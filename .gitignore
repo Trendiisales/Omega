@@ -1,0 +1,7 @@
+
+# macOS junk
+.DS_Store
+
+# archives
+*.tar.gz
+*.zip
