@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CHIMERA HFT Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-panel: #16161a;
+            --bg-input: #0d0d0f;
+            --border: #1e1e22;
+            --border-light: #26262b;
+            --text: #e0e0e0;
+            --text-dim: #666;
+            --green: #4ade80;
+            --red: #f87171;
+            --yellow: #facc15;
+            --blue: #60a5fa;
+            --cyan: #22d3ee;
+            --purple: #a78bfa;
+        }
+        
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Consolas', 'Liberation Mono', monospace;
+            background: var(--bg-dark);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-panel);
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--cyan);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .uptime {
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+        .master-status {
+            padding: 6px 14px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .master-status.online { background: rgba(74,222,128,0.15); color: var(--green); border: 1px solid var(--green); }
+        .master-status.offline { background: rgba(248,113,113,0.15); color: var(--red); border: 1px solid var(--red); }
+        .master-status.degraded { background: rgba(250,204,21,0.15); color: var(--yellow); border: 1px solid var(--yellow); }
+        
+        /* Main Layout */
+        .main {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            min-height: calc(100vh - 60px);
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-panel);
+            border-right: 1px solid var(--border);
+            padding: 16px;
+            overflow-y: auto;
+        }
+        .sidebar-section {
+            margin-bottom: 20px;
+        }
+        .sidebar-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        /* Symbol List */
+        .symbol-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .symbol-row {
+            display: grid;
+            grid-template-columns: 80px 1fr 50px;
+            align-items: center;
+            padding: 8px 10px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .symbol-row:hover {
+            border-color: var(--border-light);
+            background: #1a1a1f;
+        }
+        .symbol-row.selected {
+            border-color: var(--cyan);
+            background: rgba(34,211,238,0.08);
+            box-shadow: 0 0 10px rgba(34,211,238,0.15);
+        }
+        .symbol-row.stale {
+            opacity: 0.5;
+        }
+        .symbol-name {
+            font-weight: 600;
+            font-size: 12px;
+        }
+        .symbol-price {
+            font-size: 11px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+        .symbol-latency {
+            font-size: 10px;
+            text-align: right;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .symbol-latency.fast { background: rgba(74,222,128,0.2); color: var(--green); }
+        .symbol-latency.medium { background: rgba(250,204,21,0.2); color: var(--yellow); }
+        .symbol-latency.slow { background: rgba(248,113,113,0.2); color: var(--red); }
+        
+        /* Content Area */
+        .content {
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        /* Cards Grid */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        
+        /* Card */
+        .card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 16px;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+        .card-title {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-dim);
+        }
+        .card-status {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        .card-status.ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
+        .card-status.down { background: var(--red); box-shadow: 0 0 8px var(--red); }
+        .card-status.warn { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+        
+        /* Metrics */
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+        .metric-label { color: var(--text-dim); }
+        .metric-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+        .metric-value.green { color: var(--green); }
+        .metric-value.red { color: var(--red); }
+        .metric-value.yellow { color: var(--yellow); }
+        .metric-value.blue { color: var(--blue); }
+        .metric-value.cyan { color: var(--cyan); }
+        
+        /* Feed Status Cards */
+        .feeds-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .feed-card {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 14px;
+            text-align: center;
+        }
+        .feed-name {
+            font-size: 11px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .feed-status {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .feed-status.ok { color: var(--green); }
+        .feed-status.down { color: var(--red); }
+        .feed-latency {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-top: 6px;
+        }
+        .persistence-flag {
+            font-size: 10px;
+            margin-top: 4px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            display: inline-block;
+        }
+        .persistence-flag.connected { background: rgba(74,222,128,0.15); color: var(--green); }
+        .persistence-flag.reconnected { background: rgba(250,204,21,0.15); color: var(--yellow); }
+        .persistence-flag.disconnected { background: rgba(248,113,113,0.15); color: var(--red); }
+        
+        /* Latency Bar */
+        .latency-bar-container {
+            margin-top: 8px;
+        }
+        .latency-bar-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+        .latency-bar {
+            height: 6px;
+            background: var(--bg-input);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .latency-bar-fill {
+            height: 100%;
+            transition: width 0.3s, background 0.3s;
+        }
+        
+        /* Price Display */
+        .price-display {
+            background: var(--bg-input);
+            border-radius: 6px;
+            padding: 16px;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+        .price-symbol {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--cyan);
+            margin-bottom: 8px;
+        }
+        .price-main {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .price-bid { color: var(--green); }
+        .price-ask { color: var(--red); }
+        .price-separator { color: var(--text-dim); margin: 0 8px; }
+        .price-spread {
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+        
+        /* Activity Log */
+        .log-container {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            display: grid;
+            grid-template-columns: 70px 60px 1fr;
+            gap: 10px;
+            padding: 6px 12px;
+            font-size: 11px;
+            border-bottom: 1px solid var(--border);
+        }
+        .log-entry:last-child { border-bottom: none; }
+        .log-time { color: var(--text-dim); }
+        .log-type { font-weight: 600; }
+        .log-type.info { color: var(--blue); }
+        .log-type.tick { color: var(--green); }
+        .log-type.warn { color: var(--yellow); }
+        .log-type.error { color: var(--red); }
+        .log-type.conn { color: var(--cyan); }
+        .log-msg { color: var(--text); }
+        
+        /* Pulse Animation */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .pulse { animation: pulse 2s infinite; }
+        
+        /* Connection Error Banner */
+        .error-banner {
+            display: none;
+            background: rgba(248,113,113,0.1);
+            border: 1px solid var(--red);
+            color: var(--red);
+            padding: 12px 20px;
+            text-align: center;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-banner" id="error-banner">
+        ⚠️ Cannot connect to Chimera metrics server (localhost:9002). Ensure engine is running with metrics pipe.
+    </div>
+    
+    <header class="header">
+        <h1>⚡ CHIMERA HFT</h1>
+        <div class="header-right">
+            <span class="uptime" id="uptime">Uptime: 00:00:00</span>
+            <span class="master-status online" id="master-status">CONNECTING</span>
+        </div>
+    </header>
+    
+    <div class="main">
+        <!-- Sidebar with Symbols -->
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <div class="sidebar-title">Crypto</div>
+                <div class="symbol-list" id="crypto-symbols"></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title">Forex Major</div>
+                <div class="symbol-list" id="forex-symbols"></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title">Metals</div>
+                <div class="symbol-list" id="metals-symbols"></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title">Indices</div>
+                <div class="symbol-list" id="indices-symbols"></div>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="content">
+            <!-- Feed Status Row -->
+            <div class="feeds-row">
+                <div class="feed-card">
+                    <div class="feed-name">Binance WebSocket</div>
+                    <div class="feed-status" id="feed-binance">● CONNECTING</div>
+                    <div class="feed-latency" id="binance-latency">Latency: -- μs</div>
+                    <div class="persistence-flag connected" id="binance-persist">PERSISTENT</div>
+                </div>
+                <div class="feed-card">
+                    <div class="feed-name">FIX Quote (cTrader)</div>
+                    <div class="feed-status" id="feed-quote">● CONNECTING</div>
+                    <div class="feed-latency" id="quote-latency">Latency: -- μs</div>
+                    <div class="persistence-flag connected" id="quote-persist">PERSISTENT</div>
+                </div>
+                <div class="feed-card">
+                    <div class="feed-name">FIX Trade (cTrader)</div>
+                    <div class="feed-status" id="feed-trade">● CONNECTING</div>
+                    <div class="feed-latency" id="trade-latency">Latency: -- μs</div>
+                    <div class="persistence-flag connected" id="trade-persist">PERSISTENT</div>
+                </div>
+            </div>
+            
+            <!-- Cards Grid -->
+            <div class="cards-grid">
+                <!-- Selected Symbol Price -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Selected Symbol</span>
+                        <div class="card-status ok" id="selected-status"></div>
+                    </div>
+                    <div class="price-display">
+                        <div class="price-symbol" id="selected-symbol">BTCUSDT</div>
+                        <div class="price-main">
+                            <span class="price-bid" id="selected-bid">--</span>
+                            <span class="price-separator">/</span>
+                            <span class="price-ask" id="selected-ask">--</span>
+                        </div>
+                        <div class="price-spread" id="selected-spread">Spread: --</div>
+                    </div>
+                    <div class="latency-bar-container">
+                        <div class="latency-bar-label">
+                            <span>Feed Latency</span>
+                            <span id="selected-latency-value">-- μs</span>
+                        </div>
+                        <div class="latency-bar">
+                            <div class="latency-bar-fill" id="selected-latency-bar" style="width:0%;background:var(--green)"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Engine Health -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Engine Health</span>
+                        <div class="card-status ok" id="engine-status"></div>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Loop Time</span>
+                        <span class="metric-value" id="engine-loop">-- μs</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Queue Depth</span>
+                        <span class="metric-value" id="engine-queue">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Ticks/sec</span>
+                        <span class="metric-value cyan" id="engine-tps">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Heartbeat</span>
+                        <span class="metric-value" id="engine-heartbeat">--</span>
+                    </div>
+                </div>
+                
+                <!-- Tick Statistics -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Tick Statistics</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Binance Ticks</span>
+                        <span class="metric-value blue" id="stat-binance-ticks">0</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">FIX Ticks</span>
+                        <span class="metric-value green" id="stat-fix-ticks">0</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">FIX Messages</span>
+                        <span class="metric-value" id="stat-fix-msgs">0</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Heartbeats</span>
+                        <span class="metric-value" id="stat-fix-hb">0</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Errors</span>
+                        <span class="metric-value red" id="stat-errors">0</span>
+                    </div>
+                </div>
+                
+                <!-- Latency Breakdown -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Latency (μs)</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Binance WS</span>
+                        <span class="metric-value green" id="lat-binance">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">FIX Quote</span>
+                        <span class="metric-value green" id="lat-quote">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">FIX Trade</span>
+                        <span class="metric-value green" id="lat-trade">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Engine Loop</span>
+                        <span class="metric-value" id="lat-engine">--</span>
+                    </div>
+                    <div class="latency-bar-container" style="margin-top:12px">
+                        <div class="latency-bar-label">
+                            <span>End-to-End</span>
+                            <span id="lat-e2e-value">-- μs</span>
+                        </div>
+                        <div class="latency-bar">
+                            <div class="latency-bar-fill" id="lat-e2e-bar" style="width:0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Activity Log -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Activity Log</span>
+                </div>
+                <div class="log-container" id="log-container"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // =====================================================================
+        // SYMBOL DEFINITIONS
+        // =====================================================================
+        const SYMBOLS = {
+            crypto: [
+                { name: 'BTCUSDT', feed: 'binance', decimals: 2 },
+                { name: 'ETHUSDT', feed: 'binance', decimals: 2 },
+                { name: 'SOLUSDT', feed: 'binance', decimals: 2 }
+            ],
+            forex: [
+                { name: 'EURUSD', feed: 'fix', decimals: 5 },
+                { name: 'GBPUSD', feed: 'fix', decimals: 5 },
+                { name: 'USDJPY', feed: 'fix', decimals: 3 },
+                { name: 'AUDUSD', feed: 'fix', decimals: 5 },
+                { name: 'USDCAD', feed: 'fix', decimals: 5 },
+                { name: 'NZDUSD', feed: 'fix', decimals: 5 },
+                { name: 'USDCHF', feed: 'fix', decimals: 5 }
+            ],
+            metals: [
+                { name: 'XAUUSD', feed: 'fix', decimals: 2 },
+                { name: 'XAGUSD', feed: 'fix', decimals: 3 }
+            ],
+            indices: [
+                { name: 'NAS100', feed: 'fix', decimals: 2 },
+                { name: 'SPX500', feed: 'fix', decimals: 2 },
+                { name: 'US30', feed: 'fix', decimals: 2 },
+                { name: 'DAX40', feed: 'fix', decimals: 2 }
+            ]
+        };
+        
+        // =====================================================================
+        // STATE
+        // =====================================================================
+        let selectedSymbol = 'BTCUSDT';
+        let startTime = Date.now();
+        let logs = [];
+        let lastTickCounts = { binance: 0, fix: 0 };
+        let ticksPerSec = 0;
+        let symbolPrices = {};
+        let symbolLatencies = {};
+        
+        // Persistence tracking
+        let feedState = {
+            binance: { connected: false, wasConnected: false, reconnects: 0 },
+            quote: { connected: false, wasConnected: false, reconnects: 0 },
+            trade: { connected: false, wasConnected: false, reconnects: 0 }
+        };
+        
+        // =====================================================================
+        // UTILITIES
+        // =====================================================================
+        function formatNum(n, decimals = 0) {
+            if (n === null || n === undefined || isNaN(n)) return '--';
+            return n.toLocaleString('en-US', { 
+                minimumFractionDigits: decimals, 
+                maximumFractionDigits: decimals 
+            });
+        }
+        
+        function formatTime(date) {
+            return date.toLocaleTimeString('en-US', { hour12: false });
+        }
+        
+        function formatUptime(ms) {
+            const s = Math.floor(ms / 1000);
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = s % 60;
+            return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+        }
+        
+        function latencyColor(us) {
+            if (us < 500) return 'var(--green)';
+            if (us < 2000) return 'var(--yellow)';
+            return 'var(--red)';
+        }
+        
+        function latencyClass(us) {
+            if (us < 500) return 'fast';
+            if (us < 2000) return 'medium';
+            return 'slow';
+        }
+        
+        // =====================================================================
+        // LOGGING
+        // =====================================================================
+        function addLog(type, msg) {
+            logs.unshift({ time: new Date(), type, msg });
+            if (logs.length > 100) logs.pop();
+            renderLogs();
+        }
+        
+        function renderLogs() {
+            const container = document.getElementById('log-container');
+            container.innerHTML = logs.slice(0, 30).map(l => `
+                <div class="log-entry">
+                    <span class="log-time">${formatTime(l.time)}</span>
+                    <span class="log-type ${l.type.toLowerCase()}">${l.type}</span>
+                    <span class="log-msg">${l.msg}</span>
+                </div>
+            `).join('');
+        }
+        
+        // =====================================================================
+        // SYMBOL RENDERING
+        // =====================================================================
+        function renderSymbols() {
+            for (const [category, symbols] of Object.entries(SYMBOLS)) {
+                const container = document.getElementById(`${category}-symbols`);
+                container.innerHTML = symbols.map(s => {
+                    const price = symbolPrices[s.name] || { bid: 0, ask: 0 };
+                    const latency = symbolLatencies[s.name] || 0;
+                    const isSelected = s.name === selectedSymbol;
+                    const isStale = price.lastUpdate && (Date.now() - price.lastUpdate > 5000);
+                    
+                    return `
+                        <div class="symbol-row ${isSelected ? 'selected' : ''} ${isStale ? 'stale' : ''}" 
+                             onclick="selectSymbol('${s.name}')">
+                            <span class="symbol-name">${s.name}</span>
+                            <span class="symbol-price">${price.bid > 0 ? formatNum(price.bid, s.decimals) : '--'}</span>
+                            <span class="symbol-latency ${latencyClass(latency)}">${latency > 0 ? latency + 'μs' : '--'}</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+        
+        function selectSymbol(symbol) {
+            selectedSymbol = symbol;
+            renderSymbols();
+            updateSelectedSymbol();
+            addLog('INFO', `Selected ${symbol}`);
+        }
+        
+        function updateSelectedSymbol() {
+            const price = symbolPrices[selectedSymbol] || { bid: 0, ask: 0 };
+            const latency = symbolLatencies[selectedSymbol] || 0;
+            const sym = Object.values(SYMBOLS).flat().find(s => s.name === selectedSymbol);
+            const decimals = sym ? sym.decimals : 2;
+            
+            document.getElementById('selected-symbol').textContent = selectedSymbol;
+            document.getElementById('selected-bid').textContent = price.bid > 0 ? formatNum(price.bid, decimals) : '--';
+            document.getElementById('selected-ask').textContent = price.ask > 0 ? formatNum(price.ask, decimals) : '--';
+            
+            if (price.bid > 0 && price.ask > 0) {
+                const spread = price.ask - price.bid;
+                const spreadPips = selectedSymbol.includes('JPY') ? spread * 100 : spread * 10000;
+                document.getElementById('selected-spread').textContent = `Spread: ${spreadPips.toFixed(1)} pips`;
+            } else {
+                document.getElementById('selected-spread').textContent = 'Spread: --';
+            }
+            
+            document.getElementById('selected-latency-value').textContent = latency > 0 ? `${latency} μs` : '-- μs';
+            const pct = Math.min(100, (latency / 5000) * 100);
+            document.getElementById('selected-latency-bar').style.width = `${pct}%`;
+            document.getElementById('selected-latency-bar').style.background = latencyColor(latency);
+        }
+        
+        // =====================================================================
+        // FEED STATUS & PERSISTENCE
+        // =====================================================================
+        function updateFeedStatus(feed, connected, latency) {
+            const state = feedState[feed];
+            const wasConnected = state.connected;
+            state.connected = connected;
+            
+            if (connected && !wasConnected && state.wasConnected) {
+                state.reconnects++;
+                addLog('WARN', `${feed.toUpperCase()} reconnected (${state.reconnects} reconnects)`);
+            } else if (!connected && wasConnected) {
+                addLog('ERROR', `${feed.toUpperCase()} disconnected!`);
+            } else if (connected && !state.wasConnected) {
+                addLog('CONN', `${feed.toUpperCase()} connected`);
+            }
+            
+            state.wasConnected = state.wasConnected || connected;
+            
+            // Update UI
+            const statusEl = document.getElementById(`feed-${feed}`);
+            const latencyEl = document.getElementById(`${feed}-latency`);
+            const persistEl = document.getElementById(`${feed}-persist`);
+            
+            if (connected) {
+                statusEl.className = 'feed-status ok';
+                statusEl.innerHTML = '● ONLINE';
+            } else {
+                statusEl.className = 'feed-status down';
+                statusEl.innerHTML = '● OFFLINE';
+            }
+            
+            if (latency !== undefined) {
+                latencyEl.textContent = `Latency: ${latency} μs`;
+            }
+            
+            if (state.reconnects > 0) {
+                persistEl.className = 'persistence-flag reconnected';
+                persistEl.textContent = `RECONNECTED (${state.reconnects}x)`;
+            } else if (connected) {
+                persistEl.className = 'persistence-flag connected';
+                persistEl.textContent = 'PERSISTENT';
+            } else if (state.wasConnected) {
+                persistEl.className = 'persistence-flag disconnected';
+                persistEl.textContent = 'DROPPED';
+            } else {
+                persistEl.className = 'persistence-flag disconnected';
+                persistEl.textContent = 'NOT CONNECTED';
+            }
+        }
+        
+        // =====================================================================
+        // METRICS PARSING
+        // =====================================================================
+        function parsePrometheus(text) {
+            const metrics = {};
+            for (const line of text.split('\n')) {
+                if (line.startsWith('#') || !line.trim()) continue;
+                const match = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s+([0-9.e+-]+)/);
+                if (match) metrics[match[1]] = parseFloat(match[2]);
+            }
+            return metrics;
+        }
+        
+        // =====================================================================
+        // MAIN UPDATE LOOP
+        // =====================================================================
+        async function fetchMetrics() {
+            try {
+                const response = await fetch('http://localhost:9002/metrics');
+                if (!response.ok) throw new Error('Fetch failed');
+                
+                const text = await response.text();
+                const m = parsePrometheus(text);
+                
+                document.getElementById('error-banner').style.display = 'none';
+                document.getElementById('master-status').textContent = 'ONLINE';
+                document.getElementById('master-status').className = 'master-status online';
+                
+                // Feed status
+                const binanceOk = (m.chimera_binance_connected || 0) > 0;
+                const quoteOk = (m.chimera_fix_quote_connected || 0) > 0;
+                const tradeOk = (m.chimera_fix_trade_connected || 0) > 0;
+                
+                updateFeedStatus('binance', binanceOk, m.chimera_binance_latency_us || 0);
+                updateFeedStatus('quote', quoteOk, m.chimera_fix_quote_latency_us || 0);
+                updateFeedStatus('trade', tradeOk, m.chimera_fix_trade_latency_us || 0);
+                
+                // Tick stats
+                const binanceTicks = m.chimera_binance_ticks || 0;
+                const fixTicks = m.chimera_fix_ticks || 0;
+                
+                document.getElementById('stat-binance-ticks').textContent = formatNum(binanceTicks);
+                document.getElementById('stat-fix-ticks').textContent = formatNum(fixTicks);
+                document.getElementById('stat-fix-msgs').textContent = formatNum(m.chimera_fix_messages || 0);
+                document.getElementById('stat-fix-hb').textContent = formatNum(m.chimera_fix_heartbeats || 0);
+                document.getElementById('stat-errors').textContent = formatNum(m.chimera_fix_errors || 0);
+                
+                // Calculate TPS
+                const totalTicks = binanceTicks + fixTicks;
+                const prevTotal = lastTickCounts.binance + lastTickCounts.fix;
+                ticksPerSec = totalTicks - prevTotal;
+                lastTickCounts = { binance: binanceTicks, fix: fixTicks };
+                
+                // Engine stats
+                document.getElementById('engine-tps').textContent = ticksPerSec > 0 ? ticksPerSec : '--';
+                document.getElementById('engine-loop').textContent = `${m.chimera_engine_loop_us || 0} μs`;
+                document.getElementById('engine-queue').textContent = m.chimera_queue_depth || 0;
+                document.getElementById('engine-heartbeat').textContent = m.chimera_heartbeat || 0;
+                
+                // Latency breakdown
+                const binanceLat = m.chimera_binance_latency_us || 0;
+                const quoteLat = m.chimera_fix_quote_latency_us || 0;
+                const tradeLat = m.chimera_fix_trade_latency_us || 0;
+                const engineLat = m.chimera_engine_loop_us || 0;
+                
+                document.getElementById('lat-binance').textContent = `${binanceLat}`;
+                document.getElementById('lat-binance').style.color = latencyColor(binanceLat);
+                document.getElementById('lat-quote').textContent = `${quoteLat}`;
+                document.getElementById('lat-quote').style.color = latencyColor(quoteLat);
+                document.getElementById('lat-trade').textContent = `${tradeLat}`;
+                document.getElementById('lat-trade').style.color = latencyColor(tradeLat);
+                document.getElementById('lat-engine').textContent = `${engineLat}`;
+                
+                const e2e = Math.max(binanceLat, quoteLat) + engineLat;
+                document.getElementById('lat-e2e-value').textContent = `${e2e} μs`;
+                const e2ePct = Math.min(100, (e2e / 10000) * 100);
+                document.getElementById('lat-e2e-bar').style.width = `${e2ePct}%`;
+                document.getElementById('lat-e2e-bar').style.background = latencyColor(e2e);
+                
+                // Symbol prices from metrics
+                if (m.chimera_xauusd_bid > 0) {
+                    symbolPrices['XAUUSD'] = { bid: m.chimera_xauusd_bid, ask: m.chimera_xauusd_ask || 0, lastUpdate: Date.now() };
+                    symbolLatencies['XAUUSD'] = quoteLat;
+                }
+                if (m.chimera_eurusd_bid > 0) {
+                    symbolPrices['EURUSD'] = { bid: m.chimera_eurusd_bid, ask: m.chimera_eurusd_ask || 0, lastUpdate: Date.now() };
+                    symbolLatencies['EURUSD'] = quoteLat;
+                }
+                if (m.chimera_btcusdt_bid > 0) {
+                    symbolPrices['BTCUSDT'] = { bid: m.chimera_btcusdt_bid, ask: m.chimera_btcusdt_ask || 0, lastUpdate: Date.now() };
+                    symbolLatencies['BTCUSDT'] = binanceLat;
+                }
+                if (m.chimera_ethusdt_bid > 0) {
+                    symbolPrices['ETHUSDT'] = { bid: m.chimera_ethusdt_bid, ask: m.chimera_ethusdt_ask || 0, lastUpdate: Date.now() };
+                    symbolLatencies['ETHUSDT'] = binanceLat;
+                }
+                
+                // Update displays
+                renderSymbols();
+                updateSelectedSymbol();
+                
+                // Engine health status
+                const healthy = engineLat < 1000 && (binanceOk || quoteOk);
+                document.getElementById('engine-status').className = `card-status ${healthy ? 'ok' : 'warn'}`;
+                document.getElementById('selected-status').className = `card-status ${symbolPrices[selectedSymbol]?.bid > 0 ? 'ok' : 'down'}`;
+                
+            } catch (err) {
+                document.getElementById('error-banner').style.display = 'block';
+                document.getElementById('master-status').textContent = 'OFFLINE';
+                document.getElementById('master-status').className = 'master-status offline';
+            }
+        }
+        
+        function updateUptime() {
+            document.getElementById('uptime').textContent = `Uptime: ${formatUptime(Date.now() - startTime)}`;
+        }
+        
+        // =====================================================================
+        // INIT
+        // =====================================================================
+        addLog('INFO', 'Dashboard initialized');
+        addLog('INFO', 'Connecting to metrics server...');
+        
+        renderSymbols();
+        
+        setInterval(fetchMetrics, 500);
+        setInterval(updateUptime, 1000);
+        fetchMetrics();
+    </script>
+</body>
+</html>

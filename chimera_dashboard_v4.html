@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CHIMERA HFT Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-panel: #16161a;
+            --bg-input: #0d0d0f;
+            --border: #1e1e22;
+            --border-light: #26262b;
+            --text: #e0e0e0;
+            --text-dim: #666;
+            --green: #4ade80;
+            --red: #f87171;
+            --yellow: #facc15;
+            --blue: #60a5fa;
+            --cyan: #22d3ee;
+            --purple: #a78bfa;
+        }
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            background: var(--bg-dark);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-panel);
+        }
+        .header h1 { font-size: 16px; color: var(--cyan); cursor: pointer; }
+        .header-right { display: flex; align-items: center; gap: 12px; font-size: 11px; }
+        .master-status {
+            padding: 3px 10px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        .master-status.online { background: rgba(74,222,128,0.15); color: var(--green); border: 1px solid var(--green); }
+        .master-status.offline { background: rgba(248,113,113,0.15); color: var(--red); border: 1px solid var(--red); }
+        
+        .main {
+            display: grid;
+            grid-template-columns: 200px 1fr 260px;
+            min-height: calc(100vh - 45px);
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-panel);
+            border-right: 1px solid var(--border);
+            padding: 10px;
+            overflow-y: auto;
+            font-size: 11px;
+        }
+        .sidebar-section { margin-bottom: 12px; }
+        .sidebar-title {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid var(--border);
+        }
+        .symbol-list { display: flex; flex-direction: column; gap: 2px; }
+        .symbol-row {
+            display: grid;
+            grid-template-columns: 55px 1fr 40px;
+            align-items: center;
+            padding: 5px 6px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+        .symbol-row:hover { border-color: var(--border-light); }
+        .symbol-row.selected {
+            border-color: var(--cyan);
+            background: rgba(34,211,238,0.08);
+            box-shadow: 0 0 6px rgba(34,211,238,0.15);
+        }
+        .symbol-row.stale { opacity: 0.4; }
+        .symbol-name { font-weight: 600; }
+        .symbol-price { text-align: right; color: var(--green); }
+        .symbol-latency { font-size: 8px; text-align: right; padding: 1px 3px; border-radius: 2px; }
+        .symbol-latency.fast { background: rgba(74,222,128,0.2); color: var(--green); }
+        .symbol-latency.medium { background: rgba(250,204,21,0.2); color: var(--yellow); }
+        .symbol-latency.slow { background: rgba(248,113,113,0.2); color: var(--red); }
+        
+        /* Content */
+        .content { padding: 12px; overflow-y: auto; }
+        
+        .feeds-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .feed-card {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 10px;
+            text-align: center;
+        }
+        .feed-name { font-size: 9px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px; }
+        .feed-status { font-size: 12px; font-weight: 600; }
+        .feed-status.ok { color: var(--green); }
+        .feed-status.down { color: var(--red); }
+        .feed-latency { font-size: 10px; color: var(--cyan); margin-top: 3px; font-weight: 600; }
+        .persistence-flag { font-size: 8px; margin-top: 2px; padding: 1px 4px; border-radius: 2px; }
+        .persistence-flag.connected { background: rgba(74,222,128,0.15); color: var(--green); }
+        .persistence-flag.reconnected { background: rgba(250,204,21,0.15); color: var(--yellow); }
+        .persistence-flag.disconnected { background: rgba(248,113,113,0.15); color: var(--red); }
+        
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 10px;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+        .card-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); }
+        .card-status { width: 6px; height: 6px; border-radius: 50%; }
+        .card-status.ok { background: var(--green); box-shadow: 0 0 4px var(--green); }
+        .card-status.down { background: var(--red); }
+        .card-status.warn { background: var(--yellow); }
+        
+        .metric-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 11px; }
+        .metric-label { color: var(--text-dim); }
+        .metric-value { font-weight: 600; }
+        .metric-value.green { color: var(--green); }
+        .metric-value.red { color: var(--red); }
+        .metric-value.yellow { color: var(--yellow); }
+        .metric-value.blue { color: var(--blue); }
+        .metric-value.cyan { color: var(--cyan); }
+        
+        .price-display {
+            background: var(--bg-input);
+            border-radius: 4px;
+            padding: 12px;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        .price-symbol { font-size: 12px; font-weight: 600; color: var(--cyan); margin-bottom: 4px; }
+        .price-main { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
+        .price-bid { color: var(--green); }
+        .price-ask { color: var(--red); }
+        .price-separator { color: var(--text-dim); margin: 0 4px; }
+        .price-spread { font-size: 10px; color: var(--text-dim); }
+        
+        .latency-bar { height: 4px; background: var(--bg-input); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+        .latency-bar-fill { height: 100%; transition: width 0.3s; }
+        
+        /* Trades Blotter */
+        .trades-table {
+            width: 100%;
+            font-size: 10px;
+            border-collapse: collapse;
+        }
+        .trades-table th {
+            text-align: left;
+            padding: 4px 6px;
+            color: var(--text-dim);
+            font-weight: 500;
+            border-bottom: 1px solid var(--border);
+        }
+        .trades-table td {
+            padding: 4px 6px;
+            border-bottom: 1px solid var(--border);
+        }
+        .trades-table tr:hover { background: var(--bg-input); }
+        .trade-buy { color: var(--green); }
+        .trade-sell { color: var(--red); }
+        .trade-pnl-pos { color: var(--green); }
+        .trade-pnl-neg { color: var(--red); }
+        
+        /* Activity Log */
+        .log-container {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            display: grid;
+            grid-template-columns: 55px 45px 1fr;
+            gap: 6px;
+            padding: 3px 8px;
+            font-size: 9px;
+            border-bottom: 1px solid var(--border);
+        }
+        .log-time { color: var(--text-dim); }
+        .log-type { font-weight: 600; }
+        .log-type.info { color: var(--blue); }
+        .log-type.conn { color: var(--cyan); }
+        .log-type.trade { color: var(--green); }
+        .log-type.warn { color: var(--yellow); }
+        .log-type.error { color: var(--red); }
+        
+        /* Right Panel */
+        .config-panel {
+            background: var(--bg-panel);
+            border-left: 1px solid var(--border);
+            padding: 10px;
+            overflow-y: auto;
+            font-size: 11px;
+        }
+        .config-section { margin-bottom: 14px; }
+        .config-title {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--cyan);
+            margin-bottom: 8px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid var(--border);
+        }
+        .config-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+        }
+        .config-label { color: var(--text-dim); font-size: 10px; }
+        .config-value {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            padding: 2px 6px;
+            border-radius: 2px;
+            font-size: 10px;
+            min-width: 60px;
+            text-align: right;
+        }
+        .config-toggle {
+            width: 32px;
+            height: 16px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            position: relative;
+        }
+        .config-toggle.on { background: rgba(74,222,128,0.3); border-color: var(--green); }
+        .config-toggle::after {
+            content: '';
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: var(--text-dim);
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: all 0.2s;
+        }
+        .config-toggle.on::after { left: 18px; background: var(--green); }
+        
+        /* Preset Buttons */
+        .preset-row {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+        .preset-btn {
+            flex: 1;
+            padding: 6px 4px;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            background: var(--bg-input);
+            color: var(--text-dim);
+            font-size: 9px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        .preset-btn:hover { border-color: var(--border-light); }
+        .preset-btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(34,211,238,0.1); }
+        .preset-btn.conservative.active { border-color: var(--green); color: var(--green); background: rgba(74,222,128,0.1); }
+        .preset-btn.balanced.active { border-color: var(--yellow); color: var(--yellow); background: rgba(250,204,21,0.1); }
+        .preset-btn.aggressive.active { border-color: var(--red); color: var(--red); background: rgba(248,113,113,0.1); }
+        
+        .error-banner {
+            display: none;
+            background: rgba(248,113,113,0.1);
+            border: 1px solid var(--red);
+            color: var(--red);
+            padding: 8px;
+            text-align: center;
+            font-size: 11px;
+        }
+        
+        /* Config Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 20px;
+            width: 320px;
+        }
+        .modal h3 { color: var(--cyan); margin-bottom: 14px; font-size: 14px; }
+        .modal input {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 8px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+        .modal-btns { display: flex; gap: 8px; }
+        .modal-btns button {
+            flex: 1;
+            padding: 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 11px;
+        }
+        .btn-primary { background: var(--cyan); color: #000; border: none; }
+        .btn-secondary { background: var(--bg-input); color: var(--text); border: 1px solid var(--border); }
+    </style>
+</head>
+<body>
+    <div class="error-banner" id="error-banner"></div>
+    
+    <div class="modal" id="config-modal">
+        <div class="modal-content">
+            <h3>⚙️ Server Configuration</h3>
+            <label style="font-size:10px;color:var(--text-dim);">Server IP</label>
+            <input type="text" id="server-input" placeholder="localhost or VPS IP">
+            <label style="font-size:10px;color:var(--text-dim);">Port</label>
+            <input type="text" id="port-input" value="9001">
+            <div class="modal-btns">
+                <button class="btn-primary" onclick="saveServerConfig()">Connect</button>
+                <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+            </div>
+            <div style="margin-top:10px;font-size:9px;color:var(--text-dim);">
+                Local: localhost:9001 | VPS: 45.85.3.38:9001
+            </div>
+        </div>
+    </div>
+    
+    <header class="header">
+        <h1 onclick="openModal()">⚡ CHIMERA HFT</h1>
+        <div class="header-right">
+            <span id="server-display" style="color:var(--text-dim);cursor:pointer;" onclick="openModal()">localhost:9001</span>
+            <span id="uptime">00:00:00</span>
+            <span class="master-status online" id="master-status">--</span>
+        </div>
+    </header>
+    
+    <div class="main">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <div class="sidebar-title">Crypto (Binance)</div>
+                <div class="symbol-list" id="crypto-symbols"></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title">Forex (FIX)</div>
+                <div class="symbol-list" id="forex-symbols"></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title">Metals (FIX)</div>
+                <div class="symbol-list" id="metals-symbols"></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title">Indices (FIX)</div>
+                <div class="symbol-list" id="indices-symbols"></div>
+            </div>
+        </aside>
+        
+        <main class="content">
+            <div class="feeds-row">
+                <div class="feed-card">
+                    <div class="feed-name">Binance WS</div>
+                    <div class="feed-status" id="feed-binance">● --</div>
+                    <div class="feed-latency" id="binance-latency">-- μs</div>
+                    <div class="persistence-flag" id="binance-persist">--</div>
+                </div>
+                <div class="feed-card">
+                    <div class="feed-name">FIX Quote</div>
+                    <div class="feed-status" id="feed-quote">● --</div>
+                    <div class="feed-latency" id="quote-latency">-- μs</div>
+                    <div class="persistence-flag" id="quote-persist">--</div>
+                </div>
+                <div class="feed-card">
+                    <div class="feed-name">FIX Trade</div>
+                    <div class="feed-status" id="feed-trade">● --</div>
+                    <div class="feed-latency" id="trade-latency">-- μs</div>
+                    <div class="persistence-flag" id="trade-persist">--</div>
+                </div>
+            </div>
+            
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Selected Symbol</span>
+                        <div class="card-status ok" id="selected-status"></div>
+                    </div>
+                    <div class="price-display">
+                        <div class="price-symbol" id="selected-symbol">XAUUSD</div>
+                        <div class="price-main">
+                            <span class="price-bid" id="selected-bid">--</span>
+                            <span class="price-separator">/</span>
+                            <span class="price-ask" id="selected-ask">--</span>
+                        </div>
+                        <div class="price-spread" id="selected-spread">Spread: --</div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:10px;">
+                        <span style="color:var(--text-dim)">Latency</span>
+                        <span id="selected-latency" style="color:var(--cyan)">-- μs</span>
+                    </div>
+                    <div class="latency-bar"><div class="latency-bar-fill" id="selected-lat-bar" style="width:0%"></div></div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header"><span class="card-title">Tick Statistics</span></div>
+                    <div class="metric-row">
+                        <span class="metric-label">Binance</span>
+                        <span class="metric-value blue" id="stat-bn-ticks">0</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">FIX</span>
+                        <span class="metric-value green" id="stat-fix-ticks">0</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Ticks/sec</span>
+                        <span class="metric-value cyan" id="stat-tps">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Messages</span>
+                        <span class="metric-value" id="stat-msgs">0</span>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header"><span class="card-title">Latency (μs)</span></div>
+                    <div class="metric-row">
+                        <span class="metric-label">Binance</span>
+                        <span class="metric-value" id="lat-bn">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">FIX Quote</span>
+                        <span class="metric-value" id="lat-quote">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">FIX Trade</span>
+                        <span class="metric-value" id="lat-trade">--</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">End-to-End</span>
+                        <span class="metric-value cyan" id="lat-e2e">--</span>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Engine</span>
+                        <div class="card-status ok" id="engine-status"></div>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Loop</span>
+                        <span class="metric-value" id="eng-loop">-- μs</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Queue</span>
+                        <span class="metric-value" id="eng-queue">0</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Uptime</span>
+                        <span class="metric-value" id="eng-uptime">0s</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Errors</span>
+                        <span class="metric-value red" id="eng-errors">0</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Trades Blotter -->
+            <div class="card" style="margin-bottom:10px;">
+                <div class="card-header">
+                    <span class="card-title">Recent Trades</span>
+                    <span style="font-size:9px;color:var(--text-dim);" id="trade-count">0 trades</span>
+                </div>
+                <div style="max-height:100px;overflow-y:auto;">
+                    <table class="trades-table">
+                        <thead>
+                            <tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>P&L</th></tr>
+                        </thead>
+                        <tbody id="trades-body">
+                            <tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:12px;">No trades yet</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><span class="card-title">Activity Log</span></div>
+                <div class="log-container" id="log-container"></div>
+            </div>
+        </main>
+        
+        <aside class="config-panel">
+            <div class="config-section">
+                <div class="config-title">🎚️ Trading Mode</div>
+                <div class="preset-row">
+                    <div class="preset-btn conservative" id="preset-cons" onclick="setPreset('conservative')">SAFE</div>
+                    <div class="preset-btn balanced active" id="preset-bal" onclick="setPreset('balanced')">BALANCED</div>
+                    <div class="preset-btn aggressive" id="preset-agg" onclick="setPreset('aggressive')">AGGRESSIVE</div>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">Trading</span>
+                    <div class="config-toggle on" id="cfg-trading" onclick="toggleCfg('trading')"></div>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">Auto Hedge</span>
+                    <div class="config-toggle" id="cfg-hedge" onclick="toggleCfg('hedge')"></div>
+                </div>
+            </div>
+            
+            <div class="config-section">
+                <div class="config-title">📊 Position</div>
+                <div class="config-row">
+                    <span class="config-label">Size</span>
+                    <span class="config-value" id="cfg-size">0.0005</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">Max Pos</span>
+                    <span class="config-value" id="cfg-maxpos">1</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">Exposure</span>
+                    <span class="config-value" id="cfg-exposure">0.0005</span>
+                </div>
+            </div>
+            
+            <div class="config-section">
+                <div class="config-title">🎯 Entry</div>
+                <div class="config-row">
+                    <span class="config-label">Spread (bps)</span>
+                    <span class="config-value" id="cfg-spread">4</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">Depth</span>
+                    <span class="config-value" id="cfg-depth">30000</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">Toxic</span>
+                    <span class="config-value" id="cfg-toxic">0.55</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">VPIN</span>
+                    <span class="config-value" id="cfg-vpin">0.60</span>
+                </div>
+            </div>
+            
+            <div class="config-section">
+                <div class="config-title">🛡️ Risk</div>
+                <div class="config-row">
+                    <span class="config-label">SL (bps)</span>
+                    <span class="config-value" id="cfg-sl">25</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">TP (bps)</span>
+                    <span class="config-value" id="cfg-tp">45</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">Cooldown</span>
+                    <span class="config-value" id="cfg-cooldown">250ms</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">Max Lat</span>
+                    <span class="config-value" id="cfg-maxlat">600μs</span>
+                </div>
+            </div>
+            
+            <div class="config-section">
+                <div class="config-title">📡 VPS</div>
+                <div class="config-row">
+                    <span class="config-label">Server</span>
+                    <span class="config-value">NY-COLO</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">IP</span>
+                    <span class="config-value">45.85.3.38</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">Binance RTT</span>
+                    <span class="config-value green" id="vps-bn-rtt">-- μs</span>
+                </div>
+                <div class="config-row">
+                    <span class="config-label">FIX RTT</span>
+                    <span class="config-value green" id="vps-fix-rtt">-- μs</span>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        // Presets
+        const PRESETS = {
+            conservative: { size: '0.0002', maxpos: '1', spread: '2', depth: '50000', toxic: '0.45', vpin: '0.50', sl: '15', tp: '30', cooldown: '500ms', maxlat: '400μs' },
+            balanced: { size: '0.0005', maxpos: '1', spread: '4', depth: '30000', toxic: '0.55', vpin: '0.60', sl: '25', tp: '45', cooldown: '250ms', maxlat: '600μs' },
+            aggressive: { size: '0.001', maxpos: '3', spread: '6', depth: '15000', toxic: '0.65', vpin: '0.70', sl: '35', tp: '60', cooldown: '100ms', maxlat: '1000μs' }
+        };
+        
+        let currentPreset = 'balanced';
+        
+        function setPreset(name) {
+            currentPreset = name;
+            const p = PRESETS[name];
+            document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`preset-${name.substr(0,3)}`).classList.add('active');
+            
+            document.getElementById('cfg-size').textContent = p.size;
+            document.getElementById('cfg-maxpos').textContent = p.maxpos;
+            document.getElementById('cfg-spread').textContent = p.spread;
+            document.getElementById('cfg-depth').textContent = p.depth;
+            document.getElementById('cfg-toxic').textContent = p.toxic;
+            document.getElementById('cfg-vpin').textContent = p.vpin;
+            document.getElementById('cfg-sl').textContent = p.sl;
+            document.getElementById('cfg-tp').textContent = p.tp;
+            document.getElementById('cfg-cooldown').textContent = p.cooldown;
+            document.getElementById('cfg-maxlat').textContent = p.maxlat;
+            
+            addLog('INFO', `Preset: ${name.toUpperCase()}`);
+        }
+        
+        function toggleCfg(name) {
+            document.getElementById(`cfg-${name}`).classList.toggle('on');
+        }
+        
+        // Server config
+        let serverHost = localStorage.getItem('chimera_host') || 'localhost';
+        let serverPort = localStorage.getItem('chimera_port') || '9001';
+        document.getElementById('server-display').textContent = `${serverHost}:${serverPort}`;
+        
+        function openModal() {
+            document.getElementById('config-modal').style.display = 'flex';
+            document.getElementById('server-input').value = serverHost;
+            document.getElementById('port-input').value = serverPort;
+        }
+        function closeModal() { document.getElementById('config-modal').style.display = 'none'; }
+        function saveServerConfig() {
+            serverHost = document.getElementById('server-input').value || 'localhost';
+            serverPort = document.getElementById('port-input').value || '9001';
+            localStorage.setItem('chimera_host', serverHost);
+            localStorage.setItem('chimera_port', serverPort);
+            document.getElementById('server-display').textContent = `${serverHost}:${serverPort}`;
+            closeModal();
+            addLog('INFO', `Connecting to ${serverHost}:${serverPort}`);
+        }
+        
+        // Symbols
+        const SYMBOLS = {
+            crypto: [
+                { name: 'BTCUSDT', key: 'btcusdt', decimals: 2 },
+                { name: 'ETHUSDT', key: 'ethusdt', decimals: 2 },
+                { name: 'SOLUSDT', key: 'solusdt', decimals: 2 }
+            ],
+            forex: [
+                { name: 'EURUSD', key: 'eurusd', decimals: 5 },
+                { name: 'GBPUSD', key: 'gbpusd', decimals: 5 },
+                { name: 'USDJPY', key: 'usdjpy', decimals: 3 },
+                { name: 'AUDUSD', key: 'audusd', decimals: 5 },
+                { name: 'USDCAD', key: 'usdcad', decimals: 5 },
+                { name: 'NZDUSD', key: 'nzdusd', decimals: 5 },
+                { name: 'USDCHF', key: 'usdchf', decimals: 5 }
+            ],
+            metals: [
+                { name: 'XAUUSD', key: 'xauusd', decimals: 2 },
+                { name: 'XAGUSD', key: 'xagusd', decimals: 3 }
+            ],
+            indices: [
+                { name: 'NAS100', key: 'nas100', decimals: 2 },
+                { name: 'SPX500', key: 'spx500', decimals: 2 },
+                { name: 'US30', key: 'us30', decimals: 2 },
+                { name: 'GER30', key: 'ger30', decimals: 2 },
+                { name: 'UK100', key: 'uk100', decimals: 2 },
+                { name: 'JPN225', key: 'jpn225', decimals: 2 }
+            ]
+        };
+        
+        let selectedSymbol = 'XAUUSD';
+        let symbolPrices = {};
+        let symbolLatencies = {};
+        let logs = [];
+        let trades = [];
+        let lastTicks = { bn: 0, fix: 0 };
+        let feedState = {
+            binance: { connected: false, wasConnected: false, reconnects: 0 },
+            quote: { connected: false, wasConnected: false, reconnects: 0 },
+            trade: { connected: false, wasConnected: false, reconnects: 0 }
+        };
+        let startTime = Date.now();
+        
+        function fmt(n, d=0) {
+            if (!n || isNaN(n)) return '--';
+            return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+        }
+        function latColor(us) { return us < 500 ? 'var(--green)' : us < 2000 ? 'var(--yellow)' : 'var(--red)'; }
+        function latClass(us) { return us < 500 ? 'fast' : us < 2000 ? 'medium' : 'slow'; }
+        
+        function addLog(type, msg) {
+            logs.unshift({ time: new Date(), type, msg });
+            if (logs.length > 50) logs.pop();
+            renderLogs();
+        }
+        function renderLogs() {
+            document.getElementById('log-container').innerHTML = logs.slice(0,15).map(l => `
+                <div class="log-entry">
+                    <span class="log-time">${l.time.toLocaleTimeString('en-US',{hour12:false})}</span>
+                    <span class="log-type ${l.type.toLowerCase()}">${l.type}</span>
+                    <span>${l.msg}</span>
+                </div>
+            `).join('');
+        }
+        
+        function renderSymbols() {
+            for (const [cat, syms] of Object.entries(SYMBOLS)) {
+                document.getElementById(`${cat}-symbols`).innerHTML = syms.map(s => {
+                    const p = symbolPrices[s.name] || {};
+                    const lat = symbolLatencies[s.name] || 0;
+                    const sel = s.name === selectedSymbol;
+                    const stale = p.ts && (Date.now() - p.ts > 5000);
+                    return `<div class="symbol-row ${sel?'selected':''} ${stale?'stale':''}" onclick="selectSymbol('${s.name}')">
+                        <span class="symbol-name">${s.name}</span>
+                        <span class="symbol-price">${p.bid>0?fmt(p.bid,s.decimals):'--'}</span>
+                        <span class="symbol-latency ${latClass(lat)}">${lat>0?lat+'μs':'--'}</span>
+                    </div>`;
+                }).join('');
+            }
+        }
+        
+        function selectSymbol(sym) {
+            selectedSymbol = sym;
+            renderSymbols();
+            updateSelected();
+        }
+        
+        function updateSelected() {
+            const p = symbolPrices[selectedSymbol] || {};
+            const lat = symbolLatencies[selectedSymbol] || 0;
+            const s = Object.values(SYMBOLS).flat().find(x=>x.name===selectedSymbol);
+            const d = s ? s.decimals : 2;
+            
+            document.getElementById('selected-symbol').textContent = selectedSymbol;
+            document.getElementById('selected-bid').textContent = p.bid>0 ? fmt(p.bid,d) : '--';
+            document.getElementById('selected-ask').textContent = p.ask>0 ? fmt(p.ask,d) : '--';
+            
+            if (p.bid>0 && p.ask>0) {
+                const spread = p.ask - p.bid;
+                const pips = selectedSymbol.includes('JPY') ? spread*100 : spread*10000;
+                document.getElementById('selected-spread').textContent = `Spread: ${pips.toFixed(1)} pips`;
+            } else {
+                document.getElementById('selected-spread').textContent = 'Spread: --';
+            }
+            
+            document.getElementById('selected-latency').textContent = lat>0 ? `${lat} μs` : '-- μs';
+            const pct = Math.min(100, lat/50);
+            document.getElementById('selected-lat-bar').style.width = `${pct}%`;
+            document.getElementById('selected-lat-bar').style.background = latColor(lat);
+            document.getElementById('selected-status').className = `card-status ${p.bid>0?'ok':'down'}`;
+        }
+        
+        function updateFeed(name, connected, latency) {
+            const st = feedState[name];
+            const was = st.connected;
+            st.connected = connected;
+            
+            if (connected && !was && st.wasConnected) { st.reconnects++; addLog('WARN', `${name.toUpperCase()} reconnected`); }
+            else if (!connected && was) { addLog('ERROR', `${name.toUpperCase()} disconnected`); }
+            else if (connected && !st.wasConnected) { addLog('CONN', `${name.toUpperCase()} connected`); }
+            st.wasConnected = st.wasConnected || connected;
+            
+            const statusEl = document.getElementById(`feed-${name}`);
+            statusEl.className = `feed-status ${connected?'ok':'down'}`;
+            statusEl.innerHTML = connected ? '● ONLINE' : '● OFFLINE';
+            
+            document.getElementById(`${name}-latency`).textContent = latency>0 ? `${latency} μs` : '-- μs';
+            
+            const persEl = document.getElementById(`${name}-persist`);
+            if (st.reconnects > 0) {
+                persEl.className = 'persistence-flag reconnected';
+                persEl.textContent = `RECONN (${st.reconnects}x)`;
+            } else if (connected) {
+                persEl.className = 'persistence-flag connected';
+                persEl.textContent = 'PERSISTENT';
+            } else if (st.wasConnected) {
+                persEl.className = 'persistence-flag disconnected';
+                persEl.textContent = 'DROPPED';
+            } else {
+                persEl.className = 'persistence-flag';
+                persEl.textContent = '--';
+            }
+        }
+        
+        async function fetchMetrics() {
+            try {
+                const resp = await fetch(`http://${serverHost}:${serverPort}/metrics`);
+                if (!resp.ok) throw new Error();
+                const text = await resp.text();
+                const m = {};
+                for (const line of text.split('\n')) {
+                    if (line.startsWith('#') || !line.trim()) continue;
+                    const match = line.match(/^([a-z_]+)\s+([0-9.e+-]+)/);
+                    if (match) m[match[1]] = parseFloat(match[2]);
+                }
+                
+                document.getElementById('error-banner').style.display = 'none';
+                document.getElementById('master-status').textContent = 'ONLINE';
+                document.getElementById('master-status').className = 'master-status online';
+                
+                // Feeds
+                const bnOk = m.chimera_binance_connected > 0;
+                const qOk = m.chimera_fix_quote_connected > 0;
+                const tOk = m.chimera_fix_trade_connected > 0;
+                const bnLat = m.chimera_binance_latency_us || 0;
+                const qLat = m.chimera_fix_quote_latency_us || 0;
+                const tLat = m.chimera_fix_trade_latency_us || 0;
+                
+                updateFeed('binance', bnOk, bnLat);
+                updateFeed('quote', qOk, qLat);
+                updateFeed('trade', tOk, tLat);
+                
+                // Stats
+                const bnTicks = m.chimera_binance_ticks || 0;
+                const fxTicks = m.chimera_fix_ticks || 0;
+                document.getElementById('stat-bn-ticks').textContent = bnTicks.toLocaleString();
+                document.getElementById('stat-fix-ticks').textContent = fxTicks.toLocaleString();
+                document.getElementById('stat-msgs').textContent = (m.chimera_fix_messages||0).toLocaleString();
+                
+                const tps = Math.round(((bnTicks - lastTicks.bn) + (fxTicks - lastTicks.fix)) * 2);
+                lastTicks = { bn: bnTicks, fix: fxTicks };
+                document.getElementById('stat-tps').textContent = tps > 0 ? tps : '--';
+                
+                // Latency panel
+                document.getElementById('lat-bn').textContent = bnLat || '--';
+                document.getElementById('lat-bn').style.color = latColor(bnLat);
+                document.getElementById('lat-quote').textContent = qLat || '--';
+                document.getElementById('lat-quote').style.color = latColor(qLat);
+                document.getElementById('lat-trade').textContent = tLat || '--';
+                document.getElementById('lat-trade').style.color = latColor(tLat);
+                const e2e = Math.max(bnLat, qLat) + (m.chimera_engine_loop_us || 50);
+                document.getElementById('lat-e2e').textContent = e2e;
+                
+                // VPS latency
+                document.getElementById('vps-bn-rtt').textContent = bnLat > 0 ? `${bnLat} μs` : '-- μs';
+                document.getElementById('vps-fix-rtt').textContent = qLat > 0 ? `${qLat} μs` : '-- μs';
+                
+                // Engine
+                document.getElementById('eng-loop').textContent = `${m.chimera_engine_loop_us || 50} μs`;
+                document.getElementById('eng-queue').textContent = m.chimera_queue_depth || 0;
+                document.getElementById('eng-uptime').textContent = `${m.chimera_uptime_sec || 0}s`;
+                document.getElementById('eng-errors').textContent = m.chimera_fix_errors || 0;
+                document.getElementById('engine-status').className = `card-status ${(bnOk||qOk)?'ok':'down'}`;
+                
+                // Prices
+                for (const [cat, syms] of Object.entries(SYMBOLS)) {
+                    for (const s of syms) {
+                        const bid = m[`chimera_${s.key}_bid`] || 0;
+                        const ask = m[`chimera_${s.key}_ask`] || 0;
+                        if (bid > 0) {
+                            symbolPrices[s.name] = { bid, ask, ts: Date.now() };
+                            symbolLatencies[s.name] = cat === 'crypto' ? bnLat : qLat;
+                        }
+                    }
+                }
+                
+                renderSymbols();
+                updateSelected();
+                
+            } catch (err) {
+                document.getElementById('error-banner').style.display = 'block';
+                document.getElementById('error-banner').textContent = `⚠️ Cannot connect to ${serverHost}:${serverPort} - Click header to configure`;
+                document.getElementById('master-status').textContent = 'OFFLINE';
+                document.getElementById('master-status').className = 'master-status offline';
+            }
+        }
+        
+        // Init
+        addLog('INFO', 'Dashboard initialized');
+        setPreset('balanced');
+        renderSymbols();
+        
+        setInterval(fetchMetrics, 500);
+        setInterval(() => {
+            const sec = Math.floor((Date.now() - startTime) / 1000);
+            const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+            document.getElementById('uptime').textContent = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+        }, 1000);
+        fetchMetrics();
+    </script>
+</body>
+</html>
