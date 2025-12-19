@@ -1,1 +1,0 @@
-/usr/bin/c++  -Wall -Wextra -Wpedantic -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/chimera.dir/main.cpp.o CMakeFiles/chimera.dir/core/Logger.cpp.o -o chimera  /opt/homebrew/Cellar/openssl@3/3.6.0/lib/libssl.dylib /opt/homebrew/Cellar/openssl@3/3.6.0/lib/libcrypto.dylib

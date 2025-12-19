@@ -1,4 +1,0 @@
-/Users/jo/Chimera/build/CMakeFiles/chimera.dir
-/Users/jo/Chimera/build/CMakeFiles/stress_test.dir
-/Users/jo/Chimera/build/CMakeFiles/edit_cache.dir
-/Users/jo/Chimera/build/CMakeFiles/rebuild_cache.dir

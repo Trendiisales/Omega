@@ -1,0 +1,87 @@
+# CHIMERA HFT - CI Hardening Gate
+# ================================
+# This workflow ensures no HFT regression makes it into main.
+# Blocks merge if any critical HFT constraint is violated.
+#
+# Checks:
+# - No system_clock in hot paths
+# - No m.get() string allocations in FIX hot paths
+# - No slow numeric parsing (atof/atoi)
+# - Mutex classification enforcement
+# - Zero-copy infrastructure present
+
+name: HFT Hardening Gate
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  hardening-check:
+    runs-on: ubuntu-latest
+    name: HFT Compliance Check
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run HFT hardening checks
+        run: |
+          chmod +x tools/hft_hardening_check.sh
+          tools/hft_hardening_check.sh src
+        shell: bash
+
+      - name: Upload hardening report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hft-hardening-report
+          path: |
+            tools/hft_hardening_check.sh
+            HFT_HARDENING_REPORT.md
+          retention-days: 30
+
+  build-test:
+    runs-on: ubuntu-latest
+    name: Build & Compile Check
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libssl-dev
+
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cd build
+          make -j$(nproc) 2>&1 | tee build.log
+
+      - name: Check for ODR violations
+        run: |
+          # Check for multiple definition errors
+          if grep -q "multiple definition" build/build.log; then
+            echo "❌ ODR violation detected!"
+            grep "multiple definition" build/build.log
+            exit 1
+          fi
+          echo "✅ No ODR violations"
+
+      - name: Check for warnings
+        run: |
+          WARN_COUNT=$(grep -c "warning:" build/build.log || echo "0")
+          echo "Compiler warnings: $WARN_COUNT"
+          if [ "$WARN_COUNT" -gt 10 ]; then
+            echo "⚠️ Too many warnings ($WARN_COUNT > 10)"
+            grep "warning:" build/build.log | head -20
+          fi

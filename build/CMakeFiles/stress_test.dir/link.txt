@@ -1,1 +1,0 @@
-/usr/bin/c++  -Wall -Wextra -Wpedantic -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/stress_test.dir/tests/StressHarness.cpp.o CMakeFiles/stress_test.dir/core/Logger.cpp.o -o stress_test
