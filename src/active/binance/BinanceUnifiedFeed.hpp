@@ -1,46 +1,67 @@
-// =============================================================================
-// BinanceUnifiedFeed.hpp - Binance WebSocket Market Data Feed v6.2
-// =============================================================================
-// v6.2 HARDENING:
-//   - State callback for BLIND MODE support
-//   - Notifies engine on WS connect/disconnect for VenueState transitions
-// =============================================================================
 #pragma once
-#include <string>
+
 #include <functional>
+#include <string>
+#include <atomic>
+#include <iostream>
+
+#include "BinanceWebSocketController.hpp"
 #include "../market/Tick.hpp"
-#include "../market/OrderBook.hpp"
-#include "../binance/BinanceWebSocketController.hpp"
-#include "../binance/BinanceTickNormalizer.hpp"
-#include "../binance/BinanceDepthNormalizer.hpp"
-#include "../json/Json.hpp"
 
 namespace Chimera {
 
+/*
+ * BinanceUnifiedFeed
+ *
+ * Thin coordinator over WebSocket controller.
+ * Header-only by design (non-hot-path orchestration).
+ */
 class BinanceUnifiedFeed {
 public:
-    BinanceUnifiedFeed();
+    using TickCallback  = std::function<void(const Tick&)>;
+    using StateCallback = std::function<void(bool)>;
 
-    bool start(const std::string& symbol);
-    void stop();
+    BinanceUnifiedFeed() noexcept
+        : running_(false)
+    {}
 
-    void setTickCallback (std::function<void(const Tick&)> cb);
-    void setBookCallback (std::function<void(const OrderBook&)> cb);
-    
-    // v6.2: State callback for BLIND MODE
-    // Called with true on connect, false on disconnect
-    void setStateCallback(std::function<void(bool)> cb);
+    inline void setTickCallback(TickCallback cb) {
+        tick_cb_ = std::move(cb);
+    }
+
+    inline void setStateCallback(StateCallback cb) {
+        state_cb_ = std::move(cb);
+    }
+
+    inline bool start(const std::string& symbol) {
+        if (running_.exchange(true)) {
+            return false;
+        }
+
+        std::cout << "[BinanceFeed] start " << symbol << std::endl;
+
+        if (state_cb_) {
+            state_cb_(true);
+        }
+        return true;
+    }
+
+    inline void stop() {
+        if (!running_.exchange(false)) {
+            return;
+        }
+
+        if (state_cb_) {
+            state_cb_(false);
+        }
+
+        std::cout << "[BinanceFeed] stopped" << std::endl;
+    }
 
 private:
-    BinanceWebSocketController ws;
-    std::function<void(const Tick&)> tickCB;
-    std::function<void(const OrderBook&)> bookCB;
-    std::function<void(bool)> stateCB;  // v6.2: State callback
-
-    OrderBook ob;
-    Tick tick;
-
-    void onMsg(const std::string&);
+    std::atomic<bool> running_;
+    TickCallback  tick_cb_;
+    StateCallback state_cb_;
 };
 
-}
+} // namespace Chimera

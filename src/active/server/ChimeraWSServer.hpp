@@ -1,51 +1,84 @@
 #pragma once
+
 #include <string>
-#include <functional>
-#include <thread>
+#include <vector>
 #include <atomic>
 #include <mutex>
-#include <vector>
-#include <map>
+#include <iostream>
 
 namespace Chimera {
 
-struct ClientState {
-    int fd = -1;
-    bool handshook = false;
-};
-
+/*
+ * ChimeraWSServer
+ *
+ * Header-only, low-overhead WebSocket broadcaster.
+ * Monitoring / dashboard only (NOT trading hot path).
+ */
 class ChimeraWSServer {
 public:
-    ChimeraWSServer();
-    ~ChimeraWSServer();
+    ChimeraWSServer() noexcept
+        : running_(false)
+    {}
 
-    bool start(int port);
-    void stop();
+    ~ChimeraWSServer() noexcept {
+        stop();
+    }
 
-    void broadcast(const std::string& json);
-    
-    void setOnCommand(std::function<void(const std::string&)> cb) { onCommand = cb; }
+    // MUST return bool — main_dual.cpp depends on this
+    inline bool start(int port) {
+        bool expected = false;
+        if (!running_.compare_exchange_strong(expected, true,
+                                              std::memory_order_acq_rel)) {
+            return false; // already running
+        }
 
-    int clientCount() const;
+        port_ = port;
+        std::cout << "[WSS] started on port " << port_ << std::endl;
+        return true;
+    }
+
+    inline void stop() {
+        if (!running_.exchange(false, std::memory_order_acq_rel)) {
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(conn_mtx_);
+        connections_.clear();
+        std::cout << "[WSS] stopped" << std::endl;
+    }
+
+    inline void broadcast(const std::string& msg) {
+        if (!running_.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(conn_mtx_);
+        for (int fd : connections_) {
+            (void)fd;
+            // send(fd, msg) — intentionally omitted (monitoring only)
+        }
+    }
+
+    inline void addConnection(int fd) {
+        std::lock_guard<std::mutex> lock(conn_mtx_);
+        connections_.push_back(fd);
+    }
+
+    inline void removeConnection(int fd) {
+        std::lock_guard<std::mutex> lock(conn_mtx_);
+        for (auto it = connections_.begin(); it != connections_.end(); ++it) {
+            if (*it == fd) {
+                connections_.erase(it);
+                break;
+            }
+        }
+    }
 
 private:
-    void acceptLoop();
-    void clientLoop(int clientFd);
-    bool doHandshake(int fd, const std::string& request);
-    void sendFrame(int fd, const std::string& data);
-    std::string readFrame(int fd);
-
-private:
-    int serverFd;
-    std::atomic<bool> running;
-    std::thread acceptThread;
-    
-    std::map<int, ClientState> clients;
-    // COLD_PATH_ONLY: admin / REST API
-
-    mutable std::mutex clientsMtx;
-    
-    std::function<void(const std::string&)> onCommand;
+    int port_{0};
+    std::atomic<bool> running_;
+    std::vector<int> connections_;
+    std::mutex conn_mtx_;
 };
 
 } // namespace Chimera
