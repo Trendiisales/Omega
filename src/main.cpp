@@ -98,9 +98,9 @@ omega::OmegaTradeLedger          g_omegaLedger;      // extern in TelemetryServe
 static omega::MacroRegimeDetector g_macroDetector;
 
 // CRTP breakout engines — one per primary symbol
-static omega::BreakoutEngine g_eng_mes("MES");
-static omega::BreakoutEngine g_eng_mnq("MNQ");
-static omega::BreakoutEngine g_eng_mcl("MCL");
+static omega::BreakoutEngine g_eng_sp("US500.F");
+static omega::BreakoutEngine g_eng_nq("USTEC.F");
+static omega::BreakoutEngine g_eng_cl("USOIL.F");
 
 // Book
 static std::mutex                              g_book_mtx;
@@ -183,25 +183,35 @@ static std::string build_logon(int seq, const char* subID) {
     return wrap_fix(b.str());
 }
 
-// Symbol ID map — populated from SecurityList response (35=y)
-// BlackBull sends numeric IDs in tag 55, not symbol names
-static std::unordered_map<int, std::string> g_id_to_sym;   // e.g. 123 -> "MES"
-static std::unordered_map<std::string, int> g_sym_to_id;   // e.g. "MES" -> 123
-static std::vector<int>                     g_md_ids;       // IDs to subscribe to
-static bool                                 g_ids_ready = false;
-
-static const char* OMEGA_SYMBOLS[] = {
-    "MES","MNQ","MCL","ES","NQ","CL","VIX","DX","ZN","YM","RTY"
+// ─────────────────────────────────────────────────────────────────────────────
+// BlackBull symbol ID map (from SecurityList — hardcoded, no runtime discovery)
+// Primary trading: US500.F, USTEC.F, USOIL.F
+// Confirmation:    VIX.F, DX.F, DJ30.F, NAS100, GOLD.F, NGAS.F, ES, DX
+// ─────────────────────────────────────────────────────────────────────────────
+struct SymbolDef { int id; const char* name; };
+static const SymbolDef OMEGA_SYMS[] = {
+    // Primary — traded
+    { 2642, "US500.F"  },   // S&P 500 futures  (replaces MES)
+    { 2643, "USTEC.F"  },   // Nasdaq futures   (replaces MNQ)
+    { 2632, "USOIL.F"  },   // Oil futures      (replaces MCL)
+    // Confirmation — regime only
+    { 4462, "VIX.F"    },
+    { 2638, "DX.F"     },
+    { 2637, "DJ30.F"   },
+    {  110, "NAS100"   },
+    { 2660, "GOLD.F"   },
+    { 2631, "NGAS.F"   },
+    { 3225, "ES"       },
+    { 3173, "DX"       },
 };
 static const int OMEGA_NSYMS = 11;
 
-static std::string build_security_list_req(int seq) {
-    std::ostringstream b;
-    b << "35=x\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
-      << "50=QUOTE\x01" << "57=QUOTE\x01"
-      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "320=OmegaSecListReq\x01" << "559=0\x01";
-    return wrap_fix(b.str());
+// Runtime ID->name map built at startup from OMEGA_SYMS
+static std::unordered_map<int, const char*> g_id_to_sym;
+
+static void build_id_map() {
+    for (int i = 0; i < OMEGA_NSYMS; ++i)
+        g_id_to_sym[OMEGA_SYMS[i].id] = OMEGA_SYMS[i].name;
 }
 
 static std::string build_marketdata_req(int seq) {
@@ -210,19 +220,10 @@ static std::string build_marketdata_req(int seq) {
       << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01"
       << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=0\x01" << "265=0\x01";
-
-    if (g_ids_ready && !g_md_ids.empty()) {
-        // Use numeric IDs discovered from SecurityList
-        b << "146=" << g_md_ids.size() << "\x01";
-        for (int id : g_md_ids) b << "55=" << id << "\x01";
-        std::cout << "[OMEGA] MD request using " << g_md_ids.size() << " numeric IDs\n";
-    } else {
-        // Fallback: request by name (may work on some brokers)
-        b << "146=" << OMEGA_NSYMS << "\x01";
-        for (int i = 0; i < OMEGA_NSYMS; ++i) b << "55=" << OMEGA_SYMBOLS[i] << "\x01";
-        std::cout << "[OMEGA] MD request using symbol names (no SecurityList yet)\n";
-    }
+      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=0\x01" << "265=0\x01"
+      << "146=" << OMEGA_NSYMS << "\x01";
+    for (int i = 0; i < OMEGA_NSYMS; ++i)
+        b << "55=" << OMEGA_SYMS[i].id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
     return wrap_fix(b.str());
 }
@@ -412,9 +413,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     std::cout.flush();
 
     const double mid = (bid + ask) * 0.5;
-    if (sym == "VIX") g_macroDetector.updateVIX(mid);
-    if (sym == "ES")  g_macroDetector.updateES(mid);
-    if (sym == "NQ")  g_macroDetector.updateNQ(mid);
+    if (sym == "VIX.F")  g_macroDetector.updateVIX(mid);
+    if (sym == "ES")     g_macroDetector.updateES(mid);
+    if (sym == "NAS100") g_macroDetector.updateNQ(mid);
 
     g_telemetry.UpdatePrice(sym.c_str(), bid, ask);
 
@@ -451,9 +452,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // ── Route to engine ───────────────────────────────────────────────────────
     omega::BreakoutEngine* eng = nullptr;
-    if      (sym == "MES") eng = &g_eng_mes;
-    else if (sym == "MNQ") eng = &g_eng_mnq;
-    else if (sym == "MCL") eng = &g_eng_mcl;
+    if      (sym == "US500.F") eng = &g_eng_sp;
+    else if (sym == "USTEC.F") eng = &g_eng_nq;
+    else if (sym == "USOIL.F") eng = &g_eng_cl;
     else {
         g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
         return;
@@ -529,10 +530,9 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     if (type == "A") {
         std::cout << "[OMEGA] LOGON ACCEPTED\n";
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
-        // Send SecurityListRequest first — BlackBull uses numeric IDs in tag 55
-        const std::string slr = build_security_list_req(g_quote_seq++);
-        SSL_write(ssl, slr.c_str(), static_cast<int>(slr.size()));
-        std::cout << "[OMEGA] SecurityListRequest sent\n";
+        const std::string md = build_marketdata_req(g_quote_seq++);
+        SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
+        std::cout << "[OMEGA] Subscribed: US500.F USTEC.F USOIL.F + 8 confirmation\n";
         return;
     }
 
@@ -555,84 +555,17 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         return;
     }
 
-    // ── SecurityList response — build ID map then subscribe ──────────────────
-    if (type == "y") {
-        // Dump raw to file so we can read the symbol IDs
-        std::ofstream f("C:\\Omega\\seclist_raw.txt");
-        std::string printable = msg;
-        for (char& c : printable) if (c == '\x01') c = '\n';
-        f << printable;
-        f.close();
-        std::cout << "[OMEGA] SecurityList dumped to C:\\Omega\\seclist_raw.txt\n";
-        std::cout.flush();
-        g_id_to_sym.clear();
-        g_sym_to_id.clear();
-        g_md_ids.clear();
-
-        // Parse all 55= (symbolId) and 107= (symbol name) pairs
-        // BlackBull format: ...55=<id>\x01..107=<name>\x01...
-        size_t pos = 0u;
-        while (pos < msg.size()) {
-            const size_t id_pos = msg.find("55=", pos);
-            if (id_pos == std::string::npos) break;
-            const size_t id_end = msg.find('\x01', id_pos + 3u);
-            if (id_end == std::string::npos) break;
-            const std::string id_str = msg.substr(id_pos + 3u, id_end - (id_pos + 3u));
-
-            // Look for 107= (SecurityDesc) or 55= name near this entry
-            const size_t name_pos = msg.find("107=", id_pos);
-            std::string sym_name;
-            if (name_pos != std::string::npos && name_pos < id_pos + 200u) {
-                const size_t name_end = msg.find('\x01', name_pos + 4u);
-                if (name_end != std::string::npos)
-                    sym_name = msg.substr(name_pos + 4u, name_end - (name_pos + 4u));
-            }
-
-            try {
-                const int id = std::stoi(id_str);
-                // Check if this symbol is one we want
-                for (int i = 0; i < OMEGA_NSYMS; ++i) {
-                    if (sym_name == OMEGA_SYMBOLS[i]) {
-                        g_id_to_sym[id] = sym_name;
-                        g_sym_to_id[sym_name] = id;
-                        g_md_ids.push_back(id);
-                        std::cout << "[OMEGA] ID map: " << id << " -> " << sym_name << "\n";
-                        break;
-                    }
-                }
-            } catch (...) {}
-            pos = id_end + 1u;
-        }
-
-        g_ids_ready = !g_md_ids.empty();
-        if (!g_ids_ready) {
-            std::cerr << "[OMEGA] WARNING: No matching IDs found in SecurityList — subscribing by name\n";
-        }
-
-        // Now send MarketData subscription
-        const std::string md = build_marketdata_req(g_quote_seq++);
-        SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
-        std::cout << "[OMEGA] MarketData subscribed for " << (g_ids_ready ? g_md_ids.size() : (size_t)OMEGA_NSYMS) << " symbols\n";
-        return;
-    }
-
     // ── Market data ───────────────────────────────────────────────────────────
     if (type == "W" || type == "X") {
         const std::string sym_raw = extract_tag(msg, "55");
         if (sym_raw.empty()) return;
-
-        // Resolve symbol name from numeric ID
-        std::string sym;
+        const char* sym = nullptr;
         try {
             const int id = std::stoi(sym_raw);
             const auto it = g_id_to_sym.find(id);
-            if (it != g_id_to_sym.end()) sym = it->second;
-            else { std::cout << "[OMEGA] Unknown ID: " << id << "\n"; return; }
-        } catch (...) {
-            // Not numeric — broker sent name directly
-            sym = sym_raw;
-        }
-
+            if (it == g_id_to_sym.end()) return;
+            sym = it->second;
+        } catch (...) { return; }
         double bid = 0.0, ask = 0.0;
         size_t pos = 0u;
         while ((pos = msg.find("269=", pos)) != std::string::npos) {
@@ -652,7 +585,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         return;
     }
 
-    if (type == "3" || type == "j") {
+        if (type == "3" || type == "j") {
         std::cerr << "[OMEGA] FIX REJECT: " << extract_tag(msg, "58") << "\n";
     }
 }
@@ -711,9 +644,9 @@ static void quote_loop() {
                           << " T=" << g_omegaLedger.total()
                           << " WR=" << g_omegaLedger.winRate() << "%"
                           << " RTTp95=" << g_rtt_p95 << "ms"
-                          << " MES=" << static_cast<int>(g_eng_mes.phase)
-                          << " MNQ=" << static_cast<int>(g_eng_mnq.phase)
-                          << " MCL=" << static_cast<int>(g_eng_mcl.phase) << "\n";
+                          << " SP=" << static_cast<int>(g_eng_sp.phase)
+                          << " NQ=" << static_cast<int>(g_eng_nq.phase)
+                          << " CL=" << static_cast<int>(g_eng_cl.phase) << "\n";
             }
 
             char buf[8192];
@@ -743,7 +676,7 @@ static void quote_loop() {
                         g_omegaLedger.record(tr); write_shadow_csv(tr);
                     });
         };
-        fc(g_eng_mes, "MES"); fc(g_eng_mnq, "MNQ"); fc(g_eng_mcl, "MCL");
+        fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F");
 
         SSL_shutdown(ssl); SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
@@ -779,9 +712,10 @@ int main(int argc, char* argv[])
 
     const std::string cfg_path = (argc > 1) ? argv[1] : "omega_config.ini";
     load_config(cfg_path);
-    apply_engine_config(g_eng_mes);
-    apply_engine_config(g_eng_mnq);
-    apply_engine_config(g_eng_mcl);
+    apply_engine_config(g_eng_sp);
+    apply_engine_config(g_eng_nq);
+    apply_engine_config(g_eng_cl);
+    build_id_map();
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
