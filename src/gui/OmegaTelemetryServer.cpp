@@ -96,17 +96,17 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
     char buf[8192];
     snprintf(buf, sizeof(buf),
         "{"
-        "\"mes_bid\":%.4f,\"mes_ask\":%.4f,"
-        "\"mnq_bid\":%.4f,\"mnq_ask\":%.4f,"
-        "\"mcl_bid\":%.4f,\"mcl_ask\":%.4f,"
-        "\"es_bid\":%.4f,\"es_ask\":%.4f,"
+        "\"sp_bid\":%.4f,\"sp_ask\":%.4f,"
         "\"nq_bid\":%.4f,\"nq_ask\":%.4f,"
         "\"cl_bid\":%.4f,\"cl_ask\":%.4f,"
         "\"vix_bid\":%.4f,\"vix_ask\":%.4f,"
         "\"dx_bid\":%.4f,\"dx_ask\":%.4f,"
-        "\"zn_bid\":%.4f,\"zn_ask\":%.4f,"
-        "\"ym_bid\":%.4f,\"ym_ask\":%.4f,"
-        "\"rty_bid\":%.4f,\"rty_ask\":%.4f,"
+        "\"dj_bid\":%.4f,\"dj_ask\":%.4f,"
+        "\"nas_bid\":%.4f,\"nas_ask\":%.4f,"
+        "\"gold_bid\":%.4f,\"gold_ask\":%.4f,"
+        "\"ngas_bid\":%.4f,\"ngas_ask\":%.4f,"
+        "\"es_bid\":%.4f,\"es_ask\":%.4f,"
+        "\"dxcash_bid\":%.4f,\"dxcash_ask\":%.4f,"
         "\"daily_pnl\":%.2f,\"max_drawdown\":%.2f,"
         "\"fix_rtt_last\":%.2f,\"fix_rtt_p50\":%.2f,\"fix_rtt_p95\":%.2f,"
         "\"total_trades\":%d,\"wins\":%d,\"losses\":%d,\"win_rate\":%.1f,"
@@ -116,24 +116,24 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"quote_msg_rate\":%d,\"sequence_gaps\":%d,"
         "\"mode\":\"%s\","
         "\"session_name\":\"%s\",\"session_tradeable\":%d,"
-        "\"mes_phase\":%d,\"mes_comp_high\":%.4f,\"mes_comp_low\":%.4f,"
-        "\"mes_recent_vol_pct\":%.4f,\"mes_baseline_vol_pct\":%.4f,\"mes_signals\":%d,"
-        "\"mnq_phase\":%d,\"mnq_comp_high\":%.4f,\"mnq_comp_low\":%.4f,"
-        "\"mnq_recent_vol_pct\":%.4f,\"mnq_baseline_vol_pct\":%.4f,\"mnq_signals\":%d,"
-        "\"mcl_phase\":%d,\"mcl_comp_high\":%.4f,\"mcl_comp_low\":%.4f,"
-        "\"mcl_recent_vol_pct\":%.4f,\"mcl_baseline_vol_pct\":%.4f,\"mcl_signals\":%d,"
+        "\"sp_phase\":%d,\"sp_comp_high\":%.4f,\"sp_comp_low\":%.4f,"
+        "\"sp_recent_vol_pct\":%.4f,\"sp_baseline_vol_pct\":%.4f,\"sp_signals\":%d,"
+        "\"nq_phase\":%d,\"nq_comp_high\":%.4f,\"nq_comp_low\":%.4f,"
+        "\"nq_recent_vol_pct\":%.4f,\"nq_baseline_vol_pct\":%.4f,\"nq_signals\":%d,"
+        "\"cl_phase\":%d,\"cl_comp_high\":%.4f,\"cl_comp_low\":%.4f,"
+        "\"cl_recent_vol_pct\":%.4f,\"cl_baseline_vol_pct\":%.4f,\"cl_signals\":%d,"
         "\"last_signal_symbol\":\"%s\",\"last_signal_side\":\"%s\","
         "\"last_signal_price\":%.4f,\"last_signal_reason\":\"%s\","
         "\"vix_level\":%.2f,\"macro_regime\":\"%s\",\"es_nq_divergence\":%.6f,"
         "\"gov_spread\":%d,\"gov_latency\":%d,\"gov_pnl\":%d,"
         "\"gov_positions\":%d,\"gov_consec_loss\":%d"
         "}",
-        s->mes_bid, s->mes_ask, s->mnq_bid, s->mnq_ask,
-        s->mcl_bid, s->mcl_ask, s->es_bid,  s->es_ask,
-        s->nq_bid,  s->nq_ask,  s->cl_bid,  s->cl_ask,
-        s->vix_bid, s->vix_ask, s->dx_bid,  s->dx_ask,
-        s->zn_bid,  s->zn_ask,  s->ym_bid,  s->ym_ask,
-        s->rty_bid, s->rty_ask,
+        s->sp_bid,     s->sp_ask,     s->nq_bid,  s->nq_ask,
+        s->cl_bid,     s->cl_ask,     s->vix_bid, s->vix_ask,
+        s->dx_bid,     s->dx_ask,     s->dj_bid,  s->dj_ask,
+        s->nas_bid,    s->nas_ask,    s->gold_bid, s->gold_ask,
+        s->ngas_bid,   s->ngas_ask,   s->es_bid,  s->es_ask,
+        s->dxcash_bid, s->dxcash_ask,
         s->daily_pnl, s->max_drawdown,
         s->fix_rtt_last, s->fix_rtt_p50, s->fix_rtt_p95,
         trades, wins, s->losses, wr,
@@ -143,12 +143,12 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->quote_msg_rate, s->sequence_gaps,
         s->mode,
         s->session_name, s->session_tradeable,
-        s->mes_phase, s->mes_comp_high, s->mes_comp_low,
-        s->mes_recent_vol_pct, s->mes_baseline_vol_pct, s->mes_signals,
-        s->mnq_phase, s->mnq_comp_high, s->mnq_comp_low,
-        s->mnq_recent_vol_pct, s->mnq_baseline_vol_pct, s->mnq_signals,
-        s->mcl_phase, s->mcl_comp_high, s->mcl_comp_low,
-        s->mcl_recent_vol_pct, s->mcl_baseline_vol_pct, s->mcl_signals,
+        s->sp_phase, s->sp_comp_high, s->sp_comp_low,
+        s->sp_recent_vol_pct, s->sp_baseline_vol_pct, s->sp_signals,
+        s->nq_phase, s->nq_comp_high, s->nq_comp_low,
+        s->nq_recent_vol_pct, s->nq_baseline_vol_pct, s->nq_signals,
+        s->cl_phase, s->cl_comp_high, s->cl_comp_low,
+        s->cl_recent_vol_pct, s->cl_baseline_vol_pct, s->cl_signals,
         s->last_signal_symbol, s->last_signal_side,
         s->last_signal_price, s->last_signal_reason,
         s->vix_level, s->macro_regime, s->es_nq_divergence,

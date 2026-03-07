@@ -49,20 +49,17 @@
         .card-hd { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:2px; color:var(--t2);
             margin-bottom:12px; display:flex; align-items:center; gap:8px; }
         .card-hd .dot { width:5px; height:5px; border-radius:50%; background:var(--cyan); flex-shrink:0; }
-        /* LEFT COL */
         .col-left { grid-column:1; display:flex; flex-direction:column; gap:10px; }
-        /* Symbol rows */
         .sym-group-label { font-size:8px; color:var(--t2); text-transform:uppercase; letter-spacing:2px; margin:6px 0 4px; }
         .sym-row { display:flex; justify-content:space-between; align-items:center; padding:8px 10px;
             border-radius:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); margin-bottom:4px; }
         .sym-row.primary-sym { border-color:rgba(61,184,255,0.18); background:rgba(61,184,255,0.04); }
-        .sym-label { font-weight:700; font-size:11px; color:var(--t2); letter-spacing:1px; min-width:40px; }
+        .sym-label { font-weight:700; font-size:11px; color:var(--t2); letter-spacing:1px; min-width:60px; }
         .sym-label.primary { color:var(--blue); }
         .px-pair { display:flex; gap:10px; align-items:center; }
         .bid { font-family:'Space Mono',monospace; font-size:13px; font-weight:700; color:var(--green); }
         .ask { font-family:'Space Mono',monospace; font-size:13px; font-weight:700; color:var(--red); }
         .sym-spread { font-family:'Space Mono',monospace; font-size:9px; color:var(--t2); }
-        /* Engine state cards */
         .eng-state-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
         .eng-state-card { border-radius:8px; padding:10px 8px; border:1px solid var(--border);
             background:rgba(255,255,255,0.02); text-align:center; position:relative; overflow:hidden; transition:all 0.3s; }
@@ -71,7 +68,7 @@
         .eng-state-card.phase-2 { background:rgba(0,40,20,0.95); border-color:var(--green); animation:eng-pulse-green 0.8s ease-in-out infinite; }
         @keyframes eng-pulse-amber { 0%,100%{box-shadow:0 0 0 0 rgba(255,149,0,0);} 50%{box-shadow:0 0 12px 3px rgba(255,149,0,0.2);} }
         @keyframes eng-pulse-green { 0%,100%{box-shadow:0 0 0 0 rgba(0,232,122,0);} 50%{box-shadow:0 0 16px 4px rgba(0,232,122,0.3);} }
-        .eng-sym { font-size:11px; font-weight:700; color:var(--blue); letter-spacing:1px; }
+        .eng-sym { font-size:10px; font-weight:700; color:var(--blue); letter-spacing:0.5px; }
         .eng-phase-badge { font-size:8px; text-transform:uppercase; letter-spacing:1px; margin-top:4px; padding:2px 6px;
             border-radius:4px; display:inline-block; }
         .phase-badge-flat { background:rgba(255,255,255,0.06); color:var(--t2); }
@@ -79,7 +76,6 @@
         .phase-badge-brk  { background:rgba(0,232,122,0.15); color:var(--green); }
         .eng-vol { font-family:'Space Mono',monospace; font-size:9px; color:var(--t2); margin-top:4px; }
         .eng-signals { font-family:'Space Mono',monospace; font-size:11px; color:var(--gold); margin-top:4px; }
-        /* Macro regime */
         .regime-strip { display:flex; gap:8px; align-items:center; padding:10px 12px; border-radius:8px;
             background:rgba(255,255,255,0.02); border:1px solid var(--border); margin-top:0; }
         .regime-label { font-size:9px; color:var(--t2); text-transform:uppercase; letter-spacing:1.5px; }
@@ -87,7 +83,6 @@
         .regime-risk-on  { color:var(--green); }
         .regime-risk-off { color:var(--red); }
         .regime-neutral  { color:var(--amber); }
-        /* CENTRE COL */
         .col-centre { grid-column:2; display:flex; flex-direction:column; gap:10px; }
         .stats-row { display:grid; grid-template-columns:180px 1fr 1fr 1fr 1fr; gap:8px; }
         .pnl-val { font-family:'Space Mono',monospace; font-size:34px; font-weight:700; letter-spacing:-1px; transition:color 0.3s; text-shadow:0 0 20px currentColor; }
@@ -96,7 +91,6 @@
         .stat-card { text-align:center; padding:14px 10px; }
         .stat-val { font-family:'Space Mono',monospace; font-size:22px; font-weight:700; color:var(--blue); text-shadow:0 0 12px rgba(61,184,255,0.3); }
         .stat-lbl { font-size:9px; color:var(--t2); text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
-        /* Confirmation symbols heatmap */
         .conf-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
         .conf-card { border-radius:8px; padding:8px; border:1px solid var(--border);
             background:rgba(255,255,255,0.02); text-align:center; }
@@ -104,17 +98,14 @@
         .conf-price { font-family:'Space Mono',monospace; font-size:11px; color:var(--t1); margin-top:3px; }
         .conf-chg { font-family:'Space Mono',monospace; font-size:9px; margin-top:2px; }
         .conf-up { color:var(--green); } .conf-dn { color:var(--red); } .conf-flat { color:var(--t2); }
-        /* Last signal detail */
         .sig-panel { padding:12px 14px; border-radius:8px; border:1px solid rgba(61,184,255,0.15);
             background:rgba(61,184,255,0.04); }
-        /* Trades table */
         .no-data { text-align:center; color:var(--t2); padding:20px; font-size:12px; }
         table { width:100%; border-collapse:collapse; font-size:11px; }
         th { text-align:left; padding:7px 8px; color:var(--t2); font-size:9px; text-transform:uppercase;
             letter-spacing:1.5px; font-weight:600; border-bottom:1px solid rgba(255,255,255,0.06); }
         td { padding:8px 8px; border-bottom:1px solid rgba(255,255,255,0.03); }
         tr:hover td { background:rgba(255,255,255,0.02); }
-        /* RIGHT COL */
         .col-right { grid-column:3; display:flex; flex-direction:column; gap:10px; }
         .lat-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
         .lat-item { text-align:center; padding:10px 8px; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid var(--border); }
@@ -132,7 +123,6 @@
         .fix-label { color:var(--t2); font-size:10px; text-transform:uppercase; letter-spacing:1px; }
         .fix-val { font-family:'Space Mono',monospace; font-weight:700; font-size:12px; }
         .fix-ok { color:var(--green); } .fix-bad { color:var(--red); }
-        /* Bottom row */
         .bottom-row { grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
         ::-webkit-scrollbar { width:4px; height:4px; }
         ::-webkit-scrollbar-track { background:transparent; }
@@ -165,45 +155,45 @@
 
                 <div class="sym-group-label">▶ Primary — Trading</div>
                 <div class="sym-row primary-sym">
-                    <span class="sym-label primary">MES</span>
-                    <div class="px-pair"><span class="bid" id="mesBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="mesAsk">----</span></div>
-                    <span class="sym-spread" id="mesSpread">--</span>
+                    <span class="sym-label primary">US500.F</span>
+                    <div class="px-pair"><span class="bid" id="spBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="spAsk">----</span></div>
+                    <span class="sym-spread" id="spSpread">--</span>
                 </div>
                 <div class="sym-row primary-sym">
-                    <span class="sym-label primary">MNQ</span>
-                    <div class="px-pair"><span class="bid" id="mnqBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="mnqAsk">----</span></div>
-                    <span class="sym-spread" id="mnqSpread">--</span>
+                    <span class="sym-label primary">USTEC.F</span>
+                    <div class="px-pair"><span class="bid" id="nqBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="nqAsk">----</span></div>
+                    <span class="sym-spread" id="nqSpread">--</span>
                 </div>
                 <div class="sym-row primary-sym">
-                    <span class="sym-label primary">MCL</span>
-                    <div class="px-pair"><span class="bid" id="mclBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="mclAsk">----</span></div>
-                    <span class="sym-spread" id="mclSpread">--</span>
+                    <span class="sym-label primary">USOIL.F</span>
+                    <div class="px-pair"><span class="bid" id="clBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="clAsk">----</span></div>
+                    <span class="sym-spread" id="clSpread">--</span>
                 </div>
 
                 <div class="sym-group-label" style="margin-top:8px;">◈ Confirmation</div>
                 <div class="sym-row">
-                    <span class="sym-label">ES</span>
-                    <div class="px-pair"><span class="bid" id="esBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="esAsk" style="font-size:11px">--</span></div>
-                </div>
-                <div class="sym-row">
-                    <span class="sym-label">NQ</span>
-                    <div class="px-pair"><span class="bid" id="nqBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="nqAsk" style="font-size:11px">--</span></div>
-                </div>
-                <div class="sym-row">
-                    <span class="sym-label">CL</span>
-                    <div class="px-pair"><span class="bid" id="clBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="clAsk" style="font-size:11px">--</span></div>
-                </div>
-                <div class="sym-row">
-                    <span class="sym-label">VIX</span>
+                    <span class="sym-label">VIX.F</span>
                     <div class="px-pair"><span class="bid" id="vixBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="vixAsk" style="font-size:11px">--</span></div>
                 </div>
                 <div class="sym-row">
-                    <span class="sym-label">DX</span>
+                    <span class="sym-label">DX.F</span>
                     <div class="px-pair"><span class="bid" id="dxBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="dxAsk" style="font-size:11px">--</span></div>
                 </div>
                 <div class="sym-row">
-                    <span class="sym-label">ZN</span>
-                    <div class="px-pair"><span class="bid" id="znBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="znAsk" style="font-size:11px">--</span></div>
+                    <span class="sym-label">DJ30.F</span>
+                    <div class="px-pair"><span class="bid" id="djBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="djAsk" style="font-size:11px">--</span></div>
+                </div>
+                <div class="sym-row">
+                    <span class="sym-label">NAS100</span>
+                    <div class="px-pair"><span class="bid" id="nasBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="nasAsk" style="font-size:11px">--</span></div>
+                </div>
+                <div class="sym-row">
+                    <span class="sym-label">GOLD.F</span>
+                    <div class="px-pair"><span class="bid" id="goldBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="goldAsk" style="font-size:11px">--</span></div>
+                </div>
+                <div class="sym-row">
+                    <span class="sym-label">NGAS.F</span>
+                    <div class="px-pair"><span class="bid" id="ngasBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="ngasAsk" style="font-size:11px">--</span></div>
                 </div>
             </div>
 
@@ -230,23 +220,23 @@
             <div>
                 <div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">⚡ Breakout Engine State</div>
                 <div class="eng-state-grid">
-                    <div class="eng-state-card phase-0" id="engMES">
-                        <div class="eng-sym">MES</div>
-                        <div class="eng-phase-badge phase-badge-flat" id="engMESPhase">FLAT</div>
-                        <div class="eng-vol" id="engMESVol">rv -- bv --</div>
-                        <div class="eng-signals" id="engMESSig">0 signals</div>
+                    <div class="eng-state-card phase-0" id="engSP">
+                        <div class="eng-sym">US500.F</div>
+                        <div class="eng-phase-badge phase-badge-flat" id="engSPPhase">FLAT</div>
+                        <div class="eng-vol" id="engSPVol">rv -- bv --</div>
+                        <div class="eng-signals" id="engSPSig">0 signals</div>
                     </div>
-                    <div class="eng-state-card phase-0" id="engMNQ">
-                        <div class="eng-sym">MNQ</div>
-                        <div class="eng-phase-badge phase-badge-flat" id="engMNQPhase">FLAT</div>
-                        <div class="eng-vol" id="engMNQVol">rv -- bv --</div>
-                        <div class="eng-signals" id="engMNQSig">0 signals</div>
+                    <div class="eng-state-card phase-0" id="engNQ">
+                        <div class="eng-sym">USTEC.F</div>
+                        <div class="eng-phase-badge phase-badge-flat" id="engNQPhase">FLAT</div>
+                        <div class="eng-vol" id="engNQVol">rv -- bv --</div>
+                        <div class="eng-signals" id="engNQSig">0 signals</div>
                     </div>
-                    <div class="eng-state-card phase-0" id="engMCL">
-                        <div class="eng-sym">MCL</div>
-                        <div class="eng-phase-badge phase-badge-flat" id="engMCLPhase">FLAT</div>
-                        <div class="eng-vol" id="engMCLVol">rv -- bv --</div>
-                        <div class="eng-signals" id="engMCLSig">0 signals</div>
+                    <div class="eng-state-card phase-0" id="engCL">
+                        <div class="eng-sym">USOIL.F</div>
+                        <div class="eng-phase-badge phase-badge-flat" id="engCLPhase">FLAT</div>
+                        <div class="eng-vol" id="engCLVol">rv -- bv --</div>
+                        <div class="eng-signals" id="engCLSig">0 signals</div>
                     </div>
                 </div>
             </div>
@@ -255,7 +245,7 @@
             <div class="stats-row">
                 <div class="card" style="padding:14px 16px;">
                     <div class="card-hd"><span class="dot"></span>Daily P&amp;L</div>
-                    <div class="pnl-val pnl-pos" id="pnlVal">$0.00</div>
+                    <div class="pnl-val pnl-pos" id="pnlVal">+$0.00</div>
                     <div class="pnl-sub" id="pnlSub">0 trades &middot; 0.0% win</div>
                 </div>
                 <div class="card stat-card"><div class="stat-val" id="statWins">0</div><div class="stat-lbl">Wins</div></div>
@@ -322,19 +312,19 @@
                 <div class="fix-row"><span class="fix-label">Fills</span><span class="fix-val" id="fixFills" style="color:var(--t1)">0</span></div>
             </div>
 
-            <!-- YM / RTY confirmation -->
+            <!-- Breadth confirmation -->
             <div class="card">
                 <div class="card-hd"><span class="dot" style="background:var(--silver)"></span>Breadth</div>
                 <div class="sym-row" style="margin-bottom:4px;">
-                    <span class="sym-label">YM</span>
-                    <div class="px-pair"><span class="bid" id="ymBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="ymAsk" style="font-size:11px">--</span></div>
+                    <span class="sym-label">ES</span>
+                    <div class="px-pair"><span class="bid" id="esBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="esAsk" style="font-size:11px">--</span></div>
                 </div>
                 <div class="sym-row">
-                    <span class="sym-label">RTY</span>
-                    <div class="px-pair"><span class="bid" id="rtyBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="rtyAsk" style="font-size:11px">--</span></div>
+                    <span class="sym-label">DX</span>
+                    <div class="px-pair"><span class="bid" id="dxCashBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="dxCashAsk" style="font-size:11px">--</span></div>
                 </div>
                 <div style="font-size:9px;color:var(--t2);margin-top:8px;text-align:center;">
-                    YM + RTY confirm broad index moves
+                    ES + DX confirm broad market moves
                 </div>
             </div>
         </div>
@@ -360,10 +350,8 @@ let wsConnected = false;
 let lastData = {};
 let _bellEnabled = false;
 let _lastTradeCount = 0;
-let _prevPrices = {};
 
 function safe(v,d=0){const n=Number(v);return isNaN(n)?d:n;}
-function fmt(v,dec=2){return safe(v)>0?safe(v).toFixed(dec):'--';}
 function fmtUTC(ts){if(!ts)return '--';const d=new Date(ts*1000);return d.toUTCString().slice(17,25);}
 
 function toggleBell(){
@@ -400,31 +388,27 @@ function updateEngineCard(prefix, phase, compHi, compLo, rv, bv, sigs) {
     if (p === 0) { badge.className='eng-phase-badge phase-badge-flat'; badge.textContent='FLAT'; }
     else if (p === 1) { badge.className='eng-phase-badge phase-badge-comp'; badge.textContent='COMPRESSION'; }
     else { badge.className='eng-phase-badge phase-badge-brk'; badge.textContent='BREAKOUT ⚡'; }
-    if (vol) vol.textContent = 'rv ' + safe(rv).toFixed(3) + '% bv ' + safe(bv).toFixed(3) + '%';
-    if (sig) sig.textContent = sigs + ' signals';
-    // Show compression range if in compression
     if (p === 1 && safe(compHi) > 0) {
-        vol.textContent = 'Hi=' + safe(compHi).toFixed(2) + ' Lo=' + safe(compLo).toFixed(2);
+        if (vol) vol.textContent = 'Hi=' + safe(compHi).toFixed(2) + ' Lo=' + safe(compLo).toFixed(2);
+    } else {
+        if (vol) vol.textContent = 'rv ' + safe(rv).toFixed(3) + '% bv ' + safe(bv).toFixed(3) + '%';
     }
+    if (sig) sig.textContent = sigs + ' signals';
 }
 
 function updateMacroRegime(d) {
     const vix = safe(d.vix_level);
     const reg = d.macro_regime || 'NEUTRAL';
     const div = safe(d.es_nq_divergence);
-
     const vE = document.getElementById('vixLevel');
     if (vE) { vE.textContent = vix > 0 ? vix.toFixed(1) : '--';
         vE.style.color = vix >= 25 ? 'var(--red)' : vix <= 15 ? 'var(--green)' : 'var(--amber)'; }
-
     const rE = document.getElementById('macroRegime');
     if (rE) { rE.textContent = reg;
         rE.className = 'regime-val regime-' + reg.toLowerCase().replace('_','-'); }
-
     const dE = document.getElementById('esNqDiv');
     if (dE) { dE.textContent = (div >= 0 ? '+' : '') + (div * 100).toFixed(3) + '%';
         dE.style.color = Math.abs(div) < 0.0002 ? 'var(--t2)' : div > 0 ? 'var(--green)' : 'var(--red)'; }
-
     const sE = document.getElementById('sessionVal');
     if (sE) { const t = safe(d.session_tradeable);
         sE.textContent = t ? (d.session_name || 'ACTIVE') : 'CLOSED';
@@ -456,9 +440,9 @@ function renderCompRanges(d) {
     const el = document.getElementById('compRanges');
     if (!el) return;
     const syms = [
-        { sym:'MES', phase:d.mes_phase, hi:d.mes_comp_high, lo:d.mes_comp_low, rv:d.mes_recent_vol_pct, bv:d.mes_baseline_vol_pct },
-        { sym:'MNQ', phase:d.mnq_phase, hi:d.mnq_comp_high, lo:d.mnq_comp_low, rv:d.mnq_recent_vol_pct, bv:d.mnq_baseline_vol_pct },
-        { sym:'MCL', phase:d.mcl_phase, hi:d.mcl_comp_high, lo:d.mcl_comp_low, rv:d.mcl_recent_vol_pct, bv:d.mcl_baseline_vol_pct },
+        { sym:'US500.F', phase:d.sp_phase,  hi:d.sp_comp_high,  lo:d.sp_comp_low,  rv:d.sp_recent_vol_pct,  bv:d.sp_baseline_vol_pct  },
+        { sym:'USTEC.F', phase:d.nq_phase,  hi:d.nq_comp_high,  lo:d.nq_comp_low,  rv:d.nq_recent_vol_pct,  bv:d.nq_baseline_vol_pct  },
+        { sym:'USOIL.F', phase:d.cl_phase,  hi:d.cl_comp_high,  lo:d.cl_comp_low,  rv:d.cl_recent_vol_pct,  bv:d.cl_baseline_vol_pct  },
     ];
     let html = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">';
     syms.forEach(s => {
@@ -500,7 +484,6 @@ function renderTrades(trades) {
     const totalPnl = closed.reduce((s,t) => s + safe(t.pnl), 0);
     if (cE) cE.textContent = closed.length + ' closed · ' + wins + 'W/' + losses + 'L · ' +
         (totalPnl >= 0 ? '+' : '') + '$' + Math.abs(totalPnl).toFixed(2);
-
     const now = Math.floor(Date.now() / 1000);
     el.innerHTML = trades.slice(0, 50).map(t => {
         const isOpen = !t.exitReason || t.exitReason === '';
@@ -519,7 +502,7 @@ function renderTrades(trades) {
             : reason === 'TP_HIT' ? 'var(--green)' : reason === 'SL_HIT' ? 'var(--red)' : 'var(--t2)';
         let heldStr = '--';
         if (isOpen && safe(t.entryTs) > 0) {
-            const el = now - safe(t.entryTs); heldStr = el >= 60 ? Math.floor(el/60)+'m'+(el%60)+'s' : el+'s';
+            const es = now - safe(t.entryTs); heldStr = es >= 60 ? Math.floor(es/60)+'m'+(es%60)+'s' : es+'s';
         } else if (safe(t.entryTs) > 0 && safe(t.exitTs) > 0) {
             const hs = safe(t.exitTs) - safe(t.entryTs); heldStr = hs >= 60 ? Math.floor(hs/60)+'m'+(hs%60)+'s' : hs+'s';
         }
@@ -543,25 +526,25 @@ function renderTrades(trades) {
 function updateDashboard(d) {
     lastData = d; setConn(true);
 
-    // Prices — primary
-    setPrice('mesBid', d.mes_bid, 2); setPrice('mesAsk', d.mes_ask, 2); setSpread('mesSpread', d.mes_bid, d.mes_ask);
-    setPrice('mnqBid', d.mnq_bid, 2); setPrice('mnqAsk', d.mnq_ask, 2); setSpread('mnqSpread', d.mnq_bid, d.mnq_ask);
-    setPrice('mclBid', d.mcl_bid, 2); setPrice('mclAsk', d.mcl_ask, 2); setSpread('mclSpread', d.mcl_bid, d.mcl_ask);
+    // Primary prices
+    setPrice('spBid',  d.sp_bid,  2); setPrice('spAsk',  d.sp_ask,  2); setSpread('spSpread', d.sp_bid, d.sp_ask);
+    setPrice('nqBid',  d.nq_bid,  2); setPrice('nqAsk',  d.nq_ask,  2); setSpread('nqSpread', d.nq_bid, d.nq_ask);
+    setPrice('clBid',  d.cl_bid,  2); setPrice('clAsk',  d.cl_ask,  2); setSpread('clSpread', d.cl_bid, d.cl_ask);
 
-    // Prices — confirmation
-    setPrice('esBid',  d.es_bid,  2); setPrice('esAsk',  d.es_ask,  2);
-    setPrice('nqBid',  d.nq_bid,  2); setPrice('nqAsk',  d.nq_ask,  2);
-    setPrice('clBid',  d.cl_bid,  2); setPrice('clAsk',  d.cl_ask,  2);
-    setPrice('vixBid', d.vix_bid, 2); setPrice('vixAsk', d.vix_ask, 2);
-    setPrice('dxBid',  d.dx_bid,  2); setPrice('dxAsk',  d.dx_ask,  2);
-    setPrice('znBid',  d.zn_bid,  2); setPrice('znAsk',  d.zn_ask,  2);
-    setPrice('ymBid',  d.ym_bid,  2); setPrice('ymAsk',  d.ym_ask,  2);
-    setPrice('rtyBid', d.rty_bid, 2); setPrice('rtyAsk', d.rty_ask, 2);
+    // Confirmation prices
+    setPrice('vixBid',    d.vix_bid,    2); setPrice('vixAsk',    d.vix_ask,    2);
+    setPrice('dxBid',     d.dx_bid,     2); setPrice('dxAsk',     d.dx_ask,     2);
+    setPrice('djBid',     d.dj_bid,     2); setPrice('djAsk',     d.dj_ask,     2);
+    setPrice('nasBid',    d.nas_bid,    2); setPrice('nasAsk',    d.nas_ask,    2);
+    setPrice('goldBid',   d.gold_bid,   2); setPrice('goldAsk',   d.gold_ask,   2);
+    setPrice('ngasBid',   d.ngas_bid,   2); setPrice('ngasAsk',   d.ngas_ask,   2);
+    setPrice('esBid',     d.es_bid,     2); setPrice('esAsk',     d.es_ask,     2);
+    setPrice('dxCashBid', d.dxcash_bid, 2); setPrice('dxCashAsk', d.dxcash_ask, 2);
 
     // Engine state
-    updateEngineCard('MES', d.mes_phase, d.mes_comp_high, d.mes_comp_low, d.mes_recent_vol_pct, d.mes_baseline_vol_pct, d.mes_signals);
-    updateEngineCard('MNQ', d.mnq_phase, d.mnq_comp_high, d.mnq_comp_low, d.mnq_recent_vol_pct, d.mnq_baseline_vol_pct, d.mnq_signals);
-    updateEngineCard('MCL', d.mcl_phase, d.mcl_comp_high, d.mcl_comp_low, d.mcl_recent_vol_pct, d.mcl_baseline_vol_pct, d.mcl_signals);
+    updateEngineCard('SP', d.sp_phase, d.sp_comp_high, d.sp_comp_low, d.sp_recent_vol_pct, d.sp_baseline_vol_pct, d.sp_signals);
+    updateEngineCard('NQ', d.nq_phase, d.nq_comp_high, d.nq_comp_low, d.nq_recent_vol_pct, d.nq_baseline_vol_pct, d.nq_signals);
+    updateEngineCard('CL', d.cl_phase, d.cl_comp_high, d.cl_comp_low, d.cl_recent_vol_pct, d.cl_baseline_vol_pct, d.cl_signals);
 
     // PnL
     const pnl = safe(d.daily_pnl);
@@ -576,12 +559,12 @@ function updateDashboard(d) {
     document.getElementById('statMaxDD').textContent   = '$' + safe(d.max_drawdown).toFixed(0);
 
     // Latency
-    document.getElementById('rttLast').textContent = safe(d.fix_rtt_last) > 0 ? safe(d.fix_rtt_last).toFixed(1) : '--';
-    document.getElementById('rttP50').textContent  = safe(d.fix_rtt_p50)  > 0 ? safe(d.fix_rtt_p50).toFixed(1)  : '--';
-    document.getElementById('rttP95').textContent  = safe(d.fix_rtt_p95)  > 0 ? safe(d.fix_rtt_p95).toFixed(1)  : '--';
-    const rtt = safe(d.fix_rtt_last);
+    const rttL = safe(d.fix_rtt_last), rttP50 = safe(d.fix_rtt_p50), rttP95 = safe(d.fix_rtt_p95);
+    document.getElementById('rttLast').textContent = rttL  > 0 ? rttL.toFixed(1)   : '--';
+    document.getElementById('rttP50').textContent  = rttP50 > 0 ? rttP50.toFixed(1) : '--';
+    document.getElementById('rttP95').textContent  = rttP95 > 0 ? rttP95.toFixed(1) : '--';
     const rttEl = document.getElementById('rttLast');
-    if (rttEl) rttEl.style.color = rtt < 10 ? 'var(--green)' : rtt < 30 ? 'var(--amber)' : 'var(--red)';
+    if (rttEl) rttEl.style.color = rttL < 10 ? 'var(--green)' : rttL < 30 ? 'var(--amber)' : 'var(--red)';
 
     // FIX status
     const qOk = (d.fix_quote_status || '').includes('CONNECTED');

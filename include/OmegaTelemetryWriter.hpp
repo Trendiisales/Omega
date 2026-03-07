@@ -16,22 +16,22 @@ struct OmegaTelemetrySnapshot
     std::atomic<uint64_t> sequence;
 
     // --- Primary symbol prices (MES, MNQ, MCL) ---
-    double mes_bid;
-    double mes_ask;
-    double mnq_bid;
-    double mnq_ask;
-    double mcl_bid;
-    double mcl_ask;
+    double sp_bid;
+    double sp_ask;
+    double nq_bid;
+    double nq_ask;
+    double cl_bid;
+    double cl_ask;
 
     // --- Confirmation symbol prices ---
-    double es_bid;  double es_ask;
-    double nq_bid;  double nq_ask;
-    double cl_bid;  double cl_ask;
-    double vix_bid; double vix_ask;
-    double dx_bid;  double dx_ask;
-    double zn_bid;  double zn_ask;
-    double ym_bid;  double ym_ask;
-    double rty_bid; double rty_ask;
+    double vix_bid;    double vix_ask;
+    double dx_bid;     double dx_ask;
+    double dj_bid;     double dj_ask;
+    double nas_bid;    double nas_ask;
+    double gold_bid;   double gold_ask;
+    double ngas_bid;   double ngas_ask;
+    double es_bid;     double es_ask;
+    double dxcash_bid; double dxcash_ask;
 
     // --- P&L ---
     double daily_pnl;
@@ -66,32 +66,32 @@ struct OmegaTelemetrySnapshot
     int  session_tradeable;
 
     // --- Breakout engine state per primary symbol ---
-    // MES
-    int  mes_phase;            // 0=FLAT 1=COMPRESSION 2=BREAKOUT
-    double mes_comp_high;
-    double mes_comp_low;
-    double mes_recent_vol_pct;
-    double mes_baseline_vol_pct;
-    int  mes_signals;
+    // US500.F
+    int  sp_phase;             // 0=FLAT 1=COMPRESSION 2=BREAKOUT
+    double sp_comp_high;
+    double sp_comp_low;
+    double sp_recent_vol_pct;
+    double sp_baseline_vol_pct;
+    int  sp_signals;
 
-    // MNQ
-    int  mnq_phase;
-    double mnq_comp_high;
-    double mnq_comp_low;
-    double mnq_recent_vol_pct;
-    double mnq_baseline_vol_pct;
-    int  mnq_signals;
+    // USTEC.F
+    int  nq_phase;
+    double nq_comp_high;
+    double nq_comp_low;
+    double nq_recent_vol_pct;
+    double nq_baseline_vol_pct;
+    int  nq_signals;
 
-    // MCL
-    int  mcl_phase;
-    double mcl_comp_high;
-    double mcl_comp_low;
-    double mcl_recent_vol_pct;
-    double mcl_baseline_vol_pct;
-    int  mcl_signals;
+    // USOIL.F
+    int  cl_phase;
+    double cl_comp_high;
+    double cl_comp_low;
+    double cl_recent_vol_pct;
+    double cl_baseline_vol_pct;
+    int  cl_signals;
 
     // --- Last signal ---
-    char last_signal_symbol[8];
+    char last_signal_symbol[16];
     char last_signal_side[8];   // "LONG" / "SHORT" / "NONE"
     double last_signal_price;
     char last_signal_reason[64];
@@ -119,17 +119,17 @@ private:
     OmegaTelemetrySnapshot* m_snap;
 
     // Last valid prices (prevents zero-price bug)
-    double lv_mes_bid=0, lv_mes_ask=0;
-    double lv_mnq_bid=0, lv_mnq_ask=0;
-    double lv_mcl_bid=0, lv_mcl_ask=0;
-    double lv_es_bid=0,  lv_es_ask=0;
-    double lv_nq_bid=0,  lv_nq_ask=0;
-    double lv_cl_bid=0,  lv_cl_ask=0;
-    double lv_vix_bid=0, lv_vix_ask=0;
-    double lv_dx_bid=0,  lv_dx_ask=0;
-    double lv_zn_bid=0,  lv_zn_ask=0;
-    double lv_ym_bid=0,  lv_ym_ask=0;
-    double lv_rty_bid=0, lv_rty_ask=0;
+    double lv_sp_bid=0,     lv_sp_ask=0;
+    double lv_nq_bid=0,     lv_nq_ask=0;
+    double lv_cl_bid=0,     lv_cl_ask=0;
+    double lv_vix_bid=0,    lv_vix_ask=0;
+    double lv_dx_bid=0,     lv_dx_ask=0;
+    double lv_dj_bid=0,     lv_dj_ask=0;
+    double lv_nas_bid=0,    lv_nas_ask=0;
+    double lv_gold_bid=0,   lv_gold_ask=0;
+    double lv_ngas_bid=0,   lv_ngas_ask=0;
+    double lv_es_bid=0,     lv_es_ask=0;
+    double lv_dxcash_bid=0, lv_dxcash_ask=0;
 
 public:
     OmegaTelemetryWriter() : m_map(nullptr), m_snap(nullptr) {}
@@ -169,17 +169,17 @@ public:
         if (!m_snap || bid <= 0 || ask <= 0) return;
         uint64_t seq = m_snap->sequence.load(std::memory_order_relaxed);
         // Route to correct field
-        if      (!strcmp(sym,"MES"))  { lv_mes_bid=bid; lv_mes_ask=ask; m_snap->mes_bid=bid; m_snap->mes_ask=ask; }
-        else if (!strcmp(sym,"MNQ"))  { lv_mnq_bid=bid; lv_mnq_ask=ask; m_snap->mnq_bid=bid; m_snap->mnq_ask=ask; }
-        else if (!strcmp(sym,"MCL"))  { lv_mcl_bid=bid; lv_mcl_ask=ask; m_snap->mcl_bid=bid; m_snap->mcl_ask=ask; }
-        else if (!strcmp(sym,"ES"))   { lv_es_bid=bid;  lv_es_ask=ask;  m_snap->es_bid=bid;  m_snap->es_ask=ask; }
-        else if (!strcmp(sym,"NQ"))   { lv_nq_bid=bid;  lv_nq_ask=ask;  m_snap->nq_bid=bid;  m_snap->nq_ask=ask; }
-        else if (!strcmp(sym,"CL"))   { lv_cl_bid=bid;  lv_cl_ask=ask;  m_snap->cl_bid=bid;  m_snap->cl_ask=ask; }
-        else if (!strcmp(sym,"VIX"))  { lv_vix_bid=bid; lv_vix_ask=ask; m_snap->vix_bid=bid; m_snap->vix_ask=ask; }
-        else if (!strcmp(sym,"DX"))   { lv_dx_bid=bid;  lv_dx_ask=ask;  m_snap->dx_bid=bid;  m_snap->dx_ask=ask; }
-        else if (!strcmp(sym,"ZN"))   { lv_zn_bid=bid;  lv_zn_ask=ask;  m_snap->zn_bid=bid;  m_snap->zn_ask=ask; }
-        else if (!strcmp(sym,"YM"))   { lv_ym_bid=bid;  lv_ym_ask=ask;  m_snap->ym_bid=bid;  m_snap->ym_ask=ask; }
-        else if (!strcmp(sym,"RTY"))  { lv_rty_bid=bid; lv_rty_ask=ask; m_snap->rty_bid=bid; m_snap->rty_ask=ask; }
+        if      (!strcmp(sym,"US500.F")) { lv_sp_bid=bid;     lv_sp_ask=ask;     m_snap->sp_bid=bid;     m_snap->sp_ask=ask; }
+        else if (!strcmp(sym,"USTEC.F")) { lv_nq_bid=bid;     lv_nq_ask=ask;     m_snap->nq_bid=bid;     m_snap->nq_ask=ask; }
+        else if (!strcmp(sym,"USOIL.F")) { lv_cl_bid=bid;     lv_cl_ask=ask;     m_snap->cl_bid=bid;     m_snap->cl_ask=ask; }
+        else if (!strcmp(sym,"VIX.F"))   { lv_vix_bid=bid;    lv_vix_ask=ask;    m_snap->vix_bid=bid;    m_snap->vix_ask=ask; }
+        else if (!strcmp(sym,"DX.F"))    { lv_dx_bid=bid;     lv_dx_ask=ask;     m_snap->dx_bid=bid;     m_snap->dx_ask=ask; }
+        else if (!strcmp(sym,"DJ30.F"))  { lv_dj_bid=bid;     lv_dj_ask=ask;     m_snap->dj_bid=bid;     m_snap->dj_ask=ask; }
+        else if (!strcmp(sym,"NAS100"))  { lv_nas_bid=bid;    lv_nas_ask=ask;    m_snap->nas_bid=bid;    m_snap->nas_ask=ask; }
+        else if (!strcmp(sym,"GOLD.F"))  { lv_gold_bid=bid;   lv_gold_ask=ask;   m_snap->gold_bid=bid;   m_snap->gold_ask=ask; }
+        else if (!strcmp(sym,"NGAS.F"))  { lv_ngas_bid=bid;   lv_ngas_ask=ask;   m_snap->ngas_bid=bid;   m_snap->ngas_ask=ask; }
+        else if (!strcmp(sym,"ES"))      { lv_es_bid=bid;     lv_es_ask=ask;     m_snap->es_bid=bid;     m_snap->es_ask=ask; }
+        else if (!strcmp(sym,"DX"))      { lv_dxcash_bid=bid; lv_dxcash_ask=ask; m_snap->dxcash_bid=bid; m_snap->dxcash_ask=ask; }
         m_snap->sequence.store(seq + 1, std::memory_order_release);
     }
 
@@ -228,18 +228,18 @@ public:
                            double recent_vol_pct, double baseline_vol_pct, int signals)
     {
         if (!m_snap) return;
-        if (!strcmp(sym,"MES")) {
-            m_snap->mes_phase=phase; m_snap->mes_comp_high=comp_high;
-            m_snap->mes_comp_low=comp_low; m_snap->mes_recent_vol_pct=recent_vol_pct;
-            m_snap->mes_baseline_vol_pct=baseline_vol_pct; m_snap->mes_signals=signals;
-        } else if (!strcmp(sym,"MNQ")) {
-            m_snap->mnq_phase=phase; m_snap->mnq_comp_high=comp_high;
-            m_snap->mnq_comp_low=comp_low; m_snap->mnq_recent_vol_pct=recent_vol_pct;
-            m_snap->mnq_baseline_vol_pct=baseline_vol_pct; m_snap->mnq_signals=signals;
-        } else if (!strcmp(sym,"MCL")) {
-            m_snap->mcl_phase=phase; m_snap->mcl_comp_high=comp_high;
-            m_snap->mcl_comp_low=comp_low; m_snap->mcl_recent_vol_pct=recent_vol_pct;
-            m_snap->mcl_baseline_vol_pct=baseline_vol_pct; m_snap->mcl_signals=signals;
+        if (!strcmp(sym,"US500.F")) {
+            m_snap->sp_phase=phase; m_snap->sp_comp_high=comp_high;
+            m_snap->sp_comp_low=comp_low; m_snap->sp_recent_vol_pct=recent_vol_pct;
+            m_snap->sp_baseline_vol_pct=baseline_vol_pct; m_snap->sp_signals=signals;
+        } else if (!strcmp(sym,"USTEC.F")) {
+            m_snap->nq_phase=phase; m_snap->nq_comp_high=comp_high;
+            m_snap->nq_comp_low=comp_low; m_snap->nq_recent_vol_pct=recent_vol_pct;
+            m_snap->nq_baseline_vol_pct=baseline_vol_pct; m_snap->nq_signals=signals;
+        } else if (!strcmp(sym,"USOIL.F")) {
+            m_snap->cl_phase=phase; m_snap->cl_comp_high=comp_high;
+            m_snap->cl_comp_low=comp_low; m_snap->cl_recent_vol_pct=recent_vol_pct;
+            m_snap->cl_baseline_vol_pct=baseline_vol_pct; m_snap->cl_signals=signals;
         }
     }
 
