@@ -694,7 +694,7 @@ int main(int argc, char* argv[])
     }
 
     omega::OmegaTelemetryServer gui_server;
-    gui_server.start(g_cfg.gui_port, g_cfg.ws_port);
+    gui_server.start(g_cfg.gui_port, g_cfg.ws_port, g_telemetry.snap());
     std::cout << "[OMEGA] GUI http://localhost:" << g_cfg.gui_port
               << "  WS:" << g_cfg.ws_port << "\n";
 

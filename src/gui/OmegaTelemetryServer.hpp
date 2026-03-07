@@ -23,7 +23,7 @@ public:
     OmegaTelemetryServer();
     ~OmegaTelemetryServer();
 
-    void start(int http_port, int ws_port);
+    void start(int http_port, int ws_port, OmegaTelemetrySnapshot* snap = nullptr);
     void stop();
 
 private:

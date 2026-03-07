@@ -202,14 +202,23 @@ OmegaTelemetryServer::OmegaTelemetryServer()
 
 OmegaTelemetryServer::~OmegaTelemetryServer() { stop(); }
 
-void OmegaTelemetryServer::start(int http_port, int ws_port)
+void OmegaTelemetryServer::start(int http_port, int ws_port, OmegaTelemetrySnapshot* snap)
 {
     if (running_.load()) return;
     ws_port_ = ws_port;
-    hMap_ = OpenFileMappingA(FILE_MAP_READ, FALSE, "Global\\OmegaTelemetrySharedMemory");
-    if (hMap_)
-        snap_ = static_cast<OmegaTelemetrySnapshot*>(
-                    MapViewOfFile(hMap_, FILE_MAP_READ, 0, 0, sizeof(OmegaTelemetrySnapshot)));
+
+    if (snap) {
+        // Direct pointer — same process, no shared memory roundtrip needed
+        snap_ = snap;
+        std::cout << "[OmegaHTTP] Direct snapshot pointer OK\n";
+    } else {
+        hMap_ = OpenFileMappingA(FILE_MAP_READ, FALSE, "Global\\OmegaTelemetrySharedMemory");
+        if (hMap_)
+            snap_ = static_cast<OmegaTelemetrySnapshot*>(
+                        MapViewOfFile(hMap_, FILE_MAP_READ, 0, 0, sizeof(OmegaTelemetrySnapshot)));
+        if (!snap_)
+            std::cerr << "[OmegaHTTP] WARNING: snapshot null — no data will show\n";
+    }
     running_.store(true);
     thread_    = std::thread(&OmegaTelemetryServer::run,             this, http_port);
     ws_thread_ = std::thread(&OmegaTelemetryServer::wsBroadcastLoop, this);
@@ -223,7 +232,7 @@ void OmegaTelemetryServer::stop()
     if (ws_fd_     != INVALID_SOCKET) closesocket(ws_fd_);
     if (thread_.joinable())    thread_.join();
     if (ws_thread_.joinable()) ws_thread_.join();
-    if (snap_) UnmapViewOfFile(snap_);
+    if (snap_ && hMap_) UnmapViewOfFile(snap_);  // only unmap if we opened it
     if (hMap_) CloseHandle(hMap_);
 }
 
