@@ -183,17 +183,46 @@ static std::string build_logon(int seq, const char* subID) {
     return wrap_fix(b.str());
 }
 
+// Symbol ID map — populated from SecurityList response (35=y)
+// BlackBull sends numeric IDs in tag 55, not symbol names
+static std::unordered_map<int, std::string> g_id_to_sym;   // e.g. 123 -> "MES"
+static std::unordered_map<std::string, int> g_sym_to_id;   // e.g. "MES" -> 123
+static std::vector<int>                     g_md_ids;       // IDs to subscribe to
+static bool                                 g_ids_ready = false;
+
+static const char* OMEGA_SYMBOLS[] = {
+    "MES","MNQ","MCL","ES","NQ","CL","VIX","DX","ZN","YM","RTY"
+};
+static const int OMEGA_NSYMS = 11;
+
+static std::string build_security_list_req(int seq) {
+    std::ostringstream b;
+    b << "35=x\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01"
+      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "320=OmegaSecListReq\x01" << "559=0\x01";
+    return wrap_fix(b.str());
+}
+
 static std::string build_marketdata_req(int seq) {
-    static const char* syms[] = { "MES","MNQ","MCL","ES","NQ","CL","VIX","DX","ZN","YM","RTY" };
-    static const int nsyms = 11;
     std::ostringstream b;
     b << "35=V\x01"
       << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01"
       << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=0\x01" << "265=0\x01"
-      << "146=" << nsyms << "\x01";
-    for (int i = 0; i < nsyms; ++i) b << "55=" << syms[i] << "\x01";
+      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=0\x01" << "265=0\x01";
+
+    if (g_ids_ready && !g_md_ids.empty()) {
+        // Use numeric IDs discovered from SecurityList
+        b << "146=" << g_md_ids.size() << "\x01";
+        for (int id : g_md_ids) b << "55=" << id << "\x01";
+        std::cout << "[OMEGA] MD request using " << g_md_ids.size() << " numeric IDs\n";
+    } else {
+        // Fallback: request by name (may work on some brokers)
+        b << "146=" << OMEGA_NSYMS << "\x01";
+        for (int i = 0; i < OMEGA_NSYMS; ++i) b << "55=" << OMEGA_SYMBOLS[i] << "\x01";
+        std::cout << "[OMEGA] MD request using symbol names (no SecurityList yet)\n";
+    }
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
     return wrap_fix(b.str());
 }
@@ -500,14 +529,14 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     if (type == "A") {
         std::cout << "[OMEGA] LOGON ACCEPTED\n";
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
-        const std::string md = build_marketdata_req(g_quote_seq++);
-        SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
-        std::cout << "[OMEGA] Subscribed: MES MNQ MCL ES NQ CL VIX DX ZN YM RTY\n";
+        // Send SecurityListRequest first — BlackBull uses numeric IDs in tag 55
+        const std::string slr = build_security_list_req(g_quote_seq++);
+        SSL_write(ssl, slr.c_str(), static_cast<int>(slr.size()));
+        std::cout << "[OMEGA] SecurityListRequest sent\n";
         return;
     }
 
     if (type == "0") {
-        // Heartbeat response — measure RTT
         const std::string trid = extract_tag(msg, "112");
         if (!trid.empty() && trid == g_rtt_pending_id && g_rtt_pending_ts > 0) {
             const auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -520,25 +549,81 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     }
 
     if (type == "1") {
-        // TestRequest from server — respond
         const std::string trid = extract_tag(msg, "112");
         const std::string hb   = build_heartbeat(g_quote_seq++, "QUOTE", trid.c_str());
         SSL_write(ssl, hb.c_str(), static_cast<int>(hb.size()));
         return;
     }
 
-    if (type == "W" || type == "X") {
-        const std::string sym = extract_tag(msg, "55");
-        if (sym.empty()) return;
+    // ── SecurityList response — build ID map then subscribe ──────────────────
+    if (type == "y") {
+        std::cout << "[OMEGA] SecurityList received — building ID map\n";
+        g_id_to_sym.clear();
+        g_sym_to_id.clear();
+        g_md_ids.clear();
 
-        // Debug: print first market data message raw
-        static bool first_md = true;
-        if (first_md) {
-            std::string printable = msg;
-            for (char& c : printable) if (c == '\x01') c = '|';
-            std::cout << "[MD-RAW] " << printable.substr(0, 300) << "\n";
-            std::cout.flush();
-            first_md = false;
+        // Parse all 55= (symbolId) and 107= (symbol name) pairs
+        // BlackBull format: ...55=<id>\x01..107=<name>\x01...
+        size_t pos = 0u;
+        while (pos < msg.size()) {
+            const size_t id_pos = msg.find("55=", pos);
+            if (id_pos == std::string::npos) break;
+            const size_t id_end = msg.find('\x01', id_pos + 3u);
+            if (id_end == std::string::npos) break;
+            const std::string id_str = msg.substr(id_pos + 3u, id_end - (id_pos + 3u));
+
+            // Look for 107= (SecurityDesc) or 55= name near this entry
+            const size_t name_pos = msg.find("107=", id_pos);
+            std::string sym_name;
+            if (name_pos != std::string::npos && name_pos < id_pos + 200u) {
+                const size_t name_end = msg.find('\x01', name_pos + 4u);
+                if (name_end != std::string::npos)
+                    sym_name = msg.substr(name_pos + 4u, name_end - (name_pos + 4u));
+            }
+
+            try {
+                const int id = std::stoi(id_str);
+                // Check if this symbol is one we want
+                for (int i = 0; i < OMEGA_NSYMS; ++i) {
+                    if (sym_name == OMEGA_SYMBOLS[i]) {
+                        g_id_to_sym[id] = sym_name;
+                        g_sym_to_id[sym_name] = id;
+                        g_md_ids.push_back(id);
+                        std::cout << "[OMEGA] ID map: " << id << " -> " << sym_name << "\n";
+                        break;
+                    }
+                }
+            } catch (...) {}
+            pos = id_end + 1u;
+        }
+
+        g_ids_ready = !g_md_ids.empty();
+        if (!g_ids_ready) {
+            std::cerr << "[OMEGA] WARNING: No matching IDs found in SecurityList — subscribing by name\n";
+        }
+
+        // Now send MarketData subscription
+        const std::string md = build_marketdata_req(g_quote_seq++);
+        SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
+        std::cout << "[OMEGA] MarketData subscribed for " << (g_ids_ready ? g_md_ids.size() : (size_t)OMEGA_NSYMS) << " symbols\n";
+        return;
+    }
+
+    // ── Market data ───────────────────────────────────────────────────────────
+    if (type == "W" || type == "X") {
+        const std::string sym_raw = extract_tag(msg, "55");
+        if (sym_raw.empty()) return;
+
+        // Resolve symbol name from numeric ID
+        std::string sym;
+        try {
+            const int id = std::stoi(sym_raw);
+            const auto it = g_id_to_sym.find(id);
+            if (it != g_id_to_sym.end()) sym = it->second;
+            else { std::cout << "[OMEGA] Unknown ID: " << id << "\n"; return; }
+        } catch (...) {
+            // Not numeric — broker sent name directly
+            sym = sym_raw;
         }
 
         double bid = 0.0, ask = 0.0;
@@ -547,11 +632,8 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             const char et = msg[pos + 4u];
             const size_t next_soh = msg.find('\x01', pos);
             if (next_soh == std::string::npos) break;
-            // Find 270= between current tag and next entry (269=)
-            const size_t next_269 = msg.find("269=", pos + 1u);
-            const size_t search_end = (next_269 != std::string::npos) ? next_269 : msg.size();
             const size_t px = msg.find("270=", pos);
-            if (px == std::string::npos || px > search_end) { pos = next_soh; continue; }
+            if (px == std::string::npos) { pos = next_soh; continue; }
             const size_t pxe = msg.find('\x01', px + 4u);
             if (pxe == std::string::npos) break;
             const double price = std::stod(msg.substr(px + 4u, pxe - (px + 4u)));
