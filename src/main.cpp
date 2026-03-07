@@ -557,7 +557,14 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
 
     // ── SecurityList response — build ID map then subscribe ──────────────────
     if (type == "y") {
-        std::cout << "[OMEGA] SecurityList received — building ID map\n";
+        // Dump raw to file so we can read the symbol IDs
+        std::ofstream f("C:\\Omega\\seclist_raw.txt");
+        std::string printable = msg;
+        for (char& c : printable) if (c == '\x01') c = '\n';
+        f << printable;
+        f.close();
+        std::cout << "[OMEGA] SecurityList dumped to C:\\Omega\\seclist_raw.txt\n";
+        std::cout.flush();
         g_id_to_sym.clear();
         g_sym_to_id.clear();
         g_md_ids.clear();
