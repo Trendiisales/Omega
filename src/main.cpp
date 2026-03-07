@@ -379,6 +379,9 @@ static void sig_handler(int) noexcept { g_running.store(false); }
 static void on_tick(const std::string& sym, double bid, double ask) {
     { std::lock_guard<std::mutex> lk(g_book_mtx); g_bids[sym] = bid; g_asks[sym] = ask; }
 
+    std::cout << "[TICK] " << sym << " " << bid << "/" << ask << "\n";
+    std::cout.flush();
+
     const double mid = (bid + ask) * 0.5;
     if (sym == "VIX") g_macroDetector.updateVIX(mid);
     if (sym == "ES")  g_macroDetector.updateES(mid);
@@ -527,13 +530,29 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     if (type == "W" || type == "X") {
         const std::string sym = extract_tag(msg, "55");
         if (sym.empty()) return;
+
+        // Debug: print first market data message raw
+        static bool first_md = true;
+        if (first_md) {
+            std::string printable = msg;
+            for (char& c : printable) if (c == '\x01') c = '|';
+            std::cout << "[MD-RAW] " << printable.substr(0, 300) << "\n";
+            std::cout.flush();
+            first_md = false;
+        }
+
         double bid = 0.0, ask = 0.0;
         size_t pos = 0u;
         while ((pos = msg.find("269=", pos)) != std::string::npos) {
-            const char et  = msg[pos + 4u];
-            const size_t px  = msg.find("270=", pos);
-            if (px == std::string::npos) break;
-            const size_t pxe = msg.find('\x01', px);
+            const char et = msg[pos + 4u];
+            const size_t next_soh = msg.find('\x01', pos);
+            if (next_soh == std::string::npos) break;
+            // Find 270= between current tag and next entry (269=)
+            const size_t next_269 = msg.find("269=", pos + 1u);
+            const size_t search_end = (next_269 != std::string::npos) ? next_269 : msg.size();
+            const size_t px = msg.find("270=", pos);
+            if (px == std::string::npos || px > search_end) { pos = next_soh; continue; }
+            const size_t pxe = msg.find('\x01', px + 4u);
             if (pxe == std::string::npos) break;
             const double price = std::stod(msg.substr(px + 4u, pxe - (px + 4u)));
             if (et == '0') bid = price;
