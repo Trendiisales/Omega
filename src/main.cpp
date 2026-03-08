@@ -80,6 +80,12 @@ struct OmegaConfig {
     // Session UTC
     int session_start_utc = 7;
     int session_end_utc   = 21;
+    bool session_asia     = true;  // enable Asia/Tokyo window 22:00-05:00 UTC
+
+    // Gold breakout params (XAU — tighter than indices, price-regime aware)
+    double gold_tp_pct   = 0.30;   // 0.30% TP — ~$9 on $3000 gold
+    double gold_sl_pct   = 0.15;   // 0.15% SL — tight, gold moves are decisive
+    double gold_vol_thresh_pct = 0.04; // lower threshold — gold is less volatile than oil
 
     // GUI
     int         gui_port   = 7779;
@@ -101,6 +107,7 @@ static omega::MacroRegimeDetector g_macroDetector;
 static omega::BreakoutEngine g_eng_sp("US500.F");
 static omega::BreakoutEngine g_eng_nq("USTEC.F");
 static omega::BreakoutEngine g_eng_cl("USOIL.F");
+static omega::BreakoutEngine g_eng_xau("GOLD.F");  // Gold — Tokyo+London+NY sessions
 
 // Book
 static std::mutex                              g_book_mtx;
@@ -310,11 +317,27 @@ static void write_shadow_csv(const omega::TradeRecord& tr) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Session
+// Handles overnight ranges (e.g. start=22 end=5 wraps through midnight)
+// NZ 12pm = UTC 00:00 = Asia session open (Tokyo gold trading active)
+// Sessions:
+//   Asia:   22:00-05:00 UTC (NZ/AU morning, Tokyo gold)
+//   London: 07:00-16:00 UTC
+//   NY:     13:00-21:00 UTC
+// Config uses two windows: primary (e.g. 7-21) + asia (22-5) via session_asia flag
 // ─────────────────────────────────────────────────────────────────────────────
 static bool session_tradeable() noexcept {
     const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti; gmtime_s(&ti, &t);
-    return (ti.tm_hour >= g_cfg.session_start_utc && ti.tm_hour < g_cfg.session_end_utc);
+    const int h = ti.tm_hour;
+
+    // Primary window (London + NY): 07:00-21:00 UTC
+    const bool in_primary = (h >= g_cfg.session_start_utc && h < g_cfg.session_end_utc);
+
+    // Asia/Tokyo window: 22:00-05:00 UTC (overnight, wraps midnight)
+    // Active for gold — Tokyo is the 3rd largest gold market
+    const bool in_asia = g_cfg.session_asia && (h >= 22 || h < 5);
+
+    return in_primary || in_asia;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -385,10 +408,16 @@ static void load_config(const std::string& path) {
         if (section == "session") {
             if (k=="session_start_utc") g_cfg.session_start_utc = std::stoi(v);
             if (k=="session_end_utc")   g_cfg.session_end_utc   = std::stoi(v);
+            if (k=="session_asia")      g_cfg.session_asia      = (v == "true" || v == "1");
         }
         if (section == "telemetry") {
             if (k=="gui_port")   g_cfg.gui_port   = std::stoi(v);
             if (k=="shadow_csv") g_cfg.shadow_csv = v;
+        }
+        if (section == "gold") {
+            if (k=="gold_tp_pct")        g_cfg.gold_tp_pct        = std::stod(v);
+            if (k=="gold_sl_pct")        g_cfg.gold_sl_pct        = std::stod(v);
+            if (k=="gold_vol_thresh_pct") g_cfg.gold_vol_thresh_pct = std::stod(v);
         }
     }
     std::cout << "[CONFIG] mode=" << g_cfg.mode
@@ -455,6 +484,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     if      (sym == "US500.F") eng = &g_eng_sp;
     else if (sym == "USTEC.F") eng = &g_eng_nq;
     else if (sym == "USOIL.F") eng = &g_eng_cl;
+    else if (sym == "GOLD.F")  eng = &g_eng_xau;
     else {
         g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
         return;
@@ -646,7 +676,8 @@ static void quote_loop() {
                           << " RTTp95=" << g_rtt_p95 << "ms"
                           << " SP=" << static_cast<int>(g_eng_sp.phase)
                           << " NQ=" << static_cast<int>(g_eng_nq.phase)
-                          << " CL=" << static_cast<int>(g_eng_cl.phase) << "\n";
+                          << " CL=" << static_cast<int>(g_eng_cl.phase)
+                          << " XAU=" << static_cast<int>(g_eng_xau.phase) << "\n";
             }
 
             char buf[8192];
@@ -676,7 +707,7 @@ static void quote_loop() {
                         g_omegaLedger.record(tr); write_shadow_csv(tr);
                     });
         };
-        fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F");
+        fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F"); fc(g_eng_xau, "GOLD.F");
 
         SSL_shutdown(ssl); SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
@@ -715,6 +746,11 @@ int main(int argc, char* argv[])
     apply_engine_config(g_eng_sp);
     apply_engine_config(g_eng_nq);
     apply_engine_config(g_eng_cl);
+    // Gold uses tighter params — price-level invariant percentages, lower vol threshold
+    apply_engine_config(g_eng_xau);
+    g_eng_xau.TP_PCT        = g_cfg.gold_tp_pct;
+    g_eng_xau.SL_PCT        = g_cfg.gold_sl_pct;
+    g_eng_xau.VOL_THRESH_PCT = g_cfg.gold_vol_thresh_pct;
     build_id_map();
 
     WSADATA wsa;
