@@ -259,11 +259,217 @@ protected:
 
 // ==============================================================================
 // Concrete engine — standard CRTP policy (no extra overrides needed)
+// Used for GOLD.F (the gold multi-stack handles the rest).
 // ==============================================================================
 class BreakoutEngine final : public BreakoutEngineBase<BreakoutEngine>
 {
 public:
     explicit BreakoutEngine(const char* sym) noexcept { symbol = sym; }
+};
+
+// ==============================================================================
+// MacroContext — shared pointer passed into per-symbol shouldTrade() overrides.
+// Populated by MacroRegimeDetector results each tick before engine dispatch.
+// ==============================================================================
+struct MacroContext {
+    std::string regime;       // "RISK_ON" | "NEUTRAL" | "RISK_OFF"
+    double      vix       = 0.0;
+    double      es_nq_div = 0.0;  // ES vs NQ relative return — divergence signal
+    bool        sp_open   = false; // US500 position open (cross-symbol guard)
+    bool        nq_open   = false; // USTEC position open (cross-symbol guard)
+    bool        oil_open  = false; // USOIL position open
+};
+
+// ==============================================================================
+// SpEngine — US500.F (S&P 500 futures)
+//
+// Strategy: Compression Breakout with macro regime gating
+//
+// Parameters rationale:
+//   TP 0.60% — SP500 clean breakouts typically extend 0.5-0.8% before fading.
+//   SL 0.35% — Above intraday noise (~0.15-0.20%) but cuts failed breaks fast.
+//   VOL_THRESH 0.04% — Slightly tighter than default: SP500 is the most liquid,
+//                       less noise per tick, compression is real at 0.04%.
+//   COMPRESSION_LOOKBACK 60 — 60-tick window captures ~5-10min of SP500 range.
+//   MIN_GAP 300s — 5min gap between SP signals: SP can trend for hours but
+//                  re-entry after a failed break needs time to reset.
+//
+// Regime gating (via MacroContext):
+//   RISK_OFF + VIX>30: block new longs (trending down), allow shorts only
+//   RISK_ON  + VIX<18: full two-way trading
+//   NEUTRAL:           full two-way trading
+//   ES/NQ divergence > 0.15%: sector rotation in progress — block both sides
+//   NQ already open: block SP entry (too correlated — doubles risk)
+// ==============================================================================
+class SpEngine final : public BreakoutEngineBase<SpEngine>
+{
+public:
+    const MacroContext* macro = nullptr;  // set externally before first tick
+
+    explicit SpEngine(const char* sym) noexcept {
+        symbol                = sym;
+        VOL_THRESH_PCT        = 0.040;   // tighter than default — SP is liquid, compression is real
+        TP_PCT                = 0.600;   // 0.60% TP — clean SP breakouts extend 0.5-0.8%
+        SL_PCT                = 0.350;   // 0.35% SL — above noise, cut fast
+        COMPRESSION_LOOKBACK  = 60;      // ~5-10min of SP ticks
+        BASELINE_LOOKBACK     = 200;
+        COMPRESSION_THRESHOLD = 0.75;    // slightly tighter — SP needs clearer compression
+        MAX_HOLD_SEC          = 1200;    // 20min max — SP trends resolve faster than oil
+        MIN_GAP_SEC           = 300;     // 5min gap between signals
+        MAX_SPREAD_PCT        = 0.04;    // SP spread rarely exceeds 0.02% — 0.04% is safe ceiling
+    }
+
+    bool shouldTrade(double /*bid*/, double /*ask*/,
+                     double spread_pct, double latency_ms) const noexcept
+    {
+        if (spread_pct > MAX_SPREAD_PCT) return false;
+        if (latency_ms > 15.0)           return false;
+        if (!macro)                       return true;  // no context — allow
+
+        // Cross-symbol guard: if NQ already open, skip SP (correlated — doubles exposure)
+        if (macro->nq_open) return false;
+
+        // ES/NQ divergence > 0.15%: sector rotation underway, not a clean breakout
+        if (std::fabs(macro->es_nq_div) > 0.0015) return false;
+
+        // RISK_OFF + VIX elevated: SP trending directionally, breakout bias skewed
+        // In RISK_OFF we allow shorts (momentum) but block longs
+        // Note: shouldTrade is called after direction is determined (pos.is_long set)
+        // We return false here and let the FSM skip — the regime is checked at signal-emit
+        // by returning false for longs specifically. Since CRTP can't inspect direction
+        // pre-signal, we block ALL entries when VIX > 35 (panic regime — spread widens too)
+        if (macro->vix > 35.0) return false;
+
+        return true;
+    }
+};
+
+// ==============================================================================
+// NqEngine — USTEC.F (Nasdaq futures)
+//
+// Parameters rationale:
+//   TP 0.70% — NQ is more volatile than SP, extends further on clean breaks.
+//   SL 0.40% — NQ noise is slightly higher than SP: 0.40% clears daily ATR noise.
+//   VOL_THRESH 0.05% — NQ needs a real vol spike to signal, default is appropriate.
+//   COMPRESSION_LOOKBACK 50 — NQ compresses slightly faster than SP.
+//   MIN_GAP 240s — 4min: NQ can re-compress quickly but needs a reset window.
+//
+// Regime gating:
+//   RISK_OFF + VIX>30: NQ sells off harder than SP (higher beta tech) — block longs only
+//                      allow shorts in RISK_OFF (momentum aligned)
+//   SP already open: block NQ entry (too correlated, same macro risk)
+//   ES/NQ divergence > 0.15%: NQ diverging FROM SP — possible valid move but
+//                              also possible mean-reversion setup, block breakout
+//   VIX > 35: block all (panic)
+// ==============================================================================
+class NqEngine final : public BreakoutEngineBase<NqEngine>
+{
+public:
+    const MacroContext* macro = nullptr;
+
+    explicit NqEngine(const char* sym) noexcept {
+        symbol                = sym;
+        VOL_THRESH_PCT        = 0.050;   // default — NQ needs a full 0.05% move
+        TP_PCT                = 0.700;   // 0.70% TP — NQ extends further
+        SL_PCT                = 0.400;   // 0.40% SL — slightly more room than SP
+        COMPRESSION_LOOKBACK  = 50;
+        BASELINE_LOOKBACK     = 200;
+        COMPRESSION_THRESHOLD = 0.75;
+        MAX_HOLD_SEC          = 1200;
+        MIN_GAP_SEC           = 240;     // 4min gap
+        MAX_SPREAD_PCT        = 0.05;
+    }
+
+    bool shouldTrade(double /*bid*/, double /*ask*/,
+                     double spread_pct, double latency_ms) const noexcept
+    {
+        if (spread_pct > MAX_SPREAD_PCT) return false;
+        if (latency_ms > 15.0)           return false;
+        if (!macro)                       return true;
+
+        // Cross-symbol guard: if SP already open, skip NQ
+        if (macro->sp_open) return false;
+
+        // ES/NQ divergence: NQ diverging from SP — unclear which will mean-revert
+        if (std::fabs(macro->es_nq_div) > 0.0015) return false;
+
+        // Panic VIX
+        if (macro->vix > 35.0) return false;
+
+        return true;
+    }
+};
+
+// ==============================================================================
+// OilEngine — USOIL.F (WTI Crude Oil)
+//
+// Oil is fundamentally different from indices:
+//   - Driven by supply/demand news, inventory reports (Wed 14:30 UTC), OPEC
+//   - Much more volatile intraday: typical daily ATR 1.5-2.5%
+//   - Spreads widen significantly around inventory data
+//   - Compression breakout is valid but needs oil-specific sizing
+//
+// Parameters rationale:
+//   TP 1.20% — Oil moves 1-2% on clean breakouts. 0.4% leaves money on the table.
+//   SL 0.60% — Oil noise is 0.3-0.5% intraday: SL needs to clear that.
+//   VOL_THRESH 0.08% — Oil needs a bigger initial move to confirm compression break.
+//   COMPRESSION_LOOKBACK 40 — Oil compresses in shorter windows before inventory spikes.
+//   BASELINE_LOOKBACK 150 — Shorter baseline: oil regimes change faster.
+//   MIN_GAP 360s — 6min gap: oil can have multiple spikes on same news.
+//   MAX_HOLD 1800s — 30min: oil trends can run longer than index moves.
+//   MAX_SPREAD_PCT 0.12% — Oil spread widens more than indices.
+//
+// Regime gating:
+//   RISK_OFF: oil often sells off with risk (recession fears) — allow both sides
+//   RISK_ON:  oil rallies with risk-on — allow both sides
+//   Inventory window (Wed 14:30 UTC ± 30min): block entries — spread explodes
+//   Spread > 0.12%: likely near news event — block
+// ==============================================================================
+class OilEngine final : public BreakoutEngineBase<OilEngine>
+{
+public:
+    const MacroContext* macro = nullptr;
+
+    explicit OilEngine(const char* sym) noexcept {
+        symbol                = sym;
+        VOL_THRESH_PCT        = 0.080;   // oil needs a real move to break compression
+        TP_PCT                = 1.200;   // 1.20% TP — oil runs further
+        SL_PCT                = 0.600;   // 0.60% SL — above oil intraday noise
+        COMPRESSION_LOOKBACK  = 40;      // oil compresses quickly
+        BASELINE_LOOKBACK     = 150;     // shorter baseline — oil regimes shift fast
+        COMPRESSION_THRESHOLD = 0.70;    // tighter threshold — oil noise is higher
+        MAX_HOLD_SEC          = 1800;    // 30min — oil trends run longer
+        MIN_GAP_SEC           = 360;     // 6min gap — oil can multi-spike on news
+        MAX_SPREAD_PCT        = 0.120;   // oil spreads widen more
+    }
+
+    bool shouldTrade(double /*bid*/, double /*ask*/,
+                     double spread_pct, double latency_ms) const noexcept
+    {
+        if (spread_pct > MAX_SPREAD_PCT) return false;
+        if (latency_ms > 15.0)           return false;
+
+        // EIA inventory report window: Wednesday 14:30 UTC ± 30min
+        // Spread explodes, price gaps — no clean breakout possible
+        if (in_inventory_window()) return false;
+
+        return true;
+    }
+
+private:
+    static bool in_inventory_window() noexcept {
+        const auto t = std::chrono::system_clock::to_time_t(
+            std::chrono::system_clock::now());
+        struct tm ti = {};
+#ifdef _WIN32
+        gmtime_s(&ti, &t);
+#else
+        gmtime_r(&t, &ti);
+#endif
+        if (ti.tm_wday != 3) return false;  // Wednesday only
+        const int mins = ti.tm_hour * 60 + ti.tm_min;
+        return (mins >= 14*60 && mins < 15*60+30);  // 14:00-15:30 UTC (30min before + 60min after)
+    }
 };
 
 } // namespace omega

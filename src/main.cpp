@@ -88,6 +88,24 @@ struct OmegaConfig {
     double gold_sl_pct   = 0.15;   // 0.15% SL — tight, gold moves are decisive
     double gold_vol_thresh_pct = 0.04; // lower threshold — gold is less volatile than oil
 
+    // SP (US500) — liquid, tight compression, better TP:SL than generic default
+    double sp_tp_pct          = 0.600;  // 0.60% TP: clean SP breaks extend 0.5-0.8%
+    double sp_sl_pct          = 0.350;  // 0.35% SL: above noise, cut failed breaks fast
+    double sp_vol_thresh_pct  = 0.040;  // 0.04%: tighter than default, SP compression is real
+    int    sp_min_gap_sec     = 300;    // 5min gap between signals
+
+    // NQ (USTEC) — higher beta, wider TP
+    double nq_tp_pct          = 0.700;  // 0.70% TP: NQ extends further than SP
+    double nq_sl_pct          = 0.400;  // 0.40% SL: slightly more room for NQ noise
+    double nq_vol_thresh_pct  = 0.050;  // 0.05%: NQ needs a full vol spike
+    int    nq_min_gap_sec     = 240;    // 4min gap
+
+    // Oil (USOIL) — fundamentally different: 1-2% typical moves
+    double oil_tp_pct         = 1.200;  // 1.20% TP: oil runs 1-2% on clean breaks
+    double oil_sl_pct         = 0.600;  // 0.60% SL: oil noise is 0.3-0.5% intraday
+    double oil_vol_thresh_pct = 0.080;  // 0.08%: oil needs a bigger initial signal
+    int    oil_min_gap_sec    = 360;    // 6min gap: oil can multi-spike on news
+
     // GUI
     int         gui_port   = 7779;
     int         ws_port    = 7780;
@@ -104,11 +122,14 @@ static OmegaTelemetryWriter      g_telemetry;
 omega::OmegaTradeLedger          g_omegaLedger;      // extern in TelemetryServer.cpp
 static omega::MacroRegimeDetector g_macroDetector;
 
-// CRTP breakout engines — one per primary symbol
-static omega::BreakoutEngine g_eng_sp("US500.F");
-static omega::BreakoutEngine g_eng_nq("USTEC.F");
-static omega::BreakoutEngine g_eng_cl("USOIL.F");
+// CRTP breakout engines — typed per symbol (instrument-specific params + regime gating)
+static omega::SpEngine  g_eng_sp("US500.F");   // S&P 500 — regime-gated, cross-symbol guard
+static omega::NqEngine  g_eng_nq("USTEC.F");   // Nasdaq  — regime-gated, cross-symbol guard
+static omega::OilEngine g_eng_cl("USOIL.F");   // WTI Oil — inventory window blocked
 static omega::BreakoutEngine g_eng_xau("GOLD.F");  // Gold — Tokyo+London+NY sessions
+
+// Shared macro context — updated each tick, read by SP/NQ shouldTrade()
+static omega::MacroContext g_macro_ctx;
 
 // Multi-engine gold stack — CompressionBreakout + ImpulseContinuation +
 // SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
@@ -347,8 +368,9 @@ static bool session_tradeable() noexcept {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Apply config to engines
+// Apply config to engines — per-symbol typed overloads
 // ─────────────────────────────────────────────────────────────────────────────
+// Generic fallback (used for GOLD BreakoutEngine)
 static void apply_engine_config(omega::BreakoutEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.vol_thresh_pct;
     eng.TP_PCT                = g_cfg.tp_pct;
@@ -359,6 +381,45 @@ static void apply_engine_config(omega::BreakoutEngine& eng) noexcept {
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
     eng.MIN_GAP_SEC           = g_cfg.min_entry_gap_sec;
     eng.MAX_SPREAD_PCT        = g_cfg.max_spread_pct;
+}
+// SP — uses [sp] config section, links macro context
+static void apply_engine_config(omega::SpEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = g_cfg.sp_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.sp_tp_pct;
+    eng.SL_PCT                = g_cfg.sp_sl_pct;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_THRESHOLD = 0.75;
+    eng.MAX_HOLD_SEC          = 1200;
+    eng.MIN_GAP_SEC           = g_cfg.sp_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = 0.04;
+    eng.macro                 = &g_macro_ctx;
+}
+// NQ — uses [nq] config section, links macro context
+static void apply_engine_config(omega::NqEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = g_cfg.nq_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.nq_tp_pct;
+    eng.SL_PCT                = g_cfg.nq_sl_pct;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_THRESHOLD = 0.75;
+    eng.MAX_HOLD_SEC          = 1200;
+    eng.MIN_GAP_SEC           = g_cfg.nq_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = 0.05;
+    eng.macro                 = &g_macro_ctx;
+}
+// Oil — uses [oil] config section, inventory window block built into engine
+static void apply_engine_config(omega::OilEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = g_cfg.oil_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.oil_tp_pct;
+    eng.SL_PCT                = g_cfg.oil_sl_pct;
+    eng.COMPRESSION_LOOKBACK  = 40;
+    eng.BASELINE_LOOKBACK     = 150;
+    eng.COMPRESSION_THRESHOLD = 0.70;
+    eng.MAX_HOLD_SEC          = 1800;
+    eng.MIN_GAP_SEC           = g_cfg.oil_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = 0.12;
+    eng.macro                 = &g_macro_ctx;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -425,12 +486,33 @@ static void load_config(const std::string& path) {
             if (k=="gold_sl_pct")        g_cfg.gold_sl_pct        = std::stod(v);
             if (k=="gold_vol_thresh_pct") g_cfg.gold_vol_thresh_pct = std::stod(v);
         }
+        if (section == "sp") {
+            if (k=="tp_pct")         g_cfg.sp_tp_pct         = std::stod(v);
+            if (k=="sl_pct")         g_cfg.sp_sl_pct         = std::stod(v);
+            if (k=="vol_thresh_pct") g_cfg.sp_vol_thresh_pct = std::stod(v);
+            if (k=="min_gap_sec")    g_cfg.sp_min_gap_sec    = std::stoi(v);
+        }
+        if (section == "nq") {
+            if (k=="tp_pct")         g_cfg.nq_tp_pct         = std::stod(v);
+            if (k=="sl_pct")         g_cfg.nq_sl_pct         = std::stod(v);
+            if (k=="vol_thresh_pct") g_cfg.nq_vol_thresh_pct = std::stod(v);
+            if (k=="min_gap_sec")    g_cfg.nq_min_gap_sec    = std::stoi(v);
+        }
+        if (section == "oil") {
+            if (k=="tp_pct")         g_cfg.oil_tp_pct         = std::stod(v);
+            if (k=="sl_pct")         g_cfg.oil_sl_pct         = std::stod(v);
+            if (k=="vol_thresh_pct") g_cfg.oil_vol_thresh_pct = std::stod(v);
+            if (k=="min_gap_sec")    g_cfg.oil_min_gap_sec    = std::stoi(v);
+        }
     }
     std::cout << "[CONFIG] mode=" << g_cfg.mode
               << " vol=" << g_cfg.vol_thresh_pct
               << "% tp=" << g_cfg.tp_pct
               << "% sl=" << g_cfg.sl_pct
-              << "% maxhold=" << g_cfg.max_hold_sec << "s\n";
+              << "% maxhold=" << g_cfg.max_hold_sec << "s\n"
+              << "[CONFIG] SP  tp=" << g_cfg.sp_tp_pct  << "% sl=" << g_cfg.sp_sl_pct  << "% vol=" << g_cfg.sp_vol_thresh_pct  << "%\n"
+              << "[CONFIG] NQ  tp=" << g_cfg.nq_tp_pct  << "% sl=" << g_cfg.nq_sl_pct  << "% vol=" << g_cfg.nq_vol_thresh_pct  << "%\n"
+              << "[CONFIG] OIL tp=" << g_cfg.oil_tp_pct << "% sl=" << g_cfg.oil_sl_pct << "% vol=" << g_cfg.oil_vol_thresh_pct << "%\n";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -457,6 +539,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     const std::string regime = g_macroDetector.regime();
     g_telemetry.UpdateMacroRegime(
         g_macroDetector.vixLevel(), regime.c_str(), g_macroDetector.esNqDivergence());
+
+    // Update shared MacroContext — read by SP/NQ shouldTrade() overrides
+    g_macro_ctx.regime     = regime;
+    g_macro_ctx.vix        = g_macroDetector.vixLevel();
+    g_macro_ctx.es_nq_div  = g_macroDetector.esNqDivergence();
+    g_macro_ctx.sp_open    = g_eng_sp.pos.active;
+    g_macro_ctx.nq_open    = g_eng_nq.pos.active;
+    g_macro_ctx.oil_open   = g_eng_cl.pos.active;
 
     const bool tradeable = session_tradeable();
     g_telemetry.UpdateSession(tradeable ? "ACTIVE" : "CLOSED", tradeable ? 1 : 0);
@@ -485,17 +575,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         return;
     }
 
-    // ── Route to engine ───────────────────────────────────────────────────────
-    omega::BreakoutEngine* eng = nullptr;
-    if      (sym == "US500.F") eng = &g_eng_sp;
-    else if (sym == "USTEC.F") eng = &g_eng_nq;
-    else if (sym == "USOIL.F") eng = &g_eng_cl;
-    else if (sym == "GOLD.F")  eng = &g_eng_xau;
-    else {
-        g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
-        return;
-    }
-
+    // ── Route to engine — typed dispatch (CRTP has no virtual base) ──────────
+    // Each branch calls the same logical sequence on the correct typed engine.
+    // on_close lambda is defined once and reused across all branches.
     auto on_close = [&](const omega::TradeRecord& tr) {
         g_omegaLedger.record(tr);
         write_shadow_csv(tr);
@@ -514,29 +596,33 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
     };
 
-    const auto sig = eng->update(bid, ask, g_rtt_last, regime.c_str(), on_close);
+    // Helper lambda — runs engine, updates telemetry, logs signal
+    auto dispatch = [&](auto& eng) {
+        const auto sig = eng.update(bid, ask, g_rtt_last, regime.c_str(), on_close);
+        g_telemetry.UpdateEngineState(sym.c_str(),
+            static_cast<int>(eng.phase), eng.comp_high, eng.comp_low,
+            eng.recent_vol_pct, eng.base_vol_pct, eng.signal_count);
+        if (sig.valid) {
+            g_telemetry.UpdateLastSignal(sym.c_str(),
+                sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
+            std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
+                      << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
+                      << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
+                      << " regime=" << regime << "\033[0m\n";
+        }
+    };
 
-    g_telemetry.UpdateEngineState(sym.c_str(),
-        static_cast<int>(eng->phase), eng->comp_high, eng->comp_low,
-        eng->recent_vol_pct, eng->base_vol_pct, eng->signal_count);
-
-    if (sig.valid) {
-        g_telemetry.UpdateLastSignal(sym.c_str(),
-            sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
-        std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
-                  << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
-                  << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
-                  << " regime=" << regime << "\033[0m\n";
-    }
-
-    // ── Gold multi-engine stack (parallel to BreakoutEngine on GOLD.F) ────────
-    // Runs all 6 engines: CompressionBreakout, ImpulseContinuation,
-    // SessionMomentum, VWAPSnapback, LiquiditySweepPro, LiquiditySweepPressure.
-    // Regime-gated: only engines suited to current market regime can fire.
-    // Shadow mode: signals logged only — no FIX orders sent.
-    if (sym == "GOLD.F") {
-        const bool gold_has_open = eng->pos.active;
-        g_gold_stack.set_has_open_position(gold_has_open);
+    if      (sym == "US500.F") { dispatch(g_eng_sp); }
+    else if (sym == "USTEC.F") { dispatch(g_eng_nq); }
+    else if (sym == "USOIL.F") { dispatch(g_eng_cl); }
+    else if (sym == "GOLD.F")  {
+        dispatch(g_eng_xau);
+        // ── Gold multi-engine stack (parallel to BreakoutEngine on GOLD.F) ──
+        // Runs all 6 engines: CompressionBreakout, ImpulseContinuation,
+        // SessionMomentum, VWAPSnapback, LiquiditySweepPro, LiquiditySweepPressure.
+        // Regime-gated: only engines suited to current market regime can fire.
+        // Shadow mode: signals logged only — no FIX orders sent.
+        g_gold_stack.set_has_open_position(g_eng_xau.pos.active);
         const auto gsig = g_gold_stack.on_tick(bid, ask, g_rtt_last);
         if (gsig.valid) {
             g_telemetry.UpdateLastSignal("GOLD.F",
@@ -554,9 +640,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                       << "\033[0m\n";
         }
     }
-
-    g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
-}
+    else {
+        g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
+        return;
+    }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIX message extraction
@@ -730,8 +817,8 @@ static void quote_loop() {
             for (const auto& m : extract_messages(buf, n)) dispatch_fix(m, ssl);
         }
 
-        // Force-close on disconnect
-        auto fc = [](omega::BreakoutEngine& eng, const char* sym) {
+        // Force-close on disconnect — auto& template lambda works for all typed engines
+        auto fc = [](auto& eng, const char* sym) {
             if (!eng.pos.active) return;
             double bid = 0.0, ask = 0.0;
             { std::lock_guard<std::mutex> lk(g_book_mtx);
@@ -780,13 +867,14 @@ int main(int argc, char* argv[])
 
     const std::string cfg_path = (argc > 1) ? argv[1] : "omega_config.ini";
     load_config(cfg_path);
-    apply_engine_config(g_eng_sp);
-    apply_engine_config(g_eng_nq);
-    apply_engine_config(g_eng_cl);
-    // Gold uses tighter params — price-level invariant percentages, lower vol threshold
+    // Per-symbol typed overloads — each applies instrument-specific params + macro context ptr
+    apply_engine_config(g_eng_sp);   // [sp] section: tp=0.60%, sl=0.35%, vol=0.04%, regime-gated
+    apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated
+    apply_engine_config(g_eng_cl);   // [oil] section: tp=1.20%, sl=0.60%, vol=0.08%, inventory-blocked
+    // Gold: generic breakout engine, overridden with gold-specific pct params
     apply_engine_config(g_eng_xau);
-    g_eng_xau.TP_PCT        = g_cfg.gold_tp_pct;
-    g_eng_xau.SL_PCT        = g_cfg.gold_sl_pct;
+    g_eng_xau.TP_PCT         = g_cfg.gold_tp_pct;
+    g_eng_xau.SL_PCT         = g_cfg.gold_sl_pct;
     g_eng_xau.VOL_THRESH_PCT = g_cfg.gold_vol_thresh_pct;
     build_id_map();
 
