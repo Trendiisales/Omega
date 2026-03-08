@@ -471,12 +471,24 @@ function renderTrades(trades) {
     }
     const closed = trades.filter(t => t.exitReason && t.exitReason !== '');
     if (_bellEnabled && closed.length > _lastTradeCount && closed.length > 0) {
-        if (safe(closed[0].pnl) > 0) {
-            try { const a=new AudioContext();const o=a.createOscillator();const g=a.createGain();
-                o.connect(g);g.connect(a.destination);o.frequency.value=880;
-                g.gain.setValueAtTime(0.3,a.currentTime);g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+0.4);
-                o.start();o.stop(a.currentTime+0.4); } catch(e){}
-        }
+        const pnl = safe(closed[0].pnl);
+        try {
+            const a=new AudioContext(),o=a.createOscillator(),g=a.createGain();
+            o.connect(g);g.connect(a.destination);
+            if (pnl > 0) {
+                o.frequency.value=880;g.gain.setValueAtTime(0.3,a.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+0.4);
+                o.start();o.stop(a.currentTime+0.4);
+                setTimeout(()=>{try{const a2=new AudioContext(),o2=a2.createOscillator(),g2=a2.createGain();
+                    o2.connect(g2);g2.connect(a2.destination);o2.frequency.value=1100;
+                    g2.gain.setValueAtTime(0.2,a2.currentTime);g2.gain.exponentialRampToValueAtTime(0.001,a2.currentTime+0.3);
+                    o2.start();o2.stop(a2.currentTime+0.3);}catch(e){}},200);
+            } else {
+                o.frequency.value=200;g.gain.setValueAtTime(0.25,a.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+0.5);
+                o.start();o.stop(a.currentTime+0.5);
+            }
+        } catch(e){}
     }
     _lastTradeCount = closed.length;
     const wins = closed.filter(t => safe(t.pnl) > 0).length;

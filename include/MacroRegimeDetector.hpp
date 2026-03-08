@@ -15,8 +15,8 @@ class MacroRegimeDetector
 {
 public:
     // VIX thresholds
-    double VIX_HIGH = 25.0;   // above = risk-off / trend dominant
-    double VIX_LOW  = 15.0;   // below = risk-on / range dominant
+    double VIX_HIGH = 30.0;   // above = risk-off / trend dominant (raised from 25 — markets elevated post-2024)
+    double VIX_LOW  = 18.0;   // below = risk-on / range dominant (raised from 15)
 
     // Divergence window
     int    DIV_WINDOW = 20;   // ticks
