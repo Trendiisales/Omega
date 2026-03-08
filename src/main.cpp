@@ -39,6 +39,7 @@
 #include "BreakoutEngine.hpp"
 #include "MacroRegimeDetector.hpp"
 #include "OmegaTelemetryServer.hpp"
+#include "GoldEngineStack.hpp"    // Multi-engine gold stack (ported from ChimeraMetals)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Singleton
@@ -108,6 +109,11 @@ static omega::BreakoutEngine g_eng_sp("US500.F");
 static omega::BreakoutEngine g_eng_nq("USTEC.F");
 static omega::BreakoutEngine g_eng_cl("USOIL.F");
 static omega::BreakoutEngine g_eng_xau("GOLD.F");  // Gold — Tokyo+London+NY sessions
+
+// Multi-engine gold stack — CompressionBreakout + ImpulseContinuation +
+// SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
+// Runs in parallel with g_eng_xau (BreakoutEngine) on every GOLD.F tick.
+static omega::gold::GoldEngineStack g_gold_stack;
 
 // Book
 static std::mutex                              g_book_mtx;
@@ -523,6 +529,32 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                   << " regime=" << regime << "\033[0m\n";
     }
 
+    // ── Gold multi-engine stack (parallel to BreakoutEngine on GOLD.F) ────────
+    // Runs all 6 engines: CompressionBreakout, ImpulseContinuation,
+    // SessionMomentum, VWAPSnapback, LiquiditySweepPro, LiquiditySweepPressure.
+    // Regime-gated: only engines suited to current market regime can fire.
+    // Shadow mode: signals logged only — no FIX orders sent.
+    if (sym == "GOLD.F") {
+        const bool gold_has_open = eng->pos.active;
+        g_gold_stack.set_has_open_position(gold_has_open);
+        const auto gsig = g_gold_stack.on_tick(bid, ask, g_rtt_last);
+        if (gsig.valid) {
+            g_telemetry.UpdateLastSignal("GOLD.F",
+                gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason);
+            std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
+                      << "[GOLD-STACK] " << (gsig.is_long ? "LONG" : "SHORT")
+                      << " entry=" << gsig.entry
+                      << " tp="    << gsig.tp_ticks << "ticks"
+                      << " sl="    << gsig.sl_ticks << "ticks"
+                      << " conf="  << gsig.confidence
+                      << " eng="   << gsig.engine
+                      << " reason=" << gsig.reason
+                      << " regime=" << g_gold_stack.regime_name()
+                      << " vwap="  << g_gold_stack.vwap()
+                      << "\033[0m\n";
+        }
+    }
+
     g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
 }
 
@@ -678,6 +710,11 @@ static void quote_loop() {
                           << " NQ=" << static_cast<int>(g_eng_nq.phase)
                           << " CL=" << static_cast<int>(g_eng_cl.phase)
                           << " XAU=" << static_cast<int>(g_eng_xau.phase) << "\n";
+                // Gold multi-engine stack stats
+                g_gold_stack.print_stats();
+                std::cout << "[GOLD-DIAG] regime=" << g_gold_stack.regime_name()
+                          << " vwap=" << g_gold_stack.vwap()
+                          << " vol_range=" << g_gold_stack.vol_range() << "\n";
             }
 
             char buf[8192];

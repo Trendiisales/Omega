@@ -1,0 +1,752 @@
+#pragma once
+// =============================================================================
+// GoldEngineStack.hpp — Self-contained gold multi-engine stack for Omega
+//
+// Ported from ChimeraMetals. Zero external dependencies on ChimeraMetals.
+// All 5 engines + RegimeGovernor + Supervisor in one header.
+//
+// Engines:
+//   1. CompressionBreakout   — COMPRESSION regime: tight range → expansion
+//   2. ImpulseContinuation   — TREND/IMPULSE regime: directional continuation
+//   3. SessionMomentum       — IMPULSE regime: session open volatility expansion
+//   4. VWAPSnapback          — MEAN_REVERSION regime: fade exhausted moves to VWAP
+//   5. LiquiditySweepPro     — MEAN_REVERSION/IMPULSE: stop-hunt reversal
+//   6. LiquiditySweepPressure— MEAN_REVERSION/IMPULSE: pre-sweep pressure detection
+//
+// Usage:
+//   GoldEngineStack g_gold;
+//   g_gold.on_tick(bid, ask, latency_ms);            // call every tick
+//   if (g_gold.has_signal()) { ... g_gold.signal() } // check result
+//   g_gold.on_close(pnl);                            // record trade close
+// =============================================================================
+
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <cmath>
+#include <array>
+#include <vector>
+#include <memory>
+#include <string>
+#include <chrono>
+#include <algorithm>
+#include <functional>
+
+namespace omega {
+namespace gold {
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CircularBuffer / MinMaxCircularBuffer  (ported from ChimeraMetals)
+// ─────────────────────────────────────────────────────────────────────────────
+template<typename T, size_t N>
+class CircularBuffer {
+    static_assert(N > 0 && (N & (N-1)) == 0, "N must be power of two");
+    std::array<T,N> buf_{}; size_t head_=0, count_=0;
+    static constexpr size_t MASK = N-1;
+public:
+    void push_back(const T& v) {
+        buf_[(head_+count_)&MASK]=v;
+        if(count_<N) ++count_; else head_=(head_+1)&MASK;
+    }
+    size_t size()  const { return count_; }
+    bool   empty() const { return count_==0; }
+    const T& operator[](size_t i) const { return buf_[(head_+i)&MASK]; }
+    const T& back()  const { return buf_[(head_+count_-1)&MASK]; }
+    const T& front() const { return buf_[head_]; }
+    void clear() { head_=0; count_=0; }
+};
+
+template<typename T, size_t N>
+class MinMaxCircularBuffer {
+    static_assert(N > 0 && (N & (N-1)) == 0, "N must be power of two");
+    std::array<T,N>    buf_{};
+    std::array<size_t,2*N> min_idx_{}, max_idx_{};
+    size_t abs_head_=0,count_=0,min_h_=0,min_t_=0,max_h_=0,max_t_=0;
+    static constexpr size_t MASK=N-1, IMASK=2*N-1;
+public:
+    void push_back(const T& v) {
+        size_t slot=abs_head_&MASK; buf_[slot]=v;
+        if(count_==N){ size_t ev=(abs_head_-N)&MASK;
+            if(min_h_!=min_t_&&min_idx_[min_h_&IMASK]==ev)++min_h_;
+            if(max_h_!=max_t_&&max_idx_[max_h_&IMASK]==ev)++max_h_; }
+        while(min_h_!=min_t_&&buf_[min_idx_[(min_t_-1)&IMASK]]>=v)--min_t_;
+        min_idx_[min_t_++&IMASK]=slot;
+        while(max_h_!=max_t_&&buf_[max_idx_[(max_t_-1)&IMASK]]<=v)--max_t_;
+        max_idx_[max_t_++&IMASK]=slot;
+        ++abs_head_; if(count_<N)++count_;
+    }
+    size_t size()  const { return count_; }
+    bool   empty() const { return count_==0; }
+    T min() const { return buf_[min_idx_[min_h_&IMASK]]; }
+    T max() const { return buf_[max_idx_[max_h_&IMASK]]; }
+    T range() const { return empty()?T{}:max()-min(); }
+    const T& back() const { return buf_[(abs_head_-1)&MASK]; }
+    const T& operator[](size_t i) const { return buf_[(abs_head_-count_+i)&MASK]; }
+    void clear(){ abs_head_=count_=0; min_h_=min_t_=max_h_=max_t_=0; }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MarketSnapshot
+// ─────────────────────────────────────────────────────────────────────────────
+enum class SessionType { ASIAN, LONDON, NEWYORK, OVERLAP, UNKNOWN };
+enum class TradeSide   { LONG, SHORT, NONE };
+
+struct GoldSnapshot {
+    double bid=0, ask=0, mid=0, spread=0;
+    double vwap=0, volatility=0, trend=0, sweep_size=0, prev_mid=0;
+    SessionType session = SessionType::UNKNOWN;
+    bool is_valid() const { return bid>0 && ask>0 && bid<ask; }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GoldSignal — what the stack returns on a valid entry
+// ─────────────────────────────────────────────────────────────────────────────
+struct GoldSignal {
+    bool   valid      = false;
+    bool   is_long    = true;
+    double entry      = 0.0;
+    double tp_ticks   = 0.0;   // in price ticks (0.10 per tick for gold)
+    double sl_ticks   = 0.0;
+    double confidence = 0.0;
+    char   engine[32] = {};
+    char   reason[32] = {};
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VWAP + session + PriceStdDev state (replaces ChimeraMetals MarketFeatures)
+// ─────────────────────────────────────────────────────────────────────────────
+class GoldFeatures {
+    double cum_pv_=0, cum_vol_=0, vwap_=0;
+    double last_price_=0, volatility_=0;
+    double sweep_hi_=0, sweep_lo_=0;
+    double trend_=0;
+    CircularBuffer<double,256> price_window_;
+    int tick_counter_=0;
+
+    // UTC hour → SessionType
+    static SessionType classify_session() {
+        auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti{}; 
+#ifdef _WIN32
+        gmtime_s(&ti, &t);
+#else
+        gmtime_r(&t, &ti);
+#endif
+        int h = ti.tm_hour, m = ti.tm_min;
+        int mins = h*60+m;
+        if (mins>=420 && mins<630)  return SessionType::LONDON;   // 07:00-10:30
+        if (mins>=630 && mins<780)  return SessionType::OVERLAP;  // 10:30-13:00
+        if (mins>=780 && mins<960)  return SessionType::NEWYORK;  // 13:00-16:00
+        if (mins>=960 && mins<1080) return SessionType::NEWYORK;  // 16:00-18:00
+        return SessionType::ASIAN;
+    }
+
+public:
+    void reset_daily() { cum_pv_=0; cum_vol_=0; vwap_=0; }
+
+    void update(GoldSnapshot& snap, double bid, double ask) {
+        double mid = (bid+ask)*0.5;
+        double spread = ask-bid;
+
+        // VWAP
+        cum_pv_ += mid; cum_vol_ += 1.0;
+        vwap_ = (cum_vol_>0) ? cum_pv_/cum_vol_ : mid;
+
+        // Tick-to-tick volatility (for momentum gates)
+        if (last_price_>0) {
+            double move = std::fabs(mid-last_price_);
+            volatility_ = 0.9*volatility_ + 0.1*move;
+        }
+        last_price_ = mid;
+
+        // Price window for stddev (z-score denominator)
+        price_window_.push_back(mid);
+
+        // Sweep detection (rolling hi/lo)
+        if (tick_counter_++ % 50 == 0) {
+            sweep_hi_ = mid; sweep_lo_ = mid;
+        }
+        if (mid > sweep_hi_) sweep_hi_ = mid;
+        if (mid < sweep_lo_) sweep_lo_ = mid;
+        snap.sweep_size = (mid > (sweep_hi_+sweep_lo_)*0.5)
+            ? (mid - sweep_lo_) : -(sweep_hi_ - mid);
+
+        // Trend
+        trend_ = 0.95*trend_ + 0.05*(mid - vwap_);
+
+        snap.mid       = mid;
+        snap.spread    = spread;
+        snap.vwap      = vwap_;
+        snap.volatility= get_price_stddev();
+        snap.trend     = trend_;
+        snap.session   = classify_session();
+    }
+
+    double get_vwap()    const { return vwap_; }
+    double get_volatility() const { return volatility_; }
+
+    double get_price_stddev() const {
+        size_t n = price_window_.size();
+        if (n<2) return 1.0;
+        double sum=0;
+        for(size_t i=0;i<n;i++) sum+=price_window_[i];
+        double mean=sum/n, sq=0;
+        for(size_t i=0;i<n;i++){double d=price_window_[i]-mean;sq+=d*d;}
+        double sd=std::sqrt(sq/(n-1));
+        return (sd>0.1)?sd:1.0;
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TradeSignal (internal)
+// ─────────────────────────────────────────────────────────────────────────────
+struct Signal {
+    bool valid=false; TradeSide side=TradeSide::NONE;
+    double confidence=0,size=0,entry=0,tp=0,sl=0;
+    char reason[32]={}, engine[32]={};
+    bool is_long() const { return side==TradeSide::LONG; }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EngineBase
+// ─────────────────────────────────────────────────────────────────────────────
+class EngineBase {
+public:
+    std::string name_; double weight_; bool enabled_=true;
+    uint64_t signal_count_=0;
+    EngineBase(const char* n, double w): name_(n), weight_(w) {}
+    virtual ~EngineBase()=default;
+    virtual Signal process(const GoldSnapshot&)=0;
+    Signal noSignal() const { return Signal{}; }
+    void setEnabled(bool e){ enabled_=e; }
+    bool isEnabled() const { return enabled_; }
+    const std::string& getName() const { return name_; }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. CompressionBreakoutEngine
+// ─────────────────────────────────────────────────────────────────────────────
+class CompressionBreakoutEngine : public EngineBase {
+    MinMaxCircularBuffer<double,32> history_;
+    static constexpr size_t WINDOW=30;
+    static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.30, MAX_SPREAD=1.80;
+    static constexpr int TP_TICKS=40, SL_TICKS=18;
+    std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(2)};
+public:
+    CompressionBreakoutEngine(): EngineBase("CompressionBreakout",1.0){}
+    Signal process(const GoldSnapshot& s) override {
+        if(!enabled_||!s.is_valid()) return noSignal();
+        if(s.spread>MAX_SPREAD) return noSignal();
+        auto now=std::chrono::steady_clock::now();
+        if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
+        history_.push_back(s.mid);
+        if(history_.size()<WINDOW) return noSignal();
+        double hi=history_.max(), lo=history_.min(), range=hi-lo;
+        if(range>COMPRESSION_RANGE) return noSignal();
+        Signal sig; sig.entry=s.mid; sig.size=0.02;
+        if(s.mid>hi+BREAKOUT_TRIGGER){
+            sig.valid=true; sig.side=TradeSide::LONG;
+            sig.confidence=std::min(1.5,(s.mid-hi)/BREAKOUT_TRIGGER);
+            sig.tp=TP_TICKS; sig.sl=SL_TICKS;
+            strncpy(sig.reason,"COMPRESSION_BREAK_LONG",31);
+            strncpy(sig.engine,"CompressionBreakout",31);
+            history_.clear(); last_signal_=now; signal_count_++; return sig;
+        }
+        if(s.mid<lo-BREAKOUT_TRIGGER){
+            sig.valid=true; sig.side=TradeSide::SHORT;
+            sig.confidence=std::min(1.5,(lo-s.mid)/BREAKOUT_TRIGGER);
+            sig.tp=TP_TICKS; sig.sl=SL_TICKS;
+            strncpy(sig.reason,"COMPRESSION_BREAK_SHORT",31);
+            strncpy(sig.engine,"CompressionBreakout",31);
+            history_.clear(); last_signal_=now; signal_count_++; return sig;
+        }
+        return noSignal();
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. ImpulseContinuationEngine
+// ─────────────────────────────────────────────────────────────────────────────
+class ImpulseContinuationEngine : public EngineBase {
+    MinMaxCircularBuffer<double,64> price_history_;
+    static constexpr double IMPULSE_MIN=1.0,PULLBACK_MIN=0.2,PULLBACK_MAX=0.6;
+    static constexpr double MIN_MOMENTUM=0.40,MIN_MOVE_5T=0.40,MAX_MOMENTUM=5.0,PARABOLIC_VWAP=10.0;
+    static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=6.0,MAX_SPREAD=2.20;
+    static constexpr int TP_TICKS=16,SL_TICKS=8;
+    static constexpr int MAX_ENTRIES_PER_TREND=2,COOLDOWN_SECONDS=120;
+    static constexpr double MIN_PRICE_MOVE=8.0;
+    std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SECONDS)};
+    int trend_entry_count_=0,last_trend_dir_=0;
+    double last_entry_price_=0;
+    enum class State{IDLE,WAITING_PULLBACK} state_=State::IDLE;
+    int direction_=0; double impulse_high_=0,impulse_low_=0;
+public:
+    ImpulseContinuationEngine(): EngineBase("ImpulseContinuation",1.1){}
+    Signal process(const GoldSnapshot& s) override {
+        if(!enabled_||!s.is_valid()) return noSignal();
+        if(s.spread>MAX_SPREAD) return noSignal();
+        if(s.prev_mid>0){
+            double mom=std::fabs(s.mid-s.prev_mid);
+            if(mom<MIN_MOMENTUM) return noSignal();
+            if(mom>MAX_MOMENTUM&&std::fabs(s.mid-s.vwap)>PARABOLIC_VWAP) return noSignal();
+        }
+        if(s.vwap>0){
+            double vd=std::fabs(s.mid-s.vwap);
+            if(vd<MIN_VWAP_DIST||vd>MAX_VWAP_DIST) return noSignal();
+        }
+        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&s.session!=SessionType::OVERLAP)
+            return noSignal();
+        auto now=std::chrono::steady_clock::now();
+        if(now-last_signal_<std::chrono::seconds(COOLDOWN_SECONDS)) return noSignal();
+        price_history_.push_back(s.mid);
+        if(price_history_.size()<10) return noSignal();
+        if(price_history_.size()>5){
+            double move5=std::fabs(price_history_.back()-price_history_[price_history_.size()-6]);
+            if(move5<MIN_MOVE_5T) return noSignal();
+        }
+        if(state_==State::IDLE){
+            double hi=price_history_.max(),lo=price_history_.min();
+            if(hi-lo>=IMPULSE_MIN){
+                direction_=(hi-s.mid<s.mid-lo)?1:-1;
+                impulse_high_=hi; impulse_low_=lo;
+                state_=State::WAITING_PULLBACK;
+            }
+            return noSignal();
+        }
+        double pb=(direction_==1)?(impulse_high_-s.mid):(s.mid-impulse_low_);
+        if(pb>PULLBACK_MAX){state_=State::IDLE;direction_=0;return noSignal();}
+        if(pb>=PULLBACK_MIN&&pb<=PULLBACK_MAX){
+            int dir=direction_; state_=State::IDLE; direction_=0;
+            if(s.vwap>0){
+                if(dir==1&&s.mid<s.vwap) return noSignal();
+                if(dir==-1&&s.mid>s.vwap) return noSignal();
+            }
+            if(dir!=last_trend_dir_){trend_entry_count_=0;last_trend_dir_=dir;}
+            if(trend_entry_count_>=MAX_ENTRIES_PER_TREND) return noSignal();
+            if(last_entry_price_>0&&std::fabs(s.mid-last_entry_price_)<MIN_PRICE_MOVE) return noSignal();
+            last_signal_=now; last_entry_price_=s.mid; trend_entry_count_++; signal_count_++;
+            Signal sig; sig.valid=true;
+            sig.side=(dir==1)?TradeSide::LONG:TradeSide::SHORT;
+            sig.confidence=std::min(1.5,(impulse_high_-impulse_low_)/(IMPULSE_MIN*2.0));
+            sig.size=0.02; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;
+            strncpy(sig.reason,dir==1?"IMPULSE_CONT_LONG":"IMPULSE_CONT_SHORT",31);
+            strncpy(sig.engine,"ImpulseContinuation",31);
+            return sig;
+        }
+        return noSignal();
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. SessionMomentumEngine
+// ─────────────────────────────────────────────────────────────────────────────
+class SessionMomentumEngine : public EngineBase {
+    MinMaxCircularBuffer<double,64> history_;
+    static constexpr size_t WINDOW=60;
+    static constexpr double IMPULSE_MIN=1.20,MAX_SPREAD=3.50;
+    static constexpr int TP_TICKS=30,SL_TICKS=15;
+    std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::milliseconds(1000)};
+
+    static bool in_session_window(){
+        auto t=std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm u{}; 
+#ifdef _WIN32
+        gmtime_s(&u,&t);
+#else
+        gmtime_r(&t,&u);
+#endif
+        int m=u.tm_hour*60+u.tm_min;
+        return (m>=420&&m<=630)||(m>=750&&m<=930); // 07:00-10:30 and 12:30-15:30
+    }
+public:
+    SessionMomentumEngine(): EngineBase("SessionMomentum",1.2){}
+    Signal process(const GoldSnapshot& s) override {
+        if(!enabled_||!s.is_valid()) return noSignal();
+        if(!in_session_window()) return noSignal();
+        if(s.spread>MAX_SPREAD) return noSignal();
+        auto now=std::chrono::steady_clock::now();
+        if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
+        history_.push_back(s.mid);
+        if(history_.size()<WINDOW) return noSignal();
+        double hi=history_.max(),lo=history_.min(),impulse=hi-lo;
+        if(impulse<IMPULSE_MIN) return noSignal();
+        if(s.vwap<=0) return noSignal();
+        double conf=std::min(1.5,impulse/(IMPULSE_MIN*2.0));
+        double dhi=hi-s.mid,dlo=s.mid-lo;
+        Signal sig; sig.size=0.02; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;
+        if(dhi<dlo&&s.mid>s.vwap){
+            sig.valid=true; sig.side=TradeSide::LONG; sig.confidence=conf;
+            strncpy(sig.reason,"SESSION_MOM_LONG",31); strncpy(sig.engine,"SessionMomentum",31);
+            last_signal_=now; signal_count_++; history_.clear(); return sig;
+        }
+        if(dlo<dhi&&s.mid<s.vwap){
+            sig.valid=true; sig.side=TradeSide::SHORT; sig.confidence=conf;
+            strncpy(sig.reason,"SESSION_MOM_SHORT",31); strncpy(sig.engine,"SessionMomentum",31);
+            last_signal_=now; signal_count_++; history_.clear(); return sig;
+        }
+        return noSignal();
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. VWAPSnapbackEngine
+// ─────────────────────────────────────────────────────────────────────────────
+class VWAPSnapbackEngine : public EngineBase {
+    static constexpr double VWAP_DEV_ENTRY=3.5,VWAP_DEV_STRONG=5.5,MOMENTUM_SPIKE=2.5,MAX_SPREAD=4.00;
+    static constexpr int TP_TICKS=12,SL_TICKS=8;
+    std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::milliseconds(500)};
+public:
+    VWAPSnapbackEngine(): EngineBase("VWAP_SNAPBACK",1.4){}
+    Signal process(const GoldSnapshot& s) override {
+        if(!enabled_||!s.is_valid()) return noSignal();
+        if(s.spread>MAX_SPREAD) return noSignal();
+        if(s.volatility<0.001) return noSignal();
+        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&s.session!=SessionType::OVERLAP)
+            return noSignal();
+        auto now=std::chrono::steady_clock::now();
+        if(now-last_signal_<std::chrono::milliseconds(500)) return noSignal();
+        double dev=s.mid-s.vwap;
+        double z=(s.volatility>0)?(dev/s.volatility):0;
+        if(std::fabs(z)<VWAP_DEV_ENTRY||std::fabs(z)>VWAP_DEV_STRONG) return noSignal();
+        if(std::fabs(s.sweep_size)<MOMENTUM_SPIKE) return noSignal();
+        TradeSide side;
+        if(z<-VWAP_DEV_ENTRY&&s.sweep_size>0)      side=TradeSide::LONG;
+        else if(z>VWAP_DEV_ENTRY&&s.sweep_size<0)  side=TradeSide::SHORT;
+        else return noSignal();
+        Signal sig; sig.valid=true; sig.side=side;
+        sig.confidence=std::min(1.5,std::fabs(z)/(VWAP_DEV_ENTRY*2.0));
+        sig.size=0.05; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;
+        strncpy(sig.reason,"VWAP_DEV",31); strncpy(sig.engine,"VWAP_SNAPBACK",31);
+        last_signal_=now; signal_count_++;
+        return sig;
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. LiquiditySweepProEngine
+// ─────────────────────────────────────────────────────────────────────────────
+class LiquiditySweepProEngine : public EngineBase {
+    CircularBuffer<double,256> history_;
+    static constexpr double MAX_SPREAD=4.00,SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.60;
+    static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=1.50,MIN_EXPECTED_MOVE=0.80;
+    static constexpr double TP_RATIO=0.85,BASE_SIZE=0.02;
+    static constexpr int SL_TICKS=10,MOM_WINDOW=6,LIQ_WINDOW=120;
+    static constexpr double CLUSTER_RANGE=0.35; static constexpr int MIN_CLUSTER=8;
+
+    double computeMom(){
+        size_t n=history_.size();
+        if(n<(size_t)MOM_WINDOW)return 0;
+        return std::fabs(history_[n-1]-history_[n-MOM_WINDOW]);
+    }
+    bool momExhausting(){
+        size_t n=history_.size();
+        if(n<(size_t)(MOM_WINDOW*2))return false;
+        double m1=std::fabs(history_[n-1]-history_[n-MOM_WINDOW]);
+        double m2=std::fabs(history_[n-MOM_WINDOW]-history_[n-MOM_WINDOW*2]);
+        return m1<m2*EXHAUSTION_RATIO;
+    }
+    double detectLiqPool(){
+        size_t n=history_.size();
+        if(n<(size_t)LIQ_WINDOW)return 0;
+        double prices[LIQ_WINDOW];
+        size_t start=n-LIQ_WINDOW;
+        for(int i=0;i<LIQ_WINDOW;i++)prices[i]=history_[start+i];
+        std::sort(prices,prices+LIQ_WINDOW);
+        double best_price=0; int best_cluster=0;
+        for(int i=0;i<LIQ_WINDOW;i++){
+            int cluster=0;
+            for(int j=0;j<LIQ_WINDOW;j++)
+                if(std::fabs(prices[i]-prices[j])<CLUSTER_RANGE)cluster++;
+            if(cluster>best_cluster){best_cluster=cluster;best_price=prices[i];}
+        }
+        return (best_cluster>=MIN_CLUSTER)?best_price:0;
+    }
+public:
+    LiquiditySweepProEngine(): EngineBase("LiquiditySweepPro",1.1){}
+    Signal process(const GoldSnapshot& s) override {
+        if(!enabled_||!s.is_valid())return noSignal();
+        history_.push_back(s.mid);
+        if(s.spread>MAX_SPREAD)return noSignal();
+        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&s.session!=SessionType::OVERLAP)
+            return noSignal();
+        double liq=detectLiqPool();
+        if(liq==0)return noSignal();
+        if(std::fabs(s.mid-liq)<SWEEP_TRIGGER)return noSignal();
+        if(computeMom()<MOMENTUM_SPIKE)return noSignal();
+        if(!momExhausting())return noSignal();
+        double dv=std::fabs(s.mid-s.vwap);
+        if(dv<MIN_VWAP_DISTANCE||dv<MIN_EXPECTED_MOVE)return noSignal();
+        TradeSide side=(s.mid>s.vwap)?TradeSide::SHORT:TradeSide::LONG;
+        int tp=std::max(6,std::min(16,(int)((dv*TP_RATIO)/0.1)));
+        Signal sig; sig.valid=true; sig.side=side; sig.confidence=0.95;
+        sig.size=BASE_SIZE; sig.entry=s.mid; sig.tp=tp; sig.sl=SL_TICKS;
+        strncpy(sig.reason,side==TradeSide::SHORT?"SWEEP_SHORT":"SWEEP_LONG",31);
+        strncpy(sig.engine,"LiquiditySweepPro",31);
+        signal_count_++; return sig;
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. LiquiditySweepPressureEngine
+// ─────────────────────────────────────────────────────────────────────────────
+class LiquiditySweepPressureEngine : public EngineBase {
+    CircularBuffer<double,512> history_;
+    static constexpr double MAX_SPREAD=4.00,SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.60;
+    static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=1.50,MIN_EXPECTED_MOVE=0.80;
+    static constexpr double TP_RATIO=0.85,BASE_SIZE=0.02,PRESSURE_THRESHOLD=0.15;
+    static constexpr double CLUSTER_RANGE=0.35,PRESSURE_RANGE=0.45;
+    static constexpr int SL_TICKS=10,MOM_WINDOW=6,LIQ_WINDOW=150,PRESSURE_WINDOW=50;
+    static constexpr int MIN_CLUSTER=8;
+
+    double computeMom(){
+        size_t n=history_.size();
+        if(n<(size_t)MOM_WINDOW)return 0;
+        return std::fabs(history_[n-1]-history_[n-MOM_WINDOW]);
+    }
+    bool momExhausting(){
+        size_t n=history_.size();
+        if(n<(size_t)(MOM_WINDOW*2))return false;
+        double m1=std::fabs(history_[n-1]-history_[n-MOM_WINDOW]);
+        double m2=std::fabs(history_[n-MOM_WINDOW]-history_[n-MOM_WINDOW*2]);
+        return m1<m2*EXHAUSTION_RATIO;
+    }
+    double computePressure(double level){
+        size_t n=history_.size();
+        if(n<(size_t)PRESSURE_WINDOW)return 0;
+        int pushes=0;
+        for(size_t i=n-PRESSURE_WINDOW;i<n;i++)
+            if(std::fabs(history_[i]-level)<PRESSURE_RANGE)pushes++;
+        return (double)pushes/PRESSURE_WINDOW;
+    }
+    double detectLiqPool(){
+        size_t n=history_.size();
+        if(n<(size_t)LIQ_WINDOW)return 0;
+        double prices[LIQ_WINDOW];
+        size_t start=n-LIQ_WINDOW;
+        for(int i=0;i<LIQ_WINDOW;i++)prices[i]=history_[start+i];
+        std::sort(prices,prices+LIQ_WINDOW);
+        double best_price=0; int best_cluster=0;
+        for(int i=0;i<LIQ_WINDOW;i++){
+            int cluster=0;
+            for(int j=0;j<LIQ_WINDOW;j++)
+                if(std::fabs(prices[i]-prices[j])<CLUSTER_RANGE)cluster++;
+            if(cluster>best_cluster){best_cluster=cluster;best_price=prices[i];}
+        }
+        return (best_cluster>=MIN_CLUSTER)?best_price:0;
+    }
+public:
+    LiquiditySweepPressureEngine(): EngineBase("LiquiditySweepPressure",1.15){}
+    Signal process(const GoldSnapshot& s) override {
+        if(!enabled_||!s.is_valid())return noSignal();
+        history_.push_back(s.mid);
+        if(s.spread>MAX_SPREAD)return noSignal();
+        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&s.session!=SessionType::OVERLAP)
+            return noSignal();
+        double liq=detectLiqPool();
+        if(liq==0)return noSignal();
+        if(computePressure(liq)<PRESSURE_THRESHOLD)return noSignal();
+        if(std::fabs(s.mid-liq)<SWEEP_TRIGGER)return noSignal();
+        if(computeMom()<MOMENTUM_SPIKE)return noSignal();
+        if(!momExhausting())return noSignal();
+        double dv=std::fabs(s.mid-s.vwap);
+        if(dv<MIN_VWAP_DISTANCE||dv<MIN_EXPECTED_MOVE)return noSignal();
+        TradeSide side=(s.mid>s.vwap)?TradeSide::SHORT:TradeSide::LONG;
+        int tp=std::max(6,std::min(16,(int)((dv*TP_RATIO)/0.1)));
+        Signal sig; sig.valid=true; sig.side=side; sig.confidence=0.96;
+        sig.size=BASE_SIZE; sig.entry=s.mid; sig.tp=tp; sig.sl=SL_TICKS;
+        strncpy(sig.reason,side==TradeSide::SHORT?"PRESSURE_SWEEP_SHORT":"PRESSURE_SWEEP_LONG",31);
+        strncpy(sig.engine,"LiquiditySweepPressure",31);
+        signal_count_++; return sig;
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RegimeGovernor (ported from ChimeraMetals — exact same logic)
+// ─────────────────────────────────────────────────────────────────────────────
+enum class MarketRegime { COMPRESSION, TREND, MEAN_REVERSION, IMPULSE };
+
+class RegimeGovernor {
+    MinMaxCircularBuffer<double,64> history_;
+    MarketRegime current_=MarketRegime::MEAN_REVERSION;
+    MarketRegime candidate_=MarketRegime::MEAN_REVERSION;
+    int confirm_count_=0;
+    std::chrono::steady_clock::time_point last_switch_=std::chrono::steady_clock::now();
+    static constexpr int CONFIRM_TICKS=5,MIN_LOCK_MS=1000;
+    static constexpr size_t WINDOW=60;
+    static constexpr double CE=0.70,CX=1.00,IE=1.20,IX=0.90,TE=2.20,TX=1.60;
+
+    MarketRegime classifyRaw(double range,double mid,double hi,double lo) const {
+        double centre=(hi+lo)*0.5;
+        bool at_extreme=std::fabs(mid-centre)>=0.4;
+        switch(current_){
+            case MarketRegime::COMPRESSION:
+                return(range>CX)?(at_extreme?MarketRegime::IMPULSE:MarketRegime::MEAN_REVERSION):MarketRegime::COMPRESSION;
+            case MarketRegime::TREND:
+                return(range<TX)?(at_extreme?MarketRegime::IMPULSE:MarketRegime::MEAN_REVERSION):MarketRegime::TREND;
+            case MarketRegime::IMPULSE:
+                if(range>TE)return MarketRegime::TREND;
+                if(range<IX)return(range<CE)?MarketRegime::COMPRESSION:MarketRegime::MEAN_REVERSION;
+                return MarketRegime::IMPULSE;
+            case MarketRegime::MEAN_REVERSION:
+                if(range<CE)return MarketRegime::COMPRESSION;
+                if(range>TE)return MarketRegime::TREND;
+                if(range>IE&&at_extreme)return MarketRegime::IMPULSE;
+                return MarketRegime::MEAN_REVERSION;
+        }
+        return MarketRegime::MEAN_REVERSION;
+    }
+public:
+    MarketRegime detect(double mid, bool has_open_pos) {
+        if(has_open_pos) return current_;
+        history_.push_back(mid);
+        if(history_.size()<WINDOW) return current_;
+        double hi=history_.max(),lo=history_.min(),range=hi-lo;
+        MarketRegime raw=classifyRaw(range,mid,hi,lo);
+        auto now=std::chrono::steady_clock::now();
+        auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(now-last_switch_).count();
+        if(raw==candidate_){
+            ++confirm_count_;
+            if(confirm_count_>=CONFIRM_TICKS&&ms>=MIN_LOCK_MS){
+                if(current_!=raw){
+                    current_=raw; last_switch_=now;
+                    printf("[GOLD-REGIME] %s\n",name(raw)); fflush(stdout);
+                }
+                confirm_count_=0;
+            }
+        } else { candidate_=raw; confirm_count_=1; }
+        return current_;
+    }
+    void apply(std::vector<std::unique_ptr<EngineBase>>& engines, MarketRegime r) const {
+        for(auto& e:engines){
+            const std::string& n=e->getName(); bool en=false;
+            switch(r){
+                case MarketRegime::COMPRESSION:
+                    en=(n=="CompressionBreakout"); break;
+                case MarketRegime::TREND:
+                    en=(n=="ImpulseContinuation"); break;
+                case MarketRegime::MEAN_REVERSION:
+                    en=(n=="VWAP_SNAPBACK"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"); break;
+                case MarketRegime::IMPULSE:
+                    en=(n=="ImpulseContinuation"||n=="SessionMomentum"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"); break;
+            }
+            e->setEnabled(en);
+        }
+    }
+    MarketRegime current() const { return current_; }
+    static const char* name(MarketRegime r){
+        switch(r){
+            case MarketRegime::COMPRESSION:    return "COMPRESSION";
+            case MarketRegime::TREND:          return "TREND";
+            case MarketRegime::MEAN_REVERSION: return "MEAN_REVERSION";
+            case MarketRegime::IMPULSE:        return "IMPULSE";
+        }
+        return "UNKNOWN";
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VolatilityFilter
+// ─────────────────────────────────────────────────────────────────────────────
+class VolatilityFilter {
+    MinMaxCircularBuffer<double,64> history_;
+    static constexpr size_t WINDOW=50;
+    static constexpr double VOL_THRESHOLD=1.4;
+public:
+    bool allow(double mid){
+        history_.push_back(mid);
+        if(history_.size()<WINDOW)return false;
+        return history_.range()>=VOL_THRESHOLD;
+    }
+    double current_range() const { return history_.empty()?0:history_.range(); }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GoldEngineStack — the public interface wired into Omega's on_tick
+// ─────────────────────────────────────────────────────────────────────────────
+class GoldEngineStack {
+public:
+    GoldEngineStack() {
+        engines_.push_back(std::make_unique<CompressionBreakoutEngine>());
+        engines_.push_back(std::make_unique<ImpulseContinuationEngine>());
+        engines_.push_back(std::make_unique<SessionMomentumEngine>());
+        engines_.push_back(std::make_unique<VWAPSnapbackEngine>());
+        engines_.push_back(std::make_unique<LiquiditySweepProEngine>());
+        engines_.push_back(std::make_unique<LiquiditySweepPressureEngine>());
+    }
+
+    // Call every tick. Returns valid GoldSignal if any engine fires.
+    GoldSignal on_tick(double bid, double ask, double latency_ms) {
+        if(bid<=0||ask<=0||bid>=ask) return GoldSignal{};
+
+        // Build snapshot
+        GoldSnapshot snap;
+        snap.bid=bid; snap.ask=ask;
+        snap.prev_mid=(last_mid_>0)?last_mid_:((bid+ask)*0.5);
+        features_.update(snap,bid,ask);
+        last_mid_=snap.mid;
+
+        // Volatility gate
+        if(!vol_filter_.allow(snap.mid)) return GoldSignal{};
+
+        // VWAP chop zone gate
+        if(snap.vwap>0&&std::fabs(snap.mid-snap.vwap)<1.0) return GoldSignal{};
+
+        // Regime classification (frozen while position open)
+        MarketRegime regime=governor_.detect(snap.mid,has_open_pos_);
+        governor_.apply(engines_,regime);
+        current_regime_=regime;
+
+        // Fast path: ImpulseContinuation first
+        for(auto& e:engines_){
+            if(e->getName()=="ImpulseContinuation"&&e->isEnabled()){
+                Signal s=e->process(snap);
+                if(s.valid) return to_gold_signal(s);
+                break;
+            }
+        }
+
+        // Slow path: best confidence×weight
+        Signal best; double best_score=0;
+        for(auto& e:engines_){
+            if(e->getName()=="ImpulseContinuation"||!e->isEnabled()) continue;
+            Signal s=e->process(snap);
+            if(!s.valid) continue;
+            double score=s.confidence*e->weight_;
+            if(score>best_score){ best_score=score; best=s; }
+        }
+        return best.valid?to_gold_signal(best):GoldSignal{};
+    }
+
+    void set_has_open_position(bool v) { has_open_pos_=v; }
+    const char* regime_name() const { return RegimeGovernor::name(current_regime_); }
+    double vwap()  const { return features_.get_vwap(); }
+    double vol_range() const { return vol_filter_.current_range(); }
+
+    // Signal counts per engine for GUI
+    void print_stats() const {
+        for(const auto& e:engines_)
+            printf("[GOLD-ENGINE] %-26s signals=%llu\n",e->getName().c_str(),(unsigned long long)e->signal_count_);
+        fflush(stdout);
+    }
+
+private:
+    std::vector<std::unique_ptr<EngineBase>> engines_;
+    GoldFeatures    features_;
+    RegimeGovernor  governor_;
+    VolatilityFilter vol_filter_;
+    MarketRegime     current_regime_=MarketRegime::MEAN_REVERSION;
+    bool             has_open_pos_=false;
+    double           last_mid_=0;
+
+    static GoldSignal to_gold_signal(const Signal& s){
+        GoldSignal g;
+        g.valid=true; g.is_long=(s.side==TradeSide::LONG);
+        g.entry=s.entry; g.tp_ticks=s.tp; g.sl_ticks=s.sl;
+        g.confidence=s.confidence;
+        strncpy(g.engine,s.engine,31); strncpy(g.reason,s.reason,31);
+        return g;
+    }
+};
+
+} // namespace gold
+} // namespace omega
