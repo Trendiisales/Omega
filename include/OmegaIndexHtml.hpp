@@ -1,10 +1,10 @@
 #pragma once
-// AUTO-GENERATED — do not edit directly.
-// Source: src/gui/www/omega_index.html
-// Embedded at build time to eliminate file-copy dependency.
-// To update: edit omega_index.html then run scripts/embed_html.py
+// AUTO-GENERATED from src/gui/www/omega_index.html
+// Split into 3 chunks to stay under MSVC 16KB string literal limit.
+// Adjacent string literals are concatenated by the compiler.
 namespace omega_gui {
-static const char* INDEX_HTML = R"OMEGA(
+static const char* INDEX_HTML =
+R"OMEGA0(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -193,6 +193,8 @@ static const char* INDEX_HTML = R"OMEGA(
                 </div>
                 <div class="sym-row">
                     <span class="sym-label">NAS100</span>
+)OMEGA0"
+R"OMEGA1(
                     <div class="px-pair"><span class="bid" id="nasBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="nasAsk" style="font-size:11px">--</span></div>
                 </div>
                 <div class="sym-row">
@@ -436,6 +438,8 @@ function renderLastSignal(d) {
         '<div style="text-align:center;"><div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Symbol</div>' +
         '<div style="font-family:Space Mono,monospace;font-size:18px;font-weight:700;color:var(--blue);">' + (d.last_signal_symbol || '--') + '</div></div>' +
         '<div style="text-align:center;"><div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Direction</div>' +
+)OMEGA1"
+R"OMEGA2(
         '<div style="font-family:Space Mono,monospace;font-size:18px;font-weight:700;color:' + sc + ';">' + d.last_signal_side + '</div></div>' +
         '<div style="text-align:center;"><div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Price</div>' +
         '<div style="font-family:Space Mono,monospace;font-size:18px;font-weight:700;color:var(--t1);">' + safe(d.last_signal_price).toFixed(2) + '</div></div>' +
@@ -652,5 +656,6 @@ pollTrades();
 </body>
 </html>
 
-)OMEGA";
+)OMEGA2"
+;
 } // namespace omega_gui
