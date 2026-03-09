@@ -725,17 +725,46 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         return;
     }
 
+    // ── Unknown / unexpected message types — log everything for diagnostics ──
+    if (type != "W" && type != "X" && type != "A" && type != "0" && type != "1" && type != "3" && type != "j") {
+        // Replace SOH with | for readable logging
+        std::string readable = msg.substr(0, std::min(msg.size(), size_t(300)));
+        for (char& c : readable) if (c == '\x01') c = '|';
+        std::cerr << "[OMEGA-RAW] type=" << type << " msg=" << readable << "\n";
+        std::cerr.flush();
+    }
+
     // ── Market data ───────────────────────────────────────────────────────────
     if (type == "W" || type == "X") {
         const std::string sym_raw = extract_tag(msg, "55");
-        if (sym_raw.empty()) return;
+        if (sym_raw.empty()) {
+            std::cerr << "[OMEGA-MD] W/X msg missing tag 55 — raw: ";
+            std::string r = msg.substr(0, 200); for (char& c : r) if (c=='\x01') c='|';
+            std::cerr << r << "\n"; std::cerr.flush();
+            return;
+        }
         const char* sym = nullptr;
+        // Try numeric ID first (normal case), then string name fallback
         try {
             const int id = std::stoi(sym_raw);
             const auto it = g_id_to_sym.find(id);
-            if (it == g_id_to_sym.end()) return;
+            if (it == g_id_to_sym.end()) {
+                std::cerr << "[OMEGA-MD] Unknown numeric ID " << id << " in tag55\n";
+                std::cerr.flush();
+                return;
+            }
             sym = it->second;
-        } catch (...) { return; }
+        } catch (...) {
+            // Broker sent string name in 55= (e.g. "GOLD.F") — look up directly
+            for (int i = 0; i < OMEGA_NSYMS; ++i) {
+                if (sym_raw == OMEGA_SYMS[i].name) { sym = OMEGA_SYMS[i].name; break; }
+            }
+            if (!sym) {
+                std::cerr << "[OMEGA-MD] Unknown string symbol '" << sym_raw << "' in tag55\n";
+                std::cerr.flush();
+                return;
+            }
+        }
         double bid = 0.0, ask = 0.0;
         size_t pos = 0u;
         while ((pos = msg.find("269=", pos)) != std::string::npos) {
@@ -751,13 +780,23 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             else if (et == '1') ask = price;
             pos = pxe;
         }
-        if (bid > 0.0 && ask > 0.0) on_tick(sym, bid, ask);
+        if (bid > 0.0 && ask > 0.0) {
+            on_tick(sym, bid, ask);
+        } else {
+            std::cerr << "[OMEGA-MD] " << sym << " bid=" << bid << " ask=" << ask << " — no valid prices in msg\n";
+            std::string r = msg.substr(0, 200); for (char& c : r) if (c=='\x01') c='|';
+            std::cerr << "  raw: " << r << "\n"; std::cerr.flush();
+        }
         return;
     }
 
-        if (type == "3" || type == "j") {
-        std::cerr << "[OMEGA] FIX REJECT: " << extract_tag(msg, "58") << "\n";
-    }
+    if (type == "3" || type == "j") {
+        std::string r = msg.substr(0, 400); for (char& c : r) if (c=='\x01') c='|';
+        std::cerr << "[OMEGA] FIX REJECT type=" << type
+                  << " text=" << extract_tag(msg, "58")
+                  << " refMsgType=" << extract_tag(msg, "372")
+                  << " full=" << r << "\n";
+        std::cerr.flush();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
