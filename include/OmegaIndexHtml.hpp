@@ -337,7 +337,8 @@ R"OMEGA1(
                 </div>
             </div>
         </div>
-
+)OMEGA1"
+R"OMEGA1B(
         <!-- BOTTOM ROW -->
         <div class="bottom-row">
             <div class="card">
@@ -519,7 +520,7 @@ function renderLastSignal(d) {
         '<div style="text-align:center;"><div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Symbol</div>' +
         '<div style="font-family:Space Mono,monospace;font-size:18px;font-weight:700;color:var(--blue);">' + (d.last_signal_symbol || '--') + '</div></div>' +
         '<div style="text-align:center;"><div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Direction</div>' +
-)OMEGA1"
+)OMEGA1B"
 R"OMEGA2(
         '<div style="font-family:Space Mono,monospace;font-size:18px;font-weight:700;color:' + sc + ';">' + d.last_signal_side + '</div></div>' +
         '<div style="text-align:center;"><div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Price</div>' +
