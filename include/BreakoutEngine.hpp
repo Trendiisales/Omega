@@ -81,7 +81,7 @@ public:
     bool shouldTrade(double /*bid*/, double /*ask*/,
                      double spread_pct, double latency_ms) const noexcept
     {
-        return spread_pct <= MAX_SPREAD_PCT && latency_ms <= 15.0;
+        return spread_pct <= MAX_SPREAD_PCT && latency_ms <= 2000.0;
     }
     void onSignal(const BreakoutSignal& /*sig*/) const noexcept {}
 

@@ -72,7 +72,7 @@ struct OmegaConfig {
     int    max_hold_sec          = 1500;
     int    min_entry_gap_sec     = 180;
     double max_spread_pct        = 0.05;
-    double max_latency_ms        = 15.0;
+    double max_latency_ms        = 2000.0;  // FIX broker RTT 200-500ms is normal; only block if connection is dead
 
     // Risk
     double daily_loss_limit  = 200.0;
