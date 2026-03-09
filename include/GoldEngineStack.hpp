@@ -31,6 +31,7 @@
 #include <chrono>
 #include <algorithm>
 #include <functional>
+#include "OmegaTradeLedger.hpp"
 
 namespace omega {
 namespace gold {
@@ -681,8 +682,151 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 // GoldEngineStack — the public interface wired into Omega's on_tick
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// GoldPositionManager — tracks open position, runs TP/SL/timeout each tick,
+// calls on_close with a filled TradeRecord when trade exits.
+// ─────────────────────────────────────────────────────────────────────────────
+class GoldPositionManager {
+    static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
+    static constexpr int    MAX_HOLD_SEC  = 1200;  // 20min max hold
+    static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
+
+    struct GoldPos {
+        bool    active    = false;
+        bool    is_long   = true;
+        double  entry     = 0;
+        double  tp        = 0;   // absolute price level
+        double  sl        = 0;   // absolute price level
+        double  mfe       = 0;
+        double  mae       = 0;
+        double  spread_at_entry = 0;
+        int64_t entry_ts  = 0;
+        char    engine[32] = {};
+        char    reason[32] = {};
+    } pos_;
+
+    int trade_id_ = 1000;  // separate ID range from CRTP engines (those start at 1)
+
+    static int64_t nowSec() {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+    }
+
+    void do_close(double exit_px, const char* why,
+                  double latency_ms, const char* regime,
+                  std::function<void(const omega::TradeRecord&)>& on_close) {
+        if (!pos_.active) return;
+        omega::TradeRecord tr;
+        tr.id          = trade_id_++;
+        tr.symbol      = "GOLD.F";
+        tr.side        = pos_.is_long ? "LONG" : "SHORT";
+        tr.entryPrice  = pos_.entry;
+        tr.exitPrice   = exit_px;
+        tr.tp          = pos_.tp;
+        tr.sl          = pos_.sl;
+        tr.size        = CONTRACT_SIZE;
+        tr.pnl         = (pos_.is_long ? (exit_px - pos_.entry)
+                                       : (pos_.entry - exit_px)) * CONTRACT_SIZE;
+        tr.mfe         = pos_.mfe;
+        tr.mae         = pos_.mae;
+        tr.entryTs     = pos_.entry_ts;
+        tr.exitTs      = nowSec();
+        tr.exitReason  = why;
+        tr.spreadAtEntry = pos_.spread_at_entry;
+        tr.latencyMs   = latency_ms;
+        tr.engine      = std::string(pos_.engine);
+        tr.regime      = regime ? regime : "";
+        pos_.active    = false;
+        pos_           = GoldPos{};
+        if (on_close) on_close(tr);
+    }
+
+public:
+    bool active() const { return pos_.active; }
+
+    // Open a new position from a GoldSignal.
+    // tp_ticks / sl_ticks are in $0.10 increments (standard gold tick).
+    void open(const GoldSignal& sig, double spread,
+              double latency_ms, const char* regime) {
+        if (pos_.active) return;  // never double-enter
+        pos_.active   = true;
+        pos_.is_long  = sig.is_long;
+        pos_.entry    = sig.entry;
+        pos_.tp       = sig.is_long
+                        ? sig.entry + sig.tp_ticks * TICK_SIZE
+                        : sig.entry - sig.tp_ticks * TICK_SIZE;
+        pos_.sl       = sig.is_long
+                        ? sig.entry - sig.sl_ticks * TICK_SIZE
+                        : sig.entry + sig.sl_ticks * TICK_SIZE;
+        pos_.mfe      = 0;
+        pos_.mae      = 0;
+        pos_.spread_at_entry = spread;
+        pos_.entry_ts = nowSec();
+        strncpy(pos_.engine, sig.engine, 31);
+        strncpy(pos_.reason, sig.reason, 31);
+        printf("[GOLD-STACK-ENTRY] %s entry=%.2f tp=%.2f sl=%.2f eng=%s reason=%s regime=%s\n",
+               pos_.is_long?"LONG":"SHORT", pos_.entry, pos_.tp, pos_.sl,
+               pos_.engine, pos_.reason, regime?regime:"?");
+        fflush(stdout);
+    }
+
+    // Called every tick while position is open. Manages TP/SL/timeout.
+    // Returns true if position was closed this tick.
+    bool manage(double bid, double ask, double latency_ms, const char* regime,
+                std::function<void(const omega::TradeRecord&)>& on_close) {
+        if (!pos_.active) return false;
+        double mid = (bid + ask) * 0.5;
+        // MFE / MAE (in price units, not bp)
+        double move = pos_.is_long ? (mid - pos_.entry) : (pos_.entry - mid);
+        if (move > pos_.mfe) pos_.mfe = move;
+        if (move < pos_.mae) pos_.mae = move;
+        // TP
+        bool tp_hit = pos_.is_long ? (ask >= pos_.tp) : (bid <= pos_.tp);
+        if (tp_hit) {
+            double fill = pos_.is_long ? pos_.tp : pos_.tp;
+            printf("[GOLD-STACK-TP] %s fill=%.2f pnl=%.2f\n",
+                   pos_.engine, fill,
+                   pos_.is_long?(fill-pos_.entry):(pos_.entry-fill));
+            fflush(stdout);
+            do_close(fill, "TP_HIT", latency_ms, regime, on_close);
+            return true;
+        }
+        // SL
+        bool sl_hit = pos_.is_long ? (bid <= pos_.sl) : (ask >= pos_.sl);
+        if (sl_hit) {
+            double fill = pos_.is_long ? pos_.sl : pos_.sl;
+            printf("[GOLD-STACK-SL] %s fill=%.2f pnl=%.2f\n",
+                   pos_.engine, fill,
+                   pos_.is_long?(fill-pos_.entry):(pos_.entry-fill));
+            fflush(stdout);
+            do_close(fill, "SL_HIT", latency_ms, regime, on_close);
+            return true;
+        }
+        // Timeout
+        if (nowSec() - pos_.entry_ts >= MAX_HOLD_SEC) {
+            printf("[GOLD-STACK-TIMEOUT] %s hold=%lds exit=%.2f\n",
+                   pos_.engine, (long)(nowSec()-pos_.entry_ts), mid);
+            fflush(stdout);
+            do_close(mid, "TIMEOUT", latency_ms, regime, on_close);
+            return true;
+        }
+        return false;
+    }
+
+    // Force-close on disconnect / session end
+    void force_close(double bid, double ask, double latency_ms, const char* regime,
+                     std::function<void(const omega::TradeRecord&)>& on_close) {
+        if (!pos_.active) return;
+        double mid = (bid + ask) * 0.5;
+        do_close(mid, "FORCE_CLOSE", latency_ms, regime, on_close);
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 class GoldEngineStack {
 public:
+    using CloseCallback = std::function<void(const omega::TradeRecord&)>;
+
     GoldEngineStack() {
         engines_.push_back(std::make_unique<CompressionBreakoutEngine>());
         engines_.push_back(std::make_unique<ImpulseContinuationEngine>());
@@ -692,9 +836,22 @@ public:
         engines_.push_back(std::make_unique<LiquiditySweepPressureEngine>());
     }
 
-    // Call every tick. Returns valid GoldSignal if any engine fires.
-    GoldSignal on_tick(double bid, double ask, double latency_ms) {
+    // Call every tick.
+    // on_close is called when a position closes (TP/SL/timeout/force).
+    // can_enter=false → manage existing position only, no new entries.
+    // Returns valid GoldSignal if a NEW entry was just opened this tick.
+    GoldSignal on_tick(double bid, double ask, double latency_ms,
+                       CloseCallback on_close = nullptr, bool can_enter = true) {
         if(bid<=0||ask<=0||bid>=ask) return GoldSignal{};
+        double spread = ask - bid;
+
+        // ── Manage existing position (TP/SL/timeout) ─────────────────────────
+        bool just_closed = pos_mgr_.manage(bid, ask, latency_ms,
+                                           current_regime_name(), on_close);
+        (void)just_closed;
+
+        // Update has_open_pos_ so regime governor freezes while in trade
+        has_open_pos_ = pos_mgr_.active();
 
         // Build snapshot
         GoldSnapshot snap;
@@ -703,22 +860,30 @@ public:
         features_.update(snap,bid,ask);
         last_mid_=snap.mid;
 
-        // Volatility gate
-        if(!vol_filter_.allow(snap.mid)) return GoldSignal{};
-
-        // VWAP chop zone gate
-        if(snap.vwap>0&&std::fabs(snap.mid-snap.vwap)<0.5) return GoldSignal{};  // 1.0→0.5: $1.00 chop gate was blocking trades within spread of VWAP; $0.50 = half typical spread
-
         // Regime classification (frozen while position open)
         MarketRegime regime=governor_.detect(snap.mid,has_open_pos_);
         governor_.apply(engines_,regime);
         current_regime_=regime;
 
+        // Don't look for new entries if already in a position or gated out
+        if(has_open_pos_ || !can_enter) return GoldSignal{};
+
+        // Volatility gate
+        if(!vol_filter_.allow(snap.mid)) return GoldSignal{};
+
+        // VWAP chop zone gate
+        if(snap.vwap>0&&std::fabs(snap.mid-snap.vwap)<0.5) return GoldSignal{};
+
         // Fast path: ImpulseContinuation first
         for(auto& e:engines_){
             if(e->getName()=="ImpulseContinuation"&&e->isEnabled()){
                 Signal s=e->process(snap);
-                if(s.valid) return to_gold_signal(s);
+                if(s.valid){
+                    GoldSignal gs=to_gold_signal(s);
+                    pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
+                    has_open_pos_=true;
+                    return gs;
+                }
                 break;
             }
         }
@@ -732,29 +897,50 @@ public:
             double score=s.confidence*e->weight_;
             if(score>best_score){ best_score=score; best=s; }
         }
-        return best.valid?to_gold_signal(best):GoldSignal{};
+        if(best.valid){
+            GoldSignal gs=to_gold_signal(best);
+            pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
+            has_open_pos_=true;
+            return gs;
+        }
+        return GoldSignal{};
     }
 
-    void set_has_open_position(bool v) { has_open_pos_=v; }
+    // Force-close on session end or disconnect
+    void force_close(double bid, double ask, double latency_ms,
+                     CloseCallback on_close) {
+        pos_mgr_.force_close(bid, ask, latency_ms, current_regime_name(), on_close);
+        has_open_pos_ = false;
+    }
+
+    // Legacy: kept for compatibility — managed internally now
+    void set_has_open_position(bool v) { (void)v; }
+
+    bool has_open_position() const { return pos_mgr_.active(); }
     const char* regime_name() const { return RegimeGovernor::name(current_regime_); }
-    double vwap()  const { return features_.get_vwap(); }
+    double vwap()      const { return features_.get_vwap(); }
     double vol_range() const { return vol_filter_.current_range(); }
 
-    // Signal counts per engine for GUI
     void print_stats() const {
         for(const auto& e:engines_)
-            printf("[GOLD-ENGINE] %-26s signals=%llu\n",e->getName().c_str(),(unsigned long long)e->signal_count_);
+            printf("[GOLD-ENGINE] %-26s signals=%llu\n",
+                   e->getName().c_str(),(unsigned long long)e->signal_count_);
         fflush(stdout);
     }
 
 private:
     std::vector<std::unique_ptr<EngineBase>> engines_;
-    GoldFeatures    features_;
-    RegimeGovernor  governor_;
+    GoldFeatures     features_;
+    RegimeGovernor   governor_;
     VolatilityFilter vol_filter_;
+    GoldPositionManager pos_mgr_;
     MarketRegime     current_regime_=MarketRegime::MEAN_REVERSION;
     bool             has_open_pos_=false;
     double           last_mid_=0;
+
+    const char* current_regime_name() const {
+        return RegimeGovernor::name(current_regime_);
+    }
 
     static GoldSignal to_gold_signal(const Signal& s){
         GoldSignal g;

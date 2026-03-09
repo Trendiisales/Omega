@@ -637,18 +637,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "USOIL.F") { dispatch(g_eng_cl); }
     else if (sym == "GOLD.F")  {
         dispatch(g_eng_xau);
-        // ── Gold multi-engine stack (parallel to BreakoutEngine on GOLD.F) ──
-        // Runs all 6 engines: CompressionBreakout, ImpulseContinuation,
-        // SessionMomentum, VWAPSnapback, LiquiditySweepPro, LiquiditySweepPressure.
-        // Regime-gated: only engines suited to current market regime can fire.
-        // Shadow mode: signals logged only — no FIX orders sent.
-        g_gold_stack.set_has_open_position(g_eng_xau.pos.active);
-        const auto gsig = g_gold_stack.on_tick(bid, ask, g_rtt_last);
+        // ── GoldEngineStack: 6 engines with self-managed positions ────────────
+        // Stack manages its own position internally (entry, TP/SL/timeout, on_close).
+        // can_enter gates new entries; g_eng_xau.pos.active blocks stack entries
+        // when the CRTP BreakoutEngine already has a gold position open.
+        const bool gold_can_enter = can_enter && !g_eng_xau.pos.active;
+        const auto gsig = g_gold_stack.on_tick(bid, ask, g_rtt_last, on_close, gold_can_enter);
         if (gsig.valid) {
+            // New entry fired — log it
             g_telemetry.UpdateLastSignal("GOLD.F",
                 gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason);
             std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
-                      << "[GOLD-STACK] " << (gsig.is_long ? "LONG" : "SHORT")
+                      << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
                       << " entry=" << gsig.entry
                       << " tp="    << gsig.tp_ticks << "ticks"
                       << " sl="    << gsig.sl_ticks << "ticks"
@@ -853,6 +853,20 @@ static void quote_loop() {
                     });
         };
         fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F"); fc(g_eng_xau, "GOLD.F");
+        // Also force-close any open GoldEngineStack position
+        {
+            double g_bid = 0.0, g_ask = 0.0;
+            { std::lock_guard<std::mutex> lk(g_book_mtx);
+              const auto bi = g_bids.find("GOLD.F"); if (bi != g_bids.end()) g_bid = bi->second;
+              const auto ai = g_asks.find("GOLD.F"); if (ai != g_asks.end()) g_ask = ai->second; }
+            if (g_bid > 0.0 && g_ask > 0.0) {
+                GoldEngineStack::CloseCallback gold_fc_cb =
+                    [](const omega::TradeRecord& tr) {
+                        g_omegaLedger.record(tr); write_shadow_csv(tr);
+                    };
+                g_gold_stack.force_close(g_bid, g_ask, g_rtt_last, gold_fc_cb);
+            }
+        }
 
         SSL_shutdown(ssl); SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
