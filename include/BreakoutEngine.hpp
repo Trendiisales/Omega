@@ -104,10 +104,17 @@ public:
         if (static_cast<int>(m_prices.size()) < COMPRESSION_LOOKBACK + 1) return {};
 
         // Compute volatilities
+        // During warmup (< BASELINE_LOOKBACK ticks): use the longest window we have
+        // so compression detection is meaningful from the start.
+        // Without this, base_vol = recent_vol → in_compression always false → FLAT forever.
         recent_vol_pct = rangePct(m_prices.cend() - COMPRESSION_LOOKBACK, m_prices.cend());
-        base_vol_pct   = (static_cast<int>(m_prices.size()) >= BASELINE_LOOKBACK)
-                         ? rangePct(m_prices.cend() - BASELINE_LOOKBACK, m_prices.cend())
-                         : recent_vol_pct;
+        if (static_cast<int>(m_prices.size()) >= BASELINE_LOOKBACK) {
+            base_vol_pct = rangePct(m_prices.cend() - BASELINE_LOOKBACK, m_prices.cend());
+        } else {
+            // Warmup: use all available ticks as baseline.
+            // This lets compression detection work from tick COMPRESSION_LOOKBACK+1 onwards.
+            base_vol_pct = rangePct(m_prices.cbegin(), m_prices.cend());
+        }
 
         // ── Manage open position ──────────────────────────────────────────────
         if (pos.active) {
@@ -298,7 +305,7 @@ struct MacroContext {
 //   RISK_OFF + VIX>30: block new longs (trending down), allow shorts only
 //   RISK_ON  + VIX<18: full two-way trading
 //   NEUTRAL:           full two-way trading
-//   ES/NQ divergence > 0.15%: sector rotation in progress — block both sides
+//   ES/NQ divergence > 0.30%: sector rotation in progress — block both sides
 //   NQ already open: block SP entry (too correlated — doubles risk)
 // ==============================================================================
 class SpEngine final : public BreakoutEngineBase<SpEngine>
@@ -329,8 +336,8 @@ public:
         // Cross-symbol guard: if NQ already open, skip SP (correlated — doubles exposure)
         if (macro->nq_open) return false;
 
-        // ES/NQ divergence > 0.15%: sector rotation underway, not a clean breakout
-        if (std::fabs(macro->es_nq_div) > 0.0015) return false;
+        // ES/NQ divergence > 0.30%: sector rotation underway, not a clean breakout
+        if (std::fabs(macro->es_nq_div) > 0.0030) return false;
 
         // RISK_OFF + VIX elevated: SP trending directionally, breakout bias skewed
         // In RISK_OFF we allow shorts (momentum) but block longs
@@ -358,7 +365,7 @@ public:
 //   RISK_OFF + VIX>30: NQ sells off harder than SP (higher beta tech) — block longs only
 //                      allow shorts in RISK_OFF (momentum aligned)
 //   SP already open: block NQ entry (too correlated, same macro risk)
-//   ES/NQ divergence > 0.15%: NQ diverging FROM SP — possible valid move but
+//   ES/NQ divergence > 0.30%: NQ diverging FROM SP — possible valid move but
 //                              also possible mean-reversion setup, block breakout
 //   VIX > 35: block all (panic)
 // ==============================================================================
@@ -391,7 +398,7 @@ public:
         if (macro->sp_open) return false;
 
         // ES/NQ divergence: NQ diverging from SP — unclear which will mean-revert
-        if (std::fabs(macro->es_nq_div) > 0.0015) return false;
+        if (std::fabs(macro->es_nq_div) > 0.0030) return false;
 
         // Panic VIX
         if (macro->vix > 35.0) return false;
