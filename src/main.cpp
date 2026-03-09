@@ -127,14 +127,14 @@ static omega::MacroRegimeDetector g_macroDetector;
 static omega::SpEngine  g_eng_sp("US500.F");   // S&P 500 — regime-gated, cross-symbol guard
 static omega::NqEngine  g_eng_nq("USTEC.F");   // Nasdaq  — regime-gated, cross-symbol guard
 static omega::OilEngine g_eng_cl("USOIL.F");   // WTI Oil — inventory window blocked
-static omega::BreakoutEngine g_eng_xau("GOLD.F");  // Gold — Tokyo+London+NY sessions
+static omega::GoldEngine g_eng_xau("GOLD.F");  // Gold — safe-haven, inverse VIX logic
 
 // Shared macro context — updated each tick, read by SP/NQ shouldTrade()
 static omega::MacroContext g_macro_ctx;
 
 // Multi-engine gold stack — CompressionBreakout + ImpulseContinuation +
 // SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
-// Runs in parallel with g_eng_xau (BreakoutEngine) on every GOLD.F tick.
+// Runs in parallel with g_eng_xau (GoldEngine) on every GOLD.F tick.
 static omega::gold::GoldEngineStack g_gold_stack;
 
 // Book
@@ -879,6 +879,7 @@ int main(int argc, char* argv[])
     apply_engine_config(g_eng_cl);   // [oil] section: tp=1.20%, sl=0.60%, vol=0.08%, inventory-blocked
     // Gold: generic breakout engine, overridden with gold-specific pct params
     // Gold: dedicated config — do not use generic breakout defaults
+    g_eng_xau.macro                 = &g_macro_ctx;  // gold uses inverse regime logic
     g_eng_xau.TP_PCT                = g_cfg.gold_tp_pct;
     g_eng_xau.SL_PCT                = g_cfg.gold_sl_pct;
     g_eng_xau.VOL_THRESH_PCT        = g_cfg.gold_vol_thresh_pct;
