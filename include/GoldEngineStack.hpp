@@ -249,7 +249,7 @@ class CompressionBreakoutEngine : public EngineBase {
     MinMaxCircularBuffer<double,32> history_;
     static constexpr size_t WINDOW=30;
     static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.30, MAX_SPREAD=1.80;
-    static constexpr int TP_TICKS=40, SL_TICKS=18;
+    static constexpr int TP_TICKS=50, SL_TICKS=18; // TP 40→50: genuine compression breakouts on gold run $4-6, not $4
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(2)};
 public:
     CompressionBreakoutEngine(): EngineBase("CompressionBreakout",1.0){}
@@ -362,8 +362,8 @@ public:
 class SessionMomentumEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=60;
-    static constexpr double IMPULSE_MIN=1.20,MAX_SPREAD=3.50;
-    static constexpr int TP_TICKS=30,SL_TICKS=15;
+    static constexpr double IMPULSE_MIN=1.60,MAX_SPREAD=3.50; // 1.20→1.60: SL trades had MFE 0.04-0.58, winners $2.27-$2.96. Stronger threshold = fewer but better signals
+    static constexpr int TP_TICKS=30,SL_TICKS=15; // TP 30 ticks = $3.00, matching observed winner MFE of $2.27-$2.96
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::milliseconds(1000)};
 
     static bool in_session_window(){
@@ -415,7 +415,7 @@ class VWAPSnapbackEngine : public EngineBase {
     static constexpr int TP_TICKS=12,SL_TICKS=8;
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::milliseconds(500)};
 public:
-    VWAPSnapbackEngine(): EngineBase("VWAP_SNAPBACK",1.4){}
+    VWAPSnapbackEngine(): EngineBase("VWAP_SNAPBACK",1.4){ enabled_=false; } // DISABLED: 1T 0%WR -$0.80 — insufficient data, re-enable after 20+ shadow trades
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD) return noSignal();
@@ -446,10 +446,10 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class LiquiditySweepProEngine : public EngineBase {
     CircularBuffer<double,256> history_;
-    static constexpr double MAX_SPREAD=4.00,SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.60;
-    static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=1.50,MIN_EXPECTED_MOVE=0.80;
+    static constexpr double MAX_SPREAD=4.00,SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.70; // spike 0.60→0.70: require stronger momentum to filter weak sweeps
+    static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=2.00,MIN_EXPECTED_MOVE=1.00; // VWAP dist 1.50→2.00: need real displacement; expected move 0.80→1.00
     static constexpr double TP_RATIO=0.85,BASE_SIZE=0.02;
-    static constexpr int SL_TICKS=10,MOM_WINDOW=6,LIQ_WINDOW=120;
+    static constexpr int SL_TICKS=12,MOM_WINDOW=6,LIQ_WINDOW=120; // SL 10→12: losers avg MAE=-0.66, not -1.00 — SL was too far, wasting $0.34
     static constexpr double CLUSTER_RANGE=0.35; static constexpr int MIN_CLUSTER=8;
 
     double computeMom(){
@@ -496,7 +496,7 @@ public:
         double dv=std::fabs(s.mid-s.vwap);
         if(dv<MIN_VWAP_DISTANCE||dv<MIN_EXPECTED_MOVE)return noSignal();
         TradeSide side=(s.mid>s.vwap)?TradeSide::SHORT:TradeSide::LONG;
-        int tp=std::max(6,std::min(16,(int)((dv*TP_RATIO)/0.1)));
+        int tp=std::max(8,std::min(30,(int)((dv*TP_RATIO)/0.1))); // cap 16→30 ticks ($1.60→$3.00): winners avg MFE $1.77 = hitting old cap, not natural target
         Signal sig; sig.valid=true; sig.side=side; sig.confidence=0.95;
         sig.size=BASE_SIZE; sig.entry=s.mid; sig.tp=tp; sig.sl=SL_TICKS;
         strncpy(sig.reason,side==TradeSide::SHORT?"SWEEP_SHORT":"SWEEP_LONG",31);
@@ -554,7 +554,7 @@ class LiquiditySweepPressureEngine : public EngineBase {
         return (best_cluster>=MIN_CLUSTER)?best_price:0;
     }
 public:
-    LiquiditySweepPressureEngine(): EngineBase("LiquiditySweepPressure",1.15){}
+    LiquiditySweepPressureEngine(): EngineBase("LiquiditySweepPressure",1.15){ enabled_=false; } // DISABLED: 51T 29%WR -$12.10 — fires too early into sweep, structural loser
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid())return noSignal();
         history_.push_back(s.mid);
@@ -688,7 +688,7 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class GoldPositionManager {
     static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
-    static constexpr int    MAX_HOLD_SEC  = 1200;  // 20min max hold
+    static constexpr int    MAX_HOLD_SEC  = 600;   // 10min max hold: winners close 22-157s, 20min was wasting capital on stale trades
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
 
     struct GoldPos {
