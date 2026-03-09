@@ -797,6 +797,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                   << " refMsgType=" << extract_tag(msg, "372")
                   << " full=" << r << "\n";
         std::cerr.flush();
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
