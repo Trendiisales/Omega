@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <chrono>
 #include <deque>
 #include <cmath>
 
@@ -22,7 +23,7 @@ public:
     int    DIV_WINDOW = 20;   // ticks
 
     void updateVIX(double vix_mid) {
-        if (vix_mid > 0) m_vix = vix_mid;
+        if (vix_mid > 0) { m_vix = vix_mid; m_vix_ts = nowSec(); }
     }
 
     void updateES(double es_mid) {
@@ -38,11 +39,21 @@ public:
     }
 
     // Returns "RISK_ON", "RISK_OFF", "NEUTRAL"
+    // Falls back to NEUTRAL if VIX data is stale (>5 minutes) — never block on stale regime
     std::string regime() const
     {
+        constexpr int64_t VIX_STALE_SEC = 300;  // 5 minutes
+        const bool vix_fresh = (m_vix_ts > 0) &&
+                               (nowSec() - m_vix_ts < VIX_STALE_SEC);
+        if (!vix_fresh) return "NEUTRAL";  // stale VIX — don't block on unknown data
         if (m_vix >= VIX_HIGH) return "RISK_OFF";
         if (m_vix > 0 && m_vix <= VIX_LOW) return "RISK_ON";
         return "NEUTRAL";
+    }
+
+    bool vix_is_stale() const {
+        constexpr int64_t VIX_STALE_SEC = 300;
+        return (m_vix_ts == 0) || (nowSec() - m_vix_ts >= VIX_STALE_SEC);
     }
 
     double vixLevel() const { return m_vix; }
@@ -58,8 +69,14 @@ public:
 
 private:
     double             m_vix = 0;
+    int64_t            m_vix_ts = 0;      // Unix seconds of last VIX update
     std::deque<double> m_es_prices;
     std::deque<double> m_nq_prices;
+
+    static int64_t nowSec() noexcept {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+    }
 };
 
 } // namespace omega

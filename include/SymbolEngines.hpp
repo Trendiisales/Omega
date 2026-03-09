@@ -144,9 +144,9 @@ public:
         VOL_THRESH_PCT        = 0.080;
         TP_PCT                = 1.200;
         SL_PCT                = 0.600;
-        COMPRESSION_LOOKBACK  = 40;
-        BASELINE_LOOKBACK     = 150;
-        COMPRESSION_THRESHOLD = 0.70;
+        COMPRESSION_LOOKBACK  = 120;  // 40→120: oil intraday pauses are 15-40s (40 ticks), real compression is 2-10min (120+ ticks)
+        BASELINE_LOOKBACK     = 300;  // 150→300: baseline must be at least 2.5x compression window for meaningful ratio
+        COMPRESSION_THRESHOLD = 0.65;  // 0.70→0.65: oil chops more than indices — tighter threshold avoids false compression exits
         MAX_HOLD_SEC          = 1800;
         MIN_GAP_SEC           = 360;
         MAX_SPREAD_PCT        = 0.120;

@@ -162,13 +162,12 @@ public:
         if (in_compression) return {};  // still inside compression — keep tracking
 
         // Compression just ended — fire signal only if price clearly exited one side.
-        // Use comp_high/comp_low directly: price must be ABOVE comp_high (long)
-        // or BELOW comp_low (short). A mid-range exit = noise, skip it.
-        // VOL_THRESH_PCT defines how far outside the range price must be.
-        const double range      = comp_high - comp_low;
-        const double min_exit   = range * (VOL_THRESH_PCT / 100.0) * 0.5; // 50% of thresh as buffer
-        const bool   long_break  = (mid > comp_high - min_exit);   // exited above range
-        const bool   short_break = (mid < comp_low  + min_exit);   // exited below range
+        // Price must be ABOVE comp_high (long) or BELOW comp_low (short).
+        // Buffer = 1.5x spread: must clear spread + half a spread of confirmation.
+        // Old: range * VOL_THRESH * 0.5 was effectively zero ($0.00012 on oil) — no filter.
+        const double min_exit    = spread * 1.5;  // must clear 1.5× spread above/below range
+        const bool   long_break  = (mid > comp_high + min_exit);   // clearly above compression high
+        const bool   short_break = (mid < comp_low  - min_exit);   // clearly below compression low
 
         if (!long_break && !short_break) {
             phase = Phase::FLAT; return {};  // mid-range exit — noise, skip

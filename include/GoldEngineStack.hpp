@@ -668,7 +668,7 @@ public:
 class VolatilityFilter {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=50;
-    static constexpr double VOL_THRESHOLD=1.4;
+    static constexpr double VOL_THRESHOLD=0.8;  // 1.4→0.8: $1.40 was blocking all Asian session signals; $0.80 = realistic quiet-period floor
 public:
     bool allow(double mid){
         history_.push_back(mid);
@@ -707,7 +707,7 @@ public:
         if(!vol_filter_.allow(snap.mid)) return GoldSignal{};
 
         // VWAP chop zone gate
-        if(snap.vwap>0&&std::fabs(snap.mid-snap.vwap)<1.0) return GoldSignal{};
+        if(snap.vwap>0&&std::fabs(snap.mid-snap.vwap)<0.5) return GoldSignal{};  // 1.0→0.5: $1.00 chop gate was blocking trades within spread of VWAP; $0.50 = half typical spread
 
         // Regime classification (frozen while position open)
         MarketRegime regime=governor_.detect(snap.mid,has_open_pos_);
