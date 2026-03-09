@@ -148,19 +148,27 @@ public:
             return {};
         }
 
-        // phase == COMPRESSION
-        if (!in_compression) { phase = Phase::FLAT; return {}; }
-
+        // phase == COMPRESSION — track the range
         if (mid > comp_high) comp_high = mid;
         if (mid < comp_low)  comp_low  = mid;
 
-        const double thresh    = mid * VOL_THRESH_PCT / 100.0;
-        const bool long_break  = (mid >= comp_high + thresh);
-        const bool short_break = (mid <= comp_low  - thresh);
-        if (!long_break && !short_break) return {};
+        // ── Breakout detection ────────────────────────────────────────────
+        // Breakout = compression ENDS (recent_vol expands above threshold).
+        // Direction = which side of the compression range price exits from.
+        //
+        // The old VOL_THRESH approach ("price >= comp_high + thresh") was broken:
+        // comp_high chases price every tick, so it requires a 6-sigma single-tick
+        // move — statistically impossible. Fixed: use compression exit direction.
+        if (in_compression) return {};  // still inside compression — keep tracking
+
+        // Compression just ended — fire signal in exit direction
+        const double comp_mid    = (comp_high + comp_low) * 0.5;
+        // long_break=true → price above compression midpoint → BUY
+        // long_break=false → price below compression midpoint → SELL
+        const bool long_break = (mid > comp_mid);
 
         // Session/latency gate — no new entries outside trading window
-        if (!can_enter) return {};
+        if (!can_enter) { phase = Phase::FLAT; return {}; }
 
         // CRTP gate — instrument-specific filters (spread, regime, EIA etc)
         if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, latency_ms)) {
