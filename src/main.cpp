@@ -381,17 +381,6 @@ static bool session_tradeable() noexcept {
 // Apply config to engines — per-symbol typed overloads
 // ─────────────────────────────────────────────────────────────────────────────
 // Generic fallback (used for GOLD BreakoutEngine)
-static void apply_engine_config(omega::BreakoutEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = g_cfg.vol_thresh_pct;
-    eng.TP_PCT                = g_cfg.tp_pct;
-    eng.SL_PCT                = g_cfg.sl_pct;
-    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
-    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
-    eng.COMPRESSION_THRESHOLD = g_cfg.compression_threshold;
-    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    eng.MIN_GAP_SEC           = g_cfg.min_entry_gap_sec;
-    eng.MAX_SPREAD_PCT        = g_cfg.max_spread_pct;
-}
 // SP — uses [sp] config section, links macro context
 static void apply_engine_config(omega::SpEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.sp_vol_thresh_pct;
@@ -478,9 +467,12 @@ static void load_config(const std::string& path) {
             if (k=="max_spread_entry_pct")  g_cfg.max_spread_pct        = std::stod(v);
         }
         if (section == "risk") {
-            if (k=="daily_loss_limit")  g_cfg.daily_loss_limit  = std::stod(v);
-            if (k=="max_consec_losses") g_cfg.max_consec_losses = std::stoi(v);
-            if (k=="loss_pause_sec")    g_cfg.loss_pause_sec    = std::stoi(v);
+            if (k=="daily_loss_limit")     g_cfg.daily_loss_limit  = std::stod(v);
+            if (k=="max_consec_losses")    g_cfg.max_consec_losses = std::stoi(v);
+            if (k=="loss_pause_sec")       g_cfg.loss_pause_sec    = std::stoi(v);
+            if (k=="min_entry_gap_sec")    g_cfg.min_entry_gap_sec = std::stoi(v);
+            if (k=="max_spread_entry_pct") g_cfg.max_spread_pct    = std::stod(v);
+            if (k=="max_latency_ms")       g_cfg.max_latency_ms    = std::stod(v);
         }
         if (section == "session") {
             if (k=="session_start_utc") g_cfg.session_start_utc = std::stoi(v);
@@ -489,7 +481,8 @@ static void load_config(const std::string& path) {
         }
         if (section == "telemetry") {
             if (k=="gui_port")   g_cfg.gui_port   = std::stoi(v);
-            if (k=="shadow_csv") g_cfg.shadow_csv = v;
+            if (k=="ws_port")    g_cfg.ws_port     = std::stoi(v);
+            if (k=="shadow_csv") g_cfg.shadow_csv  = v;
         }
         if (section == "gold") {
             if (k=="gold_tp_pct")        g_cfg.gold_tp_pct        = std::stod(v);
@@ -520,9 +513,11 @@ static void load_config(const std::string& path) {
               << "% tp=" << g_cfg.tp_pct
               << "% sl=" << g_cfg.sl_pct
               << "% maxhold=" << g_cfg.max_hold_sec << "s\n"
-              << "[CONFIG] SP  tp=" << g_cfg.sp_tp_pct  << "% sl=" << g_cfg.sp_sl_pct  << "% vol=" << g_cfg.sp_vol_thresh_pct  << "%\n"
-              << "[CONFIG] NQ  tp=" << g_cfg.nq_tp_pct  << "% sl=" << g_cfg.nq_sl_pct  << "% vol=" << g_cfg.nq_vol_thresh_pct  << "%\n"
-              << "[CONFIG] OIL tp=" << g_cfg.oil_tp_pct << "% sl=" << g_cfg.oil_sl_pct << "% vol=" << g_cfg.oil_vol_thresh_pct << "%\n";
+              << "[CONFIG] SP   tp=" << g_cfg.sp_tp_pct   << "% sl=" << g_cfg.sp_sl_pct   << "% vol=" << g_cfg.sp_vol_thresh_pct  << "%\n"
+              << "[CONFIG] NQ   tp=" << g_cfg.nq_tp_pct   << "% sl=" << g_cfg.nq_sl_pct   << "% vol=" << g_cfg.nq_vol_thresh_pct  << "%\n"
+              << "[CONFIG] OIL  tp=" << g_cfg.oil_tp_pct  << "% sl=" << g_cfg.oil_sl_pct  << "% vol=" << g_cfg.oil_vol_thresh_pct << "%\n"
+              << "[CONFIG] GOLD tp=" << g_cfg.gold_tp_pct << "% sl=" << g_cfg.gold_sl_pct << "% vol=" << g_cfg.gold_vol_thresh_pct << "%\n"
+              << "[CONFIG] latency_cap=" << g_cfg.max_latency_ms << "ms spread_cap=" << g_cfg.max_spread_pct << "%\n";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -883,10 +878,16 @@ int main(int argc, char* argv[])
     apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated
     apply_engine_config(g_eng_cl);   // [oil] section: tp=1.20%, sl=0.60%, vol=0.08%, inventory-blocked
     // Gold: generic breakout engine, overridden with gold-specific pct params
-    apply_engine_config(g_eng_xau);
-    g_eng_xau.TP_PCT         = g_cfg.gold_tp_pct;
-    g_eng_xau.SL_PCT         = g_cfg.gold_sl_pct;
-    g_eng_xau.VOL_THRESH_PCT = g_cfg.gold_vol_thresh_pct;
+    // Gold: dedicated config — do not use generic breakout defaults
+    g_eng_xau.TP_PCT                = g_cfg.gold_tp_pct;
+    g_eng_xau.SL_PCT                = g_cfg.gold_sl_pct;
+    g_eng_xau.VOL_THRESH_PCT        = g_cfg.gold_vol_thresh_pct;
+    g_eng_xau.COMPRESSION_LOOKBACK  = 60;   // gold compresses slower than indices
+    g_eng_xau.BASELINE_LOOKBACK     = 250;  // longer baseline — gold trends persist
+    g_eng_xau.COMPRESSION_THRESHOLD = 0.75;
+    g_eng_xau.MAX_HOLD_SEC          = 1500; // 25min — gold breaks can run
+    g_eng_xau.MIN_GAP_SEC           = 180;  // 3min gap between signals
+    g_eng_xau.MAX_SPREAD_PCT        = 0.06; // gold spreads slightly wider than indices
     build_id_map();
 
     WSADATA wsa;
