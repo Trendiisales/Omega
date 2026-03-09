@@ -90,6 +90,14 @@ struct OmegaTelemetrySnapshot
     double cl_baseline_vol_pct;
     int  cl_signals;
 
+    // GOLD.F
+    int  xau_phase;
+    double xau_comp_high;
+    double xau_comp_low;
+    double xau_recent_vol_pct;
+    double xau_baseline_vol_pct;
+    int  xau_signals;
+
     // --- Last signal ---
     char last_signal_symbol[16];
     char last_signal_side[8];   // "LONG" / "SHORT" / "NONE"
@@ -240,6 +248,10 @@ public:
             m_snap->cl_phase=phase; m_snap->cl_comp_high=comp_high;
             m_snap->cl_comp_low=comp_low; m_snap->cl_recent_vol_pct=recent_vol_pct;
             m_snap->cl_baseline_vol_pct=baseline_vol_pct; m_snap->cl_signals=signals;
+        } else if (!strcmp(sym,"GOLD.F")) {
+            m_snap->xau_phase=phase; m_snap->xau_comp_high=comp_high;
+            m_snap->xau_comp_low=comp_low; m_snap->xau_recent_vol_pct=recent_vol_pct;
+            m_snap->xau_baseline_vol_pct=baseline_vol_pct; m_snap->xau_signals=signals;
         }
     }
 

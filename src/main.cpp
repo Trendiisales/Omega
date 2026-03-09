@@ -556,7 +556,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     const bool tradeable = session_tradeable();
     g_telemetry.UpdateSession(tradeable ? "ACTIVE" : "CLOSED", tradeable ? 1 : 0);
 
-    // ── Governor gates ────────────────────────────────────────────────────────
+    // ── Governor gates — PnL/loss-pause block ALL processing ─────────────────
+    // NOTE: session + latency gates are checked INSIDE dispatch so engines
+    // always receive ticks for warmup. Without this, a 250-tick warmup never
+    // completes during closed session and gold/oil/indices never fire signals.
     if (g_omegaLedger.dailyPnl() < -g_cfg.daily_loss_limit) {
         ++g_gov_pnl;
         g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
@@ -570,15 +573,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         g_loss_pause = false;
     }
-    if (!tradeable) {
-        g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
-        return;
-    }
-    if (g_rtt_last > 0.0 && !g_governor.checkLatency(g_rtt_last, g_cfg.max_latency_ms)) {
-        ++g_gov_lat;
-        g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
-        return;
-    }
+
+    // Gate flags — passed into dispatch, checked before entry (not before warmup)
+    const bool lat_ok = (g_rtt_last <= 0.0 || g_governor.checkLatency(g_rtt_last, g_cfg.max_latency_ms));
+    const bool can_enter = tradeable && lat_ok;
+    if (!lat_ok) ++g_gov_lat;
 
     // ── Route to engine — typed dispatch (CRTP has no virtual base) ──────────
     // Each branch calls the same logical sequence on the correct typed engine.
@@ -601,9 +600,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
     };
 
-    // Helper lambda — runs engine, updates telemetry, logs signal
+    // Helper lambda — always feeds ticks to engine (warmup + position management).
+    // can_enter=false gates new entries only; TP/SL/timeout always run.
     auto dispatch = [&](auto& eng) {
-        const auto sig = eng.update(bid, ask, g_rtt_last, regime.c_str(), on_close);
+        const auto sig = eng.update(bid, ask, g_rtt_last, regime.c_str(), on_close, can_enter);
         g_telemetry.UpdateEngineState(sym.c_str(),
             static_cast<int>(eng.phase), eng.comp_high, eng.comp_low,
             eng.recent_vol_pct, eng.base_vol_pct, eng.signal_count);

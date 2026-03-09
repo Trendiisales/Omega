@@ -86,10 +86,13 @@ public:
     void onSignal(const BreakoutSignal& /*sig*/) const noexcept {}
 
     // ── update() — call on every tick ────────────────────────────────────────
+    // can_enter=true  → full processing including new entries
+    // can_enter=false → warmup + position management only, no new entries
     [[nodiscard]] BreakoutSignal update(double bid, double ask,
                                         double latency_ms,
                                         const char* macro_regime,
-                                        CloseCallback on_close) noexcept
+                                        CloseCallback on_close,
+                                        bool can_enter = true) noexcept
     {
         if (bid <= 0.0 || ask <= 0.0) return {};
 
@@ -156,7 +159,10 @@ public:
         const bool short_break = (mid <= comp_low  - thresh);
         if (!long_break && !short_break) return {};
 
-        // CRTP gate
+        // Session/latency gate — no new entries outside trading window
+        if (!can_enter) return {};
+
+        // CRTP gate — instrument-specific filters (spread, regime, EIA etc)
         if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, latency_ms)) {
             phase = Phase::FLAT; return {};
         }
