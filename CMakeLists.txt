@@ -53,11 +53,46 @@ target_link_libraries(Omega
     ws2_32
 )
 
+# ── Build version stamp ──────────────────────────────────────────────────────
+# Embeds git hash + build timestamp directly into the binary.
+# After every build: startup banner + GUI header + /version endpoint show these.
+# This is the ONLY reliable way to confirm which code is running on Windows.
+
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} log -1 --format=%ci HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_DATE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+else()
+    set(GIT_HASH "unknown")
+    set(GIT_DATE "unknown")
+endif()
+
+string(TIMESTAMP BUILD_TIMESTAMP "%Y-%m-%d %H:%M UTC")
+
+target_compile_definitions(Omega PRIVATE
+    OMEGA_GIT_HASH="${GIT_HASH}"
+    OMEGA_GIT_DATE="${GIT_DATE}"
+    OMEGA_BUILD_TIME="${BUILD_TIMESTAMP}"
+)
+
 message(STATUS "========================================")
 message(STATUS "OMEGA — Commodities & Indices System")
-message(STATUS "Version: 1.0.0")
+message(STATUS "Version:    1.0.0")
+message(STATUS "Git hash:   ${GIT_HASH}")
+message(STATUS "Commit:     ${GIT_DATE}")
+message(STATUS "Built:      ${BUILD_TIMESTAMP}")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "OpenSSL: ${OPENSSL_VERSION}")
-message(STATUS "Symbols: MES MNQ MCL + 8 confirmation")
-message(STATUS "GUI: HTTP :7779 / WS :7780")
+message(STATUS "OpenSSL:    ${OPENSSL_VERSION}")
 message(STATUS "========================================")

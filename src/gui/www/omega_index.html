@@ -141,6 +141,7 @@
         </div>
         <div class="hbar">
             <span id="modeBadge" class="badge mode-shadow">SHADOW</span>
+            <span id="buildBadge" class="badge" style="color:var(--t2);font-size:9px;letter-spacing:1px" title="Build version — click to verify">v<span id="buildVersion">...</span></span>
             <span class="badge"><span class="conn-dot bad" id="connDot"></span><span id="connText">Connecting...</span></span>
             <span class="badge" id="fixQuoteHdr" style="color:var(--red)">QUOTE: --</span>
             <span class="mono" id="clock">--:--:-- UTC</span>
@@ -591,6 +592,12 @@ function updateDashboard(d) {
     // Mode badge
     const mb = document.getElementById('modeBadge');
     if (mb) { mb.textContent = d.mode || 'SHADOW'; mb.className = 'badge ' + (d.mode === 'LIVE' ? 'mode-live' : 'mode-shadow'); }
+    const bv = document.getElementById('buildVersion');
+    if (bv && d.build_version) {
+        bv.textContent = d.build_version;
+        const bb = document.getElementById('buildBadge');
+        if (bb) bb.title = 'Built: ' + (d.build_time || '?');
+    }
 
     // Governor
     const gs = safe(d.gov_spread), gl = safe(d.gov_latency), gp = safe(d.gov_pnl), gc = safe(d.gov_consec_loss);

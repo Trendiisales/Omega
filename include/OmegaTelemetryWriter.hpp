@@ -59,7 +59,9 @@ struct OmegaTelemetrySnapshot
     int  sequence_gaps;
 
     // --- Mode ---
-    char mode[8];   // "SHADOW" or "LIVE"
+    char mode[8];        // "SHADOW" or "LIVE"
+    char build_version[32]; // git hash, e.g. "f60cebb"
+    char build_time[48];    // build timestamp
 
     // --- Session ---
     char session_name[32];
@@ -224,6 +226,10 @@ public:
         m_snap->sequence_gaps  = gaps;
     }
 
+    void UpdateBuildVersion(const char* version, const char* built) {
+        strncpy_s(m_snap->build_version, version, 31);
+        strncpy_s(m_snap->build_time,    built,   47);
+    }
     void UpdateSession(const char* name, int tradeable)
     {
         if (!m_snap) return;

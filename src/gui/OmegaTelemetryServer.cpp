@@ -126,7 +126,10 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"last_signal_price\":%.4f,\"last_signal_reason\":\"%s\","
         "\"vix_level\":%.2f,\"macro_regime\":\"%s\",\"es_nq_divergence\":%.6f,"
         "\"gov_spread\":%d,\"gov_latency\":%d,\"gov_pnl\":%d,"
-        "\"gov_positions\":%d,\"gov_consec_loss\":%d"
+        "\"gov_positions\":%d,\"gov_consec_loss\":%d,"
+        "\"xau_phase\":%d,\"xau_comp_high\":%.4f,\"xau_comp_low\":%.4f,"
+        "\"xau_recent_vol_pct\":%.4f,\"xau_baseline_vol_pct\":%.4f,\"xau_signals\":%d,"
+        "\"build_version\":\"%s\",\"build_time\":\"%s\""
         "}",
         s->sp_bid,     s->sp_ask,     s->nq_bid,  s->nq_ask,
         s->cl_bid,     s->cl_ask,     s->vix_bid, s->vix_ask,
@@ -153,7 +156,10 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->last_signal_price, s->last_signal_reason,
         s->vix_level, s->macro_regime, s->es_nq_divergence,
         s->gov_spread, s->gov_latency, s->gov_pnl,
-        s->gov_positions, s->gov_consec_loss
+        s->gov_positions, s->gov_consec_loss,
+        s->xau_phase, s->xau_comp_high, s->xau_comp_low,
+        s->xau_recent_vol_pct, s->xau_baseline_vol_pct, s->xau_signals,
+        s->build_version, s->build_time
     );
     return buf;
 }
@@ -393,6 +399,15 @@ void OmegaTelemetryServer::run(int port)
 
         if (strstr(buf, "GET /api/telemetry"))    { ct = "application/json"; body = buildTelemetryJson(snap_); }
         else if (strstr(buf, "GET /api/trades"))  { ct = "application/json"; body = buildTradesJson(); }
+        else if (strstr(buf, "GET /version"))     {
+            ct = "application/json";
+            char vbuf[256];
+            if (snap_) snprintf(vbuf, sizeof(vbuf),
+                "{\"version\":\"%s\",\"built\":\"%s\"}",
+                snap_->build_version, snap_->build_time);
+            else snprintf(vbuf, sizeof(vbuf), "{\"version\":\"starting\",\"built\":\"unknown\"}");
+            body = vbuf;
+        }
         else if (strstr(buf, "GET /chimera_logo.png")) { ct = "image/png"; body = loadFile("chimera_logo.png"); }
         else if (strstr(buf, "GET / ") || strstr(buf, "GET /index.html")) {
             ct = "text/html"; body = loadFile("omega_index.html");
