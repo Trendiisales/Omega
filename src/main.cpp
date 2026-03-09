@@ -860,7 +860,7 @@ static void quote_loop() {
               const auto bi = g_bids.find("GOLD.F"); if (bi != g_bids.end()) g_bid = bi->second;
               const auto ai = g_asks.find("GOLD.F"); if (ai != g_asks.end()) g_ask = ai->second; }
             if (g_bid > 0.0 && g_ask > 0.0) {
-                GoldEngineStack::CloseCallback gold_fc_cb =
+                omega::gold::GoldEngineStack::CloseCallback gold_fc_cb =
                     [](const omega::TradeRecord& tr) {
                         g_omegaLedger.record(tr); write_shadow_csv(tr);
                     };
