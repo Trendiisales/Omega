@@ -37,6 +37,7 @@
 #include "OmegaTelemetryWriter.hpp"
 #include "OmegaTradeLedger.hpp"
 #include "BreakoutEngine.hpp"
+#include "SymbolEngines.hpp"      // SpEngine, NqEngine, OilEngine, MacroContext (includes BreakoutEngine.hpp)
 #include "MacroRegimeDetector.hpp"
 #include "OmegaTelemetryServer.hpp"
 #include "GoldEngineStack.hpp"    // Multi-engine gold stack (ported from ChimeraMetals)
