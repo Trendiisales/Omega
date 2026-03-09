@@ -161,11 +161,18 @@ public:
         // move — statistically impossible. Fixed: use compression exit direction.
         if (in_compression) return {};  // still inside compression — keep tracking
 
-        // Compression just ended — fire signal in exit direction
-        const double comp_mid    = (comp_high + comp_low) * 0.5;
-        // long_break=true → price above compression midpoint → BUY
-        // long_break=false → price below compression midpoint → SELL
-        const bool long_break = (mid > comp_mid);
+        // Compression just ended — fire signal only if price clearly exited one side.
+        // Use comp_high/comp_low directly: price must be ABOVE comp_high (long)
+        // or BELOW comp_low (short). A mid-range exit = noise, skip it.
+        // VOL_THRESH_PCT defines how far outside the range price must be.
+        const double range      = comp_high - comp_low;
+        const double min_exit   = range * (VOL_THRESH_PCT / 100.0) * 0.5; // 50% of thresh as buffer
+        const bool   long_break  = (mid > comp_high - min_exit);   // exited above range
+        const bool   short_break = (mid < comp_low  + min_exit);   // exited below range
+
+        if (!long_break && !short_break) {
+            phase = Phase::FLAT; return {};  // mid-range exit — noise, skip
+        }
 
         // Session/latency gate — no new entries outside trading window
         if (!can_enter) { phase = Phase::FLAT; return {}; }
@@ -180,7 +187,7 @@ public:
             phase = Phase::FLAT; return {};
         }
 
-        const bool   is_long = long_break;
+        const bool   is_long = long_break;  // short_break → !is_long → SHORT
         const double tp = is_long ? mid * (1.0 + TP_PCT / 100.0)
                                   : mid * (1.0 - TP_PCT / 100.0);
         const double sl = is_long ? mid * (1.0 - SL_PCT / 100.0)

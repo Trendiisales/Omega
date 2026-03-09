@@ -1,7 +1,6 @@
 #pragma once
 // AUTO-GENERATED from src/gui/www/omega_index.html
 // Split into 3 chunks to stay under MSVC 16KB string literal limit.
-// Adjacent string literals are concatenated by the compiler.
 namespace omega_gui {
 static const char* INDEX_HTML =
 R"OMEGA0(
@@ -630,15 +629,31 @@ function setConn(ok) {
     if (t) t.textContent = ok ? (wsConnected ? 'Live (WS)' : 'Connected') : 'Reconnecting...';
 }
 
+let wsFailCount = 0;
+let wsGiveUp = false;
+
 function connectWS() {
+    if (wsGiveUp) return;  // port blocked by firewall — HTTP poll handles it
     const ws = new WebSocket('ws://' + window.location.hostname + ':7780');
-    ws.onopen  = () => { wsConnected = true; setConn(true); };
+    ws.onopen  = () => { wsConnected = true; wsFailCount = 0; setConn(true); };
     ws.onmessage = e => { try { updateDashboard(JSON.parse(e.data)); } catch(_) {} };
-    ws.onclose = () => { wsConnected = false; setConn(false); setTimeout(connectWS, 2000); };
+    ws.onerror = () => { wsFailCount++; };
+    ws.onclose = () => {
+        wsConnected = false; setConn(false);
+        if (wsFailCount >= 5) {
+            // Port likely blocked by firewall — stop hammering, use HTTP poll
+            wsGiveUp = true;
+            console.log('[Omega] WS port 7780 unreachable after 5 attempts — switching to HTTP poll mode');
+            return;
+        }
+        // Exponential backoff: 2s, 4s, 8s, max 15s
+        const delay = Math.min(2000 * Math.pow(2, wsFailCount), 15000);
+        setTimeout(connectWS, delay);
+    };
 }
 
 function httpPoll() {
-    if (wsConnected) return;
+    if (wsConnected) return;  // WS handles updates when connected
     fetch('/api/telemetry').then(r => r.json()).then(updateDashboard).catch(() => setConn(false));
 }
 
@@ -649,8 +664,8 @@ function pollTrades() {
 setInterval(() => { document.getElementById('clock').textContent = new Date().toUTCString().slice(17,25) + ' UTC'; }, 1000);
 
 connectWS();
-setInterval(httpPoll, 1000);
-setInterval(pollTrades, 3000);
+setInterval(httpPoll, 1000);   // HTTP fallback when WS unavailable
+setInterval(pollTrades, 5000); // trades poll every 5s (was 3s)
 pollTrades();
 </script>
 </body>
