@@ -277,8 +277,8 @@ R"OMEGA1(
                     <span class="dot" style="background:var(--green)"></span>
                     Recent Trades
                     <span id="tradeCount" style="font-family:'Space Mono',monospace;color:var(--t2);margin-left:8px;font-size:10px;"></span>
-                    <button id="bellBtn" onclick="toggleBell()" title="Toggle win bell"
-                        style="margin-left:auto;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;color:var(--t2);">🔔 Bell: OFF</button>
+                    <button id="bellBtn" onclick="toggleBell()" title="Click to enable trade bell (required by browser)"
+                        style="margin-left:auto;background:rgba(255,214,0,.1);border:1px solid #ffd600;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;color:#ffd600;">🔔 ARM BELL</button>
                 </div>
                 <div style="overflow-y:auto;max-height:300px;">
                     <table>
@@ -359,6 +359,11 @@ let wsConnected = false;
 let lastData = {};
 let _bellEnabled = false;
 let _lastTradeCount = 0;
+let _bellBootCount = -1; // set to trade count on first data load — prevents page-refresh re-ring
+// AudioContext created ONCE on user gesture (toggleBell click) and reused.
+// Chrome blocks AudioContext creation outside of user gestures.
+// Creating a new AudioContext() inside the poll/fetch callback = BLOCKED.
+let _audioCtx = null;
 
 function safe(v,d=0){const n=Number(v);return isNaN(n)?d:n;}
 function fmtUTC(ts){if(!ts)return '--';const d=new Date(ts*1000);return d.toUTCString().slice(17,25);}
@@ -366,10 +371,87 @@ function fmtUTC(ts){if(!ts)return '--';const d=new Date(ts*1000);return d.toUTCS
 function toggleBell(){
     _bellEnabled=!_bellEnabled;
     const b=document.getElementById('bellBtn');
-    if(b){b.textContent=_bellEnabled?'🔔 Bell: ON':'🔔 Bell: OFF';b.style.color=_bellEnabled?'var(--green)':'var(--t2)';}
-    if(_bellEnabled){try{const a=new AudioContext();const o=a.createOscillator();const g=a.createGain();
-        o.connect(g);g.connect(a.destination);o.frequency.value=660;g.gain.setValueAtTime(0.15,a.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+0.2);o.start();o.stop(a.currentTime+0.2);}catch(e){}}
+    if(b){
+        if(_bellEnabled){
+            b.textContent='🔔 BELL: ARMED';
+            b.style.color='var(--green)';b.style.borderColor='var(--green)';
+            b.style.background='rgba(0,230,118,.1)';
+        } else {
+            b.textContent='🔔 ARM BELL';
+            b.style.color='#ffd600';b.style.borderColor='#ffd600';
+            b.style.background='rgba(255,214,0,.1)';
+        }
+    }
+    // Create AudioContext on first user click — Chrome requires user gesture
+    if(_bellEnabled && !_audioCtx){
+        try{
+            _audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+            // Resume if suspended (autoplay policy)
+            if(_audioCtx.state==='suspended') _audioCtx.resume();
+        }catch(e){console.warn('AudioContext init failed:',e);}
+    }
+    if(_bellEnabled && _audioCtx){ _playTestBell(); }
+}
+
+function _playTestBell(){
+    // Short quiet test tone on arm so user knows it's working
+    try{
+        const ctx=_audioCtx; if(!ctx) return;
+        if(ctx.state==='suspended') ctx.resume();
+        const now=ctx.currentTime;
+        const o=ctx.createOscillator(),g=ctx.createGain(),c=ctx.createDynamicsCompressor();
+        c.threshold.value=-6;c.ratio.value=4;
+        o.connect(g);g.connect(c);c.connect(ctx.destination);
+        o.type='sine';o.frequency.value=880;
+        g.gain.setValueAtTime(0,now);
+        g.gain.linearRampToValueAtTime(0.4,now+0.01);
+        g.gain.exponentialRampToValueAtTime(0.001,now+0.35);
+        o.start(now);o.stop(now+0.4);
+    }catch(e){}
+}
+
+// playWinBell — loud two-tone ascending chime with compressor
+function _playWinBell(){
+    if(!_bellEnabled||!_audioCtx) return;
+    try{
+        const ctx=_audioCtx;
+        if(ctx.state==='suspended') ctx.resume();
+        const now=ctx.currentTime;
+        // Two chimes: 880Hz then 1100Hz, louder than old 0.3 gain
+        [[0,880,1040],[0.22,1100,1320]].forEach(([t,f1,f2])=>{
+            [f1,f2].forEach((freq,i)=>{
+                const o=ctx.createOscillator(),g=ctx.createGain(),c=ctx.createDynamicsCompressor();
+                c.threshold.value=-3;c.ratio.value=4;c.attack.value=0.003;c.release.value=0.1;
+                o.connect(g);g.connect(c);c.connect(ctx.destination);
+                o.type='sine';o.frequency.setValueAtTime(freq,now+t);
+                g.gain.setValueAtTime(0,now+t);
+                g.gain.linearRampToValueAtTime(i===0?1.8:0.9,now+t+0.008); // 1.8 vs old 1.2 — louder
+                g.gain.exponentialRampToValueAtTime(0.3,now+t+0.1);
+                g.gain.exponentialRampToValueAtTime(0.001,now+t+1.4);
+                o.start(now+t);o.stop(now+t+1.5);
+            });
+        });
+    }catch(e){}
+}
+
+// playLossBell — low descending thud
+function _playLossBell(){
+    if(!_bellEnabled||!_audioCtx) return;
+    try{
+        const ctx=_audioCtx;
+        if(ctx.state==='suspended') ctx.resume();
+        const now=ctx.currentTime;
+        const o=ctx.createOscillator(),g=ctx.createGain(),c=ctx.createDynamicsCompressor();
+        c.threshold.value=-6;c.ratio.value=4;
+        o.connect(g);g.connect(c);c.connect(ctx.destination);
+        o.type='sawtooth';
+        o.frequency.setValueAtTime(280,now);
+        o.frequency.linearRampToValueAtTime(130,now+0.3);
+        g.gain.setValueAtTime(0,now);
+        g.gain.linearRampToValueAtTime(0.9,now+0.01); // 0.9 vs old 0.25 — much louder
+        g.gain.exponentialRampToValueAtTime(0.001,now+0.5);
+        o.start(now);o.stop(now+0.55);
+    }catch(e){}
 }
 
 function setPrice(id, val, dec) {
@@ -481,25 +563,11 @@ function renderTrades(trades) {
         if (cE) cE.textContent = ''; return;
     }
     const closed = trades.filter(t => t.exitReason && t.exitReason !== '');
-    if (_bellEnabled && closed.length > _lastTradeCount && closed.length > 0) {
+    // On first data load after page refresh, set boot baseline — never ring for pre-existing trades
+    if (_bellBootCount < 0) { _bellBootCount = closed.length; _lastTradeCount = closed.length; }
+    if (_bellEnabled && closed.length > _lastTradeCount && _lastTradeCount >= _bellBootCount) {
         const pnl = safe(closed[0].pnl);
-        try {
-            const a=new AudioContext(),o=a.createOscillator(),g=a.createGain();
-            o.connect(g);g.connect(a.destination);
-            if (pnl > 0) {
-                o.frequency.value=880;g.gain.setValueAtTime(0.3,a.currentTime);
-                g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+0.4);
-                o.start();o.stop(a.currentTime+0.4);
-                setTimeout(()=>{try{const a2=new AudioContext(),o2=a2.createOscillator(),g2=a2.createGain();
-                    o2.connect(g2);g2.connect(a2.destination);o2.frequency.value=1100;
-                    g2.gain.setValueAtTime(0.2,a2.currentTime);g2.gain.exponentialRampToValueAtTime(0.001,a2.currentTime+0.3);
-                    o2.start();o2.stop(a2.currentTime+0.3);}catch(e){}},200);
-            } else {
-                o.frequency.value=200;g.gain.setValueAtTime(0.25,a.currentTime);
-                g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+0.5);
-                o.start();o.stop(a.currentTime+0.5);
-            }
-        } catch(e){}
+        if (pnl > 0) { _playWinBell(); } else { _playLossBell(); }
     }
     _lastTradeCount = closed.length;
     const wins = closed.filter(t => safe(t.pnl) > 0).length;
