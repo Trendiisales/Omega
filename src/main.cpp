@@ -72,7 +72,7 @@ struct OmegaConfig {
     int    max_hold_sec          = 1500;
     int    min_entry_gap_sec     = 180;
     double max_spread_pct        = 0.05;
-    double max_latency_ms        = 2000.0;  // FIX broker RTT 200-500ms is normal; only block if connection is dead
+    double max_latency_ms        = 2000.0; // hard cap — only blocks dead/hung FIX connections
 
     // Risk
     double daily_loss_limit  = 200.0;
@@ -154,6 +154,22 @@ static int     g_gov_lat     = 0;
 static int     g_gov_pnl     = 0;
 static int     g_gov_consec  = 0;
 static int     g_consec_losses = 0;
+
+// Adaptive latency governor — identical logic to ChimeraMetals
+// Hard cap raised to 2000ms to suit FIX broker RTT (BlackBull ~400ms normal)
+struct Governor {
+    const double latency_multiplier  = 3.5;     // allow up to 3.5x average RTT
+    const double min_latency_limit   = 20.0;    // adaptive floor (ms)
+    const double hard_latency_cap    = 2000.0;  // hard ceiling — never trade if FIX is hung
+
+    bool checkLatency(double latency_ms) const noexcept {
+        if (latency_ms > hard_latency_cap)  return false;  // dead connection
+        const double adaptive_limit = std::max(min_latency_limit, latency_ms * latency_multiplier);
+        if (latency_ms > adaptive_limit)    return false;  // spike above 3.5x baseline
+        return true;
+    }
+};
+static Governor g_governor;
 static bool    g_loss_pause    = false;
 static int64_t g_loss_pause_until = 0;
 
@@ -570,7 +586,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
         return;
     }
-    if (g_rtt_last > 0.0 && g_rtt_last > g_cfg.max_latency_ms) {
+    if (g_rtt_last > 0.0 && !g_governor.checkLatency(g_rtt_last)) {
         ++g_gov_lat;
         g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
         return;

@@ -58,7 +58,6 @@ public:
                      double spread_pct, double latency_ms) const noexcept
     {
         if (spread_pct > MAX_SPREAD_PCT) return false;
-        if (latency_ms > 2000.0)           return false;
         if (!macro)                       return true;
         if (macro->nq_open)               return false;
         if (std::fabs(macro->es_nq_div) > 0.0030) return false;
@@ -98,7 +97,6 @@ public:
                      double spread_pct, double latency_ms) const noexcept
     {
         if (spread_pct > MAX_SPREAD_PCT) return false;
-        if (latency_ms > 2000.0)           return false;
         if (!macro)                       return true;
         if (macro->sp_open)               return false;
         if (std::fabs(macro->es_nq_div) > 0.0030) return false;
@@ -135,7 +133,6 @@ public:
                      double spread_pct, double latency_ms) const noexcept
     {
         if (spread_pct > MAX_SPREAD_PCT) return false;
-        if (latency_ms > 2000.0)           return false;
         if (in_inventory_window())        return false;
         return true;
     }
