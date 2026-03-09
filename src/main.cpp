@@ -72,7 +72,7 @@ struct OmegaConfig {
     int    max_hold_sec          = 1500;
     int    min_entry_gap_sec     = 180;
     double max_spread_pct        = 0.05;
-    double max_latency_ms        = 2000.0; // hard cap — only blocks dead/hung FIX connections
+    double max_latency_ms        = 200.0;  // matches ChimeraMetals max_latency_error_ms=200
 
     // Risk
     double daily_loss_limit  = 200.0;
