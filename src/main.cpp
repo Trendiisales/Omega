@@ -641,12 +641,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else {
+        // Confirmation-only symbol (VIX, ES, NAS100, DX etc) — no engine dispatch
         g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
         return;
     }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FIX message extraction
+    g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
+}  // ← on_tick
 // ─────────────────────────────────────────────────────────────────────────────
 static std::vector<std::string> extract_messages(const char* data, int n) {
     g_recv_buf.append(data, static_cast<size_t>(n));
