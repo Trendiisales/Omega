@@ -722,7 +722,7 @@ function connectWS() {
 }
 
 function httpPoll() {
-    if (wsConnected) return;  // WS handles updates when connected
+    // Always poll via HTTP — WS port 7780 is firewalled externally
     fetch('/api/telemetry').then(r => r.json()).then(updateDashboard).catch(() => setConn(false));
 }
 
@@ -733,7 +733,7 @@ function pollTrades() {
 setInterval(() => { document.getElementById('clock').textContent = new Date().toUTCString().slice(17,25) + ' UTC'; }, 1000);
 
 connectWS();
-setInterval(httpPoll, 1000);   // HTTP fallback when WS unavailable
+setInterval(httpPoll, 500);   // HTTP poll every 500ms — WS port 7780 firewalled externally
 setInterval(pollTrades, 5000); // trades poll every 5s (was 3s)
 pollTrades();
 </script>
