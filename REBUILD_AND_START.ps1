@@ -1,9 +1,9 @@
 # ==============================================================================
-#                   OMEGA — CLEAN REBUILD AND START
+#                   OMEGA - CLEAN REBUILD AND START
 # ==============================================================================
 
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "   OMEGA — CLEAN REBUILD                               " -ForegroundColor Cyan
+Write-Host "   OMEGA - CLEAN REBUILD                               " -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
