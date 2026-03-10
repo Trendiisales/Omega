@@ -130,6 +130,32 @@ public:
             if (!pos.is_long && mid <= pos.tp) { closePos(mid, "TP_HIT",  latency_ms, macro_regime, on_close); return {}; }
             if ( pos.is_long && mid <= pos.sl) { closePos(mid, "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
             if (!pos.is_long && mid >= pos.sl) { closePos(mid, "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
+
+            // ── BREAKOUT FAILURE SCRATCH ──────────────────────────────────────
+            // If within first 120s the price moves against us by > 0.08% of entry,
+            // the breakout is confirmed false — cut immediately. Do NOT hold a
+            // wrong-direction break for 20 minutes hoping for reversal.
+            // Data: USTEC SHORT held 20min at -$20 vs SL $100 away. Scratch saves
+            // ~$10-15 by exiting at first confirmation of failure (~60-90s in).
+            // 0.08% chosen: above spread noise (0.02-0.04%) but tight enough to
+            // catch a genuine false break within the first few minutes.
+            {
+                const int64_t held_sec = nowSec() - pos.entry_ts;
+                if (held_sec <= 120) {
+                    const double adverse_pct = pos.is_long
+                        ? (pos.entry - mid) / pos.entry * 100.0
+                        : (mid - pos.entry) / pos.entry * 100.0;
+                    if (adverse_pct > 0.08) {
+                        std::cout << "[SCRATCH] " << symbol
+                                  << (pos.is_long ? " LONG" : " SHORT")
+                                  << " false breakout — adverse=" << adverse_pct
+                                  << "% in " << held_sec << "s\n";
+                        closePos(mid, "SCRATCH", latency_ms, macro_regime, on_close);
+                        return {};
+                    }
+                }
+            }
+
             if (nowSec() - pos.entry_ts >= static_cast<int64_t>(MAX_HOLD_SEC)) {
                 closePos(mid, "TIMEOUT", latency_ms, macro_regime, on_close); return {};
             }
