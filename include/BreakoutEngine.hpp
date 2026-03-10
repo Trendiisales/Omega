@@ -144,6 +144,11 @@ public:
                 phase     = Phase::COMPRESSION;
                 comp_high = mid;
                 comp_low  = mid;
+                std::cout << "[ENG-" << symbol << "] COMPRESSION entered"
+                          << " recent=" << recent_vol_pct << "% base=" << base_vol_pct
+                          << "% ratio=" << (base_vol_pct>0?recent_vol_pct/base_vol_pct:0)
+                          << " mid=" << mid << "\n";
+                std::cout.flush();
             }
             return {};
         }
@@ -170,19 +175,36 @@ public:
         const bool   short_break = (mid < comp_low  - min_exit);   // clearly below compression low
 
         if (!long_break && !short_break) {
-            phase = Phase::FLAT; return {};  // mid-range exit — noise, skip
+            std::cout << "[ENG-" << symbol << "] BREAKOUT mid-range exit, resetting"
+                      << " mid=" << mid << " hi=" << comp_high << " lo=" << comp_low << "\n";
+            std::cout.flush();
+            phase = Phase::FLAT; return {};
         }
 
+        std::cout << "[ENG-" << symbol << "] BREAKOUT attempt"
+                  << (long_break?" LONG":" SHORT")
+                  << " mid=" << mid << " hi=" << comp_high << " lo=" << comp_low
+                  << " can_enter=" << can_enter << "\n";
+        std::cout.flush();
+
         // Session/latency gate — no new entries outside trading window
-        if (!can_enter) { phase = Phase::FLAT; return {}; }
+        if (!can_enter) {
+            std::cout << "[ENG-" << symbol << "] BLOCKED: can_enter=false\n"; std::cout.flush();
+            phase = Phase::FLAT; return {};
+        }
 
         // CRTP gate — instrument-specific filters (spread, regime, EIA etc)
         if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, latency_ms)) {
+            std::cout << "[ENG-" << symbol << "] BLOCKED: shouldTrade=false"
+                      << " spread=" << spread_pct << "%\n"; std::cout.flush();
             phase = Phase::FLAT; return {};
         }
 
         const int64_t now = nowSec();
         if (now - m_last_signal_ts < static_cast<int64_t>(MIN_GAP_SEC)) {
+            std::cout << "[ENG-" << symbol << "] BLOCKED: min_gap not met"
+                      << " gap=" << (now-m_last_signal_ts) << "s min=" << MIN_GAP_SEC << "\n";
+            std::cout.flush();
             phase = Phase::FLAT; return {};
         }
 
