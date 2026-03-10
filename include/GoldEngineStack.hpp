@@ -846,8 +846,19 @@ public:
         double spread = ask - bid;
 
         // ── Manage existing position (TP/SL/timeout) ─────────────────────────
+        // Wrap on_close to detect SL exit and arm the 120s inter-engine cooldown
+        CloseCallback wrapped_close = on_close
+            ? [this, &on_close](const omega::TradeRecord& tr) {
+                on_close(tr);
+                if (tr.exitReason == "SL_HIT") {
+                    sl_cooldown_until_ = nowSec() + 120;
+                    printf("[GOLD-SL-COOLDOWN] armed 120s — blocks all engines until cooldown expires\n");
+                    fflush(stdout);
+                }
+              }
+            : CloseCallback{};
         bool just_closed = pos_mgr_.manage(bid, ask, latency_ms,
-                                           current_regime_name(), on_close);
+                                           current_regime_name(), wrapped_close);
         (void)just_closed;
 
         // Update has_open_pos_ so regime governor freezes while in trade
@@ -867,6 +878,10 @@ public:
 
         // Don't look for new entries if already in a position or gated out
         if(has_open_pos_ || !can_enter) return GoldSignal{};
+
+        // SL cooldown: after any gold SL, block ALL engines for 120s
+        // Prevents multiple engines firing sequentially on same fake breakout
+        if(nowSec() < sl_cooldown_until_) return GoldSignal{};
 
         // Volatility gate
         if(!vol_filter_.allow(snap.mid)) return GoldSignal{};
@@ -937,6 +952,7 @@ private:
     MarketRegime     current_regime_=MarketRegime::MEAN_REVERSION;
     bool             has_open_pos_=false;
     double           last_mid_=0;
+    int64_t          sl_cooldown_until_=0;  // block ALL engines for 120s after any SL
 
     const char* current_regime_name() const {
         return RegimeGovernor::name(current_regime_);
