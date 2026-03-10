@@ -54,9 +54,9 @@ public:
         VOL_THRESH_PCT        = 0.040;
         TP_PCT                = 0.600;
         SL_PCT                = 0.350;
-        COMPRESSION_LOOKBACK  = 60;
-        BASELINE_LOOKBACK     = 200;
-        COMPRESSION_THRESHOLD = 0.75;
+        COMPRESSION_LOOKBACK  = 40;    // 60->40: faster compression detection in high-vol market
+        BASELINE_LOOKBACK     = 160;   // 200->160: 4x ratio maintained, responds faster
+        COMPRESSION_THRESHOLD = 0.85;  // 0.75->0.85: VIX=24 market needs looser threshold
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 300;
         MAX_SPREAD_PCT        = 0.04;
@@ -99,9 +99,9 @@ public:
         VOL_THRESH_PCT        = 0.050;
         TP_PCT                = 0.700;
         SL_PCT                = 0.400;
-        COMPRESSION_LOOKBACK  = 50;
-        BASELINE_LOOKBACK     = 200;
-        COMPRESSION_THRESHOLD = 0.75;
+        COMPRESSION_LOOKBACK  = 35;    // 50->35: faster compression detection in high-vol market
+        BASELINE_LOOKBACK     = 140;   // 200->140: 4x ratio maintained, responds faster
+        COMPRESSION_THRESHOLD = 0.85;  // 0.75->0.85: VIX=24 market needs looser threshold
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 240;
         MAX_SPREAD_PCT        = 0.05;
@@ -146,9 +146,9 @@ public:
         VOL_THRESH_PCT        = 0.080;
         TP_PCT                = 1.200;
         SL_PCT                = 0.600;
-        COMPRESSION_LOOKBACK  = 120;  // 40→120: oil intraday pauses are 15-40s (40 ticks), real compression is 2-10min (120+ ticks)
-        BASELINE_LOOKBACK     = 300;  // 150→300: baseline must be at least 2.5x compression window for meaningful ratio
-        COMPRESSION_THRESHOLD = 0.70;  // restored to 0.70: 0.65 was too tight, oil stuck FLAT -- needs same threshold as indices
+        COMPRESSION_LOOKBACK  = 80;    // 120->80: reduce warmup time, still captures 2-4min compression
+        BASELINE_LOOKBACK     = 240;   // 300->240: 3x ratio maintained, faster baseline
+        COMPRESSION_THRESHOLD = 0.80;  // 0.70->0.80: loosen for elevated vol regime
         MAX_HOLD_SEC          = 1800;
         MIN_GAP_SEC           = 360;
         MAX_SPREAD_PCT        = 0.120;
@@ -209,9 +209,9 @@ public:
         VOL_THRESH_PCT        = 0.040;
         TP_PCT                = 0.300;
         SL_PCT                = 0.150;
-        COMPRESSION_LOOKBACK  = 60;
-        BASELINE_LOOKBACK     = 250;
-        COMPRESSION_THRESHOLD = 0.75;
+        COMPRESSION_LOOKBACK  = 40;    // 60->40: faster warmup, gold ticks infrequently
+        BASELINE_LOOKBACK     = 160;   // 250->160: 4x ratio, faster baseline
+        COMPRESSION_THRESHOLD = 0.85;  // 0.75->0.85: loosen for elevated vol regime
         MAX_HOLD_SEC          = 1500;
         MIN_GAP_SEC           = 180;
         MAX_SPREAD_PCT        = 0.06;
