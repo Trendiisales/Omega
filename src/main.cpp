@@ -21,6 +21,7 @@
 #include <iomanip>
 #include <ctime>
 #include <fstream>
+#include <direct.h>   // _mkdir on Windows
 #include <chrono>
 #include <mutex>
 #include <algorithm>
@@ -126,6 +127,7 @@ struct OmegaConfig {
     int         gui_port   = 7779;
     int         ws_port    = 7780;
     std::string shadow_csv = "omega_shadow.csv";
+    std::string log_file   = "";   // if set, tee all stdout+stderr here
 };
 
 static OmegaConfig         g_cfg;
@@ -183,6 +185,32 @@ static int64_t g_loss_pause_until = 0;
 
 // Shadow CSV
 static std::ofstream g_shadow_csv;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TeeBuffer — mirrors stdout to a log file automatically
+// ─────────────────────────────────────────────────────────────────────────────
+class TeeBuffer : public std::streambuf {
+public:
+    TeeBuffer(std::streambuf* orig, std::streambuf* file)
+        : orig_(orig), file_(file) {}
+    int overflow(int c) override {
+        if (c == EOF) return !EOF;
+        orig_->sputc(static_cast<char>(c));
+        if (file_) file_->sputc(static_cast<char>(c));
+        return c;
+    }
+    std::streamsize xsputn(const char* s, std::streamsize n) override {
+        orig_->sputn(s, n);
+        if (file_) file_->sputn(s, n);
+        return n;
+    }
+private:
+    std::streambuf* orig_;
+    std::streambuf* file_;
+};
+static std::ofstream     g_log_file;
+static TeeBuffer*        g_tee_buf   = nullptr;
+static std::streambuf*   g_orig_cout = nullptr;
 
 // FIX recv buffer
 static std::string g_recv_buf;
@@ -507,6 +535,7 @@ static void load_config(const std::string& path) {
             if (k=="gui_port")   g_cfg.gui_port   = std::stoi(v);
             if (k=="ws_port")    g_cfg.ws_port     = std::stoi(v);
             if (k=="shadow_csv") g_cfg.shadow_csv  = v;
+            if (k=="log_file")   g_cfg.log_file    = v;
         }
         if (section == "gold") {
             if (k=="gold_tp_pct")        g_cfg.gold_tp_pct        = std::stod(v);
@@ -1025,6 +1054,25 @@ int main(int argc, char* argv[])
     g_telemetry.SetMode(g_cfg.mode.c_str());
     g_telemetry.UpdateBuildVersion(OMEGA_VERSION, OMEGA_BUILT);
 
+    // Open log file and tee stdout into it
+    if (!g_cfg.log_file.empty()) {
+        // Ensure directory exists
+        const size_t slash = g_cfg.log_file.find_last_of("/\\");
+        if (slash != std::string::npos) {
+            std::string dir = g_cfg.log_file.substr(0, slash);
+            _mkdir(dir.c_str());  // no-op if exists
+        }
+        g_log_file.open(g_cfg.log_file, std::ios::app);
+        if (g_log_file.is_open()) {
+            g_orig_cout = std::cout.rdbuf();
+            g_tee_buf   = new TeeBuffer(g_orig_cout, g_log_file.rdbuf());
+            std::cout.rdbuf(g_tee_buf);
+            std::cout << "[OMEGA] Log file: " << g_cfg.log_file << "\n";
+        } else {
+            std::cerr << "[OMEGA] WARNING: could not open log file: " << g_cfg.log_file << "\n";
+        }
+    }
+
     g_shadow_csv.open(g_cfg.shadow_csv, std::ios::app);
     if (g_shadow_csv.is_open()) {
         g_shadow_csv.seekp(0, std::ios::end);
@@ -1047,6 +1095,8 @@ int main(int argc, char* argv[])
     std::cout << "[OMEGA] Shutdown\n";
     gui_server.stop();
     g_shadow_csv.close();
+    if (g_orig_cout) std::cout.rdbuf(g_orig_cout);
+    if (g_log_file.is_open()) g_log_file.close();
     WSACleanup();
     ReleaseMutex(g_singleton_mutex);
     CloseHandle(g_singleton_mutex);
