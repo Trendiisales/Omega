@@ -145,7 +145,7 @@ public:
                     const double adverse_pct = pos.is_long
                         ? (pos.entry - mid) / pos.entry * 100.0
                         : (mid - pos.entry) / pos.entry * 100.0;
-                    if (adverse_pct > 0.08) {
+                    if (adverse_pct > 0.12) {  // raised 0.08→0.12%: 0.08% too tight for SP/NQ intraday noise
                         std::cout << "[SCRATCH] " << symbol
                                   << (pos.is_long ? " LONG" : " SHORT")
                                   << " false breakout — adverse=" << adverse_pct
