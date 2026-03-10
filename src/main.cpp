@@ -274,20 +274,18 @@ static std::string build_logon(int seq, const char* subID) {
 struct SymbolDef { int id; const char* name; };
 static const SymbolDef OMEGA_SYMS[] = {
     // Primary -- traded
-    { 2642, "US500.F"  },   // S&P 500 futures  (replaces MES)
-    { 2643, "USTEC.F"  },   // Nasdaq futures   (replaces MNQ)
-    { 2632, "USOIL.F"  },   // Oil futures      (replaces MCL)
+    { 2642, "US500.F"  },   // S&P 500 futures
+    { 2643, "USTEC.F"  },   // Nasdaq futures
+    { 2632, "USOIL.F"  },   // Oil futures
     // Confirmation -- regime only
-    { 4462, "VIX.F"    },
-    { 2638, "DX.F"     },
-    { 2637, "DJ30.F"   },
-    {  110, "NAS100"   },
-    { 2660, "GOLD.F"   },
-    { 2631, "NGAS.F"   },
-    { 3225, "ES"       },
-    { 3173, "DX"       },
+    { 4462, "VIX.F"    },   // VIX -- regime gate
+    { 2638, "DX.F"     },   // Dollar index
+    { 2637, "DJ30.F"   },   // Dow Jones
+    {  110, "NAS100"   },   // Nasdaq cash -- ES/NQ divergence
+    { 2660, "GOLD.F"   },   // Gold
+    { 2631, "NGAS.F"   },   // Natural gas
 };
-static const int OMEGA_NSYMS = 11;
+static const int OMEGA_NSYMS = 9;
 
 // Runtime ID->name map built at startup from OMEGA_SYMS
 static std::unordered_map<int, const char*> g_id_to_sym;
@@ -574,9 +572,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     std::cout.flush();
 
     const double mid = (bid + ask) * 0.5;
-    if (sym == "VIX.F")  g_macroDetector.updateVIX(mid);
-    if (sym == "ES")     g_macroDetector.updateES(mid);
-    if (sym == "NAS100") g_macroDetector.updateNQ(mid);
+    if (sym == "VIX.F")   g_macroDetector.updateVIX(mid);
+    if (sym == "US500.F") g_macroDetector.updateES(mid);   // SP500 futures -- ES/NQ divergence
+    if (sym == "USTEC.F") g_macroDetector.updateNQ(mid);   // Nasdaq futures -- ES/NQ divergence
 
     g_telemetry.UpdatePrice(sym.c_str(), bid, ask);
 
