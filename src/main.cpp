@@ -806,11 +806,14 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             if (sent_us > 0 && now_us > sent_us) {
                 const double tick_lat_ms = static_cast<double>(now_us - sent_us) / 1000.0;
                 if (tick_lat_ms > 0.0 && tick_lat_ms < 5000.0) {
-                    rtt_record(tick_lat_ms);  // update rolling p95 every tick
+                    // Do NOT feed tag52 delta into rtt_record — broker clock vs our clock
+                    // may differ by 10-20ms even on co-located hardware (NTP drift).
+                    // rtt_record() feeds the lat_ok gate — only use true TestRequest RTT.
+                    // tag52 delta is displayed separately as feed latency indicator only.
                     static int64_t s_last_lat_push_us = 0;
                     if (now_us - s_last_lat_push_us >= 200000LL) {
                         s_last_lat_push_us = now_us;
-                        g_telemetry.UpdateLatency(g_rtt_last, g_rtt_p50, g_rtt_p95);
+                        g_telemetry.UpdateLatency(tick_lat_ms, g_rtt_p50, g_rtt_p95);
                     }
                 }
             }
