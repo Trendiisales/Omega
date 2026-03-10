@@ -208,6 +208,31 @@ static std::string timestamp() {
     return o.str();
 }
 
+// Parse FIX tag 52 SendingTime "YYYYMMDD-HH:MM:SS.mmm" -> microseconds since epoch
+// Returns 0 on failure. Used to measure per-tick latency from broker send time.
+static int64_t parse_fix_time_us(const std::string& ts) noexcept {
+    // Format: 20240315-14:32:01.234  (length=21, ms optional)
+    if (ts.size() < 17) return 0;
+    try {
+        struct tm ti{};
+        ti.tm_year = std::stoi(ts.substr(0,4))  - 1900;
+        ti.tm_mon  = std::stoi(ts.substr(4,2))  - 1;
+        ti.tm_mday = std::stoi(ts.substr(6,2));
+        ti.tm_hour = std::stoi(ts.substr(9,2));
+        ti.tm_min  = std::stoi(ts.substr(12,2));
+        ti.tm_sec  = std::stoi(ts.substr(15,2));
+        int ms = 0;
+        if (ts.size() >= 21 && ts[17] == '.') ms = std::stoi(ts.substr(18,3));
+#ifdef _WIN32
+        const int64_t epoch_s = static_cast<int64_t>(_mkgmtime(&ti));
+#else
+        const int64_t epoch_s = static_cast<int64_t>(timegm(&ti));
+#endif
+        if (epoch_s < 0) return 0;
+        return epoch_s * 1000000LL + static_cast<int64_t>(ms) * 1000LL;
+    } catch (...) { return 0; }
+}
+
 static std::string extract_tag(const std::string& msg, const char* tag) {
     const std::string pat = std::string(tag) + '=';
     const size_t pos = msg.find(pat);
@@ -784,6 +809,22 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             pos = pxe;
         }
         if (bid > 0.0 && ask > 0.0) {
+            // Per-tick latency from broker tag 52 (SendingTime)
+            // This is measured on every quote -- far more accurate than 5s heartbeat ping
+            const std::string send_ts = extract_tag(msg, "52");
+            if (!send_ts.empty()) {
+                const auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                const int64_t sent_us = parse_fix_time_us(send_ts);
+                if (sent_us > 0 && now_us > sent_us) {
+                    const double tick_lat_ms = static_cast<double>(now_us - sent_us) / 1000.0;
+                    // Sanity: ignore if > 5000ms (clock skew, stale msg) or negative
+                    if (tick_lat_ms > 0.0 && tick_lat_ms < 5000.0) {
+                        rtt_record(tick_lat_ms);
+                        g_telemetry.UpdateLatency(g_rtt_last, g_rtt_p50, g_rtt_p95);
+                    }
+                }
+            }
             on_tick(sym, bid, ask);
         } else {
             std::cerr << "[OMEGA-MD] " << sym << " bid=" << bid << " ask=" << ask << " — no valid prices in msg\n";
