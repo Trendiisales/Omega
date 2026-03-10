@@ -16,7 +16,7 @@
 
 namespace omega {
 
-enum class Phase : uint8_t { FLAT = 0, COMPRESSION = 1, BREAKOUT = 2 };
+enum class Phase : uint8_t { FLAT = 0, COMPRESSION = 1, BREAKOUT_WATCH = 2, IN_TRADE = 3 };
 
 struct BreakoutSignal
 {
@@ -70,6 +70,7 @@ public:
     Phase   phase          = Phase::FLAT;
     double  comp_high      = 0.0;
     double  comp_low       = 0.0;
+    int     watch_ticks    = 0;
     double  recent_vol_pct = 0.0;
     double  base_vol_pct   = 0.0;
     int     signal_count   = 0;
@@ -153,90 +154,105 @@ public:
             return {};
         }
 
-        // phase == COMPRESSION — track the range ONLY while still in compression.
-        // Do NOT update comp_high/comp_low after compression ends — otherwise
-        // comp_high = mid on the breakout tick makes long_break impossible.
-        if (in_compression) {
-            if (mid > comp_high) comp_high = mid;
-            if (mid < comp_low)  comp_low  = mid;
-            return {};  // still compressing — keep tracking
-        }
-
-        // ── Breakout detection ────────────────────────────────────────────
-        // Compression just ended. comp_high/comp_low are frozen at the compression range.
-        // Price must clearly exit one side to confirm direction.
-        // Buffer = 1.5x spread to avoid false signals from spread noise.
-        const double min_exit    = spread * 1.5;
-        const bool   long_break  = (mid > comp_high + min_exit);
-        const bool   short_break = (mid < comp_low  - min_exit);
-
-        if (!long_break && !short_break) {
-            std::cout << "[ENG-" << symbol << "] BREAKOUT mid-range exit, resetting"
-                      << " mid=" << mid << " hi=" << comp_high << " lo=" << comp_low << "\n";
+        // ── COMPRESSION phase: track the range while vol is compressed ────────
+        if (phase == Phase::COMPRESSION) {
+            if (in_compression) {
+                if (mid > comp_high) comp_high = mid;
+                if (mid < comp_low)  comp_low  = mid;
+                return {};  // still compressing — keep tracking
+            }
+            // Compression just ended — transition to BREAKOUT_WATCH.
+            // comp_high/comp_low are now frozen. Watch up to 15 ticks for price exit.
+            phase       = Phase::BREAKOUT_WATCH;
+            watch_ticks = 15;
+            std::cout << "[ENG-" << symbol << "] BREAKOUT_WATCH started"
+                      << " hi=" << comp_high << " lo=" << comp_low << "\n";
             std::cout.flush();
-            phase = Phase::FLAT; return {};
+            // Fall through to BREAKOUT_WATCH check on this same tick
         }
 
-        std::cout << "[ENG-" << symbol << "] BREAKOUT attempt"
-                  << (long_break?" LONG":" SHORT")
-                  << " mid=" << mid << " hi=" << comp_high << " lo=" << comp_low
-                  << " can_enter=" << can_enter << "\n";
-        std::cout.flush();
+        // ── BREAKOUT_WATCH phase: wait for price to exit the frozen range ─────
+        if (phase == Phase::BREAKOUT_WATCH) {
+            // Buffer = 0.5x spread (tight — just needs to clear the range edge)
+            const double min_exit    = spread * 0.5;
+            const bool   long_break  = (mid > comp_high + min_exit);
+            const bool   short_break = (mid < comp_low  - min_exit);
 
-        // Session/latency gate — no new entries outside trading window
-        if (!can_enter) {
-            std::cout << "[ENG-" << symbol << "] BLOCKED: can_enter=false\n"; std::cout.flush();
-            phase = Phase::FLAT; return {};
-        }
+            if (!long_break && !short_break) {
+                watch_ticks--;
+                if (watch_ticks <= 0) {
+                    std::cout << "[ENG-" << symbol << "] BREAKOUT_WATCH expired (no exit), resetting"
+                              << " mid=" << mid << " hi=" << comp_high << " lo=" << comp_low << "\n";
+                    std::cout.flush();
+                    phase = Phase::FLAT;
+                }
+                return {};  // still watching
+            }
 
-        // CRTP gate — instrument-specific filters (spread, regime, EIA etc)
-        if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, latency_ms)) {
-            std::cout << "[ENG-" << symbol << "] BLOCKED: shouldTrade=false"
-                      << " spread=" << spread_pct << "%\n"; std::cout.flush();
-            phase = Phase::FLAT; return {};
-        }
-
-        const int64_t now = nowSec();
-        if (now - m_last_signal_ts < static_cast<int64_t>(MIN_GAP_SEC)) {
-            std::cout << "[ENG-" << symbol << "] BLOCKED: min_gap not met"
-                      << " gap=" << (now-m_last_signal_ts) << "s min=" << MIN_GAP_SEC << "\n";
+            // Price has exited the compression range — confirmed breakout
+            std::cout << "[ENG-" << symbol << "] BREAKOUT attempt"
+                      << (long_break?" LONG":" SHORT")
+                      << " mid=" << mid << " hi=" << comp_high << " lo=" << comp_low
+                      << " can_enter=" << can_enter << "\n";
             std::cout.flush();
-            phase = Phase::FLAT; return {};
-        }
 
-        const bool   is_long = long_break;  // short_break → !is_long → SHORT
-        const double tp = is_long ? mid * (1.0 + TP_PCT / 100.0)
-                                  : mid * (1.0 - TP_PCT / 100.0);
-        const double sl = is_long ? mid * (1.0 - SL_PCT / 100.0)
-                                  : mid * (1.0 + SL_PCT / 100.0);
+            // Session/latency gate
+            if (!can_enter) {
+                std::cout << "[ENG-" << symbol << "] BLOCKED: can_enter=false\n"; std::cout.flush();
+                phase = Phase::FLAT; return {};
+            }
 
-        pos.active          = true;
-        pos.is_long         = is_long;
-        pos.entry           = mid;
-        pos.tp              = tp;
-        pos.sl              = sl;
-        pos.size            = 1.0;
-        pos.mfe             = 0.0;
-        pos.mae             = 0.0;
-        pos.entry_ts        = now;
-        pos.spread_at_entry = spread;
-        strncpy_s(pos.regime, macro_regime ? macro_regime : "", 31);
+            // CRTP gate — instrument-specific filters (spread, regime, EIA etc)
+            if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, latency_ms)) {
+                std::cout << "[ENG-" << symbol << "] BLOCKED: shouldTrade=false"
+                          << " spread=" << spread_pct << "%\n"; std::cout.flush();
+                phase = Phase::FLAT; return {};
+            }
 
-        m_last_signal_ts = now;
-        ++m_trade_id;
-        ++signal_count;
-        phase = Phase::FLAT;
+            const int64_t now = nowSec();
+            if (now - m_last_signal_ts < static_cast<int64_t>(MIN_GAP_SEC)) {
+                std::cout << "[ENG-" << symbol << "] BLOCKED: min_gap not met"
+                          << " gap=" << (now-m_last_signal_ts) << "s min=" << MIN_GAP_SEC << "\n";
+                std::cout.flush();
+                phase = Phase::FLAT; return {};
+            }
 
-        BreakoutSignal sig;
-        sig.valid   = true;
-        sig.is_long = is_long;
-        sig.entry   = mid;
-        sig.tp      = tp;
-        sig.sl      = sl;
-        sig.reason  = is_long ? "COMP_BREAK_LONG" : "COMP_BREAK_SHORT";
+            const bool   is_long = long_break;
+            const double tp = is_long ? mid * (1.0 + TP_PCT / 100.0)
+                                      : mid * (1.0 - TP_PCT / 100.0);
+            const double sl = is_long ? mid * (1.0 - SL_PCT / 100.0)
+                                      : mid * (1.0 + SL_PCT / 100.0);
 
-        static_cast<Derived*>(this)->onSignal(sig);
-        return sig;
+            pos.active          = true;
+            pos.is_long         = is_long;
+            pos.entry           = mid;
+            pos.tp              = tp;
+            pos.sl              = sl;
+            pos.size            = 1.0;
+            pos.mfe             = 0.0;
+            pos.mae             = 0.0;
+            pos.entry_ts        = now;
+            pos.spread_at_entry = spread;
+            strncpy_s(pos.regime, macro_regime ? macro_regime : "", 31);
+
+            m_last_signal_ts = now;
+            ++m_trade_id;
+            ++signal_count;
+            phase = Phase::FLAT;
+
+            BreakoutSignal sig;
+            sig.valid   = true;
+            sig.is_long = is_long;
+            sig.entry   = mid;
+            sig.tp      = tp;
+            sig.sl      = sl;
+            sig.reason  = is_long ? "COMP_BREAK_LONG" : "COMP_BREAK_SHORT";
+
+            static_cast<Derived*>(this)->onSignal(sig);
+            return sig;
+        }  // end BREAKOUT_WATCH
+
+        return {};  // phase not handled (shouldn't reach here)
     }
 
     void forceClose(double bid, double ask, const char* reason,
