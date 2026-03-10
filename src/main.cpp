@@ -274,20 +274,19 @@ static std::string build_logon(int seq, const char* subID) {
 struct SymbolDef { int id; const char* name; };
 static const SymbolDef OMEGA_SYMS[] = {
     // Primary -- traded
-    { 2642, "US500.F"  },   // S&P 500 futures  (replaces MES)
-    { 2643, "USTEC.F"  },   // Nasdaq futures   (replaces MNQ)
-    { 2632, "USOIL.F"  },   // Oil futures      (replaces MCL)
-    // Confirmation -- regime only
+    { 2642, "US500.F"  },   // S&P 500 futures
+    { 2643, "USTEC.F"  },   // Nasdaq futures
+    { 2632, "USOIL.F"  },   // Oil futures
+    // Confirmation -- regime/context only
     { 4462, "VIX.F"    },
     { 2638, "DX.F"     },
     { 2637, "DJ30.F"   },
     {  110, "NAS100"   },
     { 2660, "GOLD.F"   },
     { 2631, "NGAS.F"   },
-    { 3225, "ES"       },
-    { 3173, "DX"       },
+    // ES (3225) and DX (3173) removed -- not valid on BlackBull, generated FIX rejects
 };
-static const int OMEGA_NSYMS = 11;
+static const int OMEGA_NSYMS = 9;
 
 // Runtime ID->name map built at startup from OMEGA_SYMS
 static std::unordered_map<int, const char*> g_id_to_sym;
@@ -422,42 +421,28 @@ static bool session_tradeable() noexcept {
 // Generic fallback (used for GOLD BreakoutEngine)
 // SP -- uses [sp] config section, links macro context
 static void apply_engine_config(omega::SpEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = g_cfg.sp_vol_thresh_pct;
-    eng.TP_PCT                = g_cfg.sp_tp_pct;
-    eng.SL_PCT                = g_cfg.sp_sl_pct;
-    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
-    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
-    eng.COMPRESSION_THRESHOLD = 0.75;
-    eng.MAX_HOLD_SEC          = 1200;
-    eng.MIN_GAP_SEC           = g_cfg.sp_min_gap_sec;
-    eng.MAX_SPREAD_PCT        = 0.04;
-    eng.macro                 = &g_macro_ctx;
+    // Only override config-file-driven values. Constructor sets tuned compression params.
+    // DO NOT override COMPRESSION_LOOKBACK/BASELINE/THRESHOLD -- constructor has correct values.
+    eng.TP_PCT      = g_cfg.sp_tp_pct;
+    eng.SL_PCT      = g_cfg.sp_sl_pct;
+    eng.MIN_GAP_SEC = g_cfg.sp_min_gap_sec;
+    eng.macro       = &g_macro_ctx;
 }
 // NQ -- uses [nq] config section, links macro context
 static void apply_engine_config(omega::NqEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = g_cfg.nq_vol_thresh_pct;
-    eng.TP_PCT                = g_cfg.nq_tp_pct;
-    eng.SL_PCT                = g_cfg.nq_sl_pct;
-    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
-    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
-    eng.COMPRESSION_THRESHOLD = 0.75;
-    eng.MAX_HOLD_SEC          = 1200;
-    eng.MIN_GAP_SEC           = g_cfg.nq_min_gap_sec;
-    eng.MAX_SPREAD_PCT        = 0.05;
-    eng.macro                 = &g_macro_ctx;
+    // Only override config-file-driven values. Constructor sets tuned compression params.
+    eng.TP_PCT      = g_cfg.nq_tp_pct;
+    eng.SL_PCT      = g_cfg.nq_sl_pct;
+    eng.MIN_GAP_SEC = g_cfg.nq_min_gap_sec;
+    eng.macro       = &g_macro_ctx;
 }
 // Oil -- uses [oil] config section, inventory window block built into engine
 static void apply_engine_config(omega::OilEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = g_cfg.oil_vol_thresh_pct;
-    eng.TP_PCT                = g_cfg.oil_tp_pct;
-    eng.SL_PCT                = g_cfg.oil_sl_pct;
-    eng.COMPRESSION_LOOKBACK  = 40;
-    eng.BASELINE_LOOKBACK     = 150;
-    eng.COMPRESSION_THRESHOLD = 0.70;
-    eng.MAX_HOLD_SEC          = 1800;
-    eng.MIN_GAP_SEC           = g_cfg.oil_min_gap_sec;
-    eng.MAX_SPREAD_PCT        = 0.12;
-    eng.macro                 = &g_macro_ctx;
+    // Only override config-file-driven values. Constructor sets tuned compression params.
+    eng.TP_PCT      = g_cfg.oil_tp_pct;
+    eng.SL_PCT      = g_cfg.oil_sl_pct;
+    eng.MIN_GAP_SEC = g_cfg.oil_min_gap_sec;
+    eng.macro       = &g_macro_ctx;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -574,9 +559,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     std::cout.flush();
 
     const double mid = (bid + ask) * 0.5;
-    if (sym == "VIX.F")  g_macroDetector.updateVIX(mid);
-    if (sym == "ES")     g_macroDetector.updateES(mid);
-    if (sym == "NAS100") g_macroDetector.updateNQ(mid);
+    if (sym == "VIX.F")   g_macroDetector.updateVIX(mid);
+    if (sym == "US500.F") g_macroDetector.updateES(mid);   // use traded futures, not cash ES
+    if (sym == "USTEC.F") g_macroDetector.updateNQ(mid);   // use traded futures, not cash NAS100
 
     g_telemetry.UpdatePrice(sym.c_str(), bid, ask);
 
@@ -807,40 +792,37 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             else if (et == '1') ask = price;
             pos = pxe;
         }
-        if (bid > 0.0 && ask > 0.0) {
-            // Measure latency from broker tag 52 (SendingTime) on every quote
-            // Provides sub-second RTT samples vs 5s heartbeat ping
-            const std::string send_ts = extract_tag(msg, "52");
-            if (!send_ts.empty()) {
-                const auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count();
-                const int64_t sent_us = parse_fix_time_us(send_ts);
-                if (sent_us > 0 && now_us > sent_us) {
-                    const double tick_lat_ms = static_cast<double>(now_us - sent_us) / 1000.0;
-                    if (tick_lat_ms > 0.0 && tick_lat_ms < 5000.0) {
-                        rtt_record(tick_lat_ms);  // update rolling p95 every tick
-                        // Push to GUI at most once per 200ms -- WS broadcasts every 250ms
-                        static int64_t s_last_lat_push_us = 0;
-                        if (now_us - s_last_lat_push_us >= 200000LL) {
-                            s_last_lat_push_us = now_us;
-                            g_telemetry.UpdateLatency(g_rtt_last, g_rtt_p50, g_rtt_p95);
-                        }
+        // Measure latency from broker tag 52 (SendingTime) on every quote
+        // Provides sub-second RTT samples vs 5s heartbeat ping
+        const std::string send_ts = extract_tag(msg, "52");
+        if (!send_ts.empty()) {
+            const auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            const int64_t sent_us = parse_fix_time_us(send_ts);
+            if (sent_us > 0 && now_us > sent_us) {
+                const double tick_lat_ms = static_cast<double>(now_us - sent_us) / 1000.0;
+                if (tick_lat_ms > 0.0 && tick_lat_ms < 5000.0) {
+                    rtt_record(tick_lat_ms);  // update rolling p95 every tick
+                    static int64_t s_last_lat_push_us = 0;
+                    if (now_us - s_last_lat_push_us >= 200000LL) {
+                        s_last_lat_push_us = now_us;
+                        g_telemetry.UpdateLatency(g_rtt_last, g_rtt_p50, g_rtt_p95);
                     }
                 }
             }
-            // Merge incremental update with cached book.
-            // BlackBull type=X sends only ONE side (bid OR ask).
-            // Fill missing side from last known book so on_tick always gets valid bid+ask.
-            if (bid <= 0.0 || ask <= 0.0) {
-                std::lock_guard<std::mutex> lk(g_book_mtx);
-                if (bid <= 0.0) { const auto it = g_bids.find(sym); if (it != g_bids.end()) bid = it->second; }
-                if (ask <= 0.0) { const auto it = g_asks.find(sym); if (it != g_asks.end()) ask = it->second; }
-            }
-            if (bid > 0.0 && ask > 0.0) {
-                on_tick(sym, bid, ask);
-            }
-            // else: book not yet seeded for this symbol, drop silently
         }
+        // Merge incremental update with cached book.
+        // BlackBull type=X sends only ONE side (bid OR ask).
+        // Fill missing side from last known book so on_tick always gets valid bid+ask.
+        if (bid <= 0.0 || ask <= 0.0) {
+            std::lock_guard<std::mutex> lk(g_book_mtx);
+            if (bid <= 0.0) { const auto it = g_bids.find(sym); if (it != g_bids.end()) bid = it->second; }
+            if (ask <= 0.0) { const auto it = g_asks.find(sym); if (it != g_asks.end()) ask = it->second; }
+        }
+        if (bid > 0.0 && ask > 0.0) {
+            on_tick(sym, bid, ask);
+        }
+        // else: book not yet seeded for this symbol, drop silently
         return;
     }
 
@@ -1021,7 +1003,7 @@ int main(int argc, char* argv[])
     g_eng_xau.VOL_THRESH_PCT        = g_cfg.gold_vol_thresh_pct;
     g_eng_xau.COMPRESSION_LOOKBACK  = 60;   // gold compresses slower than indices
     g_eng_xau.BASELINE_LOOKBACK     = 250;  // longer baseline -- gold trends persist
-    g_eng_xau.COMPRESSION_THRESHOLD = 0.75;
+    // g_eng_xau.COMPRESSION_THRESHOLD set to 0.85 in GoldEngine constructor -- do not override
     g_eng_xau.MAX_HOLD_SEC          = 1500; // 25min -- gold breaks can run
     g_eng_xau.MIN_GAP_SEC           = 180;  // 3min gap between signals
     g_eng_xau.MAX_SPREAD_PCT        = 0.06; // gold spreads slightly wider than indices
