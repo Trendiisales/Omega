@@ -67,7 +67,8 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)           return false; // liquidity gate
         if (!macro)                                 return true;
-        if (macro->nq_open)                         return false; // cross-symbol: no double equity risk
+        // Cross-block removed: SP and NQ compress/break together — blocking one wastes half the move
+        // Each has independent TP/SL/position. Correlation risk is not a reason to block.
         if (std::fabs(macro->es_nq_div) > 0.0030)  return false; // sector rotation — not clean
         if (macro->vix > 40.0)                      return false; // panic — unreliable fills
         if (macro->regime == "RISK_OFF")            return false; // trending down — breakouts fail
@@ -111,7 +112,8 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)           return false; // liquidity gate
         if (!macro)                                 return true;
-        if (macro->sp_open)                         return false; // cross-symbol: no double equity risk
+        // Cross-block removed: SP and NQ compress/break together — blocking one wastes half the move
+        // Each has independent TP/SL/position. Correlation risk is not a reason to block.
         if (std::fabs(macro->es_nq_div) > 0.0030)  return false; // SP/NQ decoupling
         if (macro->vix > 40.0)                      return false; // panic
         if (macro->regime == "RISK_OFF")            return false; // equity index — no bearish breakouts
