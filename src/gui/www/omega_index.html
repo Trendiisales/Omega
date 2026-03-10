@@ -510,9 +510,12 @@ function renderTrades(trades) {
         const result = isOpen ? '🔵 OPEN'
             : reason === 'TP_HIT'  ? '✅ TP'
             : reason === 'SL_HIT'  ? '❌ SL'
-            : reason === 'TIMEOUT' ? '⏱ TO' : '⚡ FC';
+            : reason === 'TIMEOUT' ? '⏱ TO'
+            : reason === 'SCRATCH' ? '✂ SC' : '⚡ FC';
         const resultC = isOpen ? 'var(--blue)'
-            : reason === 'TP_HIT' ? 'var(--green)' : reason === 'SL_HIT' ? 'var(--red)' : 'var(--t2)';
+            : reason === 'TP_HIT'  ? 'var(--green)'
+            : reason === 'SL_HIT'  ? 'var(--red)'
+            : reason === 'SCRATCH' ? 'var(--amber)' : 'var(--t2)';
         let heldStr = '--';
         if (isOpen && safe(t.entryTs) > 0) {
             const es = now - safe(t.entryTs); heldStr = es >= 60 ? Math.floor(es/60)+'m'+(es%60)+'s' : es+'s';
