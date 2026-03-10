@@ -16,8 +16,8 @@ class MacroRegimeDetector
 {
 public:
     // VIX thresholds
-    double VIX_HIGH = 30.0;   // above = risk-off / trend dominant (raised from 25 — markets elevated post-2024)
-    double VIX_LOW  = 18.0;   // below = risk-on / range dominant (raised from 15)
+    double VIX_HIGH = 28.0;   // above = risk-off. Lowered from 30 -- triggers slightly earlier in elevated vol
+    double VIX_LOW  = 20.0;   // below = risk-on. Raised from 18 -- post-2024 VIX baseline is 20-25, 18 never fired
 
     // Divergence window
     int    DIV_WINDOW = 20;   // ticks
@@ -39,13 +39,13 @@ public:
     }
 
     // Returns "RISK_ON", "RISK_OFF", "NEUTRAL"
-    // Falls back to NEUTRAL if VIX data is stale (>5 minutes) — never block on stale regime
+    // Falls back to NEUTRAL if VIX data is stale (>5 minutes) -- never block on stale regime
     std::string regime() const
     {
         constexpr int64_t VIX_STALE_SEC = 300;  // 5 minutes
         const bool vix_fresh = (m_vix_ts > 0) &&
                                (nowSec() - m_vix_ts < VIX_STALE_SEC);
-        if (!vix_fresh) return "NEUTRAL";  // stale VIX — don't block on unknown data
+        if (!vix_fresh) return "NEUTRAL";  // stale VIX -- don't block on unknown data
         if (m_vix >= VIX_HIGH) return "RISK_OFF";
         if (m_vix > 0 && m_vix <= VIX_LOW) return "RISK_ON";
         return "NEUTRAL";
