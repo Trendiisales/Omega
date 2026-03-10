@@ -1,7 +1,7 @@
 // ==============================================================================
-// OMEGA — Commodities & Indices Trading System
+// OMEGA -- Commodities & Indices Trading System
 // Strategy: Compression Breakout (CRTP engine, zero virtual dispatch)
-// Broker: BlackBull Markets — identical FIX stack to ChimeraMetals
+// Broker: BlackBull Markets -- identical FIX stack to ChimeraMetals
 // Primary: MES · MNQ · MCL  |  Confirmation: ES NQ CL VIX DX ZN YM RTY
 // GUI: HTTP :7779 / WebSocket :7780
 // ==============================================================================
@@ -33,11 +33,11 @@
 #include <cstdint>
 #include <cstring>
 
-// ── Omega headers (flat — all files in same directory on VPS) ────────────────
+// ── Omega headers (flat -- all files in same directory on VPS) ────────────────
 #include "OmegaTelemetryWriter.hpp"
 #include "OmegaTradeLedger.hpp"
 
-// ── Build version — injected by CMake from git hash + build timestamp ────────
+// ── Build version -- injected by CMake from git hash + build timestamp ────────
 // If not set by CMake (manual compile), falls back to "dev-build".
 #ifndef OMEGA_GIT_HASH
 #  define OMEGA_GIT_HASH "dev-build"
@@ -66,7 +66,7 @@ static HANDLE g_singleton_mutex = NULL;
 // Config
 // ─────────────────────────────────────────────────────────────────────────────
 struct OmegaConfig {
-    // FIX — identical to ChimeraMetals
+    // FIX -- identical to ChimeraMetals
     std::string host       = "live-uk-eqx-02.p.c-trader.com";
     int         port       = 5211;
     std::string sender     = "live.blackbull.8077780";
@@ -99,24 +99,24 @@ struct OmegaConfig {
     int session_end_utc   = 21;
     bool session_asia     = true;  // enable Asia/Tokyo window 22:00-05:00 UTC
 
-    // Gold breakout params (XAU — tighter than indices, price-regime aware)
-    double gold_tp_pct   = 0.30;   // 0.30% TP — ~$9 on $3000 gold
-    double gold_sl_pct   = 0.15;   // 0.15% SL — tight, gold moves are decisive
-    double gold_vol_thresh_pct = 0.04; // lower threshold — gold is less volatile than oil
+    // Gold breakout params (XAU -- tighter than indices, price-regime aware)
+    double gold_tp_pct   = 0.30;   // 0.30% TP -- ~$9 on $3000 gold
+    double gold_sl_pct   = 0.15;   // 0.15% SL -- tight, gold moves are decisive
+    double gold_vol_thresh_pct = 0.04; // lower threshold -- gold is less volatile than oil
 
-    // SP (US500) — liquid, tight compression, better TP:SL than generic default
+    // SP (US500) -- liquid, tight compression, better TP:SL than generic default
     double sp_tp_pct          = 0.600;  // 0.60% TP: clean SP breaks extend 0.5-0.8%
     double sp_sl_pct          = 0.350;  // 0.35% SL: above noise, cut failed breaks fast
     double sp_vol_thresh_pct  = 0.040;  // 0.04%: tighter than default, SP compression is real
     int    sp_min_gap_sec     = 300;    // 5min gap between signals
 
-    // NQ (USTEC) — higher beta, wider TP
+    // NQ (USTEC) -- higher beta, wider TP
     double nq_tp_pct          = 0.700;  // 0.70% TP: NQ extends further than SP
     double nq_sl_pct          = 0.400;  // 0.40% SL: slightly more room for NQ noise
     double nq_vol_thresh_pct  = 0.050;  // 0.05%: NQ needs a full vol spike
     int    nq_min_gap_sec     = 240;    // 4min gap
 
-    // Oil (USOIL) — fundamentally different: 1-2% typical moves
+    // Oil (USOIL) -- fundamentally different: 1-2% typical moves
     double oil_tp_pct         = 1.200;  // 1.20% TP: oil runs 1-2% on clean breaks
     double oil_sl_pct         = 0.600;  // 0.60% SL: oil noise is 0.3-0.5% intraday
     double oil_vol_thresh_pct = 0.080;  // 0.08%: oil needs a bigger initial signal
@@ -138,16 +138,16 @@ static OmegaTelemetryWriter      g_telemetry;
 omega::OmegaTradeLedger          g_omegaLedger;      // extern in TelemetryServer.cpp
 static omega::MacroRegimeDetector g_macroDetector;
 
-// CRTP breakout engines — typed per symbol (instrument-specific params + regime gating)
-static omega::SpEngine  g_eng_sp("US500.F");   // S&P 500 — regime-gated, cross-symbol guard
-static omega::NqEngine  g_eng_nq("USTEC.F");   // Nasdaq  — regime-gated, cross-symbol guard
-static omega::OilEngine g_eng_cl("USOIL.F");   // WTI Oil — inventory window blocked
-static omega::GoldEngine g_eng_xau("GOLD.F");  // Gold — safe-haven, inverse VIX logic
+// CRTP breakout engines -- typed per symbol (instrument-specific params + regime gating)
+static omega::SpEngine  g_eng_sp("US500.F");   // S&P 500 -- regime-gated, cross-symbol guard
+static omega::NqEngine  g_eng_nq("USTEC.F");   // Nasdaq  -- regime-gated, cross-symbol guard
+static omega::OilEngine g_eng_cl("USOIL.F");   // WTI Oil -- inventory window blocked
+static omega::GoldEngine g_eng_xau("GOLD.F");  // Gold -- safe-haven, inverse VIX logic
 
-// Shared macro context — updated each tick, read by SP/NQ shouldTrade()
+// Shared macro context -- updated each tick, read by SP/NQ shouldTrade()
 static omega::MacroContext g_macro_ctx;
 
-// Multi-engine gold stack — CompressionBreakout + ImpulseContinuation +
+// Multi-engine gold stack -- CompressionBreakout + ImpulseContinuation +
 // SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
 // Runs in parallel with g_eng_xau (GoldEngine) on every GOLD.F tick.
 static omega::gold::GoldEngineStack g_gold_stack;
@@ -170,7 +170,7 @@ static int     g_gov_pnl     = 0;
 static int     g_gov_consec  = 0;
 static int     g_consec_losses = 0;
 
-// Latency governor — blocks trades when FIX RTT exceeds configured hard cap
+// Latency governor -- blocks trades when FIX RTT exceeds configured hard cap
 struct Governor {
     bool checkLatency(double latency_ms, double cfg_max_ms) const noexcept {
         if (cfg_max_ms > 0.0) return latency_ms <= cfg_max_ms;
@@ -267,17 +267,17 @@ static std::string build_logon(int seq, const char* subID) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BlackBull symbol ID map (from SecurityList — hardcoded, no runtime discovery)
+// BlackBull symbol ID map (from SecurityList -- hardcoded, no runtime discovery)
 // Primary trading: US500.F, USTEC.F, USOIL.F
 // Confirmation:    VIX.F, DX.F, DJ30.F, NAS100, GOLD.F, NGAS.F, ES, DX
 // ─────────────────────────────────────────────────────────────────────────────
 struct SymbolDef { int id; const char* name; };
 static const SymbolDef OMEGA_SYMS[] = {
-    // Primary — traded
+    // Primary -- traded
     { 2642, "US500.F"  },   // S&P 500 futures  (replaces MES)
     { 2643, "USTEC.F"  },   // Nasdaq futures   (replaces MNQ)
     { 2632, "USOIL.F"  },   // Oil futures      (replaces MCL)
-    // Confirmation — regime only
+    // Confirmation -- regime only
     { 4462, "VIX.F"    },
     { 2638, "DX.F"     },
     { 2637, "DJ30.F"   },
@@ -330,7 +330,7 @@ static std::string build_test_request(int seq, const char* subID, const std::str
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SSL connect (identical to ChimeraMetals — untouched)
+// SSL connect (identical to ChimeraMetals -- untouched)
 // ─────────────────────────────────────────────────────────────────────────────
 static SSL* connect_ssl(const std::string& host, int port, int& sock_out) {
     struct addrinfo hints{}, *result = nullptr;
@@ -410,17 +410,17 @@ static bool session_tradeable() noexcept {
     const bool in_primary = (h >= g_cfg.session_start_utc && h < g_cfg.session_end_utc);
 
     // Asia/Tokyo window: 22:00-05:00 UTC (overnight, wraps midnight)
-    // Active for gold — Tokyo is the 3rd largest gold market
+    // Active for gold -- Tokyo is the 3rd largest gold market
     const bool in_asia = g_cfg.session_asia && (h >= 22 || h < 5);
 
     return in_primary || in_asia;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Apply config to engines — per-symbol typed overloads
+// Apply config to engines -- per-symbol typed overloads
 // ─────────────────────────────────────────────────────────────────────────────
 // Generic fallback (used for GOLD BreakoutEngine)
-// SP — uses [sp] config section, links macro context
+// SP -- uses [sp] config section, links macro context
 static void apply_engine_config(omega::SpEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.sp_vol_thresh_pct;
     eng.TP_PCT                = g_cfg.sp_tp_pct;
@@ -433,7 +433,7 @@ static void apply_engine_config(omega::SpEngine& eng) noexcept {
     eng.MAX_SPREAD_PCT        = 0.04;
     eng.macro                 = &g_macro_ctx;
 }
-// NQ — uses [nq] config section, links macro context
+// NQ -- uses [nq] config section, links macro context
 static void apply_engine_config(omega::NqEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.nq_vol_thresh_pct;
     eng.TP_PCT                = g_cfg.nq_tp_pct;
@@ -446,7 +446,7 @@ static void apply_engine_config(omega::NqEngine& eng) noexcept {
     eng.MAX_SPREAD_PCT        = 0.05;
     eng.macro                 = &g_macro_ctx;
 }
-// Oil — uses [oil] config section, inventory window block built into engine
+// Oil -- uses [oil] config section, inventory window block built into engine
 static void apply_engine_config(omega::OilEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.oil_vol_thresh_pct;
     eng.TP_PCT                = g_cfg.oil_tp_pct;
@@ -565,7 +565,7 @@ static void load_config(const std::string& path) {
 static void sig_handler(int) noexcept { g_running.store(false); }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tick handler — called for every bid/ask update
+// Tick handler -- called for every bid/ask update
 // ─────────────────────────────────────────────────────────────────────────────
 static void on_tick(const std::string& sym, double bid, double ask) {
     { std::lock_guard<std::mutex> lk(g_book_mtx); g_bids[sym] = bid; g_asks[sym] = ask; }
@@ -584,7 +584,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_telemetry.UpdateMacroRegime(
         g_macroDetector.vixLevel(), regime.c_str(), g_macroDetector.esNqDivergence());
 
-    // Update shared MacroContext — read by SP/NQ shouldTrade() overrides
+    // Update shared MacroContext -- read by SP/NQ shouldTrade() overrides
     g_macro_ctx.regime     = regime;
     g_macro_ctx.vix        = g_macroDetector.vixLevel();
     g_macro_ctx.es_nq_div  = g_macroDetector.esNqDivergence();
@@ -595,7 +595,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     const bool tradeable = session_tradeable();
     g_telemetry.UpdateSession(tradeable ? "ACTIVE" : "CLOSED", tradeable ? 1 : 0);
 
-    // ── Governor gates — PnL/loss-pause block ALL processing ─────────────────
+    // ── Governor gates -- PnL/loss-pause block ALL processing ─────────────────
     // NOTE: session + latency gates are checked INSIDE dispatch so engines
     // always receive ticks for warmup. Without this, a 250-tick warmup never
     // completes during closed session and gold/oil/indices never fire signals.
@@ -613,7 +613,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_loss_pause = false;
     }
 
-    // Gate flags — passed into dispatch, checked before entry (not before warmup)
+    // Gate flags -- passed into dispatch, checked before entry (not before warmup)
     // Use p95 RTT (not last) -- a single spike in g_rtt_last was permanently blocking
     // entries until the next 5s ping. p95 over 200 samples is stable and representative.
     const double rtt_check = (g_rtt_p95 > 0.0) ? g_rtt_p95 : g_rtt_last;
@@ -621,7 +621,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     const bool can_enter = tradeable && lat_ok;
     if (!lat_ok) ++g_gov_lat;
 
-    // ── Route to engine — typed dispatch (CRTP has no virtual base) ──────────
+    // ── Route to engine -- typed dispatch (CRTP has no virtual base) ──────────
     // Each branch calls the same logical sequence on the correct typed engine.
     // on_close lambda is defined once and reused across all branches.
     auto on_close = [&](const omega::TradeRecord& tr) {
@@ -632,7 +632,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_loss_pause       = true;
                 g_loss_pause_until = nowSec() + g_cfg.loss_pause_sec;
                 std::cout << "[OMEGA-RISK] " << g_cfg.max_consec_losses
-                          << " consecutive losses — pause " << g_cfg.loss_pause_sec << "s\n";
+                          << " consecutive losses -- pause " << g_cfg.loss_pause_sec << "s\n";
             }
         } else { g_consec_losses = 0; }
         g_telemetry.UpdateStats(
@@ -642,7 +642,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
     };
 
-    // Helper lambda — always feeds ticks to engine (warmup + position management).
+    // Helper lambda -- always feeds ticks to engine (warmup + position management).
     // can_enter=false gates new entries only; TP/SL/timeout always run.
     auto dispatch = [&](auto& eng) {
         const auto sig = eng.update(bid, ask, rtt_check, regime.c_str(), on_close, can_enter);
@@ -666,12 +666,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         dispatch(g_eng_xau);
         // ── GoldEngineStack: 6 engines with self-managed positions ────────────
         // Stack manages its own position internally (entry, TP/SL/timeout, on_close).
-        // can_enter gates new entries; g_eng_xau.pos.active blocks stack entries
-        // when the CRTP BreakoutEngine already has a gold position open.
-        const bool gold_can_enter = can_enter && !g_eng_xau.pos.active;
+        // Decoupled from g_eng_xau: stack has its own RegimeGovernor + 6 engines.
+        // g_eng_xau (generic CRTP) no longer blocks the stack -- they run independently.
+        const bool gold_can_enter = can_enter;
         const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close, gold_can_enter);
         if (gsig.valid) {
-            // New entry fired — log it
+            // New entry fired -- log it
             g_telemetry.UpdateLastSignal("GOLD.F",
                 gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason);
             std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
@@ -688,7 +688,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else {
-        // Confirmation-only symbol (VIX, ES, NAS100, DX etc) — no engine dispatch
+        // Confirmation-only symbol (VIX, ES, NAS100, DX etc) -- no engine dispatch
         g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
         return;
     }
@@ -752,7 +752,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         return;
     }
 
-    // ── Unknown / unexpected message types — log everything for diagnostics ──
+    // ── Unknown / unexpected message types -- log everything for diagnostics ──
     if (type != "W" && type != "X" && type != "A" && type != "0" && type != "1" && type != "3" && type != "j") {
         // Replace SOH with | for readable logging
         std::string readable = msg.substr(0, std::min(msg.size(), size_t(300)));
@@ -765,7 +765,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     if (type == "W" || type == "X") {
         const std::string sym_raw = extract_tag(msg, "55");
         if (sym_raw.empty()) {
-            std::cerr << "[OMEGA-MD] W/X msg missing tag 55 — raw: ";
+            std::cerr << "[OMEGA-MD] W/X msg missing tag 55 -- raw: ";
             std::string r = msg.substr(0, 200); for (char& c : r) if (c=='\x01') c='|';
             std::cerr << r << "\n"; std::cerr.flush();
             return;
@@ -782,7 +782,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             }
             sym = it->second;
         } catch (...) {
-            // Broker sent string name in 55= (e.g. "GOLD.F") — look up directly
+            // Broker sent string name in 55= (e.g. "GOLD.F") -- look up directly
             for (int i = 0; i < OMEGA_NSYMS; ++i) {
                 if (sym_raw == OMEGA_SYMS[i].name) { sym = OMEGA_SYMS[i].name; break; }
             }
@@ -830,7 +830,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             }
             on_tick(sym, bid, ask);
         } else {
-            std::cerr << "[OMEGA-MD] " << sym << " bid=" << bid << " ask=" << ask << " — no valid prices in msg\n";
+            std::cerr << "[OMEGA-MD] " << sym << " bid=" << bid << " ask=" << ask << " -- no valid prices in msg\n";
             std::string r = msg.substr(0, 200); for (char& c : r) if (c=='\x01') c='|';
             std::cerr << "  raw: " << r << "\n"; std::cerr.flush();
         }
@@ -861,7 +861,7 @@ static void quote_loop() {
         int sock = -1;
         SSL* ssl = connect_ssl(g_cfg.host, g_cfg.port, sock);
         if (!ssl) {
-            std::cerr << "[OMEGA] Connect failed — retry " << backoff_ms << "ms\n";
+            std::cerr << "[OMEGA] Connect failed -- retry " << backoff_ms << "ms\n";
             Sleep(static_cast<DWORD>(backoff_ms));
             backoff_ms = std::min(backoff_ms * 2, max_backoff);
             continue;
@@ -919,13 +919,13 @@ static void quote_loop() {
                 if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                     Sleep(1); continue;
                 }
-                std::cerr << "[OMEGA] SSL error " << err << " — reconnecting\n";
+                std::cerr << "[OMEGA] SSL error " << err << " -- reconnecting\n";
                 break;
             }
             for (const auto& m : extract_messages(buf, n)) dispatch_fix(m, ssl);
         }
 
-        // Force-close on disconnect — auto& template lambda works for all typed engines
+        // Force-close on disconnect -- auto& template lambda works for all typed engines
         auto fc = [](auto& eng, const char* sym) {
             if (!eng.pos.active) return;
             double bid = 0.0, ask = 0.0;
@@ -993,20 +993,20 @@ int main(int argc, char* argv[])
 
     const std::string cfg_path = (argc > 1) ? argv[1] : "omega_config.ini";
     load_config(cfg_path);
-    // Per-symbol typed overloads — each applies instrument-specific params + macro context ptr
+    // Per-symbol typed overloads -- each applies instrument-specific params + macro context ptr
     apply_engine_config(g_eng_sp);   // [sp] section: tp=0.60%, sl=0.35%, vol=0.04%, regime-gated
     apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated
     apply_engine_config(g_eng_cl);   // [oil] section: tp=1.20%, sl=0.60%, vol=0.08%, inventory-blocked
     // Gold: generic breakout engine, overridden with gold-specific pct params
-    // Gold: dedicated config — do not use generic breakout defaults
+    // Gold: dedicated config -- do not use generic breakout defaults
     g_eng_xau.macro                 = &g_macro_ctx;  // gold uses inverse regime logic
     g_eng_xau.TP_PCT                = g_cfg.gold_tp_pct;
     g_eng_xau.SL_PCT                = g_cfg.gold_sl_pct;
     g_eng_xau.VOL_THRESH_PCT        = g_cfg.gold_vol_thresh_pct;
     g_eng_xau.COMPRESSION_LOOKBACK  = 60;   // gold compresses slower than indices
-    g_eng_xau.BASELINE_LOOKBACK     = 250;  // longer baseline — gold trends persist
+    g_eng_xau.BASELINE_LOOKBACK     = 250;  // longer baseline -- gold trends persist
     g_eng_xau.COMPRESSION_THRESHOLD = 0.75;
-    g_eng_xau.MAX_HOLD_SEC          = 1500; // 25min — gold breaks can run
+    g_eng_xau.MAX_HOLD_SEC          = 1500; // 25min -- gold breaks can run
     g_eng_xau.MIN_GAP_SEC           = 180;  // 3min gap between signals
     g_eng_xau.MAX_SPREAD_PCT        = 0.06; // gold spreads slightly wider than indices
     build_id_map();
@@ -1037,7 +1037,7 @@ int main(int argc, char* argv[])
 
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
-    std::cout << "[OMEGA] FIX loop starting — " << g_cfg.mode << " mode\n";
+    std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
     quote_loop();
 
     std::cout << "[OMEGA] Shutdown\n";
