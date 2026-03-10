@@ -840,6 +840,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                 on_tick(sym, bid, ask);
             }
             // else: book not yet seeded for this symbol, drop silently
+        }
         return;
     }
 
