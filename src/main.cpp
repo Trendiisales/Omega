@@ -595,7 +595,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
             return;
         }
-        g_loss_pause = false;
+        // Pause expired: reset all loss counters so we start fresh
+        g_loss_pause     = false;
+        g_consec_losses  = 0;  // FIX: was never reset on pause-clear, caused immediate re-pause on next loss
+        g_gov_consec     = 0;  // FIX: was accumulating forever (showed 14197 = ticks not losses)
+        std::cout << "[OMEGA-RISK] loss pause cleared — counters reset\n";
     }
 
     // Gate flags -- passed into dispatch, checked before entry (not before warmup)
