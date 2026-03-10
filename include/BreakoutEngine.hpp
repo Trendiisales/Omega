@@ -153,26 +153,22 @@ public:
             return {};
         }
 
-        // phase == COMPRESSION — track the range
-        if (mid > comp_high) comp_high = mid;
-        if (mid < comp_low)  comp_low  = mid;
+        // phase == COMPRESSION — track the range ONLY while still in compression.
+        // Do NOT update comp_high/comp_low after compression ends — otherwise
+        // comp_high = mid on the breakout tick makes long_break impossible.
+        if (in_compression) {
+            if (mid > comp_high) comp_high = mid;
+            if (mid < comp_low)  comp_low  = mid;
+            return {};  // still compressing — keep tracking
+        }
 
         // ── Breakout detection ────────────────────────────────────────────
-        // Breakout = compression ENDS (recent_vol expands above threshold).
-        // Direction = which side of the compression range price exits from.
-        //
-        // The old VOL_THRESH approach ("price >= comp_high + thresh") was broken:
-        // comp_high chases price every tick, so it requires a 6-sigma single-tick
-        // move — statistically impossible. Fixed: use compression exit direction.
-        if (in_compression) return {};  // still inside compression — keep tracking
-
-        // Compression just ended — fire signal only if price clearly exited one side.
-        // Price must be ABOVE comp_high (long) or BELOW comp_low (short).
-        // Buffer = 1.5x spread: must clear spread + half a spread of confirmation.
-        // Old: range * VOL_THRESH * 0.5 was effectively zero ($0.00012 on oil) — no filter.
-        const double min_exit    = spread * 1.5;  // must clear 1.5× spread above/below range
-        const bool   long_break  = (mid > comp_high + min_exit);   // clearly above compression high
-        const bool   short_break = (mid < comp_low  - min_exit);   // clearly below compression low
+        // Compression just ended. comp_high/comp_low are frozen at the compression range.
+        // Price must clearly exit one side to confirm direction.
+        // Buffer = 1.5x spread to avoid false signals from spread noise.
+        const double min_exit    = spread * 1.5;
+        const bool   long_break  = (mid > comp_high + min_exit);
+        const bool   short_break = (mid < comp_low  - min_exit);
 
         if (!long_break && !short_break) {
             std::cout << "[ENG-" << symbol << "] BREAKOUT mid-range exit, resetting"
