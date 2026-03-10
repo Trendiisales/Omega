@@ -274,18 +274,20 @@ static std::string build_logon(int seq, const char* subID) {
 struct SymbolDef { int id; const char* name; };
 static const SymbolDef OMEGA_SYMS[] = {
     // Primary -- traded
-    { 2642, "US500.F"  },   // S&P 500 futures
-    { 2643, "USTEC.F"  },   // Nasdaq futures
-    { 2632, "USOIL.F"  },   // Oil futures
+    { 2642, "US500.F"  },   // S&P 500 futures  (replaces MES)
+    { 2643, "USTEC.F"  },   // Nasdaq futures   (replaces MNQ)
+    { 2632, "USOIL.F"  },   // Oil futures      (replaces MCL)
     // Confirmation -- regime only
-    { 4462, "VIX.F"    },   // VIX -- regime gate
-    { 2638, "DX.F"     },   // Dollar index
-    { 2637, "DJ30.F"   },   // Dow Jones
-    {  110, "NAS100"   },   // Nasdaq cash -- ES/NQ divergence
-    { 2660, "GOLD.F"   },   // Gold
-    { 2631, "NGAS.F"   },   // Natural gas
+    { 4462, "VIX.F"    },
+    { 2638, "DX.F"     },
+    { 2637, "DJ30.F"   },
+    {  110, "NAS100"   },
+    { 2660, "GOLD.F"   },
+    { 2631, "NGAS.F"   },
+    { 3225, "ES"       },
+    { 3173, "DX"       },
 };
-static const int OMEGA_NSYMS = 9;
+static const int OMEGA_NSYMS = 11;
 
 // Runtime ID->name map built at startup from OMEGA_SYMS
 static std::unordered_map<int, const char*> g_id_to_sym;
@@ -572,9 +574,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     std::cout.flush();
 
     const double mid = (bid + ask) * 0.5;
-    if (sym == "VIX.F")   g_macroDetector.updateVIX(mid);
-    if (sym == "US500.F") g_macroDetector.updateES(mid);   // SP500 futures -- ES/NQ divergence
-    if (sym == "USTEC.F") g_macroDetector.updateNQ(mid);   // Nasdaq futures -- ES/NQ divergence
+    if (sym == "VIX.F")  g_macroDetector.updateVIX(mid);
+    if (sym == "ES")     g_macroDetector.updateES(mid);
+    if (sym == "NAS100") g_macroDetector.updateNQ(mid);
 
     g_telemetry.UpdatePrice(sym.c_str(), bid, ask);
 
@@ -826,18 +828,12 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                     }
                 }
             }
-            // Merge incremental update with last known book.
-            // BlackBull type=X often sends only one side -- fill missing side
-            // from cached book so on_tick always gets a valid bid+ask.
-            if (bid <= 0.0 || ask <= 0.0) {
-                std::lock_guard<std::mutex> lk(g_book_mtx);
-                if (bid <= 0.0) { const auto it = g_bids.find(sym); if (it != g_bids.end()) bid = it->second; }
-                if (ask <= 0.0) { const auto it = g_asks.find(sym); if (it != g_asks.end()) ask = it->second; }
-            }
-            if (bid > 0.0 && ask > 0.0) {
-                on_tick(sym, bid, ask);
-            }
-            // else: book not yet seeded for this symbol, drop silently
+            on_tick(sym, bid, ask);
+        } else {
+            std::cerr << "[OMEGA-MD] " << sym << " bid=" << bid << " ask=" << ask << " -- no valid prices in msg\n";
+            std::string r = msg.substr(0, 200); for (char& c : r) if (c=='\x01') c='|';
+            std::cerr << "  raw: " << r << "\n"; std::cerr.flush();
+        }
         return;
     }
 
@@ -898,17 +894,26 @@ static void quote_loop() {
                 }
             }
 
-            // Diagnostic every 5 min
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_diag).count() >= 300) {
+            // Diagnostic every 60s -- visibility into engine phase + vol state
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_diag).count() >= 60) {
                 last_diag = now;
                 std::cout << "[OMEGA-DIAG] PnL=" << g_omegaLedger.dailyPnl()
                           << " T=" << g_omegaLedger.total()
                           << " WR=" << g_omegaLedger.winRate() << "%"
                           << " RTTp95=" << g_rtt_p95 << "ms"
-                          << " SP=" << static_cast<int>(g_eng_sp.phase)
-                          << " NQ=" << static_cast<int>(g_eng_nq.phase)
-                          << " CL=" << static_cast<int>(g_eng_cl.phase)
-                          << " XAU=" << static_cast<int>(g_eng_xau.phase) << "\n";
+                          << " session=" << (session_tradeable() ? "ACTIVE" : "CLOSED") << "\n"
+                          << "[OMEGA-DIAG] SP phase=" << static_cast<int>(g_eng_sp.phase)
+                          << " recent=" << g_eng_sp.recent_vol_pct << "% base=" << g_eng_sp.base_vol_pct << "%"
+                          << " ratio=" << (g_eng_sp.base_vol_pct>0 ? g_eng_sp.recent_vol_pct/g_eng_sp.base_vol_pct : 0) << "\n"
+                          << "[OMEGA-DIAG] NQ phase=" << static_cast<int>(g_eng_nq.phase)
+                          << " recent=" << g_eng_nq.recent_vol_pct << "% base=" << g_eng_nq.base_vol_pct << "%"
+                          << " ratio=" << (g_eng_nq.base_vol_pct>0 ? g_eng_nq.recent_vol_pct/g_eng_nq.base_vol_pct : 0) << "\n"
+                          << "[OMEGA-DIAG] CL phase=" << static_cast<int>(g_eng_cl.phase)
+                          << " recent=" << g_eng_cl.recent_vol_pct << "% base=" << g_eng_cl.base_vol_pct << "%"
+                          << " ratio=" << (g_eng_cl.base_vol_pct>0 ? g_eng_cl.recent_vol_pct/g_eng_cl.base_vol_pct : 0) << "\n"
+                          << "[OMEGA-DIAG] XAU phase=" << static_cast<int>(g_eng_xau.phase)
+                          << " recent=" << g_eng_xau.recent_vol_pct << "% base=" << g_eng_xau.base_vol_pct << "%"
+                          << " ratio=" << (g_eng_xau.base_vol_pct>0 ? g_eng_xau.recent_vol_pct/g_eng_xau.base_vol_pct : 0) << "\n";
                 // Gold multi-engine stack stats
                 g_gold_stack.print_stats();
                 std::cout << "[GOLD-DIAG] regime=" << g_gold_stack.regime_name()
