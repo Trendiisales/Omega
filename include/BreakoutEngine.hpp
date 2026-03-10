@@ -64,6 +64,9 @@ public:
     int         MAX_HOLD_SEC          = 1500;
     int         MIN_GAP_SEC           = 180;
     double      MAX_SPREAD_PCT        = 0.05;
+    double      MOMENTUM_THRESH_PCT   = 0.05;   // momentum gate: price_now vs price_20_ago
+    double      MIN_BREAKOUT_PCT      = 0.25;   // minimum breakout move from comp range edge
+    int         MAX_TRADES_PER_MIN    = 2;       // rate limiter: max entries per 60s window
     const char* symbol                = "???";
 
     // ── Observable state (read by telemetry thread) ───────────────────────────
@@ -77,6 +80,20 @@ public:
     OpenPos pos;
 
     using CloseCallback = std::function<void(const TradeRecord&)>;
+
+private:
+    // ── Momentum window (20 ticks) ────────────────────────────────────────────
+    std::deque<double> m_momentum_window;   // last 20 mids for momentum gate
+    static constexpr int MOMENTUM_WINDOW = 20;
+
+    // ── Range window (50 ticks) for structural break gate ────────────────────
+    std::deque<double> m_range_window;      // last 50 mids for hi/lo range
+    static constexpr int RANGE_WINDOW = 50;
+
+    // ── Rate limiter ──────────────────────────────────────────────────────────
+    std::deque<int64_t> m_trade_times;      // timestamps of recent entries
+
+public:
 
     // ── Default CRTP hooks ────────────────────────────────────────────────────
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -104,6 +121,16 @@ public:
         m_prices.push_back(mid);
         if (static_cast<int>(m_prices.size()) > BASELINE_LOOKBACK * 2)
             m_prices.pop_front();
+
+        // Maintain momentum window (20 ticks)
+        m_momentum_window.push_back(mid);
+        if (static_cast<int>(m_momentum_window.size()) > MOMENTUM_WINDOW)
+            m_momentum_window.pop_front();
+
+        // Maintain range window (50 ticks)
+        m_range_window.push_back(mid);
+        if (static_cast<int>(m_range_window.size()) > RANGE_WINDOW)
+            m_range_window.pop_front();
 
         if (static_cast<int>(m_prices.size()) < COMPRESSION_LOOKBACK + 1) return {};
 
@@ -243,6 +270,59 @@ public:
                 phase = Phase::FLAT; return {};
             }
 
+            // ── MOMENTUM GATE ─────────────────────────────────────────────────────
+            // Require directional pressure: price_now vs price_20_ticks_ago > MOMENTUM_THRESH_PCT
+            if (static_cast<int>(m_momentum_window.size()) >= MOMENTUM_WINDOW) {
+                const double momentum_pct = (mid - m_momentum_window.front()) / m_momentum_window.front() * 100.0;
+                const bool   momentum_ok  = long_break  ? (momentum_pct >  MOMENTUM_THRESH_PCT)
+                                                        : (momentum_pct < -MOMENTUM_THRESH_PCT);
+                if (!momentum_ok) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: momentum_gate"                              << " mom=" << momentum_pct << "% thresh=" << MOMENTUM_THRESH_PCT << "%\n";
+                    std::cout.flush();
+                    phase = Phase::FLAT; return {};
+                }
+            }
+
+            // ── STRUCTURAL RANGE BREAK GATE ───────────────────────────────────────
+            // Price must break the 50-tick structural high/low — not just the comp range
+            if (static_cast<int>(m_range_window.size()) >= RANGE_WINDOW) {
+                const double struct_hi = *std::max_element(m_range_window.begin(), m_range_window.end());
+                const double struct_lo = *std::min_element(m_range_window.begin(), m_range_window.end());
+                const bool   range_ok  = long_break  ? (mid > struct_hi)
+                                                     : (mid < struct_lo);
+                if (!range_ok) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: range_break_gate"                              << " mid=" << mid << " struct_hi=" << struct_hi << " struct_lo=" << struct_lo << "\n";
+                    std::cout.flush();
+                    phase = Phase::FLAT; return {};
+                }
+            }
+
+            // ── MINIMUM BREAKOUT MOVE GATE ────────────────────────────────────────
+            // Reject weak breakouts — move from comp edge must be >= MIN_BREAKOUT_PCT
+            {
+                const double edge        = long_break ? comp_high : comp_low;
+                const double move_pct    = std::fabs(mid - edge) / edge * 100.0;
+                if (move_pct < MIN_BREAKOUT_PCT) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: min_breakout_gate"                              << " move=" << move_pct << "% min=" << MIN_BREAKOUT_PCT << "%\n";
+                    std::cout.flush();
+                    phase = Phase::FLAT; return {};
+                }
+            }
+
+            // ── RATE LIMITER GATE ─────────────────────────────────────────────────
+            // Max MAX_TRADES_PER_MIN entries per 60-second window
+            {
+                const int64_t now_sec = nowSec();
+                // Evict entries older than 60s
+                while (!m_trade_times.empty() && now_sec - m_trade_times.front() > 60)
+                    m_trade_times.pop_front();
+                if (static_cast<int>(m_trade_times.size()) >= MAX_TRADES_PER_MIN) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: rate_limit"                              << " trades_in_60s=" << m_trade_times.size() << "\n";
+                    std::cout.flush();
+                    phase = Phase::FLAT; return {};
+                }
+            }
+
             const bool   is_long = long_break;
             const double tp = is_long ? mid * (1.0 + TP_PCT / 100.0)
                                       : mid * (1.0 - TP_PCT / 100.0);
@@ -264,6 +344,7 @@ public:
             m_last_signal_ts = now;
             ++m_trade_id;
             ++signal_count;
+            m_trade_times.push_back(now);   // rate limiter: record entry time
             phase = Phase::FLAT;
 
             BreakoutSignal sig;
