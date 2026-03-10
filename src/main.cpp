@@ -826,12 +826,18 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                     }
                 }
             }
-            on_tick(sym, bid, ask);
-        } else {
-            std::cerr << "[OMEGA-MD] " << sym << " bid=" << bid << " ask=" << ask << " -- no valid prices in msg\n";
-            std::string r = msg.substr(0, 200); for (char& c : r) if (c=='\x01') c='|';
-            std::cerr << "  raw: " << r << "\n"; std::cerr.flush();
-        }
+            // Merge incremental update with last known book.
+            // BlackBull type=X often sends only one side -- fill missing side
+            // from cached book so on_tick always gets a valid bid+ask.
+            if (bid <= 0.0 || ask <= 0.0) {
+                std::lock_guard<std::mutex> lk(g_book_mtx);
+                if (bid <= 0.0) { const auto it = g_bids.find(sym); if (it != g_bids.end()) bid = it->second; }
+                if (ask <= 0.0) { const auto it = g_asks.find(sym); if (it != g_asks.end()) ask = it->second; }
+            }
+            if (bid > 0.0 && ask > 0.0) {
+                on_tick(sym, bid, ask);
+            }
+            // else: book not yet seeded for this symbol, drop silently
         return;
     }
 
