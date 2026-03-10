@@ -208,10 +208,9 @@ static std::string timestamp() {
     return o.str();
 }
 
-// Parse FIX tag 52 SendingTime "YYYYMMDD-HH:MM:SS.mmm" -> microseconds since epoch
-// Returns 0 on failure. Used to measure per-tick latency from broker send time.
+// Parse FIX SendingTime (tag 52) "YYYYMMDD-HH:MM:SS.mmm" -> microseconds since epoch
+// Returns 0 on parse failure. Used for per-tick latency measurement.
 static int64_t parse_fix_time_us(const std::string& ts) noexcept {
-    // Format: 20240315-14:32:01.234  (length=21, ms optional)
     if (ts.size() < 17) return 0;
     try {
         struct tm ti{};
@@ -809,8 +808,8 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             pos = pxe;
         }
         if (bid > 0.0 && ask > 0.0) {
-            // Per-tick latency from broker tag 52 (SendingTime)
-            // This is measured on every quote -- far more accurate than 5s heartbeat ping
+            // Measure latency from broker tag 52 (SendingTime) on every quote
+            // Provides sub-second RTT samples vs 5s heartbeat ping
             const std::string send_ts = extract_tag(msg, "52");
             if (!send_ts.empty()) {
                 const auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -818,10 +817,14 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                 const int64_t sent_us = parse_fix_time_us(send_ts);
                 if (sent_us > 0 && now_us > sent_us) {
                     const double tick_lat_ms = static_cast<double>(now_us - sent_us) / 1000.0;
-                    // Sanity: ignore if > 5000ms (clock skew, stale msg) or negative
                     if (tick_lat_ms > 0.0 && tick_lat_ms < 5000.0) {
-                        rtt_record(tick_lat_ms);
-                        g_telemetry.UpdateLatency(g_rtt_last, g_rtt_p50, g_rtt_p95);
+                        rtt_record(tick_lat_ms);  // update rolling p95 every tick
+                        // Push to GUI at most once per 200ms -- WS broadcasts every 250ms
+                        static int64_t s_last_lat_push_us = 0;
+                        if (now_us - s_last_lat_push_us >= 200000LL) {
+                            s_last_lat_push_us = now_us;
+                            g_telemetry.UpdateLatency(g_rtt_last, g_rtt_p50, g_rtt_p95);
+                        }
                     }
                 }
             }
