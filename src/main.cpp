@@ -305,7 +305,7 @@ static std::string build_marketdata_req(int seq) {
       << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=0\x01" << "265=0\x01"
       << "146=" << OMEGA_NSYMS << "\x01";
     for (int i = 0; i < OMEGA_NSYMS; ++i)
-        b << "55=" << OMEGA_SYMS[i].id << "\x01";
+        b << "55=" << OMEGA_SYMS[i].name << "\x01";  // use string names — ID-independent, survives broker reconfig
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
     return wrap_fix(b.str());
 }
