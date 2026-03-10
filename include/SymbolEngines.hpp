@@ -1,13 +1,13 @@
 #pragma once
 // ==============================================================================
-// SymbolEngines.hpp — Per-instrument CRTP breakout engine policies
+// SymbolEngines.hpp -- Per-instrument CRTP breakout engine policies
 //
 // Each engine has FULLY INDEPENDENT logic appropriate to its instrument:
 //
-//   SpEngine   (US500.F) — equity index, regime-gated, cross-NQ guard
-//   NqEngine   (USTEC.F) — equity index, regime-gated, cross-SP guard
-//   OilEngine  (USOIL.F) — commodity, EIA window blocked, VIX-irrelevant
-//   GoldEngine (GOLD.F)  — safe-haven, INVERSE VIX logic (risk-off = trade more)
+//   SpEngine   (US500.F) -- equity index, regime-gated, cross-NQ guard
+//   NqEngine   (USTEC.F) -- equity index, regime-gated, cross-SP guard
+//   OilEngine  (USOIL.F) -- commodity, EIA window blocked, VIX-irrelevant
+//   GoldEngine (GOLD.F)  -- safe-haven, INVERSE VIX logic (risk-off = trade more)
 //
 // MacroContext is updated every tick in main.cpp and passed to all engines.
 // VIX panic threshold is unified at 40.0 for equity engines only.
@@ -20,19 +20,19 @@
 namespace omega {
 
 // ==============================================================================
-// MacroContext — shared state updated every tick, read by shouldTrade() overrides
+// MacroContext -- shared state updated every tick, read by shouldTrade() overrides
 // ==============================================================================
 struct MacroContext {
     std::string regime;        // "RISK_ON" | "NEUTRAL" | "RISK_OFF"
     double      vix       = 0.0;
-    double      es_nq_div = 0.0;  // ES vs NQ relative return — divergence signal
+    double      es_nq_div = 0.0;  // ES vs NQ relative return -- divergence signal
     bool        sp_open   = false; // US500 position open (cross-symbol guard)
     bool        nq_open   = false; // USTEC position open (cross-symbol guard)
     bool        oil_open  = false; // USOIL position open
 };
 
 // ==============================================================================
-// SpEngine — US500.F (S&P 500 futures)
+// SpEngine -- US500.F (S&P 500 futures)
 //
 // INSTRUMENT: Equity index. Correlated with NQ. Sensitive to macro regime.
 // TP 0.60%, SL 0.35%, VOL_THRESH 0.04%, MIN_GAP 300s, MAX_HOLD 1200s
@@ -40,9 +40,9 @@ struct MacroContext {
 // GATES (SP-specific):
 //   spread > 0.04%    -> block (liquidity concern)
 //   NQ position open  -> block (doubles correlated equity risk)
-//   ES/NQ div > 0.30% -> block (sector rotation — not a clean index breakout)
-//   VIX > 40          -> block (panic regime — spreads blow out, fills unreliable)
-//   RISK_OFF regime   -> block (trending down — compression breaks fail)
+//   ES/NQ div > 0.30% -> block (sector rotation -- not a clean index breakout)
+//   VIX > 40          -> block (panic regime -- spreads blow out, fills unreliable)
+//   RISK_OFF regime   -> block (trending down -- compression breaks fail)
 // ==============================================================================
 class SpEngine final : public BreakoutEngineBase<SpEngine>
 {
@@ -67,17 +67,17 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)           return false; // liquidity gate
         if (!macro)                                 return true;
-        // Cross-block removed: SP and NQ compress/break together — blocking one wastes half the move
+        // Cross-block removed: SP and NQ compress/break together -- blocking one wastes half the move
         // Each has independent TP/SL/position. Correlation risk is not a reason to block.
-        if (std::fabs(macro->es_nq_div) > 0.0030)  return false; // sector rotation — not clean
-        if (macro->vix > 40.0)                      return false; // panic — unreliable fills
-        if (macro->regime == "RISK_OFF")            return false; // trending down — breakouts fail
+        if (std::fabs(macro->es_nq_div) > 0.0030)  return false; // sector rotation -- not clean
+        if (macro->vix > 40.0)                      return false; // panic -- unreliable fills
+        // RISK_OFF block removed: compression breakouts fire both ways. RISK_OFF = uncertainty, not direction.
         return true;
     }
 };
 
 // ==============================================================================
-// NqEngine — USTEC.F (Nasdaq-100 futures)
+// NqEngine -- USTEC.F (Nasdaq-100 futures)
 //
 // INSTRUMENT: Equity index, higher beta than SP. Tech-heavy, moves faster.
 // TP 0.70%, SL 0.40%, VOL_THRESH 0.05%, MIN_GAP 240s, MAX_HOLD 1200s
@@ -85,9 +85,9 @@ public:
 // GATES (NQ-specific):
 //   spread > 0.05%    -> block (NQ spread slightly wider than SP)
 //   SP position open  -> block (doubles correlated equity risk)
-//   ES/NQ div > 0.30% -> block (SP/NQ decoupling — unreliable signal)
+//   ES/NQ div > 0.30% -> block (SP/NQ decoupling -- unreliable signal)
 //   VIX > 40          -> block (panic regime)
-//   RISK_OFF regime   -> block (equity index — no bearish breakouts)
+//   RISK_OFF regime   -> block (equity index -- no bearish breakouts)
 // ==============================================================================
 class NqEngine final : public BreakoutEngineBase<NqEngine>
 {
@@ -112,17 +112,17 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)           return false; // liquidity gate
         if (!macro)                                 return true;
-        // Cross-block removed: SP and NQ compress/break together — blocking one wastes half the move
+        // Cross-block removed: SP and NQ compress/break together -- blocking one wastes half the move
         // Each has independent TP/SL/position. Correlation risk is not a reason to block.
         if (std::fabs(macro->es_nq_div) > 0.0030)  return false; // SP/NQ decoupling
         if (macro->vix > 40.0)                      return false; // panic
-        if (macro->regime == "RISK_OFF")            return false; // equity index — no bearish breakouts
+        // RISK_OFF block removed: compression breakouts fire both ways. RISK_OFF = uncertainty, not direction.
         return true;
     }
 };
 
 // ==============================================================================
-// OilEngine — USOIL.F (WTI Crude Oil)
+// OilEngine -- USOIL.F (WTI Crude Oil)
 //
 // INSTRUMENT: Commodity. Supply/demand driven. NOT correlated with equity regime.
 // TP 1.20%, SL 0.60%, VOL_THRESH 0.08%, MIN_GAP 360s, MAX_HOLD 1800s
@@ -148,7 +148,7 @@ public:
         SL_PCT                = 0.600;
         COMPRESSION_LOOKBACK  = 120;  // 40→120: oil intraday pauses are 15-40s (40 ticks), real compression is 2-10min (120+ ticks)
         BASELINE_LOOKBACK     = 300;  // 150→300: baseline must be at least 2.5x compression window for meaningful ratio
-        COMPRESSION_THRESHOLD = 0.65;  // 0.70→0.65: oil chops more than indices — tighter threshold avoids false compression exits
+        COMPRESSION_THRESHOLD = 0.70;  // restored to 0.70: 0.65 was too tight, oil stuck FLAT -- needs same threshold as indices
         MAX_HOLD_SEC          = 1800;
         MIN_GAP_SEC           = 360;
         MAX_SPREAD_PCT        = 0.120;
@@ -175,25 +175,28 @@ private:
 #endif
         if (ti.tm_wday != 3) return false;  // Wednesday only
         const int mins = ti.tm_hour * 60 + ti.tm_min;
-        return (mins >= 14*60 && mins < 15*60+30);  // 14:00-15:30 UTC
+        // Block only 5 min pre-announcement (spread widens) + 30 min post (vol normalises)
+        // 14:25-15:00 UTC. The release itself IS the breakout -- trade it after initial spike.
+        // Old block was 14:00-15:30 which killed the entire best oil move of the week.
+        return (mins >= 14*60+25 && mins < 15*60);  // 14:25-15:00 UTC only
     }
 };
 
 // ==============================================================================
-// GoldEngine — GOLD.F (XAU/USD)
+// GoldEngine -- GOLD.F (XAU/USD)
 //
 // INSTRUMENT: Safe-haven asset. INVERSE relationship with equity risk regime.
 // TP 0.30%, SL 0.15%, VOL_THRESH 0.04%, MIN_GAP 180s, MAX_HOLD 1500s
 //
 // GATES (Gold-specific):
 //   spread > 0.06%   -> block (gold spread wider than indices)
-//   VIX > 60         -> block (true dislocation — all markets illiquid)
-//   RISK_OFF         -> ALLOW freely (gold rallies on fear — core edge)
+//   VIX > 60         -> block (true dislocation -- all markets illiquid)
+//   RISK_OFF         -> ALLOW freely (gold rallies on fear -- core edge)
 //   RISK_ON          -> allow (gold breakouts still work, just less frequent)
 //   NEUTRAL          -> allow normally
 //
 // NOTE: Gold is a safe-haven. It performs BEST in RISK_OFF.
-//   We deliberately do NOT block RISK_OFF for gold — that is when it moves most.
+//   We deliberately do NOT block RISK_OFF for gold -- that is when it moves most.
 //   The only universal block is extreme VIX > 60 (true dislocation, all illiquid).
 // ==============================================================================
 class GoldEngine final : public BreakoutEngineBase<GoldEngine>
@@ -219,8 +222,8 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)  return false; // gold spread gate
         if (!macro)                        return true;
-        if (macro->vix > 60.0)             return false; // true dislocation — all illiquid
-        // RISK_OFF = gold's home turf — always allow
+        if (macro->vix > 60.0)             return false; // true dislocation -- all illiquid
+        // RISK_OFF = gold's home turf -- always allow
         // RISK_ON / NEUTRAL = allow (compression breakouts valid in all regimes for gold)
         return true;
     }
