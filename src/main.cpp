@@ -272,7 +272,7 @@ static std::string build_logon(int seq, const char* subID) {
 // Confirmation:    VIX.F, DX.F, DJ30.F, NAS100, GOLD.F, NGAS.F, ES, DX
 // ─────────────────────────────────────────────────────────────────────────────
 struct SymbolDef { int id; const char* name; };
-static const SymbolDef OMEGA_SYMS[] = {
+static SymbolDef OMEGA_SYMS[] = {
     // Primary -- traded
     { 2642, "US500.F"  },   // S&P 500 futures
     { 2643, "USTEC.F"  },   // Nasdaq futures
@@ -294,6 +294,19 @@ static std::unordered_map<int, const char*> g_id_to_sym;
 static void build_id_map() {
     for (int i = 0; i < OMEGA_NSYMS; ++i)
         g_id_to_sym[OMEGA_SYMS[i].id] = OMEGA_SYMS[i].name;
+}
+
+static bool        g_seclist_received = false;  // gate: wait for ID discovery before subscribing
+
+static std::string build_seclist_req(int seq) {
+    std::ostringstream b;
+    b << "35=x\x01"
+      << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01"
+      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "320=OMEGA-SL-001\x01"   // SecurityReqID
+      << "559=0\x01";             // SecurityListRequestType=0 (all securities)
+    return wrap_fix(b.str());
 }
 
 static std::string build_marketdata_req(int seq) {
@@ -716,9 +729,60 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     if (type == "A") {
         std::cout << "[OMEGA] LOGON ACCEPTED\n";
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
+        // Request SecurityList first to discover current numeric IDs
+        // MarketDataRequest is sent after SecurityList response (type=y) is received
+        const std::string sl = build_seclist_req(g_quote_seq++);
+        SSL_write(ssl, sl.c_str(), static_cast<int>(sl.size()));
+        std::cout << "[OMEGA] SecurityListRequest sent — awaiting ID discovery\n";
+        return;
+    }
+
+    // SecurityList response — parse symbol IDs and subscribe
+    if (type == "y") {
+        std::cout << "[OMEGA] SecurityList received — parsing symbol IDs\n";
+        // Rebuild ID map from live SecurityList response
+        // Format: repeating groups with 55=<name> 48=<numericID>
+        // We scan for all 55= / 48= pairs in the raw FIX message
+        g_id_to_sym.clear();
+        // Parse raw FIX: split on SOH, walk tags
+        std::vector<std::string> fields;
+        std::string tmp;
+        for (char c : msg) {
+            if (c == '\x01') { if (!tmp.empty()) fields.push_back(tmp); tmp.clear(); }
+            else tmp += c;
+        }
+        std::string last_name;
+        int matched = 0;
+        for (const auto& f : fields) {
+            const auto eq = f.find('=');
+            if (eq == std::string::npos) continue;
+            const std::string tag = f.substr(0, eq);
+            const std::string val = f.substr(eq + 1);
+            if (tag == "55") { last_name = val; }
+            else if (tag == "48" && !last_name.empty()) {
+                try {
+                    const int id = std::stoi(val);
+                    // Find matching name in OMEGA_SYMS and update ID
+                    for (int i = 0; i < OMEGA_NSYMS; ++i) {
+                        if (last_name == OMEGA_SYMS[i].name) {
+                            // Update the ID in OMEGA_SYMS (cast away const for update)
+                            OMEGA_SYMS[i].id = id;
+                            g_id_to_sym[id] = OMEGA_SYMS[i].name;
+                            std::cout << "[OMEGA-SL] " << last_name << " -> ID " << id << "\n";
+                            ++matched;
+                            break;
+                        }
+                    }
+                } catch (...) {}
+                last_name.clear();
+            }
+        }
+        std::cout << "[OMEGA-SL] Matched " << matched << "/" << OMEGA_NSYMS << " symbols\n";
+        // Now send MarketDataRequest with discovered IDs
+        g_seclist_received = true;
         const std::string md = build_marketdata_req(g_quote_seq++);
         SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
-        std::cout << "[OMEGA] Subscribed: US500.F USTEC.F USOIL.F + 8 confirmation\n";
+        std::cout << "[OMEGA] Subscribed: US500.F USTEC.F USOIL.F + confirmation symbols\n";
         return;
     }
 
