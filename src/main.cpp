@@ -198,29 +198,107 @@ static int                g_trade_seq  = 1;
 static std::ofstream g_shadow_csv;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TeeBuffer — mirrors stdout to a log file automatically
+// RollingTeeBuffer — mirrors stdout to a daily rolling log file
+// Rotates at UTC midnight. Keeps LOG_KEEP_DAYS files, deletes older ones.
+// File naming: logs/omega_YYYY-MM-DD.log
 // ─────────────────────────────────────────────────────────────────────────────
-class TeeBuffer : public std::streambuf {
+class RollingTeeBuffer : public std::streambuf {
 public:
-    TeeBuffer(std::streambuf* orig, std::streambuf* file)
-        : orig_(orig), file_(file) {}
+    static constexpr int LOG_KEEP_DAYS = 5;
+
+    explicit RollingTeeBuffer(std::streambuf* orig, const std::string& log_dir)
+        : orig_(orig), log_dir_(log_dir)
+    {
+        open_today();
+    }
+
     int overflow(int c) override {
         if (c == EOF) return !EOF;
+        check_rotate();
         orig_->sputc(static_cast<char>(c));
-        if (file_) file_->sputc(static_cast<char>(c));
+        if (file_buf_) file_buf_->sputc(static_cast<char>(c));
         return c;
     }
     std::streamsize xsputn(const char* s, std::streamsize n) override {
+        check_rotate();
         orig_->sputn(s, n);
-        if (file_) file_->sputn(s, n);
+        if (file_buf_) file_buf_->sputn(s, n);
         return n;
     }
+
+    std::string current_path() const { return current_path_; }
+
+    void flush_and_close() {
+        if (file_.is_open()) { file_.flush(); file_.close(); }
+        file_buf_ = nullptr;
+    }
+
 private:
     std::streambuf* orig_;
-    std::streambuf* file_;
+    std::string     log_dir_;
+    std::ofstream   file_;
+    std::streambuf* file_buf_ = nullptr;
+    std::string     current_path_;
+    int             current_day_ = -1;
+
+    static std::string utc_date_str() {
+        auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti{};
+        gmtime_s(&ti, &t);
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
+                      ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday);
+        return buf;
+    }
+
+    static int utc_day_of_year() {
+        auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti{};
+        gmtime_s(&ti, &t);
+        return ti.tm_yday;
+    }
+
+    void open_today() {
+        if (file_.is_open()) { file_.flush(); file_.close(); file_buf_ = nullptr; }
+        _mkdir(log_dir_.c_str());
+        current_path_ = log_dir_ + "/omega_" + utc_date_str() + ".log";
+        file_.open(current_path_, std::ios::app);
+        file_buf_    = file_.is_open() ? file_.rdbuf() : nullptr;
+        current_day_ = utc_day_of_year();
+        purge_old_logs();
+    }
+
+    void check_rotate() {
+        if (utc_day_of_year() != current_day_)
+            open_today();
+    }
+
+    void purge_old_logs() {
+        // Enumerate logs/omega_*.log and delete files older than LOG_KEEP_DAYS
+        WIN32_FIND_DATAA fd{};
+        std::string pattern = log_dir_ + "/omega_*.log";
+        HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) return;
+
+        // Collect all matching filenames
+        std::vector<std::string> files;
+        do {
+            files.push_back(log_dir_ + "/" + fd.cFileName);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+
+        // Sort ascending — oldest first
+        std::sort(files.begin(), files.end());
+
+        // Delete everything beyond the keep window
+        while (static_cast<int>(files.size()) > LOG_KEEP_DAYS) {
+            DeleteFileA(files.front().c_str());
+            files.erase(files.begin());
+        }
+    }
 };
-static std::ofstream     g_log_file;
-static TeeBuffer*        g_tee_buf   = nullptr;
+
+static RollingTeeBuffer* g_tee_buf   = nullptr;
 static std::streambuf*   g_orig_cout = nullptr;
 
 // FIX recv buffer
@@ -1190,22 +1268,19 @@ int main(int argc, char* argv[])
     g_telemetry.UpdateBuildVersion(OMEGA_VERSION, OMEGA_BUILT);
 
     // Open log file and tee stdout into it
-    if (!g_cfg.log_file.empty()) {
-        // Ensure directory exists
-        const size_t slash = g_cfg.log_file.find_last_of("/\\");
-        if (slash != std::string::npos) {
-            std::string dir = g_cfg.log_file.substr(0, slash);
-            _mkdir(dir.c_str());  // no-op if exists
+    // Rolling log: logs/omega_YYYY-MM-DD.log, 5-day retention
+    {
+        std::string log_dir = "logs";
+        if (!g_cfg.log_file.empty()) {
+            const size_t slash = g_cfg.log_file.find_last_of("/\\\\");
+            if (slash != std::string::npos)
+                log_dir = g_cfg.log_file.substr(0, slash);
         }
-        g_log_file.open(g_cfg.log_file, std::ios::app);
-        if (g_log_file.is_open()) {
-            g_orig_cout = std::cout.rdbuf();
-            g_tee_buf   = new TeeBuffer(g_orig_cout, g_log_file.rdbuf());
-            std::cout.rdbuf(g_tee_buf);
-            std::cout << "[OMEGA] Log file: " << g_cfg.log_file << "\n";
-        } else {
-            std::cerr << "[OMEGA] WARNING: could not open log file: " << g_cfg.log_file << "\n";
-        }
+        g_orig_cout = std::cout.rdbuf();
+        g_tee_buf   = new RollingTeeBuffer(g_orig_cout, log_dir);
+        std::cout.rdbuf(g_tee_buf);
+        std::cout << "[OMEGA] Rolling log: " << g_tee_buf->current_path()
+                  << " (5-day retention)\n";
     }
 
     g_shadow_csv.open(g_cfg.shadow_csv, std::ios::app);
@@ -1234,8 +1309,7 @@ int main(int argc, char* argv[])
     std::cout << "[OMEGA] Shutdown\n";
     gui_server.stop();
     g_shadow_csv.close();
-    if (g_orig_cout) std::cout.rdbuf(g_orig_cout);
-    if (g_log_file.is_open()) g_log_file.close();
+    if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); }
     WSACleanup();
     ReleaseMutex(g_singleton_mutex);
     CloseHandle(g_singleton_mutex);
