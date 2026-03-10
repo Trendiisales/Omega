@@ -851,7 +851,7 @@ public:
             ? [this, &on_close](const omega::TradeRecord& tr) {
                 on_close(tr);
                 if (tr.exitReason == "SL_HIT") {
-                    sl_cooldown_until_ = nowSec() + 120;
+                    sl_cooldown_until_ = static_cast<int64_t>(std::time(nullptr)) + 120;
                     printf("[GOLD-SL-COOLDOWN] armed 120s — blocks all engines until cooldown expires\n");
                     fflush(stdout);
                 }
@@ -881,7 +881,7 @@ public:
 
         // SL cooldown: after any gold SL, block ALL engines for 120s
         // Prevents multiple engines firing sequentially on same fake breakout
-        if(nowSec() < sl_cooldown_until_) return GoldSignal{};
+        if(static_cast<int64_t>(std::time(nullptr)) < sl_cooldown_until_) return GoldSignal{};
 
         // Volatility gate
         if(!vol_filter_.allow(snap.mid)) return GoldSignal{};
