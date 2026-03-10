@@ -590,7 +590,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
 
     // Gate flags — passed into dispatch, checked before entry (not before warmup)
-    const bool lat_ok = (g_rtt_last <= 0.0 || g_governor.checkLatency(g_rtt_last, g_cfg.max_latency_ms));
+    // Use p95 RTT (not last) -- a single spike in g_rtt_last was permanently blocking
+    // entries until the next 5s ping. p95 over 200 samples is stable and representative.
+    const double rtt_check = (g_rtt_p95 > 0.0) ? g_rtt_p95 : g_rtt_last;
+    const bool lat_ok = (rtt_check <= 0.0 || g_governor.checkLatency(rtt_check, g_cfg.max_latency_ms));
     const bool can_enter = tradeable && lat_ok;
     if (!lat_ok) ++g_gov_lat;
 
@@ -618,7 +621,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Helper lambda — always feeds ticks to engine (warmup + position management).
     // can_enter=false gates new entries only; TP/SL/timeout always run.
     auto dispatch = [&](auto& eng) {
-        const auto sig = eng.update(bid, ask, g_rtt_last, regime.c_str(), on_close, can_enter);
+        const auto sig = eng.update(bid, ask, rtt_check, regime.c_str(), on_close, can_enter);
         g_telemetry.UpdateEngineState(sym.c_str(),
             static_cast<int>(eng.phase), eng.comp_high, eng.comp_low,
             eng.recent_vol_pct, eng.base_vol_pct, eng.signal_count);
@@ -642,7 +645,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // can_enter gates new entries; g_eng_xau.pos.active blocks stack entries
         // when the CRTP BreakoutEngine already has a gold position open.
         const bool gold_can_enter = can_enter && !g_eng_xau.pos.active;
-        const auto gsig = g_gold_stack.on_tick(bid, ask, g_rtt_last, on_close, gold_can_enter);
+        const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close, gold_can_enter);
         if (gsig.valid) {
             // New entry fired — log it
             g_telemetry.UpdateLastSignal("GOLD.F",
