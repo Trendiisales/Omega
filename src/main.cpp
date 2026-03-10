@@ -742,9 +742,8 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     }
 
     // ── Unknown / unexpected message types -- log everything for diagnostics ──
-    // Log ALL non-heartbeat messages for diagnostics
-    if (type != "0") {
-        std::string readable = msg.substr(0, std::min(msg.size(), size_t(400)));
+    if (type != "W" && type != "X" && type != "A" && type != "0" && type != "1" && type != "3" && type != "j") {
+        std::string readable = msg.substr(0, std::min(msg.size(), size_t(300)));
         for (char& c : readable) if (c == '\x01') c = '|';
         std::cerr << "[OMEGA-RAW] type=" << type << " msg=" << readable << "\n";
         std::cerr.flush();
