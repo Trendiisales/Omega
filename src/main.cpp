@@ -25,7 +25,6 @@
 #include <mutex>
 #include <algorithm>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <deque>
 #include <cmath>
@@ -828,16 +827,8 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         }
         if (bid > 0.0 && ask > 0.0) {
             on_tick(sym, bid, ask);
-        } else {
-            // Log first empty tick per symbol to catch bad IDs / closed markets
-            static std::unordered_set<std::string> s_warned;
-            if (s_warned.find(sym) == s_warned.end()) {
-                s_warned.insert(sym);
-                std::cerr << "[OMEGA-MD] empty quote for " << sym
-                          << " bid=" << bid << " ask=" << ask << " (268=0 or ID wrong)\n";
-                std::cerr.flush();
-            }
         }
+        // else: book not yet seeded for this symbol, drop silently
         return;
     }
 
