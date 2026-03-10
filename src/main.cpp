@@ -89,6 +89,9 @@ struct OmegaConfig {
     int    min_entry_gap_sec     = 180;
     double max_spread_pct        = 0.05;
     double max_latency_ms        = 10.0;   // broker RTT measured 1ms avg; 10ms = safe hard cap
+    double momentum_thresh_pct   = 0.05;   // momentum gate threshold
+    double min_breakout_pct      = 0.25;   // min breakout size from comp edge
+    int    max_trades_per_min    = 2;       // rate limiter
 
     // Risk
     double daily_loss_limit  = 200.0;
@@ -459,26 +462,35 @@ static bool session_tradeable() noexcept {
 static void apply_engine_config(omega::SpEngine& eng) noexcept {
     // Only override config-file-driven values. Constructor sets tuned compression params.
     // DO NOT override COMPRESSION_LOOKBACK/BASELINE/THRESHOLD -- constructor has correct values.
-    eng.TP_PCT      = g_cfg.sp_tp_pct;
-    eng.SL_PCT      = g_cfg.sp_sl_pct;
-    eng.MIN_GAP_SEC = g_cfg.sp_min_gap_sec;
-    eng.macro       = &g_macro_ctx;
+    eng.TP_PCT               = g_cfg.sp_tp_pct;
+    eng.SL_PCT               = g_cfg.sp_sl_pct;
+    eng.MIN_GAP_SEC          = g_cfg.sp_min_gap_sec;
+    eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
+    eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
+    eng.macro                = &g_macro_ctx;
 }
 // NQ -- uses [nq] config section, links macro context
 static void apply_engine_config(omega::NqEngine& eng) noexcept {
     // Only override config-file-driven values. Constructor sets tuned compression params.
-    eng.TP_PCT      = g_cfg.nq_tp_pct;
-    eng.SL_PCT      = g_cfg.nq_sl_pct;
-    eng.MIN_GAP_SEC = g_cfg.nq_min_gap_sec;
-    eng.macro       = &g_macro_ctx;
+    eng.TP_PCT               = g_cfg.nq_tp_pct;
+    eng.SL_PCT               = g_cfg.nq_sl_pct;
+    eng.MIN_GAP_SEC          = g_cfg.nq_min_gap_sec;
+    eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
+    eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
+    eng.macro                = &g_macro_ctx;
 }
 // Oil -- uses [oil] config section, inventory window block built into engine
 static void apply_engine_config(omega::OilEngine& eng) noexcept {
     // Only override config-file-driven values. Constructor sets tuned compression params.
-    eng.TP_PCT      = g_cfg.oil_tp_pct;
-    eng.SL_PCT      = g_cfg.oil_sl_pct;
-    eng.MIN_GAP_SEC = g_cfg.oil_min_gap_sec;
-    eng.macro       = &g_macro_ctx;
+    eng.TP_PCT               = g_cfg.oil_tp_pct;
+    eng.SL_PCT               = g_cfg.oil_sl_pct;
+    eng.MIN_GAP_SEC          = g_cfg.oil_min_gap_sec;
+    eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
+    eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
+    eng.macro                = &g_macro_ctx;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -526,6 +538,9 @@ static void load_config(const std::string& path) {
             if (k=="max_hold_sec")          g_cfg.max_hold_sec          = std::stoi(v);
             if (k=="min_entry_gap_sec")     g_cfg.min_entry_gap_sec     = std::stoi(v);
             if (k=="max_spread_entry_pct")  g_cfg.max_spread_pct        = std::stod(v);
+            if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct  = std::stod(v);
+            if (k=="min_breakout_move_pct") g_cfg.min_breakout_pct     = std::stod(v);
+            if (k=="max_trades_per_minute") g_cfg.max_trades_per_min   = std::stoi(v);
         }
         if (section == "risk") {
             if (k=="daily_loss_limit")     g_cfg.daily_loss_limit  = std::stod(v);
