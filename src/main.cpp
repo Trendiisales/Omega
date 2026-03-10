@@ -126,6 +126,7 @@ struct OmegaConfig {
     // GUI
     int         gui_port   = 7779;
     int         ws_port    = 7780;
+    int         trade_port = 5212;   // FIX trade connection (orders)
     std::string shadow_csv = "omega_shadow.csv";
     std::string log_file   = "";   // if set, tee all stdout+stderr here
 };
@@ -182,6 +183,13 @@ struct Governor {
 static Governor g_governor;
 static bool    g_loss_pause    = false;
 static int64_t g_loss_pause_until = 0;
+
+// Trade connection (port 5212) — separate SSL from quote (port 5211)
+static SSL*               g_trade_ssl  = nullptr;
+static int                g_trade_sock = -1;
+static std::atomic<bool>  g_trade_ready{false};
+static std::mutex         g_trade_mtx;
+static int                g_trade_seq  = 1;
 
 // Shadow CSV
 static std::ofstream g_shadow_csv;
@@ -500,6 +508,7 @@ static void load_config(const std::string& path) {
         if (section == "fix") {
             if (k=="host")               g_cfg.host      = v;
             if (k=="port")               g_cfg.port      = std::stoi(v);
+            if (k=="trade_port")        g_cfg.trade_port = std::stoi(v);
             if (k=="sender_comp_id")     g_cfg.sender    = v;
             if (k=="target_comp_id")     g_cfg.target    = v;
             if (k=="username")           g_cfg.username  = v;
@@ -874,6 +883,117 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Quote loop
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// trade_loop  — FIX session on port 5212 (order management)
+// Runs in its own thread. In SHADOW mode: connects, logs on, keeps alive.
+// In LIVE mode: NewOrderSingle messages are sent via g_trade_ssl.
+// ─────────────────────────────────────────────────────────────────────────────
+static void trade_loop() {
+    int backoff_ms = 1000;
+    const int max_backoff = 30000;
+
+    while (g_running.load()) {
+        std::cout << "[OMEGA-TRADE] Connecting " << g_cfg.host << ":" << g_cfg.trade_port << "\n";
+
+        int sock = -1;
+        SSL* ssl = connect_ssl(g_cfg.host, g_cfg.trade_port, sock);
+        if (!ssl) {
+            std::cerr << "[OMEGA-TRADE] Connect failed -- retry " << backoff_ms << "ms\n";
+            Sleep(static_cast<DWORD>(backoff_ms));
+            backoff_ms = std::min(backoff_ms * 2, max_backoff);
+            continue;
+        }
+
+        backoff_ms = 1000;
+        g_trade_seq = 1;
+
+        // Send trade logon
+        const std::string logon = build_logon(g_trade_seq++, "TRADE");
+        SSL_write(ssl, logon.c_str(), static_cast<int>(logon.size()));
+        std::cout << "[OMEGA-TRADE] Logon sent\n";
+
+        // Store globally for order submission
+        {
+            std::lock_guard<std::mutex> lk(g_trade_mtx);
+            g_trade_ssl  = ssl;
+            g_trade_sock = sock;
+        }
+
+        // Read loop — heartbeats + logon ACK only on trade session
+        std::string trade_recv_buf;
+        auto last_ping = std::chrono::steady_clock::now();
+
+        while (g_running.load()) {
+            const auto now = std::chrono::steady_clock::now();
+
+            // Heartbeat every 30s
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_ping).count() >= g_cfg.heartbeat) {
+                last_ping = now;
+                const std::string hb = build_heartbeat(g_trade_seq++, "TRADE");
+                std::lock_guard<std::mutex> lk(g_trade_mtx);
+                if (SSL_write(ssl, hb.c_str(), static_cast<int>(hb.size())) <= 0) break;
+            }
+
+            char buf[4096];
+            const int n = SSL_read(ssl, buf, static_cast<int>(sizeof(buf)) - 1);
+            if (n <= 0) {
+                const int err = SSL_get_error(ssl, n);
+                if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                    Sleep(1); continue;
+                }
+                std::cerr << "[OMEGA-TRADE] SSL error " << err << " -- reconnecting\n";
+                break;
+            }
+            trade_recv_buf.append(buf, static_cast<size_t>(n));
+
+            // Parse messages from trade session
+            while (true) {
+                const size_t bs = trade_recv_buf.find("8=FIX");
+                if (bs == std::string::npos) { trade_recv_buf.clear(); break; }
+                if (bs > 0) trade_recv_buf = trade_recv_buf.substr(bs);
+                const size_t bl_pos = trade_recv_buf.find("\x01" "9=");
+                if (bl_pos == std::string::npos) break;
+                const size_t bl_start = bl_pos + 3u;
+                const size_t bl_end   = trade_recv_buf.find('\x01', bl_start);
+                if (bl_end == std::string::npos) break;
+                const int body_len = std::stoi(trade_recv_buf.substr(bl_start, bl_end - bl_start));
+                const size_t hdr_end = bl_end + 1u;
+                const size_t msg_end = hdr_end + static_cast<size_t>(body_len) + 7u;
+                if (msg_end > trade_recv_buf.size()) break;
+                const std::string tmsg = trade_recv_buf.substr(0u, msg_end);
+                trade_recv_buf = trade_recv_buf.substr(msg_end);
+
+                const std::string ttype = extract_tag(tmsg, "35");
+                if (ttype == "A") {
+                    g_trade_ready.store(true);
+                    std::cout << "[OMEGA-TRADE] LOGON ACCEPTED\n";
+                } else if (ttype == "5") {
+                    std::cout << "[OMEGA-TRADE] Logout received\n";
+                    break;
+                } else if (ttype == "3" || ttype == "j") {
+                    std::string r = tmsg.substr(0, 300);
+                    for (char& c : r) if (c == '\x01') c = '|';
+                    std::cerr << "[OMEGA-TRADE] REJECT type=" << ttype
+                              << " text=" << extract_tag(tmsg, "58") << "\n";
+                }
+                // Heartbeats (type=0) and TestRequests (type=1) silently absorbed
+            }
+        }
+
+        // Tear down
+        g_trade_ready.store(false);
+        {
+            std::lock_guard<std::mutex> lk(g_trade_mtx);
+            g_trade_ssl  = nullptr;
+            g_trade_sock = -1;
+        }
+        SSL_shutdown(ssl); SSL_free(ssl);
+        if (sock >= 0) closesocket(static_cast<SOCKET>(sock));
+        std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
+        Sleep(2000);
+    }
+}
+
 static void quote_loop() {
     int backoff_ms = 1000;
     const int max_backoff = 30000;
@@ -1090,6 +1210,10 @@ int main(int argc, char* argv[])
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
+    // Launch trade connection in background thread
+    std::thread trade_thread(trade_loop);
+    trade_thread.detach();
+    Sleep(500);  // Give trade connection 500ms head start before quote loop
     quote_loop();
 
     std::cout << "[OMEGA] Shutdown\n";
