@@ -882,8 +882,8 @@ public:
             ? [this, &on_close](const omega::TradeRecord& tr) {
                 on_close(tr);
                 if (tr.exitReason == "SL_HIT") {
-                    sl_cooldown_until_ = static_cast<int64_t>(std::time(nullptr)) + 60;
-                    printf("[GOLD-SL-COOLDOWN] armed 60s — blocks all engines until cooldown expires\n");
+                    sl_cooldown_until_ = static_cast<int64_t>(std::time(nullptr)) + 180;
+                    printf("[GOLD-SL-COOLDOWN] armed 180s — blocks all engines until cooldown expires\n");
                     fflush(stdout);
                 }
               }
@@ -926,6 +926,7 @@ public:
             if(e->getName()=="ImpulseContinuation"&&e->isEnabled()){
                 Signal s=e->process(snap);
                 if(s.valid){
+                    if (s.confidence < 0.90) return GoldSignal{};
                     GoldSignal gs=to_gold_signal(s);
                     pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
                     has_open_pos_=true;
@@ -945,6 +946,7 @@ public:
             if(score>best_score){ best_score=score; best=s; }
         }
         if(best.valid){
+            if (best_score < 1.10) return GoldSignal{};
             GoldSignal gs=to_gold_signal(best);
             pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
             has_open_pos_=true;

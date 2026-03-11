@@ -961,20 +961,20 @@ static void apply_shadow_research_profile() noexcept {
     g_cfg.session_asia      = true;
 
     g_cfg.max_latency_ms    = std::max(g_cfg.max_latency_ms, 25.0);
-    // Defensive quality-throughput posture: prioritize capital protection.
-    g_cfg.max_hold_sec      = std::min(g_cfg.max_hold_sec, 75);
-    g_cfg.momentum_thresh_pct = std::min(g_cfg.momentum_thresh_pct, 0.010);
-    g_cfg.min_breakout_pct    = std::min(g_cfg.min_breakout_pct, 0.035);
-    g_cfg.max_trades_per_min  = std::max(g_cfg.max_trades_per_min, 8);
+    // SHADOW quality profile: still active, but avoid low-edge overtrading.
+    g_cfg.max_hold_sec        = std::min(g_cfg.max_hold_sec, 120);
+    g_cfg.momentum_thresh_pct = std::max(g_cfg.momentum_thresh_pct, 0.045);
+    g_cfg.min_breakout_pct    = std::max(g_cfg.min_breakout_pct, 0.12);
+    g_cfg.max_trades_per_min  = std::min(g_cfg.max_trades_per_min, 3);
 
-    g_cfg.sp_min_gap_sec = std::min(g_cfg.sp_min_gap_sec, 35);
-    g_cfg.nq_min_gap_sec = std::min(g_cfg.nq_min_gap_sec, 35);
-    g_cfg.oil_min_gap_sec = std::min(g_cfg.oil_min_gap_sec, 45);
+    g_cfg.sp_min_gap_sec  = std::max(g_cfg.sp_min_gap_sec, 90);
+    g_cfg.nq_min_gap_sec  = std::max(g_cfg.nq_min_gap_sec, 90);
+    g_cfg.oil_min_gap_sec = std::max(g_cfg.oil_min_gap_sec, 180);
 
-    g_cfg.sp_vol_thresh_pct = std::min(g_cfg.sp_vol_thresh_pct, 0.030);
-    g_cfg.nq_vol_thresh_pct = std::min(g_cfg.nq_vol_thresh_pct, 0.035);
-    g_cfg.oil_vol_thresh_pct = std::min(g_cfg.oil_vol_thresh_pct, 0.060);
-    g_cfg.gold_vol_thresh_pct = std::min(g_cfg.gold_vol_thresh_pct, 0.030);
+    g_cfg.sp_vol_thresh_pct   = std::max(g_cfg.sp_vol_thresh_pct, 0.040);
+    g_cfg.nq_vol_thresh_pct   = std::max(g_cfg.nq_vol_thresh_pct, 0.050);
+    g_cfg.oil_vol_thresh_pct  = std::max(g_cfg.oil_vol_thresh_pct, 0.080);
+    g_cfg.gold_vol_thresh_pct = std::max(g_cfg.gold_vol_thresh_pct, 0.045);
 
     // Small-win profile with better quality than pure scalping.
     g_cfg.sp_tp_pct = std::min(g_cfg.sp_tp_pct, 0.11);
@@ -986,7 +986,7 @@ static void apply_shadow_research_profile() noexcept {
     g_cfg.gold_tp_pct = std::min(g_cfg.gold_tp_pct, 0.10);
     g_cfg.gold_sl_pct = std::min(g_cfg.gold_sl_pct, 0.08);
 
-    std::cout << "[CONFIG] SHADOW quality profile enabled: 24h session, quality-throughput tuning\n";
+    std::cout << "[CONFIG] SHADOW quality profile enabled: 24h session, conservative quality tuning\n";
 }
 
 static void maybe_reset_daily_ledger() {
@@ -1153,8 +1153,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             auto& st = g_sym_risk[risk_key];
             st.daily_pnl += tr.pnl;
             if (tr.pnl <= 0.0) {
-                const int loss_limit = (g_cfg.mode == "SHADOW") ? 3 : g_cfg.max_consec_losses;
-                const int pause_sec  = (g_cfg.mode == "SHADOW") ? 180 : g_cfg.loss_pause_sec;
+                const int loss_limit = (g_cfg.mode == "SHADOW") ? 2 : g_cfg.max_consec_losses;
+                const int pause_sec  = (g_cfg.mode == "SHADOW") ? 300 : g_cfg.loss_pause_sec;
                 if (++st.consec_losses >= loss_limit) {
                     st.pause_until = nowSec() + pause_sec;
                     std::cout << "[OMEGA-RISK] " << risk_key << " "
@@ -1172,11 +1172,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     (held <= 120) &&
                     (tr.exitReason == "SL_HIT" || tr.exitReason == "SCRATCH" || tr.exitReason == "TIMEOUT");
                 if (fast_bad_loss) {
-                    if (++qs.fast_loss_streak >= 3) {
-                        qs.pause_until = nowSec() + 45;
+                    if (++qs.fast_loss_streak >= 2) {
+                        qs.pause_until = nowSec() + 180;
                         std::cout << "[OMEGA-QUALITY] " << tr.symbol
                                   << " fast-loss streak=" << qs.fast_loss_streak
-                                  << " pause=45s\n";
+                                  << " pause=180s\n";
                     }
                 } else if (tr.pnl > 0.0) {
                     qs.fast_loss_streak = 0;
@@ -1764,15 +1764,15 @@ int main(int argc, char* argv[])
     if (g_cfg.mode == "SHADOW") {
         g_eng_sp.AGGRESSIVE_SHADOW = true;
         g_eng_nq.AGGRESSIVE_SHADOW = true;
-        g_eng_cl.AGGRESSIVE_SHADOW = true;
-        g_eng_us30.AGGRESSIVE_SHADOW = true;
-        g_eng_ger30.AGGRESSIVE_SHADOW = true;
-        g_eng_uk100.AGGRESSIVE_SHADOW = true;
-        g_eng_estx50.AGGRESSIVE_SHADOW = true;
-        g_eng_xag.AGGRESSIVE_SHADOW = true;
-        g_eng_eurusd.AGGRESSIVE_SHADOW = true;
-        g_eng_brent.AGGRESSIVE_SHADOW = true;
-        g_eng_xau.AGGRESSIVE_SHADOW = true;
+        g_eng_cl.AGGRESSIVE_SHADOW = false;
+        g_eng_us30.AGGRESSIVE_SHADOW = false;
+        g_eng_ger30.AGGRESSIVE_SHADOW = false;
+        g_eng_uk100.AGGRESSIVE_SHADOW = false;
+        g_eng_estx50.AGGRESSIVE_SHADOW = false;
+        g_eng_xag.AGGRESSIVE_SHADOW = false;
+        g_eng_eurusd.AGGRESSIVE_SHADOW = false;
+        g_eng_brent.AGGRESSIVE_SHADOW = false;
+        g_eng_xau.AGGRESSIVE_SHADOW = false;
     }
 
     auto bind_shadow_cb = [](auto& eng) {
