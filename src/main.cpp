@@ -911,6 +911,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     if (!lat_ok) ++g_gov_lat;
 
     auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
+        // Shadow mode is research mode: do not block entries on loss governors.
+        if (g_cfg.mode == "SHADOW") return false;
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         auto& st = g_sym_risk[symbol];
         if (st.daily_pnl < -g_cfg.daily_loss_limit) {
@@ -989,6 +991,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             ps.live_pnl += tr.pnl;
             if (tr.pnl > 0) ps.live_wins++; else ps.live_losses++;
             if (!ps.disabled &&
+                g_cfg.mode != "SHADOW" &&
                 ps.live_trades >= g_cfg.auto_disable_after_trades &&
                 ps.live_pnl < 0.0) {
                 ps.disabled = true;
