@@ -248,7 +248,7 @@ public:
 class CompressionBreakoutEngine : public EngineBase {
     MinMaxCircularBuffer<double,32> history_;
     static constexpr size_t WINDOW=30;
-    static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.30, MAX_SPREAD=1.80;
+    static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.25, MAX_SPREAD=1.80;
     static constexpr int TP_TICKS=50, SL_TICKS=18; // TP 40→50: genuine compression breakouts on gold run $4-6, not $4
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(2)};
 public:
@@ -321,7 +321,8 @@ public:
             double vd=std::fabs(s.mid-s.vwap);
             if(vd<MIN_VWAP_DIST||vd>MAX_VWAP_DIST) return noSignal();
         }
-        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&s.session!=SessionType::OVERLAP)
+        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&
+           s.session!=SessionType::OVERLAP&&s.session!=SessionType::ASIAN)
             return noSignal();
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::seconds(COOLDOWN_SECONDS)) return noSignal();
@@ -788,6 +789,28 @@ public:
         double move = pos_.is_long ? (mid - pos_.entry) : (pos_.entry - mid);
         if (move > pos_.mfe) pos_.mfe = move;
         if (move < pos_.mae) pos_.mae = move;
+
+        // Profit lock / trail:
+        // 1) Once trade reaches +2.0, lock small gain (BE + 0.2).
+        // 2) Once trade reaches +3.0, trail stop by 1.2 from current mid.
+        if (move >= 2.0) {
+            if (pos_.is_long) {
+                const double be_lock = pos_.entry + 0.2;
+                if (be_lock > pos_.sl) pos_.sl = be_lock;
+            } else {
+                const double be_lock = pos_.entry - 0.2;
+                if (be_lock < pos_.sl) pos_.sl = be_lock;
+            }
+        }
+        if (move >= 3.0) {
+            if (pos_.is_long) {
+                const double trail = mid - 1.2;
+                if (trail > pos_.sl) pos_.sl = trail;
+            } else {
+                const double trail = mid + 1.2;
+                if (trail < pos_.sl) pos_.sl = trail;
+            }
+        }
         // TP
         bool tp_hit = pos_.is_long ? (ask >= pos_.tp) : (bid <= pos_.tp);
         if (tp_hit) {
@@ -859,8 +882,8 @@ public:
             ? [this, &on_close](const omega::TradeRecord& tr) {
                 on_close(tr);
                 if (tr.exitReason == "SL_HIT") {
-                    sl_cooldown_until_ = static_cast<int64_t>(std::time(nullptr)) + 120;
-                    printf("[GOLD-SL-COOLDOWN] armed 120s — blocks all engines until cooldown expires\n");
+                    sl_cooldown_until_ = static_cast<int64_t>(std::time(nullptr)) + 60;
+                    printf("[GOLD-SL-COOLDOWN] armed 60s — blocks all engines until cooldown expires\n");
                     fflush(stdout);
                 }
               }
