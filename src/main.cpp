@@ -97,6 +97,7 @@ struct OmegaConfig {
     double daily_loss_limit  = 200.0;
     int    max_consec_losses = 3;
     int    loss_pause_sec    = 300;
+    int    max_open_positions = 1;
 
     // Session UTC
     int session_start_utc = 7;
@@ -173,6 +174,7 @@ static std::string         g_rtt_pending_id;
 static int     g_gov_spread  = 0;
 static int     g_gov_lat     = 0;
 static int     g_gov_pnl     = 0;
+static int     g_gov_pos     = 0;
 static int     g_gov_consec  = 0;
 static int     g_consec_losses = 0;
 
@@ -186,6 +188,7 @@ struct Governor {
 static Governor g_governor;
 static bool    g_loss_pause    = false;
 static int64_t g_loss_pause_until = 0;
+static int     g_last_ledger_utc_day = -1;
 
 // Trade connection (port 5212) — separate SSL from quote (port 5211)
 static SSL*               g_trade_ssl  = nullptr;
@@ -522,8 +525,15 @@ static bool session_tradeable() noexcept {
     struct tm ti; gmtime_s(&ti, &t);
     const int h = ti.tm_hour;
 
-    // Primary window (London + NY): 07:00-21:00 UTC
-    const bool in_primary = (h >= g_cfg.session_start_utc && h < g_cfg.session_end_utc);
+    // Primary window (supports wrap-through-midnight, e.g. 22->5)
+    bool in_primary = false;
+    if (g_cfg.session_start_utc == g_cfg.session_end_utc) {
+        in_primary = true; // explicit 24h mode
+    } else if (g_cfg.session_start_utc < g_cfg.session_end_utc) {
+        in_primary = (h >= g_cfg.session_start_utc && h < g_cfg.session_end_utc);
+    } else {
+        in_primary = (h >= g_cfg.session_start_utc || h < g_cfg.session_end_utc);
+    }
 
     // Asia/Tokyo window: 22:00-05:00 UTC (overnight, wraps midnight)
     // Active for gold -- Tokyo is the 3rd largest gold market
@@ -540,6 +550,7 @@ static bool session_tradeable() noexcept {
 static void apply_engine_config(omega::SpEngine& eng) noexcept {
     // Only override config-file-driven values. Constructor sets tuned compression params.
     // DO NOT override COMPRESSION_LOOKBACK/BASELINE/THRESHOLD -- constructor has correct values.
+    eng.VOL_THRESH_PCT        = g_cfg.sp_vol_thresh_pct;
     eng.TP_PCT               = g_cfg.sp_tp_pct;
     eng.SL_PCT               = g_cfg.sp_sl_pct;
     eng.MIN_GAP_SEC          = g_cfg.sp_min_gap_sec;
@@ -551,6 +562,7 @@ static void apply_engine_config(omega::SpEngine& eng) noexcept {
 // NQ -- uses [nq] config section, links macro context
 static void apply_engine_config(omega::NqEngine& eng) noexcept {
     // Only override config-file-driven values. Constructor sets tuned compression params.
+    eng.VOL_THRESH_PCT        = g_cfg.nq_vol_thresh_pct;
     eng.TP_PCT               = g_cfg.nq_tp_pct;
     eng.SL_PCT               = g_cfg.nq_sl_pct;
     eng.MIN_GAP_SEC          = g_cfg.nq_min_gap_sec;
@@ -562,6 +574,7 @@ static void apply_engine_config(omega::NqEngine& eng) noexcept {
 // Oil -- uses [oil] config section, inventory window block built into engine
 static void apply_engine_config(omega::OilEngine& eng) noexcept {
     // Only override config-file-driven values. Constructor sets tuned compression params.
+    eng.VOL_THRESH_PCT        = g_cfg.oil_vol_thresh_pct;
     eng.TP_PCT               = g_cfg.oil_tp_pct;
     eng.SL_PCT               = g_cfg.oil_sl_pct;
     eng.MIN_GAP_SEC          = g_cfg.oil_min_gap_sec;
@@ -621,12 +634,18 @@ static void load_config(const std::string& path) {
             if (k=="max_trades_per_minute") g_cfg.max_trades_per_min   = std::stoi(v);
         }
         if (section == "risk") {
+            if (k=="max_positions")        g_cfg.max_open_positions = std::stoi(v);
             if (k=="daily_loss_limit")     g_cfg.daily_loss_limit  = std::stod(v);
             if (k=="max_consec_losses")    g_cfg.max_consec_losses = std::stoi(v);
             if (k=="loss_pause_sec")       g_cfg.loss_pause_sec    = std::stoi(v);
             if (k=="min_entry_gap_sec")    g_cfg.min_entry_gap_sec = std::stoi(v);
             if (k=="max_spread_entry_pct") g_cfg.max_spread_pct    = std::stod(v);
             if (k=="max_latency_ms")       g_cfg.max_latency_ms    = std::stod(v);
+            // Backward-compat: older configs place breakout keys under [risk].
+            // Parse them here too so tuned values are not silently ignored.
+            if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct = std::stod(v);
+            if (k=="min_breakout_move_pct") g_cfg.min_breakout_pct    = std::stod(v);
+            if (k=="max_trades_per_minute") g_cfg.max_trades_per_min  = std::stoi(v);
         }
         if (section == "session") {
             if (k=="session_start_utc") g_cfg.session_start_utc = std::stoi(v);
@@ -675,6 +694,57 @@ static void load_config(const std::string& path) {
               << "[CONFIG] latency_cap=" << g_cfg.max_latency_ms << "ms spread_cap=" << g_cfg.max_spread_pct << "%\n";
 }
 
+static void sanitize_config() noexcept {
+    auto clampd = [](double v, double lo, double hi, double fallback) {
+        if (!std::isfinite(v)) return fallback;
+        return std::max(lo, std::min(v, hi));
+    };
+    auto clampi = [](int v, int lo, int hi, int fallback) {
+        if (v < lo || v > hi) return fallback;
+        return v;
+    };
+
+    g_cfg.max_open_positions = clampi(g_cfg.max_open_positions, 1, 8, 1);
+    g_cfg.max_consec_losses  = clampi(g_cfg.max_consec_losses, 1, 20, 3);
+    g_cfg.loss_pause_sec     = clampi(g_cfg.loss_pause_sec, 10, 3600, 300);
+
+    g_cfg.max_latency_ms     = clampd(g_cfg.max_latency_ms, 0.0, 5000.0, 10.0);
+    g_cfg.daily_loss_limit   = clampd(g_cfg.daily_loss_limit, 1.0, 1000000.0, 200.0);
+    g_cfg.momentum_thresh_pct = clampd(g_cfg.momentum_thresh_pct, 0.0, 10.0, 0.05);
+    g_cfg.min_breakout_pct    = clampd(g_cfg.min_breakout_pct, 0.0, 10.0, 0.25);
+
+    g_cfg.sp_vol_thresh_pct   = clampd(g_cfg.sp_vol_thresh_pct, 0.0, 10.0, 0.04);
+    g_cfg.nq_vol_thresh_pct   = clampd(g_cfg.nq_vol_thresh_pct, 0.0, 10.0, 0.05);
+    g_cfg.oil_vol_thresh_pct  = clampd(g_cfg.oil_vol_thresh_pct, 0.0, 10.0, 0.08);
+    g_cfg.gold_vol_thresh_pct = clampd(g_cfg.gold_vol_thresh_pct, 0.0, 10.0, 0.04);
+
+    g_cfg.session_start_utc = clampi(g_cfg.session_start_utc, 0, 23, 7);
+    g_cfg.session_end_utc   = clampi(g_cfg.session_end_utc,   0, 23, 21);
+
+    std::cout << "[CONFIG] risk max_positions=" << g_cfg.max_open_positions
+              << " max_consec_losses=" << g_cfg.max_consec_losses
+              << " loss_pause_sec=" << g_cfg.loss_pause_sec << "\n";
+}
+
+static void maybe_reset_daily_ledger() {
+    const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    struct tm ti{};
+    gmtime_s(&ti, &t);
+    if (g_last_ledger_utc_day < 0) {
+        g_last_ledger_utc_day = ti.tm_yday;
+        return;
+    }
+    if (ti.tm_yday == g_last_ledger_utc_day) return;
+    g_last_ledger_utc_day = ti.tm_yday;
+
+    g_omegaLedger.resetDaily();
+    g_loss_pause = false;
+    g_consec_losses = 0;
+    g_loss_pause_until = 0;
+    g_gov_spread = g_gov_lat = g_gov_pnl = g_gov_pos = g_gov_consec = 0;
+    std::cout << "[OMEGA-RISK] UTC day rollover — daily ledger/counters reset\n";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Signal handler
 // ─────────────────────────────────────────────────────────────────────────────
@@ -688,6 +758,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     std::cout << "[TICK] " << sym << " " << bid << "/" << ask << "\n";
     std::cout.flush();
+
+    maybe_reset_daily_ledger();
 
     const double mid = (bid + ask) * 0.5;
     if (sym == "VIX.F")   g_macroDetector.updateVIX(mid);
@@ -717,13 +789,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // completes during closed session and gold/oil/indices never fire signals.
     if (g_omegaLedger.dailyPnl() < -g_cfg.daily_loss_limit) {
         ++g_gov_pnl;
-        g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
+        g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, g_gov_pos, g_gov_consec);
         return;
     }
     if (g_loss_pause) {
         if (nowSec() < g_loss_pause_until) {
             ++g_gov_consec;
-            g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
+            g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, g_gov_pos, g_gov_consec);
             return;
         }
         // Pause expired: reset all loss counters so we start fresh
@@ -738,8 +810,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // entries until the next 5s ping. p95 over 200 samples is stable and representative.
     const double rtt_check = (g_rtt_p95 > 0.0) ? g_rtt_p95 : g_rtt_last;
     const bool lat_ok = (rtt_check <= 0.0 || g_governor.checkLatency(rtt_check, g_cfg.max_latency_ms));
-    const bool can_enter = tradeable && lat_ok;
+    const int open_positions =
+        static_cast<int>(g_eng_sp.pos.active) +
+        static_cast<int>(g_eng_nq.pos.active) +
+        static_cast<int>(g_eng_cl.pos.active) +
+        static_cast<int>(g_eng_xau.pos.active) +
+        static_cast<int>(g_gold_stack.has_open_position());
+    const bool pos_budget_ok = open_positions < g_cfg.max_open_positions;
+    const bool can_enter = tradeable && lat_ok && pos_budget_ok;
     if (!lat_ok) ++g_gov_lat;
+    if (!pos_budget_ok) ++g_gov_pos;
 
     // ── Route to engine -- typed dispatch (CRTP has no virtual base) ──────────
     // Each branch calls the same logical sequence on the correct typed engine.
@@ -788,7 +868,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Stack manages its own position internally (entry, TP/SL/timeout, on_close).
         // Decoupled from g_eng_xau: stack has its own RegimeGovernor + 6 engines.
         // g_eng_xau (generic CRTP) no longer blocks the stack -- they run independently.
-        const bool gold_can_enter = can_enter;
+        // If the generic gold engine just opened on this tick, block the stack entry.
+        const bool gold_can_enter = can_enter && !g_eng_xau.pos.active;
         const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close, gold_can_enter);
         if (gsig.valid) {
             // New entry fired -- log it
@@ -809,11 +890,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
     else {
         // Confirmation-only symbol (VIX, ES, NAS100, DX etc) -- no engine dispatch
-        g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
+        g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, g_gov_pos, g_gov_consec);
         return;
     }
 
-    g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
+    g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, g_gov_pos, g_gov_consec);
 }  // ← on_tick
 // ─────────────────────────────────────────────────────────────────────────────
 static std::vector<std::string> extract_messages(const char* data, int n) {
@@ -1239,6 +1320,7 @@ int main(int argc, char* argv[])
 
     const std::string cfg_path = (argc > 1) ? argv[1] : "omega_config.ini";
     load_config(cfg_path);
+    sanitize_config();
     // Per-symbol typed overloads -- each applies instrument-specific params + macro context ptr
     apply_engine_config(g_eng_sp);   // [sp] section: tp=0.60%, sl=0.35%, vol=0.04%, regime-gated
     apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated

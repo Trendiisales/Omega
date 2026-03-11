@@ -258,10 +258,17 @@ public:
         if(s.spread>MAX_SPREAD) return noSignal();
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
-        history_.push_back(s.mid);
-        if(history_.size()<WINDOW) return noSignal();
+        if(history_.size() < WINDOW){
+            history_.push_back(s.mid);
+            return noSignal();
+        }
+        // Use the prior window as the compression range.
+        // If current mid is included in hi/lo, breakout checks become unreachable.
         double hi=history_.max(), lo=history_.min(), range=hi-lo;
-        if(range>COMPRESSION_RANGE) return noSignal();
+        if(range>COMPRESSION_RANGE) {
+            history_.push_back(s.mid);
+            return noSignal();
+        }
         Signal sig; sig.entry=s.mid; sig.size=0.02;
         if(s.mid>hi+BREAKOUT_TRIGGER){
             sig.valid=true; sig.side=TradeSide::LONG;
@@ -279,6 +286,7 @@ public:
             strncpy(sig.engine,"CompressionBreakout",31);
             history_.clear(); last_signal_=now; signal_count_++; return sig;
         }
+        history_.push_back(s.mid);
         return noSignal();
     }
 };
@@ -875,6 +883,7 @@ public:
         MarketRegime regime=governor_.detect(snap.mid,has_open_pos_);
         governor_.apply(engines_,regime);
         current_regime_=regime;
+        apply_asian_session_overrides(snap.session);
 
         // Don't look for new entries if already in a position or gated out
         if(has_open_pos_ || !can_enter) return GoldSignal{};
@@ -953,6 +962,20 @@ private:
     bool             has_open_pos_=false;
     double           last_mid_=0;
     int64_t          sl_cooldown_until_=0;  // block ALL engines for 120s after any SL
+
+    void apply_asian_session_overrides(SessionType session) {
+        if (session != SessionType::ASIAN) return;
+        // Core mismatch fix:
+        // Session gate allows Asia trading globally, but regime routing can disable
+        // CompressionBreakout while other enabled engines remain London/NY-only.
+        // Keep Asia-capable engines available so stack can actually emit entries.
+        for (auto& e : engines_) {
+            const auto& n = e->getName();
+            if (n == "CompressionBreakout" || n == "ImpulseContinuation") {
+                e->setEnabled(true);
+            }
+        }
+    }
 
     const char* current_regime_name() const {
         return RegimeGovernor::name(current_regime_);
