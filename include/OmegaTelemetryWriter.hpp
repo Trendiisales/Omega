@@ -32,6 +32,12 @@ struct OmegaTelemetrySnapshot
     double ngas_bid;   double ngas_ask;
     double es_bid;     double es_ask;
     double dxcash_bid; double dxcash_ask;
+    double ger30_bid;  double ger30_ask;
+    double uk100_bid;  double uk100_ask;
+    double estx50_bid; double estx50_ask;
+    double xag_bid;    double xag_ask;
+    double eurusd_bid; double eurusd_ask;
+    double brent_bid;  double brent_ask;
 
     // --- P&L ---
     double daily_pnl;
@@ -140,6 +146,12 @@ private:
     double lv_ngas_bid=0,   lv_ngas_ask=0;
     double lv_es_bid=0,     lv_es_ask=0;
     double lv_dxcash_bid=0, lv_dxcash_ask=0;
+    double lv_ger30_bid=0,  lv_ger30_ask=0;
+    double lv_uk100_bid=0,  lv_uk100_ask=0;
+    double lv_estx50_bid=0, lv_estx50_ask=0;
+    double lv_xag_bid=0,    lv_xag_ask=0;
+    double lv_eurusd_bid=0, lv_eurusd_ask=0;
+    double lv_brent_bid=0,  lv_brent_ask=0;
 
 public:
     OmegaTelemetryWriter() : m_map(nullptr), m_snap(nullptr) {}
@@ -190,6 +202,12 @@ public:
         else if (!strcmp(sym,"NGAS.F"))  { lv_ngas_bid=bid;   lv_ngas_ask=ask;   m_snap->ngas_bid=bid;   m_snap->ngas_ask=ask; }
         else if (!strcmp(sym,"ES"))      { lv_es_bid=bid;     lv_es_ask=ask;     m_snap->es_bid=bid;     m_snap->es_ask=ask; }
         else if (!strcmp(sym,"DX"))      { lv_dxcash_bid=bid; lv_dxcash_ask=ask; m_snap->dxcash_bid=bid; m_snap->dxcash_ask=ask; }
+        else if (!strcmp(sym,"GER30"))   { lv_ger30_bid=bid;  lv_ger30_ask=ask;  m_snap->ger30_bid=bid;  m_snap->ger30_ask=ask; }
+        else if (!strcmp(sym,"UK100"))   { lv_uk100_bid=bid;  lv_uk100_ask=ask;  m_snap->uk100_bid=bid;  m_snap->uk100_ask=ask; }
+        else if (!strcmp(sym,"ESTX50"))  { lv_estx50_bid=bid; lv_estx50_ask=ask; m_snap->estx50_bid=bid; m_snap->estx50_ask=ask; }
+        else if (!strcmp(sym,"XAGUSD"))  { lv_xag_bid=bid;    lv_xag_ask=ask;    m_snap->xag_bid=bid;    m_snap->xag_ask=ask; }
+        else if (!strcmp(sym,"EURUSD"))  { lv_eurusd_bid=bid; lv_eurusd_ask=ask; m_snap->eurusd_bid=bid; m_snap->eurusd_ask=ask; }
+        else if (!strcmp(sym,"UKBRENT")) { lv_brent_bid=bid;  lv_brent_ask=ask;  m_snap->brent_bid=bid;  m_snap->brent_ask=ask; }
         m_snap->sequence.store(seq + 1, std::memory_order_release);
     }
 

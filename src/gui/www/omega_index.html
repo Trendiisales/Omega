@@ -170,6 +170,41 @@
                     <div class="px-pair"><span class="bid" id="clBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="clAsk">----</span></div>
                     <span class="sym-spread" id="clSpread">--</span>
                 </div>
+                <div class="sym-row primary-sym">
+                    <span class="sym-label primary">DJ30.F</span>
+                    <div class="px-pair"><span class="bid" id="djBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="djAsk">----</span></div>
+                    <span class="sym-spread" id="djSpread">--</span>
+                </div>
+                <div class="sym-row primary-sym">
+                    <span class="sym-label primary">GER30</span>
+                    <div class="px-pair"><span class="bid" id="ger30Bid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="ger30Ask">----</span></div>
+                    <span class="sym-spread" id="ger30Spread">--</span>
+                </div>
+                <div class="sym-row primary-sym">
+                    <span class="sym-label primary">UK100</span>
+                    <div class="px-pair"><span class="bid" id="uk100Bid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="uk100Ask">----</span></div>
+                    <span class="sym-spread" id="uk100Spread">--</span>
+                </div>
+                <div class="sym-row primary-sym">
+                    <span class="sym-label primary">ESTX50</span>
+                    <div class="px-pair"><span class="bid" id="estx50Bid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="estx50Ask">----</span></div>
+                    <span class="sym-spread" id="estx50Spread">--</span>
+                </div>
+                <div class="sym-row primary-sym">
+                    <span class="sym-label primary">XAGUSD</span>
+                    <div class="px-pair"><span class="bid" id="xagBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="xagAsk">----</span></div>
+                    <span class="sym-spread" id="xagSpread">--</span>
+                </div>
+                <div class="sym-row primary-sym">
+                    <span class="sym-label primary">EURUSD</span>
+                    <div class="px-pair"><span class="bid" id="eurusdBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="eurusdAsk">----</span></div>
+                    <span class="sym-spread" id="eurusdSpread">--</span>
+                </div>
+                <div class="sym-row primary-sym">
+                    <span class="sym-label primary">UKBRENT</span>
+                    <div class="px-pair"><span class="bid" id="brentBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="brentAsk">----</span></div>
+                    <span class="sym-spread" id="brentSpread">--</span>
+                </div>
 
                 <div class="sym-group-label" style="margin-top:8px;">◈ Confirmation</div>
                 <div class="sym-row">
@@ -179,10 +214,6 @@
                 <div class="sym-row">
                     <span class="sym-label">DX.F</span>
                     <div class="px-pair"><span class="bid" id="dxBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="dxAsk" style="font-size:11px">--</span></div>
-                </div>
-                <div class="sym-row">
-                    <span class="sym-label">DJ30.F</span>
-                    <div class="px-pair"><span class="bid" id="djBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="djAsk" style="font-size:11px">--</span></div>
                 </div>
                 <div class="sym-row">
                     <span class="sym-label">NAS100</span>
@@ -546,11 +577,17 @@ function updateDashboard(d) {
     setPrice('spBid',  d.sp_bid,  2); setPrice('spAsk',  d.sp_ask,  2); setSpread('spSpread', d.sp_bid, d.sp_ask);
     setPrice('nqBid',  d.nq_bid,  2); setPrice('nqAsk',  d.nq_ask,  2); setSpread('nqSpread', d.nq_bid, d.nq_ask);
     setPrice('clBid',  d.cl_bid,  2); setPrice('clAsk',  d.cl_ask,  2); setSpread('clSpread', d.cl_bid, d.cl_ask);
+    setPrice('djBid', d.dj_bid, 2); setPrice('djAsk', d.dj_ask, 2); setSpread('djSpread', d.dj_bid, d.dj_ask);
+    setPrice('ger30Bid', d.ger30_bid, 2); setPrice('ger30Ask', d.ger30_ask, 2); setSpread('ger30Spread', d.ger30_bid, d.ger30_ask);
+    setPrice('uk100Bid', d.uk100_bid, 2); setPrice('uk100Ask', d.uk100_ask, 2); setSpread('uk100Spread', d.uk100_bid, d.uk100_ask);
+    setPrice('estx50Bid', d.estx50_bid, 2); setPrice('estx50Ask', d.estx50_ask, 2); setSpread('estx50Spread', d.estx50_bid, d.estx50_ask);
+    setPrice('xagBid', d.xag_bid, 3); setPrice('xagAsk', d.xag_ask, 3); setSpread('xagSpread', d.xag_bid, d.xag_ask);
+    setPrice('eurusdBid', d.eurusd_bid, 5); setPrice('eurusdAsk', d.eurusd_ask, 5); setSpread('eurusdSpread', d.eurusd_bid, d.eurusd_ask);
+    setPrice('brentBid', d.brent_bid, 3); setPrice('brentAsk', d.brent_ask, 3); setSpread('brentSpread', d.brent_bid, d.brent_ask);
 
     // Confirmation prices
     setPrice('vixBid',    d.vix_bid,    2); setPrice('vixAsk',    d.vix_ask,    2);
     setPrice('dxBid',     d.dx_bid,     2); setPrice('dxAsk',     d.dx_ask,     2);
-    setPrice('djBid',     d.dj_bid,     2); setPrice('djAsk',     d.dj_ask,     2);
     setPrice('nasBid',    d.nas_bid,    2); setPrice('nasAsk',    d.nas_ask,    2);
     setPrice('goldBid',   d.gold_bid,   2); setPrice('goldAsk',   d.gold_ask,   2);
     setPrice('ngasBid',   d.ngas_bid,   2); setPrice('ngasAsk',   d.ngas_ask,   2);
