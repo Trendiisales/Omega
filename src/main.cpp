@@ -102,6 +102,12 @@ struct OmegaConfig {
     bool   enable_shadow_signal_audit = true;
     int    auto_disable_after_trades  = 10;
     bool   enable_extended_symbols    = true;   // subscribe + trade additional opportunity symbols
+    int    ext_ger30_id               = 0;
+    int    ext_uk100_id               = 0;
+    int    ext_estx50_id              = 0;
+    int    ext_xagusd_id              = 0;
+    int    ext_eurusd_id              = 0;
+    int    ext_ukbrent_id             = 0;
 
     // Session UTC
     int session_start_utc = 7;
@@ -518,10 +524,10 @@ static SymbolDef OMEGA_SYMS[] = {
     // ES (3225) and DX (3173) removed -- not valid on BlackBull, generated FIX rejects
 };
 static const int OMEGA_NSYMS = 9;
-static const char* OMEGA_EXT_SYMS[] = {
-    "GER30", "UK100", "ESTX50", "XAGUSD", "EURUSD", "UKBRENT"
+struct ExtSymbolDef { int id; const char* name; };
+static std::vector<ExtSymbolDef> g_ext_syms = {
+    {0, "GER30"}, {0, "UK100"}, {0, "ESTX50"}, {0, "XAGUSD"}, {0, "EURUSD"}, {0, "UKBRENT"}
 };
-static const int OMEGA_NEXT_SYMS = 6;
 
 // Runtime ID->name map built at startup from OMEGA_SYMS
 static std::unordered_map<int, const char*> g_id_to_sym;
@@ -529,6 +535,9 @@ static std::unordered_map<int, const char*> g_id_to_sym;
 static void build_id_map() {
     for (int i = 0; i < OMEGA_NSYMS; ++i)
         g_id_to_sym[OMEGA_SYMS[i].id] = OMEGA_SYMS[i].name;
+    for (const auto& e : g_ext_syms) {
+        if (e.id > 0) g_id_to_sym[e.id] = e.name;
+    }
 }
 
 static std::string build_marketdata_req(int seq) {
@@ -546,15 +555,19 @@ static std::string build_marketdata_req(int seq) {
 }
 
 static std::string build_marketdata_req_extended(int seq) {
+    std::vector<int> ids;
+    ids.reserve(g_ext_syms.size());
+    for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
+    if (ids.empty()) return {};
+
     std::ostringstream b;
     b << "35=V\x01"
       << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01"
       << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
       << "262=OMEGA-MD-EXT-001\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
-      << "146=" << OMEGA_NEXT_SYMS << "\x01";
-    for (int i = 0; i < OMEGA_NEXT_SYMS; ++i)
-        b << "55=" << OMEGA_EXT_SYMS[i] << "\x01";
+      << "146=" << ids.size() << "\x01";
+    for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
     return wrap_fix(b.str());
 }
@@ -841,6 +854,14 @@ static void load_config(const std::string& path) {
             if (k=="gold_vol_thresh_pct") g_cfg.gold_vol_thresh_pct = std::stod(v);
             if (k=="use_crtp_engine")    g_cfg.gold_use_crtp_engine = (v == "true" || v == "1");
         }
+        if (section == "extended_ids") {
+            if (k=="ger30_id")   g_cfg.ext_ger30_id   = std::stoi(v);
+            if (k=="uk100_id")   g_cfg.ext_uk100_id   = std::stoi(v);
+            if (k=="estx50_id")  g_cfg.ext_estx50_id  = std::stoi(v);
+            if (k=="xagusd_id")  g_cfg.ext_xagusd_id  = std::stoi(v);
+            if (k=="eurusd_id")  g_cfg.ext_eurusd_id  = std::stoi(v);
+            if (k=="ukbrent_id") g_cfg.ext_ukbrent_id = std::stoi(v);
+        }
         if (section == "sp") {
             if (k=="tp_pct")         g_cfg.sp_tp_pct         = std::stod(v);
             if (k=="sl_pct")         g_cfg.sp_sl_pct         = std::stod(v);
@@ -899,6 +920,20 @@ static void sanitize_config() noexcept {
 
     g_cfg.session_start_utc = clampi(g_cfg.session_start_utc, 0, 23, 7);
     g_cfg.session_end_utc   = clampi(g_cfg.session_end_utc,   0, 23, 21);
+
+    g_cfg.ext_ger30_id   = std::max(0, g_cfg.ext_ger30_id);
+    g_cfg.ext_uk100_id   = std::max(0, g_cfg.ext_uk100_id);
+    g_cfg.ext_estx50_id  = std::max(0, g_cfg.ext_estx50_id);
+    g_cfg.ext_xagusd_id  = std::max(0, g_cfg.ext_xagusd_id);
+    g_cfg.ext_eurusd_id  = std::max(0, g_cfg.ext_eurusd_id);
+    g_cfg.ext_ukbrent_id = std::max(0, g_cfg.ext_ukbrent_id);
+
+    g_ext_syms[0].id = g_cfg.ext_ger30_id;
+    g_ext_syms[1].id = g_cfg.ext_uk100_id;
+    g_ext_syms[2].id = g_cfg.ext_estx50_id;
+    g_ext_syms[3].id = g_cfg.ext_xagusd_id;
+    g_ext_syms[4].id = g_cfg.ext_eurusd_id;
+    g_ext_syms[5].id = g_cfg.ext_ukbrent_id;
 
     std::cout << "[CONFIG] risk max_positions=" << g_cfg.max_open_positions
               << " max_consec_losses=" << g_cfg.max_consec_losses
@@ -1206,8 +1241,12 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         std::cout << "[OMEGA] Subscribed: US500.F USTEC.F USOIL.F + 8 confirmation\n";
         if (g_cfg.enable_extended_symbols) {
             const std::string ext = build_marketdata_req_extended(g_quote_seq++);
-            SSL_write(ssl, ext.c_str(), static_cast<int>(ext.size()));
-            std::cout << "[OMEGA] Subscribed EXT: GER30 UK100 ESTX50 XAGUSD EURUSD UKBRENT\n";
+            if (!ext.empty()) {
+                SSL_write(ssl, ext.c_str(), static_cast<int>(ext.size()));
+                std::cout << "[OMEGA] Subscribed EXT (numeric IDs from config)\n";
+            } else {
+                std::cout << "[OMEGA] EXT subscription skipped (no extended_ids configured)\n";
+            }
         }
         return;
     }
@@ -1265,8 +1304,8 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                 if (sym_raw == OMEGA_SYMS[i].name) { sym = OMEGA_SYMS[i].name; break; }
             }
             if (!sym && g_cfg.enable_extended_symbols) {
-                for (int i = 0; i < OMEGA_NEXT_SYMS; ++i) {
-                    if (sym_raw == OMEGA_EXT_SYMS[i]) { sym = OMEGA_EXT_SYMS[i]; break; }
+                for (const auto& e : g_ext_syms) {
+                    if (sym_raw == e.name) { sym = e.name; break; }
                 }
             }
             if (!sym) {
