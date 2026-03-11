@@ -99,6 +99,8 @@ struct OmegaConfig {
     int    loss_pause_sec    = 300;
     int    max_open_positions = 1;
     bool   independent_symbols = true;  // true: risk/position gating is per-symbol (recommended)
+    bool   enable_shadow_signal_audit = true;
+    int    auto_disable_after_trades  = 10;
 
     // Session UTC
     int session_start_utc = 7;
@@ -134,6 +136,7 @@ struct OmegaConfig {
     int         ws_port    = 7780;
     int         trade_port = 5212;   // FIX trade connection (orders)
     std::string shadow_csv = "omega_shadow.csv";
+    std::string shadow_signal_csv = "omega_shadow_signals.csv";
     std::string log_file   = "";   // if set, tee all stdout+stderr here
 };
 
@@ -206,6 +209,99 @@ static int                g_trade_seq  = 1;
 
 // Shadow CSV
 static std::ofstream g_shadow_csv;
+static std::ofstream g_shadow_signal_csv;
+
+struct ShadowSignalPos {
+    bool active = false;
+    std::string symbol;
+    bool is_long = true;
+    double entry = 0.0;
+    double tp = 0.0;
+    double sl = 0.0;
+    int64_t entry_ts = 0;
+    std::string verdict; // BLOCKED / ELIGIBLE
+    std::string reason;
+};
+static std::mutex g_shadow_signal_mtx;
+static std::vector<ShadowSignalPos> g_shadow_signal_positions;
+
+struct PerfStats {
+    int live_trades = 0;
+    int live_wins = 0;
+    int live_losses = 0;
+    double live_pnl = 0.0;
+    int shadow_trades = 0;
+    int shadow_wins = 0;
+    int shadow_losses = 0;
+    double shadow_pnl = 0.0;
+    bool disabled = false;
+};
+static std::mutex g_perf_mtx;
+static std::unordered_map<std::string, PerfStats> g_perf;
+static bool g_disable_gold_stack = false;
+
+static std::string perf_key_from_trade(const omega::TradeRecord& tr) {
+    if (tr.symbol == "GOLD.F" && tr.engine != "BreakoutEngine") return "GOLD_STACK";
+    if (tr.symbol == "GOLD.F") return "GOLD_CRTP";
+    return tr.symbol;
+}
+
+static void write_shadow_signal_close(const ShadowSignalPos& p, double exit_px,
+                                      const char* exit_reason, double pnl) {
+    if (!g_shadow_signal_csv.is_open()) return;
+    const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    g_shadow_signal_csv
+        << p.entry_ts << ',' << p.symbol << ',' << (p.is_long ? "LONG" : "SHORT")
+        << ',' << p.entry << ',' << exit_px << ',' << p.tp << ',' << p.sl
+        << ',' << pnl << ',' << (now - p.entry_ts)
+        << ',' << p.verdict << ',' << p.reason << ',' << exit_reason << '\n';
+    g_shadow_signal_csv.flush();
+}
+
+static void manage_shadow_signals_on_tick(const std::string& sym, double bid, double ask) {
+    if (!g_cfg.enable_shadow_signal_audit) return;
+    std::lock_guard<std::mutex> lk(g_shadow_signal_mtx);
+    if (g_shadow_signal_positions.empty()) return;
+    const double mid = (bid + ask) * 0.5;
+    const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    constexpr int SHADOW_MAX_HOLD_SEC = 600;
+    for (auto& p : g_shadow_signal_positions) {
+        if (!p.active || p.symbol != sym) continue;
+        const bool tp_hit = p.is_long ? (mid >= p.tp) : (mid <= p.tp);
+        const bool sl_hit = p.is_long ? (mid <= p.sl) : (mid >= p.sl);
+        const bool to_hit = (now - p.entry_ts) >= SHADOW_MAX_HOLD_SEC;
+        if (!tp_hit && !sl_hit && !to_hit) continue;
+        const double exit_px = tp_hit ? p.tp : (sl_hit ? p.sl : mid);
+        const double pnl = p.is_long ? (exit_px - p.entry) : (p.entry - exit_px);
+        write_shadow_signal_close(p, exit_px, tp_hit ? "TP_HIT" : (sl_hit ? "SL_HIT" : "TIMEOUT"), pnl);
+        {
+            std::lock_guard<std::mutex> pk(g_perf_mtx);
+            auto& ps = g_perf[p.symbol + "_SHADOW_" + p.verdict];
+            ps.shadow_trades++;
+            ps.shadow_pnl += pnl;
+            if (pnl > 0) ps.shadow_wins++; else ps.shadow_losses++;
+        }
+        p.active = false;
+    }
+}
+
+static void print_perf_stats() {
+    std::lock_guard<std::mutex> lk(g_perf_mtx);
+    if (g_perf.empty()) return;
+    for (const auto& kv : g_perf) {
+        const auto& k = kv.first;
+        const auto& s = kv.second;
+        std::cout << "[OMEGA-PERF] " << k
+                  << " liveT=" << s.live_trades
+                  << " livePnL=" << s.live_pnl
+                  << " WR=" << (s.live_trades > 0 ? (100.0 * s.live_wins / s.live_trades) : 0.0)
+                  << "% shadowT=" << s.shadow_trades
+                  << " shadowPnL=" << s.shadow_pnl
+                  << " disabled=" << (s.disabled ? 1 : 0) << "\n";
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RollingTeeBuffer — mirrors stdout to a daily rolling log file
@@ -646,6 +742,8 @@ static void load_config(const std::string& path) {
             if (k=="max_consec_losses")    g_cfg.max_consec_losses = std::stoi(v);
             if (k=="loss_pause_sec")       g_cfg.loss_pause_sec    = std::stoi(v);
             if (k=="independent_symbols")  g_cfg.independent_symbols = (v == "true" || v == "1");
+            if (k=="enable_shadow_signal_audit") g_cfg.enable_shadow_signal_audit = (v == "true" || v == "1");
+            if (k=="auto_disable_after_trades")  g_cfg.auto_disable_after_trades = std::stoi(v);
             if (k=="min_entry_gap_sec")    g_cfg.min_entry_gap_sec = std::stoi(v);
             if (k=="max_spread_entry_pct") g_cfg.max_spread_pct    = std::stod(v);
             if (k=="max_latency_ms")       g_cfg.max_latency_ms    = std::stod(v);
@@ -664,6 +762,7 @@ static void load_config(const std::string& path) {
             if (k=="gui_port")   g_cfg.gui_port   = std::stoi(v);
             if (k=="ws_port")    g_cfg.ws_port     = std::stoi(v);
             if (k=="shadow_csv") g_cfg.shadow_csv  = v;
+            if (k=="shadow_signal_csv") g_cfg.shadow_signal_csv = v;
             if (k=="log_file")   g_cfg.log_file    = v;
         }
         if (section == "gold") {
@@ -716,6 +815,7 @@ static void sanitize_config() noexcept {
     g_cfg.max_open_positions = clampi(g_cfg.max_open_positions, 1, 8, 1);
     g_cfg.max_consec_losses  = clampi(g_cfg.max_consec_losses, 1, 20, 3);
     g_cfg.loss_pause_sec     = clampi(g_cfg.loss_pause_sec, 10, 3600, 300);
+    g_cfg.auto_disable_after_trades = clampi(g_cfg.auto_disable_after_trades, 5, 200, 10);
 
     g_cfg.max_latency_ms     = clampd(g_cfg.max_latency_ms, 0.0, 5000.0, 10.0);
     g_cfg.daily_loss_limit   = clampd(g_cfg.daily_loss_limit, 1.0, 1000000.0, 200.0);
@@ -751,6 +851,15 @@ static void maybe_reset_daily_ledger() {
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         g_sym_risk.clear();
     }
+    {
+        std::lock_guard<std::mutex> lk(g_shadow_signal_mtx);
+        g_shadow_signal_positions.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_perf_mtx);
+        g_perf.clear();
+    }
+    g_disable_gold_stack = false;
     g_gov_spread = g_gov_lat = g_gov_pnl = g_gov_pos = g_gov_consec = 0;
     std::cout << "[OMEGA-RISK] UTC day rollover — per-symbol risk state reset\n";
 }
@@ -765,6 +874,7 @@ static void sig_handler(int) noexcept { g_running.store(false); }
 // ─────────────────────────────────────────────────────────────────────────────
 static void on_tick(const std::string& sym, double bid, double ask) {
     { std::lock_guard<std::mutex> lk(g_book_mtx); g_bids[sym] = bid; g_asks[sym] = ask; }
+    manage_shadow_signals_on_tick(sym, bid, ask);
 
     std::cout << "[TICK] " << sym << " " << bid << "/" << ask << "\n";
     std::cout.flush();
@@ -821,6 +931,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     };
 
     auto symbol_gate = [&](const std::string& symbol, bool symbol_has_open_position) -> bool {
+        if (symbol == "GOLD.F" && g_disable_gold_stack) return false;
+        {
+            std::lock_guard<std::mutex> lk(g_perf_mtx);
+            auto it = g_perf.find(symbol);
+            if (it != g_perf.end() && it->second.disabled) return false;
+        }
         if (!tradeable) return false;
         if (!lat_ok) return false;
         if (symbol_has_open_position) {
@@ -849,6 +965,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     auto on_close = [&](const omega::TradeRecord& tr) {
         g_omegaLedger.record(tr);
         write_shadow_csv(tr);
+        const std::string perf_key = perf_key_from_trade(tr);
         {
             const std::string risk_key = g_cfg.independent_symbols ? tr.symbol : "GLOBAL";
             std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
@@ -863,6 +980,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             } else {
                 st.consec_losses = 0;
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lk(g_perf_mtx);
+            auto& ps = g_perf[perf_key];
+            ps.live_trades++;
+            ps.live_pnl += tr.pnl;
+            if (tr.pnl > 0) ps.live_wins++; else ps.live_losses++;
+            if (!ps.disabled &&
+                ps.live_trades >= g_cfg.auto_disable_after_trades &&
+                ps.live_pnl < 0.0) {
+                ps.disabled = true;
+                if (perf_key == "GOLD_STACK") g_disable_gold_stack = true;
+                std::cout << "[OMEGA-AUTO-DISABLE] " << perf_key
+                          << " live_trades=" << ps.live_trades
+                          << " pnl=" << ps.live_pnl << "\n";
             }
         }
         g_telemetry.UpdateStats(
@@ -1276,6 +1409,7 @@ static void quote_loop() {
                 std::cout << "[GOLD-DIAG] regime=" << g_gold_stack.regime_name()
                           << " vwap=" << g_gold_stack.vwap()
                           << " vol_range=" << g_gold_stack.vol_range() << "\n";
+                print_perf_stats();
             }
 
             char buf[8192];
@@ -1376,6 +1510,31 @@ int main(int argc, char* argv[])
     g_eng_xau.MAX_HOLD_SEC          = 1500; // 25min -- gold breaks can run
     g_eng_xau.MIN_GAP_SEC           = 180;  // 3min gap between signals
     g_eng_xau.MAX_SPREAD_PCT        = 0.06; // gold spreads slightly wider than indices
+
+    auto bind_shadow_cb = [](auto& eng) {
+        eng.shadow_signal_cb =
+            [](const char* symbol, bool is_long, double entry, double tp, double sl,
+               const char* verdict, const char* reason) {
+                if (!g_cfg.enable_shadow_signal_audit) return;
+                ShadowSignalPos p;
+                p.active  = true;
+                p.symbol  = symbol ? symbol : "";
+                p.is_long = is_long;
+                p.entry   = entry;
+                p.tp      = tp;
+                p.sl      = sl;
+                p.entry_ts = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                p.verdict = verdict ? verdict : "";
+                p.reason  = reason ? reason : "";
+                std::lock_guard<std::mutex> lk(g_shadow_signal_mtx);
+                g_shadow_signal_positions.push_back(std::move(p));
+            };
+    };
+    bind_shadow_cb(g_eng_sp);
+    bind_shadow_cb(g_eng_nq);
+    bind_shadow_cb(g_eng_cl);
+    bind_shadow_cb(g_eng_xau);
     build_id_map();
 
     WSADATA wsa;
@@ -1413,6 +1572,14 @@ int main(int argc, char* argv[])
         std::cout << "[OMEGA] Shadow CSV: " << g_cfg.shadow_csv << "\n";
     }
 
+    g_shadow_signal_csv.open(g_cfg.shadow_signal_csv, std::ios::app);
+    if (g_shadow_signal_csv.is_open()) {
+        g_shadow_signal_csv.seekp(0, std::ios::end);
+        if (g_shadow_signal_csv.tellp() == std::streampos(0))
+            g_shadow_signal_csv << "ts_unix,symbol,side,entry_px,exit_px,tp,sl,pnl,hold_sec,verdict,reason,exit_reason\n";
+        std::cout << "[OMEGA] Shadow Signal CSV: " << g_cfg.shadow_signal_csv << "\n";
+    }
+
     omega::OmegaTelemetryServer gui_server;
     gui_server.start(g_cfg.gui_port, g_cfg.ws_port, g_telemetry.snap());
     std::cout << "[OMEGA] GUI http://localhost:" << g_cfg.gui_port
@@ -1430,6 +1597,7 @@ int main(int argc, char* argv[])
     std::cout << "[OMEGA] Shutdown\n";
     gui_server.stop();
     g_shadow_csv.close();
+    g_shadow_signal_csv.close();
     if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); }
     WSACleanup();
     ReleaseMutex(g_singleton_mutex);

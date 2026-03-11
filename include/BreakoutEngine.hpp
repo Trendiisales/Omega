@@ -80,6 +80,9 @@ public:
     OpenPos pos;
 
     using CloseCallback = std::function<void(const TradeRecord&)>;
+    using ShadowSignalCallback = std::function<void(const char* symbol, bool is_long, double entry, double tp, double sl,
+                                                    const char* verdict, const char* reason)>;
+    ShadowSignalCallback shadow_signal_cb;
 
 private:
     // ── Momentum window (20 ticks) ────────────────────────────────────────────
@@ -249,9 +252,16 @@ public:
                       << " can_enter=" << can_enter << "\n";
             std::cout.flush();
 
+            const bool   is_long = long_break;
+            const double tp = is_long ? mid * (1.0 + TP_PCT / 100.0)
+                                      : mid * (1.0 - TP_PCT / 100.0);
+            const double sl = is_long ? mid * (1.0 - SL_PCT / 100.0)
+                                      : mid * (1.0 + SL_PCT / 100.0);
+
             // Session/latency gate
             if (!can_enter) {
                 std::cout << "[ENG-" << symbol << "] BLOCKED: can_enter=false\n"; std::cout.flush();
+                if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "can_enter");
                 phase = Phase::FLAT; return {};
             }
 
@@ -259,6 +269,7 @@ public:
             if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, latency_ms)) {
                 std::cout << "[ENG-" << symbol << "] BLOCKED: shouldTrade=false"
                           << " spread=" << spread_pct << "%\n"; std::cout.flush();
+                if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "shouldTrade");
                 phase = Phase::FLAT; return {};
             }
 
@@ -267,6 +278,18 @@ public:
                 std::cout << "[ENG-" << symbol << "] BLOCKED: min_gap not met"
                           << " gap=" << (now-m_last_signal_ts) << "s min=" << MIN_GAP_SEC << "\n";
                 std::cout.flush();
+                if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "min_gap");
+                phase = Phase::FLAT; return {};
+            }
+
+            // ── VOLATILITY EXPANSION GATE ───────────────────────────────────────
+            // Breakout should occur on expansion, not in a dead tape.
+            if (recent_vol_pct < VOL_THRESH_PCT) {
+                std::cout << "[ENG-" << symbol << "] BLOCKED: vol_gate"
+                          << " recent=" << recent_vol_pct
+                          << "% min=" << VOL_THRESH_PCT << "%\n";
+                std::cout.flush();
+                if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "vol_gate");
                 phase = Phase::FLAT; return {};
             }
 
@@ -279,6 +302,7 @@ public:
                 if (!momentum_ok) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: momentum_gate"                              << " mom=" << momentum_pct << "% thresh=" << MOMENTUM_THRESH_PCT << "%\n";
                     std::cout.flush();
+                    if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "momentum_gate");
                     phase = Phase::FLAT; return {};
                 }
             }
@@ -286,13 +310,19 @@ public:
             // ── STRUCTURAL RANGE BREAK GATE ───────────────────────────────────────
             // Price must break the 50-tick structural high/low — not just the comp range
             if (static_cast<int>(m_range_window.size()) >= RANGE_WINDOW) {
-                const double struct_hi = *std::max_element(m_range_window.begin(), m_range_window.end());
-                const double struct_lo = *std::min_element(m_range_window.begin(), m_range_window.end());
+                // Exclude current tick from structural range.
+                // Including current mid makes `mid > struct_hi` / `mid < struct_lo`
+                // impossible when `struct_hi/lo` is computed over the same set.
+                auto struct_end = m_range_window.end();
+                --struct_end;
+                const double struct_hi = *std::max_element(m_range_window.begin(), struct_end);
+                const double struct_lo = *std::min_element(m_range_window.begin(), struct_end);
                 const bool   range_ok  = long_break  ? (mid > struct_hi)
                                                      : (mid < struct_lo);
                 if (!range_ok) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: range_break_gate"                              << " mid=" << mid << " struct_hi=" << struct_hi << " struct_lo=" << struct_lo << "\n";
                     std::cout.flush();
+                    if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "range_break_gate");
                     phase = Phase::FLAT; return {};
                 }
             }
@@ -305,6 +335,7 @@ public:
                 if (move_pct < MIN_BREAKOUT_PCT) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: min_breakout_gate"                              << " move=" << move_pct << "% min=" << MIN_BREAKOUT_PCT << "%\n";
                     std::cout.flush();
+                    if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "min_breakout_gate");
                     phase = Phase::FLAT; return {};
                 }
             }
@@ -319,15 +350,11 @@ public:
                 if (static_cast<int>(m_trade_times.size()) >= MAX_TRADES_PER_MIN) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: rate_limit"                              << " trades_in_60s=" << m_trade_times.size() << "\n";
                     std::cout.flush();
+                    if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "rate_limit");
                     phase = Phase::FLAT; return {};
                 }
             }
-
-            const bool   is_long = long_break;
-            const double tp = is_long ? mid * (1.0 + TP_PCT / 100.0)
-                                      : mid * (1.0 - TP_PCT / 100.0);
-            const double sl = is_long ? mid * (1.0 - SL_PCT / 100.0)
-                                      : mid * (1.0 + SL_PCT / 100.0);
+            if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "ELIGIBLE", "pass");
 
             pos.active          = true;
             pos.is_long         = is_long;
