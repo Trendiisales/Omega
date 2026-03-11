@@ -101,6 +101,7 @@ struct OmegaConfig {
     bool   independent_symbols = true;  // true: risk/position gating is per-symbol (recommended)
     bool   enable_shadow_signal_audit = true;
     int    auto_disable_after_trades  = 10;
+    bool   enable_extended_symbols    = true;   // subscribe + trade additional opportunity symbols
 
     // Session UTC
     int session_start_utc = 7;
@@ -155,6 +156,13 @@ static omega::SpEngine  g_eng_sp("US500.F");   // S&P 500 -- regime-gated, cross
 static omega::NqEngine  g_eng_nq("USTEC.F");   // Nasdaq  -- regime-gated, cross-symbol guard
 static omega::OilEngine g_eng_cl("USOIL.F");   // WTI Oil -- inventory window blocked
 static omega::GoldEngine g_eng_xau("GOLD.F");  // Gold -- safe-haven, inverse VIX logic
+static omega::BreakoutEngine g_eng_us30("DJ30.F");   // Dow/US30 (promoted from confirmation)
+static omega::BreakoutEngine g_eng_ger30("GER30");   // DAX proxy
+static omega::BreakoutEngine g_eng_uk100("UK100");   // FTSE
+static omega::BreakoutEngine g_eng_estx50("ESTX50"); // EuroStoxx50
+static omega::BreakoutEngine g_eng_xag("XAGUSD");    // Silver
+static omega::BreakoutEngine g_eng_eurusd("EURUSD"); // FX major
+static omega::BreakoutEngine g_eng_brent("UKBRENT"); // Brent crude
 
 // Shared macro context -- updated each tick, read by SP/NQ shouldTrade()
 static omega::MacroContext g_macro_ctx;
@@ -510,6 +518,10 @@ static SymbolDef OMEGA_SYMS[] = {
     // ES (3225) and DX (3173) removed -- not valid on BlackBull, generated FIX rejects
 };
 static const int OMEGA_NSYMS = 9;
+static const char* OMEGA_EXT_SYMS[] = {
+    "GER30", "UK100", "ESTX50", "XAGUSD", "EURUSD", "UKBRENT"
+};
+static const int OMEGA_NEXT_SYMS = 6;
 
 // Runtime ID->name map built at startup from OMEGA_SYMS
 static std::unordered_map<int, const char*> g_id_to_sym;
@@ -529,6 +541,20 @@ static std::string build_marketdata_req(int seq) {
       << "146=" << OMEGA_NSYMS << "\x01";
     for (int i = 0; i < OMEGA_NSYMS; ++i)
         b << "55=" << OMEGA_SYMS[i].id << "\x01";
+    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
+    return wrap_fix(b.str());
+}
+
+static std::string build_marketdata_req_extended(int seq) {
+    std::ostringstream b;
+    b << "35=V\x01"
+      << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01"
+      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "262=OMEGA-MD-EXT-001\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
+      << "146=" << OMEGA_NEXT_SYMS << "\x01";
+    for (int i = 0; i < OMEGA_NEXT_SYMS; ++i)
+        b << "55=" << OMEGA_EXT_SYMS[i] << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
     return wrap_fix(b.str());
 }
@@ -687,6 +713,49 @@ static void apply_engine_config(omega::OilEngine& eng) noexcept {
     eng.macro                = &g_macro_ctx;
 }
 
+static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = std::min(0.06, std::max(0.02, g_cfg.sp_vol_thresh_pct));
+    eng.TP_PCT                = g_cfg.sp_tp_pct;
+    eng.SL_PCT                = g_cfg.sp_sl_pct;
+    eng.MIN_GAP_SEC           = std::max(30, g_cfg.sp_min_gap_sec);
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+}
+
+static void apply_generic_fx_config(omega::BreakoutEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = 0.010;
+    eng.TP_PCT                = 0.080;
+    eng.SL_PCT                = 0.040;
+    eng.MIN_GAP_SEC           = 45;
+    eng.MAX_SPREAD_PCT        = 0.010;
+    eng.MOMENTUM_THRESH_PCT   = std::min(0.015, std::max(0.004, g_cfg.momentum_thresh_pct));
+    eng.MIN_BREAKOUT_PCT      = std::min(0.080, std::max(0.020, g_cfg.min_breakout_pct));
+    eng.MAX_TRADES_PER_MIN    = std::max(4, g_cfg.max_trades_per_min);
+}
+
+static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = 0.060;
+    eng.TP_PCT                = 0.800;
+    eng.SL_PCT                = 0.400;
+    eng.MIN_GAP_SEC           = 60;
+    eng.MAX_SPREAD_PCT        = 0.08;
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+}
+
+static void apply_generic_brent_config(omega::BreakoutEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = g_cfg.oil_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.oil_tp_pct;
+    eng.SL_PCT                = g_cfg.oil_sl_pct;
+    eng.MIN_GAP_SEC           = std::max(60, g_cfg.oil_min_gap_sec);
+    eng.MAX_SPREAD_PCT        = 0.12;
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Config loader
 // ─────────────────────────────────────────────────────────────────────────────
@@ -744,6 +813,7 @@ static void load_config(const std::string& path) {
             if (k=="independent_symbols")  g_cfg.independent_symbols = (v == "true" || v == "1");
             if (k=="enable_shadow_signal_audit") g_cfg.enable_shadow_signal_audit = (v == "true" || v == "1");
             if (k=="auto_disable_after_trades")  g_cfg.auto_disable_after_trades = std::stoi(v);
+            if (k=="enable_extended_symbols")    g_cfg.enable_extended_symbols = (v == "true" || v == "1");
             if (k=="min_entry_gap_sec")    g_cfg.min_entry_gap_sec = std::stoi(v);
             if (k=="max_spread_entry_pct") g_cfg.max_spread_pct    = std::stod(v);
             if (k=="max_latency_ms")       g_cfg.max_latency_ms    = std::stod(v);
@@ -954,6 +1024,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_eng_sp.pos.active) +
             static_cast<int>(g_eng_nq.pos.active) +
             static_cast<int>(g_eng_cl.pos.active) +
+            static_cast<int>(g_eng_us30.pos.active) +
+            static_cast<int>(g_eng_ger30.pos.active) +
+            static_cast<int>(g_eng_uk100.pos.active) +
+            static_cast<int>(g_eng_estx50.pos.active) +
+            static_cast<int>(g_eng_xag.pos.active) +
+            static_cast<int>(g_eng_eurusd.pos.active) +
+            static_cast<int>(g_eng_brent.pos.active) +
             static_cast<int>(g_eng_xau.pos.active) +
             static_cast<int>(g_gold_stack.has_open_position());
         const bool pos_budget_ok = open_positions < g_cfg.max_open_positions;
@@ -1034,6 +1111,27 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "USOIL.F") {
         dispatch(g_eng_cl, symbol_gate("USOIL.F", g_eng_cl.pos.active));
     }
+    else if (sym == "DJ30.F") {
+        dispatch(g_eng_us30, symbol_gate("DJ30.F", g_eng_us30.pos.active));
+    }
+    else if (sym == "GER30") {
+        dispatch(g_eng_ger30, symbol_gate("GER30", g_eng_ger30.pos.active));
+    }
+    else if (sym == "UK100") {
+        dispatch(g_eng_uk100, symbol_gate("UK100", g_eng_uk100.pos.active));
+    }
+    else if (sym == "ESTX50") {
+        dispatch(g_eng_estx50, symbol_gate("ESTX50", g_eng_estx50.pos.active));
+    }
+    else if (sym == "XAGUSD") {
+        dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active));
+    }
+    else if (sym == "EURUSD") {
+        dispatch(g_eng_eurusd, symbol_gate("EURUSD", g_eng_eurusd.pos.active));
+    }
+    else if (sym == "UKBRENT") {
+        dispatch(g_eng_brent, symbol_gate("UKBRENT", g_eng_brent.pos.active));
+    }
     else if (sym == "GOLD.F")  {
         const bool gold_symbol_open =
             g_gold_stack.has_open_position() || (g_cfg.gold_use_crtp_engine && g_eng_xau.pos.active);
@@ -1106,6 +1204,11 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         const std::string md = build_marketdata_req(g_quote_seq++);
         SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
         std::cout << "[OMEGA] Subscribed: US500.F USTEC.F USOIL.F + 8 confirmation\n";
+        if (g_cfg.enable_extended_symbols) {
+            const std::string ext = build_marketdata_req_extended(g_quote_seq++);
+            SSL_write(ssl, ext.c_str(), static_cast<int>(ext.size()));
+            std::cout << "[OMEGA] Subscribed EXT: GER30 UK100 ESTX50 XAGUSD EURUSD UKBRENT\n";
+        }
         return;
     }
 
@@ -1160,6 +1263,11 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             // Broker sent string name in 55= (e.g. "GOLD.F") -- look up directly
             for (int i = 0; i < OMEGA_NSYMS; ++i) {
                 if (sym_raw == OMEGA_SYMS[i].name) { sym = OMEGA_SYMS[i].name; break; }
+            }
+            if (!sym && g_cfg.enable_extended_symbols) {
+                for (int i = 0; i < OMEGA_NEXT_SYMS; ++i) {
+                    if (sym_raw == OMEGA_EXT_SYMS[i]) { sym = OMEGA_EXT_SYMS[i]; break; }
+                }
             }
             if (!sym) {
                 std::cerr << "[OMEGA-MD] Unknown string symbol '" << sym_raw << "' in tag55\n";
@@ -1442,7 +1550,10 @@ static void quote_loop() {
                         g_omegaLedger.record(tr); write_shadow_csv(tr);
                     });
         };
-        fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F"); fc(g_eng_xau, "GOLD.F");
+        fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F");
+        fc(g_eng_us30, "DJ30.F"); fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
+        fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
+        fc(g_eng_brent, "UKBRENT"); fc(g_eng_xau, "GOLD.F");
         // Also force-close any open GoldEngineStack position
         {
             double g_bid = 0.0, g_ask = 0.0;
@@ -1501,6 +1612,13 @@ int main(int argc, char* argv[])
     apply_engine_config(g_eng_sp);   // [sp] section: tp=0.60%, sl=0.35%, vol=0.04%, regime-gated
     apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated
     apply_engine_config(g_eng_cl);   // [oil] section: tp=1.20%, sl=0.60%, vol=0.08%, inventory-blocked
+    apply_generic_index_config(g_eng_us30);
+    apply_generic_index_config(g_eng_ger30);
+    apply_generic_index_config(g_eng_uk100);
+    apply_generic_index_config(g_eng_estx50);
+    apply_generic_silver_config(g_eng_xag);
+    apply_generic_fx_config(g_eng_eurusd);
+    apply_generic_brent_config(g_eng_brent);
     // Gold: generic breakout engine, overridden with gold-specific pct params
     // Gold: dedicated config -- do not use generic breakout defaults
     g_eng_xau.macro                 = &g_macro_ctx;  // gold uses inverse regime logic
@@ -1537,6 +1655,13 @@ int main(int argc, char* argv[])
     bind_shadow_cb(g_eng_sp);
     bind_shadow_cb(g_eng_nq);
     bind_shadow_cb(g_eng_cl);
+    bind_shadow_cb(g_eng_us30);
+    bind_shadow_cb(g_eng_ger30);
+    bind_shadow_cb(g_eng_uk100);
+    bind_shadow_cb(g_eng_estx50);
+    bind_shadow_cb(g_eng_xag);
+    bind_shadow_cb(g_eng_eurusd);
+    bind_shadow_cb(g_eng_brent);
     bind_shadow_cb(g_eng_xau);
     build_id_map();
 
