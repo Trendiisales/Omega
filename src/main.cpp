@@ -98,6 +98,7 @@ struct OmegaConfig {
     int    max_consec_losses = 3;
     int    loss_pause_sec    = 300;
     int    max_open_positions = 1;
+    bool   independent_symbols = true;  // true: risk/position gating is per-symbol (recommended)
 
     // Session UTC
     int session_start_utc = 7;
@@ -108,6 +109,7 @@ struct OmegaConfig {
     double gold_tp_pct   = 0.30;   // 0.30% TP -- ~$9 on $3000 gold
     double gold_sl_pct   = 0.15;   // 0.15% SL -- tight, gold moves are decisive
     double gold_vol_thresh_pct = 0.04; // lower threshold -- gold is less volatile than oil
+    bool   gold_use_crtp_engine = false; // false: use GoldEngineStack as primary gold executor
 
     // SP (US500) -- liquid, tight compression, better TP:SL than generic default
     double sp_tp_pct          = 0.600;  // 0.60% TP: clean SP breaks extend 0.5-0.8%
@@ -176,7 +178,14 @@ static int     g_gov_lat     = 0;
 static int     g_gov_pnl     = 0;
 static int     g_gov_pos     = 0;
 static int     g_gov_consec  = 0;
-static int     g_consec_losses = 0;
+
+struct SymbolRiskState {
+    double daily_pnl = 0.0;
+    int    consec_losses = 0;
+    int64_t pause_until = 0;
+};
+static std::mutex g_sym_risk_mtx;
+static std::unordered_map<std::string, SymbolRiskState> g_sym_risk;
 
 // Latency governor -- blocks trades when FIX RTT exceeds configured hard cap
 struct Governor {
@@ -186,8 +195,6 @@ struct Governor {
     }
 };
 static Governor g_governor;
-static bool    g_loss_pause    = false;
-static int64_t g_loss_pause_until = 0;
 static int     g_last_ledger_utc_day = -1;
 
 // Trade connection (port 5212) — separate SSL from quote (port 5211)
@@ -638,6 +645,7 @@ static void load_config(const std::string& path) {
             if (k=="daily_loss_limit")     g_cfg.daily_loss_limit  = std::stod(v);
             if (k=="max_consec_losses")    g_cfg.max_consec_losses = std::stoi(v);
             if (k=="loss_pause_sec")       g_cfg.loss_pause_sec    = std::stoi(v);
+            if (k=="independent_symbols")  g_cfg.independent_symbols = (v == "true" || v == "1");
             if (k=="min_entry_gap_sec")    g_cfg.min_entry_gap_sec = std::stoi(v);
             if (k=="max_spread_entry_pct") g_cfg.max_spread_pct    = std::stod(v);
             if (k=="max_latency_ms")       g_cfg.max_latency_ms    = std::stod(v);
@@ -662,6 +670,7 @@ static void load_config(const std::string& path) {
             if (k=="gold_tp_pct")        g_cfg.gold_tp_pct        = std::stod(v);
             if (k=="gold_sl_pct")        g_cfg.gold_sl_pct        = std::stod(v);
             if (k=="gold_vol_thresh_pct") g_cfg.gold_vol_thresh_pct = std::stod(v);
+            if (k=="use_crtp_engine")    g_cfg.gold_use_crtp_engine = (v == "true" || v == "1");
         }
         if (section == "sp") {
             if (k=="tp_pct")         g_cfg.sp_tp_pct         = std::stod(v);
@@ -738,11 +747,12 @@ static void maybe_reset_daily_ledger() {
     g_last_ledger_utc_day = ti.tm_yday;
 
     g_omegaLedger.resetDaily();
-    g_loss_pause = false;
-    g_consec_losses = 0;
-    g_loss_pause_until = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+        g_sym_risk.clear();
+    }
     g_gov_spread = g_gov_lat = g_gov_pnl = g_gov_pos = g_gov_consec = 0;
-    std::cout << "[OMEGA-RISK] UTC day rollover — daily ledger/counters reset\n";
+    std::cout << "[OMEGA-RISK] UTC day rollover — per-symbol risk state reset\n";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -783,43 +793,55 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     const bool tradeable = session_tradeable();
     g_telemetry.UpdateSession(tradeable ? "ACTIVE" : "CLOSED", tradeable ? 1 : 0);
 
-    // ── Governor gates -- PnL/loss-pause block ALL processing ─────────────────
-    // NOTE: session + latency gates are checked INSIDE dispatch so engines
-    // always receive ticks for warmup. Without this, a 250-tick warmup never
-    // completes during closed session and gold/oil/indices never fire signals.
-    if (g_omegaLedger.dailyPnl() < -g_cfg.daily_loss_limit) {
-        ++g_gov_pnl;
-        g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, g_gov_pos, g_gov_consec);
-        return;
-    }
-    if (g_loss_pause) {
-        if (nowSec() < g_loss_pause_until) {
-            ++g_gov_consec;
-            g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, g_gov_pos, g_gov_consec);
-            return;
-        }
-        // Pause expired: reset all loss counters so we start fresh
-        g_loss_pause     = false;
-        g_consec_losses  = 0;  // FIX: was never reset on pause-clear, caused immediate re-pause on next loss
-        g_gov_consec     = 0;  // FIX: was accumulating forever (showed 14197 = ticks not losses)
-        std::cout << "[OMEGA-RISK] loss pause cleared — counters reset\n";
-    }
-
-    // Gate flags -- passed into dispatch, checked before entry (not before warmup)
+    // Base gate flags -- passed into dispatch, checked before entry (not before warmup)
     // Use p95 RTT (not last) -- a single spike in g_rtt_last was permanently blocking
     // entries until the next 5s ping. p95 over 200 samples is stable and representative.
     const double rtt_check = (g_rtt_p95 > 0.0) ? g_rtt_p95 : g_rtt_last;
     const bool lat_ok = (rtt_check <= 0.0 || g_governor.checkLatency(rtt_check, g_cfg.max_latency_ms));
-    const int open_positions =
-        static_cast<int>(g_eng_sp.pos.active) +
-        static_cast<int>(g_eng_nq.pos.active) +
-        static_cast<int>(g_eng_cl.pos.active) +
-        static_cast<int>(g_eng_xau.pos.active) +
-        static_cast<int>(g_gold_stack.has_open_position());
-    const bool pos_budget_ok = open_positions < g_cfg.max_open_positions;
-    const bool can_enter = tradeable && lat_ok && pos_budget_ok;
     if (!lat_ok) ++g_gov_lat;
-    if (!pos_budget_ok) ++g_gov_pos;
+
+    auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
+        std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+        auto& st = g_sym_risk[symbol];
+        if (st.daily_pnl < -g_cfg.daily_loss_limit) {
+            ++g_gov_pnl;
+            return true;
+        }
+        const int64_t now = nowSec();
+        if (st.pause_until > now) {
+            ++g_gov_consec;
+            return true;
+        }
+        if (st.pause_until != 0 && st.pause_until <= now) {
+            st.pause_until = 0;
+            st.consec_losses = 0;
+            std::cout << "[OMEGA-RISK] " << symbol << " loss pause cleared\n";
+        }
+        return false;
+    };
+
+    auto symbol_gate = [&](const std::string& symbol, bool symbol_has_open_position) -> bool {
+        if (!tradeable) return false;
+        if (!lat_ok) return false;
+        if (symbol_has_open_position) {
+            ++g_gov_pos;
+            return false;
+        }
+        if (g_cfg.independent_symbols) {
+            return !symbol_risk_blocked(symbol);
+        }
+        // Legacy global portfolio mode.
+        if (symbol_risk_blocked("GLOBAL")) return false;
+        const int open_positions =
+            static_cast<int>(g_eng_sp.pos.active) +
+            static_cast<int>(g_eng_nq.pos.active) +
+            static_cast<int>(g_eng_cl.pos.active) +
+            static_cast<int>(g_eng_xau.pos.active) +
+            static_cast<int>(g_gold_stack.has_open_position());
+        const bool pos_budget_ok = open_positions < g_cfg.max_open_positions;
+        if (!pos_budget_ok) ++g_gov_pos;
+        return pos_budget_ok;
+    };
 
     // ── Route to engine -- typed dispatch (CRTP has no virtual base) ──────────
     // Each branch calls the same logical sequence on the correct typed engine.
@@ -827,14 +849,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     auto on_close = [&](const omega::TradeRecord& tr) {
         g_omegaLedger.record(tr);
         write_shadow_csv(tr);
-        if (tr.pnl <= 0.0) {
-            if (++g_consec_losses >= g_cfg.max_consec_losses) {
-                g_loss_pause       = true;
-                g_loss_pause_until = nowSec() + g_cfg.loss_pause_sec;
-                std::cout << "[OMEGA-RISK] " << g_cfg.max_consec_losses
-                          << " consecutive losses -- pause " << g_cfg.loss_pause_sec << "s\n";
+        {
+            const std::string risk_key = g_cfg.independent_symbols ? tr.symbol : "GLOBAL";
+            std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+            auto& st = g_sym_risk[risk_key];
+            st.daily_pnl += tr.pnl;
+            if (tr.pnl <= 0.0) {
+                if (++st.consec_losses >= g_cfg.max_consec_losses) {
+                    st.pause_until = nowSec() + g_cfg.loss_pause_sec;
+                    std::cout << "[OMEGA-RISK] " << risk_key << " "
+                              << g_cfg.max_consec_losses << " consecutive losses -- pause "
+                              << g_cfg.loss_pause_sec << "s\n";
+                }
+            } else {
+                st.consec_losses = 0;
             }
-        } else { g_consec_losses = 0; }
+        }
         g_telemetry.UpdateStats(
             g_omegaLedger.dailyPnl(), g_omegaLedger.maxDD(),
             g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
@@ -844,8 +874,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // Helper lambda -- always feeds ticks to engine (warmup + position management).
     // can_enter=false gates new entries only; TP/SL/timeout always run.
-    auto dispatch = [&](auto& eng) {
-        const auto sig = eng.update(bid, ask, rtt_check, regime.c_str(), on_close, can_enter);
+    auto dispatch = [&](auto& eng, bool can_enter_for_symbol) {
+        const auto sig = eng.update(bid, ask, rtt_check, regime.c_str(), on_close, can_enter_for_symbol);
         g_telemetry.UpdateEngineState(sym.c_str(),
             static_cast<int>(eng.phase), eng.comp_high, eng.comp_low,
             eng.recent_vol_pct, eng.base_vol_pct, eng.signal_count);
@@ -859,17 +889,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     };
 
-    if      (sym == "US500.F") { dispatch(g_eng_sp); }
-    else if (sym == "USTEC.F") { dispatch(g_eng_nq); }
-    else if (sym == "USOIL.F") { dispatch(g_eng_cl); }
+    if      (sym == "US500.F") {
+        dispatch(g_eng_sp, symbol_gate("US500.F", g_eng_sp.pos.active));
+    }
+    else if (sym == "USTEC.F") {
+        dispatch(g_eng_nq, symbol_gate("USTEC.F", g_eng_nq.pos.active));
+    }
+    else if (sym == "USOIL.F") {
+        dispatch(g_eng_cl, symbol_gate("USOIL.F", g_eng_cl.pos.active));
+    }
     else if (sym == "GOLD.F")  {
-        dispatch(g_eng_xau);
-        // ── GoldEngineStack: 6 engines with self-managed positions ────────────
-        // Stack manages its own position internally (entry, TP/SL/timeout, on_close).
-        // Decoupled from g_eng_xau: stack has its own RegimeGovernor + 6 engines.
-        // g_eng_xau (generic CRTP) no longer blocks the stack -- they run independently.
-        // If the generic gold engine just opened on this tick, block the stack entry.
-        const bool gold_can_enter = can_enter && !g_eng_xau.pos.active;
+        const bool gold_symbol_open =
+            g_gold_stack.has_open_position() || (g_cfg.gold_use_crtp_engine && g_eng_xau.pos.active);
+        const bool gold_can_enter = symbol_gate("GOLD.F", gold_symbol_open);
+
+        // Keep CRTP gold warmed for telemetry; default execution path is stack-only.
+        dispatch(g_eng_xau, g_cfg.gold_use_crtp_engine ? gold_can_enter : false);
+
+        // ── GoldEngineStack: dedicated gold executor (independent from other symbols) ──
+        // GOLD.F keeps single-position semantics within gold, but no longer blocks
+        // SP/NQ/OIL via global position/risk gates.
         const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close, gold_can_enter);
         if (gsig.valid) {
             // New entry fired -- log it
