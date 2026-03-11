@@ -697,8 +697,20 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class GoldPositionManager {
     static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
-    static constexpr int    MAX_HOLD_SEC  = 90;    // Scalper mode: recycle quickly for many small closed trades
+    static constexpr int    MAX_HOLD_SEC  = 120;   // allow runners while trail handles protection
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
+    static constexpr int    MAX_PYRAMID_LEGS = 3;  // base + 2 add-ons
+    static constexpr double PYR_COVER_MOVE   = 0.60; // add next leg only after prior leg covers costs
+    static constexpr double PYR_MIN_STEP     = 0.50; // require fresh displacement before each add
+    static constexpr int64_t PYR_ADD_COOLDOWN_SEC = 3;
+    static constexpr int    PYR_TP_TICKS     = 20;
+    static constexpr int    PYR_SL_TICKS     = 8;
+    static constexpr double LOCK_ARM_MOVE    = 0.60;
+    static constexpr double LOCK_GAIN        = 0.12;
+    static constexpr double TRAIL_ARM_1      = 1.00;
+    static constexpr double TRAIL_DIST_1     = 0.60;
+    static constexpr double TRAIL_ARM_2      = 1.80;
+    static constexpr double TRAIL_DIST_2     = 0.40;
 
     struct GoldPos {
         bool    active    = false;
@@ -709,147 +721,241 @@ class GoldPositionManager {
         double  mfe       = 0;
         double  mae       = 0;
         double  spread_at_entry = 0;
+        double  size      = CONTRACT_SIZE;
         int64_t entry_ts  = 0;
         char    engine[32] = {};
         char    reason[32] = {};
-    } pos_;
+        char    regime[32] = {};
+    };
 
+    std::vector<GoldPos> legs_;
     int trade_id_ = 1000;  // separate ID range from CRTP engines (those start at 1)
+    double  last_add_price_ = 0.0;
+    int64_t last_add_ts_    = 0;
 
     static int64_t nowSec() {
         return std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
     }
 
-    void do_close(double exit_px, const char* why,
-                  double latency_ms, const char* regime,
-                  std::function<void(const omega::TradeRecord&)>& on_close) {
-        if (!pos_.active) return;
+    void emit_close(const GoldPos& leg, double exit_px, const char* why,
+                    double latency_ms, const char* regime,
+                    std::function<void(const omega::TradeRecord&)>& on_close) {
         omega::TradeRecord tr;
         tr.id          = trade_id_++;
         tr.symbol      = "GOLD.F";
-        tr.side        = pos_.is_long ? "LONG" : "SHORT";
-        tr.entryPrice  = pos_.entry;
+        tr.side        = leg.is_long ? "LONG" : "SHORT";
+        tr.entryPrice  = leg.entry;
         tr.exitPrice   = exit_px;
-        tr.tp          = pos_.tp;
-        tr.sl          = pos_.sl;
-        tr.size        = CONTRACT_SIZE;
-        tr.pnl         = (pos_.is_long ? (exit_px - pos_.entry)
-                                       : (pos_.entry - exit_px)) * CONTRACT_SIZE;
-        tr.mfe         = pos_.mfe;
-        tr.mae         = pos_.mae;
-        tr.entryTs     = pos_.entry_ts;
+        tr.tp          = leg.tp;
+        tr.sl          = leg.sl;
+        tr.size        = leg.size;
+        tr.pnl         = (leg.is_long ? (exit_px - leg.entry)
+                                      : (leg.entry - exit_px)) * leg.size;
+        tr.mfe         = leg.mfe;
+        tr.mae         = leg.mae;
+        tr.entryTs     = leg.entry_ts;
         tr.exitTs      = nowSec();
         tr.exitReason  = why;
-        tr.spreadAtEntry = pos_.spread_at_entry;
+        tr.spreadAtEntry = leg.spread_at_entry;
         tr.latencyMs   = latency_ms;
-        tr.engine      = std::string(pos_.engine);
+        tr.engine      = std::string(leg.engine);
         tr.regime      = regime ? regime : "";
-        pos_.active    = false;
-        pos_           = GoldPos{};
         if (on_close) on_close(tr);
     }
 
+    void close_leg(size_t idx, double exit_px, const char* why,
+                   double latency_ms, const char* regime,
+                   std::function<void(const omega::TradeRecord&)>& on_close) {
+        if (idx >= legs_.size()) return;
+        GoldPos leg = legs_[idx];
+        emit_close(leg, exit_px, why, latency_ms, regime, on_close);
+        legs_.erase(legs_.begin() + static_cast<long>(idx));
+    }
+
+    void apply_tight_trail(GoldPos& leg, double mid) {
+        const double move = leg.is_long ? (mid - leg.entry) : (leg.entry - mid);
+        if (move >= LOCK_ARM_MOVE) {
+            if (leg.is_long) {
+                const double be_lock = leg.entry + LOCK_GAIN;
+                if (be_lock > leg.sl) leg.sl = be_lock;
+            } else {
+                const double be_lock = leg.entry - LOCK_GAIN;
+                if (be_lock < leg.sl) leg.sl = be_lock;
+            }
+        }
+        if (move >= TRAIL_ARM_1) {
+            if (leg.is_long) {
+                const double trail = mid - TRAIL_DIST_1;
+                if (trail > leg.sl) leg.sl = trail;
+            } else {
+                const double trail = mid + TRAIL_DIST_1;
+                if (trail < leg.sl) leg.sl = trail;
+            }
+        }
+        if (move >= TRAIL_ARM_2) {
+            if (leg.is_long) {
+                const double trail = mid - TRAIL_DIST_2;
+                if (trail > leg.sl) leg.sl = trail;
+            } else {
+                const double trail = mid + TRAIL_DIST_2;
+                if (trail < leg.sl) leg.sl = trail;
+            }
+        }
+    }
+
+    bool can_add_pyramid(double mid) const {
+        if (legs_.empty() || static_cast<int>(legs_.size()) >= MAX_PYRAMID_LEGS) return false;
+        const int64_t now = nowSec();
+        if (now - last_add_ts_ < PYR_ADD_COOLDOWN_SEC) return false;
+
+        const GoldPos& last = legs_.back();
+        const double move = last.is_long ? (mid - last.entry) : (last.entry - mid);
+        if (move < PYR_COVER_MOVE) return false;
+        if (std::fabs(mid - last_add_price_) < PYR_MIN_STEP) return false;
+        return true;
+    }
+
+    void add_pyramid_leg(double mid, double spread, double latency_ms, const char* regime) {
+        if (legs_.empty() || static_cast<int>(legs_.size()) >= MAX_PYRAMID_LEGS) return;
+        const bool is_long = legs_.front().is_long;
+        GoldPos leg;
+        leg.active   = true;
+        leg.is_long  = is_long;
+        leg.entry    = mid;
+        leg.tp       = is_long ? mid + PYR_TP_TICKS * TICK_SIZE
+                               : mid - PYR_TP_TICKS * TICK_SIZE;
+        leg.sl       = is_long ? mid - PYR_SL_TICKS * TICK_SIZE
+                               : mid + PYR_SL_TICKS * TICK_SIZE;
+        leg.mfe      = 0;
+        leg.mae      = 0;
+        leg.size     = CONTRACT_SIZE;
+        leg.spread_at_entry = spread;
+        leg.entry_ts = nowSec();
+        strncpy(leg.engine, "PYRAMID", 31);
+        strncpy(leg.reason, "PYR_ADD", 31);
+        strncpy(leg.regime, regime ? regime : "", 31);
+        legs_.push_back(leg);
+        last_add_price_ = mid;
+        last_add_ts_ = leg.entry_ts;
+        printf("[GOLD-PYRAMID-ADD] %s lvl=%zu entry=%.2f tp=%.2f sl=%.2f\n",
+               is_long ? "LONG" : "SHORT",
+               legs_.size(), leg.entry, leg.tp, leg.sl);
+        fflush(stdout);
+        (void)latency_ms;
+    }
+
 public:
-    bool active() const { return pos_.active; }
+    bool active() const { return !legs_.empty(); }
+    size_t leg_count() const { return legs_.size(); }
 
     // Open a new position from a GoldSignal.
     // tp_ticks / sl_ticks are in $0.10 increments (standard gold tick).
     void open(const GoldSignal& sig, double spread,
               double latency_ms, const char* regime) {
-        if (pos_.active) return;  // never double-enter
-        pos_.active   = true;
-        pos_.is_long  = sig.is_long;
-        pos_.entry    = sig.entry;
-        pos_.tp       = sig.is_long
+        if (!legs_.empty()) return;  // signal-based base entry only when flat
+        GoldPos leg;
+        leg.active   = true;
+        leg.is_long  = sig.is_long;
+        leg.entry    = sig.entry;
+        leg.tp       = sig.is_long
                         ? sig.entry + sig.tp_ticks * TICK_SIZE
                         : sig.entry - sig.tp_ticks * TICK_SIZE;
-        pos_.sl       = sig.is_long
+        leg.sl       = sig.is_long
                         ? sig.entry - sig.sl_ticks * TICK_SIZE
                         : sig.entry + sig.sl_ticks * TICK_SIZE;
-        pos_.mfe      = 0;
-        pos_.mae      = 0;
-        pos_.spread_at_entry = spread;
-        pos_.entry_ts = nowSec();
-        strncpy(pos_.engine, sig.engine, 31);
-        strncpy(pos_.reason, sig.reason, 31);
+        leg.mfe      = 0;
+        leg.mae      = 0;
+        leg.size     = CONTRACT_SIZE;
+        leg.spread_at_entry = spread;
+        leg.entry_ts = nowSec();
+        strncpy(leg.engine, sig.engine, 31);
+        strncpy(leg.reason, sig.reason, 31);
+        strncpy(leg.regime, regime ? regime : "", 31);
+        legs_.clear();
+        legs_.push_back(leg);
+        last_add_price_ = leg.entry;
+        last_add_ts_ = leg.entry_ts;
         printf("[GOLD-STACK-ENTRY] %s entry=%.2f tp=%.2f sl=%.2f eng=%s reason=%s regime=%s\n",
-               pos_.is_long?"LONG":"SHORT", pos_.entry, pos_.tp, pos_.sl,
-               pos_.engine, pos_.reason, regime?regime:"?");
+               leg.is_long?"LONG":"SHORT", leg.entry, leg.tp, leg.sl,
+               leg.engine, leg.reason, regime?regime:"?");
         fflush(stdout);
+        (void)latency_ms;
     }
 
     // Called every tick while position is open. Manages TP/SL/timeout.
     // Returns true if position was closed this tick.
     bool manage(double bid, double ask, double latency_ms, const char* regime,
                 std::function<void(const omega::TradeRecord&)>& on_close) {
-        if (!pos_.active) return false;
+        if (legs_.empty()) return false;
         double mid = (bid + ask) * 0.5;
-        // MFE / MAE (in price units, not bp)
-        double move = pos_.is_long ? (mid - pos_.entry) : (pos_.entry - mid);
-        if (move > pos_.mfe) pos_.mfe = move;
-        if (move < pos_.mae) pos_.mae = move;
+        bool closed_any = false;
+        const int64_t now = nowSec();
 
-        // Profit lock / trail:
-        // 1) Once trade reaches +2.0, lock small gain (BE + 0.2).
-        // 2) Once trade reaches +3.0, trail stop by 1.2 from current mid.
-        if (move >= 2.0) {
-            if (pos_.is_long) {
-                const double be_lock = pos_.entry + 0.2;
-                if (be_lock > pos_.sl) pos_.sl = be_lock;
-            } else {
-                const double be_lock = pos_.entry - 0.2;
-                if (be_lock < pos_.sl) pos_.sl = be_lock;
+        for (int i = static_cast<int>(legs_.size()) - 1; i >= 0; --i) {
+            GoldPos& leg = legs_[static_cast<size_t>(i)];
+            const double move = leg.is_long ? (mid - leg.entry) : (leg.entry - mid);
+            if (move > leg.mfe) leg.mfe = move;
+            if (move < leg.mae) leg.mae = move;
+
+            // Regime change = exit immediately (market character changed)
+            if (regime && leg.regime[0] != '\0' && std::strncmp(regime, leg.regime, 31) != 0) {
+                close_leg(static_cast<size_t>(i), mid, "REGIME_FLIP", latency_ms, regime, on_close);
+                closed_any = true;
+                continue;
+            }
+
+            apply_tight_trail(leg, mid);
+
+            const bool tp_hit = leg.is_long ? (ask >= leg.tp) : (bid <= leg.tp);
+            if (tp_hit) {
+                const double fill = leg.tp;
+                printf("[GOLD-STACK-TP] %s fill=%.2f pnl=%.2f\n",
+                       leg.engine, fill,
+                       leg.is_long ? (fill - leg.entry) : (leg.entry - fill));
+                fflush(stdout);
+                close_leg(static_cast<size_t>(i), fill, "TP_HIT", latency_ms, regime, on_close);
+                closed_any = true;
+                continue;
+            }
+
+            const bool sl_hit = leg.is_long ? (bid <= leg.sl) : (ask >= leg.sl);
+            if (sl_hit) {
+                const double fill = leg.sl;
+                printf("[GOLD-STACK-SL] %s fill=%.2f pnl=%.2f\n",
+                       leg.engine, fill,
+                       leg.is_long ? (fill - leg.entry) : (leg.entry - fill));
+                fflush(stdout);
+                close_leg(static_cast<size_t>(i), fill, "SL_HIT", latency_ms, regime, on_close);
+                closed_any = true;
+                continue;
+            }
+
+            if (now - leg.entry_ts >= MAX_HOLD_SEC) {
+                printf("[GOLD-STACK-TIMEOUT] %s hold=%lds exit=%.2f\n",
+                       leg.engine, (long)(now - leg.entry_ts), mid);
+                fflush(stdout);
+                close_leg(static_cast<size_t>(i), mid, "TIMEOUT", latency_ms, regime, on_close);
+                closed_any = true;
+                continue;
             }
         }
-        if (move >= 3.0) {
-            if (pos_.is_long) {
-                const double trail = mid - 1.2;
-                if (trail > pos_.sl) pos_.sl = trail;
-            } else {
-                const double trail = mid + 1.2;
-                if (trail < pos_.sl) pos_.sl = trail;
-            }
+
+        // Add-on pyramid legs only after existing edge has covered costs.
+        if (!legs_.empty() && can_add_pyramid(mid)) {
+            add_pyramid_leg(mid, ask - bid, latency_ms, regime);
         }
-        // TP
-        bool tp_hit = pos_.is_long ? (ask >= pos_.tp) : (bid <= pos_.tp);
-        if (tp_hit) {
-            double fill = pos_.is_long ? pos_.tp : pos_.tp;
-            printf("[GOLD-STACK-TP] %s fill=%.2f pnl=%.2f\n",
-                   pos_.engine, fill,
-                   pos_.is_long?(fill-pos_.entry):(pos_.entry-fill));
-            fflush(stdout);
-            do_close(fill, "TP_HIT", latency_ms, regime, on_close);
-            return true;
-        }
-        // SL
-        bool sl_hit = pos_.is_long ? (bid <= pos_.sl) : (ask >= pos_.sl);
-        if (sl_hit) {
-            double fill = pos_.is_long ? pos_.sl : pos_.sl;
-            printf("[GOLD-STACK-SL] %s fill=%.2f pnl=%.2f\n",
-                   pos_.engine, fill,
-                   pos_.is_long?(fill-pos_.entry):(pos_.entry-fill));
-            fflush(stdout);
-            do_close(fill, "SL_HIT", latency_ms, regime, on_close);
-            return true;
-        }
-        // Timeout
-        if (nowSec() - pos_.entry_ts >= MAX_HOLD_SEC) {
-            printf("[GOLD-STACK-TIMEOUT] %s hold=%lds exit=%.2f\n",
-                   pos_.engine, (long)(nowSec()-pos_.entry_ts), mid);
-            fflush(stdout);
-            do_close(mid, "TIMEOUT", latency_ms, regime, on_close);
-            return true;
-        }
-        return false;
+        return closed_any;
     }
 
     // Force-close on disconnect / session end
     void force_close(double bid, double ask, double latency_ms, const char* regime,
                      std::function<void(const omega::TradeRecord&)>& on_close) {
-        if (!pos_.active) return;
+        if (legs_.empty()) return;
         double mid = (bid + ask) * 0.5;
-        do_close(mid, "FORCE_CLOSE", latency_ms, regime, on_close);
+        for (int i = static_cast<int>(legs_.size()) - 1; i >= 0; --i) {
+            close_leg(static_cast<size_t>(i), mid, "FORCE_CLOSE", latency_ms, regime, on_close);
+        }
     }
 };
 

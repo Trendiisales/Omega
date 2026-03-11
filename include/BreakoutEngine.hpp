@@ -173,10 +173,14 @@ public:
             {
                 const int64_t held_sec = nowSec() - pos.entry_ts;
                 if (held_sec <= 120) {
+                    const bool is_oil_symbol =
+                        (std::strcmp(symbol, "USOIL.F") == 0) ||
+                        (std::strcmp(symbol, "UKBRENT") == 0);
+                    const double scratch_limit = is_oil_symbol ? 0.16 : 0.12;
                     const double adverse_pct = pos.is_long
                         ? (pos.entry - mid) / pos.entry * 100.0
                         : (mid - pos.entry) / pos.entry * 100.0;
-                    if (adverse_pct > 0.12) {  // raised 0.08→0.12%: 0.08% too tight for SP/NQ intraday noise
+                    if (adverse_pct > scratch_limit) {
                         std::cout << "[SCRATCH] " << symbol
                                   << (pos.is_long ? " LONG" : " SHORT")
                                   << " false breakout — adverse=" << adverse_pct
@@ -188,10 +192,14 @@ public:
                 // SHADOW quality guard: do not let losing trades drift into timeout.
                 // If a trade is still negative after 45s by >0.05%, cut it.
                 if (AGGRESSIVE_SHADOW && held_sec >= 45) {
+                    const bool is_oil_symbol =
+                        (std::strcmp(symbol, "USOIL.F") == 0) ||
+                        (std::strcmp(symbol, "UKBRENT") == 0);
+                    const double shadow_cut_limit = is_oil_symbol ? 0.08 : 0.05;
                     const double adverse_pct = pos.is_long
                         ? (pos.entry - mid) / pos.entry * 100.0
                         : (mid - pos.entry) / pos.entry * 100.0;
-                    if (adverse_pct > 0.05) {
+                    if (adverse_pct > shadow_cut_limit) {
                         std::cout << "[SHADOW-CUT] " << symbol
                                   << (pos.is_long ? " LONG" : " SHORT")
                                   << " adverse=" << adverse_pct
