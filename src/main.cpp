@@ -940,6 +940,31 @@ static void sanitize_config() noexcept {
               << " loss_pause_sec=" << g_cfg.loss_pause_sec << "\n";
 }
 
+static void apply_shadow_research_profile() noexcept {
+    if (g_cfg.mode != "SHADOW") return;
+
+    // SHADOW is research mode: remove session dead-zones and loosen entry throttles.
+    g_cfg.session_start_utc = 0;
+    g_cfg.session_end_utc   = 0;   // equal start/end => 24h tradeable window
+    g_cfg.session_asia      = true;
+
+    g_cfg.max_latency_ms    = std::max(g_cfg.max_latency_ms, 25.0);
+    g_cfg.momentum_thresh_pct = std::min(g_cfg.momentum_thresh_pct, 0.012);
+    g_cfg.min_breakout_pct    = std::min(g_cfg.min_breakout_pct, 0.06);
+    g_cfg.max_trades_per_min  = std::max(g_cfg.max_trades_per_min, 10);
+
+    g_cfg.sp_min_gap_sec = std::min(g_cfg.sp_min_gap_sec, 45);
+    g_cfg.nq_min_gap_sec = std::min(g_cfg.nq_min_gap_sec, 45);
+    g_cfg.oil_min_gap_sec = std::min(g_cfg.oil_min_gap_sec, 60);
+
+    g_cfg.sp_vol_thresh_pct = std::min(g_cfg.sp_vol_thresh_pct, 0.030);
+    g_cfg.nq_vol_thresh_pct = std::min(g_cfg.nq_vol_thresh_pct, 0.035);
+    g_cfg.oil_vol_thresh_pct = std::min(g_cfg.oil_vol_thresh_pct, 0.060);
+    g_cfg.gold_vol_thresh_pct = std::min(g_cfg.gold_vol_thresh_pct, 0.030);
+
+    std::cout << "[CONFIG] SHADOW research profile enabled: 24h session, relaxed entry gates\n";
+}
+
 static void maybe_reset_daily_ledger() {
     const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti{};
@@ -1038,14 +1063,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     };
 
     auto symbol_gate = [&](const std::string& symbol, bool symbol_has_open_position) -> bool {
+        const bool shadow_mode = (g_cfg.mode == "SHADOW");
         if (symbol == "GOLD.F" && g_disable_gold_stack) return false;
         {
             std::lock_guard<std::mutex> lk(g_perf_mtx);
             auto it = g_perf.find(symbol);
             if (it != g_perf.end() && it->second.disabled) return false;
         }
-        if (!tradeable) return false;
-        if (!lat_ok) return false;
+        if (!shadow_mode && !tradeable) return false;
+        if (!shadow_mode && !lat_ok) return false;
         if (symbol_has_open_position) {
             ++g_gov_pos;
             return false;
@@ -1647,6 +1673,7 @@ int main(int argc, char* argv[])
     const std::string cfg_path = (argc > 1) ? argv[1] : "omega_config.ini";
     load_config(cfg_path);
     sanitize_config();
+    apply_shadow_research_profile();
     // Per-symbol typed overloads -- each applies instrument-specific params + macro context ptr
     apply_engine_config(g_eng_sp);   // [sp] section: tp=0.60%, sl=0.35%, vol=0.04%, regime-gated
     apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated
@@ -1670,6 +1697,20 @@ int main(int argc, char* argv[])
     g_eng_xau.MAX_HOLD_SEC          = 1500; // 25min -- gold breaks can run
     g_eng_xau.MIN_GAP_SEC           = 180;  // 3min gap between signals
     g_eng_xau.MAX_SPREAD_PCT        = 0.06; // gold spreads slightly wider than indices
+
+    if (g_cfg.mode == "SHADOW") {
+        g_eng_sp.AGGRESSIVE_SHADOW = true;
+        g_eng_nq.AGGRESSIVE_SHADOW = true;
+        g_eng_cl.AGGRESSIVE_SHADOW = true;
+        g_eng_us30.AGGRESSIVE_SHADOW = true;
+        g_eng_ger30.AGGRESSIVE_SHADOW = true;
+        g_eng_uk100.AGGRESSIVE_SHADOW = true;
+        g_eng_estx50.AGGRESSIVE_SHADOW = true;
+        g_eng_xag.AGGRESSIVE_SHADOW = true;
+        g_eng_eurusd.AGGRESSIVE_SHADOW = true;
+        g_eng_brent.AGGRESSIVE_SHADOW = true;
+        g_eng_xau.AGGRESSIVE_SHADOW = true;
+    }
 
     auto bind_shadow_cb = [](auto& eng) {
         eng.shadow_signal_cb =

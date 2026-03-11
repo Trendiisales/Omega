@@ -67,6 +67,7 @@ public:
     double      MOMENTUM_THRESH_PCT   = 0.05;   // momentum gate: price_now vs price_20_ago
     double      MIN_BREAKOUT_PCT      = 0.25;   // minimum breakout move from comp range edge
     int         MAX_TRADES_PER_MIN    = 2;       // rate limiter: max entries per 60s window
+    bool        AGGRESSIVE_SHADOW     = false;   // shadow research mode: loosen entry filters for signal discovery
     const char* symbol                = "???";
 
     // ── Observable state (read by telemetry thread) ───────────────────────────
@@ -297,10 +298,15 @@ public:
             // Require directional pressure: price_now vs price_20_ticks_ago > MOMENTUM_THRESH_PCT
             if (static_cast<int>(m_momentum_window.size()) >= MOMENTUM_WINDOW) {
                 const double momentum_pct = (mid - m_momentum_window.front()) / m_momentum_window.front() * 100.0;
-                const bool   momentum_ok  = long_break  ? (momentum_pct >  MOMENTUM_THRESH_PCT)
-                                                        : (momentum_pct < -MOMENTUM_THRESH_PCT);
+                const double momentum_thresh = AGGRESSIVE_SHADOW
+                    ? (MOMENTUM_THRESH_PCT * 0.35)
+                    : MOMENTUM_THRESH_PCT;
+                const bool   momentum_ok  = long_break  ? (momentum_pct >  momentum_thresh)
+                                                        : (momentum_pct < -momentum_thresh);
                 if (!momentum_ok) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: momentum_gate"                              << " mom=" << momentum_pct << "% thresh=" << MOMENTUM_THRESH_PCT << "%\n";
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: momentum_gate"
+                              << " mom=" << momentum_pct << "% thresh=" << momentum_thresh
+                              << "% shadow=" << (AGGRESSIVE_SHADOW ? 1 : 0) << "\n";
                     std::cout.flush();
                     if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "momentum_gate");
                     phase = Phase::FLAT; return {};
@@ -317,10 +323,19 @@ public:
                 --struct_end;
                 const double struct_hi = *std::max_element(m_range_window.begin(), struct_end);
                 const double struct_lo = *std::min_element(m_range_window.begin(), struct_end);
-                const bool   range_ok  = long_break  ? (mid > struct_hi)
-                                                     : (mid < struct_lo);
+                bool range_ok = long_break ? (mid > struct_hi) : (mid < struct_lo);
+                if (AGGRESSIVE_SHADOW) {
+                    // In shadow discovery mode we accept comp-range exits even if they
+                    // don't clear a full 50-tick structural extreme.
+                    const double relaxed_buf = spread * 0.25;
+                    range_ok = long_break ? (mid > (comp_high + relaxed_buf))
+                                          : (mid < (comp_low  - relaxed_buf));
+                }
                 if (!range_ok) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: range_break_gate"                              << " mid=" << mid << " struct_hi=" << struct_hi << " struct_lo=" << struct_lo << "\n";
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: range_break_gate"
+                              << " mid=" << mid << " struct_hi=" << struct_hi
+                              << " struct_lo=" << struct_lo
+                              << " shadow=" << (AGGRESSIVE_SHADOW ? 1 : 0) << "\n";
                     std::cout.flush();
                     if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "range_break_gate");
                     phase = Phase::FLAT; return {};
@@ -332,8 +347,13 @@ public:
             {
                 const double edge        = long_break ? comp_high : comp_low;
                 const double move_pct    = std::fabs(mid - edge) / edge * 100.0;
-                if (move_pct < MIN_BREAKOUT_PCT) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: min_breakout_gate"                              << " move=" << move_pct << "% min=" << MIN_BREAKOUT_PCT << "%\n";
+                const double min_breakout_req = AGGRESSIVE_SHADOW
+                    ? (MIN_BREAKOUT_PCT * 0.30)
+                    : MIN_BREAKOUT_PCT;
+                if (move_pct < min_breakout_req) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: min_breakout_gate"
+                              << " move=" << move_pct << "% min=" << min_breakout_req
+                              << "% shadow=" << (AGGRESSIVE_SHADOW ? 1 : 0) << "\n";
                     std::cout.flush();
                     if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "min_breakout_gate");
                     phase = Phase::FLAT; return {};
