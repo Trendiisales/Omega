@@ -699,6 +699,7 @@ static void apply_engine_config(omega::SpEngine& eng) noexcept {
     eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC         = g_cfg.max_hold_sec;
     eng.macro                = &g_macro_ctx;
 }
 // NQ -- uses [nq] config section, links macro context
@@ -711,6 +712,7 @@ static void apply_engine_config(omega::NqEngine& eng) noexcept {
     eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC         = g_cfg.max_hold_sec;
     eng.macro                = &g_macro_ctx;
 }
 // Oil -- uses [oil] config section, inventory window block built into engine
@@ -723,6 +725,7 @@ static void apply_engine_config(omega::OilEngine& eng) noexcept {
     eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC         = g_cfg.max_hold_sec;
     eng.macro                = &g_macro_ctx;
 }
 
@@ -734,6 +737,7 @@ static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
     eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
 }
 
 static void apply_generic_fx_config(omega::BreakoutEngine& eng) noexcept {
@@ -745,6 +749,7 @@ static void apply_generic_fx_config(omega::BreakoutEngine& eng) noexcept {
     eng.MOMENTUM_THRESH_PCT   = std::min(0.015, std::max(0.004, g_cfg.momentum_thresh_pct));
     eng.MIN_BREAKOUT_PCT      = std::min(0.080, std::max(0.020, g_cfg.min_breakout_pct));
     eng.MAX_TRADES_PER_MIN    = std::max(4, g_cfg.max_trades_per_min);
+    eng.MAX_HOLD_SEC          = std::min(240, std::max(45, g_cfg.max_hold_sec));
 }
 
 static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
@@ -756,6 +761,7 @@ static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
     eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
 }
 
 static void apply_generic_brent_config(omega::BreakoutEngine& eng) noexcept {
@@ -767,6 +773,7 @@ static void apply_generic_brent_config(omega::BreakoutEngine& eng) noexcept {
     eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -949,6 +956,7 @@ static void apply_shadow_research_profile() noexcept {
     g_cfg.session_asia      = true;
 
     g_cfg.max_latency_ms    = std::max(g_cfg.max_latency_ms, 25.0);
+    g_cfg.max_hold_sec      = std::min(g_cfg.max_hold_sec, 180);
     g_cfg.momentum_thresh_pct = std::min(g_cfg.momentum_thresh_pct, 0.012);
     g_cfg.min_breakout_pct    = std::min(g_cfg.min_breakout_pct, 0.06);
     g_cfg.max_trades_per_min  = std::max(g_cfg.max_trades_per_min, 10);
@@ -961,6 +969,14 @@ static void apply_shadow_research_profile() noexcept {
     g_cfg.nq_vol_thresh_pct = std::min(g_cfg.nq_vol_thresh_pct, 0.035);
     g_cfg.oil_vol_thresh_pct = std::min(g_cfg.oil_vol_thresh_pct, 0.060);
     g_cfg.gold_vol_thresh_pct = std::min(g_cfg.gold_vol_thresh_pct, 0.030);
+    g_cfg.sp_tp_pct = std::min(g_cfg.sp_tp_pct, 0.30);
+    g_cfg.sp_sl_pct = std::min(g_cfg.sp_sl_pct, 0.20);
+    g_cfg.nq_tp_pct = std::min(g_cfg.nq_tp_pct, 0.35);
+    g_cfg.nq_sl_pct = std::min(g_cfg.nq_sl_pct, 0.22);
+    g_cfg.oil_tp_pct = std::min(g_cfg.oil_tp_pct, 0.60);
+    g_cfg.oil_sl_pct = std::min(g_cfg.oil_sl_pct, 0.35);
+    g_cfg.gold_tp_pct = std::min(g_cfg.gold_tp_pct, 0.30);
+    g_cfg.gold_sl_pct = std::min(g_cfg.gold_sl_pct, 0.18);
 
     std::cout << "[CONFIG] SHADOW research profile enabled: 24h session, relaxed entry gates\n";
 }
@@ -1694,7 +1710,7 @@ int main(int argc, char* argv[])
     g_eng_xau.COMPRESSION_LOOKBACK  = 60;   // gold compresses slower than indices
     g_eng_xau.BASELINE_LOOKBACK     = 250;  // longer baseline -- gold trends persist
     // g_eng_xau.COMPRESSION_THRESHOLD set to 0.85 in GoldEngine constructor -- do not override
-    g_eng_xau.MAX_HOLD_SEC          = 1500; // 25min -- gold breaks can run
+    g_eng_xau.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
     g_eng_xau.MIN_GAP_SEC           = 180;  // 3min gap between signals
     g_eng_xau.MAX_SPREAD_PCT        = 0.06; // gold spreads slightly wider than indices
 
