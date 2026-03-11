@@ -185,6 +185,21 @@ public:
                         return {};
                     }
                 }
+                // SHADOW quality guard: do not let losing trades drift into timeout.
+                // If a trade is still negative after 45s by >0.05%, cut it.
+                if (AGGRESSIVE_SHADOW && held_sec >= 45) {
+                    const double adverse_pct = pos.is_long
+                        ? (pos.entry - mid) / pos.entry * 100.0
+                        : (mid - pos.entry) / pos.entry * 100.0;
+                    if (adverse_pct > 0.05) {
+                        std::cout << "[SHADOW-CUT] " << symbol
+                                  << (pos.is_long ? " LONG" : " SHORT")
+                                  << " adverse=" << adverse_pct
+                                  << "% held=" << held_sec << "s\n";
+                        closePos(mid, "SHADOW_CUT", latency_ms, macro_regime, on_close);
+                        return {};
+                    }
+                }
             }
 
             if (nowSec() - pos.entry_ts >= static_cast<int64_t>(MAX_HOLD_SEC)) {

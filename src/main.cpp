@@ -961,30 +961,30 @@ static void apply_shadow_research_profile() noexcept {
     g_cfg.session_asia      = true;
 
     g_cfg.max_latency_ms    = std::max(g_cfg.max_latency_ms, 25.0);
-    // Quality-throughput posture: still active, but no longer pure churn.
-    g_cfg.max_hold_sec      = std::min(g_cfg.max_hold_sec, 120);
+    // Defensive quality-throughput posture: prioritize capital protection.
+    g_cfg.max_hold_sec      = std::min(g_cfg.max_hold_sec, 75);
     g_cfg.momentum_thresh_pct = std::min(g_cfg.momentum_thresh_pct, 0.010);
     g_cfg.min_breakout_pct    = std::min(g_cfg.min_breakout_pct, 0.035);
-    g_cfg.max_trades_per_min  = std::max(g_cfg.max_trades_per_min, 12);
+    g_cfg.max_trades_per_min  = std::max(g_cfg.max_trades_per_min, 8);
 
-    g_cfg.sp_min_gap_sec = std::min(g_cfg.sp_min_gap_sec, 25);
-    g_cfg.nq_min_gap_sec = std::min(g_cfg.nq_min_gap_sec, 25);
-    g_cfg.oil_min_gap_sec = std::min(g_cfg.oil_min_gap_sec, 35);
+    g_cfg.sp_min_gap_sec = std::min(g_cfg.sp_min_gap_sec, 35);
+    g_cfg.nq_min_gap_sec = std::min(g_cfg.nq_min_gap_sec, 35);
+    g_cfg.oil_min_gap_sec = std::min(g_cfg.oil_min_gap_sec, 45);
 
-    g_cfg.sp_vol_thresh_pct = std::min(g_cfg.sp_vol_thresh_pct, 0.025);
-    g_cfg.nq_vol_thresh_pct = std::min(g_cfg.nq_vol_thresh_pct, 0.030);
-    g_cfg.oil_vol_thresh_pct = std::min(g_cfg.oil_vol_thresh_pct, 0.050);
-    g_cfg.gold_vol_thresh_pct = std::min(g_cfg.gold_vol_thresh_pct, 0.025);
+    g_cfg.sp_vol_thresh_pct = std::min(g_cfg.sp_vol_thresh_pct, 0.030);
+    g_cfg.nq_vol_thresh_pct = std::min(g_cfg.nq_vol_thresh_pct, 0.035);
+    g_cfg.oil_vol_thresh_pct = std::min(g_cfg.oil_vol_thresh_pct, 0.060);
+    g_cfg.gold_vol_thresh_pct = std::min(g_cfg.gold_vol_thresh_pct, 0.030);
 
     // Small-win profile with better quality than pure scalping.
-    g_cfg.sp_tp_pct = std::min(g_cfg.sp_tp_pct, 0.12);
-    g_cfg.sp_sl_pct = std::min(g_cfg.sp_sl_pct, 0.10);
-    g_cfg.nq_tp_pct = std::min(g_cfg.nq_tp_pct, 0.14);
-    g_cfg.nq_sl_pct = std::min(g_cfg.nq_sl_pct, 0.12);
-    g_cfg.oil_tp_pct = std::min(g_cfg.oil_tp_pct, 0.28);
-    g_cfg.oil_sl_pct = std::min(g_cfg.oil_sl_pct, 0.24);
-    g_cfg.gold_tp_pct = std::min(g_cfg.gold_tp_pct, 0.12);
-    g_cfg.gold_sl_pct = std::min(g_cfg.gold_sl_pct, 0.10);
+    g_cfg.sp_tp_pct = std::min(g_cfg.sp_tp_pct, 0.11);
+    g_cfg.sp_sl_pct = std::min(g_cfg.sp_sl_pct, 0.08);
+    g_cfg.nq_tp_pct = std::min(g_cfg.nq_tp_pct, 0.12);
+    g_cfg.nq_sl_pct = std::min(g_cfg.nq_sl_pct, 0.09);
+    g_cfg.oil_tp_pct = std::min(g_cfg.oil_tp_pct, 0.24);
+    g_cfg.oil_sl_pct = std::min(g_cfg.oil_sl_pct, 0.18);
+    g_cfg.gold_tp_pct = std::min(g_cfg.gold_tp_pct, 0.10);
+    g_cfg.gold_sl_pct = std::min(g_cfg.gold_sl_pct, 0.08);
 
     std::cout << "[CONFIG] SHADOW quality profile enabled: 24h session, quality-throughput tuning\n";
 }
@@ -1066,12 +1066,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     if (!lat_ok) ++g_gov_lat;
 
     auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
-        // Shadow mode is research mode: do not block entries on loss governors.
-        if (g_cfg.mode == "SHADOW") return false;
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         auto& st = g_sym_risk[symbol];
-        if (st.daily_pnl < -g_cfg.daily_loss_limit) {
+        const bool shadow_mode = (g_cfg.mode == "SHADOW");
+        const double daily_limit = shadow_mode ? 8.0 : g_cfg.daily_loss_limit;
+        if (st.daily_pnl < -daily_limit) {
             ++g_gov_pnl;
+            if (shadow_mode && st.pause_until < nowSec() + 300) {
+                st.pause_until = nowSec() + 300; // 5 min symbol cooldown in shadow
+            }
             return true;
         }
         const int64_t now = nowSec();
@@ -1150,11 +1153,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             auto& st = g_sym_risk[risk_key];
             st.daily_pnl += tr.pnl;
             if (tr.pnl <= 0.0) {
-                if (++st.consec_losses >= g_cfg.max_consec_losses) {
-                    st.pause_until = nowSec() + g_cfg.loss_pause_sec;
+                const int loss_limit = (g_cfg.mode == "SHADOW") ? 3 : g_cfg.max_consec_losses;
+                const int pause_sec  = (g_cfg.mode == "SHADOW") ? 180 : g_cfg.loss_pause_sec;
+                if (++st.consec_losses >= loss_limit) {
+                    st.pause_until = nowSec() + pause_sec;
                     std::cout << "[OMEGA-RISK] " << risk_key << " "
-                              << g_cfg.max_consec_losses << " consecutive losses -- pause "
-                              << g_cfg.loss_pause_sec << "s\n";
+                              << loss_limit << " consecutive losses -- pause "
+                              << pause_sec << "s\n";
                 }
             } else {
                 st.consec_losses = 0;
