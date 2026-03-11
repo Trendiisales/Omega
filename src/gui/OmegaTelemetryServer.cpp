@@ -420,8 +420,11 @@ void OmegaTelemetryServer::run(int port)
         }
         else if (strstr(buf, "GET /chimera_logo.png")) { ct = "image/png"; body = loadFile("chimera_logo.png"); }
         else if (strstr(buf, "GET / ") || strstr(buf, "GET /index.html")) {
-            // Serve embedded HTML — always in sync with binary, no file copy needed
-            ct = "text/html"; body = omega_gui::INDEX_HTML;
+            // Prefer on-disk HTML so GUI updates deploy without header regeneration.
+            // Fallback to embedded HTML if file is missing.
+            ct = "text/html";
+            body = loadFile("omega_index.html");
+            if (body.empty()) body = omega_gui::INDEX_HTML;
             if (body.empty()) { body = "<h1>Omega GUI not found</h1>"; status = 404; }
         }
         else { status = 404; body = "Not Found"; }

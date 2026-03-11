@@ -45,6 +45,7 @@ Write-Host ""
 
 Write-Host "[4/4] Copying assets and starting..." -ForegroundColor Yellow
 Copy-Item "C:\Omega\omega_config.ini" "Release\omega_config.ini" -Force -ErrorAction SilentlyContinue
+Copy-Item "C:\Omega\src\gui\www\omega_index.html" "Release\omega_index.html" -Force -ErrorAction SilentlyContinue
 Copy-Item "C:\Omega\src\gui\www\chimera_logo.png" "Release\chimera_logo.png" -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
