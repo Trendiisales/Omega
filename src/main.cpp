@@ -956,27 +956,30 @@ static void apply_shadow_research_profile() noexcept {
     g_cfg.session_asia      = true;
 
     g_cfg.max_latency_ms    = std::max(g_cfg.max_latency_ms, 25.0);
-    g_cfg.max_hold_sec      = std::min(g_cfg.max_hold_sec, 180);
-    g_cfg.momentum_thresh_pct = std::min(g_cfg.momentum_thresh_pct, 0.012);
-    g_cfg.min_breakout_pct    = std::min(g_cfg.min_breakout_pct, 0.06);
-    g_cfg.max_trades_per_min  = std::max(g_cfg.max_trades_per_min, 10);
+    // Scalper posture: many fast, small trades for rapid tuning loops.
+    g_cfg.max_hold_sec      = std::min(g_cfg.max_hold_sec, 90);
+    g_cfg.momentum_thresh_pct = std::min(g_cfg.momentum_thresh_pct, 0.006);
+    g_cfg.min_breakout_pct    = std::min(g_cfg.min_breakout_pct, 0.020);
+    g_cfg.max_trades_per_min  = std::max(g_cfg.max_trades_per_min, 20);
 
-    g_cfg.sp_min_gap_sec = std::min(g_cfg.sp_min_gap_sec, 45);
-    g_cfg.nq_min_gap_sec = std::min(g_cfg.nq_min_gap_sec, 45);
-    g_cfg.oil_min_gap_sec = std::min(g_cfg.oil_min_gap_sec, 60);
+    g_cfg.sp_min_gap_sec = std::min(g_cfg.sp_min_gap_sec, 20);
+    g_cfg.nq_min_gap_sec = std::min(g_cfg.nq_min_gap_sec, 20);
+    g_cfg.oil_min_gap_sec = std::min(g_cfg.oil_min_gap_sec, 30);
 
-    g_cfg.sp_vol_thresh_pct = std::min(g_cfg.sp_vol_thresh_pct, 0.030);
-    g_cfg.nq_vol_thresh_pct = std::min(g_cfg.nq_vol_thresh_pct, 0.035);
-    g_cfg.oil_vol_thresh_pct = std::min(g_cfg.oil_vol_thresh_pct, 0.060);
-    g_cfg.gold_vol_thresh_pct = std::min(g_cfg.gold_vol_thresh_pct, 0.030);
-    g_cfg.sp_tp_pct = std::min(g_cfg.sp_tp_pct, 0.30);
-    g_cfg.sp_sl_pct = std::min(g_cfg.sp_sl_pct, 0.20);
-    g_cfg.nq_tp_pct = std::min(g_cfg.nq_tp_pct, 0.35);
-    g_cfg.nq_sl_pct = std::min(g_cfg.nq_sl_pct, 0.22);
-    g_cfg.oil_tp_pct = std::min(g_cfg.oil_tp_pct, 0.60);
-    g_cfg.oil_sl_pct = std::min(g_cfg.oil_sl_pct, 0.35);
-    g_cfg.gold_tp_pct = std::min(g_cfg.gold_tp_pct, 0.30);
-    g_cfg.gold_sl_pct = std::min(g_cfg.gold_sl_pct, 0.18);
+    g_cfg.sp_vol_thresh_pct = std::min(g_cfg.sp_vol_thresh_pct, 0.020);
+    g_cfg.nq_vol_thresh_pct = std::min(g_cfg.nq_vol_thresh_pct, 0.025);
+    g_cfg.oil_vol_thresh_pct = std::min(g_cfg.oil_vol_thresh_pct, 0.040);
+    g_cfg.gold_vol_thresh_pct = std::min(g_cfg.gold_vol_thresh_pct, 0.020);
+
+    // Tight targets/stops for quick closure visibility in SHADOW.
+    g_cfg.sp_tp_pct = std::min(g_cfg.sp_tp_pct, 0.08);
+    g_cfg.sp_sl_pct = std::min(g_cfg.sp_sl_pct, 0.12);
+    g_cfg.nq_tp_pct = std::min(g_cfg.nq_tp_pct, 0.10);
+    g_cfg.nq_sl_pct = std::min(g_cfg.nq_sl_pct, 0.14);
+    g_cfg.oil_tp_pct = std::min(g_cfg.oil_tp_pct, 0.22);
+    g_cfg.oil_sl_pct = std::min(g_cfg.oil_sl_pct, 0.30);
+    g_cfg.gold_tp_pct = std::min(g_cfg.gold_tp_pct, 0.10);
+    g_cfg.gold_sl_pct = std::min(g_cfg.gold_sl_pct, 0.14);
 
     std::cout << "[CONFIG] SHADOW research profile enabled: 24h session, relaxed entry gates\n";
 }

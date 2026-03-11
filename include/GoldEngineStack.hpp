@@ -697,7 +697,7 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class GoldPositionManager {
     static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
-    static constexpr int    MAX_HOLD_SEC  = 180;   // Shadow-first quick turnover: force capital recycle every 3 minutes
+    static constexpr int    MAX_HOLD_SEC  = 90;    // Scalper mode: recycle quickly for many small closed trades
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
 
     struct GoldPos {
