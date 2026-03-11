@@ -1,6 +1,7 @@
 # ==============================================================================
 #                   OMEGA - CLEAN REBUILD AND START
 # ==============================================================================
+$ErrorActionPreference = "Stop"
 
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host "   OMEGA - CLEAN REBUILD                               " -ForegroundColor Cyan
@@ -13,15 +14,25 @@ Start-Sleep -Seconds 2
 Write-Host "      [OK]" -ForegroundColor Green
 Write-Host ""
 
-Write-Host "[2/4] Git pull..." -ForegroundColor Yellow
-cd C:\Omega
-git pull origin main
+Write-Host "[2/4] Syncing to origin/main..." -ForegroundColor Yellow
+Set-Location C:\Omega
+git fetch origin
+git checkout main
+# Deterministic deploy: always build exact remote head.
+git reset --hard origin/main
+$localHead  = (git rev-parse HEAD).Trim()
+$remoteHead = (git rev-parse origin/main).Trim()
+if ($localHead -ne $remoteHead) {
+    Write-Host "      [ERROR] Repo not aligned to origin/main" -ForegroundColor Red
+    exit 1
+}
+Write-Host "      [OK] HEAD $localHead" -ForegroundColor Green
 Write-Host ""
 
 Write-Host "[3/4] Clean build..." -ForegroundColor Yellow
 Remove-Item -Path "C:\Omega\build" -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path "C:\Omega\build" -Force | Out-Null
-cd C:\Omega\build
+Set-Location C:\Omega\build
 cmake ..
 cmake --build . --config Release
 
@@ -43,5 +54,5 @@ Write-Host "  http://185.167.119.59:7779/version" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
-cd Release
+Set-Location Release
 .\Omega.exe omega_config.ini
