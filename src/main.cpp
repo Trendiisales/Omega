@@ -201,8 +201,13 @@ struct SymbolRiskState {
     int    consec_losses = 0;
     int64_t pause_until = 0;
 };
+struct ShadowQualityState {
+    int     fast_loss_streak = 0;
+    int64_t pause_until      = 0;
+};
 static std::mutex g_sym_risk_mtx;
 static std::unordered_map<std::string, SymbolRiskState> g_sym_risk;
+static std::unordered_map<std::string, ShadowQualityState> g_shadow_quality;
 
 // Latency governor -- blocks trades when FIX RTT exceeds configured hard cap
 struct Governor {
@@ -956,32 +961,32 @@ static void apply_shadow_research_profile() noexcept {
     g_cfg.session_asia      = true;
 
     g_cfg.max_latency_ms    = std::max(g_cfg.max_latency_ms, 25.0);
-    // Scalper posture: many fast, small trades for rapid tuning loops.
-    g_cfg.max_hold_sec      = std::min(g_cfg.max_hold_sec, 90);
-    g_cfg.momentum_thresh_pct = std::min(g_cfg.momentum_thresh_pct, 0.006);
-    g_cfg.min_breakout_pct    = std::min(g_cfg.min_breakout_pct, 0.020);
-    g_cfg.max_trades_per_min  = std::max(g_cfg.max_trades_per_min, 20);
+    // Quality-throughput posture: still active, but no longer pure churn.
+    g_cfg.max_hold_sec      = std::min(g_cfg.max_hold_sec, 120);
+    g_cfg.momentum_thresh_pct = std::min(g_cfg.momentum_thresh_pct, 0.010);
+    g_cfg.min_breakout_pct    = std::min(g_cfg.min_breakout_pct, 0.035);
+    g_cfg.max_trades_per_min  = std::max(g_cfg.max_trades_per_min, 12);
 
-    g_cfg.sp_min_gap_sec = std::min(g_cfg.sp_min_gap_sec, 20);
-    g_cfg.nq_min_gap_sec = std::min(g_cfg.nq_min_gap_sec, 20);
-    g_cfg.oil_min_gap_sec = std::min(g_cfg.oil_min_gap_sec, 30);
+    g_cfg.sp_min_gap_sec = std::min(g_cfg.sp_min_gap_sec, 25);
+    g_cfg.nq_min_gap_sec = std::min(g_cfg.nq_min_gap_sec, 25);
+    g_cfg.oil_min_gap_sec = std::min(g_cfg.oil_min_gap_sec, 35);
 
-    g_cfg.sp_vol_thresh_pct = std::min(g_cfg.sp_vol_thresh_pct, 0.020);
-    g_cfg.nq_vol_thresh_pct = std::min(g_cfg.nq_vol_thresh_pct, 0.025);
-    g_cfg.oil_vol_thresh_pct = std::min(g_cfg.oil_vol_thresh_pct, 0.040);
-    g_cfg.gold_vol_thresh_pct = std::min(g_cfg.gold_vol_thresh_pct, 0.020);
+    g_cfg.sp_vol_thresh_pct = std::min(g_cfg.sp_vol_thresh_pct, 0.025);
+    g_cfg.nq_vol_thresh_pct = std::min(g_cfg.nq_vol_thresh_pct, 0.030);
+    g_cfg.oil_vol_thresh_pct = std::min(g_cfg.oil_vol_thresh_pct, 0.050);
+    g_cfg.gold_vol_thresh_pct = std::min(g_cfg.gold_vol_thresh_pct, 0.025);
 
-    // Tight targets/stops for quick closure visibility in SHADOW.
-    g_cfg.sp_tp_pct = std::min(g_cfg.sp_tp_pct, 0.08);
-    g_cfg.sp_sl_pct = std::min(g_cfg.sp_sl_pct, 0.12);
-    g_cfg.nq_tp_pct = std::min(g_cfg.nq_tp_pct, 0.10);
-    g_cfg.nq_sl_pct = std::min(g_cfg.nq_sl_pct, 0.14);
-    g_cfg.oil_tp_pct = std::min(g_cfg.oil_tp_pct, 0.22);
-    g_cfg.oil_sl_pct = std::min(g_cfg.oil_sl_pct, 0.30);
-    g_cfg.gold_tp_pct = std::min(g_cfg.gold_tp_pct, 0.10);
-    g_cfg.gold_sl_pct = std::min(g_cfg.gold_sl_pct, 0.14);
+    // Small-win profile with better quality than pure scalping.
+    g_cfg.sp_tp_pct = std::min(g_cfg.sp_tp_pct, 0.12);
+    g_cfg.sp_sl_pct = std::min(g_cfg.sp_sl_pct, 0.10);
+    g_cfg.nq_tp_pct = std::min(g_cfg.nq_tp_pct, 0.14);
+    g_cfg.nq_sl_pct = std::min(g_cfg.nq_sl_pct, 0.12);
+    g_cfg.oil_tp_pct = std::min(g_cfg.oil_tp_pct, 0.28);
+    g_cfg.oil_sl_pct = std::min(g_cfg.oil_sl_pct, 0.24);
+    g_cfg.gold_tp_pct = std::min(g_cfg.gold_tp_pct, 0.12);
+    g_cfg.gold_sl_pct = std::min(g_cfg.gold_sl_pct, 0.10);
 
-    std::cout << "[CONFIG] SHADOW research profile enabled: 24h session, relaxed entry gates\n";
+    std::cout << "[CONFIG] SHADOW quality profile enabled: 24h session, quality-throughput tuning\n";
 }
 
 static void maybe_reset_daily_ledger() {
@@ -999,6 +1004,7 @@ static void maybe_reset_daily_ledger() {
     {
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         g_sym_risk.clear();
+        g_shadow_quality.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_shadow_signal_mtx);
@@ -1091,6 +1097,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         if (!shadow_mode && !tradeable) return false;
         if (!shadow_mode && !lat_ok) return false;
+        if (shadow_mode) {
+            std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+            auto& qs = g_shadow_quality[symbol];
+            const int64_t now = nowSec();
+            if (qs.pause_until > now) {
+                ++g_gov_consec;
+                return false;
+            }
+            if (qs.pause_until != 0 && qs.pause_until <= now) {
+                qs.pause_until = 0;
+                qs.fast_loss_streak = 0;
+            }
+        }
         if (symbol_has_open_position) {
             ++g_gov_pos;
             return false;
@@ -1139,6 +1158,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             } else {
                 st.consec_losses = 0;
+            }
+            if (g_cfg.mode == "SHADOW") {
+                auto& qs = g_shadow_quality[tr.symbol];
+                const int64_t held = std::max<int64_t>(0, tr.exitTs - tr.entryTs);
+                const bool fast_bad_loss =
+                    (tr.pnl <= 0.0) &&
+                    (held <= 120) &&
+                    (tr.exitReason == "SL_HIT" || tr.exitReason == "SCRATCH" || tr.exitReason == "TIMEOUT");
+                if (fast_bad_loss) {
+                    if (++qs.fast_loss_streak >= 3) {
+                        qs.pause_until = nowSec() + 45;
+                        std::cout << "[OMEGA-QUALITY] " << tr.symbol
+                                  << " fast-loss streak=" << qs.fast_loss_streak
+                                  << " pause=45s\n";
+                    }
+                } else if (tr.pnl > 0.0) {
+                    qs.fast_loss_streak = 0;
+                } else if (qs.fast_loss_streak > 0) {
+                    --qs.fast_loss_streak;
+                }
             }
         }
         {

@@ -299,7 +299,7 @@ public:
             if (static_cast<int>(m_momentum_window.size()) >= MOMENTUM_WINDOW) {
                 const double momentum_pct = (mid - m_momentum_window.front()) / m_momentum_window.front() * 100.0;
                 const double momentum_thresh = AGGRESSIVE_SHADOW
-                    ? (MOMENTUM_THRESH_PCT * 0.35)
+                    ? (MOMENTUM_THRESH_PCT * 0.60)
                     : MOMENTUM_THRESH_PCT;
                 const bool   momentum_ok  = long_break  ? (momentum_pct >  momentum_thresh)
                                                         : (momentum_pct < -momentum_thresh);
@@ -327,7 +327,7 @@ public:
                 if (AGGRESSIVE_SHADOW) {
                     // In shadow discovery mode we accept comp-range exits even if they
                     // don't clear a full 50-tick structural extreme.
-                    const double relaxed_buf = spread * 0.25;
+                    const double relaxed_buf = spread * 0.50;
                     range_ok = long_break ? (mid > (comp_high + relaxed_buf))
                                           : (mid < (comp_low  - relaxed_buf));
                 }
@@ -348,7 +348,7 @@ public:
                 const double edge        = long_break ? comp_high : comp_low;
                 const double move_pct    = std::fabs(mid - edge) / edge * 100.0;
                 const double min_breakout_req = AGGRESSIVE_SHADOW
-                    ? (MIN_BREAKOUT_PCT * 0.30)
+                    ? (MIN_BREAKOUT_PCT * 0.60)
                     : MIN_BREAKOUT_PCT;
                 if (move_pct < min_breakout_req) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: min_breakout_gate"
