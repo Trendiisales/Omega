@@ -359,6 +359,8 @@ public:
 
     std::string current_path() const { return current_path_; }
 
+    void force_rotate_check() { check_rotate(); }
+
     void flush_and_close() {
         if (file_.is_open()) { file_.flush(); file_.close(); }
         file_buf_ = nullptr;
@@ -1653,6 +1655,7 @@ static void quote_loop() {
             // Diagnostic every 60s -- visibility into engine phase + vol state
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_diag).count() >= 60) {
                 last_diag = now;
+                if (g_tee_buf) g_tee_buf->force_rotate_check();  // ensure daily log rolls at UTC midnight even if stdout is quiet
                 std::cout << "[OMEGA-DIAG] PnL=" << g_omegaLedger.dailyPnl()
                           << " T=" << g_omegaLedger.total()
                           << " WR=" << g_omegaLedger.winRate() << "%"
@@ -1866,6 +1869,7 @@ int main(int argc, char* argv[])
         g_orig_cout = std::cout.rdbuf();
         g_tee_buf   = new RollingTeeBuffer(g_orig_cout, log_dir);
         std::cout.rdbuf(g_tee_buf);
+        std::cerr.rdbuf(g_tee_buf);  // tee stderr too — nothing gets lost
         std::cout << "[OMEGA] Rolling log: " << g_tee_buf->current_path()
                   << " (5-day retention)\n";
     }
