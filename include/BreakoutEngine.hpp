@@ -67,6 +67,7 @@ public:
     double      MOMENTUM_THRESH_PCT   = 0.05;   // momentum gate: price_now vs price_20_ago
     double      MIN_BREAKOUT_PCT      = 0.25;   // minimum breakout move from comp range edge
     int         MAX_TRADES_PER_MIN    = 2;       // rate limiter: max entries per 60s window
+    double      ENTRY_SIZE            = 1.0;     // position size multiplier written into TradeRecord::size
     bool        AGGRESSIVE_SHADOW     = false;   // shadow research mode: loosen entry filters for signal discovery
     const char* symbol                = "???";
 
@@ -404,7 +405,7 @@ public:
             pos.entry           = mid;
             pos.tp              = tp;
             pos.sl              = sl;
-            pos.size            = 1.0;
+            pos.size            = (ENTRY_SIZE > 0.0 ? ENTRY_SIZE : 1.0);
             pos.mfe             = 0.0;
             pos.mae             = 0.0;
             pos.entry_ts        = now;

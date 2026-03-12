@@ -101,6 +101,12 @@ struct OmegaConfig {
     bool   independent_symbols = true;  // true: risk/position gating is per-symbol (recommended)
     bool   enable_shadow_signal_audit = true;
     int    auto_disable_after_trades  = 10;
+    bool   shadow_ustec_pilot_only    = true;   // in SHADOW: allow only GOLD + USTEC pilot entries
+    double ustec_pilot_size           = 0.35;   // reduced NQ pilot size vs default 1.0
+    int    ustec_pilot_min_gap_sec    = 60;     // more opportunities than default 90s shadow NQ gap
+    bool   ustec_pilot_require_session = true;  // keep USTEC pilot out of session-closed tape
+    bool   ustec_pilot_require_latency = true;  // enforce latency gate in shadow for USTEC pilot
+    bool   ustec_pilot_block_risk_off  = true;  // skip USTEC pilot in RISK_OFF regime
     bool   enable_extended_symbols    = true;   // subscribe + trade additional opportunity symbols
     int    ext_ger30_id               = 0;
     int    ext_uk100_id               = 0;
@@ -838,6 +844,12 @@ static void load_config(const std::string& path) {
             if (k=="independent_symbols")  g_cfg.independent_symbols = (v == "true" || v == "1");
             if (k=="enable_shadow_signal_audit") g_cfg.enable_shadow_signal_audit = (v == "true" || v == "1");
             if (k=="auto_disable_after_trades")  g_cfg.auto_disable_after_trades = std::stoi(v);
+            if (k=="shadow_ustec_pilot_only")    g_cfg.shadow_ustec_pilot_only = (v == "true" || v == "1");
+            if (k=="ustec_pilot_size")           g_cfg.ustec_pilot_size = std::stod(v);
+            if (k=="ustec_pilot_min_gap_sec")    g_cfg.ustec_pilot_min_gap_sec = std::stoi(v);
+            if (k=="ustec_pilot_require_session") g_cfg.ustec_pilot_require_session = (v == "true" || v == "1");
+            if (k=="ustec_pilot_require_latency") g_cfg.ustec_pilot_require_latency = (v == "true" || v == "1");
+            if (k=="ustec_pilot_block_risk_off")  g_cfg.ustec_pilot_block_risk_off = (v == "true" || v == "1");
             if (k=="enable_extended_symbols")    g_cfg.enable_extended_symbols = (v == "true" || v == "1");
             if (k=="min_entry_gap_sec")    g_cfg.min_entry_gap_sec = std::stoi(v);
             if (k=="max_spread_entry_pct") g_cfg.max_spread_pct    = std::stod(v);
@@ -902,6 +914,9 @@ static void load_config(const std::string& path) {
               << "[CONFIG] NQ   tp=" << g_cfg.nq_tp_pct   << "% sl=" << g_cfg.nq_sl_pct   << "% vol=" << g_cfg.nq_vol_thresh_pct  << "%\n"
               << "[CONFIG] OIL  tp=" << g_cfg.oil_tp_pct  << "% sl=" << g_cfg.oil_sl_pct  << "% vol=" << g_cfg.oil_vol_thresh_pct << "%\n"
               << "[CONFIG] GOLD tp=" << g_cfg.gold_tp_pct << "% sl=" << g_cfg.gold_sl_pct << "% vol=" << g_cfg.gold_vol_thresh_pct << "%\n"
+              << "[CONFIG] USTEC pilot only=" << (g_cfg.shadow_ustec_pilot_only ? "true" : "false")
+              << " size=" << g_cfg.ustec_pilot_size
+              << " min_gap=" << g_cfg.ustec_pilot_min_gap_sec << "s\n"
               << "[CONFIG] latency_cap=" << g_cfg.max_latency_ms << "ms spread_cap=" << g_cfg.max_spread_pct << "%\n";
 }
 
@@ -919,11 +934,13 @@ static void sanitize_config() noexcept {
     g_cfg.max_consec_losses  = clampi(g_cfg.max_consec_losses, 1, 20, 3);
     g_cfg.loss_pause_sec     = clampi(g_cfg.loss_pause_sec, 10, 3600, 300);
     g_cfg.auto_disable_after_trades = clampi(g_cfg.auto_disable_after_trades, 5, 200, 10);
+    g_cfg.ustec_pilot_min_gap_sec   = clampi(g_cfg.ustec_pilot_min_gap_sec, 15, 900, 60);
 
     g_cfg.max_latency_ms     = clampd(g_cfg.max_latency_ms, 0.0, 5000.0, 10.0);
     g_cfg.daily_loss_limit   = clampd(g_cfg.daily_loss_limit, 1.0, 1000000.0, 200.0);
     g_cfg.momentum_thresh_pct = clampd(g_cfg.momentum_thresh_pct, 0.0, 10.0, 0.05);
     g_cfg.min_breakout_pct    = clampd(g_cfg.min_breakout_pct, 0.0, 10.0, 0.25);
+    g_cfg.ustec_pilot_size    = clampd(g_cfg.ustec_pilot_size, 0.05, 2.0, 0.35);
 
     g_cfg.sp_vol_thresh_pct   = clampd(g_cfg.sp_vol_thresh_pct, 0.0, 10.0, 0.04);
     g_cfg.nq_vol_thresh_pct   = clampd(g_cfg.nq_vol_thresh_pct, 0.0, 10.0, 0.05);
@@ -1101,6 +1118,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (!shadow_mode && !tradeable) return false;
         if (!shadow_mode && !lat_ok) return false;
         if (shadow_mode) {
+            // Shadow portfolio split: keep GOLD stack live and run USTEC pilot only.
+            if (g_cfg.shadow_ustec_pilot_only &&
+                symbol != "GOLD.F" && symbol != "USTEC.F") {
+                return false;
+            }
+            if (symbol == "USTEC.F") {
+                if (g_cfg.ustec_pilot_require_session && !tradeable) return false;
+                if (g_cfg.ustec_pilot_require_latency && !lat_ok) return false;
+                if (g_cfg.ustec_pilot_block_risk_off && regime == "RISK_OFF") return false;
+            }
             std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
             auto& qs = g_shadow_quality[symbol];
             const int64_t now = nowSec();
@@ -1773,6 +1800,15 @@ int main(int argc, char* argv[])
         g_eng_eurusd.AGGRESSIVE_SHADOW = false;
         g_eng_brent.AGGRESSIVE_SHADOW = false;
         g_eng_xau.AGGRESSIVE_SHADOW = false;
+
+        if (g_cfg.shadow_ustec_pilot_only) {
+            g_eng_nq.ENTRY_SIZE = g_cfg.ustec_pilot_size;
+            g_eng_nq.MIN_GAP_SEC = g_cfg.ustec_pilot_min_gap_sec;
+            g_eng_nq.MAX_TRADES_PER_MIN = std::min(g_eng_nq.MAX_TRADES_PER_MIN, 2);
+            std::cout << "[OMEGA-PILOT] USTEC shadow pilot enabled | size=" << g_eng_nq.ENTRY_SIZE
+                      << " min_gap=" << g_eng_nq.MIN_GAP_SEC
+                      << " max_trades_per_min=" << g_eng_nq.MAX_TRADES_PER_MIN << "\n";
+        }
     }
 
     auto bind_shadow_cb = [](auto& eng) {
