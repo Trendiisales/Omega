@@ -31,6 +31,7 @@
 #include <chrono>
 #include <algorithm>
 #include <functional>
+#include <deque>
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -248,7 +249,7 @@ public:
 class CompressionBreakoutEngine : public EngineBase {
     MinMaxCircularBuffer<double,32> history_;
     static constexpr size_t WINDOW=30;
-    static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.25, MAX_SPREAD=1.80;
+    static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.35, MAX_SPREAD=1.80;
     static constexpr int TP_TICKS=50, SL_TICKS=18; // TP 40→50: genuine compression breakouts on gold run $4-6, not $4
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(2)};
 public:
@@ -297,7 +298,7 @@ public:
 class ImpulseContinuationEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> price_history_;
     static constexpr double IMPULSE_MIN=1.0,PULLBACK_MIN=0.2,PULLBACK_MAX=0.6;
-    static constexpr double MIN_MOMENTUM=0.40,MIN_MOVE_5T=0.40,MAX_MOMENTUM=5.0,PARABOLIC_VWAP=10.0;
+    static constexpr double MIN_MOMENTUM=0.55,MIN_MOVE_5T=0.55,MAX_MOMENTUM=5.0,PARABOLIC_VWAP=10.0;
     static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=6.0,MAX_SPREAD=2.20;
     static constexpr int TP_TICKS=16,SL_TICKS=8;
     static constexpr int MAX_ENTRIES_PER_TREND=2,COOLDOWN_SECONDS=120;
@@ -700,17 +701,19 @@ class GoldPositionManager {
     static constexpr int    MAX_HOLD_SEC  = 120;   // allow runners while trail handles protection
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
     static constexpr int    MAX_PYRAMID_LEGS = 3;  // base + 2 add-ons
-    static constexpr double PYR_COVER_MOVE   = 0.60; // add next leg only after prior leg covers costs
-    static constexpr double PYR_MIN_STEP     = 0.50; // require fresh displacement before each add
-    static constexpr int64_t PYR_ADD_COOLDOWN_SEC = 3;
-    static constexpr int    PYR_TP_TICKS     = 20;
-    static constexpr int    PYR_SL_TICKS     = 8;
-    static constexpr double LOCK_ARM_MOVE    = 0.60;
-    static constexpr double LOCK_GAIN        = 0.12;
-    static constexpr double TRAIL_ARM_1      = 1.00;
-    static constexpr double TRAIL_DIST_1     = 0.60;
-    static constexpr double TRAIL_ARM_2      = 1.80;
-    static constexpr double TRAIL_DIST_2     = 0.40;
+    static constexpr double PYR_COVER_MOVE   = 0.80; // add only after prior leg has clearly covered costs
+    static constexpr double PYR_MIN_STEP     = 0.70; // avoid stacking at nearly same level in chop
+    static constexpr int64_t PYR_ADD_COOLDOWN_SEC = 4;
+    static constexpr int    PYR_TP_TICKS     = 18;
+    static constexpr int    PYR_SL_TICKS     = 7;
+    static constexpr double LOCK_ARM_MOVE    = 0.90;
+    static constexpr double LOCK_GAIN        = 0.20;
+    static constexpr double TRAIL_ARM_1      = 1.40;
+    static constexpr double TRAIL_DIST_1     = 0.50;
+    static constexpr double TRAIL_ARM_2      = 2.20;
+    static constexpr double TRAIL_DIST_2     = 0.35;
+    static constexpr double MIN_LOCKED_PROFIT = 0.05;
+    static constexpr double MAX_BASE_SL_TICKS = 12.0; // cap hard loss to about $1.20 on base entries
 
     struct GoldPos {
         bool    active    = false;
@@ -804,10 +807,28 @@ class GoldPositionManager {
         }
     }
 
-    bool can_add_pyramid(double mid) const {
+    static bool regime_allows_pyramid(const char* regime) {
+        if (!regime) return false;
+        return std::strcmp(regime, "TREND") == 0 || std::strcmp(regime, "IMPULSE") == 0;
+    }
+
+    bool leg_profit_locked(const GoldPos& leg) const {
+        if (leg.is_long) return leg.sl >= leg.entry + MIN_LOCKED_PROFIT;
+        return leg.sl <= leg.entry - MIN_LOCKED_PROFIT;
+    }
+
+    bool can_add_pyramid(double mid, const char* regime) const {
         if (legs_.empty() || static_cast<int>(legs_.size()) >= MAX_PYRAMID_LEGS) return false;
+        if (!regime_allows_pyramid(regime)) return false;
         const int64_t now = nowSec();
         if (now - last_add_ts_ < PYR_ADD_COOLDOWN_SEC) return false;
+
+        const GoldPos& leader = legs_.front();
+        const double leader_move = leader.is_long ? (mid - leader.entry) : (leader.entry - mid);
+        if (leader_move < PYR_COVER_MOVE) return false;
+        for (const auto& leg : legs_) {
+            if (!leg_profit_locked(leg)) return false;
+        }
 
         const GoldPos& last = legs_.back();
         const double move = last.is_long ? (mid - last.entry) : (last.entry - mid);
@@ -854,6 +875,7 @@ public:
     void open(const GoldSignal& sig, double spread,
               double latency_ms, const char* regime) {
         if (!legs_.empty()) return;  // signal-based base entry only when flat
+        const double sl_ticks = std::max(4.0, std::min(MAX_BASE_SL_TICKS, sig.sl_ticks));
         GoldPos leg;
         leg.active   = true;
         leg.is_long  = sig.is_long;
@@ -862,8 +884,8 @@ public:
                         ? sig.entry + sig.tp_ticks * TICK_SIZE
                         : sig.entry - sig.tp_ticks * TICK_SIZE;
         leg.sl       = sig.is_long
-                        ? sig.entry - sig.sl_ticks * TICK_SIZE
-                        : sig.entry + sig.sl_ticks * TICK_SIZE;
+                        ? sig.entry - sl_ticks * TICK_SIZE
+                        : sig.entry + sl_ticks * TICK_SIZE;
         leg.mfe      = 0;
         leg.mae      = 0;
         leg.size     = CONTRACT_SIZE;
@@ -942,7 +964,7 @@ public:
         }
 
         // Add-on pyramid legs only after existing edge has covered costs.
-        if (!legs_.empty() && can_add_pyramid(mid)) {
+        if (!legs_.empty() && can_add_pyramid(mid, regime)) {
             add_pyramid_leg(mid, ask - bid, latency_ms, regime);
         }
         return closed_any;
@@ -981,19 +1003,21 @@ public:
                        CloseCallback on_close = nullptr, bool can_enter = true) {
         if(bid<=0||ask<=0||bid>=ask) return GoldSignal{};
         double spread = ask - bid;
+        const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
 
         // ── Manage existing position (TP/SL/timeout) ─────────────────────────
-        // Wrap on_close to detect SL exit and arm the 120s inter-engine cooldown
-        CloseCallback wrapped_close = on_close
-            ? [this, &on_close](const omega::TradeRecord& tr) {
+        // Wrap on_close to track side-specific chop and selective cooldowns.
+        CloseCallback wrapped_close;
+        if (on_close) {
+            wrapped_close = [this, &on_close](const omega::TradeRecord& tr) {
                 on_close(tr);
-                if (tr.exitReason == "SL_HIT") {
-                    sl_cooldown_until_ = static_cast<int64_t>(std::time(nullptr)) + 180;
-                    printf("[GOLD-SL-COOLDOWN] armed 180s — blocks all engines until cooldown expires\n");
-                    fflush(stdout);
-                }
-              }
-            : CloseCallback{};
+                note_close_for_quality(tr);
+            };
+        } else {
+            wrapped_close = [this](const omega::TradeRecord& tr) {
+                note_close_for_quality(tr);
+            };
+        }
         bool just_closed = pos_mgr_.manage(bid, ask, latency_ms,
                                            current_regime_name(), wrapped_close);
         (void)just_closed;
@@ -1017,22 +1041,22 @@ public:
         // Don't look for new entries if already in a position or gated out
         if(has_open_pos_ || !can_enter) return GoldSignal{};
 
-        // SL cooldown: after any gold SL, block ALL engines for 120s
-        // Prevents multiple engines firing sequentially on same fake breakout
-        if(static_cast<int64_t>(std::time(nullptr)) < sl_cooldown_until_) return GoldSignal{};
+        // Hard-loss cooldown to avoid immediate revenge trading after failed break.
+        if(now_s < sl_cooldown_until_) return GoldSignal{};
 
         // Volatility gate
         if(!vol_filter_.allow(snap.mid)) return GoldSignal{};
 
         // VWAP chop zone gate
-        if(snap.vwap>0&&std::fabs(snap.mid-snap.vwap)<0.5) return GoldSignal{};
+        if(snap.vwap>0&&std::fabs(snap.mid-snap.vwap)<MIN_VWAP_DISLOCATION) return GoldSignal{};
 
         // Fast path: ImpulseContinuation first
         for(auto& e:engines_){
             if(e->getName()=="ImpulseContinuation"&&e->isEnabled()){
                 Signal s=e->process(snap);
                 if(s.valid){
-                    if (s.confidence < 0.90) return GoldSignal{};
+                    const double score = s.confidence * 1.1; // engine weight for ImpulseContinuation
+                    if (!entry_quality_ok(s, score, snap, now_s)) return GoldSignal{};
                     GoldSignal gs=to_gold_signal(s);
                     pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
                     has_open_pos_=true;
@@ -1052,7 +1076,7 @@ public:
             if(score>best_score){ best_score=score; best=s; }
         }
         if(best.valid){
-            if (best_score < 1.10) return GoldSignal{};
+            if (!entry_quality_ok(best, best_score, snap, now_s)) return GoldSignal{};
             GoldSignal gs=to_gold_signal(best);
             pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
             has_open_pos_=true;
@@ -1084,6 +1108,18 @@ public:
     }
 
 private:
+    static constexpr int64_t HARD_SL_GLOBAL_COOLDOWN_SEC = 60;
+    static constexpr int64_t SIDE_CHOP_WINDOW_SEC = 90;
+    static constexpr int64_t SIDE_CHOP_PAUSE_SEC = 60;
+    static constexpr size_t  SIDE_CHOP_TRIGGER_COUNT = 2;
+    static constexpr int64_t SAME_LEVEL_REENTRY_SEC = 30;
+    static constexpr double  SAME_LEVEL_REENTRY_BAND = 0.80;
+    static constexpr double  MIN_VWAP_DISLOCATION = 0.80;
+    static constexpr double  MAX_ENTRY_SPREAD = 1.60;
+    static constexpr double  IMPULSE_MIN_CONFIDENCE = 1.05;
+    static constexpr double  IMPULSE_MIN_SCORE = 1.20;
+    static constexpr double  GENERAL_MIN_SCORE = 1.20;
+
     std::vector<std::unique_ptr<EngineBase>> engines_;
     GoldFeatures     features_;
     RegimeGovernor   governor_;
@@ -1092,7 +1128,80 @@ private:
     MarketRegime     current_regime_=MarketRegime::MEAN_REVERSION;
     bool             has_open_pos_=false;
     double           last_mid_=0;
-    int64_t          sl_cooldown_until_=0;  // block ALL engines for 120s after any SL
+    int64_t          sl_cooldown_until_=0;  // block new entries briefly after hard SL
+    std::array<int64_t, 2> side_pause_until_{{0,0}}; // [LONG,SHORT]
+    std::array<std::deque<int64_t>, 2> side_hard_sl_times_{};
+    std::array<double, 2> last_exit_price_{{0.0,0.0}};
+    std::array<int64_t, 2> last_exit_ts_{{0,0}};
+
+    static int side_idx(TradeSide side) {
+        if (side == TradeSide::LONG) return 0;
+        if (side == TradeSide::SHORT) return 1;
+        return -1;
+    }
+    static int side_idx(const std::string& side) {
+        if (side == "LONG") return 0;
+        if (side == "SHORT") return 1;
+        return -1;
+    }
+    static const char* side_name(int idx) {
+        return idx == 0 ? "LONG" : "SHORT";
+    }
+
+    bool side_paused(TradeSide side, int64_t now_s) const {
+        const int idx = side_idx(side);
+        return idx >= 0 && now_s < side_pause_until_[static_cast<size_t>(idx)];
+    }
+
+    bool same_level_reentry_blocked(TradeSide side, double entry, int64_t now_s) const {
+        const int idx = side_idx(side);
+        if (idx < 0) return false;
+        const size_t u = static_cast<size_t>(idx);
+        if (now_s - last_exit_ts_[u] > SAME_LEVEL_REENTRY_SEC) return false;
+        return std::fabs(entry - last_exit_price_[u]) < SAME_LEVEL_REENTRY_BAND;
+    }
+
+    bool entry_quality_ok(const Signal& s, double score, const GoldSnapshot& snap, int64_t now_s) const {
+        if (snap.spread > MAX_ENTRY_SPREAD) return false;
+        if (snap.vwap > 0.0 && std::fabs(s.entry - snap.vwap) < MIN_VWAP_DISLOCATION) return false;
+        if (s.engine[0] != '\0' && std::strcmp(s.engine, "ImpulseContinuation") == 0) {
+            if (s.confidence < IMPULSE_MIN_CONFIDENCE || score < IMPULSE_MIN_SCORE) return false;
+        } else {
+            if (score < GENERAL_MIN_SCORE) return false;
+        }
+        if (side_paused(s.side, now_s)) return false;
+        if (same_level_reentry_blocked(s.side, s.entry, now_s)) return false;
+        return true;
+    }
+
+    void note_close_for_quality(const omega::TradeRecord& tr) {
+        const int idx = side_idx(tr.side);
+        if (idx < 0) return;
+        const size_t u = static_cast<size_t>(idx);
+        const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
+        last_exit_price_[u] = tr.exitPrice;
+        last_exit_ts_[u] = now_s;
+
+        if (tr.exitReason != "SL_HIT") return;
+
+        // Only treat non-positive SL exits as hard stop-outs.
+        if (tr.pnl > 0.0) return;
+
+        sl_cooldown_until_ = std::max(sl_cooldown_until_, now_s + HARD_SL_GLOBAL_COOLDOWN_SEC);
+
+        auto& q = side_hard_sl_times_[u];
+        q.push_back(now_s);
+        while (!q.empty() && now_s - q.front() > SIDE_CHOP_WINDOW_SEC) q.pop_front();
+        if (q.size() >= SIDE_CHOP_TRIGGER_COUNT) {
+            side_pause_until_[u] = now_s + SIDE_CHOP_PAUSE_SEC;
+            q.clear();
+            printf("[GOLD-CHOP-PAUSE] side=%s pause=%llds window=%llds\n",
+                   side_name(idx),
+                   static_cast<long long>(SIDE_CHOP_PAUSE_SEC),
+                   static_cast<long long>(SIDE_CHOP_WINDOW_SEC));
+            fflush(stdout);
+        }
+    }
 
     void apply_asian_session_overrides(SessionType session) {
         if (session != SessionType::ASIAN) return;
