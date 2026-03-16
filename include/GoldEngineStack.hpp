@@ -254,11 +254,31 @@ class CompressionBreakoutEngine : public EngineBase {
     // Cooldown raised to 5000ms: tightening trigger to $0.20 caused gold to trade
     // every tick on normal noise. $0.35 trigger restored with 5s minimum between entries.
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(5)};
+
+    // NY/Tokyo handoff dead zone: 21:00–23:00 UTC
+    // This window has thin liquidity, wide erratic spreads, and a stale VWAP
+    // (daily VWAP resets at midnight so 22:00–00:30 values are meaningless).
+    // Compression is real but breakouts are noise — price oscillates $3–5 randomly.
+    // Tokyo gold directional flow does not establish until ~23:00 UTC.
+    // Result without this gate: clusters of SL hits in 5–15 minute windows.
+    static bool in_handoff_dead_zone() noexcept {
+        const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti{};
+#ifdef _WIN32
+        gmtime_s(&ti, &t);
+#else
+        gmtime_r(&t, &ti);
+#endif
+        const int h = ti.tm_hour;
+        return (h >= 21 && h < 23); // 21:00–23:00 UTC blocked
+    }
+
 public:
     CompressionBreakoutEngine(): EngineBase("CompressionBreakout",1.0){}
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD) return noSignal();
+        if(in_handoff_dead_zone()) return noSignal(); // NY/Tokyo handoff — no compression trades
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
         if(history_.size() < WINDOW){
