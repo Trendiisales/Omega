@@ -62,11 +62,17 @@ public:
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 300;
         MAX_SPREAD_PCT        = 0.04;
-        // SP at ~6600: 0.025% = $1.65 momentum over 20 ticks — reasonable but
-        // too tight in early London (07-09 UTC). Loosen to 0.012% = $0.79.
+        // SP at ~6745 (Mar 2026): 0.012% = $0.81 over 20 ticks.
+        // London avg hourly range $28.71, typical 4s move ~$1.93.
+        // $0.81 = 42% of typical 4s move — meaningful directional pressure.
         MOMENTUM_THRESH_PCT   = 0.012;
-        // SP at ~6600: 0.12% = $7.92 beyond comp edge — correct, keep as-is.
-        MIN_BREAKOUT_PCT      = 0.12;
+        // SP at ~6745 (Mar 2026): London avg hourly range = $28.71, min = $14.50.
+        // 0.12% = $8.09 from comp edge — that is 28% of the avg hourly range.
+        // Real breakouts in London clear $3–5 beyond the compression edge.
+        // 0.05% = $3.37 — confirms a real directional break without requiring
+        // a full hourly range move just to enter.
+        // Was 0.12% which was blocking nearly every valid signal.
+        MIN_BREAKOUT_PCT      = 0.05;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -168,10 +174,16 @@ public:
         MAX_HOLD_SEC          = 1800;
         MIN_GAP_SEC           = 360;
         MAX_SPREAD_PCT        = 0.120;
-        // Oil at ~$100: 0.015% = $0.015 momentum over 20 ticks — directional
-        // but not over-restrictive. 0.10% min_breakout = $0.10 beyond comp edge.
-        MOMENTUM_THRESH_PCT   = 0.015;
-        MIN_BREAKOUT_PCT      = 0.10;
+        // Oil at ~$95.74 (Mar 2026): London avg hourly range = $1.92, min = $1.16.
+        // Typical 4s move = $1.92/hr ÷ 15 = $0.128.
+        // 0.015% = $0.014 over 20 ticks — only 11% of typical 4s move — too loose,
+        // fires on random tick noise. 0.050% = $0.048 = 37% of typical 4s move.
+        // Tightened from 0.015% to filter genuine directional momentum.
+        MOMENTUM_THRESH_PCT   = 0.050;
+        // Oil at ~$95.74: 6% of avg hourly range $1.92 = $0.115.
+        // 0.12% = $0.115 from comp edge — confirms real breakout vs noise.
+        // Was 0.10% ($0.096) which was slightly below the 6% target.
+        MIN_BREAKOUT_PCT      = 0.12;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
