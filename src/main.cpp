@@ -1416,8 +1416,15 @@ static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
     eng.MAX_SPREAD_PCT        = 0.08;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    eng.MOMENTUM_THRESH_PCT   = 0.012;
-    eng.MIN_BREAKOUT_PCT      = 0.08;
+    // Silver at ~$80.33 (Mar 2026): London avg hourly range = $1.34, min = $0.755.
+    // Typical 4s move = $1.34/hr / 15 windows = $0.089.
+    // 0.012% = $0.0096 over 20 ticks — only 11% of typical 4s move, fires on noise.
+    // 0.040% = $0.032 = 36% of typical 4s move — genuine directional pressure only.
+    eng.MOMENTUM_THRESH_PCT   = 0.040;
+    // Silver at ~$80.33: 6% of avg hourly range $1.34 = $0.080.
+    // 0.10% = $0.080 from comp edge — confirms real break above noise.
+    // Was 0.08% ($0.064) = 5% of hourly range — slightly too loose.
+    eng.MIN_BREAKOUT_PCT      = 0.10;
 }
 
 static void apply_generic_brent_config(omega::BreakoutEngine& eng) noexcept {
