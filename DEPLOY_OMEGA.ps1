@@ -43,7 +43,14 @@ Write-Host ""
 # [4/4] Copy assets and run
 Write-Host "[4/4] Copying assets and starting..." -ForegroundColor Yellow
 $rel = "C:\Omega\build\Release"
-Copy-Item "C:\Omega\omega_config.ini"            "$rel\omega_config.ini"  -Force -ErrorAction SilentlyContinue
+$configSource = "C:\Omega\config\omega_config.ini"
+if (-not (Test-Path $configSource)) { $configSource = "C:\Omega\omega_config.ini" }
+if (-not (Test-Path $configSource)) {
+    Write-Host "      [ERROR] omega_config.ini not found in repo" -ForegroundColor Red
+    Read-Host "Press Enter to exit"
+    return
+}
+Copy-Item $configSource                          "$rel\omega_config.ini"  -Force
 Copy-Item "C:\Omega\src\gui\www\omega_index.html" "$rel\omega_index.html" -Force -ErrorAction SilentlyContinue
 Copy-Item "C:\Omega\src\gui\www\chimera_logo.png" "$rel\chimera_logo.png" -Force -ErrorAction SilentlyContinue
 Write-Host "      [OK] Assets copied" -ForegroundColor Green
