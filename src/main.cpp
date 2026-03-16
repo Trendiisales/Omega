@@ -1384,12 +1384,13 @@ static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = 0.060;
     eng.TP_PCT                = 0.800;
     eng.SL_PCT                = 0.400;
-    eng.MIN_GAP_SEC           = 60;
+    // Silver is churn-prone in early London (07-09 UTC) due to thin liquidity.
+    // 180s min gap prevents the engine re-entering after every SL hit.
+    // Was 60s — too short, caused back-to-back losses in choppy range.
+    eng.MIN_GAP_SEC           = 180;
     eng.MAX_SPREAD_PCT        = 0.08;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    // Silver at ~$79: 0.012% = $0.0095 momentum — genuine directional pressure
-    // 0.08% min_breakout = $0.063 beyond comp edge — clear of noise
     eng.MOMENTUM_THRESH_PCT   = 0.012;
     eng.MIN_BREAKOUT_PCT      = 0.08;
 }

@@ -204,27 +204,35 @@ private:
 //     enter silver in gold's direction
 //   - Silver TP/SL scaled from gold's move magnitude
 //
-// PARAMETERS (tuned for co-location, not retail):
-//   GOLD_SIGNAL_MOVE   = $0.50  — gold must move $0.50 in 10 ticks to arm signal
-//   SILVER_MIN_REACTION= $0.008 — silver must have moved < $0.008 (hasn't reacted)
-//   SILVER_TP          = $0.25  — ~0.75% of silver at $33 (silver moves ~0.5x gold %)
-//   SILVER_SL          = $0.10  — tight stop, signal was wrong if silver doesn't follow
-//   SIGNAL_EXPIRY_MS   = 800    — arm expires after 800ms (silver has caught up by then)
-//   MAX_SPREAD_GOLD    = $1.50  — don't trade if gold spread is blown out
-//   MAX_SPREAD_SILVER  = $0.12  — don't trade if silver spread is blown out
-//   COOLDOWN_SEC       = 30     — minimum gap between lead-lag entries
+// PARAMETERS — calibrated from live market observation:
+//   Silver bid-ask spread: ~$0.10. SL must be >= 2.5x spread = $0.25 min.
+//   Gold noise at $4990: $0.50 in 10 ticks is normal noise. Need $2.00+ for signal.
+//   Silver min reaction: $0.008 < spread noise. Use $0.05 = half spread.
+//   Cooldown: 30s caused re-entry after SL, creating churn. Use 300s (5 min).
+//   Gold window: 10 ticks at 5-15t/s = <2s. Use 20 ticks for real direction.
+//
+//   GOLD_SIGNAL_MOVE   = $2.00  — gold must move $2.00 in 20 ticks (genuine move)
+//   SILVER_MIN_REACTION= $0.05  — silver must not have moved $0.05 yet (half spread)
+//   SILVER_TP          = $0.50  — $0.50 target: 2:1 R:R vs $0.25 SL
+//   SILVER_SL          = $0.25  — 2.5x spread: above noise, below genuine reversal
+//   SIGNAL_EXPIRY_MS   = 500    — tighter expiry: if 500ms elapsed edge is gone
+//   MAX_SPREAD_GOLD    = $1.50  — unchanged
+//   MAX_SPREAD_SILVER  = $0.15  — slightly wider to allow for spreads
+//   COOLDOWN_SEC       = 300    — 5 min between entries: genuine signals are rare
+//   MAX_HOLD_SEC       = 60     — if silver hasn't followed in 60s it won't
+//   GOLD_WINDOW        = 20     — ticks to measure gold move (was 10 — too noisy)
 // =============================================================================
 class GoldSilverLeadLag {
-    static constexpr double GOLD_SIGNAL_MOVE    = 0.50;  // $0.50 gold move arms signal
-    static constexpr double SILVER_MIN_REACTION = 0.008; // silver must not have moved yet
-    static constexpr double SILVER_TP           = 0.25;  // $0.25 silver target (~0.75%)
-    static constexpr double SILVER_SL           = 0.10;  // $0.10 silver stop (tight)
-    static constexpr int64_t SIGNAL_EXPIRY_MS   = 800;   // signal valid 800ms only
+    static constexpr double GOLD_SIGNAL_MOVE    = 2.00;  // $2.00 gold move in 20 ticks
+    static constexpr double SILVER_MIN_REACTION = 0.05;  // silver must not have moved $0.05
+    static constexpr double SILVER_TP           = 0.50;  // $0.50 target
+    static constexpr double SILVER_SL           = 0.25;  // $0.25 stop — 2.5x spread
+    static constexpr int64_t SIGNAL_EXPIRY_MS   = 500;   // 500ms expiry
     static constexpr double MAX_SPREAD_GOLD     = 1.50;
-    static constexpr double MAX_SPREAD_SILVER   = 0.12;
-    static constexpr int    COOLDOWN_SEC        = 30;
-    static constexpr int    MAX_HOLD_SEC        = 90;    // silver catches up fast
-    static constexpr int    GOLD_WINDOW         = 10;    // ticks to measure gold move
+    static constexpr double MAX_SPREAD_SILVER   = 0.15;
+    static constexpr int    COOLDOWN_SEC        = 300;   // 5 min cooldown
+    static constexpr int    MAX_HOLD_SEC        = 60;    // 60s max hold
+    static constexpr int    GOLD_WINDOW         = 20;    // 20 ticks for direction
 
     // Gold price window — last 10 mids
     std::deque<double> gold_window_;
