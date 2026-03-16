@@ -54,8 +54,10 @@
         .sym-row { display:flex; justify-content:space-between; align-items:center; padding:8px 10px;
             border-radius:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); margin-bottom:4px; }
         .sym-row.primary-sym { border-color:rgba(61,184,255,0.18); background:rgba(61,184,255,0.04); }
+        .sym-row.primary-sym.gold-focus { border-color:rgba(240,192,64,0.40); background:linear-gradient(90deg,rgba(240,192,64,0.16),rgba(61,184,255,0.03)); box-shadow:inset 0 0 0 1px rgba(255,217,102,0.08); }
         .sym-label { font-weight:700; font-size:11px; color:var(--t2); letter-spacing:1px; min-width:60px; }
         .sym-label.primary { color:var(--blue); }
+        .sym-label.primary.gold-focus { color:var(--gold2); }
         .px-pair { display:flex; gap:10px; align-items:center; }
         .bid { font-family:'Space Mono',monospace; font-size:13px; font-weight:700; color:var(--green); }
         .ask { font-family:'Space Mono',monospace; font-size:13px; font-weight:700; color:var(--red); }
@@ -66,9 +68,11 @@
         .eng-state-card.phase-0 { background:rgba(10,16,28,0.6); border-color:var(--t3); }
         .eng-state-card.phase-1 { background:rgba(40,28,4,0.8); border-color:rgba(200,120,0,0.4); animation:eng-pulse-amber 1.5s ease-in-out infinite; }
         .eng-state-card.phase-2 { background:rgba(0,40,20,0.95); border-color:var(--green); animation:eng-pulse-green 0.8s ease-in-out infinite; }
+        .eng-state-card.gold-engine { box-shadow:inset 0 0 0 1px rgba(255,217,102,0.08); }
         @keyframes eng-pulse-amber { 0%,100%{box-shadow:0 0 0 0 rgba(255,149,0,0);} 50%{box-shadow:0 0 12px 3px rgba(255,149,0,0.2);} }
         @keyframes eng-pulse-green { 0%,100%{box-shadow:0 0 0 0 rgba(0,232,122,0);} 50%{box-shadow:0 0 16px 4px rgba(0,232,122,0.3);} }
         .eng-sym { font-size:10px; font-weight:700; color:var(--blue); letter-spacing:0.5px; }
+        .eng-state-card.gold-engine .eng-sym { color:var(--gold2); }
         .eng-phase-badge { font-size:8px; text-transform:uppercase; letter-spacing:1px; margin-top:4px; padding:2px 6px;
             border-radius:4px; display:inline-block; }
         .phase-badge-flat { background:rgba(255,255,255,0.06); color:var(--t2); }
@@ -136,11 +140,12 @@
             <div class="logo-img"></div>
             <div>
                 <div class="logo-name">Omega</div>
-                <div class="logo-sub">Commodities &amp; Indices — Breakout System</div>
+                <div class="logo-sub">Gold-Led Commodities &amp; Indices — Breakout System</div>
             </div>
         </div>
         <div class="hbar">
             <span id="modeBadge" class="badge mode-shadow">SHADOW</span>
+            <span id="tradeFocusBadge" class="badge" style="color:var(--gold2);border-color:rgba(240,192,64,0.35);background:rgba(240,192,64,0.12);">FOCUS: GOLD.F</span>
             <span id="buildBadge" class="badge" style="color:var(--t2);font-size:9px;letter-spacing:1px" title="Build version — click to verify">v<span id="buildVersion">...</span></span>
             <span class="badge"><span class="conn-dot bad" id="connDot"></span><span id="connText">Connecting...</span></span>
             <span class="badge" id="fixQuoteHdr" style="color:var(--red)">QUOTE: --</span>
@@ -154,7 +159,12 @@
             <div class="card">
                 <div class="card-hd"><span class="dot"></span>Market Data</div>
 
-                <div class="sym-group-label">▶ Primary — Trading</div>
+                <div class="sym-group-label">▶ Primary — Gold-Led Trading</div>
+                <div class="sym-row primary-sym gold-focus">
+                    <span class="sym-label primary gold-focus">GOLD.F</span>
+                    <div class="px-pair"><span class="bid" id="goldBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="goldAsk">----</span></div>
+                    <span class="sym-spread" id="goldSpread">--</span>
+                </div>
                 <div class="sym-row primary-sym">
                     <span class="sym-label primary">US500.F</span>
                     <div class="px-pair"><span class="bid" id="spBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="spAsk">----</span></div>
@@ -220,10 +230,6 @@
                     <div class="px-pair"><span class="bid" id="nasBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="nasAsk" style="font-size:11px">--</span></div>
                 </div>
                 <div class="sym-row">
-                    <span class="sym-label">GOLD.F</span>
-                    <div class="px-pair"><span class="bid" id="goldBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="goldAsk" style="font-size:11px">--</span></div>
-                </div>
-                <div class="sym-row">
                     <span class="sym-label">NGAS.F</span>
                     <div class="px-pair"><span class="bid" id="ngasBid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="ngasAsk" style="font-size:11px">--</span></div>
                 </div>
@@ -250,8 +256,14 @@
         <div class="col-centre">
             <!-- Engine Phase Cards -->
             <div>
-                <div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">⚡ Breakout Engine State</div>
+                <div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">⚡ Lead Engine State</div>
                 <div class="eng-state-grid">
+                    <div class="eng-state-card phase-0 gold-engine" id="engXAU">
+                        <div class="eng-sym">GOLD.F</div>
+                        <div class="eng-phase-badge phase-badge-flat" id="engXAUPhase">FLAT</div>
+                        <div class="eng-vol" id="engXAUVol">rv -- bv --</div>
+                        <div class="eng-signals" id="engXAUSig">0 signals</div>
+                    </div>
                     <div class="eng-state-card phase-0" id="engSP">
                         <div class="eng-sym">US500.F</div>
                         <div class="eng-phase-badge phase-badge-flat" id="engSPPhase">FLAT</div>
@@ -263,12 +275,6 @@
                         <div class="eng-phase-badge phase-badge-flat" id="engNQPhase">FLAT</div>
                         <div class="eng-vol" id="engNQVol">rv -- bv --</div>
                         <div class="eng-signals" id="engNQSig">0 signals</div>
-                    </div>
-                    <div class="eng-state-card phase-0" id="engCL">
-                        <div class="eng-sym">USOIL.F</div>
-                        <div class="eng-phase-badge phase-badge-flat" id="engCLPhase">FLAT</div>
-                        <div class="eng-vol" id="engCLVol">rv -- bv --</div>
-                        <div class="eng-signals" id="engCLSig">0 signals</div>
                     </div>
                 </div>
             </div>
@@ -472,9 +478,9 @@ function renderCompRanges(d) {
     const el = document.getElementById('compRanges');
     if (!el) return;
     const syms = [
+        { sym:'GOLD.F',  phase:d.xau_phase, hi:d.xau_comp_high, lo:d.xau_comp_low, rv:d.xau_recent_vol_pct, bv:d.xau_baseline_vol_pct },
         { sym:'US500.F', phase:d.sp_phase,  hi:d.sp_comp_high,  lo:d.sp_comp_low,  rv:d.sp_recent_vol_pct,  bv:d.sp_baseline_vol_pct  },
         { sym:'USTEC.F', phase:d.nq_phase,  hi:d.nq_comp_high,  lo:d.nq_comp_low,  rv:d.nq_recent_vol_pct,  bv:d.nq_baseline_vol_pct  },
-        { sym:'USOIL.F', phase:d.cl_phase,  hi:d.cl_comp_high,  lo:d.cl_comp_low,  rv:d.cl_recent_vol_pct,  bv:d.cl_baseline_vol_pct  },
     ];
     let html = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">';
     syms.forEach(s => {
@@ -497,11 +503,20 @@ function renderCompRanges(d) {
 function renderTrades(trades) {
     const el = document.getElementById('tradesBody');
     const cE = document.getElementById('tradeCount');
+    const fE = document.getElementById('tradeFocusBadge');
     if (!trades || trades.length === 0) {
         el.innerHTML = '<tr><td colspan="10" class="no-data">No trades yet</td></tr>';
+        if (fE) fE.textContent = 'FOCUS: GOLD.F';
         if (cE) cE.textContent = ''; return;
     }
     const closed = trades.filter(t => t.exitReason && t.exitReason !== '');
+    const symbolCounts = {};
+    closed.forEach(t => { const sym = t.symbol || '--'; symbolCounts[sym] = (symbolCounts[sym] || 0) + 1; });
+    const focus = Object.entries(symbolCounts).sort((a, b) => b[1] - a[1])[0];
+    if (fE) {
+        if (focus && closed.length > 0) fE.textContent = 'FOCUS: ' + focus[0] + ' ' + focus[1] + '/' + closed.length;
+        else fE.textContent = 'FOCUS: GOLD.F';
+    }
     if (_bellEnabled && closed.length > _lastTradeCount && closed.length > 0) {
         const pnl = safe(closed[0].pnl);
         try {
@@ -574,6 +589,7 @@ function updateDashboard(d) {
     lastData = d; setConn(true);
 
     // Primary prices
+    setPrice('goldBid', d.gold_bid, 2); setPrice('goldAsk', d.gold_ask, 2); setSpread('goldSpread', d.gold_bid, d.gold_ask);
     setPrice('spBid',  d.sp_bid,  2); setPrice('spAsk',  d.sp_ask,  2); setSpread('spSpread', d.sp_bid, d.sp_ask);
     setPrice('nqBid',  d.nq_bid,  2); setPrice('nqAsk',  d.nq_ask,  2); setSpread('nqSpread', d.nq_bid, d.nq_ask);
     setPrice('clBid',  d.cl_bid,  2); setPrice('clAsk',  d.cl_ask,  2); setSpread('clSpread', d.cl_bid, d.cl_ask);
@@ -589,15 +605,14 @@ function updateDashboard(d) {
     setPrice('vixBid',    d.vix_bid,    2); setPrice('vixAsk',    d.vix_ask,    2);
     setPrice('dxBid',     d.dx_bid,     2); setPrice('dxAsk',     d.dx_ask,     2);
     setPrice('nasBid',    d.nas_bid,    2); setPrice('nasAsk',    d.nas_ask,    2);
-    setPrice('goldBid',   d.gold_bid,   2); setPrice('goldAsk',   d.gold_ask,   2);
     setPrice('ngasBid',   d.ngas_bid,   2); setPrice('ngasAsk',   d.ngas_ask,   2);
     setPrice('esBid',     d.es_bid,     2); setPrice('esAsk',     d.es_ask,     2);
     setPrice('dxCashBid', d.dxcash_bid, 2); setPrice('dxCashAsk', d.dxcash_ask, 2);
 
     // Engine state
+    updateEngineCard('XAU', d.xau_phase, d.xau_comp_high, d.xau_comp_low, d.xau_recent_vol_pct, d.xau_baseline_vol_pct, d.xau_signals);
     updateEngineCard('SP', d.sp_phase, d.sp_comp_high, d.sp_comp_low, d.sp_recent_vol_pct, d.sp_baseline_vol_pct, d.sp_signals);
     updateEngineCard('NQ', d.nq_phase, d.nq_comp_high, d.nq_comp_low, d.nq_recent_vol_pct, d.nq_baseline_vol_pct, d.nq_signals);
-    updateEngineCard('CL', d.cl_phase, d.cl_comp_high, d.cl_comp_low, d.cl_recent_vol_pct, d.cl_baseline_vol_pct, d.cl_signals);
 
     // PnL
     const pnl = safe(d.daily_pnl);

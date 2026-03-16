@@ -21,8 +21,10 @@
 #include <iomanip>
 #include <ctime>
 #include <fstream>
+#include <filesystem>
 #include <direct.h>   // _mkdir on Windows
 #include <chrono>
+#include <memory>
 #include <mutex>
 #include <algorithm>
 #include <unordered_map>
@@ -235,6 +237,8 @@ static int                g_trade_seq  = 1;
 // Shadow CSV
 static std::ofstream g_shadow_csv;
 static std::ofstream g_shadow_signal_csv;
+static std::ofstream g_trade_close_csv;
+static std::mutex    g_trade_close_csv_mtx;
 
 struct ShadowSignalPos {
     bool active = false;
@@ -335,7 +339,7 @@ static void print_perf_stats() {
 // ─────────────────────────────────────────────────────────────────────────────
 class RollingTeeBuffer : public std::streambuf {
 public:
-    static constexpr int LOG_KEEP_DAYS = 5;
+    static constexpr int LOG_KEEP_DAYS = 20;
 
     explicit RollingTeeBuffer(std::streambuf* orig, const std::string& log_dir)
         : orig_(orig), log_dir_(log_dir)
@@ -431,8 +435,95 @@ private:
     }
 };
 
+static std::string utc_date_for_ts(int64_t ts);
+
+class RollingCsvLogger {
+public:
+    static constexpr int LOG_KEEP_DAYS = 20;
+
+    RollingCsvLogger(std::string dir, std::string stem, std::string header)
+        : dir_(std::move(dir)), stem_(std::move(stem)), header_(std::move(header)) {}
+
+    void append_row(int64_t ts_utc, const std::string& row) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        open_for_ts(ts_utc);
+        if (!file_.is_open()) return;
+        file_ << row << '\n';
+        file_.flush();
+    }
+
+    std::string current_path() const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        return current_path_;
+    }
+
+    void close() {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (file_.is_open()) {
+            file_.flush();
+            file_.close();
+        }
+        current_path_.clear();
+        current_date_.clear();
+    }
+
+private:
+    mutable std::mutex mtx_;
+    std::string dir_;
+    std::string stem_;
+    std::string header_;
+    std::ofstream file_;
+    std::string current_path_;
+    std::string current_date_;
+
+    void open_for_ts(int64_t ts_utc) {
+        const std::string date = utc_date_for_ts(ts_utc);
+        if (date == current_date_ && file_.is_open()) return;
+
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        fs::create_directories(fs::path(dir_), ec);
+
+        if (file_.is_open()) {
+            file_.flush();
+            file_.close();
+        }
+
+        current_date_ = date;
+        current_path_ = dir_ + "/" + stem_ + "_" + date + ".csv";
+        file_.open(current_path_, std::ios::app);
+        if (!file_.is_open()) return;
+
+        file_.seekp(0, std::ios::end);
+        if (file_.tellp() == std::streampos(0))
+            file_ << header_ << '\n';
+        purge_old_logs();
+    }
+
+    void purge_old_logs() {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        std::vector<fs::path> files;
+        for (const auto& entry : fs::directory_iterator(fs::path(dir_), ec)) {
+            if (ec) break;
+            if (!entry.is_regular_file()) continue;
+            const auto name = entry.path().filename().string();
+            if (name.rfind(stem_ + "_", 0) != 0) continue;
+            if (entry.path().extension() != ".csv") continue;
+            files.push_back(entry.path());
+        }
+        std::sort(files.begin(), files.end());
+        while (static_cast<int>(files.size()) > LOG_KEEP_DAYS) {
+            fs::remove(files.front(), ec);
+            files.erase(files.begin());
+        }
+    }
+};
+
 static RollingTeeBuffer* g_tee_buf   = nullptr;
 static std::streambuf*   g_orig_cout = nullptr;
+static std::unique_ptr<RollingCsvLogger> g_daily_trade_close_log;
+static std::unique_ptr<RollingCsvLogger> g_daily_gold_trade_close_log;
 
 // FIX recv buffer
 static std::string g_recv_buf;
@@ -456,6 +547,63 @@ static std::string timestamp() {
     o << std::put_time(&ti, "%Y%m%d-%H:%M:%S")
       << '.' << std::setw(3) << std::setfill('0') << ms.count();
     return o.str();
+}
+
+static void utc_tm_from_ts(int64_t ts, struct tm& ti) noexcept {
+    const auto t = static_cast<time_t>(ts);
+    gmtime_s(&ti, &t);
+}
+
+static std::string utc_iso8601(int64_t ts) {
+    struct tm ti{};
+    utc_tm_from_ts(ts, ti);
+    std::ostringstream o;
+    o << std::put_time(&ti, "%Y-%m-%dT%H:%M:%SZ");
+    return o.str();
+}
+
+static std::string utc_date_for_ts(int64_t ts) {
+    struct tm ti{};
+    utc_tm_from_ts(ts, ti);
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
+                  ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday);
+    return buf;
+}
+
+static const char* utc_weekday_name(int64_t ts) noexcept {
+    static const char* DAYS[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    struct tm ti{};
+    utc_tm_from_ts(ts, ti);
+    const int idx = (ti.tm_wday >= 0 && ti.tm_wday < 7) ? ti.tm_wday : 0;
+    return DAYS[idx];
+}
+
+static std::string csv_quote(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 2);
+    out.push_back('"');
+    for (const char c : s) {
+        if (c == '"') out += "\"\"";
+        else out.push_back(c);
+    }
+    out.push_back('"');
+    return out;
+}
+
+static std::string log_root_dir() {
+    if (!g_cfg.log_file.empty()) {
+        const size_t slash = g_cfg.log_file.find_last_of("/\\");
+        if (slash != std::string::npos) return g_cfg.log_file.substr(0, slash);
+    }
+    return "logs";
+}
+
+static void ensure_parent_dir(const std::string& path) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path p(path);
+    if (!p.parent_path().empty()) fs::create_directories(p.parent_path(), ec);
 }
 
 // Parse FIX SendingTime (tag 52) "YYYYMMDD-HH:MM:SS.mmm" -> microseconds since epoch
@@ -663,6 +811,58 @@ static void write_shadow_csv(const omega::TradeRecord& tr) {
                  << ',' << tr.latencyMs
                  << ',' << tr.regime << '\n';
     g_shadow_csv.flush();
+}
+
+static std::string trade_ref_from_record(const omega::TradeRecord& tr) {
+    std::ostringstream o;
+    o << tr.symbol << '|' << tr.entryTs << '|' << tr.id << '|' << tr.engine;
+    return o.str();
+}
+
+static std::string build_trade_close_csv_row(const omega::TradeRecord& tr) {
+    const int64_t hold_sec = std::max<int64_t>(0, tr.exitTs - tr.entryTs);
+    std::ostringstream o;
+    o << tr.id
+      << ',' << csv_quote(trade_ref_from_record(tr))
+      << ',' << tr.entryTs
+      << ',' << csv_quote(utc_iso8601(tr.entryTs))
+      << ',' << csv_quote(utc_weekday_name(tr.entryTs))
+      << ',' << tr.exitTs
+      << ',' << csv_quote(utc_iso8601(tr.exitTs))
+      << ',' << csv_quote(utc_weekday_name(tr.exitTs))
+      << ',' << csv_quote(tr.symbol)
+      << ',' << csv_quote(tr.engine)
+      << ',' << csv_quote(tr.side)
+      << std::fixed << std::setprecision(4)
+      << ',' << tr.entryPrice
+      << ',' << tr.exitPrice
+      << ',' << tr.tp
+      << ',' << tr.sl
+      << ',' << tr.size
+      << ',' << tr.pnl
+      << ',' << tr.mfe
+      << ',' << tr.mae
+      << ',' << hold_sec
+      << ',' << tr.spreadAtEntry
+      << ',' << tr.latencyMs
+      << ',' << csv_quote(tr.regime)
+      << ',' << csv_quote(tr.exitReason);
+    return o.str();
+}
+
+static void write_trade_close_logs(const omega::TradeRecord& tr) {
+    const std::string row = build_trade_close_csv_row(tr);
+    {
+        std::lock_guard<std::mutex> lk(g_trade_close_csv_mtx);
+        if (g_trade_close_csv.is_open()) {
+            g_trade_close_csv << row << '\n';
+            g_trade_close_csv.flush();
+        }
+    }
+    const int64_t bucket_ts = tr.exitTs > 0 ? tr.exitTs : nowSec();
+    if (g_daily_trade_close_log) g_daily_trade_close_log->append_row(bucket_ts, row);
+    if (tr.symbol == "GOLD.F" && g_daily_gold_trade_close_log)
+        g_daily_gold_trade_close_log->append_row(bucket_ts, row);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1038,6 +1238,74 @@ static void maybe_reset_daily_ledger() {
     std::cout << "[OMEGA-RISK] UTC day rollover — per-symbol risk state reset\n";
 }
 
+static void handle_closed_trade(const omega::TradeRecord& tr) {
+    g_omegaLedger.record(tr);
+    write_shadow_csv(tr);
+    write_trade_close_logs(tr);
+
+    const std::string perf_key = perf_key_from_trade(tr);
+    {
+        const std::string risk_key = g_cfg.independent_symbols ? tr.symbol : "GLOBAL";
+        std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+        auto& st = g_sym_risk[risk_key];
+        st.daily_pnl += tr.pnl;
+        if (tr.pnl <= 0.0) {
+            const int loss_limit = (g_cfg.mode == "SHADOW") ? 2 : g_cfg.max_consec_losses;
+            const int pause_sec  = (g_cfg.mode == "SHADOW") ? 300 : g_cfg.loss_pause_sec;
+            if (++st.consec_losses >= loss_limit) {
+                st.pause_until = nowSec() + pause_sec;
+                std::cout << "[OMEGA-RISK] " << risk_key << " "
+                          << loss_limit << " consecutive losses -- pause "
+                          << pause_sec << "s\n";
+            }
+        } else {
+            st.consec_losses = 0;
+        }
+        if (g_cfg.mode == "SHADOW") {
+            auto& qs = g_shadow_quality[tr.symbol];
+            const int64_t held = std::max<int64_t>(0, tr.exitTs - tr.entryTs);
+            const bool fast_bad_loss =
+                (tr.pnl <= 0.0) &&
+                (held <= 120) &&
+                (tr.exitReason == "SL_HIT" || tr.exitReason == "SCRATCH" || tr.exitReason == "TIMEOUT");
+            if (fast_bad_loss) {
+                if (++qs.fast_loss_streak >= 2) {
+                    qs.pause_until = nowSec() + 180;
+                    std::cout << "[OMEGA-QUALITY] " << tr.symbol
+                              << " fast-loss streak=" << qs.fast_loss_streak
+                              << " pause=180s\n";
+                }
+            } else if (tr.pnl > 0.0) {
+                qs.fast_loss_streak = 0;
+            } else if (qs.fast_loss_streak > 0) {
+                --qs.fast_loss_streak;
+            }
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_perf_mtx);
+        auto& ps = g_perf[perf_key];
+        ps.live_trades++;
+        ps.live_pnl += tr.pnl;
+        if (tr.pnl > 0) ps.live_wins++; else ps.live_losses++;
+        if (!ps.disabled &&
+            g_cfg.mode != "SHADOW" &&
+            ps.live_trades >= g_cfg.auto_disable_after_trades &&
+            ps.live_pnl < 0.0) {
+            ps.disabled = true;
+            if (perf_key == "GOLD_STACK") g_disable_gold_stack = true;
+            std::cout << "[OMEGA-AUTO-DISABLE] " << perf_key
+                      << " live_trades=" << ps.live_trades
+                      << " pnl=" << ps.live_pnl << "\n";
+        }
+    }
+    g_telemetry.UpdateStats(
+        g_omegaLedger.dailyPnl(), g_omegaLedger.maxDD(),
+        g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
+        g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
+    g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Signal handler
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1173,69 +1441,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Each branch calls the same logical sequence on the correct typed engine.
     // on_close lambda is defined once and reused across all branches.
     auto on_close = [&](const omega::TradeRecord& tr) {
-        g_omegaLedger.record(tr);
-        write_shadow_csv(tr);
-        const std::string perf_key = perf_key_from_trade(tr);
-        {
-            const std::string risk_key = g_cfg.independent_symbols ? tr.symbol : "GLOBAL";
-            std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
-            auto& st = g_sym_risk[risk_key];
-            st.daily_pnl += tr.pnl;
-            if (tr.pnl <= 0.0) {
-                const int loss_limit = (g_cfg.mode == "SHADOW") ? 2 : g_cfg.max_consec_losses;
-                const int pause_sec  = (g_cfg.mode == "SHADOW") ? 300 : g_cfg.loss_pause_sec;
-                if (++st.consec_losses >= loss_limit) {
-                    st.pause_until = nowSec() + pause_sec;
-                    std::cout << "[OMEGA-RISK] " << risk_key << " "
-                              << loss_limit << " consecutive losses -- pause "
-                              << pause_sec << "s\n";
-                }
-            } else {
-                st.consec_losses = 0;
-            }
-            if (g_cfg.mode == "SHADOW") {
-                auto& qs = g_shadow_quality[tr.symbol];
-                const int64_t held = std::max<int64_t>(0, tr.exitTs - tr.entryTs);
-                const bool fast_bad_loss =
-                    (tr.pnl <= 0.0) &&
-                    (held <= 120) &&
-                    (tr.exitReason == "SL_HIT" || tr.exitReason == "SCRATCH" || tr.exitReason == "TIMEOUT");
-                if (fast_bad_loss) {
-                    if (++qs.fast_loss_streak >= 2) {
-                        qs.pause_until = nowSec() + 180;
-                        std::cout << "[OMEGA-QUALITY] " << tr.symbol
-                                  << " fast-loss streak=" << qs.fast_loss_streak
-                                  << " pause=180s\n";
-                    }
-                } else if (tr.pnl > 0.0) {
-                    qs.fast_loss_streak = 0;
-                } else if (qs.fast_loss_streak > 0) {
-                    --qs.fast_loss_streak;
-                }
-            }
-        }
-        {
-            std::lock_guard<std::mutex> lk(g_perf_mtx);
-            auto& ps = g_perf[perf_key];
-            ps.live_trades++;
-            ps.live_pnl += tr.pnl;
-            if (tr.pnl > 0) ps.live_wins++; else ps.live_losses++;
-            if (!ps.disabled &&
-                g_cfg.mode != "SHADOW" &&
-                ps.live_trades >= g_cfg.auto_disable_after_trades &&
-                ps.live_pnl < 0.0) {
-                ps.disabled = true;
-                if (perf_key == "GOLD_STACK") g_disable_gold_stack = true;
-                std::cout << "[OMEGA-AUTO-DISABLE] " << perf_key
-                          << " live_trades=" << ps.live_trades
-                          << " pnl=" << ps.live_pnl << "\n";
-            }
-        }
-        g_telemetry.UpdateStats(
-            g_omegaLedger.dailyPnl(), g_omegaLedger.maxDD(),
-            g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
-            g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
-        g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
+        handle_closed_trade(tr);
     };
 
     // Helper lambda -- always feeds ticks to engine (warmup + position management).
@@ -1705,7 +1911,7 @@ static void quote_loop() {
                 eng.forceClose(bid, ask, "DISCONNECT", g_rtt_last,
                     g_macroDetector.regime().c_str(),
                     [](const omega::TradeRecord& tr) {
-                        g_omegaLedger.record(tr); write_shadow_csv(tr);
+                        handle_closed_trade(tr);
                     });
         };
         fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F");
@@ -1721,7 +1927,7 @@ static void quote_loop() {
             if (g_bid > 0.0 && g_ask > 0.0) {
                 omega::gold::GoldEngineStack::CloseCallback gold_fc_cb =
                     [](const omega::TradeRecord& tr) {
-                        g_omegaLedger.record(tr); write_shadow_csv(tr);
+                        handle_closed_trade(tr);
                     };
                 g_gold_stack.force_close(g_bid, g_ask, g_rtt_last, gold_fc_cb);
             }
@@ -1858,20 +2064,44 @@ int main(int argc, char* argv[])
     g_telemetry.UpdateBuildVersion(OMEGA_VERSION, OMEGA_BUILT);
 
     // Open log file and tee stdout into it
-    // Rolling log: logs/omega_YYYY-MM-DD.log, 5-day retention
+    // Rolling log: logs/omega_YYYY-MM-DD.log, UTC daily rotation, 20-file retention
     {
-        std::string log_dir = "logs";
-        if (!g_cfg.log_file.empty()) {
-            const size_t slash = g_cfg.log_file.find_last_of("/\\\\");
-            if (slash != std::string::npos)
-                log_dir = g_cfg.log_file.substr(0, slash);
-        }
+        const std::string log_dir = log_root_dir();
         g_orig_cout = std::cout.rdbuf();
         g_tee_buf   = new RollingTeeBuffer(g_orig_cout, log_dir);
         std::cout.rdbuf(g_tee_buf);
         std::cerr.rdbuf(g_tee_buf);  // tee stderr too — nothing gets lost
         std::cout << "[OMEGA] Rolling log: " << g_tee_buf->current_path()
-                  << " (5-day retention)\n";
+                  << " (UTC daily rotation, 20-file retention)\n";
+    }
+
+    {
+        const std::string trade_dir = log_root_dir() + "/trades";
+        const std::string gold_dir  = log_root_dir() + "/gold";
+        const std::string header =
+            "trade_id,trade_ref,entry_ts_unix,entry_ts_utc,entry_utc_weekday,"
+            "exit_ts_unix,exit_ts_utc,exit_utc_weekday,symbol,engine,side,"
+            "entry_px,exit_px,tp,sl,size,pnl,mfe,mae,hold_sec,spread_at_entry,"
+            "latency_ms,regime,exit_reason";
+
+        const std::string trade_csv_path = trade_dir + "/omega_trade_closes.csv";
+        ensure_parent_dir(trade_csv_path);
+        g_trade_close_csv.open(trade_csv_path, std::ios::app);
+        if (g_trade_close_csv.is_open()) {
+            g_trade_close_csv.seekp(0, std::ios::end);
+            if (g_trade_close_csv.tellp() == std::streampos(0))
+                g_trade_close_csv << header << '\n';
+            std::cout << "[OMEGA] Full Trade CSV: " << trade_csv_path << "\n";
+        }
+
+        g_daily_trade_close_log = std::make_unique<RollingCsvLogger>(
+            trade_dir, "omega_trade_closes", header);
+        g_daily_gold_trade_close_log = std::make_unique<RollingCsvLogger>(
+            gold_dir, "omega_gold_trade_closes", header);
+        std::cout << "[OMEGA] Daily Trade Logs: " << trade_dir
+                  << "/omega_trade_closes_YYYY-MM-DD.csv (UTC, 20-file retention)\n";
+        std::cout << "[OMEGA] Daily Gold Logs: " << gold_dir
+                  << "/omega_gold_trade_closes_YYYY-MM-DD.csv (UTC, 20-file retention)\n";
     }
 
     g_shadow_csv.open(g_cfg.shadow_csv, std::ios::app);
@@ -1907,6 +2137,9 @@ int main(int argc, char* argv[])
 
     std::cout << "[OMEGA] Shutdown\n";
     gui_server.stop();
+    if (g_daily_trade_close_log) g_daily_trade_close_log->close();
+    if (g_daily_gold_trade_close_log) g_daily_gold_trade_close_log->close();
+    g_trade_close_csv.close();
     g_shadow_csv.close();
     g_shadow_signal_csv.close();
     if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); }

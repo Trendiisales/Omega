@@ -50,14 +50,39 @@ public:
         return m_trades;
     }
 
-    double dailyPnl()   const { return m_daily_pnl; }
-    double maxDD()      const { return m_max_dd; }
-    int    wins()       const { return m_wins; }
-    int    losses()     const { return m_losses; }
-    int    total()      const { return m_wins + m_losses; }
-    double winRate()    const { int t=total(); return t>0?(100.0*m_wins/t):0.0; }
-    double avgWin()     const { return m_wins>0?(m_sum_win/m_wins):0.0; }
-    double avgLoss()    const { return m_losses>0?(m_sum_loss/m_losses):0.0; }
+    double dailyPnl() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        return m_daily_pnl;
+    }
+    double maxDD() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        return m_max_dd;
+    }
+    int wins() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        return m_wins;
+    }
+    int losses() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        return m_losses;
+    }
+    int total() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        return m_wins + m_losses;
+    }
+    double winRate() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        const int t = m_wins + m_losses;
+        return t > 0 ? (100.0 * m_wins / t) : 0.0;
+    }
+    double avgWin() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        return m_wins > 0 ? (m_sum_win / m_wins) : 0.0;
+    }
+    double avgLoss() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        return m_losses > 0 ? (m_sum_loss / m_losses) : 0.0;
+    }
 
     void resetDaily()
     {

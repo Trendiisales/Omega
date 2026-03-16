@@ -21,3 +21,11 @@ build\Release\Omega.exe omega_config.ini
 
 ## GUI
 Open `http://localhost:7779` in browser.
+
+## Baseline Report (PowerShell on VPS)
+Run expectancy/profit-factor summary from the full trade CSV:
+
+```powershell
+Set-Location C:\Omega
+powershell -ExecutionPolicy Bypass -File .\BASELINE_REPORT.ps1 -CsvPath "C:\Omega\build\Release\logs\trades\omega_trade_closes.csv" -MinTrades 30
+```
