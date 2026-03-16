@@ -688,6 +688,28 @@ static void write_shadow_signal_close(const ShadowSignalPos& p, double exit_px,
     }
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tick value normalisation — converts raw price-point PnL to USD equivalent.
+// BlackBull CFD lot sizes (standard 1-lot). Adjust if trading mini/micro lots.
+// Used by: daily_loss_limit check, shadow PnL accumulation, GUI display.
+// ─────────────────────────────────────────────────────────────────────────────
+static double tick_value_multiplier(const std::string& symbol) noexcept {
+    if (symbol == "US500.F")  return 50.0;    // S&P500 futures: $50/pt
+    if (symbol == "USTEC.F")  return 20.0;    // Nasdaq futures: $20/pt
+    if (symbol == "USOIL.F")  return 1000.0;  // WTI oil: $1000/pt
+    if (symbol == "GOLD.F")   return 100.0;   // Gold: $100/pt
+    if (symbol == "DJ30.F")   return 5.0;     // Dow Jones: $5/pt
+    if (symbol == "NAS100")   return 20.0;    // Nasdaq cash CFD: $20/pt
+    if (symbol == "XAGUSD")   return 5000.0;  // Silver: $5000/pt
+    if (symbol == "EURUSD")   return 100000.0;// FX: $100k/pt (1 standard lot)
+    if (symbol == "UKBRENT")  return 1000.0;  // Brent crude: $1000/pt
+    if (symbol == "GER30")    return 25.0;    // DAX CFD: $25/pt
+    if (symbol == "UK100")    return 25.0;    // FTSE CFD: $25/pt
+    if (symbol == "ESTX50")   return 25.0;    // EuroStoxx CFD: $25/pt
+    return 1.0;  // Unknown symbol: no scaling (safe fallback)
+}
+
 static void manage_shadow_signals_on_tick(const std::string& sym, double bid, double ask) {
     if (!g_cfg.enable_shadow_signal_audit) return;
     std::lock_guard<std::mutex> lk(g_shadow_signal_mtx);
@@ -1783,28 +1805,6 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
         g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
     g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tick value normalisation — converts raw price-point PnL to USD equivalent.
-// BlackBull CFD lot sizes (standard 1-lot). Adjust if trading mini/micro lots.
-// Used by: daily_loss_limit check, shadow PnL accumulation, GUI display.
-// ─────────────────────────────────────────────────────────────────────────────
-static double tick_value_multiplier(const std::string& symbol) noexcept {
-    if (symbol == "US500.F")  return 50.0;    // S&P500 futures: $50/pt
-    if (symbol == "USTEC.F")  return 20.0;    // Nasdaq futures: $20/pt
-    if (symbol == "USOIL.F")  return 1000.0;  // WTI oil: $1000/pt
-    if (symbol == "GOLD.F")   return 100.0;   // Gold: $100/pt
-    if (symbol == "DJ30.F")   return 5.0;     // Dow Jones: $5/pt
-    if (symbol == "NAS100")   return 20.0;    // Nasdaq cash CFD: $20/pt
-    if (symbol == "XAGUSD")   return 5000.0;  // Silver: $5000/pt
-    if (symbol == "EURUSD")   return 100000.0;// FX: $100k/pt (1 standard lot)
-    if (symbol == "UKBRENT")  return 1000.0;  // Brent crude: $1000/pt
-    if (symbol == "GER30")    return 25.0;    // DAX CFD: $25/pt
-    if (symbol == "UK100")    return 25.0;    // FTSE CFD: $25/pt
-    if (symbol == "ESTX50")   return 25.0;    // EuroStoxx CFD: $25/pt
-    return 1.0;  // Unknown symbol: no scaling (safe fallback)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
