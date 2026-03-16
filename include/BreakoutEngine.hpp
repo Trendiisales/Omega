@@ -548,7 +548,9 @@ protected:
         tr.exitReason    = reason;
         tr.spreadAtEntry = pos.spread_at_entry;
         tr.latencyMs     = latency_ms;
-        tr.engine        = "BreakoutEngine";
+        // Use the symbol-derived engine name so typed engines (SpEngine, NqEngine etc)
+        // are identifiable in the CSV. Was hardcoded "BreakoutEngine" for all types.
+        tr.engine        = std::string(symbol ? symbol : "???") + "_BE";
         tr.regime        = (macro_regime && *macro_regime) ? macro_regime : pos.regime;
 
         pos.active = false;

@@ -803,7 +803,7 @@ struct LiveOrderRecord {
 
 static std::mutex g_live_orders_mtx;
 static std::unordered_map<std::string, LiveOrderRecord> g_live_orders;
-static int g_order_id_counter = 1;
+static std::atomic<int> g_order_id_counter{1};
 
 // Look up numeric symbol ID from name — defined after OMEGA_SYMS below
 static int symbol_name_to_id(const std::string& name);
@@ -1753,8 +1753,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     { std::lock_guard<std::mutex> lk(g_book_mtx); g_bids[sym] = bid; g_asks[sym] = ask; }
     manage_shadow_signals_on_tick(sym, bid, ask);
 
-    std::cout << "[TICK] " << sym << " " << bid << "/" << ask << "\n";
-    std::cout.flush();
+    // Rate-limit tick logging — max 1 line per symbol per 30s to keep logs readable.
+    // Previously logged every tick: thousands of lines/minute drowning signal output.
+    {
+        static std::mutex s_tick_log_mtx;
+        static std::unordered_map<std::string, int64_t> s_last_tick_log;
+        const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        std::lock_guard<std::mutex> lk(s_tick_log_mtx);
+        auto& last = s_last_tick_log[sym];
+        if (now_ms - last >= 30000) {
+            last = now_ms;
+            std::cout << "[TICK] " << sym << " " << bid << "/" << ask << "\n";
+            std::cout.flush();
+        }
+    }
 
     maybe_reset_daily_ledger();
 
@@ -2505,6 +2518,44 @@ int main(int argc, char* argv[])
     g_eng_xau.MIN_GAP_SEC           = 180;  // 3min gap between signals
     g_eng_xau.MAX_SPREAD_PCT        = 0.06; // gold spreads slightly wider than indices
 
+    // ── Startup parameter validation — logged on every start ─────────────────
+    // This block documents the exact live values every engine will use.
+    // Any mismatch between config intent and actual values is visible immediately.
+    std::cout << "\n[OMEGA-PARAMS] ═══════════════════════════════════════════\n"
+              << "[OMEGA-PARAMS] ENGINE PARAMETER AUDIT (live values after all config overrides)\n"
+              << "[OMEGA-PARAMS] ───────────────────────────────────────────\n"
+              << "[OMEGA-PARAMS] US500.F  TP=" << g_eng_sp.TP_PCT  << "% SL=" << g_eng_sp.SL_PCT
+              << "% vol=" << g_eng_sp.VOL_THRESH_PCT << "% mom=" << g_eng_sp.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_sp.MIN_BREAKOUT_PCT << "% gap=" << g_eng_sp.MIN_GAP_SEC
+              << "s hold=" << g_eng_sp.MAX_HOLD_SEC << "s spread=" << g_eng_sp.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] USTEC.F  TP=" << g_eng_nq.TP_PCT  << "% SL=" << g_eng_nq.SL_PCT
+              << "% vol=" << g_eng_nq.VOL_THRESH_PCT << "% mom=" << g_eng_nq.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_nq.MIN_BREAKOUT_PCT << "% gap=" << g_eng_nq.MIN_GAP_SEC
+              << "s hold=" << g_eng_nq.MAX_HOLD_SEC << "s spread=" << g_eng_nq.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] USOIL.F  TP=" << g_eng_cl.TP_PCT  << "% SL=" << g_eng_cl.SL_PCT
+              << "% vol=" << g_eng_cl.VOL_THRESH_PCT << "% mom=" << g_eng_cl.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_cl.MIN_BREAKOUT_PCT << "% gap=" << g_eng_cl.MIN_GAP_SEC
+              << "s hold=" << g_eng_cl.MAX_HOLD_SEC << "s spread=" << g_eng_cl.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] DJ30.F   TP=" << g_eng_us30.TP_PCT << "% SL=" << g_eng_us30.SL_PCT
+              << "% vol=" << g_eng_us30.VOL_THRESH_PCT << "% mom=" << g_eng_us30.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_us30.MIN_BREAKOUT_PCT << "% gap=" << g_eng_us30.MIN_GAP_SEC
+              << "s hold=" << g_eng_us30.MAX_HOLD_SEC << "s spread=" << g_eng_us30.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] NAS100   TP=" << g_eng_nas100.TP_PCT << "% SL=" << g_eng_nas100.SL_PCT
+              << "% vol=" << g_eng_nas100.VOL_THRESH_PCT << "% mom=" << g_eng_nas100.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_nas100.MIN_BREAKOUT_PCT << "% gap=" << g_eng_nas100.MIN_GAP_SEC
+              << "s hold=" << g_eng_nas100.MAX_HOLD_SEC << "s spread=" << g_eng_nas100.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] XAGUSD   TP=" << g_eng_xag.TP_PCT  << "% SL=" << g_eng_xag.SL_PCT
+              << "% vol=" << g_eng_xag.VOL_THRESH_PCT << "% mom=" << g_eng_xag.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_xag.MIN_BREAKOUT_PCT << "% gap=" << g_eng_xag.MIN_GAP_SEC
+              << "s hold=" << g_eng_xag.MAX_HOLD_SEC << "s spread=" << g_eng_xag.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] GOLD.F   TP=" << g_eng_xau.TP_PCT  << "% SL=" << g_eng_xau.SL_PCT
+              << "% vol=" << g_eng_xau.VOL_THRESH_PCT << "% gap=" << g_eng_xau.MIN_GAP_SEC
+              << "s hold=" << g_eng_xau.MAX_HOLD_SEC << "s spread=" << g_eng_xau.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] GoldStack MIN_ENTRY_GAP=30s MAX_HOLD=600s REGIME_FLIP_MIN=60s\n"
+              << "[OMEGA-PARAMS] LeadLag=DISABLED SpreadDisloc_cooldown=60s EventComp_max_daily=4\n"
+              << "[OMEGA-PARAMS] ═══════════════════════════════════════════\n\n";
+    std::cout.flush();
+
     if (g_cfg.mode == "SHADOW") {
         const bool shadow_research = g_cfg.shadow_research_mode;
         g_eng_sp.AGGRESSIVE_SHADOW = shadow_research;
@@ -2647,44 +2698,41 @@ int main(int argc, char* argv[])
     const std::string shadow_csv_path =
         resolve_audit_log_path(g_cfg.shadow_csv, "shadow/omega_shadow.csv");
     ensure_parent_dir(shadow_csv_path);
-    g_shadow_csv.open(shadow_csv_path, std::ios::app);
+    // Truncate on startup — ensures header always matches current schema.
+    g_shadow_csv.open(shadow_csv_path, std::ios::trunc);
     if (!g_shadow_csv.is_open()) {
         std::cerr << "[OMEGA-FATAL] Failed to open shadow trade CSV: " << shadow_csv_path << "\n";
         return 1;
     }
-    g_shadow_csv.seekp(0, std::ios::end);
-    if (g_shadow_csv.tellp() == std::streampos(0))
-        g_shadow_csv << "ts_unix,symbol,side,entry_px,exit_px,pnl,mfe,mae,"
-                        "hold_sec,reason,spread_at_entry,latency_ms,regime\n";
+    g_shadow_csv << "ts_unix,symbol,side,entry_px,exit_px,pnl,mfe,mae,"
+                    "hold_sec,reason,spread_at_entry,latency_ms,regime\n";
     std::cout << "[OMEGA] Shadow CSV: " << shadow_csv_path << "\n";
 
     const std::string shadow_signal_csv_path =
         resolve_audit_log_path(g_cfg.shadow_signal_csv, "shadow/omega_shadow_signals.csv");
     ensure_parent_dir(shadow_signal_csv_path);
-    g_shadow_signal_csv.open(shadow_signal_csv_path, std::ios::app);
+    // Truncate on startup.
+    g_shadow_signal_csv.open(shadow_signal_csv_path, std::ios::trunc);
     if (!g_shadow_signal_csv.is_open()) {
         std::cerr << "[OMEGA-FATAL] Failed to open shadow signal CSV: " << shadow_signal_csv_path << "\n";
         return 1;
     }
-    g_shadow_signal_csv.seekp(0, std::ios::end);
-    if (g_shadow_signal_csv.tellp() == std::streampos(0))
-        g_shadow_signal_csv << "ts_unix,symbol,side,entry_px,exit_px,tp,sl,pnl,hold_sec,verdict,reason,exit_reason\n";
+    g_shadow_signal_csv << "ts_unix,symbol,side,entry_px,exit_px,tp,sl,pnl,hold_sec,verdict,reason,exit_reason\n";
     std::cout << "[OMEGA] Shadow Signal CSV: " << shadow_signal_csv_path << "\n";
 
     const std::string shadow_signal_event_csv_path =
         resolve_audit_log_path("logs/shadow/omega_shadow_signal_events.csv",
                                "shadow/omega_shadow_signal_events.csv");
     ensure_parent_dir(shadow_signal_event_csv_path);
-    g_shadow_signal_event_csv.open(shadow_signal_event_csv_path, std::ios::app);
+    // Truncate on startup.
+    g_shadow_signal_event_csv.open(shadow_signal_event_csv_path, std::ios::trunc);
     if (!g_shadow_signal_event_csv.is_open()) {
         std::cerr << "[OMEGA-FATAL] Failed to open shadow signal event CSV: "
                   << shadow_signal_event_csv_path << "\n";
         return 1;
     }
-    g_shadow_signal_event_csv.seekp(0, std::ios::end);
-    if (g_shadow_signal_event_csv.tellp() == std::streampos(0))
-        g_shadow_signal_event_csv
-            << "event_ts_unix,event_ts_utc,event_utc_weekday,symbol,side,entry_px,tp,sl,verdict,reason\n";
+    g_shadow_signal_event_csv
+        << "event_ts_unix,event_ts_utc,event_utc_weekday,symbol,side,entry_px,tp,sl,verdict,reason\n";
     std::cout << "[OMEGA] Shadow Signal Event CSV: " << shadow_signal_event_csv_path << "\n";
 
     WSADATA wsa;

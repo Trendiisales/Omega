@@ -700,7 +700,8 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class GoldPositionManager {
     static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
-    static constexpr int    MAX_HOLD_SEC  = 120;   // allow runners while trail handles protection
+    static constexpr int    MAX_HOLD_SEC  = 600;   // 10 min: matches main config max_hold_sec
+                                                    // was 120 — too short for $5 TP targets
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
     static constexpr int    MAX_PYRAMID_LEGS = 3;  // base + 2 add-ons
     static constexpr double PYR_COVER_MOVE   = 0.80; // add only after prior leg has clearly covered costs
@@ -922,8 +923,15 @@ public:
             if (move > leg.mfe) leg.mfe = move;
             if (move < leg.mae) leg.mae = move;
 
-            // Regime change = exit immediately (market character changed)
-            if (regime && leg.regime[0] != '\0' && std::strncmp(regime, leg.regime, 31) != 0) {
+            // Regime change exit — only close if position has been open >= 60s.
+            // Short positions opened during IMPULSE are valid even as regime
+            // transitions to MEAN_REVERSION — gold doesn't stop moving because
+            // the regime label changed. Instant REGIME_FLIP exits were causing
+            // churn: enter → regime flips 10s later → exit → repeat.
+            const int64_t held_so_far = now - leg.entry_ts;
+            if (regime && leg.regime[0] != '\0' &&
+                std::strncmp(regime, leg.regime, 31) != 0 &&
+                held_so_far >= 60) {
                 close_leg(static_cast<size_t>(i), mid, "REGIME_FLIP", latency_ms, regime, on_close);
                 closed_any = true;
                 continue;

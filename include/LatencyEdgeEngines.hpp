@@ -413,7 +413,7 @@ class GoldSpreadDislocation {
     static constexpr double MAX_MEDIAN_SPREAD  = 1.20;
     static constexpr double TP                 = 0.30;
     static constexpr double SL                 = 0.15;
-    static constexpr int    COOLDOWN_SEC       = 15;
+    static constexpr int    COOLDOWN_SEC       = 60;   // raised from 15s — 3 SL hits in 45s was possible
     static constexpr int    MAX_HOLD_SEC       = 30;
     static constexpr int    SPREAD_WINDOW      = 20;
 
@@ -475,7 +475,8 @@ public:
 
         const double med = median_spread();
 
-        // Session gate
+        // Session gate: London+NY only (07:00-20:00 UTC).
+        // Spread dislocations in Asia are real moves, not noise.
         if (!in_active_session()) { prev_mid_ = mid; return {}; }
 
         // Median must be in liquid range
@@ -585,8 +586,26 @@ class GoldEventCompression {
     int64_t last_entry_ = 0;
     int     trade_count_ = 0;
     bool    armed_       = false;
+    int     daily_trades_ = 0;      // reset at UTC midnight
+    int     last_reset_day_ = -1;   // UTC day-of-year for reset tracking
+    static constexpr int MAX_DAILY_TRADES = 4;  // max 4 event trades per day
 
     LePositionManager pos_mgr_;
+
+    void check_daily_reset() noexcept {
+        const auto t = std::chrono::system_clock::to_time_t(
+            std::chrono::system_clock::now());
+        struct tm ti{};
+#ifdef _WIN32
+        gmtime_s(&ti, &t);
+#else
+        gmtime_r(&t, &ti);
+#endif
+        if (ti.tm_yday != last_reset_day_) {
+            last_reset_day_ = ti.tm_yday;
+            daily_trades_ = 0;
+        }
+    }
 
     // Returns seconds until next high-impact event, or -1 if not within window
     static int secs_to_next_event() noexcept {
@@ -653,6 +672,10 @@ public:
         if (pos_mgr_.pos.active) return {};
         if (spread > MAX_SPREAD) return {};
 
+        // Daily reset and max trades gate
+        check_daily_reset();
+        if (daily_trades_ >= MAX_DAILY_TRADES) return {};
+
         // Check if we're in pre-event window
         const int secs_to_ev = secs_to_next_event();
         if (secs_to_ev < 0) {
@@ -689,6 +712,7 @@ public:
         armed_ = false;
         last_entry_ = le_now_sec();
         ++trade_count_;
+        ++daily_trades_;
 
         LeSignal sig;
         sig.valid   = true;
@@ -757,20 +781,16 @@ public:
         return {};
     }
 
-    // Returns valid signal if lead-lag fired on this silver tick
-    // DISABLED: Lead-lag was firing on every gold wiggle regardless of parameters.
-    // The fundamental issue is that gold ticks arrive faster than silver reprices,
-    // creating false "silver hasn't reacted" signals on normal noise.
-    // Requires a proper redesign using time-weighted gold direction over 30+ seconds.
+    // Returns valid signal if lead-lag fired on this silver tick.
+    // DISABLED: was firing on every gold wiggle — fundamental design issue.
+    // Existing open positions are still managed to closure.
     LeSignal on_tick_silver(double bid, double ask, double latency_ms,
                             CloseCb on_close) noexcept {
-        // Manage any existing open position from previous entries
         if (lead_lag_.has_open_position()) {
-            // Still manage open positions to close them correctly
-            // but don't open new ones
+            // Drain any hanging position — call the actual manage path
+            lead_lag_.on_tick_silver(bid, ask, latency_ms, on_close);
         }
-        (void)bid; (void)ask; (void)latency_ms; (void)on_close;
-        return {};  // DISABLED
+        return {};  // no new entries — DISABLED
     }
 
     bool has_open_position() const noexcept {
