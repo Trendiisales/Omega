@@ -167,11 +167,12 @@ omega::OmegaTradeLedger          g_omegaLedger;      // extern in TelemetryServe
 static omega::MacroRegimeDetector g_macroDetector;
 
 // CRTP breakout engines -- typed per symbol (instrument-specific params + regime gating)
-static omega::SpEngine  g_eng_sp("US500.F");   // S&P 500 -- regime-gated, cross-symbol guard
-static omega::NqEngine  g_eng_nq("USTEC.F");   // Nasdaq  -- regime-gated, cross-symbol guard
-static omega::OilEngine g_eng_cl("USOIL.F");   // WTI Oil -- inventory window blocked
-static omega::GoldEngine g_eng_xau("GOLD.F");  // Gold -- safe-haven, inverse VIX logic
-static omega::BreakoutEngine g_eng_us30("DJ30.F");   // Dow/US30 (promoted from confirmation)
+static omega::SpEngine    g_eng_sp("US500.F");   // S&P 500 -- regime-gated, cross-symbol guard
+static omega::NqEngine    g_eng_nq("USTEC.F");   // Nasdaq  -- regime-gated, cross-symbol guard
+static omega::OilEngine   g_eng_cl("USOIL.F");   // WTI Oil -- inventory window blocked
+static omega::GoldEngine  g_eng_xau("GOLD.F");   // Gold -- safe-haven, inverse VIX logic
+static omega::Us30Engine  g_eng_us30("DJ30.F");  // Dow Jones -- macro-gated typed engine
+static omega::Nas100Engine g_eng_nas100("NAS100"); // Nasdaq cash -- independent from USTEC.F
 static omega::BreakoutEngine g_eng_ger30("GER30");   // DAX proxy
 static omega::BreakoutEngine g_eng_uk100("UK100");   // FTSE
 static omega::BreakoutEngine g_eng_estx50("ESTX50"); // EuroStoxx50
@@ -756,6 +757,168 @@ static std::string wrap_fix(const std::string& body) {
 
 static int g_quote_seq = 1;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Live Order Dispatch — 35=D NewOrderSingle
+// ─────────────────────────────────────────────────────────────────────────────
+// Design: SHADOW mode = zero orders sent, full paper audit trail.
+//         LIVE mode   = real 35=D sent on trade session (port 5212).
+//
+// Safety architecture:
+//   1. send_live_order() checks mode == "LIVE" before sending — impossible to
+//      accidentally fire in SHADOW mode regardless of any other code path.
+//   2. g_trade_ready atomic must be true (trade session logged in).
+//   3. g_trade_ssl must be non-null and write must succeed.
+//   4. Every order is logged to console AND the order log before sending.
+//   5. Order tracking: g_live_orders maps clOrdId -> symbol+side for ACK matching.
+//   6. FIX rejects (35=3, 35=j) on trade session are already logged in trade_loop.
+//
+// BlackBull/cTrader FIX 4.4 NewOrderSingle fields:
+//   35=D, 11=clOrdId, 55=symbolId, 54=side(1=Buy/2=Sell),
+//   38=qty, 40=ordType(1=Market), 59=timeInForce(3=IOC),
+//   60=transactTime
+//
+// Position management (TP/SL/TIMEOUT) is handled entirely by the engines in
+// software — we do NOT send bracket orders. This is correct for CFD/futures
+// market makers like BlackBull where bracket orders are unreliable.
+// The engine closes via another Market order when TP/SL triggers.
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct LiveOrderRecord {
+    std::string clOrdId;
+    std::string symbol;
+    std::string side;     // "LONG" / "SHORT"
+    double      qty   = 0;
+    double      price = 0;  // mid at time of order
+    int64_t     ts    = 0;
+    bool        acked = false;
+    bool        rejected = false;
+};
+
+static std::mutex g_live_orders_mtx;
+static std::unordered_map<std::string, LiveOrderRecord> g_live_orders;
+static int g_order_id_counter = 1;
+
+// Look up numeric symbol ID from name — defined after OMEGA_SYMS below
+static int symbol_name_to_id(const std::string& name);
+
+static std::string build_new_order_single(int seq, const std::string& clOrdId,
+                                          int sym_id, bool is_long,
+                                          double qty) {
+    std::ostringstream b;
+    b << "35=D\x01"
+      << "49=" << g_cfg.sender << "\x01"
+      << "56=" << g_cfg.target << "\x01"
+      << "50=TRADE\x01" << "57=TRADE\x01"
+      << "34=" << seq << "\x01"
+      << "52=" << timestamp() << "\x01"
+      << "11=" << clOrdId << "\x01"           // ClOrdID
+      << "55=" << sym_id  << "\x01"           // Symbol (numeric ID)
+      << "54=" << (is_long ? "1" : "2") << "\x01"  // Side: 1=Buy 2=Sell
+      << "38=" << std::fixed << std::setprecision(2) << qty << "\x01"  // OrderQty
+      << "40=1\x01"                           // OrdType=Market
+      << "59=3\x01"                           // TimeInForce=IOC
+      << "60=" << timestamp() << "\x01";      // TransactTime
+    return wrap_fix(b.str());
+}
+
+// Send a live market order. Does nothing in SHADOW mode.
+// Returns clOrdId on success, empty string on failure/shadow.
+static std::string send_live_order(const std::string& symbol, bool is_long,
+                                   double qty, double mid_price) {
+    // Hard SHADOW gate — never send in shadow regardless of anything else
+    if (g_cfg.mode != "LIVE") return {};
+
+    if (!g_trade_ready.load()) {
+        std::cerr << "[ORDER] BLOCKED — trade session not ready\n";
+        return {};
+    }
+
+    const int sym_id = symbol_name_to_id(symbol);
+    if (sym_id <= 0) {
+        std::cerr << "[ORDER] BLOCKED — no numeric ID for symbol " << symbol << "\n";
+        return {};
+    }
+
+    const std::string clOrdId = "OM-" + std::to_string(nowSec())
+                               + "-" + std::to_string(g_order_id_counter++);
+
+    std::string msg;
+    {
+        std::lock_guard<std::mutex> lk(g_trade_mtx);
+        if (!g_trade_ssl) {
+            std::cerr << "[ORDER] BLOCKED — trade SSL null\n";
+            return {};
+        }
+        msg = build_new_order_single(g_trade_seq++, clOrdId, sym_id, is_long, qty);
+        const int w = SSL_write(g_trade_ssl, msg.c_str(), static_cast<int>(msg.size()));
+        if (w <= 0) {
+            std::cerr << "[ORDER] SSL_write failed for " << symbol << "\n";
+            return {};
+        }
+    }
+
+    // Record for ACK tracking
+    {
+        std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+        LiveOrderRecord rec;
+        rec.clOrdId = clOrdId;
+        rec.symbol  = symbol;
+        rec.side    = is_long ? "LONG" : "SHORT";
+        rec.qty     = qty;
+        rec.price   = mid_price;
+        rec.ts      = nowSec();
+        g_live_orders[clOrdId] = rec;
+    }
+
+    std::cout << "\033[1;33m[ORDER-SENT] " << symbol
+              << " " << (is_long ? "BUY" : "SELL")
+              << " qty=" << qty
+              << " mid=" << std::fixed << std::setprecision(4) << mid_price
+              << " clOrdId=" << clOrdId
+              << "\033[0m\n";
+    std::cout.flush();
+
+    return clOrdId;
+}
+
+// Handle ExecutionReport (35=8) from trade session
+static void handle_execution_report(const std::string& msg) {
+    const std::string clOrdId  = extract_tag(msg, "11");
+    const std::string ordStatus= extract_tag(msg, "39"); // 0=New,1=PartFill,2=Fill,8=Rejected
+    const std::string execType = extract_tag(msg, "150");
+    const std::string text     = extract_tag(msg, "58");
+    const std::string symbol   = extract_tag(msg, "55");
+    const std::string side     = extract_tag(msg, "54");
+    const std::string lastPx   = extract_tag(msg, "31");
+    const std::string lastQty  = extract_tag(msg, "32");
+
+    std::cout << "[ORDER-ACK] clOrdId=" << clOrdId
+              << " status=" << ordStatus
+              << " execType=" << execType
+              << " sym=" << symbol
+              << " side=" << side
+              << " lastPx=" << lastPx
+              << " lastQty=" << lastQty
+              << (text.empty() ? "" : " text=" + text) << "\n";
+    std::cout.flush();
+
+    if (!clOrdId.empty()) {
+        std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+        auto it = g_live_orders.find(clOrdId);
+        if (it != g_live_orders.end()) {
+            if (ordStatus == "8") {
+                it->second.rejected = true;
+                std::cerr << "[ORDER-REJECT] " << it->second.symbol
+                          << " " << it->second.side
+                          << " REJECTED text=" << text << "\n";
+                std::cerr.flush();
+            } else if (ordStatus == "0" || ordStatus == "1" || ordStatus == "2") {
+                it->second.acked = true;
+            }
+        }
+    }
+}
+
 static std::string build_logon(int seq, const char* subID) {
     std::ostringstream b;
     b << "35=A\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
@@ -795,6 +958,18 @@ static std::vector<ExtSymbolDef> g_ext_syms = {
 // Runtime ID->name map built at startup from OMEGA_SYMS
 static std::mutex g_symbol_map_mtx;
 static std::unordered_map<int, std::string> g_id_to_sym;
+
+// Look up numeric symbol ID from name (reverse of g_id_to_sym)
+static int symbol_name_to_id(const std::string& name) {
+    for (int i = 0; i < OMEGA_NSYMS; ++i) {
+        if (name == OMEGA_SYMS[i].name) return OMEGA_SYMS[i].id;
+    }
+    std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+    for (const auto& e : g_ext_syms) {
+        if (name == e.name && e.id > 0) return e.id;
+    }
+    return 0;
+}
 
 static void build_id_map() {
     std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
@@ -1034,7 +1209,16 @@ static std::string build_trade_close_csv_row(const omega::TradeRecord& tr) {
       << ',' << tr.tp
       << ',' << tr.sl
       << ',' << tr.size
-      << ',' << tr.pnl
+      << ',' << tr.pnl          // gross
+      << ',' << tr.net_pnl      // net (after slippage + commission)
+      << ',' << tr.slippage_entry
+      << ',' << tr.slippage_exit
+      << ',' << tr.commission
+      << std::setprecision(6)
+      << ',' << tr.slip_entry_pct
+      << ',' << tr.slip_exit_pct
+      << ',' << tr.comm_per_side
+      << std::fixed << std::setprecision(4)
       << ',' << tr.mfe
       << ',' << tr.mae
       << ',' << hold_sec
@@ -1103,7 +1287,9 @@ static void apply_engine_config(omega::SpEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.sp_vol_thresh_pct;
     eng.TP_PCT               = g_cfg.sp_tp_pct;
     eng.SL_PCT               = g_cfg.sp_sl_pct;
-    eng.MIN_GAP_SEC          = g_cfg.sp_min_gap_sec;
+    // min_entry_gap_sec from [breakout] section acts as floor across all symbols.
+    // Per-symbol [sp] min_gap_sec applies unless [breakout] min_entry_gap_sec is larger.
+    eng.MIN_GAP_SEC          = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
     eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
@@ -1116,7 +1302,7 @@ static void apply_engine_config(omega::NqEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.nq_vol_thresh_pct;
     eng.TP_PCT               = g_cfg.nq_tp_pct;
     eng.SL_PCT               = g_cfg.nq_sl_pct;
-    eng.MIN_GAP_SEC          = g_cfg.nq_min_gap_sec;
+    eng.MIN_GAP_SEC          = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
     eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
@@ -1129,7 +1315,7 @@ static void apply_engine_config(omega::OilEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.oil_vol_thresh_pct;
     eng.TP_PCT               = g_cfg.oil_tp_pct;
     eng.SL_PCT               = g_cfg.oil_sl_pct;
-    eng.MIN_GAP_SEC          = g_cfg.oil_min_gap_sec;
+    eng.MIN_GAP_SEC          = std::max(g_cfg.oil_min_gap_sec, g_cfg.min_entry_gap_sec);
     eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
@@ -1146,6 +1332,33 @@ static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
     eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+}
+
+// Us30 (DJ30.F) -- typed engine, links macro context
+static void apply_engine_config(omega::Us30Engine& eng) noexcept {
+    // Constructor sets compression params -- only override tradeable params
+    eng.VOL_THRESH_PCT        = std::min(0.05, std::max(0.02, g_cfg.sp_vol_thresh_pct));
+    eng.TP_PCT                = g_cfg.sp_tp_pct;
+    eng.SL_PCT                = g_cfg.sp_sl_pct;
+    eng.MIN_GAP_SEC           = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+    eng.macro                 = &g_macro_ctx;
+}
+
+// Nas100 -- typed engine, links macro context
+static void apply_engine_config(omega::Nas100Engine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = g_cfg.nq_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.nq_tp_pct;
+    eng.SL_PCT                = g_cfg.nq_sl_pct;
+    eng.MIN_GAP_SEC           = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+    eng.macro                 = &g_macro_ctx;
 }
 
 static void apply_generic_fx_config(omega::BreakoutEngine& eng) noexcept {
@@ -1435,7 +1648,20 @@ static void maybe_reset_daily_ledger() {
     std::cout << "[OMEGA-RISK] UTC day rollover — per-symbol risk state reset\n";
 }
 
-static void handle_closed_trade(const omega::TradeRecord& tr) {
+static void handle_closed_trade(const omega::TradeRecord& tr_in) {
+    // Apply realistic shadow costs before any recording/stats.
+    // commission_per_side=0.0 for BlackBull CFD model (cost embedded in spread).
+    omega::TradeRecord tr = tr_in;
+    omega::apply_realistic_costs(tr, 0.0);
+
+    std::cout << "[TRADE-COST] " << tr.symbol
+              << " gross=" << std::fixed << std::setprecision(4) << tr.pnl
+              << " slip_in=" << tr.slippage_entry
+              << " slip_out=" << tr.slippage_exit
+              << " net=" << tr.net_pnl
+              << " exit=" << tr.exitReason << "\n";
+    std::cout.flush();
+
     g_omegaLedger.record(tr);
     write_shadow_csv(tr);
     write_trade_close_logs(tr);
@@ -1446,8 +1672,8 @@ static void handle_closed_trade(const omega::TradeRecord& tr) {
         const std::string risk_key = g_cfg.independent_symbols ? tr.symbol : "GLOBAL";
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         auto& st = g_sym_risk[risk_key];
-        st.daily_pnl += tr.pnl;
-        if (tr.pnl <= 0.0) {
+        st.daily_pnl += tr.net_pnl;   // track net (after costs) for risk gates
+        if (tr.net_pnl <= 0.0) {
             const int loss_limit = shadow_research ? 2 : g_cfg.max_consec_losses;
             const int pause_sec  = shadow_research ? 300 : g_cfg.loss_pause_sec;
             if (++st.consec_losses >= loss_limit) {
@@ -1463,7 +1689,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr) {
             auto& qs = g_shadow_quality[tr.symbol];
             const int64_t held = std::max<int64_t>(0, tr.exitTs - tr.entryTs);
             const bool fast_bad_loss =
-                (tr.pnl <= 0.0) &&
+                (tr.net_pnl <= 0.0) &&
                 (held <= 120) &&
                 (tr.exitReason == "SL_HIT" || tr.exitReason == "SCRATCH" || tr.exitReason == "TIMEOUT");
             if (fast_bad_loss) {
@@ -1473,7 +1699,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr) {
                               << " fast-loss streak=" << qs.fast_loss_streak
                               << " pause=180s\n";
                 }
-            } else if (tr.pnl > 0.0) {
+            } else if (tr.net_pnl > 0.0) {
                 qs.fast_loss_streak = 0;
             } else if (qs.fast_loss_streak > 0) {
                 --qs.fast_loss_streak;
@@ -1484,8 +1710,8 @@ static void handle_closed_trade(const omega::TradeRecord& tr) {
         std::lock_guard<std::mutex> lk(g_perf_mtx);
         auto& ps = g_perf[perf_key];
         ps.live_trades++;
-        ps.live_pnl += tr.pnl;
-        if (tr.pnl > 0) ps.live_wins++; else ps.live_losses++;
+        ps.live_pnl += tr.net_pnl;   // net pnl for performance tracking
+        if (tr.net_pnl > 0) ps.live_wins++; else ps.live_losses++;
         if (!ps.disabled &&
             g_cfg.mode != "SHADOW" &&
             ps.live_trades >= g_cfg.auto_disable_after_trades &&
@@ -1625,6 +1851,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_eng_nq.pos.active) +
             static_cast<int>(g_eng_cl.pos.active) +
             static_cast<int>(g_eng_us30.pos.active) +
+            static_cast<int>(g_eng_nas100.pos.active) +
             static_cast<int>(g_eng_ger30.pos.active) +
             static_cast<int>(g_eng_uk100.pos.active) +
             static_cast<int>(g_eng_estx50.pos.active) +
@@ -1659,6 +1886,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                       << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
                       << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
                       << " regime=" << regime << "\033[0m\n";
+            // ── Live order dispatch (no-op in SHADOW mode) ──────────────────
+            send_live_order(sym, sig.is_long, eng.ENTRY_SIZE, sig.entry);
         }
     };
 
@@ -1692,6 +1921,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "UKBRENT") {
         dispatch(g_eng_brent, symbol_gate("UKBRENT", g_eng_brent.pos.active));
     }
+    else if (sym == "NAS100") {
+        dispatch(g_eng_nas100, symbol_gate("NAS100", g_eng_nas100.pos.active));
+    }
     else if (sym == "GOLD.F")  {
         const bool gold_symbol_open =
             g_gold_stack.has_open_position() || (g_cfg.gold_use_crtp_engine && g_eng_xau.pos.active);
@@ -1700,12 +1932,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Keep CRTP gold warmed for telemetry; default execution path is stack-only.
         dispatch(g_eng_xau, g_cfg.gold_use_crtp_engine ? gold_can_enter : false);
 
-        // ── GoldEngineStack: dedicated gold executor (independent from other symbols) ──
-        // GOLD.F keeps single-position semantics within gold, but no longer blocks
-        // SP/NQ/OIL via global position/risk gates.
+        // ── GoldEngineStack: dedicated gold executor ──────────────────────────
         const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close, gold_can_enter);
         if (gsig.valid) {
-            // New entry fired -- log it
             g_telemetry.UpdateLastSignal("GOLD.F",
                 gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason);
             std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
@@ -1719,6 +1948,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                       << " regime=" << g_gold_stack.regime_name()
                       << " vwap="  << g_gold_stack.vwap()
                       << "\033[0m\n";
+            // ── Live order dispatch (no-op in SHADOW mode) ────────────────────
+            send_live_order("GOLD.F", gsig.is_long, 1.0, gsig.entry);
         }
     }
     else {
@@ -1995,6 +2226,9 @@ static void trade_loop() {
                     const std::string sec_req = build_security_list_request(g_trade_seq++, req_id);
                     SSL_write(ssl, sec_req.c_str(), static_cast<int>(sec_req.size()));
                     std::cout << "[OMEGA-TRADE] SecurityListRequest sent req_id=" << req_id << "\n";
+                } else if (ttype == "8") {
+                    // ExecutionReport — order ACK / fill / reject
+                    handle_execution_report(tmsg);
                 } else if (ttype == "y") {
                     const auto entries = parse_security_list_entries(tmsg);
                     if (!entries.empty()) {
@@ -2145,7 +2379,8 @@ static void quote_loop() {
                     });
         };
         fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F");
-        fc(g_eng_us30, "DJ30.F"); fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
+        fc(g_eng_us30, "DJ30.F"); fc(g_eng_nas100, "NAS100");
+        fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
         fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
         fc(g_eng_brent, "UKBRENT"); fc(g_eng_xau, "GOLD.F");
         // Also force-close any open GoldEngineStack position
@@ -2207,7 +2442,8 @@ int main(int argc, char* argv[])
     apply_engine_config(g_eng_sp);   // [sp] section: tp=0.60%, sl=0.35%, vol=0.04%, regime-gated
     apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated
     apply_engine_config(g_eng_cl);   // [oil] section: tp=1.20%, sl=0.60%, vol=0.08%, inventory-blocked
-    apply_generic_index_config(g_eng_us30);
+    apply_engine_config(g_eng_us30); // typed Us30Engine: macro-gated like SP/NQ
+    apply_engine_config(g_eng_nas100); // typed Nas100Engine: macro-gated, independent from USTEC.F
     apply_generic_index_config(g_eng_ger30);
     apply_generic_index_config(g_eng_uk100);
     apply_generic_index_config(g_eng_estx50);
@@ -2233,6 +2469,7 @@ int main(int argc, char* argv[])
         g_eng_nq.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_cl.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_us30.AGGRESSIVE_SHADOW = shadow_research;
+        g_eng_nas100.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_ger30.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_uk100.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_estx50.AGGRESSIVE_SHADOW = shadow_research;
@@ -2281,6 +2518,7 @@ int main(int argc, char* argv[])
     bind_shadow_cb(g_eng_nq);
     bind_shadow_cb(g_eng_cl);
     bind_shadow_cb(g_eng_us30);
+    bind_shadow_cb(g_eng_nas100);
     bind_shadow_cb(g_eng_ger30);
     bind_shadow_cb(g_eng_uk100);
     bind_shadow_cb(g_eng_estx50);
@@ -2317,7 +2555,10 @@ int main(int argc, char* argv[])
         const std::string header =
             "trade_id,trade_ref,entry_ts_unix,entry_ts_utc,entry_utc_weekday,"
             "exit_ts_unix,exit_ts_utc,exit_utc_weekday,symbol,engine,side,"
-            "entry_px,exit_px,tp,sl,size,pnl,mfe,mae,hold_sec,spread_at_entry,"
+            "entry_px,exit_px,tp,sl,size,gross_pnl,net_pnl,"
+            "slippage_entry,slippage_exit,commission,"
+            "slip_entry_pct,slip_exit_pct,comm_per_side,"
+            "mfe,mae,hold_sec,spread_at_entry,"
             "latency_ms,regime,exit_reason";
         const std::string shadow_signal_event_header =
             "event_ts_unix,event_ts_utc,event_utc_weekday,symbol,side,entry_px,tp,sl,verdict,reason";

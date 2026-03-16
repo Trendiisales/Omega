@@ -19,8 +19,11 @@ public:
     double VIX_HIGH = 28.0;   // above = risk-off. Lowered from 30 -- triggers slightly earlier in elevated vol
     double VIX_LOW  = 20.0;   // below = risk-on. Raised from 18 -- post-2024 VIX baseline is 20-25, 18 never fired
 
-    // Divergence window
-    int    DIV_WINDOW = 20;   // ticks
+    // Divergence window — 60 ticks (raised from 20).
+    // 20 ticks at 5-15 ticks/sec = only 1-4 seconds of data — far too noisy.
+    // 60 ticks gives ~5-15 seconds of divergence measurement, smoothing out
+    // tick-rate differences between SP and NQ that caused false divergence blocks.
+    int    DIV_WINDOW = 60;
 
     void updateVIX(double vix_mid) {
         if (vix_mid > 0) { m_vix = vix_mid; m_vix_ts = nowSec(); }

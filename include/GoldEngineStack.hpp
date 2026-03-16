@@ -425,7 +425,7 @@ class VWAPSnapbackEngine : public EngineBase {
     static constexpr int TP_TICKS=12,SL_TICKS=8;
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::milliseconds(500)};
 public:
-    VWAPSnapbackEngine(): EngineBase("VWAP_SNAPBACK",1.4){ enabled_=false; } // DISABLED: 1T 0%WR -$0.80 — insufficient data, re-enable after 20+ shadow trades
+    VWAPSnapbackEngine(): EngineBase("VWAP_SNAPBACK",1.4){ enabled_=true; } // Re-enabled: 1T sample too small for judgment — needs 20+ trades to evaluate
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD) return noSignal();

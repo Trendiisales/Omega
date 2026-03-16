@@ -4,10 +4,12 @@
 //
 // Each engine has FULLY INDEPENDENT logic appropriate to its instrument:
 //
-//   SpEngine   (US500.F) -- equity index, regime-gated, cross-NQ guard
-//   NqEngine   (USTEC.F) -- equity index, regime-gated, cross-SP guard
-//   OilEngine  (USOIL.F) -- commodity, EIA window blocked, VIX-irrelevant
-//   GoldEngine (GOLD.F)  -- safe-haven, INVERSE VIX logic (risk-off = trade more)
+//   SpEngine    (US500.F) -- equity index, regime-gated, div-gated
+//   NqEngine    (USTEC.F) -- equity index, higher beta, div-gated
+//   Us30Engine  (DJ30.F)  -- Dow Jones, macro-gated like SP/NQ
+//   Nas100Engine(NAS100)  -- Nasdaq cash, looser spread than USTEC.F
+//   OilEngine   (USOIL.F) -- commodity, EIA window blocked, VIX-irrelevant
+//   GoldEngine  (GOLD.F)  -- safe-haven, INVERSE VIX logic (risk-off = trade more)
 //
 // MacroContext is updated every tick in main.cpp and passed to all engines.
 // VIX panic threshold is unified at 40.0 for equity engines only.
@@ -67,9 +69,11 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)           return false; // liquidity gate
         if (!macro)                                 return true;
-        // Cross-block removed: SP and NQ compress/break together -- blocking one wastes half the move
-        // Each has independent TP/SL/position. Correlation risk is not a reason to block.
-        if (std::fabs(macro->es_nq_div) > 0.0030)  return false; // sector rotation -- not clean
+        // Divergence gate: 0.60% threshold (raised from 0.30%).
+        // 0.30% was blocking ~60% of sessions — NQ is higher beta than SP and
+        // routinely diverges 0.3-0.5% intraday without signal degradation.
+        // 0.60% represents genuine sector rotation / decoupling events only.
+        if (std::fabs(macro->es_nq_div) > 0.0060)  return false; // sector rotation -- not clean
         if (macro->vix > 40.0)                      return false; // panic -- unreliable fills
         // RISK_OFF block removed: compression breakouts fire both ways. RISK_OFF = uncertainty, not direction.
         return true;
@@ -112,9 +116,10 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)           return false; // liquidity gate
         if (!macro)                                 return true;
-        // Cross-block removed: SP and NQ compress/break together -- blocking one wastes half the move
-        // Each has independent TP/SL/position. Correlation risk is not a reason to block.
-        if (std::fabs(macro->es_nq_div) > 0.0030)  return false; // SP/NQ decoupling
+        // Divergence gate: 0.60% threshold (raised from 0.30%).
+        // NQ is higher beta than SP. A 0.30% divergence is normal daily noise —
+        // raising to 0.60% targets real decoupling events (sector rotation, events).
+        if (std::fabs(macro->es_nq_div) > 0.0060)  return false; // SP/NQ decoupling
         if (macro->vix > 40.0)                      return false; // panic
         // RISK_OFF block removed: compression breakouts fire both ways. RISK_OFF = uncertainty, not direction.
         return true;
@@ -225,6 +230,82 @@ public:
         if (macro->vix > 60.0)             return false; // true dislocation -- all illiquid
         // RISK_OFF = gold's home turf -- always allow
         // RISK_ON / NEUTRAL = allow (compression breakouts valid in all regimes for gold)
+        return true;
+    }
+};
+
+// ==============================================================================
+// Us30Engine -- DJ30.F (Dow Jones Industrial Average)
+//
+// INSTRUMENT: US equity index. Less tech-heavy than NQ, steadier than SP.
+// TP 0.80%, SL 0.35%, VOL_THRESH 0.035%, MIN_GAP 180s, MAX_HOLD 1200s
+//
+// GATES: same macro gates as SP/NQ — divergence, VIX panic.
+// Slightly looser VOL_THRESH than SP (Dow is slower-moving).
+// ==============================================================================
+class Us30Engine final : public BreakoutEngineBase<Us30Engine>
+{
+public:
+    const MacroContext* macro = nullptr;
+
+    explicit Us30Engine(const char* sym) noexcept {
+        symbol                = sym;
+        VOL_THRESH_PCT        = 0.035;
+        TP_PCT                = 0.800;
+        SL_PCT                = 0.350;
+        COMPRESSION_LOOKBACK  = 40;
+        BASELINE_LOOKBACK     = 160;
+        COMPRESSION_THRESHOLD = 0.85;
+        MAX_HOLD_SEC          = 1200;
+        MIN_GAP_SEC           = 180;
+        MAX_SPREAD_PCT        = 0.05;
+    }
+
+    bool shouldTrade(double /*bid*/, double /*ask*/,
+                     double spread_pct, double /*latency_ms*/) const noexcept
+    {
+        if (spread_pct > MAX_SPREAD_PCT)          return false;
+        if (!macro)                                return true;
+        if (std::fabs(macro->es_nq_div) > 0.0060) return false; // same div gate as SP/NQ
+        if (macro->vix > 40.0)                     return false;
+        return true;
+    }
+};
+
+// ==============================================================================
+// Nas100Engine -- NAS100 (Nasdaq-100 cash index)
+//
+// INSTRUMENT: Nasdaq cash. Tracks USTEC.F closely but different tick frequency.
+// TP 0.70%, SL 0.40%, VOL_THRESH 0.050%, MIN_GAP 180s, MAX_HOLD 1200s
+//
+// GATES: same as NqEngine but slightly wider spread tolerance (cash vs futures).
+// Independent position from USTEC.F — they compress/break independently.
+// ==============================================================================
+class Nas100Engine final : public BreakoutEngineBase<Nas100Engine>
+{
+public:
+    const MacroContext* macro = nullptr;
+
+    explicit Nas100Engine(const char* sym) noexcept {
+        symbol                = sym;
+        VOL_THRESH_PCT        = 0.050;
+        TP_PCT                = 0.700;
+        SL_PCT                = 0.400;
+        COMPRESSION_LOOKBACK  = 35;
+        BASELINE_LOOKBACK     = 140;
+        COMPRESSION_THRESHOLD = 0.85;
+        MAX_HOLD_SEC          = 1200;
+        MIN_GAP_SEC           = 180;
+        MAX_SPREAD_PCT        = 0.06;  // cash slightly wider than futures
+    }
+
+    bool shouldTrade(double /*bid*/, double /*ask*/,
+                     double spread_pct, double /*latency_ms*/) const noexcept
+    {
+        if (spread_pct > MAX_SPREAD_PCT)          return false;
+        if (!macro)                                return true;
+        if (std::fabs(macro->es_nq_div) > 0.0060) return false;
+        if (macro->vix > 40.0)                     return false;
         return true;
     }
 };

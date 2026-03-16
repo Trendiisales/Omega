@@ -163,6 +163,44 @@ public:
             if ( pos.is_long && mid <= pos.sl) { closePos(mid, "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
             if (!pos.is_long && mid >= pos.sl) { closePos(mid, "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
 
+            // ── TRAILING STOP ─────────────────────────────────────────────────
+            // Stage 1: once move >= 0.60% lock breakeven + 0.10% buffer.
+            //          Eliminates all "gave it all back" losses on trades that
+            //          were clearly working before reversing.
+            // Stage 2: once move >= 1.00% trail SL at 0.40% behind current mid.
+            //          Lets winners run while protecting > half the profit.
+            // Stage 3: once move >= 1.60% tighten trail to 0.25% behind mid.
+            //          Squeezes maximum out of strong trending moves.
+            {
+                const double move_pct = pos.is_long
+                    ? (mid - pos.entry) / pos.entry * 100.0
+                    : (pos.entry - mid) / pos.entry * 100.0;
+
+                if (move_pct >= 1.60) {
+                    // Tight trail: 0.25% behind mid
+                    const double trail = pos.is_long
+                        ? mid * (1.0 - 0.25 / 100.0)
+                        : mid * (1.0 + 0.25 / 100.0);
+                    if ( pos.is_long && trail > pos.sl) pos.sl = trail;
+                    if (!pos.is_long && trail < pos.sl) pos.sl = trail;
+                } else if (move_pct >= 1.00) {
+                    // Standard trail: 0.40% behind mid
+                    const double trail = pos.is_long
+                        ? mid * (1.0 - 0.40 / 100.0)
+                        : mid * (1.0 + 0.40 / 100.0);
+                    if ( pos.is_long && trail > pos.sl) pos.sl = trail;
+                    if (!pos.is_long && trail < pos.sl) pos.sl = trail;
+                } else if (move_pct >= 0.60) {
+                    // Lock breakeven + 0.10% buffer — never lose on a trade
+                    // that moved 0.60% in our favour
+                    const double be = pos.is_long
+                        ? pos.entry * (1.0 + 0.10 / 100.0)
+                        : pos.entry * (1.0 - 0.10 / 100.0);
+                    if ( pos.is_long && be > pos.sl) pos.sl = be;
+                    if (!pos.is_long && be < pos.sl) pos.sl = be;
+                }
+            }
+
             // ── BREAKOUT FAILURE SCRATCH ──────────────────────────────────────
             // If within first 120s the price moves against us by > 0.08% of entry,
             // the breakout is confirmed false — cut immediately. Do NOT hold a
@@ -177,7 +215,11 @@ public:
                     const bool is_oil_symbol =
                         (std::strcmp(symbol, "USOIL.F") == 0) ||
                         (std::strcmp(symbol, "UKBRENT") == 0);
-                    const double scratch_limit = is_oil_symbol ? 0.16 : 0.12;
+                    // Raised scratch threshold: 0.12% was within normal tick noise for
+                    // liquid index futures, causing valid breakouts to be scratched on
+                    // a brief retest. 0.20% (indices) and 0.25% (oil) are above
+                    // typical 1-2 minute noise while still catching genuine false breaks.
+                    const double scratch_limit = is_oil_symbol ? 0.25 : 0.20;
                     const double adverse_pct = pos.is_long
                         ? (pos.entry - mid) / pos.entry * 100.0
                         : (mid - pos.entry) / pos.entry * 100.0;
@@ -185,6 +227,7 @@ public:
                         std::cout << "[SCRATCH] " << symbol
                                   << (pos.is_long ? " LONG" : " SHORT")
                                   << " false breakout — adverse=" << adverse_pct
+                                  << "% limit=" << scratch_limit
                                   << "% in " << held_sec << "s\n";
                         closePos(mid, "SCRATCH", latency_ms, macro_regime, on_close);
                         return {};
@@ -243,9 +286,12 @@ public:
                 return {};  // still compressing — keep tracking
             }
             // Compression just ended — transition to BREAKOUT_WATCH.
-            // comp_high/comp_low are now frozen. Watch up to 15 ticks for price exit.
+            // comp_high/comp_low are now frozen. Watch up to 40 ticks for price exit.
+            // 40 ticks at typical 5-15 ticks/sec = 3-8 seconds to confirm breakout.
+            // Previous value of 15 ticks expired in <1.5 seconds at fast tick rates,
+            // killing valid slow-developing breakouts before they could confirm.
             phase       = Phase::BREAKOUT_WATCH;
-            watch_ticks = 15;
+            watch_ticks = 40;
             std::cout << "[ENG-" << symbol << "] BREAKOUT_WATCH started"
                       << " hi=" << comp_high << " lo=" << comp_low << "\n";
             std::cout.flush();
@@ -308,14 +354,30 @@ public:
             }
 
             // ── VOLATILITY EXPANSION GATE ───────────────────────────────────────
-            // Breakout should occur on expansion, not in a dead tape.
-            if (recent_vol_pct < VOL_THRESH_PCT) {
-                std::cout << "[ENG-" << symbol << "] BLOCKED: vol_gate"
-                          << " recent=" << recent_vol_pct
-                          << "% min=" << VOL_THRESH_PCT << "%\n";
-                std::cout.flush();
-                if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "vol_gate");
-                phase = Phase::FLAT; return {};
+            // At the moment of breakout the recent_vol over COMPRESSION_LOOKBACK ticks
+            // may still be below the absolute VOL_THRESH_PCT threshold because the
+            // expansion is just beginning.
+            // FIX: accept entry if EITHER:
+            //   (a) recent_vol >= VOL_THRESH_PCT (explicit expansion confirmed), OR
+            //   (b) recent_vol is expanding vs the compression state — i.e. it has
+            //       crossed back above 80% of base_vol (compression is ending).
+            //       This catches the breakout onset correctly.
+            // Only hard-block if recent_vol is still deeply compressed (< 60% of base).
+            {
+                const double vol_expansion_floor = (base_vol_pct > 0.0)
+                    ? (base_vol_pct * 0.60)  // allow entry once vol >= 60% of baseline
+                    : VOL_THRESH_PCT;
+                const bool vol_ok = (recent_vol_pct >= VOL_THRESH_PCT) ||
+                                    (recent_vol_pct >= vol_expansion_floor);
+                if (!vol_ok) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: vol_gate"
+                              << " recent=" << recent_vol_pct
+                              << "% thresh=" << VOL_THRESH_PCT
+                              << "% floor=" << vol_expansion_floor << "%\n";
+                    std::cout.flush();
+                    if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "vol_gate");
+                    phase = Phase::FLAT; return {};
+                }
             }
 
             // ── MOMENTUM GATE ─────────────────────────────────────────────────────
