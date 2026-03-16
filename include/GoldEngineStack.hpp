@@ -110,6 +110,7 @@ struct GoldSignal {
     double tp_ticks   = 0.0;   // in price ticks (0.10 per tick for gold)
     double sl_ticks   = 0.0;
     double confidence = 0.0;
+    double size       = 1.0;   // contract size — carried from sub-engine Signal.size
     char   engine[32] = {};
     char   reason[32] = {};
 };
@@ -1291,6 +1292,7 @@ private:
         g.valid=true; g.is_long=(s.side==TradeSide::LONG);
         g.entry=s.entry; g.tp_ticks=s.tp; g.sl_ticks=s.sl;
         g.confidence=s.confidence;
+        g.size = s.size > 0.0 ? s.size : 1.0;  // carry sub-engine sizing through
         strncpy(g.engine,s.engine,31); strncpy(g.reason,s.reason,31);
         return g;
     }

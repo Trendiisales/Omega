@@ -702,7 +702,8 @@ static void manage_shadow_signals_on_tick(const std::string& sym, double bid, do
         const bool to_hit = (now - p.entry_ts) >= SHADOW_MAX_HOLD_SEC;
         if (!tp_hit && !sl_hit && !to_hit) continue;
         const double exit_px = tp_hit ? p.tp : (sl_hit ? p.sl : mid);
-        const double pnl = p.is_long ? (exit_px - p.entry) : (p.entry - exit_px);
+        const double pnl_pts = p.is_long ? (exit_px - p.entry) : (p.entry - exit_px);
+        const double pnl = pnl_pts * tick_value_multiplier(p.symbol);  // normalised to USD
         write_shadow_signal_close(p, exit_px, tp_hit ? "TP_HIT" : (sl_hit ? "SL_HIT" : "TIMEOUT"), pnl);
         {
             std::lock_guard<std::mutex> pk(g_perf_mtx);
@@ -1705,8 +1706,19 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
               << " exit=" << tr.exitReason << "\n";
     std::cout.flush();
 
+    // Normalise PnL from raw price points to USD using per-instrument tick value.
+    // Without this, daily_loss_limit and all PnL aggregates are in mixed raw units.
+    {
+        const double mult = tick_value_multiplier(tr.symbol);
+        tr.pnl        *= mult;
+        tr.net_pnl    *= mult;
+        tr.mfe        *= mult;
+        tr.mae        *= mult;
+        // Note: slippage_entry/exit, commission are already in dollar terms from apply_realistic_costs
+    }
     g_omegaLedger.record(tr);
-    write_shadow_csv(tr);
+    // Shadow CSV only written in SHADOW mode — prevents LIVE trades contaminating shadow analysis
+    if (g_cfg.mode == "SHADOW") write_shadow_csv(tr);
     write_trade_close_logs(tr);
 
     const std::string perf_key = perf_key_from_trade(tr);
@@ -1773,6 +1785,28 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tick value normalisation — converts raw price-point PnL to USD equivalent.
+// BlackBull CFD lot sizes (standard 1-lot). Adjust if trading mini/micro lots.
+// Used by: daily_loss_limit check, shadow PnL accumulation, GUI display.
+// ─────────────────────────────────────────────────────────────────────────────
+static double tick_value_multiplier(const std::string& symbol) noexcept {
+    if (symbol == "US500.F")  return 50.0;    // S&P500 futures: $50/pt
+    if (symbol == "USTEC.F")  return 20.0;    // Nasdaq futures: $20/pt
+    if (symbol == "USOIL.F")  return 1000.0;  // WTI oil: $1000/pt
+    if (symbol == "GOLD.F")   return 100.0;   // Gold: $100/pt
+    if (symbol == "DJ30.F")   return 5.0;     // Dow Jones: $5/pt
+    if (symbol == "NAS100")   return 20.0;    // Nasdaq cash CFD: $20/pt
+    if (symbol == "XAGUSD")   return 5000.0;  // Silver: $5000/pt
+    if (symbol == "EURUSD")   return 100000.0;// FX: $100k/pt (1 standard lot)
+    if (symbol == "UKBRENT")  return 1000.0;  // Brent crude: $1000/pt
+    if (symbol == "GER30")    return 25.0;    // DAX CFD: $25/pt
+    if (symbol == "UK100")    return 25.0;    // FTSE CFD: $25/pt
+    if (symbol == "ESTX50")   return 25.0;    // EuroStoxx CFD: $25/pt
+    return 1.0;  // Unknown symbol: no scaling (safe fallback)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Signal handler
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1831,6 +1865,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     const double rtt_check = (g_rtt_p95 > 0.0) ? g_rtt_p95 : g_rtt_last;
     const bool lat_ok = (rtt_check <= 0.0 || g_governor.checkLatency(rtt_check, g_cfg.max_latency_ms));
     if (!lat_ok) ++g_gov_lat;
+    // Spread governor: track when current symbol spread exceeds the configured cap.
+    // Per-engine MAX_SPREAD_PCT already blocks entry; this feeds the GUI counter.
+    if (g_cfg.max_spread_pct > 0.0 && mid > 0.0) {
+        const double spread_pct = (ask - bid) / mid * 100.0;
+        if (spread_pct > g_cfg.max_spread_pct) ++g_gov_spread;
+    }
 
     auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
@@ -1898,6 +1938,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             return false;
         }
         if (g_cfg.independent_symbols) {
+            // Per-symbol risk is independent, but enforce a global open-position cap.
+            // Without this, all 12 symbols could open simultaneously ignoring max_positions.
+            const int open_positions =
+                static_cast<int>(g_eng_sp.pos.active) +
+                static_cast<int>(g_eng_nq.pos.active) +
+                static_cast<int>(g_eng_cl.pos.active) +
+                static_cast<int>(g_eng_us30.pos.active) +
+                static_cast<int>(g_eng_nas100.pos.active) +
+                static_cast<int>(g_eng_ger30.pos.active) +
+                static_cast<int>(g_eng_uk100.pos.active) +
+                static_cast<int>(g_eng_estx50.pos.active) +
+                static_cast<int>(g_eng_xag.pos.active) +
+                static_cast<int>(g_eng_eurusd.pos.active) +
+                static_cast<int>(g_eng_brent.pos.active) +
+                static_cast<int>(g_eng_xau.pos.active) +
+                static_cast<int>(g_gold_stack.has_open_position());
+            if (open_positions >= g_cfg.max_open_positions) {
+                ++g_gov_pos;
+                return false;
+            }
             return !symbol_risk_blocked(symbol);
         }
         // Legacy global portfolio mode.
@@ -2014,7 +2074,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                       << " regime=" << g_gold_stack.regime_name()
                       << " vwap="  << g_gold_stack.vwap()
                       << "\033[0m\n";
-            send_live_order("GOLD.F", gsig.is_long, 1.0, gsig.entry);
+            send_live_order("GOLD.F", gsig.is_long, gsig.size > 0.0 ? gsig.size : 1.0, gsig.entry);
         }
 
         // ── Latency Edge Stack: co-location speed engines ─────────────────────

@@ -315,7 +315,7 @@ void OmegaTelemetryServer::wsBroadcastLoop()
 
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);  // 127.0.0.1 only — no VPS exposure
     addr.sin_port        = htons(static_cast<u_short>(ws_port_));
 
     if (bind(ws_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR ||
@@ -384,7 +384,7 @@ void OmegaTelemetryServer::run(int port)
 
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);  // 127.0.0.1 only — no VPS exposure
     addr.sin_port        = htons(static_cast<u_short>(port));
 
     if (bind(server_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR ||
@@ -432,7 +432,7 @@ void OmegaTelemetryServer::run(int port)
         char hdr[256];
         snprintf(hdr, sizeof(hdr),
             "HTTP/1.1 %d OK\r\nContent-Type: %s\r\nContent-Length: %zu\r\n"
-            "Access-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+            "Access-Control-Allow-Origin: http://localhost\r\nConnection: close\r\n\r\n",
             status, ct.c_str(), body.size());
         send(c, hdr,        static_cast<int>(strlen(hdr)),     0);
         send(c, body.c_str(), static_cast<int>(body.size()),   0);
