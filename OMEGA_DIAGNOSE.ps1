@@ -119,15 +119,22 @@ if (-not $shadowSignalFiles) {
     if (Test-Path $fallback) { $shadowSignalFiles = @(Get-Item $fallback) }
 }
 
+$shadowSignalEventFiles = Get-RecentFiles "$LogRoot\shadow\events\omega_shadow_signal_events_*.csv" $Days
+if (-not $shadowSignalEventFiles) {
+    $fallback = "$LogRoot\shadow\omega_shadow_signal_events.csv"
+    if (Test-Path $fallback) { $shadowSignalEventFiles = @(Get-Item $fallback) }
+}
+
 $logFiles = Get-RecentFiles "$LogRoot\omega_*.log" $Days
 
-if (-not $tradeFiles -and -not $shadowSignalFiles -and -not $logFiles) {
+if (-not $tradeFiles -and -not $shadowSignalFiles -and -not $shadowSignalEventFiles -and -not $logFiles) {
     Write-Host "[ERROR] No Omega logs found under $LogRoot" -ForegroundColor Red
     exit 1
 }
 
 $tradeRows = if ($tradeFiles) { Import-CsvSet $tradeFiles } else { @() }
 $shadowSignalRows = if ($shadowSignalFiles) { Import-CsvSet $shadowSignalFiles } else { @() }
+$shadowSignalEventRows = if ($shadowSignalEventFiles) { Import-CsvSet $shadowSignalEventFiles } else { @() }
 $logLines = if ($logFiles) { @(Get-LogLines $logFiles) } else { @() }
 
 $expectedSymbols = @(
@@ -140,6 +147,7 @@ Write-Host "=== OMEGA DIAGNOSIS ===" -ForegroundColor Cyan
 Write-Host "Log root: $LogRoot"
 Write-Host "Trade files: $($tradeFiles.Count)"
 Write-Host "Shadow signal files: $($shadowSignalFiles.Count)"
+Write-Host "Shadow signal event files: $($shadowSignalEventFiles.Count)"
 Write-Host "Rolling logs: $($logFiles.Count)"
 Write-Host ""
 
@@ -192,15 +200,15 @@ if ($tradeRows.Count -gt 0) {
     Write-Host "No trade close CSV rows found."
 }
 
-if ($shadowSignalRows.Count -gt 0) {
-    Write-Host "`n--- SHADOW SIGNAL VERDICTS ---" -ForegroundColor Cyan
-    Get-CountReport $shadowSignalRows {
+if ($shadowSignalEventRows.Count -gt 0) {
+    Write-Host "`n--- SHADOW SIGNAL EVENTS ---" -ForegroundColor Cyan
+    Get-CountReport $shadowSignalEventRows {
         param($r)
         "$($r.symbol) | $($r.verdict)"
     } "signals" | Sort-Object signals -Descending | Format-Table -AutoSize
 
     Write-Host "`n--- BLOCKED REASONS BY SYMBOL ---" -ForegroundColor Cyan
-    $blocked = @($shadowSignalRows | Where-Object { $_.verdict -eq "BLOCKED" })
+    $blocked = @($shadowSignalEventRows | Where-Object { $_.verdict -eq "BLOCKED" })
     if ($blocked.Count -gt 0) {
         Get-CountReport $blocked {
             param($r)
@@ -211,7 +219,7 @@ if ($shadowSignalRows.Count -gt 0) {
     }
 
     Write-Host "`n--- ELIGIBLE SIGNALS BY SYMBOL ---" -ForegroundColor Cyan
-    $eligible = @($shadowSignalRows | Where-Object { $_.verdict -eq "ELIGIBLE" })
+    $eligible = @($shadowSignalEventRows | Where-Object { $_.verdict -eq "ELIGIBLE" })
     if ($eligible.Count -gt 0) {
         Get-CountReport $eligible {
             param($r)
@@ -220,9 +228,15 @@ if ($shadowSignalRows.Count -gt 0) {
     } else {
         Write-Host "No ELIGIBLE shadow signals recorded."
     }
+} elseif ($shadowSignalRows.Count -gt 0) {
+    Write-Host "`n--- SHADOW SIGNAL VERDICTS ---" -ForegroundColor Cyan
+    Get-CountReport $shadowSignalRows {
+        param($r)
+        "$($r.symbol) | $($r.verdict)"
+    } "signals" | Sort-Object signals -Descending | Format-Table -AutoSize
 } else {
     Write-Host "`n--- SHADOW SIGNAL VERDICTS ---" -ForegroundColor Cyan
-    Write-Host "No shadow signal CSV rows found."
+    Write-Host "No shadow signal event rows found."
 }
 
 $tickCounts = @{}
@@ -278,9 +292,13 @@ foreach ($r in $tradeRows) {
 $blockedBySymbol = @{}
 $eligibleBySymbol = @{}
 $topBlockedReason = @{}
-if ($shadowSignalRows.Count -gt 0) {
+if ($shadowSignalEventRows.Count -gt 0 -or $shadowSignalRows.Count -gt 0) {
     foreach ($sym in $expectedSymbols) {
-        $rows = @($shadowSignalRows | Where-Object { $_.symbol -eq $sym })
+        $rows = if ($shadowSignalEventRows.Count -gt 0) {
+            @($shadowSignalEventRows | Where-Object { $_.symbol -eq $sym })
+        } else {
+            @($shadowSignalRows | Where-Object { $_.symbol -eq $sym })
+        }
         $blockedRows = @($rows | Where-Object { $_.verdict -eq "BLOCKED" })
         $eligibleRows = @($rows | Where-Object { $_.verdict -eq "ELIGIBLE" })
         $blockedBySymbol[$sym] = $blockedRows.Count
