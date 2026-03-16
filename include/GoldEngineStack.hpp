@@ -249,9 +249,11 @@ public:
 class CompressionBreakoutEngine : public EngineBase {
     MinMaxCircularBuffer<double,32> history_;
     static constexpr size_t WINDOW=30;
-    static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.20, MAX_SPREAD=1.80;
-    static constexpr int TP_TICKS=50, SL_TICKS=18; // BREAKOUT_TRIGGER 0.35→0.20: co-located VPS earns $0.15 better fill vs retail
-    std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(2)};
+    static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.35, MAX_SPREAD=1.80;
+    static constexpr int TP_TICKS=50, SL_TICKS=18;
+    // Cooldown raised to 5000ms: tightening trigger to $0.20 caused gold to trade
+    // every tick on normal noise. $0.35 trigger restored with 5s minimum between entries.
+    std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(5)};
 public:
     CompressionBreakoutEngine(): EngineBase("CompressionBreakout",1.0){}
     Signal process(const GoldSnapshot& s) override {
@@ -1044,6 +1046,10 @@ public:
         // Hard-loss cooldown to avoid immediate revenge trading after failed break.
         if(now_s < sl_cooldown_until_) return GoldSignal{};
 
+        // Minimum entry gap — prevents re-entering immediately after every TP/SL.
+        // CompressionBreakout was re-firing on every tick without this gate.
+        if(now_s - last_entry_ts_ < MIN_ENTRY_GAP_SEC) return GoldSignal{};
+
         // Volatility gate
         if(!vol_filter_.allow(snap.mid)) return GoldSignal{};
 
@@ -1060,6 +1066,7 @@ public:
                     GoldSignal gs=to_gold_signal(s);
                     pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
                     has_open_pos_=true;
+                    last_entry_ts_=now_s;
                     return gs;
                 }
                 break;
@@ -1080,6 +1087,7 @@ public:
             GoldSignal gs=to_gold_signal(best);
             pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
             has_open_pos_=true;
+            last_entry_ts_=now_s;
             return gs;
         }
         return GoldSignal{};
@@ -1119,6 +1127,9 @@ private:
     static constexpr double  IMPULSE_MIN_CONFIDENCE = 1.05;
     static constexpr double  IMPULSE_MIN_SCORE = 1.20;
     static constexpr double  GENERAL_MIN_SCORE = 1.20;
+    // Minimum gap between any new entry — prevents re-entering immediately after TP/SL.
+    // Was causing 30+ gold trades per hour as CompressionBreakout re-fired every tick.
+    static constexpr int64_t MIN_ENTRY_GAP_SEC = 30;
 
     std::vector<std::unique_ptr<EngineBase>> engines_;
     GoldFeatures     features_;
@@ -1128,8 +1139,9 @@ private:
     MarketRegime     current_regime_=MarketRegime::MEAN_REVERSION;
     bool             has_open_pos_=false;
     double           last_mid_=0;
-    int64_t          sl_cooldown_until_=0;  // block new entries briefly after hard SL
-    std::array<int64_t, 2> side_pause_until_{{0,0}}; // [LONG,SHORT]
+    int64_t          sl_cooldown_until_=0;
+    int64_t          last_entry_ts_=0;     // timestamp of last entry — enforces MIN_ENTRY_GAP_SEC
+    std::array<int64_t, 2> side_pause_until_{{0,0}};
     std::array<std::deque<int64_t>, 2> side_hard_sl_times_{};
     std::array<double, 2> last_exit_price_{{0.0,0.0}};
     std::array<int64_t, 2> last_exit_ts_{{0,0}};

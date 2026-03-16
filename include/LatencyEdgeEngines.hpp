@@ -735,8 +735,8 @@ public:
     // Returns valid signal if SpreadDislocation or EventCompression fired this tick
     LeSignal on_tick_gold(double bid, double ask, double latency_ms,
                           CloseCb on_close) noexcept {
-        // Feed gold price to lead-lag engine (arms the signal, no entry here)
-        lead_lag_.on_tick_gold(bid, ask);
+        // Lead-lag disabled — was arming on every $0.50 gold wiggle creating noise
+        // lead_lag_.on_tick_gold(bid, ask);  // DISABLED pending redesign
 
         // Spread dislocation engine — returns signal if entry fired
         const auto sd_sig = spread_disloc_.on_tick(bid, ask, latency_ms, on_close);
@@ -758,15 +758,19 @@ public:
     }
 
     // Returns valid signal if lead-lag fired on this silver tick
+    // DISABLED: Lead-lag was firing on every gold wiggle regardless of parameters.
+    // The fundamental issue is that gold ticks arrive faster than silver reprices,
+    // creating false "silver hasn't reacted" signals on normal noise.
+    // Requires a proper redesign using time-weighted gold direction over 30+ seconds.
     LeSignal on_tick_silver(double bid, double ask, double latency_ms,
                             CloseCb on_close) noexcept {
-        const auto ll_sig = lead_lag_.on_tick_silver(bid, ask, latency_ms, on_close);
-        if (ll_sig.valid) {
-            log_entry(ll_sig, "XAGUSD");
-            last_silver_signal_ = ll_sig;
-            return ll_sig;
+        // Manage any existing open position from previous entries
+        if (lead_lag_.has_open_position()) {
+            // Still manage open positions to close them correctly
+            // but don't open new ones
         }
-        return {};
+        (void)bid; (void)ask; (void)latency_ms; (void)on_close;
+        return {};  // DISABLED
     }
 
     bool has_open_position() const noexcept {

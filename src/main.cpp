@@ -2611,14 +2611,15 @@ int main(int argc, char* argv[])
 
         const std::string trade_csv_path = trade_dir + "/omega_trade_closes.csv";
         ensure_parent_dir(trade_csv_path);
-        g_trade_close_csv.open(trade_csv_path, std::ios::app);
+        // Always truncate and rewrite header on startup — ensures column schema
+        // matches current build. Old header with missing columns (e.g. gross_pnl,
+        // net_pnl added in a later build) would cause blank fields in PowerShell.
+        g_trade_close_csv.open(trade_csv_path, std::ios::trunc);
         if (!g_trade_close_csv.is_open()) {
             std::cerr << "[OMEGA-FATAL] Failed to open full trade CSV: " << trade_csv_path << "\n";
             return 1;
         }
-        g_trade_close_csv.seekp(0, std::ios::end);
-        if (g_trade_close_csv.tellp() == std::streampos(0))
-            g_trade_close_csv << header << '\n';
+        g_trade_close_csv << header << '\n';
         std::cout << "[OMEGA] Full Trade CSV: " << trade_csv_path << "\n";
 
         g_daily_trade_close_log = std::make_unique<RollingCsvLogger>(
