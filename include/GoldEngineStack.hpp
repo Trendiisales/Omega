@@ -246,21 +246,47 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. CompressionBreakoutEngine
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// CompressionBreakoutEngine — parameter rationale at $5000 gold (Mar 2026)
+//
+// CALIBRATION BASIS: Last 2 London sessions (Mar 13 + Mar 16 2026)
+//   Avg hourly H-L range:  $28–$30
+//   Tightest London hour:  $14.00  (Mar 13 09:00 UTC)
+//   Normal quiet range:    $14–$22 (pre-NY open)
+//   Event candles:         $52–$75 (14:00 UTC macro releases)
+//
+// OLD values (wrong — calibrated for ~$300 gold, not $5000):
+//   COMPRESSION_RANGE = $2.00  → NEVER achieved in London (hourly avg $28)
+//   BREAKOUT_TRIGGER  = $0.35  → 0.007% of price, pure tick noise
+//   Result: engine fired on sub-minute $0.35 oscillations constantly
+//
+// NEW values (calibrated for $5000 gold):
+//   COMPRESSION_RANGE = $8.00  → achievable in tight 30-tick windows
+//                                 sub-hourly consolidation does compress to $6–10
+//   BREAKOUT_TRIGGER  = $2.50  → 0.05% of $5000, confirms real directional intent
+//                                 filters out the $1–2 oscillations that were causing SL hits
+//   MAX_SPREAD        = $2.00  → unchanged, still valid spread gate
+//   TP_TICKS          = 50     → $5.00 target (2:1 on $2.50 SL effectively)
+//   SL_TICKS          = 20     → $2.00 stop, tight enough to cut losers fast
+//
+// DEAD ZONE: 21:00–23:00 UTC blocked (NY/Tokyo handoff)
+//   Thin liquidity + stale VWAP (resets midnight) + no directional flow
+//   4 SL hits in 16 min observed 22:35 UTC Mar 17 before this gate added
+// ─────────────────────────────────────────────────────────────────────────────
 class CompressionBreakoutEngine : public EngineBase {
     MinMaxCircularBuffer<double,32> history_;
-    static constexpr size_t WINDOW=30;
-    static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.35, MAX_SPREAD=1.80;
-    static constexpr int TP_TICKS=50, SL_TICKS=18;
-    // Cooldown raised to 5000ms: tightening trigger to $0.20 caused gold to trade
-    // every tick on normal noise. $0.35 trigger restored with 5s minimum between entries.
+    static constexpr size_t WINDOW        = 30;
+    static constexpr double COMPRESSION_RANGE = 8.00;  // was 2.00 — $2 never achievable at $5000 gold
+    static constexpr double BREAKOUT_TRIGGER  = 2.50;  // was 0.35 — $0.35 is tick noise, $2.50 is real
+    static constexpr double MAX_SPREAD        = 2.00;  // unchanged
+    static constexpr int    TP_TICKS          = 50;    // $5.00 target
+    static constexpr int    SL_TICKS          = 20;    // $2.00 stop — was 18, matches new trigger scale
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(5)};
 
     // NY/Tokyo handoff dead zone: 21:00–23:00 UTC
-    // This window has thin liquidity, wide erratic spreads, and a stale VWAP
-    // (daily VWAP resets at midnight so 22:00–00:30 values are meaningless).
-    // Compression is real but breakouts are noise — price oscillates $3–5 randomly.
+    // Thin liquidity, erratic spreads, stale VWAP (resets at midnight).
     // Tokyo gold directional flow does not establish until ~23:00 UTC.
-    // Result without this gate: clusters of SL hits in 5–15 minute windows.
+    // Without this gate: 4 SL hits in 16 min observed 22:35 UTC Mar 17 2026.
     static bool in_handoff_dead_zone() noexcept {
         const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti{};
@@ -269,8 +295,7 @@ class CompressionBreakoutEngine : public EngineBase {
 #else
         gmtime_r(&t, &ti);
 #endif
-        const int h = ti.tm_hour;
-        return (h >= 21 && h < 23); // 21:00–23:00 UTC blocked
+        return (ti.tm_hour >= 21 && ti.tm_hour < 23);
     }
 
 public:
