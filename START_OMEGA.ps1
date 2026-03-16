@@ -3,8 +3,8 @@
 # ==============================================================================
 $ErrorActionPreference = "Stop"
 
-$repo = "C:\Omega"
-$exe  = "C:\Omega\build\Release\Omega.exe"
+$repo = "C:\\Omega"
+$exe  = "C:\\Omega\\build\\Release\\Omega.exe"
 
 Set-Location $repo
 git fetch origin | Out-Null
@@ -20,6 +20,7 @@ if (-not (Test-Path $exe)) {
     Write-Host "[ERROR] Omega.exe not found — run REBUILD_AND_START.ps1 first" -ForegroundColor Red
     exit 1
 }
+
 Write-Host "Starting Omega at commit $localHead..." -ForegroundColor Cyan
-cd C:\Omega\build\Release
-.\Omega.exe omega_config.ini
+Set-Location "C:\\Omega\\build\\Release"
+.\\Omega.exe omega_config.ini
