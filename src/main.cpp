@@ -146,6 +146,7 @@ struct OmegaConfig {
     double oil_sl_pct         = 0.600;  // 0.60% SL: oil noise is 0.3-0.5% intraday
     double oil_vol_thresh_pct = 0.080;  // 0.08%: oil needs a bigger initial signal
     int    oil_min_gap_sec    = 360;    // 6min gap: oil can multi-spike on news
+    int    oil_max_hold_sec   = 1800;   // 30min: oil moves are slower than indices
 
     // GUI
     int         gui_port   = 7779;
@@ -1319,7 +1320,10 @@ static void apply_engine_config(omega::OilEngine& eng) noexcept {
     eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
-    eng.MAX_HOLD_SEC         = g_cfg.max_hold_sec;
+    // Oil needs its own max hold — 30 min minimum. Oil moves are slower than indices
+    // and the 1.5% TP target requires time. The generic max_hold_sec=600 (10 min) is
+    // too short and causes premature timeouts. Use the larger of config or 1800s.
+    eng.MAX_HOLD_SEC         = std::max(g_cfg.oil_max_hold_sec, 1800);
     eng.macro                = &g_macro_ctx;
 }
 
@@ -1514,6 +1518,7 @@ static void load_config(const std::string& path) {
             if (k=="sl_pct")         g_cfg.oil_sl_pct         = std::stod(v);
             if (k=="vol_thresh_pct") g_cfg.oil_vol_thresh_pct = std::stod(v);
             if (k=="min_gap_sec")    g_cfg.oil_min_gap_sec    = std::stoi(v);
+            if (k=="max_hold_sec")   g_cfg.oil_max_hold_sec   = std::stoi(v);
         }
     }
     std::cout << "[CONFIG] mode=" << g_cfg.mode
