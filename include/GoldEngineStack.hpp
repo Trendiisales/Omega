@@ -249,8 +249,8 @@ public:
 class CompressionBreakoutEngine : public EngineBase {
     MinMaxCircularBuffer<double,32> history_;
     static constexpr size_t WINDOW=30;
-    static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.35, MAX_SPREAD=1.80;
-    static constexpr int TP_TICKS=50, SL_TICKS=18; // TP 40→50: genuine compression breakouts on gold run $4-6, not $4
+    static constexpr double COMPRESSION_RANGE=2.00, BREAKOUT_TRIGGER=0.20, MAX_SPREAD=1.80;
+    static constexpr int TP_TICKS=50, SL_TICKS=18; // BREAKOUT_TRIGGER 0.35→0.20: co-located VPS earns $0.15 better fill vs retail
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(2)};
 public:
     CompressionBreakoutEngine(): EngineBase("CompressionBreakout",1.0){}

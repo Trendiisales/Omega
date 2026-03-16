@@ -59,6 +59,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "MacroRegimeDetector.hpp"
 #include "OmegaTelemetryServer.hpp"
 #include "GoldEngineStack.hpp"    // Multi-engine gold stack (ported from ChimeraMetals)
+#include "LatencyEdgeEngines.hpp" // Co-location speed advantage engines (LeadLag, SpreadDisloc, EventComp)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Singleton
@@ -188,6 +189,11 @@ static omega::MacroContext g_macro_ctx;
 // SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
 // Runs in parallel with g_eng_xau (GoldEngine) on every GOLD.F tick.
 static omega::gold::GoldEngineStack g_gold_stack;
+
+// Co-location latency edge engines -- GoldSilverLeadLag + GoldSpreadDislocation
+// + GoldEventCompression. Fully independent from GoldEngineStack and CRTP engines.
+// These exploit the 0.3-4ms RTT advantage of the co-located VPS.
+static omega::latency::LatencyEdgeStack g_le_stack;
 
 // Book
 static std::mutex                              g_book_mtx;
@@ -1918,7 +1924,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         dispatch(g_eng_estx50, symbol_gate("ESTX50", g_eng_estx50.pos.active));
     }
     else if (sym == "XAGUSD") {
+        // Standard breakout engine for silver
         dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active));
+        // Lead-lag engine: enter silver when gold has moved but silver hasn't yet
+        {
+            const auto ll_sig = g_le_stack.on_tick_silver(bid, ask, rtt_check, on_close);
+            if (ll_sig.valid) {
+                g_telemetry.UpdateLastSignal("XAGUSD",
+                    ll_sig.is_long ? "LONG" : "SHORT", ll_sig.entry, ll_sig.reason);
+                send_live_order("XAGUSD", ll_sig.is_long, ll_sig.size, ll_sig.entry);
+            }
+        }
     }
     else if (sym == "EURUSD") {
         dispatch(g_eng_eurusd, symbol_gate("EURUSD", g_eng_eurusd.pos.active));
@@ -1953,8 +1969,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                       << " regime=" << g_gold_stack.regime_name()
                       << " vwap="  << g_gold_stack.vwap()
                       << "\033[0m\n";
-            // ── Live order dispatch (no-op in SHADOW mode) ────────────────────
             send_live_order("GOLD.F", gsig.is_long, 1.0, gsig.entry);
+        }
+
+        // ── Latency Edge Stack: co-location speed engines ─────────────────────
+        // SpreadDislocation and EventCompression run on every GOLD.F tick.
+        // LeadLag arms here, fires on next XAGUSD tick (see XAGUSD dispatch block).
+        // These engines are fully independent — separate positions and P&L.
+        {
+            const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, on_close);
+            if (le_sig.valid) {
+                g_telemetry.UpdateLastSignal("GOLD.F",
+                    le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason);
+                send_live_order("GOLD.F", le_sig.is_long, le_sig.size, le_sig.entry);
+            }
         }
     }
     else {
@@ -2343,6 +2371,8 @@ static void quote_loop() {
                 std::cout << "[GOLD-DIAG] regime=" << g_gold_stack.regime_name()
                           << " vwap=" << g_gold_stack.vwap()
                           << " vol_range=" << g_gold_stack.vol_range() << "\n";
+                // Latency edge engines stats
+                g_le_stack.print_stats();
                 print_perf_stats();
             }
 
@@ -2388,18 +2418,25 @@ static void quote_loop() {
         fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
         fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
         fc(g_eng_brent, "UKBRENT"); fc(g_eng_xau, "GOLD.F");
-        // Also force-close any open GoldEngineStack position
+        // Force-close GoldEngineStack
         {
-            double g_bid = 0.0, g_ask = 0.0;
+            double g_bid = 0.0, g_ask = 0.0, s_bid = 0.0, s_ask = 0.0;
             { std::lock_guard<std::mutex> lk(g_book_mtx);
               const auto bi = g_bids.find("GOLD.F"); if (bi != g_bids.end()) g_bid = bi->second;
-              const auto ai = g_asks.find("GOLD.F"); if (ai != g_asks.end()) g_ask = ai->second; }
+              const auto ai = g_asks.find("GOLD.F"); if (ai != g_asks.end()) g_ask = ai->second;
+              const auto sbi = g_bids.find("XAGUSD"); if (sbi != g_bids.end()) s_bid = sbi->second;
+              const auto sai = g_asks.find("XAGUSD"); if (sai != g_asks.end()) s_ask = sai->second; }
             if (g_bid > 0.0 && g_ask > 0.0) {
                 omega::gold::GoldEngineStack::CloseCallback gold_fc_cb =
-                    [](const omega::TradeRecord& tr) {
-                        handle_closed_trade(tr);
-                    };
+                    [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
                 g_gold_stack.force_close(g_bid, g_ask, g_rtt_last, gold_fc_cb);
+                // Force-close latency edge engines
+                omega::latency::LatencyEdgeStack::CloseCb le_cb =
+                    [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+                g_le_stack.force_close_all(g_bid, g_ask,
+                    s_bid > 0.0 ? s_bid : g_bid * 0.0185,  // fallback silver price
+                    s_ask > 0.0 ? s_ask : g_ask * 0.0185,
+                    g_rtt_last, le_cb);
             }
         }
 
