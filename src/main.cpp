@@ -1252,32 +1252,57 @@ static void write_trade_close_logs(const omega::TradeRecord& tr) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Session
-// Handles overnight ranges (e.g. start=22 end=5 wraps through midnight)
-// NZ 12pm = UTC 00:00 = Asia session open (Tokyo gold trading active)
-// Sessions:
-//   Asia:   22:00-05:00 UTC (NZ/AU morning, Tokyo gold)
-//   London: 07:00-16:00 UTC
-//   NY:     13:00-21:00 UTC
-// Config uses two windows: primary (e.g. 7-21) + asia (22-5) via session_asia flag
+// session_tradeable() — UTC hour gate for all engine entries
+//
+// TWO WINDOWS are evaluated. Either window active = trading allowed.
+//
+// PRIMARY WINDOW  (config: session_start_utc → session_end_utc)
+//   Default: 07:00–22:00 UTC  (London open → NY close + 1hr buffer)
+//   Covers:  London 07:00–16:00, NY 13:00–22:00
+//   Supports wrap-through-midnight if start > end (e.g. 22→5)
+//   Set start == end to run 24h (not recommended)
+//
+// ASIA WINDOW  (config: session_asia=true)
+//   Fixed:  22:00–05:00 UTC  (Tokyo gold market + NZ/AU morning)
+//   Active for gold, silver, oil — all trade during Tokyo hours
+//   Hardcoded range — not affected by primary window values
+//
+// DEAD ZONE (intentional gap):
+//   05:00–07:00 UTC — Sydney close to London open
+//   Genuinely thin liquidity, wide spreads, no engine runs here
+//
+// COVERAGE MAP:
+//   00:00–05:00  Asia window active      ✓ trading
+//   05:00–07:00  DEAD ZONE               ✗ blocked
+//   07:00–22:00  Primary window active   ✓ trading
+//   22:00–24:00  Asia window active      ✓ trading
+//
+// BUG HISTORY:
+//   session_end_utc was 21 — created a silent 21:00–22:00 dead zone each night.
+//   Gold, oil, silver, forex all blocked for 1hr despite being open markets.
+//   Fixed: session_end_utc raised to 22 — primary window now hands off directly
+//   to Asia window with no gap.
 // ─────────────────────────────────────────────────────────────────────────────
 static bool session_tradeable() noexcept {
     const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti; gmtime_s(&ti, &t);
     const int h = ti.tm_hour;
 
-    // Primary window (supports wrap-through-midnight, e.g. 22->5)
+    // PRIMARY WINDOW — London + NY (07:00–22:00 UTC by default)
+    // Supports wrap-through-midnight: if start > end, range crosses 00:00
+    // e.g. start=22 end=5 → active from 22:00 through to 05:00
     bool in_primary = false;
     if (g_cfg.session_start_utc == g_cfg.session_end_utc) {
-        in_primary = true; // explicit 24h mode
+        in_primary = true;                                              // 24h explicit mode
     } else if (g_cfg.session_start_utc < g_cfg.session_end_utc) {
-        in_primary = (h >= g_cfg.session_start_utc && h < g_cfg.session_end_utc);
+        in_primary = (h >= g_cfg.session_start_utc && h < g_cfg.session_end_utc); // normal range
     } else {
-        in_primary = (h >= g_cfg.session_start_utc || h < g_cfg.session_end_utc);
+        in_primary = (h >= g_cfg.session_start_utc || h < g_cfg.session_end_utc); // wraps midnight
     }
 
-    // Asia/Tokyo window: 22:00-05:00 UTC (overnight, wraps midnight)
-    // Active for gold -- Tokyo is the 3rd largest gold market
+    // ASIA WINDOW — Tokyo gold market (22:00–05:00 UTC, wraps midnight)
+    // Hardcoded range — independent of primary window config.
+    // When session_end_utc=22, primary hands off to Asia with zero gap.
     const bool in_asia = g_cfg.session_asia && (h >= 22 || h < 5);
 
     return in_primary || in_asia;
