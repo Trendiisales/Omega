@@ -56,12 +56,17 @@ public:
         VOL_THRESH_PCT        = 0.040;
         TP_PCT                = 0.600;
         SL_PCT                = 0.350;
-        COMPRESSION_LOOKBACK  = 40;    // 60->40: faster compression detection in high-vol market
-        BASELINE_LOOKBACK     = 160;   // 200->160: 4x ratio maintained, responds faster
-        COMPRESSION_THRESHOLD = 0.85;  // 0.75->0.85: VIX=24 market needs looser threshold
+        COMPRESSION_LOOKBACK  = 40;
+        BASELINE_LOOKBACK     = 160;
+        COMPRESSION_THRESHOLD = 0.85;
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 300;
         MAX_SPREAD_PCT        = 0.04;
+        // SP at ~6600: 0.025% = $1.65 momentum over 20 ticks — reasonable but
+        // too tight in early London (07-09 UTC). Loosen to 0.012% = $0.79.
+        MOMENTUM_THRESH_PCT   = 0.012;
+        // SP at ~6600: 0.12% = $7.92 beyond comp edge — correct, keep as-is.
+        MIN_BREAKOUT_PCT      = 0.12;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -103,12 +108,18 @@ public:
         VOL_THRESH_PCT        = 0.050;
         TP_PCT                = 0.700;
         SL_PCT                = 0.400;
-        COMPRESSION_LOOKBACK  = 35;    // 50->35: faster compression detection in high-vol market
-        BASELINE_LOOKBACK     = 140;   // 200->140: 4x ratio maintained, responds faster
-        COMPRESSION_THRESHOLD = 0.85;  // 0.75->0.85: VIX=24 market needs looser threshold
+        COMPRESSION_LOOKBACK  = 35;
+        BASELINE_LOOKBACK     = 140;
+        COMPRESSION_THRESHOLD = 0.85;
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 240;
         MAX_SPREAD_PCT        = 0.05;
+        // NQ at ~24500: 0.025% = $6.13 over 20 ticks — way too tight for early
+        // London pre-market chop. 0.010% = $2.45 — still meaningful momentum.
+        MOMENTUM_THRESH_PCT   = 0.010;
+        // NQ at ~24500: 0.12% = $29.40 beyond comp edge — too large.
+        // Tighten to 0.08% = $19.60 — still a genuine break, not a fake.
+        MIN_BREAKOUT_PCT      = 0.08;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -151,12 +162,16 @@ public:
         VOL_THRESH_PCT        = 0.080;
         TP_PCT                = 1.200;
         SL_PCT                = 0.600;
-        COMPRESSION_LOOKBACK  = 80;    // 120->80: reduce warmup time, still captures 2-4min compression
-        BASELINE_LOOKBACK     = 240;   // 300->240: 3x ratio maintained, faster baseline
-        COMPRESSION_THRESHOLD = 0.80;  // 0.70->0.80: loosen for elevated vol regime
+        COMPRESSION_LOOKBACK  = 80;
+        BASELINE_LOOKBACK     = 240;
+        COMPRESSION_THRESHOLD = 0.80;
         MAX_HOLD_SEC          = 1800;
         MIN_GAP_SEC           = 360;
         MAX_SPREAD_PCT        = 0.120;
+        // Oil at ~$100: 0.015% = $0.015 momentum over 20 ticks — directional
+        // but not over-restrictive. 0.10% min_breakout = $0.10 beyond comp edge.
+        MOMENTUM_THRESH_PCT   = 0.015;
+        MIN_BREAKOUT_PCT      = 0.10;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -259,6 +274,12 @@ public:
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 180;
         MAX_SPREAD_PCT        = 0.05;
+        // DJ30 at ~46700: 0.025% = $11.68 over 20 ticks — completely unreachable
+        // in early London. 0.006% = $2.80 — meaningful momentum for Dow.
+        MOMENTUM_THRESH_PCT   = 0.006;
+        // DJ30 at ~46700: 0.12% = $56.04 beyond comp edge — absurd.
+        // 0.04% = $18.68 — still a real break above noise for Dow.
+        MIN_BREAKOUT_PCT      = 0.04;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -296,7 +317,11 @@ public:
         COMPRESSION_THRESHOLD = 0.85;
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 180;
-        MAX_SPREAD_PCT        = 0.06;  // cash slightly wider than futures
+        MAX_SPREAD_PCT        = 0.06;
+        // NAS100 at ~24500: same as NqEngine — 0.010% = $2.45 momentum threshold
+        MOMENTUM_THRESH_PCT   = 0.010;
+        // NAS100: 0.08% = $19.60 beyond comp edge — matches NqEngine
+        MIN_BREAKOUT_PCT      = 0.08;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,

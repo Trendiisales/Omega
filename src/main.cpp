@@ -1289,48 +1289,39 @@ static bool session_tradeable() noexcept {
 // Generic fallback (used for GOLD BreakoutEngine)
 // SP -- uses [sp] config section, links macro context
 static void apply_engine_config(omega::SpEngine& eng) noexcept {
-    // Only override config-file-driven values. Constructor sets tuned compression params.
-    // DO NOT override COMPRESSION_LOOKBACK/BASELINE/THRESHOLD -- constructor has correct values.
     eng.VOL_THRESH_PCT        = g_cfg.sp_vol_thresh_pct;
-    eng.TP_PCT               = g_cfg.sp_tp_pct;
-    eng.SL_PCT               = g_cfg.sp_sl_pct;
-    // min_entry_gap_sec from [breakout] section acts as floor across all symbols.
-    // Per-symbol [sp] min_gap_sec applies unless [breakout] min_entry_gap_sec is larger.
-    eng.MIN_GAP_SEC          = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
-    eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
-    eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
-    eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
-    eng.MAX_HOLD_SEC         = g_cfg.max_hold_sec;
-    eng.macro                = &g_macro_ctx;
+    eng.TP_PCT                = g_cfg.sp_tp_pct;
+    eng.SL_PCT                = g_cfg.sp_sl_pct;
+    eng.MIN_GAP_SEC           = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
+    // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
+    // correct per-instrument values (0.012% / 0.12%) tuned for SP price level.
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+    eng.macro                 = &g_macro_ctx;
 }
 // NQ -- uses [nq] config section, links macro context
 static void apply_engine_config(omega::NqEngine& eng) noexcept {
-    // Only override config-file-driven values. Constructor sets tuned compression params.
     eng.VOL_THRESH_PCT        = g_cfg.nq_vol_thresh_pct;
-    eng.TP_PCT               = g_cfg.nq_tp_pct;
-    eng.SL_PCT               = g_cfg.nq_sl_pct;
-    eng.MIN_GAP_SEC          = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
-    eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
-    eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
-    eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
-    eng.MAX_HOLD_SEC         = g_cfg.max_hold_sec;
-    eng.macro                = &g_macro_ctx;
+    eng.TP_PCT                = g_cfg.nq_tp_pct;
+    eng.SL_PCT                = g_cfg.nq_sl_pct;
+    eng.MIN_GAP_SEC           = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
+    // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
+    // correct per-instrument values (0.010% / 0.08%) tuned for NQ price level.
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+    eng.macro                 = &g_macro_ctx;
 }
 // Oil -- uses [oil] config section, inventory window block built into engine
 static void apply_engine_config(omega::OilEngine& eng) noexcept {
-    // Only override config-file-driven values. Constructor sets tuned compression params.
     eng.VOL_THRESH_PCT        = g_cfg.oil_vol_thresh_pct;
-    eng.TP_PCT               = g_cfg.oil_tp_pct;
-    eng.SL_PCT               = g_cfg.oil_sl_pct;
-    eng.MIN_GAP_SEC          = std::max(g_cfg.oil_min_gap_sec, g_cfg.min_entry_gap_sec);
-    eng.MOMENTUM_THRESH_PCT  = g_cfg.momentum_thresh_pct;
-    eng.MIN_BREAKOUT_PCT     = g_cfg.min_breakout_pct;
-    eng.MAX_TRADES_PER_MIN   = g_cfg.max_trades_per_min;
-    // Oil needs its own max hold — 30 min minimum. Oil moves are slower than indices
-    // and the 1.5% TP target requires time. The generic max_hold_sec=600 (10 min) is
-    // too short and causes premature timeouts. Use the larger of config or 1800s.
-    eng.MAX_HOLD_SEC         = std::max(g_cfg.oil_max_hold_sec, 1800);
-    eng.macro                = &g_macro_ctx;
+    eng.TP_PCT                = g_cfg.oil_tp_pct;
+    eng.SL_PCT                = g_cfg.oil_sl_pct;
+    eng.MIN_GAP_SEC           = std::max(g_cfg.oil_min_gap_sec, g_cfg.min_entry_gap_sec);
+    // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
+    // correct per-instrument values (0.015% / 0.10%) tuned for Oil price level.
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = std::max(g_cfg.oil_max_hold_sec, 1800);
+    eng.macro                 = &g_macro_ctx;
 }
 
 static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
@@ -1338,21 +1329,27 @@ static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
     eng.TP_PCT                = g_cfg.sp_tp_pct;
     eng.SL_PCT                = g_cfg.sp_sl_pct;
     eng.MIN_GAP_SEC           = std::max(30, g_cfg.sp_min_gap_sec);
-    eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
-    eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+    // European indices (GER30~22000, UK100~8300, ESTX50~5700) need
+    // instrument-appropriate thresholds, not the global 0.025%/0.12%.
+    // 0.025% on UK100 at 8300 = $2.08 — fine.
+    // 0.025% on GER30 at 22000 = $5.50 — too tight for early London.
+    // Use 0.010% momentum (absolute ~$1-2 for all EU indices) and
+    // 0.06% min_breakout (absolute ~$5-13 depending on index level).
+    eng.MOMENTUM_THRESH_PCT   = 0.010;
+    eng.MIN_BREAKOUT_PCT      = 0.06;
 }
 
 // Us30 (DJ30.F) -- typed engine, links macro context
 static void apply_engine_config(omega::Us30Engine& eng) noexcept {
-    // Constructor sets compression params -- only override tradeable params
     eng.VOL_THRESH_PCT        = std::min(0.05, std::max(0.02, g_cfg.sp_vol_thresh_pct));
     eng.TP_PCT                = g_cfg.sp_tp_pct;
     eng.SL_PCT                = g_cfg.sp_sl_pct;
     eng.MIN_GAP_SEC           = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
-    eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
-    eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
+    // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
+    // correct per-instrument values (0.006% / 0.04%) tuned for DJ30 price level
+    // (46700+ points — global 0.025%/0.12% translates to absurd absolute values).
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
     eng.macro                 = &g_macro_ctx;
@@ -1364,8 +1361,8 @@ static void apply_engine_config(omega::Nas100Engine& eng) noexcept {
     eng.TP_PCT                = g_cfg.nq_tp_pct;
     eng.SL_PCT                = g_cfg.nq_sl_pct;
     eng.MIN_GAP_SEC           = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
-    eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
-    eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
+    // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
+    // correct per-instrument values (0.010% / 0.08%) tuned for NAS100 price level.
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
     eng.macro                 = &g_macro_ctx;
@@ -1389,10 +1386,12 @@ static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
     eng.SL_PCT                = 0.400;
     eng.MIN_GAP_SEC           = 60;
     eng.MAX_SPREAD_PCT        = 0.08;
-    eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
-    eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+    // Silver at ~$79: 0.012% = $0.0095 momentum — genuine directional pressure
+    // 0.08% min_breakout = $0.063 beyond comp edge — clear of noise
+    eng.MOMENTUM_THRESH_PCT   = 0.012;
+    eng.MIN_BREAKOUT_PCT      = 0.08;
 }
 
 static void apply_generic_brent_config(omega::BreakoutEngine& eng) noexcept {
