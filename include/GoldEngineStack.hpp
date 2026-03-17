@@ -584,7 +584,12 @@ public:
         double dv=std::fabs(s.mid-s.vwap);
         if(dv<MIN_VWAP_DISTANCE||dv<MIN_EXPECTED_MOVE)return noSignal();
         TradeSide side=(s.mid>s.vwap)?TradeSide::SHORT:TradeSide::LONG;
-        int tp=std::max(18,std::min(40,(int)((dv*TP_RATIO)/0.1))); // floor=18 ticks matches new SL, cap=40 ticks ($4.00): let sweeps run to natural VWAP reversion
+        // Trend alignment gate: block sweep fades that go against an active trend.
+        // A genuine exhausted sweep shows trend already rolling (trend < 0 for SHORT,
+        // trend > 0 for LONG). Shorting into trend > 0.30 = fading a live London rally.
+        if (side == TradeSide::SHORT && s.trend >  0.30) return noSignal();
+        if (side == TradeSide::LONG  && s.trend < -0.30) return noSignal();
+        int tp=std::max(18,std::min(40,(int)((dv*TP_RATIO)/0.1)));
         Signal sig; sig.valid=true; sig.side=side; sig.confidence=0.95;
         sig.size=BASE_SIZE; sig.entry=s.mid; sig.tp=tp; sig.sl=SL_TICKS;
         strncpy(sig.reason,side==TradeSide::SHORT?"SWEEP_SHORT":"SWEEP_LONG",31);
