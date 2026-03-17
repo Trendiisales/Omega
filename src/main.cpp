@@ -131,11 +131,13 @@ struct OmegaConfig {
     // compute_size() clamps DOWN to max_lot and UP to min_lot.
     // Overrides risk calculation if risk would produce a smaller size.
     // Set to 0.0 to use only the global 0.01 hard floor.
-    double min_lot_gold    = 0.01;   // GOLD.F min lots
-    double min_lot_indices = 0.01;   // SP/NQ/DJ30/NAS100/EU indices min lots
-    double min_lot_oil     = 0.01;   // USOIL.F / UKBRENT min lots
-    double min_lot_silver  = 0.01;   // XAGUSD min lots
-    double min_lot_fx      = 0.01;   // EURUSD min lots
+    // Broker minimums (BlackBull cTrader confirmed):
+    // GOLD/XAGUSD/OIL/FX/indices = 0.01 lots, NAS100 = 0.10 lots (hardcoded in compute_size)
+    double min_lot_gold    = 0.01;
+    double min_lot_indices = 0.01;
+    double min_lot_oil     = 0.01;
+    double min_lot_silver  = 0.01;
+    double min_lot_fx      = 0.01;
     int    ext_ger30_id               = 0;
     int    ext_uk100_id               = 0;
     int    ext_estx50_id              = 0;
@@ -797,9 +799,11 @@ static double compute_size(const std::string& symbol,
     else if (symbol == "EURUSD")                               { cap = g_cfg.max_lot_fx;     flr = g_cfg.min_lot_fx; }
     else if (symbol == "XAGUSD")                               { cap = g_cfg.max_lot_silver; flr = g_cfg.min_lot_silver; }
     else if (symbol == "USOIL.F" || symbol == "UKBRENT")       { cap = g_cfg.max_lot_oil;    flr = g_cfg.min_lot_oil; }
+    // NAS100 has a broker minimum of 0.10 lots — override the indices floor
+    if (symbol == "NAS100") flr = std::max(flr, 0.10);
 
     size = std::min(size, cap);                    // never exceed max_lot
-    if (flr > 0.01) size = std::max(size, flr);   // never go below min_lot (if set above global 0.01 floor)
+    size = std::max(size, std::max(flr, 0.01));    // never go below min_lot or global 0.01 floor
 
     return size;
 }
