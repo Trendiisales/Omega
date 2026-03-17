@@ -894,6 +894,10 @@ class GoldPositionManager {
     void add_pyramid_leg(double mid, double spread, double latency_ms, const char* regime) {
         if (legs_.empty() || static_cast<int>(legs_.size()) >= MAX_PYRAMID_LEGS) return;
         const bool is_long = legs_.front().is_long;
+        // Inherit size from the base leg so pyramid add-ons match the position scale.
+        // Base entries use sig.size (e.g. 0.02 from sub-engines). Using CONTRACT_SIZE=1.0
+        // here would make pyramid legs 50x larger than the base — a critical size mismatch.
+        const double base_size = legs_.front().size;
         GoldPos leg;
         leg.active   = true;
         leg.is_long  = is_long;
@@ -904,7 +908,7 @@ class GoldPositionManager {
                                : mid + PYR_SL_TICKS * TICK_SIZE;
         leg.mfe      = 0;
         leg.mae      = 0;
-        leg.size     = CONTRACT_SIZE;
+        leg.size     = base_size;  // match base leg size — not CONTRACT_SIZE=1.0
         leg.spread_at_entry = spread;
         leg.entry_ts = nowSec();
         strncpy(leg.engine, "PYRAMID", 31);
@@ -913,9 +917,9 @@ class GoldPositionManager {
         legs_.push_back(leg);
         last_add_price_ = mid;
         last_add_ts_ = leg.entry_ts;
-        printf("[GOLD-PYRAMID-ADD] %s lvl=%zu entry=%.2f tp=%.2f sl=%.2f\n",
+        printf("[GOLD-PYRAMID-ADD] %s lvl=%zu entry=%.2f tp=%.2f sl=%.2f size=%.4f\n",
                is_long ? "LONG" : "SHORT",
-               legs_.size(), leg.entry, leg.tp, leg.sl);
+               legs_.size(), leg.entry, leg.tp, leg.sl, leg.size);
         fflush(stdout);
         (void)latency_ms;
     }
@@ -983,7 +987,13 @@ public:
             if (regime && leg.regime[0] != '\0' &&
                 std::strncmp(regime, leg.regime, 31) != 0 &&
                 held_so_far >= 60) {
-                close_leg(static_cast<size_t>(i), mid, "REGIME_FLIP", latency_ms, regime, on_close);
+                // Cap exit at SL if price has blown through — same logic as TIMEOUT.
+                // Sparse ticks during reconnect can cause price to drift past SL
+                // without triggering the explicit SL check above. REGIME_FLIP at
+                // raw mid could then record a loss larger than the intended stop.
+                const bool sl_breached = leg.is_long ? (mid < leg.sl) : (mid > leg.sl);
+                const double regime_flip_exit = sl_breached ? leg.sl : mid;
+                close_leg(static_cast<size_t>(i), regime_flip_exit, "REGIME_FLIP", latency_ms, regime, on_close);
                 closed_any = true;
                 continue;
             }
