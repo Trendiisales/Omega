@@ -232,16 +232,19 @@ private:
 //   GOLD_WINDOW        = 20     — ticks to measure gold move (was 10 — too noisy)
 // =============================================================================
 class GoldSilverLeadLag {
-    static constexpr double GOLD_SIGNAL_MOVE    = 2.00;  // $2.00 gold move in 20 ticks
-    static constexpr double SILVER_MIN_REACTION = 0.05;  // silver must not have moved $0.05
-    static constexpr double SILVER_TP           = 0.50;  // $0.50 target
-    static constexpr double SILVER_SL           = 0.25;  // $0.25 stop — 2.5x spread
-    static constexpr int64_t SIGNAL_EXPIRY_MS   = 500;   // 500ms expiry
-    static constexpr double MAX_SPREAD_GOLD     = 1.50;
-    static constexpr double MAX_SPREAD_SILVER   = 0.15;
-    static constexpr int    COOLDOWN_SEC        = 300;   // 5 min cooldown
-    static constexpr int    MAX_HOLD_SEC        = 60;    // 60s max hold
-    static constexpr int    GOLD_WINDOW         = 20;    // 20 ticks for direction
+    // Runtime members — set via configure() from LatencyEdgeCfg.
+    // Defaults match calibrated constexpr values prior to config-driven refactor.
+    double  GOLD_SIGNAL_MOVE    = 2.00;  // $2.00 gold move in 20 ticks
+    double  SILVER_MIN_REACTION = 0.05;  // silver must not have moved $0.05
+    double  SILVER_TP           = 0.50;  // $0.50 target
+    double  SILVER_SL           = 0.25;  // $0.25 stop — 2.5x spread
+    int64_t SIGNAL_EXPIRY_MS    = 500;   // 500ms expiry
+    double  MAX_SPREAD_GOLD     = 1.50;
+    double  MAX_SPREAD_SILVER   = 0.15;
+    int     COOLDOWN_SEC        = 300;   // 5 min cooldown
+    int     MAX_HOLD_SEC        = 60;    // 60s max hold
+    // Fixed structural constant — buffer size, not tunable
+    static constexpr int GOLD_WINDOW = 20;    // 20 ticks for direction
 
     // Gold price window — last 10 mids
     std::deque<double> gold_window_;
@@ -262,6 +265,22 @@ class GoldSilverLeadLag {
 public:
     bool has_open_position() const { return pos_mgr_.pos.active; }
     int  trade_count()       const { return trade_count_; }
+
+    void configure(double gold_signal_move, double silver_min_reaction,
+                   double silver_tp, double silver_sl,
+                   int64_t signal_expiry_ms,
+                   double max_spread_gold, double max_spread_silver,
+                   int cooldown_sec, int max_hold_sec) {
+        GOLD_SIGNAL_MOVE    = gold_signal_move;
+        SILVER_MIN_REACTION = silver_min_reaction;
+        SILVER_TP           = silver_tp;
+        SILVER_SL           = silver_sl;
+        SIGNAL_EXPIRY_MS    = signal_expiry_ms;
+        MAX_SPREAD_GOLD     = max_spread_gold;
+        MAX_SPREAD_SILVER   = max_spread_silver;
+        COOLDOWN_SEC        = cooldown_sec;
+        MAX_HOLD_SEC        = max_hold_sec;
+    }
 
     using CloseCb = LePositionManager::CloseCb;
 
@@ -417,14 +436,16 @@ public:
 //                        in Asia are real moves, not noise
 // =============================================================================
 class GoldSpreadDislocation {
-    static constexpr double SPREAD_SPIKE_RATIO = 2.5;
-    static constexpr double MIN_MEDIAN_SPREAD  = 0.30;
-    static constexpr double MAX_MEDIAN_SPREAD  = 1.20;
-    static constexpr double TP                 = 0.30;
-    static constexpr double SL                 = 0.15;
-    static constexpr int    COOLDOWN_SEC       = 60;   // raised from 15s — 3 SL hits in 45s was possible
-    static constexpr int    MAX_HOLD_SEC       = 30;
-    static constexpr int    SPREAD_WINDOW      = 20;
+    // Runtime members — set via configure() from LatencyEdgeCfg.
+    // Defaults match calibrated constexpr values prior to config-driven refactor.
+    double SPREAD_SPIKE_RATIO = 2.5;
+    double MIN_MEDIAN_SPREAD  = 0.30;
+    double MAX_MEDIAN_SPREAD  = 1.20;
+    double TP                 = 0.30;
+    double SL                 = 0.15;
+    int    COOLDOWN_SEC       = 60;   // raised from 15s — 3 SL hits in 45s was possible
+    int    MAX_HOLD_SEC       = 30;
+    static constexpr int SPREAD_WINDOW = 20;  // structural — buffer size, not tunable
 
     std::deque<double> spread_history_;  // last 20 spreads
     double prev_mid_   = 0.0;
@@ -456,6 +477,17 @@ class GoldSpreadDislocation {
 public:
     bool has_open_position() const { return pos_mgr_.pos.active; }
     int  trade_count()       const { return trade_count_; }
+
+    void configure(double spike_ratio, double min_med, double max_med,
+                   double tp, double sl, int cooldown_sec, int max_hold_sec) {
+        SPREAD_SPIKE_RATIO = spike_ratio;
+        MIN_MEDIAN_SPREAD  = min_med;
+        MAX_MEDIAN_SPREAD  = max_med;
+        TP                 = tp;
+        SL                 = sl;
+        COOLDOWN_SEC       = cooldown_sec;
+        MAX_HOLD_SEC       = max_hold_sec;
+    }
 
     using CloseCb = LePositionManager::CloseCb;
 
@@ -585,15 +617,19 @@ public:
 //   MAX_HOLD_SEC         = 300   — 5 min — event moves need time to develop
 // =============================================================================
 class GoldEventCompression {
-    static constexpr int    PRE_EVENT_WINDOW_SEC = 90;
-    static constexpr double EVENT_COMP_RANGE     = 0.40;
-    static constexpr double EVENT_TRIGGER        = 0.15;
-    static constexpr double TP                   = 3.00;
-    static constexpr double SL                   = 0.80;
-    static constexpr int    COMP_WINDOW          = 20;
-    static constexpr int    MAX_HOLD_SEC         = 300;
-    static constexpr double MAX_SPREAD           = 2.00;  // spreads widen pre-event
-    static constexpr int    COOLDOWN_SEC         = 600;   // 10 min between event trades
+    // Runtime members — set via configure() from LatencyEdgeCfg.
+    // Defaults match calibrated constexpr values prior to config-driven refactor.
+    double EVENT_COMP_RANGE = 0.40;
+    double EVENT_TRIGGER    = 0.15;
+    double TP               = 3.00;
+    double SL               = 0.80;
+    int    MAX_HOLD_SEC     = 300;
+    double MAX_SPREAD       = 2.00;  // spreads widen pre-event
+    int    COOLDOWN_SEC     = 600;   // 10 min between event trades
+    // Fixed structural constants — not tunable via config
+    static constexpr int PRE_EVENT_WINDOW_SEC = 90;
+    static constexpr int COMP_WINDOW          = 20;
+    static constexpr int MAX_DAILY_TRADES     = 4;
 
     std::deque<double> comp_window_;
     int64_t last_entry_ = 0;
@@ -601,7 +637,6 @@ class GoldEventCompression {
     bool    armed_       = false;
     int     daily_trades_ = 0;      // reset at UTC midnight
     int     last_reset_day_ = -1;   // UTC day-of-year for reset tracking
-    static constexpr int MAX_DAILY_TRADES = 4;  // max 4 event trades per day
 
     LePositionManager pos_mgr_;
 
@@ -660,6 +695,17 @@ class GoldEventCompression {
 public:
     bool has_open_position() const { return pos_mgr_.pos.active; }
     int  trade_count()       const { return trade_count_; }
+
+    void configure(double comp_range, double trigger, double tp, double sl,
+                   int max_hold_sec, int cooldown_sec, double max_spread) {
+        EVENT_COMP_RANGE = comp_range;
+        EVENT_TRIGGER    = trigger;
+        TP               = tp;
+        SL               = sl;
+        MAX_HOLD_SEC     = max_hold_sec;
+        COOLDOWN_SEC     = cooldown_sec;
+        MAX_SPREAD       = max_spread;
+    }
 
     using CloseCb = LePositionManager::CloseCb;
 
@@ -759,6 +805,40 @@ public:
 };
 
 // =============================================================================
+// LatencyEdgeCfg — all tunable parameters for LatencyEdgeStack in one struct.
+// Populated from [latency_edge] ini section by main.cpp, then passed to
+// LatencyEdgeStack::configure(). Default values match prior constexpr calibration.
+// =============================================================================
+struct LatencyEdgeCfg {
+    // GoldSilverLeadLag
+    double  lead_lag_gold_signal_move    = 2.00;
+    double  lead_lag_silver_min_reaction = 0.05;
+    double  lead_lag_silver_tp           = 0.50;
+    double  lead_lag_silver_sl           = 0.25;
+    int64_t lead_lag_signal_expiry_ms    = 500;
+    double  lead_lag_max_spread_gold     = 1.50;
+    double  lead_lag_max_spread_silver   = 0.15;
+    int     lead_lag_cooldown_sec        = 300;
+    int     lead_lag_max_hold_sec        = 60;
+    // GoldSpreadDislocation
+    double  spread_disloc_spike_ratio    = 2.5;
+    double  spread_disloc_min_median     = 0.30;
+    double  spread_disloc_max_median     = 1.20;
+    double  spread_disloc_tp             = 0.30;
+    double  spread_disloc_sl             = 0.15;
+    int     spread_disloc_cooldown_sec   = 60;
+    int     spread_disloc_max_hold_sec   = 30;
+    // GoldEventCompression
+    double  event_comp_range             = 0.40;
+    double  event_comp_trigger           = 0.15;
+    double  event_comp_tp                = 3.00;
+    double  event_comp_sl                = 0.80;
+    int     event_comp_max_hold_sec      = 300;
+    int     event_comp_cooldown_sec      = 600;
+    double  event_comp_max_spread        = 2.00;
+};
+
+// =============================================================================
 // LatencyEdgeStack — public interface wired into Omega's on_tick
 // =============================================================================
 // Single object per process. Call:
@@ -772,6 +852,32 @@ public:
 class LatencyEdgeStack {
 public:
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
+
+    // Apply all config-driven parameters. Call once after load_config().
+    void configure(const LatencyEdgeCfg& c) {
+        lead_lag_.configure(
+            c.lead_lag_gold_signal_move, c.lead_lag_silver_min_reaction,
+            c.lead_lag_silver_tp,        c.lead_lag_silver_sl,
+            c.lead_lag_signal_expiry_ms,
+            c.lead_lag_max_spread_gold,  c.lead_lag_max_spread_silver,
+            c.lead_lag_cooldown_sec,     c.lead_lag_max_hold_sec);
+        spread_disloc_.configure(
+            c.spread_disloc_spike_ratio, c.spread_disloc_min_median,
+            c.spread_disloc_max_median,  c.spread_disloc_tp,
+            c.spread_disloc_sl,          c.spread_disloc_cooldown_sec,
+            c.spread_disloc_max_hold_sec);
+        event_comp_.configure(
+            c.event_comp_range,    c.event_comp_trigger,
+            c.event_comp_tp,       c.event_comp_sl,
+            c.event_comp_max_hold_sec, c.event_comp_cooldown_sec,
+            c.event_comp_max_spread);
+        printf("[LE-CFG] SpreadDisloc tp=%.2f sl=%.2f cooldown=%ds "
+               "EventComp tp=%.2f sl=%.2f trigger=%.2f max_hold=%ds\n",
+               c.spread_disloc_tp,   c.spread_disloc_sl,   c.spread_disloc_cooldown_sec,
+               c.event_comp_tp,      c.event_comp_sl,
+               c.event_comp_trigger, c.event_comp_max_hold_sec);
+        fflush(stdout);
+    }
 
     // Returns valid signal if SpreadDislocation or EventCompression fired this tick.
     // can_enter=false blocks new entries but still manages any existing open position

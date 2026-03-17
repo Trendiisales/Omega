@@ -182,6 +182,12 @@ struct OmegaConfig {
     std::string shadow_csv = "omega_shadow.csv";
     std::string shadow_signal_csv = "omega_shadow_signals.csv";
     std::string log_file   = "";   // if set, tee all stdout+stderr here
+
+    // GoldEngineStack config — passed to g_gold_stack.configure()
+    omega::gold::GoldStackCfg gs_cfg;
+
+    // LatencyEdgeStack config — passed to g_latency_edge.configure()
+    omega::latency::LatencyEdgeCfg le_cfg;
 };
 
 static OmegaConfig         g_cfg;
@@ -1689,6 +1695,65 @@ static void load_config(const std::string& path) {
             if (k=="min_gap_sec")    g_cfg.oil_min_gap_sec    = std::stoi(v);
             if (k=="max_hold_sec")   g_cfg.oil_max_hold_sec   = std::stoi(v);
         }
+        if (section == "gold_stack") {
+            auto& gs = g_cfg.gs_cfg;
+            // Orchestrator gates
+            if (k=="hard_sl_cooldown_sec")    gs.hard_sl_cooldown_sec     = std::stoi(v);
+            if (k=="side_chop_window_sec")    gs.side_chop_window_sec     = std::stoi(v);
+            if (k=="side_chop_pause_sec")     gs.side_chop_pause_sec      = std::stoi(v);
+            if (k=="same_level_reentry_sec")  gs.same_level_reentry_sec   = std::stoi(v);
+            if (k=="same_level_reentry_band") gs.same_level_reentry_band  = std::stod(v);
+            if (k=="min_vwap_dislocation")    gs.min_vwap_dislocation     = std::stod(v);
+            if (k=="max_entry_spread")        gs.max_entry_spread         = std::stod(v);
+            if (k=="min_entry_gap_sec")       gs.min_entry_gap_sec        = std::stoi(v);
+            // Position manager
+            if (k=="max_hold_sec")            gs.max_hold_sec             = std::stoi(v);
+            if (k=="lock_arm_move")           gs.lock_arm_move            = std::stod(v);
+            if (k=="lock_gain")               gs.lock_gain                = std::stod(v);
+            if (k=="trail_arm_1")             gs.trail_arm_1              = std::stod(v);
+            if (k=="trail_dist_1")            gs.trail_dist_1             = std::stod(v);
+            if (k=="trail_arm_2")             gs.trail_arm_2              = std::stod(v);
+            if (k=="trail_dist_2")            gs.trail_dist_2             = std::stod(v);
+            if (k=="min_locked_profit")       gs.min_locked_profit        = std::stod(v);
+            if (k=="max_base_sl_ticks")       gs.max_base_sl_ticks        = std::stod(v);
+            // LiquiditySweepPro
+            if (k=="sweep_pro_max_spread")    gs.sweep_pro_max_spread     = std::stod(v);
+            if (k=="sweep_pro_sl_ticks")      gs.sweep_pro_sl_ticks       = std::stoi(v);
+            if (k=="sweep_pro_base_size")     gs.sweep_pro_base_size      = std::stod(v);
+            // LiquiditySweepPressure
+            if (k=="sweep_pres_max_spread")   gs.sweep_pres_max_spread    = std::stod(v);
+            if (k=="sweep_pres_sl_ticks")     gs.sweep_pres_sl_ticks      = std::stoi(v);
+            if (k=="sweep_pres_base_size")    gs.sweep_pres_base_size     = std::stod(v);
+        }
+        if (section == "latency_edge") {
+            auto& le = g_cfg.le_cfg;
+            // GoldSilverLeadLag
+            if (k=="lead_lag_gold_signal_move")    le.lead_lag_gold_signal_move    = std::stod(v);
+            if (k=="lead_lag_silver_min_reaction") le.lead_lag_silver_min_reaction = std::stod(v);
+            if (k=="lead_lag_silver_tp")           le.lead_lag_silver_tp           = std::stod(v);
+            if (k=="lead_lag_silver_sl")           le.lead_lag_silver_sl           = std::stod(v);
+            if (k=="lead_lag_signal_expiry_ms")    le.lead_lag_signal_expiry_ms    = std::stoi(v);
+            if (k=="lead_lag_max_spread_gold")     le.lead_lag_max_spread_gold     = std::stod(v);
+            if (k=="lead_lag_max_spread_silver")   le.lead_lag_max_spread_silver   = std::stod(v);
+            if (k=="lead_lag_cooldown_sec")        le.lead_lag_cooldown_sec        = std::stoi(v);
+            if (k=="lead_lag_max_hold_sec")        le.lead_lag_max_hold_sec        = std::stoi(v);
+            // GoldSpreadDislocation
+            if (k=="spread_disloc_spike_ratio")    le.spread_disloc_spike_ratio    = std::stod(v);
+            if (k=="spread_disloc_min_median")     le.spread_disloc_min_median     = std::stod(v);
+            if (k=="spread_disloc_max_median")     le.spread_disloc_max_median     = std::stod(v);
+            if (k=="spread_disloc_tp")             le.spread_disloc_tp             = std::stod(v);
+            if (k=="spread_disloc_sl")             le.spread_disloc_sl             = std::stod(v);
+            if (k=="spread_disloc_cooldown_sec")   le.spread_disloc_cooldown_sec   = std::stoi(v);
+            if (k=="spread_disloc_max_hold_sec")   le.spread_disloc_max_hold_sec   = std::stoi(v);
+            // GoldEventCompression
+            if (k=="event_comp_range")             le.event_comp_range             = std::stod(v);
+            if (k=="event_comp_trigger")           le.event_comp_trigger           = std::stod(v);
+            if (k=="event_comp_tp")                le.event_comp_tp                = std::stod(v);
+            if (k=="event_comp_sl")                le.event_comp_sl                = std::stod(v);
+            if (k=="event_comp_max_hold_sec")      le.event_comp_max_hold_sec      = std::stoi(v);
+            if (k=="event_comp_cooldown_sec")      le.event_comp_cooldown_sec      = std::stoi(v);
+            if (k=="event_comp_max_spread")        le.event_comp_max_spread        = std::stod(v);
+        }
     }
     std::cout << "[CONFIG] mode=" << g_cfg.mode
               << " vol=" << g_cfg.vol_thresh_pct
@@ -2831,6 +2896,14 @@ int main(int argc, char* argv[])
     std::cout << "[SIZING] Fixed lot mode active (risk_per_trade_usd=0)\n"
               << "[SIZING]   All instruments: 0.01 lots | NAS100: 0.10 lots\n";
     std::cout.flush();
+
+    // GoldEngineStack config — applies all [gold_stack] ini values.
+    // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
+    g_gold_stack.configure(g_cfg.gs_cfg);
+
+    // LatencyEdgeStack config — applies all [latency_edge] ini values.
+    // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
+    g_le_stack.configure(g_cfg.le_cfg);
 
     // ── Startup parameter validation — logged on every start ─────────────────
     // This block documents the exact live values every engine will use.

@@ -523,14 +523,16 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class LiquiditySweepProEngine : public EngineBase {
     CircularBuffer<double,256> history_;
-    static constexpr double MAX_SPREAD=4.00,SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.70;
+    // Runtime members — set via apply_cfg() from GoldStackCfg.
+    // Defaults match the calibrated constexpr values used prior to config-driven refactor.
+    double MAX_SPREAD      = 4.00;
+    double BASE_SIZE       = 0.01;  // fallback min_lot — overridden by compute_size() in main
+    int    SL_TICKS        = 18;    // $1.80 — above max spread noise floor for sweep entries
+    // Fixed internal constants — not exposed to config (structural, not tunable)
+    static constexpr double SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.70;
     static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=2.00,MIN_EXPECTED_MOVE=1.00;
-    static constexpr double TP_RATIO=0.85,BASE_SIZE=0.01;  // fallback min_lot — overridden by compute_size() in main
-    static constexpr int SL_TICKS=18,MOM_WINDOW=6,LIQ_WINDOW=120;
-    // SL raised 12→18 ($1.20→$1.80): old $1.20 was below max spread noise floor.
-    // Sweep entries by definition enter at a volatile point — need $1.80 to absorb
-    // the initial continuation spike before the reversal takes hold.
-    // TP cap raised 30→40 ticks: winners avg MFE was hitting cap, extend natural target.
+    static constexpr double TP_RATIO=0.85;
+    static constexpr int MOM_WINDOW=6,LIQ_WINDOW=120;
     static constexpr double CLUSTER_RANGE=0.35; static constexpr int MIN_CLUSTER=8;
 
     double computeMom(){
@@ -563,6 +565,11 @@ class LiquiditySweepProEngine : public EngineBase {
     }
 public:
     LiquiditySweepProEngine(): EngineBase("LiquiditySweepPro",1.1){}
+    void apply_cfg(double max_spread, int sl_ticks, double base_size) {
+        MAX_SPREAD = max_spread;
+        SL_TICKS   = sl_ticks;
+        BASE_SIZE  = base_size;
+    }
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid())return noSignal();
         history_.push_back(s.mid);
@@ -591,11 +598,17 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class LiquiditySweepPressureEngine : public EngineBase {
     CircularBuffer<double,512> history_;
-    static constexpr double MAX_SPREAD=4.00,SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.60;
+    // Runtime members — set via apply_cfg() from GoldStackCfg.
+    // Defaults match the calibrated constexpr values used prior to config-driven refactor.
+    double MAX_SPREAD  = 4.00;
+    int    SL_TICKS    = 10;    // $1.00 — tighter than SweepPro, pressure entries are earlier
+    double BASE_SIZE   = 0.01;  // fallback min_lot — overridden by compute_size() in main
+    // Fixed internal constants — not exposed to config (structural, not tunable)
+    static constexpr double SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.60;
     static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=1.50,MIN_EXPECTED_MOVE=0.80;
-    static constexpr double TP_RATIO=0.85,BASE_SIZE=0.01,PRESSURE_THRESHOLD=0.15;  // BASE_SIZE=fallback min_lot
+    static constexpr double TP_RATIO=0.85,PRESSURE_THRESHOLD=0.15;
     static constexpr double CLUSTER_RANGE=0.35,PRESSURE_RANGE=0.45;
-    static constexpr int SL_TICKS=10,MOM_WINDOW=6,LIQ_WINDOW=150,PRESSURE_WINDOW=50;
+    static constexpr int MOM_WINDOW=6,LIQ_WINDOW=150,PRESSURE_WINDOW=50;
     static constexpr int MIN_CLUSTER=8;
 
     double computeMom(){
@@ -636,6 +649,11 @@ class LiquiditySweepPressureEngine : public EngineBase {
     }
 public:
     LiquiditySweepPressureEngine(): EngineBase("LiquiditySweepPressure",1.15){ enabled_=false; } // DISABLED: 51T 29%WR -$12.10 — fires too early into sweep, structural loser
+    void apply_cfg(double max_spread, int sl_ticks, double base_size) {
+        MAX_SPREAD = max_spread;
+        SL_TICKS   = sl_ticks;
+        BASE_SIZE  = base_size;
+    }
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid())return noSignal();
         history_.push_back(s.mid);
@@ -769,26 +787,25 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class GoldPositionManager {
     static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
-    static constexpr int    MAX_HOLD_SEC  = 600;   // 10 min: matches main config max_hold_sec
-                                                    // was 120 — too short for $5 TP targets
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
     static constexpr int    MAX_PYRAMID_LEGS = 3;  // base + 2 add-ons
-    static constexpr double PYR_COVER_MOVE   = 0.80; // add only after prior leg has clearly covered costs
-    static constexpr double PYR_MIN_STEP     = 0.70; // avoid stacking at nearly same level in chop
+    static constexpr double PYR_COVER_MOVE   = 0.80;
+    static constexpr double PYR_MIN_STEP     = 0.70;
     static constexpr int64_t PYR_ADD_COOLDOWN_SEC = 4;
-    static constexpr int    PYR_TP_TICKS     = 25;  // $2.50 — raised from 18 ($1.80), matches new SL scale
-    static constexpr int    PYR_SL_TICKS     = 12;  // $1.20 — raised from 7 ($0.70), above spread noise floor
-    // ── Trailing stop arm levels ──────────────────────────────────────────
-    // Arms are calibrated to the new SL floor of $3.00 (30 ticks, CompressionBreakout).
-    // PRINCIPLE: lock breakeven at 50% of SL, trail at 1x SL, tight-trail at 2x SL.
-    static constexpr double LOCK_ARM_MOVE    = 1.50;  // raised 0.80→1.50: lock only after genuine $1.50 move, not $0.80 micro-bounce
-    static constexpr double LOCK_GAIN        = 0.60;  // raised 0.20→0.60: $0.20 lock was within spread noise and got hit instantly
-    static constexpr double TRAIL_ARM_1      = 2.50;  // raised 1.60→2.50: trail after $2.50 move (= real momentum, not bounce)
-    static constexpr double TRAIL_DIST_1     = 0.80;  // raised 0.60→0.80: trail $0.80 behind mid (above max spread)
-    static constexpr double TRAIL_ARM_2      = 5.00;  // raised 3.00→5.00: tight-trail only on big $5.00 winners
-    static constexpr double TRAIL_DIST_2     = 0.50;  // raised 0.35→0.50: tight trail but still above spread
-    static constexpr double MIN_LOCKED_PROFIT = 0.30; // raised 0.05→0.30: must lock meaningful profit above entry+spread
-    static constexpr double MAX_BASE_SL_TICKS = 30.0; // raised 25→30: cap must be >= highest engine SL (CompressionBreakout now uses 30 ticks)
+    static constexpr int    PYR_TP_TICKS     = 25;
+    static constexpr int    PYR_SL_TICKS     = 12;
+
+    // ── Runtime members — set via set_cfg() from GoldStackCfg ─────────────
+    // Defaults match calibrated constexpr values prior to config-driven refactor.
+    int    MAX_HOLD_SEC       = 600;   // 10 min: matches main config max_hold_sec
+    double LOCK_ARM_MOVE      = 1.50;  // lock only after genuine $1.50 move
+    double LOCK_GAIN          = 0.60;  // $0.60 lock above entry
+    double TRAIL_ARM_1        = 2.50;  // trail after $2.50 move
+    double TRAIL_DIST_1       = 0.80;  // trail $0.80 behind mid
+    double TRAIL_ARM_2        = 5.00;  // tight-trail only on big $5.00 winners
+    double TRAIL_DIST_2       = 0.50;  // tight trail distance
+    double MIN_LOCKED_PROFIT  = 0.30;  // must lock meaningful profit above entry+spread
+    double MAX_BASE_SL_TICKS  = 30.0;  // cap must be >= highest engine SL (CB uses 30)
 
     struct GoldPos {
         bool    active    = false;
@@ -949,6 +966,23 @@ public:
     bool active() const { return !legs_.empty(); }
     size_t leg_count() const { return legs_.size(); }
 
+    // Apply config-driven parameters from GoldStackCfg.
+    void set_cfg(int max_hold_sec,
+                 double lock_arm_move, double lock_gain,
+                 double trail_arm_1,   double trail_dist_1,
+                 double trail_arm_2,   double trail_dist_2,
+                 double min_locked_profit, double max_base_sl_ticks) {
+        MAX_HOLD_SEC      = max_hold_sec;
+        LOCK_ARM_MOVE     = lock_arm_move;
+        LOCK_GAIN         = lock_gain;
+        TRAIL_ARM_1       = trail_arm_1;
+        TRAIL_DIST_1      = trail_dist_1;
+        TRAIL_ARM_2       = trail_arm_2;
+        TRAIL_DIST_2      = trail_dist_2;
+        MIN_LOCKED_PROFIT = min_locked_profit;
+        MAX_BASE_SL_TICKS = max_base_sl_ticks;
+    }
+
     // Open a new position from a GoldSignal.
     // tp_ticks / sl_ticks are in $0.10 increments (standard gold tick).
     void open(const GoldSignal& sig, double spread,
@@ -1089,6 +1123,42 @@ public:
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GoldStackCfg — all tunable parameters for GoldEngineStack in one struct.
+// Populated from [gold_stack] ini section by main.cpp, then passed to
+// GoldEngineStack::configure(). Default values match prior constexpr calibration
+// so the system is behaviorally identical until the ini is explicitly changed.
+// ─────────────────────────────────────────────────────────────────────────────
+struct GoldStackCfg {
+    // ── Orchestrator gates ──────────────────────────────────────────────────
+    int64_t hard_sl_cooldown_sec        = 120;  // global SL cooldown after any stop hit
+    int64_t side_chop_window_sec        = 300;  // rolling window for side-specific SL counting
+    int64_t side_chop_pause_sec         = 300;  // pause duration when chop detected on a side
+    int64_t same_level_reentry_sec      = 60;   // min seconds before re-entering same price band
+    double  same_level_reentry_band     = 1.50; // $-band for same-level detection
+    double  min_vwap_dislocation        = 1.20; // min $-distance from VWAP to enter
+    double  max_entry_spread            = 1.60; // max spread at entry (absolute $)
+    int64_t min_entry_gap_sec           = 90;   // min gap between any two entries
+    // ── Position manager ────────────────────────────────────────────────────
+    int     max_hold_sec                = 600;  // position timeout
+    double  lock_arm_move               = 1.50; // move required before locking breakeven
+    double  lock_gain                   = 0.60; // breakeven lock distance above entry
+    double  trail_arm_1                 = 2.50; // move required to arm first trail
+    double  trail_dist_1                = 0.80; // first trail distance behind mid
+    double  trail_arm_2                 = 5.00; // move required to arm tight trail
+    double  trail_dist_2                = 0.50; // tight trail distance behind mid
+    double  min_locked_profit           = 0.30; // min profit that must be locked
+    double  max_base_sl_ticks           = 30.0; // SL cap for base entries (ticks)
+    // ── LiquiditySweepPro ───────────────────────────────────────────────────
+    double  sweep_pro_max_spread        = 4.00;
+    int     sweep_pro_sl_ticks          = 18;
+    double  sweep_pro_base_size         = 0.01;
+    // ── LiquiditySweepPressure ──────────────────────────────────────────────
+    double  sweep_pres_max_spread       = 4.00;
+    int     sweep_pres_sl_ticks         = 10;
+    double  sweep_pres_base_size        = 0.01;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 class GoldEngineStack {
 public:
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
@@ -1100,6 +1170,47 @@ public:
         engines_.push_back(std::make_unique<VWAPSnapbackEngine>());
         engines_.push_back(std::make_unique<LiquiditySweepProEngine>());
         engines_.push_back(std::make_unique<LiquiditySweepPressureEngine>());
+    }
+
+    // Apply all config-driven parameters from GoldStackCfg.
+    // Call once after load_config() before on_tick() is invoked.
+    void configure(const GoldStackCfg& c) {
+        // Orchestrator runtime members
+        HARD_SL_GLOBAL_COOLDOWN_SEC = c.hard_sl_cooldown_sec;
+        SIDE_CHOP_WINDOW_SEC        = c.side_chop_window_sec;
+        SIDE_CHOP_PAUSE_SEC         = c.side_chop_pause_sec;
+        SAME_LEVEL_REENTRY_SEC      = c.same_level_reentry_sec;
+        SAME_LEVEL_REENTRY_BAND     = c.same_level_reentry_band;
+        MIN_VWAP_DISLOCATION        = c.min_vwap_dislocation;
+        MAX_ENTRY_SPREAD            = c.max_entry_spread;
+        MIN_ENTRY_GAP_SEC           = c.min_entry_gap_sec;
+
+        // Position manager
+        pos_mgr_.set_cfg(c.max_hold_sec,
+                         c.lock_arm_move,   c.lock_gain,
+                         c.trail_arm_1,     c.trail_dist_1,
+                         c.trail_arm_2,     c.trail_dist_2,
+                         c.min_locked_profit, c.max_base_sl_ticks);
+
+        // Sub-engines
+        for (auto& e : engines_) {
+            if (e->getName() == "LiquiditySweepPro") {
+                static_cast<LiquiditySweepProEngine*>(e.get())->apply_cfg(
+                    c.sweep_pro_max_spread, c.sweep_pro_sl_ticks, c.sweep_pro_base_size);
+            } else if (e->getName() == "LiquiditySweepPressure") {
+                static_cast<LiquiditySweepPressureEngine*>(e.get())->apply_cfg(
+                    c.sweep_pres_max_spread, c.sweep_pres_sl_ticks, c.sweep_pres_base_size);
+            }
+        }
+
+        printf("[GOLD-STACK-CFG] gap=%llds sl_cooldown=%llds chop_win=%llds chop_pause=%llds\n"
+               "                 vwap_min=%.2f spread_max=%.2f max_hold=%ds\n"
+               "                 trail1_arm=%.2f trail1_dist=%.2f trail2_arm=%.2f trail2_dist=%.2f\n",
+               (long long)MIN_ENTRY_GAP_SEC, (long long)HARD_SL_GLOBAL_COOLDOWN_SEC,
+               (long long)SIDE_CHOP_WINDOW_SEC, (long long)SIDE_CHOP_PAUSE_SEC,
+               MIN_VWAP_DISLOCATION, MAX_ENTRY_SPREAD, c.max_hold_sec,
+               c.trail_arm_1, c.trail_dist_1, c.trail_arm_2, c.trail_dist_2);
+        fflush(stdout);
     }
 
     // Call every tick.
@@ -1228,20 +1339,20 @@ public:
     }
 
 private:
-    static constexpr int64_t HARD_SL_GLOBAL_COOLDOWN_SEC = 120; // raised 60→120: 60s wasn't stopping revenge entries after hard stops
-    static constexpr int64_t SIDE_CHOP_WINDOW_SEC = 300;        // raised 90→300: 90s window expired before detecting London chop pattern
-    static constexpr int64_t SIDE_CHOP_PAUSE_SEC = 300;         // raised 60→300: 60s pause was too short — chop resumed after pause
-    static constexpr size_t  SIDE_CHOP_TRIGGER_COUNT = 2;       // keep at 2: still want early chop detection
-    static constexpr int64_t SAME_LEVEL_REENTRY_SEC = 60;       // raised 30→60: 30s allowed near-instant re-entries at same level
-    static constexpr double  SAME_LEVEL_REENTRY_BAND = 1.50;    // raised 0.80→1.50: $0.80 band was too tight, same-level re-entries slipped through
-    static constexpr double  MIN_VWAP_DISLOCATION = 1.20;       // raised 0.80→1.20: entries within $1.20 of VWAP are noise territory
-    static constexpr double  MAX_ENTRY_SPREAD = 1.60;
-    static constexpr double  IMPULSE_MIN_CONFIDENCE = 1.05;
-    static constexpr double  IMPULSE_MIN_SCORE = 1.20;
-    static constexpr double  GENERAL_MIN_SCORE = 1.20;
-    // Minimum gap between any new entry — prevents re-entering immediately after TP/SL.
-    // Was causing 30+ gold trades per hour as CompressionBreakout re-fired every tick.
-    static constexpr int64_t MIN_ENTRY_GAP_SEC = 90;            // raised 30→90: 30s was insufficient — CB was re-firing 2-3x per compression box
+    // ── Runtime members — set via configure() from GoldStackCfg ───────────
+    // Defaults match calibrated constexpr values prior to config-driven refactor.
+    int64_t HARD_SL_GLOBAL_COOLDOWN_SEC = 120; // raised 60→120: 60s wasn't stopping revenge entries after hard stops
+    int64_t SIDE_CHOP_WINDOW_SEC        = 300; // raised 90→300: 90s window expired before detecting London chop pattern
+    int64_t SIDE_CHOP_PAUSE_SEC         = 300; // raised 60→300: 60s pause was too short — chop resumed after pause
+    size_t  SIDE_CHOP_TRIGGER_COUNT     = 2;   // keep at 2: still want early chop detection
+    int64_t SAME_LEVEL_REENTRY_SEC      = 60;  // raised 30→60: 30s allowed near-instant re-entries at same level
+    double  SAME_LEVEL_REENTRY_BAND     = 1.50;// raised 0.80→1.50: $0.80 band was too tight
+    double  MIN_VWAP_DISLOCATION        = 1.20;// raised 0.80→1.20: entries within $1.20 of VWAP are noise territory
+    double  MAX_ENTRY_SPREAD            = 1.60;
+    double  IMPULSE_MIN_CONFIDENCE      = 1.05;
+    double  IMPULSE_MIN_SCORE           = 1.20;
+    double  GENERAL_MIN_SCORE           = 1.20;
+    int64_t MIN_ENTRY_GAP_SEC           = 90;  // raised 30→90: CB was re-firing 2-3x per compression box
 
     std::vector<std::unique_ptr<EngineBase>> engines_;
     GoldFeatures     features_;
