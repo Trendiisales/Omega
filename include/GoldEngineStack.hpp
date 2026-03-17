@@ -1388,7 +1388,7 @@ private:
         g.valid=true; g.is_long=(s.side==TradeSide::LONG);
         g.entry=s.entry; g.tp_ticks=s.tp; g.sl_ticks=s.sl;
         g.confidence=s.confidence;
-        g.size = s.size > 0.0 ? s.size : 1.0;  // carry sub-engine sizing through
+        g.size = s.size > 0.0 ? s.size : 0.01;  // sub-engine size carries through; 0.01 fallback, never 1.0
         strncpy(g.engine,s.engine,31); strncpy(g.reason,s.reason,31);
         return g;
     }

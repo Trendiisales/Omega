@@ -2812,6 +2812,26 @@ int main(int argc, char* argv[])
     g_eng_xau.MIN_GAP_SEC           = 180;  // 3min gap between signals
     g_eng_xau.MAX_SPREAD_PCT        = 0.06; // gold spreads slightly wider than indices
 
+    // ── FIXED LOT SIZES — authoritative sizing for all engines ───────────────
+    // risk_per_trade_usd=0 so compute_size() returns ENTRY_SIZE directly.
+    // These are the MINIMUM operating lot sizes. Do NOT change without instruction.
+    // NAS100 broker minimum is 0.10 lots — all other instruments trade at 0.01.
+    g_eng_sp.ENTRY_SIZE     = 0.01;
+    g_eng_nq.ENTRY_SIZE     = 0.01;
+    g_eng_cl.ENTRY_SIZE     = 0.01;
+    g_eng_us30.ENTRY_SIZE   = 0.01;
+    g_eng_nas100.ENTRY_SIZE = 0.10;  // NAS100: broker minimum 0.10 lots
+    g_eng_ger30.ENTRY_SIZE  = 0.01;
+    g_eng_uk100.ENTRY_SIZE  = 0.01;
+    g_eng_estx50.ENTRY_SIZE = 0.01;
+    g_eng_xag.ENTRY_SIZE    = 0.01;
+    g_eng_eurusd.ENTRY_SIZE = 0.01;
+    g_eng_brent.ENTRY_SIZE  = 0.01;
+    g_eng_xau.ENTRY_SIZE    = 0.01;
+    std::cout << "[SIZING] Fixed lot mode active (risk_per_trade_usd=0)\n"
+              << "[SIZING]   All instruments: 0.01 lots | NAS100: 0.10 lots\n";
+    std::cout.flush();
+
     // ── Startup parameter validation — logged on every start ─────────────────
     // This block documents the exact live values every engine will use.
     // Any mismatch between config intent and actual values is visible immediately.
