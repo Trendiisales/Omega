@@ -38,6 +38,7 @@ struct OpenPos
     double  size            = 1.0;
     double  mfe             = 0.0;
     double  mae             = 0.0;
+    double  sl_pct          = 0.0;  // SL% used at entry — drives trail arm thresholds
     int64_t entry_ts        = 0;
     double  spread_at_entry = 0.0;
     char    regime[32]      = {};
@@ -167,38 +168,53 @@ public:
             if (!pos.is_long && ask >= pos.sl) { closePos(pos.sl,  "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
 
             // ── TRAILING STOP ─────────────────────────────────────────────────
-            // Stage 1: once move >= 0.60% lock breakeven + 0.10% buffer.
-            //          Eliminates all "gave it all back" losses on trades that
-            //          were clearly working before reversing.
-            // Stage 2: once move >= 1.00% trail SL at 0.40% behind current mid.
-            //          Lets winners run while protecting > half the profit.
-            // Stage 3: once move >= 1.60% tighten trail to 0.25% behind mid.
-            //          Squeezes maximum out of strong trending moves.
+            // Arms and distances are SL-relative, not fixed %.
+            // Fixed % arms were dead code for most instruments:
+            //   SP500/GER30/UK100/EURUSD: lock arm (0.60%) >= TP → trail never fired
+            //   NQ/DJ30/NAS100/Silver:    trail1 arm (1.00%) >= TP → only lock fired
+            //
+            // NEW: all thresholds derived from pos.sl_pct (SL% used at entry).
+            //   Lock  arm  = 0.50 × SL_PCT  → arms at 50% of risk taken
+            //   Trail1 arm = 1.00 × SL_PCT  → arms once we're 1× SL in profit
+            //   Trail2 arm = 2.00 × SL_PCT  → tight trail once 2× SL in profit
+            //   Trail1 dist= 0.40 × SL_PCT  → trail 40% of SL behind mid
+            //   Trail2 dist= 0.25 × SL_PCT  → tight trail 25% of SL behind mid
+            //   Lock gain  = 0.10 × SL_PCT  → lock entry + 10% of SL as buffer
+            //
+            // With SL_PCT stored in pos.sl_pct at entry, every instrument gets
+            // correctly scaled arms regardless of absolute price level.
             {
+                const double sl_pct   = (pos.sl_pct > 0.0) ? pos.sl_pct : SL_PCT;
                 const double move_pct = pos.is_long
                     ? (mid - pos.entry) / pos.entry * 100.0
                     : (pos.entry - mid) / pos.entry * 100.0;
 
-                if (move_pct >= 1.60) {
-                    // Tight trail: 0.25% behind mid
+                const double lock_arm   = sl_pct * 0.50;
+                const double trail1_arm = sl_pct * 1.00;
+                const double trail2_arm = sl_pct * 2.00;
+                const double trail1_dist = sl_pct * 0.40;
+                const double trail2_dist = sl_pct * 0.25;
+                const double lock_gain   = sl_pct * 0.10;
+
+                if (move_pct >= trail2_arm) {
+                    // Tight trail: 0.25×SL behind mid
                     const double trail = pos.is_long
-                        ? mid * (1.0 - 0.25 / 100.0)
-                        : mid * (1.0 + 0.25 / 100.0);
+                        ? mid * (1.0 - trail2_dist / 100.0)
+                        : mid * (1.0 + trail2_dist / 100.0);
                     if ( pos.is_long && trail > pos.sl) pos.sl = trail;
                     if (!pos.is_long && trail < pos.sl) pos.sl = trail;
-                } else if (move_pct >= 1.00) {
-                    // Standard trail: 0.40% behind mid
+                } else if (move_pct >= trail1_arm) {
+                    // Standard trail: 0.40×SL behind mid
                     const double trail = pos.is_long
-                        ? mid * (1.0 - 0.40 / 100.0)
-                        : mid * (1.0 + 0.40 / 100.0);
+                        ? mid * (1.0 - trail1_dist / 100.0)
+                        : mid * (1.0 + trail1_dist / 100.0);
                     if ( pos.is_long && trail > pos.sl) pos.sl = trail;
                     if (!pos.is_long && trail < pos.sl) pos.sl = trail;
-                } else if (move_pct >= 0.60) {
-                    // Lock breakeven + 0.10% buffer — never lose on a trade
-                    // that moved 0.60% in our favour
+                } else if (move_pct >= lock_arm) {
+                    // Lock breakeven + 0.10×SL buffer
                     const double be = pos.is_long
-                        ? pos.entry * (1.0 + 0.10 / 100.0)
-                        : pos.entry * (1.0 - 0.10 / 100.0);
+                        ? pos.entry * (1.0 + lock_gain / 100.0)
+                        : pos.entry * (1.0 - lock_gain / 100.0);
                     if ( pos.is_long && be > pos.sl) pos.sl = be;
                     if (!pos.is_long && be < pos.sl) pos.sl = be;
                 }
@@ -479,6 +495,7 @@ public:
             pos.tp              = tp;
             pos.sl              = sl;
             pos.size            = (ENTRY_SIZE > 0.0 ? ENTRY_SIZE : 1.0);
+            pos.sl_pct          = SL_PCT;  // stored so trail arms scale per instrument
             pos.mfe             = 0.0;
             pos.mae             = 0.0;
             pos.entry_ts        = now;
