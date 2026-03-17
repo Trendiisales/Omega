@@ -126,7 +126,8 @@ struct OmegaTelemetrySnapshot
     int gov_consec_loss;
 
     // --- Uptime ---
-    int64_t uptime_sec;  // seconds since process start — written each tick by main loop
+    int64_t uptime_sec;    // seconds since process start — written each tick by main loop
+    int64_t start_time;    // unix timestamp of process start — set once at init
 };
 
 // ==============================================================================

@@ -330,7 +330,7 @@ void OmegaTelemetryServer::wsBroadcastLoop()
     u_long nb = 1;
     ioctlsocket(ws_fd_, FIONBIO, &nb);
 
-    std::cout << "[OmegaWS] WebSocket port " << ws_port_ << "\n";
+    std::cout << "[OmegaWS] WebSocket port " << ws_port_ << "\n" << std::flush;
 
     auto last_broadcast = std::chrono::steady_clock::now();
 
@@ -356,6 +356,9 @@ void OmegaTelemetryServer::wsBroadcastLoop()
         const auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_broadcast).count() >= 250) {
             last_broadcast = now;
+            // Update uptime every broadcast — independent of FIX tick rate
+            if (snap_ && snap_->start_time > 0)
+                snap_->uptime_sec = static_cast<int64_t>(std::time(nullptr)) - snap_->start_time;
             std::lock_guard<std::mutex> lk(ws_mutex_);
             if (!ws_clients_.empty()) {
                 const std::string payload = buildTelemetryJson(snap_);
@@ -396,7 +399,7 @@ void OmegaTelemetryServer::run(int port)
         std::cerr << "[OmegaHTTP] bind/listen failed\n"; return;
     }
 
-    std::cout << "[OmegaHTTP] port " << port << "\n";
+    std::cout << "[OmegaHTTP] port " << port << "\n" << std::flush;
 
     while (running_.load()) {
         sockaddr_in ca{}; int cl = sizeof(ca);

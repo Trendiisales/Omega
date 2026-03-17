@@ -3038,11 +3038,18 @@ int main(int argc, char* argv[])
     if (!g_telemetry.Init()) std::cerr << "[OMEGA] Telemetry init failed\n";
     g_telemetry.SetMode(g_cfg.mode.c_str());
     g_telemetry.UpdateBuildVersion(OMEGA_VERSION, OMEGA_BUILT);
+    if (g_telemetry.snap()) {
+        g_telemetry.snap()->uptime_sec = 0;
+        g_telemetry.snap()->start_time = g_start_time;
+    }
 
     omega::OmegaTelemetryServer gui_server;
+    std::cout.flush();  // flush before spawning GUI threads to avoid interleaved output
     gui_server.start(g_cfg.gui_port, g_cfg.ws_port, g_telemetry.snap());
+    Sleep(200);  // let GUI threads print their startup lines before we continue
     std::cout << "[OMEGA] GUI http://localhost:" << g_cfg.gui_port
               << "  WS:" << g_cfg.ws_port << "\n";
+    std::cout.flush();
 
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
