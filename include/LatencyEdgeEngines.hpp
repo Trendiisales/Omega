@@ -450,17 +450,22 @@ public:
 
     using CloseCb = LePositionManager::CloseCb;
 
+    // can_enter=false: manage existing position to closure but block all new entries.
+    // This is the simultaneous-position guard — called with gold_can_enter from main.
     LeSignal on_tick(double bid, double ask, double latency_ms,
-                     CloseCb on_close) noexcept {
+                     CloseCb on_close, bool can_enter = true) noexcept {
         if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return {};
 
         const double spread = ask - bid;
         const double mid    = (bid + ask) * 0.5;
 
-        // Always manage open position
+        // Always manage open position — TP/SL/timeout must run regardless of can_enter
         if (pos_mgr_.pos.active) {
             pos_mgr_.manage(bid, ask, latency_ms, "SPREAD_DISLOC", on_close, MAX_HOLD_SEC);
         }
+
+        // New-entry gate: blocked when another GOLD.F engine already has a position
+        if (!can_enter) { prev_mid_ = mid; return {}; }
 
         // Update spread history
         spread_history_.push_back(spread);
@@ -650,17 +655,22 @@ public:
 
     using CloseCb = LePositionManager::CloseCb;
 
+    // can_enter=false: manage existing position to closure but block all new entries.
+    // This is the simultaneous-position guard — called with gold_can_enter from main.
     LeSignal on_tick(double bid, double ask, double latency_ms,
-                     CloseCb on_close) noexcept {
+                     CloseCb on_close, bool can_enter = true) noexcept {
         if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return {};
 
         const double spread = ask - bid;
         const double mid    = (bid + ask) * 0.5;
 
-        // Always manage open position
+        // Always manage open position — TP/SL/timeout must run regardless of can_enter
         if (pos_mgr_.pos.active) {
             pos_mgr_.manage(bid, ask, latency_ms, "EVENT_COMP", on_close, MAX_HOLD_SEC);
         }
+
+        // New-entry gate: blocked when another GOLD.F engine already has a position
+        if (!can_enter) return {};
 
         // Update compression window
         comp_window_.push_back(mid);
@@ -756,14 +766,16 @@ class LatencyEdgeStack {
 public:
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
-    // Returns valid signal if SpreadDislocation or EventCompression fired this tick
+    // Returns valid signal if SpreadDislocation or EventCompression fired this tick.
+    // can_enter=false blocks new entries but still manages any existing open position
+    // to its TP/SL/timeout — existing positions must always be drained regardless.
     LeSignal on_tick_gold(double bid, double ask, double latency_ms,
-                          CloseCb on_close) noexcept {
+                          CloseCb on_close, bool can_enter = true) noexcept {
         // Lead-lag disabled — was arming on every $0.50 gold wiggle creating noise
         // lead_lag_.on_tick_gold(bid, ask);  // DISABLED pending redesign
 
         // Spread dislocation engine — returns signal if entry fired
-        const auto sd_sig = spread_disloc_.on_tick(bid, ask, latency_ms, on_close);
+        const auto sd_sig = spread_disloc_.on_tick(bid, ask, latency_ms, on_close, can_enter);
         if (sd_sig.valid) {
             log_entry(sd_sig, "GOLD.F");
             last_gold_signal_ = sd_sig;
@@ -771,7 +783,7 @@ public:
         }
 
         // Event compression engine — returns signal if entry fired
-        const auto ev_sig = event_comp_.on_tick(bid, ask, latency_ms, on_close);
+        const auto ev_sig = event_comp_.on_tick(bid, ask, latency_ms, on_close, can_enter);
         if (ev_sig.valid) {
             log_entry(ev_sig, "GOLD.F");
             last_gold_signal_ = ev_sig;

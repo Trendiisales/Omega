@@ -1953,7 +1953,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_eng_eurusd.pos.active) +
                 static_cast<int>(g_eng_brent.pos.active) +
                 static_cast<int>(g_eng_xau.pos.active) +
-                static_cast<int>(g_gold_stack.has_open_position());
+                static_cast<int>(g_gold_stack.has_open_position()) +
+                static_cast<int>(g_le_stack.has_open_position());  // LE gold positions count toward global cap
             if (open_positions >= g_cfg.max_open_positions) {
                 ++g_gov_pos;
                 return false;
@@ -1975,7 +1976,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_eng_eurusd.pos.active) +
             static_cast<int>(g_eng_brent.pos.active) +
             static_cast<int>(g_eng_xau.pos.active) +
-            static_cast<int>(g_gold_stack.has_open_position());
+            static_cast<int>(g_gold_stack.has_open_position()) +
+            static_cast<int>(g_le_stack.has_open_position());  // LE gold positions count toward global cap
         const bool pos_budget_ok = open_positions < g_cfg.max_open_positions;
         if (!pos_budget_ok) ++g_gov_pos;
         return pos_budget_ok;
@@ -2051,8 +2053,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         dispatch(g_eng_nas100, symbol_gate("NAS100", g_eng_nas100.pos.active));
     }
     else if (sym == "GOLD.F")  {
+        // gold_symbol_open must include ALL three GOLD.F executors so no two can
+        // enter simultaneously: GoldEngineStack, CRTP GoldEngine, LatencyEdgeStack.
+        // LatencyEdge engines (SpreadDislocation, EventCompression) trade GOLD.F
+        // independently -- without this check they could stack on top of a live
+        // GoldStack or CRTP position.
         const bool gold_symbol_open =
-            g_gold_stack.has_open_position() || (g_cfg.gold_use_crtp_engine && g_eng_xau.pos.active);
+            g_gold_stack.has_open_position() ||
+            g_le_stack.has_open_position()   ||
+            (g_cfg.gold_use_crtp_engine && g_eng_xau.pos.active);
         const bool gold_can_enter = symbol_gate("GOLD.F", gold_symbol_open);
 
         // Keep CRTP gold warmed for telemetry; default execution path is stack-only.
@@ -2080,9 +2089,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // ── Latency Edge Stack: co-location speed engines ─────────────────────
         // SpreadDislocation and EventCompression run on every GOLD.F tick.
         // LeadLag arms here, fires on next XAGUSD tick (see XAGUSD dispatch block).
-        // These engines are fully independent — separate positions and P&L.
+        // gold_can_enter is passed through so LE engines cannot open a new entry
+        // while GoldEngineStack, CRTP GoldEngine, or another LE engine is in a
+        // GOLD.F position — prevents simultaneous gold positions from any source.
         {
-            const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, on_close);
+            const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, on_close, gold_can_enter);
             if (le_sig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason);
