@@ -256,6 +256,7 @@ R"OMEGA1(
                     <div class="card-hd"><span class="dot"></span>Daily P&amp;L</div>
                     <div class="pnl-val pnl-pos" id="pnlVal">+$0.00</div>
                     <div class="pnl-sub" id="pnlSub">0 trades &middot; 0.0% win</div>
+                    <div style="font-size:9px;color:var(--t2);margin-top:3px;" id="pnlGrossSub"></div>
                 </div>
                 <div class="card stat-card"><div class="stat-val" id="statWins">0</div><div class="stat-lbl">Wins</div></div>
                 <div class="card stat-card"><div class="stat-val" id="statLosses">0</div><div class="stat-lbl">Losses</div></div>
@@ -284,9 +285,9 @@ R"OMEGA1(
                     <table>
                         <thead><tr>
                             <th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th>
-                            <th>TP</th><th>SL</th><th>Held</th><th>Result</th><th>P&amp;L</th>
+                            <th>TP</th><th>SL</th><th>Held</th><th>Result</th><th>Gross</th><th>Slip</th><th>Net P&amp;L</th>
                         </tr></thead>
-                        <tbody id="tradesBody"><tr><td colspan="10" class="no-data">No trades yet</td></tr></tbody>
+                        <tbody id="tradesBody"><tr><td colspan="12" class="no-data">No trades yet</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -560,27 +561,29 @@ function renderTrades(trades) {
     const el = document.getElementById('tradesBody');
     const cE = document.getElementById('tradeCount');
     if (!trades || trades.length === 0) {
-        el.innerHTML = '<tr><td colspan="10" class="no-data">No trades yet</td></tr>';
+        el.innerHTML = '<tr><td colspan="12" class="no-data">No trades yet</td></tr>';
         if (cE) cE.textContent = ''; return;
     }
     const closed = trades.filter(t => t.exitReason && t.exitReason !== '');
     // On first data load after page refresh, set boot baseline — never ring for pre-existing trades
     if (_bellBootCount < 0) { _bellBootCount = closed.length; _lastTradeCount = closed.length; }
     if (_bellEnabled && closed.length > _lastTradeCount && _lastTradeCount >= _bellBootCount) {
-        const pnl = safe(closed[0].pnl);
+        const pnl = safe(closed[0].net_pnl);
         if (pnl > 0) { _playWinBell(); } else { _playLossBell(); }
     }
     _lastTradeCount = closed.length;
-    const wins = closed.filter(t => safe(t.pnl) > 0).length;
-    const losses = closed.filter(t => safe(t.pnl) < 0).length;
-    const totalPnl = closed.reduce((s,t) => s + safe(t.pnl), 0);
+    const wins = closed.filter(t => safe(t.net_pnl) > 0).length;
+    const losses = closed.filter(t => safe(t.net_pnl) < 0).length;
+    const totalNet = closed.reduce((s,t) => s + safe(t.net_pnl), 0);
     if (cE) cE.textContent = closed.length + ' closed · ' + wins + 'W/' + losses + 'L · ' +
-        (totalPnl >= 0 ? '+' : '') + '$' + Math.abs(totalPnl).toFixed(2);
+        (totalNet >= 0 ? '+' : '') + '$' + Math.abs(totalNet).toFixed(2) + ' net';
     const now = Math.floor(Date.now() / 1000);
     el.innerHTML = trades.slice(0, 50).map(t => {
         const isOpen = !t.exitReason || t.exitReason === '';
-        const pnl = safe(t.pnl);
-        const isWin = pnl > 0, isLoss = pnl < 0;
+        const netPnl  = safe(t.net_pnl);
+        const grossPnl = safe(t.pnl);
+        const slip    = safe(t.slippage_entry) + safe(t.slippage_exit);
+        const isWin = netPnl > 0, isLoss = netPnl < 0;
         const rowBg = isOpen ? 'rgba(61,184,255,0.07)' : isWin ? 'rgba(0,200,100,0.07)' : isLoss ? 'rgba(220,50,50,0.07)' : '';
         const rowBorder = isOpen ? '1px solid rgba(61,184,255,0.25)' : '1px solid rgba(255,255,255,0.04)';
         const pnlC = isWin ? 'var(--green)' : isLoss ? 'var(--red)' : 'var(--t2)';
@@ -598,8 +601,10 @@ function renderTrades(trades) {
         } else if (safe(t.entryTs) > 0 && safe(t.exitTs) > 0) {
             const hs = safe(t.exitTs) - safe(t.entryTs); heldStr = hs >= 60 ? Math.floor(hs/60)+'m'+(hs%60)+'s' : hs+'s';
         }
-        const pnlDisplay = isOpen ? '<span style="color:var(--t2);font-size:9px;">live</span>'
-            : (pnl >= 0 ? '+' : '') + '$' + Math.abs(pnl).toFixed(2);
+        const grossDisplay = isOpen ? '' : (grossPnl >= 0 ? '+' : '') + '$' + Math.abs(grossPnl).toFixed(2);
+        const slipDisplay  = isOpen ? '' : slip > 0 ? '-$' + slip.toFixed(2) : '--';
+        const netDisplay   = isOpen ? '<span style="color:var(--t2);font-size:9px;">live</span>'
+            : (netPnl >= 0 ? '+' : '') + '$' + Math.abs(netPnl).toFixed(2);
         return `<tr style="background:${rowBg};border-bottom:${rowBorder};">
             <td style="padding:4px 8px;color:var(--t2);font-size:9px;">${fmtUTC(safe(t.entryTs))}</td>
             <td style="padding:4px 8px;color:var(--blue);font-weight:700;">${t.symbol||'--'}</td>
@@ -610,7 +615,9 @@ function renderTrades(trades) {
             <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:var(--red);font-size:9px;">${safe(t.sl)>0?safe(t.sl).toFixed(1):'--'}</td>
             <td style="padding:4px 8px;color:var(--t2);font-size:9px;">${heldStr}</td>
             <td style="padding:4px 8px;font-weight:700;color:${resultC};">${result}</td>
-            <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:${pnlC};font-weight:700;">${pnlDisplay}</td>
+            <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:var(--t2);font-size:10px;">${grossDisplay}</td>
+            <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:var(--red);font-size:10px;">${slipDisplay}</td>
+            <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:${pnlC};font-weight:700;">${netDisplay}</td>
         </tr>`;
     }).join('');
 }
@@ -638,13 +645,21 @@ function updateDashboard(d) {
     updateEngineCard('NQ', d.nq_phase, d.nq_comp_high, d.nq_comp_low, d.nq_recent_vol_pct, d.nq_baseline_vol_pct, d.nq_signals);
     updateEngineCard('CL', d.cl_phase, d.cl_comp_high, d.cl_comp_low, d.cl_recent_vol_pct, d.cl_baseline_vol_pct, d.cl_signals);
 
-    // PnL
+    // PnL — daily_pnl from ledger is already net (after slippage)
+    // gross_daily_pnl is the sum before slippage, shown as subtitle for transparency
     const pnl = safe(d.daily_pnl);
+    const grossPnl = safe(d.gross_daily_pnl);
     const pE = document.getElementById('pnlVal');
     if (pE) { pE.textContent = (pnl >= 0 ? '+' : '') + '$' + Math.abs(pnl).toFixed(2);
         pE.className = 'pnl-val ' + (pnl >= 0 ? 'pnl-pos' : 'pnl-neg'); }
     const t = safe(d.total_trades), wr = safe(d.win_rate);
     document.getElementById('pnlSub').textContent = t + ' trades · ' + wr.toFixed(1) + '% win';
+    const gSub = document.getElementById('pnlGrossSub');
+    if (gSub && grossPnl !== 0) {
+        const slip = Math.abs(grossPnl - pnl);
+        gSub.textContent = 'gross ' + (grossPnl >= 0 ? '+' : '') + '$' + Math.abs(grossPnl).toFixed(2)
+            + ' · slip -$' + slip.toFixed(2);
+    }
     document.getElementById('statWins').textContent    = safe(d.wins);
     document.getElementById('statLosses').textContent  = safe(d.losses);
     document.getElementById('statAvgWin').textContent  = '$' + safe(d.avg_win).toFixed(0);

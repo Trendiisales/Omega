@@ -125,12 +125,13 @@ public:
     {
         std::lock_guard<std::mutex> lk(m_mtx);
         m_trades.push_back(tr);
-        // Use net_pnl for all stats if costs were applied, else fall back to gross pnl
+        // net_pnl is used for all stats (after slippage + commission)
         const double pnl_for_stats = (tr.net_pnl != 0.0 || tr.slippage_entry != 0.0)
                                      ? tr.net_pnl : tr.pnl;
         if (pnl_for_stats > 0) { m_wins++; m_sum_win += pnl_for_stats; }
         else                   { m_losses++; m_sum_loss += std::abs(pnl_for_stats); }
-        m_daily_pnl += pnl_for_stats;
+        m_daily_pnl       += pnl_for_stats;
+        m_gross_daily_pnl += tr.pnl;   // gross before costs — for display transparency
         if (m_daily_pnl - m_peak_pnl < -m_max_dd) m_max_dd = m_peak_pnl - m_daily_pnl;
         if (m_daily_pnl > m_peak_pnl) m_peak_pnl = m_daily_pnl;
     }
@@ -144,6 +145,10 @@ public:
     double dailyPnl() const {
         std::lock_guard<std::mutex> lk(m_mtx);
         return m_daily_pnl;
+    }
+    double grossDailyPnl() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        return m_gross_daily_pnl;
     }
     double maxDD() const {
         std::lock_guard<std::mutex> lk(m_mtx);
@@ -179,7 +184,7 @@ public:
     {
         std::lock_guard<std::mutex> lk(m_mtx);
         m_trades.clear();
-        m_daily_pnl = 0; m_peak_pnl = 0; m_max_dd = 0;
+        m_daily_pnl = 0; m_gross_daily_pnl = 0; m_peak_pnl = 0; m_max_dd = 0;
         m_wins = 0; m_losses = 0;
         m_sum_win = 0; m_sum_loss = 0;
     }
@@ -187,9 +192,10 @@ public:
 private:
     mutable std::mutex        m_mtx;
     std::vector<TradeRecord>  m_trades;
-    double m_daily_pnl = 0;
-    double m_peak_pnl  = 0;
-    double m_max_dd    = 0;
+    double m_daily_pnl       = 0;
+    double m_gross_daily_pnl = 0;
+    double m_peak_pnl        = 0;
+    double m_max_dd          = 0;
     int    m_wins      = 0;
     int    m_losses    = 0;
     double m_sum_win   = 0;

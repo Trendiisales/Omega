@@ -1912,7 +1912,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         }
     }
     g_telemetry.UpdateStats(
-        g_omegaLedger.dailyPnl(), g_omegaLedger.maxDD(),
+        g_omegaLedger.dailyPnl(), g_omegaLedger.grossDailyPnl(), g_omegaLedger.maxDD(),
         g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
         g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
     g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
