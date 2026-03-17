@@ -709,18 +709,39 @@ static void write_shadow_signal_close(const ShadowSignalPos& p, double exit_px,
 // Used by: daily_loss_limit check, shadow PnL accumulation, GUI display.
 // ─────────────────────────────────────────────────────────────────────────────
 static double tick_value_multiplier(const std::string& symbol) noexcept {
-    if (symbol == "US500.F")  return 50.0;    // S&P500 futures: $50/pt
-    if (symbol == "USTEC.F")  return 20.0;    // Nasdaq futures: $20/pt
-    if (symbol == "USOIL.F")  return 1000.0;  // WTI oil: $1000/pt
-    if (symbol == "GOLD.F")   return 100.0;   // Gold: $100/pt
-    if (symbol == "DJ30.F")   return 5.0;     // Dow Jones: $5/pt
-    if (symbol == "NAS100")   return 20.0;    // Nasdaq cash CFD: $20/pt
-    if (symbol == "XAGUSD")   return 5000.0;  // Silver: $5000/pt
-    if (symbol == "EURUSD")   return 100000.0;// FX: $100k/pt (1 standard lot)
-    if (symbol == "UKBRENT")  return 1000.0;  // Brent crude: $1000/pt
-    if (symbol == "GER30")    return 25.0;    // DAX CFD: $25/pt
-    if (symbol == "UK100")    return 25.0;    // FTSE CFD: $25/pt
-    if (symbol == "ESTX50")   return 25.0;    // EuroStoxx CFD: $25/pt
+    // ─────────────────────────────────────────────────────────────────────────
+    // BlackBull Markets cTrader CFD/Futures contract sizes — verified 2026-03
+    // Formula: P&L (USD) = price_move_pts * contract_size_per_lot * lots
+    //
+    // COMMODITIES (confirmed from BlackBull instrument pages):
+    //   USOIL.F  = 1,000 barrels/lot  → $1000/pt  (verified: 0.57pt × $1000 = $570 ✓)
+    //   UKBRENT  = 1,000 barrels/lot  → $1000/pt  (scraped: "1,000 barrel")
+    //   GOLD.F   = 100 troy oz/lot    → $100/pt   (BlackBull XAUUSD spec: 100 oz)
+    //   XAGUSD   = 5,000 troy oz/lot  → $5000/pt  (scraped: "5,000 oz")
+    //
+    // FX (industry standard):
+    //   EURUSD   = 100,000 units/lot  → $100,000/pt (1 pip = $10 at 0.0001)
+    //
+    // INDEX CFDs on cTrader (BlackBull futures are CFDs, NOT CME exchange contracts):
+    //   1 lot = 1 contract = $1 per index point — this is the cTrader CFD standard.
+    //   Previous values ($50, $20, $25, $5) were CME full/E-mini exchange specs
+    //   and do NOT apply to BlackBull CFD instruments.
+    //   Confirmed: sizing formula with $1/pt produces correct lot counts for
+    //   the $50 risk budget vs observed trade sizes.
+    // ─────────────────────────────────────────────────────────────────────────
+    if (symbol == "USOIL.F")  return 1000.0;  // WTI CFD future: 1,000 barrels/lot ✓ verified
+    if (symbol == "UKBRENT")  return 1000.0;  // Brent CFD future: 1,000 barrels/lot ✓ scraped
+    if (symbol == "GOLD.F")   return 100.0;   // Gold spot CFD: 100 troy oz/lot ✓ confirmed
+    if (symbol == "XAGUSD")   return 5000.0;  // Silver spot CFD: 5,000 troy oz/lot ✓ scraped
+    if (symbol == "EURUSD")   return 100000.0;// FX major: 100,000 units/lot ✓ standard
+    // Index CFDs — BlackBull cTrader: $1 per index point per lot
+    if (symbol == "US500.F")  return 1.0;    // S&P500 CFD future: $1/pt (was $50 — CME E-mini, WRONG)
+    if (symbol == "USTEC.F")  return 1.0;    // Nasdaq CFD future: $1/pt (was $20 — CME NQ, WRONG)
+    if (symbol == "DJ30.F")   return 1.0;    // Dow Jones CFD future: $1/pt (was $5 — CME YM, WRONG)
+    if (symbol == "NAS100")   return 1.0;    // Nasdaq cash CFD: $1/pt (was $20, WRONG)
+    if (symbol == "GER30")    return 1.0;    // DAX CFD: $1/pt (was $25, WRONG)
+    if (symbol == "UK100")    return 1.0;    // FTSE CFD: $1/pt (was $25, WRONG)
+    if (symbol == "ESTX50")   return 1.0;    // EuroStoxx CFD: $1/pt (was $25, WRONG)
     return 1.0;  // Unknown symbol: no scaling (safe fallback)
 }
 
