@@ -779,17 +779,15 @@ class GoldPositionManager {
     static constexpr int    PYR_TP_TICKS     = 25;  // $2.50 — raised from 18 ($1.80), matches new SL scale
     static constexpr int    PYR_SL_TICKS     = 12;  // $1.20 — raised from 7 ($0.70), above spread noise floor
     // ── Trailing stop arm levels ──────────────────────────────────────────
-    // Arms are calibrated to the new SL floor of $1.60 (16 ticks, ImpulseCont).
+    // Arms are calibrated to the new SL floor of $3.00 (30 ticks, CompressionBreakout).
     // PRINCIPLE: lock breakeven at 50% of SL, trail at 1x SL, tight-trail at 2x SL.
-    // This ensures EVERY trade that makes half its risk gets protected.
-    // OLD arms were $0.90/$1.40/$2.20 — too large relative to the (now fixed) SL values.
-    static constexpr double LOCK_ARM_MOVE    = 0.80;  // lock once +$0.80 (50% of $1.60 SL floor)
-    static constexpr double LOCK_GAIN        = 0.20;  // lock SL at entry + $0.20 (not breakeven zero)
-    static constexpr double TRAIL_ARM_1      = 1.60;  // trail once +$1.60 (= 1x SL floor)
-    static constexpr double TRAIL_DIST_1     = 0.60;  // trail $0.60 behind mid (tight but above spread)
-    static constexpr double TRAIL_ARM_2      = 3.00;  // tight-trail once +$3.00 (= 2x SL floor)
-    static constexpr double TRAIL_DIST_2     = 0.35;  // trail $0.35 behind mid (very tight on big winners)
-    static constexpr double MIN_LOCKED_PROFIT = 0.05;
+    static constexpr double LOCK_ARM_MOVE    = 1.50;  // raised 0.80→1.50: lock only after genuine $1.50 move, not $0.80 micro-bounce
+    static constexpr double LOCK_GAIN        = 0.60;  // raised 0.20→0.60: $0.20 lock was within spread noise and got hit instantly
+    static constexpr double TRAIL_ARM_1      = 2.50;  // raised 1.60→2.50: trail after $2.50 move (= real momentum, not bounce)
+    static constexpr double TRAIL_DIST_1     = 0.80;  // raised 0.60→0.80: trail $0.80 behind mid (above max spread)
+    static constexpr double TRAIL_ARM_2      = 5.00;  // raised 3.00→5.00: tight-trail only on big $5.00 winners
+    static constexpr double TRAIL_DIST_2     = 0.50;  // raised 0.35→0.50: tight trail but still above spread
+    static constexpr double MIN_LOCKED_PROFIT = 0.30; // raised 0.05→0.30: must lock meaningful profit above entry+spread
     static constexpr double MAX_BASE_SL_TICKS = 30.0; // raised 25→30: cap must be >= highest engine SL (CompressionBreakout now uses 30 ticks)
 
     struct GoldPos {
@@ -1129,7 +1127,13 @@ public:
         }
         bool just_closed = pos_mgr_.manage(bid, ask, latency_ms,
                                            current_regime_name(), wrapped_close);
-        (void)just_closed;
+
+        // If a position closed this tick, stamp last_entry_ts_ to now so the
+        // MIN_ENTRY_GAP_SEC check below cannot be bypassed by same-tick re-entry.
+        // Previously last_entry_ts_ was only set when a new entry opened — a position
+        // closing and immediately re-entering on the same tick had a stale timestamp
+        // and fired through the gap check as if 90s had already elapsed.
+        if (just_closed) last_entry_ts_ = now_s;
 
         // Update has_open_pos_ so regime governor freezes while in trade
         has_open_pos_ = pos_mgr_.active();
@@ -1309,12 +1313,18 @@ private:
         const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
         last_exit_price_[u] = tr.exitPrice;
         last_exit_ts_[u] = now_s;
+        // Also update last_entry_ts_ on any close so same-tick re-entry is blocked.
+        // Previously last_entry_ts_ was only set when a NEW entry opened — meaning a
+        // position that closed and re-entered on the same tick had a stale last_entry_ts_
+        // and bypassed the MIN_ENTRY_GAP_SEC check entirely.
+        last_entry_ts_ = std::max(last_entry_ts_, now_s);
 
         if (tr.exitReason != "SL_HIT") return;
 
-        // Only treat non-positive SL exits as hard stop-outs.
-        if (tr.pnl > 0.0) return;
-
+        // Fire cooldown on ALL SL_HIT exits, not just negative pnl ones.
+        // Trailing stops that lock above entry produce pnl>0 but are still failed
+        // breakouts — skipping cooldown allowed immediate re-entry into the same chop.
+        // Old guard: if (tr.pnl > 0.0) return;  <-- REMOVED
         sl_cooldown_until_ = std::max(sl_cooldown_until_, now_s + HARD_SL_GLOBAL_COOLDOWN_SEC);
 
         auto& q = side_hard_sl_times_[u];
