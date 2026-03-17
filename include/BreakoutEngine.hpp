@@ -158,10 +158,13 @@ public:
             if (move  > pos.mfe) pos.mfe =  move;
             if (-move > pos.mae) pos.mae = -move;
 
-            if ( pos.is_long && mid >= pos.tp) { closePos(mid, "TP_HIT",  latency_ms, macro_regime, on_close); return {}; }
-            if (!pos.is_long && mid <= pos.tp) { closePos(mid, "TP_HIT",  latency_ms, macro_regime, on_close); return {}; }
-            if ( pos.is_long && mid <= pos.sl) { closePos(mid, "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
-            if (!pos.is_long && mid >= pos.sl) { closePos(mid, "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
+            // TP/SL checks use the aggressive fill side of the spread.
+            // Long exits sell at bid; short exits buy back at ask.
+            // Using mid was understating slippage on SL hits.
+            if ( pos.is_long && bid >= pos.tp) { closePos(pos.tp,  "TP_HIT",  latency_ms, macro_regime, on_close); return {}; }
+            if (!pos.is_long && ask <= pos.tp) { closePos(pos.tp,  "TP_HIT",  latency_ms, macro_regime, on_close); return {}; }
+            if ( pos.is_long && bid <= pos.sl) { closePos(pos.sl,  "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
+            if (!pos.is_long && ask >= pos.sl) { closePos(pos.sl,  "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
 
             // ── TRAILING STOP ─────────────────────────────────────────────────
             // Stage 1: once move >= 0.60% lock breakeven + 0.10% buffer.
@@ -255,7 +258,15 @@ public:
             }
 
             if (nowSec() - pos.entry_ts >= static_cast<int64_t>(MAX_HOLD_SEC)) {
-                closePos(mid, "TIMEOUT", latency_ms, macro_regime, on_close); return {};
+                // Cap timeout exit at SL if price has blown through — mirrors the
+                // GoldStack fix. Sparse ticks on reconnect can allow price to pass
+                // the SL level without triggering the check above. Without this,
+                // a 10-25min timeout fills at whatever mid is, not the intended stop.
+                double timeout_exit = mid;
+                const bool sl_breached = pos.is_long ? (mid < pos.sl) : (mid > pos.sl);
+                if (sl_breached) timeout_exit = pos.sl;
+                closePos(timeout_exit, "TIMEOUT", latency_ms, macro_regime, on_close);
+                return {};
             }
             return {};
         }

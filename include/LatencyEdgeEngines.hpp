@@ -128,8 +128,17 @@ public:
         const bool timeout = (le_now_sec() - pos.entry_ts) >= max_hold_sec;
 
         if (tp_hit || sl_hit || timeout) {
-            const double exit_px = tp_hit ? pos.tp : (sl_hit ? pos.sl : mid);
-            const char*  reason  = tp_hit ? "TP_HIT" : (sl_hit ? "SL_HIT" : "TIMEOUT");
+            // Cap timeout at SL if price has blown through — prevents holding to
+            // timeout at a price far beyond the intended stop due to sparse ticks.
+            double exit_px;
+            if (tp_hit)       exit_px = pos.tp;
+            else if (sl_hit)  exit_px = pos.sl;
+            else {
+                // timeout — use mid, but cap at SL if breached
+                const bool sl_breached = pos.is_long ? (mid < pos.sl) : (mid > pos.sl);
+                exit_px = sl_breached ? pos.sl : mid;
+            }
+            const char* reason = tp_hit ? "TP_HIT" : (sl_hit ? "SL_HIT" : "TIMEOUT");
             close(exit_px, reason, latency_ms, regime, on_close);
             return true;
         }

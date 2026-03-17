@@ -370,8 +370,13 @@ public:
             double vd=std::fabs(s.mid-s.vwap);
             if(vd<MIN_VWAP_DIST||vd>MAX_VWAP_DIST) return noSignal();
         }
+        // ASIAN session removed from whitelist (was previously included).
+        // ImpulseContinuation needs sustained directional flow with clear impulse
+        // + pullback structure. Asian gold (00:00-07:00 UTC) is choppy mean-reverting
+        // tape — no trending structure exists to continue. Incident Mar 17 2026:
+        // fired SHORT in MEAN_REVERSION at 00:47 UTC → $205 loss.
         if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&
-           s.session!=SessionType::OVERLAP&&s.session!=SessionType::ASIAN)
+           s.session!=SessionType::OVERLAP)
             return noSignal();
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::seconds(COOLDOWN_SECONDS)) return noSignal();
