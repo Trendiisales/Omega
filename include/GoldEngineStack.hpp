@@ -1010,10 +1010,21 @@ public:
             }
 
             if (now - leg.entry_ts >= MAX_HOLD_SEC) {
-                printf("[GOLD-STACK-TIMEOUT] %s hold=%lds exit=%.2f\n",
-                       leg.engine, (long)(now - leg.entry_ts), mid);
+                // Cap timeout exit at SL if price has blown through — prevents a
+                // position being held 10min at a price far beyond the intended stop.
+                // Incident: ImpulseContinuation SHORT timed out at 5013.15 (mid)
+                // while SL was 5011.90. SL never triggered due to sparse ticks on
+                // reconnect. Timeout at mid = $205 loss vs expected $80 SL loss.
+                double timeout_exit = mid;
+                const bool sl_breached = leg.is_long ? (mid < leg.sl) : (mid > leg.sl);
+                if (sl_breached) {
+                    timeout_exit = leg.sl;  // fill at SL price, not at current mid
+                }
+                printf("[GOLD-STACK-TIMEOUT] %s hold=%lds exit=%.2f%s\n",
+                       leg.engine, (long)(now - leg.entry_ts), timeout_exit,
+                       sl_breached ? " (capped at SL)" : "");
                 fflush(stdout);
-                close_leg(static_cast<size_t>(i), mid, "TIMEOUT", latency_ms, regime, on_close);
+                close_leg(static_cast<size_t>(i), timeout_exit, "TIMEOUT", latency_ms, regime, on_close);
                 closed_any = true;
                 continue;
             }
@@ -1271,13 +1282,24 @@ private:
 
     void apply_asian_session_overrides(SessionType session) {
         if (session != SessionType::ASIAN) return;
-        // Core mismatch fix:
-        // Session gate allows Asia trading globally, but regime routing can disable
-        // CompressionBreakout while other enabled engines remain London/NY-only.
-        // Keep Asia-capable engines available so stack can actually emit entries.
+        // Asian session: only CompressionBreakout is allowed.
+        // ImpulseContinuation REMOVED from this override (was previously included).
+        //
+        // WHY: ImpulseContinuation requires an established directional trend with
+        // clear impulse + pullback structure. During Asian hours (00:00-07:00 UTC)
+        // gold moves are thin, choppy, and lack the sustained directional flow the
+        // engine needs. Allowing it bypassed the RegimeGovernor's correct decision
+        // to disable it in MEAN_REVERSION — which is the dominant Asian regime.
+        //
+        // INCIDENT (Mar 17 2026 00:47 UTC): ImpulseContinuation fired SHORT in
+        // MEAN_REVERSION regime. Gold was $4.26 below VWAP=5015, already
+        // mean-reverting upward. Result: $205 loss (2.05 pts × $100/pt).
+        //
+        // CompressionBreakout is safe in Asia — it requires only a compression
+        // range break, which is a self-contained price structure signal that works
+        // in any session. The dead-zone gate (21:00-23:00) blocks the worst hours.
         for (auto& e : engines_) {
-            const auto& n = e->getName();
-            if (n == "CompressionBreakout" || n == "ImpulseContinuation") {
+            if (e->getName() == "CompressionBreakout") {
                 e->setEnabled(true);
             }
         }
