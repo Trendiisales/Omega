@@ -147,7 +147,9 @@ R"OMEGA0(
         </div>
         <div class="hbar">
             <span id="modeBadge" class="badge mode-shadow">SHADOW</span>
-            <span id="buildBadge" class="badge" style="color:var(--t2);font-size:9px;letter-spacing:1px" title="Build version — click to verify">v<span id="buildVersion">...</span></span>
+            <span id="buildBadge" class="badge" style="color:var(--amber);font-size:9px;font-weight:700;letter-spacing:1.5px" title="Git hash — built version">⬡ <span id="buildVersion">...</span></span>
+            <span id="sessionBadge" class="badge" style="color:var(--t2);font-size:10px;font-weight:600">── SESSION</span>
+            <span id="uptimeBadge" class="badge" style="color:var(--t2);font-size:10px;font-family:monospace">UP 00:00:00</span>
             <span class="badge"><span class="conn-dot bad" id="connDot"></span><span id="connText">Connecting...</span></span>
             <span class="badge" id="fixQuoteHdr" style="color:var(--red)">QUOTE: --</span>
             <span class="mono" id="clock">--:--:-- UTC</span>
@@ -686,11 +688,38 @@ function updateDashboard(d) {
     // Mode badge
     const mb = document.getElementById('modeBadge');
     if (mb) { mb.textContent = d.mode || 'SHADOW'; mb.className = 'badge ' + (d.mode === 'LIVE' ? 'mode-live' : 'mode-shadow'); }
+    // Git hash — prominent amber badge
     const bv = document.getElementById('buildVersion');
     if (bv && d.build_version) {
         bv.textContent = d.build_version;
         const bb = document.getElementById('buildBadge');
         if (bb) bb.title = 'Built: ' + (d.build_time || '?');
+    }
+
+    // UTC session — computed client-side from current UTC time
+    const sb = document.getElementById('sessionBadge');
+    if (sb) {
+        const now = new Date();
+        const mins = now.getUTCHours() * 60 + now.getUTCMinutes();
+        let sess, col;
+        if      (mins >= 420 && mins < 630)  { sess = 'LONDON';   col = 'var(--green)'; }
+        else if (mins >= 630 && mins < 780)  { sess = 'OVERLAP';  col = 'var(--amber)'; }
+        else if (mins >= 780 && mins < 1080) { sess = 'NEW YORK'; col = 'var(--green)'; }
+        else if (mins >= 300 && mins < 420)  { sess = 'DEAD ZONE'; col = 'var(--red)';  }
+        else                                 { sess = 'ASIAN';    col = 'var(--t2)';   }
+        sb.textContent = sess + ' SESSION';
+        sb.style.color = col;
+    }
+
+    // Uptime — from server-side seconds counter
+    const ub = document.getElementById('uptimeBadge');
+    if (ub && d.uptime_sec != null) {
+        const s = d.uptime_sec;
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sc = s % 60;
+        ub.textContent = 'UP ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(sc).padStart(2,'0');
+        ub.style.color = h >= 1 ? 'var(--green)' : 'var(--t2)';
     }
 
     // Governor

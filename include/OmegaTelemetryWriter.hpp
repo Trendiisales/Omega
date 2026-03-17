@@ -124,6 +124,9 @@ struct OmegaTelemetrySnapshot
     int gov_pnl;
     int gov_positions;
     int gov_consec_loss;
+
+    // --- Uptime ---
+    int64_t uptime_sec;  // seconds since process start — written each tick by main loop
 };
 
 // ==============================================================================

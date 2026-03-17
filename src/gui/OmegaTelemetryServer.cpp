@@ -136,7 +136,8 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"gov_positions\":%d,\"gov_consec_loss\":%d,"
         "\"xau_phase\":%d,\"xau_comp_high\":%.4f,\"xau_comp_low\":%.4f,"
         "\"xau_recent_vol_pct\":%.4f,\"xau_baseline_vol_pct\":%.4f,\"xau_signals\":%d,"
-        "\"build_version\":\"%s\",\"build_time\":\"%s\""
+        "\"build_version\":\"%s\",\"build_time\":\"%s\","
+        "\"uptime_sec\":%lld"
         "}",
         s->sp_bid,     s->sp_ask,     s->nq_bid,  s->nq_ask,
         s->cl_bid,     s->cl_ask,     s->vix_bid, s->vix_ask,
@@ -169,7 +170,8 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->gov_positions, s->gov_consec_loss,
         s->xau_phase, s->xau_comp_high, s->xau_comp_low,
         s->xau_recent_vol_pct, s->xau_baseline_vol_pct, s->xau_signals,
-        s->build_version, s->build_time
+        s->build_version, s->build_time,
+        (long long)s->uptime_sec
     );
     return buf;
 }

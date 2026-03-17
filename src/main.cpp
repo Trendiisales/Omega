@@ -186,6 +186,7 @@ struct OmegaConfig {
 
 static OmegaConfig         g_cfg;
 static std::atomic<bool>   g_running(true);
+static const int64_t       g_start_time = static_cast<int64_t>(std::time(nullptr)); // process start for uptime
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Globals
@@ -2292,6 +2293,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
 
     g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, g_gov_pos, g_gov_consec);
+    if (g_telemetry.snap()) g_telemetry.snap()->uptime_sec =
+        static_cast<int64_t>(std::time(nullptr)) - g_start_time;
 }  // ← on_tick
 // ─────────────────────────────────────────────────────────────────────────────
 static std::vector<std::string> extract_messages(const char* data, int n) {
