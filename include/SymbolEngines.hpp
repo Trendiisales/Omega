@@ -49,6 +49,8 @@ class SpEngine final : public BreakoutEngineBase<SpEngine>
 {
 public:
     const MacroContext* macro = nullptr;
+    double vix_panic      = 40.0;
+    double div_threshold  = 0.0060;
 
     explicit SpEngine(const char* sym) noexcept {
         symbol                = sym;
@@ -61,27 +63,17 @@ public:
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 60;
         MAX_SPREAD_PCT        = 0.04;
-        // SP at ~6688: 0.006% = $0.40 over 20 ticks — confirmed directional pressure
-        // Halved from 0.012%: log showed blocks at 0.0075%, just 60% of old threshold
         MOMENTUM_THRESH_PCT   = 0.006;
-        // SP at ~6688: 0.03% = $2.01 from comp edge — real break without noise
-        // Reduced from 0.05% ($3.34): actual breakout moves seen at $0.50-$2.00
-        // 0.03% filters sub-$1 micro-exits while catching genuine range breaks
         MIN_BREAKOUT_PCT      = 0.03;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
                      double spread_pct, double /*latency_ms*/) const noexcept
     {
-        if (spread_pct > MAX_SPREAD_PCT)           return false; // liquidity gate
-        if (!macro)                                 return true;
-        // Divergence gate: 0.60% threshold (raised from 0.30%).
-        // 0.30% was blocking ~60% of sessions — NQ is higher beta than SP and
-        // routinely diverges 0.3-0.5% intraday without signal degradation.
-        // 0.60% represents genuine sector rotation / decoupling events only.
-        if (std::fabs(macro->es_nq_div) > 0.0060)  return false; // sector rotation -- not clean
-        if (macro->vix > 40.0)                      return false; // panic -- unreliable fills
-        // RISK_OFF block removed: compression breakouts fire both ways. RISK_OFF = uncertainty, not direction.
+        if (spread_pct > MAX_SPREAD_PCT)                    return false;
+        if (!macro)                                          return true;
+        if (std::fabs(macro->es_nq_div) > div_threshold)    return false;
+        if (macro->vix > vix_panic)                         return false;
         return true;
     }
 };
@@ -103,6 +95,8 @@ class NqEngine final : public BreakoutEngineBase<NqEngine>
 {
 public:
     const MacroContext* macro = nullptr;
+    double vix_panic      = 40.0;
+    double div_threshold  = 0.0060;
 
     explicit NqEngine(const char* sym) noexcept {
         symbol                = sym;
@@ -115,26 +109,17 @@ public:
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 60;
         MAX_SPREAD_PCT        = 0.05;
-        // NQ at ~24600: 0.005% = $1.23 over 20 ticks — meaningful momentum
-        // Halved from 0.010%: log showed blocks at 0.0076%, 76% of old threshold
         MOMENTUM_THRESH_PCT   = 0.005;
-        // NQ at ~24600: 0.04% = $9.84 from comp edge — genuine range break
-        // Halved from 0.08% ($19.68): actual moves at exit were 0.007-0.010%
-        // ($1.7-$2.5). 0.04% = $9.84 is a real structural break, not noise.
         MIN_BREAKOUT_PCT      = 0.04;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
                      double spread_pct, double /*latency_ms*/) const noexcept
     {
-        if (spread_pct > MAX_SPREAD_PCT)           return false; // liquidity gate
-        if (!macro)                                 return true;
-        // Divergence gate: 0.60% threshold (raised from 0.30%).
-        // NQ is higher beta than SP. A 0.30% divergence is normal daily noise —
-        // raising to 0.60% targets real decoupling events (sector rotation, events).
-        if (std::fabs(macro->es_nq_div) > 0.0060)  return false; // SP/NQ decoupling
-        if (macro->vix > 40.0)                      return false; // panic
-        // RISK_OFF block removed: compression breakouts fire both ways. RISK_OFF = uncertainty, not direction.
+        if (spread_pct > MAX_SPREAD_PCT)                    return false;
+        if (!macro)                                          return true;
+        if (std::fabs(macro->es_nq_div) > div_threshold)    return false;
+        if (macro->vix > vix_panic)                         return false;
         return true;
     }
 };
@@ -158,6 +143,7 @@ class OilEngine final : public BreakoutEngineBase<OilEngine>
 {
 public:
     const MacroContext* macro = nullptr;
+    double vix_panic = 50.0;
 
     explicit OilEngine(const char* sym) noexcept {
         symbol                = sym;
@@ -170,21 +156,16 @@ public:
         MAX_HOLD_SEC          = 1800;
         MIN_GAP_SEC           = 90;
         MAX_SPREAD_PCT        = 0.120;
-        // Oil at ~$96: 0.050% = $0.048 over 20 ticks — genuine oil momentum
-        // Unchanged: 0.05% still valid for oil's noise level
         MOMENTUM_THRESH_PCT   = 0.050;
-        // Oil at ~$96: 0.06% = $0.058 from comp edge — real break
-        // Halved from 0.12% ($0.115): log showed actual moves at 0.04-0.10%
-        // 0.06% catches the genuine breaks that 0.12% was filtering
         MIN_BREAKOUT_PCT      = 0.06;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
                      double spread_pct, double /*latency_ms*/) const noexcept
     {
-        if (spread_pct > MAX_SPREAD_PCT)  return false; // oil spread gate
-        if (in_inventory_window())         return false; // EIA Wed 14:00-15:30 UTC
-        if (macro && macro->vix > 50.0)   return false; // true liquidity crisis only
+        if (spread_pct > MAX_SPREAD_PCT)           return false;
+        if (in_inventory_window())                  return false;
+        if (macro && macro->vix > vix_panic)        return false;
         return true;
     }
 
@@ -220,6 +201,8 @@ class Us30Engine final : public BreakoutEngineBase<Us30Engine>
 {
 public:
     const MacroContext* macro = nullptr;
+    double vix_panic     = 40.0;
+    double div_threshold = 0.0060;
 
     explicit Us30Engine(const char* sym) noexcept {
         symbol                = sym;
@@ -232,21 +215,17 @@ public:
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 60;
         MAX_SPREAD_PCT        = 0.05;
-        // DJ30 at ~46700: 0.025% = $11.68 over 20 ticks — completely unreachable
-        // in early London. 0.006% = $2.80 — meaningful momentum for Dow.
         MOMENTUM_THRESH_PCT   = 0.006;
-        // DJ30 at ~46700: 0.12% = $56.04 beyond comp edge — absurd.
-        // 0.04% = $18.68 — still a real break above noise for Dow.
         MIN_BREAKOUT_PCT      = 0.04;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
                      double spread_pct, double /*latency_ms*/) const noexcept
     {
-        if (spread_pct > MAX_SPREAD_PCT)          return false;
-        if (!macro)                                return true;
-        if (std::fabs(macro->es_nq_div) > 0.0060) return false; // same div gate as SP/NQ
-        if (macro->vix > 40.0)                     return false;
+        if (spread_pct > MAX_SPREAD_PCT)                 return false;
+        if (!macro)                                       return true;
+        if (std::fabs(macro->es_nq_div) > div_threshold) return false;
+        if (macro->vix > vix_panic)                      return false;
         return true;
     }
 };
@@ -264,6 +243,8 @@ class Nas100Engine final : public BreakoutEngineBase<Nas100Engine>
 {
 public:
     const MacroContext* macro = nullptr;
+    double vix_panic     = 40.0;
+    double div_threshold = 0.0060;
 
     explicit Nas100Engine(const char* sym) noexcept {
         symbol                = sym;
@@ -276,19 +257,17 @@ public:
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 60;
         MAX_SPREAD_PCT        = 0.06;
-        // NAS100 at ~24600: 0.005% = $1.23 — halved from 0.010%, matches NqEngine fix
         MOMENTUM_THRESH_PCT   = 0.005;
-        // NAS100: 0.04% = $9.84 — halved from 0.08%, matches NqEngine fix
         MIN_BREAKOUT_PCT      = 0.04;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
                      double spread_pct, double /*latency_ms*/) const noexcept
     {
-        if (spread_pct > MAX_SPREAD_PCT)          return false;
-        if (!macro)                                return true;
-        if (std::fabs(macro->es_nq_div) > 0.0060) return false;
-        if (macro->vix > 40.0)                     return false;
+        if (spread_pct > MAX_SPREAD_PCT)                 return false;
+        if (!macro)                                       return true;
+        if (std::fabs(macro->es_nq_div) > div_threshold) return false;
+        if (macro->vix > vix_panic)                      return false;
         return true;
     }
 };

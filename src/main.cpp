@@ -151,23 +151,56 @@ struct OmegaConfig {
     bool session_asia     = true;  // enable Asia/Tokyo window 22:00-05:00 UTC
 
     // SP (US500) -- liquid, tight compression, better TP:SL than generic default
-    double sp_tp_pct          = 0.600;  // 0.60% TP: clean SP breaks extend 0.5-0.8%
-    double sp_sl_pct          = 0.350;  // 0.35% SL: above noise, cut failed breaks fast
-    double sp_vol_thresh_pct  = 0.040;  // 0.04%: tighter than default, SP compression is real
-    int    sp_min_gap_sec     = 60;     // 1min gap between signals
+    double sp_tp_pct              = 0.600;  // 0.60% TP: clean SP breaks extend 0.5-0.8%
+    double sp_sl_pct              = 0.350;  // 0.35% SL: above noise, cut failed breaks fast
+    double sp_vol_thresh_pct      = 0.040;  // 0.04%: tighter than default, SP compression is real
+    int    sp_min_gap_sec         = 60;     // 1min gap between signals
+    double sp_momentum_thresh_pct = 0.006;
+    double sp_min_breakout_pct    = 0.030;
+    double sp_max_spread_pct      = 0.040;
+    double sp_compression_threshold = 0.85;
+    double sp_vix_panic           = 40.0;
+    double sp_div_threshold       = 0.0060;
 
     // NQ (USTEC) -- higher beta, wider TP
-    double nq_tp_pct          = 0.700;  // 0.70% TP: NQ extends further than SP
-    double nq_sl_pct          = 0.400;  // 0.40% SL: slightly more room for NQ noise
-    double nq_vol_thresh_pct  = 0.050;  // 0.05%: NQ needs a full vol spike
-    int    nq_min_gap_sec     = 60;     // 1min gap
+    double nq_tp_pct              = 0.700;  // 0.70% TP: NQ extends further than SP
+    double nq_sl_pct              = 0.400;  // 0.40% SL: slightly more room for NQ noise
+    double nq_vol_thresh_pct      = 0.050;  // 0.05%: NQ needs a full vol spike
+    int    nq_min_gap_sec         = 60;     // 1min gap
+    double nq_momentum_thresh_pct = 0.005;
+    double nq_min_breakout_pct    = 0.040;
+    double nq_max_spread_pct      = 0.050;
+    double nq_compression_threshold = 0.85;
+    double nq_vix_panic           = 40.0;
+    double nq_div_threshold       = 0.0060;
+
+    // Us30 (DJ30)
+    double us30_momentum_thresh_pct   = 0.006;
+    double us30_min_breakout_pct      = 0.040;
+    double us30_max_spread_pct        = 0.050;
+    double us30_compression_threshold = 0.85;
+    double us30_vix_panic             = 40.0;
+    double us30_div_threshold         = 0.0060;
+
+    // Nas100 (NAS100 cash)
+    double nas100_momentum_thresh_pct   = 0.005;
+    double nas100_min_breakout_pct      = 0.040;
+    double nas100_max_spread_pct        = 0.060;
+    double nas100_compression_threshold = 0.85;
+    double nas100_vix_panic             = 40.0;
+    double nas100_div_threshold         = 0.0060;
 
     // Oil (USOIL) -- fundamentally different: 1-2% typical moves
-    double oil_tp_pct         = 1.200;  // 1.20% TP: oil runs 1-2% on clean breaks
-    double oil_sl_pct         = 0.600;  // 0.60% SL: oil noise is 0.3-0.5% intraday
-    double oil_vol_thresh_pct = 0.080;  // 0.08%: oil needs a bigger initial signal
-    int    oil_min_gap_sec    = 90;     // 90s gap
-    int    oil_max_hold_sec   = 1800;   // 30min: oil moves are slower than indices
+    double oil_tp_pct                 = 1.200;
+    double oil_sl_pct                 = 0.600;
+    double oil_vol_thresh_pct         = 0.080;
+    int    oil_min_gap_sec            = 90;
+    int    oil_max_hold_sec           = 1800;
+    double oil_momentum_thresh_pct    = 0.050;
+    double oil_min_breakout_pct       = 0.060;
+    double oil_max_spread_pct         = 0.120;
+    double oil_compression_threshold  = 0.80;
+    double oil_vix_panic              = 50.0;
 
     // GUI
     int         gui_port   = 7779;
@@ -1435,45 +1468,56 @@ static bool session_tradeable() noexcept {
 // Generic fallback (used for GOLD BreakoutEngine)
 // SP -- uses [sp] config section, links macro context
 static void apply_engine_config(omega::SpEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = g_cfg.sp_vol_thresh_pct;
-    eng.TP_PCT                = g_cfg.sp_tp_pct;
-    eng.SL_PCT                = g_cfg.sp_sl_pct;
-    eng.MIN_GAP_SEC           = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
-    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
-    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
-    // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
-    // correct per-instrument values (0.012% / 0.12%) tuned for SP price level.
-    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
-    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    eng.macro                 = &g_macro_ctx;
+    eng.VOL_THRESH_PCT          = g_cfg.sp_vol_thresh_pct;
+    eng.TP_PCT                  = g_cfg.sp_tp_pct;
+    eng.SL_PCT                  = g_cfg.sp_sl_pct;
+    eng.MIN_GAP_SEC             = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.BASELINE_LOOKBACK       = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK    = g_cfg.compression_lookback;
+    eng.MOMENTUM_THRESH_PCT     = g_cfg.sp_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT        = g_cfg.sp_min_breakout_pct;
+    eng.MAX_SPREAD_PCT          = g_cfg.sp_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD   = g_cfg.sp_compression_threshold;
+    eng.vix_panic               = g_cfg.sp_vix_panic;
+    eng.div_threshold           = g_cfg.sp_div_threshold;
+    eng.MAX_TRADES_PER_MIN      = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC            = g_cfg.max_hold_sec;
+    eng.macro                   = &g_macro_ctx;
 }
 // NQ -- uses [nq] config section, links macro context
 static void apply_engine_config(omega::NqEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = g_cfg.nq_vol_thresh_pct;
-    eng.TP_PCT                = g_cfg.nq_tp_pct;
-    eng.SL_PCT                = g_cfg.nq_sl_pct;
-    eng.MIN_GAP_SEC           = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
-    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
-    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
-    // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
-    // correct per-instrument values (0.010% / 0.08%) tuned for NQ price level.
-    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
-    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    eng.macro                 = &g_macro_ctx;
+    eng.VOL_THRESH_PCT          = g_cfg.nq_vol_thresh_pct;
+    eng.TP_PCT                  = g_cfg.nq_tp_pct;
+    eng.SL_PCT                  = g_cfg.nq_sl_pct;
+    eng.MIN_GAP_SEC             = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.BASELINE_LOOKBACK       = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK    = g_cfg.compression_lookback;
+    eng.MOMENTUM_THRESH_PCT     = g_cfg.nq_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT        = g_cfg.nq_min_breakout_pct;
+    eng.MAX_SPREAD_PCT          = g_cfg.nq_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD   = g_cfg.nq_compression_threshold;
+    eng.vix_panic               = g_cfg.nq_vix_panic;
+    eng.div_threshold           = g_cfg.nq_div_threshold;
+    eng.MAX_TRADES_PER_MIN      = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC            = g_cfg.max_hold_sec;
+    eng.macro                   = &g_macro_ctx;
 }
 // Oil -- uses [oil] config section, inventory window block built into engine
 static void apply_engine_config(omega::OilEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = g_cfg.oil_vol_thresh_pct;
-    eng.TP_PCT                = g_cfg.oil_tp_pct;
-    eng.SL_PCT                = g_cfg.oil_sl_pct;
-    eng.MIN_GAP_SEC           = std::max(g_cfg.oil_min_gap_sec, g_cfg.min_entry_gap_sec);
-    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
-    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
-    // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
-    // correct per-instrument values (0.015% / 0.10%) tuned for Oil price level.
-    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
-    eng.MAX_HOLD_SEC          = std::max(g_cfg.oil_max_hold_sec, 1800);
-    eng.macro                 = &g_macro_ctx;
+    eng.VOL_THRESH_PCT          = g_cfg.oil_vol_thresh_pct;
+    eng.TP_PCT                  = g_cfg.oil_tp_pct;
+    eng.SL_PCT                  = g_cfg.oil_sl_pct;
+    eng.MIN_GAP_SEC             = std::max(g_cfg.oil_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.BASELINE_LOOKBACK       = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK    = g_cfg.compression_lookback;
+    eng.MOMENTUM_THRESH_PCT     = g_cfg.oil_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT        = g_cfg.oil_min_breakout_pct;
+    eng.MAX_SPREAD_PCT          = g_cfg.oil_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD   = g_cfg.oil_compression_threshold;
+    eng.vix_panic               = g_cfg.oil_vix_panic;
+    eng.MAX_TRADES_PER_MIN      = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC            = std::max(g_cfg.oil_max_hold_sec, 1800);
+    eng.macro                   = &g_macro_ctx;
 }
 
 static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
@@ -1495,33 +1539,40 @@ static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
 
 // Us30 (DJ30.F) -- typed engine, links macro context
 static void apply_engine_config(omega::Us30Engine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = std::min(0.05, std::max(0.02, g_cfg.sp_vol_thresh_pct));
-    eng.TP_PCT                = g_cfg.sp_tp_pct;
-    eng.SL_PCT                = g_cfg.sp_sl_pct;
-    eng.MIN_GAP_SEC           = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
-    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
-    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
-    // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
-    // correct per-instrument values (0.006% / 0.04%) tuned for DJ30 price level
-    // (46700+ points — global 0.025%/0.12% translates to absurd absolute values).
-    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
-    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    eng.macro                 = &g_macro_ctx;
+    eng.VOL_THRESH_PCT          = std::min(0.05, std::max(0.02, g_cfg.sp_vol_thresh_pct));
+    eng.TP_PCT                  = g_cfg.sp_tp_pct;
+    eng.SL_PCT                  = g_cfg.sp_sl_pct;
+    eng.MIN_GAP_SEC             = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.BASELINE_LOOKBACK       = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK    = g_cfg.compression_lookback;
+    eng.MOMENTUM_THRESH_PCT     = g_cfg.us30_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT        = g_cfg.us30_min_breakout_pct;
+    eng.MAX_SPREAD_PCT          = g_cfg.us30_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD   = g_cfg.us30_compression_threshold;
+    eng.vix_panic               = g_cfg.us30_vix_panic;
+    eng.div_threshold           = g_cfg.us30_div_threshold;
+    eng.MAX_TRADES_PER_MIN      = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC            = g_cfg.max_hold_sec;
+    eng.macro                   = &g_macro_ctx;
 }
 
 // Nas100 -- typed engine, links macro context
 static void apply_engine_config(omega::Nas100Engine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = g_cfg.nq_vol_thresh_pct;
-    eng.TP_PCT                = g_cfg.nq_tp_pct;
-    eng.SL_PCT                = g_cfg.nq_sl_pct;
-    eng.MIN_GAP_SEC           = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
-    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
-    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
-    // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
-    // correct per-instrument values (0.010% / 0.08%) tuned for NAS100 price level.
-    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
-    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    eng.macro                 = &g_macro_ctx;
+    eng.VOL_THRESH_PCT          = g_cfg.nq_vol_thresh_pct;
+    eng.TP_PCT                  = g_cfg.nq_tp_pct;
+    eng.SL_PCT                  = g_cfg.nq_sl_pct;
+    eng.MIN_GAP_SEC             = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.BASELINE_LOOKBACK       = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK    = g_cfg.compression_lookback;
+    eng.MOMENTUM_THRESH_PCT     = g_cfg.nas100_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT        = g_cfg.nas100_min_breakout_pct;
+    eng.MAX_SPREAD_PCT          = g_cfg.nas100_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD   = g_cfg.nas100_compression_threshold;
+    eng.vix_panic               = g_cfg.nas100_vix_panic;
+    eng.div_threshold           = g_cfg.nas100_div_threshold;
+    eng.MAX_TRADES_PER_MIN      = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC            = g_cfg.max_hold_sec;
+    eng.macro                   = &g_macro_ctx;
 }
 
 static void apply_generic_fx_config(omega::BreakoutEngine& eng) noexcept {
@@ -1674,23 +1725,56 @@ static void load_config(const std::string& path) {
             if (k=="ukbrent_id") g_cfg.ext_ukbrent_id = std::stoi(v);
         }
         if (section == "sp") {
-            if (k=="tp_pct")         g_cfg.sp_tp_pct         = std::stod(v);
-            if (k=="sl_pct")         g_cfg.sp_sl_pct         = std::stod(v);
-            if (k=="vol_thresh_pct") g_cfg.sp_vol_thresh_pct = std::stod(v);
-            if (k=="min_gap_sec")    g_cfg.sp_min_gap_sec    = std::stoi(v);
+            if (k=="tp_pct")                g_cfg.sp_tp_pct                = std::stod(v);
+            if (k=="sl_pct")                g_cfg.sp_sl_pct                = std::stod(v);
+            if (k=="vol_thresh_pct")        g_cfg.sp_vol_thresh_pct        = std::stod(v);
+            if (k=="min_gap_sec")           g_cfg.sp_min_gap_sec           = std::stoi(v);
+            if (k=="momentum_thresh_pct")   g_cfg.sp_momentum_thresh_pct   = std::stod(v);
+            if (k=="min_breakout_pct")      g_cfg.sp_min_breakout_pct      = std::stod(v);
+            if (k=="max_spread_pct")        g_cfg.sp_max_spread_pct        = std::stod(v);
+            if (k=="compression_threshold") g_cfg.sp_compression_threshold = std::stod(v);
+            if (k=="vix_panic")             g_cfg.sp_vix_panic             = std::stod(v);
+            if (k=="div_threshold")         g_cfg.sp_div_threshold         = std::stod(v);
         }
         if (section == "nq") {
-            if (k=="tp_pct")         g_cfg.nq_tp_pct         = std::stod(v);
-            if (k=="sl_pct")         g_cfg.nq_sl_pct         = std::stod(v);
-            if (k=="vol_thresh_pct") g_cfg.nq_vol_thresh_pct = std::stod(v);
-            if (k=="min_gap_sec")    g_cfg.nq_min_gap_sec    = std::stoi(v);
+            if (k=="tp_pct")                g_cfg.nq_tp_pct                = std::stod(v);
+            if (k=="sl_pct")                g_cfg.nq_sl_pct                = std::stod(v);
+            if (k=="vol_thresh_pct")        g_cfg.nq_vol_thresh_pct        = std::stod(v);
+            if (k=="min_gap_sec")           g_cfg.nq_min_gap_sec           = std::stoi(v);
+            if (k=="momentum_thresh_pct")   g_cfg.nq_momentum_thresh_pct   = std::stod(v);
+            if (k=="min_breakout_pct")      g_cfg.nq_min_breakout_pct      = std::stod(v);
+            if (k=="max_spread_pct")        g_cfg.nq_max_spread_pct        = std::stod(v);
+            if (k=="compression_threshold") g_cfg.nq_compression_threshold = std::stod(v);
+            if (k=="vix_panic")             g_cfg.nq_vix_panic             = std::stod(v);
+            if (k=="div_threshold")         g_cfg.nq_div_threshold         = std::stod(v);
+        }
+        if (section == "us30") {
+            if (k=="momentum_thresh_pct")   g_cfg.us30_momentum_thresh_pct   = std::stod(v);
+            if (k=="min_breakout_pct")      g_cfg.us30_min_breakout_pct      = std::stod(v);
+            if (k=="max_spread_pct")        g_cfg.us30_max_spread_pct        = std::stod(v);
+            if (k=="compression_threshold") g_cfg.us30_compression_threshold = std::stod(v);
+            if (k=="vix_panic")             g_cfg.us30_vix_panic             = std::stod(v);
+            if (k=="div_threshold")         g_cfg.us30_div_threshold         = std::stod(v);
+        }
+        if (section == "nas100") {
+            if (k=="momentum_thresh_pct")   g_cfg.nas100_momentum_thresh_pct   = std::stod(v);
+            if (k=="min_breakout_pct")      g_cfg.nas100_min_breakout_pct      = std::stod(v);
+            if (k=="max_spread_pct")        g_cfg.nas100_max_spread_pct        = std::stod(v);
+            if (k=="compression_threshold") g_cfg.nas100_compression_threshold = std::stod(v);
+            if (k=="vix_panic")             g_cfg.nas100_vix_panic             = std::stod(v);
+            if (k=="div_threshold")         g_cfg.nas100_div_threshold         = std::stod(v);
         }
         if (section == "oil") {
-            if (k=="tp_pct")         g_cfg.oil_tp_pct         = std::stod(v);
-            if (k=="sl_pct")         g_cfg.oil_sl_pct         = std::stod(v);
-            if (k=="vol_thresh_pct") g_cfg.oil_vol_thresh_pct = std::stod(v);
-            if (k=="min_gap_sec")    g_cfg.oil_min_gap_sec    = std::stoi(v);
-            if (k=="max_hold_sec")   g_cfg.oil_max_hold_sec   = std::stoi(v);
+            if (k=="tp_pct")                g_cfg.oil_tp_pct                = std::stod(v);
+            if (k=="sl_pct")                g_cfg.oil_sl_pct                = std::stod(v);
+            if (k=="vol_thresh_pct")        g_cfg.oil_vol_thresh_pct        = std::stod(v);
+            if (k=="min_gap_sec")           g_cfg.oil_min_gap_sec           = std::stoi(v);
+            if (k=="max_hold_sec")          g_cfg.oil_max_hold_sec          = std::stoi(v);
+            if (k=="momentum_thresh_pct")   g_cfg.oil_momentum_thresh_pct   = std::stod(v);
+            if (k=="min_breakout_pct")      g_cfg.oil_min_breakout_pct      = std::stod(v);
+            if (k=="max_spread_pct")        g_cfg.oil_max_spread_pct        = std::stod(v);
+            if (k=="compression_threshold") g_cfg.oil_compression_threshold = std::stod(v);
+            if (k=="vix_panic")             g_cfg.oil_vix_panic             = std::stod(v);
         }
         if (section == "gold_stack") {
             auto& gs = g_cfg.gs_cfg;
