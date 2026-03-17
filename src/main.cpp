@@ -1822,29 +1822,33 @@ static void maybe_reset_daily_ledger() {
 }
 
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
-    // Apply realistic shadow costs before any recording/stats.
-    // commission_per_side=0.0 for BlackBull CFD model (cost embedded in spread).
     omega::TradeRecord tr = tr_in;
-    omega::apply_realistic_costs(tr, 0.0);
 
-    std::cout << "[TRADE-COST] " << tr.symbol
-              << " gross=" << std::fixed << std::setprecision(4) << tr.pnl
-              << " slip_in=" << tr.slippage_entry
-              << " slip_out=" << tr.slippage_exit
-              << " net=" << tr.net_pnl
-              << " exit=" << tr.exitReason << "\n";
-    std::cout.flush();
-
-    // Normalise PnL from raw price points to USD using per-instrument tick value.
-    // Without this, daily_loss_limit and all PnL aggregates are in mixed raw units.
+    // Step 1: Scale raw price-point P&L to USD using per-instrument contract size.
+    // This MUST happen before apply_realistic_costs so slippage is computed in USD.
+    // Previously apply_realistic_costs ran first with raw price values, causing
+    // slippage to be ~1000× too small (e.g. $0.002 instead of $8.10 for XAGUSD).
     {
         const double mult = tick_value_multiplier(tr.symbol);
-        tr.pnl        *= mult;
-        tr.net_pnl    *= mult;
-        tr.mfe        *= mult;
-        tr.mae        *= mult;
-        // Note: slippage_entry/exit, commission are already in dollar terms from apply_realistic_costs
+        tr.pnl  *= mult;   // gross USD
+        tr.mfe  *= mult;   // max favourable excursion USD
+        tr.mae  *= mult;   // max adverse excursion USD
+        // net_pnl, slippage_entry/exit, commission set below by apply_realistic_costs
+
+        // Step 2: Apply realistic shadow costs (slippage + commission) in USD.
+        // commission_per_side=0.0 for BlackBull CFD — cost is embedded in the spread.
+        // tick_mult passed in so slippage = price × slip_pct × tick_mult × size (USD).
+        omega::apply_realistic_costs(tr, 0.0, mult);
     }
+
+    // Step 3: Log — all values are now in USD
+    std::cout << "[TRADE-COST] " << tr.symbol
+              << " gross=$" << std::fixed << std::setprecision(2) << tr.pnl
+              << " slip_in=$" << tr.slippage_entry
+              << " slip_out=$" << tr.slippage_exit
+              << " net=$" << tr.net_pnl
+              << " exit=" << tr.exitReason << "\n";
+    std::cout.flush();
     g_omegaLedger.record(tr);
     // Shadow CSV only written in SHADOW mode — prevents LIVE trades contaminating shadow analysis
     if (g_cfg.mode == "SHADOW") write_shadow_csv(tr);

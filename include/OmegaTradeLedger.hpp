@@ -57,24 +57,29 @@ struct TradeRecord
 // ─────────────────────────────────────────────────────────────────────────────
 // apply_realistic_costs — fills TradeRecord cost fields for shadow simulation.
 //
-// Instrument presets (per unit, one-way):
-//   GOLD.F / XAGUSD          : slip 0.010% — gold/silver tick friction
-//   USOIL.F / UKBRENT        : slip 0.012% — oil slightly wider intraday
-//   USTEC.F / US500.F / DJ30 : slip 0.006% — liquid equity index futures
-//   GER30 / UK100 / ESTX50   : slip 0.008% — European index CFDs, slightly wider
-//   EURUSD                   : slip 0.003% — FX major, very liquid
-//   default                  : slip 0.008%
+// CALL ORDER: invoke this AFTER tr.pnl has been scaled to USD by tick_mult.
+// All output cost fields (slippage_entry, slippage_exit, commission, net_pnl)
+// are in USD.
 //
-// Commission: 0.0 per side (BlackBull CFD model — cost is in spread only).
+// tick_mult: dollar value per price-point per lot from tick_value_multiplier().
+//   e.g. XAGUSD=5000, USOIL.F=1000, GOLD.F=100, US500.F=1, EURUSD=100000
+//   This is required to convert price-point slippage into USD correctly.
+//   Without it, slippage on a $5000/pt instrument would be ~$0.08 instead of
+//   ~$8, making net_pnl ≈ gross_pnl and the cost model meaningless.
 //
-// Entry adverse fill: LONG entry = mid + (entry_px × slip_pct/100)
-//                     SHORT entry = mid - (entry_px × slip_pct/100)
-// Exit adverse fill:  TP exit = filled at TP - (TP × slip_pct/100) for LONG
-//                     SL exit = filled at SL + (SL × slip_pct/100) for LONG
-//                     (slippage AGAINST the trade on both entry and exit)
+// Instrument slippage presets (one-way, % of price):
+//   GOLD.F / XAGUSD          : 0.010% — gold/silver tick friction
+//   USOIL.F / UKBRENT        : 0.012% — oil slightly wider intraday
+//   USTEC.F / US500.F / DJ30 : 0.006% — liquid equity index futures
+//   GER30 / UK100 / ESTX50   : 0.008% — European index CFDs, slightly wider
+//   EURUSD                   : 0.003% — FX major, very liquid
+//   default                  : 0.008%
+//
+// Commission: 0.0 per side (BlackBull CFD — cost is embedded in spread).
 // ─────────────────────────────────────────────────────────────────────────────
 inline void apply_realistic_costs(TradeRecord& tr,
-                                  double commission_per_side = 0.0)
+                                  double commission_per_side,
+                                  double tick_mult)
 {
     // Determine per-instrument slippage rate
     double slip_pct = 0.008; // default
@@ -90,28 +95,26 @@ inline void apply_realistic_costs(TradeRecord& tr,
     else if (sym == "EURUSD")
         slip_pct = 0.003;
 
-    // Entry slippage: we always pay half-spread equivalent against us
-    // (on top of spreadAtEntry which is already the bid-ask cost)
-    const double entry_slip_price = tr.entryPrice * (slip_pct / 100.0);
-    // Exit slippage: depends on exit reason
-    // SL exits: market impact is worse (panic fill) — 1.5× slip
-    // TP exits: limit order, slip is smaller — 0.75× slip
-    // TIMEOUT/SCRATCH: market order, full slip
+    // Exit multiplier — worse fill on panic SL, better on limit TP
     double exit_slip_multiplier = 1.0;
     if (tr.exitReason == "TP_HIT")         exit_slip_multiplier = 0.75;
     else if (tr.exitReason == "SL_HIT")    exit_slip_multiplier = 1.50;
     else if (tr.exitReason == "SCRATCH")   exit_slip_multiplier = 1.25;
-    const double exit_slip_price = tr.exitPrice * (slip_pct / 100.0) * exit_slip_multiplier;
 
     tr.slip_entry_pct = slip_pct;
     tr.slip_exit_pct  = slip_pct * exit_slip_multiplier;
     tr.comm_per_side  = commission_per_side;
 
-    // Slippage cost = always adverse regardless of side
-    tr.slippage_entry = entry_slip_price * tr.size;
-    tr.slippage_exit  = exit_slip_price  * tr.size;
-    tr.commission     = commission_per_side * 2.0 * tr.size; // entry + exit
+    // Slippage in USD:  price × slip_pct/100 × tick_mult × size
+    // tick_mult converts from price-point slippage to dollar slippage.
+    // e.g. XAGUSD entry=81.01, slip=0.01%, tick_mult=5000, size=0.20
+    //      → 81.01 × 0.0001 × 5000 × 0.20 = $8.10 USD (correct)
+    //      Without tick_mult: 81.01 × 0.0001 × 0.20 = $0.0016 (meaningless)
+    tr.slippage_entry = tr.entryPrice * (slip_pct / 100.0) * tick_mult * tr.size;
+    tr.slippage_exit  = tr.exitPrice  * (slip_pct / 100.0) * exit_slip_multiplier * tick_mult * tr.size;
+    tr.commission     = commission_per_side * 2.0 * tr.size; // entry + exit, already in USD
 
+    // tr.pnl must already be in USD before this call
     tr.net_pnl = tr.pnl - tr.slippage_entry - tr.slippage_exit - tr.commission;
 }
 
