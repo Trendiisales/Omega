@@ -1448,8 +1448,8 @@ static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
     // 0.025% on GER30 at 22000 = $5.50 — too tight for early London.
     // Use 0.010% momentum (absolute ~$1-2 for all EU indices) and
     // 0.06% min_breakout (absolute ~$5-13 depending on index level).
-    eng.MOMENTUM_THRESH_PCT   = 0.010;
-    eng.MIN_BREAKOUT_PCT      = 0.06;
+    eng.MOMENTUM_THRESH_PCT   = 0.005;  // halved from 0.010% — log showed blocks at 0.007%
+    eng.MIN_BREAKOUT_PCT      = 0.03;   // halved from 0.06% — EU indices have small comp exits
 }
 
 // Us30 (DJ30.F) -- typed engine, links macro context
@@ -1502,15 +1502,12 @@ static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
     eng.MAX_SPREAD_PCT        = 0.08;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    // Silver at ~$80.33 (Mar 2026): London avg hourly range = $1.34, min = $0.755.
-    // Typical 4s move = $1.34/hr / 15 windows = $0.089.
-    // 0.012% = $0.0096 over 20 ticks — only 11% of typical 4s move, fires on noise.
-    // 0.040% = $0.032 = 36% of typical 4s move — genuine directional pressure only.
-    eng.MOMENTUM_THRESH_PCT   = 0.040;
-    // Silver at ~$80.33: 6% of avg hourly range $1.34 = $0.080.
-    // 0.10% = $0.080 from comp edge — confirms real break above noise.
-    // Was 0.08% ($0.064) = 5% of hourly range — slightly too loose.
-    eng.MIN_BREAKOUT_PCT      = 0.10;
+    // Silver at ~$80.60: 0.020% = $0.016 over 20 ticks — halved from 0.040%
+    // Log showed block at 0.0397% momentum, just 0.0003% below old threshold
+    eng.MOMENTUM_THRESH_PCT   = 0.020;
+    // Silver at ~$80.60: 0.05% = $0.040 from comp edge — real structural break
+    // Halved from 0.10%: actual breakout moves seen at 0.022-0.043% in log
+    eng.MIN_BREAKOUT_PCT      = 0.05;
 }
 
 static void apply_generic_brent_config(omega::BreakoutEngine& eng) noexcept {

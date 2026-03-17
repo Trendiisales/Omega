@@ -62,17 +62,13 @@ public:
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 300;
         MAX_SPREAD_PCT        = 0.04;
-        // SP at ~6745 (Mar 2026): 0.012% = $0.81 over 20 ticks.
-        // London avg hourly range $28.71, typical 4s move ~$1.93.
-        // $0.81 = 42% of typical 4s move — meaningful directional pressure.
-        MOMENTUM_THRESH_PCT   = 0.012;
-        // SP at ~6745 (Mar 2026): London avg hourly range = $28.71, min = $14.50.
-        // 0.12% = $8.09 from comp edge — that is 28% of the avg hourly range.
-        // Real breakouts in London clear $3–5 beyond the compression edge.
-        // 0.05% = $3.37 — confirms a real directional break without requiring
-        // a full hourly range move just to enter.
-        // Was 0.12% which was blocking nearly every valid signal.
-        MIN_BREAKOUT_PCT      = 0.05;
+        // SP at ~6688: 0.006% = $0.40 over 20 ticks — confirmed directional pressure
+        // Halved from 0.012%: log showed blocks at 0.0075%, just 60% of old threshold
+        MOMENTUM_THRESH_PCT   = 0.006;
+        // SP at ~6688: 0.03% = $2.01 from comp edge — real break without noise
+        // Reduced from 0.05% ($3.34): actual breakout moves seen at $0.50-$2.00
+        // 0.03% filters sub-$1 micro-exits while catching genuine range breaks
+        MIN_BREAKOUT_PCT      = 0.03;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -120,12 +116,13 @@ public:
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 240;
         MAX_SPREAD_PCT        = 0.05;
-        // NQ at ~24500: 0.025% = $6.13 over 20 ticks — way too tight for early
-        // London pre-market chop. 0.010% = $2.45 — still meaningful momentum.
-        MOMENTUM_THRESH_PCT   = 0.010;
-        // NQ at ~24500: 0.12% = $29.40 beyond comp edge — too large.
-        // Tighten to 0.08% = $19.60 — still a genuine break, not a fake.
-        MIN_BREAKOUT_PCT      = 0.08;
+        // NQ at ~24600: 0.005% = $1.23 over 20 ticks — meaningful momentum
+        // Halved from 0.010%: log showed blocks at 0.0076%, 76% of old threshold
+        MOMENTUM_THRESH_PCT   = 0.005;
+        // NQ at ~24600: 0.04% = $9.84 from comp edge — genuine range break
+        // Halved from 0.08% ($19.68): actual moves at exit were 0.007-0.010%
+        // ($1.7-$2.5). 0.04% = $9.84 is a real structural break, not noise.
+        MIN_BREAKOUT_PCT      = 0.04;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -174,16 +171,13 @@ public:
         MAX_HOLD_SEC          = 1800;
         MIN_GAP_SEC           = 360;
         MAX_SPREAD_PCT        = 0.120;
-        // Oil at ~$95.74 (Mar 2026): London avg hourly range = $1.92, min = $1.16.
-        // Typical 4s move = $1.92/hr ÷ 15 = $0.128.
-        // 0.015% = $0.014 over 20 ticks — only 11% of typical 4s move — too loose,
-        // fires on random tick noise. 0.050% = $0.048 = 37% of typical 4s move.
-        // Tightened from 0.015% to filter genuine directional momentum.
+        // Oil at ~$96: 0.050% = $0.048 over 20 ticks — genuine oil momentum
+        // Unchanged: 0.05% still valid for oil's noise level
         MOMENTUM_THRESH_PCT   = 0.050;
-        // Oil at ~$95.74: 6% of avg hourly range $1.92 = $0.115.
-        // 0.12% = $0.115 from comp edge — confirms real breakout vs noise.
-        // Was 0.10% ($0.096) which was slightly below the 6% target.
-        MIN_BREAKOUT_PCT      = 0.12;
+        // Oil at ~$96: 0.06% = $0.058 from comp edge — real break
+        // Halved from 0.12% ($0.115): log showed actual moves at 0.04-0.10%
+        // 0.06% catches the genuine breaks that 0.12% was filtering
+        MIN_BREAKOUT_PCT      = 0.06;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -330,10 +324,10 @@ public:
         MAX_HOLD_SEC          = 1200;
         MIN_GAP_SEC           = 180;
         MAX_SPREAD_PCT        = 0.06;
-        // NAS100 at ~24500: same as NqEngine — 0.010% = $2.45 momentum threshold
-        MOMENTUM_THRESH_PCT   = 0.010;
-        // NAS100: 0.08% = $19.60 beyond comp edge — matches NqEngine
-        MIN_BREAKOUT_PCT      = 0.08;
+        // NAS100 at ~24600: 0.005% = $1.23 — halved from 0.010%, matches NqEngine fix
+        MOMENTUM_THRESH_PCT   = 0.005;
+        // NAS100: 0.04% = $9.84 — halved from 0.08%, matches NqEngine fix
+        MIN_BREAKOUT_PCT      = 0.04;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
