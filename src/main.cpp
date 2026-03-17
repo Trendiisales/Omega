@@ -126,6 +126,16 @@ struct OmegaConfig {
     double max_lot_oil     = 0.50;   // USOIL.F / UKBRENT max lots
     double max_lot_silver  = 0.20;   // XAGUSD max lots
     double max_lot_fx      = 5.00;   // EURUSD max lots
+
+    // Per-symbol minimum lot size floor.
+    // compute_size() clamps DOWN to max_lot and UP to min_lot.
+    // Overrides risk calculation if risk would produce a smaller size.
+    // Set to 0.0 to use only the global 0.01 hard floor.
+    double min_lot_gold    = 0.01;   // GOLD.F min lots
+    double min_lot_indices = 0.01;   // SP/NQ/DJ30/NAS100/EU indices min lots
+    double min_lot_oil     = 0.01;   // USOIL.F / UKBRENT min lots
+    double min_lot_silver  = 0.01;   // XAGUSD min lots
+    double min_lot_fx      = 0.01;   // EURUSD min lots
     int    ext_ger30_id               = 0;
     int    ext_uk100_id               = 0;
     int    ext_estx50_id              = 0;
@@ -780,15 +790,16 @@ static double compute_size(const std::string& symbol,
     size = std::floor(size * 100.0 + 0.5) / 100.0;
     if (size < 0.01) size = 0.01;  // hard floor: never less than 1 micro-lot
 
-    // Per-symbol safety cap — hard ceiling regardless of risk param
-    // Prevents a misconfigured risk_per_trade_usd from opening a dangerously large position
+    // Per-symbol safety cap (ceiling) and minimum floor
     double cap = g_cfg.max_lot_indices; // safe default for unknowns
-    if (symbol == "GOLD.F")                                    cap = g_cfg.max_lot_gold;
-    else if (symbol == "EURUSD")                               cap = g_cfg.max_lot_fx;
-    else if (symbol == "XAGUSD")                               cap = g_cfg.max_lot_silver;
-    else if (symbol == "USOIL.F" || symbol == "UKBRENT")       cap = g_cfg.max_lot_oil;
+    double flr = g_cfg.min_lot_indices;
+    if (symbol == "GOLD.F")                                    { cap = g_cfg.max_lot_gold;   flr = g_cfg.min_lot_gold; }
+    else if (symbol == "EURUSD")                               { cap = g_cfg.max_lot_fx;     flr = g_cfg.min_lot_fx; }
+    else if (symbol == "XAGUSD")                               { cap = g_cfg.max_lot_silver; flr = g_cfg.min_lot_silver; }
+    else if (symbol == "USOIL.F" || symbol == "UKBRENT")       { cap = g_cfg.max_lot_oil;    flr = g_cfg.min_lot_oil; }
 
-    size = std::min(size, cap);
+    size = std::min(size, cap);                    // never exceed max_lot
+    if (flr > 0.01) size = std::max(size, flr);   // never go below min_lot (if set above global 0.01 floor)
 
     return size;
 }
@@ -1617,6 +1628,11 @@ static void load_config(const std::string& path) {
             if (k=="max_lot_oil")          g_cfg.max_lot_oil        = std::stod(v);
             if (k=="max_lot_silver")       g_cfg.max_lot_silver     = std::stod(v);
             if (k=="max_lot_fx")           g_cfg.max_lot_fx         = std::stod(v);
+            if (k=="min_lot_gold")         g_cfg.min_lot_gold       = std::stod(v);
+            if (k=="min_lot_indices")      g_cfg.min_lot_indices    = std::stod(v);
+            if (k=="min_lot_oil")          g_cfg.min_lot_oil        = std::stod(v);
+            if (k=="min_lot_silver")       g_cfg.min_lot_silver     = std::stod(v);
+            if (k=="min_lot_fx")           g_cfg.min_lot_fx         = std::stod(v);
             // Backward-compat: older configs place breakout keys under [risk].
             // Parse them here too so tuned values are not silently ignored.
             if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct = std::stod(v);
@@ -1714,6 +1730,12 @@ static void sanitize_config() noexcept {
     g_cfg.max_lot_oil        = clampd(g_cfg.max_lot_oil,     0.01, 10.0, 0.50);
     g_cfg.max_lot_silver     = clampd(g_cfg.max_lot_silver,  0.01, 10.0, 0.20);
     g_cfg.max_lot_fx         = clampd(g_cfg.max_lot_fx,      0.01, 50.0, 5.00);
+    // min_lot must never exceed max_lot (would make the clamp contradictory)
+    g_cfg.min_lot_gold       = clampd(g_cfg.min_lot_gold,    0.0, g_cfg.max_lot_gold,    0.01);
+    g_cfg.min_lot_indices    = clampd(g_cfg.min_lot_indices, 0.0, g_cfg.max_lot_indices, 0.01);
+    g_cfg.min_lot_oil        = clampd(g_cfg.min_lot_oil,     0.0, g_cfg.max_lot_oil,     0.01);
+    g_cfg.min_lot_silver     = clampd(g_cfg.min_lot_silver,  0.0, g_cfg.max_lot_silver,  0.01);
+    g_cfg.min_lot_fx         = clampd(g_cfg.min_lot_fx,      0.0, g_cfg.max_lot_fx,      0.01);
 
     g_cfg.sp_vol_thresh_pct   = clampd(g_cfg.sp_vol_thresh_pct, 0.0, 10.0, 0.04);
     g_cfg.nq_vol_thresh_pct   = clampd(g_cfg.nq_vol_thresh_pct, 0.0, 10.0, 0.05);
@@ -1755,11 +1777,16 @@ static void sanitize_config() noexcept {
                   << "[CONFIG]     GOLD.F   ~" << gold_size << " lots  (SL≈$10.4, max_loss≈$"  << std::round(gold_size * 10.4  * 100)  << ")\n"
                   << "[CONFIG]     US500.F  ~" << sp_size   << " lots  (SL≈$22.3, max_loss≈$"  << std::round(sp_size   * 22.3  * 1)    << ")\n"
                   << "[CONFIG]     USTEC.F  ~" << nq_size   << " lots  (SL≈$78.0, max_loss≈$"  << std::round(nq_size   * 78.0  * 1)    << ")\n"
-                  << "[CONFIG]   caps: gold=" << g_cfg.max_lot_gold
+                  << "[CONFIG]   caps(max): gold=" << g_cfg.max_lot_gold
                   << " idx=" << g_cfg.max_lot_indices
                   << " oil=" << g_cfg.max_lot_oil
                   << " silver=" << g_cfg.max_lot_silver
-                  << " fx=" << g_cfg.max_lot_fx << "\n";
+                  << " fx=" << g_cfg.max_lot_fx << "\n"
+                  << "[CONFIG]   floors(min): gold=" << g_cfg.min_lot_gold
+                  << " idx=" << g_cfg.min_lot_indices
+                  << " oil=" << g_cfg.min_lot_oil
+                  << " silver=" << g_cfg.min_lot_silver
+                  << " fx=" << g_cfg.min_lot_fx << "\n";
     } else {
         std::cout << "[CONFIG] RISK-SIZING DISABLED (risk_per_trade_usd=0) — using fixed fallback size 0.01 lots\n";
     }
@@ -2203,15 +2230,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_telemetry.UpdateLastSignal("GOLD.F",
                 gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason);
             // Risk-based sizing for gold stack.
-            // sl_abs = sl_ticks × $0.10/tick. Falls back to gsig.size when disabled.
-            const double gold_sl_abs  = gsig.sl_ticks * 0.10;
+            // BUG FIX: was using gsig.sl_ticks * 0.10 (= 2.50 pts for SL_TICKS=25)
+            // but the actual stop placed on the position is gold_sl_pct% of entry (~12 pts).
+            // Using 2.50 instead of 12.17 made positions ~5x too large for the risk budget.
+            // Fix: use the same SL distance that the position manager actually uses.
+            const double gold_sl_abs  = gsig.entry * (g_cfg.gold_sl_pct / 100.0);
             const double gold_spread  = ask - bid;
             const double gold_lot     = compute_size("GOLD.F", gold_sl_abs, gold_spread, gsig.size > 0.0 ? gsig.size : 0.02);
             std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
                       << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
                       << " entry=" << gsig.entry
                       << " tp="    << gsig.tp_ticks << "ticks"
-                      << " sl="    << gsig.sl_ticks << "ticks"
+                      << " sl="    << gsig.sl_ticks << "ticks (engine) / " << std::fixed << std::setprecision(2) << gold_sl_abs << "pts (actual)"
                       << " size="  << gold_lot
                       << " conf="  << gsig.confidence
                       << " eng="   << gsig.engine
