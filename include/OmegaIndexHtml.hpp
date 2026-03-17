@@ -4,6 +4,8 @@ namespace omega_gui {
 static const char* INDEX_HTML =
 R"OMEGA0(
 
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -139,8 +141,8 @@ R"OMEGA0(
         .stat-lbl { font-size:9px; color:var(--t2); text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
         .sig-panel { padding:12px 14px; border-radius:8px; border:1px solid rgba(61,184,255,0.15); background:rgba(61,184,255,0.04); }
         .no-data { text-align:center; color:var(--t2); padding:20px; font-size:12px; }
-        table { width:100%; border-collapse:collapse; font-size:11px; }
-        th { text-align:left; padding:7px 8px; color:var(--t2); font-size:9px; text-transform:uppercase;
+        table { width:100%; border-collapse:collapse; font-size:13px; }
+        th { text-align:left; padding:7px 8px; color:var(--t2); font-size:11px; text-transform:uppercase;
             letter-spacing:1.5px; font-weight:600; border-bottom:1px solid rgba(255,255,255,0.06); }
         td { padding:8px 8px; border-bottom:1px solid rgba(255,255,255,0.03); }
         tr:hover td { background:rgba(255,255,255,0.02); }
@@ -157,11 +159,13 @@ R"OMEGA0(
         .gov-bar-fill { height:100%; border-radius:2px; background:var(--amber); transition:width 0.5s; }
         .gov-n { font-family:'Space Mono',monospace; font-weight:700; color:var(--amber); min-width:24px; text-align:right; }
         .fix-row { display:flex; justify-content:space-between; align-items:center; padding:7px 10px;
-            border-radius:8px; background:rgba(255,255,255,0.02); border:1px solid var(--border); margin-bottom:5px; font-size:11px; }
-        .fix-label { color:var(--t2); font-size:10px; text-transform:uppercase; letter-spacing:1px; }
 )OMEGA0"
 
 R"OMEGA1(
+            border-radius:8px; background:rgba(255,255,255,0.02); border:1px solid var(--border); margin-bottom:5px; font-size:11px; }
+        .fix-label { color:var(--t2); font-size:10px; text-transform:uppercase; letter-spacing:1px; }
+
+
         .fix-val { font-family:'Space Mono',monospace; font-weight:700; font-size:12px; }
         .fix-ok { color:var(--green); } .fix-bad { color:var(--red); }
         .bottom-row { grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
@@ -362,15 +366,16 @@ R"OMEGA1(
                         <div class="eng-vol" id="engSPVol">rv -- bv --</div>
                         <div class="eng-signals" id="engSPSig">0 signals</div>
                     </div>
+)OMEGA1"
+
+R"OMEGA2(
                     <div class="eng-state-card phase-0" id="engNQ">
                         <div class="eng-sym">USTEC.F</div>
                         <div class="eng-phase-badge phase-badge-flat" id="engNQPhase">FLAT</div>
                         <div class="eng-vol" id="engNQVol">rv -- bv --</div>
                         <div class="eng-signals" id="engNQSig">0 signals</div>
                     </div>
-)OMEGA1"
 
-R"OMEGA2(
                     <div class="eng-state-card phase-0" id="engCL">
                         <div class="eng-sym">USOIL.F</div>
                         <div class="eng-phase-badge phase-badge-flat" id="engCLPhase">FLAT</div>
@@ -532,6 +537,9 @@ function updateMacroRegime(d){
     const rE=document.getElementById('macroRegime');
     if(rE){rE.textContent=reg;rE.className='regime-val regime-'+reg.toLowerCase().replace('_','-');}
     const dE=document.getElementById('esNqDiv');
+)OMEGA2"
+
+R"OMEGA3(
     if(dE){dE.textContent=(div>=0?'+':'')+(div*100).toFixed(3)+'%';dE.style.color=Math.abs(div)<0.0002?'var(--t2)':div>0?'var(--green)':'var(--red)';}
     const sE=document.getElementById('sessionVal');
     if(sE){const t=safe(d.session_tradeable);sE.textContent=t?(d.session_name||'ACTIVE'):'CLOSED';sE.style.color=t?'var(--green)':'var(--t2)';}
@@ -540,9 +548,7 @@ function updateMacroRegime(d){
 function renderLastSignal(d){
     const el=document.getElementById('lastSignalDetail');if(!el)return;
     if(!d.last_signal_side||d.last_signal_side==='NONE'||d.last_signal_side==='CLOSED'||d.last_signal_side===''){
-)OMEGA2"
 
-R"OMEGA3(
         el.innerHTML='<span style="color:var(--t2);font-size:12px;">Waiting for first signal...</span>';return;}
     const sc=d.last_signal_side==='LONG'?'var(--green)':'var(--red)';
     el.innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">'
@@ -598,22 +604,24 @@ function renderTrades(trades){
         let heldStr='--';
         if(isOpen&&safe(t.entryTs)>0){const es=now-safe(t.entryTs);heldStr=es>=60?Math.floor(es/60)+'m'+(es%60)+'s':es+'s';}
         else if(safe(t.entryTs)>0&&safe(t.exitTs)>0){const hs=safe(t.exitTs)-safe(t.entryTs);heldStr=hs>=60?Math.floor(hs/60)+'m'+(hs%60)+'s':hs+'s';}
-        const grossDisplay=isOpen?'':(grossPnl>=0?'+':'')+  '$'+Math.abs(grossPnl).toFixed(2);
+        // Gross: always show correct sign — SL hit means negative gross
+        const grossDisplay=isOpen?'':(grossPnl>=0?'+':'-')+'$'+Math.abs(grossPnl).toFixed(2);
         const slipDisplay=isOpen?'':slip>0?'-$'+slip.toFixed(2):'--';
-        const netDisplay=isOpen?'<span style="color:var(--t2);font-size:9px;">live</span>':(netPnl>=0?'+':'')+  '$'+Math.abs(netPnl).toFixed(2);
+        // Net P&L: always show correct sign — never override with + on a loss
+        const netDisplay=isOpen?'<span style="color:var(--t2);font-size:11px;">live</span>':(netPnl>=0?'+':'-')+'$'+Math.abs(netPnl).toFixed(2);
         return `<tr style="background:${rowBg};border-bottom:${rowBorder};">
-            <td style="padding:4px 8px;color:var(--t2);font-size:9px;">${fmtUTC(safe(t.entryTs))}</td>
-            <td style="padding:4px 8px;color:var(--blue);font-weight:700;">${t.symbol||'--'}</td>
-            <td style="padding:4px 8px;color:${sideC};font-weight:700;">${t.side||'--'}</td>
-            <td style="padding:4px 8px;font-family:'Space Mono',monospace;">${safe(t.price)>0?safe(t.price).toFixed(2):'--'}</td>
-            <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:var(--t2);">${isOpen?'<span style="color:var(--blue);font-size:9px;">open</span>':safe(t.exitPrice)>0?safe(t.exitPrice).toFixed(2):'--'}</td>
-            <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:var(--green);font-size:9px;">${safe(t.tp)>0?safe(t.tp).toFixed(1):'--'}</td>
-            <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:var(--red);font-size:9px;">${safe(t.sl)>0?safe(t.sl).toFixed(1):'--'}</td>
-            <td style="padding:4px 8px;color:var(--t2);font-size:9px;">${heldStr}</td>
-            <td style="padding:4px 8px;font-weight:700;color:${resultC};">${result}</td>
-            <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:var(--t2);font-size:10px;">${grossDisplay}</td>
-            <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:var(--red);font-size:10px;">${slipDisplay}</td>
-            <td style="padding:4px 8px;font-family:'Space Mono',monospace;color:${pnlC};font-weight:700;">${netDisplay}</td>
+            <td style="padding:5px 8px;color:var(--t2);font-size:11px;">${fmtUTC(safe(t.entryTs))}</td>
+            <td style="padding:5px 8px;color:var(--blue);font-weight:700;font-size:13px;">${t.symbol||'--'}</td>
+            <td style="padding:5px 8px;color:${sideC};font-weight:700;font-size:13px;">${t.side||'--'}</td>
+            <td style="padding:5px 8px;font-family:'Space Mono',monospace;font-size:12px;">${safe(t.price)>0?safe(t.price).toFixed(2):'--'}</td>
+            <td style="padding:5px 8px;font-family:'Space Mono',monospace;color:var(--t2);font-size:12px;">${isOpen?'<span style="color:var(--blue);font-size:11px;">open</span>':safe(t.exitPrice)>0?safe(t.exitPrice).toFixed(2):'--'}</td>
+            <td style="padding:5px 8px;font-family:'Space Mono',monospace;color:var(--green);font-size:11px;">${safe(t.tp)>0?safe(t.tp).toFixed(1):'--'}</td>
+            <td style="padding:5px 8px;font-family:'Space Mono',monospace;color:var(--red);font-size:11px;">${safe(t.sl)>0?safe(t.sl).toFixed(1):'--'}</td>
+            <td style="padding:5px 8px;color:var(--t2);font-size:11px;">${heldStr}</td>
+            <td style="padding:5px 8px;font-weight:700;font-size:13px;color:${resultC};">${result}</td>
+            <td style="padding:5px 8px;font-family:'Space Mono',monospace;color:${grossPnl>=0?'var(--green)':'var(--red)'};font-size:12px;font-weight:600;">${grossDisplay}</td>
+            <td style="padding:5px 8px;font-family:'Space Mono',monospace;color:var(--red);font-size:11px;">${slipDisplay}</td>
+            <td style="padding:5px 8px;font-family:'Space Mono',monospace;color:${pnlC};font-weight:700;font-size:13px;">${netDisplay}</td>
         </tr>`;
     }).join('');
 }
@@ -687,6 +695,9 @@ function updateDashboard(d){
     document.getElementById('fixFills').textContent=safe(d.total_fills);
 
     // Mode + build
+)OMEGA3"
+
+R"OMEGA4(
     const mb=document.getElementById('modeBadge');
     if(mb){mb.textContent=d.mode||'SHADOW';mb.className='badge '+(d.mode==='LIVE'?'mode-live':'mode-shadow');}
     const bv=document.getElementById('buildVersion');
@@ -698,15 +709,14 @@ function updateDashboard(d){
         if(mins>=420&&mins<630){sess='LONDON';col='var(--green)';}
         else if(mins>=630&&mins<780){sess='OVERLAP';col='var(--amber)';}
         else if(mins>=780&&mins<1080){sess='NEW YORK';col='var(--green)';}
+
         else if(mins>=300&&mins<420){sess='DEAD ZONE';col='var(--red)';}
         else{sess='ASIAN';col='var(--t2)';}
         sb.textContent=sess+' SESSION';sb.style.color=col;}
 
     // Uptime
     const ub=document.getElementById('uptimeBadge');
-)OMEGA3"
 
-R"OMEGA4(
     if(ub&&d.uptime_sec!=null){const s=d.uptime_sec,h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60;
         ub.textContent='UP '+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0');
         ub.style.color=h>=1?'var(--green)':'var(--t2)';}
