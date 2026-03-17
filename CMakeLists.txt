@@ -54,45 +54,41 @@ target_link_libraries(Omega
 )
 
 # ── Build version stamp ──────────────────────────────────────────────────────
-# Embeds git hash + build timestamp directly into the binary.
-# After every build: startup banner + GUI header + /version endpoint show these.
-# This is the ONLY reliable way to confirm which code is running on Windows.
+# Regenerates include/version_generated.hpp on EVERY build (not just cmake ..)
+# so the binary always shows the correct git hash after git pull + rebuild.
+# Uses a build-time custom command — execute_process runs at configure time only
+# and would bake a stale hash forever until cmake .. is re-run.
+
+set(VERSION_HEADER "${CMAKE_SOURCE_DIR}/include/version_generated.hpp")
 
 find_package(Git QUIET)
-if(GIT_FOUND)
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        OUTPUT_VARIABLE GIT_HASH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} log -1 --format=%ci HEAD
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        OUTPUT_VARIABLE GIT_DATE
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-else()
-    set(GIT_HASH "unknown")
-    set(GIT_DATE "unknown")
-endif()
 
-string(TIMESTAMP BUILD_TIMESTAMP "%Y-%m-%d %H:%M UTC")
-
-target_compile_definitions(Omega PRIVATE
-    OMEGA_GIT_HASH="${GIT_HASH}"
-    OMEGA_GIT_DATE="${GIT_DATE}"
-    OMEGA_BUILD_TIME="${BUILD_TIMESTAMP}"
+add_custom_command(
+    OUTPUT  "${VERSION_HEADER}"
+    COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DOUTPUT_FILE=${VERSION_HEADER}
+            -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+            -P ${CMAKE_SOURCE_DIR}/cmake/UpdateGitHash.cmake
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Regenerating git hash header..."
+    # DEPFILE not used — we want this to run unconditionally every build
 )
+
+# Dummy target that always runs, forcing the custom command every build
+add_custom_target(omega_version_header ALL
+    DEPENDS "${VERSION_HEADER}"
+)
+
+# Ensure version header is generated before main.cpp compiles
+add_dependencies(Omega omega_version_header)
+
+# Include the generated header directory
+target_include_directories(Omega PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 message(STATUS "========================================")
 message(STATUS "OMEGA — Commodities & Indices System")
-message(STATUS "Version:    1.0.0")
-message(STATUS "Git hash:   ${GIT_HASH}")
-message(STATUS "Commit:     ${GIT_DATE}")
-message(STATUS "Built:      ${BUILD_TIMESTAMP}")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "OpenSSL:    ${OPENSSL_VERSION}")
+message(STATUS "Git hash:   regenerated on every build")
 message(STATUS "========================================")
