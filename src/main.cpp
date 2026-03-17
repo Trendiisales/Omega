@@ -150,12 +150,6 @@ struct OmegaConfig {
     int session_end_utc   = 21;
     bool session_asia     = true;  // enable Asia/Tokyo window 22:00-05:00 UTC
 
-    // Gold breakout params (XAU -- tighter than indices, price-regime aware)
-    double gold_tp_pct   = 0.30;   // 0.30% TP -- ~$9 on $3000 gold
-    double gold_sl_pct   = 0.15;   // 0.15% SL -- tight, gold moves are decisive
-    double gold_vol_thresh_pct = 0.04; // lower threshold -- gold is less volatile than oil
-    bool   gold_use_crtp_engine = false; // false: use GoldEngineStack as primary gold executor
-
     // SP (US500) -- liquid, tight compression, better TP:SL than generic default
     double sp_tp_pct          = 0.600;  // 0.60% TP: clean SP breaks extend 0.5-0.8%
     double sp_sl_pct          = 0.350;  // 0.35% SL: above noise, cut failed breaks fast
@@ -205,7 +199,6 @@ static omega::MacroRegimeDetector g_macroDetector;
 static omega::SpEngine    g_eng_sp("US500.F");   // S&P 500 -- regime-gated, cross-symbol guard
 static omega::NqEngine    g_eng_nq("USTEC.F");   // Nasdaq  -- regime-gated, cross-symbol guard
 static omega::OilEngine   g_eng_cl("USOIL.F");   // WTI Oil -- inventory window blocked
-static omega::GoldEngine  g_eng_xau("GOLD.F");   // Gold -- safe-haven, inverse VIX logic
 static omega::Us30Engine  g_eng_us30("DJ30.F");  // Dow Jones -- macro-gated typed engine
 static omega::Nas100Engine g_eng_nas100("NAS100"); // Nasdaq cash -- independent from USTEC.F
 static omega::BreakoutEngine g_eng_ger30("GER30");   // DAX proxy
@@ -220,7 +213,7 @@ static omega::MacroContext g_macro_ctx;
 
 // Multi-engine gold stack -- CompressionBreakout + ImpulseContinuation +
 // SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
-// Runs in parallel with g_eng_xau (GoldEngine) on every GOLD.F tick.
+// Primary gold executor — sole handler for all GOLD.F ticks.
 static omega::gold::GoldEngineStack g_gold_stack;
 
 // Co-location latency edge engines -- GoldSilverLeadLag + GoldSpreadDislocation
@@ -1662,12 +1655,6 @@ static void load_config(const std::string& path) {
             if (k=="shadow_signal_csv") g_cfg.shadow_signal_csv = v;
             if (k=="log_file")   g_cfg.log_file    = v;
         }
-        if (section == "gold") {
-            if (k=="gold_tp_pct")        g_cfg.gold_tp_pct        = std::stod(v);
-            if (k=="gold_sl_pct")        g_cfg.gold_sl_pct        = std::stod(v);
-            if (k=="gold_vol_thresh_pct") g_cfg.gold_vol_thresh_pct = std::stod(v);
-            if (k=="use_crtp_engine")    g_cfg.gold_use_crtp_engine = (v == "true" || v == "1");
-        }
         if (section == "extended_ids") {
             if (k=="ger30_id")   g_cfg.ext_ger30_id   = std::stoi(v);
             if (k=="uk100_id")   g_cfg.ext_uk100_id   = std::stoi(v);
@@ -1763,7 +1750,6 @@ static void load_config(const std::string& path) {
               << "[CONFIG] SP   tp=" << g_cfg.sp_tp_pct   << "% sl=" << g_cfg.sp_sl_pct   << "% vol=" << g_cfg.sp_vol_thresh_pct  << "%\n"
               << "[CONFIG] NQ   tp=" << g_cfg.nq_tp_pct   << "% sl=" << g_cfg.nq_sl_pct   << "% vol=" << g_cfg.nq_vol_thresh_pct  << "%\n"
               << "[CONFIG] OIL  tp=" << g_cfg.oil_tp_pct  << "% sl=" << g_cfg.oil_sl_pct  << "% vol=" << g_cfg.oil_vol_thresh_pct << "%\n"
-              << "[CONFIG] GOLD tp=" << g_cfg.gold_tp_pct << "% sl=" << g_cfg.gold_sl_pct << "% vol=" << g_cfg.gold_vol_thresh_pct << "%\n"
               << "[CONFIG] USTEC pilot only=" << (g_cfg.shadow_ustec_pilot_only ? "true" : "false")
               << " shadow_research=" << (g_cfg.shadow_research_mode ? "true" : "false")
               << " size=" << g_cfg.ustec_pilot_size
@@ -1810,7 +1796,6 @@ static void sanitize_config() noexcept {
     g_cfg.sp_vol_thresh_pct   = clampd(g_cfg.sp_vol_thresh_pct, 0.0, 10.0, 0.04);
     g_cfg.nq_vol_thresh_pct   = clampd(g_cfg.nq_vol_thresh_pct, 0.0, 10.0, 0.05);
     g_cfg.oil_vol_thresh_pct  = clampd(g_cfg.oil_vol_thresh_pct, 0.0, 10.0, 0.08);
-    g_cfg.gold_vol_thresh_pct = clampd(g_cfg.gold_vol_thresh_pct, 0.0, 10.0, 0.04);
 
     g_cfg.session_start_utc = clampi(g_cfg.session_start_utc, 0, 23, 7);
     g_cfg.session_end_utc   = clampi(g_cfg.session_end_utc,   0, 23, 21);
@@ -1884,7 +1869,6 @@ static void apply_shadow_research_profile() noexcept {
     g_cfg.sp_vol_thresh_pct   = std::max(g_cfg.sp_vol_thresh_pct, 0.040);
     g_cfg.nq_vol_thresh_pct   = std::max(g_cfg.nq_vol_thresh_pct, 0.050);
     g_cfg.oil_vol_thresh_pct  = std::max(g_cfg.oil_vol_thresh_pct, 0.080);
-    g_cfg.gold_vol_thresh_pct = std::max(g_cfg.gold_vol_thresh_pct, 0.045);
 
     // Small-win profile with better quality than pure scalping.
     g_cfg.sp_tp_pct = std::min(g_cfg.sp_tp_pct, 0.11);
@@ -1893,8 +1877,6 @@ static void apply_shadow_research_profile() noexcept {
     g_cfg.nq_sl_pct = std::min(g_cfg.nq_sl_pct, 0.09);
     g_cfg.oil_tp_pct = std::min(g_cfg.oil_tp_pct, 0.24);
     g_cfg.oil_sl_pct = std::min(g_cfg.oil_sl_pct, 0.18);
-    g_cfg.gold_tp_pct = std::min(g_cfg.gold_tp_pct, 0.10);
-    g_cfg.gold_sl_pct = std::min(g_cfg.gold_sl_pct, 0.08);
 
     std::cout << "[CONFIG] SHADOW quality profile enabled: 24h session, conservative quality tuning\n";
 }
@@ -2171,7 +2153,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_eng_xag.pos.active) +
                 static_cast<int>(g_eng_eurusd.pos.active) +
                 static_cast<int>(g_eng_brent.pos.active) +
-                static_cast<int>(g_eng_xau.pos.active) +
                 static_cast<int>(g_gold_stack.has_open_position()) +
                 static_cast<int>(g_le_stack.has_open_position());  // LE gold positions count toward global cap
             if (open_positions >= g_cfg.max_open_positions) {
@@ -2194,7 +2175,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_eng_xag.pos.active) +
             static_cast<int>(g_eng_eurusd.pos.active) +
             static_cast<int>(g_eng_brent.pos.active) +
-            static_cast<int>(g_eng_xau.pos.active) +
             static_cast<int>(g_gold_stack.has_open_position()) +
             static_cast<int>(g_le_stack.has_open_position());  // LE gold positions count toward global cap
         const bool pos_budget_ok = open_positions < g_cfg.max_open_positions;
@@ -2287,31 +2267,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         dispatch(g_eng_nas100, symbol_gate("NAS100", g_eng_nas100.pos.active));
     }
     else if (sym == "GOLD.F")  {
-        // gold_symbol_open must include ALL three GOLD.F executors so no two can
-        // enter simultaneously: GoldEngineStack, CRTP GoldEngine, LatencyEdgeStack.
-        // LatencyEdge engines (SpreadDislocation, EventCompression) trade GOLD.F
-        // independently -- without this check they could stack on top of a live
-        // GoldStack or CRTP position.
+        // gold_symbol_open covers both GoldEngineStack and LatencyEdgeStack so no
+        // two gold executors can enter simultaneously.
         const bool gold_symbol_open =
             g_gold_stack.has_open_position() ||
-            g_le_stack.has_open_position()   ||
-            (g_cfg.gold_use_crtp_engine && g_eng_xau.pos.active);
+            g_le_stack.has_open_position();
         const bool gold_can_enter = symbol_gate("GOLD.F", gold_symbol_open);
-
-        // Keep CRTP gold warmed for telemetry; default execution path is stack-only.
-        dispatch(g_eng_xau, g_cfg.gold_use_crtp_engine ? gold_can_enter : false);
 
         // ── GoldEngineStack: dedicated gold executor ──────────────────────────
         const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close, gold_can_enter);
         if (gsig.valid) {
             g_telemetry.UpdateLastSignal("GOLD.F",
                 gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason);
-            // Risk-based sizing for gold stack.
-            // BUG FIX: was using gsig.sl_ticks * 0.10 (= 2.50 pts for SL_TICKS=25)
-            // but the actual stop placed on the position is gold_sl_pct% of entry (~12 pts).
-            // Using 2.50 instead of 12.17 made positions ~5x too large for the risk budget.
-            // Fix: use the same SL distance that the position manager actually uses.
-            const double gold_sl_abs  = gsig.entry * (g_cfg.gold_sl_pct / 100.0);
+            // Risk-based sizing: use the engine's actual SL ticks (in $ at $0.10/tick).
+            // risk_per_trade_usd=0 so compute_size returns gsig.size directly.
+            const double gold_sl_abs  = gsig.sl_ticks * 0.10;
             const double gold_spread  = ask - bid;
             const double gold_lot     = compute_size("GOLD.F", gold_sl_abs, gold_spread, gsig.size > 0.0 ? gsig.size : 0.02);
             std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
@@ -2333,7 +2303,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // SpreadDislocation and EventCompression run on every GOLD.F tick.
         // LeadLag arms here, fires on next XAGUSD tick (see XAGUSD dispatch block).
         // gold_can_enter is passed through so LE engines cannot open a new entry
-        // while GoldEngineStack, CRTP GoldEngine, or another LE engine is in a
+        // while GoldEngineStack or a LE engine is in a
         // GOLD.F position — prevents simultaneous gold positions from any source.
         {
             const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, on_close, gold_can_enter);
@@ -2730,10 +2700,7 @@ static void quote_loop() {
                           << " ratio=" << (g_eng_nq.base_vol_pct>0 ? g_eng_nq.recent_vol_pct/g_eng_nq.base_vol_pct : 0) << "\n"
                           << "[OMEGA-DIAG] CL phase=" << static_cast<int>(g_eng_cl.phase)
                           << " recent=" << g_eng_cl.recent_vol_pct << "% base=" << g_eng_cl.base_vol_pct << "%"
-                          << " ratio=" << (g_eng_cl.base_vol_pct>0 ? g_eng_cl.recent_vol_pct/g_eng_cl.base_vol_pct : 0) << "\n"
-                          << "[OMEGA-DIAG] XAU phase=" << static_cast<int>(g_eng_xau.phase)
-                          << " recent=" << g_eng_xau.recent_vol_pct << "% base=" << g_eng_xau.base_vol_pct << "%"
-                          << " ratio=" << (g_eng_xau.base_vol_pct>0 ? g_eng_xau.recent_vol_pct/g_eng_xau.base_vol_pct : 0) << "\n";
+                          << " ratio=" << (g_eng_cl.base_vol_pct>0 ? g_eng_cl.recent_vol_pct/g_eng_cl.base_vol_pct : 0) << "\n";
                 // Gold multi-engine stack stats
                 g_gold_stack.print_stats();
                 std::cout << "[GOLD-DIAG] regime=" << g_gold_stack.regime_name()
@@ -2785,7 +2752,7 @@ static void quote_loop() {
         fc(g_eng_us30, "DJ30.F"); fc(g_eng_nas100, "NAS100");
         fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
         fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
-        fc(g_eng_brent, "UKBRENT"); fc(g_eng_xau, "GOLD.F");
+        fc(g_eng_brent, "UKBRENT");
         // Force-close GoldEngineStack
         {
             double g_bid = 0.0, g_ask = 0.0, s_bid = 0.0, s_ask = 0.0;
@@ -2866,17 +2833,6 @@ int main(int argc, char* argv[])
     apply_generic_brent_config(g_eng_brent);
     // Gold: generic breakout engine, overridden with gold-specific pct params
     // Gold: dedicated config -- do not use generic breakout defaults
-    g_eng_xau.macro                 = &g_macro_ctx;  // gold uses inverse regime logic
-    g_eng_xau.TP_PCT                = g_cfg.gold_tp_pct;
-    g_eng_xau.SL_PCT                = g_cfg.gold_sl_pct;
-    g_eng_xau.VOL_THRESH_PCT        = g_cfg.gold_vol_thresh_pct;
-    g_eng_xau.COMPRESSION_LOOKBACK  = 60;   // gold compresses slower than indices
-    g_eng_xau.BASELINE_LOOKBACK     = 250;  // longer baseline -- gold trends persist
-    // g_eng_xau.COMPRESSION_THRESHOLD set to 0.85 in GoldEngine constructor -- do not override
-    g_eng_xau.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    g_eng_xau.MIN_GAP_SEC           = 180;  // 3min gap between signals
-    g_eng_xau.MAX_SPREAD_PCT        = 0.06; // gold spreads slightly wider than indices
-
     // ── FIXED LOT SIZES — authoritative sizing for all engines ───────────────
     // risk_per_trade_usd=0 so compute_size() returns ENTRY_SIZE directly.
     // These are the MINIMUM operating lot sizes. Do NOT change without instruction.
@@ -2892,7 +2848,6 @@ int main(int argc, char* argv[])
     g_eng_xag.ENTRY_SIZE    = 0.01;
     g_eng_eurusd.ENTRY_SIZE = 0.01;
     g_eng_brent.ENTRY_SIZE  = 0.01;
-    g_eng_xau.ENTRY_SIZE    = 0.01;
     std::cout << "[SIZING] Fixed lot mode active (risk_per_trade_usd=0)\n"
               << "[SIZING]   All instruments: 0.01 lots | NAS100: 0.10 lots\n";
     std::cout.flush();
@@ -2935,9 +2890,9 @@ int main(int argc, char* argv[])
               << "% vol=" << g_eng_xag.VOL_THRESH_PCT << "% mom=" << g_eng_xag.MOMENTUM_THRESH_PCT
               << "% brk=" << g_eng_xag.MIN_BREAKOUT_PCT << "% gap=" << g_eng_xag.MIN_GAP_SEC
               << "s hold=" << g_eng_xag.MAX_HOLD_SEC << "s spread=" << g_eng_xag.MAX_SPREAD_PCT << "%\n"
-              << "[OMEGA-PARAMS] GOLD.F   TP=" << g_eng_xau.TP_PCT  << "% SL=" << g_eng_xau.SL_PCT
-              << "% vol=" << g_eng_xau.VOL_THRESH_PCT << "% gap=" << g_eng_xau.MIN_GAP_SEC
-              << "s hold=" << g_eng_xau.MAX_HOLD_SEC << "s spread=" << g_eng_xau.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] GOLD.F   GoldEngineStack active | gap=" << g_cfg.gs_cfg.min_entry_gap_sec
+              << "s hold=" << g_cfg.gs_cfg.max_hold_sec << "s vwap_min=" << g_cfg.gs_cfg.min_vwap_dislocation
+              << " spread_max=" << g_cfg.gs_cfg.max_entry_spread << "\n"
               << "[OMEGA-PARAMS] GoldStack MIN_ENTRY_GAP=30s MAX_HOLD=600s REGIME_FLIP_MIN=60s\n"
               << "[OMEGA-PARAMS] LeadLag=DISABLED SpreadDisloc_cooldown=60s EventComp_max_daily=4\n"
               << "[OMEGA-PARAMS] ═══════════════════════════════════════════\n\n";
@@ -2956,7 +2911,6 @@ int main(int argc, char* argv[])
         g_eng_xag.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_eurusd.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_brent.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_xau.AGGRESSIVE_SHADOW = shadow_research;
 
         if (g_cfg.shadow_ustec_pilot_only) {
             g_eng_nq.ENTRY_SIZE = g_cfg.ustec_pilot_size;
@@ -3005,7 +2959,6 @@ int main(int argc, char* argv[])
     bind_shadow_cb(g_eng_xag);
     bind_shadow_cb(g_eng_eurusd);
     bind_shadow_cb(g_eng_brent);
-    bind_shadow_cb(g_eng_xau);
     build_id_map();
 
     // Open log file and tee stdout into it

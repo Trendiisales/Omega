@@ -9,7 +9,6 @@
 //   Us30Engine  (DJ30.F)  -- Dow Jones, macro-gated like SP/NQ
 //   Nas100Engine(NAS100)  -- Nasdaq cash, looser spread than USTEC.F
 //   OilEngine   (USOIL.F) -- commodity, EIA window blocked, VIX-irrelevant
-//   GoldEngine  (GOLD.F)  -- safe-haven, INVERSE VIX logic (risk-off = trade more)
 //
 // MacroContext is updated every tick in main.cpp and passed to all engines.
 // VIX panic threshold is unified at 40.0 for equity engines only.
@@ -205,53 +204,6 @@ private:
         // 14:25-15:00 UTC. The release itself IS the breakout -- trade it after initial spike.
         // Old block was 14:00-15:30 which killed the entire best oil move of the week.
         return (mins >= 14*60+25 && mins < 15*60);  // 14:25-15:00 UTC only
-    }
-};
-
-// ==============================================================================
-// GoldEngine -- GOLD.F (XAU/USD)
-//
-// INSTRUMENT: Safe-haven asset. INVERSE relationship with equity risk regime.
-// TP 0.30%, SL 0.15%, VOL_THRESH 0.04%, MIN_GAP 180s, MAX_HOLD 1500s
-//
-// GATES (Gold-specific):
-//   spread > 0.06%   -> block (gold spread wider than indices)
-//   VIX > 60         -> block (true dislocation -- all markets illiquid)
-//   RISK_OFF         -> ALLOW freely (gold rallies on fear -- core edge)
-//   RISK_ON          -> allow (gold breakouts still work, just less frequent)
-//   NEUTRAL          -> allow normally
-//
-// NOTE: Gold is a safe-haven. It performs BEST in RISK_OFF.
-//   We deliberately do NOT block RISK_OFF for gold -- that is when it moves most.
-//   The only universal block is extreme VIX > 60 (true dislocation, all illiquid).
-// ==============================================================================
-class GoldEngine final : public BreakoutEngineBase<GoldEngine>
-{
-public:
-    const MacroContext* macro = nullptr;
-
-    explicit GoldEngine(const char* sym) noexcept {
-        symbol                = sym;
-        VOL_THRESH_PCT        = 0.040;
-        TP_PCT                = 0.300;
-        SL_PCT                = 0.150;
-        COMPRESSION_LOOKBACK  = 40;    // 60->40: faster warmup, gold ticks infrequently
-        BASELINE_LOOKBACK     = 160;   // 250->160: 4x ratio, faster baseline
-        COMPRESSION_THRESHOLD = 0.85;  // 0.75->0.85: loosen for elevated vol regime
-        MAX_HOLD_SEC          = 1500;
-        MIN_GAP_SEC           = 180;
-        MAX_SPREAD_PCT        = 0.06;
-    }
-
-    bool shouldTrade(double /*bid*/, double /*ask*/,
-                     double spread_pct, double /*latency_ms*/) const noexcept
-    {
-        if (spread_pct > MAX_SPREAD_PCT)  return false; // gold spread gate
-        if (!macro)                        return true;
-        if (macro->vix > 60.0)             return false; // true dislocation -- all illiquid
-        // RISK_OFF = gold's home turf -- always allow
-        // RISK_ON / NEUTRAL = allow (compression breakouts valid in all regimes for gold)
-        return true;
     }
 };
 
