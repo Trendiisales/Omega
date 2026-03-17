@@ -37,9 +37,9 @@ R"OMEGA0(
             background:linear-gradient(120deg,var(--cyan) 0%,var(--blue) 60%,var(--purple) 100%);
             -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
         .logo-sub { font-size:9px; color:var(--t2); letter-spacing:2px; text-transform:uppercase; margin-top:1px; }
-        .hbar { display:flex; align-items:center; gap:10px; }
-        .badge { padding:5px 12px; border-radius:6px; font-size:11px; font-weight:600; letter-spacing:0.5px;
-            border:1px solid var(--border); background:rgba(255,255,255,0.04); }
+        .hbar { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; overflow:visible; }
+        .badge { padding:4px 9px; border-radius:6px; font-size:11px; font-weight:600; letter-spacing:0.5px;
+            border:1px solid var(--border); background:rgba(255,255,255,0.04); white-space:nowrap; }
         .badge.mode-shadow { color:var(--amber); border-color:var(--amber); background:rgba(255,149,0,0.1); }
         .badge.mode-live   { color:var(--green); border-color:var(--green); background:rgba(0,232,122,0.1); }
         .conn-dot { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:6px; }
@@ -148,8 +148,8 @@ R"OMEGA0(
         <div class="hbar">
             <span id="modeBadge" class="badge mode-shadow">SHADOW</span>
             <span id="buildBadge" class="badge" style="color:var(--amber);font-size:9px;font-weight:700;letter-spacing:1.5px" title="Git hash — built version">⬡ <span id="buildVersion">...</span></span>
-            <span id="sessionBadge" class="badge" style="color:var(--t2);font-size:10px;font-weight:600">── SESSION</span>
             <span id="uptimeBadge" class="badge" style="color:var(--t2);font-size:10px;font-family:monospace">UP 00:00:00</span>
+            <span id="sessionBadge" class="badge" style="color:var(--t2);font-size:10px;font-weight:600">── UTC</span>
             <span class="badge"><span class="conn-dot bad" id="connDot"></span><span id="connText">Connecting...</span></span>
             <span class="badge" id="fixQuoteHdr" style="color:var(--red)">QUOTE: --</span>
             <span class="mono" id="clock">--:--:-- UTC</span>
