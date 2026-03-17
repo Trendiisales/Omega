@@ -2757,7 +2757,11 @@ int main(int argc, char* argv[])
 {
     g_singleton_mutex = CreateMutexA(NULL, TRUE, "Global\\Omega_Breakout_System");
     if (!g_singleton_mutex || GetLastError() == ERROR_ALREADY_EXISTS) {
-        std::cerr << "[OMEGA] Already running\n"; return 1;
+        std::cout << "[OMEGA] ALREADY RUNNING — another Omega instance holds the mutex. Exiting.\n";
+        std::cerr << "[OMEGA] ALREADY RUNNING — another Omega instance holds the mutex. Exiting.\n";
+        std::cout.flush(); std::cerr.flush();
+        Sleep(2000);  // keep window open long enough to read
+        return 1;
     }
 
     SetConsoleOutputCP(CP_UTF8);
