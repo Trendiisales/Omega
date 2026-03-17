@@ -2200,7 +2200,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (ll_sig.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
                     ll_sig.is_long ? "LONG" : "SHORT", ll_sig.entry, ll_sig.reason);
-                send_live_order("XAGUSD", ll_sig.is_long, ll_sig.size, ll_sig.entry);
+                // Route through compute_size — was sending raw sig.size=1.0 directly
+                // which would submit 1 full lot of XAGUSD (5000 oz, ~$400k notional).
+                const double ll_sl_abs  = std::fabs(ll_sig.entry - ll_sig.sl);
+                const double ll_spread  = ask - bid;
+                const double ll_lot     = compute_size("XAGUSD", ll_sl_abs, ll_spread, ll_sig.size);
+                printf("[LEAD-LAG-SIZE] XAGUSD sl_abs=%.4f spread=%.4f lot=%.4f\n",
+                       ll_sl_abs, ll_spread, ll_lot);
+                send_live_order("XAGUSD", ll_sig.is_long, ll_lot, ll_sig.entry);
             }
         }
     }
@@ -2267,7 +2274,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (le_sig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason);
-                send_live_order("GOLD.F", le_sig.is_long, le_sig.size, le_sig.entry);
+                // Route through compute_size — was sending raw sig.size=1.0 directly
+                // which would submit 1 full lot of GOLD.F (100 oz, ~$500k notional).
+                const double le_sl_abs  = std::fabs(le_sig.entry - le_sig.sl);
+                const double le_spread  = ask - bid;
+                const double le_lot     = compute_size("GOLD.F", le_sl_abs, le_spread, le_sig.size);
+                printf("[LE-SIZE] GOLD.F eng=%s sl_abs=%.2f spread=%.2f lot=%.4f\n",
+                       le_sig.engine, le_sl_abs, le_spread, le_lot);
+                send_live_order("GOLD.F", le_sig.is_long, le_lot, le_sig.entry);
             }
         }
     }

@@ -318,7 +318,7 @@ public:
             history_.push_back(s.mid);
             return noSignal();
         }
-        Signal sig; sig.entry=s.mid; sig.size=0.02;
+        Signal sig; sig.entry=s.mid; sig.size=0.01;  // fallback min_lot — overridden by compute_size() in main
         if(s.mid>hi+BREAKOUT_TRIGGER){
             sig.valid=true; sig.side=TradeSide::LONG;
             sig.confidence=std::min(1.5,(s.mid-hi)/BREAKOUT_TRIGGER);
@@ -414,7 +414,7 @@ public:
             Signal sig; sig.valid=true;
             sig.side=(dir==1)?TradeSide::LONG:TradeSide::SHORT;
             sig.confidence=std::min(1.5,(impulse_high_-impulse_low_)/(IMPULSE_MIN*2.0));
-            sig.size=0.02; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;
+            sig.size=0.01; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // fallback min_lot
             strncpy(sig.reason,dir==1?"IMPULSE_CONT_LONG":"IMPULSE_CONT_SHORT",31);
             strncpy(sig.engine,"ImpulseContinuation",31);
             return sig;
@@ -464,7 +464,7 @@ public:
         if(s.vwap<=0) return noSignal();
         double conf=std::min(1.5,impulse/(IMPULSE_MIN*2.0));
         double dhi=hi-s.mid,dlo=s.mid-lo;
-        Signal sig; sig.size=0.02; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;
+        Signal sig; sig.size=0.01; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // fallback min_lot
         if(dhi<dlo&&s.mid>s.vwap){
             sig.valid=true; sig.side=TradeSide::LONG; sig.confidence=conf;
             strncpy(sig.reason,"SESSION_MOM_LONG",31); strncpy(sig.engine,"SessionMomentum",31);
@@ -511,7 +511,7 @@ public:
         else return noSignal();
         Signal sig; sig.valid=true; sig.side=side;
         sig.confidence=std::min(1.5,std::fabs(z)/(VWAP_DEV_ENTRY*2.0));
-        sig.size=0.05; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;
+        sig.size=0.01; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // fallback min_lot
         strncpy(sig.reason,"VWAP_DEV",31); strncpy(sig.engine,"VWAP_SNAPBACK",31);
         last_signal_=now; signal_count_++;
         return sig;
@@ -525,7 +525,7 @@ class LiquiditySweepProEngine : public EngineBase {
     CircularBuffer<double,256> history_;
     static constexpr double MAX_SPREAD=4.00,SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.70;
     static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=2.00,MIN_EXPECTED_MOVE=1.00;
-    static constexpr double TP_RATIO=0.85,BASE_SIZE=0.02;
+    static constexpr double TP_RATIO=0.85,BASE_SIZE=0.01;  // fallback min_lot — overridden by compute_size() in main
     static constexpr int SL_TICKS=18,MOM_WINDOW=6,LIQ_WINDOW=120;
     // SL raised 12→18 ($1.20→$1.80): old $1.20 was below max spread noise floor.
     // Sweep entries by definition enter at a volatile point — need $1.80 to absorb
@@ -593,7 +593,7 @@ class LiquiditySweepPressureEngine : public EngineBase {
     CircularBuffer<double,512> history_;
     static constexpr double MAX_SPREAD=4.00,SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.60;
     static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=1.50,MIN_EXPECTED_MOVE=0.80;
-    static constexpr double TP_RATIO=0.85,BASE_SIZE=0.02,PRESSURE_THRESHOLD=0.15;
+    static constexpr double TP_RATIO=0.85,BASE_SIZE=0.01,PRESSURE_THRESHOLD=0.15;  // BASE_SIZE=fallback min_lot
     static constexpr double CLUSTER_RANGE=0.35,PRESSURE_RANGE=0.45;
     static constexpr int SL_TICKS=10,MOM_WINDOW=6,LIQ_WINDOW=150,PRESSURE_WINDOW=50;
     static constexpr int MIN_CLUSTER=8;
@@ -971,7 +971,11 @@ public:
                         : sig.entry + sl_ticks * TICK_SIZE;
         leg.mfe      = 0;
         leg.mae      = 0;
-        leg.size     = CONTRACT_SIZE;
+        // Use sig.size (the compute_size() result passed through GoldSignal) so the
+        // position manager and PnL ledger reflect the actual broker lot submitted.
+        // CONTRACT_SIZE=1.0 was a placeholder — using it here made ledger PnL 50x
+        // the real dollar value (0.02 lots × $100/pt became 1.0 lot × $100/pt).
+        leg.size     = (sig.size > 0.0) ? sig.size : 0.01;
         leg.spread_at_entry = spread;
         leg.entry_ts = nowSec();
         strncpy(leg.engine, sig.engine, 31);

@@ -58,7 +58,7 @@ struct LeSignal {
     double      entry     = 0.0;
     double      tp        = 0.0;
     double      sl        = 0.0;
-    double      size      = 1.0;
+    double      size      = 0.01;  // fallback min_lot — overridden by compute_size() in main
     const char* engine    = "";
     const char* reason    = "";
 };
@@ -72,7 +72,7 @@ struct LePosition {
     double  entry           = 0.0;
     double  tp              = 0.0;
     double  sl              = 0.0;
-    double  size            = 1.0;
+    double  size            = 0.01;  // fallback min_lot — overridden by compute_size() in main
     double  mfe             = 0.0;
     double  mae             = 0.0;
     double  spread_at_entry = 0.0;
@@ -365,7 +365,7 @@ public:
         sig.entry    = mid;
         sig.tp       = armed_long_ ? mid + SILVER_TP : mid - SILVER_TP;
         sig.sl       = armed_long_ ? mid - SILVER_SL : mid + SILVER_SL;
-        sig.size     = 1.0;
+        sig.size     = 0.01;  // fallback min_lot — compute_size() in main overrides this
         sig.engine   = "GoldSilverLeadLag";
         sig.reason   = armed_long_ ? "GOLD_LEADS_LONG" : "GOLD_LEADS_SHORT";
 
@@ -532,8 +532,7 @@ public:
         sig.entry   = mid;
         sig.tp      = is_long ? mid + TP  : mid - TP;
         sig.sl      = is_long ? mid - SL  : mid + SL;
-        sig.size    = 1.0;
-        sig.engine  = "GoldSpreadDisloc";
+        sig.size    = 0.01;  // fallback min_lot — compute_size() in main overrides this
         sig.reason  = is_long ? "SPREAD_SPIKE_FADE_LONG" : "SPREAD_SPIKE_FADE_SHORT";
 
         pos_mgr_.open(sig, spread, "GOLD.F");
@@ -739,8 +738,7 @@ public:
         sig.entry   = mid;
         sig.tp      = long_break ? mid + TP  : mid - TP;
         sig.sl      = long_break ? mid - SL  : mid + SL;
-        sig.size    = 1.0;
-        sig.engine  = "GoldEventComp";
+        sig.size    = 0.01;  // fallback min_lot — compute_size() in main overrides this
         sig.reason  = long_break ? "EVENT_BREAK_LONG" : "EVENT_BREAK_SHORT";
 
         pos_mgr_.open(sig, spread, "GOLD.F");
