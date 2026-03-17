@@ -55,11 +55,11 @@ public:
         VOL_THRESH_PCT        = 0.040;
         TP_PCT                = 0.600;
         SL_PCT                = 0.350;
-        COMPRESSION_LOOKBACK  = 40;
-        BASELINE_LOOKBACK     = 160;
+        COMPRESSION_LOOKBACK  = 20;
+        BASELINE_LOOKBACK     = 80;
         COMPRESSION_THRESHOLD = 0.85;
         MAX_HOLD_SEC          = 1200;
-        MIN_GAP_SEC           = 300;
+        MIN_GAP_SEC           = 60;
         MAX_SPREAD_PCT        = 0.04;
         // SP at ~6688: 0.006% = $0.40 over 20 ticks — confirmed directional pressure
         // Halved from 0.012%: log showed blocks at 0.0075%, just 60% of old threshold
@@ -109,11 +109,11 @@ public:
         VOL_THRESH_PCT        = 0.050;
         TP_PCT                = 0.700;
         SL_PCT                = 0.400;
-        COMPRESSION_LOOKBACK  = 35;
-        BASELINE_LOOKBACK     = 140;
+        COMPRESSION_LOOKBACK  = 18;
+        BASELINE_LOOKBACK     = 70;
         COMPRESSION_THRESHOLD = 0.85;
         MAX_HOLD_SEC          = 1200;
-        MIN_GAP_SEC           = 240;
+        MIN_GAP_SEC           = 60;
         MAX_SPREAD_PCT        = 0.05;
         // NQ at ~24600: 0.005% = $1.23 over 20 ticks — meaningful momentum
         // Halved from 0.010%: log showed blocks at 0.0076%, 76% of old threshold
@@ -164,11 +164,11 @@ public:
         VOL_THRESH_PCT        = 0.080;
         TP_PCT                = 1.200;
         SL_PCT                = 0.600;
-        COMPRESSION_LOOKBACK  = 80;
-        BASELINE_LOOKBACK     = 240;
+        COMPRESSION_LOOKBACK  = 40;
+        BASELINE_LOOKBACK     = 120;
         COMPRESSION_THRESHOLD = 0.80;
         MAX_HOLD_SEC          = 1800;
-        MIN_GAP_SEC           = 360;
+        MIN_GAP_SEC           = 90;
         MAX_SPREAD_PCT        = 0.120;
         // Oil at ~$96: 0.050% = $0.048 over 20 ticks — genuine oil momentum
         // Unchanged: 0.05% still valid for oil's noise level
@@ -226,11 +226,11 @@ public:
         VOL_THRESH_PCT        = 0.035;
         TP_PCT                = 0.800;
         SL_PCT                = 0.350;
-        COMPRESSION_LOOKBACK  = 40;
-        BASELINE_LOOKBACK     = 160;
+        COMPRESSION_LOOKBACK  = 20;
+        BASELINE_LOOKBACK     = 80;
         COMPRESSION_THRESHOLD = 0.85;
         MAX_HOLD_SEC          = 1200;
-        MIN_GAP_SEC           = 180;
+        MIN_GAP_SEC           = 60;
         MAX_SPREAD_PCT        = 0.05;
         // DJ30 at ~46700: 0.025% = $11.68 over 20 ticks — completely unreachable
         // in early London. 0.006% = $2.80 — meaningful momentum for Dow.
@@ -270,11 +270,11 @@ public:
         VOL_THRESH_PCT        = 0.050;
         TP_PCT                = 0.700;
         SL_PCT                = 0.400;
-        COMPRESSION_LOOKBACK  = 35;
-        BASELINE_LOOKBACK     = 140;
+        COMPRESSION_LOOKBACK  = 18;
+        BASELINE_LOOKBACK     = 70;
         COMPRESSION_THRESHOLD = 0.85;
         MAX_HOLD_SEC          = 1200;
-        MIN_GAP_SEC           = 180;
+        MIN_GAP_SEC           = 60;
         MAX_SPREAD_PCT        = 0.06;
         // NAS100 at ~24600: 0.005% = $1.23 — halved from 0.010%, matches NqEngine fix
         MOMENTUM_THRESH_PCT   = 0.005;

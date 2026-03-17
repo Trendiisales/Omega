@@ -89,7 +89,7 @@ struct OmegaConfig {
     int    baseline_lookback     = 200;
     double compression_threshold = 0.80;
     int    max_hold_sec          = 1500;
-    int    min_entry_gap_sec     = 180;
+    int    min_entry_gap_sec     = 30;
     double max_spread_pct        = 0.05;
     double max_latency_ms        = 60.0;   // paper default: realistic remote VPS RTT without starving all entries
     double momentum_thresh_pct   = 0.05;   // momentum gate threshold
@@ -154,19 +154,19 @@ struct OmegaConfig {
     double sp_tp_pct          = 0.600;  // 0.60% TP: clean SP breaks extend 0.5-0.8%
     double sp_sl_pct          = 0.350;  // 0.35% SL: above noise, cut failed breaks fast
     double sp_vol_thresh_pct  = 0.040;  // 0.04%: tighter than default, SP compression is real
-    int    sp_min_gap_sec     = 300;    // 5min gap between signals
+    int    sp_min_gap_sec     = 60;     // 1min gap between signals
 
     // NQ (USTEC) -- higher beta, wider TP
     double nq_tp_pct          = 0.700;  // 0.70% TP: NQ extends further than SP
     double nq_sl_pct          = 0.400;  // 0.40% SL: slightly more room for NQ noise
     double nq_vol_thresh_pct  = 0.050;  // 0.05%: NQ needs a full vol spike
-    int    nq_min_gap_sec     = 240;    // 4min gap
+    int    nq_min_gap_sec     = 60;     // 1min gap
 
     // Oil (USOIL) -- fundamentally different: 1-2% typical moves
     double oil_tp_pct         = 1.200;  // 1.20% TP: oil runs 1-2% on clean breaks
     double oil_sl_pct         = 0.600;  // 0.60% SL: oil noise is 0.3-0.5% intraday
     double oil_vol_thresh_pct = 0.080;  // 0.08%: oil needs a bigger initial signal
-    int    oil_min_gap_sec    = 360;    // 6min gap: oil can multi-spike on news
+    int    oil_min_gap_sec    = 90;     // 90s gap
     int    oil_max_hold_sec   = 1800;   // 30min: oil moves are slower than indices
 
     // GUI
@@ -1439,6 +1439,8 @@ static void apply_engine_config(omega::SpEngine& eng) noexcept {
     eng.TP_PCT                = g_cfg.sp_tp_pct;
     eng.SL_PCT                = g_cfg.sp_sl_pct;
     eng.MIN_GAP_SEC           = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
     // correct per-instrument values (0.012% / 0.12%) tuned for SP price level.
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
@@ -1451,6 +1453,8 @@ static void apply_engine_config(omega::NqEngine& eng) noexcept {
     eng.TP_PCT                = g_cfg.nq_tp_pct;
     eng.SL_PCT                = g_cfg.nq_sl_pct;
     eng.MIN_GAP_SEC           = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
     // correct per-instrument values (0.010% / 0.08%) tuned for NQ price level.
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
@@ -1463,6 +1467,8 @@ static void apply_engine_config(omega::OilEngine& eng) noexcept {
     eng.TP_PCT                = g_cfg.oil_tp_pct;
     eng.SL_PCT                = g_cfg.oil_sl_pct;
     eng.MIN_GAP_SEC           = std::max(g_cfg.oil_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
     // correct per-instrument values (0.015% / 0.10%) tuned for Oil price level.
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
@@ -1493,6 +1499,8 @@ static void apply_engine_config(omega::Us30Engine& eng) noexcept {
     eng.TP_PCT                = g_cfg.sp_tp_pct;
     eng.SL_PCT                = g_cfg.sp_sl_pct;
     eng.MIN_GAP_SEC           = std::max(g_cfg.sp_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
     // correct per-instrument values (0.006% / 0.04%) tuned for DJ30 price level
     // (46700+ points — global 0.025%/0.12% translates to absurd absolute values).
@@ -1507,6 +1515,8 @@ static void apply_engine_config(omega::Nas100Engine& eng) noexcept {
     eng.TP_PCT                = g_cfg.nq_tp_pct;
     eng.SL_PCT                = g_cfg.nq_sl_pct;
     eng.MIN_GAP_SEC           = std::max(g_cfg.nq_min_gap_sec, g_cfg.min_entry_gap_sec);
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     // Do NOT override MOMENTUM_THRESH_PCT / MIN_BREAKOUT_PCT — constructor has
     // correct per-instrument values (0.010% / 0.08%) tuned for NAS100 price level.
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
