@@ -1144,6 +1144,7 @@ public:
         governor_.apply(engines_,regime);
         current_regime_=regime;
         apply_asian_session_overrides(snap.session);
+        apply_london_session_overrides(snap.session);
 
         // Don't look for new entries if already in a position or gated out
         if(has_open_pos_ || !can_enter) return GoldSignal{};
@@ -1283,6 +1284,14 @@ private:
         if (snap.vwap > 0.0 && std::fabs(s.entry - snap.vwap) < MIN_VWAP_DISLOCATION) return false;
         if (s.engine[0] != '\0' && std::strcmp(s.engine, "ImpulseContinuation") == 0) {
             if (s.confidence < IMPULSE_MIN_CONFIDENCE || score < IMPULSE_MIN_SCORE) return false;
+        } else if (s.engine[0] != '\0' && std::strcmp(s.engine, "CompressionBreakout") == 0) {
+            // CompressionBreakout uses its own internal confidence calc:
+            // confidence = min(1.5, breakout_distance / BREAKOUT_TRIGGER)
+            // A minimal breakout (price exits by exactly 1x trigger) gives confidence=1.0
+            // and score=1.0*weight(1.0)=1.0, which fails GENERAL_MIN_SCORE=1.20.
+            // The engine's compression range + breakout trigger gates are already sufficient
+            // quality filters — bypassing the generic score gate here is intentional.
+            // No score check: the structural requirement (compression box + breakout) IS the quality gate.
         } else {
             if (score < GENERAL_MIN_SCORE) return false;
         }
@@ -1338,6 +1347,33 @@ private:
         // CompressionBreakout is safe in Asia — it requires only a compression
         // range break, which is a self-contained price structure signal that works
         // in any session. The dead-zone gate (21:00-23:00) blocks the worst hours.
+        for (auto& e : engines_) {
+            if (e->getName() == "CompressionBreakout") {
+                e->setEnabled(true);
+            }
+        }
+    }
+
+    void apply_london_session_overrides(SessionType session) {
+        if (session != SessionType::LONDON) return;
+        // London open (07:00-10:30 UTC): force-enable CompressionBreakout regardless
+        // of RegimeGovernor classification.
+        //
+        // WHY: RegimeGovernor starts in MEAN_REVERSION and transitions to COMPRESSION
+        // only after CONFIRM_TICKS (5 ticks) of tight range. At London open, gold often
+        // establishes a compression box during the pre-release consolidation, but the
+        // governor may still be classifying as MEAN_REVERSION from Asian session.
+        // Result: CompressionBreakout is disabled by governor.apply() and misses the
+        // very breakout that London open consolidation sets up.
+        //
+        // CompressionBreakout is self-contained — it only fires when its own 30-tick
+        // window shows a tight range ($8 or less) AND price escapes by $2.50. The
+        // regime gate is redundant here; the engine's internal structural checks
+        // (COMPRESSION_RANGE=$8 + BREAKOUT_TRIGGER=$2.50) ARE the real quality filter.
+        //
+        // SessionMomentum already covers London via its in_session_window() check and
+        // fires when IMPULSE regime is active. This override covers the regime gap where
+        // gold compresses at London open but governor hasn't classified COMPRESSION yet.
         for (auto& e : engines_) {
             if (e->getName() == "CompressionBreakout") {
                 e->setEnabled(true);
