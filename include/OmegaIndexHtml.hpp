@@ -1,9 +1,9 @@
 #pragma once
-// AUTO-GENERATED from src/gui/www/omega_index.html
-// Split into 3 chunks to stay under MSVC 16KB string literal limit.
+// AUTO-GENERATED — split into chunks to stay under MSVC 16KB string literal limit.
 namespace omega_gui {
 static const char* INDEX_HTML =
 R"OMEGA0(
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -159,6 +159,9 @@ R"OMEGA0(
         .fix-row { display:flex; justify-content:space-between; align-items:center; padding:7px 10px;
             border-radius:8px; background:rgba(255,255,255,0.02); border:1px solid var(--border); margin-bottom:5px; font-size:11px; }
         .fix-label { color:var(--t2); font-size:10px; text-transform:uppercase; letter-spacing:1px; }
+)OMEGA0"
+
+R"OMEGA1(
         .fix-val { font-family:'Space Mono',monospace; font-weight:700; font-size:12px; }
         .fix-ok { color:var(--green); } .fix-bad { color:var(--red); }
         .bottom-row { grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
@@ -347,8 +350,7 @@ R"OMEGA0(
                 </div>
             </div>
         </div>
-)OMEGA0"
-R"OMEGA1(
+
         <!-- CENTRE COLUMN -->
         <div class="col-centre">
             <div>
@@ -366,6 +368,9 @@ R"OMEGA1(
                         <div class="eng-vol" id="engNQVol">rv -- bv --</div>
                         <div class="eng-signals" id="engNQSig">0 signals</div>
                     </div>
+)OMEGA1"
+
+R"OMEGA2(
                     <div class="eng-state-card phase-0" id="engCL">
                         <div class="eng-sym">USOIL.F</div>
                         <div class="eng-phase-badge phase-badge-flat" id="engCLPhase">FLAT</div>
@@ -457,8 +462,7 @@ R"OMEGA1(
                 <div style="font-size:9px;color:var(--t2);margin-top:8px;text-align:center;">ES + DX confirm broad market moves</div>
             </div>
         </div>
-)OMEGA1"
-R"OMEGA2(
+
         <!-- BOTTOM ROW -->
         <div class="bottom-row">
             <div class="card">
@@ -536,6 +540,9 @@ function updateMacroRegime(d){
 function renderLastSignal(d){
     const el=document.getElementById('lastSignalDetail');if(!el)return;
     if(!d.last_signal_side||d.last_signal_side==='NONE'||d.last_signal_side==='CLOSED'||d.last_signal_side===''){
+)OMEGA2"
+
+R"OMEGA3(
         el.innerHTML='<span style="color:var(--t2);font-size:12px;">Waiting for first signal...</span>';return;}
     const sc=d.last_signal_side==='LONG'?'var(--green)':'var(--red)';
     el.innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">'
@@ -697,6 +704,9 @@ function updateDashboard(d){
 
     // Uptime
     const ub=document.getElementById('uptimeBadge');
+)OMEGA3"
+
+R"OMEGA4(
     if(ub&&d.uptime_sec!=null){const s=d.uptime_sec,h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60;
         ub.textContent='UP '+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0');
         ub.style.color=h>=1?'var(--green)':'var(--t2)';}
@@ -736,6 +746,6 @@ pollTrades();
 </script>
 </body>
 </html>
-)OMEGA2"
+)OMEGA4"
 ;
 } // namespace omega_gui
