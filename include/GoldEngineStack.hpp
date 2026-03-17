@@ -275,13 +275,13 @@ public:
 //   4 SL hits in 16 min observed 22:35 UTC Mar 17 before this gate added
 // ─────────────────────────────────────────────────────────────────────────────
 class CompressionBreakoutEngine : public EngineBase {
-    MinMaxCircularBuffer<double,32> history_;
-    static constexpr size_t WINDOW        = 30;
-    static constexpr double COMPRESSION_RANGE = 8.00;  // was 2.00 — $2 never achievable at $5000 gold
-    static constexpr double BREAKOUT_TRIGGER  = 2.50;  // was 0.35 — $0.35 is tick noise, $2.50 is real
-    static constexpr double MAX_SPREAD        = 2.00;  // unchanged
-    static constexpr int    TP_TICKS          = 80;    // $8.00 target — 3.2:1 R:R on $2.50 SL
-    static constexpr int    SL_TICKS          = 25;    // $2.50 stop — 3x typical max spread ($0.80), clear of noise
+    MinMaxCircularBuffer<double,64> history_;  // raised 32→64: larger buffer required for 50-tick WINDOW
+    static constexpr size_t WINDOW        = 50;            // raised 30→50: 30 ticks at London open = ~3-6s, too short for real compression; 50 ticks = ~10-15s
+    static constexpr double COMPRESSION_RANGE = 6.00;      // lowered 8.00→6.00: $8 was too permissive; $6 requires genuinely tight pre-break range
+    static constexpr double BREAKOUT_TRIGGER  = 3.00;      // raised 2.50→3.00: extra $0.50 filters marginal exits that were reversing on retest
+    static constexpr double MAX_SPREAD        = 2.00;      // unchanged
+    static constexpr int    TP_TICKS          = 80;        // $8.00 target — 2.67:1 R:R on $3.00 SL
+    static constexpr int    SL_TICKS          = 30;        // raised 25→30: $3.00 stop matches new $3.00 trigger; avoids instant stop-out on breakout retest
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(5)};
 
     // NY/Tokyo handoff dead zone: 21:00–23:00 UTC
@@ -790,9 +790,7 @@ class GoldPositionManager {
     static constexpr double TRAIL_ARM_2      = 3.00;  // tight-trail once +$3.00 (= 2x SL floor)
     static constexpr double TRAIL_DIST_2     = 0.35;  // trail $0.35 behind mid (very tight on big winners)
     static constexpr double MIN_LOCKED_PROFIT = 0.05;
-    static constexpr double MAX_BASE_SL_TICKS = 25.0; // cap SL at 25 ticks = $2.50 absolute max
-    // Raised from 12 ($1.20): old cap was below the new SL values for several engines
-    // (CompressionBreakout now uses 25 ticks). A cap below the engine SL is a contradiction.
+    static constexpr double MAX_BASE_SL_TICKS = 30.0; // raised 25→30: cap must be >= highest engine SL (CompressionBreakout now uses 30 ticks)
 
     struct GoldPos {
         bool    active    = false;
@@ -1226,20 +1224,20 @@ public:
     }
 
 private:
-    static constexpr int64_t HARD_SL_GLOBAL_COOLDOWN_SEC = 60;
-    static constexpr int64_t SIDE_CHOP_WINDOW_SEC = 90;
-    static constexpr int64_t SIDE_CHOP_PAUSE_SEC = 60;
-    static constexpr size_t  SIDE_CHOP_TRIGGER_COUNT = 2;
-    static constexpr int64_t SAME_LEVEL_REENTRY_SEC = 30;
-    static constexpr double  SAME_LEVEL_REENTRY_BAND = 0.80;
-    static constexpr double  MIN_VWAP_DISLOCATION = 0.80;
+    static constexpr int64_t HARD_SL_GLOBAL_COOLDOWN_SEC = 120; // raised 60→120: 60s wasn't stopping revenge entries after hard stops
+    static constexpr int64_t SIDE_CHOP_WINDOW_SEC = 300;        // raised 90→300: 90s window expired before detecting London chop pattern
+    static constexpr int64_t SIDE_CHOP_PAUSE_SEC = 300;         // raised 60→300: 60s pause was too short — chop resumed after pause
+    static constexpr size_t  SIDE_CHOP_TRIGGER_COUNT = 2;       // keep at 2: still want early chop detection
+    static constexpr int64_t SAME_LEVEL_REENTRY_SEC = 60;       // raised 30→60: 30s allowed near-instant re-entries at same level
+    static constexpr double  SAME_LEVEL_REENTRY_BAND = 1.50;    // raised 0.80→1.50: $0.80 band was too tight, same-level re-entries slipped through
+    static constexpr double  MIN_VWAP_DISLOCATION = 1.20;       // raised 0.80→1.20: entries within $1.20 of VWAP are noise territory
     static constexpr double  MAX_ENTRY_SPREAD = 1.60;
     static constexpr double  IMPULSE_MIN_CONFIDENCE = 1.05;
     static constexpr double  IMPULSE_MIN_SCORE = 1.20;
     static constexpr double  GENERAL_MIN_SCORE = 1.20;
     // Minimum gap between any new entry — prevents re-entering immediately after TP/SL.
     // Was causing 30+ gold trades per hour as CompressionBreakout re-fired every tick.
-    static constexpr int64_t MIN_ENTRY_GAP_SEC = 30;
+    static constexpr int64_t MIN_ENTRY_GAP_SEC = 90;            // raised 30→90: 30s was insufficient — CB was re-firing 2-3x per compression box
 
     std::vector<std::unique_ptr<EngineBase>> engines_;
     GoldFeatures     features_;
@@ -1370,14 +1368,10 @@ private:
         // Result: CompressionBreakout is disabled by governor.apply() and misses the
         // very breakout that London open consolidation sets up.
         //
-        // CompressionBreakout is self-contained — it only fires when its own 30-tick
-        // window shows a tight range ($8 or less) AND price escapes by $2.50. The
-        // regime gate is redundant here; the engine's internal structural checks
-        // (COMPRESSION_RANGE=$8 + BREAKOUT_TRIGGER=$2.50) ARE the real quality filter.
-        //
-        // SessionMomentum already covers London via its in_session_window() check and
-        // fires when IMPULSE regime is active. This override covers the regime gap where
-        // gold compresses at London open but governor hasn't classified COMPRESSION yet.
+        // Guard: only force-enable if the volatility filter has warmed up (vol_range > 0).
+        // Without this, CB fires on every tick from bar-1 of the London session before
+        // any real compression structure exists — this was causing the London open SL chain.
+        if (vol_filter_.current_range() < 0.50) return;  // not enough history yet — wait for warmup
         for (auto& e : engines_) {
             if (e->getName() == "CompressionBreakout") {
                 e->setEnabled(true);
