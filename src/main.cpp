@@ -2312,6 +2312,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_eng_estx50.pos.active) +
                 static_cast<int>(g_eng_xag.pos.active) +
                 static_cast<int>(g_eng_eurusd.pos.active) +
+                static_cast<int>(g_eng_audusd.pos.active) +
+                static_cast<int>(g_eng_nzdusd.pos.active) +
+                static_cast<int>(g_eng_usdjpy.pos.active) +
                 static_cast<int>(g_eng_brent.pos.active) +
                 static_cast<int>(g_gold_stack.has_open_position()) +
                 static_cast<int>(g_le_stack.has_open_position());  // LE gold positions count toward global cap
@@ -2334,6 +2337,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_eng_estx50.pos.active) +
             static_cast<int>(g_eng_xag.pos.active) +
             static_cast<int>(g_eng_eurusd.pos.active) +
+            static_cast<int>(g_eng_audusd.pos.active) +
+            static_cast<int>(g_eng_nzdusd.pos.active) +
+            static_cast<int>(g_eng_usdjpy.pos.active) +
             static_cast<int>(g_eng_brent.pos.active) +
             static_cast<int>(g_gold_stack.has_open_position()) +
             static_cast<int>(g_le_stack.has_open_position());  // LE gold positions count toward global cap
@@ -2419,6 +2425,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
     else if (sym == "EURUSD") {
         dispatch(g_eng_eurusd, symbol_gate("EURUSD", g_eng_eurusd.pos.active));
+        // Asia FX pairs — gated to Asia session only when asia_fx_asia_only=true
+        {
+            const auto t2 = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti2; gmtime_s(&ti2, &t2);
+            const int h2 = ti2.tm_hour;
+            const bool in_asia_window = (h2 >= 22 || h2 < 7); // 22:00-07:00 UTC
+            const bool asia_ok = !g_cfg.asia_fx_asia_only || in_asia_window;
+            if (asia_ok) {
+                dispatch(g_eng_audusd, symbol_gate("AUDUSD", g_eng_audusd.pos.active));
+                dispatch(g_eng_nzdusd, symbol_gate("NZDUSD", g_eng_nzdusd.pos.active));
+                dispatch(g_eng_usdjpy, symbol_gate("USDJPY", g_eng_usdjpy.pos.active));
+            }
+        }
     }
     else if (sym == "UKBRENT") {
         dispatch(g_eng_brent, symbol_gate("UKBRENT", g_eng_brent.pos.active));
@@ -2912,6 +2931,7 @@ static void quote_loop() {
         fc(g_eng_us30, "DJ30.F"); fc(g_eng_nas100, "NAS100");
         fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
         fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
+        fc(g_eng_audusd, "AUDUSD"); fc(g_eng_nzdusd, "NZDUSD"); fc(g_eng_usdjpy, "USDJPY");
         fc(g_eng_brent, "UKBRENT");
         // Force-close GoldEngineStack
         {
@@ -2990,6 +3010,9 @@ int main(int argc, char* argv[])
     apply_generic_index_config(g_eng_estx50);
     apply_generic_silver_config(g_eng_xag);
     apply_generic_fx_config(g_eng_eurusd);
+    apply_generic_audusd_config(g_eng_audusd);
+    apply_generic_nzdusd_config(g_eng_nzdusd);
+    apply_generic_usdjpy_config(g_eng_usdjpy);
     apply_generic_brent_config(g_eng_brent);
     // Gold: generic breakout engine, overridden with gold-specific pct params
     // Gold: dedicated config -- do not use generic breakout defaults
@@ -3050,6 +3073,15 @@ int main(int argc, char* argv[])
               << "% vol=" << g_eng_xag.VOL_THRESH_PCT << "% mom=" << g_eng_xag.MOMENTUM_THRESH_PCT
               << "% brk=" << g_eng_xag.MIN_BREAKOUT_PCT << "% gap=" << g_eng_xag.MIN_GAP_SEC
               << "s hold=" << g_eng_xag.MAX_HOLD_SEC << "s spread=" << g_eng_xag.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] AUDUSD   TP=" << g_eng_audusd.TP_PCT << "% SL=" << g_eng_audusd.SL_PCT
+              << "% vol=" << g_eng_audusd.VOL_THRESH_PCT << "% mom=" << g_eng_audusd.MOMENTUM_THRESH_PCT
+              << "% gap=" << g_eng_audusd.MIN_GAP_SEC << "s spread=" << g_eng_audusd.MAX_SPREAD_PCT << "% [ASIA]\n"
+              << "[OMEGA-PARAMS] NZDUSD   TP=" << g_eng_nzdusd.TP_PCT << "% SL=" << g_eng_nzdusd.SL_PCT
+              << "% vol=" << g_eng_nzdusd.VOL_THRESH_PCT << "% mom=" << g_eng_nzdusd.MOMENTUM_THRESH_PCT
+              << "% gap=" << g_eng_nzdusd.MIN_GAP_SEC << "s spread=" << g_eng_nzdusd.MAX_SPREAD_PCT << "% [ASIA]\n"
+              << "[OMEGA-PARAMS] USDJPY   TP=" << g_eng_usdjpy.TP_PCT << "% SL=" << g_eng_usdjpy.SL_PCT
+              << "% vol=" << g_eng_usdjpy.VOL_THRESH_PCT << "% mom=" << g_eng_usdjpy.MOMENTUM_THRESH_PCT
+              << "% gap=" << g_eng_usdjpy.MIN_GAP_SEC << "s spread=" << g_eng_usdjpy.MAX_SPREAD_PCT << "% [ASIA/TOKYO-FIX]\n"
               << "[OMEGA-PARAMS] GOLD.F   GoldEngineStack active | gap=" << g_cfg.gs_cfg.min_entry_gap_sec
               << "s hold=" << g_cfg.gs_cfg.max_hold_sec << "s vwap_min=" << g_cfg.gs_cfg.min_vwap_dislocation
               << " spread_max=" << g_cfg.gs_cfg.max_entry_spread << "\n"
@@ -3070,6 +3102,9 @@ int main(int argc, char* argv[])
         g_eng_estx50.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_xag.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_eurusd.AGGRESSIVE_SHADOW = shadow_research;
+        g_eng_audusd.AGGRESSIVE_SHADOW = shadow_research;
+        g_eng_nzdusd.AGGRESSIVE_SHADOW = shadow_research;
+        g_eng_usdjpy.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_brent.AGGRESSIVE_SHADOW = shadow_research;
 
         if (g_cfg.shadow_ustec_pilot_only) {
@@ -3118,6 +3153,9 @@ int main(int argc, char* argv[])
     bind_shadow_cb(g_eng_estx50);
     bind_shadow_cb(g_eng_xag);
     bind_shadow_cb(g_eng_eurusd);
+    bind_shadow_cb(g_eng_audusd);
+    bind_shadow_cb(g_eng_nzdusd);
+    bind_shadow_cb(g_eng_usdjpy);
     bind_shadow_cb(g_eng_brent);
     build_id_map();
 

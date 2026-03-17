@@ -6,6 +6,7 @@ R"OMEGA0(
 
 
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -238,6 +239,25 @@ R"OMEGA1(
                 <span class="hdr-ticker-sep">|</span>
                 <span class="hdr-ticker-ask" id="hdrEurAsk" style="font-size:11px">----</span>
             </div>
+            <div style="width:1px;height:28px;background:var(--border);margin:0 2px;"></div>
+            <div class="hdr-ticker" style="border-color:rgba(0,212,255,0.2);background:rgba(0,212,255,0.04);">
+                <span class="hdr-ticker-sym" style="color:var(--cyan)">AUD</span>
+                <span class="hdr-ticker-bid" id="hdrAudBid" style="font-size:11px">----</span>
+                <span class="hdr-ticker-sep">|</span>
+                <span class="hdr-ticker-ask" id="hdrAudAsk" style="font-size:11px">----</span>
+            </div>
+            <div class="hdr-ticker" style="border-color:rgba(0,212,255,0.2);background:rgba(0,212,255,0.04);">
+                <span class="hdr-ticker-sym" style="color:var(--cyan)">NZD</span>
+                <span class="hdr-ticker-bid" id="hdrNzdBid" style="font-size:11px">----</span>
+                <span class="hdr-ticker-sep">|</span>
+                <span class="hdr-ticker-ask" id="hdrNzdAsk" style="font-size:11px">----</span>
+            </div>
+            <div class="hdr-ticker" style="border-color:rgba(157,127,255,0.25);background:rgba(157,127,255,0.05);">
+                <span class="hdr-ticker-sym" style="color:var(--purple)">JPY</span>
+                <span class="hdr-ticker-bid" id="hdrJpyBid" style="font-size:11px">----</span>
+                <span class="hdr-ticker-sep">|</span>
+                <span class="hdr-ticker-ask" id="hdrJpyAsk" style="font-size:11px">----</span>
+            </div>
         </div>
 
         <div class="hbar">
@@ -298,6 +318,21 @@ R"OMEGA1(
                     <div class="px-pair"><span class="bid" id="eurBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="eurAsk">----</span></div>
                     <span class="sym-spread" id="eurSpread">--</span>
                 </div>
+                <div class="sym-row" style="border-color:rgba(0,212,255,0.18);background:rgba(0,212,255,0.04);">
+                    <span class="sym-label" style="color:var(--cyan)">AUDUSD</span>
+                    <div class="px-pair"><span class="bid" id="audBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="audAsk">----</span></div>
+                    <span class="sym-spread" id="audSpread">--</span>
+                </div>
+                <div class="sym-row" style="border-color:rgba(0,212,255,0.18);background:rgba(0,212,255,0.04);">
+                    <span class="sym-label" style="color:var(--cyan)">NZDUSD</span>
+                    <div class="px-pair"><span class="bid" id="nzdBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="nzdAsk">----</span></div>
+                    <span class="sym-spread" id="nzdSpread">--</span>
+                </div>
+                <div class="sym-row" style="border-color:rgba(157,127,255,0.2);background:rgba(157,127,255,0.04);">
+                    <span class="sym-label" style="color:var(--purple)">USDJPY <span style="font-size:8px;color:var(--t3)">★FIX</span></span>
+                    <div class="px-pair"><span class="bid" id="jpyBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="jpyAsk">----</span></div>
+                    <span class="sym-spread" id="jpySpread">--</span>
+                </div>
 
                 <!-- EU indices + DJ30/NAS100 -->
                 <div class="sym-group-label" style="margin-top:8px;">◈ Indices</div>
@@ -319,6 +354,9 @@ R"OMEGA1(
                 </div>
                 <div class="sym-row">
                     <span class="sym-label">ESTX50</span>
+)OMEGA1"
+
+R"OMEGA2(
                     <div class="px-pair"><span class="bid" id="estx50Bid" style="font-size:11px">--</span><span style="color:var(--t3)">|</span><span class="ask" id="estx50Ask" style="font-size:11px">--</span></div>
                 </div>
 
@@ -366,9 +404,7 @@ R"OMEGA1(
                         <div class="eng-vol" id="engSPVol">rv -- bv --</div>
                         <div class="eng-signals" id="engSPSig">0 signals</div>
                     </div>
-)OMEGA1"
 
-R"OMEGA2(
                     <div class="eng-state-card phase-0" id="engNQ">
                         <div class="eng-sym">USTEC.F</div>
                         <div class="eng-phase-badge phase-badge-flat" id="engNQPhase">FLAT</div>
@@ -504,6 +540,9 @@ function toggleBell(){
     if(_bellEnabled&&_audioCtx){_playTestBell();}
 }
 function _playTestBell(){try{const ctx=_audioCtx;if(!ctx)return;if(ctx.state==='suspended')ctx.resume();const now=ctx.currentTime;const o=ctx.createOscillator(),g=ctx.createGain(),c=ctx.createDynamicsCompressor();c.threshold.value=-6;c.ratio.value=4;o.connect(g);g.connect(c);c.connect(ctx.destination);o.type='sine';o.frequency.value=880;g.gain.setValueAtTime(0,now);g.gain.linearRampToValueAtTime(0.4,now+0.01);g.gain.exponentialRampToValueAtTime(0.001,now+0.35);o.start(now);o.stop(now+0.4);}catch(e){}}
+)OMEGA2"
+
+R"OMEGA3(
 function _playWinBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const now=ctx.currentTime;[[0,880,1040],[0.22,1100,1320]].forEach(([t,f1,f2])=>{[f1,f2].forEach((freq,i)=>{const o=ctx.createOscillator(),g=ctx.createGain(),c=ctx.createDynamicsCompressor();c.threshold.value=-3;c.ratio.value=4;c.attack.value=0.003;c.release.value=0.1;o.connect(g);g.connect(c);c.connect(ctx.destination);o.type='sine';o.frequency.setValueAtTime(freq,now+t);g.gain.setValueAtTime(0,now+t);g.gain.linearRampToValueAtTime(i===0?1.8:0.9,now+t+0.008);g.gain.exponentialRampToValueAtTime(0.3,now+t+0.1);g.gain.exponentialRampToValueAtTime(0.001,now+t+1.4);o.start(now+t);o.stop(now+t+1.5);});});}catch(e){}}
 function _playLossBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const now=ctx.currentTime;const o=ctx.createOscillator(),g=ctx.createGain(),c=ctx.createDynamicsCompressor();c.threshold.value=-6;c.ratio.value=4;o.connect(g);g.connect(c);c.connect(ctx.destination);o.type='sawtooth';o.frequency.setValueAtTime(280,now);o.frequency.linearRampToValueAtTime(130,now+0.3);g.gain.setValueAtTime(0,now);g.gain.linearRampToValueAtTime(0.9,now+0.01);g.gain.exponentialRampToValueAtTime(0.001,now+0.5);o.start(now);o.stop(now+0.55);}catch(e){}}
 
@@ -537,9 +576,7 @@ function updateMacroRegime(d){
     const rE=document.getElementById('macroRegime');
     if(rE){rE.textContent=reg;rE.className='regime-val regime-'+reg.toLowerCase().replace('_','-');}
     const dE=document.getElementById('esNqDiv');
-)OMEGA2"
 
-R"OMEGA3(
     if(dE){dE.textContent=(div>=0?'+':'')+(div*100).toFixed(3)+'%';dE.style.color=Math.abs(div)<0.0002?'var(--t2)':div>0?'var(--green)':'var(--red)';}
     const sE=document.getElementById('sessionVal');
     if(sE){const t=safe(d.session_tradeable);sE.textContent=t?(d.session_name||'ACTIVE'):'CLOSED';sE.style.color=t?'var(--green)':'var(--t2)';}
@@ -638,15 +675,24 @@ function updateDashboard(d){
     setPrice('hdrClBid',  d.cl_bid,   2);setPrice('hdrClAsk',  d.cl_ask,   2);
     setPrice('hdrBrentBid',d.brent_bid,2);setPrice('hdrBrentAsk',d.brent_ask,2);
     setPrice('hdrEurBid', d.eurusd_bid,5);setPrice('hdrEurAsk', d.eurusd_ask,5);
+    setPrice('hdrAudBid', d.audusd_bid,5);setPrice('hdrAudAsk', d.audusd_ask,5);
+    setPrice('hdrNzdBid', d.nzdusd_bid,5);setPrice('hdrNzdAsk', d.nzdusd_ask,5);
+    setPrice('hdrJpyBid', d.usdjpy_bid,3);setPrice('hdrJpyAsk', d.usdjpy_ask,3);
 
     // Left column prices — Gold + Silver first
     setPrice('goldBid',d.gold_bid,2);setPrice('goldAsk',d.gold_ask,2);setSpread('goldSpread',d.gold_bid,d.gold_ask);
     setPrice('xagBid', d.xag_bid, 3);setPrice('xagAsk', d.xag_ask, 3);setSpread('xagSpread', d.xag_bid, d.xag_ask);
     setPrice('spBid',  d.sp_bid,  2);setPrice('spAsk',  d.sp_ask,  2);setSpread('spSpread', d.sp_bid, d.sp_ask);
     setPrice('nqBid',  d.nq_bid,  2);setPrice('nqAsk',  d.nq_ask,  2);setSpread('nqSpread', d.nq_bid, d.nq_ask);
+)OMEGA3"
+
+R"OMEGA4(
     setPrice('clBid',  d.cl_bid,  2);setPrice('clAsk',  d.cl_ask,  2);setSpread('clSpread', d.cl_bid, d.cl_ask);
     setPrice('brentBid',d.brent_bid,2);setPrice('brentAsk',d.brent_ask,2);setSpread('brentSpread',d.brent_bid,d.brent_ask);
     setPrice('eurBid', d.eurusd_bid,5);setPrice('eurAsk', d.eurusd_ask,5);setSpread('eurSpread',d.eurusd_bid,d.eurusd_ask);
+    setPrice('audBid', d.audusd_bid,5);setPrice('audAsk', d.audusd_ask,5);setSpread('audSpread',d.audusd_bid,d.audusd_ask);
+    setPrice('nzdBid', d.nzdusd_bid,5);setPrice('nzdAsk', d.nzdusd_ask,5);setSpread('nzdSpread',d.nzdusd_bid,d.nzdusd_ask);
+    setPrice('jpyBid', d.usdjpy_bid,3);setPrice('jpyAsk', d.usdjpy_ask,3);setSpread('jpySpread',d.usdjpy_bid,d.usdjpy_ask);
     setPrice('djBid',  d.dj_bid,  2);setPrice('djAsk',  d.dj_ask,  2);
     setPrice('nasBid', d.nas_bid, 2);setPrice('nasAsk', d.nas_ask, 2);
     setPrice('ger30Bid',d.ger30_bid,2);setPrice('ger30Ask',d.ger30_ask,2);
@@ -695,9 +741,7 @@ function updateDashboard(d){
     document.getElementById('fixFills').textContent=safe(d.total_fills);
 
     // Mode + build
-)OMEGA3"
 
-R"OMEGA4(
     const mb=document.getElementById('modeBadge');
     if(mb){mb.textContent=d.mode||'SHADOW';mb.className='badge '+(d.mode==='LIVE'?'mode-live':'mode-shadow');}
     const bv=document.getElementById('buildVersion');

@@ -113,6 +113,9 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"estx50_bid\":%.4f,\"estx50_ask\":%.4f,"
         "\"xag_bid\":%.4f,\"xag_ask\":%.4f,"
         "\"eurusd_bid\":%.4f,\"eurusd_ask\":%.4f,"
+        "\"audusd_bid\":%.4f,\"audusd_ask\":%.4f,"
+        "\"nzdusd_bid\":%.4f,\"nzdusd_ask\":%.4f,"
+        "\"usdjpy_bid\":%.4f,\"usdjpy_ask\":%.4f,"
         "\"brent_bid\":%.4f,\"brent_ask\":%.4f,"
         "\"daily_pnl\":%.2f,\"gross_daily_pnl\":%.2f,\"max_drawdown\":%.2f,"
         "\"fix_rtt_last\":%.2f,\"fix_rtt_p50\":%.2f,\"fix_rtt_p95\":%.2f,"
@@ -147,7 +150,9 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->dxcash_bid, s->dxcash_ask,
         s->ger30_bid,  s->ger30_ask,  s->uk100_bid, s->uk100_ask,
         s->estx50_bid, s->estx50_ask, s->xag_bid,   s->xag_ask,
-        s->eurusd_bid, s->eurusd_ask, s->brent_bid, s->brent_ask,
+        s->eurusd_bid, s->eurusd_ask,
+        s->audusd_bid, s->audusd_ask, s->nzdusd_bid, s->nzdusd_ask,
+        s->usdjpy_bid, s->usdjpy_ask, s->brent_bid,  s->brent_ask,
         s->daily_pnl, s->gross_daily_pnl, s->max_drawdown,
         s->fix_rtt_last, s->fix_rtt_p50, s->fix_rtt_p95,
         trades, wins, s->losses, wr,
