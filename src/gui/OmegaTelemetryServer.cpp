@@ -436,7 +436,9 @@ void OmegaTelemetryServer::run(int port)
         char hdr[256];
         snprintf(hdr, sizeof(hdr),
             "HTTP/1.1 %d OK\r\nContent-Type: %s\r\nContent-Length: %zu\r\n"
-            "Access-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
+            "Access-Control-Allow-Origin: *\r\nX-Content-Type-Options: nosniff\r\n"
+            "Cache-Control: no-store, no-cache, must-revalidate\r\nPragma: no-cache\r\n"
+            "Connection: close\r\n\r\n",
             status, ct.c_str(), body.size());
         send(c, hdr,        static_cast<int>(strlen(hdr)),     0);
         send(c, body.c_str(), static_cast<int>(body.size()),   0);
