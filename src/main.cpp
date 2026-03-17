@@ -376,8 +376,7 @@ static std::unordered_map<std::string, PerfStats> g_perf;
 static bool g_disable_gold_stack = false;
 
 static std::string perf_key_from_trade(const omega::TradeRecord& tr) {
-    if (tr.symbol == "GOLD.F" && tr.engine != "BreakoutEngine") return "GOLD_STACK";
-    if (tr.symbol == "GOLD.F") return "GOLD_CRTP";
+    if (tr.symbol == "GOLD.F") return "GOLD_STACK";
     return tr.symbol;
 }
 
@@ -1507,7 +1506,6 @@ static bool session_tradeable() noexcept {
 // ─────────────────────────────────────────────────────────────────────────────
 // Apply config to engines -- per-symbol typed overloads
 // ─────────────────────────────────────────────────────────────────────────────
-// Generic fallback (used for GOLD BreakoutEngine)
 // SP -- uses [sp] config section, links macro context
 static void apply_engine_config(omega::SpEngine& eng) noexcept {
     eng.VOL_THRESH_PCT          = g_cfg.sp_vol_thresh_pct;
