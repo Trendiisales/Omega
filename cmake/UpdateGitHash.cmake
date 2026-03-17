@@ -1,5 +1,7 @@
-# UpdateGitHash.cmake — runs at BUILD time (not configure time) via add_custom_command
-# Writes include/version_generated.hpp with fresh git hash + timestamp every build.
+# UpdateGitHash.cmake — runs at BUILD TIME via add_custom_target(ALL)
+# Writes version_generated.hpp + version_sentinel.h every build.
+# The sentinel's changing timestamp forces main.cpp to recompile via
+# set_property(SOURCE main.cpp APPEND PROPERTY OBJECT_DEPENDS sentinel).
 
 find_package(Git QUIET)
 
@@ -25,12 +27,20 @@ endif()
 
 string(TIMESTAMP BUILD_TIMESTAMP "%Y-%m-%d %H:%M UTC")
 
+# Write the real header included by main.cpp
 file(WRITE "${OUTPUT_FILE}"
 "// AUTO-GENERATED — do not edit. Regenerated on every build by cmake/UpdateGitHash.cmake
 #pragma once
 #define OMEGA_GIT_HASH   \"${GIT_HASH}\"
 #define OMEGA_GIT_DATE   \"${GIT_DATE}\"
 #define OMEGA_BUILD_TIME \"${BUILD_TIMESTAMP}\"
+")
+
+# Write the sentinel — its timestamp changes every build, forcing main.cpp recompile
+file(WRITE "${SENTINEL_FILE}"
+"// Sentinel — timestamp updated every build to force main.cpp recompile.
+// Do not include this file directly.
+// Built: ${BUILD_TIMESTAMP}
 ")
 
 message(STATUS "[Omega] Git hash: ${GIT_HASH} | Built: ${BUILD_TIMESTAMP}")

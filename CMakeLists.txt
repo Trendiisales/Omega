@@ -54,36 +54,47 @@ target_link_libraries(Omega
 )
 
 # ── Build version stamp ──────────────────────────────────────────────────────
-# Regenerates include/version_generated.hpp on EVERY build (not just cmake ..)
-# so the binary always shows the correct git hash after git pull + rebuild.
-# Uses a build-time custom command — execute_process runs at configure time only
-# and would bake a stale hash forever until cmake .. is re-run.
-
-set(VERSION_HEADER "${CMAKE_SOURCE_DIR}/include/version_generated.hpp")
+# Rewrites include/version_generated.hpp on EVERY build and forces main.cpp
+# to recompile so the banner always shows the current commit hash.
+#
+# Why this approach:
+#   - add_custom_command(OUTPUT ...) only reruns when the output is MISSING or
+#     stale vs listed deps — since version_generated.hpp has no deps it is
+#     always "up to date" and CMake skips it entirely.
+#   - Even if the file is rewritten, MSVC skips recompiling main.cpp unless the
+#     file's mtime changes.
+#   - Solution: ALL custom_target (always runs) writes a BYPRODUCTS sentinel
+#     file with a fresh timestamp every build. main.cpp lists that sentinel as
+#     a source dep via set_property, forcing recompile whenever it changes.
 
 find_package(Git QUIET)
 
-add_custom_command(
-    OUTPUT  "${VERSION_HEADER}"
+set(VERSION_HEADER   "${CMAKE_SOURCE_DIR}/include/version_generated.hpp")
+set(VERSION_SENTINEL "${CMAKE_BINARY_DIR}/version_sentinel.h")
+
+# Step 1 — custom target marked ALL: runs UpdateGitHash.cmake unconditionally
+# every build. Writes both the real header and a sentinel with current timestamp.
+add_custom_target(omega_version_header ALL
     COMMAND ${CMAKE_COMMAND}
             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
             -DOUTPUT_FILE=${VERSION_HEADER}
+            -DSENTINEL_FILE=${VERSION_SENTINEL}
             -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
             -P ${CMAKE_SOURCE_DIR}/cmake/UpdateGitHash.cmake
+    BYPRODUCTS "${VERSION_HEADER}" "${VERSION_SENTINEL}"
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Regenerating git hash header..."
-    # DEPFILE not used — we want this to run unconditionally every build
 )
 
-# Dummy target that always runs, forcing the custom command every build
-add_custom_target(omega_version_header ALL
-    DEPENDS "${VERSION_HEADER}"
-)
-
-# Ensure version header is generated before main.cpp compiles
+# Step 2 — make Omega depend on the target so it runs before linking
 add_dependencies(Omega omega_version_header)
 
-# Include the generated header directory
+# Step 3 — add the sentinel as a source file dep on main.cpp so MSVC sees a
+# changed input and recompiles it every time the sentinel timestamp updates.
+set_property(SOURCE "${CMAKE_SOURCE_DIR}/src/main.cpp"
+    APPEND PROPERTY OBJECT_DEPENDS "${VERSION_SENTINEL}"
+)
+
 target_include_directories(Omega PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 message(STATUS "========================================")
