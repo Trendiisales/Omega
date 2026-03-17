@@ -202,6 +202,41 @@ struct OmegaConfig {
     double oil_compression_threshold  = 0.80;
     double oil_vix_panic              = 50.0;
 
+    // Silver (XAGUSD)
+    double silver_tp_pct               = 0.800;
+    double silver_sl_pct               = 0.400;
+    double silver_vol_thresh_pct       = 0.060;
+    int    silver_min_gap_sec          = 180;
+    double silver_momentum_thresh_pct  = 0.020;
+    double silver_min_breakout_pct     = 0.050;
+    double silver_max_spread_pct       = 0.080;
+    double silver_compression_threshold = 0.85;
+
+    // Brent (UKBRENT)
+    double brent_tp_pct                = 1.500;
+    double brent_sl_pct                = 0.500;
+    double brent_vol_thresh_pct        = 0.080;
+    int    brent_min_gap_sec           = 90;
+    double brent_momentum_thresh_pct   = 0.050;
+    double brent_min_breakout_pct      = 0.060;
+    double brent_max_spread_pct        = 0.120;
+    double brent_compression_threshold = 0.80;
+
+    // EU Indices (GER30, UK100, ESTX50) — shared params
+    double eu_index_momentum_thresh_pct   = 0.005;
+    double eu_index_min_breakout_pct      = 0.030;
+    double eu_index_compression_threshold = 0.85;
+
+    // FX (EURUSD)
+    double fx_tp_pct               = 0.080;
+    double fx_sl_pct               = 0.040;
+    double fx_vol_thresh_pct       = 0.010;
+    int    fx_min_gap_sec          = 45;
+    double fx_momentum_thresh_pct  = 0.015;
+    double fx_min_breakout_pct     = 0.080;
+    double fx_max_spread_pct       = 0.010;
+    double fx_compression_threshold = 0.85;
+
     // GUI
     int         gui_port   = 7779;
     int         ws_port    = 7780;
@@ -394,13 +429,20 @@ public:
         if (c == EOF) return !EOF;
         check_rotate();
         orig_->sputc(static_cast<char>(c));
-        if (file_buf_) file_buf_->sputc(static_cast<char>(c));
+        if (file_buf_) {
+            file_buf_->sputc(static_cast<char>(c));
+            if (c == '\n') file_.flush();  // flush on newline — log always current
+        }
         return c;
     }
     std::streamsize xsputn(const char* s, std::streamsize n) override {
         check_rotate();
         orig_->sputn(s, n);
-        if (file_buf_) file_buf_->sputn(s, n);
+        if (file_buf_) {
+            file_buf_->sputn(s, n);
+            bool has_newline = (std::memchr(s, '\n', static_cast<size_t>(n)) != nullptr);
+            if (has_newline || n > 256) file_.flush();
+        }
         return n;
     }
 
@@ -1525,16 +1567,13 @@ static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
     eng.TP_PCT                = g_cfg.sp_tp_pct;
     eng.SL_PCT                = g_cfg.sp_sl_pct;
     eng.MIN_GAP_SEC           = std::max(30, g_cfg.sp_min_gap_sec);
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.eu_index_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.eu_index_min_breakout_pct;
+    eng.COMPRESSION_THRESHOLD = g_cfg.eu_index_compression_threshold;
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    // European indices (GER30~22000, UK100~8300, ESTX50~5700) need
-    // instrument-appropriate thresholds, not the global 0.025%/0.12%.
-    // 0.025% on UK100 at 8300 = $2.08 — fine.
-    // 0.025% on GER30 at 22000 = $5.50 — too tight for early London.
-    // Use 0.010% momentum (absolute ~$1-2 for all EU indices) and
-    // 0.06% min_breakout (absolute ~$5-13 depending on index level).
-    eng.MOMENTUM_THRESH_PCT   = 0.005;  // halved from 0.010% — log showed blocks at 0.007%
-    eng.MIN_BREAKOUT_PCT      = 0.03;   // halved from 0.06% — EU indices have small comp exits
 }
 
 // Us30 (DJ30.F) -- typed engine, links macro context
@@ -1576,44 +1615,46 @@ static void apply_engine_config(omega::Nas100Engine& eng) noexcept {
 }
 
 static void apply_generic_fx_config(omega::BreakoutEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = 0.010;
-    eng.TP_PCT                = 0.080;
-    eng.SL_PCT                = 0.040;
-    eng.MIN_GAP_SEC           = 45;
-    eng.MAX_SPREAD_PCT        = 0.010;
-    eng.MOMENTUM_THRESH_PCT   = std::min(0.015, std::max(0.004, g_cfg.momentum_thresh_pct));
-    eng.MIN_BREAKOUT_PCT      = std::min(0.080, std::max(0.020, g_cfg.min_breakout_pct));
-    eng.MAX_TRADES_PER_MIN    = std::max(4, g_cfg.max_trades_per_min);
-    eng.MAX_HOLD_SEC          = std::min(240, std::max(45, g_cfg.max_hold_sec));
+    eng.VOL_THRESH_PCT        = g_cfg.fx_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.fx_tp_pct;
+    eng.SL_PCT                = g_cfg.fx_sl_pct;
+    eng.MIN_GAP_SEC           = g_cfg.fx_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = g_cfg.fx_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD = g_cfg.fx_compression_threshold;
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.fx_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.fx_min_breakout_pct;
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
 }
 
 static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = 0.060;
-    eng.TP_PCT                = 0.800;
-    eng.SL_PCT                = 0.400;
-    // Silver is churn-prone in early London (07-09 UTC) due to thin liquidity.
-    // 180s min gap prevents the engine re-entering after every SL hit.
-    // Was 60s — too short, caused back-to-back losses in choppy range.
-    eng.MIN_GAP_SEC           = 180;
-    eng.MAX_SPREAD_PCT        = 0.08;
+    eng.VOL_THRESH_PCT        = g_cfg.silver_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.silver_tp_pct;
+    eng.SL_PCT                = g_cfg.silver_sl_pct;
+    eng.MIN_GAP_SEC           = g_cfg.silver_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = g_cfg.silver_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD = g_cfg.silver_compression_threshold;
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.silver_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.silver_min_breakout_pct;
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-    // Silver at ~$80.60: 0.020% = $0.016 over 20 ticks — halved from 0.040%
-    // Log showed block at 0.0397% momentum, just 0.0003% below old threshold
-    eng.MOMENTUM_THRESH_PCT   = 0.020;
-    // Silver at ~$80.60: 0.05% = $0.040 from comp edge — real structural break
-    // Halved from 0.10%: actual breakout moves seen at 0.022-0.043% in log
-    eng.MIN_BREAKOUT_PCT      = 0.05;
 }
 
 static void apply_generic_brent_config(omega::BreakoutEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = g_cfg.oil_vol_thresh_pct;
-    eng.TP_PCT                = g_cfg.oil_tp_pct;
-    eng.SL_PCT                = g_cfg.oil_sl_pct;
-    eng.MIN_GAP_SEC           = std::max(60, g_cfg.oil_min_gap_sec);
-    eng.MAX_SPREAD_PCT        = 0.12;
-    eng.MOMENTUM_THRESH_PCT   = g_cfg.momentum_thresh_pct;
-    eng.MIN_BREAKOUT_PCT      = g_cfg.min_breakout_pct;
+    eng.VOL_THRESH_PCT        = g_cfg.brent_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.brent_tp_pct;
+    eng.SL_PCT                = g_cfg.brent_sl_pct;
+    eng.MIN_GAP_SEC           = g_cfg.brent_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = g_cfg.brent_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD = g_cfg.brent_compression_threshold;
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.brent_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.brent_min_breakout_pct;
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
 }
@@ -1775,6 +1816,41 @@ static void load_config(const std::string& path) {
             if (k=="max_spread_pct")        g_cfg.oil_max_spread_pct        = std::stod(v);
             if (k=="compression_threshold") g_cfg.oil_compression_threshold = std::stod(v);
             if (k=="vix_panic")             g_cfg.oil_vix_panic             = std::stod(v);
+        }
+        if (section == "silver") {
+            if (k=="tp_pct")                g_cfg.silver_tp_pct                = std::stod(v);
+            if (k=="sl_pct")                g_cfg.silver_sl_pct                = std::stod(v);
+            if (k=="vol_thresh_pct")        g_cfg.silver_vol_thresh_pct        = std::stod(v);
+            if (k=="min_gap_sec")           g_cfg.silver_min_gap_sec           = std::stoi(v);
+            if (k=="momentum_thresh_pct")   g_cfg.silver_momentum_thresh_pct   = std::stod(v);
+            if (k=="min_breakout_pct")      g_cfg.silver_min_breakout_pct      = std::stod(v);
+            if (k=="max_spread_pct")        g_cfg.silver_max_spread_pct        = std::stod(v);
+            if (k=="compression_threshold") g_cfg.silver_compression_threshold = std::stod(v);
+        }
+        if (section == "brent") {
+            if (k=="tp_pct")                g_cfg.brent_tp_pct                = std::stod(v);
+            if (k=="sl_pct")                g_cfg.brent_sl_pct                = std::stod(v);
+            if (k=="vol_thresh_pct")        g_cfg.brent_vol_thresh_pct        = std::stod(v);
+            if (k=="min_gap_sec")           g_cfg.brent_min_gap_sec           = std::stoi(v);
+            if (k=="momentum_thresh_pct")   g_cfg.brent_momentum_thresh_pct   = std::stod(v);
+            if (k=="min_breakout_pct")      g_cfg.brent_min_breakout_pct      = std::stod(v);
+            if (k=="max_spread_pct")        g_cfg.brent_max_spread_pct        = std::stod(v);
+            if (k=="compression_threshold") g_cfg.brent_compression_threshold = std::stod(v);
+        }
+        if (section == "eu_index") {
+            if (k=="momentum_thresh_pct")   g_cfg.eu_index_momentum_thresh_pct   = std::stod(v);
+            if (k=="min_breakout_pct")      g_cfg.eu_index_min_breakout_pct      = std::stod(v);
+            if (k=="compression_threshold") g_cfg.eu_index_compression_threshold = std::stod(v);
+        }
+        if (section == "fx") {
+            if (k=="tp_pct")                g_cfg.fx_tp_pct                = std::stod(v);
+            if (k=="sl_pct")                g_cfg.fx_sl_pct                = std::stod(v);
+            if (k=="vol_thresh_pct")        g_cfg.fx_vol_thresh_pct        = std::stod(v);
+            if (k=="min_gap_sec")           g_cfg.fx_min_gap_sec           = std::stoi(v);
+            if (k=="momentum_thresh_pct")   g_cfg.fx_momentum_thresh_pct   = std::stod(v);
+            if (k=="min_breakout_pct")      g_cfg.fx_min_breakout_pct      = std::stod(v);
+            if (k=="max_spread_pct")        g_cfg.fx_max_spread_pct        = std::stod(v);
+            if (k=="compression_threshold") g_cfg.fx_compression_threshold = std::stod(v);
         }
         if (section == "gold_stack") {
             auto& gs = g_cfg.gs_cfg;
