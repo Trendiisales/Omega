@@ -689,18 +689,32 @@ public:
 enum class MarketRegime { COMPRESSION, TREND, MEAN_REVERSION, IMPULSE };
 
 class RegimeGovernor {
-    MinMaxCircularBuffer<double,64> history_;
+    MinMaxCircularBuffer<double,128> history_;  // raised 64→128: 60 ticks at London pace = ~4-12s, too short; 128 ticks = ~15-25s, captures real structure
     MarketRegime current_=MarketRegime::MEAN_REVERSION;
     MarketRegime candidate_=MarketRegime::MEAN_REVERSION;
     int confirm_count_=0;
     std::chrono::steady_clock::time_point last_switch_=std::chrono::steady_clock::now();
     static constexpr int CONFIRM_TICKS=5,MIN_LOCK_MS=1000;
-    static constexpr size_t WINDOW=60;
-    static constexpr double CE=0.70,CX=1.00,IE=1.20,IX=0.90,TE=2.20,TX=1.60;
+    static constexpr size_t WINDOW=120;  // raised 60→120: at $5000 gold, 60 ticks = ~5-12s of data — not enough to distinguish regime from noise
+
+    // Thresholds recalibrated for $5000 gold (Mar 2026)
+    // OLD values were for ~$300 gold: CE=0.70, CX=1.00, IE=1.20, IX=0.90, TE=2.20, TX=1.60
+    // At $5000, a $0.70-$2.20 range in 60 ticks is pure noise — normal mid-London wiggle.
+    // Real $5000 gold structure over 120 ticks:
+    //   COMPRESSION: range < $3.00 (genuinely tight pre-break consolidation)
+    //   MEAN_REVERSION: range $3.00-$8.00 (normal ranging, fade-the-move valid)
+    //   IMPULSE: range $8.00-$15.00 (strong directional move underway)
+    //   TREND: range > $15.00 (sustained trend, continuation valid)
+    static constexpr double CE=3.00;  // compression entry: range < $3.00
+    static constexpr double CX=4.50;  // compression exit:  range > $4.50
+    static constexpr double IE=8.00;  // impulse entry:     range > $8.00
+    static constexpr double IX=6.00;  // impulse exit:      range < $6.00
+    static constexpr double TE=15.00; // trend entry:       range > $15.00
+    static constexpr double TX=12.00; // trend exit:        range < $12.00
 
     MarketRegime classifyRaw(double range,double mid,double hi,double lo) const {
         double centre=(hi+lo)*0.5;
-        bool at_extreme=std::fabs(mid-centre)>=0.4;
+        bool at_extreme=std::fabs(mid-centre)>=2.00;  // raised 0.40→2.00: $0.40 from centre is tick noise at $5000 gold; $2.00 = real directional pressure
         switch(current_){
             case MarketRegime::COMPRESSION:
                 return(range>CX)?(at_extreme?MarketRegime::IMPULSE:MarketRegime::MEAN_REVERSION):MarketRegime::COMPRESSION;
@@ -773,7 +787,7 @@ public:
 class VolatilityFilter {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=50;
-    static constexpr double VOL_THRESHOLD=0.8;  // 1.4→0.8: $1.40 was blocking all Asian session signals; $0.80 = realistic quiet-period floor
+    static constexpr double VOL_THRESHOLD=2.50;  // raised 0.80→2.50: at $5000 gold, $0.80 range in 50 ticks is dead flat tape; $2.50 = minimum meaningful volatility for a trade to have room to develop
 public:
     bool allow(double mid){
         history_.push_back(mid);
