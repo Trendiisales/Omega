@@ -748,23 +748,25 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
 // ─────────────────────────────────────────────────────────────────────────────
 // compute_size() — risk-based position sizing
 //
-// When risk_per_trade_usd > 0 (enabled in config), size every trade so that
-// the maximum dollar loss (SL distance + spread cost) equals risk_per_trade_usd.
+// Sizes every trade so the maximum dollar loss (SL distance + spread cost)
+// equals risk_per_trade_usd.
 //
 // Formula: size = risk_usd / ((sl_abs + spread_abs) * tick_value_per_lot)
 //
-// Falls back to fallback_size when:
+// Falls back to fallback_size only when:
 //   - risk_per_trade_usd == 0.0 (disabled — use legacy fixed sizes)
 //   - sl_abs or tick_mult is zero (safety: avoids division by zero)
-//   - computed size is smaller than fallback (never go below legacy minimum)
 //
-// The result is clamped by a per-symbol max_lot cap so a misconfigured
-// risk parameter can never open a dangerously oversized position.
+// The result is clamped to [0.01, per-symbol max_lot cap].
+// NOTE: the old floor of std::max(size, fallback_size) has been removed.
+//       That floor overrode the risk calculation entirely — on a $50 risk budget
+//       with USOIL at $1000/pt, the correct size is 0.10 lots, but the floor
+//       forced it to 1.0 lot, producing a $478 actual risk — nearly 10× intended.
 // ─────────────────────────────────────────────────────────────────────────────
 static double compute_size(const std::string& symbol,
                             double sl_abs,       // SL distance in price points
                             double spread_abs,   // current bid-ask spread in price points
-                            double fallback_size // legacy fixed size (used when disabled)
+                            double fallback_size // used only when risk sizing is disabled
                             ) noexcept {
     if (g_cfg.risk_per_trade_usd <= 0.0) return fallback_size;
 
@@ -776,20 +778,17 @@ static double compute_size(const std::string& symbol,
 
     // Round to 2 decimal places (standard lot precision)
     size = std::floor(size * 100.0 + 0.5) / 100.0;
-    if (size < 0.01) size = 0.01;  // minimum 0.01 lots
+    if (size < 0.01) size = 0.01;  // hard floor: never less than 1 micro-lot
 
-    // Per-symbol safety cap — never exceed configured max regardless of risk param
-    double cap = fallback_size;  // safe default
+    // Per-symbol safety cap — hard ceiling regardless of risk param
+    // Prevents a misconfigured risk_per_trade_usd from opening a dangerously large position
+    double cap = g_cfg.max_lot_indices; // safe default for unknowns
     if (symbol == "GOLD.F")                                    cap = g_cfg.max_lot_gold;
     else if (symbol == "EURUSD")                               cap = g_cfg.max_lot_fx;
     else if (symbol == "XAGUSD")                               cap = g_cfg.max_lot_silver;
     else if (symbol == "USOIL.F" || symbol == "UKBRENT")       cap = g_cfg.max_lot_oil;
-    else                                                       cap = g_cfg.max_lot_indices;
 
     size = std::min(size, cap);
-
-    // Never go below legacy fallback — risk sizing only scales UP from legacy
-    size = std::max(size, fallback_size);
 
     return size;
 }
@@ -1742,15 +1741,27 @@ static void sanitize_config() noexcept {
               << " max_consec_losses=" << g_cfg.max_consec_losses
               << " loss_pause_sec=" << g_cfg.loss_pause_sec << "\n";
     if (g_cfg.risk_per_trade_usd > 0.0) {
-        std::cout << "[CONFIG] RISK-SIZING ENABLED risk_per_trade=$"
-                  << g_cfg.risk_per_trade_usd
-                  << " max_lot: gold=" << g_cfg.max_lot_gold
+        // Print example sizes at current risk level so it's easy to verify on boot
+        const double r = g_cfg.risk_per_trade_usd;
+        const double oil_size  = std::floor(std::min(r / (0.478 * 1000.0),  g_cfg.max_lot_oil)     * 100 + 0.5) / 100;
+        const double xag_size  = std::floor(std::min(r / (0.324 * 5000.0),  g_cfg.max_lot_silver)  * 100 + 0.5) / 100;
+        const double gold_size = std::floor(std::min(r / (10.4  * 100.0),   g_cfg.max_lot_gold)    * 100 + 0.5) / 100;
+        const double sp_size   = std::floor(std::min(r / (22.3  * 1.0),     g_cfg.max_lot_indices) * 100 + 0.5) / 100;
+        const double nq_size   = std::floor(std::min(r / (78.0  * 1.0),     g_cfg.max_lot_indices) * 100 + 0.5) / 100;
+        std::cout << "[CONFIG] RISK-SIZING ENABLED  risk_per_trade=$" << r << "\n"
+                  << "[CONFIG]   example sizes at current risk ($" << r << " max loss per trade):\n"
+                  << "[CONFIG]     USOIL.F  ~" << oil_size  << " lots  (SL≈$0.48, max_loss≈$"  << std::round(oil_size  * 0.478 * 1000) << ")\n"
+                  << "[CONFIG]     XAGUSD   ~" << xag_size  << " lots  (SL≈$0.32, max_loss≈$"  << std::round(xag_size  * 0.324 * 5000) << ")\n"
+                  << "[CONFIG]     GOLD.F   ~" << gold_size << " lots  (SL≈$10.4, max_loss≈$"  << std::round(gold_size * 10.4  * 100)  << ")\n"
+                  << "[CONFIG]     US500.F  ~" << sp_size   << " lots  (SL≈$22.3, max_loss≈$"  << std::round(sp_size   * 22.3  * 1)    << ")\n"
+                  << "[CONFIG]     USTEC.F  ~" << nq_size   << " lots  (SL≈$78.0, max_loss≈$"  << std::round(nq_size   * 78.0  * 1)    << ")\n"
+                  << "[CONFIG]   caps: gold=" << g_cfg.max_lot_gold
                   << " idx=" << g_cfg.max_lot_indices
                   << " oil=" << g_cfg.max_lot_oil
                   << " silver=" << g_cfg.max_lot_silver
                   << " fx=" << g_cfg.max_lot_fx << "\n";
     } else {
-        std::cout << "[CONFIG] RISK-SIZING DISABLED (risk_per_trade_usd=0) — using fixed lot sizes\n";
+        std::cout << "[CONFIG] RISK-SIZING DISABLED (risk_per_trade_usd=0) — using fixed fallback size 0.01 lots\n";
     }
 }
 
