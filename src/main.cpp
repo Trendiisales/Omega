@@ -112,6 +112,20 @@ struct OmegaConfig {
     bool   ustec_pilot_require_latency = true;  // enforce latency gate in shadow for USTEC pilot
     bool   ustec_pilot_block_risk_off  = true;  // skip USTEC pilot in RISK_OFF regime
     bool   enable_extended_symbols    = true;   // subscribe + trade additional opportunity symbols
+
+    // ── Risk-based position sizing ──────────────────────────────────────────
+    // risk_per_trade_usd: the maximum dollar loss per trade (SL + spread cost).
+    // Size is computed dynamically at entry: size = risk$ / (sl_abs + spread) / tick_mult
+    // Set to 0.0 to use legacy fixed ENTRY_SIZE / sig.size (backward-compatible default).
+    // Start conservative (e.g. 50.0) and increase as shadow P&L validates the strategy.
+    double risk_per_trade_usd = 0.0;  // 0 = disabled, use fixed sizes
+    // Per-symbol hard cap on lot size — safety net regardless of computed size.
+    // Prevents a misconfigured risk_per_trade from opening an oversized position.
+    double max_lot_gold    = 0.50;   // GOLD.F max lots per trade
+    double max_lot_indices = 0.20;   // SP/NQ/DJ30/NAS100/EU indices max lots
+    double max_lot_oil     = 0.50;   // USOIL.F / UKBRENT max lots
+    double max_lot_silver  = 0.20;   // XAGUSD max lots
+    double max_lot_fx      = 5.00;   // EURUSD max lots
     int    ext_ger30_id               = 0;
     int    ext_uk100_id               = 0;
     int    ext_estx50_id              = 0;
@@ -708,6 +722,55 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     if (symbol == "UK100")    return 25.0;    // FTSE CFD: $25/pt
     if (symbol == "ESTX50")   return 25.0;    // EuroStoxx CFD: $25/pt
     return 1.0;  // Unknown symbol: no scaling (safe fallback)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// compute_size() — risk-based position sizing
+//
+// When risk_per_trade_usd > 0 (enabled in config), size every trade so that
+// the maximum dollar loss (SL distance + spread cost) equals risk_per_trade_usd.
+//
+// Formula: size = risk_usd / ((sl_abs + spread_abs) * tick_value_per_lot)
+//
+// Falls back to fallback_size when:
+//   - risk_per_trade_usd == 0.0 (disabled — use legacy fixed sizes)
+//   - sl_abs or tick_mult is zero (safety: avoids division by zero)
+//   - computed size is smaller than fallback (never go below legacy minimum)
+//
+// The result is clamped by a per-symbol max_lot cap so a misconfigured
+// risk parameter can never open a dangerously oversized position.
+// ─────────────────────────────────────────────────────────────────────────────
+static double compute_size(const std::string& symbol,
+                            double sl_abs,       // SL distance in price points
+                            double spread_abs,   // current bid-ask spread in price points
+                            double fallback_size // legacy fixed size (used when disabled)
+                            ) noexcept {
+    if (g_cfg.risk_per_trade_usd <= 0.0) return fallback_size;
+
+    const double tick_mult = tick_value_multiplier(symbol);
+    if (tick_mult <= 0.0 || sl_abs <= 0.0) return fallback_size;
+
+    const double total_risk_pts = sl_abs + spread_abs;
+    double size = g_cfg.risk_per_trade_usd / (total_risk_pts * tick_mult);
+
+    // Round to 2 decimal places (standard lot precision)
+    size = std::floor(size * 100.0 + 0.5) / 100.0;
+    if (size < 0.01) size = 0.01;  // minimum 0.01 lots
+
+    // Per-symbol safety cap — never exceed configured max regardless of risk param
+    double cap = fallback_size;  // safe default
+    if (symbol == "GOLD.F")                                    cap = g_cfg.max_lot_gold;
+    else if (symbol == "EURUSD")                               cap = g_cfg.max_lot_fx;
+    else if (symbol == "XAGUSD")                               cap = g_cfg.max_lot_silver;
+    else if (symbol == "USOIL.F" || symbol == "UKBRENT")       cap = g_cfg.max_lot_oil;
+    else                                                       cap = g_cfg.max_lot_indices;
+
+    size = std::min(size, cap);
+
+    // Never go below legacy fallback — risk sizing only scales UP from legacy
+    size = std::max(size, fallback_size);
+
+    return size;
 }
 
 static void manage_shadow_signals_on_tick(const std::string& sym, double bid, double ask) {
@@ -1530,6 +1593,13 @@ static void load_config(const std::string& path) {
             if (k=="min_entry_gap_sec")    g_cfg.min_entry_gap_sec = std::stoi(v);
             if (k=="max_spread_entry_pct") g_cfg.max_spread_pct    = std::stod(v);
             if (k=="max_latency_ms")       g_cfg.max_latency_ms    = std::stod(v);
+            // Risk-based position sizing
+            if (k=="risk_per_trade_usd")   g_cfg.risk_per_trade_usd = std::stod(v);
+            if (k=="max_lot_gold")         g_cfg.max_lot_gold       = std::stod(v);
+            if (k=="max_lot_indices")      g_cfg.max_lot_indices    = std::stod(v);
+            if (k=="max_lot_oil")          g_cfg.max_lot_oil        = std::stod(v);
+            if (k=="max_lot_silver")       g_cfg.max_lot_silver     = std::stod(v);
+            if (k=="max_lot_fx")           g_cfg.max_lot_fx         = std::stod(v);
             // Backward-compat: older configs place breakout keys under [risk].
             // Parse them here too so tuned values are not silently ignored.
             if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct = std::stod(v);
@@ -1620,6 +1690,14 @@ static void sanitize_config() noexcept {
     g_cfg.min_breakout_pct    = clampd(g_cfg.min_breakout_pct, 0.0, 10.0, 0.25);
     g_cfg.ustec_pilot_size    = clampd(g_cfg.ustec_pilot_size, 0.05, 2.0, 0.35);
 
+    // Risk-based sizing sanitization
+    g_cfg.risk_per_trade_usd = clampd(g_cfg.risk_per_trade_usd, 0.0, 10000.0, 0.0);
+    g_cfg.max_lot_gold       = clampd(g_cfg.max_lot_gold,    0.01, 10.0, 0.50);
+    g_cfg.max_lot_indices    = clampd(g_cfg.max_lot_indices, 0.01, 10.0, 0.20);
+    g_cfg.max_lot_oil        = clampd(g_cfg.max_lot_oil,     0.01, 10.0, 0.50);
+    g_cfg.max_lot_silver     = clampd(g_cfg.max_lot_silver,  0.01, 10.0, 0.20);
+    g_cfg.max_lot_fx         = clampd(g_cfg.max_lot_fx,      0.01, 50.0, 5.00);
+
     g_cfg.sp_vol_thresh_pct   = clampd(g_cfg.sp_vol_thresh_pct, 0.0, 10.0, 0.04);
     g_cfg.nq_vol_thresh_pct   = clampd(g_cfg.nq_vol_thresh_pct, 0.0, 10.0, 0.05);
     g_cfg.oil_vol_thresh_pct  = clampd(g_cfg.oil_vol_thresh_pct, 0.0, 10.0, 0.08);
@@ -1645,6 +1723,17 @@ static void sanitize_config() noexcept {
     std::cout << "[CONFIG] risk max_positions=" << g_cfg.max_open_positions
               << " max_consec_losses=" << g_cfg.max_consec_losses
               << " loss_pause_sec=" << g_cfg.loss_pause_sec << "\n";
+    if (g_cfg.risk_per_trade_usd > 0.0) {
+        std::cout << "[CONFIG] RISK-SIZING ENABLED risk_per_trade=$"
+                  << g_cfg.risk_per_trade_usd
+                  << " max_lot: gold=" << g_cfg.max_lot_gold
+                  << " idx=" << g_cfg.max_lot_indices
+                  << " oil=" << g_cfg.max_lot_oil
+                  << " silver=" << g_cfg.max_lot_silver
+                  << " fx=" << g_cfg.max_lot_fx << "\n";
+    } else {
+        std::cout << "[CONFIG] RISK-SIZING DISABLED (risk_per_trade_usd=0) — using fixed lot sizes\n";
+    }
 }
 
 static void apply_shadow_research_profile() noexcept {
@@ -2000,12 +2089,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sig.valid) {
             g_telemetry.UpdateLastSignal(sym.c_str(),
                 sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
+            // Risk-based sizing: compute lot size from SL distance + current spread.
+            // sl_abs = entry × SL_PCT / 100 (SL distance in price points).
+            // Falls back to eng.ENTRY_SIZE when risk_per_trade_usd=0 (disabled).
+            const double sl_abs     = sig.entry * eng.SL_PCT / 100.0;
+            const double spread_abs = ask - bid;
+            const double lot_size   = compute_size(sym, sl_abs, spread_abs, eng.ENTRY_SIZE);
+            eng.ENTRY_SIZE = lot_size;  // update so TradeRecord.size reflects actual size
             std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
                       << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
                       << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
+                      << " size=" << lot_size
                       << " regime=" << regime << "\033[0m\n";
             // ── Live order dispatch (no-op in SHADOW mode) ──────────────────
-            send_live_order(sym, sig.is_long, eng.ENTRY_SIZE, sig.entry);
+            send_live_order(sym, sig.is_long, lot_size, sig.entry);
         }
     };
 
@@ -2072,18 +2169,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (gsig.valid) {
             g_telemetry.UpdateLastSignal("GOLD.F",
                 gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason);
+            // Risk-based sizing for gold stack.
+            // sl_abs = sl_ticks × $0.10/tick. Falls back to gsig.size when disabled.
+            const double gold_sl_abs  = gsig.sl_ticks * 0.10;
+            const double gold_spread  = ask - bid;
+            const double gold_lot     = compute_size("GOLD.F", gold_sl_abs, gold_spread, gsig.size > 0.0 ? gsig.size : 0.02);
             std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
                       << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
                       << " entry=" << gsig.entry
                       << " tp="    << gsig.tp_ticks << "ticks"
                       << " sl="    << gsig.sl_ticks << "ticks"
+                      << " size="  << gold_lot
                       << " conf="  << gsig.confidence
                       << " eng="   << gsig.engine
                       << " reason=" << gsig.reason
                       << " regime=" << g_gold_stack.regime_name()
                       << " vwap="  << g_gold_stack.vwap()
                       << "\033[0m\n";
-            send_live_order("GOLD.F", gsig.is_long, gsig.size > 0.0 ? gsig.size : 1.0, gsig.entry);
+            send_live_order("GOLD.F", gsig.is_long, gold_lot, gsig.entry);
         }
 
         // ── Latency Edge Stack: co-location speed engines ─────────────────────
