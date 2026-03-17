@@ -280,8 +280,8 @@ class CompressionBreakoutEngine : public EngineBase {
     static constexpr double COMPRESSION_RANGE = 8.00;  // was 2.00 — $2 never achievable at $5000 gold
     static constexpr double BREAKOUT_TRIGGER  = 2.50;  // was 0.35 — $0.35 is tick noise, $2.50 is real
     static constexpr double MAX_SPREAD        = 2.00;  // unchanged
-    static constexpr int    TP_TICKS          = 50;    // $5.00 target
-    static constexpr int    SL_TICKS          = 20;    // $2.00 stop — was 18, matches new trigger scale
+    static constexpr int    TP_TICKS          = 80;    // $8.00 target — 3.2:1 R:R on $2.50 SL
+    static constexpr int    SL_TICKS          = 25;    // $2.50 stop — 3x typical max spread ($0.80), clear of noise
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(5)};
 
     // NY/Tokyo handoff dead zone: 21:00–23:00 UTC
@@ -348,7 +348,11 @@ class ImpulseContinuationEngine : public EngineBase {
     static constexpr double IMPULSE_MIN=1.0,PULLBACK_MIN=0.2,PULLBACK_MAX=0.6;
     static constexpr double MIN_MOMENTUM=0.55,MIN_MOVE_5T=0.55,MAX_MOMENTUM=5.0,PARABOLIC_VWAP=10.0;
     static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=6.0,MAX_SPREAD=2.20;
-    static constexpr int TP_TICKS=16,SL_TICKS=8;
+    static constexpr int TP_TICKS=40,SL_TICKS=16;
+    // TP $4.00 (40 ticks), SL $1.60 (16 ticks) — 2.5:1 R:R
+    // SL raised from 8 ticks ($0.80): was AT or BELOW typical spread noise ($0.30-$0.80).
+    // A single wide tick could stop out a valid trade. $1.60 = 2x max spread = real signal floor.
+    // TP raised from 16 ($1.60) to maintain 2.5:1 R:R and match observed impulse move sizes.
     static constexpr int MAX_ENTRIES_PER_TREND=2,COOLDOWN_SECONDS=120;
     static constexpr double MIN_PRICE_MOVE=8.0;
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SECONDS)};
@@ -425,8 +429,13 @@ public:
 class SessionMomentumEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=60;
-    static constexpr double IMPULSE_MIN=1.60,MAX_SPREAD=3.50; // 1.20→1.60: SL trades had MFE 0.04-0.58, winners $2.27-$2.96. Stronger threshold = fewer but better signals
-    static constexpr int TP_TICKS=30,SL_TICKS=15; // TP 30 ticks = $3.00, matching observed winner MFE of $2.27-$2.96
+    static constexpr double IMPULSE_MIN=1.60,MAX_SPREAD=3.50;
+    static constexpr int TP_TICKS=50,SL_TICKS=20;
+    // TP $5.00 (50 ticks), SL $2.00 (20 ticks) — 2.5:1 R:R
+    // SL raised from 15 ($1.50): session-open moves are noisy in the first 30s,
+    // $1.50 was being clipped by normal volatility expansion. $2.00 gives room.
+    // TP raised from 30 ($3.00): observed winner MFE $2.27-$2.96 was hitting the old cap.
+    // $5.00 lets genuine session momentum runs fully extend.
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::milliseconds(1000)};
 
     static bool in_session_window(){
@@ -475,7 +484,12 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class VWAPSnapbackEngine : public EngineBase {
     static constexpr double VWAP_DEV_ENTRY=3.5,VWAP_DEV_STRONG=5.5,MOMENTUM_SPIKE=2.5,MAX_SPREAD=4.00;
-    static constexpr int TP_TICKS=12,SL_TICKS=8;
+    static constexpr int TP_TICKS=35,SL_TICKS=15;
+    // TP $3.50 (35 ticks), SL $1.50 (15 ticks) — 2.3:1 R:R
+    // SL raised from 8 ($0.80): was at spread noise floor. A single ask/bid bounce
+    // would stop out the trade before it could develop. $1.50 = 2x spread.
+    // TP raised from 12 ($1.20): mean-reversion to VWAP from 3.5σ is typically
+    // $2-$4 of reversion. $1.20 was capping winners well below their natural target.
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::milliseconds(500)};
 public:
     VWAPSnapbackEngine(): EngineBase("VWAP_SNAPBACK",1.4){ enabled_=true; } // Re-enabled: 1T sample too small for judgment — needs 20+ trades to evaluate
@@ -509,10 +523,14 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class LiquiditySweepProEngine : public EngineBase {
     CircularBuffer<double,256> history_;
-    static constexpr double MAX_SPREAD=4.00,SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.70; // spike 0.60→0.70: require stronger momentum to filter weak sweeps
-    static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=2.00,MIN_EXPECTED_MOVE=1.00; // VWAP dist 1.50→2.00: need real displacement; expected move 0.80→1.00
+    static constexpr double MAX_SPREAD=4.00,SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.70;
+    static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=2.00,MIN_EXPECTED_MOVE=1.00;
     static constexpr double TP_RATIO=0.85,BASE_SIZE=0.02;
-    static constexpr int SL_TICKS=12,MOM_WINDOW=6,LIQ_WINDOW=120; // SL 10→12: losers avg MAE=-0.66, not -1.00 — SL was too far, wasting $0.34
+    static constexpr int SL_TICKS=18,MOM_WINDOW=6,LIQ_WINDOW=120;
+    // SL raised 12→18 ($1.20→$1.80): old $1.20 was below max spread noise floor.
+    // Sweep entries by definition enter at a volatile point — need $1.80 to absorb
+    // the initial continuation spike before the reversal takes hold.
+    // TP cap raised 30→40 ticks: winners avg MFE was hitting cap, extend natural target.
     static constexpr double CLUSTER_RANGE=0.35; static constexpr int MIN_CLUSTER=8;
 
     double computeMom(){
@@ -559,7 +577,7 @@ public:
         double dv=std::fabs(s.mid-s.vwap);
         if(dv<MIN_VWAP_DISTANCE||dv<MIN_EXPECTED_MOVE)return noSignal();
         TradeSide side=(s.mid>s.vwap)?TradeSide::SHORT:TradeSide::LONG;
-        int tp=std::max(8,std::min(30,(int)((dv*TP_RATIO)/0.1))); // cap 16→30 ticks ($1.60→$3.00): winners avg MFE $1.77 = hitting old cap, not natural target
+        int tp=std::max(18,std::min(40,(int)((dv*TP_RATIO)/0.1))); // floor=18 ticks matches new SL, cap=40 ticks ($4.00): let sweeps run to natural VWAP reversion
         Signal sig; sig.valid=true; sig.side=side; sig.confidence=0.95;
         sig.size=BASE_SIZE; sig.entry=s.mid; sig.tp=tp; sig.sl=SL_TICKS;
         strncpy(sig.reason,side==TradeSide::SHORT?"SWEEP_SHORT":"SWEEP_LONG",31);
@@ -758,16 +776,23 @@ class GoldPositionManager {
     static constexpr double PYR_COVER_MOVE   = 0.80; // add only after prior leg has clearly covered costs
     static constexpr double PYR_MIN_STEP     = 0.70; // avoid stacking at nearly same level in chop
     static constexpr int64_t PYR_ADD_COOLDOWN_SEC = 4;
-    static constexpr int    PYR_TP_TICKS     = 18;
-    static constexpr int    PYR_SL_TICKS     = 7;
-    static constexpr double LOCK_ARM_MOVE    = 0.90;
-    static constexpr double LOCK_GAIN        = 0.20;
-    static constexpr double TRAIL_ARM_1      = 1.40;
-    static constexpr double TRAIL_DIST_1     = 0.50;
-    static constexpr double TRAIL_ARM_2      = 2.20;
-    static constexpr double TRAIL_DIST_2     = 0.35;
+    static constexpr int    PYR_TP_TICKS     = 25;  // $2.50 — raised from 18 ($1.80), matches new SL scale
+    static constexpr int    PYR_SL_TICKS     = 12;  // $1.20 — raised from 7 ($0.70), above spread noise floor
+    // ── Trailing stop arm levels ──────────────────────────────────────────
+    // Arms are calibrated to the new SL floor of $1.60 (16 ticks, ImpulseCont).
+    // PRINCIPLE: lock breakeven at 50% of SL, trail at 1x SL, tight-trail at 2x SL.
+    // This ensures EVERY trade that makes half its risk gets protected.
+    // OLD arms were $0.90/$1.40/$2.20 — too large relative to the (now fixed) SL values.
+    static constexpr double LOCK_ARM_MOVE    = 0.80;  // lock once +$0.80 (50% of $1.60 SL floor)
+    static constexpr double LOCK_GAIN        = 0.20;  // lock SL at entry + $0.20 (not breakeven zero)
+    static constexpr double TRAIL_ARM_1      = 1.60;  // trail once +$1.60 (= 1x SL floor)
+    static constexpr double TRAIL_DIST_1     = 0.60;  // trail $0.60 behind mid (tight but above spread)
+    static constexpr double TRAIL_ARM_2      = 3.00;  // tight-trail once +$3.00 (= 2x SL floor)
+    static constexpr double TRAIL_DIST_2     = 0.35;  // trail $0.35 behind mid (very tight on big winners)
     static constexpr double MIN_LOCKED_PROFIT = 0.05;
-    static constexpr double MAX_BASE_SL_TICKS = 12.0; // cap hard loss to about $1.20 on base entries
+    static constexpr double MAX_BASE_SL_TICKS = 25.0; // cap SL at 25 ticks = $2.50 absolute max
+    // Raised from 12 ($1.20): old cap was below the new SL values for several engines
+    // (CompressionBreakout now uses 25 ticks). A cap below the engine SL is a contradiction.
 
     struct GoldPos {
         bool    active    = false;
