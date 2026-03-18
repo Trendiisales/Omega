@@ -1460,6 +1460,7 @@ static void rtt_record(double ms) {
 static void write_shadow_csv(const omega::TradeRecord& tr) {
     if (g_shadow_csv.is_open()) {
         g_shadow_csv << tr.entryTs << ',' << tr.symbol << ',' << tr.side
+                     << ',' << tr.engine
                      << ',' << tr.entryPrice << ',' << tr.exitPrice
                      << ',' << tr.pnl << ',' << tr.mfe << ',' << tr.mae
                      << ',' << (tr.exitTs - tr.entryTs)
@@ -3588,14 +3589,16 @@ int main(int argc, char* argv[])
     const std::string shadow_csv_path =
         resolve_audit_log_path(g_cfg.shadow_csv, "shadow/omega_shadow.csv");
     ensure_parent_dir(shadow_csv_path);
-    // Truncate on startup — ensures header always matches current schema.
-    g_shadow_csv.open(shadow_csv_path, std::ios::trunc);
+    g_shadow_csv.open(shadow_csv_path, std::ios::app);
     if (!g_shadow_csv.is_open()) {
         std::cerr << "[OMEGA-FATAL] Failed to open shadow trade CSV: " << shadow_csv_path << "\n";
         return 1;
     }
-    g_shadow_csv << "ts_unix,symbol,side,entry_px,exit_px,pnl,mfe,mae,"
-                    "hold_sec,reason,spread_at_entry,latency_ms,regime\n";
+    // Write header only if file is empty — never truncate, data must survive restarts
+    g_shadow_csv.seekp(0, std::ios::end);
+    if (g_shadow_csv.tellp() == std::streampos(0))
+        g_shadow_csv << "ts_unix,symbol,side,engine,entry_px,exit_px,pnl,mfe,mae,"
+                        "hold_sec,exit_reason,spread_at_entry,latency_ms,regime\n";
     std::cout << "[OMEGA] Shadow CSV: " << shadow_csv_path << "\n";
 
     const std::string shadow_signal_csv_path =
