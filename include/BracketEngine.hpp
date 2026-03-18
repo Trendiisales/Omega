@@ -487,19 +487,11 @@ public:
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
-                     double spread_pct, double vwap) const noexcept
+                     double /*spread_pct*/, double /*vwap*/) const noexcept
     {
-        // Spread gate — absolute points, not pct (gold spread is ~0.3-2.0 pts)
-        // VWAP_MIN_DIST is in price points for gold
-        const double mid_approx = 0.0; // not needed — vwap check uses absolute dist
-        (void)spread_pct;
-        // VWAP filter: don't enter when price is too close to VWAP (chop zone)
-        if (VWAP_MIN_DIST > 0.0 && vwap > 0.0) {
-            // bid/ask not directly available here — use bracket levels as proxy
-            // The check already happens at the top of on_tick before shouldTrade
-            // This is a secondary guard; primary is in on_tick VWAP filter
-        }
-        return true;  // primary VWAP check is done in on_tick via VWAP_MIN_DIST field
+        // Primary VWAP check is done in on_tick via VWAP_MIN_DIST field.
+        // Spread gate for gold uses absolute points — checked in on_tick before shouldTrade.
+        return true;
     }
 };
 

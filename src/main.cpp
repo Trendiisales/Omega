@@ -3451,8 +3451,10 @@ int main(int argc, char* argv[])
             // For indices (e.g. 2.5 pts / 6000) * 100 = 0.042% -- correct.
             // So we store the raw abs value and let the caller provide typical price.
             // Simpler: we know the instrument types — pass typical_price per symbol.
-            auto apply_be = [](omega::BreakoutEngine& eng, const SymbolConfig& c, double typical_price) {
-                if (c.tp_mult   > 0.0) eng.TP_PCT       = eng.SL_PCT * c.tp_mult;
+            auto apply_be = [](auto& eng, const SymbolConfig& c, double typical_price) {
+                // Apply SL_MULT first so TP_PCT = SL_PCT * tp_mult uses the scaled SL
+                if (c.sl_mult > 0.0 && c.sl_mult != 1.0) eng.SL_PCT *= c.sl_mult;
+                if (c.tp_mult > 0.0)                      eng.TP_PCT  = eng.SL_PCT * c.tp_mult;
                 if (c.max_spread > 0.0 && typical_price > 0.0)
                     eng.MAX_SPREAD_PCT = (c.max_spread / typical_price) * 100.0;
                 if (c.min_hold_ms > 0) eng.MAX_HOLD_SEC = c.min_hold_ms / 1000;
@@ -3570,6 +3572,22 @@ int main(int argc, char* argv[])
               << "% vol=" << g_eng_eurusd.VOL_THRESH_PCT << "% mom=" << g_eng_eurusd.MOMENTUM_THRESH_PCT
               << "% brk=" << g_eng_eurusd.MIN_BREAKOUT_PCT << "% gap=" << g_eng_eurusd.MIN_GAP_SEC
               << "s spread=" << g_eng_eurusd.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] GER30    TP=" << g_eng_ger30.TP_PCT  << "% SL=" << g_eng_ger30.SL_PCT
+              << "% vol=" << g_eng_ger30.VOL_THRESH_PCT << "% mom=" << g_eng_ger30.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_ger30.MIN_BREAKOUT_PCT << "% gap=" << g_eng_ger30.MIN_GAP_SEC
+              << "s hold=" << g_eng_ger30.MAX_HOLD_SEC << "s spread=" << g_eng_ger30.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] UK100    TP=" << g_eng_uk100.TP_PCT  << "% SL=" << g_eng_uk100.SL_PCT
+              << "% vol=" << g_eng_uk100.VOL_THRESH_PCT << "% mom=" << g_eng_uk100.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_uk100.MIN_BREAKOUT_PCT << "% gap=" << g_eng_uk100.MIN_GAP_SEC
+              << "s hold=" << g_eng_uk100.MAX_HOLD_SEC << "s spread=" << g_eng_uk100.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] ESTX50   TP=" << g_eng_estx50.TP_PCT << "% SL=" << g_eng_estx50.SL_PCT
+              << "% vol=" << g_eng_estx50.VOL_THRESH_PCT << "% mom=" << g_eng_estx50.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_estx50.MIN_BREAKOUT_PCT << "% gap=" << g_eng_estx50.MIN_GAP_SEC
+              << "s hold=" << g_eng_estx50.MAX_HOLD_SEC << "s spread=" << g_eng_estx50.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] UKBRENT  TP=" << g_eng_brent.TP_PCT  << "% SL=" << g_eng_brent.SL_PCT
+              << "% vol=" << g_eng_brent.VOL_THRESH_PCT << "% mom=" << g_eng_brent.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_brent.MIN_BREAKOUT_PCT << "% gap=" << g_eng_brent.MIN_GAP_SEC
+              << "s hold=" << g_eng_brent.MAX_HOLD_SEC << "s spread=" << g_eng_brent.MAX_SPREAD_PCT << "%\n"
               << "[OMEGA-PARAMS] GOLD.F   GoldEngineStack active | gap=" << g_cfg.gs_cfg.min_entry_gap_sec
               << "s hold=" << g_cfg.gs_cfg.max_hold_sec << "s vwap_min=" << g_cfg.gs_cfg.min_vwap_dislocation
               << " spread_max=" << g_cfg.gs_cfg.max_entry_spread << "\n"
