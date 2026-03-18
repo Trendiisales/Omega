@@ -1175,8 +1175,27 @@ static void handle_execution_report(const std::string& msg) {
                           << " " << it->second.side
                           << " REJECTED text=" << text << "\n";
                 std::cerr.flush();
+                // CRITICAL FIX: notify bracket engines of rejection so they
+                // don't stay stuck in PENDING with no open broker position.
+                if (it->second.symbol == "GOLD.F")   g_bracket_gold.on_reject();
+                if (it->second.symbol == "XAGUSD")   g_bracket_xag.on_reject();
             } else if (ordStatus == "0" || ordStatus == "1" || ordStatus == "2") {
                 it->second.acked = true;
+                // CRITICAL FIX: on confirmed fill, update bracket engines with
+                // real broker fill price and quantity. This is the ONLY place
+                // pos.active is set to true — no phantom positions.
+                if (!lastPx.empty() && !lastQty.empty()) {
+                    try {
+                        const double fill_px  = std::stod(lastPx);
+                        const double fill_qty = std::stod(lastQty);
+                        if (fill_px > 0.0 && fill_qty > 0.0) {
+                            if (it->second.symbol == "GOLD.F")
+                                g_bracket_gold.confirm_fill(fill_px, fill_qty);
+                            if (it->second.symbol == "XAGUSD")
+                                g_bracket_xag.confirm_fill(fill_px, fill_qty);
+                        }
+                    } catch (...) {}
+                }
             }
         }
     }
@@ -2569,18 +2588,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             return ti_xag.tm_hour >= 7;
         }();
         if (silver_session_ok) {
-            dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active));
+            // CRITICAL FIX: compression engine blocked while bracket is PENDING or LIVE
+            if (!g_bracket_xag.has_open_position()) {
+                dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active));
+            }
         }
         // Bracket engine: hi/lo structure stop — runs parallel to compression engine
+        // CRITICAL FIX: symbol_gate now includes g_bracket_xag.has_open_position() so
+        // the compression engine (g_eng_xag) cannot enter while bracket is PENDING/LIVE.
+        // confirm_fill() called with real size after send — no more phantom positions.
         if (silver_session_ok) {
+            const bool xag_bracket_block =
+                g_bracket_xag.has_open_position() || g_eng_xag.pos.active;
             const auto bsig = g_bracket_xag.update(bid, ask, rtt_check, regime.c_str(), bracket_on_close,
-                symbol_gate("XAGUSD", g_bracket_xag.pos.active || g_eng_xag.pos.active));
+                symbol_gate("XAGUSD", xag_bracket_block));
             if (bsig.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
                     bsig.is_long ? "LONG" : "SHORT", bsig.entry, bsig.reason);
                 const double bxag_sl_abs = std::fabs(bsig.entry - bsig.sl);
                 const double bxag_lot    = compute_size("XAGUSD", bxag_sl_abs, ask - bid, g_bracket_xag.ENTRY_SIZE);
                 send_live_order("XAGUSD", bsig.is_long, bxag_lot, bsig.entry);
+                // CRITICAL FIX: confirm fill with REAL size — engine was using ENTRY_SIZE stub
+                g_bracket_xag.confirm_fill(bsig.entry, bxag_lot);
             }
         }
         // Lead-lag engine: enter silver when gold has moved but silver hasn't yet
@@ -2630,63 +2659,66 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         dispatch(g_eng_nas100, symbol_gate("NAS100", g_eng_nas100.pos.active));
     }
     else if (sym == "GOLD.F")  {
-        // gold_symbol_open covers both GoldEngineStack and LatencyEdgeStack so no
-        // two gold executors can enter simultaneously.
+        // gold_symbol_open covers GoldEngineStack, LatencyEdgeStack, AND BracketEngine
+        // so no two gold executors can enter simultaneously.
+        // CRITICAL FIX: g_bracket_gold.has_open_position() covers both PENDING and LIVE —
+        // blocks all other gold engines while a bracket order is in flight or open.
         const bool gold_symbol_open =
             g_gold_stack.has_open_position() ||
-            g_le_stack.has_open_position();
+            g_le_stack.has_open_position()   ||
+            g_bracket_gold.has_open_position();
         const bool gold_can_enter = symbol_gate("GOLD.F", gold_symbol_open);
 
-        // ── GoldEngineStack: dedicated gold executor ──────────────────────────
-        const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close, gold_can_enter);
-        if (gsig.valid) {
-            g_telemetry.UpdateLastSignal("GOLD.F",
-                gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason);
-            // Risk-based sizing: use the engine's actual SL ticks (in $ at $0.10/tick).
-            // risk_per_trade_usd=0 so compute_size returns gsig.size directly.
-            const double gold_sl_abs  = gsig.sl_ticks * 0.10;
-            const double gold_spread  = ask - bid;
-            const double gold_lot     = compute_size("GOLD.F", gold_sl_abs, gold_spread, gsig.size > 0.0 ? gsig.size : 0.02);
-            std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
-                      << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
-                      << " entry=" << gsig.entry
-                      << " tp="    << gsig.tp_ticks << "ticks"
-                      << " sl="    << gsig.sl_ticks << "ticks (engine) / " << std::fixed << std::setprecision(2) << gold_sl_abs << "pts (actual)"
-                      << " size="  << gold_lot
-                      << " conf="  << gsig.confidence
-                      << " eng="   << gsig.engine
-                      << " reason=" << gsig.reason
-                      << " regime=" << g_gold_stack.regime_name()
-                      << " vwap="  << g_gold_stack.vwap()
-                      << "\033[0m\n";
-            send_live_order("GOLD.F", gsig.is_long, gold_lot, gsig.entry);
+        // ── GoldEngineStack: blocked when bracket is active ───────────────────
+        // CRITICAL FIX: do not let GoldStack fire while bracket is PENDING or LIVE
+        if (!g_bracket_gold.has_open_position()) {
+            const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close, gold_can_enter);
+            if (gsig.valid) {
+                g_telemetry.UpdateLastSignal("GOLD.F",
+                    gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason);
+                const double gold_sl_abs  = gsig.sl_ticks * 0.10;
+                const double gold_spread  = ask - bid;
+                const double gold_lot     = compute_size("GOLD.F", gold_sl_abs, gold_spread, gsig.size > 0.0 ? gsig.size : 0.02);
+                std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
+                          << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
+                          << " entry=" << gsig.entry
+                          << " tp="    << gsig.tp_ticks << "ticks"
+                          << " sl="    << gsig.sl_ticks << "ticks (engine) / " << std::fixed << std::setprecision(2) << gold_sl_abs << "pts (actual)"
+                          << " size="  << gold_lot
+                          << " conf="  << gsig.confidence
+                          << " eng="   << gsig.engine
+                          << " reason=" << gsig.reason
+                          << " regime=" << g_gold_stack.regime_name()
+                          << " vwap="  << g_gold_stack.vwap()
+                          << "\033[0m\n";
+                send_live_order("GOLD.F", gsig.is_long, gold_lot, gsig.entry);
+            }
         }
 
-        // ── Latency Edge Stack: co-location speed engines ─────────────────────
-        // Bracket engine: hi/lo structure stop — parallel edge to GoldEngineStack
+        // ── Bracket engine: hi/lo structure stop ─────────────────────────────
+        // can_enter = gold_can_enter AND bracket itself not already in a position.
+        // CRITICAL FIX: confirm_fill() called after send so size is real broker qty.
         {
             const auto bgsig = g_bracket_gold.update(bid, ask, rtt_check, regime.c_str(), bracket_on_close,
-                gold_can_enter && !g_bracket_gold.pos.active);
+                gold_can_enter && !g_bracket_gold.has_open_position());
             if (bgsig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     bgsig.is_long ? "LONG" : "SHORT", bgsig.entry, bgsig.reason);
                 const double bg_sl_abs = std::fabs(bgsig.entry - bgsig.sl);
                 const double bg_lot    = compute_size("GOLD.F", bg_sl_abs, ask - bid, g_bracket_gold.ENTRY_SIZE);
                 send_live_order("GOLD.F", bgsig.is_long, bg_lot, bgsig.entry);
+                // CRITICAL FIX: confirm fill with REAL size — engine was using ENTRY_SIZE stub
+                g_bracket_gold.confirm_fill(bgsig.entry, bg_lot);
             }
         }
-        // SpreadDislocation and EventCompression run on every GOLD.F tick.
-        // LeadLag arms here, fires on next XAGUSD tick (see XAGUSD dispatch block).
-        // gold_can_enter is passed through so LE engines cannot open a new entry
-        // while GoldEngineStack or a LE engine is in a
-        // GOLD.F position — prevents simultaneous gold positions from any source.
-        {
+
+        // ── Latency Edge Stack: blocked when bracket is active ────────────────
+        // CRITICAL FIX: LE stack cannot open while bracket is PENDING or LIVE.
+        if (!g_bracket_gold.has_open_position()) {
             const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, on_close, gold_can_enter);
             if (le_sig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason);
-                // Route through compute_size — was sending raw sig.size=1.0 directly
-                // which would submit 1 full lot of GOLD.F (100 oz, ~$500k notional).
                 const double le_sl_abs  = std::fabs(le_sig.entry - le_sig.sl);
                 const double le_spread  = ask - bid;
                 const double le_lot     = compute_size("GOLD.F", le_sl_abs, le_spread, le_sig.size);

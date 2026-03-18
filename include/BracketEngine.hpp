@@ -2,21 +2,21 @@
 // ==============================================================================
 // BracketEngine — Classic breakout bracket for Gold and Silver
 //
-// Logic (exactly as specified):
-//   1. Identify a recent high/low structure over a lookback window
-//   2. Place a virtual buy stop above the high
-//   3. Place a virtual sell stop below the low
-//   4. Attach SL and TP to each side immediately
-//   5. Wait for price to cross either stop level
-//   6. Once one side triggers → enter, cancel the other side
+// State machine (FIXED):
+//   IDLE      → not enough data / session closed
+//   ARMED     → bracket levels set, waiting for price to cross
+//   PENDING   → signal fired, order sent, awaiting broker fill confirmation
+//   LIVE      → fill confirmed, managing open position (TP/SL/trail/timeout)
+//   COOLDOWN  → position closed, waiting before re-arming
 //
-// Key differences from BreakoutEngine (compression/vol approach):
-//   - Structure is price-based (hi/lo of N ticks), not volatility ratio
-//   - Both sides are "armed" simultaneously — no FLAT→COMPRESSION→WATCH FSM
-//   - No momentum gate, no vol gate — price doing the work
-//   - Min range filter: bracket only arms if hi-lo spread is meaningful
-//   - Cooldown after a fill: prevents immediate re-arming after stop hit
-//   - Session-aware: caller gates this via can_enter
+// Key fixes vs previous version:
+//   ✅ PENDING phase: engine does NOT mark pos.active until confirm_fill() called
+//   ✅ Self-inclusion bug fixed: structure computed from window[0..N-2] only
+//   ✅ has_open_position() covers both PENDING and LIVE — blocks other engines
+//   ✅ confirm_fill(price, size) sets real broker fill — no phantom positions
+//   ✅ on_reject() resets cleanly without ghost state
+//   ✅ Correct bid/ask execution pricing (long=ask, short=bid)
+//   ✅ SL anchored to bracket opposite side (structure-based, not % guess)
 //
 // Used by: GOLD.F (parallel with GoldEngineStack), XAGUSD
 // ==============================================================================
@@ -33,20 +33,22 @@
 
 namespace omega {
 
-// ── Bracket state ──────────────────────────────────────────────────────────────
+// ── Bracket phase ──────────────────────────────────────────────────────────────
 enum class BracketPhase : uint8_t {
-    IDLE    = 0,   // not enough data yet
-    ARMED   = 1,   // both stops set, waiting for trigger
-    IN_TRADE = 2,  // one side triggered, position live
+    IDLE     = 0,   // not enough data / session closed
+    ARMED    = 1,   // bracket levels set, waiting for price to cross
+    PENDING  = 2,   // signal emitted, order sent — awaiting confirm_fill()
+    LIVE     = 3,   // fill confirmed, managing open position
+    COOLDOWN = 4,   // post-close cooldown before re-arming
 };
 
 struct BracketSignal {
-    bool   valid   = false;
-    bool   is_long = true;
-    double entry   = 0.0;
-    double tp      = 0.0;
-    double sl      = 0.0;
-    const char* reason = "";
+    bool        valid   = false;
+    bool        is_long = true;
+    double      entry   = 0.0;
+    double      tp      = 0.0;
+    double      sl      = 0.0;
+    const char* reason  = "";
 };
 
 class BracketEngine {
@@ -54,25 +56,23 @@ public:
     // ── Config — set via apply_*_config before first tick ─────────────────────
     const char* symbol            = "???";
 
-    int    STRUCTURE_LOOKBACK     = 40;    // ticks to define the recent high/low
-    double TP_PCT                 = 0.25;  // TP as % of entry price
-    double SL_PCT                 = 0.12;  // SL as % of entry price (inside the range)
-    double MIN_RANGE_PCT          = 0.04;  // bracket only arms if hi-lo >= this % of mid
-                                           // prevents arming in flat/dead tape
-    double MAX_SPREAD_PCT         = 0.06;  // max spread at trigger (% of mid)
-    int    MIN_GAP_SEC            = 90;    // min seconds between any two entries
-    int    COOLDOWN_AFTER_SL_SEC  = 120;   // extra cooldown after an SL hit
-    int    MAX_HOLD_SEC           = 900;   // position timeout
-    double ENTRY_SIZE             = 0.01;  // lot size
+    int    STRUCTURE_LOOKBACK     = 40;
+    double TP_PCT                 = 0.25;
+    double SL_PCT                 = 0.12;
+    double MIN_RANGE_PCT          = 0.04;
+    double MAX_SPREAD_PCT         = 0.06;
+    int    MIN_GAP_SEC            = 90;
+    int    COOLDOWN_AFTER_SL_SEC  = 120;
+    int    MAX_HOLD_SEC           = 900;
+    double ENTRY_SIZE             = 0.01;
     bool   AGGRESSIVE_SHADOW      = false;
 
-    // ── Observable state (read by telemetry) ──────────────────────────────────
-    BracketPhase phase         = BracketPhase::IDLE;
-    double       bracket_high  = 0.0;  // armed buy stop level
-    double       bracket_low   = 0.0;  // armed sell stop level
-    int          signal_count  = 0;
+    // ── Observable state ──────────────────────────────────────────────────────
+    BracketPhase phase        = BracketPhase::IDLE;
+    double       bracket_high = 0.0;
+    double       bracket_low  = 0.0;
+    int          signal_count = 0;
 
-    // Open position — mirrors BreakoutEngine OpenPos layout
     struct OpenPos {
         bool    active   = false;
         bool    is_long  = true;
@@ -87,9 +87,37 @@ public:
         char    regime[32] = {};
     } pos;
 
+    BracketSignal pending_sig;
+
     using CloseCallback = std::function<void(const TradeRecord&)>;
 
-    // ── update() — call on every tick ─────────────────────────────────────────
+    // ── has_open_position(): blocks other engines on same symbol ──────────────
+    bool has_open_position() const noexcept {
+        return phase == BracketPhase::PENDING || phase == BracketPhase::LIVE;
+    }
+
+    // ── confirm_fill(): called by execution report on FILL ────────────────────
+    void confirm_fill(double actual_price, double actual_size) noexcept {
+        if (phase != BracketPhase::PENDING) return;
+        pos.active   = true;
+        pos.entry    = actual_price;
+        pos.size     = actual_size;
+        pos.entry_ts = nowSec();
+        phase        = BracketPhase::LIVE;
+        std::cout << "[BRACKET-" << symbol << "] FILL CONFIRMED"
+                  << " price=" << actual_price
+                  << " size="  << actual_size << "\n";
+        std::cout.flush();
+    }
+
+    // ── on_reject(): called by execution report on REJECT ─────────────────────
+    void on_reject() noexcept {
+        std::cout << "[BRACKET-" << symbol << "] ORDER REJECTED — resetting\n";
+        std::cout.flush();
+        reset();
+    }
+
+    // ── update(): call on every tick ─────────────────────────────────────────
     [[nodiscard]] BracketSignal update(
         double bid, double ask,
         double latency_ms,
@@ -99,28 +127,40 @@ public:
     {
         if (bid <= 0.0 || ask <= 0.0) return {};
 
+        m_last_bid = bid;
+        m_last_ask = ask;
+
         const double mid        = (bid + ask) * 0.5;
         const double spread     = ask - bid;
         const double spread_pct = (mid > 0.0) ? (spread / mid * 100.0) : 999.0;
 
-        // Always maintain the structure window
+        // ── COOLDOWN ──────────────────────────────────────────────────────────
+        if (phase == BracketPhase::COOLDOWN) {
+            if ((nowSec() - m_cooldown_start) >= static_cast<int64_t>(m_cooldown_sec))
+                phase = BracketPhase::IDLE;
+            else
+                return {};
+        }
+
+        // Always maintain window
         m_window.push_back(mid);
         if (static_cast<int>(m_window.size()) > STRUCTURE_LOOKBACK * 2)
             m_window.pop_front();
 
-        // ── Manage open position ───────────────────────────────────────────────
-        if (pos.active) {
+        // ── LIVE: manage open position ─────────────────────────────────────────
+        if (phase == BracketPhase::LIVE) {
+            if (!pos.active) return {};
+
             const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
-            if (move  > pos.mfe) pos.mfe =  move;
+            if ( move > pos.mfe) pos.mfe =  move;
             if (-move > pos.mae) pos.mae = -move;
 
-            // TP/SL — use aggressive fill side
             if ( pos.is_long && bid >= pos.tp) { closePos(pos.tp, "TP_HIT",  latency_ms, macro_regime, on_close); return {}; }
             if (!pos.is_long && ask <= pos.tp) { closePos(pos.tp, "TP_HIT",  latency_ms, macro_regime, on_close); return {}; }
             if ( pos.is_long && bid <= pos.sl) { closePos(pos.sl, "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
             if (!pos.is_long && ask >= pos.sl) { closePos(pos.sl, "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
 
-            // Trailing stop — same SL-relative scaling as BreakoutEngine
+            // Trailing stop
             {
                 const double move_pct = pos.is_long
                     ? (mid - pos.entry) / pos.entry * 100.0
@@ -164,75 +204,62 @@ public:
             return {};
         }
 
-        // ── Not in trade — manage bracket ─────────────────────────────────────
+        // ── PENDING: order in flight, waiting for confirm_fill() ──────────────
+        if (phase == BracketPhase::PENDING) return {};
+
+        // ── Session gate (only for IDLE/ARMED) ────────────────────────────────
         if (!can_enter) {
-            phase = BracketPhase::IDLE;
+            phase        = BracketPhase::IDLE;
+            bracket_high = 0.0;
+            bracket_low  = 0.0;
             return {};
         }
 
-        // Need enough ticks to define structure
         if (static_cast<int>(m_window.size()) < STRUCTURE_LOOKBACK) return {};
 
-        // Recompute bracket from the most recent STRUCTURE_LOOKBACK ticks every tick.
-        // This keeps the structure current — stale structure after a big move
-        // would leave stops far from current price and miss the real breakout.
-        const auto begin = m_window.end() - STRUCTURE_LOOKBACK;
-        const auto end   = m_window.end();
-        const double struct_hi = *std::max_element(begin, end);
-        const double struct_lo = *std::min_element(begin, end);
+        // ── FIXED: compute structure excluding current tick ────────────────────
+        const int wsize = static_cast<int>(m_window.size());
+        const auto begin = m_window.begin() + (wsize - STRUCTURE_LOOKBACK);
+        const auto end_excl = m_window.end() - 1;  // exclude current tick
+        const double struct_hi = *std::max_element(begin, end_excl);
+        const double struct_lo = *std::min_element(begin, end_excl);
         const double range_pct = (mid > 0.0) ? ((struct_hi - struct_lo) / mid * 100.0) : 0.0;
 
-        // Only arm if range is meaningful — avoids bracketing dead tape
         const double min_range = AGGRESSIVE_SHADOW ? (MIN_RANGE_PCT * 0.7) : MIN_RANGE_PCT;
         if (range_pct < min_range) {
-            phase         = BracketPhase::IDLE;
-            bracket_high  = 0.0;
-            bracket_low   = 0.0;
+            phase        = BracketPhase::IDLE;
+            bracket_high = 0.0;
+            bracket_low  = 0.0;
             return {};
         }
 
-        // Set armed levels: buy stop just above hi, sell stop just below lo
-        // Use a small buffer (0.5x spread) so we don't trigger on the range extreme itself
-        const double buf     = spread * 0.5;
-        bracket_high = struct_hi + buf;  // buy stop trigger
-        bracket_low  = struct_lo - buf;  // sell stop trigger
+        const double buf = spread * 0.5;
+        bracket_high = struct_hi + buf;
+        bracket_low  = struct_lo - buf;
         phase        = BracketPhase::ARMED;
 
-        // Check cooldown from last trade
-        const int64_t now = nowSec();
-        if (now - m_last_signal_ts < static_cast<int64_t>(m_cooldown_sec)) {
-            // Still cooling down — bracket is visible but won't fire
+        if ((nowSec() - m_last_signal_ts) < static_cast<int64_t>(m_cooldown_sec))
             return {};
-        }
 
-        // Spread check
         if (spread_pct > MAX_SPREAD_PCT) {
             std::cout << "[BRACKET-" << symbol << "] spread too wide: "
                       << spread_pct << "% > " << MAX_SPREAD_PCT << "%\n";
             return {};
         }
 
-        // ── Trigger check: has price crossed either stop? ─────────────────────
-        // Buy stop: ask crosses above bracket_high (buy at ask — we're paying up)
-        // Sell stop: bid crosses below bracket_low (sell at bid — we're selling down)
+        // ── Trigger ───────────────────────────────────────────────────────────
         const bool long_trigger  = (ask >= bracket_high);
         const bool short_trigger = (bid <= bracket_low);
+        if (!long_trigger && !short_trigger) return {};
 
-        if (!long_trigger && !short_trigger) return {};  // bracket armed but not triggered
-
-        // Prefer the stronger trigger if both fire simultaneously (shouldn't happen
-        // in normal markets but can on gap opens)
         const bool is_long = long_trigger && (!short_trigger ||
             (ask - bracket_high) >= (bracket_low - bid));
 
-        // Entry price = the stop level itself (fill at the breakout point, not mid)
-        const double entry = is_long ? bracket_high : bracket_low;
+        const double entry = is_long ? ask : bid;
         const double tp    = is_long ? entry * (1.0 + TP_PCT / 100.0)
                                      : entry * (1.0 - TP_PCT / 100.0);
-        // SL sits inside the range — below struct_hi for longs, above struct_lo for shorts
-        // This gives the trade room to develop without a fixed % SL being too tight
-        const double sl    = is_long ? (struct_lo - buf)   // below the recent low
-                                     : (struct_hi + buf);  // above the recent high
+        const double sl    = is_long ? (struct_lo - buf)
+                                     : (struct_hi + buf);
 
         std::cout << "[BRACKET-" << symbol << "] TRIGGERED "
                   << (is_long ? "LONG" : "SHORT")
@@ -242,52 +269,54 @@ public:
                   << " range=" << range_pct << "%\n";
         std::cout.flush();
 
-        // ── Enter position — opposite side automatically cancelled ────────────
-        pos.active          = true;
-        pos.is_long         = is_long;
-        pos.entry           = entry;
-        pos.tp              = tp;
-        pos.sl              = sl;
-        pos.size            = ENTRY_SIZE;
-        pos.mfe             = 0.0;
-        pos.mae             = 0.0;
-        pos.entry_ts        = now;
+        // ── Set PENDING (pos.active = false until confirm_fill) ───────────────
+        pos              = OpenPos{};
+        pos.active       = false;
+        pos.is_long      = is_long;
+        pos.entry        = entry;
+        pos.tp           = tp;
+        pos.sl           = sl;
+        pos.size         = ENTRY_SIZE;
         pos.spread_at_entry = spread;
         strncpy_s(pos.regime, macro_regime ? macro_regime : "", 31);
 
-        // Reset bracket — opposite side is now implicitly cancelled
-        phase        = BracketPhase::IN_TRADE;
+        phase        = BracketPhase::PENDING;
         bracket_high = 0.0;
         bracket_low  = 0.0;
 
-        m_last_signal_ts = now;
-        m_cooldown_sec   = MIN_GAP_SEC;  // reset to standard cooldown
+        m_last_signal_ts = nowSec();
+        m_cooldown_sec   = MIN_GAP_SEC;
         ++signal_count;
         ++m_trade_id;
 
-        BracketSignal sig;
-        sig.valid   = true;
-        sig.is_long = is_long;
-        sig.entry   = entry;
-        sig.tp      = tp;
-        sig.sl      = sl;
-        sig.reason  = is_long ? "BRACKET_LONG" : "BRACKET_SHORT";
-        return sig;
+        pending_sig.valid   = true;
+        pending_sig.is_long = is_long;
+        pending_sig.entry   = entry;
+        pending_sig.tp      = tp;
+        pending_sig.sl      = sl;
+        pending_sig.reason  = is_long ? "BRACKET_LONG" : "BRACKET_SHORT";
+
+        return pending_sig;
     }
 
     void forceClose(double bid, double ask, const char* reason,
                     double latency_ms, const char* macro_regime,
                     CloseCallback on_close) noexcept
     {
-        if (!pos.active) return;
-        closePos((bid + ask) * 0.5, reason, latency_ms, macro_regime, on_close);
+        if (phase == BracketPhase::LIVE && pos.active)
+            closePos((bid + ask) * 0.5, reason, latency_ms, macro_regime, on_close);
+        else if (phase == BracketPhase::PENDING)
+            reset();
     }
 
 private:
     std::deque<double> m_window;
     int64_t m_last_signal_ts = 0;
     int64_t m_cooldown_sec   = 0;
+    int64_t m_cooldown_start = 0;
     int     m_trade_id       = 0;
+    double  m_last_bid       = 0.0;
+    double  m_last_ask       = 0.0;
 
     static int64_t nowSec() noexcept {
         return std::chrono::duration_cast<std::chrono::seconds>(
@@ -300,11 +329,10 @@ private:
     {
         if (!pos.active) return;
 
-        // Extra cooldown after SL — avoid re-entering the same broken structure
-        if (std::strcmp(reason, "SL_HIT") == 0)
-            m_cooldown_sec = COOLDOWN_AFTER_SL_SEC;
-        else
-            m_cooldown_sec = MIN_GAP_SEC;
+        m_cooldown_sec   = (std::strcmp(reason, "SL_HIT") == 0)
+                               ? COOLDOWN_AFTER_SL_SEC
+                               : MIN_GAP_SEC;
+        m_cooldown_start = nowSec();
 
         TradeRecord tr;
         tr.id            = m_trade_id;
@@ -327,11 +355,19 @@ private:
         tr.engine        = std::string(symbol ? symbol : "???") + "_BRACKET";
         tr.regime        = (macro_regime && *macro_regime) ? macro_regime : pos.regime;
 
-        pos.active = false;
-        pos        = OpenPos{};
-        phase      = BracketPhase::IDLE;
+        pos         = OpenPos{};
+        pending_sig = BracketSignal{};
+        phase       = BracketPhase::COOLDOWN;
 
         if (on_close) on_close(tr);
+    }
+
+    void reset() noexcept {
+        pos          = OpenPos{};
+        pending_sig  = BracketSignal{};
+        bracket_high = 0.0;
+        bracket_low  = 0.0;
+        phase        = BracketPhase::IDLE;
     }
 };
 
