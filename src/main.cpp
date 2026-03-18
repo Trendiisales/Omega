@@ -80,7 +80,7 @@ struct OmegaConfig {
     int    compression_lookback  = 50;
     int    baseline_lookback     = 200;
     double compression_threshold = 0.80;
-    int    max_hold_sec          = 1500;
+    int    max_hold_sec          = 1800;  // raised from 1500 — spec MIN_HOLD values imply longer trades
     int    min_entry_gap_sec     = 30;
     double max_spread_pct        = 0.05;
     double max_latency_ms        = 60.0;   // paper default: realistic remote VPS RTT without starving all entries
@@ -142,55 +142,55 @@ struct OmegaConfig {
     int session_end_utc   = 21;
     bool session_asia     = true;  // enable Asia/Tokyo window 22:00-05:00 UTC
 
-    // SP (US500) -- liquid, tight compression, better TP:SL than generic default
-    double sp_tp_pct              = 0.600;  // 0.60% TP: clean SP breaks extend 0.5-0.8%
-    double sp_sl_pct              = 0.350;  // 0.35% SL: above noise, cut failed breaks fast
-    double sp_vol_thresh_pct      = 0.040;  // 0.04%: tighter than default, SP compression is real
-    int    sp_min_gap_sec         = 60;     // 1min gap between signals
+    // SP (US500) -- spec: TP_MULT=1.7, SL_MULT=1.0, MAX_SPREAD=2.5pts@6000=0.042%, MIN_HOLD=22s
+    double sp_tp_pct              = 0.595;  // TP_MULT=1.7 × SL=0.35% ≈ 0.595%
+    double sp_sl_pct              = 0.350;
+    double sp_vol_thresh_pct      = 0.040;
+    int    sp_min_gap_sec         = 60;
     double sp_momentum_thresh_pct = 0.006;
     double sp_min_breakout_pct    = 0.030;
-    double sp_max_spread_pct      = 0.040;
+    double sp_max_spread_pct      = 0.042;  // 2.5pts @ ~6000
     double sp_compression_threshold = 0.85;
     double sp_vix_panic           = 40.0;
     double sp_div_threshold       = 0.0060;
 
-    // NQ (USTEC) -- higher beta, wider TP
-    double nq_tp_pct              = 0.700;  // 0.70% TP: NQ extends further than SP
-    double nq_sl_pct              = 0.400;  // 0.40% SL: slightly more room for NQ noise
-    double nq_vol_thresh_pct      = 0.050;  // 0.05%: NQ needs a full vol spike
-    int    nq_min_gap_sec         = 60;     // 1min gap
+    // NQ (USTEC) -- spec: TP_MULT=1.6, SL_MULT=1.0, MAX_SPREAD=3.0pts@19000=0.016%
+    double nq_tp_pct              = 0.640;  // TP_MULT=1.6 × SL=0.40%
+    double nq_sl_pct              = 0.400;
+    double nq_vol_thresh_pct      = 0.050;
+    int    nq_min_gap_sec         = 60;
     double nq_momentum_thresh_pct = 0.005;
     double nq_min_breakout_pct    = 0.040;
-    double nq_max_spread_pct      = 0.050;
+    double nq_max_spread_pct      = 0.016;  // 3.0pts @ ~19000 — tightened from 0.050
     double nq_compression_threshold = 0.85;
     double nq_vix_panic           = 40.0;
     double nq_div_threshold       = 0.0060;
 
-    // Us30 (DJ30)
+    // Us30 (DJ30) -- spec: TP_MULT=1.7, SL_MULT=1.0, MAX_SPREAD=3.5pts@42000=0.008%
     double us30_momentum_thresh_pct   = 0.006;
     double us30_min_breakout_pct      = 0.040;
-    double us30_max_spread_pct        = 0.050;
+    double us30_max_spread_pct        = 0.008;  // 3.5pts @ ~42000 — tightened from 0.050
     double us30_compression_threshold = 0.85;
     double us30_vix_panic             = 40.0;
     double us30_div_threshold         = 0.0060;
 
-    // Nas100 (NAS100 cash)
+    // Nas100 (NAS100 cash) -- spec: TP_MULT=1.6, SL_MULT=1.0, MAX_SPREAD=3.0pts@19000=0.016%
     double nas100_momentum_thresh_pct   = 0.005;
     double nas100_min_breakout_pct      = 0.040;
-    double nas100_max_spread_pct        = 0.060;
+    double nas100_max_spread_pct        = 0.016;  // 3.0pts @ ~19000 — tightened from 0.060
     double nas100_compression_threshold = 0.85;
     double nas100_vix_panic             = 40.0;
     double nas100_div_threshold         = 0.0060;
 
-    // Oil (USOIL) -- fundamentally different: 1-2% typical moves
-    double oil_tp_pct                 = 1.200;
-    double oil_sl_pct                 = 0.600;
+    // Oil (USOIL) -- spec: TP_MULT=1.8, SL_MULT=1.2, MAX_SPREAD=1.5pts@97=1.55%
+    double oil_tp_pct                 = 1.440;  // TP_MULT=1.8 × SL=0.8% (wider for oil)
+    double oil_sl_pct                 = 0.800;  // widened: oil needs room (SL_MULT=1.2)
     double oil_vol_thresh_pct         = 0.080;
     int    oil_min_gap_sec            = 90;
     int    oil_max_hold_sec           = 1800;
     double oil_momentum_thresh_pct    = 0.050;
     double oil_min_breakout_pct       = 0.060;
-    double oil_max_spread_pct         = 0.120;
+    double oil_max_spread_pct         = 0.120;  // 1.5pts @ ~97 ≈ 1.55% — keep current
     double oil_compression_threshold  = 0.80;
     double oil_vix_panic              = 50.0;
 
@@ -219,14 +219,14 @@ struct OmegaConfig {
     double eu_index_min_breakout_pct      = 0.030;
     double eu_index_compression_threshold = 0.85;
 
-    // FX (EURUSD)
-    double fx_tp_pct               = 0.080;
+    // FX (EURUSD) -- spec: TP_MULT=1.5, MAX_SPREAD=0.0002@1.15=0.017%
+    double fx_tp_pct               = 0.060;  // TP_MULT=1.5 × SL=0.040%
     double fx_sl_pct               = 0.040;
     double fx_vol_thresh_pct       = 0.010;
     int    fx_min_gap_sec          = 45;
     double fx_momentum_thresh_pct  = 0.015;
     double fx_min_breakout_pct     = 0.080;
-    double fx_max_spread_pct       = 0.010;
+    double fx_max_spread_pct       = 0.017;  // 0.0002 @ ~1.15 — tightened from 0.010 (was too loose)
     double fx_compression_threshold = 0.85;
 
     // Asia FX (AUDUSD, NZDUSD, USDJPY) — shared session gate flag
@@ -3329,36 +3329,36 @@ int main(int argc, char* argv[])
     g_bracket_gold.configure(
         0.8,    // buffer
         30,     // lookback
-        0.75,   // RR
+        1.6,    // RR (TP_MULT=1.6 per spec)
         120000, // cooldown_ms
-        18.0,   // MIN_RANGE (static fallback when ATR not ready)
-        3.0,    // CONFIRM_MOVE (static fallback)
+        0.40,   // MIN_RANGE static fallback (ATR scaling takes over after 20 ticks)
+        0.05,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
-        15000,  // min_hold_ms
+        12000,  // min_hold_ms (spec: 12000)
         8.0,    // VWAP_MIN_DIST
-        45000,  // MIN_STRUCTURE_MS
-        5000,   // FAILURE_WINDOW_MS
-        20,     // ATR_PERIOD: 20-tick rolling ATR
-        0.15,   // ATR_CONFIRM_K: CONFIRM_MOVE = ATR * 0.15
-        1.5     // ATR_RANGE_K:   MIN_RANGE    = ATR * 1.5
+        30000,  // MIN_STRUCTURE_MS (spec: 30000)
+        5000,   // FAILURE_WINDOW_MS (spec: 5000)
+        20,     // ATR_PERIOD
+        0.15,   // ATR_CONFIRM_K
+        1.5     // ATR_RANGE_K
     );
     g_bracket_gold.ENTRY_SIZE = 0.01;
     g_bracket_gold.symbol     = "GOLD.F";
     g_bracket_xag.configure(
         0.08,   // buffer
         30,     // lookback
-        0.75,   // RR
+        1.4,    // RR (TP_MULT=1.4 per spec)
         120000, // cooldown_ms
-        0.35,   // MIN_RANGE (static fallback)
-        0.06,   // CONFIRM_MOVE (static fallback)
+        0.35,   // MIN_RANGE static fallback
+        0.06,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
-        15000,  // min_hold_ms
+        8000,   // min_hold_ms (spec: 8000)
         0.15,   // VWAP_MIN_DIST
-        30000,  // MIN_STRUCTURE_MS
-        5000,   // FAILURE_WINDOW_MS
-        20,     // ATR_PERIOD: 20-tick rolling ATR
-        0.17,   // ATR_CONFIRM_K: CONFIRM_MOVE = ATR * 0.17
-        1.4     // ATR_RANGE_K:   MIN_RANGE    = ATR * 1.4
+        20000,  // MIN_STRUCTURE_MS (spec: 20000)
+        4000,   // FAILURE_WINDOW_MS (spec: 4000)
+        20,     // ATR_PERIOD
+        0.17,   // ATR_CONFIRM_K
+        1.4     // ATR_RANGE_K
     );
     g_bracket_xag.ENTRY_SIZE = 0.01;
     g_bracket_xag.symbol     = "XAGUSD";
