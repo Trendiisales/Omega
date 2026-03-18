@@ -2637,7 +2637,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()),
                 xag_can && !g_bracket_xag.has_open_position(),
-                regime.c_str(), bracket_on_close);
+                regime.c_str(), bracket_on_close, 0.0);
             const auto bsig = g_bracket_xag.get_signal();
             if (bsig.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
@@ -2744,12 +2744,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 (bh >= 7 && bh <= 11) ||   // London open
                 (bh >= 13 && bh <= 17);    // NY session
 
-            // VWAP distance filter: only trade when price is >8 pts from VWAP
-            // Prevents entering in sideways/mean-reverting tape
+            // VWAP distance filter: lives inside engine via VWAP_MIN_DIST
+            // gold_vwap passed directly to on_tick — no external check needed
             const double gold_vwap = g_gold_stack.vwap();
-            const double gold_mid  = (bid + ask) * 0.5;
-            const bool gold_vwap_ok = (gold_vwap <= 0.0) ||
-                                      (std::fabs(gold_mid - gold_vwap) > 8.0);
 
             // Frequency limit: max 2 bracket trades per minute on gold
             {
@@ -2767,14 +2764,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 gold_can_enter &&
                 !g_bracket_gold.has_open_position() &&
                 gold_bracket_session &&
-                gold_vwap_ok &&
                 gold_freq_ok;
 
             g_bracket_gold.on_tick(bid, ask,
                 static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()),
                 gold_bracket_can_enter,
-                regime.c_str(), bracket_on_close);
+                regime.c_str(), bracket_on_close, gold_vwap);
             const auto bgsig = g_bracket_gold.get_signal();
             if (bgsig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
@@ -3343,26 +3339,28 @@ int main(int argc, char* argv[])
     // Bracket engines — configure() with tuned production params.
     // buffer, lookback, RR, cooldown_ms, MIN_RANGE, CONFIRM_MOVE, confirm_timeout_ms, min_hold_ms
     g_bracket_gold.configure(
-        0.8,    // buffer: 80c above/below bracket level
-        30,     // lookback ticks for structure
-        0.75,   // RR (lower — TP inside real move, not over-reaching)
-        120000, // cooldown after close: 120s
-        18.0,   // MIN_RANGE: gold must have $18 range to arm (was $12)
-        3.0,    // CONFIRM_MOVE: price must move $3 past bracket (was $2)
-        4000,   // confirm timeout: 4s to follow through or back to ARMED
-        15000   // min hold: 15s minimum before SL/TP check
+        0.8,    // buffer
+        30,     // lookback
+        0.75,   // RR
+        120000, // cooldown_ms
+        18.0,   // MIN_RANGE
+        3.0,    // CONFIRM_MOVE
+        4000,   // confirm_timeout_ms
+        15000,  // min_hold_ms
+        8.0     // VWAP_MIN_DIST: block entries within $8 of VWAP
     );
     g_bracket_gold.ENTRY_SIZE = 0.01;
     g_bracket_gold.symbol     = "GOLD.F";
     g_bracket_xag.configure(
-        0.08,   // buffer (was 0.05)
-        30,     // lookback (was 25)
-        0.75,   // RR (was 0.9)
-        120000, // cooldown: 120s (was 90s)
-        0.35,   // MIN_RANGE: silver must have 35c range (was 0.25)
-        0.06,   // CONFIRM_MOVE: 6c follow-through required (was 0.04)
-        4000,   // confirm timeout: 4s
-        15000   // min hold: 15s
+        0.08,   // buffer
+        30,     // lookback
+        0.75,   // RR
+        120000, // cooldown_ms
+        0.35,   // MIN_RANGE
+        0.06,   // CONFIRM_MOVE
+        4000,   // confirm_timeout_ms
+        15000,  // min_hold_ms
+        0.15    // VWAP_MIN_DIST: block entries within 15c of VWAP
     );
     g_bracket_xag.ENTRY_SIZE = 0.01;
     g_bracket_xag.symbol     = "XAGUSD";

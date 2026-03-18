@@ -67,6 +67,7 @@ public:
     double CONFIRM_MOVE          = 0.0;
     int    CONFIRM_TIMEOUT_MS    = 5000;
     int    MIN_HOLD_MS           = 15000;
+    double VWAP_MIN_DIST         = 0.0;   // min distance from VWAP to allow entry
 
     // Legacy fields kept for telemetry reads — not used for logic.
     double ENTRY_SIZE            = 0.01;
@@ -105,7 +106,8 @@ public:
                    double min_range,
                    double confirm_move,
                    int    confirm_timeout_ms,
-                   int    min_hold_ms)
+                   int    min_hold_ms,
+                   double vwap_min_dist = 0.0)
     {
         BUFFER              = buffer;
         STRUCTURE_LOOKBACK  = lookback;
@@ -115,6 +117,7 @@ public:
         CONFIRM_MOVE        = confirm_move;
         CONFIRM_TIMEOUT_MS  = confirm_timeout_ms;
         MIN_HOLD_MS         = min_hold_ms;
+        VWAP_MIN_DIST       = vwap_min_dist;
     }
 
     // ── has_open_position(): blocks other engines ─────────────────────────────
@@ -124,7 +127,8 @@ public:
 
     // ── on_tick(): call every tick — does not return signal (use get_signal()) ─
     void on_tick(double bid, double ask, long long ts, bool can_enter,
-                 const char* macro_regime, CloseCallback on_close) noexcept
+                 const char* macro_regime, CloseCallback on_close,
+                 double vwap = 0.0) noexcept
     {
         if (bid <= 0.0 || ask <= 0.0) return;
 
@@ -209,6 +213,14 @@ public:
 
         // MIN_RANGE filter — don't arm in dead tape
         if (range < MIN_RANGE) {
+            phase        = BracketPhase::IDLE;
+            bracket_high = 0.0;
+            bracket_low  = 0.0;
+            return;
+        }
+
+        // VWAP distance filter — don't enter when price is near VWAP (sideways/chop)
+        if (VWAP_MIN_DIST > 0.0 && vwap > 0.0 && std::fabs(mid - vwap) < VWAP_MIN_DIST) {
             phase        = BracketPhase::IDLE;
             bracket_high = 0.0;
             bracket_low  = 0.0;
