@@ -1,0 +1,101 @@
+#include "SymbolConfig.hpp"
+#include <fstream>
+#include <sstream>
+#include <iostream>
+#include <algorithm>
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+static std::string trim(const std::string& s)
+{
+    size_t l = s.find_first_not_of(" \t\r\n");
+    size_t r = s.find_last_not_of(" \t\r\n");
+    return (l == std::string::npos) ? "" : s.substr(l, r - l + 1);
+}
+
+static double get_double(const std::unordered_map<std::string,std::string>& kv,
+                         const std::string& key, double def)
+{
+    auto it = kv.find(key);
+    if (it == kv.end()) return def;
+    try { return std::stod(it->second); } catch(...) { return def; }
+}
+
+static int get_int(const std::unordered_map<std::string,std::string>& kv,
+                   const std::string& key, int def)
+{
+    auto it = kv.find(key);
+    if (it == kv.end()) return def;
+    try { return std::stoi(it->second); } catch(...) { return def; }
+}
+
+// ── SymbolConfigManager::load ─────────────────────────────────────────────────
+bool SymbolConfigManager::load(const std::string& path)
+{
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "[SYMCFG] Failed to open " << path << "\n";
+        return false;
+    }
+
+    std::string line;
+    std::string current_section;
+    std::unordered_map<std::string,std::string> kv;
+
+    auto flush = [&]() {
+        if (current_section.empty()) return;
+
+        SymbolConfig cfg;
+        cfg.min_range        = get_double(kv, "MIN_RANGE",        0.0);
+        cfg.confirm_offset   = get_double(kv, "CONFIRM_OFFSET",   0.0);
+        cfg.min_structure_ms = get_int   (kv, "MIN_STRUCTURE_MS", 0);
+        cfg.breakout_fail_ms = get_int   (kv, "BREAKOUT_FAIL_MS", 0);
+        cfg.min_hold_ms      = get_int   (kv, "MIN_HOLD_MS",      0);
+        cfg.tp_mult          = get_double(kv, "TP_MULT",          1.5);
+        cfg.sl_mult          = get_double(kv, "SL_MULT",          1.0);
+        cfg.max_spread       = get_double(kv, "MAX_SPREAD",       0.0);
+
+        configs_[current_section] = cfg;
+        std::cout << "[SYMCFG] Loaded " << current_section
+                  << " MIN_RANGE=" << cfg.min_range
+                  << " TP_MULT="   << cfg.tp_mult
+                  << " MAX_SPREAD="<< cfg.max_spread << "\n";
+        kv.clear();
+    };
+
+    while (std::getline(file, line)) {
+        line = trim(line);
+        if (line.empty() || line[0] == ';' || line[0] == '#') continue;
+
+        if (line[0] == '[') {
+            flush();
+            current_section = trim(line.substr(1, line.size() - 2));
+            continue;
+        }
+
+        auto pos = line.find('=');
+        if (pos == std::string::npos) continue;
+
+        std::string key = trim(line.substr(0, pos));
+        std::string val = trim(line.substr(pos + 1));
+        kv[key] = val;
+    }
+
+    flush();  // flush final section
+
+    std::cout << "[SYMCFG] Loaded " << configs_.size() << " symbol configs from " << path << "\n";
+    return !configs_.empty();
+}
+
+// ── SymbolConfigManager::get ──────────────────────────────────────────────────
+const SymbolConfig& SymbolConfigManager::get(const std::string& symbol) const
+{
+    auto it = configs_.find(symbol);
+    if (it != configs_.end()) return it->second;
+    std::cerr << "[SYMCFG] WARNING: no config for '" << symbol << "' — using defaults\n";
+    return default_config_;
+}
+
+bool SymbolConfigManager::has(const std::string& symbol) const
+{
+    return configs_.find(symbol) != configs_.end();
+}

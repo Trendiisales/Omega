@@ -34,6 +34,7 @@ include_directories(
 
 set(SOURCES
     src/main.cpp
+    src/SymbolConfig.cpp
     src/gui/OmegaTelemetryServer.cpp
 )
 
