@@ -68,6 +68,8 @@ public:
     int    CONFIRM_TIMEOUT_MS    = 5000;
     int    MIN_HOLD_MS           = 15000;
     double VWAP_MIN_DIST         = 0.0;   // min distance from VWAP to allow entry
+    int    MIN_STRUCTURE_MS      = 0;     // min ms range must hold before arming
+    int    FAILURE_WINDOW_MS     = 5000;  // ms after fill to check for breakout failure
 
     // Legacy fields kept for telemetry reads — not used for logic.
     double ENTRY_SIZE            = 0.01;
@@ -107,7 +109,9 @@ public:
                    double confirm_move,
                    int    confirm_timeout_ms,
                    int    min_hold_ms,
-                   double vwap_min_dist = 0.0)
+                   double vwap_min_dist    = 0.0,
+                   int    min_structure_ms = 0,
+                   int    failure_window_ms = 5000)
     {
         BUFFER              = buffer;
         STRUCTURE_LOOKBACK  = lookback;
@@ -118,6 +122,8 @@ public:
         CONFIRM_TIMEOUT_MS  = confirm_timeout_ms;
         MIN_HOLD_MS         = min_hold_ms;
         VWAP_MIN_DIST       = vwap_min_dist;
+        MIN_STRUCTURE_MS    = min_structure_ms;
+        FAILURE_WINDOW_MS   = failure_window_ms;
     }
 
     // ── has_open_position(): blocks other engines ─────────────────────────────
@@ -154,6 +160,19 @@ public:
             const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
             if ( move > pos.mfe) pos.mfe =  move;
             if (-move > pos.mae) pos.mae = -move;
+
+            // Breakout failure detection within FAILURE_WINDOW_MS:
+            // If price returns inside the bracket immediately after fill,
+            // it's a liquidity sweep not a real breakout — exit before full SL.
+            if (FAILURE_WINDOW_MS > 0 &&
+                ts - pos.entry_ts < static_cast<long long>(FAILURE_WINDOW_MS)) {
+                if ( pos.is_long && bid < pos.sl) {
+                    closePos(bid, "BREAKOUT_FAIL", macro_regime, on_close); return;
+                }
+                if (!pos.is_long && ask > pos.sl) {
+                    closePos(ask, "BREAKOUT_FAIL", macro_regime, on_close); return;
+                }
+            }
 
             // MIN_HOLD_MS: don't check SL/TP until position has been open long enough
             if (ts - pos.entry_ts < static_cast<long long>(MIN_HOLD_MS)) return;
@@ -233,12 +252,17 @@ public:
 
         // ── IDLE → ARMED ──────────────────────────────────────────────────────
         if (phase == BracketPhase::IDLE) {
-            phase = BracketPhase::ARMED;
+            phase       = BracketPhase::ARMED;
+            m_armed_ts  = ts;  // record when structure was established
             return;
         }
 
         // ── ARMED: watch for initial touch ────────────────────────────────────
         if (phase == BracketPhase::ARMED) {
+            // Structure duration filter — range must hold for MIN_STRUCTURE_MS
+            // before we allow a trigger. Removes drifting/noise ranges.
+            if (MIN_STRUCTURE_MS > 0 && ts - m_armed_ts < static_cast<long long>(MIN_STRUCTURE_MS))
+                return;
             if (ask >= bracket_high) {
                 m_confirm_side     = 1;
                 m_confirm_start_ts = ts;
@@ -327,13 +351,14 @@ public:
 
 private:
     std::deque<double> m_window;
-    int64_t  m_last_ts         = 0;
-    double   m_last_bid        = 0.0;
-    double   m_last_ask        = 0.0;
-    int64_t  m_cooldown_start  = 0;
-    int      m_confirm_side    = 0;
+    int64_t  m_last_ts          = 0;
+    double   m_last_bid         = 0.0;
+    double   m_last_ask         = 0.0;
+    int64_t  m_cooldown_start   = 0;
+    int      m_confirm_side     = 0;
     int64_t  m_confirm_start_ts = 0;
-    int      m_trade_id        = 0;
+    int64_t  m_armed_ts         = 0;   // when phase transitioned to ARMED
+    int      m_trade_id         = 0;
 
     void trigger(int side, double spread, const char* macro_regime) noexcept
     {
@@ -417,6 +442,7 @@ private:
         bracket_high   = 0.0;
         bracket_low    = 0.0;
         m_confirm_side = 0;
+        m_armed_ts     = 0;
         phase          = BracketPhase::IDLE;
     }
 };

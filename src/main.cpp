@@ -3334,7 +3334,9 @@ int main(int argc, char* argv[])
         3.0,    // CONFIRM_MOVE
         4000,   // confirm_timeout_ms
         15000,  // min_hold_ms
-        8.0     // VWAP_MIN_DIST: block entries within $8 of VWAP
+        8.0,    // VWAP_MIN_DIST
+        45000,  // MIN_STRUCTURE_MS: range must hold 45s before arming
+        5000    // FAILURE_WINDOW_MS: 5s breakout failure window
     );
     g_bracket_gold.ENTRY_SIZE = 0.01;
     g_bracket_gold.symbol     = "GOLD.F";
@@ -3347,7 +3349,9 @@ int main(int argc, char* argv[])
         0.06,   // CONFIRM_MOVE
         4000,   // confirm_timeout_ms
         15000,  // min_hold_ms
-        0.15    // VWAP_MIN_DIST: block entries within 15c of VWAP
+        0.15,   // VWAP_MIN_DIST
+        30000,  // MIN_STRUCTURE_MS: range must hold 30s before arming
+        5000    // FAILURE_WINDOW_MS: 5s breakout failure window
     );
     g_bracket_xag.ENTRY_SIZE = 0.01;
     g_bracket_xag.symbol     = "XAGUSD";
