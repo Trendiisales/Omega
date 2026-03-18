@@ -1256,7 +1256,8 @@ static SymbolDef OMEGA_SYMS[] = {
 static const int OMEGA_NSYMS = 9;
 struct ExtSymbolDef { int id; const char* name; };
 static std::vector<ExtSymbolDef> g_ext_syms = {
-    {0, "GER30"}, {0, "UK100"}, {0, "ESTX50"}, {0, "XAGUSD"}, {0, "EURUSD"}, {0, "UKBRENT"}, {0, "GBPUSD"}
+    {0, "GER30"}, {0, "UK100"}, {0, "ESTX50"}, {0, "XAGUSD"}, {0, "EURUSD"}, {0, "UKBRENT"},
+    {0, "GBPUSD"}, {0, "AUDUSD"}, {0, "NZDUSD"}, {0, "USDJPY"}
 };
 
 // Runtime ID->name map built at startup from OMEGA_SYMS
@@ -1395,6 +1396,9 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
                 case 4: g_cfg.ext_eurusd_id = id; break;
                 case 5: g_cfg.ext_ukbrent_id = id; break;
                 case 6: g_cfg.ext_gbpusd_id = id; break;
+                case 7: g_cfg.ext_audusd_id = id; break;
+                case 8: g_cfg.ext_nzdusd_id = id; break;
+                case 9: g_cfg.ext_usdjpy_id = id; break;
                 default: break;
             }
             break;
@@ -1930,6 +1934,10 @@ static void load_config(const std::string& path) {
             if (k=="xagusd_id")  g_cfg.ext_xagusd_id  = std::stoi(v);
             if (k=="eurusd_id")  g_cfg.ext_eurusd_id  = std::stoi(v);
             if (k=="ukbrent_id") g_cfg.ext_ukbrent_id = std::stoi(v);
+            if (k=="gbpusd_id")  g_cfg.ext_gbpusd_id  = std::stoi(v);
+            if (k=="audusd_id")  g_cfg.ext_audusd_id  = std::stoi(v);
+            if (k=="nzdusd_id")  g_cfg.ext_nzdusd_id  = std::stoi(v);
+            if (k=="usdjpy_id")  g_cfg.ext_usdjpy_id  = std::stoi(v);
         }
         if (section == "sp") {
             if (k=="tp_pct")                g_cfg.sp_tp_pct                = std::stod(v);
@@ -2152,6 +2160,10 @@ static void sanitize_config() noexcept {
     g_cfg.ext_xagusd_id  = std::max(0, g_cfg.ext_xagusd_id);
     g_cfg.ext_eurusd_id  = std::max(0, g_cfg.ext_eurusd_id);
     g_cfg.ext_ukbrent_id = std::max(0, g_cfg.ext_ukbrent_id);
+    g_cfg.ext_gbpusd_id  = std::max(0, g_cfg.ext_gbpusd_id);
+    g_cfg.ext_audusd_id  = std::max(0, g_cfg.ext_audusd_id);
+    g_cfg.ext_nzdusd_id  = std::max(0, g_cfg.ext_nzdusd_id);
+    g_cfg.ext_usdjpy_id  = std::max(0, g_cfg.ext_usdjpy_id);
 
     g_ext_syms[0].id = g_cfg.ext_ger30_id;
     g_ext_syms[1].id = g_cfg.ext_uk100_id;
@@ -2159,6 +2171,10 @@ static void sanitize_config() noexcept {
     g_ext_syms[3].id = g_cfg.ext_xagusd_id;
     g_ext_syms[4].id = g_cfg.ext_eurusd_id;
     g_ext_syms[5].id = g_cfg.ext_ukbrent_id;
+    g_ext_syms[6].id = g_cfg.ext_gbpusd_id;
+    g_ext_syms[7].id = g_cfg.ext_audusd_id;
+    g_ext_syms[8].id = g_cfg.ext_nzdusd_id;
+    g_ext_syms[9].id = g_cfg.ext_usdjpy_id;
 
     std::cout << "[CONFIG] risk max_positions=" << g_cfg.max_open_positions
               << " max_consec_losses=" << g_cfg.max_consec_losses
@@ -2685,19 +2701,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
     else if (sym == "EURUSD") {
         dispatch(g_eng_eurusd, symbol_gate("EURUSD", g_eng_eurusd.pos.active));
+    }
+    else if (sym == "GBPUSD") {
         dispatch(g_eng_gbpusd, symbol_gate("GBPUSD", g_eng_gbpusd.pos.active));
-        // Asia FX pairs — gated to Asia session only when asia_fx_asia_only=true
-        {
-            const auto t2 = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            struct tm ti2; gmtime_s(&ti2, &t2);
-            const int h2 = ti2.tm_hour;
-            const bool in_asia_window = (h2 >= 22 || h2 < 7); // 22:00-07:00 UTC
-            const bool asia_ok = !g_cfg.asia_fx_asia_only || in_asia_window;
-            if (asia_ok) {
-                dispatch(g_eng_audusd, symbol_gate("AUDUSD", g_eng_audusd.pos.active));
-                dispatch(g_eng_nzdusd, symbol_gate("NZDUSD", g_eng_nzdusd.pos.active));
-                dispatch(g_eng_usdjpy, symbol_gate("USDJPY", g_eng_usdjpy.pos.active));
-            }
+    }
+    else if (sym == "AUDUSD" || sym == "NZDUSD" || sym == "USDJPY") {
+        // Asia FX — gated to Asia session only when asia_fx_asia_only=true
+        const auto t2 = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti2; gmtime_s(&ti2, &t2);
+        const int h2 = ti2.tm_hour;
+        const bool in_asia_window = (h2 >= 22 || h2 < 7); // 22:00-07:00 UTC
+        const bool asia_ok = !g_cfg.asia_fx_asia_only || in_asia_window;
+        if (asia_ok) {
+            if (sym == "AUDUSD") dispatch(g_eng_audusd, symbol_gate("AUDUSD", g_eng_audusd.pos.active));
+            if (sym == "NZDUSD") dispatch(g_eng_nzdusd, symbol_gate("NZDUSD", g_eng_nzdusd.pos.active));
+            if (sym == "USDJPY") dispatch(g_eng_usdjpy, symbol_gate("USDJPY", g_eng_usdjpy.pos.active));
         }
     }
     else if (sym == "UKBRENT") {
