@@ -136,6 +136,7 @@ struct OmegaConfig {
     int    ext_xagusd_id              = 0;
     int    ext_eurusd_id              = 0;
     int    ext_ukbrent_id             = 0;
+    int    ext_gbpusd_id              = 0;
 
     // Session UTC
     int session_start_utc = 7;
@@ -228,6 +229,18 @@ struct OmegaConfig {
     double fx_min_breakout_pct     = 0.080;
     double fx_max_spread_pct       = 0.017;  // 0.0002 @ ~1.15 — tightened from 0.010 (was too loose)
     double fx_compression_threshold = 0.85;
+
+    // GBPUSD -- spec: TP_MULT=1.5, SL_MULT=1.0, MAX_SPREAD=0.0003@1.27=0.024%
+    double gbpusd_tp_pct               = 0.057;  // TP_MULT=1.5 × SL=0.038%
+    double gbpusd_sl_pct               = 0.038;
+    double gbpusd_vol_thresh_pct       = 0.012;
+    int    gbpusd_min_gap_sec          = 40;
+    double gbpusd_momentum_thresh_pct  = 0.018;
+    double gbpusd_min_breakout_pct     = 0.085;
+    double gbpusd_max_spread_pct       = 0.024;  // 0.0003 @ ~1.27
+    double gbpusd_compression_threshold = 0.85;
+    double max_lot_gbpusd              = 5.00;
+    double min_lot_gbpusd              = 0.01;
 
     // Asia FX (AUDUSD, NZDUSD, USDJPY) — shared session gate flag
     bool   asia_fx_asia_only = true;   // true: only trade 22:00-07:00 UTC Asia window
@@ -325,6 +338,7 @@ static omega::BreakoutEngine g_eng_uk100("UK100");   // FTSE
 static omega::BreakoutEngine g_eng_estx50("ESTX50"); // EuroStoxx50
 static omega::BreakoutEngine g_eng_xag("XAGUSD");    // Silver
 static omega::BreakoutEngine g_eng_eurusd("EURUSD"); // FX major
+static omega::BreakoutEngine g_eng_gbpusd("GBPUSD"); // FX major
 static omega::BreakoutEngine g_eng_brent("UKBRENT"); // Brent crude
 static omega::BreakoutEngine g_eng_audusd("AUDUSD"); // AUD/USD — Asia session FX
 static omega::BreakoutEngine g_eng_nzdusd("NZDUSD"); // NZD/USD — Asia session FX
@@ -887,6 +901,7 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     if (symbol == "GOLD.F")   return 100.0;   // Gold spot CFD: 100 troy oz/lot ✓ confirmed
     if (symbol == "XAGUSD")   return 5000.0;  // Silver spot CFD: 5,000 troy oz/lot ✓ scraped
     if (symbol == "EURUSD")   return 100000.0;// FX major: 100,000 units/lot ✓ standard
+    if (symbol == "GBPUSD")   return 100000.0;// FX major: 100,000 units/lot
     // Index CFDs — BlackBull cTrader: $1 per index point per lot
     if (symbol == "US500.F")  return 1.0;    // S&P500 CFD future: $1/pt (was $50 — CME E-mini, WRONG)
     if (symbol == "USTEC.F")  return 1.0;    // Nasdaq CFD future: $1/pt (was $20 — CME NQ, WRONG)
@@ -936,10 +951,11 @@ static double compute_size(const std::string& symbol,
     // Per-symbol safety cap (ceiling) and minimum floor
     double cap = g_cfg.max_lot_indices; // safe default for unknowns
     double flr = g_cfg.min_lot_indices;
-    if (symbol == "GOLD.F")                                    { cap = g_cfg.max_lot_gold;   flr = g_cfg.min_lot_gold; }
-    else if (symbol == "EURUSD")                               { cap = g_cfg.max_lot_fx;     flr = g_cfg.min_lot_fx; }
-    else if (symbol == "XAGUSD")                               { cap = g_cfg.max_lot_silver; flr = g_cfg.min_lot_silver; }
-    else if (symbol == "USOIL.F" || symbol == "UKBRENT")       { cap = g_cfg.max_lot_oil;    flr = g_cfg.min_lot_oil; }
+    if (symbol == "GOLD.F")                                    { cap = g_cfg.max_lot_gold;    flr = g_cfg.min_lot_gold; }
+    else if (symbol == "EURUSD")                               { cap = g_cfg.max_lot_fx;      flr = g_cfg.min_lot_fx; }
+    else if (symbol == "GBPUSD")                               { cap = g_cfg.max_lot_gbpusd;  flr = g_cfg.min_lot_gbpusd; }
+    else if (symbol == "XAGUSD")                               { cap = g_cfg.max_lot_silver;  flr = g_cfg.min_lot_silver; }
+    else if (symbol == "USOIL.F" || symbol == "UKBRENT")       { cap = g_cfg.max_lot_oil;     flr = g_cfg.min_lot_oil; }
     // NAS100 has a broker minimum of 0.10 lots — override the indices floor
     if (symbol == "NAS100") flr = std::max(flr, 0.10);
 
@@ -1240,7 +1256,7 @@ static SymbolDef OMEGA_SYMS[] = {
 static const int OMEGA_NSYMS = 9;
 struct ExtSymbolDef { int id; const char* name; };
 static std::vector<ExtSymbolDef> g_ext_syms = {
-    {0, "GER30"}, {0, "UK100"}, {0, "ESTX50"}, {0, "XAGUSD"}, {0, "EURUSD"}, {0, "UKBRENT"}
+    {0, "GER30"}, {0, "UK100"}, {0, "ESTX50"}, {0, "XAGUSD"}, {0, "EURUSD"}, {0, "UKBRENT"}, {0, "GBPUSD"}
 };
 
 // Runtime ID->name map built at startup from OMEGA_SYMS
@@ -1378,6 +1394,7 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
                 case 3: g_cfg.ext_xagusd_id = id; break;
                 case 4: g_cfg.ext_eurusd_id = id; break;
                 case 5: g_cfg.ext_ukbrent_id = id; break;
+                case 6: g_cfg.ext_gbpusd_id = id; break;
                 default: break;
             }
             break;
@@ -1718,6 +1735,21 @@ static void apply_generic_fx_config(omega::BreakoutEngine& eng) noexcept {
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
 }
 
+static void apply_generic_gbpusd_config(omega::BreakoutEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = g_cfg.gbpusd_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.gbpusd_tp_pct;
+    eng.SL_PCT                = g_cfg.gbpusd_sl_pct;
+    eng.MIN_GAP_SEC           = g_cfg.gbpusd_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = g_cfg.gbpusd_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD = g_cfg.gbpusd_compression_threshold;
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.gbpusd_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.gbpusd_min_breakout_pct;
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+}
+
 static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.silver_vol_thresh_pct;
     eng.TP_PCT                = g_cfg.silver_tp_pct;
@@ -1985,6 +2017,16 @@ static void load_config(const std::string& path) {
             if (k=="min_breakout_pct")      g_cfg.fx_min_breakout_pct      = std::stod(v);
             if (k=="max_spread_pct")        g_cfg.fx_max_spread_pct        = std::stod(v);
             if (k=="compression_threshold") g_cfg.fx_compression_threshold = std::stod(v);
+        }
+        if (section == "gbpusd") {
+            if (k=="tp_pct")                g_cfg.gbpusd_tp_pct                = std::stod(v);
+            if (k=="sl_pct")                g_cfg.gbpusd_sl_pct                = std::stod(v);
+            if (k=="vol_thresh_pct")        g_cfg.gbpusd_vol_thresh_pct        = std::stod(v);
+            if (k=="min_gap_sec")           g_cfg.gbpusd_min_gap_sec           = std::stoi(v);
+            if (k=="momentum_thresh_pct")   g_cfg.gbpusd_momentum_thresh_pct   = std::stod(v);
+            if (k=="min_breakout_pct")      g_cfg.gbpusd_min_breakout_pct      = std::stod(v);
+            if (k=="max_spread_pct")        g_cfg.gbpusd_max_spread_pct        = std::stod(v);
+            if (k=="compression_threshold") g_cfg.gbpusd_compression_threshold = std::stod(v);
         }
         if (section == "gold_stack") {
             auto& gs = g_cfg.gs_cfg;
@@ -2458,6 +2500,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_bracket_xag.pos.active) +
                 static_cast<int>(g_bracket_gold.pos.active) +
                 static_cast<int>(g_eng_eurusd.pos.active) +
+                static_cast<int>(g_eng_gbpusd.pos.active) +
                 static_cast<int>(g_eng_audusd.pos.active) +
                 static_cast<int>(g_eng_nzdusd.pos.active) +
                 static_cast<int>(g_eng_usdjpy.pos.active) +
@@ -2485,6 +2528,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_bracket_xag.pos.active) +
             static_cast<int>(g_bracket_gold.pos.active) +
             static_cast<int>(g_eng_eurusd.pos.active) +
+            static_cast<int>(g_eng_gbpusd.pos.active) +
             static_cast<int>(g_eng_audusd.pos.active) +
             static_cast<int>(g_eng_nzdusd.pos.active) +
             static_cast<int>(g_eng_usdjpy.pos.active) +
@@ -2641,6 +2685,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
     else if (sym == "EURUSD") {
         dispatch(g_eng_eurusd, symbol_gate("EURUSD", g_eng_eurusd.pos.active));
+        dispatch(g_eng_gbpusd, symbol_gate("GBPUSD", g_eng_gbpusd.pos.active));
         // Asia FX pairs — gated to Asia session only when asia_fx_asia_only=true
         {
             const auto t2 = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -3220,6 +3265,7 @@ static void quote_loop() {
         fc(g_eng_us30, "DJ30.F"); fc(g_eng_nas100, "NAS100");
         fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
         fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
+        fc(g_eng_gbpusd, "GBPUSD");
         // Force-close bracket engines — look up current prices from book
         {
             double bxag_bid = 0.0, bxag_ask = 0.0;
@@ -3359,6 +3405,7 @@ int main(int argc, char* argv[])
         1.4     // ATR_RANGE_K
     );
     apply_generic_fx_config(g_eng_eurusd);
+    apply_generic_gbpusd_config(g_eng_gbpusd);
     apply_generic_audusd_config(g_eng_audusd);
     apply_generic_nzdusd_config(g_eng_nzdusd);
     apply_generic_usdjpy_config(g_eng_usdjpy);
@@ -3379,6 +3426,7 @@ int main(int argc, char* argv[])
     g_eng_estx50.ENTRY_SIZE = 0.01;
     g_eng_xag.ENTRY_SIZE    = 0.01;
     g_eng_eurusd.ENTRY_SIZE = 0.01;
+    g_eng_gbpusd.ENTRY_SIZE = 0.01;
     g_eng_brent.ENTRY_SIZE  = 0.01;
     std::cout << "[SIZING] Fixed lot mode active (risk_per_trade_usd=0)\n"
               << "[SIZING]   All instruments: 0.01 lots | NAS100: 0.10 lots\n";
@@ -3431,6 +3479,9 @@ int main(int argc, char* argv[])
               << "[OMEGA-PARAMS] USDJPY   TP=" << g_eng_usdjpy.TP_PCT << "% SL=" << g_eng_usdjpy.SL_PCT
               << "% vol=" << g_eng_usdjpy.VOL_THRESH_PCT << "% mom=" << g_eng_usdjpy.MOMENTUM_THRESH_PCT
               << "% gap=" << g_eng_usdjpy.MIN_GAP_SEC << "s spread=" << g_eng_usdjpy.MAX_SPREAD_PCT << "% [ASIA/TOKYO-FIX]\n"
+              << "[OMEGA-PARAMS] GBPUSD   TP=" << g_eng_gbpusd.TP_PCT << "% SL=" << g_eng_gbpusd.SL_PCT
+              << "% vol=" << g_eng_gbpusd.VOL_THRESH_PCT << "% mom=" << g_eng_gbpusd.MOMENTUM_THRESH_PCT
+              << "% gap=" << g_eng_gbpusd.MIN_GAP_SEC << "s spread=" << g_eng_gbpusd.MAX_SPREAD_PCT << "%\n"
               << "[OMEGA-PARAMS] GOLD.F   GoldEngineStack active | gap=" << g_cfg.gs_cfg.min_entry_gap_sec
               << "s hold=" << g_cfg.gs_cfg.max_hold_sec << "s vwap_min=" << g_cfg.gs_cfg.min_vwap_dislocation
               << " spread_max=" << g_cfg.gs_cfg.max_entry_spread << "\n"
@@ -3451,6 +3502,7 @@ int main(int argc, char* argv[])
         g_eng_estx50.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_xag.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_eurusd.AGGRESSIVE_SHADOW = shadow_research;
+        g_eng_gbpusd.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_audusd.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_nzdusd.AGGRESSIVE_SHADOW = shadow_research;
         g_eng_usdjpy.AGGRESSIVE_SHADOW = shadow_research;

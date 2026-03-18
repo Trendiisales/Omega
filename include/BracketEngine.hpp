@@ -387,15 +387,10 @@ protected:
 
     void trigger(int side, double spread, const char* macro_regime) noexcept
     {
-        const double entry = (side > 0) ? pos.entry  // will be overwritten by confirm_fill
-                                        : pos.entry;
-        const double ask_  = bracket_high; // snapshot before clearing
-        const double bid_  = bracket_low;
-        const double e     = (side > 0) ? ask_ : bid_;  // use bracket levels as proxy
-        // actual entry price will come from confirm_fill — use bracket level for TP/SL calc
-        const double stop  = (side > 0) ? bracket_low : bracket_high;
-        const double dist  = std::fabs(e - stop);
-        const double tp    = e + side * dist * RR;
+        const double e    = (side > 0) ? bracket_high : bracket_low;  // entry level
+        const double stop = (side > 0) ? bracket_low  : bracket_high;
+        const double dist = std::fabs(e - stop);
+        const double tp   = e + side * dist * RR;
 
         std::cout << "[BRACKET-" << symbol << "] TRIGGERED "
                   << (side > 0 ? "LONG" : "SHORT")
