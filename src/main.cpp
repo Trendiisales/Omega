@@ -3553,15 +3553,15 @@ int main(int argc, char* argv[])
 
         const std::string trade_csv_path = trade_dir + "/omega_trade_closes.csv";
         ensure_parent_dir(trade_csv_path);
-        // Always truncate and rewrite header on startup — ensures column schema
-        // matches current build. Old header with missing columns (e.g. gross_pnl,
-        // net_pnl added in a later build) would cause blank fields in PowerShell.
-        g_trade_close_csv.open(trade_csv_path, std::ios::trunc);
+        g_trade_close_csv.open(trade_csv_path, std::ios::app);
         if (!g_trade_close_csv.is_open()) {
             std::cerr << "[OMEGA-FATAL] Failed to open full trade CSV: " << trade_csv_path << "\n";
             return 1;
         }
-        g_trade_close_csv << header << '\n';
+        // Write header only if file is empty — never truncate, all trades must persist
+        g_trade_close_csv.seekp(0, std::ios::end);
+        if (g_trade_close_csv.tellp() == std::streampos(0))
+            g_trade_close_csv << header << '\n';
         std::cout << "[OMEGA] Full Trade CSV: " << trade_csv_path << "\n";
 
         g_daily_trade_close_log = std::make_unique<RollingCsvLogger>(
@@ -3604,28 +3604,30 @@ int main(int argc, char* argv[])
     const std::string shadow_signal_csv_path =
         resolve_audit_log_path(g_cfg.shadow_signal_csv, "shadow/omega_shadow_signals.csv");
     ensure_parent_dir(shadow_signal_csv_path);
-    // Truncate on startup.
-    g_shadow_signal_csv.open(shadow_signal_csv_path, std::ios::trunc);
+    g_shadow_signal_csv.open(shadow_signal_csv_path, std::ios::app);
     if (!g_shadow_signal_csv.is_open()) {
         std::cerr << "[OMEGA-FATAL] Failed to open shadow signal CSV: " << shadow_signal_csv_path << "\n";
         return 1;
     }
-    g_shadow_signal_csv << "ts_unix,symbol,side,entry_px,exit_px,tp,sl,pnl,hold_sec,verdict,reason,exit_reason\n";
+    g_shadow_signal_csv.seekp(0, std::ios::end);
+    if (g_shadow_signal_csv.tellp() == std::streampos(0))
+        g_shadow_signal_csv << "ts_unix,symbol,side,entry_px,exit_px,tp,sl,pnl,hold_sec,verdict,reason,exit_reason\n";
     std::cout << "[OMEGA] Shadow Signal CSV: " << shadow_signal_csv_path << "\n";
 
     const std::string shadow_signal_event_csv_path =
         resolve_audit_log_path("logs/shadow/omega_shadow_signal_events.csv",
                                "shadow/omega_shadow_signal_events.csv");
     ensure_parent_dir(shadow_signal_event_csv_path);
-    // Truncate on startup.
-    g_shadow_signal_event_csv.open(shadow_signal_event_csv_path, std::ios::trunc);
+    g_shadow_signal_event_csv.open(shadow_signal_event_csv_path, std::ios::app);
     if (!g_shadow_signal_event_csv.is_open()) {
         std::cerr << "[OMEGA-FATAL] Failed to open shadow signal event CSV: "
                   << shadow_signal_event_csv_path << "\n";
         return 1;
     }
-    g_shadow_signal_event_csv
-        << "event_ts_unix,event_ts_utc,event_utc_weekday,symbol,side,entry_px,tp,sl,verdict,reason\n";
+    g_shadow_signal_event_csv.seekp(0, std::ios::end);
+    if (g_shadow_signal_event_csv.tellp() == std::streampos(0))
+        g_shadow_signal_event_csv
+            << "event_ts_unix,event_ts_utc,event_utc_weekday,symbol,side,entry_px,tp,sl,verdict,reason\n";
     std::cout << "[OMEGA] Shadow Signal Event CSV: " << shadow_signal_event_csv_path << "\n";
 
     WSADATA wsa;
