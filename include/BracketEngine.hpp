@@ -466,8 +466,8 @@ private:
                                         : (pos.entry - exit_px)) * pos.size;
         tr.mfe           = pos.mfe;
         tr.mae           = pos.mae;
-        tr.entryTs       = pos.entry_ts;
-        tr.exitTs        = m_last_ts;
+        tr.entryTs       = pos.entry_ts / 1000;   // ms → seconds for CSV/rotation
+        tr.exitTs        = m_last_ts   / 1000;
         tr.exitReason    = reason;
         tr.spreadAtEntry = pos.spread_at_entry;
         tr.latencyMs     = 0.0;
