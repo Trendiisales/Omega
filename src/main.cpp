@@ -2586,35 +2586,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         dispatch(g_eng_estx50, symbol_gate("ESTX50", g_eng_estx50.pos.active));
     }
     else if (sym == "XAGUSD") {
-        // Silver session gate: only trade in windows where silver has real volume.
-        // Block 05:00-07:00 UTC dead zone AND pure Asian session (00:00-05:00 thin).
-        // Silver is a London/NY instrument — Asia volume is too thin for breakouts.
-        // Exception: 22:00-24:00 allowed (Tokyo open, genuine silver demand flow).
-        // Allow: 07:00-24:00 (London+NY+Tokyo open)
-        // Block: 00:00-07:00 — thin Asia, silver has no real flow in this window
-        const bool silver_session_ok = []() {
-            const auto t_xag = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            struct tm ti_xag; gmtime_s(&ti_xag, &t_xag);
-            return ti_xag.tm_hour >= 7;
-        }();
-        if (silver_session_ok) {
-            // g_eng_xag (CRTP compression engine) DISABLED — BracketEngine is the sole
-            // silver executor. Running both created duplicate entries on the same move.
-            // Bracket has confirmation filter + range filter + session gate — superior.
-            // (was: dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active)))
-        }
         // Bracket engine: hi/lo structure stop with confirmation filter.
-        // CRITICAL: has_open_position() blocks compression engine above.
-        // Filters: session (London 07-11 / NY 13-17 UTC), frequency limit
-        if (silver_session_ok) {
-            // Tighter session gate for bracket: London+NY only (not full 07-24)
-            const auto t_xbrk = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            struct tm ti_xbrk; gmtime_s(&ti_xbrk, &t_xbrk);
-            const int xbh = ti_xbrk.tm_hour;
-            const bool xag_bracket_session =
-                (xbh >= 7 && xbh <= 11) ||   // London
-                (xbh >= 13 && xbh <= 17);    // NY
-
+        // Session gate removed — MIN_RANGE, CONFIRM_MOVE, VWAP filters handle conditions.
+        {
             // Frequency limit: max 2 bracket trades per minute on silver
             {
                 const int64_t now_ms = static_cast<long long>(
@@ -2629,7 +2603,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
             const bool xag_bracket_block = g_bracket_xag.has_open_position();
             const bool xag_can = symbol_gate("XAGUSD", xag_bracket_block) &&
-                                 xag_bracket_session &&
                                  xag_freq_ok;
 
             g_bracket_xag.on_tick(bid, ask,
@@ -2732,21 +2705,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
 
         // ── Bracket engine: hi/lo structure stop ─────────────────────────────
-        // on_tick() feeds state machine. get_signal() consumes pending signal.
-        // confirm_fill() called with real computed lot size after send.
-        // Filters: session (London 07-11 / NY 13-17 UTC), VWAP distance, frequency
+        // Session gate removed — MIN_RANGE, CONFIRM_MOVE, and VWAP_MIN_DIST
+        // are sufficient to block bad conditions regardless of time of day.
         {
-            const auto t_brk = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            struct tm ti_brk; gmtime_s(&ti_brk, &t_brk);
-            const int bh = ti_brk.tm_hour;
-            const bool gold_bracket_session =
-                (bh >= 7 && bh <= 11) ||   // London open
-                (bh >= 13 && bh <= 17);    // NY session
-
-            // VWAP distance filter: lives inside engine via VWAP_MIN_DIST
-            // gold_vwap passed directly to on_tick — no external check needed
-            const double gold_vwap = g_gold_stack.vwap();
-
             // Frequency limit: max 2 bracket trades per minute on gold
             {
                 const int64_t now_ms = static_cast<long long>(
@@ -2762,14 +2723,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool gold_bracket_can_enter =
                 gold_can_enter &&
                 !g_bracket_gold.has_open_position() &&
-                gold_bracket_session &&
                 gold_freq_ok;
 
             g_bracket_gold.on_tick(bid, ask,
                 static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()),
                 gold_bracket_can_enter,
-                regime.c_str(), bracket_on_close, gold_vwap);
+                regime.c_str(), bracket_on_close, g_gold_stack.vwap());
             const auto bgsig = g_bracket_gold.get_signal();
             if (bgsig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
