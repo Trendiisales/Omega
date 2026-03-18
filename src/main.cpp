@@ -3024,10 +3024,18 @@ static void trade_loop() {
 
         // Read loop — heartbeats + logon ACK only on trade session
         std::string trade_recv_buf;
-        auto last_ping = std::chrono::steady_clock::now();
+        auto last_ping      = std::chrono::steady_clock::now();
+        auto logon_sent_at  = std::chrono::steady_clock::now();
 
         while (g_running.load()) {
             const auto now = std::chrono::steady_clock::now();
+
+            // Logon timeout: if no LOGON ACCEPTED within 10s, drop and reconnect
+            if (!g_trade_ready.load() &&
+                std::chrono::duration_cast<std::chrono::seconds>(now - logon_sent_at).count() >= 10) {
+                std::cerr << "[OMEGA-TRADE] Logon timeout (10s) -- reconnecting\n";
+                break;
+            }
 
             // Heartbeat every 30s
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_ping).count() >= g_cfg.heartbeat) {
@@ -3147,11 +3155,19 @@ static void quote_loop() {
         SSL_write(ssl, logon.c_str(), static_cast<int>(logon.size()));
         std::cout << "[OMEGA] Logon sent\n";
 
-        auto last_ping = std::chrono::steady_clock::now();
-        auto last_diag = std::chrono::steady_clock::now();
+        auto last_ping      = std::chrono::steady_clock::now();
+        auto last_diag      = std::chrono::steady_clock::now();
+        auto logon_sent_at  = std::chrono::steady_clock::now();  // logon timeout tracking
 
         while (g_running.load()) {
             const auto now = std::chrono::steady_clock::now();
+
+            // Logon timeout: if no LOGON ACCEPTED within 10s, drop and reconnect
+            if (!g_quote_ready.load() &&
+                std::chrono::duration_cast<std::chrono::seconds>(now - logon_sent_at).count() >= 10) {
+                std::cerr << "[OMEGA] Logon timeout (10s) -- reconnecting\n";
+                break;
+            }
 
             // RTT ping every 5s
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_ping).count() >= 5) {
