@@ -229,6 +229,65 @@ struct OmegaConfig {
     double fx_max_spread_pct       = 0.010;
     double fx_compression_threshold = 0.85;
 
+    // Asia FX (AUDUSD, NZDUSD, USDJPY) — shared session gate flag
+    bool   asia_fx_asia_only = true;   // true: only trade 22:00-07:00 UTC Asia window
+    // AUDUSD
+    double audusd_tp_pct               = 0.070;
+    double audusd_sl_pct               = 0.035;
+    double audusd_vol_thresh_pct       = 0.010;
+    int    audusd_min_gap_sec          = 45;
+    double audusd_momentum_thresh_pct  = 0.015;
+    double audusd_min_breakout_pct     = 0.070;
+    double audusd_max_spread_pct       = 0.010;
+    double audusd_compression_threshold = 0.82;
+    // NZDUSD
+    double nzdusd_tp_pct               = 0.075;
+    double nzdusd_sl_pct               = 0.038;
+    double nzdusd_vol_thresh_pct       = 0.010;
+    int    nzdusd_min_gap_sec          = 45;
+    double nzdusd_momentum_thresh_pct  = 0.015;
+    double nzdusd_min_breakout_pct     = 0.075;
+    double nzdusd_max_spread_pct       = 0.012;
+    double nzdusd_compression_threshold = 0.82;
+    // USDJPY
+    double usdjpy_tp_pct               = 0.090;
+    double usdjpy_sl_pct               = 0.045;
+    double usdjpy_vol_thresh_pct       = 0.012;
+    int    usdjpy_min_gap_sec          = 45;
+    double usdjpy_momentum_thresh_pct  = 0.018;
+    double usdjpy_min_breakout_pct     = 0.090;
+    double usdjpy_max_spread_pct       = 0.015;
+    double usdjpy_compression_threshold = 0.80;
+    // Asia FX lot limits
+    double max_lot_audusd = 5.00;
+    double max_lot_nzdusd = 5.00;
+    double max_lot_usdjpy = 5.00;
+    double min_lot_audusd = 0.01;
+    double min_lot_nzdusd = 0.01;
+    double min_lot_usdjpy = 0.01;
+    // Extended symbol IDs for Asia FX
+    int    ext_audusd_id = 0;
+    int    ext_nzdusd_id = 0;
+    int    ext_usdjpy_id = 0;
+
+    // Bracket engines (Gold + Silver)
+    int    bracket_gold_lookback      = 40;
+    double bracket_gold_tp_pct        = 0.25;
+    double bracket_gold_sl_pct        = 0.12;
+    double bracket_gold_min_range_pct = 0.04;
+    double bracket_gold_max_spread_pct = 0.06;
+    int    bracket_gold_min_gap_sec   = 90;
+    int    bracket_gold_cooldown_sl_sec = 120;
+    int    bracket_gold_max_hold_sec  = 1800;
+    int    bracket_xag_lookback       = 40;
+    double bracket_xag_tp_pct         = 0.20;
+    double bracket_xag_sl_pct         = 0.10;
+    double bracket_xag_min_range_pct  = 0.035;
+    double bracket_xag_max_spread_pct = 0.08;
+    int    bracket_xag_min_gap_sec    = 90;
+    int    bracket_xag_cooldown_sl_sec = 120;
+    int    bracket_xag_max_hold_sec   = 1800;
+
     // GUI
     int         gui_port   = 7779;
     int         ws_port    = 7780;
@@ -267,6 +326,9 @@ static omega::BreakoutEngine g_eng_estx50("ESTX50"); // EuroStoxx50
 static omega::BreakoutEngine g_eng_xag("XAGUSD");    // Silver
 static omega::BreakoutEngine g_eng_eurusd("EURUSD"); // FX major
 static omega::BreakoutEngine g_eng_brent("UKBRENT"); // Brent crude
+static omega::BreakoutEngine g_eng_audusd("AUDUSD"); // AUD/USD — Asia session FX
+static omega::BreakoutEngine g_eng_nzdusd("NZDUSD"); // NZD/USD — Asia session FX
+static omega::BreakoutEngine g_eng_usdjpy("USDJPY"); // USD/JPY — Asia session FX (Tokyo fix)
 
 // Shared macro context -- updated each tick, read by SP/NQ shouldTrade()
 static omega::MacroContext g_macro_ctx;
@@ -1650,6 +1712,51 @@ static void apply_generic_brent_config(omega::BreakoutEngine& eng) noexcept {
     eng.COMPRESSION_THRESHOLD = g_cfg.brent_compression_threshold;
     eng.MOMENTUM_THRESH_PCT   = g_cfg.brent_momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT      = g_cfg.brent_min_breakout_pct;
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+}
+
+static void apply_generic_audusd_config(omega::BreakoutEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = g_cfg.audusd_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.audusd_tp_pct;
+    eng.SL_PCT                = g_cfg.audusd_sl_pct;
+    eng.MIN_GAP_SEC           = g_cfg.audusd_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = g_cfg.audusd_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD = g_cfg.audusd_compression_threshold;
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.audusd_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.audusd_min_breakout_pct;
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+}
+
+static void apply_generic_nzdusd_config(omega::BreakoutEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = g_cfg.nzdusd_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.nzdusd_tp_pct;
+    eng.SL_PCT                = g_cfg.nzdusd_sl_pct;
+    eng.MIN_GAP_SEC           = g_cfg.nzdusd_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = g_cfg.nzdusd_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD = g_cfg.nzdusd_compression_threshold;
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.nzdusd_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.nzdusd_min_breakout_pct;
+    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
+    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
+    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
+    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+}
+
+static void apply_generic_usdjpy_config(omega::BreakoutEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = g_cfg.usdjpy_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.usdjpy_tp_pct;
+    eng.SL_PCT                = g_cfg.usdjpy_sl_pct;
+    eng.MIN_GAP_SEC           = g_cfg.usdjpy_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = g_cfg.usdjpy_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD = g_cfg.usdjpy_compression_threshold;
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.usdjpy_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.usdjpy_min_breakout_pct;
     eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
     eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
