@@ -239,6 +239,12 @@ R"OMEGA1(
                 <span class="hdr-ticker-sep">|</span>
                 <span class="hdr-ticker-ask" id="hdrEurAsk" style="font-size:11px">----</span>
             </div>
+            <div class="hdr-ticker">
+                <span class="hdr-ticker-sym">GBPUSD</span>
+                <span class="hdr-ticker-bid" id="hdrGbpBid" style="font-size:11px">----</span>
+                <span class="hdr-ticker-sep">|</span>
+                <span class="hdr-ticker-ask" id="hdrGbpAsk" style="font-size:11px">----</span>
+            </div>
             <div style="width:1px;height:28px;background:var(--border);margin:0 2px;"></div>
             <div class="hdr-ticker" style="border-color:rgba(0,212,255,0.2);background:rgba(0,212,255,0.04);">
                 <span class="hdr-ticker-sym" style="color:var(--cyan)">AUD</span>
@@ -317,6 +323,11 @@ R"OMEGA1(
                     <span class="sym-label primary">EURUSD</span>
                     <div class="px-pair"><span class="bid" id="eurBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="eurAsk">----</span></div>
                     <span class="sym-spread" id="eurSpread">--</span>
+                </div>
+                <div class="sym-row primary-sym">
+                    <span class="sym-label primary">GBPUSD</span>
+                    <div class="px-pair"><span class="bid" id="gbpBid">----</span><span style="color:var(--t3)">|</span><span class="ask" id="gbpAsk">----</span></div>
+                    <span class="sym-spread" id="gbpSpread">--</span>
                 </div>
                 <div class="sym-row" style="border-color:rgba(0,212,255,0.18);background:rgba(0,212,255,0.04);">
                     <span class="sym-label" style="color:var(--cyan)">AUDUSD</span>
@@ -675,6 +686,7 @@ function updateDashboard(d){
     setPrice('hdrClBid',  d.cl_bid,   2);setPrice('hdrClAsk',  d.cl_ask,   2);
     setPrice('hdrBrentBid',d.brent_bid,2);setPrice('hdrBrentAsk',d.brent_ask,2);
     setPrice('hdrEurBid', d.eurusd_bid,5);setPrice('hdrEurAsk', d.eurusd_ask,5);
+    setPrice('hdrGbpBid', d.gbpusd_bid,5);setPrice('hdrGbpAsk', d.gbpusd_ask,5);
     setPrice('hdrAudBid', d.audusd_bid,5);setPrice('hdrAudAsk', d.audusd_ask,5);
     setPrice('hdrNzdBid', d.nzdusd_bid,5);setPrice('hdrNzdAsk', d.nzdusd_ask,5);
     setPrice('hdrJpyBid', d.usdjpy_bid,3);setPrice('hdrJpyAsk', d.usdjpy_ask,3);
@@ -690,6 +702,7 @@ R"OMEGA4(
     setPrice('clBid',  d.cl_bid,  2);setPrice('clAsk',  d.cl_ask,  2);setSpread('clSpread', d.cl_bid, d.cl_ask);
     setPrice('brentBid',d.brent_bid,2);setPrice('brentAsk',d.brent_ask,2);setSpread('brentSpread',d.brent_bid,d.brent_ask);
     setPrice('eurBid', d.eurusd_bid,5);setPrice('eurAsk', d.eurusd_ask,5);setSpread('eurSpread',d.eurusd_bid,d.eurusd_ask);
+    setPrice('gbpBid', d.gbpusd_bid,5);setPrice('gbpAsk', d.gbpusd_ask,5);setSpread('gbpSpread',d.gbpusd_bid,d.gbpusd_ask);
     setPrice('audBid', d.audusd_bid,5);setPrice('audAsk', d.audusd_ask,5);setSpread('audSpread',d.audusd_bid,d.audusd_ask);
     setPrice('nzdBid', d.nzdusd_bid,5);setPrice('nzdAsk', d.nzdusd_ask,5);setSpread('nzdSpread',d.nzdusd_bid,d.nzdusd_ask);
     setPrice('jpyBid', d.usdjpy_bid,3);setPrice('jpyAsk', d.usdjpy_ask,3);setSpread('jpySpread',d.usdjpy_bid,d.usdjpy_ask);

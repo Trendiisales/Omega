@@ -37,6 +37,7 @@ struct OmegaTelemetrySnapshot
     double estx50_bid; double estx50_ask;
     double xag_bid;    double xag_ask;
     double eurusd_bid; double eurusd_ask;
+    double gbpusd_bid; double gbpusd_ask;
     double audusd_bid; double audusd_ask;
     double nzdusd_bid; double nzdusd_ask;
     double usdjpy_bid; double usdjpy_ask;
@@ -159,6 +160,7 @@ private:
     double lv_estx50_bid=0, lv_estx50_ask=0;
     double lv_xag_bid=0,    lv_xag_ask=0;
     double lv_eurusd_bid=0, lv_eurusd_ask=0;
+    double lv_gbpusd_bid=0, lv_gbpusd_ask=0;
     double lv_audusd_bid=0, lv_audusd_ask=0;
     double lv_nzdusd_bid=0, lv_nzdusd_ask=0;
     double lv_usdjpy_bid=0, lv_usdjpy_ask=0;
@@ -218,6 +220,7 @@ public:
         else if (!strcmp(sym,"ESTX50"))  { lv_estx50_bid=bid; lv_estx50_ask=ask; m_snap->estx50_bid=bid; m_snap->estx50_ask=ask; }
         else if (!strcmp(sym,"XAGUSD"))  { lv_xag_bid=bid;    lv_xag_ask=ask;    m_snap->xag_bid=bid;    m_snap->xag_ask=ask; }
         else if (!strcmp(sym,"EURUSD"))  { lv_eurusd_bid=bid; lv_eurusd_ask=ask; m_snap->eurusd_bid=bid; m_snap->eurusd_ask=ask; }
+        else if (!strcmp(sym,"GBPUSD"))  { lv_gbpusd_bid=bid; lv_gbpusd_ask=ask; m_snap->gbpusd_bid=bid; m_snap->gbpusd_ask=ask; }
         else if (!strcmp(sym,"AUDUSD"))  { lv_audusd_bid=bid; lv_audusd_ask=ask; m_snap->audusd_bid=bid; m_snap->audusd_ask=ask; }
         else if (!strcmp(sym,"NZDUSD"))  { lv_nzdusd_bid=bid; lv_nzdusd_ask=ask; m_snap->nzdusd_bid=bid; m_snap->nzdusd_ask=ask; }
         else if (!strcmp(sym,"USDJPY"))  { lv_usdjpy_bid=bid; lv_usdjpy_ask=ask; m_snap->usdjpy_bid=bid; m_snap->usdjpy_ask=ask; }
