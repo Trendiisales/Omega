@@ -220,6 +220,7 @@ struct OmegaConfig {
     double eu_index_momentum_thresh_pct   = 0.005;
     double eu_index_min_breakout_pct      = 0.030;
     double eu_index_compression_threshold = 0.85;
+    double eu_index_max_spread_pct        = 0.042;  // ~2.5pts @ typical EU index price — mirrors SP default
 
     // FX (EURUSD) -- spec: TP_MULT=1.5, MAX_SPREAD=0.0002@1.15=0.017%
     double fx_tp_pct               = 0.060;  // TP_MULT=1.5 × SL=0.040%
@@ -1683,6 +1684,7 @@ static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
     eng.MIN_GAP_SEC           = std::max(30, g_cfg.sp_min_gap_sec);
     eng.MOMENTUM_THRESH_PCT   = g_cfg.eu_index_momentum_thresh_pct;
     eng.MIN_BREAKOUT_PCT      = g_cfg.eu_index_min_breakout_pct;
+    eng.MAX_SPREAD_PCT        = g_cfg.eu_index_max_spread_pct;
     eng.COMPRESSION_THRESHOLD = g_cfg.eu_index_compression_threshold;
     eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
     eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
@@ -2019,6 +2021,7 @@ static void load_config(const std::string& path) {
             if (k=="momentum_thresh_pct")   g_cfg.eu_index_momentum_thresh_pct   = std::stod(v);
             if (k=="min_breakout_pct")      g_cfg.eu_index_min_breakout_pct      = std::stod(v);
             if (k=="compression_threshold") g_cfg.eu_index_compression_threshold = std::stod(v);
+            if (k=="max_spread_pct")        g_cfg.eu_index_max_spread_pct        = std::stod(v);
         }
         if (section == "fx") {
             if (k=="tp_pct")                g_cfg.fx_tp_pct                = std::stod(v);
@@ -3561,7 +3564,12 @@ int main(int argc, char* argv[])
               << "% gap=" << g_eng_usdjpy.MIN_GAP_SEC << "s spread=" << g_eng_usdjpy.MAX_SPREAD_PCT << "% [ASIA/TOKYO-FIX]\n"
               << "[OMEGA-PARAMS] GBPUSD   TP=" << g_eng_gbpusd.TP_PCT << "% SL=" << g_eng_gbpusd.SL_PCT
               << "% vol=" << g_eng_gbpusd.VOL_THRESH_PCT << "% mom=" << g_eng_gbpusd.MOMENTUM_THRESH_PCT
-              << "% gap=" << g_eng_gbpusd.MIN_GAP_SEC << "s spread=" << g_eng_gbpusd.MAX_SPREAD_PCT << "%\n"
+              << "% brk=" << g_eng_gbpusd.MIN_BREAKOUT_PCT << "% gap=" << g_eng_gbpusd.MIN_GAP_SEC
+              << "s spread=" << g_eng_gbpusd.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] EURUSD   TP=" << g_eng_eurusd.TP_PCT << "% SL=" << g_eng_eurusd.SL_PCT
+              << "% vol=" << g_eng_eurusd.VOL_THRESH_PCT << "% mom=" << g_eng_eurusd.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_eurusd.MIN_BREAKOUT_PCT << "% gap=" << g_eng_eurusd.MIN_GAP_SEC
+              << "s spread=" << g_eng_eurusd.MAX_SPREAD_PCT << "%\n"
               << "[OMEGA-PARAMS] GOLD.F   GoldEngineStack active | gap=" << g_cfg.gs_cfg.min_entry_gap_sec
               << "s hold=" << g_cfg.gs_cfg.max_hold_sec << "s vwap_min=" << g_cfg.gs_cfg.min_vwap_dislocation
               << " spread_max=" << g_cfg.gs_cfg.max_entry_spread << "\n"
