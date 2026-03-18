@@ -288,6 +288,12 @@ class CompressionBreakoutEngine : public EngineBase {
     // Thin liquidity, erratic spreads, stale VWAP (resets at midnight).
     // Tokyo gold directional flow does not establish until ~23:00 UTC.
     // Without this gate: 4 SL hits in 16 min observed 22:35 UTC Mar 17 2026.
+    //
+    // Two dead zones blocked:
+    //   21:00–23:00 UTC — NY/Tokyo handoff: thin, no directional flow yet
+    //   05:00–07:00 UTC — late Asia/Sydney runoff: Tokyo volume exhausted,
+    //                     London not yet open, spreads widen, moves fade
+    //                     Evidence: GOLD SHORT timeout Mar 18 06:03 UTC
     static bool in_handoff_dead_zone() noexcept {
         const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti{};
@@ -296,7 +302,9 @@ class CompressionBreakoutEngine : public EngineBase {
 #else
         gmtime_r(&t, &ti);
 #endif
-        return (ti.tm_hour >= 21 && ti.tm_hour < 23);
+        const int h = ti.tm_hour;
+        return (h >= 21 && h < 23) ||  // NY/Tokyo handoff
+               (h >= 5  && h < 7);     // late Asia runoff → London dead zone
     }
 
 public:

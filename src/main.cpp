@@ -2311,6 +2311,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_eng_uk100.pos.active) +
                 static_cast<int>(g_eng_estx50.pos.active) +
                 static_cast<int>(g_eng_xag.pos.active) +
+                static_cast<int>(g_bracket_xag.pos.active) +
+                static_cast<int>(g_bracket_gold.pos.active) +
                 static_cast<int>(g_eng_eurusd.pos.active) +
                 static_cast<int>(g_eng_audusd.pos.active) +
                 static_cast<int>(g_eng_nzdusd.pos.active) +
@@ -2336,6 +2338,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_eng_uk100.pos.active) +
             static_cast<int>(g_eng_estx50.pos.active) +
             static_cast<int>(g_eng_xag.pos.active) +
+            static_cast<int>(g_bracket_xag.pos.active) +
+            static_cast<int>(g_bracket_gold.pos.active) +
             static_cast<int>(g_eng_eurusd.pos.active) +
             static_cast<int>(g_eng_audusd.pos.active) +
             static_cast<int>(g_eng_nzdusd.pos.active) +
@@ -2389,7 +2393,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         dispatch(g_eng_nq, symbol_gate("USTEC.F", g_eng_nq.pos.active));
     }
     else if (sym == "USOIL.F") {
-        dispatch(g_eng_cl, symbol_gate("USOIL.F", g_eng_cl.pos.active));
+        // Oil session gate: London/NY only (07:00-22:00 UTC)
+        // WTI has minimal Asia volume — no real breakout catalysts 00:00-07:00
+        {
+            const auto t_cl = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti_cl; gmtime_s(&ti_cl, &t_cl);
+            if (ti_cl.tm_hour >= 7) {
+                dispatch(g_eng_cl, symbol_gate("USOIL.F", g_eng_cl.pos.active));
+            }
+        }
     }
     else if (sym == "DJ30.F") {
         dispatch(g_eng_us30, symbol_gate("DJ30.F", g_eng_us30.pos.active));
@@ -2404,8 +2416,33 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         dispatch(g_eng_estx50, symbol_gate("ESTX50", g_eng_estx50.pos.active));
     }
     else if (sym == "XAGUSD") {
-        // Standard breakout engine for silver
-        dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active));
+        // Silver session gate: only trade in windows where silver has real volume.
+        // Block 05:00-07:00 UTC dead zone AND pure Asian session (00:00-05:00 thin).
+        // Silver is a London/NY instrument — Asia volume is too thin for breakouts.
+        // Exception: 22:00-24:00 allowed (Tokyo open, genuine silver demand flow).
+        {
+            const auto t_xag = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti_xag; gmtime_s(&ti_xag, &t_xag);
+            const int h_xag = ti_xag.tm_hour;
+        // Allow: 07:00-24:00 (London+NY+Tokyo open)
+        // Block: 00:00-07:00 — thin Asia, silver has no real flow in this window
+        const bool silver_session_ok = (h_xag >= 7);
+            if (silver_session_ok) {
+                dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active));
+            }
+        }
+        // Bracket engine: hi/lo structure stop — runs parallel to compression engine
+        if (silver_session_ok) {
+            const auto bsig = g_bracket_xag.update(bid, ask, rtt_check, macro_regime.c_str(), on_close,
+                symbol_gate("XAGUSD", g_bracket_xag.pos.active || g_eng_xag.pos.active));
+            if (bsig.valid) {
+                g_telemetry.UpdateLastSignal("XAGUSD",
+                    bsig.is_long ? "LONG" : "SHORT", bsig.entry, bsig.reason);
+                const double bxag_sl_abs = std::fabs(bsig.entry - bsig.sl);
+                const double bxag_lot    = compute_size("XAGUSD", bxag_sl_abs, ask - bid, g_bracket_xag.ENTRY_SIZE);
+                send_live_order("XAGUSD", bsig.is_long, bxag_lot, bsig.entry);
+            }
+        }
         // Lead-lag engine: enter silver when gold has moved but silver hasn't yet
         {
             const auto ll_sig = g_le_stack.on_tick_silver(bid, ask, rtt_check, on_close);
@@ -2440,7 +2477,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "UKBRENT") {
-        dispatch(g_eng_brent, symbol_gate("UKBRENT", g_eng_brent.pos.active));
+        // Brent session gate: London/NY only (07:00-22:00 UTC)
+        {
+            const auto t_br = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti_br; gmtime_s(&ti_br, &t_br);
+            if (ti_br.tm_hour >= 7) {
+                dispatch(g_eng_brent, symbol_gate("UKBRENT", g_eng_brent.pos.active));
+            }
+        }
     }
     else if (sym == "NAS100") {
         dispatch(g_eng_nas100, symbol_gate("NAS100", g_eng_nas100.pos.active));
@@ -2479,6 +2523,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
 
         // ── Latency Edge Stack: co-location speed engines ─────────────────────
+        // Bracket engine: hi/lo structure stop — parallel edge to GoldEngineStack
+        {
+            const auto bgsig = g_bracket_gold.update(bid, ask, rtt_check, macro_regime.c_str(), on_close,
+                gold_can_enter && !g_bracket_gold.pos.active);
+            if (bgsig.valid) {
+                g_telemetry.UpdateLastSignal("GOLD.F",
+                    bgsig.is_long ? "LONG" : "SHORT", bgsig.entry, bgsig.reason);
+                const double bg_sl_abs = std::fabs(bgsig.entry - bgsig.sl);
+                const double bg_lot    = compute_size("GOLD.F", bg_sl_abs, ask - bid, g_bracket_gold.ENTRY_SIZE);
+                send_live_order("GOLD.F", bgsig.is_long, bg_lot, bgsig.entry);
+            }
+        }
         // SpreadDislocation and EventCompression run on every GOLD.F tick.
         // LeadLag arms here, fires on next XAGUSD tick (see XAGUSD dispatch block).
         // gold_can_enter is passed through so LE engines cannot open a new entry
@@ -2931,6 +2987,8 @@ static void quote_loop() {
         fc(g_eng_us30, "DJ30.F"); fc(g_eng_nas100, "NAS100");
         fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
         fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
+        g_bracket_xag.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "", on_close);
+        g_bracket_gold.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "", on_close);
         fc(g_eng_audusd, "AUDUSD"); fc(g_eng_nzdusd, "NZDUSD"); fc(g_eng_usdjpy, "USDJPY");
         fc(g_eng_brent, "UKBRENT");
         // Force-close GoldEngineStack
@@ -3009,6 +3067,24 @@ int main(int argc, char* argv[])
     apply_generic_index_config(g_eng_uk100);
     apply_generic_index_config(g_eng_estx50);
     apply_generic_silver_config(g_eng_xag);
+    g_bracket_gold.STRUCTURE_LOOKBACK    = g_cfg.bracket_gold_lookback;
+    g_bracket_gold.TP_PCT                = g_cfg.bracket_gold_tp_pct;
+    g_bracket_gold.SL_PCT                = g_cfg.bracket_gold_sl_pct;
+    g_bracket_gold.MIN_RANGE_PCT         = g_cfg.bracket_gold_min_range_pct;
+    g_bracket_gold.MAX_SPREAD_PCT        = g_cfg.bracket_gold_max_spread_pct;
+    g_bracket_gold.MIN_GAP_SEC           = g_cfg.bracket_gold_min_gap_sec;
+    g_bracket_gold.COOLDOWN_AFTER_SL_SEC = g_cfg.bracket_gold_cooldown_sl_sec;
+    g_bracket_gold.MAX_HOLD_SEC          = g_cfg.bracket_gold_max_hold_sec;
+    g_bracket_gold.ENTRY_SIZE            = 0.01;
+    g_bracket_xag.STRUCTURE_LOOKBACK     = g_cfg.bracket_xag_lookback;
+    g_bracket_xag.TP_PCT                 = g_cfg.bracket_xag_tp_pct;
+    g_bracket_xag.SL_PCT                 = g_cfg.bracket_xag_sl_pct;
+    g_bracket_xag.MIN_RANGE_PCT          = g_cfg.bracket_xag_min_range_pct;
+    g_bracket_xag.MAX_SPREAD_PCT         = g_cfg.bracket_xag_max_spread_pct;
+    g_bracket_xag.MIN_GAP_SEC            = g_cfg.bracket_xag_min_gap_sec;
+    g_bracket_xag.COOLDOWN_AFTER_SL_SEC  = g_cfg.bracket_xag_cooldown_sl_sec;
+    g_bracket_xag.MAX_HOLD_SEC           = g_cfg.bracket_xag_max_hold_sec;
+    g_bracket_xag.ENTRY_SIZE             = 0.01;
     apply_generic_fx_config(g_eng_eurusd);
     apply_generic_audusd_config(g_eng_audusd);
     apply_generic_nzdusd_config(g_eng_nzdusd);
