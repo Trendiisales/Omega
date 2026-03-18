@@ -887,21 +887,12 @@ public:
         // Lead-lag disabled — was arming on every $0.50 gold wiggle creating noise
         // lead_lag_.on_tick_gold(bid, ask);  // DISABLED pending redesign
 
-        // Spread dislocation engine — returns signal if entry fired
-        const auto sd_sig = spread_disloc_.on_tick(bid, ask, latency_ms, on_close, can_enter);
-        if (sd_sig.valid) {
-            log_entry(sd_sig, "GOLD.F");
-            last_gold_signal_ = sd_sig;
-            return sd_sig;
-        }
-
-        // Event compression engine — returns signal if entry fired
-        const auto ev_sig = event_comp_.on_tick(bid, ask, latency_ms, on_close, can_enter);
-        if (ev_sig.valid) {
-            log_entry(ev_sig, "GOLD.F");
-            last_gold_signal_ = ev_sig;
-            return ev_sig;
-        }
+        // SpreadDislocation + EventCompression DISABLED for new entries.
+        // These are microstructure/latency-dependent engines. With SO_RCVTIMEO=200ms
+        // on the socket, data can be up to 200ms stale — latency edge is gone.
+        // Drain any existing open positions, then return no signal.
+        spread_disloc_.on_tick(bid, ask, latency_ms, on_close, false);  // manage only
+        event_comp_.on_tick(bid, ask, latency_ms, on_close, false);     // manage only
 
         return {};
     }

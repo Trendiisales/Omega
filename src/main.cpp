@@ -2598,10 +2598,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             return ti_xag.tm_hour >= 7;
         }();
         if (silver_session_ok) {
-            // CRITICAL FIX: compression engine blocked while bracket is PENDING or LIVE
-            if (!g_bracket_xag.has_open_position()) {
-                dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active));
-            }
+            // g_eng_xag (CRTP compression engine) DISABLED — BracketEngine is the sole
+            // silver executor. Running both created duplicate entries on the same move.
+            // Bracket has confirmation filter + range filter + session gate — superior.
+            // (was: dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active)))
         }
         // Bracket engine: hi/lo structure stop with confirmation filter.
         // CRITICAL: has_open_position() blocks compression engine above.
@@ -2627,8 +2627,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             const bool xag_freq_ok = (g_bracket_xag_trades_this_minute < 2);
 
-            const bool xag_bracket_block =
-                g_bracket_xag.has_open_position() || g_eng_xag.pos.active;
+            const bool xag_bracket_block = g_bracket_xag.has_open_position();
             const bool xag_can = symbol_gate("XAGUSD", xag_bracket_block) &&
                                  xag_bracket_session &&
                                  xag_freq_ok;
