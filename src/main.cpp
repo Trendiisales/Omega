@@ -281,6 +281,13 @@ static omega::gold::GoldEngineStack g_gold_stack;
 // These exploit the 0.3-4ms RTT advantage of the co-located VPS.
 static omega::latency::LatencyEdgeStack g_le_stack;
 
+// Bracket engines -- hi/lo structure stop-and-reverse for Gold and Silver.
+// Run in parallel to their respective primary executors (GoldEngineStack / g_eng_xag).
+// symbol set in load_config() after g_cfg is populated.
+#include "BracketEngine.hpp"
+static omega::BracketEngine g_bracket_gold;  // GOLD.F hi/lo structure bracket
+static omega::BracketEngine g_bracket_xag;   // XAGUSD hi/lo structure bracket
+
 // Book
 static std::mutex                              g_book_mtx;
 static std::unordered_map<std::string,double>  g_bids;
@@ -2359,6 +2366,33 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         handle_closed_trade(tr);
     };
 
+    // bracket_on_close — used exclusively by g_bracket_gold and g_bracket_xag.
+    // When the engine closes a position (TP/SL/timeout/force), it calls this with
+    // the filled TradeRecord. We:
+    //   1. Record/ledger the trade (same as on_close)
+    //   2. Send a closing market order (opposite side, same size) in LIVE mode.
+    //
+    // The bracket engines manage TP/SL/trailing purely in software — we do NOT
+    // submit bracket orders to BlackBull. When the engine decides to exit, we
+    // fire a market order here to close the position at the broker.
+    //
+    // tr.side is the ENTRY side ("LONG"/"SHORT"); to close we flip it.
+    // tr.size is the lot size originally submitted at entry.
+    auto bracket_on_close = [&](const omega::TradeRecord& tr) {
+        handle_closed_trade(tr);
+        // Send the closing market order (reverse of entry side).
+        const bool close_is_long = (tr.side == "SHORT");  // long entry → sell to close
+        const double close_qty   = tr.size;
+        std::cout << "\033[1;35m[BRACKET-CLOSE] " << tr.symbol
+                  << " " << (close_is_long ? "BUY" : "SELL") << " (close)"
+                  << " qty=" << close_qty
+                  << " exit=" << std::fixed << std::setprecision(4) << tr.exitPrice
+                  << " reason=" << tr.exitReason
+                  << "\033[0m\n";
+        std::cout.flush();
+        send_live_order(tr.symbol, close_is_long, close_qty, tr.exitPrice);
+    };
+
     // Helper lambda -- always feeds ticks to engine (warmup + position management).
     // can_enter=false gates new entries only; TP/SL/timeout always run.
     auto dispatch = [&](auto& eng, bool can_enter_for_symbol) {
@@ -2433,7 +2467,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         // Bracket engine: hi/lo structure stop — runs parallel to compression engine
         if (silver_session_ok) {
-            const auto bsig = g_bracket_xag.update(bid, ask, rtt_check, macro_regime.c_str(), on_close,
+            const auto bsig = g_bracket_xag.update(bid, ask, rtt_check, regime.c_str(), bracket_on_close,
                 symbol_gate("XAGUSD", g_bracket_xag.pos.active || g_eng_xag.pos.active));
             if (bsig.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
@@ -2525,7 +2559,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // ── Latency Edge Stack: co-location speed engines ─────────────────────
         // Bracket engine: hi/lo structure stop — parallel edge to GoldEngineStack
         {
-            const auto bgsig = g_bracket_gold.update(bid, ask, rtt_check, macro_regime.c_str(), on_close,
+            const auto bgsig = g_bracket_gold.update(bid, ask, rtt_check, regime.c_str(), bracket_on_close,
                 gold_can_enter && !g_bracket_gold.pos.active);
             if (bgsig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
@@ -2987,8 +3021,8 @@ static void quote_loop() {
         fc(g_eng_us30, "DJ30.F"); fc(g_eng_nas100, "NAS100");
         fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
         fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
-        g_bracket_xag.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "", on_close);
-        g_bracket_gold.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "", on_close);
+        g_bracket_xag.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "", bracket_on_close);
+        g_bracket_gold.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "", bracket_on_close);
         fc(g_eng_audusd, "AUDUSD"); fc(g_eng_nzdusd, "NZDUSD"); fc(g_eng_usdjpy, "USDJPY");
         fc(g_eng_brent, "UKBRENT");
         // Force-close GoldEngineStack
@@ -3076,6 +3110,7 @@ int main(int argc, char* argv[])
     g_bracket_gold.COOLDOWN_AFTER_SL_SEC = g_cfg.bracket_gold_cooldown_sl_sec;
     g_bracket_gold.MAX_HOLD_SEC          = g_cfg.bracket_gold_max_hold_sec;
     g_bracket_gold.ENTRY_SIZE            = 0.01;
+    g_bracket_gold.symbol                = "GOLD.F";   // must be set — used in TradeRecord and log output
     g_bracket_xag.STRUCTURE_LOOKBACK     = g_cfg.bracket_xag_lookback;
     g_bracket_xag.TP_PCT                 = g_cfg.bracket_xag_tp_pct;
     g_bracket_xag.SL_PCT                 = g_cfg.bracket_xag_sl_pct;
@@ -3085,6 +3120,7 @@ int main(int argc, char* argv[])
     g_bracket_xag.COOLDOWN_AFTER_SL_SEC  = g_cfg.bracket_xag_cooldown_sl_sec;
     g_bracket_xag.MAX_HOLD_SEC           = g_cfg.bracket_xag_max_hold_sec;
     g_bracket_xag.ENTRY_SIZE             = 0.01;
+    g_bracket_xag.symbol                 = "XAGUSD";  // must be set — used in TradeRecord and log output
     apply_generic_fx_config(g_eng_eurusd);
     apply_generic_audusd_config(g_eng_audusd);
     apply_generic_nzdusd_config(g_eng_nzdusd);
