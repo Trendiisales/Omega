@@ -350,6 +350,12 @@ static omega::latency::LatencyEdgeStack g_le_stack;
 static omega::BracketEngine g_bracket_gold;  // GOLD.F hi/lo structure bracket
 static omega::BracketEngine g_bracket_xag;   // XAGUSD hi/lo structure bracket
 
+// Bracket trade frequency tracking — max 2 bracket trades per symbol per minute
+static int      g_bracket_gold_trades_this_minute = 0;
+static int      g_bracket_xag_trades_this_minute  = 0;
+static int64_t  g_bracket_gold_minute_start       = 0;
+static int64_t  g_bracket_xag_minute_start        = 0;
+
 // Book
 static std::mutex                              g_book_mtx;
 static std::unordered_map<std::string,double>  g_bids;
@@ -2595,10 +2601,34 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         // Bracket engine: hi/lo structure stop with confirmation filter.
         // CRITICAL: has_open_position() blocks compression engine above.
+        // Filters: session (London 07-11 / NY 13-17 UTC), frequency limit
         if (silver_session_ok) {
+            // Tighter session gate for bracket: London+NY only (not full 07-24)
+            const auto t_xbrk = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti_xbrk; gmtime_s(&ti_xbrk, &t_xbrk);
+            const int xbh = ti_xbrk.tm_hour;
+            const bool xag_bracket_session =
+                (xbh >= 7 && xbh <= 11) ||   // London
+                (xbh >= 13 && xbh <= 17);    // NY
+
+            // Frequency limit: max 2 bracket trades per minute on silver
+            {
+                const int64_t now_ms = static_cast<long long>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+                if (now_ms - g_bracket_xag_minute_start >= 60000) {
+                    g_bracket_xag_minute_start       = now_ms;
+                    g_bracket_xag_trades_this_minute = 0;
+                }
+            }
+            const bool xag_freq_ok = (g_bracket_xag_trades_this_minute < 2);
+
             const bool xag_bracket_block =
                 g_bracket_xag.has_open_position() || g_eng_xag.pos.active;
-            const bool xag_can = symbol_gate("XAGUSD", xag_bracket_block);
+            const bool xag_can = symbol_gate("XAGUSD", xag_bracket_block) &&
+                                 xag_bracket_session &&
+                                 xag_freq_ok;
+
             g_bracket_xag.on_tick(bid, ask,
                 static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()),
@@ -2612,6 +2642,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double bxag_lot    = compute_size("XAGUSD", bxag_sl_abs, ask - bid, g_bracket_xag.ENTRY_SIZE);
                 send_live_order("XAGUSD", bsig.is_long, bxag_lot, bsig.entry);
                 g_bracket_xag.confirm_fill(bsig.entry, bxag_lot);
+                ++g_bracket_xag_trades_this_minute;
             }
         }
         // Lead-lag engine: enter silver when gold has moved but silver hasn't yet
@@ -2700,11 +2731,45 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // ── Bracket engine: hi/lo structure stop ─────────────────────────────
         // on_tick() feeds state machine. get_signal() consumes pending signal.
         // confirm_fill() called with real computed lot size after send.
+        // Filters: session (London 07-11 / NY 13-17 UTC), VWAP distance, frequency
         {
+            const auto t_brk = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti_brk; gmtime_s(&ti_brk, &t_brk);
+            const int bh = ti_brk.tm_hour;
+            const bool gold_bracket_session =
+                (bh >= 7 && bh <= 11) ||   // London open
+                (bh >= 13 && bh <= 17);    // NY session
+
+            // VWAP distance filter: only trade when price is >8 pts from VWAP
+            // Prevents entering in sideways/mean-reverting tape
+            const double gold_vwap = g_gold_stack.vwap();
+            const double gold_mid  = (bid + ask) * 0.5;
+            const bool gold_vwap_ok = (gold_vwap <= 0.0) ||
+                                      (std::fabs(gold_mid - gold_vwap) > 8.0);
+
+            // Frequency limit: max 2 bracket trades per minute on gold
+            {
+                const int64_t now_ms = static_cast<long long>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+                if (now_ms - g_bracket_gold_minute_start >= 60000) {
+                    g_bracket_gold_minute_start       = now_ms;
+                    g_bracket_gold_trades_this_minute = 0;
+                }
+            }
+            const bool gold_freq_ok = (g_bracket_gold_trades_this_minute < 2);
+
+            const bool gold_bracket_can_enter =
+                gold_can_enter &&
+                !g_bracket_gold.has_open_position() &&
+                gold_bracket_session &&
+                gold_vwap_ok &&
+                gold_freq_ok;
+
             g_bracket_gold.on_tick(bid, ask,
                 static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()),
-                gold_can_enter && !g_bracket_gold.has_open_position(),
+                gold_bracket_can_enter,
                 regime.c_str(), bracket_on_close);
             const auto bgsig = g_bracket_gold.get_signal();
             if (bgsig.valid) {
@@ -2714,6 +2779,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double bg_lot    = compute_size("GOLD.F", bg_sl_abs, ask - bid, g_bracket_gold.ENTRY_SIZE);
                 send_live_order("GOLD.F", bgsig.is_long, bg_lot, bgsig.entry);
                 g_bracket_gold.confirm_fill(bgsig.entry, bg_lot);
+                ++g_bracket_gold_trades_this_minute;
             }
         }
 
@@ -3267,27 +3333,27 @@ int main(int argc, char* argv[])
     apply_generic_index_config(g_eng_uk100);
     apply_generic_index_config(g_eng_estx50);
     apply_generic_silver_config(g_eng_xag);
-    // Bracket engines — configure() with hardcoded production params.
+    // Bracket engines — configure() with tuned production params.
     // buffer, lookback, RR, cooldown_ms, MIN_RANGE, CONFIRM_MOVE, confirm_timeout_ms, min_hold_ms
     g_bracket_gold.configure(
-        0.5,    // buffer: 50c above/below bracket level
-        25,     // lookback ticks for structure
-        0.9,    // RR
-        90000,  // cooldown after close: 90s
-        12.0,   // MIN_RANGE: gold must have $12 range to arm
-        2.0,    // CONFIRM_MOVE: price must move $2 past bracket before entry
+        0.8,    // buffer: 80c above/below bracket level
+        30,     // lookback ticks for structure
+        0.75,   // RR (lower — TP inside real move, not over-reaching)
+        120000, // cooldown after close: 120s
+        18.0,   // MIN_RANGE: gold must have $18 range to arm (was $12)
+        3.0,    // CONFIRM_MOVE: price must move $3 past bracket (was $2)
         4000,   // confirm timeout: 4s to follow through or back to ARMED
         15000   // min hold: 15s minimum before SL/TP check
     );
     g_bracket_gold.ENTRY_SIZE = 0.01;
     g_bracket_gold.symbol     = "GOLD.F";
     g_bracket_xag.configure(
-        0.05,   // buffer
-        25,     // lookback
-        0.9,    // RR
-        90000,  // cooldown: 90s
-        0.25,   // MIN_RANGE: silver must have 25c range to arm
-        0.04,   // CONFIRM_MOVE: 4c follow-through required
+        0.08,   // buffer (was 0.05)
+        30,     // lookback (was 25)
+        0.75,   // RR (was 0.9)
+        120000, // cooldown: 120s (was 90s)
+        0.35,   // MIN_RANGE: silver must have 35c range (was 0.25)
+        0.06,   // CONFIRM_MOVE: 6c follow-through required (was 0.04)
         4000,   // confirm timeout: 4s
         15000   // min hold: 15s
     );

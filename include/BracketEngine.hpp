@@ -79,8 +79,9 @@ public:
     int          signal_count = 0;
 
     struct OpenPos {
-        bool    active   = false;
-        bool    is_long  = true;
+        bool    active          = false;
+        bool    is_long         = true;
+        bool    sl_locked_to_be = false;   // true once SL has been moved to breakeven
         double  entry    = 0.0;
         double  tp       = 0.0;
         double  sl       = 0.0;
@@ -153,10 +154,30 @@ public:
             // MIN_HOLD_MS: don't check SL/TP until position has been open long enough
             if (ts - pos.entry_ts < static_cast<long long>(MIN_HOLD_MS)) return;
 
+            // Partial lock-in: move SL to breakeven at 60% TP progress
+            // Converts "good move that reversed" trades into breakeven/small wins
+            {
+                const double tp_dist  = std::fabs(pos.tp - pos.entry);
+                const double progress = tp_dist > 0.0
+                    ? (pos.is_long ? (mid - pos.entry) : (pos.entry - mid)) / tp_dist
+                    : 0.0;
+                if (progress >= 0.60 && !pos.sl_locked_to_be) {
+                    const double be = pos.entry;
+                    if ( pos.is_long && be > pos.sl) { pos.sl = be; pos.sl_locked_to_be = true; }
+                    if (!pos.is_long && be < pos.sl) { pos.sl = be; pos.sl_locked_to_be = true; }
+                    if (pos.sl_locked_to_be) {
+                        std::cout << "[BRACKET-" << symbol << "] SL LOCKED TO BE"
+                                  << " progress=" << std::fixed << std::setprecision(2) << progress
+                                  << " sl=" << pos.sl << "\n";
+                        std::cout.flush();
+                    }
+                }
+            }
+
             if ( pos.is_long && bid >= pos.tp) { closePos(pos.tp, "TP_HIT",  macro_regime, on_close); return; }
             if (!pos.is_long && ask <= pos.tp) { closePos(pos.tp, "TP_HIT",  macro_regime, on_close); return; }
-            if ( pos.is_long && bid <= pos.sl) { closePos(pos.sl, "SL_HIT",  macro_regime, on_close); return; }
-            if (!pos.is_long && ask >= pos.sl) { closePos(pos.sl, "SL_HIT",  macro_regime, on_close); return; }
+            if ( pos.is_long && bid <= pos.sl) { closePos(pos.sl, pos.sl_locked_to_be ? "BE_HIT" : "SL_HIT", macro_regime, on_close); return; }
+            if (!pos.is_long && ask >= pos.sl) { closePos(pos.sl, pos.sl_locked_to_be ? "BE_HIT" : "SL_HIT", macro_regime, on_close); return; }
             return;
         }
 
