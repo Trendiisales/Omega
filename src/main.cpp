@@ -2593,22 +2593,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active));
             }
         }
-        // Bracket engine: hi/lo structure stop — runs parallel to compression engine
-        // CRITICAL FIX: symbol_gate now includes g_bracket_xag.has_open_position() so
-        // the compression engine (g_eng_xag) cannot enter while bracket is PENDING/LIVE.
-        // confirm_fill() called with real size after send — no more phantom positions.
+        // Bracket engine: hi/lo structure stop with confirmation filter.
+        // CRITICAL: has_open_position() blocks compression engine above.
         if (silver_session_ok) {
             const bool xag_bracket_block =
                 g_bracket_xag.has_open_position() || g_eng_xag.pos.active;
-            const auto bsig = g_bracket_xag.update(bid, ask, rtt_check, regime.c_str(), bracket_on_close,
-                symbol_gate("XAGUSD", xag_bracket_block));
+            const bool xag_can = symbol_gate("XAGUSD", xag_bracket_block);
+            g_bracket_xag.on_tick(bid, ask,
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count()),
+                xag_can && !g_bracket_xag.has_open_position(),
+                regime.c_str(), bracket_on_close);
+            const auto bsig = g_bracket_xag.get_signal();
             if (bsig.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
                     bsig.is_long ? "LONG" : "SHORT", bsig.entry, bsig.reason);
                 const double bxag_sl_abs = std::fabs(bsig.entry - bsig.sl);
                 const double bxag_lot    = compute_size("XAGUSD", bxag_sl_abs, ask - bid, g_bracket_xag.ENTRY_SIZE);
                 send_live_order("XAGUSD", bsig.is_long, bxag_lot, bsig.entry);
-                // CRITICAL FIX: confirm fill with REAL size — engine was using ENTRY_SIZE stub
                 g_bracket_xag.confirm_fill(bsig.entry, bxag_lot);
             }
         }
@@ -2696,18 +2698,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
 
         // ── Bracket engine: hi/lo structure stop ─────────────────────────────
-        // can_enter = gold_can_enter AND bracket itself not already in a position.
-        // CRITICAL FIX: confirm_fill() called after send so size is real broker qty.
+        // on_tick() feeds state machine. get_signal() consumes pending signal.
+        // confirm_fill() called with real computed lot size after send.
         {
-            const auto bgsig = g_bracket_gold.update(bid, ask, rtt_check, regime.c_str(), bracket_on_close,
-                gold_can_enter && !g_bracket_gold.has_open_position());
+            g_bracket_gold.on_tick(bid, ask,
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count()),
+                gold_can_enter && !g_bracket_gold.has_open_position(),
+                regime.c_str(), bracket_on_close);
+            const auto bgsig = g_bracket_gold.get_signal();
             if (bgsig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     bgsig.is_long ? "LONG" : "SHORT", bgsig.entry, bgsig.reason);
                 const double bg_sl_abs = std::fabs(bgsig.entry - bgsig.sl);
                 const double bg_lot    = compute_size("GOLD.F", bg_sl_abs, ask - bid, g_bracket_gold.ENTRY_SIZE);
                 send_live_order("GOLD.F", bgsig.is_long, bg_lot, bgsig.entry);
-                // CRITICAL FIX: confirm fill with REAL size — engine was using ENTRY_SIZE stub
                 g_bracket_gold.confirm_fill(bgsig.entry, bg_lot);
             }
         }
@@ -3262,26 +3267,32 @@ int main(int argc, char* argv[])
     apply_generic_index_config(g_eng_uk100);
     apply_generic_index_config(g_eng_estx50);
     apply_generic_silver_config(g_eng_xag);
-    g_bracket_gold.STRUCTURE_LOOKBACK    = g_cfg.bracket_gold_lookback;
-    g_bracket_gold.TP_PCT                = g_cfg.bracket_gold_tp_pct;
-    g_bracket_gold.SL_PCT                = g_cfg.bracket_gold_sl_pct;
-    g_bracket_gold.MIN_RANGE_PCT         = g_cfg.bracket_gold_min_range_pct;
-    g_bracket_gold.MAX_SPREAD_PCT        = g_cfg.bracket_gold_max_spread_pct;
-    g_bracket_gold.MIN_GAP_SEC           = g_cfg.bracket_gold_min_gap_sec;
-    g_bracket_gold.COOLDOWN_AFTER_SL_SEC = g_cfg.bracket_gold_cooldown_sl_sec;
-    g_bracket_gold.MAX_HOLD_SEC          = g_cfg.bracket_gold_max_hold_sec;
-    g_bracket_gold.ENTRY_SIZE            = 0.01;
-    g_bracket_gold.symbol                = "GOLD.F";   // must be set — used in TradeRecord and log output
-    g_bracket_xag.STRUCTURE_LOOKBACK     = g_cfg.bracket_xag_lookback;
-    g_bracket_xag.TP_PCT                 = g_cfg.bracket_xag_tp_pct;
-    g_bracket_xag.SL_PCT                 = g_cfg.bracket_xag_sl_pct;
-    g_bracket_xag.MIN_RANGE_PCT          = g_cfg.bracket_xag_min_range_pct;
-    g_bracket_xag.MAX_SPREAD_PCT         = g_cfg.bracket_xag_max_spread_pct;
-    g_bracket_xag.MIN_GAP_SEC            = g_cfg.bracket_xag_min_gap_sec;
-    g_bracket_xag.COOLDOWN_AFTER_SL_SEC  = g_cfg.bracket_xag_cooldown_sl_sec;
-    g_bracket_xag.MAX_HOLD_SEC           = g_cfg.bracket_xag_max_hold_sec;
-    g_bracket_xag.ENTRY_SIZE             = 0.01;
-    g_bracket_xag.symbol                 = "XAGUSD";  // must be set — used in TradeRecord and log output
+    // Bracket engines — configure() with hardcoded production params.
+    // buffer, lookback, RR, cooldown_ms, MIN_RANGE, CONFIRM_MOVE, confirm_timeout_ms, min_hold_ms
+    g_bracket_gold.configure(
+        0.5,    // buffer: 50c above/below bracket level
+        25,     // lookback ticks for structure
+        0.9,    // RR
+        90000,  // cooldown after close: 90s
+        12.0,   // MIN_RANGE: gold must have $12 range to arm
+        2.0,    // CONFIRM_MOVE: price must move $2 past bracket before entry
+        4000,   // confirm timeout: 4s to follow through or back to ARMED
+        15000   // min hold: 15s minimum before SL/TP check
+    );
+    g_bracket_gold.ENTRY_SIZE = 0.01;
+    g_bracket_gold.symbol     = "GOLD.F";
+    g_bracket_xag.configure(
+        0.05,   // buffer
+        25,     // lookback
+        0.9,    // RR
+        90000,  // cooldown: 90s
+        0.25,   // MIN_RANGE: silver must have 25c range to arm
+        0.04,   // CONFIRM_MOVE: 4c follow-through required
+        4000,   // confirm timeout: 4s
+        15000   // min hold: 15s
+    );
+    g_bracket_xag.ENTRY_SIZE = 0.01;
+    g_bracket_xag.symbol     = "XAGUSD";
     apply_generic_fx_config(g_eng_eurusd);
     apply_generic_audusd_config(g_eng_audusd);
     apply_generic_nzdusd_config(g_eng_nzdusd);
