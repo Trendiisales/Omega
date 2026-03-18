@@ -347,8 +347,8 @@ static omega::latency::LatencyEdgeStack g_le_stack;
 // Run in parallel to their respective primary executors (GoldEngineStack / g_eng_xag).
 // symbol set in load_config() after g_cfg is populated.
 #include "BracketEngine.hpp"
-static omega::BracketEngine g_bracket_gold;  // GOLD.F hi/lo structure bracket
-static omega::BracketEngine g_bracket_xag;   // XAGUSD hi/lo structure bracket
+static omega::GoldBracketEngine   g_bracket_gold;  // GOLD.F hi/lo structure bracket
+static omega::SilverBracketEngine g_bracket_xag;   // XAGUSD hi/lo structure bracket
 
 // Bracket trade frequency tracking — max 2 bracket trades per symbol per minute
 static int      g_bracket_gold_trades_this_minute = 0;
@@ -3329,39 +3329,35 @@ int main(int argc, char* argv[])
     g_bracket_gold.configure(
         0.8,    // buffer
         30,     // lookback
-        1.6,    // RR (TP_MULT=1.6 per spec)
+        1.6,    // RR
         120000, // cooldown_ms
-        0.40,   // MIN_RANGE static fallback (ATR scaling takes over after 20 ticks)
+        0.40,   // MIN_RANGE static fallback
         0.05,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
-        12000,  // min_hold_ms (spec: 12000)
+        12000,  // min_hold_ms
         8.0,    // VWAP_MIN_DIST
-        30000,  // MIN_STRUCTURE_MS (spec: 30000)
-        5000,   // FAILURE_WINDOW_MS (spec: 5000)
+        30000,  // MIN_STRUCTURE_MS
+        5000,   // FAILURE_WINDOW_MS
         20,     // ATR_PERIOD
         0.15,   // ATR_CONFIRM_K
         1.5     // ATR_RANGE_K
     );
-    g_bracket_gold.ENTRY_SIZE = 0.01;
-    g_bracket_gold.symbol     = "GOLD.F";
     g_bracket_xag.configure(
         0.08,   // buffer
         30,     // lookback
-        1.4,    // RR (TP_MULT=1.4 per spec)
+        1.4,    // RR
         120000, // cooldown_ms
         0.35,   // MIN_RANGE static fallback
         0.06,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
-        8000,   // min_hold_ms (spec: 8000)
+        8000,   // min_hold_ms
         0.15,   // VWAP_MIN_DIST
-        20000,  // MIN_STRUCTURE_MS (spec: 20000)
-        4000,   // FAILURE_WINDOW_MS (spec: 4000)
+        20000,  // MIN_STRUCTURE_MS
+        4000,   // FAILURE_WINDOW_MS
         20,     // ATR_PERIOD
         0.17,   // ATR_CONFIRM_K
         1.4     // ATR_RANGE_K
     );
-    g_bracket_xag.ENTRY_SIZE = 0.01;
-    g_bracket_xag.symbol     = "XAGUSD";
     apply_generic_fx_config(g_eng_eurusd);
     apply_generic_audusd_config(g_eng_audusd);
     apply_generic_nzdusd_config(g_eng_nzdusd);
