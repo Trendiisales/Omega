@@ -3044,6 +3044,11 @@ static void trade_loop() {
                 if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                     Sleep(1); continue;
                 }
+                // SO_RCVTIMEO timeout fires as SSL_ERROR_SYSCALL + WSAETIMEDOUT —
+                // not a real disconnect, just no data in 200ms window
+                if (err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT) {
+                    continue;
+                }
                 std::cerr << "[OMEGA-TRADE] SSL error " << err << " -- reconnecting\n";
                 break;
             }
@@ -3205,6 +3210,11 @@ static void quote_loop() {
                 const int err = SSL_get_error(ssl, n);
                 if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                     Sleep(1); continue;
+                }
+                // SO_RCVTIMEO timeout fires as SSL_ERROR_SYSCALL + WSAETIMEDOUT —
+                // not a real disconnect, just no data in 200ms window
+                if (err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT) {
+                    continue;
                 }
                 std::cerr << "[OMEGA] SSL error " << err << " -- reconnecting\n";
                 break;
