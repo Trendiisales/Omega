@@ -1421,8 +1421,12 @@ static SSL* connect_ssl(const std::string& host, int port, int& sock_out) {
     }
     freeaddrinfo(result);
     int flag = 1;
-    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&flag), sizeof(flag));
+    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,  reinterpret_cast<const char*>(&flag), sizeof(flag));
     setsockopt(sock, SOL_SOCKET,  SO_KEEPALIVE, reinterpret_cast<const char*>(&flag), sizeof(flag));
+    // 200ms receive timeout — SSL_read unblocks within 200ms so g_running=false exits promptly
+    DWORD recv_timeout_ms = 200;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+               reinterpret_cast<const char*>(&recv_timeout_ms), sizeof(recv_timeout_ms));
     SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
     if (!ctx) { closesocket(sock); return nullptr; }
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
@@ -3003,7 +3007,7 @@ static void trade_loop() {
         SSL* ssl = connect_ssl(g_cfg.host, g_cfg.trade_port, sock);
         if (!ssl) {
             std::cerr << "[OMEGA-TRADE] Connect failed -- retry " << backoff_ms << "ms\n";
-            Sleep(static_cast<DWORD>(backoff_ms));
+            for (int i = 0; i < backoff_ms / 100 && g_running.load(); ++i) Sleep(100);
             backoff_ms = std::min(backoff_ms * 2, max_backoff);
             continue;
         }
@@ -3111,7 +3115,8 @@ static void trade_loop() {
         SSL_shutdown(ssl); SSL_free(ssl);
         if (sock >= 0) closesocket(static_cast<SOCKET>(sock));
         std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
-        Sleep(2000);
+        // Interruptible reconnect wait — exits immediately on shutdown
+        for (int i = 0; i < 20 && g_running.load(); ++i) Sleep(100);
     }
 }
 
@@ -3127,7 +3132,8 @@ static void quote_loop() {
         SSL* ssl = connect_ssl(g_cfg.host, g_cfg.port, sock);
         if (!ssl) {
             std::cerr << "[OMEGA] Connect failed -- retry " << backoff_ms << "ms\n";
-            Sleep(static_cast<DWORD>(backoff_ms));
+            // Interruptible backoff — exits immediately on shutdown signal
+            for (int i = 0; i < backoff_ms / 100 && g_running.load(); ++i) Sleep(100);
             backoff_ms = std::min(backoff_ms * 2, max_backoff);
             continue;
         }
@@ -3281,7 +3287,8 @@ static void quote_loop() {
 
         SSL_shutdown(ssl); SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
-        Sleep(static_cast<DWORD>(backoff_ms));
+        // Interruptible reconnect wait — exits immediately on shutdown signal
+        for (int i = 0; i < backoff_ms / 100 && g_running.load(); ++i) Sleep(100);
         backoff_ms = std::min(backoff_ms * 2, max_backoff);
     }
 }
