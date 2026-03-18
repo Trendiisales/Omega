@@ -3021,8 +3021,16 @@ static void quote_loop() {
         fc(g_eng_us30, "DJ30.F"); fc(g_eng_nas100, "NAS100");
         fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
         fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
-        g_bracket_xag.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "", bracket_on_close);
-        g_bracket_gold.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "", bracket_on_close);
+        g_bracket_xag.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "",
+            [](const omega::TradeRecord& tr) {
+                handle_closed_trade(tr);
+                send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+            });
+        g_bracket_gold.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "",
+            [](const omega::TradeRecord& tr) {
+                handle_closed_trade(tr);
+                send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+            });
         fc(g_eng_audusd, "AUDUSD"); fc(g_eng_nzdusd, "NZDUSD"); fc(g_eng_usdjpy, "USDJPY");
         fc(g_eng_brent, "UKBRENT");
         // Force-close GoldEngineStack
