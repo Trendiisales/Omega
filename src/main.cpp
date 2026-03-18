@@ -2561,16 +2561,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Block 05:00-07:00 UTC dead zone AND pure Asian session (00:00-05:00 thin).
         // Silver is a London/NY instrument — Asia volume is too thin for breakouts.
         // Exception: 22:00-24:00 allowed (Tokyo open, genuine silver demand flow).
-        {
-            const auto t_xag = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            struct tm ti_xag; gmtime_s(&ti_xag, &t_xag);
-            const int h_xag = ti_xag.tm_hour;
         // Allow: 07:00-24:00 (London+NY+Tokyo open)
         // Block: 00:00-07:00 — thin Asia, silver has no real flow in this window
-        const bool silver_session_ok = (h_xag >= 7);
-            if (silver_session_ok) {
-                dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active));
-            }
+        const bool silver_session_ok = []() {
+            const auto t_xag = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti_xag; gmtime_s(&ti_xag, &t_xag);
+            return ti_xag.tm_hour >= 7;
+        }();
+        if (silver_session_ok) {
+            dispatch(g_eng_xag, symbol_gate("XAGUSD", g_eng_xag.pos.active));
         }
         // Bracket engine: hi/lo structure stop — runs parallel to compression engine
         if (silver_session_ok) {
@@ -3128,16 +3127,31 @@ static void quote_loop() {
         fc(g_eng_us30, "DJ30.F"); fc(g_eng_nas100, "NAS100");
         fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
         fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
-        g_bracket_xag.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "",
-            [](const omega::TradeRecord& tr) {
-                handle_closed_trade(tr);
-                send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
-            });
-        g_bracket_gold.forceClose(g_bid, g_ask, "FORCE_CLOSE", g_rtt_last, "",
-            [](const omega::TradeRecord& tr) {
-                handle_closed_trade(tr);
-                send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
-            });
+        // Force-close bracket engines — look up current prices from book
+        {
+            double bxag_bid = 0.0, bxag_ask = 0.0;
+            { std::lock_guard<std::mutex> lk(g_book_mtx);
+              const auto bi = g_bids.find("XAGUSD"); if (bi != g_bids.end()) bxag_bid = bi->second;
+              const auto ai = g_asks.find("XAGUSD"); if (ai != g_asks.end()) bxag_ask = ai->second; }
+            if (bxag_bid > 0.0 && bxag_ask > 0.0)
+                g_bracket_xag.forceClose(bxag_bid, bxag_ask, "FORCE_CLOSE", g_rtt_last, "",
+                    [](const omega::TradeRecord& tr) {
+                        handle_closed_trade(tr);
+                        send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+                    });
+        }
+        {
+            double bgld_bid = 0.0, bgld_ask = 0.0;
+            { std::lock_guard<std::mutex> lk(g_book_mtx);
+              const auto bi = g_bids.find("GOLD.F"); if (bi != g_bids.end()) bgld_bid = bi->second;
+              const auto ai = g_asks.find("GOLD.F"); if (ai != g_asks.end()) bgld_ask = ai->second; }
+            if (bgld_bid > 0.0 && bgld_ask > 0.0)
+                g_bracket_gold.forceClose(bgld_bid, bgld_ask, "FORCE_CLOSE", g_rtt_last, "",
+                    [](const omega::TradeRecord& tr) {
+                        handle_closed_trade(tr);
+                        send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+                    });
+        }
         fc(g_eng_audusd, "AUDUSD"); fc(g_eng_nzdusd, "NZDUSD"); fc(g_eng_usdjpy, "USDJPY");
         fc(g_eng_brent, "UKBRENT");
         // Force-close GoldEngineStack
