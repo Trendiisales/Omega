@@ -93,16 +93,17 @@ public:
     struct OpenPos {
         bool    active          = false;
         bool    is_long         = true;
-        bool    sl_locked_to_be = false;   // true once SL has been moved to breakeven
-        double  entry    = 0.0;
-        double  tp       = 0.0;
-        double  sl       = 0.0;
-        double  size     = 0.01;
-        double  mfe      = 0.0;
-        double  mae      = 0.0;
-        int64_t entry_ts = 0;
+        bool    sl_locked_to_be = false;
+        double  entry           = 0.0;
+        double  tp              = 0.0;
+        double  sl              = 0.0;
+        double  breakout_level  = 0.0;  // bracket_high (long) or bracket_low (short) — for failure check
+        double  size            = 0.01;
+        double  mfe             = 0.0;
+        double  mae             = 0.0;
+        int64_t entry_ts        = 0;
         double  spread_at_entry = 0.0;
-        char    regime[32] = {};
+        char    regime[32]      = {};
     } pos;
 
     BracketSignal pending_sig;
@@ -177,14 +178,15 @@ public:
             if (-move > pos.mae) pos.mae = -move;
 
             // Breakout failure detection within FAILURE_WINDOW_MS:
-            // If price returns inside the bracket immediately after fill,
-            // it's a liquidity sweep not a real breakout — exit before full SL.
+            // If price returns INSIDE the bracket (back through the breakout level)
+            // immediately after fill, it's a liquidity sweep — exit early.
+            // Uses breakout_level (bracket_high/low), NOT pos.sl (full SL distance).
             if (FAILURE_WINDOW_MS > 0 &&
                 ts - pos.entry_ts < static_cast<long long>(FAILURE_WINDOW_MS)) {
-                if ( pos.is_long && bid < pos.sl) {
+                if ( pos.is_long && bid < pos.breakout_level) {
                     closePos(bid, "BREAKOUT_FAIL", macro_regime, on_close); return;
                 }
-                if (!pos.is_long && ask > pos.sl) {
+                if (!pos.is_long && ask > pos.breakout_level) {
                     closePos(ask, "BREAKOUT_FAIL", macro_regime, on_close); return;
                 }
             }
@@ -424,6 +426,7 @@ private:
         pos.entry      = entry;
         pos.sl         = stop;
         pos.tp         = tp;
+        pos.breakout_level = (side > 0) ? bracket_high : bracket_low;  // level price must stay past
         pos.size       = ENTRY_SIZE;
         pos.spread_at_entry = spread;
         if (macro_regime) strncpy_s(pos.regime, macro_regime, 31);
