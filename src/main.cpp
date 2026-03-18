@@ -3009,6 +3009,7 @@ static void trade_loop() {
 
         backoff_ms = 1000;
         g_trade_seq = 1;
+        g_trade_ready.store(false);  // clear before logon — previous session may have left it true
 
         // Send trade logon
         const std::string logon = build_logon(g_trade_seq++, "TRADE");
@@ -3150,6 +3151,7 @@ static void quote_loop() {
         g_recv_buf.clear();
         g_quote_seq      = 1;
         g_rtt_pending_ts = 0;
+        g_quote_ready.store(false);  // clear before logon — previous session may have left it true
 
         const std::string logon = build_logon(g_quote_seq++, "QUOTE");
         SSL_write(ssl, logon.c_str(), static_cast<int>(logon.size()));
