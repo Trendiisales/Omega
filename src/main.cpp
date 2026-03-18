@@ -3330,13 +3330,16 @@ int main(int argc, char* argv[])
         30,     // lookback
         0.75,   // RR
         120000, // cooldown_ms
-        18.0,   // MIN_RANGE
-        3.0,    // CONFIRM_MOVE
+        18.0,   // MIN_RANGE (static fallback when ATR not ready)
+        3.0,    // CONFIRM_MOVE (static fallback)
         4000,   // confirm_timeout_ms
         15000,  // min_hold_ms
         8.0,    // VWAP_MIN_DIST
-        45000,  // MIN_STRUCTURE_MS: range must hold 45s before arming
-        5000    // FAILURE_WINDOW_MS: 5s breakout failure window
+        45000,  // MIN_STRUCTURE_MS
+        5000,   // FAILURE_WINDOW_MS
+        20,     // ATR_PERIOD: 20-tick rolling ATR
+        0.15,   // ATR_CONFIRM_K: CONFIRM_MOVE = ATR * 0.15
+        1.5     // ATR_RANGE_K:   MIN_RANGE    = ATR * 1.5
     );
     g_bracket_gold.ENTRY_SIZE = 0.01;
     g_bracket_gold.symbol     = "GOLD.F";
@@ -3345,13 +3348,16 @@ int main(int argc, char* argv[])
         30,     // lookback
         0.75,   // RR
         120000, // cooldown_ms
-        0.35,   // MIN_RANGE
-        0.06,   // CONFIRM_MOVE
+        0.35,   // MIN_RANGE (static fallback)
+        0.06,   // CONFIRM_MOVE (static fallback)
         4000,   // confirm_timeout_ms
         15000,  // min_hold_ms
         0.15,   // VWAP_MIN_DIST
-        30000,  // MIN_STRUCTURE_MS: range must hold 30s before arming
-        5000    // FAILURE_WINDOW_MS: 5s breakout failure window
+        30000,  // MIN_STRUCTURE_MS
+        5000,   // FAILURE_WINDOW_MS
+        20,     // ATR_PERIOD: 20-tick rolling ATR
+        0.17,   // ATR_CONFIRM_K: CONFIRM_MOVE = ATR * 0.17
+        1.4     // ATR_RANGE_K:   MIN_RANGE    = ATR * 1.4
     );
     g_bracket_xag.ENTRY_SIZE = 0.01;
     g_bracket_xag.symbol     = "XAGUSD";

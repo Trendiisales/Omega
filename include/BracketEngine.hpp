@@ -71,6 +71,14 @@ public:
     int    MIN_STRUCTURE_MS      = 0;     // min ms range must hold before arming
     int    FAILURE_WINDOW_MS     = 5000;  // ms after fill to check for breakout failure
 
+    // ATR volatility scaling — when ATR_PERIOD > 0, CONFIRM_MOVE and MIN_RANGE
+    // are scaled by current ATR instead of using static values.
+    // ATR_CONFIRM_K * atr replaces CONFIRM_MOVE (0 = use static)
+    // ATR_RANGE_K   * atr replaces MIN_RANGE    (0 = use static)
+    int    ATR_PERIOD            = 0;     // 0 = disabled; recommended 20
+    double ATR_CONFIRM_K         = 0.0;  // CONFIRM_MOVE = ATR * k; gold ~0.15, silver ~0.17
+    double ATR_RANGE_K           = 0.0;  // MIN_RANGE    = ATR * k; gold ~1.5,  silver ~1.4
+
     // Legacy fields kept for telemetry reads — not used for logic.
     double ENTRY_SIZE            = 0.01;
     double SL_PCT                = 0.0;
@@ -80,6 +88,7 @@ public:
     double       bracket_high = 0.0;
     double       bracket_low  = 0.0;
     int          signal_count = 0;
+    double       atr          = 0.0;  // current ATR (readable by telemetry/logs)
 
     struct OpenPos {
         bool    active          = false;
@@ -109,9 +118,12 @@ public:
                    double confirm_move,
                    int    confirm_timeout_ms,
                    int    min_hold_ms,
-                   double vwap_min_dist    = 0.0,
-                   int    min_structure_ms = 0,
-                   int    failure_window_ms = 5000)
+                   double vwap_min_dist     = 0.0,
+                   int    min_structure_ms  = 0,
+                   int    failure_window_ms = 5000,
+                   int    atr_period        = 0,
+                   double atr_confirm_k     = 0.0,
+                   double atr_range_k       = 0.0)
     {
         BUFFER              = buffer;
         STRUCTURE_LOOKBACK  = lookback;
@@ -124,6 +136,9 @@ public:
         VWAP_MIN_DIST       = vwap_min_dist;
         MIN_STRUCTURE_MS    = min_structure_ms;
         FAILURE_WINDOW_MS   = failure_window_ms;
+        ATR_PERIOD          = atr_period;
+        ATR_CONFIRM_K       = atr_confirm_k;
+        ATR_RANGE_K         = atr_range_k;
     }
 
     // ── has_open_position(): blocks other engines ─────────────────────────────
@@ -230,8 +245,30 @@ public:
         const double struct_lo = *std::min_element(wbegin, wend);
         const double range     = struct_hi - struct_lo;
 
+        // ── ATR update — rolling mean of per-tick bid-ask ranges ──────────────
+        // Spread is a reasonable per-tick volatility proxy available on every tick.
+        // True ATR (high-low per bar) would need bar aggregation; tick spread ATR
+        // is a consistent, low-latency substitute that scales with volatility.
+        if (ATR_PERIOD > 0) {
+            m_atr_window.push_back(spread);
+            if (static_cast<int>(m_atr_window.size()) > ATR_PERIOD * 3)
+                m_atr_window.pop_front();
+            if (static_cast<int>(m_atr_window.size()) >= ATR_PERIOD) {
+                double sum = 0.0;
+                const int n = static_cast<int>(m_atr_window.size());
+                for (int i = n - ATR_PERIOD; i < n; ++i) sum += m_atr_window[i];
+                atr = sum / ATR_PERIOD;
+            }
+        }
+
+        // Effective params — ATR-scaled when ATR is ready, static otherwise
+        const double eff_min_range    = (ATR_RANGE_K   > 0.0 && atr > 0.0)
+                                        ? atr * ATR_RANGE_K   : MIN_RANGE;
+        const double eff_confirm_move = (ATR_CONFIRM_K > 0.0 && atr > 0.0)
+                                        ? atr * ATR_CONFIRM_K : CONFIRM_MOVE;
+
         // MIN_RANGE filter — don't arm in dead tape
-        if (range < MIN_RANGE) {
+        if (range < eff_min_range) {
             phase        = BracketPhase::IDLE;
             bracket_high = 0.0;
             bracket_low  = 0.0;
@@ -264,18 +301,22 @@ public:
             if (MIN_STRUCTURE_MS > 0 && ts - m_armed_ts < static_cast<long long>(MIN_STRUCTURE_MS))
                 return;
             if (ask >= bracket_high) {
-                m_confirm_side     = 1;
-                m_confirm_start_ts = ts;
-                phase              = BracketPhase::CONFIRMING;
+                m_confirm_side       = 1;
+                m_confirm_start_ts   = ts;
+                m_eff_confirm_move   = eff_confirm_move;  // snapshot for next tick
+                phase                = BracketPhase::CONFIRMING;
                 std::cout << "[BRACKET-" << symbol << "] CONFIRMING LONG"
-                          << " need ask>=" << bracket_high + CONFIRM_MOVE << "\n";
+                          << " need ask>=" << bracket_high + eff_confirm_move
+                          << (atr > 0.0 ? " (ATR-scaled)" : "") << "\n";
                 std::cout.flush();
             } else if (bid <= bracket_low) {
-                m_confirm_side     = -1;
-                m_confirm_start_ts = ts;
-                phase              = BracketPhase::CONFIRMING;
+                m_confirm_side       = -1;
+                m_confirm_start_ts   = ts;
+                m_eff_confirm_move   = eff_confirm_move;
+                phase                = BracketPhase::CONFIRMING;
                 std::cout << "[BRACKET-" << symbol << "] CONFIRMING SHORT"
-                          << " need bid<=" << bracket_low - CONFIRM_MOVE << "\n";
+                          << " need bid<=" << bracket_low - eff_confirm_move
+                          << (atr > 0.0 ? " (ATR-scaled)" : "") << "\n";
                 std::cout.flush();
             }
             return;
@@ -284,12 +325,12 @@ public:
         // ── CONFIRMING: wait for CONFIRM_MOVE continuation ────────────────────
         if (phase == BracketPhase::CONFIRMING) {
             if (m_confirm_side == 1) {
-                if (ask >= bracket_high + CONFIRM_MOVE) {
+                if (ask >= bracket_high + m_eff_confirm_move) {
                     trigger(1, spread, macro_regime);
                     return;
                 }
             } else {
-                if (bid <= bracket_low - CONFIRM_MOVE) {
+                if (bid <= bracket_low - m_eff_confirm_move) {
                     trigger(-1, spread, macro_regime);
                     return;
                 }
@@ -351,14 +392,16 @@ public:
 
 private:
     std::deque<double> m_window;
-    int64_t  m_last_ts          = 0;
-    double   m_last_bid         = 0.0;
-    double   m_last_ask         = 0.0;
-    int64_t  m_cooldown_start   = 0;
-    int      m_confirm_side     = 0;
-    int64_t  m_confirm_start_ts = 0;
-    int64_t  m_armed_ts         = 0;   // when phase transitioned to ARMED
-    int      m_trade_id         = 0;
+    std::deque<double> m_atr_window;   // rolling per-tick ranges for ATR
+    int64_t  m_last_ts            = 0;
+    double   m_last_bid           = 0.0;
+    double   m_last_ask           = 0.0;
+    int64_t  m_cooldown_start     = 0;
+    int      m_confirm_side       = 0;
+    int64_t  m_confirm_start_ts   = 0;
+    double   m_eff_confirm_move   = 0.0;  // ATR-scaled confirm move, snapshotted at touch
+    int64_t  m_armed_ts           = 0;
+    int      m_trade_id           = 0;
 
     void trigger(int side, double spread, const char* macro_regime) noexcept
     {
@@ -437,13 +480,16 @@ private:
     }
 
     void reset() noexcept {
-        pos            = OpenPos{};
-        pending_sig    = BracketSignal{};
-        bracket_high   = 0.0;
-        bracket_low    = 0.0;
-        m_confirm_side = 0;
-        m_armed_ts     = 0;
-        phase          = BracketPhase::IDLE;
+        pos                = OpenPos{};
+        pending_sig        = BracketSignal{};
+        bracket_high       = 0.0;
+        bracket_low        = 0.0;
+        m_confirm_side     = 0;
+        m_eff_confirm_move = 0.0;
+        m_armed_ts         = 0;
+        phase              = BracketPhase::IDLE;
+        // Note: m_atr_window intentionally NOT cleared on reset —
+        // ATR history is continuous and should survive position resets
     }
 };
 
