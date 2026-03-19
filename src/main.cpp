@@ -1030,7 +1030,45 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
     return clOrdId;
 }
 
-// Handle ExecutionReport (35=8) from trade session
+// Cancel an open order by clOrdId (FIX 35=F OrderCancelRequest).
+// Used by bracket engine to cancel the unfilled leg after the other fills.
+static void send_cancel_order(const std::string& clOrdId) {
+    if (g_cfg.mode != "LIVE") return;
+    if (clOrdId.empty()) return;
+
+    std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+    auto it = g_live_orders.find(clOrdId);
+    if (it == g_live_orders.end()) return;
+    if (it->second.acked || it->second.rejected) return; // already done
+
+    const std::string cancelClOrdId = "CX-" + std::to_string(nowSec())
+                                    + "-" + std::to_string(g_order_id_counter++);
+    const int sym_id = symbol_name_to_id(it->second.symbol);
+    if (sym_id <= 0) return;
+
+    std::ostringstream b;
+    b << "35=F\x01"
+      << "49=" << g_cfg.sender << "\x01"
+      << "56=" << g_cfg.target << "\x01"
+      << "50=TRADE\x01" << "57=TRADE\x01"
+      << "34=" << g_trade_seq++ << "\x01"
+      << "52=" << timestamp() << "\x01"
+      << "41=" << clOrdId << "\x01"              // OrigClOrdID
+      << "11=" << cancelClOrdId << "\x01"        // new ClOrdID for the cancel
+      << "55=" << sym_id << "\x01"
+      << "54=" << (it->second.side == "LONG" ? "1" : "2") << "\x01"
+      << "38=" << std::fixed << std::setprecision(2) << it->second.qty << "\x01"
+      << "60=" << timestamp() << "\x01";
+    const std::string msg = wrap_fix(b.str());
+
+    if (g_trade_ssl) {
+        SSL_write(g_trade_ssl, msg.c_str(), static_cast<int>(msg.size()));
+        std::cout << "[ORDER-CANCEL] clOrdId=" << clOrdId
+                  << " sym=" << it->second.symbol
+                  << " side=" << it->second.side << "\n";
+        std::cout.flush();
+    }
+}
 static void handle_execution_report(const std::string& msg) {
     const std::string clOrdId  = extract_tag(msg, "11");
     const std::string ordStatus= extract_tag(msg, "39"); // 0=New,1=PartFill,2=Fill,8=Rejected
@@ -1067,18 +1105,27 @@ static void handle_execution_report(const std::string& msg) {
                 if (it->second.symbol == "XAGUSD")   g_bracket_xag.on_reject();
             } else if (ordStatus == "0" || ordStatus == "1" || ordStatus == "2") {
                 it->second.acked = true;
-                // CRITICAL FIX: on confirmed fill, update bracket engines with
-                // real broker fill price and quantity. This is the ONLY place
-                // pos.active is set to true — no phantom positions.
                 if (!lastPx.empty() && !lastQty.empty()) {
                     try {
                         const double fill_px  = std::stod(lastPx);
                         const double fill_qty = std::stod(lastQty);
                         if (fill_px > 0.0 && fill_qty > 0.0) {
-                            if (it->second.symbol == "GOLD.F")
-                                g_bracket_gold.confirm_fill(fill_px, fill_qty);
-                            if (it->second.symbol == "XAGUSD")
-                                g_bracket_xag.confirm_fill(fill_px, fill_qty);
+                            const bool is_long_fill = (it->second.side == "LONG");
+                            if (it->second.symbol == "GOLD.F") {
+                                g_bracket_gold.confirm_fill(is_long_fill, fill_px, fill_qty);
+                                // Cancel the other (unfilled) leg
+                                const std::string& cancel_id = is_long_fill
+                                    ? g_bracket_gold.pending_short_clOrdId
+                                    : g_bracket_gold.pending_long_clOrdId;
+                                if (!cancel_id.empty()) send_cancel_order(cancel_id);
+                            }
+                            if (it->second.symbol == "XAGUSD") {
+                                g_bracket_xag.confirm_fill(is_long_fill, fill_px, fill_qty);
+                                const std::string& cancel_id = is_long_fill
+                                    ? g_bracket_xag.pending_short_clOrdId
+                                    : g_bracket_xag.pending_long_clOrdId;
+                                if (!cancel_id.empty()) send_cancel_order(cancel_id);
+                            }
                         }
                     } catch (...) {}
                 }
@@ -2540,14 +2587,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     std::chrono::system_clock::now().time_since_epoch()).count()),
                 xag_can && !g_bracket_xag.has_open_position(),
                 regime.c_str(), bracket_on_close, 0.0);
-            const auto bsig = g_bracket_xag.get_signal();
-            if (bsig.valid) {
-                g_telemetry.UpdateLastSignal("XAGUSD",
-                    bsig.is_long ? "LONG" : "SHORT", bsig.entry, bsig.reason);
-                const double bxag_sl_abs = std::fabs(bsig.entry - bsig.sl);
-                const double bxag_lot    = compute_size("XAGUSD", bxag_sl_abs, ask - bid, g_bracket_xag.ENTRY_SIZE);
-                send_live_order("XAGUSD", bsig.is_long, bxag_lot, bsig.entry);
-                g_bracket_xag.confirm_fill(bsig.entry, bxag_lot);
+            const auto bsigs = g_bracket_xag.get_signals();
+            if (bsigs.valid) {
+                // True bracket: send BOTH market orders simultaneously.
+                // Whichever fills first → confirm_fill(is_long, ...) called from FIX handler.
+                // The other order will be a duplicate fill on a closed position — ignored.
+                const double bxag_lot = compute_size("XAGUSD",
+                    std::fabs(bsigs.long_entry - bsigs.long_sl), ask - bid,
+                    g_bracket_xag.ENTRY_SIZE);
+                g_telemetry.UpdateLastSignal("XAGUSD", "BRACKET", bsigs.long_entry, "BOTH_ARMED");
+                const std::string long_id  = send_live_order("XAGUSD", true,  bxag_lot, bsigs.long_entry);
+                const std::string short_id = send_live_order("XAGUSD", false, bxag_lot, bsigs.short_entry);
+                g_bracket_xag.pending_long_clOrdId  = long_id;
+                g_bracket_xag.pending_short_clOrdId = short_id;
+                // In SHADOW mode: simulate fill on the side price is closer to
+                if (g_cfg.mode != "LIVE") {
+                    const bool closer_to_high = (std::fabs(bid - bsigs.long_entry) <
+                                                 std::fabs(bid - bsigs.short_entry));
+                    g_bracket_xag.confirm_fill(closer_to_high, closer_to_high ? bsigs.long_entry : bsigs.short_entry, bxag_lot);
+                }
                 ++g_bracket_xag_trades_this_minute;
             }
         }
@@ -2682,14 +2740,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     std::chrono::system_clock::now().time_since_epoch()).count()),
                 gold_bracket_can_enter,
                 regime.c_str(), bracket_on_close, g_gold_stack.vwap());
-            const auto bgsig = g_bracket_gold.get_signal();
-            if (bgsig.valid) {
-                g_telemetry.UpdateLastSignal("GOLD.F",
-                    bgsig.is_long ? "LONG" : "SHORT", bgsig.entry, bgsig.reason);
-                const double bg_sl_abs = std::fabs(bgsig.entry - bgsig.sl);
-                const double bg_lot    = compute_size("GOLD.F", bg_sl_abs, ask - bid, g_bracket_gold.ENTRY_SIZE);
-                send_live_order("GOLD.F", bgsig.is_long, bg_lot, bgsig.entry);
-                g_bracket_gold.confirm_fill(bgsig.entry, bg_lot);
+            const auto bgsigs = g_bracket_gold.get_signals();
+            if (bgsigs.valid) {
+                // True bracket: send BOTH market orders simultaneously.
+                // Whichever fills first → FIX handler calls confirm_fill(is_long, px, qty)
+                // and cancels the other via pending_long/short_clOrdId.
+                const double bg_lot = compute_size("GOLD.F",
+                    std::fabs(bgsigs.long_entry - bgsigs.long_sl), ask - bid,
+                    g_bracket_gold.ENTRY_SIZE);
+                g_telemetry.UpdateLastSignal("GOLD.F", "BRACKET", bgsigs.long_entry, "BOTH_ARMED");
+                const std::string long_id  = send_live_order("GOLD.F", true,  bg_lot, bgsigs.long_entry);
+                const std::string short_id = send_live_order("GOLD.F", false, bg_lot, bgsigs.short_entry);
+                g_bracket_gold.pending_long_clOrdId  = long_id;
+                g_bracket_gold.pending_short_clOrdId = short_id;
+                // In SHADOW mode: simulate fill on the side price is closer to
+                if (g_cfg.mode != "LIVE") {
+                    const bool closer_to_high = (std::fabs(bid - bgsigs.long_entry) <
+                                                 std::fabs(bid - bgsigs.short_entry));
+                    g_bracket_gold.confirm_fill(closer_to_high, closer_to_high ? bgsigs.long_entry : bgsigs.short_entry, bg_lot);
+                }
                 ++g_bracket_gold_trades_this_minute;
             }
         }
