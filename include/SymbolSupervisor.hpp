@@ -323,16 +323,23 @@ public:
 
         const double top_score = std::max(stable_bracket, stable_breakout);
 
-        // THE ONLY RULE: top_score >= threshold AND not CHOP → allow=1
-        // No regime check. No confidence check. No other conditions.
-        // All previous override layers were causing top_score=0.81 → allow=0 (impossible).
-        const bool chop = (stable_regime == Regime::CHOP_REVERSAL);
+        // ── Permission decision ───────────────────────────────────────────────
+        // HIGH_RISK_NO_TRADE and CHOP always block — unconditionally.
+        // Cached scores (stable_bracket/stable_breakout) are used for telemetry
+        // and score continuity only. They must NEVER grant allow=1 when the live
+        // regime is blocking. Previously HIGH_RISK with hot cache (score>0.25)
+        // could return allow_breakout=true — this was the root cause of the leak.
+        const bool chop      = (stable_regime == Regime::CHOP_REVERSAL);
+        const bool high_risk = (stable_regime == Regime::HIGH_RISK_NO_TRADE);
+        const bool blocked   = chop || high_risk || (top_score < cfg.min_winner_score);
 
-        if (top_score < cfg.min_winner_score || chop) {
+        if (blocked) {
             d.allow_bracket  = false;
             d.allow_breakout = false;
             d.winner         = "NONE";
-            d.reason         = (chop) ? "chop_detected" : "score_below_threshold";
+            if      (chop)      d.reason = "chop_detected";
+            else if (high_risk) d.reason = "high_risk_no_trade";
+            else                d.reason = "score_below_threshold";
             if (chop) {
                 ++m_consecutive_blocks;
                 if (m_consecutive_blocks >= cfg.cooldown_fail_threshold) {
@@ -342,7 +349,7 @@ public:
             }
         } else {
             m_consecutive_blocks = 0;
-            d.reason = "valid_signal";  // reason always reflects actual decision
+            d.reason = "valid_signal";
             if (cfg.allow_breakout) {
                 d.allow_breakout = true;
                 d.winner         = "BREAKOUT";
