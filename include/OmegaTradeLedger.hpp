@@ -109,9 +109,24 @@ inline void apply_realistic_costs(TradeRecord& tr,
     // tick_mult converts from price-point slippage to dollar slippage.
     // e.g. XAGUSD entry=81.01, slip=0.01%, tick_mult=5000, size=0.20
     //      → 81.01 × 0.0001 × 5000 × 0.20 = $8.10 USD (correct)
-    //      Without tick_mult: 81.01 × 0.0001 × 0.20 = $0.0016 (meaningless)
-    tr.slippage_entry = tr.entryPrice * (slip_pct / 100.0) * tick_mult * tr.size;
-    tr.slippage_exit  = tr.exitPrice  * (slip_pct / 100.0) * exit_slip_multiplier * tick_mult * tr.size;
+    //
+    // Index CFD special case (tick_mult=1.0, price ~5,000-50,000):
+    // price × slip_pct produces slippage scaled to the raw index level.
+    // DJ30 at 46,472: 0.006% = 2.79pts slip per side — exceeds many TP targets.
+    // For tick_mult=1.0 instruments, cap slippage at MAX_INDEX_SLIP_PTS per side.
+    // Realistic BlackBull liquid index CFD fill slippage: 0.5pts per side.
+    static constexpr double MAX_INDEX_SLIP_PTS = 0.5;  // pts per side, per lot
+    auto slip_usd = [&](double price, double pct_rate, double mult, double sz) -> double {
+        const double raw = price * (pct_rate / 100.0) * mult * sz;
+        if (mult <= 1.0) {
+            // Index CFD: cap at MAX_INDEX_SLIP_PTS × tick_mult × size (USD)
+            const double cap = MAX_INDEX_SLIP_PTS * mult * sz;
+            return std::min(raw, cap);
+        }
+        return raw;
+    };
+    tr.slippage_entry = slip_usd(tr.entryPrice, slip_pct,                         tick_mult, tr.size);
+    tr.slippage_exit  = slip_usd(tr.exitPrice,  slip_pct * exit_slip_multiplier,  tick_mult, tr.size);
     tr.commission     = commission_per_side * 2.0 * tr.size; // entry + exit, already in USD
 
     // tr.pnl must already be in USD before this call
