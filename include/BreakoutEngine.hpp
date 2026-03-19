@@ -519,6 +519,22 @@ public:
                 --m_comp_reentry_wait;
                 return {};
             }
+            // ── SUPERVISOR GATE (Leak 1 fix) ─────────────────────────────────
+            // can_enter=false means supervisor says no-trade (or session/daily-loss gate).
+            // Do NOT enter compression — stay FLAT until supervisor clears.
+            // This closes the gap where allow=0 was advisory: engines were entering
+            // COMPRESSION freely and only hit the supervisor check at final execution.
+            if (!can_enter) {
+                static thread_local int64_t s_last_sup_block_log = 0;
+                const int64_t now_s = nowSec();
+                if (now_s - s_last_sup_block_log >= 10) {
+                    s_last_sup_block_log = now_s;
+                    std::cout << "[ENG-" << symbol
+                              << "] FLAT: supervisor gate — compression blocked (can_enter=0)\n";
+                    std::cout.flush();
+                }
+                return {};
+            }
             if (can_enter_compression) {
                 phase                  = Phase::COMPRESSION;
                 comp_high              = mid;
@@ -538,6 +554,21 @@ public:
 
         // ── COMPRESSION phase ─────────────────────────────────────────────────
         if (phase == Phase::COMPRESSION) {
+            // ── SUPERVISOR GATE (Leak 2 fix) ─────────────────────────────────
+            // Supervisor flipped to no-trade while engine was already in COMPRESSION.
+            // Abort back to FLAT immediately — do not continue building setup.
+            // COMP_REENTRY_DELAY is NOT applied here: this was an external veto, not a
+            // failed setup. Engine should re-arm cleanly when supervisor clears.
+            if (!can_enter) {
+                std::cout << "[ENG-" << symbol
+                          << "] COMPRESSION aborted — supervisor gate (can_enter=0)\n";
+                std::cout.flush();
+                phase                  = Phase::FLAT;
+                m_compression_ticks    = 0;
+                m_comp_violation_ticks = 0;
+                m_comp_initial_range   = 0.0;
+                return {};
+            }
             // Always extend range — price probing the boundary is part of structure
             if (mid > comp_high) comp_high = mid;
             if (mid < comp_low)  comp_low  = mid;
