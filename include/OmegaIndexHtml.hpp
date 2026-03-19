@@ -242,6 +242,9 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:n
     <div style="width:1px;height:28px;background:var(--border);"></div>
     <div style="text-align:center;">
       <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Session</div>
+)OMEGA0"
+
+R"OMEGA1(
       <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;" id="sessionValHdr">--</div>
     </div>
     <div style="width:1px;height:28px;background:var(--border);"></div>
@@ -421,9 +424,6 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:n
       </div>
     </div>
 
-)OMEGA1"
-
-R"OMEGA2(
 
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">⬡ FX + Asia Engines</div>
@@ -458,6 +458,9 @@ R"OMEGA2(
               <th>Held</th><th>Result</th><th>Gross</th><th>Slip</th><th>Net</th>
             </tr></thead>
             <tbody id="tradesBody"><tr><td colspan="10" class="no-data">No trades yet</td></tr></tbody>
+)OMEGA1"
+
+R"OMEGA2(
           </table>
         </div>
       </div>
@@ -615,9 +618,7 @@ function renderTrades(trades){
     let heldStr='--';
     if(isOpen&&safe(t.entryTs)>0){const s=now-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
 
-)OMEGA2"
 
-R"OMEGA3(
     else if(safe(t.entryTs)>0&&safe(t.exitTs)>0){const s=safe(t.exitTs)-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
     const rowBg=isOpen?'rgba(46,168,255,0.06)':win?'rgba(0,217,126,0.05)':loss?'rgba(255,51,85,0.05)':'';
     // BUG FIX 2: gross column — was (gross>=0?'+':'') now (gross>=0?'+':'-')
@@ -660,6 +661,9 @@ function updateDashboard(d){
   px('audBid',d.audusd_bid,5);px('audAsk',d.audusd_ask,5);sprd('audSpread',d.audusd_bid,d.audusd_ask);
   px('nzdBid',d.nzdusd_bid,5);px('nzdAsk',d.nzdusd_ask,5);sprd('nzdSpread',d.nzdusd_bid,d.nzdusd_ask);
   px('jpyBid',d.usdjpy_bid,3);px('jpyAsk',d.usdjpy_ask,3);sprd('jpySpread',d.usdjpy_bid,d.usdjpy_ask);
+)OMEGA2"
+
+R"OMEGA3(
   px('vixBid',d.vix_bid,2);px('vixAsk',d.vix_ask,2);
   px('dxBid',d.dx_bid,2);px('dxAsk',d.dx_ask,2);
   px('ngasBid',d.ngas_bid,2);px('ngasAsk',d.ngas_ask,2);
@@ -805,6 +809,7 @@ pollTrades();
 </script>
 </body>
 </html>
+
 
 )OMEGA3"
 
