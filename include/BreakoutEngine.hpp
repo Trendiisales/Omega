@@ -564,7 +564,7 @@ public:
             }
             phase               = Phase::BREAKOUT_WATCH;
             m_compression_ticks = 0;
-            watch_ticks = 40;
+            watch_ticks = 80;
             std::cout << "[ENG-" << symbol << "] BREAKOUT_WATCH started"
                       << " hi=" << comp_high << " lo=" << comp_low << "\n";
             std::cout.flush();
@@ -653,19 +653,16 @@ public:
             }
 
             // ── TICK DIRECTION GATE ───────────────────────────────────────────
-            // Require at least 2 consecutive ticks in the breakout direction.
-            // Filters single-tick spikes that trigger the range exit but have
-            // no follow-through. With AGGRESSIVE_SHADOW relaxed to 1 tick.
+            // Require consecutive ticks in the breakout direction.
+            // If direction not confirmed yet, stay in BREAKOUT_WATCH and wait —
+            // do NOT reset phase (that was killing setups on equal/flat ticks).
             {
                 const int min_run = AGGRESSIVE_SHADOW ? 1 : 2;
                 const bool dir_ok = long_break ? (m_tick_run >= min_run)
                                                : (m_tick_run <= -min_run);
                 if (!dir_ok) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: tick_direction"
-                              << " run=" << m_tick_run
-                              << " need=" << (long_break ? min_run : -min_run) << "\n";
-                    std::cout.flush();
-                    phase = Phase::FLAT; return {};
+                    // Don't reset — just wait for next tick to confirm direction
+                    return {};
                 }
             }
 

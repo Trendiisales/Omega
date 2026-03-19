@@ -114,14 +114,10 @@ public:
         if (!macro)                                          return true;
         if (std::fabs(macro->es_nq_div) > div_threshold)    return false;
         if (macro->vix > vix_panic)                         return false;
-        // Cross-symbol: at least one other US index compressing/breaking.
-        // Only enforce once at least one index has been compressing (non-zero state).
-        // This prevents blocking during the warmup period before compression is detected.
-        const bool any_us_active = macro->sp_compressing || macro->nq_compressing || macro->us30_compressing;
-        if (any_us_active && !(macro->nq_compressing || macro->us30_compressing)) return false;
-        // L2: block extreme imbalance (book defended by LP, fills will be bad)
+        // L2: block extreme imbalance
         const double imb = macro->sp_l2_imbalance;
         if (imb > 0.0 && (imb < 0.20 || imb > 0.80))       return false;
+        return true;
         return true;
     }
 };
@@ -168,10 +164,9 @@ public:
         if (!macro)                                          return true;
         if (std::fabs(macro->es_nq_div) > div_threshold)    return false;
         if (macro->vix > vix_panic)                         return false;
-        const bool any_us_active2 = macro->sp_compressing || macro->nq_compressing || macro->us30_compressing;
-        if (any_us_active2 && !(macro->sp_compressing || macro->us30_compressing)) return false;
         const double imb = macro->nq_l2_imbalance;
         if (imb > 0.0 && (imb < 0.20 || imb > 0.80))       return false;
+        return true;
         return true;
     }
 };
@@ -278,8 +273,6 @@ public:
         if (!macro)                                       return true;
         if (std::fabs(macro->es_nq_div) > div_threshold) return false;
         if (macro->vix > vix_panic)                      return false;
-        { const bool any = macro->sp_compressing || macro->nq_compressing || macro->us30_compressing;
-          if (any && !(macro->sp_compressing || macro->nq_compressing)) return false; }
         const double imb = macro->us30_l2_imbalance;
         if (imb > 0.0 && (imb < 0.20 || imb > 0.80))    return false;
         return true;
@@ -288,12 +281,6 @@ public:
 
 // ==============================================================================
 // Nas100Engine -- NAS100 (Nasdaq-100 cash index)
-//
-// INSTRUMENT: Nasdaq cash. Tracks USTEC.F closely but different tick frequency.
-// TP 0.70%, SL 0.40%, VOL_THRESH 0.050%, MIN_GAP 180s, MAX_HOLD 1200s
-//
-// GATES: same as NqEngine but slightly wider spread tolerance (cash vs futures).
-// Independent position from USTEC.F — they compress/break independently.
 // ==============================================================================
 class Nas100Engine final : public BreakoutEngineBase<Nas100Engine>
 {
@@ -324,8 +311,6 @@ public:
         if (!macro)                                       return true;
         if (std::fabs(macro->es_nq_div) > div_threshold) return false;
         if (macro->vix > vix_panic)                      return false;
-        { const bool any = macro->sp_compressing || macro->nq_compressing || macro->us30_compressing;
-          if (any && !(macro->sp_compressing || macro->us30_compressing)) return false; }
         const double imb = macro->nas_l2_imbalance;
         if (imb > 0.0 && (imb < 0.20 || imb > 0.80))    return false;
         return true;
