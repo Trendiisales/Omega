@@ -2443,7 +2443,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (it != g_perf.end() && it->second.disabled) return false;
         }
         if ((!shadow_mode || !shadow_research) && !tradeable) return false;
-        if ((!shadow_mode || !shadow_research) && !lat_ok) return false;
+        if (!shadow_mode && !lat_ok) return false;  // latency gate: LIVE only
         if (shadow_mode) {
             // Optional shadow pilot mode: keep GOLD stack live and run USTEC pilot only.
             if (g_cfg.shadow_ustec_pilot_only &&

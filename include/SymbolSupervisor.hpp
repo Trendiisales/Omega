@@ -41,7 +41,7 @@ inline const char* regime_name(Regime r) noexcept {
 struct SupervisorConfig {
     bool   allow_bracket           = true;
     bool   allow_breakout          = true;
-    double min_regime_confidence   = 0.55;
+    double min_regime_confidence   = 0.45;  // was 0.55 — too tight, caused allow=1/0 alternation
     double min_engine_win_margin   = 0.10;
     // Fix 1+2: absolute winner score floor — both engines scoring low blocks the trade
     double min_winner_score        = 0.25;
