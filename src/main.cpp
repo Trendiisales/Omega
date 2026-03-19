@@ -2629,7 +2629,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
         auto selected = omega::select_best_trades(g_cycle_candidates, g_ranking_cfg);
         if (selected.empty()) {
-            std::cout << "[RANKED OUT] " << sym << " score below threshold\n";
+            std::cout << "[RANKED OUT] " << sym
+                      << " score=" << cand.score
+                      << " threshold=" << g_ranking_cfg.min_score_threshold << "\n";
             std::cout.flush();
             return;
         }
