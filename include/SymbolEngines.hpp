@@ -320,4 +320,80 @@ public:
     }
 };
 
+// ==============================================================================
+// EuIndexEngine -- GER30, UK100, ESTX50
+//
+// European equity indices. Correlated with US equity regime (VIX-driven).
+// ES/NQ divergence is a US-only signal — not applicable here.
+// VIX panic blocks all equity index trading universally.
+// L2 imbalance available for GER30/UK100/ESTX50 via MacroContext fields
+// (ger30_l2_imbalance etc) — but MacroContext does not have these fields yet.
+// Gate on VIX only for now; div gate excluded (EUR/GBP-listed, not ES/NQ).
+// ==============================================================================
+class EuIndexEngine final : public BreakoutEngineBase<EuIndexEngine>
+{
+public:
+    const MacroContext* macro = nullptr;
+    double vix_panic = 40.0;  // same threshold as US equity engines
+
+    explicit EuIndexEngine(const char* sym) noexcept {
+        symbol = sym;
+        // Defaults — overwritten by apply_generic_index_config() at startup
+    }
+
+    bool shouldTrade(double /*bid*/, double /*ask*/,
+                     double spread_pct, double /*latency_ms*/) const noexcept
+    {
+        if (spread_pct > MAX_SPREAD_PCT)         return false;
+        if (!macro)                               return true;
+        // VIX panic: same gate as US equity engines.
+        // European indices sell off in sync with US during panic regimes.
+        if (macro->vix > vix_panic)              return false;
+        return true;
+    }
+};
+
+// ==============================================================================
+// BrentEngine -- UKBRENT (Brent Crude Oil)
+//
+// Commodity. Not equity-regime correlated (same logic as OilEngine for WTI).
+// VIX panic at 50 (liquidity crisis threshold, not equity regime threshold).
+// EIA inventory window blocked same as WTI — same release, same impact.
+// ==============================================================================
+class BrentEngine final : public BreakoutEngineBase<BrentEngine>
+{
+public:
+    const MacroContext* macro = nullptr;
+    double vix_panic = 50.0;  // commodity: only true liquidity crisis
+
+    explicit BrentEngine(const char* sym) noexcept {
+        symbol = sym;
+        // Defaults — overwritten by apply_generic_brent_config() at startup
+    }
+
+    bool shouldTrade(double /*bid*/, double /*ask*/,
+                     double spread_pct, double /*latency_ms*/) const noexcept
+    {
+        if (spread_pct > MAX_SPREAD_PCT)         return false;
+        if (in_inventory_window())               return false;
+        if (macro && macro->vix > vix_panic)     return false;
+        return true;
+    }
+
+private:
+    static bool in_inventory_window() noexcept {
+        const auto t = std::chrono::system_clock::to_time_t(
+            std::chrono::system_clock::now());
+        struct tm ti = {};
+#ifdef _WIN32
+        gmtime_s(&ti, &t);
+#else
+        gmtime_r(&t, &ti);
+#endif
+        if (ti.tm_wday != 3) return false;  // Wednesday only
+        const int mins = ti.tm_hour * 60 + ti.tm_min;
+        return (mins >= 14*60+25 && mins < 15*60);  // 14:25-15:00 UTC
+    }
+};
+
 } // namespace omega

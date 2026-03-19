@@ -341,13 +341,13 @@ static omega::NqEngine    g_eng_nq("USTEC.F");
 static omega::OilEngine   g_eng_cl("USOIL.F");
 static omega::Us30Engine  g_eng_us30("DJ30.F");
 static omega::Nas100Engine g_eng_nas100("NAS100");
-static omega::BreakoutEngine g_eng_ger30("GER30");
-static omega::BreakoutEngine g_eng_uk100("UK100");
-static omega::BreakoutEngine g_eng_estx50("ESTX50");
+static omega::EuIndexEngine  g_eng_ger30("GER30");
+static omega::EuIndexEngine  g_eng_uk100("UK100");
+static omega::EuIndexEngine  g_eng_estx50("ESTX50");
 static omega::BreakoutEngine g_eng_xag("XAGUSD");
 static omega::BreakoutEngine g_eng_eurusd("EURUSD");
 static omega::BreakoutEngine g_eng_gbpusd("GBPUSD");
-static omega::BreakoutEngine g_eng_brent("UKBRENT");
+static omega::BrentEngine    g_eng_brent("UKBRENT");
 static omega::BreakoutEngine g_eng_audusd("AUDUSD");
 static omega::BreakoutEngine g_eng_nzdusd("NZDUSD");
 static omega::BreakoutEngine g_eng_usdjpy("USDJPY");
@@ -1627,7 +1627,7 @@ static void apply_engine_config(omega::OilEngine& eng) noexcept {
     eng.macro                   = &g_macro_ctx;
 }
 
-static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
+static void apply_generic_index_config(omega::EuIndexEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = std::min(0.06, std::max(0.02, g_cfg.sp_vol_thresh_pct));
     eng.TP_PCT                = g_cfg.sp_tp_pct;
     eng.SL_PCT                = g_cfg.sp_sl_pct;
@@ -1640,6 +1640,8 @@ static void apply_generic_index_config(omega::BreakoutEngine& eng) noexcept {
     eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+    eng.vix_panic             = g_cfg.sp_vix_panic;  // EU indices use same VIX panic as US equity
+    eng.macro                 = &g_macro_ctx;         // required for VIX gate in shouldTrade()
 }
 
 // Us30 (DJ30.F) -- typed engine, links macro context
@@ -1725,7 +1727,7 @@ static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
 }
 
-static void apply_generic_brent_config(omega::BreakoutEngine& eng) noexcept {
+static void apply_generic_brent_config(omega::BrentEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.brent_vol_thresh_pct;
     eng.TP_PCT                = g_cfg.brent_tp_pct;
     eng.SL_PCT                = g_cfg.brent_sl_pct;
@@ -1738,6 +1740,8 @@ static void apply_generic_brent_config(omega::BreakoutEngine& eng) noexcept {
     eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
+    eng.vix_panic             = g_cfg.oil_vix_panic;  // commodity: 50.0 (same as OilEngine)
+    eng.macro                 = &g_macro_ctx;          // required for VIX gate in shouldTrade()
 }
 
 static void apply_generic_audusd_config(omega::BreakoutEngine& eng) noexcept {
