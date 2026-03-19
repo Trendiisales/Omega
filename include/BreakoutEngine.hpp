@@ -478,14 +478,29 @@ public:
                 }
             }
 
-            // ── Edge filter — TP must exceed min expected move ────────────────
-            // Blocks trades where the TP distance doesn't justify costs.
-            // MIN_EDGE_PCT is the minimum TP move as % of price.
-            if (MIN_EDGE_PCT > 0.0) {
-                const double tp_dist_pct = std::fabs(tp - mid) / mid * 100.0;
-                if (tp_dist_pct < MIN_EDGE_PCT) {
+            // ── Edge filter — actual breakout move must cover round-trip cost ──
+            // Compares the REAL move (price distance from compression edge) against
+            // the actual spread cost of entry + exit. This is a live check that
+            // adapts to current market conditions, not a static config comparison.
+            // MIN_EDGE_PCT acts as a floor: move must also be >= MIN_EDGE_PCT of price.
+            if (MIN_EDGE_PCT > 0.0 || spread > 0.0) {
+                const double breakout_move = is_long
+                    ? (mid - comp_high)    // how far price has broken above range
+                    : (comp_low  - mid);   // how far price has broken below range
+                const double breakout_move_pct = (mid > 0.0) ? (breakout_move / mid * 100.0) : 0.0;
+                const double round_trip_pct    = (mid > 0.0) ? (spread * 2.0   / mid * 100.0) : 999.0;
+                // Block if actual move doesn't cover round-trip spread cost
+                if (breakout_move_pct < round_trip_pct) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: move_below_cost"
+                              << " move=" << breakout_move_pct << "%"
+                              << " cost=" << round_trip_pct << "%\n";
+                    std::cout.flush();
+                    phase = Phase::FLAT; return {};
+                }
+                // Block if move is below the minimum edge floor
+                if (MIN_EDGE_PCT > 0.0 && breakout_move_pct < MIN_EDGE_PCT) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: no_edge"
-                              << " tp_dist=" << tp_dist_pct << "% min=" << MIN_EDGE_PCT << "%\n";
+                              << " move=" << breakout_move_pct << "% min=" << MIN_EDGE_PCT << "%\n";
                     std::cout.flush();
                     phase = Phase::FLAT; return {};
                 }
