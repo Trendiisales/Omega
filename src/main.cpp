@@ -96,7 +96,6 @@ struct OmegaConfig {
     int    loss_pause_sec    = 300;
     int    max_open_positions = 1;
     bool   independent_symbols = true;  // true: risk/position gating is per-symbol (recommended)
-    bool   enable_shadow_signal_audit = true;
     int    auto_disable_after_trades  = 10;
     bool   shadow_ustec_pilot_only    = false;  // false: multi-symbol SHADOW research; true: restrict to GOLD + USTEC pilot
     bool   shadow_research_mode       = false;  // false: paper/live-like behavior; true: discovery mode with relaxed filters
@@ -309,7 +308,6 @@ struct OmegaConfig {
     int         ws_port    = 7780;
     int         trade_port = 5212;   // FIX trade connection (orders)
     std::string shadow_csv = "omega_shadow.csv";
-    std::string shadow_signal_csv = "omega_shadow_signals.csv";
     std::string log_file   = "";   // if set, tee all stdout+stderr here
 
     // GoldEngineStack config — passed to g_gold_stack.configure()
@@ -429,24 +427,8 @@ static std::atomic<bool>  g_ext_md_refresh_needed{false};
 
 // Shadow CSV
 static std::ofstream g_shadow_csv;
-static std::ofstream g_shadow_signal_csv;
-static std::ofstream g_shadow_signal_event_csv;
 static std::ofstream g_trade_close_csv;
 static std::mutex    g_trade_close_csv_mtx;
-
-struct ShadowSignalPos {
-    bool active = false;
-    std::string symbol;
-    bool is_long = true;
-    double entry = 0.0;
-    double tp = 0.0;
-    double sl = 0.0;
-    int64_t entry_ts = 0;
-    std::string verdict; // BLOCKED / ELIGIBLE
-    std::string reason;
-};
-static std::mutex g_shadow_signal_mtx;
-static std::vector<ShadowSignalPos> g_shadow_signal_positions;
 
 struct PerfStats {
     int live_trades = 0;
@@ -469,18 +451,6 @@ static std::string perf_key_from_trade(const omega::TradeRecord& tr) {
 }
 
 static std::string build_trade_close_csv_row(const omega::TradeRecord& tr);
-static std::string build_shadow_signal_event_csv_row(const ShadowSignalPos& p,
-                                                     int64_t event_ts);
-static std::string build_shadow_signal_close_csv_row(const ShadowSignalPos& p,
-                                                     int64_t exit_ts,
-                                                     double exit_px,
-                                                     const char* exit_reason,
-                                                     double pnl);
-static void write_shadow_signal_event(const ShadowSignalPos& p);
-static void write_shadow_signal_close(const ShadowSignalPos& p, double exit_px,
-                                      const char* exit_reason, double pnl);
-static void manage_shadow_signals_on_tick(const std::string& sym, double bid, double ask);
-
 static void print_perf_stats() {
     std::lock_guard<std::mutex> lk(g_perf_mtx);
     if (g_perf.empty()) return;
@@ -698,8 +668,6 @@ static std::streambuf*   g_orig_cout = nullptr;
 static std::unique_ptr<RollingCsvLogger> g_daily_trade_close_log;
 static std::unique_ptr<RollingCsvLogger> g_daily_gold_trade_close_log;
 static std::unique_ptr<RollingCsvLogger> g_daily_shadow_trade_log;
-static std::unique_ptr<RollingCsvLogger> g_daily_shadow_signal_log;
-static std::unique_ptr<RollingCsvLogger> g_daily_shadow_signal_event_log;
 
 // FIX recv buffer
 static std::string g_recv_buf;
@@ -790,90 +758,6 @@ static void ensure_parent_dir(const std::string& path) {
     std::error_code ec;
     const fs::path p(path);
     if (!p.parent_path().empty()) fs::create_directories(p.parent_path(), ec);
-}
-
-static std::string build_shadow_signal_event_csv_row(const ShadowSignalPos& p,
-                                                     int64_t event_ts) {
-    std::ostringstream o;
-    o << event_ts
-      << ',' << csv_quote(utc_iso8601(event_ts))
-      << ',' << csv_quote(utc_weekday_name(event_ts))
-      << ',' << csv_quote(p.symbol)
-      << ',' << csv_quote(p.is_long ? "LONG" : "SHORT")
-      << std::fixed << std::setprecision(4)
-      << ',' << p.entry
-      << ',' << p.tp
-      << ',' << p.sl
-      << ',' << csv_quote(p.verdict)
-      << ',' << csv_quote(p.reason);
-    return o.str();
-}
-
-static std::string build_shadow_signal_close_csv_row(const ShadowSignalPos& p,
-                                                     int64_t exit_ts,
-                                                     double exit_px,
-                                                     const char* exit_reason,
-                                                     double pnl) {
-    const int64_t hold_sec = std::max<int64_t>(0, exit_ts - p.entry_ts);
-    std::ostringstream o;
-    o << p.entry_ts
-      << ',' << csv_quote(utc_iso8601(p.entry_ts))
-      << ',' << csv_quote(utc_weekday_name(p.entry_ts))
-      << ',' << exit_ts
-      << ',' << csv_quote(utc_iso8601(exit_ts))
-      << ',' << csv_quote(utc_weekday_name(exit_ts))
-      << ',' << csv_quote(p.symbol)
-      << ',' << csv_quote(p.is_long ? "LONG" : "SHORT")
-      << std::fixed << std::setprecision(4)
-      << ',' << p.entry
-      << ',' << exit_px
-      << ',' << p.tp
-      << ',' << p.sl
-      << ',' << pnl
-      << ',' << hold_sec
-      << ',' << csv_quote(p.verdict)
-      << ',' << csv_quote(p.reason)
-      << ',' << csv_quote(exit_reason ? exit_reason : "");
-    return o.str();
-}
-
-static void write_shadow_signal_event(const ShadowSignalPos& p) {
-    const int64_t now = p.entry_ts > 0 ? p.entry_ts : nowSec();
-    if (g_shadow_signal_event_csv.is_open()) {
-        g_shadow_signal_event_csv
-            << now
-            << ',' << utc_iso8601(now)
-            << ',' << utc_weekday_name(now)
-            << ',' << p.symbol
-            << ',' << (p.is_long ? "LONG" : "SHORT")
-            << ',' << std::fixed << std::setprecision(4) << p.entry
-            << ',' << p.tp
-            << ',' << p.sl
-            << ',' << p.verdict
-            << ',' << p.reason << '\n';
-        g_shadow_signal_event_csv.flush();
-    }
-    if (g_daily_shadow_signal_event_log) {
-        g_daily_shadow_signal_event_log->append_row(
-            now, build_shadow_signal_event_csv_row(p, now));
-    }
-}
-
-static void write_shadow_signal_close(const ShadowSignalPos& p, double exit_px,
-                                      const char* exit_reason, double pnl) {
-    const int64_t now = nowSec();
-    if (g_shadow_signal_csv.is_open()) {
-        g_shadow_signal_csv
-            << p.entry_ts << ',' << p.symbol << ',' << (p.is_long ? "LONG" : "SHORT")
-            << ',' << p.entry << ',' << exit_px << ',' << p.tp << ',' << p.sl
-            << ',' << pnl << ',' << (now - p.entry_ts)
-            << ',' << p.verdict << ',' << p.reason << ',' << exit_reason << '\n';
-        g_shadow_signal_csv.flush();
-    }
-    if (g_daily_shadow_signal_log) {
-        g_daily_shadow_signal_log->append_row(
-            now, build_shadow_signal_close_csv_row(p, now, exit_px, exit_reason, pnl));
-    }
 }
 
 
@@ -972,33 +856,6 @@ static double compute_size(const std::string& symbol,
     return size;
 }
 
-static void manage_shadow_signals_on_tick(const std::string& sym, double bid, double ask) {
-    if (!g_cfg.enable_shadow_signal_audit) return;
-    std::lock_guard<std::mutex> lk(g_shadow_signal_mtx);
-    if (g_shadow_signal_positions.empty()) return;
-    const double mid = (bid + ask) * 0.5;
-    const int64_t now = nowSec();
-    constexpr int SHADOW_MAX_HOLD_SEC = 600;
-    for (auto& p : g_shadow_signal_positions) {
-        if (!p.active || p.symbol != sym) continue;
-        const bool tp_hit = p.is_long ? (mid >= p.tp) : (mid <= p.tp);
-        const bool sl_hit = p.is_long ? (mid <= p.sl) : (mid >= p.sl);
-        const bool to_hit = (now - p.entry_ts) >= SHADOW_MAX_HOLD_SEC;
-        if (!tp_hit && !sl_hit && !to_hit) continue;
-        const double exit_px = tp_hit ? p.tp : (sl_hit ? p.sl : mid);
-        const double pnl_pts = p.is_long ? (exit_px - p.entry) : (p.entry - exit_px);
-        const double pnl = pnl_pts * tick_value_multiplier(p.symbol);  // normalised to USD
-        write_shadow_signal_close(p, exit_px, tp_hit ? "TP_HIT" : (sl_hit ? "SL_HIT" : "TIMEOUT"), pnl);
-        {
-            std::lock_guard<std::mutex> pk(g_perf_mtx);
-            auto& ps = g_perf[p.symbol + "_SHADOW_" + p.verdict];
-            ps.shadow_trades++;
-            ps.shadow_pnl += pnl;
-            if (pnl > 0) ps.shadow_wins++; else ps.shadow_losses++;
-        }
-        p.active = false;
-    }
-}
 
 // Parse FIX SendingTime (tag 52) "YYYYMMDD-HH:MM:SS.mmm" -> microseconds since epoch
 // Returns 0 on parse failure. Used for per-tick latency measurement.
@@ -1893,7 +1750,6 @@ static void load_config(const std::string& path) {
             if (k=="max_consec_losses")    g_cfg.max_consec_losses = std::stoi(v);
             if (k=="loss_pause_sec")       g_cfg.loss_pause_sec    = std::stoi(v);
             if (k=="independent_symbols")  g_cfg.independent_symbols = (v == "true" || v == "1");
-            if (k=="enable_shadow_signal_audit") g_cfg.enable_shadow_signal_audit = (v == "true" || v == "1");
             if (k=="auto_disable_after_trades")  g_cfg.auto_disable_after_trades = std::stoi(v);
             if (k=="shadow_ustec_pilot_only")    g_cfg.shadow_ustec_pilot_only = (v == "true" || v == "1");
             if (k=="shadow_research_mode")       g_cfg.shadow_research_mode = (v == "true" || v == "1");
@@ -1933,7 +1789,6 @@ static void load_config(const std::string& path) {
             if (k=="gui_port")   g_cfg.gui_port   = std::stoi(v);
             if (k=="ws_port")    g_cfg.ws_port     = std::stoi(v);
             if (k=="shadow_csv") g_cfg.shadow_csv  = v;
-            if (k=="shadow_signal_csv") g_cfg.shadow_signal_csv = v;
             if (k=="log_file")   g_cfg.log_file    = v;
         }
         if (section == "extended_ids") {
@@ -2271,10 +2126,6 @@ static void maybe_reset_daily_ledger() {
         g_shadow_quality.clear();
     }
     {
-        std::lock_guard<std::mutex> lk(g_shadow_signal_mtx);
-        g_shadow_signal_positions.clear();
-    }
-    {
         std::lock_guard<std::mutex> lk(g_perf_mtx);
         g_perf.clear();
     }
@@ -2390,7 +2241,6 @@ static void sig_handler(int) noexcept { g_running.store(false); }
 // ─────────────────────────────────────────────────────────────────────────────
 static void on_tick(const std::string& sym, double bid, double ask) {
     { std::lock_guard<std::mutex> lk(g_book_mtx); g_bids[sym] = bid; g_asks[sym] = ask; }
-    manage_shadow_signals_on_tick(sym, bid, ask);
 
     // Rate-limit tick logging — max 1 line per symbol per 30s to keep logs readable.
     // Previously logged every tick: thousands of lines/minute drowning signal output.
@@ -3643,41 +3493,6 @@ int main(int argc, char* argv[])
                   << " execution profile active\n";
     }
 
-    auto bind_shadow_cb = [](auto& eng) {
-        eng.shadow_signal_cb =
-            [](const char* symbol, bool is_long, double entry, double tp, double sl,
-               const char* verdict, const char* reason) {
-                if (!g_cfg.enable_shadow_signal_audit) return;
-                ShadowSignalPos p;
-                p.active  = true;
-                p.symbol  = symbol ? symbol : "";
-                p.is_long = is_long;
-                p.entry   = entry;
-                p.tp      = tp;
-                p.sl      = sl;
-                p.entry_ts = std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count();
-                p.verdict = verdict ? verdict : "";
-                p.reason  = reason ? reason : "";
-                write_shadow_signal_event(p);
-                std::lock_guard<std::mutex> lk(g_shadow_signal_mtx);
-                g_shadow_signal_positions.push_back(std::move(p));
-            };
-    };
-    bind_shadow_cb(g_eng_sp);
-    bind_shadow_cb(g_eng_nq);
-    bind_shadow_cb(g_eng_cl);
-    bind_shadow_cb(g_eng_us30);
-    bind_shadow_cb(g_eng_nas100);
-    bind_shadow_cb(g_eng_ger30);
-    bind_shadow_cb(g_eng_uk100);
-    bind_shadow_cb(g_eng_estx50);
-    bind_shadow_cb(g_eng_xag);
-    bind_shadow_cb(g_eng_eurusd);
-    bind_shadow_cb(g_eng_audusd);
-    bind_shadow_cb(g_eng_nzdusd);
-    bind_shadow_cb(g_eng_usdjpy);
-    bind_shadow_cb(g_eng_brent);
     build_id_map();
 
     // Open log file and tee stdout into it
@@ -3702,8 +3517,6 @@ int main(int argc, char* argv[])
         const std::string trade_dir = log_root_dir() + "/trades";
         const std::string gold_dir  = log_root_dir() + "/gold";
         const std::string shadow_trade_dir = log_root_dir() + "/shadow/trades";
-        const std::string shadow_signal_dir = log_root_dir() + "/shadow/signals";
-        const std::string shadow_signal_event_dir = log_root_dir() + "/shadow/events";
         const std::string header =
             "trade_id,trade_ref,entry_ts_unix,entry_ts_utc,entry_utc_weekday,"
             "exit_ts_unix,exit_ts_utc,exit_utc_weekday,symbol,engine,side,"
@@ -3712,12 +3525,6 @@ int main(int argc, char* argv[])
             "slip_entry_pct,slip_exit_pct,comm_per_side,"
             "mfe,mae,hold_sec,spread_at_entry,"
             "latency_ms,regime,exit_reason";
-        const std::string shadow_signal_event_header =
-            "event_ts_unix,event_ts_utc,event_utc_weekday,symbol,side,entry_px,tp,sl,verdict,reason";
-        const std::string shadow_signal_header =
-            "entry_ts_unix,entry_ts_utc,entry_utc_weekday,exit_ts_unix,exit_ts_utc,"
-            "exit_utc_weekday,symbol,side,entry_px,exit_px,tp,sl,pnl,hold_sec,"
-            "verdict,reason,exit_reason";
 
         const std::string trade_csv_path = trade_dir + "/omega_trade_closes.csv";
         ensure_parent_dir(trade_csv_path);
@@ -3738,20 +3545,12 @@ int main(int argc, char* argv[])
             gold_dir, "omega_gold_trade_closes", header);
         g_daily_shadow_trade_log = std::make_unique<RollingCsvLogger>(
             shadow_trade_dir, "omega_shadow_trades", header);
-        g_daily_shadow_signal_log = std::make_unique<RollingCsvLogger>(
-            shadow_signal_dir, "omega_shadow_signals", shadow_signal_header);
-        g_daily_shadow_signal_event_log = std::make_unique<RollingCsvLogger>(
-            shadow_signal_event_dir, "omega_shadow_signal_events", shadow_signal_event_header);
         std::cout << "[OMEGA] Daily Trade Logs: " << trade_dir
                   << "/omega_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)\n";
         std::cout << "[OMEGA] Daily Gold Logs: " << gold_dir
                   << "/omega_gold_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)\n";
         std::cout << "[OMEGA] Daily Shadow Trade Logs: " << shadow_trade_dir
                   << "/omega_shadow_trades_YYYY-MM-DD.csv (UTC, 5-file retention)\n";
-        std::cout << "[OMEGA] Daily Shadow Signal Logs: " << shadow_signal_dir
-                  << "/omega_shadow_signals_YYYY-MM-DD.csv (UTC, 5-file retention)\n";
-        std::cout << "[OMEGA] Daily Shadow Signal Event Logs: " << shadow_signal_event_dir
-                  << "/omega_shadow_signal_events_YYYY-MM-DD.csv (UTC, 5-file retention)\n";
     }
 
     const std::string shadow_csv_path =
@@ -3768,35 +3567,6 @@ int main(int argc, char* argv[])
         g_shadow_csv << "ts_unix,symbol,side,engine,entry_px,exit_px,pnl,mfe,mae,"
                         "hold_sec,exit_reason,spread_at_entry,latency_ms,regime\n";
     std::cout << "[OMEGA] Shadow CSV: " << shadow_csv_path << "\n";
-
-    const std::string shadow_signal_csv_path =
-        resolve_audit_log_path(g_cfg.shadow_signal_csv, "shadow/omega_shadow_signals.csv");
-    ensure_parent_dir(shadow_signal_csv_path);
-    g_shadow_signal_csv.open(shadow_signal_csv_path, std::ios::app);
-    if (!g_shadow_signal_csv.is_open()) {
-        std::cerr << "[OMEGA-FATAL] Failed to open shadow signal CSV: " << shadow_signal_csv_path << "\n";
-        return 1;
-    }
-    g_shadow_signal_csv.seekp(0, std::ios::end);
-    if (g_shadow_signal_csv.tellp() == std::streampos(0))
-        g_shadow_signal_csv << "ts_unix,symbol,side,entry_px,exit_px,tp,sl,pnl,hold_sec,verdict,reason,exit_reason\n";
-    std::cout << "[OMEGA] Shadow Signal CSV: " << shadow_signal_csv_path << "\n";
-
-    const std::string shadow_signal_event_csv_path =
-        resolve_audit_log_path("logs/shadow/omega_shadow_signal_events.csv",
-                               "shadow/omega_shadow_signal_events.csv");
-    ensure_parent_dir(shadow_signal_event_csv_path);
-    g_shadow_signal_event_csv.open(shadow_signal_event_csv_path, std::ios::app);
-    if (!g_shadow_signal_event_csv.is_open()) {
-        std::cerr << "[OMEGA-FATAL] Failed to open shadow signal event CSV: "
-                  << shadow_signal_event_csv_path << "\n";
-        return 1;
-    }
-    g_shadow_signal_event_csv.seekp(0, std::ios::end);
-    if (g_shadow_signal_event_csv.tellp() == std::streampos(0))
-        g_shadow_signal_event_csv
-            << "event_ts_unix,event_ts_utc,event_utc_weekday,symbol,side,entry_px,tp,sl,verdict,reason\n";
-    std::cout << "[OMEGA] Shadow Signal Event CSV: " << shadow_signal_event_csv_path << "\n";
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
@@ -3834,12 +3604,8 @@ int main(int argc, char* argv[])
     if (g_daily_trade_close_log) g_daily_trade_close_log->close();
     if (g_daily_gold_trade_close_log) g_daily_gold_trade_close_log->close();
     if (g_daily_shadow_trade_log) g_daily_shadow_trade_log->close();
-    if (g_daily_shadow_signal_log) g_daily_shadow_signal_log->close();
-    if (g_daily_shadow_signal_event_log) g_daily_shadow_signal_event_log->close();
     g_trade_close_csv.close();
     g_shadow_csv.close();
-    g_shadow_signal_csv.close();
-    g_shadow_signal_event_csv.close();
     if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); }
     WSACleanup();
     ReleaseMutex(g_singleton_mutex);

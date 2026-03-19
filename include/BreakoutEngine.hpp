@@ -85,9 +85,6 @@ public:
     OpenPos pos;
 
     using CloseCallback = std::function<void(const TradeRecord&)>;
-    using ShadowSignalCallback = std::function<void(const char* symbol, bool is_long, double entry, double tp, double sl,
-                                                    const char* verdict, const char* reason)>;
-    ShadowSignalCallback shadow_signal_cb;
 
 private:
     // ── Momentum window (20 ticks) ────────────────────────────────────────────
@@ -361,7 +358,6 @@ public:
             // Session/latency gate
             if (!can_enter) {
                 std::cout << "[ENG-" << symbol << "] BLOCKED: can_enter=false\n"; std::cout.flush();
-                if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "can_enter");
                 phase = Phase::FLAT; return {};
             }
 
@@ -369,7 +365,6 @@ public:
             if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, latency_ms)) {
                 std::cout << "[ENG-" << symbol << "] BLOCKED: shouldTrade=false"
                           << " spread=" << spread_pct << "%\n"; std::cout.flush();
-                if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "shouldTrade");
                 phase = Phase::FLAT; return {};
             }
 
@@ -378,7 +373,6 @@ public:
                 std::cout << "[ENG-" << symbol << "] BLOCKED: min_gap not met"
                           << " gap=" << (now-m_last_signal_ts) << "s min=" << MIN_GAP_SEC << "\n";
                 std::cout.flush();
-                if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "min_gap");
                 phase = Phase::FLAT; return {};
             }
 
@@ -404,7 +398,6 @@ public:
                               << "% thresh=" << VOL_THRESH_PCT
                               << "% floor=" << vol_expansion_floor << "%\n";
                     std::cout.flush();
-                    if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "vol_gate");
                     phase = Phase::FLAT; return {};
                 }
             }
@@ -423,7 +416,6 @@ public:
                               << " mom=" << momentum_pct << "% thresh=" << momentum_thresh
                               << "% shadow=" << (AGGRESSIVE_SHADOW ? 1 : 0) << "\n";
                     std::cout.flush();
-                    if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "momentum_gate");
                     phase = Phase::FLAT; return {};
                 }
             }
@@ -452,7 +444,6 @@ public:
                               << " struct_lo=" << struct_lo
                               << " shadow=" << (AGGRESSIVE_SHADOW ? 1 : 0) << "\n";
                     std::cout.flush();
-                    if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "range_break_gate");
                     phase = Phase::FLAT; return {};
                 }
             }
@@ -470,7 +461,6 @@ public:
                               << " move=" << move_pct << "% min=" << min_breakout_req
                               << "% shadow=" << (AGGRESSIVE_SHADOW ? 1 : 0) << "\n";
                     std::cout.flush();
-                    if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "min_breakout_gate");
                     phase = Phase::FLAT; return {};
                 }
             }
@@ -485,11 +475,9 @@ public:
                 if (static_cast<int>(m_trade_times.size()) >= MAX_TRADES_PER_MIN) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: rate_limit"                              << " trades_in_60s=" << m_trade_times.size() << "\n";
                     std::cout.flush();
-                    if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "BLOCKED", "rate_limit");
                     phase = Phase::FLAT; return {};
                 }
             }
-            if (shadow_signal_cb) shadow_signal_cb(symbol, is_long, mid, tp, sl, "ELIGIBLE", "pass");
 
             pos.active          = true;
             pos.is_long         = is_long;
