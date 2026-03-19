@@ -2585,7 +2585,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_bracket_xag.on_tick(bid, ask,
                 static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()),
-                xag_can && !g_bracket_xag.has_open_position(),
+                g_bracket_xag.has_open_position() ? xag_can : (xag_can && !g_bracket_xag.has_open_position()),
                 regime.c_str(), bracket_on_close, 0.0);
             const auto bsigs = g_bracket_xag.get_signals();
             if (bsigs.valid) {
@@ -2732,10 +2732,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 gold_vwap_ok &&
                 gold_freq_ok;
 
+            // Session gate passed separately — used to cancel PENDING brackets
+            // that outlast the allowed session window (different from can_enter
+            // which also includes the position-open check)
+            const bool gold_bracket_session_active =
+                gold_can_enter &&
+                gold_bracket_session_ok &&
+                gold_vwap_ok;
+
             g_bracket_gold.on_tick(bid, ask,
                 static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count()),
-                gold_bracket_can_enter,
+                g_bracket_gold.has_open_position() ? gold_bracket_session_active : gold_bracket_can_enter,
                 regime.c_str(), bracket_on_close, g_gold_stack.vwap());
             const auto bgsigs = g_bracket_gold.get_signals();
             if (bgsigs.valid) {

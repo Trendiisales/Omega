@@ -223,8 +223,15 @@ public:
         }
 
         // ── PENDING: both orders out, waiting for first fill ──────────────────
-        // Timeout after 60s — cancel both and reset
+        // Timeout after 60s — cancel both and reset.
+        // Also cancel if can_enter goes false (session ended, risk gate hit etc.)
         if (phase == BracketPhase::PENDING) {
+            if (!can_enter) {
+                std::cout << "[BRACKET-" << symbol << "] PENDING CANCELLED — can_enter=false (session/risk gate)\n";
+                std::cout.flush();
+                reset();
+                return;
+            }
             if ((now - m_armed_ts) > 60) {
                 std::cout << "[BRACKET-" << symbol << "] PENDING TIMEOUT — both orders cancelled\n";
                 std::cout.flush();
@@ -232,18 +239,14 @@ public:
                 return;
             }
             // Shadow fill simulation: fire when price actually touches a bracket level
-            // This runs every tick while PENDING so the fill happens at the right price,
-            // not immediately at arm time.
             if (m_shadow_mode) {
                 if (ask >= m_locked_hi) {
-                    // Long side touched — simulate long fill
                     std::cout << "[BRACKET-" << symbol << "] SHADOW FILL LONG @ " << m_locked_hi << "\n";
                     std::cout.flush();
                     confirm_fill(true, m_locked_hi, ENTRY_SIZE);
                     return;
                 }
                 if (bid <= m_locked_lo) {
-                    // Short side touched — simulate short fill
                     std::cout << "[BRACKET-" << symbol << "] SHADOW FILL SHORT @ " << m_locked_lo << "\n";
                     std::cout.flush();
                     confirm_fill(false, m_locked_lo, ENTRY_SIZE);
