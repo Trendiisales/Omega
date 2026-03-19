@@ -971,7 +971,42 @@ static std::string fix_build_logout(int seq, const char* subID) {
       << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01";
     return wrap_fix(b.str());
 }
-// 35=V Subscribe — primary symbols. 264=1 IS THE ONLY VALID DEPTH. DO NOT CHANGE.
+// ── SINGLE subscription covering ALL symbols (primary + extended) ──────────
+// ONE fixed req ID = OMEGA-MD-ALL. Unsub always matches. No ghost possible.
+static std::string fix_build_md_subscribe_all(int seq) {
+    // Collect all symbol IDs: primary + extended
+    std::vector<int> ids;
+    for (int i = 0; i < OMEGA_NSYMS; ++i) ids.push_back(OMEGA_SYMS[i].id);
+    {
+        std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+        for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
+    }
+    std::ostringstream b;
+    b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "262=OMEGA-MD-ALL\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
+      << "146=" << ids.size() << "\x01";
+    for (int id : ids) b << "55=" << id << "\x01";
+    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
+    return wrap_fix(b.str());
+}
+static std::string fix_build_md_unsub_all(int seq) {
+    std::vector<int> ids;
+    for (int i = 0; i < OMEGA_NSYMS; ++i) ids.push_back(OMEGA_SYMS[i].id);
+    {
+        std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+        for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
+    }
+    std::ostringstream b;
+    b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "262=OMEGA-MD-ALL\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+      << "146=" << ids.size() << "\x01";
+    for (int id : ids) b << "55=" << id << "\x01";
+    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
+    return wrap_fix(b.str());
+}
+// Legacy individual builders kept for ghost cleanup of old session IDs
 static std::string fix_build_md_subscribe(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
@@ -982,7 +1017,6 @@ static std::string fix_build_md_subscribe(int seq) {
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
     return wrap_fix(b.str());
 }
-// 35=V Subscribe — extended symbols. 264=1 ONLY.
 static std::string fix_build_md_subscribe_ext(int seq) {
     std::vector<int> ids;
     { std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
@@ -997,7 +1031,6 @@ static std::string fix_build_md_subscribe_ext(int seq) {
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
     return wrap_fix(b.str());
 }
-// 35=V Unsubscribe — primary
 static std::string fix_build_md_unsub(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
@@ -1008,7 +1041,6 @@ static std::string fix_build_md_unsub(int seq) {
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
     return wrap_fix(b.str());
 }
-// 35=V Unsubscribe — extended (fixed ID matches subscribe ID exactly)
 static std::string fix_build_md_unsub_ext(int seq) {
     std::vector<int> ids;
     { std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
@@ -3024,18 +3056,11 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         g_quote_ready.store(true);
         g_connected_since.store(nowSec());
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
-        const std::string md = fix_build_md_subscribe(g_quote_seq++);
+        // Single subscription for ALL symbols under fixed ID OMEGA-MD-ALL
+        // This permanently eliminates the ghost session problem — one ID, one unsub.
+        const std::string md = fix_build_md_subscribe_all(g_quote_seq++);
         SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
-        std::cout << "[OMEGA] Subscribed: US500.F USTEC.F USOIL.F + 8 confirmation\n";
-        if (g_cfg.enable_extended_symbols) {
-            const std::string ext = fix_build_md_subscribe_ext(g_quote_seq++);
-            if (!ext.empty()) {
-                SSL_write(ssl, ext.c_str(), static_cast<int>(ext.size()));
-                std::cout << "[OMEGA] Subscribed EXT (numeric IDs from config)\n";
-            } else {
-                std::cout << "[OMEGA] EXT subscription deferred (waiting for SecurityList or configured IDs)\n";
-            }
-        }
+        std::cout << "[OMEGA] Subscribed ALL symbols (OMEGA-MD-ALL)\n";
         return;
     }
 
@@ -3379,23 +3404,38 @@ static void quote_loop() {
         {
             const std::string ghost_logon = fix_build_logon(g_quote_seq++, "QUOTE");
             SSL_write(ssl, ghost_logon.c_str(), static_cast<int>(ghost_logon.size()));
-            Sleep(600); // wait for logon ACK
+            Sleep(600);
 
-            // Primary subscription unsub
-            const std::string unsub = fix_build_md_unsub(g_quote_seq++);
-            SSL_write(ssl, unsub.c_str(), static_cast<int>(unsub.size()));
-
-            // EXT subscription unsub — fixed ID OMEGA-MD-EXT matches subscribe exactly
-            const std::string unsub_ext = fix_build_md_unsub_ext(g_quote_seq++);
-            if (!unsub_ext.empty())
-                SSL_write(ssl, unsub_ext.c_str(), static_cast<int>(unsub_ext.size()));
+            // Unsub every ID this system has ever used — covers all ghost scenarios
+            auto send_unsub = [&](const std::string& req_id) {
+                std::vector<int> ids;
+                for (int i = 0; i < OMEGA_NSYMS; ++i) ids.push_back(OMEGA_SYMS[i].id);
+                { std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+                  for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id); }
+                std::ostringstream b;
+                b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+                  << "50=QUOTE\x01" << "57=QUOTE\x01"
+                  << "34=" << g_quote_seq++ << "\x01" << "52=" << timestamp() << "\x01"
+                  << "262=" << req_id << "\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+                  << "146=" << ids.size() << "\x01";
+                for (int id : ids) b << "55=" << id << "\x01";
+                b << "267=2\x01" << "269=0\x01" << "269=1\x01";
+                const std::string u = wrap_fix(b.str());
+                SSL_write(ssl, u.c_str(), static_cast<int>(u.size()));
+            };
+            // All IDs ever used by this system
+            send_unsub("OMEGA-MD-ALL");   // current
+            send_unsub("OMEGA-MD-001");   // legacy primary
+            send_unsub("OMEGA-MD-EXT");   // legacy extended
+            for (int s = 1; s <= 10; ++s) // legacy dynamic IDs OMEGA-MD-EXT-1 ... OMEGA-MD-EXT-10
+                send_unsub("OMEGA-MD-EXT-" + std::to_string(s));
 
             Sleep(200);
             const std::string lo = fix_build_logout(g_quote_seq++, "QUOTE");
             SSL_write(ssl, lo.c_str(), static_cast<int>(lo.size()));
-            Sleep(600); // wait for server to process everything
+            Sleep(600);
 
-            std::cout << "[OMEGA] Ghost session cleanup sent (unsub 1-20)\n";
+            std::cout << "[OMEGA] Ghost session cleanup sent (all IDs)\n";
         }
 
         // Close and reconnect with a fresh TCP/SSL connection for the real logon
@@ -3472,10 +3512,11 @@ static void quote_loop() {
 
             if (g_quote_ready.load() && g_cfg.enable_extended_symbols &&
                 g_ext_md_refresh_needed.exchange(false)) {
-                const std::string ext = fix_build_md_subscribe_ext(g_quote_seq++);
-                if (!ext.empty()) {
-                    SSL_write(ssl, ext.c_str(), static_cast<int>(ext.size()));
-                    std::cout << "[OMEGA] Refreshed EXT subscription from SecurityList\n";
+                // Resubscribe all symbols under single fixed ID after SecurityList updates IDs
+                const std::string all = fix_build_md_subscribe_all(g_quote_seq++);
+                if (!all.empty()) {
+                    SSL_write(ssl, all.c_str(), static_cast<int>(all.size()));
+                    std::cout << "[OMEGA] Refreshed ALL subscription from SecurityList\n";
                 }
             }
 
@@ -3497,15 +3538,11 @@ static void quote_loop() {
             for (const auto& m : extract_messages(buf, n)) dispatch_fix(m, ssl);
         }
 
-        // Unsubscribe before closing — prevents ghost session on server that causes
-        // ALREADY_SUBSCRIBED on next logon attempt and delays the logon ACK.
+        // Unsubscribe before closing — prevents ghost session
         if (g_quote_ready.load()) {
-            const std::string unsub = fix_build_md_unsub(g_quote_seq++);
-            SSL_write(ssl, unsub.c_str(), static_cast<int>(unsub.size()));
-            const std::string unsub_ext = fix_build_md_unsub_ext(g_quote_seq++);
-            if (!unsub_ext.empty())
-                SSL_write(ssl, unsub_ext.c_str(), static_cast<int>(unsub_ext.size()));
-            Sleep(200); // brief wait for server to process unsub before TCP close
+            const std::string unsub_all = fix_build_md_unsub_all(g_quote_seq++);
+            SSL_write(ssl, unsub_all.c_str(), static_cast<int>(unsub_all.size()));
+            Sleep(200);
             std::cout << "[OMEGA] Unsubscribed market data before disconnect\n";
         }
 
