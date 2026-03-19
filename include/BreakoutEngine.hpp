@@ -510,9 +510,10 @@ public:
 
         if (phase == Phase::FLAT) {
             if (in_compression) {
-                phase     = Phase::COMPRESSION;
-                comp_high = mid;
-                comp_low  = mid;
+                phase               = Phase::COMPRESSION;
+                comp_high           = mid;
+                comp_low            = mid;
+                m_compression_ticks = 1;
                 std::cout << "[ENG-" << symbol << "] COMPRESSION entered"
                           << " recent=" << recent_vol_pct << "% base=" << base_vol_pct
                           << "% ratio=" << (base_vol_pct>0?recent_vol_pct/base_vol_pct:0)
@@ -525,9 +526,17 @@ public:
         // ── COMPRESSION phase: track the range while vol is compressed ────────
         if (phase == Phase::COMPRESSION) {
             if (in_compression) {
+                ++m_compression_ticks;
                 if (mid > comp_high) comp_high = mid;
                 if (mid < comp_low)  comp_low  = mid;
                 return {};  // still compressing — keep tracking
+            }
+            // Compression just ended — require minimum ticks to ensure range is real
+            if (m_compression_ticks < 3) {
+                // Too few ticks — range is noise (FX sparse tick issue). Reset quietly.
+                phase               = Phase::FLAT;
+                m_compression_ticks = 0;
+                return {};
             }
             // Compression just ended — check range is viable before watching
             const double comp_range_built = comp_high - comp_low;
@@ -535,9 +544,12 @@ public:
                 std::cout << "[ENG-" << symbol << "] COMPRESSION reset: range_too_small"
                           << " range=" << comp_range_built << " min=" << MIN_COMP_RANGE << "\n";
                 std::cout.flush();
-                phase = Phase::FLAT; return {};
+                phase               = Phase::FLAT;
+                m_compression_ticks = 0;
+                return {};
             }
-            phase       = Phase::BREAKOUT_WATCH;
+            phase               = Phase::BREAKOUT_WATCH;
+            m_compression_ticks = 0;
             watch_ticks = 40;
             std::cout << "[ENG-" << symbol << "] BREAKOUT_WATCH started"
                       << " hi=" << comp_high << " lo=" << comp_low << "\n";
@@ -750,8 +762,9 @@ public:
 
 protected:
     std::deque<double> m_prices;
-    int64_t            m_last_signal_ts = 0;
-    int                m_trade_id       = 0;
+    int64_t            m_last_signal_ts  = 0;
+    int                m_trade_id        = 0;
+    int                m_compression_ticks = 0;  // ticks spent inside compression phase
 
     static int64_t nowSec() noexcept {
         return std::chrono::duration_cast<std::chrono::seconds>(
