@@ -119,7 +119,6 @@ public:
         const double imb = macro->sp_l2_imbalance;
         if (imb > 0.0 && (imb < 0.20 || imb > 0.80))       return false;
         return true;
-        return true;
     }
 };
 
@@ -168,7 +167,6 @@ public:
         if (macro->vix > vix_panic)                         return false;
         const double imb = macro->nq_l2_imbalance;
         if (imb > 0.0 && (imb < 0.20 || imb > 0.80))       return false;
-        return true;
         return true;
     }
 };
