@@ -645,7 +645,6 @@ public:
 
         // ── BREAKOUT_WATCH phase ──────────────────────────────────────────────
         if (phase == Phase::BREAKOUT_WATCH) {
-            const double comp_range  = comp_high - comp_low;
             // Trigger OUTSIDE the range with spread*0.5 tolerance.
             // Previous trigger (comp_high - range*0.15) fired INSIDE the range,
             // giving breakout_move = mid - comp_high = negative. That made net_move
