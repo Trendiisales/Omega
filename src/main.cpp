@@ -2765,8 +2765,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_telemetry.UpdateLastSignal(sym.c_str(),
             sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
         const double sl_abs   = sig.entry * eng.SL_PCT / 100.0;
+        // Compute lot_size but do NOT write back to eng.ENTRY_SIZE yet.
+        // eng.ENTRY_SIZE must only be updated if the trade actually executes.
+        // Previously it was mutated here — before ranking and supervisor recheck —
+        // so a blocked/outranked signal would corrupt sizing for the next trade.
         const double lot_size = compute_size(sym, sl_abs, ask - bid, eng.ENTRY_SIZE);
-        eng.ENTRY_SIZE = lot_size;
 
         omega::TradeCandidate cand = omega::build_candidate(
             omega::EdgeResult{
@@ -2789,27 +2792,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
         auto selected = omega::select_best_trades(g_cycle_candidates, g_ranking_cfg);
         if (selected.empty()) {
-            // All candidates invalid — shouldn't happen after edge passed, log for debug
             std::cout << "[RANKED OUT] " << sym << " no valid candidates\n";
             std::cout.flush();
+            g_cycle_candidates.clear();  // don't let invalid candidates persist into next window
             return;
         }
         const omega::TradeCandidate& best = selected[0];
         if (std::string(best.symbol) != sym) {
-            // A different symbol ranked higher this cycle — this signal loses
             std::cout << "[RANKED OUT] " << sym
                       << " outranked by " << best.symbol
                       << " score=" << best.score << "\n";
             std::cout.flush();
+            // Do NOT clear g_cycle_candidates — the winner stays live for execution
+            // on its own dispatch call this same tick. But remove this symbol's
+            // losing candidate so it cannot re-compete on the next tick.
+            g_cycle_candidates.erase(
+                std::remove_if(g_cycle_candidates.begin(), g_cycle_candidates.end(),
+                    [&sym](const omega::TradeCandidate& c) {
+                        return std::string(c.symbol) == sym;
+                    }),
+                g_cycle_candidates.end());
             return;
         }
-
-        std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
-                  << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
-                  << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
-                  << " size=" << lot_size << " score=" << best.score
-                  << " sup_regime=" << omega::regime_name(sdec.regime)
-                  << " regime=" << regime << "\033[0m\n";
 
         // Final supervisor re-check before execution.
         // eng.phase is FLAT at this point (set inside update() when signal fires).
@@ -2821,6 +2825,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             return;
         }
 
+        // All gates passed — commit sizing and execute.
+        // eng.ENTRY_SIZE written here only, after ranking and supervisor have cleared.
+        eng.ENTRY_SIZE = lot_size;
+        std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
+                  << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
+                  << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
+                  << " size=" << lot_size << " score=" << best.score
+                  << " sup_regime=" << omega::regime_name(sdec.regime)
+                  << " regime=" << regime << "\033[0m\n";
         send_live_order(sym, sig.is_long, lot_size, sig.entry);
         g_cycle_candidates.clear();
     };
