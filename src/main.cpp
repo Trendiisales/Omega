@@ -71,6 +71,7 @@ struct OmegaConfig {
     std::string username   = "8077780";
     std::string password   = "Bowen6feb";
     int         heartbeat  = 30;
+    int         connection_warmup_sec = 30;  // seconds after reconnect before new entries allowed
 
     std::string mode       = "SHADOW";
 
@@ -423,6 +424,7 @@ static std::atomic<bool>  g_trade_ready{false};
 static std::mutex         g_trade_mtx;
 static int                g_trade_seq  = 1;
 static std::atomic<bool>  g_quote_ready{false};
+static std::atomic<int64_t> g_connected_since{0};  // unix seconds of last successful logon
 static std::atomic<bool>  g_ext_md_refresh_needed{false};
 
 // Shadow CSV
@@ -1868,6 +1870,7 @@ static void load_config(const std::string& path) {
             if (k=="username")           g_cfg.username  = v;
             if (k=="password")           g_cfg.password  = v;
             if (k=="heartbeat_interval") g_cfg.heartbeat = std::stoi(v);
+            if (k=="connection_warmup_sec") g_cfg.connection_warmup_sec = std::stoi(v);
         }
         if (section == "mode"     && k=="mode")         g_cfg.mode           = v;
         if (section == "breakout") {
@@ -2471,6 +2474,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool shadow_mode = (g_cfg.mode == "SHADOW");
         const bool shadow_research = (shadow_mode && g_cfg.shadow_research_mode);
         if (symbol == "GOLD.F" && g_disable_gold_stack) return false;
+        // Connection stability gate: block new entries for N seconds after reconnect.
+        // Prevents opening positions on the first tick after logon when the FIX session
+        // may be unstable — avoids the open→immediate-FORCE_CLOSE pattern seen in logs.
+        {
+            const int64_t cs = g_connected_since.load();
+            if (cs > 0 && (nowSec() - cs) < g_cfg.connection_warmup_sec) {
+                return false;
+            }
+        }
         {
             std::lock_guard<std::mutex> lk(g_perf_mtx);
             auto it = g_perf.find(symbol);
@@ -2872,6 +2884,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     if (type == "A") {
         std::cout << "[OMEGA] LOGON ACCEPTED\n";
         g_quote_ready.store(true);
+        g_connected_since.store(nowSec());
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
         const std::string md = build_marketdata_req(g_quote_seq++);
         SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
@@ -3273,7 +3286,7 @@ static void quote_loop() {
         }
 
         g_quote_ready.store(false);
-        // Force-close on disconnect -- auto& template lambda works for all typed engines
+        g_connected_since.store(0);  // reset stability timer on disconnect
         auto fc = [](auto& eng, const char* sym) {
             if (!eng.pos.active) return;
             double bid = 0.0, ask = 0.0;
