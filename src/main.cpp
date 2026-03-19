@@ -3387,8 +3387,8 @@ int main(int argc, char* argv[])
         1.6     // EDGE_MULTIPLIER
     );
     // Wire shadow fill simulation — price-triggered in PENDING, not immediate at arm
-    g_bracket_gold.m_shadow_mode = (g_cfg.mode != "LIVE");
-    g_bracket_xag.m_shadow_mode  = (g_cfg.mode != "LIVE");
+    g_bracket_gold.shadow_mode = (g_cfg.mode != "LIVE");
+    g_bracket_xag.shadow_mode  = (g_cfg.mode != "LIVE");
     apply_generic_fx_config(g_eng_eurusd);
     apply_generic_gbpusd_config(g_eng_gbpusd);
     apply_generic_audusd_config(g_eng_audusd);

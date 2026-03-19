@@ -82,6 +82,7 @@ public:
     double ENTRY_SIZE          = 0.01;
     double SL_PCT              = 0.0;
     const char* symbol         = "???";
+    bool   shadow_mode         = false;  // set by main.cpp — enables price-triggered fill sim in PENDING
 
     // ── Observable state ──────────────────────────────────────────────────────
     BracketPhase phase        = BracketPhase::IDLE;
@@ -239,7 +240,7 @@ public:
                 return;
             }
             // Shadow fill simulation: fire when price actually touches a bracket level
-            if (m_shadow_mode) {
+            if (shadow_mode) {
                 if (ask >= m_locked_hi) {
                     std::cout << "[BRACKET-" << symbol << "] SHADOW FILL LONG @ " << m_locked_hi << "\n";
                     std::cout.flush();
@@ -376,7 +377,6 @@ protected:
     double m_locked_long_tp   = 0.0;
     double m_locked_short_sl  = 0.0;
     double m_locked_short_tp  = 0.0;
-    bool   m_shadow_mode      = false;  // set by main.cpp — enables price-triggered fill sim
 
     static int64_t nowSec() noexcept {
         return std::chrono::duration_cast<std::chrono::seconds>(
