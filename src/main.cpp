@@ -3506,8 +3506,17 @@ int main(int argc, char* argv[])
     // Loads on top of the apply_* defaults above. Every symbol independently
     // tunable from symbols.ini with no shared inheritance.
     {
-        const std::string sym_ini = "symbols.ini";
-        if (g_sym_cfg.load(sym_ini)) {
+        // Try multiple paths — binary may run from different working directories
+        const std::vector<std::string> sym_ini_candidates = {
+            "symbols.ini",
+            "C:\\Omega\\symbols.ini",
+            "C:\\Omega\\config\\symbols.ini",
+        };
+        std::string sym_ini;
+        for (const auto& candidate : sym_ini_candidates) {
+            if (g_sym_cfg.load(candidate)) { sym_ini = candidate; break; }
+        }
+        if (!sym_ini.empty()) {
             // Helper: apply SymbolConfig to a BreakoutEngine.
             // TP_PCT = SL_PCT * tp_mult (scales TP relative to existing SL).
             // MAX_SPREAD: symbols.ini stores absolute price units. BreakoutEngine
@@ -3590,11 +3599,32 @@ int main(int argc, char* argv[])
             apply_supervisor(g_sup_brent,  "UKBRENT", g_sym_cfg.get("UKBRENT"));
             apply_supervisor(g_sup_gold,   "GOLD.F",  g_sym_cfg.get("GOLD.F"));
             std::cout << "[SUPERVISOR] All supervisors configured from " << sym_ini << "\n";
-
             std::cout << "[SYMCFG] All engine params overridden from " << sym_ini << "\n";
         } else {
-            std::cout << "[SYMCFG] WARNING: " << sym_ini
-                      << " not found — using compiled-in defaults\n";
+            std::cout << "[SYMCFG] WARNING: symbols.ini not found in any search path\n"
+                      << "[SYMCFG] Searched: symbols.ini, C:\\Omega\\symbols.ini, C:\\Omega\\config\\symbols.ini\n"
+                      << "[SYMCFG] Using compiled-in defaults — copy symbols.ini to Omega.exe directory\n";
+            // Assign symbol names directly so supervisor logs are readable even without ini
+            g_sup_sp.symbol     = "US500.F"; g_sup_nq.symbol     = "USTEC.F";
+            g_sup_cl.symbol     = "USOIL.F"; g_sup_us30.symbol   = "DJ30.F";
+            g_sup_nas100.symbol = "NAS100";  g_sup_ger30.symbol  = "GER30";
+            g_sup_uk100.symbol  = "UK100";   g_sup_estx50.symbol = "ESTX50";
+            g_sup_xag.symbol    = "XAGUSD";  g_sup_gold.symbol   = "GOLD.F";
+            g_sup_eurusd.symbol = "EURUSD";  g_sup_gbpusd.symbol = "GBPUSD";
+            g_sup_audusd.symbol = "AUDUSD";  g_sup_nzdusd.symbol = "NZDUSD";
+            g_sup_usdjpy.symbol = "USDJPY";  g_sup_brent.symbol  = "UKBRENT";
+            // Without symbols.ini: disable bracket on non-metals (no bracket engine exists)
+            for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_cl, &g_sup_us30, &g_sup_nas100,
+                              &g_sup_ger30, &g_sup_uk100, &g_sup_estx50,
+                              &g_sup_eurusd, &g_sup_gbpusd, &g_sup_audusd,
+                              &g_sup_nzdusd, &g_sup_usdjpy, &g_sup_brent})
+                sup->cfg.allow_bracket = false;
+            // Raise cooldown threshold from default 3 to 20
+            for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_cl, &g_sup_us30, &g_sup_nas100,
+                              &g_sup_ger30, &g_sup_uk100, &g_sup_estx50, &g_sup_xag,
+                              &g_sup_gold, &g_sup_eurusd, &g_sup_gbpusd, &g_sup_audusd,
+                              &g_sup_nzdusd, &g_sup_usdjpy, &g_sup_brent})
+                sup->cfg.cooldown_fail_threshold = 20;
         }
     }
     // Gold: generic breakout engine, overridden with gold-specific pct params

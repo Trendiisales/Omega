@@ -51,7 +51,7 @@ struct SymbolConfig
     int    max_false_breaks        = 2;
     bool   bracket_in_quiet_comp   = true;
     bool   breakout_in_trend       = true;
-    int    cooldown_fail_threshold = 3;
+    int    cooldown_fail_threshold = 20;  // raised from 3 — 3 fired on every normal fluctuation
     int    cooldown_duration_ms    = 120000;
 };
 

@@ -54,8 +54,8 @@ struct SupervisorConfig {
     double momentum_trend_thresh   = 0.015;
     bool   bracket_in_quiet_comp   = true;
     bool   breakout_in_trend       = true;
-    // Fix 6: bad-regime memory
-    int     cooldown_fail_threshold = 3;
+    // Fix 6: bad-regime memory — raised threshold to 20 (was 3, fired constantly)
+    int     cooldown_fail_threshold = 20;
     int64_t cooldown_duration_ms    = 120000; // 2 minutes
 };
 
