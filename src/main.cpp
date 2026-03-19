@@ -1113,7 +1113,7 @@ static void handle_execution_report(const std::string& msg) {
                             const bool is_long_fill = (it->second.side == "LONG");
                             if (it->second.symbol == "GOLD.F") {
                                 g_bracket_gold.confirm_fill(is_long_fill, fill_px, fill_qty);
-                                // Cancel the other (unfilled) leg
+                                // Cancel other leg — engine fires cancel_order_fn internally
                                 const std::string& cancel_id = is_long_fill
                                     ? g_bracket_gold.pending_short_clOrdId
                                     : g_bracket_gold.pending_long_clOrdId;
@@ -3389,6 +3389,8 @@ int main(int argc, char* argv[])
     // Wire shadow fill simulation — price-triggered in PENDING, not immediate at arm
     g_bracket_gold.shadow_mode = (g_cfg.mode != "LIVE");
     g_bracket_xag.shadow_mode  = (g_cfg.mode != "LIVE");
+    g_bracket_gold.cancel_order_fn = [](const std::string& id) { send_cancel_order(id); };
+    g_bracket_xag.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
     apply_generic_fx_config(g_eng_eurusd);
     apply_generic_gbpusd_config(g_eng_gbpusd);
     apply_generic_audusd_config(g_eng_audusd);

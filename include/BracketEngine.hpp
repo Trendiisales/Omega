@@ -113,9 +113,13 @@ public:
     std::string pending_short_clOrdId;
 
     using CloseCallback = std::function<void(const TradeRecord&)>;
+    using CancelCallback = std::function<void(const std::string&)>; // called with clOrdId to cancel
 
     bool shouldTrade(double, double, double, double) const noexcept { return true; }
     void onSignal(const BracketBothSignals&) const noexcept {}
+
+    // Set by main.cpp so engine can cancel broker orders directly on timeout/reject
+    CancelCallback cancel_order_fn;
 
     // ── configure() ──────────────────────────────────────────────────────────
     void configure(double buffer,
@@ -224,22 +228,21 @@ public:
         }
 
         // ── PENDING: both orders out, waiting for first fill ──────────────────
-        // Timeout after 60s — cancel both and reset.
-        // Also cancel if can_enter goes false (session ended, risk gate hit etc.)
         if (phase == BracketPhase::PENDING) {
             if (!can_enter) {
-                std::cout << "[BRACKET-" << symbol << "] PENDING CANCELLED — can_enter=false (session/risk gate)\n";
+                std::cout << "[BRACKET-" << symbol << "] PENDING CANCELLED — session/risk gate closed\n";
                 std::cout.flush();
+                cancel_both_broker_orders();
                 reset();
                 return;
             }
             if ((now - m_armed_ts) > 60) {
-                std::cout << "[BRACKET-" << symbol << "] PENDING TIMEOUT — both orders cancelled\n";
+                std::cout << "[BRACKET-" << symbol << "] PENDING TIMEOUT — cancelling both broker orders\n";
                 std::cout.flush();
+                cancel_both_broker_orders();
                 reset();
                 return;
             }
-            // Shadow fill simulation: fire when price actually touches a bracket level
             if (shadow_mode) {
                 if (ask >= m_locked_hi) {
                     std::cout << "[BRACKET-" << symbol << "] SHADOW FILL LONG @ " << m_locked_hi << "\n";
@@ -340,6 +343,18 @@ public:
         pos.sl       = is_long_filled ? m_locked_long_sl  : m_locked_short_sl;
         pos.tp       = is_long_filled ? m_locked_long_tp  : m_locked_short_tp;
         phase        = BracketPhase::LIVE;
+        // Engine-enforced: cancel the other leg immediately on fill
+        if (cancel_order_fn) {
+            const std::string& other_id = is_long_filled
+                ? pending_short_clOrdId : pending_long_clOrdId;
+            if (!other_id.empty()) {
+                cancel_order_fn(other_id);
+                std::cout << "[BRACKET-" << symbol << "] OCO CANCEL other_leg=" << other_id << "\n";
+                std::cout.flush();
+            }
+        }
+        pending_long_clOrdId.clear();
+        pending_short_clOrdId.clear();
         std::cout << "[BRACKET-" << symbol << "] FILL CONFIRMED"
                   << " side=" << (is_long_filled ? "LONG" : "SHORT")
                   << " px=" << actual_price << " size=" << actual_size
@@ -348,8 +363,10 @@ public:
     }
 
     void on_reject() noexcept {
-        std::cout << "[BRACKET-" << symbol << "] REJECTED — reset\n";
+        // One side rejected — cancel the other side on the broker then reset
+        std::cout << "[BRACKET-" << symbol << "] REJECTED — cancelling other leg and resetting\n";
         std::cout.flush();
+        cancel_both_broker_orders();
         reset();
     }
 
@@ -359,11 +376,24 @@ public:
     {
         if (phase == BracketPhase::LIVE && pos.active)
             closePos((bid + ask) * 0.5, reason, macro_regime, on_close);
-        else if (phase == BracketPhase::PENDING)
+        else if (phase == BracketPhase::PENDING) {
+            cancel_both_broker_orders();
             reset();
+        }
     }
 
 protected:
+    // ── cancel_both_broker_orders() ───────────────────────────────────────────
+    // Fires cancel_order_fn for both pending legs if they exist.
+    // Called on: timeout, session gate close, reject, forceClose while PENDING.
+    void cancel_both_broker_orders() noexcept {
+        if (cancel_order_fn) {
+            if (!pending_long_clOrdId.empty())  cancel_order_fn(pending_long_clOrdId);
+            if (!pending_short_clOrdId.empty()) cancel_order_fn(pending_short_clOrdId);
+        }
+        pending_long_clOrdId.clear();
+        pending_short_clOrdId.clear();
+    }
     std::deque<double> m_window;
     std::deque<double> m_atr_window;
     int64_t m_cooldown_start = 0;
