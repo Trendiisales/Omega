@@ -46,9 +46,13 @@ struct SymbolConfig
     bool   allow_breakout          = true;
     double min_regime_confidence   = 0.55;
     double min_engine_win_margin   = 0.10;
+    double min_winner_score        = 0.25;  // absolute floor: blocks low 0.12 vs 0.09 noise
+    double min_bracket_score       = 0.35;  // bracket-specific floor (higher: places 2 orders)
     int    max_false_breaks        = 2;
     bool   bracket_in_quiet_comp   = true;
     bool   breakout_in_trend       = true;
+    int    cooldown_fail_threshold = 3;
+    int    cooldown_duration_ms    = 120000;
 };
 
 // ==============================================================================

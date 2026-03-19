@@ -2290,15 +2290,29 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
     g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
 
-    // Track false breaks per symbol — supervisor uses this to detect CHOP_REVERSAL.
-    // Increment on any breakout failure. Decay by 1 on a winning trade (regime improving).
+    // Track false breaks per symbol — supervisor uses this for CHOP_REVERSAL detection
     {
         auto& fb = g_false_break_counts[tr.symbol];
         if (tr.exitReason == "BREAKOUT_FAIL" || tr.exitReason == "SL_HIT") {
             ++fb;
         } else if (tr.net_pnl > 0.0 && fb > 0) {
-            --fb;  // winning trade — regime improving, decay false break count
+            --fb;
         }
+    }
+
+    // Notify supervisor of winning trade — decays consecutive-block counter
+    if (tr.net_pnl > 0.0) {
+        auto notify = [&](omega::SymbolSupervisor& sup, const std::string& s) {
+            if (tr.symbol == s) sup.on_trade_success();
+        };
+        notify(g_sup_sp,     "US500.F"); notify(g_sup_nq,     "USTEC.F");
+        notify(g_sup_cl,     "USOIL.F"); notify(g_sup_us30,   "DJ30.F");
+        notify(g_sup_nas100, "NAS100");  notify(g_sup_ger30,   "GER30");
+        notify(g_sup_uk100,  "UK100");   notify(g_sup_estx50,  "ESTX50");
+        notify(g_sup_xag,    "XAGUSD");  notify(g_sup_gold,    "GOLD.F");
+        notify(g_sup_eurusd, "EURUSD");  notify(g_sup_gbpusd,  "GBPUSD");
+        notify(g_sup_audusd, "AUDUSD");  notify(g_sup_nzdusd,  "NZDUSD");
+        notify(g_sup_usdjpy, "USDJPY");  notify(g_sup_brent,   "UKBRENT");
     }
 
     // Equity-based sizing only applies in LIVE mode — in SHADOW there is no
@@ -3544,16 +3558,18 @@ int main(int argc, char* argv[])
             auto apply_supervisor = [](omega::SymbolSupervisor& sup,
                                        const std::string& sym,
                                        const SymbolConfig& c) {
-                sup.symbol                      = sym;
-                sup.cfg.allow_bracket           = c.allow_bracket;
-                sup.cfg.allow_breakout          = c.allow_breakout;
-                sup.cfg.min_regime_confidence   = c.min_regime_confidence;
-                sup.cfg.min_engine_win_margin   = c.min_engine_win_margin;
-                sup.cfg.max_false_breaks        = c.max_false_breaks;
-                sup.cfg.bracket_in_quiet_comp   = c.bracket_in_quiet_comp;
-                sup.cfg.breakout_in_trend       = c.breakout_in_trend;
-                // Use MAX_SPREAD_PCT from engine as the supervisor's spread limit
-                // (already set from apply_be above)
+                sup.symbol                          = sym;
+                sup.cfg.allow_bracket               = c.allow_bracket;
+                sup.cfg.allow_breakout              = c.allow_breakout;
+                sup.cfg.min_regime_confidence       = c.min_regime_confidence;
+                sup.cfg.min_engine_win_margin       = c.min_engine_win_margin;
+                sup.cfg.min_winner_score            = c.min_winner_score;
+                sup.cfg.min_bracket_score           = c.min_bracket_score;
+                sup.cfg.max_false_breaks            = c.max_false_breaks;
+                sup.cfg.bracket_in_quiet_comp       = c.bracket_in_quiet_comp;
+                sup.cfg.breakout_in_trend           = c.breakout_in_trend;
+                sup.cfg.cooldown_fail_threshold     = c.cooldown_fail_threshold;
+                sup.cfg.cooldown_duration_ms        = static_cast<int64_t>(c.cooldown_duration_ms);
             };
             apply_supervisor(g_sup_sp,     "US500.F", g_sym_cfg.get("US500.F"));
             apply_supervisor(g_sup_nq,     "USTEC.F", g_sym_cfg.get("USTEC.F"));

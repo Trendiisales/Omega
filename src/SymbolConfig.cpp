@@ -62,9 +62,13 @@ bool SymbolConfigManager::load(const std::string& path)
         cfg.allow_breakout         = get_int   (kv, "ALLOW_BREAKOUT",         1) != 0;
         cfg.min_regime_confidence  = get_double(kv, "MIN_REGIME_CONFIDENCE",  0.55);
         cfg.min_engine_win_margin  = get_double(kv, "MIN_ENGINE_WIN_MARGIN",  0.10);
+        cfg.min_winner_score       = get_double(kv, "MIN_WINNER_SCORE",       0.25);
+        cfg.min_bracket_score      = get_double(kv, "MIN_BRACKET_SCORE",      0.35);
         cfg.max_false_breaks       = get_int   (kv, "MAX_FALSE_BREAKS",       2);
         cfg.bracket_in_quiet_comp  = get_int   (kv, "BRACKET_IN_QUIET_COMP",  1) != 0;
         cfg.breakout_in_trend      = get_int   (kv, "BREAKOUT_IN_TREND",      1) != 0;
+        cfg.cooldown_fail_threshold= get_int   (kv, "COOLDOWN_FAIL_THRESHOLD",3);
+        cfg.cooldown_duration_ms   = get_int   (kv, "COOLDOWN_DURATION_MS",   120000);
 
         configs_[current_section] = cfg;
         std::cout << "[SYMCFG] Loaded " << current_section
