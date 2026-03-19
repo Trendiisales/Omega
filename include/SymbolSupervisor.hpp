@@ -283,21 +283,32 @@ public:
                                             ? m_candidate_regime
                                             : Regime::HIGH_RISK_NO_TRADE));
 
-        // Recompute scores for the stable regime
+        // Scores for the stable regime.
+        // KEY FIX: when the current tick is a blocking regime (HIGH_RISK/CHOP),
+        // bracket_score and breakout_score are 0.0 (computed from blocking regime branch).
+        // If we use those zeros for the stable regime scores, top_score collapses to 0
+        // and score_ok=false — allow=0 on every noise tick even with stable regime.
+        // Fix: when blocking, reuse the last cached non-zero scores from the stable regime.
         double stable_bracket  = 0.0;
         double stable_breakout = 0.0;
-        switch (stable_regime) {
-            case Regime::QUIET_COMPRESSION:
-                stable_bracket  = bracket_score;
-                stable_breakout = breakout_score;
-                break;
-            case Regime::EXPANSION_BREAKOUT:
-            case Regime::TREND_CONTINUATION:
-                stable_bracket  = bracket_score;
-                stable_breakout = breakout_score;
-                break;
-            default:
-                break;
+        if (is_blocking_regime && candidate_stable) {
+            stable_bracket  = m_last_stable_bracket;
+            stable_breakout = m_last_stable_breakout;
+        } else {
+            switch (stable_regime) {
+                case Regime::QUIET_COMPRESSION:
+                case Regime::EXPANSION_BREAKOUT:
+                case Regime::TREND_CONTINUATION:
+                    stable_bracket  = bracket_score;
+                    stable_breakout = breakout_score;
+                    m_last_stable_bracket  = bracket_score;
+                    m_last_stable_breakout = breakout_score;
+                    break;
+                default:
+                    m_last_stable_bracket  = 0.0;
+                    m_last_stable_breakout = 0.0;
+                    break;
+            }
         }
 
         // ── Permission decision — 3-layer gate ────────────────────────────────
@@ -429,7 +440,11 @@ private:
     // Hysteresis: candidate regime must hold for this many ticks before switching
     Regime  m_candidate_regime    = Regime::UNKNOWN;
     int     m_candidate_count     = 0;
-    static constexpr int REGIME_HOLD_TICKS = 4;  // raised from 2 — needs 4 ticks to stabilise
+    // Score cache: last valid scores from a non-blocking tick — used to hold
+    // allow=1 during HIGH_RISK noise ticks that would otherwise zero the scores
+    double  m_last_stable_bracket  = 0.0;
+    double  m_last_stable_breakout = 0.0;
+    static constexpr int REGIME_HOLD_TICKS = 4;
 };
 
 } // namespace omega
