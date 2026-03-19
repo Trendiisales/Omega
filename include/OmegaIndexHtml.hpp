@@ -634,6 +634,7 @@ function renderTrades(trades){
   if(_bellEnabled&&closed.length>_lastTradeCount&&_lastTradeCount>=_bellBootCount){const pnl=safe(closed[0].net_pnl);pnl>0?_playWinBell():_playLossBell();}
   _lastTradeCount=closed.length;
   const wins=closed.filter(t=>safe(t.net_pnl)>0).length,losses=closed.filter(t=>safe(t.net_pnl)<0).length,totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
+  // BUG FIX 1: trade count header — was (totalNet>=0?'+':'') now (totalNet>=0?'+':'-')
   if(cE)cE.textContent=closed.length+' closed · '+wins+'W/'+losses+'L · '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
   const now=Math.floor(Date.now()/1000);
   el.innerHTML=trades.slice(0,60).map(t=>{
@@ -650,8 +651,10 @@ function renderTrades(trades){
 R"OMEGA3(
     else if(safe(t.entryTs)>0&&safe(t.exitTs)>0){const s=safe(t.exitTs)-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
     const rowBg=isOpen?'rgba(46,168,255,0.06)':win?'rgba(0,217,126,0.05)':loss?'rgba(255,51,85,0.05)':'';
+    // BUG FIX 2: gross column — was (gross>=0?'+':'') now (gross>=0?'+':'-')
     const grossD=isOpen?'':(gross>=0?'+':'-')+'$'+Math.abs(gross).toFixed(2);
     const slipD=isOpen?'':slip>0?'-$'+slip.toFixed(2):'--';
+    // BUG FIX 3: net column — was (net>=0?'+':'') now (net>=0?'+':'-')
     const netD=isOpen?'<span style="color:var(--t2);font-size:10px">live</span>':(net>=0?'+':'-')+'$'+Math.abs(net).toFixed(2);
     return `<tr style="background:${rowBg}">
       <td style="color:var(--t2);font-size:10px">${fmtUTC(safe(t.entryTs))}</td>
