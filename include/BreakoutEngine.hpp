@@ -45,6 +45,90 @@ struct OpenPos
 };
 
 // ==============================================================================
+// Edge model — signal strength, cost model, exhaustion filter, adaptive TP/SL
+// ==============================================================================
+
+struct EdgeConfig {
+    double k_impulse      = 2.2;   // breakout_strength multiplier
+    double k_vol          = 1.5;   // vol expansion multiplier
+    double k_compression  = 1.2;   // compression quality multiplier
+    double k_momentum     = 1.8;   // momentum score multiplier
+    double slippage_mult  = 1.5;   // slippage as multiple of spread
+    double safety_mult    = 1.2;   // required = total_cost * (1 + safety_mult)
+    double exhaustion_mult= 1.5;   // block if move > comp_range * exhaustion_mult
+    double min_edge_buffer= 0.00001;
+};
+
+struct EdgeResult {
+    double expected_move = 0.0;
+    double total_cost    = 0.0;
+    double net_edge      = 0.0;
+    double tp_price      = 0.0;
+    double sl_price      = 0.0;
+    double size          = 0.0;
+    bool   valid         = false;
+};
+
+inline EdgeResult compute_edge_and_execution(
+    double mid, double spread,
+    double breakout_move,
+    double comp_high, double comp_low,
+    double recent_vol, double momentum,
+    bool is_long,
+    double account_equity,
+    const EdgeConfig& cfg) noexcept
+{
+    EdgeResult r{};
+    const double comp_range = comp_high - comp_low;
+    if (mid <= 0.0 || comp_range <= 0.0) return r;
+
+    // Normalised features
+    const double breakout_strength   = breakout_move / comp_range;
+    const double compression_quality = 1.0 / (1.0 + comp_range);
+    const double momentum_score      = std::fabs(momentum);
+
+    // Signal strength — weighted sum of independent indicators
+    const double signal_strength =
+          breakout_strength   * cfg.k_impulse
+        + recent_vol          * cfg.k_vol
+        + compression_quality * cfg.k_compression
+        + momentum_score      * cfg.k_momentum;
+
+    const double expected_move = signal_strength * comp_range;
+
+    // Full cost model: spread in + spread out + slippage
+    const double spread_cost   = spread;
+    const double slippage_cost = spread * cfg.slippage_mult;
+    const double total_cost    = (spread_cost * 2.0) + slippage_cost;
+    const double required      = total_cost * (1.0 + cfg.safety_mult);
+
+    // Exhaustion filter: block if move already exceeds comp_range * k
+    if (breakout_move > comp_range * cfg.exhaustion_mult) return r;
+
+    // Edge check
+    const double net_edge = expected_move - required;
+    if (net_edge <= cfg.min_edge_buffer) return r;
+
+    // Adaptive TP/SL based on expected move
+    const double tp_dist = expected_move * 0.7;
+    const double sl_dist = expected_move * 0.5;
+    r.tp_price = is_long ? mid + tp_dist : mid - tp_dist;
+    r.sl_price = is_long ? mid - sl_dist : mid + sl_dist;
+
+    // Edge-based position sizing: risk 0.2% of equity per trade
+    const double risk_per_trade = account_equity * 0.002;
+    r.size = (sl_dist > 0.0) ? (risk_per_trade / sl_dist) : 0.01;
+    if (r.size < 0.01) r.size = 0.01;
+    if (r.size > 5.0)  r.size = 5.0;
+
+    r.expected_move = expected_move;
+    r.total_cost    = required;
+    r.net_edge      = net_edge;
+    r.valid         = true;
+    return r;
+}
+
+// ==============================================================================
 // CRTP base
 // Derived must be: class MyEngine : public BreakoutEngineBase<MyEngine>
 // Optional overrides:
@@ -67,8 +151,10 @@ public:
     double      MAX_SPREAD_PCT        = 0.05;
     double      MOMENTUM_THRESH_PCT   = 0.05;
     double      MIN_BREAKOUT_PCT      = 0.25;
-    double      MIN_EDGE_PCT          = 0.0;    // min TP distance as % of price — 0 = disabled
-    double      SLIPPAGE_EST_PCT      = 0.0;    // estimated one-way slippage as % of price
+    double      MIN_EDGE_PCT          = 0.0;
+    double      SLIPPAGE_EST_PCT      = 0.0;
+    double      ACCOUNT_EQUITY        = 10000.0; // set from main.cpp — used for edge-based sizing
+    EdgeConfig  EDGE_CFG;                         // edge model params — uses defaults
     int         MAX_TRADES_PER_MIN    = 2;
     double      ENTRY_SIZE            = 0.01;
     bool        AGGRESSIVE_SHADOW     = false;
@@ -349,11 +435,7 @@ public:
                       << " can_enter=" << can_enter << "\n";
             std::cout.flush();
 
-            const bool   is_long = long_break;
-            const double tp = is_long ? mid * (1.0 + TP_PCT / 100.0)
-                                      : mid * (1.0 - TP_PCT / 100.0);
-            const double sl = is_long ? mid * (1.0 - SL_PCT / 100.0)
-                                      : mid * (1.0 + SL_PCT / 100.0);
+            const bool is_long = long_break;
 
             // Session/latency gate
             if (!can_enter) {
@@ -376,20 +458,10 @@ public:
                 phase = Phase::FLAT; return {};
             }
 
-            // ── VOLATILITY EXPANSION GATE ───────────────────────────────────────
-            // At the moment of breakout the recent_vol over COMPRESSION_LOOKBACK ticks
-            // may still be below the absolute VOL_THRESH_PCT threshold because the
-            // expansion is just beginning.
-            // FIX: accept entry if EITHER:
-            //   (a) recent_vol >= VOL_THRESH_PCT (explicit expansion confirmed), OR
-            //   (b) recent_vol is expanding vs the compression state — i.e. it has
-            //       crossed back above 80% of base_vol (compression is ending).
-            //       This catches the breakout onset correctly.
-            // Only hard-block if recent_vol is still deeply compressed (< 60% of base).
+            // ── VOLATILITY EXPANSION GATE ─────────────────────────────────────
             {
                 const double vol_expansion_floor = (base_vol_pct > 0.0)
-                    ? (base_vol_pct * 0.60)  // allow entry once vol >= 60% of baseline
-                    : VOL_THRESH_PCT;
+                    ? (base_vol_pct * 0.60) : VOL_THRESH_PCT;
                 const bool vol_ok = (recent_vol_pct >= VOL_THRESH_PCT) ||
                                     (recent_vol_pct >= vol_expansion_floor);
                 if (!vol_ok) {
@@ -402,38 +474,30 @@ public:
                 }
             }
 
-            // ── MOMENTUM GATE ─────────────────────────────────────────────────────
-            // Require directional pressure: price_now vs price_20_ticks_ago > MOMENTUM_THRESH_PCT
+            // ── MOMENTUM GATE ─────────────────────────────────────────────────
+            double momentum_pct = 0.0;
             if (static_cast<int>(m_momentum_window.size()) >= MOMENTUM_WINDOW) {
-                const double momentum_pct = (mid - m_momentum_window.front()) / m_momentum_window.front() * 100.0;
+                momentum_pct = (mid - m_momentum_window.front())
+                               / m_momentum_window.front() * 100.0;
                 const double momentum_thresh = AGGRESSIVE_SHADOW
-                    ? (MOMENTUM_THRESH_PCT * 0.60)
-                    : MOMENTUM_THRESH_PCT;
-                const bool   momentum_ok  = long_break  ? (momentum_pct >  momentum_thresh)
-                                                        : (momentum_pct < -momentum_thresh);
+                    ? (MOMENTUM_THRESH_PCT * 0.60) : MOMENTUM_THRESH_PCT;
+                const bool momentum_ok = long_break ? (momentum_pct >  momentum_thresh)
+                                                    : (momentum_pct < -momentum_thresh);
                 if (!momentum_ok) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: momentum_gate"
-                              << " mom=" << momentum_pct << "% thresh=" << momentum_thresh
-                              << "% shadow=" << (AGGRESSIVE_SHADOW ? 1 : 0) << "\n";
+                              << " mom=" << momentum_pct << "% thresh=" << momentum_thresh << "%\n";
                     std::cout.flush();
                     phase = Phase::FLAT; return {};
                 }
             }
 
-            // ── STRUCTURAL RANGE BREAK GATE ───────────────────────────────────────
-            // Price must break the 50-tick structural high/low — not just the comp range
+            // ── STRUCTURAL RANGE BREAK GATE ───────────────────────────────────
             if (static_cast<int>(m_range_window.size()) >= RANGE_WINDOW) {
-                // Exclude current tick from structural range.
-                // Including current mid makes `mid > struct_hi` / `mid < struct_lo`
-                // impossible when `struct_hi/lo` is computed over the same set.
-                auto struct_end = m_range_window.end();
-                --struct_end;
+                auto struct_end = m_range_window.end(); --struct_end;
                 const double struct_hi = *std::max_element(m_range_window.begin(), struct_end);
                 const double struct_lo = *std::min_element(m_range_window.begin(), struct_end);
                 bool range_ok = long_break ? (mid > struct_hi) : (mid < struct_lo);
                 if (AGGRESSIVE_SHADOW) {
-                    // In shadow discovery mode we accept comp-range exits even if they
-                    // don't clear a full 50-tick structural extreme.
                     const double relaxed_buf = spread * 0.50;
                     range_ok = long_break ? (mid > (comp_high + relaxed_buf))
                                           : (mid < (comp_low  - relaxed_buf));
@@ -441,100 +505,74 @@ public:
                 if (!range_ok) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: range_break_gate"
                               << " mid=" << mid << " struct_hi=" << struct_hi
-                              << " struct_lo=" << struct_lo
-                              << " shadow=" << (AGGRESSIVE_SHADOW ? 1 : 0) << "\n";
+                              << " struct_lo=" << struct_lo << "\n";
                     std::cout.flush();
                     phase = Phase::FLAT; return {};
                 }
             }
 
-            // ── MINIMUM BREAKOUT MOVE GATE ────────────────────────────────────────
-            // Reject weak breakouts — move from comp edge must be >= MIN_BREAKOUT_PCT
+            // ── MINIMUM BREAKOUT MOVE GATE ────────────────────────────────────
             {
-                const double edge        = long_break ? comp_high : comp_low;
-                const double move_pct    = std::fabs(mid - edge) / edge * 100.0;
-                const double min_breakout_req = AGGRESSIVE_SHADOW
-                    ? (MIN_BREAKOUT_PCT * 0.60)
-                    : MIN_BREAKOUT_PCT;
-                if (move_pct < min_breakout_req) {
+                const double edge = long_break ? comp_high : comp_low;
+                const double move_pct = std::fabs(mid - edge) / edge * 100.0;
+                const double min_req  = AGGRESSIVE_SHADOW
+                    ? (MIN_BREAKOUT_PCT * 0.60) : MIN_BREAKOUT_PCT;
+                if (move_pct < min_req) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: min_breakout_gate"
-                              << " move=" << move_pct << "% min=" << min_breakout_req
-                              << "% shadow=" << (AGGRESSIVE_SHADOW ? 1 : 0) << "\n";
+                              << " move=" << move_pct << "% min=" << min_req << "%\n";
                     std::cout.flush();
                     phase = Phase::FLAT; return {};
                 }
             }
 
-            // ── RATE LIMITER GATE ─────────────────────────────────────────────────
-            // Max MAX_TRADES_PER_MIN entries per 60-second window
+            // ── RATE LIMITER GATE ─────────────────────────────────────────────
             {
                 const int64_t now_sec = nowSec();
-                // Evict entries older than 60s
                 while (!m_trade_times.empty() && now_sec - m_trade_times.front() > 60)
                     m_trade_times.pop_front();
                 if (static_cast<int>(m_trade_times.size()) >= MAX_TRADES_PER_MIN) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: rate_limit"                              << " trades_in_60s=" << m_trade_times.size() << "\n";
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: rate_limit"
+                              << " trades_in_60s=" << m_trade_times.size() << "\n";
                     std::cout.flush();
                     phase = Phase::FLAT; return {};
                 }
             }
 
-            // ── Full cost + expected move gate ───────────────────────────────
-            //
-            // COST MODEL: spread (round-trip) + estimated slippage (round-trip)
-            //   total_cost_pct = (spread * 2 + slippage * 2) / mid * 100
-            //
-            // EXPECTED MOVE: impulse strength projects how far price is likely
-            //   to continue AFTER the breakout, not just how far it has moved.
-            //   impulse = recent_vol_pct * |momentum_pct| (dimensionless strength)
-            //   expected_follow = impulse * k where k calibrated to 1.0
-            //   We use the larger of:
-            //     (a) actual breakout distance already covered (floor)
-            //     (b) impulse-projected follow-through (forward estimate)
-            //
-            // A trade is valid only if:
-            //   expected_follow >= total_cost + MIN_EDGE_PCT (safety buffer)
-            {
-                const double breakout_move = is_long
-                    ? (mid - comp_high) : (comp_low - mid);
-                const double breakout_move_pct = (mid > 0.0)
-                    ? (breakout_move / mid * 100.0) : 0.0;
+            // ── EDGE MODEL — signal strength, full cost, exhaustion, adaptive TP/SL ──
+            const double breakout_move = is_long
+                ? (mid - comp_high) : (comp_low - mid);
 
-                // Full round-trip cost: spread in + spread out + slippage in + slip out
-                const double spread_pct    = (mid > 0.0) ? (spread / mid * 100.0) : 0.0;
-                const double total_cost_pct = (spread_pct * 2.0) + (SLIPPAGE_EST_PCT * 2.0);
+            const EdgeResult edge = compute_edge_and_execution(
+                mid, spread,
+                breakout_move, comp_high, comp_low,
+                recent_vol_pct, momentum_pct,
+                is_long, ACCOUNT_EQUITY, EDGE_CFG);
 
-                // Impulse strength: vol × |momentum| gives a dimensionless signal of
-                // how much energy is behind the move
-                double momentum_pct = 0.0;
-                if (static_cast<int>(m_momentum_window.size()) >= MOMENTUM_WINDOW) {
-                    momentum_pct = (mid - m_momentum_window.front())
-                                   / m_momentum_window.front() * 100.0;
-                }
-                const double impulse       = recent_vol_pct * std::fabs(momentum_pct);
-                const double expected_move = std::max(breakout_move_pct, impulse);
-
-                // Required: expected_move >= cost + MIN_EDGE_PCT buffer
-                const double required = total_cost_pct + MIN_EDGE_PCT;
-
-                if (expected_move < required) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: insufficient_edge"
-                              << " expected=" << expected_move
-                              << "% cost="    << total_cost_pct
-                              << "% min_edge=" << MIN_EDGE_PCT
-                              << "% required=" << required << "%\n";
-                    std::cout.flush();
-                    phase = Phase::FLAT; return {};
-                }
+            if (!edge.valid) {
+                std::cout << "[ENG-" << symbol << "] BLOCKED: edge_model"
+                          << " move=" << breakout_move
+                          << " comp_range=" << (comp_high - comp_low)
+                          << " spread=" << spread << "\n";
+                std::cout.flush();
+                phase = Phase::FLAT; return {};
             }
+
+            std::cout << "[ENG-" << symbol << "] EDGE OK"
+                      << " expected=" << edge.expected_move
+                      << " cost=" << edge.total_cost
+                      << " net=" << edge.net_edge
+                      << " tp=" << edge.tp_price
+                      << " sl=" << edge.sl_price
+                      << " size=" << edge.size << "\n";
+            std::cout.flush();
 
             pos.active          = true;
             pos.is_long         = is_long;
             pos.entry           = mid;
-            pos.tp              = tp;
-            pos.sl              = sl;
-            pos.size            = (ENTRY_SIZE > 0.0 ? ENTRY_SIZE : 0.01);
-            pos.sl_pct          = SL_PCT;  // stored so trail arms scale per instrument
+            pos.tp              = edge.tp_price;
+            pos.sl              = edge.sl_price;
+            pos.size            = edge.size;
+            pos.sl_pct          = SL_PCT;
             pos.mfe             = 0.0;
             pos.mae             = 0.0;
             pos.entry_ts        = now;

@@ -112,6 +112,7 @@ struct OmegaConfig {
     // Set to 0.0 to use legacy fixed ENTRY_SIZE / sig.size (backward-compatible default).
     // Start conservative (e.g. 50.0) and increase as shadow P&L validates the strategy.
     double risk_per_trade_usd = 0.0;  // 0 = disabled, use fixed sizes
+    double account_equity     = 10000.0; // account size for edge-based position sizing
     // Per-symbol hard cap on lot size — safety net regardless of computed size.
     // Prevents a misconfigured risk_per_trade from opening an oversized position.
     double max_lot_gold    = 0.50;   // GOLD.F max lots per trade
@@ -1811,6 +1812,7 @@ static void load_config(const std::string& path) {
             if (k=="max_latency_ms")       g_cfg.max_latency_ms    = std::stod(v);
             // Risk-based position sizing
             if (k=="risk_per_trade_usd")   g_cfg.risk_per_trade_usd = std::stod(v);
+            if (k=="account_equity")       g_cfg.account_equity     = std::stod(v);
             if (k=="max_lot_gold")         g_cfg.max_lot_gold       = std::stod(v);
             if (k=="max_lot_indices")      g_cfg.max_lot_indices    = std::stod(v);
             if (k=="max_lot_oil")          g_cfg.max_lot_oil        = std::stod(v);
@@ -3459,16 +3461,12 @@ int main(int argc, char* argv[])
         }
     }
     // Gold: generic breakout engine, overridden with gold-specific pct params
-    // Gold: dedicated config -- do not use generic breakout defaults
-    // ── FIXED LOT SIZES — authoritative sizing for all engines ───────────────
-    // risk_per_trade_usd=0 so compute_size() returns ENTRY_SIZE directly.
-    // These are the MINIMUM operating lot sizes. Do NOT change without instruction.
-    // NAS100 broker minimum is 0.10 lots — all other instruments trade at 0.01.
+    // ── Fixed lot sizes — authoritative sizing ────────────────────────────────
     g_eng_sp.ENTRY_SIZE     = 0.01;
     g_eng_nq.ENTRY_SIZE     = 0.01;
     g_eng_cl.ENTRY_SIZE     = 0.01;
     g_eng_us30.ENTRY_SIZE   = 0.01;
-    g_eng_nas100.ENTRY_SIZE = 0.10;  // NAS100: broker minimum 0.10 lots
+    g_eng_nas100.ENTRY_SIZE = 0.10;
     g_eng_ger30.ENTRY_SIZE  = 0.01;
     g_eng_uk100.ENTRY_SIZE  = 0.01;
     g_eng_estx50.ENTRY_SIZE = 0.01;
@@ -3479,6 +3477,23 @@ int main(int argc, char* argv[])
     std::cout << "[SIZING] Fixed lot mode active (risk_per_trade_usd=0)\n"
               << "[SIZING]   All instruments: 0.01 lots | NAS100: 0.10 lots\n";
     std::cout.flush();
+
+    // Wire account equity to edge model — used for edge-based position sizing.
+    // Set account_equity in omega_config.ini [risk] section.
+    // Default 10000 is conservative — adjust to reflect actual account size.
+    const double acct_eq = g_cfg.account_equity;
+    g_eng_sp.ACCOUNT_EQUITY     = acct_eq;
+    g_eng_nq.ACCOUNT_EQUITY     = acct_eq;
+    g_eng_cl.ACCOUNT_EQUITY     = acct_eq;
+    g_eng_us30.ACCOUNT_EQUITY   = acct_eq;
+    g_eng_nas100.ACCOUNT_EQUITY = acct_eq;
+    g_eng_ger30.ACCOUNT_EQUITY  = acct_eq;
+    g_eng_uk100.ACCOUNT_EQUITY  = acct_eq;
+    g_eng_estx50.ACCOUNT_EQUITY = acct_eq;
+    g_eng_xag.ACCOUNT_EQUITY    = acct_eq;
+    g_eng_eurusd.ACCOUNT_EQUITY = acct_eq;
+    g_eng_gbpusd.ACCOUNT_EQUITY = acct_eq;
+    g_eng_brent.ACCOUNT_EQUITY  = acct_eq;
 
     // GoldEngineStack config — applies all [gold_stack] ini values.
     // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
