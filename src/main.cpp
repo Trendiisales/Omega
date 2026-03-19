@@ -2711,30 +2711,35 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Calls supervisor, gates new entries on allow_breakout, always ticks for
     // position management. Feeds valid signals into global ranking buffer.
     auto dispatch = [&](auto& eng, omega::SymbolSupervisor& sup, bool base_can_enter) {
-        // Fix: ARMED state (COMPRESSION or BREAKOUT_WATCH) bypasses supervisor permission.
-        // Supervisor still runs every tick for regime classification and telemetry.
-        // But once a setup is live, no supervisor flip can kill it.
-        const bool eng_mid_cycle = (eng.phase == omega::Phase::COMPRESSION
-                                 || eng.phase == omega::Phase::BREAKOUT_WATCH);
+        // Supervisor always runs every tick — for regime classification and telemetry.
         const auto sdec = sup_decision(sup, eng, base_can_enter);
-        // ARMED: can_enter locked to base_can_enter (position/session/daily loss only)
-        // IDLE:  can_enter requires supervisor allow_breakout
-        const bool can_enter = eng_mid_cycle
+
+        // ── can_enter construction ────────────────────────────────────────────
+        // FLAT:            supervisor must allow + base gates must pass
+        // COMPRESSION:     supervisor must allow + base gates must pass
+        //                  (BreakoutEngine Leak2 fix aborts to FLAT if can_enter=false)
+        // BREAKOUT_WATCH:  ARMED — bypass supervisor, only base gates apply.
+        //                  Once armed at breakout-watch stage a supervisor flip must
+        //                  not kill it mid-execution. Final re-check below is last defence.
+        const bool eng_armed = (eng.phase == omega::Phase::BREAKOUT_WATCH);
+        const bool can_enter = eng_armed
             ? base_can_enter
             : (base_can_enter && sdec.allow_breakout);
-        if (eng_mid_cycle && !sdec.allow_breakout && base_can_enter) {
-            // Log when ARMED bypass overrides supervisor — confirms protection is active
+
+        if (eng_armed && !sdec.allow_breakout && base_can_enter) {
             static thread_local int64_t s_last_armed_log = 0;
             const int64_t now_log = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             if (now_log - s_last_armed_log >= 5) {
                 s_last_armed_log = now_log;
                 std::cout << "[ARMED-BYPASS] " << eng.symbol
-                          << " supervisor allow=0 ignored — engine mid-cycle\n";
+                          << " supervisor allow=0 ignored — engine in BREAKOUT_WATCH\n";
                 std::cout.flush();
             }
         }
-        // Session-slot scaling on MIN_BREAKOUT_PCT — only when idle, not mid-setup
+        // Session-slot scaling on MIN_BREAKOUT_PCT — only when idle (FLAT), not mid-setup
+        const bool eng_mid_cycle = (eng.phase == omega::Phase::COMPRESSION
+                                 || eng.phase == omega::Phase::BREAKOUT_WATCH);
         if (!eng_mid_cycle) {
             static std::unordered_map<const char*, double> s_base_breakout;
             const char* sym_key = eng.symbol;
