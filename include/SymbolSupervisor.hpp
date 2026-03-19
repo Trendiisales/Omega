@@ -49,8 +49,8 @@ struct SupervisorConfig {
     double min_bracket_score       = 0.35;
     int    max_false_breaks        = 2;
     double max_spread_pct          = 0.10;
-    double compression_thresh      = 0.60;
-    double expansion_thresh        = 0.80;
+    double compression_thresh      = 0.55;  // vol_ratio below this = compression
+    double expansion_thresh        = 0.90;  // vol_ratio above this = expansion (wider gap reduces oscillation)
     double momentum_trend_thresh   = 0.015;
     bool   bracket_in_quiet_comp   = true;
     bool   breakout_in_trend       = true;
@@ -372,7 +372,7 @@ private:
     // Hysteresis: candidate regime must hold for this many ticks before switching
     Regime  m_candidate_regime    = Regime::UNKNOWN;
     int     m_candidate_count     = 0;
-    static constexpr int REGIME_HOLD_TICKS = 3;  // must see same regime 3 ticks in a row
+    static constexpr int REGIME_HOLD_TICKS = 4;  // must see same regime 4 ticks in a row
 };
 
 } // namespace omega
