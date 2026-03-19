@@ -332,14 +332,7 @@ public:
         if (!gate_ok) {
             d.allow_bracket  = false;
             d.allow_breakout = false;
-            // Distinguish "no setup" from "good setup but engine unavailable"
-            // This is purely for log clarity — both result in NONE
-            if (regime_ok && confidence_ok && top_score >= cfg.min_winner_score) {
-                d.winner = "NONE";
-                d.reason = "bracket_unavailable"; // regime good, no engine can act
-            } else {
-                d.winner = "NONE";
-            }
+            d.winner = "NONE";
             // Cooldown only counts CHOP or repeated false-break conditions —
             // NOT plain inactivity (no_dominant_regime).
             // Punishing quiet symbols for having no setup causes missed entries
