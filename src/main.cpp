@@ -3741,10 +3741,12 @@ int main(int argc, char* argv[])
                     eng.MAX_SPREAD_PCT = (c.max_spread / typical_price) * 100.0;
                 if (c.min_hold_ms  > 0)   eng.MAX_HOLD_SEC  = c.min_hold_ms / 1000;
                 if (c.max_hold_sec > 0)   eng.MAX_HOLD_SEC  = c.max_hold_sec;
-                if (c.min_edge_bp    > 0.0) eng.EDGE_CFG.min_edge_bp  = c.min_edge_bp;  // wire to actual edge check
-                if (c.slippage_est_bp> 0.0) eng.SLIPPAGE_EST_PCT  = c.slippage_est_bp / 100.0;
-                if (c.min_breakout_pct>0.0) eng.MIN_BREAKOUT_PCT  = c.min_breakout_pct;
-                if (c.min_range      > 0.0) eng.MIN_COMP_RANGE    = c.min_range;
+                // Use >= 0 so MIN_EDGE_BP=0 (indices) actually disables the bp check.
+                // > 0.0 left the default 6.0 in place when symbols.ini said 0.
+                if (c.min_edge_bp    >= 0.0) eng.EDGE_CFG.min_edge_bp  = c.min_edge_bp;
+                if (c.slippage_est_bp > 0.0) eng.SLIPPAGE_EST_PCT  = c.slippage_est_bp / 100.0;
+                if (c.min_breakout_pct> 0.0) eng.MIN_BREAKOUT_PCT  = c.min_breakout_pct;
+                if (c.min_range      > 0.0)  eng.MIN_COMP_RANGE    = c.min_range;
             };
 
             // BreakoutEngine symbols — typical prices for MAX_SPREAD_PCT conversion

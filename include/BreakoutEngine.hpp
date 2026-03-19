@@ -56,7 +56,7 @@ struct OpenPos
 
 struct EdgeConfig {
     double cost_spread_mult  = 0.3;   // cost = spread * this
-    double min_range_factor  = 0.20;  // net_move must exceed comp_range * this
+    double min_range_factor  = 0.12;  // net_move must exceed comp_range * this
     double min_edge_bp       = 6.0;
     double exhaustion_mult   = 3.0;
     double min_edge_buffer   = 0.0;
