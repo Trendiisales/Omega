@@ -228,19 +228,54 @@ public:
                 break;
         }
 
+        // ── Regime hysteresis — must see same regime N ticks before switching ───
+        // Prevents tick-by-tick oscillation between regimes from thrashing the
+        // allow_breakout/allow_bracket flags. The engine needs consistent
+        // permission for multiple ticks to progress through its FSM phases.
+        // HIGH_RISK and CHOP are applied immediately (safety — block fast).
+        // Tradeable regimes require REGIME_HOLD_TICKS consecutive matching ticks.
+        if (regime == Regime::HIGH_RISK_NO_TRADE || regime == Regime::CHOP_REVERSAL) {
+            m_candidate_regime = regime;
+            m_candidate_count  = REGIME_HOLD_TICKS; // immediate
+        } else if (regime == m_candidate_regime) {
+            ++m_candidate_count;
+        } else {
+            m_candidate_regime = regime;
+            m_candidate_count  = 1;
+        }
+        // Use the stable regime for decisions — only promote if held long enough
+        const Regime stable_regime = (m_candidate_count >= REGIME_HOLD_TICKS)
+                                     ? m_candidate_regime
+                                     : Regime::HIGH_RISK_NO_TRADE;
+        // Recompute scores using the stable regime
+        double stable_bracket  = 0.0;
+        double stable_breakout = 0.0;
+        switch (stable_regime) {
+            case Regime::QUIET_COMPRESSION:
+                stable_bracket  = bracket_score;
+                stable_breakout = breakout_score;
+                break;
+            case Regime::EXPANSION_BREAKOUT:
+            case Regime::TREND_CONTINUATION:
+                stable_bracket  = bracket_score;
+                stable_breakout = breakout_score;
+                break;
+            default:
+                break;
+        }
+
         // ── Permission decision — 3-layer gate ────────────────────────────────
         SupervisorDecision d{};
-        d.regime         = regime;
+        d.regime         = stable_regime;
         d.confidence     = confidence;
-        d.bracket_score  = bracket_score;
-        d.breakout_score = breakout_score;
+        d.bracket_score  = stable_bracket;
+        d.breakout_score = stable_breakout;
         d.reason         = reason;
 
-        const bool regime_ok     = (regime != Regime::CHOP_REVERSAL)
-                                && (regime != Regime::HIGH_RISK_NO_TRADE);
+        const bool regime_ok     = (stable_regime != Regime::CHOP_REVERSAL)
+                                && (stable_regime != Regime::HIGH_RISK_NO_TRADE);
         const bool confidence_ok = (confidence >= cfg.min_regime_confidence);
-        // Fix 1: winner score floor — blocks low-quality 0.12 vs 0.09 decisions
-        const double top_score   = std::max(bracket_score, breakout_score);
+        const double top_score   = std::max(stable_bracket, stable_breakout);
         const bool   score_ok    = (top_score >= cfg.min_winner_score);
 
         if (!regime_ok || !confidence_ok || !score_ok) {
@@ -260,21 +295,23 @@ public:
         } else {
             m_consecutive_blocks = 0;
 
-            const double margin  = bracket_score - breakout_score;
+            const double margin  = stable_bracket - stable_breakout;
             const bool margin_ok = std::fabs(margin) >= cfg.min_engine_win_margin;
 
-            // Each engine must independently clear min_winner_score.
-            // Previously breakout could win by default when bracket was disabled,
-            // even with breakout_score=0.03 — producing allow=1 with no real signal.
-            const bool breakout_qualifies = (breakout_score >= cfg.min_winner_score)
+            // Breakout only valid in EXPANSION or TREND — not in QUIET_COMPRESSION.
+            // In compression the market hasn't moved yet; granting breakout here
+            // produces allow=1 with no signal because the engine blocks on vol_gate.
+            const bool breakout_regime_ok = (stable_regime == Regime::EXPANSION_BREAKOUT
+                                          || stable_regime == Regime::TREND_CONTINUATION);
+            const bool breakout_qualifies = breakout_regime_ok
+                                         && (stable_breakout >= cfg.min_winner_score)
                                          && cfg.allow_breakout;
-            const bool bracket_qualifies  = (bracket_score >= cfg.min_bracket_score)
+            const bool bracket_qualifies  = (stable_bracket >= cfg.min_bracket_score)
                                          && cfg.allow_bracket;
 
             if (!margin_ok) {
-                // Tie — use config preference
-                if (regime == Regime::QUIET_COMPRESSION && cfg.bracket_in_quiet_comp
-                        && bracket_qualifies) {
+                if (stable_regime == Regime::QUIET_COMPRESSION
+                        && cfg.bracket_in_quiet_comp && bracket_qualifies) {
                     d.allow_bracket = true;
                     d.winner        = "BRACKET";
                 } else if (breakout_qualifies) {
@@ -282,17 +319,14 @@ public:
                     d.winner         = "BREAKOUT";
                 }
             } else if (margin > 0) {
-                // Bracket wins on margin
                 if (bracket_qualifies) {
                     d.allow_bracket = true;
                     d.winner        = "BRACKET";
                 } else if (breakout_qualifies) {
-                    // Bracket wins margin but fails floor — fall through to breakout
                     d.allow_breakout = true;
                     d.winner         = "BREAKOUT";
                 }
             } else {
-                // Breakout wins
                 if (breakout_qualifies) {
                     d.allow_breakout = true;
                     d.winner         = "BREAKOUT";
@@ -333,8 +367,12 @@ public:
 
 private:
     SupervisorDecision last_;
-    int     m_consecutive_blocks = 0;
-    int64_t m_cooldown_until_ms  = 0;
+    int     m_consecutive_blocks  = 0;
+    int64_t m_cooldown_until_ms   = 0;
+    // Hysteresis: candidate regime must hold for this many ticks before switching
+    Regime  m_candidate_regime    = Regime::UNKNOWN;
+    int     m_candidate_count     = 0;
+    static constexpr int REGIME_HOLD_TICKS = 3;  // must see same regime 3 ticks in a row
 };
 
 } // namespace omega
