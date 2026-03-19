@@ -2279,11 +2279,11 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
     g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
 
-    // Fix 5: update ACCOUNT_EQUITY on all engines after every close so
-    // edge-based sizing reflects current daily P&L (shrinks on loss, grows on win).
-    {
+    // Equity-based sizing only applies in LIVE mode — in SHADOW there is no
+    // real money and updating equity from paper P&L would corrupt sizing.
+    if (g_cfg.mode == "LIVE") {
         const double updated_equity = g_cfg.account_equity + g_omegaLedger.dailyPnl();
-        const double eq = std::max(updated_equity, 100.0); // floor at $100
+        const double eq = std::max(updated_equity, 100.0);
         g_eng_sp.ACCOUNT_EQUITY     = eq;
         g_eng_nq.ACCOUNT_EQUITY     = eq;
         g_eng_cl.ACCOUNT_EQUITY     = eq;
@@ -3516,22 +3516,28 @@ int main(int argc, char* argv[])
               << "[SIZING]   All instruments: 0.01 lots | NAS100: 0.10 lots\n";
     std::cout.flush();
 
-    // Wire account equity to edge model — used for edge-based position sizing.
-    // Set account_equity in omega_config.ini [risk] section.
-    // Default 10000 is conservative — adjust to reflect actual account size.
-    const double acct_eq = g_cfg.account_equity;
-    g_eng_sp.ACCOUNT_EQUITY     = acct_eq;
-    g_eng_nq.ACCOUNT_EQUITY     = acct_eq;
-    g_eng_cl.ACCOUNT_EQUITY     = acct_eq;
-    g_eng_us30.ACCOUNT_EQUITY   = acct_eq;
-    g_eng_nas100.ACCOUNT_EQUITY = acct_eq;
-    g_eng_ger30.ACCOUNT_EQUITY  = acct_eq;
-    g_eng_uk100.ACCOUNT_EQUITY  = acct_eq;
-    g_eng_estx50.ACCOUNT_EQUITY = acct_eq;
-    g_eng_xag.ACCOUNT_EQUITY    = acct_eq;
-    g_eng_eurusd.ACCOUNT_EQUITY = acct_eq;
-    g_eng_gbpusd.ACCOUNT_EQUITY = acct_eq;
-    g_eng_brent.ACCOUNT_EQUITY  = acct_eq;
+    // Wire account equity to edge model — LIVE mode only.
+    // In SHADOW mode engines use fixed ENTRY_SIZE — equity is irrelevant.
+    if (g_cfg.mode == "LIVE") {
+        const double acct_eq = g_cfg.account_equity;
+        g_eng_sp.ACCOUNT_EQUITY     = acct_eq;
+        g_eng_nq.ACCOUNT_EQUITY     = acct_eq;
+        g_eng_cl.ACCOUNT_EQUITY     = acct_eq;
+        g_eng_us30.ACCOUNT_EQUITY   = acct_eq;
+        g_eng_nas100.ACCOUNT_EQUITY = acct_eq;
+        g_eng_ger30.ACCOUNT_EQUITY  = acct_eq;
+        g_eng_uk100.ACCOUNT_EQUITY  = acct_eq;
+        g_eng_estx50.ACCOUNT_EQUITY = acct_eq;
+        g_eng_xag.ACCOUNT_EQUITY    = acct_eq;
+        g_eng_eurusd.ACCOUNT_EQUITY = acct_eq;
+        g_eng_gbpusd.ACCOUNT_EQUITY = acct_eq;
+        g_eng_brent.ACCOUNT_EQUITY  = acct_eq;
+        std::cout << "[SIZING] LIVE mode: equity-based sizing active"
+                  << " account_equity=" << acct_eq << "\n";
+    } else {
+        std::cout << "[SIZING] SHADOW mode: fixed lot sizing (equity-based sizing disabled)\n";
+    }
+    std::cout.flush();
 
     // GoldEngineStack config — applies all [gold_stack] ini values.
     // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
