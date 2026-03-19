@@ -1244,6 +1244,42 @@ static std::string build_marketdata_req_extended(int seq) {
     return wrap_fix(b.str());
 }
 
+// Unsubscribe from market data — send before disconnect to prevent ghost session
+// on the server that causes ALREADY_SUBSCRIBED on the next logon.
+// 263=2 = Disable (unsubscribe), matches the subscribe req IDs.
+static std::string build_marketdata_unsub(int seq) {
+    std::ostringstream b;
+    b << "35=V\x01"
+      << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01"
+      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "262=OMEGA-MD-001\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+      << "146=" << OMEGA_NSYMS << "\x01";
+    for (int i = 0; i < OMEGA_NSYMS; ++i)
+        b << "55=" << OMEGA_SYMS[i].id << "\x01";
+    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
+    return wrap_fix(b.str());
+}
+static std::string build_marketdata_unsub_extended(int seq) {
+    std::vector<int> ids;
+    {
+        std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+        ids.reserve(g_ext_syms.size());
+        for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
+    }
+    if (ids.empty()) return {};
+    std::ostringstream b;
+    b << "35=V\x01"
+      << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01"
+      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "262=OMEGA-MD-EXT-UNSUB\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+      << "146=" << ids.size() << "\x01";
+    for (int id : ids) b << "55=" << id << "\x01";
+    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
+    return wrap_fix(b.str());
+}
+
 static std::string build_security_list_request(int seq, const std::string& req_id) {
     std::ostringstream b;
     b << "35=x\x01"
@@ -3269,10 +3305,12 @@ static void quote_loop() {
         while (g_running.load()) {
             const auto now = std::chrono::steady_clock::now();
 
-            // Logon timeout: if no LOGON ACCEPTED within 10s, drop and reconnect
+            // Logon timeout: raised to 30s (was 10s) — cTrader server needs time to
+            // clean up ghost sessions from prior disconnect before ACKing new logon.
+            // 10s was too tight when ALREADY_SUBSCRIBED cleanup is in progress.
             if (!g_quote_ready.load() &&
-                std::chrono::duration_cast<std::chrono::seconds>(now - logon_sent_at).count() >= 10) {
-                std::cerr << "[OMEGA] Logon timeout (10s) -- reconnecting\n";
+                std::chrono::duration_cast<std::chrono::seconds>(now - logon_sent_at).count() >= 30) {
+                std::cerr << "[OMEGA] Logon timeout (30s) -- reconnecting\n";
                 break;
             }
 
@@ -3343,6 +3381,18 @@ static void quote_loop() {
                 break;
             }
             for (const auto& m : extract_messages(buf, n)) dispatch_fix(m, ssl);
+        }
+
+        // Unsubscribe before closing — prevents ghost session on server that causes
+        // ALREADY_SUBSCRIBED on next logon attempt and delays the logon ACK.
+        if (g_quote_ready.load()) {
+            const std::string unsub = build_marketdata_unsub(g_quote_seq++);
+            SSL_write(ssl, unsub.c_str(), static_cast<int>(unsub.size()));
+            const std::string unsub_ext = build_marketdata_unsub_extended(g_quote_seq++);
+            if (!unsub_ext.empty())
+                SSL_write(ssl, unsub_ext.c_str(), static_cast<int>(unsub_ext.size()));
+            Sleep(200); // brief wait for server to process unsub before TCP close
+            std::cout << "[OMEGA] Unsubscribed market data before disconnect\n";
         }
 
         g_quote_ready.store(false);
