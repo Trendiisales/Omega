@@ -2639,9 +2639,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
 
         // ── Bracket engine: hi/lo structure stop ─────────────────────────────
-        // Session gate removed — MIN_RANGE, CONFIRM_MOVE, and VWAP_MIN_DIST
-        // are sufficient to block bad conditions regardless of time of day.
         {
+            // Session gate: London 07-11 UTC + NY 13-17 UTC only.
+            // Bracket needs directional momentum — Asia hours are dead compression.
+            const int h_bracket = []{
+                std::time_t t = std::time(nullptr);
+                std::tm utc{}; gmtime_s(&utc, &t);
+                return utc.tm_hour;
+            }();
+            const bool gold_bracket_session_ok =
+                (h_bracket >= 7  && h_bracket < 11) ||   // London
+                (h_bracket >= 13 && h_bracket < 17);      // NY
+
+            // VWAP distance filter: only trade when price is >8 pts from VWAP.
+            // Entries near VWAP have no directional edge — they chop back immediately.
+            const double gold_vwap    = g_gold_stack.vwap();
+            const double gold_mid     = (bid + ask) * 0.5;
+            const bool   gold_vwap_ok = (gold_vwap <= 0.0) ||
+                                        (std::fabs(gold_mid - gold_vwap) > 8.0);
+
             // Frequency limit: max 2 bracket trades per minute on gold
             {
                 const int64_t now_ms = static_cast<long long>(
@@ -2657,6 +2673,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool gold_bracket_can_enter =
                 gold_can_enter &&
                 !g_bracket_gold.has_open_position() &&
+                gold_bracket_session_ok &&
+                gold_vwap_ok &&
                 gold_freq_ok;
 
             g_bracket_gold.on_tick(bid, ask,
@@ -3266,7 +3284,7 @@ int main(int argc, char* argv[])
         30,     // lookback
         1.6,    // RR
         120000, // cooldown_ms
-        0.40,   // MIN_RANGE static fallback
+        2.8,    // MIN_RANGE — 2.8pts minimum structural range (was 0.40 — way too small)
         0.05,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
         12000,  // min_hold_ms
@@ -3275,14 +3293,16 @@ int main(int argc, char* argv[])
         5000,   // FAILURE_WINDOW_MS
         20,     // ATR_PERIOD
         0.15,   // ATR_CONFIRM_K
-        1.5     // ATR_RANGE_K
+        2.0,    // ATR_RANGE_K — ATR×2 ≈ 2.8pts at typical gold spread
+        0.8,    // SLIPPAGE_BUFFER — 0.8pts estimated one-way slip on gold
+        1.6     // EDGE_MULTIPLIER — tp must be >= (spread+slip)*1.6
     );
     g_bracket_xag.configure(
         0.08,   // buffer
         30,     // lookback
         1.4,    // RR
         120000, // cooldown_ms
-        0.35,   // MIN_RANGE static fallback
+        0.20,   // MIN_RANGE — 0.20pts minimum (was 0.35, spec says 0.20)
         0.06,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
         8000,   // min_hold_ms
@@ -3291,7 +3311,9 @@ int main(int argc, char* argv[])
         4000,   // FAILURE_WINDOW_MS
         20,     // ATR_PERIOD
         0.17,   // ATR_CONFIRM_K
-        1.4     // ATR_RANGE_K
+        1.4,    // ATR_RANGE_K
+        0.10,   // SLIPPAGE_BUFFER — 0.10pts estimated one-way slip on silver
+        1.6     // EDGE_MULTIPLIER
     );
     apply_generic_fx_config(g_eng_eurusd);
     apply_generic_gbpusd_config(g_eng_gbpusd);

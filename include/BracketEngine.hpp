@@ -72,6 +72,8 @@ public:
     int    ATR_PERIOD          = 0;
     double ATR_CONFIRM_K       = 0.0;
     double ATR_RANGE_K         = 0.0;
+    double SLIPPAGE_BUFFER     = 0.0;  // estimated one-way slippage in price points
+    double EDGE_MULTIPLIER     = 1.5;  // tp_dist must be >= (spread + slippage_buffer) * EDGE_MULTIPLIER
 
     // Legacy fields kept for telemetry / main.cpp reads
     double ENTRY_SIZE          = 0.01;
@@ -127,7 +129,9 @@ public:
                    int    failure_window_ms = 5000,
                    int    atr_period        = 0,
                    double atr_confirm_k     = 0.0,
-                   double atr_range_k       = 0.0)
+                   double atr_range_k       = 0.0,
+                   double slippage_buffer   = 0.0,
+                   double edge_multiplier   = 1.5)
     {
         BUFFER             = buffer;
         STRUCTURE_LOOKBACK = lookback;
@@ -143,6 +147,8 @@ public:
         ATR_PERIOD         = atr_period;
         ATR_CONFIRM_K      = atr_confirm_k;
         ATR_RANGE_K        = atr_range_k;
+        SLIPPAGE_BUFFER    = slippage_buffer;
+        EDGE_MULTIPLIER    = edge_multiplier;
     }
 
     // ── has_open_position() ───────────────────────────────────────────────────
@@ -338,13 +344,14 @@ public:
     // ── confirm_fill() ────────────────────────────────────────────────────────
     void confirm_fill(double actual_price, double actual_size) noexcept {
         if (phase != BracketPhase::PENDING) return;
+        // NOTE: do NOT read pos.tp/pos.sl from pending_sig here —
+        // get_signal() already consumed and zeroed pending_sig before confirm_fill
+        // is called. pos.tp and pos.sl are correctly set in trigger() and survive.
         pos.active   = true;
         pos.entry    = actual_price;
         pos.size     = actual_size;
         pos.entry_ts = nowSec();
-        pos.tp       = pending_sig.tp;
-        pos.sl       = pending_sig.sl;
-        pos.is_long  = pending_sig.is_long;
+        // pos.tp, pos.sl, pos.is_long already set correctly in trigger() — do not overwrite
         phase        = BracketPhase::LIVE;
         std::cout << "[BRACKET-" << symbol << "] FILL CONFIRMED"
                   << " px=" << actual_price << " size=" << actual_size
@@ -391,6 +398,22 @@ protected:
         const double stop = (side > 0) ? bracket_low  : bracket_high;
         const double dist = std::fabs(e - stop);
         const double tp   = e + side * dist * RR;
+
+        // ── Pre-entry viability check ─────────────────────────────────────────
+        // Block trade if TP distance < (spread + slippage_buffer) * edge_multiplier.
+        // Ensures we have a real edge over execution costs before firing.
+        const double tp_dist = std::fabs(tp - e);
+        const double cost    = spread + SLIPPAGE_BUFFER;
+        if (EDGE_MULTIPLIER > 0.0 && cost > 0.0 && tp_dist < cost * EDGE_MULTIPLIER) {
+            std::cout << "[BRACKET-" << symbol << "] BLOCKED: no_edge"
+                      << " tp_dist=" << tp_dist
+                      << " cost=" << cost
+                      << " need>=" << cost * EDGE_MULTIPLIER << "\n";
+            std::cout.flush();
+            phase = BracketPhase::IDLE;
+            bracket_high = 0.0; bracket_low = 0.0; m_confirm_side = 0;
+            return;
+        }
 
         std::cout << "[BRACKET-" << symbol << "] TRIGGERED "
                   << (side > 0 ? "LONG" : "SHORT")
