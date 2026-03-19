@@ -284,6 +284,7 @@ public:
     double      MIN_BREAKOUT_PCT      = 0.25;
     double      MIN_EDGE_PCT          = 0.0;
     double      SLIPPAGE_EST_PCT      = 0.0;
+    double      MIN_COMP_RANGE        = 0.0;   // minimum compression range in price pts (0=disabled)
     double      ACCOUNT_EQUITY        = 10000.0; // set from main.cpp — used for edge-based sizing
     EdgeConfig  EDGE_CFG;                         // edge model params — uses defaults
     int         MAX_TRADES_PER_MIN    = 2;
@@ -528,11 +529,14 @@ public:
                 if (mid < comp_low)  comp_low  = mid;
                 return {};  // still compressing — keep tracking
             }
-            // Compression just ended — transition to BREAKOUT_WATCH.
-            // comp_high/comp_low are now frozen. Watch up to 40 ticks for price exit.
-            // 40 ticks at typical 5-15 ticks/sec = 3-8 seconds to confirm breakout.
-            // Previous value of 15 ticks expired in <1.5 seconds at fast tick rates,
-            // killing valid slow-developing breakouts before they could confirm.
+            // Compression just ended — check range is viable before watching
+            const double comp_range_built = comp_high - comp_low;
+            if (MIN_COMP_RANGE > 0.0 && comp_range_built < MIN_COMP_RANGE) {
+                std::cout << "[ENG-" << symbol << "] COMPRESSION reset: range_too_small"
+                          << " range=" << comp_range_built << " min=" << MIN_COMP_RANGE << "\n";
+                std::cout.flush();
+                phase = Phase::FLAT; return {};
+            }
             phase       = Phase::BREAKOUT_WATCH;
             watch_ticks = 40;
             std::cout << "[ENG-" << symbol << "] BREAKOUT_WATCH started"

@@ -3553,6 +3553,7 @@ int main(int argc, char* argv[])
                 if (c.min_edge_bp    > 0.0) eng.MIN_EDGE_PCT      = c.min_edge_bp    / 100.0;
                 if (c.slippage_est_bp> 0.0) eng.SLIPPAGE_EST_PCT  = c.slippage_est_bp / 100.0;
                 if (c.min_breakout_pct>0.0) eng.MIN_BREAKOUT_PCT  = c.min_breakout_pct;
+                if (c.min_range      > 0.0) eng.MIN_COMP_RANGE    = c.min_range;
             };
 
             // BreakoutEngine symbols — typical prices for MAX_SPREAD_PCT conversion
@@ -3751,7 +3752,8 @@ int main(int argc, char* argv[])
               << "s hold=" << g_eng_uk100.MAX_HOLD_SEC << "s spread=" << g_eng_uk100.MAX_SPREAD_PCT << "%\n"
               << "[OMEGA-PARAMS] ESTX50   TP=" << g_eng_estx50.TP_PCT << "% SL=" << g_eng_estx50.SL_PCT
               << "% vol=" << g_eng_estx50.VOL_THRESH_PCT << "% mom=" << g_eng_estx50.MOMENTUM_THRESH_PCT
-              << "% brk=" << g_eng_estx50.MIN_BREAKOUT_PCT << "% gap=" << g_eng_estx50.MIN_GAP_SEC
+              << "% brk=" << g_eng_estx50.MIN_BREAKOUT_PCT << "% minrange=" << g_eng_estx50.MIN_COMP_RANGE
+              << " gap=" << g_eng_estx50.MIN_GAP_SEC
               << "s hold=" << g_eng_estx50.MAX_HOLD_SEC << "s spread=" << g_eng_estx50.MAX_SPREAD_PCT << "%\n"
               << "[OMEGA-PARAMS] UKBRENT  TP=" << g_eng_brent.TP_PCT  << "% SL=" << g_eng_brent.SL_PCT
               << "% vol=" << g_eng_brent.VOL_THRESH_PCT << "% mom=" << g_eng_brent.MOMENTUM_THRESH_PCT
