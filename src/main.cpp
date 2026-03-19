@@ -2801,6 +2801,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                   << " size=" << lot_size << " score=" << best.score
                   << " sup_regime=" << omega::regime_name(sdec.regime)
                   << " regime=" << regime << "\033[0m\n";
+
+        // Final supervisor re-check before execution.
+        // eng.phase is FLAT at this point (set inside update() when signal fires).
+        // If supervisor flipped to NO_TRADE between arming and breakout, block here.
+        if (!sdec.allow_breakout) {
+            std::cout << "[ENG-" << sym << "] BLOCKED: supervisor_recheck allow=0 at execution\n";
+            std::cout.flush();
+            g_cycle_candidates.clear();
+            return;
+        }
+
         send_live_order(sym, sig.is_long, lot_size, sig.entry);
         g_cycle_candidates.clear();
     };
@@ -3530,11 +3541,16 @@ static void quote_loop() {
             for (const auto& m : extract_messages(buf, n)) dispatch_fix(m, ssl);
         }
 
-        // Unsubscribe + Logout before closing — prevents ghost session on next connect
-        if (g_quote_ready.load()) {
-            const std::string unsub_all = fix_build_md_unsub_all(g_quote_seq++);
-            SSL_write(ssl, unsub_all.c_str(), static_cast<int>(unsub_all.size()));
-            std::cout << "[OMEGA] Unsubscribed market data before disconnect\n";
+        // Unsubscribe + Logout before closing — prevents ghost session on next connect.
+        // Send unconditionally: even if logon timed out the server may have a half-open
+        // session. A logout on a non-logged-in connection is harmless; skipping it on a
+        // timed-out logon leaves a ghost session that blocks the next connect.
+        {
+            if (g_quote_ready.load()) {
+                const std::string unsub_all = fix_build_md_unsub_all(g_quote_seq++);
+                SSL_write(ssl, unsub_all.c_str(), static_cast<int>(unsub_all.size()));
+                std::cout << "[OMEGA] Unsubscribed market data before disconnect\n";
+            }
             const std::string lo = fix_build_logout(g_quote_seq++, "QUOTE");
             SSL_write(ssl, lo.c_str(), static_cast<int>(lo.size()));
             std::cout << "[OMEGA] Logout sent\n";
