@@ -1260,6 +1260,28 @@ static void handle_execution_report(const std::string& msg) {
     }
 }
 
+static std::vector<std::pair<int, std::string>> parse_security_list_entries(const std::string& msg) {
+    std::vector<std::pair<int, std::string>> out;
+    int current_id = 0;
+    size_t pos = 0;
+    while (pos < msg.size()) {
+        const size_t eq = msg.find('=', pos);
+        if (eq == std::string::npos) break;
+        const size_t soh = msg.find('\x01', eq + 1);
+        if (soh == std::string::npos) break;
+        const std::string tag = msg.substr(pos, eq - pos);
+        const std::string val = msg.substr(eq + 1, soh - (eq + 1));
+        if (tag == "55") {
+            try { current_id = std::stoi(val); } catch (...) { current_id = 0; }
+        } else if (tag == "1007" && current_id > 0 && !val.empty()) {
+            out.emplace_back(current_id, val);
+            current_id = 0;
+        }
+        pos = soh + 1;
+    }
+    return out;
+}
+
 static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std::string>>& entries) {
     bool ext_changed = false;
     std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
