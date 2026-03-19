@@ -256,13 +256,19 @@
         <div class="col-centre">
             <!-- Engine Phase Cards -->
             <div>
-                <div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">⚡ Lead Engine State</div>
-                <div class="eng-state-grid">
+                <div style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">⚡ Engine State</div>
+                <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
                     <div class="eng-state-card phase-0 gold-engine" id="engXAU">
-                        <div class="eng-sym">GOLD.F</div>
+                        <div class="eng-sym" style="color:var(--gold2);">GOLD.F</div>
                         <div class="eng-phase-badge phase-badge-flat" id="engXAUPhase">FLAT</div>
                         <div class="eng-vol" id="engXAUVol">rv -- bv --</div>
                         <div class="eng-signals" id="engXAUSig">0 signals</div>
+                    </div>
+                    <div class="eng-state-card phase-0" id="engXAG">
+                        <div class="eng-sym" style="color:var(--silver);">XAGUSD</div>
+                        <div class="eng-phase-badge phase-badge-flat" id="engXAGPhase">FLAT</div>
+                        <div class="eng-vol" id="engXAGVol">rv -- bv --</div>
+                        <div class="eng-signals" id="engXAGSig">--</div>
                     </div>
                     <div class="eng-state-card phase-0" id="engSP">
                         <div class="eng-sym">US500.F</div>
@@ -275,6 +281,12 @@
                         <div class="eng-phase-badge phase-badge-flat" id="engNQPhase">FLAT</div>
                         <div class="eng-vol" id="engNQVol">rv -- bv --</div>
                         <div class="eng-signals" id="engNQSig">0 signals</div>
+                    </div>
+                    <div class="eng-state-card phase-0" id="engCL">
+                        <div class="eng-sym">USOIL.F</div>
+                        <div class="eng-phase-badge phase-badge-flat" id="engCLPhase">FLAT</div>
+                        <div class="eng-vol" id="engCLVol">rv -- bv --</div>
+                        <div class="eng-signals" id="engCLSig">0 signals</div>
                     </div>
                 </div>
             </div>
@@ -325,11 +337,13 @@
         <div class="col-right">
             <div class="card">
                 <div class="card-hd"><span class="dot" style="background:var(--blue)"></span>FIX Latency</div>
-                <div class="lat-grid">
-                    <div class="lat-item"><div class="lat-val" id="rttLast">--</div><div class="lat-lbl">Last ms</div></div>
-                    <div class="lat-item"><div class="lat-val" id="rttP50">--</div><div class="lat-lbl">P50 ms</div></div>
-                    <div class="lat-item"><div class="lat-val" id="rttP95">--</div><div class="lat-lbl">P95 ms</div></div>
-                    <div class="lat-item"><div class="lat-val" id="msgRate">--</div><div class="lat-lbl">msg/s</div></div>
+                <div style="text-align:center;padding:8px 0 4px;">
+                    <div class="lat-val" id="rttLast" style="font-size:28px;">--</div>
+                    <div class="lat-lbl">Last ms</div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;">
+                    <div class="lat-item"><div style="font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:var(--t2);" id="rttP50">--</div><div class="lat-lbl">P50 ms</div></div>
+                    <div class="lat-item"><div style="font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:var(--t2);" id="rttP95">--</div><div class="lat-lbl">P95 ms</div></div>
                 </div>
             </div>
 
@@ -479,10 +493,12 @@ function renderCompRanges(d) {
     if (!el) return;
     const syms = [
         { sym:'GOLD.F',  phase:d.xau_phase, hi:d.xau_comp_high, lo:d.xau_comp_low, rv:d.xau_recent_vol_pct, bv:d.xau_baseline_vol_pct },
-        { sym:'US500.F', phase:d.sp_phase,  hi:d.sp_comp_high,  lo:d.sp_comp_low,  rv:d.sp_recent_vol_pct,  bv:d.sp_baseline_vol_pct  },
-        { sym:'USTEC.F', phase:d.nq_phase,  hi:d.nq_comp_high,  lo:d.nq_comp_low,  rv:d.nq_recent_vol_pct,  bv:d.nq_baseline_vol_pct  },
+        { sym:'XAGUSD',  phase:0,            hi:safe(d.xag_bid),  lo:0,              rv:0,                    bv:0 },
+        { sym:'US500.F', phase:d.sp_phase,   hi:d.sp_comp_high,   lo:d.sp_comp_low,  rv:d.sp_recent_vol_pct,  bv:d.sp_baseline_vol_pct  },
+        { sym:'USTEC.F', phase:d.nq_phase,   hi:d.nq_comp_high,   lo:d.nq_comp_low,  rv:d.nq_recent_vol_pct,  bv:d.nq_baseline_vol_pct  },
+        { sym:'USOIL.F', phase:d.cl_phase,   hi:d.cl_comp_high,   lo:d.cl_comp_low,  rv:d.cl_recent_vol_pct,  bv:d.cl_baseline_vol_pct  },
     ];
-    let html = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">';
+    let html = '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">';
     syms.forEach(s => {
         const p = safe(s.phase);
         const col = p === 1 ? 'var(--amber)' : p === 2 ? 'var(--green)' : 'var(--t3)';
@@ -611,8 +627,19 @@ function updateDashboard(d) {
 
     // Engine state
     updateEngineCard('XAU', d.xau_phase, d.xau_comp_high, d.xau_comp_low, d.xau_recent_vol_pct, d.xau_baseline_vol_pct, d.xau_signals);
+    // XAG: use bid/ask spread as vol proxy since telemetry doesn't send xag_phase separately
+    const xagPhase = 0; // bracket engine — no standalone phase field yet
+    const xagSigEl = document.getElementById('engXAGSig');
+    const xagVolEl = document.getElementById('engXAGVol');
+    const xagBadge = document.getElementById('engXAGPhase');
+    const xagCard  = document.getElementById('engXAG');
+    if (xagCard)  xagCard.className  = 'eng-state-card phase-0';
+    if (xagBadge) { xagBadge.className='eng-phase-badge phase-badge-flat'; xagBadge.textContent='BRACKET'; }
+    if (xagVolEl && safe(d.xag_bid)>0) xagVolEl.textContent = safe(d.xag_bid).toFixed(3) + ' / ' + safe(d.xag_ask).toFixed(3);
+    if (xagSigEl) xagSigEl.textContent = '';
     updateEngineCard('SP', d.sp_phase, d.sp_comp_high, d.sp_comp_low, d.sp_recent_vol_pct, d.sp_baseline_vol_pct, d.sp_signals);
     updateEngineCard('NQ', d.nq_phase, d.nq_comp_high, d.nq_comp_low, d.nq_recent_vol_pct, d.nq_baseline_vol_pct, d.nq_signals);
+    updateEngineCard('CL', d.cl_phase, d.cl_comp_high, d.cl_comp_low, d.cl_recent_vol_pct, d.cl_baseline_vol_pct, d.cl_signals);
 
     // PnL
     const pnl = safe(d.daily_pnl);
@@ -626,13 +653,17 @@ function updateDashboard(d) {
     document.getElementById('statAvgWin').textContent  = '$' + safe(d.avg_win).toFixed(0);
     document.getElementById('statMaxDD').textContent   = '$' + safe(d.max_drawdown).toFixed(0);
 
-    // Latency
+    // Latency — P50/P95 capped at 500ms (above = stale accumulated noise, show --)
     const rttL = safe(d.fix_rtt_last), rttP50 = safe(d.fix_rtt_p50), rttP95 = safe(d.fix_rtt_p95);
-    document.getElementById('rttLast').textContent = rttL  > 0 ? rttL.toFixed(1)   : '--';
-    document.getElementById('rttP50').textContent  = rttP50 > 0 ? rttP50.toFixed(1) : '--';
-    document.getElementById('rttP95').textContent  = rttP95 > 0 ? rttP95.toFixed(1) : '--';
     const rttEl = document.getElementById('rttLast');
-    if (rttEl) rttEl.style.color = rttL < 10 ? 'var(--green)' : rttL < 30 ? 'var(--amber)' : 'var(--red)';
+    if (rttEl) {
+        rttEl.textContent = rttL > 0 ? rttL.toFixed(1) : '--';
+        rttEl.style.color = rttL <= 0 ? 'var(--t2)' : rttL < 10 ? 'var(--green)' : rttL < 30 ? 'var(--amber)' : 'var(--red)';
+    }
+    const p50El = document.getElementById('rttP50');
+    if (p50El) p50El.textContent = (rttP50 > 0 && rttP50 < 500) ? rttP50.toFixed(1) : '--';
+    const p95El = document.getElementById('rttP95');
+    if (p95El) p95El.textContent = (rttP95 > 0 && rttP95 < 500) ? rttP95.toFixed(1) : '--';
 
     // FIX status
     const qOk = (d.fix_quote_status || '').includes('CONNECTED');
