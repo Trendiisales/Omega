@@ -553,7 +553,10 @@ public:
             }
             // Compression just ended — require minimum ticks to ensure range is real
             if (m_compression_ticks < 3) {
-                // Too few ticks — range is noise (FX sparse tick issue). Reset quietly.
+                // Too few ticks — range is noise (FX sparse tick issue). Reset to FLAT.
+                std::cout << "[ENG-" << symbol << "] ARM_CHECK fail reason=min_ticks"
+                          << " ticks=" << m_compression_ticks << " need=3\n";
+                std::cout.flush();
                 phase               = Phase::FLAT;
                 m_compression_ticks = 0;
                 return {};
@@ -561,11 +564,18 @@ public:
             // Compression just ended — check range is viable before watching
             const double comp_range_built = comp_high - comp_low;
             if (MIN_COMP_RANGE > 0.0 && comp_range_built < MIN_COMP_RANGE) {
-                // Range too small — don't reset, keep building.
-                // Reset to COMPRESSION so price continues expanding the range.
-                // Throwing away valid structure was killing setups.
-                phase               = Phase::COMPRESSION;
-                m_compression_ticks = 3;  // keep minimum tick count so we don't re-enter this check immediately
+                // Range too small — log and reset to FLAT so next compression
+                // attempt starts fresh. The previous loop-back to COMPRESSION with
+                // m_compression_ticks=3 caused a silent oscillation: vol ticking
+                // above threshold re-entered this same check on the very next tick,
+                // producing infinite ARM_CHECK fails with no log output.
+                std::cout << "[ENG-" << symbol << "] ARM_CHECK fail reason=range_too_small"
+                          << " range=" << comp_range_built
+                          << " min=" << MIN_COMP_RANGE
+                          << " hi=" << comp_high << " lo=" << comp_low << "\n";
+                std::cout.flush();
+                phase               = Phase::FLAT;
+                m_compression_ticks = 0;
                 return {};
             }
             phase               = Phase::BREAKOUT_WATCH;
