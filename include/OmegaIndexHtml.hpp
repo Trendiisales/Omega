@@ -634,7 +634,7 @@ function renderTrades(trades){
   if(_bellEnabled&&closed.length>_lastTradeCount&&_lastTradeCount>=_bellBootCount){const pnl=safe(closed[0].net_pnl);pnl>0?_playWinBell():_playLossBell();}
   _lastTradeCount=closed.length;
   const wins=closed.filter(t=>safe(t.net_pnl)>0).length,losses=closed.filter(t=>safe(t.net_pnl)<0).length,totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
-  if(cE)cE.textContent=closed.length+' closed · '+wins+'W/'+losses+'L · '+(totalNet>=0?'+':'')+  '$'+Math.abs(totalNet).toFixed(2);
+  if(cE)cE.textContent=closed.length+' closed · '+wins+'W/'+losses+'L · '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
   const now=Math.floor(Date.now()/1000);
   el.innerHTML=trades.slice(0,60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
@@ -726,10 +726,10 @@ function updateDashboard(d){
   // PnL
   const pnl=safe(d.daily_pnl),gross=safe(d.gross_daily_pnl);
   const pE=document.getElementById('pnlVal');
-  if(pE){pE.textContent=(pnl>=0?'+':'')+'$'+Math.abs(pnl).toFixed(2);pE.className='pnl-num '+(pnl>=0?'pnl-pos':'pnl-neg');}
+  if(pE){pE.textContent=(pnl>=0?'+':'-')+'$'+Math.abs(pnl).toFixed(2);pE.className='pnl-num '+(pnl>=0?'pnl-pos':'pnl-neg');}
   txt('pnlSub',safe(d.total_trades)+' trades · '+safe(d.win_rate).toFixed(1)+'% win');
   const gSub=document.getElementById('pnlGrossSub');
-  if(gSub&&gross!==0){const slip=Math.abs(gross-pnl);gSub.textContent='gross '+(gross>=0?'+':'')+'$'+Math.abs(gross).toFixed(2)+' · slip -$'+slip.toFixed(2);}
+  if(gSub&&gross!==0){const slip=Math.abs(gross-pnl);gSub.textContent='gross '+(gross>=0?'+':'-')+'$'+Math.abs(gross).toFixed(2)+' · slip -$'+slip.toFixed(2);}
   const sw=document.getElementById('statWins'),sl=document.getElementById('statLosses');
   if(sw)sw.textContent=safe(d.wins);if(sl)sl.textContent=safe(d.losses);
   const saw=document.getElementById('statAvgWin'),smd=document.getElementById('statMaxDD');
