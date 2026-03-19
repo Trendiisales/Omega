@@ -105,7 +105,7 @@ public:
         MAX_SPREAD_PCT        = 0.04;
         MOMENTUM_THRESH_PCT   = 0.006;
         MIN_BREAKOUT_PCT      = 0.03;
-        WATCH_TIMEOUT_SEC     = 120;  // 2 min
+        WATCH_TIMEOUT_SEC     = 240;  // 2 min
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -155,7 +155,7 @@ public:
         MAX_SPREAD_PCT        = 0.05;
         MOMENTUM_THRESH_PCT   = 0.005;
         MIN_BREAKOUT_PCT      = 0.04;
-        WATCH_TIMEOUT_SEC     = 120;  // 2 min
+        WATCH_TIMEOUT_SEC     = 240;  // 2 min
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -205,7 +205,7 @@ public:
         MAX_SPREAD_PCT        = 0.120;
         MOMENTUM_THRESH_PCT   = 0.050;
         MIN_BREAKOUT_PCT      = 0.06;
-        WATCH_TIMEOUT_SEC     = 120;
+        WATCH_TIMEOUT_SEC     = 240;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -265,7 +265,7 @@ public:
         MAX_SPREAD_PCT        = 0.05;
         MOMENTUM_THRESH_PCT   = 0.006;
         MIN_BREAKOUT_PCT      = 0.04;
-        WATCH_TIMEOUT_SEC     = 150;  // 2.5 min
+        WATCH_TIMEOUT_SEC     = 240;  // 2.5 min
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -304,7 +304,7 @@ public:
         MAX_SPREAD_PCT        = 0.06;
         MOMENTUM_THRESH_PCT   = 0.005;
         MIN_BREAKOUT_PCT      = 0.04;
-        WATCH_TIMEOUT_SEC     = 120;  // 2 min
+        WATCH_TIMEOUT_SEC     = 240;  // 2 min
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
