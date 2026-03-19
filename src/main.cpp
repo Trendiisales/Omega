@@ -835,6 +835,13 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     if (symbol == "XAGUSD")   return 5000.0;  // Silver spot CFD: 5,000 troy oz/lot ✓ scraped
     if (symbol == "EURUSD")   return 100000.0;// FX major: 100,000 units/lot ✓ standard
     if (symbol == "GBPUSD")   return 100000.0;// FX major: 100,000 units/lot
+    // FX minors — same 100,000 units/lot contract size as majors
+    if (symbol == "AUDUSD")   return 100000.0;// AUD/USD: 100,000 units/lot
+    if (symbol == "NZDUSD")   return 100000.0;// NZD/USD: 100,000 units/lot
+    // USDJPY: JPY-quoted pair. P&L in USD = move_JPY * 100000 / rate.
+    // Static approximation: 100000/150 = 667. Accurate to ~5% for 140-160 range.
+    // Shadow sim only — not used for live order sizing.
+    if (symbol == "USDJPY")   return 667.0;   // USD/JPY: ~100,000/150 ≈ 667 USD/pt/lot
     // Index CFDs — BlackBull cTrader: $1 per index point per lot
     if (symbol == "US500.F")  return 1.0;    // S&P500 CFD future: $1/pt (was $50 — CME E-mini, WRONG)
     if (symbol == "USTEC.F")  return 1.0;    // Nasdaq CFD future: $1/pt (was $20 — CME NQ, WRONG)
