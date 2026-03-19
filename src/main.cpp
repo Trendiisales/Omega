@@ -2600,12 +2600,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const std::string short_id = send_live_order("XAGUSD", false, bxag_lot, bsigs.short_entry);
                 g_bracket_xag.pending_long_clOrdId  = long_id;
                 g_bracket_xag.pending_short_clOrdId = short_id;
-                // In SHADOW mode: simulate fill on the side price is closer to
-                if (g_cfg.mode != "LIVE") {
-                    const bool closer_to_high = (std::fabs(bid - bsigs.long_entry) <
-                                                 std::fabs(bid - bsigs.short_entry));
-                    g_bracket_xag.confirm_fill(closer_to_high, closer_to_high ? bsigs.long_entry : bsigs.short_entry, bxag_lot);
-                }
+                // SHADOW mode: do NOT simulate fill at arm time.
+                // The PENDING state persists and on_tick() will detect when price
+                // actually crosses bracket_high or bracket_low on a subsequent tick.
                 ++g_bracket_xag_trades_this_minute;
             }
         }
@@ -2753,12 +2750,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const std::string short_id = send_live_order("GOLD.F", false, bg_lot, bgsigs.short_entry);
                 g_bracket_gold.pending_long_clOrdId  = long_id;
                 g_bracket_gold.pending_short_clOrdId = short_id;
-                // In SHADOW mode: simulate fill on the side price is closer to
-                if (g_cfg.mode != "LIVE") {
-                    const bool closer_to_high = (std::fabs(bid - bgsigs.long_entry) <
-                                                 std::fabs(bid - bgsigs.short_entry));
-                    g_bracket_gold.confirm_fill(closer_to_high, closer_to_high ? bgsigs.long_entry : bgsigs.short_entry, bg_lot);
-                }
+                // SHADOW mode: do NOT simulate fill at arm time.
+                // The PENDING state persists and on_tick() will detect when price
+                // actually crosses bracket_high or bracket_low on a subsequent tick.
                 ++g_bracket_gold_trades_this_minute;
             }
         }
@@ -3384,6 +3378,9 @@ int main(int argc, char* argv[])
         0.10,   // SLIPPAGE_BUFFER — 0.10pts estimated one-way slip on silver
         1.6     // EDGE_MULTIPLIER
     );
+    // Wire shadow fill simulation — price-triggered in PENDING, not immediate at arm
+    g_bracket_gold.m_shadow_mode = (g_cfg.mode != "LIVE");
+    g_bracket_xag.m_shadow_mode  = (g_cfg.mode != "LIVE");
     apply_generic_fx_config(g_eng_eurusd);
     apply_generic_gbpusd_config(g_eng_gbpusd);
     apply_generic_audusd_config(g_eng_audusd);

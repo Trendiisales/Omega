@@ -229,6 +229,26 @@ public:
                 std::cout << "[BRACKET-" << symbol << "] PENDING TIMEOUT — both orders cancelled\n";
                 std::cout.flush();
                 reset();
+                return;
+            }
+            // Shadow fill simulation: fire when price actually touches a bracket level
+            // This runs every tick while PENDING so the fill happens at the right price,
+            // not immediately at arm time.
+            if (m_shadow_mode) {
+                if (ask >= m_locked_hi) {
+                    // Long side touched — simulate long fill
+                    std::cout << "[BRACKET-" << symbol << "] SHADOW FILL LONG @ " << m_locked_hi << "\n";
+                    std::cout.flush();
+                    confirm_fill(true, m_locked_hi, ENTRY_SIZE);
+                    return;
+                }
+                if (bid <= m_locked_lo) {
+                    // Short side touched — simulate short fill
+                    std::cout << "[BRACKET-" << symbol << "] SHADOW FILL SHORT @ " << m_locked_lo << "\n";
+                    std::cout.flush();
+                    confirm_fill(false, m_locked_lo, ENTRY_SIZE);
+                    return;
+                }
             }
             return;
         }
@@ -351,6 +371,7 @@ protected:
     double m_locked_long_tp   = 0.0;
     double m_locked_short_sl  = 0.0;
     double m_locked_short_tp  = 0.0;
+    bool   m_shadow_mode      = false;  // set by main.cpp — enables price-triggered fill sim
 
     static int64_t nowSec() noexcept {
         return std::chrono::duration_cast<std::chrono::seconds>(
