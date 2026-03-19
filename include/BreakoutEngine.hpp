@@ -665,6 +665,8 @@ public:
                 }
             }
 
+            const int64_t now = nowSec(); // used by entry block below
+
             // ── GATE 5: Edge model ────────────────────────────────────────────
             // Primary quality gate. Prices breakout move vs spread+slippage cost.
             // Incorporates vol expansion, compression quality, and momentum.
