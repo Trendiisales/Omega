@@ -280,7 +280,9 @@ public:
                 atr = s / ATR_PERIOD;
             }
         }
-        const double eff_min_range = (ATR_RANGE_K > 0.0 && atr > 0.0) ? atr * ATR_RANGE_K : MIN_RANGE;
+        const double eff_min_range = (ATR_RANGE_K > 0.0 && atr > 0.0)
+                                     ? std::max(atr * ATR_RANGE_K, MIN_RANGE)
+                                     : MIN_RANGE;
 
         // ── Structural range ──────────────────────────────────────────────────
         const int    wsz    = static_cast<int>(m_window.size());
@@ -383,6 +385,16 @@ protected:
 
     void arm_both_sides(double spread, const char* macro_regime) noexcept {
         const double dist = bracket_high - bracket_low;
+
+        // Hard block: range must meet absolute minimum regardless of ATR scaling
+        if (dist < MIN_RANGE) {
+            std::cout << "[BRACKET-" << symbol << "] BLOCKED: range_too_small"
+                      << " dist=" << dist << " min=" << MIN_RANGE << "\n";
+            std::cout.flush();
+            phase = BracketPhase::IDLE;
+            bracket_high = 0.0; bracket_low = 0.0;
+            return;
+        }
 
         const double long_entry  = bracket_high;
         const double long_sl     = bracket_low;
