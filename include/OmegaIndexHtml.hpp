@@ -229,35 +229,26 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:n
     </div>
   </div>
 
-  <div class="hdr-tickers">
-    <div class="htk gold">
-      <span class="htk-sym">GOLD</span>
-      <span class="htk-b" id="hdrGoldBid">----</span>
-      <span class="htk-sep">|</span>
-      <span class="htk-a" id="hdrGoldAsk">----</span>
-      <span class="htk-ph ph-flat" id="hdrGoldPhase">--</span>
+  <div style="display:flex;align-items:center;gap:18px;padding:6px 18px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);">
+    <div style="text-align:center;">
+      <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">VIX</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;" id="vixLevelHdr">--</div>
     </div>
-    <div class="htk silver">
-      <span class="htk-sym">SILVER</span>
-      <span class="htk-b" id="hdrXagBid">----</span>
-      <span class="htk-sep">|</span>
-      <span class="htk-a" id="hdrXagAsk">----</span>
-
-)OMEGA0"
-
-R"OMEGA1(
+    <div style="width:1px;height:28px;background:var(--border);"></div>
+    <div style="text-align:center;">
+      <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Regime</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;" id="macroRegimeHdr">--</div>
     </div>
-    <div class="vd"></div>
-    <div class="htk"><span class="htk-sym">US500</span><span class="htk-b" id="hdrSpBid" style="font-size:10px">----</span><span class="htk-sep">|</span><span class="htk-a" id="hdrSpAsk" style="font-size:10px">----</span></div>
-    <div class="htk"><span class="htk-sym">USTEC</span><span class="htk-b" id="hdrNqBid" style="font-size:10px">----</span><span class="htk-sep">|</span><span class="htk-a" id="hdrNqAsk" style="font-size:10px">----</span></div>
-    <div class="htk"><span class="htk-sym">OIL</span><span class="htk-b" id="hdrClBid" style="font-size:10px">----</span><span class="htk-sep">|</span><span class="htk-a" id="hdrClAsk" style="font-size:10px">----</span></div>
-    <div class="htk"><span class="htk-sym">BRENT</span><span class="htk-b" id="hdrBrentBid" style="font-size:10px">----</span><span class="htk-sep">|</span><span class="htk-a" id="hdrBrentAsk" style="font-size:10px">----</span></div>
-    <div class="vd"></div>
-    <div class="htk"><span class="htk-sym">EUR</span><span class="htk-b" id="hdrEurBid" style="font-size:10px">----</span><span class="htk-sep">|</span><span class="htk-a" id="hdrEurAsk" style="font-size:10px">----</span></div>
-    <div class="htk"><span class="htk-sym">GBP</span><span class="htk-b" id="hdrGbpBid" style="font-size:10px">----</span><span class="htk-sep">|</span><span class="htk-a" id="hdrGbpAsk" style="font-size:10px">----</span></div>
-    <div class="htk" style="border-color:rgba(0,200,240,0.2)"><span class="htk-sym" style="color:var(--cyan)">AUD</span><span class="htk-b" id="hdrAudBid" style="font-size:10px">----</span><span class="htk-sep">|</span><span class="htk-a" id="hdrAudAsk" style="font-size:10px">----</span></div>
-    <div class="htk" style="border-color:rgba(0,200,240,0.2)"><span class="htk-sym" style="color:var(--cyan)">NZD</span><span class="htk-b" id="hdrNzdBid" style="font-size:10px">----</span><span class="htk-sep">|</span><span class="htk-a" id="hdrNzdAsk" style="font-size:10px">----</span></div>
-    <div class="htk" style="border-color:rgba(164,127,255,0.2)"><span class="htk-sym" style="color:var(--purple)">JPY</span><span class="htk-b" id="hdrJpyBid" style="font-size:10px">----</span><span class="htk-sep">|</span><span class="htk-a" id="hdrJpyAsk" style="font-size:10px">----</span></div>
+    <div style="width:1px;height:28px;background:var(--border);"></div>
+    <div style="text-align:center;">
+      <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Session</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;" id="sessionValHdr">--</div>
+    </div>
+    <div style="width:1px;height:28px;background:var(--border);"></div>
+    <div style="text-align:center;">
+      <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">ES÷NQ</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:var(--blue);" id="esNqDivHdr">--</div>
+    </div>
   </div>
 
   <div class="hbar">
@@ -348,12 +339,11 @@ R"OMEGA1(
           <div class="px-pair"><span class="bid" id="eurBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="eurAsk">----</span></div>
           <span class="sprd" id="eurSpread">--</span>
         </div>
-        <div class="sym-row r-fx">
+        <div class="sym-row r-fx" style="border-color:rgba(0,200,240,0.18);background:rgba(0,200,240,0.04);">
           <span class="sym-nm c-cyan">GBPUSD</span>
           <div class="px-pair"><span class="bid" id="gbpBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="gbpAsk">----</span></div>
           <span class="sprd" id="gbpSpread">--</span>
         </div>
-
         <div class="sym-section-label">🌏 Asia FX</div>
         <div class="sym-row r-asia">
           <span class="sym-nm c-teal">AUDUSD</span>
@@ -390,28 +380,6 @@ R"OMEGA1(
       </div>
     </div>
 
-    <!-- Regime -->
-    <div class="card regime-card">
-      <div class="card-hd"><span class="dot" style="background:var(--gold)"></span>Macro Regime</div>
-      <div class="regime-grid">
-        <div class="rg-item">
-          <div class="rg-lbl">VIX</div>
-          <div class="rg-val" id="vixLevel" style="color:var(--t1)">--</div>
-        </div>
-        <div class="rg-item">
-          <div class="rg-lbl">Regime</div>
-          <div class="rg-val" id="macroRegime">--</div>
-        </div>
-        <div class="rg-item">
-          <div class="rg-lbl">ES/NQ Div</div>
-          <div class="rg-val" id="esNqDiv" style="color:var(--blue)">--</div>
-        </div>
-        <div class="rg-item">
-          <div class="rg-lbl">Session</div>
-          <div class="rg-val" id="sessionVal" style="color:var(--t1)">--</div>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- ── CENTRE ── -->
@@ -675,19 +643,6 @@ R"OMEGA3(
 function updateDashboard(d){
   lastData=d;setConn(true);
 
-  // Header
-  px('hdrGoldBid',d.gold_bid,2);px('hdrGoldAsk',d.gold_ask,2);setHdrPhase('hdrGoldPhase',d.xau_phase);
-  px('hdrXagBid',d.xag_bid,3);px('hdrXagAsk',d.xag_ask,3);
-  px('hdrSpBid',d.sp_bid,2);px('hdrSpAsk',d.sp_ask,2);
-  px('hdrNqBid',d.nq_bid,2);px('hdrNqAsk',d.nq_ask,2);
-  px('hdrClBid',d.cl_bid,2);px('hdrClAsk',d.cl_ask,2);
-  px('hdrBrentBid',d.brent_bid,2);px('hdrBrentAsk',d.brent_ask,2);
-  px('hdrEurBid',d.eurusd_bid,5);px('hdrEurAsk',d.eurusd_ask,5);
-  px('hdrGbpBid',d.gbpusd_bid,5);px('hdrGbpAsk',d.gbpusd_ask,5);
-  px('hdrAudBid',d.audusd_bid,5);px('hdrAudAsk',d.audusd_ask,5);
-  px('hdrNzdBid',d.nzdusd_bid,5);px('hdrNzdAsk',d.nzdusd_ask,5);
-  px('hdrJpyBid',d.usdjpy_bid,3);px('hdrJpyAsk',d.usdjpy_ask,3);
-
   // Left column
   px('goldBid',d.gold_bid,2);px('goldAsk',d.gold_ask,2);sprd('goldSpread',d.gold_bid,d.gold_ask);
   px('xagBid',d.xag_bid,3);px('xagAsk',d.xag_ask,3);sprd('xagSpread',d.xag_bid,d.xag_ask);
@@ -790,8 +745,17 @@ function updateDashboard(d){
     if(b)b.style.width=(n/maxG*100)+'%';if(ni)ni.textContent=n;});
   txt('govTotal','Total: '+(gs+gl+gp+gpos+gc));
 
-  // Regime
+  // Regime — header strip
   const vix=safe(d.vix_level),reg=d.macro_regime||'NEUTRAL',div=safe(d.es_nq_divergence);
+  const vHdr=document.getElementById('vixLevelHdr');
+  if(vHdr){vHdr.textContent=vix>0?vix.toFixed(1):'--';vHdr.style.color=vix>=25?'var(--red)':vix<=15?'var(--green)':'var(--amber)';}
+  const rHdr=document.getElementById('macroRegimeHdr');
+  if(rHdr){rHdr.textContent=reg;rHdr.style.color=reg==='RISK_ON'?'var(--green)':reg==='RISK_OFF'?'var(--red)':'var(--amber)';}
+  const dHdr=document.getElementById('esNqDivHdr');
+  if(dHdr){dHdr.textContent=(div>=0?'+':'')+(div*100).toFixed(3)+'%';dHdr.style.color=Math.abs(div)<0.0002?'var(--t2)':div>0?'var(--green)':'var(--red)';}
+  const sHdr=document.getElementById('sessionValHdr');
+  if(sHdr){const trd=safe(d.session_tradeable);sHdr.textContent=trd?(d.session_name||'ACTIVE'):'CLOSED';sHdr.style.color=trd?'var(--green)':'var(--t2)';}
+  // Also keep legacy IDs if still referenced
   const vE=document.getElementById('vixLevel');
   if(vE){vE.textContent=vix>0?vix.toFixed(1):'--';vE.style.color=vix>=25?'var(--red)':vix<=15?'var(--green)':'var(--amber)';}
   const rE2=document.getElementById('macroRegime');
