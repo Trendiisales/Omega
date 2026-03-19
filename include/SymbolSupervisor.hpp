@@ -245,20 +245,38 @@ public:
         if (!is_blocking_regime) {
             if (regime == m_candidate_regime) {
                 ++m_candidate_count;
+            } else if (
+                // QUIET_COMPRESSION and EXPANSION_BREAKOUT are adjacent states —
+                // the market oscillates between them as vol ticks above/below threshold.
+                // Don't reset the candidate when switching between these two.
+                // This lets EXPANSION accumulate through brief compression ticks.
+                (regime == Regime::QUIET_COMPRESSION
+                    && m_candidate_regime == Regime::EXPANSION_BREAKOUT) ||
+                (regime == Regime::EXPANSION_BREAKOUT
+                    && m_candidate_regime == Regime::QUIET_COMPRESSION)
+            ) {
+                // Compatible regime — keep building toward the existing candidate
+                ++m_candidate_count;
+                // But track which one we're actually in so scores are correct
+                m_candidate_regime = regime;
             } else {
-                // Switched to a different tradeable regime — reset
+                // Genuinely different regime — reset
                 m_candidate_regime = regime;
                 m_candidate_count  = 1;
             }
         }
-        // Stable regime: use candidate if held long enough, else keep last stable
-        // (not HIGH_RISK — that was the bug). Fall back to UNKNOWN if no candidate.
+        // Stable regime: promote candidate once it's held long enough.
+        // When not yet stable: use HIGH_RISK during blocking regimes,
+        // or the current candidate (not last_.regime which may be stale).
         const bool candidate_stable = (m_candidate_count >= REGIME_HOLD_TICKS)
                                    && !is_blocking_regime;
         const Regime stable_regime  = candidate_stable
                                       ? m_candidate_regime
-                                      : (is_blocking_regime ? Regime::HIGH_RISK_NO_TRADE
-                                                            : last_.regime);
+                                      : (is_blocking_regime
+                                         ? Regime::HIGH_RISK_NO_TRADE
+                                         : (m_candidate_count > 0
+                                            ? m_candidate_regime
+                                            : Regime::HIGH_RISK_NO_TRADE));
 
         // Recompute scores for the stable regime
         double stable_bracket  = 0.0;
@@ -326,11 +344,17 @@ public:
             const double margin  = stable_bracket - stable_breakout;
             const bool margin_ok = std::fabs(margin) >= cfg.min_engine_win_margin;
 
-            // Breakout only valid in EXPANSION or TREND — not in QUIET_COMPRESSION.
-            // In compression the market hasn't moved yet; granting breakout here
-            // produces allow=1 with no signal because the engine blocks on vol_gate.
+            // Breakout valid in EXPANSION or TREND.
+            // Also valid in QUIET_COMPRESSION when bracket is disabled (allow_bracket=false):
+            // for non-metals the engine builds compression then fires the breakout —
+            // the supervisor must allow it during the compression phase so the engine
+            // can progress. Without this, non-metals with allow_bracket=false never trade
+            // because QUIET_COMPRESSION always returns NONE.
+            const bool bracket_disabled_symbol = !cfg.allow_bracket;
             const bool breakout_regime_ok = (stable_regime == Regime::EXPANSION_BREAKOUT
-                                          || stable_regime == Regime::TREND_CONTINUATION);
+                                          || stable_regime == Regime::TREND_CONTINUATION
+                                          || (stable_regime == Regime::QUIET_COMPRESSION
+                                              && bracket_disabled_symbol));
             const bool breakout_qualifies = breakout_regime_ok
                                          && (stable_breakout >= cfg.min_winner_score)
                                          && cfg.allow_breakout;
