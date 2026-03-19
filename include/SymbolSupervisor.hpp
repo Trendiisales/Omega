@@ -313,7 +313,13 @@ public:
             }
         }
 
-        // ── Permission decision — ONE rule only ──────────────────────────────
+        // ── Permission decision ───────────────────────────────────────────────
+        // Block unconditionally when the LIVE regime (not stable/smoothed) is
+        // HIGH_RISK or CHOP. The stable_regime is hysteresis-smoothed — when
+        // candidate_stable=true from a prior EXPANSION tick, stable_regime stays
+        // EXPANSION_BREAKOUT even while the live regime is HIGH_RISK_NO_TRADE.
+        // Checking stable_regime for high_risk therefore never fires in that case.
+        // Must check live `regime` variable, which is the raw classifier output.
         SupervisorDecision d{};
         d.regime         = stable_regime;
         d.confidence     = confidence;
@@ -323,14 +329,8 @@ public:
 
         const double top_score = std::max(stable_bracket, stable_breakout);
 
-        // ── Permission decision ───────────────────────────────────────────────
-        // HIGH_RISK_NO_TRADE and CHOP always block — unconditionally.
-        // Cached scores (stable_bracket/stable_breakout) are used for telemetry
-        // and score continuity only. They must NEVER grant allow=1 when the live
-        // regime is blocking. Previously HIGH_RISK with hot cache (score>0.25)
-        // could return allow_breakout=true — this was the root cause of the leak.
-        const bool chop      = (stable_regime == Regime::CHOP_REVERSAL);
-        const bool high_risk = (stable_regime == Regime::HIGH_RISK_NO_TRADE);
+        const bool chop      = (regime == Regime::CHOP_REVERSAL);
+        const bool high_risk = (regime == Regime::HIGH_RISK_NO_TRADE);
         const bool blocked   = chop || high_risk || (top_score < cfg.min_winner_score);
 
         if (blocked) {
