@@ -100,11 +100,11 @@ inline EdgeResult compute_edge_and_execution(
     // ── Normalised features ───────────────────────────────────────────────────
     const double breakout_strength = breakout_move / comp_range;
 
-    // Fix 2: normalize compression_quality to price-relative scale
-    // comp_range/mid gives % of price — consistent across Gold, FX, indices
-    // Invert: tighter compression (smaller %) → higher quality
-    const double comp_pct         = (comp_range / mid);  // normalised range as fraction
-    const double compression_quality = (comp_pct > 0.0) ? (1.0 / (1.0 + comp_pct * 100.0)) : 0.0;
+    // Fix 2: normalize compression_quality to price-relative scale.
+    // comp_range/mid gives range as fraction of price — consistent cross-symbol.
+    // Invert: tighter compression (smaller fraction) → higher quality score.
+    const double comp_pct             = (comp_range / mid);
+    const double compression_quality  = (comp_pct > 0.0) ? (1.0 / (1.0 + comp_pct)) : 0.0;
 
     const double momentum_score   = std::fabs(momentum);
     const double vol_score        = recent_vol;
