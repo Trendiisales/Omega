@@ -55,11 +55,11 @@ struct OpenPos
 // ==============================================================================
 
 struct EdgeConfig {
-    double cost_spread_mult  = 0.5;   // cost = spread * this
-    double min_range_factor  = 0.5;   // net_move must exceed comp_range * this
-    double min_edge_bp       = 6.0;   // net_move / mid * 10000 must exceed this
-    double exhaustion_mult   = 3.0;   // reject if move > comp_range * this (extended: allow full range moves)
-    double min_edge_buffer   = 0.0;   // unused, kept for compat
+    double cost_spread_mult  = 0.3;   // cost = spread * this
+    double min_range_factor  = 0.20;  // net_move must exceed comp_range * this
+    double min_edge_bp       = 6.0;
+    double exhaustion_mult   = 3.0;
+    double min_edge_buffer   = 0.0;
 };
 
 struct EdgeResult {
