@@ -2780,14 +2780,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
         auto selected = omega::select_best_trades(g_cycle_candidates, g_ranking_cfg);
         if (selected.empty()) {
-            std::cout << "[RANKED OUT] " << sym
-                      << " score=" << cand.score
-                      << " threshold=" << g_ranking_cfg.min_score_threshold << "\n";
+            // All candidates invalid — shouldn't happen after edge passed, log for debug
+            std::cout << "[RANKED OUT] " << sym << " no valid candidates\n";
             std::cout.flush();
             return;
         }
         const omega::TradeCandidate& best = selected[0];
-        if (std::string(best.symbol) != sym) return;
+        if (std::string(best.symbol) != sym) {
+            // A different symbol ranked higher this cycle — this signal loses
+            std::cout << "[RANKED OUT] " << sym
+                      << " outranked by " << best.symbol
+                      << " score=" << best.score << "\n";
+            std::cout.flush();
+            return;
+        }
 
         std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
                   << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
