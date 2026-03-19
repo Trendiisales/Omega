@@ -145,22 +145,29 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .eng-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;}
 .eng-grid.eng-grid-3{grid-template-columns:repeat(3,1fr);}
 .eng-grid.eng-grid-6{grid-template-columns:repeat(6,1fr);}
-.eng-cell{border-radius:7px;padding:7px 5px;border:1px solid var(--border);
+.eng-cell{border-radius:7px;padding:6px 5px;border:1px solid var(--border);
   background:rgba(255,255,255,0.015);text-align:center;cursor:default;transition:all 0.25s;}
-.eng-cell.ph1{background:rgba(30,18,0,0.85);border-color:rgba(255,136,0,0.45);
-  box-shadow:0 0 8px rgba(255,136,0,0.12);animation:eng-amber 1.8s ease-in-out infinite;}
-.eng-cell.ph2{background:rgba(0,30,15,0.95);border-color:rgba(0,217,126,0.6);
-  box-shadow:0 0 12px rgba(0,217,126,0.25);animation:eng-green 0.9s ease-in-out infinite;}
-@keyframes eng-amber{0%,100%{box-shadow:0 0 8px rgba(255,136,0,0.1)}50%{box-shadow:0 0 14px rgba(255,136,0,0.25)}}
-@keyframes eng-green{0%,100%{box-shadow:0 0 10px rgba(0,217,126,0.15)}50%{box-shadow:0 0 20px rgba(0,217,126,0.4)}}
+.eng-cell.ph1{background:rgba(30,18,0,0.85);border-color:rgba(255,136,0,0.55);
+  box-shadow:0 0 8px rgba(255,136,0,0.15);animation:eng-amber 1.8s ease-in-out infinite;}
+.eng-cell.ph2{background:rgba(0,30,15,0.95);border-color:rgba(0,217,126,0.7);
+  box-shadow:0 0 14px rgba(0,217,126,0.35);animation:eng-green 0.9s ease-in-out infinite;}
+.eng-cell.ph-live{background:rgba(0,40,20,0.98);border-color:rgba(0,217,126,1.0);
+  box-shadow:0 0 20px rgba(0,217,126,0.6);animation:eng-live 0.4s ease-in-out infinite;}
+@keyframes eng-amber{0%,100%{box-shadow:0 0 8px rgba(255,136,0,0.1)}50%{box-shadow:0 0 16px rgba(255,136,0,0.3)}}
+@keyframes eng-green{0%,100%{box-shadow:0 0 10px rgba(0,217,126,0.2)}50%{box-shadow:0 0 22px rgba(0,217,126,0.5)}}
+@keyframes eng-live{0%,100%{box-shadow:0 0 16px rgba(0,217,126,0.4)}50%{box-shadow:0 0 30px rgba(0,217,126,0.9)}}
 .eng-sym{font-size:9px;font-weight:700;color:var(--blue);letter-spacing:0.3px;line-height:1;}
-.eng-ph{font-size:7px;text-transform:uppercase;letter-spacing:0.5px;margin-top:3px;padding:1px 4px;
+.eng-ph{font-size:7px;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;padding:1px 4px;
   border-radius:3px;display:inline-block;}
 .eph-flat{background:rgba(255,255,255,0.05);color:var(--t2);}
 .eph-comp{background:var(--amber-dim);color:var(--amber);}
 .eph-brk{background:var(--green-dim);color:var(--green);}
-.eng-vol{font-family:'IBM Plex Mono',monospace;font-size:7px;color:var(--t3);margin-top:3px;line-height:1.3;}
-.eng-sigs{font-size:8px;color:var(--gold);margin-top:2px;}
+.eph-live{background:rgba(0,217,126,0.25);color:#fff;font-weight:700;}
+.eng-px{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;margin-top:3px;
+  display:flex;justify-content:center;gap:3px;align-items:center;line-height:1;}
+.eng-bid{color:var(--green);}.eng-ask{color:var(--red);}.eng-sep{color:var(--t3);font-size:8px;}
+.eng-vol{font-family:'IBM Plex Mono',monospace;font-size:7px;color:var(--t3);margin-top:2px;line-height:1.2;}
+.eng-sigs{font-size:8px;color:var(--gold);margin-top:1px;}
 
 /* Signal + trade area */
 .sig-trade-area{flex:1;display:grid;grid-template-rows:auto 1fr;gap:8px;min-height:0;overflow:hidden;}
@@ -232,6 +239,10 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:n
   <div style="display:flex;align-items:center;gap:18px;padding:6px 18px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);">
     <div style="text-align:center;">
       <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">VIX</div>
+)OMEGA0"
+
+R"OMEGA1(
+R"OMEGA1(
       <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;" id="vixLevelHdr">--</div>
     </div>
     <div style="width:1px;height:28px;background:var(--border);"></div>
@@ -242,9 +253,7 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:n
     <div style="width:1px;height:28px;background:var(--border);"></div>
     <div style="text-align:center;">
       <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Session</div>
-)OMEGA0"
 
-R"OMEGA1(
       <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;" id="sessionValHdr">--</div>
     </div>
     <div style="width:1px;height:28px;background:var(--border);"></div>
@@ -406,21 +415,21 @@ R"OMEGA1(
     <div class="eng-section">
       <div class="eng-section-label">⚡ US / Oil Engines</div>
       <div class="eng-grid eng-grid-5">
-        <div class="eng-cell" id="engSP"><div class="eng-sym c-blue">US500</div><div class="eng-ph eph-flat" id="engSPPhase">FLAT</div><div class="eng-vol" id="engSPVol">--</div><div class="eng-sigs" id="engSPSig">0</div></div>
-        <div class="eng-cell" id="engNQ"><div class="eng-sym c-blue">USTEC</div><div class="eng-ph eph-flat" id="engNQPhase">FLAT</div><div class="eng-vol" id="engNQVol">--</div><div class="eng-sigs" id="engNQSig">0</div></div>
-        <div class="eng-cell" id="engUS30"><div class="eng-sym c-blue">DJ30</div><div class="eng-ph eph-flat" id="engUS30Phase">FLAT</div><div class="eng-vol" id="engUS30Vol">--</div><div class="eng-sigs" id="engUS30Sig">0</div></div>
-        <div class="eng-cell" id="engNAS"><div class="eng-sym c-blue">NAS100</div><div class="eng-ph eph-flat" id="engNASPhase">FLAT</div><div class="eng-vol" id="engNASVol">--</div><div class="eng-sigs" id="engNASSig">0</div></div>
-        <div class="eng-cell" id="engCL"><div class="eng-sym c-amber" style="color:var(--amber)">USOIL</div><div class="eng-ph eph-flat" id="engCLPhase">FLAT</div><div class="eng-vol" id="engCLVol">--</div><div class="eng-sigs" id="engCLSig">0</div></div>
+        <div class="eng-cell" id="engSP"><div class="eng-sym c-blue">US500</div><div class="eng-ph eph-flat" id="engSPPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engSPBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engSPAsk">--</span></div><div class="eng-vol" id="engSPVol">--</div><div class="eng-sigs" id="engSPSig">0</div></div>
+        <div class="eng-cell" id="engNQ"><div class="eng-sym c-blue">USTEC</div><div class="eng-ph eph-flat" id="engNQPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engNQBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engNQAsk">--</span></div><div class="eng-vol" id="engNQVol">--</div><div class="eng-sigs" id="engNQSig">0</div></div>
+        <div class="eng-cell" id="engUS30"><div class="eng-sym c-blue">DJ30</div><div class="eng-ph eph-flat" id="engUS30Phase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engUS30Bid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engUS30Ask">--</span></div><div class="eng-vol" id="engUS30Vol">--</div><div class="eng-sigs" id="engUS30Sig">0</div></div>
+        <div class="eng-cell" id="engNAS"><div class="eng-sym c-blue">NAS100</div><div class="eng-ph eph-flat" id="engNASPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engNASBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engNASAsk">--</span></div><div class="eng-vol" id="engNASVol">--</div><div class="eng-sigs" id="engNASSig">0</div></div>
+        <div class="eng-cell" id="engCL"><div class="eng-sym" style="color:var(--amber)">USOIL</div><div class="eng-ph eph-flat" id="engCLPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engCLBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engCLAsk">--</span></div><div class="eng-vol" id="engCLVol">--</div><div class="eng-sigs" id="engCLSig">0</div></div>
       </div>
     </div>
 
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">◈ EU Indices + Brent</div>
       <div class="eng-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div class="eng-cell" id="engGER"><div class="eng-sym c-purple">GER30</div><div class="eng-ph eph-flat" id="engGERPhase">FLAT</div><div class="eng-vol" id="engGERVol">--</div><div class="eng-sigs" id="engGERSig">0</div></div>
-        <div class="eng-cell" id="engUK"><div class="eng-sym c-purple">UK100</div><div class="eng-ph eph-flat" id="engUKPhase">FLAT</div><div class="eng-vol" id="engUKVol">--</div><div class="eng-sigs" id="engUKSig">0</div></div>
-        <div class="eng-cell" id="engESTX"><div class="eng-sym c-purple">ESTX50</div><div class="eng-ph eph-flat" id="engESTXPhase">FLAT</div><div class="eng-vol" id="engESTXVol">--</div><div class="eng-sigs" id="engESTXSig">0</div></div>
-        <div class="eng-cell" id="engBRENT"><div class="eng-sym" style="color:var(--amber)">BRENT</div><div class="eng-ph eph-flat" id="engBRENTPhase">FLAT</div><div class="eng-vol" id="engBRENTVol">--</div><div class="eng-sigs" id="engBRENTSig">0</div></div>
+        <div class="eng-cell" id="engGER"><div class="eng-sym c-purple">GER30</div><div class="eng-ph eph-flat" id="engGERPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engGERBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engGERAsk">--</span></div><div class="eng-vol" id="engGERVol">--</div><div class="eng-sigs" id="engGERSig">0</div></div>
+        <div class="eng-cell" id="engUK"><div class="eng-sym c-purple">UK100</div><div class="eng-ph eph-flat" id="engUKPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engUKBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engUKAsk">--</span></div><div class="eng-vol" id="engUKVol">--</div><div class="eng-sigs" id="engUKSig">0</div></div>
+        <div class="eng-cell" id="engESTX"><div class="eng-sym c-purple">ESTX50</div><div class="eng-ph eph-flat" id="engESTXPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engESTXBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engESTXAsk">--</span></div><div class="eng-vol" id="engESTXVol">--</div><div class="eng-sigs" id="engESTXSig">0</div></div>
+        <div class="eng-cell" id="engBRENT"><div class="eng-sym" style="color:var(--amber)">BRENT</div><div class="eng-ph eph-flat" id="engBRENTPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engBRENTBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engBRENTAsk">--</span></div><div class="eng-vol" id="engBRENTVol">--</div><div class="eng-sigs" id="engBRENTSig">0</div></div>
       </div>
     </div>
 
@@ -428,11 +437,35 @@ R"OMEGA1(
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">⬡ FX + Asia Engines</div>
       <div class="eng-grid" style="grid-template-columns:repeat(5,1fr)">
-        <div class="eng-cell" id="engEUR"><div class="eng-sym c-cyan">EURUSD</div><div class="eng-ph eph-flat" id="engEURPhase">FLAT</div><div class="eng-vol" id="engEURVol">--</div><div class="eng-sigs" id="engEURSig">0</div></div>
-        <div class="eng-cell" id="engGBP"><div class="eng-sym c-cyan">GBPUSD</div><div class="eng-ph eph-flat" id="engGBPPhase">FLAT</div><div class="eng-vol" id="engGBPVol">--</div><div class="eng-sigs" id="engGBPSig">0</div></div>
-        <div class="eng-cell" id="engAUD"><div class="eng-sym c-teal">AUDUSD</div><div class="eng-ph eph-flat" id="engAUDPhase">FLAT</div><div class="eng-vol" id="engAUDVol">--</div><div class="eng-sigs" id="engAUDSig">0</div></div>
-        <div class="eng-cell" id="engNZD"><div class="eng-sym c-teal">NZDUSD</div><div class="eng-ph eph-flat" id="engNZDPhase">FLAT</div><div class="eng-vol" id="engNZDVol">--</div><div class="eng-sigs" id="engNZDSig">0</div></div>
-        <div class="eng-cell" id="engJPY"><div class="eng-sym" style="color:var(--purple)">USDJPY</div><div class="eng-ph eph-flat" id="engJPYPhase">FLAT</div><div class="eng-vol" id="engJPYVol">--</div><div class="eng-sigs" id="engJPYSig">0</div></div>
+        <div class="eng-cell" id="engEUR"><div class="eng-sym c-cyan">EURUSD</div><div class="eng-ph eph-flat" id="engEURPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engEURBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engEURAsk">--</span></div><div class="eng-vol" id="engEURVol">--</div><div class="eng-sigs" id="engEURSig">0</div></div>
+)OMEGA1"
+
+R"OMEGA2(
+R"OMEGA2(
+        <div class="eng-cell" id="engGBP"><div class="eng-sym c-cyan">GBPUSD</div><div class="eng-ph eph-flat" id="engGBPPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engGBPBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engGBPAsk">--</span></div><div class="eng-vol" id="engGBPVol">--</div><div class="eng-sigs" id="engGBPSig">0</div></div>
+        <div class="eng-cell" id="engAUD"><div class="eng-sym c-teal">AUDUSD</div><div class="eng-ph eph-flat" id="engAUDPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engAUDBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engAUDAsk">--</span></div><div class="eng-vol" id="engAUDVol">--</div><div class="eng-sigs" id="engAUDSig">0</div></div>
+        <div class="eng-cell" id="engNZD"><div class="eng-sym c-teal">NZDUSD</div><div class="eng-ph eph-flat" id="engNZDPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engNZDBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engNZDAsk">--</span></div><div class="eng-vol" id="engNZDVol">--</div><div class="eng-sigs" id="engNZDSig">0</div></div>
+        <div class="eng-cell" id="engJPY"><div class="eng-sym" style="color:var(--purple)">USDJPY</div><div class="eng-ph eph-flat" id="engJPYPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engJPYBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engJPYAsk">--</span></div><div class="eng-vol" id="engJPYVol">--</div><div class="eng-sigs" id="engJPYSig">0</div></div>
+      </div>
+    </div>
+
+    <div class="eng-section" style="margin-top:6px;">
+      <div class="eng-section-label">★ Metals Engines</div>
+      <div class="eng-grid" style="grid-template-columns:repeat(2,1fr)">
+        <div class="eng-cell" id="engXAU" style="border-color:rgba(245,200,66,0.2);background:rgba(245,200,66,0.04);">
+          <div class="eng-sym" style="color:var(--gold)">GOLD.F</div>
+          <div class="eng-ph eph-flat" id="engXAUPhase">FLAT</div>
+          <div class="eng-px"><span class="eng-bid" id="engXAUBid" style="color:var(--gold)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAUAsk" style="color:var(--red)">--</span></div>
+          <div class="eng-vol" id="engXAUVol">--</div>
+          <div class="eng-sigs" id="engXAUSig">0</div>
+        </div>
+        <div class="eng-cell" id="engXAG" style="border-color:rgba(154,180,204,0.2);background:rgba(154,180,204,0.03);">
+          <div class="eng-sym" style="color:var(--silver)">XAGUSD</div>
+          <div class="eng-ph eph-flat" id="engXAGPhase">FLAT</div>
+          <div class="eng-px"><span class="eng-bid" id="engXAGBid" style="color:var(--silver)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAGAsk" style="color:var(--red)">--</span></div>
+          <div class="eng-vol" id="engXAGVol">--</div>
+          <div class="eng-sigs" id="engXAGSig">0</div>
+        </div>
       </div>
     </div>
 
@@ -458,9 +491,7 @@ R"OMEGA1(
               <th>Held</th><th>Result</th><th>Gross</th><th>Slip</th><th>Net</th>
             </tr></thead>
             <tbody id="tradesBody"><tr><td colspan="10" class="no-data">No trades yet</td></tr></tbody>
-)OMEGA1"
 
-R"OMEGA2(
           </table>
         </div>
       </div>
@@ -513,26 +544,6 @@ R"OMEGA2(
       </div>
     </div>
 
-    <!-- Gold engine state summary -->
-    <div class="card">
-      <div class="card-hd"><span class="dot" style="background:var(--gold)"></span>Gold Stack</div>
-      <div style="padding:8px 10px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-        <div class="rg-item"><div class="rg-lbl">Phase</div><div class="rg-val" id="goldPhaseRight" style="font-size:11px;color:var(--gold)">--</div></div>
-        <div class="rg-item"><div class="rg-lbl">Signals</div><div class="rg-val" id="goldSigsRight" style="color:var(--gold)">0</div></div>
-        <div class="rg-item"><div class="rg-lbl">rv%</div><div class="rg-val" id="goldRvRight" style="color:var(--t1);font-size:11px">--</div></div>
-        <div class="rg-item"><div class="rg-lbl">bv%</div><div class="rg-val" id="goldBvRight" style="color:var(--t1);font-size:11px">--</div></div>
-      </div>
-    </div>
-
-    <!-- Silver bracket engine -->
-    <div class="card">
-      <div class="card-hd"><span class="dot" style="background:var(--silver)"></span>Silver Bracket</div>
-      <div style="padding:8px 10px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-        <div class="rg-item"><div class="rg-lbl">Phase</div><div class="rg-val" id="xagPhaseRight" style="font-size:11px;color:var(--silver)">--</div></div>
-        <div class="rg-item"><div class="rg-lbl">Signals</div><div class="rg-val" id="xagSigsRight" style="color:var(--silver)">0</div></div>
-      </div>
-    </div>
-
   </div><!-- /col-right -->
 
 </div><!-- /main -->
@@ -568,21 +579,28 @@ function setHdrPhase(id,phase){
   else{el.className='htk-ph ph-brk';el.textContent='BRK ⚡';}
 }
 
-function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo){
+function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask,dec,isLive){
   const cell=document.getElementById(cellId),ph=document.getElementById(phaseId),vol=document.getElementById(volId),sig=document.getElementById(sigId);
   if(!cell)return;
   const p=safe(phase);
-  cell.className='eng-cell'+(p===1?' ph1':p===2?' ph2':'');
+  if(isLive) cell.className='eng-cell ph-live';
+  else cell.className='eng-cell'+(p===1?' ph1':p===2?' ph2':'');
   if(ph){
-    if(p===0){ph.className='eng-ph eph-flat';ph.textContent='FLAT';}
+    if(isLive){ph.className='eng-ph eph-live';ph.textContent='LIVE ●';}
+    else if(p===0){ph.className='eng-ph eph-flat';ph.textContent='FLAT';}
     else if(p===1){ph.className='eng-ph eph-comp';ph.textContent='COMP';}
     else{ph.className='eng-ph eph-brk';ph.textContent='BRK⚡';}
   }
   if(vol){
-    if(p===1&&safe(hi)>0) vol.textContent=safe(hi).toFixed(1)+'↑'+safe(lo).toFixed(1);
+    if(p===1&&safe(hi)>0) vol.textContent=safe(hi).toFixed(dec||1)+'↑'+safe(lo).toFixed(dec||1);
     else vol.textContent='r'+safe(rv).toFixed(2)+'%';
   }
   if(sig)sig.textContent=sigs+'sig';
+  // Prices
+  const bidEl=document.getElementById(cellId+'Bid'),askEl=document.getElementById(cellId+'Ask');
+  const d=dec!=null?dec:2;
+  if(bidEl&&safe(bid)>0)bidEl.textContent=safe(bid).toFixed(d);
+  if(askEl&&safe(ask)>0)askEl.textContent=safe(ask).toFixed(d);
 }
 
 function renderLastSignal(d){
@@ -613,6 +631,10 @@ function renderTrades(trades){
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
     const win=net>0,loss=net<0,sc=t.side==='LONG'?'var(--green)':'var(--red)';
     const reason=t.exitReason||'',result=isOpen?'🔵':reason==='TP_HIT'?'✅TP':reason==='SL_HIT'?'❌SL':reason==='TIMEOUT'?'⏱TO':'⚡FC';
+)OMEGA2"
+
+R"OMEGA3(
+R"OMEGA3(
     const rc=isOpen?'var(--blue)':win?'var(--green)':loss?'var(--red)':'var(--t2)';
     const netC=win?'var(--green)':loss?'var(--red)':'var(--t2)';
     let heldStr='--';
@@ -661,30 +683,37 @@ function updateDashboard(d){
   px('audBid',d.audusd_bid,5);px('audAsk',d.audusd_ask,5);sprd('audSpread',d.audusd_bid,d.audusd_ask);
   px('nzdBid',d.nzdusd_bid,5);px('nzdAsk',d.nzdusd_ask,5);sprd('nzdSpread',d.nzdusd_bid,d.nzdusd_ask);
   px('jpyBid',d.usdjpy_bid,3);px('jpyAsk',d.usdjpy_ask,3);sprd('jpySpread',d.usdjpy_bid,d.usdjpy_ask);
-)OMEGA2"
 
-R"OMEGA3(
   px('vixBid',d.vix_bid,2);px('vixAsk',d.vix_ask,2);
   px('dxBid',d.dx_bid,2);px('dxAsk',d.dx_ask,2);
   px('ngasBid',d.ngas_bid,2);px('ngasAsk',d.ngas_ask,2);
 
   // Engine cells — US/Oil group (sp_phase etc from telemetry)
-  updateEngCell('engSP','engSPPhase','engSPVol','engSPSig',d.sp_phase,d.sp_recent_vol_pct,d.sp_baseline_vol_pct,d.sp_signals,d.sp_comp_high,d.sp_comp_low);
-  updateEngCell('engNQ','engNQPhase','engNQVol','engNQSig',d.nq_phase,d.nq_recent_vol_pct,d.nq_baseline_vol_pct,d.nq_signals,d.nq_comp_high,d.nq_comp_low);
-  updateEngCell('engCL','engCLPhase','engCLVol','engCLSig',d.cl_phase,d.cl_recent_vol_pct,d.cl_baseline_vol_pct,d.cl_signals,d.cl_comp_high,d.cl_comp_low);
+  // Engine cells — pass bid/ask prices and live state
+  const live=d.open_positions||[];
+  const isLive=sym=>live.some?.(p=>p.symbol===sym):false;
+  updateEngCell('engSP','engSPPhase','engSPVol','engSPSig',d.sp_phase,d.sp_recent_vol_pct,d.sp_baseline_vol_pct,d.sp_signals,d.sp_comp_high,d.sp_comp_low,d.sp_bid,d.sp_ask,2,isLive('US500.F'));
+  updateEngCell('engNQ','engNQPhase','engNQVol','engNQSig',d.nq_phase,d.nq_recent_vol_pct,d.nq_baseline_vol_pct,d.nq_signals,d.nq_comp_high,d.nq_comp_low,d.nq_bid,d.nq_ask,2,isLive('USTEC.F'));
+  updateEngCell('engUS30','engUS30Phase','engUS30Vol','engUS30Sig',d.dj_phase,d.dj_recent_vol_pct,d.dj_baseline_vol_pct,d.dj_signals,d.dj_comp_high,d.dj_comp_low,d.dj_bid,d.dj_ask,2,isLive('DJ30.F'));
+  updateEngCell('engNAS','engNASPhase','engNASVol','engNASSig',d.nas_phase,d.nas_recent_vol_pct,d.nas_baseline_vol_pct,d.nas_signals,d.nas_comp_high,d.nas_comp_low,d.nas_bid,d.nas_ask,2,isLive('NAS100'));
+  updateEngCell('engCL','engCLPhase','engCLVol','engCLSig',d.cl_phase,d.cl_recent_vol_pct,d.cl_baseline_vol_pct,d.cl_signals,d.cl_comp_high,d.cl_comp_low,d.cl_bid,d.cl_ask,2,isLive('USOIL.F'));
+  updateEngCell('engGER','engGERPhase','engGERVol','engGERSig',d.ger30_phase,d.ger30_recent_vol_pct,d.ger30_baseline_vol_pct,d.ger30_signals,d.ger30_comp_high,d.ger30_comp_low,d.ger30_bid,d.ger30_ask,2,isLive('GER30'));
+  updateEngCell('engUK','engUKPhase','engUKVol','engUKSig',d.uk100_phase,d.uk100_recent_vol_pct,d.uk100_baseline_vol_pct,d.uk100_signals,d.uk100_comp_high,d.uk100_comp_low,d.uk100_bid,d.uk100_ask,2,isLive('UK100'));
+  updateEngCell('engESTX','engESTXPhase','engESTXVol','engESTXSig',d.estx50_phase,d.estx50_recent_vol_pct,d.estx50_baseline_vol_pct,d.estx50_signals,d.estx50_comp_high,d.estx50_comp_low,d.estx50_bid,d.estx50_ask,2,isLive('ESTX50'));
+  updateEngCell('engBRENT','engBRENTPhase','engBRENTVol','engBRENTSig',d.brent_phase,d.brent_recent_vol_pct,d.brent_baseline_vol_pct,d.brent_signals,d.brent_comp_high,d.brent_comp_low,d.brent_bid,d.brent_ask,2,isLive('UKBRENT'));
+  updateEngCell('engEUR','engEURPhase','engEURVol','engEURSig',d.eurusd_phase,d.eurusd_recent_vol_pct,d.eurusd_baseline_vol_pct,d.eurusd_signals,d.eurusd_comp_high,d.eurusd_comp_low,d.eurusd_bid,d.eurusd_ask,5,isLive('EURUSD'));
+  updateEngCell('engGBP','engGBPPhase','engGBPVol','engGBPSig',d.gbpusd_phase,d.gbpusd_recent_vol_pct,d.gbpusd_baseline_vol_pct,d.gbpusd_signals,d.gbpusd_comp_high,d.gbpusd_comp_low,d.gbpusd_bid,d.gbpusd_ask,5,isLive('GBPUSD'));
+  updateEngCell('engAUD','engAUDPhase','engAUDVol','engAUDSig',d.audusd_phase,d.audusd_recent_vol_pct,d.audusd_baseline_vol_pct,d.audusd_signals,d.audusd_comp_high,d.audusd_comp_low,d.audusd_bid,d.audusd_ask,5,isLive('AUDUSD'));
+  updateEngCell('engNZD','engNZDPhase','engNZDVol','engNZDSig',d.nzdusd_phase,d.nzdusd_recent_vol_pct,d.nzdusd_baseline_vol_pct,d.nzdusd_signals,d.nzdusd_comp_high,d.nzdusd_comp_low,d.nzdusd_bid,d.nzdusd_ask,5,isLive('NZDUSD'));
+  updateEngCell('engJPY','engJPYPhase','engJPYVol','engJPYSig',d.usdjpy_phase,d.usdjpy_recent_vol_pct,d.usdjpy_baseline_vol_pct,d.usdjpy_signals,d.usdjpy_comp_high,d.usdjpy_comp_low,d.usdjpy_bid,d.usdjpy_ask,3,isLive('USDJPY'));
+  // Gold + Silver engine cells
+  const xauP=safe(d.xau_phase);
+  updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',xauP,d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('GOLD.F'));
+  updateEngCell('engXAG','engXAGPhase','engXAGVol','engXAGSig',d.xag_phase,d.xag_recent_vol_pct,d.xag_baseline_vol_pct,d.xag_signals,0,0,d.xag_bid,d.xag_ask,3,isLive('XAGUSD'));
   // These engines don't have dedicated phase fields in telemetry yet — show placeholder
   ['engUS30','engNAS','engGER','engUK','engESTX','engBRENT','engEUR','engGBP','engAUD','engNZD','engJPY'].forEach(id=>{
     const cell=document.getElementById(id);if(cell&&cell.className==='eng-cell')cell.className='eng-cell';
   });
-
-  // Gold stack (xau_ fields)
-  const xauP=safe(d.xau_phase);
-  const xauPh=xauP===0?'FLAT':xauP===1?'COMP':'BRK⚡';
-  txt('goldPhaseRight',xauPh);txt('goldSigsRight',d.xau_signals||0);
-  txt('goldRvRight',safe(d.xau_recent_vol_pct).toFixed(3)+'%');
-  txt('goldBvRight',safe(d.xau_baseline_vol_pct).toFixed(3)+'%');
-  // Silver bracket phase not in telemetry — show from xag engine if available
-  txt('xagPhaseRight','--');txt('xagSigsRight','--');
 
   // PnL
   const pnl=safe(d.daily_pnl),gross=safe(d.gross_daily_pnl);
@@ -805,13 +834,18 @@ setInterval(()=>{const el=document.getElementById('clock');if(el)el.textContent=
 connectWS();
 setInterval(httpPoll,1000);
 setInterval(pollTrades,5000);
+)OMEGA3"
+
+R"OMEGA4(
+R"OMEGA4(
 pollTrades();
 </script>
 </body>
 </html>
 
 
-)OMEGA3"
+
+)OMEGA4"
 
 ;
 } // namespace omega_gui
