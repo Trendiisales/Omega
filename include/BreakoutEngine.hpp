@@ -561,11 +561,11 @@ public:
             // Compression just ended — check range is viable before watching
             const double comp_range_built = comp_high - comp_low;
             if (MIN_COMP_RANGE > 0.0 && comp_range_built < MIN_COMP_RANGE) {
-                std::cout << "[ENG-" << symbol << "] COMPRESSION reset: range_too_small"
-                          << " range=" << comp_range_built << " min=" << MIN_COMP_RANGE << "\n";
-                std::cout.flush();
-                phase               = Phase::FLAT;
-                m_compression_ticks = 0;
+                // Range too small — don't reset, keep building.
+                // Reset to COMPRESSION so price continues expanding the range.
+                // Throwing away valid structure was killing setups.
+                phase               = Phase::COMPRESSION;
+                m_compression_ticks = 3;  // keep minimum tick count so we don't re-enter this check immediately
                 return {};
             }
             phase               = Phase::BREAKOUT_WATCH;

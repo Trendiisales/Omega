@@ -246,23 +246,24 @@ public:
             if (regime == m_candidate_regime) {
                 ++m_candidate_count;
             } else if (
-                // QUIET_COMPRESSION and EXPANSION_BREAKOUT are adjacent states —
-                // the market oscillates between them as vol ticks above/below threshold.
-                // Don't reset the candidate when switching between these two.
-                // This lets EXPANSION accumulate through brief compression ticks.
                 (regime == Regime::QUIET_COMPRESSION
                     && m_candidate_regime == Regime::EXPANSION_BREAKOUT) ||
                 (regime == Regime::EXPANSION_BREAKOUT
                     && m_candidate_regime == Regime::QUIET_COMPRESSION)
             ) {
-                // Compatible regime — keep building toward the existing candidate
                 ++m_candidate_count;
-                // But track which one we're actually in so scores are correct
                 m_candidate_regime = regime;
             } else {
-                // Genuinely different regime — reset
-                m_candidate_regime = regime;
-                m_candidate_count  = 1;
+                // Fix 2: only switch regime if time-based hold is met
+                // Prevents tick-by-tick flipping that kills entries
+                const bool time_ok = (now_ms - m_candidate_start_ms) >= REGIME_HOLD_MS;
+                if (time_ok || m_candidate_count == 0) {
+                    m_candidate_regime   = regime;
+                    m_candidate_count    = 1;
+                    m_candidate_start_ms = now_ms;
+                } else {
+                    ++m_candidate_count;  // keep building current candidate
+                }
             }
         }
         // Stable regime: promote candidate once it's held long enough.
@@ -321,9 +322,12 @@ public:
 
         const bool regime_ok     = (stable_regime != Regime::CHOP_REVERSAL)
                                 && (stable_regime != Regime::HIGH_RISK_NO_TRADE);
-        const bool confidence_ok = (confidence >= cfg.min_regime_confidence);
         const double top_score   = std::max(stable_bracket, stable_breakout);
         const bool   score_ok    = (top_score >= cfg.min_winner_score);
+        // Fix 3: top_score >= threshold = dominant regime, allow regardless of confidence.
+        // confidence_ok was blocking trades when top_score=0.76 threshold=0.25 — wrong.
+        // Confidence is still used for regime classification but not as a hard trade gate.
+        const bool confidence_ok = (confidence >= cfg.min_regime_confidence) || score_ok;
 
         if (!regime_ok || !confidence_ok || !score_ok) {
             d.allow_bracket  = false;
@@ -440,11 +444,14 @@ private:
     // Hysteresis: candidate regime must hold for this many ticks before switching
     Regime  m_candidate_regime    = Regime::UNKNOWN;
     int     m_candidate_count     = 0;
-    // Score cache: last valid scores from a non-blocking tick — used to hold
-    // allow=1 during HIGH_RISK noise ticks that would otherwise zero the scores
+    int64_t m_candidate_start_ms  = 0;  // Fix 2: time-based minimum hold
+    // Score cache: last valid scores from a non-blocking tick
     double  m_last_stable_bracket  = 0.0;
     double  m_last_stable_breakout = 0.0;
-    static constexpr int REGIME_HOLD_TICKS = 4;
+    // Fix 2: reduced from 4 — supervisor was too slow to stabilise
+    static constexpr int REGIME_HOLD_TICKS   = 2;
+    // Fix 2: minimum ms a regime must hold before switching (prevents tick-by-tick flipping)
+    static constexpr int64_t REGIME_HOLD_MS  = 3000;  // 3 seconds
 };
 
 } // namespace omega
