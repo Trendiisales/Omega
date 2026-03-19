@@ -3413,7 +3413,7 @@ static void trade_loop() {
             g_trade_ssl  = nullptr;
             g_trade_sock = -1;
         }
-        SSL_shutdown(ssl); SSL_free(ssl);
+        SSL_free(ssl);
         if (sock >= 0) closesocket(static_cast<SOCKET>(sock));
         std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
         // Interruptible reconnect wait — exits within 10ms on shutdown
@@ -3626,7 +3626,7 @@ static void quote_loop() {
             }
         }
 
-        SSL_shutdown(ssl); SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
+        SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
         // Interruptible reconnect wait — exits within 10ms on shutdown
         for (int i = 0; i < backoff_ms / 10 && g_running.load(); ++i) Sleep(10);
