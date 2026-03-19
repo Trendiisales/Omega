@@ -3414,12 +3414,14 @@ int main(int argc, char* argv[])
             // So we store the raw abs value and let the caller provide typical price.
             // Simpler: we know the instrument types — pass typical_price per symbol.
             auto apply_be = [](auto& eng, const SymbolConfig& c, double typical_price) {
-                // Apply SL_MULT first so TP_PCT = SL_PCT * tp_mult uses the scaled SL
                 if (c.sl_mult > 0.0 && c.sl_mult != 1.0) eng.SL_PCT *= c.sl_mult;
                 if (c.tp_mult > 0.0)                      eng.TP_PCT  = eng.SL_PCT * c.tp_mult;
                 if (c.max_spread > 0.0 && typical_price > 0.0)
                     eng.MAX_SPREAD_PCT = (c.max_spread / typical_price) * 100.0;
-                if (c.min_hold_ms > 0) eng.MAX_HOLD_SEC = c.min_hold_ms / 1000;
+                if (c.min_hold_ms  > 0)   eng.MAX_HOLD_SEC  = c.min_hold_ms / 1000;
+                if (c.max_hold_sec > 0)   eng.MAX_HOLD_SEC  = c.max_hold_sec;
+                // min_edge_bp → MIN_EDGE_PCT: bp/100 gives % of price
+                if (c.min_edge_bp  > 0.0) eng.MIN_EDGE_PCT  = c.min_edge_bp / 100.0;
             };
 
             // BreakoutEngine symbols — typical prices for MAX_SPREAD_PCT conversion

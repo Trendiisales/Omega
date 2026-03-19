@@ -23,20 +23,22 @@
 struct SymbolConfig
 {
     // Bracket/breakout trigger geometry
-    double min_range         = 0.0;   // minimum range size to arm
-    double confirm_offset    = 0.0;   // follow-through distance after breakout level
-    int    min_structure_ms  = 0;     // minimum time range must hold before arming
+    double min_range         = 0.0;
+    double confirm_offset    = 0.0;
+    int    min_structure_ms  = 0;
 
     // Position management
-    int    breakout_fail_ms  = 0;     // window to detect false breakout after entry
-    int    min_hold_ms       = 0;     // minimum hold before SL/TP evaluated
+    int    breakout_fail_ms  = 0;
+    int    min_hold_ms       = 0;
+    int    max_hold_sec      = 0;    // per-symbol max hold — overrides global max_hold_sec
 
     // Risk/reward
-    double tp_mult           = 1.5;   // TP = SL_dist * tp_mult (bracket RR)
-    double sl_mult           = 1.0;   // SL multiplier
+    double tp_mult           = 1.5;
+    double sl_mult           = 1.0;
 
     // Entry filter
-    double max_spread        = 0.0;   // maximum spread at entry (absolute instrument units)
+    double max_spread        = 0.0;  // absolute instrument units
+    double min_edge_bp       = 0.0;  // minimum edge in basis points (0 = disabled)
 };
 
 // ==============================================================================

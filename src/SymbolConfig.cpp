@@ -50,28 +50,24 @@ bool SymbolConfigManager::load(const std::string& path)
         cfg.min_structure_ms = get_int   (kv, "MIN_STRUCTURE_MS", 0);
         cfg.breakout_fail_ms = get_int   (kv, "BREAKOUT_FAIL_MS", 0);
         cfg.min_hold_ms      = get_int   (kv, "MIN_HOLD_MS",      0);
+        cfg.max_hold_sec     = get_int   (kv, "MAX_HOLD_SEC",     0);
         cfg.tp_mult          = get_double(kv, "TP_MULT",          1.5);
         cfg.sl_mult          = get_double(kv, "SL_MULT",          1.0);
         cfg.max_spread       = get_double(kv, "MAX_SPREAD",       0.0);
+        cfg.min_edge_bp      = get_double(kv, "MIN_EDGE_BP",      0.0);
 
         configs_[current_section] = cfg;
         std::cout << "[SYMCFG] Loaded " << current_section
-                  << " MIN_RANGE=" << cfg.min_range
-                  << " TP_MULT="   << cfg.tp_mult
-                  << " MAX_SPREAD="<< cfg.max_spread << "\n";
+                  << " MIN_RANGE="    << cfg.min_range
+                  << " TP_MULT="      << cfg.tp_mult
+                  << " MAX_HOLD_SEC=" << cfg.max_hold_sec
+                  << " MIN_EDGE_BP="  << cfg.min_edge_bp
+                  << " MAX_SPREAD="   << cfg.max_spread << "\n";
 
-        // Validate critical fields — zero values cause silent misbehaviour:
-        //   min_range=0    → engine arms on any tick, fires constantly
-        //   confirm_offset=0 → no follow-through required, noise entries
-        //   max_spread=0   → spread filter disabled, entries during spikes
-        //   tp_mult=0      → TP set to entry price, closes immediately flat
-        //   sl_mult=0      → SL set to entry price, closes immediately flat
         bool cfg_warn = false;
-        if (cfg.min_range     <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": MIN_RANGE=0 — engine will arm on every tick\n";     cfg_warn = true; }
-        if (cfg.confirm_offset<= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": CONFIRM_OFFSET=0 — no follow-through filter\n";      cfg_warn = true; }
-        if (cfg.max_spread    <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": MAX_SPREAD=0 — spread gate disabled\n";                cfg_warn = true; }
-        if (cfg.tp_mult       <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": TP_MULT=0 — TP will equal entry, trade closes flat\n"; cfg_warn = true; }
-        if (cfg.sl_mult       <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": SL_MULT=0 — SL will equal entry, trade closes flat\n"; cfg_warn = true; }
+        if (cfg.max_spread <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": MAX_SPREAD=0 — spread gate disabled\n";                cfg_warn = true; }
+        if (cfg.tp_mult    <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": TP_MULT=0 — TP will equal entry, trade closes flat\n";  cfg_warn = true; }
+        if (cfg.sl_mult    <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": SL_MULT=0 — SL will equal entry, trade closes flat\n";  cfg_warn = true; }
         if (!cfg_warn) std::cout << "[SYMCFG] " << current_section << " OK\n";
 
         kv.clear();

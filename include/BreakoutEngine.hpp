@@ -65,13 +65,12 @@ public:
     int         MAX_HOLD_SEC          = 1500;
     int         MIN_GAP_SEC           = 180;
     double      MAX_SPREAD_PCT        = 0.05;
-    double      MOMENTUM_THRESH_PCT   = 0.05;   // momentum gate: price_now vs price_20_ago
-    double      MIN_BREAKOUT_PCT      = 0.25;   // minimum breakout move from comp range edge
-    int         MAX_TRADES_PER_MIN    = 2;       // rate limiter: max entries per 60s window
-    double      ENTRY_SIZE            = 0.01;   // fallback lot size (only used when risk_per_trade_usd=0)
-                                                 // When risk sizing is enabled this is ignored — size is
-                                                 // computed from risk_per_trade_usd / (sl_pts * tick_mult)
-    bool        AGGRESSIVE_SHADOW     = false;   // shadow research mode: loosen entry filters for signal discovery
+    double      MOMENTUM_THRESH_PCT   = 0.05;
+    double      MIN_BREAKOUT_PCT      = 0.25;
+    double      MIN_EDGE_PCT          = 0.0;    // min TP distance as % of price — 0 = disabled
+    int         MAX_TRADES_PER_MIN    = 2;
+    double      ENTRY_SIZE            = 0.01;
+    bool        AGGRESSIVE_SHADOW     = false;
     const char* symbol                = "???";
 
     // ── Observable state (read by telemetry thread) ───────────────────────────
@@ -474,6 +473,19 @@ public:
                     m_trade_times.pop_front();
                 if (static_cast<int>(m_trade_times.size()) >= MAX_TRADES_PER_MIN) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: rate_limit"                              << " trades_in_60s=" << m_trade_times.size() << "\n";
+                    std::cout.flush();
+                    phase = Phase::FLAT; return {};
+                }
+            }
+
+            // ── Edge filter — TP must exceed min expected move ────────────────
+            // Blocks trades where the TP distance doesn't justify costs.
+            // MIN_EDGE_PCT is the minimum TP move as % of price.
+            if (MIN_EDGE_PCT > 0.0) {
+                const double tp_dist_pct = std::fabs(tp - mid) / mid * 100.0;
+                if (tp_dist_pct < MIN_EDGE_PCT) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: no_edge"
+                              << " tp_dist=" << tp_dist_pct << "% min=" << MIN_EDGE_PCT << "%\n";
                     std::cout.flush();
                     phase = Phase::FLAT; return {};
                 }
