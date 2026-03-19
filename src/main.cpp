@@ -3435,7 +3435,6 @@ int main(int argc, char* argv[])
             // BracketEngine symbols — override configure() fields directly
             auto apply_bracket = [](auto& eng, const SymbolConfig& c) {
                 if (c.min_range        > 0.0) eng.MIN_RANGE        = c.min_range;
-                if (c.confirm_offset   > 0.0) eng.CONFIRM_MOVE     = c.confirm_offset;
                 if (c.min_structure_ms > 0)   eng.MIN_STRUCTURE_MS = c.min_structure_ms;
                 if (c.breakout_fail_ms > 0)   eng.FAILURE_WINDOW_MS= c.breakout_fail_ms;
                 if (c.min_hold_ms      > 0)   eng.MIN_HOLD_MS      = c.min_hold_ms;
