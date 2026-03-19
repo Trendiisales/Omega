@@ -266,6 +266,7 @@ R"OMEGA1(
     <span class="badge" id="sessionBadge" style="color:var(--t2)">── UTC</span>
     <span class="badge"><span class="dot-conn dot-bad" id="connDot"></span><span id="connText">Connecting</span></span>
     <span class="badge" id="fixQuoteHdr" style="color:var(--red)">Q:--</span>
+    <span id="buildBadge" class="badge" style="color:var(--amber);font-size:9px;font-weight:700;letter-spacing:1.5px" title="Git hash — built version">⬡ <span id="buildVersion">...</span></span>
     <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--t2)" id="clock">--:--:-- UTC</span>
   </div>
 </header>
@@ -762,7 +763,7 @@ function updateDashboard(d){
 
   // Build version
   const bv=document.getElementById('buildVersion');
-  if(bv&&d.build_version)bv.textContent=d.build_version.slice(0,8);
+  if(bv&&d.build_version){bv.textContent=d.build_version;const bb=document.getElementById('buildBadge');if(bb)bb.title='Built: '+(d.build_time||'?');}
 
   // Session badge
   const sb=document.getElementById('sessionBadge');
