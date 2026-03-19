@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <iomanip>
 #include <algorithm>
 #include <functional>
 #include <cstring>
@@ -534,10 +535,12 @@ public:
                 comp_high           = mid;
                 comp_low            = mid;
                 m_compression_ticks = 1;
-                std::cout << "[ENG-" << symbol << "] COMPRESSION entered"
+                std::cout << std::fixed << std::setprecision(5)
+                          << "[ENG-" << symbol << "] COMPRESSION entered"
                           << " recent=" << recent_vol_pct << "% base=" << base_vol_pct
                           << "% ratio=" << (base_vol_pct>0?recent_vol_pct/base_vol_pct:0)
                           << " mid=" << mid << "\n";
+                std::cout.unsetf(std::ios::fixed);
                 std::cout.flush();
             }
             return {};
@@ -569,11 +572,13 @@ public:
                 // m_compression_ticks=3 caused a silent oscillation: vol ticking
                 // above threshold re-entered this same check on the very next tick,
                 // producing infinite ARM_CHECK fails with no log output.
-                std::cout << "[ENG-" << symbol << "] ARM_CHECK fail reason=range_too_small"
+                std::cout << std::fixed << std::setprecision(5)
+                          << "[ENG-" << symbol << "] ARM_CHECK fail reason=range_too_small"
                           << " range=" << comp_range_built
                           << " min=" << MIN_COMP_RANGE
                           << " hi=" << comp_high << " lo=" << comp_low << "\n";
                 std::cout.flush();
+                std::cout.unsetf(std::ios::fixed);  // restore default formatting
                 phase               = Phase::FLAT;
                 m_compression_ticks = 0;
                 return {};
@@ -582,9 +587,11 @@ public:
             m_compression_ticks = 0;
             m_watch_start_ts    = nowSec();
             watch_ticks         = 0;  // not used for timeout, kept for telemetry
-            std::cout << "[ENG-" << symbol << "] BREAKOUT_WATCH started (ARMED)"
+            std::cout << std::fixed << std::setprecision(5)
+                      << "[ENG-" << symbol << "] BREAKOUT_WATCH started (ARMED)"
                       << " hi=" << comp_high << " lo=" << comp_low
                       << " timeout=" << WATCH_TIMEOUT_SEC << "s\n";
+            std::cout.unsetf(std::ios::fixed);
             std::cout.flush();
             // Fall through to BREAKOUT_WATCH check on this same tick
         }
@@ -627,10 +634,12 @@ public:
             }
 
             // Price has exited the compression range — confirmed breakout
-            std::cout << "[ENG-" << symbol << "] BREAKOUT attempt"
+            std::cout << std::fixed << std::setprecision(5)
+                      << "[ENG-" << symbol << "] BREAKOUT attempt"
                       << (long_break?" LONG":" SHORT")
                       << " mid=" << mid << " hi=" << comp_high << " lo=" << comp_low
                       << " can_enter=" << can_enter << "\n";
+            std::cout.unsetf(std::ios::fixed);
             std::cout.flush();
 
             const bool is_long = long_break;
