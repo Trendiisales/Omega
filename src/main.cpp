@@ -37,6 +37,7 @@
 #include <cstring>
 
 // ── Omega headers (flat -- all files in same directory on VPS) ────────────────
+#include "OmegaFIX.hpp"          // IMMUTABLE — FIX infrastructure, do not modify
 #include "OmegaTelemetryWriter.hpp"
 #include "OmegaTradeLedger.hpp"
 #include "SymbolConfig.hpp"
@@ -945,6 +946,95 @@ static std::string wrap_fix(const std::string& body) {
 
 static int g_quote_seq = 1;
 
+// ══════════════════════════════════════════════════════════════════════════════
+// IMMUTABLE FIX SECTION — DO NOT MODIFY
+// BlackBull cTrader FIX 4.4 message builders.
+// These functions encode the ONLY valid parameter combinations for this broker.
+// Changing any tag value here will break the quote session.
+// See OmegaFIX.hpp header and FIX_BLACKBULL_CONSTRAINTS.md for constraints.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 35=A Logon
+static std::string fix_build_logon(int seq, const char* subID) {
+    std::ostringstream b;
+    b << "35=A\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=" << subID << "\x01" << "57=" << subID << "\x01" << "34=" << seq << "\x01"
+      << "52=" << timestamp() << "\x01" << "98=0\x01" << "108=" << g_cfg.heartbeat << "\x01"
+      << "141=Y\x01" << "553=" << g_cfg.username << "\x01" << "554=" << g_cfg.password << "\x01";
+    return wrap_fix(b.str());
+}
+// 35=5 Logout
+static std::string fix_build_logout(int seq, const char* subID) {
+    std::ostringstream b;
+    b << "35=5\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=" << subID << "\x01" << "57=" << subID << "\x01"
+      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01";
+    return wrap_fix(b.str());
+}
+// 35=V Subscribe — primary symbols. 264=1 IS THE ONLY VALID DEPTH. DO NOT CHANGE.
+static std::string fix_build_md_subscribe(int seq) {
+    std::ostringstream b;
+    b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
+      << "146=" << OMEGA_NSYMS << "\x01";
+    for (int i = 0; i < OMEGA_NSYMS; ++i) b << "55=" << OMEGA_SYMS[i].id << "\x01";
+    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
+    return wrap_fix(b.str());
+}
+// 35=V Subscribe — extended symbols. 264=1 ONLY.
+static std::string fix_build_md_subscribe_ext(int seq) {
+    std::vector<int> ids;
+    { std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+      for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id); }
+    if (ids.empty()) return {};
+    std::ostringstream b;
+    b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "262=OMEGA-MD-EXT-" << seq << "\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
+      << "146=" << ids.size() << "\x01";
+    for (int id : ids) b << "55=" << id << "\x01";
+    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
+    return wrap_fix(b.str());
+}
+// 35=V Unsubscribe — primary
+static std::string fix_build_md_unsub(int seq) {
+    std::ostringstream b;
+    b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "262=OMEGA-MD-001\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+      << "146=" << OMEGA_NSYMS << "\x01";
+    for (int i = 0; i < OMEGA_NSYMS; ++i) b << "55=" << OMEGA_SYMS[i].id << "\x01";
+    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
+    return wrap_fix(b.str());
+}
+// 35=V Unsubscribe — extended
+static std::string fix_build_md_unsub_ext(int seq) {
+    std::vector<int> ids;
+    { std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+      for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id); }
+    if (ids.empty()) return {};
+    std::ostringstream b;
+    b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "262=OMEGA-MD-EXT-UNSUB\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+      << "146=" << ids.size() << "\x01";
+    for (int id : ids) b << "55=" << id << "\x01";
+    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
+    return wrap_fix(b.str());
+}
+// 35=x SecurityListRequest
+static std::string fix_build_security_list_request(int seq, const std::string& req_id) {
+    std::ostringstream b;
+    b << "35=x\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+      << "50=TRADE\x01" << "57=TRADE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
+      << "320=" << req_id << "\x01" << "559=0\x01";
+    return wrap_fix(b.str());
+}
+// ══════════════════════════════════════════════════════════════════════════════
+// END IMMUTABLE FIX SECTION
+// ══════════════════════════════════════════════════════════════════════════════
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Live Order Dispatch — 35=D NewOrderSingle
 // ─────────────────────────────────────────────────────────────────────────────
@@ -985,9 +1075,6 @@ struct LiveOrderRecord {
 static std::mutex g_live_orders_mtx;
 static std::unordered_map<std::string, LiveOrderRecord> g_live_orders;
 static std::atomic<int> g_order_id_counter{1};
-
-// Look up numeric symbol ID from name — defined after OMEGA_SYMS below
-static int symbol_name_to_id(const std::string& name);
 
 static std::string build_new_order_single(int seq, const std::string& clOrdId,
                                           int sym_id, bool is_long,
@@ -1171,180 +1258,6 @@ static void handle_execution_report(const std::string& msg) {
             }
         }
     }
-}
-
-static std::string build_logon(int seq, const char* subID) {
-    std::ostringstream b;
-    b << "35=A\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
-      << "50=" << subID << "\x01" << "57=" << subID << "\x01" << "34=" << seq << "\x01"
-      << "52=" << timestamp() << "\x01" << "98=0\x01" << "108=" << g_cfg.heartbeat << "\x01"
-      << "141=Y\x01" << "553=" << g_cfg.username << "\x01" << "554=" << g_cfg.password << "\x01";
-    return wrap_fix(b.str());
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BlackBull symbol ID map.
-// Primary symbols ship with bootstrap IDs; extended symbols can be learned at runtime from SecurityList.
-// Primary trading: US500.F, USTEC.F, USOIL.F
-// Confirmation:    VIX.F, DX.F, DJ30.F, NAS100, GOLD.F, NGAS.F, ES, DX
-// ─────────────────────────────────────────────────────────────────────────────
-struct SymbolDef { int id; const char* name; };
-static SymbolDef OMEGA_SYMS[] = {
-    // Primary -- traded
-    { 2642, "US500.F"  },   // S&P 500 futures
-    { 2643, "USTEC.F"  },   // Nasdaq futures
-    { 2632, "USOIL.F"  },   // Oil futures
-    // Confirmation -- regime/context only
-    { 4462, "VIX.F"    },
-    { 2638, "DX.F"     },
-    { 2637, "DJ30.F"   },
-    {  110, "NAS100"   },
-    { 2660, "GOLD.F"   },
-    { 2631, "NGAS.F"   },
-    // ES (3225) and DX (3173) removed -- not valid on BlackBull, generated FIX rejects
-};
-static const int OMEGA_NSYMS = 9;
-struct ExtSymbolDef { int id; const char* name; };
-static std::vector<ExtSymbolDef> g_ext_syms = {
-    {0, "GER30"}, {0, "UK100"}, {0, "ESTX50"}, {0, "XAGUSD"}, {0, "EURUSD"}, {0, "UKBRENT"},
-    {0, "GBPUSD"}, {0, "AUDUSD"}, {0, "NZDUSD"}, {0, "USDJPY"}
-};
-
-// Runtime ID->name map built at startup from OMEGA_SYMS
-static std::mutex g_symbol_map_mtx;
-static std::unordered_map<int, std::string> g_id_to_sym;
-
-// Look up numeric symbol ID from name (reverse of g_id_to_sym)
-static int symbol_name_to_id(const std::string& name) {
-    for (int i = 0; i < OMEGA_NSYMS; ++i) {
-        if (name == OMEGA_SYMS[i].name) return OMEGA_SYMS[i].id;
-    }
-    std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
-    for (const auto& e : g_ext_syms) {
-        if (name == e.name && e.id > 0) return e.id;
-    }
-    return 0;
-}
-
-static void build_id_map() {
-    std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
-    g_id_to_sym.clear();
-    for (int i = 0; i < OMEGA_NSYMS; ++i)
-        g_id_to_sym[OMEGA_SYMS[i].id] = OMEGA_SYMS[i].name;
-    for (const auto& e : g_ext_syms) {
-        if (e.id > 0) g_id_to_sym[e.id] = e.name;
-    }
-}
-
-static std::string build_marketdata_req(int seq) {
-    std::ostringstream b;
-    b << "35=V\x01"
-      << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
-      << "50=QUOTE\x01" << "57=QUOTE\x01"
-      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
-      << "146=" << OMEGA_NSYMS << "\x01";
-    for (int i = 0; i < OMEGA_NSYMS; ++i)
-        b << "55=" << OMEGA_SYMS[i].id << "\x01";
-    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
-    return wrap_fix(b.str());
-}
-
-static std::string build_marketdata_req_extended(int seq) {
-    std::vector<int> ids;
-    {
-        std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
-        ids.reserve(g_ext_syms.size());
-        for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
-    }
-    if (ids.empty()) return {};
-
-    std::ostringstream b;
-    b << "35=V\x01"
-      << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
-      << "50=QUOTE\x01" << "57=QUOTE\x01"
-      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-EXT-" << seq << "\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
-      << "146=" << ids.size() << "\x01";
-    for (int id : ids) b << "55=" << id << "\x01";
-    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
-    return wrap_fix(b.str());
-}
-
-// Unsubscribe from market data — send before disconnect to prevent ghost session
-// on the server that causes ALREADY_SUBSCRIBED on the next logon.
-// 263=2 = Disable (unsubscribe), matches the subscribe req IDs.
-static std::string build_marketdata_unsub(int seq) {
-    std::ostringstream b;
-    b << "35=V\x01"
-      << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
-      << "50=QUOTE\x01" << "57=QUOTE\x01"
-      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-001\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
-      << "146=" << OMEGA_NSYMS << "\x01";
-    for (int i = 0; i < OMEGA_NSYMS; ++i)
-        b << "55=" << OMEGA_SYMS[i].id << "\x01";
-    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
-    return wrap_fix(b.str());
-}
-static std::string build_marketdata_unsub_extended(int seq) {
-    std::vector<int> ids;
-    {
-        std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
-        ids.reserve(g_ext_syms.size());
-        for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
-    }
-    if (ids.empty()) return {};
-    std::ostringstream b;
-    b << "35=V\x01"
-      << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
-      << "50=QUOTE\x01" << "57=QUOTE\x01"
-      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-EXT-UNSUB\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
-      << "146=" << ids.size() << "\x01";
-    for (int id : ids) b << "55=" << id << "\x01";
-    b << "267=2\x01" << "269=0\x01" << "269=1\x01";
-    return wrap_fix(b.str());
-}
-
-static std::string build_security_list_request(int seq, const std::string& req_id) {
-    std::ostringstream b;
-    b << "35=x\x01"
-      << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
-      << "50=TRADE\x01" << "57=TRADE\x01"
-      << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "320=" << req_id << "\x01"
-      << "559=0\x01";  // optional 55 omitted => request full list (per cTrader FIX docs, inferred)
-    return wrap_fix(b.str());
-}
-
-static std::vector<std::pair<int, std::string>> parse_security_list_entries(const std::string& msg) {
-    std::vector<std::pair<int, std::string>> out;
-    int current_id = 0;
-
-    size_t pos = 0;
-    while (pos < msg.size()) {
-        const size_t eq = msg.find('=', pos);
-        if (eq == std::string::npos) break;
-        const size_t soh = msg.find('\x01', eq + 1);
-        if (soh == std::string::npos) break;
-
-        const std::string tag = msg.substr(pos, eq - pos);
-        const std::string val = msg.substr(eq + 1, soh - (eq + 1));
-
-        if (tag == "55") {
-            try {
-                current_id = std::stoi(val);
-            } catch (...) {
-                current_id = 0;
-            }
-        } else if (tag == "1007" && current_id > 0 && !val.empty()) {
-            out.emplace_back(current_id, val);
-            current_id = 0;
-        }
-        pos = soh + 1;
-    }
-    return out;
 }
 
 static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std::string>>& entries) {
@@ -3070,11 +2983,11 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         g_quote_ready.store(true);
         g_connected_since.store(nowSec());
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
-        const std::string md = build_marketdata_req(g_quote_seq++);
+        const std::string md = fix_build_md_subscribe(g_quote_seq++);
         SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
         std::cout << "[OMEGA] Subscribed: US500.F USTEC.F USOIL.F + 8 confirmation\n";
         if (g_cfg.enable_extended_symbols) {
-            const std::string ext = build_marketdata_req_extended(g_quote_seq++);
+            const std::string ext = fix_build_md_subscribe_ext(g_quote_seq++);
             if (!ext.empty()) {
                 SSL_write(ssl, ext.c_str(), static_cast<int>(ext.size()));
                 std::cout << "[OMEGA] Subscribed EXT (numeric IDs from config)\n";
@@ -3277,7 +3190,7 @@ static void trade_loop() {
         g_trade_ready.store(false);  // clear before logon — previous session may have left it true
 
         // Send trade logon
-        const std::string logon = build_logon(g_trade_seq++, "TRADE");
+        const std::string logon = fix_build_logon(g_trade_seq++, "TRADE");
         SSL_write(ssl, logon.c_str(), static_cast<int>(logon.size()));
         std::cout << "[OMEGA-TRADE] Logon sent\n";
 
@@ -3350,7 +3263,7 @@ static void trade_loop() {
                     g_trade_ready.store(true);
                     std::cout << "[OMEGA-TRADE] LOGON ACCEPTED\n";
                     const std::string req_id = "omega-sec-" + std::to_string(nowSec());
-                    const std::string sec_req = build_security_list_request(g_trade_seq++, req_id);
+                    const std::string sec_req = fix_build_security_list_request(g_trade_seq++, req_id);
                     SSL_write(ssl, sec_req.c_str(), static_cast<int>(sec_req.size()));
                     std::cout << "[OMEGA-TRADE] SecurityListRequest sent req_id=" << req_id << "\n";
                 } else if (ttype == "8") {
@@ -3426,24 +3339,20 @@ static void quote_loop() {
         // new logon with ALREADY_SUBSCRIBED, causing the 30s timeout loop.
         {
             // Send a throwaway logon just to get a session context for the unsub
-            const std::string ghost_logon = build_logon(g_quote_seq++, "QUOTE");
+            const std::string ghost_logon = fix_build_logon(g_quote_seq++, "QUOTE");
             SSL_write(ssl, ghost_logon.c_str(), static_cast<int>(ghost_logon.size()));
             Sleep(500); // brief wait for server to process logon
 
             // Send unsubscribe for both subscription IDs
-            const std::string unsub = build_marketdata_unsub(g_quote_seq++);
+            const std::string unsub = fix_build_md_unsub(g_quote_seq++);
             SSL_write(ssl, unsub.c_str(), static_cast<int>(unsub.size()));
-            const std::string unsub_ext = build_marketdata_unsub_extended(g_quote_seq++);
+            const std::string unsub_ext = fix_build_md_unsub_ext(g_quote_seq++);
             if (!unsub_ext.empty())
                 SSL_write(ssl, unsub_ext.c_str(), static_cast<int>(unsub_ext.size()));
 
             // Send logout to cleanly close this throwaway session
-            std::ostringstream lo;
-            lo << "35=5\x01"
-               << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
-               << "50=QUOTE\x01" << "57=QUOTE\x01"
-               << "34=" << g_quote_seq++ << "\x01" << "52=" << timestamp() << "\x01";
-            SSL_write(ssl, wrap_fix(lo.str()).c_str(), static_cast<int>(wrap_fix(lo.str()).size()));
+            const std::string lo = fix_build_logout(g_quote_seq++, "QUOTE");
+            SSL_write(ssl, lo.c_str(), static_cast<int>(lo.size()));
             Sleep(500); // wait for server to process logout + unsub
 
             std::cout << "[OMEGA] Ghost session cleanup sent\n";
@@ -3459,7 +3368,7 @@ static void quote_loop() {
         }
         g_quote_seq = 1;
 
-        const std::string logon = build_logon(g_quote_seq++, "QUOTE");
+        const std::string logon = fix_build_logon(g_quote_seq++, "QUOTE");
         SSL_write(ssl, logon.c_str(), static_cast<int>(logon.size()));
         std::cout << "[OMEGA] Logon sent\n";
 
@@ -3523,7 +3432,7 @@ static void quote_loop() {
 
             if (g_quote_ready.load() && g_cfg.enable_extended_symbols &&
                 g_ext_md_refresh_needed.exchange(false)) {
-                const std::string ext = build_marketdata_req_extended(g_quote_seq++);
+                const std::string ext = fix_build_md_subscribe_ext(g_quote_seq++);
                 if (!ext.empty()) {
                     SSL_write(ssl, ext.c_str(), static_cast<int>(ext.size()));
                     std::cout << "[OMEGA] Refreshed EXT subscription from SecurityList\n";
@@ -3551,9 +3460,9 @@ static void quote_loop() {
         // Unsubscribe before closing — prevents ghost session on server that causes
         // ALREADY_SUBSCRIBED on next logon attempt and delays the logon ACK.
         if (g_quote_ready.load()) {
-            const std::string unsub = build_marketdata_unsub(g_quote_seq++);
+            const std::string unsub = fix_build_md_unsub(g_quote_seq++);
             SSL_write(ssl, unsub.c_str(), static_cast<int>(unsub.size()));
-            const std::string unsub_ext = build_marketdata_unsub_extended(g_quote_seq++);
+            const std::string unsub_ext = fix_build_md_unsub_ext(g_quote_seq++);
             if (!unsub_ext.empty())
                 SSL_write(ssl, unsub_ext.c_str(), static_cast<int>(unsub_ext.size()));
             Sleep(200); // brief wait for server to process unsub before TCP close
