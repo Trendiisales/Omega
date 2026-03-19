@@ -2278,6 +2278,25 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
         g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
     g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
+
+    // Fix 5: update ACCOUNT_EQUITY on all engines after every close so
+    // edge-based sizing reflects current daily P&L (shrinks on loss, grows on win).
+    {
+        const double updated_equity = g_cfg.account_equity + g_omegaLedger.dailyPnl();
+        const double eq = std::max(updated_equity, 100.0); // floor at $100
+        g_eng_sp.ACCOUNT_EQUITY     = eq;
+        g_eng_nq.ACCOUNT_EQUITY     = eq;
+        g_eng_cl.ACCOUNT_EQUITY     = eq;
+        g_eng_us30.ACCOUNT_EQUITY   = eq;
+        g_eng_nas100.ACCOUNT_EQUITY = eq;
+        g_eng_ger30.ACCOUNT_EQUITY  = eq;
+        g_eng_uk100.ACCOUNT_EQUITY  = eq;
+        g_eng_estx50.ACCOUNT_EQUITY = eq;
+        g_eng_xag.ACCOUNT_EQUITY    = eq;
+        g_eng_eurusd.ACCOUNT_EQUITY = eq;
+        g_eng_gbpusd.ACCOUNT_EQUITY = eq;
+        g_eng_brent.ACCOUNT_EQUITY  = eq;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2510,6 +2529,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // Helper lambda -- always feeds ticks to engine (warmup + position management).
     // can_enter=false gates new entries only; TP/SL/timeout always run.
+    // Ranking: when a signal fires, score it against the ranking threshold.
+    // Low-score signals are suppressed even if the edge model passed.
+    static omega::RankingConfig g_ranking_cfg;  // default weights, configurable
     auto dispatch = [&](auto& eng, bool can_enter_for_symbol) {
         const auto sig = eng.update(bid, ask, rtt_check, regime.c_str(), on_close, can_enter_for_symbol);
         g_telemetry.UpdateEngineState(sym.c_str(),
@@ -2518,19 +2540,35 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sig.valid) {
             g_telemetry.UpdateLastSignal(sym.c_str(),
                 sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
-            // Risk-based sizing: compute lot size from SL distance + current spread.
-            // sl_abs = entry × SL_PCT / 100 (SL distance in price points).
-            // Falls back to eng.ENTRY_SIZE when risk_per_trade_usd=0 (disabled).
             const double sl_abs     = sig.entry * eng.SL_PCT / 100.0;
             const double spread_abs = ask - bid;
             const double lot_size   = compute_size(sym, sl_abs, spread_abs, eng.ENTRY_SIZE);
-            eng.ENTRY_SIZE = lot_size;  // update so TradeRecord.size reflects actual size
+            eng.ENTRY_SIZE = lot_size;
+
+            // Ranking gate: build candidate from the signal's edge components
+            // and score it. Block if below min_score_threshold.
+            omega::TradeCandidate cand = omega::build_candidate(
+                omega::EdgeResult{
+                    sig.net_edge > 0 ? sig.net_edge : 0.0,  // expected_move proxy
+                    0.0, sig.net_edge,                        // total_cost, net_edge
+                    sig.tp, sig.sl, static_cast<double>(lot_size),
+                    sig.breakout_strength, sig.momentum_score, sig.vol_score,
+                    true
+                },
+                sig.is_long, sig.entry, sym.c_str());
+            cand.score = omega::compute_trade_score(cand, g_ranking_cfg);
+            if (cand.score < g_ranking_cfg.min_score_threshold) {
+                std::cout << "[ENG-" << sym << "] RANKED OUT score=" << cand.score
+                          << " min=" << g_ranking_cfg.min_score_threshold << "\n";
+                std::cout.flush();
+                return;
+            }
+
             std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
                       << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
                       << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
-                      << " size=" << lot_size
+                      << " size=" << lot_size << " score=" << cand.score
                       << " regime=" << regime << "\033[0m\n";
-            // ── Live order dispatch (no-op in SHADOW mode) ──────────────────
             send_live_order(sym, sig.is_long, lot_size, sig.entry);
         }
     };

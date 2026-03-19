@@ -20,12 +20,17 @@ enum class Phase : uint8_t { FLAT = 0, COMPRESSION = 1, BREAKOUT_WATCH = 2, IN_T
 
 struct BreakoutSignal
 {
-    bool        valid   = false;
-    bool        is_long = true;
-    double      entry   = 0.0;
-    double      tp      = 0.0;
-    double      sl      = 0.0;
-    const char* reason  = "";
+    bool        valid            = false;
+    bool        is_long          = true;
+    double      entry            = 0.0;
+    double      tp               = 0.0;
+    double      sl               = 0.0;
+    const char* reason           = "";
+    // Edge model outputs — available for ranking
+    double      net_edge         = 0.0;
+    double      breakout_strength= 0.0;
+    double      momentum_score   = 0.0;
+    double      vol_score        = 0.0;
 };
 
 struct OpenPos
@@ -51,22 +56,25 @@ struct OpenPos
 struct EdgeConfig {
     double k_impulse      = 2.2;   // breakout_strength multiplier
     double k_vol          = 1.5;   // vol expansion multiplier
-    double k_compression  = 1.2;   // compression quality multiplier
     double k_momentum     = 1.8;   // momentum score multiplier
     double slippage_mult  = 1.5;   // slippage as multiple of spread
-    double safety_mult    = 1.2;   // required = total_cost * (1 + safety_mult)
+    double safety_mult    = 0.3;   // required = total_cost * (1 + safety_mult)  [was 1.2 → ~×2.2, now 0.3 → ×1.3]
     double exhaustion_mult= 1.5;   // block if move > comp_range * exhaustion_mult
+    double min_breakout_k = 0.15;  // block if move < comp_range * min_breakout_k
     double min_edge_buffer= 0.00001;
 };
 
 struct EdgeResult {
-    double expected_move = 0.0;
-    double total_cost    = 0.0;
-    double net_edge      = 0.0;
-    double tp_price      = 0.0;
-    double sl_price      = 0.0;
-    double size          = 0.0;
-    bool   valid         = false;
+    double expected_move    = 0.0;
+    double total_cost       = 0.0;
+    double net_edge         = 0.0;
+    double tp_price         = 0.0;
+    double sl_price         = 0.0;
+    double size             = 0.0;
+    double breakout_strength= 0.0;
+    double momentum_score   = 0.0;
+    double vol_score        = 0.0;
+    bool   valid            = false;
 };
 
 inline EdgeResult compute_edge_and_execution(
@@ -82,50 +90,156 @@ inline EdgeResult compute_edge_and_execution(
     const double comp_range = comp_high - comp_low;
     if (mid <= 0.0 || comp_range <= 0.0) return r;
 
-    // Normalised features
-    const double breakout_strength   = breakout_move / comp_range;
-    const double compression_quality = 1.0 / (1.0 + comp_range);
-    const double momentum_score      = std::fabs(momentum);
+    // ── Min breakout guard: reject tiny breaks just above range ──────────────
+    // Fix 6: block weak fakes — move must be >= comp_range * min_breakout_k
+    if (breakout_move < comp_range * cfg.min_breakout_k) return r;
 
-    // Signal strength — weighted sum of independent indicators
+    // ── Exhaustion filter ─────────────────────────────────────────────────────
+    if (breakout_move > comp_range * cfg.exhaustion_mult) return r;
+
+    // ── Normalised features ───────────────────────────────────────────────────
+    const double breakout_strength = breakout_move / comp_range;
+
+    // Fix 2: normalize compression_quality to price-relative scale
+    // comp_range/mid gives % of price — consistent across Gold, FX, indices
+    // Invert: tighter compression (smaller %) → higher quality
+    const double comp_pct         = (comp_range / mid);  // normalised range as fraction
+    const double compression_quality = (comp_pct > 0.0) ? (1.0 / (1.0 + comp_pct * 100.0)) : 0.0;
+
+    const double momentum_score   = std::fabs(momentum);
+    const double vol_score        = recent_vol;
+
+    // Fix 3: multiplicative signal — all factors must be present (alignment required)
+    // Additive lets high-vol + zero-momentum pass; multiplicative requires both.
     const double signal_strength =
-          breakout_strength   * cfg.k_impulse
-        + recent_vol          * cfg.k_vol
-        + compression_quality * cfg.k_compression
-        + momentum_score      * cfg.k_momentum;
+        breakout_strength *
+        (1.0 + vol_score) *
+        (1.0 + momentum_score) *
+        (1.0 + compression_quality);
 
     const double expected_move = signal_strength * comp_range;
 
-    // Full cost model: spread in + spread out + slippage
+    // ── Full cost model ───────────────────────────────────────────────────────
     const double spread_cost   = spread;
     const double slippage_cost = spread * cfg.slippage_mult;
     const double total_cost    = (spread_cost * 2.0) + slippage_cost;
+    // Fix 1: safety_mult=0.3 → required = total_cost * 1.3 (was 2.2 — far too strict)
     const double required      = total_cost * (1.0 + cfg.safety_mult);
 
-    // Exhaustion filter: block if move already exceeds comp_range * k
-    if (breakout_move > comp_range * cfg.exhaustion_mult) return r;
-
-    // Edge check
+    // ── Edge check ────────────────────────────────────────────────────────────
     const double net_edge = expected_move - required;
     if (net_edge <= cfg.min_edge_buffer) return r;
 
-    // Adaptive TP/SL based on expected move
-    const double tp_dist = expected_move * 0.7;
-    const double sl_dist = expected_move * 0.5;
+    // ── Adaptive TP/SL with clamps ────────────────────────────────────────────
+    // Fix 4: clamp TP to avoid overreach when model overestimates;
+    //        clamp SL floor to cover spread so we're not stopped out by noise
+    const double tp_raw  = expected_move * 0.7;
+    const double sl_raw  = expected_move * 0.5;
+    const double tp_dist = std::min(tp_raw, comp_range * 1.2);   // cap at 1.2× comp range
+    const double sl_dist = std::max(sl_raw, spread * 3.0);        // floor at 3× spread
     r.tp_price = is_long ? mid + tp_dist : mid - tp_dist;
     r.sl_price = is_long ? mid - sl_dist : mid + sl_dist;
 
-    // Edge-based position sizing: risk 0.2% of equity per trade
-    const double risk_per_trade = account_equity * 0.002;
+    // ── Edge-based position sizing ────────────────────────────────────────────
+    const double risk_per_trade = account_equity * 0.002;  // 0.2% risk per trade
     r.size = (sl_dist > 0.0) ? (risk_per_trade / sl_dist) : 0.01;
     if (r.size < 0.01) r.size = 0.01;
     if (r.size > 5.0)  r.size = 5.0;
 
-    r.expected_move = expected_move;
-    r.total_cost    = required;
-    r.net_edge      = net_edge;
-    r.valid         = true;
+    r.expected_move     = expected_move;
+    r.total_cost        = required;
+    r.net_edge          = net_edge;
+    r.breakout_strength = breakout_strength;
+    r.momentum_score    = momentum_score;
+    r.vol_score         = vol_score;
+    r.valid             = true;
     return r;
+}
+
+// ==============================================================================
+// Trade ranking + selection — scores and filters candidates, picks best setup
+// ==============================================================================
+
+struct RankingConfig {
+    int    max_trades_per_cycle  = 1;
+    double min_score_threshold   = 0.2;
+    double score_edge_weight     = 0.5;
+    double score_momentum_weight = 0.2;
+    double score_vol_weight      = 0.2;
+    double score_breakout_weight = 0.1;
+};
+
+struct TradeCandidate {
+    bool        valid            = false;
+    bool        is_long          = true;
+    double      entry            = 0.0;
+    double      tp               = 0.0;
+    double      sl               = 0.0;
+    double      size             = 0.0;
+    double      expected_move    = 0.0;
+    double      cost             = 0.0;
+    double      net_edge         = 0.0;
+    double      breakout_strength= 0.0;
+    double      momentum         = 0.0;
+    double      vol              = 0.0;
+    double      score            = 0.0;
+    const char* symbol           = "";
+};
+
+inline TradeCandidate build_candidate(
+    const EdgeResult& e, bool is_long, double entry, const char* sym) noexcept
+{
+    TradeCandidate t{};
+    if (!e.valid) return t;
+    t.valid             = true;
+    t.is_long           = is_long;
+    t.entry             = entry;
+    t.tp                = e.tp_price;
+    t.sl                = e.sl_price;
+    t.size              = e.size;
+    t.expected_move     = e.expected_move;
+    t.cost              = e.total_cost;
+    t.net_edge          = e.net_edge;
+    t.breakout_strength = e.breakout_strength;
+    t.momentum          = e.momentum_score;
+    t.vol               = e.vol_score;
+    t.symbol            = sym ? sym : "";
+    return t;
+}
+
+inline double compute_trade_score(
+    const TradeCandidate& t, const RankingConfig& cfg) noexcept
+{
+    if (!t.valid) return -1.0;
+    return  (t.net_edge          * cfg.score_edge_weight)
+          + (std::fabs(t.momentum)* cfg.score_momentum_weight)
+          + (t.vol                * cfg.score_vol_weight)
+          + (t.breakout_strength  * cfg.score_breakout_weight);
+}
+
+inline std::vector<TradeCandidate> select_best_trades(
+    std::vector<TradeCandidate>& candidates,
+    const RankingConfig& cfg) noexcept
+{
+    for (auto& t : candidates)
+        t.score = compute_trade_score(t, cfg);
+
+    candidates.erase(
+        std::remove_if(candidates.begin(), candidates.end(),
+            [&](const TradeCandidate& t) {
+                return !t.valid || t.score < cfg.min_score_threshold;
+            }),
+        candidates.end());
+
+    std::sort(candidates.begin(), candidates.end(),
+        [](const TradeCandidate& a, const TradeCandidate& b) {
+            return a.score > b.score;
+        });
+
+    if (static_cast<int>(candidates.size()) > cfg.max_trades_per_cycle)
+        candidates.resize(cfg.max_trades_per_cycle);
+
+    return candidates;
 }
 
 // ==============================================================================
@@ -561,6 +675,7 @@ public:
                       << " expected=" << edge.expected_move
                       << " cost=" << edge.total_cost
                       << " net=" << edge.net_edge
+                      << " bs=" << edge.breakout_strength
                       << " tp=" << edge.tp_price
                       << " sl=" << edge.sl_price
                       << " size=" << edge.size << "\n";
@@ -586,12 +701,16 @@ public:
             phase = Phase::FLAT;
 
             BreakoutSignal sig;
-            sig.valid   = true;
-            sig.is_long = is_long;
-            sig.entry   = mid;
-            sig.tp      = tp;
-            sig.sl      = sl;
-            sig.reason  = is_long ? "COMP_BREAK_LONG" : "COMP_BREAK_SHORT";
+            sig.valid            = true;
+            sig.is_long          = is_long;
+            sig.entry            = mid;
+            sig.tp               = edge.tp_price;
+            sig.sl               = edge.sl_price;
+            sig.reason           = is_long ? "COMP_BREAK_LONG" : "COMP_BREAK_SHORT";
+            sig.net_edge         = edge.net_edge;
+            sig.breakout_strength= edge.breakout_strength;
+            sig.momentum_score   = edge.momentum_score;
+            sig.vol_score        = edge.vol_score;
 
             static_cast<Derived*>(this)->onSignal(sig);
             return sig;
