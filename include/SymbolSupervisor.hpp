@@ -94,23 +94,45 @@ public:
         if (mid <= 0.0) return last_;
 
         // Fix 6: cooldown check — block everything during penalty period
+        // Early exit allowed if signal is very strong (top_score > 0.45) — market
+        // may have become genuinely good during cooldown window
         const int64_t now_ms = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         if (now_ms < m_cooldown_until_ms) {
-            SupervisorDecision b{};
-            b.regime        = Regime::HIGH_RISK_NO_TRADE;
-            b.confidence    = 1.0;
-            b.winner        = "NONE";
-            b.reason        = "symbol_in_cooldown";
-            b.in_cooldown   = true;
-            if (b.regime != last_.regime || b.in_cooldown != last_.in_cooldown) {
-                std::cout << "[SUPERVISOR-" << symbol << "] IN_COOLDOWN until +"
-                          << (m_cooldown_until_ms - now_ms) / 1000 << "s\n";
-                std::cout.flush();
+            // Peek at scores to check for early-exit condition.
+            // We cannot use the scores computed later (not yet computed here),
+            // so use a fast proxy: if vol is clearly expanding + momentum strong,
+            // break cooldown early. This avoids missing the best entry.
+            const double fast_vol_ratio = (base_vol_pct > 0.0)
+                                          ? (recent_vol_pct / base_vol_pct) : 1.0;
+            const double fast_dir       = std::fabs(momentum_pct)
+                                          / (cfg.momentum_trend_thresh * 2.0 + 0.001);
+            const double fast_edge      = std::min(0.15, net_edge_pct * 8.0);
+            const double fast_score     = std::min(1.0,
+                fast_vol_ratio * 0.4 + fast_dir * 0.4 + fast_edge * 5.0);
+            const bool early_exit = (fast_score > 0.45);
+            if (!early_exit) {
+                SupervisorDecision b{};
+                b.regime        = Regime::HIGH_RISK_NO_TRADE;
+                b.confidence    = 1.0;
+                b.winner        = "NONE";
+                b.reason        = "symbol_in_cooldown";
+                b.in_cooldown   = true;
+                if (b.regime != last_.regime || b.in_cooldown != last_.in_cooldown) {
+                    std::cout << "[SUPERVISOR-" << symbol << "] IN_COOLDOWN until +"
+                              << (m_cooldown_until_ms - now_ms) / 1000 << "s\n";
+                    std::cout.flush();
+                }
+                last_ = b;
+                return b;
             }
-            last_ = b;
-            return b;
+            // Strong signal — break cooldown early
+            m_cooldown_until_ms = 0;
+            m_consecutive_blocks = 0;
+            std::cout << "[SUPERVISOR-" << symbol << "] COOLDOWN EARLY EXIT"
+                      << " fast_score=" << fast_score << "\n";
+            std::cout.flush();
         }
 
         const double spread_pct = spread / mid * 100.0;
@@ -137,8 +159,9 @@ public:
             static_cast<double>(false_break_count)
             / static_cast<double>(cfg.max_false_breaks + 1));
 
-        // Fix 4: edge quality boost — real edge from model raises breakout score
-        const double edge_boost = std::min(0.20, std::max(0.0, net_edge_pct * 10.0));
+        // Fix 4: edge quality boost — capped lower (0.15) and scaled conservatively (×8)
+        // to prevent weak structure + high edge dominating the score
+        const double edge_boost = std::min(0.15, std::max(0.0, net_edge_pct * 8.0));
 
         // ── Regime classification ──────────────────────────────────────────────
         Regime      regime     = Regime::UNKNOWN;
@@ -278,17 +301,20 @@ public:
                 d.winner = "NONE";
         }
 
-        // Log on change
+        // Log on change — includes top_score and threshold for tuning visibility
         if (d.regime != last_.regime || d.winner != last_.winner
                 || d.in_cooldown != last_.in_cooldown) {
             std::cout << "[SUPERVISOR-" << symbol << "]"
-                      << " regime="   << regime_name(d.regime)
-                      << " conf="     << std::fixed << std::setprecision(2) << d.confidence
-                      << " bracket="  << d.bracket_score
-                      << " breakout=" << d.breakout_score
-                      << " winner="   << d.winner
-                      << " allow="    << (d.allow_bracket || d.allow_breakout ? 1 : 0)
-                      << " reason="   << d.reason << "\n";
+                      << " regime="    << regime_name(d.regime)
+                      << " conf="      << std::fixed << std::setprecision(2) << d.confidence
+                      << " bracket="   << d.bracket_score
+                      << " breakout="  << d.breakout_score
+                      << " top_score=" << top_score
+                      << " threshold=" << cfg.min_winner_score
+                      << " winner="    << d.winner
+                      << " allow="     << (d.allow_bracket || d.allow_breakout ? 1 : 0)
+                      << " cooldown="  << d.in_cooldown
+                      << " reason="    << d.reason << "\n";
             std::cout.flush();
         }
 
