@@ -204,11 +204,12 @@ inline std::vector<TradeCandidate> select_best_trades(
     for (auto& t : candidates)
         t.score = compute_trade_score(t, cfg);
 
+    // Remove only invalid candidates — do NOT gate on min_score_threshold.
+    // Ranking selects the best when multiple signals compete; it must never
+    // block a single valid signal that already passed the edge model.
     candidates.erase(
         std::remove_if(candidates.begin(), candidates.end(),
-            [&](const TradeCandidate& t) {
-                return !t.valid || t.score < cfg.min_score_threshold;
-            }),
+            [](const TradeCandidate& t) { return !t.valid; }),
         candidates.end());
 
     std::sort(candidates.begin(), candidates.end(),
@@ -735,9 +736,22 @@ public:
 
             const int64_t now = nowSec(); // used by entry block below
 
-            // ── GATE 5: Edge model ────────────────────────────────────────────
-            // Primary quality gate. Prices breakout move vs spread+slippage cost.
-            // Incorporates vol expansion, compression quality, and momentum.
+            // ── GATE 5: Confirmation move ─────────────────────────────────────
+            // Require price to clear the level by comp_range*0.25 before firing.
+            // Trigger fires at comp_high + spread*0.5 (tolerance). Without this
+            // gate we enter on the first tick of breakout before any follow-through,
+            // which gets stopped out immediately on the next tick.
+            // confirm = range*0.25 ensures real expansion has started.
+            {
+                const double comp_range_now = comp_high - comp_low;
+                const double confirm        = comp_range_now * 0.25;
+                const double clearance      = is_long ? (mid - comp_high) : (comp_low - mid);
+                if (clearance < confirm) {
+                    return {};  // wait — stay ARMED, don't reset
+                }
+            }
+
+            // ── GATE 6: Edge model ────────────────────────────────────────────
             const double breakout_move = is_long
                 ? (mid - comp_high) : (comp_low - mid);
             double momentum_pct = 0.0;
