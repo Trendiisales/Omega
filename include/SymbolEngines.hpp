@@ -105,6 +105,7 @@ public:
         MAX_SPREAD_PCT        = 0.04;
         MOMENTUM_THRESH_PCT   = 0.006;
         MIN_BREAKOUT_PCT      = 0.03;
+        WATCH_TIMEOUT_SEC     = 420;  // 7 min — SP ticks steadily, watch longer
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -155,6 +156,7 @@ public:
         MAX_SPREAD_PCT        = 0.05;
         MOMENTUM_THRESH_PCT   = 0.005;
         MIN_BREAKOUT_PCT      = 0.04;
+        WATCH_TIMEOUT_SEC     = 300;  // 5 min
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -205,6 +207,7 @@ public:
         MAX_SPREAD_PCT        = 0.120;
         MOMENTUM_THRESH_PCT   = 0.050;
         MIN_BREAKOUT_PCT      = 0.06;
+        WATCH_TIMEOUT_SEC     = 300;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -264,6 +267,7 @@ public:
         MAX_SPREAD_PCT        = 0.05;
         MOMENTUM_THRESH_PCT   = 0.006;
         MIN_BREAKOUT_PCT      = 0.04;
+        WATCH_TIMEOUT_SEC     = 480;  // 8 min — DJ30 slower mover
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -302,6 +306,7 @@ public:
         MAX_SPREAD_PCT        = 0.06;
         MOMENTUM_THRESH_PCT   = 0.005;
         MIN_BREAKOUT_PCT      = 0.04;
+        WATCH_TIMEOUT_SEC     = 300;  // 5 min
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,

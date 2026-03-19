@@ -284,19 +284,22 @@ public:
     double      MIN_BREAKOUT_PCT      = 0.25;
     double      MIN_EDGE_PCT          = 0.0;
     double      SLIPPAGE_EST_PCT      = 0.0;
-    double      MIN_COMP_RANGE        = 0.0;   // minimum compression range in price pts (0=disabled)
-    double      ACCOUNT_EQUITY        = 10000.0; // set from main.cpp — used for edge-based sizing
-    EdgeConfig  EDGE_CFG;                         // edge model params — uses defaults
+    double      MIN_COMP_RANGE        = 0.0;
+    double      ACCOUNT_EQUITY        = 10000.0;
+    EdgeConfig  EDGE_CFG;
     int         MAX_TRADES_PER_MIN    = 2;
     double      ENTRY_SIZE            = 0.01;
     bool        AGGRESSIVE_SHADOW     = false;
     const char* symbol                = "???";
+    // Fix 1: time-based watch timeout (seconds) replaces tick-count watch_ticks.
+    // Per-symbol tuning via symbols.ini. Indices default 300s, FX 180s.
+    int         WATCH_TIMEOUT_SEC     = 300;
 
     // ── Observable state (read by telemetry thread) ───────────────────────────
     Phase   phase          = Phase::FLAT;
     double  comp_high      = 0.0;
     double  comp_low       = 0.0;
-    int     watch_ticks    = 0;
+    int     watch_ticks    = 0;   // kept for GUI telemetry display only
     double  recent_vol_pct = 0.0;
     double  base_vol_pct   = 0.0;
     int     signal_count   = 0;
@@ -321,6 +324,9 @@ private:
     // Breakout with 2+ ticks in direction = real order flow, not a spike.
     int    m_tick_run  = 0;
     double m_last_mid  = 0.0;
+
+    // ── Watch phase timing ────────────────────────────────────────────────────
+    int64_t m_watch_start_ts = 0;  // unix seconds when BREAKOUT_WATCH started
 
 public:
 
@@ -564,29 +570,49 @@ public:
             }
             phase               = Phase::BREAKOUT_WATCH;
             m_compression_ticks = 0;
-            watch_ticks = 80;
-            std::cout << "[ENG-" << symbol << "] BREAKOUT_WATCH started"
-                      << " hi=" << comp_high << " lo=" << comp_low << "\n";
+            m_watch_start_ts    = nowSec();
+            watch_ticks         = 0;  // not used for timeout, kept for telemetry
+            std::cout << "[ENG-" << symbol << "] BREAKOUT_WATCH started (ARMED)"
+                      << " hi=" << comp_high << " lo=" << comp_low
+                      << " timeout=" << WATCH_TIMEOUT_SEC << "s\n";
             std::cout.flush();
             // Fall through to BREAKOUT_WATCH check on this same tick
         }
 
-        // ── BREAKOUT_WATCH phase: wait for price to exit the frozen range ─────
+        // ── BREAKOUT_WATCH phase: ARMED — wait indefinitely for price to exit ─
+        // Fix 1: time-based timeout (not tick-count). Tick rate is non-deterministic.
+        // Fix 2: on timeout, stay ARMED with same range — do NOT reset to FLAT.
+        //        Compression structure is still valid after the initial watch period.
+        //        Only reset if vol has fully normalized (structure genuinely gone).
         if (phase == Phase::BREAKOUT_WATCH) {
-            // Buffer = 0.5x spread (tight — just needs to clear the range edge)
             const double min_exit    = spread * 0.5;
             const bool   long_break  = (mid > comp_high + min_exit);
             const bool   short_break = (mid < comp_low  - min_exit);
 
             if (!long_break && !short_break) {
-                watch_ticks--;
-                if (watch_ticks <= 0) {
-                    std::cout << "[ENG-" << symbol << "] BREAKOUT_WATCH expired (no exit), resetting"
-                              << " mid=" << mid << " hi=" << comp_high << " lo=" << comp_low << "\n";
-                    std::cout.flush();
-                    phase = Phase::FLAT;
+                const int64_t elapsed = nowSec() - m_watch_start_ts;
+                if (elapsed > WATCH_TIMEOUT_SEC) {
+                    // Check if compression structure still holds.
+                    // If vol has fully expanded back to baseline, range is stale — reset.
+                    // If vol still compressed or moderate, stay ARMED with same range.
+                    const bool structure_gone = (base_vol_pct > 0.0) &&
+                                                (recent_vol_pct > base_vol_pct * 0.95);
+                    if (structure_gone) {
+                        std::cout << "[ENG-" << symbol << "] WATCH timeout — structure gone"
+                                  << " rv=" << recent_vol_pct << "% bv=" << base_vol_pct
+                                  << "% elapsed=" << elapsed << "s, resetting\n";
+                        std::cout.flush();
+                        phase = Phase::FLAT;
+                    } else {
+                        // Stay ARMED — extend watch window, keep same comp_high/comp_low
+                        m_watch_start_ts = nowSec();
+                        std::cout << "[ENG-" << symbol << "] WATCH extended — structure intact"
+                                  << " hi=" << comp_high << " lo=" << comp_low
+                                  << " rv=" << recent_vol_pct << "% bv=" << base_vol_pct << "%\n";
+                        std::cout.flush();
+                    }
                 }
-                return {};  // still watching
+                return {};
             }
 
             // Price has exited the compression range — confirmed breakout
