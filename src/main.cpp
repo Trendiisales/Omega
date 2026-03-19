@@ -2759,6 +2759,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double gold_sl_abs  = gsig.sl_ticks * 0.10;
                 const double gold_spread  = ask - bid;
                 const double gold_lot     = compute_size("GOLD.F", gold_sl_abs, gold_spread, gsig.size > 0.0 ? gsig.size : 0.02);
+                g_gold_stack.patch_position_size(gold_lot);  // fix: update base leg size so PnL/ledger uses risk-adjusted lot not sub-engine default
                 std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
                           << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
                           << " entry=" << gsig.entry

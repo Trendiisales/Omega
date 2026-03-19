@@ -863,6 +863,14 @@ class GoldPositionManager {
     void emit_close(const GoldPos& leg, double exit_px, const char* why,
                     double latency_ms, const char* regime,
                     std::function<void(const omega::TradeRecord&)>& on_close) {
+        // Safety guard: exit_px should never be zero or negative for GOLD.F.
+        // If it is, fall back to entry price (flat trade) and log the anomaly.
+        if (exit_px <= 0.0) {
+            printf("[GOLD-STACK-WARN] emit_close called with exit_px=%.4f why=%s entry=%.4f — clamping to entry\n",
+                   exit_px, why ? why : "?", leg.entry);
+            fflush(stdout);
+            exit_px = leg.entry;
+        }
         omega::TradeRecord tr;
         tr.id          = trade_id_++;
         tr.symbol      = "GOLD.F";
@@ -993,6 +1001,16 @@ public:
     bool active() const { return !legs_.empty(); }
     size_t leg_count() const { return legs_.size(); }
 
+    // Patch the base leg size after compute_size() runs in main.cpp.
+    // on_tick() opens the position with the sub-engine default size (e.g. 0.01).
+    // main.cpp then computes the correct risk-adjusted lot and calls this to
+    // update the base leg so PnL, slippage, and the ledger all use the right size.
+    // Only patches index 0 (base leg) — pyramid legs inherit base size on add.
+    void patch_base_size(double lot) {
+        if (legs_.empty() || lot <= 0.0) return;
+        legs_[0].size = lot;
+    }
+
     // Apply config-driven parameters from GoldStackCfg.
     void set_cfg(int max_hold_sec,
                  double lock_arm_move, double lock_gain,
@@ -1016,13 +1034,21 @@ public:
               double latency_ms, const char* regime) {
         if (!legs_.empty()) return;  // signal-based base entry only when flat
         const double sl_ticks = std::max(4.0, std::min(MAX_BASE_SL_TICKS, sig.sl_ticks));
+        // Guard: tp_ticks=0 means leg.tp = entry, TP fires instantly at entry price.
+        // Fall back to a minimal TP (2× SL) so the position isn't immediately closed flat.
+        const double tp_ticks = (sig.tp_ticks > 0.0) ? sig.tp_ticks : sl_ticks * 2.0;
+        if (sig.tp_ticks <= 0.0) {
+            printf("[GOLD-STACK-WARN] open() called with tp_ticks=0 engine=%s — using fallback tp_ticks=%.0f\n",
+                   sig.engine, sl_ticks * 2.0);
+            fflush(stdout);
+        }
         GoldPos leg;
         leg.active   = true;
         leg.is_long  = sig.is_long;
         leg.entry    = sig.entry;
         leg.tp       = sig.is_long
-                        ? sig.entry + sig.tp_ticks * TICK_SIZE
-                        : sig.entry - sig.tp_ticks * TICK_SIZE;
+                        ? sig.entry + tp_ticks * TICK_SIZE
+                        : sig.entry - tp_ticks * TICK_SIZE;
         leg.sl       = sig.is_long
                         ? sig.entry - sl_ticks * TICK_SIZE
                         : sig.entry + sl_ticks * TICK_SIZE;
@@ -1354,6 +1380,11 @@ public:
     void set_has_open_position(bool v) { (void)v; }
 
     bool has_open_position() const { return pos_mgr_.active(); }
+
+    // Call immediately after on_tick() returns a valid signal to apply the
+    // risk-adjusted lot size from compute_size(). Without this, the ledger
+    // records PnL on the sub-engine default (0.01 lots) not the actual size.
+    void patch_position_size(double lot) { pos_mgr_.patch_base_size(lot); }
     const char* regime_name() const { return RegimeGovernor::name(current_regime_); }
     double vwap()      const { return features_.get_vwap(); }
     double vol_range() const { return vol_filter_.current_range(); }
