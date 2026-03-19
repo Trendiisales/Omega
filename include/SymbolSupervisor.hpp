@@ -316,21 +316,17 @@ public:
         // ── Permission decision ───────────────────────────────────────────────
         // CHOP always blocks immediately — genuine structure failure, not noise.
         //
-        // HIGH_RISK handling uses a two-tier approach:
-        //   candidate_stable=false: HIGH_RISK blocks immediately (regime not yet
-        //     confirmed — single noisy tick should not allow entry).
-        //   candidate_stable=true:  HIGH_RISK is treated as noise and absorbed.
-        //     The candidate has held REGIME_HOLD_TICKS of a tradeable regime.
-        //     A single HIGH_RISK tick between two EXPANSION ticks is classifier
-        //     noise — absorbing it is the purpose of the hysteresis system.
-        //     We use stable_regime (EXPANSION_BREAKOUT) for the block check.
+        // HIGH_RISK uses symmetric hysteresis:
+        //   Promotion:  tradeable regime must hold REGIME_HOLD_TICKS before allow=1
+        //   Revocation: HIGH_RISK must hold HIGH_RISK_REVOKE_TICKS before allow=0
+        //               on a previously stable candidate.
         //
-        // This fixes the flip-flop seen in live logs:
-        //   allow=1 (valid_signal) -> COMPRESSION entered
-        //   allow=0 (high_risk, next tick) -> COMPRESSION aborted
-        //   allow=1 (valid_signal, tick after) -> COMPRESSION entered again
-        // That cycle repeated indefinitely because every HIGH_RISK tick was a
-        // hard block even when candidate_stable=true.
+        // This prevents the flip-flop (single HIGH_RISK tick aborting compression)
+        // while still revoking on genuine sustained HIGH_RISK conditions.
+        //
+        // If candidate is not yet stable: HIGH_RISK blocks immediately (strict).
+        // If candidate is stable: require HIGH_RISK_REVOKE_TICKS consecutive
+        //   HIGH_RISK ticks before revoking the stable candidate.
         SupervisorDecision d{};
         d.regime         = stable_regime;
         d.confidence     = confidence;
@@ -340,14 +336,20 @@ public:
 
         const double top_score = std::max(stable_bracket, stable_breakout);
 
+        // Update HIGH_RISK revocation counter
+        if (regime == Regime::HIGH_RISK_NO_TRADE && candidate_stable) {
+            ++m_high_risk_ticks;
+        } else {
+            m_high_risk_ticks = 0;
+        }
+
         const bool chop      = (regime == Regime::CHOP_REVERSAL);
-        // When candidate is stable, use stable_regime for high_risk check so that
-        // a single noisy HIGH_RISK tick doesn't kill a confirmed tradeable setup.
-        // When candidate is not yet stable, use live regime (stricter).
-        const bool effective_high_risk = candidate_stable
-            ? (stable_regime == Regime::HIGH_RISK_NO_TRADE)
+        // HIGH_RISK blocks if:
+        //   a) candidate not yet stable (single tick is enough), OR
+        //   b) candidate stable but HIGH_RISK has persisted for REVOKE_TICKS
+        const bool high_risk = candidate_stable
+            ? (m_high_risk_ticks >= HIGH_RISK_REVOKE_TICKS)
             : (regime == Regime::HIGH_RISK_NO_TRADE);
-        const bool high_risk = effective_high_risk;
         const bool blocked   = chop || high_risk || (top_score < cfg.min_winner_score);
 
         if (blocked) {
@@ -418,10 +420,16 @@ private:
     // Score cache: last valid scores from a non-blocking tick
     double  m_last_stable_bracket  = 0.0;
     double  m_last_stable_breakout = 0.0;
+    // Consecutive HIGH_RISK ticks while candidate_stable=true — used for revocation
+    int     m_high_risk_ticks      = 0;
     // Fix 2: reduced from 4 — supervisor was too slow to stabilise
-    static constexpr int REGIME_HOLD_TICKS   = 2;
+    static constexpr int REGIME_HOLD_TICKS     = 2;
     // Fix 2: minimum ms a regime must hold before switching (prevents tick-by-tick flipping)
-    static constexpr int64_t REGIME_HOLD_MS  = 3000;  // 3 seconds
+    static constexpr int64_t REGIME_HOLD_MS    = 3000;  // 3 seconds
+    // HIGH_RISK must hold this many consecutive ticks to revoke a stable candidate.
+    // 5 ticks at ~1-3 ticks/sec = 2-5 seconds of sustained HIGH_RISK before revoke.
+    // Single noisy ticks (1-2) are absorbed. Genuine sustained HIGH_RISK (5+) revokes.
+    static constexpr int HIGH_RISK_REVOKE_TICKS = 5;
 };
 
 } // namespace omega
