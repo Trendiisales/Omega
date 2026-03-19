@@ -55,11 +55,11 @@ struct OpenPos
 // ==============================================================================
 
 struct EdgeConfig {
-    double slippage_mult  = 0.3;   // slippage = spread * slippage_mult
-    double safety_mult    = 0.2;   // total_cost *= (1 + safety_mult)
-    double exhaustion_mult= 2.0;   // block if move > comp_range * exhaustion_mult
-    double min_breakout_k = 0.10;  // block if move < comp_range * min_breakout_k
-    double min_edge_buffer= 0.0;   // net_edge must exceed this (pts)
+    double cost_spread_mult  = 0.5;   // cost = spread * this
+    double min_range_factor  = 0.5;   // net_move must exceed comp_range * this
+    double min_edge_bp       = 6.0;   // net_move / mid * 10000 must exceed this
+    double exhaustion_mult   = 3.0;   // reject if move > comp_range * this (extended: allow full range moves)
+    double min_edge_buffer   = 0.0;   // unused, kept for compat
 };
 
 struct EdgeResult {
@@ -87,55 +87,32 @@ inline EdgeResult compute_edge_and_execution(
     EdgeResult r{};
     const double comp_range = comp_high - comp_low;
     if (mid <= 0.0 || comp_range <= 0.0) return r;
-
-    // ── Min breakout guard ────────────────────────────────────────────────────
-    // Require move >= 0.5 × comp_range — captures early expansion, not full move.
-    // Previous value (0.15) was too loose; combined with trigger inside range this
-    // means breakout_move is measured from trigger point, not from comp edge.
-    if (breakout_move < comp_range * cfg.min_breakout_k) return r;
+    // breakout_move is measured from comp edge (mid - comp_high for long).
+    // With spread*0.5 tolerance, this is always >= spread*0.5 when we get here.
+    if (breakout_move <= 0.0) return r;
 
     // ── Exhaustion filter ─────────────────────────────────────────────────────
     if (breakout_move > comp_range * cfg.exhaustion_mult) return r;
 
-    // ── Normalised features ───────────────────────────────────────────────────
-    const double breakout_strength = breakout_move / comp_range;
-
-    const double comp_pct            = (comp_range / mid);
-    const double compression_quality = (comp_pct > 0.0) ? (1.0 / (1.0 + comp_pct)) : 0.0;
-    const double momentum_score      = std::fabs(momentum);
-    const double vol_score           = recent_vol;
-
-    const double signal_strength =
-        breakout_strength *
-        (1.0 + vol_score) *
-        (1.0 + momentum_score) *
-        (1.0 + compression_quality);
-
     // ── Cost model ───────────────────────────────────────────────────────────
-    // Use spread * 0.5 as effective cost — mid-price moves already account for
-    // half the spread. Previous model used spread*2 + vol-scaled slippage which
-    // produced costs of 300+ pts on NAS100 (vol_ratio unit mismatch: recent_vol
-    // is a %-of-price figure, comp_range/mid is also %-of-price → ratio ~200×).
-    // Simple model: pay half-spread entry + half-spread exit + fixed slippage.
-    const double entry_cost  = spread * 0.5;
-    const double exit_cost   = spread * 0.5;
-    const double slip_cost   = spread * cfg.slippage_mult;  // slippage_mult now ~0.3
-    const double total_cost  = (entry_cost + exit_cost + slip_cost) * (1.0 + cfg.safety_mult);
+    // cost = spread * 0.5 (half-spread — mid-based move already net of half spread)
+    const double cost      = spread * cfg.cost_spread_mult;
+    const double net_move  = breakout_move - cost;
 
-    // ── Expected move (saturating) ────────────────────────────────────────────
-    const double raw_expected  = signal_strength * comp_range;
-    const double saturation_cap = comp_range * 2.0;
-    const double expected_move = saturation_cap * std::tanh(raw_expected / saturation_cap);
+    // ── Edge in basis points ──────────────────────────────────────────────────
+    const double edge_bp   = (mid > 0.0) ? (net_move / mid * 10000.0) : 0.0;
 
-    // ── Edge check: net move must exceed total cost ───────────────────────────
-    const double net_edge = expected_move - total_cost;
-    if (net_edge <= cfg.min_edge_buffer) return r;
+    // ── Validation ───────────────────────────────────────────────────────────
+    // Both conditions must pass:
+    //   1. net_move > comp_range * min_range_factor  (meaningful relative to structure)
+    //   2. edge_bp  >= min_edge_bp                   (meaningful relative to price)
+    const bool edge_ok = (net_move > comp_range * cfg.min_range_factor) &&
+                         (edge_bp  >= cfg.min_edge_bp);
+    if (!edge_ok) return r;
 
-    // ── Adaptive TP/SL ────────────────────────────────────────────────────────
-    const double tp_raw  = expected_move * 0.7;
-    const double sl_raw  = expected_move * 0.5;
-    const double tp_dist = std::min(tp_raw, comp_range * 1.2);
-    const double sl_dist = std::max(sl_raw, spread * 2.0);   // floor at 2× spread (was 3×)
+    // ── TP / SL ───────────────────────────────────────────────────────────────
+    const double tp_dist = comp_range * 0.8;
+    const double sl_dist = std::max(comp_range * 0.4, spread * 1.5);
     r.tp_price = is_long ? mid + tp_dist : mid - tp_dist;
     r.sl_price = is_long ? mid - sl_dist : mid + sl_dist;
 
@@ -145,12 +122,12 @@ inline EdgeResult compute_edge_and_execution(
     if (r.size < 0.01) r.size = 0.01;
     if (r.size > 5.0)  r.size = 5.0;
 
-    r.expected_move     = expected_move;
-    r.total_cost        = total_cost;
-    r.net_edge          = net_edge;
-    r.breakout_strength = breakout_strength;
-    r.momentum_score    = momentum_score;
-    r.vol_score         = vol_score;
+    r.expected_move     = net_move;
+    r.total_cost        = cost;
+    r.net_edge          = net_move;
+    r.breakout_strength = (comp_range > 0.0) ? breakout_move / comp_range : 0.0;
+    r.momentum_score    = std::fabs(momentum);
+    r.vol_score         = recent_vol;
     r.valid             = true;
     return r;
 }
@@ -669,13 +646,14 @@ public:
         // ── BREAKOUT_WATCH phase ──────────────────────────────────────────────
         if (phase == Phase::BREAKOUT_WATCH) {
             const double comp_range  = comp_high - comp_low;
-            // Trigger 0.15× range INSIDE the levels — fires before full range break.
-            // Previous trigger (spread*0.5 outside hi/lo) required a clean full break;
-            // markets often probe then extend, so we were missing early entries.
-            // 0.15× range is above spread noise but captures the initial thrust.
-            const double trigger_buf = comp_range * 0.15;
-            const bool   long_break  = (mid > comp_high - trigger_buf);
-            const bool   short_break = (mid < comp_low  + trigger_buf);
+            // Trigger OUTSIDE the range with spread*0.5 tolerance.
+            // Previous trigger (comp_high - range*0.15) fired INSIDE the range,
+            // giving breakout_move = mid - comp_high = negative. That made net_move
+            // always negative → edge always failed. Fix: require mid to clear the
+            // level by spread*0.5 so move is always positive and meaningful.
+            const double tol        = spread * 0.5;
+            const bool   long_break  = (mid >= comp_high + tol);
+            const bool   short_break = (mid <= comp_low  - tol);
 
             if (!long_break && !short_break) {
                 const int64_t elapsed = nowSec() - m_watch_start_ts;
@@ -776,15 +754,18 @@ public:
 
             if (!edge.valid) {
                 const double comp_range_now = comp_high - comp_low;
-                const double net_approx = breakout_move - spread * (1.0 + EDGE_CFG.slippage_mult) * (1.0 + EDGE_CFG.safety_mult);
-                const double bp_approx  = (mid > 0.0) ? (net_approx / mid * 10000.0) : 0.0;
+                const double net_approx     = breakout_move - spread * EDGE_CFG.cost_spread_mult;
+                const double bp_approx      = (mid > 0.0) ? (net_approx / mid * 10000.0) : 0.0;
+                const double need_pts       = comp_range_now * EDGE_CFG.min_range_factor;
                 std::cout << std::fixed << std::setprecision(4)
                           << "[ENG-" << symbol << "] BLOCKED: edge_model"
                           << " move=" << breakout_move
                           << " range=" << comp_range_now
                           << " spread=" << spread
-                          << " net~=" << net_approx
-                          << " bp~=" << bp_approx << "\n";
+                          << " net=" << net_approx
+                          << " bp=" << bp_approx
+                          << " need_pts=" << need_pts
+                          << " need_bp=" << EDGE_CFG.min_edge_bp << "\n";
                 std::cout.unsetf(std::ios::fixed);
                 std::cout.flush();
                 phase = Phase::FLAT; return {};

@@ -3272,7 +3272,7 @@ static void trade_loop() {
         SSL* ssl = connect_ssl(g_cfg.host, g_cfg.trade_port, sock);
         if (!ssl) {
             std::cerr << "[OMEGA-TRADE] Connect failed -- retry " << backoff_ms << "ms\n";
-            for (int i = 0; i < backoff_ms / 100 && g_running.load(); ++i) Sleep(100);
+            for (int i = 0; i < backoff_ms / 10 && g_running.load(); ++i) Sleep(10);
             backoff_ms = std::min(backoff_ms * 2, max_backoff);
             continue;
         }
@@ -3417,7 +3417,7 @@ static void quote_loop() {
         if (!ssl) {
             std::cerr << "[OMEGA] Connect failed -- retry " << backoff_ms << "ms\n";
             // Interruptible backoff — exits immediately on shutdown signal
-            for (int i = 0; i < backoff_ms / 100 && g_running.load(); ++i) Sleep(100);
+            for (int i = 0; i < backoff_ms / 10 && g_running.load(); ++i) Sleep(10);
             backoff_ms = std::min(backoff_ms * 2, max_backoff);
             continue;
         }
