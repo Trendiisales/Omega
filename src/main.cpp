@@ -3535,6 +3535,7 @@ int main(int argc, char* argv[])
                 if (c.max_hold_sec > 0)   eng.MAX_HOLD_SEC  = c.max_hold_sec;
                 if (c.min_edge_bp    > 0.0) eng.MIN_EDGE_PCT      = c.min_edge_bp    / 100.0;
                 if (c.slippage_est_bp> 0.0) eng.SLIPPAGE_EST_PCT  = c.slippage_est_bp / 100.0;
+                if (c.min_breakout_pct>0.0) eng.MIN_BREAKOUT_PCT  = c.min_breakout_pct;
             };
 
             // BreakoutEngine symbols — typical prices for MAX_SPREAD_PCT conversion

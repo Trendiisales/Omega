@@ -247,7 +247,6 @@ public:
             d.allow_bracket  = false;
             d.allow_breakout = false;
             d.winner         = "NONE";
-            // Fix 6: accumulate consecutive blocks toward cooldown
             ++m_consecutive_blocks;
             if (m_consecutive_blocks >= cfg.cooldown_fail_threshold) {
                 m_cooldown_until_ms  = now_ms + cfg.cooldown_duration_ms;
@@ -259,39 +258,42 @@ public:
                 std::cout.flush();
             }
         } else {
-            m_consecutive_blocks = 0;  // valid regime — reset counter
+            m_consecutive_blocks = 0;
 
-            const double margin   = bracket_score - breakout_score;
-            const bool margin_ok  = std::fabs(margin) >= cfg.min_engine_win_margin;
+            const double margin  = bracket_score - breakout_score;
+            const bool margin_ok = std::fabs(margin) >= cfg.min_engine_win_margin;
+
+            // Each engine must independently clear min_winner_score.
+            // Previously breakout could win by default when bracket was disabled,
+            // even with breakout_score=0.03 — producing allow=1 with no real signal.
+            const bool breakout_qualifies = (breakout_score >= cfg.min_winner_score)
+                                         && cfg.allow_breakout;
+            const bool bracket_qualifies  = (bracket_score >= cfg.min_bracket_score)
+                                         && cfg.allow_bracket;
 
             if (!margin_ok) {
                 // Tie — use config preference
-                if (regime == Regime::QUIET_COMPRESSION && cfg.bracket_in_quiet_comp) {
-                    // Fix 3: bracket must also clear its own absolute floor
-                    if (bracket_score >= cfg.min_bracket_score && cfg.allow_bracket) {
-                        d.allow_bracket  = true;
-                        d.winner         = "BRACKET";
-                    } else if (cfg.allow_breakout) {
-                        d.allow_breakout = true;
-                        d.winner         = "BREAKOUT";
-                    }
-                } else if (cfg.allow_breakout) {
+                if (regime == Regime::QUIET_COMPRESSION && cfg.bracket_in_quiet_comp
+                        && bracket_qualifies) {
+                    d.allow_bracket = true;
+                    d.winner        = "BRACKET";
+                } else if (breakout_qualifies) {
                     d.allow_breakout = true;
                     d.winner         = "BREAKOUT";
                 }
             } else if (margin > 0) {
-                // Bracket wins by margin
-                // Fix 3: also check bracket floor — fall to breakout if bracket score too low
-                if (bracket_score >= cfg.min_bracket_score && cfg.allow_bracket) {
-                    d.allow_bracket  = true;
-                    d.winner         = "BRACKET";
-                } else if (cfg.allow_breakout) {
+                // Bracket wins on margin
+                if (bracket_qualifies) {
+                    d.allow_bracket = true;
+                    d.winner        = "BRACKET";
+                } else if (breakout_qualifies) {
+                    // Bracket wins margin but fails floor — fall through to breakout
                     d.allow_breakout = true;
                     d.winner         = "BREAKOUT";
                 }
             } else {
                 // Breakout wins
-                if (cfg.allow_breakout) {
+                if (breakout_qualifies) {
                     d.allow_breakout = true;
                     d.winner         = "BREAKOUT";
                 }

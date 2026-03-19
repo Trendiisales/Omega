@@ -40,6 +40,7 @@ struct SymbolConfig
     double max_spread        = 0.0;
     double min_edge_bp       = 0.0;
     double slippage_est_bp   = 0.0;
+    double min_breakout_pct  = 0.0;  // override MIN_BREAKOUT_PCT in engine (0=use default)
 
     // Supervisor config — controls which engine is permitted per regime
     bool   allow_bracket           = true;
