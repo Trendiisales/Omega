@@ -3771,19 +3771,17 @@ int main(int argc, char* argv[])
             apply_be(g_eng_usdjpy, g_sym_cfg.get("USDJPY"),  150.0);
             apply_be(g_eng_brent,  g_sym_cfg.get("UKBRENT"), 85.0);
 
-            // Per-symbol WATCH_TIMEOUT_SEC — time-based, not tick-count
-            // Typed engines (Sp/Nq/Us30/Nas100/Oil) set their own in constructors.
-            // EU indices and FX set here:
-            g_eng_ger30.WATCH_TIMEOUT_SEC  = 300;
-            g_eng_uk100.WATCH_TIMEOUT_SEC  = 300;
-            g_eng_estx50.WATCH_TIMEOUT_SEC = 300;
-            g_eng_xag.WATCH_TIMEOUT_SEC    = 240;
-            g_eng_eurusd.WATCH_TIMEOUT_SEC = 180;
-            g_eng_gbpusd.WATCH_TIMEOUT_SEC = 180;
-            g_eng_audusd.WATCH_TIMEOUT_SEC = 180;
-            g_eng_nzdusd.WATCH_TIMEOUT_SEC = 180;
-            g_eng_usdjpy.WATCH_TIMEOUT_SEC = 180;
-            g_eng_brent.WATCH_TIMEOUT_SEC  = 300;
+            // Per-symbol WATCH_TIMEOUT_SEC — 120s indices, 120s FX
+            g_eng_ger30.WATCH_TIMEOUT_SEC  = 120;
+            g_eng_uk100.WATCH_TIMEOUT_SEC  = 120;
+            g_eng_estx50.WATCH_TIMEOUT_SEC = 120;
+            g_eng_xag.WATCH_TIMEOUT_SEC    = 120;
+            g_eng_eurusd.WATCH_TIMEOUT_SEC = 120;
+            g_eng_gbpusd.WATCH_TIMEOUT_SEC = 120;
+            g_eng_audusd.WATCH_TIMEOUT_SEC = 120;
+            g_eng_nzdusd.WATCH_TIMEOUT_SEC = 120;
+            g_eng_usdjpy.WATCH_TIMEOUT_SEC = 120;
+            g_eng_brent.WATCH_TIMEOUT_SEC  = 120;
 
             // BracketEngine symbols — override configure() fields directly
             auto apply_bracket = [](auto& eng, const SymbolConfig& c) {

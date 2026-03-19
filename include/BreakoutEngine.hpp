@@ -641,16 +641,14 @@ public:
             m_comp_violation_ticks = 0;
 
             // ── Arm check ─────────────────────────────────────────────────────
-            // Compression is still valid. Check if we can transition to ARMED.
-            // Only attempt arm when vol has briefly exited (we're at the boundary).
-            // While vol is fully in compression there's nothing to break yet.
-            if (still_compressed) {
-                return {};  // still compressing — keep building range
+            // Arm when ratio is still well inside compression (< 0.75).
+            // Previous logic armed at the 0.80–0.95 boundary — by then vol had
+            // already started expanding and the breakout was often already in motion.
+            // Arming at < 0.75 means we're ARMED while price is still coiling,
+            // ready to fire the moment it breaks — not after.
+            if (vol_ratio >= 0.75) {
+                return {};  // still building — wait for deeper compression before arming
             }
-
-            // Vol has exited the enter-threshold (ratio crossed 0.80) but is still
-            // below exit-threshold (0.95) — we're at the compression boundary.
-            // This is the arm window: range is built, structure intact, vol starting to expand.
 
             // Require minimum range
             if (MIN_COMP_RANGE > 0.0 && comp_range < MIN_COMP_RANGE) {
@@ -683,15 +681,16 @@ public:
             // Fall through to BREAKOUT_WATCH check on this same tick
         }
 
-        // ── BREAKOUT_WATCH phase: ARMED — wait indefinitely for price to exit ─
-        // Fix 1: time-based timeout (not tick-count). Tick rate is non-deterministic.
-        // Fix 2: on timeout, stay ARMED with same range — do NOT reset to FLAT.
-        //        Compression structure is still valid after the initial watch period.
-        //        Only reset if vol has fully normalized (structure genuinely gone).
+        // ── BREAKOUT_WATCH phase ──────────────────────────────────────────────
         if (phase == Phase::BREAKOUT_WATCH) {
-            const double min_exit    = spread * 0.5;
-            const bool   long_break  = (mid > comp_high + min_exit);
-            const bool   short_break = (mid < comp_low  - min_exit);
+            const double comp_range  = comp_high - comp_low;
+            // Trigger 0.15× range INSIDE the levels — fires before full range break.
+            // Previous trigger (spread*0.5 outside hi/lo) required a clean full break;
+            // markets often probe then extend, so we were missing early entries.
+            // 0.15× range is above spread noise but captures the initial thrust.
+            const double trigger_buf = comp_range * 0.15;
+            const bool   long_break  = (mid > comp_high - trigger_buf);
+            const bool   short_break = (mid < comp_low  + trigger_buf);
 
             if (!long_break && !short_break) {
                 const int64_t elapsed = nowSec() - m_watch_start_ts;
