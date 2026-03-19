@@ -37,9 +37,18 @@ struct SymbolConfig
     double sl_mult           = 1.0;
 
     // Entry filter
-    double max_spread        = 0.0;  // absolute instrument units
-    double min_edge_bp       = 0.0;  // minimum edge in basis points (0 = disabled)
-    double slippage_est_bp   = 0.0;  // estimated one-way slippage in basis points
+    double max_spread        = 0.0;
+    double min_edge_bp       = 0.0;
+    double slippage_est_bp   = 0.0;
+
+    // Supervisor config — controls which engine is permitted per regime
+    bool   allow_bracket           = true;
+    bool   allow_breakout          = true;
+    double min_regime_confidence   = 0.55;
+    double min_engine_win_margin   = 0.10;
+    int    max_false_breaks        = 2;
+    bool   bracket_in_quiet_comp   = true;
+    bool   breakout_in_trend       = true;
 };
 
 // ==============================================================================
