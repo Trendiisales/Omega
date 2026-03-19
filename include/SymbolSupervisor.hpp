@@ -313,7 +313,7 @@ public:
             }
         }
 
-        // ── Permission decision — 3-layer gate ────────────────────────────────
+        // ── Permission decision — ONE rule only ──────────────────────────────
         SupervisorDecision d{};
         d.regime         = stable_regime;
         d.confidence     = confidence;
@@ -323,81 +323,34 @@ public:
 
         const double top_score = std::max(stable_bracket, stable_breakout);
 
-        // Simple rule: if top_score >= threshold → allow. Nothing else.
-        // All previous conditions (regime_ok, confidence_ok) were causing
-        // mathematically impossible outcomes (top_score=0.80 → allow=0).
-        const bool gate_ok = (top_score >= cfg.min_winner_score)
-                          && (stable_regime != Regime::CHOP_REVERSAL);
+        // THE ONLY RULE: top_score >= threshold AND not CHOP → allow=1
+        // No regime check. No confidence check. No other conditions.
+        // All previous override layers were causing top_score=0.81 → allow=0 (impossible).
+        const bool chop = (stable_regime == Regime::CHOP_REVERSAL);
 
-        if (!gate_ok) {
+        if (top_score < cfg.min_winner_score || chop) {
             d.allow_bracket  = false;
             d.allow_breakout = false;
-            d.winner = "NONE";
-            // Cooldown only counts CHOP or repeated false-break conditions —
-            // NOT plain inactivity (no_dominant_regime).
-            // Punishing quiet symbols for having no setup causes missed entries
-            // when those symbols eventually move.
-            if (regime == Regime::CHOP_REVERSAL
-                    || (regime == Regime::HIGH_RISK_NO_TRADE
-                        && reason != std::string("no_dominant_regime"))) {
+            d.winner         = "NONE";
+            d.reason         = (chop) ? "chop_detected" : "score_below_threshold";
+            if (chop) {
                 ++m_consecutive_blocks;
                 if (m_consecutive_blocks >= cfg.cooldown_fail_threshold) {
                     m_cooldown_until_ms  = now_ms + cfg.cooldown_duration_ms;
                     m_consecutive_blocks = 0;
-                    std::cout << "[SUPERVISOR-" << symbol << "] COOLDOWN triggered"
-                              << " after " << cfg.cooldown_fail_threshold << " blocks"
-                              << " for " << cfg.cooldown_duration_ms / 1000 << "s"
-                              << " reason=" << reason << "\n";
-                    std::cout.flush();
                 }
             }
         } else {
+            // Score is sufficient — allow based on engine config
             m_consecutive_blocks = 0;
-
-            const double margin  = stable_bracket - stable_breakout;
-            const bool margin_ok = std::fabs(margin) >= cfg.min_engine_win_margin;
-
-            // Breakout valid in EXPANSION or TREND.
-            // Also valid in QUIET_COMPRESSION when bracket is disabled (allow_bracket=false):
-            // for non-metals the engine builds compression then fires the breakout —
-            // the supervisor must allow it during the compression phase so the engine
-            // can progress. Without this, non-metals with allow_bracket=false never trade
-            // because QUIET_COMPRESSION always returns NONE.
-            const bool bracket_disabled_symbol = !cfg.allow_bracket;
-            const bool breakout_regime_ok = (stable_regime == Regime::EXPANSION_BREAKOUT
-                                          || stable_regime == Regime::TREND_CONTINUATION
-                                          || (stable_regime == Regime::QUIET_COMPRESSION
-                                              && bracket_disabled_symbol));
-            const bool breakout_qualifies = breakout_regime_ok
-                                         && (stable_breakout >= cfg.min_winner_score)
-                                         && cfg.allow_breakout;
-            const bool bracket_qualifies  = (stable_bracket >= cfg.min_bracket_score)
-                                         && cfg.allow_bracket;
-
-            if (!margin_ok) {
-                if (stable_regime == Regime::QUIET_COMPRESSION
-                        && cfg.bracket_in_quiet_comp && bracket_qualifies) {
-                    d.allow_bracket = true;
-                    d.winner        = "BRACKET";
-                } else if (breakout_qualifies) {
-                    d.allow_breakout = true;
-                    d.winner         = "BREAKOUT";
-                }
-            } else if (margin > 0) {
-                if (bracket_qualifies) {
-                    d.allow_bracket = true;
-                    d.winner        = "BRACKET";
-                } else if (breakout_qualifies) {
-                    d.allow_breakout = true;
-                    d.winner         = "BREAKOUT";
-                }
-            } else {
-                if (breakout_qualifies) {
-                    d.allow_breakout = true;
-                    d.winner         = "BREAKOUT";
-                }
+            if (cfg.allow_breakout) {
+                d.allow_breakout = true;
+                d.winner         = "BREAKOUT";
             }
-
+            if (cfg.allow_bracket && stable_bracket >= cfg.min_bracket_score) {
+                d.allow_bracket = true;
+                d.winner        = d.allow_breakout ? "BREAKOUT" : "BRACKET";
+            }
             if (!d.allow_bracket && !d.allow_breakout)
                 d.winner = "NONE";
         }
