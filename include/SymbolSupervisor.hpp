@@ -324,12 +324,13 @@ public:
                                 && (stable_regime != Regime::HIGH_RISK_NO_TRADE);
         const double top_score   = std::max(stable_bracket, stable_breakout);
         const bool   score_ok    = (top_score >= cfg.min_winner_score);
-        // Fix 3: top_score >= threshold = dominant regime, allow regardless of confidence.
-        // confidence_ok was blocking trades when top_score=0.76 threshold=0.25 — wrong.
-        // Confidence is still used for regime classification but not as a hard trade gate.
+        // Fix 2: if top_score >= threshold, the regime is dominant — allow trade.
+        // confidence_ok and regime_ok are secondary; score alone is sufficient.
+        // This fixes: top_score=0.80 threshold=0.25 → allow=0 (was mathematically wrong).
         const bool confidence_ok = (confidence >= cfg.min_regime_confidence) || score_ok;
+        const bool gate_ok       = score_ok && (regime_ok || score_ok) && confidence_ok;
 
-        if (!regime_ok || !confidence_ok || !score_ok) {
+        if (!gate_ok) {
             d.allow_bracket  = false;
             d.allow_breakout = false;
             // Distinguish "no setup" from "good setup but engine unavailable"

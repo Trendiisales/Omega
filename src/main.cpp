@@ -2655,13 +2655,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Calls supervisor, gates new entries on allow_breakout, always ticks for
     // position management. Feeds valid signals into global ranking buffer.
     auto dispatch = [&](auto& eng, omega::SymbolSupervisor& sup, bool base_can_enter) {
-        const auto sdec = sup_decision(sup, eng, base_can_enter);
+        // Fix: ARMED state (COMPRESSION or BREAKOUT_WATCH) bypasses supervisor permission.
+        // Supervisor still runs every tick for regime classification and telemetry.
+        // But once a setup is live, no supervisor flip can kill it.
         const bool eng_mid_cycle = (eng.phase == omega::Phase::COMPRESSION
                                  || eng.phase == omega::Phase::BREAKOUT_WATCH);
-        // Supervisor gates NEW entries only.
-        // Once in COMPRESSION or BREAKOUT_WATCH the setup is live — do not revoke.
-        // Supervisor oscillating allow=0/1 was killing setups mid-cycle.
-        const bool can_enter = base_can_enter && (sdec.allow_breakout || eng_mid_cycle);
+        const auto sdec = sup_decision(sup, eng, base_can_enter);
+        // ARMED: can_enter locked to base_can_enter (position/session/daily loss only)
+        // IDLE:  can_enter requires supervisor allow_breakout
+        const bool can_enter = eng_mid_cycle
+            ? base_can_enter
+            : (base_can_enter && sdec.allow_breakout);
         // Session-slot scaling on MIN_BREAKOUT_PCT — only when idle, not mid-setup
         if (!eng_mid_cycle) {
             static std::unordered_map<const char*, double> s_base_breakout;
