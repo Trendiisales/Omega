@@ -991,7 +991,7 @@ static std::string fix_build_md_subscribe_ext(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-EXT-" << seq << "\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-EXT\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1008,7 +1008,7 @@ static std::string fix_build_md_unsub(int seq) {
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
     return wrap_fix(b.str());
 }
-// 35=V Unsubscribe — extended
+// 35=V Unsubscribe — extended (fixed ID matches subscribe ID exactly)
 static std::string fix_build_md_unsub_ext(int seq) {
     std::vector<int> ids;
     { std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
@@ -1017,7 +1017,7 @@ static std::string fix_build_md_unsub_ext(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-EXT-UNSUB\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-EXT\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -3373,29 +3373,7 @@ static void quote_loop() {
             const std::string unsub = fix_build_md_unsub(g_quote_seq++);
             SSL_write(ssl, unsub.c_str(), static_cast<int>(unsub.size()));
 
-            // EXT subscriptions — send unsub for seq 1-20 to catch any prior session ID
-            // The EXT req ID is OMEGA-MD-EXT-{seq}, so we need to match each one.
-            for (int s = 1; s <= 20; ++s) {
-                std::vector<int> ids;
-                { std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
-                  for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id); }
-                if (!ids.empty()) {
-                    std::ostringstream ub;
-                    ub << "35=V\x01"
-                       << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
-                       << "50=QUOTE\x01" << "57=QUOTE\x01"
-                       << "34=" << g_quote_seq++ << "\x01" << "52=" << timestamp() << "\x01"
-                       << "262=OMEGA-MD-EXT-" << s << "\x01"
-                       << "263=2\x01" << "264=1\x01" << "265=0\x01"
-                       << "146=" << ids.size() << "\x01";
-                    for (int id : ids) ub << "55=" << id << "\x01";
-                    ub << "267=2\x01" << "269=0\x01" << "269=1\x01";
-                    const std::string u = wrap_fix(ub.str());
-                    SSL_write(ssl, u.c_str(), static_cast<int>(u.size()));
-                }
-            }
-
-            // Also send the named unsub just in case
+            // EXT subscription unsub — fixed ID OMEGA-MD-EXT matches subscribe exactly
             const std::string unsub_ext = fix_build_md_unsub_ext(g_quote_seq++);
             if (!unsub_ext.empty())
                 SSL_write(ssl, unsub_ext.c_str(), static_cast<int>(unsub_ext.size()));
