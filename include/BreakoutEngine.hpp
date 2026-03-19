@@ -68,6 +68,7 @@ public:
     double      MOMENTUM_THRESH_PCT   = 0.05;
     double      MIN_BREAKOUT_PCT      = 0.25;
     double      MIN_EDGE_PCT          = 0.0;    // min TP distance as % of price — 0 = disabled
+    double      SLIPPAGE_EST_PCT      = 0.0;    // estimated one-way slippage as % of price
     int         MAX_TRADES_PER_MIN    = 2;
     double      ENTRY_SIZE            = 0.01;
     bool        AGGRESSIVE_SHADOW     = false;
@@ -478,29 +479,50 @@ public:
                 }
             }
 
-            // ── Edge filter — actual breakout move must cover round-trip cost ──
-            // Compares the REAL move (price distance from compression edge) against
-            // the actual spread cost of entry + exit. This is a live check that
-            // adapts to current market conditions, not a static config comparison.
-            // MIN_EDGE_PCT acts as a floor: move must also be >= MIN_EDGE_PCT of price.
-            if (MIN_EDGE_PCT > 0.0 || spread > 0.0) {
+            // ── Full cost + expected move gate ───────────────────────────────
+            //
+            // COST MODEL: spread (round-trip) + estimated slippage (round-trip)
+            //   total_cost_pct = (spread * 2 + slippage * 2) / mid * 100
+            //
+            // EXPECTED MOVE: impulse strength projects how far price is likely
+            //   to continue AFTER the breakout, not just how far it has moved.
+            //   impulse = recent_vol_pct * |momentum_pct| (dimensionless strength)
+            //   expected_follow = impulse * k where k calibrated to 1.0
+            //   We use the larger of:
+            //     (a) actual breakout distance already covered (floor)
+            //     (b) impulse-projected follow-through (forward estimate)
+            //
+            // A trade is valid only if:
+            //   expected_follow >= total_cost + MIN_EDGE_PCT (safety buffer)
+            {
                 const double breakout_move = is_long
-                    ? (mid - comp_high)    // how far price has broken above range
-                    : (comp_low  - mid);   // how far price has broken below range
-                const double breakout_move_pct = (mid > 0.0) ? (breakout_move / mid * 100.0) : 0.0;
-                const double round_trip_pct    = (mid > 0.0) ? (spread * 2.0   / mid * 100.0) : 999.0;
-                // Block if actual move doesn't cover round-trip spread cost
-                if (breakout_move_pct < round_trip_pct) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: move_below_cost"
-                              << " move=" << breakout_move_pct << "%"
-                              << " cost=" << round_trip_pct << "%\n";
-                    std::cout.flush();
-                    phase = Phase::FLAT; return {};
+                    ? (mid - comp_high) : (comp_low - mid);
+                const double breakout_move_pct = (mid > 0.0)
+                    ? (breakout_move / mid * 100.0) : 0.0;
+
+                // Full round-trip cost: spread in + spread out + slippage in + slip out
+                const double spread_pct    = (mid > 0.0) ? (spread / mid * 100.0) : 0.0;
+                const double total_cost_pct = (spread_pct * 2.0) + (SLIPPAGE_EST_PCT * 2.0);
+
+                // Impulse strength: vol × |momentum| gives a dimensionless signal of
+                // how much energy is behind the move
+                double momentum_pct = 0.0;
+                if (static_cast<int>(m_momentum_window.size()) >= MOMENTUM_WINDOW) {
+                    momentum_pct = (mid - m_momentum_window.front())
+                                   / m_momentum_window.front() * 100.0;
                 }
-                // Block if move is below the minimum edge floor
-                if (MIN_EDGE_PCT > 0.0 && breakout_move_pct < MIN_EDGE_PCT) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: no_edge"
-                              << " move=" << breakout_move_pct << "% min=" << MIN_EDGE_PCT << "%\n";
+                const double impulse       = recent_vol_pct * std::fabs(momentum_pct);
+                const double expected_move = std::max(breakout_move_pct, impulse);
+
+                // Required: expected_move >= cost + MIN_EDGE_PCT buffer
+                const double required = total_cost_pct + MIN_EDGE_PCT;
+
+                if (expected_move < required) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: insufficient_edge"
+                              << " expected=" << expected_move
+                              << "% cost="    << total_cost_pct
+                              << "% min_edge=" << MIN_EDGE_PCT
+                              << "% required=" << required << "%\n";
                     std::cout.flush();
                     phase = Phase::FLAT; return {};
                 }

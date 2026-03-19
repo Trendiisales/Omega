@@ -39,6 +39,7 @@ struct SymbolConfig
     // Entry filter
     double max_spread        = 0.0;  // absolute instrument units
     double min_edge_bp       = 0.0;  // minimum edge in basis points (0 = disabled)
+    double slippage_est_bp   = 0.0;  // estimated one-way slippage in basis points
 };
 
 // ==============================================================================
