@@ -266,10 +266,15 @@ public:
             }
         }
         // Stable regime: promote candidate once it's held long enough.
-        // When not yet stable: use HIGH_RISK during blocking regimes,
-        // or the current candidate (not last_.regime which may be stale).
-        const bool candidate_stable = (m_candidate_count >= REGIME_HOLD_TICKS)
-                                   && !is_blocking_regime;
+        // KEY FIX: candidate_stable must NOT depend on is_blocking_regime.
+        // Previously: candidate_stable = (count >= HOLD) && !is_blocking
+        // This meant any single HIGH_RISK noise tick forced stable=false regardless
+        // of accumulated count — the hysteresis gave zero protection.
+        // Now: once count >= HOLD_TICKS, the regime is considered stable.
+        // A blocking tick does NOT revoke stability — it is absorbed as noise.
+        // Stability is only broken when a genuinely different tradeable regime
+        // accumulates its own HOLD_TICKS count (handled by the reset below).
+        const bool candidate_stable = (m_candidate_count >= REGIME_HOLD_TICKS);
         const Regime stable_regime  = candidate_stable
                                       ? m_candidate_regime
                                       : (is_blocking_regime
@@ -424,7 +429,7 @@ private:
     // Hysteresis: candidate regime must hold for this many ticks before switching
     Regime  m_candidate_regime    = Regime::UNKNOWN;
     int     m_candidate_count     = 0;
-    static constexpr int REGIME_HOLD_TICKS = 2;  // 2 consecutive ticks before regime is stable
+    static constexpr int REGIME_HOLD_TICKS = 4;  // raised from 2 — needs 4 ticks to stabilise
 };
 
 } // namespace omega
