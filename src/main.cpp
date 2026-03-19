@@ -464,6 +464,7 @@ static int                g_trade_seq  = 1;
 static std::atomic<bool>  g_quote_ready{false};
 static std::atomic<int64_t> g_connected_since{0};  // unix seconds of last successful logon
 static std::atomic<bool>  g_ext_md_refresh_needed{false};
+static std::atomic<bool>  g_md_subscribed{false};   // true once OMEGA-MD-ALL is active on this session
 
 // Shadow CSV
 static std::ofstream g_shadow_csv;
@@ -2370,6 +2371,30 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
 // ─────────────────────────────────────────────────────────────────────────────
 static void sig_handler(int) noexcept { g_running.store(false); }
 
+// Windows console close handler — handles X button, CTRL+C, CTRL+BREAK, logoff,
+// shutdown. std::signal(SIGINT) is NOT called when the console window is closed
+// or the process is terminated by Windows — this handler covers all those paths.
+// Without it, g_running stays true → no FIX Logout sent → ghost session left on
+// server → next connect gets ALREADY_SUBSCRIBED.
+static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
+    switch (event) {
+        case CTRL_C_EVENT:
+        case CTRL_BREAK_EVENT:
+        case CTRL_CLOSE_EVENT:
+        case CTRL_LOGOFF_EVENT:
+        case CTRL_SHUTDOWN_EVENT:
+            g_running.store(false);
+            // Block here up to 8s to allow quote_loop and trade_loop to send
+            // their FIX Logout messages before Windows kills the process.
+            // Windows gives a console close handler ~5s before it force-kills;
+            // we sleep in 100ms slices so shutdown is still responsive.
+            for (int i = 0; i < 80 && g_running.load() == false; ++i) Sleep(100);
+            return TRUE;  // TRUE = we handled it, don't call default handler
+        default:
+            return FALSE;
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tick handler -- called for every bid/ask update
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3055,11 +3080,13 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         std::cout << "[OMEGA] LOGON ACCEPTED\n";
         g_quote_ready.store(true);
         g_connected_since.store(nowSec());
+        g_md_subscribed.store(false);  // clear — fresh session, not yet subscribed
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
         // Single subscription for ALL symbols under fixed ID OMEGA-MD-ALL
         // This permanently eliminates the ghost session problem — one ID, one unsub.
         const std::string md = fix_build_md_subscribe_all(g_quote_seq++);
         SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
+        g_md_subscribed.store(true);
         std::cout << "[OMEGA] Subscribed ALL symbols (OMEGA-MD-ALL)\n";
         return;
     }
@@ -3358,7 +3385,13 @@ static void trade_loop() {
             }
         }
 
-        // Tear down
+        // Tear down — send FIX Logout before closing so server ends session cleanly
+        if (g_trade_ready.load()) {
+            const std::string tlo = fix_build_logout(g_trade_seq++, "TRADE");
+            SSL_write(ssl, tlo.c_str(), static_cast<int>(tlo.size()));
+            Sleep(300);
+            std::cout << "[OMEGA-TRADE] Logout sent\n";
+        }
         g_trade_ready.store(false);
         {
             std::lock_guard<std::mutex> lk(g_trade_mtx);
@@ -3512,11 +3545,19 @@ static void quote_loop() {
 
             if (g_quote_ready.load() && g_cfg.enable_extended_symbols &&
                 g_ext_md_refresh_needed.exchange(false)) {
-                // Resubscribe all symbols under single fixed ID after SecurityList updates IDs
-                const std::string all = fix_build_md_subscribe_all(g_quote_seq++);
-                if (!all.empty()) {
-                    SSL_write(ssl, all.c_str(), static_cast<int>(all.size()));
-                    std::cout << "[OMEGA] Refreshed ALL subscription from SecurityList\n";
+                if (!g_md_subscribed.load()) {
+                    // Not yet subscribed on this session — send first subscription
+                    const std::string all = fix_build_md_subscribe_all(g_quote_seq++);
+                    if (!all.empty()) {
+                        SSL_write(ssl, all.c_str(), static_cast<int>(all.size()));
+                        g_md_subscribed.store(true);
+                        std::cout << "[OMEGA] Subscribed ALL symbols from SecurityList refresh\n";
+                    }
+                } else {
+                    // Already subscribed (LOGON ACCEPTED already sent it) — skip to avoid
+                    // ALREADY_SUBSCRIBED reject. SecurityList IDs are already in g_ext_syms
+                    // and will be used on the next reconnect's subscription.
+                    std::cout << "[OMEGA] SecurityList refreshed (subscription already active, skipping re-sub)\n";
                 }
             }
 
@@ -3538,15 +3579,23 @@ static void quote_loop() {
             for (const auto& m : extract_messages(buf, n)) dispatch_fix(m, ssl);
         }
 
-        // Unsubscribe before closing — prevents ghost session
+        // Unsubscribe + Logout before closing — prevents ghost session on next connect
         if (g_quote_ready.load()) {
             const std::string unsub_all = fix_build_md_unsub_all(g_quote_seq++);
             SSL_write(ssl, unsub_all.c_str(), static_cast<int>(unsub_all.size()));
             Sleep(200);
             std::cout << "[OMEGA] Unsubscribed market data before disconnect\n";
+            // Send FIX Logout (35=5) — tells server session is ending cleanly.
+            // Without this the server keeps the session open for ~30s and rejects
+            // the next Logon with ALREADY_SUBSCRIBED.
+            const std::string lo = fix_build_logout(g_quote_seq++, "QUOTE");
+            SSL_write(ssl, lo.c_str(), static_cast<int>(lo.size()));
+            Sleep(300);  // give server time to process logout before TCP close
+            std::cout << "[OMEGA] Logout sent\n";
         }
 
         g_quote_ready.store(false);
+        g_md_subscribed.store(false);  // clear — session ending
         g_connected_since.store(0);  // reset stability timer on disconnect
         auto fc = [](auto& eng, const char* sym) {
             if (!eng.pos.active) return;
@@ -3655,6 +3704,7 @@ int main(int argc, char* argv[])
 
     std::signal(SIGINT,  sig_handler);
     std::signal(SIGTERM, sig_handler);
+    SetConsoleCtrlHandler(console_ctrl_handler, TRUE);  // handles X button, CTRL_CLOSE, shutdown
 
     const std::string cfg_path = (argc > 1) ? argv[1] : "omega_config.ini";
     load_config(cfg_path);
