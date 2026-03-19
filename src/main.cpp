@@ -322,6 +322,7 @@ struct OmegaConfig {
 
 static OmegaConfig         g_cfg;
 static std::atomic<bool>   g_running(true);
+static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup — unblocks ctrl handler
 static const int64_t       g_start_time = static_cast<int64_t>(std::time(nullptr)); // process start for uptime
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2384,12 +2385,10 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
         case CTRL_LOGOFF_EVENT:
         case CTRL_SHUTDOWN_EVENT:
             g_running.store(false);
-            // Block here up to 8s to allow quote_loop and trade_loop to send
-            // their FIX Logout messages before Windows kills the process.
-            // Windows gives a console close handler ~5s before it force-kills;
-            // we sleep in 100ms slices so shutdown is still responsive.
-            for (int i = 0; i < 80 && g_running.load() == false; ++i) Sleep(100);
-            return TRUE;  // TRUE = we handled it, don't call default handler
+            // Wait for main() to finish cleanup (logout sent, files closed).
+            // Max 2s — if not done by then Windows can kill us, that's fine.
+            for (int i = 0; i < 20 && !g_shutdown_done.load(); ++i) Sleep(100);
+            return TRUE;
         default:
             return FALSE;
     }
@@ -4110,13 +4109,13 @@ int main(int argc, char* argv[])
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
-    // Launch trade connection in background thread
     std::thread trade_thread(trade_loop);
-    trade_thread.detach();
     Sleep(500);  // Give trade connection 500ms head start before quote loop
-    quote_loop();
+    quote_loop();  // blocks until g_running=false
 
+    // quote_loop has exited — g_running is false, trade_loop will exit shortly
     std::cout << "[OMEGA] Shutdown\n";
+    trade_thread.join();  // wait for trade logout to be sent before closing files
     gui_server.stop();
     if (g_daily_trade_close_log) g_daily_trade_close_log->close();
     if (g_daily_gold_trade_close_log) g_daily_gold_trade_close_log->close();
@@ -4127,5 +4126,6 @@ int main(int argc, char* argv[])
     WSACleanup();
     ReleaseMutex(g_singleton_mutex);
     CloseHandle(g_singleton_mutex);
+    g_shutdown_done.store(true);  // unblock console_ctrl_handler — process may now exit
     return 0;
 }
