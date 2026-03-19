@@ -110,7 +110,7 @@ public:
                                           / (cfg.momentum_trend_thresh * 2.0 + 0.001);
             const double fast_edge      = std::min(0.15, net_edge_pct * 8.0);
             const double fast_score     = std::min(1.0,
-                fast_vol_ratio * 0.4 + fast_dir * 0.4 + fast_edge * 5.0);
+                fast_vol_ratio * 0.4 + fast_dir * 0.4 + fast_edge * 3.0);
             const bool early_exit = (fast_score > 0.45);
             if (!early_exit) {
                 SupervisorDecision b{};
