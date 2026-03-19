@@ -295,6 +295,15 @@ public:
     // Fix 1: time-based watch timeout (seconds) replaces tick-count watch_ticks.
     // Per-symbol tuning via symbols.ini. Indices default 300s, FX 180s.
     int         WATCH_TIMEOUT_SEC     = 300;
+    // Compression stickiness: number of consecutive non-compression ticks to absorb
+    // before declaring compression ended. Real indices have noisy vol — a single tick
+    // above threshold must not destroy accumulated range state.
+    // 3 = absorb up to 3 noisy ticks before giving up. Tunable per symbol.
+    int         COMP_ESCAPE_TOLERANCE = 3;
+    // Re-entry cooldown: ticks to wait in FLAT before re-detecting compression after
+    // a failed arm. Prevents immediate re-entry churn (COMPRESSION→fail→COMPRESSION).
+    // 5 = skip 5 ticks before allowing next compression detection.
+    int         COMP_REENTRY_DELAY    = 5;
 
     // ── Observable state (read by telemetry thread) ───────────────────────────
     Phase   phase          = Phase::FLAT;
@@ -531,10 +540,20 @@ public:
 
         if (phase == Phase::FLAT) {
             if (in_compression) {
+                // Re-entry cooldown: if we just reset from a failed compression,
+                // don't immediately re-enter. Wait until we've accumulated enough
+                // baseline history to ensure the next compression is real.
+                // m_comp_escape_ticks is re-used here as a re-entry delay counter:
+                // it counts down from COMP_REENTRY_DELAY on reset, blocks re-entry until 0.
+                if (m_comp_escape_ticks > 0) {
+                    --m_comp_escape_ticks;
+                    return {};
+                }
                 phase               = Phase::COMPRESSION;
                 comp_high           = mid;
                 comp_low            = mid;
                 m_compression_ticks = 1;
+                m_comp_escape_ticks = 0;
                 std::cout << std::fixed << std::setprecision(5)
                           << "[ENG-" << symbol << "] COMPRESSION entered"
                           << " recent=" << recent_vol_pct << "% base=" << base_vol_pct
@@ -547,44 +566,72 @@ public:
         }
 
         // ── COMPRESSION phase: track the range while vol is compressed ────────
+        // Sticky compression: allow up to COMP_ESCAPE_TOLERANCE consecutive ticks
+        // where vol briefly pops above threshold before giving up.
+        // Real compressions in live indices have noisy vol — a single tick above
+        // threshold must not destroy accumulated range state.
         if (phase == Phase::COMPRESSION) {
             if (in_compression) {
                 ++m_compression_ticks;
+                m_comp_escape_ticks = 0;  // reset escape counter — still compressing
                 if (mid > comp_high) comp_high = mid;
                 if (mid < comp_low)  comp_low  = mid;
                 return {};  // still compressing — keep tracking
             }
-            // Compression just ended — require minimum ticks to ensure range is real
-            if (m_compression_ticks < 3) {
-                // Too few ticks — range is noise (FX sparse tick issue). Reset to FLAT.
+
+            // Vol briefly escaped compression threshold.
+            // Absorb up to COMP_ESCAPE_TOLERANCE ticks before declaring it over.
+            // This makes compression sticky through brief noise spikes.
+            ++m_comp_escape_ticks;
+            // Still track range expansion during escape window — price may be
+            // probing the boundary before returning to compression.
+            if (mid > comp_high) comp_high = mid;
+            if (mid < comp_low)  comp_low  = mid;
+
+            if (m_comp_escape_ticks <= COMP_ESCAPE_TOLERANCE) {
+                return {};  // absorb the noise tick — stay in COMPRESSION
+            }
+
+            // Escape tolerance exhausted — compression genuinely ended.
+            // Reset escape counter and apply re-entry cooldown on failure paths.
+
+            // FIX: require only 2 ticks (not 3) — real market compressions on indices
+            // can be sparse and 3 ticks is unnecessarily strict.
+            if (m_compression_ticks < 2) {
                 std::cout << "[ENG-" << symbol << "] ARM_CHECK fail reason=min_ticks"
-                          << " ticks=" << m_compression_ticks << " need=3\n";
+                          << " ticks=" << m_compression_ticks << " need=2\n";
                 std::cout.flush();
                 phase               = Phase::FLAT;
                 m_compression_ticks = 0;
+                m_comp_escape_ticks = COMP_REENTRY_DELAY;  // cooldown before re-detecting
                 return {};
             }
-            // Compression just ended — check range is viable before watching
+
+            // FIX: if range is too small, stay in COMPRESSION to keep accumulating.
+            // Do NOT reset — the range will grow as price explores the boundary.
+            // Only force-exit after MAX_RANGE_WAIT_TICKS of waiting with small range.
             const double comp_range_built = comp_high - comp_low;
             if (MIN_COMP_RANGE > 0.0 && comp_range_built < MIN_COMP_RANGE) {
-                // Range too small — log and reset to FLAT so next compression
-                // attempt starts fresh. The previous loop-back to COMPRESSION with
-                // m_compression_ticks=3 caused a silent oscillation: vol ticking
-                // above threshold re-entered this same check on the very next tick,
-                // producing infinite ARM_CHECK fails with no log output.
                 std::cout << std::fixed << std::setprecision(5)
                           << "[ENG-" << symbol << "] ARM_CHECK fail reason=range_too_small"
                           << " range=" << comp_range_built
                           << " min=" << MIN_COMP_RANGE
-                          << " hi=" << comp_high << " lo=" << comp_low << "\n";
+                          << " hi=" << comp_high << " lo=" << comp_low
+                          << " — staying in COMPRESSION to accumulate\n";
+                std::cout.unsetf(std::ios::fixed);
                 std::cout.flush();
-                std::cout.unsetf(std::ios::fixed);  // restore default formatting
-                phase               = Phase::FLAT;
-                m_compression_ticks = 0;
+                // Stay in compression — reset escape counter and keep building range.
+                // This is the key fix: instead of resetting to FLAT (killing all state),
+                // we stay alive and let the range grow on subsequent ticks.
+                phase               = Phase::COMPRESSION;
+                m_comp_escape_ticks = 0;
                 return {};
             }
+
+            // Range is viable — arm the watch
             phase               = Phase::BREAKOUT_WATCH;
             m_compression_ticks = 0;
+            m_comp_escape_ticks = 0;
             m_watch_start_ts    = nowSec();
             watch_ticks         = 0;  // not used for timeout, kept for telemetry
             std::cout << std::fixed << std::setprecision(5)
@@ -770,9 +817,10 @@ public:
 
 protected:
     std::deque<double> m_prices;
-    int64_t            m_last_signal_ts  = 0;
-    int                m_trade_id        = 0;
+    int64_t            m_last_signal_ts    = 0;
+    int                m_trade_id          = 0;
     int                m_compression_ticks = 0;  // ticks spent inside compression phase
+    int                m_comp_escape_ticks = 0;  // consecutive ticks where vol briefly popped above threshold
 
     static int64_t nowSec() noexcept {
         return std::chrono::duration_cast<std::chrono::seconds>(

@@ -87,7 +87,7 @@ struct OmegaConfig {
     int    max_hold_sec          = 1800;  // raised from 1500 — spec MIN_HOLD values imply longer trades
     int    min_entry_gap_sec     = 30;
     double max_spread_pct        = 0.05;
-    double max_latency_ms        = 60.0;   // paper default: realistic remote VPS RTT without starving all entries
+    double max_latency_ms        = 120.0;  // raised from 60ms — RTTp95 from remote VPS is ~68ms, 60ms was vetoing all LIVE entries
     double momentum_thresh_pct   = 0.05;   // momentum gate threshold
     double min_breakout_pct      = 0.25;   // min breakout size from comp edge
     int    max_trades_per_min    = 2;       // rate limiter
@@ -2173,7 +2173,7 @@ static void apply_shadow_research_profile() noexcept {
     g_cfg.session_end_utc   = 0;   // equal start/end => 24h tradeable window
     g_cfg.session_asia      = true;
 
-    g_cfg.max_latency_ms    = std::max(g_cfg.max_latency_ms, 25.0);
+    g_cfg.max_latency_ms    = std::max(g_cfg.max_latency_ms, 80.0);  // floor raised: 25ms was irrelevant, real VPS RTTp95 ~68ms
     // SHADOW quality profile: still active, but avoid low-edge overtrading.
     g_cfg.max_hold_sec        = std::min(g_cfg.max_hold_sec, 120);
     g_cfg.momentum_thresh_pct = std::max(g_cfg.momentum_thresh_pct, 0.045);
