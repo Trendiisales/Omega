@@ -2379,10 +2379,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
 
     // Cross-symbol compression state — engine is in COMPRESSION or BREAKOUT_WATCH
+    // NAS100 and USTEC.F are the same underlying — either one counts as "nq compressing"
     g_macro_ctx.sp_compressing    = (g_eng_sp.phase     == omega::Phase::COMPRESSION
                                   || g_eng_sp.phase     == omega::Phase::BREAKOUT_WATCH);
     g_macro_ctx.nq_compressing    = (g_eng_nq.phase     == omega::Phase::COMPRESSION
-                                  || g_eng_nq.phase     == omega::Phase::BREAKOUT_WATCH);
+                                  || g_eng_nq.phase     == omega::Phase::BREAKOUT_WATCH
+                                  || g_eng_nas100.phase == omega::Phase::COMPRESSION
+                                  || g_eng_nas100.phase == omega::Phase::BREAKOUT_WATCH);
     g_macro_ctx.us30_compressing  = (g_eng_us30.phase   == omega::Phase::COMPRESSION
                                   || g_eng_us30.phase   == omega::Phase::BREAKOUT_WATCH);
     g_macro_ctx.ger30_compressing = (g_eng_ger30.phase  == omega::Phase::COMPRESSION
@@ -3332,30 +3335,51 @@ static void quote_loop() {
         g_quote_ready.store(false);  // clear before logon — previous session may have left it true
 
         // ── Ghost session cleanup ─────────────────────────────────────────────
-        // Send a logon + immediate unsubscribe before the real logon.
-        // If the server has a ghost subscription from a prior broken session
-        // (crash, timeout, bad 264= value etc), the unsub clears it.
-        // Without this, the server holds the old sub and delays/rejects the
-        // new logon with ALREADY_SUBSCRIBED, causing the 30s timeout loop.
+        // Send a throwaway logon then unsub ALL possible subscription IDs.
+        // The EXT subscription uses a dynamic seq in its req ID (OMEGA-MD-EXT-{seq}),
+        // so we must send unsub for every seq number a prior session could have used.
         {
-            // Send a throwaway logon just to get a session context for the unsub
             const std::string ghost_logon = fix_build_logon(g_quote_seq++, "QUOTE");
             SSL_write(ssl, ghost_logon.c_str(), static_cast<int>(ghost_logon.size()));
-            Sleep(500); // brief wait for server to process logon
+            Sleep(600); // wait for logon ACK
 
-            // Send unsubscribe for both subscription IDs
+            // Primary subscription unsub
             const std::string unsub = fix_build_md_unsub(g_quote_seq++);
             SSL_write(ssl, unsub.c_str(), static_cast<int>(unsub.size()));
+
+            // EXT subscriptions — send unsub for seq 1-20 to catch any prior session ID
+            // The EXT req ID is OMEGA-MD-EXT-{seq}, so we need to match each one.
+            for (int s = 1; s <= 20; ++s) {
+                std::vector<int> ids;
+                { std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+                  for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id); }
+                if (!ids.empty()) {
+                    std::ostringstream ub;
+                    ub << "35=V\x01"
+                       << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
+                       << "50=QUOTE\x01" << "57=QUOTE\x01"
+                       << "34=" << g_quote_seq++ << "\x01" << "52=" << timestamp() << "\x01"
+                       << "262=OMEGA-MD-EXT-" << s << "\x01"
+                       << "263=2\x01" << "264=1\x01" << "265=0\x01"
+                       << "146=" << ids.size() << "\x01";
+                    for (int id : ids) ub << "55=" << id << "\x01";
+                    ub << "267=2\x01" << "269=0\x01" << "269=1\x01";
+                    const std::string u = wrap_fix(ub.str());
+                    SSL_write(ssl, u.c_str(), static_cast<int>(u.size()));
+                }
+            }
+
+            // Also send the named unsub just in case
             const std::string unsub_ext = fix_build_md_unsub_ext(g_quote_seq++);
             if (!unsub_ext.empty())
                 SSL_write(ssl, unsub_ext.c_str(), static_cast<int>(unsub_ext.size()));
 
-            // Send logout to cleanly close this throwaway session
+            Sleep(200);
             const std::string lo = fix_build_logout(g_quote_seq++, "QUOTE");
             SSL_write(ssl, lo.c_str(), static_cast<int>(lo.size()));
-            Sleep(500); // wait for server to process logout + unsub
+            Sleep(600); // wait for server to process everything
 
-            std::cout << "[OMEGA] Ghost session cleanup sent\n";
+            std::cout << "[OMEGA] Ghost session cleanup sent (unsub 1-20)\n";
         }
 
         // Close and reconnect with a fresh TCP/SSL connection for the real logon
