@@ -81,52 +81,27 @@ inline void apply_realistic_costs(TradeRecord& tr,
                                   double commission_per_side,
                                   double tick_mult)
 {
-    // Determine per-instrument slippage rate
-    double slip_pct = 0.008; // default
-    const std::string& sym = tr.symbol;
-    if (sym == "GOLD.F" || sym == "XAGUSD")
-        slip_pct = 0.010;
-    else if (sym == "USOIL.F" || sym == "UKBRENT")
-        slip_pct = 0.012;
-    else if (sym == "USTEC.F" || sym == "US500.F" || sym == "DJ30.F" || sym == "NAS100")
-        slip_pct = 0.006;
-    else if (sym == "GER30" || sym == "UK100" || sym == "ESTX50")
-        slip_pct = 0.008;
-    else if (sym == "EURUSD")
-        slip_pct = 0.003;
-
-    // Exit multiplier — worse fill on panic SL, better on limit TP
-    double exit_slip_multiplier = 1.0;
-    if (tr.exitReason == "TP_HIT")         exit_slip_multiplier = 0.75;
-    else if (tr.exitReason == "SL_HIT")    exit_slip_multiplier = 1.50;
-    else if (tr.exitReason == "SCRATCH")   exit_slip_multiplier = 1.25;
-
-    tr.slip_entry_pct = slip_pct;
-    tr.slip_exit_pct  = slip_pct * exit_slip_multiplier;
+    tr.slip_entry_pct = 0.0;  // unused — cost now derived from spreadAtEntry directly
+    tr.slip_exit_pct  = 0.0;  // unused — exit has no cost gap (bid/ask used for TP/SL)
     tr.comm_per_side  = commission_per_side;
 
-    // Slippage in USD:  price × slip_pct/100 × tick_mult × size
-    // tick_mult converts from price-point slippage to dollar slippage.
-    // e.g. XAGUSD entry=81.01, slip=0.01%, tick_mult=5000, size=0.20
-    //      → 81.01 × 0.0001 × 5000 × 0.20 = $8.10 USD (correct)
+    // ── Exact cost model derived from engine mechanics ───────────────────────
+    // Entry: engine records pos.entry = mid. Real fill on LONG = ask = mid + spread/2.
+    //        Cost = spread_at_entry/2 × tick_mult × size.
     //
-    // Index CFD special case (tick_mult=1.0, price ~5,000-50,000):
-    // price × slip_pct produces slippage scaled to the raw index level.
-    // DJ30 at 46,472: 0.006% = 2.79pts slip per side — exceeds many TP targets.
-    // For tick_mult=1.0 instruments, cap slippage at MAX_INDEX_SLIP_PTS per side.
-    // Realistic BlackBull liquid index CFD fill slippage: 0.5pts per side.
-    static constexpr double MAX_INDEX_SLIP_PTS = 0.5;  // pts per side, per lot
-    auto slip_usd = [&](double price, double pct_rate, double mult, double sz) -> double {
-        const double raw = price * (pct_rate / 100.0) * mult * sz;
-        if (mult <= 1.0) {
-            // Index CFD: cap at MAX_INDEX_SLIP_PTS × tick_mult × size (USD)
-            const double cap = MAX_INDEX_SLIP_PTS * mult * sz;
-            return std::min(raw, cap);
-        }
-        return raw;
-    };
-    tr.slippage_entry = slip_usd(tr.entryPrice, slip_pct,                         tick_mult, tr.size);
-    tr.slippage_exit  = slip_usd(tr.exitPrice,  slip_pct * exit_slip_multiplier,  tick_mult, tr.size);
+    // Exit:  TP fires when bid >= TP level → closePos(pos.tp) → exit recorded at pos.tp.
+    //        SL fires when bid <= SL level → closePos(pos.sl) → exit recorded at pos.sl.
+    //        Real fill = bid at that moment = pos.tp or pos.sl exactly.
+    //        Shadow exit = pos.tp or pos.sl exactly.
+    //        No cost gap on exit — engine already uses aggressive bid/ask for checks.
+    //
+    // For non-index instruments (FX, commodities) the engine also uses mid for entry,
+    // so the same half-spread model applies. The slip_pct approach approximated this
+    // but overcounted on index CFDs (price level 46,000 × 0.006% = 2.8pts, exceeding TP).
+    //
+    // tr.spreadAtEntry is set at entry time (= ask - bid in price points).
+    tr.slippage_entry = (tr.spreadAtEntry / 2.0) * tick_mult * tr.size;
+    tr.slippage_exit  = 0.0;  // TP/SL checks use bid/ask — exit fill = TP/SL level exactly
     tr.commission     = commission_per_side * 2.0 * tr.size; // entry + exit, already in USD
 
     // tr.pnl must already be in USD before this call
