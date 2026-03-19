@@ -242,7 +242,6 @@ td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:n
 )OMEGA0"
 
 R"OMEGA1(
-R"OMEGA1(
       <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;" id="vixLevelHdr">--</div>
     </div>
     <div style="width:1px;height:28px;background:var(--border);"></div>
@@ -441,7 +440,6 @@ R"OMEGA1(
 )OMEGA1"
 
 R"OMEGA2(
-R"OMEGA2(
         <div class="eng-cell" id="engGBP"><div class="eng-sym c-cyan">GBPUSD</div><div class="eng-ph eph-flat" id="engGBPPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engGBPBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engGBPAsk">--</span></div><div class="eng-vol" id="engGBPVol">--</div><div class="eng-sigs" id="engGBPSig">0</div></div>
         <div class="eng-cell" id="engAUD"><div class="eng-sym c-teal">AUDUSD</div><div class="eng-ph eph-flat" id="engAUDPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engAUDBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engAUDAsk">--</span></div><div class="eng-vol" id="engAUDVol">--</div><div class="eng-sigs" id="engAUDSig">0</div></div>
         <div class="eng-cell" id="engNZD"><div class="eng-sym c-teal">NZDUSD</div><div class="eng-ph eph-flat" id="engNZDPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engNZDBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engNZDAsk">--</span></div><div class="eng-vol" id="engNZDVol">--</div><div class="eng-sigs" id="engNZDSig">0</div></div>
@@ -452,20 +450,8 @@ R"OMEGA2(
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">★ Metals Engines</div>
       <div class="eng-grid" style="grid-template-columns:repeat(2,1fr)">
-        <div class="eng-cell" id="engXAU" style="border-color:rgba(245,200,66,0.2);background:rgba(245,200,66,0.04);">
-          <div class="eng-sym" style="color:var(--gold)">GOLD.F</div>
-          <div class="eng-ph eph-flat" id="engXAUPhase">FLAT</div>
-          <div class="eng-px"><span class="eng-bid" id="engXAUBid" style="color:var(--gold)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAUAsk" style="color:var(--red)">--</span></div>
-          <div class="eng-vol" id="engXAUVol">--</div>
-          <div class="eng-sigs" id="engXAUSig">0</div>
-        </div>
-        <div class="eng-cell" id="engXAG" style="border-color:rgba(154,180,204,0.2);background:rgba(154,180,204,0.03);">
-          <div class="eng-sym" style="color:var(--silver)">XAGUSD</div>
-          <div class="eng-ph eph-flat" id="engXAGPhase">FLAT</div>
-          <div class="eng-px"><span class="eng-bid" id="engXAGBid" style="color:var(--silver)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAGAsk" style="color:var(--red)">--</span></div>
-          <div class="eng-vol" id="engXAGVol">--</div>
-          <div class="eng-sigs" id="engXAGSig">0</div>
-        </div>
+        <div class="eng-cell" id="engXAU" style="border-color:rgba(245,200,66,0.2);background:rgba(245,200,66,0.04);"><div class="eng-sym" style="color:var(--gold)">GOLD.F</div><div class="eng-ph eph-flat" id="engXAUPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engXAUBid" style="color:var(--gold)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAUAsk" style="color:var(--red)">--</span></div><div class="eng-vol" id="engXAUVol">--</div><div class="eng-sigs" id="engXAUSig">0</div></div>
+        <div class="eng-cell" id="engXAG" style="border-color:rgba(154,180,204,0.2);background:rgba(154,180,204,0.03);"><div class="eng-sym" style="color:var(--silver)">XAGUSD</div><div class="eng-ph eph-flat" id="engXAGPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engXAGBid" style="color:var(--silver)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAGAsk" style="color:var(--red)">--</span></div><div class="eng-vol" id="engXAGVol">--</div><div class="eng-sigs" id="engXAGSig">0</div></div>
       </div>
     </div>
 
@@ -583,7 +569,7 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
   const cell=document.getElementById(cellId),ph=document.getElementById(phaseId),vol=document.getElementById(volId),sig=document.getElementById(sigId);
   if(!cell)return;
   const p=safe(phase);
-  if(isLive) cell.className='eng-cell ph-live';
+  if(isLive)cell.className='eng-cell ph-live';
   else cell.className='eng-cell'+(p===1?' ph1':p===2?' ph2':'');
   if(ph){
     if(isLive){ph.className='eng-ph eph-live';ph.textContent='LIVE ●';}
@@ -592,13 +578,12 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
     else{ph.className='eng-ph eph-brk';ph.textContent='BRK⚡';}
   }
   if(vol){
-    if(p===1&&safe(hi)>0) vol.textContent=safe(hi).toFixed(dec||1)+'↑'+safe(lo).toFixed(dec||1);
+    if(p===1&&safe(hi)>0)vol.textContent=safe(hi).toFixed(dec||1)+'↑'+safe(lo).toFixed(dec||1);
     else vol.textContent='r'+safe(rv).toFixed(2)+'%';
   }
   if(sig)sig.textContent=sigs+'sig';
-  // Prices
-  const bidEl=document.getElementById(cellId+'Bid'),askEl=document.getElementById(cellId+'Ask');
   const d=dec!=null?dec:2;
+  const bidEl=document.getElementById(cellId+'Bid'),askEl=document.getElementById(cellId+'Ask');
   if(bidEl&&safe(bid)>0)bidEl.textContent=safe(bid).toFixed(d);
   if(askEl&&safe(ask)>0)askEl.textContent=safe(ask).toFixed(d);
 }
@@ -631,13 +616,12 @@ function renderTrades(trades){
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
     const win=net>0,loss=net<0,sc=t.side==='LONG'?'var(--green)':'var(--red)';
     const reason=t.exitReason||'',result=isOpen?'🔵':reason==='TP_HIT'?'✅TP':reason==='SL_HIT'?'❌SL':reason==='TIMEOUT'?'⏱TO':'⚡FC';
-)OMEGA2"
-
-R"OMEGA3(
-R"OMEGA3(
     const rc=isOpen?'var(--blue)':win?'var(--green)':loss?'var(--red)':'var(--t2)';
     const netC=win?'var(--green)':loss?'var(--red)':'var(--t2)';
     let heldStr='--';
+)OMEGA2"
+
+R"OMEGA3(
     if(isOpen&&safe(t.entryTs)>0){const s=now-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
 
 
@@ -689,9 +673,8 @@ function updateDashboard(d){
   px('ngasBid',d.ngas_bid,2);px('ngasAsk',d.ngas_ask,2);
 
   // Engine cells — US/Oil group (sp_phase etc from telemetry)
-  // Engine cells — pass bid/ask prices and live state
   const live=d.open_positions||[];
-  const isLive=sym=>live.some?.(p=>p.symbol===sym):false;
+  const isLive=sym=>Array.isArray(live)&&live.some(p=>p.symbol===sym);
   updateEngCell('engSP','engSPPhase','engSPVol','engSPSig',d.sp_phase,d.sp_recent_vol_pct,d.sp_baseline_vol_pct,d.sp_signals,d.sp_comp_high,d.sp_comp_low,d.sp_bid,d.sp_ask,2,isLive('US500.F'));
   updateEngCell('engNQ','engNQPhase','engNQVol','engNQSig',d.nq_phase,d.nq_recent_vol_pct,d.nq_baseline_vol_pct,d.nq_signals,d.nq_comp_high,d.nq_comp_low,d.nq_bid,d.nq_ask,2,isLive('USTEC.F'));
   updateEngCell('engUS30','engUS30Phase','engUS30Vol','engUS30Sig',d.dj_phase,d.dj_recent_vol_pct,d.dj_baseline_vol_pct,d.dj_signals,d.dj_comp_high,d.dj_comp_low,d.dj_bid,d.dj_ask,2,isLive('DJ30.F'));
@@ -706,14 +689,8 @@ function updateDashboard(d){
   updateEngCell('engAUD','engAUDPhase','engAUDVol','engAUDSig',d.audusd_phase,d.audusd_recent_vol_pct,d.audusd_baseline_vol_pct,d.audusd_signals,d.audusd_comp_high,d.audusd_comp_low,d.audusd_bid,d.audusd_ask,5,isLive('AUDUSD'));
   updateEngCell('engNZD','engNZDPhase','engNZDVol','engNZDSig',d.nzdusd_phase,d.nzdusd_recent_vol_pct,d.nzdusd_baseline_vol_pct,d.nzdusd_signals,d.nzdusd_comp_high,d.nzdusd_comp_low,d.nzdusd_bid,d.nzdusd_ask,5,isLive('NZDUSD'));
   updateEngCell('engJPY','engJPYPhase','engJPYVol','engJPYSig',d.usdjpy_phase,d.usdjpy_recent_vol_pct,d.usdjpy_baseline_vol_pct,d.usdjpy_signals,d.usdjpy_comp_high,d.usdjpy_comp_low,d.usdjpy_bid,d.usdjpy_ask,3,isLive('USDJPY'));
-  // Gold + Silver engine cells
-  const xauP=safe(d.xau_phase);
-  updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',xauP,d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('GOLD.F'));
+  updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('GOLD.F'));
   updateEngCell('engXAG','engXAGPhase','engXAGVol','engXAGSig',d.xag_phase,d.xag_recent_vol_pct,d.xag_baseline_vol_pct,d.xag_signals,0,0,d.xag_bid,d.xag_ask,3,isLive('XAGUSD'));
-  // These engines don't have dedicated phase fields in telemetry yet — show placeholder
-  ['engUS30','engNAS','engGER','engUK','engESTX','engBRENT','engEUR','engGBP','engAUD','engNZD','engJPY'].forEach(id=>{
-    const cell=document.getElementById(id);if(cell&&cell.className==='eng-cell')cell.className='eng-cell';
-  });
 
   // PnL
   const pnl=safe(d.daily_pnl),gross=safe(d.gross_daily_pnl);
@@ -834,10 +811,6 @@ setInterval(()=>{const el=document.getElementById('clock');if(el)el.textContent=
 connectWS();
 setInterval(httpPoll,1000);
 setInterval(pollTrades,5000);
-)OMEGA3"
-
-R"OMEGA4(
-R"OMEGA4(
 pollTrades();
 </script>
 </body>
@@ -845,7 +818,7 @@ pollTrades();
 
 
 
-)OMEGA4"
+)OMEGA3"
 
 ;
 } // namespace omega_gui
