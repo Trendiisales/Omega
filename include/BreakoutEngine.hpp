@@ -592,11 +592,12 @@ public:
             if (!long_break && !short_break) {
                 const int64_t elapsed = nowSec() - m_watch_start_ts;
                 if (elapsed > WATCH_TIMEOUT_SEC) {
-                    // Check if compression structure still holds.
-                    // If vol has fully expanded back to baseline, range is stale — reset.
-                    // If vol still compressed or moderate, stay ARMED with same range.
+                    // structure_gone: vol has fully normalised well above baseline.
+                    // Threshold must be >> COMPRESSION_THRESHOLD (0.80-0.85) to avoid
+                    // resetting the engine the moment compression ends (vol ~0.85 baseline).
+                    // Only reset when vol is clearly back to full expansion (1.5× baseline).
                     const bool structure_gone = (base_vol_pct > 0.0) &&
-                                                (recent_vol_pct > base_vol_pct * 0.95);
+                                                (recent_vol_pct > base_vol_pct * 1.50);
                     if (structure_gone) {
                         std::cout << "[ENG-" << symbol << "] WATCH timeout — structure gone"
                                   << " rv=" << recent_vol_pct << "% bv=" << base_vol_pct
