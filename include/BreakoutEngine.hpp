@@ -277,7 +277,8 @@ public:
     double      SL_PCT                = 2.000;
     int         COMPRESSION_LOOKBACK  = 50;
     int         BASELINE_LOOKBACK     = 200;
-    double      COMPRESSION_THRESHOLD = 0.80;
+    double      COMPRESSION_THRESHOLD = 0.80;  // enter compression when ratio < this
+    double      COMP_EXIT_THRESHOLD   = 0.95;  // hysteresis: stay compressed while ratio < this, exit when >= this
     int         MAX_HOLD_SEC          = 1500;
     int         MIN_GAP_SEC           = 180;
     double      MAX_SPREAD_PCT        = 0.05;
@@ -292,17 +293,24 @@ public:
     double      ENTRY_SIZE            = 0.01;
     bool        AGGRESSIVE_SHADOW     = false;
     const char* symbol                = "???";
-    // Fix 1: time-based watch timeout (seconds) replaces tick-count watch_ticks.
-    // Per-symbol tuning via symbols.ini. Indices default 300s, FX 180s.
     int         WATCH_TIMEOUT_SEC     = 300;
-    // Compression stickiness: number of consecutive non-compression ticks to absorb
-    // before declaring compression ended. Real indices have noisy vol — a single tick
-    // above threshold must not destroy accumulated range state.
-    // 3 = absorb up to 3 noisy ticks before giving up. Tunable per symbol.
-    int         COMP_ESCAPE_TOLERANCE = 3;
-    // Re-entry cooldown: ticks to wait in FLAT before re-detecting compression after
-    // a failed arm. Prevents immediate re-entry churn (COMPRESSION→fail→COMPRESSION).
-    // 5 = skip 5 ticks before allowing next compression detection.
+    // ── Compression stability params (spec values) ────────────────────────────
+    // range_tolerance: compression range may expand up to this multiple of the
+    // initial range before it is considered a genuine breakout of structure.
+    // 1.25 = allow 25% range expansion before declaring structure broken.
+    double      COMP_RANGE_TOLERANCE  = 1.25;
+    // drift_tolerance: price may drift up to this fraction of comp range inside
+    // structure without triggering a reset.
+    // 0.35 = 35% of range = ~2pts on ESTX50 with 6pt range.
+    double      COMP_DRIFT_TOLERANCE  = 0.35;
+    // violation_ticks: require this many consecutive ticks breaching ALL three
+    // reset conditions before actually resetting. 3 = per spec.
+    int         COMP_VIOLATION_TICKS  = 3;
+    // min_life: ignore violations for this many ticks after entering compression.
+    // Prevents immediate churn on entry. 12 = per spec.
+    int         COMP_MIN_LIFE_TICKS   = 12;
+    // re-entry cooldown: ticks to wait in FLAT after a failed arm before
+    // allowing next compression detection. Stops COMPRESSION→fail churn.
     int         COMP_REENTRY_DELAY    = 5;
 
     // ── Observable state (read by telemetry thread) ───────────────────────────
@@ -535,29 +543,29 @@ public:
         }
 
         // ── Phase FSM ─────────────────────────────────────────────────────────
-        const bool in_compression = (base_vol_pct > 0.0) &&
-                                    (recent_vol_pct < COMPRESSION_THRESHOLD * base_vol_pct);
+        // Hysteresis: two thresholds prevent threshold flickering.
+        //   Enter compression:  ratio < COMPRESSION_THRESHOLD (0.80)
+        //   Stay  compression:  ratio < COMP_EXIT_THRESHOLD   (0.95)
+        //   Exit  compression:  ratio >= COMP_EXIT_THRESHOLD  (0.95)
+        const double vol_ratio = (base_vol_pct > 0.0) ? (recent_vol_pct / base_vol_pct) : 999.0;
+        const bool can_enter_compression = (base_vol_pct > 0.0) && (vol_ratio < COMPRESSION_THRESHOLD);
+        const bool still_compressed      = (base_vol_pct > 0.0) && (vol_ratio < COMP_EXIT_THRESHOLD);
 
         if (phase == Phase::FLAT) {
-            if (in_compression) {
-                // Re-entry cooldown: if we just reset from a failed compression,
-                // don't immediately re-enter. Wait until we've accumulated enough
-                // baseline history to ensure the next compression is real.
-                // m_comp_escape_ticks is re-used here as a re-entry delay counter:
-                // it counts down from COMP_REENTRY_DELAY on reset, blocks re-entry until 0.
-                if (m_comp_escape_ticks > 0) {
-                    --m_comp_escape_ticks;
-                    return {};
-                }
-                phase               = Phase::COMPRESSION;
-                comp_high           = mid;
-                comp_low            = mid;
-                m_compression_ticks = 1;
-                m_comp_escape_ticks = 0;
+            if (m_comp_reentry_wait > 0) {
+                --m_comp_reentry_wait;
+                return {};
+            }
+            if (can_enter_compression) {
+                phase                  = Phase::COMPRESSION;
+                comp_high              = mid;
+                comp_low               = mid;
+                m_compression_ticks    = 1;
+                m_comp_violation_ticks = 0;
                 std::cout << std::fixed << std::setprecision(5)
                           << "[ENG-" << symbol << "] COMPRESSION entered"
-                          << " recent=" << recent_vol_pct << "% base=" << base_vol_pct
-                          << "% ratio=" << (base_vol_pct>0?recent_vol_pct/base_vol_pct:0)
+                          << " ratio=" << vol_ratio
+                          << " recent=" << recent_vol_pct << "% base=" << base_vol_pct << "%"
                           << " mid=" << mid << "\n";
                 std::cout.unsetf(std::ios::fixed);
                 std::cout.flush();
@@ -565,78 +573,110 @@ public:
             return {};
         }
 
-        // ── COMPRESSION phase: track the range while vol is compressed ────────
-        // Sticky compression: allow up to COMP_ESCAPE_TOLERANCE consecutive ticks
-        // where vol briefly pops above threshold before giving up.
-        // Real compressions in live indices have noisy vol — a single tick above
-        // threshold must not destroy accumulated range state.
+        // ── COMPRESSION phase ─────────────────────────────────────────────────
         if (phase == Phase::COMPRESSION) {
-            if (in_compression) {
-                ++m_compression_ticks;
-                m_comp_escape_ticks = 0;  // reset escape counter — still compressing
-                if (mid > comp_high) comp_high = mid;
-                if (mid < comp_low)  comp_low  = mid;
-                return {};  // still compressing — keep tracking
-            }
-
-            // Vol briefly escaped compression threshold.
-            // Absorb up to COMP_ESCAPE_TOLERANCE ticks before declaring it over.
-            // This makes compression sticky through brief noise spikes.
-            ++m_comp_escape_ticks;
-            // Still track range expansion during escape window — price may be
-            // probing the boundary before returning to compression.
+            // Always extend range — price probing the boundary is part of structure
             if (mid > comp_high) comp_high = mid;
             if (mid < comp_low)  comp_low  = mid;
 
-            if (m_comp_escape_ticks <= COMP_ESCAPE_TOLERANCE) {
-                return {};  // absorb the noise tick — stay in COMPRESSION
-            }
+            const double comp_range   = comp_high - comp_low;
+            const double comp_midpt   = (comp_high + comp_low) * 0.5;
 
-            // Escape tolerance exhausted — compression genuinely ended.
-            // Reset escape counter and apply re-entry cooldown on failure paths.
+            // ── Check three reset conditions ──────────────────────────────────
+            // Reset only when ALL THREE are true for COMP_VIOLATION_TICKS consecutive ticks.
+            // Single-condition or single-tick violations are absorbed.
 
-            // FIX: require only 2 ticks (not 3) — real market compressions on indices
-            // can be sparse and 3 ticks is unnecessarily strict.
-            if (m_compression_ticks < 2) {
-                std::cout << "[ENG-" << symbol << "] ARM_CHECK fail reason=min_ticks"
-                          << " ticks=" << m_compression_ticks << " need=2\n";
-                std::cout.flush();
-                phase               = Phase::FLAT;
-                m_compression_ticks = 0;
-                m_comp_escape_ticks = COMP_REENTRY_DELAY;  // cooldown before re-detecting
+            // Condition 1: vol ratio has genuinely expanded (hysteresis exit threshold)
+            const bool vol_broken = !still_compressed;  // ratio >= 0.95
+
+            // Condition 2: range has expanded beyond tolerance
+            // Use initial comp range if available, else current. We track it separately.
+            const bool range_broken = (m_comp_initial_range > 0.0) &&
+                                      (comp_range > m_comp_initial_range * COMP_RANGE_TOLERANCE);
+
+            // Condition 3: price has drifted too far from the compression midpoint
+            const double drift     = std::fabs(mid - comp_midpt);
+            const double max_drift = (comp_range > 0.0) ? (comp_range * COMP_DRIFT_TOLERANCE) : 999.0;
+            const bool drift_broken = (drift > max_drift);
+
+            const bool all_violated = vol_broken && range_broken && drift_broken;
+
+            // Min life: ignore ALL violations for first COMP_MIN_LIFE_TICKS ticks.
+            // Prevents immediate churn right after entering compression.
+            if (m_compression_ticks < COMP_MIN_LIFE_TICKS) {
+                ++m_compression_ticks;
+                m_comp_violation_ticks = 0;  // can't violate during min life
+                // Record initial range once we have a few ticks of data
+                if (m_compression_ticks == 3 && m_comp_initial_range <= 0.0)
+                    m_comp_initial_range = std::max(comp_range, MIN_COMP_RANGE * 0.5);
                 return {};
             }
 
-            // FIX: if range is too small, stay in COMPRESSION to keep accumulating.
-            // Do NOT reset — the range will grow as price explores the boundary.
-            // Only force-exit after MAX_RANGE_WAIT_TICKS of waiting with small range.
-            const double comp_range_built = comp_high - comp_low;
-            if (MIN_COMP_RANGE > 0.0 && comp_range_built < MIN_COMP_RANGE) {
+            ++m_compression_ticks;
+
+            if (all_violated) {
+                ++m_comp_violation_ticks;
+                if (m_comp_violation_ticks < COMP_VIOLATION_TICKS) {
+                    return {};  // absorb — need COMP_VIOLATION_TICKS consecutive violations
+                }
+                // Genuine structure break — reset
                 std::cout << std::fixed << std::setprecision(5)
-                          << "[ENG-" << symbol << "] ARM_CHECK fail reason=range_too_small"
-                          << " range=" << comp_range_built
-                          << " min=" << MIN_COMP_RANGE
-                          << " hi=" << comp_high << " lo=" << comp_low
-                          << " — staying in COMPRESSION to accumulate\n";
+                          << "[ENG-" << symbol << "] COMPRESSION broken"
+                          << " ratio=" << vol_ratio
+                          << " range=" << comp_range
+                          << " init_range=" << m_comp_initial_range
+                          << " drift=" << drift
+                          << " ticks=" << m_compression_ticks << "\n";
                 std::cout.unsetf(std::ios::fixed);
                 std::cout.flush();
-                // Stay in compression — reset escape counter and keep building range.
-                // This is the key fix: instead of resetting to FLAT (killing all state),
-                // we stay alive and let the range grow on subsequent ticks.
-                phase               = Phase::COMPRESSION;
-                m_comp_escape_ticks = 0;
+                phase                  = Phase::FLAT;
+                m_compression_ticks    = 0;
+                m_comp_violation_ticks = 0;
+                m_comp_initial_range   = 0.0;
+                m_comp_reentry_wait    = COMP_REENTRY_DELAY;
                 return {};
             }
 
-            // Range is viable — arm the watch
-            phase               = Phase::BREAKOUT_WATCH;
-            m_compression_ticks = 0;
-            m_comp_escape_ticks = 0;
-            m_watch_start_ts    = nowSec();
-            watch_ticks         = 0;  // not used for timeout, kept for telemetry
+            // Not all conditions violated — reset violation counter
+            m_comp_violation_ticks = 0;
+
+            // ── Arm check ─────────────────────────────────────────────────────
+            // Compression is still valid. Check if we can transition to ARMED.
+            // Only attempt arm when vol has briefly exited (we're at the boundary).
+            // While vol is fully in compression there's nothing to break yet.
+            if (still_compressed) {
+                return {};  // still compressing — keep building range
+            }
+
+            // Vol has exited the enter-threshold (ratio crossed 0.80) but is still
+            // below exit-threshold (0.95) — we're at the compression boundary.
+            // This is the arm window: range is built, structure intact, vol starting to expand.
+
+            // Require minimum range
+            if (MIN_COMP_RANGE > 0.0 && comp_range < MIN_COMP_RANGE) {
+                std::cout << std::fixed << std::setprecision(5)
+                          << "[ENG-" << symbol << "] ARM_CHECK fail reason=range_too_small"
+                          << " range=" << comp_range
+                          << " min=" << MIN_COMP_RANGE
+                          << " hi=" << comp_high << " lo=" << comp_low
+                          << " ticks=" << m_compression_ticks << "\n";
+                std::cout.unsetf(std::ios::fixed);
+                std::cout.flush();
+                return {};  // stay — range may grow
+            }
+
+            // ── ARM ───────────────────────────────────────────────────────────
+            phase                  = Phase::BREAKOUT_WATCH;
+            m_compression_ticks    = 0;
+            m_comp_violation_ticks = 0;
+            m_comp_initial_range   = 0.0;
+            m_watch_start_ts       = nowSec();
+            watch_ticks            = 0;
             std::cout << std::fixed << std::setprecision(5)
                       << "[ENG-" << symbol << "] BREAKOUT_WATCH started (ARMED)"
                       << " hi=" << comp_high << " lo=" << comp_low
+                      << " range=" << comp_range
+                      << " ratio=" << vol_ratio
                       << " timeout=" << WATCH_TIMEOUT_SEC << "s\n";
             std::cout.unsetf(std::ios::fixed);
             std::cout.flush();
@@ -817,10 +857,12 @@ public:
 
 protected:
     std::deque<double> m_prices;
-    int64_t            m_last_signal_ts    = 0;
-    int                m_trade_id          = 0;
-    int                m_compression_ticks = 0;  // ticks spent inside compression phase
-    int                m_comp_escape_ticks = 0;  // consecutive ticks where vol briefly popped above threshold
+    int64_t            m_last_signal_ts       = 0;
+    int                m_trade_id             = 0;
+    int                m_compression_ticks    = 0;   // ticks spent in COMPRESSION phase
+    int                m_comp_violation_ticks = 0;   // consecutive ticks where ALL reset conditions are true
+    int                m_comp_reentry_wait    = 0;   // countdown before re-detecting compression after reset
+    double             m_comp_initial_range   = 0.0; // comp range captured at tick 3 — used for range_tolerance check
 
     static int64_t nowSec() noexcept {
         return std::chrono::duration_cast<std::chrono::seconds>(
