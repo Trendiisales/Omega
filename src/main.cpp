@@ -1403,6 +1403,13 @@ static SSL* connect_ssl(const std::string& host, int port, int& sock_out) {
     DWORD recv_timeout_ms = 200;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
                reinterpret_cast<const char*>(&recv_timeout_ms), sizeof(recv_timeout_ms));
+    // 500ms send timeout — prevents SSL_write blocking indefinitely on logout during shutdown.
+    // Without SO_SNDTIMEO, SSL_write on the FIX logout can block for the full Windows TCP
+    // retransmission timeout (~21s) if the server is slow to ACK the send buffer.
+    // That is exactly the 20-30s shutdown delay. 500ms is enough to send a small FIX message.
+    DWORD send_timeout_ms = 500;
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
+               reinterpret_cast<const char*>(&send_timeout_ms), sizeof(send_timeout_ms));
     SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
     if (!ctx) { closesocket(sock); return nullptr; }
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
