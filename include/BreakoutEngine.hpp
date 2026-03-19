@@ -247,8 +247,6 @@ public:
     double      MAX_SPREAD_PCT        = 0.05;
     double      MOMENTUM_THRESH_PCT   = 0.05;
     double      MIN_BREAKOUT_PCT      = 0.25;
-    double      MIN_EDGE_PCT          = 0.0;
-    double      SLIPPAGE_EST_PCT      = 0.0;
     double      MIN_COMP_RANGE        = 0.0;
     double      ACCOUNT_EQUITY        = 10000.0;
     EdgeConfig  EDGE_CFG;

@@ -55,7 +55,6 @@ bool SymbolConfigManager::load(const std::string& path)
         cfg.sl_mult          = get_double(kv, "SL_MULT",          1.0);
         cfg.max_spread       = get_double(kv, "MAX_SPREAD",       0.0);
         cfg.min_edge_bp      = get_double(kv, "MIN_EDGE_BP",      0.0);
-        cfg.slippage_est_bp  = get_double(kv, "SLIPPAGE_EST_BP",  0.0);
         cfg.min_breakout_pct = get_double(kv, "MIN_BREAKOUT_PCT", 0.0);
 
         // Supervisor fields
