@@ -624,109 +624,24 @@ public:
 
             const bool is_long = long_break;
 
-            // Session/latency gate
+            // ── GATE 1: Session/position gate ────────────────────────────────
             if (!can_enter) {
-                std::cout << "[ENG-" << symbol << "] BLOCKED: can_enter=false\n"; std::cout.flush();
-                phase = Phase::FLAT; return {};
-            }
-
-            // CRTP gate — instrument-specific filters (spread, regime, EIA etc)
-            if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, latency_ms)) {
-                std::cout << "[ENG-" << symbol << "] BLOCKED: shouldTrade=false"
-                          << " spread=" << spread_pct << "%\n"; std::cout.flush();
-                phase = Phase::FLAT; return {};
-            }
-
-            const int64_t now = nowSec();
-            if (now - m_last_signal_ts < static_cast<int64_t>(MIN_GAP_SEC)) {
-                std::cout << "[ENG-" << symbol << "] BLOCKED: min_gap not met"
-                          << " gap=" << (now-m_last_signal_ts) << "s min=" << MIN_GAP_SEC << "\n";
+                std::cout << "[ENG-" << symbol << "] BLOCKED: can_enter=false\n";
                 std::cout.flush();
                 phase = Phase::FLAT; return {};
             }
 
-            // ── VOLATILITY EXPANSION GATE ─────────────────────────────────────
-            {
-                const double vol_expansion_floor = (base_vol_pct > 0.0)
-                    ? (base_vol_pct * 0.60) : VOL_THRESH_PCT;
-                const bool vol_ok = (recent_vol_pct >= VOL_THRESH_PCT) ||
-                                    (recent_vol_pct >= vol_expansion_floor);
-                if (!vol_ok) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: vol_gate"
-                              << " recent=" << recent_vol_pct
-                              << "% thresh=" << VOL_THRESH_PCT
-                              << "% floor=" << vol_expansion_floor << "%\n";
-                    std::cout.flush();
-                    phase = Phase::FLAT; return {};
-                }
+            // ── GATE 2: Spread/instrument gate ───────────────────────────────
+            // Instrument-specific: spread too wide, EIA window for oil, etc.
+            // Non-resetting — spread may tighten on next tick.
+            if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, latency_ms)) {
+                std::cout << "[ENG-" << symbol << "] BLOCKED: spread/instrument"
+                          << " spread=" << spread_pct << "%\n";
+                std::cout.flush();
+                return {};  // wait, don't reset
             }
 
-            // ── MOMENTUM GATE ─────────────────────────────────────────────────
-            double momentum_pct = 0.0;
-            if (static_cast<int>(m_momentum_window.size()) >= MOMENTUM_WINDOW) {
-                momentum_pct = (mid - m_momentum_window.front())
-                               / m_momentum_window.front() * 100.0;
-                const double momentum_thresh = AGGRESSIVE_SHADOW
-                    ? (MOMENTUM_THRESH_PCT * 0.60) : MOMENTUM_THRESH_PCT;
-                const bool momentum_ok = long_break ? (momentum_pct >  momentum_thresh)
-                                                    : (momentum_pct < -momentum_thresh);
-                if (!momentum_ok) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: momentum_gate"
-                              << " mom=" << momentum_pct << "% thresh=" << momentum_thresh << "%\n";
-                    std::cout.flush();
-                    phase = Phase::FLAT; return {};
-                }
-            }
-
-            // ── TICK DIRECTION GATE ───────────────────────────────────────────
-            // Require consecutive ticks in the breakout direction.
-            // If direction not confirmed yet, stay in BREAKOUT_WATCH and wait —
-            // do NOT reset phase (that was killing setups on equal/flat ticks).
-            {
-                const int min_run = AGGRESSIVE_SHADOW ? 1 : 2;
-                const bool dir_ok = long_break ? (m_tick_run >= min_run)
-                                               : (m_tick_run <= -min_run);
-                if (!dir_ok) {
-                    // Don't reset — just wait for next tick to confirm direction
-                    return {};
-                }
-            }
-
-            // ── STRUCTURAL RANGE BREAK GATE ───────────────────────────────────
-            if (static_cast<int>(m_range_window.size()) >= RANGE_WINDOW) {
-                auto struct_end = m_range_window.end(); --struct_end;
-                const double struct_hi = *std::max_element(m_range_window.begin(), struct_end);
-                const double struct_lo = *std::min_element(m_range_window.begin(), struct_end);
-                bool range_ok = long_break ? (mid > struct_hi) : (mid < struct_lo);
-                if (AGGRESSIVE_SHADOW) {
-                    const double relaxed_buf = spread * 0.50;
-                    range_ok = long_break ? (mid > (comp_high + relaxed_buf))
-                                          : (mid < (comp_low  - relaxed_buf));
-                }
-                if (!range_ok) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: range_break_gate"
-                              << " mid=" << mid << " struct_hi=" << struct_hi
-                              << " struct_lo=" << struct_lo << "\n";
-                    std::cout.flush();
-                    phase = Phase::FLAT; return {};
-                }
-            }
-
-            // ── MINIMUM BREAKOUT MOVE GATE ────────────────────────────────────
-            {
-                const double edge = long_break ? comp_high : comp_low;
-                const double move_pct = std::fabs(mid - edge) / edge * 100.0;
-                const double min_req  = AGGRESSIVE_SHADOW
-                    ? (MIN_BREAKOUT_PCT * 0.60) : MIN_BREAKOUT_PCT;
-                if (move_pct < min_req) {
-                    std::cout << "[ENG-" << symbol << "] BLOCKED: min_breakout_gate"
-                              << " move=" << move_pct << "% min=" << min_req << "%\n";
-                    std::cout.flush();
-                    phase = Phase::FLAT; return {};
-                }
-            }
-
-            // ── RATE LIMITER GATE ─────────────────────────────────────────────
+            // ── GATE 3: Rate limiter ──────────────────────────────────────────
             {
                 const int64_t now_sec = nowSec();
                 while (!m_trade_times.empty() && now_sec - m_trade_times.front() > 60)
@@ -739,9 +654,26 @@ public:
                 }
             }
 
-            // ── EDGE MODEL — signal strength, full cost, exhaustion, adaptive TP/SL ──
+            // ── GATE 4: Min gap ───────────────────────────────────────────────
+            {
+                const int64_t now_ts = nowSec();
+                if (now_ts - m_last_signal_ts < static_cast<int64_t>(MIN_GAP_SEC)) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: min_gap"
+                              << " gap=" << (now_ts-m_last_signal_ts) << "s min=" << MIN_GAP_SEC << "\n";
+                    std::cout.flush();
+                    phase = Phase::FLAT; return {};
+                }
+            }
+
+            // ── GATE 5: Edge model ────────────────────────────────────────────
+            // Primary quality gate. Prices breakout move vs spread+slippage cost.
+            // Incorporates vol expansion, compression quality, and momentum.
             const double breakout_move = is_long
                 ? (mid - comp_high) : (comp_low - mid);
+            double momentum_pct = 0.0;
+            if (static_cast<int>(m_momentum_window.size()) >= MOMENTUM_WINDOW)
+                momentum_pct = (mid - m_momentum_window.front())
+                               / m_momentum_window.front() * 100.0;
 
             const EdgeResult edge = compute_edge_and_execution(
                 mid, spread,

@@ -2636,16 +2636,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec = sup_decision(sup, eng, base_can_enter);
         const bool eng_mid_cycle = (eng.phase == omega::Phase::COMPRESSION
                                  || eng.phase == omega::Phase::BREAKOUT_WATCH);
+        // Supervisor gates NEW entries only.
+        // Once in COMPRESSION or BREAKOUT_WATCH the setup is live — do not revoke.
+        // Supervisor oscillating allow=0/1 was killing setups mid-cycle.
         const bool can_enter = base_can_enter && (sdec.allow_breakout || eng_mid_cycle);
-        // Session-slot scaling: adjust MIN_BREAKOUT_PCT by time-of-day quality.
-        // Only when not mid-cycle — don't change the gate during an active setup.
-        // We track the "config base" in a static map keyed by symbol pointer.
+        // Session-slot scaling on MIN_BREAKOUT_PCT — only when idle, not mid-setup
         if (!eng_mid_cycle) {
             static std::unordered_map<const char*, double> s_base_breakout;
             const char* sym_key = eng.symbol;
             auto it = s_base_breakout.find(sym_key);
             if (it == s_base_breakout.end()) {
-                // First call — store current value as the config base
                 s_base_breakout[sym_key] = eng.MIN_BREAKOUT_PCT;
                 it = s_base_breakout.find(sym_key);
             }
