@@ -2666,6 +2666,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool can_enter = eng_mid_cycle
             ? base_can_enter
             : (base_can_enter && sdec.allow_breakout);
+        if (eng_mid_cycle && !sdec.allow_breakout && base_can_enter) {
+            // Log when ARMED bypass overrides supervisor — confirms protection is active
+            static thread_local int64_t s_last_armed_log = 0;
+            const int64_t now_log = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (now_log - s_last_armed_log >= 5) {
+                s_last_armed_log = now_log;
+                std::cout << "[ARMED-BYPASS] " << eng.symbol
+                          << " supervisor allow=0 ignored — engine mid-cycle\n";
+                std::cout.flush();
+            }
+        }
         // Session-slot scaling on MIN_BREAKOUT_PCT — only when idle, not mid-setup
         if (!eng_mid_cycle) {
             static std::unordered_map<const char*, double> s_base_breakout;

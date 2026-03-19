@@ -341,8 +341,8 @@ public:
                 }
             }
         } else {
-            // Score is sufficient — allow based on engine config
             m_consecutive_blocks = 0;
+            d.reason = "valid_signal";  // reason always reflects actual decision
             if (cfg.allow_breakout) {
                 d.allow_breakout = true;
                 d.winner         = "BREAKOUT";
