@@ -400,7 +400,7 @@ private:
     // Hysteresis: candidate regime must hold for this many ticks before switching
     Regime  m_candidate_regime    = Regime::UNKNOWN;
     int     m_candidate_count     = 0;
-    static constexpr int REGIME_HOLD_TICKS = 4;  // must see same regime 4 ticks in a row
+    static constexpr int REGIME_HOLD_TICKS = 2;  // 2 consecutive ticks before regime is stable
 };
 
 } // namespace omega

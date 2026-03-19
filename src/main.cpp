@@ -2595,7 +2595,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // position management. Feeds valid signals into global ranking buffer.
     auto dispatch = [&](auto& eng, omega::SymbolSupervisor& sup, bool base_can_enter) {
         const auto sdec = sup_decision(sup, eng, base_can_enter);
-        const bool can_enter = base_can_enter && sdec.allow_breakout;
+        // Once the engine is in COMPRESSION or BREAKOUT_WATCH it has already been
+        // granted permission on a prior tick. Revoking can_enter mid-cycle causes
+        // the BREAKOUT attempt to fire with can_enter=false and get blocked — the
+        // engine wasted the setup. Keep permission alive until the phase resolves.
+        const bool eng_mid_cycle = (eng.phase == omega::Phase::COMPRESSION
+                                 || eng.phase == omega::Phase::BREAKOUT_WATCH);
+        const bool can_enter = base_can_enter && (sdec.allow_breakout || eng_mid_cycle);
         const auto sig = eng.update(bid, ask, rtt_check, regime.c_str(), on_close, can_enter);
         g_telemetry.UpdateEngineState(sym.c_str(),
             static_cast<int>(eng.phase), eng.comp_high, eng.comp_low,
