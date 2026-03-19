@@ -228,26 +228,39 @@ public:
                 break;
         }
 
-        // ── Regime hysteresis — must see same regime N ticks before switching ───
-        // Prevents tick-by-tick oscillation between regimes from thrashing the
-        // allow_breakout/allow_bracket flags. The engine needs consistent
-        // permission for multiple ticks to progress through its FSM phases.
-        // HIGH_RISK and CHOP are applied immediately (safety — block fast).
-        // Tradeable regimes require REGIME_HOLD_TICKS consecutive matching ticks.
-        if (regime == Regime::HIGH_RISK_NO_TRADE || regime == Regime::CHOP_REVERSAL) {
-            m_candidate_regime = regime;
-            m_candidate_count  = REGIME_HOLD_TICKS; // immediate
-        } else if (regime == m_candidate_regime) {
-            ++m_candidate_count;
-        } else {
-            m_candidate_regime = regime;
-            m_candidate_count  = 1;
+        // ── Regime hysteresis ─────────────────────────────────────────────────
+        // Key insight from live session: HIGH_RISK_NO_TRADE was resetting the
+        // candidate counter, so tradeable regimes could never accumulate the
+        // required hold ticks. A single noisy HIGH_RISK tick wiped all progress.
+        //
+        // Rules:
+        //   CHOP/HIGH_RISK: block trading immediately but do NOT reset the
+        //     candidate counter for a previously-building tradeable regime.
+        //     The candidate keeps building — we just don't trade yet.
+        //   Tradeable regimes: must hold REGIME_HOLD_TICKS consecutive ticks.
+        //     A single HIGH_RISK tick between two EXPANSION ticks is noise.
+        //   Regime change to different tradeable regime: reset counter.
+        const bool is_blocking_regime = (regime == Regime::HIGH_RISK_NO_TRADE
+                                      || regime == Regime::CHOP_REVERSAL);
+        if (!is_blocking_regime) {
+            if (regime == m_candidate_regime) {
+                ++m_candidate_count;
+            } else {
+                // Switched to a different tradeable regime — reset
+                m_candidate_regime = regime;
+                m_candidate_count  = 1;
+            }
         }
-        // Use the stable regime for decisions — only promote if held long enough
-        const Regime stable_regime = (m_candidate_count >= REGIME_HOLD_TICKS)
-                                     ? m_candidate_regime
-                                     : Regime::HIGH_RISK_NO_TRADE;
-        // Recompute scores using the stable regime
+        // Stable regime: use candidate if held long enough, else keep last stable
+        // (not HIGH_RISK — that was the bug). Fall back to UNKNOWN if no candidate.
+        const bool candidate_stable = (m_candidate_count >= REGIME_HOLD_TICKS)
+                                   && !is_blocking_regime;
+        const Regime stable_regime  = candidate_stable
+                                      ? m_candidate_regime
+                                      : (is_blocking_regime ? Regime::HIGH_RISK_NO_TRADE
+                                                            : last_.regime);
+
+        // Recompute scores for the stable regime
         double stable_bracket  = 0.0;
         double stable_breakout = 0.0;
         switch (stable_regime) {
@@ -281,16 +294,31 @@ public:
         if (!regime_ok || !confidence_ok || !score_ok) {
             d.allow_bracket  = false;
             d.allow_breakout = false;
-            d.winner         = "NONE";
-            ++m_consecutive_blocks;
-            if (m_consecutive_blocks >= cfg.cooldown_fail_threshold) {
-                m_cooldown_until_ms  = now_ms + cfg.cooldown_duration_ms;
-                m_consecutive_blocks = 0;
-                std::cout << "[SUPERVISOR-" << symbol << "] COOLDOWN triggered"
-                          << " after " << cfg.cooldown_fail_threshold << " blocks"
-                          << " for " << cfg.cooldown_duration_ms / 1000 << "s"
-                          << " reason=" << reason << "\n";
-                std::cout.flush();
+            // Distinguish "no setup" from "good setup but engine unavailable"
+            // This is purely for log clarity — both result in NONE
+            if (regime_ok && confidence_ok && top_score >= cfg.min_winner_score) {
+                d.winner = "NONE";
+                d.reason = "bracket_unavailable"; // regime good, no engine can act
+            } else {
+                d.winner = "NONE";
+            }
+            // Cooldown only counts CHOP or repeated false-break conditions —
+            // NOT plain inactivity (no_dominant_regime).
+            // Punishing quiet symbols for having no setup causes missed entries
+            // when those symbols eventually move.
+            if (regime == Regime::CHOP_REVERSAL
+                    || (regime == Regime::HIGH_RISK_NO_TRADE
+                        && reason != std::string("no_dominant_regime"))) {
+                ++m_consecutive_blocks;
+                if (m_consecutive_blocks >= cfg.cooldown_fail_threshold) {
+                    m_cooldown_until_ms  = now_ms + cfg.cooldown_duration_ms;
+                    m_consecutive_blocks = 0;
+                    std::cout << "[SUPERVISOR-" << symbol << "] COOLDOWN triggered"
+                              << " after " << cfg.cooldown_fail_threshold << " blocks"
+                              << " for " << cfg.cooldown_duration_ms / 1000 << "s"
+                              << " reason=" << reason << "\n";
+                    std::cout.flush();
+                }
             }
         } else {
             m_consecutive_blocks = 0;
