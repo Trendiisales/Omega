@@ -391,6 +391,33 @@ static std::mutex                              g_book_mtx;
 static std::unordered_map<std::string,double>  g_bids;
 static std::unordered_map<std::string,double>  g_asks;
 
+// L2 book — top 5 levels per symbol, updated from FIX depth feed
+struct L2Level { double price = 0.0; double size = 0.0; };
+struct L2Book {
+    L2Level bids[5];
+    L2Level asks[5];
+    int     bid_count = 0;
+    int     ask_count = 0;
+    // Imbalance: bid_size / (bid_size + ask_size) across top N levels
+    // 0.5 = balanced, >0.65 = bid-heavy, <0.35 = ask-heavy
+    double imbalance() const noexcept {
+        double bs = 0.0, as = 0.0;
+        for (int i = 0; i < bid_count && i < 5; ++i) bs += bids[i].size;
+        for (int i = 0; i < ask_count && i < 5; ++i) as += asks[i].size;
+        const double tot = bs + as;
+        return (tot > 0.0) ? (bs / tot) : 0.5;
+    }
+    // Best wall: largest size level on a given side (0=bid, 1=ask)
+    double wall_size(int side) const noexcept {
+        double mx = 0.0;
+        if (side == 0) { for (int i=0;i<bid_count&&i<5;++i) if(bids[i].size>mx) mx=bids[i].size; }
+        else           { for (int i=0;i<ask_count&&i<5;++i) if(asks[i].size>mx) mx=asks[i].size; }
+        return mx;
+    }
+};
+static std::mutex                                g_l2_mtx;
+static std::unordered_map<std::string, L2Book>   g_l2_books;
+
 // RTT
 static double              g_rtt_last = 0.0, g_rtt_p50 = 0.0, g_rtt_p95 = 0.0;
 static std::deque<double>  g_rtts;
@@ -1215,7 +1242,7 @@ static std::string build_marketdata_req(int seq) {
       << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01"
       << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=5\x01" << "265=0\x01"
       << "146=" << OMEGA_NSYMS << "\x01";
     for (int i = 0; i < OMEGA_NSYMS; ++i)
         b << "55=" << OMEGA_SYMS[i].id << "\x01";
@@ -1237,7 +1264,7 @@ static std::string build_marketdata_req_extended(int seq) {
       << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01"
       << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-EXT-" << seq << "\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-EXT-" << seq << "\x01" << "263=1\x01" << "264=5\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -2419,6 +2446,55 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.nq_open    = g_eng_nq.pos.active;
     g_macro_ctx.oil_open   = g_eng_cl.pos.active;
 
+    // Session slot — updated every tick
+    {
+        const auto t_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti_now = {};
+#ifdef _WIN32
+        gmtime_s(&ti_now, &t_now);
+#else
+        gmtime_r(&t_now, &ti_now);
+#endif
+        const int h = ti_now.tm_hour;
+        if      (h >= 7  && h < 9)  g_macro_ctx.session_slot = 1; // London open
+        else if (h >= 9  && h < 12) g_macro_ctx.session_slot = 2; // London core
+        else if (h >= 12 && h < 14) g_macro_ctx.session_slot = 3; // Overlap
+        else if (h >= 14 && h < 17) g_macro_ctx.session_slot = 4; // NY open
+        else if (h >= 17 && h < 22) g_macro_ctx.session_slot = 5; // NY late
+        else if (h >= 22 || h < 5)  g_macro_ctx.session_slot = 6; // Asia
+        else                         g_macro_ctx.session_slot = 0; // Dead zone 05-07
+    }
+
+    // Cross-symbol compression state — engine is in COMPRESSION or BREAKOUT_WATCH
+    g_macro_ctx.sp_compressing    = (g_eng_sp.phase     == omega::Phase::COMPRESSION
+                                  || g_eng_sp.phase     == omega::Phase::BREAKOUT_WATCH);
+    g_macro_ctx.nq_compressing    = (g_eng_nq.phase     == omega::Phase::COMPRESSION
+                                  || g_eng_nq.phase     == omega::Phase::BREAKOUT_WATCH);
+    g_macro_ctx.us30_compressing  = (g_eng_us30.phase   == omega::Phase::COMPRESSION
+                                  || g_eng_us30.phase   == omega::Phase::BREAKOUT_WATCH);
+    g_macro_ctx.ger30_compressing = (g_eng_ger30.phase  == omega::Phase::COMPRESSION
+                                  || g_eng_ger30.phase  == omega::Phase::BREAKOUT_WATCH);
+    g_macro_ctx.uk100_compressing = (g_eng_uk100.phase  == omega::Phase::COMPRESSION
+                                  || g_eng_uk100.phase  == omega::Phase::BREAKOUT_WATCH);
+
+    // L2 imbalance — read from book and push into MacroContext
+    {
+        std::lock_guard<std::mutex> lk(g_l2_mtx);
+        auto getImb = [&](const std::string& s) -> double {
+            auto it = g_l2_books.find(s);
+            return (it != g_l2_books.end()) ? it->second.imbalance() : 0.5;
+        };
+        g_macro_ctx.sp_l2_imbalance   = getImb("US500.F");
+        g_macro_ctx.nq_l2_imbalance   = getImb("USTEC.F");
+        g_macro_ctx.nas_l2_imbalance  = getImb("NAS100");
+        g_macro_ctx.us30_l2_imbalance = getImb("DJ30.F");
+        g_macro_ctx.gold_l2_imbalance = getImb("GOLD.F");
+        g_macro_ctx.xag_l2_imbalance  = getImb("XAGUSD");
+        g_macro_ctx.eur_l2_imbalance  = getImb("EURUSD");
+        g_macro_ctx.gbp_l2_imbalance  = getImb("GBPUSD");
+        g_macro_ctx.cl_l2_imbalance   = getImb("USOIL.F");
+    }
+
     const bool tradeable = session_tradeable();
     g_telemetry.UpdateSession(tradeable ? "ACTIVE" : "CLOSED", tradeable ? 1 : 0);
 
@@ -2642,13 +2718,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // position management. Feeds valid signals into global ranking buffer.
     auto dispatch = [&](auto& eng, omega::SymbolSupervisor& sup, bool base_can_enter) {
         const auto sdec = sup_decision(sup, eng, base_can_enter);
-        // Once the engine is in COMPRESSION or BREAKOUT_WATCH it has already been
-        // granted permission on a prior tick. Revoking can_enter mid-cycle causes
-        // the BREAKOUT attempt to fire with can_enter=false and get blocked — the
-        // engine wasted the setup. Keep permission alive until the phase resolves.
         const bool eng_mid_cycle = (eng.phase == omega::Phase::COMPRESSION
                                  || eng.phase == omega::Phase::BREAKOUT_WATCH);
         const bool can_enter = base_can_enter && (sdec.allow_breakout || eng_mid_cycle);
+        // Session-slot scaling: adjust MIN_BREAKOUT_PCT by time-of-day quality.
+        // Only when not mid-cycle — don't change the gate during an active setup.
+        // We track the "config base" in a static map keyed by symbol pointer.
+        if (!eng_mid_cycle) {
+            static std::unordered_map<const char*, double> s_base_breakout;
+            const char* sym_key = eng.symbol;
+            auto it = s_base_breakout.find(sym_key);
+            if (it == s_base_breakout.end()) {
+                // First call — store current value as the config base
+                s_base_breakout[sym_key] = eng.MIN_BREAKOUT_PCT;
+                it = s_base_breakout.find(sym_key);
+            }
+            const double base = it->second;
+            const double mult = omega::session_breakout_mult(g_macro_ctx.session_slot);
+            eng.MIN_BREAKOUT_PCT = base * std::max(0.70, std::min(1.30, mult));
+        }
         const auto sig = eng.update(bid, ask, rtt_check, regime.c_str(), on_close, can_enter);
         g_telemetry.UpdateEngineState(sym.c_str(),
             static_cast<int>(eng.phase), eng.comp_high, eng.comp_low,
@@ -3063,19 +3151,55 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             }
         }
         double bid = 0.0, ask = 0.0;
-        size_t pos = 0u;
-        while ((pos = msg.find("269=", pos)) != std::string::npos) {
-            const char et = msg[pos + 4u];
-            const size_t next_soh = msg.find('\x01', pos);
-            if (next_soh == std::string::npos) break;
-            const size_t px = msg.find("270=", pos);
-            if (px == std::string::npos) { pos = next_soh; continue; }
-            const size_t pxe = msg.find('\x01', px + 4u);
-            if (pxe == std::string::npos) break;
-            const double price = std::stod(msg.substr(px + 4u, pxe - (px + 4u)));
-            if (et == '0') bid = price;
-            else if (et == '1') ask = price;
-            pos = pxe;
+        // ── L2 depth parsing — tag 269=side, 270=price, 271=size ─────────────
+        // Parse all depth levels into g_l2_books, extract best bid/ask for on_tick.
+        {
+            L2Book book;
+            size_t pos = 0u;
+            while ((pos = msg.find("269=", pos)) != std::string::npos) {
+                const char et = msg[pos + 4u];
+                const size_t soh = msg.find('\x01', pos);
+                if (soh == std::string::npos) break;
+                const size_t px_pos = msg.find("270=", pos);
+                if (px_pos == std::string::npos || px_pos > soh + 200) { pos = soh; continue; }
+                const size_t px_end = msg.find('\x01', px_pos + 4u);
+                if (px_end == std::string::npos) break;
+                const double price = std::stod(msg.substr(px_pos + 4u, px_end - (px_pos + 4u)));
+                // Tag 271 (MDEntrySize) — may or may not be present
+                double size = 0.0;
+                const size_t sz_pos = msg.find("271=", px_pos);
+                if (sz_pos != std::string::npos && sz_pos < px_end + 30) {
+                    const size_t sz_end = msg.find('\x01', sz_pos + 4u);
+                    if (sz_end != std::string::npos)
+                        size = std::stod(msg.substr(sz_pos + 4u, sz_end - (sz_pos + 4u)));
+                }
+                if (et == '0') { // bid
+                    if (price > bid) bid = price;
+                    if (book.bid_count < 5) {
+                        book.bids[book.bid_count++] = {price, size};
+                    }
+                } else if (et == '1') { // ask
+                    if (ask <= 0.0 || price < ask) ask = price;
+                    if (book.ask_count < 5) {
+                        book.asks[book.ask_count++] = {price, size};
+                    }
+                }
+                pos = soh;
+            }
+            // Store L2 book
+            if (book.bid_count > 0 || book.ask_count > 0) {
+                std::lock_guard<std::mutex> lk(g_l2_mtx);
+                auto& stored = g_l2_books[sym];
+                // Merge: only update sides we received
+                if (book.bid_count > 0) {
+                    stored.bid_count = book.bid_count;
+                    for (int i = 0; i < book.bid_count; ++i) stored.bids[i] = book.bids[i];
+                }
+                if (book.ask_count > 0) {
+                    stored.ask_count = book.ask_count;
+                    for (int i = 0; i < book.ask_count; ++i) stored.asks[i] = book.asks[i];
+                }
+            }
         }
         // Measure latency from broker tag 52 (SendingTime) on every quote
         // Provides sub-second RTT samples vs 5s heartbeat ping

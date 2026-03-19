@@ -316,6 +316,12 @@ private:
     // ── Rate limiter ──────────────────────────────────────────────────────────
     std::deque<int64_t> m_trade_times;      // timestamps of recent entries
 
+    // ── Tick direction counter ────────────────────────────────────────────────
+    // +N = N consecutive upticks, -N = N consecutive downticks. Reset on flip.
+    // Breakout with 2+ ticks in direction = real order flow, not a spike.
+    int    m_tick_run  = 0;
+    double m_last_mid  = 0.0;
+
 public:
 
     // ── Default CRTP hooks ────────────────────────────────────────────────────
@@ -354,6 +360,14 @@ public:
         m_range_window.push_back(mid);
         if (static_cast<int>(m_range_window.size()) > RANGE_WINDOW)
             m_range_window.pop_front();
+
+        // Update tick direction run counter
+        if (m_last_mid > 0.0) {
+            if (mid > m_last_mid)       m_tick_run = (m_tick_run > 0) ? m_tick_run + 1 : 1;
+            else if (mid < m_last_mid)  m_tick_run = (m_tick_run < 0) ? m_tick_run - 1 : -1;
+            // equal tick: keep current run
+        }
+        m_last_mid = mid;
 
         if (static_cast<int>(m_prices.size()) < COMPRESSION_LOOKBACK + 1) return {};
 
@@ -633,6 +647,23 @@ public:
                 if (!momentum_ok) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: momentum_gate"
                               << " mom=" << momentum_pct << "% thresh=" << momentum_thresh << "%\n";
+                    std::cout.flush();
+                    phase = Phase::FLAT; return {};
+                }
+            }
+
+            // ── TICK DIRECTION GATE ───────────────────────────────────────────
+            // Require at least 2 consecutive ticks in the breakout direction.
+            // Filters single-tick spikes that trigger the range exit but have
+            // no follow-through. With AGGRESSIVE_SHADOW relaxed to 1 tick.
+            {
+                const int min_run = AGGRESSIVE_SHADOW ? 1 : 2;
+                const bool dir_ok = long_break ? (m_tick_run >= min_run)
+                                               : (m_tick_run <= -min_run);
+                if (!dir_ok) {
+                    std::cout << "[ENG-" << symbol << "] BLOCKED: tick_direction"
+                              << " run=" << m_tick_run
+                              << " need=" << (long_break ? min_run : -min_run) << "\n";
                     std::cout.flush();
                     phase = Phase::FLAT; return {};
                 }

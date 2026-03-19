@@ -30,7 +30,47 @@ struct MacroContext {
     bool        sp_open   = false; // US500 position open (cross-symbol guard)
     bool        nq_open   = false; // USTEC position open (cross-symbol guard)
     bool        oil_open  = false; // USOIL position open
+
+    // Cross-symbol compression alignment — set in on_tick from engine phases
+    // true = that symbol is currently in COMPRESSION or BREAKOUT_WATCH
+    bool        sp_compressing   = false;
+    bool        nq_compressing   = false;
+    bool        us30_compressing = false;
+    bool        ger30_compressing= false;
+    bool        uk100_compressing= false;
+
+    // L2 book imbalance per symbol — bid_size / (bid_size + ask_size) at top 3 levels
+    // 0.5 = balanced, >0.65 = bid-heavy (bullish pressure), <0.35 = ask-heavy (bearish)
+    double      sp_l2_imbalance   = 0.5;
+    double      nq_l2_imbalance   = 0.5;
+    double      nas_l2_imbalance  = 0.5;
+    double      us30_l2_imbalance = 0.5;
+    double      gold_l2_imbalance = 0.5;
+    double      xag_l2_imbalance  = 0.5;
+    double      eur_l2_imbalance  = 0.5;
+    double      gbp_l2_imbalance  = 0.5;
+    double      cl_l2_imbalance   = 0.5;
+
+    // Session time slot — updated every tick
+    // 0=dead(05-07 UTC), 1=London(07-09), 2=London_core(09-12),
+    // 3=overlap(12-14), 4=NY(14-17), 5=NY_late(17-22), 6=Asia(22-05)
+    int         session_slot = 0;
 };
+
+// Returns session slot multiplier for MIN_BREAKOUT_PCT scaling.
+// London open and NY open have highest follow-through — allow tighter gates.
+// Dead zone and late NY have lowest follow-through — require wider moves.
+inline double session_breakout_mult(int slot) noexcept {
+    switch (slot) {
+        case 1: return 0.70;  // London open  07-09: best breakouts, loosen gate 30%
+        case 2: return 0.85;  // London core  09-12: good but not as clean
+        case 3: return 0.90;  // Overlap      12-14: mixed, NY not fully open
+        case 4: return 0.75;  // NY open      14-17: second best window
+        case 5: return 1.10;  // NY late      17-22: choppy, tighten gate 10%
+        case 6: return 0.80;  // Asia         22-05: gold/FX active
+        default: return 1.20; // Dead zone    05-07: worst, tighten gate 20%
+    }
+}
 
 // ==============================================================================
 // SpEngine -- US500.F (S&P 500 futures)
@@ -74,6 +114,14 @@ public:
         if (!macro)                                          return true;
         if (std::fabs(macro->es_nq_div) > div_threshold)    return false;
         if (macro->vix > vix_panic)                         return false;
+        // Cross-symbol: at least one other US index compressing/breaking.
+        // Only enforce once at least one index has been compressing (non-zero state).
+        // This prevents blocking during the warmup period before compression is detected.
+        const bool any_us_active = macro->sp_compressing || macro->nq_compressing || macro->us30_compressing;
+        if (any_us_active && !(macro->nq_compressing || macro->us30_compressing)) return false;
+        // L2: block extreme imbalance (book defended by LP, fills will be bad)
+        const double imb = macro->sp_l2_imbalance;
+        if (imb > 0.0 && (imb < 0.20 || imb > 0.80))       return false;
         return true;
     }
 };
@@ -120,6 +168,10 @@ public:
         if (!macro)                                          return true;
         if (std::fabs(macro->es_nq_div) > div_threshold)    return false;
         if (macro->vix > vix_panic)                         return false;
+        const bool any_us_active2 = macro->sp_compressing || macro->nq_compressing || macro->us30_compressing;
+        if (any_us_active2 && !(macro->sp_compressing || macro->us30_compressing)) return false;
+        const double imb = macro->nq_l2_imbalance;
+        if (imb > 0.0 && (imb < 0.20 || imb > 0.80))       return false;
         return true;
     }
 };
@@ -226,6 +278,10 @@ public:
         if (!macro)                                       return true;
         if (std::fabs(macro->es_nq_div) > div_threshold) return false;
         if (macro->vix > vix_panic)                      return false;
+        { const bool any = macro->sp_compressing || macro->nq_compressing || macro->us30_compressing;
+          if (any && !(macro->sp_compressing || macro->nq_compressing)) return false; }
+        const double imb = macro->us30_l2_imbalance;
+        if (imb > 0.0 && (imb < 0.20 || imb > 0.80))    return false;
         return true;
     }
 };
@@ -268,6 +324,10 @@ public:
         if (!macro)                                       return true;
         if (std::fabs(macro->es_nq_div) > div_threshold) return false;
         if (macro->vix > vix_panic)                      return false;
+        { const bool any = macro->sp_compressing || macro->nq_compressing || macro->us30_compressing;
+          if (any && !(macro->sp_compressing || macro->us30_compressing)) return false; }
+        const double imb = macro->nas_l2_imbalance;
+        if (imb > 0.0 && (imb < 0.20 || imb > 0.80))    return false;
         return true;
     }
 };
