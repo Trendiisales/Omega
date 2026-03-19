@@ -131,6 +131,7 @@ public:
         if (pnl_for_stats > 0) { m_wins++; m_sum_win += pnl_for_stats; }
         else                   { m_losses++; m_sum_loss += std::abs(pnl_for_stats); }
         m_daily_pnl       += pnl_for_stats;
+        m_cumulative_pnl  += pnl_for_stats;  // never resets — true equity tracking
         m_gross_daily_pnl += tr.pnl;   // gross before costs — for display transparency
         if (m_daily_pnl - m_peak_pnl < -m_max_dd) m_max_dd = m_peak_pnl - m_daily_pnl;
         if (m_daily_pnl > m_peak_pnl) m_peak_pnl = m_daily_pnl;
@@ -145,6 +146,10 @@ public:
     double dailyPnl() const {
         std::lock_guard<std::mutex> lk(m_mtx);
         return m_daily_pnl;
+    }
+    double cumulativePnl() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        return m_cumulative_pnl;
     }
     double grossDailyPnl() const {
         std::lock_guard<std::mutex> lk(m_mtx);
@@ -194,6 +199,7 @@ private:
     std::vector<TradeRecord>  m_trades;
     double m_daily_pnl       = 0;
     double m_gross_daily_pnl = 0;
+    double m_cumulative_pnl  = 0;  // never reset — survives daily rollover
     double m_peak_pnl        = 0;
     double m_max_dd          = 0;
     int    m_wins      = 0;

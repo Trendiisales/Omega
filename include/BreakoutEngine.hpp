@@ -211,10 +211,14 @@ inline double compute_trade_score(
     const TradeCandidate& t, const RankingConfig& cfg) noexcept
 {
     if (!t.valid) return -1.0;
-    return  (t.net_edge          * cfg.score_edge_weight)
-          + (std::fabs(t.momentum)* cfg.score_momentum_weight)
-          + (t.vol                * cfg.score_vol_weight)
-          + (t.breakout_strength  * cfg.score_breakout_weight);
+    // Normalize net_edge by entry price — removes price-scale bias across symbols.
+    // Gold net_edge=2.0 at price=4850 = 0.041% vs EURUSD net_edge=0.0002 at 1.08 = 0.019%.
+    // Without normalization gold always dominates ranking regardless of setup quality.
+    const double norm_edge = (t.entry > 0.0) ? (t.net_edge / t.entry) : 0.0;
+    return  (norm_edge             * cfg.score_edge_weight)
+          + (std::fabs(t.momentum) * cfg.score_momentum_weight)
+          + (t.vol                 * cfg.score_vol_weight)
+          + (t.breakout_strength   * cfg.score_breakout_weight);
 }
 
 inline std::vector<TradeCandidate> select_best_trades(

@@ -2282,7 +2282,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     // Equity-based sizing only applies in LIVE mode — in SHADOW there is no
     // real money and updating equity from paper P&L would corrupt sizing.
     if (g_cfg.mode == "LIVE") {
-        const double updated_equity = g_cfg.account_equity + g_omegaLedger.dailyPnl();
+        const double updated_equity = g_cfg.account_equity + g_omegaLedger.cumulativePnl();
         const double eq = std::max(updated_equity, 100.0);
         g_eng_sp.ACCOUNT_EQUITY     = eq;
         g_eng_nq.ACCOUNT_EQUITY     = eq;
