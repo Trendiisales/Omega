@@ -103,8 +103,12 @@ target_include_directories(Omega PRIVATE ${CMAKE_SOURCE_DIR}/include)
 # This POST_BUILD step copies them automatically on every build so the binary
 # always has the latest config without manual copying.
 add_custom_command(TARGET Omega POST_BUILD
+    # Canonical source is config/symbols.ini — sync root copy then deploy both
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/symbols.ini"
         "${CMAKE_SOURCE_DIR}/symbols.ini"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/symbols.ini"
         "$<TARGET_FILE_DIR:Omega>/symbols.ini"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/omega_config.ini"
