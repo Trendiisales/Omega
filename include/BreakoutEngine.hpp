@@ -626,9 +626,9 @@ public:
 
             // ── GATE 1: Session/position gate ────────────────────────────────
             if (!can_enter) {
-                std::cout << "[ENG-" << symbol << "] BLOCKED: can_enter=false\n";
-                std::cout.flush();
-                phase = Phase::FLAT; return {};
+                // can_enter=false = position/session/daily-loss gate.
+                // Don't reset phase — stay ARMED, wait for gate to clear.
+                return {};
             }
 
             // ── GATE 2: Spread/instrument gate ───────────────────────────────

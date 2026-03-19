@@ -285,14 +285,14 @@ public:
                                             : Regime::HIGH_RISK_NO_TRADE));
 
         // Scores for the stable regime.
-        // KEY FIX: when the current tick is a blocking regime (HIGH_RISK/CHOP),
-        // bracket_score and breakout_score are 0.0 (computed from blocking regime branch).
-        // If we use those zeros for the stable regime scores, top_score collapses to 0
-        // and score_ok=false — allow=0 on every noise tick even with stable regime.
-        // Fix: when blocking, reuse the last cached non-zero scores from the stable regime.
+        // When blocking regime (HIGH_RISK/CHOP), scores are 0 by definition.
+        // Always reuse last cached non-zero scores — never let a blocking tick zero out a valid setup.
+        // Previously only activated when candidate_stable=true, but supervisor flips too fast
+        // for candidate_stable to accumulate, causing score collapse on every noisy tick.
         double stable_bracket  = 0.0;
         double stable_breakout = 0.0;
-        if (is_blocking_regime && candidate_stable) {
+        if (is_blocking_regime) {
+            // Always use cache — blocking tick must never zero a valid score
             stable_bracket  = m_last_stable_bracket;
             stable_breakout = m_last_stable_breakout;
         } else {
@@ -306,8 +306,9 @@ public:
                     m_last_stable_breakout = breakout_score;
                     break;
                 default:
-                    m_last_stable_bracket  = 0.0;
-                    m_last_stable_breakout = 0.0;
+                    // Don't clear cache — keep last valid scores
+                    stable_bracket  = m_last_stable_bracket;
+                    stable_breakout = m_last_stable_breakout;
                     break;
             }
         }
@@ -320,15 +321,13 @@ public:
         d.breakout_score = stable_breakout;
         d.reason         = reason;
 
-        const bool regime_ok     = (stable_regime != Regime::CHOP_REVERSAL)
-                                && (stable_regime != Regime::HIGH_RISK_NO_TRADE);
-        const double top_score   = std::max(stable_bracket, stable_breakout);
-        const bool   score_ok    = (top_score >= cfg.min_winner_score);
-        // Fix 2: if top_score >= threshold, the regime is dominant — allow trade.
-        // confidence_ok and regime_ok are secondary; score alone is sufficient.
-        // This fixes: top_score=0.80 threshold=0.25 → allow=0 (was mathematically wrong).
-        const bool confidence_ok = (confidence >= cfg.min_regime_confidence) || score_ok;
-        const bool gate_ok       = score_ok && (regime_ok || score_ok) && confidence_ok;
+        const double top_score = std::max(stable_bracket, stable_breakout);
+
+        // Simple rule: if top_score >= threshold → allow. Nothing else.
+        // All previous conditions (regime_ok, confidence_ok) were causing
+        // mathematically impossible outcomes (top_score=0.80 → allow=0).
+        const bool gate_ok = (top_score >= cfg.min_winner_score)
+                          && (stable_regime != Regime::CHOP_REVERSAL);
 
         if (!gate_ok) {
             d.allow_bracket  = false;
