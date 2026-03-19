@@ -50,7 +50,7 @@ struct SupervisorConfig {
     int    max_false_breaks        = 2;
     double max_spread_pct          = 0.10;
     double compression_thresh      = 0.55;  // vol_ratio below this = compression
-    double expansion_thresh        = 0.90;  // vol_ratio above this = expansion (wider gap reduces oscillation)
+    double expansion_thresh        = 0.85;  // vol_ratio above this = expansion
     double momentum_trend_thresh   = 0.015;
     bool   bracket_in_quiet_comp   = true;
     bool   breakout_in_trend       = true;

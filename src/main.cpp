@@ -2581,12 +2581,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              auto& eng,
                              bool base_can_enter) -> omega::SupervisorDecision {
         const int fb = g_false_break_counts.count(sym) ? g_false_break_counts[sym] : 0;
+        // Momentum: vol expansion relative to baseline — how much vol has grown.
+        // Was: (mid - comp_low)/mid which is a price distance, not directional momentum.
+        // Correct: (recent_vol - base_vol) / base_vol — captures vol expansion direction.
+        const double momentum_proxy = (eng.base_vol_pct > 0.0)
+            ? ((eng.recent_vol_pct - eng.base_vol_pct) / eng.base_vol_pct * 100.0)
+            : 0.0;
+        // in_compression: use the engine's own compression state (phase==COMPRESSION)
+        // but also pass true during BREAKOUT_WATCH — supervisor should know the engine
+        // just exited compression and is watching for a break, not re-classify as no-setup.
+        const bool in_comp_or_watch = (eng.phase == omega::Phase::COMPRESSION
+                                    || eng.phase == omega::Phase::BREAKOUT_WATCH);
         return sup.update(
             bid, ask,
             eng.recent_vol_pct, eng.base_vol_pct,
-            eng.recent_vol_pct > 0 ? (mid - eng.comp_low) / mid * 100.0 : 0.0,
+            momentum_proxy,
             eng.comp_high, eng.comp_low,
-            eng.phase == omega::Phase::COMPRESSION,
+            in_comp_or_watch,
             fb);
     };
 
