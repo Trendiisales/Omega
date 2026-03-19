@@ -3388,7 +3388,6 @@ static void trade_loop() {
         if (g_trade_ready.load()) {
             const std::string tlo = fix_build_logout(g_trade_seq++, "TRADE");
             SSL_write(ssl, tlo.c_str(), static_cast<int>(tlo.size()));
-            Sleep(300);
             std::cout << "[OMEGA-TRADE] Logout sent\n";
         }
         g_trade_ready.store(false);
@@ -3400,8 +3399,8 @@ static void trade_loop() {
         SSL_shutdown(ssl); SSL_free(ssl);
         if (sock >= 0) closesocket(static_cast<SOCKET>(sock));
         std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
-        // Interruptible reconnect wait — exits immediately on shutdown
-        for (int i = 0; i < 20 && g_running.load(); ++i) Sleep(100);
+        // Interruptible reconnect wait — exits within 10ms on shutdown
+        for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
     }
 }
 
@@ -3529,14 +3528,9 @@ static void quote_loop() {
         if (g_quote_ready.load()) {
             const std::string unsub_all = fix_build_md_unsub_all(g_quote_seq++);
             SSL_write(ssl, unsub_all.c_str(), static_cast<int>(unsub_all.size()));
-            Sleep(200);
             std::cout << "[OMEGA] Unsubscribed market data before disconnect\n";
-            // Send FIX Logout (35=5) — tells server session is ending cleanly.
-            // Without this the server keeps the session open for ~30s and rejects
-            // the next Logon with ALREADY_SUBSCRIBED.
             const std::string lo = fix_build_logout(g_quote_seq++, "QUOTE");
             SSL_write(ssl, lo.c_str(), static_cast<int>(lo.size()));
-            Sleep(300);  // give server time to process logout before TCP close
             std::cout << "[OMEGA] Logout sent\n";
         }
 
@@ -3612,8 +3606,8 @@ static void quote_loop() {
 
         SSL_shutdown(ssl); SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
-        // Interruptible reconnect wait — exits immediately on shutdown signal
-        for (int i = 0; i < backoff_ms / 100 && g_running.load(); ++i) Sleep(100);
+        // Interruptible reconnect wait — exits within 10ms on shutdown
+        for (int i = 0; i < backoff_ms / 10 && g_running.load(); ++i) Sleep(10);
         backoff_ms = std::min(backoff_ms * 2, max_backoff);
     }
 }

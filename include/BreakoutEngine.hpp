@@ -55,15 +55,11 @@ struct OpenPos
 // ==============================================================================
 
 struct EdgeConfig {
-    double k_impulse      = 2.2;   // breakout_strength multiplier (unused in new model, kept for compat)
-    double k_vol          = 1.5;   // vol expansion multiplier (unused in new model, kept for compat)
-    double k_momentum     = 1.8;   // momentum score multiplier (unused in new model, kept for compat)
-    double slippage_mult  = 0.3;   // slippage = spread * slippage_mult (was 1.5 → caused 300pt costs on NAS100)
+    double slippage_mult  = 0.3;   // slippage = spread * slippage_mult
     double safety_mult    = 0.2;   // total_cost *= (1 + safety_mult)
-    double exhaustion_mult= 2.0;   // block if move > comp_range * exhaustion_mult (relaxed from 1.5)
-    double min_breakout_k = 0.10;  // block if move < comp_range * min_breakout_k (relaxed: trigger is inside range)
+    double exhaustion_mult= 2.0;   // block if move > comp_range * exhaustion_mult
+    double min_breakout_k = 0.10;  // block if move < comp_range * min_breakout_k
     double min_edge_buffer= 0.0;   // net_edge must exceed this (pts)
-    double min_edge_bp    = 4.0;   // net_edge must be >= price * min_edge_bp/10000 (4bp floor)
 };
 
 struct EdgeResult {
@@ -131,18 +127,9 @@ inline EdgeResult compute_edge_and_execution(
     const double saturation_cap = comp_range * 2.0;
     const double expected_move = saturation_cap * std::tanh(raw_expected / saturation_cap);
 
-    // ── Edge check 1: net move > cost ────────────────────────────────────────
+    // ── Edge check: net move must exceed total cost ───────────────────────────
     const double net_edge = expected_move - total_cost;
     if (net_edge <= cfg.min_edge_buffer) return r;
-
-    // ── Edge check 2: minimum bp threshold ───────────────────────────────────
-    // Absolute floor: net move must be at least cfg.min_edge_bp basis points of price.
-    // Prevents passing marginal trades on very-tight-range compressions.
-    // 8bp = 0.0008 × mid. For NAS100 at 24000 = 19.2pts min net move.
-    if (cfg.min_edge_bp > 0.0 && mid > 0.0) {
-        const double min_net_pts = mid * cfg.min_edge_bp / 10000.0;
-        if (net_edge < min_net_pts) return r;
-    }
 
     // ── Adaptive TP/SL ────────────────────────────────────────────────────────
     const double tp_raw  = expected_move * 0.7;
@@ -797,8 +784,7 @@ public:
                           << " range=" << comp_range_now
                           << " spread=" << spread
                           << " net~=" << net_approx
-                          << " bp~=" << bp_approx
-                          << " min_bp=" << EDGE_CFG.min_edge_bp << "\n";
+                          << " bp~=" << bp_approx << "\n";
                 std::cout.unsetf(std::ios::fixed);
                 std::cout.flush();
                 phase = Phase::FLAT; return {};
