@@ -2762,13 +2762,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             eng.recent_vol_pct, eng.base_vol_pct, eng.signal_count);
         if (!sig.valid) return;
 
-        g_telemetry.UpdateLastSignal(sym.c_str(),
-            sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
         const double sl_abs   = sig.entry * eng.SL_PCT / 100.0;
         // Compute lot_size but do NOT write back to eng.ENTRY_SIZE yet.
         // eng.ENTRY_SIZE must only be updated if the trade actually executes.
-        // Previously it was mutated here — before ranking and supervisor recheck —
-        // so a blocked/outranked signal would corrupt sizing for the next trade.
         const double lot_size = compute_size(sym, sl_abs, ask - bid, eng.ENTRY_SIZE);
 
         omega::TradeCandidate cand = omega::build_candidate(
@@ -2826,8 +2822,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
 
         // All gates passed — commit sizing and execute.
-        // eng.ENTRY_SIZE written here only, after ranking and supervisor have cleared.
+        // eng.ENTRY_SIZE and telemetry written here only, after all gates cleared.
         eng.ENTRY_SIZE = lot_size;
+        g_telemetry.UpdateLastSignal(sym.c_str(),
+            sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
         std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
                   << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
                   << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
