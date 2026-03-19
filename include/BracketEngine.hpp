@@ -386,10 +386,31 @@ protected:
     void arm_both_sides(double spread, const char* macro_regime) noexcept {
         const double dist = bracket_high - bracket_low;
 
-        // Hard block: range must meet absolute minimum regardless of ATR scaling
+        // ── Hard range floor ─────────────────────────────────────────────────
+        // dist is the SL distance for both legs. Must meet absolute minimum.
         if (dist < MIN_RANGE) {
             std::cout << "[BRACKET-" << symbol << "] BLOCKED: range_too_small"
                       << " dist=" << dist << " min=" << MIN_RANGE << "\n";
+            std::cout.flush();
+            phase = BracketPhase::IDLE;
+            bracket_high = 0.0; bracket_low = 0.0;
+            return;
+        }
+
+        // ── Spread viability check (mandatory, runs before any other calc) ───
+        // A trade is only viable if the SL distance covers:
+        //   - entry spread (paid on open)
+        //   - exit spread (paid on close)
+        //   - slippage on both sides
+        // If dist <= round_trip_cost the trade has negative expectancy before
+        // it even moves — spread alone will push it to SL.
+        const double round_trip_cost = (spread * 2.0) + (SLIPPAGE_BUFFER * 2.0);
+        if (dist <= round_trip_cost) {
+            std::cout << "[BRACKET-" << symbol << "] BLOCKED: spread_not_covered"
+                      << " dist=" << dist
+                      << " round_trip_cost=" << round_trip_cost
+                      << " (spread=" << spread
+                      << " slip=" << SLIPPAGE_BUFFER << ")\n";
             std::cout.flush();
             phase = BracketPhase::IDLE;
             bracket_high = 0.0; bracket_low = 0.0;
