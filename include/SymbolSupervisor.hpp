@@ -49,7 +49,11 @@ struct SupervisorConfig {
     double min_bracket_score       = 0.35;
     int    max_false_breaks        = 2;
     double max_spread_pct          = 0.10;
-    double compression_thresh      = 0.55;  // vol_ratio below this = compression
+    double compression_thresh      = 0.85;  // vol_ratio below this = compression
+    // Must be >= engine COMPRESSION_THRESHOLD (0.85). Previously 0.55, which was
+    // far below the engine threshold (0.85), meaning the supervisor never saw
+    // QUIET_COMPRESSION in the vol_ratio range 0.55-0.85 where the engine operates.
+    // Result: FX engines permanently blocked as HIGH_RISK_NO_TRADE.
     double expansion_thresh        = 0.85;  // vol_ratio above this = expansion
     double momentum_trend_thresh   = 0.015;
     bool   bracket_in_quiet_comp   = true;
@@ -143,10 +147,20 @@ public:
         const double mom_abs    = std::fabs(momentum_pct);
 
         // ── Feature scores ─────────────────────────────────────────────────────
+        // compression_score: measures how compressed the market is.
+        // Previously gated on in_compression (engine phase), causing a deadlock:
+        //   supervisor needs in_compression=true to classify QUIET_COMPRESSION
+        //   engine needs QUIET_COMPRESSION to enter compression
+        //   → FX engines could never start, especially overnight low-vol pairs.
+        // Fix: vol_suppression is computable from vol_ratio alone.
+        // tightness uses comp_range if available (engine in compression), else 1.0
+        // (fully tight — no structural range data yet, assume max tightness).
         double compression_score = 0.0;
-        if (in_compression && comp_pct > 0.0) {
-            const double tightness       = std::max(0.0, 1.0 - comp_pct * 200.0);
+        {
             const double vol_suppression = std::max(0.0, 1.0 - vol_ratio);
+            const double tightness = (in_compression && comp_pct > 0.0)
+                ? std::max(0.0, 1.0 - comp_pct * 200.0)
+                : 1.0;  // no range data yet — assume fully tight
             compression_score = (tightness + vol_suppression) * 0.5;
         }
         const double expansion_score = std::max(0.0,
@@ -176,7 +190,11 @@ public:
             regime     = Regime::CHOP_REVERSAL;
             confidence = trap_risk;
             reason     = "repeated_false_breaks";
-        } else if (in_compression && vol_ratio < cfg.compression_thresh && comp_pct > 0.00005) {
+        } else if (vol_ratio < cfg.compression_thresh) {
+            // QUIET_COMPRESSION: vol is suppressed relative to baseline.
+            // Previously required in_compression=true (engine phase), creating a deadlock
+            // for FX pairs where vol_ratio < threshold but engine couldn't enter compression
+            // because the supervisor was blocking it. vol_ratio alone determines compression.
             regime     = Regime::QUIET_COMPRESSION;
             confidence = compression_score * exec_score;
             reason     = "tight_range_low_vol";
