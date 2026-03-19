@@ -314,12 +314,23 @@ public:
         }
 
         // ── Permission decision ───────────────────────────────────────────────
-        // Block unconditionally when the LIVE regime (not stable/smoothed) is
-        // HIGH_RISK or CHOP. The stable_regime is hysteresis-smoothed — when
-        // candidate_stable=true from a prior EXPANSION tick, stable_regime stays
-        // EXPANSION_BREAKOUT even while the live regime is HIGH_RISK_NO_TRADE.
-        // Checking stable_regime for high_risk therefore never fires in that case.
-        // Must check live `regime` variable, which is the raw classifier output.
+        // CHOP always blocks immediately — genuine structure failure, not noise.
+        //
+        // HIGH_RISK handling uses a two-tier approach:
+        //   candidate_stable=false: HIGH_RISK blocks immediately (regime not yet
+        //     confirmed — single noisy tick should not allow entry).
+        //   candidate_stable=true:  HIGH_RISK is treated as noise and absorbed.
+        //     The candidate has held REGIME_HOLD_TICKS of a tradeable regime.
+        //     A single HIGH_RISK tick between two EXPANSION ticks is classifier
+        //     noise — absorbing it is the purpose of the hysteresis system.
+        //     We use stable_regime (EXPANSION_BREAKOUT) for the block check.
+        //
+        // This fixes the flip-flop seen in live logs:
+        //   allow=1 (valid_signal) -> COMPRESSION entered
+        //   allow=0 (high_risk, next tick) -> COMPRESSION aborted
+        //   allow=1 (valid_signal, tick after) -> COMPRESSION entered again
+        // That cycle repeated indefinitely because every HIGH_RISK tick was a
+        // hard block even when candidate_stable=true.
         SupervisorDecision d{};
         d.regime         = stable_regime;
         d.confidence     = confidence;
@@ -330,7 +341,13 @@ public:
         const double top_score = std::max(stable_bracket, stable_breakout);
 
         const bool chop      = (regime == Regime::CHOP_REVERSAL);
-        const bool high_risk = (regime == Regime::HIGH_RISK_NO_TRADE);
+        // When candidate is stable, use stable_regime for high_risk check so that
+        // a single noisy HIGH_RISK tick doesn't kill a confirmed tradeable setup.
+        // When candidate is not yet stable, use live regime (stricter).
+        const bool effective_high_risk = candidate_stable
+            ? (stable_regime == Regime::HIGH_RISK_NO_TRADE)
+            : (regime == Regime::HIGH_RISK_NO_TRADE);
+        const bool high_risk = effective_high_risk;
         const bool blocked   = chop || high_risk || (top_score < cfg.min_winner_score);
 
         if (blocked) {
