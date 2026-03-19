@@ -55,14 +55,15 @@ struct OpenPos
 // ==============================================================================
 
 struct EdgeConfig {
-    double k_impulse      = 2.2;   // breakout_strength multiplier
-    double k_vol          = 1.5;   // vol expansion multiplier
-    double k_momentum     = 1.8;   // momentum score multiplier
-    double slippage_mult  = 1.5;   // slippage as multiple of spread
-    double safety_mult    = 0.3;   // required = total_cost * (1 + safety_mult)  [was 1.2 → ~×2.2, now 0.3 → ×1.3]
-    double exhaustion_mult= 1.5;   // block if move > comp_range * exhaustion_mult
-    double min_breakout_k = 0.15;  // block if move < comp_range * min_breakout_k
-    double min_edge_buffer= 0.00001;
+    double k_impulse      = 2.2;   // breakout_strength multiplier (unused in new model, kept for compat)
+    double k_vol          = 1.5;   // vol expansion multiplier (unused in new model, kept for compat)
+    double k_momentum     = 1.8;   // momentum score multiplier (unused in new model, kept for compat)
+    double slippage_mult  = 0.3;   // slippage = spread * slippage_mult (was 1.5 → caused 300pt costs on NAS100)
+    double safety_mult    = 0.2;   // total_cost *= (1 + safety_mult)
+    double exhaustion_mult= 2.0;   // block if move > comp_range * exhaustion_mult (relaxed from 1.5)
+    double min_breakout_k = 0.10;  // block if move < comp_range * min_breakout_k (relaxed: trigger is inside range)
+    double min_edge_buffer= 0.0;   // net_edge must exceed this (pts)
+    double min_edge_bp    = 4.0;   // net_edge must be >= price * min_edge_bp/10000 (4bp floor)
 };
 
 struct EdgeResult {
@@ -91,8 +92,10 @@ inline EdgeResult compute_edge_and_execution(
     const double comp_range = comp_high - comp_low;
     if (mid <= 0.0 || comp_range <= 0.0) return r;
 
-    // ── Min breakout guard: reject tiny breaks just above range ──────────────
-    // Fix 6: block weak fakes — move must be >= comp_range * min_breakout_k
+    // ── Min breakout guard ────────────────────────────────────────────────────
+    // Require move >= 0.5 × comp_range — captures early expansion, not full move.
+    // Previous value (0.15) was too loose; combined with trigger inside range this
+    // means breakout_move is measured from trigger point, not from comp edge.
     if (breakout_move < comp_range * cfg.min_breakout_k) return r;
 
     // ── Exhaustion filter ─────────────────────────────────────────────────────
@@ -101,67 +104,62 @@ inline EdgeResult compute_edge_and_execution(
     // ── Normalised features ───────────────────────────────────────────────────
     const double breakout_strength = breakout_move / comp_range;
 
-    // Fix 2: normalize compression_quality to price-relative scale.
-    // comp_range/mid gives range as fraction of price — consistent cross-symbol.
-    // Invert: tighter compression (smaller fraction) → higher quality score.
-    const double comp_pct             = (comp_range / mid);
-    const double compression_quality  = (comp_pct > 0.0) ? (1.0 / (1.0 + comp_pct)) : 0.0;
+    const double comp_pct            = (comp_range / mid);
+    const double compression_quality = (comp_pct > 0.0) ? (1.0 / (1.0 + comp_pct)) : 0.0;
+    const double momentum_score      = std::fabs(momentum);
+    const double vol_score           = recent_vol;
 
-    const double momentum_score   = std::fabs(momentum);
-    const double vol_score        = recent_vol;
-
-    // Fix 3: multiplicative signal — all factors must be present (alignment required)
-    // Additive lets high-vol + zero-momentum pass; multiplicative requires both.
     const double signal_strength =
         breakout_strength *
         (1.0 + vol_score) *
         (1.0 + momentum_score) *
         (1.0 + compression_quality);
 
-    // ── Full cost model — volatility-scaled slippage ──────────────────────────
-    // slippage_mult scales with vol expansion: higher vol = worse fills on breakout.
-    // At baseline vol, slippage = spread × slippage_mult (base).
-    // When vol expands 2× → slippage_mult doubles → cost rises automatically.
-    // Prevents marginal trades from passing during volatile/spiky conditions.
-    const double vol_ratio      = (recent_vol > 0.0 && comp_range > 0.0)
-                                  ? (recent_vol / (comp_range / mid))  // vol relative to range
-                                  : 1.0;
-    const double dynamic_slip   = cfg.slippage_mult * std::max(1.0, vol_ratio);
-    const double slippage_cost  = spread * dynamic_slip;
-    const double total_cost     = (spread * 2.0) + slippage_cost;
-    const double required       = total_cost * (1.0 + cfg.safety_mult);
+    // ── Cost model ───────────────────────────────────────────────────────────
+    // Use spread * 0.5 as effective cost — mid-price moves already account for
+    // half the spread. Previous model used spread*2 + vol-scaled slippage which
+    // produced costs of 300+ pts on NAS100 (vol_ratio unit mismatch: recent_vol
+    // is a %-of-price figure, comp_range/mid is also %-of-price → ratio ~200×).
+    // Simple model: pay half-spread entry + half-spread exit + fixed slippage.
+    const double entry_cost  = spread * 0.5;
+    const double exit_cost   = spread * 0.5;
+    const double slip_cost   = spread * cfg.slippage_mult;  // slippage_mult now ~0.3
+    const double total_cost  = (entry_cost + exit_cost + slip_cost) * (1.0 + cfg.safety_mult);
 
-    // ── Saturating expected move ──────────────────────────────────────────────
-    // Linear projection (signal × comp_range) overestimates strong breakouts.
-    // Replace with tanh saturation: output approaches 2×comp_range asymptotically.
-    // Weak signal (near 0) → near linear. Strong signal → saturates at ~2× range.
-    // This prevents TP from being set far beyond what the market can realistically deliver.
-    const double raw_expected   = signal_strength * comp_range;
+    // ── Expected move (saturating) ────────────────────────────────────────────
+    const double raw_expected  = signal_strength * comp_range;
     const double saturation_cap = comp_range * 2.0;
-    const double expected_move  = saturation_cap * std::tanh(raw_expected / saturation_cap);
+    const double expected_move = saturation_cap * std::tanh(raw_expected / saturation_cap);
 
-    // ── Edge check ────────────────────────────────────────────────────────────
-    const double net_edge = expected_move - required;
+    // ── Edge check 1: net move > cost ────────────────────────────────────────
+    const double net_edge = expected_move - total_cost;
     if (net_edge <= cfg.min_edge_buffer) return r;
 
-    // ── Adaptive TP/SL with clamps ────────────────────────────────────────────
-    // Fix 4: clamp TP to avoid overreach when model overestimates;
-    //        clamp SL floor to cover spread so we're not stopped out by noise
+    // ── Edge check 2: minimum bp threshold ───────────────────────────────────
+    // Absolute floor: net move must be at least cfg.min_edge_bp basis points of price.
+    // Prevents passing marginal trades on very-tight-range compressions.
+    // 8bp = 0.0008 × mid. For NAS100 at 24000 = 19.2pts min net move.
+    if (cfg.min_edge_bp > 0.0 && mid > 0.0) {
+        const double min_net_pts = mid * cfg.min_edge_bp / 10000.0;
+        if (net_edge < min_net_pts) return r;
+    }
+
+    // ── Adaptive TP/SL ────────────────────────────────────────────────────────
     const double tp_raw  = expected_move * 0.7;
     const double sl_raw  = expected_move * 0.5;
-    const double tp_dist = std::min(tp_raw, comp_range * 1.2);   // cap at 1.2× comp range
-    const double sl_dist = std::max(sl_raw, spread * 3.0);        // floor at 3× spread
+    const double tp_dist = std::min(tp_raw, comp_range * 1.2);
+    const double sl_dist = std::max(sl_raw, spread * 2.0);   // floor at 2× spread (was 3×)
     r.tp_price = is_long ? mid + tp_dist : mid - tp_dist;
     r.sl_price = is_long ? mid - sl_dist : mid + sl_dist;
 
-    // ── Edge-based position sizing ────────────────────────────────────────────
-    const double risk_per_trade = account_equity * 0.002;  // 0.2% risk per trade
+    // ── Position sizing ───────────────────────────────────────────────────────
+    const double risk_per_trade = account_equity * 0.002;
     r.size = (sl_dist > 0.0) ? (risk_per_trade / sl_dist) : 0.01;
     if (r.size < 0.01) r.size = 0.01;
     if (r.size > 5.0)  r.size = 5.0;
 
     r.expected_move     = expected_move;
-    r.total_cost        = required;
+    r.total_cost        = total_cost;
     r.net_edge          = net_edge;
     r.breakout_strength = breakout_strength;
     r.momentum_score    = momentum_score;
@@ -790,10 +788,18 @@ public:
                 is_long, ACCOUNT_EQUITY, EDGE_CFG);
 
             if (!edge.valid) {
-                std::cout << "[ENG-" << symbol << "] BLOCKED: edge_model"
+                const double comp_range_now = comp_high - comp_low;
+                const double net_approx = breakout_move - spread * (1.0 + EDGE_CFG.slippage_mult) * (1.0 + EDGE_CFG.safety_mult);
+                const double bp_approx  = (mid > 0.0) ? (net_approx / mid * 10000.0) : 0.0;
+                std::cout << std::fixed << std::setprecision(4)
+                          << "[ENG-" << symbol << "] BLOCKED: edge_model"
                           << " move=" << breakout_move
-                          << " comp_range=" << (comp_high - comp_low)
-                          << " spread=" << spread << "\n";
+                          << " range=" << comp_range_now
+                          << " spread=" << spread
+                          << " net~=" << net_approx
+                          << " bp~=" << bp_approx
+                          << " min_bp=" << EDGE_CFG.min_edge_bp << "\n";
+                std::cout.unsetf(std::ios::fixed);
                 std::cout.flush();
                 phase = Phase::FLAT; return {};
             }
