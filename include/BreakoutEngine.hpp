@@ -117,14 +117,27 @@ inline EdgeResult compute_edge_and_execution(
         (1.0 + momentum_score) *
         (1.0 + compression_quality);
 
-    const double expected_move = signal_strength * comp_range;
+    // ── Full cost model — volatility-scaled slippage ──────────────────────────
+    // slippage_mult scales with vol expansion: higher vol = worse fills on breakout.
+    // At baseline vol, slippage = spread × slippage_mult (base).
+    // When vol expands 2× → slippage_mult doubles → cost rises automatically.
+    // Prevents marginal trades from passing during volatile/spiky conditions.
+    const double vol_ratio      = (recent_vol > 0.0 && comp_range > 0.0)
+                                  ? (recent_vol / (comp_range / mid))  // vol relative to range
+                                  : 1.0;
+    const double dynamic_slip   = cfg.slippage_mult * std::max(1.0, vol_ratio);
+    const double slippage_cost  = spread * dynamic_slip;
+    const double total_cost     = (spread * 2.0) + slippage_cost;
+    const double required       = total_cost * (1.0 + cfg.safety_mult);
 
-    // ── Full cost model ───────────────────────────────────────────────────────
-    const double spread_cost   = spread;
-    const double slippage_cost = spread * cfg.slippage_mult;
-    const double total_cost    = (spread_cost * 2.0) + slippage_cost;
-    // Fix 1: safety_mult=0.3 → required = total_cost * 1.3 (was 2.2 — far too strict)
-    const double required      = total_cost * (1.0 + cfg.safety_mult);
+    // ── Saturating expected move ──────────────────────────────────────────────
+    // Linear projection (signal × comp_range) overestimates strong breakouts.
+    // Replace with tanh saturation: output approaches 2×comp_range asymptotically.
+    // Weak signal (near 0) → near linear. Strong signal → saturates at ~2× range.
+    // This prevents TP from being set far beyond what the market can realistically deliver.
+    const double raw_expected   = signal_strength * comp_range;
+    const double saturation_cap = comp_range * 2.0;
+    const double expected_move  = saturation_cap * std::tanh(raw_expected / saturation_cap);
 
     // ── Edge check ────────────────────────────────────────────────────────────
     const double net_edge = expected_move - required;

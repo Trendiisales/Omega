@@ -2527,50 +2527,70 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         send_live_order(tr.symbol, close_is_long, close_qty, tr.exitPrice);
     };
 
-    // Helper lambda -- always feeds ticks to engine (warmup + position management).
-    // can_enter=false gates new entries only; TP/SL/timeout always run.
-    // Ranking: when a signal fires, score it against the ranking threshold.
-    // Low-score signals are suppressed even if the edge model passed.
-    static omega::RankingConfig g_ranking_cfg;  // default weights, configurable
+    // ── Global ranking: collect candidates across all symbols ────────────────
+    // on_tick fires once per symbol per tick — not all symbols in one call.
+    // We use a static buffer with a time window: collect all candidates that
+    // fire within RANKING_WINDOW_MS of each other, then pick the best one.
+    // Any candidate older than the window is flushed before adding new ones.
+    static omega::RankingConfig g_ranking_cfg;
+    static std::vector<omega::TradeCandidate> g_cycle_candidates;
+    static int64_t g_cycle_window_start_ms = 0;
+    constexpr int64_t RANKING_WINDOW_MS = 500; // collect signals within 500ms window
+
     auto dispatch = [&](auto& eng, bool can_enter_for_symbol) {
         const auto sig = eng.update(bid, ask, rtt_check, regime.c_str(), on_close, can_enter_for_symbol);
         g_telemetry.UpdateEngineState(sym.c_str(),
             static_cast<int>(eng.phase), eng.comp_high, eng.comp_low,
             eng.recent_vol_pct, eng.base_vol_pct, eng.signal_count);
-        if (sig.valid) {
-            g_telemetry.UpdateLastSignal(sym.c_str(),
-                sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
-            const double sl_abs     = sig.entry * eng.SL_PCT / 100.0;
-            const double spread_abs = ask - bid;
-            const double lot_size   = compute_size(sym, sl_abs, spread_abs, eng.ENTRY_SIZE);
-            eng.ENTRY_SIZE = lot_size;
+        if (!sig.valid) return;
 
-            // Ranking gate: build candidate from the signal's edge components
-            // and score it. Block if below min_score_threshold.
-            omega::TradeCandidate cand = omega::build_candidate(
-                omega::EdgeResult{
-                    sig.net_edge > 0 ? sig.net_edge : 0.0,  // expected_move proxy
-                    0.0, sig.net_edge,                        // total_cost, net_edge
-                    sig.tp, sig.sl, static_cast<double>(lot_size),
-                    sig.breakout_strength, sig.momentum_score, sig.vol_score,
-                    true
-                },
-                sig.is_long, sig.entry, sym.c_str());
-            cand.score = omega::compute_trade_score(cand, g_ranking_cfg);
-            if (cand.score < g_ranking_cfg.min_score_threshold) {
-                std::cout << "[ENG-" << sym << "] RANKED OUT score=" << cand.score
-                          << " min=" << g_ranking_cfg.min_score_threshold << "\n";
-                std::cout.flush();
-                return;
-            }
+        g_telemetry.UpdateLastSignal(sym.c_str(),
+            sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
+        const double sl_abs   = sig.entry * eng.SL_PCT / 100.0;
+        const double lot_size = compute_size(sym, sl_abs, ask - bid, eng.ENTRY_SIZE);
+        eng.ENTRY_SIZE = lot_size;
 
-            std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
-                      << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
-                      << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
-                      << " size=" << lot_size << " score=" << cand.score
-                      << " regime=" << regime << "\033[0m\n";
-            send_live_order(sym, sig.is_long, lot_size, sig.entry);
+        // Build candidate and add to global buffer
+        omega::TradeCandidate cand = omega::build_candidate(
+            omega::EdgeResult{
+                sig.net_edge > 0 ? sig.net_edge : 0.0,
+                0.0, sig.net_edge,
+                sig.tp, sig.sl, static_cast<double>(lot_size),
+                sig.breakout_strength, sig.momentum_score, sig.vol_score,
+                true
+            },
+            sig.is_long, sig.entry, sym.c_str());
+
+        // Flush stale candidates outside the ranking window
+        const int64_t now_ms = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        if (now_ms - g_cycle_window_start_ms > RANKING_WINDOW_MS) {
+            g_cycle_candidates.clear();
+            g_cycle_window_start_ms = now_ms;
         }
+        g_cycle_candidates.push_back(cand);
+
+        // Select best from everything collected so far
+        auto selected = omega::select_best_trades(g_cycle_candidates, g_ranking_cfg);
+        if (selected.empty()) {
+            std::cout << "[RANKED OUT] " << sym << " score below threshold\n";
+            std::cout.flush();
+            return;
+        }
+
+        const omega::TradeCandidate& best = selected[0];
+        // Only execute if THIS tick's candidate is the current best
+        // (avoids re-executing a signal from a previous tick that's still in the buffer)
+        if (std::string(best.symbol) != sym) return;
+
+        std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
+                  << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
+                  << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
+                  << " size=" << lot_size << " score=" << best.score
+                  << " regime=" << regime << "\033[0m\n";
+        send_live_order(sym, sig.is_long, lot_size, sig.entry);
+        g_cycle_candidates.clear(); // consumed — reset for next cycle
     };
 
     if      (sym == "US500.F") {
