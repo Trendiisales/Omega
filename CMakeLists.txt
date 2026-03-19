@@ -98,6 +98,20 @@ set_property(SOURCE "${CMAKE_SOURCE_DIR}/src/main.cpp"
 
 target_include_directories(Omega PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
+# ── Copy config files to build output directory ───────────────────────────────
+# symbols.ini and omega_config.ini must live next to Omega.exe at runtime.
+# This POST_BUILD step copies them automatically on every build so the binary
+# always has the latest config without manual copying.
+add_custom_command(TARGET Omega POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/symbols.ini"
+        "$<TARGET_FILE_DIR:Omega>/symbols.ini"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/omega_config.ini"
+        "$<TARGET_FILE_DIR:Omega>/omega_config.ini"
+    COMMENT "Copying config files to build output directory"
+)
+
 message(STATUS "========================================")
 message(STATUS "OMEGA — Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
