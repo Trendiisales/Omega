@@ -87,7 +87,7 @@ struct CrossPosition {
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
     bool manage(double bid, double ask, int max_hold_sec,
-                CloseCb& on_close) noexcept {
+                CloseCb on_close) noexcept {
         if (!active) return false;
         const double mid  = (bid + ask) * 0.5;
         const double move = is_long ? (mid - entry) : (entry - mid);
@@ -119,19 +119,25 @@ struct CrossPosition {
         spread_at_entry = spread;
         entry_ts        = ca_now_sec();
         mfe = mae = 0.0;
-        strncpy(symbol, sig.symbol, 15);
-        strncpy(engine, sig.engine, 31);
-        strncpy(reason, sig.reason, 31);
+#ifdef _WIN32
+        strncpy_s(symbol, sig.symbol, 15);
+        strncpy_s(engine, sig.engine, 31);
+        strncpy_s(reason, sig.reason, 31);
+#else
+        strncpy(symbol, sig.symbol, 15); symbol[15] = '\0';
+        strncpy(engine, sig.engine, 31); engine[31] = '\0';
+        strncpy(reason, sig.reason, 31); reason[31] = '\0';
+#endif
     }
 
-    void force_close(double bid, double ask, CloseCb& on_close) noexcept {
+    void force_close(double bid, double ask, CloseCb on_close) noexcept {
         if (!active) return;
         const double mid = (bid + ask) * 0.5;
         emit(mid, "FORCE_CLOSE", on_close);
     }
 
 private:
-    void emit(double exit_px, const char* exit_reason, CloseCb& on_close) {
+    void emit(double exit_px, const char* exit_reason, CloseCb on_close) {
         omega::TradeRecord tr;
         tr.symbol      = symbol;
         tr.side        = is_long ? "LONG" : "SHORT";

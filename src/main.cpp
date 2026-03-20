@@ -3933,23 +3933,28 @@ static void quote_loop() {
         fc_bracket(g_bracket_nzdusd,  "NZDUSD");
         fc_bracket(g_bracket_usdjpy,  "USDJPY");
         // Cross-asset engine force-close
-        auto fc_ca = [](auto& eng, const char* sym_fc) {
-            if (!eng.has_open_position()) return;
-            double b = 0.0, a = 0.0;
-            { std::lock_guard<std::mutex> lk(g_book_mtx);
-              const auto bi = g_bids.find(sym_fc); if (bi != g_bids.end()) b = bi->second;
-              const auto ai = g_asks.find(sym_fc); if (ai != g_asks.end()) a = ai->second; }
-            if (b > 0.0 && a > 0.0) { omega::TradeRecord::CloseCb cb = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); }; (void)cb; }
-        };
-        { auto cb = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
-          double b,a;
-          auto get_px = [&](const char* s){ b=0;a=0; std::lock_guard<std::mutex> lk(g_book_mtx); auto bi=g_bids.find(s); if(bi!=g_bids.end())b=bi->second; auto ai=g_asks.find(s); if(ai!=g_asks.end())a=ai->second; };
-          get_px("US500.F");  if(b>0&&a>0){ g_ca_esnq.force_close(b,a,cb); g_orb_us.force_close(b,a,cb); }
-          get_px("USOIL.F");  if(b>0&&a>0){ g_ca_eia_fade.force_close(b,a,cb); g_ca_brent_wti.force_close(b,a,cb); }
-          get_px("GBPUSD");   if(b>0&&a>0){ g_ca_fx_cascade.force_close(b,a,cb); }
-          get_px("USDJPY");   if(b>0&&a>0){ g_ca_carry_unwind.force_close(b,a,cb); }
-          get_px("GER30");    if(b>0&&a>0){ g_orb_ger30.force_close(b,a,cb); }
-          get_px("XAGUSD");   if(b>0&&a>0){ g_orb_silver.force_close(b,a,cb); }
+        {
+            std::function<void(const omega::TradeRecord&)> ca_cb =
+                [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+            auto ca_get_px = [](const char* s, double& b, double& a) {
+                b = 0.0; a = 0.0;
+                std::lock_guard<std::mutex> lk(g_book_mtx);
+                const auto bi = g_bids.find(s); if (bi != g_bids.end()) b = bi->second;
+                const auto ai = g_asks.find(s); if (ai != g_asks.end()) a = ai->second;
+            };
+            double ca_b = 0.0, ca_a = 0.0;
+            ca_get_px("US500.F", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_esnq.force_close(ca_b, ca_a, ca_cb); g_orb_us.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("USOIL.F", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_eia_fade.force_close(ca_b, ca_a, ca_cb); g_ca_brent_wti.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("GBPUSD", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_fx_cascade.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("USDJPY", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_carry_unwind.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("GER30", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_ger30.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("XAGUSD", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_silver.force_close(ca_b, ca_a, ca_cb); }
         }
         // Force-close GoldEngineStack
         {
