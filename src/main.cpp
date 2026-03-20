@@ -2487,9 +2487,18 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
         case CTRL_SHUTDOWN_EVENT:
             g_running.store(false);
             // Wait for main() to finish cleanup (logout sent, files closed).
-            // Max 2s — if not done by then Windows can kill us, that's fine.
-            for (int i = 0; i < 20 && !g_shutdown_done.load(); ++i) Sleep(100);
-            return TRUE;
+            // Worst case: SO_RCVTIMEO(200ms) + quote teardown(~300ms) +
+            //             trade teardown(~300ms) + join wait(up to 1.5s) = ~2.3s.
+            // We wait up to 4s to cover this comfortably.
+            // If still not done after 4s, return FALSE — this lets Windows apply
+            // the default handler (process termination) rather than suppressing
+            // the signal and leaving a zombie process. The user has to press
+            // Ctrl+C multiple times if we return TRUE and haven't finished.
+            for (int i = 0; i < 40 && !g_shutdown_done.load(); ++i) Sleep(100);
+            // Return FALSE so Windows terminates us if g_shutdown_done never set.
+            // Return TRUE only if we completed cleanly — prevents Windows from
+            // also running the default kill on top of our clean exit.
+            return g_shutdown_done.load() ? TRUE : FALSE;
         default:
             return FALSE;
     }
