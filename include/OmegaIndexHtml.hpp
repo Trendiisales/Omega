@@ -550,6 +550,7 @@ R"OMEGA2(
 
 )OMEGA2"
 R"OMEGA3(
+
   </div><!-- /col-right -->
 
 </div><!-- /main -->
@@ -699,6 +700,9 @@ function renderLastSignal(d){
     </div>`;
   }).join('');
 }
+)OMEGA3"
+R"OMEGA3B(
+
 
 function renderTrades(trades){
   const el=document.getElementById('tradesBody'),cE=document.getElementById('tradeCount');
@@ -791,7 +795,8 @@ function updateDashboard(d){
   updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('GOLD.F'),d.brackets&&d.brackets.gold);
   updateEngCell('engXAG','engXAGPhase','engXAGVol','engXAGSig',d.xag_phase,d.xag_recent_vol_pct,d.xag_baseline_vol_pct,d.xag_signals,0,0,d.xag_bid,d.xag_ask,3,isLive('XAGUSD'),d.brackets&&d.brackets.xag);
 
-)OMEGA3"
+
+)OMEGA3B"
 R"OMEGA4(
   // PnL
   const pnl=safe(d.daily_pnl),gross=safe(d.gross_daily_pnl);
