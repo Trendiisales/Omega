@@ -2778,11 +2778,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         return pos_budget_ok;
     };
 
-    // ── Route to engine -- typed dispatch (CRTP has no virtual base) ──────────
-    // Each branch calls the same logical sequence on the correct typed engine.
-    // on_close lambda is defined once and reused across all branches.
+    // on_close — called by BreakoutEngine (CRTP) when a position closes.
+    // BreakoutEngine positions are closed by the BROKER via SL/TP orders submitted
+    // at entry. The broker sends an ExecutionReport fill — on_close is called from
+    // the fill handler. No market close order needed here; broker already closed it.
+    //
+    // Cross-asset engines (EsNqDiv, EIAFade, BrentWTI, FxCascade, CarryUnwind, ORB)
+    // manage TP/SL in software — they enter with a market order but place no broker
+    // TP/SL orders. When they close, a market close order IS needed.
+    // Those engines receive their own dedicated callback below (ca_on_close).
     auto on_close = [&](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);
+    };
+
+    // ca_on_close — for cross-asset and ORB engines. These manage TP/SL in software
+    // with no broker-side orders, so closing requires an explicit market order.
+    auto ca_on_close = [&](const omega::TradeRecord& tr) {
+        handle_closed_trade(tr);
+        send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
     };
 
     // bracket_on_close — used exclusively by g_bracket_gold and g_bracket_xag.
@@ -2799,17 +2812,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // tr.size is the lot size originally submitted at entry.
     auto bracket_on_close = [&](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);
-        // Send the closing market order (reverse of entry side).
-        const bool close_is_long = (tr.side == "SHORT");  // long entry → sell to close
-        const double close_qty   = tr.size;
+        // Only send a market close order for reasons where the BROKER has no
+        // pending order to handle the close automatically:
+        //   BREAKOUT_FAIL — engine detected failure before TP/SL; broker still
+        //                   has the OCO live and must be cancelled + closed.
+        //   FORCE_CLOSE   — disconnect or manual close; broker may have live orders.
+        // Do NOT send for TP_HIT / SL_HIT / BE_HIT — in LIVE mode the broker's
+        // OCO order fills the close. Sending another market order doubles the position.
+        const bool needs_market_close =
+            (std::strcmp(tr.exitReason, "BREAKOUT_FAIL") == 0 ||
+             std::strcmp(tr.exitReason, "FORCE_CLOSE")   == 0);
+        if (!needs_market_close) return;
+        const bool close_is_long = (tr.side == "SHORT");
         std::cout << "\033[1;35m[BRACKET-CLOSE] " << tr.symbol
                   << " " << (close_is_long ? "BUY" : "SELL") << " (close)"
-                  << " qty=" << close_qty
+                  << " qty=" << tr.size
                   << " exit=" << std::fixed << std::setprecision(4) << tr.exitPrice
                   << " reason=" << tr.exitReason
                   << "\033[0m\n";
         std::cout.flush();
-        send_live_order(tr.symbol, close_is_long, close_qty, tr.exitPrice);
+        send_live_order(tr.symbol, close_is_long, tr.size, tr.exitPrice);
     };
 
     // ── Global ranking: collect candidates across all symbols ────────────────
@@ -3043,11 +3065,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
         // Cross-asset: ES/NQ divergence + Opening Range
         if (!g_ca_esnq.has_open_position() && base_can_sp) {
-            const auto ca_sig = g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, on_close);
+            const auto ca_sig = g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, ca_on_close);
             if (ca_sig.valid) { const double lot = compute_size(sym, std::fabs(ca_sig.entry-ca_sig.sl), ask-bid, 0.01); (void)lot; send_live_order(sym, ca_sig.is_long, lot, ca_sig.entry); }
         }
         if (!g_orb_us.has_open_position() && base_can_sp) {
-            const auto orb = g_orb_us.on_tick(sym, bid, ask, on_close);
+            const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
         }
     }
@@ -3077,7 +3099,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 dispatch(g_eng_cl, g_sup_cl, base_can);
             // EIA fade engine
             if (!g_ca_eia_fade.has_open_position() && base_can) {
-                const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, on_close);
+                const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close);
                 if (ef.valid) { const double lot = compute_size(sym, std::fabs(ef.entry-ef.sl), ask-bid, 0.01); send_live_order(sym, ef.is_long, lot, ef.entry); }
             }
             // Brent/WTI spread engine — get Brent price from book
@@ -3088,7 +3110,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                   const auto ai = g_asks.find("UKBRENT"); if (ai != g_asks.end()) brent_a = ai->second; }
                 const double brent_mid = (brent_b > 0 && brent_a > 0) ? (brent_b+brent_a)*0.5 : 0.0;
                 if (brent_mid > 0) {
-                    const auto bw = g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid, on_close);
+                    const auto bw = g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid, ca_on_close);
                     if (bw.valid) { const double lot = compute_size(sym, std::fabs(bw.entry-bw.sl), ask-bid, 0.01); send_live_order(sym, bw.is_long, lot, bw.entry); }
                 }
             }
@@ -3114,7 +3136,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
         // Opening range breakout: Xetra open 08:00 UTC
         if (!g_orb_ger30.has_open_position() && base_can_ger) {
-            const auto orb = g_orb_ger30.on_tick(sym, bid, ask, on_close);
+            const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
         }
     }
@@ -3148,14 +3170,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              0.0, g_bracket_xag_trades_this_minute, g_bracket_xag_minute_start);
         // Silver COMEX opening range 13:30 UTC
         if (!g_orb_silver.has_open_position() && base_can) {
-            const auto orb = g_orb_silver.on_tick(sym, bid, ask, on_close);
+            const auto orb = g_orb_silver.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
         }
         // Lead-lag: not supervisor-gated (intermarket signal, not regime-based)
         // Must check base_can — without it LL fires even when breakout/bracket is open.
         // Confirmed same class of bug as GOLD.F LE: two concurrent XAGUSD positions.
         if (base_can) {
-            const auto ll_sig = g_le_stack.on_tick_silver(bid, ask, rtt_check, on_close);
+            const auto ll_sig = g_le_stack.on_tick_silver(bid, ask, rtt_check, ca_on_close);
             if (ll_sig.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
                     ll_sig.is_long ? "LONG" : "SHORT", ll_sig.entry, ll_sig.reason);
@@ -3195,7 +3217,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
         // FX cascade: EURUSD-driven GBPUSD entry
         if (!g_ca_fx_cascade.has_open_position() && base_can_fx2) {
-            const auto cas = g_ca_fx_cascade.on_tick_gbpusd(bid, ask, on_close);
+            const auto cas = g_ca_fx_cascade.on_tick_gbpusd(bid, ask, ca_on_close);
             if (cas.valid) { const double lot = compute_size("GBPUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01); send_live_order("GBPUSD", cas.is_long, lot, cas.entry); }
         }
     }
@@ -3224,7 +3246,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active) dispatch_bracket(g_bracket_usdjpy, g_sup_usdjpy, g_eng_usdjpy, bc_jpy, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
                 // Carry unwind: VIX spike + JPY bid
                 if (!g_ca_carry_unwind.has_open_position() && bc_jpy) {
-                    const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, on_close);
+                    const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close);
                     if (cu.valid) { const double lot = compute_size("USDJPY", std::fabs(cu.entry-cu.sl), ask-bid, 0.01); send_live_order("USDJPY", cu.is_long, lot, cu.entry); }
                 }
             }
@@ -3353,7 +3375,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Confirmed cause: LE fired SHORT 4680.94 while GoldStack SHORT 4682.44
         // was still open (4s apart), producing two concurrent losing positions.
         if (!g_bracket_gold.has_open_position() && !g_gold_stack.has_open_position()) {
-            const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, on_close, gold_can_enter);
+            const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, ca_on_close, gold_can_enter);
             if (le_sig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason);
@@ -3904,6 +3926,8 @@ static void quote_loop() {
                     g_macroDetector.regime().c_str(),
                     [](const omega::TradeRecord& tr) {
                         handle_closed_trade(tr);
+                        // Send market close — broker doesn't know we're disconnecting
+                        send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     });
         };
         fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F");
@@ -3947,7 +3971,12 @@ static void quote_loop() {
               const auto ai = g_asks.find(sym_fc); if (ai != g_asks.end()) a = ai->second; }
             if (b > 0.0 && a > 0.0)
                 beng.forceClose(b, a, "FORCE_CLOSE", g_rtt_last, "",
-                    [](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
+                    [](const omega::TradeRecord& tr) {
+                        handle_closed_trade(tr);
+                        // Send market close — broker doesn't know we disconnected.
+                        // Matches gold/xag bracket behaviour on disconnect.
+                        send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+                    });
         };
         fc_bracket(g_bracket_sp,      "US500.F");
         fc_bracket(g_bracket_nq,      "USTEC.F");
@@ -3965,7 +3994,10 @@ static void quote_loop() {
         // Cross-asset engine force-close
         {
             std::function<void(const omega::TradeRecord&)> ca_cb =
-                [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+                [](const omega::TradeRecord& tr) {
+                    handle_closed_trade(tr);
+                    send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+                };
             auto ca_get_px = [](const char* s, double& b, double& a) {
                 b = 0.0; a = 0.0;
                 std::lock_guard<std::mutex> lk(g_book_mtx);
@@ -3996,13 +4028,19 @@ static void quote_loop() {
               const auto sai = g_asks.find("XAGUSD"); if (sai != g_asks.end()) s_ask = sai->second; }
             if (g_bid > 0.0 && g_ask > 0.0) {
                 omega::gold::GoldEngineStack::CloseCallback gold_fc_cb =
-                    [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+                    [](const omega::TradeRecord& tr) {
+                        handle_closed_trade(tr);
+                        send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+                    };
                 g_gold_stack.force_close(g_bid, g_ask, g_rtt_last, gold_fc_cb);
                 // Force-close latency edge engines
                 omega::latency::LatencyEdgeStack::CloseCb le_cb =
-                    [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+                    [](const omega::TradeRecord& tr) {
+                        handle_closed_trade(tr);
+                        send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+                    };
                 g_le_stack.force_close_all(g_bid, g_ask,
-                    s_bid > 0.0 ? s_bid : g_bid * 0.0185,  // fallback silver price
+                    s_bid > 0.0 ? s_bid : g_bid * 0.0185,
                     s_ask > 0.0 ? s_ask : g_ask * 0.0185,
                     g_rtt_last, le_cb);
             }
