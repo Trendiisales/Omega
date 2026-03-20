@@ -192,7 +192,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
             s->sig_price[idx],  s->sig_reason[idx]);
         result += entry;
     }
-    result += "]}";
+    result += "]";  // close signal_history array — outer object closed after brackets below
 
     // Append per-symbol bracket state
     result += ",\"brackets\":{";
@@ -214,7 +214,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
     bktJson("gold", s->bkt_gold); result += ',';
     bktJson("eur",  s->bkt_eur);  result += ',';
     bktJson("gbp",  s->bkt_gbp);
-    result += "}";
+    result += "}}";  // close brackets{} then close root {}
 
     return result;
 }
