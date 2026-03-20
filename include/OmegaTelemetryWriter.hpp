@@ -197,7 +197,7 @@ public:
             strcpy_s(m_snap->macro_regime, "NEUTRAL");
             m_snap->sig_head  = 0;
             m_snap->sig_count = 0;
-            for (int i = 0; i < OmegaSnapshot::MAX_SIGNAL_HISTORY; ++i) {
+            for (int i = 0; i < OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY; ++i) {
                 m_snap->sig_symbol[i][0] = '\0';
                 strcpy_s(m_snap->sig_side[i], "NONE");
                 m_snap->sig_price[i]    = 0.0;
@@ -316,8 +316,8 @@ public:
         strcpy_s(m_snap->sig_side[idx],   side);
         m_snap->sig_price[idx]  = price;
         strcpy_s(m_snap->sig_reason[idx], reason);
-        m_snap->sig_head  = (idx + 1) % OmegaSnapshot::MAX_SIGNAL_HISTORY;
-        if (m_snap->sig_count < OmegaSnapshot::MAX_SIGNAL_HISTORY)
+        m_snap->sig_head  = (idx + 1) % OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY;
+        if (m_snap->sig_count < OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY)
             ++m_snap->sig_count;
     }
 

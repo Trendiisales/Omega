@@ -183,8 +183,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
     const int head  = s->sig_head;  // next-write index, so newest = head-1 (wraps)
     for (int i = 0; i < count; ++i) {
         // Walk backwards from head-1
-        const int idx = (head - 1 - i + OmegaSnapshot::MAX_SIGNAL_HISTORY)
-                        % OmegaSnapshot::MAX_SIGNAL_HISTORY;
+        const int idx = (head - 1 - i + OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY) % OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY;
         if (i > 0) result += ',';
         char entry[256];
         snprintf(entry, sizeof(entry),
