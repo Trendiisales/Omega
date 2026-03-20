@@ -40,7 +40,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
 /* ── CARD ── */
 .card{background:var(--glass);border:1px solid var(--border);border-radius:10px;
   backdrop-filter:blur(20px);position:relative;overflow:hidden;}
-.card-hd{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:2.5px;
+.card-hd{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2.5px;
   color:var(--t2);padding:10px 12px 6px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border);}
 .card-hd .dot{width:4px;height:4px;border-radius:50%;flex-shrink:0;}
 .card-body{padding:10px 12px;}
@@ -55,7 +55,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .logo-name{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;
   letter-spacing:2px;background:linear-gradient(120deg,var(--cyan),var(--blue) 50%,var(--purple));
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;}
-.logo-sub{font-size:7px;color:var(--t2);letter-spacing:3px;text-transform:uppercase;margin-top:1px;}
+.logo-sub{font-size:9px;color:var(--t2);letter-spacing:3px;text-transform:uppercase;margin-top:1px;}
 
 /* ── HEADER TICKERS ── */
 .hdr-tickers{display:flex;align-items:center;gap:4px;justify-content:center;overflow:hidden;}
@@ -63,13 +63,13 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
   border:1px solid var(--border);background:rgba(255,255,255,0.02);white-space:nowrap;cursor:default;}
 .htk.gold{border-color:rgba(245,200,66,0.3);background:var(--gold-dim);}
 .htk.silver{border-color:rgba(154,180,204,0.25);background:var(--silver-dim);}
-.htk-sym{font-size:8px;font-weight:700;letter-spacing:1px;color:var(--t2);}
+.htk-sym{font-size:10px;font-weight:700;letter-spacing:1px;color:var(--t2);}
 .htk.gold .htk-sym{color:var(--gold);}
 .htk.silver .htk-sym{color:var(--silver);}
-.htk-b{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--green);}
-.htk-a{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--red);}
-.htk-sep{color:var(--t3);font-size:9px;}
-.htk-ph{font-size:7px;font-weight:700;letter-spacing:0.5px;padding:1px 4px;border-radius:3px;margin-left:2px;}
+.htk-b{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--green);}
+.htk-a{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--red);}
+.htk-sep{color:var(--t3);font-size:11px;}
+.htk-ph{font-size:9px;font-weight:700;letter-spacing:0.5px;padding:1px 4px;border-radius:3px;margin-left:2px;}
 .ph-flat{background:rgba(255,255,255,0.05);color:var(--t2);}
 .ph-comp{background:var(--amber-dim);color:var(--amber);}
 .ph-brk{background:var(--green-dim);color:var(--green);animation:brk-blink 0.7s ease-in-out infinite;}
@@ -95,7 +95,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .mkt-body{flex:1;overflow-y:auto;padding:6px 8px;}
 .mkt-body::-webkit-scrollbar{width:3px;}
 .mkt-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px;}
-.sym-section-label{font-size:7px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;
+.sym-section-label{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;
   padding:5px 4px 3px;opacity:0.7;}
 .sym-row{display:grid;grid-template-columns:62px 1fr auto;align-items:center;gap:6px;
   padding:5px 6px;border-radius:6px;margin-bottom:2px;border:1px solid transparent;transition:background 0.15s;}
@@ -112,14 +112,14 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .px-pair{display:flex;gap:5px;align-items:center;}
 .bid{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--green);}
 .ask{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--red);}
-.sprd{font-family:'IBM Plex Mono',monospace;font-size:8px;color:var(--t2);}
+.sprd{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t2);}
 
 /* Regime card */
 .regime-card{flex-shrink:0;}
 .regime-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 10px;}
 .rg-item{background:rgba(255,255,255,0.02);border-radius:6px;padding:7px 8px;text-align:center;}
-.rg-lbl{font-size:7px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;}
-.rg-val{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--t1);}
+.rg-lbl{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;}
+.rg-val{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;color:var(--t1);}
 
 /* ── CENTRE COLUMN ── */
 .col-centre{grid-column:2;display:flex;flex-direction:column;gap:8px;overflow:hidden;min-height:0;}
@@ -133,15 +133,15 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .pnl-num{font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;
   letter-spacing:-0.5px;text-shadow:0 0 20px currentColor;line-height:1;margin:4px 0 2px;}
 .pnl-pos{color:var(--green)}.pnl-neg{color:var(--red)}
-.pnl-sub{font-size:9px;color:var(--t2);}
+.pnl-sub{font-size:11px;color:var(--t2);}
 .stat-card{background:var(--glass);border:1px solid var(--border);border-radius:10px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 6px;}
 .stat-n{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:700;color:var(--blue);}
-.stat-l{font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-top:3px;}
+.stat-l{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-top:3px;}
 
 /* Engine grid — all 15 engines in a responsive grid */
 .eng-section{flex-shrink:0;}
-.eng-section-label{font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;padding:0 2px 5px;}
+.eng-section-label{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;padding:0 2px 5px;}
 .eng-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;}
 .eng-grid.eng-grid-3{grid-template-columns:repeat(3,1fr);}
 .eng-grid.eng-grid-6{grid-template-columns:repeat(6,1fr);}
@@ -156,33 +156,33 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 @keyframes eng-amber{0%,100%{box-shadow:0 0 8px rgba(255,136,0,0.1)}50%{box-shadow:0 0 16px rgba(255,136,0,0.3)}}
 @keyframes eng-green{0%,100%{box-shadow:0 0 10px rgba(0,217,126,0.2)}50%{box-shadow:0 0 22px rgba(0,217,126,0.5)}}
 @keyframes eng-live{0%,100%{box-shadow:0 0 16px rgba(0,217,126,0.4)}50%{box-shadow:0 0 30px rgba(0,217,126,0.9)}}
-.eng-sym{font-size:10px;font-weight:700;color:var(--blue);letter-spacing:0.5px;line-height:1;}
-.eng-ph{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:3px;padding:2px 5px;
+.eng-sym{font-size:12px;font-weight:700;color:var(--blue);letter-spacing:0.5px;line-height:1;}
+.eng-ph{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:3px;padding:2px 5px;
   border-radius:3px;display:inline-block;}
 .eph-flat{background:rgba(255,255,255,0.05);color:var(--t2);}
 .eph-comp{background:var(--amber-dim);color:var(--amber);}
 .eph-brk{background:var(--green-dim);color:var(--green);}
 .eph-live{background:rgba(0,217,126,0.25);color:#fff;font-weight:700;}
-.eng-px{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;margin-top:3px;
+.eng-px{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;margin-top:3px;
   display:flex;justify-content:center;gap:3px;align-items:center;line-height:1;}
-.eng-bid{color:var(--green);}.eng-ask{color:var(--red);}.eng-sep{color:var(--t2);font-size:9px;}
-.eng-vol{font-family:'IBM Plex Mono',monospace;font-size:8px;color:#a8bbd4;margin-top:2px;line-height:1.3;}
+.eng-bid{color:var(--green);}.eng-ask{color:var(--red);}.eng-sep{color:var(--t2);font-size:11px;}
+.eng-vol{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#a8bbd4;margin-top:2px;line-height:1.3;}
 /* Proximity bar — shows how close price is to compression boundary */
 .eng-prox{width:calc(100% - 8px);display:flex;align-items:center;gap:4px;margin:3px 4px 0;}
 .eng-prox-track{flex:1;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;}
 .eng-prox-fill{height:100%;border-radius:2px;transition:width 0.3s,background 0.3s;}
-.eng-prox-pct{font-family:'IBM Plex Mono',monospace;font-size:8px;color:var(--t2);
+.eng-prox-pct{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t2);
   min-width:26px;text-align:right;transition:color 0.3s;flex-shrink:0;}
 /* Signal count badge */
-.eng-sigs{font-size:9px;font-weight:700;color:var(--gold);margin-top:2px;
+.eng-sigs{font-size:11px;font-weight:700;color:var(--gold);margin-top:2px;
   padding:1px 4px;border-radius:3px;background:rgba(245,200,66,0.1);}
 
 /* Signal + trade area */
 .sig-trade-area{flex:1;display:grid;grid-template-rows:auto 1fr;gap:8px;min-height:0;overflow:hidden;}
 .last-sig{flex-shrink:0;background:var(--glass);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
 .sig-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:center;}
-.sig-field-lbl{font-size:7px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;}
-.sig-field-val{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;}
+.sig-field-lbl{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;}
+.sig-field-val{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;}
 
 .trades-card{flex:1;background:var(--glass);border:1px solid var(--border);border-radius:10px;
   display:flex;flex-direction:column;overflow:hidden;min-height:0;}
@@ -194,7 +194,7 @@ th{padding:7px 10px;color:var(--t2);font-size:10px;text-transform:uppercase;lett
   font-weight:700;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg1);}
 td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:nowrap;
   font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;}
-.no-data{text-align:center;color:var(--t2);padding:24px;font-size:11px;}
+.no-data{text-align:center;color:var(--t2);padding:24px;font-size:13px;}
 
 /* ── RIGHT COLUMN ── */
 .col-right{grid-column:3;display:flex;flex-direction:column;gap:8px;overflow-y:auto;}
@@ -205,31 +205,31 @@ td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:
 .lat-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 10px;}
 .lat-item{background:rgba(255,255,255,0.02);border-radius:6px;padding:8px 6px;text-align:center;}
 .lat-val{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;color:var(--blue);}
-.lat-lbl{font-size:7px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-top:3px;}
+.lat-lbl{font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-top:3px;}
 
 /* Governor */
 .gov-item{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;
   border-bottom:1px solid var(--border);}
 .gov-item:last-of-type{border-bottom:none;}
-.gov-lbl{font-size:9px;color:var(--t2);}
+.gov-lbl{font-size:11px;color:var(--t2);}
 .gov-bar{flex:1;height:3px;background:rgba(255,255,255,0.06);margin:0 8px;border-radius:2px;overflow:hidden;}
 .gov-fill{height:100%;border-radius:2px;background:var(--amber);transition:width 0.5s;}
-.gov-n{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--amber);min-width:22px;text-align:right;}
+.gov-n{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--amber);min-width:22px;text-align:right;}
 
 /* FIX session */
 .fix-item{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;
   border-bottom:1px solid var(--border);}
 .fix-item:last-of-type{border-bottom:none;}
-.fix-lbl{font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;}
-.fix-val{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;}
+.fix-lbl{font-size:11px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;}
+.fix-val{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;}
 .fix-ok{color:var(--green)}.fix-bad{color:var(--red)}
 
 /* Comp ranges */
 .comp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:8px 10px;}
 .comp-item{background:rgba(255,255,255,0.02);border-radius:6px;padding:7px 6px;text-align:center;}
-.comp-sym{font-size:9px;font-weight:700;color:var(--blue);margin-bottom:3px;}
-.comp-ph{font-size:8px;font-weight:700;margin-bottom:3px;}
-.comp-detail{font-family:'IBM Plex Mono',monospace;font-size:8px;color:#a8bbd4;}
+.comp-sym{font-size:11px;font-weight:700;color:var(--blue);margin-bottom:3px;}
+.comp-ph{font-size:10px;font-weight:700;margin-bottom:3px;}
+.comp-detail{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#a8bbd4;}
 </style>
 </head>
 <body>
@@ -250,24 +250,24 @@ R"OMEGA1(
 
   <div style="display:flex;align-items:center;gap:18px;padding:6px 18px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);">
     <div style="text-align:center;">
-      <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">VIX</div>
+      <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">VIX</div>
 
-      <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;" id="vixLevelHdr">--</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;" id="vixLevelHdr">--</div>
     </div>
     <div style="width:1px;height:28px;background:var(--border);"></div>
     <div style="text-align:center;">
-      <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Regime</div>
-      <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;" id="macroRegimeHdr">--</div>
+      <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Regime</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;" id="macroRegimeHdr">--</div>
     </div>
     <div style="width:1px;height:28px;background:var(--border);"></div>
     <div style="text-align:center;">
-      <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Session</div>
+      <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Session</div>
 
-      <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;" id="sessionValHdr">--</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;" id="sessionValHdr">--</div>
     </div>
     <div style="width:1px;height:28px;background:var(--border);"></div>
     <div style="text-align:center;">
-      <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">ES÷NQ</div>
+      <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">ES÷NQ</div>
       <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:var(--blue);" id="esNqDivHdr">--</div>
     </div>
   </div>
@@ -279,7 +279,7 @@ R"OMEGA1(
     <span class="badge"><span class="dot-conn dot-bad" id="connDot"></span><span id="connText">Connecting</span></span>
     <span class="badge" id="fixQuoteHdr" style="color:var(--red)">Q:--</span>
     <span id="buildBadge" class="badge" style="color:var(--amber);font-size:9px;font-weight:700;letter-spacing:1.5px" title="Git hash — built version">⬡ <span id="buildVersion">...</span></span>
-    <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--t2)" id="clock">--:--:-- UTC</span>
+    <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--t2)" id="clock">--:--:-- UTC</span>
   </div>
 </header>
 
@@ -296,106 +296,106 @@ R"OMEGA1(
         <div class="sym-section-label">★ Precious Metals</div>
         <div class="sym-row r-gold">
           <span class="sym-nm c-gold">GOLD.F</span>
-          <div class="px-pair"><span class="bid" id="goldBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="goldAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="goldBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="goldAsk">----</span></div>
           <span class="sprd" id="goldSpread">--</span>
         </div>
         <div class="sym-row r-silver">
           <span class="sym-nm c-silver">XAGUSD</span>
-          <div class="px-pair"><span class="bid" id="xagBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="xagAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="xagBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="xagAsk">----</span></div>
           <span class="sprd" id="xagSpread">--</span>
         </div>
 
         <div class="sym-section-label">▶ US Indices &amp; Oil</div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">US500.F</span>
-          <div class="px-pair"><span class="bid" id="spBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="spAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="spBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="spAsk">----</span></div>
           <span class="sprd" id="spSpread">--</span>
         </div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">USTEC.F</span>
-          <div class="px-pair"><span class="bid" id="nqBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="nqAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="nqBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="nqAsk">----</span></div>
           <span class="sprd" id="nqSpread">--</span>
         </div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">DJ30.F</span>
-          <div class="px-pair"><span class="bid" id="djBid" style="font-size:10px">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="djAsk" style="font-size:10px">----</span></div>
+          <div class="px-pair"><span class="bid" id="djBid" style="font-size:11px">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="djAsk" style="font-size:11px">----</span></div>
           <span class="sprd"></span>
         </div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">NAS100</span>
-          <div class="px-pair"><span class="bid" id="nasBid" style="font-size:10px">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="nasAsk" style="font-size:10px">----</span></div>
+          <div class="px-pair"><span class="bid" id="nasBid" style="font-size:11px">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="nasAsk" style="font-size:11px">----</span></div>
           <span class="sprd"></span>
         </div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">USOIL.F</span>
-          <div class="px-pair"><span class="bid" id="clBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="clAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="clBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="clAsk">----</span></div>
           <span class="sprd" id="clSpread">--</span>
         </div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">UKBRENT</span>
-          <div class="px-pair"><span class="bid" id="brentBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="brentAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="brentBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="brentAsk">----</span></div>
           <span class="sprd" id="brentSpread">--</span>
         </div>
 
         <div class="sym-section-label">◈ EU Indices</div>
         <div class="sym-row r-eu">
           <span class="sym-nm c-purple">GER30</span>
-          <div class="px-pair"><span class="bid" id="ger30Bid" style="font-size:10px">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="ger30Ask" style="font-size:10px">----</span></div>
+          <div class="px-pair"><span class="bid" id="ger30Bid" style="font-size:11px">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="ger30Ask" style="font-size:11px">----</span></div>
           <span class="sprd"></span>
         </div>
         <div class="sym-row r-eu">
           <span class="sym-nm c-purple">UK100</span>
-          <div class="px-pair"><span class="bid" id="uk100Bid" style="font-size:10px">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="uk100Ask" style="font-size:10px">----</span></div>
+          <div class="px-pair"><span class="bid" id="uk100Bid" style="font-size:11px">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="uk100Ask" style="font-size:11px">----</span></div>
           <span class="sprd"></span>
         </div>
         <div class="sym-row r-eu">
           <span class="sym-nm c-purple">ESTX50</span>
-          <div class="px-pair"><span class="bid" id="estx50Bid" style="font-size:10px">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="estx50Ask" style="font-size:10px">----</span></div>
+          <div class="px-pair"><span class="bid" id="estx50Bid" style="font-size:11px">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="estx50Ask" style="font-size:11px">----</span></div>
           <span class="sprd"></span>
         </div>
 
         <div class="sym-section-label">⬡ FX Majors</div>
         <div class="sym-row r-fx">
           <span class="sym-nm c-cyan">EURUSD</span>
-          <div class="px-pair"><span class="bid" id="eurBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="eurAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="eurBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="eurAsk">----</span></div>
           <span class="sprd" id="eurSpread">--</span>
         </div>
         <div class="sym-row r-fx" style="border-color:rgba(0,200,240,0.18);background:rgba(0,200,240,0.04);">
           <span class="sym-nm c-cyan">GBPUSD</span>
-          <div class="px-pair"><span class="bid" id="gbpBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="gbpAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="gbpBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="gbpAsk">----</span></div>
           <span class="sprd" id="gbpSpread">--</span>
         </div>
         <div class="sym-section-label">🌏 Asia FX</div>
         <div class="sym-row r-asia">
           <span class="sym-nm c-teal">AUDUSD</span>
-          <div class="px-pair"><span class="bid" id="audBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="audAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="audBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="audAsk">----</span></div>
           <span class="sprd" id="audSpread">--</span>
         </div>
         <div class="sym-row r-asia">
           <span class="sym-nm c-teal">NZDUSD</span>
-          <div class="px-pair"><span class="bid" id="nzdBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="nzdAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="nzdBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="nzdAsk">----</span></div>
           <span class="sprd" id="nzdSpread">--</span>
         </div>
         <div class="sym-row r-asia">
           <span class="sym-nm" style="color:var(--purple)">USDJPY</span>
-          <div class="px-pair"><span class="bid" id="jpyBid">----</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="jpyAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="jpyBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="jpyAsk">----</span></div>
           <span class="sprd" id="jpySpread">--</span>
         </div>
 
         <div class="sym-section-label">◈ Confirmation</div>
         <div class="sym-row">
           <span class="sym-nm c-t2">VIX.F</span>
-          <div class="px-pair"><span class="bid" id="vixBid" style="font-size:10px">--</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="vixAsk" style="font-size:10px">--</span></div>
+          <div class="px-pair"><span class="bid" id="vixBid" style="font-size:11px">--</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="vixAsk" style="font-size:11px">--</span></div>
           <span class="sprd"></span>
         </div>
         <div class="sym-row">
           <span class="sym-nm c-t2">DX.F</span>
-          <div class="px-pair"><span class="bid" id="dxBid" style="font-size:10px">--</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="dxAsk" style="font-size:10px">--</span></div>
+          <div class="px-pair"><span class="bid" id="dxBid" style="font-size:11px">--</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="dxAsk" style="font-size:11px">--</span></div>
           <span class="sprd"></span>
         </div>
         <div class="sym-row">
           <span class="sym-nm c-t2">NGAS.F</span>
-          <div class="px-pair"><span class="bid" id="ngasBid" style="font-size:10px">--</span><span class="c-t2" style="font-size:9px">|</span><span class="ask" id="ngasAsk" style="font-size:10px">--</span></div>
+          <div class="px-pair"><span class="bid" id="ngasBid" style="font-size:11px">--</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="ngasAsk" style="font-size:11px">--</span></div>
           <span class="sprd"></span>
         </div>
       </div>
@@ -409,10 +409,10 @@ R"OMEGA1(
     <!-- Stats bar -->
     <div class="stats-bar">
       <div class="pnl-card">
-        <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;">Daily P&amp;L</div>
+        <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;">Daily P&amp;L</div>
         <div class="pnl-num pnl-pos" id="pnlVal">+$0.00</div>
         <div class="pnl-sub" id="pnlSub">0 trades · 0.0% win</div>
-        <div style="font-size:8px;color:var(--t2);margin-top:2px;" id="pnlGrossSub"></div>
+        <div style="font-size:10px;color:var(--t2);margin-top:2px;" id="pnlGrossSub"></div>
       </div>
       <div class="stat-card"><div class="stat-n" id="statWins" style="color:var(--green)">0</div><div class="stat-l">Wins</div></div>
       <div class="stat-card"><div class="stat-n" id="statLosses" style="color:var(--red)">0</div><div class="stat-l">Losses</div></div>
@@ -469,17 +469,17 @@ R"OMEGA2(
     <!-- Last signal + trades -->
     <div class="sig-trade-area">
       <div class="last-sig">
-        <div style="font-size:8px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+        <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
           <span style="width:4px;height:4px;border-radius:50%;background:var(--amber);flex-shrink:0;display:inline-block;"></span>Last Signal
           <button id="bellBtn" onclick="toggleBell()" style="margin-left:auto;background:rgba(255,214,0,.1);border:1px solid rgba(255,214,0,0.4);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:9px;color:#ffd600;font-family:inherit;font-weight:700;">🔔 ARM BELL</button>
         </div>
-        <div id="lastSignalDetail"><span style="color:var(--t2);font-size:11px;">Waiting for first signal…</span></div>
+        <div id="lastSignalDetail"><span style="color:var(--t2);font-size:13px;">Waiting for first signal…</span></div>
       </div>
 
       <div class="trades-card">
         <div class="card-hd" style="flex-shrink:0;">
           <span class="dot" style="background:var(--green)"></span>Recent Trades
-          <span id="tradeCount" style="font-family:'IBM Plex Mono',monospace;color:var(--t2);margin-left:6px;font-size:9px;"></span>
+          <span id="tradeCount" style="font-family:'IBM Plex Mono',monospace;color:var(--t2);margin-left:6px;font-size:11px;"></span>
         </div>
         <div class="trades-scroll">
           <table>
@@ -528,7 +528,7 @@ R"OMEGA2(
       <div class="gov-item"><span class="gov-lbl">PNL LIM</span><div class="gov-bar"><div class="gov-fill" id="gbarPnl" style="width:0%"></div></div><span class="gov-n" id="gnPnl">0</span></div>
       <div class="gov-item"><span class="gov-lbl">POSITION</span><div class="gov-bar"><div class="gov-fill" id="gbarPos" style="width:0%"></div></div><span class="gov-n" id="gnPos">0</span></div>
       <div class="gov-item"><span class="gov-lbl">CONSEC</span><div class="gov-bar"><div class="gov-fill" id="gbarConsec" style="width:0%"></div></div><span class="gov-n" id="gnConsec">0</span></div>
-      <div style="font-size:8px;color:var(--t2);padding:5px 10px;text-align:right;" id="govTotal">Total: 0</div>
+      <div style="font-size:10px;color:var(--t2);padding:5px 10px;text-align:right;" id="govTotal">Total: 0</div>
     </div>
 
     <!-- Compression Ranges (SP/NQ/CL) -->
@@ -645,13 +645,13 @@ R"OMEGA3(
 function renderLastSignal(d){
   const el=document.getElementById('lastSignalDetail');if(!el)return;
   if(!d.last_signal_side||d.last_signal_side==='NONE'||d.last_signal_side==='CLOSED'||!d.last_signal_side){
-    el.innerHTML='<span style="color:var(--t2);font-size:11px;">Waiting for first signal…</span>';return;}
+    el.innerHTML='<span style="color:var(--t2);font-size:13px;">Waiting for first signal…</span>';return;}
   const sc=d.last_signal_side==='LONG'?'var(--green)':'var(--red)';
   el.innerHTML=`<div class="sig-row">
     <div><div class="sig-field-lbl">Symbol</div><div class="sig-field-val" style="color:var(--blue)">${d.last_signal_symbol||'--'}</div></div>
     <div><div class="sig-field-lbl">Direction</div><div class="sig-field-val" style="color:${sc}">${d.last_signal_side}</div></div>
     <div><div class="sig-field-lbl">Price</div><div class="sig-field-val" style="color:var(--t1)">${safe(d.last_signal_price).toFixed(2)}</div></div>
-    <div><div class="sig-field-lbl">Reason</div><div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--gold);margin-top:4px;">${d.last_signal_reason||'--'}</div></div>
+    <div><div class="sig-field-lbl">Reason</div><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--gold);margin-top:4px;">${d.last_signal_reason||'--'}</div></div>
   </div>`;
 }
 
@@ -685,15 +685,15 @@ function renderTrades(trades){
     // BUG FIX 3: net column — was (net>=0?'+':'') now (net>=0?'+':'-')
     const netD=isOpen?'<span style="color:var(--t2);font-size:10px">live</span>':(net>=0?'+':'-')+'$'+Math.abs(net).toFixed(2);
     return `<tr style="background:${rowBg}">
-      <td style="color:var(--t2);font-size:10px">${fmtUTC(safe(t.entryTs))}</td>
+      <td style="color:var(--t2);font-size:12px">${fmtUTC(safe(t.entryTs))}</td>
       <td style="color:var(--blue);font-weight:700">${t.symbol||'--'}</td>
       <td style="color:${sc};font-weight:700">${t.side||'--'}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px">${safe(t.price)>0?safe(t.price).toFixed(2):'--'}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;color:var(--t2);font-size:11px">${isOpen?'<span style="color:var(--blue);font-size:10px">open</span>':safe(t.exitPrice)>0?safe(t.exitPrice).toFixed(2):'--'}</td>
-      <td style="color:var(--t2);font-size:10px">${heldStr}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:13px">${safe(t.price)>0?safe(t.price).toFixed(2):'--'}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;color:var(--t2);font-size:13px">${isOpen?'<span style="color:var(--blue);font-size:12px">open</span>':safe(t.exitPrice)>0?safe(t.exitPrice).toFixed(2):'--'}</td>
+      <td style="color:var(--t2);font-size:12px">${heldStr}</td>
       <td style="font-weight:700;color:${rc}">${result}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;color:${gross>=0?'var(--green)':'var(--red)'};font-size:11px">${grossD}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;color:var(--red);font-size:10px">${slipD}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;color:${gross>=0?'var(--green)':'var(--red)'};font-size:13px">${grossD}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;color:var(--red);font-size:12px">${slipD}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:${netC};font-weight:700">${netD}</td>
     </tr>`;
   }).join('');
