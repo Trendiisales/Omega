@@ -463,6 +463,7 @@ class SessionMomentumEngine : public EngineBase {
     }
 public:
     SessionMomentumEngine(): EngineBase("SessionMomentum",1.2){}
+    void reset_history() { history_.clear(); }
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(!in_session_window()) return noSignal();
@@ -1320,6 +1321,27 @@ public:
         apply_asian_session_overrides(snap.session);
         apply_london_session_overrides(snap.session);
 
+        // ── Session-change guard ─────────────────────────────────────────
+        // When session transitions (ASIAN→LONDON, LONDON→NEWYORK etc),
+        // reset SessionMomentumEngine's price history so it cannot fire on
+        // stale cross-session data. The IMPULSE regime from Asia may persist
+        // into London open enabling SessionMomentum, but its 60-tick window
+        // would contain only Asia prices — not London directional context.
+        // Confirmed cause: SHORT at 07:00:09 UTC fired on Asia IMPULSE regime
+        // carrying into London, with 60-tick history entirely Asia data.
+        if (snap.session != last_session_ && last_session_ != SessionType::UNKNOWN) {
+            for (auto& e : engines_) {
+                if (e->getName() == "SessionMomentum") {
+                    // Cast to SessionMomentumEngine and clear its history
+                    static_cast<SessionMomentumEngine*>(e.get())->reset_history();
+                }
+            }
+            printf("[GOLD-SESSION-CHANGE] %s → %s: SessionMomentum history cleared\n",
+                   session_name(last_session_), session_name(snap.session));
+            fflush(stdout);
+        }
+        last_session_ = snap.session;
+
         // Don't look for new entries if already in a position or gated out
         if(has_open_pos_ || !can_enter) return GoldSignal{};
 
@@ -1428,6 +1450,10 @@ private:
     int64_t          last_entry_ts_=0;     // timestamp of last entry — enforces MIN_ENTRY_GAP_SEC
     std::array<int64_t, 2> side_pause_until_{{0,0}};
     std::array<std::deque<int64_t>, 2> side_hard_sl_times_{};
+    // Session-change tracking — reset session-specific engine histories
+    // when session transitions (e.g. ASIAN→LONDON) so engines don't fire
+    // on stale cross-session data (e.g. Asia impulse carrying into London open)
+    SessionType last_session_ = SessionType::UNKNOWN;
     std::array<double, 2> last_exit_price_{{0.0,0.0}};
     std::array<int64_t, 2> last_exit_ts_{{0,0}};
 
@@ -1564,6 +1590,16 @@ private:
 
     const char* current_regime_name() const {
         return RegimeGovernor::name(current_regime_);
+    }
+
+    static const char* session_name(SessionType s) {
+        switch(s) {
+            case SessionType::ASIAN:   return "ASIAN";
+            case SessionType::LONDON:  return "LONDON";
+            case SessionType::NEWYORK: return "NEWYORK";
+            case SessionType::OVERLAP: return "OVERLAP";
+            default:                   return "UNKNOWN";
+        }
     }
 
     static GoldSignal to_gold_signal(const Signal& s){

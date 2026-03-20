@@ -189,10 +189,11 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .trades-scroll{flex:1;overflow-y:auto;}
 .trades-scroll::-webkit-scrollbar{width:3px;}
 .trades-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px;}
-table{width:100%;border-collapse:collapse;font-size:12px;}
-th{padding:6px 8px;color:var(--t2);font-size:8px;text-transform:uppercase;letter-spacing:1.5px;
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{padding:7px 10px;color:var(--t2);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;
   font-weight:700;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg1);}
-td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:nowrap;}
+td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:nowrap;
+  font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;}
 .no-data{text-align:center;color:var(--t2);padding:24px;font-size:11px;}
 
 /* ── RIGHT COLUMN ── */
