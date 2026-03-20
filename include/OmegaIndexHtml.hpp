@@ -655,13 +655,34 @@ function renderLastSignal(d){
   if(hist.length===0){
     el.innerHTML='<span style="color:var(--t2);font-size:13px;">Waiting for first signal…</span>';return;}
   el.innerHTML=hist.map((s,i)=>{
-    const sc=s.side==='LONG'?'var(--green)':'var(--red)';
+    const isBracket=s.side==='BRACKET';
     const age=i===0?'<span style="font-size:10px;color:var(--gold);margin-left:6px;">LATEST</span>':'';
+    // Parse HI/LO from bracket reason string "HI:XXXXX.XX LO:XXXXX.XX"
+    let bracketContent='';
+    if(isBracket&&s.reason){
+      const hiM=s.reason.match(/HI:([\d.]+)/);
+      const loM=s.reason.match(/LO:([\d.]+)/);
+      const hi=hiM?parseFloat(hiM[1]):0;
+      const lo=loM?parseFloat(loM[1]):0;
+      const range=hi&&lo?(hi-lo).toFixed(2):'--';
+      bracketContent=`
+        <span style="display:inline-flex;gap:8px;align-items:center;margin-left:4px">
+          <span style="background:rgba(0,217,126,0.15);border:1px solid var(--green);border-radius:3px;padding:1px 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--green)">▲ ${hi>0?hi.toFixed(2):'--'}</span>
+          <span style="background:rgba(255,51,85,0.15);border:1px solid var(--red);border-radius:3px;padding:1px 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--red)">▼ ${lo>0?lo.toFixed(2):'--'}</span>
+          <span style="color:var(--t2);font-size:11px">Δ${range}</span>
+        </span>`;
+    }
+    const sc=isBracket?'var(--amber)':s.side==='LONG'?'var(--green)':'var(--red)';
+    const sideLabel=isBracket?'BRACKET ⟺':s.side;
+    if(!isBracket){
+      // Standard breakout signal
+      bracketContent=`<span style="color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:11px;margin-left:4px">${s.reason||''}</span>`;
+    }
     return `<div class="sig-row" style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);opacity:${1-i*0.15}">
       <span style="color:var(--blue);font-weight:700;min-width:72px;display:inline-block">${s.symbol||'--'}</span>
-      <span style="color:${sc};font-weight:700;min-width:50px;display:inline-block">${s.side||'--'}</span>
-      <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;min-width:80px;display:inline-block">${(s.price||0).toFixed(2)}</span>
-      <span style="color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:12px">${s.reason||'--'}</span>${age}
+      <span style="color:${sc};font-weight:700;min-width:60px;display:inline-block">${sideLabel}</span>
+      ${!isBracket?`<span style="font-family:'IBM Plex Mono',monospace;font-size:13px;min-width:80px;display:inline-block">${(s.price||0).toFixed(2)}</span>`:''}
+      ${bracketContent}${age}
     </div>`;
   }).join('');
 }
