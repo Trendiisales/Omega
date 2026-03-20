@@ -3608,6 +3608,12 @@ static void trade_loop() {
             g_trade_ssl  = nullptr;
             g_trade_sock = -1;
         }
+        // Hard-close: set socket non-blocking so SSL_free doesn't block on
+        // close-notify handshake. The server will handle the abrupt close.
+        // SSL_shutdown is deliberately NOT called — it can block 20-30s.
+        if (sock >= 0) {
+            u_long nb = 1; ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &nb);
+        }
         SSL_free(ssl);
         if (sock >= 0) closesocket(static_cast<SOCKET>(sock));
         std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
@@ -3845,6 +3851,8 @@ static void quote_loop() {
             }
         }
 
+        // Hard-close: non-blocking before SSL_free to avoid close-notify block
+        { u_long nb = 1; ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &nb); }
         SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
         // Interruptible reconnect wait — exits within 10ms on shutdown
@@ -4396,7 +4404,17 @@ int main(int argc, char* argv[])
 
     // quote_loop has exited — g_running is false, trade_loop will exit shortly
     std::cout << "[OMEGA] Shutdown\n";
-    trade_thread.join();  // wait for trade logout to be sent before closing files
+    // Give trade thread 1.5s max to send logout and exit cleanly.
+    // After that, detach — the non-blocking SSL_free means it won't block.
+    {
+        auto start = std::chrono::steady_clock::now();
+        while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500)) {
+            if (!trade_thread.joinable()) break;
+            Sleep(10);
+        }
+    }
+    if (trade_thread.joinable()) trade_thread.detach();
+    else trade_thread.join();  // already done, safe to join
     gui_server.stop();
     if (g_daily_trade_close_log) g_daily_trade_close_log->close();
     if (g_daily_gold_trade_close_log) g_daily_gold_trade_close_log->close();
