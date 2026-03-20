@@ -2368,8 +2368,8 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         auto& st = g_sym_risk[risk_key];
         st.daily_pnl += tr.net_pnl;   // track net (after costs) for risk gates
         if (tr.net_pnl <= 0.0) {
-            const int loss_limit = shadow_research ? 2 : g_cfg.max_consec_losses;
-            const int pause_sec  = shadow_research ? 300 : g_cfg.loss_pause_sec;
+            const int loss_limit = shadow_research ? 5 : g_cfg.max_consec_losses;
+            const int pause_sec  = shadow_research ? 60 : g_cfg.loss_pause_sec;
             if (++st.consec_losses >= loss_limit) {
                 st.pause_until = nowSec() + pause_sec;
                 std::cout << "[OMEGA-RISK] " << risk_key << " "
@@ -2619,7 +2619,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         auto& st = g_sym_risk[symbol];
         const bool shadow_research = (g_cfg.mode == "SHADOW" && g_cfg.shadow_research_mode);
-        const double daily_limit = shadow_research ? 8.0 : g_cfg.daily_loss_limit;
+        const double daily_limit = shadow_research ? 100.0 : g_cfg.daily_loss_limit;
         if (st.daily_pnl < -daily_limit) {
             ++g_gov_pnl;
             if (shadow_research && st.pause_until < nowSec() + 300) {
