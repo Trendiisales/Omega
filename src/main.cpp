@@ -2667,6 +2667,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_eng_xag.pos.active) +
                 static_cast<int>(g_bracket_xag.pos.active) +
                 static_cast<int>(g_bracket_gold.pos.active) +
+                static_cast<int>(g_bracket_sp.pos.active) +
+                static_cast<int>(g_bracket_nq.pos.active) +
+                static_cast<int>(g_bracket_us30.pos.active) +
+                static_cast<int>(g_bracket_nas100.pos.active) +
+                static_cast<int>(g_bracket_ger30.pos.active) +
+                static_cast<int>(g_bracket_uk100.pos.active) +
+                static_cast<int>(g_bracket_estx50.pos.active) +
+                static_cast<int>(g_bracket_brent.pos.active) +
+                static_cast<int>(g_bracket_eurusd.pos.active) +
+                static_cast<int>(g_bracket_gbpusd.pos.active) +
+                static_cast<int>(g_bracket_audusd.pos.active) +
+                static_cast<int>(g_bracket_nzdusd.pos.active) +
+                static_cast<int>(g_bracket_usdjpy.pos.active) +
                 static_cast<int>(g_eng_eurusd.pos.active) +
                 static_cast<int>(g_eng_gbpusd.pos.active) +
                 static_cast<int>(g_eng_audusd.pos.active) +
@@ -2976,7 +2989,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
         if (sdec_sp.allow_breakout && !g_bracket_sp.has_open_position())
             dispatch(g_eng_sp, g_sup_sp, base_can_sp);
-        if (sdec_sp.allow_bracket && !g_eng_sp.pos.active)
+        if (sdec_sp.allow_bracket && !g_eng_sp.pos.active
+                && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_sp, g_sup_sp, g_eng_sp, base_can_sp,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
     }
@@ -2985,7 +2999,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
         if (sdec_nq.allow_breakout && !g_bracket_nq.has_open_position())
             dispatch(g_eng_nq, g_sup_nq, base_can_nq);
-        if (sdec_nq.allow_bracket && !g_eng_nq.pos.active)
+        if (sdec_nq.allow_bracket && !g_eng_nq.pos.active
+                && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_nq, g_sup_nq, g_eng_nq, base_can_nq,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
     }
@@ -3009,7 +3024,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30);
         if (sdec_us30.allow_breakout && !g_bracket_us30.has_open_position())
             dispatch(g_eng_us30, g_sup_us30, base_can_us30);
-        if (sdec_us30.allow_bracket && !g_eng_us30.pos.active)
+        if (sdec_us30.allow_bracket && !g_eng_us30.pos.active
+                && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_us30, g_sup_us30, g_eng_us30, base_can_us30,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
     }
@@ -3126,7 +3142,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas);
         if (sdec_nas.allow_breakout && !g_bracket_nas100.has_open_position())
             dispatch(g_eng_nas100, g_sup_nas100, base_can_nas);
-        if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active)
+        // Asia session: bracket also blocked for US equity
+        if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active
+                && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_nas100, g_sup_nas100, g_eng_nas100, base_can_nas,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
     }
