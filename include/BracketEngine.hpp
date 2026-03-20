@@ -261,7 +261,17 @@ public:
         }
 
         // ── Entry gate ────────────────────────────────────────────────────────
+        // While ARMED: do not reset to IDLE on a single can_enter=false tick.
+        // A brief supervisor blip (one tick of HIGH_RISK between two valid ticks)
+        // was destroying 25+ seconds of accumulated MIN_STRUCTURE_MS timer, causing
+        // gold bracket to never fire. Hold the ARMED phase and pause the timer by
+        // bumping m_armed_ts forward — the structure window does not decay in one tick.
+        // Only reset if can_enter=false while IDLE (no structure yet) or PENDING.
         if (!can_enter) {
+            if (phase == BracketPhase::ARMED) {
+                m_armed_ts = nowSec(); // pause timer — don't advance toward MIN_STRUCTURE_MS
+                return;
+            }
             phase = BracketPhase::IDLE; bracket_high = 0.0; bracket_low = 0.0;
             return;
         }
