@@ -2543,7 +2543,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         auto& last = s_last_tick_log[sym];
         if (now_ms - last >= 30000) {
             last = now_ms;
-            std::cout << "[TICK] " << sym << " " << bid << "/" << ask << "\n";
+            std::cout << "[TICK] " << sym << " "
+                      << std::fixed << std::setprecision(2) << bid << "/"
+                      << std::fixed << std::setprecision(2) << ask << "\n";
+            std::cout.unsetf(std::ios::fixed);
             std::cout.flush();
         }
     }
@@ -3062,7 +3065,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double lot = compute_size(sym,
                 std::fabs(bsigs.long_entry - bsigs.long_sl), ask - bid,
                 bracket_eng.ENTRY_SIZE);
-            g_telemetry.UpdateLastSignal(sym.c_str(), "BRACKET", bsigs.long_entry, "BOTH_ARMED");
+            // Encode bracket levels in reason so GUI can display hi/lo
+            char bracket_reason[64];
+            snprintf(bracket_reason, sizeof(bracket_reason), "HI:%.2f LO:%.2f",
+                     bsigs.long_entry, bsigs.short_entry);
+            g_telemetry.UpdateLastSignal(sym.c_str(), "BRACKET", bsigs.long_entry, bracket_reason);
             std::cout << "\033[1;33m[BRACKET] " << sym
                       << " sup_regime=" << omega::regime_name(sdec.regime)
                       << " bracket_score=" << sdec.bracket_score
@@ -3378,7 +3385,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double bg_lot = compute_size("GOLD.F",
                     std::fabs(bgsigs.long_entry - bgsigs.long_sl), ask - bid,
                     g_bracket_gold.ENTRY_SIZE);
-                g_telemetry.UpdateLastSignal("GOLD.F", "BRACKET", bgsigs.long_entry, "BOTH_ARMED");
+                char bg_reason[64];
+                snprintf(bg_reason, sizeof(bg_reason), "HI:%.2f LO:%.2f",
+                         bgsigs.long_entry, bgsigs.short_entry);
+                g_telemetry.UpdateLastSignal("GOLD.F", "BRACKET", bgsigs.long_entry, bg_reason);
                 std::cout << "\033[1;33m[BRACKET] GOLD.F"
                           << " sup_regime=" << omega::regime_name(gold_sdec.regime)
                           << " bracket_score=" << gold_sdec.bracket_score

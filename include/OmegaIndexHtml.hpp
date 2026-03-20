@@ -492,9 +492,9 @@ R"OMEGA2(
           <table>
             <thead><tr>
               <th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th>
-              <th>Held</th><th>Result</th><th>Reason</th><th>Gross</th><th>Slip</th><th>Net</th>
+              <th>Held</th><th>Result</th><th>Reason</th><th>Bracket</th><th>Gross</th><th>Slip</th><th>Net</th>
             </tr></thead>
-            <tbody id="tradesBody"><tr><td colspan="11" class="no-data">No trades yet</td></tr></tbody>
+            <tbody id="tradesBody"><tr><td colspan="12" class="no-data">No trades yet</td></tr></tbody>
 
           </table>
         </div>
@@ -668,7 +668,7 @@ function renderLastSignal(d){
 
 function renderTrades(trades){
   const el=document.getElementById('tradesBody'),cE=document.getElementById('tradeCount');
-  if(!trades||trades.length===0){el.innerHTML='<tr><td colspan="11" class="no-data">No trades yet</td></tr>';if(cE)cE.textContent='';return;}
+  if(!trades||trades.length===0){el.innerHTML='<tr><td colspan="12" class="no-data">No trades yet</td></tr>';if(cE)cE.textContent='';return;}
   const closed=trades.filter(t=>t.exitReason&&t.exitReason!=='');
   if(_bellBootCount<0){_bellBootCount=closed.length;_lastTradeCount=closed.length;}
   if(_bellEnabled&&closed.length>_lastTradeCount&&_lastTradeCount>=_bellBootCount){const pnl=safe(closed[0].net_pnl);pnl>0?_playWinBell():_playLossBell();}
@@ -704,6 +704,7 @@ function renderTrades(trades){
       <td style="color:var(--t2);font-size:12px">${heldStr}</td>
       <td style="font-weight:700;color:${rc}">${result}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:var(--gold);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'--':(t.exitReason||'--')}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--t2)">${(t.bracket_hi&&t.bracket_lo&&t.bracket_hi>0)?('↑'+safe(t.bracket_hi).toFixed(2)+' ↓'+safe(t.bracket_lo).toFixed(2)):'--'}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:${gross>=0?'var(--green)':'var(--red)'};font-size:13px">${grossD}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:var(--red);font-size:12px">${slipD}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:${netC};font-weight:700">${netD}</td>

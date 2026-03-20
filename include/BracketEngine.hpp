@@ -562,6 +562,8 @@ protected:
         tr.latencyMs     = 0.0;
         tr.engine        = std::string(symbol ? symbol : "???") + "_BRACKET";
         tr.regime        = (macro_regime && *macro_regime) ? macro_regime : pos.regime;
+        tr.bracket_hi    = m_locked_hi;   // upper boundary locked at arm time
+        tr.bracket_lo    = m_locked_lo;   // lower boundary locked at arm time
 
         pos              = OpenPos{};
         pending_both     = BracketBothSignals{};

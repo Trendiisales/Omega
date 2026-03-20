@@ -214,13 +214,15 @@ static std::string buildTradesJson()
             "\"pnl\":%.2f,\"net_pnl\":%.2f,\"slippage_entry\":%.2f,\"slippage_exit\":%.2f,"
             "\"mfe\":%.2f,\"mae\":%.2f,"
             "\"entryTs\":%lld,\"exitTs\":%lld,"
-            "\"exitReason\":\"%s\",\"engine\":\"%s\",\"regime\":\"%s\"}",
+            "\"exitReason\":\"%s\",\"engine\":\"%s\",\"regime\":\"%s\","
+            "\"bracket_hi\":%.4f,\"bracket_lo\":%.4f}",
             t.id, t.symbol.c_str(), t.side.c_str(),
             t.entryPrice, t.exitPrice, t.tp, t.sl, t.size,
             t.pnl, t.net_pnl, t.slippage_entry, t.slippage_exit,
             t.mfe, t.mae,
             static_cast<long long>(t.entryTs), static_cast<long long>(t.exitTs),
-            t.exitReason.c_str(), t.engine.c_str(), t.regime.c_str());
+            t.exitReason.c_str(), t.engine.c_str(), t.regime.c_str(),
+            t.bracket_hi, t.bracket_lo);
         out += row;
     }
     out += ']';

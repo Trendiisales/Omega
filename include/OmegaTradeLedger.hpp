@@ -52,6 +52,10 @@ struct TradeRecord
     double      slip_entry_pct  = 0;  // entry slippage rate applied
     double      slip_exit_pct   = 0;  // exit slippage rate applied
     double      comm_per_side   = 0;  // commission per side applied
+
+    // ── Bracket metadata (only set for bracket engine trades) ────────────────
+    double      bracket_hi      = 0;  // upper boundary of the bracket range at arm time
+    double      bracket_lo      = 0;  // lower boundary of the bracket range at arm time
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
