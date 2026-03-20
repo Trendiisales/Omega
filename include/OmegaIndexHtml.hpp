@@ -99,7 +99,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .mkt-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px;}
 .sym-section-label{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;
   padding:5px 4px 3px;opacity:0.7;}
-.sym-row{display:grid;grid-template-columns:80px 1fr auto;align-items:center;gap:6px;
+.sym-row{display:grid;grid-template-columns:80px 1fr 38px;align-items:center;gap:0;
   padding:5px 6px;border-radius:6px;margin-bottom:2px;border:1px solid transparent;transition:background 0.15s;}
 .sym-row:hover{background:rgba(255,255,255,0.025);}
 .sym-row.r-gold{border-color:rgba(245,200,66,0.15);background:rgba(245,200,66,0.04);}
@@ -111,10 +111,14 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .sym-nm{font-size:10px;font-weight:700;letter-spacing:0.5px;}
 .c-gold{color:var(--gold)}.c-silver{color:var(--silver)}.c-blue{color:var(--blue)}
 .c-cyan{color:var(--cyan)}.c-teal{color:var(--teal)}.c-purple{color:var(--purple)}.c-t2{color:var(--t2)}
-.px-pair{display:flex;gap:5px;align-items:center;}
-.bid{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--green);}
-.ask{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--red);}
-.sprd{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t2);}
+.px-pair{display:grid;grid-template-columns:1fr 8px 1fr;align-items:center;gap:0;}
+.bid{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--green);
+  text-align:right;white-space:nowrap;}
+.ask{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--red);
+  text-align:left;white-space:nowrap;padding-left:3px;}
+.px-sep{color:var(--t2);font-size:11px;text-align:center;}
+.sprd{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t2);
+  text-align:right;white-space:nowrap;}
 
 /* Regime card */
 .regime-card{flex-shrink:0;}
@@ -299,107 +303,107 @@ R"OMEGA1(
         <div class="sym-section-label">★ Precious Metals</div>
         <div class="sym-row r-gold">
           <span class="sym-nm c-gold">GOLD.F</span>
-          <div class="px-pair"><span class="bid" id="goldBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="goldAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="goldBid">----</span><span class="px-sep">|</span><span class="ask" id="goldAsk">----</span></div>
           <span class="sprd" id="goldSpread">--</span>
         </div>
         <div class="sym-row r-silver">
           <span class="sym-nm c-silver">XAGUSD</span>
-          <div class="px-pair"><span class="bid" id="xagBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="xagAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="xagBid">----</span><span class="px-sep">|</span><span class="ask" id="xagAsk">----</span></div>
           <span class="sprd" id="xagSpread">--</span>
         </div>
 
         <div class="sym-section-label">▶ US Indices &amp; Oil</div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">US500.F</span>
-          <div class="px-pair"><span class="bid" id="spBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="spAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="spBid">----</span><span class="px-sep">|</span><span class="ask" id="spAsk">----</span></div>
           <span class="sprd" id="spSpread">--</span>
         </div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">USTEC.F</span>
-          <div class="px-pair"><span class="bid" id="nqBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="nqAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="nqBid">----</span><span class="px-sep">|</span><span class="ask" id="nqAsk">----</span></div>
           <span class="sprd" id="nqSpread">--</span>
         </div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">DJ30.F</span>
-          <div class="px-pair"><span class="bid" id="djBid" style="font-size:11px">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="djAsk" style="font-size:11px">----</span></div>
-          <span class="sprd"></span>
+          <div class="px-pair"><span class="bid" id="djBid">----</span><span class="px-sep">|</span><span class="ask" id="djAsk">----</span></div>
+          <span class="sprd" id="djSpread">--</span>
         </div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">NAS100</span>
-          <div class="px-pair"><span class="bid" id="nasBid" style="font-size:11px">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="nasAsk" style="font-size:11px">----</span></div>
-          <span class="sprd"></span>
+          <div class="px-pair"><span class="bid" id="nasBid">----</span><span class="px-sep">|</span><span class="ask" id="nasAsk">----</span></div>
+          <span class="sprd" id="nasSpread">--</span>
         </div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">USOIL.F</span>
-          <div class="px-pair"><span class="bid" id="clBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="clAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="clBid">----</span><span class="px-sep">|</span><span class="ask" id="clAsk">----</span></div>
           <span class="sprd" id="clSpread">--</span>
         </div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">UKBRENT</span>
-          <div class="px-pair"><span class="bid" id="brentBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="brentAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="brentBid">----</span><span class="px-sep">|</span><span class="ask" id="brentAsk">----</span></div>
           <span class="sprd" id="brentSpread">--</span>
         </div>
 
         <div class="sym-section-label">◈ EU Indices</div>
         <div class="sym-row r-eu">
           <span class="sym-nm c-purple">GER30</span>
-          <div class="px-pair"><span class="bid" id="ger30Bid" style="font-size:11px">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="ger30Ask" style="font-size:11px">----</span></div>
-          <span class="sprd"></span>
+          <div class="px-pair"><span class="bid" id="ger30Bid">----</span><span class="px-sep">|</span><span class="ask" id="ger30Ask">----</span></div>
+          <span class="sprd" id="ger30Spread">--</span>
         </div>
         <div class="sym-row r-eu">
           <span class="sym-nm c-purple">UK100</span>
-          <div class="px-pair"><span class="bid" id="uk100Bid" style="font-size:11px">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="uk100Ask" style="font-size:11px">----</span></div>
-          <span class="sprd"></span>
+          <div class="px-pair"><span class="bid" id="uk100Bid">----</span><span class="px-sep">|</span><span class="ask" id="uk100Ask">----</span></div>
+          <span class="sprd" id="uk100Spread">--</span>
         </div>
         <div class="sym-row r-eu">
           <span class="sym-nm c-purple">ESTX50</span>
-          <div class="px-pair"><span class="bid" id="estx50Bid" style="font-size:11px">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="estx50Ask" style="font-size:11px">----</span></div>
-          <span class="sprd"></span>
+          <div class="px-pair"><span class="bid" id="estx50Bid">----</span><span class="px-sep">|</span><span class="ask" id="estx50Ask">----</span></div>
+          <span class="sprd" id="estx50Spread">--</span>
         </div>
 
         <div class="sym-section-label">⬡ FX Majors</div>
         <div class="sym-row r-fx">
           <span class="sym-nm c-cyan">EURUSD</span>
-          <div class="px-pair"><span class="bid" id="eurBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="eurAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="eurBid">----</span><span class="px-sep">|</span><span class="ask" id="eurAsk">----</span></div>
           <span class="sprd" id="eurSpread">--</span>
         </div>
         <div class="sym-row r-fx" style="border-color:rgba(0,200,240,0.18);background:rgba(0,200,240,0.04);">
           <span class="sym-nm c-cyan">GBPUSD</span>
-          <div class="px-pair"><span class="bid" id="gbpBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="gbpAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="gbpBid">----</span><span class="px-sep">|</span><span class="ask" id="gbpAsk">----</span></div>
           <span class="sprd" id="gbpSpread">--</span>
         </div>
         <div class="sym-section-label">🌏 Asia FX</div>
         <div class="sym-row r-asia">
           <span class="sym-nm c-teal">AUDUSD</span>
-          <div class="px-pair"><span class="bid" id="audBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="audAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="audBid">----</span><span class="px-sep">|</span><span class="ask" id="audAsk">----</span></div>
           <span class="sprd" id="audSpread">--</span>
         </div>
         <div class="sym-row r-asia">
           <span class="sym-nm c-teal">NZDUSD</span>
-          <div class="px-pair"><span class="bid" id="nzdBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="nzdAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="nzdBid">----</span><span class="px-sep">|</span><span class="ask" id="nzdAsk">----</span></div>
           <span class="sprd" id="nzdSpread">--</span>
         </div>
         <div class="sym-row r-asia">
           <span class="sym-nm" style="color:var(--purple)">USDJPY</span>
-          <div class="px-pair"><span class="bid" id="jpyBid">----</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="jpyAsk">----</span></div>
+          <div class="px-pair"><span class="bid" id="jpyBid">----</span><span class="px-sep">|</span><span class="ask" id="jpyAsk">----</span></div>
           <span class="sprd" id="jpySpread">--</span>
         </div>
 
         <div class="sym-section-label">◈ Confirmation</div>
         <div class="sym-row">
           <span class="sym-nm c-t2">VIX.F</span>
-          <div class="px-pair"><span class="bid" id="vixBid" style="font-size:11px">--</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="vixAsk" style="font-size:11px">--</span></div>
-          <span class="sprd"></span>
+          <div class="px-pair"><span class="bid" id="vixBid">--</span><span class="px-sep">|</span><span class="ask" id="vixAsk">--</span></div>
+          <span class="sprd" id="vixSpread">--</span>
         </div>
         <div class="sym-row">
           <span class="sym-nm c-t2">DX.F</span>
-          <div class="px-pair"><span class="bid" id="dxBid" style="font-size:11px">--</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="dxAsk" style="font-size:11px">--</span></div>
-          <span class="sprd"></span>
+          <div class="px-pair"><span class="bid" id="dxBid">--</span><span class="px-sep">|</span><span class="ask" id="dxAsk">--</span></div>
+          <span class="sprd" id="dxSpread">--</span>
         </div>
         <div class="sym-row">
           <span class="sym-nm c-t2">NGAS.F</span>
-          <div class="px-pair"><span class="bid" id="ngasBid" style="font-size:11px">--</span><span class="c-t2" style="font-size:11px">|</span><span class="ask" id="ngasAsk" style="font-size:11px">--</span></div>
-          <span class="sprd"></span>
+          <div class="px-pair"><span class="bid" id="ngasBid">--</span><span class="px-sep">|</span><span class="ask" id="ngasAsk">--</span></div>
+          <span class="sprd" id="ngasSpread">--</span>
         </div>
       </div>
     </div>
