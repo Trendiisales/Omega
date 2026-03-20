@@ -113,6 +113,22 @@ struct OmegaTelemetrySnapshot
 
     // --- Signal history ring buffer (5 most recent signals) ---
     static constexpr int MAX_SIGNAL_HISTORY = 5;
+
+    // --- Per-symbol bracket engine state ---
+    // phase: 0=IDLE, 1=ARMED, 2=PENDING, 3=LIVE, 4=COOLDOWN
+    // hi/lo: locked bracket levels (0 when IDLE/COOLDOWN)
+    struct BracketState { int phase=0; double hi=0; double lo=0; };
+    BracketState bkt_sp;      // US500.F
+    BracketState bkt_nq;      // USTEC.F
+    BracketState bkt_us30;    // DJ30.F
+    BracketState bkt_nas;     // NAS100
+    BracketState bkt_ger;     // GER30
+    BracketState bkt_uk;      // UK100
+    BracketState bkt_estx;    // ESTX50
+    BracketState bkt_xag;     // XAGUSD
+    BracketState bkt_gold;    // GOLD.F
+    BracketState bkt_eur;     // EURUSD
+    BracketState bkt_gbp;     // GBPUSD
     char   sig_symbol [MAX_SIGNAL_HISTORY][16];
     char   sig_side   [MAX_SIGNAL_HISTORY][8];   // "LONG" / "SHORT"
     double sig_price  [MAX_SIGNAL_HISTORY];
@@ -305,6 +321,25 @@ public:
             m_snap->xau_comp_low=comp_low; m_snap->xau_recent_vol_pct=recent_vol_pct;
             m_snap->xau_baseline_vol_pct=baseline_vol_pct; m_snap->xau_signals=signals;
         }
+    }
+
+    void UpdateBracketState(const char* sym, int phase, double hi, double lo)
+    {
+        if (!m_snap) return;
+        auto set = [&](OmegaTelemetrySnapshot::BracketState& b){
+            b.phase = phase; b.hi = hi; b.lo = lo;
+        };
+        if      (!strcmp(sym,"US500.F")) set(m_snap->bkt_sp);
+        else if (!strcmp(sym,"USTEC.F")) set(m_snap->bkt_nq);
+        else if (!strcmp(sym,"DJ30.F"))  set(m_snap->bkt_us30);
+        else if (!strcmp(sym,"NAS100"))  set(m_snap->bkt_nas);
+        else if (!strcmp(sym,"GER30"))   set(m_snap->bkt_ger);
+        else if (!strcmp(sym,"UK100"))   set(m_snap->bkt_uk);
+        else if (!strcmp(sym,"ESTX50"))  set(m_snap->bkt_estx);
+        else if (!strcmp(sym,"XAGUSD"))  set(m_snap->bkt_xag);
+        else if (!strcmp(sym,"GOLD.F"))  set(m_snap->bkt_gold);
+        else if (!strcmp(sym,"EURUSD"))  set(m_snap->bkt_eur);
+        else if (!strcmp(sym,"GBPUSD"))  set(m_snap->bkt_gbp);
     }
 
     void UpdateLastSignal(const char* sym, const char* side, double price, const char* reason)

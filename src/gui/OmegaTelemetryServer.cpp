@@ -193,6 +193,29 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         result += entry;
     }
     result += "]}";
+
+    // Append per-symbol bracket state
+    result += ",\"brackets\":{";
+    auto bktJson = [&](const char* key, const OmegaTelemetrySnapshot::BracketState& b) {
+        char tmp[96];
+        snprintf(tmp, sizeof(tmp),
+            "\"%s\":{\"phase\":%d,\"hi\":%.4f,\"lo\":%.4f}",
+            key, b.phase, b.hi, b.lo);
+        result += tmp;
+    };
+    bktJson("sp",   s->bkt_sp);   result += ',';
+    bktJson("nq",   s->bkt_nq);   result += ',';
+    bktJson("us30", s->bkt_us30); result += ',';
+    bktJson("nas",  s->bkt_nas);  result += ',';
+    bktJson("ger",  s->bkt_ger);  result += ',';
+    bktJson("uk",   s->bkt_uk);   result += ',';
+    bktJson("estx", s->bkt_estx); result += ',';
+    bktJson("xag",  s->bkt_xag);  result += ',';
+    bktJson("gold", s->bkt_gold); result += ',';
+    bktJson("eur",  s->bkt_eur);  result += ',';
+    bktJson("gbp",  s->bkt_gbp);
+    result += "}";
+
     return result;
 }
 

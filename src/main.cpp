@@ -3069,6 +3069,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             bracket_open ? can_manage : can_arm,
             regime.c_str(), bracket_on_close, vwap_val);
 
+        // Update bracket state in telemetry snapshot every tick so GUI shows live levels
+        g_telemetry.UpdateBracketState(sym.c_str(),
+            static_cast<int>(bracket_eng.phase),
+            bracket_eng.bracket_high,
+            bracket_eng.bracket_low);
+
         const auto bsigs = bracket_eng.get_signals();
         if (bsigs.valid) {
             const double lot = compute_size(sym,
@@ -3391,6 +3397,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_bracket_gold.on_tick(bid, ask, now_ms_g,
                 bracket_open ? can_manage : can_arm_bracket,
                 regime.c_str(), bracket_on_close, gold_vwap);
+            g_telemetry.UpdateBracketState("GOLD.F",
+                static_cast<int>(g_bracket_gold.phase),
+                g_bracket_gold.bracket_high,
+                g_bracket_gold.bracket_low);
             const auto bgsigs = g_bracket_gold.get_signals();
             if (bgsigs.valid) {
                 const double bg_lot = compute_size("GOLD.F",

@@ -585,23 +585,36 @@ function setHdrPhase(id,phase){
   else{el.className='htk-ph ph-brk';el.textContent='BRK ⚡';}
 }
 
-function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask,dec,isLive){
+function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask,dec,isLive,bkt){
   const cell=document.getElementById(cellId),ph=document.getElementById(phaseId),
         vol=document.getElementById(volId),sig=document.getElementById(sigId);
   if(!cell)return;
   const p=safe(phase),d=dec!=null?dec:2;
+  const bktPhase=bkt?safe(bkt.phase):0;
+  const bktActive=bkt&&bktPhase>=1&&bktPhase<=3&&safe(bkt.hi)>0;
   if(isLive)cell.className='eng-cell ph-live';
+  else if(bktPhase===2)cell.className='eng-cell ph2';  // PENDING = orange
+  else if(bktPhase===1||bktPhase===3)cell.className='eng-cell ph2'; // ARMED/LIVE bracket
   else cell.className='eng-cell'+(p===1?' ph1':p===2?' ph2':'');
   if(ph){
     if(isLive){ph.className='eng-ph eph-live';ph.textContent='LIVE ●';}
+    else if(bktPhase===3){ph.className='eng-ph eph-live';ph.textContent='BKT LIVE ●';}
+    else if(bktPhase===2){ph.className='eng-ph eph-brk';ph.textContent='BKT PENDING ⏳';}
+    else if(bktPhase===1){ph.className='eng-ph eph-comp';ph.textContent='BKT ARMED ⟺';}
     else if(p===0){ph.className='eng-ph eph-flat';ph.textContent='FLAT';}
     else if(p===1){ph.className='eng-ph eph-comp';ph.textContent='COMPRESSING';}
     else{ph.className='eng-ph eph-brk';ph.textContent='BREAKOUT ⚡';}
   }
   if(vol){
-    if(p===1&&safe(hi)>0)vol.textContent='range: '+safe(hi).toFixed(d)+'↑'+safe(lo).toFixed(d);
-    else if(safe(rv)>0)vol.textContent='vol: '+safe(rv).toFixed(2)+'% / '+safe(bv).toFixed(2)+'%';
-    else vol.textContent='';
+    if(bktActive){
+      // Show bracket levels prominently
+      const bhi=safe(bkt.hi).toFixed(d),blo=safe(bkt.lo).toFixed(d);
+      vol.innerHTML='<span style="color:var(--green)">▲'+bhi+'</span> <span style="color:var(--red)">▼'+blo+'</span>';
+    } else if(p===1&&safe(hi)>0){
+      vol.textContent='range: '+safe(hi).toFixed(d)+'↑'+safe(lo).toFixed(d);
+    } else if(safe(rv)>0){
+      vol.textContent='vol: '+safe(rv).toFixed(2)+'% / '+safe(bv).toFixed(2)+'%';
+    } else vol.innerHTML='';
   }
   // Signal count
   if(sig)sig.textContent=sigs>0?sigs+' signal'+(sigs>1?'s':''):'';
@@ -761,22 +774,22 @@ function updateDashboard(d){
   // Engine cells — US/Oil group (sp_phase etc from telemetry)
   const live=d.open_positions||[];
   const isLive=sym=>Array.isArray(live)&&live.some(p=>p.symbol===sym);
-  updateEngCell('engSP','engSPPhase','engSPVol','engSPSig',d.sp_phase,d.sp_recent_vol_pct,d.sp_baseline_vol_pct,d.sp_signals,d.sp_comp_high,d.sp_comp_low,d.sp_bid,d.sp_ask,2,isLive('US500.F'));
-  updateEngCell('engNQ','engNQPhase','engNQVol','engNQSig',d.nq_phase,d.nq_recent_vol_pct,d.nq_baseline_vol_pct,d.nq_signals,d.nq_comp_high,d.nq_comp_low,d.nq_bid,d.nq_ask,2,isLive('USTEC.F'));
-  updateEngCell('engUS30','engUS30Phase','engUS30Vol','engUS30Sig',d.dj_phase,d.dj_recent_vol_pct,d.dj_baseline_vol_pct,d.dj_signals,d.dj_comp_high,d.dj_comp_low,d.dj_bid,d.dj_ask,2,isLive('DJ30.F'));
-  updateEngCell('engNAS','engNASPhase','engNASVol','engNASSig',d.nas_phase,d.nas_recent_vol_pct,d.nas_baseline_vol_pct,d.nas_signals,d.nas_comp_high,d.nas_comp_low,d.nas_bid,d.nas_ask,2,isLive('NAS100'));
-  updateEngCell('engCL','engCLPhase','engCLVol','engCLSig',d.cl_phase,d.cl_recent_vol_pct,d.cl_baseline_vol_pct,d.cl_signals,d.cl_comp_high,d.cl_comp_low,d.cl_bid,d.cl_ask,2,isLive('USOIL.F'));
-  updateEngCell('engGER','engGERPhase','engGERVol','engGERSig',d.ger30_phase,d.ger30_recent_vol_pct,d.ger30_baseline_vol_pct,d.ger30_signals,d.ger30_comp_high,d.ger30_comp_low,d.ger30_bid,d.ger30_ask,2,isLive('GER30'));
-  updateEngCell('engUK','engUKPhase','engUKVol','engUKSig',d.uk100_phase,d.uk100_recent_vol_pct,d.uk100_baseline_vol_pct,d.uk100_signals,d.uk100_comp_high,d.uk100_comp_low,d.uk100_bid,d.uk100_ask,2,isLive('UK100'));
-  updateEngCell('engESTX','engESTXPhase','engESTXVol','engESTXSig',d.estx50_phase,d.estx50_recent_vol_pct,d.estx50_baseline_vol_pct,d.estx50_signals,d.estx50_comp_high,d.estx50_comp_low,d.estx50_bid,d.estx50_ask,2,isLive('ESTX50'));
-  updateEngCell('engBRENT','engBRENTPhase','engBRENTVol','engBRENTSig',d.brent_phase,d.brent_recent_vol_pct,d.brent_baseline_vol_pct,d.brent_signals,d.brent_comp_high,d.brent_comp_low,d.brent_bid,d.brent_ask,2,isLive('UKBRENT'));
-  updateEngCell('engEUR','engEURPhase','engEURVol','engEURSig',d.eurusd_phase,d.eurusd_recent_vol_pct,d.eurusd_baseline_vol_pct,d.eurusd_signals,d.eurusd_comp_high,d.eurusd_comp_low,d.eurusd_bid,d.eurusd_ask,5,isLive('EURUSD'));
-  updateEngCell('engGBP','engGBPPhase','engGBPVol','engGBPSig',d.gbpusd_phase,d.gbpusd_recent_vol_pct,d.gbpusd_baseline_vol_pct,d.gbpusd_signals,d.gbpusd_comp_high,d.gbpusd_comp_low,d.gbpusd_bid,d.gbpusd_ask,5,isLive('GBPUSD'));
-  updateEngCell('engAUD','engAUDPhase','engAUDVol','engAUDSig',d.audusd_phase,d.audusd_recent_vol_pct,d.audusd_baseline_vol_pct,d.audusd_signals,d.audusd_comp_high,d.audusd_comp_low,d.audusd_bid,d.audusd_ask,5,isLive('AUDUSD'));
-  updateEngCell('engNZD','engNZDPhase','engNZDVol','engNZDSig',d.nzdusd_phase,d.nzdusd_recent_vol_pct,d.nzdusd_baseline_vol_pct,d.nzdusd_signals,d.nzdusd_comp_high,d.nzdusd_comp_low,d.nzdusd_bid,d.nzdusd_ask,5,isLive('NZDUSD'));
-  updateEngCell('engJPY','engJPYPhase','engJPYVol','engJPYSig',d.usdjpy_phase,d.usdjpy_recent_vol_pct,d.usdjpy_baseline_vol_pct,d.usdjpy_signals,d.usdjpy_comp_high,d.usdjpy_comp_low,d.usdjpy_bid,d.usdjpy_ask,3,isLive('USDJPY'));
-  updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('GOLD.F'));
-  updateEngCell('engXAG','engXAGPhase','engXAGVol','engXAGSig',d.xag_phase,d.xag_recent_vol_pct,d.xag_baseline_vol_pct,d.xag_signals,0,0,d.xag_bid,d.xag_ask,3,isLive('XAGUSD'));
+  updateEngCell('engSP','engSPPhase','engSPVol','engSPSig',d.sp_phase,d.sp_recent_vol_pct,d.sp_baseline_vol_pct,d.sp_signals,d.sp_comp_high,d.sp_comp_low,d.sp_bid,d.sp_ask,2,isLive('US500.F'),d.brackets&&d.brackets.sp);
+  updateEngCell('engNQ','engNQPhase','engNQVol','engNQSig',d.nq_phase,d.nq_recent_vol_pct,d.nq_baseline_vol_pct,d.nq_signals,d.nq_comp_high,d.nq_comp_low,d.nq_bid,d.nq_ask,2,isLive('USTEC.F'),d.brackets&&d.brackets.nq);
+  updateEngCell('engUS30','engUS30Phase','engUS30Vol','engUS30Sig',d.dj_phase,d.dj_recent_vol_pct,d.dj_baseline_vol_pct,d.dj_signals,d.dj_comp_high,d.dj_comp_low,d.dj_bid,d.dj_ask,2,isLive('DJ30.F'),d.brackets&&d.brackets.us30);
+  updateEngCell('engNAS','engNASPhase','engNASVol','engNASSig',d.nas_phase,d.nas_recent_vol_pct,d.nas_baseline_vol_pct,d.nas_signals,d.nas_comp_high,d.nas_comp_low,d.nas_bid,d.nas_ask,2,isLive('NAS100'),d.brackets&&d.brackets.nas);
+  updateEngCell('engCL','engCLPhase','engCLVol','engCLSig',d.cl_phase,d.cl_recent_vol_pct,d.cl_baseline_vol_pct,d.cl_signals,d.cl_comp_high,d.cl_comp_low,d.cl_bid,d.cl_ask,2,isLive('USOIL.F'),null);
+  updateEngCell('engGER','engGERPhase','engGERVol','engGERSig',d.ger30_phase,d.ger30_recent_vol_pct,d.ger30_baseline_vol_pct,d.ger30_signals,d.ger30_comp_high,d.ger30_comp_low,d.ger30_bid,d.ger30_ask,2,isLive('GER30'),d.brackets&&d.brackets.ger);
+  updateEngCell('engUK','engUKPhase','engUKVol','engUKSig',d.uk100_phase,d.uk100_recent_vol_pct,d.uk100_baseline_vol_pct,d.uk100_signals,d.uk100_comp_high,d.uk100_comp_low,d.uk100_bid,d.uk100_ask,2,isLive('UK100'),d.brackets&&d.brackets.uk);
+  updateEngCell('engESTX','engESTXPhase','engESTXVol','engESTXSig',d.estx50_phase,d.estx50_recent_vol_pct,d.estx50_baseline_vol_pct,d.estx50_signals,d.estx50_comp_high,d.estx50_comp_low,d.estx50_bid,d.estx50_ask,2,isLive('ESTX50'),d.brackets&&d.brackets.estx);
+  updateEngCell('engBRENT','engBRENTPhase','engBRENTVol','engBRENTSig',d.brent_phase,d.brent_recent_vol_pct,d.brent_baseline_vol_pct,d.brent_signals,d.brent_comp_high,d.brent_comp_low,d.brent_bid,d.brent_ask,2,isLive('UKBRENT'),null);
+  updateEngCell('engEUR','engEURPhase','engEURVol','engEURSig',d.eurusd_phase,d.eurusd_recent_vol_pct,d.eurusd_baseline_vol_pct,d.eurusd_signals,d.eurusd_comp_high,d.eurusd_comp_low,d.eurusd_bid,d.eurusd_ask,5,isLive('EURUSD'),d.brackets&&d.brackets.eur);
+  updateEngCell('engGBP','engGBPPhase','engGBPVol','engGBPSig',d.gbpusd_phase,d.gbpusd_recent_vol_pct,d.gbpusd_baseline_vol_pct,d.gbpusd_signals,d.gbpusd_comp_high,d.gbpusd_comp_low,d.gbpusd_bid,d.gbpusd_ask,5,isLive('GBPUSD'),d.brackets&&d.brackets.gbp);
+  updateEngCell('engAUD','engAUDPhase','engAUDVol','engAUDSig',d.audusd_phase,d.audusd_recent_vol_pct,d.audusd_baseline_vol_pct,d.audusd_signals,d.audusd_comp_high,d.audusd_comp_low,d.audusd_bid,d.audusd_ask,5,isLive('AUDUSD'),null);
+  updateEngCell('engNZD','engNZDPhase','engNZDVol','engNZDSig',d.nzdusd_phase,d.nzdusd_recent_vol_pct,d.nzdusd_baseline_vol_pct,d.nzdusd_signals,d.nzdusd_comp_high,d.nzdusd_comp_low,d.nzdusd_bid,d.nzdusd_ask,5,isLive('NZDUSD'),null);
+  updateEngCell('engJPY','engJPYPhase','engJPYVol','engJPYSig',d.usdjpy_phase,d.usdjpy_recent_vol_pct,d.usdjpy_baseline_vol_pct,d.usdjpy_signals,d.usdjpy_comp_high,d.usdjpy_comp_low,d.usdjpy_bid,d.usdjpy_ask,3,isLive('USDJPY'),null);
+  updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('GOLD.F'),d.brackets&&d.brackets.gold);
+  updateEngCell('engXAG','engXAGPhase','engXAGVol','engXAGSig',d.xag_phase,d.xag_recent_vol_pct,d.xag_baseline_vol_pct,d.xag_signals,0,0,d.xag_bid,d.xag_ask,3,isLive('XAGUSD'),d.brackets&&d.brackets.xag);
 
 )OMEGA3"
 R"OMEGA4(
