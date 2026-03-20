@@ -724,26 +724,19 @@ public:
 enum class MarketRegime { COMPRESSION, TREND, MEAN_REVERSION, IMPULSE };
 
 class RegimeGovernor {
-    MinMaxCircularBuffer<double,128> history_;  // raised 64→128: 60 ticks at London pace = ~4-12s, too short; 128 ticks = ~15-25s, captures real structure
+    MinMaxCircularBuffer<double,128> history_;
     MarketRegime current_=MarketRegime::MEAN_REVERSION;
     MarketRegime candidate_=MarketRegime::MEAN_REVERSION;
     int confirm_count_=0;
     std::chrono::steady_clock::time_point last_switch_=std::chrono::steady_clock::now();
     static constexpr int CONFIRM_TICKS=5,MIN_LOCK_MS=1000;
-    static constexpr size_t WINDOW=120;  // raised 60→120: at $5000 gold, 60 ticks = ~5-12s of data — not enough to distinguish regime from noise
+    static constexpr size_t WINDOW=80;  // reduced 120→80: 120 ticks = 20-30s warmup before any regime; 80 ticks = ~12-18s, still meaningful structure
 
     // Thresholds recalibrated for $5000 gold (Mar 2026)
-    // OLD values were for ~$300 gold: CE=0.70, CX=1.00, IE=1.20, IX=0.90, TE=2.20, TX=1.60
-    // At $5000, a $0.70-$2.20 range in 60 ticks is pure noise — normal mid-London wiggle.
-    // Real $5000 gold structure over 120 ticks:
-    //   COMPRESSION: range < $3.00 (genuinely tight pre-break consolidation)
-    //   MEAN_REVERSION: range $3.00-$8.00 (normal ranging, fade-the-move valid)
-    //   IMPULSE: range $8.00-$15.00 (strong directional move underway)
-    //   TREND: range > $15.00 (sustained trend, continuation valid)
     static constexpr double CE=3.00;  // compression entry: range < $3.00
     static constexpr double CX=4.50;  // compression exit:  range > $4.50
-    static constexpr double IE=8.00;  // impulse entry:     range > $8.00
-    static constexpr double IX=6.00;  // impulse exit:      range < $6.00
+    static constexpr double IE=6.00;  // impulse entry:     reduced 8.00→6.00: $8 range is rare mid-session; $6 still filters noise
+    static constexpr double IX=4.50;  // impulse exit:      reduced 6.00→4.50: symmetric with new IE
     static constexpr double TE=15.00; // trend entry:       range > $15.00
     static constexpr double TX=12.00; // trend exit:        range < $12.00
 
@@ -822,7 +815,7 @@ public:
 class VolatilityFilter {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=50;
-    static constexpr double VOL_THRESHOLD=2.50;  // raised 0.80→2.50: at $5000 gold, $0.80 range in 50 ticks is dead flat tape; $2.50 = minimum meaningful volatility for a trade to have room to develop
+    static constexpr double VOL_THRESHOLD=1.50;  // reduced 2.50→1.50: $2.50 was blocking normal mid-session activity; $1.50 still filters dead flat tape while allowing real setups
 public:
     bool allow(double mid){
         history_.push_back(mid);
