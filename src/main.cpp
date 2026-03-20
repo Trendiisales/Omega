@@ -325,6 +325,7 @@ static OmegaConfig         g_cfg;
 static std::atomic<bool>   g_running(true);
 static std::atomic<bool>   g_quote_logout_received(false);  // server sent Logout to quote session
 static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup — unblocks ctrl handler
+static std::atomic<bool>   g_trade_thread_done(false);  // set by trade_loop() just before it returns
 static const int64_t       g_start_time = static_cast<int64_t>(std::time(nullptr)); // process start for uptime
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3698,13 +3699,11 @@ static void trade_loop() {
             }
         }
 
-        // Tear down: set socket non-blocking FIRST so SSL_write cannot hang,
-        // then send logout (best-effort, kernel buffers it), then brief pause
-        // for the server to receive it, then SSL_free (also non-blocking so
-        // close-notify handshake never blocks). This path must complete in < 300ms.
-        if (sock >= 0) {
-            u_long nb = 1; ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &nb);
-        }
+        // Tear down: SO_SNDTIMEO (500ms, set in connect_ssl) ensures SSL_write
+        // returns within 500ms max even if the server is slow to ACK.
+        // DO NOT set FIONBIO here — non-blocking mode causes SSL_write to return
+        // WANT_WRITE immediately (0 bytes sent) which silently drops the logout.
+        // SO_SNDTIMEO is the correct mechanism; FIONBIO defeats it.
         if (g_trade_ready.load()) {
             const std::string tlo = fix_build_logout(g_trade_seq++, "TRADE");
             SSL_write(ssl, tlo.c_str(), static_cast<int>(tlo.size()));
@@ -3723,6 +3722,7 @@ static void trade_loop() {
         // Interruptible reconnect wait — exits within 10ms on shutdown
         for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
     }
+    g_trade_thread_done.store(true);  // signal main() that trade_loop has fully exited
 }
 
 static void quote_loop() {
@@ -3851,12 +3851,9 @@ static void quote_loop() {
             }
         }
 
-        // Set non-blocking BEFORE unsub/logout so SSL_write can never hang.
-        // The messages go into the kernel send buffer immediately and are flushed
-        // to the wire during the Sleep(150) below — no blocking possible.
-        if (sock >= 0) {
-            u_long nb_lo = 1; ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &nb_lo);
-        }
+        // SO_SNDTIMEO (500ms, set in connect_ssl) caps SSL_write duration.
+        // DO NOT set FIONBIO — it causes SSL_write to return WANT_WRITE
+        // immediately, silently dropping the unsub and logout messages.
         if (g_quote_ready.load()) {
             const std::string unsub_all = fix_build_md_unsub_all(g_quote_seq++);
             SSL_write(ssl, unsub_all.c_str(), static_cast<int>(unsub_all.size()));
@@ -4548,19 +4545,20 @@ int main(int argc, char* argv[])
     Sleep(500);  // Give trade connection 500ms head start before quote loop
     quote_loop();  // blocks until g_running=false
 
-    // quote_loop has exited — g_running is false, trade_loop will exit shortly
+    // quote_loop has exited — g_running is false, trade_loop will exit shortly.
     std::cout << "[OMEGA] Shutdown\n";
-    // Give trade thread 1.5s max to send logout and exit cleanly.
-    // After that, detach — the non-blocking SSL_free means it won't block.
+    // Wait up to 1.5s for trade_loop to finish its own logout+SSL_free sequence.
+    // We check g_trade_thread_done (set at the end of trade_loop) not joinable(),
+    // because joinable() stays true until join()/detach() regardless of whether
+    // the thread has actually finished executing.
     {
         auto start = std::chrono::steady_clock::now();
-        while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500)) {
-            if (!trade_thread.joinable()) break;
+        while (!g_trade_thread_done.load() &&
+               std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500)) {
             Sleep(10);
         }
     }
-    if (trade_thread.joinable()) trade_thread.detach();
-    else trade_thread.join();  // already done, safe to join
+    if (trade_thread.joinable()) trade_thread.join();
     gui_server.stop();
     if (g_daily_trade_close_log) g_daily_trade_close_log->close();
     if (g_daily_gold_trade_close_log) g_daily_gold_trade_close_log->close();
