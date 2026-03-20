@@ -5,6 +5,7 @@
 // CRTP eliminates all virtual dispatch — hot path is fully inlined.
 // ==============================================================================
 #include <deque>
+#include <array>
 #include <string>
 #include <chrono>
 #include <cmath>
@@ -49,11 +50,13 @@ struct OpenPos
     double  spread_at_entry = 0.0;
     char    regime[32]      = {};
     // Pyramid tracking — one add-on per trade in expansion regime
-    bool    pyramid_armed   = false;  // set when trail1 arm crossed
-    bool    pyramid_done    = false;  // one add-on only
-    double  pyramid_entry   = 0.0;    // price of the add-on entry
-    double  pyramid_tp      = 0.0;    // add-on TP level
-    double  pyramid_sl      = 0.0;    // add-on SL level (initially = main SL)
+    bool    pyramid_armed   = false;
+    bool    pyramid_done    = false;
+    double  pyramid_entry   = 0.0;
+    double  pyramid_tp      = 0.0;
+    double  pyramid_sl      = 0.0;
+    // Regime at entry — for regime-flip exit
+    char    entry_regime[32] = {};   // supervisor regime name at entry time
 };
 
 // ==============================================================================
@@ -355,6 +358,26 @@ public:
         if (static_cast<int>(m_prices.size()) > BASELINE_LOOKBACK * 2)
             m_prices.pop_front();
 
+        // ── VWAP update (daily reset at UTC midnight) ─────────────────────
+        {
+            const auto t_v = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti_v{};
+#ifdef _WIN32
+            gmtime_s(&ti_v, &t_v);
+#else
+            gmtime_r(&t_v, &ti_v);
+#endif
+            if (ti_v.tm_yday != m_vwap_last_day) {
+                m_vwap_cum_pv  = 0.0;
+                m_vwap_cum_vol = 0.0;
+                m_vwap         = 0.0;
+                m_vwap_last_day = ti_v.tm_yday;
+            }
+            m_vwap_cum_pv  += mid;
+            m_vwap_cum_vol += 1.0;
+            m_vwap = (m_vwap_cum_vol > 0.0) ? (m_vwap_cum_pv / m_vwap_cum_vol) : mid;
+        }
+
         // Maintain momentum window (20 ticks)
         m_momentum_window.push_back(mid);
         if (static_cast<int>(m_momentum_window.size()) > MOMENTUM_WINDOW)
@@ -393,6 +416,23 @@ public:
             const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
             if (move  > pos.mfe) pos.mfe =  move;
             if (-move > pos.mae) pos.mae = -move;
+
+            // ── REGIME-FLIP EXIT (Gold pattern) ──────────────────────────────
+            // If supervisor regime changes after REGIME_FLIP_MIN_HOLD_SEC,
+            // the structure that justified entry has changed — exit at mid.
+            // Cap at SL if price has blown past it (reconnect/sparse tick safety).
+            if (macro_regime && pos.entry_regime[0] != '\0' &&
+                std::strncmp(macro_regime, pos.entry_regime, 31) != 0 &&
+                (nowSec() - pos.entry_ts) >= REGIME_FLIP_MIN_HOLD_SEC) {
+                const bool sl_breached = pos.is_long ? (mid < pos.sl) : (mid > pos.sl);
+                const double flip_exit = sl_breached ? pos.sl : mid;
+                std::cout << "[ENG-" << symbol << "] REGIME_FLIP exit="
+                          << flip_exit << " was=" << pos.entry_regime
+                          << " now=" << macro_regime << "\n";
+                std::cout.flush();
+                closePos(flip_exit, "REGIME_FLIP", latency_ms, macro_regime, on_close);
+                return {};
+            }
 
             // TP/SL checks use the aggressive fill side of the spread.
             // Long exits sell at bid; short exits buy back at ask.
@@ -616,6 +656,16 @@ public:
                 }
                 return {};
             }
+            // ── GOLD-EQUIVALENT RISK GATES ────────────────────────────────────
+            // Global SL cooldown: any recent stop → wait before new compression
+            if (nowSec() < m_sl_cooldown_until) return {};
+
+            // VWAP dislocation gate: don't enter near VWAP (mean-reversion zone)
+            if (VWAP_MIN_DIST_PCT > 0.0 && m_vwap > 0.0) {
+                const double vwap_dist_pct = std::fabs(mid - m_vwap) / mid * 100.0;
+                if (vwap_dist_pct < VWAP_MIN_DIST_PCT) return {};
+            }
+
             if (can_enter_compression) {
                 phase                  = Phase::COMPRESSION;
                 comp_high              = mid;
@@ -915,6 +965,18 @@ public:
                       << " size=" << edge.size << "\n";
             std::cout.flush();
 
+            // Side-specific chop gate: if this direction has been paused, skip
+            {
+                const int side_idx = is_long ? 0 : 1;
+                if (nowSec() < m_side_pause_until[static_cast<size_t>(side_idx)]) {
+                    std::cout << "[ENG-" << symbol << "] CHOP-PAUSE: "
+                              << (is_long ? "LONG" : "SHORT") << " side paused\n";
+                    std::cout.flush();
+                    phase = Phase::FLAT;
+                    return {};
+                }
+            }
+
             pos.active          = true;
             pos.is_long         = is_long;
             pos.entry           = mid;
@@ -927,6 +989,8 @@ public:
             pos.entry_ts        = now;
             pos.spread_at_entry = spread;
             strncpy_s(pos.regime, macro_regime ? macro_regime : "", 31);
+            // Store supervisor regime at entry for regime-flip exit detection
+            strncpy_s(pos.entry_regime, macro_regime ? macro_regime : "", 31);
 
             m_last_signal_ts = now;
             ++m_trade_id;
@@ -967,6 +1031,32 @@ protected:
     // Same-level re-entry guard — prevents re-entering same failed compression
     double             m_last_exit_price      = 0.0;
     int64_t            m_last_exit_ts         = 0;
+
+    // ── Gold-equivalent risk controls (ported from GoldEngineStack) ───────
+    // Global SL cooldown: any stop hit → block new entries for GLOBAL_SL_COOLDOWN_SEC
+    int64_t            m_sl_cooldown_until    = 0;
+    static constexpr int64_t GLOBAL_SL_COOLDOWN_SEC = 120;
+
+    // Side-specific chop detection: 2 SL hits same side in window → pause that side
+    // side 0 = LONG, side 1 = SHORT
+    std::array<int64_t, 2>             m_side_pause_until{{0, 0}};
+    std::array<std::deque<int64_t>, 2> m_side_sl_times;
+    static constexpr int64_t SIDE_CHOP_WINDOW_SEC   = 300;
+    static constexpr int64_t SIDE_CHOP_PAUSE_SEC    = 300;
+    static constexpr int     SIDE_CHOP_TRIGGER      = 2;
+
+    // VWAP tracking — daily cumulative tick average, resets at UTC midnight
+    double             m_vwap_cum_pv          = 0.0;  // sum(price)
+    double             m_vwap_cum_vol         = 0.0;  // tick count
+    double             m_vwap                 = 0.0;  // current VWAP
+    int                m_vwap_last_day        = -1;   // last UTC day-of-year
+    // VWAP dislocation gate: don't enter within VWAP_MIN_DIST_PCT of VWAP
+    // Set to 0 to disable. Calibrated per instrument class at startup.
+    double             VWAP_MIN_DIST_PCT      = 0.05; // % of mid — 0.05% default
+
+    // Regime-flip exit: if supervisor regime changes while in trade (>= 60s)
+    // close the position — the market structure that justified entry has changed
+    static constexpr int64_t REGIME_FLIP_MIN_HOLD_SEC = 60;
     int                m_trade_id             = 0;
     int                m_compression_ticks    = 0;   // ticks spent in COMPRESSION phase
     int                m_comp_violation_ticks = 0;   // consecutive ticks where ALL reset conditions are true
@@ -1021,6 +1111,32 @@ protected:
         // Record exit for same-level re-entry guard
         m_last_exit_price = exit_px;
         m_last_exit_ts    = nowSec();
+
+        // ── Gold-equivalent SL cooldown + chop detection ─────────────────
+        if (std::strcmp(reason, "SL_HIT") == 0) {
+            const int64_t now_s = nowSec();
+            // Global SL cooldown — block all new entries for GLOBAL_SL_COOLDOWN_SEC
+            m_sl_cooldown_until = now_s + GLOBAL_SL_COOLDOWN_SEC;
+            std::cout << "[ENG-" << symbol << "] SL_COOLDOWN "
+                      << GLOBAL_SL_COOLDOWN_SEC << "s\n";
+            std::cout.flush();
+            // Side-specific chop detection
+            const int side_idx = tr.side == "LONG" ? 0 : 1;
+            const size_t u = static_cast<size_t>(side_idx);
+            auto& q = m_side_sl_times[u];
+            q.push_back(now_s);
+            // Trim to window
+            while (!q.empty() && now_s - q.front() > SIDE_CHOP_WINDOW_SEC)
+                q.pop_front();
+            if (static_cast<int>(q.size()) >= SIDE_CHOP_TRIGGER) {
+                m_side_pause_until[u] = now_s + SIDE_CHOP_PAUSE_SEC;
+                q.clear();
+                std::cout << "[ENG-" << symbol << "] CHOP-DETECTED: "
+                          << tr.side << " side paused "
+                          << SIDE_CHOP_PAUSE_SEC << "s\n";
+                std::cout.flush();
+            }
+        }
 
         pos.active = false;
         pos        = OpenPos{};
