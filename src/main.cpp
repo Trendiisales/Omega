@@ -322,6 +322,7 @@ struct OmegaConfig {
 
 static OmegaConfig         g_cfg;
 static std::atomic<bool>   g_running(true);
+static std::atomic<bool>   g_quote_logout_received(false);  // server sent Logout to quote session
 static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup — unblocks ctrl handler
 static const int64_t       g_start_time = static_cast<int64_t>(std::time(nullptr)); // process start for uptime
 
@@ -3321,6 +3322,15 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         return;
     }
 
+    if (type == "5") {
+        // Server sent Logout — ghost session or forced disconnect.
+        // Set flag so quote_loop breaks out and reconnects with a delay.
+        std::cout << "[OMEGA] Logout received from server (ghost session or forced)\n";
+        g_quote_ready.store(false);
+        g_quote_logout_received.store(true);
+        return;
+    }
+
     // ── Unknown / unexpected message types -- log everything for diagnostics ──
     if (type != "W" && type != "X" && type != "A" && type != "0" && type != "1" && type != "3" && type != "j") {
         std::string readable = msg.substr(0, std::min(msg.size(), size_t(300)));
@@ -3608,9 +3618,11 @@ static void trade_loop() {
             g_trade_ssl  = nullptr;
             g_trade_sock = -1;
         }
-        // Hard-close: set socket non-blocking so SSL_free doesn't block on
-        // close-notify handshake. The server will handle the abrupt close.
-        // SSL_shutdown is deliberately NOT called — it can block 20-30s.
+        // Give the server 200ms to receive and process the logout before
+        // we close the socket. Without this, the non-blocking close can race
+        // the server and leave a ghost session.
+        Sleep(200);
+        // Set non-blocking BEFORE SSL_free so close-notify doesn't block 20-30s.
         if (sock >= 0) {
             u_long nb = 1; ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &nb);
         }
@@ -3740,6 +3752,12 @@ static void quote_loop() {
                 break;
             }
             for (const auto& m : extract_messages(buf, n)) dispatch_fix(m, ssl);
+            // If server sent us a Logout (ghost session), break immediately
+            if (g_quote_logout_received.load()) {
+                g_quote_logout_received.store(false);
+                std::cout << "[OMEGA] Breaking read loop — server logout received\n";
+                break;
+            }
         }
 
         // Unsubscribe + Logout before closing — prevents ghost session on next connect.
@@ -3851,12 +3869,20 @@ static void quote_loop() {
             }
         }
 
+        // Give server 200ms to receive logout before non-blocking close
+        Sleep(200);
         // Hard-close: non-blocking before SSL_free to avoid close-notify block
         { u_long nb = 1; ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &nb); }
         SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
         // Interruptible reconnect wait — exits within 10ms on shutdown
         for (int i = 0; i < backoff_ms / 10 && g_running.load(); ++i) Sleep(10);
+        // Extra 2s delay when server sent Logout (ghost/forced disconnect)
+        // Gives the server time to fully clear the old session before we reconnect.
+        if (g_quote_logout_received.exchange(false) && g_running.load()) {
+            std::cout << "[OMEGA] Ghost session — waiting 2s for server to clear old session\n";
+            for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
+        }
         backoff_ms = std::min(backoff_ms * 2, max_backoff);
     }
 }
