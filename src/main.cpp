@@ -4285,38 +4285,37 @@ int main(int argc, char* argv[])
             g_eng_brent.WATCH_TIMEOUT_SEC  = 240;
 
             // BracketEngine symbols — override configure() fields from symbols.ini.
-            // slippage_est_bp → slippage_buffer in price units = price * bp / 10000
-            // typical_price used only for slippage_buffer conversion.
-            auto apply_bracket = [](auto& eng, const SymbolConfig& c, double typical_price) {
-                if (c.min_range        > 0.0) eng.MIN_RANGE         = c.min_range;
-                if (c.min_structure_ms > 0)   eng.MIN_STRUCTURE_MS  = c.min_structure_ms;
-                if (c.breakout_fail_ms > 0)   eng.FAILURE_WINDOW_MS = c.breakout_fail_ms;
-                if (c.min_hold_ms      > 0)   eng.MIN_HOLD_MS       = c.min_hold_ms;
+            // NOTE: SLIPPAGE_BUFFER is NOT overridden here. The configure() calls above
+            // already set correct per-symbol slippage in price-point units (0.50 for ESTX50,
+            // 0.80 for gold, 0.00010 for EURUSD etc). The SLIPPAGE_EST_BP field in symbols.ini
+            // is in basis-points which is only meaningful for FX — converting bp*price/10000
+            // for indices produces wildly inflated values (5bp*5600=2.80pts vs correct 0.50pts)
+            // and blocks all index bracket trades. Do not re-derive it here.
+            auto apply_bracket = [](auto& eng, const SymbolConfig& c) {
+                if (c.min_range        > 0.0) eng.MIN_RANGE          = c.min_range;
+                if (c.min_structure_ms > 0)   eng.MIN_STRUCTURE_MS   = c.min_structure_ms;
+                if (c.breakout_fail_ms > 0)   eng.FAILURE_WINDOW_MS  = c.breakout_fail_ms;
+                if (c.min_hold_ms      > 0)   eng.MIN_HOLD_MS        = c.min_hold_ms;
                 if (c.max_hold_sec     > 0)   eng.PENDING_TIMEOUT_SEC = c.max_hold_sec;
-                if (c.tp_mult          > 0.0) eng.RR                = c.tp_mult;
-                if (c.max_spread       > 0.0) eng.MAX_SPREAD         = c.max_spread;
-                if (c.slippage_est_bp  > 0.0) eng.SLIPPAGE_BUFFER   = typical_price * c.slippage_est_bp / 10000.0;
+                if (c.tp_mult          > 0.0) eng.RR                  = c.tp_mult;
+                if (c.max_spread       > 0.0) eng.MAX_SPREAD          = c.max_spread;
+                // SLIPPAGE_BUFFER intentionally NOT set here — configure() has correct values
             };
-            // Gold and silver — use live typical prices
-            apply_bracket(g_bracket_gold,   g_sym_cfg.get("GOLD.F"),   4600.0);
-            apply_bracket(g_bracket_xag,    g_sym_cfg.get("XAGUSD"),     30.0);
-            // US indices
-            apply_bracket(g_bracket_sp,     g_sym_cfg.get("US500.F"),  6000.0);
-            apply_bracket(g_bracket_nq,     g_sym_cfg.get("USTEC.F"), 20000.0);
-            apply_bracket(g_bracket_us30,   g_sym_cfg.get("DJ30.F"),  42000.0);
-            apply_bracket(g_bracket_nas100, g_sym_cfg.get("NAS100"),  20000.0);
-            // EU indices
-            apply_bracket(g_bracket_ger30,  g_sym_cfg.get("GER30"),   22000.0);
-            apply_bracket(g_bracket_uk100,  g_sym_cfg.get("UK100"),    8500.0);
-            apply_bracket(g_bracket_estx50, g_sym_cfg.get("ESTX50"),   5600.0);
-            // Energy
-            apply_bracket(g_bracket_brent,  g_sym_cfg.get("UKBRENT"),    85.0);
-            // FX
-            apply_bracket(g_bracket_eurusd, g_sym_cfg.get("EURUSD"),     1.10);
-            apply_bracket(g_bracket_gbpusd, g_sym_cfg.get("GBPUSD"),     1.27);
-            apply_bracket(g_bracket_audusd, g_sym_cfg.get("AUDUSD"),     0.65);
-            apply_bracket(g_bracket_nzdusd, g_sym_cfg.get("NZDUSD"),     0.60);
-            apply_bracket(g_bracket_usdjpy, g_sym_cfg.get("USDJPY"),   150.0);
+            apply_bracket(g_bracket_gold,   g_sym_cfg.get("GOLD.F"));
+            apply_bracket(g_bracket_xag,    g_sym_cfg.get("XAGUSD"));
+            apply_bracket(g_bracket_sp,     g_sym_cfg.get("US500.F"));
+            apply_bracket(g_bracket_nq,     g_sym_cfg.get("USTEC.F"));
+            apply_bracket(g_bracket_us30,   g_sym_cfg.get("DJ30.F"));
+            apply_bracket(g_bracket_nas100, g_sym_cfg.get("NAS100"));
+            apply_bracket(g_bracket_ger30,  g_sym_cfg.get("GER30"));
+            apply_bracket(g_bracket_uk100,  g_sym_cfg.get("UK100"));
+            apply_bracket(g_bracket_estx50, g_sym_cfg.get("ESTX50"));
+            apply_bracket(g_bracket_brent,  g_sym_cfg.get("UKBRENT"));
+            apply_bracket(g_bracket_eurusd, g_sym_cfg.get("EURUSD"));
+            apply_bracket(g_bracket_gbpusd, g_sym_cfg.get("GBPUSD"));
+            apply_bracket(g_bracket_audusd, g_sym_cfg.get("AUDUSD"));
+            apply_bracket(g_bracket_nzdusd, g_sym_cfg.get("NZDUSD"));
+            apply_bracket(g_bracket_usdjpy, g_sym_cfg.get("USDJPY"));
             std::cout << "[SYMCFG] All bracket engine params overridden from " << sym_ini << "\n";
 
             // Apply supervisor config from symbols.ini to each supervisor
@@ -4381,23 +4380,76 @@ int main(int argc, char* argv[])
                 sup->cfg.cooldown_fail_threshold = 20;
         }
     }
-    // Gold: generic breakout engine, overridden with gold-specific pct params
-    // ── Fixed lot sizes — authoritative sizing ────────────────────────────────
-    g_eng_sp.ENTRY_SIZE     = 0.01;
-    g_eng_nq.ENTRY_SIZE     = 0.01;
-    g_eng_cl.ENTRY_SIZE     = 0.01;
-    g_eng_us30.ENTRY_SIZE   = 0.01;
-    g_eng_nas100.ENTRY_SIZE = 0.10;
-    g_eng_ger30.ENTRY_SIZE  = 0.01;
-    g_eng_uk100.ENTRY_SIZE  = 0.01;
-    g_eng_estx50.ENTRY_SIZE = 0.01;
-    g_eng_xag.ENTRY_SIZE    = 0.01;
-    g_eng_eurusd.ENTRY_SIZE = 0.01;
-    g_eng_gbpusd.ENTRY_SIZE = 0.01;
-    g_eng_brent.ENTRY_SIZE  = 0.01;
-    std::cout << "[SIZING] Fixed lot mode active (risk_per_trade_usd=0)\n"
-              << "[SIZING]   All instruments: 0.01 lots | NAS100: 0.10 lots\n";
-    std::cout.flush();
+    // ── Position sizing ───────────────────────────────────────────────────────
+    // ENTRY_SIZE on each engine is the FALLBACK lot used only when
+    // risk_per_trade_usd == 0. When risk sizing is active, compute_size()
+    // calculates the lot dynamically and ENTRY_SIZE is never used.
+    // NAS100 broker minimum is 0.10 lots — enforced as fallback and in compute_size floor.
+    if (g_cfg.risk_per_trade_usd <= 0.0) {
+        // Fixed lot mode — risk sizing disabled, use hardcoded fallbacks
+        g_eng_sp.ENTRY_SIZE       = 0.01;
+        g_eng_nq.ENTRY_SIZE       = 0.01;
+        g_eng_cl.ENTRY_SIZE       = 0.01;
+        g_eng_us30.ENTRY_SIZE     = 0.01;
+        g_eng_nas100.ENTRY_SIZE   = 0.10;  // NAS100 broker minimum
+        g_eng_ger30.ENTRY_SIZE    = 0.01;
+        g_eng_uk100.ENTRY_SIZE    = 0.01;
+        g_eng_estx50.ENTRY_SIZE   = 0.01;
+        g_eng_xag.ENTRY_SIZE      = 0.01;
+        g_eng_eurusd.ENTRY_SIZE   = 0.01;
+        g_eng_gbpusd.ENTRY_SIZE   = 0.01;
+        g_eng_brent.ENTRY_SIZE    = 0.01;
+        // Bracket engine fallbacks — same as breakout engines
+        g_bracket_sp.ENTRY_SIZE       = 0.01;
+        g_bracket_nq.ENTRY_SIZE       = 0.01;
+        g_bracket_us30.ENTRY_SIZE     = 0.01;
+        g_bracket_nas100.ENTRY_SIZE   = 0.10;  // NAS100 broker minimum
+        g_bracket_ger30.ENTRY_SIZE    = 0.01;
+        g_bracket_uk100.ENTRY_SIZE    = 0.01;
+        g_bracket_estx50.ENTRY_SIZE   = 0.01;
+        g_bracket_brent.ENTRY_SIZE    = 0.01;
+        g_bracket_eurusd.ENTRY_SIZE   = 0.01;
+        g_bracket_gbpusd.ENTRY_SIZE   = 0.01;
+        g_bracket_audusd.ENTRY_SIZE   = 0.01;
+        g_bracket_nzdusd.ENTRY_SIZE   = 0.01;
+        g_bracket_usdjpy.ENTRY_SIZE   = 0.01;
+        std::cout << "[SIZING] Fixed lot mode active (risk_per_trade_usd=0)\n"
+                  << "[SIZING]   All instruments: 0.01 lots | NAS100: 0.10 lots\n";
+    } else {
+        // Risk-based sizing active — ENTRY_SIZE is only a safety fallback,
+        // compute_size() drives actual lot size from risk_per_trade_usd.
+        // Set fallbacks to sensible minimums in case compute_size() ever bails.
+        g_eng_sp.ENTRY_SIZE       = 0.01;
+        g_eng_nq.ENTRY_SIZE       = 0.01;
+        g_eng_cl.ENTRY_SIZE       = 0.01;
+        g_eng_us30.ENTRY_SIZE     = 0.01;
+        g_eng_nas100.ENTRY_SIZE   = 0.10;  // NAS100 broker minimum
+        g_eng_ger30.ENTRY_SIZE    = 0.01;
+        g_eng_uk100.ENTRY_SIZE    = 0.10;  // indices: $10 / ~8pt SL * $1/pt = 1.25 → capped at max
+        g_eng_estx50.ENTRY_SIZE   = 0.10;
+        g_eng_xag.ENTRY_SIZE      = 0.01;
+        g_eng_eurusd.ENTRY_SIZE   = 0.01;
+        g_eng_gbpusd.ENTRY_SIZE   = 0.01;
+        g_eng_brent.ENTRY_SIZE    = 0.01;
+        // Bracket engine fallbacks
+        g_bracket_sp.ENTRY_SIZE       = 0.10;
+        g_bracket_nq.ENTRY_SIZE       = 0.10;
+        g_bracket_us30.ENTRY_SIZE     = 0.10;
+        g_bracket_nas100.ENTRY_SIZE   = 0.10;  // NAS100 broker minimum
+        g_bracket_ger30.ENTRY_SIZE    = 0.10;
+        g_bracket_uk100.ENTRY_SIZE    = 0.10;
+        g_bracket_estx50.ENTRY_SIZE   = 0.10;
+        g_bracket_brent.ENTRY_SIZE    = 0.01;
+        g_bracket_eurusd.ENTRY_SIZE   = 0.01;
+        g_bracket_gbpusd.ENTRY_SIZE   = 0.01;
+        g_bracket_audusd.ENTRY_SIZE   = 0.01;
+        g_bracket_nzdusd.ENTRY_SIZE   = 0.01;
+        g_bracket_usdjpy.ENTRY_SIZE   = 0.01;
+        std::cout << "[SIZING] Risk-based sizing active (risk_per_trade_usd=$"
+                  << g_cfg.risk_per_trade_usd << ")\n"
+                  << "[SIZING]   Lot size computed dynamically per trade from SL distance\n"
+                  << "[SIZING]   Fallback (if compute_size fails): indices=0.10 | others=0.01\n";
+    }
 
     // Wire account equity to edge model — LIVE mode only.
     // In SHADOW mode engines use fixed ENTRY_SIZE — equity is irrelevant.
