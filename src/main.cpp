@@ -3054,9 +3054,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (now_ms - min_start >= 60000) { min_start = now_ms; trades_this_min = 0; }
         const bool freq_ok = (trades_this_min < 2);
 
-        const bool bracket_open = bracket_eng.has_open_position();
-        const bool can_arm      = base_can_enter && sdec.allow_bracket && freq_ok && !bracket_open;
-        const bool can_manage   = base_can_enter && sdec.allow_bracket;
+        const bool bracket_open    = bracket_eng.has_open_position();
+        const bool bracket_pending = (bracket_eng.phase == BracketPhase::PENDING);
+        const bool can_arm         = base_can_enter && sdec.allow_bracket && freq_ok && !bracket_open;
+
+        // When PENDING: orders are already at the broker — only a hard session gate
+        // should cancel them, NOT a supervisor blip. Passing true here means the engine
+        // only checks PENDING_TIMEOUT and shadow fill; supervisor fluctuations are ignored.
+        // When LIVE: can_manage gate still applies (allows force-close on session end).
+        const bool can_manage      = bracket_pending ? true
+                                                     : (base_can_enter && sdec.allow_bracket);
 
         bracket_eng.on_tick(bid, ask, now_ms,
             bracket_open ? can_manage : can_arm,
@@ -3377,7 +3384,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok && !bracket_open
                                       && !g_gold_stack.has_open_position()
                                       && gold_not_asia;
-            const bool can_manage      = gold_can_enter;
+            // PENDING: orders already at broker — only timeout should cancel, not gate flips
+            const bool gold_bracket_pending = (g_bracket_gold.phase == BracketPhase::PENDING);
+            const bool can_manage      = gold_bracket_pending ? true : gold_can_enter;
 
             g_bracket_gold.on_tick(bid, ask, now_ms_g,
                 bracket_open ? can_manage : can_arm_bracket,
