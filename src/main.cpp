@@ -4162,6 +4162,9 @@ int main(int argc, char* argv[])
     // Wire shadow fill simulation — price-triggered in PENDING, not immediate at arm
     g_bracket_gold.shadow_mode = (g_cfg.mode != "LIVE");
     g_bracket_xag.shadow_mode  = (g_cfg.mode != "LIVE");
+    // PENDING_TIMEOUT_SEC: gold/silver compress for minutes before breaking — 60s was expiring before the move
+    g_bracket_gold.PENDING_TIMEOUT_SEC = 600;  // 10 min: gold compression can last well beyond 5 min
+    g_bracket_xag.PENDING_TIMEOUT_SEC  = 300;  // 5 min: silver moves faster than gold
     // Configure opening range engines
     g_orb_us.OPEN_HOUR    = 13; g_orb_us.OPEN_MIN    = 30;  // NY open 13:30 UTC
     g_orb_ger30.OPEN_HOUR = 8;  g_orb_ger30.OPEN_MIN = 0;   // Xetra open 08:00 UTC
@@ -4202,9 +4205,10 @@ int main(int argc, char* argv[])
 
     // Shadow mode + cancel wiring for all new bracket engines
     const bool shadow = (g_cfg.mode != "LIVE");
-    auto wire_bracket = [&](auto& beng) {
-        beng.shadow_mode      = shadow;
-        beng.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
+    auto wire_bracket = [&](auto& beng, int pending_timeout_sec = 180) {
+        beng.shadow_mode         = shadow;
+        beng.PENDING_TIMEOUT_SEC = pending_timeout_sec;
+        beng.cancel_order_fn     = [](const std::string& id) { send_cancel_order(id); };
     };
     wire_bracket(g_bracket_sp);     wire_bracket(g_bracket_nq);
     wire_bracket(g_bracket_us30);   wire_bracket(g_bracket_nas100);

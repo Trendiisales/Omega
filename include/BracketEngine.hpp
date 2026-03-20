@@ -81,6 +81,12 @@ public:
     double EDGE_MULTIPLIER     = 1.5;
     double ENTRY_SIZE          = 0.01;
     double SL_PCT              = 0.0;
+    // PENDING_TIMEOUT_SEC: how long to wait for price to hit a bracket level.
+    // LIVE mode: 60s is fine — broker holds the stop orders, we just wait for fill ACK.
+    // SHADOW mode: price must cross the level within this window for fill simulation.
+    // Gold often consolidates 2-5 min after compressing — 60s was expiring before break.
+    // Default 300s (5 min). Set per-engine in main.cpp after configure().
+    int    PENDING_TIMEOUT_SEC = 300;
     const char* symbol         = "???";
     bool   shadow_mode         = false;  // set by main.cpp — enables price-triggered fill sim in PENDING
 
@@ -236,8 +242,13 @@ public:
                 reset();
                 return;
             }
-            if ((now - m_armed_ts) > 60) {
-                std::cout << "[BRACKET-" << symbol << "] PENDING TIMEOUT — cancelling both broker orders\n";
+            if ((now - m_armed_ts) > static_cast<int64_t>(PENDING_TIMEOUT_SEC)) {
+                std::cout << "[BRACKET-" << symbol << "] PENDING TIMEOUT after " << PENDING_TIMEOUT_SEC
+                          << "s — price never hit bracket hi=" << m_locked_hi
+                          << " lo=" << m_locked_lo
+                          << " last_mid=" << std::fixed << std::setprecision(4) << ((bid+ask)*0.5)
+                          << " dist_to_hi=" << (m_locked_hi - (bid+ask)*0.5)
+                          << " dist_to_lo=" << ((bid+ask)*0.5 - m_locked_lo) << "\n";
                 std::cout.flush();
                 cancel_both_broker_orders();
                 reset();
