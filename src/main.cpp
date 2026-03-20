@@ -2829,8 +2829,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Do NOT send for TP_HIT / SL_HIT / BE_HIT — in LIVE mode the broker's
         // OCO order fills the close. Sending another market order doubles the position.
         const bool needs_market_close =
-            (std::strcmp(tr.exitReason, "BREAKOUT_FAIL") == 0 ||
-             std::strcmp(tr.exitReason, "FORCE_CLOSE")   == 0);
+            (tr.exitReason == "BREAKOUT_FAIL" ||
+             tr.exitReason == "FORCE_CLOSE");
         if (!needs_market_close) return;
         const bool close_is_long = (tr.side == "SHORT");
         std::cout << "\033[1;35m[BRACKET-CLOSE] " << tr.symbol
