@@ -48,6 +48,12 @@ struct OpenPos
     int64_t entry_ts        = 0;
     double  spread_at_entry = 0.0;
     char    regime[32]      = {};
+    // Pyramid tracking — one add-on per trade in expansion regime
+    bool    pyramid_armed   = false;  // set when trail1 arm crossed
+    bool    pyramid_done    = false;  // one add-on only
+    double  pyramid_entry   = 0.0;    // price of the add-on entry
+    double  pyramid_tp      = 0.0;    // add-on TP level
+    double  pyramid_sl      = 0.0;    // add-on SL level (initially = main SL)
 };
 
 // ==============================================================================
@@ -111,7 +117,12 @@ inline EdgeResult compute_edge_and_execution(
     if (!edge_ok) return r;
 
     // ── TP / SL ───────────────────────────────────────────────────────────────
-    const double tp_dist = comp_range * 0.8;
+    // TP raised from comp_range×0.8 to comp_range×1.6 (4:1 R:R vs prior 2:1).
+    // Rationale: with TP=0.8×range, trail2 arm (2×SL=0.8×range) = TP exactly.
+    // Trail2 never fires — trade exits at fixed TP, capping every genuine run.
+    // At 1.6×range: trail2 fires at 0.8×range, then trails the remaining move.
+    // This matches Gold's engine R:R profile (TP=80ticks, SL=30ticks = 2.67:1).
+    const double tp_dist = comp_range * 1.6;
     const double sl_dist = std::max(comp_range * 0.4, spread * 1.5);
 
     // ── R:R validity gate ─────────────────────────────────────────────────────
@@ -444,6 +455,70 @@ public:
                 }
             }
 
+            // ── PYRAMID ADD-ON ────────────────────────────────────────────────
+            // When trail1 arm is crossed and regime is EXPANSION_BREAKOUT or TREND,
+            // add one pyramid leg at current price with TP=remaining comp_range×1.6
+            // and SL raised to BE (same as Gold's pyramid pattern).
+            // One add-on only (pyramid_done). Inherits same TP/SL as main position.
+            if (!pos.pyramid_done) {
+                const double sl_pct_now = (pos.sl_pct > 0.0) ? pos.sl_pct : SL_PCT;
+                const double trail1_arm_pct = sl_pct_now * 1.00;
+                const double move_pct_now = pos.is_long
+                    ? (mid - pos.entry) / pos.entry * 100.0
+                    : (pos.entry - mid) / pos.entry * 100.0;
+                if (move_pct_now >= trail1_arm_pct) {
+                    if (!pos.pyramid_armed) {
+                        pos.pyramid_armed = true;
+                        std::cout << "[ENG-" << symbol << "] PYRAMID ARMED"
+                                  << " move_pct=" << move_pct_now << "% arm=" << trail1_arm_pct << "%\n";
+                        std::cout.flush();
+                    }
+                }
+                // Arm and open pyramid: must be armed, not yet done,
+                // and macro regime must be expansion/trend
+                if (pos.pyramid_armed && !pos.pyramid_done && macro_regime) {
+                    const bool exp_regime =
+                        (std::strncmp(macro_regime, "EXPANSION_BREAKOUT", 18) == 0) ||
+                        (std::strncmp(macro_regime, "TREND_CONTINUATION", 18) == 0);
+                    if (exp_regime) {
+                        pos.pyramid_done  = true;
+                        pos.pyramid_entry = mid;
+                        // Pyramid TP: same as main position TP
+                        pos.pyramid_tp = pos.tp;
+                        // Pyramid SL: locked to BE (main entry ± small buffer)
+                        const double be_buffer = mid * (sl_pct_now * 0.10) / 100.0;
+                        pos.pyramid_sl = pos.is_long
+                            ? pos.entry + be_buffer
+                            : pos.entry - be_buffer;
+                        std::cout << "[ENG-" << symbol << "] PYRAMID ADD-ON"
+                                  << " entry=" << mid
+                                  << " tp=" << pos.pyramid_tp
+                                  << " sl=" << pos.pyramid_sl
+                                  << " regime=" << macro_regime << "\n";
+                        std::cout.flush();
+                        // Fire the pyramid as a signal so main.cpp can send the order
+                        // We set a flag in the OpenPos — main dispatch will see it
+                        // on the NEXT tick and send the order.
+                        // (Returning a signal here would interfere with pos management)
+                    }
+                }
+            }
+            // Manage pyramid position TP/SL
+            if (pos.pyramid_done && pos.pyramid_entry > 0.0) {
+                const bool pyr_tp = pos.is_long ? (bid >= pos.pyramid_tp) : (ask <= pos.pyramid_tp);
+                const bool pyr_sl = pos.is_long ? (bid <= pos.pyramid_sl) : (ask >= pos.pyramid_sl);
+                if (pyr_tp) {
+                    std::cout << "[ENG-" << symbol << "] PYRAMID TP hit=" << pos.pyramid_tp << "\n";
+                    std::cout.flush();
+                    pos.pyramid_entry = 0.0;  // close pyramid tracking
+                }
+                else if (pyr_sl) {
+                    std::cout << "[ENG-" << symbol << "] PYRAMID SL hit=" << pos.pyramid_sl << "\n";
+                    std::cout.flush();
+                    pos.pyramid_entry = 0.0;
+                }
+            }
+
             // ── BREAKOUT FAILURE SCRATCH ──────────────────────────────────────
             // If within first 120s the price moves against us by > 0.08% of entry,
             // the breakout is confirmed false — cut immediately. Do NOT hold a
@@ -763,7 +838,16 @@ public:
             // ── GATE 4: Min gap ───────────────────────────────────────────────
             {
                 const int64_t now_ts = nowSec();
-                if (now_ts - m_last_signal_ts < static_cast<int64_t>(MIN_GAP_SEC)) {
+                // Same-level re-entry guard: don't re-enter within SL_PCT band of recent exit
+            // for SAME_LEVEL_SEC seconds. Prevents re-entering the same failed setup.
+            if (m_last_exit_price > 0.0 && mid > 0.0 &&
+                (now_ts - m_last_exit_ts) < SAME_LEVEL_SEC) {
+                const double band = mid * SL_PCT / 100.0 * SAME_LEVEL_BAND_MULT;
+                if (std::fabs(mid - m_last_exit_price) < band) {
+                    return {};
+                }
+            }
+            if (now_ts - m_last_signal_ts < static_cast<int64_t>(MIN_GAP_SEC)) {
                     std::cout << "[ENG-" << symbol << "] BLOCKED: min_gap"
                               << " gap=" << (now_ts-m_last_signal_ts) << "s min=" << MIN_GAP_SEC << "\n";
                     std::cout.flush();
@@ -880,6 +964,9 @@ public:
 protected:
     std::deque<double> m_prices;
     int64_t            m_last_signal_ts       = 0;
+    // Same-level re-entry guard — prevents re-entering same failed compression
+    double             m_last_exit_price      = 0.0;
+    int64_t            m_last_exit_ts         = 0;
     int                m_trade_id             = 0;
     int                m_compression_ticks    = 0;   // ticks spent in COMPRESSION phase
     int                m_comp_violation_ticks = 0;   // consecutive ticks where ALL reset conditions are true
@@ -930,6 +1017,10 @@ protected:
         // are identifiable in the CSV. Was hardcoded "BreakoutEngine" for all types.
         tr.engine        = std::string(symbol ? symbol : "???") + "_BE";
         tr.regime        = (macro_regime && *macro_regime) ? macro_regime : pos.regime;
+
+        // Record exit for same-level re-entry guard
+        m_last_exit_price = exit_px;
+        m_last_exit_ts    = nowSec();
 
         pos.active = false;
         pos        = OpenPos{};
