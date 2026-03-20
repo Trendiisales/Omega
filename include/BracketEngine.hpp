@@ -79,6 +79,7 @@ public:
     double ATR_RANGE_K         = 0.0;
     double SLIPPAGE_BUFFER     = 0.0;
     double EDGE_MULTIPLIER     = 1.5;
+    double MAX_SPREAD          = 0.0;  // if >0, blocks arm_both_sides when spread exceeds this value
     double ENTRY_SIZE          = 0.01;
     double SL_PCT              = 0.0;
     // PENDING_TIMEOUT_SEC: how long to wait for price to hit a bracket level.
@@ -436,6 +437,19 @@ protected:
 
     void arm_both_sides(double spread, const char* macro_regime) noexcept {
         const double dist = bracket_high - bracket_low;
+
+        // ── Max spread gate ──────────────────────────────────────────────────
+        // Block entry if current spread exceeds configured maximum.
+        // Prevents firing into wide-spread conditions where round-trip cost
+        // eats the entire expected edge.
+        if (MAX_SPREAD > 0.0 && spread > MAX_SPREAD) {
+            std::cout << "[BRACKET-" << symbol << "] BLOCKED: spread_too_wide"
+                      << " spread=" << spread << " max=" << MAX_SPREAD << "\n";
+            std::cout.flush();
+            phase = BracketPhase::IDLE;
+            bracket_high = 0.0; bracket_low = 0.0;
+            return;
+        }
 
         // ── Hard range floor ─────────────────────────────────────────────────
         // dist is the SL distance for both legs. Must meet absolute minimum.

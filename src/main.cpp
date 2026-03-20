@@ -2426,7 +2426,10 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_omegaLedger.dailyPnl(), g_omegaLedger.grossDailyPnl(), g_omegaLedger.maxDD(),
         g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
         g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
-    g_telemetry.UpdateLastSignal(tr.symbol.c_str(), "CLOSED", tr.exitPrice, tr.exitReason.c_str());
+    // NOTE: do NOT call UpdateLastSignal("CLOSED") here — the GUI treats "CLOSED"
+    // identically to "NONE" and resets the last-signal panel to "Waiting for first signal..."
+    // on every single trade close. The last_signal panel should show the last ENTRY signal,
+    // not be blanked by every exit.
 
     // Track false breaks per symbol — supervisor uses this for CHOP_REVERSAL detection
     {
@@ -4281,16 +4284,40 @@ int main(int argc, char* argv[])
             g_eng_usdjpy.WATCH_TIMEOUT_SEC = 240;
             g_eng_brent.WATCH_TIMEOUT_SEC  = 240;
 
-            // BracketEngine symbols — override configure() fields directly
-            auto apply_bracket = [](auto& eng, const SymbolConfig& c) {
-                if (c.min_range        > 0.0) eng.MIN_RANGE        = c.min_range;
-                if (c.min_structure_ms > 0)   eng.MIN_STRUCTURE_MS = c.min_structure_ms;
-                if (c.breakout_fail_ms > 0)   eng.FAILURE_WINDOW_MS= c.breakout_fail_ms;
-                if (c.min_hold_ms      > 0)   eng.MIN_HOLD_MS      = c.min_hold_ms;
-                if (c.tp_mult          > 0.0) eng.RR               = c.tp_mult;
+            // BracketEngine symbols — override configure() fields from symbols.ini.
+            // slippage_est_bp → slippage_buffer in price units = price * bp / 10000
+            // typical_price used only for slippage_buffer conversion.
+            auto apply_bracket = [](auto& eng, const SymbolConfig& c, double typical_price) {
+                if (c.min_range        > 0.0) eng.MIN_RANGE         = c.min_range;
+                if (c.min_structure_ms > 0)   eng.MIN_STRUCTURE_MS  = c.min_structure_ms;
+                if (c.breakout_fail_ms > 0)   eng.FAILURE_WINDOW_MS = c.breakout_fail_ms;
+                if (c.min_hold_ms      > 0)   eng.MIN_HOLD_MS       = c.min_hold_ms;
+                if (c.max_hold_sec     > 0)   eng.PENDING_TIMEOUT_SEC = c.max_hold_sec;
+                if (c.tp_mult          > 0.0) eng.RR                = c.tp_mult;
+                if (c.max_spread       > 0.0) eng.MAX_SPREAD         = c.max_spread;
+                if (c.slippage_est_bp  > 0.0) eng.SLIPPAGE_BUFFER   = typical_price * c.slippage_est_bp / 10000.0;
             };
-            apply_bracket(g_bracket_gold, g_sym_cfg.get("GOLD.F"));
-            apply_bracket(g_bracket_xag,  g_sym_cfg.get("XAGUSD"));
+            // Gold and silver — use live typical prices
+            apply_bracket(g_bracket_gold,   g_sym_cfg.get("GOLD.F"),   4600.0);
+            apply_bracket(g_bracket_xag,    g_sym_cfg.get("XAGUSD"),     30.0);
+            // US indices
+            apply_bracket(g_bracket_sp,     g_sym_cfg.get("US500.F"),  6000.0);
+            apply_bracket(g_bracket_nq,     g_sym_cfg.get("USTEC.F"), 20000.0);
+            apply_bracket(g_bracket_us30,   g_sym_cfg.get("DJ30.F"),  42000.0);
+            apply_bracket(g_bracket_nas100, g_sym_cfg.get("NAS100"),  20000.0);
+            // EU indices
+            apply_bracket(g_bracket_ger30,  g_sym_cfg.get("GER30"),   22000.0);
+            apply_bracket(g_bracket_uk100,  g_sym_cfg.get("UK100"),    8500.0);
+            apply_bracket(g_bracket_estx50, g_sym_cfg.get("ESTX50"),   5600.0);
+            // Energy
+            apply_bracket(g_bracket_brent,  g_sym_cfg.get("UKBRENT"),    85.0);
+            // FX
+            apply_bracket(g_bracket_eurusd, g_sym_cfg.get("EURUSD"),     1.10);
+            apply_bracket(g_bracket_gbpusd, g_sym_cfg.get("GBPUSD"),     1.27);
+            apply_bracket(g_bracket_audusd, g_sym_cfg.get("AUDUSD"),     0.65);
+            apply_bracket(g_bracket_nzdusd, g_sym_cfg.get("NZDUSD"),     0.60);
+            apply_bracket(g_bracket_usdjpy, g_sym_cfg.get("USDJPY"),   150.0);
+            std::cout << "[SYMCFG] All bracket engine params overridden from " << sym_ini << "\n";
 
             // Apply supervisor config from symbols.ini to each supervisor
             auto apply_supervisor = [](omega::SymbolSupervisor& sup,
