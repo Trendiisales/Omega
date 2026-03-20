@@ -3698,7 +3698,13 @@ static void trade_loop() {
             }
         }
 
-        // Tear down — send FIX Logout before closing so server ends session cleanly
+        // Tear down: set socket non-blocking FIRST so SSL_write cannot hang,
+        // then send logout (best-effort, kernel buffers it), then brief pause
+        // for the server to receive it, then SSL_free (also non-blocking so
+        // close-notify handshake never blocks). This path must complete in < 300ms.
+        if (sock >= 0) {
+            u_long nb = 1; ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &nb);
+        }
         if (g_trade_ready.load()) {
             const std::string tlo = fix_build_logout(g_trade_seq++, "TRADE");
             SSL_write(ssl, tlo.c_str(), static_cast<int>(tlo.size()));
@@ -3710,14 +3716,7 @@ static void trade_loop() {
             g_trade_ssl  = nullptr;
             g_trade_sock = -1;
         }
-        // Give the server 200ms to receive and process the logout before
-        // we close the socket. Without this, the non-blocking close can race
-        // the server and leave a ghost session.
-        Sleep(200);
-        // Set non-blocking BEFORE SSL_free so close-notify doesn't block 20-30s.
-        if (sock >= 0) {
-            u_long nb = 1; ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &nb);
-        }
+        Sleep(150);  // let kernel flush logout to wire before closing
         SSL_free(ssl);
         if (sock >= 0) closesocket(static_cast<SOCKET>(sock));
         std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
@@ -3852,16 +3851,18 @@ static void quote_loop() {
             }
         }
 
-        // Unsubscribe + Logout before closing — prevents ghost session on next connect.
-        // Send unconditionally: even if logon timed out the server may have a half-open
-        // session. A logout on a non-logged-in connection is harmless; skipping it on a
-        // timed-out logon leaves a ghost session that blocks the next connect.
+        // Set non-blocking BEFORE unsub/logout so SSL_write can never hang.
+        // The messages go into the kernel send buffer immediately and are flushed
+        // to the wire during the Sleep(150) below — no blocking possible.
+        if (sock >= 0) {
+            u_long nb_lo = 1; ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &nb_lo);
+        }
+        if (g_quote_ready.load()) {
+            const std::string unsub_all = fix_build_md_unsub_all(g_quote_seq++);
+            SSL_write(ssl, unsub_all.c_str(), static_cast<int>(unsub_all.size()));
+            std::cout << "[OMEGA] Unsubscribed market data before disconnect\n";
+        }
         {
-            if (g_quote_ready.load()) {
-                const std::string unsub_all = fix_build_md_unsub_all(g_quote_seq++);
-                SSL_write(ssl, unsub_all.c_str(), static_cast<int>(unsub_all.size()));
-                std::cout << "[OMEGA] Unsubscribed market data before disconnect\n";
-            }
             const std::string lo = fix_build_logout(g_quote_seq++, "QUOTE");
             SSL_write(ssl, lo.c_str(), static_cast<int>(lo.size()));
             std::cout << "[OMEGA] Logout sent\n";
@@ -3985,10 +3986,9 @@ static void quote_loop() {
             }
         }
 
-        // Give server 200ms to receive logout before non-blocking close
-        Sleep(200);
-        // Hard-close: non-blocking before SSL_free to avoid close-notify block
-        { u_long nb = 1; ioctlsocket(static_cast<SOCKET>(sock), FIONBIO, &nb); }
+        Sleep(150);  // let kernel flush logout/unsub to wire
+        // Socket already non-blocking (set above before logout send).
+        // SSL_free will not block on close-notify handshake.
         SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
         // Interruptible reconnect wait — exits within 10ms on shutdown
