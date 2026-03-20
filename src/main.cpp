@@ -3055,7 +3055,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool freq_ok = (trades_this_min < 2);
 
         const bool bracket_open    = bracket_eng.has_open_position();
-        const bool bracket_pending = (bracket_eng.phase == BracketPhase::PENDING);
+        const bool bracket_pending = (bracket_eng.phase == omega::BracketPhase::PENDING);
         const bool can_arm         = base_can_enter && sdec.allow_bracket && freq_ok && !bracket_open;
 
         // When PENDING: orders are already at the broker — only a hard session gate
@@ -3385,7 +3385,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                       && !g_gold_stack.has_open_position()
                                       && gold_not_asia;
             // PENDING: orders already at broker — only timeout should cancel, not gate flips
-            const bool gold_bracket_pending = (g_bracket_gold.phase == BracketPhase::PENDING);
+            const bool gold_bracket_pending = (g_bracket_gold.phase == omega::BracketPhase::PENDING);
             const bool can_manage      = gold_bracket_pending ? true : gold_can_enter;
 
             g_bracket_gold.on_tick(bid, ask, now_ms_g,
