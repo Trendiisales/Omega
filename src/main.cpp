@@ -1466,10 +1466,23 @@ static SSL* connect_ssl(const std::string& host, int port, int& sock_out) {
         return nullptr;
     SOCKET sock = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (sock == INVALID_SOCKET) { freeaddrinfo(result); return nullptr; }
-    if (connect(sock, result->ai_addr, static_cast<int>(result->ai_addrlen)) != 0) {
-        freeaddrinfo(result); closesocket(sock); return nullptr;
-    }
+
+    // Non-blocking connect with 5s timeout — prevents connect() blocking for
+    // the full OS TCP timeout (~20s on Windows) during shutdown or server outage.
+    u_long nb = 1; ioctlsocket(sock, FIONBIO, &nb);
+    connect(sock, result->ai_addr, static_cast<int>(result->ai_addrlen));
     freeaddrinfo(result);
+    fd_set wset; FD_ZERO(&wset); FD_SET(sock, &wset);
+    struct timeval tv{5, 0};  // 5 second connect timeout
+    int sel = select(0, nullptr, &wset, nullptr, &tv);
+    if (sel <= 0) { closesocket(sock); return nullptr; }
+    // Check for connect error (select returns writable even on error)
+    int err = 0; int elen = sizeof(err);
+    getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&err), &elen);
+    if (err != 0) { closesocket(sock); return nullptr; }
+    // Restore blocking mode for normal operation
+    nb = 0; ioctlsocket(sock, FIONBIO, &nb);
+
     int flag = 1;
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,  reinterpret_cast<const char*>(&flag), sizeof(flag));
     setsockopt(sock, SOL_SOCKET,  SO_KEEPALIVE, reinterpret_cast<const char*>(&flag), sizeof(flag));
@@ -1477,22 +1490,25 @@ static SSL* connect_ssl(const std::string& host, int port, int& sock_out) {
     DWORD recv_timeout_ms = 200;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
                reinterpret_cast<const char*>(&recv_timeout_ms), sizeof(recv_timeout_ms));
-    // 500ms send timeout — prevents SSL_write blocking indefinitely on logout during shutdown.
-    // Without SO_SNDTIMEO, SSL_write on the FIX logout can block for the full Windows TCP
-    // retransmission timeout (~21s) if the server is slow to ACK the send buffer.
-    // That is exactly the 20-30s shutdown delay. 500ms is enough to send a small FIX message.
+    // 500ms send timeout — caps SSL_write on logout/heartbeat during shutdown
     DWORD send_timeout_ms = 500;
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
                reinterpret_cast<const char*>(&send_timeout_ms), sizeof(send_timeout_ms));
     SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
     if (!ctx) { closesocket(sock); return nullptr; }
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+    // Quiet shutdown: SSL_free() will NOT send/wait for TLS close-notify.
+    // Without this, SSL_free() performs a bidirectional TLS handshake that can
+    // block for several seconds waiting for the server's close-notify response,
+    // even with SO_SNDTIMEO set. This was the remaining shutdown hang.
+    SSL_CTX_set_quiet_shutdown(ctx, 1);
     SSL* ssl = SSL_new(ctx);
     if (!ssl) { SSL_CTX_free(ctx); closesocket(sock); return nullptr; }
+    SSL_CTX_free(ctx);  // ssl holds a reference; ctx can be freed now
     SSL_set_fd(ssl, static_cast<int>(sock));
     if (SSL_connect(ssl) <= 0) {
         ERR_print_errors_fp(stderr);
-        SSL_free(ssl); SSL_CTX_free(ctx); closesocket(sock); return nullptr;
+        closesocket(sock); SSL_free(ssl); return nullptr;
     }
     sock_out = static_cast<int>(sock);
     return ssl;
@@ -3716,8 +3732,10 @@ static void trade_loop() {
             g_trade_sock = -1;
         }
         Sleep(150);  // let kernel flush logout to wire before closing
-        SSL_free(ssl);
+        // Close the socket FIRST — SSL_free then finds a dead socket and
+        // returns immediately rather than attempting any I/O.
         if (sock >= 0) closesocket(static_cast<SOCKET>(sock));
+        SSL_free(ssl);
         std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
         // Interruptible reconnect wait — exits within 10ms on shutdown
         for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
@@ -3984,9 +4002,10 @@ static void quote_loop() {
         }
 
         Sleep(150);  // let kernel flush logout/unsub to wire
-        // Socket already non-blocking (set above before logout send).
-        // SSL_free will not block on close-notify handshake.
-        SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
+        // Close socket FIRST — SSL_free finds dead socket, returns immediately.
+        // quiet_shutdown is set on the SSL_CTX so no close-notify handshake occurs.
+        closesocket(static_cast<SOCKET>(sock));
+        SSL_free(ssl);
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
         // Interruptible reconnect wait — exits within 10ms on shutdown
         for (int i = 0; i < backoff_ms / 10 && g_running.load(); ++i) Sleep(10);
