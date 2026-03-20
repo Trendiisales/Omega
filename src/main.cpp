@@ -2366,19 +2366,26 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         const std::string risk_key = g_cfg.independent_symbols ? tr.symbol : "GLOBAL";
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         auto& st = g_sym_risk[risk_key];
-        st.daily_pnl += tr.net_pnl;   // track net (after costs) for risk gates
+        st.daily_pnl += tr.net_pnl;   // track net (after costs) for stats only
         if (tr.net_pnl <= 0.0) {
-            const int loss_limit = shadow_research ? 5 : g_cfg.max_consec_losses;
-            const int pause_sec  = shadow_research ? 60 : g_cfg.loss_pause_sec;
-            if (++st.consec_losses >= loss_limit) {
-                st.pause_until = nowSec() + pause_sec;
-                std::cout << "[OMEGA-RISK] " << risk_key << " "
-                          << loss_limit << " consecutive losses -- pause "
-                          << pause_sec << "s\n";
+            // SHADOW: never pause or block — every trade is data we need for tuning.
+            // Loss tracking is recorded for stats/CSV but does not gate entries.
+            if (!shadow_research) {
+                const int loss_limit = g_cfg.max_consec_losses;
+                const int pause_sec  = g_cfg.loss_pause_sec;
+                if (++st.consec_losses >= loss_limit) {
+                    st.pause_until = nowSec() + pause_sec;
+                    std::cout << "[OMEGA-RISK] " << risk_key << " "
+                              << loss_limit << " consecutive losses -- pause "
+                              << pause_sec << "s\n";
+                }
+            } else {
+                ++st.consec_losses; // count for stats, no gate
             }
         } else {
             st.consec_losses = 0;
         }
+        // SHADOW: fast-loss streak tracked for stats/logging only — no pause applied
         if (shadow_research) {
             auto& qs = g_shadow_quality[tr.symbol];
             const int64_t held = std::max<int64_t>(0, tr.exitTs - tr.entryTs);
@@ -2387,12 +2394,10 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                 (held <= 120) &&
                 (tr.exitReason == "SL_HIT" || tr.exitReason == "SCRATCH" || tr.exitReason == "TIMEOUT");
             if (fast_bad_loss) {
-                if (++qs.fast_loss_streak >= 2) {
-                    qs.pause_until = nowSec() + 180;
-                    std::cout << "[OMEGA-QUALITY] " << tr.symbol
-                              << " fast-loss streak=" << qs.fast_loss_streak
-                              << " pause=180s\n";
-                }
+                ++qs.fast_loss_streak;
+                std::cout << "[OMEGA-QUALITY] " << tr.symbol
+                          << " fast-loss streak=" << qs.fast_loss_streak
+                          << " (logged only — no block in shadow)\n";
             } else if (tr.net_pnl > 0.0) {
                 qs.fast_loss_streak = 0;
             } else if (qs.fast_loss_streak > 0) {
@@ -2616,15 +2621,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
 
     auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
+        // SHADOW: never block on loss — all trades are data for tuning.
+        if (g_cfg.mode == "SHADOW") return false;
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         auto& st = g_sym_risk[symbol];
-        const bool shadow_research = (g_cfg.mode == "SHADOW" && g_cfg.shadow_research_mode);
-        const double daily_limit = shadow_research ? 100.0 : g_cfg.daily_loss_limit;
-        if (st.daily_pnl < -daily_limit) {
+        if (st.daily_pnl < -g_cfg.daily_loss_limit) {
             ++g_gov_pnl;
-            if (shadow_research && st.pause_until < nowSec() + 300) {
-                st.pause_until = nowSec() + 300; // 5 min symbol cooldown in shadow
-            }
             return true;
         }
         const int64_t now = nowSec();
@@ -2671,19 +2673,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (g_cfg.ustec_pilot_require_latency && !lat_ok) return false;
                 if (g_cfg.ustec_pilot_block_risk_off && regime == "RISK_OFF") return false;
             }
-            if (shadow_research) {
-                std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
-                auto& qs = g_shadow_quality[symbol];
-                const int64_t now = nowSec();
-                if (qs.pause_until > now) {
-                    ++g_gov_consec;
-                    return false;
-                }
-                if (qs.pause_until != 0 && qs.pause_until <= now) {
-                    qs.pause_until = 0;
-                    qs.fast_loss_streak = 0;
-                }
-            }
+            // SHADOW: shadow_quality streak is tracked for stats only — no gate applied
         }
         if (symbol_has_open_position) {
             ++g_gov_pos;
