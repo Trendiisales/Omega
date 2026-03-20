@@ -3295,8 +3295,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             const bool gold_freq_ok    = (g_bracket_gold_trades_this_minute < 2);
             const bool bracket_open    = g_bracket_gold.has_open_position();
+            // Asia session (22:00-05:00 UTC, slot==6): block bracket engine on Gold.
+            // GoldStack CompressionBreakout still runs in Asia — it has its own
+            // dead-zone gate (21:00-23:00 and 05:00-07:00). But the bracket engine
+            // arms both sides blindly with no directional filter and was producing
+            // SL hits in Asia (confirmed: SHORT at 03:52 UTC, -$2.18).
+            const bool gold_not_asia = (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6);
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok && !bracket_open
-                                      && !g_gold_stack.has_open_position();
+                                      && !g_gold_stack.has_open_position()
+                                      && gold_not_asia;
             const bool can_manage      = gold_can_enter;
 
             g_bracket_gold.on_tick(bid, ask, now_ms_g,
