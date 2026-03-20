@@ -1031,6 +1031,8 @@ protected:
     // Same-level re-entry guard — prevents re-entering same failed compression
     double             m_last_exit_price      = 0.0;
     int64_t            m_last_exit_ts         = 0;
+    static constexpr double  SAME_LEVEL_BAND_MULT = 1.0;  // band = SL_PCT × 1.0 of price
+    static constexpr int64_t SAME_LEVEL_SEC       = 60;
 
     // ── Gold-equivalent risk controls (ported from GoldEngineStack) ───────
     // Global SL cooldown: any stop hit → block new entries for GLOBAL_SL_COOLDOWN_SEC
