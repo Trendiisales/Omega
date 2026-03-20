@@ -437,13 +437,16 @@ public:
 class SessionMomentumEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=60;
-    static constexpr double IMPULSE_MIN=1.60,MAX_SPREAD=3.50;
-    static constexpr int TP_TICKS=50,SL_TICKS=20;
-    // TP $5.00 (50 ticks), SL $2.00 (20 ticks) — 2.5:1 R:R
-    // SL raised from 15 ($1.50): session-open moves are noisy in the first 30s,
-    // $1.50 was being clipped by normal volatility expansion. $2.00 gives room.
-    // TP raised from 30 ($3.00): observed winner MFE $2.27-$2.96 was hitting the old cap.
-    // $5.00 lets genuine session momentum runs fully extend.
+    static constexpr double IMPULSE_MIN=3.50,MAX_SPREAD=2.50;
+    static constexpr int TP_TICKS=60,SL_TICKS=25;
+    // IMPULSE_MIN raised 1.60→3.50: $1.60 range over 60 ticks is normal London
+    // micro-noise. $3.50 is the minimum for a genuine directional session open move.
+    // Observed losing trade: 3s hold, $0.20 gross, $0.18 slip → $0.02 net.
+    // That impulse was sub-$2.00 — pure noise, not a momentum signal.
+    // MAX_SPREAD tightened 3.50→2.50: wide spread = price discovery, not momentum.
+    // SL raised 20→25 ticks ($2.00→$2.50): more room vs. London open volatility.
+    // TP raised 50→60 ticks ($5.00→$6.00): keeps R:R at 2.4:1 after spread cost.
+    static constexpr double VWAP_DEV_MIN=1.50; // price must be >$1.50 from VWAP to confirm direction
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::milliseconds(1000)};
 
     static bool in_session_window(){
@@ -475,6 +478,9 @@ public:
         double hi=history_.max(),lo=history_.min(),impulse=hi-lo;
         if(impulse<IMPULSE_MIN) return noSignal();
         if(s.vwap<=0) return noSignal();
+        // Require meaningful VWAP displacement — price must be committed to a direction,
+        // not oscillating around VWAP within the impulse range.
+        if(std::fabs(s.mid-s.vwap)<VWAP_DEV_MIN) return noSignal();
         double conf=std::min(1.5,impulse/(IMPULSE_MIN*2.0));
         double dhi=hi-s.mid,dlo=s.mid-lo;
         Signal sig; sig.size=0.01; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // fallback min_lot
