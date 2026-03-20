@@ -35,7 +35,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
 
 /* ── LAYOUT ── */
 .desk{display:grid;grid-template-rows:52px 1fr;height:100vh;gap:0;padding:8px;gap:8px;}
-.main{display:grid;grid-template-columns:220px 1fr 240px;gap:8px;overflow:hidden;min-height:0;}
+.main{display:grid;grid-template-columns:320px 1fr 300px;gap:8px;overflow:hidden;min-height:0;}
 
 /* ── CARD ── */
 .card{background:var(--glass);border:1px solid var(--border);border-radius:10px;
@@ -97,7 +97,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .mkt-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px;}
 .sym-section-label{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;
   padding:5px 4px 3px;opacity:0.7;}
-.sym-row{display:grid;grid-template-columns:62px 1fr auto;align-items:center;gap:6px;
+.sym-row{display:grid;grid-template-columns:80px 1fr auto;align-items:center;gap:6px;
   padding:5px 6px;border-radius:6px;margin-bottom:2px;border:1px solid transparent;transition:background 0.15s;}
 .sym-row:hover{background:rgba(255,255,255,0.025);}
 .sym-row.r-gold{border-color:rgba(245,200,66,0.15);background:rgba(245,200,66,0.04);}
@@ -125,7 +125,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .col-centre{grid-column:2;display:flex;flex-direction:column;gap:8px;overflow:hidden;min-height:0;}
 
 /* Stats row */
-.stats-bar{display:grid;grid-template-columns:160px repeat(4,1fr);gap:8px;flex-shrink:0;}
+.stats-bar{display:grid;grid-template-columns:200px repeat(4,1fr);gap:8px;flex-shrink:0;}
 .pnl-card{background:var(--glass);border:1px solid var(--border);border-radius:10px;
   padding:10px 14px;position:relative;overflow:hidden;}
 .pnl-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
@@ -514,26 +514,26 @@ R"OMEGA2(
       <div class="card-hd"><span class="dot" style="background:var(--purple)"></span>FIX Session</div>
       <div class="fix-item"><span class="fix-lbl">Quote</span><span class="fix-val fix-bad" id="fixQStatus">--</span></div>
       <div class="fix-item"><span class="fix-lbl">Mode</span><span class="fix-val" id="fixModeRight" style="color:var(--amber)">--</span></div>
-      <div class="fix-item"><span class="fix-lbl">Seq Gaps</span><span class="fix-val" id="fixGaps" style="color:var(--t1)">0</span></div>
-      <div class="fix-item"><span class="fix-lbl">Orders</span><span class="fix-val" id="fixOrders" style="color:var(--t1)">0</span></div>
-      <div class="fix-item"><span class="fix-lbl">Fills</span><span class="fix-val" id="fixFills" style="color:var(--t1)">0</span></div>
-      <div class="fix-item"><span class="fix-lbl">Build</span><span class="fix-val" id="buildVersion" style="color:var(--t2);font-size:9px">...</span></div>
+      <div class="fix-item"><span class="fix-lbl">Seq Gaps <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">missed msgs</span></span><span class="fix-val" id="fixGaps" style="color:var(--t1)">0</span></div>
+      <div class="fix-item"><span class="fix-lbl">Orders <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">sent</span></span><span class="fix-val" id="fixOrders" style="color:var(--t1)">0</span></div>
+      <div class="fix-item"><span class="fix-lbl">Fills <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">executions</span></span><span class="fix-val" id="fixFills" style="color:var(--t1)">0</span></div>
+      <div class="fix-item"><span class="fix-lbl">BUILD <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">git hash</span></span><span class="fix-val" id="buildVersion" style="color:var(--t2);font-size:9px">...</span></div>
     </div>
 
     <!-- Governor Blocks -->
     <div class="card">
       <div class="card-hd"><span class="dot" style="background:var(--amber)"></span>Governor Blocks</div>
-      <div class="gov-item"><span class="gov-lbl">SPREAD</span><div class="gov-bar"><div class="gov-fill" id="gbarSpread" style="width:0%"></div></div><span class="gov-n" id="gnSpread">0</span></div>
-      <div class="gov-item"><span class="gov-lbl">LATENCY</span><div class="gov-bar"><div class="gov-fill" id="gbarLat" style="width:0%"></div></div><span class="gov-n" id="gnLat">0</span></div>
-      <div class="gov-item"><span class="gov-lbl">PNL LIM</span><div class="gov-bar"><div class="gov-fill" id="gbarPnl" style="width:0%"></div></div><span class="gov-n" id="gnPnl">0</span></div>
-      <div class="gov-item"><span class="gov-lbl">POSITION</span><div class="gov-bar"><div class="gov-fill" id="gbarPos" style="width:0%"></div></div><span class="gov-n" id="gnPos">0</span></div>
-      <div class="gov-item"><span class="gov-lbl">CONSEC</span><div class="gov-bar"><div class="gov-fill" id="gbarConsec" style="width:0%"></div></div><span class="gov-n" id="gnConsec">0</span></div>
+      <div class="gov-item" title="Trades blocked because spread is too wide — entry cost exceeds edge threshold"><span class="gov-lbl">SPREAD <span style="font-size:9px;color:var(--t3)">wide spread</span></span><div class="gov-bar"><div class="gov-fill" id="gbarSpread" style="width:0%"></div></div><span class="gov-n" id="gnSpread">0</span></div>
+      <div class="gov-item" title="Trades blocked because FIX round-trip latency exceeded the configured cap — stale prices"><span class="gov-lbl">LATENCY <span style="font-size:9px;color:var(--t3)">rtt cap</span></span><div class="gov-bar"><div class="gov-fill" id="gbarLat" style="width:0%"></div></div><span class="gov-n" id="gnLat">0</span></div>
+      <div class="gov-item" title="Trades blocked because daily P&amp;L loss limit was hit — engine shut down for the day"><span class="gov-lbl">P&amp;L LIMIT <span style="font-size:9px;color:var(--t3)">daily cap</span></span><div class="gov-bar"><div class="gov-fill" id="gbarPnl" style="width:0%"></div></div><span class="gov-n" id="gnPnl">0</span></div>
+      <div class="gov-item" title="Trades blocked because max open positions reached — waiting for existing trades to close"><span class="gov-lbl">POSITIONS <span style="font-size:9px;color:var(--t3)">cap reached</span></span><div class="gov-bar"><div class="gov-fill" id="gbarPos" style="width:0%"></div></div><span class="gov-n" id="gnPos">0</span></div>
+      <div class="gov-item" title="Trades blocked due to consecutive losses — cooling off after a losing streak"><span class="gov-lbl">CONSEC LOSS <span style="font-size:9px;color:var(--t3)">streak block</span></span><div class="gov-bar"><div class="gov-fill" id="gbarConsec" style="width:0%"></div></div><span class="gov-n" id="gnConsec">0</span></div>
       <div style="font-size:10px;color:var(--t2);padding:5px 10px;text-align:right;" id="govTotal">Total: 0</div>
     </div>
 
     <!-- Compression Ranges (SP/NQ/CL) -->
     <div class="card">
-      <div class="card-hd"><span class="dot" style="background:var(--cyan)"></span>Compression Ranges</div>
+      <div class="card-hd"><span class="dot" style="background:var(--cyan)"></span>Compression Ranges<span style="font-size:9px;font-weight:400;color:var(--t3);letter-spacing:0;text-transform:none;margin-left:6px;">how close to breakout</span></div>
       <div class="comp-grid">
         <div class="comp-item"><div class="comp-sym">US500</div><div class="comp-ph" id="compSPPh" style="color:var(--t2)">FLAT</div><div class="comp-detail" id="compSPDet">--</div></div>
         <div class="comp-item"><div class="comp-sym">USTEC</div><div class="comp-ph" id="compNQPh" style="color:var(--t2)">FLAT</div><div class="comp-detail" id="compNQDet">--</div></div>
@@ -839,7 +839,7 @@ R"OMEGA4(
     const phEl=document.getElementById('comp'+s.id+'Ph');if(phEl){phEl.textContent=label;phEl.style.color=col;}
     const dtEl=document.getElementById('comp'+s.id+'Det');
     if(dtEl){if(p===1&&safe(s.hi)>0)dtEl.textContent=safe(s.hi).toFixed(2)+'↑'+safe(s.lo).toFixed(2);
-    else dtEl.textContent='rv='+safe(s.rv).toFixed(3)+'%';}
+    else dtEl.textContent='vol '+safe(s.rv).toFixed(3)+'%';}
   });
 
   renderLastSignal(d);
