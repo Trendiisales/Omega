@@ -3345,7 +3345,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
 
         // LatencyEdge: not supervisor-gated (intermarket/latency signal)
-        if (!g_bracket_gold.has_open_position()) {
+        // Must also check g_gold_stack — LE and GoldStack share the same broker
+        // account and symbol. Two simultaneous GOLD.F positions are not intended.
+        // Confirmed cause: LE fired SHORT 4680.94 while GoldStack SHORT 4682.44
+        // was still open (4s apart), producing two concurrent losing positions.
+        if (!g_bracket_gold.has_open_position() && !g_gold_stack.has_open_position()) {
             const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, on_close, gold_can_enter);
             if (le_sig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
