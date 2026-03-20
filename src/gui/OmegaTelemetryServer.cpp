@@ -133,16 +133,13 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"nq_recent_vol_pct\":%.4f,\"nq_baseline_vol_pct\":%.4f,\"nq_signals\":%d,"
         "\"cl_phase\":%d,\"cl_comp_high\":%.4f,\"cl_comp_low\":%.4f,"
         "\"cl_recent_vol_pct\":%.4f,\"cl_baseline_vol_pct\":%.4f,\"cl_signals\":%d,"
-        "\"last_signal_symbol\":\"%s\",\"last_signal_side\":\"%s\","
-        "\"last_signal_price\":%.4f,\"last_signal_reason\":\"%s\","
         "\"vix_level\":%.2f,\"macro_regime\":\"%s\",\"es_nq_divergence\":%.6f,"
         "\"gov_spread\":%d,\"gov_latency\":%d,\"gov_pnl\":%d,"
         "\"gov_positions\":%d,\"gov_consec_loss\":%d,"
         "\"xau_phase\":%d,\"xau_comp_high\":%.4f,\"xau_comp_low\":%.4f,"
         "\"xau_recent_vol_pct\":%.4f,\"xau_baseline_vol_pct\":%.4f,\"xau_signals\":%d,"
         "\"build_version\":\"%s\",\"build_time\":\"%s\","
-        "\"uptime_sec\":%lld"
-        "}",
+        "\"uptime_sec\":%lld",
         s->sp_bid,     s->sp_ask,     s->nq_bid,  s->nq_ask,
         s->cl_bid,     s->cl_ask,     s->vix_bid, s->vix_ask,
         s->dx_bid,     s->dx_ask,     s->dj_bid,  s->dj_ask,
@@ -170,8 +167,6 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->nq_recent_vol_pct, s->nq_baseline_vol_pct, s->nq_signals,
         s->cl_phase, s->cl_comp_high, s->cl_comp_low,
         s->cl_recent_vol_pct, s->cl_baseline_vol_pct, s->cl_signals,
-        s->last_signal_symbol, s->last_signal_side,
-        s->last_signal_price, s->last_signal_reason,
         s->vix_level, s->macro_regime, s->es_nq_divergence,
         s->gov_spread, s->gov_latency, s->gov_pnl,
         s->gov_positions, s->gov_consec_loss,
@@ -180,7 +175,26 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->build_version, s->build_time,
         (long long)s->uptime_sec
     );
-    return buf;
+
+    // Append signal_history ring buffer as JSON array (newest first)
+    std::string result(buf);
+    result += ",\"signal_history\":[";
+    const int count = s->sig_count;
+    const int head  = s->sig_head;  // next-write index, so newest = head-1 (wraps)
+    for (int i = 0; i < count; ++i) {
+        // Walk backwards from head-1
+        const int idx = (head - 1 - i + OmegaSnapshot::MAX_SIGNAL_HISTORY)
+                        % OmegaSnapshot::MAX_SIGNAL_HISTORY;
+        if (i > 0) result += ',';
+        char entry[256];
+        snprintf(entry, sizeof(entry),
+            "{\"symbol\":\"%s\",\"side\":\"%s\",\"price\":%.4f,\"reason\":\"%s\"}",
+            s->sig_symbol[idx], s->sig_side[idx],
+            s->sig_price[idx],  s->sig_reason[idx]);
+        result += entry;
+    }
+    result += "]}";
+    return result;
 }
 
 static std::string buildTradesJson()

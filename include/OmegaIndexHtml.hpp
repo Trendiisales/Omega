@@ -492,9 +492,9 @@ R"OMEGA2(
           <table>
             <thead><tr>
               <th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th>
-              <th>Held</th><th>Result</th><th>Gross</th><th>Slip</th><th>Net</th>
+              <th>Held</th><th>Result</th><th>Reason</th><th>Gross</th><th>Slip</th><th>Net</th>
             </tr></thead>
-            <tbody id="tradesBody"><tr><td colspan="10" class="no-data">No trades yet</td></tr></tbody>
+            <tbody id="tradesBody"><tr><td colspan="11" class="no-data">No trades yet</td></tr></tbody>
 
           </table>
         </div>
@@ -651,20 +651,24 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
 
 function renderLastSignal(d){
   const el=document.getElementById('lastSignalDetail');if(!el)return;
-  if(!d.last_signal_side||d.last_signal_side==='NONE'||d.last_signal_side==='CLOSED'||!d.last_signal_side){
+  const hist=d.signal_history||[];
+  if(hist.length===0){
     el.innerHTML='<span style="color:var(--t2);font-size:13px;">Waiting for first signal…</span>';return;}
-  const sc=d.last_signal_side==='LONG'?'var(--green)':'var(--red)';
-  el.innerHTML=`<div class="sig-row">
-    <div><div class="sig-field-lbl">Symbol</div><div class="sig-field-val" style="color:var(--blue)">${d.last_signal_symbol||'--'}</div></div>
-    <div><div class="sig-field-lbl">Direction</div><div class="sig-field-val" style="color:${sc}">${d.last_signal_side}</div></div>
-    <div><div class="sig-field-lbl">Price</div><div class="sig-field-val" style="color:var(--t1)">${safe(d.last_signal_price).toFixed(2)}</div></div>
-    <div><div class="sig-field-lbl">Reason</div><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--gold);margin-top:4px;">${d.last_signal_reason||'--'}</div></div>
-  </div>`;
+  el.innerHTML=hist.map((s,i)=>{
+    const sc=s.side==='LONG'?'var(--green)':'var(--red)';
+    const age=i===0?'<span style="font-size:10px;color:var(--gold);margin-left:6px;">LATEST</span>':'';
+    return `<div class="sig-row" style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);opacity:${1-i*0.15}">
+      <span style="color:var(--blue);font-weight:700;min-width:72px;display:inline-block">${s.symbol||'--'}</span>
+      <span style="color:${sc};font-weight:700;min-width:50px;display:inline-block">${s.side||'--'}</span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;min-width:80px;display:inline-block">${(s.price||0).toFixed(2)}</span>
+      <span style="color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:12px">${s.reason||'--'}</span>${age}
+    </div>`;
+  }).join('');
 }
 
 function renderTrades(trades){
   const el=document.getElementById('tradesBody'),cE=document.getElementById('tradeCount');
-  if(!trades||trades.length===0){el.innerHTML='<tr><td colspan="10" class="no-data">No trades yet</td></tr>';if(cE)cE.textContent='';return;}
+  if(!trades||trades.length===0){el.innerHTML='<tr><td colspan="11" class="no-data">No trades yet</td></tr>';if(cE)cE.textContent='';return;}
   const closed=trades.filter(t=>t.exitReason&&t.exitReason!=='');
   if(_bellBootCount<0){_bellBootCount=closed.length;_lastTradeCount=closed.length;}
   if(_bellEnabled&&closed.length>_lastTradeCount&&_lastTradeCount>=_bellBootCount){const pnl=safe(closed[0].net_pnl);pnl>0?_playWinBell():_playLossBell();}
@@ -699,6 +703,7 @@ function renderTrades(trades){
       <td style="font-family:'IBM Plex Mono',monospace;color:var(--t2);font-size:13px">${isOpen?'<span style="color:var(--blue);font-size:12px">open</span>':safe(t.exitPrice)>0?safe(t.exitPrice).toFixed(2):'--'}</td>
       <td style="color:var(--t2);font-size:12px">${heldStr}</td>
       <td style="font-weight:700;color:${rc}">${result}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;color:var(--gold);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'--':(t.exitReason||'--')}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:${gross>=0?'var(--green)':'var(--red)'};font-size:13px">${grossD}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:var(--red);font-size:12px">${slipD}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:${netC};font-weight:700">${netD}</td>

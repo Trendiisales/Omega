@@ -111,11 +111,14 @@ struct OmegaTelemetrySnapshot
     double xau_baseline_vol_pct;
     int  xau_signals;
 
-    // --- Last signal ---
-    char last_signal_symbol[16];
-    char last_signal_side[8];   // "LONG" / "SHORT" / "NONE"
-    double last_signal_price;
-    char last_signal_reason[64];
+    // --- Signal history ring buffer (5 most recent signals) ---
+    static constexpr int MAX_SIGNAL_HISTORY = 5;
+    char   sig_symbol [MAX_SIGNAL_HISTORY][16];
+    char   sig_side   [MAX_SIGNAL_HISTORY][8];   // "LONG" / "SHORT"
+    double sig_price  [MAX_SIGNAL_HISTORY];
+    char   sig_reason [MAX_SIGNAL_HISTORY][64];
+    int    sig_head;   // index of most recent signal (0-based, wraps)
+    int    sig_count;  // how many valid entries (0–5)
 
     // --- Regime indicators ---
     double vix_level;
@@ -192,7 +195,14 @@ public:
             strcpy_s(m_snap->fix_trade_status, "DISCONNECTED");
             strcpy_s(m_snap->mode, "SHADOW");
             strcpy_s(m_snap->macro_regime, "NEUTRAL");
-            strcpy_s(m_snap->last_signal_side, "NONE");
+            m_snap->sig_head  = 0;
+            m_snap->sig_count = 0;
+            for (int i = 0; i < OmegaSnapshot::MAX_SIGNAL_HISTORY; ++i) {
+                m_snap->sig_symbol[i][0] = '\0';
+                strcpy_s(m_snap->sig_side[i], "NONE");
+                m_snap->sig_price[i]    = 0.0;
+                m_snap->sig_reason[i][0]= '\0';
+            }
         }
         return m_snap != nullptr;
     }
@@ -300,10 +310,15 @@ public:
     void UpdateLastSignal(const char* sym, const char* side, double price, const char* reason)
     {
         if (!m_snap) return;
-        strcpy_s(m_snap->last_signal_symbol, sym);
-        strcpy_s(m_snap->last_signal_side, side);
-        m_snap->last_signal_price = price;
-        strcpy_s(m_snap->last_signal_reason, reason);
+        // Push new signal into ring buffer (newest at index sig_head)
+        const int idx = m_snap->sig_head;
+        strcpy_s(m_snap->sig_symbol[idx], sym);
+        strcpy_s(m_snap->sig_side[idx],   side);
+        m_snap->sig_price[idx]  = price;
+        strcpy_s(m_snap->sig_reason[idx], reason);
+        m_snap->sig_head  = (idx + 1) % OmegaSnapshot::MAX_SIGNAL_HISTORY;
+        if (m_snap->sig_count < OmegaSnapshot::MAX_SIGNAL_HISTORY)
+            ++m_snap->sig_count;
     }
 
     void UpdateMacroRegime(double vix, const char* regime, double es_nq_div)

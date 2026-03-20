@@ -878,13 +878,25 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     // Shadow sim only — not used for live order sizing.
     if (symbol == "USDJPY")   return 667.0;   // USD/JPY: ~100,000/150 ≈ 667 USD/pt/lot
     // Index CFDs — BlackBull cTrader: $1 per index point per lot
-    if (symbol == "US500.F")  return 1.0;    // S&P500 CFD future: $1/pt (was $50 — CME E-mini, WRONG)
-    if (symbol == "USTEC.F")  return 1.0;    // Nasdaq CFD future: $1/pt (was $20 — CME NQ, WRONG)
-    if (symbol == "DJ30.F")   return 1.0;    // Dow Jones CFD future: $1/pt (was $5 — CME YM, WRONG)
-    if (symbol == "NAS100")   return 1.0;    // Nasdaq cash CFD: $1/pt (was $20, WRONG)
-    if (symbol == "GER30")    return 1.0;    // DAX CFD: $1/pt (was $25, WRONG)
-    if (symbol == "UK100")    return 1.0;    // FTSE CFD: $1/pt (was $25, WRONG)
-    if (symbol == "ESTX50")   return 1.0;    // EuroStoxx CFD: $1/pt (was $25, WRONG)
+    // INDEX CFDs — BlackBull cTrader contract sizes (verified from Symbol Info spec pages 2026-03-21)
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+    // Lot size shown in Symbol Info = denomination per lot = $/pt/lot for USD-quoted instruments
+    // EUR/GBP-quoted instruments need FX conversion (static approx: EUR≈1.10, GBP≈1.33)
+    //
+    // US500.F : lot_size=50.0  US500.F  → $50/pt/lot   (confirmed from spec)
+    // USTEC.F : lot_size=20.0  USTEC.F  → $20/pt/lot   (confirmed from spec)
+    // DJ30.F  : lot_size=5.0   DJ30.F   → $5/pt/lot    (confirmed from spec)
+    // NAS100  : lot_size=1.0   NAS100   → $1/pt/lot    (confirmed; min trade=0.1 lots)
+    // GER30   : lot_size=1.0   GER30, quote=EUR → $1.10/pt/lot  (EUR×1.10 approx)
+    // UK100   : lot_size=1.0   UK100,  quote=GBP → $1.33/pt/lot (GBP×1.33 approx)
+    // ESTX50  : lot_size=1.0   ESTX50, quote=EUR → $1.10/pt/lot (EUR×1.10 approx)
+    if (symbol == "US500.F")  return 50.0;   // confirmed: lot=50 US500.F
+    if (symbol == "USTEC.F")  return 20.0;   // confirmed: lot=20 USTEC.F
+    if (symbol == "DJ30.F")   return 5.0;    // confirmed: lot=5 DJ30.F
+    if (symbol == "NAS100")   return 1.0;    // confirmed: lot=1 NAS100 (USD, min 0.1 lots)
+    if (symbol == "GER30")    return 1.10;   // confirmed: lot=1 GER30 EUR-quoted × 1.10
+    if (symbol == "UK100")    return 1.33;   // confirmed: lot=1 UK100 GBP-quoted × 1.33
+    if (symbol == "ESTX50")   return 1.10;   // confirmed: lot=1 ESTX50 EUR-quoted × 1.10
     return 1.0;  // Unknown symbol: no scaling (safe fallback)
 }
 
@@ -2990,7 +3002,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
         // All gates passed — commit sizing and execute.
         // eng.ENTRY_SIZE and telemetry written here only, after all gates cleared.
-        eng.ENTRY_SIZE = lot_size;
+        eng.ENTRY_SIZE  = lot_size;
+        // CRITICAL: patch pos.size with the correct risk-based lot size.
+        // pos.size was set to edge.size inside compute_edge_and_execution which uses
+        // account_equity*0.002/sl_dist — an internal formula that bypasses risk_per_trade_usd
+        // and the per-symbol lot caps. Without this patch, tr.pnl = move * edge.size
+        // (potentially 5-10 lots) instead of move * lot_size (0.01-0.10 lots).
+        eng.pos.size    = lot_size;
         g_telemetry.UpdateLastSignal(sym.c_str(),
             sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
         std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
