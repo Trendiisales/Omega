@@ -113,6 +113,10 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)                    return false;
         if (!macro)                                          return true;
+        // Block US equity indices during Asia session (slot 6 = 22:00-05:00 UTC).
+        // US index futures have thin volume and poor follow-through in Asia.
+        // False breakouts dominate; the session_breakout_mult does not compensate.
+        if (macro->session_slot == 6)                        return false;
         if (std::fabs(macro->es_nq_div) > div_threshold)    return false;
         if (macro->vix > vix_panic)                         return false;
         // L2: block extreme imbalance
@@ -163,6 +167,7 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)                    return false;
         if (!macro)                                          return true;
+        if (macro->session_slot == 6)                        return false;  // Asia: no US equity
         if (std::fabs(macro->es_nq_div) > div_threshold)    return false;
         if (macro->vix > vix_panic)                         return false;
         const double imb = macro->nq_l2_imbalance;
@@ -273,6 +278,7 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)                 return false;
         if (!macro)                                       return true;
+        if (macro->session_slot == 6)                     return false;  // Asia: no US equity
         if (std::fabs(macro->es_nq_div) > div_threshold) return false;
         if (macro->vix > vix_panic)                      return false;
         const double imb = macro->us30_l2_imbalance;
@@ -312,6 +318,7 @@ public:
     {
         if (spread_pct > MAX_SPREAD_PCT)                 return false;
         if (!macro)                                       return true;
+        if (macro->session_slot == 6)                     return false;  // Asia: no US equity
         if (std::fabs(macro->es_nq_div) > div_threshold) return false;
         if (macro->vix > vix_panic)                      return false;
         const double imb = macro->nas_l2_imbalance;

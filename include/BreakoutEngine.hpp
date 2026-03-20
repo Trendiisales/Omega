@@ -113,6 +113,14 @@ inline EdgeResult compute_edge_and_execution(
     // ── TP / SL ───────────────────────────────────────────────────────────────
     const double tp_dist = comp_range * 0.8;
     const double sl_dist = std::max(comp_range * 0.4, spread * 1.5);
+
+    // ── R:R validity gate ─────────────────────────────────────────────────────
+    // Reject if sl_dist >= tp_dist (R:R < 1:1 before spread cost).
+    // Fires when spread dominates comp_range×0.4 — wide-spread Asia session.
+    // Example: USTEC comp_range=2pts spread=3.24pts → sl=4.86 tp=1.6 → R:R=0.33
+    // A trade with sl >= tp has negative expectancy before costs. Block it.
+    if (sl_dist >= tp_dist) return r;
+
     r.tp_price = is_long ? mid + tp_dist : mid - tp_dist;
     r.sl_price = is_long ? mid - sl_dist : mid + sl_dist;
 
