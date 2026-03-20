@@ -3066,14 +3066,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto t_cl = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti_cl; gmtime_s(&ti_cl, &t_cl);
         if (ti_cl.tm_hour >= 7) {
-            const bool base_can = symbol_gate("USOIL.F", g_eng_cl.pos.active || g_bracket_gold.has_open_position());
+            const bool base_can = symbol_gate("USOIL.F", g_eng_cl.pos.active);
+            // NOTE: USOIL.F bracket is disabled — it was incorrectly sharing
+            // g_bracket_gold (GOLD.F's GoldBracketEngine). That engine's confirm_fill,
+            // on_reject, and pending order IDs are wired to GOLD.F fills only.
+            // An oil bracket position would corrupt GOLD.F bracket state.
+            // Oil needs its own dedicated BracketEngine before bracket can be enabled.
             const auto sdec = sup_decision(g_sup_cl, g_eng_cl, base_can);
             if (sdec.allow_breakout)
                 dispatch(g_eng_cl, g_sup_cl, base_can);
-            // Bracket for oil when supervisor permits
-            if (!g_eng_cl.pos.active)
-                dispatch_bracket(g_bracket_gold, g_sup_cl, g_eng_cl, base_can,
-                                 0.0, g_bracket_gold_trades_this_minute, g_bracket_gold_minute_start);
             // EIA fade engine
             if (!g_ca_eia_fade.has_open_position() && base_can) {
                 const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, on_close);
@@ -3151,7 +3152,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
         }
         // Lead-lag: not supervisor-gated (intermarket signal, not regime-based)
-        {
+        // Must check base_can — without it LL fires even when breakout/bracket is open.
+        // Confirmed same class of bug as GOLD.F LE: two concurrent XAGUSD positions.
+        if (base_can) {
             const auto ll_sig = g_le_stack.on_tick_silver(bid, ask, rtt_check, on_close);
             if (ll_sig.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
