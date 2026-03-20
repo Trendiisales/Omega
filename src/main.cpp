@@ -54,7 +54,8 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "MacroRegimeDetector.hpp"
 #include "OmegaTelemetryServer.hpp"
 #include "GoldEngineStack.hpp"    // Multi-engine gold stack (ported from ChimeraMetals)
-#include "LatencyEdgeEngines.hpp" // Co-location speed advantage engines (LeadLag, SpreadDisloc, EventComp)
+#include "LatencyEdgeEngines.hpp"
+#include "CrossAssetEngines.hpp" // Co-location speed advantage engines (LeadLag, SpreadDisloc, EventComp)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Singleton
@@ -360,6 +361,15 @@ static omega::MacroContext g_macro_ctx;
 // SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
 // Primary gold executor — sole handler for all GOLD.F ticks.
 static omega::gold::GoldEngineStack g_gold_stack;
+// Cross-asset engines
+static omega::cross::EsNqDivergenceEngine  g_ca_esnq;
+static omega::cross::OilEventFadeEngine    g_ca_eia_fade;
+static omega::cross::BrentWtiSpreadEngine  g_ca_brent_wti;
+static omega::cross::FxCascadeEngine       g_ca_fx_cascade;
+static omega::cross::CarryUnwindEngine     g_ca_carry_unwind;
+static omega::cross::OpeningRangeEngine    g_orb_us;     // US equity 13:30 UTC
+static omega::cross::OpeningRangeEngine    g_orb_ger30;  // Xetra 08:00 UTC
+static omega::cross::OpeningRangeEngine    g_orb_silver; // COMEX 13:30 UTC
 
 // Co-location latency edge engines -- GoldSilverLeadLag + GoldSpreadDislocation
 // + GoldEventCompression. Fully independent from GoldEngineStack and CRTP engines.
@@ -2681,6 +2691,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_bracket_audusd.pos.active) +
                 static_cast<int>(g_bracket_nzdusd.pos.active) +
                 static_cast<int>(g_bracket_usdjpy.pos.active) +
+                static_cast<int>(g_ca_esnq.has_open_position()) +
+                static_cast<int>(g_ca_eia_fade.has_open_position()) +
+                static_cast<int>(g_ca_brent_wti.has_open_position()) +
+                static_cast<int>(g_ca_fx_cascade.has_open_position()) +
+                static_cast<int>(g_ca_carry_unwind.has_open_position()) +
+                static_cast<int>(g_orb_us.has_open_position()) +
+                static_cast<int>(g_orb_ger30.has_open_position()) +
+                static_cast<int>(g_orb_silver.has_open_position()) +
                 static_cast<int>(g_eng_eurusd.pos.active) +
                 static_cast<int>(g_eng_gbpusd.pos.active) +
                 static_cast<int>(g_eng_audusd.pos.active) +
@@ -2722,6 +2740,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_bracket_audusd.pos.active) +
             static_cast<int>(g_bracket_nzdusd.pos.active) +
             static_cast<int>(g_bracket_usdjpy.pos.active) +
+            static_cast<int>(g_ca_esnq.has_open_position()) +
+            static_cast<int>(g_ca_eia_fade.has_open_position()) +
+            static_cast<int>(g_ca_brent_wti.has_open_position()) +
+            static_cast<int>(g_ca_fx_cascade.has_open_position()) +
+            static_cast<int>(g_ca_carry_unwind.has_open_position()) +
+            static_cast<int>(g_orb_us.has_open_position()) +
+            static_cast<int>(g_orb_ger30.has_open_position()) +
+            static_cast<int>(g_orb_silver.has_open_position()) +
             static_cast<int>(g_eng_eurusd.pos.active) +
             static_cast<int>(g_eng_gbpusd.pos.active) +
             static_cast<int>(g_eng_audusd.pos.active) +
@@ -2998,6 +3024,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_sp, g_sup_sp, g_eng_sp, base_can_sp,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
+        // Cross-asset: ES/NQ divergence + Opening Range
+        if (!g_ca_esnq.has_open_position() && base_can_sp) {
+            const auto ca_sig = g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, on_close);
+            if (ca_sig.valid) { const double lot = compute_size(sym, std::fabs(ca_sig.entry-ca_sig.sl), ask-bid, 0.01); (void)lot; send_live_order(sym, ca_sig.is_long, lot, ca_sig.entry); }
+        }
+        if (!g_orb_us.has_open_position() && base_can_sp) {
+            const auto orb = g_orb_us.on_tick(sym, bid, ask, on_close);
+            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
+        }
     }
     else if (sym == "USTEC.F") {
         const bool base_can_nq = symbol_gate("USTEC.F", g_eng_nq.pos.active || g_bracket_nq.has_open_position());
@@ -3022,6 +3057,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (!g_eng_cl.pos.active)
                 dispatch_bracket(g_bracket_gold, g_sup_cl, g_eng_cl, base_can,
                                  0.0, g_bracket_gold_trades_this_minute, g_bracket_gold_minute_start);
+            // EIA fade engine
+            if (!g_ca_eia_fade.has_open_position() && base_can) {
+                const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, on_close);
+                if (ef.valid) { const double lot = compute_size(sym, std::fabs(ef.entry-ef.sl), ask-bid, 0.01); send_live_order(sym, ef.is_long, lot, ef.entry); }
+            }
+            // Brent/WTI spread engine — get Brent price from book
+            if (!g_ca_brent_wti.has_open_position() && base_can) {
+                double brent_b = 0.0, brent_a = 0.0;
+                { std::lock_guard<std::mutex> lk(g_book_mtx);
+                  const auto bi = g_bids.find("UKBRENT"); if (bi != g_bids.end()) brent_b = bi->second;
+                  const auto ai = g_asks.find("UKBRENT"); if (ai != g_asks.end()) brent_a = ai->second; }
+                const double brent_mid = (brent_b > 0 && brent_a > 0) ? (brent_b+brent_a)*0.5 : 0.0;
+                if (brent_mid > 0) {
+                    const auto bw = g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid, on_close);
+                    if (bw.valid) { const double lot = compute_size(sym, std::fabs(bw.entry-bw.sl), ask-bid, 0.01); send_live_order(sym, bw.is_long, lot, bw.entry); }
+                }
+            }
         }
     }
     else if (sym == "DJ30.F") {
@@ -3042,6 +3094,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_ger.allow_bracket && !g_eng_ger30.pos.active)
             dispatch_bracket(g_bracket_ger30, g_sup_ger30, g_eng_ger30, base_can_ger,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
+        // Opening range breakout: Xetra open 08:00 UTC
+        if (!g_orb_ger30.has_open_position() && base_can_ger) {
+            const auto orb = g_orb_ger30.on_tick(sym, bid, ask, on_close);
+            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
+        }
     }
     else if (sym == "UK100") {
         const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.has_open_position());
@@ -3071,6 +3128,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec.allow_bracket && !g_eng_xag.pos.active)
             dispatch_bracket(g_bracket_xag, g_sup_xag, g_eng_xag, base_can,
                              0.0, g_bracket_xag_trades_this_minute, g_bracket_xag_minute_start);
+        // Silver COMEX opening range 13:30 UTC
+        if (!g_orb_silver.has_open_position() && base_can) {
+            const auto orb = g_orb_silver.on_tick(sym, bid, ask, on_close);
+            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
+        }
         // Lead-lag: not supervisor-gated (intermarket signal, not regime-based)
         {
             const auto ll_sig = g_le_stack.on_tick_silver(bid, ask, rtt_check, on_close);
@@ -3088,6 +3150,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "EURUSD") {
         const bool base_can_fx = symbol_gate("EURUSD", g_eng_eurusd.pos.active || g_bracket_eurusd.has_open_position());
         const auto sdec_fx = sup_decision(g_sup_eurusd, g_eng_eurusd, base_can_fx);
+        // Notify FX cascade engine if EURUSD just fired a signal this tick
+        {
+            static bool s_eur_was_armed = false;
+            const bool eur_armed_now = (g_eng_eurusd.phase == omega::Phase::BREAKOUT_WATCH);
+            // Detect transition: was armed, now FLAT with active pos = signal fired
+            if (s_eur_was_armed && !eur_armed_now && g_eng_eurusd.pos.active)
+                g_ca_fx_cascade.notify_eurusd_signal(g_eng_eurusd.pos.is_long);
+            s_eur_was_armed = eur_armed_now;
+        }
         if (sdec_fx.allow_breakout && !g_bracket_eurusd.has_open_position())
             dispatch(g_eng_eurusd, g_sup_eurusd, base_can_fx);
         if (sdec_fx.allow_bracket && !g_eng_eurusd.pos.active)
@@ -3102,6 +3173,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_fx2.allow_bracket && !g_eng_gbpusd.pos.active)
             dispatch_bracket(g_bracket_gbpusd, g_sup_gbpusd, g_eng_gbpusd, base_can_fx2,
                              0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
+        // FX cascade: EURUSD-driven GBPUSD entry
+        if (!g_ca_fx_cascade.has_open_position() && base_can_fx2) {
+            const auto cas = g_ca_fx_cascade.on_tick_gbpusd(bid, ask, on_close);
+            if (cas.valid) { const double lot = compute_size("GBPUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01); send_live_order("GBPUSD", cas.is_long, lot, cas.entry); }
+        }
     }
     else if (sym == "AUDUSD" || sym == "NZDUSD" || sym == "USDJPY") {
         const auto t2 = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -3126,6 +3202,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const auto sd_jpy = sup_decision(g_sup_usdjpy, g_eng_usdjpy, bc_jpy);
                 if (sd_jpy.allow_breakout && !g_bracket_usdjpy.has_open_position()) dispatch(g_eng_usdjpy, g_sup_usdjpy, bc_jpy);
                 if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active) dispatch_bracket(g_bracket_usdjpy, g_sup_usdjpy, g_eng_usdjpy, bc_jpy, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
+                // Carry unwind: VIX spike + JPY bid
+                if (!g_ca_carry_unwind.has_open_position() && bc_jpy) {
+                    const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, on_close);
+                    if (cu.valid) { const double lot = compute_size("USDJPY", std::fabs(cu.entry-cu.sl), ask-bid, 0.01); send_live_order("USDJPY", cu.is_long, lot, cu.entry); }
+                }
             }
         }
     }
@@ -3851,6 +3932,25 @@ static void quote_loop() {
         fc_bracket(g_bracket_audusd,  "AUDUSD");
         fc_bracket(g_bracket_nzdusd,  "NZDUSD");
         fc_bracket(g_bracket_usdjpy,  "USDJPY");
+        // Cross-asset engine force-close
+        auto fc_ca = [](auto& eng, const char* sym_fc) {
+            if (!eng.has_open_position()) return;
+            double b = 0.0, a = 0.0;
+            { std::lock_guard<std::mutex> lk(g_book_mtx);
+              const auto bi = g_bids.find(sym_fc); if (bi != g_bids.end()) b = bi->second;
+              const auto ai = g_asks.find(sym_fc); if (ai != g_asks.end()) a = ai->second; }
+            if (b > 0.0 && a > 0.0) { omega::TradeRecord::CloseCb cb = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); }; (void)cb; }
+        };
+        { auto cb = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+          double b,a;
+          auto get_px = [&](const char* s){ b=0;a=0; std::lock_guard<std::mutex> lk(g_book_mtx); auto bi=g_bids.find(s); if(bi!=g_bids.end())b=bi->second; auto ai=g_asks.find(s); if(ai!=g_asks.end())a=ai->second; };
+          get_px("US500.F");  if(b>0&&a>0){ g_ca_esnq.force_close(b,a,cb); g_orb_us.force_close(b,a,cb); }
+          get_px("USOIL.F");  if(b>0&&a>0){ g_ca_eia_fade.force_close(b,a,cb); g_ca_brent_wti.force_close(b,a,cb); }
+          get_px("GBPUSD");   if(b>0&&a>0){ g_ca_fx_cascade.force_close(b,a,cb); }
+          get_px("USDJPY");   if(b>0&&a>0){ g_ca_carry_unwind.force_close(b,a,cb); }
+          get_px("GER30");    if(b>0&&a>0){ g_orb_ger30.force_close(b,a,cb); }
+          get_px("XAGUSD");   if(b>0&&a>0){ g_orb_silver.force_close(b,a,cb); }
+        }
         // Force-close GoldEngineStack
         {
             double g_bid = 0.0, g_ask = 0.0, s_bid = 0.0, s_ask = 0.0;
@@ -3980,6 +4080,10 @@ int main(int argc, char* argv[])
     // Wire shadow fill simulation — price-triggered in PENDING, not immediate at arm
     g_bracket_gold.shadow_mode = (g_cfg.mode != "LIVE");
     g_bracket_xag.shadow_mode  = (g_cfg.mode != "LIVE");
+    // Configure opening range engines
+    g_orb_us.OPEN_HOUR    = 13; g_orb_us.OPEN_MIN    = 30;  // NY open 13:30 UTC
+    g_orb_ger30.OPEN_HOUR = 8;  g_orb_ger30.OPEN_MIN = 0;   // Xetra open 08:00 UTC
+    g_orb_silver.OPEN_HOUR= 13; g_orb_silver.OPEN_MIN= 30;  // COMEX open 13:30 UTC
     g_bracket_gold.cancel_order_fn = [](const std::string& id) { send_cancel_order(id); };
     g_bracket_xag.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
 
