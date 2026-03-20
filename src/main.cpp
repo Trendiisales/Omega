@@ -2255,15 +2255,17 @@ static void sanitize_config() noexcept {
         const double oil_size  = std::floor(std::min(r / (0.478 * 1000.0),  g_cfg.max_lot_oil)     * 100 + 0.5) / 100;
         const double xag_size  = std::floor(std::min(r / (0.324 * 5000.0),  g_cfg.max_lot_silver)  * 100 + 0.5) / 100;
         const double gold_size = std::floor(std::min(r / (10.4  * 100.0),   g_cfg.max_lot_gold)    * 100 + 0.5) / 100;
-        const double sp_size   = std::floor(std::min(r / (22.3  * 1.0),     g_cfg.max_lot_indices) * 100 + 0.5) / 100;
-        const double nq_size   = std::floor(std::min(r / (78.0  * 1.0),     g_cfg.max_lot_indices) * 100 + 0.5) / 100;
+        const double sp_size   = std::floor(std::min(r / (22.3  * 50.0),    g_cfg.max_lot_indices) * 100 + 0.5) / 100;
+        const double nq_size   = std::floor(std::min(r / (78.0  * 20.0),    g_cfg.max_lot_indices) * 100 + 0.5) / 100;
+        const double dj_size   = std::floor(std::min(r / (40.0  * 5.0),     g_cfg.max_lot_indices) * 100 + 0.5) / 100;
         std::cout << "[CONFIG] RISK-SIZING ENABLED  risk_per_trade=$" << r << "\n"
                   << "[CONFIG]   example sizes at current risk ($" << r << " max loss per trade):\n"
                   << "[CONFIG]     USOIL.F  ~" << oil_size  << " lots  (SL≈$0.48, max_loss≈$"  << std::round(oil_size  * 0.478 * 1000) << ")\n"
                   << "[CONFIG]     XAGUSD   ~" << xag_size  << " lots  (SL≈$0.32, max_loss≈$"  << std::round(xag_size  * 0.324 * 5000) << ")\n"
                   << "[CONFIG]     GOLD.F   ~" << gold_size << " lots  (SL≈$10.4, max_loss≈$"  << std::round(gold_size * 10.4  * 100)  << ")\n"
-                  << "[CONFIG]     US500.F  ~" << sp_size   << " lots  (SL≈$22.3, max_loss≈$"  << std::round(sp_size   * 22.3  * 1)    << ")\n"
-                  << "[CONFIG]     USTEC.F  ~" << nq_size   << " lots  (SL≈$78.0, max_loss≈$"  << std::round(nq_size   * 78.0  * 1)    << ")\n"
+                  << "[CONFIG]     US500.F  ~" << sp_size   << " lots  (SL≈22.3pts@$50/pt, max_loss≈$"  << std::round(sp_size   * 22.3  * 50)   << ")\n"
+                  << "[CONFIG]     USTEC.F  ~" << nq_size   << " lots  (SL≈78.0pts@$20/pt, max_loss≈$"  << std::round(nq_size   * 78.0  * 20)   << ")\n"
+                  << "[CONFIG]     DJ30.F   ~" << dj_size   << " lots  (SL≈40.0pts@$5/pt,  max_loss≈$"  << std::round(dj_size   * 40.0  * 5)    << ")\n"
                   << "[CONFIG]   caps(max): gold=" << g_cfg.max_lot_gold
                   << " idx=" << g_cfg.max_lot_indices
                   << " oil=" << g_cfg.max_lot_oil
@@ -4488,7 +4490,7 @@ int main(int argc, char* argv[])
         std::cout << "[SIZING] LIVE mode: equity-based sizing active"
                   << " account_equity=" << acct_eq << "\n";
     } else {
-        std::cout << "[SIZING] SHADOW mode: fixed lot sizing (equity-based sizing disabled)\n";
+        std::cout << "[SIZING] SHADOW mode: ACCOUNT_EQUITY wiring disabled (not needed — risk_per_trade_usd drives sizing)\n";
     }
     std::cout.flush();
 
