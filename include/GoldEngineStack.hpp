@@ -483,13 +483,29 @@ public:
         if(std::fabs(s.mid-s.vwap)<VWAP_DEV_MIN) return noSignal();
         double conf=std::min(1.5,impulse/(IMPULSE_MIN*2.0));
         double dhi=hi-s.mid,dlo=s.mid-lo;
+
+        // Recent momentum confirmation — the last 5 ticks must show continuation
+        // in the signal direction. Without this, the engine enters at exhaustion:
+        // price has already made its move and is reversing, but dhi/dlo still
+        // points to the old extreme. Both observed bad trades (3s hold, SL hit
+        // immediately) had this signature — entered at the top/bottom of a
+        // completed move, not a continuing one.
+        // recent_move > 0 = price rising over last 5 ticks (favour LONG)
+        // recent_move < 0 = price falling over last 5 ticks (favour SHORT)
+        double recent_move = 0.0;
+        if (history_.size() >= 5) {
+            // Compare current mid to the mid 5 ticks ago
+            // history_ is circular; index [size-5] is 5 ticks back
+            recent_move = s.mid - history_[history_.size() - 5];
+        }
+        static constexpr double RECENT_MOVE_MIN = 0.30; // must still be moving $0.30 in signal direction
         Signal sig; sig.size=0.01; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // fallback min_lot
-        if(dhi<dlo&&s.mid>s.vwap){
+        if(dhi<dlo&&s.mid>s.vwap&&recent_move<-RECENT_MOVE_MIN){
             sig.valid=true; sig.side=TradeSide::LONG; sig.confidence=conf;
             strncpy(sig.reason,"SESSION_MOM_LONG",31); strncpy(sig.engine,"SessionMomentum",31);
             last_signal_=now; signal_count_++; history_.clear(); return sig;
         }
-        if(dlo<dhi&&s.mid<s.vwap){
+        if(dlo<dhi&&s.mid<s.vwap&&recent_move>RECENT_MOVE_MIN){
             sig.valid=true; sig.side=TradeSide::SHORT; sig.confidence=conf;
             strncpy(sig.reason,"SESSION_MOM_SHORT",31); strncpy(sig.engine,"SessionMomentum",31);
             last_signal_=now; signal_count_++; history_.clear(); return sig;
