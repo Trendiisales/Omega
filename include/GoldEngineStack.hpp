@@ -278,7 +278,7 @@ class CompressionBreakoutEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> history_;  // raised 32→64: larger buffer required for 50-tick WINDOW
     static constexpr size_t WINDOW        = 50;            // raised 30→50: 30 ticks at London open = ~3-6s, too short for real compression; 50 ticks = ~10-15s
     static constexpr double COMPRESSION_RANGE = 6.00;      // lowered 8.00→6.00: $8 was too permissive; $6 requires genuinely tight pre-break range
-    static constexpr double BREAKOUT_TRIGGER  = 3.00;      // raised 2.50→3.00: extra $0.50 filters marginal exits that were reversing on retest
+    static constexpr double BREAKOUT_TRIGGER  = 1.50;      // lowered 3.00→1.50: $3.00 was 133% of typical $2.25 compression range, never reachable; $1.50 confirms real directional break without requiring an impulse move
     static constexpr double MAX_SPREAD        = 2.00;      // unchanged
     static constexpr int    TP_TICKS          = 80;        // $8.00 target — 2.67:1 R:R on $3.00 SL
     static constexpr int    SL_TICKS          = 30;        // raised 25→30: $3.00 stop matches new $3.00 trigger; avoids instant stop-out on breakout retest
@@ -733,9 +733,9 @@ class RegimeGovernor {
     static constexpr size_t WINDOW=80;  // reduced 120→80: 120 ticks = 20-30s warmup before any regime; 80 ticks = ~12-18s, still meaningful structure
 
     // Thresholds recalibrated for $5000 gold (Mar 2026)
-    static constexpr double CE=3.00;  // compression entry: range < $3.00
+    static constexpr double CE=4.00;  // compression entry: raised 3.00→4.00: range was oscillating at 2.25–3.10 causing constant COMPRESSION↔MEAN_REVERSION flips at the 3.00 boundary; 4.00 gives stable COMPRESSION classification at current gold vol
     static constexpr double CX=4.50;  // compression exit:  range > $4.50
-    static constexpr double IE=6.00;  // impulse entry:     reduced 8.00→6.00: $8 range is rare mid-session; $6 still filters noise
+    static constexpr double IE=5.00;  // impulse entry:     lowered 6.00→5.00: $6 range unreachable at current $2.25–3.10 gold vol; $5 still confirms real impulse vs noise
     static constexpr double IX=4.50;  // impulse exit:      reduced 6.00→4.50: symmetric with new IE
     static constexpr double TE=15.00; // trend entry:       range > $15.00
     static constexpr double TX=12.00; // trend exit:        range < $12.00
