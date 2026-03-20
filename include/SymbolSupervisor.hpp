@@ -140,8 +140,15 @@ public:
         }
 
         const double spread_pct = spread / mid * 100.0;
-        const double vol_ratio  = (base_vol_pct > 0.0)
-                                  ? (recent_vol_pct / base_vol_pct) : 1.0;
+        // cold_start: base_vol_pct not yet computed (engine buffer < BASELINE_LOOKBACK).
+        // Previously fell back to vol_ratio=1.0 which lands in the ambiguous zone
+        // (not < compression_thresh, not enough dir for expansion) → HIGH_RISK every tick.
+        // The engine itself still guards against entries during warmup, so passing
+        // QUIET_COMPRESSION here is safe — it just lets ticks accumulate unblocked.
+        const bool   cold_start = (base_vol_pct <= 0.0);
+        const double vol_ratio  = cold_start
+                                  ? 0.5   // force into QUIET_COMPRESSION during warmup
+                                  : (recent_vol_pct / base_vol_pct);
         const double comp_range = (comp_high > comp_low) ? (comp_high - comp_low) : 0.0;
         const double comp_pct   = (mid > 0.0 && comp_range > 0.0) ? (comp_range / mid) : 0.0;
         const double mom_abs    = std::fabs(momentum_pct);
@@ -212,6 +219,15 @@ public:
             regime     = Regime::CHOP_REVERSAL;
             confidence = trap_risk * exec_score;
             reason     = "weak_follow_through";
+        } else if (dir_score < 0.2) {
+            // Ambiguous zone: vol_ratio in compression–expansion band (0.85–1.0) with no
+            // directional momentum. Previously fell to HIGH_RISK "no_dominant_regime",
+            // permanently blocking all engines. A flat undirected market is compression —
+            // classify it so the engine can accumulate ticks and eventually trade.
+            // The engine's own compression/breakout gates remain active.
+            regime     = Regime::QUIET_COMPRESSION;
+            confidence = compression_score * exec_score;
+            reason     = "flat_undirected_treated_as_compression";
         } else {
             // Fix 2: genuine low-confidence — compute real score, don't hardcode 0.5
             regime     = Regime::HIGH_RISK_NO_TRADE;
