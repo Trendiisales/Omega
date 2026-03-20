@@ -536,11 +536,13 @@ static void print_perf_stats() {
         const auto& s = kv.second;
         std::cout << "[OMEGA-PERF] " << k
                   << " liveT=" << s.live_trades
-                  << " livePnL=" << s.live_pnl
-                  << " WR=" << (s.live_trades > 0 ? (100.0 * s.live_wins / s.live_trades) : 0.0)
+                  << " livePnL=" << std::fixed << std::setprecision(2) << s.live_pnl
+                  << " WR=" << std::fixed << std::setprecision(1)
+                  << (s.live_trades > 0 ? (100.0 * s.live_wins / s.live_trades) : 0.0)
                   << "% shadowT=" << s.shadow_trades
-                  << " shadowPnL=" << s.shadow_pnl
+                  << " shadowPnL=" << std::fixed << std::setprecision(2) << s.shadow_pnl
                   << " disabled=" << (s.disabled ? 1 : 0) << "\n";
+        std::cout.unsetf(std::ios::fixed);
     }
 }
 
@@ -3084,9 +3086,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // ── Routing — every symbol goes through supervisor ────────────────────────
     if (sym == "US500.F") {
-        const bool base_can_sp = symbol_gate("US500.F", g_eng_sp.pos.active || g_bracket_sp.has_open_position());
+        const bool base_can_sp = symbol_gate("US500.F", g_eng_sp.pos.active || g_bracket_sp.pos.active);
         const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
-        if (sdec_sp.allow_breakout && !g_bracket_sp.has_open_position())
+        if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
             dispatch(g_eng_sp, g_sup_sp, base_can_sp);
         if (sdec_sp.allow_bracket && !g_eng_sp.pos.active
                 && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
@@ -3103,9 +3105,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "USTEC.F") {
-        const bool base_can_nq = symbol_gate("USTEC.F", g_eng_nq.pos.active || g_bracket_nq.has_open_position());
+        const bool base_can_nq = symbol_gate("USTEC.F", g_eng_nq.pos.active || g_bracket_nq.pos.active);
         const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
-        if (sdec_nq.allow_breakout && !g_bracket_nq.has_open_position())
+        if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
             dispatch(g_eng_nq, g_sup_nq, base_can_nq);
         if (sdec_nq.allow_bracket && !g_eng_nq.pos.active
                 && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
@@ -3146,9 +3148,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "DJ30.F") {
-        const bool base_can_us30 = symbol_gate("DJ30.F", g_eng_us30.pos.active || g_bracket_us30.has_open_position());
+        const bool base_can_us30 = symbol_gate("DJ30.F", g_eng_us30.pos.active || g_bracket_us30.pos.active);
         const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30);
-        if (sdec_us30.allow_breakout && !g_bracket_us30.has_open_position())
+        if (sdec_us30.allow_breakout && !g_bracket_us30.pos.active)
             dispatch(g_eng_us30, g_sup_us30, base_can_us30);
         if (sdec_us30.allow_bracket && !g_eng_us30.pos.active
                 && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
@@ -3156,9 +3158,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
     }
     else if (sym == "GER30") {
-        const bool base_can_ger = symbol_gate("GER30", g_eng_ger30.pos.active || g_bracket_ger30.has_open_position());
+        const bool base_can_ger = symbol_gate("GER30", g_eng_ger30.pos.active || g_bracket_ger30.pos.active);
         const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger);
-        if (sdec_ger.allow_breakout && !g_bracket_ger30.has_open_position())
+        if (sdec_ger.allow_breakout && !g_bracket_ger30.pos.active)
             dispatch(g_eng_ger30, g_sup_ger30, base_can_ger);
         if (sdec_ger.allow_bracket && !g_eng_ger30.pos.active)
             dispatch_bracket(g_bracket_ger30, g_sup_ger30, g_eng_ger30, base_can_ger,
@@ -3170,29 +3172,29 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "UK100") {
-        const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.has_open_position());
+        const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active);
         const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk);
-        if (sdec_uk.allow_breakout && !g_bracket_uk100.has_open_position())
+        if (sdec_uk.allow_breakout && !g_bracket_uk100.pos.active)
             dispatch(g_eng_uk100, g_sup_uk100, base_can_uk);
         if (sdec_uk.allow_bracket && !g_eng_uk100.pos.active)
             dispatch_bracket(g_bracket_uk100, g_sup_uk100, g_eng_uk100, base_can_uk,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
     }
     else if (sym == "ESTX50") {
-        const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.has_open_position());
+        const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active);
         const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx);
-        if (sdec_estx.allow_breakout && !g_bracket_estx50.has_open_position())
+        if (sdec_estx.allow_breakout && !g_bracket_estx50.pos.active)
             dispatch(g_eng_estx50, g_sup_estx50, base_can_estx);
         if (sdec_estx.allow_bracket && !g_eng_estx50.pos.active)
             dispatch_bracket(g_bracket_estx50, g_sup_estx50, g_eng_estx50, base_can_estx,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
     }
     else if (sym == "XAGUSD") {
-        const bool xag_any_open = g_eng_xag.pos.active || g_bracket_xag.has_open_position();
+        const bool xag_any_open = g_eng_xag.pos.active || g_bracket_xag.pos.active;
         const bool base_can     = symbol_gate("XAGUSD", xag_any_open);
         // Supervisor decides: breakout or bracket — only one may arm
         const auto sdec = sup_decision(g_sup_xag, g_eng_xag, base_can);
-        if (sdec.allow_breakout && !g_bracket_xag.has_open_position())
+        if (sdec.allow_breakout && !g_bracket_xag.pos.active)
             dispatch(g_eng_xag, g_sup_xag, base_can);
         if (sdec.allow_bracket && !g_eng_xag.pos.active)
             dispatch_bracket(g_bracket_xag, g_sup_xag, g_eng_xag, base_can,
@@ -3219,7 +3221,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "EURUSD") {
-        const bool base_can_fx = symbol_gate("EURUSD", g_eng_eurusd.pos.active || g_bracket_eurusd.has_open_position());
+        const bool base_can_fx = symbol_gate("EURUSD", g_eng_eurusd.pos.active || g_bracket_eurusd.pos.active);
         const auto sdec_fx = sup_decision(g_sup_eurusd, g_eng_eurusd, base_can_fx);
         // Notify FX cascade engine if EURUSD just fired a signal this tick
         {
@@ -3230,16 +3232,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_ca_fx_cascade.notify_eurusd_signal(g_eng_eurusd.pos.is_long);
             s_eur_was_armed = eur_armed_now;
         }
-        if (sdec_fx.allow_breakout && !g_bracket_eurusd.has_open_position())
+        if (sdec_fx.allow_breakout && !g_bracket_eurusd.pos.active)
             dispatch(g_eng_eurusd, g_sup_eurusd, base_can_fx);
         if (sdec_fx.allow_bracket && !g_eng_eurusd.pos.active)
             dispatch_bracket(g_bracket_eurusd, g_sup_eurusd, g_eng_eurusd, base_can_fx,
                              0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
     }
     else if (sym == "GBPUSD") {
-        const bool base_can_fx2 = symbol_gate("GBPUSD", g_eng_gbpusd.pos.active || g_bracket_gbpusd.has_open_position());
+        const bool base_can_fx2 = symbol_gate("GBPUSD", g_eng_gbpusd.pos.active || g_bracket_gbpusd.pos.active);
         const auto sdec_fx2 = sup_decision(g_sup_gbpusd, g_eng_gbpusd, base_can_fx2);
-        if (sdec_fx2.allow_breakout && !g_bracket_gbpusd.has_open_position())
+        if (sdec_fx2.allow_breakout && !g_bracket_gbpusd.pos.active)
             dispatch(g_eng_gbpusd, g_sup_gbpusd, base_can_fx2);
         if (sdec_fx2.allow_bracket && !g_eng_gbpusd.pos.active)
             dispatch_bracket(g_bracket_gbpusd, g_sup_gbpusd, g_eng_gbpusd, base_can_fx2,
@@ -3257,21 +3259,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool asia_ok = !g_cfg.asia_fx_asia_only || (h2 >= 22 || h2 < 7);
         if (asia_ok) {
             if (sym == "AUDUSD") {
-                const bool bc_aud = symbol_gate("AUDUSD", g_eng_audusd.pos.active || g_bracket_audusd.has_open_position());
+                const bool bc_aud = symbol_gate("AUDUSD", g_eng_audusd.pos.active || g_bracket_audusd.pos.active);
                 const auto sd_aud = sup_decision(g_sup_audusd, g_eng_audusd, bc_aud);
-                if (sd_aud.allow_breakout && !g_bracket_audusd.has_open_position()) dispatch(g_eng_audusd, g_sup_audusd, bc_aud);
+                if (sd_aud.allow_breakout && !g_bracket_audusd.pos.active) dispatch(g_eng_audusd, g_sup_audusd, bc_aud);
                 if (sd_aud.allow_bracket && !g_eng_audusd.pos.active) dispatch_bracket(g_bracket_audusd, g_sup_audusd, g_eng_audusd, bc_aud, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
             }
             if (sym == "NZDUSD") {
-                const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.has_open_position());
+                const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.pos.active);
                 const auto sd_nzd = sup_decision(g_sup_nzdusd, g_eng_nzdusd, bc_nzd);
-                if (sd_nzd.allow_breakout && !g_bracket_nzdusd.has_open_position()) dispatch(g_eng_nzdusd, g_sup_nzdusd, bc_nzd);
+                if (sd_nzd.allow_breakout && !g_bracket_nzdusd.pos.active) dispatch(g_eng_nzdusd, g_sup_nzdusd, bc_nzd);
                 if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active) dispatch_bracket(g_bracket_nzdusd, g_sup_nzdusd, g_eng_nzdusd, bc_nzd, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
             }
             if (sym == "USDJPY") {
-                const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.has_open_position());
+                const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.pos.active);
                 const auto sd_jpy = sup_decision(g_sup_usdjpy, g_eng_usdjpy, bc_jpy);
-                if (sd_jpy.allow_breakout && !g_bracket_usdjpy.has_open_position()) dispatch(g_eng_usdjpy, g_sup_usdjpy, bc_jpy);
+                if (sd_jpy.allow_breakout && !g_bracket_usdjpy.pos.active) dispatch(g_eng_usdjpy, g_sup_usdjpy, bc_jpy);
                 if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active) dispatch_bracket(g_bracket_usdjpy, g_sup_usdjpy, g_eng_usdjpy, bc_jpy, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
                 // Carry unwind: VIX spike + JPY bid
                 if (!g_ca_carry_unwind.has_open_position() && bc_jpy) {
@@ -3285,9 +3287,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto t_br = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti_br; gmtime_s(&ti_br, &t_br);
         if (ti_br.tm_hour >= 7) {
-            const bool base_can_brent = symbol_gate("UKBRENT", g_eng_brent.pos.active || g_bracket_brent.has_open_position());
+            const bool base_can_brent = symbol_gate("UKBRENT", g_eng_brent.pos.active || g_bracket_brent.pos.active);
             const auto sdec_brent = sup_decision(g_sup_brent, g_eng_brent, base_can_brent);
-            if (sdec_brent.allow_breakout && !g_bracket_brent.has_open_position())
+            if (sdec_brent.allow_breakout && !g_bracket_brent.pos.active)
                 dispatch(g_eng_brent, g_sup_brent, base_can_brent);
             if (sdec_brent.allow_bracket && !g_eng_brent.pos.active)
                 dispatch_bracket(g_bracket_brent, g_sup_brent, g_eng_brent, base_can_brent,
@@ -3295,9 +3297,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "NAS100") {
-        const bool base_can_nas = symbol_gate("NAS100", g_eng_nas100.pos.active || g_bracket_nas100.has_open_position());
+        const bool base_can_nas = symbol_gate("NAS100", g_eng_nas100.pos.active || g_bracket_nas100.pos.active);
         const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas);
-        if (sdec_nas.allow_breakout && !g_bracket_nas100.has_open_position())
+        if (sdec_nas.allow_breakout && !g_bracket_nas100.pos.active)
             dispatch(g_eng_nas100, g_sup_nas100, base_can_nas);
         // Asia session: bracket also blocked for US equity
         if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active
@@ -3881,8 +3883,9 @@ static void quote_loop() {
                 // Gold multi-engine stack stats
                 g_gold_stack.print_stats();
                 std::cout << "[GOLD-DIAG] regime=" << g_gold_stack.regime_name()
-                          << " vwap=" << g_gold_stack.vwap()
-                          << " vol_range=" << g_gold_stack.vol_range() << "\n";
+                          << " vwap=" << std::fixed << std::setprecision(2) << g_gold_stack.vwap()
+                          << " vol_range=" << std::fixed << std::setprecision(2) << g_gold_stack.vol_range() << "\n";
+                std::cout.unsetf(std::ios::fixed);
                 // Latency edge engines stats
                 g_le_stack.print_stats();
                 print_perf_stats();
