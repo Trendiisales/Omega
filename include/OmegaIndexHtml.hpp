@@ -629,7 +629,7 @@ R"OMEGA3(
       if(mid>0&&range>0){
         const distLong=Math.abs(mid-safe(hi))/range;
         const distShort=Math.abs(mid-safe(lo))/range;
-        const proximity=Math.min(100,(1-Math.min(distLong,distShort))*100);
+        const proximity=Math.max(0,Math.min(100,(1-Math.min(distLong,distShort))*100));
         prox.style.width=proximity+'%';
         prox.style.background='var(--green)';
         if(pctEl){pctEl.textContent=Math.round(proximity)+'%';pctEl.style.color='var(--green)';}
