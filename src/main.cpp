@@ -2852,7 +2852,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double mult = omega::session_breakout_mult(g_macro_ctx.session_slot);
             eng.MIN_BREAKOUT_PCT = base * std::max(0.70, std::min(1.30, mult));
         }
-        const auto sig = eng.update(bid, ask, rtt_check, regime.c_str(), on_close, can_enter);
+        // Pass supervisor regime name (EXPANSION_BREAKOUT/QUIET_COMPRESSION etc) not macro
+        // regime (RISK_ON/NEUTRAL). The pyramid logic in BreakoutEngine checks for
+        // EXPANSION_BREAKOUT/TREND_CONTINUATION — those are supervisor regime names.
+        const char* eng_regime = omega::regime_name(sdec.regime);
+        const auto sig = eng.update(bid, ask, rtt_check, eng_regime, on_close, can_enter);
         g_telemetry.UpdateEngineState(sym.c_str(),
             static_cast<int>(eng.phase), eng.comp_high, eng.comp_low,
             eng.recent_vol_pct, eng.base_vol_pct, eng.signal_count);
