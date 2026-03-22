@@ -3038,7 +3038,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         eng.pos.size    = lot_size;
         g_telemetry.UpdateLastSignal(sym.c_str(),
             sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason,
-            omega::regime_name(sdec.regime), regime, "BREAKOUT");
+            omega::regime_name(sdec.regime), regime.c_str(), "BREAKOUT");
         std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
                   << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
                   << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
@@ -3106,7 +3106,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             snprintf(bracket_reason, sizeof(bracket_reason), "HI:%.2f LO:%.2f",
                      bsigs.long_entry, bsigs.short_entry);
             g_telemetry.UpdateLastSignal(sym.c_str(), "BRACKET", bsigs.long_entry, bracket_reason,
-                omega::regime_name(sdec.regime), regime, "BRACKET");
+                omega::regime_name(sdec.regime), regime.c_str(), "BRACKET");
             std::cout << "\033[1;33m[BRACKET] " << sym
                       << " sup_regime=" << omega::regime_name(sdec.regime)
                       << " bracket_score=" << sdec.bracket_score
@@ -3247,7 +3247,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (ll_sig.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
                     ll_sig.is_long ? "LONG" : "SHORT", ll_sig.entry, ll_sig.reason,
-                    "LEAD_LAG", regime, "LE");
+                    "LEAD_LAG", regime.c_str(), "LE");
                 const double ll_lot = compute_size("XAGUSD",
                     std::fabs(ll_sig.entry - ll_sig.sl), ask - bid, ll_sig.size);
                 printf("[LEAD-LAG-SIZE] XAGUSD sl_abs=%.4f spread=%.4f lot=%.4f\n",
@@ -3374,7 +3374,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (gsig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason,
-                    omega::regime_name(gold_sdec.regime), regime, "BREAKOUT");
+                    omega::regime_name(gold_sdec.regime), regime.c_str(), "BREAKOUT");
                 const double gold_sl_abs = gsig.sl_ticks * 0.10;
                 const double gold_lot    = compute_size("GOLD.F", gold_sl_abs, ask - bid,
                                                         gsig.size > 0.0 ? gsig.size : 0.02);
@@ -3434,7 +3434,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 snprintf(bg_reason, sizeof(bg_reason), "HI:%.2f LO:%.2f",
                          bgsigs.long_entry, bgsigs.short_entry);
                 g_telemetry.UpdateLastSignal("GOLD.F", "BRACKET", bgsigs.long_entry, bg_reason,
-                    omega::regime_name(gold_sdec.regime), regime, "BRACKET");
+                    omega::regime_name(gold_sdec.regime), regime.c_str(), "BRACKET");
                 std::cout << "\033[1;33m[BRACKET] GOLD.F"
                           << " sup_regime=" << omega::regime_name(gold_sdec.regime)
                           << " bracket_score=" << gold_sdec.bracket_score
@@ -3457,7 +3457,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (le_sig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason,
-                    "LEAD_LAG", regime, "LE");
+                    "LEAD_LAG", regime.c_str(), "LE");
                 const double le_sl_abs = std::fabs(le_sig.entry - le_sig.sl);
                 const double le_lot    = compute_size("GOLD.F", le_sl_abs, ask - bid, le_sig.size);
                 printf("[LE-SIZE] GOLD.F eng=%s sl_abs=%.2f spread=%.2f lot=%.4f\n",
