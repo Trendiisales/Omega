@@ -331,6 +331,15 @@ private:
 
 public:
 
+    // ── Telemetry accessors ───────────────────────────────────────────────────
+    // Returns unix-second timestamp until which SL cooldown is active (0 = not cooling)
+    int64_t sl_cooldown_until() const noexcept { return m_sl_cooldown_until; }
+    // Returns unix-second timestamp until which the given side is chop-paused (0 = not paused)
+    // side: 0=LONG, 1=SHORT
+    int64_t side_pause_until(int side) const noexcept {
+        return (side == 0 || side == 1) ? m_side_pause_until[static_cast<size_t>(side)] : 0;
+    }
+
     // ── Default CRTP hooks ────────────────────────────────────────────────────
     bool shouldTrade(double /*bid*/, double /*ask*/,
                      double spread_pct, double latency_ms) const noexcept

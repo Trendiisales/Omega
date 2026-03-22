@@ -136,6 +136,9 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"vix_level\":%.2f,\"macro_regime\":\"%s\",\"es_nq_divergence\":%.6f,"
         "\"gov_spread\":%d,\"gov_latency\":%d,\"gov_pnl\":%d,"
         "\"gov_positions\":%d,\"gov_consec_loss\":%d,"
+        "\"asia_fx_gate_open\":%d,"
+        "\"cfg_max_trades_per_cycle\":%d,\"cfg_max_open_positions\":%d,"
+        "\"sl_cooldown_count\":%d,"
         "\"xau_phase\":%d,\"xau_comp_high\":%.4f,\"xau_comp_low\":%.4f,"
         "\"xau_recent_vol_pct\":%.4f,\"xau_baseline_vol_pct\":%.4f,\"xau_signals\":%d,"
         "\"build_version\":\"%s\",\"build_time\":\"%s\","
@@ -170,6 +173,9 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->vix_level, s->macro_regime, s->es_nq_divergence,
         s->gov_spread, s->gov_latency, s->gov_pnl,
         s->gov_positions, s->gov_consec_loss,
+        s->asia_fx_gate_open,
+        s->cfg_max_trades_per_cycle, s->cfg_max_open_positions,
+        s->sl_cooldown_count,
         s->xau_phase, s->xau_comp_high, s->xau_comp_low,
         s->xau_recent_vol_pct, s->xau_baseline_vol_pct, s->xau_signals,
         s->build_version, s->build_time,
@@ -193,6 +199,18 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         result += entry;
     }
     result += "]";  // close signal_history array — outer object closed after brackets below
+
+    // Append SL cooldown array
+    result += ",\"sl_cooldowns\":[";
+    for (int i = 0; i < s->sl_cooldown_count; ++i) {
+        if (i > 0) result += ',';
+        char cd[64];
+        snprintf(cd, sizeof(cd),
+            "{\"symbol\":\"%s\",\"secs_remaining\":%d}",
+            s->sl_cooldown_symbols[i], s->sl_cooldown_secs_remaining[i]);
+        result += cd;
+    }
+    result += "]";
 
     // Append per-symbol bracket state
     result += ",\"brackets\":{";

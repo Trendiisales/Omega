@@ -459,7 +459,7 @@ private:
     // Fix 2: reduced from 4 — supervisor was too slow to stabilise
     static constexpr int REGIME_HOLD_TICKS     = 2;
     // Fix 2: minimum ms a regime must hold before switching (prevents tick-by-tick flipping)
-    static constexpr int64_t REGIME_HOLD_MS    = 3000;  // 3 seconds
+    static constexpr int64_t REGIME_HOLD_MS    = 1500;  // 1.5 seconds — faster regime promotion
     // HIGH_RISK must hold this many consecutive ticks to revoke a stable candidate.
     // 5 ticks at ~1-3 ticks/sec = 2-5 seconds of sustained HIGH_RISK before revoke.
     // Single noisy ticks (1-2) are absorbed. Genuine sustained HIGH_RISK (5+) revokes.

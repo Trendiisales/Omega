@@ -148,6 +148,19 @@ struct OmegaTelemetrySnapshot
     int gov_positions;
     int gov_consec_loss;
 
+    // --- SL cooldown state (per symbol) ---
+    static constexpr int MAX_COOLDOWN_SYMBOLS = 16;
+    char    sl_cooldown_symbols[MAX_COOLDOWN_SYMBOLS][16]; // symbols currently in SL cooldown
+    int32_t sl_cooldown_secs_remaining[MAX_COOLDOWN_SYMBOLS]; // seconds left on each
+    int     sl_cooldown_count;          // how many symbols are in cooldown right now
+
+    // --- Asia FX gate ---
+    int     asia_fx_gate_open;          // 1 = trading allowed (gate open), 0 = session-blocked
+
+    // --- Config snapshot ---
+    int     cfg_max_trades_per_cycle;   // current value of max_trades_per_cycle
+    int     cfg_max_open_positions;     // current value of max_open_positions
+
     // --- Uptime ---
     int64_t uptime_sec;    // seconds since process start — written each tick by main loop
     int64_t start_time;    // unix timestamp of process start — set once at init
@@ -372,6 +385,34 @@ public:
         m_snap->gov_pnl       = pnl;
         m_snap->gov_positions = pos;
         m_snap->gov_consec_loss = consec;
+    }
+
+    // Update which symbols are in SL cooldown and how long remains
+    void UpdateSLCooldown(const std::vector<std::pair<std::string,int>>& active_cooldowns)
+    {
+        if (!m_snap) return;
+        const int n = std::min(static_cast<int>(active_cooldowns.size()),
+                               OmegaTelemetrySnapshot::MAX_COOLDOWN_SYMBOLS);
+        m_snap->sl_cooldown_count = n;
+        for (int i = 0; i < n; ++i) {
+            strncpy_s(m_snap->sl_cooldown_symbols[i], 16,
+                      active_cooldowns[i].first.c_str(), _TRUNCATE);
+            m_snap->sl_cooldown_secs_remaining[i] = active_cooldowns[i].second;
+        }
+        // Zero unused slots
+        for (int i = n; i < OmegaTelemetrySnapshot::MAX_COOLDOWN_SYMBOLS; ++i) {
+            m_snap->sl_cooldown_symbols[i][0] = '\0';
+            m_snap->sl_cooldown_secs_remaining[i] = 0;
+        }
+    }
+
+    // Update Asia FX gate state and config snapshot
+    void UpdateAsiaCfg(int asia_gate_open, int max_trades_per_cycle, int max_open_pos)
+    {
+        if (!m_snap) return;
+        m_snap->asia_fx_gate_open       = asia_gate_open;
+        m_snap->cfg_max_trades_per_cycle = max_trades_per_cycle;
+        m_snap->cfg_max_open_positions   = max_open_pos;
     }
 
     void SetMode(const char* m) { if (m_snap) strcpy_s(m_snap->mode, m); }

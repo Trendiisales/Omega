@@ -98,7 +98,7 @@ struct OmegaConfig {
     double daily_loss_limit  = 200.0;
     int    max_consec_losses = 3;
     int    loss_pause_sec    = 300;
-    int    max_open_positions = 1;
+    int    max_open_positions = 4;     // allow up to 4 concurrent positions across different symbols
     bool   independent_symbols = true;  // true: risk/position gating is per-symbol (recommended)
     int    auto_disable_after_trades  = 10;
     bool   shadow_ustec_pilot_only    = false;  // false: multi-symbol SHADOW research; true: restrict to GOLD + USTEC pilot
@@ -2974,7 +2974,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_cycle_candidates.clear();
             g_cycle_window_start_ms = now_ms;
         }
-        g_cycle_candidates.push_back(cand);
+
+        // Per-symbol duplicate guard: if this symbol already has a candidate in the
+        // current window, replace it only if the new score is better — never double-enter.
+        {
+            auto existing = std::find_if(g_cycle_candidates.begin(), g_cycle_candidates.end(),
+                [&sym](const omega::TradeCandidate& c) {
+                    return std::string(c.symbol) == sym;
+                });
+            if (existing != g_cycle_candidates.end()) {
+                if (cand.score > existing->score) {
+                    *existing = cand;  // replace with higher-scoring candidate
+                }
+                // Either way, don't add a second entry for same symbol
+            } else {
+                g_cycle_candidates.push_back(cand);
+            }
+        }
 
         auto selected = omega::select_best_trades(g_cycle_candidates, g_ranking_cfg);
         if (selected.empty()) {
@@ -3451,6 +3467,41 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
 
     g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, g_gov_pos, g_gov_consec);
+
+    // ── SL cooldown telemetry — collect active cooldowns across all engines ──
+    {
+        const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
+        std::vector<std::pair<std::string,int>> cooldowns;
+        auto chk = [&](auto& eng, const char* name) {
+            const int64_t rem = eng.sl_cooldown_until() - now_s;
+            if (rem > 0) cooldowns.push_back({name, static_cast<int>(rem)});
+        };
+        chk(g_eng_sp,     "US500.F");
+        chk(g_eng_nq,     "USTEC.F");
+        chk(g_eng_cl,     "USOIL.F");
+        chk(g_eng_us30,   "DJ30.F");
+        chk(g_eng_nas100, "NAS100");
+        chk(g_eng_ger30,  "GER30");
+        chk(g_eng_uk100,  "UK100");
+        chk(g_eng_estx50, "ESTX50");
+        chk(g_eng_xag,    "XAGUSD");
+        chk(g_eng_eurusd, "EURUSD");
+        chk(g_eng_gbpusd, "GBPUSD");
+        chk(g_eng_audusd, "AUDUSD");
+        chk(g_eng_nzdusd, "NZDUSD");
+        chk(g_eng_usdjpy, "USDJPY");
+        chk(g_eng_brent,  "UKBRENT");
+        g_telemetry.UpdateSLCooldown(cooldowns);
+    }
+
+    // ── Asia gate + config snapshot ──────────────────────────────────────────
+    {
+        const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
+        const int h2 = static_cast<int>((now_s % 86400) / 3600);
+        const int asia_open = (!g_cfg.asia_fx_asia_only || (h2 >= 22 || h2 < 7)) ? 1 : 0;
+        g_telemetry.UpdateAsiaCfg(asia_open, g_cfg.max_trades_per_cycle, g_cfg.max_open_positions);
+    }
+
     if (g_telemetry.snap()) g_telemetry.snap()->uptime_sec =
         static_cast<int64_t>(std::time(nullptr)) - g_start_time;
 }  // ← on_tick
