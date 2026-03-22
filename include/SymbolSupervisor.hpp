@@ -403,16 +403,33 @@ public:
         } else {
             m_consecutive_blocks = 0;
             d.reason = "valid_signal";
-            if (cfg.allow_breakout) {
+
+            // ── Regime-gated permission ───────────────────────────────────────
+            // QUIET_COMPRESSION = price is coiling, not breaking — only bracket allowed
+            // EXPANSION_BREAKOUT / TREND_CONTINUATION = breakout allowed
+            // breakout_in_trend:    if false, block breakout during TREND_CONTINUATION
+            // bracket_in_quiet_comp: if false, block bracket during QUIET_COMPRESSION
+            const bool regime_allows_breakout =
+                (stable_regime == Regime::EXPANSION_BREAKOUT) ||
+                (stable_regime == Regime::TREND_CONTINUATION && cfg.breakout_in_trend);
+
+            const bool regime_allows_bracket =
+                (stable_regime == Regime::EXPANSION_BREAKOUT) ||
+                (stable_regime == Regime::TREND_CONTINUATION) ||
+                (stable_regime == Regime::QUIET_COMPRESSION && cfg.bracket_in_quiet_comp);
+
+            if (cfg.allow_breakout && regime_allows_breakout) {
                 d.allow_breakout = true;
                 d.winner         = "BREAKOUT";
             }
-            if (cfg.allow_bracket && stable_bracket >= cfg.min_bracket_score) {
+            if (cfg.allow_bracket && regime_allows_bracket && stable_bracket >= cfg.min_bracket_score) {
                 d.allow_bracket = true;
                 d.winner        = d.allow_breakout ? "BREAKOUT" : "BRACKET";
             }
-            if (!d.allow_bracket && !d.allow_breakout)
+            if (!d.allow_bracket && !d.allow_breakout) {
                 d.winner = "NONE";
+                d.reason = "regime_not_tradeable";  // QUIET_COMPRESSION with no bracket
+            }
         }
 
         // Log on change — includes top_score and threshold for tuning visibility
