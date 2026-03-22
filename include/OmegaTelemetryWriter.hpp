@@ -129,10 +129,13 @@ struct OmegaTelemetrySnapshot
     BracketState bkt_gold;    // GOLD.F
     BracketState bkt_eur;     // EURUSD
     BracketState bkt_gbp;     // GBPUSD
-    char   sig_symbol [MAX_SIGNAL_HISTORY][16];
-    char   sig_side   [MAX_SIGNAL_HISTORY][8];   // "LONG" / "SHORT"
-    double sig_price  [MAX_SIGNAL_HISTORY];
-    char   sig_reason [MAX_SIGNAL_HISTORY][64];
+    char   sig_symbol    [MAX_SIGNAL_HISTORY][16];
+    char   sig_side      [MAX_SIGNAL_HISTORY][8];   // "LONG" / "SHORT"
+    double sig_price     [MAX_SIGNAL_HISTORY];
+    char   sig_reason    [MAX_SIGNAL_HISTORY][64];
+    char   sig_sup_regime[MAX_SIGNAL_HISTORY][32];  // supervisor regime e.g. "EXPANSION_BREAKOUT"
+    char   sig_macro     [MAX_SIGNAL_HISTORY][16];  // macro regime e.g. "RISK_ON"
+    char   sig_engine    [MAX_SIGNAL_HISTORY][16];  // engine type e.g. "BREAKOUT" / "BRACKET"
     int    sig_head;   // index of most recent signal (0-based, wraps)
     int    sig_count;  // how many valid entries (0–5)
 
@@ -227,10 +230,13 @@ public:
             m_snap->sig_head  = 0;
             m_snap->sig_count = 0;
             for (int i = 0; i < OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY; ++i) {
-                m_snap->sig_symbol[i][0] = '\0';
+                m_snap->sig_symbol[i][0]     = '\0';
                 strcpy_s(m_snap->sig_side[i], "NONE");
-                m_snap->sig_price[i]    = 0.0;
-                m_snap->sig_reason[i][0]= '\0';
+                m_snap->sig_price[i]         = 0.0;
+                m_snap->sig_reason[i][0]     = '\0';
+                m_snap->sig_sup_regime[i][0] = '\0';
+                m_snap->sig_macro[i][0]      = '\0';
+                m_snap->sig_engine[i][0]     = '\0';
             }
         }
         return m_snap != nullptr;
@@ -355,15 +361,19 @@ public:
         else if (!strcmp(sym,"GBPUSD"))  set(m_snap->bkt_gbp);
     }
 
-    void UpdateLastSignal(const char* sym, const char* side, double price, const char* reason)
+    void UpdateLastSignal(const char* sym, const char* side, double price, const char* reason,
+                          const char* sup_regime = "", const char* macro_regime = "", const char* engine_type = "BREAKOUT")
     {
         if (!m_snap) return;
         // Push new signal into ring buffer (newest at index sig_head)
         const int idx = m_snap->sig_head;
-        strcpy_s(m_snap->sig_symbol[idx], sym);
-        strcpy_s(m_snap->sig_side[idx],   side);
-        m_snap->sig_price[idx]  = price;
-        strcpy_s(m_snap->sig_reason[idx], reason);
+        strcpy_s(m_snap->sig_symbol[idx],     sym);
+        strcpy_s(m_snap->sig_side[idx],       side);
+        m_snap->sig_price[idx]              = price;
+        strcpy_s(m_snap->sig_reason[idx],     reason);
+        strcpy_s(m_snap->sig_sup_regime[idx], sup_regime    ? sup_regime    : "");
+        strcpy_s(m_snap->sig_macro[idx],      macro_regime  ? macro_regime  : "");
+        strcpy_s(m_snap->sig_engine[idx],     engine_type   ? engine_type   : "BREAKOUT");
         m_snap->sig_head  = (idx + 1) % OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY;
         if (m_snap->sig_count < OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY)
             ++m_snap->sig_count;

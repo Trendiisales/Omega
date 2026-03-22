@@ -3037,7 +3037,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // (potentially 5-10 lots) instead of move * lot_size (0.01-0.10 lots).
         eng.pos.size    = lot_size;
         g_telemetry.UpdateLastSignal(sym.c_str(),
-            sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason);
+            sig.is_long ? "LONG" : "SHORT", sig.entry, sig.reason,
+            omega::regime_name(sdec.regime), regime, "BREAKOUT");
         std::cout << "\033[1;" << (sig.is_long ? "32" : "31") << "m"
                   << "[OMEGA] " << sym << " " << (sig.is_long ? "LONG" : "SHORT")
                   << " entry=" << sig.entry << " tp=" << sig.tp << " sl=" << sig.sl
@@ -3104,7 +3105,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             char bracket_reason[64];
             snprintf(bracket_reason, sizeof(bracket_reason), "HI:%.2f LO:%.2f",
                      bsigs.long_entry, bsigs.short_entry);
-            g_telemetry.UpdateLastSignal(sym.c_str(), "BRACKET", bsigs.long_entry, bracket_reason);
+            g_telemetry.UpdateLastSignal(sym.c_str(), "BRACKET", bsigs.long_entry, bracket_reason,
+                omega::regime_name(sdec.regime), regime, "BRACKET");
             std::cout << "\033[1;33m[BRACKET] " << sym
                       << " sup_regime=" << omega::regime_name(sdec.regime)
                       << " bracket_score=" << sdec.bracket_score
@@ -3244,7 +3246,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto ll_sig = g_le_stack.on_tick_silver(bid, ask, rtt_check, ca_on_close);
             if (ll_sig.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
-                    ll_sig.is_long ? "LONG" : "SHORT", ll_sig.entry, ll_sig.reason);
+                    ll_sig.is_long ? "LONG" : "SHORT", ll_sig.entry, ll_sig.reason,
+                    "LEAD_LAG", regime, "LE");
                 const double ll_lot = compute_size("XAGUSD",
                     std::fabs(ll_sig.entry - ll_sig.sl), ask - bid, ll_sig.size);
                 printf("[LEAD-LAG-SIZE] XAGUSD sl_abs=%.4f spread=%.4f lot=%.4f\n",
@@ -3370,7 +3373,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close, gold_can_enter);
             if (gsig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
-                    gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason);
+                    gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason,
+                    omega::regime_name(gold_sdec.regime), regime, "BREAKOUT");
                 const double gold_sl_abs = gsig.sl_ticks * 0.10;
                 const double gold_lot    = compute_size("GOLD.F", gold_sl_abs, ask - bid,
                                                         gsig.size > 0.0 ? gsig.size : 0.02);
@@ -3429,7 +3433,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 char bg_reason[64];
                 snprintf(bg_reason, sizeof(bg_reason), "HI:%.2f LO:%.2f",
                          bgsigs.long_entry, bgsigs.short_entry);
-                g_telemetry.UpdateLastSignal("GOLD.F", "BRACKET", bgsigs.long_entry, bg_reason);
+                g_telemetry.UpdateLastSignal("GOLD.F", "BRACKET", bgsigs.long_entry, bg_reason,
+                    omega::regime_name(gold_sdec.regime), regime, "BRACKET");
                 std::cout << "\033[1;33m[BRACKET] GOLD.F"
                           << " sup_regime=" << omega::regime_name(gold_sdec.regime)
                           << " bracket_score=" << gold_sdec.bracket_score
@@ -3451,7 +3456,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, ca_on_close, gold_can_enter);
             if (le_sig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
-                    le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason);
+                    le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason,
+                    "LEAD_LAG", regime, "LE");
                 const double le_sl_abs = std::fabs(le_sig.entry - le_sig.sl);
                 const double le_lot    = compute_size("GOLD.F", le_sl_abs, ask - bid, le_sig.size);
                 printf("[LE-SIZE] GOLD.F eng=%s sl_abs=%.2f spread=%.2f lot=%.4f\n",

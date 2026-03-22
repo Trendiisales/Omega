@@ -191,11 +191,13 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         // Walk backwards from head-1
         const int idx = (head - 1 - i + OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY) % OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY;
         if (i > 0) result += ',';
-        char entry[256];
+        char entry[384];
         snprintf(entry, sizeof(entry),
-            "{\"symbol\":\"%s\",\"side\":\"%s\",\"price\":%.4f,\"reason\":\"%s\"}",
+            "{\"symbol\":\"%s\",\"side\":\"%s\",\"price\":%.4f,\"reason\":\"%s\","
+            "\"sup_regime\":\"%s\",\"macro\":\"%s\",\"engine\":\"%s\"}",
             s->sig_symbol[idx], s->sig_side[idx],
-            s->sig_price[idx],  s->sig_reason[idx]);
+            s->sig_price[idx],  s->sig_reason[idx],
+            s->sig_sup_regime[idx], s->sig_macro[idx], s->sig_engine[idx]);
         result += entry;
     }
     result += "]";  // close signal_history array — outer object closed after brackets below

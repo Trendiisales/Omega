@@ -454,7 +454,7 @@ R"OMEGA2(
 
 
     <div class="eng-section" style="margin-top:6px;">
-      <div class="eng-section-label">⬡ FX + Asia Engines</div>
+      <div class="eng-section-label">⬡ FX + Asia Engines <span id="asiaGateBadge" style="font-size:10px;margin-left:8px;padding:1px 7px;border-radius:3px;border:1px solid rgba(255,255,255,0.15);color:var(--t2)">ASIA FX: --</span></div>
       <div class="eng-grid" style="grid-template-columns:repeat(5,1fr)">
         <div class="eng-cell" id="engEUR"><div class="eng-sym c-cyan">EURUSD</div><div class="eng-ph eph-flat" id="engEURPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engEURBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engEURAsk">--</span></div><div class="eng-vol" id="engEURVol">--</div><div class="eng-sigs" id="engEURSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engEURProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engEURPct"></span></div></div>
 
@@ -483,6 +483,12 @@ R"OMEGA2(
         <div id="lastSignalDetail"><span style="color:var(--t2);font-size:13px;">Waiting for first signal…</span></div>
       </div>
 
+      <!-- SL Cooldown Panel -->
+      <div id="slCooldownSection" style="display:none;margin:0 0 8px 0;padding:6px 10px;background:rgba(255,51,85,0.07);border:1px solid rgba(255,51,85,0.2);border-radius:6px;">
+        <div style="font-size:10px;color:var(--red);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;font-weight:700;">⚠ SL Cooldown Active</div>
+        <div id="slCooldownPanel"></div>
+      </div>
+
       <div class="trades-card">
         <div class="card-hd" style="flex-shrink:0;">
           <span class="dot" style="background:var(--green)"></span>Recent Trades
@@ -492,9 +498,9 @@ R"OMEGA2(
           <table>
             <thead><tr>
               <th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th>
-              <th>Held</th><th>Result</th><th>Reason</th><th>Bracket</th><th>Gross</th><th>Slip</th><th>Net</th>
+              <th>Held</th><th>Result</th><th>Reason</th><th>Regime</th><th>Bracket</th><th>Gross</th><th>Slip</th><th>Net</th>
             </tr></thead>
-            <tbody id="tradesBody"><tr><td colspan="12" class="no-data">No trades yet</td></tr></tbody>
+            <tbody id="tradesBody"><tr><td colspan="13" class="no-data">No trades yet</td></tr></tbody>
 
           </table>
         </div>
@@ -670,35 +676,70 @@ function renderLastSignal(d){
     el.innerHTML='<span style="color:var(--t2);font-size:13px;">Waiting for first signal…</span>';return;}
   el.innerHTML=hist.map((s,i)=>{
     const isBracket=s.side==='BRACKET';
-    const age=i===0?'<span style="font-size:10px;color:var(--gold);margin-left:6px;">LATEST</span>':'';
-    // Parse HI/LO from bracket reason string "HI:XXXXX.XX LO:XXXXX.XX"
-    let bracketContent='';
+    const age=i===0?'<span style="font-size:10px;color:var(--gold);margin-left:6px;padding:1px 5px;background:rgba(255,214,0,0.12);border-radius:3px;border:1px solid rgba(255,214,0,0.3)">LATEST</span>':'';
+    // Regime badges
+    const sup=s.sup_regime||'';
+    const mac=s.macro||'';
+    const eng=s.engine||'';
+    const supCol=sup.includes('EXPANSION')||sup.includes('TREND')?'var(--green)':sup.includes('QUIET')||sup.includes('REVERSAL')?'var(--amber)':'var(--t2)';
+    const macCol=mac==='RISK_ON'?'var(--green)':mac==='RISK_OFF'?'var(--red)':'var(--amber)';
+    const engCol=eng==='BRACKET'?'var(--cyan)':eng==='LE'?'var(--purple, #b388ff)':'var(--blue)';
+    const regimeBadges=`<span style="display:inline-flex;gap:4px;align-items:center;margin-left:6px">
+      ${sup?`<span style="font-size:10px;color:${supCol};background:rgba(255,255,255,0.05);border-radius:3px;padding:1px 5px;border:1px solid rgba(255,255,255,0.1)">${sup}</span>`:''}
+      ${mac?`<span style="font-size:10px;color:${macCol};background:rgba(255,255,255,0.05);border-radius:3px;padding:1px 5px;border:1px solid rgba(255,255,255,0.1)">${mac}</span>`:''}
+      ${eng?`<span style="font-size:10px;color:${engCol};background:rgba(255,255,255,0.05);border-radius:3px;padding:1px 5px;border:1px solid rgba(255,255,255,0.1)">${eng}</span>`:''}
+    </span>`;
+    let content='';
     if(isBracket&&s.reason){
       const hiM=s.reason.match(/HI:([\d.]+)/);
       const loM=s.reason.match(/LO:([\d.]+)/);
       const hi=hiM?parseFloat(hiM[1]):0;
       const lo=loM?parseFloat(loM[1]):0;
       const range=hi&&lo?(hi-lo).toFixed(2):'--';
-      bracketContent=`
-        <span style="display:inline-flex;gap:8px;align-items:center;margin-left:4px">
-          <span style="background:rgba(0,217,126,0.15);border:1px solid var(--green);border-radius:3px;padding:1px 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--green)">▲ ${hi>0?hi.toFixed(2):'--'}</span>
-          <span style="background:rgba(255,51,85,0.15);border:1px solid var(--red);border-radius:3px;padding:1px 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--red)">▼ ${lo>0?lo.toFixed(2):'--'}</span>
-          <span style="color:var(--t2);font-size:11px">Δ${range}</span>
-        </span>`;
+      content=`<span style="display:inline-flex;gap:8px;align-items:center;margin-left:4px">
+        <span style="background:rgba(0,217,126,0.15);border:1px solid var(--green);border-radius:3px;padding:1px 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--green)">▲ ${hi>0?hi.toFixed(2):'--'}</span>
+        <span style="background:rgba(255,51,85,0.15);border:1px solid var(--red);border-radius:3px;padding:1px 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--red)">▼ ${lo>0?lo.toFixed(2):'--'}</span>
+        <span style="color:var(--t2);font-size:11px">Δ${range}</span>
+      </span>`;
+    } else {
+      content=`<span style="color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:11px;margin-left:4px">${s.reason||''}</span>`;
     }
     const sc=isBracket?'var(--amber)':s.side==='LONG'?'var(--green)':'var(--red)';
     const sideLabel=isBracket?'BRACKET ⟺':s.side;
-    if(!isBracket){
-      // Standard breakout signal
-      bracketContent=`<span style="color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:11px;margin-left:4px">${s.reason||''}</span>`;
-    }
     return `<div class="sig-row" style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);opacity:${1-i*0.15}">
       <span style="color:var(--blue);font-weight:700;min-width:72px;display:inline-block">${s.symbol||'--'}</span>
       <span style="color:${sc};font-weight:700;min-width:60px;display:inline-block">${sideLabel}</span>
       ${!isBracket?`<span style="font-family:'IBM Plex Mono',monospace;font-size:13px;min-width:80px;display:inline-block">${(s.price||0).toFixed(2)}</span>`:''}
-      ${bracketContent}${age}
+      ${content}${regimeBadges}${age}
     </div>`;
   }).join('');
+}
+
+function renderSLCooldowns(d){
+  const el=document.getElementById('slCooldownPanel');if(!el)return;
+  const cds=d.sl_cooldowns||[];
+  const count=safe(d.sl_cooldown_count);
+  if(count===0||cds.length===0){el.innerHTML='<span style="color:var(--t2);font-size:11px">None</span>';el.parentElement&&(el.parentElement.style.display='none');return;}
+  el.parentElement&&(el.parentElement.style.display='block');
+  el.innerHTML=cds.map(c=>{
+    const pct=Math.min(100,Math.round(safe(c.secs_remaining)/120*100));
+    return `<div style="display:inline-flex;align-items:center;gap:5px;margin-right:8px;margin-bottom:4px;background:rgba(255,51,85,0.12);border:1px solid rgba(255,51,85,0.35);border-radius:4px;padding:2px 8px">
+      <span style="color:var(--red);font-weight:700;font-size:12px">${c.symbol}</span>
+      <span style="color:var(--t2);font-size:11px">SL COOL</span>
+      <span style="color:var(--red);font-family:'IBM Plex Mono',monospace;font-size:11px">${safe(c.secs_remaining)}s</span>
+      <div style="width:32px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:var(--red);border-radius:2px;transition:width 1s linear"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderAsiaGate(d){
+  const el=document.getElementById('asiaGateBadge');if(!el)return;
+  const open=safe(d.asia_fx_gate_open);
+  el.textContent=open?'ASIA FX: OPEN':'ASIA FX: CLOSED';
+  el.style.color=open?'var(--green)':'var(--t2)';
+  el.style.borderColor=open?'rgba(0,217,126,0.3)':'rgba(255,255,255,0.1)';
 }
 )OMEGA3"
 R"OMEGA3B(
@@ -733,6 +774,10 @@ function renderTrades(trades){
     const slipD=isOpen?'':slip>0?'-$'+slip.toFixed(2):'--';
     // BUG FIX 3: net column — was (net>=0?'+':'') now (net>=0?'+':'-')
     const netD=isOpen?'<span style="color:var(--t2);font-size:10px">live</span>':(net>=0?'+':'-')+'$'+Math.abs(net).toFixed(2);
+    const tReg=t.regime||'';const tEng=t.engine||'';
+    const regCol=tReg.includes('EXPANSION')||tReg.includes('TREND')?'var(--green)':tReg.includes('QUIET')?'var(--amber)':'var(--t2)';
+    const engBadge=tEng?`<span style="font-size:9px;color:var(--cyan);margin-left:3px">${tEng}</span>`:'';
+    const regimeCell=`<span style="color:${regCol};font-size:10px">${tReg||'--'}</span>${engBadge}`;
     return `<tr style="background:${rowBg}">
       <td style="color:var(--t2);font-size:12px">${fmtUTC(safe(t.entryTs))}</td>
       <td style="color:var(--blue);font-weight:700">${t.symbol||'--'}</td>
@@ -742,6 +787,7 @@ function renderTrades(trades){
       <td style="color:var(--t2);font-size:12px">${heldStr}</td>
       <td style="font-weight:700;color:${rc}">${result}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:var(--gold);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'--':(t.exitReason||'--')}</td>
+      <td style="font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${regimeCell}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--t2)">${(t.bracket_hi&&t.bracket_lo&&t.bracket_hi>0)?('↑'+safe(t.bracket_hi).toFixed(2)+' ↓'+safe(t.bracket_lo).toFixed(2)):'--'}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:${gross>=0?'var(--green)':'var(--red)'};font-size:13px">${grossD}</td>
       <td style="font-family:'IBM Plex Mono',monospace;color:var(--red);font-size:12px">${slipD}</td>
@@ -895,6 +941,8 @@ R"OMEGA4(
   });
 
   renderLastSignal(d);
+  renderSLCooldowns(d);
+  renderAsiaGate(d);
 }
 
 function setConn(ok){
