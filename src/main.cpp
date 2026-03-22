@@ -92,6 +92,7 @@ struct OmegaConfig {
     double momentum_thresh_pct   = 0.05;   // momentum gate threshold
     double min_breakout_pct      = 0.25;   // min breakout size from comp edge
     int    max_trades_per_min    = 2;       // rate limiter
+    int    max_trades_per_cycle  = 1;       // ranking window: max candidates to promote per cycle
 
     // Risk
     double daily_loss_limit  = 200.0;
@@ -249,7 +250,7 @@ struct OmegaConfig {
     double min_lot_gbpusd              = 0.01;
 
     // Asia FX (AUDUSD, NZDUSD, USDJPY) — shared session gate flag
-    bool   asia_fx_asia_only = true;   // true: only trade 22:00-07:00 UTC Asia window
+    bool   asia_fx_asia_only = false;  // false: trade Asia FX in all sessions (asia_fx_asia_only=false in config)
     // AUDUSD
     double audusd_tp_pct               = 0.070;
     double audusd_sl_pct               = 0.035;
@@ -1949,6 +1950,7 @@ static void load_config(const std::string& path) {
             if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct  = std::stod(v);
             if (k=="min_breakout_move_pct") g_cfg.min_breakout_pct     = std::stod(v);
             if (k=="max_trades_per_minute") g_cfg.max_trades_per_min   = std::stoi(v);
+            if (k=="max_trades_per_cycle")  g_cfg.max_trades_per_cycle = std::stoi(v);
         }
         if (section == "risk") {
             if (k=="max_positions")        g_cfg.max_open_positions = std::stoi(v);
@@ -1986,6 +1988,7 @@ static void load_config(const std::string& path) {
             if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct = std::stod(v);
             if (k=="min_breakout_move_pct") g_cfg.min_breakout_pct    = std::stod(v);
             if (k=="max_trades_per_minute") g_cfg.max_trades_per_min  = std::stoi(v);
+            if (k=="max_trades_per_cycle")  g_cfg.max_trades_per_cycle = std::stoi(v);
         }
         if (section == "session") {
             if (k=="session_start_utc") g_cfg.session_start_utc = std::stoi(v);
@@ -2862,6 +2865,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Any candidate older than the window is flushed before adding new ones.
     // ── Global ranking state ──────────────────────────────────────────────────
     static omega::RankingConfig g_ranking_cfg;
+    g_ranking_cfg.max_trades_per_cycle = g_cfg.max_trades_per_cycle;
     static std::vector<omega::TradeCandidate> g_cycle_candidates;
     static int64_t g_cycle_window_start_ms = 0;
     constexpr int64_t RANKING_WINDOW_MS = 500;
