@@ -60,6 +60,63 @@ Copy-Item "C:\Omega\src\gui\www\chimera_logo.png" "$rel\chimera_logo.png" -Force
 Write-Host "      [OK] Assets copied (omega_config.ini + symbols.ini + GUI)" -ForegroundColor Green
 Write-Host ""
 
+# [5/5] Verify deployed symbols.ini matches repo — abort if encoding or copy failed
+Write-Host "[5/5] Verifying deployed symbols.ini..." -ForegroundColor Yellow
+
+# Expected ground-truth values — must match configure() in main.cpp exactly
+$expected = @{
+    "GOLD.F"   = @{ "MIN_RANGE" = "6.00";    "MIN_STRUCTURE_MS" = "15000"; "BREAKOUT_FAIL_MS" = "15000" }
+    "XAGUSD"   = @{ "MIN_RANGE" = "0.15";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "12000" }
+    "US500.F"  = @{ "MIN_RANGE" = "4.00";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "USTEC.F"  = @{ "MIN_RANGE" = "12.50";   "MIN_STRUCTURE_MS" = "45000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "DJ30.F"   = @{ "MIN_RANGE" = "20.00";   "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "NAS100"   = @{ "MIN_RANGE" = "12.50";   "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "GER30"    = @{ "MIN_RANGE" = "10.00";   "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "UK100"    = @{ "MIN_RANGE" = "4.00";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "ESTX50"   = @{ "MIN_RANGE" = "3.00";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "UKBRENT"  = @{ "MIN_RANGE" = "0.50";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "12000" }
+    "EURUSD"   = @{ "MIN_RANGE" = "0.00035"; "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
+    "GBPUSD"   = @{ "MIN_RANGE" = "0.00040"; "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
+    "AUDUSD"   = @{ "MIN_RANGE" = "0.00025"; "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
+    "NZDUSD"   = @{ "MIN_RANGE" = "0.00025"; "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
+    "USDJPY"   = @{ "MIN_RANGE" = "0.12";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
+}
+
+$iniPath = "$rel\symbols.ini"
+$iniLines = Get-Content $iniPath
+$failures = @()
+$currentSection = ""
+
+foreach ($line in $iniLines) {
+    $line = $line.Trim()
+    if ($line -match '^\[(.+)\]') {
+        $currentSection = $matches[1]
+    }
+    if ($currentSection -and $expected.ContainsKey($currentSection)) {
+        foreach ($key in $expected[$currentSection].Keys) {
+            if ($line -match "^$key\s*=\s*(.+)") {
+                $actual = $matches[1].Trim() -replace '\s*;.*$', ''  # strip inline comments
+                $expect = $expected[$currentSection][$key]
+                if ([double]$actual -ne [double]$expect) {
+                    $failures += "  FAIL [$currentSection] $key = $actual  (expected $expect)"
+                }
+            }
+        }
+    }
+}
+
+if ($failures.Count -gt 0) {
+    Write-Host "      [ERROR] symbols.ini verification FAILED — aborting launch:" -ForegroundColor Red
+    $failures | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    Write-Host ""
+    Write-Host "      Run: git checkout HEAD -- symbols.ini" -ForegroundColor Yellow
+    Write-Host "      Then re-run this script." -ForegroundColor Yellow
+    Read-Host "Press Enter to exit"
+    return
+}
+Write-Host "      [OK] symbols.ini verified — all 15 symbols, 3 fields each correct" -ForegroundColor Green
+Write-Host ""
+
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host "  Starting Omega.exe..." -ForegroundColor Cyan
 Write-Host "  GUI -> http://185.167.119.59:7779" -ForegroundColor Green
