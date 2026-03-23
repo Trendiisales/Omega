@@ -3157,7 +3157,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
         if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
             dispatch(g_eng_nq, g_sup_nq, base_can_nq);
-        if (sdec_nq.allow_bracket && !g_eng_nq.pos.active
+        // Cross-symbol guard: USTEC and NAS100 are correlated — don't hold brackets on both
+        const bool nas100_bracket_open = g_bracket_nas100.has_open_position();
+        if (sdec_nq.allow_bracket && !g_eng_nq.pos.active && !nas100_bracket_open
                 && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_nq, g_sup_nq, g_eng_nq, base_can_nq,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
@@ -3359,8 +3361,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas);
         if (sdec_nas.allow_breakout && !g_bracket_nas100.pos.active)
             dispatch(g_eng_nas100, g_sup_nas100, base_can_nas);
+        // Cross-symbol guard: NAS100 and USTEC are correlated — don't hold brackets on both
+        const bool ustec_bracket_open = g_bracket_nq.has_open_position();
         // Asia session: bracket also blocked for US equity
-        if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active
+        if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active && !ustec_bracket_open
                 && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_nas100, g_sup_nas100, g_eng_nas100, base_can_nas,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
@@ -3468,28 +3472,46 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bracket_gold_minute_start       = now_ms_g;
                 g_bracket_gold_trades_this_minute = 0;
             }
-            const bool gold_freq_ok    = (g_bracket_gold_trades_this_minute < 6);  // raised 2→6: 30s cooldown + cascade allows multiple re-arms
+            const bool gold_freq_ok    = (g_bracket_gold_trades_this_minute < 6);
             const bool bracket_open    = g_bracket_gold.has_open_position();
 
-            // Asia session gate (22:00–05:00 UTC, slot==6):
-            // Block bracket on choppy mean-reverting Asia tape. Allow on real trends.
-            //
-            // The old gate (regime_name == "TREND"/"IMPULSE") was wrong: RegimeGovernor
-            // locks regime after CONFIRM_TICKS, so a fast cascade still reads MEAN_REVERSION
-            // while the EWM drift already shows a sustained directional move.
-            //
-            // is_drift_trending() reads the raw EWM signal directly — same logic the
-            // governor uses internally to override MEAN_REVERSION→TREND, without lag:
-            //   |ewm_fast - ewm_slow| > $8  (fast α=0.05, slow α=0.005)
-            //   OR 512-tick range > $20 with price at extreme (>35% from centre)
-            // Choppy Asia noise never sustains $8 EWM drift.
-            // A genuine cascade develops it within 50–100 ticks.
-            // Outside Asia: gate is always open — bracket uses its own structural detector.
             const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
             const bool asia_trend_ok = !in_asia_slot || g_gold_stack.is_drift_trending(g_macro_ctx.gold_l2_imbalance);
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok && !bracket_open
                                       && !g_gold_stack.has_open_position()
                                       && asia_trend_ok;
+
+            // ── Gold bracket gate diagnostic — prints every 10s ───────────────
+            {
+                static int64_t s_last_brk_diag = 0;
+                if (now_ms_g - s_last_brk_diag >= 10000) {
+                    s_last_brk_diag = now_ms_g;
+                    const char* phase_str =
+                        g_bracket_gold.phase == omega::BracketPhase::IDLE     ? "IDLE"
+                      : g_bracket_gold.phase == omega::BracketPhase::ARMED    ? "ARMED"
+                      : g_bracket_gold.phase == omega::BracketPhase::PENDING  ? "PENDING"
+                      : g_bracket_gold.phase == omega::BracketPhase::LIVE     ? "LIVE"
+                      :                                                          "COOLDOWN";
+                    std::cout << "[GOLD-BRK-DIAG]"
+                              << " phase="         << phase_str
+                              << " can_enter="     << gold_can_enter
+                              << " spread_ok="     << gold_spread_ok
+                              << " freq_ok="       << gold_freq_ok
+                              << " bracket_open="  << bracket_open
+                              << " stack_open="    << g_gold_stack.has_open_position()
+                              << " in_asia="       << in_asia_slot
+                              << " asia_ok="       << asia_trend_ok
+                              << " drift="         << std::fixed << std::setprecision(2) << g_gold_stack.ewm_drift()
+                              << " l2_imb="        << std::setprecision(3) << g_macro_ctx.gold_l2_imbalance
+                              << " can_arm="       << can_arm_bracket
+                              << " brk_hi="        << std::setprecision(2) << g_bracket_gold.bracket_high
+                              << " brk_lo="        << g_bracket_gold.bracket_low
+                              << " range="         << (g_bracket_gold.bracket_high - g_bracket_gold.bracket_low)
+                              << " session_slot="  << g_macro_ctx.session_slot
+                              << "\n";
+                    std::cout.flush();
+                }
+            }
             // Phase-aware gate:
             //   IDLE    → can_arm_bracket: all gates apply to start arming
             //   ARMED   → true: timer must run uninterrupted, no supervisor re-gating
@@ -4407,8 +4429,11 @@ int main(int argc, char* argv[])
     //
     // US500.F (~$6,600): daily range $120, typical compression $8, spread $0.50
     g_bracket_sp.configure(    0.25, 30, 2.5,  60000,  4.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 0.30, 1.5);
-    // USTEC.F (~$23,000): daily range $400, typical compression $25, spread $1.50
-    g_bracket_nq.configure(    0.75, 30, 2.5,  60000, 12.5, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
+    // USTEC.F (~$24,000): daily range $400, typical compression $25, spread $2.71 actual
+    // SLIPPAGE_BUFFER raised 1.00→2.50: shadow fill showed $2.71 actual slip vs $1.00 estimate.
+    //   With 1.00, spread_not_covered check understated real costs — fired trades with no edge.
+    // MIN_STRUCTURE_MS raised 20000→45000: 20s was too short for a noisy index at this price.
+    g_bracket_nq.configure(    0.75, 30, 2.5,  60000, 12.5, 0.05, 4000, 10000, 0.0, 45000, 10000, 20, 0.15, 2.0, 2.50, 1.5);
     // DJ30.F (~$43,000): daily range $500, typical compression $40, spread $5.00
     g_bracket_us30.configure(  2.50, 30, 2.5,  60000, 20.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 3.00, 1.5);
     // NAS100 (~$23,000): same scale as USTEC
