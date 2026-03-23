@@ -212,25 +212,86 @@ public:
 
             if ((now - pos.entry_ts) < static_cast<int64_t>(MIN_HOLD_MS / 1000)) return;
 
-            // BE lock at 60% TP progress
+            // ── Stepped trailing stop — rides multi-hour trends ──────────────
+            // Instead of a fixed TP that exits at 1R, we use a stepped trail:
+            //   Step 1 (40% of TP dist):  SL → breakeven. Position is free.
+            //   Step 2 (100% = 1R):       SL → entry + 50% of TP dist. Lock half.
+            //   Step 3 (200% = 2R):       SL → entry + 100% of TP dist. Lock full 1R.
+            //   Step 4 (300%+ = 3R+):     Trail SL at MFE - trail_dist (25% of initial range).
+            //                              This is the "ride the cascade" zone.
+            // There is NO fixed TP — position runs until trail stop is hit.
+            // On a $6 range / RR=3.0 initial setup:
+            //   trail_dist = 6 * 0.25 = $1.50 trail
+            //   At 1R ($18 in): SL → $9 locked
+            //   At 2R ($36 in): SL → $18 locked
+            //   At 3R ($54 in): SL trails $1.50 behind MFE
+            //   At $100 move:   SL at ~$98.50 behind entry — position stays open all day
             {
-                const double tp_dist = std::fabs(pos.tp - pos.entry);
-                const double progress = (tp_dist > 0.0)
-                    ? (pos.is_long ? (mid - pos.entry) : (pos.entry - mid)) / tp_dist : 0.0;
-                if (progress >= 0.60 && !pos.sl_locked_to_be) {
-                    const double be = pos.entry;
-                    if ( pos.is_long && be > pos.sl) { pos.sl = be; pos.sl_locked_to_be = true; }
-                    if (!pos.is_long && be < pos.sl) { pos.sl = be; pos.sl_locked_to_be = true; }
-                    if (pos.sl_locked_to_be)
-                        std::cout << "[BRACKET-" << symbol << "] SL->BE"
-                                  << " progress=" << std::fixed << std::setprecision(2) << progress << "\n";
+                const double initial_range = std::fabs(m_locked_hi - m_locked_lo);
+                const double trail_dist    = std::max(initial_range * 0.25, spread * 2.0);
+                const double tp_dist       = std::fabs(pos.tp - pos.entry); // initial target dist
+                const double move          = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
+
+                if (move > 0.0) {
+                    if (move > pos.mfe) pos.mfe = move;  // track max favourable
+
+                    // Step 1: BE lock at 40% of initial target
+                    if (move >= tp_dist * 0.40 && !pos.sl_locked_to_be) {
+                        if ( pos.is_long && pos.entry > pos.sl) {
+                            pos.sl = pos.entry; pos.sl_locked_to_be = true;
+                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP1 SL->BE move=" << move << "\n";
+                        }
+                        if (!pos.is_long && pos.entry < pos.sl) {
+                            pos.sl = pos.entry; pos.sl_locked_to_be = true;
+                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP1 SL->BE move=" << move << "\n";
+                        }
+                    }
+                    // Step 2: Lock 50% of initial TP at 1R
+                    if (move >= tp_dist && pos.sl_locked_to_be) {
+                        const double lock2 = pos.is_long
+                            ? pos.entry + tp_dist * 0.50
+                            : pos.entry - tp_dist * 0.50;
+                        if ((pos.is_long && lock2 > pos.sl) || (!pos.is_long && lock2 < pos.sl)) {
+                            pos.sl = lock2;
+                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP2 lock_half move=" << move << "\n";
+                        }
+                    }
+                    // Step 3: Lock full 1R at 2R
+                    if (move >= tp_dist * 2.0 && pos.sl_locked_to_be) {
+                        const double lock3 = pos.is_long
+                            ? pos.entry + tp_dist
+                            : pos.entry - tp_dist;
+                        if ((pos.is_long && lock3 > pos.sl) || (!pos.is_long && lock3 < pos.sl)) {
+                            pos.sl = lock3;
+                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP3 lock_1R move=" << move << "\n";
+                        }
+                    }
+                    // Step 4: Free-running trail at MFE - trail_dist (3R+)
+                    if (move >= tp_dist * 3.0 && pos.sl_locked_to_be) {
+                        const double trail_sl = pos.is_long
+                            ? (pos.entry + pos.mfe - trail_dist)
+                            : (pos.entry - pos.mfe + trail_dist);
+                        if ((pos.is_long && trail_sl > pos.sl) || (!pos.is_long && trail_sl < pos.sl)) {
+                            pos.sl = trail_sl;
+                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP4 mfe_trail=" << pos.mfe
+                                      << " sl=" << pos.sl << "\n";
+                        }
+                    }
                 }
             }
 
-            if ( pos.is_long && bid >= pos.tp) { closePos(pos.tp, "TP_HIT",  macro_regime, on_close); return; }
-            if (!pos.is_long && ask <= pos.tp) { closePos(pos.tp, "TP_HIT",  macro_regime, on_close); return; }
-            if ( pos.is_long && bid <= pos.sl) { closePos(pos.sl, pos.sl_locked_to_be ? "BE_HIT" : "SL_HIT", macro_regime, on_close); return; }
-            if (!pos.is_long && ask >= pos.sl) { closePos(pos.sl, pos.sl_locked_to_be ? "BE_HIT" : "SL_HIT", macro_regime, on_close); return; }
+            // No fixed TP — trail stop exits the position
+            // SL check handles all exits: initial SL, BE, stepped locks, and trail
+            if ( pos.is_long && bid <= pos.sl) {
+                const char* r = pos.sl_locked_to_be
+                    ? (pos.sl > pos.entry + 0.01 ? "TRAIL_HIT" : "BE_HIT") : "SL_HIT";
+                closePos(pos.sl, r, macro_regime, on_close); return;
+            }
+            if (!pos.is_long && ask >= pos.sl) {
+                const char* r = pos.sl_locked_to_be
+                    ? (pos.sl < pos.entry - 0.01 ? "TRAIL_HIT" : "BE_HIT") : "SL_HIT";
+                closePos(pos.sl, r, macro_regime, on_close); return;
+            }
             return;
         }
 
