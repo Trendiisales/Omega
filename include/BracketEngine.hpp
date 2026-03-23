@@ -337,16 +337,13 @@ public:
         }
 
         // ── Entry gate ────────────────────────────────────────────────────────
-        // While ARMED: do not reset to IDLE on a single can_enter=false tick.
-        // A brief supervisor blip (one tick of HIGH_RISK between two valid ticks)
-        // was destroying 25+ seconds of accumulated MIN_STRUCTURE_MS timer, causing
-        // gold bracket to never fire. Hold the ARMED phase and pause the timer by
-        // bumping m_armed_ts forward — the structure window does not decay in one tick.
-        // Only reset if can_enter=false while IDLE (no structure yet) or PENDING.
+        // While ARMED: preserve the timer — do NOT reset m_armed_ts.
+        // A can_enter=false blip means we can't arm new structure, but
+        // structure that already qualified should not lose its timer.
         if (!can_enter) {
             if (phase == BracketPhase::ARMED) {
-                m_armed_ts = nowSec(); // pause timer — don't advance toward MIN_STRUCTURE_MS
-                std::cout << "[BRACKET-" << symbol << "] ARMED RESET — can_enter=false blip, timer paused\n";
+                // Timer preserved — do not touch m_armed_ts
+                std::cout << "[BRACKET-" << symbol << "] ARMED HOLD — can_enter=false blip, timer preserved\n";
                 std::cout.flush();
                 return;
             }
@@ -385,20 +382,21 @@ public:
         const double range  = shi - slo;
 
         if (range < eff_min_range) {
-            // While ARMED: don't reset on a single-tick range collapse.
-            // During a trending move the rolling window continuously drops old highs
-            // as new lows come in, causing transient range shrinkage on every tick.
-            // The structure was valid when we armed — a brief dip below MIN_RANGE
-            // resets m_armed_ts and means we never reach MIN_STRUCTURE_MS.
-            // Only reset to IDLE if we haven't armed yet (IDLE phase).
+            // While ARMED: hold state — don't reset timer on transient range collapse.
+            // Rolling window shrinks naturally as trend pushes through it.
             if (phase != BracketPhase::ARMED) {
                 phase = BracketPhase::IDLE; bracket_high = 0.0; bracket_low = 0.0;
             }
             return;
         }
 
+        // shouldTrade() gate — only resets to IDLE from IDLE, not from ARMED.
+        // If we are already ARMED (structure was valid), a single-tick shouldTrade
+        // failure (e.g. transient spread spike) must not destroy the timer.
         if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, vwap)) {
-            phase = BracketPhase::IDLE; bracket_high = 0.0; bracket_low = 0.0;
+            if (phase != BracketPhase::ARMED) {
+                phase = BracketPhase::IDLE; bracket_high = 0.0; bracket_low = 0.0;
+            }
             return;
         }
 
