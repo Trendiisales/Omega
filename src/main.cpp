@@ -3067,12 +3067,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double bkt_momentum = (ref_eng.base_vol_pct > 0.0)
             ? ((ref_eng.recent_vol_pct - ref_eng.base_vol_pct) / ref_eng.base_vol_pct * 100.0)
             : 0.0;
+        // in_compression: true when breakout engine is in COMPRESSION/WATCH,
+        // OR when the bracket engine itself has ARMED (it detected compression independently).
+        // Without this, bracket ARMED state is invisible to the supervisor — it scores
+        // the symbol as HIGH_RISK/no_dominant and blocks the bracket it should allow.
+        const bool bracket_detected_compression =
+            (bracket_eng.phase == omega::BracketPhase::ARMED ||
+             bracket_eng.phase == omega::BracketPhase::PENDING);
+        const bool in_compression_for_sup =
+            (ref_eng.phase == omega::Phase::COMPRESSION) || bracket_detected_compression;
         const auto sdec = sup.update(
             bid, ask,
             ref_eng.recent_vol_pct, ref_eng.base_vol_pct,
             bkt_momentum,
             ref_eng.comp_high, ref_eng.comp_low,
-            ref_eng.phase == omega::Phase::COMPRESSION,
+            in_compression_for_sup,
             fb);
 
         // Frequency limit
