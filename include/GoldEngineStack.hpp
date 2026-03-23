@@ -239,7 +239,15 @@ public:
     virtual ~EngineBase()=default;
     virtual Signal process(const GoldSnapshot&)=0;
     Signal noSignal() const { return Signal{}; }
-    void setEnabled(bool e){ enabled_=e; }
+    void setEnabled(bool e){
+        // Reset internal state when re-enabling — prevents stale WAITING_PULLBACK
+        // state persisting across regime cycles (TREND→COMPRESSION→TREND).
+        // Without reset, engine resumes with impulse_high_/impulse_low_ from
+        // potentially minutes ago, causing either missed entries or wrong direction.
+        if (e && !enabled_) reset();
+        enabled_=e;
+    }
+    virtual void reset() {}  // override in engines with stateful detection
     bool isEnabled() const { return enabled_; }
     const std::string& getName() const { return name_; }
 };
@@ -379,12 +387,26 @@ class ImpulseContinuationEngine : public EngineBase {
     int direction_=0; double impulse_high_=0,impulse_low_=0;
 public:
     ImpulseContinuationEngine(): EngineBase("ImpulseContinuation",1.1){}
+    // Reset stale detection state when engine is re-enabled after a regime cycle.
+    // Prevents WAITING_PULLBACK state from a previous trend persisting into a new one.
+    void reset() override {
+        state_ = State::IDLE; direction_ = 0;
+        impulse_high_ = 0; impulse_low_ = 0;
+        trend_entry_count_ = 0; last_trend_dir_ = 0; last_entry_price_ = 0;
+        price_history_.clear();
+        last_signal_ = std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SECONDS);
+    }
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD) return noSignal();
-        if(s.prev_mid>0){
+        // NOTE: per-tick momentum gate (fabs(mid-prev_mid) < MIN_MOMENTUM) removed.
+        // At $4400 gold most ticks move $0.01-$0.08 — MIN_MOMENTUM=0.10 killed ~90% of
+        // ticks before any other check ran, starving the 20-tick drift and pullback logic.
+        // The 20-tick net drift check below (>$1.50) is the correct directional filter.
+        // Parabolic protection retained via MAX_MOMENTUM check on the same path.
+        if(s.prev_mid>0 && s.vwap>0){
             double mom=std::fabs(s.mid-s.prev_mid);
-            if(mom<MIN_MOMENTUM) return noSignal();
+            // Only apply parabolic gate (extreme single-tick spike far from VWAP)
             if(mom>MAX_MOMENTUM&&std::fabs(s.mid-s.vwap)>PARABOLIC_VWAP) return noSignal();
         }
         if(s.vwap>0){
