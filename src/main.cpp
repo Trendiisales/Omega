@@ -3439,15 +3439,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             const bool gold_freq_ok    = (g_bracket_gold_trades_this_minute < 6);  // raised 2→6: 30s cooldown + cascade allows multiple re-arms
             const bool bracket_open    = g_bracket_gold.has_open_position();
-            // Asia session (22:00-05:00 UTC, slot==6): block bracket engine on Gold.
-            // GoldStack CompressionBreakout still runs in Asia — it has its own
-            // dead-zone gate (21:00-23:00 and 05:00-07:00). But the bracket engine
-            // arms both sides blindly with no directional filter and was producing
-            // SL hits in Asia (confirmed: SHORT at 03:52 UTC, -$2.18).
-            const bool gold_not_asia = (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6);
+            // Asia session gate (22:00-05:00 UTC, slot==6):
+            // Originally blocked ALL gold bracket in Asia after a -$2.18 SL hit at 03:52 UTC.
+            // That was caused by choppy mean-reverting Asia tape with no trend structure.
+            // FIX: Allow bracket in Asia ONLY when GoldStack RegimeGovernor confirms TREND or IMPULSE.
+            // A genuine trending regime (EWM drift detected, range > $20) means the move is real.
+            // A MEAN_REVERSION or COMPRESSION Asia regime stays blocked — that was the bad trade.
+            const bool in_asia_slot = (g_macro_ctx.session_slot == 6);
+            const bool asia_trend_ok = !in_asia_slot ||
+                (strcmp(gold_stack_regime, "TREND") == 0 || strcmp(gold_stack_regime, "IMPULSE") == 0);
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok && !bracket_open
                                       && !g_gold_stack.has_open_position()
-                                      && gold_not_asia;
+                                      && asia_trend_ok;
             // PENDING: orders already at broker — only timeout should cancel, not gate flips
             const bool gold_bracket_pending = (g_bracket_gold.phase == omega::BracketPhase::PENDING);
             const bool can_manage      = gold_bracket_pending ? true : gold_can_enter;
@@ -4280,7 +4283,11 @@ int main(int argc, char* argv[])
                 //   Pre-breakout compression happens near VWAP by definition.
                 //   $8 VWAP gate blocked brackets precisely when price is coiling.
         30000,  // MIN_STRUCTURE_MS — 30s structure hold (unchanged)
-        5000,   // FAILURE_WINDOW_MS — 5s breakout failure window (unchanged)
+        15000,  // FAILURE_WINDOW_MS: raised 5s→15s for gold.
+                //   Gold liquidity sweeps (fake move before real break) last 8-12s.
+                //   5s was force-closing SHORT positions during sweep phase when
+                //   price briefly crossed bracket_mid — a false failure detection.
+                //   15s allows the sweep to complete and confirms the real direction.
         20,     // ATR_PERIOD
         0.15,   // ATR_CONFIRM_K
         2.0,    // ATR_RANGE_K — ATR×2 ≈ 2.8pts at typical gold spread

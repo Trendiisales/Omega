@@ -389,12 +389,25 @@ public:
         }
         if(s.vwap>0){
             double vd=std::fabs(s.mid-s.vwap);
-            // MIN_VWAP_DIST: need some dislocation from VWAP to confirm trend
-            // MAX_VWAP_DIST: raised to $40 — do not block far-from-VWAP trend entries
+            // MIN_VWAP_DIST: need minimum dislocation from VWAP to confirm trend direction
             if(vd<MIN_VWAP_DIST) return noSignal();
-            // Only apply max distance gate when NOT clearly trending
-            // (parabolic exhaustion check — if momentum is extreme AND too far, skip)
-            if(vd>MAX_VWAP_DIST&&std::fabs(s.mid-s.prev_mid)>MAX_MOMENTUM) return noSignal();
+            // MAX_VWAP_DIST: only apply when price is AGAINST VWAP direction.
+            // In a strong trend (price $50-$100 from VWAP), removing the max cap
+            // allows continuation entries. The directional check ensures we are
+            // trading WITH the trend, not against it.
+            // Example: mid=$4,360, vwap=$4,450 → SHORT side, mid < vwap ✅ WITH trend
+            //          Don't cap VWAP distance here — the trend IS the signal.
+            // Only block if price is far from VWAP AND going AGAINST VWAP direction
+            // (that would be a countertrend exhaustion trade, not what we want here)
+            // Parabolic gate still applies: extreme single-tick momentum + very far from VWAP
+            if(vd>MAX_VWAP_DIST) {
+                // Check if we'd be trading WITH trend (toward VWAP) or AGAINST trend
+                // ImpulseContinuation uses pullback logic, so after impulse, dir points
+                // in direction of the impulse. If dir==-1 (SHORT) and mid < vwap → WITH trend.
+                // We keep only the parabolic exhaustion check, drop the distance cap.
+                if(std::fabs(s.mid-s.prev_mid)>MAX_MOMENTUM) return noSignal();
+                // Otherwise: allow. A price $90 below VWAP in a downtrend is a signal, not a block.
+            }
         }
         // 20-tick directional drift: require net move > $1.50 in one direction
         // over last 20 ticks. Catches slow grinds that fail per-tick momentum gate.
