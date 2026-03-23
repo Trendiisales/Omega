@@ -760,13 +760,14 @@ class RegimeGovernor {
         }
         return MarketRegime::MEAN_REVERSION;
     }
+    double hi_=0, lo_=0, range_=0;  // last computed window values
 public:
     MarketRegime detect(double mid, bool has_open_pos) {
         if(has_open_pos) return current_;
         history_.push_back(mid);
         if(history_.size()<WINDOW) return current_;
-        double hi=history_.max(),lo=history_.min(),range=hi-lo;
-        MarketRegime raw=classifyRaw(range,mid,hi,lo);
+        hi_=history_.max(); lo_=history_.min(); range_=hi_-lo_;
+        MarketRegime raw=classifyRaw(range_,mid,hi_,lo_);
         auto now=std::chrono::steady_clock::now();
         auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(now-last_switch_).count();
         if(raw==candidate_){
@@ -798,6 +799,9 @@ public:
         }
     }
     MarketRegime current() const { return current_; }
+    double window_range() const { return range_; }
+    double window_hi()    const { return hi_; }
+    double window_lo()    const { return lo_; }
     static const char* name(MarketRegime r){
         switch(r){
             case MarketRegime::COMPRESSION:    return "COMPRESSION";
@@ -1427,8 +1431,11 @@ public:
     // records PnL on the sub-engine default (0.01 lots) not the actual size.
     void patch_position_size(double lot) { pos_mgr_.patch_base_size(lot); }
     const char* regime_name() const { return RegimeGovernor::name(current_regime_); }
-    double vwap()      const { return features_.get_vwap(); }
-    double vol_range() const { return vol_filter_.current_range(); }
+    double vwap()          const { return features_.get_vwap(); }
+    double vol_range()     const { return vol_filter_.current_range(); }
+    double governor_range() const { return governor_.window_range(); }
+    double governor_hi()    const { return governor_.window_hi(); }
+    double governor_lo()    const { return governor_.window_lo(); }
 
     void print_stats() const {
         for(const auto& e:engines_)
