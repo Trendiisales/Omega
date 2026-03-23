@@ -3505,10 +3505,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool in_dead_zone  = (g_macro_ctx.session_slot == 0);
             const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
             const bool asia_trend_ok = !in_asia_slot || g_gold_stack.is_drift_trending(g_macro_ctx.gold_l2_imbalance);
+            // Dead zone (05:00-07:00 UTC): bracket is NOT hard-blocked.
+            // Bracket is bidirectional — needs compression + clean break, not directional flow.
+            // Spread/regime gates (gold_spread_ok, HIGH_RISK_NO_TRADE) already block thin liquidity.
+            // Hard-blocking was missing profitable trending moves through the dead zone window.
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok && !bracket_open
                                       && !g_gold_stack.has_open_position()
-                                      && asia_trend_ok
-                                      && !in_dead_zone;
+                                      && asia_trend_ok;
 
             // ── Gold bracket gate diagnostic — prints every 10s ───────────────
             {
@@ -3544,16 +3547,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             // Phase-aware gate:
             //   IDLE    → can_arm_bracket: all gates apply to start arming
-            //   ARMED   → true normally (timer uninterrupted), BUT false in dead zone.
-            //             Dead zone passes false → BracketEngine resets ARMED to IDLE.
-            //             Prevents a bracket armed before 05:00 firing into thin liquidity.
-            //   PENDING → true normally, BUT false in dead zone (cancels broker orders cleanly).
+            //   ARMED   → true: timer must run uninterrupted, no supervisor re-gating
+            //   PENDING → true: orders at broker, only timeout or spread gate cancels
             //   LIVE    → gold_can_enter: allow force-close on session end
             const bool gold_bracket_armed   = (g_bracket_gold.phase == omega::BracketPhase::ARMED);
             const bool gold_bracket_pending = (g_bracket_gold.phase == omega::BracketPhase::PENDING);
-            const bool can_manage      = in_dead_zone ? false
-                                       : (gold_bracket_armed || gold_bracket_pending) ? true
-                                       : gold_can_enter;
+            const bool can_manage      = (gold_bracket_armed || gold_bracket_pending) ? true : gold_can_enter;
 
             g_bracket_gold.on_tick(bid, ask, now_ms_g,
                 (bracket_open || gold_bracket_armed) ? can_manage : can_arm_bracket,
