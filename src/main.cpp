@@ -3265,7 +3265,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 std::chrono::system_clock::now());
             struct tm ti_bn{}; gmtime_s(&ti_bn, &t_bn);
             const int mins_utc = ti_bn.tm_hour * 60 + ti_bn.tm_min;
-            return (mins_utc >= 420 && mins_utc < 435); // 07:00-07:15 UTC
+            return (mins_utc >= 420 && mins_utc < 440); // 07:00-07:20 UTC
         }();
 
         // ── Trend bias: L2-aware counter-trend suppression + pyramiding ───────
@@ -3728,7 +3728,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     std::chrono::system_clock::now());
                 struct tm ti_lo{}; gmtime_s(&ti_lo, &t_lo);
                 const int mins_utc = ti_lo.tm_hour * 60 + ti_lo.tm_min;
-                return (mins_utc >= 420 && mins_utc < 435);  // 07:00-07:15 UTC
+                return (mins_utc >= 420 && mins_utc < 440);  // 07:00-07:20 UTC
             }();
 
             // ── Trend bias: handled generically via g_bracket_trend["GOLD.F"] ─
