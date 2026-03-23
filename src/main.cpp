@@ -3684,6 +3684,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
             const bool asia_trend_ok = !in_asia_slot || g_gold_stack.is_drift_trending(g_macro_ctx.gold_l2_imbalance);
 
+            // London open noise guard: 07:00-07:15 UTC — first 15min of London open
+            // has violent liquidity sweeps as Asian orders get repriced. The gold stack
+            // already blocks this window (confirmed fix in GoldEngineStack.hpp line 494).
+            // The bracket must also block new arming: evidence = SHORT 07:00:34 SL_HIT $7.97,
+            // entire $7.80 bracket range was one London open sweep.
+            // Existing ARMED/PENDING/LIVE positions are NOT cancelled — only new arming blocked.
+            const bool in_london_open_noise = [&]() -> bool {
+                const auto t_lo = std::chrono::system_clock::to_time_t(
+                    std::chrono::system_clock::now());
+                struct tm ti_lo{}; gmtime_s(&ti_lo, &t_lo);
+                const int mins_utc = ti_lo.tm_hour * 60 + ti_lo.tm_min;
+                return (mins_utc >= 420 && mins_utc < 435);  // 07:00-07:15 UTC
+            }();
+
             // ── Trend bias: handled generically via g_bracket_trend["GOLD.F"] ─
             // Counter-trend suppression, L2 extension/shortening, and pyramiding
             // are all applied inside dispatch_bracket via BracketTrendState.
@@ -3700,7 +3714,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                       && (!bracket_open || gold_is_pyramiding)
                                       && !g_gold_stack.has_open_position()
                                       && asia_trend_ok
-                                      && !gold_trend_blocked;
+                                      && !gold_trend_blocked
+                                      && !in_london_open_noise;
 
             // ── Gold bracket gate diagnostic — prints every 10s ───────────────
             {
@@ -3721,6 +3736,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                               << " bracket_open="  << bracket_open
                               << " stack_open="    << g_gold_stack.has_open_position()
                               << " in_dead_zone="  << in_dead_zone
+                              << " london_noise="  << in_london_open_noise
                               << " in_asia="       << in_asia_slot
                               << " asia_ok="       << asia_trend_ok
                               << " drift="         << std::fixed << std::setprecision(2) << g_gold_stack.ewm_drift()
@@ -4587,23 +4603,24 @@ int main(int argc, char* argv[])
         90000,  // cooldown_ms: raised 30s→90s — Asia chop caused 8+ fires in 30min over a $22 range.
                 //   90s prevents re-arm into thin dead-zone/Asia liquidity while still
                 //   allowing re-arm on genuine cascade continuation in London/NY.
-        2.8,    // MIN_RANGE — 2.8pts minimum (unchanged)
+        6.0,    // MIN_RANGE — raised 2.8→6.0pts.
+                //   Evidence: 07:00 SHORT SL_HIT on $7.80 bracket — the entire range
+                //   was one London open liquidity sweep. $2.8 was allowing micro-ranges
+                //   that are smaller than a typical sweep. At $4200, $6 = 0.14% —
+                //   still captures real compressions, eliminates single-sweep traps.
         0.05,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
         12000,  // min_hold_ms
         0.0,    // VWAP_MIN_DIST: removed (was 8.0).
                 //   Pre-breakout compression happens near VWAP by definition.
                 //   $8 VWAP gate blocked brackets precisely when price is coiling.
-        5000,   // MIN_STRUCTURE_MS — 5s (was 30s). Gold cascades move $5 in 10s —
-                //   30s was longer than the entire structure window. The bracket
-                //   would arm, the structure would collapse and re-form 3 times
-                //   before the timer elapsed. 5s confirms the range is real
-                //   without missing the initial break.
-        15000,  // FAILURE_WINDOW_MS: raised 5s→15s for gold.
-                //   Gold liquidity sweeps (fake move before real break) last 8-12s.
-                //   5s was force-closing SHORT positions during sweep phase when
-                //   price briefly crossed bracket_mid — a false failure detection.
-                //   15s allows the sweep to complete and confirms the real direction.
+        15000,  // MIN_STRUCTURE_MS — raised 5s→15s.
+                //   5s was too short: bracket was arming on London open noise that
+                //   resolved in under 10s. 15s requires the range to hold long enough
+                //   to be structural, not just a momentary price print.
+        15000,  // FAILURE_WINDOW_MS: 15s for gold (unchanged).
+                //   Gold liquidity sweeps last 8-12s. 15s allows the sweep to
+                //   complete before declaring failure.
         20,     // ATR_PERIOD
         0.15,   // ATR_CONFIRM_K
         2.0,    // ATR_RANGE_K — ATR×2 ≈ 2.8pts at typical gold spread
