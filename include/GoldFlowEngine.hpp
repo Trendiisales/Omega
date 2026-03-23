@@ -88,7 +88,9 @@ static constexpr int    GFE_COOLDOWN_MS       = 30000; // 30s cooldown after exi
 static constexpr double GFE_RISK_DOLLARS      = 30.0;  // $ risk per trade (fallback)
 static constexpr double GFE_MIN_LOT           = 0.01;
 static constexpr double GFE_MAX_LOT           = 1.0;
-static constexpr double GFE_MOMENTUM_TICKS    = 5;     // ticks back for momentum check
+static constexpr double GFE_MOMENTUM_TICKS    = 12;    // ticks back for momentum check
+                                                        // 5 was quote noise at London rate (50-100 ticks/sec = 50ms).
+                                                        // 12 ticks = ~120-240ms at London, ~2-4s at Asia — real directional move.
 
 // -----------------------------------------------------------------------------
 struct GoldFlowEngine {
@@ -198,13 +200,13 @@ struct GoldFlowEngine {
         // Short: imbalance still ask-heavy (< 0.40)
         if (long_signal  && l2_imb < 0.60) {
             std::cout << "[GOLD-FLOW] SIGNAL_STALE long — imb=" << l2_imb
-                      << " (need >0.60 at entry)\\n";
+                      << " (need >0.60 at entry)\n";
             std::cout.flush();
             return;
         }
         if (short_signal && l2_imb > 0.40) {
             std::cout << "[GOLD-FLOW] SIGNAL_STALE short — imb=" << l2_imb
-                      << " (need <0.40 at entry)\\n";
+                      << " (need <0.40 at entry)\n";
             std::cout.flush();
             return;
         }
