@@ -173,18 +173,20 @@ struct OmegaConfig {
     double nq_vix_panic           = 40.0;
     double nq_div_threshold       = 0.0060;
 
-    // Us30 (DJ30) -- spec: TP_MULT=1.7, SL_MULT=1.0, MAX_SPREAD=3.5pts@42000=0.008%
+    // Us30 (DJ30) -- supervisor spread gate: 0.080% of ~$46000 = ~$37 max
+    // OLD: 0.008% = $3.68 max — blocked EVERY tick (actual spread $25-65). Wrong era.
     double us30_momentum_thresh_pct   = 0.006;
     double us30_min_breakout_pct      = 0.040;
-    double us30_max_spread_pct        = 0.008;  // 3.5pts @ ~42000 — tightened from 0.050
+    double us30_max_spread_pct        = 0.080;  // 0.080% of ~$46000 = ~$37
     double us30_compression_threshold = 0.85;
     double us30_vix_panic             = 40.0;
     double us30_div_threshold         = 0.0060;
 
-    // Nas100 (NAS100 cash) -- spec: TP_MULT=1.6, SL_MULT=1.0, MAX_SPREAD=3.0pts@19000=0.016%
+    // Nas100 (NAS100 cash) -- supervisor spread gate: 0.060% of ~$24600 = ~$14.76 max
+    // OLD: 0.016% = $3.94 max — blocked most ticks (actual spread $8-13). Wrong era.
     double nas100_momentum_thresh_pct   = 0.005;
     double nas100_min_breakout_pct      = 0.040;
-    double nas100_max_spread_pct        = 0.016;  // 3.0pts @ ~19000 — tightened from 0.060
+    double nas100_max_spread_pct        = 0.060;  // 0.060% of ~$24600 = ~$14.76
     double nas100_compression_threshold = 0.85;
     double nas100_vix_panic             = 40.0;
     double nas100_div_threshold         = 0.0060;
@@ -4963,7 +4965,7 @@ int main(int argc, char* argv[])
             // and blocks all index bracket trades. Do not re-derive it here.
             auto apply_bracket = [](auto& eng, const SymbolConfig& c) {
                 if (c.min_range        > 0.0) eng.MIN_RANGE          = c.min_range;
-                if (c.bracket_rr       > 0.0) eng.MAX_RANGE          = c.bracket_rr; // reuse bracket_rr field as MAX_RANGE override
+                if (c.max_range        > 0.0) eng.MAX_RANGE          = c.max_range;
                 if (c.min_structure_ms > 0)   eng.MIN_STRUCTURE_MS   = c.min_structure_ms;
                 if (c.breakout_fail_ms > 0)   eng.FAILURE_WINDOW_MS  = c.breakout_fail_ms;
                 if (c.min_hold_ms      > 0)   eng.MIN_HOLD_MS        = c.min_hold_ms;

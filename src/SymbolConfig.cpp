@@ -61,6 +61,7 @@ bool SymbolConfigManager::load(const std::string& path)
         cfg.slippage_buffer  = get_double(kv, "SLIPPAGE_BUFFER",  0.0);
         cfg.cooldown_ms      = get_int   (kv, "COOLDOWN_MS",      0);
         cfg.bracket_rr       = get_double(kv, "BRACKET_RR",       0.0);
+        cfg.max_range        = get_double(kv, "MAX_RANGE",        0.0);  // bracket range ceiling
         cfg.bracket_lookback = get_int   (kv, "BRACKET_LOOKBACK", 0);
 
         // Supervisor fields
