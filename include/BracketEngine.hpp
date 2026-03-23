@@ -523,11 +523,17 @@ protected:
             return;
         }
 
-        // ── Hard range floor ─────────────────────────────────────────────────
-        // dist is the SL distance for both legs. Must meet absolute minimum.
-        if (dist < MIN_RANGE) {
-            std::cout << "[BRACKET-" << symbol << "] BLOCKED: range_too_small"
-                      << " dist=" << dist << " min=" << MIN_RANGE << "\n";
+        // ── Hard range floor — checked on RAW structural range, not spread-padded dist ──
+        // dist = (shi + spread*0.5) - (slo - spread*0.5) = raw_range + spread.
+        // Checking dist < MIN_RANGE allows a $0.18 structure range + $0.12 spread
+        // to pass MIN_RANGE=$0.30 — the SL is then $0.30 wide but the STRUCTURE
+        // that justified the bracket was only $0.18. Any normal tick sweeps it.
+        // Fix: derive raw_range from dist and spread, check that separately.
+        const double raw_range = dist - spread; // dist = raw_range + spread (buf = spread*0.5 each side)
+        if (raw_range < MIN_RANGE) {
+            std::cout << "[BRACKET-" << symbol << "] BLOCKED: raw_range_too_small"
+                      << " raw_range=" << raw_range << " dist=" << dist
+                      << " spread=" << spread << " min=" << MIN_RANGE << "\n";
             std::cout.flush();
             phase = BracketPhase::IDLE;
             bracket_high = 0.0; bracket_low = 0.0;

@@ -4698,8 +4698,11 @@ int main(int argc, char* argv[])
         3.0,    // RR: 3.0 matches gold. On $0.30 compression: trail arms at $0.90 in.
                 //   On a $3.50 weekly move: 10R+ captured via trail.
         30000,  // cooldown_ms: 30s — silver cascades same as gold, re-arm fast.
-        0.15,   // MIN_RANGE: $0.15 minimum (half typical compression).
-                //   At $65, $0.15 = 0.23% — meaningful structure, not noise.
+        0.40,   // MIN_RANGE: $0.40 minimum raw structural range.
+                //   At $64, $0.40 = 0.63% -- real compression, not tick noise.
+                //   Old value was $0.15 which fired on $0.18 structures that
+                //   were swept in seconds. Raw range check in arm_both_sides
+                //   now enforces this against the spread-padded dist.
         0.06,   // CONFIRM_MOVE
         4000,   // confirm_timeout_ms
         8000,   // min_hold_ms
