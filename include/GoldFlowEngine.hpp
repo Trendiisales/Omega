@@ -112,7 +112,7 @@ struct GoldFlowEngine {
     void on_tick(double bid, double ask,
                  double l2_imb, double ewm_drift,
                  int64_t now_ms,
-                 CloseCallback& on_close) noexcept
+                 CloseCallback on_close) noexcept
     {
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
@@ -294,7 +294,7 @@ private:
     }
 
     void manage_position(double bid, double ask, double mid, double spread,
-                         int64_t now_ms, CloseCallback& on_close) noexcept
+                         int64_t now_ms, CloseCallback on_close) noexcept
     {
         if (!pos.active) return;
 
@@ -381,7 +381,7 @@ private:
     }
 
     void close_position(double exit_px, const char* reason,
-                        int64_t now_ms, CloseCallback& on_close) noexcept
+                        int64_t now_ms, CloseCallback on_close) noexcept
     {
         omega::TradeRecord tr;
         tr.id           = m_trade_id;
