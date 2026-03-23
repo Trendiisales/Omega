@@ -864,22 +864,48 @@ public:
     // of the confirmed/locked regime (which lags by CONFIRM_TICKS).
     // ewm_drift > 0 = bullish drift, < 0 = bearish drift, |drift| > 8 = significant
     double ewm_drift() const { return ewm_init_ ? (ewm_fast_ - ewm_slow_) : 0.0; }
-    bool   is_drift_trending() const {
-        // Not initialised yet (first tick) — allow bracket, structural detector is sufficient
-        if (!ewm_init_) return true;
-        // EWM confirms strong directional drift — allow
+
+    // is_drift_trending() — Asia bracket gate.
+    // Returns true if a real directional trend is detected, false if confirmed chop.
+    //
+    // Three-tier decision using EWM + L2 imbalance:
+    //
+    // TIER 1 — EWM fully warmed (512+ ticks, ~8-10 min):
+    //   Primary signal. |ewm_fast - ewm_slow| > $8 = trend confirmed.
+    //   Long-window: 512-tick range > $20 AND price at extreme = trend.
+    //   If neither: confirmed chop → block.
+    //
+    // TIER 2 — EWM warming up (<512 ticks) but initialised:
+    //   EWM not reliable yet. Use L2 imbalance as real-time confirmation.
+    //   L2 is order-book data — available immediately, no warmup needed.
+    //   l2_imbalance < 0.35 = ask-heavy (sellers dominating) = confirms downtrend.
+    //   l2_imbalance > 0.65 = bid-heavy (buyers dominating) = confirms uptrend.
+    //   0.35–0.65 = balanced book = no directional conviction → block.
+    //
+    // TIER 3 — EWM not yet initialised (first tick):
+    //   Use L2 only. Same thresholds as Tier 2.
+    bool is_drift_trending(double l2_imbalance = 0.5) const {
+        // Helper: L2 confirms directional pressure
+        const bool l2_directional = (l2_imbalance < 0.35 || l2_imbalance > 0.65);
+
+        // EWM not yet initialised — L2 only
+        if (!ewm_init_) return l2_directional;
+
+        // EWM strong drift signal — always allow regardless of L2
         const double d = ewm_fast_ - ewm_slow_;
         if (std::fabs(d) > 8.0) return true;
-        // Long-window check — only meaningful once we have 512 ticks (~8-10 min)
+
+        // Long-window check — only meaningful once we have 512 ticks
         if (drift_buf_.size() >= 512) {
             const double dr     = drift_buf_.max() - drift_buf_.min();
             const double centre = (drift_buf_.max() + drift_buf_.min()) * 0.5;
             if (dr > 20.0 && std::fabs(ewm_fast_ - centre) > dr * 0.35) return true;
-            // Fully warmed, 512+ ticks, no drift signal → confirmed chop → block
+            // Fully warmed, no drift → confirmed chop → block (ignore L2)
             return false;
         }
-        // Initialised but < 512 ticks — EWM warming up, can't confirm chop yet → allow
-        return true;
+
+        // EWM warming up (<512 ticks) — use L2 as confirmation
+        return l2_directional;
     }
     static const char* name(MarketRegime r){
         switch(r){
@@ -1532,8 +1558,8 @@ public:
     // Raw EWM drift — detects sustained directional move before regime lock confirms it.
     // Useful for Asia bracket gate: fires on real trends even when regime is still
     // classified as MEAN_REVERSION due to lag in CONFIRM_TICKS.
-    double ewm_drift()           const { return governor_.ewm_drift(); }
-    bool   is_drift_trending()   const { return governor_.is_drift_trending(); }
+    double ewm_drift()                              const { return governor_.ewm_drift(); }
+    bool   is_drift_trending(double l2_imb = 0.5)  const { return governor_.is_drift_trending(l2_imb); }
     // recent_vol_pct: governor 80-tick range as pct of price
     // base_vol_pct:   EWM-smoothed baseline (doesn't chase trends — stays elevated)
     double recent_vol_pct() const {

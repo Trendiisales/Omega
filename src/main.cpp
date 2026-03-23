@@ -3486,7 +3486,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // A genuine cascade develops it within 50–100 ticks.
             // Outside Asia: gate is always open — bracket uses its own structural detector.
             const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
-            const bool asia_trend_ok = !in_asia_slot || g_gold_stack.is_drift_trending();
+            const bool asia_trend_ok = !in_asia_slot || g_gold_stack.is_drift_trending(g_macro_ctx.gold_l2_imbalance);
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok && !bracket_open
                                       && !g_gold_stack.has_open_position()
                                       && asia_trend_ok;
