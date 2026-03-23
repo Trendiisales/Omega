@@ -385,7 +385,15 @@ public:
         const double range  = shi - slo;
 
         if (range < eff_min_range) {
-            phase = BracketPhase::IDLE; bracket_high = 0.0; bracket_low = 0.0;
+            // While ARMED: don't reset on a single-tick range collapse.
+            // During a trending move the rolling window continuously drops old highs
+            // as new lows come in, causing transient range shrinkage on every tick.
+            // The structure was valid when we armed — a brief dip below MIN_RANGE
+            // resets m_armed_ts and means we never reach MIN_STRUCTURE_MS.
+            // Only reset to IDLE if we haven't armed yet (IDLE phase).
+            if (phase != BracketPhase::ARMED) {
+                phase = BracketPhase::IDLE; bracket_high = 0.0; bracket_low = 0.0;
+            }
             return;
         }
 
