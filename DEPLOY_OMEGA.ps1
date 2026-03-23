@@ -19,11 +19,25 @@ Write-Host ""
 Write-Host "[2/5] Pulling latest from GitHub..." -ForegroundColor Yellow
 Set-Location C:\Omega
 git fetch origin
+
+# Check if the deploy script itself will change — if so, re-exec the new version.
+# PowerShell loads the entire script into memory before running any of it, so
+# git reset --hard below would overwrite the file but the OLD code keeps running.
+# Fix: detect if the script differs from origin/main and re-launch if so.
+$scriptChanged = git diff HEAD origin/main -- DEPLOY_OMEGA.ps1
 git reset --hard origin/main
+
 # Force-overwrite symbols.ini directly from git object store.
 # git checkout HEAD silently fails when git considers the file clean despite wrong encoding.
 # git show always outputs the correct committed bytes regardless of working tree state.
 git show HEAD:symbols.ini | Out-File -FilePath "C:\Omega\symbols.ini" -Encoding utf8 -Force
+
+if ($scriptChanged) {
+    Write-Host "      [RESTART] Deploy script updated -- re-launching new version..." -ForegroundColor Cyan
+    & "C:\Omega\DEPLOY_OMEGA.ps1"
+    return
+}
+
 Write-Host "      [OK] Up to date: $(git log --oneline -1)" -ForegroundColor Green
 Write-Host ""
 
