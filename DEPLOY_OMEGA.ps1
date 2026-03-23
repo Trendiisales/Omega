@@ -66,7 +66,7 @@ Write-Host ""
 Write-Host "[5/5] Verifying deployed symbols.ini..." -ForegroundColor Yellow
 
 $expected = @{
-    "GOLD.F"  = @{ "MIN_RANGE" = "6.00";    "MIN_STRUCTURE_MS" = "15000"; "BREAKOUT_FAIL_MS" = "15000" }
+    "GOLD.F"  = @{ "MIN_RANGE" = "10.00";   "MIN_STRUCTURE_MS" = "30000"; "BREAKOUT_FAIL_MS" = "25000" }
     "XAGUSD"  = @{ "MIN_RANGE" = "0.15";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "12000" }
     "US500.F" = @{ "MIN_RANGE" = "4.00";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
     "USTEC.F" = @{ "MIN_RANGE" = "12.50";   "MIN_STRUCTURE_MS" = "45000"; "BREAKOUT_FAIL_MS" = "10000" }

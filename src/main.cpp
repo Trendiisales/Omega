@@ -4630,35 +4630,30 @@ int main(int argc, char* argv[])
     g_bracket_gold.configure(
         0.8,    // buffer: place orders 0.8pts outside the range
         30,     // lookback: 30-tick structural range window
-        3.0,    // RR: raised 1.6→3.0 — on a $6 range this gives $18 TP.
-                //   On a $100 move, the bracket fires early, takes $18, then
-                //   re-arms. Multiple re-arms capture the cascade vs one $9.6 hit.
-        90000,  // cooldown_ms: raised 30s→90s — Asia chop caused 8+ fires in 30min over a $22 range.
-                //   90s prevents re-arm into thin dead-zone/Asia liquidity while still
-                //   allowing re-arm on genuine cascade continuation in London/NY.
-        6.0,    // MIN_RANGE — raised 2.8→6.0pts.
-                //   Evidence: 07:00 SHORT SL_HIT on $7.80 bracket — the entire range
-                //   was one London open liquidity sweep. $2.8 was allowing micro-ranges
-                //   that are smaller than a typical sweep. At $4200, $6 = 0.14% —
-                //   still captures real compressions, eliminates single-sweep traps.
+        3.0,    // RR: 3.0 -- on a $10 range this gives $30 TP.
+                //   Trail rides $50-100+ moves on trending days like today ($400 drop).
+        90000,  // cooldown_ms: 90s -- prevents re-arm into thin liquidity.
+        10.0,   // MIN_RANGE -- raised 6.0->10.0pts.
+                //   Evidence: 6pt ranges get swept in seconds on trending days.
+                //   The losers (7s, 53s BREAKOUT_FAIL) all had 6.0-6.5pt ranges.
+                //   The winner (56min TRAIL_HIT +$99) had a 15.95pt range.
+                //   10pt compression = real structure. At $4200, 10pt = 0.24%.
+                //   A $400 trending day will have many 10pt+ compressions to trade.
         0.05,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
         12000,  // min_hold_ms
-        0.0,    // VWAP_MIN_DIST: removed (was 8.0).
-                //   Pre-breakout compression happens near VWAP by definition.
-                //   $8 VWAP gate blocked brackets precisely when price is coiling.
-        15000,  // MIN_STRUCTURE_MS — raised 5s→15s.
-                //   5s was too short: bracket was arming on London open noise that
-                //   resolved in under 10s. 15s requires the range to hold long enough
-                //   to be structural, not just a momentary price print.
-        15000,  // FAILURE_WINDOW_MS: 15s for gold (unchanged).
-                //   Gold liquidity sweeps last 8-12s. 15s allows the sweep to
-                //   complete before declaring failure.
+        0.0,    // VWAP_MIN_DIST: removed.
+        30000,  // MIN_STRUCTURE_MS -- raised 15s->30s.
+                //   15s was too short on trending days -- noise ranges hold 15s easily.
+                //   30s ensures the compression is real consolidation, not a pause.
+        25000,  // FAILURE_WINDOW_MS -- raised 15s->25s.
+                //   On a trending day the initial sweep can take 15-20s to resolve.
+                //   25s gives the move time to commit before declaring failure.
         20,     // ATR_PERIOD
         0.15,   // ATR_CONFIRM_K
-        2.0,    // ATR_RANGE_K — ATR×2 ≈ 2.8pts at typical gold spread
-        0.8,    // SLIPPAGE_BUFFER — 0.8pts estimated one-way slip
-        1.5     // EDGE_MULTIPLIER — tp must be >= (spread+slip)*1.5
+        2.0,    // ATR_RANGE_K
+        0.8,    // SLIPPAGE_BUFFER
+        1.5     // EDGE_MULTIPLIER
     );
     // XAGUSD (~$65): daily range $3.5, typical compression $0.30, spread $0.08
     // Silver amplifies gold — same cascade logic, same cooldown, trail rides $3-5 weekly moves.
