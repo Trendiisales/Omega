@@ -3083,18 +3083,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool freq_ok = (trades_this_min < 2);
 
         const bool bracket_open    = bracket_eng.has_open_position();
+        const bool bracket_armed   = (bracket_eng.phase == omega::BracketPhase::ARMED);
         const bool bracket_pending = (bracket_eng.phase == omega::BracketPhase::PENDING);
         const bool can_arm         = base_can_enter && sdec.allow_bracket && freq_ok && !bracket_open;
 
-        // When PENDING: orders are already at the broker — only a hard session gate
-        // should cancel them, NOT a supervisor blip. Passing true here means the engine
-        // only checks PENDING_TIMEOUT and shadow fill; supervisor fluctuations are ignored.
-        // When LIVE: can_manage gate still applies (allows force-close on session end).
-        const bool can_manage      = bracket_pending ? true
+        // Gate logic by phase:
+        //   IDLE    → can_arm: supervisor + session + freq all required to start arming
+        //   ARMED   → true: structure already qualified, timer must run uninterrupted.
+        //             Passing can_arm here re-gates on supervisor every tick, causing
+        //             the BracketEngine ARMED HOLD path to fire on every blip and the
+        //             MIN_STRUCTURE_MS timer to effectively never elapse.
+        //   PENDING → true: orders at broker, only timeout should cancel
+        //   LIVE    → can_manage: allow force-close on session/risk gate
+        const bool can_manage      = (bracket_armed || bracket_pending) ? true
                                                      : (base_can_enter && sdec.allow_bracket);
 
         bracket_eng.on_tick(bid, ask, now_ms,
-            bracket_open ? can_manage : can_arm,
+            (bracket_open || bracket_armed) ? can_manage : can_arm,
             regime.c_str(), bracket_on_close, vwap_val, l2_imb);
 
         // Update bracket state in telemetry snapshot every tick so GUI shows live levels
@@ -3485,12 +3490,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok && !bracket_open
                                       && !g_gold_stack.has_open_position()
                                       && asia_trend_ok;
-            // PENDING: orders already at broker — only timeout should cancel, not gate flips
+            // Phase-aware gate:
+            //   IDLE    → can_arm_bracket: all gates apply to start arming
+            //   ARMED   → true: timer must run uninterrupted, no supervisor re-gating
+            //   PENDING → true: orders at broker, only timeout cancels
+            //   LIVE    → gold_can_enter: allow force-close on session end
+            const bool gold_bracket_armed   = (g_bracket_gold.phase == omega::BracketPhase::ARMED);
             const bool gold_bracket_pending = (g_bracket_gold.phase == omega::BracketPhase::PENDING);
-            const bool can_manage      = gold_bracket_pending ? true : gold_can_enter;
+            const bool can_manage      = (gold_bracket_armed || gold_bracket_pending) ? true : gold_can_enter;
 
             g_bracket_gold.on_tick(bid, ask, now_ms_g,
-                bracket_open ? can_manage : can_arm_bracket,
+                (bracket_open || gold_bracket_armed) ? can_manage : can_arm_bracket,
                 regime.c_str(), bracket_on_close, gold_vwap_now,
                 g_macro_ctx.gold_l2_imbalance);
             g_telemetry.UpdateBracketState("GOLD.F",
