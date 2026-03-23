@@ -3442,7 +3442,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
             g_bracket_gold.on_tick(bid, ask, now_ms_g,
                 bracket_open ? can_manage : can_arm_bracket,
-                regime.c_str(), bracket_on_close, gold_vwap);
+                regime.c_str(), bracket_on_close, gold_vwap_now);
             g_telemetry.UpdateBracketState("GOLD.F",
                 static_cast<int>(g_bracket_gold.phase),
                 g_bracket_gold.bracket_high,

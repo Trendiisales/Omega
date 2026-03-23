@@ -1491,7 +1491,7 @@ private:
     // Long-window baseline vol tracker for supervisor — 400-tick rolling window
     // (~60-80s at typical gold tick rate). Provides a genuine measured baseline
     // so supervisor vol_ratio = recent_range / baseline_range is fully real.
-    MinMaxCircularBuffer<double,400> baseline_buf_;
+    MinMaxCircularBuffer<double,512> baseline_buf_;
     double baseline_vol_pct_ = 0.0;  // cached: baseline_range / mid * 100
 
     static int side_idx(TradeSide side) {
