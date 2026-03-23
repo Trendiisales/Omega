@@ -3355,17 +3355,37 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // BreakoutEngine-based vol state if available, otherwise use silver as proxy.
         // For gold we track phase/vol from the bracket engine's internal data.
         const int fb_gold = g_false_break_counts.count("GOLD.F") ? g_false_break_counts["GOLD.F"] : 0;
-        const double gold_mid = (bid + ask) * 0.5;
-        const double gold_vwap = g_gold_stack.vwap();
-        // Approximate vol state from VWAP distance and gold stack regime
-        const double gold_approx_vol = (gold_vwap > 0.0)
-            ? std::fabs(gold_mid - gold_vwap) / gold_mid * 100.0 : 0.05;
+        // Run supervisor — use real vol/regime state from GoldEngineStack.
+        // gold_vol_range: the rolling min/max range the RegimeGovernor uses internally.
+        // We convert to a pct of mid price so it's on the same scale as SymbolSupervisor's
+        // vol_ratio input (recent_vol / base_vol). We synthesise recent/base so that:
+        //   TREND/IMPULSE (range >> compression threshold) → vol_ratio > 1.0 → EXPANSION
+        //   COMPRESSION   (range tight)                    → vol_ratio < 0.85 → QUIET_COMPRESSION
+        const double gold_vol_range   = g_gold_stack.vol_range();              // price range $
+        const double gold_vwap_now    = g_gold_stack.vwap();
+        const double gold_mid_now     = (bid + ask) * 0.5;
+        // VWAP distance as momentum proxy (positive = above VWAP = upward pressure)
+        const double gold_momentum    = (gold_vwap_now > 0.0)
+            ? (gold_mid_now - gold_vwap_now) / gold_mid_now * 100.0
+            : 0.0;
+        // Map GoldStack internal regime directly to supervisor vol signals:
+        //   TREND / IMPULSE → recent_vol >> base_vol (ratio 1.4) → EXPANSION_BREAKOUT
+        //   COMPRESSION     → recent_vol << base_vol (ratio 0.5) → QUIET_COMPRESSION
+        //   MEAN_REVERSION  → recent_vol ≈ base_vol (ratio 1.0) → ambiguous / HIGH_RISK
+        const char* gold_stack_regime = g_gold_stack.regime_name();
+        const bool  gold_is_trending  = (strcmp(gold_stack_regime,"TREND")==0
+                                      || strcmp(gold_stack_regime,"IMPULSE")==0);
+        const bool  gold_is_compressing = strcmp(gold_stack_regime,"COMPRESSION")==0;
+        const double gold_recent_vol  = gold_is_trending    ? 0.14   // forces vol_ratio>1.0 → expansion
+                                      : gold_is_compressing ? 0.04   // forces vol_ratio<0.85 → compression
+                                      : 0.08;                         // mean_reversion → neutral
+        const double gold_base_vol    = 0.10;                         // fixed reference
         const auto gold_sdec = g_sup_gold.update(
             bid, ask,
-            gold_approx_vol, gold_approx_vol * 1.5,  // recent/base vol approximation
-            0.0,                                       // momentum: gold stack handles internally
+            gold_recent_vol, gold_base_vol,
+            gold_momentum,
             g_bracket_gold.bracket_high, g_bracket_gold.bracket_low,
-            false,                                     // compression phase: bracket engine decides
+            gold_is_compressing,
             fb_gold);
 
         // GoldEngineStack (breakout/latency logic): allowed when supervisor permits breakout
