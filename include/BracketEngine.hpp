@@ -89,6 +89,15 @@ public:
     // Gold often consolidates 2-5 min after compressing — 60s was expiring before break.
     // Default 300s (5 min). Set per-engine in main.cpp after configure().
     int    PENDING_TIMEOUT_SEC = 300;
+    // MIN_BREAK_TICKS: consecutive ticks price must stay INSIDE the bracket before
+    // arm_both_sides() fires. Guards against liquidity sweeps at London open and
+    // other spike-and-snap patterns where price blows through a bracket level in
+    // a single tick then reverses. Default 0 = disabled. Set to 3 for gold.
+    // How it works: once structure has held (MIN_STRUCTURE_MS passed), each tick
+    // checks whether mid is inside [bracket_low, bracket_high]. If yes, counter
+    // increments. If price spikes outside (sweep), counter resets to 0. Only when
+    // counter reaches MIN_BREAK_TICKS does arm_both_sides() fire.
+    int    MIN_BREAK_TICKS     = 0;
     const char* symbol         = "???";
     bool   shadow_mode         = false;  // set by main.cpp — enables price-triggered fill sim in PENDING
 
@@ -420,6 +429,38 @@ public:
             if (MIN_STRUCTURE_MS > 0 &&
                 (nowSec() - m_armed_ts) < static_cast<int64_t>(MIN_STRUCTURE_MS / 1000))
                 return;
+
+            // ── Sweep gate (MIN_BREAK_TICKS) ─────────────────────────────────
+            // Only fires arm_both_sides() when price has been inside the bracket
+            // for MIN_BREAK_TICKS consecutive ticks. Guards against London open
+            // liquidity sweeps where price spikes through a bracket level in 1
+            // tick then snaps back — causing a fill at the worst possible price.
+            // Each tick inside increments counter; any tick outside resets it.
+            // When MIN_BREAK_TICKS=0 (default) this block is skipped entirely.
+            if (MIN_BREAK_TICKS > 0) {
+                if (mid >= bracket_low && mid <= bracket_high) {
+                    ++m_inside_ticks;
+                } else {
+                    if (m_inside_ticks > 0) {
+                        std::cout << "[BRACKET-" << symbol << "] SWEEP-RESET"
+                                  << " mid=" << mid
+                                  << " bracket=[" << bracket_low << "," << bracket_high << "]"
+                                  << " inside_ticks=" << m_inside_ticks << " (reset to 0)\n";
+                        std::cout.flush();
+                    }
+                    m_inside_ticks = 0;
+                }
+                if (m_inside_ticks < MIN_BREAK_TICKS) {
+                    return;
+                }
+                // Threshold reached — reset counter and fall through to arm
+                m_inside_ticks = 0;
+                std::cout << "[BRACKET-" << symbol << "] SWEEP-CONFIRMED"
+                          << " inside_ticks>=" << MIN_BREAK_TICKS
+                          << " mid=" << mid << " — arming\n";
+                std::cout.flush();
+            }
+
             arm_both_sides(spread, macro_regime);
         }
     }
@@ -490,10 +531,11 @@ protected:
     }
     std::deque<double> m_window;
     std::deque<double> m_atr_window;
-    int64_t m_cooldown_start = 0;
-    int64_t m_armed_ts       = 0;
-    int     m_trade_id       = 0;
-    double  m_l2_imbalance   = 0.5;  // last L2 bid/(bid+ask) imbalance — >0.65 bid-heavy, <0.35 ask-heavy
+    int64_t m_cooldown_start  = 0;
+    int64_t m_armed_ts        = 0;
+    int     m_trade_id        = 0;
+    double  m_l2_imbalance    = 0.5;
+    int     m_inside_ticks    = 0;  // consecutive ticks mid was inside bracket — for MIN_BREAK_TICKS gate
 
     // Locked at the moment both orders are sent — never change after PENDING
     double m_locked_hi        = 0.0;
@@ -687,6 +729,7 @@ protected:
         pending_short_clOrdId.clear();
         m_armed_ts     = 0;
         m_l2_imbalance = 0.5;
+        m_inside_ticks = 0;
         phase = BracketPhase::IDLE;
     }
 };

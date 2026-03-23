@@ -4769,6 +4769,14 @@ int main(int argc, char* argv[])
     // PENDING_TIMEOUT_SEC: gold/silver compress for minutes before breaking — 60s was expiring before the move
     g_bracket_gold.PENDING_TIMEOUT_SEC = 600;  // 10 min: gold compression can last well beyond 5 min
     g_bracket_xag.PENDING_TIMEOUT_SEC  = 300;  // 5 min: silver moves faster than gold
+    // MIN_BREAK_TICKS: sweep guard — price must stay inside the bracket for N consecutive
+    // ticks before orders are sent. Catches London open liquidity sweeps (07:00:34 SHORT
+    // -$7.97): bracket range $7.80 was exactly one sweep wide, SHORT filled in 1 tick
+    // then price snapped back $7.80 to SL in 16s. 3 ticks ~= 0.3-0.6s — long enough to
+    // distinguish a single-tick spike from genuine compression holding at the boundary.
+    // Silver also benefits: London open sweep pattern identical, slightly faster ticks.
+    g_bracket_gold.MIN_BREAK_TICKS = 3;
+    g_bracket_xag.MIN_BREAK_TICKS  = 3;
     // MAX_RANGE: prevents bracketing full trending session moves instead of real compression
     // Gold at $4400: 0.4% = $17.6 max range. Tight compression is $8-16. Day range is $40-120.
     g_bracket_gold.MAX_RANGE   = 18.0;   // ~0.40% of gold ~$4400
