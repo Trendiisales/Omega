@@ -413,6 +413,133 @@ static int64_t  g_bracket_idx_minute_start        = 0;
 static int      g_bracket_fx_trades_this_minute   = 0;
 static int64_t  g_bracket_fx_minute_start         = 0;
 
+// ── Per-symbol bracket trend bias system ─────────────────────────────────────
+// Applies to ALL bracket symbols, not just gold.
+//
+// Problem: during a strong trend (e.g. gold -$66 in 20min), the bracket
+// re-arms on every compression. The trend-direction leg wins; the counter-
+// trend leg fires on dead-cat bounces → BREAKOUT_FAIL / SL_HIT losses.
+//
+// Solution: track consecutive profitable exits per symbol. When N same-
+// direction wins occur within TREND_WINDOW_MS, set a trend bias:
+//   - Counter-trend re-arm is BLOCKED for COUNTER_BLOCK_MS
+//   - L2 imbalance EXTENDS the block (confirming trend) or SHORTENS it (opposing)
+//   - When bias is active and L2 strongly confirms, PYRAMIDING is allowed:
+//     a second bracket arm in the trend direction with reduced size
+//
+// L2 integration:
+//   l2 > L2_STRONG_THRESHOLD (0.70): bid-heavy → long pressure → confirms LONG bias,
+//                                     opposes SHORT bias → shorten SHORT bias block
+//   l2 < L2_WEAK_THRESHOLD  (0.30): ask-heavy → short pressure → confirms SHORT bias,
+//                                    opposes LONG bias → shorten LONG bias block
+//   0.30-0.70: neutral → no adjustment
+//
+// Pyramiding: when trend bias is active AND L2 strongly confirms direction AND
+// the trend-direction position is already open → allow a second arm at reduced
+// size (PYRAMID_SIZE_MULT) to compound the move.
+
+static constexpr int     BRACKET_TREND_LOOKBACK    = 2;      // consecutive same-dir wins to activate bias
+static constexpr int64_t BRACKET_TREND_WINDOW_MS   = 300000; // 5min: exits must cluster to count
+static constexpr int64_t BRACKET_COUNTER_BLOCK_MS  = 180000; // 3min base block on counter-trend arm
+static constexpr int64_t BRACKET_L2_EXTEND_MS      = 60000;  // L2 confirmation extends block by 1min
+static constexpr int64_t BRACKET_L2_SHORTEN_MS     = 60000;  // L2 opposition shortens block by 1min
+static constexpr double  L2_STRONG_THRESHOLD       = 0.70;   // bid-heavy: long pressure
+static constexpr double  L2_WEAK_THRESHOLD         = 0.30;   // ask-heavy: short pressure
+static constexpr double  PYRAMID_SIZE_MULT         = 0.50;   // pyramid at half normal size
+static constexpr double  L2_PYRAMID_THRESHOLD      = 0.72;   // stronger L2 required for pyramid
+
+struct BracketExitRecord {
+    bool    is_long;
+    bool    was_profitable; // TRAIL_HIT, TP_HIT, BE_HIT = true; SL_HIT, BREAKOUT_FAIL = false
+    int64_t ts_ms;
+};
+
+struct BracketTrendState {
+    std::deque<BracketExitRecord> exits;
+    int     bias          = 0;    // 0=none, 1=long_bias (block short arm), -1=short_bias (block long arm)
+    int64_t bias_set_ms   = 0;    // when bias was last activated
+    int64_t block_until_ms = 0;   // dynamic: extended/shortened by L2
+
+    // Called on each bracket close for this symbol
+    void on_exit(bool is_long, bool profitable, int64_t now_ms) {
+        exits.push_back({is_long, profitable, now_ms});
+        // Prune old exits outside the trend window
+        while (!exits.empty() && (now_ms - exits.front().ts_ms) > BRACKET_TREND_WINDOW_MS)
+            exits.pop_front();
+        // Count consecutive profitable same-direction exits from most recent backwards
+        int consec_long = 0, consec_short = 0;
+        for (auto it = exits.rbegin(); it != exits.rend(); ++it) {
+            if (!it->was_profitable) break;
+            if (it->is_long)  { if (consec_short > 0) break; ++consec_long;  }
+            else              { if (consec_long  > 0) break; ++consec_short; }
+        }
+        const int prev_bias = bias;
+        if (consec_short >= BRACKET_TREND_LOOKBACK && bias != -1) {
+            bias           = -1; // short trend → block LONG arm
+            bias_set_ms    = now_ms;
+            block_until_ms = now_ms + BRACKET_COUNTER_BLOCK_MS;
+        } else if (consec_long >= BRACKET_TREND_LOOKBACK && bias != 1) {
+            bias           = 1;  // long trend → block SHORT arm
+            bias_set_ms    = now_ms;
+            block_until_ms = now_ms + BRACKET_COUNTER_BLOCK_MS;
+        }
+        if (bias != prev_bias) {
+            printf("[BRACKET-TREND] symbol bias=%d consec_l=%d consec_s=%d reason=%s\n",
+                   bias, consec_long, consec_short, profitable ? "win" : "loss");
+        }
+    }
+
+    // Called every tick to apply L2 adjustment to block duration
+    // Returns updated block_until_ms (for logging)
+    void update_l2(double l2_imb, int64_t now_ms) {
+        if (bias == 0 || now_ms >= block_until_ms) { bias = 0; return; }
+        // L2 confirms trend → extend block (market pressure supports the trend continuing)
+        // L2 opposes trend  → shorten block (market pressure suggests reversal coming)
+        static int64_t last_l2_adj = 0;
+        if (now_ms - last_l2_adj < 5000) return; // throttle to once per 5s
+        last_l2_adj = now_ms;
+        if (bias == -1 && l2_imb < L2_WEAK_THRESHOLD) {
+            // short bias, ask-heavy L2 confirms: extend
+            block_until_ms = std::min(block_until_ms + BRACKET_L2_EXTEND_MS,
+                                      bias_set_ms + BRACKET_COUNTER_BLOCK_MS * 3);
+        } else if (bias == 1 && l2_imb > L2_STRONG_THRESHOLD) {
+            // long bias, bid-heavy L2 confirms: extend
+            block_until_ms = std::min(block_until_ms + BRACKET_L2_EXTEND_MS,
+                                      bias_set_ms + BRACKET_COUNTER_BLOCK_MS * 3);
+        } else if (bias == -1 && l2_imb > L2_STRONG_THRESHOLD) {
+            // short bias but bid-heavy L2 opposes: shorten
+            block_until_ms = std::max(block_until_ms - BRACKET_L2_SHORTEN_MS, now_ms + 5000L);
+        } else if (bias == 1 && l2_imb < L2_WEAK_THRESHOLD) {
+            // long bias but ask-heavy L2 opposes: shorten
+            block_until_ms = std::max(block_until_ms - BRACKET_L2_SHORTEN_MS, now_ms + 5000L);
+        }
+    }
+
+    // Is counter-trend arming currently blocked?
+    bool counter_trend_blocked(int64_t now_ms) const {
+        return bias != 0 && now_ms < block_until_ms;
+    }
+
+    // Is pyramiding allowed? Requires active bias + strong L2 confirmation
+    bool pyramid_allowed(double l2_imb, int64_t now_ms) const {
+        if (bias == 0 || now_ms >= block_until_ms) return false;
+        if (bias == -1 && l2_imb < (1.0 - L2_PYRAMID_THRESHOLD)) return true;  // short trend + ask-heavy
+        if (bias ==  1 && l2_imb > L2_PYRAMID_THRESHOLD)          return true;  // long trend + bid-heavy
+        return false;
+    }
+
+    // Is a given arm direction allowed? (false = blocked by trend bias)
+    // Used to skip sending the counter-trend order when pyramiding
+    bool arm_allowed(bool is_long, double l2_imb, int64_t now_ms) const {
+        if (!counter_trend_blocked(now_ms)) return true;
+        if (bias == -1 && is_long)  return false; // short trend blocks LONG arm
+        if (bias ==  1 && !is_long) return false; // long trend blocks SHORT arm
+        return true;
+    }
+};
+
+static std::unordered_map<std::string, BracketTrendState> g_bracket_trend;
+
 // ── Per-symbol supervisors — one per traded symbol ────────────────────────────
 // Each supervisor classifies regime and grants engine permissions each tick.
 // Config loaded from symbols.ini via apply_supervisor() at startup.
@@ -2839,6 +2966,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // tr.size is the lot size originally submitted at entry.
     auto bracket_on_close = [&](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);
+
+        // ── Per-symbol bracket trend bias update ─────────────────────────────
+        // Applies to ALL bracket symbols. Tracks consecutive profitable exits
+        // to detect a dominant trend, then suppresses counter-trend re-arms.
+        // L2 imbalance extends/shortens the block dynamically (see BracketTrendState).
+        {
+            const int64_t now_ms_bc = static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            const bool profitable = (tr.exitReason == std::string("TRAIL_HIT") ||
+                                     tr.exitReason == std::string("TP_HIT")    ||
+                                     tr.exitReason == std::string("BE_HIT"));
+            g_bracket_trend[tr.symbol].on_exit(tr.side == "LONG", profitable, now_ms_bc);
+        }
+
         // Only send a market close order for reasons where the BROKER has no
         // pending order to handle the close automatically:
         //   BREAKOUT_FAIL — engine detected failure before TP/SL; broker still
@@ -3094,14 +3236,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool bracket_open    = bracket_eng.has_open_position();
         const bool bracket_armed   = (bracket_eng.phase == omega::BracketPhase::ARMED);
         const bool bracket_pending = (bracket_eng.phase == omega::BracketPhase::PENDING);
-        const bool can_arm         = base_can_enter && sdec.allow_bracket && freq_ok && !bracket_open;
+
+        // ── Trend bias: L2-aware counter-trend suppression + pyramiding ───────
+        // Update L2 adjustment on the trend state every tick (throttled internally to 5s)
+        BracketTrendState& trend = g_bracket_trend[sym];
+        trend.update_l2(l2_imb, now_ms);
+        const bool trend_blocked   = trend.counter_trend_blocked(now_ms);
+        const bool pyramid_ok      = trend.pyramid_allowed(l2_imb, now_ms);
+
+        // Pyramiding: when trend bias active + L2 strongly confirms + position already open
+        // in trend direction → allow a second bracket arm (base_can_enter bypasses !bracket_open).
+        // The second arm uses PYRAMID_SIZE_MULT of normal size.
+        const bool is_pyramiding   = pyramid_ok && bracket_open &&
+                                     ((trend.bias == 1  && bracket_eng.pos.is_long) ||
+                                      (trend.bias == -1 && !bracket_eng.pos.is_long));
+
+        const bool can_arm         = (base_can_enter && sdec.allow_bracket && freq_ok
+                                      && (!bracket_open || is_pyramiding)
+                                      && !trend_blocked);
 
         // Gate logic by phase:
-        //   IDLE    → can_arm: supervisor + session + freq all required to start arming
-        //   ARMED   → true: structure already qualified, timer must run uninterrupted.
-        //             Passing can_arm here re-gates on supervisor every tick, causing
-        //             the BracketEngine ARMED HOLD path to fire on every blip and the
-        //             MIN_STRUCTURE_MS timer to effectively never elapse.
+        //   IDLE    → can_arm: supervisor + session + freq + trend bias all required
+        //   ARMED   → true: structure qualified, timer must run uninterrupted
         //   PENDING → true: orders at broker, only timeout should cancel
         //   LIVE    → can_manage: allow force-close on session/risk gate
         const bool can_manage      = (bracket_armed || bracket_pending) ? true
@@ -3119,21 +3275,43 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
         const auto bsigs = bracket_eng.get_signals();
         if (bsigs.valid) {
-            const double lot = compute_size(sym,
+            const double base_lot = compute_size(sym,
                 std::fabs(bsigs.long_entry - bsigs.long_sl), ask - bid,
                 bracket_eng.ENTRY_SIZE);
-            // Encode bracket levels in reason so GUI can display hi/lo
-            char bracket_reason[64];
-            snprintf(bracket_reason, sizeof(bracket_reason), "HI:%.2f LO:%.2f",
-                     bsigs.long_entry, bsigs.short_entry);
+            const double lot = is_pyramiding ? (base_lot * PYRAMID_SIZE_MULT) : base_lot;
+
+            // Encode bracket levels + trend state in reason for GUI
+            char bracket_reason[80];
+            snprintf(bracket_reason, sizeof(bracket_reason), "HI:%.2f LO:%.2f bias:%d l2:%.2f",
+                     bsigs.long_entry, bsigs.short_entry, trend.bias, l2_imb);
             g_telemetry.UpdateLastSignal(sym.c_str(), "BRACKET", bsigs.long_entry, bracket_reason,
                 omega::regime_name(sdec.regime), regime.c_str(), "BRACKET");
             std::cout << "\033[1;33m[BRACKET] " << sym
                       << " sup_regime=" << omega::regime_name(sdec.regime)
                       << " bracket_score=" << sdec.bracket_score
-                      << " winner=" << sdec.winner << "\033[0m\n";
-            const std::string long_id  = send_live_order(sym, true,  lot, bsigs.long_entry);
-            const std::string short_id = send_live_order(sym, false, lot, bsigs.short_entry);
+                      << " winner=" << sdec.winner
+                      << " bias=" << trend.bias
+                      << " l2=" << std::fixed << std::setprecision(2) << l2_imb
+                      << (is_pyramiding ? " PYRAMID" : "")
+                      << "\033[0m\n";
+
+            // L2-aware order sizing:
+            //   When trend bias active: send trend-direction leg at full size,
+            //   counter-trend leg at half size (hedge leg, expect cancellation).
+            //   When no bias: both legs at full size (standard bracket).
+            std::string long_id, short_id;
+            if (trend.bias != 0) {
+                const bool long_is_trend  = (trend.bias == 1);
+                const double trend_lot    = lot;
+                const double counter_lot  = lot * 0.5;
+                long_id  = send_live_order(sym, true,  long_is_trend  ? trend_lot : counter_lot, bsigs.long_entry);
+                short_id = send_live_order(sym, false, !long_is_trend ? trend_lot : counter_lot, bsigs.short_entry);
+                printf("[BRACKET-L2] %s bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",
+                       sym.c_str(), trend.bias, trend_lot, counter_lot, l2_imb);
+            } else {
+                long_id  = send_live_order(sym, true,  lot, bsigs.long_entry);
+                short_id = send_live_order(sym, false, lot, bsigs.short_entry);
+            }
             bracket_eng.pending_long_clOrdId  = long_id;
             bracket_eng.pending_short_clOrdId = short_id;
             ++trades_this_min;
@@ -3505,13 +3683,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool in_dead_zone  = (g_macro_ctx.session_slot == 0);
             const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
             const bool asia_trend_ok = !in_asia_slot || g_gold_stack.is_drift_trending(g_macro_ctx.gold_l2_imbalance);
-            // Dead zone (05:00-07:00 UTC): bracket is NOT hard-blocked.
-            // Bracket is bidirectional — needs compression + clean break, not directional flow.
-            // Spread/regime gates (gold_spread_ok, HIGH_RISK_NO_TRADE) already block thin liquidity.
-            // Hard-blocking was missing profitable trending moves through the dead zone window.
-            const bool can_arm_bracket = gold_can_enter && gold_freq_ok && !bracket_open
+
+            // ── Trend bias: handled generically via g_bracket_trend["GOLD.F"] ─
+            // Counter-trend suppression, L2 extension/shortening, and pyramiding
+            // are all applied inside dispatch_bracket via BracketTrendState.
+            // Gold uses the same system as all other bracket symbols.
+            // Dead zone (05:00-07:00 UTC): not hard-blocked — spread/regime gates suffice.
+            BracketTrendState& gold_trend = g_bracket_trend["GOLD.F"];
+            gold_trend.update_l2(g_macro_ctx.gold_l2_imbalance, now_ms_g);
+            const bool gold_trend_blocked = gold_trend.counter_trend_blocked(now_ms_g);
+            const bool gold_pyramid_ok    = gold_trend.pyramid_allowed(g_macro_ctx.gold_l2_imbalance, now_ms_g);
+            const bool gold_is_pyramiding = gold_pyramid_ok && bracket_open &&
+                                            ((gold_trend.bias == 1  && g_bracket_gold.pos.is_long) ||
+                                             (gold_trend.bias == -1 && !g_bracket_gold.pos.is_long));
+            const bool can_arm_bracket = gold_can_enter && gold_freq_ok
+                                      && (!bracket_open || gold_is_pyramiding)
                                       && !g_gold_stack.has_open_position()
-                                      && asia_trend_ok;
+                                      && asia_trend_ok
+                                      && !gold_trend_blocked;
 
             // ── Gold bracket gate diagnostic — prints every 10s ───────────────
             {
@@ -3537,6 +3726,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                               << " drift="         << std::fixed << std::setprecision(2) << g_gold_stack.ewm_drift()
                               << " l2_imb="        << std::setprecision(3) << g_macro_ctx.gold_l2_imbalance
                               << " can_arm="       << can_arm_bracket
+                              << " trend_bias="    << gold_trend.bias
+                              << " trend_blocked=" << gold_trend_blocked
+                              << " pyramid_ok="    << gold_pyramid_ok
                               << " brk_hi="        << std::setprecision(2) << g_bracket_gold.bracket_high
                               << " brk_lo="        << g_bracket_gold.bracket_low
                               << " range="         << (g_bracket_gold.bracket_high - g_bracket_gold.bracket_low)
@@ -3564,20 +3756,40 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bracket_gold.bracket_low);
             const auto bgsigs = g_bracket_gold.get_signals();
             if (bgsigs.valid) {
-                const double bg_lot = compute_size("GOLD.F",
+                const double base_bg_lot = compute_size("GOLD.F",
                     std::fabs(bgsigs.long_entry - bgsigs.long_sl), ask - bid,
                     g_bracket_gold.ENTRY_SIZE);
-                char bg_reason[64];
-                snprintf(bg_reason, sizeof(bg_reason), "HI:%.2f LO:%.2f",
-                         bgsigs.long_entry, bgsigs.short_entry);
+                const double bg_lot = gold_is_pyramiding
+                    ? (base_bg_lot * PYRAMID_SIZE_MULT) : base_bg_lot;
+                char bg_reason[80];
+                snprintf(bg_reason, sizeof(bg_reason), "HI:%.2f LO:%.2f bias:%d l2:%.2f",
+                         bgsigs.long_entry, bgsigs.short_entry,
+                         gold_trend.bias, g_macro_ctx.gold_l2_imbalance);
                 g_telemetry.UpdateLastSignal("GOLD.F", "BRACKET", bgsigs.long_entry, bg_reason,
                     omega::regime_name(gold_sdec.regime), regime.c_str(), "BRACKET");
                 std::cout << "\033[1;33m[BRACKET] GOLD.F"
                           << " sup_regime=" << omega::regime_name(gold_sdec.regime)
                           << " bracket_score=" << gold_sdec.bracket_score
-                          << " winner=" << gold_sdec.winner << "\033[0m\n";
-                const std::string long_id  = send_live_order("GOLD.F", true,  bg_lot, bgsigs.long_entry);
-                const std::string short_id = send_live_order("GOLD.F", false, bg_lot, bgsigs.short_entry);
+                          << " winner=" << gold_sdec.winner
+                          << " bias=" << gold_trend.bias
+                          << " l2=" << std::fixed << std::setprecision(2) << g_macro_ctx.gold_l2_imbalance
+                          << (gold_is_pyramiding ? " PYRAMID" : "")
+                          << "\033[0m\n";
+                // L2-aware sizing: trend-direction leg at full size, counter leg at half
+                std::string long_id, short_id;
+                if (gold_trend.bias != 0) {
+                    const bool long_is_trend = (gold_trend.bias == 1);
+                    long_id  = send_live_order("GOLD.F", true,
+                        long_is_trend  ? bg_lot : (bg_lot * 0.5), bgsigs.long_entry);
+                    short_id = send_live_order("GOLD.F", false,
+                        !long_is_trend ? bg_lot : (bg_lot * 0.5), bgsigs.short_entry);
+                    printf("[BRACKET-L2] GOLD.F bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",
+                           gold_trend.bias, bg_lot, bg_lot * 0.5,
+                           g_macro_ctx.gold_l2_imbalance);
+                } else {
+                    long_id  = send_live_order("GOLD.F", true,  bg_lot, bgsigs.long_entry);
+                    short_id = send_live_order("GOLD.F", false, bg_lot, bgsigs.short_entry);
+                }
                 g_bracket_gold.pending_long_clOrdId  = long_id;
                 g_bracket_gold.pending_short_clOrdId = short_id;
                 ++g_bracket_gold_trades_this_minute;
