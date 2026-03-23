@@ -20,6 +20,9 @@ Write-Host "[2/4] Pulling latest from GitHub..." -ForegroundColor Yellow
 Set-Location C:\Omega
 git fetch origin
 git reset --hard origin/main
+# Force-overwrite any files that may have wrong encoding or been modified outside git
+git checkout HEAD -- symbols.ini
+git checkout HEAD -- DEPLOY_OMEGA.ps1
 Write-Host "      [OK] Up to date: $(git log --oneline -1)" -ForegroundColor Green
 Write-Host ""
 
