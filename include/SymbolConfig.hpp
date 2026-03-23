@@ -2,20 +2,23 @@
 // ==============================================================================
 // SymbolConfig.hpp — per-symbol parameter store
 //
-// Every symbol is independently configurable from symbols.ini.
-// No shared TP/SL inheritance. No generic fallback leakage.
-// The manager loads symbols.ini at startup and provides O(1) lookup by name.
+// SINGLE SOURCE OF TRUTH for all per-symbol tuning.
+// symbols.ini is loaded at startup. apply_bracket() in main.cpp applies these
+// AFTER configure(), so symbols.ini always wins over any hardcoded value.
+// Never add tunable values to configure() without also adding them here.
 //
 // symbols.ini format:
 //   [SYMBOL_NAME]
 //   MIN_RANGE=0.40
-//   CONFIRM_OFFSET=0.05
-//   MIN_STRUCTURE_MS=30000
-//   BREAKOUT_FAIL_MS=5000
-//   MIN_HOLD_MS=12000
-//   TP_MULT=1.6
-//   SL_MULT=1.0
-//   MAX_SPREAD=2.0
+//   MIN_STRUCTURE_MS=20000
+//   BREAKOUT_FAIL_MS=12000
+//   MIN_HOLD_MS=8000
+//   TP_MULT=1.6          ; = RR for bracket engines
+//   MAX_SPREAD=0.08
+//   SLIPPAGE_BUFFER=0.08  ; price-unit slippage estimate (not basis points)
+//   COOLDOWN_MS=30000     ; post-trade cooldown in ms
+//   BRACKET_RR=3.0        ; bracket-specific RR (overrides TP_MULT for brackets)
+//   BRACKET_LOOKBACK=30   ; tick lookback for structural range
 // ==============================================================================
 #include <string>
 #include <unordered_map>
@@ -30,7 +33,7 @@ struct SymbolConfig
     // Position management
     int    breakout_fail_ms  = 0;
     int    min_hold_ms       = 0;
-    int    max_hold_sec      = 0;    // per-symbol max hold — overrides global max_hold_sec
+    int    max_hold_sec      = 0;
 
     // Risk/reward
     double tp_mult           = 1.5;
@@ -39,20 +42,26 @@ struct SymbolConfig
     // Entry filter
     double max_spread        = 0.0;
     double min_edge_bp       = 0.0;
-    double slippage_est_bp   = 0.0;  // estimated one-way slippage in basis points — converted to price units per symbol
-    double min_breakout_pct  = 0.0;  // override MIN_BREAKOUT_PCT in engine (0=use default)
+    double slippage_est_bp   = 0.0;  // basis-point slippage — for breakout engines
+    double min_breakout_pct  = 0.0;
 
-    // Supervisor config — controls which engine is permitted per regime
+    // Bracket-specific overrides (symbols.ini owns these, configure() is fallback only)
+    double slippage_buffer   = 0.0;   // SLIPPAGE_BUFFER: price-unit slip for bracket cost model (0=use configure default)
+    int    cooldown_ms       = 0;     // COOLDOWN_MS: post-trade cooldown (0=use configure default)
+    double bracket_rr        = 0.0;   // BRACKET_RR: bracket R:R ratio (0=use TP_MULT)
+    int    bracket_lookback  = 0;     // BRACKET_LOOKBACK: tick lookback for structure (0=use configure default)
+
+    // Supervisor config
     bool   allow_bracket           = true;
     bool   allow_breakout          = true;
     double min_regime_confidence   = 0.55;
     double min_engine_win_margin   = 0.10;
-    double min_winner_score        = 0.25;  // absolute floor: blocks low 0.12 vs 0.09 noise
-    double min_bracket_score       = 0.35;  // bracket-specific floor (higher: places 2 orders)
+    double min_winner_score        = 0.25;
+    double min_bracket_score       = 0.35;
     int    max_false_breaks        = 2;
     bool   bracket_in_quiet_comp   = true;
     bool   breakout_in_trend       = true;
-    int    cooldown_fail_threshold = 20;  // raised from 3 — 3 fired on every normal fluctuation
+    int    cooldown_fail_threshold = 20;
     int    cooldown_duration_ms    = 120000;
 };
 
