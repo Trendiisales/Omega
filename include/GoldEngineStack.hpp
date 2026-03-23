@@ -1333,6 +1333,13 @@ public:
         features_.update(snap,bid,ask);
         last_mid_=snap.mid;
 
+        // Update long-window baseline for supervisor vol_ratio
+        baseline_buf_.push_back(snap.mid);
+        if (baseline_buf_.size() >= 40) {  // min warmup before using baseline
+            const double bl_range = baseline_buf_.max() - baseline_buf_.min();
+            baseline_vol_pct_ = (snap.mid > 0.0) ? (bl_range / snap.mid * 100.0) : 0.0;
+        }
+
         // Regime classification (frozen while position open)
         MarketRegime regime=governor_.detect(snap.mid,has_open_pos_);
         governor_.apply(engines_,regime);
@@ -1430,12 +1437,15 @@ public:
     // risk-adjusted lot size from compute_size(). Without this, the ledger
     // records PnL on the sub-engine default (0.01 lots) not the actual size.
     void patch_position_size(double lot) { pos_mgr_.patch_base_size(lot); }
-    const char* regime_name() const { return RegimeGovernor::name(current_regime_); }
-    double vwap()          const { return features_.get_vwap(); }
-    double vol_range()     const { return vol_filter_.current_range(); }
-    double governor_range() const { return governor_.window_range(); }
-    double governor_hi()    const { return governor_.window_hi(); }
-    double governor_lo()    const { return governor_.window_lo(); }
+    const char* regime_name()    const { return RegimeGovernor::name(current_regime_); }
+    double vwap()                const { return features_.get_vwap(); }
+    double vol_range()           const { return vol_filter_.current_range(); }
+    double governor_range()      const { return governor_.window_range(); }
+    double governor_hi()         const { return governor_.window_hi(); }
+    double governor_lo()         const { return governor_.window_lo(); }
+    double recent_vol_pct()      const { return (governor_.window_range() > 0.0 && last_mid_ > 0.0)
+                                              ? (governor_.window_range() / last_mid_ * 100.0) : 0.0; }
+    double base_vol_pct()        const { return baseline_vol_pct_; }
 
     void print_stats() const {
         for(const auto& e:engines_)
@@ -1478,6 +1488,11 @@ private:
     SessionType last_session_ = SessionType::UNKNOWN;
     std::array<double, 2> last_exit_price_{{0.0,0.0}};
     std::array<int64_t, 2> last_exit_ts_{{0,0}};
+    // Long-window baseline vol tracker for supervisor — 400-tick rolling window
+    // (~60-80s at typical gold tick rate). Provides a genuine measured baseline
+    // so supervisor vol_ratio = recent_range / baseline_range is fully real.
+    MinMaxCircularBuffer<double,400> baseline_buf_;
+    double baseline_vol_pct_ = 0.0;  // cached: baseline_range / mid * 100
 
     static int side_idx(TradeSide side) {
         if (side == TradeSide::LONG) return 0;

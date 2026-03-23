@@ -3364,37 +3364,29 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // vol_ratio input (recent_vol / base_vol). We synthesise recent/base so that:
         //   TREND/IMPULSE (range >> compression threshold) → vol_ratio > 1.0 → EXPANSION
         //   COMPRESSION   (range tight)                    → vol_ratio < 0.85 → QUIET_COMPRESSION
+        // Gold supervisor — all inputs are real measured values, zero synthetic data.
+        // recent_vol_pct: governor 80-tick rolling range / mid price
+        // base_vol_pct:   400-tick rolling range / mid price (long-window baseline)
+        // momentum:       VWAP distance as directional pressure (real, signed)
+        // comp_high/low:  governor 80-tick window hi/lo (real price bounds)
+        // in_compression: from GoldStack's own RegimeGovernor
         const char* gold_stack_regime   = g_gold_stack.regime_name();
-        const double gold_gov_range     = g_gold_stack.governor_range(); // rolling price range $
+        const double gold_recent_vol    = g_gold_stack.recent_vol_pct();
+        const double gold_base_vol      = g_gold_stack.base_vol_pct();
         const double gold_gov_hi        = g_gold_stack.governor_hi();
         const double gold_gov_lo        = g_gold_stack.governor_lo();
         const double gold_mid_now       = (bid + ask) * 0.5;
         const double gold_vwap_now      = g_gold_stack.vwap();
-
-        // Convert absolute price range to pct-of-price for supervisor vol_ratio input.
-        // Use a 60-tick (~10s) short window vs the 80-tick governor window as recent/base.
-        // Both derived from the same governor so they're consistent and real.
-        // recent_vol ≈ governor_range (last 80 ticks), base_vol ≈ long-run reference ($8 = 0.18% at $4500)
-        const double gold_price_ref     = (gold_mid_now > 0.0) ? gold_mid_now : 4500.0;
-        const double gold_recent_vol    = (gold_gov_range > 0.0)
-                                          ? (gold_gov_range / gold_price_ref * 100.0)
-                                          : 0.0;
-        // Base vol: long-run reference calibrated to gold's typical session range
-        // $8 range at $4500 = 0.18% — matches London session normal vol
-        const double gold_base_vol      = 0.18;
-
-        // VWAP distance as momentum: positive = price above VWAP = upward pressure
-        const double gold_momentum      = (gold_vwap_now > 0.0)
+        const double gold_momentum      = (gold_vwap_now > 0.0 && gold_mid_now > 0.0)
             ? ((gold_mid_now - gold_vwap_now) / gold_mid_now * 100.0)
             : 0.0;
-
         const bool gold_is_compressing  = (strcmp(gold_stack_regime, "COMPRESSION") == 0);
 
         const auto gold_sdec = g_sup_gold.update(
             bid, ask,
             gold_recent_vol, gold_base_vol,
             gold_momentum,
-            gold_gov_hi, gold_gov_lo,   // real window hi/lo as comp_high/comp_low
+            gold_gov_hi, gold_gov_lo,
             gold_is_compressing,
             fb_gold);
 
