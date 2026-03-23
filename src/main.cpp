@@ -3544,12 +3544,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             // Phase-aware gate:
             //   IDLE    → can_arm_bracket: all gates apply to start arming
-            //   ARMED   → true: timer must run uninterrupted, no supervisor re-gating
-            //   PENDING → true: orders at broker, only timeout cancels
+            //   ARMED   → true normally (timer uninterrupted), BUT false in dead zone.
+            //             Dead zone passes false → BracketEngine resets ARMED to IDLE.
+            //             Prevents a bracket armed before 05:00 firing into thin liquidity.
+            //   PENDING → true normally, BUT false in dead zone (cancels broker orders cleanly).
             //   LIVE    → gold_can_enter: allow force-close on session end
             const bool gold_bracket_armed   = (g_bracket_gold.phase == omega::BracketPhase::ARMED);
             const bool gold_bracket_pending = (g_bracket_gold.phase == omega::BracketPhase::PENDING);
-            const bool can_manage      = (gold_bracket_armed || gold_bracket_pending) ? true : gold_can_enter;
+            const bool can_manage      = in_dead_zone ? false
+                                       : (gold_bracket_armed || gold_bracket_pending) ? true
+                                       : gold_can_enter;
 
             g_bracket_gold.on_tick(bid, ask, now_ms_g,
                 (bracket_open || gold_bracket_armed) ? can_manage : can_arm_bracket,
