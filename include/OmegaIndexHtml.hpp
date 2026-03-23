@@ -12,7 +12,7 @@ R"OMEGA0(
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store,no-cache,must-revalidate">
 <title>Omega — Trading Desk</title>
-<link rel="icon" type="image/png" href="/chimera_logo.png">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzA1MDgwZCIvPgogIDx0ZXh0IHg9IjE2IiB5PSIyMyIgZm9udC1mYW1pbHk9InNlcmlmIiBmb250LXNpemU9IjIwIiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iI2Y1Yzg0MiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+zqk8L3RleHQ+Cjwvc3ZnPg==">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -52,7 +52,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
   display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;
   padding:0 14px;backdrop-filter:blur(24px);box-shadow:0 2px 20px rgba(0,0,0,0.5);}
 .logo{display:flex;align-items:center;gap:9px;flex-shrink:0;}
-.logo-img{width:28px;height:28px;background:url('/chimera_logo.png') center/contain no-repeat;
+.logo-img{width:28px;height:28px;background:url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzA1MDgwZCIvPgogIDx0ZXh0IHg9IjE2IiB5PSIyMyIgZm9udC1mYW1pbHk9InNlcmlmIiBmb250LXNpemU9IjIwIiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iI2Y1Yzg0MiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+zqk8L3RleHQ+Cjwvc3ZnPg==') center/contain no-repeat;
   filter:drop-shadow(0 0 6px rgba(46,168,255,0.5));}
 .logo-name{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;
   letter-spacing:2px;background:linear-gradient(120deg,var(--cyan),var(--blue) 50%,var(--purple));
