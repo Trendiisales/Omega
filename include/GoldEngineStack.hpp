@@ -354,15 +354,24 @@ public:
 class ImpulseContinuationEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> price_history_;
     static constexpr double IMPULSE_MIN=1.0,PULLBACK_MIN=0.2,PULLBACK_MAX=0.6;
-    static constexpr double MIN_MOMENTUM=0.55,MIN_MOVE_5T=0.55,MAX_MOMENTUM=5.0,PARABOLIC_VWAP=10.0;
-    static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=6.0,MAX_SPREAD=2.20;
+    // MIN_MOMENTUM lowered 0.55→0.10: $0.55/tick filters out slow grinds entirely.
+    // A $100 drop over 4h = $0.003/tick — no tick would pass $0.55 gate.
+    // $0.10 is still above typical noise ($0.01-0.05) but allows slow trend entries.
+    // Directional drift check (20-tick) replaces raw tick momentum as primary filter.
+    static constexpr double MIN_MOMENTUM=0.10,MIN_MOVE_5T=0.20,MAX_MOMENTUM=5.0,PARABOLIC_VWAP=15.0;
+    // MAX_VWAP_DIST raised 6.0→40.0: $6 cap blocked ALL entries during sustained trends.
+    // In a $100 drop, price moves $50+ from daily VWAP by midday — every tick blocked.
+    // $40 allows entries throughout a strong trend while still blocking parabolic exhaustion.
+    // MIN_VWAP_DIST kept at 1.50 — still need some VWAP dislocation to confirm trend.
+    static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=40.0,MAX_SPREAD=2.20;
     static constexpr int TP_TICKS=40,SL_TICKS=16;
-    // TP $4.00 (40 ticks), SL $1.60 (16 ticks) — 2.5:1 R:R
-    // SL raised from 8 ticks ($0.80): was AT or BELOW typical spread noise ($0.30-$0.80).
-    // A single wide tick could stop out a valid trade. $1.60 = 2x max spread = real signal floor.
-    // TP raised from 16 ($1.60) to maintain 2.5:1 R:R and match observed impulse move sizes.
-    static constexpr int MAX_ENTRIES_PER_TREND=2,COOLDOWN_SECONDS=120;
-    static constexpr double MIN_PRICE_MOVE=8.0;
+    // MAX_ENTRIES_PER_TREND raised 2→4: multi-hour trends need more than 2 entries.
+    // $100 drop over 4h: 2 entries at $10 separation = only $20 of the move captured.
+    // 4 entries at $10 separation = $40 captured. Still conservative vs the move size.
+    // COOLDOWN_SECONDS lowered 120→60: 120s gap was too wide for fast impulse legs.
+    // MIN_PRICE_MOVE raised 8.0→12.0: prevent tight re-entries, force meaningful separation.
+    static constexpr int MAX_ENTRIES_PER_TREND=4,COOLDOWN_SECONDS=60;
+    static constexpr double MIN_PRICE_MOVE=12.0;
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SECONDS)};
     int trend_entry_count_=0,last_trend_dir_=0;
     double last_entry_price_=0;
@@ -380,7 +389,18 @@ public:
         }
         if(s.vwap>0){
             double vd=std::fabs(s.mid-s.vwap);
-            if(vd<MIN_VWAP_DIST||vd>MAX_VWAP_DIST) return noSignal();
+            // MIN_VWAP_DIST: need some dislocation from VWAP to confirm trend
+            // MAX_VWAP_DIST: raised to $40 — do not block far-from-VWAP trend entries
+            if(vd<MIN_VWAP_DIST) return noSignal();
+            // Only apply max distance gate when NOT clearly trending
+            // (parabolic exhaustion check — if momentum is extreme AND too far, skip)
+            if(vd>MAX_VWAP_DIST&&std::fabs(s.mid-s.prev_mid)>MAX_MOMENTUM) return noSignal();
+        }
+        // 20-tick directional drift: require net move > $1.50 in one direction
+        // over last 20 ticks. Catches slow grinds that fail per-tick momentum gate.
+        if(price_history_.size()>=20){
+            double net20=price_history_.back()-price_history_[price_history_.size()-20];
+            if(std::fabs(net20)<1.50) return noSignal();
         }
         // ASIAN session removed from whitelist (was previously included).
         // ImpulseContinuation needs sustained directional flow with clear impulse
@@ -761,13 +781,38 @@ class RegimeGovernor {
         return MarketRegime::MEAN_REVERSION;
     }
     double hi_=0, lo_=0, range_=0;  // last computed window values
+    // Drift tracker — detects slow sustained trends that don't show large range
+    // in the short window (e.g. $100 over 4h = $0.28/tick, 80-tick window = $22)
+    // Uses a 512-tick long window EWM to detect directional drift.
+    MinMaxCircularBuffer<double,512> drift_buf_;
+    double ewm_fast_=0, ewm_slow_=0;  // EWM prices, α=0.05 fast, α=0.005 slow
+    bool ewm_init_=false;
 public:
     MarketRegime detect(double mid, bool has_open_pos) {
         if(has_open_pos) return current_;
         history_.push_back(mid);
+        drift_buf_.push_back(mid);
+        // EWM drift detection — fast vs slow exponential weighted mean
+        if(!ewm_init_){ ewm_fast_=mid; ewm_slow_=mid; ewm_init_=true; }
+        ewm_fast_ = 0.05*mid + 0.95*ewm_fast_;
+        ewm_slow_ = 0.005*mid + 0.995*ewm_slow_;
         if(history_.size()<WINDOW) return current_;
         hi_=history_.max(); lo_=history_.min(); range_=hi_-lo_;
+        // Directional drift: EWM spread > $8 signals sustained trend
+        // $8 EWM gap requires ~$20+ sustained directional move to develop
+        const double ewm_drift = ewm_fast_ - ewm_slow_;
+        const bool drift_trend = std::fabs(ewm_drift) > 8.0;
+        // Long-window drift: if 512-tick range AND price at extreme of range
+        bool long_drift_trend = false;
+        if(drift_buf_.size()>=512){
+            const double dr=drift_buf_.max()-drift_buf_.min();
+            const double centre=(drift_buf_.max()+drift_buf_.min())*0.5;
+            long_drift_trend=(dr>20.0&&std::fabs(mid-centre)>dr*0.35);
+        }
         MarketRegime raw=classifyRaw(range_,mid,hi_,lo_);
+        // Override to TREND if drift detected but range classifier missed it
+        if(raw==MarketRegime::MEAN_REVERSION&&(drift_trend||long_drift_trend))
+            raw=MarketRegime::TREND;
         auto now=std::chrono::steady_clock::now();
         auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(now-last_switch_).count();
         if(raw==candidate_){
@@ -1337,7 +1382,14 @@ public:
         baseline_buf_.push_back(snap.mid);
         if (baseline_buf_.size() >= 40) {  // min warmup before using baseline
             const double bl_range = baseline_buf_.max() - baseline_buf_.min();
-            baseline_vol_pct_ = (snap.mid > 0.0) ? (bl_range / snap.mid * 100.0) : 0.0;
+            const double tick_vol = (snap.mid > 0.0) ? (bl_range / snap.mid * 100.0) : 0.0;
+            // EWM baseline: α=0.002, decays slowly so baseline stays elevated
+            // during AND after trends — vol_ratio stays > 1 throughout the move.
+            if (!ewm_vol_init_) { ewm_vol_baseline_ = tick_vol; ewm_vol_init_ = true; }
+            ewm_vol_baseline_ = 0.002 * tick_vol + 0.998 * ewm_vol_baseline_;
+            // Use the MAX of rolling range and EWM as baseline.
+            // Rolling range catches fast spikes; EWM holds the level during slow grinds.
+            baseline_vol_pct_ = std::max(tick_vol * 0.5, ewm_vol_baseline_);
         }
 
         // Regime classification (frozen while position open)
@@ -1443,9 +1495,13 @@ public:
     double governor_range()      const { return governor_.window_range(); }
     double governor_hi()         const { return governor_.window_hi(); }
     double governor_lo()         const { return governor_.window_lo(); }
-    double recent_vol_pct()      const { return (governor_.window_range() > 0.0 && last_mid_ > 0.0)
-                                              ? (governor_.window_range() / last_mid_ * 100.0) : 0.0; }
-    double base_vol_pct()        const { return baseline_vol_pct_; }
+    // recent_vol_pct: governor 80-tick range as pct of price
+    // base_vol_pct:   EWM-smoothed baseline (doesn't chase trends — stays elevated)
+    double recent_vol_pct() const {
+        if (governor_.window_range() <= 0.0 || last_mid_ <= 0.0) return 0.0;
+        return governor_.window_range() / last_mid_ * 100.0;
+    }
+    double base_vol_pct() const { return baseline_vol_pct_; }
 
     void print_stats() const {
         for(const auto& e:engines_)
@@ -1493,6 +1549,11 @@ private:
     // so supervisor vol_ratio = recent_range / baseline_range is fully real.
     MinMaxCircularBuffer<double,512> baseline_buf_;
     double baseline_vol_pct_ = 0.0;  // cached: baseline_range / mid * 100
+    // EWM baseline: slow-decaying volatility estimate that doesn't chase trends.
+    // α=0.002 → half-life ~350 ticks (~3min). Drifts up on expansion, stays
+    // elevated after, giving vol_ratio > 1 during and after trend moves.
+    double ewm_vol_baseline_ = 0.0;
+    bool ewm_vol_init_ = false;
 
     static int side_idx(TradeSide side) {
         if (side == TradeSide::LONG) return 0;

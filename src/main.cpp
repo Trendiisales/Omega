@@ -3364,15 +3364,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // vol_ratio input (recent_vol / base_vol). We synthesise recent/base so that:
         //   TREND/IMPULSE (range >> compression threshold) → vol_ratio > 1.0 → EXPANSION
         //   COMPRESSION   (range tight)                    → vol_ratio < 0.85 → QUIET_COMPRESSION
-        // Gold supervisor — all inputs are real measured values, zero synthetic data.
-        // recent_vol_pct: governor 80-tick rolling range / mid price
-        // base_vol_pct:   400-tick rolling range / mid price (long-window baseline)
-        // momentum:       VWAP distance as directional pressure (real, signed)
-        // comp_high/low:  governor 80-tick window hi/lo (real price bounds)
-        // in_compression: from GoldStack's own RegimeGovernor
+        // Gold supervisor — uses GoldEngineStack's own RegimeGovernor as the truth source.
+        // The GoldStack has a proper multi-timeframe EWM drift detector that correctly
+        // identifies TREND/IMPULSE/COMPRESSION/MEAN_REVERSION. Attempting to derive
+        // vol_ratio from rolling price windows fails for sustained trends: both the
+        // 80-tick recent window and 512-tick baseline track the trend identically,
+        // giving vol_ratio≈1.0 (appears compressed) even during a $100 drop.
+        //
+        // Architecture: GoldStack regime → calibrated vol signals → SymbolSupervisor
+        //   TREND/IMPULSE  → recent=0.25%, base=0.10% → vol_ratio=2.5 → EXPANSION_BREAKOUT
+        //   COMPRESSION    → recent=0.04%, base=0.10% → vol_ratio=0.4 → QUIET_COMPRESSION
+        //   MEAN_REVERSION → recent=0.10%, base=0.10% → vol_ratio=1.0 → HIGH_RISK/ambiguous
+        // The SymbolSupervisor then applies its secondary gates: spread, false-breaks,
+        // cooldown, min_winner_score — which are meaningful and correct for gold.
         const char* gold_stack_regime   = g_gold_stack.regime_name();
-        const double gold_recent_vol    = g_gold_stack.recent_vol_pct();
-        const double gold_base_vol      = g_gold_stack.base_vol_pct();
         const double gold_gov_hi        = g_gold_stack.governor_hi();
         const double gold_gov_lo        = g_gold_stack.governor_lo();
         const double gold_mid_now       = (bid + ask) * 0.5;
@@ -3380,11 +3385,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double gold_momentum      = (gold_vwap_now > 0.0 && gold_mid_now > 0.0)
             ? ((gold_mid_now - gold_vwap_now) / gold_mid_now * 100.0)
             : 0.0;
-        const bool gold_is_compressing  = (strcmp(gold_stack_regime, "COMPRESSION") == 0);
+        const bool gold_is_trending     = (strcmp(gold_stack_regime,"TREND")==0
+                                        || strcmp(gold_stack_regime,"IMPULSE")==0);
+        const bool gold_is_compressing  = (strcmp(gold_stack_regime,"COMPRESSION")==0);
+        // vol signals calibrated to SymbolSupervisor thresholds (compression_thresh=0.85)
+        const double gold_recent_vol    = gold_is_trending    ? 0.25
+                                        : gold_is_compressing ? 0.04
+                                        : 0.10;
+        static constexpr double GOLD_BASE_VOL = 0.10;
 
         const auto gold_sdec = g_sup_gold.update(
             bid, ask,
-            gold_recent_vol, gold_base_vol,
+            gold_recent_vol, GOLD_BASE_VOL,
             gold_momentum,
             gold_gov_hi, gold_gov_lo,
             gold_is_compressing,
