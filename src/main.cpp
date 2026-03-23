@@ -380,7 +380,9 @@ static omega::latency::LatencyEdgeStack g_le_stack;
 
 // Bracket engines
 #include "BracketEngine.hpp"
+#include "GoldFlowEngine.hpp"
 static omega::GoldBracketEngine   g_bracket_gold;
+static GoldFlowEngine             g_gold_flow;
 static omega::SilverBracketEngine g_bracket_xag;
 // US equity index bracket engines — arms both sides on compression,
 // captures the move regardless of direction. Eliminates wrong-direction losses.
@@ -3702,10 +3704,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Only block bracket if spread is too wide (supervisor's spread gate is still valid)
         const bool gold_spread_ok = !(gold_sdec.regime == omega::Regime::HIGH_RISK_NO_TRADE
             && gold_sdec.reason != nullptr && std::string(gold_sdec.reason) == "spread_too_wide");
+        // now_ms_g declared here so both the bracket block and flow engine block can use it
+        const int64_t now_ms_g = static_cast<long long>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
         if (gold_spread_ok) {
-            const int64_t now_ms_g = static_cast<long long>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count());
             if (now_ms_g - g_bracket_gold_minute_start >= 60000) {
                 g_bracket_gold_minute_start       = now_ms_g;
                 g_bracket_gold_trades_this_minute = 0;
@@ -3842,6 +3845,37 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bracket_gold.pending_long_clOrdId  = long_id;
                 g_bracket_gold.pending_short_clOrdId = short_id;
                 ++g_bracket_gold_trades_this_minute;
+            }
+        }
+
+        // GoldFlowEngine: L2 order-flow directional engine.
+        // Fires only when no other gold position is open.
+        // Entry: L2 imbalance persistence + EWM drift + momentum all confirm.
+        // SL: ATR(20) * 1.0 -- volatility-sized, not bracket-range-sized.
+        // Trail: progressive ATR-based stages that tighten as profit grows.
+        if (gold_can_enter
+            && !g_bracket_gold.has_open_position()
+            && !g_gold_stack.has_open_position()
+            && !g_gold_flow.has_open_position()) {
+            g_gold_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
+                                       ? g_cfg.risk_per_trade_usd : GFE_RISK_DOLLARS;
+            g_gold_flow.shadow_mode  = (g_cfg.mode != "LIVE");
+            auto flow_on_close = [&](const omega::TradeRecord& tr) {
+                handle_closed_trade(tr);
+                // Close broker position with a market order (same as bracket_on_close)
+                const bool close_is_long = (tr.side == "SHORT"); // flip to close
+                send_live_order("GOLD.F", close_is_long, tr.size, tr.exitPrice);
+            };
+            g_gold_flow.on_tick(bid, ask,
+                g_macro_ctx.gold_l2_imbalance,
+                g_gold_stack.ewm_drift(),
+                now_ms_g, flow_on_close);
+            if (g_gold_flow.has_open_position()) {
+                // Flow engine entered -- telemetry
+                g_telemetry.UpdateLastSignal("GOLD.F",
+                    g_gold_flow.pos.is_long ? "LONG" : "SHORT",
+                    g_gold_flow.pos.entry, "L2_FLOW",
+                    "FLOW", regime.c_str(), "GOLD_FLOW");
             }
         }
 
