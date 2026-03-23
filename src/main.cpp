@@ -3237,6 +3237,37 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool bracket_armed   = (bracket_eng.phase == omega::BracketPhase::ARMED);
         const bool bracket_pending = (bracket_eng.phase == omega::BracketPhase::PENDING);
 
+        // ── Direct spread guard — belt-and-suspenders beyond supervisor ───────
+        // Supervisor spread gate was broken (max_spread_pct defaulted to 0.10=10%,
+        // never overridden). Now fixed via apply_supervisor, but also guard here
+        // as a second layer. Only blocks NEW arming (IDLE phase) — never cancels
+        // an already ARMED/PENDING/LIVE position.
+        // London open guard (07:00-07:15 UTC): spreads blow out on all instruments
+        // at session open. Same pattern as gold's in_london_open_noise.
+        const bool bracket_spread_blocked = [&]() -> bool {
+            if (bracket_open || bracket_armed || bracket_pending) return false; // managing existing
+            const double mid_price = (bid + ask) * 0.5;
+            if (mid_price <= 0.0) return false;
+            const double spread_pct = (ask - bid) / mid_price * 100.0;
+            if (spread_pct > sup.cfg.max_spread_pct) {
+                std::cout << "[BRACKET-SPREAD-BLOCK] " << sym
+                          << " spread_pct=" << std::fixed << std::setprecision(3) << spread_pct
+                          << "% > max=" << sup.cfg.max_spread_pct << "%\n";
+                std::cout.flush();
+                return true;
+            }
+            return false;
+        }();
+        // London open guard: 07:00-07:15 UTC — violent liquidity sweeps on all instruments
+        const bool bracket_london_noise = [&]() -> bool {
+            if (bracket_open || bracket_armed || bracket_pending) return false;
+            const auto t_bn = std::chrono::system_clock::to_time_t(
+                std::chrono::system_clock::now());
+            struct tm ti_bn{}; gmtime_s(&ti_bn, &t_bn);
+            const int mins_utc = ti_bn.tm_hour * 60 + ti_bn.tm_min;
+            return (mins_utc >= 420 && mins_utc < 435); // 07:00-07:15 UTC
+        }();
+
         // ── Trend bias: L2-aware counter-trend suppression + pyramiding ───────
         // Update L2 adjustment on the trend state every tick (throttled internally to 5s)
         BracketTrendState& trend = g_bracket_trend[sym];
@@ -3253,7 +3284,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
         const bool can_arm         = (base_can_enter && sdec.allow_bracket && freq_ok
                                       && (!bracket_open || is_pyramiding)
-                                      && !trend_blocked);
+                                      && !trend_blocked
+                                      && !bracket_spread_blocked
+                                      && !bracket_london_noise);
 
         // Gate logic by phase:
         //   IDLE    → can_arm: supervisor + session + freq + trend bias all required
@@ -4874,9 +4907,15 @@ int main(int argc, char* argv[])
             std::cout << "[SYMCFG] All bracket engine params overridden from " << sym_ini << "\n";
 
             // Apply supervisor config from symbols.ini to each supervisor
+            // apply_supervisor: wires SymbolConfig fields into supervisor cfg.
+            // max_spread_pct is NOT in SymbolConfig — it lives in OmegaConfig
+            // per-symbol fields. Pass it explicitly per symbol so the supervisor's
+            // spread gate fires at the correct threshold (was stuck at 0.10 default,
+            // which at $24,000 = $2,400 threshold — never triggered).
             auto apply_supervisor = [](omega::SymbolSupervisor& sup,
                                        const std::string& sym,
-                                       const SymbolConfig& c) {
+                                       const SymbolConfig& c,
+                                       double max_spread_pct_override) {
                 sup.symbol                          = sym;
                 sup.cfg.allow_bracket               = c.allow_bracket;
                 sup.cfg.allow_breakout              = c.allow_breakout;
@@ -4889,23 +4928,24 @@ int main(int argc, char* argv[])
                 sup.cfg.breakout_in_trend           = c.breakout_in_trend;
                 sup.cfg.cooldown_fail_threshold     = c.cooldown_fail_threshold;
                 sup.cfg.cooldown_duration_ms        = static_cast<int64_t>(c.cooldown_duration_ms);
+                sup.cfg.max_spread_pct              = max_spread_pct_override;
             };
-            apply_supervisor(g_sup_sp,     "US500.F", g_sym_cfg.get("US500.F"));
-            apply_supervisor(g_sup_nq,     "USTEC.F", g_sym_cfg.get("USTEC.F"));
-            apply_supervisor(g_sup_cl,     "USOIL.F", g_sym_cfg.get("USOIL.F"));
-            apply_supervisor(g_sup_us30,   "DJ30.F",  g_sym_cfg.get("DJ30.F"));
-            apply_supervisor(g_sup_nas100, "NAS100",  g_sym_cfg.get("NAS100"));
-            apply_supervisor(g_sup_ger30,  "GER30",   g_sym_cfg.get("GER30"));
-            apply_supervisor(g_sup_uk100,  "UK100",   g_sym_cfg.get("UK100"));
-            apply_supervisor(g_sup_estx50, "ESTX50",  g_sym_cfg.get("ESTX50"));
-            apply_supervisor(g_sup_xag,    "XAGUSD",  g_sym_cfg.get("XAGUSD"));
-            apply_supervisor(g_sup_eurusd, "EURUSD",  g_sym_cfg.get("EURUSD"));
-            apply_supervisor(g_sup_gbpusd, "GBPUSD",  g_sym_cfg.get("GBPUSD"));
-            apply_supervisor(g_sup_audusd, "AUDUSD",  g_sym_cfg.get("AUDUSD"));
-            apply_supervisor(g_sup_nzdusd, "NZDUSD",  g_sym_cfg.get("NZDUSD"));
-            apply_supervisor(g_sup_usdjpy, "USDJPY",  g_sym_cfg.get("USDJPY"));
-            apply_supervisor(g_sup_brent,  "UKBRENT", g_sym_cfg.get("UKBRENT"));
-            apply_supervisor(g_sup_gold,   "GOLD.F",  g_sym_cfg.get("GOLD.F"));
+            apply_supervisor(g_sup_sp,     "US500.F", g_sym_cfg.get("US500.F"), g_cfg.sp_max_spread_pct);
+            apply_supervisor(g_sup_nq,     "USTEC.F", g_sym_cfg.get("USTEC.F"), g_cfg.nq_max_spread_pct);
+            apply_supervisor(g_sup_cl,     "USOIL.F", g_sym_cfg.get("USOIL.F"), g_cfg.oil_max_spread_pct);
+            apply_supervisor(g_sup_us30,   "DJ30.F",  g_sym_cfg.get("DJ30.F"),  g_cfg.us30_max_spread_pct);
+            apply_supervisor(g_sup_nas100, "NAS100",  g_sym_cfg.get("NAS100"),  g_cfg.nas100_max_spread_pct);
+            apply_supervisor(g_sup_ger30,  "GER30",   g_sym_cfg.get("GER30"),   g_cfg.eu_index_max_spread_pct);
+            apply_supervisor(g_sup_uk100,  "UK100",   g_sym_cfg.get("UK100"),   g_cfg.eu_index_max_spread_pct);
+            apply_supervisor(g_sup_estx50, "ESTX50",  g_sym_cfg.get("ESTX50"),  g_cfg.eu_index_max_spread_pct);
+            apply_supervisor(g_sup_xag,    "XAGUSD",  g_sym_cfg.get("XAGUSD"),  g_cfg.silver_max_spread_pct);
+            apply_supervisor(g_sup_eurusd, "EURUSD",  g_sym_cfg.get("EURUSD"),  g_cfg.fx_max_spread_pct);
+            apply_supervisor(g_sup_gbpusd, "GBPUSD",  g_sym_cfg.get("GBPUSD"),  g_cfg.fx_max_spread_pct);
+            apply_supervisor(g_sup_audusd, "AUDUSD",  g_sym_cfg.get("AUDUSD"),  g_cfg.fx_max_spread_pct);
+            apply_supervisor(g_sup_nzdusd, "NZDUSD",  g_sym_cfg.get("NZDUSD"),  g_cfg.fx_max_spread_pct);
+            apply_supervisor(g_sup_usdjpy, "USDJPY",  g_sym_cfg.get("USDJPY"),  g_cfg.fx_max_spread_pct);
+            apply_supervisor(g_sup_brent,  "UKBRENT", g_sym_cfg.get("UKBRENT"), g_cfg.brent_max_spread_pct);
+            apply_supervisor(g_sup_gold,   "GOLD.F",  g_sym_cfg.get("GOLD.F"),  g_cfg.bracket_gold_max_spread_pct);
             std::cout << "[SUPERVISOR] All supervisors configured from " << sym_ini << "\n";
             std::cout << "[SYMCFG] All engine params overridden from " << sym_ini << "\n";
         } else {
