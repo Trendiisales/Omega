@@ -147,7 +147,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 
 /* Engine grid — all 15 engines in a responsive grid */
 .eng-section{flex-shrink:0;}
-.eng-section-label{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;padding:0 2px 5px;}
+.eng-section-label{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;padding:0 2px 5px;display:flex;align-items:center;gap:0;}
 .eng-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;}
 .eng-grid.eng-grid-3{grid-template-columns:repeat(3,1fr);}
 .eng-grid.eng-grid-6{grid-template-columns:repeat(6,1fr);}
@@ -454,7 +454,7 @@ R"OMEGA2(
 
 
     <div class="eng-section" style="margin-top:6px;">
-      <div class="eng-section-label">⬡ FX + Asia Engines <span id="asiaGateBadge" style="font-size:10px;margin-left:8px;padding:1px 7px;border-radius:3px;border:1px solid rgba(255,255,255,0.15);color:var(--t2)">ASIA FX: --</span></div>
+      <div class="eng-section-label">⬡ FX + Asia Engines <span id="asiaGateBadge" style="font-size:10px;margin-left:8px;padding:1px 7px;border-radius:3px;border:1px solid rgba(255,255,255,0.15);color:var(--t2);white-space:nowrap;flex-shrink:0;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">ASIA FX: --</span></div>
       <div class="eng-grid" style="grid-template-columns:repeat(5,1fr)">
         <div class="eng-cell" id="engEUR"><div class="eng-sym c-cyan">EURUSD</div><div class="eng-ph eph-flat" id="engEURPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engEURBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engEURAsk">--</span></div><div class="eng-vol" id="engEURVol">--</div><div class="eng-sigs" id="engEURSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engEURProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engEURPct"></span></div></div>
 

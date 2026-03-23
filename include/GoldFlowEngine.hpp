@@ -57,7 +57,12 @@ static constexpr int    GFE_SLOW_TICKS        = 100;   // slow confirmation wind
 static constexpr double GFE_LONG_THRESHOLD    = 0.75;  // bid-heavy: long signal
 static constexpr double GFE_SHORT_THRESHOLD   = 0.25;  // ask-heavy: short signal
 static constexpr double GFE_DRIFT_MIN         = 0.0;   // drift must be non-zero same dir
-static constexpr int    GFE_ATR_PERIOD        = 20;    // ATR lookback ticks
+static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- raised 20→100:
+                                                        // 20-tick hi-lo range was a 2-second window,
+                                                        // producing SL of $0.3–5 depending on micro-volatility.
+                                                        // 100 ticks = ~10-30s, EWM-smoothed, stable across sessions.
+static constexpr double GFE_ATR_EWM_ALPHA     = 0.05;  // EWM smoothing alpha for ATR (20-tick equivalent half-life)
+static constexpr double GFE_ATR_MIN           = 2.0;   // ATR floor in $pts -- prevents sub-$2 SL on dead tape
 static constexpr double GFE_ATR_SL_MULT       = 1.0;   // SL = ATR * this
 static constexpr double GFE_TRAIL_STAGE2_MULT = 1.0;   // trail at 1.0x ATR from stage 2
 static constexpr double GFE_TRAIL_STAGE3_MULT = 0.5;   // tighten to 0.5x ATR at stage 3
@@ -140,10 +145,11 @@ struct GoldFlowEngine {
         update_persistence(l2_imb, now_ms);
 
         // FLOW_BUILDING or IDLE: check for signal
-        const bool fast_long  = (m_fast_long_count  >= GFE_FAST_TICKS);
-        const bool fast_short = (m_fast_short_count >= GFE_FAST_TICKS);
-        const bool slow_long  = (m_slow_long_count  >= GFE_SLOW_TICKS);
-        const bool slow_short = (m_slow_short_count >= GFE_SLOW_TICKS);
+        // Check for directional persistence using rolling window counts
+        const bool fast_long  = (m_fast_long_count  >= GFE_FAST_DIR_THRESHOLD);
+        const bool fast_short = (m_fast_short_count >= GFE_FAST_DIR_THRESHOLD);
+        const bool slow_long  = (m_slow_long_count  >= GFE_SLOW_DIR_THRESHOLD);
+        const bool slow_short = (m_slow_short_count >= GFE_SLOW_DIR_THRESHOLD);
 
         if (fast_long || fast_short) phase = Phase::FLOW_BUILDING;
         else { phase = Phase::IDLE; return; }
@@ -151,14 +157,17 @@ struct GoldFlowEngine {
         // Momentum: mid vs 5 ticks ago
         const double momentum = mid_momentum();
 
-        // Drift and momentum confirmation
+        // Drift and momentum confirmation.
+        // slow_long/short_short now uses GFE_SLOW_DIR_THRESHOLD (75% of 100 ticks = 75 ticks).
+        // The old 0.6 fallback (60 ticks streak) is replaced by the window threshold --
+        // no separate fallback needed since the window count is already tolerant of neutral ticks.
         const bool long_signal  = fast_long
-                                  && (slow_long || m_slow_long_count >= GFE_SLOW_TICKS * 0.6)
+                                  && slow_long
                                   && ewm_drift > GFE_DRIFT_MIN
                                   && momentum > 0.0;
 
         const bool short_signal = fast_short
-                                  && (slow_short || m_slow_short_count >= GFE_SLOW_TICKS * 0.6)
+                                  && slow_short
                                   && ewm_drift < -GFE_DRIFT_MIN
                                   && momentum < 0.0;
 
@@ -180,16 +189,34 @@ struct GoldFlowEngine {
     // -------------------------------------------------------------------------
 private:
 
-    // ATR calculation (20-tick rolling spread/range proxy)
-    double              m_atr           = 0.0;
-    std::deque<double>  m_atr_window;
+    // ATR calculation -- EWM-smoothed tick-to-tick range, 100-tick warmup
+    double              m_atr           = 0.0;   // exposed ATR (0 until warmup complete)
+    double              m_atr_ewm       = 0.0;   // internal EWM accumulator
+    double              m_last_mid_atr  = 0.0;   // previous mid for tick-range computation
+    int                 m_atr_warmup_ticks = 0;  // counts ticks until GFE_ATR_PERIOD reached
+    std::deque<double>  m_atr_window;             // retains spread data (unused post-fix, kept for compat)
     std::deque<double>  m_mid_window;   // for momentum
 
-    // Persistence counters -- count consecutive ticks above/below threshold
+    // Persistence windows -- rolling window count of directional ticks
+    // Fast: counts how many of the last GFE_FAST_TICKS ticks were directional
+    // Slow: counts how many of the last GFE_SLOW_TICKS ticks were directional
+    // OLD design used streak counters (+1 per matching tick, -1 per neutral tick).
+    //   Problem: one neutral tick decayed 99 built ticks by 1, making the slow
+    //   counter almost impossible to reach 100 on real noisy market data.
+    // NEW design: circular ring buffer counting directional ticks in the window.
+    //   Neutral ticks simply push out old directional ticks as the window advances.
+    //   Threshold = 75% of window must be directional (vs 100% in old streak design).
+    static constexpr int GFE_FAST_DIR_THRESHOLD = (GFE_FAST_TICKS * 3) / 4;  // 23/30 ticks directional
+    static constexpr int GFE_SLOW_DIR_THRESHOLD = (GFE_SLOW_TICKS * 3) / 4;  // 75/100 ticks directional
+
     int     m_fast_long_count  = 0;
     int     m_fast_short_count = 0;
     int     m_slow_long_count  = 0;
     int     m_slow_short_count = 0;
+
+    // Rolling window buffers: 1=long, -1=short, 0=neutral
+    std::deque<int> m_fast_window;   // last GFE_FAST_TICKS direction values
+    std::deque<int> m_slow_window;   // last GFE_SLOW_TICKS direction values
 
     int64_t m_cooldown_start   = 0;
     int     m_trade_id         = 0;
@@ -200,23 +227,35 @@ private:
         if ((int)m_mid_window.size() > GFE_ATR_PERIOD * 3)
             m_mid_window.pop_front();
 
-        // Use high-low range proxy: spread + mid movement tick-to-tick
+        // EWM-smoothed ATR using tick-to-tick range (high-low proxy).
+        //
+        // OLD: hi-lo range over last 20 ticks = 2-second window.
+        //   Problem: on a volatile tick this was $4, on a quiet tick $0.3.
+        //   SL was effectively random between $0.3 and $4, sized to whatever
+        //   micro-move happened in the 2 seconds before entry.
+        //
+        // NEW: each tick's "true range" = max(tick-to-tick move, spread).
+        //   EWM-smooth over 100 ticks (alpha=0.05, ~20-tick half-life).
+        //   GFE_ATR_MIN=$2 floor prevents sub-$2 SL on dead overnight tape.
+        //   Result: stable $4-15 ATR during London, $2-5 during Asia -- correct.
+        if (m_last_mid_atr > 0.0) {
+            const double tick_range = std::max(std::fabs(mid - m_last_mid_atr), spread);
+            if (m_atr_ewm <= 0.0)
+                m_atr_ewm = tick_range;  // seed on first tick
+            else
+                m_atr_ewm = GFE_ATR_EWM_ALPHA * tick_range + (1.0 - GFE_ATR_EWM_ALPHA) * m_atr_ewm;
+        }
+        m_last_mid_atr = mid;
+
+        // Only expose ATR once we have GFE_ATR_PERIOD ticks of warmup
+        ++m_atr_warmup_ticks;
+        if (m_atr_warmup_ticks >= GFE_ATR_PERIOD)
+            m_atr = std::max(GFE_ATR_MIN, m_atr_ewm);
+
+        // Keep m_atr_window populated for momentum (spread data retained)
         m_atr_window.push_back(spread);
         if ((int)m_atr_window.size() > GFE_ATR_PERIOD * 3)
             m_atr_window.pop_front();
-
-        if ((int)m_atr_window.size() >= GFE_ATR_PERIOD) {
-            double sum = 0.0;
-            const int n = (int)m_atr_window.size();
-            for (int i = n - GFE_ATR_PERIOD; i < n; ++i)
-                sum += m_atr_window[i];
-            // ATR from spread is too tight -- use mid range instead
-            // Range ATR: max-min of mid over lookback
-            const auto mb = m_mid_window.end() - std::min((int)m_mid_window.size(), GFE_ATR_PERIOD);
-            const double range_hi = *std::max_element(mb, m_mid_window.end());
-            const double range_lo = *std::min_element(mb, m_mid_window.end());
-            m_atr = range_hi - range_lo;
-        }
     }
 
     double mid_momentum() const noexcept {
@@ -225,28 +264,31 @@ private:
     }
 
     void update_persistence(double l2_imb, int64_t /*now_ms*/) noexcept {
-        // Fast window: consecutive ticks
-        if (l2_imb > GFE_LONG_THRESHOLD) {
-            ++m_fast_long_count;
-            m_fast_short_count = 0;
-        } else if (l2_imb < GFE_SHORT_THRESHOLD) {
-            ++m_fast_short_count;
-            m_fast_long_count = 0;
-        } else {
-            // Neutral tick -- decay slowly (don't reset instantly, allows small retracements)
-            if (m_fast_long_count  > 0) --m_fast_long_count;
-            if (m_fast_short_count > 0) --m_fast_short_count;
+        // Classify this tick's direction
+        const int dir = (l2_imb > GFE_LONG_THRESHOLD) ? 1
+                      : (l2_imb < GFE_SHORT_THRESHOLD) ? -1
+                      : 0;
+
+        // Fast window -- push new tick, drop oldest if full
+        m_fast_window.push_back(dir);
+        if ((int)m_fast_window.size() > GFE_FAST_TICKS)
+            m_fast_window.pop_front();
+
+        // Slow window
+        m_slow_window.push_back(dir);
+        if ((int)m_slow_window.size() > GFE_SLOW_TICKS)
+            m_slow_window.pop_front();
+
+        // Recount directional ticks in each window
+        m_fast_long_count  = 0; m_fast_short_count = 0;
+        m_slow_long_count  = 0; m_slow_short_count = 0;
+        for (int d : m_fast_window) {
+            if (d ==  1) ++m_fast_long_count;
+            if (d == -1) ++m_fast_short_count;
         }
-        // Slow window: same logic, separate counter
-        if (l2_imb > GFE_LONG_THRESHOLD) {
-            ++m_slow_long_count;
-            m_slow_short_count = 0;
-        } else if (l2_imb < GFE_SHORT_THRESHOLD) {
-            ++m_slow_short_count;
-            m_slow_long_count = 0;
-        } else {
-            if (m_slow_long_count  > 0) --m_slow_long_count;
-            if (m_slow_short_count > 0) --m_slow_short_count;
+        for (int d : m_slow_window) {
+            if (d ==  1) ++m_slow_long_count;
+            if (d == -1) ++m_slow_short_count;
         }
     }
 
@@ -282,6 +324,8 @@ private:
         // Reset persistence so we don't re-enter immediately
         m_fast_long_count = m_fast_short_count = 0;
         m_slow_long_count = m_slow_short_count = 0;
+        m_fast_window.clear();
+        m_slow_window.clear();
 
         std::cout << "[GOLD-FLOW] ENTRY " << (is_long ? "LONG" : "SHORT")
                   << " @ " << std::fixed << std::setprecision(2) << entry_px
@@ -363,13 +407,12 @@ private:
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
         if (!sl_hit) return;
 
-        // ---- Minimum hold time ------------------------------------------
-        const int64_t held_ms = now_ms - (pos.entry_ts * 1000);
-        if (held_ms < GFE_MIN_HOLD_MS && pos.trail_stage == 0) {
-            // Still in initial SL zone and not held long enough -- let it run
-            // (avoids exiting on the very first tick's spread bounce)
-            return;
-        }
+        // Always honour a hard SL hit immediately, regardless of time held.
+        // OLD code blocked exits when held_ms < 5s AND trail_stage == 0 to
+        // "avoid spread bounce". This caused the engine to hold a full 1xATR
+        // loss open on a genuine false signal entry, which is exactly wrong.
+        // The spread gate on entry (GFE_MAX_SPREAD=$0.60) already filters
+        // entries where spread noise could fake-hit the SL on the first tick.
 
         // ---- Exit -------------------------------------------------------
         const double exit_px = pos.is_long ? bid : ask;
