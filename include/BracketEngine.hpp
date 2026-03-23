@@ -374,9 +374,8 @@ public:
                                      : MIN_RANGE;
 
         // ── Structural range ──────────────────────────────────────────────────
-        const int    wsz    = static_cast<int>(m_window.size());
-        const auto   wbegin = m_window.begin() + (wsz - STRUCTURE_LOOKBACK);
-        const auto   wend   = m_window.end() - 1;
+        const auto   wbegin = m_window.end() - STRUCTURE_LOOKBACK;
+        const auto   wend   = m_window.end();   // inclusive of current tick
         const double shi    = *std::max_element(wbegin, wend);
         const double slo    = *std::min_element(wbegin, wend);
         const double range  = shi - slo;
