@@ -31,7 +31,18 @@
 //
 //  COOLDOWN: 30s after any exit. Prevents overtrading after a move exhausts.
 //
-//  Usage in main.cpp:
+//  KNOWN GAP — MAKER EXECUTION (Problem 3):
+//    Current engine uses market orders (entry_px = ask for long, bid for short).
+//    The flow intelligence spec calls for LIMIT orders at mid to save ~$0.30/trade
+//    (half-spread). At 20 trades/day that's ~$6/day or ~$1500/year on $30 risk.
+//    Implementation requires:
+//      1. Send LIMIT order at mid price via FIX tag 40=2
+//      2. Track pending limit order ID
+//      3. On fill ACK → transition to LIVE
+//      4. On timeout (e.g. 500ms) → cancel limit, optionally send market
+//    This is a main.cpp FIX dispatch change, not an engine change.
+//    Currently deferred — market orders work correctly, limit adds fill-rate risk.
+//
 //    #include "GoldFlowEngine.hpp"
 //    static GoldFlowEngine g_gold_flow;
 //    // each tick:
@@ -176,6 +187,28 @@ struct GoldFlowEngine {
         // ATR must be warmed up
         if (m_atr <= 0.0) return;
 
+        // ── FIX 1: Stale imbalance check ─────────────────────────────────────
+        // The persistence windows confirm imbalance was sustained over the last
+        // 30/100 ticks, but the CURRENT tick's imbalance may have already flipped
+        // neutral or against direction. If the book has normalised since the signal
+        // built, don't enter -- the institutional pressure that justified the signal
+        // may already be exhausted.
+        // Threshold: current l2_imb must still show directional bias (not just neutral).
+        // Long: imbalance still bid-heavy (> 0.60, softer than build threshold of 0.75)
+        // Short: imbalance still ask-heavy (< 0.40)
+        if (long_signal  && l2_imb < 0.60) {
+            std::cout << "[GOLD-FLOW] SIGNAL_STALE long — imb=" << l2_imb
+                      << " (need >0.60 at entry)\\n";
+            std::cout.flush();
+            return;
+        }
+        if (short_signal && l2_imb > 0.40) {
+            std::cout << "[GOLD-FLOW] SIGNAL_STALE short — imb=" << l2_imb
+                      << " (need <0.40 at entry)\\n";
+            std::cout.flush();
+            return;
+        }
+
         // Fire entry
         enter(long_signal, mid, bid, ask, spread, now_ms);
     }
@@ -295,14 +328,33 @@ private:
     void enter(bool is_long, double mid, double bid, double ask,
                double spread, int64_t now_ms) noexcept
     {
-        const double sl_pts  = m_atr * GFE_ATR_SL_MULT;
+        // ── FIX 2: SL floor — ATR floor alone is insufficient ────────────────
+        // GFE_ATR_MIN = $2.0 prevents sub-$2 SL from EWM ATR on dead tape.
+        // BUT: spread = $0.60 at max entry. $2.0 SL / $0.60 spread = 3.3x spread.
+        // A normal spread fluctuation can close 30% of that SL gap instantly.
+        // Any tick-rate noise on Asia tape hits a $2 SL in seconds.
+        //
+        // Minimum SL = max(ATR * mult, spread * 3.0).
+        // spread * 3.0 ensures SL is never reachable by spread noise alone.
+        // Example: spread=$0.45 → min SL=$1.35, but ATR=$3 wins → SL=$3.
+        //          spread=$0.55 → min SL=$1.65, ATR=$2 → SL=$2 (ATR wins).
+        //          spread=$0.60 → min SL=$1.80, ATR=$2 → SL=$2 (ATR wins).
+        // The spread gate (GFE_MAX_SPREAD=$0.60) already caps spread at entry.
+        const double atr_sl  = m_atr * GFE_ATR_SL_MULT;
+        const double min_sl  = spread * 3.0;
+        const double sl_pts  = std::max(atr_sl, min_sl);
         if (sl_pts <= 0.0) return;
 
         // Size: fixed dollar risk / SL_pts
-        // 1 lot gold = $100/pt at BlackBull. Adjust tick_mult if different.
-        const double tick_mult = 100.0; // $100 per pt per lot
+        // 1 lot gold = $100/pt at BlackBull.
+        // Cap at 0.08 lots per spec: prevents oversizing when ATR collapses
+        // on overnight tape (ATR=$2, size = $30/(2*100) = 0.15 lots — too big
+        // for a $2 stop that sits inside normal bid/ask noise).
+        static constexpr double GFE_MAX_LOT_FLOW = 0.08;
+        const double tick_mult = 100.0;
         double size = risk_dollars / (sl_pts * tick_mult);
-        size = std::max(GFE_MIN_LOT, std::min(GFE_MAX_LOT, std::round(size * 100.0) / 100.0));
+        size = std::max(GFE_MIN_LOT, std::min(GFE_MAX_LOT_FLOW,
+               std::round(size * 100.0) / 100.0));
 
         const double entry_px = is_long ? ask : bid; // market order, pay spread
         const double sl_px    = is_long ? (entry_px - sl_pts) : (entry_px + sl_pts);
@@ -331,7 +383,7 @@ private:
                   << " @ " << std::fixed << std::setprecision(2) << entry_px
                   << " sl=" << sl_px
                   << " sl_pts=" << sl_pts
-                  << " atr=" << m_atr
+                  << " (atr=" << m_atr << " spread_floor=" << min_sl << ")"
                   << " size=" << size
                   << " spread=" << spread << "\n";
         std::cout.flush();
