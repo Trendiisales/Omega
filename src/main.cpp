@@ -394,6 +394,7 @@ static omega::BracketEngine g_bracket_uk100;
 static omega::BracketEngine g_bracket_estx50;
 // Oil/Brent bracket
 static omega::BracketEngine g_bracket_brent;
+static omega::BracketEngine g_bracket_cl;    // USOIL.F — separate from gold, properly isolated
 // FX bracket engines
 static omega::BracketEngine g_bracket_eurusd;
 static omega::BracketEngine g_bracket_gbpusd;
@@ -2727,6 +2728,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_bracket_uk100.pos.active) +
                 static_cast<int>(g_bracket_estx50.pos.active) +
                 static_cast<int>(g_bracket_brent.pos.active) +
+                static_cast<int>(g_bracket_cl.pos.active) +
                 static_cast<int>(g_bracket_eurusd.pos.active) +
                 static_cast<int>(g_bracket_gbpusd.pos.active) +
                 static_cast<int>(g_bracket_audusd.pos.active) +
@@ -2776,6 +2778,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_bracket_uk100.pos.active) +
             static_cast<int>(g_bracket_estx50.pos.active) +
             static_cast<int>(g_bracket_brent.pos.active) +
+            static_cast<int>(g_bracket_cl.pos.active) +
             static_cast<int>(g_bracket_eurusd.pos.active) +
             static_cast<int>(g_bracket_gbpusd.pos.active) +
             static_cast<int>(g_bracket_audusd.pos.active) +
@@ -4294,23 +4297,28 @@ int main(int argc, char* argv[])
         0.8,    // SLIPPAGE_BUFFER — 0.8pts estimated one-way slip
         1.5     // EDGE_MULTIPLIER — tp must be >= (spread+slip)*1.5
     );
+    // XAGUSD (~$65): daily range $3.5, typical compression $0.30, spread $0.08
+    // Silver amplifies gold — same cascade logic, same cooldown, trail rides $3-5 weekly moves.
+    // Trail at 3R: comp=$0.30, trail_dist=$0.075 — very tight, holds through volatile moves.
     g_bracket_xag.configure(
-        0.08,   // buffer
-        30,     // lookback
-        1.4,    // RR
-        120000, // cooldown_ms
-        0.20,   // MIN_RANGE — 0.20pts minimum (was 0.35, spec says 0.20)
-        0.06,   // CONFIRM_MOVE static fallback
+        0.04,   // buffer: spread*0.5 = $0.04 outside range
+        30,     // lookback: 30-tick structural window
+        3.0,    // RR: 3.0 matches gold. On $0.30 compression: trail arms at $0.90 in.
+                //   On a $3.50 weekly move: 10R+ captured via trail.
+        30000,  // cooldown_ms: 30s — silver cascades same as gold, re-arm fast.
+        0.15,   // MIN_RANGE: $0.15 minimum (half typical compression).
+                //   At $65, $0.15 = 0.23% — meaningful structure, not noise.
+        0.06,   // CONFIRM_MOVE
         4000,   // confirm_timeout_ms
         8000,   // min_hold_ms
-        0.15,   // VWAP_MIN_DIST
-        20000,  // MIN_STRUCTURE_MS
-        4000,   // FAILURE_WINDOW_MS
+        0.0,    // VWAP_MIN_DIST: removed — silver near VWAP pre-breakout by definition.
+        20000,  // MIN_STRUCTURE_MS: 20s
+        12000,  // FAILURE_WINDOW_MS: 12s — silver sweeps slightly faster than gold.
         20,     // ATR_PERIOD
         0.17,   // ATR_CONFIRM_K
         1.4,    // ATR_RANGE_K
-        0.10,   // SLIPPAGE_BUFFER — 0.10pts estimated one-way slip on silver
-        1.6     // EDGE_MULTIPLIER
+        0.08,   // SLIPPAGE_BUFFER: $0.08 matches typical silver spread
+        1.5     // EDGE_MULTIPLIER
     );
     // Wire shadow fill simulation — price-triggered in PENDING, not immediate at arm
     g_bracket_gold.shadow_mode = (g_cfg.mode != "LIVE");
@@ -4341,20 +4349,64 @@ int main(int argc, char* argv[])
     g_bracket_nzdusd.symbol = "NZDUSD";  g_bracket_nzdusd.ENTRY_SIZE = 0.01;
     g_bracket_usdjpy.symbol = "USDJPY";  g_bracket_usdjpy.ENTRY_SIZE = 0.01;
 
-    // configure(buffer, lookback, rr, cooldown_ms, min_range, confirm, ctout, min_hold, vwap_dist, struct_ms, fail_win, atr_per, atr_ck, atr_rk, slip_buf, edge_mult)
-    g_bracket_sp.configure(    0.30, 30, 1.8, 120000,  2.0, 0.05, 4000, 10000, 4.0, 20000, 5000, 20, 0.15, 2.0, 0.30, 1.6);
-    g_bracket_nq.configure(    1.00, 30, 1.8, 120000,  8.0, 0.05, 4000, 10000,12.0, 20000, 5000, 20, 0.15, 2.0, 1.00, 1.6);
-    g_bracket_us30.configure(  3.00, 30, 1.8, 120000, 20.0, 0.05, 4000, 10000,40.0, 20000, 5000, 20, 0.15, 2.0, 3.00, 1.6);
-    g_bracket_nas100.configure(1.00, 30, 1.8, 120000,  8.0, 0.05, 4000, 10000, 8.0, 20000, 5000, 20, 0.15, 2.0, 1.00, 1.6);
-    g_bracket_ger30.configure( 1.00, 30, 1.8, 120000,  5.0, 0.05, 4000, 10000,10.0, 20000, 5000, 20, 0.15, 2.0, 1.00, 1.6);
-    g_bracket_uk100.configure( 0.50, 30, 1.8, 120000,  3.0, 0.05, 4000, 10000, 6.0, 20000, 5000, 20, 0.15, 2.0, 0.50, 1.6);
-    g_bracket_estx50.configure(0.50, 30, 1.8, 120000,  2.0, 0.05, 4000, 10000, 4.0, 20000, 5000, 20, 0.15, 2.0, 0.50, 1.6);
-    g_bracket_brent.configure( 0.10, 30, 1.8, 120000,  0.5, 0.05, 4000, 10000, 1.5, 20000, 5000, 20, 0.15, 2.0, 0.10, 1.6);
-    g_bracket_eurusd.configure(0.00010, 30, 1.8, 120000, 0.00060, 0.05, 4000, 10000, 0.0010, 20000, 5000, 20, 0.15, 2.0, 0.00010, 1.6);
-    g_bracket_gbpusd.configure(0.00012, 30, 1.8, 120000, 0.00070, 0.05, 4000, 10000, 0.0012, 20000, 5000, 20, 0.15, 2.0, 0.00012, 1.6);
-    g_bracket_audusd.configure(0.00008, 30, 1.8, 120000, 0.00050, 0.05, 4000, 10000, 0.0008, 20000, 5000, 20, 0.15, 2.0, 0.00008, 1.6);
-    g_bracket_nzdusd.configure(0.00008, 30, 1.8, 120000, 0.00050, 0.05, 4000, 10000, 0.0008, 20000, 5000, 20, 0.15, 2.0, 0.00008, 1.6);
-    g_bracket_usdjpy.configure(0.04,    30, 1.8, 120000, 0.25,    0.05, 4000, 10000, 0.40,   20000, 5000, 20, 0.15, 2.0, 0.04,    1.6);
+    // ── Bracket calibration — March 2026 actual prices ─────────────────────────
+    // All params derived from real price levels and observed daily ranges.
+    // configure(buf, lookback, RR, cooldown_ms, min_range, cfm, ctout, min_hold_ms,
+    //           vwap_dist, struct_ms, fail_win_ms, atr_per, atr_ck, atr_rk, slip_buf, edge_mult)
+    //
+    // RR=2.5 for equity indices — trail kicks in at 2.5R, stepped SL locks gains
+    // cooldown=60s for indices — slightly choppier intraday than commodities
+    // fail_win=10s for indices — sweeps resolve faster on liquid index futures
+    // vwap_dist=0 everywhere — pre-breakout price near VWAP by definition
+    //
+    // US500.F (~$6,600): daily range $120, typical compression $8, spread $0.50
+    g_bracket_sp.configure(    0.25, 30, 2.5,  60000,  4.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 0.30, 1.5);
+    // USTEC.F (~$23,000): daily range $400, typical compression $25, spread $1.50
+    g_bracket_nq.configure(    0.75, 30, 2.5,  60000, 12.5, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
+    // DJ30.F (~$43,000): daily range $500, typical compression $40, spread $5.00
+    g_bracket_us30.configure(  2.50, 30, 2.5,  60000, 20.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 3.00, 1.5);
+    // NAS100 (~$23,000): same scale as USTEC
+    g_bracket_nas100.configure(0.75, 30, 2.5,  60000, 12.5, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
+    // GER30/DAX (~$22,800): daily range $300, typical compression $20, spread $2.00
+    g_bracket_ger30.configure( 1.00, 30, 2.5,  60000, 10.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
+    // UK100/FTSE (~$8,600): daily range $120, typical compression $8, spread $1.00
+    g_bracket_uk100.configure( 0.50, 30, 2.5,  60000,  4.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
+    // ESTX50 (~$5,400): daily range $80, typical compression $6, spread $1.00
+    g_bracket_estx50.configure(0.50, 30, 2.5,  60000,  3.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
+    g_bracket_brent.configure(
+        0.10,   // buffer
+        30,     // lookback
+        2.5,    // RR: raised 1.8→2.5. Brent has $2-5 daily ranges — trail captures multi-hour moves.
+        45000,  // cooldown_ms: reduced 120s→45s. Slightly longer than gold (oil choppier intraday).
+        0.5,    // MIN_RANGE — 0.50pts minimum (unchanged)
+        0.05,   // CONFIRM_MOVE
+        4000,   // confirm_timeout_ms
+        10000,  // min_hold_ms
+        0.0,    // VWAP_MIN_DIST: removed — same rationale as gold/silver
+        20000,  // MIN_STRUCTURE_MS
+        12000,  // FAILURE_WINDOW_MS: raised 5s→12s — oil sweeps similar duration to silver
+        20,     // ATR_PERIOD
+        0.15,   // ATR_CONFIRM_K
+        2.0,    // ATR_RANGE_K
+        0.10,   // SLIPPAGE_BUFFER
+        1.5     // EDGE_MULTIPLIER
+    );
+    // FX brackets — calibrated for March 2026 price levels
+    // RR=2.0 for FX — tighter pip-based moves, trail at 2R
+    // cooldown=45s — FX compresses and re-compresses faster than commodities
+    // fail_win=8s — FX sweeps resolve quickly (highly liquid, tight spread)
+    // vwap_dist=0 everywhere — pre-breakout FX near session VWAP
+    //
+    // EURUSD (~1.156): daily range ~100 pips, compression ~7 pips, spread ~1.4 pip
+    g_bracket_eurusd.configure(0.00007, 30, 2.0,  45000, 0.00035, 0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.00010, 1.5);
+    // GBPUSD (~1.330): daily range ~120 pips, compression ~8 pips, spread ~1.8 pip
+    g_bracket_gbpusd.configure(0.00009, 30, 2.0,  45000, 0.00040, 0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.00012, 1.5);
+    // AUDUSD (~0.701): daily range ~80 pips, compression ~5 pips, spread ~1.2 pip
+    g_bracket_audusd.configure(0.00006, 30, 2.0,  45000, 0.00025, 0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.00008, 1.5);
+    // NZDUSD (~0.583): similar to AUD, slightly wider spread
+    g_bracket_nzdusd.configure(0.00007, 30, 2.0,  45000, 0.00025, 0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.00009, 1.5);
+    // USDJPY (~149.5): daily range ~120 pips, compression ~25 pips, spread ~4 pip
+    g_bracket_usdjpy.configure(0.02,    30, 2.0,  45000, 0.12,    0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.04,    1.5);
 
     // Shadow mode + cancel wiring for all new bracket engines
     const bool shadow = (g_cfg.mode != "LIVE");
@@ -4363,13 +4415,23 @@ int main(int argc, char* argv[])
         beng.PENDING_TIMEOUT_SEC = pending_timeout_sec;
         beng.cancel_order_fn     = [](const std::string& id) { send_cancel_order(id); };
     };
-    wire_bracket(g_bracket_sp);     wire_bracket(g_bracket_nq);
-    wire_bracket(g_bracket_us30);   wire_bracket(g_bracket_nas100);
-    wire_bracket(g_bracket_ger30);  wire_bracket(g_bracket_uk100);
-    wire_bracket(g_bracket_estx50); wire_bracket(g_bracket_brent);
-    wire_bracket(g_bracket_eurusd); wire_bracket(g_bracket_gbpusd);
-    wire_bracket(g_bracket_audusd); wire_bracket(g_bracket_nzdusd);
-    wire_bracket(g_bracket_usdjpy);
+    // Pending timeouts calibrated per symbol:
+    // Commodities: longer compression periods before breaking (5-10 min)
+    // Equity indices: faster breakouts (3-5 min)
+    // FX: tightest — often break within 2-3 min or reset
+    wire_bracket(g_bracket_sp,      300);  // US500: 5min — index compression holds ~3-5min
+    wire_bracket(g_bracket_nq,      300);  // USTEC: 5min
+    wire_bracket(g_bracket_us30,    300);  // DJ30:  5min
+    wire_bracket(g_bracket_nas100,  300);  // NAS100: 5min
+    wire_bracket(g_bracket_ger30,   300);  // GER30: 5min
+    wire_bracket(g_bracket_uk100,   300);  // UK100: 5min
+    wire_bracket(g_bracket_estx50,  300);  // ESTX50: 5min
+    wire_bracket(g_bracket_brent,   480);  // Brent: 8min — oil compresses longer than indices
+    wire_bracket(g_bracket_eurusd,  180);  // EURUSD: 3min — FX breaks fast or resets
+    wire_bracket(g_bracket_gbpusd,  180);  // GBPUSD: 3min
+    wire_bracket(g_bracket_audusd,  180);  // AUDUSD: 3min
+    wire_bracket(g_bracket_nzdusd,  180);  // NZDUSD: 3min
+    wire_bracket(g_bracket_usdjpy,  240);  // USDJPY: 4min — JPY can compress longer
     apply_generic_fx_config(g_eng_eurusd);
     apply_generic_gbpusd_config(g_eng_gbpusd);
     apply_generic_audusd_config(g_eng_audusd);
