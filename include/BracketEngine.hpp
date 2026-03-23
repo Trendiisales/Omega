@@ -176,8 +176,11 @@ public:
                  bool can_enter,
                  const char* macro_regime,
                  CloseCallback on_close,
-                 double vwap = 0.0) noexcept
+                 double vwap = 0.0,
+                 double l2_imbalance = 0.5) noexcept
     {
+        // Store latest L2 imbalance — used in arm_both_sides() for direction bias logging
+        m_l2_imbalance = l2_imbalance;
         if (bid <= 0.0 || ask <= 0.0) return;
         const double mid        = (bid + ask) * 0.5;
         const double spread     = ask - bid;
@@ -343,6 +346,8 @@ public:
         if (!can_enter) {
             if (phase == BracketPhase::ARMED) {
                 m_armed_ts = nowSec(); // pause timer — don't advance toward MIN_STRUCTURE_MS
+                std::cout << "[BRACKET-" << symbol << "] ARMED RESET — can_enter=false blip, timer paused\n";
+                std::cout.flush();
                 return;
             }
             phase = BracketPhase::IDLE; bracket_high = 0.0; bracket_low = 0.0;
@@ -482,6 +487,7 @@ protected:
     int64_t m_cooldown_start = 0;
     int64_t m_armed_ts       = 0;
     int     m_trade_id       = 0;
+    double  m_l2_imbalance   = 0.5;  // last L2 bid/(bid+ask) imbalance — >0.65 bid-heavy, <0.35 ask-heavy
 
     // Locked at the moment both orders are sent — never change after PENDING
     double m_locked_hi        = 0.0;
@@ -590,10 +596,19 @@ protected:
         ++signal_count;
         ++m_trade_id;
 
+        // L2 imbalance direction note — informational, does not gate the trade.
+        // >0.65 = bid-heavy (bullish pressure, long leg favoured)
+        // <0.35 = ask-heavy (bearish pressure, short leg favoured)
+        // 0.35-0.65 = balanced (both legs equally likely)
+        const char* l2_bias = (m_l2_imbalance > 0.65) ? "BID_HEAVY->LONG_FAVOURED"
+                            : (m_l2_imbalance < 0.35) ? "ASK_HEAVY->SHORT_FAVOURED"
+                            :                            "BALANCED";
+
         std::cout << "[BRACKET-" << symbol << "] BOTH ARMED"
                   << " LONG@" << long_entry << " tp=" << long_tp << " sl=" << long_sl
                   << " | SHORT@" << short_entry << " tp=" << short_tp << " sl=" << short_sl
-                  << " range=" << dist << "\n";
+                  << " range=" << dist
+                  << " l2_imb=" << m_l2_imbalance << " (" << l2_bias << ")\n";
         std::cout.flush();
 
         static_cast<Derived*>(this)->onSignal(pending_both);
@@ -642,7 +657,8 @@ protected:
         m_locked_short_sl = m_locked_short_tp = 0.0;
         pending_long_clOrdId.clear();
         pending_short_clOrdId.clear();
-        m_armed_ts = 0;
+        m_armed_ts     = 0;
+        m_l2_imbalance = 0.5;
         phase = BracketPhase::IDLE;
     }
 };

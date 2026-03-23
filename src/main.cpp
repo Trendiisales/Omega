@@ -3061,7 +3061,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                  bool base_can_enter,
                                  double vwap_val,
                                  int& trades_this_min,
-                                 int64_t& min_start) {
+                                 int64_t& min_start,
+                                 double l2_imb = 0.5) {
         const int fb = g_false_break_counts.count(sym) ? g_false_break_counts[sym] : 0;
         const double bkt_momentum = (ref_eng.base_vol_pct > 0.0)
             ? ((ref_eng.recent_vol_pct - ref_eng.base_vol_pct) / ref_eng.base_vol_pct * 100.0)
@@ -3094,7 +3095,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
         bracket_eng.on_tick(bid, ask, now_ms,
             bracket_open ? can_manage : can_arm,
-            regime.c_str(), bracket_on_close, vwap_val);
+            regime.c_str(), bracket_on_close, vwap_val, l2_imb);
 
         // Update bracket state in telemetry snapshot every tick so GUI shows live levels
         g_telemetry.UpdateBracketState(sym.c_str(),
@@ -3134,7 +3135,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_sp.allow_bracket && !g_eng_sp.pos.active
                 && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_sp, g_sup_sp, g_eng_sp, base_can_sp,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
+                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
+                             g_macro_ctx.sp_l2_imbalance);
         // Cross-asset: ES/NQ divergence + Opening Range
         if (!g_ca_esnq.has_open_position() && base_can_sp) {
             const auto ca_sig = g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, ca_on_close);
@@ -3153,7 +3155,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_nq.allow_bracket && !g_eng_nq.pos.active
                 && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_nq, g_sup_nq, g_eng_nq, base_can_nq,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
+                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
+                             g_macro_ctx.nq_l2_imbalance);
     }
     else if (sym == "USOIL.F") {
         // Session gate: London/NY only (07:00-22:00 UTC)
@@ -3196,7 +3199,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_us30.allow_bracket && !g_eng_us30.pos.active
                 && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_us30, g_sup_us30, g_eng_us30, base_can_us30,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
+                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
+                             g_macro_ctx.us30_l2_imbalance);
     }
     else if (sym == "GER30") {
         const bool base_can_ger = symbol_gate("GER30", g_eng_ger30.pos.active || g_bracket_ger30.pos.active);
@@ -3205,7 +3209,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch(g_eng_ger30, g_sup_ger30, base_can_ger);
         if (sdec_ger.allow_bracket && !g_eng_ger30.pos.active)
             dispatch_bracket(g_bracket_ger30, g_sup_ger30, g_eng_ger30, base_can_ger,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
+                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
+                             0.5); // GER30 L2 not yet in MacroContext — neutral imbalance
         // Opening range breakout: Xetra open 08:00 UTC
         if (!g_orb_ger30.has_open_position() && base_can_ger) {
             const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
@@ -3219,7 +3224,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch(g_eng_uk100, g_sup_uk100, base_can_uk);
         if (sdec_uk.allow_bracket && !g_eng_uk100.pos.active)
             dispatch_bracket(g_bracket_uk100, g_sup_uk100, g_eng_uk100, base_can_uk,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
+                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
+                             0.5); // UK100 L2 not yet in MacroContext — neutral imbalance
     }
     else if (sym == "ESTX50") {
         const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active);
@@ -3228,7 +3234,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch(g_eng_estx50, g_sup_estx50, base_can_estx);
         if (sdec_estx.allow_bracket && !g_eng_estx50.pos.active)
             dispatch_bracket(g_bracket_estx50, g_sup_estx50, g_eng_estx50, base_can_estx,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
+                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
+                             0.5); // ESTX50 L2 not yet in MacroContext — neutral imbalance
     }
     else if (sym == "XAGUSD") {
         const bool xag_any_open = g_eng_xag.pos.active || g_bracket_xag.pos.active;
@@ -3239,7 +3246,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch(g_eng_xag, g_sup_xag, base_can);
         if (sdec.allow_bracket && !g_eng_xag.pos.active)
             dispatch_bracket(g_bracket_xag, g_sup_xag, g_eng_xag, base_can,
-                             0.0, g_bracket_xag_trades_this_minute, g_bracket_xag_minute_start);
+                             0.0, g_bracket_xag_trades_this_minute, g_bracket_xag_minute_start,
+                             g_macro_ctx.xag_l2_imbalance);
         // Silver COMEX opening range 13:30 UTC
         if (!g_orb_silver.has_open_position() && base_can) {
             const auto orb = g_orb_silver.on_tick(sym, bid, ask, ca_on_close);
@@ -3278,7 +3286,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch(g_eng_eurusd, g_sup_eurusd, base_can_fx);
         if (sdec_fx.allow_bracket && !g_eng_eurusd.pos.active)
             dispatch_bracket(g_bracket_eurusd, g_sup_eurusd, g_eng_eurusd, base_can_fx,
-                             0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
+                             0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start,
+                             g_macro_ctx.eur_l2_imbalance);
     }
     else if (sym == "GBPUSD") {
         const bool base_can_fx2 = symbol_gate("GBPUSD", g_eng_gbpusd.pos.active || g_bracket_gbpusd.pos.active);
@@ -3287,7 +3296,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch(g_eng_gbpusd, g_sup_gbpusd, base_can_fx2);
         if (sdec_fx2.allow_bracket && !g_eng_gbpusd.pos.active)
             dispatch_bracket(g_bracket_gbpusd, g_sup_gbpusd, g_eng_gbpusd, base_can_fx2,
-                             0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
+                             0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start,
+                             g_macro_ctx.gbp_l2_imbalance);
         // FX cascade: EURUSD-driven GBPUSD entry
         if (!g_ca_fx_cascade.has_open_position() && base_can_fx2) {
             const auto cas = g_ca_fx_cascade.on_tick_gbpusd(bid, ask, ca_on_close);
@@ -3304,19 +3314,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool bc_aud = symbol_gate("AUDUSD", g_eng_audusd.pos.active || g_bracket_audusd.pos.active);
                 const auto sd_aud = sup_decision(g_sup_audusd, g_eng_audusd, bc_aud);
                 if (sd_aud.allow_breakout && !g_bracket_audusd.pos.active) dispatch(g_eng_audusd, g_sup_audusd, bc_aud);
-                if (sd_aud.allow_bracket && !g_eng_audusd.pos.active) dispatch_bracket(g_bracket_audusd, g_sup_audusd, g_eng_audusd, bc_aud, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
+                if (sd_aud.allow_bracket && !g_eng_audusd.pos.active) dispatch_bracket(g_bracket_audusd, g_sup_audusd, g_eng_audusd, bc_aud, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5);
             }
             if (sym == "NZDUSD") {
                 const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.pos.active);
                 const auto sd_nzd = sup_decision(g_sup_nzdusd, g_eng_nzdusd, bc_nzd);
                 if (sd_nzd.allow_breakout && !g_bracket_nzdusd.pos.active) dispatch(g_eng_nzdusd, g_sup_nzdusd, bc_nzd);
-                if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active) dispatch_bracket(g_bracket_nzdusd, g_sup_nzdusd, g_eng_nzdusd, bc_nzd, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
+                if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active) dispatch_bracket(g_bracket_nzdusd, g_sup_nzdusd, g_eng_nzdusd, bc_nzd, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5);
             }
             if (sym == "USDJPY") {
                 const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.pos.active);
                 const auto sd_jpy = sup_decision(g_sup_usdjpy, g_eng_usdjpy, bc_jpy);
                 if (sd_jpy.allow_breakout && !g_bracket_usdjpy.pos.active) dispatch(g_eng_usdjpy, g_sup_usdjpy, bc_jpy);
-                if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active) dispatch_bracket(g_bracket_usdjpy, g_sup_usdjpy, g_eng_usdjpy, bc_jpy, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start);
+                if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active) dispatch_bracket(g_bracket_usdjpy, g_sup_usdjpy, g_eng_usdjpy, bc_jpy, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5);
                 // Carry unwind: VIX spike + JPY bid
                 if (!g_ca_carry_unwind.has_open_position() && bc_jpy) {
                     const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close);
@@ -3335,7 +3345,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 dispatch(g_eng_brent, g_sup_brent, base_can_brent);
             if (sdec_brent.allow_bracket && !g_eng_brent.pos.active)
                 dispatch_bracket(g_bracket_brent, g_sup_brent, g_eng_brent, base_can_brent,
-                                 0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
+                                 0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
+                                 g_macro_ctx.cl_l2_imbalance);
         }
     }
     else if (sym == "NAS100") {
@@ -3347,7 +3358,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active
                 && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_nas100, g_sup_nas100, g_eng_nas100, base_can_nas,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start);
+                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
+                             g_macro_ctx.nq_l2_imbalance);
     }
     else if (sym == "GOLD.F")  {
         const bool gold_any_open =
@@ -3471,7 +3483,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
             g_bracket_gold.on_tick(bid, ask, now_ms_g,
                 bracket_open ? can_manage : can_arm_bracket,
-                regime.c_str(), bracket_on_close, gold_vwap_now);
+                regime.c_str(), bracket_on_close, gold_vwap_now,
+                g_macro_ctx.gold_l2_imbalance);
             g_telemetry.UpdateBracketState("GOLD.F",
                 static_cast<int>(g_bracket_gold.phase),
                 g_bracket_gold.bracket_high,
@@ -4296,7 +4309,11 @@ int main(int argc, char* argv[])
         0.0,    // VWAP_MIN_DIST: removed (was 8.0).
                 //   Pre-breakout compression happens near VWAP by definition.
                 //   $8 VWAP gate blocked brackets precisely when price is coiling.
-        30000,  // MIN_STRUCTURE_MS — 30s structure hold (unchanged)
+        5000,   // MIN_STRUCTURE_MS — 5s (was 30s). Gold cascades move $5 in 10s —
+                //   30s was longer than the entire structure window. The bracket
+                //   would arm, the structure would collapse and re-form 3 times
+                //   before the timer elapsed. 5s confirms the range is real
+                //   without missing the initial break.
         15000,  // FAILURE_WINDOW_MS: raised 5s→15s for gold.
                 //   Gold liquidity sweeps (fake move before real break) last 8-12s.
                 //   5s was force-closing SHORT positions during sweep phase when
