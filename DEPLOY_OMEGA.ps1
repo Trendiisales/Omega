@@ -60,10 +60,10 @@ Copy-Item "C:\Omega\src\gui\www\chimera_logo.png" "$rel\chimera_logo.png" -Force
 Write-Host "      [OK] Assets copied (omega_config.ini + symbols.ini + GUI)" -ForegroundColor Green
 Write-Host ""
 
-# [5/5] Verify deployed symbols.ini matches repo — abort if encoding or copy failed
+# [5/5] Verify deployed symbols.ini matches repo -- abort if encoding or copy failed
 Write-Host "[5/5] Verifying deployed symbols.ini..." -ForegroundColor Yellow
 
-# Expected ground-truth values — must match configure() in main.cpp exactly
+# Expected ground-truth values -- must match configure() in main.cpp exactly
 $expected = @{
     "GOLD.F"   = @{ "MIN_RANGE" = "6.00";    "MIN_STRUCTURE_MS" = "15000"; "BREAKOUT_FAIL_MS" = "15000" }
     "XAGUSD"   = @{ "MIN_RANGE" = "0.15";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "12000" }
@@ -106,7 +106,7 @@ foreach ($line in $iniLines) {
 }
 
 if ($failures.Count -gt 0) {
-    Write-Host "      [ERROR] symbols.ini verification FAILED — aborting launch:" -ForegroundColor Red
+    Write-Host "      [ERROR] symbols.ini verification FAILED -- aborting launch:" -ForegroundColor Red
     $failures | ForEach-Object { Write-Host $_ -ForegroundColor Red }
     Write-Host ""
     Write-Host "      Run: git checkout HEAD -- symbols.ini" -ForegroundColor Yellow
@@ -114,7 +114,7 @@ if ($failures.Count -gt 0) {
     Read-Host "Press Enter to exit"
     return
 }
-Write-Host "      [OK] symbols.ini verified — all 15 symbols, 3 fields each correct" -ForegroundColor Green
+Write-Host "      [OK] symbols.ini verified -- all 15 symbols, 3 fields each correct" -ForegroundColor Green
 Write-Host ""
 
 Write-Host "=======================================================" -ForegroundColor Cyan
