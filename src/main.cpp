@@ -3306,11 +3306,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              g_macro_ctx.eur_l2_imbalance);
     }
     else if (sym == "GBPUSD") {
+        // ── FX group bracket guard — only one bracket across GBPUSD/AUDUSD/NZDUSD/USDJPY ──
+        // These four pairs share high USD-correlation: simultaneous brackets create
+        // duplicated directional USD exposure. EURUSD is intentionally excluded —
+        // different liquidity tier and independent signal flow.
+        const bool any_fx_bracket_active =
+            g_bracket_gbpusd.has_open_position() ||
+            g_bracket_audusd.has_open_position() ||
+            g_bracket_nzdusd.has_open_position() ||
+            g_bracket_usdjpy.has_open_position();
         const bool base_can_fx2 = symbol_gate("GBPUSD", g_eng_gbpusd.pos.active || g_bracket_gbpusd.pos.active);
         const auto sdec_fx2 = sup_decision(g_sup_gbpusd, g_eng_gbpusd, base_can_fx2);
         if (sdec_fx2.allow_breakout && !g_bracket_gbpusd.pos.active)
             dispatch(g_eng_gbpusd, g_sup_gbpusd, base_can_fx2);
-        if (sdec_fx2.allow_bracket && !g_eng_gbpusd.pos.active)
+        if (sdec_fx2.allow_bracket && !g_eng_gbpusd.pos.active && !any_fx_bracket_active)
             dispatch_bracket(g_bracket_gbpusd, g_sup_gbpusd, g_eng_gbpusd, base_can_fx2,
                              0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start,
                              g_macro_ctx.gbp_l2_imbalance);
@@ -3321,6 +3330,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "AUDUSD" || sym == "NZDUSD" || sym == "USDJPY") {
+        // ── FX group bracket guard — shared across GBPUSD/AUDUSD/NZDUSD/USDJPY ──
+        const bool any_fx_bracket_active =
+            g_bracket_gbpusd.has_open_position() ||
+            g_bracket_audusd.has_open_position() ||
+            g_bracket_nzdusd.has_open_position() ||
+            g_bracket_usdjpy.has_open_position();
         const auto t2 = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti2; gmtime_s(&ti2, &t2);
         const int h2 = ti2.tm_hour;
@@ -3330,19 +3345,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool bc_aud = symbol_gate("AUDUSD", g_eng_audusd.pos.active || g_bracket_audusd.pos.active);
                 const auto sd_aud = sup_decision(g_sup_audusd, g_eng_audusd, bc_aud);
                 if (sd_aud.allow_breakout && !g_bracket_audusd.pos.active) dispatch(g_eng_audusd, g_sup_audusd, bc_aud);
-                if (sd_aud.allow_bracket && !g_eng_audusd.pos.active) dispatch_bracket(g_bracket_audusd, g_sup_audusd, g_eng_audusd, bc_aud, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5);
+                if (sd_aud.allow_bracket && !g_eng_audusd.pos.active && !any_fx_bracket_active)
+                    dispatch_bracket(g_bracket_audusd, g_sup_audusd, g_eng_audusd, bc_aud, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5);
             }
             if (sym == "NZDUSD") {
                 const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.pos.active);
                 const auto sd_nzd = sup_decision(g_sup_nzdusd, g_eng_nzdusd, bc_nzd);
                 if (sd_nzd.allow_breakout && !g_bracket_nzdusd.pos.active) dispatch(g_eng_nzdusd, g_sup_nzdusd, bc_nzd);
-                if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active) dispatch_bracket(g_bracket_nzdusd, g_sup_nzdusd, g_eng_nzdusd, bc_nzd, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5);
+                if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active && !any_fx_bracket_active)
+                    dispatch_bracket(g_bracket_nzdusd, g_sup_nzdusd, g_eng_nzdusd, bc_nzd, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5);
             }
             if (sym == "USDJPY") {
                 const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.pos.active);
                 const auto sd_jpy = sup_decision(g_sup_usdjpy, g_eng_usdjpy, bc_jpy);
                 if (sd_jpy.allow_breakout && !g_bracket_usdjpy.pos.active) dispatch(g_eng_usdjpy, g_sup_usdjpy, bc_jpy);
-                if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active) dispatch_bracket(g_bracket_usdjpy, g_sup_usdjpy, g_eng_usdjpy, bc_jpy, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5);
+                if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active && !any_fx_bracket_active)
+                    dispatch_bracket(g_bracket_usdjpy, g_sup_usdjpy, g_eng_usdjpy, bc_jpy, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5);
                 // Carry unwind: VIX spike + JPY bid
                 if (!g_ca_carry_unwind.has_open_position() && bc_jpy) {
                     const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close);
