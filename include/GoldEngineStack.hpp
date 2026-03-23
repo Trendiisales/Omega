@@ -525,11 +525,12 @@ class SessionMomentumEngine : public EngineBase {
         gmtime_r(&t,&u);
 #endif
         int m=u.tm_hour*60+u.tm_min;
-        // 07:15-10:30 (was 07:00): first 15min of London open is high-noise.
-        // Spread is widest, Asia/London gap absorbing, no institutional flow yet.
-        // Confirmed: SHORT at 07:04 UTC hit SL immediately — Asia VWAP ≠ London signal.
-        // 12:30-15:30 unchanged — well before NY open, lower risk window.
-        return (m>=435&&m<=630)||(m>=750&&m<=930); // 07:15-10:30 and 12:30-15:30
+        // 07:15-10:30: London session open window (skip first 15min noise)
+        // 13:15-15:30: NY open window. OLD start was 12:30 — this is late OVERLAP,
+        //   London momentum is exhausting by 12:30-13:15, not starting.
+        //   Evidence: 12:55 entry at $4480 = exact pre-NY-open high → immediate reversal.
+        //   NY open is 13:30 UTC. 13:15 gives 15min warmup without catching London reversals.
+        return (m>=435&&m<=630)||(m>=795&&m<=930); // 07:15-10:30 and 13:15-15:30
     }
 public:
     SessionMomentumEngine(): EngineBase("SessionMomentum",1.2){}

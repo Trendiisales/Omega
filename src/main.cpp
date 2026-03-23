@@ -471,13 +471,30 @@ struct BracketTrendState {
         // Prune old exits outside the trend window
         while (!exits.empty() && (now_ms - exits.front().ts_ms) > BRACKET_TREND_WINDOW_MS)
             exits.pop_front();
-        // Count consecutive profitable same-direction exits from most recent backwards
+
+        // ── Win bias: consecutive profitable same-direction exits ─────────────
+        // 2 consecutive wins in same dir → set trend bias (block counter-direction)
         int consec_long = 0, consec_short = 0;
         for (auto it = exits.rbegin(); it != exits.rend(); ++it) {
             if (!it->was_profitable) break;
             if (it->is_long)  { if (consec_short > 0) break; ++consec_long;  }
             else              { if (consec_long  > 0) break; ++consec_short; }
         }
+
+        // ── Rejection bias: consecutive losses in same direction ──────────────
+        // If the bracket keeps entering LONG and keeps losing, the market is
+        // rejecting that direction. Block LONGs, favour SHORTs.
+        // Triggered by SL_HIT or BREAKOUT_FAIL (not BE — breakeven = neutral).
+        // This fixes: gold 13:03-13:41 (4 LONG SLs/BFs) and EUR 15:07-15:25 (3 LONG SLs)
+        int loss_long = 0, loss_short = 0;
+        for (auto it = exits.rbegin(); it != exits.rend(); ++it) {
+            if (it->was_profitable) break;  // stop at first win/BE
+            if (it->is_long)  { if (loss_short > 0) break; ++loss_long;  }
+            else              { if (loss_long  > 0) break; ++loss_short; }
+        }
+        const int64_t REJECTION_BLOCK_MS = 300000; // 5 min — longer than win bias (3min)
+        static constexpr int REJECTION_LOOKBACK = 2; // 2 consecutive same-dir losses
+
         const int prev_bias = bias;
         if (consec_short >= BRACKET_TREND_LOOKBACK && bias != -1) {
             bias           = -1; // short trend → block LONG arm
@@ -487,10 +504,20 @@ struct BracketTrendState {
             bias           = 1;  // long trend → block SHORT arm
             bias_set_ms    = now_ms;
             block_until_ms = now_ms + BRACKET_COUNTER_BLOCK_MS;
+        } else if (loss_long >= REJECTION_LOOKBACK && bias != -1) {
+            // Market rejected repeated LONG entries → block LONGs for 5min
+            bias           = -1;
+            bias_set_ms    = now_ms;
+            block_until_ms = now_ms + REJECTION_BLOCK_MS;
+        } else if (loss_short >= REJECTION_LOOKBACK && bias != 1) {
+            // Market rejected repeated SHORT entries → block SHORTs for 5min
+            bias           = 1;
+            bias_set_ms    = now_ms;
+            block_until_ms = now_ms + REJECTION_BLOCK_MS;
         }
         if (bias != prev_bias) {
-            printf("[BRACKET-TREND] symbol bias=%d consec_l=%d consec_s=%d reason=%s\n",
-                   bias, consec_long, consec_short, profitable ? "win" : "loss");
+            printf("[BRACKET-TREND] symbol bias=%d consec_l=%d consec_s=%d loss_l=%d loss_s=%d reason=%s\n",
+                   bias, consec_long, consec_short, loss_long, loss_short, profitable ? "win" : "loss");
         }
     }
 
