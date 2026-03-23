@@ -361,7 +361,12 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class ImpulseContinuationEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> price_history_;
-    static constexpr double IMPULSE_MIN=1.0,PULLBACK_MIN=0.2,PULLBACK_MAX=0.6;
+    static constexpr double IMPULSE_MIN = 1.0;  // min hi-lo range in price_history_ to detect impulse
+    static constexpr double PULLBACK_MIN_RATIO = 0.08;  // min pullback = 8% of impulse range
+    static constexpr double PULLBACK_MAX_RATIO = 0.55;  // max pullback = 55% of impulse range
+    // OLD fixed values: PULLBACK_MIN=0.2, PULLBACK_MAX=0.6 (dollar amounts)
+    // On a $4 impulse: max=$0.60 = 15% retrace — normal 38% retrace ($1.52) reset engine
+    // New: scaled to impulse range so all impulse sizes get realistic retrace tolerance
     // MIN_MOMENTUM lowered 0.55→0.10: $0.55/tick filters out slow grinds entirely.
     // A $100 drop over 4h = $0.003/tick — no tick would pass $0.55 gate.
     // $0.10 is still above typical noise ($0.01-0.05) but allows slow trend entries.
@@ -462,9 +467,16 @@ public:
             }
             return noSignal();
         }
+        // Pullback bounds scaled to impulse range — fixed dollar caps were too tight.
+        // On a $4 impulse: old PULLBACK_MAX=$0.60 = 15% retrace max.
+        // Normal 38% retrace ($1.52) exceeded cap and reset engine every time.
+        // New: 8-55% of impulse range allows realistic retraces across all impulse sizes.
+        const double impulse_range = impulse_high_ - impulse_low_;
+        const double pb_min = impulse_range * PULLBACK_MIN_RATIO;
+        const double pb_max = impulse_range * PULLBACK_MAX_RATIO;
         double pb=(direction_==1)?(impulse_high_-s.mid):(s.mid-impulse_low_);
-        if(pb>PULLBACK_MAX){state_=State::IDLE;direction_=0;return noSignal();}
-        if(pb>=PULLBACK_MIN&&pb<=PULLBACK_MAX){
+        if(pb>pb_max){state_=State::IDLE;direction_=0;return noSignal();}
+        if(pb>=pb_min&&pb<=pb_max){
             int dir=direction_; state_=State::IDLE; direction_=0;
             if(s.vwap>0){
                 if(dir==1&&s.mid<s.vwap) return noSignal();
@@ -1607,7 +1619,7 @@ private:
     int64_t SAME_LEVEL_REENTRY_SEC      = 60;  // raised 30→60: 30s allowed near-instant re-entries at same level
     double  SAME_LEVEL_REENTRY_BAND     = 1.50;// raised 0.80→1.50: $0.80 band was too tight
     double  MIN_VWAP_DISLOCATION        = 1.20;// raised 0.80→1.20: entries within $1.20 of VWAP are noise territory
-    double  MAX_ENTRY_SPREAD            = 1.60;
+    double  MAX_ENTRY_SPREAD            = 2.50;  // raised 1.60→2.50: matches gold spread reality in London ($1.50-$2.50)
     double  IMPULSE_MIN_CONFIDENCE      = 1.05;
     double  IMPULSE_MIN_SCORE           = 1.20;
     double  GENERAL_MIN_SCORE           = 1.20;

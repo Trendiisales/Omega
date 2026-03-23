@@ -168,7 +168,7 @@ struct OmegaConfig {
     int    nq_min_gap_sec         = 60;
     double nq_momentum_thresh_pct = 0.005;
     double nq_min_breakout_pct    = 0.040;
-    double nq_max_spread_pct      = 0.016;  // 3.0pts @ ~19000 — tightened from 0.050
+    double nq_max_spread_pct      = 0.060;  // 0.060% of ~$24600 = ~$14.76 max. OLD: 0.016% = $3.94 — blocked most ticks (actual $8-13)
     double nq_compression_threshold = 0.85;
     double nq_vix_panic           = 40.0;
     double nq_div_threshold       = 0.0060;
@@ -210,7 +210,7 @@ struct OmegaConfig {
     int    silver_min_gap_sec          = 180;
     double silver_momentum_thresh_pct  = 0.020;
     double silver_min_breakout_pct     = 0.050;
-    double silver_max_spread_pct       = 0.080;
+    double silver_max_spread_pct       = 0.120;  // 0.120% of ~$68 = ~$0.082 max. OLD: 0.080% = $0.054 — too tight for volatile silver ($0.05-$0.13)
     double silver_compression_threshold = 0.85;
 
     // Brent (UKBRENT)
@@ -227,7 +227,8 @@ struct OmegaConfig {
     double eu_index_momentum_thresh_pct   = 0.005;
     double eu_index_min_breakout_pct      = 0.030;
     double eu_index_compression_threshold = 0.85;
-    double eu_index_max_spread_pct        = 0.042;  // ~2.5pts @ typical EU index price — mirrors SP default
+    double eu_index_max_spread_pct        = 0.080;  // 0.080% — ESTX50@5600=$4.48, GER30@22500=$18, UK100@9900=$7.92
+    // OLD: 0.042% — ESTX50=$2.35 max, actual $1.50-8 (wide spreads blocked all EU index supervisor decisions)
 
     // FX (EURUSD) -- spec: TP_MULT=1.5, MAX_SPREAD=0.0002@1.15=0.017%
     double fx_tp_pct               = 0.060;  // TP_MULT=1.5 × SL=0.040%
