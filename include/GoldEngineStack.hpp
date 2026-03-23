@@ -865,15 +865,21 @@ public:
     // ewm_drift > 0 = bullish drift, < 0 = bearish drift, |drift| > 8 = significant
     double ewm_drift() const { return ewm_init_ ? (ewm_fast_ - ewm_slow_) : 0.0; }
     bool   is_drift_trending() const {
-        if (!ewm_init_) return false;
+        // Not initialised yet (first tick) — allow bracket, structural detector is sufficient
+        if (!ewm_init_) return true;
+        // EWM confirms strong directional drift — allow
         const double d = ewm_fast_ - ewm_slow_;
-        if (std::fabs(d) > 8.0) return true;  // EWM fast/slow spread > $8
+        if (std::fabs(d) > 8.0) return true;
+        // Long-window check — only meaningful once we have 512 ticks (~8-10 min)
         if (drift_buf_.size() >= 512) {
-            const double dr = drift_buf_.max() - drift_buf_.min();
+            const double dr     = drift_buf_.max() - drift_buf_.min();
             const double centre = (drift_buf_.max() + drift_buf_.min()) * 0.5;
             if (dr > 20.0 && std::fabs(ewm_fast_ - centre) > dr * 0.35) return true;
+            // Fully warmed, 512+ ticks, no drift signal → confirmed chop → block
+            return false;
         }
-        return false;
+        // Initialised but < 512 ticks — EWM warming up, can't confirm chop yet → allow
+        return true;
     }
     static const char* name(MarketRegime r){
         switch(r){
