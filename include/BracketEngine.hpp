@@ -230,16 +230,16 @@ public:
                 const double initial_range = std::fabs(m_locked_hi - m_locked_lo);
                 const double trail_dist    = std::max(initial_range * 0.25, spread * 2.0);
                 const double tp_dist       = std::fabs(pos.tp - pos.entry); // initial target dist
-                const double move          = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
+                const double trail_move    = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
 
-                if (move > 0.0) {
-                    if (move > pos.mfe) pos.mfe = move;  // track max favourable
+                if (trail_move > 0.0) {
+                    if (trail_move > pos.mfe) pos.mfe = trail_move;  // track max favourable
 
                     // Step 1: BE lock at 40% of initial target
-                    if (move >= tp_dist * 0.40 && !pos.sl_locked_to_be) {
+                    if (trail_move >= tp_dist * 0.40 && !pos.sl_locked_to_be) {
                         if ( pos.is_long && pos.entry > pos.sl) {
                             pos.sl = pos.entry; pos.sl_locked_to_be = true;
-                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP1 SL->BE move=" << move << "\n";
+                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP1 SL->BE move=" << trail_move << "\n";
                         }
                         if (!pos.is_long && pos.entry < pos.sl) {
                             pos.sl = pos.entry; pos.sl_locked_to_be = true;
@@ -247,27 +247,27 @@ public:
                         }
                     }
                     // Step 2: Lock 50% of initial TP at 1R
-                    if (move >= tp_dist && pos.sl_locked_to_be) {
+                    if (trail_move >= tp_dist && pos.sl_locked_to_be) {
                         const double lock2 = pos.is_long
                             ? pos.entry + tp_dist * 0.50
                             : pos.entry - tp_dist * 0.50;
                         if ((pos.is_long && lock2 > pos.sl) || (!pos.is_long && lock2 < pos.sl)) {
                             pos.sl = lock2;
-                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP2 lock_half move=" << move << "\n";
+                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP2 lock_half move=" << trail_move << "\n";
                         }
                     }
                     // Step 3: Lock full 1R at 2R
-                    if (move >= tp_dist * 2.0 && pos.sl_locked_to_be) {
+                    if (trail_move >= tp_dist * 2.0 && pos.sl_locked_to_be) {
                         const double lock3 = pos.is_long
                             ? pos.entry + tp_dist
                             : pos.entry - tp_dist;
                         if ((pos.is_long && lock3 > pos.sl) || (!pos.is_long && lock3 < pos.sl)) {
                             pos.sl = lock3;
-                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP3 lock_1R move=" << move << "\n";
+                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP3 lock_1R move=" << trail_move << "\n";
                         }
                     }
                     // Step 4: Free-running trail at MFE - trail_dist (3R+)
-                    if (move >= tp_dist * 3.0 && pos.sl_locked_to_be) {
+                    if (trail_move >= tp_dist * 3.0 && pos.sl_locked_to_be) {
                         const double trail_sl = pos.is_long
                             ? (pos.entry + pos.mfe - trail_dist)
                             : (pos.entry - pos.mfe + trail_dist);
