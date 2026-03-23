@@ -4755,22 +4755,30 @@ int main(int argc, char* argv[])
     // vwap_dist=0 everywhere — pre-breakout price near VWAP by definition
     //
     // US500.F (~$6,600): daily range $120, typical compression $8, spread $0.50
-    g_bracket_sp.configure(    0.25, 30, 2.5,  60000,  4.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 0.30, 1.5);
-    // USTEC.F (~$24,000): daily range $400, typical compression $25, spread $2.71 actual
-    // SLIPPAGE_BUFFER raised 1.00→2.50: shadow fill showed $2.71 actual slip vs $1.00 estimate.
-    //   With 1.00, spread_not_covered check understated real costs — fired trades with no edge.
-    // MIN_STRUCTURE_MS raised 20000→45000: 20s was too short for a noisy index at this price.
-    g_bracket_nq.configure(    0.75, 30, 2.5,  60000, 12.5, 0.05, 4000, 10000, 0.0, 45000, 10000, 20, 0.15, 2.0, 2.50, 1.5);
-    // DJ30.F (~$43,000): daily range $500, typical compression $40, spread $5.00
-    g_bracket_us30.configure(  2.50, 30, 2.5,  60000, 20.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 3.00, 1.5);
-    // NAS100 (~$23,000): same scale as USTEC
-    g_bracket_nas100.configure(0.75, 30, 2.5,  60000, 12.5, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
-    // GER30/DAX (~$22,800): daily range $300, typical compression $20, spread $2.00
-    g_bracket_ger30.configure( 1.00, 30, 2.5,  60000, 10.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
-    // UK100/FTSE (~$8,600): daily range $120, typical compression $8, spread $1.00
-    g_bracket_uk100.configure( 0.50, 30, 2.5,  60000,  4.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
-    // ESTX50 (~$5,400): daily range $80, typical compression $6, spread $1.00
-    g_bracket_estx50.configure(0.50, 30, 2.5,  60000,  3.0, 0.05, 4000, 10000, 0.0, 20000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
+    // Index bracket engines — MIN_RANGE calibrated to current 2026 price levels.
+    // Rule: MIN_RANGE >= 0.20% of instrument price. Below that is tick noise.
+    // At wrong (old) values: UK100 $4 @ 9720 = 0.041%, ESTX50 $3 @ 5387 = 0.056% — pure noise.
+    // Cooldown raised 60s→180s: 60s cooldown re-armed into same chop 1 min after SL hit.
+    // MIN_STRUCTURE_MS raised 20s→30s: 20s is too short for real index compression.
+    //
+    // configure(buf, lookback, RR, cooldown_ms, MIN_RANGE, cfm, ctout, min_hold_ms,
+    //           vwap_dist, MIN_STRUCTURE_MS, FAILURE_WINDOW_MS, atr_period,
+    //           atr_confirm_k, atr_range_k, slippage_buffer, edge_multiplier)
+    //
+    // US500.F (~6000): 0.20% = $12.0 min range
+    g_bracket_sp.configure(    0.25, 30, 2.5, 180000, 12.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.30, 1.5);
+    // USTEC.F (~21000): 0.20% = $42.0 min range
+    g_bracket_nq.configure(    0.75, 30, 2.5, 180000, 42.0, 0.05, 4000, 10000, 0.0, 45000, 10000, 20, 0.15, 2.0, 2.50, 1.5);
+    // DJ30.F (~43000): 0.20% = $86.0 min range
+    g_bracket_us30.configure(  2.50, 30, 2.5, 180000, 86.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 3.00, 1.5);
+    // NAS100 (~21000): same as USTEC
+    g_bracket_nas100.configure(0.75, 30, 2.5, 180000, 42.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
+    // GER30 (~22000): 0.20% = $44.0 min range
+    g_bracket_ger30.configure( 1.00, 30, 2.5, 180000, 44.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
+    // UK100 (~9720): 0.20% = $19.5 min range
+    g_bracket_uk100.configure( 0.50, 30, 2.5, 180000, 20.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
+    // ESTX50 (~5387): 0.20% = $10.8 min range
+    g_bracket_estx50.configure(0.50, 30, 2.5, 180000, 11.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
     g_bracket_brent.configure(
         0.10,   // buffer
         30,     // lookback
