@@ -367,17 +367,29 @@ public:
             m_window.pop_front();
         if (static_cast<int>(m_window.size()) < STRUCTURE_LOOKBACK) return;
 
-        // ── ATR ───────────────────────────────────────────────────────────────
-        if (ATR_PERIOD > 0) {
-            m_atr_window.push_back(spread);
-            if (static_cast<int>(m_atr_window.size()) > ATR_PERIOD * 3)
-                m_atr_window.pop_front();
-            if (static_cast<int>(m_atr_window.size()) >= ATR_PERIOD) {
-                double s = 0.0;
-                const int n = static_cast<int>(m_atr_window.size());
-                for (int i = n - ATR_PERIOD; i < n; ++i) s += m_atr_window[i];
-                atr = s / ATR_PERIOD;
-            }
+        // ── Volatility-scaled minimum range ───────────────────────────────────
+        // ATR_PERIOD > 0: compute true price-range volatility (hi-lo of mid over
+        // ATR_PERIOD ticks from m_window). This is the actual market noise floor.
+        // eff_min_range = max(recent_volatility * ATR_RANGE_K, MIN_RANGE).
+        //
+        // Why this matters: with a fixed MIN_RANGE, a $6 bracket qualifies on a
+        // quiet Asian session (noise $3-5) but also during London open (noise $12-20)
+        // where a $6 bracket SL sits well inside normal noise and gets swept.
+        // Scaling to recent volatility raises the floor automatically when the
+        // market is noisy — a bracket must be LARGER than noise to be valid.
+        //
+        // ATR_RANGE_K tuning guide (set per-symbol in main.cpp):
+        //   Gold:   ATR_PERIOD=20, ATR_RANGE_K=1.5  → eff_min = max($6, noise*1.5)
+        //           London noise ~$8-12 → eff_min rises to $12-18 automatically
+        //   Silver: ATR_PERIOD=20, ATR_RANGE_K=1.5
+        //   FX:     ATR_PERIOD=20, ATR_RANGE_K=1.8  (tighter price, higher multiplier)
+        //   Indices: leave disabled (ATR_PERIOD=0) — noise floor more stable
+        if (ATR_PERIOD > 0 && static_cast<int>(m_window.size()) >= ATR_PERIOD) {
+            const int    n    = static_cast<int>(m_window.size());
+            const auto   vbeg = m_window.begin() + (n - ATR_PERIOD);
+            const double vhi  = *std::max_element(vbeg, m_window.end());
+            const double vlo  = *std::min_element(vbeg, m_window.end());
+            atr = vhi - vlo;  // true price-range volatility over ATR_PERIOD ticks
         }
         const double eff_min_range = (ATR_RANGE_K > 0.0 && atr > 0.0)
                                      ? std::max(atr * ATR_RANGE_K, MIN_RANGE)

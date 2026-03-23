@@ -129,6 +129,15 @@ struct OmegaTelemetrySnapshot
     BracketState bkt_gold;    // GOLD.F
     BracketState bkt_eur;     // EURUSD
     BracketState bkt_gbp;     // GBPUSD
+    BracketState bkt_brent;   // UKBRENT
+
+    // UKBRENT engine state
+    int    brent_phase           = 0;
+    double brent_comp_high       = 0.0;
+    double brent_comp_low        = 0.0;
+    double brent_recent_vol_pct  = 0.0;
+    double brent_baseline_vol_pct= 0.0;
+    int    brent_signals         = 0;
     char   sig_symbol    [MAX_SIGNAL_HISTORY][16];
     char   sig_side      [MAX_SIGNAL_HISTORY][8];   // "LONG" / "SHORT"
     double sig_price     [MAX_SIGNAL_HISTORY];
@@ -339,6 +348,10 @@ public:
             m_snap->xau_phase=phase; m_snap->xau_comp_high=comp_high;
             m_snap->xau_comp_low=comp_low; m_snap->xau_recent_vol_pct=recent_vol_pct;
             m_snap->xau_baseline_vol_pct=baseline_vol_pct; m_snap->xau_signals=signals;
+        } else if (!strcmp(sym,"UKBRENT")) {
+            m_snap->brent_phase=phase; m_snap->brent_comp_high=comp_high;
+            m_snap->brent_comp_low=comp_low; m_snap->brent_recent_vol_pct=recent_vol_pct;
+            m_snap->brent_baseline_vol_pct=baseline_vol_pct; m_snap->brent_signals=signals;
         }
     }
 
@@ -359,6 +372,7 @@ public:
         else if (!strcmp(sym,"GOLD.F"))  set(m_snap->bkt_gold);
         else if (!strcmp(sym,"EURUSD"))  set(m_snap->bkt_eur);
         else if (!strcmp(sym,"GBPUSD"))  set(m_snap->bkt_gbp);
+        else if (!strcmp(sym,"UKBRENT")) set(m_snap->bkt_brent);
     }
 
     void UpdateLastSignal(const char* sym, const char* side, double price, const char* reason,

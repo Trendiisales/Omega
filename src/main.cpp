@@ -4777,6 +4777,26 @@ int main(int argc, char* argv[])
     // Silver also benefits: London open sweep pattern identical, slightly faster ticks.
     g_bracket_gold.MIN_BREAK_TICKS = 3;
     g_bracket_xag.MIN_BREAK_TICKS  = 3;
+    // ATR-based dynamic minimum range: eff_min_range = max(recent_noise * ATR_RANGE_K, MIN_RANGE)
+    // Prevents brackets arming when the market noise floor exceeds the bracket width —
+    // the SL then sits inside normal noise and gets swept without a real move.
+    //
+    // ATR_PERIOD=20 ticks: at London open ~5-15 ticks/sec = 1-4s of recent price action.
+    // This captures the current noise floor, not historical vol. Updates every tick.
+    //
+    // Gold: London noise $8-20. MIN_RANGE=6. ATR_RANGE_K=1.5 → when noise=$12, eff_min=18.
+    //   A $10 bracket in $12 noise is invalid — SL would be swept immediately.
+    //   A $20 bracket in $12 noise is valid — genuine compression above noise.
+    // Silver: proportionally similar (~$0.10-0.40 noise). ATR_RANGE_K=1.5.
+    // FX (EURUSD etc.): noise ~0.0003-0.0008. ATR_RANGE_K=1.8 (tighter price, more sensitive).
+    g_bracket_gold.ATR_PERIOD  = 20;  g_bracket_gold.ATR_RANGE_K  = 1.5;
+    g_bracket_xag.ATR_PERIOD   = 20;  g_bracket_xag.ATR_RANGE_K   = 1.5;
+    g_bracket_eurusd.ATR_PERIOD = 20; g_bracket_eurusd.ATR_RANGE_K = 1.8;
+    g_bracket_gbpusd.ATR_PERIOD = 20; g_bracket_gbpusd.ATR_RANGE_K = 1.8;
+    g_bracket_audusd.ATR_PERIOD = 20; g_bracket_audusd.ATR_RANGE_K = 1.8;
+    g_bracket_nzdusd.ATR_PERIOD = 20; g_bracket_nzdusd.ATR_RANGE_K = 1.8;
+    g_bracket_usdjpy.ATR_PERIOD = 20; g_bracket_usdjpy.ATR_RANGE_K = 1.8;
+    // Indices: leave ATR disabled — noise floor more stable, fixed MIN_RANGE sufficient
     // MAX_RANGE: prevents bracketing full trending session moves instead of real compression
     // Gold at $4400: 0.4% = $17.6 max range. Tight compression is $8-16. Day range is $40-120.
     g_bracket_gold.MAX_RANGE   = 18.0;   // ~0.40% of gold ~$4400

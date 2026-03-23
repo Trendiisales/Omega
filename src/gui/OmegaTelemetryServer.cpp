@@ -141,6 +141,8 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"sl_cooldown_count\":%d,"
         "\"xau_phase\":%d,\"xau_comp_high\":%.4f,\"xau_comp_low\":%.4f,"
         "\"xau_recent_vol_pct\":%.4f,\"xau_baseline_vol_pct\":%.4f,\"xau_signals\":%d,"
+        "\"brent_phase\":%d,\"brent_comp_high\":%.4f,\"brent_comp_low\":%.4f,"
+        "\"brent_recent_vol_pct\":%.4f,\"brent_baseline_vol_pct\":%.4f,\"brent_signals\":%d,"
         "\"build_version\":\"%s\",\"build_time\":\"%s\","
         "\"uptime_sec\":%lld",
         s->sp_bid,     s->sp_ask,     s->nq_bid,  s->nq_ask,
@@ -178,6 +180,8 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->sl_cooldown_count,
         s->xau_phase, s->xau_comp_high, s->xau_comp_low,
         s->xau_recent_vol_pct, s->xau_baseline_vol_pct, s->xau_signals,
+        s->brent_phase, s->brent_comp_high, s->brent_comp_low,
+        s->brent_recent_vol_pct, s->brent_baseline_vol_pct, s->brent_signals,
         s->build_version, s->build_time,
         (long long)s->uptime_sec
     );
@@ -233,7 +237,8 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
     bktJson("xag",  s->bkt_xag);  result += ',';
     bktJson("gold", s->bkt_gold); result += ',';
     bktJson("eur",  s->bkt_eur);  result += ',';
-    bktJson("gbp",  s->bkt_gbp);
+    bktJson("gbp",  s->bkt_gbp);  result += ',';
+    bktJson("brent",s->bkt_brent);
     result += "}}";  // close brackets{} then close root {}
 
     return result;
