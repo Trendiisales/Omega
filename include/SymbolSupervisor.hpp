@@ -250,7 +250,10 @@ public:
                                + exec_score * 0.2 + edge_boost;
                 break;
             case Regime::TREND_CONTINUATION:
-                bracket_score  = 0.05;
+                // In a trend, bracket re-arms on each compression leg.
+                // Score = exec_score (spread/latency quality) since the trend IS the signal.
+                // dir_score included to confirm direction is still present.
+                bracket_score  = exec_score * 0.6 + dir_score * 0.4;
                 breakout_score = dir_score * 0.6 + expansion_score * 0.3
                                + exec_score * 0.1 + edge_boost;
                 break;

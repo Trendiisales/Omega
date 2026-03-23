@@ -3431,8 +3431,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
         }
 
-        // BracketEngine: allowed when supervisor permits bracket
-        if (gold_sdec.allow_bracket) {
+        // BracketEngine: NOT gated by supervisor allow_bracket.
+        // The supervisor was designed for breakout engines (vol_ratio→regime→allow).
+        // For gold bracket, that chain fails during cascades:
+        //   MEAN_REVERSION → vol_ratio=1.0 → HIGH_RISK_NO_TRADE → allow_bracket=False
+        //   TREND/IMPULSE  → bracket_score was 0.05 → blocked
+        // The BracketEngine has its OWN structural compression detector (30-tick lookback,
+        // MIN_RANGE=$2.80). That is the correct gate for the bracket.
+        // We only apply: gold_can_enter (risk/session/latency), freq_ok, asia_trend_ok,
+        // no-double-position, and spread gate from supervisor.
+        // Only block bracket if spread is too wide (supervisor's spread gate is still valid)
+        const bool gold_spread_ok = !(gold_sdec.regime == omega::Regime::HIGH_RISK_NO_TRADE
+            && gold_sdec.reason != nullptr && std::string(gold_sdec.reason) == "spread_too_wide");
+        if (gold_spread_ok) {
             const int64_t now_ms_g = static_cast<long long>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count());
