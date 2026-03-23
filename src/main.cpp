@@ -4739,6 +4739,11 @@ int main(int argc, char* argv[])
     // PENDING_TIMEOUT_SEC: gold/silver compress for minutes before breaking — 60s was expiring before the move
     g_bracket_gold.PENDING_TIMEOUT_SEC = 600;  // 10 min: gold compression can last well beyond 5 min
     g_bracket_xag.PENDING_TIMEOUT_SEC  = 300;  // 5 min: silver moves faster than gold
+    // MAX_RANGE: prevents bracketing full trending session moves instead of real compression
+    // Gold at $4400: 0.4% = $17.6 max range. Tight compression is $8-16. Day range is $40-120.
+    g_bracket_gold.MAX_RANGE   = 18.0;   // ~0.40% of gold ~$4400
+    // Silver at $68: 0.4% = $0.27 max range. Compression = $0.15-0.25. Day range = $1-3.
+    g_bracket_xag.MAX_RANGE    = 0.30;   // ~0.44% of silver ~$68
     // Configure opening range engines
     g_orb_us.OPEN_HOUR    = 13; g_orb_us.OPEN_MIN    = 30;  // NY open 13:30 UTC
     g_orb_ger30.OPEN_HOUR = 8;  g_orb_ger30.OPEN_MIN = 0;   // Xetra open 08:00 UTC
@@ -4760,6 +4765,24 @@ int main(int argc, char* argv[])
     g_bracket_gbpusd.symbol = "GBPUSD";  g_bracket_gbpusd.ENTRY_SIZE = 0.01;
     g_bracket_audusd.symbol = "AUDUSD";  g_bracket_audusd.ENTRY_SIZE = 0.01;
     g_bracket_nzdusd.symbol = "NZDUSD";  g_bracket_nzdusd.ENTRY_SIZE = 0.01;
+
+    // ── MAX_RANGE caps: ~0.4% of instrument price ─────────────────────────────
+    // Prevents bracketing full day-range trending moves as if they were compression.
+    // Evidence: ESTX50 bracket fired on 79.8pt range (1.4% of 5600) = entire London
+    // open move, not compression. Rule: MAX_RANGE ≈ 2× MIN_RANGE ≈ 0.4% of price.
+    g_bracket_sp.MAX_RANGE      = 25.0;   // ~0.40% of SP ~6200
+    g_bracket_nq.MAX_RANGE      = 90.0;   // ~0.40% of NQ ~22500
+    g_bracket_us30.MAX_RANGE    = 180.0;  // ~0.40% of DJ30 ~45000
+    g_bracket_nas100.MAX_RANGE  = 90.0;   // ~0.40% of NAS100 ~22500
+    g_bracket_ger30.MAX_RANGE   = 90.0;   // ~0.40% of GER30 ~22500
+    g_bracket_uk100.MAX_RANGE   = 40.0;   // ~0.40% of UK100 ~10000
+    g_bracket_estx50.MAX_RANGE  = 22.0;   // ~0.40% of ESTX50 ~5500
+    g_bracket_brent.MAX_RANGE   = 1.20;   // ~0.40% of Brent ~$90 (oil tight)
+    g_bracket_eurusd.MAX_RANGE  = 0.0008; // ~0.07% of EURUSD ~1.15 (FX tight)
+    g_bracket_gbpusd.MAX_RANGE  = 0.0010; // ~0.08% of GBPUSD ~1.33
+    g_bracket_audusd.MAX_RANGE  = 0.0006; // ~0.09% of AUDUSD ~0.70
+    g_bracket_nzdusd.MAX_RANGE  = 0.0006; // ~0.10% of NZDUSD ~0.60
+    // USDJPY/GOLD/XAGUSD: MAX_RANGE set after their configure() calls below
     g_bracket_usdjpy.symbol = "USDJPY";  g_bracket_usdjpy.ENTRY_SIZE = 0.01;
 
     // ── Bracket calibration — March 2026 actual prices ─────────────────────────
@@ -4831,6 +4854,7 @@ int main(int argc, char* argv[])
     g_bracket_nzdusd.configure(0.00007, 30, 2.0,  45000, 0.00025, 0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.00009, 1.5);
     // USDJPY (~149.5): daily range ~120 pips, compression ~25 pips, spread ~4 pip
     g_bracket_usdjpy.configure(0.02,    30, 2.0,  45000, 0.12,    0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.04,    1.5);
+    g_bracket_usdjpy.MAX_RANGE = 0.60;   // ~0.40% of USDJPY ~150
 
     // Shadow mode + cancel wiring for all new bracket engines
     const bool shadow = (g_cfg.mode != "LIVE");
@@ -4939,6 +4963,7 @@ int main(int argc, char* argv[])
             // and blocks all index bracket trades. Do not re-derive it here.
             auto apply_bracket = [](auto& eng, const SymbolConfig& c) {
                 if (c.min_range        > 0.0) eng.MIN_RANGE          = c.min_range;
+                if (c.bracket_rr       > 0.0) eng.MAX_RANGE          = c.bracket_rr; // reuse bracket_rr field as MAX_RANGE override
                 if (c.min_structure_ms > 0)   eng.MIN_STRUCTURE_MS   = c.min_structure_ms;
                 if (c.breakout_fail_ms > 0)   eng.FAILURE_WINDOW_MS  = c.breakout_fail_ms;
                 if (c.min_hold_ms      > 0)   eng.MIN_HOLD_MS        = c.min_hold_ms;

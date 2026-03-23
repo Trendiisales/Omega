@@ -71,6 +71,7 @@ public:
     double RR                  = 1.5;
     int    COOLDOWN_MS         = 120000;
     double MIN_RANGE           = 0.0;
+    double MAX_RANGE           = 0.0;  // if >0, blocks arm when range EXCEEDS this (prevents bracketing trending moves)
     int    MIN_HOLD_MS         = 15000;
     int    FAILURE_WINDOW_MS   = 5000;
     double VWAP_MIN_DIST       = 0.0;
@@ -534,6 +535,22 @@ protected:
             std::cout << "[BRACKET-" << symbol << "] BLOCKED: raw_range_too_small"
                       << " raw_range=" << raw_range << " dist=" << dist
                       << " spread=" << spread << " min=" << MIN_RANGE << "\n";
+            std::cout.flush();
+            phase = BracketPhase::IDLE;
+            bracket_high = 0.0; bracket_low = 0.0;
+            return;
+        }
+
+        // ── Hard range ceiling — prevents bracketing trending day-moves ───────
+        // Without this, a 30-tick window during a London open trend captures
+        // the entire session range (e.g. ESTX50 79.8pts = 1.4% of price).
+        // That's not compression — it's the full daily move. Bracketing it
+        // means SL = 79.8pts, BREAKOUT_FAIL midpoint = 40pts from entry,
+        // and the trade fails in seconds because there's no real compression.
+        // MAX_RANGE=0 disables the cap. Set per-symbol to ~0.4% of price.
+        if (MAX_RANGE > 0.0 && raw_range > MAX_RANGE) {
+            std::cout << "[BRACKET-" << symbol << "] BLOCKED: raw_range_too_large"
+                      << " raw_range=" << raw_range << " max=" << MAX_RANGE << "\n";
             std::cout.flush();
             phase = BracketPhase::IDLE;
             bracket_high = 0.0; bracket_low = 0.0;

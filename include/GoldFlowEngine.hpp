@@ -68,6 +68,9 @@ static constexpr int    GFE_SLOW_TICKS        = 100;   // slow confirmation wind
 static constexpr double GFE_LONG_THRESHOLD    = 0.75;  // bid-heavy: long signal
 static constexpr double GFE_SHORT_THRESHOLD   = 0.25;  // ask-heavy: short signal
 static constexpr double GFE_DRIFT_MIN         = 0.0;   // drift must be non-zero same dir
+// Drift-persistence fallback (used when L2 size data is unavailable — imbalance always 0.5)
+static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 0.30; // drift pts/tick to count as directional
+static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 20;   // rolling window for drift persistence check
 static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- raised 20→100:
                                                         // 20-tick hi-lo range was a 2-second window,
                                                         // producing SL of $0.3–5 depending on micro-volatility.
@@ -168,11 +171,45 @@ struct GoldFlowEngine {
         // Spread gate — blocks entry but not persistence building
         if (spread > GFE_MAX_SPREAD) return;
 
-        // Check for directional persistence using rolling window counts
-        const bool fast_long  = (m_fast_long_count  >= GFE_FAST_DIR_THRESHOLD);
-        const bool fast_short = (m_fast_short_count >= GFE_FAST_DIR_THRESHOLD);
-        const bool slow_long  = (m_slow_long_count  >= GFE_SLOW_DIR_THRESHOLD);
-        const bool slow_short = (m_slow_short_count >= GFE_SLOW_DIR_THRESHOLD);
+        // ── L2 availability detection ─────────────────────────────────────────
+        // BlackBull FIX feed sends no tag-271 size data → imbalance() always 0.500.
+        // When L2 is structurally unavailable, the persistence windows fill with
+        // all-neutral ticks and can NEVER reach directional threshold.
+        // In that case use DRIFT-PERSISTENCE mode: EWM drift sustained for
+        // GFE_DRIFT_PERSIST_TICKS consecutive ticks + stronger momentum threshold.
+        // This is still a real confirmation signal — just price-based not book-based.
+        const bool l2_data_live = (std::fabs(l2_imb - 0.5) > 0.001);
+
+        bool fast_long, fast_short, slow_long, slow_short;
+        if (l2_data_live) {
+            // Normal path: rolling window imbalance persistence
+            fast_long  = (m_fast_long_count  >= GFE_FAST_DIR_THRESHOLD);
+            fast_short = (m_fast_short_count >= GFE_FAST_DIR_THRESHOLD);
+            slow_long  = (m_slow_long_count  >= GFE_SLOW_DIR_THRESHOLD);
+            slow_short = (m_slow_short_count >= GFE_SLOW_DIR_THRESHOLD);
+        } else {
+            // Fallback path: L2 unavailable — use drift persistence counter
+            // Update drift persistence window
+            const int drift_dir = (ewm_drift > GFE_DRIFT_FALLBACK_THRESHOLD)  ?  1
+                                 : (ewm_drift < -GFE_DRIFT_FALLBACK_THRESHOLD) ? -1
+                                 : 0;
+            m_drift_persist_window.push_back(drift_dir);
+            if ((int)m_drift_persist_window.size() > GFE_DRIFT_PERSIST_TICKS)
+                m_drift_persist_window.pop_front();
+
+            int drift_long_count = 0, drift_short_count = 0;
+            for (int d : m_drift_persist_window) {
+                if (d ==  1) ++drift_long_count;
+                if (d == -1) ++drift_short_count;
+            }
+            // Require 70% of drift ticks directional (stricter than L2 path's 75% of 30)
+            const int drift_thresh = (GFE_DRIFT_PERSIST_TICKS * 7) / 10;
+            fast_long  = (drift_long_count  >= drift_thresh);
+            fast_short = (drift_short_count >= drift_thresh);
+            // For slow confirmation, require the same drift ratio over the full window
+            slow_long  = fast_long;   // drift persistence IS the slow confirmation
+            slow_short = fast_short;
+        }
 
         if (fast_long || fast_short) phase = Phase::FLOW_BUILDING;
         else { phase = Phase::IDLE; return; }
@@ -194,14 +231,19 @@ struct GoldFlowEngine {
         // Momentum: mid vs GFE_MOMENTUM_TICKS ticks ago (12 ticks = ~120-240ms London)
         const double momentum = mid_momentum();
 
+        // Drift threshold: when L2 available use minimal filter (just non-zero).
+        // When L2 unavailable (fallback mode), require stronger drift to compensate
+        // for the weaker persistence confirmation (drift-only vs book pressure).
+        const double drift_threshold = l2_data_live ? GFE_DRIFT_MIN : GFE_DRIFT_FALLBACK_THRESHOLD;
+
         const bool long_signal  = fast_long
                                   && slow_long
-                                  && ewm_drift > GFE_DRIFT_MIN
+                                  && ewm_drift > drift_threshold
                                   && momentum > 0.0;
 
         const bool short_signal = fast_short
                                   && slow_short
-                                  && ewm_drift < -GFE_DRIFT_MIN
+                                  && ewm_drift < -drift_threshold
                                   && momentum < 0.0;
 
         if (!long_signal && !short_signal) return;
@@ -212,17 +254,24 @@ struct GoldFlowEngine {
         // ── Stale imbalance check at entry ────────────────────────────────────
         // Persistence windows confirm imbalance was sustained over last 30/100 ticks,
         // but current tick's imbalance may have already flipped neutral.
-        if (long_signal  && l2_imb < 0.60) {
-            std::cout << "[GOLD-FLOW] SIGNAL_STALE long — imb=" << l2_imb
-                      << " (need >0.60 at entry)\n";
-            std::cout.flush();
-            return;
-        }
-        if (short_signal && l2_imb > 0.40) {
-            std::cout << "[GOLD-FLOW] SIGNAL_STALE short — imb=" << l2_imb
-                      << " (need <0.40 at entry)\n";
-            std::cout.flush();
-            return;
+        //
+        // BROKER FALLBACK: BlackBull's FIX feed sends tag 269= (side) but NOT tag 271=
+        // (MDEntrySize). With zero sizes on both sides, imbalance() returns exactly 0.5
+        // Stale imbalance check — only when L2 data is actually live
+        // (l2_data_live declared above in persistence section)
+        if (l2_data_live) {
+            if (long_signal  && l2_imb < 0.60) {
+                std::cout << "[GOLD-FLOW] SIGNAL_STALE long — imb=" << l2_imb
+                          << " (need >0.60 at entry)\n";
+                std::cout.flush();
+                return;
+            }
+            if (short_signal && l2_imb > 0.40) {
+                std::cout << "[GOLD-FLOW] SIGNAL_STALE short — imb=" << l2_imb
+                          << " (need <0.40 at entry)\n";
+                std::cout.flush();
+                return;
+            }
         }
 
         // Fire entry
@@ -271,6 +320,11 @@ private:
     // Rolling window buffers: 1=long, -1=short, 0=neutral
     std::deque<int> m_fast_window;   // last GFE_FAST_TICKS direction values
     std::deque<int> m_slow_window;   // last GFE_SLOW_TICKS direction values
+
+    // Drift persistence fallback (used when L2 size data is unavailable — imbalance always 0.5)
+    // Tracks ewm_drift direction over GFE_DRIFT_PERSIST_TICKS=20 ticks.
+    // Replaces L2 persistence windows when broker doesn't send tag-271 size data.
+    std::deque<int> m_drift_persist_window;
 
     int64_t m_cooldown_start   = 0;
     int     m_trade_id         = 0;
@@ -394,6 +448,7 @@ private:
         m_slow_long_count = m_slow_short_count = 0;
         m_fast_window.clear();
         m_slow_window.clear();
+        m_drift_persist_window.clear();
 
         std::cout << "[GOLD-FLOW] ENTRY " << (is_long ? "LONG" : "SHORT")
                   << " @ " << std::fixed << std::setprecision(2) << entry_px
