@@ -3465,21 +3465,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             const bool gold_freq_ok    = (g_bracket_gold_trades_this_minute < 6);  // raised 2→6: 30s cooldown + cascade allows multiple re-arms
             const bool bracket_open    = g_bracket_gold.has_open_position();
-            // Asia session gate (22:00-05:00 UTC, slot==6):
-            // Originally blocked ALL gold bracket in Asia after a -$2.18 SL hit at 03:52 UTC.
-            // That was caused by choppy mean-reverting Asia tape with no trend structure.
-            // FIX: Allow bracket in Asia ONLY when GoldStack RegimeGovernor confirms TREND or IMPULSE.
-            // A genuine trending regime (EWM drift detected, range > $20) means the move is real.
-            // A MEAN_REVERSION or COMPRESSION Asia regime stays blocked — that was the bad trade.
-            // Asia session gate: previously blocked bracket in Asia unless GoldStack
-            // confirmed TREND or IMPULSE. This was too restrictive — GoldStack labels
-            // a sustained downtrend as MEAN_REVERSION (price far from VWAP), which
-            // blocked the bracket during exactly the conditions it should fire.
-            // The BracketEngine's own MIN_RANGE=$2.80 + MIN_STRUCTURE_MS=5s structural
-            // compression detector is the correct gate. If a real structure exists,
-            // the bracket fires. If it's choppy Asia noise, no structure forms.
+
+            // Asia session gate (22:00–05:00 UTC, slot==6):
+            // Block bracket on choppy mean-reverting Asia tape. Allow on real trends.
+            //
+            // The old gate (regime_name == "TREND"/"IMPULSE") was wrong: RegimeGovernor
+            // locks regime after CONFIRM_TICKS, so a fast cascade still reads MEAN_REVERSION
+            // while the EWM drift already shows a sustained directional move.
+            //
+            // is_drift_trending() reads the raw EWM signal directly — same logic the
+            // governor uses internally to override MEAN_REVERSION→TREND, without lag:
+            //   |ewm_fast - ewm_slow| > $8  (fast α=0.05, slow α=0.005)
+            //   OR 512-tick range > $20 with price at extreme (>35% from centre)
+            // Choppy Asia noise never sustains $8 EWM drift.
+            // A genuine cascade develops it within 50–100 ticks.
+            // Outside Asia: gate is always open — bracket uses its own structural detector.
+            const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
+            const bool asia_trend_ok = !in_asia_slot || g_gold_stack.is_drift_trending();
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok && !bracket_open
-                                      && !g_gold_stack.has_open_position();
+                                      && !g_gold_stack.has_open_position()
+                                      && asia_trend_ok;
             // PENDING: orders already at broker — only timeout should cancel, not gate flips
             const bool gold_bracket_pending = (g_bracket_gold.phase == omega::BracketPhase::PENDING);
             const bool can_manage      = gold_bracket_pending ? true : gold_can_enter;
