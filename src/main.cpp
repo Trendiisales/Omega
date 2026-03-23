@@ -3147,7 +3147,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
             dispatch(g_eng_sp, g_sup_sp, base_can_sp);
         if (sdec_sp.allow_bracket && !g_eng_sp.pos.active
-                && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
+                && (g_macro_ctx.session_slot >= 1 && g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_sp, g_sup_sp, g_eng_sp, base_can_sp,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.sp_l2_imbalance);
@@ -3169,7 +3169,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Cross-symbol guard: USTEC and NAS100 are correlated — don't hold brackets on both
         const bool nas100_bracket_open = g_bracket_nas100.has_open_position();
         if (sdec_nq.allow_bracket && !g_eng_nq.pos.active && !nas100_bracket_open
-                && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
+                && (g_macro_ctx.session_slot >= 1 && g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_nq, g_sup_nq, g_eng_nq, base_can_nq,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.nq_l2_imbalance);
@@ -3213,7 +3213,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_us30.allow_breakout && !g_bracket_us30.pos.active)
             dispatch(g_eng_us30, g_sup_us30, base_can_us30);
         if (sdec_us30.allow_bracket && !g_eng_us30.pos.active
-                && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
+                && (g_macro_ctx.session_slot >= 1 && g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_us30, g_sup_us30, g_eng_us30, base_can_us30,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.us30_l2_imbalance);
@@ -3392,7 +3392,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool ustec_bracket_open = g_bracket_nq.has_open_position();
         // Asia session: bracket also blocked for US equity
         if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active && !ustec_bracket_open
-                && (!g_macro_ctx.session_slot || g_macro_ctx.session_slot != 6))
+                && (g_macro_ctx.session_slot >= 1 && g_macro_ctx.session_slot != 6))
             dispatch_bracket(g_bracket_nas100, g_sup_nas100, g_eng_nas100, base_can_nas,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.nq_l2_imbalance);
@@ -3499,14 +3499,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bracket_gold_minute_start       = now_ms_g;
                 g_bracket_gold_trades_this_minute = 0;
             }
-            const bool gold_freq_ok    = (g_bracket_gold_trades_this_minute < 6);
+            const bool gold_freq_ok    = (g_bracket_gold_trades_this_minute < 3);
             const bool bracket_open    = g_bracket_gold.has_open_position();
 
+            const bool in_dead_zone  = (g_macro_ctx.session_slot == 0);
             const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
             const bool asia_trend_ok = !in_asia_slot || g_gold_stack.is_drift_trending(g_macro_ctx.gold_l2_imbalance);
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok && !bracket_open
                                       && !g_gold_stack.has_open_position()
-                                      && asia_trend_ok;
+                                      && asia_trend_ok
+                                      && !in_dead_zone;
 
             // ── Gold bracket gate diagnostic — prints every 10s ───────────────
             {
@@ -3526,6 +3528,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                               << " freq_ok="       << gold_freq_ok
                               << " bracket_open="  << bracket_open
                               << " stack_open="    << g_gold_stack.has_open_position()
+                              << " in_dead_zone="  << in_dead_zone
                               << " in_asia="       << in_asia_slot
                               << " asia_ok="       << asia_trend_ok
                               << " drift="         << std::fixed << std::setprecision(2) << g_gold_stack.ewm_drift()
@@ -4366,9 +4369,9 @@ int main(int argc, char* argv[])
         3.0,    // RR: raised 1.6→3.0 — on a $6 range this gives $18 TP.
                 //   On a $100 move, the bracket fires early, takes $18, then
                 //   re-arms. Multiple re-arms capture the cascade vs one $9.6 hit.
-        30000,  // cooldown_ms: reduced 120s→30s — re-arm fast on trend continuation.
-                //   120s cooldown missed the entire cascade after first TP.
-                //   30s allows re-arm at next compression leg.
+        90000,  // cooldown_ms: raised 30s→90s — Asia chop caused 8+ fires in 30min over a $22 range.
+                //   90s prevents re-arm into thin dead-zone/Asia liquidity while still
+                //   allowing re-arm on genuine cascade continuation in London/NY.
         2.8,    // MIN_RANGE — 2.8pts minimum (unchanged)
         0.05,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
