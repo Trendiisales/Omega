@@ -51,9 +51,10 @@ if (-not (Test-Path $configSource)) {
     return
 }
 Copy-Item $configSource                          "$rel\omega_config.ini"  -Force
+Copy-Item "C:\Omega\symbols.ini"                 "$rel\symbols.ini"       -Force
 Copy-Item "C:\Omega\src\gui\www\omega_index.html" "$rel\omega_index.html" -Force -ErrorAction SilentlyContinue
 Copy-Item "C:\Omega\src\gui\www\chimera_logo.png" "$rel\chimera_logo.png" -Force -ErrorAction SilentlyContinue
-Write-Host "      [OK] Assets copied" -ForegroundColor Green
+Write-Host "      [OK] Assets copied (omega_config.ini + symbols.ini + GUI)" -ForegroundColor Green
 Write-Host ""
 
 Write-Host "=======================================================" -ForegroundColor Cyan
