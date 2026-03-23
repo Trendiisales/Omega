@@ -3437,7 +3437,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bracket_gold_minute_start       = now_ms_g;
                 g_bracket_gold_trades_this_minute = 0;
             }
-            const bool gold_freq_ok    = (g_bracket_gold_trades_this_minute < 2);
+            const bool gold_freq_ok    = (g_bracket_gold_trades_this_minute < 6);  // raised 2→6: 30s cooldown + cascade allows multiple re-arms
             const bool bracket_open    = g_bracket_gold.has_open_position();
             // Asia session (22:00-05:00 UTC, slot==6): block bracket engine on Gold.
             // GoldStack CompressionBreakout still runs in Asia — it has its own
@@ -4264,22 +4264,28 @@ int main(int argc, char* argv[])
     // Bracket engines — configure() with tuned production params.
     // buffer, lookback, RR, cooldown_ms, MIN_RANGE, CONFIRM_MOVE, confirm_timeout_ms, min_hold_ms
     g_bracket_gold.configure(
-        0.8,    // buffer
-        30,     // lookback
-        1.6,    // RR
-        120000, // cooldown_ms
-        2.8,    // MIN_RANGE — 2.8pts minimum structural range (was 0.40 — way too small)
+        0.8,    // buffer: place orders 0.8pts outside the range
+        30,     // lookback: 30-tick structural range window
+        3.0,    // RR: raised 1.6→3.0 — on a $6 range this gives $18 TP.
+                //   On a $100 move, the bracket fires early, takes $18, then
+                //   re-arms. Multiple re-arms capture the cascade vs one $9.6 hit.
+        30000,  // cooldown_ms: reduced 120s→30s — re-arm fast on trend continuation.
+                //   120s cooldown missed the entire cascade after first TP.
+                //   30s allows re-arm at next compression leg.
+        2.8,    // MIN_RANGE — 2.8pts minimum (unchanged)
         0.05,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
         12000,  // min_hold_ms
-        8.0,    // VWAP_MIN_DIST
-        30000,  // MIN_STRUCTURE_MS
-        5000,   // FAILURE_WINDOW_MS
+        0.0,    // VWAP_MIN_DIST: removed (was 8.0).
+                //   Pre-breakout compression happens near VWAP by definition.
+                //   $8 VWAP gate blocked brackets precisely when price is coiling.
+        30000,  // MIN_STRUCTURE_MS — 30s structure hold (unchanged)
+        5000,   // FAILURE_WINDOW_MS — 5s breakout failure window (unchanged)
         20,     // ATR_PERIOD
         0.15,   // ATR_CONFIRM_K
         2.0,    // ATR_RANGE_K — ATR×2 ≈ 2.8pts at typical gold spread
-        0.8,    // SLIPPAGE_BUFFER — 0.8pts estimated one-way slip on gold
-        1.6     // EDGE_MULTIPLIER — tp must be >= (spread+slip)*1.6
+        0.8,    // SLIPPAGE_BUFFER — 0.8pts estimated one-way slip
+        1.5     // EDGE_MULTIPLIER — tp must be >= (spread+slip)*1.5
     );
     g_bracket_xag.configure(
         0.08,   // buffer
