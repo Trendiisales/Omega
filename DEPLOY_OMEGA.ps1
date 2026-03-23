@@ -66,21 +66,22 @@ Write-Host ""
 Write-Host "[5/5] Verifying deployed symbols.ini..." -ForegroundColor Yellow
 
 $expected = @{
-    "GOLD.F"  = @{ "MIN_RANGE" = "10.00";   "MIN_STRUCTURE_MS" = "30000"; "BREAKOUT_FAIL_MS" = "25000" }
-    "XAGUSD"  = @{ "MIN_RANGE" = "0.15";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "12000" }
-    "US500.F" = @{ "MIN_RANGE" = "4.00";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
-    "USTEC.F" = @{ "MIN_RANGE" = "12.50";   "MIN_STRUCTURE_MS" = "45000"; "BREAKOUT_FAIL_MS" = "10000" }
-    "DJ30.F"  = @{ "MIN_RANGE" = "20.00";   "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
-    "NAS100"  = @{ "MIN_RANGE" = "12.50";   "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
-    "GER30"   = @{ "MIN_RANGE" = "10.00";   "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
-    "UK100"   = @{ "MIN_RANGE" = "4.00";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
-    "ESTX50"  = @{ "MIN_RANGE" = "3.00";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
-    "UKBRENT" = @{ "MIN_RANGE" = "0.50";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "12000" }
-    "EURUSD"  = @{ "MIN_RANGE" = "0.00035"; "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
-    "GBPUSD"  = @{ "MIN_RANGE" = "0.00040"; "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
-    "AUDUSD"  = @{ "MIN_RANGE" = "0.00025"; "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
-    "NZDUSD"  = @{ "MIN_RANGE" = "0.00025"; "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
-    "USDJPY"  = @{ "MIN_RANGE" = "0.12";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
+    "GOLD.F"  = @{ "MIN_RANGE" = "10.00";    "MIN_STRUCTURE_MS" = "30000"; "BREAKOUT_FAIL_MS" = "25000" }
+    "XAGUSD"  = @{ "MIN_RANGE" = "0.40";     "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "12000" }
+    "US500.F" = @{ "MIN_RANGE" = "4.00";     "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "USTEC.F" = @{ "MIN_RANGE" = "12.50";    "MIN_STRUCTURE_MS" = "45000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "DJ30.F"  = @{ "MIN_RANGE" = "20.00";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "NAS100"  = @{ "MIN_RANGE" = "12.50";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "GER30"   = @{ "MIN_RANGE" = "10.00";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "UK100"   = @{ "MIN_RANGE" = "4.00";     "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "ESTX50"  = @{ "MIN_RANGE" = "3.00";     "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "10000" }
+    "USOIL.F" = @{ "MIN_RANGE" = "0.50";     "MIN_STRUCTURE_MS" = "25000"; "BREAKOUT_FAIL_MS" = "12000" }
+    "UKBRENT" = @{ "MIN_RANGE" = "0.50";     "MIN_STRUCTURE_MS" = "25000"; "BREAKOUT_FAIL_MS" = "12000" }
+    "EURUSD"  = @{ "MIN_RANGE" = "0.00035";  "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
+    "GBPUSD"  = @{ "MIN_RANGE" = "0.00040";  "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
+    "AUDUSD"  = @{ "MIN_RANGE" = "0.00025";  "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
+    "NZDUSD"  = @{ "MIN_RANGE" = "0.00025";  "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
+    "USDJPY"  = @{ "MIN_RANGE" = "0.12";     "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "8000"  }
 }
 
 $iniPath = "$rel\symbols.ini"
@@ -114,7 +115,7 @@ if ($failures.Count -gt 0) {
     Read-Host "Press Enter to exit"
     return
 }
-Write-Host "      [OK] symbols.ini verified -- all 15 symbols x 3 fields correct" -ForegroundColor Green
+Write-Host "      [OK] symbols.ini verified -- all 16 symbols x 3 fields correct" -ForegroundColor Green
 Write-Host ""
 
 Write-Host "=======================================================" -ForegroundColor Cyan
