@@ -1261,11 +1261,7 @@ static std::string fix_build_md_subscribe_all(int seq) {
         std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
         for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
     }
-    {
-        // Include passive observers (cross-pairs for L2 data only — never traded)
-        std::lock_guard<std::mutex> plk(g_passive_syms_mtx);
-        for (const auto& kv : g_passive_syms) ids.push_back(kv.first);
-    }
+    // Passive L2 cross-pairs disabled — not subscribing, not needed for price feed.
     // BlackBull confirmed: MarketDepth MUST be 0 or 1. Never use 5.
     // Log message: "INVALID_REQUEST: MarketDepth should be either 0 or 1"
     const int depth_val = 1;
@@ -1699,24 +1695,33 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
             for (int i = 0; i < OMEGA_NSYMS; ++i)
                 if (name == OMEGA_SYMS[i].name) { is_primary = true; break; }
             if (!is_primary) {
-                // Only subscribe to whitelisted cross-pairs — not all 1481 broker symbols.
-                // Filter: skip .P .I .F suffix variants (duplicate feeds), skip exotics.
-                const bool has_suffix = (name.size() > 4 &&
-                    (name.back() == 'P' || name.back() == 'I' || name.back() == 'F') &&
-                    name[name.size()-2] == '.');
-                if (!has_suffix && PASSIVE_WHITELIST.count(name)) {
-                    std::lock_guard<std::mutex> plk(g_passive_syms_mtx);
-                    g_passive_syms[id] = name;
-                    g_passive_sym_names.insert(name);
-                    std::cout << "[OMEGA-SECURITY] PASSIVE L2 observer: '" << name
-                              << "' id=" << id << " (subscribing for cross-pair depth data)\n";
-                } else if (!has_suffix) {
-                    // Log unmatched non-suffix symbols for awareness (not subscribing)
-                    static const char* hints[] = {"GER","UK1","EST","XAG","EUR","BRENT","GBP","AUD","NZD","JPY"};
+                // Try broker alias matching for symbols we care about.
+                // BlackBull may send UKBRENT instead of BRENT, GER30 instead of GER40, etc.
+                struct AliasMap { const char* broker; size_t ext_idx; };
+                static const AliasMap aliases[] = {
+                    {"UKBRENT",  5}, {"BRENT.F",  5},
+                    {"GER30",    0}, {"GER40",    0}, {"DAX",      0},
+                    {"UK100",    1}, {"FTSE",     1},
+                    {"ESTX50",   2}, {"STOXX50",  2}, {"SX5E",     2},
+                };
+                bool alias_matched = false;
+                for (const auto& a : aliases) {
+                    if (name == a.broker && a.ext_idx < g_ext_syms.size() && g_ext_syms[a.ext_idx].id == 0) {
+                        g_ext_syms[a.ext_idx].id = id;
+                        g_id_to_sym[id] = g_ext_syms[a.ext_idx].name;
+                        std::cout << "[OMEGA-SECURITY] alias matched '" << name
+                                  << "' -> '" << g_ext_syms[a.ext_idx].name
+                                  << "' id=" << id << "\n";
+                        alias_matched = true;
+                        break;
+                    }
+                }
+                // Log anything with a keyword we care about so we can see broker names
+                if (!alias_matched) {
+                    static const char* hints[] = {"GER","UK1","EST","BRENT","DAX","FTSE","STOXX"};
                     for (const char* h : hints) {
                         if (name.find(h) != std::string::npos) {
-                            std::cout << "[OMEGA-SECURITY] UNMATCHED (not subscribed): '" << name
-                                      << "' id=" << id << "\n";
+                            std::cout << "[OMEGA-SECURITY] UNMATCHED: '" << name << "' id=" << id << "\n";
                             break;
                         }
                     }
@@ -4723,32 +4728,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                 }
             }
         }
-        // ── Passive L2 observer routing ───────────────────────────────────────
-        // Whitelisted cross-pairs: update L2 book + cache, return without on_tick.
-        // O(1) lookup via g_passive_sym_names set (populated from SecurityList).
-        {
-            bool is_passive = false;
-            {
-                std::lock_guard<std::mutex> plk(g_passive_syms_mtx);
-                is_passive = (g_passive_sym_names.count(sym) > 0);
-            }
-            if (is_passive) {
-                std::lock_guard<std::mutex> lk(g_l2_mtx);
-                auto it = g_l2_books.find(sym);
-                if (it != g_l2_books.end()) {
-                    const double imb = it->second.imbalance();
-                    if      (sym == "EURJPY") g_cross_l2.eurjpy = imb;
-                    else if (sym == "GBPJPY") g_cross_l2.gbpjpy = imb;
-                    else if (sym == "EURGBP") g_cross_l2.eurgbp = imb;
-                    else if (sym == "AUDCAD") g_cross_l2.audcad = imb;
-                    else if (sym == "AUDJPY") g_cross_l2.audjpy = imb;
-                    else if (sym == "NZDJPY") g_cross_l2.nzdjpy = imb;
-                    else if (sym == "EURCHF") g_cross_l2.eurchf = imb;
-                    else if (sym == "CHFJPY") g_cross_l2.chfjpy = imb;
-                }
-                return;  // passive — no engine dispatch
-            }
-        }
+        // Passive L2 routing disabled — all symbols go through on_tick.
 
         // Seed cache with whatever side(s) we just parsed — must happen BEFORE
         // the fallback read below, otherwise first-ever X (single-sided) drops silently.
