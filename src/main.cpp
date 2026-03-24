@@ -464,6 +464,7 @@ struct BracketTrendState {
     int     bias          = 0;    // 0=none, 1=long_bias (block short arm), -1=short_bias (block long arm)
     int64_t bias_set_ms   = 0;    // when bias was last activated
     int64_t block_until_ms = 0;   // dynamic: extended/shortened by L2
+    int64_t last_l2_adj   = 0;    // per-instance L2 throttle (was static — shared across all symbols)
 
     // Called on each bracket close for this symbol
     void on_exit(bool is_long, bool profitable, int64_t now_ms) {
@@ -527,7 +528,6 @@ struct BracketTrendState {
         if (bias == 0 || now_ms >= block_until_ms) { bias = 0; return; }
         // L2 confirms trend → extend block (market pressure supports the trend continuing)
         // L2 opposes trend  → shorten block (market pressure suggests reversal coming)
-        static int64_t last_l2_adj = 0;
         if (now_ms - last_l2_adj < 5000) return; // throttle to once per 5s
         last_l2_adj = now_ms;
         if (bias == -1 && l2_imb < L2_WEAK_THRESHOLD) {
@@ -704,6 +704,7 @@ static void print_perf_stats() {
                   << " shadowPnL=" << std::fixed << std::setprecision(2) << s.shadow_pnl
                   << " disabled=" << (s.disabled ? 1 : 0) << "\n";
         std::cout.unsetf(std::ios::fixed);
+        std::cout << std::setprecision(6); // restore default precision
     }
 }
 
@@ -1142,8 +1143,14 @@ static int64_t parse_fix_time_us(const std::string& ts) noexcept {
 
 static std::string extract_tag(const std::string& msg, const char* tag) {
     const std::string pat = std::string(tag) + '=';
-    const size_t pos = msg.find(pat);
-    if (pos == std::string::npos) return {};
+    size_t pos = 0;
+    while (true) {
+        pos = msg.find(pat, pos);
+        if (pos == std::string::npos) return {};
+        // Tag must be at start of message or preceded by SOH delimiter
+        if (pos == 0 || msg[pos - 1] == '\x01') break;
+        pos += pat.size(); // false match inside a value — skip
+    }
     const size_t s = pos + pat.size();
     const size_t e = msg.find('\x01', s);
     if (e == std::string::npos) return {};
@@ -1413,38 +1420,52 @@ static void send_cancel_order(const std::string& clOrdId) {
     if (g_cfg.mode != "LIVE") return;
     if (clOrdId.empty()) return;
 
-    std::lock_guard<std::mutex> lk(g_live_orders_mtx);
-    auto it = g_live_orders.find(clOrdId);
-    if (it == g_live_orders.end()) return;
-    if (it->second.acked || it->second.rejected) return; // already done
+    // Collect order info under g_live_orders_mtx, then release before acquiring g_trade_mtx
+    // to avoid lock-order inversion (send_live_order takes g_trade_mtx then g_live_orders_mtx).
+    std::string cancelSymbol, cancelSide;
+    double cancelQty = 0.0;
+    int sym_id = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+        auto it = g_live_orders.find(clOrdId);
+        if (it == g_live_orders.end()) return;
+        if (it->second.acked || it->second.rejected) return; // already done
+        cancelSymbol = it->second.symbol;
+        cancelSide   = it->second.side;
+        cancelQty    = it->second.qty;
+        sym_id       = symbol_name_to_id(cancelSymbol);
+    }
+    if (sym_id <= 0) return;
 
     const std::string cancelClOrdId = "CX-" + std::to_string(nowSec())
                                     + "-" + std::to_string(g_order_id_counter++);
-    const int sym_id = symbol_name_to_id(it->second.symbol);
-    if (sym_id <= 0) return;
 
-    std::ostringstream b;
-    b << "35=F\x01"
-      << "49=" << g_cfg.sender << "\x01"
-      << "56=" << g_cfg.target << "\x01"
-      << "50=TRADE\x01" << "57=TRADE\x01"
-      << "34=" << g_trade_seq++ << "\x01"
-      << "52=" << timestamp() << "\x01"
-      << "41=" << clOrdId << "\x01"              // OrigClOrdID
-      << "11=" << cancelClOrdId << "\x01"        // new ClOrdID for the cancel
-      << "55=" << sym_id << "\x01"
-      << "54=" << (it->second.side == "LONG" ? "1" : "2") << "\x01"
-      << "38=" << std::fixed << std::setprecision(2) << it->second.qty << "\x01"
-      << "60=" << timestamp() << "\x01";
-    const std::string msg = wrap_fix(b.str());
+    // Build and send cancel under g_trade_mtx — protects g_trade_seq and g_trade_ssl
+    {
+        std::lock_guard<std::mutex> lk(g_trade_mtx);
+        if (!g_trade_ssl) return;
 
-    if (g_trade_ssl) {
+        std::ostringstream b;
+        b << "35=F\x01"
+          << "49=" << g_cfg.sender << "\x01"
+          << "56=" << g_cfg.target << "\x01"
+          << "50=TRADE\x01" << "57=TRADE\x01"
+          << "34=" << g_trade_seq++ << "\x01"
+          << "52=" << timestamp() << "\x01"
+          << "41=" << clOrdId << "\x01"              // OrigClOrdID
+          << "11=" << cancelClOrdId << "\x01"        // new ClOrdID for the cancel
+          << "55=" << sym_id << "\x01"
+          << "54=" << (cancelSide == "LONG" ? "1" : "2") << "\x01"
+          << "38=" << std::fixed << std::setprecision(2) << cancelQty << "\x01"
+          << "60=" << timestamp() << "\x01";
+        const std::string msg = wrap_fix(b.str());
+
         SSL_write(g_trade_ssl, msg.c_str(), static_cast<int>(msg.size()));
-        std::cout << "[ORDER-CANCEL] clOrdId=" << clOrdId
-                  << " sym=" << it->second.symbol
-                  << " side=" << it->second.side << "\n";
-        std::cout.flush();
     }
+    std::cout << "[ORDER-CANCEL] clOrdId=" << clOrdId
+              << " sym=" << cancelSymbol
+              << " side=" << cancelSide << "\n";
+    std::cout.flush();
 }
 static void handle_execution_report(const std::string& msg) {
     const std::string clOrdId  = extract_tag(msg, "11");
@@ -1698,8 +1719,8 @@ static void rtt_record(double ms) {
     if (g_rtts.size() > 200u) g_rtts.pop_front();
     std::vector<double> v(g_rtts.begin(), g_rtts.end());
     std::sort(v.begin(), v.end());
-    g_rtt_p50 = v[static_cast<size_t>(v.size() * 0.50)];
-    g_rtt_p95 = v[static_cast<size_t>(v.size() * 0.95)];
+    g_rtt_p50 = v[std::min(static_cast<size_t>(v.size() * 0.50), v.size() - 1)];
+    g_rtt_p95 = v[std::min(static_cast<size_t>(v.size() * 0.95), v.size() - 1)];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2062,6 +2083,18 @@ static void apply_generic_usdjpy_config(omega::BreakoutEngine& eng) noexcept {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Safe config parsing helpers — malformed values log a warning instead of crashing
+// ─────────────────────────────────────────────────────────────────────────────
+static int safe_stoi(const std::string& v, const std::string& key, int fallback = 0) {
+    try { return std::stoi(v); }
+    catch (...) { std::cerr << "[CONFIG-WARN] bad int for '" << key << "': " << v << "\n"; return fallback; }
+}
+static double safe_stod(const std::string& v, const std::string& key, double fallback = 0.0) {
+    try { return std::stod(v); }
+    catch (...) { std::cerr << "[CONFIG-WARN] bad double for '" << key << "': " << v << "\n"; return fallback; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Config loader
 // ─────────────────────────────────────────────────────────────────────────────
 static void load_config(const std::string& path) {
@@ -2087,248 +2120,248 @@ static void load_config(const std::string& path) {
 
         if (section == "fix") {
             if (k=="host")               g_cfg.host      = v;
-            if (k=="port")               g_cfg.port      = std::stoi(v);
-            if (k=="trade_port")        g_cfg.trade_port = std::stoi(v);
+            if (k=="port")               g_cfg.port      = safe_stoi(v, k);
+            if (k=="trade_port")        g_cfg.trade_port = safe_stoi(v, k);
             if (k=="sender_comp_id")     g_cfg.sender    = v;
             if (k=="target_comp_id")     g_cfg.target    = v;
             if (k=="username")           g_cfg.username  = v;
             if (k=="password")           g_cfg.password  = v;
-            if (k=="heartbeat_interval") g_cfg.heartbeat = std::stoi(v);
-            if (k=="connection_warmup_sec") g_cfg.connection_warmup_sec = std::stoi(v);
+            if (k=="heartbeat_interval") g_cfg.heartbeat = safe_stoi(v, k);
+            if (k=="connection_warmup_sec") g_cfg.connection_warmup_sec = safe_stoi(v, k);
         }
         if (section == "mode"     && k=="mode")         g_cfg.mode           = v;
         if (section == "breakout") {
-            if (k=="vol_thresh_pct")        g_cfg.vol_thresh_pct        = std::stod(v);
-            if (k=="tp_pct")                g_cfg.tp_pct                = std::stod(v);
-            if (k=="sl_pct")                g_cfg.sl_pct                = std::stod(v);
-            if (k=="compression_lookback")  g_cfg.compression_lookback  = std::stoi(v);
-            if (k=="baseline_lookback")     g_cfg.baseline_lookback     = std::stoi(v);
-            if (k=="compression_threshold") g_cfg.compression_threshold = std::stod(v);
-            if (k=="max_hold_sec")          g_cfg.max_hold_sec          = std::stoi(v);
-            if (k=="min_entry_gap_sec")     g_cfg.min_entry_gap_sec     = std::stoi(v);
-            if (k=="max_spread_entry_pct")  g_cfg.max_spread_pct        = std::stod(v);
-            if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct  = std::stod(v);
-            if (k=="min_breakout_move_pct") g_cfg.min_breakout_pct     = std::stod(v);
-            if (k=="max_trades_per_minute") g_cfg.max_trades_per_min   = std::stoi(v);
-            if (k=="max_trades_per_cycle")  g_cfg.max_trades_per_cycle = std::stoi(v);
+            if (k=="vol_thresh_pct")        g_cfg.vol_thresh_pct        = safe_stod(v, k);
+            if (k=="tp_pct")                g_cfg.tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.sl_pct                = safe_stod(v, k);
+            if (k=="compression_lookback")  g_cfg.compression_lookback  = safe_stoi(v, k);
+            if (k=="baseline_lookback")     g_cfg.baseline_lookback     = safe_stoi(v, k);
+            if (k=="compression_threshold") g_cfg.compression_threshold = safe_stod(v, k);
+            if (k=="max_hold_sec")          g_cfg.max_hold_sec          = safe_stoi(v, k);
+            if (k=="min_entry_gap_sec")     g_cfg.min_entry_gap_sec     = safe_stoi(v, k);
+            if (k=="max_spread_entry_pct")  g_cfg.max_spread_pct        = safe_stod(v, k);
+            if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct  = safe_stod(v, k);
+            if (k=="min_breakout_move_pct") g_cfg.min_breakout_pct     = safe_stod(v, k);
+            if (k=="max_trades_per_minute") g_cfg.max_trades_per_min   = safe_stoi(v, k);
+            if (k=="max_trades_per_cycle")  g_cfg.max_trades_per_cycle = safe_stoi(v, k);
         }
         if (section == "risk") {
-            if (k=="max_positions")        g_cfg.max_open_positions = std::stoi(v);
-            if (k=="daily_loss_limit")     g_cfg.daily_loss_limit  = std::stod(v);
-            if (k=="max_consec_losses")    g_cfg.max_consec_losses = std::stoi(v);
-            if (k=="loss_pause_sec")       g_cfg.loss_pause_sec    = std::stoi(v);
+            if (k=="max_positions")        g_cfg.max_open_positions = safe_stoi(v, k);
+            if (k=="daily_loss_limit")     g_cfg.daily_loss_limit  = safe_stod(v, k);
+            if (k=="max_consec_losses")    g_cfg.max_consec_losses = safe_stoi(v, k);
+            if (k=="loss_pause_sec")       g_cfg.loss_pause_sec    = safe_stoi(v, k);
             if (k=="independent_symbols")  g_cfg.independent_symbols = (v == "true" || v == "1");
-            if (k=="auto_disable_after_trades")  g_cfg.auto_disable_after_trades = std::stoi(v);
+            if (k=="auto_disable_after_trades")  g_cfg.auto_disable_after_trades = safe_stoi(v, k);
             if (k=="shadow_ustec_pilot_only")    g_cfg.shadow_ustec_pilot_only = (v == "true" || v == "1");
             if (k=="shadow_research_mode")       g_cfg.shadow_research_mode = (v == "true" || v == "1");
-            if (k=="ustec_pilot_size")           g_cfg.ustec_pilot_size = std::stod(v);
-            if (k=="ustec_pilot_min_gap_sec")    g_cfg.ustec_pilot_min_gap_sec = std::stoi(v);
+            if (k=="ustec_pilot_size")           g_cfg.ustec_pilot_size = safe_stod(v, k);
+            if (k=="ustec_pilot_min_gap_sec")    g_cfg.ustec_pilot_min_gap_sec = safe_stoi(v, k);
             if (k=="ustec_pilot_require_session") g_cfg.ustec_pilot_require_session = (v == "true" || v == "1");
             if (k=="ustec_pilot_require_latency") g_cfg.ustec_pilot_require_latency = (v == "true" || v == "1");
             if (k=="ustec_pilot_block_risk_off")  g_cfg.ustec_pilot_block_risk_off = (v == "true" || v == "1");
             if (k=="enable_extended_symbols")    g_cfg.enable_extended_symbols = (v == "true" || v == "1");
-            if (k=="min_entry_gap_sec")    g_cfg.min_entry_gap_sec = std::stoi(v);
-            if (k=="max_spread_entry_pct") g_cfg.max_spread_pct    = std::stod(v);
-            if (k=="max_latency_ms")       g_cfg.max_latency_ms    = std::stod(v);
+            if (k=="min_entry_gap_sec")    g_cfg.min_entry_gap_sec = safe_stoi(v, k);
+            if (k=="max_spread_entry_pct") g_cfg.max_spread_pct    = safe_stod(v, k);
+            if (k=="max_latency_ms")       g_cfg.max_latency_ms    = safe_stod(v, k);
             // Risk-based position sizing
-            if (k=="risk_per_trade_usd")   g_cfg.risk_per_trade_usd = std::stod(v);
-            if (k=="account_equity")       g_cfg.account_equity     = std::stod(v);
-            if (k=="max_lot_gold")         g_cfg.max_lot_gold       = std::stod(v);
-            if (k=="max_lot_indices")      g_cfg.max_lot_indices    = std::stod(v);
-            if (k=="max_lot_oil")          g_cfg.max_lot_oil        = std::stod(v);
-            if (k=="max_lot_silver")       g_cfg.max_lot_silver     = std::stod(v);
-            if (k=="max_lot_fx")           g_cfg.max_lot_fx         = std::stod(v);
-            if (k=="min_lot_gold")         g_cfg.min_lot_gold       = std::stod(v);
-            if (k=="min_lot_indices")      g_cfg.min_lot_indices    = std::stod(v);
-            if (k=="min_lot_oil")          g_cfg.min_lot_oil        = std::stod(v);
-            if (k=="min_lot_silver")       g_cfg.min_lot_silver     = std::stod(v);
-            if (k=="min_lot_fx")           g_cfg.min_lot_fx         = std::stod(v);
+            if (k=="risk_per_trade_usd")   g_cfg.risk_per_trade_usd = safe_stod(v, k);
+            if (k=="account_equity")       g_cfg.account_equity     = safe_stod(v, k);
+            if (k=="max_lot_gold")         g_cfg.max_lot_gold       = safe_stod(v, k);
+            if (k=="max_lot_indices")      g_cfg.max_lot_indices    = safe_stod(v, k);
+            if (k=="max_lot_oil")          g_cfg.max_lot_oil        = safe_stod(v, k);
+            if (k=="max_lot_silver")       g_cfg.max_lot_silver     = safe_stod(v, k);
+            if (k=="max_lot_fx")           g_cfg.max_lot_fx         = safe_stod(v, k);
+            if (k=="min_lot_gold")         g_cfg.min_lot_gold       = safe_stod(v, k);
+            if (k=="min_lot_indices")      g_cfg.min_lot_indices    = safe_stod(v, k);
+            if (k=="min_lot_oil")          g_cfg.min_lot_oil        = safe_stod(v, k);
+            if (k=="min_lot_silver")       g_cfg.min_lot_silver     = safe_stod(v, k);
+            if (k=="min_lot_fx")           g_cfg.min_lot_fx         = safe_stod(v, k);
             // Backward-compat: older configs place breakout keys under [risk].
             // Parse them here too so tuned values are not silently ignored.
-            if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct = std::stod(v);
-            if (k=="min_breakout_move_pct") g_cfg.min_breakout_pct    = std::stod(v);
-            if (k=="max_trades_per_minute") g_cfg.max_trades_per_min  = std::stoi(v);
-            if (k=="max_trades_per_cycle")  g_cfg.max_trades_per_cycle = std::stoi(v);
+            if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct = safe_stod(v, k);
+            if (k=="min_breakout_move_pct") g_cfg.min_breakout_pct    = safe_stod(v, k);
+            if (k=="max_trades_per_minute") g_cfg.max_trades_per_min  = safe_stoi(v, k);
+            if (k=="max_trades_per_cycle")  g_cfg.max_trades_per_cycle = safe_stoi(v, k);
         }
         if (section == "session") {
-            if (k=="session_start_utc") g_cfg.session_start_utc = std::stoi(v);
-            if (k=="session_end_utc")   g_cfg.session_end_utc   = std::stoi(v);
+            if (k=="session_start_utc") g_cfg.session_start_utc = safe_stoi(v, k);
+            if (k=="session_end_utc")   g_cfg.session_end_utc   = safe_stoi(v, k);
             if (k=="session_asia")      g_cfg.session_asia      = (v == "true" || v == "1");
         }
         if (section == "telemetry") {
-            if (k=="gui_port")   g_cfg.gui_port   = std::stoi(v);
-            if (k=="ws_port")    g_cfg.ws_port     = std::stoi(v);
+            if (k=="gui_port")   g_cfg.gui_port   = safe_stoi(v, k);
+            if (k=="ws_port")    g_cfg.ws_port     = safe_stoi(v, k);
             if (k=="shadow_csv") g_cfg.shadow_csv  = v;
             if (k=="log_file")   g_cfg.log_file    = v;
         }
         if (section == "extended_ids") {
-            if (k=="ger30_id")   g_cfg.ext_ger30_id   = std::stoi(v);
-            if (k=="uk100_id")   g_cfg.ext_uk100_id   = std::stoi(v);
-            if (k=="estx50_id")  g_cfg.ext_estx50_id  = std::stoi(v);
-            if (k=="xagusd_id")  g_cfg.ext_xagusd_id  = std::stoi(v);
-            if (k=="eurusd_id")  g_cfg.ext_eurusd_id  = std::stoi(v);
-            if (k=="ukbrent_id") g_cfg.ext_ukbrent_id = std::stoi(v);
-            if (k=="gbpusd_id")  g_cfg.ext_gbpusd_id  = std::stoi(v);
-            if (k=="audusd_id")  g_cfg.ext_audusd_id  = std::stoi(v);
-            if (k=="nzdusd_id")  g_cfg.ext_nzdusd_id  = std::stoi(v);
-            if (k=="usdjpy_id")  g_cfg.ext_usdjpy_id  = std::stoi(v);
+            if (k=="ger30_id")   g_cfg.ext_ger30_id   = safe_stoi(v, k);
+            if (k=="uk100_id")   g_cfg.ext_uk100_id   = safe_stoi(v, k);
+            if (k=="estx50_id")  g_cfg.ext_estx50_id  = safe_stoi(v, k);
+            if (k=="xagusd_id")  g_cfg.ext_xagusd_id  = safe_stoi(v, k);
+            if (k=="eurusd_id")  g_cfg.ext_eurusd_id  = safe_stoi(v, k);
+            if (k=="ukbrent_id") g_cfg.ext_ukbrent_id = safe_stoi(v, k);
+            if (k=="gbpusd_id")  g_cfg.ext_gbpusd_id  = safe_stoi(v, k);
+            if (k=="audusd_id")  g_cfg.ext_audusd_id  = safe_stoi(v, k);
+            if (k=="nzdusd_id")  g_cfg.ext_nzdusd_id  = safe_stoi(v, k);
+            if (k=="usdjpy_id")  g_cfg.ext_usdjpy_id  = safe_stoi(v, k);
         }
         if (section == "sp") {
-            if (k=="tp_pct")                g_cfg.sp_tp_pct                = std::stod(v);
-            if (k=="sl_pct")                g_cfg.sp_sl_pct                = std::stod(v);
-            if (k=="vol_thresh_pct")        g_cfg.sp_vol_thresh_pct        = std::stod(v);
-            if (k=="min_gap_sec")           g_cfg.sp_min_gap_sec           = std::stoi(v);
-            if (k=="momentum_thresh_pct")   g_cfg.sp_momentum_thresh_pct   = std::stod(v);
-            if (k=="min_breakout_pct")      g_cfg.sp_min_breakout_pct      = std::stod(v);
-            if (k=="max_spread_pct")        g_cfg.sp_max_spread_pct        = std::stod(v);
-            if (k=="compression_threshold") g_cfg.sp_compression_threshold = std::stod(v);
-            if (k=="vix_panic")             g_cfg.sp_vix_panic             = std::stod(v);
-            if (k=="div_threshold")         g_cfg.sp_div_threshold         = std::stod(v);
+            if (k=="tp_pct")                g_cfg.sp_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.sp_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.sp_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.sp_min_gap_sec           = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.sp_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.sp_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.sp_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.sp_compression_threshold = safe_stod(v, k);
+            if (k=="vix_panic")             g_cfg.sp_vix_panic             = safe_stod(v, k);
+            if (k=="div_threshold")         g_cfg.sp_div_threshold         = safe_stod(v, k);
         }
         if (section == "nq") {
-            if (k=="tp_pct")                g_cfg.nq_tp_pct                = std::stod(v);
-            if (k=="sl_pct")                g_cfg.nq_sl_pct                = std::stod(v);
-            if (k=="vol_thresh_pct")        g_cfg.nq_vol_thresh_pct        = std::stod(v);
-            if (k=="min_gap_sec")           g_cfg.nq_min_gap_sec           = std::stoi(v);
-            if (k=="momentum_thresh_pct")   g_cfg.nq_momentum_thresh_pct   = std::stod(v);
-            if (k=="min_breakout_pct")      g_cfg.nq_min_breakout_pct      = std::stod(v);
-            if (k=="max_spread_pct")        g_cfg.nq_max_spread_pct        = std::stod(v);
-            if (k=="compression_threshold") g_cfg.nq_compression_threshold = std::stod(v);
-            if (k=="vix_panic")             g_cfg.nq_vix_panic             = std::stod(v);
-            if (k=="div_threshold")         g_cfg.nq_div_threshold         = std::stod(v);
+            if (k=="tp_pct")                g_cfg.nq_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.nq_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.nq_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.nq_min_gap_sec           = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.nq_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.nq_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.nq_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.nq_compression_threshold = safe_stod(v, k);
+            if (k=="vix_panic")             g_cfg.nq_vix_panic             = safe_stod(v, k);
+            if (k=="div_threshold")         g_cfg.nq_div_threshold         = safe_stod(v, k);
         }
         if (section == "us30") {
-            if (k=="momentum_thresh_pct")   g_cfg.us30_momentum_thresh_pct   = std::stod(v);
-            if (k=="min_breakout_pct")      g_cfg.us30_min_breakout_pct      = std::stod(v);
-            if (k=="max_spread_pct")        g_cfg.us30_max_spread_pct        = std::stod(v);
-            if (k=="compression_threshold") g_cfg.us30_compression_threshold = std::stod(v);
-            if (k=="vix_panic")             g_cfg.us30_vix_panic             = std::stod(v);
-            if (k=="div_threshold")         g_cfg.us30_div_threshold         = std::stod(v);
+            if (k=="momentum_thresh_pct")   g_cfg.us30_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.us30_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.us30_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.us30_compression_threshold = safe_stod(v, k);
+            if (k=="vix_panic")             g_cfg.us30_vix_panic             = safe_stod(v, k);
+            if (k=="div_threshold")         g_cfg.us30_div_threshold         = safe_stod(v, k);
         }
         if (section == "nas100") {
-            if (k=="momentum_thresh_pct")   g_cfg.nas100_momentum_thresh_pct   = std::stod(v);
-            if (k=="min_breakout_pct")      g_cfg.nas100_min_breakout_pct      = std::stod(v);
-            if (k=="max_spread_pct")        g_cfg.nas100_max_spread_pct        = std::stod(v);
-            if (k=="compression_threshold") g_cfg.nas100_compression_threshold = std::stod(v);
-            if (k=="vix_panic")             g_cfg.nas100_vix_panic             = std::stod(v);
-            if (k=="div_threshold")         g_cfg.nas100_div_threshold         = std::stod(v);
+            if (k=="momentum_thresh_pct")   g_cfg.nas100_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.nas100_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.nas100_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.nas100_compression_threshold = safe_stod(v, k);
+            if (k=="vix_panic")             g_cfg.nas100_vix_panic             = safe_stod(v, k);
+            if (k=="div_threshold")         g_cfg.nas100_div_threshold         = safe_stod(v, k);
         }
         if (section == "oil") {
-            if (k=="tp_pct")                g_cfg.oil_tp_pct                = std::stod(v);
-            if (k=="sl_pct")                g_cfg.oil_sl_pct                = std::stod(v);
-            if (k=="vol_thresh_pct")        g_cfg.oil_vol_thresh_pct        = std::stod(v);
-            if (k=="min_gap_sec")           g_cfg.oil_min_gap_sec           = std::stoi(v);
-            if (k=="max_hold_sec")          g_cfg.oil_max_hold_sec          = std::stoi(v);
-            if (k=="momentum_thresh_pct")   g_cfg.oil_momentum_thresh_pct   = std::stod(v);
-            if (k=="min_breakout_pct")      g_cfg.oil_min_breakout_pct      = std::stod(v);
-            if (k=="max_spread_pct")        g_cfg.oil_max_spread_pct        = std::stod(v);
-            if (k=="compression_threshold") g_cfg.oil_compression_threshold = std::stod(v);
-            if (k=="vix_panic")             g_cfg.oil_vix_panic             = std::stod(v);
+            if (k=="tp_pct")                g_cfg.oil_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.oil_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.oil_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.oil_min_gap_sec           = safe_stoi(v, k);
+            if (k=="max_hold_sec")          g_cfg.oil_max_hold_sec          = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.oil_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.oil_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.oil_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.oil_compression_threshold = safe_stod(v, k);
+            if (k=="vix_panic")             g_cfg.oil_vix_panic             = safe_stod(v, k);
         }
         if (section == "silver") {
-            if (k=="tp_pct")                g_cfg.silver_tp_pct                = std::stod(v);
-            if (k=="sl_pct")                g_cfg.silver_sl_pct                = std::stod(v);
-            if (k=="vol_thresh_pct")        g_cfg.silver_vol_thresh_pct        = std::stod(v);
-            if (k=="min_gap_sec")           g_cfg.silver_min_gap_sec           = std::stoi(v);
-            if (k=="momentum_thresh_pct")   g_cfg.silver_momentum_thresh_pct   = std::stod(v);
-            if (k=="min_breakout_pct")      g_cfg.silver_min_breakout_pct      = std::stod(v);
-            if (k=="max_spread_pct")        g_cfg.silver_max_spread_pct        = std::stod(v);
-            if (k=="compression_threshold") g_cfg.silver_compression_threshold = std::stod(v);
+            if (k=="tp_pct")                g_cfg.silver_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.silver_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.silver_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.silver_min_gap_sec           = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.silver_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.silver_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.silver_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.silver_compression_threshold = safe_stod(v, k);
         }
         if (section == "brent") {
-            if (k=="tp_pct")                g_cfg.brent_tp_pct                = std::stod(v);
-            if (k=="sl_pct")                g_cfg.brent_sl_pct                = std::stod(v);
-            if (k=="vol_thresh_pct")        g_cfg.brent_vol_thresh_pct        = std::stod(v);
-            if (k=="min_gap_sec")           g_cfg.brent_min_gap_sec           = std::stoi(v);
-            if (k=="momentum_thresh_pct")   g_cfg.brent_momentum_thresh_pct   = std::stod(v);
-            if (k=="min_breakout_pct")      g_cfg.brent_min_breakout_pct      = std::stod(v);
-            if (k=="max_spread_pct")        g_cfg.brent_max_spread_pct        = std::stod(v);
-            if (k=="compression_threshold") g_cfg.brent_compression_threshold = std::stod(v);
+            if (k=="tp_pct")                g_cfg.brent_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.brent_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.brent_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.brent_min_gap_sec           = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.brent_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.brent_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.brent_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.brent_compression_threshold = safe_stod(v, k);
         }
         if (section == "eu_index") {
-            if (k=="momentum_thresh_pct")   g_cfg.eu_index_momentum_thresh_pct   = std::stod(v);
-            if (k=="min_breakout_pct")      g_cfg.eu_index_min_breakout_pct      = std::stod(v);
-            if (k=="compression_threshold") g_cfg.eu_index_compression_threshold = std::stod(v);
-            if (k=="max_spread_pct")        g_cfg.eu_index_max_spread_pct        = std::stod(v);
+            if (k=="momentum_thresh_pct")   g_cfg.eu_index_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.eu_index_min_breakout_pct      = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.eu_index_compression_threshold = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.eu_index_max_spread_pct        = safe_stod(v, k);
         }
         if (section == "fx") {
-            if (k=="tp_pct")                g_cfg.fx_tp_pct                = std::stod(v);
-            if (k=="sl_pct")                g_cfg.fx_sl_pct                = std::stod(v);
-            if (k=="vol_thresh_pct")        g_cfg.fx_vol_thresh_pct        = std::stod(v);
-            if (k=="min_gap_sec")           g_cfg.fx_min_gap_sec           = std::stoi(v);
-            if (k=="momentum_thresh_pct")   g_cfg.fx_momentum_thresh_pct   = std::stod(v);
-            if (k=="min_breakout_pct")      g_cfg.fx_min_breakout_pct      = std::stod(v);
-            if (k=="max_spread_pct")        g_cfg.fx_max_spread_pct        = std::stod(v);
-            if (k=="compression_threshold") g_cfg.fx_compression_threshold = std::stod(v);
+            if (k=="tp_pct")                g_cfg.fx_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.fx_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.fx_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.fx_min_gap_sec           = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.fx_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.fx_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.fx_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.fx_compression_threshold = safe_stod(v, k);
         }
         if (section == "gbpusd") {
-            if (k=="tp_pct")                g_cfg.gbpusd_tp_pct                = std::stod(v);
-            if (k=="sl_pct")                g_cfg.gbpusd_sl_pct                = std::stod(v);
-            if (k=="vol_thresh_pct")        g_cfg.gbpusd_vol_thresh_pct        = std::stod(v);
-            if (k=="min_gap_sec")           g_cfg.gbpusd_min_gap_sec           = std::stoi(v);
-            if (k=="momentum_thresh_pct")   g_cfg.gbpusd_momentum_thresh_pct   = std::stod(v);
-            if (k=="min_breakout_pct")      g_cfg.gbpusd_min_breakout_pct      = std::stod(v);
-            if (k=="max_spread_pct")        g_cfg.gbpusd_max_spread_pct        = std::stod(v);
-            if (k=="compression_threshold") g_cfg.gbpusd_compression_threshold = std::stod(v);
+            if (k=="tp_pct")                g_cfg.gbpusd_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.gbpusd_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.gbpusd_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.gbpusd_min_gap_sec           = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.gbpusd_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.gbpusd_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.gbpusd_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.gbpusd_compression_threshold = safe_stod(v, k);
         }
         if (section == "gold_stack") {
             auto& gs = g_cfg.gs_cfg;
             // Orchestrator gates
-            if (k=="hard_sl_cooldown_sec")    gs.hard_sl_cooldown_sec     = std::stoi(v);
-            if (k=="side_chop_window_sec")    gs.side_chop_window_sec     = std::stoi(v);
-            if (k=="side_chop_pause_sec")     gs.side_chop_pause_sec      = std::stoi(v);
-            if (k=="same_level_reentry_sec")  gs.same_level_reentry_sec   = std::stoi(v);
-            if (k=="same_level_reentry_band") gs.same_level_reentry_band  = std::stod(v);
-            if (k=="min_vwap_dislocation")    gs.min_vwap_dislocation     = std::stod(v);
-            if (k=="max_entry_spread")        gs.max_entry_spread         = std::stod(v);
-            if (k=="min_entry_gap_sec")       gs.min_entry_gap_sec        = std::stoi(v);
+            if (k=="hard_sl_cooldown_sec")    gs.hard_sl_cooldown_sec     = safe_stoi(v, k);
+            if (k=="side_chop_window_sec")    gs.side_chop_window_sec     = safe_stoi(v, k);
+            if (k=="side_chop_pause_sec")     gs.side_chop_pause_sec      = safe_stoi(v, k);
+            if (k=="same_level_reentry_sec")  gs.same_level_reentry_sec   = safe_stoi(v, k);
+            if (k=="same_level_reentry_band") gs.same_level_reentry_band  = safe_stod(v, k);
+            if (k=="min_vwap_dislocation")    gs.min_vwap_dislocation     = safe_stod(v, k);
+            if (k=="max_entry_spread")        gs.max_entry_spread         = safe_stod(v, k);
+            if (k=="min_entry_gap_sec")       gs.min_entry_gap_sec        = safe_stoi(v, k);
             // Position manager
-            if (k=="max_hold_sec")            gs.max_hold_sec             = std::stoi(v);
-            if (k=="lock_arm_move")           gs.lock_arm_move            = std::stod(v);
-            if (k=="lock_gain")               gs.lock_gain                = std::stod(v);
-            if (k=="trail_arm_1")             gs.trail_arm_1              = std::stod(v);
-            if (k=="trail_dist_1")            gs.trail_dist_1             = std::stod(v);
-            if (k=="trail_arm_2")             gs.trail_arm_2              = std::stod(v);
-            if (k=="trail_dist_2")            gs.trail_dist_2             = std::stod(v);
-            if (k=="min_locked_profit")       gs.min_locked_profit        = std::stod(v);
-            if (k=="max_base_sl_ticks")       gs.max_base_sl_ticks        = std::stod(v);
+            if (k=="max_hold_sec")            gs.max_hold_sec             = safe_stoi(v, k);
+            if (k=="lock_arm_move")           gs.lock_arm_move            = safe_stod(v, k);
+            if (k=="lock_gain")               gs.lock_gain                = safe_stod(v, k);
+            if (k=="trail_arm_1")             gs.trail_arm_1              = safe_stod(v, k);
+            if (k=="trail_dist_1")            gs.trail_dist_1             = safe_stod(v, k);
+            if (k=="trail_arm_2")             gs.trail_arm_2              = safe_stod(v, k);
+            if (k=="trail_dist_2")            gs.trail_dist_2             = safe_stod(v, k);
+            if (k=="min_locked_profit")       gs.min_locked_profit        = safe_stod(v, k);
+            if (k=="max_base_sl_ticks")       gs.max_base_sl_ticks        = safe_stod(v, k);
             // LiquiditySweepPro
-            if (k=="sweep_pro_max_spread")    gs.sweep_pro_max_spread     = std::stod(v);
-            if (k=="sweep_pro_sl_ticks")      gs.sweep_pro_sl_ticks       = std::stoi(v);
-            if (k=="sweep_pro_base_size")     gs.sweep_pro_base_size      = std::stod(v);
+            if (k=="sweep_pro_max_spread")    gs.sweep_pro_max_spread     = safe_stod(v, k);
+            if (k=="sweep_pro_sl_ticks")      gs.sweep_pro_sl_ticks       = safe_stoi(v, k);
+            if (k=="sweep_pro_base_size")     gs.sweep_pro_base_size      = safe_stod(v, k);
             // LiquiditySweepPressure
-            if (k=="sweep_pres_max_spread")   gs.sweep_pres_max_spread    = std::stod(v);
-            if (k=="sweep_pres_sl_ticks")     gs.sweep_pres_sl_ticks      = std::stoi(v);
-            if (k=="sweep_pres_base_size")    gs.sweep_pres_base_size     = std::stod(v);
+            if (k=="sweep_pres_max_spread")   gs.sweep_pres_max_spread    = safe_stod(v, k);
+            if (k=="sweep_pres_sl_ticks")     gs.sweep_pres_sl_ticks      = safe_stoi(v, k);
+            if (k=="sweep_pres_base_size")    gs.sweep_pres_base_size     = safe_stod(v, k);
         }
         if (section == "latency_edge") {
             auto& le = g_cfg.le_cfg;
             // GoldSilverLeadLag
-            if (k=="lead_lag_gold_signal_move")    le.lead_lag_gold_signal_move    = std::stod(v);
-            if (k=="lead_lag_silver_min_reaction") le.lead_lag_silver_min_reaction = std::stod(v);
-            if (k=="lead_lag_silver_tp")           le.lead_lag_silver_tp           = std::stod(v);
-            if (k=="lead_lag_silver_sl")           le.lead_lag_silver_sl           = std::stod(v);
-            if (k=="lead_lag_signal_expiry_ms")    le.lead_lag_signal_expiry_ms    = std::stoi(v);
-            if (k=="lead_lag_max_spread_gold")     le.lead_lag_max_spread_gold     = std::stod(v);
-            if (k=="lead_lag_max_spread_silver")   le.lead_lag_max_spread_silver   = std::stod(v);
-            if (k=="lead_lag_cooldown_sec")        le.lead_lag_cooldown_sec        = std::stoi(v);
-            if (k=="lead_lag_max_hold_sec")        le.lead_lag_max_hold_sec        = std::stoi(v);
+            if (k=="lead_lag_gold_signal_move")    le.lead_lag_gold_signal_move    = safe_stod(v, k);
+            if (k=="lead_lag_silver_min_reaction") le.lead_lag_silver_min_reaction = safe_stod(v, k);
+            if (k=="lead_lag_silver_tp")           le.lead_lag_silver_tp           = safe_stod(v, k);
+            if (k=="lead_lag_silver_sl")           le.lead_lag_silver_sl           = safe_stod(v, k);
+            if (k=="lead_lag_signal_expiry_ms")    le.lead_lag_signal_expiry_ms    = safe_stoi(v, k);
+            if (k=="lead_lag_max_spread_gold")     le.lead_lag_max_spread_gold     = safe_stod(v, k);
+            if (k=="lead_lag_max_spread_silver")   le.lead_lag_max_spread_silver   = safe_stod(v, k);
+            if (k=="lead_lag_cooldown_sec")        le.lead_lag_cooldown_sec        = safe_stoi(v, k);
+            if (k=="lead_lag_max_hold_sec")        le.lead_lag_max_hold_sec        = safe_stoi(v, k);
             // GoldSpreadDislocation
-            if (k=="spread_disloc_spike_ratio")    le.spread_disloc_spike_ratio    = std::stod(v);
-            if (k=="spread_disloc_min_median")     le.spread_disloc_min_median     = std::stod(v);
-            if (k=="spread_disloc_max_median")     le.spread_disloc_max_median     = std::stod(v);
-            if (k=="spread_disloc_tp")             le.spread_disloc_tp             = std::stod(v);
-            if (k=="spread_disloc_sl")             le.spread_disloc_sl             = std::stod(v);
-            if (k=="spread_disloc_cooldown_sec")   le.spread_disloc_cooldown_sec   = std::stoi(v);
-            if (k=="spread_disloc_max_hold_sec")   le.spread_disloc_max_hold_sec   = std::stoi(v);
+            if (k=="spread_disloc_spike_ratio")    le.spread_disloc_spike_ratio    = safe_stod(v, k);
+            if (k=="spread_disloc_min_median")     le.spread_disloc_min_median     = safe_stod(v, k);
+            if (k=="spread_disloc_max_median")     le.spread_disloc_max_median     = safe_stod(v, k);
+            if (k=="spread_disloc_tp")             le.spread_disloc_tp             = safe_stod(v, k);
+            if (k=="spread_disloc_sl")             le.spread_disloc_sl             = safe_stod(v, k);
+            if (k=="spread_disloc_cooldown_sec")   le.spread_disloc_cooldown_sec   = safe_stoi(v, k);
+            if (k=="spread_disloc_max_hold_sec")   le.spread_disloc_max_hold_sec   = safe_stoi(v, k);
             // GoldEventCompression
-            if (k=="event_comp_range")             le.event_comp_range             = std::stod(v);
-            if (k=="event_comp_trigger")           le.event_comp_trigger           = std::stod(v);
-            if (k=="event_comp_tp")                le.event_comp_tp                = std::stod(v);
-            if (k=="event_comp_sl")                le.event_comp_sl                = std::stod(v);
-            if (k=="event_comp_max_hold_sec")      le.event_comp_max_hold_sec      = std::stoi(v);
-            if (k=="event_comp_cooldown_sec")      le.event_comp_cooldown_sec      = std::stoi(v);
-            if (k=="event_comp_max_spread")        le.event_comp_max_spread        = std::stod(v);
+            if (k=="event_comp_range")             le.event_comp_range             = safe_stod(v, k);
+            if (k=="event_comp_trigger")           le.event_comp_trigger           = safe_stod(v, k);
+            if (k=="event_comp_tp")                le.event_comp_tp                = safe_stod(v, k);
+            if (k=="event_comp_sl")                le.event_comp_sl                = safe_stod(v, k);
+            if (k=="event_comp_max_hold_sec")      le.event_comp_max_hold_sec      = safe_stoi(v, k);
+            if (k=="event_comp_cooldown_sec")      le.event_comp_cooldown_sec      = safe_stoi(v, k);
+            if (k=="event_comp_max_spread")        le.event_comp_max_spread        = safe_stod(v, k);
         }
     }
     std::cout << "[CONFIG] mode=" << g_cfg.mode
@@ -2651,6 +2684,9 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_eng_xag.ACCOUNT_EQUITY    = eq;
         g_eng_eurusd.ACCOUNT_EQUITY = eq;
         g_eng_gbpusd.ACCOUNT_EQUITY = eq;
+        g_eng_audusd.ACCOUNT_EQUITY = eq;
+        g_eng_nzdusd.ACCOUNT_EQUITY = eq;
+        g_eng_usdjpy.ACCOUNT_EQUITY = eq;
         g_eng_brent.ACCOUNT_EQUITY  = eq;
     }
 }
@@ -2712,6 +2748,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                       << std::fixed << std::setprecision(2) << bid << "/"
                       << std::fixed << std::setprecision(2) << ask << "\n";
             std::cout.unsetf(std::ios::fixed);
+            std::cout << std::setprecision(6);
             std::cout.flush();
         }
     }
@@ -2786,7 +2823,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.xag_l2_imbalance  = getImb("XAGUSD");
         g_macro_ctx.eur_l2_imbalance  = getImb("EURUSD");
         g_macro_ctx.gbp_l2_imbalance  = getImb("GBPUSD");
-        g_macro_ctx.cl_l2_imbalance   = getImb("USOIL.F");
+        g_macro_ctx.cl_l2_imbalance    = getImb("USOIL.F");
+        g_macro_ctx.brent_l2_imbalance = getImb("BRENT");
     }
 
     const bool tradeable = session_tradeable();
@@ -3099,7 +3137,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             : (base_can_enter && sdec.allow_breakout);
 
         if (eng_armed && !sdec.allow_breakout && base_can_enter) {
-            static thread_local int64_t s_last_armed_log = 0;
+            static int64_t s_last_armed_log = 0;
             const int64_t now_log = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             if (now_log - s_last_armed_log >= 5) {
@@ -3113,8 +3151,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool eng_mid_cycle = (eng.phase == omega::Phase::COMPRESSION
                                  || eng.phase == omega::Phase::BREAKOUT_WATCH);
         if (!eng_mid_cycle) {
-            static std::unordered_map<const char*, double> s_base_breakout;
-            const char* sym_key = eng.symbol;
+            static std::unordered_map<std::string, double> s_base_breakout;
+            const std::string sym_key = eng.symbol;
             auto it = s_base_breakout.find(sym_key);
             if (it == s_base_breakout.end()) {
                 s_base_breakout[sym_key] = eng.MIN_BREAKOUT_PCT;
@@ -3449,7 +3487,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Session gate: London/NY only (07:00-22:00 UTC)
         const auto t_cl = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti_cl; gmtime_s(&ti_cl, &t_cl);
-        if (ti_cl.tm_hour >= 7) {
+        if (ti_cl.tm_hour >= 7 && ti_cl.tm_hour < 22) {
             const bool base_can = symbol_gate("USOIL.F", g_eng_cl.pos.active);
             // NOTE: USOIL.F bracket is disabled — it was incorrectly sharing
             // g_bracket_gold (GOLD.F's GoldBracketEngine). That engine's confirm_fill,
@@ -3651,7 +3689,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (sdec_brent.allow_bracket && !g_eng_brent.pos.active)
                 dispatch_bracket(g_bracket_brent, g_sup_brent, g_eng_brent, base_can_brent,
                                  0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                                 g_macro_ctx.cl_l2_imbalance, &sdec_brent);
+                                 g_macro_ctx.brent_l2_imbalance, &sdec_brent);
         }
     }
     else if (sym == "NAS100") {
@@ -4022,7 +4060,9 @@ static std::vector<std::string> extract_messages(const char* data, int n) {
         const size_t bl_start = bl_pos + 3u;
         const size_t bl_end   = g_recv_buf.find('\x01', bl_start);
         if (bl_end == std::string::npos) break;
-        const int    body_len = std::stoi(g_recv_buf.substr(bl_start, bl_end - bl_start));
+        int body_len = 0;
+        try { body_len = std::stoi(g_recv_buf.substr(bl_start, bl_end - bl_start)); }
+        catch (...) { g_recv_buf = g_recv_buf.substr(bl_end); continue; } // malformed — skip
         const size_t hdr_end  = bl_end + 1u;
         const size_t msg_end  = hdr_end + static_cast<size_t>(body_len) + 7u;
         if (msg_end > g_recv_buf.size()) break;
@@ -4315,7 +4355,9 @@ static void trade_loop() {
                 const size_t bl_start = bl_pos + 3u;
                 const size_t bl_end   = trade_recv_buf.find('\x01', bl_start);
                 if (bl_end == std::string::npos) break;
-                const int body_len = std::stoi(trade_recv_buf.substr(bl_start, bl_end - bl_start));
+                int body_len = 0;
+                try { body_len = std::stoi(trade_recv_buf.substr(bl_start, bl_end - bl_start)); }
+                catch (...) { trade_recv_buf = trade_recv_buf.substr(bl_end); continue; }
                 const size_t hdr_end = bl_end + 1u;
                 const size_t msg_end = hdr_end + static_cast<size_t>(body_len) + 7u;
                 if (msg_end > trade_recv_buf.size()) break;
@@ -4464,6 +4506,7 @@ static void quote_loop() {
                           << " vwap=" << std::fixed << std::setprecision(2) << g_gold_stack.vwap()
                           << " vol_range=" << std::fixed << std::setprecision(2) << g_gold_stack.vol_range() << "\n";
                 std::cout.unsetf(std::ios::fixed);
+                std::cout << std::setprecision(6);
                 // Latency edge engines stats
                 g_le_stack.print_stats();
                 print_perf_stats();
@@ -4594,6 +4637,7 @@ static void quote_loop() {
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     });
         };
+        fc_bracket(g_bracket_cl,      "USOIL.F");
         fc_bracket(g_bracket_sp,      "US500.F");
         fc_bracket(g_bracket_nq,      "USTEC.F");
         fc_bracket(g_bracket_us30,    "DJ30.F");
@@ -4649,6 +4693,12 @@ static void quote_loop() {
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     };
                 g_gold_stack.force_close(g_bid, g_ask, g_rtt_last, gold_fc_cb);
+                // Force-close GoldFlowEngine
+                {
+                    const int64_t fc_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    g_gold_flow.force_close(g_bid, g_ask, fc_now_ms, gold_fc_cb);
+                }
                 // Force-close latency edge engines
                 omega::latency::LatencyEdgeStack::CloseCb le_cb =
                     [](const omega::TradeRecord& tr) {
@@ -4690,6 +4740,7 @@ int main(int argc, char* argv[])
         std::cout << "[OMEGA] ALREADY RUNNING — another Omega instance holds the mutex. Exiting.\n";
         std::cerr << "[OMEGA] ALREADY RUNNING — another Omega instance holds the mutex. Exiting.\n";
         std::cout.flush(); std::cerr.flush();
+        if (g_singleton_mutex) { CloseHandle(g_singleton_mutex); g_singleton_mutex = nullptr; }
         Sleep(2000);  // keep window open long enough to read
         return 1;
     }
@@ -5481,7 +5532,7 @@ int main(int argc, char* argv[])
     if (g_daily_shadow_trade_log) g_daily_shadow_trade_log->close();
     g_trade_close_csv.close();
     g_shadow_csv.close();
-    if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); }
+    if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); delete g_tee_buf; g_tee_buf = nullptr; }
     WSACleanup();
     ReleaseMutex(g_singleton_mutex);
     CloseHandle(g_singleton_mutex);

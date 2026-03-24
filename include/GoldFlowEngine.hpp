@@ -282,6 +282,13 @@ struct GoldFlowEngine {
         return phase == Phase::LIVE;
     }
 
+    // Force-close any open position (used during disconnect cleanup)
+    void force_close(double bid, double ask, int64_t now_ms, CloseCallback on_close) noexcept {
+        if (!has_open_position()) return;
+        const double exit_px = pos.is_long ? bid : ask;
+        close_position(exit_px, "FORCE_CLOSE", now_ms, on_close);
+    }
+
     double current_atr() const noexcept { return m_atr; }
 
     // -------------------------------------------------------------------------
