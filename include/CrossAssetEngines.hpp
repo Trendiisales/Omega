@@ -622,7 +622,7 @@ private:
 //
 // Used for:
 //   US equities: NY open 13:30 UTC, track 13:30-14:00, bracket at 14:00
-//   GER30:       Xetra open 08:00 UTC, track 08:00-08:30, bracket at 08:30
+//   GER40:       Xetra open 08:00 UTC, track 08:00-08:30, bracket at 08:30
 //   Silver:      COMEX open 13:30 UTC, track 13:30-14:00, bracket at 14:00
 //
 // Different from compression breakout: the range is time-fixed (always the

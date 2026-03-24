@@ -223,11 +223,11 @@ struct OmegaConfig {
     double brent_max_spread_pct        = 0.120;
     double brent_compression_threshold = 0.80;
 
-    // EU Indices (GER30, UK100, ESTX50) — shared params
+    // EU Indices (GER40, UK100, ESTX50) — shared params
     double eu_index_momentum_thresh_pct   = 0.005;
     double eu_index_min_breakout_pct      = 0.030;
     double eu_index_compression_threshold = 0.85;
-    double eu_index_max_spread_pct        = 0.080;  // 0.080% — ESTX50@5600=$4.48, GER30@22500=$18, UK100@9900=$7.92
+    double eu_index_max_spread_pct        = 0.080;  // 0.080% — ESTX50@5600=$4.48, GER40@22500=$18, UK100@9900=$7.92
     // OLD: 0.042% — ESTX50=$2.35 max, actual $1.50-8 (wide spreads blocked all EU index supervisor decisions)
 
     // FX (EURUSD) -- spec: TP_MULT=1.5, MAX_SPREAD=0.0002@1.15=0.017%
@@ -348,7 +348,7 @@ static omega::NqEngine    g_eng_nq("USTEC.F");
 static omega::OilEngine   g_eng_cl("USOIL.F");
 static omega::Us30Engine  g_eng_us30("DJ30.F");
 static omega::Nas100Engine g_eng_nas100("NAS100");
-static omega::EuIndexEngine  g_eng_ger30("GER30");
+static omega::EuIndexEngine  g_eng_ger30("GER40");
 static omega::EuIndexEngine  g_eng_uk100("UK100");
 static omega::EuIndexEngine  g_eng_estx50("ESTX50");
 static omega::BreakoutEngine g_eng_xag("XAGUSD");
@@ -1052,14 +1052,14 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     // USTEC.F : lot_size=20.0  USTEC.F  → $20/pt/lot   (confirmed from spec)
     // DJ30.F  : lot_size=5.0   DJ30.F   → $5/pt/lot    (confirmed from spec)
     // NAS100  : lot_size=1.0   NAS100   → $1/pt/lot    (confirmed; min trade=0.1 lots)
-    // GER30   : lot_size=1.0   GER30, quote=EUR → $1.10/pt/lot  (EUR×1.10 approx)
+    // GER40   : lot_size=1.0   GER40, quote=EUR → $1.10/pt/lot  (EUR×1.10 approx)
     // UK100   : lot_size=1.0   UK100,  quote=GBP → $1.33/pt/lot (GBP×1.33 approx)
     // ESTX50  : lot_size=1.0   ESTX50, quote=EUR → $1.10/pt/lot (EUR×1.10 approx)
     if (symbol == "US500.F")  return 50.0;   // confirmed: lot=50 US500.F
     if (symbol == "USTEC.F")  return 20.0;   // confirmed: lot=20 USTEC.F
     if (symbol == "DJ30.F")   return 5.0;    // confirmed: lot=5 DJ30.F
     if (symbol == "NAS100")   return 1.0;    // confirmed: lot=1 NAS100 (USD, min 0.1 lots)
-    if (symbol == "GER30")    return 1.10;   // confirmed: lot=1 GER30 EUR-quoted × 1.10
+    if (symbol == "GER40")    return 1.10;   // confirmed: lot=1 GER40 EUR-quoted × 1.10
     if (symbol == "UK100")    return 1.33;   // confirmed: lot=1 UK100 GBP-quoted × 1.33
     if (symbol == "ESTX50")   return 1.10;   // confirmed: lot=1 ESTX50 EUR-quoted × 1.10
     return 1.0;  // Unknown symbol: no scaling (safe fallback)
@@ -1506,7 +1506,7 @@ static void handle_execution_report(const std::string& msg) {
                 if (it->second.symbol == "USTEC.F")  g_bracket_nq.on_reject();
                 if (it->second.symbol == "DJ30.F")   g_bracket_us30.on_reject();
                 if (it->second.symbol == "NAS100")   g_bracket_nas100.on_reject();
-                if (it->second.symbol == "GER30")    g_bracket_ger30.on_reject();
+                if (it->second.symbol == "GER40")    g_bracket_ger30.on_reject();
                 if (it->second.symbol == "UK100")    g_bracket_uk100.on_reject();
                 if (it->second.symbol == "ESTX50")   g_bracket_estx50.on_reject();
                 if (it->second.symbol == "BRENT")  g_bracket_brent.on_reject();
@@ -1548,7 +1548,7 @@ static void handle_execution_report(const std::string& msg) {
                             if (it->second.symbol == "USTEC.F")  fill_bracket(g_bracket_nq);
                             if (it->second.symbol == "DJ30.F")   fill_bracket(g_bracket_us30);
                             if (it->second.symbol == "NAS100")   fill_bracket(g_bracket_nas100);
-                            if (it->second.symbol == "GER30")    fill_bracket(g_bracket_ger30);
+                            if (it->second.symbol == "GER40")    fill_bracket(g_bracket_ger30);
                             if (it->second.symbol == "UK100")    fill_bracket(g_bracket_uk100);
                             if (it->second.symbol == "ESTX50")   fill_bracket(g_bracket_estx50);
                             if (it->second.symbol == "BRENT")  fill_bracket(g_bracket_brent);
@@ -1632,7 +1632,7 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
             break;
         }
         // Log unmatched broker symbols that contain keywords we care about —
-        // catches broker renames like GER30→GER40, UK100→UK100.F etc.
+        // catches broker renames like GER40→GER40, UK100→UK100.F etc.
         if (!matched_ext) {
             bool is_primary = false;
             for (int i = 0; i < OMEGA_NSYMS; ++i)
@@ -2696,7 +2696,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         };
         notify(g_sup_sp,     "US500.F"); notify(g_sup_nq,     "USTEC.F");
         notify(g_sup_cl,     "USOIL.F"); notify(g_sup_us30,   "DJ30.F");
-        notify(g_sup_nas100, "NAS100");  notify(g_sup_ger30,   "GER30");
+        notify(g_sup_nas100, "NAS100");  notify(g_sup_ger30,   "GER40");
         notify(g_sup_uk100,  "UK100");   notify(g_sup_estx50,  "ESTX50");
         notify(g_sup_xag,    "XAGUSD");  notify(g_sup_gold,    "GOLD.F");
         notify(g_sup_eurusd, "EURUSD");  notify(g_sup_gbpusd,  "GBPUSD");
@@ -3565,15 +3565,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.us30_l2_imbalance, &sdec_us30);
     }
-    else if (sym == "GER30") {
-        const bool base_can_ger = symbol_gate("GER30", g_eng_ger30.pos.active || g_bracket_ger30.pos.active);
+    else if (sym == "GER40") {
+        const bool base_can_ger = symbol_gate("GER40", g_eng_ger30.pos.active || g_bracket_ger30.pos.active);
         const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger);
         if (sdec_ger.allow_breakout && !g_bracket_ger30.pos.active)
             dispatch(g_eng_ger30, g_sup_ger30, base_can_ger, &sdec_ger);
         if (sdec_ger.allow_bracket && !g_eng_ger30.pos.active)
             dispatch_bracket(g_bracket_ger30, g_sup_ger30, g_eng_ger30, base_can_ger,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             0.5, &sdec_ger); // GER30 L2 not yet in MacroContext — neutral imbalance
+                             0.5, &sdec_ger); // GER40 L2 not yet in MacroContext — neutral imbalance
         // Opening range breakout: Xetra open 08:00 UTC
         if (!g_orb_ger30.has_open_position() && base_can_ger) {
             const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
@@ -4063,7 +4063,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         chk(g_eng_cl,     "USOIL.F");
         chk(g_eng_us30,   "DJ30.F");
         chk(g_eng_nas100, "NAS100");
-        chk(g_eng_ger30,  "GER30");
+        chk(g_eng_ger30,  "GER40");
         chk(g_eng_uk100,  "UK100");
         chk(g_eng_estx50, "ESTX50");
         chk(g_eng_xag,    "XAGUSD");
@@ -4563,7 +4563,7 @@ static void quote_loop() {
 
             if (g_quote_ready.load() && g_cfg.enable_extended_symbols &&
                 g_ext_md_refresh_needed.exchange(false)) {
-                // SecurityList just populated ext symbol IDs (GER30/UK100/ESTX50 etc).
+                // SecurityList just populated ext symbol IDs (GER40/UK100/ESTX50 etc).
                 // We MUST re-subscribe regardless of g_md_subscribed: the initial LOGON
                 // subscription fired before SecurityList arrived so all ext IDs were 0
                 // and were filtered out. Unsub first to avoid ALREADY_SUBSCRIBED reject,
@@ -4578,7 +4578,7 @@ static void quote_loop() {
                     SSL_write(ssl, resub.c_str(), static_cast<int>(resub.size()));
                     g_md_subscribed.store(true);
                     std::cout << "[OMEGA] Re-subscribed ALL symbols with learned ext IDs"
-                                 " (GER30/UK100/ESTX50/XAGUSD/EURUSD/BRENT/GBPUSD/AUDUSD/NZDUSD/USDJPY now included)\n";
+                                 " (GER40/UK100/ESTX50/XAGUSD/EURUSD/BRENT/GBPUSD/AUDUSD/NZDUSD/USDJPY now included)\n";
                 }
             }
 
@@ -4640,7 +4640,7 @@ static void quote_loop() {
         };
         fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F");
         fc(g_eng_us30, "DJ30.F"); fc(g_eng_nas100, "NAS100");
-        fc(g_eng_ger30, "GER30"); fc(g_eng_uk100, "UK100");
+        fc(g_eng_ger30, "GER40"); fc(g_eng_uk100, "UK100");
         fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
         fc(g_eng_gbpusd, "GBPUSD");
         // Force-close bracket engines — look up current prices from book
@@ -4690,7 +4690,7 @@ static void quote_loop() {
         fc_bracket(g_bracket_nq,      "USTEC.F");
         fc_bracket(g_bracket_us30,    "DJ30.F");
         fc_bracket(g_bracket_nas100,  "NAS100");
-        fc_bracket(g_bracket_ger30,   "GER30");
+        fc_bracket(g_bracket_ger30,   "GER40");
         fc_bracket(g_bracket_uk100,   "UK100");
         fc_bracket(g_bracket_estx50,  "ESTX50");
         fc_bracket(g_bracket_brent,   "BRENT");
@@ -4721,7 +4721,7 @@ static void quote_loop() {
             if (ca_b > 0.0 && ca_a > 0.0) { g_ca_fx_cascade.force_close(ca_b, ca_a, ca_cb); }
             ca_get_px("USDJPY", ca_b, ca_a);
             if (ca_b > 0.0 && ca_a > 0.0) { g_ca_carry_unwind.force_close(ca_b, ca_a, ca_cb); }
-            ca_get_px("GER30", ca_b, ca_a);
+            ca_get_px("GER40", ca_b, ca_a);
             if (ca_b > 0.0 && ca_a > 0.0) { g_orb_ger30.force_close(ca_b, ca_a, ca_cb); }
             ca_get_px("XAGUSD", ca_b, ca_a);
             if (ca_b > 0.0 && ca_a > 0.0) { g_orb_silver.force_close(ca_b, ca_a, ca_cb); }
@@ -4935,7 +4935,7 @@ int main(int argc, char* argv[])
     g_bracket_nq.symbol     = "USTEC.F"; g_bracket_nq.ENTRY_SIZE     = 0.01;
     g_bracket_us30.symbol   = "DJ30.F";  g_bracket_us30.ENTRY_SIZE   = 0.01;
     g_bracket_nas100.symbol = "NAS100";  g_bracket_nas100.ENTRY_SIZE = 0.01;
-    g_bracket_ger30.symbol  = "GER30";   g_bracket_ger30.ENTRY_SIZE  = 0.01;
+    g_bracket_ger30.symbol  = "GER40";   g_bracket_ger30.ENTRY_SIZE  = 0.01;
     g_bracket_uk100.symbol  = "UK100";   g_bracket_uk100.ENTRY_SIZE  = 0.01;
     g_bracket_estx50.symbol = "ESTX50";  g_bracket_estx50.ENTRY_SIZE = 0.01;
     g_bracket_brent.symbol  = "BRENT"; g_bracket_brent.ENTRY_SIZE  = 0.01;
@@ -4952,7 +4952,7 @@ int main(int argc, char* argv[])
     g_bracket_nq.MAX_RANGE      = 90.0;   // ~0.40% of NQ ~22500
     g_bracket_us30.MAX_RANGE    = 180.0;  // ~0.40% of DJ30 ~45000
     g_bracket_nas100.MAX_RANGE  = 90.0;   // ~0.40% of NAS100 ~22500
-    g_bracket_ger30.MAX_RANGE   = 90.0;   // ~0.40% of GER30 ~22500
+    g_bracket_ger30.MAX_RANGE   = 90.0;   // ~0.40% of GER40 ~22500
     g_bracket_uk100.MAX_RANGE   = 40.0;   // ~0.40% of UK100 ~10000
     g_bracket_estx50.MAX_RANGE  = 22.0;   // ~0.40% of ESTX50 ~5500
     g_bracket_brent.MAX_RANGE   = 1.20;   // ~0.40% of Brent ~$90 (oil tight)
@@ -4992,7 +4992,7 @@ int main(int argc, char* argv[])
     g_bracket_us30.configure(  2.50, 30, 2.5, 180000, 86.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 3.00, 1.5);
     // NAS100 (~21000): same as USTEC
     g_bracket_nas100.configure(0.75, 30, 2.5, 180000, 42.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
-    // GER30 (~22000): 0.20% = $44.0 min range
+    // GER40 (~22000): 0.20% = $44.0 min range
     g_bracket_ger30.configure( 1.00, 30, 2.5, 180000, 44.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
     // UK100 (~9720): 0.20% = $19.5 min range
     g_bracket_uk100.configure( 0.50, 30, 2.5, 180000, 20.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
@@ -5049,7 +5049,7 @@ int main(int argc, char* argv[])
     wire_bracket(g_bracket_nq,      300);  // USTEC: 5min
     wire_bracket(g_bracket_us30,    300);  // DJ30:  5min
     wire_bracket(g_bracket_nas100,  300);  // NAS100: 5min
-    wire_bracket(g_bracket_ger30,   300);  // GER30: 5min
+    wire_bracket(g_bracket_ger30,   300);  // GER40: 5min
     wire_bracket(g_bracket_uk100,   300);  // UK100: 5min
     wire_bracket(g_bracket_estx50,  300);  // ESTX50: 5min
     wire_bracket(g_bracket_brent,   480);  // Brent: 8min — oil compresses longer than indices
@@ -5110,7 +5110,7 @@ int main(int argc, char* argv[])
             apply_be(g_eng_cl,     g_sym_cfg.get("USOIL.F"), 80.0);
             apply_be(g_eng_us30,   g_sym_cfg.get("DJ30.F"),  42000.0);
             apply_be(g_eng_nas100, g_sym_cfg.get("NAS100"),  20000.0);
-            apply_be(g_eng_ger30,  g_sym_cfg.get("GER30"),   22000.0);
+            apply_be(g_eng_ger30,  g_sym_cfg.get("GER40"),   22000.0);
             apply_be(g_eng_uk100,  g_sym_cfg.get("UK100"),   8500.0);
             apply_be(g_eng_estx50, g_sym_cfg.get("ESTX50"),  5300.0);
             apply_be(g_eng_xag,    g_sym_cfg.get("XAGUSD"),  30.0);
@@ -5157,7 +5157,7 @@ int main(int argc, char* argv[])
             apply_bracket(g_bracket_nq,     g_sym_cfg.get("USTEC.F"));
             apply_bracket(g_bracket_us30,   g_sym_cfg.get("DJ30.F"));
             apply_bracket(g_bracket_nas100, g_sym_cfg.get("NAS100"));
-            apply_bracket(g_bracket_ger30,  g_sym_cfg.get("GER30"));
+            apply_bracket(g_bracket_ger30,  g_sym_cfg.get("GER40"));
             apply_bracket(g_bracket_uk100,  g_sym_cfg.get("UK100"));
             apply_bracket(g_bracket_estx50, g_sym_cfg.get("ESTX50"));
             apply_bracket(g_bracket_brent,  g_sym_cfg.get("BRENT"));
@@ -5197,7 +5197,7 @@ int main(int argc, char* argv[])
             apply_supervisor(g_sup_cl,     "USOIL.F", g_sym_cfg.get("USOIL.F"), g_cfg.oil_max_spread_pct);
             apply_supervisor(g_sup_us30,   "DJ30.F",  g_sym_cfg.get("DJ30.F"),  g_cfg.us30_max_spread_pct);
             apply_supervisor(g_sup_nas100, "NAS100",  g_sym_cfg.get("NAS100"),  g_cfg.nas100_max_spread_pct);
-            apply_supervisor(g_sup_ger30,  "GER30",   g_sym_cfg.get("GER30"),   g_cfg.eu_index_max_spread_pct);
+            apply_supervisor(g_sup_ger30,  "GER40",   g_sym_cfg.get("GER40"),   g_cfg.eu_index_max_spread_pct);
             apply_supervisor(g_sup_uk100,  "UK100",   g_sym_cfg.get("UK100"),   g_cfg.eu_index_max_spread_pct);
             apply_supervisor(g_sup_estx50, "ESTX50",  g_sym_cfg.get("ESTX50"),  g_cfg.eu_index_max_spread_pct);
             apply_supervisor(g_sup_xag,    "XAGUSD",  g_sym_cfg.get("XAGUSD"),  g_cfg.silver_max_spread_pct);
@@ -5229,7 +5229,7 @@ int main(int argc, char* argv[])
             // Assign symbol names directly so supervisor logs are readable even without ini
             g_sup_sp.symbol     = "US500.F"; g_sup_nq.symbol     = "USTEC.F";
             g_sup_cl.symbol     = "USOIL.F"; g_sup_us30.symbol   = "DJ30.F";
-            g_sup_nas100.symbol = "NAS100";  g_sup_ger30.symbol  = "GER30";
+            g_sup_nas100.symbol = "NAS100";  g_sup_ger30.symbol  = "GER40";
             g_sup_uk100.symbol  = "UK100";   g_sup_estx50.symbol = "ESTX50";
             g_sup_xag.symbol    = "XAGUSD";  g_sup_gold.symbol   = "GOLD.F";
             g_sup_eurusd.symbol = "EURUSD";  g_sup_gbpusd.symbol = "GBPUSD";
@@ -5398,7 +5398,7 @@ int main(int argc, char* argv[])
               << "% vol=" << g_eng_eurusd.VOL_THRESH_PCT << "% mom=" << g_eng_eurusd.MOMENTUM_THRESH_PCT
               << "% brk=" << g_eng_eurusd.MIN_BREAKOUT_PCT << "% gap=" << g_eng_eurusd.MIN_GAP_SEC
               << "s spread=" << g_eng_eurusd.MAX_SPREAD_PCT << "%\n"
-              << "[OMEGA-PARAMS] GER30    TP=" << g_eng_ger30.TP_PCT  << "% SL=" << g_eng_ger30.SL_PCT
+              << "[OMEGA-PARAMS] GER40    TP=" << g_eng_ger30.TP_PCT  << "% SL=" << g_eng_ger30.SL_PCT
               << "% vol=" << g_eng_ger30.VOL_THRESH_PCT << "% mom=" << g_eng_ger30.MOMENTUM_THRESH_PCT
               << "% brk=" << g_eng_ger30.MIN_BREAKOUT_PCT << "% gap=" << g_eng_ger30.MIN_GAP_SEC
               << "s hold=" << g_eng_ger30.MAX_HOLD_SEC << "s spread=" << g_eng_ger30.MAX_SPREAD_PCT << "%\n"

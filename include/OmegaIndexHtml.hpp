@@ -346,7 +346,7 @@ R"OMEGA1(
 
         <div class="sym-section-label">◈ EU Indices</div>
         <div class="sym-row r-eu">
-          <span class="sym-nm c-purple">GER30</span>
+          <span class="sym-nm c-purple">GER40</span>
           <div class="px-pair"><span class="bid" id="ger30Bid">----</span><span class="px-sep">|</span><span class="ask" id="ger30Ask">----</span></div>
           <span class="sprd" id="ger30Spread">--</span>
         </div>
@@ -444,7 +444,7 @@ R"OMEGA2(
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">◈ EU Indices + Brent</div>
       <div class="eng-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div class="eng-cell" id="engGER"><div class="eng-sym c-purple">GER30</div><div class="eng-ph eph-flat" id="engGERPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engGERBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engGERAsk">--</span></div><div class="eng-vol" id="engGERVol">--</div><div class="eng-sigs" id="engGERSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engGERProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engGERPct"></span></div></div>
+        <div class="eng-cell" id="engGER"><div class="eng-sym c-purple">GER40</div><div class="eng-ph eph-flat" id="engGERPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engGERBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engGERAsk">--</span></div><div class="eng-vol" id="engGERVol">--</div><div class="eng-sigs" id="engGERSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engGERProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engGERPct"></span></div></div>
         <div class="eng-cell" id="engUK"><div class="eng-sym c-purple">UK100</div><div class="eng-ph eph-flat" id="engUKPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engUKBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engUKAsk">--</span></div><div class="eng-vol" id="engUKVol">--</div><div class="eng-sigs" id="engUKSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engUKProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engUKPct"></span></div></div>
 
         <div class="eng-cell" id="engESTX"><div class="eng-sym c-purple">ESTX50</div><div class="eng-ph eph-flat" id="engESTXPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engESTXBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engESTXAsk">--</span></div><div class="eng-vol" id="engESTXVol">--</div><div class="eng-sigs" id="engESTXSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engESTXProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engESTXPct"></span></div></div>
@@ -828,7 +828,7 @@ function updateDashboard(d){
   updateEngCell('engUS30','engUS30Phase','engUS30Vol','engUS30Sig',(d.brackets&&d.brackets.us30?d.brackets.us30.phase:0),0,0,0,(d.brackets&&d.brackets.us30?d.brackets.us30.hi:0),(d.brackets&&d.brackets.us30?d.brackets.us30.lo:0),d.dj_bid,d.dj_ask,2,isLive('DJ30.F'),d.brackets&&d.brackets.us30);
   updateEngCell('engNAS','engNASPhase','engNASVol','engNASSig',(d.brackets&&d.brackets.nas?d.brackets.nas.phase:0),0,0,0,(d.brackets&&d.brackets.nas?d.brackets.nas.hi:0),(d.brackets&&d.brackets.nas?d.brackets.nas.lo:0),d.nas_bid,d.nas_ask,2,isLive('NAS100'),d.brackets&&d.brackets.nas);
   updateEngCell('engCL','engCLPhase','engCLVol','engCLSig',d.cl_phase,d.cl_recent_vol_pct,d.cl_baseline_vol_pct,d.cl_signals,d.cl_comp_high,d.cl_comp_low,d.cl_bid,d.cl_ask,2,isLive('USOIL.F'),null);
-  updateEngCell('engGER','engGERPhase','engGERVol','engGERSig',(d.brackets&&d.brackets.ger?d.brackets.ger.phase:0),0,0,0,(d.brackets&&d.brackets.ger?d.brackets.ger.hi:0),(d.brackets&&d.brackets.ger?d.brackets.ger.lo:0),d.ger30_bid,d.ger30_ask,2,isLive('GER30'),d.brackets&&d.brackets.ger);
+  updateEngCell('engGER','engGERPhase','engGERVol','engGERSig',(d.brackets&&d.brackets.ger?d.brackets.ger.phase:0),0,0,0,(d.brackets&&d.brackets.ger?d.brackets.ger.hi:0),(d.brackets&&d.brackets.ger?d.brackets.ger.lo:0),d.ger30_bid,d.ger30_ask,2,isLive('GER40'),d.brackets&&d.brackets.ger);
   updateEngCell('engUK','engUKPhase','engUKVol','engUKSig',(d.brackets&&d.brackets.uk?d.brackets.uk.phase:0),0,0,0,(d.brackets&&d.brackets.uk?d.brackets.uk.hi:0),(d.brackets&&d.brackets.uk?d.brackets.uk.lo:0),d.uk100_bid,d.uk100_ask,2,isLive('UK100'),d.brackets&&d.brackets.uk);
   updateEngCell('engESTX','engESTXPhase','engESTXVol','engESTXSig',(d.brackets&&d.brackets.estx?d.brackets.estx.phase:0),0,0,0,(d.brackets&&d.brackets.estx?d.brackets.estx.hi:0),(d.brackets&&d.brackets.estx?d.brackets.estx.lo:0),d.estx50_bid,d.estx50_ask,2,isLive('ESTX50'),d.brackets&&d.brackets.estx);
   updateEngCell('engBRENT','engBRENTPhase','engBRENTVol','engBRENTSig',d.brent_phase,d.brent_recent_vol_pct,d.brent_baseline_vol_pct,d.brent_signals,d.brent_comp_high,d.brent_comp_low,d.brent_bid,d.brent_ask,2,isLive('BRENT'),d.brackets&&d.brackets.brent);

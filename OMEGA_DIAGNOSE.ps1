@@ -139,7 +139,7 @@ $logLines = if ($logFiles) { @(Get-LogLines $logFiles) } else { @() }
 
 $expectedSymbols = @(
     "US500.F", "USTEC.F", "USOIL.F", "GOLD.F",
-    "DJ30.F", "GER30", "UK100", "ESTX50", "XAGUSD", "EURUSD", "UKBRENT"
+    "DJ30.F", "GER40", "UK100", "ESTX50", "XAGUSD", "EURUSD", "UKBRENT"
 )
 
 Write-Host ""

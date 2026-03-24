@@ -122,7 +122,7 @@ struct OmegaTelemetrySnapshot
     BracketState bkt_nq;      // USTEC.F
     BracketState bkt_us30;    // DJ30.F
     BracketState bkt_nas;     // NAS100
-    BracketState bkt_ger;     // GER30
+    BracketState bkt_ger;     // GER40
     BracketState bkt_uk;      // UK100
     BracketState bkt_estx;    // ESTX50
     BracketState bkt_xag;     // XAGUSD
@@ -269,7 +269,7 @@ public:
         else if (!strcmp(sym,"NGAS.F"))  { lv_ngas_bid=bid;   lv_ngas_ask=ask;   m_snap->ngas_bid=bid;   m_snap->ngas_ask=ask; }
         else if (!strcmp(sym,"ES"))      { lv_es_bid=bid;     lv_es_ask=ask;     m_snap->es_bid=bid;     m_snap->es_ask=ask; }
         else if (!strcmp(sym,"DX"))      { lv_dxcash_bid=bid; lv_dxcash_ask=ask; m_snap->dxcash_bid=bid; m_snap->dxcash_ask=ask; }
-        else if (!strcmp(sym,"GER30"))   { lv_ger30_bid=bid;  lv_ger30_ask=ask;  m_snap->ger30_bid=bid;  m_snap->ger30_ask=ask; }
+        else if (!strcmp(sym,"GER40"))   { lv_ger30_bid=bid;  lv_ger30_ask=ask;  m_snap->ger30_bid=bid;  m_snap->ger30_ask=ask; }
         else if (!strcmp(sym,"UK100"))   { lv_uk100_bid=bid;  lv_uk100_ask=ask;  m_snap->uk100_bid=bid;  m_snap->uk100_ask=ask; }
         else if (!strcmp(sym,"ESTX50"))  { lv_estx50_bid=bid; lv_estx50_ask=ask; m_snap->estx50_bid=bid; m_snap->estx50_ask=ask; }
         else if (!strcmp(sym,"XAGUSD"))  { lv_xag_bid=bid;    lv_xag_ask=ask;    m_snap->xag_bid=bid;    m_snap->xag_ask=ask; }
@@ -365,7 +365,7 @@ public:
         else if (!strcmp(sym,"USTEC.F")) set(m_snap->bkt_nq);
         else if (!strcmp(sym,"DJ30.F"))  set(m_snap->bkt_us30);
         else if (!strcmp(sym,"NAS100"))  set(m_snap->bkt_nas);
-        else if (!strcmp(sym,"GER30"))   set(m_snap->bkt_ger);
+        else if (!strcmp(sym,"GER40"))   set(m_snap->bkt_ger);
         else if (!strcmp(sym,"UK100"))   set(m_snap->bkt_uk);
         else if (!strcmp(sym,"ESTX50"))  set(m_snap->bkt_estx);
         else if (!strcmp(sym,"XAGUSD"))  set(m_snap->bkt_xag);

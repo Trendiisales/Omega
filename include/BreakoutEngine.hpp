@@ -463,7 +463,7 @@ public:
             // ── TRAILING STOP ─────────────────────────────────────────────────
             // Arms and distances are SL-relative, not fixed %.
             // Fixed % arms were dead code for most instruments:
-            //   SP500/GER30/UK100/EURUSD: lock arm (0.60%) >= TP → trail never fired
+            //   SP500/GER40/UK100/EURUSD: lock arm (0.60%) >= TP → trail never fired
             //   NQ/DJ30/NAS100/Silver:    trail1 arm (1.00%) >= TP → only lock fired
             //
             // NEW: all thresholds derived from pos.sl_pct (SL% used at entry).

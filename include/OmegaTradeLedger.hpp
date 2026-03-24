@@ -75,7 +75,7 @@ struct TradeRecord
 //   GOLD.F / XAGUSD          : 0.010% — gold/silver tick friction
 //   USOIL.F / UKBRENT        : 0.012% — oil slightly wider intraday
 //   USTEC.F / US500.F / DJ30 : 0.006% — liquid equity index futures
-//   GER30 / UK100 / ESTX50   : 0.008% — European index CFDs, slightly wider
+//   GER40 / UK100 / ESTX50   : 0.008% — European index CFDs, slightly wider
 //   EURUSD                   : 0.003% — FX major, very liquid
 //   default                  : 0.008%
 //

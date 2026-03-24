@@ -30,7 +30,7 @@ static SymbolDef OMEGA_SYMS[] = {
 static const int OMEGA_NSYMS = 9;
 
 static std::vector<ExtSymbolDef> g_ext_syms = {
-    {0,"GER30"},{0,"UK100"},{0,"ESTX50"},{0,"XAGUSD"},
+    {0,"GER40"},{0,"UK100"},{0,"ESTX50"},{0,"XAGUSD"},
     {0,"EURUSD"},{0,"BRENT"},{0,"GBPUSD"},{0,"AUDUSD"},
     {0,"NZDUSD"},{0,"USDJPY"}
 };

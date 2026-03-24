@@ -329,12 +329,12 @@ public:
 };
 
 // ==============================================================================
-// EuIndexEngine -- GER30, UK100, ESTX50
+// EuIndexEngine -- GER40, UK100, ESTX50
 //
 // European equity indices. Correlated with US equity regime (VIX-driven).
 // ES/NQ divergence is a US-only signal — not applicable here.
 // VIX panic blocks all equity index trading universally.
-// L2 imbalance available for GER30/UK100/ESTX50 via MacroContext fields
+// L2 imbalance available for GER40/UK100/ESTX50 via MacroContext fields
 // (ger30_l2_imbalance etc) — but MacroContext does not have these fields yet.
 // Gate on VIX only for now; div gate excluded (EUR/GBP-listed, not ES/NQ).
 // ==============================================================================
