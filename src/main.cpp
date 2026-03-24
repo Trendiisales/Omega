@@ -6138,13 +6138,12 @@ int main(int argc, char* argv[])
         g_ctrader_depth.ctid_account_id     = g_cfg.ctrader_ctid_account_id;
         g_ctrader_depth.l2_mtx              = &g_l2_mtx;
         g_ctrader_depth.l2_books            = &g_l2_books;
-        // Subscribe to all traded symbols + passive cross-pair whitelist
+        // Subscribe depth only for actively traded symbols — not passive cross-pairs.
+        // cTrader drops connection when too many depth streams are requested at once.
         for (int i = 0; i < OMEGA_NSYMS; ++i)
             g_ctrader_depth.symbol_whitelist.insert(OMEGA_SYMS[i].name);
         for (const auto& e : g_ext_syms)
-            g_ctrader_depth.symbol_whitelist.insert(e.name);
-        for (const auto& name : PASSIVE_WHITELIST)
-            g_ctrader_depth.symbol_whitelist.insert(name);
+            if (!e.name.empty()) g_ctrader_depth.symbol_whitelist.insert(e.name);
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
     } else {
