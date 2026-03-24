@@ -581,7 +581,7 @@ public:
                 if (held_sec <= 120) {
                     const bool is_oil_symbol =
                         (std::strcmp(symbol, "USOIL.F") == 0) ||
-                        (std::strcmp(symbol, "UKBRENT") == 0);
+                        (std::strcmp(symbol, "BRENT") == 0);
                     // Raised scratch threshold: 0.12% was within normal tick noise for
                     // liquid index futures, causing valid breakouts to be scratched on
                     // a brief retest. 0.20% (indices) and 0.25% (oil) are above
@@ -605,7 +605,7 @@ public:
                 if (AGGRESSIVE_SHADOW && held_sec >= 45) {
                     const bool is_oil_symbol =
                         (std::strcmp(symbol, "USOIL.F") == 0) ||
-                        (std::strcmp(symbol, "UKBRENT") == 0);
+                        (std::strcmp(symbol, "BRENT") == 0);
                     const double shadow_cut_limit = is_oil_symbol ? 0.08 : 0.05;
                     const double adverse_pct = pos.is_long
                         ? (pos.entry - mid) / pos.entry * 100.0

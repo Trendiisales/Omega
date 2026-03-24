@@ -278,7 +278,7 @@ public:
         else if (!strcmp(sym,"AUDUSD"))  { lv_audusd_bid=bid; lv_audusd_ask=ask; m_snap->audusd_bid=bid; m_snap->audusd_ask=ask; }
         else if (!strcmp(sym,"NZDUSD"))  { lv_nzdusd_bid=bid; lv_nzdusd_ask=ask; m_snap->nzdusd_bid=bid; m_snap->nzdusd_ask=ask; }
         else if (!strcmp(sym,"USDJPY"))  { lv_usdjpy_bid=bid; lv_usdjpy_ask=ask; m_snap->usdjpy_bid=bid; m_snap->usdjpy_ask=ask; }
-        else if (!strcmp(sym,"UKBRENT")) { lv_brent_bid=bid;  lv_brent_ask=ask;  m_snap->brent_bid=bid;  m_snap->brent_ask=ask; }
+        else if (!strcmp(sym,"BRENT")) { lv_brent_bid=bid;  lv_brent_ask=ask;  m_snap->brent_bid=bid;  m_snap->brent_ask=ask; }
         m_snap->sequence.store(seq + 1, std::memory_order_release);
     }
 
@@ -348,7 +348,7 @@ public:
             m_snap->xau_phase=phase; m_snap->xau_comp_high=comp_high;
             m_snap->xau_comp_low=comp_low; m_snap->xau_recent_vol_pct=recent_vol_pct;
             m_snap->xau_baseline_vol_pct=baseline_vol_pct; m_snap->xau_signals=signals;
-        } else if (!strcmp(sym,"UKBRENT")) {
+        } else if (!strcmp(sym,"BRENT")) {
             m_snap->brent_phase=phase; m_snap->brent_comp_high=comp_high;
             m_snap->brent_comp_low=comp_low; m_snap->brent_recent_vol_pct=recent_vol_pct;
             m_snap->brent_baseline_vol_pct=baseline_vol_pct; m_snap->brent_signals=signals;
@@ -372,7 +372,7 @@ public:
         else if (!strcmp(sym,"GOLD.F"))  set(m_snap->bkt_gold);
         else if (!strcmp(sym,"EURUSD"))  set(m_snap->bkt_eur);
         else if (!strcmp(sym,"GBPUSD"))  set(m_snap->bkt_gbp);
-        else if (!strcmp(sym,"UKBRENT")) set(m_snap->bkt_brent);
+        else if (!strcmp(sym,"BRENT")) set(m_snap->bkt_brent);
     }
 
     void UpdateLastSignal(const char* sym, const char* side, double price, const char* reason,

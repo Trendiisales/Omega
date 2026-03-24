@@ -354,7 +354,7 @@ static omega::EuIndexEngine  g_eng_estx50("ESTX50");
 static omega::BreakoutEngine g_eng_xag("XAGUSD");
 static omega::BreakoutEngine g_eng_eurusd("EURUSD");
 static omega::BreakoutEngine g_eng_gbpusd("GBPUSD");
-static omega::BrentEngine    g_eng_brent("UKBRENT");
+static omega::BrentEngine    g_eng_brent("BRENT");
 static omega::BreakoutEngine g_eng_audusd("AUDUSD");
 static omega::BreakoutEngine g_eng_nzdusd("NZDUSD");
 static omega::BreakoutEngine g_eng_usdjpy("USDJPY");
@@ -1028,7 +1028,7 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     //   the $50 risk budget vs observed trade sizes.
     // ─────────────────────────────────────────────────────────────────────────
     if (symbol == "USOIL.F")  return 1000.0;  // WTI CFD future: 1,000 barrels/lot ✓ verified
-    if (symbol == "UKBRENT")  return 1000.0;  // Brent CFD future: 1,000 barrels/lot ✓ scraped
+    if (symbol == "BRENT")  return 1000.0;  // Brent CFD future: 1,000 barrels/lot ✓ scraped
     if (symbol == "GOLD.F")   return 100.0;   // Gold spot CFD: 100 troy oz/lot ✓ confirmed
     if (symbol == "XAGUSD")   return 5000.0;  // Silver spot CFD: 5,000 troy oz/lot ✓ scraped
     if (symbol == "EURUSD")   return 100000.0;// FX major: 100,000 units/lot ✓ standard
@@ -1105,7 +1105,7 @@ static double compute_size(const std::string& symbol,
     else if (symbol == "EURUSD")                               { cap = g_cfg.max_lot_fx;      flr = g_cfg.min_lot_fx; }
     else if (symbol == "GBPUSD")                               { cap = g_cfg.max_lot_gbpusd;  flr = g_cfg.min_lot_gbpusd; }
     else if (symbol == "XAGUSD")                               { cap = g_cfg.max_lot_silver;  flr = g_cfg.min_lot_silver; }
-    else if (symbol == "USOIL.F" || symbol == "UKBRENT")       { cap = g_cfg.max_lot_oil;     flr = g_cfg.min_lot_oil; }
+    else if (symbol == "USOIL.F" || symbol == "BRENT")       { cap = g_cfg.max_lot_oil;     flr = g_cfg.min_lot_oil; }
     // NAS100 has a broker minimum of 0.10 lots — override the indices floor
     if (symbol == "NAS100") flr = std::max(flr, 0.10);
 
@@ -1487,7 +1487,7 @@ static void handle_execution_report(const std::string& msg) {
                 if (it->second.symbol == "GER30")    g_bracket_ger30.on_reject();
                 if (it->second.symbol == "UK100")    g_bracket_uk100.on_reject();
                 if (it->second.symbol == "ESTX50")   g_bracket_estx50.on_reject();
-                if (it->second.symbol == "UKBRENT")  g_bracket_brent.on_reject();
+                if (it->second.symbol == "BRENT")  g_bracket_brent.on_reject();
                 if (it->second.symbol == "EURUSD")   g_bracket_eurusd.on_reject();
                 if (it->second.symbol == "GBPUSD")   g_bracket_gbpusd.on_reject();
                 if (it->second.symbol == "AUDUSD")   g_bracket_audusd.on_reject();
@@ -1529,7 +1529,7 @@ static void handle_execution_report(const std::string& msg) {
                             if (it->second.symbol == "GER30")    fill_bracket(g_bracket_ger30);
                             if (it->second.symbol == "UK100")    fill_bracket(g_bracket_uk100);
                             if (it->second.symbol == "ESTX50")   fill_bracket(g_bracket_estx50);
-                            if (it->second.symbol == "UKBRENT")  fill_bracket(g_bracket_brent);
+                            if (it->second.symbol == "BRENT")  fill_bracket(g_bracket_brent);
                             if (it->second.symbol == "EURUSD")   fill_bracket(g_bracket_eurusd);
                             if (it->second.symbol == "GBPUSD")   fill_bracket(g_bracket_gbpusd);
                             if (it->second.symbol == "AUDUSD")   fill_bracket(g_bracket_audusd);
@@ -2632,7 +2632,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         notify(g_sup_xag,    "XAGUSD");  notify(g_sup_gold,    "GOLD.F");
         notify(g_sup_eurusd, "EURUSD");  notify(g_sup_gbpusd,  "GBPUSD");
         notify(g_sup_audusd, "AUDUSD");  notify(g_sup_nzdusd,  "NZDUSD");
-        notify(g_sup_usdjpy, "USDJPY");  notify(g_sup_brent,   "UKBRENT");
+        notify(g_sup_usdjpy, "USDJPY");  notify(g_sup_brent,   "BRENT");
     }
 
     // Equity-based sizing only applies in LIVE mode — in SHADOW there is no
@@ -3450,8 +3450,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (!g_ca_brent_wti.has_open_position() && base_can) {
                 double brent_b = 0.0, brent_a = 0.0;
                 { std::lock_guard<std::mutex> lk(g_book_mtx);
-                  const auto bi = g_bids.find("UKBRENT"); if (bi != g_bids.end()) brent_b = bi->second;
-                  const auto ai = g_asks.find("UKBRENT"); if (ai != g_asks.end()) brent_a = ai->second; }
+                  const auto bi = g_bids.find("BRENT"); if (bi != g_bids.end()) brent_b = bi->second;
+                  const auto ai = g_asks.find("BRENT"); if (ai != g_asks.end()) brent_a = ai->second; }
                 const double brent_mid = (brent_b > 0 && brent_a > 0) ? (brent_b+brent_a)*0.5 : 0.0;
                 if (brent_mid > 0) {
                     const auto bw = g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid, ca_on_close);
@@ -3622,11 +3622,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
         }
     }
-    else if (sym == "UKBRENT") {
+    else if (sym == "BRENT") {
         const auto t_br = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti_br; gmtime_s(&ti_br, &t_br);
         if (ti_br.tm_hour >= 7) {
-            const bool base_can_brent = symbol_gate("UKBRENT", g_eng_brent.pos.active || g_bracket_brent.pos.active);
+            const bool base_can_brent = symbol_gate("BRENT", g_eng_brent.pos.active || g_bracket_brent.pos.active);
             const auto sdec_brent = sup_decision(g_sup_brent, g_eng_brent, base_can_brent);
             if (sdec_brent.allow_breakout && !g_bracket_brent.pos.active)
                 dispatch(g_eng_brent, g_sup_brent, base_can_brent, &sdec_brent);
@@ -3976,7 +3976,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         chk(g_eng_audusd, "AUDUSD");
         chk(g_eng_nzdusd, "NZDUSD");
         chk(g_eng_usdjpy, "USDJPY");
-        chk(g_eng_brent,  "UKBRENT");
+        chk(g_eng_brent,  "BRENT");
         g_telemetry.UpdateSLCooldown(cooldowns);
     }
 
@@ -4556,7 +4556,7 @@ static void quote_loop() {
                     });
         }
         fc(g_eng_audusd, "AUDUSD"); fc(g_eng_nzdusd, "NZDUSD"); fc(g_eng_usdjpy, "USDJPY");
-        fc(g_eng_brent, "UKBRENT");
+        fc(g_eng_brent, "BRENT");
         // Force-close all new bracket engines
         auto fc_bracket = [](auto& beng, const char* sym_fc) {
             if (!beng.has_open_position()) return;
@@ -4580,7 +4580,7 @@ static void quote_loop() {
         fc_bracket(g_bracket_ger30,   "GER30");
         fc_bracket(g_bracket_uk100,   "UK100");
         fc_bracket(g_bracket_estx50,  "ESTX50");
-        fc_bracket(g_bracket_brent,   "UKBRENT");
+        fc_bracket(g_bracket_brent,   "BRENT");
         fc_bracket(g_bracket_eurusd,  "EURUSD");
         fc_bracket(g_bracket_gbpusd,  "GBPUSD");
         fc_bracket(g_bracket_audusd,  "AUDUSD");
@@ -4818,7 +4818,7 @@ int main(int argc, char* argv[])
     g_bracket_ger30.symbol  = "GER30";   g_bracket_ger30.ENTRY_SIZE  = 0.01;
     g_bracket_uk100.symbol  = "UK100";   g_bracket_uk100.ENTRY_SIZE  = 0.01;
     g_bracket_estx50.symbol = "ESTX50";  g_bracket_estx50.ENTRY_SIZE = 0.01;
-    g_bracket_brent.symbol  = "UKBRENT"; g_bracket_brent.ENTRY_SIZE  = 0.01;
+    g_bracket_brent.symbol  = "BRENT"; g_bracket_brent.ENTRY_SIZE  = 0.01;
     g_bracket_eurusd.symbol = "EURUSD";  g_bracket_eurusd.ENTRY_SIZE = 0.01;
     g_bracket_gbpusd.symbol = "GBPUSD";  g_bracket_gbpusd.ENTRY_SIZE = 0.01;
     g_bracket_audusd.symbol = "AUDUSD";  g_bracket_audusd.ENTRY_SIZE = 0.01;
@@ -4998,7 +4998,7 @@ int main(int argc, char* argv[])
             apply_be(g_eng_audusd, g_sym_cfg.get("AUDUSD"),  0.65);
             apply_be(g_eng_nzdusd, g_sym_cfg.get("NZDUSD"),  0.60);
             apply_be(g_eng_usdjpy, g_sym_cfg.get("USDJPY"),  150.0);
-            apply_be(g_eng_brent,  g_sym_cfg.get("UKBRENT"), 85.0);
+            apply_be(g_eng_brent,  g_sym_cfg.get("BRENT"), 85.0);
 
             // Per-symbol WATCH_TIMEOUT_SEC — 120s indices, 120s FX
             g_eng_ger30.WATCH_TIMEOUT_SEC  = 240;
@@ -5039,7 +5039,7 @@ int main(int argc, char* argv[])
             apply_bracket(g_bracket_ger30,  g_sym_cfg.get("GER30"));
             apply_bracket(g_bracket_uk100,  g_sym_cfg.get("UK100"));
             apply_bracket(g_bracket_estx50, g_sym_cfg.get("ESTX50"));
-            apply_bracket(g_bracket_brent,  g_sym_cfg.get("UKBRENT"));
+            apply_bracket(g_bracket_brent,  g_sym_cfg.get("BRENT"));
             apply_bracket(g_bracket_eurusd, g_sym_cfg.get("EURUSD"));
             apply_bracket(g_bracket_gbpusd, g_sym_cfg.get("GBPUSD"));
             apply_bracket(g_bracket_audusd, g_sym_cfg.get("AUDUSD"));
@@ -5085,7 +5085,7 @@ int main(int argc, char* argv[])
             apply_supervisor(g_sup_audusd, "AUDUSD",  g_sym_cfg.get("AUDUSD"),  g_cfg.fx_max_spread_pct);
             apply_supervisor(g_sup_nzdusd, "NZDUSD",  g_sym_cfg.get("NZDUSD"),  g_cfg.fx_max_spread_pct);
             apply_supervisor(g_sup_usdjpy, "USDJPY",  g_sym_cfg.get("USDJPY"),  g_cfg.fx_max_spread_pct);
-            apply_supervisor(g_sup_brent,  "UKBRENT", g_sym_cfg.get("UKBRENT"), g_cfg.brent_max_spread_pct);
+            apply_supervisor(g_sup_brent,  "BRENT", g_sym_cfg.get("BRENT"), g_cfg.brent_max_spread_pct);
             apply_supervisor(g_sup_gold,   "GOLD.F",  g_sym_cfg.get("GOLD.F"),  g_cfg.bracket_gold_max_spread_pct);
             std::cout << "[SUPERVISOR] All supervisors configured from " << sym_ini << "\n";
             std::cout << "[SYMCFG] All engine params overridden from " << sym_ini << "\n";
@@ -5101,7 +5101,7 @@ int main(int argc, char* argv[])
             g_sup_xag.symbol    = "XAGUSD";  g_sup_gold.symbol   = "GOLD.F";
             g_sup_eurusd.symbol = "EURUSD";  g_sup_gbpusd.symbol = "GBPUSD";
             g_sup_audusd.symbol = "AUDUSD";  g_sup_nzdusd.symbol = "NZDUSD";
-            g_sup_usdjpy.symbol = "USDJPY";  g_sup_brent.symbol  = "UKBRENT";
+            g_sup_usdjpy.symbol = "USDJPY";  g_sup_brent.symbol  = "BRENT";
             // Without symbols.ini: disable bracket on non-metals (no bracket engine exists)
             for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_cl, &g_sup_us30, &g_sup_nas100,
                               &g_sup_ger30, &g_sup_uk100, &g_sup_estx50,
