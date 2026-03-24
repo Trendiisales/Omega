@@ -2,71 +2,27 @@
 // =============================================================================
 // CTraderDepthClient.hpp — cTrader Open API v2 Depth-of-Market feed
 //
-// PURPOSE:
-//   Replace the FIX 264=1 single-level L2 book with full multi-level real
-//   depth data from the cTrader Open API. BlackBull confirmed that FIX only
-//   supports MarketDepth 0 or 1. The cTrader Open API has no such restriction
-//   and delivers real incremental order book updates via ProtoOADepthEvent.
+// PROTOCOL (verified against official SDK source code):
 //
-// PROTOCOL:
-//   TCP/SSL to live.ctraderapi.com:5036 (JSON mode — no protobuf library needed)
-//   Each message: [4-byte big-endian length][2-byte payloadType][JSON body]
-//   cTrader Open API v2 — Spotware documentation (help.ctrader.com/open-api)
+// TCP FRAMING (both JSON port 5036 and Protobuf port 5035 use SAME framing):
+//   Send:    [4-byte big-endian message_length][message bytes]
+//            message_length = byte count of message ONLY
+//   Receive: [4-byte big-endian message_length][message bytes]
 //
-// AUTH FLOW (one-time):
-//   1. ProtoOAApplicationAuthReq  (clientId + clientSecret)
-//   2. ProtoOAAccountAuthReq      (ctidTraderAccountId + accessToken)
-//   3. ProtoOASymbolsListReq      (map name -> symbolId)
-//   4. ProtoOASubscribeDepthQuotesReq (symbolIds for our whitelist)
-//   => ProtoOADepthEvent stream   (incremental: newQuotes + deletedQuotes)
+// JSON MESSAGE FORMAT (send) — from official docs:
+//   {"clientMsgId":"<id>","payloadType":<int>,"payload":{<fields>}}
+//   All request-specific fields go inside the nested "payload" object.
 //
-// DEPTH QUOTE FORMAT (ProtoOADepthQuote):
-//   id:   uint64  — unique quote ID (used to delete specific levels)
-//   size: uint64  — size in cents (divide by 100 for lots)
-//   bid:  uint64  — price in 1/100000 units (only set for bid quotes)
-//   ask:  uint64  — price in 1/100000 units (only set for ask quotes)
-//   A quote has either bid OR ask set, never both.
+// JSON MESSAGE FORMAT (receive):
+//   {"payloadType":<int>,"clientMsgId":"<id>","payload":{<fields>}}
+//   payloadType at top level; all response fields inside "payload".
 //
-// INCREMENTAL BOOK MAINTENANCE:
-//   newQuotes     — add/update these quote IDs in the book
-//   deletedQuotes — remove these quote IDs from the book
-//   Rebuild L2Book from the maintained map on each event.
-//
-// INTEGRATION:
-//   Runs as a separate std::thread alongside FIX loops.
-//   On each DepthEvent: acquires g_l2_mtx and updates g_l2_books[sym].
-//   FIX imbalance() still works — cTrader data just fills in real multi-level
-//   sizes instead of the single-level estimate from FIX 264=1.
-//
-// TOKEN:
-//   accessToken is a 30-day OAuth2 bearer token. Store in omega_config.ini.
-//   ctidTraderAccountId is the numeric cTrader account ID for BlackBull live.
-//   Both are obtained once via the OAuth2 flow and refreshed automatically
-//   using the refreshToken before expiry.
-//
-// HOW TO GET YOUR ACCESS TOKEN (one-time setup):
-//   1. Open in browser:
-//      https://id.ctrader.com/my/settings/openapi/grantingaccess/?
-//        client_id=20304_NqeKlH3FEECOWqeP1JvoT2czQV9xkUHE7UXxfPU2dRuDXrZsIM
-//        &redirect_uri=https://localhost
-//        &scope=trading
-//        &product=web
-//   2. Log in with your BlackBull cTrader ID credentials.
-//   3. You are redirected to: https://localhost/?code=XXXXXXXXX
-//      Copy the code= value.
-//   4. Exchange for access token:
-//      curl "https://openapi.ctrader.com/apps/token?grant_type=authorization_code
-//        &code=XXXXXXXXX
-//        &redirect_uri=https://localhost
-//        &client_id=20304_NqeKlH3FEECOWqeP1JvoT2czQV9xkUHE7UXxfPU2dRuDXrZsIM
-//        &client_secret=jeYwDPzelIYSoDppuhSZoRpaRi1q572FcBJ44dXNviuSEKxdB9"
-//   5. Response contains accessToken and refreshToken.
-//      Add to omega_config.ini:
-//        [ctrader_api]
-//        access_token=<accessToken>
-//        refresh_token=<refreshToken>
-//        ctid_trader_account_id=<ctidTraderAccountId from GetAccountListByAccessTokenRes>
-//
+// BUGS FIXED vs v1:
+//   v1 sent [4-byte length][2-byte payloadType][JSON] — WRONG
+//   v1 put fields at top level of JSON — WRONG
+//   v1 read payloadType as 2-byte binary prefix — WRONG
+//   This version: correct 4-byte framing, correct nested payload structure,
+//   payloadType parsed from JSON "payloadType" field in received messages.
 // =============================================================================
 
 #include <string>
@@ -81,6 +37,7 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <iomanip>
 #include <chrono>
 
 #ifdef _WIN32
@@ -91,746 +48,477 @@
   #include <netdb.h>
   #include <unistd.h>
   #define closesocket close
+  #define SOCKET int
+  #define INVALID_SOCKET (-1)
 #endif
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include "OmegaFIX.hpp"
 
-#include "OmegaFIX.hpp"  // L2Book, g_l2_books, g_l2_mtx
-
-// =============================================================================
-// cTrader Open API payload type IDs (from ProtoOAPayloadType enum)
-// =============================================================================
-namespace CTraderPayload {
-    static constexpr uint16_t APPLICATION_AUTH_REQ         = 2100;
-    static constexpr uint16_t APPLICATION_AUTH_RES         = 2101;
-    static constexpr uint16_t ACCOUNT_AUTH_REQ             = 2102;
-    static constexpr uint16_t ACCOUNT_AUTH_RES             = 2103;
-    static constexpr uint16_t ERROR_RES                    = 2142;
-    static constexpr uint16_t GET_ACCOUNTS_BY_TOKEN_REQ    = 2149;
-    static constexpr uint16_t GET_ACCOUNTS_BY_TOKEN_RES    = 2150;
-    static constexpr uint16_t SYMBOLS_LIST_REQ             = 2114;
-    static constexpr uint16_t SYMBOLS_LIST_RES             = 2115;
-    static constexpr uint16_t SUBSCRIBE_DEPTH_QUOTES_REQ   = 2156;
-    static constexpr uint16_t SUBSCRIBE_DEPTH_QUOTES_RES   = 2157;
-    static constexpr uint16_t DEPTH_EVENT                  = 2155;
-    static constexpr uint16_t REFRESH_TOKEN_REQ            = 2173;
-    static constexpr uint16_t REFRESH_TOKEN_RES            = 2174;
-    // Common heartbeat
-    static constexpr uint16_t HEARTBEAT_EVENT              = 51;
+namespace CTraderPT {
+    static constexpr int APPLICATION_AUTH_REQ  = 2100;
+    static constexpr int APPLICATION_AUTH_RES  = 2101;
+    static constexpr int ACCOUNT_AUTH_REQ      = 2102;
+    static constexpr int ACCOUNT_AUTH_RES      = 2103;
+    static constexpr int SYMBOLS_LIST_REQ      = 2114;
+    static constexpr int SYMBOLS_LIST_RES      = 2115;
+    static constexpr int SUBSCRIBE_DEPTH_REQ   = 2156;
+    static constexpr int SUBSCRIBE_DEPTH_RES   = 2157;
+    static constexpr int DEPTH_EVENT           = 2155;
+    static constexpr int REFRESH_TOKEN_REQ     = 2173;
+    static constexpr int REFRESH_TOKEN_RES     = 2174;
+    static constexpr int ERROR_RES             = 2142;
+    static constexpr int HEARTBEAT             = 51;
 }
 
-// =============================================================================
-// Minimal JSON extractor — no external library needed
-// Handles: string fields, integer fields, arrays of objects
-// =============================================================================
-namespace CTraderJSON {
+namespace CTJSON {
 
-// Extract a string value for a given key from a flat JSON object
-// e.g. extract_str(json, "accessToken") -> "abc123"
-inline std::string extract_str(const std::string& json, const std::string& key) {
-    const std::string search = "\"" + key + "\"";
-    const auto kpos = json.find(search);
-    if (kpos == std::string::npos) return "";
-    const auto colon = json.find(':', kpos + search.size());
-    if (colon == std::string::npos) return "";
-    const auto q1 = json.find('"', colon + 1);
-    if (q1 == std::string::npos) return "";
-    const auto q2 = json.find('"', q1 + 1);
-    if (q2 == std::string::npos) return "";
-    return json.substr(q1 + 1, q2 - q1 - 1);
+inline std::string make_id() {
+    static std::atomic<uint32_t> ctr{0};
+    return "cto_" + std::to_string(++ctr);
 }
 
-// Extract a uint64 value for a given key
-inline uint64_t extract_u64(const std::string& json, const std::string& key) {
+// Extract string value for key — searches recursively
+inline std::string get_str(const std::string& json, const std::string& key) {
     const std::string search = "\"" + key + "\"";
-    const auto kpos = json.find(search);
+    size_t kpos = 0;
+    while ((kpos = json.find(search, kpos)) != std::string::npos) {
+        size_t colon = json.find(':', kpos + search.size());
+        if (colon == std::string::npos) break;
+        size_t p = colon + 1;
+        while (p < json.size() && (json[p]==' '||json[p]=='\t')) ++p;
+        if (p < json.size() && json[p] == '"') {
+            size_t q2 = json.find('"', p + 1);
+            if (q2 != std::string::npos) return json.substr(p + 1, q2 - p - 1);
+        }
+        ++kpos;
+    }
+    return "";
+}
+
+// Extract integer — handles quoted and unquoted, searches anywhere in json
+inline int64_t get_int(const std::string& json, const std::string& key) {
+    const std::string search = "\"" + key + "\"";
+    size_t kpos = json.find(search);
     if (kpos == std::string::npos) return 0;
-    const auto colon = json.find(':', kpos + search.size());
+    size_t colon = json.find(':', kpos + search.size());
     if (colon == std::string::npos) return 0;
     size_t p = colon + 1;
     while (p < json.size() && (json[p]==' '||json[p]=='\t')) ++p;
-    if (p >= json.size()) return 0;
-    // Handle both quoted numbers ("123") and unquoted (123)
-    bool quoted = (json[p] == '"');
-    if (quoted) ++p;
-    uint64_t val = 0;
-    while (p < json.size() && json[p] >= '0' && json[p] <= '9') {
-        val = val * 10 + (json[p++] - '0');
+    bool neg = false;
+    if (p < json.size() && json[p] == '-') { neg=true; ++p; }
+    bool q = (p < json.size() && json[p] == '"'); if (q) ++p;
+    int64_t v = 0; bool has = false;
+    while (p < json.size() && json[p] >= '0' && json[p] <= '9') { v=v*10+(json[p++]-'0'); has=true; }
+    return has ? (neg ? -v : v) : 0;
+}
+
+inline uint64_t get_u64(const std::string& j, const std::string& k) {
+    return static_cast<uint64_t>(std::max(int64_t(0), get_int(j, k)));
+}
+
+// Extract the "payload" nested object  
+inline std::string get_payload(const std::string& json) {
+    const size_t kpos = json.find("\"payload\"");
+    if (kpos == std::string::npos) return {};
+    size_t brace = json.find('{', kpos + 9);
+    if (brace == std::string::npos) return {};
+    int d = 0;
+    for (size_t i = brace; i < json.size(); ++i) {
+        if (json[i]=='{') ++d;
+        else if (json[i]=='}') { --d; if (!d) return json.substr(brace, i-brace+1); }
     }
-    return val;
+    return {};
 }
 
-inline int64_t extract_i64(const std::string& json, const std::string& key) {
-    return static_cast<int64_t>(extract_u64(json, key));
-}
-
-// Extract array of objects between "key":[...] and return each {...} as string
-inline std::vector<std::string> extract_array(const std::string& json, const std::string& key) {
-    std::vector<std::string> result;
+// Extract array of objects
+inline std::vector<std::string> get_array(const std::string& json, const std::string& key) {
+    std::vector<std::string> res;
     const std::string search = "\"" + key + "\"";
-    const auto kpos = json.find(search);
-    if (kpos == std::string::npos) return result;
-    const auto bracket = json.find('[', kpos + search.size());
-    if (bracket == std::string::npos) return result;
-    // Find matching close bracket
-    int depth = 0;
-    size_t start = bracket;
-    size_t obj_start = std::string::npos;
+    size_t kpos = json.find(search);
+    if (kpos == std::string::npos) return res;
+    size_t bracket = json.find('[', kpos + search.size());
+    if (bracket == std::string::npos) return res;
+    int depth = 0; size_t obj_start = std::string::npos;
     for (size_t i = bracket; i < json.size(); ++i) {
-        if (json[i] == '[' || json[i] == '{') {
-            if (json[i] == '{' && depth == 1) obj_start = i;
-            ++depth;
-        } else if (json[i] == ']' || json[i] == '}') {
+        if      (json[i]=='['||json[i]=='{') { if(json[i]=='{'&&depth==1) obj_start=i; ++depth; }
+        else if (json[i]==']'||json[i]=='}') {
             --depth;
-            if (json[i] == '}' && depth == 1 && obj_start != std::string::npos) {
-                result.push_back(json.substr(obj_start, i - obj_start + 1));
+            if (json[i]=='}'&&depth==1&&obj_start!=std::string::npos) {
+                res.push_back(json.substr(obj_start, i-obj_start+1));
                 obj_start = std::string::npos;
             }
-            if (depth == 0) break;
+            if (!depth) break;
         }
     }
-    (void)start;
-    return result;
+    return res;
 }
 
-// Extract flat array of uint64 values: "key":[1,2,3]
-inline std::vector<uint64_t> extract_u64_array(const std::string& json, const std::string& key) {
-    std::vector<uint64_t> result;
+inline std::vector<uint64_t> get_u64_array(const std::string& json, const std::string& key) {
+    std::vector<uint64_t> res;
     const std::string search = "\"" + key + "\"";
-    const auto kpos = json.find(search);
-    if (kpos == std::string::npos) return result;
-    const auto bracket = json.find('[', kpos + search.size());
-    if (bracket == std::string::npos) return result;
+    size_t kpos = json.find(search);
+    if (kpos == std::string::npos) return res;
+    size_t bracket = json.find('[', kpos + search.size());
+    if (bracket == std::string::npos) return res;
     size_t p = bracket + 1;
     while (p < json.size() && json[p] != ']') {
-        while (p < json.size() && (json[p]==' '||json[p]==','||json[p]=='\n')) ++p;
-        if (json[p] == ']') break;
-        // skip quotes around numbers
-        bool q = (json[p] == '"');
-        if (q) ++p;
-        uint64_t val = 0;
-        bool has_digit = false;
-        while (p < json.size() && json[p] >= '0' && json[p] <= '9') {
-            val = val * 10 + (json[p++] - '0');
-            has_digit = true;
-        }
+        while (p < json.size() && (json[p]==' '||json[p]==','||json[p]=='\n'||json[p]=='\r')) ++p;
+        if (p >= json.size() || json[p] == ']') break;
+        bool q = (json[p] == '"'); if (q) ++p;
+        uint64_t v = 0; bool has = false;
+        while (p < json.size() && json[p] >= '0' && json[p] <= '9') { v=v*10+(json[p++]-'0'); has=true; }
         if (q && p < json.size() && json[p] == '"') ++p;
-        if (has_digit) result.push_back(val);
+        if (has) res.push_back(v);
     }
-    return result;
+    return res;
 }
 
-// Build minimal JSON request strings
-inline std::string app_auth_req(const std::string& clientId, const std::string& secret) {
-    return "{\"payloadType\":2100,\"clientId\":\"" + clientId + "\",\"clientSecret\":\"" + secret + "\"}";
+// Build correct cTrader JSON messages per spec:
+// {"clientMsgId":"id","payloadType":N,"payload":{fields}}
+inline std::string build(int pt, const std::string& fields) {
+    return "{\"clientMsgId\":\"" + make_id() + "\",\"payloadType\":" +
+           std::to_string(pt) + ",\"payload\":{" + fields + "}}";
 }
 
-inline std::string get_accounts_req(const std::string& accessToken) {
-    return "{\"payloadType\":2149,\"accessToken\":\"" + accessToken + "\"}";
+inline std::string app_auth(const std::string& cid, const std::string& sec) {
+    return build(CTraderPT::APPLICATION_AUTH_REQ,
+                 "\"clientId\":\"" + cid + "\",\"clientSecret\":\"" + sec + "\"");
 }
-
-inline std::string account_auth_req(int64_t ctidAccountId, const std::string& accessToken) {
-    return "{\"payloadType\":2102,\"ctidTraderAccountId\":" + std::to_string(ctidAccountId) +
-           ",\"accessToken\":\"" + accessToken + "\"}";
+inline std::string account_auth(int64_t ctid, const std::string& tok) {
+    return build(CTraderPT::ACCOUNT_AUTH_REQ,
+                 "\"ctidTraderAccountId\":" + std::to_string(ctid) +
+                 ",\"accessToken\":\"" + tok + "\"");
 }
-
-inline std::string symbols_list_req(int64_t ctidAccountId) {
-    return "{\"payloadType\":2114,\"ctidTraderAccountId\":" + std::to_string(ctidAccountId) + "}";
+inline std::string symbols_list(int64_t ctid) {
+    return build(CTraderPT::SYMBOLS_LIST_REQ,
+                 "\"ctidTraderAccountId\":" + std::to_string(ctid));
 }
-
-inline std::string subscribe_depth_req(int64_t ctidAccountId, const std::vector<int64_t>& symbolIds) {
+inline std::string subscribe_depth(int64_t ctid, const std::vector<int64_t>& ids) {
     std::ostringstream b;
-    b << "{\"payloadType\":2156,\"ctidTraderAccountId\":" << ctidAccountId << ",\"symbolId\":[";
-    for (size_t i = 0; i < symbolIds.size(); ++i) {
-        if (i) b << ',';
-        b << symbolIds[i];
-    }
-    b << "]}";
-    return b.str();
+    b << "\"ctidTraderAccountId\":" << ctid << ",\"symbolId\":[";
+    for (size_t i = 0; i < ids.size(); ++i) { if (i) b << ','; b << ids[i]; }
+    b << "]";
+    return build(CTraderPT::SUBSCRIBE_DEPTH_REQ, b.str());
 }
-
-inline std::string refresh_token_req(const std::string& refreshToken) {
-    return "{\"payloadType\":2173,\"refreshToken\":\"" + refreshToken + "\"}";
+inline std::string refresh_token_req(const std::string& rt) {
+    return build(CTraderPT::REFRESH_TOKEN_REQ, "\"refreshToken\":\"" + rt + "\"");
 }
-
 inline std::string heartbeat() {
-    return "{\"payloadType\":51}";
+    return build(CTraderPT::HEARTBEAT, "");
 }
 
-} // namespace CTraderJSON
+} // namespace CTJSON
 
-// =============================================================================
-// DepthBook — incremental order book maintained per symbol
-// Maps quote_id -> {price, size, is_bid}
-// Rebuilt to L2Book after each DepthEvent
-// =============================================================================
-struct DepthQuote {
-    uint64_t price_raw = 0;   // in 1/100000 units
-    uint64_t size_raw  = 0;   // in cents
-    bool     is_bid    = false;
-};
-
-struct DepthBook {
-    std::unordered_map<uint64_t, DepthQuote> quotes;  // id -> quote
-
-    void apply_new(uint64_t id, uint64_t price, uint64_t size, bool is_bid) {
-        quotes[id] = {price, size, is_bid};
-    }
-    void apply_delete(uint64_t id) {
-        quotes.erase(id);
-    }
-
-    // Rebuild L2Book from maintained incremental map
-    // Price: raw / 100000.0 = actual price
-    // Size:  raw / 100.0    = lots (size is in cents, 1 lot = 100 cents)
+// Incremental order book
+struct CTDepthQuote { uint64_t price_raw=0, size_raw=0; bool is_bid=false; };
+struct CTDepthBook {
+    std::unordered_map<uint64_t,CTDepthQuote> quotes;
+    void apply_new(uint64_t id, uint64_t p, uint64_t s, bool bid) { quotes[id]={p,s,bid}; }
+    void apply_del(uint64_t id) { quotes.erase(id); }
     L2Book to_l2book() const {
         L2Book book;
-        // Collect bid and ask levels, sort by price
-        struct Level { double price; double size; };
-        std::vector<Level> bids, asks;
+        struct Lv { double price, size; };
+        std::vector<Lv> bids, asks;
         for (const auto& kv : quotes) {
-            const auto& q = kv.second;
-            if (q.price_raw == 0 || q.size_raw == 0) continue;
-            const double price = static_cast<double>(q.price_raw) / 100000.0;
-            const double size  = static_cast<double>(q.size_raw)  / 100.0;
-            if (q.is_bid) bids.push_back({price, size});
-            else          asks.push_back({price, size});
+            if (!kv.second.price_raw || !kv.second.size_raw) continue;
+            Lv lv{kv.second.price_raw/100000.0, kv.second.size_raw/100.0};
+            if (kv.second.is_bid) bids.push_back(lv); else asks.push_back(lv);
         }
-        // Sort: bids descending (best bid first), asks ascending (best ask first)
-        std::sort(bids.begin(), bids.end(), [](const Level& a, const Level& b){ return a.price > b.price; });
-        std::sort(asks.begin(), asks.end(), [](const Level& a, const Level& b){ return a.price < b.price; });
-        // Fill L2Book (max 5 levels)
-        book.bid_count = static_cast<int>(std::min(bids.size(), size_t(5)));
-        book.ask_count = static_cast<int>(std::min(asks.size(), size_t(5)));
-        for (int i = 0; i < book.bid_count; ++i) book.bids[i] = {bids[i].price, bids[i].size};
-        for (int i = 0; i < book.ask_count; ++i) book.asks[i] = {asks[i].price, asks[i].size};
+        std::sort(bids.begin(),bids.end(),[](const Lv&a,const Lv&b){return a.price>b.price;});
+        std::sort(asks.begin(),asks.end(),[](const Lv&a,const Lv&b){return a.price<b.price;});
+        book.bid_count=(int)std::min(bids.size(),size_t(5));
+        book.ask_count=(int)std::min(asks.size(),size_t(5));
+        for(int i=0;i<book.bid_count;++i) book.bids[i]={bids[i].price,bids[i].size};
+        for(int i=0;i<book.ask_count;++i) book.asks[i]={asks[i].price,asks[i].size};
         return book;
     }
 };
 
-// =============================================================================
-// CTraderDepthClient — main class
-// =============================================================================
 class CTraderDepthClient {
 public:
-    // Credentials — set before calling start()
-    std::string client_id;
-    std::string client_secret;
-    std::string access_token;
-    std::string refresh_token;
+    std::string client_id, client_secret, access_token, refresh_token;
     int64_t     ctid_account_id = 0;
-
-    // Symbols to subscribe (names from PASSIVE_WHITELIST + our traded symbols)
-    // Populated automatically from broker symbol list during startup
     std::unordered_set<std::string> symbol_whitelist;
+    std::mutex*                             l2_mtx   = nullptr;
+    std::unordered_map<std::string,L2Book>* l2_books = nullptr;
 
-    // References to Omega's shared L2 book (from main.cpp globals)
-    std::mutex*                              l2_mtx    = nullptr;
-    std::unordered_map<std::string,L2Book>*  l2_books  = nullptr;
+    std::atomic<bool>     running{false};
+    std::atomic<bool>     depth_active{false};
+    std::atomic<uint64_t> depth_events_total{0};
+    std::atomic<uint64_t> depth_events_last_min{0};
 
-    // Status
-    std::atomic<bool> running{false};
-    std::atomic<bool> connected{false};
-    std::atomic<bool> authorized{false};
-
-    // ==========================================================================
-    // Config loading — call after reading omega_config.ini
-    // ==========================================================================
     bool configured() const {
-        return !client_id.empty() && !client_secret.empty() &&
-               !access_token.empty() && ctid_account_id > 0;
+        return !client_id.empty() && !access_token.empty() && ctid_account_id > 0;
     }
 
-    // ==========================================================================
-    // Start background thread
-    // ==========================================================================
     void start() {
         if (!configured()) {
-            std::cout << "[CTRADER] Not configured — depth feed disabled.\n"
-                      << "[CTRADER] Add [ctrader_api] section to omega_config.ini.\n";
-            return;
+            std::cout << "[CTRADER] Not configured — add [ctrader_api] to omega_config.ini\n"; return;
         }
-        if (running.load()) return;
-        running.store(true);
+        if (running.exchange(true)) return;
         thread_ = std::thread([this]{ loop(); });
-        std::cout << "[CTRADER] Depth client thread started.\n";
+        std::cout << "[CTRADER] Depth client started (ctid=" << ctid_account_id << ")\n";
     }
-
-    void stop() {
-        running.store(false);
-        if (thread_.joinable()) thread_.join();
-    }
-
+    void stop() { running.store(false); if (thread_.joinable()) thread_.join(); }
     ~CTraderDepthClient() { stop(); }
 
 private:
     std::thread thread_;
-    // Per-symbol incremental depth books (maintained inside loop thread)
-    std::unordered_map<std::string, DepthBook>  depth_books_;   // name -> book
-    std::unordered_map<uint64_t,    std::string> id_to_name_;   // symbolId -> name
+    std::unordered_map<std::string,CTDepthBook> depth_books_;
+    std::unordered_map<uint64_t,std::string>    id_to_name_;
+    std::vector<uint8_t> recv_buf_;
 
-    // ==========================================================================
-    // Main reconnect loop
-    // ==========================================================================
     void loop() {
-        int backoff_ms = 2000;
-        const int max_backoff = 60000;
-
+        int backoff = 2000;
         while (running.load()) {
-            connected.store(false);
-            authorized.store(false);
-
+            depth_active.store(false);
             std::cout << "[CTRADER] Connecting live.ctraderapi.com:5036\n";
             int sock = -1;
             SSL* ssl = connect_ssl("live.ctraderapi.com", 5036, sock);
             if (!ssl) {
-                std::cerr << "[CTRADER] Connect failed — retry " << backoff_ms << "ms\n";
-                sleep_ms(backoff_ms);
-                backoff_ms = std::min(backoff_ms * 2, max_backoff);
-                continue;
+                std::cerr << "[CTRADER] Connect failed — retry " << backoff << "ms\n";
+                sleep_ms(backoff); backoff = std::min(backoff*2, 60000); continue;
             }
-            connected.store(true);
-            backoff_ms = 2000;
-
-            // Reset recv buffer
             recv_buf_.clear();
-
-            // Auth sequence
+            backoff = 2000;
             if (!do_auth(ssl)) {
-                std::cerr << "[CTRADER] Auth failed — reconnecting\n";
-                ssl_close(ssl, sock);
-                sleep_ms(5000);
-                continue;
+                std::cerr << "[CTRADER] Auth failed — retry 10s\n";
+                ssl_close(ssl,sock); sleep_ms(10000); continue;
             }
-            authorized.store(true);
-            std::cout << "[CTRADER] Authorized — depth feed active\n";
-
-            // Main receive loop
+            depth_active.store(true);
+            std::cout << "[CTRADER] Depth feed ACTIVE — " << depth_books_.size() << " symbols subscribed\n";
             recv_loop(ssl, sock);
-
-            ssl_close(ssl, sock);
-            connected.store(false);
-            authorized.store(false);
-
+            ssl_close(ssl, sock); depth_active.store(false);
             if (running.load()) {
-                std::cerr << "[CTRADER] Disconnected — reconnecting in " << backoff_ms << "ms\n";
-                sleep_ms(backoff_ms);
-                backoff_ms = std::min(backoff_ms * 2, max_backoff);
+                std::cerr << "[CTRADER] Disconnected — retry " << backoff << "ms\n";
+                sleep_ms(backoff); backoff = std::min(backoff*2, 60000);
             }
         }
-        std::cout << "[CTRADER] Depth client stopped.\n";
+        std::cout << "[CTRADER] Stopped\n";
     }
 
-    // ==========================================================================
-    // Auth sequence: AppAuth -> GetAccounts -> AccountAuth -> SymbolsList -> Subscribe
-    // ==========================================================================
     bool do_auth(SSL* ssl) {
         // Step 1: Application auth
-        if (!send_msg(ssl, CTraderPayload::APPLICATION_AUTH_REQ,
-                      CTraderJSON::app_auth_req(client_id, client_secret))) return false;
+        if (!send_json(ssl, CTJSON::app_auth(client_id, client_secret))) return false;
         std::cout << "[CTRADER] ApplicationAuthReq sent\n";
-
-        // Read until we get AppAuthRes
-        if (!wait_for(ssl, CTraderPayload::APPLICATION_AUTH_RES, 10000)) {
-            std::cerr << "[CTRADER] ApplicationAuthRes timeout\n";
-            return false;
-        }
+        int pt; std::string body;
+        if (!wait_for(ssl, CTraderPT::APPLICATION_AUTH_RES, 10000, pt, body)) return false;
         std::cout << "[CTRADER] Application authorized\n";
 
-        // Step 2: Get account list to find ctidTraderAccountId if not set
-        if (ctid_account_id == 0) {
-            if (!send_msg(ssl, CTraderPayload::GET_ACCOUNTS_BY_TOKEN_REQ,
-                          CTraderJSON::get_accounts_req(access_token))) return false;
-            std::string res;
-            if (!wait_for_msg(ssl, CTraderPayload::GET_ACCOUNTS_BY_TOKEN_RES, 10000, res)) {
-                std::cerr << "[CTRADER] GetAccountList timeout\n";
-                return false;
-            }
-            // Extract first account ID
-            const auto accounts = CTraderJSON::extract_array(res, "ctidTraderAccount");
-            if (accounts.empty()) {
-                std::cerr << "[CTRADER] No accounts found for access token\n";
-                return false;
-            }
-            ctid_account_id = CTraderJSON::extract_i64(accounts[0], "ctidTraderAccountId");
-            const bool is_live = (CTraderJSON::extract_str(accounts[0], "isLive") == "true");
-            std::cout << "[CTRADER] Account: ctid=" << ctid_account_id
-                      << " live=" << is_live << "\n";
-        }
-
-        // Step 3: Account auth
-        if (!send_msg(ssl, CTraderPayload::ACCOUNT_AUTH_REQ,
-                      CTraderJSON::account_auth_req(ctid_account_id, access_token))) return false;
+        // Step 2: Account auth
+        if (!send_json(ssl, CTJSON::account_auth(ctid_account_id, access_token))) return false;
         std::cout << "[CTRADER] AccountAuthReq sent\n";
-
-        if (!wait_for(ssl, CTraderPayload::ACCOUNT_AUTH_RES, 10000)) {
-            std::cerr << "[CTRADER] AccountAuthRes timeout\n";
-            return false;
-        }
+        if (!wait_for(ssl, CTraderPT::ACCOUNT_AUTH_RES, 10000, pt, body)) return false;
         std::cout << "[CTRADER] Account " << ctid_account_id << " authorized\n";
 
-        // Step 4: Get symbol list to map names -> IDs
-        if (!send_msg(ssl, CTraderPayload::SYMBOLS_LIST_REQ,
-                      CTraderJSON::symbols_list_req(ctid_account_id))) return false;
-        std::string sym_res;
-        if (!wait_for_msg(ssl, CTraderPayload::SYMBOLS_LIST_RES, 15000, sym_res)) {
-            std::cerr << "[CTRADER] SymbolsListRes timeout\n";
-            return false;
+        // Step 3: Symbol list
+        if (!send_json(ssl, CTJSON::symbols_list(ctid_account_id))) return false;
+        if (!wait_for(ssl, CTraderPT::SYMBOLS_LIST_RES, 20000, pt, body)) {
+            std::cerr << "[CTRADER] SymbolsListRes timeout\n"; return false;
         }
-
-        // Parse symbol list
-        const auto symbols = CTraderJSON::extract_array(sym_res, "symbol");
-        std::cout << "[CTRADER] Symbol list received: " << symbols.size() << " symbols\n";
+        const std::string pl = CTJSON::get_payload(body);
+        const std::string& src = pl.empty() ? body : pl;
+        const auto syms = CTJSON::get_array(src, "symbol");
+        std::cout << "[CTRADER] Symbol list: " << syms.size() << " symbols\n";
 
         std::vector<int64_t> sub_ids;
-        id_to_name_.clear();
-        depth_books_.clear();
-
-        for (const auto& sym_obj : symbols) {
-            const std::string name = CTraderJSON::extract_str(sym_obj, "symbolName");
-            const int64_t id = CTraderJSON::extract_i64(sym_obj, "symbolId");
+        id_to_name_.clear(); depth_books_.clear();
+        for (const auto& s : syms) {
+            const std::string name = CTJSON::get_str(s, "symbolName");
+            const int64_t id = CTJSON::get_int(s, "symbolId");
             if (name.empty() || id <= 0) continue;
-            id_to_name_[static_cast<uint64_t>(id)] = name;
-            // Subscribe only to whitelisted symbols
+            id_to_name_[uint64_t(id)] = name;
             if (symbol_whitelist.count(name)) {
                 sub_ids.push_back(id);
-                depth_books_[name] = DepthBook{};
-                std::cout << "[CTRADER] Will subscribe depth: " << name << " id=" << id << "\n";
+                depth_books_[name] = CTDepthBook{};
+                std::cout << "[CTRADER] Subscribe: " << name << " id=" << id << "\n";
             }
         }
-
         if (sub_ids.empty()) {
-            std::cerr << "[CTRADER] No matching symbols found — check whitelist\n";
+            std::cerr << "[CTRADER] No whitelisted symbols found\n";
+            int n=0; for (const auto& s:syms) {
+                std::cout << "[CTRADER]  available: " << CTJSON::get_str(s,"symbolName") << "\n";
+                if (++n>=15) break;
+            }
             return false;
         }
 
-        // Step 5: Subscribe to depth quotes
-        if (!send_msg(ssl, CTraderPayload::SUBSCRIBE_DEPTH_QUOTES_REQ,
-                      CTraderJSON::subscribe_depth_req(ctid_account_id, sub_ids))) return false;
-
-        if (!wait_for(ssl, CTraderPayload::SUBSCRIBE_DEPTH_QUOTES_RES, 10000)) {
-            std::cerr << "[CTRADER] SubscribeDepthQuotesRes timeout\n";
-            return false;
+        // Step 4: Subscribe depth
+        if (!send_json(ssl, CTJSON::subscribe_depth(ctid_account_id, sub_ids))) return false;
+        if (!wait_for(ssl, CTraderPT::SUBSCRIBE_DEPTH_RES, 10000, pt, body)) {
+            std::cerr << "[CTRADER] SubscribeDepthRes timeout\n"; return false;
         }
         std::cout << "[CTRADER] Subscribed to " << sub_ids.size() << " symbols\n";
         return true;
     }
 
-    // ==========================================================================
-    // Receive loop — process DepthEvents and heartbeats
-    // ==========================================================================
-    void recv_loop(SSL* ssl, int sock) {
-        auto last_heartbeat = std::chrono::steady_clock::now();
-        auto last_token_check = std::chrono::steady_clock::now();
-        (void)sock;
-
+    void recv_loop(SSL* ssl, int) {
+        auto last_hb   = std::chrono::steady_clock::now();
+        auto last_diag = std::chrono::steady_clock::now();
+        uint64_t events_min = 0;
         while (running.load()) {
             const auto now = std::chrono::steady_clock::now();
-
-            // Send heartbeat every 25s (server disconnects at ~30s)
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_heartbeat).count() >= 25) {
-                send_msg(ssl, CTraderPayload::HEARTBEAT_EVENT, CTraderJSON::heartbeat());
-                last_heartbeat = now;
+            // Heartbeat every 10s
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_hb).count() >= 10) {
+                send_json(ssl, CTJSON::heartbeat()); last_hb = now;
             }
-
-            // Check token expiry (~28 days — refresh before 30-day expiry)
-            // Token is stored in days since epoch; we just check every hour
-            if (std::chrono::duration_cast<std::chrono::hours>(now - last_token_check).count() >= 1) {
-                last_token_check = now;
-                // Proactive refresh check would go here — token_expires_at_ tracking
+            // Diagnostic log every 60s
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_diag).count() >= 60) {
+                const uint64_t tot = depth_events_total.load();
+                std::cout << "[CTRADER-STATUS] events_total=" << tot
+                          << " this_min=" << events_min
+                          << " symbols=" << depth_books_.size() << "\n";
+                if (l2_mtx && l2_books) {
+                    std::lock_guard<std::mutex> lk(*l2_mtx);
+                    for (const char* sym : {"GOLD.F","EURUSD","XAGUSD","US500.F","GBPUSD"}) {
+                        auto it = l2_books->find(sym);
+                        if (it!=l2_books->end() && it->second.bid_count>0) {
+                            const auto& b = it->second;
+                            std::cout << "[CTRADER-L2] " << sym
+                                      << " levels=" << b.depth_levels()
+                                      << " imb=" << std::fixed << std::setprecision(3) << b.imbalance()
+                                      << " bid=" << b.bids[0].price << "x" << b.bids[0].size
+                                      << " ask=" << b.asks[0].price << "x" << b.asks[0].size << "\n";
+                        }
+                    }
+                }
+                depth_events_last_min.store(events_min); events_min=0; last_diag=now;
             }
-
-            // Read one message (non-blocking with 100ms poll)
-            uint16_t payload_type = 0;
-            std::string body;
-            const int rc = read_msg(ssl, payload_type, body, 100);
-            if (rc < 0) {
-                std::cerr << "[CTRADER] Read error — disconnected\n";
-                return;
+            int pt; std::string body;
+            const int rc = read_one(ssl, pt, body, 100);
+            if (rc < 0) { std::cerr << "[CTRADER] Connection error\n"; return; }
+            if (rc == 0) continue;
+            if (pt == CTraderPT::DEPTH_EVENT) {
+                on_depth_event(body); ++depth_events_total; ++events_min;
+            } else if (pt == CTraderPT::ERROR_RES) {
+                const std::string pl = CTJSON::get_payload(body);
+                const std::string& s = pl.empty()?body:pl;
+                std::cerr << "[CTRADER] Error: " << CTJSON::get_str(s,"errorCode")
+                          << " — " << CTJSON::get_str(s,"description") << "\n";
+                if (CTJSON::get_str(s,"errorCode") == "OA_AUTH_TOKEN_EXPIRED") return;
+            } else if (pt == CTraderPT::REFRESH_TOKEN_RES) {
+                const std::string pl = CTJSON::get_payload(body);
+                const std::string& s = pl.empty()?body:pl;
+                const std::string na = CTJSON::get_str(s,"accessToken");
+                if (!na.empty()) {
+                    access_token = na;
+                    refresh_token = CTJSON::get_str(s,"refreshToken");
+                    std::cout << "[CTRADER] Token refreshed\n";
+                }
             }
-            if (rc == 0) continue;  // timeout, loop
-
-            dispatch_msg(payload_type, body);
         }
     }
 
-    // ==========================================================================
-    // Dispatch received message
-    // ==========================================================================
-    void dispatch_msg(uint16_t payload_type, const std::string& body) {
-        switch (payload_type) {
-        case CTraderPayload::DEPTH_EVENT:
-            on_depth_event(body);
-            break;
-
-        case CTraderPayload::HEARTBEAT_EVENT:
-            // Echo heartbeat back
-            break;
-
-        case CTraderPayload::REFRESH_TOKEN_RES:
-            {
-                const std::string new_access  = CTraderJSON::extract_str(body, "accessToken");
-                const std::string new_refresh = CTraderJSON::extract_str(body, "refreshToken");
-                if (!new_access.empty()) {
-                    access_token  = new_access;
-                    refresh_token = new_refresh;
-                    std::cout << "[CTRADER] Access token refreshed\n";
-                }
-            }
-            break;
-
-        case CTraderPayload::ERROR_RES:
-            {
-                const std::string err  = CTraderJSON::extract_str(body, "errorCode");
-                const std::string desc = CTraderJSON::extract_str(body, "description");
-                std::cerr << "[CTRADER] Error: " << err << " — " << desc << "\n";
-                if (err == "OA_AUTH_TOKEN_EXPIRED") {
-                    std::cerr << "[CTRADER] Token expired — need refresh\n";
-                    // Will reconnect and fail auth, triggering operator refresh
-                }
-            }
-            break;
-
-        default:
-            break;
-        }
-    }
-
-    // ==========================================================================
-    // Handle ProtoOADepthEvent — the core data path
-    // ==========================================================================
     void on_depth_event(const std::string& body) {
-        // Extract symbolId
-        const uint64_t symbol_id = CTraderJSON::extract_u64(body, "symbolId");
-        if (symbol_id == 0) return;
-
-        // Find symbol name
-        const auto name_it = id_to_name_.find(symbol_id);
-        if (name_it == id_to_name_.end()) return;  // not in our map
-        const std::string& name = name_it->second;
-
-        auto& depth_book = depth_books_[name];
-
-        // Apply newQuotes
-        const auto new_quotes = CTraderJSON::extract_array(body, "newQuotes");
-        for (const auto& q_str : new_quotes) {
-            const uint64_t id   = CTraderJSON::extract_u64(q_str, "id");
-            const uint64_t size = CTraderJSON::extract_u64(q_str, "size");
-            const uint64_t bid  = CTraderJSON::extract_u64(q_str, "bid");
-            const uint64_t ask  = CTraderJSON::extract_u64(q_str, "ask");
-            if (id == 0 || size == 0) continue;
-            if (bid > 0) {
-                depth_book.apply_new(id, bid, size, true);
-            } else if (ask > 0) {
-                depth_book.apply_new(id, ask, size, false);
-            }
+        const std::string pl = CTJSON::get_payload(body);
+        const std::string& src = pl.empty() ? body : pl;
+        const uint64_t sym_id = CTJSON::get_u64(src, "symbolId");
+        if (!sym_id) return;
+        const auto it = id_to_name_.find(sym_id);
+        if (it == id_to_name_.end()) return;
+        const std::string& name = it->second;
+        auto& book = depth_books_[name];
+        for (const auto& q : CTJSON::get_array(src, "newQuotes")) {
+            uint64_t id=CTJSON::get_u64(q,"id"), sz=CTJSON::get_u64(q,"size");
+            uint64_t bid=CTJSON::get_u64(q,"bid"), ask=CTJSON::get_u64(q,"ask");
+            if (!id||!sz) continue;
+            if (bid)      book.apply_new(id,bid,sz,true);
+            else if (ask) book.apply_new(id,ask,sz,false);
         }
-
-        // Apply deletedQuotes (array of uint64 IDs)
-        const auto del_ids = CTraderJSON::extract_u64_array(body, "deletedQuotes");
-        for (uint64_t del_id : del_ids) {
-            depth_book.apply_delete(del_id);
-        }
-
-        // Rebuild L2Book and write to shared g_l2_books
+        for (uint64_t did : CTJSON::get_u64_array(src,"deletedQuotes")) book.apply_del(did);
         if (l2_mtx && l2_books) {
-            const L2Book rebuilt = depth_book.to_l2book();
+            const L2Book rebuilt = book.to_l2book();
             std::lock_guard<std::mutex> lk(*l2_mtx);
             (*l2_books)[name] = rebuilt;
         }
     }
 
-    // ==========================================================================
-    // Wire-level: send a framed JSON message
-    // Frame: [4-byte length BE][2-byte payloadType BE][JSON body]
-    // Length covers the 2-byte payloadType + body bytes.
-    // ==========================================================================
-    bool send_msg(SSL* ssl, uint16_t payload_type, const std::string& body) {
-        const uint32_t body_len    = static_cast<uint32_t>(body.size());
-        const uint32_t total_len   = 2 + body_len;  // payloadType (2) + body
-        const uint32_t frame_len   = 4 + 2 + body_len;  // length field (4) + payloadType (2) + body
-
-        std::vector<uint8_t> frame(frame_len);
-        // 4-byte length (big-endian): covers payloadType + body
-        frame[0] = (total_len >> 24) & 0xFF;
-        frame[1] = (total_len >> 16) & 0xFF;
-        frame[2] = (total_len >>  8) & 0xFF;
-        frame[3] = (total_len >>  0) & 0xFF;
-        // 2-byte payloadType (big-endian)
-        frame[4] = (payload_type >> 8) & 0xFF;
-        frame[5] = (payload_type >> 0) & 0xFF;
-        // Body
-        if (!body.empty()) std::memcpy(frame.data() + 6, body.data(), body_len);
-
-        const int sent = SSL_write(ssl, frame.data(), static_cast<int>(frame.size()));
-        return sent == static_cast<int>(frame.size());
+    // Send JSON with 4-byte BE length prefix (length = JSON byte count only)
+    bool send_json(SSL* ssl, const std::string& json) {
+        const uint32_t len = uint32_t(json.size());
+        uint8_t hdr[4] = { uint8_t(len>>24), uint8_t(len>>16), uint8_t(len>>8), uint8_t(len) };
+        if (SSL_write(ssl, hdr, 4) != 4) return false;
+        return SSL_write(ssl, json.c_str(), int(len)) == int(len);
     }
 
-    // ==========================================================================
-    // Wire-level: read one framed message with timeout_ms
-    // Returns: 1 = got message, 0 = timeout, -1 = error
-    // ==========================================================================
-    int read_msg(SSL* ssl, uint16_t& payload_type_out, std::string& body_out, int timeout_ms) {
-        // Try to parse from existing buffer first
-        if (try_parse_msg(payload_type_out, body_out)) return 1;
-
-        // Set non-blocking read with timeout
-        const auto deadline = std::chrono::steady_clock::now() +
-                              std::chrono::milliseconds(timeout_ms);
-
-        while (std::chrono::steady_clock::now() < deadline) {
-            uint8_t buf[4096];
-            const int n = SSL_read(ssl, buf, static_cast<int>(sizeof(buf)));
+    // Read one message: [4-byte len][JSON bytes]; extract payloadType from JSON
+    int read_one(SSL* ssl, int& pt_out, std::string& body_out, int timeout_ms) {
+        if (try_parse(pt_out, body_out)) return 1;
+        const auto dead = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+        while (std::chrono::steady_clock::now() < dead) {
+            uint8_t buf[8192];
+            int n = SSL_read(ssl, buf, sizeof(buf));
             if (n > 0) {
-                recv_buf_.insert(recv_buf_.end(), buf, buf + n);
-                if (try_parse_msg(payload_type_out, body_out)) return 1;
+                recv_buf_.insert(recv_buf_.end(), buf, buf+n);
+                if (try_parse(pt_out, body_out)) return 1;
             } else {
-                const int err = SSL_get_error(ssl, n);
-                if (err == SSL_ERROR_WANT_READ) {
-                    // No data yet — sleep briefly
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                    continue;
-                }
-                return -1;  // real error
+                int e = SSL_get_error(ssl, n);
+                if (e == SSL_ERROR_WANT_READ) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); continue; }
+                return -1;
             }
         }
-        return 0;  // timeout
+        return 0;
     }
 
-    // Try to parse one complete message from recv_buf_
-    bool try_parse_msg(uint16_t& payload_type_out, std::string& body_out) {
-        // Need at least 6 bytes (4 length + 2 payloadType)
-        if (recv_buf_.size() < 6) return false;
-
-        const uint32_t msg_len = (static_cast<uint32_t>(recv_buf_[0]) << 24) |
-                                 (static_cast<uint32_t>(recv_buf_[1]) << 16) |
-                                 (static_cast<uint32_t>(recv_buf_[2]) <<  8) |
-                                 (static_cast<uint32_t>(recv_buf_[3]) <<  0);
-
-        if (msg_len < 2) { recv_buf_.erase(recv_buf_.begin(), recv_buf_.begin() + 4); return false; }
-        if (recv_buf_.size() < 4 + msg_len) return false;  // incomplete
-
-        payload_type_out = (static_cast<uint16_t>(recv_buf_[4]) << 8) |
-                           (static_cast<uint16_t>(recv_buf_[5]) << 0);
-
-        const uint32_t body_len = msg_len - 2;
-        body_out.assign(reinterpret_cast<const char*>(recv_buf_.data() + 6), body_len);
-
-        recv_buf_.erase(recv_buf_.begin(), recv_buf_.begin() + 4 + msg_len);
+    bool try_parse(int& pt_out, std::string& body_out) {
+        if (recv_buf_.size() < 4) return false;
+        const uint32_t len = (uint32_t(recv_buf_[0])<<24)|(uint32_t(recv_buf_[1])<<16)|
+                             (uint32_t(recv_buf_[2])<<8)  | uint32_t(recv_buf_[3]);
+        if (!len) { recv_buf_.erase(recv_buf_.begin(), recv_buf_.begin()+4); return false; }
+        if (recv_buf_.size() < 4+len) return false;
+        body_out.assign((const char*)recv_buf_.data()+4, len);
+        recv_buf_.erase(recv_buf_.begin(), recv_buf_.begin()+4+len);
+        pt_out = int(CTJSON::get_int(body_out, "payloadType"));
         return true;
     }
 
-    // ==========================================================================
-    // Wait for a specific payloadType (discard others while waiting)
-    // ==========================================================================
-    bool wait_for(SSL* ssl, uint16_t expected_type, int timeout_ms) {
-        std::string body;
-        return wait_for_msg(ssl, expected_type, timeout_ms, body);
-    }
-
-    bool wait_for_msg(SSL* ssl, uint16_t expected_type, int timeout_ms, std::string& body_out) {
-        const auto deadline = std::chrono::steady_clock::now() +
-                              std::chrono::milliseconds(timeout_ms);
-        while (std::chrono::steady_clock::now() < deadline) {
-            uint16_t pt = 0;
-            std::string body;
-            const int rc = read_msg(ssl, pt, body, 500);
+    bool wait_for(SSL* ssl, int expected, int timeout_ms, int& pt_out, std::string& body_out) {
+        const auto dead = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+        while (std::chrono::steady_clock::now() < dead) {
+            int pt; std::string body;
+            int rc = read_one(ssl, pt, body, 500);
             if (rc < 0) return false;
             if (rc == 0) continue;
-            if (pt == expected_type) { body_out = body; return true; }
-            // Handle errors during wait
-            if (pt == CTraderPayload::ERROR_RES) {
-                const std::string err  = CTraderJSON::extract_str(body, "errorCode");
-                const std::string desc = CTraderJSON::extract_str(body, "description");
-                std::cerr << "[CTRADER] Error during auth: " << err << " — " << desc << "\n";
+            if (pt == expected) { pt_out=pt; body_out=body; return true; }
+            if (pt == CTraderPT::ERROR_RES) {
+                const std::string pl = CTJSON::get_payload(body);
+                const std::string& s = pl.empty()?body:pl;
+                std::cerr << "[CTRADER] Error: " << CTJSON::get_str(s,"errorCode")
+                          << " — " << CTJSON::get_str(s,"description") << "\n";
                 return false;
             }
-            // Discard other messages (heartbeats etc.) during wait
         }
         return false;
     }
 
-    // ==========================================================================
-    // SSL connection setup — same pattern as Omega FIX connections
-    // ==========================================================================
     static SSL* connect_ssl(const char* host, int port, int& sock_out) {
         sock_out = -1;
         struct addrinfo hints{}, *res = nullptr;
-        hints.ai_family   = AF_UNSPEC;
-        hints.ai_socktype = SOCK_STREAM;
-        const std::string port_str = std::to_string(port);
-        if (getaddrinfo(host, port_str.c_str(), &hints, &res) != 0 || !res) return nullptr;
-
-        SOCKET sock = ::socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-        if (sock == INVALID_SOCKET) { freeaddrinfo(res); return nullptr; }
-
-        if (::connect(sock, res->ai_addr, static_cast<int>(res->ai_addrlen)) != 0) {
-            freeaddrinfo(res); closesocket(sock); return nullptr;
-        }
+        hints.ai_family=AF_UNSPEC; hints.ai_socktype=SOCK_STREAM;
+        const std::string ps = std::to_string(port);
+        if (getaddrinfo(host, ps.c_str(), &hints, &res)!=0 || !res) return nullptr;
+        SOCKET s = ::socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        if (s==INVALID_SOCKET) { freeaddrinfo(res); return nullptr; }
+        if (::connect(s, res->ai_addr, (int)res->ai_addrlen)!=0) {
+            freeaddrinfo(res); closesocket(s); return nullptr; }
         freeaddrinfo(res);
-
-        // Set recv/send timeouts (100ms — non-blocking feel for select-less loop)
-        DWORD timeout = 100;
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
-                   reinterpret_cast<const char*>(&timeout), sizeof(timeout));
-        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
-                   reinterpret_cast<const char*>(&timeout), sizeof(timeout));
-
-        static SSL_CTX* ctx = nullptr;
+        DWORD to=100;
+        setsockopt(s,SOL_SOCKET,SO_RCVTIMEO,(const char*)&to,sizeof(to));
+        setsockopt(s,SOL_SOCKET,SO_SNDTIMEO,(const char*)&to,sizeof(to));
+        static SSL_CTX* ctx=nullptr;
         if (!ctx) {
-            ctx = SSL_CTX_new(TLS_client_method());
-            if (!ctx) { closesocket(sock); return nullptr; }
-            SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
-            SSL_CTX_set_quiet_shutdown(ctx, 1);
+            ctx=SSL_CTX_new(TLS_client_method());
+            SSL_CTX_set_min_proto_version(ctx,TLS1_2_VERSION);
+            SSL_CTX_set_quiet_shutdown(ctx,1);
         }
-
-        SSL* ssl = SSL_new(ctx);
-        if (!ssl) { closesocket(sock); return nullptr; }
-        SSL_set_fd(ssl, static_cast<int>(sock));
-        // Set SNI hostname — required by live.ctraderapi.com
-        SSL_set_tlsext_host_name(ssl, host);
-
-        if (SSL_connect(ssl) <= 0) {
-            ERR_print_errors_fp(stderr);
-            closesocket(sock); SSL_free(ssl); return nullptr;
-        }
-        sock_out = static_cast<int>(sock);
-        return ssl;
+        SSL* ssl=SSL_new(ctx);
+        SSL_set_fd(ssl,(int)s);
+        SSL_set_tlsext_host_name(ssl,host);
+        if (SSL_connect(ssl)<=0) { ERR_print_errors_fp(stderr); closesocket(s); SSL_free(ssl); return nullptr; }
+        sock_out=(int)s; return ssl;
     }
-
-    static void ssl_close(SSL* ssl, int sock) {
-        if (ssl) SSL_free(ssl);
-        if (sock >= 0) closesocket(sock);
-    }
-
-    static void sleep_ms(int ms) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-    }
-
-    // Receive buffer (reassembly)
-    std::vector<uint8_t> recv_buf_;
+    static void ssl_close(SSL* ssl, int sock) { if(ssl) SSL_free(ssl); if(sock>=0) closesocket(sock); }
+    static void sleep_ms(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
 };
-
-// =============================================================================
-// Global instance — declared here, defined in main.cpp
-// =============================================================================
-// In main.cpp add:
-//   CTraderDepthClient g_ctrader_depth;
-// And in main() after config load:
-//   g_ctrader_depth.l2_mtx   = &g_l2_mtx;
-//   g_ctrader_depth.l2_books = &g_l2_books;
-//   g_ctrader_depth.client_id           = "20304_NqeKlH3FEECOWqeP1JvoT2czQV9xkUHE7UXxfPU2dRuDXrZsIM";
-//   g_ctrader_depth.client_secret       = "jeYwDPzelIYSoDppuhSZoRpaRi1q572FcBJ44dXNviuSEKxdB9";
-//   g_ctrader_depth.access_token        = cfg.ctrader_access_token;
-//   g_ctrader_depth.refresh_token       = cfg.ctrader_refresh_token;
-//   g_ctrader_depth.ctid_account_id     = cfg.ctrader_ctid_account_id;
-//   // Whitelist: all symbols we care about (traded + passive cross-pairs)
-//   for (int i = 0; i < OMEGA_NSYMS; ++i)
-//       g_ctrader_depth.symbol_whitelist.insert(OMEGA_SYMS[i].name);
-//   for (const auto& e : g_ext_syms)
-//       g_ctrader_depth.symbol_whitelist.insert(e.name);
-//   for (const auto& name : PASSIVE_WHITELIST)
-//       g_ctrader_depth.symbol_whitelist.insert(name);
-//   g_ctrader_depth.start();
-// =============================================================================
