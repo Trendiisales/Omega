@@ -4775,20 +4775,28 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                   << " refMsgType=" << extract_tag(msg, "372")
                   << " full=" << r << "\n";
         std::cerr.flush();
-        // ALREADY_SUBSCRIBED: ghost session from previous connect still holds subscription.
-        // Force unsub the old ID then resubscribe fresh so ticks resume.
+        // ALREADY_SUBSCRIBED: ghost session holds the subscription.
+        // Send unsub ONLY — do not immediately resub (that triggers another reject loop).
+        // The quote_loop will resubscribe on the next poll cycle once broker clears the ghost.
         if (rej_text.find("ALREADY_SUBSCRIBED") != std::string::npos) {
-            std::cout << "[OMEGA] ALREADY_SUBSCRIBED — forcing unsub+resub to clear ghost session\n";
-            std::cout.flush();
-            const std::string unsub = fix_build_md_unsub_all(g_quote_seq++);
-            if (!unsub.empty()) SSL_write(ssl, unsub.c_str(), (int)unsub.size());
-            Sleep(150);
-            const std::string resub = fix_build_md_subscribe_all(g_quote_seq++);
-            if (!resub.empty()) {
-                SSL_write(ssl, resub.c_str(), (int)resub.size());
-                g_md_subscribed.store(true);
-                std::cout << "[OMEGA] Resubscribed after ALREADY_SUBSCRIBED — ticks should resume\n";
+            static std::atomic<int64_t> s_last_unsub_ms{0};
+            const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (now_ms - s_last_unsub_ms.load() > 2000) {  // rate-limit: once per 2s
+                s_last_unsub_ms.store(now_ms);
+                std::cout << "[OMEGA] ALREADY_SUBSCRIBED — sending unsub to clear ghost session\n";
                 std::cout.flush();
+                const std::string unsub = fix_build_md_unsub_all(g_quote_seq++);
+                if (!unsub.empty()) SSL_write(ssl, unsub.c_str(), (int)unsub.size());
+                Sleep(300);  // give broker time to clear
+                // Now resub once
+                const std::string resub = fix_build_md_subscribe_all(g_quote_seq++);
+                if (!resub.empty()) {
+                    SSL_write(ssl, resub.c_str(), (int)resub.size());
+                    g_md_subscribed.store(true);
+                    std::cout << "[OMEGA] Resubscribed — ticks should resume\n";
+                    std::cout.flush();
+                }
             }
         }
     }

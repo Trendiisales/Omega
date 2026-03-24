@@ -608,6 +608,14 @@ private:
         const uint8_t mk[4]={0x37,0xfa,0x21,0x3d};
         f.insert(f.end(),mk,mk+4);
         for(size_t i=0;i<plen;++i) f.push_back((uint8_t)json[i]^mk[i%4]);
+        // Log first send for diagnostics
+        static bool s_logged = false;
+        if (!s_logged) {
+            s_logged = true;
+            printf("[CTRADER-SEND] frame_len=%d hdr=%02X %02X payload_preview=%.80s\n",
+                   (int)f.size(), f[0], f[1], json.c_str());
+            fflush(stdout);
+        }
         return SSL_write(ssl,f.data(),(int)f.size())==(int)f.size();
     }
 
