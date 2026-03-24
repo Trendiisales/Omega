@@ -3508,7 +3508,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // ── Routing — every symbol goes through supervisor ────────────────────────
     if (sym == "US500.F") {
-        const bool base_can_sp = symbol_gate("US500.F", g_eng_sp.pos.active || g_bracket_sp.pos.active);
+        const bool base_can_sp = symbol_gate("US500.F",
+            g_eng_sp.pos.active          ||
+            g_bracket_sp.pos.active      ||
+            g_orb_us.has_open_position() ||      // ADDED
+            g_vwap_rev_sp.has_open_position());   // ADDED
         const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
         if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
             dispatch(g_eng_sp, g_sup_sp, base_can_sp, &sdec_sp);
@@ -3522,7 +3526,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto ca_sig = g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, ca_on_close);
             if (ca_sig.valid) { const double lot = compute_size(sym, std::fabs(ca_sig.entry-ca_sig.sl), ask-bid, 0.01); (void)lot; send_live_order(sym, ca_sig.is_long, lot, ca_sig.entry); }
         }
-        if (!g_orb_us.has_open_position() && base_can_sp) {
+        if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {  // ADDED !vwap check
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
@@ -3534,7 +3538,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Reference: first tick of each UTC calendar day as VWAP proxy.
         // Previously used ORB range midpoint → dead before 13:30 UTC (entire London session blocked).
         // Daily-open anchor matches EURUSD approach and covers full 07:00-22:00 session.
-        if (!g_vwap_rev_sp.has_open_position() && base_can_sp) {
+        if (!g_vwap_rev_sp.has_open_position() && !g_orb_us.has_open_position() && base_can_sp) {  // ADDED !orb check
             static double s_sp_daily_open = 0.0;
             static int    s_sp_last_day   = -1;
             const auto t_sp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -3554,7 +3558,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "USTEC.F") {
-        const bool base_can_nq = symbol_gate("USTEC.F", g_eng_nq.pos.active || g_bracket_nq.pos.active);
+        const bool base_can_nq = symbol_gate("USTEC.F",
+            g_eng_nq.pos.active                  ||
+            g_bracket_nq.pos.active              ||
+            g_vwap_rev_nq.has_open_position());     // ADDED
         const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
         if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
             dispatch(g_eng_nq, g_sup_nq, base_can_nq, &sdec_nq);
@@ -3591,7 +3598,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto t_cl = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti_cl; gmtime_s(&ti_cl, &t_cl);
         if (ti_cl.tm_hour >= 7 && ti_cl.tm_hour < 22) {
-            const bool base_can = symbol_gate("USOIL.F", g_eng_cl.pos.active);
+            const bool base_can = symbol_gate("USOIL.F",
+                g_eng_cl.pos.active                 ||
+                g_ca_eia_fade.has_open_position()   ||  // ADDED
+                g_ca_brent_wti.has_open_position());    // ADDED
             // NOTE: USOIL.F bracket is disabled — it was incorrectly sharing
             // g_bracket_gold (GOLD.F's GoldBracketEngine). That engine's confirm_fill,
             // on_reject, and pending order IDs are wired to GOLD.F fills only.
@@ -3600,13 +3610,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto sdec = sup_decision(g_sup_cl, g_eng_cl, base_can);
             if (sdec.allow_breakout)
                 dispatch(g_eng_cl, g_sup_cl, base_can);
-            // EIA fade engine
-            if (!g_ca_eia_fade.has_open_position() && base_can) {
+            // EIA fade engine — only when BrentWTI not already open
+            if (!g_ca_eia_fade.has_open_position() && !g_ca_brent_wti.has_open_position() && base_can) {  // ADDED !brent check
                 const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close);
                 if (ef.valid) { const double lot = compute_size(sym, std::fabs(ef.entry-ef.sl), ask-bid, 0.01); send_live_order(sym, ef.is_long, lot, ef.entry); }
             }
-            // Brent/WTI spread engine — get Brent price from book
-            if (!g_ca_brent_wti.has_open_position() && base_can) {
+            // Brent/WTI spread engine — only when EIA not already open
+            if (!g_ca_brent_wti.has_open_position() && !g_ca_eia_fade.has_open_position() && base_can) {  // ADDED !eia check
                 double brent_b = 0.0, brent_a = 0.0;
                 { std::lock_guard<std::mutex> lk(g_book_mtx);
                   const auto bi = g_bids.find("BRENT"); if (bi != g_bids.end()) brent_b = bi->second;
@@ -3631,7 +3641,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              g_macro_ctx.us30_l2_imbalance, &sdec_us30);
     }
     else if (sym == "GER40") {
-        const bool base_can_ger = symbol_gate("GER40", g_eng_ger30.pos.active || g_bracket_ger30.pos.active);
+        const bool base_can_ger = symbol_gate("GER40",
+            g_eng_ger30.pos.active              ||
+            g_bracket_ger30.pos.active          ||
+            g_orb_ger30.has_open_position()     ||  // ADDED
+            g_vwap_rev_ger40.has_open_position() || // ADDED
+            g_trend_pb_ger40.has_open_position());  // ADDED
         const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger);
         if (sdec_ger.allow_breakout && !g_bracket_ger30.pos.active)
             dispatch(g_eng_ger30, g_sup_ger30, base_can_ger, &sdec_ger);
@@ -3640,7 +3655,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.ger40_l2_imbalance, &sdec_ger);
         // Opening range breakout: Xetra open 08:00 UTC
-        if (!g_orb_ger30.has_open_position() && base_can_ger) {
+        if (!g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position() && base_can_ger) {  // ADDED !vwap check
             const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
@@ -3649,7 +3664,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
         }
         // VWAP Reversion: GER40 over-extension from Xetra ORB range midpoint
-        if (!g_vwap_rev_ger40.has_open_position() && base_can_ger) {
+        if (!g_vwap_rev_ger40.has_open_position() && !g_orb_ger30.has_open_position() && base_can_ger) {  // ADDED !orb check
             const double ger_vwap = (g_orb_ger30.range_high() + g_orb_ger30.range_low()) > 0.0
                 ? (g_orb_ger30.range_high() + g_orb_ger30.range_low()) * 0.5 : 0.0;
             if (ger_vwap > 0.0) {
