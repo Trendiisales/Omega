@@ -1605,9 +1605,11 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
             }
         }
 
+        bool matched_ext = false;
         for (size_t i = 0; i < g_ext_syms.size(); ++i) {
             auto& ext = g_ext_syms[i];
             if (name != ext.name) continue;
+            matched_ext = true;
             if (ext.id == id) break;
 
             std::cout << "[OMEGA-SECURITY] learned ext id " << name
@@ -1629,7 +1631,33 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
             }
             break;
         }
+        // Log unmatched broker symbols that contain keywords we care about —
+        // catches broker renames like GER30→GER40, UK100→UK100.F etc.
+        if (!matched_ext) {
+            bool is_primary = false;
+            for (int i = 0; i < OMEGA_NSYMS; ++i)
+                if (name == OMEGA_SYMS[i].name) { is_primary = true; break; }
+            if (!is_primary) {
+                // Log anything containing keywords for symbols we're looking for
+                static const char* hints[] = {"GER","UK1","EST","XAG","EUR","BRENT","GBP","AUD","NZD","JPY"};
+                for (const char* h : hints) {
+                    if (name.find(h) != std::string::npos) {
+                        std::cout << "[OMEGA-SECURITY] UNMATCHED broker symbol: '" << name
+                                  << "' id=" << id << " (hint: " << h << " — check if broker renamed it)\n";
+                        break;
+                    }
+                }
+            }
+        }
     }
+    // Log ext symbols that are still unresolved after processing
+    for (const auto& ext : g_ext_syms) {
+        if (ext.id == 0) {
+            std::cout << "[OMEGA-SECURITY] WARNING: ext symbol '" << ext.name
+                      << "' still has id=0 — broker SecurityList did not contain a match\n";
+        }
+    }
+    std::cout.flush();
     return ext_changed;
 }
 
@@ -4397,7 +4425,13 @@ static void trade_loop() {
                         const std::string req_id = extract_tag(tmsg, "320");
                         std::cout << "[OMEGA-TRADE] SecurityList received req_id="
                                   << (req_id.empty() ? "?" : req_id)
-                                  << " entries=" << entries.size() << "\n";
+                                  << " entries=" << entries.size();
+                        if (ext_changed) std::cout << " (ext IDs updated — will re-subscribe)";
+                        std::cout << "\n";
+                        // Dump all entries for diagnostics — helps identify broker renames
+                        for (const auto& e : entries)
+                            std::cout << "[OMEGA-TRADE]   id=" << e.first << " name='" << e.second << "'\n";
+                        std::cout.flush();
                         if (ext_changed) g_ext_md_refresh_needed.store(true);
                     }
                 } else if (ttype == "5") {
