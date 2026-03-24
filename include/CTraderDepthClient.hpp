@@ -276,15 +276,15 @@ private:
         if (!send_msg(ssl, PB::symbols_list_req(ctid_account_id))) return false;
         if (!wait_for(ssl, 2115, 20000, pt, payload)) { std::cerr << "[CTRADER] SymbolsListRes timeout\n"; return false; }
 
-        // Parse SymbolsListRes — field 2 = repeated ProtoOALightSymbol
-        // ProtoOALightSymbol: field 2=symbolId(int64), field 3=symbolName(string)
+        // Parse SymbolsListRes — field 3 = repeated ProtoOALightSymbol
+        // ProtoOALightSymbol: field 1=symbolId(int64), field 2=symbolName(string)
         id_to_name_.clear(); depth_books_.clear();
         std::vector<int64_t> sub_ids;
         for (const auto& f : PB::parse(payload)) {
-            if (f.field_num != 2 || f.wire_type != 2) continue;
+            if (f.field_num != 3 || f.wire_type != 2) continue;
             const auto sf = PB::parse(f.bytes);
-            const int64_t sid = int64_t(PB::get_varint(sf, 2));
-            const std::string sname = PB::get_string(sf, 3);
+            const int64_t sid = int64_t(PB::get_varint(sf, 1));
+            const std::string sname = PB::get_string(sf, 2);
             if (sid <= 0 || sname.empty()) continue;
             id_to_name_[uint64_t(sid)] = sname;
             if (symbol_whitelist.count(sname)) {
