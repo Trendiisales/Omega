@@ -295,6 +295,14 @@ public:
     // re-entry cooldown: ticks to wait in FLAT after a failed arm before
     // allowing next compression detection. Stops COMPRESSION→fail churn.
     int         COMP_REENTRY_DELAY    = 5;
+    // confirm_ticks: price must stay OUTSIDE the compression boundary for this
+    // many consecutive ticks before the breakout signal fires.
+    // Mirrors MIN_BREAK_TICKS in BracketEngine — prevents single-tick sweep
+    // spikes (e.g. London open liquidity sweeps) from triggering a real entry.
+    // The counter resets to 0 if price pulls back inside the range on any tick.
+    // 0 = disabled (legacy behaviour, fires on first qualifying tick).
+    // Recommended: 3 for gold/silver, 2 for FX/indices.
+    int         MIN_CONFIRM_TICKS     = 0;
 
     // ── Observable state (read by telemetry thread) ───────────────────────────
     Phase   phase          = Phase::FLAT;
@@ -841,6 +849,7 @@ public:
                                   << "% elapsed=" << elapsed << "s, resetting\n";
                         std::cout.flush();
                         phase = Phase::FLAT;
+                        m_break_confirm_ticks = 0;
                     } else {
                         // Stay ARMED — extend watch window, keep same comp_high/comp_low
                         m_watch_start_ts = nowSec();
@@ -916,18 +925,30 @@ public:
 
             const int64_t now = nowSec(); // used by entry block below
 
-            // ── GATE 5: Confirmation move ─────────────────────────────────────
-            // Require price to clear the level by comp_range*0.25 before firing.
-            // Trigger fires at comp_high + spread*0.5 (tolerance). Without this
-            // gate we enter on the first tick of breakout before any follow-through,
-            // which gets stopped out immediately on the next tick.
-            // confirm = range*0.25 ensures real expansion has started.
+            // ── GATE 5: Confirmation move (tick-sustained) ────────────────────
+            // Require price to clear the level by comp_range*0.25 AND hold
+            // outside for MIN_CONFIRM_TICKS consecutive ticks before firing.
+            // Single-tick clearance (old behaviour) fired on sweep spikes —
+            // London open liquidity sweep hit comp_high + tolerance in 1 tick,
+            // SL hit in 19s. MIN_CONFIRM_TICKS=3 means the spike must sustain
+            // for ~0.3-0.9s at London tick rates before a signal is generated.
+            // Counter resets to 0 if price pulls back inside the boundary.
             {
                 const double comp_range_now = comp_high - comp_low;
                 const double confirm        = comp_range_now * 0.25;
                 const double clearance      = is_long ? (mid - comp_high) : (comp_low - mid);
                 if (clearance < confirm) {
+                    m_break_confirm_ticks = 0;  // pulled back inside — reset counter
                     return {};  // wait — stay ARMED, don't reset
+                }
+                // Price is outside with sufficient clearance — accumulate ticks
+                if (MIN_CONFIRM_TICKS > 0) {
+                    ++m_break_confirm_ticks;
+                    if (m_break_confirm_ticks < MIN_CONFIRM_TICKS) {
+                        return {};  // not yet sustained — stay ARMED, wait
+                    }
+                    // Sustained for MIN_CONFIRM_TICKS — confirmed, fall through
+                    m_break_confirm_ticks = 0;
                 }
             }
 
@@ -1073,6 +1094,7 @@ protected:
     int                m_comp_violation_ticks = 0;   // consecutive ticks where ALL reset conditions are true
     int                m_comp_reentry_wait    = 0;   // countdown before re-detecting compression after reset
     double             m_comp_initial_range   = 0.0; // comp range captured at tick 3 — used for range_tolerance check
+    int                m_break_confirm_ticks  = 0;   // consecutive ticks price has stayed outside comp boundary (Gate 5)
 
     static int64_t nowSec() noexcept {
         return std::chrono::duration_cast<std::chrono::seconds>(

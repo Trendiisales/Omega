@@ -4981,6 +4981,7 @@ int main(int argc, char* argv[])
                 if (c.min_edge_bp    >= 0.0) eng.EDGE_CFG.min_edge_bp  = c.min_edge_bp;
                 if (c.min_breakout_pct> 0.0) eng.MIN_BREAKOUT_PCT  = c.min_breakout_pct;
                 if (c.min_range      > 0.0)  eng.MIN_COMP_RANGE    = c.min_range;
+                if (c.min_confirm_ticks > 0) eng.MIN_CONFIRM_TICKS = c.min_confirm_ticks;
             };
 
             // BreakoutEngine symbols — typical prices for MAX_SPREAD_PCT conversion

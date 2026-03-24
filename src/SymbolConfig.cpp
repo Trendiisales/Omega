@@ -57,6 +57,7 @@ bool SymbolConfigManager::load(const std::string& path)
         cfg.min_edge_bp      = get_double(kv, "MIN_EDGE_BP",      0.0);
         cfg.slippage_est_bp  = get_double(kv, "SLIPPAGE_EST_BP",  0.0);
         cfg.min_breakout_pct = get_double(kv, "MIN_BREAKOUT_PCT", 0.0);
+        cfg.min_confirm_ticks= get_int   (kv, "MIN_CONFIRM_TICKS",0);
         // Bracket-specific overrides — if present in ini, apply_bracket() will use them
         cfg.slippage_buffer  = get_double(kv, "SLIPPAGE_BUFFER",  0.0);
         cfg.cooldown_ms      = get_int   (kv, "COOLDOWN_MS",      0);

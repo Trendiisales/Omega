@@ -286,7 +286,7 @@ class CompressionBreakoutEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> history_;  // raised 32→64: larger buffer required for 50-tick WINDOW
     static constexpr size_t WINDOW        = 50;            // raised 30→50: 30 ticks at London open = ~3-6s, too short for real compression; 50 ticks = ~10-15s
     static constexpr double COMPRESSION_RANGE = 6.00;      // lowered 8.00→6.00: $8 was too permissive; $6 requires genuinely tight pre-break range
-    static constexpr double BREAKOUT_TRIGGER  = 1.50;      // lowered 3.00→1.50: $3.00 was 133% of typical $2.25 compression range, never reachable; $1.50 confirms real directional break without requiring an impulse move
+    static constexpr double BREAKOUT_TRIGGER  = 2.50;      // raised 1.50→2.50: $1.50 fires on single-tick London open spikes (SL in 19s observed); $2.50 = 42% of $6 range, requires committed directional move not noise
     static constexpr double MAX_SPREAD        = 2.00;      // unchanged
     static constexpr int    TP_TICKS          = 80;        // $8.00 target — 2.67:1 R:R on $3.00 SL
     static constexpr int    SL_TICKS          = 30;        // raised 25→30: $3.00 stop matches new $3.00 trigger; avoids instant stop-out on breakout retest
@@ -317,6 +317,12 @@ class CompressionBreakoutEngine : public EngineBase {
 
 public:
     CompressionBreakoutEngine(): EngineBase("CompressionBreakout",1.0){}
+
+    // EWM drift injected each tick by GoldEngineStack so CB can check momentum direction.
+    // Positive = bullish drift, negative = bearish drift. Set via set_ewm_drift().
+    double ewm_drift_ = 0.0;
+    void set_ewm_drift(double d) { ewm_drift_ = d; }
+
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD) return noSignal();
@@ -336,6 +342,8 @@ public:
         }
         Signal sig; sig.entry=s.mid; sig.size=0.01;  // fallback min_lot — overridden by compute_size() in main
         if(s.mid>hi+BREAKOUT_TRIGGER){
+            // EWM drift check: don't go LONG when drift is strongly negative (momentum against)
+            if(ewm_drift_ < -3.0) { history_.push_back(s.mid); return noSignal(); }
             sig.valid=true; sig.side=TradeSide::LONG;
             sig.confidence=std::min(1.5,(s.mid-hi)/BREAKOUT_TRIGGER);
             sig.tp=TP_TICKS; sig.sl=SL_TICKS;
@@ -344,6 +352,8 @@ public:
             history_.clear(); last_signal_=now; signal_count_++; return sig;
         }
         if(s.mid<lo-BREAKOUT_TRIGGER){
+            // EWM drift check: don't go SHORT when drift is strongly positive (momentum against)
+            if(ewm_drift_ > +3.0) { history_.push_back(s.mid); return noSignal(); }
             sig.valid=true; sig.side=TradeSide::SHORT;
             sig.confidence=std::min(1.5,(lo-s.mid)/BREAKOUT_TRIGGER);
             sig.tp=TP_TICKS; sig.sl=SL_TICKS;
@@ -1548,6 +1558,15 @@ public:
             }
         }
 
+        // Inject current EWM drift into CompressionBreakoutEngine so it can
+        // block trades that go against confirmed momentum direction.
+        for (auto& e : engines_) {
+            if (e->getName() == "CompressionBreakout") {
+                static_cast<CompressionBreakoutEngine*>(e.get())->set_ewm_drift(governor_.ewm_drift());
+                break;
+            }
+        }
+
         // Slow path: best confidence×weight
         Signal best; double best_score=0;
         for(auto& e:engines_){
@@ -1688,13 +1707,11 @@ private:
         if (s.engine[0] != '\0' && std::strcmp(s.engine, "ImpulseContinuation") == 0) {
             if (s.confidence < IMPULSE_MIN_CONFIDENCE || score < IMPULSE_MIN_SCORE) return false;
         } else if (s.engine[0] != '\0' && std::strcmp(s.engine, "CompressionBreakout") == 0) {
-            // CompressionBreakout uses its own internal confidence calc:
-            // confidence = min(1.5, breakout_distance / BREAKOUT_TRIGGER)
-            // A minimal breakout (price exits by exactly 1x trigger) gives confidence=1.0
-            // and score=1.0*weight(1.0)=1.0, which fails GENERAL_MIN_SCORE=1.20.
-            // The engine's compression range + breakout trigger gates are already sufficient
-            // quality filters — bypassing the generic score gate here is intentional.
-            // No score check: the structural requirement (compression box + breakout) IS the quality gate.
+            // CB confidence = min(1.5, breakout_distance / BREAKOUT_TRIGGER).
+            // With TRIGGER=$2.50: confidence=1.0 means price moved exactly $2.50 past the box.
+            // Require >= 1.0 — the minimal qualifying break. Anything below means CB fired
+            // at the very edge of the trigger (noise). No score bypass — CB must pass this.
+            if (s.confidence < 1.0) return false;
         } else {
             if (score < GENERAL_MIN_SCORE) return false;
         }
@@ -1765,20 +1782,18 @@ private:
 
     void apply_london_session_overrides(SessionType session) {
         if (session != SessionType::LONDON) return;
-        // London open (07:00-10:30 UTC): force-enable CompressionBreakout regardless
-        // of RegimeGovernor classification.
+        // London open (07:00-10:30 UTC): override MEAN_REVERSION → enable CB.
         //
-        // WHY: RegimeGovernor starts in MEAN_REVERSION and transitions to COMPRESSION
-        // only after CONFIRM_TICKS (5 ticks) of tight range. At London open, gold often
-        // establishes a compression box during the pre-release consolidation, but the
-        // governor may still be classifying as MEAN_REVERSION from Asian session.
-        // Result: CompressionBreakout is disabled by governor.apply() and misses the
-        // very breakout that London open consolidation sets up.
-        //
-        // Guard: only force-enable if the volatility filter has warmed up (vol_range > 0).
-        // Without this, CB fires on every tick from bar-1 of the London session before
-        // any real compression structure exists — this was causing the London open SL chain.
-        if (vol_filter_.current_range() < 0.50) return;  // not enough history yet — wait for warmup
+        // ONLY override MEAN_REVERSION lag (governor hasn't confirmed COMPRESSION yet
+        // because it needs CONFIRM_TICKS). Do NOT override IMPULSE or TREND —
+        // those are correct governor classifications meaning price is already moving.
+        // Overriding IMPULSE was the direct cause of the 07:00 SHORT SL_HIT:
+        //   governor said IMPULSE (price thrusting up) → CB disabled (correct)
+        //   London override re-enabled CB anyway → SHORT fired on 1-tick dip → SL in 19s
+        if (current_regime_ == MarketRegime::IMPULSE) return;
+        if (current_regime_ == MarketRegime::TREND)   return;
+        // Guard: need real vol history before arming CB
+        if (vol_filter_.current_range() < 2.00) return;  // raised 0.50→2.00: $0.50 is 2-3 ticks of noise, not structure
         for (auto& e : engines_) {
             if (e->getName() == "CompressionBreakout") {
                 e->setEnabled(true);

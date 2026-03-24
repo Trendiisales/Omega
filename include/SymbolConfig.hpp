@@ -45,6 +45,7 @@ struct SymbolConfig
     double min_edge_bp       = 0.0;
     double slippage_est_bp   = 0.0;  // basis-point slippage — for breakout engines
     double min_breakout_pct  = 0.0;
+    int    min_confirm_ticks = 0;    // consecutive ticks price must stay outside comp boundary before signal fires (0=disabled)
 
     // Bracket-specific overrides (symbols.ini owns these, configure() is fallback only)
     double slippage_buffer   = 0.0;   // SLIPPAGE_BUFFER: price-unit slip for bracket cost model (0=use configure default)
