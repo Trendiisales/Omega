@@ -52,6 +52,7 @@ struct OpenPos
     // Pyramid tracking — one add-on per trade in expansion regime
     bool    pyramid_armed   = false;
     bool    pyramid_done    = false;
+    bool    pyramid_pending = false;  // set by engine, cleared by main.cpp after order sent
     double  pyramid_entry   = 0.0;
     double  pyramid_tp      = 0.0;
     double  pyramid_sl      = 0.0;
@@ -514,9 +515,9 @@ public:
 
             // ── PYRAMID ADD-ON ────────────────────────────────────────────────
             // When trail1 arm is crossed and regime is EXPANSION_BREAKOUT or TREND,
-            // add one pyramid leg at current price with TP=remaining comp_range×1.6
-            // and SL raised to BE (same as Gold's pyramid pattern).
-            // One add-on only (pyramid_done). Inherits same TP/SL as main position.
+            // set pyramid_pending=true so main.cpp can send the add-on order on the
+            // next tick. main.cpp checks pos.pyramid_pending, sends the order, then
+            // clears the flag. One add-on only (pyramid_done guards re-entry).
             if (!pos.pyramid_done) {
                 const double sl_pct_now = (pos.sl_pct > 0.0) ? pos.sl_pct : SL_PCT;
                 const double trail1_arm_pct = sl_pct_now * 1.00;
@@ -538,8 +539,9 @@ public:
                         (std::strncmp(macro_regime, "EXPANSION_BREAKOUT", 18) == 0) ||
                         (std::strncmp(macro_regime, "TREND_CONTINUATION", 18) == 0);
                     if (exp_regime) {
-                        pos.pyramid_done  = true;
-                        pos.pyramid_entry = mid;
+                        pos.pyramid_done    = true;
+                        pos.pyramid_pending = true;   // main.cpp clears this after sending the order
+                        pos.pyramid_entry   = mid;
                         // Pyramid TP: same as main position TP
                         pos.pyramid_tp = pos.tp;
                         // Pyramid SL: locked to BE (main entry ± small buffer)
@@ -547,21 +549,18 @@ public:
                         pos.pyramid_sl = pos.is_long
                             ? pos.entry + be_buffer
                             : pos.entry - be_buffer;
-                        std::cout << "[ENG-" << symbol << "] PYRAMID ADD-ON"
+                        std::cout << "[ENG-" << symbol << "] PYRAMID PENDING"
                                   << " entry=" << mid
                                   << " tp=" << pos.pyramid_tp
                                   << " sl=" << pos.pyramid_sl
                                   << " regime=" << macro_regime << "\n";
                         std::cout.flush();
-                        // Fire the pyramid as a signal so main.cpp can send the order
-                        // We set a flag in the OpenPos — main dispatch will see it
-                        // on the NEXT tick and send the order.
-                        // (Returning a signal here would interfere with pos management)
                     }
                 }
             }
-            // Manage pyramid position TP/SL
-            if (pos.pyramid_done && pos.pyramid_entry > 0.0) {
+            // Manage pyramid position TP/SL — only once main.cpp has sent the order
+            // (pyramid_pending cleared). If still pending, skip management this tick.
+            if (pos.pyramid_done && pos.pyramid_entry > 0.0 && !pos.pyramid_pending) {
                 const bool pyr_tp = pos.is_long ? (bid >= pos.pyramid_tp) : (ask <= pos.pyramid_tp);
                 const bool pyr_sl = pos.is_long ? (bid <= pos.pyramid_sl) : (ask >= pos.pyramid_sl);
                 if (pyr_tp) {

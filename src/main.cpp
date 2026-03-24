@@ -3132,6 +3132,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_telemetry.UpdateEngineState(sym.c_str(),
             static_cast<int>(eng.phase), eng.comp_high, eng.comp_low,
             eng.recent_vol_pct, eng.base_vol_pct, eng.signal_count);
+
+        // ── Pyramid add-on dispatch ───────────────────────────────────────────
+        // engine sets pyramid_pending=true when trail1 arm + expansion regime met.
+        // We send the add-on order here and clear the flag so it fires exactly once.
+        if (eng.pos.pyramid_pending && eng.pos.pyramid_entry > 0.0) {
+            eng.pos.pyramid_pending = false;
+            const double pyr_sl_abs = std::fabs(eng.pos.pyramid_entry - eng.pos.pyramid_sl);
+            const double pyr_lot    = compute_size(sym, pyr_sl_abs, ask - bid, eng.ENTRY_SIZE) * 0.5;
+            std::cout << "\033[1;36m[PYRAMID] " << sym
+                      << " " << (eng.pos.is_long ? "LONG" : "SHORT")
+                      << " add-on entry=" << eng.pos.pyramid_entry
+                      << " tp=" << eng.pos.pyramid_tp
+                      << " sl=" << eng.pos.pyramid_sl
+                      << " size=" << pyr_lot << "\033[0m\n";
+            std::cout.flush();
+            send_live_order(sym, eng.pos.is_long, pyr_lot, eng.pos.pyramid_entry);
+        }
+
         if (!sig.valid) return;
 
         const double sl_abs   = sig.entry * eng.SL_PCT / 100.0;

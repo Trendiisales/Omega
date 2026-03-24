@@ -396,7 +396,11 @@ public:
             if      (chop)      d.reason = "chop_detected";
             else if (high_risk) d.reason = "high_risk_no_trade";
             else                d.reason = "score_below_threshold";
-            if (chop) {
+            // Increment consecutive-block counter on CHOP or persistent HIGH_RISK.
+            // Previously only CHOP incremented — a symbol stuck in permanent HIGH_RISK
+            // (e.g. permanently wide spreads) would never trigger the cooldown and would
+            // log every tick silently forever.
+            if (chop || high_risk) {
                 ++m_consecutive_blocks;
                 if (m_consecutive_blocks >= cfg.cooldown_fail_threshold) {
                     m_cooldown_until_ms  = now_ms + cfg.cooldown_duration_ms;

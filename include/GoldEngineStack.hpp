@@ -1363,7 +1363,7 @@ struct GoldStackCfg {
     int64_t same_level_reentry_sec      = 60;   // min seconds before re-entering same price band
     double  same_level_reentry_band     = 1.50; // $-band for same-level detection
     double  min_vwap_dislocation        = 1.20; // min $-distance from VWAP to enter
-    double  max_entry_spread            = 1.60; // max spread at entry (absolute $)
+    double  max_entry_spread            = 2.50;  // max spread at entry (absolute $) — matches GoldEngineStack runtime default
     int64_t min_entry_gap_sec           = 90;   // min gap between any two entries
     // ── Position manager ────────────────────────────────────────────────────
     int     max_hold_sec                = 600;  // position timeout

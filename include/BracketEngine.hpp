@@ -212,8 +212,10 @@ public:
             if (-move > pos.mae) pos.mae = -move;
 
             // Breakout failure: price re-crosses midpoint of bracket
+            // FAILURE_WINDOW_MS divided by 1000 uses integer truncation — values < 1000ms
+            // truncate to 0, disabling the window. Use ceiling division to preserve small values.
             if (FAILURE_WINDOW_MS > 0 &&
-                (now - pos.entry_ts) < static_cast<int64_t>(FAILURE_WINDOW_MS / 1000)) {
+                (now - pos.entry_ts) < static_cast<int64_t>((FAILURE_WINDOW_MS + 999) / 1000)) {
                 const double bracket_mid = (m_locked_hi + m_locked_lo) * 0.5;
                 if ( pos.is_long && bid < bracket_mid) {
                     closePos(bid, "BREAKOUT_FAIL", macro_regime, on_close); return;
@@ -662,7 +664,11 @@ protected:
         pos.active      = false;
         pos.size        = ENTRY_SIZE;
         pos.spread_at_entry = spread;
+#ifdef _WIN32
         if (macro_regime) strncpy_s(pos.regime, macro_regime, 31);
+#else
+        if (macro_regime) { strncpy(pos.regime, macro_regime, 31); pos.regime[31] = '\0'; }
+#endif
 
         pending_both.valid       = true;
         pending_both.long_entry  = long_entry;

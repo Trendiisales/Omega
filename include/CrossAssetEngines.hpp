@@ -102,7 +102,17 @@ struct CrossPosition {
         double exit_px = tp_hit ? tp : (sl_hit ? sl : mid);
 
         if (tp_hit || sl_hit || timed_out) {
-            if (timed_out && sl_hit) exit_px = sl; // cap at SL
+            // On timeout: cap exit at SL if price has blown through.
+            // A sparse-tick reconnect can let price drift past SL without triggering
+            // the explicit sl_hit check. Without this, timeout records a loss larger
+            // than the intended stop — same fix applied in GoldPositionManager and BracketEngine.
+            if (timed_out && !sl_hit && !tp_hit) {
+                const bool sl_breached = is_long ? (mid < sl) : (mid > sl);
+                if (sl_breached) {
+                    exit_px    = sl;
+                    reason_str = "SL_HIT";  // price was past SL at timeout — report as SL, not TIMEOUT
+                }
+            }
             emit(exit_px, reason_str, on_close);
             return true;
         }
@@ -207,6 +217,9 @@ public:
 
         // div > threshold: ES leading, NQ lagging → long NQ on NQ tick
         // div < -threshold: NQ leading, ES lagging → long ES on ES tick
+        // Note: we only enter the laggard LONG. Shorting the leader is not done
+        // here — we cannot reliably predict whether the leader corrects down or
+        // the laggard catches up (asymmetric convergence).
         bool fire = false;
         bool is_long = true;
 
@@ -214,13 +227,10 @@ public:
             fire = true; is_long = true;  // NQ lags ES upward → long NQ
         } else if (div < -DIV_ENTRY_THRESH && sym == "US500.F") {
             fire = true; is_long = true;  // ES lags NQ upward → long ES
-        } else if (div > DIV_ENTRY_THRESH && sym == "US500.F") {
-            fire = true; is_long = false; // ES outpacing NQ → NQ will drag ES down? No.
-            // Actually: ES > NQ means ES is high relative to NQ.
-            // ES will mean-revert down OR NQ will catch up.
-            // More reliable: enter the laggard (NQ long). Skip ES short.
-            fire = false;
         }
+        // ES short path (div>thresh on US500.F tick) intentionally excluded:
+        // entering ES short when ES leads NQ is not reliable convergence —
+        // the leader may simply be right and NQ is slow. Laggard-long only.
         if (!fire) return {};
 
         CrossSignal sig;
