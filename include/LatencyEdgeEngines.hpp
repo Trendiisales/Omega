@@ -471,7 +471,11 @@ class GoldSpreadDislocation {
         gmtime_r(&t, &ti);
 #endif
         const int h = ti.tm_hour;
-        return (h >= 7 && h < 20);  // London + NY: 07:00-20:00 UTC
+        // London + NY: 07:00-20:00 UTC
+        // Asia window: 22:00-05:00 UTC (Tokyo open, NZ/AU morning)
+        // Dead zone 05:00-07:00 and 20:00-22:00 remain blocked — thin liquidity.
+        // Spread dislocations in Asia are real moves (comment confirmed this was wrong to block).
+        return (h >= 7 && h < 20) || h >= 22 || h < 5;
     }
 
 public:

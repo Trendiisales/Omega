@@ -3690,8 +3690,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
         if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
             dispatch(g_eng_sp, g_sup_sp, base_can_sp, &sdec_sp);
-        if (sdec_sp.allow_bracket && !g_eng_sp.pos.active
-                && (g_macro_ctx.session_slot >= 1 && g_macro_ctx.session_slot != 6))
+        if (sdec_sp.allow_bracket && !g_eng_sp.pos.active)
             dispatch_bracket(g_bracket_sp, g_sup_sp, g_eng_sp, base_can_sp,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.sp_l2_imbalance, &sdec_sp);
@@ -3741,8 +3740,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch(g_eng_nq, g_sup_nq, base_can_nq, &sdec_nq);
         // Cross-symbol guard: USTEC and NAS100 are correlated — don't hold brackets on both
         const bool nas100_bracket_open = g_bracket_nas100.has_open_position();
-        if (sdec_nq.allow_bracket && !g_eng_nq.pos.active && !nas100_bracket_open
-                && (g_macro_ctx.session_slot >= 1 && g_macro_ctx.session_slot != 6))
+        if (sdec_nq.allow_bracket && !g_eng_nq.pos.active && !nas100_bracket_open)
             dispatch_bracket(g_bracket_nq, g_sup_nq, g_eng_nq, base_can_nq,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.nq_l2_imbalance, &sdec_nq);
@@ -3808,8 +3806,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30);
         if (sdec_us30.allow_breakout && !g_bracket_us30.pos.active)
             dispatch(g_eng_us30, g_sup_us30, base_can_us30, &sdec_us30);
-        if (sdec_us30.allow_bracket && !g_eng_us30.pos.active
-                && (g_macro_ctx.session_slot >= 1 && g_macro_ctx.session_slot != 6))
+        if (sdec_us30.allow_bracket && !g_eng_us30.pos.active)
             dispatch_bracket(g_bracket_us30, g_sup_us30, g_eng_us30, base_can_us30,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.us30_l2_imbalance, &sdec_us30);
@@ -4090,9 +4087,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch(g_eng_nas100, g_sup_nas100, base_can_nas, &sdec_nas);
         // Cross-symbol guard: NAS100 and USTEC are correlated — don't hold brackets on both
         const bool ustec_bracket_open = g_bracket_nq.has_open_position();
-        // Asia session: bracket also blocked for US equity
-        if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active && !ustec_bracket_open
-                && (g_macro_ctx.session_slot >= 1 && g_macro_ctx.session_slot != 6))
+        if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active && !ustec_bracket_open)
             dispatch_bracket(g_bracket_nas100, g_sup_nas100, g_eng_nas100, base_can_nas,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.nq_l2_imbalance, &sdec_nas);

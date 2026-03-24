@@ -326,13 +326,15 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD) return noSignal();
-        // Block Asian session: compression breakouts on thin Asia tape are noise.
-        // Other engines (ImpulseContinuation, VWAPSnapback, LiquiditySweep) already block Asia.
-        // CompressionBreakout was only blocking 2 narrow dead zones (21-23, 05-07 UTC),
-        // leaving 23:00-05:00 UTC open — where 2-4s SL-hit noise trades were observed.
-        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&
-           s.session!=SessionType::OVERLAP)
-            return noSignal();
+        // Session-aware threshold adjustment: Asian tape is thinner so require a
+        // larger compression range and stronger breakout before signalling.
+        // Dead zone (05:00-07:00 UTC, slot 0) remains fully blocked — genuinely no liquidity.
+        // Asia (22:00-05:00 UTC) is allowed with tighter quality gates applied below.
+        if(s.session==SessionType::UNKNOWN) return noSignal(); // slot 0 dead zone maps here
+        const bool is_asia_session = (s.session==SessionType::ASIAN);
+        const double eff_max_spread    = is_asia_session ? MAX_SPREAD * 0.60 : MAX_SPREAD;   // tighter spread in Asia = real moves only
+        const double eff_breakout_mult = is_asia_session ? BREAKOUT_TRIGGER * 1.40 : BREAKOUT_TRIGGER; // 40% larger range required
+        if(s.spread > eff_max_spread) return noSignal();
         if(in_handoff_dead_zone()) return noSignal(); // NY/Tokyo handoff — no compression trades
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
@@ -348,21 +350,21 @@ public:
             return noSignal();
         }
         Signal sig; sig.entry=s.mid; sig.size=0.01;  // fallback min_lot — overridden by compute_size() in main
-        if(s.mid>hi+BREAKOUT_TRIGGER){
+        if(s.mid>hi+eff_breakout_mult){
             // EWM drift check: don't go LONG when drift is strongly negative (momentum against)
             if(ewm_drift_ < -3.0) { history_.push_back(s.mid); return noSignal(); }
             sig.valid=true; sig.side=TradeSide::LONG;
-            sig.confidence=std::min(1.5,(s.mid-hi)/BREAKOUT_TRIGGER);
+            sig.confidence=std::min(1.5,(s.mid-hi)/eff_breakout_mult);
             sig.tp=TP_TICKS; sig.sl=SL_TICKS;
             strncpy(sig.reason,"COMPRESSION_BREAK_LONG",31);
             strncpy(sig.engine,"CompressionBreakout",31);
             history_.clear(); last_signal_=now; signal_count_++; return sig;
         }
-        if(s.mid<lo-BREAKOUT_TRIGGER){
+        if(s.mid<lo-eff_breakout_mult){
             // EWM drift check: don't go SHORT when drift is strongly positive (momentum against)
             if(ewm_drift_ > +3.0) { history_.push_back(s.mid); return noSignal(); }
             sig.valid=true; sig.side=TradeSide::SHORT;
-            sig.confidence=std::min(1.5,(lo-s.mid)/BREAKOUT_TRIGGER);
+            sig.confidence=std::min(1.5,(lo-s.mid)/eff_breakout_mult);
             sig.tp=TP_TICKS; sig.sl=SL_TICKS;
             strncpy(sig.reason,"COMPRESSION_BREAK_SHORT",31);
             strncpy(sig.engine,"CompressionBreakout",31);
@@ -455,18 +457,20 @@ public:
         }
         // 20-tick directional drift: require net move > $1.50 in one direction
         // over last 20 ticks. Catches slow grinds that fail per-tick momentum gate.
+        // Session-aware quality gate: Asian tape (00:00-07:00 UTC) is thinner and
+        // mean-reverting. Allow entries but require stronger impulse evidence:
+        // tighter spread, larger net20 drift, and no counter-trend entries.
+        // Dead zone (slot 0 → UNKNOWN) remains fully blocked.
+        if(s.session==SessionType::UNKNOWN) return noSignal();
+        const bool is_asia = (s.session==SessionType::ASIAN);
+        // In Asia: require a larger 20-tick net move and tighter spread
+        const double eff_net20_min  = is_asia ? 3.00 : 1.50;  // raised from 1.50 in Asia
+        const double eff_max_spread = is_asia ? 1.50 : MAX_SPREAD;
+        if(s.spread > eff_max_spread) return noSignal();
         if(price_history_.size()>=20){
             double net20=price_history_.back()-price_history_[price_history_.size()-20];
-            if(std::fabs(net20)<1.50) return noSignal();
+            if(std::fabs(net20)<eff_net20_min) return noSignal();
         }
-        // ASIAN session removed from whitelist (was previously included).
-        // ImpulseContinuation needs sustained directional flow with clear impulse
-        // + pullback structure. Asian gold (00:00-07:00 UTC) is choppy mean-reverting
-        // tape — no trending structure exists to continue. Incident Mar 17 2026:
-        // fired SHORT in MEAN_REVERSION at 00:47 UTC → $205 loss.
-        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&
-           s.session!=SessionType::OVERLAP)
-            return noSignal();
         // Skip first 15 minutes of London open (07:00-07:15 UTC).
         // Early London is dominated by spread spikes, stop hunts, and false breakouts
         // before real directional flow establishes. IMPULSE_MIN=$1.00 is just spread noise
@@ -634,17 +638,24 @@ public:
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD) return noSignal();
         if(s.volatility<0.001) return noSignal();
-        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&s.session!=SessionType::OVERLAP)
-            return noSignal();
+        // Session-aware gate: allow Asia session but raise the bar.
+        // Dead zone (UNKNOWN/slot 0, 05:00-07:00 UTC) remains hard-blocked — no liquidity.
+        // Asia: require tighter spread and stronger VWAP deviation before firing.
+        if(s.session==SessionType::UNKNOWN) return noSignal();
+        const bool is_asia_snap = (s.session==SessionType::ASIAN);
+        const double eff_spread_max = is_asia_snap ? MAX_SPREAD * 0.55 : MAX_SPREAD;
+        const double eff_dev_entry  = is_asia_snap ? VWAP_DEV_ENTRY  * 1.50 : VWAP_DEV_ENTRY;
+        const double eff_dev_strong = is_asia_snap ? VWAP_DEV_STRONG * 1.30 : VWAP_DEV_STRONG;
+        if(s.spread > eff_spread_max) return noSignal();
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::milliseconds(500)) return noSignal();
         double dev=s.mid-s.vwap;
         double z=(s.volatility>0)?(dev/s.volatility):0;
-        if(std::fabs(z)<VWAP_DEV_ENTRY||std::fabs(z)>VWAP_DEV_STRONG) return noSignal();
+        if(std::fabs(z)<eff_dev_entry||std::fabs(z)>eff_dev_strong) return noSignal();
         if(std::fabs(s.sweep_size)<MOMENTUM_SPIKE) return noSignal();
         TradeSide side;
-        if(z<-VWAP_DEV_ENTRY&&s.sweep_size>0)      side=TradeSide::LONG;
-        else if(z>VWAP_DEV_ENTRY&&s.sweep_size<0)  side=TradeSide::SHORT;
+        if(z<-eff_dev_entry&&s.sweep_size>0)      side=TradeSide::LONG;
+        else if(z>eff_dev_entry&&s.sweep_size<0)  side=TradeSide::SHORT;
         else return noSignal();
         Signal sig; sig.valid=true; sig.side=side;
         sig.confidence=std::min(1.5,std::fabs(z)/(VWAP_DEV_ENTRY*2.0));
@@ -711,8 +722,11 @@ public:
         if(!enabled_||!s.is_valid())return noSignal();
         history_.push_back(s.mid);
         if(s.spread>MAX_SPREAD)return noSignal();
-        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&s.session!=SessionType::OVERLAP)
-            return noSignal();
+        // Session-aware gate: allow Asia but require tighter spread (real moves, not noise).
+        // Dead zone (UNKNOWN/slot 0, 05:00-07:00 UTC) remains hard-blocked.
+        if(s.session==SessionType::UNKNOWN) return noSignal();
+        const bool is_asia_liq = (s.session==SessionType::ASIAN);
+        if(is_asia_liq && s.spread > MAX_SPREAD * 0.55) return noSignal();
         double liq=detectLiqPool();
         if(liq==0)return noSignal();
         if(std::fabs(s.mid-liq)<SWEEP_TRIGGER)return noSignal();
@@ -726,7 +740,6 @@ public:
         // trend > 0 for LONG). Shorting into trend > 0.30 = fading a live London rally.
         if (side == TradeSide::SHORT && s.trend >  0.30) return noSignal();
         if (side == TradeSide::LONG  && s.trend < -0.30) return noSignal();
-        int tp=std::max(18,std::min(40,(int)((dv*TP_RATIO)/0.1)));
         Signal sig; sig.valid=true; sig.side=side; sig.confidence=0.95;
         sig.size=BASE_SIZE; sig.entry=s.mid; sig.tp=tp; sig.sl=SL_TICKS;
         strncpy(sig.reason,side==TradeSide::SHORT?"SWEEP_SHORT":"SWEEP_LONG",31);
@@ -800,8 +813,11 @@ public:
         if(!enabled_||!s.is_valid())return noSignal();
         history_.push_back(s.mid);
         if(s.spread>MAX_SPREAD)return noSignal();
-        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&s.session!=SessionType::OVERLAP)
-            return noSignal();
+        // Dead zone (UNKNOWN/slot 0, 05:00-07:00 UTC) remains hard-blocked.
+        // Asia session allowed — engine is disabled (51T 29%WR) so this is future-proofing only.
+        if(s.session==SessionType::UNKNOWN) return noSignal();
+        const bool is_asia_pres = (s.session==SessionType::ASIAN);
+        if(is_asia_pres && s.spread > MAX_SPREAD * 0.55) return noSignal();
         double liq=detectLiqPool();
         if(liq==0)return noSignal();
         if(computePressure(liq)<PRESSURE_THRESHOLD)return noSignal();
