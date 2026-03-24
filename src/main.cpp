@@ -4569,8 +4569,13 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         g_connected_since.store(nowSec());
         g_md_subscribed.store(false);  // clear — fresh session, not yet subscribed
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
-        // Single subscription for ALL symbols under fixed ID OMEGA-MD-ALL
-        // This permanently eliminates the ghost session problem — one ID, one unsub.
+        // Always unsub first to clear any ghost session from previous connect.
+        // This prevents ALREADY_SUBSCRIBED rejects on rapid reconnects.
+        {
+            const std::string unsub = fix_build_md_unsub_all(g_quote_seq++);
+            SSL_write(ssl, unsub.c_str(), static_cast<int>(unsub.size()));
+            Sleep(100);  // brief gap before resub
+        }
         const std::string md = fix_build_md_subscribe_all(g_quote_seq++);
         SSL_write(ssl, md.c_str(), static_cast<int>(md.size()));
         g_md_subscribed.store(true);
