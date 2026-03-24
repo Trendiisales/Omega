@@ -4,10 +4,11 @@
 //
 // PROTOCOL (verified against official SDK source code):
 //
-// TCP FRAMING (both JSON port 5036 and Protobuf port 5035 use SAME framing):
-//   Send:    [4-byte big-endian message_length][message bytes]
-//            message_length = byte count of message ONLY
-//   Receive: [4-byte big-endian message_length][message bytes]
+// TCP FRAMING confirmed by live server response (2026-03-25):
+//   Port 5036 JSON uses NEWLINE-DELIMITED JSON — no length prefix.
+//   Send:    <json_string>\n
+//   Receive: <json_string>\n
+//   (Port 5035 protobuf uses [4-byte BE length][protobuf bytes] — different)
 //
 // JSON MESSAGE FORMAT (send) — from official docs:
 //   {"clientMsgId":"<id>","payloadType":<int>,"payload":{<fields>}}
@@ -349,21 +350,7 @@ private:
         // Step 1: Application auth
         if (!send_json(ssl, CTJSON::app_auth(client_id, client_secret))) return false;
         std::cout << "[CTRADER] ApplicationAuthReq sent (clientId=" << client_id.substr(0,12) << "...)\n";
-        // Raw diagnostic: dump first response bytes to confirm server is responding
-        {
-            uint8_t probe[32] = {};
-            int n = SSL_read(ssl, probe, sizeof(probe));
-            if (n <= 0) {
-                std::cerr << "[CTRADER] No response after ApplicationAuthReq — server closed connection\n";
-                return false;
-            }
-            std::cout << "[CTRADER] Server response received: " << n << " bytes, first4=";
-            printf("[CTRADER-RAW] %02X %02X %02X %02X | ascii=", probe[0],probe[1],probe[2],probe[3]);
-            for (int i=0;i<std::min(n,20);++i) printf("%c", (probe[i]>=32&&probe[i]<127)?probe[i]:'.');
-            printf("\n"); fflush(stdout);
-            // Put bytes back into recv_buf for normal parsing
-            recv_buf_.insert(recv_buf_.end(), probe, probe+n);
-        }
+        std::cout << "[CTRADER] Waiting for ApplicationAuthRes...\n";
         int pt; std::string body;
         if (!wait_for(ssl, CTraderPT::APPLICATION_AUTH_RES, 15000, pt, body)) {
             std::cerr << "[CTRADER] ApplicationAuthRes failed — last_pt=" << pt << " body_len=" << body.size() << "\n";
@@ -511,15 +498,15 @@ private:
         }
     }
 
-    // Send JSON with 4-byte BE length prefix (length = JSON byte count only)
+    // Send JSON with newline terminator — port 5036 uses newline-delimited JSON,
+    // NOT the 4-byte length prefix used by port 5035 protobuf.
+    // Confirmed: server responds with raw {"payloadType":...}\n (no length prefix).
     bool send_json(SSL* ssl, const std::string& json) {
-        const uint32_t len = uint32_t(json.size());
-        uint8_t hdr[4] = { uint8_t(len>>24), uint8_t(len>>16), uint8_t(len>>8), uint8_t(len) };
-        if (SSL_write(ssl, hdr, 4) != 4) return false;
-        return SSL_write(ssl, json.c_str(), int(len)) == int(len);
+        const std::string msg = json + "\n";
+        return SSL_write(ssl, msg.c_str(), int(msg.size())) == int(msg.size());
     }
 
-    // Read one message: [4-byte len][JSON bytes]; extract payloadType from JSON
+    // Read one newline-delimited JSON message from SSL stream
     int read_one(SSL* ssl, int& pt_out, std::string& body_out, int timeout_ms) {
         if (try_parse(pt_out, body_out)) return 1;
         const auto dead = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
@@ -538,14 +525,17 @@ private:
         return 0;
     }
 
+    // Parse one newline-delimited JSON message from recv_buf_
+    // Port 5036 confirmed: server sends raw JSON lines terminated by \n
+    // No 4-byte length prefix (that's protobuf/port 5035 only)
     bool try_parse(int& pt_out, std::string& body_out) {
-        if (recv_buf_.size() < 4) return false;
-        const uint32_t len = (uint32_t(recv_buf_[0])<<24)|(uint32_t(recv_buf_[1])<<16)|
-                             (uint32_t(recv_buf_[2])<<8)  | uint32_t(recv_buf_[3]);
-        if (!len) { recv_buf_.erase(recv_buf_.begin(), recv_buf_.begin()+4); return false; }
-        if (recv_buf_.size() < 4+len) return false;
-        body_out.assign((const char*)recv_buf_.data()+4, len);
-        recv_buf_.erase(recv_buf_.begin(), recv_buf_.begin()+4+len);
+        const auto nl = std::find(recv_buf_.begin(), recv_buf_.end(), uint8_t('\n'));
+        if (nl == recv_buf_.end()) return false;
+        body_out.assign((const char*)recv_buf_.data(),
+                        std::distance(recv_buf_.begin(), nl));
+        recv_buf_.erase(recv_buf_.begin(), nl + 1);
+        if (!body_out.empty() && body_out.back() == '\r') body_out.pop_back();
+        if (body_out.empty()) return false;
         pt_out = int(CTJSON::get_int(body_out, "payloadType"));
         return true;
     }
