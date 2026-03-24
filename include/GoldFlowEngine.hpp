@@ -602,9 +602,11 @@ private:
         tr.tp           = 0.0; // no fixed TP -- trail only
         tr.sl           = pos.sl;
         tr.size         = pos.size;
+        // PnL in raw price points × size — handle_closed_trade applies tick_value_multiplier
+        // to convert to USD. Do NOT pre-multiply by 100 here (was double-counting).
         tr.pnl          = (pos.is_long ? (exit_px - pos.entry) : (pos.entry - exit_px))
-                          * pos.size * 100.0; // $100/pt/lot gold
-        tr.mfe          = pos.mfe * pos.size * 100.0;
+                          * pos.size;
+        tr.mfe          = pos.mfe * pos.size;
         tr.mae          = 0.0;
         tr.entryTs      = pos.entry_ts;
         tr.exitTs       = now_ms / 1000;
@@ -618,7 +620,7 @@ private:
         std::cout << "[GOLD-FLOW] EXIT " << (pos.is_long ? "LONG" : "SHORT")
                   << " @ " << std::fixed << std::setprecision(2) << exit_px
                   << " reason=" << reason
-                  << " pnl=" << tr.pnl
+                  << " pnl_raw=" << tr.pnl << " pnl_usd=" << (tr.pnl * 100.0)
                   << " mfe=" << pos.mfe
                   << " stage=" << pos.trail_stage
                   << " held=" << held_s << "s\n";
