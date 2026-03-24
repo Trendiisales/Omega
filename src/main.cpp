@@ -4013,7 +4013,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_gold_flow.on_tick(bid, ask,
                 g_macro_ctx.gold_l2_imbalance,
                 g_gold_stack.ewm_drift(),
-                now_ms_g, flow_on_close);
+                now_ms_g, flow_on_close,
+                g_macro_ctx.session_slot);
             if (g_gold_flow.has_open_position()) {
                 // Flow engine entered -- telemetry
                 g_telemetry.UpdateLastSignal("GOLD.F",
@@ -4428,9 +4429,6 @@ static void trade_loop() {
                                   << " entries=" << entries.size();
                         if (ext_changed) std::cout << " (ext IDs updated — will re-subscribe)";
                         std::cout << "\n";
-                        // Dump all entries for diagnostics — helps identify broker renames
-                        for (const auto& e : entries)
-                            std::cout << "[OMEGA-TRADE]   id=" << e.first << " name='" << e.second << "'\n";
                         std::cout.flush();
                         if (ext_changed) g_ext_md_refresh_needed.store(true);
                     }

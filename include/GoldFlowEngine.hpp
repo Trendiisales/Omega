@@ -95,6 +95,23 @@ static constexpr int    GFE_MOMENTUM_TICKS    = 12;    // ticks back for momentu
                                                         // 12 ticks = ~120-240ms at London, ~2-4s at Asia — real directional move.
 static constexpr int    GFE_MOMENTUM_BUF_SIZE = 64;    // independent momentum history buffer (separate from ATR buffer)
 
+// Asia/dead-zone session hardening — prevents entries on choppy mean-reverting tape
+// Asia gold (22:00-07:00 UTC) has: thin liquidity, micro-oscillations that fake
+// directional flow, tight ATR that produces SL easily hit by noise.
+// These thresholds require genuinely committed moves before entry.
+static constexpr double GFE_ASIA_ATR_MIN           = 5.0;    // $5 ATR floor (vs $2 normal) — rejects dead/thin tape
+static constexpr double GFE_ASIA_MAX_SPREAD        = 1.5;    // $1.50 max spread (vs $2.50 normal) — tighter liquidity requirement
+static constexpr double GFE_ASIA_DRIFT_MIN         = 0.50;   // drift must exceed $0.50 (vs $0 normal) — real directional pressure
+static constexpr double GFE_ASIA_MOMENTUM_MIN      = 0.30;   // mid must move $0.30+ over momentum ticks (vs $0 normal)
+static constexpr int    GFE_ASIA_COOLDOWN_MS       = 60000;  // 60s cooldown (vs 30s normal) — fewer attempts on bad tape
+static constexpr double GFE_ASIA_ATR_SPREAD_RATIO  = 4.0;    // ATR must be >= 4x spread — reject noise-dominated tape
+// Persistence thresholds for Asia: 90% of window must be directional (vs 75% normal)
+// On choppy tape, 75% easily fills from random oscillations. 90% requires real conviction.
+static constexpr int    GFE_ASIA_FAST_DIR_THRESHOLD = (GFE_FAST_TICKS * 9) / 10;  // 27/30 ticks
+static constexpr int    GFE_ASIA_SLOW_DIR_THRESHOLD = (GFE_SLOW_TICKS * 9) / 10;  // 90/100 ticks
+// Dominance: max 2 opposing ticks in fast window (vs 7 normal)
+static constexpr int    GFE_ASIA_DOMINANCE_MAX_OPPOSING = 2;
+
 // -----------------------------------------------------------------------------
 struct GoldFlowEngine {
 
@@ -130,20 +147,28 @@ struct GoldFlowEngine {
     // now_ms         : current epoch ms
     // on_close       : callback when position closes
     // -------------------------------------------------------------------------
+    // session_slot: 0=dead, 1=London, 2=London_core, 3=overlap, 4=NY, 5=NY_late, 6=Asia
     void on_tick(double bid, double ask,
                  double l2_imb, double ewm_drift,
                  int64_t now_ms,
-                 CloseCallback on_close) noexcept
+                 CloseCallback on_close,
+                 int session_slot = -1) noexcept
     {
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
+        m_last_session_slot = session_slot;
+
+        // Session classification: Asia (slot 6) and dead zone (slot 0) are low-quality tape
+        const bool is_low_quality_session = (session_slot == 6 || session_slot == 0);
+        const double eff_max_spread = is_low_quality_session ? GFE_ASIA_MAX_SPREAD : GFE_MAX_SPREAD;
+        const int    eff_cooldown   = is_low_quality_session ? GFE_ASIA_COOLDOWN_MS : GFE_COOLDOWN_MS;
 
         // Feed ATR and momentum history (always — warmup must run every tick)
         update_atr(spread, mid);
 
         // Cooldown phase
         if (phase == Phase::COOLDOWN) {
-            if (now_ms - m_cooldown_start >= GFE_COOLDOWN_MS)
+            if (now_ms - m_cooldown_start >= eff_cooldown)
                 phase = Phase::IDLE;
             else return;
         }
@@ -155,21 +180,21 @@ struct GoldFlowEngine {
         }
 
         // ── FIX (claim 3): Block ALL signal accumulation until ATR is warmed up ──
-        // Persistence windows would otherwise fill during the 100-tick ATR warmup,
-        // then fire a trade on the very first tick ATR becomes valid.
-        // ATR must be ready before any flow signal can build.
         if (m_atr_warmup_ticks < GFE_ATR_PERIOD) return;
 
         // ── FIX (claim 4): Update persistence BEFORE spread gate ──────────────
-        // OLD: spread gate returned before update_persistence(), so spread spikes
-        // froze the window — valid signal survived through volatility bursts.
-        // NEW: persistence updates every tick regardless of spread.
-        // Spread gate only blocks entry execution, not signal accumulation.
-        // Wide-spread ticks correctly contribute neutral/directional imbalance to window.
         update_persistence(l2_imb, now_ms);
 
-        // Spread gate — blocks entry but not persistence building
-        if (spread > GFE_MAX_SPREAD) return;
+        // Spread gate — session-aware: tighter during Asia/dead zone
+        if (spread > eff_max_spread) return;
+
+        // ── Asia/dead-zone ATR quality gate ──────────────────────────────────
+        // On low-quality tape, reject if ATR is too low (noise-dominated) or
+        // ATR-to-spread ratio is too small (SL within spread fluctuation range).
+        if (is_low_quality_session) {
+            if (m_atr < GFE_ASIA_ATR_MIN) return;  // tape too dead
+            if (spread > 0.0 && m_atr / spread < GFE_ASIA_ATR_SPREAD_RATIO) return;  // SL within noise
+        }
 
         // ── L2 availability detection ─────────────────────────────────────────
         // BlackBull FIX feed sends no tag-271 size data → imbalance() always 0.500.
@@ -180,13 +205,17 @@ struct GoldFlowEngine {
         // This is still a real confirmation signal — just price-based not book-based.
         const bool l2_data_live = (std::fabs(l2_imb - 0.5) > 0.001);
 
+        // Session-aware persistence thresholds: Asia requires 90% dominance, normal 75%
+        const int eff_fast_thresh = is_low_quality_session ? GFE_ASIA_FAST_DIR_THRESHOLD : GFE_FAST_DIR_THRESHOLD;
+        const int eff_slow_thresh = is_low_quality_session ? GFE_ASIA_SLOW_DIR_THRESHOLD : GFE_SLOW_DIR_THRESHOLD;
+
         bool fast_long, fast_short, slow_long, slow_short;
         if (l2_data_live) {
             // Normal path: rolling window imbalance persistence
-            fast_long  = (m_fast_long_count  >= GFE_FAST_DIR_THRESHOLD);
-            fast_short = (m_fast_short_count >= GFE_FAST_DIR_THRESHOLD);
-            slow_long  = (m_slow_long_count  >= GFE_SLOW_DIR_THRESHOLD);
-            slow_short = (m_slow_short_count >= GFE_SLOW_DIR_THRESHOLD);
+            fast_long  = (m_fast_long_count  >= eff_fast_thresh);
+            fast_short = (m_fast_short_count >= eff_fast_thresh);
+            slow_long  = (m_slow_long_count  >= eff_slow_thresh);
+            slow_short = (m_slow_short_count >= eff_slow_thresh);
         } else {
             // Fallback path: L2 unavailable — use drift persistence counter
             // Update drift persistence window
@@ -219,32 +248,38 @@ struct GoldFlowEngine {
         // A window of 23 long + 7 short ticks passed even though 30% was opposing.
         // NEW: require the opposing direction count is < 25% of the window.
         // This ensures the window is genuinely one-directional, not mixed.
-        // dominance_threshold = 25% of fast window = 7 ticks. Short count must be < 7.
+        // dominance_threshold: normal = 25% opposing allowed (7/30), Asia = max 2 opposing
         static constexpr int GFE_DOMINANCE_MAX_OPPOSING = GFE_FAST_TICKS / 4; // 7/30
-        if (fast_long  && m_fast_short_count >= GFE_DOMINANCE_MAX_OPPOSING) {
+        const int eff_dominance_max = is_low_quality_session ? GFE_ASIA_DOMINANCE_MAX_OPPOSING : GFE_DOMINANCE_MAX_OPPOSING;
+        if (fast_long  && m_fast_short_count >= eff_dominance_max) {
             phase = Phase::IDLE; return;  // too much opposing pressure — not clean flow
         }
-        if (fast_short && m_fast_long_count  >= GFE_DOMINANCE_MAX_OPPOSING) {
+        if (fast_short && m_fast_long_count  >= eff_dominance_max) {
             phase = Phase::IDLE; return;
         }
 
         // Momentum: mid vs GFE_MOMENTUM_TICKS ticks ago (12 ticks = ~120-240ms London)
         const double momentum = mid_momentum();
 
-        // Drift threshold: when L2 available use minimal filter (just non-zero).
-        // When L2 unavailable (fallback mode), require stronger drift to compensate
-        // for the weaker persistence confirmation (drift-only vs book pressure).
-        const double drift_threshold = l2_data_live ? GFE_DRIFT_MIN : GFE_DRIFT_FALLBACK_THRESHOLD;
+        // Drift threshold: session-aware + L2-availability-aware.
+        // Normal session: L2 available = just non-zero, L2 unavailable = $0.30 fallback.
+        // Asia/dead zone: always at least $0.50 drift required — micro-oscillations don't count.
+        double drift_threshold = l2_data_live ? GFE_DRIFT_MIN : GFE_DRIFT_FALLBACK_THRESHOLD;
+        if (is_low_quality_session) drift_threshold = std::max(drift_threshold, GFE_ASIA_DRIFT_MIN);
+
+        // Momentum floor: Asia requires $0.30+ price movement (vs any non-zero normally).
+        // Prevents entries on sub-$0.10 momentum ticks that dominate choppy overnight tape.
+        const double momentum_floor = is_low_quality_session ? GFE_ASIA_MOMENTUM_MIN : 0.0;
 
         const bool long_signal  = fast_long
                                   && slow_long
                                   && ewm_drift > drift_threshold
-                                  && momentum > 0.0;
+                                  && momentum > momentum_floor;
 
         const bool short_signal = fast_short
                                   && slow_short
                                   && ewm_drift < -drift_threshold
-                                  && momentum < 0.0;
+                                  && momentum < -momentum_floor;
 
         if (!long_signal && !short_signal) return;
 
@@ -336,6 +371,7 @@ private:
     int64_t m_cooldown_start   = 0;
     int     m_trade_id         = 0;
     double  m_spread_at_entry  = 0.0;
+    int     m_last_session_slot = -1;
 
     void update_atr(double spread, double mid) noexcept {
         // ATR: EWM-smoothed tick-to-tick range
@@ -463,7 +499,8 @@ private:
                   << " sl_pts=" << sl_pts
                   << " (atr=" << m_atr << " spread_floor=" << min_sl << ")"
                   << " size=" << size
-                  << " spread=" << spread << "\n";
+                  << " spread=" << spread
+                  << " session=" << m_last_session_slot << "\n";
         std::cout.flush();
     }
 
