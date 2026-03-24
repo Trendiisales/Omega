@@ -59,6 +59,12 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "CrossAssetEngines.hpp" // Co-location speed advantage engines (LeadLag, SpreadDisloc, EventComp)
 #include "CTraderDepthClient.hpp" // cTrader Open API v2 — full order book depth feed
 
+// ── Adaptive intelligence layer (gap-close vs best systems) ──────────────────
+#include "OmegaAdaptiveRisk.hpp"   // Kelly sizing, rolling Sharpe, DD throttle, corr heat
+#include "OmegaNewsBlackout.hpp"   // Economic calendar blackout (NFP, FOMC, CPI, EIA)
+#include "OmegaPartialExit.hpp"    // Split TP — close 50% at 1R, trail remainder
+#include "OmegaRegimeAdaptor.hpp"  // Regime-adaptive engine weights + vol regime
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Singleton
 // ─────────────────────────────────────────────────────────────────────────────
@@ -354,6 +360,12 @@ static const int64_t       g_start_time = static_cast<int64_t>(std::time(nullptr
 static OmegaTelemetryWriter      g_telemetry;
 omega::OmegaTradeLedger          g_omegaLedger;      // extern in TelemetryServer.cpp
 static omega::MacroRegimeDetector g_macroDetector;
+
+// ── Adaptive intelligence layer ───────────────────────────────────────────────
+static omega::risk::AdaptiveRiskManager   g_adaptive_risk;   // Kelly, Sharpe, DD throttle, corr heat
+static omega::news::NewsBlackout          g_news_blackout;   // NFP/FOMC/CPI/EIA/ECB event blackouts
+static omega::partial::PartialExitManager g_partial_exit;    // split TP: 50% at 1R, trail remainder
+static omega::regime::RegimeAdaptor       g_regime_adaptor;  // regime-adaptive engine weights + vol
 
 // CRTP breakout engines -- typed per symbol (instrument-specific params + regime gating)
 // ── Per-symbol config manager — loaded from symbols.ini at startup ────────────
@@ -2810,6 +2822,19 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_eng_usdjpy.ACCOUNT_EQUITY = eq;
         g_eng_brent.ACCOUNT_EQUITY  = eq;
     }
+
+    // ── Feed closed trade into adaptive risk tracker ──────────────────────────
+    // hold_sec: time position was open (entryTs/exitTs are unix seconds)
+    {
+        const double hold_sec = static_cast<double>(
+            tr.exitTs > tr.entryTs ? tr.exitTs - tr.entryTs : 1);
+        g_adaptive_risk.record_trade(tr.symbol, tr.net_pnl, hold_sec);
+    }
+
+    // ── Reset partial exit state when broker closes position ─────────────────
+    // CRTP engine positions are closed by broker SL/TP — partial exit must be
+    // reset here so the next entry can re-arm cleanly.
+    g_partial_exit.reset(tr.symbol);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2915,6 +2940,62 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.sp_open    = g_eng_sp.pos.active;
     g_macro_ctx.nq_open    = g_eng_nq.pos.active;
     g_macro_ctx.oil_open   = g_eng_cl.pos.active;
+
+    // ── Feed adaptive intelligence layer ─────────────────────────────────────
+    // Regime adaptor: track macro regime changes + per-symbol vol regime
+    g_regime_adaptor.update(regime, g_macroDetector.vixLevel(), nowSec());
+    // Vol update: use half-spread as proxy for tick vol (avoids needing prev_mid)
+    g_regime_adaptor.update_vol(sym, (ask - bid) * 0.5, nowSec());
+    g_adaptive_risk.update_vol(sym, (ask - bid) * 0.5);
+
+    // Correlation cluster counts — updated every tick for heat guard
+    // Count open positions per cluster for CorrelationHeatGuard
+    {
+        const int us_eq = static_cast<int>(g_eng_sp.pos.active)
+                        + static_cast<int>(g_eng_nq.pos.active)
+                        + static_cast<int>(g_eng_us30.pos.active)
+                        + static_cast<int>(g_eng_nas100.pos.active)
+                        + static_cast<int>(g_bracket_sp.pos.active)
+                        + static_cast<int>(g_bracket_nq.pos.active)
+                        + static_cast<int>(g_bracket_us30.pos.active)
+                        + static_cast<int>(g_bracket_nas100.pos.active)
+                        + static_cast<int>(g_ca_esnq.has_open_position())
+                        + static_cast<int>(g_vwap_rev_sp.has_open_position())
+                        + static_cast<int>(g_vwap_rev_nq.has_open_position())
+                        + static_cast<int>(g_orb_us.has_open_position());
+        const int eu_eq = static_cast<int>(g_eng_ger30.pos.active)
+                        + static_cast<int>(g_eng_uk100.pos.active)
+                        + static_cast<int>(g_eng_estx50.pos.active)
+                        + static_cast<int>(g_bracket_ger30.pos.active)
+                        + static_cast<int>(g_bracket_uk100.pos.active)
+                        + static_cast<int>(g_bracket_estx50.pos.active)
+                        + static_cast<int>(g_vwap_rev_ger40.has_open_position())
+                        + static_cast<int>(g_orb_ger30.has_open_position())
+                        + static_cast<int>(g_orb_uk100.has_open_position())
+                        + static_cast<int>(g_orb_estx50.has_open_position());
+        const int oil   = static_cast<int>(g_eng_cl.pos.active)
+                        + static_cast<int>(g_eng_brent.pos.active)
+                        + static_cast<int>(g_bracket_brent.pos.active)
+                        + static_cast<int>(g_ca_eia_fade.has_open_position())
+                        + static_cast<int>(g_ca_brent_wti.has_open_position());
+        const int metals = static_cast<int>(g_gold_stack.has_open_position())
+                         + static_cast<int>(g_bracket_gold.pos.active)
+                         + static_cast<int>(g_gold_flow.has_open_position())
+                         + static_cast<int>(g_eng_xag.pos.active)
+                         + static_cast<int>(g_bracket_xag.pos.active)
+                         + static_cast<int>(g_orb_silver.has_open_position());
+        const int jpy   = static_cast<int>(g_eng_usdjpy.pos.active)
+                        + static_cast<int>(g_eng_audusd.pos.active)
+                        + static_cast<int>(g_eng_nzdusd.pos.active)
+                        + static_cast<int>(g_ca_carry_unwind.has_open_position());
+        const int eur_gbp = static_cast<int>(g_eng_eurusd.pos.active)
+                          + static_cast<int>(g_eng_gbpusd.pos.active)
+                          + static_cast<int>(g_bracket_eurusd.pos.active)
+                          + static_cast<int>(g_bracket_gbpusd.pos.active)
+                          + static_cast<int>(g_vwap_rev_eurusd.has_open_position())
+                          + static_cast<int>(g_ca_fx_cascade.has_open_gbpusd());
+        g_adaptive_risk.update_cluster_counts(us_eq, eu_eq, oil, metals, jpy, eur_gbp);
+    }
 
     // Session slot — updated every tick
     {
@@ -3158,6 +3239,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 ++g_gov_pos;
                 return false;
             }
+            // ── News blackout gate ────────────────────────────────────────────
+            if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
+            // ── Regime block gate ─────────────────────────────────────────────
+            // Only blocks in LIVE mode — shadow needs all trades for data collection
+            if (g_cfg.mode != "SHADOW" && g_regime_adaptor.equity_blocked(symbol)) return false;
+            // ── Correlation heat gate ─────────────────────────────────────────
+            if (g_cfg.mode != "SHADOW" && !g_adaptive_risk.corr_heat_ok(symbol)) return false;
             return !symbol_risk_blocked(symbol);
         }
         // Legacy global portfolio mode.
@@ -3214,7 +3302,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_gold_flow.has_open_position());  // gold flow positions count toward global cap
         const bool pos_budget_ok = open_positions < g_cfg.max_open_positions;
         if (!pos_budget_ok) ++g_gov_pos;
-        return pos_budget_ok;
+        if (!pos_budget_ok) return false;
+        // ── News blackout gate ────────────────────────────────────────────────
+        if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
+        // ── Regime block gate ─────────────────────────────────────────────────
+        if (g_cfg.mode != "SHADOW" && g_regime_adaptor.equity_blocked(symbol)) return false;
+        // ── Correlation heat gate ─────────────────────────────────────────────
+        if (g_cfg.mode != "SHADOW" && !g_adaptive_risk.corr_heat_ok(symbol)) return false;
+        return true;
     };
 
     // on_close — called by BreakoutEngine (CRTP) when a position closes.
@@ -3418,7 +3513,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double sl_abs   = sig.entry * eng.SL_PCT / 100.0;
         // Compute lot_size but do NOT write back to eng.ENTRY_SIZE yet.
         // eng.ENTRY_SIZE must only be updated if the trade actually executes.
-        const double lot_size = compute_size(sym, sl_abs, ask - bid, eng.ENTRY_SIZE);
+        const double lot_size_base = compute_size(sym, sl_abs, ask - bid, eng.ENTRY_SIZE);
+        // ── Adaptive risk adjustment: Kelly + DD throttle + vol regime ────────
+        // Pull current daily loss for this symbol from SymbolRiskState
+        double sym_daily_loss = 0.0;
+        int    sym_consec     = 0;
+        {
+            std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+            auto it = g_sym_risk.find(sym);
+            if (it != g_sym_risk.end()) {
+                sym_daily_loss = std::max(0.0, -it->second.daily_pnl); // positive = loss
+                sym_consec     = it->second.consec_losses;
+            }
+        }
+        const double lot_size = g_adaptive_risk.adjusted_lot(
+            sym, lot_size_base, sym_daily_loss, g_cfg.daily_loss_limit, sym_consec);
 
         omega::TradeCandidate cand = omega::build_candidate(
             omega::EdgeResult{
@@ -3518,6 +3627,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                   << " size=" << lot_size << " score=" << best.score
                   << " sup_regime=" << omega::regime_name(sdec.regime)
                   << " regime=" << regime << "\033[0m\n";
+        // ── Arm partial exit (split TP: 50% at 1R, trail remainder) ──────────
+        g_partial_exit.arm(sym, sig.is_long, sig.entry, sig.tp, sig.sl, lot_size,
+                           g_adaptive_risk.vol_scaler.atr_fast(sym));
         send_live_order(sym, sig.is_long, lot_size, sig.entry);
         g_cycle_candidates.clear();
     };
@@ -3712,6 +3824,52 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         return true;
     };
+
+    // ── Partial exit tick check ───────────────────────────────────────────────
+    // Runs every tick for every symbol. No-op when no partial state is active.
+    // When TP1 is hit: sends a market close for the first half and moves SL to BE.
+    // When TP2/trailing SL is hit: sends final close for the remainder.
+    // Only fires in LIVE mode — in SHADOW the broker manages SL/TP server-side
+    // (no soft management needed). Partial exit is informational in SHADOW.
+    if (g_partial_exit.active(sym)) {
+        double pe_price = 0.0, pe_lot = 0.0;
+        using PE = omega::partial::CloseAction;
+        const PE act = g_partial_exit.tick(sym, mid, bid, ask, pe_price, pe_lot);
+        if (act == PE::PARTIAL || act == PE::FULL) {
+            // Determine close direction (opposite of entry)
+            // We need to know whether the open position is long or short.
+            // Use the CRTP engine state for named symbols; fall back to partial state.
+            const bool close_is_long = [&]() -> bool {
+                if (sym == "US500.F") return !g_eng_sp.pos.is_long;
+                if (sym == "USTEC.F") return !g_eng_nq.pos.is_long;
+                if (sym == "USOIL.F") return !g_eng_cl.pos.is_long;
+                if (sym == "DJ30.F")  return !g_eng_us30.pos.is_long;
+                if (sym == "NAS100")  return !g_eng_nas100.pos.is_long;
+                if (sym == "GER40")   return !g_eng_ger30.pos.is_long;
+                if (sym == "UK100")   return !g_eng_uk100.pos.is_long;
+                if (sym == "ESTX50")  return !g_eng_estx50.pos.is_long;
+                if (sym == "XAGUSD")  return !g_eng_xag.pos.is_long;
+                if (sym == "EURUSD")  return !g_eng_eurusd.pos.is_long;
+                if (sym == "GBPUSD")  return !g_eng_gbpusd.pos.is_long;
+                if (sym == "AUDUSD")  return !g_eng_audusd.pos.is_long;
+                if (sym == "NZDUSD")  return !g_eng_nzdusd.pos.is_long;
+                if (sym == "USDJPY")  return !g_eng_usdjpy.pos.is_long;
+                if (sym == "BRENT")   return !g_eng_brent.pos.is_long;
+                return false; // fallback
+            }();
+            if (g_cfg.mode == "LIVE") {
+                // Send partial/final close order
+                send_live_order(sym, close_is_long, pe_lot, pe_price);
+                std::printf("[PARTIAL-EXIT] %s %s close %.2f lots @ %.5f\n",
+                            sym.c_str(),
+                            act == PE::PARTIAL ? "PARTIAL" : "FINAL",
+                            pe_lot, pe_price);
+            }
+            if (act == PE::FULL) {
+                g_partial_exit.reset(sym);
+            }
+        }
+    }
 
     // ── Routing — every symbol goes through supervisor ────────────────────────
     if (sym == "US500.F") {
@@ -4285,7 +4443,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                 0.40 + gold_sdec.confidence * 0.85));
                     const double base_lot  = compute_size("GOLD.F", gold_sl_abs, ask - bid,
                                                           gsig.size > 0.0 ? gsig.size : 0.02);
-                    const double gold_lot  = std::max(0.01, base_lot * conf_mult);
+                    // ── Regime weight: boost gold in RISK_OFF, reduce in RISK_ON ──
+                    const float regime_wt  = g_regime_adaptor.weight(
+                        omega::regime::EngineClass::GOLD_STACK);
+                    // ── Adaptive risk: DD throttle + Kelly on gold ─────────────
+                    double gold_daily_loss = 0.0; int gold_consec = 0;
+                    {
+                        std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+                        auto it = g_sym_risk.find("GOLD.F");
+                        if (it != g_sym_risk.end()) {
+                            gold_daily_loss = std::max(0.0, -it->second.daily_pnl);
+                            gold_consec     = it->second.consec_losses;
+                        }
+                    }
+                    const double gold_adaptive = g_adaptive_risk.adjusted_lot(
+                        "GOLD.F", base_lot * conf_mult * static_cast<double>(regime_wt),
+                        gold_daily_loss, g_cfg.daily_loss_limit, gold_consec);
+                    const double gold_lot  = std::max(0.01, gold_adaptive);
                     g_gold_stack.patch_position_size(gold_lot);
                     std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
                               << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
@@ -4296,6 +4470,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                               << " size="  << gold_lot
                               << " conf="  << gsig.confidence
                               << " conf_mult=" << conf_mult
+                              << " regime_wt=" << regime_wt
                               << " vol_ratio=" << gold_vol_ratio
                               << " eng="   << gsig.engine
                               << " sup_regime=" << omega::regime_name(gold_sdec.regime)
@@ -4307,6 +4482,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         if (!ExecutionCostGuard::is_viable("GOLD.F", ask - bid, gold_tp_dist, gold_lot)) {
                             g_telemetry.IncrCostBlocked();
                         } else {
+                            // Arm partial exit for gold stack entries
+                            g_partial_exit.arm("GOLD.F", gsig.is_long, gsig.entry,
+                                               gsig.entry + (gsig.is_long ? 1.0 : -1.0) * gold_tp_dist,
+                                               gsig.entry - (gsig.is_long ? 1.0 : -1.0) * gold_sl_abs,
+                                               gold_lot,
+                                               g_adaptive_risk.vol_scaler.atr_fast("GOLD.F"));
                             send_live_order("GOLD.F", gsig.is_long, gold_lot, gsig.entry);
                         }
                     }
@@ -6027,6 +6208,57 @@ int main(int argc, char* argv[])
     // LatencyEdgeStack config — applies all [latency_edge] ini values.
     // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
     g_le_stack.configure(g_cfg.le_cfg);
+
+    // ── Adaptive intelligence layer startup ───────────────────────────────────
+    {
+        const int64_t now_s = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+
+        // Print this week's news blackout schedule
+        g_news_blackout.print_schedule(now_s);
+
+        // Configure news blackout scheduler from config flags (defaults are fine, shown for clarity)
+        g_news_blackout.scheduler.block_nfp   = true;
+        g_news_blackout.scheduler.block_fomc  = true;
+        g_news_blackout.scheduler.block_cpi   = true;
+        g_news_blackout.scheduler.block_eia   = true;
+        g_news_blackout.scheduler.block_cb    = true;
+
+        // Adaptive risk: start with Kelly disabled for first 15 trades per symbol
+        // (confidence ramps from 0→1 automatically as trades accumulate)
+        g_adaptive_risk.kelly_enabled         = true;
+        g_adaptive_risk.dd_throttle_enabled   = true;
+        g_adaptive_risk.corr_heat_enabled     = true;
+        g_adaptive_risk.vol_regime_enabled    = true;
+
+        // Correlation cluster limits — 2 is the safe default for all clusters
+        g_adaptive_risk.corr_heat.max_per_cluster_us_equity = 2;
+        g_adaptive_risk.corr_heat.max_per_cluster_eu_equity = 2;
+        g_adaptive_risk.corr_heat.max_per_cluster_oil       = 1;  // never both OIL+BRENT open
+        g_adaptive_risk.corr_heat.max_per_cluster_metals    = 2;
+        g_adaptive_risk.corr_heat.max_per_cluster_jpy_risk  = 2;
+        g_adaptive_risk.corr_heat.max_per_cluster_eur_gbp   = 1;  // EURUSD or GBPUSD, not both
+
+        // Regime adaptor is enabled; in SHADOW mode it is informational only
+        g_regime_adaptor.enabled = true;
+
+        std::cout << "[ADAPTIVE] Kelly=" << (g_adaptive_risk.kelly_enabled ? "ON" : "OFF")
+                  << "  DDthrottle=" << (g_adaptive_risk.dd_throttle_enabled ? "ON" : "OFF")
+                  << "  CorrHeat=" << (g_adaptive_risk.corr_heat_enabled ? "ON" : "OFF")
+                  << "  VolRegime=" << (g_adaptive_risk.vol_regime_enabled ? "ON" : "OFF")
+                  << "  NewsBlackout=" << (g_news_blackout.enabled ? "ON" : "OFF")
+                  << "  PartialExit=" << (g_partial_exit.enabled ? "ON" : "OFF")
+                  << "  RegimeAdaptor=" << (g_regime_adaptor.enabled ? "ON" : "OFF") << "\n";
+
+        std::cout << "[ADAPTIVE] Corr cluster limits:"
+                  << " US_EQ=" << g_adaptive_risk.corr_heat.max_per_cluster_us_equity
+                  << " EU_EQ=" << g_adaptive_risk.corr_heat.max_per_cluster_eu_equity
+                  << " OIL="   << g_adaptive_risk.corr_heat.max_per_cluster_oil
+                  << " METALS=" << g_adaptive_risk.corr_heat.max_per_cluster_metals
+                  << " JPY="   << g_adaptive_risk.corr_heat.max_per_cluster_jpy_risk
+                  << " EUR_GBP=" << g_adaptive_risk.corr_heat.max_per_cluster_eur_gbp << "\n";
+    }
 
     // ── Startup parameter validation — logged on every start ─────────────────
     // This block documents the exact live values every engine will use.
