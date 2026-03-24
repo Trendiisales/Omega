@@ -241,7 +241,7 @@ private:
     std::vector<uint8_t> recv_buf_;
 
     void loop() {
-        sleep_ms(8000);
+        sleep_ms(30000);  // wait for FIX quote+trade sessions to fully connect first
         int backoff = 5000;
         while (running.load()) {
             depth_active.store(false);
@@ -389,7 +389,6 @@ private:
             int rc=read_one(ssl,pt,payload,500);
             if (rc<0) { std::cerr<<"[CTRADER] Lost connection waiting for pt="<<expected<<"\n"; return false; }
             if (rc==0) continue;
-            std::cout<<"[CTRADER-RECV] pt="<<pt<<" payload_len="<<payload.size()<<"\n";
             if (pt==expected) { pt_out=pt; payload_out=payload; return true; }
             if (pt==51)   { send_msg(ssl,PB::heartbeat()); continue; }
             if (pt==2142) { const auto ef=PB::parse(payload); std::cerr<<"[CTRADER] Error: "<<PB::get_string(ef,2)<<" — "<<PB::get_string(ef,3)<<"\n"; return false; }
