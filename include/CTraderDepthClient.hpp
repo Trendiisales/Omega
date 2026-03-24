@@ -222,6 +222,11 @@ public:
     std::atomic<bool>     running{false};
     std::atomic<bool>     depth_active{false};
     std::atomic<uint64_t> depth_events_total{0};
+    // Timestamp (ms since epoch) of most recent depth event — used to detect
+    // a silent feed stall: connection alive but broker stopped sending quotes.
+    // Common during thin Asian session. Checked by main loop: if age > 30s,
+    // l2_active is set to 0 and the L2 badge goes grey even if TCP is up.
+    std::atomic<int64_t>  last_depth_event_ms{0};
 
     bool configured() const { return !client_id.empty() && !access_token.empty() && ctid_account_id > 0; }
 
@@ -351,7 +356,10 @@ private:
             std::lock_guard<std::mutex> lk(*l2_mtx);
             (*l2_books)[name] = rebuilt;
         }
-    }
+        // Stamp time of last real depth event for stale detection in main loop
+        last_depth_event_ms.store(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
 
     bool send_msg(SSL* ssl, const std::vector<uint8_t>& msg) {
         if (!ssl||msg.empty()) return false;

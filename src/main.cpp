@@ -3016,7 +3016,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.eur_l2_imbalance, g_macro_ctx.gbp_l2_imbalance,
         g_macro_ctx.aud_l2_imbalance, g_macro_ctx.nzd_l2_imbalance,
         g_macro_ctx.jpy_l2_imbalance,
-        g_ctrader_depth.depth_active.load() ? 1 : 0);
+        [&]() -> int {
+            // L2 active: TCP connected AND depth events received within last 30s.
+            // Without the age check, a silent feed stall (connection alive, broker
+            // stopped sending quotes — common in thin Asian session) shows the badge
+            // green while all imbalance values are frozen stale data.
+            if (!g_ctrader_depth.depth_active.load()) return 0;
+            const int64_t last_ev = g_ctrader_depth.last_depth_event_ms.load();
+            if (last_ev == 0) return 0;  // connected but no events yet
+            const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            return ((now_ms - last_ev) < 30000) ? 1 : 0;  // stale after 30s
+        }());
 
     const bool tradeable = session_tradeable();
     g_telemetry.UpdateSession(tradeable ? "ACTIVE" : "CLOSED", tradeable ? 1 : 0);
@@ -3398,7 +3409,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                       << " sl=" << eng.pos.pyramid_sl
                       << " size=" << pyr_lot << "\033[0m\n";
             std::cout.flush();
-            send_live_order(sym, eng.pos.is_long, pyr_lot, eng.pos.pyramid_entry);
+            if (cost_ok(sym.c_str(), pyr_sl_abs, pyr_lot))
+                send_live_order(sym, eng.pos.is_long, pyr_lot, eng.pos.pyramid_entry);
         }
 
         if (!sig.valid) return;
@@ -3680,6 +3692,27 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     };
 
+    // ── cost_ok() — mandatory gate for ALL direct send_live_order calls ───────
+    // Every engine signal that bypasses dispatch()/dispatch_bracket() must call
+    // this before executing. Blocks the trade and increments the cost counter
+    // if spread + commission + slippage exceeds expected gross × EDGE_MULTIPLIER.
+    // Params: symbol, sl_abs (SL distance in price points), lot.
+    // Uses the same ExecutionCostGuard that dispatch() and dispatch_bracket() use,
+    // with RR=1.5 as the TP estimate (conservative: actual RR is often 2.0+).
+    auto cost_ok = [&](const char* csym, double sl_abs, double lot) -> bool {
+        const double tp_dist = sl_abs * 1.5;  // conservative TP estimate at 1.5R
+        if (!ExecutionCostGuard::is_viable(csym, ask - bid, tp_dist, lot)) {
+            g_telemetry.IncrCostBlocked();
+            std::cout << "[COST-BLOCKED] " << csym
+                      << " spread=" << std::fixed << std::setprecision(5) << (ask - bid)
+                      << " tp_dist=" << tp_dist
+                      << " lot=" << lot << "\n";
+            std::cout.flush();
+            return false;
+        }
+        return true;
+    };
+
     // ── Routing — every symbol goes through supervisor ────────────────────────
     if (sym == "US500.F") {
         const bool base_can_sp = symbol_gate("US500.F",
@@ -3697,14 +3730,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Cross-asset: ES/NQ divergence + Opening Range
         if (!g_ca_esnq.has_open_position() && base_can_sp) {
             const auto ca_sig = g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, ca_on_close);
-            if (ca_sig.valid) { const double lot = compute_size(sym, std::fabs(ca_sig.entry-ca_sig.sl), ask-bid, 0.01); (void)lot; send_live_order(sym, ca_sig.is_long, lot, ca_sig.entry); }
+            if (ca_sig.valid) { const double lot = compute_size(sym, std::fabs(ca_sig.entry-ca_sig.sl), ask-bid, 0.01); (void)lot; /* ca_sig disabled — lot intentionally unused */ }
         }
         if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {  // ADDED !vwap check
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("US500.F", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
-                send_live_order(sym, orb.is_long, lot, orb.entry);
+                if (cost_ok("US500.F", std::fabs(orb.entry-orb.sl), lot))
+                    send_live_order(sym, orb.is_long, lot, orb.entry);
             }
         }
         // VWAP Reversion: enter when price reverses back toward daily VWAP after over-extension.
@@ -3725,7 +3759,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (vr.valid) {
                     const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
                     g_telemetry.UpdateLastSignal("US500.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
-                    send_live_order(sym, vr.is_long, lot, vr.entry);
+                    if (cost_ok("US500.F", std::fabs(vr.entry-vr.sl), lot))
+                        send_live_order(sym, vr.is_long, lot, vr.entry);
                 }
             }
         }
@@ -3760,7 +3795,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (vr.valid) {
                     const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
                     g_telemetry.UpdateLastSignal("USTEC.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
-                    send_live_order(sym, vr.is_long, lot, vr.entry);
+                    if (cost_ok("USTEC.F", std::fabs(vr.entry-vr.sl), lot))
+                        send_live_order(sym, vr.is_long, lot, vr.entry);
                 }
             }
         }
@@ -3785,7 +3821,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // EIA fade engine — only when BrentWTI not already open
             if (!g_ca_eia_fade.has_open_position() && !g_ca_brent_wti.has_open_position() && base_can) {  // ADDED !brent check
                 const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close);
-                if (ef.valid) { const double lot = compute_size(sym, std::fabs(ef.entry-ef.sl), ask-bid, 0.01); send_live_order(sym, ef.is_long, lot, ef.entry); }
+                if (ef.valid) { const double lot = compute_size(sym, std::fabs(ef.entry-ef.sl), ask-bid, 0.01); if (cost_ok(sym.c_str(), std::fabs(ef.entry-ef.sl), lot)) send_live_order(sym, ef.is_long, lot, ef.entry); }
             }
             // Brent/WTI spread engine — only when EIA not already open
             if (!g_ca_brent_wti.has_open_position() && !g_ca_eia_fade.has_open_position() && base_can) {  // ADDED !eia check
@@ -3796,7 +3832,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double brent_mid = (brent_b > 0 && brent_a > 0) ? (brent_b+brent_a)*0.5 : 0.0;
                 if (brent_mid > 0) {
                     const auto bw = g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid, ca_on_close);
-                    if (bw.valid) { const double lot = compute_size(sym, std::fabs(bw.entry-bw.sl), ask-bid, 0.01); send_live_order(sym, bw.is_long, lot, bw.entry); }
+                    if (bw.valid) { const double lot = compute_size(sym, std::fabs(bw.entry-bw.sl), ask-bid, 0.01); if (cost_ok(sym.c_str(), std::fabs(bw.entry-bw.sl), lot)) send_live_order(sym, bw.is_long, lot, bw.entry); }
                 }
             }
         }
@@ -3831,7 +3867,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (orb.valid) {
                 const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("GER40", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
-                send_live_order(sym, orb.is_long, lot, orb.entry);
+                if (cost_ok("GER40", std::fabs(orb.entry-orb.sl), lot))
+                    send_live_order(sym, orb.is_long, lot, orb.entry);
             }
         }
         // VWAP Reversion: GER40 over-extension from Xetra ORB range midpoint
@@ -3843,7 +3880,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (vr.valid) {
                     const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
                     g_telemetry.UpdateLastSignal("GER40", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
-                    send_live_order(sym, vr.is_long, lot, vr.entry);
+                    if (cost_ok("GER40", std::fabs(vr.entry-vr.sl), lot))
+                        send_live_order(sym, vr.is_long, lot, vr.entry);
                 }
             }
         }
@@ -3854,7 +3892,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (tp_sig.valid) {
                 const double lot = compute_size(sym, std::fabs(tp_sig.entry-tp_sig.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("GER40", tp_sig.is_long?"LONG":"SHORT", tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB");
-                send_live_order(sym, tp_sig.is_long, lot, tp_sig.entry);
+                if (cost_ok("GER40", std::fabs(tp_sig.entry-tp_sig.sl), lot))
+                    send_live_order(sym, tp_sig.is_long, lot, tp_sig.entry);
             }
         }
     }
@@ -3873,7 +3912,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (orb.valid) {
                 const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("UK100", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
-                send_live_order(sym, orb.is_long, lot, orb.entry);
+                if (cost_ok("UK100", std::fabs(orb.entry-orb.sl), lot))
+                    send_live_order(sym, orb.is_long, lot, orb.entry);
             }
         }
     }
@@ -3892,7 +3932,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (orb.valid) {
                 const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("ESTX50", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
-                send_live_order(sym, orb.is_long, lot, orb.entry);
+                if (cost_ok("ESTX50", std::fabs(orb.entry-orb.sl), lot))
+                    send_live_order(sym, orb.is_long, lot, orb.entry);
             }
         }
     }
@@ -3913,7 +3954,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Silver COMEX opening range 13:30 UTC
         if (!g_orb_silver.has_open_position() && base_can) {
             const auto orb = g_orb_silver.on_tick(sym, bid, ask, ca_on_close);
-            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
+            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); if (cost_ok("XAGUSD", std::fabs(orb.entry-orb.sl), lot)) send_live_order(sym, orb.is_long, lot, orb.entry); }
         }
         // Lead-lag: not supervisor-gated (intermarket signal, not regime-based)
         // base_can now includes orb_silver and le_stack in xag_any_open above.
@@ -3928,7 +3969,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     std::fabs(ll_sig.entry - ll_sig.sl), ask - bid, ll_sig.size);
                 printf("[LEAD-LAG-SIZE] XAGUSD sl_abs=%.4f spread=%.4f lot=%.4f\n",
                        std::fabs(ll_sig.entry - ll_sig.sl), ask - bid, ll_lot);
-                send_live_order("XAGUSD", ll_sig.is_long, ll_lot, ll_sig.entry);
+                if (cost_ok("XAGUSD", std::fabs(ll_sig.entry - ll_sig.sl), ll_lot))
+                    send_live_order("XAGUSD", ll_sig.is_long, ll_lot, ll_sig.entry);
             }
         }
     }
@@ -3969,7 +4011,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (vr.valid) {
                     const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
                     g_telemetry.UpdateLastSignal("EURUSD", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
-                    send_live_order(sym, vr.is_long, lot, vr.entry);
+                    if (cost_ok("EURUSD", std::fabs(vr.entry-vr.sl), lot))
+                        send_live_order(sym, vr.is_long, lot, vr.entry);
                 }
             }
         }
@@ -4002,7 +4045,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (cas.valid) {
                 const double lot = compute_size("GBPUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("GBPUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE");
-                send_live_order("GBPUSD", cas.is_long, lot, cas.entry);
+                if (cost_ok("GBPUSD", std::fabs(cas.entry-cas.sl), lot))
+                    send_live_order("GBPUSD", cas.is_long, lot, cas.entry);
             }
         }
     }
@@ -4031,7 +4075,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     if (cas.valid) {
                         const double lot = compute_size("AUDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
                         g_telemetry.UpdateLastSignal("AUDUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE");
-                        send_live_order("AUDUSD", cas.is_long, lot, cas.entry);
+                        if (cost_ok("AUDUSD", std::fabs(cas.entry-cas.sl), lot))
+                            send_live_order("AUDUSD", cas.is_long, lot, cas.entry);
                     }
                 }
             }
@@ -4048,7 +4093,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     if (cas.valid) {
                         const double lot = compute_size("NZDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
                         g_telemetry.UpdateLastSignal("NZDUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE");
-                        send_live_order("NZDUSD", cas.is_long, lot, cas.entry);
+                        if (cost_ok("NZDUSD", std::fabs(cas.entry-cas.sl), lot))
+                            send_live_order("NZDUSD", cas.is_long, lot, cas.entry);
                     }
                 }
             }
@@ -4061,7 +4107,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // Carry unwind: VIX spike + JPY bid
                 if (!g_ca_carry_unwind.has_open_position() && bc_jpy) {
                     const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close);
-                    if (cu.valid) { const double lot = compute_size("USDJPY", std::fabs(cu.entry-cu.sl), ask-bid, 0.01); send_live_order("USDJPY", cu.is_long, lot, cu.entry); }
+                    if (cu.valid) { const double lot = compute_size("USDJPY", std::fabs(cu.entry-cu.sl), ask-bid, 0.01); if (cost_ok("USDJPY", std::fabs(cu.entry-cu.sl), lot)) send_live_order("USDJPY", cu.is_long, lot, cu.entry); }
                 }
             }
         }
@@ -4483,7 +4529,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double le_lot    = compute_size("GOLD.F", le_sl_abs, ask - bid, le_sig.size);
                 printf("[LE-SIZE] GOLD.F eng=%s sl_abs=%.2f spread=%.2f lot=%.4f\n",
                        le_sig.engine, le_sl_abs, ask - bid, le_lot);
-                send_live_order("GOLD.F", le_sig.is_long, le_lot, le_sig.entry);
+                if (cost_ok("GOLD.F", le_sl_abs, le_lot))
+                    send_live_order("GOLD.F", le_sig.is_long, le_lot, le_sig.entry);
             }
         }
         // Trend Pullback: EMA9/21/50 — only when no other GOLD.F position is open.
@@ -4502,7 +4549,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
                     "TREND_PB", regime.c_str(), "TREND_PB");
-                send_live_order("GOLD.F", tpb.is_long, lot, tpb.entry);
+                if (cost_ok("GOLD.F", std::fabs(tpb.entry-tpb.sl), lot))
+                    send_live_order("GOLD.F", tpb.is_long, lot, tpb.entry);
             }
         }
     }
@@ -5644,16 +5692,23 @@ int main(int argc, char* argv[])
     // fail_win=8s — FX sweeps resolve quickly (highly liquid, tight spread)
     // vwap_dist=0 everywhere — pre-breakout FX near session VWAP
     //
+    // MIN_RANGE raised across all FX pairs vs original calibration:
+    //   Old EURUSD 0.00035 (3.5 pip) armed on 1-pip Asian tape noise → junk bracket
+    //   New 0.00060 (6 pip): genuine compression; below that is spread-level noise
+    // MIN_STRUCTURE_MS raised 20s→45s: FX needs longer confirmation in thin tape
+    // EDGE_MULTIPLIER raised 1.5→2.0: TP must cover 2× total round-trip cost
+    //
     // EURUSD (~1.156): daily range ~100 pips, compression ~7 pips, spread ~1.4 pip
-    g_bracket_eurusd.configure(0.00007, 30, 2.0,  45000, 0.00035, 0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.00010, 1.5);
+    g_bracket_eurusd.configure(0.00007, 30, 2.0, 45000, 0.00060, 0.05, 4000, 8000, 0.0, 45000, 8000, 20, 0.15, 2.0, 0.00010, 2.0);
     // GBPUSD (~1.330): daily range ~120 pips, compression ~8 pips, spread ~1.8 pip
-    g_bracket_gbpusd.configure(0.00009, 30, 2.0,  45000, 0.00040, 0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.00012, 1.5);
+    g_bracket_gbpusd.configure(0.00009, 30, 2.0, 45000, 0.00070, 0.05, 4000, 8000, 0.0, 45000, 8000, 20, 0.15, 2.0, 0.00012, 2.0);
     // AUDUSD (~0.701): daily range ~80 pips, compression ~5 pips, spread ~1.2 pip
-    g_bracket_audusd.configure(0.00006, 30, 2.0,  45000, 0.00025, 0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.00008, 1.5);
+    g_bracket_audusd.configure(0.00006, 30, 2.0, 45000, 0.00050, 0.05, 4000, 8000, 0.0, 45000, 8000, 20, 0.15, 2.0, 0.00008, 2.0);
     // NZDUSD (~0.583): similar to AUD, slightly wider spread
-    g_bracket_nzdusd.configure(0.00007, 30, 2.0,  45000, 0.00025, 0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.00009, 1.5);
+    g_bracket_nzdusd.configure(0.00007, 30, 2.0, 45000, 0.00050, 0.05, 4000, 8000, 0.0, 45000, 8000, 20, 0.15, 2.0, 0.00009, 2.0);
     // USDJPY (~149.5): daily range ~120 pips, compression ~25 pips, spread ~4 pip
-    g_bracket_usdjpy.configure(0.02,    30, 2.0,  45000, 0.12,    0.05, 4000, 8000, 0.0, 20000, 8000, 20, 0.15, 2.0, 0.04,    1.5);
+    // MIN_RANGE raised 0.12→0.20 (2 pips)
+    g_bracket_usdjpy.configure(0.02,    30, 2.0, 45000, 0.20,    0.05, 4000, 8000, 0.0, 45000, 8000, 20, 0.15, 2.0, 0.04,    2.0);
     g_bracket_usdjpy.MAX_RANGE = 0.60;   // ~0.40% of USDJPY ~150
 
     // Shadow mode + cancel wiring for all new bracket engines
