@@ -317,6 +317,16 @@ public:
 
     using CloseCallback = std::function<void(const TradeRecord&)>;
 
+    // Seed price history with a known price so vol builds from reconnect.
+    // Called after FIX reconnect with the last known mid price.
+    // Fills m_prices with BASELINE_LOOKBACK copies of mid so base_vol_pct
+    // is available on the first tick instead of after 80+ ticks of warmup.
+    void seed(double mid_price) {
+        if (mid_price <= 0.0 || !m_prices.empty()) return;
+        for (int i = 0; i < BASELINE_LOOKBACK; ++i)
+            m_prices.push_back(mid_price);
+    }
+
 private:
     // ── Momentum window (20 ticks) ────────────────────────────────────────────
     std::deque<double> m_momentum_window;   // last 20 mids for momentum gate

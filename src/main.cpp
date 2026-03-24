@@ -249,7 +249,7 @@ struct OmegaConfig {
     int    gbpusd_min_gap_sec          = 40;
     double gbpusd_momentum_thresh_pct  = 0.018;
     double gbpusd_min_breakout_pct     = 0.085;
-    double gbpusd_max_spread_pct       = 0.024;  // 0.0003 @ ~1.27
+    double gbpusd_max_spread_pct       = 0.020;  // 2pip @ ~1.34 — actual spread 1.5-2.5pip
     double gbpusd_compression_threshold = 0.85;
     double max_lot_gbpusd              = 5.00;
     double min_lot_gbpusd              = 0.01;
@@ -2854,6 +2854,27 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
 static void on_tick(const std::string& sym, double bid, double ask) {
     { std::lock_guard<std::mutex> lk(g_book_mtx); g_bids[sym] = bid; g_asks[sym] = ask; }
 
+    // Seed vol history on first tick after reconnect — avoids 80-tick warmup dead zone.
+    // seed() is a no-op if m_prices is already populated.
+    {
+        const double mid = (bid + ask) * 0.5;
+        if      (sym == "US500.F") g_eng_sp.seed(mid);
+        else if (sym == "USTEC.F") g_eng_nq.seed(mid);
+        else if (sym == "USOIL.F") g_eng_cl.seed(mid);
+        else if (sym == "DJ30.F")  g_eng_us30.seed(mid);
+        else if (sym == "NAS100")  g_eng_nas100.seed(mid);
+        else if (sym == "GER40")   g_eng_ger30.seed(mid);
+        else if (sym == "UK100")   g_eng_uk100.seed(mid);
+        else if (sym == "ESTX50")  g_eng_estx50.seed(mid);
+        else if (sym == "XAGUSD")  g_eng_xag.seed(mid);
+        else if (sym == "EURUSD")  g_eng_eurusd.seed(mid);
+        else if (sym == "GBPUSD")  g_eng_gbpusd.seed(mid);
+        else if (sym == "AUDUSD")  g_eng_audusd.seed(mid);
+        else if (sym == "NZDUSD")  g_eng_nzdusd.seed(mid);
+        else if (sym == "USDJPY")  g_eng_usdjpy.seed(mid);
+        else if (sym == "BRENT")   g_eng_brent.seed(mid);
+    }
+
     // Rate-limit tick logging — max 1 line per symbol per 30s to keep logs readable.
     // Previously logged every tick: thousands of lines/minute drowning signal output.
     {
@@ -3457,6 +3478,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             return;
         }
 
+        // Cost guard: block if spread+commission+slippage > expected gross × 1.5
+        {
+            const double tp_dist = std::fabs(sig.tp - sig.entry);
+            if (!ExecutionCostGuard::is_viable(sym.c_str(), ask - bid, tp_dist, lot_size)) {
+                g_telemetry.IncrCostBlocked();
+                g_cycle_candidates.clear();
+                return;
+            }
+        }
+
         // All gates passed — commit sizing and execute.
         // eng.ENTRY_SIZE and telemetry written here only, after all gates cleared.
         eng.ENTRY_SIZE  = lot_size;
@@ -3601,6 +3632,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 std::fabs(bsigs.long_entry - bsigs.long_sl), ask - bid,
                 bracket_eng.ENTRY_SIZE);
             const double lot = is_pyramiding ? (base_lot * PYRAMID_SIZE_MULT) : base_lot;
+            // Cost guard: ensure spread+cost is covered by bracket TP distance
+            {
+                const double tp_dist = std::fabs(bsigs.long_entry - bsigs.long_sl) *
+                    (bracket_eng.RR > 0.0 ? bracket_eng.RR : 1.5);
+                if (!ExecutionCostGuard::is_viable(sym.c_str(), ask - bid, tp_dist, lot)) {
+                    g_telemetry.IncrCostBlocked();
+                    return;
+                }
+            }
 
             // Encode bracket levels + trend state in reason for GUI
             char bracket_reason[80];
@@ -4220,7 +4260,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                               << " sup_regime=" << omega::regime_name(gold_sdec.regime)
                               << " winner=" << gold_sdec.winner
                               << "\033[0m\n";
-                    send_live_order("GOLD.F", gsig.is_long, gold_lot, gsig.entry);
+                    // Cost guard: ensure gold TP covers spread + commission + slippage
+                    {
+                        const double gold_tp_dist = gsig.tp_ticks * 0.10;  // ticks → pts (gold tick = $0.10)
+                        if (!ExecutionCostGuard::is_viable("GOLD.F", ask - bid, gold_tp_dist, gold_lot)) {
+                            g_telemetry.IncrCostBlocked();
+                        } else {
+                            send_live_order("GOLD.F", gsig.is_long, gold_lot, gsig.entry);
+                        }
+                    }
                 }
             }
         }
@@ -4349,38 +4397,44 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_bracket_gold.ENTRY_SIZE);
                 const double bg_lot = gold_is_pyramiding
                     ? (base_bg_lot * PYRAMID_SIZE_MULT) : base_bg_lot;
-                char bg_reason[80];
-                snprintf(bg_reason, sizeof(bg_reason), "HI:%.2f LO:%.2f bias:%d l2:%.2f",
-                         bgsigs.long_entry, bgsigs.short_entry,
-                         gold_trend.bias, g_macro_ctx.gold_l2_imbalance);
-                g_telemetry.UpdateLastSignal("GOLD.F", "BRACKET", bgsigs.long_entry, bg_reason,
-                    omega::regime_name(gold_sdec.regime), regime.c_str(), "BRACKET");
-                std::cout << "\033[1;33m[BRACKET] GOLD.F"
-                          << " sup_regime=" << omega::regime_name(gold_sdec.regime)
-                          << " bracket_score=" << gold_sdec.bracket_score
-                          << " winner=" << gold_sdec.winner
-                          << " bias=" << gold_trend.bias
-                          << " l2=" << std::fixed << std::setprecision(2) << g_macro_ctx.gold_l2_imbalance
-                          << (gold_is_pyramiding ? " PYRAMID" : "")
-                          << "\033[0m\n";
-                // L2-aware sizing: trend-direction leg at full size, counter leg at half
-                std::string long_id, short_id;
-                if (gold_trend.bias != 0) {
-                    const bool long_is_trend = (gold_trend.bias == 1);
-                    long_id  = send_live_order("GOLD.F", true,
-                        long_is_trend  ? bg_lot : (bg_lot * 0.5), bgsigs.long_entry);
-                    short_id = send_live_order("GOLD.F", false,
-                        !long_is_trend ? bg_lot : (bg_lot * 0.5), bgsigs.short_entry);
-                    printf("[BRACKET-L2] GOLD.F bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",
-                           gold_trend.bias, bg_lot, bg_lot * 0.5,
-                           g_macro_ctx.gold_l2_imbalance);
+                // Cost guard: bracket TP dist = SL dist * RR
+                const double bg_tp_dist = std::fabs(bgsigs.long_entry - bgsigs.long_sl) * g_bracket_gold.RR;
+                const bool bg_cost_ok = ExecutionCostGuard::is_viable("GOLD.F", ask - bid, bg_tp_dist, bg_lot);
+                if (!bg_cost_ok) {
+                    g_telemetry.IncrCostBlocked();
                 } else {
-                    long_id  = send_live_order("GOLD.F", true,  bg_lot, bgsigs.long_entry);
-                    short_id = send_live_order("GOLD.F", false, bg_lot, bgsigs.short_entry);
+                    char bg_reason[80];
+                    snprintf(bg_reason, sizeof(bg_reason), "HI:%.2f LO:%.2f bias:%d l2:%.2f",
+                             bgsigs.long_entry, bgsigs.short_entry,
+                             gold_trend.bias, g_macro_ctx.gold_l2_imbalance);
+                    g_telemetry.UpdateLastSignal("GOLD.F", "BRACKET", bgsigs.long_entry, bg_reason,
+                        omega::regime_name(gold_sdec.regime), regime.c_str(), "BRACKET");
+                    std::cout << "\033[1;33m[BRACKET] GOLD.F"
+                              << " sup_regime=" << omega::regime_name(gold_sdec.regime)
+                              << " bracket_score=" << gold_sdec.bracket_score
+                              << " winner=" << gold_sdec.winner
+                              << " bias=" << gold_trend.bias
+                              << " l2=" << std::fixed << std::setprecision(2) << g_macro_ctx.gold_l2_imbalance
+                              << (gold_is_pyramiding ? " PYRAMID" : "")
+                              << "\033[0m\n";
+                    std::string long_id, short_id;
+                    if (gold_trend.bias != 0) {
+                        const bool long_is_trend = (gold_trend.bias == 1);
+                        long_id  = send_live_order("GOLD.F", true,
+                            long_is_trend  ? bg_lot : (bg_lot * 0.5), bgsigs.long_entry);
+                        short_id = send_live_order("GOLD.F", false,
+                            !long_is_trend ? bg_lot : (bg_lot * 0.5), bgsigs.short_entry);
+                        printf("[BRACKET-L2] GOLD.F bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",
+                               gold_trend.bias, bg_lot, bg_lot * 0.5,
+                               g_macro_ctx.gold_l2_imbalance);
+                    } else {
+                        long_id  = send_live_order("GOLD.F", true,  bg_lot, bgsigs.long_entry);
+                        short_id = send_live_order("GOLD.F", false, bg_lot, bgsigs.short_entry);
+                    }
+                    g_bracket_gold.pending_long_clOrdId  = long_id;
+                    g_bracket_gold.pending_short_clOrdId = short_id;
+                    ++g_bracket_gold_trades_this_minute;
                 }
-                g_bracket_gold.pending_long_clOrdId  = long_id;
-                g_bracket_gold.pending_short_clOrdId = short_id;
-                ++g_bracket_gold_trades_this_minute;
             }
         }
 
