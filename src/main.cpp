@@ -3711,7 +3711,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "XAGUSD") {
-        const bool xag_any_open = g_eng_xag.pos.active || g_bracket_xag.pos.active;
+        const bool xag_any_open = g_eng_xag.pos.active        ||
+                                  g_bracket_xag.pos.active    ||
+                                  g_orb_silver.has_open_position() ||  // ADDED
+                                  g_le_stack.has_open_position();       // ADDED
         const bool base_can     = symbol_gate("XAGUSD", xag_any_open);
         // Supervisor decides: breakout or bracket — only one may arm
         const auto sdec = sup_decision(g_sup_xag, g_eng_xag, base_can);
@@ -3727,9 +3730,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
         }
         // Lead-lag: not supervisor-gated (intermarket signal, not regime-based)
-        // Must check base_can — without it LL fires even when breakout/bracket is open.
-        // Confirmed same class of bug as GOLD.F LE: two concurrent XAGUSD positions.
-        if (base_can) {
+        // base_can now includes orb_silver and le_stack in xag_any_open above.
+        // ORB silver check is redundant but kept for clarity.
+        if (base_can && !g_orb_silver.has_open_position()) {  // ADDED: explicit ORB guard
             const auto ll_sig = g_le_stack.on_tick_silver(bid, ask, rtt_check, ca_on_close);
             if (ll_sig.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
