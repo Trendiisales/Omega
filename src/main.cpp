@@ -5342,7 +5342,14 @@ int main(int argc, char* argv[])
     std::signal(SIGTERM, sig_handler);
     SetConsoleCtrlHandler(console_ctrl_handler, TRUE);  // handles X button, CTRL_CLOSE, shutdown
 
-    const std::string cfg_path = (argc > 1) ? argv[1] : "omega_config.ini";
+    // Resolve config path: explicit arg > cwd\omega_config.ini > config\omega_config.ini
+    std::string cfg_path = "omega_config.ini";
+    if (argc > 1) {
+        cfg_path = argv[1];
+    } else {
+        std::ifstream test_cwd("omega_config.ini");
+        if (!test_cwd.is_open()) cfg_path = "config\\omega_config.ini";
+    }
     load_config(cfg_path);
     sanitize_config();
     apply_shadow_research_profile();
