@@ -3848,7 +3848,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "EURUSD") {
-        const bool base_can_fx = symbol_gate("EURUSD", g_eng_eurusd.pos.active || g_bracket_eurusd.pos.active);
+        const bool base_can_fx = symbol_gate("EURUSD",
+            g_eng_eurusd.pos.active                ||
+            g_bracket_eurusd.pos.active            ||
+            g_vwap_rev_eurusd.has_open_position()); // ADDED
         const auto sdec_fx = sup_decision(g_sup_eurusd, g_eng_eurusd, base_can_fx);
         // Notify FX cascade engine if EURUSD just fired a signal this tick
         {
@@ -3896,7 +3899,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_bracket_audusd.has_open_position() ||
             g_bracket_nzdusd.has_open_position() ||
             g_bracket_usdjpy.has_open_position();
-        const bool base_can_fx2 = symbol_gate("GBPUSD", g_eng_gbpusd.pos.active || g_bracket_gbpusd.pos.active);
+        const bool base_can_fx2 = symbol_gate("GBPUSD",
+            g_eng_gbpusd.pos.active                    ||
+            g_bracket_gbpusd.pos.active                ||
+            g_ca_fx_cascade.has_open_gbpusd());         // ADDED
         const auto sdec_fx2 = sup_decision(g_sup_gbpusd, g_eng_gbpusd, base_can_fx2);
         if (sdec_fx2.allow_breakout && !g_bracket_gbpusd.pos.active)
             dispatch(g_eng_gbpusd, g_sup_gbpusd, base_can_fx2, &sdec_fx2);
