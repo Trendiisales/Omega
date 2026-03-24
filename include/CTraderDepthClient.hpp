@@ -330,6 +330,10 @@ private:
             }
             recv_buf_.clear();
             backoff = 2000;
+            if (!ws_upgrade(ssl, "live.ctraderapi.com")) {
+                std::cerr << "[CTRADER] WebSocket upgrade failed\n";
+                ssl_close(ssl,sock); sleep_ms(3000); continue;
+            }
             if (!do_auth(ssl)) {
                 std::cerr << "[CTRADER] Auth failed — retry 10s\n";
                 ssl_close(ssl,sock); sleep_ms(3000); continue;  // interruptible 3s
@@ -517,10 +521,7 @@ private:
     // Send JSON with newline terminator.
     // Port 5035 raw TCP accepts newline-delimited JSON (no 4-byte length prefix).
     // Confirmed: server responds with raw {"payloadType":...}\n (no length prefix).
-    bool send_json(SSL* ssl, const std::string& json) {
-        const std::string msg = json + "\n";
-        return SSL_write(ssl, msg.c_str(), int(msg.size())) == int(msg.size());
-    }
+    bool send_json(SSL* ssl, const std::string& json) { return ws_send(ssl, json); }
 
     // Read one newline-delimited JSON message from SSL stream
     int read_one(SSL* ssl, int& pt_out, std::string& body_out, int timeout_ms) {
@@ -544,17 +545,7 @@ private:
 
     // Parse one newline-delimited JSON message from recv_buf_
     // Each message is a complete JSON string terminated by \n
-    bool try_parse(int& pt_out, std::string& body_out) {
-        const auto nl = std::find(recv_buf_.begin(), recv_buf_.end(), uint8_t('\n'));
-        if (nl == recv_buf_.end()) return false;
-        body_out.assign((const char*)recv_buf_.data(),
-                        std::distance(recv_buf_.begin(), nl));
-        recv_buf_.erase(recv_buf_.begin(), nl + 1);
-        if (!body_out.empty() && body_out.back() == '\r') body_out.pop_back();
-        if (body_out.empty()) return false;
-        pt_out = int(CTJSON::get_int(body_out, "payloadType"));
-        return true;
-    }
+    bool try_parse(int& pt_out, std::string& body_out) { return ws_try_parse(pt_out, body_out); }
 
     bool wait_for(SSL* ssl, int expected, int timeout_ms, int& pt_out, std::string& body_out) {
         const auto dead = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
@@ -584,6 +575,78 @@ private:
         }
         std::cerr << "[CTRADER] Timeout waiting for payloadType=" << expected << "\n";
         return false;
+    }
+
+
+    // =========================================================================
+    // WebSocket support — cTrader requires WS handshake before JSON exchange
+    // =========================================================================
+    bool ws_upgrade(SSL* ssl, const char* host) {
+        const char* key = "dGhlIHNhbXBsZSBub25jZQ==";
+        std::string req = std::string("GET / HTTP/1.1\r\nHost: ") + host +
+            "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " +
+            key + "\r\nSec-WebSocket-Version: 13\r\n\r\n";
+        if (SSL_write(ssl, req.c_str(), (int)req.size()) != (int)req.size()) return false;
+        char buf[1024] = {}; int n = 0;
+        const auto dead = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (running.load() && std::chrono::steady_clock::now() < dead && n < 1000) {
+            int r = SSL_read(ssl, buf+n, 1023-n);
+            if (r > 0) {
+                n += r; std::string s(buf, n);
+                if (s.find("101") != std::string::npos && s.find("\r\n\r\n") != std::string::npos) {
+                    std::cout << "[CTRADER] WebSocket upgrade OK\n"; return true;
+                }
+                if (s.find("\r\n\r\n") != std::string::npos) {
+                    std::cerr << "[CTRADER] WS upgrade failed: " << s.substr(0,100) << "\n"; return false;
+                }
+            } else {
+                if (SSL_get_error(ssl,r)==SSL_ERROR_WANT_READ) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10)); continue;
+                }
+                return false;
+            }
+        }
+        return false;
+    }
+
+    bool ws_send(SSL* ssl, const std::string& json) {
+        const size_t plen = json.size();
+        std::vector<uint8_t> f;
+        f.push_back(0x81);
+        if (plen <= 125)      { f.push_back(0x80|(uint8_t)plen); }
+        else if (plen<=65535) { f.push_back(0x80|126); f.push_back((plen>>8)&0xFF); f.push_back(plen&0xFF); }
+        else { f.push_back(0x80|127); for(int i=7;i>=0;--i) f.push_back((plen>>(8*i))&0xFF); }
+        const uint8_t mk[4]={0x37,0xfa,0x21,0x3d};
+        f.insert(f.end(),mk,mk+4);
+        for(size_t i=0;i<plen;++i) f.push_back((uint8_t)json[i]^mk[i%4]);
+        return SSL_write(ssl,f.data(),(int)f.size())==(int)f.size();
+    }
+
+    bool ws_try_parse(int& pt_out, std::string& body_out) {
+        if (recv_buf_.size() < 2) return false;
+        const uint8_t b0=recv_buf_[0], b1=recv_buf_[1];
+        const uint8_t opcode = b0 & 0x0F;
+        const bool masked = (b1 & 0x80) != 0;
+        size_t plen = b1 & 0x7F, hlen = 2;
+        if (plen==126) { if(recv_buf_.size()<4) return false; plen=((size_t)recv_buf_[2]<<8)|recv_buf_[3]; hlen=4; }
+        else if (plen==127) { if(recv_buf_.size()<10) return false; plen=0; for(int i=0;i<8;++i) plen=(plen<<8)|recv_buf_[2+i]; hlen=10; }
+        if (masked) hlen += 4;
+        if (recv_buf_.size() < hlen+plen) return false;
+        if (opcode==9) { recv_buf_.erase(recv_buf_.begin(),recv_buf_.begin()+hlen+plen); return false; }
+        if (opcode==8) { recv_buf_.clear(); pt_out=-1; return true; }
+        const uint8_t* ps = recv_buf_.data()+hlen;
+        if (masked) {
+            const uint8_t* mk=recv_buf_.data()+hlen-4;
+            body_out.resize(plen);
+            for(size_t i=0;i<plen;++i) body_out[i]=(char)(ps[i]^mk[i%4]);
+        } else {
+            body_out.assign((const char*)ps, plen);
+        }
+        recv_buf_.erase(recv_buf_.begin(), recv_buf_.begin()+hlen+plen);
+        while(!body_out.empty()&&(body_out.back()=='\n'||body_out.back()=='\r')) body_out.pop_back();
+        if (body_out.empty()) return false;
+        pt_out = int(CTJSON::get_int(body_out,"payloadType"));
+        return true;
     }
 
     static SSL* connect_ssl(const char* host, int port, int& sock_out) {
