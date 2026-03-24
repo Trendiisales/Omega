@@ -326,6 +326,13 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD) return noSignal();
+        // Block Asian session: compression breakouts on thin Asia tape are noise.
+        // Other engines (ImpulseContinuation, VWAPSnapback, LiquiditySweep) already block Asia.
+        // CompressionBreakout was only blocking 2 narrow dead zones (21-23, 05-07 UTC),
+        // leaving 23:00-05:00 UTC open — where 2-4s SL-hit noise trades were observed.
+        if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&
+           s.session!=SessionType::OVERLAP)
+            return noSignal();
         if(in_handoff_dead_zone()) return noSignal(); // NY/Tokyo handoff — no compression trades
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
