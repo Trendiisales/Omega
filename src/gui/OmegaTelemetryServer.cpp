@@ -143,6 +143,18 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"xau_recent_vol_pct\":%.4f,\"xau_baseline_vol_pct\":%.4f,\"xau_signals\":%d,"
         "\"brent_phase\":%d,\"brent_comp_high\":%.4f,\"brent_comp_low\":%.4f,"
         "\"brent_recent_vol_pct\":%.4f,\"brent_baseline_vol_pct\":%.4f,\"brent_signals\":%d,"
+        "\"xag_phase\":%d,\"xag_comp_high\":%.4f,\"xag_comp_low\":%.4f,"
+        "\"xag_recent_vol_pct\":%.4f,\"xag_baseline_vol_pct\":%.4f,\"xag_signals\":%d,"
+        "\"eurusd_phase\":%d,\"eurusd_comp_high\":%.4f,\"eurusd_comp_low\":%.4f,"
+        "\"eurusd_recent_vol_pct\":%.4f,\"eurusd_baseline_vol_pct\":%.4f,\"eurusd_signals\":%d,"
+        "\"gbpusd_phase\":%d,\"gbpusd_comp_high\":%.4f,\"gbpusd_comp_low\":%.4f,"
+        "\"gbpusd_recent_vol_pct\":%.4f,\"gbpusd_baseline_vol_pct\":%.4f,\"gbpusd_signals\":%d,"
+        "\"audusd_phase\":%d,\"audusd_comp_high\":%.4f,\"audusd_comp_low\":%.4f,"
+        "\"audusd_recent_vol_pct\":%.4f,\"audusd_baseline_vol_pct\":%.4f,\"audusd_signals\":%d,"
+        "\"nzdusd_phase\":%d,\"nzdusd_comp_high\":%.4f,\"nzdusd_comp_low\":%.4f,"
+        "\"nzdusd_recent_vol_pct\":%.4f,\"nzdusd_baseline_vol_pct\":%.4f,\"nzdusd_signals\":%d,"
+        "\"usdjpy_phase\":%d,\"usdjpy_comp_high\":%.4f,\"usdjpy_comp_low\":%.4f,"
+        "\"usdjpy_recent_vol_pct\":%.4f,\"usdjpy_baseline_vol_pct\":%.4f,\"usdjpy_signals\":%d,"
         "\"build_version\":\"%s\",\"build_time\":\"%s\","
         "\"uptime_sec\":%lld",
         s->sp_bid,     s->sp_ask,     s->nq_bid,  s->nq_ask,
@@ -182,6 +194,18 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->xau_recent_vol_pct, s->xau_baseline_vol_pct, s->xau_signals,
         s->brent_phase, s->brent_comp_high, s->brent_comp_low,
         s->brent_recent_vol_pct, s->brent_baseline_vol_pct, s->brent_signals,
+        s->xag_phase, s->xag_comp_high, s->xag_comp_low,
+        s->xag_recent_vol_pct, s->xag_baseline_vol_pct, s->xag_signals,
+        s->eurusd_phase, s->eurusd_comp_high, s->eurusd_comp_low,
+        s->eurusd_recent_vol_pct, s->eurusd_baseline_vol_pct, s->eurusd_signals,
+        s->gbpusd_phase, s->gbpusd_comp_high, s->gbpusd_comp_low,
+        s->gbpusd_recent_vol_pct, s->gbpusd_baseline_vol_pct, s->gbpusd_signals,
+        s->audusd_phase, s->audusd_comp_high, s->audusd_comp_low,
+        s->audusd_recent_vol_pct, s->audusd_baseline_vol_pct, s->audusd_signals,
+        s->nzdusd_phase, s->nzdusd_comp_high, s->nzdusd_comp_low,
+        s->nzdusd_recent_vol_pct, s->nzdusd_baseline_vol_pct, s->nzdusd_signals,
+        s->usdjpy_phase, s->usdjpy_comp_high, s->usdjpy_comp_low,
+        s->usdjpy_recent_vol_pct, s->usdjpy_baseline_vol_pct, s->usdjpy_signals,
         s->build_version, s->build_time,
         (long long)s->uptime_sec
     );

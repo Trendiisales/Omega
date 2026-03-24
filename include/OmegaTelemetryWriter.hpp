@@ -138,6 +138,54 @@ struct OmegaTelemetrySnapshot
     double brent_recent_vol_pct  = 0.0;
     double brent_baseline_vol_pct= 0.0;
     int    brent_signals         = 0;
+
+    // XAGUSD breakout engine state
+    int    xag_phase             = 0;
+    double xag_comp_high         = 0.0;
+    double xag_comp_low          = 0.0;
+    double xag_recent_vol_pct    = 0.0;
+    double xag_baseline_vol_pct  = 0.0;
+    int    xag_signals           = 0;
+
+    // EURUSD breakout engine state
+    int    eurusd_phase          = 0;
+    double eurusd_comp_high      = 0.0;
+    double eurusd_comp_low       = 0.0;
+    double eurusd_recent_vol_pct = 0.0;
+    double eurusd_baseline_vol_pct = 0.0;
+    int    eurusd_signals        = 0;
+
+    // GBPUSD breakout engine state
+    int    gbpusd_phase          = 0;
+    double gbpusd_comp_high      = 0.0;
+    double gbpusd_comp_low       = 0.0;
+    double gbpusd_recent_vol_pct = 0.0;
+    double gbpusd_baseline_vol_pct = 0.0;
+    int    gbpusd_signals        = 0;
+
+    // AUDUSD breakout engine state
+    int    audusd_phase          = 0;
+    double audusd_comp_high      = 0.0;
+    double audusd_comp_low       = 0.0;
+    double audusd_recent_vol_pct = 0.0;
+    double audusd_baseline_vol_pct = 0.0;
+    int    audusd_signals        = 0;
+
+    // NZDUSD breakout engine state
+    int    nzdusd_phase          = 0;
+    double nzdusd_comp_high      = 0.0;
+    double nzdusd_comp_low       = 0.0;
+    double nzdusd_recent_vol_pct = 0.0;
+    double nzdusd_baseline_vol_pct = 0.0;
+    int    nzdusd_signals        = 0;
+
+    // USDJPY breakout engine state
+    int    usdjpy_phase          = 0;
+    double usdjpy_comp_high      = 0.0;
+    double usdjpy_comp_low       = 0.0;
+    double usdjpy_recent_vol_pct = 0.0;
+    double usdjpy_baseline_vol_pct = 0.0;
+    int    usdjpy_signals        = 0;
     char   sig_symbol    [MAX_SIGNAL_HISTORY][16];
     char   sig_side      [MAX_SIGNAL_HISTORY][8];   // "LONG" / "SHORT"
     double sig_price     [MAX_SIGNAL_HISTORY];
@@ -375,6 +423,30 @@ public:
             m_snap->brent_phase=phase; m_snap->brent_comp_high=comp_high;
             m_snap->brent_comp_low=comp_low; m_snap->brent_recent_vol_pct=recent_vol_pct;
             m_snap->brent_baseline_vol_pct=baseline_vol_pct; m_snap->brent_signals=signals;
+        } else if (!strcmp(sym,"XAGUSD")) {
+            m_snap->xag_phase=phase; m_snap->xag_comp_high=comp_high;
+            m_snap->xag_comp_low=comp_low; m_snap->xag_recent_vol_pct=recent_vol_pct;
+            m_snap->xag_baseline_vol_pct=baseline_vol_pct; m_snap->xag_signals=signals;
+        } else if (!strcmp(sym,"EURUSD")) {
+            m_snap->eurusd_phase=phase; m_snap->eurusd_comp_high=comp_high;
+            m_snap->eurusd_comp_low=comp_low; m_snap->eurusd_recent_vol_pct=recent_vol_pct;
+            m_snap->eurusd_baseline_vol_pct=baseline_vol_pct; m_snap->eurusd_signals=signals;
+        } else if (!strcmp(sym,"GBPUSD")) {
+            m_snap->gbpusd_phase=phase; m_snap->gbpusd_comp_high=comp_high;
+            m_snap->gbpusd_comp_low=comp_low; m_snap->gbpusd_recent_vol_pct=recent_vol_pct;
+            m_snap->gbpusd_baseline_vol_pct=baseline_vol_pct; m_snap->gbpusd_signals=signals;
+        } else if (!strcmp(sym,"AUDUSD")) {
+            m_snap->audusd_phase=phase; m_snap->audusd_comp_high=comp_high;
+            m_snap->audusd_comp_low=comp_low; m_snap->audusd_recent_vol_pct=recent_vol_pct;
+            m_snap->audusd_baseline_vol_pct=baseline_vol_pct; m_snap->audusd_signals=signals;
+        } else if (!strcmp(sym,"NZDUSD")) {
+            m_snap->nzdusd_phase=phase; m_snap->nzdusd_comp_high=comp_high;
+            m_snap->nzdusd_comp_low=comp_low; m_snap->nzdusd_recent_vol_pct=recent_vol_pct;
+            m_snap->nzdusd_baseline_vol_pct=baseline_vol_pct; m_snap->nzdusd_signals=signals;
+        } else if (!strcmp(sym,"USDJPY")) {
+            m_snap->usdjpy_phase=phase; m_snap->usdjpy_comp_high=comp_high;
+            m_snap->usdjpy_comp_low=comp_low; m_snap->usdjpy_recent_vol_pct=recent_vol_pct;
+            m_snap->usdjpy_baseline_vol_pct=baseline_vol_pct; m_snap->usdjpy_signals=signals;
         }
     }
 
