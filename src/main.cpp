@@ -6160,14 +6160,27 @@ int main(int argc, char* argv[])
     std::cout << "[OMEGA] Shutdown\n";
     // Stop cTrader depth feed before joining other threads
     g_ctrader_depth.stop();
-    // Wait up to 1.5s for trade_loop to finish its own logout+SSL_free sequence.
-    // We check g_trade_thread_done (set at the end of trade_loop) not joinable(),
-    // because joinable() stays true until join()/detach() regardless of whether
-    // the thread has actually finished executing.
+
+    // Wait up to 5s for any pending close orders to be ACKed by broker before
+    // tearing down the trade connection. Only matters in LIVE mode.
+    if (g_cfg.mode == "LIVE") {
+        const auto close_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < close_deadline) {
+            std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+            bool any_pending = false;
+            for (const auto& kv : g_live_orders)
+                if (!kv.second.acked && !kv.second.rejected) { any_pending = true; break; }
+            if (!any_pending) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        std::cout << "[OMEGA] Close orders settled\n";
+    }
+
+    // Wait up to 3s for trade_loop to finish its own logout+SSL_free sequence.
     {
         auto start = std::chrono::steady_clock::now();
         while (!g_trade_thread_done.load() &&
-               std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500)) {
+               std::chrono::steady_clock::now() - start < std::chrono::milliseconds(3000)) {
             Sleep(10);
         }
     }
