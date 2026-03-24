@@ -295,6 +295,51 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         result += cg;
     }
 
+    // open_positions array — drives green "LIVE ●" highlight in engine cells.
+    // Derived from snapshot phase fields (IN_TRADE=3 for breakout, LIVE=3 for bracket,
+    // active=1 for cross-asset). No extra snapshot fields needed.
+    {
+        result += ",\"open_positions\":[";
+        bool first_pos = true;
+        auto addPos = [&](const char* sym) {
+            if (!first_pos) result += ',';
+            result += "{\"symbol\":\"";
+            result += sym;
+            result += "\"}";
+            first_pos = false;
+        };
+        // Breakout engines: phase==3 means IN_TRADE
+        if (s->sp_phase    == 3) addPos("US500.F");
+        if (s->nq_phase    == 3) addPos("USTEC.F");
+        if (s->cl_phase    == 3) addPos("USOIL.F");
+        if (s->xau_phase   == 3) addPos("GOLD.F");
+        if (s->brent_phase == 3) addPos("BRENT");
+        if (s->xag_phase   == 3) addPos("XAGUSD");
+        if (s->eurusd_phase  == 3) addPos("EURUSD");
+        if (s->gbpusd_phase  == 3) addPos("GBPUSD");
+        if (s->audusd_phase  == 3) addPos("AUDUSD");
+        if (s->nzdusd_phase  == 3) addPos("NZDUSD");
+        if (s->usdjpy_phase  == 3) addPos("USDJPY");
+        // Bracket engines: bkt phase==3 means LIVE
+        if (s->bkt_sp.phase   == 3) addPos("US500.F");
+        if (s->bkt_nq.phase   == 3) addPos("USTEC.F");
+        if (s->bkt_us30.phase == 3) addPos("DJ30.F");
+        if (s->bkt_nas.phase  == 3) addPos("NAS100");
+        if (s->bkt_ger.phase  == 3) addPos("GER40");
+        if (s->bkt_uk.phase   == 3) addPos("UK100");
+        if (s->bkt_estx.phase == 3) addPos("ESTX50");
+        if (s->bkt_xag.phase  == 3) addPos("XAGUSD");
+        if (s->bkt_gold.phase == 3) addPos("GOLD.F");
+        if (s->bkt_eur.phase  == 3) addPos("EURUSD");
+        if (s->bkt_gbp.phase  == 3) addPos("GBPUSD");
+        if (s->bkt_brent.phase== 3) addPos("BRENT");
+        // Cross-asset engines: active==1
+        for (int i = 0; i < s->ca_engine_count; ++i) {
+            if (s->ca_engines[i].active) addPos(s->ca_engines[i].symbol);
+        }
+        result += "]";
+    }
+
     result += "}";  // close root object
     return result;
 }
