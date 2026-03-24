@@ -299,11 +299,11 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
     {
         char l2[512];
         snprintf(l2, sizeof(l2),
-            ","l2_sp":%.3f,"l2_nq":%.3f,"l2_dj":%.3f,"l2_nas":%.3f"
-            ","l2_cl":%.3f,"l2_brent":%.3f,"l2_gold":%.3f,"l2_xag":%.3f"
-            ","l2_ger":%.3f,"l2_uk":%.3f,"l2_estx":%.3f"
-            ","l2_eur":%.3f,"l2_gbp":%.3f,"l2_aud":%.3f"
-            ","l2_nzd":%.3f,"l2_jpy":%.3f,"l2_active":%d",
+            ",\"l2_sp\":%.3f,\"l2_nq\":%.3f,\"l2_dj\":%.3f,\"l2_nas\":%.3f"
+            ",\"l2_cl\":%.3f,\"l2_brent\":%.3f,\"l2_gold\":%.3f,\"l2_xag\":%.3f"
+            ",\"l2_ger\":%.3f,\"l2_uk\":%.3f,\"l2_estx\":%.3f"
+            ",\"l2_eur\":%.3f,\"l2_gbp\":%.3f,\"l2_aud\":%.3f"
+            ",\"l2_nzd\":%.3f,\"l2_jpy\":%.3f,\"l2_active\":%d",
             s->l2_sp, s->l2_nq, s->l2_dj, s->l2_nas,
             s->l2_cl, s->l2_brent, s->l2_gold, s->l2_xag,
             s->l2_ger, s->l2_uk, s->l2_estx,

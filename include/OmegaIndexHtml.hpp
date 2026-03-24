@@ -430,6 +430,8 @@ R"OMEGA1(
       <div class="stat-card"><div class="stat-n" id="statMaxDD" style="color:var(--red)">$0</div><div class="stat-l">Max DD</div></div>
     </div>
 
+)OMEGA1"
+R"OMEGA1B(
     <!-- Engine state — ALL 15 engines in 3 groups -->
     <div class="eng-section">
       <div class="eng-section-label">⚡ US / Oil Engines</div>
@@ -442,7 +444,7 @@ R"OMEGA1(
       </div>
     </div>
 
-)OMEGA1"
+)OMEGA1B"
 R"OMEGA2(
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">◈ EU Indices + Brent</div>
