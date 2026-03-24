@@ -399,7 +399,8 @@ static omega::BracketEngine g_bracket_uk100;
 static omega::BracketEngine g_bracket_estx50;
 // Oil/Brent bracket
 static omega::BracketEngine g_bracket_brent;
-static omega::BracketEngine g_bracket_cl;    // USOIL.F — separate from gold, properly isolated
+// g_bracket_cl removed — USOIL.F bracket was never dispatched in on_tick (dead code).
+// Oil uses g_eng_cl (breakout) + g_ca_eia_fade + g_ca_brent_wti only.
 // FX bracket engines
 static omega::BracketEngine g_bracket_eurusd;
 static omega::BracketEngine g_bracket_gbpusd;
@@ -582,6 +583,7 @@ static omega::SymbolSupervisor g_sup_xag,     g_sup_eurusd, g_sup_gbpusd;
 static omega::SymbolSupervisor g_sup_audusd,  g_sup_nzdusd, g_sup_usdjpy;
 static omega::SymbolSupervisor g_sup_brent,   g_sup_gold;
 // false-break counters per symbol (reset on cooldown / regime change)
+static std::mutex g_false_break_mtx;
 static std::unordered_map<std::string, int> g_false_break_counts;
 
 // Book
@@ -910,8 +912,7 @@ static std::unique_ptr<RollingCsvLogger> g_daily_trade_close_log;
 static std::unique_ptr<RollingCsvLogger> g_daily_gold_trade_close_log;
 static std::unique_ptr<RollingCsvLogger> g_daily_shadow_trade_log;
 
-// FIX recv buffer
-static std::string g_recv_buf;
+// FIX recv buffer — owned by extract_messages() as a static local
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -1690,17 +1691,21 @@ static SSL* connect_ssl(const std::string& host, int port, int& sock_out) {
     DWORD send_timeout_ms = 500;
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
                reinterpret_cast<const char*>(&send_timeout_ms), sizeof(send_timeout_ms));
-    SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
-    if (!ctx) { closesocket(sock); return nullptr; }
-    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
-    // Quiet shutdown: SSL_free() will NOT send/wait for TLS close-notify.
-    // Without this, SSL_free() performs a bidirectional TLS handshake that can
-    // block for several seconds waiting for the server's close-notify response,
-    // even with SO_SNDTIMEO set. This was the remaining shutdown hang.
-    SSL_CTX_set_quiet_shutdown(ctx, 1);
-    SSL* ssl = SSL_new(ctx);
-    if (!ssl) { SSL_CTX_free(ctx); closesocket(sock); return nullptr; }
-    SSL_CTX_free(ctx);  // ssl holds a reference; ctx can be freed now
+    // Reuse a single SSL_CTX across all connections — avoids creating/destroying
+    // a fresh context on every reconnect (TLS handshake params don't change).
+    static SSL_CTX* s_ctx = nullptr;
+    if (!s_ctx) {
+        s_ctx = SSL_CTX_new(TLS_client_method());
+        if (!s_ctx) { closesocket(sock); return nullptr; }
+        SSL_CTX_set_min_proto_version(s_ctx, TLS1_2_VERSION);
+        // Quiet shutdown: SSL_free() will NOT send/wait for TLS close-notify.
+        // Without this, SSL_free() performs a bidirectional TLS handshake that can
+        // block for several seconds waiting for the server's close-notify response,
+        // even with SO_SNDTIMEO set. This was the remaining shutdown hang.
+        SSL_CTX_set_quiet_shutdown(s_ctx, 1);
+    }
+    SSL* ssl = SSL_new(s_ctx);
+    if (!ssl) { closesocket(sock); return nullptr; }
     SSL_set_fd(ssl, static_cast<int>(sock));
     if (SSL_connect(ssl) <= 0) {
         ERR_print_errors_fp(stderr);
@@ -1726,7 +1731,9 @@ static void rtt_record(double ms) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Shadow CSV
 // ─────────────────────────────────────────────────────────────────────────────
+static std::mutex g_shadow_csv_mtx;
 static void write_shadow_csv(const omega::TradeRecord& tr) {
+    std::lock_guard<std::mutex> lk(g_shadow_csv_mtx);
     if (g_shadow_csv.is_open()) {
         g_shadow_csv << tr.entryTs << ',' << tr.symbol << ',' << tr.side
                      << ',' << tr.engine
@@ -2645,6 +2652,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
 
     // Track false breaks per symbol — supervisor uses this for CHOP_REVERSAL detection
     {
+        std::lock_guard<std::mutex> lk(g_false_break_mtx);
         auto& fb = g_false_break_counts[tr.symbol];
         if (tr.exitReason == "BREAKOUT_FAIL" || tr.exitReason == "SL_HIT") {
             ++fb;
@@ -2925,7 +2933,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_bracket_uk100.pos.active) +
                 static_cast<int>(g_bracket_estx50.pos.active) +
                 static_cast<int>(g_bracket_brent.pos.active) +
-                static_cast<int>(g_bracket_cl.pos.active) +
                 static_cast<int>(g_bracket_eurusd.pos.active) +
                 static_cast<int>(g_bracket_gbpusd.pos.active) +
                 static_cast<int>(g_bracket_audusd.pos.active) +
@@ -2975,7 +2982,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_bracket_uk100.pos.active) +
             static_cast<int>(g_bracket_estx50.pos.active) +
             static_cast<int>(g_bracket_brent.pos.active) +
-            static_cast<int>(g_bracket_cl.pos.active) +
             static_cast<int>(g_bracket_eurusd.pos.active) +
             static_cast<int>(g_bracket_gbpusd.pos.active) +
             static_cast<int>(g_bracket_audusd.pos.active) +
@@ -3091,7 +3097,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     auto sup_decision = [&](omega::SymbolSupervisor& sup,
                              auto& eng,
                              bool base_can_enter) -> omega::SupervisorDecision {
-        const int fb = g_false_break_counts.count(sym) ? g_false_break_counts[sym] : 0;
+        int fb = 0;
+        { std::lock_guard<std::mutex> lk(g_false_break_mtx);
+          auto it = g_false_break_counts.find(sym); if (it != g_false_break_counts.end()) fb = it->second; }
         // Momentum: vol expansion relative to baseline — how much vol has grown.
         // Was: (mid - comp_low)/mid which is a price distance, not directional momentum.
         // Correct: (recent_vol - base_vol) / base_vol — captures vol expansion direction.
@@ -3299,7 +3307,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                  int64_t& min_start,
                                  double l2_imb = 0.5,
                                  const omega::SupervisorDecision* precomputed_sdec = nullptr) {
-        const int fb = g_false_break_counts.count(sym) ? g_false_break_counts[sym] : 0;
+        int fb = 0;
+        { std::lock_guard<std::mutex> lk(g_false_break_mtx);
+          auto it = g_false_break_counts.find(sym); if (it != g_false_break_counts.end()) fb = it->second; }
         const double bkt_momentum = (ref_eng.base_vol_pct > 0.0)
             ? ((ref_eng.recent_vol_pct - ref_eng.base_vol_pct) / ref_eng.base_vol_pct * 100.0)
             : 0.0;
@@ -3717,7 +3727,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // its own GoldStack (not a BreakoutEngine). We use a dedicated gold
         // BreakoutEngine-based vol state if available, otherwise use silver as proxy.
         // For gold we track phase/vol from the bracket engine's internal data.
-        const int fb_gold = g_false_break_counts.count("GOLD.F") ? g_false_break_counts["GOLD.F"] : 0;
+        int fb_gold = 0;
+        { std::lock_guard<std::mutex> lk(g_false_break_mtx);
+          auto it = g_false_break_counts.find("GOLD.F"); if (it != g_false_break_counts.end()) fb_gold = it->second; }
         // Run supervisor — use real vol/regime state from GoldEngineStack.
         // gold_vol_range: the rolling min/max range the RegimeGovernor uses internally.
         // We convert to a pct of mid price so it's on the same scale as SymbolSupervisor's
@@ -4038,8 +4050,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // ── Asia gate + config snapshot ──────────────────────────────────────────
     {
-        const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
-        const int h2 = static_cast<int>((now_s % 86400) / 3600);
+        const auto t_asia = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti_asia; gmtime_s(&ti_asia, &t_asia);
+        const int h2 = ti_asia.tm_hour;
         const int asia_open = (!g_cfg.asia_fx_asia_only || (h2 >= 22 || h2 < 7)) ? 1 : 0;
         g_telemetry.UpdateAsiaCfg(asia_open, g_cfg.max_trades_per_cycle, g_cfg.max_open_positions);
     }
@@ -4048,26 +4061,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         static_cast<int64_t>(std::time(nullptr)) - g_start_time;
 }  // ← on_tick
 // ─────────────────────────────────────────────────────────────────────────────
-static std::vector<std::string> extract_messages(const char* data, int n) {
-    g_recv_buf.append(data, static_cast<size_t>(n));
+static std::vector<std::string> extract_messages(const char* data, int n, bool reset = false) {
+    static std::string recv_buf;  // local static — no global sharing
+    if (reset) { recv_buf.clear(); return {}; }
+    recv_buf.append(data, static_cast<size_t>(n));
     std::vector<std::string> msgs;
     while (true) {
-        const size_t bs = g_recv_buf.find("8=FIX");
-        if (bs == std::string::npos) { g_recv_buf.clear(); break; }
-        if (bs > 0u) g_recv_buf = g_recv_buf.substr(bs);
-        const size_t bl_pos = g_recv_buf.find("\x01" "9=");
+        const size_t bs = recv_buf.find("8=FIX");
+        if (bs == std::string::npos) { recv_buf.clear(); break; }
+        if (bs > 0u) recv_buf = recv_buf.substr(bs);
+        const size_t bl_pos = recv_buf.find("\x01" "9=");
         if (bl_pos == std::string::npos) break;
         const size_t bl_start = bl_pos + 3u;
-        const size_t bl_end   = g_recv_buf.find('\x01', bl_start);
+        const size_t bl_end   = recv_buf.find('\x01', bl_start);
         if (bl_end == std::string::npos) break;
         int body_len = 0;
-        try { body_len = std::stoi(g_recv_buf.substr(bl_start, bl_end - bl_start)); }
-        catch (...) { g_recv_buf = g_recv_buf.substr(bl_end); continue; } // malformed — skip
+        try { body_len = std::stoi(recv_buf.substr(bl_start, bl_end - bl_start)); }
+        catch (...) { recv_buf = recv_buf.substr(bl_end); continue; } // malformed — skip
         const size_t hdr_end  = bl_end + 1u;
         const size_t msg_end  = hdr_end + static_cast<size_t>(body_len) + 7u;
-        if (msg_end > g_recv_buf.size()) break;
-        msgs.push_back(g_recv_buf.substr(0u, msg_end));
-        g_recv_buf = g_recv_buf.substr(msg_end);
+        if (msg_end > recv_buf.size()) break;
+        msgs.push_back(recv_buf.substr(0u, msg_end));
+        recv_buf = recv_buf.substr(msg_end);
     }
     return msgs;
 }
@@ -4445,7 +4460,7 @@ static void quote_loop() {
         }
 
         backoff_ms = 1000;
-        g_recv_buf.clear();
+        extract_messages(nullptr, 0, true);  // reset recv buffer on reconnect
         g_quote_seq      = 1;
         g_rtt_pending_ts = 0;
         g_quote_ready.store(false);
@@ -4637,7 +4652,6 @@ static void quote_loop() {
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     });
         };
-        fc_bracket(g_bracket_cl,      "USOIL.F");
         fc_bracket(g_bracket_sp,      "US500.F");
         fc_bracket(g_bracket_nq,      "USTEC.F");
         fc_bracket(g_bracket_us30,    "DJ30.F");
