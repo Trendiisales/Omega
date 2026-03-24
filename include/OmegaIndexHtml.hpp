@@ -126,6 +126,8 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .rg-item{background:rgba(255,255,255,0.02);border-radius:6px;padding:7px 8px;text-align:center;}
 .rg-lbl{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;}
 .rg-val{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;color:var(--t1);}
+)OMEGA0"
+R"OMEGA1(
 
 /* ── CENTRE COLUMN ── */
 .col-centre{grid-column:2;display:flex;flex-direction:column;gap:8px;overflow:hidden;min-height:0;}
@@ -178,8 +180,6 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .eng-prox-track{flex:1;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;}
 .eng-prox-fill{height:100%;border-radius:2px;transition:width 0.3s,background 0.3s;}
 .eng-l2{position:relative;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;margin-top:3px;}
-)OMEGA0"
-R"OMEGA1(
 .eng-l2-fill{position:absolute;top:0;height:100%;border-radius:2px;transition:width 0.25s,background 0.25s,left 0.25s;}
 .eng-prox-pct{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t2);
   min-width:26px;text-align:right;transition:color 0.3s;flex-shrink:0;}
@@ -479,13 +479,11 @@ R"OMEGA4(
       <div class="eng-section-label">★ Metals Engines</div>
       <div class="eng-grid" style="grid-template-columns:repeat(2,1fr)">
         <div class="eng-cell" id="engXAU" style="border-color:rgba(245,200,66,0.2);background:rgba(245,200,66,0.04);"><div class="eng-sym" style="color:var(--gold)">GOLD.F</div><div class="eng-ph eph-flat" id="engXAUPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engXAUBid" style="color:var(--gold)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAUAsk" style="color:var(--red)">--</span></div><div class="eng-vol" id="engXAUVol">--</div><div class="eng-sigs" id="engXAUSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engXAUProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engXAUPct"></span></div><div class="eng-l2" id="engXAUL2"><div class="eng-l2-fill" id="engXAUL2F" style="width:50%;background:var(--t3)"></div></div></div>
-)OMEGA4"
-R"OMEGA5(
         <div class="eng-cell" id="engXAG" style="border-color:rgba(154,180,204,0.2);background:rgba(154,180,204,0.03);"><div class="eng-sym" style="color:var(--silver)">XAGUSD</div><div class="eng-ph eph-flat" id="engXAGPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engXAGBid" style="color:var(--silver)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAGAsk" style="color:var(--red)">--</span></div><div class="eng-vol" id="engXAGVol">--</div><div class="eng-sigs" id="engXAGSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engXAGProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engXAGPct"></span></div><div class="eng-l2" id="engXAGL2"><div class="eng-l2-fill" id="engXAGL2F" style="width:50%;background:var(--t3)"></div></div></div>
       </div>
     </div>
-)OMEGA5"
-R"OMEGA6(
+)OMEGA4"
+R"OMEGA5(
 
     <!-- ── Cross-Asset Engines Panel ── -->
     <div class="eng-section" style="margin-top:6px;" id="caEngSection">
@@ -556,8 +554,6 @@ R"OMEGA6(
       <div class="fix-item"><span class="fix-lbl">Fills <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">executions</span></span><span class="fix-val" id="fixFills" style="color:var(--t1)">0</span></div>
       <div class="fix-item"><span class="fix-lbl">BUILD <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">git hash</span></span><span class="fix-val" id="buildVersion" style="color:var(--t2);font-size:9px">...</span></div>
     </div>
-)OMEGA6"
-R"OMEGA7(
 
     <!-- Governor Blocks -->
     <div class="card">
@@ -586,15 +582,19 @@ R"OMEGA7(
 
 </div><!-- /main -->
 </div><!-- /desk -->
-)OMEGA7"
-R"OMEGA8(
+)OMEGA5"
+R"OMEGA6(
 
 <script>
 'use strict';
 let wsConnected=false,lastData={},_bellEnabled=false,_lastTradeCount=0,_bellBootCount=-1,_audioCtx=null;
 
-function safe(v,d=0){const n=Number(v);return isNaN(n)?d:n;}
+function safe(v,d=0){const n=Number(v);return isNaN(n)?d:n;})OMEGA6"
+R"OMEGA7(
+
 function fmtUTC(ts){if(!ts)return '--';return new Date(ts*1000).toUTCString().slice(17,25);}
+)OMEGA7"
+R"OMEGA8(
 
 function toggleBell(){
   _bellEnabled=!_bellEnabled;
@@ -602,14 +602,28 @@ function toggleBell(){
   if(b){b.textContent=_bellEnabled?'🔔 ARMED':'🔔 ARM BELL';b.style.color=_bellEnabled?'var(--green)':'#ffd600';b.style.borderColor=_bellEnabled?'rgba(0,217,126,0.4)':'rgba(255,214,0,0.4)';}
   if(_bellEnabled&&!_audioCtx){try{_audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(_audioCtx.state==='suspended')_audioCtx.resume();}catch(e){}}
   if(_bellEnabled&&_audioCtx)_playTestBell();
-}
-function _playTestBell(){try{const ctx=_audioCtx;if(!ctx)return;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=880;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.35,t+0.01);g.gain.exponentialRampToValueAtTime(0.001,t+0.35);o.start(t);o.stop(t+0.4);}catch(e){}}
-function _playWinBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime;[[0,880,1040],[0.2,1100,1320]].forEach(([dt,f1,f2])=>{[f1,f2].forEach((freq,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(0,t+dt);g.gain.linearRampToValueAtTime(i?0.8:1.6,t+dt+0.008);g.gain.exponentialRampToValueAtTime(0.001,t+dt+1.2);o.start(t+dt);o.stop(t+dt+1.3);});});}catch(e){}}
-function _playLossBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sawtooth';o.frequency.setValueAtTime(280,t);o.frequency.linearRampToValueAtTime(130,t+0.3);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.8,t+0.01);g.gain.exponentialRampToValueAtTime(0.001,t+0.5);o.start(t);o.stop(t+0.55);}catch(e){}}
+})OMEGA8"
+R"OMEGA9(
 
-function px(id,val,dec){const el=document.getElementById(id);if(!el)return;const v=safe(val);if(v>0)el.textContent=v.toFixed(dec||2);}
-function sprd(id,bid,ask){const el=document.getElementById(id);if(!el)return;const b=safe(bid),a=safe(ask);if(b>0&&a>0)el.textContent=(a-b).toFixed(2);}
+function _playTestBell(){try{const ctx=_audioCtx;if(!ctx)return;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=880;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.35,t+0.01);g.gain.exponentialRampToValueAtTime(0.001,t+0.35);o.start(t);o.stop(t+0.4);}catch(e){}})OMEGA9"
+R"OMEGA10(
+
+function _playWinBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime;[[0,880,1040],[0.2,1100,1320]].forEach(([dt,f1,f2])=>{[f1,f2].forEach((freq,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(0,t+dt);g.gain.linearRampToValueAtTime(i?0.8:1.6,t+dt+0.008);g.gain.exponentialRampToValueAtTime(0.001,t+dt+1.2);o.start(t+dt);o.stop(t+dt+1.3);});});}catch(e){}})OMEGA10"
+R"OMEGA11(
+
+function _playLossBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sawtooth';o.frequency.setValueAtTime(280,t);o.frequency.linearRampToValueAtTime(130,t+0.3);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.8,t+0.01);g.gain.exponentialRampToValueAtTime(0.001,t+0.5);o.start(t);o.stop(t+0.55);}catch(e){}}
+)OMEGA11"
+R"OMEGA12(
+
+function px(id,val,dec){const el=document.getElementById(id);if(!el)return;const v=safe(val);if(v>0)el.textContent=v.toFixed(dec||2);})OMEGA12"
+R"OMEGA13(
+
+function sprd(id,bid,ask){const el=document.getElementById(id);if(!el)return;const b=safe(bid),a=safe(ask);if(b>0&&a>0)el.textContent=(a-b).toFixed(2);})OMEGA13"
+R"OMEGA14(
+
 function txt(id,v){const el=document.getElementById(id);if(el)el.textContent=v;}
+)OMEGA14"
+R"OMEGA15(
 
 function setHdrPhase(id,phase){
   const el=document.getElementById(id);if(!el)return;
@@ -618,6 +632,8 @@ function setHdrPhase(id,phase){
   else if(p===1){el.className='htk-ph ph-comp';el.textContent='COMP';}
   else{el.className='htk-ph ph-brk';el.textContent='BRK ⚡';}
 }
+)OMEGA15"
+R"OMEGA16(
 
 function updateL2Bar(cellId, imb, active) {
   const f = document.getElementById(cellId + 'L2F');
@@ -644,6 +660,8 @@ function updateL2Bar(cellId, imb, active) {
     f.style.left = (50 - pct) + '%'; f.style.width = pct + '%'; f.style.background = 'var(--red)';
   }
 }
+)OMEGA16"
+R"OMEGA17(
 
 function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask,dec,isLive,bkt){
   const cell=document.getElementById(cellId),ph=document.getElementById(phaseId),
@@ -721,6 +739,8 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
     }
   }
 }
+)OMEGA17"
+R"OMEGA18(
 
 function renderLastSignal(d){
   const el=document.getElementById('lastSignalDetail');if(!el)return;
@@ -767,6 +787,8 @@ function renderLastSignal(d){
     </div>`;
   }).join('');
 }
+)OMEGA18"
+R"OMEGA19(
 
 function renderSLCooldowns(d){
   const el=document.getElementById('slCooldownPanel');if(!el)return;
@@ -780,14 +802,14 @@ function renderSLCooldowns(d){
       <span style="color:var(--red);font-weight:700;font-size:12px">${c.symbol}</span>
       <span style="color:var(--t2);font-size:11px">SL COOL</span>
       <span style="color:var(--red);font-family:'IBM Plex Mono',monospace;font-size:11px">${safe(c.secs_remaining)}s</span>
-)OMEGA8"
-R"OMEGA9(
       <div style="width:32px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden">
         <div style="width:${pct}%;height:100%;background:var(--red);border-radius:2px;transition:width 1s linear"></div>
       </div>
     </div>`;
   }).join('');
 }
+)OMEGA19"
+R"OMEGA20(
 
 function renderAsiaGate(d){
   const el=document.getElementById('asiaGateBadge');if(!el)return;
@@ -798,6 +820,8 @@ function renderAsiaGate(d){
 }
 
 
+)OMEGA20"
+R"OMEGA21(
 
 function renderTrades(trades){
   const el=document.getElementById('tradesBody'),cE=document.getElementById('tradeCount');
@@ -849,6 +873,8 @@ function renderTrades(trades){
     </tr>`;
   }).join('');
 }
+)OMEGA21"
+R"OMEGA22(
 
 function renderCrossAsset(d){
   const grid=document.getElementById('caEngGrid');if(!grid)return;
@@ -926,8 +952,8 @@ function renderCrossAsset(d){
     </div>`;
   }).join('');
 }
-)OMEGA9"
-R"OMEGA10(
+)OMEGA22"
+R"OMEGA23(
 
 function updateDashboard(d){
   lastData=d;setConn(true);
@@ -1079,8 +1105,6 @@ function updateDashboard(d){
    {id:'NQ',phase:d.nq_phase,hi:d.nq_comp_high,lo:d.nq_comp_low,rv:d.nq_recent_vol_pct},
    {id:'CL',phase:d.cl_phase,hi:d.cl_comp_high,lo:d.cl_comp_low,rv:d.cl_recent_vol_pct}
   ].forEach(s=>{
-)OMEGA10"
-R"OMEGA11(
     const p=safe(s.phase),col=p===1?'var(--amber)':p===2?'var(--green)':'var(--t2)',label=p===0?'FLAT':p===1?'COMP':'BRK';
     const phEl=document.getElementById('comp'+s.id+'Ph');if(phEl){phEl.textContent=label;phEl.style.color=col;}
     const dtEl=document.getElementById('comp'+s.id+'Det');
@@ -1093,13 +1117,17 @@ R"OMEGA11(
   renderAsiaGate(d);
   renderCrossAsset(d);
 }
+)OMEGA23"
+R"OMEGA24(
 
 function setConn(ok){
   const d=document.getElementById('connDot'),t=document.getElementById('connText');
   if(d)d.className='dot-conn '+(ok?'dot-ok':'dot-bad');
   if(t)t.textContent=ok?(wsConnected?'Live':'Connected'):'Reconnecting';}
 
-let wsFailCount=0,wsGiveUp=false;
+let wsFailCount=0,wsGiveUp=false;)OMEGA24"
+R"OMEGA25(
+
 function connectWS(){
   if(wsGiveUp)return;
   const ws=new WebSocket('ws://'+window.location.hostname+':7780');
@@ -1107,8 +1135,12 @@ function connectWS(){
   ws.onmessage=e=>{try{updateDashboard(JSON.parse(e.data));}catch(_){}};
   ws.onerror=()=>{wsFailCount++;};
   ws.onclose=()=>{wsConnected=false;setConn(false);if(wsFailCount>=5){wsGiveUp=true;return;}setTimeout(connectWS,Math.min(2000*Math.pow(2,wsFailCount),15000));};
-}
-function httpPoll(){if(wsConnected)return;fetch('/api/telemetry').then(r=>r.json()).then(updateDashboard).catch(()=>setConn(false));}
+})OMEGA25"
+R"OMEGA26(
+
+function httpPoll(){if(wsConnected)return;fetch('/api/telemetry').then(r=>r.json()).then(updateDashboard).catch(()=>setConn(false));})OMEGA26"
+R"OMEGA27(
+
 function pollTrades(){fetch('/api/trades').then(r=>r.json()).then(renderTrades).catch(()=>{});}
 
 setInterval(()=>{const el=document.getElementById('clock');if(el)el.textContent=new Date().toUTCString().slice(17,25)+' UTC';},1000);
@@ -1120,8 +1152,7 @@ pollTrades();
 </body>
 </html>
 
-
-)OMEGA11"
+)OMEGA27"
 
 ;
 } // namespace omega_gui
