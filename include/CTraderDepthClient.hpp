@@ -355,7 +355,8 @@ private:
 
     bool do_auth(SSL* ssl) {
         // Step 1: Application auth
-        // Send immediately after WebSocket upgrade — server expects auth within ~1s
+        // Brief pause after WS upgrade before sending — server needs to settle WS state
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
         if (!send_json(ssl, CTJSON::app_auth(client_id, client_secret))) return false;
         std::cout << "[CTRADER] ApplicationAuthReq sent (clientId=" << client_id.substr(0,12) << "...)\n";
         int pt; std::string body;
@@ -570,7 +571,7 @@ private:
     // WebSocket support — cTrader requires WS handshake before JSON exchange
     // =========================================================================
     bool ws_upgrade(SSL* ssl, const char* host) {
-        const char* key = "dGhlIHNhbXBsZSBub25jZQ==";
+        const char* key = "x3JJHMbDL1EzLkh9GBhXDw==";  // valid 16-byte base64 key
         std::string req = std::string("GET / HTTP/1.1\r\nHost: ") + host +
             "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " +
             key + "\r\nSec-WebSocket-Version: 13\r\n\r\n";
@@ -621,7 +622,17 @@ private:
         if (masked) hlen += 4;
         if (recv_buf_.size() < hlen+plen) return false;
         if (opcode==9) { recv_buf_.erase(recv_buf_.begin(),recv_buf_.begin()+hlen+plen); return false; }
-        if (opcode==8) { recv_buf_.clear(); pt_out=-1; return true; }
+        if (opcode==8) {
+            // Log close frame reason (bytes 0-1 = status code, rest = reason string)
+            if (plen >= 2) {
+                uint16_t code = ((uint16_t)ps[0]<<8)|ps[1];
+                std::string reason(plen>2?(const char*)ps+2:"", plen>2?plen-2:0);
+                std::cerr << "[CTRADER-WS-CLOSE] code=" << code << " reason=" << reason << "\n";
+            } else {
+                std::cerr << "[CTRADER-WS-CLOSE] no payload\n";
+            }
+            recv_buf_.clear(); pt_out=-1; return true;
+        }
         const uint8_t* ps = recv_buf_.data()+hlen;
         if (masked) {
             const uint8_t* mk=recv_buf_.data()+hlen-4;
