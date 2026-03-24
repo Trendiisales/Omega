@@ -467,6 +467,23 @@ public:
         if(s.session!=SessionType::LONDON&&s.session!=SessionType::NEWYORK&&
            s.session!=SessionType::OVERLAP)
             return noSignal();
+        // Skip first 15 minutes of London open (07:00-07:15 UTC).
+        // Early London is dominated by spread spikes, stop hunts, and false breakouts
+        // before real directional flow establishes. IMPULSE_MIN=$1.00 is just spread noise
+        // at open — the engine detects fake "impulse + pullback" patterns that reverse instantly.
+        // SessionMomentumEngine already skips this window (starts at 07:15).
+        // Incident: 07:05 LONG at 4415.24 → SL hit in 2s, -$8.88 net.
+        {
+            const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm u{};
+#ifdef _WIN32
+            gmtime_s(&u, &t);
+#else
+            gmtime_r(&t, &u);
+#endif
+            const int m = u.tm_hour * 60 + u.tm_min;
+            if (m >= 420 && m < 435) return noSignal(); // 07:00-07:15 UTC
+        }
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::seconds(COOLDOWN_SECONDS)) return noSignal();
         price_history_.push_back(s.mid);
