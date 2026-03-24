@@ -3636,7 +3636,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_ger.allow_bracket && !g_eng_ger30.pos.active)
             dispatch_bracket(g_bracket_ger30, g_sup_ger30, g_eng_ger30, base_can_ger,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             0.5, &sdec_ger); // GER40 L2 not yet in MacroContext — neutral imbalance
+                             g_macro_ctx.ger40_l2_imbalance, &sdec_ger);
         // Opening range breakout: Xetra open 08:00 UTC
         if (!g_orb_ger30.has_open_position() && base_can_ger) {
             const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
@@ -3678,7 +3678,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_uk.allow_bracket && !g_eng_uk100.pos.active)
             dispatch_bracket(g_bracket_uk100, g_sup_uk100, g_eng_uk100, base_can_uk,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             0.5, &sdec_uk); // UK100 L2 not yet in MacroContext — neutral imbalance
+                             g_macro_ctx.uk100_l2_imbalance, &sdec_uk);
         // Opening range breakout: LSE open 08:00 UTC, 15-min range window
         if (!g_orb_uk100.has_open_position() && base_can_uk) {
             const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
@@ -3697,7 +3697,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (sdec_estx.allow_bracket && !g_eng_estx50.pos.active)
             dispatch_bracket(g_bracket_estx50, g_sup_estx50, g_eng_estx50, base_can_estx,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             0.5, &sdec_estx); // ESTX50 L2 not yet in MacroContext — neutral imbalance
+                             g_macro_ctx.estx50_l2_imbalance, &sdec_estx);
         // Opening range breakout: Euronext open 09:00 UTC, 15-min range window
         if (!g_orb_estx50.has_open_position() && base_can_estx) {
             const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
@@ -4607,14 +4607,22 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         if (!g_md_depth_fallback.load()) {
             g_md_depth_fallback.store(true);
             g_md_depth_ok.store(false);
-            // Re-subscribe using 264=1 depth. We do this by forcing a re-sub cycle:
-            // unsub the rejected request then re-sub. The subscription builders
-            // now read g_md_depth_fallback and emit 264=1 when it's set.
-            // Signal the main quote loop to re-subscribe.
-            g_md_subscribed.store(false);
-            std::cout << "[OMEGA-DEPTH] Depth fallback active — running top-of-book only."
-                         " L2Book will have depth_levels()=1 for all symbols.\n";
+            std::cout << "[OMEGA-DEPTH] Depth fallback active — re-subscribing at 264=1 (top-of-book).\n";
             std::cout.flush();
+            // Immediately unsub the rejected 264=5 request and re-sub at 264=1.
+            // ssl is in scope here (dispatch_fix parameter) — no need to signal the loop.
+            // g_md_depth_fallback=true means fix_build_md_subscribe_all() now emits 264=1.
+            const std::string unsub = fix_build_md_unsub_all(g_quote_seq++);
+            if (!unsub.empty())
+                SSL_write(ssl, unsub.c_str(), static_cast<int>(unsub.size()));
+            Sleep(80);  // brief gap — let broker process unsub before resub
+            const std::string resub = fix_build_md_subscribe_all(g_quote_seq++);
+            if (!resub.empty()) {
+                SSL_write(ssl, resub.c_str(), static_cast<int>(resub.size()));
+                g_md_subscribed.store(true);
+                std::cout << "[OMEGA-DEPTH] Re-subscribed at 264=1 — data should resume.\n";
+                std::cout.flush();
+            }
         }
     }
 
@@ -4868,6 +4876,22 @@ static void quote_loop() {
                 // Latency edge engines stats
                 g_le_stack.print_stats();
                 print_perf_stats();
+            }
+
+            // ── Depth fallback poll: if 264=5 was rejected mid-session ─────────
+            // The type-Y handler does immediate re-sub via ssl, but as a belt-and-
+            // suspenders check: if g_md_subscribed dropped false AND g_md_depth_fallback
+            // is set (meaning Y was already handled), re-sub again in case the immediate
+            // re-sub inside dispatch_fix was lost due to timing.
+            if (g_quote_ready.load() && g_md_depth_fallback.load() &&
+                !g_md_subscribed.load()) {
+                const std::string fb_resub = fix_build_md_subscribe_all(g_quote_seq++);
+                if (!fb_resub.empty()) {
+                    SSL_write(ssl, fb_resub.c_str(), static_cast<int>(fb_resub.size()));
+                    g_md_subscribed.store(true);
+                    std::cout << "[OMEGA-DEPTH] Belt-and-suspenders re-sub at 264=1 complete.\n";
+                    std::cout.flush();
+                }
             }
 
             if (g_quote_ready.load() && g_cfg.enable_extended_symbols &&

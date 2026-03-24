@@ -125,11 +125,15 @@ struct ExecutionCostGuard {
         //     FIXED: matches tick_value_multiplier("EURUSD")=100000 in main.cpp.
         // GOLD: 1 price point × $100/pt/lot = $100. ✓
         // XAGUSD: 1 price point × $5000/pt/lot = $5000. ✓
-        if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" ||
-            s == "NZDUSD" || s == "USDJPY") {
+        // USDJPY: JPY-quoted. 1 pt = 100000/150 ≈ $667/lot. Spread in price units (e.g. 0.030 = 0.3 pip).
+        if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" || s == "NZDUSD") {
             commission_per_lot = 6.0;       // $6 round-trip ECN
             slippage_pts       = 0.0002;    // 2 pip typical slippage (in price units)
-            tick_usd_per_lot   = 100000.0;  // FIXED: 100k units/lot × price_pts = USD
+            tick_usd_per_lot   = 100000.0;  // 100k units/lot × price_pts = USD
+        } else if (s == "USDJPY") {
+            commission_per_lot = 6.0;       // $6 round-trip ECN
+            slippage_pts       = 0.020;     // ~0.2 pip slippage in price units
+            tick_usd_per_lot   = 667.0;     // 100000/150 ≈ $667/pt/lot (matches tick_value_multiplier)
         } else if (s == "GOLD.F") {
             commission_per_lot = 6.0;
             slippage_pts       = 0.30;   // 30¢ typical slippage (reduced from 0.50 — ECN is tight)
