@@ -4,11 +4,11 @@
 //
 // PROTOCOL (verified against official SDK source code):
 //
-// TCP FRAMING confirmed by live server response (2026-03-25):
-//   Port 5036 JSON uses NEWLINE-DELIMITED JSON — no length prefix.
+// TCP FRAMING: switching to port 5035 (raw TCP) with newline-delimited JSON.
+//   Port 5036 appears to require WebSocket upgrade for raw TCP connections.
+//   Port 5035 accepts raw TCP for both protobuf and JSON.
 //   Send:    <json_string>\n
 //   Receive: <json_string>\n
-//   (Port 5035 protobuf uses [4-byte BE length][protobuf bytes] — different)
 //
 // JSON MESSAGE FORMAT (send) — from official docs:
 //   {"clientMsgId":"<id>","payloadType":<int>,"payload":{<fields>}}
@@ -321,9 +321,9 @@ private:
         int backoff = 2000;
         while (running.load()) {
             depth_active.store(false);
-            std::cout << "[CTRADER] Connecting live.ctraderapi.com:5036\n";
+            std::cout << "[CTRADER] Connecting live.ctraderapi.com:5035 (TCP+JSON)\n";
             int sock = -1;
-            SSL* ssl = connect_ssl("live.ctraderapi.com", 5036, sock);
+            SSL* ssl = connect_ssl("live.ctraderapi.com", 5035, sock);
             if (!ssl) {
                 std::cerr << "[CTRADER] Connect failed — retry " << backoff << "ms\n";
                 sleep_ms(backoff); backoff = std::min(backoff*2, 60000); continue;
@@ -514,8 +514,8 @@ private:
         }
     }
 
-    // Send JSON with newline terminator — port 5036 uses newline-delimited JSON,
-    // NOT the 4-byte length prefix used by port 5035 protobuf.
+    // Send JSON with newline terminator.
+    // Port 5035 raw TCP accepts newline-delimited JSON (no 4-byte length prefix).
     // Confirmed: server responds with raw {"payloadType":...}\n (no length prefix).
     bool send_json(SSL* ssl, const std::string& json) {
         const std::string msg = json + "\n";
@@ -542,8 +542,7 @@ private:
     }
 
     // Parse one newline-delimited JSON message from recv_buf_
-    // Port 5036 confirmed: server sends raw JSON lines terminated by \n
-    // No 4-byte length prefix (that's protobuf/port 5035 only)
+    // Each message is a complete JSON string terminated by \n
     bool try_parse(int& pt_out, std::string& body_out) {
         const auto nl = std::find(recv_buf_.begin(), recv_buf_.end(), uint8_t('\n'));
         if (nl == recv_buf_.end()) return false;
