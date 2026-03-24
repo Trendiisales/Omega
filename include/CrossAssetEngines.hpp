@@ -116,50 +116,58 @@ struct ExecutionCostGuard {
         const std::string s(sym);
 
         // Commission (only Forex and Metals charge per-lot ECN fee)
+        // ── tick_usd_per_lot values aligned with tick_value_multiplier() in main.cpp ──
+        // FX: spread/slippage expressed in price points (e.g. 0.0002 = 2 pips).
+        //     tick_usd_per_lot = 10.0 because 1 pip (0.0001) × $100,000/lot = $10.
+        //     This correctly converts pip-based spread/slip to USD. ✓
+        // GOLD: 1 price point × $100/pt/lot = $100. Corrected from wrong $1. ✓
+        // XAGUSD: 1 price point × $5000/pt/lot = $5000. Corrected from wrong $50. ✓
+        //     NOTE: ratio check is scale-invariant (lot cancels), so tick correction
+        //     only matters for the commission term which is in USD not price points.
         if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" ||
             s == "NZDUSD" || s == "USDJPY") {
             commission_per_lot = 6.0;    // $6 round-trip ECN
             slippage_pts       = 0.0002; // 2 pip typical slippage
-            tick_usd_per_lot   = 10.0;   // $10/pip/lot for majors
+            tick_usd_per_lot   = 10.0;   // $10/pip/lot for majors (0.0001 pip × $100k/lot)
         } else if (s == "GOLD.F") {
             commission_per_lot = 6.0;
-            slippage_pts       = 0.50;   // $0.50 typical slippage
-            tick_usd_per_lot   = 1.0;    // $1/pt/lot gold
+            slippage_pts       = 0.30;   // 30¢ typical slippage (reduced from 0.50 — ECN is tight)
+            tick_usd_per_lot   = 100.0;  // $100/pt/lot gold (100 oz × $1/oz/pt) — FIXED was $1
         } else if (s == "XAGUSD") {
             commission_per_lot = 6.0;
-            slippage_pts       = 0.03;   // ~3¢ slippage
-            tick_usd_per_lot   = 50.0;   // $50/pt/lot silver (5000oz × $0.01)
+            slippage_pts       = 0.02;   // ~2¢ typical slippage
+            tick_usd_per_lot   = 5000.0; // $5000/pt/lot silver (5000 oz × $1/oz/pt) — FIXED was $50
         } else if (s == "GER40") {
             commission_per_lot = 0.0;    // included in spread
-            slippage_pts       = 2.5;    // 2.5pt typical slippage
+            slippage_pts       = 0.80;   // 0.8pt typical slippage — FIXED was 2.5pt (unrealistic)
             tick_usd_per_lot   = 1.10;   // ~$1.10/pt/lot (EUR-quoted × 1.10)
         } else if (s == "UK100") {
             commission_per_lot = 0.0;
-            slippage_pts       = 1.5;
+            slippage_pts       = 0.60;   // 0.6pt typical slippage — FIXED was 1.5pt
             tick_usd_per_lot   = 1.27;   // GBP-quoted × 1.27
         } else if (s == "ESTX50") {
             commission_per_lot = 0.0;
-            slippage_pts       = 2.0;
+            slippage_pts       = 0.70;   // 0.7pt typical slippage — FIXED was 2.0pt
             tick_usd_per_lot   = 1.10;
         } else if (s == "US500.F") {
             commission_per_lot = 0.0;
-            slippage_pts       = 3.0;
+            slippage_pts       = 1.50;   // 1.5pt typical slippage — FIXED was 3.0pt
             tick_usd_per_lot   = 50.0;   // $50/pt/lot ES
         } else if (s == "USTEC.F") {
             commission_per_lot = 0.0;
-            slippage_pts       = 3.0;
+            slippage_pts       = 2.00;   // 2pt typical slippage — FIXED was 3.0pt
             tick_usd_per_lot   = 20.0;
         } else if (s == "NAS100") {
             commission_per_lot = 0.0;
-            slippage_pts       = 4.0;
+            slippage_pts       = 2.50;   // 2.5pt typical slippage — FIXED was 4.0pt
             tick_usd_per_lot   = 1.0;
         } else if (s == "DJ30.F") {
             commission_per_lot = 0.0;
-            slippage_pts       = 6.0;
+            slippage_pts       = 3.00;   // 3pt typical slippage — FIXED was 6.0pt
             tick_usd_per_lot   = 5.0;    // $5/pt/lot US30
         } else if (s == "USOIL.F" || s == "BRENT") {
             commission_per_lot = 0.0;
-            slippage_pts       = 0.03;
+            slippage_pts       = 0.02;   // 2¢ typical slippage — FIXED was 0.03
             tick_usd_per_lot   = 1000.0; // $1000/pt/lot crude
         }
 
@@ -173,12 +181,13 @@ struct ExecutionCostGuard {
     // tp_dist_pts: |tp - entry| in price points.
     static double expected_gross_usd(const char* sym, double tp_dist_pts, double lot) noexcept {
         if (lot <= 0.0 || tp_dist_pts <= 0.0) return 0.0;
+        // ── Must match tick_value_multiplier() in main.cpp exactly ──
         double tick_usd_per_lot = 1.0;
         const std::string s(sym);
-        if      (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" || s == "NZDUSD") tick_usd_per_lot = 10.0;
+        if      (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" || s == "NZDUSD") tick_usd_per_lot = 10.0;   // pip-norm
         else if (s == "USDJPY")    tick_usd_per_lot = 10.0;   // approx at 150
-        else if (s == "GOLD.F")    tick_usd_per_lot = 1.0;
-        else if (s == "XAGUSD")    tick_usd_per_lot = 50.0;
+        else if (s == "GOLD.F")    tick_usd_per_lot = 100.0;  // FIXED: was 1.0 — correct is $100/pt/lot
+        else if (s == "XAGUSD")    tick_usd_per_lot = 5000.0; // FIXED: was 50.0 — correct is $5000/pt/lot
         else if (s == "GER40")     tick_usd_per_lot = 1.10;
         else if (s == "UK100")     tick_usd_per_lot = 1.27;
         else if (s == "ESTX50")    tick_usd_per_lot = 1.10;
@@ -660,6 +669,14 @@ public:
     bool has_open_position() const {
         return pos_gbp_.active || pos_aud_.active || pos_nzd_.active;
     }
+
+    // Per-leg open checks — used by main.cpp to gate each cascade leg independently.
+    // This is critical: the cascade is designed to enter ALL three legs on a EURUSD signal.
+    // Using the aggregate has_open_position() blocks AUD/NZD once GBP fires, defeating
+    // the multi-leg purpose entirely. Per-leg gates allow concurrent cascade positions.
+    bool has_open_gbpusd() const { return pos_gbp_.active; }
+    bool has_open_audusd() const { return pos_aud_.active; }
+    bool has_open_nzdusd() const { return pos_nzd_.active; }
 
     // Force-close all legs — each pair uses its own current price.
     // Called on disconnect; gbpusd_bid/ask used as fallback for AUD/NZD if zeroed.

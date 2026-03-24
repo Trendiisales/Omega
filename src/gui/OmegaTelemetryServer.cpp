@@ -239,7 +239,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
     bktJson("eur",  s->bkt_eur);  result += ',';
     bktJson("gbp",  s->bkt_gbp);  result += ',';
     bktJson("brent",s->bkt_brent);
-    result += "}}";  // close brackets{} then close root {}
+    result += "}";  // close brackets{} only — root {} closed by final "}" after ca_engines
 
     // Append cross-asset engine live state array
     result += ",\"ca_engines\":[";

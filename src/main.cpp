@@ -3541,12 +3541,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 send_live_order(sym, orb.is_long, lot, orb.entry);
             }
         }
-        // VWAP Reversion: enter when price reverses back toward daily VWAP after over-extension
+        // VWAP Reversion: enter when price reverses back toward daily VWAP after over-extension.
+        // Reference: first tick of each UTC calendar day as VWAP proxy.
+        // Previously used ORB range midpoint → dead before 13:30 UTC (entire London session blocked).
+        // Daily-open anchor matches EURUSD approach and covers full 07:00-22:00 session.
         if (!g_vwap_rev_sp.has_open_position() && base_can_sp) {
-            const double sp_vwap = (g_orb_us.range_high() + g_orb_us.range_low()) > 0.0
-                ? (g_orb_us.range_high() + g_orb_us.range_low()) * 0.5 : 0.0;
-            if (sp_vwap > 0.0) {
-                const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, sp_vwap, ca_on_close);
+            static double s_sp_daily_open = 0.0;
+            static int    s_sp_last_day   = -1;
+            const auto t_sp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti_sp; gmtime_s(&ti_sp, &t_sp);
+            if (ti_sp.tm_yday != s_sp_last_day) {
+                s_sp_daily_open = (bid + ask) * 0.5;
+                s_sp_last_day   = ti_sp.tm_yday;
+            }
+            if (s_sp_daily_open > 0.0) {
+                const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, s_sp_daily_open, ca_on_close);
                 if (vr.valid) {
                     const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
                     g_telemetry.UpdateLastSignal("US500.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
@@ -3567,12 +3576,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch_bracket(g_bracket_nq, g_sup_nq, g_eng_nq, base_can_nq,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.nq_l2_imbalance, &sdec_nq);
-        // VWAP Reversion: NQ over-extension from ORB range midpoint
+        // VWAP Reversion: NQ over-extension from daily open (VWAP proxy).
+        // Same fix as US500.F: was ORB midpoint → dead before 13:30 UTC (entire London blocked).
         if (!g_vwap_rev_nq.has_open_position() && base_can_nq) {
-            const double nq_vwap = (g_orb_us.range_high() + g_orb_us.range_low()) > 0.0
-                ? (g_orb_us.range_high() + g_orb_us.range_low()) * 0.5 : 0.0;
-            if (nq_vwap > 0.0) {
-                const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, nq_vwap, ca_on_close);
+            static double s_nq_daily_open = 0.0;
+            static int    s_nq_last_day   = -1;
+            const auto t_nq = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti_nq; gmtime_s(&ti_nq, &t_nq);
+            if (ti_nq.tm_yday != s_nq_last_day) {
+                s_nq_daily_open = (bid + ask) * 0.5;
+                s_nq_last_day   = ti_nq.tm_yday;
+            }
+            if (s_nq_daily_open > 0.0) {
+                const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, s_nq_daily_open, ca_on_close);
                 if (vr.valid) {
                     const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
                     g_telemetry.UpdateLastSignal("USTEC.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
@@ -3795,8 +3811,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch_bracket(g_bracket_gbpusd, g_sup_gbpusd, g_eng_gbpusd, base_can_fx2,
                              0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start,
                              g_macro_ctx.gbp_l2_imbalance, &sdec_fx2);
-        // FX cascade: EURUSD-driven GBPUSD entry
-        if (!g_ca_fx_cascade.has_open_position() && base_can_fx2) {
+        // FX cascade: EURUSD-driven GBPUSD entry.
+        // Gate: per-leg check (not aggregate) so AUD/NZD legs can fire simultaneously.
+        if (!g_ca_fx_cascade.has_open_gbpusd() && base_can_fx2) {
             const auto cas = g_ca_fx_cascade.on_tick_gbpusd(bid, ask, ca_on_close);
             if (cas.valid) {
                 const double lot = compute_size("GBPUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
@@ -3823,8 +3840,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (sd_aud.allow_breakout && !g_bracket_audusd.pos.active) dispatch(g_eng_audusd, g_sup_audusd, bc_aud, &sd_aud);
                 if (sd_aud.allow_bracket && !g_eng_audusd.pos.active && !any_fx_bracket_active)
                     dispatch_bracket(g_bracket_audusd, g_sup_audusd, g_eng_audusd, bc_aud, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5, &sd_aud);
-                // FX cascade: EURUSD-driven AUDUSD entry (0.73 corr)
-                if (!g_ca_fx_cascade.has_open_position() && bc_aud) {
+                // FX cascade: EURUSD-driven AUDUSD entry (0.73 corr).
+                // Per-leg gate: fires independently of GBP/NZD leg state.
+                if (!g_ca_fx_cascade.has_open_audusd() && bc_aud) {
                     const auto cas = g_ca_fx_cascade.on_tick_audusd(bid, ask, ca_on_close);
                     if (cas.valid) {
                         const double lot = compute_size("AUDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
@@ -3839,8 +3857,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (sd_nzd.allow_breakout && !g_bracket_nzdusd.pos.active) dispatch(g_eng_nzdusd, g_sup_nzdusd, bc_nzd, &sd_nzd);
                 if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active && !any_fx_bracket_active)
                     dispatch_bracket(g_bracket_nzdusd, g_sup_nzdusd, g_eng_nzdusd, bc_nzd, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5, &sd_nzd);
-                // FX cascade: EURUSD-driven NZDUSD entry (0.69 corr)
-                if (!g_ca_fx_cascade.has_open_position() && bc_nzd) {
+                // FX cascade: EURUSD-driven NZDUSD entry (0.69 corr).
+                // Per-leg gate: fires independently of GBP/AUD leg state.
+                if (!g_ca_fx_cascade.has_open_nzdusd() && bc_nzd) {
                     const auto cas = g_ca_fx_cascade.on_tick_nzdusd(bid, ask, ca_on_close);
                     if (cas.valid) {
                         const double lot = compute_size("NZDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
