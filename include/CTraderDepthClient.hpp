@@ -364,7 +364,19 @@ private:
         while (running.load() && std::chrono::steady_clock::now()<dead) {
             uint8_t buf[8192]; int n=SSL_read(ssl,buf,sizeof(buf));
             if (n>0) { recv_buf_.insert(recv_buf_.end(),buf,buf+n); if(try_parse_frame(pt_out,payload_out)) return 1; }
-            else { int e=SSL_get_error(ssl,n); if(e==SSL_ERROR_WANT_READ){std::this_thread::sleep_for(std::chrono::milliseconds(5));continue;} return -1; }
+            else {
+                int e=SSL_get_error(ssl,n);
+                if (e==SSL_ERROR_WANT_READ) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); continue; }
+                // On Windows SO_RCVTIMEO expiry comes back as SSL_ERROR_SYSCALL + WSAETIMEDOUT — treat as timeout not error
+                if (e==SSL_ERROR_SYSCALL) {
+                    #ifdef _WIN32
+                    if (WSAGetLastError()==WSAETIMEDOUT||WSAGetLastError()==0) break;
+                    #else
+                    if (errno==EAGAIN||errno==EWOULDBLOCK||errno==EINTR) break;
+                    #endif
+                }
+                return -1;
+            }
         }
         return running.load() ? 0 : -1;
     }
