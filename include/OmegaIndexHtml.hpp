@@ -444,8 +444,10 @@ R"OMEGA1B(
       </div>
     </div>
 
-)OMEGA1B"
+)OMEGA1C"
 R"OMEGA2(
+)OMEGA1B"
+R"OMEGA1C(
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">◈ EU Indices + Brent</div>
       <div class="eng-grid" style="grid-template-columns:repeat(4,1fr)">
@@ -457,7 +459,8 @@ R"OMEGA2(
       </div>
     </div>
 
-
+)OMEGA2"
+R"OMEGA2B(
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">◇ FX + Asia Engines <span id="asiaGateBadge" style="font-size:10px;margin-left:8px;padding:1px 7px;border-radius:3px;border:1px solid rgba(255,255,255,0.15);color:var(--t2);white-space:nowrap;flex-shrink:0;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">ASIA FX: --</span></div>
       <div class="eng-grid" style="grid-template-columns:repeat(5,1fr)">
@@ -568,7 +571,7 @@ R"OMEGA2(
       </div>
     </div>
 
-)OMEGA2"
+)OMEGA2B"
 R"OMEGA3(
 
   </div><!-- /col-right -->
