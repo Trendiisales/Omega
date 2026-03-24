@@ -28,6 +28,7 @@
 #include <mutex>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <deque>
 #include <cmath>
@@ -56,6 +57,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "GoldEngineStack.hpp"    // Multi-engine gold stack (ported from ChimeraMetals)
 #include "LatencyEdgeEngines.hpp"
 #include "CrossAssetEngines.hpp" // Co-location speed advantage engines (LeadLag, SpreadDisloc, EventComp)
+#include "CTraderDepthClient.hpp" // cTrader Open API v2 — full order book depth feed
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Singleton
@@ -321,12 +323,26 @@ struct OmegaConfig {
     // GoldEngineStack config — passed to g_gold_stack.configure()
     omega::gold::GoldStackCfg gs_cfg;
 
+    // ── cTrader Open API v2 — depth feed ────────────────────────────────────
+    // Provides real multi-level L2 book data (ProtoOADepthEvent) in parallel
+    // with the FIX connection. BlackBull FIX only supports 264=1 (top-of-book);
+    // cTrader Open API has no depth limitation.
+    // Obtain tokens: openapi.ctrader.com/apps/20304/playground (Account info scope)
+    // ctid_trader_account_id: found via GetAccountListByAccessToken (8077780 = 44735058)
+    std::string ctrader_access_token        = "";
+    std::string ctrader_refresh_token       = "";
+    int64_t     ctrader_ctid_account_id     = 0;
+    bool        ctrader_depth_enabled       = false;  // set true when token is configured
+
     // LatencyEdgeStack config — passed to g_latency_edge.configure()
     omega::latency::LatencyEdgeCfg le_cfg;
 };
 
 static OmegaConfig         g_cfg;
 static std::atomic<bool>   g_running(true);
+
+// ── cTrader Open API depth client — parallel to FIX, read-only L2 feed ───────
+static CTraderDepthClient  g_ctrader_depth;
 static std::atomic<bool>   g_quote_logout_received(false);  // server sent Logout to quote session
 static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup — unblocks ctrl handler
 static std::atomic<bool>   g_trade_thread_done(false);  // set by trade_loop() just before it returns
@@ -603,6 +619,51 @@ static std::unordered_map<std::string, int> g_false_break_counts;
 // Book
 static std::mutex                              g_book_mtx;
 static std::unordered_map<std::string,double>  g_bids;
+
+// ── Passive L2 observer symbols ───────────────────────────────────────────────
+// ── Passive L2 observer symbols (whitelist-controlled) ────────────────────────
+// Subscribe to these cross-pairs for L2 imbalance data ONLY — never traded.
+// WHY WHITELIST: SecurityList has 1481 broker symbols. Subscribing ALL would
+// produce a massive FIX message and flood on_tick with unusable pairs.
+// We selectively subscribe to ~10 high-signal cross-pairs that confirm our
+// traded symbol directions without adding noise.
+//
+// Filtered out automatically:
+//   - .P suffix  = premium/STP feed variants (duplicate data, different ID)
+//   - .I suffix  = index variants
+//   - .F suffix  = futures variants (we already handle BRENT, USOIL.F directly)
+//   - Exotic/illiquid: EURHUF, EURNOK, GBPZAR, SEKJPY, MXNJPY etc.
+//
+// Cross-pair values used by engines:
+//   EURJPY → CarryUnwind risk-off confirmation (better than VIX alone)
+//   GBPJPY → GBPUSD FxCascade direction amplifier
+//   EURGBP → FxCascade pair selection (which pair leads EUR vs GBP)
+//   AUDCAD → USOIL/XAGUSD commodity flow proxy
+//   AUDJPY → Risk-off confirmation (classic carry barometer)
+//   NZDJPY → NZDUSD FxCascade confirmation
+//   EURCHF → Safe-haven flow (confirms risk-off alongside JPY)
+//   CHFJPY → Pure safe-haven intensity
+static const std::unordered_set<std::string> PASSIVE_WHITELIST = {
+    "EURJPY", "GBPJPY", "EURGBP", "AUDCAD",
+    "AUDJPY", "NZDJPY", "EURCHF", "CHFJPY",
+};
+// O(1) lookup: name -> true for passive symbols (populated from SecurityList)
+static std::mutex                              g_passive_syms_mtx;
+static std::unordered_set<std::string>         g_passive_sym_names;  // name set for fast dispatch check
+static std::unordered_map<int, std::string>    g_passive_syms;       // id -> name (for subscription)
+
+// Cross-pair imbalance cache — updated under g_l2_mtx, read each tick
+struct CrossPairL2 {
+    double eurjpy = 0.5;  // >0.65=EUR bid (risk-on); <0.35=JPY bid (risk-off)
+    double gbpjpy = 0.5;  // GBPUSD cascade amplifier
+    double eurgbp = 0.5;  // >0.5=EUR leads; <0.5=GBP leads (cascade selection)
+    double audcad = 0.5;  // commodity flow for oil/silver direction
+    double audjpy = 0.5;  // risk-off barometer (carry unwind confirmation)
+    double nzdjpy = 0.5;  // NZDUSD cascade confirmation
+    double eurchf = 0.5;  // safe-haven flow (complements JPY signal)
+    double chfjpy = 0.5;  // pure safe-haven intensity
+};
+static CrossPairL2 g_cross_l2;
 static std::unordered_map<std::string,double>  g_asks;
 
 // L2Level and L2Book are defined in OmegaFIX.hpp (moved 2026-03-24 for 264=5 upgrade)
@@ -1191,17 +1252,23 @@ static std::string fix_build_logout(int seq, const char* subID) {
 }
 // ── SINGLE subscription covering ALL symbols (primary + extended) ──────────
 // ONE fixed req ID = OMEGA-MD-ALL. Unsub always matches. No ghost possible.
-// 264 value: 5 (5-level depth) normally; 1 (top-of-book) if broker rejected 264=5.
+// 264=1 (top-of-book). BlackBull ONLY supports 0 or 1 — confirmed by 35=Y rejection.
 static std::string fix_build_md_subscribe_all(int seq) {
-    // Collect all symbol IDs: primary + extended
+    // Collect all symbol IDs: primary + extended + passive L2 observers
     std::vector<int> ids;
     for (int i = 0; i < OMEGA_NSYMS; ++i) ids.push_back(OMEGA_SYMS[i].id);
     {
         std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
         for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
     }
-    // Use 264=1 if broker already rejected 264=5 this session
-    const int depth_val = g_md_depth_fallback.load() ? 1 : 5;
+    {
+        // Include passive observers (cross-pairs for L2 data only — never traded)
+        std::lock_guard<std::mutex> plk(g_passive_syms_mtx);
+        for (const auto& kv : g_passive_syms) ids.push_back(kv.first);
+    }
+    // BlackBull confirmed: MarketDepth MUST be 0 or 1. Never use 5.
+    // Log message: "INVALID_REQUEST: MarketDepth should be either 0 or 1"
+    const int depth_val = 1;
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
@@ -1221,7 +1288,7 @@ static std::string fix_build_md_unsub_all(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-ALL\x01" << "263=2\x01" << "264=5\x01" << "265=0\x01"
+      << "262=OMEGA-MD-ALL\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1232,7 +1299,7 @@ static std::string fix_build_md_subscribe(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=5\x01" << "265=0\x01"
+      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
       << "146=" << OMEGA_NSYMS << "\x01";
     for (int i = 0; i < OMEGA_NSYMS; ++i) b << "55=" << OMEGA_SYMS[i].id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1246,7 +1313,7 @@ static std::string fix_build_md_subscribe_ext(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-EXT\x01" << "263=1\x01" << "264=5\x01" << "265=0\x01"
+      << "262=OMEGA-MD-EXT\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1256,7 +1323,7 @@ static std::string fix_build_md_unsub(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-001\x01" << "263=2\x01" << "264=5\x01" << "265=0\x01"
+      << "262=OMEGA-MD-001\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
       << "146=" << OMEGA_NSYMS << "\x01";
     for (int i = 0; i < OMEGA_NSYMS; ++i) b << "55=" << OMEGA_SYMS[i].id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1270,7 +1337,7 @@ static std::string fix_build_md_unsub_ext(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-EXT\x01" << "263=2\x01" << "264=5\x01" << "265=0\x01"
+      << "262=OMEGA-MD-EXT\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1632,13 +1699,26 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
             for (int i = 0; i < OMEGA_NSYMS; ++i)
                 if (name == OMEGA_SYMS[i].name) { is_primary = true; break; }
             if (!is_primary) {
-                // Log anything containing keywords for symbols we're looking for
-                static const char* hints[] = {"GER","UK1","EST","XAG","EUR","BRENT","GBP","AUD","NZD","JPY"};
-                for (const char* h : hints) {
-                    if (name.find(h) != std::string::npos) {
-                        std::cout << "[OMEGA-SECURITY] UNMATCHED broker symbol: '" << name
-                                  << "' id=" << id << " (hint: " << h << " — check if broker renamed it)\n";
-                        break;
+                // Only subscribe to whitelisted cross-pairs — not all 1481 broker symbols.
+                // Filter: skip .P .I .F suffix variants (duplicate feeds), skip exotics.
+                const bool has_suffix = (name.size() > 4 &&
+                    (name.back() == 'P' || name.back() == 'I' || name.back() == 'F') &&
+                    name[name.size()-2] == '.');
+                if (!has_suffix && PASSIVE_WHITELIST.count(name)) {
+                    std::lock_guard<std::mutex> plk(g_passive_syms_mtx);
+                    g_passive_syms[id] = name;
+                    g_passive_sym_names.insert(name);
+                    std::cout << "[OMEGA-SECURITY] PASSIVE L2 observer: '" << name
+                              << "' id=" << id << " (subscribing for cross-pair depth data)\n";
+                } else if (!has_suffix) {
+                    // Log unmatched non-suffix symbols for awareness (not subscribing)
+                    static const char* hints[] = {"GER","UK1","EST","XAG","EUR","BRENT","GBP","AUD","NZD","JPY"};
+                    for (const char* h : hints) {
+                        if (name.find(h) != std::string::npos) {
+                            std::cout << "[OMEGA-SECURITY] UNMATCHED (not subscribed): '" << name
+                                      << "' id=" << id << "\n";
+                            break;
+                        }
                     }
                 }
             }
@@ -2216,6 +2296,12 @@ static void load_config(const std::string& path) {
             if (k=="session_start_utc") g_cfg.session_start_utc = safe_stoi(v, k);
             if (k=="session_end_utc")   g_cfg.session_end_utc   = safe_stoi(v, k);
             if (k=="session_asia")      g_cfg.session_asia      = (v == "true" || v == "1");
+        }
+        if (section == "ctrader_api") {
+            if (k=="access_token")           g_cfg.ctrader_access_token     = v;
+            if (k=="refresh_token")          g_cfg.ctrader_refresh_token    = v;
+            if (k=="ctid_trader_account_id") g_cfg.ctrader_ctid_account_id  = std::stoll(v);
+            if (k=="enabled")                g_cfg.ctrader_depth_enabled    = (v == "true" || v == "1");
         }
         if (section == "telemetry") {
             if (k=="gui_port")   g_cfg.gui_port   = safe_stoi(v, k);
@@ -4603,6 +4689,33 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                 }
             }
         }
+        // ── Passive L2 observer routing ───────────────────────────────────────
+        // Whitelisted cross-pairs: update L2 book + cache, return without on_tick.
+        // O(1) lookup via g_passive_sym_names set (populated from SecurityList).
+        {
+            bool is_passive = false;
+            {
+                std::lock_guard<std::mutex> plk(g_passive_syms_mtx);
+                is_passive = (g_passive_sym_names.count(sym) > 0);
+            }
+            if (is_passive) {
+                std::lock_guard<std::mutex> lk(g_l2_mtx);
+                auto it = g_l2_books.find(sym);
+                if (it != g_l2_books.end()) {
+                    const double imb = it->second.imbalance();
+                    if      (sym == "EURJPY") g_cross_l2.eurjpy = imb;
+                    else if (sym == "GBPJPY") g_cross_l2.gbpjpy = imb;
+                    else if (sym == "EURGBP") g_cross_l2.eurgbp = imb;
+                    else if (sym == "AUDCAD") g_cross_l2.audcad = imb;
+                    else if (sym == "AUDJPY") g_cross_l2.audjpy = imb;
+                    else if (sym == "NZDJPY") g_cross_l2.nzdjpy = imb;
+                    else if (sym == "EURCHF") g_cross_l2.eurchf = imb;
+                    else if (sym == "CHFJPY") g_cross_l2.chfjpy = imb;
+                }
+                return;  // passive — no engine dispatch
+            }
+        }
+
         // Merge incremental update with cached book.
         // BlackBull type=X sends only ONE side (bid OR ask).
         // Fill missing side from last known book so on_tick always gets valid bid+ask.
@@ -5972,6 +6085,30 @@ int main(int argc, char* argv[])
 
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
+    // ── cTrader Open API depth feed (parallel to FIX — read-only L2 data) ────
+    // Provides real multi-level order book (ProtoOADepthEvent) to replace
+    // FIX 264=1 single-level estimates. Runs in its own thread independently.
+    if (!g_cfg.ctrader_access_token.empty() && g_cfg.ctrader_ctid_account_id > 0) {
+        g_ctrader_depth.client_id           = "20304_NqeKlH3FEECOWqeP1JvoT2czQV9xkUHE7UXxfPU2dRuDXrZsIM";
+        g_ctrader_depth.client_secret       = "jeYwDPzelIYSoDppuhSZoRpaRi1q572FcBJ44dXNviuSEKxdB9";
+        g_ctrader_depth.access_token        = g_cfg.ctrader_access_token;
+        g_ctrader_depth.refresh_token       = g_cfg.ctrader_refresh_token;
+        g_ctrader_depth.ctid_account_id     = g_cfg.ctrader_ctid_account_id;
+        g_ctrader_depth.l2_mtx              = &g_l2_mtx;
+        g_ctrader_depth.l2_books            = &g_l2_books;
+        // Subscribe to all traded symbols + passive cross-pair whitelist
+        for (int i = 0; i < OMEGA_NSYMS; ++i)
+            g_ctrader_depth.symbol_whitelist.insert(OMEGA_SYMS[i].name);
+        for (const auto& e : g_ext_syms)
+            g_ctrader_depth.symbol_whitelist.insert(e.name);
+        for (const auto& name : PASSIVE_WHITELIST)
+            g_ctrader_depth.symbol_whitelist.insert(name);
+        g_ctrader_depth.start();
+        std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
+    } else {
+        std::cout << "[CTRADER] Depth feed disabled — add [ctrader_api] to omega_config.ini\n";
+    }
+
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
     std::thread trade_thread(trade_loop);
     Sleep(500);  // Give trade connection 500ms head start before quote loop
@@ -5979,6 +6116,8 @@ int main(int argc, char* argv[])
 
     // quote_loop has exited — g_running is false, trade_loop will exit shortly.
     std::cout << "[OMEGA] Shutdown\n";
+    // Stop cTrader depth feed before joining other threads
+    g_ctrader_depth.stop();
     // Wait up to 1.5s for trade_loop to finish its own logout+SSL_free sequence.
     // We check g_trade_thread_done (set at the end of trade_loop) not joinable(),
     // because joinable() stays true until join()/detach() regardless of whether
