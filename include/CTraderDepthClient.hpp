@@ -332,7 +332,7 @@ private:
             backoff = 2000;
             if (!do_auth(ssl)) {
                 std::cerr << "[CTRADER] Auth failed — retry 10s\n";
-                ssl_close(ssl,sock); sleep_ms(10000); continue;
+                ssl_close(ssl,sock); sleep_ms(3000); continue;  // interruptible 3s
             }
             depth_active.store(true);
             std::cout << "[CTRADER] Depth feed ACTIVE — " << depth_books_.size() << " symbols subscribed\n";
@@ -353,7 +353,7 @@ private:
         {
             int hb_pt = 0; std::string hb_body;
             std::cout << "[CTRADER] Waiting for initial heartbeat...\n";
-            const int rc = read_one(ssl, hb_pt, hb_body, 5000);
+            const int rc = read_one(ssl, hb_pt, hb_body, 2000);
             if (rc > 0 && hb_pt == CTraderPT::HEARTBEAT) {
                 send_json(ssl, CTJSON::heartbeat());
                 std::cout << "[CTRADER] Initial heartbeat echoed\n";
@@ -526,7 +526,7 @@ private:
     int read_one(SSL* ssl, int& pt_out, std::string& body_out, int timeout_ms) {
         if (try_parse(pt_out, body_out)) return 1;
         const auto dead = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
-        while (std::chrono::steady_clock::now() < dead) {
+        while (running.load() && std::chrono::steady_clock::now() < dead) {
             uint8_t buf[8192];
             int n = SSL_read(ssl, buf, sizeof(buf));
             if (n > 0) {
@@ -538,6 +538,7 @@ private:
                 return -1;
             }
         }
+        if (!running.load()) return -1;  // shutdown signal
         return 0;
     }
 
@@ -612,5 +613,10 @@ private:
         sock_out=(int)s; return ssl;
     }
     static void ssl_close(SSL* ssl, int sock) { if(ssl) SSL_free(ssl); if(sock>=0) closesocket(sock); }
-    static void sleep_ms(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
+    void sleep_ms(int ms) {
+        // Interruptible: wakes every 50ms to check running flag
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+        while (running.load() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
 };
