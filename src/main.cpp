@@ -4750,6 +4750,14 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             }
         }
 
+        // Seed cache with whatever side(s) we just parsed — must happen BEFORE
+        // the fallback read below, otherwise first-ever X (single-sided) drops silently.
+        {
+            std::lock_guard<std::mutex> lk(g_book_mtx);
+            if (bid > 0.0) g_bids[sym] = bid;
+            if (ask > 0.0) g_asks[sym] = ask;
+        }
+
         // Merge incremental update with cached book.
         // BlackBull type=X sends only ONE side (bid OR ask).
         // Fill missing side from last known book so on_tick always gets valid bid+ask.
