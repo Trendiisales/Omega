@@ -6143,7 +6143,7 @@ int main(int argc, char* argv[])
         for (int i = 0; i < OMEGA_NSYMS; ++i)
             g_ctrader_depth.symbol_whitelist.insert(OMEGA_SYMS[i].name);
         for (const auto& e : g_ext_syms)
-            if (!e.name.empty()) g_ctrader_depth.symbol_whitelist.insert(e.name);
+            if (e.name[0] != 0) g_ctrader_depth.symbol_whitelist.insert(e.name);
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
     } else {
