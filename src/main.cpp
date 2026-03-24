@@ -4471,19 +4471,22 @@ static void quote_loop() {
 
             if (g_quote_ready.load() && g_cfg.enable_extended_symbols &&
                 g_ext_md_refresh_needed.exchange(false)) {
-                if (!g_md_subscribed.load()) {
-                    // Not yet subscribed on this session — send first subscription
-                    const std::string all = fix_build_md_subscribe_all(g_quote_seq++);
-                    if (!all.empty()) {
-                        SSL_write(ssl, all.c_str(), static_cast<int>(all.size()));
-                        g_md_subscribed.store(true);
-                        std::cout << "[OMEGA] Subscribed ALL symbols from SecurityList refresh\n";
-                    }
-                } else {
-                    // Already subscribed (LOGON ACCEPTED already sent it) — skip to avoid
-                    // ALREADY_SUBSCRIBED reject. SecurityList IDs are already in g_ext_syms
-                    // and will be used on the next reconnect's subscription.
-                    std::cout << "[OMEGA] SecurityList refreshed (subscription already active, skipping re-sub)\n";
+                // SecurityList just populated ext symbol IDs (GER30/UK100/ESTX50 etc).
+                // We MUST re-subscribe regardless of g_md_subscribed: the initial LOGON
+                // subscription fired before SecurityList arrived so all ext IDs were 0
+                // and were filtered out. Unsub first to avoid ALREADY_SUBSCRIBED reject,
+                // then send a fresh subscription with the now-known IDs.
+                const std::string unsub_r = fix_build_md_unsub_all(g_quote_seq++);
+                if (!unsub_r.empty()) {
+                    SSL_write(ssl, unsub_r.c_str(), static_cast<int>(unsub_r.size()));
+                }
+                Sleep(100);  // brief gap — let broker process unsub before resub
+                const std::string resub = fix_build_md_subscribe_all(g_quote_seq++);
+                if (!resub.empty()) {
+                    SSL_write(ssl, resub.c_str(), static_cast<int>(resub.size()));
+                    g_md_subscribed.store(true);
+                    std::cout << "[OMEGA] Re-subscribed ALL symbols with learned ext IDs"
+                                 " (GER30/UK100/ESTX50/XAGUSD/EURUSD/BRENT/GBPUSD/AUDUSD/NZDUSD/USDJPY now included)\n";
                 }
             }
 
@@ -5109,9 +5112,21 @@ int main(int argc, char* argv[])
             std::cout << "[SUPERVISOR] All supervisors configured from " << sym_ini << "\n";
             std::cout << "[SYMCFG] All engine params overridden from " << sym_ini << "\n";
         } else {
-            std::cout << "[SYMCFG] WARNING: symbols.ini not found in any search path\n"
-                      << "[SYMCFG] Searched: symbols.ini, C:\\Omega\\symbols.ini, C:\\Omega\\config\\symbols.ini\n"
-                      << "[SYMCFG] Using compiled-in defaults — copy symbols.ini to Omega.exe directory\n";
+            // ── CRITICAL: symbols.ini not found ──────────────────────────────────
+            // Without symbols.ini: allow_bracket=false for all non-metals.
+            // Bracket engines for indices/FX will NOT fire until symbols.ini is deployed.
+            // This is intentional — bracket config is not safe to run with compiled defaults.
+            std::cout << "\n";
+            std::cout << "[SYMCFG] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+            std::cout << "[SYMCFG] !!! CRITICAL: symbols.ini NOT FOUND — BRACKET DISABLED !!!\n";
+            std::cout << "[SYMCFG] !!! Searched:                                           !!!\n";
+            std::cout << "[SYMCFG] !!!   symbols.ini                                       !!!\n";
+            std::cout << "[SYMCFG] !!!   C:\\Omega\\symbols.ini                              !!!\n";
+            std::cout << "[SYMCFG] !!!   C:\\Omega\\config\\symbols.ini                      !!!\n";
+            std::cout << "[SYMCFG] !!! Copy symbols.ini to Omega.exe directory and restart !!!\n";
+            std::cout << "[SYMCFG] !!! allow_bracket=false for all non-metals until fixed  !!!\n";
+            std::cout << "[SYMCFG] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+            std::cout << "\n";
             // Assign symbol names directly so supervisor logs are readable even without ini
             g_sup_sp.symbol     = "US500.F"; g_sup_nq.symbol     = "USTEC.F";
             g_sup_cl.symbol     = "USOIL.F"; g_sup_us30.symbol   = "DJ30.F";
