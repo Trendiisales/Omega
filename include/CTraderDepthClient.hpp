@@ -318,6 +318,9 @@ private:
     std::vector<uint8_t> recv_buf_;
 
     void loop() {
+        // Delay start by 8s to let FIX connections establish first
+        // Prevents cTrader thread from interfering with FIX logon timing
+        sleep_ms(8000);
         int backoff = 2000;
         while (running.load()) {
             depth_active.store(false);
@@ -351,24 +354,8 @@ private:
     }
 
     bool do_auth(SSL* ssl) {
-        // Step 0: Wait for server's initial heartbeat and echo it back
-        // Server sends heartbeat(52) immediately on connect as a "ready" signal.
-        // Must echo before sending ApplicationAuthReq or server drops connection.
-        {
-            int hb_pt = 0; std::string hb_body;
-            std::cout << "[CTRADER] Waiting for initial heartbeat...\n";
-            const int rc = read_one(ssl, hb_pt, hb_body, 2000);
-            if (rc > 0 && hb_pt == CTraderPT::HEARTBEAT) {
-                send_json(ssl, CTJSON::heartbeat());
-                std::cout << "[CTRADER] Initial heartbeat echoed\n";
-            } else if (rc > 0) {
-                // Got something else — put it in context and continue
-                std::cout << "[CTRADER] First message pt=" << hb_pt << " (not heartbeat, continuing)\n";
-            }
-            // If rc==0 (timeout) or rc<0, just proceed — server may not always send one
-        }
-
         // Step 1: Application auth
+        // Send immediately after WebSocket upgrade — server expects auth within ~1s
         if (!send_json(ssl, CTJSON::app_auth(client_id, client_secret))) return false;
         std::cout << "[CTRADER] ApplicationAuthReq sent (clientId=" << client_id.substr(0,12) << "...)\n";
         int pt; std::string body;
@@ -558,8 +545,9 @@ private:
             std::cout << "[CTRADER-RECV] payloadType=" << pt << " body_len=" << body.size()
                       << " preview=" << body.substr(0,120) << "\n";
             std::cout.flush();
+            if (pt == -1) { std::cerr << "[CTRADER] Server sent WS close frame\n"; return false; }
             if (pt == expected) { pt_out=pt; body_out=body; return true; }
-            // Heartbeat (52): server requires echo-back or it closes connection
+            // Heartbeat (52): echo back to keep connection alive
             if (pt == CTraderPT::HEARTBEAT) {
                 send_json(ssl, CTJSON::heartbeat());
                 std::cout << "[CTRADER] Heartbeat echoed\n";
