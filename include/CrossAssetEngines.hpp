@@ -117,18 +117,19 @@ struct ExecutionCostGuard {
 
         // Commission (only Forex and Metals charge per-lot ECN fee)
         // ── tick_usd_per_lot values aligned with tick_value_multiplier() in main.cpp ──
-        // FX: spread/slippage expressed in price points (e.g. 0.0002 = 2 pips).
-        //     tick_usd_per_lot = 10.0 because 1 pip (0.0001) × $100,000/lot = $10.
-        //     This correctly converts pip-based spread/slip to USD. ✓
-        // GOLD: 1 price point × $100/pt/lot = $100. Corrected from wrong $1. ✓
-        // XAGUSD: 1 price point × $5000/pt/lot = $5000. Corrected from wrong $50. ✓
-        //     NOTE: ratio check is scale-invariant (lot cancels), so tick correction
-        //     only matters for the commission term which is in USD not price points.
+        // FX: spread/slippage in PRICE UNITS (e.g. ask-bid = 0.00020 for 2-pip spread).
+        //     tick_usd_per_lot = 100000.0 (1 standard lot = 100,000 units).
+        //     USD cost = price_pts × 100000 × lots. e.g. 0.0002 × 100000 × 0.01 = $0.20 ✓
+        //     OLD value 10.0 was WRONG: 0.0002 × 10 × 0.01 = $0.000002 — commission
+        //     of $0.06 swamped gross of $0.00006 → ratio=0.001 → ALL FX blocked.
+        //     FIXED: matches tick_value_multiplier("EURUSD")=100000 in main.cpp.
+        // GOLD: 1 price point × $100/pt/lot = $100. ✓
+        // XAGUSD: 1 price point × $5000/pt/lot = $5000. ✓
         if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" ||
             s == "NZDUSD" || s == "USDJPY") {
-            commission_per_lot = 6.0;    // $6 round-trip ECN
-            slippage_pts       = 0.0002; // 2 pip typical slippage
-            tick_usd_per_lot   = 10.0;   // $10/pip/lot for majors (0.0001 pip × $100k/lot)
+            commission_per_lot = 6.0;       // $6 round-trip ECN
+            slippage_pts       = 0.0002;    // 2 pip typical slippage (in price units)
+            tick_usd_per_lot   = 100000.0;  // FIXED: 100k units/lot × price_pts = USD
         } else if (s == "GOLD.F") {
             commission_per_lot = 6.0;
             slippage_pts       = 0.30;   // 30¢ typical slippage (reduced from 0.50 — ECN is tight)
@@ -184,8 +185,8 @@ struct ExecutionCostGuard {
         // ── Must match tick_value_multiplier() in main.cpp exactly ──
         double tick_usd_per_lot = 1.0;
         const std::string s(sym);
-        if      (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" || s == "NZDUSD") tick_usd_per_lot = 10.0;   // pip-norm
-        else if (s == "USDJPY")    tick_usd_per_lot = 10.0;   // approx at 150
+        if      (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" || s == "NZDUSD") tick_usd_per_lot = 100000.0; // FIXED: was 10.0 — correct is 100k units × price_pts
+        else if (s == "USDJPY")    tick_usd_per_lot = 667.0;    // FIXED: was 10.0 — 100000/150≈667 USD/pt/lot
         else if (s == "GOLD.F")    tick_usd_per_lot = 100.0;  // FIXED: was 1.0 — correct is $100/pt/lot
         else if (s == "XAGUSD")    tick_usd_per_lot = 5000.0; // FIXED: was 50.0 — correct is $5000/pt/lot
         else if (s == "GER40")     tick_usd_per_lot = 1.10;
@@ -631,8 +632,8 @@ private:
 // =============================================================================
 class FxCascadeEngine {
 public:
-    int64_t CASCADE_WINDOW_MS  = 500;   // must enter within 500ms of EURUSD signal
-    double  TP_PCT             = 0.06;  // 6pip TP on GBPUSD/AUDUSD/NZDUSD
+    int64_t CASCADE_WINDOW_MS  = 200;   // tightened 500→200ms: live RTT is 3-9ms, 200ms is ample
+    double  TP_PCT             = 0.08;  // raised 0.06→0.08: 8pip TP clears cost guard at ratio≥1.5×
     double  SL_PCT             = 0.04;  // 4pip SL
     int     MAX_HOLD_SEC       = 120;
     int     COOLDOWN_SEC       = 60;

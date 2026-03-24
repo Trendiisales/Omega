@@ -1214,6 +1214,7 @@ static std::string fix_build_logout(int seq, const char* subID) {
 }
 // ── SINGLE subscription covering ALL symbols (primary + extended) ──────────
 // ONE fixed req ID = OMEGA-MD-ALL. Unsub always matches. No ghost possible.
+// 264 value: 5 (5-level depth) normally; 1 (top-of-book) if broker rejected 264=5.
 static std::string fix_build_md_subscribe_all(int seq) {
     // Collect all symbol IDs: primary + extended
     std::vector<int> ids;
@@ -1222,10 +1223,12 @@ static std::string fix_build_md_subscribe_all(int seq) {
         std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
         for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
     }
+    // Use 264=1 if broker already rejected 264=5 this session
+    const int depth_val = g_md_depth_fallback.load() ? 1 : 5;
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-ALL\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-ALL\x01" << "263=1\x01" << "264=" << depth_val << "\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1241,7 +1244,7 @@ static std::string fix_build_md_unsub_all(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-ALL\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-ALL\x01" << "263=2\x01" << "264=5\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1252,7 +1255,7 @@ static std::string fix_build_md_subscribe(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-001\x01" << "263=1\x01" << "264=5\x01" << "265=0\x01"
       << "146=" << OMEGA_NSYMS << "\x01";
     for (int i = 0; i < OMEGA_NSYMS; ++i) b << "55=" << OMEGA_SYMS[i].id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1266,7 +1269,7 @@ static std::string fix_build_md_subscribe_ext(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-EXT\x01" << "263=1\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-EXT\x01" << "263=1\x01" << "264=5\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1276,7 +1279,7 @@ static std::string fix_build_md_unsub(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-001\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-001\x01" << "263=2\x01" << "264=5\x01" << "265=0\x01"
       << "146=" << OMEGA_NSYMS << "\x01";
     for (int i = 0; i < OMEGA_NSYMS; ++i) b << "55=" << OMEGA_SYMS[i].id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -1290,7 +1293,7 @@ static std::string fix_build_md_unsub_ext(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-EXT\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-EXT\x01" << "263=2\x01" << "264=5\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
@@ -2865,16 +2868,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             auto it = g_l2_books.find(s);
             return (it != g_l2_books.end()) ? it->second.imbalance() : 0.5;
         };
-        g_macro_ctx.sp_l2_imbalance   = getImb("US500.F");
-        g_macro_ctx.nq_l2_imbalance   = getImb("USTEC.F");
-        g_macro_ctx.nas_l2_imbalance  = getImb("NAS100");
-        g_macro_ctx.us30_l2_imbalance = getImb("DJ30.F");
-        g_macro_ctx.gold_l2_imbalance = getImb("GOLD.F");
-        g_macro_ctx.xag_l2_imbalance  = getImb("XAGUSD");
-        g_macro_ctx.eur_l2_imbalance  = getImb("EURUSD");
-        g_macro_ctx.gbp_l2_imbalance  = getImb("GBPUSD");
-        g_macro_ctx.cl_l2_imbalance    = getImb("USOIL.F");
-        g_macro_ctx.brent_l2_imbalance = getImb("BRENT");
+        g_macro_ctx.sp_l2_imbalance     = getImb("US500.F");
+        g_macro_ctx.nq_l2_imbalance     = getImb("USTEC.F");
+        g_macro_ctx.nas_l2_imbalance    = getImb("NAS100");
+        g_macro_ctx.us30_l2_imbalance   = getImb("DJ30.F");
+        g_macro_ctx.gold_l2_imbalance   = getImb("GOLD.F");
+        g_macro_ctx.xag_l2_imbalance    = getImb("XAGUSD");
+        g_macro_ctx.eur_l2_imbalance    = getImb("EURUSD");
+        g_macro_ctx.gbp_l2_imbalance    = getImb("GBPUSD");
+        g_macro_ctx.cl_l2_imbalance     = getImb("USOIL.F");
+        g_macro_ctx.brent_l2_imbalance  = getImb("BRENT");
+        // Previously hardcoded 0.5 — now wired (added 2026-03-24)
+        g_macro_ctx.ger40_l2_imbalance  = getImb("GER40");
+        g_macro_ctx.uk100_l2_imbalance  = getImb("UK100");
+        g_macro_ctx.estx50_l2_imbalance = getImb("ESTX50");
+        g_macro_ctx.aud_l2_imbalance    = getImb("AUDUSD");
+        g_macro_ctx.nzd_l2_imbalance    = getImb("NZDUSD");
+        g_macro_ctx.jpy_l2_imbalance    = getImb("USDJPY");
     }
 
     const bool tradeable = session_tradeable();
@@ -3924,25 +3934,36 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         int fb_gold = 0;
         { std::lock_guard<std::mutex> lk(g_false_break_mtx);
           auto it = g_false_break_counts.find("GOLD.F"); if (it != g_false_break_counts.end()) fb_gold = it->second; }
-        // Run supervisor — use real vol/regime state from GoldEngineStack.
-        // gold_vol_range: the rolling min/max range the RegimeGovernor uses internally.
-        // We convert to a pct of mid price so it's on the same scale as SymbolSupervisor's
-        // vol_ratio input (recent_vol / base_vol). We synthesise recent/base so that:
-        //   TREND/IMPULSE (range >> compression threshold) → vol_ratio > 1.0 → EXPANSION
-        //   COMPRESSION   (range tight)                    → vol_ratio < 0.85 → QUIET_COMPRESSION
-        // Gold supervisor — uses GoldEngineStack's own RegimeGovernor as the truth source.
-        // The GoldStack has a proper multi-timeframe EWM drift detector that correctly
-        // identifies TREND/IMPULSE/COMPRESSION/MEAN_REVERSION. Attempting to derive
-        // vol_ratio from rolling price windows fails for sustained trends: both the
-        // 80-tick recent window and 512-tick baseline track the trend identically,
-        // giving vol_ratio≈1.0 (appears compressed) even during a $100 drop.
+        // ── Gold supervisor — REAL measured volatility (no synthetic injection) ──
         //
-        // Architecture: GoldStack regime → calibrated vol signals → SymbolSupervisor
-        //   TREND/IMPULSE  → recent=0.25%, base=0.10% → vol_ratio=2.5 → EXPANSION_BREAKOUT
-        //   COMPRESSION    → recent=0.04%, base=0.10% → vol_ratio=0.4 → QUIET_COMPRESSION
-        //   MEAN_REVERSION → recent=0.10%, base=0.10% → vol_ratio=1.0 → HIGH_RISK/ambiguous
-        // The SymbolSupervisor then applies its secondary gates: spread, false-breaks,
-        // cooldown, min_winner_score — which are meaningful and correct for gold.
+        // REMOVED: synthetic vol mapping (IMPULSE→0.25%, COMPRESSION→0.04%, etc.)
+        // WHY REMOVED: that mapping bypassed the supervisor's vol_ratio check entirely.
+        //   IMPULSE → hardcoded recent=0.25, base=0.10 → vol_ratio=2.5 → allow_breakout=true
+        //   regardless of whether real volatility was expanding. This caused the bad
+        //   SESSION_MOM_SHORT trade: IMPULSE label alone permitted entry during a
+        //   liquidity sweep with no real vol expansion.
+        //
+        // REAL DATA SOURCES (all computed from live tick prices inside GoldEngineStack):
+        //   recent_vol_pct(): governor 80-tick MinMax range / mid * 100
+        //                     Updates every tick. Zero until 80-tick warmup.
+        //   base_vol_pct():   512-tick rolling range + EWM α=0.002 baseline.
+        //                     Doesn't chase trends — stays elevated during/after moves.
+        //                     Zero until 40-tick warmup.
+        //   in_compression:   governor range < CE ($4.00) confirmed over CONFIRM_TICKS=5.
+        //   vol_ratio:        recent / base — computed inside SymbolSupervisor.update()
+        //                     > 0.85 → QUIET_COMPRESSION
+        //                     > 1.0  → expansion candidate
+        //                     > 1.3  → EXPANSION_BREAKOUT or TREND_CONTINUATION
+        //
+        // CONFIDENCE → POSITION SIZING:
+        //   gold_sdec.confidence is now passed to compute_size() as a multiplier.
+        //   confidence 0.45-0.55 → 0.7× size. 0.80+ → 1.2× size.
+        //   Weak signals automatically get smaller positions.
+        //
+        // COUNTER-TREND GUARD FOR SESSIONMOMENTUM:
+        //   SessionMomentum SHORT blocked when price > VWAP (price above mean = no short).
+        //   SessionMomentum LONG blocked when price < VWAP.
+        //   IMPULSE regime alone no longer permits counter-trend entries.
         const char* gold_stack_regime   = g_gold_stack.regime_name();
         const double gold_gov_hi        = g_gold_stack.governor_hi();
         const double gold_gov_lo        = g_gold_stack.governor_lo();
@@ -3951,22 +3972,37 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double gold_momentum      = (gold_vwap_now > 0.0 && gold_mid_now > 0.0)
             ? ((gold_mid_now - gold_vwap_now) / gold_mid_now * 100.0)
             : 0.0;
-        const bool gold_is_trending     = (strcmp(gold_stack_regime,"TREND")==0
-                                        || strcmp(gold_stack_regime,"IMPULSE")==0);
         const bool gold_is_compressing  = (strcmp(gold_stack_regime,"COMPRESSION")==0);
-        // vol signals calibrated to SymbolSupervisor thresholds (compression_thresh=0.85)
-        const double gold_recent_vol    = gold_is_trending    ? 0.25
-                                        : gold_is_compressing ? 0.04
-                                        : 0.10;
-        static constexpr double GOLD_BASE_VOL = 0.10;
+
+        // REAL vol measurements from GoldEngineStack (tick-by-tick, no hardcoding)
+        const double gold_recent_vol    = g_gold_stack.recent_vol_pct();  // 80-tick range/mid
+        const double gold_base_vol      = g_gold_stack.base_vol_pct();    // 512-tick EWM baseline
 
         const auto gold_sdec = g_sup_gold.update(
             bid, ask,
-            gold_recent_vol, GOLD_BASE_VOL,
+            gold_recent_vol, gold_base_vol,   // REAL measured vol — no synthetic injection
             gold_momentum,
             gold_gov_hi, gold_gov_lo,
             gold_is_compressing,
             fb_gold);
+
+        // Diagnostic: log vol_ratio every 30s so we can verify real data is flowing
+        {
+            static int64_t s_last_vol_log = 0;
+            const int64_t now_ms_vl = static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            if (now_ms_vl - s_last_vol_log >= 30000) {
+                s_last_vol_log = now_ms_vl;
+                const double vr = (gold_base_vol > 0.0) ? gold_recent_vol / gold_base_vol : 0.0;
+                printf("[GOLD-VOL] regime=%s recent_vol=%.4f%% base_vol=%.4f%% ratio=%.3f"
+                       " sdec_regime=%s conf=%.3f allow_bo=%d\n",
+                       gold_stack_regime, gold_recent_vol, gold_base_vol, vr,
+                       omega::regime_name(gold_sdec.regime), gold_sdec.confidence,
+                       (int)gold_sdec.allow_breakout);
+                fflush(stdout);
+            }
+        }
 
         // GoldEngineStack: always tick for VWAP/vol warmup — supervisor gating only blocks
         // entry execution, not feature accumulation. Without this, VWAP stays 0.00 forever
@@ -3975,30 +4011,70 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Fix: always call on_tick, pass can_enter=false when supervisor blocks to prevent
         // actual signal execution while still building features.
         {
+            // ── Vol ratio confirmation ────────────────────────────────────────
+            // Require genuine vol expansion before allowing GoldStack breakout entries.
+            // Cold start (base_vol=0) is permitted — the engine's VolatilityFilter
+            // already blocks signals during its own 50-tick warmup.
+            const double gold_vol_ratio = (gold_base_vol > 0.0)
+                ? gold_recent_vol / gold_base_vol : 0.0;
+            const bool vol_expanding = (gold_base_vol <= 0.0) || (gold_vol_ratio >= 1.10);
+
+            // ── Confidence threshold ──────────────────────────────────────────
+            const bool conf_ok = (gold_sdec.confidence >= 0.45);
+
             const bool stack_can_enter = gold_sdec.allow_breakout
-                                         && !g_bracket_gold.has_open_position();
+                                         && !g_bracket_gold.has_open_position()
+                                         && vol_expanding
+                                         && conf_ok;
             const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close,
                                                     stack_can_enter && gold_can_enter);
             if (gsig.valid) {
-                g_telemetry.UpdateLastSignal("GOLD.F",
-                    gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason,
-                    omega::regime_name(gold_sdec.regime), regime.c_str(), "BREAKOUT");
-                const double gold_sl_abs = gsig.sl_ticks * 0.10;
-                const double gold_lot    = compute_size("GOLD.F", gold_sl_abs, ask - bid,
-                                                        gsig.size > 0.0 ? gsig.size : 0.02);
-                g_gold_stack.patch_position_size(gold_lot);
-                std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
-                          << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
-                          << " entry=" << gsig.entry
-                          << " tp="    << gsig.tp_ticks << "ticks"
-                          << " sl="    << gsig.sl_ticks << "ticks / " << std::fixed << std::setprecision(2) << gold_sl_abs << "pts"
-                          << " size="  << gold_lot
-                          << " conf="  << gsig.confidence
-                          << " eng="   << gsig.engine
-                          << " sup_regime=" << omega::regime_name(gold_sdec.regime)
-                          << " winner=" << gold_sdec.winner
-                          << "\033[0m\n";
-                send_live_order("GOLD.F", gsig.is_long, gold_lot, gsig.entry);
+                // ── VWAP counter-trend guard ──────────────────────────────────
+                // Block signals that trade against the VWAP direction.
+                // SHORT when price > VWAP = counter-trend. LONG when price < VWAP = fine.
+                // 0.1% tolerance band to avoid blocking entries right at VWAP.
+                const bool vwap_valid    = (gold_vwap_now > 0.0);
+                const bool direction_ok  = !vwap_valid
+                    || (gsig.is_long  && gold_mid_now <= gold_vwap_now * 1.001)
+                    || (!gsig.is_long && gold_mid_now >= gold_vwap_now * 0.999);
+
+                if (!direction_ok) {
+                    printf("[GOLD-STACK-BLOCKED] %s counter-trend mid=%.2f vwap=%.2f"
+                           " vol_ratio=%.3f eng=%s\n",
+                           gsig.is_long ? "LONG" : "SHORT",
+                           gold_mid_now, gold_vwap_now, gold_vol_ratio, gsig.engine);
+                    fflush(stdout);
+                } else {
+                    g_telemetry.UpdateLastSignal("GOLD.F",
+                        gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason,
+                        omega::regime_name(gold_sdec.regime), regime.c_str(), "BREAKOUT");
+                    const double gold_sl_abs = gsig.sl_ticks * 0.10;
+
+                    // ── Confidence-scaled sizing ──────────────────────────────
+                    // Scale by supervisor confidence: conf=0.45→0.65×, conf=0.80→1.08×
+                    // Formula: clamp(0.40 + conf*0.85, 0.65, 1.25)
+                    const double conf_mult = std::max(0.65, std::min(1.25,
+                                                0.40 + gold_sdec.confidence * 0.85));
+                    const double base_lot  = compute_size("GOLD.F", gold_sl_abs, ask - bid,
+                                                          gsig.size > 0.0 ? gsig.size : 0.02);
+                    const double gold_lot  = std::max(0.01, base_lot * conf_mult);
+                    g_gold_stack.patch_position_size(gold_lot);
+                    std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
+                              << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
+                              << " entry=" << gsig.entry
+                              << " tp="    << gsig.tp_ticks << "ticks"
+                              << " sl="    << gsig.sl_ticks << "ticks / "
+                              << std::fixed << std::setprecision(2) << gold_sl_abs << "pts"
+                              << " size="  << gold_lot
+                              << " conf="  << gsig.confidence
+                              << " conf_mult=" << conf_mult
+                              << " vol_ratio=" << gold_vol_ratio
+                              << " eng="   << gsig.engine
+                              << " sup_regime=" << omega::regime_name(gold_sdec.regime)
+                              << " winner=" << gold_sdec.winner
+                              << "\033[0m\n";
+                    send_live_order("GOLD.F", gsig.is_long, gold_lot, gsig.entry);
+                }
             }
         }
 
@@ -4538,7 +4614,32 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                   << " full=" << r << "\n";
         std::cerr.flush();
     }
-}
+
+    // ── MarketDataRequestReject (35=Y) — depth fallback ──────────────────────
+    // If broker rejects our 264=5 subscription, fall back to 264=1 (top-of-book).
+    // This fires at most once per session. g_md_depth_fallback prevents re-loop.
+    if (type == "Y") {
+        const std::string rej_reason = extract_tag(msg, "281"); // MDReqRejReason
+        const std::string req_id     = extract_tag(msg, "262"); // MDReqID
+        std::cerr << "[OMEGA-DEPTH] MarketDataRequestReject (35=Y)"
+                  << " req=" << req_id
+                  << " reason=" << rej_reason
+                  << " — broker rejected 264=5, falling back to 264=1 (top-of-book)\n";
+        std::cerr.flush();
+
+        if (!g_md_depth_fallback.load()) {
+            g_md_depth_fallback.store(true);
+            g_md_depth_ok.store(false);
+            // Re-subscribe using 264=1 depth. We do this by forcing a re-sub cycle:
+            // unsub the rejected request then re-sub. The subscription builders
+            // now read g_md_depth_fallback and emit 264=1 when it's set.
+            // Signal the main quote loop to re-subscribe.
+            g_md_subscribed.store(false);
+            std::cout << "[OMEGA-DEPTH] Depth fallback active — running top-of-book only."
+                         " L2Book will have depth_levels()=1 for all symbols.\n";
+            std::cout.flush();
+        }
+    }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Quote loop

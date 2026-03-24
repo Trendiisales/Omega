@@ -51,6 +51,13 @@ struct MacroContext {
     double      gbp_l2_imbalance  = 0.5;
     double      cl_l2_imbalance   = 0.5;
     double      brent_l2_imbalance = 0.5;
+    // Previously missing — added 2026-03-24
+    double      ger40_l2_imbalance  = 0.5;
+    double      uk100_l2_imbalance  = 0.5;
+    double      estx50_l2_imbalance = 0.5;
+    double      aud_l2_imbalance    = 0.5;
+    double      nzd_l2_imbalance    = 0.5;
+    double      jpy_l2_imbalance    = 0.5;
 
     // Session time slot — updated every tick
     // 0=dead(05-07 UTC), 1=London(07-09), 2=London_core(09-12),
