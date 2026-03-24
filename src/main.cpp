@@ -4768,12 +4768,29 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     }
 
     if (type == "3" || type == "j") {
+        const std::string rej_text = extract_tag(msg, "58");
         std::string r = msg.substr(0, 400); for (char& c : r) if (c=='\x01') c='|';
         std::cerr << "[OMEGA] FIX REJECT type=" << type
-                  << " text=" << extract_tag(msg, "58")
+                  << " text=" << rej_text
                   << " refMsgType=" << extract_tag(msg, "372")
                   << " full=" << r << "\n";
         std::cerr.flush();
+        // ALREADY_SUBSCRIBED: ghost session from previous connect still holds subscription.
+        // Force unsub the old ID then resubscribe fresh so ticks resume.
+        if (rej_text.find("ALREADY_SUBSCRIBED") != std::string::npos) {
+            std::cout << "[OMEGA] ALREADY_SUBSCRIBED — forcing unsub+resub to clear ghost session\n";
+            std::cout.flush();
+            const std::string unsub = fix_build_md_unsub_all(g_quote_seq++);
+            if (!unsub.empty()) SSL_write(ssl, unsub.c_str(), (int)unsub.size());
+            Sleep(150);
+            const std::string resub = fix_build_md_subscribe_all(g_quote_seq++);
+            if (!resub.empty()) {
+                SSL_write(ssl, resub.c_str(), (int)resub.size());
+                g_md_subscribed.store(true);
+                std::cout << "[OMEGA] Resubscribed after ALREADY_SUBSCRIBED — ticks should resume\n";
+                std::cout.flush();
+            }
+        }
     }
 
     // ── MarketDataRequestReject (35=Y) — depth fallback ──────────────────────
