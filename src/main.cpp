@@ -4766,35 +4766,12 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     }
 
     if (type == "3" || type == "j") {
-        const std::string rej_text = extract_tag(msg, "58");
         std::string r = msg.substr(0, 400); for (char& c : r) if (c=='\x01') c='|';
         std::cerr << "[OMEGA] FIX REJECT type=" << type
-                  << " text=" << rej_text
+                  << " text=" << extract_tag(msg, "58")
                   << " refMsgType=" << extract_tag(msg, "372")
                   << " full=" << r << "\n";
         std::cerr.flush();
-        // ALREADY_SUBSCRIBED: ghost session holds the subscription.
-        // Rate-limited unsub+resub: once per 2s max to avoid feedback loop.
-        if (rej_text.find("ALREADY_SUBSCRIBED") != std::string::npos) {
-            static std::atomic<int64_t> s_last_ms{0};
-            const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-            if (now_ms - s_last_ms.load() > 2000) {
-                s_last_ms.store(now_ms);
-                std::cout << "[OMEGA] ALREADY_SUBSCRIBED — unsub+resub (ghost clear)\n";
-                std::cout.flush();
-                const std::string unsub = fix_build_md_unsub_all(g_quote_seq++);
-                if (!unsub.empty()) SSL_write(ssl, unsub.c_str(), (int)unsub.size());
-                Sleep(500);  // 500ms — broker needs time to process unsub
-                const std::string resub = fix_build_md_subscribe_all(g_quote_seq++);
-                if (!resub.empty()) {
-                    SSL_write(ssl, resub.c_str(), (int)resub.size());
-                    g_md_subscribed.store(true);
-                    std::cout << "[OMEGA] Resubscribed — ticks resuming\n";
-                    std::cout.flush();
-                }
-            }
-        }
     }
 
     // ── MarketDataRequestReject (35=Y) — depth fallback ──────────────────────
