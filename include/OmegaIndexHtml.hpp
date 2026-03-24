@@ -472,6 +472,16 @@ R"OMEGA2(
       </div>
     </div>
 
+    <!-- ── Cross-Asset Engines Panel ── -->
+    <div class="eng-section" style="margin-top:6px;" id="caEngSection">
+      <div class="eng-section-label" style="display:flex;align-items:center;gap:8px;">
+        ⚡ Cross-Asset Engines
+        <span id="caBlockedBadge" style="font-size:10px;padding:1px 7px;border-radius:3px;border:1px solid rgba(255,136,0,0.3);color:var(--amber);font-family:'IBM Plex Mono',monospace;display:none;">0 blocked</span>
+        <span id="caActiveBadge" style="font-size:10px;padding:1px 7px;border-radius:3px;border:1px solid rgba(0,217,126,0.3);color:var(--green);font-family:'IBM Plex Mono',monospace;margin-left:auto;display:none;">● LIVE</span>
+      </div>
+      <div id="caEngGrid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:5px;"></div>
+    </div>
+
     <!-- Last signal + trades -->
     <div class="sig-trade-area">
       <div class="last-sig">
@@ -795,6 +805,83 @@ function renderTrades(trades){
   }).join('');
 }
 
+function renderCrossAsset(d){
+  const grid=document.getElementById('caEngGrid');if(!grid)return;
+  const engines=d.ca_engines||[];
+  const blocked=safe(d.cost_guard_blocked);
+  const passed=safe(d.cost_guard_passed);
+
+  // Badge updates
+  const bb=document.getElementById('caBlockedBadge');
+  if(bb){
+    if(blocked>0){bb.textContent=blocked+' blocked';bb.style.display='inline';}
+    else bb.style.display='none';
+  }
+  const anyActive=engines.some(e=>e.active);
+  const ab=document.getElementById('caActiveBadge');
+  if(ab){
+    if(anyActive){ab.style.display='inline';}else ab.style.display='none';
+  }
+
+  // Friendly display names
+  const NAMES={
+    'ORB_US':'ORB US','ORB_GER40':'ORB GER','ORB_UK100':'ORB UK',
+    'ORB_ESTX50':'ORB ESTX','ORB_XAG':'ORB XAG',
+    'VWAP_SP':'VWAP SP','VWAP_NQ':'VWAP NQ','VWAP_GER40':'VWAP GER','VWAP_EUR':'VWAP EUR',
+    'TRENDPB_GOLD':'TPB GOLD','TRENDPB_GER':'TPB GER',
+    'FXCASC_GBP':'CASCADE','ESNQ_DIV':'ES/NQ DIV','CARRY_UNW':'CARRY UNW'
+  };
+  // Color theme per engine type
+  const TYPE_COL={
+    'ORB':'var(--cyan)','VWAP':'var(--purple)','TRENDPB':'var(--gold)',
+    'FXCASC':'var(--green)','ESNQ':'var(--blue)','CARRY':'var(--red)'
+  };
+  function typeOf(name){
+    if(name.startsWith('ORB'))return'ORB';
+    if(name.startsWith('VWAP'))return'VWAP';
+    if(name.startsWith('TRENDPB'))return'TRENDPB';
+    if(name.startsWith('FXCASC'))return'FXCASC';
+    if(name.startsWith('ESNQ'))return'ESNQ';
+    return'CARRY';
+  }
+
+  grid.innerHTML=engines.map(e=>{
+    const label=NAMES[e.name]||e.name;
+    const type=typeOf(e.name);
+    const col=TYPE_COL[type]||'var(--t2)';
+    const isActive=e.active===1;
+    const dir=e.is_long?'▲ LONG':'▼ SHORT';
+    const dirCol=e.is_long?'var(--green)':'var(--red)';
+    const bg=isActive?'rgba(0,217,126,0.07)':'rgba(255,255,255,0.02)';
+    const border=isActive?'1px solid rgba(0,217,126,0.25)':'1px solid rgba(255,255,255,0.06)';
+
+    let detail='';
+    if(isActive){
+      const ep=e.entry>0?e.entry.toFixed(e.entry>100?1:4):'--';
+      const tpd=e.tp>0?e.tp.toFixed(e.tp>100?1:4):'--';
+      const sld=e.sl>0?e.sl.toFixed(e.sl>100?1:4):'--';
+      detail=`<div style="font-size:9px;color:var(--t2);margin-top:2px;font-family:'IBM Plex Mono',monospace;line-height:1.5">
+        <span style="color:var(--t2)">@ </span><span style="color:var(--t1)">${ep}</span>
+        <span style="margin-left:4px;color:var(--green)">TP${tpd}</span>
+        <span style="margin-left:4px;color:var(--red)">SL${sld}</span>
+      </div>`;
+    } else if(e.ref_price>0){
+      const refLabel=type==='ORB'?'rng':type==='VWAP'?'vwap':type==='TRENDPB'?'ema50':'ref';
+      const refVal=e.ref_price.toFixed(e.ref_price>100?1:4);
+      detail=`<div style="font-size:9px;color:var(--t3);margin-top:2px;font-family:'IBM Plex Mono',monospace">${refLabel}: ${refVal}</div>`;
+    }
+
+    return `<div style="background:${bg};border:${border};border-radius:6px;padding:5px 7px;min-width:0">
+      <div style="font-size:9px;color:${col};font-weight:700;letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+      <div style="font-size:9px;color:var(--t2);margin-top:1px">${e.symbol}</div>
+      ${isActive
+        ? `<div style="font-size:10px;color:${dirCol};font-weight:700;margin-top:2px">${dir}</div>`
+        : `<div style="font-size:9px;color:var(--t3);margin-top:2px">IDLE</div>`}
+      ${detail}
+    </div>`;
+  }).join('');
+}
+
 function updateDashboard(d){
   lastData=d;setConn(true);
 
@@ -942,6 +1029,7 @@ R"OMEGA4(
   renderLastSignal(d);
   renderSLCooldowns(d);
   renderAsiaGate(d);
+  renderCrossAsset(d);
 }
 
 function setConn(ok){

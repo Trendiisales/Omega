@@ -241,6 +241,37 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
     bktJson("brent",s->bkt_brent);
     result += "}}";  // close brackets{} then close root {}
 
+    // Append cross-asset engine live state array
+    result += ",\"ca_engines\":[";
+    const int nca = s->ca_engine_count;
+    for (int i = 0; i < nca; ++i) {
+        const auto& e = s->ca_engines[i];
+        if (i > 0) result += ',';
+        char ce[256];
+        snprintf(ce, sizeof(ce),
+            "{\"name\":\"%s\",\"symbol\":\"%s\","
+            "\"active\":%d,\"is_long\":%d,"
+            "\"entry\":%.4f,\"tp\":%.4f,\"sl\":%.4f,"
+            "\"ref_price\":%.4f,\"signals_today\":%d,\"cost_blocked\":%d}",
+            e.name, e.symbol,
+            e.active, e.is_long,
+            e.entry, e.tp, e.sl,
+            e.ref_price, e.signals_today, e.cost_blocked);
+        result += ce;
+    }
+    result += "]";
+
+    // Append cost guard session totals
+    {
+        char cg[96];
+        snprintf(cg, sizeof(cg),
+            ",\"cost_guard_blocked\":%lld,\"cost_guard_passed\":%lld",
+            (long long)s->cost_guard_blocked_total,
+            (long long)s->cost_guard_passed_total);
+        result += cg;
+    }
+
+    result += "}";  // close root object
     return result;
 }
 

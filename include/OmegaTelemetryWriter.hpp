@@ -176,6 +176,29 @@ struct OmegaTelemetrySnapshot
     // --- Uptime ---
     int64_t uptime_sec;    // seconds since process start — written each tick by main loop
     int64_t start_time;    // unix timestamp of process start — set once at init
+
+    // --- Cross-asset engine live state (Engines 1–8 + ORB instances) ---
+    // One slot per named engine instance. Written each tick by main.cpp.
+    // active=1 means position is currently open.
+    static constexpr int MAX_CA_ENGINES = 20;
+    struct CrossAssetEngineState {
+        char   name[24];       // e.g. "ORB_US", "VWAP_GER40", "TREND_GOLD"
+        char   symbol[12];     // e.g. "US500.F"
+        int    active;         // 1 = position open, 0 = idle
+        int    is_long;        // direction of open position (valid when active=1)
+        double entry;          // entry price (valid when active=1)
+        double tp;             // TP price
+        double sl;             // SL price
+        double ref_price;      // VWAP / EMA50 / ORB range mid — context reference
+        int    cost_blocked;   // cumulative count of COST-GUARD blocks this session
+        int    signals_today;  // signals fired today
+    };
+    CrossAssetEngineState ca_engines[MAX_CA_ENGINES];
+    int ca_engine_count;   // how many slots are populated
+
+    // --- ExecutionCostGuard session stats ---
+    int64_t cost_guard_blocked_total;   // total trades blocked by cost floor (all engines)
+    int64_t cost_guard_passed_total;    // total trades that cleared cost floor
 };
 
 // ==============================================================================
@@ -440,4 +463,42 @@ public:
     }
 
     void SetMode(const char* m) { if (m_snap) strcpy_s(m_snap->mode, m); }
+
+    // Update a single cross-asset engine slot by name (upsert by name match)
+    void UpdateCrossAsset(const char* name, const char* symbol,
+                          int active, int is_long,
+                          double entry, double tp, double sl, double ref_price,
+                          int signals_today)
+    {
+        if (!m_snap) return;
+        // Find existing slot or claim a new one
+        int slot = -1;
+        for (int i = 0; i < m_snap->ca_engine_count; ++i) {
+            if (strncmp(m_snap->ca_engines[i].name, name, 23) == 0) { slot = i; break; }
+        }
+        if (slot < 0) {
+            if (m_snap->ca_engine_count >= OmegaTelemetrySnapshot::MAX_CA_ENGINES) return;
+            slot = m_snap->ca_engine_count++;
+        }
+        auto& e = m_snap->ca_engines[slot];
+        strncpy_s(e.name,   name,   23);
+        strncpy_s(e.symbol, symbol, 11);
+        e.active       = active;
+        e.is_long      = is_long;
+        e.entry        = entry;
+        e.tp           = tp;
+        e.sl           = sl;
+        e.ref_price    = ref_price;
+        e.signals_today = signals_today;
+        // cost_blocked is incremented separately via IncrCostBlocked
+    }
+
+    void IncrCostBlocked() {
+        if (!m_snap) return;
+        ++m_snap->cost_guard_blocked_total;
+    }
+    void IncrCostPassed() {
+        if (!m_snap) return;
+        ++m_snap->cost_guard_passed_total;
+    }
 };

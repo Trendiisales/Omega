@@ -3535,19 +3535,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         if (!g_orb_us.has_open_position() && base_can_sp) {
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
-            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
+            if (orb.valid) {
+                const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
+                g_telemetry.UpdateLastSignal("US500.F", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
+                send_live_order(sym, orb.is_long, lot, orb.entry);
+            }
         }
         // VWAP Reversion: enter when price reverses back toward daily VWAP after over-extension
         if (!g_vwap_rev_sp.has_open_position() && base_can_sp) {
-            // Rolling VWAP: use MacroContext ES price for daily anchor (g_macro_ctx tracks it)
-            // Proxy: use the ORB range midpoint as intraday VWAP estimate when real VWAP unavailable
-            // Real VWAP would require cumulative tick volume — use EsNq divergence baseline as proxy
             const double sp_vwap = (g_orb_us.range_high() + g_orb_us.range_low()) > 0.0
-                ? (g_orb_us.range_high() + g_orb_us.range_low()) * 0.5
-                : 0.0; // only fire once ORB range is built (after 13:30 UTC open)
+                ? (g_orb_us.range_high() + g_orb_us.range_low()) * 0.5 : 0.0;
             if (sp_vwap > 0.0) {
                 const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, sp_vwap, ca_on_close);
-                if (vr.valid) { const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01); send_live_order(sym, vr.is_long, lot, vr.entry); }
+                if (vr.valid) {
+                    const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
+                    g_telemetry.UpdateLastSignal("US500.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
+                    send_live_order(sym, vr.is_long, lot, vr.entry);
+                }
             }
         }
     }
@@ -3569,7 +3573,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 ? (g_orb_us.range_high() + g_orb_us.range_low()) * 0.5 : 0.0;
             if (nq_vwap > 0.0) {
                 const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, nq_vwap, ca_on_close);
-                if (vr.valid) { const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01); send_live_order(sym, vr.is_long, lot, vr.entry); }
+                if (vr.valid) {
+                    const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
+                    g_telemetry.UpdateLastSignal("USTEC.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
+                    send_live_order(sym, vr.is_long, lot, vr.entry);
+                }
             }
         }
     }
@@ -3629,7 +3637,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Opening range breakout: Xetra open 08:00 UTC
         if (!g_orb_ger30.has_open_position() && base_can_ger) {
             const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
-            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
+            if (orb.valid) {
+                const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
+                g_telemetry.UpdateLastSignal("GER40", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
+                send_live_order(sym, orb.is_long, lot, orb.entry);
+            }
         }
         // VWAP Reversion: GER40 over-extension from Xetra ORB range midpoint
         if (!g_vwap_rev_ger40.has_open_position() && base_can_ger) {
@@ -3637,14 +3649,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 ? (g_orb_ger30.range_high() + g_orb_ger30.range_low()) * 0.5 : 0.0;
             if (ger_vwap > 0.0) {
                 const auto vr = g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap, ca_on_close);
-                if (vr.valid) { const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01); send_live_order(sym, vr.is_long, lot, vr.entry); }
+                if (vr.valid) {
+                    const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
+                    g_telemetry.UpdateLastSignal("GER40", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
+                    send_live_order(sym, vr.is_long, lot, vr.entry);
+                }
             }
         }
         // Trend Pullback: EMA9/21/50 stack — fires only when no other GER40 position open
         if (!g_trend_pb_ger40.has_open_position() && base_can_ger
             && !g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position()) {
             const auto tp_sig = g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close);
-            if (tp_sig.valid) { const double lot = compute_size(sym, std::fabs(tp_sig.entry-tp_sig.sl), ask-bid, 0.01); send_live_order(sym, tp_sig.is_long, lot, tp_sig.entry); }
+            if (tp_sig.valid) {
+                const double lot = compute_size(sym, std::fabs(tp_sig.entry-tp_sig.sl), ask-bid, 0.01);
+                g_telemetry.UpdateLastSignal("GER40", tp_sig.is_long?"LONG":"SHORT", tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB");
+                send_live_order(sym, tp_sig.is_long, lot, tp_sig.entry);
+            }
         }
     }
     else if (sym == "UK100") {
@@ -3659,7 +3679,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Opening range breakout: LSE open 08:00 UTC, 15-min range window
         if (!g_orb_uk100.has_open_position() && base_can_uk) {
             const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
-            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
+            if (orb.valid) {
+                const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
+                g_telemetry.UpdateLastSignal("UK100", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
+                send_live_order(sym, orb.is_long, lot, orb.entry);
+            }
         }
     }
     else if (sym == "ESTX50") {
@@ -3674,7 +3698,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Opening range breakout: Euronext open 09:00 UTC, 15-min range window
         if (!g_orb_estx50.has_open_position() && base_can_estx) {
             const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
-            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
+            if (orb.valid) {
+                const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
+                g_telemetry.UpdateLastSignal("ESTX50", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
+                send_live_order(sym, orb.is_long, lot, orb.entry);
+            }
         }
     }
     else if (sym == "XAGUSD") {
@@ -3741,7 +3769,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             if (s_eur_daily_open > 0.0) {
                 const auto vr = g_vwap_rev_eurusd.on_tick(sym, bid, ask, s_eur_daily_open, ca_on_close);
-                if (vr.valid) { const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01); send_live_order(sym, vr.is_long, lot, vr.entry); }
+                if (vr.valid) {
+                    const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
+                    g_telemetry.UpdateLastSignal("EURUSD", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
+                    send_live_order(sym, vr.is_long, lot, vr.entry);
+                }
             }
         }
     }
@@ -3766,7 +3798,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // FX cascade: EURUSD-driven GBPUSD entry
         if (!g_ca_fx_cascade.has_open_position() && base_can_fx2) {
             const auto cas = g_ca_fx_cascade.on_tick_gbpusd(bid, ask, ca_on_close);
-            if (cas.valid) { const double lot = compute_size("GBPUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01); send_live_order("GBPUSD", cas.is_long, lot, cas.entry); }
+            if (cas.valid) {
+                const double lot = compute_size("GBPUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
+                g_telemetry.UpdateLastSignal("GBPUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE");
+                send_live_order("GBPUSD", cas.is_long, lot, cas.entry);
+            }
         }
     }
     else if (sym == "AUDUSD" || sym == "NZDUSD" || sym == "USDJPY") {
@@ -3790,7 +3826,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // FX cascade: EURUSD-driven AUDUSD entry (0.73 corr)
                 if (!g_ca_fx_cascade.has_open_position() && bc_aud) {
                     const auto cas = g_ca_fx_cascade.on_tick_audusd(bid, ask, ca_on_close);
-                    if (cas.valid) { const double lot = compute_size("AUDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01); send_live_order("AUDUSD", cas.is_long, lot, cas.entry); }
+                    if (cas.valid) {
+                        const double lot = compute_size("AUDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
+                        g_telemetry.UpdateLastSignal("AUDUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE");
+                        send_live_order("AUDUSD", cas.is_long, lot, cas.entry);
+                    }
                 }
             }
             if (sym == "NZDUSD") {
@@ -3802,7 +3842,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // FX cascade: EURUSD-driven NZDUSD entry (0.69 corr)
                 if (!g_ca_fx_cascade.has_open_position() && bc_nzd) {
                     const auto cas = g_ca_fx_cascade.on_tick_nzdusd(bid, ask, ca_on_close);
-                    if (cas.valid) { const double lot = compute_size("NZDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01); send_live_order("NZDUSD", cas.is_long, lot, cas.entry); }
+                    if (cas.valid) {
+                        const double lot = compute_size("NZDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
+                        g_telemetry.UpdateLastSignal("NZDUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE");
+                        send_live_order("NZDUSD", cas.is_long, lot, cas.entry);
+                    }
                 }
             }
             if (sym == "USDJPY") {
@@ -4206,6 +4250,52 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const int h2 = ti_asia.tm_hour;
         const int asia_open = (!g_cfg.asia_fx_asia_only || (h2 >= 22 || h2 < 7)) ? 1 : 0;
         g_telemetry.UpdateAsiaCfg(asia_open, g_cfg.max_trades_per_cycle, g_cfg.max_open_positions);
+    }
+
+    // ── Cross-asset engine live state snapshot ───────────────────────────────
+    // Written every tick so the GUI always has fresh active/position data.
+    // ref_price carries the most meaningful context value per engine type:
+    //   ORB      → range midpoint (0 until range is built)
+    //   VWAP_REV → VWAP proxy used for this instrument
+    //   TREND_PB → EMA50 level (dynamic SL reference)
+    //   FX_CASCADE → 0 (armed state not visible here; signal fires fast)
+    {
+        // ORB instances
+        const double orb_us_mid    = (g_orb_us.range_high()    + g_orb_us.range_low())    > 0.0 ? (g_orb_us.range_high()    + g_orb_us.range_low())    * 0.5 : 0.0;
+        const double orb_ger_mid   = (g_orb_ger30.range_high() + g_orb_ger30.range_low())  > 0.0 ? (g_orb_ger30.range_high() + g_orb_ger30.range_low())  * 0.5 : 0.0;
+        const double orb_uk_mid    = (g_orb_uk100.range_high()  + g_orb_uk100.range_low())  > 0.0 ? (g_orb_uk100.range_high()  + g_orb_uk100.range_low())  * 0.5 : 0.0;
+        const double orb_estx_mid  = (g_orb_estx50.range_high() + g_orb_estx50.range_low()) > 0.0 ? (g_orb_estx50.range_high() + g_orb_estx50.range_low()) * 0.5 : 0.0;
+        const double orb_xag_mid   = (g_orb_silver.range_high() + g_orb_silver.range_low()) > 0.0 ? (g_orb_silver.range_high() + g_orb_silver.range_low()) * 0.5 : 0.0;
+
+        auto ca = [&](const char* nm, const char* sym, bool act, bool lng,
+                      double ent, double tp, double sl, double ref, int sigs) {
+            g_telemetry.UpdateCrossAsset(nm, sym, act?1:0, lng?1:0, ent, tp, sl, ref, sigs);
+        };
+
+        // ORB
+        ca("ORB_US",    "US500.F", g_orb_us.has_open_position(),    false, 0,0,0, orb_us_mid,   0);
+        ca("ORB_GER40", "GER40",   g_orb_ger30.has_open_position(),  false, 0,0,0, orb_ger_mid,  0);
+        ca("ORB_UK100", "UK100",   g_orb_uk100.has_open_position(),  false, 0,0,0, orb_uk_mid,   0);
+        ca("ORB_ESTX50","ESTX50",  g_orb_estx50.has_open_position(), false, 0,0,0, orb_estx_mid, 0);
+        ca("ORB_XAG",   "XAGUSD",  g_orb_silver.has_open_position(), false, 0,0,0, orb_xag_mid,  0);
+
+        // VWAP Reversion — capture VWAP proxy per instrument
+        // SP/NQ share the US ORB range mid; GER40 uses Xetra ORB; EUR uses daily open static
+        ca("VWAP_SP",   "US500.F", g_vwap_rev_sp.has_open_position(),     false, 0,0,0, orb_us_mid,  0);
+        ca("VWAP_NQ",   "USTEC.F", g_vwap_rev_nq.has_open_position(),     false, 0,0,0, orb_us_mid,  0);
+        ca("VWAP_GER40","GER40",   g_vwap_rev_ger40.has_open_position(),  false, 0,0,0, orb_ger_mid, 0);
+        ca("VWAP_EUR",  "EURUSD",  g_vwap_rev_eurusd.has_open_position(), false, 0,0,0, 0.0,         0);
+
+        // Trend Pullback — ref_price = EMA50 (dynamic SL)
+        ca("TRENDPB_GOLD","GOLD.F", g_trend_pb_gold.has_open_position(),  false, 0,0,0, g_trend_pb_gold.ema50(),  0);
+        ca("TRENDPB_GER", "GER40",  g_trend_pb_ger40.has_open_position(), false, 0,0,0, g_trend_pb_ger40.ema50(), 0);
+
+        // FX Cascade — one entry covers all three legs; armed state not stored here
+        ca("FXCASC_GBP", "GBPUSD", g_ca_fx_cascade.has_open_position(), false, 0,0,0, 0.0, 0);
+
+        // Other cross-asset (EsNq, OilFade, BrentWTI, CarryUnwind)
+        ca("ESNQ_DIV",   "US500.F", g_ca_esnq.has_open_position(),        false, 0,0,0, 0.0, 0);
+        ca("CARRY_UNW",  "USDJPY",  g_ca_carry_unwind.has_open_position(), false, 0,0,0, 0.0, 0);
     }
 
     if (g_telemetry.snap()) g_telemetry.snap()->uptime_sec =
