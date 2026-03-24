@@ -6154,7 +6154,7 @@ int main(int argc, char* argv[])
     // ── cTrader Open API depth feed (parallel to FIX — read-only L2 data) ────
     // Provides real multi-level order book (ProtoOADepthEvent) to replace
     // FIX 264=1 single-level estimates. Runs in its own thread independently.
-    if (false && !g_cfg.ctrader_access_token.empty() && g_cfg.ctrader_ctid_account_id > 0) {  // disabled: broker hasn't enabled Open API
+    if (g_cfg.ctrader_depth_enabled && !g_cfg.ctrader_access_token.empty() && g_cfg.ctrader_ctid_account_id > 0) {  // disabled: broker hasn't enabled Open API
         g_ctrader_depth.client_id           = "20304_NqeKlH3FEECOWqeP1JvoT2czQV9xkUHE7UXxfPU2dRuDXrZsIM";
         g_ctrader_depth.client_secret       = "jeYwDPzelIYSoDppuhSZoRpaRi1q572FcBJ44dXNviuSEKxdB9";
         g_ctrader_depth.access_token        = g_cfg.ctrader_access_token;
