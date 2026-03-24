@@ -2990,7 +2990,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_eng_usdjpy.pos.active) +
                 static_cast<int>(g_eng_brent.pos.active) +
                 static_cast<int>(g_gold_stack.has_open_position()) +
-                static_cast<int>(g_le_stack.has_open_position());  // LE gold positions count toward global cap
+                static_cast<int>(g_le_stack.has_open_position()) +
+                static_cast<int>(g_gold_flow.has_open_position());  // gold flow positions count toward global cap
             if (open_positions >= g_cfg.max_open_positions) {
                 ++g_gov_pos;
                 return false;
@@ -3047,7 +3048,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_eng_usdjpy.pos.active) +
             static_cast<int>(g_eng_brent.pos.active) +
             static_cast<int>(g_gold_stack.has_open_position()) +
-            static_cast<int>(g_le_stack.has_open_position());  // LE gold positions count toward global cap
+            static_cast<int>(g_le_stack.has_open_position()) +
+            static_cast<int>(g_gold_flow.has_open_position());  // gold flow positions count toward global cap
         const bool pos_budget_ok = open_positions < g_cfg.max_open_positions;
         if (!pos_budget_ok) ++g_gov_pos;
         return pos_budget_ok;
@@ -3898,10 +3900,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                              g_macro_ctx.nq_l2_imbalance, &sdec_nas);
     }
     else if (sym == "GOLD.F")  {
+        // ── Gold master exclusion gate ────────────────────────────────────────
+        // ANY open gold position across ALL 5 engines blocks new entries.
+        // This is the single source of truth — individual engine checks below
+        // use specific subsets for clarity but this master gate via symbol_gate()
+        // enforces the 1-position-at-a-time invariant at the top level.
         const bool gold_any_open =
-            g_gold_stack.has_open_position() ||
-            g_le_stack.has_open_position()   ||
-            g_bracket_gold.has_open_position();
+            g_gold_stack.has_open_position()    ||
+            g_le_stack.has_open_position()      ||
+            g_bracket_gold.has_open_position()  ||
+            g_gold_flow.has_open_position()     ||   // ADDED: was missing
+            g_trend_pb_gold.has_open_position();     // ADDED: was missing
         const bool gold_can_enter = symbol_gate("GOLD.F", gold_any_open);
 
         // Run supervisor — uses g_eng_xag as vol/phase proxy since gold has
@@ -4001,6 +4010,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
             const bool stack_can_enter = gold_sdec.allow_breakout
                                          && !g_bracket_gold.has_open_position()
+                                         && !g_gold_flow.has_open_position()      // ADDED
+                                         && !g_trend_pb_gold.has_open_position()  // ADDED
                                          && vol_expanding
                                          && conf_ok;
             const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close,
@@ -4112,6 +4123,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok
                                       && (!bracket_open || gold_is_pyramiding)
                                       && !g_gold_stack.has_open_position()
+                                      && !g_gold_flow.has_open_position()      // ADDED
+                                      && !g_trend_pb_gold.has_open_position()  // ADDED
+                                      && !g_le_stack.has_open_position()       // ADDED
                                       && asia_trend_ok
                                       && !gold_trend_blocked
                                       && !in_london_open_noise;
@@ -4219,7 +4233,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (gold_can_enter
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
-            && !g_gold_flow.has_open_position()) {
+            && !g_gold_flow.has_open_position()
+            && !g_le_stack.has_open_position()       // ADDED: prevent stack with LE
+            && !g_trend_pb_gold.has_open_position()) { // ADDED: prevent stack with TrendPB
             g_gold_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
                                        ? g_cfg.risk_per_trade_usd : GFE_RISK_DOLLARS;
             g_gold_flow.shadow_mode  = (g_cfg.mode != "LIVE");
@@ -4244,11 +4260,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
 
         // LatencyEdge: not supervisor-gated (intermarket/latency signal)
-        // Must also check g_gold_stack — LE and GoldStack share the same broker
-        // account and symbol. Two simultaneous GOLD.F positions are not intended.
-        // Confirmed cause: LE fired SHORT 4680.94 while GoldStack SHORT 4682.44
-        // was still open (4s apart), producing two concurrent losing positions.
-        if (!g_bracket_gold.has_open_position() && !g_gold_stack.has_open_position()) {
+        // Full exclusion: checks ALL other gold engines to prevent stacking.
+        // Previously only checked bracket + stack — GoldFlow and TrendPB were missing.
+        if (!g_bracket_gold.has_open_position()
+            && !g_gold_stack.has_open_position()
+            && !g_gold_flow.has_open_position()      // ADDED: prevent stack with Flow
+            && !g_trend_pb_gold.has_open_position()) { // ADDED: prevent stack with TrendPB
             const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, ca_on_close, gold_can_enter);
             if (le_sig.valid) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
