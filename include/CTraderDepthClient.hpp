@@ -321,7 +321,7 @@ private:
         // Delay start by 8s to let FIX connections establish first
         // Prevents cTrader thread from interfering with FIX logon timing
         sleep_ms(8000);
-        int backoff = 2000;
+        int backoff = 60000;  // start at 1min — avoid hammering broker if access not enabled
         while (running.load()) {
             depth_active.store(false);
             std::cout << "[CTRADER] Connecting live.ctraderapi.com:5035 (TCP+JSON)\n";
@@ -329,7 +329,7 @@ private:
             SSL* ssl = connect_ssl("live.ctraderapi.com", 5035, sock);
             if (!ssl) {
                 std::cerr << "[CTRADER] Connect failed — retry " << backoff << "ms\n";
-                sleep_ms(backoff); backoff = std::min(backoff*2, 60000); continue;
+                sleep_ms(backoff); backoff = std::min(backoff*2, 300000);  // max 5 min between retries continue;
             }
             recv_buf_.clear();
             backoff = 2000;
@@ -347,7 +347,7 @@ private:
             ssl_close(ssl, sock); depth_active.store(false);
             if (running.load()) {
                 std::cerr << "[CTRADER] Disconnected — retry " << backoff << "ms\n";
-                sleep_ms(backoff); backoff = std::min(backoff*2, 60000);
+                sleep_ms(backoff); backoff = std::min(backoff*2, 300000);  // max 5 min between retries
             }
         }
         std::cout << "[CTRADER] Stopped\n";
