@@ -4781,25 +4781,23 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                   << " full=" << r << "\n";
         std::cerr.flush();
         // ALREADY_SUBSCRIBED: ghost session holds the subscription.
-        // Send unsub ONLY — do not immediately resub (that triggers another reject loop).
-        // The quote_loop will resubscribe on the next poll cycle once broker clears the ghost.
+        // Rate-limited unsub+resub: once per 2s max to avoid feedback loop.
         if (rej_text.find("ALREADY_SUBSCRIBED") != std::string::npos) {
-            static std::atomic<int64_t> s_last_unsub_ms{0};
+            static std::atomic<int64_t> s_last_ms{0};
             const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-            if (now_ms - s_last_unsub_ms.load() > 2000) {  // rate-limit: once per 2s
-                s_last_unsub_ms.store(now_ms);
-                std::cout << "[OMEGA] ALREADY_SUBSCRIBED — sending unsub to clear ghost session\n";
+            if (now_ms - s_last_ms.load() > 2000) {
+                s_last_ms.store(now_ms);
+                std::cout << "[OMEGA] ALREADY_SUBSCRIBED — unsub+resub (ghost clear)\n";
                 std::cout.flush();
                 const std::string unsub = fix_build_md_unsub_all(g_quote_seq++);
                 if (!unsub.empty()) SSL_write(ssl, unsub.c_str(), (int)unsub.size());
-                Sleep(300);  // give broker time to clear
-                // Now resub once
+                Sleep(500);  // 500ms — broker needs time to process unsub
                 const std::string resub = fix_build_md_subscribe_all(g_quote_seq++);
                 if (!resub.empty()) {
                     SSL_write(ssl, resub.c_str(), (int)resub.size());
                     g_md_subscribed.store(true);
-                    std::cout << "[OMEGA] Resubscribed — ticks should resume\n";
+                    std::cout << "[OMEGA] Resubscribed — ticks resuming\n";
                     std::cout.flush();
                 }
             }
