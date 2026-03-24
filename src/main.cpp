@@ -605,30 +605,7 @@ static std::mutex                              g_book_mtx;
 static std::unordered_map<std::string,double>  g_bids;
 static std::unordered_map<std::string,double>  g_asks;
 
-// L2 book — top 5 levels per symbol, updated from FIX depth feed
-struct L2Level { double price = 0.0; double size = 0.0; };
-struct L2Book {
-    L2Level bids[5];
-    L2Level asks[5];
-    int     bid_count = 0;
-    int     ask_count = 0;
-    // Imbalance: bid_size / (bid_size + ask_size) across top N levels
-    // 0.5 = balanced, >0.65 = bid-heavy, <0.35 = ask-heavy
-    double imbalance() const noexcept {
-        double bs = 0.0, as = 0.0;
-        for (int i = 0; i < bid_count && i < 5; ++i) bs += bids[i].size;
-        for (int i = 0; i < ask_count && i < 5; ++i) as += asks[i].size;
-        const double tot = bs + as;
-        return (tot > 0.0) ? (bs / tot) : 0.5;
-    }
-    // Best wall: largest size level on a given side (0=bid, 1=ask)
-    double wall_size(int side) const noexcept {
-        double mx = 0.0;
-        if (side == 0) { for (int i=0;i<bid_count&&i<5;++i) if(bids[i].size>mx) mx=bids[i].size; }
-        else           { for (int i=0;i<ask_count&&i<5;++i) if(asks[i].size>mx) mx=asks[i].size; }
-        return mx;
-    }
-};
+// L2Level and L2Book are defined in OmegaFIX.hpp (moved 2026-03-24 for 264=5 upgrade)
 static std::mutex                                g_l2_mtx;
 static std::unordered_map<std::string, L2Book>   g_l2_books;
 
@@ -4640,6 +4617,8 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             std::cout.flush();
         }
     }
+
+} // end dispatch_fix
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Quote loop
