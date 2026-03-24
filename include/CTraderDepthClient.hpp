@@ -622,18 +622,17 @@ private:
         if (masked) hlen += 4;
         if (recv_buf_.size() < hlen+plen) return false;
         if (opcode==9) { recv_buf_.erase(recv_buf_.begin(),recv_buf_.begin()+hlen+plen); return false; }
+        const uint8_t* ps = recv_buf_.data()+hlen;  // define ps before use
         if (opcode==8) {
-            // Log close frame reason (bytes 0-1 = status code, rest = reason string)
             if (plen >= 2) {
-                uint16_t code = ((uint16_t)ps[0]<<8)|ps[1];
+                uint16_t wscode = ((uint16_t)ps[0]<<8)|ps[1];
                 std::string reason(plen>2?(const char*)ps+2:"", plen>2?plen-2:0);
-                std::cerr << "[CTRADER-WS-CLOSE] code=" << code << " reason=" << reason << "\n";
+                std::cerr << "[CTRADER-WS-CLOSE] code=" << wscode << " reason=" << reason << "\n";
             } else {
                 std::cerr << "[CTRADER-WS-CLOSE] no payload\n";
             }
             recv_buf_.clear(); pt_out=-1; return true;
         }
-        const uint8_t* ps = recv_buf_.data()+hlen;
         if (masked) {
             const uint8_t* mk=recv_buf_.data()+hlen-4;
             body_out.resize(plen);
