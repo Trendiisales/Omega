@@ -375,6 +375,20 @@ static omega::cross::CarryUnwindEngine     g_ca_carry_unwind;
 static omega::cross::OpeningRangeEngine    g_orb_us;     // US equity 13:30 UTC
 static omega::cross::OpeningRangeEngine    g_orb_ger30;  // Xetra 08:00 UTC
 static omega::cross::OpeningRangeEngine    g_orb_silver; // COMEX 13:30 UTC
+static omega::cross::OpeningRangeEngine    g_orb_uk100;  // LSE 08:00 UTC, 15-min window
+static omega::cross::OpeningRangeEngine    g_orb_estx50; // Euronext 09:00 UTC, 15-min window
+
+// Engine 7: VWAP Reversion — enter on reversal tick back toward daily VWAP
+// Wired to: US500.F, USTEC.F, GER40, EURUSD
+static omega::cross::VWAPReversionEngine   g_vwap_rev_sp;     // US500.F
+static omega::cross::VWAPReversionEngine   g_vwap_rev_nq;     // USTEC.F
+static omega::cross::VWAPReversionEngine   g_vwap_rev_ger40;  // GER40
+static omega::cross::VWAPReversionEngine   g_vwap_rev_eurusd; // EURUSD
+
+// Engine 8: Trend Pullback — EMA9/21/50 trend + pullback to EMA50 + bounce confirmation
+// Wired to: GOLD.F (gated — no other gold position), GER40
+static omega::cross::TrendPullbackEngine   g_trend_pb_gold;   // GOLD.F
+static omega::cross::TrendPullbackEngine   g_trend_pb_ger40;  // GER40
 
 // Co-location latency edge engines -- GoldSilverLeadLag + GoldSpreadDislocation
 // + GoldEventCompression. Fully independent from GoldEngineStack and CRTP engines.
@@ -2974,6 +2988,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_orb_us.has_open_position()) +
                 static_cast<int>(g_orb_ger30.has_open_position()) +
                 static_cast<int>(g_orb_silver.has_open_position()) +
+                static_cast<int>(g_orb_uk100.has_open_position()) +
+                static_cast<int>(g_orb_estx50.has_open_position()) +
+                static_cast<int>(g_vwap_rev_sp.has_open_position()) +
+                static_cast<int>(g_vwap_rev_nq.has_open_position()) +
+                static_cast<int>(g_vwap_rev_ger40.has_open_position()) +
+                static_cast<int>(g_vwap_rev_eurusd.has_open_position()) +
+                static_cast<int>(g_trend_pb_gold.has_open_position()) +
+                static_cast<int>(g_trend_pb_ger40.has_open_position()) +
                 static_cast<int>(g_eng_eurusd.pos.active) +
                 static_cast<int>(g_eng_gbpusd.pos.active) +
                 static_cast<int>(g_eng_audusd.pos.active) +
@@ -3023,6 +3045,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_orb_us.has_open_position()) +
             static_cast<int>(g_orb_ger30.has_open_position()) +
             static_cast<int>(g_orb_silver.has_open_position()) +
+            static_cast<int>(g_orb_uk100.has_open_position()) +
+            static_cast<int>(g_orb_estx50.has_open_position()) +
+            static_cast<int>(g_vwap_rev_sp.has_open_position()) +
+            static_cast<int>(g_vwap_rev_nq.has_open_position()) +
+            static_cast<int>(g_vwap_rev_ger40.has_open_position()) +
+            static_cast<int>(g_vwap_rev_eurusd.has_open_position()) +
+            static_cast<int>(g_trend_pb_gold.has_open_position()) +
+            static_cast<int>(g_trend_pb_ger40.has_open_position()) +
             static_cast<int>(g_eng_eurusd.pos.active) +
             static_cast<int>(g_eng_gbpusd.pos.active) +
             static_cast<int>(g_eng_audusd.pos.active) +
@@ -3507,6 +3537,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
         }
+        // VWAP Reversion: enter when price reverses back toward daily VWAP after over-extension
+        if (!g_vwap_rev_sp.has_open_position() && base_can_sp) {
+            // Rolling VWAP: use MacroContext ES price for daily anchor (g_macro_ctx tracks it)
+            // Proxy: use the ORB range midpoint as intraday VWAP estimate when real VWAP unavailable
+            // Real VWAP would require cumulative tick volume — use EsNq divergence baseline as proxy
+            const double sp_vwap = (g_orb_us.range_high() + g_orb_us.range_low()) > 0.0
+                ? (g_orb_us.range_high() + g_orb_us.range_low()) * 0.5
+                : 0.0; // only fire once ORB range is built (after 13:30 UTC open)
+            if (sp_vwap > 0.0) {
+                const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, sp_vwap, ca_on_close);
+                if (vr.valid) { const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01); send_live_order(sym, vr.is_long, lot, vr.entry); }
+            }
+        }
     }
     else if (sym == "USTEC.F") {
         const bool base_can_nq = symbol_gate("USTEC.F", g_eng_nq.pos.active || g_bracket_nq.pos.active);
@@ -3520,6 +3563,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch_bracket(g_bracket_nq, g_sup_nq, g_eng_nq, base_can_nq,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.nq_l2_imbalance, &sdec_nq);
+        // VWAP Reversion: NQ over-extension from ORB range midpoint
+        if (!g_vwap_rev_nq.has_open_position() && base_can_nq) {
+            const double nq_vwap = (g_orb_us.range_high() + g_orb_us.range_low()) > 0.0
+                ? (g_orb_us.range_high() + g_orb_us.range_low()) * 0.5 : 0.0;
+            if (nq_vwap > 0.0) {
+                const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, nq_vwap, ca_on_close);
+                if (vr.valid) { const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01); send_live_order(sym, vr.is_long, lot, vr.entry); }
+            }
+        }
     }
     else if (sym == "USOIL.F") {
         // Session gate: London/NY only (07:00-22:00 UTC)
@@ -3579,6 +3631,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
         }
+        // VWAP Reversion: GER40 over-extension from Xetra ORB range midpoint
+        if (!g_vwap_rev_ger40.has_open_position() && base_can_ger) {
+            const double ger_vwap = (g_orb_ger30.range_high() + g_orb_ger30.range_low()) > 0.0
+                ? (g_orb_ger30.range_high() + g_orb_ger30.range_low()) * 0.5 : 0.0;
+            if (ger_vwap > 0.0) {
+                const auto vr = g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap, ca_on_close);
+                if (vr.valid) { const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01); send_live_order(sym, vr.is_long, lot, vr.entry); }
+            }
+        }
+        // Trend Pullback: EMA9/21/50 stack — fires only when no other GER40 position open
+        if (!g_trend_pb_ger40.has_open_position() && base_can_ger
+            && !g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position()) {
+            const auto tp_sig = g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close);
+            if (tp_sig.valid) { const double lot = compute_size(sym, std::fabs(tp_sig.entry-tp_sig.sl), ask-bid, 0.01); send_live_order(sym, tp_sig.is_long, lot, tp_sig.entry); }
+        }
     }
     else if (sym == "UK100") {
         const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active);
@@ -3589,6 +3656,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch_bracket(g_bracket_uk100, g_sup_uk100, g_eng_uk100, base_can_uk,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              0.5, &sdec_uk); // UK100 L2 not yet in MacroContext — neutral imbalance
+        // Opening range breakout: LSE open 08:00 UTC, 15-min range window
+        if (!g_orb_uk100.has_open_position() && base_can_uk) {
+            const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
+            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
+        }
     }
     else if (sym == "ESTX50") {
         const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active);
@@ -3599,6 +3671,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch_bracket(g_bracket_estx50, g_sup_estx50, g_eng_estx50, base_can_estx,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              0.5, &sdec_estx); // ESTX50 L2 not yet in MacroContext — neutral imbalance
+        // Opening range breakout: Euronext open 09:00 UTC, 15-min range window
+        if (!g_orb_estx50.has_open_position() && base_can_estx) {
+            const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
+            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); send_live_order(sym, orb.is_long, lot, orb.entry); }
+        }
     }
     else if (sym == "XAGUSD") {
         const bool xag_any_open = g_eng_xag.pos.active || g_bracket_xag.pos.active;
@@ -3651,6 +3728,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch_bracket(g_bracket_eurusd, g_sup_eurusd, g_eng_eurusd, base_can_fx,
                              0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start,
                              g_macro_ctx.eur_l2_imbalance, &sdec_fx);
+        // VWAP Reversion: EURUSD over-extension from daily open (VWAP proxy)
+        // Tracks the first tick of each calendar day as the day's reference anchor.
+        if (!g_vwap_rev_eurusd.has_open_position() && base_can_fx) {
+            static double s_eur_daily_open = 0.0;
+            static int    s_eur_last_day   = -1;
+            const auto t_eur = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            struct tm ti_eur; gmtime_s(&ti_eur, &t_eur);
+            if (ti_eur.tm_yday != s_eur_last_day) {
+                s_eur_daily_open = (bid + ask) * 0.5;  // first tick of day = VWAP proxy
+                s_eur_last_day   = ti_eur.tm_yday;
+            }
+            if (s_eur_daily_open > 0.0) {
+                const auto vr = g_vwap_rev_eurusd.on_tick(sym, bid, ask, s_eur_daily_open, ca_on_close);
+                if (vr.valid) { const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01); send_live_order(sym, vr.is_long, lot, vr.entry); }
+            }
+        }
     }
     else if (sym == "GBPUSD") {
         // ── FX group bracket guard — only one bracket across GBPUSD/AUDUSD/NZDUSD/USDJPY ──
@@ -3694,6 +3787,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (sd_aud.allow_breakout && !g_bracket_audusd.pos.active) dispatch(g_eng_audusd, g_sup_audusd, bc_aud, &sd_aud);
                 if (sd_aud.allow_bracket && !g_eng_audusd.pos.active && !any_fx_bracket_active)
                     dispatch_bracket(g_bracket_audusd, g_sup_audusd, g_eng_audusd, bc_aud, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5, &sd_aud);
+                // FX cascade: EURUSD-driven AUDUSD entry (0.73 corr)
+                if (!g_ca_fx_cascade.has_open_position() && bc_aud) {
+                    const auto cas = g_ca_fx_cascade.on_tick_audusd(bid, ask, ca_on_close);
+                    if (cas.valid) { const double lot = compute_size("AUDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01); send_live_order("AUDUSD", cas.is_long, lot, cas.entry); }
+                }
             }
             if (sym == "NZDUSD") {
                 const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.pos.active);
@@ -3701,6 +3799,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (sd_nzd.allow_breakout && !g_bracket_nzdusd.pos.active) dispatch(g_eng_nzdusd, g_sup_nzdusd, bc_nzd, &sd_nzd);
                 if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active && !any_fx_bracket_active)
                     dispatch_bracket(g_bracket_nzdusd, g_sup_nzdusd, g_eng_nzdusd, bc_nzd, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5, &sd_nzd);
+                // FX cascade: EURUSD-driven NZDUSD entry (0.69 corr)
+                if (!g_ca_fx_cascade.has_open_position() && bc_nzd) {
+                    const auto cas = g_ca_fx_cascade.on_tick_nzdusd(bid, ask, ca_on_close);
+                    if (cas.valid) { const double lot = compute_size("NZDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01); send_live_order("NZDUSD", cas.is_long, lot, cas.entry); }
+                }
             }
             if (sym == "USDJPY") {
                 const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.pos.active);
@@ -4040,6 +4143,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 printf("[LE-SIZE] GOLD.F eng=%s sl_abs=%.2f spread=%.2f lot=%.4f\n",
                        le_sig.engine, le_sl_abs, ask - bid, le_lot);
                 send_live_order("GOLD.F", le_sig.is_long, le_lot, le_sig.entry);
+            }
+        }
+        // Trend Pullback: EMA9/21/50 — only when no other GOLD.F position is open.
+        // TrendPullbackEngine ticks every call (EMA update), but only signals when
+        // EMA stack is aligned AND price pulls back to EMA50 with a bounce tick.
+        // Gated strictly: gold has many concurrent engines, no stacking allowed.
+        if (gold_can_enter
+            && !g_bracket_gold.has_open_position()
+            && !g_gold_stack.has_open_position()
+            && !g_le_stack.has_open_position()
+            && !g_gold_flow.has_open_position()
+            && !g_trend_pb_gold.has_open_position()) {
+            const auto tpb = g_trend_pb_gold.on_tick("GOLD.F", bid, ask, ca_on_close);
+            if (tpb.valid) {
+                const double lot = compute_size("GOLD.F", std::fabs(tpb.entry-tpb.sl), ask-bid, 0.01);
+                g_telemetry.UpdateLastSignal("GOLD.F",
+                    tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
+                    "TREND_PB", regime.c_str(), "TREND_PB");
+                send_live_order("GOLD.F", tpb.is_long, lot, tpb.entry);
             }
         }
     }
@@ -4717,12 +4839,38 @@ static void quote_loop() {
             if (ca_b > 0.0 && ca_a > 0.0) { g_ca_eia_fade.force_close(ca_b, ca_a, ca_cb); g_ca_brent_wti.force_close(ca_b, ca_a, ca_cb); }
             ca_get_px("GBPUSD", ca_b, ca_a);
             if (ca_b > 0.0 && ca_a > 0.0) { g_ca_fx_cascade.force_close(ca_b, ca_a, ca_cb); }
+            // FxCascade AUD/NZD legs — force-close with each pair's own price
+            { double aud_b = 0.0, aud_a = 0.0; ca_get_px("AUDUSD", aud_b, aud_a);
+              if (aud_b > 0.0 && aud_a > 0.0) g_ca_fx_cascade.force_close_audusd(aud_b, aud_a, ca_cb); }
+            { double nzd_b = 0.0, nzd_a = 0.0; ca_get_px("NZDUSD", nzd_b, nzd_a);
+              if (nzd_b > 0.0 && nzd_a > 0.0) g_ca_fx_cascade.force_close_nzdusd(nzd_b, nzd_a, ca_cb); }
             ca_get_px("USDJPY", ca_b, ca_a);
             if (ca_b > 0.0 && ca_a > 0.0) { g_ca_carry_unwind.force_close(ca_b, ca_a, ca_cb); }
             ca_get_px("GER40", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_ger30.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) {
+                g_orb_ger30.force_close(ca_b, ca_a, ca_cb);
+                g_vwap_rev_ger40.force_close(ca_b, ca_a, ca_cb);
+                g_trend_pb_ger40.force_close(ca_b, ca_a, ca_cb);
+            }
             ca_get_px("XAGUSD", ca_b, ca_a);
             if (ca_b > 0.0 && ca_a > 0.0) { g_orb_silver.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("UK100", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_uk100.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("ESTX50", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_estx50.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("US500.F", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_sp.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("USTEC.F", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_nq.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("EURUSD", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_eurusd.force_close(ca_b, ca_a, ca_cb); }
+            // FxCascade: force_close() closes all three legs (GBPUSD/AUDUSD/NZDUSD).
+            // Each leg uses the GBPUSD price as approximation — acceptable for emergency
+            // disconnect close since the pairs are highly correlated and positions are 0.01 lot.
+            // The individual on_tick_audusd/nzdusd calls above already handle manage() on each tick.
+            // GOLD.F TrendPullback
+            ca_get_px("GOLD.F", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_trend_pb_gold.force_close(ca_b, ca_a, ca_cb); }
         }
         // Force-close GoldEngineStack
         {
@@ -4924,6 +5072,29 @@ int main(int argc, char* argv[])
     g_orb_us.OPEN_HOUR    = 13; g_orb_us.OPEN_MIN    = 30;  // NY open 13:30 UTC
     g_orb_ger30.OPEN_HOUR = 8;  g_orb_ger30.OPEN_MIN = 0;   // Xetra open 08:00 UTC
     g_orb_silver.OPEN_HOUR= 13; g_orb_silver.OPEN_MIN= 30;  // COMEX open 13:30 UTC
+    // New ORB instruments: LSE and Euronext with tighter 15-min range windows
+    g_orb_uk100.OPEN_HOUR  = 8;  g_orb_uk100.OPEN_MIN  = 0;   // LSE open 08:00 UTC
+    g_orb_uk100.RANGE_WINDOW_MIN = 15;  // 15-min range (LSE moves fast at open)
+    g_orb_uk100.TP_PCT  = 0.12;  g_orb_uk100.SL_PCT  = 0.07;  // UK100 TP/SL calibrated to GBP volatility
+    g_orb_estx50.OPEN_HOUR = 9;  g_orb_estx50.OPEN_MIN = 0;   // Euronext open 09:00 UTC
+    g_orb_estx50.RANGE_WINDOW_MIN = 15; // 15-min range
+    g_orb_estx50.TP_PCT = 0.10;  g_orb_estx50.SL_PCT = 0.06;  // ESTX50 TP/SL similar to GER40
+    // VWAPReversionEngine params — per-instrument tuning
+    // Indices: 0.20% extension threshold, 180s cooldown (fast mean-reversion)
+    g_vwap_rev_sp.EXTENSION_THRESH_PCT    = 0.20; g_vwap_rev_sp.COOLDOWN_SEC    = 180;
+    g_vwap_rev_nq.EXTENSION_THRESH_PCT    = 0.20; g_vwap_rev_nq.COOLDOWN_SEC    = 180;
+    g_vwap_rev_ger40.EXTENSION_THRESH_PCT = 0.20; g_vwap_rev_ger40.COOLDOWN_SEC = 180;
+    // EURUSD: 0.12% extension threshold (FX moves more precisely, smaller range)
+    g_vwap_rev_eurusd.EXTENSION_THRESH_PCT = 0.12; g_vwap_rev_eurusd.COOLDOWN_SEC = 120;
+    // TrendPullbackEngine params — per-instrument tuning
+    // Gold: wider pullback band (noise floor $8-20), 90s cooldown
+    g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.08;  // 0.08% of gold price = ~$3.50 at $4400
+    g_trend_pb_gold.EMA_WARMUP_TICKS  = 100;    // gold needs more warmup — fewer ticks/sec
+    g_trend_pb_gold.COOLDOWN_SEC      = 90;
+    // GER40: tighter band (index moves more cleanly around EMAs)
+    g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500
+    g_trend_pb_ger40.EMA_WARMUP_TICKS = 60;
+    g_trend_pb_ger40.COOLDOWN_SEC     = 120;
     g_bracket_gold.cancel_order_fn = [](const std::string& id) { send_cancel_order(id); };
     g_bracket_xag.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
 
