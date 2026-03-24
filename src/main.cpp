@@ -2984,6 +2984,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
 
+    // Push L2 imbalance snapshot to telemetry
+    g_telemetry.UpdateL2(
+        g_macro_ctx.sp_l2_imbalance,  g_macro_ctx.nq_l2_imbalance,
+        g_macro_ctx.us30_l2_imbalance,g_macro_ctx.nas_l2_imbalance,
+        g_macro_ctx.cl_l2_imbalance,  g_macro_ctx.brent_l2_imbalance,
+        g_macro_ctx.gold_l2_imbalance,g_macro_ctx.xag_l2_imbalance,
+        g_macro_ctx.ger40_l2_imbalance,g_macro_ctx.uk100_l2_imbalance,
+        g_macro_ctx.estx50_l2_imbalance,
+        g_macro_ctx.eur_l2_imbalance, g_macro_ctx.gbp_l2_imbalance,
+        g_macro_ctx.aud_l2_imbalance, g_macro_ctx.nzd_l2_imbalance,
+        g_macro_ctx.jpy_l2_imbalance,
+        g_ctrader_depth.depth_active.load() ? 1 : 0);
+
     const bool tradeable = session_tradeable();
     g_telemetry.UpdateSession(tradeable ? "ACTIVE" : "CLOSED", tradeable ? 1 : 0);
 

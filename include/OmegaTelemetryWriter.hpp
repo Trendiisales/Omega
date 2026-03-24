@@ -245,8 +245,14 @@ struct OmegaTelemetrySnapshot
     int ca_engine_count;   // how many slots are populated
 
     // --- ExecutionCostGuard session stats ---
-    int64_t cost_guard_blocked_total;   // total trades blocked by cost floor (all engines)
-    int64_t cost_guard_passed_total;    // total trades that cleared cost floor
+    int64_t cost_guard_blocked_total;
+    int64_t cost_guard_passed_total;
+
+    // --- L2 imbalance per symbol (0.0=ask-heavy 0.5=neutral 1.0=bid-heavy) ---
+    double l2_sp, l2_nq, l2_dj, l2_nas, l2_cl, l2_brent;
+    double l2_gold, l2_xag, l2_ger, l2_uk, l2_estx;
+    double l2_eur, l2_gbp, l2_aud, l2_nzd, l2_jpy;
+    int    l2_active;  // 1 = cTrader depth feed live
 };
 
 // ==============================================================================
@@ -494,6 +500,21 @@ public:
         m_snap->vix_level       = vix;
         m_snap->es_nq_divergence = es_nq_div;
         strcpy_s(m_snap->macro_regime, regime);
+    }
+
+    void UpdateL2(double sp, double nq, double dj, double nas,
+                  double cl, double brent, double gold, double xag,
+                  double ger, double uk, double estx,
+                  double eur, double gbp, double aud, double nzd, double jpy,
+                  int active)
+    {
+        if (!m_snap) return;
+        m_snap->l2_sp=sp; m_snap->l2_nq=nq; m_snap->l2_dj=dj; m_snap->l2_nas=nas;
+        m_snap->l2_cl=cl; m_snap->l2_brent=brent; m_snap->l2_gold=gold; m_snap->l2_xag=xag;
+        m_snap->l2_ger=ger; m_snap->l2_uk=uk; m_snap->l2_estx=estx;
+        m_snap->l2_eur=eur; m_snap->l2_gbp=gbp; m_snap->l2_aud=aud;
+        m_snap->l2_nzd=nzd; m_snap->l2_jpy=jpy;
+        m_snap->l2_active=active;
     }
 
     void UpdateGovernor(int spread, int lat, int pnl, int pos, int consec)
