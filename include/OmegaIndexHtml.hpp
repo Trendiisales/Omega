@@ -173,6 +173,8 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
   display:flex;justify-content:center;gap:3px;align-items:center;line-height:1;}
 .eng-bid{color:var(--green);}.eng-ask{color:var(--red);}.eng-sep{color:var(--t2);font-size:11px;}
 .eng-vol{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#a8bbd4;margin-top:2px;line-height:1.3;}
+)OMEGA0"
+R"OMEGA1(
 /* Proximity bar — shows how close price is to compression boundary */
 .eng-prox{width:calc(100% - 8px);display:flex;align-items:center;gap:4px;margin:3px 4px 0;}
 .eng-prox-track{flex:1;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;}
@@ -215,8 +217,7 @@ td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:
 .lat-val{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;color:var(--blue);}
 .lat-lbl{font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-top:3px;}
 
-)OMEGA0"
-R"OMEGA1(
+
 /* Governor */
 .gov-item{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;
   border-bottom:1px solid var(--border);}
@@ -381,6 +382,8 @@ R"OMEGA1(
           <div class="px-pair"><span class="bid" id="audBid">----</span><span class="px-sep">|</span><span class="ask" id="audAsk">----</span></div>
           <span class="sprd" id="audSpread">--</span>
         </div>
+)OMEGA1"
+R"OMEGA2(
         <div class="sym-row r-asia">
           <span class="sym-nm c-teal">NZDUSD</span>
           <div class="px-pair"><span class="bid" id="nzdBid">----</span><span class="px-sep">|</span><span class="ask" id="nzdAsk">----</span></div>
@@ -430,8 +433,7 @@ R"OMEGA1(
       <div class="stat-card"><div class="stat-n" id="statMaxDD" style="color:var(--red)">$0</div><div class="stat-l">Max DD</div></div>
     </div>
 
-)OMEGA1"
-R"OMEGA1B(
+
     <!-- Engine state — ALL 15 engines in 3 groups -->
     <div class="eng-section">
       <div class="eng-section-label">⚡ US / Oil Engines</div>
@@ -444,10 +446,8 @@ R"OMEGA1B(
       </div>
     </div>
 
-)OMEGA1C"
-R"OMEGA2(
-)OMEGA1B"
-R"OMEGA1C(
+
+
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">◈ EU Indices + Brent</div>
       <div class="eng-grid" style="grid-template-columns:repeat(4,1fr)">
@@ -459,13 +459,14 @@ R"OMEGA1C(
       </div>
     </div>
 
-)OMEGA2"
-R"OMEGA2B(
+
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">◇ FX + Asia Engines <span id="asiaGateBadge" style="font-size:10px;margin-left:8px;padding:1px 7px;border-radius:3px;border:1px solid rgba(255,255,255,0.15);color:var(--t2);white-space:nowrap;flex-shrink:0;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">ASIA FX: --</span></div>
       <div class="eng-grid" style="grid-template-columns:repeat(5,1fr)">
         <div class="eng-cell" id="engEUR"><div class="eng-sym c-cyan">EURUSD</div><div class="eng-ph eph-flat" id="engEURPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engEURBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engEURAsk">--</span></div><div class="eng-vol" id="engEURVol">--</div><div class="eng-sigs" id="engEURSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engEURProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engEURPct"></span></div><div class="eng-l2" id="engEURL2"><div class="eng-l2-fill" id="engEURL2F" style="width:50%;background:var(--t3)"></div></div></div>
         <div class="eng-cell" id="engGBP"><div class="eng-sym c-cyan">GBPUSD</div><div class="eng-ph eph-flat" id="engGBPPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engGBPBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engGBPAsk">--</span></div><div class="eng-vol" id="engGBPVol">--</div><div class="eng-sigs" id="engGBPSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engGBPProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engGBPPct"></span></div><div class="eng-l2" id="engGBPL2"><div class="eng-l2-fill" id="engGBPL2F" style="width:50%;background:var(--t3)"></div></div></div>
+)OMEGA2"
+R"OMEGA3(
         <div class="eng-cell" id="engAUD"><div class="eng-sym c-teal">AUDUSD</div><div class="eng-ph eph-flat" id="engAUDPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engAUDBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engAUDAsk">--</span></div><div class="eng-vol" id="engAUDVol">--</div><div class="eng-sigs" id="engAUDSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engAUDProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engAUDPct"></span></div><div class="eng-l2" id="engAUDL2"><div class="eng-l2-fill" id="engAUDL2F" style="width:50%;background:var(--t3)"></div></div></div>
         <div class="eng-cell" id="engNZD"><div class="eng-sym c-teal">NZDUSD</div><div class="eng-ph eph-flat" id="engNZDPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engNZDBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engNZDAsk">--</span></div><div class="eng-vol" id="engNZDVol">--</div><div class="eng-sigs" id="engNZDSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engNZDProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engNZDPct"></span></div><div class="eng-l2" id="engNZDL2"><div class="eng-l2-fill" id="engNZDL2F" style="width:50%;background:var(--t3)"></div></div></div>
         <div class="eng-cell" id="engJPY"><div class="eng-sym" style="color:var(--purple)">USDJPY</div><div class="eng-ph eph-flat" id="engJPYPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engJPYBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engJPYAsk">--</span></div><div class="eng-vol" id="engJPYVol">--</div><div class="eng-sigs" id="engJPYSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engJPYProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engJPYPct"></span></div><div class="eng-l2" id="engJPYL2"><div class="eng-l2-fill" id="engJPYL2F" style="width:50%;background:var(--t3)"></div></div></div>
@@ -567,12 +568,13 @@ R"OMEGA2B(
       <div class="comp-grid">
         <div class="comp-item"><div class="comp-sym">US500</div><div class="comp-ph" id="compSPPh" style="color:var(--t2)">FLAT</div><div class="comp-detail" id="compSPDet">--</div></div>
         <div class="comp-item"><div class="comp-sym">USTEC</div><div class="comp-ph" id="compNQPh" style="color:var(--t2)">FLAT</div><div class="comp-detail" id="compNQDet">--</div></div>
+)OMEGA3"
+R"OMEGA4(
         <div class="comp-item"><div class="comp-sym">USOIL</div><div class="comp-ph" id="compCLPh" style="color:var(--t2)">FLAT</div><div class="comp-detail" id="compCLDet">--</div></div>
       </div>
     </div>
 
-)OMEGA2B"
-R"OMEGA3(
+
 
   </div><!-- /col-right -->
 
@@ -762,6 +764,8 @@ function renderSLCooldowns(d){
   const el=document.getElementById('slCooldownPanel');if(!el)return;
   const cds=d.sl_cooldowns||[];
   const count=safe(d.sl_cooldown_count);
+)OMEGA4"
+R"OMEGA5(
   if(count===0||cds.length===0){el.innerHTML='<span style="color:var(--t2);font-size:11px">None</span>';el.parentElement&&(el.parentElement.style.display='none');return;}
   el.parentElement&&(el.parentElement.style.display='block');
   el.innerHTML=cds.map(c=>{
@@ -784,8 +788,7 @@ function renderAsiaGate(d){
   el.style.color=open?'var(--green)':'var(--t2)';
   el.style.borderColor=open?'rgba(0,217,126,0.3)':'rgba(255,255,255,0.1)';
 }
-)OMEGA3"
-R"OMEGA3B(
+
 
 
 function renderTrades(trades){
@@ -947,6 +950,8 @@ function updateDashboard(d){
   updateEngCell('engSP','engSPPhase','engSPVol','engSPSig',d.sp_phase,d.sp_recent_vol_pct,d.sp_baseline_vol_pct,d.sp_signals,d.sp_comp_high,d.sp_comp_low,d.sp_bid,d.sp_ask,2,isLive('US500.F'),d.brackets&&d.brackets.sp);
   updateEngCell('engNQ','engNQPhase','engNQVol','engNQSig',d.nq_phase,d.nq_recent_vol_pct,d.nq_baseline_vol_pct,d.nq_signals,d.nq_comp_high,d.nq_comp_low,d.nq_bid,d.nq_ask,2,isLive('USTEC.F'),d.brackets&&d.brackets.nq);
   updateEngCell('engUS30','engUS30Phase','engUS30Vol','engUS30Sig',(d.brackets&&d.brackets.us30?d.brackets.us30.phase:0),0,0,0,(d.brackets&&d.brackets.us30?d.brackets.us30.hi:0),(d.brackets&&d.brackets.us30?d.brackets.us30.lo:0),d.dj_bid,d.dj_ask,2,isLive('DJ30.F'),d.brackets&&d.brackets.us30);
+)OMEGA5"
+R"OMEGA6(
   updateEngCell('engNAS','engNASPhase','engNASVol','engNASSig',(d.brackets&&d.brackets.nas?d.brackets.nas.phase:0),0,0,0,(d.brackets&&d.brackets.nas?d.brackets.nas.hi:0),(d.brackets&&d.brackets.nas?d.brackets.nas.lo:0),d.nas_bid,d.nas_ask,2,isLive('NAS100'),d.brackets&&d.brackets.nas);
   updateEngCell('engCL','engCLPhase','engCLVol','engCLSig',d.cl_phase,d.cl_recent_vol_pct,d.cl_baseline_vol_pct,d.cl_signals,d.cl_comp_high,d.cl_comp_low,d.cl_bid,d.cl_ask,2,isLive('USOIL.F'),null);
   updateEngCell('engGER','engGERPhase','engGERVol','engGERSig',(d.brackets&&d.brackets.ger?d.brackets.ger.phase:0),0,0,0,(d.brackets&&d.brackets.ger?d.brackets.ger.hi:0),(d.brackets&&d.brackets.ger?d.brackets.ger.lo:0),d.ger30_bid,d.ger30_ask,2,isLive('GER40'),d.brackets&&d.brackets.ger);
@@ -976,8 +981,7 @@ function updateDashboard(d){
   if(l2badge) { l2badge.textContent = l2on ? 'L2 ●' : 'L2 ○'; l2badge.style.color = l2on ? 'var(--green)' : 'var(--t2)'; }
 
 
-)OMEGA3B"
-R"OMEGA4(
+
   // PnL
   const pnl=safe(d.daily_pnl),gross=safe(d.gross_daily_pnl);
   const pE=document.getElementById('pnlVal');
@@ -1109,7 +1113,7 @@ pollTrades();
 
 
 
-)OMEGA4"
+)OMEGA6"
 
 ;
 } // namespace omega_gui
