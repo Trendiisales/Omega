@@ -79,9 +79,29 @@ static void build_id_map() {
 }
 
 // =============================================================================
-// L2Book — up to 5 levels per symbol, updated from FIX depth feed (264=5)
-// When broker only sends 264=1, bid_count=ask_count=1 and depth methods still
-// work correctly (they don't block trades when size data is absent).
+// L2Book — up to 5 levels per symbol
+// Fed from cTrader Open API ProtoOADepthEvent (real multi-level) when active,
+// falls back to FIX 264=1 single-level when cTrader feed is not connected.
+// All methods degrade gracefully when size data is absent (no false blocks).
+//
+// ── MICROSTRUCTURE SIGNAL SUITE ─────────────────────────────────────────────
+// Stateless signals (only current snapshot needed):
+//   imbalance()          — bid_vol / (bid+ask)  vol,  0=ask-heavy, 1=bid-heavy
+//   ratio3()             — bid/ask ratio top-3 levels: >1.5 strong bid
+//   microprice()         — (bid×ask_sz + ask×bid_sz) / (bid_sz+ask_sz)
+//                          predicts next tick direction vs mid
+//   book_slope()         — weighted directional bias: +ve=buy pressure
+//   wall_above(mid)      — largest ask level > 4× avg → resistance ceiling
+//   wall_below(mid)      — largest bid level > 4× avg → support floor
+//   liquidity_vacuum_ask()— top-3 ask vol thin → upward impulse likely
+//   liquidity_vacuum_bid()— top-3 bid vol thin → downward impulse likely
+//   depth_supports_long/short() — enough liquidity to fill our size
+//   is_sweep_long/short()       — tick volume exceeds L1 size (FIX only)
+//
+// Stateful signals (need previous snapshot — in CTDepthBook, CTraderDepthClient.hpp):
+//   queue_pull_up()      — ask L1 shrank >50% → sellers pulled → up impulse
+//   queue_pull_down()    — bid L1 shrank >50% → buyers pulled → down impulse
+//   pull_ratio()         — total book volume shrank >35% → thin book alert
 // =============================================================================
 struct L2Level { double price = 0.0; double size = 0.0; };
 
@@ -105,8 +125,8 @@ struct L2Book {
     }
 
     // ── 3-level bid/ask ratio ────────────────────────────────────────────────
-    // ratio > 1.5 = strong bid (long-friendly)
-    // ratio < 0.66 = strong ask pressure (short-friendly)
+    // >1.5 = strong bid pressure (long-friendly)
+    // <0.67 = strong ask pressure (short-friendly)
     double ratio3() const noexcept {
         double bs = 0.0, as = 0.0;
         const int bn = std::min(bid_count, 3);
@@ -115,6 +135,116 @@ struct L2Book {
         for (int i = 0; i < an; ++i) as += asks[i].size;
         if (as <= 0.0) return (bs > 0.0) ? 9.9 : 1.0;
         return bs / as;
+    }
+
+    // ── Microprice ───────────────────────────────────────────────────────────
+    // Weighted midpoint that accounts for L1 queue sizes.
+    // microprice > mid → upward pressure (buyers have smaller queue to exhaust)
+    // microprice < mid → downward pressure
+    // Returns mid (best_bid+best_ask)*0.5 when sizes are 0 (graceful fallback).
+    double microprice() const noexcept {
+        if (bid_count == 0 || ask_count == 0) return 0.0;
+        const double bp = bids[0].price, bs = bids[0].size;
+        const double ap = asks[0].price, as_ = asks[0].size;
+        const double tot = bs + as_;
+        if (tot <= 0.0) return (bp + ap) * 0.5;
+        return (bp * as_ + ap * bs) / tot;
+    }
+
+    // Microprice - mid: positive = upward pressure, negative = downward
+    double microprice_bias() const noexcept {
+        if (bid_count == 0 || ask_count == 0) return 0.0;
+        const double mid = (bids[0].price + asks[0].price) * 0.5;
+        return microprice() - mid;
+    }
+
+    // ── Book slope ───────────────────────────────────────────────────────────
+    // Weighted sum across all levels: bid pressure - ask pressure.
+    // Each level weighted by 1/(1+distance_from_mid) so near levels count more.
+    // Positive = buy pressure building; negative = sell pressure building.
+    // Range is roughly -1..+1; use >0.15 as meaningful directional signal.
+    double book_slope() const noexcept {
+        if (bid_count == 0 || ask_count == 0) return 0.0;
+        const double mid = (bids[0].price + asks[0].price) * 0.5;
+        if (mid <= 0.0) return 0.0;
+        double bid_wt = 0.0, ask_wt = 0.0, total = 0.0;
+        for (int i = 0; i < bid_count; ++i) {
+            const double dist = std::fabs(mid - bids[i].price) / mid;
+            const double w = 1.0 / (1.0 + dist * 100.0);  // decay by % distance
+            bid_wt += bids[i].size * w;
+            total  += bids[i].size * w;
+        }
+        for (int i = 0; i < ask_count; ++i) {
+            const double dist = std::fabs(asks[i].price - mid) / mid;
+            const double w = 1.0 / (1.0 + dist * 100.0);
+            ask_wt += asks[i].size * w;
+            total  += asks[i].size * w;
+        }
+        if (total <= 0.0) return 0.0;
+        return (bid_wt - ask_wt) / total;  // -1..+1
+    }
+
+    // ── Liquidity vacuum ─────────────────────────────────────────────────────
+    // True when top-3 levels on a side are very thin — price can move fast.
+    // threshold: fraction of average total book volume per level.
+    // Default 0.15 = top-3 ask is <15% of average → vacuum on ask side → up impulse.
+    // When sizes are 0 (no data), always returns false (never triggers falsely).
+    bool liquidity_vacuum_ask(double threshold = 0.15) const noexcept {
+        // Thin ask side → upward impulse likely (buyers face little resistance)
+        if (ask_count == 0) return false;
+        double ask3 = 0.0;
+        const int an = std::min(ask_count, 3);
+        for (int i = 0; i < an; ++i) ask3 += asks[i].size;
+        if (ask3 <= 0.0) return false;
+        // Compare to total book volume as baseline
+        double total = 0.0;
+        for (int i = 0; i < bid_count; ++i) total += bids[i].size;
+        for (int i = 0; i < ask_count; ++i) total += asks[i].size;
+        const int levels = bid_count + ask_count;
+        if (levels == 0 || total <= 0.0) return false;
+        const double avg_per_level = total / levels;
+        return (ask3 / 3.0) < (avg_per_level * threshold);
+    }
+    bool liquidity_vacuum_bid(double threshold = 0.15) const noexcept {
+        // Thin bid side → downward impulse likely (sellers face little support)
+        if (bid_count == 0) return false;
+        double bid3 = 0.0;
+        const int bn = std::min(bid_count, 3);
+        for (int i = 0; i < bn; ++i) bid3 += bids[i].size;
+        if (bid3 <= 0.0) return false;
+        double total = 0.0;
+        for (int i = 0; i < bid_count; ++i) total += bids[i].size;
+        for (int i = 0; i < ask_count; ++i) total += asks[i].size;
+        const int levels = bid_count + ask_count;
+        if (levels == 0 || total <= 0.0) return false;
+        const double avg_per_level = total / levels;
+        return (bid3 / 3.0) < (avg_per_level * threshold);
+    }
+
+    // ── Liquidity wall detection ──────────────────────────────────────────────
+    // True when a single level holds > wall_mult × average level size.
+    // wall_above(mid): resistance ceiling above current price (ask side)
+    // wall_below(mid): support floor below current price (bid side)
+    // Default wall_mult=4.0 per microstructure literature.
+    bool wall_above(double mid, double wall_mult = 4.0) const noexcept {
+        if (ask_count == 0) return false;
+        double total = 0.0;
+        for (int i = 0; i < ask_count; ++i) total += asks[i].size;
+        if (total <= 0.0) return false;
+        const double avg = total / ask_count;
+        for (int i = 0; i < ask_count; ++i)
+            if (asks[i].price > mid && asks[i].size > avg * wall_mult) return true;
+        return false;
+    }
+    bool wall_below(double mid, double wall_mult = 4.0) const noexcept {
+        if (bid_count == 0) return false;
+        double total = 0.0;
+        for (int i = 0; i < bid_count; ++i) total += bids[i].size;
+        if (total <= 0.0) return false;
+        const double avg = total / bid_count;
+        for (int i = 0; i < bid_count; ++i)
+            if (bids[i].price < mid && bids[i].size > avg * wall_mult) return true;
+        return false;
     }
 
     // ── Best wall: largest single level on a side (0=bid, 1=ask) ────────────
@@ -145,8 +275,7 @@ struct L2Book {
 
     // ── Sweep detection ──────────────────────────────────────────────────────
     // True when last tick volume exceeds level-1 size * 1.5 AND imbalance
-    // confirms the direction. A sweep + imbalance = reliable short-term signal.
-    // sweep_vol: tag-271 size of the triggering tick.
+    // confirms the direction. Used with FIX tag-271 tick volume.
     bool is_sweep_long(double sweep_vol) const noexcept {
         if (sweep_vol <= 0.0) return false;
         const double l1_ask = (ask_count > 0) ? asks[0].size : 0.0;
@@ -161,4 +290,6 @@ struct L2Book {
     }
 
     int depth_levels() const noexcept { return std::max(bid_count, ask_count); }
+    bool has_data()    const noexcept { return bid_count > 0 && ask_count > 0 &&
+                                               bids[0].size > 0.0 && asks[0].size > 0.0; }
 };

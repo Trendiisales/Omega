@@ -211,12 +211,58 @@ inline std::string heartbeat() {
 
 } // namespace CTJSON
 
-// Incremental order book
+// Incremental order book — maintained from ProtoOADepthEvent
 struct CTDepthQuote { uint64_t price_raw=0, size_raw=0; bool is_bid=false; };
+
 struct CTDepthBook {
     std::unordered_map<uint64_t,CTDepthQuote> quotes;
+
+    // Previous snapshot totals for stateful signals (updated on each event)
+    double prev_bid1_size = 0.0;  // L1 bid size before last event
+    double prev_ask1_size = 0.0;  // L1 ask size before last event
+    double prev_total_vol = 0.0;  // total book volume before last event
+
     void apply_new(uint64_t id, uint64_t p, uint64_t s, bool bid) { quotes[id]={p,s,bid}; }
     void apply_del(uint64_t id) { quotes.erase(id); }
+
+    // Snapshot current state for stateful signals before updating
+    void snapshot_prev(const L2Book& current) noexcept {
+        prev_bid1_size = (current.bid_count > 0) ? current.bids[0].size : 0.0;
+        prev_ask1_size = (current.ask_count > 0) ? current.asks[0].size : 0.0;
+        prev_total_vol = 0.0;
+        for (int i=0;i<current.bid_count;++i) prev_total_vol += current.bids[i].size;
+        for (int i=0;i<current.ask_count;++i) prev_total_vol += current.asks[i].size;
+    }
+
+    // ── Queue pull signals ────────────────────────────────────────────────────
+    // Ask L1 shrank >50% → sellers pulled liquidity → upward impulse likely
+    // Bid L1 shrank >50% → buyers pulled liquidity → downward impulse likely
+    bool queue_pull_up(const L2Book& current, double pull_thresh = 0.50) const noexcept {
+        if (prev_ask1_size <= 0.0 || current.ask_count == 0) return false;
+        const double cur = current.asks[0].size;
+        if (cur <= 0.0) return false;
+        return (prev_ask1_size - cur) / prev_ask1_size > pull_thresh;
+    }
+    bool queue_pull_down(const L2Book& current, double pull_thresh = 0.50) const noexcept {
+        if (prev_bid1_size <= 0.0 || current.bid_count == 0) return false;
+        const double cur = current.bids[0].size;
+        if (cur <= 0.0) return false;
+        return (prev_bid1_size - cur) / prev_bid1_size > pull_thresh;
+    }
+
+    // ── Pull ratio ────────────────────────────────────────────────────────────
+    // Total book volume shrank significantly → thin book → fast move alert
+    // Returns 0..1 where 1.0 = book completely emptied
+    double pull_ratio(const L2Book& current) const noexcept {
+        if (prev_total_vol <= 0.0) return 0.0;
+        double cur_total = 0.0;
+        for (int i=0;i<current.bid_count;++i) cur_total += current.bids[i].size;
+        for (int i=0;i<current.ask_count;++i) cur_total += current.asks[i].size;
+        const double delta = prev_total_vol - cur_total;
+        if (delta <= 0.0) return 0.0;  // book grew, no pull
+        return delta / prev_total_vol;
+    }
+
     L2Book to_l2book() const {
         L2Book book;
         struct Lv { double price, size; };
@@ -302,9 +348,28 @@ private:
     bool do_auth(SSL* ssl) {
         // Step 1: Application auth
         if (!send_json(ssl, CTJSON::app_auth(client_id, client_secret))) return false;
-        std::cout << "[CTRADER] ApplicationAuthReq sent\n";
+        std::cout << "[CTRADER] ApplicationAuthReq sent (clientId=" << client_id.substr(0,12) << "...)\n";
+        // Raw diagnostic: dump first response bytes to confirm server is responding
+        {
+            uint8_t probe[32] = {};
+            int n = SSL_read(ssl, probe, sizeof(probe));
+            if (n <= 0) {
+                std::cerr << "[CTRADER] No response after ApplicationAuthReq — server closed connection\n";
+                return false;
+            }
+            std::cout << "[CTRADER] Server response received: " << n << " bytes, first4=";
+            printf("[CTRADER-RAW] %02X %02X %02X %02X | ascii=", probe[0],probe[1],probe[2],probe[3]);
+            for (int i=0;i<std::min(n,20);++i) printf("%c", (probe[i]>=32&&probe[i]<127)?probe[i]:'.');
+            printf("\n"); fflush(stdout);
+            // Put bytes back into recv_buf for normal parsing
+            recv_buf_.insert(recv_buf_.end(), probe, probe+n);
+        }
         int pt; std::string body;
-        if (!wait_for(ssl, CTraderPT::APPLICATION_AUTH_RES, 10000, pt, body)) return false;
+        if (!wait_for(ssl, CTraderPT::APPLICATION_AUTH_RES, 15000, pt, body)) {
+            std::cerr << "[CTRADER] ApplicationAuthRes failed — last_pt=" << pt << " body_len=" << body.size() << "\n";
+            if (!body.empty()) std::cerr << "[CTRADER] Last body: " << body.substr(0,200) << "\n";
+            return false;
+        }
         std::cout << "[CTRADER] Application authorized\n";
 
         // Step 2: Account auth
@@ -420,6 +485,15 @@ private:
         if (it == id_to_name_.end()) return;
         const std::string& name = it->second;
         auto& book = depth_books_[name];
+
+        // Snapshot current state BEFORE applying new event (for stateful signals)
+        if (l2_mtx && l2_books) {
+            std::lock_guard<std::mutex> lk(*l2_mtx);
+            const auto bit = l2_books->find(name);
+            if (bit != l2_books->end()) book.snapshot_prev(bit->second);
+        }
+
+        // Apply incremental updates
         for (const auto& q : CTJSON::get_array(src, "newQuotes")) {
             uint64_t id=CTJSON::get_u64(q,"id"), sz=CTJSON::get_u64(q,"size");
             uint64_t bid=CTJSON::get_u64(q,"bid"), ask=CTJSON::get_u64(q,"ask");
@@ -428,6 +502,8 @@ private:
             else if (ask) book.apply_new(id,ask,sz,false);
         }
         for (uint64_t did : CTJSON::get_u64_array(src,"deletedQuotes")) book.apply_del(did);
+
+        // Rebuild and write to shared L2 book
         if (l2_mtx && l2_books) {
             const L2Book rebuilt = book.to_l2book();
             std::lock_guard<std::mutex> lk(*l2_mtx);
@@ -479,17 +555,22 @@ private:
         while (std::chrono::steady_clock::now() < dead) {
             int pt; std::string body;
             int rc = read_one(ssl, pt, body, 500);
-            if (rc < 0) return false;
+            if (rc < 0) { std::cerr << "[CTRADER] Connection lost while waiting for pt=" << expected << "\n"; return false; }
             if (rc == 0) continue;
+            // Log every received message during auth for full diagnostics
+            std::cout << "[CTRADER-RECV] payloadType=" << pt << " body_len=" << body.size()
+                      << " preview=" << body.substr(0,120) << "\n";
+            std::cout.flush();
             if (pt == expected) { pt_out=pt; body_out=body; return true; }
             if (pt == CTraderPT::ERROR_RES) {
                 const std::string pl = CTJSON::get_payload(body);
                 const std::string& s = pl.empty()?body:pl;
-                std::cerr << "[CTRADER] Error: " << CTJSON::get_str(s,"errorCode")
+                std::cerr << "[CTRADER] ERROR_RES: " << CTJSON::get_str(s,"errorCode")
                           << " — " << CTJSON::get_str(s,"description") << "\n";
                 return false;
             }
         }
+        std::cerr << "[CTRADER] Timeout waiting for payloadType=" << expected << "\n";
         return false;
     }
 

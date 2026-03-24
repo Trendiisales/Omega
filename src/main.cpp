@@ -2948,6 +2948,35 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.aud_l2_imbalance    = getImb("AUDUSD");
         g_macro_ctx.nzd_l2_imbalance    = getImb("NZDUSD");
         g_macro_ctx.jpy_l2_imbalance    = getImb("USDJPY");
+
+        // ── Microstructure signals — only meaningful when cTrader depth active ──
+        // All methods degrade gracefully to neutral when size data is absent.
+        auto getBook = [&](const std::string& s) -> const L2Book* {
+            auto it = g_l2_books.find(s);
+            return (it != g_l2_books.end() && it->second.has_data()) ? &it->second : nullptr;
+        };
+        if (const L2Book* b = getBook("GOLD.F")) {
+            g_macro_ctx.gold_microprice_bias = b->microprice_bias();
+            g_macro_ctx.gold_book_slope      = b->book_slope();
+            g_macro_ctx.gold_vacuum_ask      = b->liquidity_vacuum_ask();
+            g_macro_ctx.gold_vacuum_bid      = b->liquidity_vacuum_bid();
+            g_macro_ctx.gold_wall_above      = b->wall_above(g_macro_ctx.gold_mid_price);
+            g_macro_ctx.gold_wall_below      = b->wall_below(g_macro_ctx.gold_mid_price);
+        }
+        if (const L2Book* b = getBook("US500.F")) {
+            g_macro_ctx.sp_microprice_bias   = b->microprice_bias();
+            g_macro_ctx.sp_book_slope        = b->book_slope();
+            g_macro_ctx.sp_vacuum_ask        = b->liquidity_vacuum_ask();
+            g_macro_ctx.sp_vacuum_bid        = b->liquidity_vacuum_bid();
+            g_macro_ctx.sp_wall_above        = b->wall_above(b->bid_count > 0 ? b->bids[0].price : 0.0);
+            g_macro_ctx.sp_wall_below        = b->wall_below(b->ask_count > 0 ? b->asks[0].price : 0.0);
+        }
+        if (const L2Book* b = getBook("XAGUSD"))  g_macro_ctx.xag_microprice_bias = b->microprice_bias();
+        if (const L2Book* b = getBook("USOIL.F")) {
+            g_macro_ctx.cl_microprice_bias   = b->microprice_bias();
+            g_macro_ctx.cl_vacuum_ask        = b->liquidity_vacuum_ask();
+            g_macro_ctx.cl_vacuum_bid        = b->liquidity_vacuum_bid();
+        }
     }
 
     const bool tradeable = session_tradeable();
@@ -4064,6 +4093,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double gold_gov_hi        = g_gold_stack.governor_hi();
         const double gold_gov_lo        = g_gold_stack.governor_lo();
         const double gold_mid_now       = (bid + ask) * 0.5;
+        g_macro_ctx.gold_mid_price      = gold_mid_now;  // needed for wall detection
         const double gold_vwap_now      = g_gold_stack.vwap();
         const double gold_momentum      = (gold_vwap_now > 0.0 && gold_mid_now > 0.0)
             ? ((gold_mid_now - gold_vwap_now) / gold_mid_now * 100.0)

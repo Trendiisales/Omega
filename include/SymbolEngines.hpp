@@ -59,6 +59,39 @@ struct MacroContext {
     double      nzd_l2_imbalance    = 0.5;
     double      jpy_l2_imbalance    = 0.5;
 
+    // ── Microstructure signals — per key symbol ───────────────────────────────
+    // Populated every tick from g_l2_books when cTrader depth feed is active.
+    // Degrade gracefully to neutral (0/0.5/false) when no depth data.
+    // Used as entry filters: confirm breakout direction before entry.
+
+    // Microprice bias: >0 = upward pressure, <0 = downward pressure
+    // Units: absolute price distance from mid (e.g. 0.25 = 25 ticks on gold)
+    double      gold_microprice_bias = 0.0;
+    double      sp_microprice_bias   = 0.0;
+    double      xag_microprice_bias  = 0.0;
+    double      cl_microprice_bias   = 0.0;
+
+    // Book slope: +ve = buy pressure building, -ve = sell pressure
+    // Range -1..+1; use |slope| > 0.10 as meaningful
+    double      gold_book_slope = 0.0;
+    double      sp_book_slope   = 0.0;
+
+    // Liquidity vacuum: true when top-3 levels on a side are very thin
+    // → fast impulse likely in that direction
+    bool        gold_vacuum_ask = false;  // ask thin → up impulse
+    bool        gold_vacuum_bid = false;  // bid thin → down impulse
+    bool        sp_vacuum_ask   = false;
+    bool        sp_vacuum_bid   = false;
+    bool        cl_vacuum_ask   = false;
+    bool        cl_vacuum_bid   = false;
+
+    // Wall detection: large single level > 4× average → likely price rejection
+    double      gold_mid_price  = 0.0;   // needed for wall_above/below context
+    bool        gold_wall_above = false;
+    bool        gold_wall_below = false;
+    bool        sp_wall_above   = false;
+    bool        sp_wall_below   = false;
+
     // Session time slot — updated every tick
     // 0=dead(05-07 UTC), 1=London(07-09), 2=London_core(09-12),
     // 3=overlap(12-14), 4=NY(14-17), 5=NY_late(17-22), 6=Asia(22-05)
