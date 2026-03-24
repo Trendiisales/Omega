@@ -3006,12 +3006,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     const double rtt_check = (g_rtt_p95 > 0.0) ? g_rtt_p95 : g_rtt_last;
     const bool lat_ok = (rtt_check <= 0.0 || g_governor.checkLatency(rtt_check, g_cfg.max_latency_ms));
     if (!lat_ok) ++g_gov_lat;
-    // Spread governor: track when current symbol spread exceeds the configured cap.
-    // Per-engine MAX_SPREAD_PCT already blocks entry; this feeds the GUI counter.
-    if (g_cfg.max_spread_pct > 0.0 && mid > 0.0) {
-        const double spread_pct = (ask - bid) / mid * 100.0;
-        if (spread_pct > g_cfg.max_spread_pct) ++g_gov_spread;
-    }
+    // Spread governor counter — incremented only when bracket_spread_blocked fires
+    // (i.e. a real signal was ready but spread was too wide). Not per-tick noise.
+    // See bracket_spread_blocked lambda below which calls ++g_gov_spread directly.
 
     auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
         // SHADOW: never block on loss — all trades are data for tuning.
@@ -3291,13 +3288,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // just exited compression and is watching for a break, not re-classify as no-setup.
         const bool in_comp_or_watch = (eng.phase == omega::Phase::COMPRESSION
                                     || eng.phase == omega::Phase::BREAKOUT_WATCH);
-        return sup.update(
+        const auto sdec_result = sup.update(
             bid, ask,
             eng.recent_vol_pct, eng.base_vol_pct,
             momentum_proxy,
             eng.comp_high, eng.comp_low,
             in_comp_or_watch,
             fb);
+        // Count actual spread blocks — only when a signal was being evaluated
+        if (sdec_result.regime == omega::Regime::HIGH_RISK_NO_TRADE
+            && sdec_result.reason != nullptr
+            && std::string(sdec_result.reason) == "spread_too_wide"
+            && base_can_enter)
+            ++g_gov_spread;
+        return sdec_result;
     };
 
     // ── dispatch — breakout engine + supervisor gated ─────────────────────────
@@ -3538,10 +3542,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (mid_price <= 0.0) return false;
             const double spread_pct = (ask - bid) / mid_price * 100.0;
             if (spread_pct > sup.cfg.max_spread_pct) {
-                std::cout << "[BRACKET-SPREAD-BLOCK] " << sym
-                          << " spread_pct=" << std::fixed << std::setprecision(3) << spread_pct
-                          << "% > max=" << sup.cfg.max_spread_pct << "%\n";
-                std::cout.flush();
+                ++g_gov_spread;
                 return true;
             }
             return false;
