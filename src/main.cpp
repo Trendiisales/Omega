@@ -4048,10 +4048,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (!g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position() && base_can_ger) {  // ADDED !vwap check
             const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
-                const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("GER40", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
-                if (cost_ok("GER40", std::fabs(orb.entry-orb.sl), lot))
-                    send_live_order(sym, orb.is_long, lot, orb.entry);
+                enter_directional("GER40", orb.is_long, orb.entry, orb.sl, orb.tp);
             }
         }
         // VWAP Reversion: GER40 over-extension from Xetra ORB range midpoint
@@ -4061,10 +4059,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (ger_vwap > 0.0) {
                 const auto vr = g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap, ca_on_close);
                 if (vr.valid) {
-                    const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
                     g_telemetry.UpdateLastSignal("GER40", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
-                    if (cost_ok("GER40", std::fabs(vr.entry-vr.sl), lot))
-                        send_live_order(sym, vr.is_long, lot, vr.entry);
+                    enter_directional("GER40", vr.is_long, vr.entry, vr.sl, vr.tp);
                 }
             }
         }
@@ -4073,10 +4069,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && !g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position()) {
             const auto tp_sig = g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close);
             if (tp_sig.valid) {
-                const double lot = compute_size(sym, std::fabs(tp_sig.entry-tp_sig.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("GER40", tp_sig.is_long?"LONG":"SHORT", tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB");
-                if (cost_ok("GER40", std::fabs(tp_sig.entry-tp_sig.sl), lot))
-                    send_live_order(sym, tp_sig.is_long, lot, tp_sig.entry);
+                enter_directional("GER40", tp_sig.is_long, tp_sig.entry, tp_sig.sl, tp_sig.tp);
             }
         }
     }
@@ -4093,10 +4087,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (!g_orb_uk100.has_open_position() && base_can_uk) {
             const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
-                const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("UK100", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
-                if (cost_ok("UK100", std::fabs(orb.entry-orb.sl), lot))
-                    send_live_order(sym, orb.is_long, lot, orb.entry);
+                enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp);
             }
         }
     }
@@ -4113,10 +4105,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (!g_orb_estx50.has_open_position() && base_can_estx) {
             const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
-                const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("ESTX50", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
-                if (cost_ok("ESTX50", std::fabs(orb.entry-orb.sl), lot))
-                    send_live_order(sym, orb.is_long, lot, orb.entry);
+                enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp);
             }
         }
     }
@@ -4137,7 +4127,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Silver COMEX opening range 13:30 UTC
         if (!g_orb_silver.has_open_position() && base_can) {
             const auto orb = g_orb_silver.on_tick(sym, bid, ask, ca_on_close);
-            if (orb.valid) { const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01); if (cost_ok("XAGUSD", std::fabs(orb.entry-orb.sl), lot)) send_live_order(sym, orb.is_long, lot, orb.entry); }
+            if (orb.valid) {
+                g_telemetry.UpdateLastSignal("XAGUSD", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
+                enter_directional("XAGUSD", orb.is_long, orb.entry, orb.sl, orb.tp);
+            }
         }
         // Lead-lag: not supervisor-gated (intermarket signal, not regime-based)
         // base_can now includes orb_silver and le_stack in xag_any_open above.
@@ -4148,12 +4141,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_telemetry.UpdateLastSignal("XAGUSD",
                     ll_sig.is_long ? "LONG" : "SHORT", ll_sig.entry, ll_sig.reason,
                     "LEAD_LAG", regime.c_str(), "LE");
-                const double ll_lot = compute_size("XAGUSD",
-                    std::fabs(ll_sig.entry - ll_sig.sl), ask - bid, ll_sig.size);
-                printf("[LEAD-LAG-SIZE] XAGUSD sl_abs=%.4f spread=%.4f lot=%.4f\n",
-                       std::fabs(ll_sig.entry - ll_sig.sl), ask - bid, ll_lot);
-                if (cost_ok("XAGUSD", std::fabs(ll_sig.entry - ll_sig.sl), ll_lot))
-                    send_live_order("XAGUSD", ll_sig.is_long, ll_lot, ll_sig.entry);
+                printf("[LEAD-LAG-SIZE] XAGUSD sl_abs=%.4f spread=%.4f (enter_directional)\n",
+                       std::fabs(ll_sig.entry - ll_sig.sl), ask - bid);
+                enter_directional("XAGUSD", ll_sig.is_long, ll_sig.entry, ll_sig.sl, ll_sig.tp, ll_sig.size);
             }
         }
     }
@@ -4192,10 +4182,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (s_eur_daily_open > 0.0) {
                 const auto vr = g_vwap_rev_eurusd.on_tick(sym, bid, ask, s_eur_daily_open, ca_on_close);
                 if (vr.valid) {
-                    const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
                     g_telemetry.UpdateLastSignal("EURUSD", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
-                    if (cost_ok("EURUSD", std::fabs(vr.entry-vr.sl), lot))
-                        send_live_order(sym, vr.is_long, lot, vr.entry);
+                    enter_directional("EURUSD", vr.is_long, vr.entry, vr.sl, vr.tp);
                 }
             }
         }
@@ -4226,10 +4214,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (!g_ca_fx_cascade.has_open_gbpusd() && base_can_fx2) {
             const auto cas = g_ca_fx_cascade.on_tick_gbpusd(bid, ask, ca_on_close);
             if (cas.valid) {
-                const double lot = compute_size("GBPUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("GBPUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE");
-                if (cost_ok("GBPUSD", std::fabs(cas.entry-cas.sl), lot))
-                    send_live_order("GBPUSD", cas.is_long, lot, cas.entry);
+                enter_directional("GBPUSD", cas.is_long, cas.entry, cas.sl, cas.tp);
             }
         }
     }
@@ -4256,10 +4242,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (!g_ca_fx_cascade.has_open_audusd() && bc_aud) {
                     const auto cas = g_ca_fx_cascade.on_tick_audusd(bid, ask, ca_on_close);
                     if (cas.valid) {
-                        const double lot = compute_size("AUDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
                         g_telemetry.UpdateLastSignal("AUDUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE");
-                        if (cost_ok("AUDUSD", std::fabs(cas.entry-cas.sl), lot))
-                            send_live_order("AUDUSD", cas.is_long, lot, cas.entry);
+                        enter_directional("AUDUSD", cas.is_long, cas.entry, cas.sl, cas.tp);
                     }
                 }
             }
@@ -4274,10 +4258,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (!g_ca_fx_cascade.has_open_nzdusd() && bc_nzd) {
                     const auto cas = g_ca_fx_cascade.on_tick_nzdusd(bid, ask, ca_on_close);
                     if (cas.valid) {
-                        const double lot = compute_size("NZDUSD", std::fabs(cas.entry-cas.sl), ask-bid, 0.01);
                         g_telemetry.UpdateLastSignal("NZDUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE");
-                        if (cost_ok("NZDUSD", std::fabs(cas.entry-cas.sl), lot))
-                            send_live_order("NZDUSD", cas.is_long, lot, cas.entry);
+                        enter_directional("NZDUSD", cas.is_long, cas.entry, cas.sl, cas.tp);
                     }
                 }
             }
@@ -4290,7 +4272,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // Carry unwind: VIX spike + JPY bid
                 if (!g_ca_carry_unwind.has_open_position() && bc_jpy) {
                     const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close);
-                    if (cu.valid) { const double lot = compute_size("USDJPY", std::fabs(cu.entry-cu.sl), ask-bid, 0.01); if (cost_ok("USDJPY", std::fabs(cu.entry-cu.sl), lot)) send_live_order("USDJPY", cu.is_long, lot, cu.entry); }
+                    if (cu.valid) {
+                        g_telemetry.UpdateLastSignal("USDJPY", cu.is_long?"LONG":"SHORT", cu.entry, cu.reason, "CARRY_UNWIND", regime.c_str(), "CARRY_UNWIND");
+                        enter_directional("USDJPY", cu.is_long, cu.entry, cu.sl, cu.tp);
+                    }
                 }
             }
         }
@@ -4731,12 +4716,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason,
                     "LEAD_LAG", regime.c_str(), "LE");
-                const double le_sl_abs = std::fabs(le_sig.entry - le_sig.sl);
-                const double le_lot    = compute_size("GOLD.F", le_sl_abs, ask - bid, le_sig.size);
-                printf("[LE-SIZE] GOLD.F eng=%s sl_abs=%.2f spread=%.2f lot=%.4f\n",
-                       le_sig.engine, le_sl_abs, ask - bid, le_lot);
-                if (cost_ok("GOLD.F", le_sl_abs, le_lot))
-                    send_live_order("GOLD.F", le_sig.is_long, le_lot, le_sig.entry);
+                printf("[LE-SIZE] GOLD.F eng=%s sl_abs=%.2f spread=%.2f (enter_directional)\n",
+                       le_sig.engine, std::fabs(le_sig.entry - le_sig.sl), ask - bid);
+                enter_directional("GOLD.F", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size);
             }
         }
         // Trend Pullback: EMA9/21/50 — only when no other GOLD.F position is open.
@@ -4751,12 +4733,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && !g_trend_pb_gold.has_open_position()) {
             const auto tpb = g_trend_pb_gold.on_tick("GOLD.F", bid, ask, ca_on_close);
             if (tpb.valid) {
-                const double lot = compute_size("GOLD.F", std::fabs(tpb.entry-tpb.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
                     "TREND_PB", regime.c_str(), "TREND_PB");
-                if (cost_ok("GOLD.F", std::fabs(tpb.entry-tpb.sl), lot))
-                    send_live_order("GOLD.F", tpb.is_long, lot, tpb.entry);
+                enter_directional("GOLD.F", tpb.is_long, tpb.entry, tpb.sl, tpb.tp);
             }
         }
     }
