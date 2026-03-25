@@ -2774,7 +2774,6 @@ static void maybe_reset_daily_ledger() {
     // already ran above, so we use dailyPnl() which reads the just-reset value.
     // Instead, snapshot net pnl from g_telem which holds the last written value.
     {
-        const double session_pnl = g_omegaLedger.dailyPnl();  // 0 after reset — get BEFORE
         // Format date string for the day that just ended
         char date_buf[16];
         // ti was computed above from system_clock; use it for the closing date
