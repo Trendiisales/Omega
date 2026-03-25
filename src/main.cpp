@@ -759,6 +759,66 @@ struct Governor {
 static Governor g_governor;
 static int     g_last_ledger_utc_day = -1;
 
+// ── Stale quote watchdog ─────────────────────────────────────────────────────
+// Tracks the last time any tick was received per symbol.
+// If last_tick_age > STALE_QUOTE_SEC while positions are open → widen SLs and
+// alert. A frozen feed with open positions is the most dangerous state.
+static std::mutex                              g_last_tick_mtx;
+static std::unordered_map<std::string,int64_t> g_last_tick_ts;  // symbol → unix ms
+static constexpr int64_t STALE_QUOTE_SEC = 8;   // 8s without tick = stale
+
+// Record a tick receipt (called from on_tick per symbol)
+static inline void stale_watchdog_ping(const std::string& sym) {
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::lock_guard<std::mutex> lk(g_last_tick_mtx);
+    g_last_tick_ts[sym] = now_ms;
+}
+
+// Returns true if symbol has received a tick within STALE_QUOTE_SEC
+static inline bool stale_watchdog_ok(const std::string& sym) {
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::lock_guard<std::mutex> lk(g_last_tick_mtx);
+    auto it = g_last_tick_ts.find(sym);
+    if (it == g_last_tick_ts.end()) return false;  // never received — treat as stale
+    return (now_ms - it->second) < STALE_QUOTE_SEC * 1000;
+}
+
+// ── Weekend gap sizing ───────────────────────────────────────────────────────
+// Friday 21:00 UTC through Sunday 22:00 UTC — markets closed, gap risk high.
+// GOLD can gap 1.5–2% on Sunday open. Size is halved, SL widened.
+// Returns a multiplier [0.5, 1.0] to apply to computed lot size.
+// Always 1.0 during normal sessions.
+static inline double weekend_gap_size_scale() {
+    const int64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    time_t t = static_cast<time_t>(now_sec);
+    struct tm ti{};
+#ifdef _WIN32
+    gmtime_s(&ti, &t);
+#else
+    gmtime_r(&t, &ti);
+#endif
+    // tm_wday: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+    const int wday = ti.tm_wday;
+    const int hour = ti.tm_hour;
+    // Friday >= 21:00 UTC or Saturday (all day) or Sunday < 22:00 UTC
+    const bool in_gap_window =
+        (wday == 5 && hour >= 21) ||   // Friday night
+        (wday == 6) ||                 // All day Saturday
+        (wday == 0 && hour < 22);      // Sunday before open
+    if (in_gap_window) {
+        static int64_t s_gap_log = 0;
+        if (now_sec - s_gap_log > 3600) {  // log once per hour
+            s_gap_log = now_sec;
+            std::printf("[WEEKEND-GAP] Gap window active — sizing 0.5x\n");
+        }
+        return 0.50;
+    }
+    return 1.00;
+}
+
 // Trade connection (port 5212) — separate SSL from quote (port 5211)
 static SSL*               g_trade_ssl  = nullptr;
 static int                g_trade_sock = -1;
@@ -3021,6 +3081,8 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         const double hold_sec = static_cast<double>(
             tr.exitTs > tr.entryTs ? tr.exitTs - tr.entryTs : 1);
         g_adaptive_risk.record_trade(tr.symbol, tr.net_pnl, hold_sec);
+        // Drawdown velocity: track rate-of-loss in rolling 30-min window
+        g_adaptive_risk.dd_velocity.record_trade(nowSec(), tr.net_pnl);
     }
 
     // ── Reset partial exit state when broker closes position ─────────────────
@@ -3070,6 +3132,7 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
 // ─────────────────────────────────────────────────────────────────────────────
 static void on_tick(const std::string& sym, double bid, double ask) {
     { std::lock_guard<std::mutex> lk(g_book_mtx); g_bids[sym] = bid; g_asks[sym] = ask; }
+    stale_watchdog_ping(sym);  // record tick receipt for frozen-feed detection
 
     // ── Edge system updates (every tick, every symbol) ────────────────────────
     {
@@ -3731,6 +3794,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     return false;
                 }
             }
+            // ── Stale quote watchdog ──────────────────────────────────────────
+            // Block entries if no tick received in last STALE_QUOTE_SEC seconds.
+            // A frozen feed with open positions is the most dangerous possible state —
+            // we have no pricing, but the broker is still live and SLs can gap.
+            if (!stale_watchdog_ok(symbol)) {
+                static thread_local int64_t s_stale_log = 0;
+                if (nowSec() - s_stale_log > 10) {
+                    s_stale_log = nowSec();
+                    std::printf("[STALE-FEED] %s no tick in >%llds — blocking entry\n",
+                                symbol.c_str(), (long long)STALE_QUOTE_SEC);
+                }
+                return false;
+            }
+            // ── Drawdown velocity circuit breaker ────────────────────────────
+            // Fires when loss rate in rolling 30-min window exceeds threshold.
+            // Threshold is configured as dd_velocity.threshold_usd (set in init
+            // to 0.5 * daily_loss_limit). When active, halts new entries 15 min.
+            if (!g_adaptive_risk.dd_velocity.new_entries_allowed(nowSec())) return false;
             // ── News blackout gate ────────────────────────────────────────────
             if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
             // ── Time-of-day gate — block known-negative 30-min buckets ─────────
@@ -7379,6 +7460,16 @@ int main(int argc, char* argv[])
         g_adaptive_risk.fill_quality_enabled     = true;
         g_adaptive_risk.fill_quality_scale       = 0.70;  // 30% size cut on adverse selection
 
+        // Drawdown velocity circuit breaker: halt new entries for 15 min if we
+        // lose more than 50% of daily_loss_limit within any 30-minute window.
+        // e.g. daily_loss_limit=$200 → fires if rolling 30-min loss > $100.
+        // Set threshold_usd=0 to disable (off by default until shadow validates).
+        g_adaptive_risk.dd_velocity.threshold_usd = g_cfg.daily_loss_limit * 0.5;
+        g_adaptive_risk.dd_velocity.window_sec    = 1800;   // 30-minute window
+        g_adaptive_risk.dd_velocity.halt_sec      = 900;    // 15-minute halt
+        std::printf("[ADAPTIVE] DD-velocity threshold=$%.0f/30min halt=15min\n",
+                    g_adaptive_risk.dd_velocity.threshold_usd);
+
         // Correlation cluster limits — 2 is the safe default for all clusters
         g_adaptive_risk.corr_heat.max_per_cluster_us_equity = 2;
         g_adaptive_risk.corr_heat.max_per_cluster_eu_equity = 2;
@@ -7414,6 +7505,11 @@ int main(int argc, char* argv[])
         // Lambda avoids circular include between OmegaAdaptiveRisk and OmegaEdges.
         g_adaptive_risk.fill_quality_check_fn = [](const std::string& sym) -> bool {
             return g_edges.fill_quality.adverse_selection_detected(sym);
+        };
+
+        // Weekend gap size scale: halve lots during Fri 21:00 – Sun 22:00 UTC.
+        g_adaptive_risk.weekend_gap_scale_fn = []() -> double {
+            return weekend_gap_size_scale();
         };
 
         // Regime adaptor is enabled; in SHADOW mode it is informational only

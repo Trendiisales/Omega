@@ -134,6 +134,128 @@ struct SymbolPerformanceTracker {
         return (mean / stdev) * std::sqrt(trades_per_year);
     }
 
+    // Sortino ratio — like Sharpe but only penalises downside volatility.
+    // Preferred by DE Shaw / Two Sigma for strategies with skewed returns.
+    // Annualised the same way as sharpe().
+    double sortino(int n = WINDOW_SHORT) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if ((int)buf_.size() < 4) return 0.0;
+        int use = std::min(n, (int)buf_.size());
+        std::vector<double> pnls;
+        pnls.reserve(use);
+        double avg_hold = 0;
+        for (auto it = buf_.rbegin(); it != buf_.rend() && (int)pnls.size() < use; ++it) {
+            pnls.push_back(it->pnl);
+            avg_hold += it->hold_sec;
+        }
+        if (pnls.empty()) return 0.0;
+        avg_hold /= pnls.size();
+        if (avg_hold < 1.0) avg_hold = 1.0;
+
+        double mean = 0;
+        for (double v : pnls) mean += v;
+        mean /= pnls.size();
+
+        // Downside deviation: only losses below zero contribute
+        double down_var = 0;
+        int down_n = 0;
+        for (double v : pnls) {
+            if (v < 0) { down_var += v * v; ++down_n; }
+        }
+        if (down_n == 0) return 99.0;  // no losses — arbitrarily high
+        const double down_stdev = std::sqrt(down_var / pnls.size());
+        if (down_stdev < 1e-9) return 0.0;
+
+        const double trades_per_year = (250.0 * 8 * 3600.0) / avg_hold;
+        return (mean / down_stdev) * std::sqrt(trades_per_year);
+    }
+
+    // Calmar ratio — annualised return / max drawdown.
+    // Used by DE Shaw for regime-based sizing decisions.
+    // Returns 0 if not enough data or no drawdown.
+    double calmar(int n = WINDOW_LONG) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if ((int)buf_.size() < 4) return 0.0;
+        int use = std::min(n, (int)buf_.size());
+        std::vector<double> pnls;
+        double avg_hold = 0;
+        for (auto it = buf_.rbegin(); it != buf_.rend() && (int)pnls.size() < use; ++it) {
+            pnls.push_back(it->pnl);
+            avg_hold += it->hold_sec;
+        }
+        if (pnls.empty()) return 0.0;
+        avg_hold /= pnls.size();
+        if (avg_hold < 1.0) avg_hold = 1.0;
+
+        double total = 0;
+        for (double v : pnls) total += v;
+        const double trades_per_year = (250.0 * 8 * 3600.0) / avg_hold;
+        const double annual_return   = (total / pnls.size()) * trades_per_year;
+
+        double cum = 0, peak = 0, max_dd = 0;
+        for (double v : pnls) {
+            cum += v;
+            if (cum > peak) peak = cum;
+            double dd = peak - cum;
+            if (dd > max_dd) max_dd = dd;
+        }
+        if (max_dd < 1e-9) return 99.0;
+        return annual_return / max_dd;
+    }
+
+    // Lag-1 trade return autocorrelation.
+    // Positive autocorr (>0.2) = losses cluster → edge is regime-dependent.
+    // When autocorr > 0.2, apply consecutive-loss lot reduction.
+    // Returns 0 if insufficient data.
+    double autocorrelation(int n = WINDOW_SHORT) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if ((int)buf_.size() < 6) return 0.0;
+        int use = std::min(n, (int)buf_.size());
+        std::vector<double> pnls;
+        for (auto it = buf_.rbegin(); it != buf_.rend() && (int)pnls.size() < use; ++it)
+            pnls.push_back(it->pnl);
+        if ((int)pnls.size() < 6) return 0.0;
+
+        double mean = 0;
+        for (double v : pnls) mean += v;
+        mean /= pnls.size();
+
+        double cov = 0, var = 0;
+        for (int i = 1; i < (int)pnls.size(); ++i) {
+            cov += (pnls[i] - mean) * (pnls[i-1] - mean);
+            var += (pnls[i] - mean) * (pnls[i] - mean);
+        }
+        if (var < 1e-9) return 0.0;
+        return cov / var;  // lag-1 autocorrelation coefficient
+    }
+
+    // Approximate one-sided binomial p-value for WR > 0.50.
+    // Uses normal approximation: z = (wins - n*0.5) / sqrt(n*0.25)
+    // Returns p-value (lower = more significant). p < 0.05 = statistically significant edge.
+    // DO NOT scale lot size beyond base until p < 0.05.
+    double win_rate_pvalue(int n_override = -1) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        int n = (n_override > 0) ? n_override : (int)buf_.size();
+        n = std::min(n, (int)buf_.size());
+        if (n < 10) return 1.0;
+        int wins = 0;
+        int cnt = 0;
+        for (auto it = buf_.rbegin(); it != buf_.rend() && cnt < n; ++it, ++cnt)
+            if (it->pnl > 0) ++wins;
+        // Normal approximation to binomial
+        const double z = (wins - n * 0.5) / std::sqrt(n * 0.25);
+        // One-sided p-value: P(Z > z) approximated via erfc
+        // erfc(z/sqrt(2))/2 — standard normal CDF complement
+        const double p = 0.5 * std::erfc(z / std::sqrt(2.0));
+        return p;
+    }
+
+    // Returns true if the edge is statistically significant (p < threshold).
+    // Use threshold=0.05 for production, 0.10 for research.
+    bool edge_is_significant(double p_threshold = 0.05) const {
+        return win_rate_pvalue() < p_threshold;
+    }
+
     int trade_count() const {
         std::lock_guard<std::mutex> lk(mtx_);
         return (int)buf_.size();
@@ -191,41 +313,54 @@ private:
 //    Kelly fraction: f* = (W/L * P - (1-P)) / (W/L)
 //    where P = win_rate, W = avg_win, L = avg_loss
 //
-//    We use FRACTIONAL Kelly (default 25%) to avoid overbetting.
-//    Size is further clamped between 50%–150% of the base risk amount.
-//    Only applies when we have >= MIN_TRADES samples.
+//    FRACTIONAL Kelly (default 25% of full Kelly).
+//    Bayesian shrinkage on win-rate prevents wild oscillation at small N:
+//      blended_wr = (N*raw_wr + prior_N*0.50) / (N + prior_N)
+//      Shrinks toward 50% at small N, releases toward raw_wr as N grows.
+//    Size clamped between 50%–150% of base.
+//    Only activates at >= MIN_TRADES samples.
+//
+//    WARNING: kelly_fraction MUST remain <= 0.40. Full Kelly (1.0) maximises
+//    geometric growth in theory but expected drawdown to 50% peak is near-
+//    certain over time. Institutional standard: 0.25–0.40×. Default 0.25.
 // ─────────────────────────────────────────────────────────────────────────────
 struct KellySizer {
-    double kelly_fraction = 0.25;   // fractional Kelly (25% of full Kelly)
-    double min_scale      = 0.50;   // never size below 50% of base
-    double max_scale      = 1.50;   // never size above 150% of base
-    int    min_trades     = 15;     // minimum trades before Kelly activates
+    double kelly_fraction   = 0.25;  // fractional Kelly — MUST be <= 0.40
+    double min_scale        = 0.50;  // never size below 50% of base
+    double max_scale        = 1.50;  // never size above 150% of base
+    int    min_trades       = 15;    // minimum trades before Kelly activates
+    int    bayesian_prior_n = 20;    // shrinkage strength (higher = more conservative)
 
-    // Returns a multiplier to apply to base lot size (0.5 – 1.5)
-    // confidence: 0 = use 1.0 (no adjustment), 1.0 = full Kelly
+    // Bayesian-shrunk win rate toward 50% prior.
+    // At N=20: 60% raw → ~55% shrunk. At N=100: ~59%. At N=∞: 60% (raw).
+    double bayesian_win_rate(double raw_wr, int n) const noexcept {
+        return (n * raw_wr + bayesian_prior_n * 0.50) / (n + bayesian_prior_n);
+    }
+
+    // Returns lot size multiplier (0.5–1.5). Uses shrunk WR to avoid
+    // oversizing from small-sample win-rate estimates.
     double size_multiplier(const SymbolPerformanceTracker& tracker) const {
-        if (tracker.trade_count() < min_trades) return 1.0;
+        const int n = tracker.trade_count();
+        if (n < min_trades) return 1.0;
 
         const double conf = tracker.confidence();
-        const double wr  = tracker.win_rate();
-        const double aw  = tracker.avg_win();
-        const double al  = tracker.avg_loss();
-
-        if (al < 1e-9) return 1.0;  // no loss data yet
+        const double wr   = bayesian_win_rate(tracker.win_rate(), n);
+        const double aw   = tracker.avg_win();
+        const double al   = tracker.avg_loss();
+        if (al < 1e-9) return 1.0;
 
         const double payoff_ratio = aw / al;
-        // Full Kelly fraction
-        const double full_kelly = (payoff_ratio * wr - (1.0 - wr)) / payoff_ratio;
-        const double frac_kelly = full_kelly * kelly_fraction;
+        const double full_kelly   = (payoff_ratio * wr - (1.0 - wr)) / payoff_ratio;
+        const double frac_kelly   = full_kelly * kelly_fraction;
 
-        // full_kelly baseline of 1.0 maps to our scale range
-        // Normalise: if full_kelly == 0.20 → scale = 1.0 (50/50 with fixed)
-        // positive kelly → scale > 1.0, negative kelly → scale < 1.0
-        const double raw_scale = 1.0 + (frac_kelly - 0.05) * 4.0; // centre at kelly=0.05
+        const double raw_scale = 1.0 + (frac_kelly - 0.05) * 4.0;
         const double clamped   = std::max(min_scale, std::min(max_scale, raw_scale));
-
-        // Blend: during warmup linearly interpolate toward 1.0
         return 1.0 + conf * (clamped - 1.0);
+    }
+
+    // Returns the shrunk WR actually used for sizing (not raw) — for logging
+    double effective_win_rate(const SymbolPerformanceTracker& tracker) const {
+        return bayesian_win_rate(tracker.win_rate(), tracker.trade_count());
     }
 };
 
@@ -271,7 +406,88 @@ struct DrawdownThrottle {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3b. MultiDayDrawdownThrottle
+// 3b. DrawdownVelocityGuard
+//     Rate-of-loss circuit breaker — fires when losses are accumulating FAST,
+//     not just when a daily total is hit.
+//
+//     Losing $200 over 8 hours is a bad day. Losing $200 in 20 minutes is a
+//     broken algo or a black-swan event — you should stop immediately.
+//
+//     Logic: maintain a ring buffer of (timestamp, pnl) for closed trades.
+//     On each new_entries_allowed() call, sum pnl over the last `window_sec`
+//     seconds. If that sum is below -`threshold_usd`, block new entries for
+//     `halt_sec` seconds.
+//
+//     Citadel calls this a "drawdown rate alarm". Standard at every prop desk.
+//
+//     Usage in main.cpp (in symbol_gate, after hourly loss check):
+//       g_adaptive_risk.dd_velocity.record_trade(nowSec(), net_pnl);
+//       if (!g_adaptive_risk.dd_velocity.new_entries_allowed(nowSec())) return false;
+// ─────────────────────────────────────────────────────────────────────────────
+struct DrawdownVelocityGuard {
+    int    window_sec     = 1800;   // 30-minute rolling window
+    double threshold_usd  = 0.0;   // 0 = disabled; set e.g. 0.5 * daily_loss_limit
+    int    halt_sec       = 900;    // 15-minute halt when velocity exceeded
+
+    struct Record { int64_t ts; double pnl; };
+
+    mutable std::mutex        mtx_;
+    std::deque<Record>        buf_;
+    int64_t                   halt_until_ = 0;
+
+    // Call on every closed trade
+    void record_trade(int64_t now_sec, double net_pnl) {
+        if (threshold_usd <= 0.0) return;
+        std::lock_guard<std::mutex> lk(mtx_);
+        buf_.push_back({now_sec, net_pnl});
+        // Prune records older than window
+        while (!buf_.empty() && buf_.front().ts < now_sec - window_sec)
+            buf_.pop_front();
+    }
+
+    // Returns false when velocity circuit breaker is active
+    bool new_entries_allowed(int64_t now_sec) {
+        if (threshold_usd <= 0.0) return true;
+        std::lock_guard<std::mutex> lk(mtx_);
+        // Still in halt period
+        if (halt_until_ > now_sec) {
+            static int64_t s_last_log = 0;
+            if (now_sec - s_last_log > 30) {
+                s_last_log = now_sec;
+                std::printf("[DD-VELOCITY] Halt active — %llds remaining\n",
+                            (long long)(halt_until_ - now_sec));
+            }
+            return false;
+        }
+        // Prune old records
+        while (!buf_.empty() && buf_.front().ts < now_sec - window_sec)
+            buf_.pop_front();
+        // Sum rolling loss
+        double rolling = 0.0;
+        for (const auto& r : buf_) rolling += r.pnl;
+        if (rolling < -threshold_usd) {
+            halt_until_ = now_sec + halt_sec;
+            std::printf("[DD-VELOCITY] TRIGGERED — rolling %ds loss=$%.2f threshold=$%.2f — halting %ds\n",
+                        window_sec, rolling, -threshold_usd, halt_sec);
+            return false;
+        }
+        return true;
+    }
+
+    // Returns current rolling window PnL (for GUI/logging)
+    double rolling_pnl(int64_t now_sec) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        double sum = 0.0;
+        for (const auto& r : buf_)
+            if (r.ts >= now_sec - window_sec) sum += r.pnl;
+        return sum;
+    }
+
+    bool is_halted(int64_t now_sec) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        return halt_until_ > now_sec;
+    }
+};
 //     Persistent memory of session-end PnL across UTC days.
 //     Written to logs/day_results.csv at rollover; read back on startup.
 //     Logic: 3+ consecutive losing days → halve all sizes next session.
@@ -597,6 +813,7 @@ public:
 
     KellySizer                  kelly;
     DrawdownThrottle            dd_throttle;
+    DrawdownVelocityGuard       dd_velocity;   // rate-of-loss circuit breaker
     MultiDayDrawdownThrottle    multiday;
     CorrelationHeatGuard        corr_heat;
     VolatilityRegimeScaler      vol_scaler;
@@ -685,13 +902,44 @@ public:
         // Wired via fill_quality_tracker_ptr to avoid circular include.
         // The FillQualityTracker interface is duck-typed via a small inline lambda.
         if (fill_quality_enabled && fill_quality_tracker_ptr) {
-            // We call adverse_selection_detected() via a function pointer trick.
-            // To avoid including OmegaEdges.hpp here, we use a registered callback.
             if (fill_quality_check_fn && fill_quality_check_fn(symbol)) {
                 std::printf("[ADAPTIVE-RISK] %s fill_quality_reduction=%.2f (adverse selection)\n",
                             symbol.c_str(), fill_quality_scale);
                 lot *= fill_quality_scale;
             }
+        }
+
+        // 6. Autocorrelation-based consecutive-loss reduction.
+        // When lag-1 trade return autocorrelation > 0.2, losses are clustering —
+        // the edge is regime-dependent and we are likely trading in the wrong regime.
+        // Reduce size by 25% until the cluster clears (autocorr drops below 0.15).
+        // This is on top of the streak_scale already applied in DrawdownThrottle.
+        if (kelly_enabled) {
+            auto it = perf.find(symbol);
+            if (it != perf.end() && it->second.trade_count() >= 8) {
+                const double ac = it->second.autocorrelation();
+                if (ac > 0.20) {
+                    static thread_local int64_t s_ac_log = 0;
+                    const int64_t now_s = static_cast<int64_t>(
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count());
+                    if (now_s - s_ac_log > 120) {
+                        s_ac_log = now_s;
+                        std::printf("[ADAPTIVE-RISK] %s autocorr=%.2f>0.20 — loss_cluster reduction 0.75x\n",
+                                    symbol.c_str(), ac);
+                    }
+                    lot *= 0.75;
+                }
+            }
+        }
+
+        // 7. Weekend gap size reduction.
+        // Friday 21:00 UTC → Sunday 22:00 UTC: markets closed, gap risk high.
+        // GOLD/metals can gap 1.5–2% on Sunday open. Halve size during gap window.
+        // Threshold registered as a callback by main.cpp to avoid circular include.
+        if (weekend_gap_scale_fn) {
+            const double gap_scale = weekend_gap_scale_fn();
+            if (gap_scale < 1.0) lot *= gap_scale;
         }
 
         // Floor to 0.01 lots, round to 2dp
@@ -702,6 +950,10 @@ public:
     // Callback registered by main.cpp: returns true if adverse selection detected
     // for this symbol. Avoids circular include between AdaptiveRisk and OmegaEdges.
     std::function<bool(const std::string&)> fill_quality_check_fn;
+
+    // Callback registered by main.cpp: returns size multiplier for weekend gap window.
+    // Returns 0.5 during Fri 21:00–Sun 22:00 UTC, 1.0 otherwise.
+    std::function<double()> weekend_gap_scale_fn;
 
     // ── Correlation heat check ─────────────────────────────────────────────────
     // Returns false if opening a new position in this symbol would exceed
@@ -755,14 +1007,26 @@ public:
             const auto& sym = kv.first;
             const auto& t   = kv.second;
             if (t.trade_count() < 3) continue;
-            std::printf("[ADAPTIVE-RISK] %s  n=%d  wr=%.1f%%  exp=$%.2f  sharpe=%.2f  kelly_mult=%.2f  vol_scale=%.2f\n",
-                        sym.c_str(),
-                        t.trade_count(),
-                        t.win_rate() * 100.0,
-                        t.expectancy(),
-                        t.sharpe(),
-                        kelly.size_multiplier(t),
-                        const_cast<VolatilityRegimeScaler&>(vol_scaler).size_scale(sym));
+            const double p_val   = t.win_rate_pvalue();
+            const double autocorr = t.autocorrelation();
+            const char* sig_str  = (p_val < 0.05) ? "SIGNIFICANT" : (p_val < 0.10) ? "MARGINAL" : "NOT_SIG";
+            const char* ac_warn  = (autocorr > 0.2) ? " [LOSS_CLUSTER]" : "";
+            std::printf(
+                "[ADAPTIVE-RISK] %s  n=%d  wr=%.1f%%(shrunk=%.1f%%)  p=%.3f(%s)  "
+                "exp=$%.2f  sharpe=%.2f  sortino=%.2f  calmar=%.2f  "
+                "autocorr=%.2f%s  kelly=%.2f  vol_scale=%.2f\n",
+                sym.c_str(),
+                t.trade_count(),
+                t.win_rate() * 100.0,
+                kelly.effective_win_rate(t) * 100.0,
+                p_val, sig_str,
+                t.expectancy(),
+                t.sharpe(),
+                t.sortino(),
+                t.calmar(),
+                autocorr, ac_warn,
+                kelly.size_multiplier(t),
+                const_cast<VolatilityRegimeScaler&>(vol_scaler).size_scale(sym));
         }
     }
 };

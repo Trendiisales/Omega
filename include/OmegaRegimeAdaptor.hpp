@@ -206,20 +206,49 @@ public:
     // Per-symbol session vol regime trackers
     std::unordered_map<std::string, SessionVolRegime> sym_vol;
 
-    // Last known macro regime + VIX
-    std::string last_regime = "NEUTRAL";
-    double      last_vix    = 0.0;
-    int64_t     last_ts     = 0;
+    // ── Confirmed macro regime (with dwell-time filter) ──────────────────────
+    // Problem: DXY/VIX can oscillate ±threshold repeatedly, causing the regime
+    // to flip every few bars. Each flip triggers size adjustments and blocked
+    // engines, creating whipsaw costs and inconsistent entry behaviour.
+    //
+    // Solution: two-state system — candidate and confirmed.
+    //   - candidate_regime: raw output from MacroRegimeDetector (updates every tick)
+    //   - last_regime:      confirmed regime, only changes after candidate has been
+    //                       stable for at least dwell_bars ticks without reverting.
+    //
+    // dwell_bars = 20 (default): regime must persist 20 consecutive ticks to confirm.
+    // At 1-tick-per-second on FX, this is ~20 seconds — fast enough to catch real
+    // regime shifts, slow enough to ignore noise.
+    std::string last_regime      = "NEUTRAL";   // confirmed (used by weight/blocked)
+    std::string candidate_regime = "NEUTRAL";   // unconfirmed candidate
+    int         candidate_count  = 0;            // consecutive ticks candidate has held
+    int         dwell_bars       = 20;           // ticks before candidate confirms
+    double      last_vix         = 0.0;
+    int64_t     last_ts          = 0;
 
-    // Update macro state (call each time MacroRegimeDetector produces a new regime)
+    // Update macro state — applies dwell-time filter before changing confirmed regime.
+    // Call each time MacroRegimeDetector produces a new regime string.
     void update(const std::string& regime, double vix, int64_t now_sec) {
-        if (regime != last_regime) {
-            std::printf("[REGIME] Macro regime change: %s → %s  VIX=%.1f\n",
-                        last_regime.c_str(), regime.c_str(), vix);
+        last_vix = vix;
+        last_ts  = now_sec;
+
+        if (regime == candidate_regime) {
+            // Candidate is holding — increment counter
+            if (++candidate_count >= dwell_bars && regime != last_regime) {
+                // Candidate has been stable long enough — confirm the change
+                std::printf("[REGIME] Confirmed regime change: %s → %s  VIX=%.1f  (held %d ticks)\n",
+                            last_regime.c_str(), regime.c_str(), vix, candidate_count);
+                last_regime = regime;
+            }
+        } else {
+            // New candidate — reset counter
+            if (regime != last_regime) {
+                std::printf("[REGIME] Candidate regime: %s → %s  VIX=%.1f  (need %d ticks to confirm)\n",
+                            last_regime.c_str(), regime.c_str(), vix, dwell_bars);
+            }
+            candidate_regime = regime;
+            candidate_count  = 1;
         }
-        last_regime = regime;
-        last_vix    = vix;
-        last_ts     = now_sec;
     }
 
     // Update vol regime for a symbol (call each tick)
@@ -268,7 +297,9 @@ public:
     }
 
     void print_status() const {
-        std::printf("[REGIME] Macro=%s  VIX=%.1f\n", last_regime.c_str(), last_vix);
+        std::printf("[REGIME] Confirmed=%s  Candidate=%s(%d/%d)  VIX=%.1f\n",
+                    last_regime.c_str(), candidate_regime.c_str(),
+                    candidate_count, dwell_bars, last_vix);
         for (const auto& kv : sym_vol) {
             std::printf("[REGIME-VOL] %s  vol=%s  scale=%.2f\n",
                         kv.first.c_str(), kv.second.name(), kv.second.size_scale());
