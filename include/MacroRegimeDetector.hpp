@@ -73,13 +73,12 @@ public:
 
         // DXY momentum — early warning
         const double dxy_ret = dxyReturn();
-        const bool dxy_risk_off = (dxy_ret >=  DXY_RISK_OFF_PCT / 100.0);
-        const bool dxy_risk_on  = (dxy_ret <=  DXY_RISK_ON_PCT  / 100.0);
+        const bool dxy_risk_off = (dxy_ret >= DXY_RISK_OFF_PCT / 100.0);
 
         // DXY risk-off fires only when VIX is already elevated (not baseline)
         if (dxy_risk_off && m_vix > VIX_LOW) return "RISK_OFF";
 
-        // Risk-on: low VIX + DXY not rising
+        // Risk-on: low VIX + DXY not spiking
         if (m_vix > 0 && m_vix <= VIX_LOW && !dxy_risk_off) return "RISK_ON";
 
         return "NEUTRAL";
