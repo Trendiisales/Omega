@@ -280,7 +280,7 @@ struct OmegaConfig {
     int    audusd_min_gap_sec          = 45;
     double audusd_momentum_thresh_pct  = 0.015;
     double audusd_min_breakout_pct     = 0.070;
-    double audusd_max_spread_pct       = 0.010;
+    double audusd_max_spread_pct       = 0.030;  // 80% of max viable spread at $50 risk RR2.0
     double audusd_compression_threshold = 0.82;
     // NZDUSD
     double nzdusd_tp_pct               = 0.075;
@@ -289,7 +289,7 @@ struct OmegaConfig {
     int    nzdusd_min_gap_sec          = 45;
     double nzdusd_momentum_thresh_pct  = 0.015;
     double nzdusd_min_breakout_pct     = 0.075;
-    double nzdusd_max_spread_pct       = 0.012;
+    double nzdusd_max_spread_pct       = 0.035;  // 80% of max viable spread at $50 risk RR2.0
     double nzdusd_compression_threshold = 0.82;
     // USDJPY
     double usdjpy_tp_pct               = 0.090;
@@ -298,7 +298,7 @@ struct OmegaConfig {
     int    usdjpy_min_gap_sec          = 45;
     double usdjpy_momentum_thresh_pct  = 0.018;
     double usdjpy_min_breakout_pct     = 0.090;
-    double usdjpy_max_spread_pct       = 0.015;
+    double usdjpy_max_spread_pct       = 0.013;  // 80% of max viable spread at $50 risk RR2.0
     double usdjpy_compression_threshold = 0.80;
     // Asia FX lot limits
     double max_lot_audusd = 5.00;
