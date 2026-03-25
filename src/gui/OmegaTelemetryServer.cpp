@@ -296,6 +296,21 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         result += cg;
     }
 
+    // Per-engine session P&L attribution
+    {
+        char ep[512];
+        snprintf(ep, sizeof(ep),
+            ",\"eng_pnl\":{\"breakout\":%.2f,\"bracket\":%.2f,\"gold_stack\":%.2f,\"gold_flow\":%.2f,\"cross\":%.2f,\"latency\":%.2f}"
+            ",\"eng_trades\":{\"breakout\":%d,\"bracket\":%d,\"gold_stack\":%d,\"gold_flow\":%d,\"cross\":%d,\"latency\":%d}",
+            s->eng_pnl_breakout,   s->eng_pnl_bracket,
+            s->eng_pnl_gold_stack, s->eng_pnl_gold_flow,
+            s->eng_pnl_cross,      s->eng_pnl_latency,
+            s->eng_trades_breakout,   s->eng_trades_bracket,
+            s->eng_trades_gold_stack, s->eng_trades_gold_flow,
+            s->eng_trades_cross,      s->eng_trades_latency);
+        result += ep;
+    }
+
     // L2 imbalance per symbol
     {
         char l2[512];

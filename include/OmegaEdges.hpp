@@ -322,6 +322,34 @@ private:
         const int mins = static_cast<int>((ts_sec % 86400) / 60);
         return mins / 30;
     }
+
+    // TOD-based lot size multiplier.
+    // Instead of binary block/allow, returns a continuous scale based on
+    // the bucket's historical win rate and EV vs the target thresholds.
+    //
+    // Scale mapping (applied AFTER allow() returns true — never blocks):
+    //   WR >= 0.60 AND EV > 0         → 1.00 (full size — strong bucket)
+    //   WR >= 0.55 AND EV > 0         → 0.90
+    //   WR >= 0.50 AND EV > -0.50     → 0.75
+    //   WR >= min_win_rate (0.40)      → 0.60 (marginal — reduce but allow)
+    //   < min_trades (cold bucket)    → 1.00 (no data = no penalty)
+    double size_scale(const std::string& sym, const std::string& engine,
+                      int64_t now_sec) const noexcept {
+        if (!enabled) return 1.0;
+        const int bucket = utc_bucket(now_sec);
+        const std::string key = sym + ":" + engine + ":" + std::to_string(bucket);
+        std::lock_guard<std::mutex> lk(mtx);
+        auto it = buckets.find(key);
+        if (it == buckets.end()) return 1.0;
+        const auto& b = it->second;
+        if (b.trades < min_trades) return 1.0;  // cold bucket — no penalty
+        const double wr = b.win_rate();
+        const double ev = b.avg_ev();
+        if (wr >= 0.60 && ev > 0.0)   return 1.00;
+        if (wr >= 0.55 && ev > 0.0)   return 0.90;
+        if (wr >= 0.50 && ev > -0.50) return 0.75;
+        return 0.60;  // marginal bucket — allow but reduce
+    }
 };
 
 

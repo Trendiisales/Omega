@@ -509,6 +509,33 @@ struct VolatilityRegimeScaler {
         auto it = state_.find(sym);
         return (it != state_.end()) ? it->second.atr_fast : 0.0;
     }
+
+    double atr_slow(const std::string& sym) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = state_.find(sym);
+        return (it != state_.end()) ? it->second.atr_slow : 0.0;
+    }
+
+    // ATR-normalised SL floor.
+    // Problem: when compression range is very tight (CRUSH regime),
+    // sl_dist = comp_range × 0.4 is tiny → lot size balloons dangerously.
+    // A $50 risk with sl_abs = 0.5pts on GOLD = 1.0 lot (should be ~0.05).
+    //
+    // Solution: never size from an SL smaller than ATR_SLOW × atr_sl_mult.
+    // Default atr_sl_mult = 0.5: SL floor = half of the slow ATR baseline.
+    // This is the same principle used by top prop firms (Tower, Virtu, DRW):
+    //   "size to the market's natural tick noise, not to the setup width"
+    //
+    // When ATR is not warmed up (< ATR_FAST samples), returns sl_abs unchanged.
+    double atr_sl_floor(const std::string& sym, double sl_abs,
+                        double atr_sl_mult = 0.5) const noexcept {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = state_.find(sym);
+        if (it == state_.end() || !it->second.ready) return sl_abs;
+        const double floor_sl = it->second.atr_slow * atr_sl_mult;
+        if (floor_sl <= 0.0) return sl_abs;
+        return std::max(sl_abs, floor_sl);
+    }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -227,6 +227,12 @@ td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:
 .gov-fill{height:100%;border-radius:2px;background:var(--amber);transition:width 0.5s;}
 .gov-n{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--amber);min-width:22px;text-align:right;}
 
+/* Engine Attribution */
+.eng-row{display:flex;align-items:center;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);}
+.eng-lbl{font-size:10px;color:var(--t2);width:90px;flex-shrink:0;letter-spacing:0.3px;}
+.eng-pnl{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;flex:1;text-align:right;}
+.eng-cnt{font-size:9px;color:var(--t3);width:32px;text-align:right;margin-left:8px;}
+
 /* Cluster Exposure */
 .exp-row{display:flex;align-items:center;margin:3px 0;gap:6px;}
 .exp-lbl{font-size:10px;color:var(--t2);width:82px;flex-shrink:0;letter-spacing:0.3px;}
@@ -586,6 +592,19 @@ R"OMEGA5(
     </div>
 
 
+
+    <!-- Per-Engine P&L Attribution -->
+    <div class="card" id="engAttribCard">
+      <div class="card-hd"><span class="dot" style="background:var(--green)"></span>Engine Attribution <span style="font-size:9px;font-weight:400;color:var(--t3);letter-spacing:0;text-transform:none;margin-left:6px;">session P&amp;L by engine type</span></div>
+      <div style="padding:6px 10px 4px;">
+        <div class="eng-row"><span class="eng-lbl">BREAKOUT</span><span class="eng-pnl" id="engPnlBreakout">$0</span><span class="eng-cnt" id="engCntBreakout">0</span></div>
+        <div class="eng-row"><span class="eng-lbl">BRACKET</span><span class="eng-pnl" id="engPnlBracket">$0</span><span class="eng-cnt" id="engCntBracket">0</span></div>
+        <div class="eng-row"><span class="eng-lbl">GOLD STACK</span><span class="eng-pnl" id="engPnlGoldStack">$0</span><span class="eng-cnt" id="engCntGoldStack">0</span></div>
+        <div class="eng-row"><span class="eng-lbl">GOLD FLOW</span><span class="eng-pnl" id="engPnlGoldFlow">$0</span><span class="eng-cnt" id="engCntGoldFlow">0</span></div>
+        <div class="eng-row"><span class="eng-lbl">CROSS-ASSET</span><span class="eng-pnl" id="engPnlCross">$0</span><span class="eng-cnt" id="engCntCross">0</span></div>
+        <div class="eng-row"><span class="eng-lbl">LATENCY</span><span class="eng-pnl" id="engPnlLatency">$0</span><span class="eng-cnt" id="engCntLatency">0</span></div>
+      </div>
+    </div>
 
     <!-- Cluster Exposure + MultiDay Throttle -->
     <div class="card" id="exposureCard">
@@ -1173,6 +1192,26 @@ function updateDashboard(d){
     const tot=safe(d.exposure_total);
     const totEl=document.getElementById('expTotal');
     if(totEl){totEl.textContent='$'+tot.toFixed(0);totEl.style.color=tot>5000?'var(--amber)':'var(--t1)';}
+  }
+
+  // ── Engine P&L attribution ────────────────────────────────────────────────
+  if (d.eng_pnl) {
+    const ep=d.eng_pnl, et=d.eng_trades||{};
+    const pairs=[
+      ['Breakout',   ep.breakout,   et.breakout],
+      ['Bracket',    ep.bracket,    et.bracket],
+      ['GoldStack',  ep.gold_stack, et.gold_stack],
+      ['GoldFlow',   ep.gold_flow,  et.gold_flow],
+      ['Cross',      ep.cross,      et.cross],
+      ['Latency',    ep.latency,    et.latency],
+    ];
+    pairs.forEach(([k,pnl,cnt])=>{
+      const p=document.getElementById('engPnl'+k);
+      const c=document.getElementById('engCnt'+k);
+      const v=safe(pnl);
+      if(p){p.textContent=(v>=0?'+':'')+v.toFixed(2);p.style.color=v>0?'var(--green)':v<0?'var(--red)':' var(--t2)';}
+      if(c){c.textContent=safe(cnt)+'t';}
+    });
   }
 
   // ── Multi-day throttle badge ──────────────────────────────────────────────

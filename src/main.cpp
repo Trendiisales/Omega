@@ -2752,6 +2752,10 @@ static void maybe_reset_daily_ledger() {
     if (ti.tm_yday == g_last_ledger_utc_day) return;
     g_last_ledger_utc_day = ti.tm_yday;
 
+    // ── Snapshot session PnL BEFORE reset — multiday throttle needs this ──
+    // resetDaily() zeroes the ledger. We must capture the final value first.
+    const double session_final_pnl = g_omegaLedger.dailyPnl();
+
     g_omegaLedger.resetDaily();
     {
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
@@ -2786,10 +2790,9 @@ static void maybe_reset_daily_ledger() {
         // ti was computed above from system_clock; use it for the closing date
         snprintf(date_buf, sizeof(date_buf), "%04d-%02d-%02d",
                  ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday);
-        // Snap pnl from telemetry writer which holds the last-broadcast value
-        const double snap_pnl = g_telemetry.snap() ? g_telemetry.snap()->daily_pnl : 0.0;
+        // Use session_final_pnl captured before resetDaily() — guaranteed accurate
         const std::string md_path = log_root_dir() + "/day_results.csv";
-        g_adaptive_risk.multiday.record_day(std::string(date_buf), snap_pnl, md_path);
+        g_adaptive_risk.multiday.record_day(std::string(date_buf), session_final_pnl, md_path);
         const int streak      = g_adaptive_risk.multiday.consecutive_losing_days();
         const double md_scale = g_adaptive_risk.multiday.size_scale();
         g_telemetry.UpdateMultiDayThrottle(streak, md_scale,
@@ -2828,6 +2831,8 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
               << " exit=" << tr.exitReason << "\n";
     std::cout.flush();
     g_omegaLedger.record(tr);
+    // Accumulate per-engine session P&L for GUI live attribution panel
+    g_telemetry.AccumEnginePnl(tr.engine.c_str(), tr.net_pnl);
     // Shadow CSV only written in SHADOW mode — prevents LIVE trades contaminating shadow analysis
     if (g_cfg.mode == "SHADOW") write_shadow_csv(tr);
     write_trade_close_logs(tr);
@@ -4026,13 +4031,51 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                       << " sl=" << eng.pos.pyramid_sl
                       << " size=" << pyr_lot << "\033[0m\n";
             std::cout.flush();
-            if (cost_ok(sym.c_str(), pyr_sl_abs, pyr_lot))
+            // ── Pyramid L2 gate ───────────────────────────────────────────
+            // Don't add-on into absorption (institutional fading) or a wall
+            // directly above/below the pyramid entry toward TP.
+            bool pyr_l2_ok = true;
+            {
+                const bool absorbing = g_edges.absorption.is_absorbing(
+                    sym, eng.pos.is_long);
+                bool wall_in_dir = false;
+                const std::string_view psv(sym);
+                if      (psv == "GOLD.F")  wall_in_dir = eng.pos.is_long
+                    ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below;
+                else if (psv == "US500.F" || psv == "USTEC.F" ||
+                         psv == "DJ30.F"  || psv == "NAS100")
+                    wall_in_dir = eng.pos.is_long
+                        ? g_macro_ctx.sp_wall_above : g_macro_ctx.sp_wall_below;
+                else if (psv == "EURUSD") wall_in_dir = eng.pos.is_long
+                    ? g_macro_ctx.eur_wall_above : g_macro_ctx.eur_wall_below;
+                else if (psv == "GBPUSD") wall_in_dir = eng.pos.is_long
+                    ? g_macro_ctx.gbp_wall_above : g_macro_ctx.gbp_wall_below;
+                if (absorbing || wall_in_dir) {
+                    pyr_l2_ok = false;
+                    printf("[PYRAMID-L2-BLOCK] %s %s absorb=%d wall=%d — pyramid suppressed\n",
+                           sym.c_str(), eng.pos.is_long?"LONG":"SHORT",
+                           absorbing?1:0, wall_in_dir?1:0);
+                }
+            }
+            if (pyr_l2_ok && cost_ok(sym.c_str(), pyr_sl_abs, pyr_lot))
                 send_live_order(sym, eng.pos.is_long, pyr_lot, eng.pos.pyramid_entry);
         }
 
         if (!sig.valid) return;
 
-        const double sl_abs   = sig.entry * eng.SL_PCT / 100.0;
+        const double sl_abs_raw = sig.entry * eng.SL_PCT / 100.0;
+        // ATR-normalised SL floor: prevent oversized lots when comp_range is tiny.
+        // Never size from an SL smaller than half the slow ATR baseline.
+        const double sl_abs = g_adaptive_risk.vol_scaler.atr_sl_floor(sym, sl_abs_raw);
+        if (sl_abs > sl_abs_raw) {
+            static thread_local int64_t s_atr_log = 0;
+            if (nowSec() - s_atr_log > 30) {
+                s_atr_log = nowSec();
+                printf("[ATR-SL-FLOOR] %s sl_raw=%.5f → sl_floor=%.5f (ATR slow=%.5f)\n",
+                       sym.c_str(), sl_abs_raw, sl_abs,
+                       g_adaptive_risk.vol_scaler.atr_slow(sym));
+            }
+        }
         // Compute lot_size but do NOT write back to eng.ENTRY_SIZE yet.
         // eng.ENTRY_SIZE must only be updated if the trade actually executes.
         const double lot_size_base = compute_size(sym, sl_abs, ask - bid, eng.ENTRY_SIZE);
@@ -4048,8 +4091,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 sym_consec     = it->second.consec_losses;
             }
         }
-        const double lot_size = g_adaptive_risk.adjusted_lot(
+        double lot_size = g_adaptive_risk.adjusted_lot(
             sym, lot_size_base, sym_daily_loss, g_cfg.daily_loss_limit, sym_consec);
+
+        // ── TOD-weighted lot scaling ──────────────────────────────────────
+        // Scale down on marginal time-of-day buckets (WR < 55%) instead of
+        // binary block/allow. Reduces size 10-40% on borderline windows.
+        {
+            const double tod_mult = g_edges.tod.size_scale(sym, "ALL", nowSec());
+            if (tod_mult < 1.0) {
+                printf("[TOD-SCALE] %s lot %.4f → %.4f (tod_mult=%.2f)\n",
+                       sym.c_str(), lot_size, lot_size * tod_mult, tod_mult);
+                lot_size *= tod_mult;
+                lot_size = std::max(0.01, std::floor(lot_size * 100.0 + 0.5) / 100.0);
+            }
+        }
 
         omega::TradeCandidate cand = omega::build_candidate(
             omega::EdgeResult{
@@ -4473,7 +4529,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                  double       sl,
                                  double       tp,          // 0 = use sl_abs*2 as TP estimate
                                  double       fallback_lot = 0.01) -> bool {
-        const double sl_abs  = std::fabs(entry - sl);
+        const double sl_abs_raw = std::fabs(entry - sl);
+        // ATR-normalised SL floor — same logic as breakout dispatch
+        const double sl_abs  = g_adaptive_risk.vol_scaler.atr_sl_floor(
+            std::string(esym), sl_abs_raw);
         const double tp_dist = (tp > 0) ? std::fabs(entry - tp) : sl_abs * 2.0;
         const double base_lot = compute_size(esym, sl_abs, ask - bid, fallback_lot);
 
@@ -4640,8 +4699,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 sym_consec = it->second.consec_losses;
             }
         }
-        const double lot = g_adaptive_risk.adjusted_lot(
+        double lot = g_adaptive_risk.adjusted_lot(
             esym, sized_lot, sym_loss, g_cfg.daily_loss_limit, sym_consec);
+        // ── TOD-weighted lot scaling ──────────────────────────────────────
+        {
+            const double tod_mult = g_edges.tod.size_scale(
+                std::string(esym), "ALL", nowSec());
+            if (tod_mult < 1.0) {
+                printf("[TOD-SCALE] %s lot %.4f → %.4f (tod_mult=%.2f)\n",
+                       esym, lot, lot * tod_mult, tod_mult);
+                lot = std::max(0.01, std::floor(lot * tod_mult * 100.0 + 0.5) / 100.0);
+            }
+        }
         // ── Max loss per trade cap ────────────────────────────────────────────
         // Hard dollar backstop: if sl_abs * lot * tick_mult > max_loss_per_trade_usd,
         // scale lot down. Fires last — after Kelly, regime weight, DD throttle.
