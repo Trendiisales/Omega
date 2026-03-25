@@ -96,6 +96,21 @@ struct MacroContext {
     // 0=dead(05-07 UTC), 1=London(07-09), 2=London_core(09-12),
     // 3=overlap(12-14), 4=NY(14-17), 5=NY_late(17-22), 6=Asia(22-05)
     int         session_slot = 0;
+
+    // ── CVD (Cumulative Volume Delta) direction per key symbol ───────────────
+    // +1 = buying dominates last 50 ticks, -1 = selling, 0 = neutral
+    // Populated every tick from g_edges.cvd. Degrade to 0 when no data.
+    int         gold_cvd_dir   = 0;
+    int         sp_cvd_dir     = 0;
+    int         nq_cvd_dir     = 0;
+    int         eurusd_cvd_dir = 0;
+    int         usdjpy_cvd_dir = 0;
+    int         xagusd_cvd_dir = 0;
+    // CVD divergence flags: price and CVD moving opposite directions
+    bool        gold_cvd_bull_div  = false;  // bullish: price down, CVD up = absorption
+    bool        gold_cvd_bear_div  = false;  // bearish: price up, CVD down = distribution
+    bool        sp_cvd_bull_div    = false;
+    bool        sp_cvd_bear_div    = false;
 };
 
 // Returns session slot multiplier for MIN_BREAKOUT_PCT scaling.

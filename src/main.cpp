@@ -1511,10 +1511,8 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
               << "\033[0m\n";
     std::cout.flush();
 
-    // ── Fill quality: record signal mid at order send time ────────────────
-    // Actual fill price recorded when ACK arrives; this stores the signal mid.
-    // FillQualityTracker compares fill vs this mid to detect adverse selection.
-    g_edges.fill_quality.record_fill(symbol, mid_price, mid_price, is_long, nowSec());
+    // Note: fill quality is recorded in handle_execution_report when the actual
+    // fill price arrives via ExecutionReport (tag 31 LastPx). Not recorded here.
 
     return clOrdId;
 }
@@ -1661,6 +1659,16 @@ static void handle_execution_report(const std::string& msg) {
                             if (it->second.symbol == "AUDUSD")   fill_bracket(g_bracket_audusd);
                             if (it->second.symbol == "NZDUSD")   fill_bracket(g_bracket_nzdusd);
                             if (it->second.symbol == "USDJPY")   fill_bracket(g_bracket_usdjpy);
+
+                            // ── Fill quality: update with actual fill price ───
+                            // Compares fill_px to the signal mid recorded at send_live_order.
+                            // Detects adverse selection when fills consistently exceed mid.
+                            g_edges.fill_quality.record_fill(
+                                it->second.symbol,
+                                it->second.price,  // signal mid at order send time
+                                fill_px,           // actual fill from ExecutionReport
+                                (it->second.side == "LONG"),
+                                nowSec());
                         }
                     } catch (...) {}
                 }
@@ -2718,6 +2726,10 @@ static void maybe_reset_daily_ledger() {
       const int64_t cutoff = static_cast<int64_t>(std::time(nullptr)) - HOURLY_WINDOW_SEC;
       while (!g_hourly_pnl_records.empty() && g_hourly_pnl_records.front().ts_sec < cutoff)
           g_hourly_pnl_records.pop_front(); }
+    // Save TOD gate data and reset CVD session accumulators
+    g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
+    g_edges.reset_daily();  // resets CVD session hi/lo; prev_day updates via on_tick
+    g_edges.fill_quality.print_summary();  // log fill quality summary at rollover
     std::cout << "[OMEGA-RISK] UTC day rollover — per-symbol risk state reset\n";
 }
 
@@ -3157,6 +3169,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
 
+    // ── CVD direction → MacroContext ──────────────────────────────────────────
+    // Push CVD direction and divergence flags into MacroContext so all engines
+    // can use them as entry confirmation without accessing g_edges directly.
+    {
+        auto upd_cvd = [&](int& dir, bool& bull, bool& bear, const char* s) {
+            const omega::edges::CVDState cs = g_edges.cvd.get(s);
+            dir  = cs.direction();
+            bull = cs.bullish_divergence();
+            bear = cs.bearish_divergence();
+        };
+        bool dummy_b = false, dummy_b2 = false;
+        upd_cvd(g_macro_ctx.gold_cvd_dir,   g_macro_ctx.gold_cvd_bull_div, g_macro_ctx.gold_cvd_bear_div, "GOLD.F");
+        upd_cvd(g_macro_ctx.sp_cvd_dir,     g_macro_ctx.sp_cvd_bull_div,   g_macro_ctx.sp_cvd_bear_div,   "US500.F");
+        upd_cvd(g_macro_ctx.nq_cvd_dir,     dummy_b,  dummy_b2,  "USTEC.F");
+        upd_cvd(g_macro_ctx.eurusd_cvd_dir, dummy_b,  dummy_b2,  "EURUSD");
+        upd_cvd(g_macro_ctx.usdjpy_cvd_dir, dummy_b,  dummy_b2,  "USDJPY");
+        upd_cvd(g_macro_ctx.xagusd_cvd_dir, dummy_b,  dummy_b2,  "XAGUSD");
+    }
+
     // Push L2 imbalance snapshot to telemetry
     g_telemetry.UpdateL2(
         g_macro_ctx.sp_l2_imbalance,  g_macro_ctx.nq_l2_imbalance,
@@ -3366,6 +3397,41 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             // ── News blackout gate ────────────────────────────────────────────
             if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
+            // ── Time-of-day gate — block known-negative 30-min buckets ─────────
+            // Uses live win-rate/EV data from closed trades. No-op until 30 trades
+            // per bucket are recorded. SHADOW mode allowed — builds the data.
+            if (g_cfg.mode != "SHADOW") {
+                // engine name not available here — check the generic symbol bucket
+                if (!g_edges.tod.allow(symbol, "ALL", nowSec())) {
+                    static thread_local int64_t s_tod_log = 0;
+                    if (nowSec() - s_tod_log > 120) {
+                        s_tod_log = nowSec();
+                        printf("[TOD-GATE] %s blocked in current 30-min bucket\n", symbol.c_str());
+                    }
+                    return false;
+                }
+            }
+            // ── Relative spread Z-score gate ──────────────────────────────────
+            // Block if current spread is anomalous vs rolling 200-tick median.
+            // More nuanced than fixed max_spread_pct — adapts to session liquidity.
+            if (!shadow_mode) {
+                std::lock_guard<std::mutex> lk2(g_book_mtx);
+                const auto bid_it = g_bids.find(symbol);
+                const auto ask_it = g_asks.find(symbol);
+                if (bid_it != g_bids.end() && ask_it != g_asks.end()) {
+                    const double spread = ask_it->second - bid_it->second;
+                    if (!g_edges.spread_gate.ok(symbol, spread)) {
+                        static thread_local int64_t s_sz_log = 0;
+                        if (nowSec() - s_sz_log > 30) {
+                            s_sz_log = nowSec();
+                            printf("[SPREAD-Z] %s spread=%.5f z=%.2f — anomalous, blocking entry\n",
+                                   symbol.c_str(), spread,
+                                   g_edges.spread_gate.z_score(symbol, spread));
+                        }
+                        return false;
+                    }
+                }
+            }
             // ── Regime block gate ─────────────────────────────────────────────
             // Only blocks in LIVE mode — shadow needs all trades for data collection
             if (g_cfg.mode != "SHADOW" && g_regime_adaptor.equity_blocked(symbol)) return false;
@@ -4032,7 +4098,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // (FX_CASCADE=0.0 and FX_CARRY=0.0 in RISK_OFF per weight table)
             return false;
         }
-        const double sized_lot = base_lot * static_cast<double>(regime_wt);
+
+        // ── Edge quality score → lot multiplier ───────────────────────────────
+        // Combines: CVD direction, CVD divergence, PDH/PDL structure, round number
+        // Score range -4..+4. Translate to 0.75x..1.25x lot multiplier.
+        // Neutral score (0) = 1.0x (no change from baseline).
+        // Strong confluence (+3/+4) = 1.25x. Against confluence (-3/-4) = skip.
+        const int edge_score = g_edges.entry_score(esym, entry, is_long, tp > 0 ? tp : entry + (is_long?1:-1)*sl_abs*2.0, nowSec());
+        if (edge_score <= -3) {
+            // Multiple signals against this trade — skip
+            // (e.g. bearish CVD divergence + trading into PDH + origin at round number)
+            printf("[EDGE-BLOCK] %s %s score=%d — skipping entry\n", esym, is_long?"LONG":"SHORT", edge_score);
+            return false;
+        }
+        const double edge_mult = 1.0 + std::max(-0.25, std::min(0.25, edge_score * 0.08));
+        const double sized_lot = base_lot * static_cast<double>(regime_wt) * edge_mult;
 
         // Adaptive risk: DD throttle + Kelly + vol regime
         double sym_loss = 0.0; int sym_consec = 0;
@@ -4392,6 +4472,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
         }
+        // London fix window (20:55-21:00 UTC) — WM/Reuters benchmark rebalancing
+        if (base_can_fx) {
+            const omega::edges::CVDState eur_cvd = g_edges.cvd.get("EURUSD");
+            const auto fix_sig = g_edges.fx_fix.on_tick_london("EURUSD", bid, ask, eur_cvd.normalised(), nowSec());
+            if (fix_sig.valid) {
+                g_telemetry.UpdateLastSignal("EURUSD", fix_sig.is_long?"LONG":"SHORT", fix_sig.entry, fix_sig.reason, "FX_FIX", regime.c_str(), "LONDON_FIX");
+                enter_directional("EURUSD", fix_sig.is_long, fix_sig.entry, fix_sig.sl, fix_sig.tp);
+            }
+        }
     }
     else if (sym == "GBPUSD") {
         // ── FX group bracket guard — only one bracket across GBPUSD/AUDUSD/NZDUSD/USDJPY ──
@@ -4480,6 +4569,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     if (cu.valid) {
                         g_telemetry.UpdateLastSignal("USDJPY", cu.is_long?"LONG":"SHORT", cu.entry, cu.reason, "CARRY_UNWIND", regime.c_str(), "CARRY_UNWIND");
                         enter_directional("USDJPY", cu.is_long, cu.entry, cu.sl, cu.tp);
+                    }
+                }
+                // Tokyo fix window (00:55-01:00 UTC) — mechanical JPY rebalancing flow
+                if (bc_jpy) {
+                    const omega::edges::CVDState jpy_cvd = g_edges.cvd.get("USDJPY");
+                    const auto fix_sig = g_edges.fx_fix.on_tick_tokyo(bid, ask, jpy_cvd.normalised(), nowSec());
+                    if (fix_sig.valid) {
+                        g_telemetry.UpdateLastSignal("USDJPY", fix_sig.is_long?"LONG":"SHORT", fix_sig.entry, fix_sig.reason, "FX_FIX", regime.c_str(), "TOKYO_FIX");
+                        enter_directional("USDJPY", fix_sig.is_long, fix_sig.entry, fix_sig.sl, fix_sig.tp);
                     }
                 }
             }
@@ -6468,6 +6566,35 @@ int main(int argc, char* argv[])
         // Print final schedule (includes both hardcoded + live injected windows)
         g_news_blackout.print_schedule(now_s);
 
+        // ── Edge systems startup configuration ───────────────────────────────
+        // TOD gate: load historical bucket data so gate is active from first trade
+        {
+            const std::string tod_path = log_root_dir() + "/omega_tod_buckets.csv";
+            g_edges.tod.load_csv(tod_path);
+            g_edges.tod.min_trades   = 30;    // need 30 trades per bucket before blocking
+            g_edges.tod.min_win_rate = 0.38;  // block if WR < 38%
+            g_edges.tod.min_avg_ev_usd = -2.0; // block if avg EV < -$2/trade
+            g_edges.tod.enabled      = (g_cfg.mode != "SHADOW"); // collect in shadow, gate in live
+        }
+        // Spread Z-score gate: starts building after first 20 ticks per symbol
+        g_edges.spread_gate.window_ticks = 200;
+        g_edges.spread_gate.max_z_score  = 3.0; // conservative: 3σ anomaly
+        g_edges.spread_gate.enabled      = (g_cfg.mode != "SHADOW");
+        // Round number filter
+        g_edges.round_numbers.proximity_frac = 0.08; // within 8% of increment = "near"
+        // Previous day levels
+        g_edges.prev_day.proximity_frac = 0.05; // within 5% of prior range = "near PDH/PDL"
+        // FX fix engines
+        g_edges.fx_fix.tp_pips        = 15.0;
+        g_edges.fx_fix.sl_pips        = 8.0;
+        g_edges.fx_fix.min_cvd_signal = 0.12; // need 12% normalised CVD to enter fix
+        g_edges.fx_fix.enabled        = (g_cfg.mode != "SHADOW");
+        // Fill quality
+        g_edges.fill_quality.window_trades = 50;
+        g_edges.fill_quality.adverse_threshold_bps = 2.0;
+        g_edges.fill_quality.enabled = true;
+        std::printf("[EDGES] All 7 edge systems initialised\n");
+
         // Adaptive risk: start with Kelly disabled for first 15 trades per symbol
         // (confidence ramps from 0→1 automatically as trades accumulate)
         g_adaptive_risk.kelly_enabled         = true;
@@ -6770,6 +6897,10 @@ int main(int argc, char* argv[])
     if (g_daily_shadow_trade_log) g_daily_shadow_trade_log->close();
     g_trade_close_csv.close();
     g_shadow_csv.close();
+    // ── Edge systems shutdown — persist TOD data ──────────────────────────────
+    g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
+    g_edges.tod.print_worst(15);
+    g_edges.fill_quality.print_summary();
     if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); delete g_tee_buf; g_tee_buf = nullptr; }
     WSACleanup();
     ReleaseMutex(g_singleton_mutex);
