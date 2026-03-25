@@ -317,6 +317,9 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    double open_entry()   const { return pos_.entry; }
+    bool   open_is_long() const { return pos_.is_long; }
+    double open_size()    const { return pos_.size; }
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
 
 private:
@@ -422,6 +425,9 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    double open_entry()   const { return pos_.entry; }
+    bool   open_is_long() const { return pos_.is_long; }
+    double open_size()    const { return pos_.size; }
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
 
 private:
@@ -508,6 +514,9 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    double open_entry()   const { return pos_.entry; }
+    bool   open_is_long() const { return pos_.is_long; }
+    double open_size()    const { return pos_.size; }
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
 
 private:
@@ -583,6 +592,24 @@ public:
     bool has_open_gbpusd() const { return pos_gbp_.active; }
     bool has_open_audusd() const { return pos_aud_.active; }
     bool has_open_nzdusd() const { return pos_nzd_.active; }
+    // Unrealised PnL helpers — return first active leg (GBP > AUD > NZD)
+    double open_entry()   const {
+        if (pos_gbp_.active) return pos_gbp_.entry;
+        if (pos_aud_.active) return pos_aud_.entry;
+        if (pos_nzd_.active) return pos_nzd_.entry;
+        return 0.0;
+    }
+    bool   open_is_long() const {
+        if (pos_gbp_.active) return pos_gbp_.is_long;
+        if (pos_aud_.active) return pos_aud_.is_long;
+        return pos_nzd_.is_long;
+    }
+    double open_size()    const {
+        if (pos_gbp_.active) return pos_gbp_.size;
+        if (pos_aud_.active) return pos_aud_.size;
+        if (pos_nzd_.active) return pos_nzd_.size;
+        return 0.0;
+    }
 
     // Force-close all legs — each pair uses its own current price.
     // Called on disconnect; gbpusd_bid/ask used as fallback for AUD/NZD if zeroed.
@@ -771,6 +798,9 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    double open_entry()   const { return pos_.entry; }
+    bool   open_is_long() const { return pos_.is_long; }
+    double open_size()    const { return pos_.size; }
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
 
 private:

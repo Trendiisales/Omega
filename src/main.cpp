@@ -436,6 +436,13 @@ static omega::cross::TrendPullbackEngine   g_trend_pb_ger40;  // GER40
 // These exploit the 0.3-4ms RTT advantage of the co-located VPS.
 static omega::latency::LatencyEdgeStack g_le_stack;
 
+// ── Cross-engine deduplication — file-scope so dispatch lambda can see it ──
+// Per-symbol timestamp of the last entry across ALL engine types.
+// Prevents simultaneous entries from GoldStack + Breakout + Bracket + TrendPB.
+static constexpr int64_t CROSS_ENG_DEDUP_SEC = 30;
+static std::mutex         g_dedup_mtx;
+static std::unordered_map<std::string, int64_t> g_last_cross_entry;
+
 // Bracket engines
 #include "BracketEngine.hpp"
 #include "GoldFlowEngine.hpp"
@@ -3373,8 +3380,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double cur_mid_xau = (g_bids.count("GOLD.F")  && g_asks.count("GOLD.F"))
             ? (g_bids.at("GOLD.F")  + g_asks.at("GOLD.F"))  * 0.5 : 0.0;
 
-        // Helper: unrealised PnL for a BreakoutEngine OpenPos
-        auto be_pnl = [&](const omega::OpenPos& p, const std::string& sym) -> double {
+        // Helper: unrealised PnL — generic lambda accepts any OpenPos-like type
+        // (omega::OpenPos from BreakoutEngine AND BracketEngineBase<T>::OpenPos
+        //  both have .active / .is_long / .entry / .size members)
+        auto be_pnl = [&](const auto& p, const std::string& sym) -> double {
             if (!p.active) return 0.0;
             double mid = 0.0;
             std::lock_guard<std::mutex> lk(g_book_mtx);
@@ -3434,17 +3443,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         total += be_pnl(g_bracket_nzdusd.pos, "NZDUSD");
         total += be_pnl(g_bracket_usdjpy.pos, "USDJPY");
 
-        // Cross-asset engines — use CrossPosition directly
-        auto& esnq_p   = g_ca_esnq.pos_;
-        auto& eia_p    = g_ca_eia_fade.pos_;
-        auto& bwti_p   = g_ca_brent_wti.pos_;
-        auto& fxc_p    = g_ca_fx_cascade.pos_;
-        auto& carry_p  = g_ca_carry_unwind.pos_;
-        total += cp_pnl(esnq_p.active,  esnq_p.is_long,  esnq_p.entry,  esnq_p.size,  "US500.F");
-        total += cp_pnl(eia_p.active,   eia_p.is_long,   eia_p.entry,   eia_p.size,   "USOIL.F");
-        total += cp_pnl(bwti_p.active,  bwti_p.is_long,  bwti_p.entry,  bwti_p.size,  "BRENT");
-        total += cp_pnl(fxc_p.active,   fxc_p.is_long,   fxc_p.entry,   fxc_p.size,   "GBPUSD");
-        total += cp_pnl(carry_p.active, carry_p.is_long, carry_p.entry, carry_p.size, "USDJPY");
+        // Cross-asset engines — use public accessors (pos_ is private)
+        // open_unrealised() calls the engine's open_pos_pnl(bid, ask) method.
+        // If an engine has a position, mid-price PnL is estimated from the book.
+        auto ca_pnl = [&](bool has_pos, double open_entry, bool open_long,
+                          double open_size, const std::string& sym) -> double {
+            if (!has_pos || open_entry <= 0.0) return 0.0;
+            return cp_pnl(true, open_long, open_entry, open_size, sym);
+        };
+        total += ca_pnl(g_ca_esnq.has_open_position(),
+                        g_ca_esnq.open_entry(), g_ca_esnq.open_is_long(), g_ca_esnq.open_size(), "US500.F");
+        total += ca_pnl(g_ca_eia_fade.has_open_position(),
+                        g_ca_eia_fade.open_entry(), g_ca_eia_fade.open_is_long(), g_ca_eia_fade.open_size(), "USOIL.F");
+        total += ca_pnl(g_ca_brent_wti.has_open_position(),
+                        g_ca_brent_wti.open_entry(), g_ca_brent_wti.open_is_long(), g_ca_brent_wti.open_size(), "BRENT");
+        total += ca_pnl(g_ca_fx_cascade.has_open_position(),
+                        g_ca_fx_cascade.open_entry(), g_ca_fx_cascade.open_is_long(), g_ca_fx_cascade.open_size(), "GBPUSD");
+        total += ca_pnl(g_ca_carry_unwind.has_open_position(),
+                        g_ca_carry_unwind.open_entry(), g_ca_carry_unwind.open_is_long(), g_ca_carry_unwind.open_size(), "USDJPY");
 
         // Gold flow
         if (g_gold_flow.pos.active) {
@@ -3597,9 +3613,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_gold_stack.has_open_position()) +
                 static_cast<int>(g_le_stack.has_open_position()) +
                 static_cast<int>(g_gold_flow.has_open_position());  // gold flow positions count toward global cap
-            if (open_positions >= g_cfg.max_open_positions) {
-                ++g_gov_pos;
-                return false;
+            // ── Session-aware position cap ────────────────────────────────
+            // Asia = max 2 (low liquidity, wide spreads, few signals worth taking)
+            // Dead zone (05-07 UTC) = max 1 (preparation period, no fresh data)
+            // London-NY overlap = full config cap (peak liquidity, all engines active)
+            // All other sessions = config cap
+            {
+                int session_cap = g_cfg.max_open_positions;
+                const int slot = g_macro_ctx.session_slot;
+                if      (slot == 0) session_cap = std::min(session_cap, 1); // dead zone 05-07 UTC
+                else if (slot == 6) session_cap = std::min(session_cap, 2); // Asia 22-05 UTC
+                // overlap (slot 3) and London/NY get full cap
+                if (open_positions >= session_cap) {
+                    ++g_gov_pos;
+                    return false;
+                }
             }
             // ── Daily profit target ───────────────────────────────────────────
             // Stop new entries once daily P&L hits the target — lock in the day.
@@ -3749,7 +3777,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_gold_stack.has_open_position()) +
             static_cast<int>(g_le_stack.has_open_position()) +
             static_cast<int>(g_gold_flow.has_open_position());  // gold flow positions count toward global cap
-        const bool pos_budget_ok = open_positions < g_cfg.max_open_positions;
+        // Session-aware cap (mirrors independent_symbols path)
+        int session_cap2 = g_cfg.max_open_positions;
+        const int slot2 = g_macro_ctx.session_slot;
+        if      (slot2 == 0) session_cap2 = std::min(session_cap2, 1);
+        else if (slot2 == 6) session_cap2 = std::min(session_cap2, 2);
+        const bool pos_budget_ok = open_positions < session_cap2;
         if (!pos_budget_ok) ++g_gov_pos;
         if (!pos_budget_ok) return false;
         // ── Daily profit target / session watermark / hourly throttle ─────────
@@ -4412,17 +4445,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Uses the same ExecutionCostGuard that dispatch() and dispatch_bracket() use,
     // with RR=1.5 as the TP estimate (conservative: actual RR is often 2.0+).
     // ── Cross-engine deduplication ────────────────────────────────────────────
-    // Prevents multiple engine types from entering the same symbol within
-    // CROSS_ENG_DEDUP_SEC seconds of each other. Without this, a strong gold
-    // breakout can simultaneously trigger GoldStack + BreakoutEngine + BracketEngine
-    // + TrendPullback — all correlated, all the same direction, all the same time.
-    // This is separate from CorrelationHeatGuard (cluster budget) — this gates
-    // WITHIN a single symbol across engine types.
-    static constexpr int64_t CROSS_ENG_DEDUP_SEC = 30;
-    static std::mutex g_dedup_mtx;
-    static std::unordered_map<std::string, int64_t> g_last_cross_entry;
-
-    auto cross_engine_dedup_ok = [&](const std::string& sym) -> bool {
+    // Per-symbol 30s lockout across all engine types — statics live at file scope.
+    auto cross_engine_dedup_ok = [](const std::string& sym) -> bool {
         std::lock_guard<std::mutex> lk(g_dedup_mtx);
         auto it = g_last_cross_entry.find(sym);
         if (it != g_last_cross_entry.end() &&
