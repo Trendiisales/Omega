@@ -5689,8 +5689,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // Arm partial exit: TP1 at 1R, TP2 at 2R (gold flow has no fixed TP)
                 const double gf_sl_abs = std::fabs(g_gold_flow.pos.entry - g_gold_flow.pos.sl);
                 if (gf_sl_abs > 0.0) {
-                    const double gf_tp1 = g_gold_flow.pos.entry +
-                        (g_gold_flow.pos.is_long ? gf_sl_abs : -gf_sl_abs);
+                    // TP2 = entry ± 2R (PartialExitManager sets TP1 = midpoint internally)
                     const double gf_tp2 = g_gold_flow.pos.entry +
                         (g_gold_flow.pos.is_long ? gf_sl_abs * 2.0 : -gf_sl_abs * 2.0);
                     g_partial_exit.arm("GOLD.F", g_gold_flow.pos.is_long,
