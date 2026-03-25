@@ -118,7 +118,6 @@ struct GoldFlowEngine {
     // -------------------------------------------------------------------------
     // Public config -- set after construction
     double risk_dollars   = GFE_RISK_DOLLARS;  // override from main.cpp
-    bool   shadow_mode    = false;
 
     // -------------------------------------------------------------------------
     // Observable state

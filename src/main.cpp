@@ -1195,13 +1195,16 @@ static double compute_size(const std::string& symbol,
     if (size < 0.01) size = 0.01;  // hard floor: never less than 1 micro-lot
 
     // Per-symbol safety cap (ceiling) and minimum floor
-    double cap = g_cfg.max_lot_indices; // safe default for unknowns
+    double cap = g_cfg.max_lot_indices; // safe default for unknown index CFDs
     double flr = g_cfg.min_lot_indices;
-    if (symbol == "GOLD.F")                                    { cap = g_cfg.max_lot_gold;    flr = g_cfg.min_lot_gold; }
+    if      (symbol == "GOLD.F")                               { cap = g_cfg.max_lot_gold;    flr = g_cfg.min_lot_gold; }
     else if (symbol == "EURUSD")                               { cap = g_cfg.max_lot_fx;      flr = g_cfg.min_lot_fx; }
     else if (symbol == "GBPUSD")                               { cap = g_cfg.max_lot_gbpusd;  flr = g_cfg.min_lot_gbpusd; }
+    else if (symbol == "AUDUSD")                               { cap = g_cfg.max_lot_audusd;  flr = g_cfg.min_lot_audusd; }
+    else if (symbol == "NZDUSD")                               { cap = g_cfg.max_lot_nzdusd;  flr = g_cfg.min_lot_nzdusd; }
+    else if (symbol == "USDJPY")                               { cap = g_cfg.max_lot_usdjpy;  flr = g_cfg.min_lot_usdjpy; }
     else if (symbol == "XAGUSD")                               { cap = g_cfg.max_lot_silver;  flr = g_cfg.min_lot_silver; }
-    else if (symbol == "USOIL.F" || symbol == "BRENT")       { cap = g_cfg.max_lot_oil;     flr = g_cfg.min_lot_oil; }
+    else if (symbol == "USOIL.F" || symbol == "BRENT")        { cap = g_cfg.max_lot_oil;     flr = g_cfg.min_lot_oil; }
     // NAS100 has a broker minimum of 0.10 lots — override the indices floor
     if (symbol == "NAS100") flr = std::max(flr, 0.10);
 
@@ -2344,11 +2347,19 @@ static void load_config(const std::string& path) {
             if (k=="max_lot_oil")          g_cfg.max_lot_oil        = safe_stod(v, k);
             if (k=="max_lot_silver")       g_cfg.max_lot_silver     = safe_stod(v, k);
             if (k=="max_lot_fx")           g_cfg.max_lot_fx         = safe_stod(v, k);
+            if (k=="max_lot_gbpusd")       g_cfg.max_lot_gbpusd     = safe_stod(v, k);
+            if (k=="max_lot_audusd")       g_cfg.max_lot_audusd     = safe_stod(v, k);
+            if (k=="max_lot_nzdusd")       g_cfg.max_lot_nzdusd     = safe_stod(v, k);
+            if (k=="max_lot_usdjpy")       g_cfg.max_lot_usdjpy     = safe_stod(v, k);
             if (k=="min_lot_gold")         g_cfg.min_lot_gold       = safe_stod(v, k);
             if (k=="min_lot_indices")      g_cfg.min_lot_indices    = safe_stod(v, k);
             if (k=="min_lot_oil")          g_cfg.min_lot_oil        = safe_stod(v, k);
             if (k=="min_lot_silver")       g_cfg.min_lot_silver     = safe_stod(v, k);
             if (k=="min_lot_fx")           g_cfg.min_lot_fx         = safe_stod(v, k);
+            if (k=="min_lot_gbpusd")       g_cfg.min_lot_gbpusd     = safe_stod(v, k);
+            if (k=="min_lot_audusd")       g_cfg.min_lot_audusd     = safe_stod(v, k);
+            if (k=="min_lot_nzdusd")       g_cfg.min_lot_nzdusd     = safe_stod(v, k);
+            if (k=="min_lot_usdjpy")       g_cfg.min_lot_usdjpy     = safe_stod(v, k);
             // Backward-compat: older configs place breakout keys under [risk].
             // Parse them here too so tuned values are not silently ignored.
             if (k=="momentum_threshold")    g_cfg.momentum_thresh_pct = safe_stod(v, k);
@@ -5027,7 +5038,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && !g_trend_pb_gold.has_open_position()) { // ADDED: prevent stack with TrendPB
             g_gold_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
                                        ? g_cfg.risk_per_trade_usd : GFE_RISK_DOLLARS;
-            g_gold_flow.shadow_mode  = (g_cfg.mode != "LIVE");
             auto flow_on_close = [&](const omega::TradeRecord& tr) {
                 handle_closed_trade(tr);
                 // Close broker position with a market order (same as bracket_on_close)
