@@ -17,6 +17,7 @@
 #include <iostream>
 #include <atomic>
 #include <string>
+#include <string_view>
 #include <sstream>
 #include <iomanip>
 #include <ctime>
@@ -3872,6 +3873,38 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double sl_abs  = std::fabs(entry - sl);
         const double tp_dist = (tp > 0) ? std::fabs(entry - tp) : sl_abs * 2.0;
         const double base_lot = compute_size(esym, sl_abs, ask - bid, fallback_lot);
+
+        // ── Regime weight ─────────────────────────────────────────────────────
+        // Map symbol → EngineClass and apply macro regime weight.
+        // FX_CASCADE and FX_CARRY return 0.0 in RISK_OFF → hard block.
+        using EC = omega::regime::EngineClass;
+        EC ec = EC::CROSS_ASSET; // safe default for ORB/VWAP/TrendPB
+        const std::string_view sv(esym);
+        if      (sv == "US500.F" || sv == "USTEC.F" || sv == "DJ30.F" || sv == "NAS100")
+            ec = EC::US_EQUITY_BREAKOUT;
+        else if (sv == "GER40" || sv == "UK100" || sv == "ESTX50")
+            ec = EC::EU_EQUITY_BREAKOUT;
+        else if (sv == "XAGUSD")
+            ec = EC::SILVER_BREAKOUT;
+        else if (sv == "USOIL.F" || sv == "BRENT")
+            ec = EC::OIL_BREAKOUT;
+        else if (sv == "EURUSD")
+            ec = EC::FX_BREAKOUT;
+        else if (sv == "GBPUSD" || sv == "AUDUSD" || sv == "NZDUSD")
+            ec = EC::FX_CASCADE;
+        else if (sv == "USDJPY")
+            ec = EC::FX_CARRY;
+        else if (sv == "GOLD.F")
+            ec = EC::GOLD_STACK; // shouldn't reach here — gold has bespoke path
+
+        const float regime_wt = g_regime_adaptor.weight(ec);
+        if (regime_wt <= 0.0f) {
+            // Hard block: engine class disabled under current macro regime
+            // (FX_CASCADE=0.0 and FX_CARRY=0.0 in RISK_OFF per weight table)
+            return false;
+        }
+        const double sized_lot = base_lot * static_cast<double>(regime_wt);
+
         // Adaptive risk: DD throttle + Kelly + vol regime
         double sym_loss = 0.0; int sym_consec = 0;
         {
@@ -3883,7 +3916,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
         }
         const double lot = g_adaptive_risk.adjusted_lot(
-            esym, base_lot, sym_loss, g_cfg.daily_loss_limit, sym_consec);
+            esym, sized_lot, sym_loss, g_cfg.daily_loss_limit, sym_consec);
         // Cost guard
         if (!ExecutionCostGuard::is_viable(esym, ask - bid, tp_dist, lot)) {
             g_telemetry.IncrCostBlocked();
@@ -3944,10 +3977,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch_bracket(g_bracket_sp, g_sup_sp, g_eng_sp, base_can_sp,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.sp_l2_imbalance, &sdec_sp);
-        // Cross-asset: ES/NQ divergence + Opening Range
-        if (!g_ca_esnq.has_open_position() && base_can_sp) {
-            const auto ca_sig = g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, ca_on_close);
-            if (ca_sig.valid) { const double lot = compute_size(sym, std::fabs(ca_sig.entry-ca_sig.sl), ask-bid, 0.01); (void)lot; /* ca_sig disabled — lot intentionally unused */ }
+        // Cross-asset: ES/NQ divergence — DISABLED pending signal quality validation
+        // Engine was built but never activated (divergence signal fires too frequently
+        // on normal ES/NQ spread fluctuations). Drain any open position to closure,
+        // but generate no new entries.
+        if (g_ca_esnq.has_open_position()) {
+            g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, ca_on_close);
         }
         if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {  // ADDED !vwap check
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
