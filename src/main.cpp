@@ -3432,6 +3432,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         return sdec_result;
     };
 
+    // ── cost_ok() — mandatory gate for all direct send_live_order calls ─────────
+    // Defined BEFORE dispatch/dispatch_bracket (generic lambdas) so MSVC can
+    // resolve it at template definition time, not just instantiation time.
+    auto cost_ok = [&](const char* csym, double sl_abs, double lot) -> bool {
+        const double tp_dist = sl_abs * 1.5;  // conservative TP estimate at 1.5R
+        if (!ExecutionCostGuard::is_viable(csym, ask - bid, tp_dist, lot)) {
+            g_telemetry.IncrCostBlocked();
+            std::cout << "[COST-BLOCKED] " << csym
+                      << " spread=" << std::fixed << std::setprecision(5) << (ask - bid)
+                      << " tp_dist=" << tp_dist
+                      << " lot=" << lot << "\n";
+            std::cout.flush();
+            return false;
+        }
+        return true;
+    };
+
     // ── dispatch — breakout engine + supervisor gated ─────────────────────────
     // Calls supervisor, gates new entries on allow_breakout, always ticks for
     // position management. Feeds valid signals into global ranking buffer.
@@ -3812,20 +3829,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Params: symbol, sl_abs (SL distance in price points), lot.
     // Uses the same ExecutionCostGuard that dispatch() and dispatch_bracket() use,
     // with RR=1.5 as the TP estimate (conservative: actual RR is often 2.0+).
-    auto cost_ok = [&](const char* csym, double sl_abs, double lot) -> bool {
-        const double tp_dist = sl_abs * 1.5;  // conservative TP estimate at 1.5R
-        if (!ExecutionCostGuard::is_viable(csym, ask - bid, tp_dist, lot)) {
-            g_telemetry.IncrCostBlocked();
-            std::cout << "[COST-BLOCKED] " << csym
-                      << " spread=" << std::fixed << std::setprecision(5) << (ask - bid)
-                      << " tp_dist=" << tp_dist
-                      << " lot=" << lot << "\n";
-            std::cout.flush();
-            return false;
-        }
-        return true;
-    };
-
     // ── enter_directional: unified entry helper for all cross-asset engines ───
     // Replaces the repeated pattern: compute_size → cost_ok → send_live_order
     // Also applies adaptive risk (adjusted_lot) and arms partial exit.
