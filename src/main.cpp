@@ -6741,7 +6741,7 @@ int main(int argc, char* argv[])
               << "s hold=" << g_cfg.gs_cfg.max_hold_sec << "s vwap_min=" << g_cfg.gs_cfg.min_vwap_dislocation
               << " spread_max=" << g_cfg.gs_cfg.max_entry_spread << "\n"
               << "[OMEGA-PARAMS] GoldStack MIN_ENTRY_GAP=30s MAX_HOLD=600s REGIME_FLIP_MIN=60s\n"
-              << "[OMEGA-PARAMS] LeadLag=DISABLED SpreadDisloc_cooldown=60s EventComp_max_daily=4\n"
+              << "[OMEGA-PARAMS] LeadLag=ACTIVE(3-window-confirm) SpreadDisloc=managed-only EventComp=managed-only\n"
               << "[OMEGA-PARAMS] ═══════════════════════════════════════════\n\n";
     std::cout.flush();
 
