@@ -820,43 +820,326 @@ private:
 };
 
 
+// =============================================================================
+// 8. VolumeProfileTracker
+// =============================================================================
+// Tracks time-at-price (tick count per bucket) as a proxy for volume profile.
+// At each price bucket, counts how many ticks price has spent there.
+//
+// HIGH-NODE ENTRY (price has spent a lot of time here):
+//   - Market Profile theory: high-node areas are VALUE areas — price returns here.
+//   - A breakout from a high-node is a lower-probability move; market tends to
+//     pull back to that node. Score: -1.
+//
+// LOW-NODE ENTRY (price rarely visits here — "thin" area):
+//   - Price moves fast through thin areas with little resistance or support.
+//   - Breakouts into thin areas have strong follow-through. Score: +1.
+//
+// Implementation: bucket = floor(price / bucket_size) × bucket_size
+//   bucket_size calibrated per instrument so there are ~50-100 meaningful buckets:
+//   GOLD: $2.00 buckets, SILVER: $0.25, SP500: 5pts, FX: 20 pips
+// =============================================================================
+class VolumeProfileTracker {
+public:
+    // Bucket sizes per instrument class (price points)
+    static constexpr double BUCKET_GOLD    = 2.00;
+    static constexpr double BUCKET_SILVER  = 0.25;
+    static constexpr double BUCKET_OIL     = 0.50;
+    static constexpr double BUCKET_INDEX   = 5.0;    // SP500, NQ, DJ30, NAS100
+    static constexpr double BUCKET_EU_IDX  = 3.0;    // GER40, UK100, ESTX50
+    static constexpr double BUCKET_FX      = 0.0020; // 20 pip buckets
+    static constexpr double BUCKET_USDJPY  = 0.20;   // 20 pip buckets in JPY
+
+    // Window: max ticks to keep in profile (rolling — old ticks fall off)
+    static constexpr int PROFILE_WINDOW = 2000;  // ~5-10 minutes at typical rates
+
+    // Thresholds: what fraction of max-node count is HIGH vs LOW
+    static constexpr double HIGH_NODE_FRAC = 0.60;  // bucket >= 60% of max = high node
+    static constexpr double LOW_NODE_FRAC  = 0.12;  // bucket <= 12% of max = thin area
+
+    struct SymState {
+        std::unordered_map<int, int> profile;  // bucket_idx → tick_count
+        std::deque<int>              history;  // ordered bucket_idx of last N ticks
+        int                          max_count = 0;
+    };
+
+    mutable std::mutex mtx_;
+    std::unordered_map<std::string, SymState> state_;
+
+    static double bucket_size(const std::string& sym) noexcept {
+        if (sym == "GOLD.F")  return BUCKET_GOLD;
+        if (sym == "XAGUSD")  return BUCKET_SILVER;
+        if (sym == "USOIL.F" || sym == "BRENT") return BUCKET_OIL;
+        if (sym == "US500.F" || sym == "USTEC.F" || sym == "DJ30.F" || sym == "NAS100")
+            return BUCKET_INDEX;
+        if (sym == "GER40" || sym == "UK100" || sym == "ESTX50")
+            return BUCKET_EU_IDX;
+        if (sym == "USDJPY") return BUCKET_USDJPY;
+        return BUCKET_FX;  // all FX pairs
+    }
+
+    void update(const std::string& sym, double mid) noexcept {
+        if (mid <= 0.0) return;
+        const double bs = bucket_size(sym);
+        if (bs <= 0.0) return;
+        const int bucket = static_cast<int>(std::floor(mid / bs));
+
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto& s = state_[sym];
+
+        // Add to profile
+        s.profile[bucket]++;
+        s.history.push_back(bucket);
+
+        // Update max
+        if (s.profile[bucket] > s.max_count)
+            s.max_count = s.profile[bucket];
+
+        // Evict oldest tick if over window
+        if ((int)s.history.size() > PROFILE_WINDOW) {
+            const int old_bucket = s.history.front();
+            s.history.pop_front();
+            auto it = s.profile.find(old_bucket);
+            if (it != s.profile.end()) {
+                it->second--;
+                if (it->second <= 0) s.profile.erase(it);
+            }
+            // Recompute max (amortised — only when max bucket was evicted)
+            if (s.max_count > 0) {
+                int new_max = 0;
+                for (const auto& kv : s.profile)
+                    if (kv.second > new_max) new_max = kv.second;
+                s.max_count = new_max;
+            }
+        }
+    }
+
+    // Returns: +1 if entry is in a thin (low-node) area → fast follow-through
+    //           0 if neutral
+    //          -1 if entry is at a high-node (value area) → likely to revert
+    int score(const std::string& sym, double entry) const noexcept {
+        const double bs = bucket_size(sym);
+        if (bs <= 0.0) return 0;
+        const int bucket = static_cast<int>(std::floor(entry / bs));
+
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = state_.find(sym);
+        if (it == state_.end() || it->second.max_count < 20) return 0;  // not warmed up
+
+        const auto& s = it->second;
+        const auto pit = s.profile.find(bucket);
+        const int count = (pit != s.profile.end()) ? pit->second : 0;
+        const double frac = static_cast<double>(count) / s.max_count;
+
+        if (frac >= HIGH_NODE_FRAC) return -1;  // high-value area — avoid
+        if (frac <= LOW_NODE_FRAC)  return +1;  // thin area — fast moves
+        return 0;
+    }
+
+    void reset(const std::string& sym) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        state_.erase(sym);
+    }
+    void reset_all() {
+        std::lock_guard<std::mutex> lk(mtx_);
+        state_.clear();
+    }
+};
+
+// =============================================================================
+// 9. OrderFlowAbsorptionDetector
+// =============================================================================
+// Detects when price and order book imbalance diverge — the institutional
+// signature of a failing breakout.
+//
+// Pattern: price rising (long breakout candidate) but L2 is ask-heavy
+//   (imbalance < 0.40) for N consecutive ticks = sellers absorbing the move.
+//   The breakout is being sold into. Hard block on longs.
+//
+// Pattern: price falling (short breakout candidate) but L2 is bid-heavy
+//   (imbalance > 0.60) for N consecutive ticks = buyers absorbing the move.
+//   Hard block on shorts.
+//
+// Based on: Jovanovic & Menkveld (2016), Kirilenko et al. (2017) — absorption
+// of aggressive order flow by passive large traders is the primary reversal signal.
+// =============================================================================
+class OrderFlowAbsorptionDetector {
+public:
+    int    CONFIRM_TICKS    = 4;    // consecutive divergent ticks needed
+    double ABSORB_THRESHOLD = 0.40; // imbalance below this = ask-heavy (sellers)
+    double ABSORB_LONG_MAX  = 0.40; // if price up AND imbalance < this = absorption
+    double ABSORB_SHORT_MIN = 0.60; // if price down AND imbalance > this = absorption
+
+    struct SymState {
+        double prev_mid    = 0.0;
+        int    absorb_long_count  = 0;  // ticks where price rising but book sell-heavy
+        int    absorb_short_count = 0;  // ticks where price falling but book buy-heavy
+    };
+
+    mutable std::mutex mtx_;
+    std::unordered_map<std::string, SymState> state_;
+
+    // Call every tick with current mid and L2 imbalance for this symbol
+    void update(const std::string& sym, double mid, double l2_imbalance) noexcept {
+        if (mid <= 0.0) return;
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto& s = state_[sym];
+
+        if (s.prev_mid > 0.0) {
+            const bool price_up   = (mid > s.prev_mid);
+            const bool price_down = (mid < s.prev_mid);
+
+            // Price rising but ask-heavy book = sellers absorbing longs
+            if (price_up && l2_imbalance < ABSORB_LONG_MAX)
+                s.absorb_long_count++;
+            else
+                s.absorb_long_count = 0;
+
+            // Price falling but bid-heavy book = buyers absorbing shorts
+            if (price_down && l2_imbalance > ABSORB_SHORT_MIN)
+                s.absorb_short_count++;
+            else
+                s.absorb_short_count = 0;
+        }
+        s.prev_mid = mid;
+    }
+
+    // Returns true if absorption is detected for the given direction
+    // is_long=true: are sellers absorbing the upward move?
+    bool is_absorbing(const std::string& sym, bool is_long) const noexcept {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = state_.find(sym);
+        if (it == state_.end()) return false;
+        const auto& s = it->second;
+        if (is_long)  return s.absorb_long_count  >= CONFIRM_TICKS;
+        return              s.absorb_short_count >= CONFIRM_TICKS;
+    }
+
+    void reset_all() {
+        std::lock_guard<std::mutex> lk(mtx_);
+        state_.clear();
+    }
+};
+
+
 // ─────────────────────────────────────────────────────────────────────────────
-// EdgeContext — single object holding all 7 edge systems
+// EdgeContext — single object holding all edge systems
 // Declare one global: static omega::edges::EdgeContext g_edges;
 // ─────────────────────────────────────────────────────────────────────────────
 struct EdgeContext {
-    CumulativeVolumeDelta  cvd;
-    TimeOfDayGate          tod;
-    RelativeSpreadGate     spread_gate;
-    RoundNumberFilter      round_numbers;
-    PreviousDayLevels      prev_day;
-    FxFixWindowEngine      fx_fix;
-    FillQualityTracker     fill_quality;
+    CumulativeVolumeDelta      cvd;
+    TimeOfDayGate              tod;
+    RelativeSpreadGate         spread_gate;
+    RoundNumberFilter          round_numbers;
+    PreviousDayLevels          prev_day;
+    FxFixWindowEngine          fx_fix;
+    FillQualityTracker         fill_quality;
+    VolumeProfileTracker       vol_profile;       // Edge 8: time-at-price
+    OrderFlowAbsorptionDetector absorption;       // Edge 9: institutional absorption
 
-    // Convenience: full entry quality score for a directional entry
-    // Returns a score from -4 to +4 (positive = higher quality)
+    // ── entry_score: original 4-signal score (-4..+4) ──────────────────────
     int entry_score(const std::string& sym, double entry, bool is_long,
                     double tp, int64_t now_sec) const noexcept {
         int score = 0;
-        // Round number confluence
         score += round_numbers.confluence_score(sym, entry, is_long, tp);
-        // PDH/PDL structural confluence
         score += prev_day.breakout_score(sym, entry, is_long);
-        // CVD direction confirms trade
         const CVDState cvd_s = cvd.get(sym);
         const int cvd_dir = cvd_s.direction();
         if (is_long  && cvd_dir == +1) ++score;
         if (!is_long && cvd_dir == -1) ++score;
-        // CVD divergence (strongest signal)
         if (is_long  && cvd_s.bullish_divergence()) ++score;
         if (!is_long && cvd_s.bearish_divergence()) ++score;
         return score;
     }
 
-    // Reset daily state (call at UTC day rollover)
+    // ── entry_score_l2: full microstructure score including L2 signals ──────
+    // Extended version that incorporates:
+    //   - All original signals (CVD, PDH/PDL, round numbers)
+    //   - Microprice bias confirmation/contradiction
+    //   - Liquidity vacuum in direction (fast move likely)
+    //   - Liquidity wall between entry and TP (target blocked)
+    //   - Order flow absorption (institutional selling into longs)
+    //   - Volume profile (thin area = follow-through; node = reversion)
+    //
+    // Score range: -7..+7
+    // Hard block threshold: <= -3 (same as before — now more selective)
+    // Lot boost threshold:  >= +3 (more signals required for boost)
+    int entry_score_l2(const std::string& sym,
+                       double entry,
+                       bool   is_long,
+                       double tp,
+                       int64_t now_sec,
+                       // L2 microstructure inputs from MacroContext
+                       double microprice_bias,   // >0 = upward pressure
+                       double l2_imbalance,      // 0..1, 0.5 = neutral
+                       bool   vacuum_in_dir,     // liquidity vacuum in trade direction
+                       bool   wall_to_tp         // large resting order between entry and TP
+                       ) const noexcept {
+
+        // Start with base score (CVD, PDH/PDL, round numbers)
+        int score = entry_score(sym, entry, is_long, tp, now_sec);
+
+        // ── Microprice bias ───────────────────────────────────────────────────
+        // Microprice = weighted midpoint accounting for queue sizes.
+        // If microprice is above mid (bias > 0), next tick is more likely up.
+        // Confirms longs, contradicts shorts, and vice versa.
+        // Threshold: 0.05pts for FX/indices, 0.50pts for gold — scale by price.
+        // Use a relative threshold: bias as pct of entry.
+        if (entry > 0.0) {
+            const double bias_pct = std::fabs(microprice_bias) / entry * 100.0;
+            if (bias_pct > 0.001) {  // meaningful: >0.1bp from mid
+                const bool bias_long  = (microprice_bias > 0.0);
+                if (is_long  && bias_long)  ++score;   // confirms long
+                if (!is_long && !bias_long) ++score;   // confirms short
+                if (is_long  && !bias_long) --score;   // contradicts long
+                if (!is_long && bias_long)  --score;   // contradicts short
+            }
+        }
+
+        // ── Liquidity vacuum ──────────────────────────────────────────────────
+        // Thin top-3 levels on the side we're heading toward = fast move.
+        // vacuum_in_dir: caller passes vacuum_ask for longs, vacuum_bid for shorts.
+        // This is one of the strongest short-term momentum confirmations available.
+        if (vacuum_in_dir) score += 2;
+
+        // ── Wall to TP ────────────────────────────────────────────────────────
+        // Large resting order between entry and TP = target may not be reached.
+        // This is a hard score penalty. If wall_to_tp and score would be neutral,
+        // we block the trade — the target is structurally obstructed.
+        if (wall_to_tp) score -= 3;
+
+        // ── Order flow absorption ─────────────────────────────────────────────
+        // Institutional signature: price moving in breakout direction but book
+        // is heavily loaded against the move. Someone big is fading this.
+        // Only apply when absorption has been confirmed (N consecutive ticks).
+        if (absorption.is_absorbing(sym, is_long)) score -= 2;
+
+        // ── Volume profile ────────────────────────────────────────────────────
+        // +1 if entry is in thin area (fast follow-through)
+        // -1 if entry is at high-volume node (price magnet, likely to revert)
+        score += vol_profile.score(sym, entry);
+
+        return score;
+    }
+
+    // ── VWAP chop gate ────────────────────────────────────────────────────────
+    // Returns true (allow entry) if price is sufficiently far from VWAP.
+    // Entries near VWAP have no directional edge — VWAP is the mean-reversion
+    // anchor; breakouts from inside the VWAP zone chop back constantly.
+    // Threshold: 0.05% of price (5bp) — tight enough to catch real chop,
+    // loose enough not to block genuine momentum that happens to be near VWAP.
+    bool vwap_gate(double entry, double vwap, double threshold_pct = 0.05) const noexcept {
+        if (vwap <= 0.0) return true;  // no VWAP data — allow
+        const double dist_pct = std::fabs(entry - vwap) / vwap * 100.0;
+        return dist_pct >= threshold_pct;
+    }
+
+    // Reset daily state
     void reset_daily() noexcept {
         cvd.reset_all();
-        // prev_day is handled by update() detecting day change — no manual reset needed
+        vol_profile.reset_all();
+        absorption.reset_all();
+        // prev_day handled by update() detecting day change
     }
 };
 

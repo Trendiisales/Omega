@@ -2998,6 +2998,30 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_edges.cvd.update(sym, bid, ask);
         g_edges.spread_gate.update(sym, ask - bid);
         g_edges.prev_day.update(sym, mid, nowSec());
+        // Edge 8: Volume profile — track time-at-price every tick
+        g_edges.vol_profile.update(sym, mid);
+        // Edge 9: Order flow absorption — detect institutional fading of moves
+        // Use the per-symbol L2 imbalance from MacroContext (updated just above this)
+        {
+            double l2_imb = 0.5;  // neutral fallback
+            if      (sym == "GOLD.F")  l2_imb = g_macro_ctx.gold_l2_imbalance;
+            else if (sym == "US500.F") l2_imb = g_macro_ctx.sp_l2_imbalance;
+            else if (sym == "USTEC.F") l2_imb = g_macro_ctx.nq_l2_imbalance;
+            else if (sym == "XAGUSD")  l2_imb = g_macro_ctx.xag_l2_imbalance;
+            else if (sym == "USOIL.F") l2_imb = g_macro_ctx.cl_l2_imbalance;
+            else if (sym == "BRENT")   l2_imb = g_macro_ctx.brent_l2_imbalance;
+            else if (sym == "EURUSD")  l2_imb = g_macro_ctx.eur_l2_imbalance;
+            else if (sym == "GBPUSD")  l2_imb = g_macro_ctx.gbp_l2_imbalance;
+            else if (sym == "AUDUSD")  l2_imb = g_macro_ctx.aud_l2_imbalance;
+            else if (sym == "NZDUSD")  l2_imb = g_macro_ctx.nzd_l2_imbalance;
+            else if (sym == "USDJPY")  l2_imb = g_macro_ctx.jpy_l2_imbalance;
+            else if (sym == "GER40")   l2_imb = g_macro_ctx.ger40_l2_imbalance;
+            else if (sym == "UK100")   l2_imb = g_macro_ctx.uk100_l2_imbalance;
+            else if (sym == "ESTX50")  l2_imb = g_macro_ctx.estx50_l2_imbalance;
+            else if (sym == "DJ30.F")  l2_imb = g_macro_ctx.us30_l2_imbalance;
+            else if (sym == "NAS100")  l2_imb = g_macro_ctx.nas_l2_imbalance;
+            g_edges.absorption.update(sym, mid, l2_imb);
+        }
     }
 
     // Seed vol history on first tick after reconnect — avoids 80-tick warmup dead zone.
@@ -4146,20 +4170,116 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             return false;
         }
 
-        // ── Edge quality score → lot multiplier ───────────────────────────────
-        // Combines: CVD direction, CVD divergence, PDH/PDL structure, round number
-        // Score range -4..+4. Translate to 0.75x..1.25x lot multiplier.
-        // Neutral score (0) = 1.0x (no change from baseline).
-        // Strong confluence (+3/+4) = 1.25x. Against confluence (-3/-4) = skip.
-        const int edge_score = g_edges.entry_score(esym, entry, is_long, tp > 0 ? tp : entry + (is_long?1:-1)*sl_abs*2.0, nowSec());
-        if (edge_score <= -3) {
-            // Multiple signals against this trade — skip
-            // (e.g. bearish CVD divergence + trading into PDH + origin at round number)
-            printf("[EDGE-BLOCK] %s %s score=%d — skipping entry\n", esym, is_long?"LONG":"SHORT", edge_score);
-            return false;
+        // ── VWAP chop gate ────────────────────────────────────────────────────
+        // Entries within 0.05% of daily VWAP have no directional edge.
+        // VWAP is the mean-reversion anchor — breakouts from inside the VWAP zone
+        // chop back constantly. Get VWAP from the matching BreakoutEngine.
+        {
+            double vwap = 0.0;
+            if      (sv == "US500.F")  vwap = g_eng_sp.vwap();
+            else if (sv == "USTEC.F")  vwap = g_eng_nq.vwap();
+            else if (sv == "DJ30.F")   vwap = g_eng_us30.vwap();
+            else if (sv == "NAS100")   vwap = g_eng_nas100.vwap();
+            else if (sv == "GER40")    vwap = g_eng_ger30.vwap();
+            else if (sv == "UK100")    vwap = g_eng_uk100.vwap();
+            else if (sv == "ESTX50")   vwap = g_eng_estx50.vwap();
+            else if (sv == "XAGUSD")   vwap = g_eng_xag.vwap();
+            else if (sv == "EURUSD")   vwap = g_eng_eurusd.vwap();
+            else if (sv == "GBPUSD")   vwap = g_eng_gbpusd.vwap();
+            else if (sv == "AUDUSD")   vwap = g_eng_audusd.vwap();
+            else if (sv == "NZDUSD")   vwap = g_eng_nzdusd.vwap();
+            else if (sv == "USDJPY")   vwap = g_eng_usdjpy.vwap();
+            else if (sv == "USOIL.F") vwap = g_eng_cl.vwap();
+            else if (sv == "BRENT")   vwap = g_eng_brent.vwap();
+            else if (sv == "GOLD.F")  vwap = g_gold_stack.vwap();
+            if (!g_edges.vwap_gate(entry, vwap)) {
+                printf("[VWAP-CHOP] %s %s entry=%.4f vwap=%.4f dist=%.3f%% — in chop zone, skipping\n",
+                       esym, is_long?"LONG":"SHORT", entry, vwap,
+                       vwap > 0 ? std::fabs(entry - vwap) / vwap * 100.0 : 0.0);
+                return false;
+            }
         }
-        const double edge_mult = 1.0 + std::max(-0.25, std::min(0.25, edge_score * 0.08));
-        const double sized_lot = base_lot * static_cast<double>(regime_wt) * edge_mult;
+
+        // sized_lot declared here at outer scope — computed inside L2 block below
+        double sized_lot = base_lot * static_cast<double>(regime_wt); // default (no L2 data)
+
+        // ── L2 microstructure edge score → lot multiplier ─────────────────────
+        // Combines: CVD, PDH/PDL, round numbers (original 4 signals) PLUS:
+        //   - Microprice bias confirmation/contradiction
+        //   - Liquidity vacuum in direction (+2 fast move)
+        //   - Wall between entry and TP (-3 hard block)
+        //   - Order flow absorption (-2 institutional fading)
+        //   - Volume profile node/thin area (+/-1)
+        // Score range -7..+7. Block at <= -3. Boost at >= +3.
+        {
+            // Pull L2 microstructure from MacroContext for this symbol
+            double microprice_bias = 0.0;
+            double l2_imbalance    = 0.5;
+            bool   vacuum_in_dir   = false;
+            bool   wall_to_tp      = false;
+
+            if      (sv == "GOLD.F") {
+                microprice_bias = g_macro_ctx.gold_microprice_bias;
+                l2_imbalance    = g_macro_ctx.gold_l2_imbalance;
+                vacuum_in_dir   = is_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid;
+                wall_to_tp      = is_long ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below;
+            } else if (sv == "US500.F" || sv == "USTEC.F" || sv == "NAS100" || sv == "DJ30.F") {
+                microprice_bias = g_macro_ctx.sp_microprice_bias;
+                l2_imbalance    = (sv == "US500.F") ? g_macro_ctx.sp_l2_imbalance : g_macro_ctx.nq_l2_imbalance;
+                vacuum_in_dir   = is_long ? g_macro_ctx.sp_vacuum_ask : g_macro_ctx.sp_vacuum_bid;
+                wall_to_tp      = is_long ? g_macro_ctx.sp_wall_above : g_macro_ctx.sp_wall_below;
+            } else if (sv == "XAGUSD") {
+                microprice_bias = g_macro_ctx.xag_microprice_bias;
+                l2_imbalance    = g_macro_ctx.xag_l2_imbalance;
+                // Silver: no vacuum/wall in MacroContext yet — use L2 imbalance as proxy
+                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+            } else if (sv == "USOIL.F" || sv == "BRENT") {
+                microprice_bias = g_macro_ctx.cl_microprice_bias;
+                l2_imbalance    = g_macro_ctx.cl_l2_imbalance;
+                vacuum_in_dir   = is_long ? g_macro_ctx.cl_vacuum_ask : g_macro_ctx.cl_vacuum_bid;
+            } else if (sv == "EURUSD") {
+                l2_imbalance    = g_macro_ctx.eur_l2_imbalance;
+                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+            } else if (sv == "GBPUSD") {
+                l2_imbalance    = g_macro_ctx.gbp_l2_imbalance;
+                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+            } else if (sv == "AUDUSD") {
+                l2_imbalance    = g_macro_ctx.aud_l2_imbalance;
+                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+            } else if (sv == "NZDUSD") {
+                l2_imbalance    = g_macro_ctx.nzd_l2_imbalance;
+                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+            } else if (sv == "USDJPY") {
+                l2_imbalance    = g_macro_ctx.jpy_l2_imbalance;
+                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+            } else if (sv == "GER40") {
+                l2_imbalance    = g_macro_ctx.ger40_l2_imbalance;
+                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+            } else if (sv == "UK100") {
+                l2_imbalance    = g_macro_ctx.uk100_l2_imbalance;
+                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+            } else if (sv == "ESTX50") {
+                l2_imbalance    = g_macro_ctx.estx50_l2_imbalance;
+                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+            }
+
+            const double tp_for_score = tp > 0 ? tp : entry + (is_long?1:-1)*sl_abs*2.0;
+            const int edge_score = g_edges.entry_score_l2(
+                esym, entry, is_long, tp_for_score, nowSec(),
+                microprice_bias, l2_imbalance, vacuum_in_dir, wall_to_tp);
+
+            if (edge_score <= -3) {
+                printf("[EDGE-BLOCK-L2] %s %s score=%d (micro=%.4f l2=%.2f vac=%d wall=%d absorb=%d vp=%d)\n",
+                       esym, is_long?"LONG":"SHORT", edge_score,
+                       microprice_bias, l2_imbalance,
+                       vacuum_in_dir ? 1 : 0, wall_to_tp ? 1 : 0,
+                       g_edges.absorption.is_absorbing(esym, is_long) ? 1 : 0,
+                       g_edges.vol_profile.score(esym, entry));
+                return false;
+            }
+            const double edge_mult = 1.0 + std::max(-0.25, std::min(0.35, edge_score * 0.07));
+            sized_lot = base_lot * static_cast<double>(regime_wt) * edge_mult;
+        }
 
         // Adaptive risk: DD throttle + Kelly + vol regime
         double sym_loss = 0.0; int sym_consec = 0;
