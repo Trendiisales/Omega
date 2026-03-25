@@ -5689,7 +5689,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
             const bool in_dead_zone  = (g_macro_ctx.session_slot == 0);
             const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
-            const bool asia_trend_ok = !in_asia_slot || g_gold_stack.is_drift_trending(g_macro_ctx.gold_l2_imbalance);
+            // Asia trend gate: only apply when L2 depth feed is actually live.
+            // When depth is unavailable (l2_imbalance stuck at 0.5 default), the gate
+            // would permanently block all Asia trading — fail-open instead.
+            // l2_depth_live: true if depth feed is connected AND received an event
+            // within the last 30 seconds (same staleness check as GUI badge).
+            const bool l2_depth_live = g_ctrader_depth.depth_active.load() &&
+                (g_ctrader_depth.last_depth_event_ms.load() > 0) &&
+                (static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count())
+                 - g_ctrader_depth.last_depth_event_ms.load() < 30000);
+            const bool asia_trend_ok = !in_asia_slot
+                || !l2_depth_live  // L2 unavailable → fail-open, allow Asia trading
+                || g_gold_stack.is_drift_trending(g_macro_ctx.gold_l2_imbalance);
 
             // London open noise guard: 07:00-07:15 UTC — first 15min of London open
             // has violent liquidity sweeps as Asian orders get repriced. The gold stack
