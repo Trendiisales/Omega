@@ -141,6 +141,10 @@ public:
         std::lock_guard<std::mutex> lk(m_mtx);
         return m_daily_pnl;
     }
+    double peakDailyPnl() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        return m_peak_pnl;
+    }
     double cumulativePnl() const {
         std::lock_guard<std::mutex> lk(m_mtx);
         return m_cumulative_pnl;

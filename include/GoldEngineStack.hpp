@@ -397,12 +397,12 @@ class ImpulseContinuationEngine : public EngineBase {
     // MIN_VWAP_DIST kept at 1.50 — still need some VWAP dislocation to confirm trend.
     static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=40.0,MAX_SPREAD=2.20;
     static constexpr int TP_TICKS=40,SL_TICKS=16;
-    // MAX_ENTRIES_PER_TREND raised 2→4: multi-hour trends need more than 2 entries.
-    // $100 drop over 4h: 2 entries at $10 separation = only $20 of the move captured.
-    // 4 entries at $10 separation = $40 captured. Still conservative vs the move size.
+    // MAX_ENTRIES_PER_TREND reduced 4→2: 4 stacked entries in the same trend leg
+    // creates catastrophic exposure on reversal — the 00:20 cluster proved this.
+    // 2 entries capture the dominant move without compounding reversal risk.
     // COOLDOWN_SECONDS lowered 120→60: 120s gap was too wide for fast impulse legs.
     // MIN_PRICE_MOVE raised 8.0→12.0: prevent tight re-entries, force meaningful separation.
-    static constexpr int MAX_ENTRIES_PER_TREND=4,COOLDOWN_SECONDS=60;
+    static constexpr int MAX_ENTRIES_PER_TREND=2,COOLDOWN_SECONDS=60;
     static constexpr double MIN_PRICE_MOVE=12.0;
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SECONDS)};
     int trend_entry_count_=0,last_trend_dir_=0;

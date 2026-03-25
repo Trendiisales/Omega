@@ -106,6 +106,14 @@ struct OmegaConfig {
 
     // Risk
     double daily_loss_limit  = 200.0;
+    double daily_profit_target = 0.0;   // 0=disabled. Stop new entries once daily P&L >= this.
+                                        // Recommended: set to 1.5× daily_loss_limit once live.
+    double max_loss_per_trade_usd = 0.0; // 0=disabled. Hard dollar cap per trade regardless of sizing.
+                                          // Enforced in enter_directional and gold stack path.
+    double session_watermark_pct = 0.0;  // 0=disabled. Stop if drawdown from intra-day peak
+                                          // exceeds this % of daily_profit_target (or daily_loss_limit).
+                                          // e.g. 0.50 = stop if 50% of peak is given back.
+    double hourly_loss_limit = 0.0;      // 0=disabled. Block new entries if rolling 2h loss > this.
     int    max_consec_losses = 3;
     int    loss_pause_sec    = 300;
     int    max_open_positions = 4;     // allow up to 4 concurrent positions across different symbols
@@ -717,6 +725,14 @@ struct ShadowQualityState {
 };
 static std::mutex g_sym_risk_mtx;
 static std::unordered_map<std::string, SymbolRiskState> g_sym_risk;
+
+// ── Hourly P&L ring buffer — rolling 2-hour loss throttle ────────────────────
+// Records net_pnl of each closed trade with its close timestamp.
+// On each symbol_gate call we sum trades from last 2h and block if > hourly_loss_limit.
+struct HourlyPnlRecord { int64_t ts_sec; double net_pnl; };
+static std::mutex                    g_hourly_pnl_mtx;
+static std::deque<HourlyPnlRecord>   g_hourly_pnl_records;
+static constexpr int64_t HOURLY_WINDOW_SEC = 7200; // 2-hour rolling window
 static std::unordered_map<std::string, ShadowQualityState> g_shadow_quality;
 
 // Latency governor -- blocks trades when FIX RTT exceeds configured hard cap
@@ -2285,6 +2301,10 @@ static void load_config(const std::string& path) {
         if (section == "risk") {
             if (k=="max_positions")        g_cfg.max_open_positions = safe_stoi(v, k);
             if (k=="daily_loss_limit")     g_cfg.daily_loss_limit  = safe_stod(v, k);
+            if (k=="daily_profit_target")  g_cfg.daily_profit_target = safe_stod(v, k);
+            if (k=="max_loss_per_trade_usd") g_cfg.max_loss_per_trade_usd = safe_stod(v, k);
+            if (k=="session_watermark_pct")  g_cfg.session_watermark_pct  = safe_stod(v, k);
+            if (k=="hourly_loss_limit")    g_cfg.hourly_loss_limit   = safe_stod(v, k);
             if (k=="max_consec_losses")    g_cfg.max_consec_losses = safe_stoi(v, k);
             if (k=="loss_pause_sec")       g_cfg.loss_pause_sec    = safe_stoi(v, k);
             if (k=="independent_symbols")  g_cfg.independent_symbols = (v == "true" || v == "1");
@@ -2539,7 +2559,11 @@ static void sanitize_config() noexcept {
     g_cfg.ustec_pilot_min_gap_sec   = clampi(g_cfg.ustec_pilot_min_gap_sec, 15, 900, 60);
 
     g_cfg.max_latency_ms     = clampd(g_cfg.max_latency_ms, 0.0, 5000.0, 60.0);
-    g_cfg.daily_loss_limit   = clampd(g_cfg.daily_loss_limit, 1.0, 1000000.0, 200.0);
+    g_cfg.daily_loss_limit       = clampd(g_cfg.daily_loss_limit,       1.0, 1000000.0, 200.0);
+    g_cfg.daily_profit_target    = clampd(g_cfg.daily_profit_target,    0.0, 1000000.0, 0.0);
+    g_cfg.max_loss_per_trade_usd = clampd(g_cfg.max_loss_per_trade_usd, 0.0, 100000.0,  0.0);
+    g_cfg.session_watermark_pct  = clampd(g_cfg.session_watermark_pct,  0.0, 1.0,        0.0);
+    g_cfg.hourly_loss_limit      = clampd(g_cfg.hourly_loss_limit,      0.0, 1000000.0, 0.0);
     g_cfg.momentum_thresh_pct = clampd(g_cfg.momentum_thresh_pct, 0.0, 10.0, 0.05);
     g_cfg.min_breakout_pct    = clampd(g_cfg.min_breakout_pct, 0.0, 10.0, 0.25);
     g_cfg.ustec_pilot_size    = clampd(g_cfg.ustec_pilot_size, 0.05, 2.0, 0.35);
@@ -2714,6 +2738,16 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     // Shadow CSV only written in SHADOW mode — prevents LIVE trades contaminating shadow analysis
     if (g_cfg.mode == "SHADOW") write_shadow_csv(tr);
     write_trade_close_logs(tr);
+
+    // ── Hourly P&L ring buffer ─────────────────────────────────────────────
+    {
+        std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
+        g_hourly_pnl_records.push_back({nowSec(), tr.net_pnl});
+        // Prune records older than 2h
+        const int64_t cutoff = nowSec() - HOURLY_WINDOW_SEC;
+        while (!g_hourly_pnl_records.empty() && g_hourly_pnl_records.front().ts_sec < cutoff)
+            g_hourly_pnl_records.pop_front();
+    }
 
     const std::string perf_key = perf_key_from_trade(tr);
     const bool shadow_research = (g_cfg.mode == "SHADOW" && g_cfg.shadow_research_mode);
@@ -3250,6 +3284,60 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 ++g_gov_pos;
                 return false;
             }
+            // ── Daily profit target ───────────────────────────────────────────
+            // Stop new entries once daily P&L hits the target — lock in the day.
+            if (!shadow_mode && g_cfg.daily_profit_target > 0.0) {
+                const double daily_pnl = g_omegaLedger.dailyPnl();
+                if (daily_pnl >= g_cfg.daily_profit_target) {
+                    static int64_t s_last_profit_log = 0;
+                    if (nowSec() - s_last_profit_log > 60) {
+                        s_last_profit_log = nowSec();
+                        printf("[OMEGA-RISK] Daily profit target $%.0f reached (P&L=$%.2f) — no new entries\n",
+                               g_cfg.daily_profit_target, daily_pnl);
+                    }
+                    return false;
+                }
+            }
+            // ── Session watermark drawdown ────────────────────────────────────
+            // Stop if drawdown from intra-day P&L peak exceeds watermark_pct
+            // of the reference level (daily_profit_target if set, else daily_loss_limit).
+            if (!shadow_mode && g_cfg.session_watermark_pct > 0.0) {
+                const double peak_pnl   = g_omegaLedger.peakDailyPnl();
+                const double daily_pnl  = g_omegaLedger.dailyPnl();
+                const double drawdown   = peak_pnl - daily_pnl;
+                const double reference  = (g_cfg.daily_profit_target > 0.0)
+                    ? g_cfg.daily_profit_target : g_cfg.daily_loss_limit;
+                const double threshold  = reference * g_cfg.session_watermark_pct;
+                if (peak_pnl > 0.0 && drawdown >= threshold) {
+                    static int64_t s_last_wm_log = 0;
+                    if (nowSec() - s_last_wm_log > 60) {
+                        s_last_wm_log = nowSec();
+                        printf("[OMEGA-RISK] Session watermark hit: peak=$%.2f current=$%.2f drawdown=$%.2f (limit=$%.2f) — no new entries\n",
+                               peak_pnl, daily_pnl, drawdown, threshold);
+                    }
+                    return false;
+                }
+            }
+            // ── Hourly loss throttle ──────────────────────────────────────────
+            // Block new entries if rolling 2h net P&L loss exceeds hourly_loss_limit.
+            if (!shadow_mode && g_cfg.hourly_loss_limit > 0.0) {
+                double rolling_pnl = 0.0;
+                {
+                    std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
+                    const int64_t cutoff = nowSec() - HOURLY_WINDOW_SEC;
+                    for (const auto& r : g_hourly_pnl_records)
+                        if (r.ts_sec >= cutoff) rolling_pnl += r.net_pnl;
+                }
+                if (rolling_pnl < -g_cfg.hourly_loss_limit) {
+                    static int64_t s_last_hourly_log = 0;
+                    if (nowSec() - s_last_hourly_log > 60) {
+                        s_last_hourly_log = nowSec();
+                        printf("[OMEGA-RISK] 2h rolling loss $%.2f exceeds limit $%.0f — throttling entries\n",
+                               rolling_pnl, g_cfg.hourly_loss_limit);
+                    }
+                    return false;
+                }
+            }
             // ── News blackout gate ────────────────────────────────────────────
             if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
             // ── Regime block gate ─────────────────────────────────────────────
@@ -3314,6 +3402,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool pos_budget_ok = open_positions < g_cfg.max_open_positions;
         if (!pos_budget_ok) ++g_gov_pos;
         if (!pos_budget_ok) return false;
+        // ── Daily profit target / session watermark / hourly throttle ─────────
+        if (!shadow_mode && g_cfg.daily_profit_target > 0.0 &&
+            g_omegaLedger.dailyPnl() >= g_cfg.daily_profit_target) return false;
+        if (!shadow_mode && g_cfg.session_watermark_pct > 0.0) {
+            const double peak = g_omegaLedger.peakDailyPnl();
+            const double ref  = (g_cfg.daily_profit_target > 0.0)
+                ? g_cfg.daily_profit_target : g_cfg.daily_loss_limit;
+            if (peak > 0.0 && (peak - g_omegaLedger.dailyPnl()) >= ref * g_cfg.session_watermark_pct)
+                return false;
+        }
+        if (!shadow_mode && g_cfg.hourly_loss_limit > 0.0) {
+            double rolling = 0.0;
+            { std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
+              for (const auto& r : g_hourly_pnl_records)
+                  if (r.ts_sec >= nowSec() - HOURLY_WINDOW_SEC) rolling += r.net_pnl; }
+            if (rolling < -g_cfg.hourly_loss_limit) return false;
+        }
         // ── News blackout gate ────────────────────────────────────────────────
         if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
         // ── Regime block gate ─────────────────────────────────────────────────
@@ -3915,15 +4020,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         const double lot = g_adaptive_risk.adjusted_lot(
             esym, sized_lot, sym_loss, g_cfg.daily_loss_limit, sym_consec);
+        // ── Max loss per trade cap ────────────────────────────────────────────
+        // Hard dollar backstop: if sl_abs * lot * tick_mult > max_loss_per_trade_usd,
+        // scale lot down. Fires last — after Kelly, regime weight, DD throttle.
+        double final_lot = lot;
+        if (g_cfg.max_loss_per_trade_usd > 0.0 && sl_abs > 0.0) {
+            const double tick_mult = tick_value_multiplier(esym);
+            const double max_loss_lot = g_cfg.max_loss_per_trade_usd / (sl_abs * tick_mult);
+            if (final_lot > max_loss_lot) {
+                final_lot = std::max(0.01, std::floor(max_loss_lot * 100.0 + 0.5) / 100.0);
+                printf("[MAX-LOSS-CAP] %s lot capped %.4f→%.4f (sl=$%.2f max=$%.0f)\n",
+                       esym, lot, final_lot, sl_abs * tick_mult * lot, g_cfg.max_loss_per_trade_usd);
+            }
+        }
         // Cost guard
-        if (!ExecutionCostGuard::is_viable(esym, ask - bid, tp_dist, lot)) {
+        if (!ExecutionCostGuard::is_viable(esym, ask - bid, tp_dist, final_lot)) {
             g_telemetry.IncrCostBlocked();
             return false;
         }
         // Arm partial exit and fire
         g_partial_exit.arm(esym, is_long, entry, tp > 0 ? tp : entry + (is_long?1:-1)*tp_dist,
-                           sl, lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
-        send_live_order(esym, is_long, lot, entry);
+                           sl, final_lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
+        send_live_order(esym, is_long, final_lot, entry);
         return true;
     };
 
@@ -4532,8 +4650,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         gold_daily_loss, g_cfg.daily_loss_limit, gold_consec);
                     // Re-clamp to max_lot_gold: adjusted_lot applies Kelly which can
                     // multiply past the compute_size cap. Cap must be the final word.
-                    const double gold_lot  = std::max(0.01,
+                    double gold_lot = std::max(0.01,
                         std::min(gold_adaptive, g_cfg.max_lot_gold));
+                    // Max loss per trade dollar cap (gold stack bypasses enter_directional)
+                    if (g_cfg.max_loss_per_trade_usd > 0.0 && gold_sl_abs > 0.0) {
+                        const double max_loss_lot = g_cfg.max_loss_per_trade_usd / (gold_sl_abs * 100.0);
+                        if (gold_lot > max_loss_lot) {
+                            const double capped = std::max(0.01, std::floor(max_loss_lot * 100.0 + 0.5) / 100.0);
+                            printf("[MAX-LOSS-CAP] GOLD.F lot capped %.4f→%.4f (sl=$%.2f max=$%.0f)\n",
+                                   gold_lot, capped, gold_sl_abs * 100.0 * gold_lot, g_cfg.max_loss_per_trade_usd);
+                            gold_lot = capped;
+                        }
+                    }
                     g_gold_stack.patch_position_size(gold_lot);
                     std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
                               << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
