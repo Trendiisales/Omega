@@ -70,6 +70,12 @@ struct EdgeConfig {
     double min_edge_bp       = 6.0;
     double exhaustion_mult   = 3.0;
     double min_edge_buffer   = 0.0;
+    // Adaptive TP multiplier — compressed in LOW/CRUSH vol regimes so TP fills.
+    // Set by RegimeAdaptor each tick: CRUSH=0.70, LOW=0.85, NORMAL=1.00, HIGH=1.15.
+    // A 3× ATR TP in a dead session never fills; compressing to 0.70× catches the
+    // mean-reversion that actually occurs in compressed, low-vol tape.
+    // Hard floor: tp_vol_mult is clamped to >= 0.60 so R:R never drops below ~2:1.
+    double tp_vol_mult       = 1.0;
 };
 
 struct EdgeResult {
@@ -126,7 +132,11 @@ inline EdgeResult compute_edge_and_execution(
     // Trail2 never fires — trade exits at fixed TP, capping every genuine run.
     // At 1.6×range: trail2 fires at 0.8×range, then trails the remaining move.
     // This matches Gold's engine R:R profile (TP=80ticks, SL=30ticks = 2.67:1).
-    const double tp_dist = comp_range * 1.6;
+    //
+    // tp_vol_mult compresses TP in LOW/CRUSH vol regimes so the target actually fills.
+    // In NORMAL/HIGH regimes it expands slightly to let momentum run. Floor at 0.60.
+    const double tp_vol_mult_clamped = std::max(0.60, std::min(1.30, cfg.tp_vol_mult));
+    const double tp_dist = comp_range * 1.6 * tp_vol_mult_clamped;
     const double sl_dist = std::max(comp_range * 0.4, spread * 1.5);
 
     // ── R:R validity gate ─────────────────────────────────────────────────────

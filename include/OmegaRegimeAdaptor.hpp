@@ -276,6 +276,24 @@ public:
         return (it != sym_vol.end()) ? it->second.size_scale() : 1.0f;
     }
 
+    // Adaptive TP multiplier per vol regime.
+    // CRUSH=0.70 — compressed tape, mean-reversion target, TP must be tight to fill.
+    // LOW=0.85   — quieter than normal, compress slightly.
+    // NORMAL=1.00 — standard TP, no adjustment.
+    // HIGH=1.15  — momentum in play, let the trade run a bit further.
+    float tp_vol_mult(const std::string& sym) const {
+        if (!enabled) return 1.0f;
+        auto it = sym_vol.find(sym);
+        if (it == sym_vol.end()) return 1.0f;
+        switch (it->second.classify()) {
+            case VolRegime::CRUSH:  return 0.70f;
+            case VolRegime::LOW:    return 0.85f;
+            case VolRegime::NORMAL: return 1.00f;
+            case VolRegime::HIGH:   return 1.15f;
+            default:                return 1.00f;
+        }
+    }
+
     // Combined size multiplier: regime weight × vol scale
     float combined_size_scale(EngineClass ec, const std::string& sym) const {
         if (!enabled) return 1.0f;

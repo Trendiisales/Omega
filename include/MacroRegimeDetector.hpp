@@ -124,4 +124,106 @@ private:
     }
 };
 
+} // namespace omega (MacroRegimeDetector)
+
+namespace omega {
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTFBiasFilter — Higher-Timeframe Bias Filter
+//
+// Problem: engines fire on their own timeframe without checking higher-TF
+// structure. A 1-min ORB entry into a 4H supply zone is low-probability.
+// Jane Street requires 2/3 timeframe agreement before adding risk.
+//
+// Approach: track two rolling windows per symbol —
+//   "daily" (last D_WINDOW ticks ≈ a session) and
+//   "intraday" (last ID_WINDOW ticks ≈ an hour).
+// Bias = (recent_mid - window_open) / window_open
+//
+//   BULLISH: both daily and intraday positive
+//   BEARISH: both daily and intraday negative
+//   NEUTRAL: mixed or insufficient data
+//
+// Usage in symbol_gate (additive — doesn't block, reduces size):
+//   auto bias = g_htf_filter.bias(symbol);
+//   if (is_long && bias == HTFBias::BEARISH) → 0.5× size
+//   if (is_long && bias == HTFBias::BULLISH) → normal size
+//
+// NOTE: We don't hard-block on HTF bias (too many false negatives in ranging
+// markets), but size is halved when bias opposes direction. Engines that
+// already have regime gating get this as an additional soft filter.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum class HTFBias { BULLISH, BEARISH, NEUTRAL };
+
+class HTFBiasFilter {
+public:
+    bool enabled       = true;
+    int  D_WINDOW      = 500;   // ~session worth of ticks for daily bias
+    int  ID_WINDOW     = 100;   // ~1 hour of ticks for intraday bias
+    double bias_threshold = 0.0005;  // 0.05% minimum move to call directional
+
+    struct SymState {
+        std::deque<double> daily;    // last D_WINDOW mids
+        std::deque<double> intraday; // last ID_WINDOW mids
+    };
+
+    mutable std::mutex mtx_;
+    std::unordered_map<std::string, SymState> state_;
+
+    void update(const std::string& sym, double mid) {
+        if (!enabled || mid <= 0.0) return;
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto& s = state_[sym];
+        s.daily.push_back(mid);
+        if (static_cast<int>(s.daily.size()) > D_WINDOW)
+            s.daily.pop_front();
+        s.intraday.push_back(mid);
+        if (static_cast<int>(s.intraday.size()) > ID_WINDOW)
+            s.intraday.pop_front();
+    }
+
+    HTFBias bias(const std::string& sym) const {
+        if (!enabled) return HTFBias::NEUTRAL;
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = state_.find(sym);
+        if (it == state_.end()) return HTFBias::NEUTRAL;
+        const auto& s = it->second;
+        if (static_cast<int>(s.daily.size()) < 20) return HTFBias::NEUTRAL;
+        if (static_cast<int>(s.intraday.size()) < 10) return HTFBias::NEUTRAL;
+
+        const double d_ret  = (s.daily.back()    - s.daily.front())    / s.daily.front();
+        const double id_ret = (s.intraday.back()  - s.intraday.front()) / s.intraday.front();
+
+        const bool d_bull  = d_ret  >  bias_threshold;
+        const bool d_bear  = d_ret  < -bias_threshold;
+        const bool id_bull = id_ret >  bias_threshold;
+        const bool id_bear = id_ret < -bias_threshold;
+
+        // Require both TFs to agree (Jane Street 2/3 rule — we use 2/2 for conservatism)
+        if (d_bull && id_bull) return HTFBias::BULLISH;
+        if (d_bear && id_bear) return HTFBias::BEARISH;
+        return HTFBias::NEUTRAL;
+    }
+
+    // Size multiplier: 1.0 if bias aligns with direction, 0.5 if opposed, 0.75 if neutral
+    double size_scale(const std::string& sym, bool is_long) const {
+        if (!enabled) return 1.0;
+        const HTFBias b = bias(sym);
+        if (b == HTFBias::NEUTRAL)                  return 0.75;
+        if (is_long  && b == HTFBias::BULLISH)      return 1.00;
+        if (!is_long && b == HTFBias::BEARISH)      return 1.00;
+        // Opposing bias — halve size, don't block entirely
+        return 0.50;
+    }
+
+    const char* bias_name(const std::string& sym) const {
+        switch (bias(sym)) {
+            case HTFBias::BULLISH: return "BULLISH";
+            case HTFBias::BEARISH: return "BEARISH";
+            default:               return "NEUTRAL";
+        }
+    }
+};
+
 } // namespace omega

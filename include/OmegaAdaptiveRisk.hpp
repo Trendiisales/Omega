@@ -942,6 +942,26 @@ public:
             if (gap_scale < 1.0) lot *= gap_scale;
         }
 
+        // 8. VPIN informed-flow size reduction.
+        // When VPIN is elevated (0.60–0.79) halve size — informed institutional flow
+        // is present and adverse selection risk is high. Above 0.80 is blocked entirely
+        // in symbol_gate before this function is reached.
+        if (vpin_scale_fn) {
+            const double vs = vpin_scale_fn(symbol);
+            if (vs < 1.0) {
+                static thread_local int64_t s_vpin_log = 0;
+                const int64_t now_s = static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+                if (now_s - s_vpin_log > 60) {
+                    s_vpin_log = now_s;
+                    std::printf("[ADAPTIVE-RISK] %s VPIN reduction=%.2f (elevated informed flow)\n",
+                                symbol.c_str(), vs);
+                }
+                lot *= vs;
+            }
+        }
+
         // Floor to 0.01 lots, round to 2dp
         lot = std::max(0.01, std::floor(lot * 100.0 + 0.5) / 100.0);
         return lot;
@@ -954,6 +974,10 @@ public:
     // Callback registered by main.cpp: returns size multiplier for weekend gap window.
     // Returns 0.5 during Fri 21:00–Sun 22:00 UTC, 1.0 otherwise.
     std::function<double()> weekend_gap_scale_fn;
+
+    // Callback registered by main.cpp: returns VPIN size scale for a symbol.
+    // Returns 0.5 when VPIN >= high_threshold, 1.0 when below.
+    std::function<double(const std::string&)> vpin_scale_fn;
 
     // ── Correlation heat check ─────────────────────────────────────────────────
     // Returns false if opening a new position in this symbol would exceed
@@ -1027,6 +1051,104 @@ public:
                 autocorr, ac_warn,
                 kelly.size_multiplier(t),
                 const_cast<VolatilityRegimeScaler&>(vol_scaler).size_scale(sym));
+        }
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PortfolioVaR
+// Correlation-adjusted risk exposure across clusters.
+//
+// Problem: per-trade risk limits don't catch simultaneous correlated moves.
+// If XAUUSD long + USDJPY short both move against you on a single DXY spike,
+// the combined loss can breach the daily limit before either individual SL fires.
+//
+// Approach: each open position contributes dollar risk (size × mid × tick_mult).
+// Cluster betas to DXY (rough but fast, no covariance matrix needed):
+//   METALS: beta = -0.6  (gold rises when USD falls, falls when USD spikes)
+//   JPY_RISK: beta = +0.5  (USDJPY rises with USD)
+//   US_EQUITY: beta = -0.4  (equities fall in risk-off / strong USD)
+//   EUR_GBP: beta = +0.3  (EUR/GBP fall when USD rises)
+//   OIL: beta = -0.3   (oil priced in USD, loose inverse)
+//   EU_EQUITY: beta = -0.3
+//
+// Portfolio VaR proxy = sqrt( sum( (cluster_dollar_risk × beta)^2 ) )
+// This approximates 1-sigma dollar loss if DXY moves 1% adversely.
+// Gate: if portfolio_var > var_limit_usd → block new entries until exposure drops.
+//
+// Usage in main.cpp symbol_gate:
+//   g_portfolio_var.update("METALS", metals_dollar_risk);
+//   if (g_portfolio_var.exceeds_limit()) return false;
+// ─────────────────────────────────────────────────────────────────────────────
+struct PortfolioVaR {
+    double var_limit_usd = 0.0;  // 0 = disabled; set to e.g. 1.5 × daily_loss_limit at init
+
+    struct ClusterExposure {
+        double dollar_risk = 0.0;  // sum of (lot × mid × tick_mult) for open positions
+        double dxy_beta    = 0.0;  // sensitivity to DXY move
+    };
+
+    std::unordered_map<std::string, ClusterExposure> clusters_;
+    mutable std::mutex mtx_;
+
+    void init_betas() {
+        std::lock_guard<std::mutex> lk(mtx_);
+        clusters_["METALS"]    = {0.0, -0.60};
+        clusters_["JPY_RISK"]  = {0.0, +0.50};
+        clusters_["US_EQUITY"] = {0.0, -0.40};
+        clusters_["EUR_GBP"]   = {0.0, +0.30};
+        clusters_["OIL"]       = {0.0, -0.30};
+        clusters_["EU_EQUITY"] = {0.0, -0.30};
+    }
+
+    // Update dollar risk for a cluster each tick
+    void update(const std::string& cluster, double dollar_risk) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = clusters_.find(cluster);
+        if (it != clusters_.end()) it->second.dollar_risk = dollar_risk;
+    }
+
+    // Compute portfolio VaR proxy: sqrt(sum((dollar_risk × beta)^2))
+    // Represents approximate 1-sigma loss on a 1% adverse DXY move.
+    double compute() const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        double sum_sq = 0.0;
+        for (const auto& kv : clusters_) {
+            const double contrib = kv.second.dollar_risk * kv.second.dxy_beta;
+            sum_sq += contrib * contrib;
+        }
+        return std::sqrt(sum_sq);
+    }
+
+    bool exceeds_limit() const {
+        if (var_limit_usd <= 0.0) return false;
+        const double var = compute();
+        if (var > var_limit_usd) {
+            static int64_t s_last_log = 0;
+            const int64_t now_s = static_cast<int64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            if (now_s - s_last_log > 30) {
+                s_last_log = now_s;
+                std::printf("[PORTFOLIO-VAR] VaR=%.2f exceeds limit=%.2f — blocking new entries\n",
+                            var, var_limit_usd);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    void print_status() const {
+        const double var = compute();
+        std::printf("[PORTFOLIO-VAR] VaR=%.2f limit=%.2f %s\n",
+                    var, var_limit_usd,
+                    exceeds_limit() ? "BLOCKED" : "OK");
+        std::lock_guard<std::mutex> lk(mtx_);
+        for (const auto& kv : clusters_) {
+            if (kv.second.dollar_risk > 0.01)
+                std::printf("  %s: $%.2f × beta=%.2f → contrib=%.2f\n",
+                            kv.first.c_str(), kv.second.dollar_risk,
+                            kv.second.dxy_beta,
+                            kv.second.dollar_risk * kv.second.dxy_beta);
         }
     }
 };

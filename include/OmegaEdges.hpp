@@ -1062,6 +1062,98 @@ public:
 // EdgeContext — single object holding all edge systems
 // Declare one global: static omega::edges::EdgeContext g_edges;
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// VPINDetector — Volume-synchronised Probability of Informed trading
+//
+// Standard VPIN uses equal-volume buckets. We use a simplified tick-based
+// version that is computationally cheap and works without real volume data:
+//   - Divide the tick stream into N-tick buckets (default 50 ticks)
+//   - For each bucket: count buy_ticks (price up) and sell_ticks (price down)
+//   - VPIN = rolling_mean(|buy - sell| / bucket_size) over last W buckets
+//   - VPIN in [0, 1]: 0 = balanced flow, 1 = one-sided (informed)
+//
+// When VPIN > high_threshold (default 0.60): informed flow detected.
+//   → Reduce lot size by 50% (via size_scale() < 1.0)
+//   → Optionally block entry entirely (block_above = 0.75)
+//
+// This catches institutional flow that doesn't show as L2 wall/vacuum.
+// Two Sigma / Citadel measure VPIN every bucket and reduce size on elevation.
+// ─────────────────────────────────────────────────────────────────────────────
+struct VPINDetector {
+    int    bucket_size     = 50;    // ticks per bucket
+    int    window_buckets  = 10;    // rolling window (10 × 50 = 500 ticks)
+    double high_threshold  = 0.60;  // VPIN above this = informed flow
+    double block_threshold = 0.80;  // VPIN above this = block entry entirely
+    bool   enabled         = true;
+
+    struct SymState {
+        double prev_mid    = 0.0;
+        int    buy_ticks   = 0;
+        int    sell_ticks  = 0;
+        int    tick_count  = 0;
+        std::deque<double> bucket_vpins;  // rolling bucket VPIN values
+    };
+
+    mutable std::mutex mtx_;
+    std::unordered_map<std::string, SymState> state_;
+
+    // Call on every tick with mid price
+    void update(const std::string& sym, double mid) {
+        if (!enabled || mid <= 0.0) return;
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto& s = state_[sym];
+        if (s.prev_mid > 0.0) {
+            if (mid > s.prev_mid)      ++s.buy_ticks;
+            else if (mid < s.prev_mid) ++s.sell_ticks;
+        }
+        s.prev_mid = mid;
+        ++s.tick_count;
+
+        if (s.tick_count >= bucket_size) {
+            const int total = s.buy_ticks + s.sell_ticks;
+            const double bucket_vpin = (total > 0)
+                ? static_cast<double>(std::abs(s.buy_ticks - s.sell_ticks)) / total
+                : 0.0;
+            s.bucket_vpins.push_back(bucket_vpin);
+            if (static_cast<int>(s.bucket_vpins.size()) > window_buckets)
+                s.bucket_vpins.pop_front();
+            // Reset bucket counters
+            s.buy_ticks = s.sell_ticks = s.tick_count = 0;
+        }
+    }
+
+    // Current VPIN for a symbol (0.0 = no data / balanced, 1.0 = fully informed)
+    double vpin(const std::string& sym) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = state_.find(sym);
+        if (it == state_.end() || it->second.bucket_vpins.empty()) return 0.0;
+        const auto& bv = it->second.bucket_vpins;
+        double sum = 0.0;
+        for (double v : bv) sum += v;
+        return sum / bv.size();
+    }
+
+    // Size multiplier: 1.0 (normal) → 0.5 (high informed flow) → 0.0 (block)
+    double size_scale(const std::string& sym) const {
+        if (!enabled) return 1.0;
+        const double v = vpin(sym);
+        if (v >= block_threshold) return 0.0;  // block entry entirely
+        if (v >= high_threshold)  return 0.5;  // halve size
+        return 1.0;
+    }
+
+    // True if entry should be completely blocked due to extreme informed flow
+    bool is_blocked(const std::string& sym) const {
+        if (!enabled) return false;
+        return vpin(sym) >= block_threshold;
+    }
+
+    void reset_on_reconnect(const std::string& sym) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        state_.erase(sym);
+    }
+};
+
 struct EdgeContext {
     CumulativeVolumeDelta      cvd;
     TimeOfDayGate              tod;
@@ -1072,6 +1164,7 @@ struct EdgeContext {
     FillQualityTracker         fill_quality;
     VolumeProfileTracker       vol_profile;       // Edge 8: time-at-price
     OrderFlowAbsorptionDetector absorption;       // Edge 9: institutional absorption
+    VPINDetector               vpin;              // Edge 10: informed order flow toxicity
 
     // ── entry_score: original 4-signal score (-4..+4) ──────────────────────
     int entry_score(const std::string& sym, double entry, bool is_long,

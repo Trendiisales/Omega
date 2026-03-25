@@ -371,9 +371,11 @@ static const int64_t       g_start_time = static_cast<int64_t>(std::time(nullptr
 static OmegaTelemetryWriter      g_telemetry;  // NOTE: always g_telemetry — never g_telem
 omega::OmegaTradeLedger          g_omegaLedger;      // extern in TelemetryServer.cpp
 static omega::MacroRegimeDetector g_macroDetector;
+static omega::HTFBiasFilter       g_htf_filter;       // higher-timeframe bias (daily+intraday)
 
 // ── Adaptive intelligence layer ───────────────────────────────────────────────
 static omega::risk::AdaptiveRiskManager   g_adaptive_risk;   // Kelly, Sharpe, DD throttle, corr heat
+static omega::risk::PortfolioVaR          g_portfolio_var;   // correlation-adjusted portfolio VaR gate
 static omega::news::NewsBlackout          g_news_blackout;   // NFP/FOMC/CPI/EIA/ECB event blackouts
 static omega::news::LiveCalendarFetcher   g_live_calendar;   // Forex Factory live calendar (HTTPS)
 static omega::edges::EdgeContext          g_edges;           // 7 institutional edges
@@ -3164,7 +3166,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             else if (sym == "NAS100")  l2_imb = g_macro_ctx.nas_l2_imbalance;
             g_edges.absorption.update(sym, mid, l2_imb);
         }
-    }
+        // Edge 10: VPIN — volume-synchronised informed flow toxicity
+        // Detects institutional flow that doesn't show as L2 wall/vacuum.
+        // Bucket-based: classifies each 50-tick window as buy/sell imbalance.
+        g_edges.vpin.update(sym, mid);
+        // HTF bias filter — tracks daily + intraday momentum per symbol.
+        // Used in lot sizing: 0.5× when trade opposes both TF trends.
+        g_htf_filter.update(sym, mid);
 
     // Seed vol history on first tick after reconnect — avoids 80-tick warmup dead zone.
     // seed() is a no-op if m_prices is already populated.
@@ -3285,6 +3293,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                           + static_cast<int>(g_vwap_rev_eurusd.has_open_position())
                           + static_cast<int>(g_ca_fx_cascade.has_open_gbpusd());
         g_adaptive_risk.update_cluster_counts(us_eq, eu_eq, oil, metals, jpy, eur_gbp);
+
+        // Portfolio VaR: update dollar-risk estimates per cluster.
+        // Dollar risk proxy = cluster_open_count × risk_per_trade_usd (configured).
+        // Uses risk_per_trade_usd if set, else falls back to daily_loss_limit / 4.
+        // This gives a conservative estimate of simultaneous loss if all positions
+        // move adversely together — the correlation-adjustment (beta) in PortfolioVaR
+        // then weights by DXY sensitivity to catch correlated drawdowns.
+        {
+            const double rpt = (g_cfg.risk_per_trade_usd > 0.0)
+                ? g_cfg.risk_per_trade_usd
+                : g_cfg.daily_loss_limit / 4.0;
+            g_portfolio_var.update("US_EQUITY", us_eq    * rpt);
+            g_portfolio_var.update("EU_EQUITY", eu_eq    * rpt);
+            g_portfolio_var.update("OIL",       oil      * rpt);
+            g_portfolio_var.update("METALS",    metals   * rpt);
+            g_portfolio_var.update("JPY_RISK",  jpy      * rpt);
+            g_portfolio_var.update("EUR_GBP",   eur_gbp  * rpt);
+        }
     }
 
     // Session slot — updated every tick
@@ -3812,6 +3838,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Threshold is configured as dd_velocity.threshold_usd (set in init
             // to 0.5 * daily_loss_limit). When active, halts new entries 15 min.
             if (!g_adaptive_risk.dd_velocity.new_entries_allowed(nowSec())) return false;
+            // ── Portfolio VaR gate ────────────────────────────────────────────
+            // Blocks new entries when correlation-adjusted exposure exceeds limit.
+            // Catches scenario where XAUUSD long + USDJPY short both move against
+            // you on a single DXY spike — per-trade limits alone don't catch this.
+            if (g_portfolio_var.exceeds_limit()) return false;
+            // ── VPIN gate — informed order flow toxicity ──────────────────────
+            // Blocks entry when VPIN > 0.80 (extreme one-sided institutional flow).
+            // VPIN > 0.60 triggers 50% size reduction (applied in adjusted_lot path).
+            // Catches institutional flow that doesn't show as L2 wall/vacuum.
+            if (g_edges.vpin.is_blocked(symbol)) {
+                static thread_local int64_t s_vpin_log = 0;
+                if (nowSec() - s_vpin_log > 30) {
+                    s_vpin_log = nowSec();
+                    std::printf("[VPIN] %s VPIN=%.2f >= %.2f — blocking entry (informed flow)\n",
+                                symbol.c_str(), g_edges.vpin.vpin(symbol),
+                                g_edges.vpin.block_threshold);
+                }
+                return false;
+            }
             // ── News blackout gate ────────────────────────────────────────────
             if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
             // ── Time-of-day gate — block known-negative 30-min buckets ─────────
@@ -4144,6 +4189,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // regime (RISK_ON/NEUTRAL). The pyramid logic in BreakoutEngine checks for
         // EXPANSION_BREAKOUT/TREND_CONTINUATION — those are supervisor regime names.
         const char* eng_regime = omega::regime_name(sdec.regime);
+        // Adaptive TP: compress target in LOW/CRUSH vol so it actually fills.
+        // CRUSH=0.70x, LOW=0.85x, NORMAL=1.00x, HIGH=1.15x — set each tick.
+        eng.EDGE_CFG.tp_vol_mult = static_cast<double>(g_regime_adaptor.tp_vol_mult(sym));
         const auto sig = eng.update(bid, ask, rtt_check, eng_regime, on_close, can_enter);
         g_telemetry.UpdateEngineState(sym.c_str(),
             static_cast<int>(eng.phase), eng.comp_high, eng.comp_low,
@@ -4239,6 +4287,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 printf("[TOD-SCALE] %s lot %.4f → %.4f (tod_mult=%.2f)\n",
                        sym.c_str(), lot_size, lot_size * tod_mult, tod_mult);
                 lot_size *= tod_mult;
+                lot_size = std::max(0.01, std::floor(lot_size * 100.0 + 0.5) / 100.0);
+            }
+        }
+
+        // ── HTF bias size scale ───────────────────────────────────────────
+        // 1.0× when daily+intraday both agree with direction (Jane Street 2/2 rule).
+        // 0.5× when both TFs oppose direction — trade is counter-trend on all TFs.
+        // 0.75× when TFs are mixed/neutral — modest size reduction for uncertainty.
+        {
+            const double htf_mult = g_htf_filter.size_scale(sym, sig.is_long);
+            if (htf_mult < 1.0) {
+                static thread_local int64_t s_htf_log = 0;
+                if (nowSec() - s_htf_log > 30) {
+                    s_htf_log = nowSec();
+                    printf("[HTF-BIAS] %s %s bias=%s → lot %.4f × %.2f\n",
+                           sym.c_str(), sig.is_long ? "LONG" : "SHORT",
+                           g_htf_filter.bias_name(sym),
+                           lot_size, htf_mult);
+                }
+                lot_size *= htf_mult;
                 lot_size = std::max(0.01, std::floor(lot_size * 100.0 + 0.5) / 100.0);
             }
         }
@@ -7512,8 +7580,27 @@ int main(int argc, char* argv[])
             return weekend_gap_size_scale();
         };
 
+        // VPIN: enabled, registers size-scale callback into adjusted_lot.
+        // block_threshold=0.80 (entry blocked), high_threshold=0.60 (0.5× size).
+        g_edges.vpin.enabled         = true;
+        g_edges.vpin.bucket_size     = 50;
+        g_edges.vpin.window_buckets  = 10;
+        g_edges.vpin.high_threshold  = 0.60;
+        g_edges.vpin.block_threshold = 0.80;
+        g_adaptive_risk.vpin_scale_fn = [](const std::string& sym) -> double {
+            return g_edges.vpin.size_scale(sym);
+        };
+
         // Regime adaptor is enabled; in SHADOW mode it is informational only
         g_regime_adaptor.enabled = true;
+
+        // Portfolio VaR: correlation-adjusted exposure gate.
+        // Limit = 1.5 × daily_loss_limit. At $200 daily limit → blocks when
+        // correlated exposure implies >$300 of potential simultaneous loss.
+        g_portfolio_var.init_betas();
+        g_portfolio_var.var_limit_usd = g_cfg.daily_loss_limit * 1.5;
+        std::printf("[PORTFOLIO-VAR] limit=$%.0f (1.5× daily_loss_limit)\n",
+                    g_portfolio_var.var_limit_usd);
 
         std::cout << "[ADAPTIVE] Kelly=" << (g_adaptive_risk.kelly_enabled ? "ON" : "OFF")
                   << "  DDthrottle="    << (g_adaptive_risk.dd_throttle_enabled ? "ON" : "OFF")
