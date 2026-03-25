@@ -3250,6 +3250,56 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.cl_vacuum_ask        = b->liquidity_vacuum_ask();
             g_macro_ctx.cl_vacuum_bid        = b->liquidity_vacuum_bid();
         }
+        // ── FX pairs — Priority 6 backlog now complete ────────────────────────────────
+        // These previously used L2 imbalance < 0.30 as a vacuum proxy.
+        // Now populated from real book data for full L2 scoring parity with GOLD/SP.
+        if (const L2Book* b = getBook("EURUSD")) {
+            g_macro_ctx.eur_microprice_bias = b->microprice_bias();
+            g_macro_ctx.eur_vacuum_ask      = b->liquidity_vacuum_ask();
+            g_macro_ctx.eur_vacuum_bid      = b->liquidity_vacuum_bid();
+            g_macro_ctx.eur_wall_above      = b->wall_above(g_macro_ctx.eur_mid_price);
+            g_macro_ctx.eur_wall_below      = b->wall_below(g_macro_ctx.eur_mid_price);
+        }
+        if (const L2Book* b = getBook("GBPUSD")) {
+            g_macro_ctx.gbp_microprice_bias = b->microprice_bias();
+            g_macro_ctx.gbp_vacuum_ask      = b->liquidity_vacuum_ask();
+            g_macro_ctx.gbp_vacuum_bid      = b->liquidity_vacuum_bid();
+            g_macro_ctx.gbp_wall_above      = b->wall_above(g_macro_ctx.gbp_mid_price);
+            g_macro_ctx.gbp_wall_below      = b->wall_below(g_macro_ctx.gbp_mid_price);
+        }
+        if (const L2Book* b = getBook("AUDUSD")) {
+            g_macro_ctx.aud_microprice_bias = b->microprice_bias();
+            g_macro_ctx.aud_vacuum_ask      = b->liquidity_vacuum_ask();
+            g_macro_ctx.aud_vacuum_bid      = b->liquidity_vacuum_bid();
+        }
+        if (const L2Book* b = getBook("NZDUSD")) {
+            g_macro_ctx.nzd_microprice_bias = b->microprice_bias();
+            g_macro_ctx.nzd_vacuum_ask      = b->liquidity_vacuum_ask();
+            g_macro_ctx.nzd_vacuum_bid      = b->liquidity_vacuum_bid();
+        }
+        if (const L2Book* b = getBook("USDJPY")) {
+            g_macro_ctx.jpy_microprice_bias = b->microprice_bias();
+            g_macro_ctx.jpy_vacuum_ask      = b->liquidity_vacuum_ask();
+            g_macro_ctx.jpy_vacuum_bid      = b->liquidity_vacuum_bid();
+        }
+        // EU equity vacuum (for bracket L2 gate)
+        if (const L2Book* b = getBook("GER40")) {
+            g_macro_ctx.ger40_microprice_bias = b->microprice_bias();
+            g_macro_ctx.ger40_vacuum_ask      = b->liquidity_vacuum_ask();
+            g_macro_ctx.ger40_vacuum_bid      = b->liquidity_vacuum_bid();
+            g_macro_ctx.ger40_wall_above      = b->wall_above(
+                b->bid_count > 0 ? b->bids[0].price : 0.0);
+            g_macro_ctx.ger40_wall_below      = b->wall_below(
+                b->ask_count > 0 ? b->asks[0].price : 0.0);
+        }
+        if (const L2Book* b = getBook("UK100")) {
+            g_macro_ctx.uk100_vacuum_ask = b->liquidity_vacuum_ask();
+            g_macro_ctx.uk100_vacuum_bid = b->liquidity_vacuum_bid();
+        }
+        if (const L2Book* b = getBook("ESTX50")) {
+            g_macro_ctx.estx50_vacuum_ask = b->liquidity_vacuum_ask();
+            g_macro_ctx.estx50_vacuum_bid = b->liquidity_vacuum_bid();
+        }
     }
 
     // ── CVD direction → MacroContext ──────────────────────────────────────────
@@ -3308,6 +3358,109 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // (i.e. a real signal was ready but spread was too wide). Not per-tick noise.
     // See bracket_spread_blocked lambda below which calls ++g_gov_spread directly.
 
+    // ── Open unrealised P&L accumulator ─────────────────────────────────────
+    // Sums floating P&L across ALL open positions each tick.
+    // Used by symbol_gate to enforce daily_loss_limit on combined
+    // closed + unrealised loss — prevents limit breach before any close fires.
+    auto open_unrealised_pnl = [&]() -> double {
+        double total = 0.0;
+        const double cur_mid_sp  = (g_bids.count("US500.F") && g_asks.count("US500.F"))
+            ? (g_bids.at("US500.F") + g_asks.at("US500.F")) * 0.5 : 0.0;
+        const double cur_mid_nq  = (g_bids.count("USTEC.F") && g_asks.count("USTEC.F"))
+            ? (g_bids.at("USTEC.F") + g_asks.at("USTEC.F")) * 0.5 : 0.0;
+        const double cur_mid_cl  = (g_bids.count("USOIL.F") && g_asks.count("USOIL.F"))
+            ? (g_bids.at("USOIL.F") + g_asks.at("USOIL.F")) * 0.5 : 0.0;
+        const double cur_mid_xau = (g_bids.count("GOLD.F")  && g_asks.count("GOLD.F"))
+            ? (g_bids.at("GOLD.F")  + g_asks.at("GOLD.F"))  * 0.5 : 0.0;
+
+        // Helper: unrealised PnL for a BreakoutEngine OpenPos
+        auto be_pnl = [&](const omega::OpenPos& p, const std::string& sym) -> double {
+            if (!p.active) return 0.0;
+            double mid = 0.0;
+            std::lock_guard<std::mutex> lk(g_book_mtx);
+            auto bi = g_bids.find(sym); auto ai = g_asks.find(sym);
+            if (bi != g_bids.end() && ai != g_asks.end())
+                mid = (bi->second + ai->second) * 0.5;
+            if (mid <= 0.0) return 0.0;
+            const double move = p.is_long ? (mid - p.entry) : (p.entry - mid);
+            return move * p.size * tick_value_multiplier(sym);
+        };
+
+        // Helper: unrealised PnL for a CrossPosition
+        auto cp_pnl = [&](bool active, bool is_long, double entry, double size,
+                          const std::string& sym) -> double {
+            if (!active) return 0.0;
+            double mid = 0.0;
+            { std::lock_guard<std::mutex> lk(g_book_mtx);
+              auto bi = g_bids.find(sym); auto ai = g_asks.find(sym);
+              if (bi != g_bids.end() && ai != g_asks.end())
+                  mid = (bi->second + ai->second) * 0.5; }
+            if (mid <= 0.0) return 0.0;
+            const double move = is_long ? (mid - entry) : (entry - mid);
+            return move * size * tick_value_multiplier(sym);
+        };
+
+        // Breakout engines
+        total += be_pnl(g_eng_sp.pos,     "US500.F");
+        total += be_pnl(g_eng_nq.pos,     "USTEC.F");
+        total += be_pnl(g_eng_cl.pos,     "USOIL.F");
+        total += be_pnl(g_eng_us30.pos,   "DJ30.F");
+        total += be_pnl(g_eng_nas100.pos, "NAS100");
+        total += be_pnl(g_eng_ger30.pos,  "GER40");
+        total += be_pnl(g_eng_uk100.pos,  "UK100");
+        total += be_pnl(g_eng_estx50.pos, "ESTX50");
+        total += be_pnl(g_eng_xag.pos,    "XAGUSD");
+        total += be_pnl(g_eng_eurusd.pos, "EURUSD");
+        total += be_pnl(g_eng_gbpusd.pos, "GBPUSD");
+        total += be_pnl(g_eng_audusd.pos, "AUDUSD");
+        total += be_pnl(g_eng_nzdusd.pos, "NZDUSD");
+        total += be_pnl(g_eng_usdjpy.pos, "USDJPY");
+        total += be_pnl(g_eng_brent.pos,  "BRENT");
+
+        // Bracket engines — pos.entry/size/is_long same struct
+        total += be_pnl(g_bracket_sp.pos,     "US500.F");
+        total += be_pnl(g_bracket_nq.pos,     "USTEC.F");
+        total += be_pnl(g_bracket_us30.pos,   "DJ30.F");
+        total += be_pnl(g_bracket_nas100.pos, "NAS100");
+        total += be_pnl(g_bracket_ger30.pos,  "GER40");
+        total += be_pnl(g_bracket_uk100.pos,  "UK100");
+        total += be_pnl(g_bracket_estx50.pos, "ESTX50");
+        total += be_pnl(g_bracket_xag.pos,    "XAGUSD");
+        total += be_pnl(g_bracket_gold.pos,   "GOLD.F");
+        total += be_pnl(g_bracket_brent.pos,  "BRENT");
+        total += be_pnl(g_bracket_eurusd.pos, "EURUSD");
+        total += be_pnl(g_bracket_gbpusd.pos, "GBPUSD");
+        total += be_pnl(g_bracket_audusd.pos, "AUDUSD");
+        total += be_pnl(g_bracket_nzdusd.pos, "NZDUSD");
+        total += be_pnl(g_bracket_usdjpy.pos, "USDJPY");
+
+        // Cross-asset engines — use CrossPosition directly
+        auto& esnq_p   = g_ca_esnq.pos_;
+        auto& eia_p    = g_ca_eia_fade.pos_;
+        auto& bwti_p   = g_ca_brent_wti.pos_;
+        auto& fxc_p    = g_ca_fx_cascade.pos_;
+        auto& carry_p  = g_ca_carry_unwind.pos_;
+        total += cp_pnl(esnq_p.active,  esnq_p.is_long,  esnq_p.entry,  esnq_p.size,  "US500.F");
+        total += cp_pnl(eia_p.active,   eia_p.is_long,   eia_p.entry,   eia_p.size,   "USOIL.F");
+        total += cp_pnl(bwti_p.active,  bwti_p.is_long,  bwti_p.entry,  bwti_p.size,  "BRENT");
+        total += cp_pnl(fxc_p.active,   fxc_p.is_long,   fxc_p.entry,   fxc_p.size,   "GBPUSD");
+        total += cp_pnl(carry_p.active, carry_p.is_long, carry_p.entry, carry_p.size, "USDJPY");
+
+        // Gold flow
+        if (g_gold_flow.pos.active) {
+            std::lock_guard<std::mutex> lk(g_book_mtx);
+            auto bi = g_bids.find("GOLD.F"); auto ai = g_asks.find("GOLD.F");
+            if (bi != g_bids.end() && ai != g_asks.end()) {
+                const double mid = (bi->second + ai->second) * 0.5;
+                const double move = g_gold_flow.pos.is_long
+                    ? (mid - g_gold_flow.pos.entry)
+                    : (g_gold_flow.pos.entry - mid);
+                total += move * g_gold_flow.pos.size * 100.0;  // GOLD.F tick mult
+            }
+        }
+        return total;
+    };
+
     auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
         // Shadow mode enforces all risk gates identically to LIVE.
         // The only shadow exemption is that orders are not sent to the broker.
@@ -3316,6 +3469,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (st.daily_pnl < -g_cfg.daily_loss_limit) {
             ++g_gov_pnl;
             return true;
+        }
+        // Also block when closed P&L + floating unrealised already breaches limit.
+        // Prevents opening new positions into a limit breach before any close fires.
+        {
+            const double closed_pnl = g_omegaLedger.dailyPnl();
+            const double unrealised  = open_unrealised_pnl();
+            if (closed_pnl + unrealised < -g_cfg.daily_loss_limit) {
+                static thread_local int64_t s_unr_log = 0;
+                if (nowSec() - s_unr_log > 30) {
+                    s_unr_log = nowSec();
+                    printf("[OMEGA-RISK] Unrealised loss gate: closed=$%.2f unreal=$%.2f total=$%.2f limit=$%.0f\n",
+                           closed_pnl, unrealised, closed_pnl + unrealised, g_cfg.daily_loss_limit);
+                }
+                ++g_gov_pnl;
+                return true;
+            }
         }
         const int64_t now = nowSec();
         if (st.pause_until > now) {
@@ -4095,6 +4264,103 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
 
+            // ── Bracket R:R floor ─────────────────────────────────────────
+            // RR config is the minimum acceptable R:R for bracket signals.
+            // Enforce 1.5 as a hard floor regardless of config.
+            {
+                const double bkt_rr = bracket_eng.RR > 0.0 ? bracket_eng.RR : 1.5;
+                if (bkt_rr < 1.5) {
+                    printf("[RR-FLOOR] %s BRACKET blocked: R:R=%.2f < 1.5 floor\n",
+                           sym.c_str(), bkt_rr);
+                    return;
+                }
+            }
+
+            // ── Bracket L2 microstructure gate ────────────────────────────
+            // Brackets bypass enter_directional so they previously skipped the
+            // full L2 scoring layer. Apply entry_score_l2 to both directions;
+            // if BOTH legs score <= -3, the setup is structurally blocked.
+            // If only one leg is blocked, proceed with the other at half size.
+            {
+                double bkt_microprice = 0.0, bkt_l2_imb = l2_imb;
+                bool bkt_vac_ask = false, bkt_vac_bid = false;
+                bool bkt_wall_above = false, bkt_wall_below = false;
+                const std::string_view sv_bkt(sym);
+                if (sv_bkt == "GOLD.F") {
+                    bkt_microprice  = g_macro_ctx.gold_microprice_bias;
+                    bkt_vac_ask     = g_macro_ctx.gold_vacuum_ask;
+                    bkt_vac_bid     = g_macro_ctx.gold_vacuum_bid;
+                    bkt_wall_above  = g_macro_ctx.gold_wall_above;
+                    bkt_wall_below  = g_macro_ctx.gold_wall_below;
+                } else if (sv_bkt == "US500.F" || sv_bkt == "USTEC.F" ||
+                           sv_bkt == "DJ30.F"  || sv_bkt == "NAS100") {
+                    bkt_microprice  = g_macro_ctx.sp_microprice_bias;
+                    bkt_vac_ask     = g_macro_ctx.sp_vacuum_ask;
+                    bkt_vac_bid     = g_macro_ctx.sp_vacuum_bid;
+                    bkt_wall_above  = g_macro_ctx.sp_wall_above;
+                    bkt_wall_below  = g_macro_ctx.sp_wall_below;
+                } else if (sv_bkt == "USOIL.F" || sv_bkt == "BRENT") {
+                    bkt_microprice  = g_macro_ctx.cl_microprice_bias;
+                    bkt_vac_ask     = g_macro_ctx.cl_vacuum_ask;
+                    bkt_vac_bid     = g_macro_ctx.cl_vacuum_bid;
+                } else if (sv_bkt == "XAGUSD") {
+                    bkt_microprice  = g_macro_ctx.xag_microprice_bias;
+                    bkt_vac_ask     = bkt_l2_imb < 0.30;
+                    bkt_vac_bid     = bkt_l2_imb > 0.70;
+                } else if (sv_bkt == "EURUSD") {
+                    bkt_microprice = g_macro_ctx.eur_microprice_bias;
+                    bkt_vac_ask    = g_macro_ctx.eur_vacuum_ask;
+                    bkt_vac_bid    = g_macro_ctx.eur_vacuum_bid;
+                    bkt_wall_above = g_macro_ctx.eur_wall_above;
+                    bkt_wall_below = g_macro_ctx.eur_wall_below;
+                } else if (sv_bkt == "GBPUSD") {
+                    bkt_microprice = g_macro_ctx.gbp_microprice_bias;
+                    bkt_vac_ask    = g_macro_ctx.gbp_vacuum_ask;
+                    bkt_vac_bid    = g_macro_ctx.gbp_vacuum_bid;
+                    bkt_wall_above = g_macro_ctx.gbp_wall_above;
+                    bkt_wall_below = g_macro_ctx.gbp_wall_below;
+                } else if (sv_bkt == "AUDUSD") {
+                    bkt_vac_ask = g_macro_ctx.aud_vacuum_ask;
+                    bkt_vac_bid = g_macro_ctx.aud_vacuum_bid;
+                } else if (sv_bkt == "NZDUSD") {
+                    bkt_vac_ask = g_macro_ctx.nzd_vacuum_ask;
+                    bkt_vac_bid = g_macro_ctx.nzd_vacuum_bid;
+                } else if (sv_bkt == "USDJPY") {
+                    bkt_vac_ask = g_macro_ctx.jpy_vacuum_ask;
+                    bkt_vac_bid = g_macro_ctx.jpy_vacuum_bid;
+                } else if (sv_bkt == "GER40") {
+                    bkt_microprice = g_macro_ctx.ger40_microprice_bias;
+                    bkt_vac_ask    = g_macro_ctx.ger40_vacuum_ask;
+                    bkt_vac_bid    = g_macro_ctx.ger40_vacuum_bid;
+                    bkt_wall_above = g_macro_ctx.ger40_wall_above;
+                    bkt_wall_below = g_macro_ctx.ger40_wall_below;
+                } else if (sv_bkt == "UK100") {
+                    bkt_vac_ask = g_macro_ctx.uk100_vacuum_ask;
+                    bkt_vac_bid = g_macro_ctx.uk100_vacuum_bid;
+                } else if (sv_bkt == "ESTX50") {
+                    bkt_vac_ask = g_macro_ctx.estx50_vacuum_ask;
+                    bkt_vac_bid = g_macro_ctx.estx50_vacuum_bid;
+                } else {
+                    // Fallback: L2 imbalance proxy for any uncovered symbol
+                    bkt_vac_ask = bkt_l2_imb < 0.30;
+                    bkt_vac_bid = bkt_l2_imb > 0.70;
+                }
+                const int score_long  = g_edges.entry_score_l2(
+                    sym, bsigs.long_entry,  true,  bsigs.long_tp,
+                    nowSec(), bkt_microprice, bkt_l2_imb, bkt_vac_ask, bkt_wall_above);
+                const int score_short = g_edges.entry_score_l2(
+                    sym, bsigs.short_entry, false, bsigs.short_tp,
+                    nowSec(), bkt_microprice, bkt_l2_imb, bkt_vac_bid, bkt_wall_below);
+                if (score_long <= -3 && score_short <= -3) {
+                    printf("[EDGE-BLOCK-BKT] %s BRACKET both legs blocked: L=%d S=%d\n",
+                           sym.c_str(), score_long, score_short);
+                    return;
+                }
+            }
+
+            // ── Cross-engine dedup ────────────────────────────────────────
+            if (!cross_engine_dedup_ok(sym)) return;
+
             // Encode bracket levels + trend state in reason for GUI
             char bracket_reason[80];
             snprintf(bracket_reason, sizeof(bracket_reason), "HI:%.2f LO:%.2f bias:%d l2:%.2f",
@@ -4145,6 +4411,30 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Params: symbol, sl_abs (SL distance in price points), lot.
     // Uses the same ExecutionCostGuard that dispatch() and dispatch_bracket() use,
     // with RR=1.5 as the TP estimate (conservative: actual RR is often 2.0+).
+    // ── Cross-engine deduplication ────────────────────────────────────────────
+    // Prevents multiple engine types from entering the same symbol within
+    // CROSS_ENG_DEDUP_SEC seconds of each other. Without this, a strong gold
+    // breakout can simultaneously trigger GoldStack + BreakoutEngine + BracketEngine
+    // + TrendPullback — all correlated, all the same direction, all the same time.
+    // This is separate from CorrelationHeatGuard (cluster budget) — this gates
+    // WITHIN a single symbol across engine types.
+    static constexpr int64_t CROSS_ENG_DEDUP_SEC = 30;
+    static std::mutex g_dedup_mtx;
+    static std::unordered_map<std::string, int64_t> g_last_cross_entry;
+
+    auto cross_engine_dedup_ok = [&](const std::string& sym) -> bool {
+        std::lock_guard<std::mutex> lk(g_dedup_mtx);
+        auto it = g_last_cross_entry.find(sym);
+        if (it != g_last_cross_entry.end() &&
+            (nowSec() - it->second) < CROSS_ENG_DEDUP_SEC) {
+            printf("[CROSS-DEDUP] %s blocked — another engine entered %.0fs ago\n",
+                   sym.c_str(), static_cast<double>(nowSec() - it->second));
+            return false;
+        }
+        g_last_cross_entry[sym] = nowSec();
+        return true;
+    };
+
     // ── enter_directional: unified entry helper for all cross-asset engines ───
     // Replaces the repeated pattern: compute_size → cost_ok → send_live_order
     // Also applies adaptive risk (adjusted_lot) and arms partial exit.
@@ -4190,6 +4480,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // (FX_CASCADE=0.0 and FX_CARRY=0.0 in RISK_OFF per weight table)
             return false;
         }
+
+        // ── Cross-engine deduplication ────────────────────────────────────
+        if (!cross_engine_dedup_ok(std::string(esym))) return false;
 
         // ── VWAP chop gate ────────────────────────────────────────────────────
         // Entries within 0.05% of daily VWAP have no directional edge.
@@ -4259,29 +4552,38 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 l2_imbalance    = g_macro_ctx.cl_l2_imbalance;
                 vacuum_in_dir   = is_long ? g_macro_ctx.cl_vacuum_ask : g_macro_ctx.cl_vacuum_bid;
             } else if (sv == "EURUSD") {
+                microprice_bias = g_macro_ctx.eur_microprice_bias;
                 l2_imbalance    = g_macro_ctx.eur_l2_imbalance;
-                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+                vacuum_in_dir   = is_long ? g_macro_ctx.eur_vacuum_ask : g_macro_ctx.eur_vacuum_bid;
+                wall_to_tp      = is_long ? g_macro_ctx.eur_wall_above  : g_macro_ctx.eur_wall_below;
             } else if (sv == "GBPUSD") {
+                microprice_bias = g_macro_ctx.gbp_microprice_bias;
                 l2_imbalance    = g_macro_ctx.gbp_l2_imbalance;
-                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+                vacuum_in_dir   = is_long ? g_macro_ctx.gbp_vacuum_ask : g_macro_ctx.gbp_vacuum_bid;
+                wall_to_tp      = is_long ? g_macro_ctx.gbp_wall_above  : g_macro_ctx.gbp_wall_below;
             } else if (sv == "AUDUSD") {
+                microprice_bias = g_macro_ctx.aud_microprice_bias;
                 l2_imbalance    = g_macro_ctx.aud_l2_imbalance;
-                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+                vacuum_in_dir   = is_long ? g_macro_ctx.aud_vacuum_ask : g_macro_ctx.aud_vacuum_bid;
             } else if (sv == "NZDUSD") {
+                microprice_bias = g_macro_ctx.nzd_microprice_bias;
                 l2_imbalance    = g_macro_ctx.nzd_l2_imbalance;
-                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+                vacuum_in_dir   = is_long ? g_macro_ctx.nzd_vacuum_ask : g_macro_ctx.nzd_vacuum_bid;
             } else if (sv == "USDJPY") {
+                microprice_bias = g_macro_ctx.jpy_microprice_bias;
                 l2_imbalance    = g_macro_ctx.jpy_l2_imbalance;
-                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+                vacuum_in_dir   = is_long ? g_macro_ctx.jpy_vacuum_ask : g_macro_ctx.jpy_vacuum_bid;
             } else if (sv == "GER40") {
+                microprice_bias = g_macro_ctx.ger40_microprice_bias;
                 l2_imbalance    = g_macro_ctx.ger40_l2_imbalance;
-                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+                vacuum_in_dir   = is_long ? g_macro_ctx.ger40_vacuum_ask : g_macro_ctx.ger40_vacuum_bid;
+                wall_to_tp      = is_long ? g_macro_ctx.ger40_wall_above  : g_macro_ctx.ger40_wall_below;
             } else if (sv == "UK100") {
                 l2_imbalance    = g_macro_ctx.uk100_l2_imbalance;
-                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+                vacuum_in_dir   = is_long ? g_macro_ctx.uk100_vacuum_ask : g_macro_ctx.uk100_vacuum_bid;
             } else if (sv == "ESTX50") {
                 l2_imbalance    = g_macro_ctx.estx50_l2_imbalance;
-                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+                vacuum_in_dir   = is_long ? g_macro_ctx.estx50_vacuum_ask : g_macro_ctx.estx50_vacuum_bid;
             }
 
             const double tp_for_score = tp > 0 ? tp : entry + (is_long?1:-1)*sl_abs*2.0;
@@ -4325,6 +4627,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 final_lot = std::max(0.01, std::floor(max_loss_lot * 100.0 + 0.5) / 100.0);
                 printf("[MAX-LOSS-CAP] %s lot capped %.4f→%.4f (sl=$%.2f max=$%.0f)\n",
                        esym, lot, final_lot, sl_abs * tick_mult * lot, g_cfg.max_loss_per_trade_usd);
+            }
+        }
+        // ── Hard R:R floor — checked at dispatch, not signal generation ────
+        // Signal generation uses comp_range × 1.6 / comp_range × 0.4 = 4:1.
+        // But L2 wall penalties, SL adjustments, and ATR sizing can push this
+        // below 1.5:1 before the order fires. Block any trade with R:R < 1.5.
+        if (sl_abs > 1e-9 && tp_dist > 1e-9) {
+            const double rr = tp_dist / sl_abs;
+            if (rr < 1.5) {
+                printf("[RR-FLOOR] %s %s blocked: R:R=%.2f (tp=%.4f sl=%.4f) < 1.5 floor\n",
+                       esym, is_long?"LONG":"SHORT", rr, tp_dist, sl_abs);
+                return false;
             }
         }
         // Cost guard
@@ -4622,6 +4936,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "EURUSD") {
+        g_macro_ctx.eur_mid_price = (bid + ask) * 0.5;  // for wall_above/below context
         const bool base_can_fx = symbol_gate("EURUSD",
             g_eng_eurusd.pos.active                ||
             g_bracket_eurusd.pos.active            ||
@@ -4672,6 +4987,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "GBPUSD") {
+        g_macro_ctx.gbp_mid_price = (bid + ask) * 0.5;  // for wall_above/below context
         // ── FX group bracket guard — only one bracket across GBPUSD/AUDUSD/NZDUSD/USDJPY ──
         // These four pairs share high USD-correlation: simultaneous brackets create
         // duplicated directional USD exposure. EURUSD is intentionally excluded —

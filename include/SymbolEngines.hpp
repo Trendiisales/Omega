@@ -70,6 +70,13 @@ struct MacroContext {
     double      sp_microprice_bias   = 0.0;
     double      xag_microprice_bias  = 0.0;
     double      cl_microprice_bias   = 0.0;
+    // FX microprice bias — now populated from real L2 book
+    double      eur_microprice_bias  = 0.0;
+    double      gbp_microprice_bias  = 0.0;
+    double      aud_microprice_bias  = 0.0;
+    double      nzd_microprice_bias  = 0.0;
+    double      jpy_microprice_bias  = 0.0;
+    double      ger40_microprice_bias= 0.0;
 
     // Book slope: +ve = buy pressure building, -ve = sell pressure
     // Range -1..+1; use |slope| > 0.10 as meaningful
@@ -91,6 +98,35 @@ struct MacroContext {
     bool        gold_wall_below = false;
     bool        sp_wall_above   = false;
     bool        sp_wall_below   = false;
+
+    // FX vacuum/wall — Priority 6 backlog (previously L2 imbalance proxy only)
+    // Now populated from actual L2 book data same as GOLD/SP/OIL.
+    bool        eur_vacuum_ask  = false;
+    bool        eur_vacuum_bid  = false;
+    bool        eur_wall_above  = false;
+    bool        eur_wall_below  = false;
+    bool        gbp_vacuum_ask  = false;
+    bool        gbp_vacuum_bid  = false;
+    bool        gbp_wall_above  = false;
+    bool        gbp_wall_below  = false;
+    bool        aud_vacuum_ask  = false;
+    bool        aud_vacuum_bid  = false;
+    bool        nzd_vacuum_ask  = false;
+    bool        nzd_vacuum_bid  = false;
+    bool        jpy_vacuum_ask  = false;
+    bool        jpy_vacuum_bid  = false;
+    double      eur_mid_price   = 0.0;
+    double      gbp_mid_price   = 0.0;
+
+    // GER40 / UK100 / ESTX50 vacuum (EU equity bracket L2 gate)
+    bool        ger40_vacuum_ask  = false;
+    bool        ger40_vacuum_bid  = false;
+    bool        ger40_wall_above  = false;
+    bool        ger40_wall_below  = false;
+    bool        uk100_vacuum_ask  = false;
+    bool        uk100_vacuum_bid  = false;
+    bool        estx50_vacuum_ask = false;
+    bool        estx50_vacuum_bid = false;
 
     // Session time slot — updated every tick
     // 0=dead(05-07 UTC), 1=London(07-09), 2=London_core(09-12),
