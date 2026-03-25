@@ -791,7 +791,16 @@ static std::unordered_map<std::string, PerfStats> g_perf;
 static bool g_disable_gold_stack = false;
 
 static std::string perf_key_from_trade(const omega::TradeRecord& tr) {
-    if (tr.symbol == "GOLD.F") return "GOLD_STACK";
+    // Route gold trades to the specific engine that generated them,
+    // not a single "GOLD_STACK" bucket. This prevents auto-disable
+    // from misfiring when losses are from flow/bracket, not the stack.
+    if (tr.symbol == "GOLD.F") {
+        if (tr.engine.find("BRACKET") != std::string::npos)   return "GOLD.F_BRACKET";
+        if (tr.engine.find("L2_FLOW") != std::string::npos ||
+            tr.engine.find("GOLD_FLOW") != std::string::npos) return "GOLD.F_FLOW";
+        if (tr.engine.find("LEAD_LAG") != std::string::npos)  return "GOLD.F_LATENCY";
+        return "GOLD_STACK";  // CompressionBreakout / Impulse / SessionMom / VWAPSnap / SweepPro
+    }
     return tr.symbol;
 }
 
@@ -1918,7 +1927,8 @@ static void write_shadow_csv(const omega::TradeRecord& tr) {
         g_shadow_csv << tr.entryTs << ',' << tr.symbol << ',' << tr.side
                      << ',' << tr.engine
                      << ',' << tr.entryPrice << ',' << tr.exitPrice
-                     << ',' << tr.pnl << ',' << tr.mfe << ',' << tr.mae
+                     << ',' << tr.net_pnl   // net after slippage+commission (was tr.pnl = gross)
+                     << ',' << tr.mfe << ',' << tr.mae
                      << ',' << (tr.exitTs - tr.entryTs)
                      << ',' << tr.exitReason
                      << ',' << tr.spreadAtEntry
@@ -2817,9 +2827,18 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         // net_pnl, slippage_entry/exit, commission set below by apply_realistic_costs
 
         // Step 2: Apply realistic shadow costs (slippage + commission) in USD.
-        // commission_per_side=0.0 for BlackBull CFD — cost is embedded in the spread.
-        // tick_mult passed in so slippage = price × slip_pct × tick_mult × size (USD).
-        omega::apply_realistic_costs(tr, 0.0, mult);
+        // Commission: FX and metals carry $6/lot round-trip on BlackBull ECN.
+        // Indices and oil are commission-free (cost embedded in spread).
+        // Per-side = $3.0 for FX/metals, $0 for indices/oil.
+        double comm_per_side = 0.0;
+        {
+            const std::string& s = tr.symbol;
+            if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" ||
+                s == "NZDUSD" || s == "USDJPY" ||
+                s == "GOLD.F" || s == "XAGUSD")
+                comm_per_side = 3.0;  // $3/side = $6 round-trip per lot
+        }
+        omega::apply_realistic_costs(tr, comm_per_side, mult);
     }
 
     // Step 3: Log — all values are now in USD
@@ -3102,6 +3121,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     const double mid = (bid + ask) * 0.5;
     if (sym == "VIX.F")   g_macroDetector.updateVIX(mid);
+    if (sym == "DX.F")    g_macroDetector.updateDXY(mid);  // Dollar Index futures — DXY momentum
     if (sym == "US500.F") g_macroDetector.updateES(mid);   // use traded futures, not cash ES
     if (sym == "USTEC.F") g_macroDetector.updateNQ(mid);   // use traded futures, not cash NAS100
 
@@ -3377,32 +3397,34 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     auto open_unrealised_pnl = [&]() -> double {
         double total = 0.0;
 
+        // Snapshot all mid prices in ONE lock acquisition to avoid 30+ per-engine
+        // g_book_mtx acquisitions at high tick rates (was lock contention risk).
+        std::unordered_map<std::string, double> mids;
+        {
+            std::lock_guard<std::mutex> lk(g_book_mtx);
+            for (const auto& kv : g_bids) {
+                auto ai = g_asks.find(kv.first);
+                if (ai != g_asks.end() && kv.second > 0 && ai->second > 0)
+                    mids[kv.first] = (kv.second + ai->second) * 0.5;
+            }
+        }
+
         // Helper: unrealised PnL — generic lambda accepts any OpenPos-like type
-        // (omega::OpenPos from BreakoutEngine AND BracketEngineBase<T>::OpenPos
-        //  both have .active / .is_long / .entry / .size members)
         auto be_pnl = [&](const auto& p, const std::string& sym) -> double {
             if (!p.active) return 0.0;
-            double mid = 0.0;
-            std::lock_guard<std::mutex> lk(g_book_mtx);
-            auto bi = g_bids.find(sym); auto ai = g_asks.find(sym);
-            if (bi != g_bids.end() && ai != g_asks.end())
-                mid = (bi->second + ai->second) * 0.5;
-            if (mid <= 0.0) return 0.0;
-            const double move = p.is_long ? (mid - p.entry) : (p.entry - mid);
+            auto it = mids.find(sym);
+            if (it == mids.end() || it->second <= 0.0) return 0.0;
+            const double move = p.is_long ? (it->second - p.entry) : (p.entry - it->second);
             return move * p.size * tick_value_multiplier(sym);
         };
 
-        // Helper: unrealised PnL for a CrossPosition
+        // Helper: unrealised PnL for a CrossPosition (uses same snapshot)
         auto cp_pnl = [&](bool active, bool is_long, double entry, double size,
                           const std::string& sym) -> double {
-            if (!active) return 0.0;
-            double mid = 0.0;
-            { std::lock_guard<std::mutex> lk(g_book_mtx);
-              auto bi = g_bids.find(sym); auto ai = g_asks.find(sym);
-              if (bi != g_bids.end() && ai != g_asks.end())
-                  mid = (bi->second + ai->second) * 0.5; }
-            if (mid <= 0.0) return 0.0;
-            const double move = is_long ? (mid - entry) : (entry - mid);
+            if (!active || entry <= 0.0) return 0.0;
+            auto it = mids.find(sym);
+            if (it == mids.end() || it->second <= 0.0) return 0.0;
+            const double move = is_long ? (it->second - entry) : (entry - it->second);
             return move * size * tick_value_multiplier(sym);
         };
 
@@ -5223,7 +5245,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_bracket_gold.has_open_position()  ||
             g_gold_flow.has_open_position()     ||   // ADDED: was missing
             g_trend_pb_gold.has_open_position();     // ADDED: was missing
-        const bool gold_can_enter = symbol_gate("GOLD.F", gold_any_open);
+        // Session-aware gold cap: dead zone 05-07 UTC → no new entries
+        const int gold_session_slot = g_macro_ctx.session_slot;
+        const bool gold_session_ok = (gold_session_slot != 0);
+        const bool gold_can_enter = gold_session_ok && symbol_gate("GOLD.F", gold_any_open);
 
         // Run supervisor — uses g_eng_xag as vol/phase proxy since gold has
         // its own GoldStack (not a BreakoutEngine). We use a dedicated gold
@@ -5351,7 +5376,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         omega::regime_name(gold_sdec.regime), regime.c_str(), "BREAKOUT",
                         gsig.entry + (gsig.is_long ? 1.0 : -1.0) * gsig.tp_ticks * 0.10,
                         gsig.entry - (gsig.is_long ? 1.0 : -1.0) * gsig.sl_ticks * 0.10);
-                    const double gold_sl_abs = gsig.sl_ticks * 0.10;
+                    const double gold_sl_abs_raw = gsig.sl_ticks * 0.10;
+                    // ATR-normalised SL floor for gold — same logic as other engines
+                    const double gold_sl_abs = g_adaptive_risk.vol_scaler.atr_sl_floor(
+                        "GOLD.F", gold_sl_abs_raw);
 
                     // ── Confidence-scaled sizing ──────────────────────────────
                     // Scale by supervisor confidence: conf=0.45→0.65×, conf=0.80→1.08×
@@ -5887,6 +5915,10 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         std::cout << "[OMEGA] LOGON ACCEPTED\n";
         g_quote_ready.store(true);
         g_connected_since.store(nowSec());
+        // Reset spread gate history on reconnect — stale medians from a
+        // prior session (e.g. Asia low-liquidity) would falsely block entries.
+        // History rebuilds in 20 ticks (~2-4 seconds at normal tick rates).
+        g_edges.spread_gate.reset_all();
         g_md_subscribed.store(false);  // clear — fresh session, not yet subscribed
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
         const std::string md = fix_build_md_subscribe_all(g_quote_seq++);

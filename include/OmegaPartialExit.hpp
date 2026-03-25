@@ -76,6 +76,21 @@ struct PartialExitState {
         // Trail step: if ATR available use 0.5×ATR, else 0.3×(tp1-entry)
         const double raw_step = std::fabs(t1 - ent) * 0.30;
         trail_step = (atr_approx > 0) ? (atr_approx * 0.5) : raw_step;
+        // Minimum trail step per instrument class — prevents noise-triggered
+        // exits on tight-range instruments where ATR×0.5 < 1 tick:
+        //   FX majors:  0.0002 (2 pips) minimum
+        //   Gold:       $0.50 minimum
+        //   Silver:     $0.05 minimum
+        //   Oil:        $0.05 minimum
+        //   Indices:    2 points minimum
+        if (ent > 0) {
+            double min_step = 0.0;
+            if      (ent < 2.0)    min_step = 0.0002;  // FX majors (price < 2)
+            else if (ent < 200.0)  min_step = 0.05;    // Silver / Oil
+            else if (ent < 5000.0) min_step = 0.50;    // Gold
+            else                   min_step = 2.0;     // Indices (SP500=6600+, NQ=24000+)
+            if (trail_step < min_step) trail_step = min_step;
+        }
         entry_ts = static_cast<int64_t>(std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
     }

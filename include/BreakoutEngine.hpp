@@ -401,8 +401,12 @@ public:
                 m_vwap         = 0.0;
                 m_vwap_last_day = ti_v.tm_yday;
             }
-            m_vwap_cum_pv  += mid;
-            m_vwap_cum_vol += 1.0;
+            // Spread-weighted VWAP: weight = 1/spread so tight-spread
+            // (liquid) ticks dominate over wide-spread (illiquid) ticks.
+            // Falls back to weight=1 when spread=0 (no book data yet).
+            const double vwap_weight = (spread > 1e-10) ? (1.0 / spread) : 1.0;
+            m_vwap_cum_pv  += mid * vwap_weight;
+            m_vwap_cum_vol += vwap_weight;
             m_vwap = (m_vwap_cum_vol > 0.0) ? (m_vwap_cum_pv / m_vwap_cum_vol) : mid;
         }
 

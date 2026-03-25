@@ -168,8 +168,9 @@ public:
         // Daily VWAP reset
         check_daily_reset();
 
-        // VWAP — cumulative tick-weighted (resets at midnight)
-        cum_pv_ += mid; cum_vol_ += 1.0;
+        // VWAP — spread-weighted (tight spread ticks count more)
+        const double gvwap_w = (spread > 1e-10) ? (1.0 / spread) : 1.0;
+        cum_pv_ += mid * gvwap_w; cum_vol_ += gvwap_w;
         vwap_ = (cum_vol_>0) ? cum_pv_/cum_vol_ : mid;
 
         // Tick-to-tick volatility (for momentum gates)

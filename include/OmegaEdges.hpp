@@ -430,6 +430,14 @@ public:
         return (it != state_.end()) ? it->second.median : 0.0;
     }
 
+    // Reset all spread history — call on reconnect so stale pre-reconnect
+    // medians (computed during low-liquidity period) don't block the first
+    // legitimate entries on a fresh connection. History rebuilds in 20 ticks.
+    void reset_all() noexcept {
+        std::lock_guard<std::mutex> lk(mtx);
+        state_.clear();
+    }
+
 private:
     mutable std::unordered_map<std::string, SpreadState> state_;
 };
