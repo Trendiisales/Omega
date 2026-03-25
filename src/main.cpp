@@ -3371,14 +3371,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // closed + unrealised loss — prevents limit breach before any close fires.
     auto open_unrealised_pnl = [&]() -> double {
         double total = 0.0;
-        const double cur_mid_sp  = (g_bids.count("US500.F") && g_asks.count("US500.F"))
-            ? (g_bids.at("US500.F") + g_asks.at("US500.F")) * 0.5 : 0.0;
-        const double cur_mid_nq  = (g_bids.count("USTEC.F") && g_asks.count("USTEC.F"))
-            ? (g_bids.at("USTEC.F") + g_asks.at("USTEC.F")) * 0.5 : 0.0;
-        const double cur_mid_cl  = (g_bids.count("USOIL.F") && g_asks.count("USOIL.F"))
-            ? (g_bids.at("USOIL.F") + g_asks.at("USOIL.F")) * 0.5 : 0.0;
-        const double cur_mid_xau = (g_bids.count("GOLD.F")  && g_asks.count("GOLD.F"))
-            ? (g_bids.at("GOLD.F")  + g_asks.at("GOLD.F"))  * 0.5 : 0.0;
 
         // Helper: unrealised PnL — generic lambda accepts any OpenPos-like type
         // (omega::OpenPos from BreakoutEngine AND BracketEngineBase<T>::OpenPos
@@ -4391,8 +4383,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
 
-            // ── Cross-engine dedup ────────────────────────────────────────
-            if (!cross_engine_dedup_ok(sym)) return;
+            // ── Cross-engine dedup (inline — lambda not yet in scope here) ─
+            {
+                std::lock_guard<std::mutex> _lk(g_dedup_mtx);
+                auto _it = g_last_cross_entry.find(sym);
+                if (_it != g_last_cross_entry.end() &&
+                    (nowSec() - _it->second) < CROSS_ENG_DEDUP_SEC) {
+                    printf("[CROSS-DEDUP] %s BRACKET blocked — another engine entered %.0fs ago\n",
+                           sym.c_str(), static_cast<double>(nowSec() - _it->second));
+                    return;
+                }
+                g_last_cross_entry[sym] = nowSec();
+            }
 
             // Encode bracket levels + trend state in reason for GUI
             char bracket_reason[80];
