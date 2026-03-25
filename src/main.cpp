@@ -2483,6 +2483,36 @@ static void load_config(const std::string& path) {
             if (k=="max_spread_pct")        g_cfg.gbpusd_max_spread_pct        = safe_stod(v, k);
             if (k=="compression_threshold") g_cfg.gbpusd_compression_threshold = safe_stod(v, k);
         }
+        if (section == "audusd") {
+            if (k=="tp_pct")                g_cfg.audusd_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.audusd_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.audusd_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.audusd_min_gap_sec           = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.audusd_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.audusd_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.audusd_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.audusd_compression_threshold = safe_stod(v, k);
+        }
+        if (section == "nzdusd") {
+            if (k=="tp_pct")                g_cfg.nzdusd_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.nzdusd_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.nzdusd_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.nzdusd_min_gap_sec           = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.nzdusd_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.nzdusd_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.nzdusd_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.nzdusd_compression_threshold = safe_stod(v, k);
+        }
+        if (section == "usdjpy") {
+            if (k=="tp_pct")                g_cfg.usdjpy_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.usdjpy_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.usdjpy_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.usdjpy_min_gap_sec           = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.usdjpy_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.usdjpy_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.usdjpy_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.usdjpy_compression_threshold = safe_stod(v, k);
+        }
         if (section == "gold_stack") {
             auto& gs = g_cfg.gs_cfg;
             // Orchestrator gates
