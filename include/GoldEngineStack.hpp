@@ -741,7 +741,7 @@ public:
         if (side == TradeSide::SHORT && s.trend >  0.30) return noSignal();
         if (side == TradeSide::LONG  && s.trend < -0.30) return noSignal();
         Signal sig; sig.valid=true; sig.side=side; sig.confidence=0.95;
-        sig.size=BASE_SIZE; sig.entry=s.mid; sig.tp=tp; sig.sl=SL_TICKS;
+        sig.size=BASE_SIZE; sig.entry=s.mid; sig.tp=SL_TICKS*2; sig.sl=SL_TICKS;
         strncpy(sig.reason,side==TradeSide::SHORT?"SWEEP_SHORT":"SWEEP_LONG",31);
         strncpy(sig.engine,"LiquiditySweepPro",31);
         signal_count_++; return sig;
