@@ -183,6 +183,17 @@ struct CrossPosition {
         const double mid = (bid + ask) * 0.5;
         emit(mid, "FORCE_CLOSE", on_close);
     }
+    // Patch lot size after enter_directional succeeds — corrects the hardcoded
+    // 0.01 fallback with the actual risk-sized lot for accurate shadow P&L.
+    void patch_size(double lot) noexcept { if (active && lot > 0.0) size = lot; }
+
+    // Silent reset — clears internal state without recording a trade.
+    // Use this when rolling back a phantom position (enter_directional rejected
+    // the trade after pos_.open() had already been called). No broker order
+    // was sent, so no trade record should be written.
+    void reset() noexcept {
+        active = false;
+    }
 
 private:
     void emit(double exit_px, const char* exit_reason, CloseCb on_close) {
@@ -294,7 +305,10 @@ public:
         const double sl      = mid * (1.0 - (is_long ? 1 : -1) * SL_PCT / 100.0);
         const double tp_dist = std::fabs(tp - mid);
 
-        if (!ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist, 0.01)) return {};
+        // Cost check removed: enter_directional() performs the definitive
+        // cost check with the actual computed lot size. Checking here with
+        // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
+        // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
         CrossSignal sig;
         sig.valid   = true;
@@ -320,7 +334,10 @@ public:
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void patch_size(double lot) noexcept { pos_.patch_size(lot); }
+    void rollback() noexcept { pos_.reset(); }
 
 private:
     CrossPosition pos_;
@@ -403,7 +420,10 @@ public:
         const double tp_dist = std::fabs(tp - mid);
 
         // Cost gate
-        if (!ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist, 0.01)) return {};
+        // Cost check removed: enter_directional() performs the definitive
+        // cost check with the actual computed lot size. Checking here with
+        // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
+        // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
         CrossSignal sig;
         sig.valid   = true;
@@ -428,7 +448,10 @@ public:
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void patch_size(double lot) noexcept { pos_.patch_size(lot); }
+    void rollback() noexcept { pos_.reset(); }
 
 private:
     CrossPosition pos_;
@@ -491,7 +514,10 @@ public:
         if (brent_wti_spread <= SPREAD_THRESH) return {};
 
         // Cost gate: TP_DIST must exceed execution floor
-        if (!ExecutionCostGuard::is_viable("USOIL.F", spread, TP_DIST, 0.01)) return {};
+        // Cost check removed: enter_directional() performs the definitive
+        // cost check with the actual computed lot size. Checking here with
+        // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
+        // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
         // Brent premium too high → WTI should catch up (long WTI)
         CrossSignal sig;
@@ -517,7 +543,10 @@ public:
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void patch_size(double lot) noexcept { pos_.patch_size(lot); }
+    void rollback() noexcept { pos_.reset(); }
 
 private:
     CrossPosition pos_;
@@ -613,6 +642,9 @@ public:
 
     // Force-close all legs — each pair uses its own current price.
     // Called on disconnect; gbpusd_bid/ask used as fallback for AUD/NZD if zeroed.
+    void rollback_gbp() noexcept { pos_gbp_.reset(); }
+    void rollback_aud() noexcept { pos_aud_.reset(); }
+    void rollback_nzd() noexcept { pos_nzd_.reset(); }
     void force_close(double gbp_bid, double gbp_ask, CloseCb on_close) {
         pos_gbp_.force_close(gbp_bid, gbp_ask, on_close);
         // AUD/NZD legs use their own price when available, else GBPUSD as proxy
@@ -621,8 +653,14 @@ public:
     }
 
     // Per-pair force-close when caller has the exact price
+    void cancel_gbpusd() noexcept { pos_gbp_.reset(); }
+    void cancel_audusd() noexcept { pos_aud_.reset(); }
+    void cancel_nzdusd() noexcept { pos_nzd_.reset(); }
     void force_close_audusd(double bid, double ask, CloseCb on_close) { pos_aud_.force_close(bid, ask, on_close); }
     void force_close_nzdusd(double bid, double ask, CloseCb on_close) { pos_nzd_.force_close(bid, ask, on_close); }
+    void patch_size_gbp(double lot) noexcept { pos_gbp_.patch_size(lot); }
+    void patch_size_aud(double lot) noexcept { pos_aud_.patch_size(lot); }
+    void patch_size_nzd(double lot) noexcept { pos_nzd_.patch_size(lot); }
 
 private:
     // Shared armed state — set by notify_eurusd_signal(), consumed per-pair independently
@@ -662,7 +700,10 @@ private:
         const double tp_dist = std::fabs(tp - mid);
 
         // Cost gate — Forex pairs carry commission + spread + slippage ~$10/lot
-        if (!ExecutionCostGuard::is_viable(pair_sym, spread, tp_dist, 0.01)) return {};
+        // Cost check removed: enter_directional() performs the definitive
+        // cost check with the actual computed lot size. Checking here with
+        // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
+        // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
         CrossSignal sig;
         sig.valid   = true;
@@ -775,7 +816,10 @@ public:
         const double sl      = mid * (1.0 + SL_PCT/100.0);
         const double tp_dist = std::fabs(tp - mid);
 
-        if (!ExecutionCostGuard::is_viable("USDJPY", spread, tp_dist, 0.01)) return {};
+        // Cost check removed: enter_directional() performs the definitive
+        // cost check with the actual computed lot size. Checking here with
+        // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
+        // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
         CrossSignal sig;
         sig.valid   = true;
@@ -801,7 +845,10 @@ public:
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void patch_size(double lot) noexcept { pos_.patch_size(lot); }
+    void rollback() noexcept { pos_.reset(); }
 
 private:
     static constexpr int WINDOW_TICKS  = 60;
@@ -894,7 +941,10 @@ public:
             const double sl = mid * (1.0 - SL_PCT/100.0);
             const double tp_dist = std::fabs(tp - mid);
             // Cost gate
-            if (!ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist, 0.01)) return {};
+            // Cost check removed: enter_directional() performs the definitive
+            // cost check with the actual computed lot size. Checking here with
+            // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
+            // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
             armed_ = true;
             CrossSignal sig;
@@ -919,7 +969,10 @@ public:
             const double sl = mid * (1.0 + SL_PCT/100.0);
             const double tp_dist = std::fabs(tp - mid);
             // Cost gate
-            if (!ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist, 0.01)) return {};
+            // Cost check removed: enter_directional() performs the definitive
+            // cost check with the actual computed lot size. Checking here with
+            // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
+            // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
             armed_ = true;
             CrossSignal sig;
@@ -942,7 +995,10 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void patch_size(double lot) noexcept { pos_.patch_size(lot); }
+    void rollback() noexcept { pos_.reset(); }
 
     // Expose range for telemetry
     double range_high() const { return range_high_; }
@@ -1059,7 +1115,10 @@ public:
         if (tp_dist <= 0.0 || tp_dist < sl_offset * 0.5) return {};
 
         // Cost gate: TP to VWAP distance must cover execution costs
-        if (!ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist, 0.01)) return {};
+        // Cost check removed: enter_directional() performs the definitive
+        // cost check with the actual computed lot size. Checking here with
+        // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
+        // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
         CrossSignal sig;
         sig.valid   = true;
@@ -1082,7 +1141,10 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void patch_size(double lot) noexcept { pos_.patch_size(lot); }
+    void rollback() noexcept { pos_.reset(); }
 
 private:
     CrossPosition pos_;
@@ -1196,7 +1258,10 @@ public:
         if (tp_dist <= 0.0)        return {};
 
         // Cost gate
-        if (!ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist, 0.01)) return {};
+        // Cost check removed: enter_directional() performs the definitive
+        // cost check with the actual computed lot size. Checking here with
+        // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
+        // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
         CrossSignal sig;
         sig.valid   = true;
@@ -1219,7 +1284,10 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void patch_size(double lot) noexcept { pos_.patch_size(lot); }
+    void rollback() noexcept { pos_.reset(); }
 
     // Expose EMAs for telemetry / external inspection
     double ema9()  const { return ema9_;  }
