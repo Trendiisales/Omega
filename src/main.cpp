@@ -767,7 +767,9 @@ static int     g_last_ledger_utc_day = -1;
 // alert. A frozen feed with open positions is the most dangerous state.
 static std::mutex                              g_last_tick_mtx;
 static std::unordered_map<std::string,int64_t> g_last_tick_ts;  // symbol → unix ms
-static constexpr int64_t STALE_QUOTE_SEC = 8;   // 8s without tick = stale
+static constexpr int64_t STALE_QUOTE_SEC = 30;  // 30s without tick = genuinely stale feed
+                                                  // (was 8s — too tight for slow FX/index symbols
+                                                  //  which legitimately go 10-20s between ticks)
 
 // Record a tick receipt (called from on_tick per symbol)
 static inline void stale_watchdog_ping(const std::string& sym) {
