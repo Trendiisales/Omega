@@ -3695,7 +3695,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // SHADOW pilot mode filters
         }
         if (symbol_has_open_position) {
-            ++g_gov_pos;
+            // Do NOT increment g_gov_pos here — this fires every tick while any
+            // position is open and would make the counter meaningless (21k+/day).
+            // g_gov_pos is reserved for position CAP blocks — meaningful signal.
             return false;
         }
         if (g_cfg.independent_symbols) {
