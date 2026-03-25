@@ -762,28 +762,65 @@ function renderLastSignal(d){
       ${mac?`<span style="font-size:10px;color:${macCol};background:rgba(255,255,255,0.05);border-radius:3px;padding:1px 5px;border:1px solid rgba(255,255,255,0.1)">${mac}</span>`:''}
       ${eng?`<span style="font-size:10px;color:${engCol};background:rgba(255,255,255,0.05);border-radius:3px;padding:1px 5px;border:1px solid rgba(255,255,255,0.1)">${eng}</span>`:''}
     </span>`;
-    let content='';
-    if(isBracket&&s.reason){
+
+    // ── TP / SL price boxes + R:R bar ─────────────────────────────────────
+    const tp=s.tp||0; const sl=s.sl||0; const entry=s.price||0;
+    let tpSlRow='';
+    if(!isBracket && tp>0 && sl>0 && entry>0){
+      const isLong=s.side==='LONG';
+      const tpDist=Math.abs(tp-entry);
+      const slDist=Math.abs(sl-entry);
+      const rr=slDist>0?(tpDist/slDist):0;
+      const rrColor=rr>=2?'var(--green)':rr>=1.5?'var(--amber)':'var(--red)';
+      // R:R bar: green portion = tp distance, red = sl distance, proportional
+      const total=tpDist+slDist;
+      const tpPct=total>0?Math.round(tpDist/total*100):50;
+      const slPct=100-tpPct;
+      // Determine decimal places from price magnitude
+      const dec=entry>100?2:entry>1?4:5;
+      tpSlRow=`<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">
+        <span style="font-size:10px;color:var(--t2);min-width:36px">ENTRY</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--amber);background:rgba(255,214,0,0.1);border:1px solid rgba(255,214,0,0.3);border-radius:3px;padding:1px 7px">${entry.toFixed(dec)}</span>
+        <span style="font-size:10px;color:var(--t2)">→</span>
+        <span style="font-size:10px;color:var(--green);font-weight:700">TP</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--green);background:rgba(0,217,126,0.12);border:1px solid rgba(0,217,126,0.4);border-radius:3px;padding:1px 7px">${tp.toFixed(dec)}</span>
+        <span style="font-size:10px;color:var(--t2);margin-left:2px">(${isLong?'+':'−'}${tpDist.toFixed(dec)})</span>
+        <span style="font-size:10px;color:var(--red);font-weight:700;margin-left:4px">SL</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--red);background:rgba(255,51,85,0.12);border:1px solid rgba(255,51,85,0.4);border-radius:3px;padding:1px 7px">${sl.toFixed(dec)}</span>
+        <span style="font-size:10px;color:var(--t2);margin-left:2px">(${isLong?'−':'+'}${slDist.toFixed(dec)})</span>
+        <span style="display:inline-flex;align-items:center;gap:4px;margin-left:6px">
+          <div style="width:48px;height:5px;border-radius:3px;overflow:hidden;display:flex">
+            <div style="width:${tpPct}%;background:rgba(0,217,126,0.7)"></div>
+            <div style="width:${slPct}%;background:rgba(255,51,85,0.7)"></div>
+          </div>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:${rrColor};font-weight:700">${rr.toFixed(1)}R</span>
+        </span>
+      </div>`;
+    } else if(isBracket && s.reason){
+      // Bracket: show HI/LO levels from reason string
       const hiM=s.reason.match(/HI:([\d.]+)/);
       const loM=s.reason.match(/LO:([\d.]+)/);
       const hi=hiM?parseFloat(hiM[1]):0;
       const lo=loM?parseFloat(loM[1]):0;
       const range=hi&&lo?(hi-lo).toFixed(2):'--';
-      content=`<span style="display:inline-flex;gap:8px;align-items:center;margin-left:4px">
+      tpSlRow=`<div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+        <span style="font-size:10px;color:var(--t2)">RANGE</span>
         <span style="background:rgba(0,217,126,0.15);border:1px solid var(--green);border-radius:3px;padding:1px 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--green)">▲ ${hi>0?hi.toFixed(2):'--'}</span>
         <span style="background:rgba(255,51,85,0.15);border:1px solid var(--red);border-radius:3px;padding:1px 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--red)">▼ ${lo>0?lo.toFixed(2):'--'}</span>
         <span style="color:var(--t2);font-size:11px">Δ${range}</span>
-      </span>`;
-    } else {
-      content=`<span style="color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:11px;margin-left:4px">${s.reason||''}</span>`;
+      </div>`;
     }
+
     const sc=isBracket?'var(--amber)':s.side==='LONG'?'var(--green)':'var(--red)';
     const sideLabel=isBracket?'BRACKET ⟺':s.side;
-    return `<div class="sig-row" style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);opacity:${1-i*0.15}">
-      <span style="color:var(--blue);font-weight:700;min-width:72px;display:inline-block">${s.symbol||'--'}</span>
-      <span style="color:${sc};font-weight:700;min-width:60px;display:inline-block">${sideLabel}</span>
-      ${!isBracket?`<span style="font-family:'IBM Plex Mono',monospace;font-size:13px;min-width:80px;display:inline-block">${(s.price||0).toFixed(2)}</span>`:''}
-      ${content}${regimeBadges}${age}
+    const reasonLabel=!isBracket?`<span style="color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:11px;margin-left:4px">${s.reason||''}</span>`:'';
+    return `<div class="sig-row" style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);opacity:${1-i*0.15}">
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px">
+        <span style="color:var(--blue);font-weight:700;min-width:72px;display:inline-block">${s.symbol||'--'}</span>
+        <span style="color:${sc};font-weight:700;min-width:60px;display:inline-block">${sideLabel}</span>
+        ${reasonLabel}${regimeBadges}${age}
+      </div>
+      ${tpSlRow}
     </div>`;
   }).join('');
 }

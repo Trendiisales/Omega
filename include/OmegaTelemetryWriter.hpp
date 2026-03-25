@@ -189,6 +189,8 @@ struct OmegaTelemetrySnapshot
     char   sig_symbol    [MAX_SIGNAL_HISTORY][16];
     char   sig_side      [MAX_SIGNAL_HISTORY][8];   // "LONG" / "SHORT"
     double sig_price     [MAX_SIGNAL_HISTORY];
+    double sig_tp        [MAX_SIGNAL_HISTORY];      // take-profit price
+    double sig_sl        [MAX_SIGNAL_HISTORY];      // stop-loss price
     char   sig_reason    [MAX_SIGNAL_HISTORY][64];
     char   sig_sup_regime[MAX_SIGNAL_HISTORY][32];  // supervisor regime e.g. "EXPANSION_BREAKOUT"
     char   sig_macro     [MAX_SIGNAL_HISTORY][16];  // macro regime e.g. "RISK_ON"
@@ -319,6 +321,8 @@ public:
                 m_snap->sig_symbol[i][0]     = '\0';
                 strcpy_s(m_snap->sig_side[i], "NONE");
                 m_snap->sig_price[i]         = 0.0;
+                m_snap->sig_tp[i]            = 0.0;
+                m_snap->sig_sl[i]            = 0.0;
                 m_snap->sig_reason[i][0]     = '\0';
                 m_snap->sig_sup_regime[i][0] = '\0';
                 m_snap->sig_macro[i][0]      = '\0';
@@ -477,7 +481,8 @@ public:
     }
 
     void UpdateLastSignal(const char* sym, const char* side, double price, const char* reason,
-                          const char* sup_regime = "", const char* macro_regime = "", const char* engine_type = "BREAKOUT")
+                          const char* sup_regime = "", const char* macro_regime = "", const char* engine_type = "BREAKOUT",
+                          double tp = 0.0, double sl = 0.0)
     {
         if (!m_snap) return;
         // Push new signal into ring buffer (newest at index sig_head)
@@ -485,6 +490,8 @@ public:
         strcpy_s(m_snap->sig_symbol[idx],     sym);
         strcpy_s(m_snap->sig_side[idx],       side);
         m_snap->sig_price[idx]              = price;
+        m_snap->sig_tp[idx]                 = tp;
+        m_snap->sig_sl[idx]                 = sl;
         strcpy_s(m_snap->sig_reason[idx],     reason);
         strcpy_s(m_snap->sig_sup_regime[idx], sup_regime    ? sup_regime    : "");
         strcpy_s(m_snap->sig_macro[idx],      macro_regime  ? macro_regime  : "");
