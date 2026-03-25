@@ -621,8 +621,9 @@ struct BracketTrendState {
 
 static std::unordered_map<std::string, BracketTrendState> g_bracket_trend;
 
-// Tracks clOrdIds that were placed as pyramid (add-on) entries.
-// On SL_HIT, if clOrdId is in this set, records last_pyramid_sl_ms to enforce cooldown.
+// Tracks which symbols currently have an active pyramid (add-on) bracket arm.
+// Set when a pyramid bracket fires; cleared on any close for that symbol.
+// On SL_HIT while symbol is in this set → records last_pyramid_sl_ms.
 static std::unordered_set<std::string> g_pyramid_clordids;
 
 // ── Per-symbol supervisors — one per traded symbol ────────────────────────────
@@ -3374,16 +3375,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // If this closing trade was a pyramid entry that hit SL, record the
             // timestamp. pyramid_allowed() will block new pyramids for 2 minutes.
             if (!profitable && tr.exitReason == std::string("SL_HIT")) {
-                if (g_pyramid_clordids.count(tr.clOrdId)) {
+                if (g_pyramid_clordids.count(tr.symbol)) {
                     g_bracket_trend[tr.symbol].last_pyramid_sl_ms = now_ms_bc;
                     printf("[PYRAMID-SL-COOLDOWN] %s pyramid SL hit — blocking new pyramids for 120s\n",
                            tr.symbol.c_str());
-                    g_pyramid_clordids.erase(tr.clOrdId);
                 }
-            } else {
-                // Clean up successfully closed pyramid entries
-                g_pyramid_clordids.erase(tr.clOrdId);
             }
+            // Clear pyramid flag on any close (win, loss, or BE)
+            g_pyramid_clordids.erase(tr.symbol);
         }
 
         // Only send a market close order for reasons where the BROKER has no
@@ -3842,10 +3841,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             bracket_eng.pending_long_clOrdId  = long_id;
             bracket_eng.pending_short_clOrdId = short_id;
-            // Tag pyramid orders so bracket_on_close can enforce SL cooldown
+            // Tag pyramid arms so bracket_on_close can enforce SL cooldown
             if (is_pyramiding) {
-                if (!long_id.empty())  g_pyramid_clordids.insert(long_id);
-                if (!short_id.empty()) g_pyramid_clordids.insert(short_id);
+                g_pyramid_clordids.insert(sym);
             }
             ++trades_this_min;
         }
@@ -4738,10 +4736,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                     g_bracket_gold.pending_long_clOrdId  = long_id;
                     g_bracket_gold.pending_short_clOrdId = short_id;
-                    // Tag pyramid orders so bracket_on_close can enforce SL cooldown
+                    // Tag pyramid arms so bracket_on_close can enforce SL cooldown
                     if (gold_is_pyramiding) {
-                        if (!long_id.empty())  g_pyramid_clordids.insert(long_id);
-                        if (!short_id.empty()) g_pyramid_clordids.insert(short_id);
+                        g_pyramid_clordids.insert(std::string("GOLD.F"));
                     }
                     ++g_bracket_gold_trades_this_minute;
                 }
