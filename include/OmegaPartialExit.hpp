@@ -257,6 +257,14 @@ public:
         return (it != states_.end()) ? it->second.tp1_done : false;
     }
 
+    // Returns the direction of the open entry (true=long, false=short).
+    // Only valid when active(symbol) == true.
+    bool entry_is_long(const std::string& symbol) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it = states_.find(symbol);
+        return (it != states_.end()) ? it->second.is_long : false;
+    }
+
 private:
     mutable std::mutex mtx_;
     std::unordered_map<std::string, PartialExitState> states_;

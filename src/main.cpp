@@ -3836,33 +3836,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         using PE = omega::partial::CloseAction;
         const PE act = g_partial_exit.tick(sym, mid, bid, ask, pe_price, pe_lot);
         if (act == PE::PARTIAL || act == PE::FULL) {
-            // Determine close direction (opposite of entry)
-            // We need to know whether the open position is long or short.
-            // Use the CRTP engine state for named symbols; fall back to partial state.
-            const bool close_is_long = [&]() -> bool {
-                if (sym == "US500.F") return !g_eng_sp.pos.is_long;
-                if (sym == "USTEC.F") return !g_eng_nq.pos.is_long;
-                if (sym == "USOIL.F") return !g_eng_cl.pos.is_long;
-                if (sym == "DJ30.F")  return !g_eng_us30.pos.is_long;
-                if (sym == "NAS100")  return !g_eng_nas100.pos.is_long;
-                if (sym == "GER40")   return !g_eng_ger30.pos.is_long;
-                if (sym == "UK100")   return !g_eng_uk100.pos.is_long;
-                if (sym == "ESTX50")  return !g_eng_estx50.pos.is_long;
-                if (sym == "XAGUSD")  return !g_eng_xag.pos.is_long;
-                if (sym == "EURUSD")  return !g_eng_eurusd.pos.is_long;
-                if (sym == "GBPUSD")  return !g_eng_gbpusd.pos.is_long;
-                if (sym == "AUDUSD")  return !g_eng_audusd.pos.is_long;
-                if (sym == "NZDUSD")  return !g_eng_nzdusd.pos.is_long;
-                if (sym == "USDJPY")  return !g_eng_usdjpy.pos.is_long;
-                if (sym == "BRENT")   return !g_eng_brent.pos.is_long;
-                return false; // fallback
-            }();
+            // Close direction = opposite of the entry direction stored at arm() time.
+            // entry_is_long() retrieves the is_long field from PartialExitState directly —
+            // valid for all symbols including GOLD.F where we can't query engine state.
+            const bool close_is_long = !g_partial_exit.entry_is_long(sym);
             if (g_cfg.mode == "LIVE") {
-                // Send partial/final close order
                 send_live_order(sym, close_is_long, pe_lot, pe_price);
-                std::printf("[PARTIAL-EXIT] %s %s close %.2f lots @ %.5f\n",
+                std::printf("[PARTIAL-EXIT] %s %s close %.2f lots @ %.5f  entry_long=%d\n",
                             sym.c_str(),
                             act == PE::PARTIAL ? "PARTIAL" : "FINAL",
+                            pe_lot, pe_price, g_partial_exit.entry_is_long(sym) ? 1 : 0);
+            } else {
+                // SHADOW: log only — engine will manage SL/TP server-side
+                std::printf("[PARTIAL-EXIT][SHADOW] %s %s %.2f lots @ %.5f\n",
+                            sym.c_str(),
+                            act == PE::PARTIAL ? "TP1-HIT" : "TP2/TRAIL-HIT",
                             pe_lot, pe_price);
             }
             if (act == PE::FULL) {
