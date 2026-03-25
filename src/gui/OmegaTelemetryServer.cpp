@@ -313,6 +313,32 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         result += l2;
     }
 
+    // Real-time cluster dollar exposure
+    {
+        char ex[256];
+        snprintf(ex, sizeof(ex),
+            ",\"exposure_us_equity\":%.2f,\"exposure_eu_equity\":%.2f"
+            ",\"exposure_oil\":%.2f,\"exposure_metals\":%.2f"
+            ",\"exposure_jpy_risk\":%.2f,\"exposure_eur_gbp\":%.2f"
+            ",\"exposure_total\":%.2f",
+            s->exposure_us_equity, s->exposure_eu_equity,
+            s->exposure_oil,       s->exposure_metals,
+            s->exposure_jpy_risk,  s->exposure_eur_gbp,
+            s->exposure_total);
+        result += ex;
+    }
+
+    // Multi-day throttle state
+    {
+        char md[128];
+        snprintf(md, sizeof(md),
+            ",\"multiday_consec_loss_days\":%d,\"multiday_scale\":%.2f,\"multiday_throttle_active\":%d",
+            s->multiday_consec_loss_days,
+            s->multiday_scale,
+            s->multiday_throttle_active);
+        result += md;
+    }
+
     // open_positions array — drives green "LIVE ●" highlight in engine cells.
     // Derived from snapshot phase fields (IN_TRADE=3 for breakout, LIVE=3 for bracket,
     // active=1 for cross-asset). No extra snapshot fields needed.

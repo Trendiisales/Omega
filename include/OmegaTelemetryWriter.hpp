@@ -3,6 +3,8 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
+#include <vector>
 
 // ==============================================================================
 // OmegaTelemetrySnapshot — shared memory block written by main loop,
@@ -250,11 +252,27 @@ struct OmegaTelemetrySnapshot
     int64_t cost_guard_blocked_total;
     int64_t cost_guard_passed_total;
 
-    // --- L2 imbalance per symbol (0.0=ask-heavy 0.5=neutral 1.0=bid-heavy) ---
+    // L2 imbalance per symbol (0.0=ask-heavy 0.5=neutral 1.0=bid-heavy)
     double l2_sp, l2_nq, l2_dj, l2_nas, l2_cl, l2_brent;
     double l2_gold, l2_xag, l2_ger, l2_uk, l2_estx;
     double l2_eur, l2_gbp, l2_aud, l2_nzd, l2_jpy;
     int    l2_active;  // 1 = cTrader depth feed live
+
+    // --- Real-time dollar exposure per correlation cluster ---
+    // Each value = sum of (lot * tick_value_multiplier) for all OPEN positions in cluster.
+    // Positive = net long exposure in USD notional, negative = net short.
+    double exposure_us_equity;  // US500, USTEC, DJ30, NAS100
+    double exposure_eu_equity;  // GER40, UK100, ESTX50
+    double exposure_oil;        // USOIL.F, BRENT
+    double exposure_metals;     // GOLD.F, XAGUSD
+    double exposure_jpy_risk;   // USDJPY, AUDUSD, NZDUSD
+    double exposure_eur_gbp;    // EURUSD, GBPUSD
+    double exposure_total;      // sum of |cluster| across all clusters
+
+    // --- Multi-day drawdown throttle state ---
+    int    multiday_consec_loss_days;  // consecutive losing sessions
+    double multiday_scale;             // current size multiplier (0.5 or 1.0)
+    int    multiday_throttle_active;   // 1 = throttle currently firing
 };
 
 // ==============================================================================
@@ -522,6 +540,32 @@ public:
         m_snap->l2_eur=eur; m_snap->l2_gbp=gbp; m_snap->l2_aud=aud;
         m_snap->l2_nzd=nzd; m_snap->l2_jpy=jpy;
         m_snap->l2_active=active;
+    }
+
+    // Update real-time cluster dollar exposure.
+    // Each value is the net USD notional (lot * tick_value_mult * direction) for open positions.
+    void UpdateExposure(double us_equity, double eu_equity, double oil,
+                        double metals,   double jpy_risk,  double eur_gbp)
+    {
+        if (!m_snap) return;
+        m_snap->exposure_us_equity = us_equity;
+        m_snap->exposure_eu_equity = eu_equity;
+        m_snap->exposure_oil       = oil;
+        m_snap->exposure_metals    = metals;
+        m_snap->exposure_jpy_risk  = jpy_risk;
+        m_snap->exposure_eur_gbp   = eur_gbp;
+        m_snap->exposure_total     = std::fabs(us_equity) + std::fabs(eu_equity)
+                                   + std::fabs(oil)       + std::fabs(metals)
+                                   + std::fabs(jpy_risk)  + std::fabs(eur_gbp);
+    }
+
+    // Update multi-day throttle state for GUI display.
+    void UpdateMultiDayThrottle(int consec_loss_days, double scale, int active)
+    {
+        if (!m_snap) return;
+        m_snap->multiday_consec_loss_days = consec_loss_days;
+        m_snap->multiday_scale            = scale;
+        m_snap->multiday_throttle_active  = active;
     }
 
     void UpdateGovernor(int spread, int lat, int pnl, int pos, int consec)

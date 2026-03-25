@@ -32,6 +32,12 @@
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
+#include <ctime>
+#include <fstream>
+#include <functional>
+#include <iomanip>
+#include <sstream>
 
 namespace omega { namespace risk {
 
@@ -229,6 +235,127 @@ struct DrawdownThrottle {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 3b. MultiDayDrawdownThrottle
+//     Persistent memory of session-end PnL across UTC days.
+//     Written to logs/day_results.csv at rollover; read back on startup.
+//     Logic: 3+ consecutive losing days → halve all sizes next session.
+//            1 winning day resets the streak.
+//
+//     File format (append-only, one row per day):
+//       unix_day_number,YYYY-MM-DD,net_pnl_usd
+//
+//     Usage:
+//       At startup:   g_adaptive_risk.multiday.load(path);
+//       At rollover:  g_adaptive_risk.multiday.record_day(date_str, net_pnl, path);
+//       Before entry: double scale = g_adaptive_risk.multiday.size_scale();
+// ─────────────────────────────────────────────────────────────────────────────
+struct MultiDayDrawdownThrottle {
+    int    trigger_days   = 3;     // consecutive losing days before throttle fires
+    double throttle_scale = 0.50;  // multiply sizes by this when throttle active
+
+    struct DayRecord {
+        int    day_number;   // unix day (time_t / 86400)
+        char   date_str[16]; // "YYYY-MM-DD"
+        double net_pnl;
+    };
+
+    std::deque<DayRecord> history;   // up to last 30 days
+    mutable std::mutex    mtx;
+
+    // Load history from CSV on startup. Safe to call if file doesn't exist yet.
+    void load(const std::string& path) noexcept {
+        std::lock_guard<std::mutex> lk(mtx);
+        history.clear();
+        std::ifstream f(path);
+        if (!f.is_open()) return;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            int day_num = 0; char date[16] = {}; double pnl = 0.0;
+            if (sscanf(line.c_str(), "%d,%15[^,],%lf", &day_num, date, &pnl) == 3) {
+                DayRecord r;
+                r.day_number = day_num;
+                strncpy(r.date_str, date, 15); r.date_str[15] = '\0';
+                r.net_pnl = pnl;
+                history.push_back(r);
+            }
+        }
+        // Keep only last 30 days
+        while ((int)history.size() > 30) history.pop_front();
+        std::printf("[MULTIDAY-THROTTLE] Loaded %d day records from %s\n",
+                    (int)history.size(), path.c_str());
+    }
+
+    // Record today's session result and append to CSV. Call at UTC rollover.
+    void record_day(const std::string& date_str, double net_pnl,
+                    const std::string& path) noexcept {
+        std::lock_guard<std::mutex> lk(mtx);
+        const int64_t t = static_cast<int64_t>(std::time(nullptr));
+        const int day_num = static_cast<int>(t / 86400);
+
+        // Avoid duplicate for same day
+        if (!history.empty() && history.back().day_number == day_num) {
+            history.back().net_pnl = net_pnl; // update in-place
+        } else {
+            DayRecord r;
+            r.day_number = day_num;
+            strncpy(r.date_str, date_str.c_str(), 15); r.date_str[15] = '\0';
+            r.net_pnl = net_pnl;
+            history.push_back(r);
+            while ((int)history.size() > 30) history.pop_front();
+        }
+
+        // Append to CSV
+        std::ofstream f(path, std::ios::app);
+        if (f.is_open()) {
+            f << day_num << ',' << date_str << ',' << std::fixed
+              << std::setprecision(2) << net_pnl << '\n';
+            f.flush();
+        }
+
+        // Log streak state
+        const int streak = consecutive_losing_days_locked();
+        std::printf("[MULTIDAY-THROTTLE] Day %s net=$%.2f  consec_loss_streak=%d  scale=%.2f\n",
+                    date_str.c_str(), net_pnl, streak,
+                    streak >= trigger_days ? throttle_scale : 1.0);
+    }
+
+    // How many consecutive losing days are at the tail of history?
+    int consecutive_losing_days() const noexcept {
+        std::lock_guard<std::mutex> lk(mtx);
+        return consecutive_losing_days_locked();
+    }
+
+    // Returns the size multiplier to apply at the START of a new session.
+    // (0.50 when throttle active, 1.0 otherwise)
+    double size_scale() const noexcept {
+        const int streak = consecutive_losing_days();
+        if (streak >= trigger_days) {
+            std::printf("[MULTIDAY-THROTTLE] ACTIVE — %d consecutive losing days → scale=%.2f\n",
+                        streak, throttle_scale);
+            return throttle_scale;
+        }
+        return 1.0;
+    }
+
+    // Is the multi-day throttle currently active?
+    bool is_active() const noexcept {
+        return consecutive_losing_days() >= trigger_days;
+    }
+
+private:
+    // Called with lock already held
+    int consecutive_losing_days_locked() const noexcept {
+        int streak = 0;
+        for (auto it = history.rbegin(); it != history.rend(); ++it) {
+            if (it->net_pnl < 0.0) ++streak;
+            else break;
+        }
+        return streak;
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 4. CorrelationHeatGuard
 //    Prevents stacking highly correlated positions simultaneously.
 //    Symbols are grouped by asset class / correlation cluster.
@@ -394,14 +521,31 @@ public:
     bool   dd_throttle_enabled    = true;
     bool   corr_heat_enabled      = true;
     bool   vol_regime_enabled     = true;
+    bool   multiday_throttle_enabled = true;
+    bool   fill_quality_enabled   = true;
+
+    // Fill quality size reduction when adverse selection detected (default 70%)
+    double fill_quality_scale     = 0.70;
+    // Minimum fills before fill-quality reduction fires (mirrors FillQualityTracker::window)
+    int    fill_quality_min_fills = 10;
 
     // Per-symbol performance trackers — keyed by canonical symbol name
     std::unordered_map<std::string, SymbolPerformanceTracker> perf;
 
-    KellySizer               kelly;
-    DrawdownThrottle         dd_throttle;
-    CorrelationHeatGuard     corr_heat;
-    VolatilityRegimeScaler   vol_scaler;
+    KellySizer                  kelly;
+    DrawdownThrottle            dd_throttle;
+    MultiDayDrawdownThrottle    multiday;
+    CorrelationHeatGuard        corr_heat;
+    VolatilityRegimeScaler      vol_scaler;
+
+    // Non-owning pointer to OmegaEdges::FillQualityTracker set by main.cpp at startup.
+    // Declared as void* to avoid circular include; cast on use via a template accessor.
+    // In practice main.cpp calls set_fill_quality_tracker(&g_edges.fill_quality).
+    void* fill_quality_tracker_ptr = nullptr;
+
+    // Setter called by main.cpp — pass &g_edges.fill_quality
+    template<typename T>
+    void set_fill_quality_tracker(T* ptr) { fill_quality_tracker_ptr = static_cast<void*>(ptr); }
 
     // ── Record a closed trade ─────────────────────────────────────────────────
     void record_trade(const std::string& symbol, double net_pnl, double hold_sec) {
@@ -453,7 +597,7 @@ public:
             lot *= vol_scaler.size_scale(symbol);
         }
 
-        // 3. Drawdown throttle
+        // 3. Intra-session drawdown throttle
         if (dd_throttle_enabled) {
             const double dd_mult = dd_throttle.combined_scale(
                 daily_loss_usd, daily_limit_usd, consec_losses);
@@ -464,10 +608,37 @@ public:
             }
         }
 
+        // 4. Multi-day drawdown throttle (applied on top of intra-session)
+        if (multiday_throttle_enabled) {
+            const double md_mult = multiday.size_scale();
+            if (md_mult < 1.0) {
+                std::printf("[ADAPTIVE-RISK] %s multiday_throttle=%.2f (consec_loss_days=%d)\n",
+                            symbol.c_str(), md_mult, multiday.consecutive_losing_days());
+                lot *= md_mult;
+            }
+        }
+
+        // 5. Fill quality adverse selection reduction
+        // Wired via fill_quality_tracker_ptr to avoid circular include.
+        // The FillQualityTracker interface is duck-typed via a small inline lambda.
+        if (fill_quality_enabled && fill_quality_tracker_ptr) {
+            // We call adverse_selection_detected() via a function pointer trick.
+            // To avoid including OmegaEdges.hpp here, we use a registered callback.
+            if (fill_quality_check_fn && fill_quality_check_fn(symbol)) {
+                std::printf("[ADAPTIVE-RISK] %s fill_quality_reduction=%.2f (adverse selection)\n",
+                            symbol.c_str(), fill_quality_scale);
+                lot *= fill_quality_scale;
+            }
+        }
+
         // Floor to 0.01 lots, round to 2dp
         lot = std::max(0.01, std::floor(lot * 100.0 + 0.5) / 100.0);
         return lot;
     }
+
+    // Callback registered by main.cpp: returns true if adverse selection detected
+    // for this symbol. Avoids circular include between AdaptiveRisk and OmegaEdges.
+    std::function<bool(const std::string&)> fill_quality_check_fn;
 
     // ── Correlation heat check ─────────────────────────────────────────────────
     // Returns false if opening a new position in this symbol would exceed

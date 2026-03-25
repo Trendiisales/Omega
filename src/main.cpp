@@ -2768,6 +2768,28 @@ static void maybe_reset_daily_ledger() {
     g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
     g_edges.reset_daily();  // resets CVD session hi/lo; prev_day updates via on_tick
     g_edges.fill_quality.print_summary();  // log fill quality summary at rollover
+
+    // Multi-day throttle: record this session's final PnL before resetting the ledger.
+    // Must happen BEFORE g_omegaLedger.resetDaily() would clear it — but resetDaily()
+    // already ran above, so we use dailyPnl() which reads the just-reset value.
+    // Instead, snapshot net pnl from g_telem which holds the last written value.
+    {
+        const double session_pnl = g_omegaLedger.dailyPnl();  // 0 after reset — get BEFORE
+        // Format date string for the day that just ended
+        char date_buf[16];
+        // ti was computed above from system_clock; use it for the closing date
+        snprintf(date_buf, sizeof(date_buf), "%04d-%02d-%02d",
+                 ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday);
+        // Snap pnl from telemetry writer which holds the last-broadcast value
+        const double snap_pnl = g_telem.snap() ? g_telem.snap()->daily_pnl : 0.0;
+        const std::string md_path = log_root_dir() + "/day_results.csv";
+        g_adaptive_risk.multiday.record_day(std::string(date_buf), snap_pnl, md_path);
+        const int streak      = g_adaptive_risk.multiday.consecutive_losing_days();
+        const double md_scale = g_adaptive_risk.multiday.size_scale();
+        g_telem.UpdateMultiDayThrottle(streak, md_scale,
+                                       g_adaptive_risk.multiday.is_active() ? 1 : 0);
+    }
+
     std::cout << "[OMEGA-RISK] UTC day rollover — per-symbol risk state reset\n";
 }
 
@@ -5331,6 +5353,90 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         ca("CARRY_UNW",  "USDJPY",  g_ca_carry_unwind.has_open_position(), false, 0,0,0, 0.0, 0);
     }
 
+    // ── Real-time cluster dollar exposure ─────────────────────────────────────────
+    // Computed every tick from phase==IN_TRADE (3) and open ca_engine positions.
+    // Dollar notional = lot_size * tick_value_multiplier(symbol) * direction (1=long, -1=short).
+    // For breakout/bracket engines, lot_size is not directly in the snapshot, so we
+    // use a fixed 1.0 sentinel scaled by tick_value_multiplier to give relative cluster weight.
+    // Exact lot sizing is in the trade ledger; this is for real-time directional exposure.
+    {
+        // Helper: net dollar exposure for one open position slot
+        // phase==3 (IN_TRADE for breakout, LIVE for bracket) = position open
+        // For engines that have ca_engine active flags, use those (more precise).
+        auto eng_exposure = [](int phase, double lot, double tick_mult, int is_long_hint=1) -> double {
+            if (phase != 3) return 0.0;
+            return lot * tick_mult * (is_long_hint >= 0 ? 1.0 : -1.0);
+        };
+
+        double exp_us = 0.0, exp_eu = 0.0, exp_oil = 0.0;
+        double exp_metals = 0.0, exp_jpy = 0.0, exp_egbp = 0.0;
+
+        const auto* sn = g_telemetry.snap();
+        if (sn) {
+            // Use cross-asset engine live states (have direction) for all cluster symbols
+            for (int i = 0; i < sn->ca_engine_count; ++i) {
+                const auto& e = sn->ca_engines[i];
+                if (!e.active) continue;
+                const double tm = tick_value_multiplier(e.symbol);
+                // We use 1.0 lot as a relative unit; actual lot unknown from snapshot
+                const double dir = e.is_long ? 1.0 : -1.0;
+                const double notional = tm * dir;
+                const std::string sym(e.symbol);
+                using CL = omega::risk::CorrCluster;
+                switch (omega::risk::symbol_to_cluster(sym)) {
+                    case CL::US_EQUITY: exp_us    += notional; break;
+                    case CL::EU_EQUITY: exp_eu    += notional; break;
+                    case CL::OIL:       exp_oil   += notional; break;
+                    case CL::METALS:    exp_metals+= notional; break;
+                    case CL::JPY_RISK:  exp_jpy   += notional; break;
+                    case CL::EUR_GBP:   exp_egbp  += notional; break;
+                    default: break;
+                }
+            }
+            // Supplement with breakout/bracket phase==3 for symbols not covered by ca_engines
+            // (breakout engines don't store direction in snapshot; use +1 as unsigned exposure)
+            auto add_bkt = [&](int phase, const char* sym) {
+                if (phase != 3) return;
+                const double tm = tick_value_multiplier(sym);
+                const std::string s(sym);
+                using CL = omega::risk::CorrCluster;
+                switch (omega::risk::symbol_to_cluster(s)) {
+                    case CL::US_EQUITY: exp_us    += tm; break;
+                    case CL::EU_EQUITY: exp_eu    += tm; break;
+                    case CL::OIL:       exp_oil   += tm; break;
+                    case CL::METALS:    exp_metals+= tm; break;
+                    case CL::JPY_RISK:  exp_jpy   += tm; break;
+                    case CL::EUR_GBP:   exp_egbp  += tm; break;
+                    default: break;
+                }
+            };
+            add_bkt(sn->sp_phase,     "US500.F");
+            add_bkt(sn->nq_phase,     "USTEC.F");
+            add_bkt(sn->cl_phase,     "USOIL.F");
+            add_bkt(sn->xau_phase,    "GOLD.F");
+            add_bkt(sn->brent_phase,  "BRENT");
+            add_bkt(sn->xag_phase,    "XAGUSD");
+            add_bkt(sn->eurusd_phase, "EURUSD");
+            add_bkt(sn->gbpusd_phase, "GBPUSD");
+            add_bkt(sn->audusd_phase, "AUDUSD");
+            add_bkt(sn->nzdusd_phase, "NZDUSD");
+            add_bkt(sn->usdjpy_phase, "USDJPY");
+            add_bkt(sn->bkt_sp.phase,    "US500.F");
+            add_bkt(sn->bkt_nq.phase,    "USTEC.F");
+            add_bkt(sn->bkt_us30.phase,  "DJ30.F");
+            add_bkt(sn->bkt_nas.phase,   "NAS100");
+            add_bkt(sn->bkt_ger.phase,   "GER40");
+            add_bkt(sn->bkt_uk.phase,    "UK100");
+            add_bkt(sn->bkt_estx.phase,  "ESTX50");
+            add_bkt(sn->bkt_xag.phase,   "XAGUSD");
+            add_bkt(sn->bkt_gold.phase,  "GOLD.F");
+            add_bkt(sn->bkt_eur.phase,   "EURUSD");
+            add_bkt(sn->bkt_gbp.phase,   "GBPUSD");
+            add_bkt(sn->bkt_brent.phase, "BRENT");
+        }
+        g_telemetry.UpdateExposure(exp_us, exp_eu, exp_oil, exp_metals, exp_jpy, exp_egbp);
+    }
+
     if (g_telemetry.snap()) g_telemetry.snap()->uptime_sec =
         static_cast<int64_t>(std::time(nullptr)) - g_start_time;
 }  // ← on_tick
@@ -6770,10 +6876,13 @@ int main(int argc, char* argv[])
 
         // Adaptive risk: start with Kelly disabled for first 15 trades per symbol
         // (confidence ramps from 0→1 automatically as trades accumulate)
-        g_adaptive_risk.kelly_enabled         = true;
-        g_adaptive_risk.dd_throttle_enabled   = true;
-        g_adaptive_risk.corr_heat_enabled     = true;
-        g_adaptive_risk.vol_regime_enabled    = true;
+        g_adaptive_risk.kelly_enabled            = true;
+        g_adaptive_risk.dd_throttle_enabled      = true;
+        g_adaptive_risk.corr_heat_enabled        = true;
+        g_adaptive_risk.vol_regime_enabled       = true;
+        g_adaptive_risk.multiday_throttle_enabled = true;
+        g_adaptive_risk.fill_quality_enabled     = true;
+        g_adaptive_risk.fill_quality_scale       = 0.70;  // 30% size cut on adverse selection
 
         // Correlation cluster limits — 2 is the safe default for all clusters
         g_adaptive_risk.corr_heat.max_per_cluster_us_equity = 2;
@@ -6783,15 +6892,36 @@ int main(int argc, char* argv[])
         g_adaptive_risk.corr_heat.max_per_cluster_jpy_risk  = 2;
         g_adaptive_risk.corr_heat.max_per_cluster_eur_gbp   = 1;  // EURUSD or GBPUSD, not both
 
+        // Multi-day drawdown throttle: load history, log startup state
+        {
+            const std::string md_path = log_root_dir() + "/day_results.csv";
+            g_adaptive_risk.multiday.load(md_path);
+            const int streak      = g_adaptive_risk.multiday.consecutive_losing_days();
+            const double md_scale = g_adaptive_risk.multiday.size_scale();
+            g_telem.UpdateMultiDayThrottle(streak, md_scale,
+                                           g_adaptive_risk.multiday.is_active() ? 1 : 0);
+            if (g_adaptive_risk.multiday.is_active())
+                std::cout << "[MULTIDAY-THROTTLE] *** ACTIVE *** consec_loss=" << streak
+                          << " -> sizes halved this session\n";
+        }
+
+        // Wire fill quality adverse selection check into adjusted_lot().
+        // Lambda avoids circular include between OmegaAdaptiveRisk and OmegaEdges.
+        g_adaptive_risk.fill_quality_check_fn = [](const std::string& sym) -> bool {
+            return g_edges.fill_quality.adverse_selection_detected(sym);
+        };
+
         // Regime adaptor is enabled; in SHADOW mode it is informational only
         g_regime_adaptor.enabled = true;
 
         std::cout << "[ADAPTIVE] Kelly=" << (g_adaptive_risk.kelly_enabled ? "ON" : "OFF")
-                  << "  DDthrottle=" << (g_adaptive_risk.dd_throttle_enabled ? "ON" : "OFF")
-                  << "  CorrHeat=" << (g_adaptive_risk.corr_heat_enabled ? "ON" : "OFF")
-                  << "  VolRegime=" << (g_adaptive_risk.vol_regime_enabled ? "ON" : "OFF")
-                  << "  NewsBlackout=" << (g_news_blackout.enabled ? "ON" : "OFF")
-                  << "  PartialExit=" << (g_partial_exit.enabled ? "ON" : "OFF")
+                  << "  DDthrottle="    << (g_adaptive_risk.dd_throttle_enabled ? "ON" : "OFF")
+                  << "  CorrHeat="      << (g_adaptive_risk.corr_heat_enabled ? "ON" : "OFF")
+                  << "  VolRegime="     << (g_adaptive_risk.vol_regime_enabled ? "ON" : "OFF")
+                  << "  MultiDayDD="    << (g_adaptive_risk.multiday_throttle_enabled ? "ON" : "OFF")
+                  << "  FillQuality="   << (g_adaptive_risk.fill_quality_enabled ? "ON" : "OFF")
+                  << "  NewsBlackout="  << (g_news_blackout.enabled ? "ON" : "OFF")
+                  << "  PartialExit="   << (g_partial_exit.enabled ? "ON" : "OFF")
                   << "  RegimeAdaptor=" << (g_regime_adaptor.enabled ? "ON" : "OFF") << "\n";
 
         std::cout << "[ADAPTIVE] Corr cluster limits:"

@@ -227,6 +227,15 @@ td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:
 .gov-fill{height:100%;border-radius:2px;background:var(--amber);transition:width 0.5s;}
 .gov-n{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--amber);min-width:22px;text-align:right;}
 
+/* Cluster Exposure */
+.exp-row{display:flex;align-items:center;margin:3px 0;gap:6px;}
+.exp-lbl{font-size:10px;color:var(--t2);width:82px;flex-shrink:0;letter-spacing:0.3px;}
+.exp-track{flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;position:relative;}
+.exp-bar{height:100%;border-radius:3px;transition:width 0.4s,background 0.3s;position:absolute;top:0;}
+.exp-bar.long{background:var(--green);left:50%;}
+.exp-bar.short{background:var(--red);right:50%;}
+.exp-val{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;min-width:52px;text-align:right;}
+
 /* FIX session */
 .fix-item{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;
   border-bottom:1px solid var(--border);}
@@ -577,6 +586,27 @@ R"OMEGA5(
     </div>
 
 
+
+    <!-- Cluster Exposure + MultiDay Throttle -->
+    <div class="card" id="exposureCard">
+      <div class="card-hd"><span class="dot" style="background:var(--cyan)"></span>Live Cluster Exposure
+        <span id="mdThrottleBadge" style="display:none;margin-left:8px;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;background:rgba(255,80,80,0.2);color:var(--red);border:1px solid var(--red);letter-spacing:0.5px;text-transform:uppercase">&#9888; SIZES HALVED</span>
+      </div>
+      <div style="padding:4px 10px 0;font-size:9px;color:var(--t3);letter-spacing:0.4px;">USD notional per cluster (1 lot units) &bull; direction: green=long red=short</div>
+
+      <div style="padding:8px 10px 2px;">
+        <div class="exp-row" id="expUS">    <span class="exp-lbl">US EQUITY</span>  <div class="exp-track"><div class="exp-bar" id="expBarUS"></div></div>    <span class="exp-val" id="expValUS">$0</span></div>
+        <div class="exp-row" id="expEU">    <span class="exp-lbl">EU EQUITY</span>  <div class="exp-track"><div class="exp-bar" id="expBarEU"></div></div>    <span class="exp-val" id="expValEU">$0</span></div>
+        <div class="exp-row" id="expOIL">   <span class="exp-lbl">OIL</span>         <div class="exp-track"><div class="exp-bar" id="expBarOIL"></div></div>   <span class="exp-val" id="expValOIL">$0</span></div>
+        <div class="exp-row" id="expMET">   <span class="exp-lbl">METALS</span>      <div class="exp-track"><div class="exp-bar" id="expBarMET"></div></div>   <span class="exp-val" id="expValMET">$0</span></div>
+        <div class="exp-row" id="expJPY">   <span class="exp-lbl">JPY/AUD/NZD</span><div class="exp-track"><div class="exp-bar" id="expBarJPY"></div></div>   <span class="exp-val" id="expValJPY">$0</span></div>
+        <div class="exp-row" id="expEGB">   <span class="exp-lbl">EUR/GBP</span>     <div class="exp-track"><div class="exp-bar" id="expBarEGB"></div></div>   <span class="exp-val" id="expValEGB">$0</span></div>
+      </div>
+      <div style="padding:4px 10px 8px;display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:10px;color:var(--t2);">TOTAL <span id="expTotal" style="color:var(--t1);font-weight:700;margin-left:4px;">$0</span></div>
+        <div style="font-size:9px;color:var(--t3);">Losing days: <span id="mdConsecDays" style="color:var(--t2);font-weight:600;">0</span> &nbsp; Scale: <span id="mdScale" style="color:var(--t2);font-weight:600;">100%</span></div>
+      </div>
+    </div>
 
   </div><!-- /col-right -->
 
@@ -1115,6 +1145,48 @@ function updateDashboard(d){
     const b=document.getElementById('gbar'+id),ni=document.getElementById('gn'+id);
     if(b)b.style.width=(n/maxG*100)+'%';if(ni)ni.textContent=n;});
   txt('govTotal','Total: '+(gs+gl+gp+gpos+gc));
+
+  // ── Cluster Exposure panel ────────────────────────────────────────────────
+  {
+    const clusters=[
+      ['US',  safe(d.exposure_us_equity), 'expBarUS',  'expValUS'],
+      ['EU',  safe(d.exposure_eu_equity), 'expBarEU',  'expValEU'],
+      ['OIL', safe(d.exposure_oil),       'expBarOIL', 'expValOIL'],
+      ['MET', safe(d.exposure_metals),    'expBarMET', 'expValMET'],
+      ['JPY', safe(d.exposure_jpy_risk),  'expBarJPY', 'expValJPY'],
+      ['EGB', safe(d.exposure_eur_gbp),   'expBarEGB', 'expValEGB'],
+    ];
+    const maxExp=Math.max(1,...clusters.map(c=>Math.abs(c[1])));
+    clusters.forEach(([_,val,barId,valId])=>{
+      const bar=document.getElementById(barId);
+      const valEl=document.getElementById(valId);
+      if(bar){
+        const pct=Math.min(100,Math.abs(val)/maxExp*50); // 50% = max half of track
+        bar.className='exp-bar '+(val>=0?'long':'short');
+        bar.style.width=pct+'%';
+      }
+      if(valEl){
+        valEl.textContent=(val>=0?'+':'')+val.toFixed(0);
+        valEl.style.color=val>0?'var(--green)':val<0?'var(--red)':'var(--t2)';
+      }
+    });
+    const tot=safe(d.exposure_total);
+    const totEl=document.getElementById('expTotal');
+    if(totEl){totEl.textContent='$'+tot.toFixed(0);totEl.style.color=tot>5000?'var(--amber)':'var(--t1)';}
+  }
+
+  // ── Multi-day throttle badge ──────────────────────────────────────────────
+  {
+    const streak=safe(d.multiday_consec_loss_days);
+    const scale=safe(d.multiday_scale,1);
+    const active=safe(d.multiday_throttle_active);
+    const badge=document.getElementById('mdThrottleBadge');
+    if(badge) badge.style.display=active?'inline-block':'none';
+    const dEl=document.getElementById('mdConsecDays');
+    if(dEl){dEl.textContent=streak;dEl.style.color=streak>=2?'var(--amber)':streak>=3?'var(--red)':'var(--t2)';}
+    const sEl=document.getElementById('mdScale');
+    if(sEl){sEl.textContent=Math.round(scale*100)+'%';sEl.style.color=scale<1?'var(--red)':'var(--green)';}
+  }
 
   // Regime — header strip
   const vix=safe(d.vix_level),reg=d.macro_regime||'NEUTRAL',div=safe(d.es_nq_divergence);
