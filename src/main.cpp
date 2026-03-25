@@ -1205,6 +1205,9 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
 // Shadow mode keeps this at the configured account_equity value.
 // Used by compute_size() so risk_per_trade_usd scales with account growth.
 static std::atomic<double> g_live_equity{10000.0};
+// Note: std::atomic<double> is lock-free on MSVC x64 (confirmed for this platform).
+// is_always_lock_free may be false on some compilers even when runtime IS lock-free,
+// so we use a runtime check logged at startup rather than a static_assert.
 
 static double compute_size(const std::string& symbol,
                             double sl_abs,       // SL distance in price points
@@ -2982,13 +2985,19 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         notify(g_sup_usdjpy, "USDJPY");  notify(g_sup_brent,   "BRENT");
     }
 
-    // Equity-based sizing only applies in LIVE mode — in SHADOW there is no
-    // real money and updating equity from paper P&L would corrupt sizing.
+    // Update live equity in both LIVE and SHADOW modes.
+    // LIVE: real money compounds. SHADOW: paper PnL compounding makes shadow results
+    // comparable to what live would produce — without this, shadow always sizes from
+    // initial $10k even after profitable paper sessions.
+    {
+        const double updated_equity = g_cfg.account_equity + g_omegaLedger.cumulativePnl();
+        const double eq = std::max(updated_equity, 100.0);
+        g_live_equity.store(eq, std::memory_order_relaxed);
+        g_gold_flow.risk_dollars = eq * (g_cfg.risk_per_trade_usd / std::max(g_cfg.account_equity, 100.0));
+    }
     if (g_cfg.mode == "LIVE") {
         const double updated_equity = g_cfg.account_equity + g_omegaLedger.cumulativePnl();
         const double eq = std::max(updated_equity, 100.0);
-        g_live_equity.store(eq, std::memory_order_relaxed);  // feeds compute_size() equity scaling
-        g_gold_flow.risk_dollars = eq * (g_cfg.risk_per_trade_usd / std::max(g_cfg.account_equity, 100.0));
         g_eng_sp.ACCOUNT_EQUITY     = eq;
         g_eng_nq.ACCOUNT_EQUITY     = eq;
         g_eng_cl.ACCOUNT_EQUITY     = eq;
@@ -3161,7 +3170,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Regime adaptor: track macro regime changes + per-symbol vol regime
     g_regime_adaptor.update(regime, g_macroDetector.vixLevel(), nowSec());
     // Vol update: use half-spread as proxy for tick vol (avoids needing prev_mid)
-    g_regime_adaptor.update_vol(sym, (ask - bid) * 0.5, nowSec());
+    // update_vol needs actual mid price (for bucket high/low range), not half-spread.
+    // Passing half-spread was causing vol regime to track spread width, not price vol.
+    g_regime_adaptor.update_vol(sym, (bid + ask) * 0.5, nowSec());
     g_adaptive_risk.update_vol(sym, (ask - bid) * 0.5);
 
     // Correlation cluster counts — updated every tick for heat guard
@@ -5951,10 +5962,11 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         std::cout << "[OMEGA] LOGON ACCEPTED\n";
         g_quote_ready.store(true);
         g_connected_since.store(nowSec());
-        // Reset spread gate history on reconnect — stale medians from a
-        // prior session (e.g. Asia low-liquidity) would falsely block entries.
-        // History rebuilds in 20 ticks (~2-4 seconds at normal tick rates).
+        // Reset spread gate + CVD on reconnect.
+        // spread_gate: stale Asia medians would block valid London entries.
+        // cvd: stale prev_bid/prev_ask causes phantom delta on price-gapped reconnect.
         g_edges.spread_gate.reset_all();
+        g_edges.cvd.reset_all();  // clears prev_bid/prev_ask to prevent gap-spike CVD
         // Reset ORB range state — partial ranges built before disconnect
         // would fire immediately on the first qualifying tick post-reconnect.
         g_orb_us.reset_range();    g_orb_ger30.reset_range();
@@ -7674,10 +7686,14 @@ int main(int argc, char* argv[])
     if (g_daily_shadow_trade_log) g_daily_shadow_trade_log->close();
     g_trade_close_csv.close();
     g_shadow_csv.close();
-    // ── Edge systems shutdown — persist TOD data ──────────────────────────────
+    // ── Edge systems shutdown — persist TOD + Kelly data ─────────────────────
     g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
     g_edges.tod.print_worst(15);
     g_edges.fill_quality.print_summary();
+    // Save Kelly performance on shutdown (not just rollover) so intra-session
+    // trades survive process restart without re-warming for 15+ trades.
+    g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
+    g_adaptive_risk.print_summary();
     if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); delete g_tee_buf; g_tee_buf = nullptr; }
     WSACleanup();
     ReleaseMutex(g_singleton_mutex);

@@ -34,7 +34,8 @@ public:
     // DXY momentum thresholds — expressed as % change (e.g. 0.15 = 0.15% = 15bp)
     // Comparison: dxyReturn() returns fraction (e.g. 0.0015) vs threshold / 100
     double DXY_RISK_OFF_PCT  =  0.15;   // +0.15% DXY over window = risk-off signal
-    double DXY_RISK_ON_PCT   = -0.10;   // -0.10% DXY over window = confirms risk-on (unused, reserved)
+    // DXY_RISK_ON_PCT reserved for future: "falling DXY confirms RISK_ON" — not yet implemented
+    // double DXY_RISK_ON_PCT = -0.10;
 
     int DIV_WINDOW = 60;
     int DXY_WINDOW = 60;   // ticks for DXY momentum window

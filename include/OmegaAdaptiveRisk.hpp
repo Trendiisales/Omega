@@ -35,6 +35,7 @@
 #include <cstring>
 #include <ctime>
 #include <fstream>
+#include <unordered_set>
 #include <functional>
 #include <iomanip>
 #include <sstream>
@@ -140,25 +141,33 @@ struct SymbolPerformanceTracker {
 
     // Persist trade results to CSV — append-only
     // Format: timestamp,pnl,hold_sec
+    // Overwrite (not append) — write the current ring buffer as the canonical state.
+    // append caused the file to double on every restart, loading 5x data after 5 restarts.
     void save_csv(const std::string& path) const noexcept {
         std::lock_guard<std::mutex> lk(mtx_);
-        std::ofstream f(path, std::ios::app);
+        std::ofstream f(path, std::ios::trunc);  // overwrite — ring buffer IS the state
         if (!f.is_open()) return;
         for (const auto& r : buf_)
             f << r.ts << "," << r.pnl << "," << r.hold_sec << "\n";
     }
 
-    // Load trade history from CSV on startup
+    // Load trade history from CSV on startup.
+    // Deduplicates by timestamp — skips records already in buf_ to prevent
+    // double-counting if save/load cycle runs multiple times per session.
     void load_csv(const std::string& path) noexcept {
         std::lock_guard<std::mutex> lk(mtx_);
         std::ifstream f(path);
         if (!f.is_open()) return;
+        // Build set of existing timestamps for dedup
+        std::unordered_set<int64_t> existing;
+        for (const auto& r : buf_) existing.insert(r.ts);
         std::string line;
         while (std::getline(f, line)) {
             if (line.empty() || line[0] == '#') continue;
             int64_t ts = 0; double pnl = 0, hold = 0;
             if (sscanf(line.c_str(), "%lld,%lf,%lf",
                        reinterpret_cast<long long*>(&ts), &pnl, &hold) == 3) {
+                if (existing.count(ts)) continue;  // skip duplicate
                 buf_.push_back({pnl, hold, ts});
                 if ((int)buf_.size() > WINDOW_LONG) buf_.pop_front();
             }
@@ -713,7 +722,12 @@ public:
         for (const auto& kv : perf) {
             std::string safe_sym = kv.first;
             for (char& c : safe_sym) if (c == '.' || c == '/') c = '_';
-            kv.second.save_csv(dir + "/" + safe_sym + ".csv");
+            {
+                std::string p = dir;
+                p += (p.back() == '/' || p.back() == '\\') ? "" : "/";
+                p += safe_sym + ".csv";
+                kv.second.save_csv(p);
+            }
         }
     }
     void load_perf(const std::string& dir) noexcept {
@@ -725,7 +739,12 @@ public:
         for (int i = 0; SYMS[i]; ++i) {
             std::string safe = SYMS[i];
             for (char& c : safe) if (c == '.' || c == '/') c = '_';
-            perf[SYMS[i]].load_csv(dir + "/" + safe + ".csv");
+            {
+                std::string p = dir;
+                p += (p.back() == '/' || p.back() == '\\') ? "" : "/";
+                p += safe + ".csv";
+                perf[SYMS[i]].load_csv(p);
+            }
         }
         std::printf("[ADAPTIVE-RISK] Kelly perf loaded from %s\n", dir.c_str());
     }
