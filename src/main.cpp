@@ -706,6 +706,10 @@ static std::unordered_map<std::string, L2Book>   g_l2_books;
 
 // RTT
 static double              g_rtt_last = 0.0, g_rtt_p50 = 0.0, g_rtt_p95 = 0.0;
+// Live USDJPY mid — updated every tick, used by tick_value_multiplier().
+// Avoids the static 667 approximation (100000/150) drifting ±8% as rate moves.
+// Initialised to 150.0 so the function is safe before the first USDJPY tick arrives.
+static std::atomic<double> g_usdjpy_mid{150.0};
 static std::deque<double>  g_rtts;
 static int64_t             g_rtt_pending_ts = 0;
 static std::string         g_rtt_pending_id;
@@ -1133,9 +1137,13 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     if (symbol == "AUDUSD")   return 100000.0;// AUD/USD: 100,000 units/lot
     if (symbol == "NZDUSD")   return 100000.0;// NZD/USD: 100,000 units/lot
     // USDJPY: JPY-quoted pair. P&L in USD = move_JPY * 100000 / rate.
-    // Static approximation: 100000/150 = 667. Accurate to ~5% for 140-160 range.
-    // Shadow sim only — not used for live order sizing.
-    if (symbol == "USDJPY")   return 667.0;   // USD/JPY: ~100,000/150 ≈ 667 USD/pt/lot
+    // Use live mid price updated every tick — avoids static approximation
+    // drifting ±8% as the rate moves between 140-160.
+    // g_usdjpy_mid initialised to 150.0 so this is safe before first tick.
+    if (symbol == "USDJPY") {
+        const double rate = g_usdjpy_mid.load(std::memory_order_relaxed);
+        return (rate > 0.0) ? (100000.0 / rate) : 667.0;
+    }
     // Index CFDs — BlackBull cTrader: $1 per index point per lot
     // INDEX CFDs — BlackBull cTrader contract sizes (verified from Symbol Info spec pages 2026-03-21)
     // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -2639,12 +2647,20 @@ static void sanitize_config() noexcept {
     g_cfg.max_lot_oil        = clampd(g_cfg.max_lot_oil,     0.01, 10.0, 0.50);
     g_cfg.max_lot_silver     = clampd(g_cfg.max_lot_silver,  0.01, 10.0, 0.20);
     g_cfg.max_lot_fx         = clampd(g_cfg.max_lot_fx,      0.01, 50.0, 5.00);
-    // min_lot must never exceed max_lot (would make the clamp contradictory)
+    g_cfg.max_lot_gbpusd     = clampd(g_cfg.max_lot_gbpusd,  0.01, 50.0, 5.00);
+    g_cfg.max_lot_audusd     = clampd(g_cfg.max_lot_audusd,  0.01, 50.0, 5.00);
+    g_cfg.max_lot_nzdusd     = clampd(g_cfg.max_lot_nzdusd,  0.01, 50.0, 5.00);
+    g_cfg.max_lot_usdjpy     = clampd(g_cfg.max_lot_usdjpy,  0.01, 50.0, 5.00);
+    // min_lot must never exceed max_lot
     g_cfg.min_lot_gold       = clampd(g_cfg.min_lot_gold,    0.0, g_cfg.max_lot_gold,    0.01);
     g_cfg.min_lot_indices    = clampd(g_cfg.min_lot_indices, 0.0, g_cfg.max_lot_indices, 0.01);
     g_cfg.min_lot_oil        = clampd(g_cfg.min_lot_oil,     0.0, g_cfg.max_lot_oil,     0.01);
     g_cfg.min_lot_silver     = clampd(g_cfg.min_lot_silver,  0.0, g_cfg.max_lot_silver,  0.01);
     g_cfg.min_lot_fx         = clampd(g_cfg.min_lot_fx,      0.0, g_cfg.max_lot_fx,      0.01);
+    g_cfg.min_lot_gbpusd     = clampd(g_cfg.min_lot_gbpusd,  0.0, g_cfg.max_lot_gbpusd,  0.01);
+    g_cfg.min_lot_audusd     = clampd(g_cfg.min_lot_audusd,  0.0, g_cfg.max_lot_audusd,  0.01);
+    g_cfg.min_lot_nzdusd     = clampd(g_cfg.min_lot_nzdusd,  0.0, g_cfg.max_lot_nzdusd,  0.01);
+    g_cfg.min_lot_usdjpy     = clampd(g_cfg.min_lot_usdjpy,  0.0, g_cfg.max_lot_usdjpy,  0.01);
 
     g_cfg.sp_vol_thresh_pct   = clampd(g_cfg.sp_vol_thresh_pct, 0.0, 10.0, 0.04);
     g_cfg.nq_vol_thresh_pct   = clampd(g_cfg.nq_vol_thresh_pct, 0.0, 10.0, 0.05);
@@ -4542,6 +4558,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "AUDUSD" || sym == "NZDUSD" || sym == "USDJPY") {
+        // Update live USDJPY rate for dynamic tick_value_multiplier()
+        if (sym == "USDJPY") g_usdjpy_mid.store((bid + ask) * 0.5, std::memory_order_relaxed);
         // ── FX group bracket guard — shared across GBPUSD/AUDUSD/NZDUSD/USDJPY ──
         const bool any_fx_bracket_active =
             g_bracket_gbpusd.has_open_position() ||
@@ -6728,24 +6746,6 @@ int main(int argc, char* argv[])
     std::cout.flush();
 
     if (g_cfg.mode == "SHADOW") {
-        // Shadow is an exact simulation of live — AGGRESSIVE_SHADOW cuts trades at 45s
-        // adverse which live never does. All engines must use the same exit logic as live.
-        g_eng_sp.AGGRESSIVE_SHADOW      = false;
-        g_eng_nq.AGGRESSIVE_SHADOW      = false;
-        g_eng_cl.AGGRESSIVE_SHADOW      = false;
-        g_eng_us30.AGGRESSIVE_SHADOW    = false;
-        g_eng_nas100.AGGRESSIVE_SHADOW  = false;
-        g_eng_ger30.AGGRESSIVE_SHADOW   = false;
-        g_eng_uk100.AGGRESSIVE_SHADOW   = false;
-        g_eng_estx50.AGGRESSIVE_SHADOW  = false;
-        g_eng_xag.AGGRESSIVE_SHADOW     = false;
-        g_eng_eurusd.AGGRESSIVE_SHADOW  = false;
-        g_eng_gbpusd.AGGRESSIVE_SHADOW  = false;
-        g_eng_audusd.AGGRESSIVE_SHADOW  = false;
-        g_eng_nzdusd.AGGRESSIVE_SHADOW  = false;
-        g_eng_usdjpy.AGGRESSIVE_SHADOW  = false;
-        g_eng_brent.AGGRESSIVE_SHADOW   = false;
-
         if (g_cfg.shadow_ustec_pilot_only) {
             g_eng_nq.ENTRY_SIZE = g_cfg.ustec_pilot_size;
             g_eng_nq.MIN_GAP_SEC = g_cfg.ustec_pilot_min_gap_sec;

@@ -275,7 +275,7 @@ public:
     EdgeConfig  EDGE_CFG;
     int         MAX_TRADES_PER_MIN    = 2;
     double      ENTRY_SIZE            = 0.01;
-    bool        AGGRESSIVE_SHADOW     = false;
+    bool        AGGRESSIVE_SHADOW     = false;  // deprecated — no longer used, kept for ABI compatibility only
     const char* symbol                = "???";
     int         WATCH_TIMEOUT_SEC     = 300;
     // ── Compression stability params (spec values) ────────────────────────────
@@ -614,25 +614,6 @@ public:
                                   << "% limit=" << scratch_limit
                                   << "% in " << held_sec << "s\n";
                         closePos(mid, "SCRATCH", latency_ms, macro_regime, on_close);
-                        return {};
-                    }
-                }
-                // SHADOW quality guard: do not let losing trades drift into timeout.
-                // If a trade is still negative after 45s by >0.05%, cut it.
-                if (AGGRESSIVE_SHADOW && held_sec >= 45) {
-                    const bool is_oil_symbol =
-                        (std::strcmp(symbol, "USOIL.F") == 0) ||
-                        (std::strcmp(symbol, "BRENT") == 0);
-                    const double shadow_cut_limit = is_oil_symbol ? 0.08 : 0.05;
-                    const double adverse_pct = pos.is_long
-                        ? (pos.entry - mid) / pos.entry * 100.0
-                        : (mid - pos.entry) / pos.entry * 100.0;
-                    if (adverse_pct > shadow_cut_limit) {
-                        std::cout << "[SHADOW-CUT] " << symbol
-                                  << (pos.is_long ? " LONG" : " SHORT")
-                                  << " adverse=" << adverse_pct
-                                  << "% held=" << held_sec << "s\n";
-                        closePos(mid, "SHADOW_CUT", latency_ms, macro_regime, on_close);
                         return {};
                     }
                 }
