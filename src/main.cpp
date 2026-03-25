@@ -374,6 +374,7 @@ static omega::MacroRegimeDetector g_macroDetector;
 // ── Adaptive intelligence layer ───────────────────────────────────────────────
 static omega::risk::AdaptiveRiskManager   g_adaptive_risk;   // Kelly, Sharpe, DD throttle, corr heat
 static omega::news::NewsBlackout          g_news_blackout;   // NFP/FOMC/CPI/EIA/ECB event blackouts
+static omega::news::LiveCalendarFetcher   g_live_calendar;   // Forex Factory live calendar (HTTPS)
 static omega::partial::PartialExitManager g_partial_exit;    // split TP: 50% at 1R, trail remainder
 static omega::regime::RegimeAdaptor       g_regime_adaptor;  // regime-adaptive engine weights + vol
 
@@ -2703,6 +2704,13 @@ static void maybe_reset_daily_ledger() {
     }
     g_disable_gold_stack = false;
     g_gov_spread = g_gov_lat = g_gov_pnl = g_gov_pos = g_gov_consec = 0;
+    // Refresh live economic calendar once per day
+    g_live_calendar.check_and_refresh(g_news_blackout, static_cast<int64_t>(std::time(nullptr)));
+    // Prune expired hourly P&L records (belt-and-suspenders; also pruned on insert)
+    { std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
+      const int64_t cutoff = static_cast<int64_t>(std::time(nullptr)) - HOURLY_WINDOW_SEC;
+      while (!g_hourly_pnl_records.empty() && g_hourly_pnl_records.front().ts_sec < cutoff)
+          g_hourly_pnl_records.pop_front(); }
     std::cout << "[OMEGA-RISK] UTC day rollover — per-symbol risk state reset\n";
 }
 
@@ -6423,15 +6431,24 @@ int main(int argc, char* argv[])
             std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
 
-        // Print this week's news blackout schedule
-        g_news_blackout.print_schedule(now_s);
-
         // Configure news blackout scheduler from config flags (defaults are fine, shown for clarity)
         g_news_blackout.scheduler.block_nfp   = true;
         g_news_blackout.scheduler.block_fomc  = true;
         g_news_blackout.scheduler.block_cpi   = true;
         g_news_blackout.scheduler.block_eia   = true;
         g_news_blackout.scheduler.block_cb    = true;
+
+        // ── Live calendar: inject exact event times from Forex Factory ────────
+        // Fetches this week's HIGH-impact events over HTTPS and injects precise
+        // blackout windows. Falls back gracefully to hardcoded schedule on failure.
+        // Pre: 5 min before event. Post: 15 min after event.
+        g_live_calendar.pre_min  = 5;
+        g_live_calendar.post_min = 15;
+        g_live_calendar.refresh_interval_sec = 86400; // re-fetch daily
+        g_live_calendar.refresh(g_news_blackout, now_s);
+
+        // Print final schedule (includes both hardcoded + live injected windows)
+        g_news_blackout.print_schedule(now_s);
 
         // Adaptive risk: start with Kelly disabled for first 15 trades per symbol
         // (confidence ramps from 0→1 automatically as trades accumulate)

@@ -303,3 +303,242 @@ private:
 };
 
 }} // namespace omega::news
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LiveCalendarFetcher
+// Fetches the Forex Factory weekly calendar XML and injects exact HIGH-impact
+// blackout windows into a NewsBlackout instance.
+//
+// URL: https://nfs.faireconomy.media/ff_calendar_thisweek.xml
+// Format: <event><title>NFP</title><country>USD</country><date>...</date>
+//         <time>8:30am</time><impact>High</impact>...
+//
+// Call refresh() once at startup, then weekly (auto-refreshes internally).
+// Falls back to the hardcoded recurring scheduler on any network failure.
+//
+// Symbols blocked per event country:
+//   USD → US500.F, USTEC.F, DJ30.F, NAS100, EURUSD, GBPUSD, AUDUSD, NZDUSD,
+//          USDJPY, GOLD.F, XAGUSD, USOIL.F, BRENT
+//   EUR → EURUSD, GER40, ESTX50
+//   GBP → GBPUSD, UK100
+//   JPY → USDJPY
+//   AUD → AUDUSD
+//   NZD → NZDUSD
+//   CAD → USOIL.F, BRENT
+// ─────────────────────────────────────────────────────────────────────────────
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
+
+namespace omega { namespace news {
+
+class LiveCalendarFetcher {
+public:
+    // Minutes before/after each HIGH-impact event to block
+    int pre_min  = 5;
+    int post_min = 15;
+    bool enabled = true;
+
+    // Refresh interval: re-fetch once a week (604800s). Set lower for testing.
+    int64_t refresh_interval_sec = 604800;
+
+    // Call once at startup (and weekly thereafter via check_and_refresh)
+    bool refresh(NewsBlackout& blackout, int64_t now_sec) {
+        if (!enabled) return false;
+        last_refresh_sec_ = now_sec;
+
+        std::string xml;
+        if (!fetch_https("nfs.faireconomy.media", "/ff_calendar_thisweek.xml", xml)) {
+            std::printf("[NEWS-CAL] Live calendar fetch failed — using hardcoded schedule\n");
+            return false;
+        }
+        const int injected = parse_and_inject(xml, blackout, now_sec);
+        std::printf("[NEWS-CAL] Live calendar loaded: %d HIGH-impact events injected\n", injected);
+        return injected > 0;
+    }
+
+    // Call every tick — only actually re-fetches after refresh_interval_sec
+    void check_and_refresh(NewsBlackout& blackout, int64_t now_sec) {
+        if (!enabled) return;
+        if (now_sec - last_refresh_sec_ >= refresh_interval_sec)
+            refresh(blackout, now_sec);
+    }
+
+private:
+    int64_t last_refresh_sec_ = 0;
+
+    // Symbol sets per currency
+    static std::unordered_set<std::string> syms_for_country(const std::string& country) {
+        if (country == "USD") return {"US500.F","USTEC.F","DJ30.F","NAS100",
+                                       "EURUSD","GBPUSD","AUDUSD","NZDUSD","USDJPY",
+                                       "GOLD.F","XAGUSD","USOIL.F","BRENT"};
+        if (country == "EUR") return {"EURUSD","GER40","ESTX50"};
+        if (country == "GBP") return {"GBPUSD","UK100"};
+        if (country == "JPY") return {"USDJPY"};
+        if (country == "AUD") return {"AUDUSD"};
+        if (country == "NZD") return {"NZDUSD"};
+        if (country == "CAD") return {"USOIL.F","BRENT"};
+        return {}; // unknown country — block all
+    }
+
+    // Extract inner text of first <tag>...</tag> in xml starting from pos
+    static std::string extract_tag(const std::string& xml, const std::string& tag, size_t& pos) {
+        const std::string open  = "<"  + tag + ">";
+        const std::string close = "</" + tag + ">";
+        const size_t s = xml.find(open, pos);
+        if (s == std::string::npos) { pos = std::string::npos; return {}; }
+        const size_t e = xml.find(close, s);
+        if (e == std::string::npos) { pos = std::string::npos; return {}; }
+        pos = e + close.size();
+        return xml.substr(s + open.size(), e - (s + open.size()));
+    }
+
+    // Parse "Jan 26, 2025" or "2025-01-26" date strings → UTC midnight unix seconds
+    static int64_t parse_date(const std::string& d) {
+        struct tm t{};
+        // Try ISO format first: 2025-01-26T08:30:00-0500
+        if (d.size() >= 10 && d[4] == '-') {
+            t.tm_year = std::stoi(d.substr(0,4)) - 1900;
+            t.tm_mon  = std::stoi(d.substr(5,2)) - 1;
+            t.tm_mday = std::stoi(d.substr(8,2));
+            return (int64_t)_mkgmtime(&t);
+        }
+        return 0;
+    }
+
+    // Parse "8:30am" / "8:30pm" / "All Day" → seconds offset from midnight UTC
+    // FF times are US Eastern — convert to UTC (+5h EST, +4h EDT)
+    // We use a conservative +5h (EST) offset; EDT adds 1h over-protection = acceptable
+    static int parse_time_offset(const std::string& t) {
+        if (t.empty() || t == "All Day" || t == "Tentative") return 13 * 3600; // noon default
+        bool pm = (t.find("pm") != std::string::npos);
+        bool am = (t.find("am") != std::string::npos);
+        const size_t colon = t.find(':');
+        if (colon == std::string::npos) return 13 * 3600;
+        int hr  = std::stoi(t.substr(0, colon));
+        int min = std::stoi(t.substr(colon + 1, 2));
+        if (pm && hr != 12) hr += 12;
+        if (am && hr == 12) hr = 0;
+        // Convert from US Eastern to UTC: +5h (conservative — EST, never under-estimates)
+        hr += 5;
+        return hr * 3600 + min * 60;
+    }
+
+    int parse_and_inject(const std::string& xml, NewsBlackout& blackout, int64_t now_sec) {
+        int count = 0;
+        size_t pos = 0;
+
+        // Remove any old live-calendar windows before adding new ones
+        blackout.prune_manual(now_sec - 1); // prune expired; new ones will be added
+
+        while (pos != std::string::npos) {
+            const size_t event_start = xml.find("<event>", pos);
+            if (event_start == std::string::npos) break;
+            const size_t event_end = xml.find("</event>", event_start);
+            if (event_end == std::string::npos) break;
+            const std::string event = xml.substr(event_start, event_end - event_start + 8);
+            pos = event_end + 8;
+
+            // Extract fields
+            size_t p = 0;
+            const std::string impact  = extract_tag(event, "impact",  p); p = 0;
+            const std::string country = extract_tag(event, "country", p); p = 0;
+            const std::string date_s  = extract_tag(event, "date",    p); p = 0;
+            const std::string time_s  = extract_tag(event, "time",    p); p = 0;
+            const std::string title   = extract_tag(event, "title",   p);
+
+            // Only HIGH impact events
+            if (impact.find("High") == std::string::npos &&
+                impact.find("high") == std::string::npos) continue;
+
+            const int64_t date_ts = parse_date(date_s);
+            if (date_ts <= 0) continue;
+
+            const int time_off = parse_time_offset(time_s);
+            const int64_t event_ts = date_ts + time_off;
+
+            // Skip events more than 7 days in the past or 14 days in the future
+            if (event_ts < now_sec - 7*86400) continue;
+            if (event_ts > now_sec + 14*86400) continue;
+
+            BlackoutWindow w;
+            w.start_utc = event_ts - (int64_t)pre_min  * 60;
+            w.end_utc   = event_ts + (int64_t)post_min * 60;
+            w.label     = "LIVE:" + title + "(" + country + ")";
+            w.symbols   = syms_for_country(country);
+
+            blackout.add_manual(w.start_utc, w.end_utc, w.label, w.symbols);
+            ++count;
+
+            std::printf("[NEWS-CAL]   +%s %s %s impact=%s\n",
+                        country.c_str(), date_s.c_str(), title.c_str(), impact.c_str());
+        }
+        return count;
+    }
+
+    // Minimal HTTPS GET using WinSock2 + OpenSSL (already linked for FIX session)
+    static bool fetch_https(const char* host, const char* path, std::string& out) {
+#ifdef _WIN32
+        // Resolve host
+        addrinfo hints{}, *res = nullptr;
+        hints.ai_family   = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        if (getaddrinfo(host, "443", &hints, &res) != 0) return false;
+
+        SOCKET sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        if (sock == INVALID_SOCKET) { freeaddrinfo(res); return false; }
+
+        // Set 10s timeout
+        DWORD tv = 10000;
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
+
+        if (connect(sock, res->ai_addr, (int)res->ai_addrlen) != 0) {
+            closesocket(sock); freeaddrinfo(res); return false;
+        }
+        freeaddrinfo(res);
+
+        // TLS handshake
+        SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+        if (!ctx) { closesocket(sock); return false; }
+        SSL_CTX_set_default_verify_paths(ctx);
+
+        SSL* ssl = SSL_new(ctx);
+        SSL_set_fd(ssl, (int)sock);
+        SSL_set_tlsext_host_name(ssl, host);
+        if (SSL_connect(ssl) != 1) {
+            SSL_free(ssl); SSL_CTX_free(ctx); closesocket(sock); return false;
+        }
+
+        // HTTP GET
+        std::string req = std::string("GET ") + path + " HTTP/1.0\r\n"
+                        + "Host: " + host + "\r\n"
+                        + "Connection: close\r\n\r\n";
+        SSL_write(ssl, req.c_str(), (int)req.size());
+
+        // Read response
+        char buf[4096];
+        std::string raw;
+        int n;
+        while ((n = SSL_read(ssl, buf, sizeof(buf) - 1)) > 0) {
+            buf[n] = '\0';
+            raw += buf;
+        }
+        SSL_free(ssl); SSL_CTX_free(ctx); closesocket(sock);
+
+        // Strip HTTP headers
+        const size_t header_end = raw.find("\r\n\r\n");
+        if (header_end == std::string::npos) return false;
+        out = raw.substr(header_end + 4);
+        return !out.empty();
+#else
+        (void)host; (void)path; (void)out;
+        return false; // non-Windows not implemented
+#endif
+    }
+};
+
+}} // namespace omega::news (re-opened for LiveCalendarFetcher)

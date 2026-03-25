@@ -639,29 +639,33 @@ private:
 };
 
 // =============================================================================
-// ENGINE 5 — CarryUnwindEngine
+// ENGINE 5 — CarryUnwindEngine (improved: 4-factor confirmation)
 // =============================================================================
-// USDJPY is the classic carry trade pair. When risk-off triggers, JPY
-// repatriation causes fast USDJPY drops. VIX spike confirms the risk-off signal.
+// USDJPY carry trade unwind. Original fired on VIX tick + any USDJPY dip,
+// including dips within bull-market uptrends — a lagging signal problem.
 //
-// Signal:
-//   1. VIX spikes >VIX_SPIKE_PCT in last 60 ticks (rapid vol expansion)
-//   2. USDJPY falling (momentum negative)
-//   → Short USDJPY aggressively
-//
-// This is a macro-driven momentum entry, not compression breakout.
-// Only fires when VIX is spiking AND USDJPY is already moving down.
-// Cost check: TP pip distance must exceed Forex ECN cost (~1 pip at 0.01 lot).
+// Improved signal requires ALL FOUR to be true:
+//   1. VIX > VIX_SPIKE_THRESH AND surged > VIX_SURGE_PCT (risk-off confirmed)
+//   2. USDJPY down > USDJPY_MOVE_PCT in short 60-tick window (momentum)
+//   3. fast EMA < slow EMA — medium-term downtrend established
+//      Prevents shorting a dip in an ongoing uptrend
+//   4. Realized vol > REALVOL_MIN_PCT over 30-tick window (options skew proxy)
+//      Low realized vol = dead tape noise, not a real unwind
 // =============================================================================
 class CarryUnwindEngine {
 public:
     double  VIX_SPIKE_THRESH  = 20.0; // VIX above this triggers monitoring
     double  VIX_SURGE_PCT     = 5.0;  // VIX up 5% in window = spike confirmed
-    double  USDJPY_MOVE_PCT   = 0.10; // USDJPY must be down 0.10% in window
+    double  USDJPY_MOVE_PCT   = 0.10; // USDJPY must be down 0.10% in short window
     double  TP_PCT            = 0.20; // 20 pip TP
     double  SL_PCT            = 0.12; // 12 pip SL
     int     MAX_HOLD_SEC      = 600;
     int     COOLDOWN_SEC      = 300;
+    // Medium-term trend EMAs (~20-tick fast, ~60-tick slow)
+    double  TREND_FAST_ALPHA  = 2.0 / (20.0 + 1.0);
+    double  TREND_SLOW_ALPHA  = 2.0 / (60.0 + 1.0);
+    // Realized vol filter — min 30-tick hi-lo range / mid
+    double  REALVOL_MIN_PCT   = 0.04; // 4bp min realized vol
     bool    enabled           = true;
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
@@ -669,7 +673,7 @@ public:
     CrossSignal on_tick(double usdjpy_bid, double usdjpy_ask,
                         double vix_now, CloseCb on_close) noexcept {
         if (!enabled || usdjpy_bid <= 0 || vix_now <= 0) return {};
-        const double mid = (usdjpy_bid + usdjpy_ask) * 0.5;
+        const double mid    = (usdjpy_bid + usdjpy_ask) * 0.5;
         const double spread = usdjpy_ask - usdjpy_bid;
 
         if (pos_.active) {
@@ -677,34 +681,59 @@ public:
             return {};
         }
 
-        // Track VIX and price history
+        // Update all rolling state every tick
         vix_window_.push_back(vix_now);
         price_window_.push_back(mid);
         if ((int)vix_window_.size()   > WINDOW_TICKS) vix_window_.pop_front();
         if ((int)price_window_.size() > WINDOW_TICKS) price_window_.pop_front();
-        if ((int)vix_window_.size() < WINDOW_TICKS) return {};
 
-        const double vix_start   = vix_window_.front();
-        const double vix_surge   = (vix_now - vix_start) / vix_start * 100.0;
+        // Medium-term EMAs
+        if (ema_fast_ <= 0.0) { ema_fast_ = mid; ema_slow_ = mid; }
+        else {
+            ema_fast_ = TREND_FAST_ALPHA * mid + (1.0 - TREND_FAST_ALPHA) * ema_fast_;
+            ema_slow_ = TREND_SLOW_ALPHA * mid + (1.0 - TREND_SLOW_ALPHA) * ema_slow_;
+        }
+
+        // Realized vol ring buffer
+        realvol_window_.push_back(mid);
+        if ((int)realvol_window_.size() > REALVOL_TICKS) realvol_window_.pop_front();
+
+        if ((int)vix_window_.size()    < WINDOW_TICKS)  return {};
+        if ((int)realvol_window_.size() < REALVOL_TICKS) return {};
+
+        // ── Filter 1: VIX spike ───────────────────────────────────────────────
+        const double vix_start = vix_window_.front();
+        const double vix_surge = (vix_now - vix_start) / vix_start * 100.0;
+        if (vix_now  < VIX_SPIKE_THRESH) return {};
+        if (vix_surge < VIX_SURGE_PCT)   return {};
+
+        // ── Filter 2: Short-term USDJPY momentum (must be falling) ───────────
         const double price_start = price_window_.front();
         const double price_move  = (mid - price_start) / price_start * 100.0;
+        if (price_move > -USDJPY_MOVE_PCT) return {};
 
-        if (vix_now < VIX_SPIKE_THRESH) return {};
-        if (vix_surge < VIX_SURGE_PCT) return {};
-        if (price_move > -USDJPY_MOVE_PCT) return {};  // must be falling
+        // ── Filter 3: Medium-term downtrend (fast EMA < slow EMA) ────────────
+        // Prevents shorting a dip within an established uptrend
+        if (ema_fast_ >= ema_slow_) return {};
+
+        // ── Filter 4: Realized vol confirms energy (options skew proxy) ───────
+        // Low realized vol = noise, not a real risk-off unwind
+        const double rv_hi  = *std::max_element(realvol_window_.begin(), realvol_window_.end());
+        const double rv_lo  = *std::min_element(realvol_window_.begin(), realvol_window_.end());
+        const double rv_pct = (rv_hi - rv_lo) / mid * 100.0;
+        if (rv_pct < REALVOL_MIN_PCT) return {};
 
         if (ca_now_sec() < cooldown_until_) return {};
 
-        const double tp = mid * (1.0 - TP_PCT/100.0);
-        const double sl = mid * (1.0 + SL_PCT/100.0);
+        const double tp      = mid * (1.0 - TP_PCT/100.0);
+        const double sl      = mid * (1.0 + SL_PCT/100.0);
         const double tp_dist = std::fabs(tp - mid);
 
-        // Cost gate
         if (!ExecutionCostGuard::is_viable("USDJPY", spread, tp_dist, 0.01)) return {};
 
         CrossSignal sig;
         sig.valid   = true;
-        sig.is_long = false;  // carry unwind = short USDJPY
+        sig.is_long = false;
         sig.entry   = mid;
         sig.tp      = tp;
         sig.sl      = sl;
@@ -715,8 +744,9 @@ public:
 
         pos_.open(sig, spread);
         cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
-        printf("[CARRY-UNWIND] SHORT USDJPY entry=%.3f vix=%.1f surge=%.1f%% usd_move=%.3f%%\n",
-               mid, vix_now, vix_surge, price_move);
+        printf("[CARRY-UNWIND] SHORT USDJPY entry=%.3f vix=%.1f surge=%.1f%% "
+               "move=%.3f%% ema_f=%.3f ema_s=%.3f rv=%.4f%%\n",
+               mid, vix_now, vix_surge, price_move, ema_fast_, ema_slow_, rv_pct);
         fflush(stdout);
         return sig;
     }
@@ -725,11 +755,15 @@ public:
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
 
 private:
-    static constexpr int WINDOW_TICKS = 60;
-    CrossPosition  pos_;
+    static constexpr int WINDOW_TICKS  = 60;
+    static constexpr int REALVOL_TICKS = 30;
+    CrossPosition      pos_;
     std::deque<double> vix_window_;
     std::deque<double> price_window_;
-    int64_t cooldown_until_ = 0;
+    std::deque<double> realvol_window_;
+    double             ema_fast_       = 0.0;
+    double             ema_slow_       = 0.0;
+    int64_t            cooldown_until_ = 0;
 };
 
 // =============================================================================
