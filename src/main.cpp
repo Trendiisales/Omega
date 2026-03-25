@@ -3825,6 +3825,45 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         return true;
     };
 
+    // ── enter_directional: unified entry helper for all cross-asset engines ───
+    // Replaces the repeated pattern: compute_size → cost_ok → send_live_order
+    // Also applies adaptive risk (adjusted_lot) and arms partial exit.
+    // sig: must have .valid, .is_long, .entry, .sl, .tp (or computed tp_dist)
+    // fallback_lot: default size when risk sizing disabled (0.01 for most CA engines)
+    // sym_override: use this symbol for sizing/corr if different from outer sym
+    auto enter_directional = [&](const char*  esym,
+                                 bool         is_long,
+                                 double       entry,
+                                 double       sl,
+                                 double       tp,          // 0 = use sl_abs*2 as TP estimate
+                                 double       fallback_lot = 0.01) -> bool {
+        const double sl_abs  = std::fabs(entry - sl);
+        const double tp_dist = (tp > 0) ? std::fabs(entry - tp) : sl_abs * 2.0;
+        const double base_lot = compute_size(esym, sl_abs, ask - bid, fallback_lot);
+        // Adaptive risk: DD throttle + Kelly + vol regime
+        double sym_loss = 0.0; int sym_consec = 0;
+        {
+            std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+            auto it = g_sym_risk.find(esym);
+            if (it != g_sym_risk.end()) {
+                sym_loss   = std::max(0.0, -it->second.daily_pnl);
+                sym_consec = it->second.consec_losses;
+            }
+        }
+        const double lot = g_adaptive_risk.adjusted_lot(
+            esym, base_lot, sym_loss, g_cfg.daily_loss_limit, sym_consec);
+        // Cost guard
+        if (!ExecutionCostGuard::is_viable(esym, ask - bid, tp_dist, lot)) {
+            g_telemetry.IncrCostBlocked();
+            return false;
+        }
+        // Arm partial exit and fire
+        g_partial_exit.arm(esym, is_long, entry, tp > 0 ? tp : entry + (is_long?1:-1)*tp_dist,
+                           sl, lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
+        send_live_order(esym, is_long, lot, entry);
+        return true;
+    };
+
     // ── Partial exit tick check ───────────────────────────────────────────────
     // Runs every tick for every symbol. No-op when no partial state is active.
     // When TP1 is hit: sends a market close for the first half and moves SL to BE.
@@ -3881,10 +3920,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {  // ADDED !vwap check
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
-                const double lot = compute_size(sym, std::fabs(orb.entry-orb.sl), ask-bid, 0.01);
                 g_telemetry.UpdateLastSignal("US500.F", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB");
-                if (cost_ok("US500.F", std::fabs(orb.entry-orb.sl), lot))
-                    send_live_order(sym, orb.is_long, lot, orb.entry);
+                enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp);
             }
         }
         // VWAP Reversion: enter when price reverses back toward daily VWAP after over-extension.
@@ -3903,10 +3940,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (s_sp_daily_open > 0.0) {
                 const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, s_sp_daily_open, ca_on_close);
                 if (vr.valid) {
-                    const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
                     g_telemetry.UpdateLastSignal("US500.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
-                    if (cost_ok("US500.F", std::fabs(vr.entry-vr.sl), lot))
-                        send_live_order(sym, vr.is_long, lot, vr.entry);
+                    enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp);
                 }
             }
         }
@@ -3939,10 +3974,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (s_nq_daily_open > 0.0) {
                 const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, s_nq_daily_open, ca_on_close);
                 if (vr.valid) {
-                    const double lot = compute_size(sym, std::fabs(vr.entry-vr.sl), ask-bid, 0.01);
                     g_telemetry.UpdateLastSignal("USTEC.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV");
-                    if (cost_ok("USTEC.F", std::fabs(vr.entry-vr.sl), lot))
-                        send_live_order(sym, vr.is_long, lot, vr.entry);
+                    enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp);
                 }
             }
         }
@@ -3967,7 +4000,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // EIA fade engine — only when BrentWTI not already open
             if (!g_ca_eia_fade.has_open_position() && !g_ca_brent_wti.has_open_position() && base_can) {  // ADDED !brent check
                 const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close);
-                if (ef.valid) { const double lot = compute_size(sym, std::fabs(ef.entry-ef.sl), ask-bid, 0.01); if (cost_ok(sym.c_str(), std::fabs(ef.entry-ef.sl), lot)) send_live_order(sym, ef.is_long, lot, ef.entry); }
+                if (ef.valid) { enter_directional(sym.c_str(), ef.is_long, ef.entry, ef.sl, ef.tp); }
             }
             // Brent/WTI spread engine — only when EIA not already open
             if (!g_ca_brent_wti.has_open_position() && !g_ca_eia_fade.has_open_position() && base_can) {  // ADDED !eia check
@@ -3978,7 +4011,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double brent_mid = (brent_b > 0 && brent_a > 0) ? (brent_b+brent_a)*0.5 : 0.0;
                 if (brent_mid > 0) {
                     const auto bw = g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid, ca_on_close);
-                    if (bw.valid) { const double lot = compute_size(sym, std::fabs(bw.entry-bw.sl), ask-bid, 0.01); if (cost_ok(sym.c_str(), std::fabs(bw.entry-bw.sl), lot)) send_live_order(sym, bw.is_long, lot, bw.entry); }
+                    if (bw.valid) { enter_directional(sym.c_str(), bw.is_long, bw.entry, bw.sl, bw.tp); }
                 }
             }
         }
