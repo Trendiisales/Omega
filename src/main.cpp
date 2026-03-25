@@ -5080,7 +5080,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_gold_flow.pos.is_long ? "LONG" : "SHORT",
                     g_gold_flow.pos.entry, "L2_FLOW",
                     "FLOW", regime.c_str(), "GOLD_FLOW",
-                    g_gold_flow.pos.tp, g_gold_flow.pos.sl);
+                    0.0, g_gold_flow.pos.sl);  // GoldFlowEngine uses trailing SL only, no fixed TP
             }
         }
 
