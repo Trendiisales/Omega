@@ -316,13 +316,6 @@ public:
         std::printf("[TOD-GATE] Loaded %zu buckets from %s\n", buckets.size(), path.c_str());
     }
 
-private:
-    // 30-minute UTC bucket index (0=00:00-00:30, 1=00:30-01:00, ... 47=23:30-24:00)
-    static int utc_bucket(int64_t ts_sec) noexcept {
-        const int mins = static_cast<int>((ts_sec % 86400) / 60);
-        return mins / 30;
-    }
-
     // TOD-based lot size multiplier.
     // Instead of binary block/allow, returns a continuous scale based on
     // the bucket's historical win rate and EV vs the target thresholds.
@@ -349,6 +342,13 @@ private:
         if (wr >= 0.55 && ev > 0.0)   return 0.90;
         if (wr >= 0.50 && ev > -0.50) return 0.75;
         return 0.60;  // marginal bucket — allow but reduce
+    }
+
+private:
+    // 30-minute UTC bucket index (0=00:00-00:30, 1=00:30-01:00, ... 47=23:30-24:00)
+    static int utc_bucket(int64_t ts_sec) noexcept {
+        const int mins = static_cast<int>((ts_sec % 86400) / 60);
+        return mins / 30;
     }
 };
 
