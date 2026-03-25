@@ -687,37 +687,29 @@ public:
     }
 
     // Call every major FX tick for London fix (EURUSD, GBPUSD)
+    // London WM/Reuters fix: 20:55-21:00 UTC (winter EST+5 = 15:55-16:00 London)
+    // Arm at day_min=1253 (20:53 UTC), fire at 1255-1257 (20:55-20:57 UTC)
     FixSignal on_tick_london(const char* sym, double bid, double ask,
                               double cvd_normalised, int64_t now_sec) noexcept {
         if (!enabled) return {};
         if (now_sec - last_london_sec_ < cooldown_sec) return {};
 
-        const int utc_min = static_cast<int>((now_sec % 86400) / 60);
-        // London fix: 20:55-21:00 UTC (EST winter +5 = 15:55-16:00 London)
-        // Using 20:53 arm, 20:55-20:57 execute
-        const bool in_arm_window = (utc_min == 1253 % 60 || utc_min == 20*60+53 - 20*60); // 20:53
-        const bool is_arm = (utc_min == 20*60+53 - 20*60);
-
-        // Simplified: arm at minute 1253 (=20:53), execute at 1255-1257 (=20:55-20:57)
-        const int total_min = utc_min; // minutes since midnight UTC
-        const bool arm_now  = (total_min % 1440 == 1253 % 60); // wrong — compute properly
-        const int day_min = static_cast<int>((now_sec % 86400) / 60);
-        const bool arm_window  = (day_min == 1253);  // 20:53 UTC
-        const bool fire_window = (day_min >= 1255 && day_min <= 1257);  // 20:55-20:57 UTC
+        const int day_min      = static_cast<int>((now_sec % 86400) / 60);
+        const bool arm_window  = (day_min == 1253);               // 20:53 UTC — arm
+        const bool fire_window = (day_min >= 1255 && day_min <= 1257); // 20:55-20:57 UTC
 
         if (arm_window) {
-            london_bias_ = cvd_normalised;
+            london_bias_  = cvd_normalised;
             armed_london_ = true;
         }
 
         if (!armed_london_ || !fire_window) return {};
         if (std::fabs(london_bias_) < min_cvd_signal) return {};
 
-        armed_london_ = false;
+        armed_london_    = false;
         last_london_sec_ = now_sec;
 
-        const bool is_eurusd = (std::strcmp(sym, "EURUSD") == 0);
-        const double pip = is_eurusd ? 0.0001 : 0.0001;
+        const double pip = 0.0001;  // both EURUSD and GBPUSD are 4-decimal pairs
         const double mid = (bid + ask) * 0.5;
         FixSignal sig;
         sig.valid   = true;
