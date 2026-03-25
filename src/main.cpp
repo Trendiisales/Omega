@@ -496,6 +496,7 @@ static constexpr double  L2_STRONG_THRESHOLD       = 0.70;   // bid-heavy: long 
 static constexpr double  L2_WEAK_THRESHOLD         = 0.30;   // ask-heavy: short pressure
 static constexpr double  PYRAMID_SIZE_MULT         = 0.50;   // pyramid at half normal size
 static constexpr double  L2_PYRAMID_THRESHOLD      = 0.72;   // stronger L2 required for pyramid
+static constexpr int64_t PYRAMID_SL_COOLDOWN_MS    = 120000; // 2min cooldown after any pyramid SL hit
 
 struct BracketExitRecord {
     bool    is_long;
@@ -509,6 +510,7 @@ struct BracketTrendState {
     int64_t bias_set_ms   = 0;    // when bias was last activated
     int64_t block_until_ms = 0;   // dynamic: extended/shortened by L2
     int64_t last_l2_adj   = 0;    // per-instance L2 throttle (was static — shared across all symbols)
+    int64_t last_pyramid_sl_ms = 0; // timestamp of most recent SL hit on a pyramid trade
 
     // Called on each bracket close for this symbol
     void on_exit(bool is_long, bool profitable, int64_t now_ms) {
@@ -596,9 +598,11 @@ struct BracketTrendState {
         return bias != 0 && now_ms < block_until_ms;
     }
 
-    // Is pyramiding allowed? Requires active bias + strong L2 confirmation
+    // Is pyramiding allowed? Requires active bias + strong L2 confirmation + no recent pyramid SL
     bool pyramid_allowed(double l2_imb, int64_t now_ms) const {
         if (bias == 0 || now_ms >= block_until_ms) return false;
+        // Block if a pyramid was SL-hit recently — prevents chasing into reversals
+        if (now_ms - last_pyramid_sl_ms < PYRAMID_SL_COOLDOWN_MS) return false;
         if (bias == -1 && l2_imb < (1.0 - L2_PYRAMID_THRESHOLD)) return true;  // short trend + ask-heavy
         if (bias ==  1 && l2_imb > L2_PYRAMID_THRESHOLD)          return true;  // long trend + bid-heavy
         return false;
@@ -615,6 +619,10 @@ struct BracketTrendState {
 };
 
 static std::unordered_map<std::string, BracketTrendState> g_bracket_trend;
+
+// Tracks clOrdIds that were placed as pyramid (add-on) entries.
+// On SL_HIT, if clOrdId is in this set, records last_pyramid_sl_ms to enforce cooldown.
+static std::unordered_set<std::string> g_pyramid_clordids;
 
 // ── Per-symbol supervisors — one per traded symbol ────────────────────────────
 // Each supervisor classifies regime and grants engine permissions each tick.
@@ -3360,6 +3368,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                      tr.exitReason == std::string("TP_HIT")    ||
                                      tr.exitReason == std::string("BE_HIT"));
             g_bracket_trend[tr.symbol].on_exit(tr.side == "LONG", profitable, now_ms_bc);
+
+            // ── Pyramid SL cooldown ───────────────────────────────────────────
+            // If this closing trade was a pyramid entry that hit SL, record the
+            // timestamp. pyramid_allowed() will block new pyramids for 2 minutes.
+            if (!profitable && tr.exitReason == std::string("SL_HIT")) {
+                if (g_pyramid_clordids.count(tr.clOrdId)) {
+                    g_bracket_trend[tr.symbol].last_pyramid_sl_ms = now_ms_bc;
+                    printf("[PYRAMID-SL-COOLDOWN] %s pyramid SL hit — blocking new pyramids for 120s\n",
+                           tr.symbol.c_str());
+                    g_pyramid_clordids.erase(tr.clOrdId);
+                }
+            } else {
+                // Clean up successfully closed pyramid entries
+                g_pyramid_clordids.erase(tr.clOrdId);
+            }
         }
 
         // Only send a market close order for reasons where the BROKER has no
@@ -3818,6 +3841,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             bracket_eng.pending_long_clOrdId  = long_id;
             bracket_eng.pending_short_clOrdId = short_id;
+            // Tag pyramid orders so bracket_on_close can enforce SL cooldown
+            if (is_pyramiding) {
+                if (!long_id.empty())  g_pyramid_clordids.insert(long_id);
+                if (!short_id.empty()) g_pyramid_clordids.insert(short_id);
+            }
             ++trades_this_min;
         }
     };
@@ -4469,7 +4497,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const double gold_adaptive = g_adaptive_risk.adjusted_lot(
                         "GOLD.F", base_lot * conf_mult * static_cast<double>(regime_wt),
                         gold_daily_loss, g_cfg.daily_loss_limit, gold_consec);
-                    const double gold_lot  = std::max(0.01, gold_adaptive);
+                    // Re-clamp to max_lot_gold: adjusted_lot applies Kelly which can
+                    // multiply past the compute_size cap. Cap must be the final word.
+                    const double gold_lot  = std::max(0.01,
+                        std::min(gold_adaptive, g_cfg.max_lot_gold));
                     g_gold_stack.patch_position_size(gold_lot);
                     std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
                               << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
@@ -4556,7 +4587,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             gold_trend.update_l2(g_macro_ctx.gold_l2_imbalance, now_ms_g);
             const bool gold_trend_blocked = gold_trend.counter_trend_blocked(now_ms_g);
             const bool gold_pyramid_ok    = gold_trend.pyramid_allowed(g_macro_ctx.gold_l2_imbalance, now_ms_g);
+            // Block pyramid in IMPULSE regime: price is thrusting hard — adding on
+            // during a thrust means chasing the move at peak momentum with tight SLs.
+            // All 4 PYRAMID SL-hits in the 00:26 cluster had regime=IMPULSE.
+            const bool gold_impulse_regime = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
             const bool gold_is_pyramiding = gold_pyramid_ok && bracket_open &&
+                                            !gold_impulse_regime &&
                                             ((gold_trend.bias == 1  && g_bracket_gold.pos.is_long) ||
                                              (gold_trend.bias == -1 && !g_bracket_gold.pos.is_long));
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok
@@ -4597,6 +4633,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                               << " trend_bias="    << gold_trend.bias
                               << " trend_blocked=" << gold_trend_blocked
                               << " pyramid_ok="    << gold_pyramid_ok
+                              << " impulse_block=" << gold_impulse_regime
+                              << " pyr_sl_age_s="  << ((now_ms_g - gold_trend.last_pyramid_sl_ms) / 1000)
                               << " brk_hi="        << std::setprecision(2) << g_bracket_gold.bracket_high
                               << " brk_lo="        << g_bracket_gold.bracket_low
                               << " range="         << (g_bracket_gold.bracket_high - g_bracket_gold.bracket_low)
@@ -4665,6 +4703,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                     g_bracket_gold.pending_long_clOrdId  = long_id;
                     g_bracket_gold.pending_short_clOrdId = short_id;
+                    // Tag pyramid orders so bracket_on_close can enforce SL cooldown
+                    if (gold_is_pyramiding) {
+                        if (!long_id.empty())  g_pyramid_clordids.insert(long_id);
+                        if (!short_id.empty()) g_pyramid_clordids.insert(short_id);
+                    }
                     ++g_bracket_gold_trades_this_minute;
                 }
             }
