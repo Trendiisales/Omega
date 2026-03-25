@@ -65,6 +65,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "OmegaAdaptiveRisk.hpp"   // Kelly sizing, rolling Sharpe, DD throttle, corr heat
 #include "OmegaNewsBlackout.hpp"   // Economic calendar blackout (NFP, FOMC, CPI, EIA)
 #include "OmegaPartialExit.hpp"    // Split TP — close 50% at 1R, trail remainder
+#include "OmegaEdges.hpp"          // 7 institutional edges: CVD, TOD, spread-Z, round#, PDH/PDL, FX-fix, fill quality
 #include "OmegaRegimeAdaptor.hpp"  // Regime-adaptive engine weights + vol regime
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -375,6 +376,7 @@ static omega::MacroRegimeDetector g_macroDetector;
 static omega::risk::AdaptiveRiskManager   g_adaptive_risk;   // Kelly, Sharpe, DD throttle, corr heat
 static omega::news::NewsBlackout          g_news_blackout;   // NFP/FOMC/CPI/EIA/ECB event blackouts
 static omega::news::LiveCalendarFetcher   g_live_calendar;   // Forex Factory live calendar (HTTPS)
+static omega::edges::EdgeContext          g_edges;           // 7 institutional edges
 static omega::partial::PartialExitManager g_partial_exit;    // split TP: 50% at 1R, trail remainder
 static omega::regime::RegimeAdaptor       g_regime_adaptor;  // regime-adaptive engine weights + vol
 
@@ -1508,6 +1510,11 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
               << " clOrdId=" << clOrdId
               << "\033[0m\n";
     std::cout.flush();
+
+    // ── Fill quality: record signal mid at order send time ────────────────
+    // Actual fill price recorded when ACK arrives; this stores the signal mid.
+    // FillQualityTracker compares fill vs this mid to detect adverse selection.
+    g_edges.fill_quality.record_fill(symbol, mid_price, mid_price, is_long, nowSec());
 
     return clOrdId;
 }
@@ -2757,6 +2764,9 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
             g_hourly_pnl_records.pop_front();
     }
 
+    // ── Time-of-day gate — record outcome per 30-min bucket ──────────────────
+    g_edges.tod.record(tr.symbol, tr.engine, tr.entryTs, tr.net_pnl);
+
     const std::string perf_key = perf_key_from_trade(tr);
     const bool shadow_research = (g_cfg.mode == "SHADOW" && g_cfg.shadow_research_mode);
     {
@@ -2931,6 +2941,14 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
 // ─────────────────────────────────────────────────────────────────────────────
 static void on_tick(const std::string& sym, double bid, double ask) {
     { std::lock_guard<std::mutex> lk(g_book_mtx); g_bids[sym] = bid; g_asks[sym] = ask; }
+
+    // ── Edge system updates (every tick, every symbol) ────────────────────────
+    {
+        const double mid = (bid + ask) * 0.5;
+        g_edges.cvd.update(sym, bid, ask);
+        g_edges.spread_gate.update(sym, ask - bid);
+        g_edges.prev_day.update(sym, mid, nowSec());
+    }
 
     // Seed vol history on first tick after reconnect — avoids 80-tick warmup dead zone.
     // seed() is a no-op if m_prices is already populated.
