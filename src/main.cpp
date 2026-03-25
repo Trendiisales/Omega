@@ -5032,14 +5032,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_telemetry.UpdateLastSignal(sym.c_str(), esnq.is_long?"LONG":"SHORT",
                     esnq.entry, esnq.reason, "ESNQ_DIV", regime.c_str(), "ESNQ_DIV",
                     esnq.tp, esnq.sl);
-                enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp);
+                if (!enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp))
+                    g_ca_esnq.force_close(bid, ask, ca_on_close);
             }
         }
         if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {  // ADDED !vwap check
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 g_telemetry.UpdateLastSignal("US500.F", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-                enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp);
+                if (!enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp))
+                    g_orb_us.force_close(bid, ask, ca_on_close);
             }
         }
         // VWAP Reversion: enter when price reverses back toward daily VWAP after over-extension.
@@ -5059,7 +5061,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, s_sp_daily_open, ca_on_close);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("US500.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true);
+                    if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true))
+                        g_vwap_rev_sp.force_close(bid, ask, ca_on_close); // rollback phantom pos
                 }
             }
         }
@@ -5093,7 +5096,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, s_nq_daily_open, ca_on_close);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("USTEC.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true);
+                    if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true))
+                        g_vwap_rev_nq.force_close(bid, ask, ca_on_close);
                 }
             }
         }
@@ -5118,7 +5122,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // EIA fade engine — only when BrentWTI not already open
             if (!g_ca_eia_fade.has_open_position() && !g_ca_brent_wti.has_open_position() && base_can) {  // ADDED !brent check
                 const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close);
-                if (ef.valid) { enter_directional(sym.c_str(), ef.is_long, ef.entry, ef.sl, ef.tp); }
+                if (ef.valid) { if (!enter_directional(sym.c_str(), ef.is_long, ef.entry, ef.sl, ef.tp)) g_ca_eia_fade.force_close(bid, ask, ca_on_close); }
             }
             // Brent/WTI spread engine — only when EIA not already open
             if (!g_ca_brent_wti.has_open_position() && !g_ca_eia_fade.has_open_position() && base_can) {  // ADDED !eia check
@@ -5129,7 +5133,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double brent_mid = (brent_b > 0 && brent_a > 0) ? (brent_b+brent_a)*0.5 : 0.0;
                 if (brent_mid > 0) {
                     const auto bw = g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid, ca_on_close);
-                    if (bw.valid) { enter_directional(sym.c_str(), bw.is_long, bw.entry, bw.sl, bw.tp); }
+                    if (bw.valid) { if (!enter_directional(sym.c_str(), bw.is_long, bw.entry, bw.sl, bw.tp)) g_ca_brent_wti.force_close(bid, ask, ca_on_close); }
                 }
             }
         }
@@ -5163,7 +5167,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 g_telemetry.UpdateLastSignal("GER40", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-                enter_directional("GER40", orb.is_long, orb.entry, orb.sl, orb.tp);
+                if (!enter_directional("GER40", orb.is_long, orb.entry, orb.sl, orb.tp))
+                    g_orb_ger30.force_close(bid, ask, ca_on_close);
             }
         }
         // VWAP Reversion: GER40 over-extension from Xetra ORB range midpoint
@@ -5174,7 +5179,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const auto vr = g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap, ca_on_close);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("GER40", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    enter_directional("GER40", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true);
+                    if (!enter_directional("GER40", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true))
+                        g_vwap_rev_ger40.force_close(bid, ask, ca_on_close);
                 }
             }
         }
@@ -5184,7 +5190,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto tp_sig = g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close);
             if (tp_sig.valid) {
                 g_telemetry.UpdateLastSignal("GER40", tp_sig.is_long?"LONG":"SHORT", tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB", tp_sig.tp, tp_sig.sl);
-                enter_directional("GER40", tp_sig.is_long, tp_sig.entry, tp_sig.sl, tp_sig.tp, 0.01, true);
+                if (!enter_directional("GER40", tp_sig.is_long, tp_sig.entry, tp_sig.sl, tp_sig.tp, 0.01, true))
+                    g_trend_pb_ger40.force_close(bid, ask, ca_on_close);
             }
         }
     }
@@ -5202,7 +5209,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 g_telemetry.UpdateLastSignal("UK100", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-                enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp);
+                if (!enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp))
+                    g_orb_uk100.force_close(bid, ask, ca_on_close);
             }
         }
     }
@@ -5220,7 +5228,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 g_telemetry.UpdateLastSignal("ESTX50", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-                enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp);
+                if (!enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp))
+                    g_orb_estx50.force_close(bid, ask, ca_on_close);
             }
         }
     }
@@ -5243,7 +5252,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto orb = g_orb_silver.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 g_telemetry.UpdateLastSignal("XAGUSD", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-                enter_directional("XAGUSD", orb.is_long, orb.entry, orb.sl, orb.tp);
+                if (!enter_directional("XAGUSD", orb.is_long, orb.entry, orb.sl, orb.tp))
+                    g_orb_silver.force_close(bid, ask, ca_on_close);
             }
         }
         // Lead-lag: not supervisor-gated (intermarket signal, not regime-based)
@@ -5258,7 +5268,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     ll_sig.tp, ll_sig.sl);
                 printf("[LEAD-LAG-SIZE] XAGUSD sl_abs=%.4f spread=%.4f (enter_directional)\n",
                        std::fabs(ll_sig.entry - ll_sig.sl), ask - bid);
-                enter_directional("XAGUSD", ll_sig.is_long, ll_sig.entry, ll_sig.sl, ll_sig.tp, ll_sig.size);
+                if (!enter_directional("XAGUSD", ll_sig.is_long, ll_sig.entry, ll_sig.sl, ll_sig.tp, ll_sig.size))
+                    g_le_stack.force_close_all(bid, ask, bid, ask, 0.0, ca_on_close);
             }
         }
     }
@@ -5299,7 +5310,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const auto vr = g_vwap_rev_eurusd.on_tick(sym, bid, ask, s_eur_daily_open, ca_on_close);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("EURUSD", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    enter_directional("EURUSD", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true);
+                    if (!enter_directional("EURUSD", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true))
+                        g_vwap_rev_eurusd.force_close(bid, ask, ca_on_close);
                 }
             }
         }
@@ -5341,7 +5353,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto cas = g_ca_fx_cascade.on_tick_gbpusd(bid, ask, ca_on_close);
             if (cas.valid) {
                 g_telemetry.UpdateLastSignal("GBPUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE", cas.tp, cas.sl);
-                enter_directional("GBPUSD", cas.is_long, cas.entry, cas.sl, cas.tp);
+                if (!enter_directional("GBPUSD", cas.is_long, cas.entry, cas.sl, cas.tp))
+                        g_ca_fx_cascade.force_close(bid, ask, ca_on_close);
             }
         }
     }
@@ -5371,7 +5384,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const auto cas = g_ca_fx_cascade.on_tick_audusd(bid, ask, ca_on_close);
                     if (cas.valid) {
                         g_telemetry.UpdateLastSignal("AUDUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE", cas.tp, cas.sl);
-                        enter_directional("AUDUSD", cas.is_long, cas.entry, cas.sl, cas.tp);
+                        if (!enter_directional("AUDUSD", cas.is_long, cas.entry, cas.sl, cas.tp))
+                            g_ca_fx_cascade.force_close_audusd(bid, ask, ca_on_close);
                     }
                 }
             }
@@ -5387,7 +5401,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const auto cas = g_ca_fx_cascade.on_tick_nzdusd(bid, ask, ca_on_close);
                     if (cas.valid) {
                         g_telemetry.UpdateLastSignal("NZDUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE", cas.tp, cas.sl);
-                        enter_directional("NZDUSD", cas.is_long, cas.entry, cas.sl, cas.tp);
+                        if (!enter_directional("NZDUSD", cas.is_long, cas.entry, cas.sl, cas.tp))
+                            g_ca_fx_cascade.force_close_nzdusd(bid, ask, ca_on_close);
                     }
                 }
             }
@@ -5402,7 +5417,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close);
                     if (cu.valid) {
                         g_telemetry.UpdateLastSignal("USDJPY", cu.is_long?"LONG":"SHORT", cu.entry, cu.reason, "CARRY_UNWIND", regime.c_str(), "CARRY_UNWIND", cu.tp, cu.sl);
-                        enter_directional("USDJPY", cu.is_long, cu.entry, cu.sl, cu.tp, 0.01, true);
+                        if (!enter_directional("USDJPY", cu.is_long, cu.entry, cu.sl, cu.tp, 0.01, true))
+                            g_ca_carry_unwind.force_close(bid, ask, ca_on_close);
                     }
                 }
                 // Tokyo fix window (00:55-01:00 UTC) — mechanical JPY rebalancing flow
@@ -5931,7 +5947,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
                     "TREND_PB", regime.c_str(), "TREND_PB",
                     tpb.tp, tpb.sl);
-                enter_directional("GOLD.F", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true);
+                if (!enter_directional("GOLD.F", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true))
+                    g_trend_pb_gold.force_close(bid, ask, ca_on_close);
             }
         }
     }
