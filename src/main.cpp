@@ -3173,6 +3173,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // HTF bias filter — tracks daily + intraday momentum per symbol.
         // Used in lot sizing: 0.5× when trade opposes both TF trends.
         g_htf_filter.update(sym, mid);
+    }  // end edge system updates
 
     // Seed vol history on first tick after reconnect — avoids 80-tick warmup dead zone.
     // seed() is a no-op if m_prices is already populated.
