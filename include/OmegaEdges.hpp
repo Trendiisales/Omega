@@ -1233,9 +1233,10 @@ struct EdgeContext {
 
         // ── Wall to TP ────────────────────────────────────────────────────────
         // Large resting order between entry and TP = target may not be reached.
-        // This is a hard score penalty. If wall_to_tp and score would be neutral,
-        // we block the trade — the target is structurally obstructed.
-        if (wall_to_tp) score -= 3;
+        // Penalty -2 (was -3): walls are frequently absorbed by institutional flow,
+        // -3 made a single wall an unconditional block regardless of other signals.
+        // Combined with absorption (-2) still reaches the -3 block threshold.
+        if (wall_to_tp) score -= 2;
 
         // ── Order flow absorption ─────────────────────────────────────────────
         // Institutional signature: price moving in breakout direction but book

@@ -4784,6 +4784,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (regime_wt <= 0.0f) {
             // Hard block: engine class disabled under current macro regime
             // (FX_CASCADE=0.0 and FX_CARRY=0.0 in RISK_OFF per weight table)
+            static thread_local int64_t s_regime_log = 0;
+            if (nowSec() - s_regime_log > 60) {
+                s_regime_log = nowSec();
+                std::printf("[REGIME-BLOCK] %s %s blocked — engine class weight=0 in regime=%s\n",
+                            esym, is_long ? "LONG" : "SHORT",
+                            g_regime_adaptor.last_regime.c_str());
+            }
             return false;
         }
 
