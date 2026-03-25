@@ -2781,13 +2781,13 @@ static void maybe_reset_daily_ledger() {
         snprintf(date_buf, sizeof(date_buf), "%04d-%02d-%02d",
                  ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday);
         // Snap pnl from telemetry writer which holds the last-broadcast value
-        const double snap_pnl = g_telem.snap() ? g_telem.snap()->daily_pnl : 0.0;
+        const double snap_pnl = g_telemetry.snap() ? g_telemetry.snap()->daily_pnl : 0.0;
         const std::string md_path = log_root_dir() + "/day_results.csv";
         g_adaptive_risk.multiday.record_day(std::string(date_buf), snap_pnl, md_path);
         const int streak      = g_adaptive_risk.multiday.consecutive_losing_days();
         const double md_scale = g_adaptive_risk.multiday.size_scale();
-        g_telem.UpdateMultiDayThrottle(streak, md_scale,
-                                       g_adaptive_risk.multiday.is_active() ? 1 : 0);
+        g_telemetry.UpdateMultiDayThrottle(streak, md_scale,
+                                           g_adaptive_risk.multiday.is_active() ? 1 : 0);
     }
 
     std::cout << "[OMEGA-RISK] UTC day rollover — per-symbol risk state reset\n";
@@ -5381,9 +5381,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // We use 1.0 lot as a relative unit; actual lot unknown from snapshot
                 const double dir = e.is_long ? 1.0 : -1.0;
                 const double notional = tm * dir;
-                const std::string sym(e.symbol);
+                const std::string ca_sym(e.symbol);
                 using CL = omega::risk::CorrCluster;
-                switch (omega::risk::symbol_to_cluster(sym)) {
+                switch (omega::risk::symbol_to_cluster(ca_sym)) {
                     case CL::US_EQUITY: exp_us    += notional; break;
                     case CL::EU_EQUITY: exp_eu    += notional; break;
                     case CL::OIL:       exp_oil   += notional; break;
@@ -6898,8 +6898,8 @@ int main(int argc, char* argv[])
             g_adaptive_risk.multiday.load(md_path);
             const int streak      = g_adaptive_risk.multiday.consecutive_losing_days();
             const double md_scale = g_adaptive_risk.multiday.size_scale();
-            g_telem.UpdateMultiDayThrottle(streak, md_scale,
-                                           g_adaptive_risk.multiday.is_active() ? 1 : 0);
+            g_telemetry.UpdateMultiDayThrottle(streak, md_scale,
+                                               g_adaptive_risk.multiday.is_active() ? 1 : 0);
             if (g_adaptive_risk.multiday.is_active())
                 std::cout << "[MULTIDAY-THROTTLE] *** ACTIVE *** consec_loss=" << streak
                           << " -> sizes halved this session\n";
