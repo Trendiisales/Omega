@@ -4722,8 +4722,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                    sym.c_str(), static_cast<double>(nowSec() - it->second));
             return false;
         }
-        g_last_cross_entry[sym] = nowSec();
+        // NOTE: timestamp is NOT stamped here — only stamped on successful execution
+        // (at send_live_order call). Stamping here would block the next 30s even when
+        // the trade is subsequently rejected by vwap_gate, L2 score, cost guard, etc.
         return true;
+    };
+
+    // Stamp dedup timestamp — called only after all gates pass and trade executes
+    auto cross_engine_dedup_stamp = [](const std::string& sym) {
+        std::lock_guard<std::mutex> lk(g_dedup_mtx);
+        g_last_cross_entry[sym] = nowSec();
     };
 
     // ── enter_directional: unified entry helper for all cross-asset engines ───
@@ -4737,7 +4745,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                  double       entry,
                                  double       sl,
                                  double       tp,          // 0 = use sl_abs*2 as TP estimate
-                                 double       fallback_lot = 0.01) -> bool {
+                                 double       fallback_lot = 0.01,
+                                 bool         skip_vwap_gate = false) -> bool {
         const double sl_abs_raw = std::fabs(entry - sl);
         // ATR-normalised SL floor — same logic as breakout dispatch
         const double sl_abs  = g_adaptive_risk.vol_scaler.atr_sl_floor(
@@ -4785,7 +4794,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Entries within 0.05% of daily VWAP have no directional edge.
         // VWAP is the mean-reversion anchor — breakouts from inside the VWAP zone
         // chop back constantly. Get VWAP from the matching BreakoutEngine.
-        {
+        // EXEMPT: mean-reversion engines (VWAP_REV, FX_FIX, carry unwind, TrendPB)
+        // that specifically target the VWAP zone — they pass skip_vwap_gate=true.
+        if (!skip_vwap_gate) {
             double vwap = 0.0;
             if      (sv == "US500.F")  vwap = g_eng_sp.vwap();
             else if (sv == "USTEC.F")  vwap = g_eng_nq.vwap();
@@ -4953,6 +4964,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_telemetry.IncrCostBlocked();
             return false;
         }
+        // All gates passed — stamp cross-engine dedup NOW (not at check time)
+        cross_engine_dedup_stamp(std::string(esym));
         // Arm partial exit and fire
         g_partial_exit.arm(esym, is_long, entry, tp > 0 ? tp : entry + (is_long?1:-1)*tp_dist,
                            sl, final_lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
@@ -5039,7 +5052,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, s_sp_daily_open, ca_on_close);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("US500.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp);
+                    enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true);
                 }
             }
         }
@@ -5073,7 +5086,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, s_nq_daily_open, ca_on_close);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("USTEC.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp);
+                    enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true);
                 }
             }
         }
@@ -5154,7 +5167,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const auto vr = g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap, ca_on_close);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("GER40", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    enter_directional("GER40", vr.is_long, vr.entry, vr.sl, vr.tp);
+                    enter_directional("GER40", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true);
                 }
             }
         }
@@ -5164,7 +5177,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto tp_sig = g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close);
             if (tp_sig.valid) {
                 g_telemetry.UpdateLastSignal("GER40", tp_sig.is_long?"LONG":"SHORT", tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB", tp_sig.tp, tp_sig.sl);
-                enter_directional("GER40", tp_sig.is_long, tp_sig.entry, tp_sig.sl, tp_sig.tp);
+                enter_directional("GER40", tp_sig.is_long, tp_sig.entry, tp_sig.sl, tp_sig.tp, 0.01, true);
             }
         }
     }
@@ -5279,7 +5292,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const auto vr = g_vwap_rev_eurusd.on_tick(sym, bid, ask, s_eur_daily_open, ca_on_close);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("EURUSD", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    enter_directional("EURUSD", vr.is_long, vr.entry, vr.sl, vr.tp);
+                    enter_directional("EURUSD", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true);
                 }
             }
         }
@@ -5289,7 +5302,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto fix_sig = g_edges.fx_fix.on_tick_london("EURUSD", bid, ask, eur_cvd.normalised(), nowSec());
             if (fix_sig.valid) {
                 g_telemetry.UpdateLastSignal("EURUSD", fix_sig.is_long?"LONG":"SHORT", fix_sig.entry, fix_sig.reason, "FX_FIX", regime.c_str(), "LONDON_FIX", fix_sig.tp, fix_sig.sl);
-                enter_directional("EURUSD", fix_sig.is_long, fix_sig.entry, fix_sig.sl, fix_sig.tp);
+                enter_directional("EURUSD", fix_sig.is_long, fix_sig.entry, fix_sig.sl, fix_sig.tp, 0.01, true);
             }
         }
     }
@@ -5382,7 +5395,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close);
                     if (cu.valid) {
                         g_telemetry.UpdateLastSignal("USDJPY", cu.is_long?"LONG":"SHORT", cu.entry, cu.reason, "CARRY_UNWIND", regime.c_str(), "CARRY_UNWIND", cu.tp, cu.sl);
-                        enter_directional("USDJPY", cu.is_long, cu.entry, cu.sl, cu.tp);
+                        enter_directional("USDJPY", cu.is_long, cu.entry, cu.sl, cu.tp, 0.01, true);
                     }
                 }
                 // Tokyo fix window (00:55-01:00 UTC) — mechanical JPY rebalancing flow
@@ -5391,7 +5404,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const auto fix_sig = g_edges.fx_fix.on_tick_tokyo(bid, ask, jpy_cvd.normalised(), nowSec());
                     if (fix_sig.valid) {
                         g_telemetry.UpdateLastSignal("USDJPY", fix_sig.is_long?"LONG":"SHORT", fix_sig.entry, fix_sig.reason, "FX_FIX", regime.c_str(), "TOKYO_FIX", fix_sig.tp, fix_sig.sl);
-                        enter_directional("USDJPY", fix_sig.is_long, fix_sig.entry, fix_sig.sl, fix_sig.tp);
+                        enter_directional("USDJPY", fix_sig.is_long, fix_sig.entry, fix_sig.sl, fix_sig.tp, 0.01, true);
                     }
                 }
             }
@@ -5899,7 +5912,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
                     "TREND_PB", regime.c_str(), "TREND_PB",
                     tpb.tp, tpb.sl);
-                enter_directional("GOLD.F", tpb.is_long, tpb.entry, tpb.sl, tpb.tp);
+                enter_directional("GOLD.F", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true);
             }
         }
     }
