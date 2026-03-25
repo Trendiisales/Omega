@@ -948,6 +948,16 @@ public:
     double range_high() const { return range_high_; }
     double range_low()  const { return range_low_;  }
 
+    // Reset range state — call on reconnect so a partial pre-disconnect range
+    // (e.g. 10 minutes into the 30-minute window) does not trigger on stale data.
+    // The daily reset in on_tick() handles normal day boundaries.
+    void reset_range() noexcept {
+        range_high_ = 0.0;
+        range_low_  = 0.0;
+        armed_      = false;
+        // Do NOT reset last_day_ — daily reset logic still uses it
+    }
+
 private:
     CrossPosition pos_;
     double  range_high_ = 0.0;

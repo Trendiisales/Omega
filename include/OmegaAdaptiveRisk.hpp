@@ -138,6 +138,33 @@ struct SymbolPerformanceTracker {
         return (int)buf_.size();
     }
 
+    // Persist trade results to CSV — append-only
+    // Format: timestamp,pnl,hold_sec
+    void save_csv(const std::string& path) const noexcept {
+        std::lock_guard<std::mutex> lk(mtx_);
+        std::ofstream f(path, std::ios::app);
+        if (!f.is_open()) return;
+        for (const auto& r : buf_)
+            f << r.ts << "," << r.pnl << "," << r.hold_sec << "\n";
+    }
+
+    // Load trade history from CSV on startup
+    void load_csv(const std::string& path) noexcept {
+        std::lock_guard<std::mutex> lk(mtx_);
+        std::ifstream f(path);
+        if (!f.is_open()) return;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            int64_t ts = 0; double pnl = 0, hold = 0;
+            if (sscanf(line.c_str(), "%lld,%lf,%lf",
+                       reinterpret_cast<long long*>(&ts), &pnl, &hold) == 3) {
+                buf_.push_back({pnl, hold, ts});
+                if ((int)buf_.size() > WINDOW_LONG) buf_.pop_front();
+            }
+        }
+    }
+
     // Confidence: 0 (cold/unreliable) → 1.0 (full window, stable)
     // Used to blend between fixed sizing and Kelly sizing during warmup
     double confidence() const {
@@ -678,6 +705,29 @@ public:
                         symbol.c_str(), CorrelationHeatGuard::cluster_name(symbol));
         }
         return ok;
+    }
+
+    // ── Persist/restore Kelly performance data ─────────────────────────────
+    // Called at startup (load) and UTC rollover (save) alongside TOD gate.
+    void save_perf(const std::string& dir) const {
+        for (const auto& kv : perf) {
+            std::string safe_sym = kv.first;
+            for (char& c : safe_sym) if (c == '.' || c == '/') c = '_';
+            kv.second.save_csv(dir + "/" + safe_sym + ".csv");
+        }
+    }
+    void load_perf(const std::string& dir) noexcept {
+        static const char* SYMS[] = {
+            "GOLD.F","XAGUSD","US500.F","USTEC.F","DJ30.F","NAS100",
+            "GER40","UK100","ESTX50","USOIL.F","BRENT",
+            "EURUSD","GBPUSD","AUDUSD","NZDUSD","USDJPY", nullptr
+        };
+        for (int i = 0; SYMS[i]; ++i) {
+            std::string safe = SYMS[i];
+            for (char& c : safe) if (c == '.' || c == '/') c = '_';
+            perf[SYMS[i]].load_csv(dir + "/" + safe + ".csv");
+        }
+        std::printf("[ADAPTIVE-RISK] Kelly perf loaded from %s\n", dir.c_str());
     }
 
     // ── Performance summary (for GUI / logging) ───────────────────────────────

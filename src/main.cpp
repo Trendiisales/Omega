@@ -368,7 +368,7 @@ static const int64_t       g_start_time = static_cast<int64_t>(std::time(nullptr
 // ─────────────────────────────────────────────────────────────────────────────
 // Globals
 // ─────────────────────────────────────────────────────────────────────────────
-static OmegaTelemetryWriter      g_telemetry;
+static OmegaTelemetryWriter      g_telemetry;  // NOTE: always g_telemetry — never g_telem
 omega::OmegaTradeLedger          g_omegaLedger;      // extern in TelemetryServer.cpp
 static omega::MacroRegimeDetector g_macroDetector;
 
@@ -1201,6 +1201,11 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
 //       with USOIL at $1000/pt, the correct size is 0.10 lots, but the floor
 //       forced it to 1.0 lot, producing a $478 actual risk — nearly 10× intended.
 // ─────────────────────────────────────────────────────────────────────────────
+// Live account equity — updated on every closed trade in LIVE mode.
+// Shadow mode keeps this at the configured account_equity value.
+// Used by compute_size() so risk_per_trade_usd scales with account growth.
+static std::atomic<double> g_live_equity{10000.0};
+
 static double compute_size(const std::string& symbol,
                             double sl_abs,       // SL distance in price points
                             double spread_abs,   // current bid-ask spread in price points
@@ -1211,8 +1216,16 @@ static double compute_size(const std::string& symbol,
     const double tick_mult = tick_value_multiplier(symbol);
     if (tick_mult <= 0.0 || sl_abs <= 0.0) return fallback_size;
 
+    // Equity-scaled risk: risk_usd = equity * (config_risk / initial_equity)
+    // As account grows from $10k to $15k, risk scales from $50 to $75 (0.5% of equity)
+    // In SHADOW mode g_live_equity stays at account_equity so no change there
+    const double base_equity = std::max(g_cfg.account_equity, 100.0);
+    const double risk_pct    = g_cfg.risk_per_trade_usd / base_equity;  // e.g. 0.005 = 0.5%
+    const double live_eq     = g_live_equity.load(std::memory_order_relaxed);
+    const double risk_usd    = live_eq * risk_pct;
+
     const double total_risk_pts = sl_abs + spread_abs;
-    double size = g_cfg.risk_per_trade_usd / (total_risk_pts * tick_mult);
+    double size = risk_usd / (total_risk_pts * tick_mult);
 
     // Round to 2 decimal places (standard lot precision)
     size = std::floor(size * 100.0 + 0.5) / 100.0;
@@ -2659,6 +2672,7 @@ static void sanitize_config() noexcept {
 
     // Risk-based sizing sanitization
     g_cfg.risk_per_trade_usd = clampd(g_cfg.risk_per_trade_usd, 0.0, 10000.0, 0.0);
+    g_live_equity.store(std::max(g_cfg.account_equity, 100.0), std::memory_order_relaxed);
     g_cfg.max_lot_gold       = clampd(g_cfg.max_lot_gold,    0.01, 10.0, 0.50);
     g_cfg.max_lot_indices    = clampd(g_cfg.max_lot_indices, 0.01, 10.0, 0.20);
     g_cfg.max_lot_oil        = clampd(g_cfg.max_lot_oil,     0.01, 10.0, 0.50);
@@ -2787,6 +2801,8 @@ static void maybe_reset_daily_ledger() {
           g_hourly_pnl_records.pop_front(); }
     // Save TOD gate data and reset CVD session accumulators
     g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
+    // Save Kelly performance history (persists win-rate/expectancy across restarts)
+    g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
     g_edges.reset_daily();  // resets CVD session hi/lo; prev_day updates via on_tick
     g_edges.fill_quality.print_summary();  // log fill quality summary at rollover
 
@@ -2971,6 +2987,8 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     if (g_cfg.mode == "LIVE") {
         const double updated_equity = g_cfg.account_equity + g_omegaLedger.cumulativePnl();
         const double eq = std::max(updated_equity, 100.0);
+        g_live_equity.store(eq, std::memory_order_relaxed);  // feeds compute_size() equity scaling
+        g_gold_flow.risk_dollars = eq * (g_cfg.risk_per_trade_usd / std::max(g_cfg.account_equity, 100.0));
         g_eng_sp.ACCOUNT_EQUITY     = eq;
         g_eng_nq.ACCOUNT_EQUITY     = eq;
         g_eng_cl.ACCOUNT_EQUITY     = eq;
@@ -4101,6 +4119,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Compute lot_size but do NOT write back to eng.ENTRY_SIZE yet.
         // eng.ENTRY_SIZE must only be updated if the trade actually executes.
         const double lot_size_base = compute_size(sym, sl_abs, ask - bid, eng.ENTRY_SIZE);
+        // Vol-regime size scale from RegimeAdaptor — CRUSH=1.10, HIGH=0.75, NORMAL=1.0
+        // Previously computed but never applied — was dead code
+        const double vol_mult = static_cast<double>(
+            g_regime_adaptor.vol_size_scale(sym));
         // ── Adaptive risk adjustment: Kelly + DD throttle + vol regime ────────
         // Pull current daily loss for this symbol from SymbolRiskState
         double sym_daily_loss = 0.0;
@@ -4114,7 +4136,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
         }
         double lot_size = g_adaptive_risk.adjusted_lot(
-            sym, lot_size_base, sym_daily_loss, g_cfg.daily_loss_limit, sym_consec);
+            sym, lot_size_base * vol_mult, sym_daily_loss, g_cfg.daily_loss_limit, sym_consec);
 
         // ── TOD-weighted lot scaling ──────────────────────────────────────
         // Scale down on marginal time-of-day buckets (WR < 55%) instead of
@@ -4556,7 +4578,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double sl_abs  = g_adaptive_risk.vol_scaler.atr_sl_floor(
             std::string(esym), sl_abs_raw);
         const double tp_dist = (tp > 0) ? std::fabs(entry - tp) : sl_abs * 2.0;
-        const double base_lot = compute_size(esym, sl_abs, ask - bid, fallback_lot);
+        const double base_lot_raw = compute_size(esym, sl_abs, ask - bid, fallback_lot);
+        // Vol-regime size scale — CRUSH=1.10x, HIGH=0.75x, NORMAL=1.0x
+        const double base_lot = base_lot_raw * static_cast<double>(
+            g_regime_adaptor.vol_size_scale(std::string(esym)));
 
         // ── Regime weight ─────────────────────────────────────────────────────
         // Map symbol → EngineClass and apply macro regime weight.
@@ -5660,7 +5685,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_gold_flow.pos.is_long ? "LONG" : "SHORT",
                     g_gold_flow.pos.entry, "L2_FLOW",
                     "FLOW", regime.c_str(), "GOLD_FLOW",
-                    0.0, g_gold_flow.pos.sl);  // GoldFlowEngine uses trailing SL only, no fixed TP
+                    0.0, g_gold_flow.pos.sl);
+                // Arm partial exit: TP1 at 1R, TP2 at 2R (gold flow has no fixed TP)
+                const double gf_sl_abs = std::fabs(g_gold_flow.pos.entry - g_gold_flow.pos.sl);
+                if (gf_sl_abs > 0.0) {
+                    const double gf_tp1 = g_gold_flow.pos.entry +
+                        (g_gold_flow.pos.is_long ? gf_sl_abs : -gf_sl_abs);
+                    const double gf_tp2 = g_gold_flow.pos.entry +
+                        (g_gold_flow.pos.is_long ? gf_sl_abs * 2.0 : -gf_sl_abs * 2.0);
+                    g_partial_exit.arm("GOLD.F", g_gold_flow.pos.is_long,
+                        g_gold_flow.pos.entry, gf_tp2, g_gold_flow.pos.sl,
+                        g_gold_flow.pos.size,
+                        g_adaptive_risk.vol_scaler.atr_fast("GOLD.F"));
+                }
             }
         }
 
@@ -5919,6 +5956,11 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         // prior session (e.g. Asia low-liquidity) would falsely block entries.
         // History rebuilds in 20 ticks (~2-4 seconds at normal tick rates).
         g_edges.spread_gate.reset_all();
+        // Reset ORB range state — partial ranges built before disconnect
+        // would fire immediately on the first qualifying tick post-reconnect.
+        g_orb_us.reset_range();    g_orb_ger30.reset_range();
+        g_orb_uk100.reset_range(); g_orb_estx50.reset_range();
+        g_orb_silver.reset_range();
         g_md_subscribed.store(false);  // clear — fresh session, not yet subscribed
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
         const std::string md = fix_build_md_subscribe_all(g_quote_seq++);
@@ -7333,6 +7375,16 @@ int main(int argc, char* argv[])
         g_adaptive_risk.corr_heat.max_per_cluster_metals    = 2;
         g_adaptive_risk.corr_heat.max_per_cluster_jpy_risk  = 2;
         g_adaptive_risk.corr_heat.max_per_cluster_eur_gbp   = 1;  // EURUSD or GBPUSD, not both
+
+        // Load Kelly performance history from previous sessions
+        {
+            const std::string kelly_dir = log_root_dir() + "/kelly";
+            // ensure_parent_dir creates the directory if needed
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            fs::create_directories(kelly_dir, ec);
+            g_adaptive_risk.load_perf(kelly_dir);
+        }
 
         // Multi-day drawdown throttle: load history, log startup state
         {

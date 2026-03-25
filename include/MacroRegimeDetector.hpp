@@ -31,8 +31,10 @@ public:
 
     // DXY fast-rise threshold — % change over DXY_WINDOW ticks that signals
     // a risk-off USD bid. 0.15% = 15bp over ~60 ticks is a meaningful move.
-    double DXY_RISK_OFF_PCT  =  0.15;   // +0.15% DXY = risk-off signal
-    double DXY_RISK_ON_PCT   = -0.10;   // -0.10% DXY = confirms risk-on
+    // DXY momentum thresholds — expressed as % change (e.g. 0.15 = 0.15% = 15bp)
+    // Comparison: dxyReturn() returns fraction (e.g. 0.0015) vs threshold / 100
+    double DXY_RISK_OFF_PCT  =  0.15;   // +0.15% DXY over window = risk-off signal
+    double DXY_RISK_ON_PCT   = -0.10;   // -0.10% DXY over window = confirms risk-on (unused, reserved)
 
     int DIV_WINDOW = 60;
     int DXY_WINDOW = 60;   // ticks for DXY momentum window
@@ -90,6 +92,8 @@ public:
     }
 
     double vixLevel() const { return m_vix; }
+    // Returns fractional return (e.g. 0.0015 = +0.15%).
+    // Compare against DXY_RISK_OFF_PCT / 100.0 to stay in consistent units.
     double dxyReturn() const {
         if ((int)m_dxy_prices.size() < 2) return 0.0;
         const double f = m_dxy_prices.front(), b = m_dxy_prices.back();

@@ -37,6 +37,9 @@ COLUMNS = [
     "pnl", "mfe", "mae", "hold_sec", "exitReason", "spreadAtEntry",
     "latencyMs", "regime"
 ]
+# Column 6 ("pnl") is net_pnl (after slippage+commission) as of audit-2 fix 10.
+# The column name in the CSV header is "pnl" for backward compatibility,
+# but the value written is tr.net_pnl. All stats here are net.
 
 class Trade:
     __slots__ = COLUMNS
@@ -48,7 +51,7 @@ class Trade:
         self.engine       = row.get("engine", "UNKNOWN").strip()
         self.entryPrice   = float(row.get("entryPrice", 0) or 0)
         self.exitPrice    = float(row.get("exitPrice", 0) or 0)
-        self.pnl          = float(row.get("pnl", 0) or 0)
+        self.pnl          = float(row.get("pnl", 0) or 0)  # net after costs (was gross pre-audit2)
         self.mfe          = float(row.get("mfe", 0) or 0)
         self.mae          = float(row.get("mae", 0) or 0)
         self.hold_sec     = float(row.get("hold_sec", 0) or 0)
