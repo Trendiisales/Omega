@@ -303,7 +303,7 @@ public:
 
         const double tp      = mid * (1.0 + (is_long ? 1 : -1) * TP_PCT / 100.0);
         const double sl      = mid * (1.0 - (is_long ? 1 : -1) * SL_PCT / 100.0);
-        const double tp_dist = std::fabs(tp - mid);
+        // tp_dist removed — cost check now in enter_directional with real lot size
 
         // Cost check removed: enter_directional() performs the definitive
         // cost check with the actual computed lot size. Checking here with
@@ -417,7 +417,7 @@ public:
 
         const double tp = is_long ? mid + spike_dist * TP_RATIO : mid - spike_dist * TP_RATIO;
         const double sl = is_long ? mid - spike_dist * SL_RATIO : mid + spike_dist * SL_RATIO;
-        const double tp_dist = std::fabs(tp - mid);
+        // tp_dist removed — cost check now in enter_directional with real lot size
 
         // Cost gate
         // Cost check removed: enter_directional() performs the definitive
@@ -697,7 +697,7 @@ private:
 
         const double tp = armed_long_ ? mid * (1.0 + TP_PCT/100.0) : mid * (1.0 - TP_PCT/100.0);
         const double sl = armed_long_ ? mid * (1.0 - SL_PCT/100.0) : mid * (1.0 + SL_PCT/100.0);
-        const double tp_dist = std::fabs(tp - mid);
+        // tp_dist removed — cost check now in enter_directional with real lot size
 
         // Cost gate — Forex pairs carry commission + spread + slippage ~$10/lot
         // Cost check removed: enter_directional() performs the definitive
@@ -814,7 +814,7 @@ public:
 
         const double tp      = mid * (1.0 - TP_PCT/100.0);
         const double sl      = mid * (1.0 + SL_PCT/100.0);
-        const double tp_dist = std::fabs(tp - mid);
+        // tp_dist removed — cost check now in enter_directional with real lot size
 
         // Cost check removed: enter_directional() performs the definitive
         // cost check with the actual computed lot size. Checking here with
@@ -939,7 +939,7 @@ public:
         if (mid > range_high_ + buffer) {
             const double tp = mid * (1.0 + TP_PCT/100.0);
             const double sl = mid * (1.0 - SL_PCT/100.0);
-            const double tp_dist = std::fabs(tp - mid);
+        // tp_dist removed — cost check now in enter_directional with real lot size
             // Cost gate
             // Cost check removed: enter_directional() performs the definitive
             // cost check with the actual computed lot size. Checking here with
@@ -967,7 +967,7 @@ public:
         if (mid < range_low_ - buffer) {
             const double tp = mid * (1.0 - TP_PCT/100.0);
             const double sl = mid * (1.0 + SL_PCT/100.0);
-            const double tp_dist = std::fabs(tp - mid);
+        // tp_dist removed — cost check now in enter_directional with real lot size
             // Cost gate
             // Cost check removed: enter_directional() performs the definitive
             // cost check with the actual computed lot size. Checking here with
