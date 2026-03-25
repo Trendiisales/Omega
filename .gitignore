@@ -14,3 +14,8 @@ cmake_install.cmake
 *.vcxproj
 *.vcxproj.filters
 *.sln
+
+# Config: canonical defaults are in config/omega_config.ini in the repo.
+# The VPS keeps its own live tuned version — ignore local edits so git pull
+# never gets blocked. Run: git checkout config/omega_config.ini to reset to defaults.
+config/omega_config.ini
