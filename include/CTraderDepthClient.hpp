@@ -360,6 +360,7 @@ private:
         last_depth_event_ms.store(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+    }
 
     bool send_msg(SSL* ssl, const std::vector<uint8_t>& msg) {
         if (!ssl||msg.empty()) return false;
