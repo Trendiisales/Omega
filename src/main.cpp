@@ -2543,6 +2543,13 @@ static void load_config(const std::string& path) {
             if (k=="sweep_pres_sl_ticks")     gs.sweep_pres_sl_ticks      = safe_stoi(v, k);
             if (k=="sweep_pres_base_size")    gs.sweep_pres_base_size     = safe_stod(v, k);
         }
+        if (section == "cross_asset") {
+            if (k=="esnq_enabled")       g_ca_esnq.enabled       = (v == "true" || v == "1");
+            if (k=="esnq_confirm_ticks") g_ca_esnq.CONFIRM_TICKS = safe_stoi(v, k);
+            if (k=="esnq_cooldown_sec")  g_ca_esnq.COOLDOWN_SEC  = safe_stoi(v, k);
+            if (k=="esnq_tp_pct")        g_ca_esnq.TP_PCT        = safe_stod(v, k);
+            if (k=="esnq_sl_pct")        g_ca_esnq.SL_PCT        = safe_stod(v, k);
+        }
         if (section == "latency_edge") {
             auto& le = g_cfg.le_cfg;
             // GoldSilverLeadLag
@@ -2693,37 +2700,11 @@ static void sanitize_config() noexcept {
 }
 
 static void apply_shadow_research_profile() noexcept {
-    if (g_cfg.mode != "SHADOW" || !g_cfg.shadow_research_mode) return;
-
-    // SHADOW is research mode: remove session dead-zones and loosen entry throttles.
-    g_cfg.session_start_utc = 0;
-    g_cfg.session_end_utc   = 0;   // equal start/end => 24h tradeable window
-    g_cfg.session_asia      = true;
-
-    g_cfg.max_latency_ms    = std::max(g_cfg.max_latency_ms, 80.0);  // floor raised: 25ms was irrelevant, real VPS RTTp95 ~68ms
-    // SHADOW quality profile: still active, but avoid low-edge overtrading.
-    g_cfg.max_hold_sec        = std::min(g_cfg.max_hold_sec, 120);
-    g_cfg.momentum_thresh_pct = std::max(g_cfg.momentum_thresh_pct, 0.045);
-    g_cfg.min_breakout_pct    = std::max(g_cfg.min_breakout_pct, 0.12);
-    g_cfg.max_trades_per_min  = std::min(g_cfg.max_trades_per_min, 3);
-
-    g_cfg.sp_min_gap_sec  = std::max(g_cfg.sp_min_gap_sec, 90);
-    g_cfg.nq_min_gap_sec  = std::max(g_cfg.nq_min_gap_sec, 90);
-    g_cfg.oil_min_gap_sec = std::max(g_cfg.oil_min_gap_sec, 180);
-
-    g_cfg.sp_vol_thresh_pct   = std::max(g_cfg.sp_vol_thresh_pct, 0.040);
-    g_cfg.nq_vol_thresh_pct   = std::max(g_cfg.nq_vol_thresh_pct, 0.050);
-    g_cfg.oil_vol_thresh_pct  = std::max(g_cfg.oil_vol_thresh_pct, 0.080);
-
-    // Small-win profile with better quality than pure scalping.
-    g_cfg.sp_tp_pct = std::min(g_cfg.sp_tp_pct, 0.11);
-    g_cfg.sp_sl_pct = std::min(g_cfg.sp_sl_pct, 0.08);
-    g_cfg.nq_tp_pct = std::min(g_cfg.nq_tp_pct, 0.12);
-    g_cfg.nq_sl_pct = std::min(g_cfg.nq_sl_pct, 0.09);
-    g_cfg.oil_tp_pct = std::min(g_cfg.oil_tp_pct, 0.24);
-    g_cfg.oil_sl_pct = std::min(g_cfg.oil_sl_pct, 0.18);
-
-    std::cout << "[CONFIG] SHADOW quality profile enabled: 24h session, conservative quality tuning\n";
+    // REMOVED: shadow mode is an exact simulation of live trading.
+    // Loosening session hours, throttles, or thresholds in shadow produces
+    // results that do not reflect what live would do — defeating the purpose.
+    // This function is a no-op. It remains here to avoid breaking call sites.
+    (void)0;
 }
 
 static void maybe_reset_daily_ledger() {
@@ -2810,32 +2791,27 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     g_edges.tod.record(tr.symbol, tr.engine, tr.entryTs, tr.net_pnl);
 
     const std::string perf_key = perf_key_from_trade(tr);
-    const bool shadow_research = (g_cfg.mode == "SHADOW" && g_cfg.shadow_research_mode);
     {
         const std::string risk_key = g_cfg.independent_symbols ? tr.symbol : "GLOBAL";
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         auto& st = g_sym_risk[risk_key];
         st.daily_pnl += tr.net_pnl;   // track net (after costs) for stats only
         if (tr.net_pnl <= 0.0) {
-            // SHADOW: never pause or block — every trade is data we need for tuning.
-            // Loss tracking is recorded for stats/CSV but does not gate entries.
-            if (!shadow_research) {
-                const int loss_limit = g_cfg.max_consec_losses;
-                const int pause_sec  = g_cfg.loss_pause_sec;
-                if (++st.consec_losses >= loss_limit) {
-                    st.pause_until = nowSec() + pause_sec;
-                    std::cout << "[OMEGA-RISK] " << risk_key << " "
-                              << loss_limit << " consecutive losses -- pause "
-                              << pause_sec << "s\n";
-                }
-            } else {
-                ++st.consec_losses; // count for stats, no gate
+            const int loss_limit = g_cfg.max_consec_losses;
+            const int pause_sec  = g_cfg.loss_pause_sec;
+            if (++st.consec_losses >= loss_limit) {
+                st.pause_until = nowSec() + pause_sec;
+                std::cout << "[OMEGA-RISK] " << risk_key << " "
+                          << loss_limit << " consecutive losses -- pause "
+                          << pause_sec << "s\n";
             }
         } else {
             st.consec_losses = 0;
         }
-        // SHADOW: fast-loss streak tracked for stats/logging only — no pause applied
-        if (shadow_research) {
+        // Fast-loss streak gate: if 3+ consecutive fast bad losses (SL/scratch/timeout
+        // within 120s), apply the same loss_pause_sec cooldown as the main consec-loss gate.
+        // Applies in all modes — shadow is a simulation.
+        {
             auto& qs = g_shadow_quality[tr.symbol];
             const int64_t held = std::max<int64_t>(0, tr.exitTs - tr.entryTs);
             const bool fast_bad_loss =
@@ -2844,9 +2820,15 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                 (tr.exitReason == "SL_HIT" || tr.exitReason == "SCRATCH" || tr.exitReason == "TIMEOUT");
             if (fast_bad_loss) {
                 ++qs.fast_loss_streak;
-                std::cout << "[OMEGA-QUALITY] " << tr.symbol
-                          << " fast-loss streak=" << qs.fast_loss_streak
-                          << " (logged only — no block in shadow)\n";
+                if (qs.fast_loss_streak >= 3) {
+                    qs.pause_until = nowSec() + g_cfg.loss_pause_sec;
+                    std::cout << "[OMEGA-QUALITY] " << tr.symbol
+                              << " fast-loss streak=" << qs.fast_loss_streak
+                              << " — pausing " << g_cfg.loss_pause_sec << "s\n";
+                } else {
+                    std::cout << "[OMEGA-QUALITY] " << tr.symbol
+                              << " fast-loss streak=" << qs.fast_loss_streak << "/3\n";
+                }
             } else if (tr.net_pnl > 0.0) {
                 qs.fast_loss_streak = 0;
             } else if (qs.fast_loss_streak > 0) {
@@ -2861,7 +2843,6 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         ps.live_pnl += tr.net_pnl;   // net pnl for performance tracking
         if (tr.net_pnl > 0) ps.live_wins++; else ps.live_losses++;
         if (!ps.disabled &&
-            g_cfg.mode != "SHADOW" &&
             ps.live_trades >= g_cfg.auto_disable_after_trades &&
             ps.live_pnl < 0.0) {
             ps.disabled = true;
@@ -3256,8 +3237,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // See bracket_spread_blocked lambda below which calls ++g_gov_spread directly.
 
     auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
-        // SHADOW: never block on loss — all trades are data for tuning.
-        if (g_cfg.mode == "SHADOW") return false;
+        // Shadow mode enforces all risk gates identically to LIVE.
+        // The only shadow exemption is that orders are not sent to the broker.
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         auto& st = g_sym_risk[symbol];
         if (st.daily_pnl < -g_cfg.daily_loss_limit) {
@@ -3279,7 +3260,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     auto symbol_gate = [&](const std::string& symbol, bool symbol_has_open_position) -> bool {
         const bool shadow_mode = (g_cfg.mode == "SHADOW");
-        const bool shadow_research = (shadow_mode && g_cfg.shadow_research_mode);
         if (symbol == "GOLD.F" && g_disable_gold_stack) return false;
         // Connection stability gate: block new entries for N seconds after reconnect.
         // Prevents opening positions on the first tick after logon when the FIX session
@@ -3295,8 +3275,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             auto it = g_perf.find(symbol);
             if (it != g_perf.end() && it->second.disabled) return false;
         }
-        if ((!shadow_mode || !shadow_research) && !tradeable) return false;
-        if (!shadow_mode && !lat_ok) return false;  // latency gate: LIVE only
+        if (!tradeable) return false;  // session gate applies in all modes — shadow is a simulation
+        if (!shadow_mode && !lat_ok) return false;  // latency gate: LIVE only (VPS can't simulate RTT)
         if (shadow_mode) {
             // Optional shadow pilot mode: keep GOLD stack live and run USTEC pilot only.
             if (g_cfg.shadow_ustec_pilot_only &&
@@ -3308,7 +3288,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (g_cfg.ustec_pilot_require_latency && !lat_ok) return false;
                 if (g_cfg.ustec_pilot_block_risk_off && regime == "RISK_OFF") return false;
             }
-            // SHADOW: shadow_quality streak is tracked for stats only — no gate applied
+            // ── Fast-loss streak gate — applies in all modes ──────────────────
+            // 3 consecutive fast bad losses triggers loss_pause_sec cooldown.
+            {
+                std::lock_guard<std::mutex> lk2(g_sym_risk_mtx);
+                auto it = g_shadow_quality.find(symbol);
+                if (it != g_shadow_quality.end() && it->second.pause_until > nowSec()) {
+                    return false;
+                }
+            }
+            // SHADOW pilot mode filters
         }
         if (symbol_has_open_position) {
             ++g_gov_pos;
@@ -3373,7 +3362,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             // ── Daily profit target ───────────────────────────────────────────
             // Stop new entries once daily P&L hits the target — lock in the day.
-            if (!shadow_mode && g_cfg.daily_profit_target > 0.0) {
+            if (g_cfg.daily_profit_target > 0.0) {
                 const double daily_pnl = g_omegaLedger.dailyPnl();
                 if (daily_pnl >= g_cfg.daily_profit_target) {
                     static int64_t s_last_profit_log = 0;
@@ -3388,7 +3377,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // ── Session watermark drawdown ────────────────────────────────────
             // Stop if drawdown from intra-day P&L peak exceeds watermark_pct
             // of the reference level (daily_profit_target if set, else daily_loss_limit).
-            if (!shadow_mode && g_cfg.session_watermark_pct > 0.0) {
+            if (g_cfg.session_watermark_pct > 0.0) {
                 const double peak_pnl   = g_omegaLedger.peakDailyPnl();
                 const double daily_pnl  = g_omegaLedger.dailyPnl();
                 const double drawdown   = peak_pnl - daily_pnl;
@@ -3407,7 +3396,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             // ── Hourly loss throttle ──────────────────────────────────────────
             // Block new entries if rolling 2h net P&L loss exceeds hourly_loss_limit.
-            if (!shadow_mode && g_cfg.hourly_loss_limit > 0.0) {
+            if (g_cfg.hourly_loss_limit > 0.0) {
                 double rolling_pnl = 0.0;
                 {
                     std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
@@ -3429,9 +3418,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
             // ── Time-of-day gate — block known-negative 30-min buckets ─────────
             // Uses live win-rate/EV data from closed trades. No-op until 30 trades
-            // per bucket are recorded. SHADOW mode allowed — builds the data.
-            if (g_cfg.mode != "SHADOW") {
-                // engine name not available here — check the generic symbol bucket
+            // per bucket are recorded. Applies in all modes — shadow is a simulation.
+            {
                 if (!g_edges.tod.allow(symbol, "ALL", nowSec())) {
                     static thread_local int64_t s_tod_log = 0;
                     if (nowSec() - s_tod_log > 120) {
@@ -3443,8 +3431,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             // ── Relative spread Z-score gate ──────────────────────────────────
             // Block if current spread is anomalous vs rolling 200-tick median.
-            // More nuanced than fixed max_spread_pct — adapts to session liquidity.
-            if (!shadow_mode) {
+            // Applies in all modes — shadow is a simulation.
+            {
                 std::lock_guard<std::mutex> lk2(g_book_mtx);
                 const auto bid_it = g_bids.find(symbol);
                 const auto ask_it = g_asks.find(symbol);
@@ -3462,11 +3450,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                 }
             }
-            // ── Regime block gate ─────────────────────────────────────────────
-            // Only blocks in LIVE mode — shadow needs all trades for data collection
-            if (g_cfg.mode != "SHADOW" && g_regime_adaptor.equity_blocked(symbol)) return false;
-            // ── Correlation heat gate ─────────────────────────────────────────
-            if (g_cfg.mode != "SHADOW" && !g_adaptive_risk.corr_heat_ok(symbol)) return false;
+            // ── Regime block gate — applied in all modes ──────────────────────
+            if (g_regime_adaptor.equity_blocked(symbol)) return false;
+            // ── Correlation heat gate — applied in all modes ──────────────────
+            if (!g_adaptive_risk.corr_heat_ok(symbol)) return false;
             return !symbol_risk_blocked(symbol);
         }
         // Legacy global portfolio mode.
@@ -3525,16 +3512,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (!pos_budget_ok) ++g_gov_pos;
         if (!pos_budget_ok) return false;
         // ── Daily profit target / session watermark / hourly throttle ─────────
-        if (!shadow_mode && g_cfg.daily_profit_target > 0.0 &&
+        // Applied in all modes including SHADOW — shadow is an exact simulation.
+        if (g_cfg.daily_profit_target > 0.0 &&
             g_omegaLedger.dailyPnl() >= g_cfg.daily_profit_target) return false;
-        if (!shadow_mode && g_cfg.session_watermark_pct > 0.0) {
+        if (g_cfg.session_watermark_pct > 0.0) {
             const double peak = g_omegaLedger.peakDailyPnl();
             const double ref  = (g_cfg.daily_profit_target > 0.0)
                 ? g_cfg.daily_profit_target : g_cfg.daily_loss_limit;
             if (peak > 0.0 && (peak - g_omegaLedger.dailyPnl()) >= ref * g_cfg.session_watermark_pct)
                 return false;
         }
-        if (!shadow_mode && g_cfg.hourly_loss_limit > 0.0) {
+        if (g_cfg.hourly_loss_limit > 0.0) {
             double rolling = 0.0;
             { std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
               for (const auto& r : g_hourly_pnl_records)
@@ -3543,10 +3531,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         // ── News blackout gate ────────────────────────────────────────────────
         if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
-        // ── Regime block gate ─────────────────────────────────────────────────
-        if (g_cfg.mode != "SHADOW" && g_regime_adaptor.equity_blocked(symbol)) return false;
-        // ── Correlation heat gate ─────────────────────────────────────────────
-        if (g_cfg.mode != "SHADOW" && !g_adaptive_risk.corr_heat_ok(symbol)) return false;
+        // ── Regime block gate — applied in all modes ──────────────────────────
+        if (g_regime_adaptor.equity_blocked(symbol)) return false;
+        // ── Correlation heat gate — applied in all modes ──────────────────────
+        if (!g_adaptive_risk.corr_heat_ok(symbol)) return false;
         return true;
     };
 
@@ -4185,30 +4173,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Runs every tick for every symbol. No-op when no partial state is active.
     // When TP1 is hit: sends a market close for the first half and moves SL to BE.
     // When TP2/trailing SL is hit: sends final close for the remainder.
-    // Only fires in LIVE mode — in SHADOW the broker manages SL/TP server-side
-    // (no soft management needed). Partial exit is informational in SHADOW.
+    // Applies in all modes — shadow simulates the close without sending a real order.
     if (g_partial_exit.active(sym)) {
         double pe_price = 0.0, pe_lot = 0.0;
         using PE = omega::partial::CloseAction;
         const PE act = g_partial_exit.tick(sym, mid, bid, ask, pe_price, pe_lot);
         if (act == PE::PARTIAL || act == PE::FULL) {
-            // Close direction = opposite of the entry direction stored at arm() time.
-            // entry_is_long() retrieves the is_long field from PartialExitState directly —
-            // valid for all symbols including GOLD.F where we can't query engine state.
             const bool close_is_long = !g_partial_exit.entry_is_long(sym);
+            // In LIVE mode send the actual order; in SHADOW simulate the fill at current mid.
             if (g_cfg.mode == "LIVE") {
                 send_live_order(sym, close_is_long, pe_lot, pe_price);
-                std::printf("[PARTIAL-EXIT] %s %s close %.2f lots @ %.5f  entry_long=%d\n",
-                            sym.c_str(),
-                            act == PE::PARTIAL ? "PARTIAL" : "FINAL",
-                            pe_lot, pe_price, g_partial_exit.entry_is_long(sym) ? 1 : 0);
-            } else {
-                // SHADOW: log only — engine will manage SL/TP server-side
-                std::printf("[PARTIAL-EXIT][SHADOW] %s %s %.2f lots @ %.5f\n",
-                            sym.c_str(),
-                            act == PE::PARTIAL ? "TP1-HIT" : "TP2/TRAIL-HIT",
-                            pe_lot, pe_price);
             }
+            // Log in both modes — shadow records the simulated partial as if it were real.
+            std::printf("[PARTIAL-EXIT]%s %s %s %.2f lots @ %.5f  entry_long=%d\n",
+                        g_cfg.mode == "LIVE" ? "" : "[SHADOW]",
+                        sym.c_str(),
+                        act == PE::PARTIAL ? "TP1-HIT" : "TP2/TRAIL-HIT",
+                        pe_lot, pe_price,
+                        g_partial_exit.entry_is_long(sym) ? 1 : 0);
             if (act == PE::FULL) {
                 g_partial_exit.reset(sym);
             }
@@ -4229,12 +4211,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             dispatch_bracket(g_bracket_sp, g_sup_sp, g_eng_sp, base_can_sp,
                              0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
                              g_macro_ctx.sp_l2_imbalance, &sdec_sp);
-        // Cross-asset: ES/NQ divergence — DISABLED pending signal quality validation
-        // Engine was built but never activated (divergence signal fires too frequently
-        // on normal ES/NQ spread fluctuations). Drain any open position to closure,
-        // but generate no new entries.
-        if (g_ca_esnq.has_open_position()) {
-            g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, ca_on_close);
+        // Cross-asset: ES/NQ divergence engine.
+        // enabled=false by default — set esnq_enabled=true in [cross_asset] config once
+        // shadow validates signal quality. on_tick() always drains open positions even
+        // when disabled; new entries only fire when enabled=true and 3-tick confirmation passes.
+        {
+            const auto esnq = g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, ca_on_close);
+            if (esnq.valid && base_can_sp) {
+                g_telemetry.UpdateLastSignal(sym.c_str(), esnq.is_long?"LONG":"SHORT",
+                    esnq.entry, esnq.reason, "ESNQ_DIV", regime.c_str(), "ESNQ_DIV");
+                enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp);
+            }
         }
         if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {  // ADDED !vwap check
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
@@ -6540,9 +6527,9 @@ int main(int argc, char* argv[])
                   << "[SIZING]   Fallback (if compute_size fails): indices=0.10 | others=0.01\n";
     }
 
-    // Wire account equity to edge model — LIVE mode only.
-    // In SHADOW mode engines use fixed ENTRY_SIZE — equity is irrelevant.
-    if (g_cfg.mode == "LIVE") {
+    // Wire account equity to edge model — applies in all modes.
+    // Shadow uses the same account_equity for Kelly sizing as live would.
+    {
         const double acct_eq = g_cfg.account_equity;
         g_eng_sp.ACCOUNT_EQUITY     = acct_eq;
         g_eng_nq.ACCOUNT_EQUITY     = acct_eq;
@@ -6556,10 +6543,8 @@ int main(int argc, char* argv[])
         g_eng_eurusd.ACCOUNT_EQUITY = acct_eq;
         g_eng_gbpusd.ACCOUNT_EQUITY = acct_eq;
         g_eng_brent.ACCOUNT_EQUITY  = acct_eq;
-        std::cout << "[SIZING] LIVE mode: equity-based sizing active"
-                  << " account_equity=" << acct_eq << "\n";
-    } else {
-        std::cout << "[SIZING] SHADOW mode: ACCOUNT_EQUITY wiring disabled (not needed — risk_per_trade_usd drives sizing)\n";
+        std::cout << "[SIZING] account_equity=" << acct_eq
+                  << (g_cfg.mode == "LIVE" ? " (LIVE)" : " (SHADOW — same as live)") << "\n";
     }
     std::cout.flush();
 
@@ -6604,12 +6589,12 @@ int main(int argc, char* argv[])
             g_edges.tod.min_trades   = 30;    // need 30 trades per bucket before blocking
             g_edges.tod.min_win_rate = 0.38;  // block if WR < 38%
             g_edges.tod.min_avg_ev_usd = -2.0; // block if avg EV < -$2/trade
-            g_edges.tod.enabled      = (g_cfg.mode != "SHADOW"); // collect in shadow, gate in live
+            g_edges.tod.enabled      = true;  // active in all modes — shadow is a simulation
         }
         // Spread Z-score gate: starts building after first 20 ticks per symbol
         g_edges.spread_gate.window_ticks = 200;
         g_edges.spread_gate.max_z_score  = 3.0; // conservative: 3σ anomaly
-        g_edges.spread_gate.enabled      = (g_cfg.mode != "SHADOW");
+        g_edges.spread_gate.enabled      = true;  // active in all modes — shadow is a simulation
         // Round number filter
         g_edges.round_numbers.proximity_frac = 0.08; // within 8% of increment = "near"
         // Previous day levels
@@ -6618,7 +6603,7 @@ int main(int argc, char* argv[])
         g_edges.fx_fix.tp_pips        = 15.0;
         g_edges.fx_fix.sl_pips        = 8.0;
         g_edges.fx_fix.min_cvd_signal = 0.12; // need 12% normalised CVD to enter fix
-        g_edges.fx_fix.enabled        = (g_cfg.mode != "SHADOW");
+        g_edges.fx_fix.enabled        = true;  // active in all modes — shadow is a simulation
         // Fill quality
         g_edges.fill_quality.window_trades = 50;
         g_edges.fill_quality.adverse_threshold_bps = 2.0;
@@ -6733,22 +6718,23 @@ int main(int argc, char* argv[])
     std::cout.flush();
 
     if (g_cfg.mode == "SHADOW") {
-        const bool shadow_research = g_cfg.shadow_research_mode;
-        g_eng_sp.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_nq.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_cl.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_us30.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_nas100.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_ger30.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_uk100.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_estx50.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_xag.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_eurusd.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_gbpusd.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_audusd.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_nzdusd.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_usdjpy.AGGRESSIVE_SHADOW = shadow_research;
-        g_eng_brent.AGGRESSIVE_SHADOW = shadow_research;
+        // Shadow is an exact simulation of live — AGGRESSIVE_SHADOW cuts trades at 45s
+        // adverse which live never does. All engines must use the same exit logic as live.
+        g_eng_sp.AGGRESSIVE_SHADOW      = false;
+        g_eng_nq.AGGRESSIVE_SHADOW      = false;
+        g_eng_cl.AGGRESSIVE_SHADOW      = false;
+        g_eng_us30.AGGRESSIVE_SHADOW    = false;
+        g_eng_nas100.AGGRESSIVE_SHADOW  = false;
+        g_eng_ger30.AGGRESSIVE_SHADOW   = false;
+        g_eng_uk100.AGGRESSIVE_SHADOW   = false;
+        g_eng_estx50.AGGRESSIVE_SHADOW  = false;
+        g_eng_xag.AGGRESSIVE_SHADOW     = false;
+        g_eng_eurusd.AGGRESSIVE_SHADOW  = false;
+        g_eng_gbpusd.AGGRESSIVE_SHADOW  = false;
+        g_eng_audusd.AGGRESSIVE_SHADOW  = false;
+        g_eng_nzdusd.AGGRESSIVE_SHADOW  = false;
+        g_eng_usdjpy.AGGRESSIVE_SHADOW  = false;
+        g_eng_brent.AGGRESSIVE_SHADOW   = false;
 
         if (g_cfg.shadow_ustec_pilot_only) {
             g_eng_nq.ENTRY_SIZE = g_cfg.ustec_pilot_size;
@@ -6760,9 +6746,7 @@ int main(int argc, char* argv[])
         } else {
             std::cout << "[OMEGA-PILOT] Multi-symbol shadow enabled | all configured engines may trade\n";
         }
-        std::cout << "[OMEGA-MODE] SHADOW "
-                  << (shadow_research ? "research/discovery" : "paper/live-like")
-                  << " execution profile active\n";
+        std::cout << "[OMEGA-MODE] SHADOW — exact live simulation (orders paper only, all risk gates active)\n";
     }
 
     build_id_map();

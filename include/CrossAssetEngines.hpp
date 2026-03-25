@@ -222,61 +222,78 @@ private:
 // Only fires during NY session (13:30-17:00 UTC) when both are liquid.
 // Cost check: TP move must cover spread + slippage (no commission for indices).
 // =============================================================================
+// =============================================================================
+// SIGNAL QUALITY FIX (2026-03):
+//   Original engine fired on any single tick where div > threshold. This caused
+//   excessive entries on normal ES/NQ spread fluctuations — the divergence value
+//   bounces above threshold momentarily then reverses with no actual lag.
+//
+//   Fix: require divergence to remain above threshold for CONFIRM_TICKS consecutive
+//   ticks on the same symbol before firing. This filters single-tick noise while
+//   still catching genuine sustained divergences (which persist 5-15+ ticks).
+//   CONFIRM_TICKS=3: at 5-15 ticks/sec, 3 ticks = 200-600ms — enough to confirm
+//   a real lag without losing the edge (convergence takes 5-30s).
+//
+//   Enabled via [cross_asset] esnq_enabled=true in omega_config.ini.
+//   Default: disabled until signal quality is validated in shadow.
+// =============================================================================
 class EsNqDivergenceEngine {
 public:
-    // Configurable
-    double  DIV_ENTRY_THRESH   = 0.0008;  // 0.08% return divergence = meaningful lag
-    double  DIV_EXIT_THRESH    = 0.0002;  // exit when divergence closes to 0.02%
-    double  TP_PCT             = 0.08;    // 0.08% TP — convergence target
-    double  SL_PCT             = 0.05;    // 0.05% SL
-    int     MAX_HOLD_SEC       = 300;     // 5 min — convergence should happen fast
+    double  DIV_ENTRY_THRESH   = 0.0008;
+    double  DIV_EXIT_THRESH    = 0.0002;
+    double  TP_PCT             = 0.08;
+    double  SL_PCT             = 0.05;
+    int     MAX_HOLD_SEC       = 300;
     int     COOLDOWN_SEC       = 120;
-    bool    enabled            = true;
+    int     CONFIRM_TICKS      = 3;       // consecutive ticks above threshold required
+    bool    enabled            = false;   // disabled until shadow validates signal quality
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
-    // Call every tick with current prices and the MacroRegimeDetector divergence
-    // sym: "US500.F" or "USTEC.F" depending on which instrument this tick is for
-    // div: g_macro_ctx.es_nq_div (pre-computed)
     CrossSignal on_tick(const std::string& sym, double bid, double ask,
                         double div, CloseCb on_close) noexcept {
-        if (!enabled || bid <= 0 || ask <= 0) return {};
+        if (bid <= 0 || ask <= 0) return {};
+        // Always manage open position even when disabled — drain existing pos.
         if (pos_.active) {
             pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
             return {};
         }
+        if (!enabled) return {};
+
         // Session gate: NY only (13:30-17:00 UTC)
         struct tm ti{}; ca_utc_time(ti);
         const int mins = ti.tm_hour * 60 + ti.tm_min;
-        if (mins < 13*60+30 || mins >= 17*60) return {};
-
+        if (mins < 13*60+30 || mins >= 17*60) {
+            confirm_count_ = 0;
+            return {};
+        }
         if (ca_now_sec() < cooldown_until_) return {};
-        const double mid  = (bid + ask) * 0.5;
+
+        const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
 
-        // div > threshold: ES leading, NQ lagging → long NQ on NQ tick
-        // div < -threshold: NQ leading, ES lagging → long ES on ES tick
-        // Note: we only enter the laggard LONG. Shorting the leader is not done
-        // here — we cannot reliably predict whether the leader corrects down or
-        // the laggard catches up (asymmetric convergence).
-        bool fire = false;
-        bool is_long = true;
+        // Determine if this tick qualifies and in which direction.
+        // Laggard-long only — shorting the leader is unreliable.
+        bool qualifies = false;
+        bool is_long   = true;
+        if      (div >  DIV_ENTRY_THRESH && sym == "USTEC.F") { qualifies = true; is_long = true; }
+        else if (div < -DIV_ENTRY_THRESH && sym == "US500.F") { qualifies = true; is_long = true; }
 
-        if (div > DIV_ENTRY_THRESH && sym == "USTEC.F") {
-            fire = true; is_long = true;  // NQ lags ES upward → long NQ
-        } else if (div < -DIV_ENTRY_THRESH && sym == "US500.F") {
-            fire = true; is_long = true;  // ES lags NQ upward → long ES
+        if (!qualifies || confirm_is_long_ != is_long) {
+            confirm_count_   = qualifies ? 1 : 0;
+            confirm_is_long_ = is_long;
+            return {};
         }
-        // ES short path (div>thresh on US500.F tick) intentionally excluded:
-        // entering ES short when ES leads NQ is not reliable convergence —
-        // the leader may simply be right and NQ is slow. Laggard-long only.
-        if (!fire) return {};
 
-        const double tp = is_long ? mid * (1.0 + TP_PCT/100.0) : mid * (1.0 - TP_PCT/100.0);
-        const double sl = is_long ? mid * (1.0 - SL_PCT/100.0) : mid * (1.0 + SL_PCT/100.0);
+        ++confirm_count_;
+        if (confirm_count_ < CONFIRM_TICKS) return {};  // not yet confirmed
+
+        confirm_count_ = 0;  // reset — don't fire every subsequent tick
+
+        const double tp      = mid * (1.0 + (is_long ? 1 : -1) * TP_PCT / 100.0);
+        const double sl      = mid * (1.0 - (is_long ? 1 : -1) * SL_PCT / 100.0);
         const double tp_dist = std::fabs(tp - mid);
 
-        // Cost gate: gross TP must cover all execution costs
         if (!ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist, 0.01)) return {};
 
         CrossSignal sig;
@@ -292,9 +309,9 @@ public:
 
         pos_.open(sig, spread);
         last_div_at_entry_ = div;
-        cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
-        printf("[ESNQ-DIV] %s %s div=%.5f entry=%.2f tp=%.2f sl=%.2f\n",
-               sym.c_str(), is_long?"LONG":"SHORT", div, mid, sig.tp, sig.sl);
+        cooldown_until_    = ca_now_sec() + COOLDOWN_SEC;
+        printf("[ESNQ-DIV] %s %s div=%.5f confirmed=%dticks entry=%.2f tp=%.2f sl=%.2f\n",
+               sym.c_str(), is_long?"LONG":"SHORT", div, CONFIRM_TICKS, mid, tp, sl);
         fflush(stdout);
         return sig;
     }
@@ -304,8 +321,10 @@ public:
 
 private:
     CrossPosition pos_;
-    int64_t cooldown_until_ = 0;
+    int64_t cooldown_until_    = 0;
     double  last_div_at_entry_ = 0.0;
+    int     confirm_count_     = 0;
+    bool    confirm_is_long_   = false;
 };
 
 // =============================================================================
