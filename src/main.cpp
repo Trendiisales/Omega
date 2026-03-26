@@ -7087,6 +7087,117 @@ static void quote_loop() {
         // SO_SNDTIMEO (500ms, set in connect_ssl) caps SSL_write duration.
         // DO NOT set FIONBIO — it causes SSL_write to return WANT_WRITE
         // immediately, silently dropping the unsub and logout messages.
+        // ── STEP 1: Snapshot all prices BEFORE unsubscribing ─────────────────
+        // This is critical — prices are cleared when market data is unsubscribed.
+        // All position force-closes MUST use these snapshots, not live book.
+        std::unordered_map<std::string,double> px_snap_bid, px_snap_ask;
+        {
+            std::lock_guard<std::mutex> lk(g_book_mtx);
+            px_snap_bid = g_bids;
+            px_snap_ask = g_asks;
+        }
+        std::cout << "[OMEGA] Price snapshot taken: " << px_snap_bid.size() << " symbols\n";
+
+        // ── STEP 2: Close ALL open positions immediately using snapped prices ──
+        // Helper: get price from snapshot, fallback to live book, fallback to entry
+        auto snap_px = [&](const char* sym, double& b, double& a) {
+            b = 0.0; a = 0.0;
+            const auto bi = px_snap_bid.find(sym); if (bi != px_snap_bid.end()) b = bi->second;
+            const auto ai = px_snap_ask.find(sym); if (ai != px_snap_ask.end()) a = ai->second;
+            if (b <= 0.0 || a <= 0.0) {
+                std::lock_guard<std::mutex> lk(g_book_mtx);
+                const auto bi2 = g_bids.find(sym); if (bi2 != g_bids.end()) b = bi2->second;
+                const auto ai2 = g_asks.find(sym); if (ai2 != g_asks.end()) a = ai2->second;
+            }
+        };
+        auto shutdown_cb = [](const omega::TradeRecord& tr) {
+            handle_closed_trade(tr);
+            send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+        };
+
+        // Close every engine type
+        auto fc_snap = [&](auto& eng, const char* sym) {
+            if (!eng.pos.active) return;
+            double bid = 0.0, ask = 0.0; snap_px(sym, bid, ask);
+            if (bid <= 0.0) { bid = eng.pos.entry * 0.9999; ask = eng.pos.entry * 1.0001; }
+            eng.forceClose(bid, ask, "SHUTDOWN", g_rtt_last,
+                g_macroDetector.regime().c_str(), shutdown_cb);
+            std::cout << "[OMEGA-SHUTDOWN] Closed " << sym << " position\n";
+        };
+        auto fc_bracket_snap = [&](auto& beng, const char* sym) {
+            if (!beng.has_open_position()) return;
+            double b = 0.0, a = 0.0; snap_px(sym, b, a);
+            if (b <= 0.0) { b = 1.0; a = 1.0; }
+            beng.forceClose(b, a, "SHUTDOWN", g_rtt_last, "", shutdown_cb);
+            std::cout << "[OMEGA-SHUTDOWN] Closed bracket " << sym << "\n";
+        };
+
+        // Breakout engines
+        fc_snap(g_eng_sp,     "US500.F"); fc_snap(g_eng_nq,    "USTEC.F");
+        fc_snap(g_eng_cl,     "USOIL.F"); fc_snap(g_eng_us30,  "DJ30.F");
+        fc_snap(g_eng_nas100, "NAS100");  fc_snap(g_eng_ger30, "GER40");
+        fc_snap(g_eng_uk100,  "UK100");   fc_snap(g_eng_estx50,"ESTX50");
+        fc_snap(g_eng_xag,    "XAGUSD"); fc_snap(g_eng_eurusd, "EURUSD");
+        fc_snap(g_eng_gbpusd, "GBPUSD"); fc_snap(g_eng_audusd, "AUDUSD");
+        fc_snap(g_eng_nzdusd, "NZDUSD"); fc_snap(g_eng_usdjpy, "USDJPY");
+        fc_snap(g_eng_brent,  "BRENT");
+
+        // Gold/Silver bracket engines
+        { double b=0,a=0; snap_px("GOLD.F",b,a);
+          if(b<=0){b=1;a=1;}
+          g_bracket_gold.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",shutdown_cb); }
+        { double b=0,a=0; snap_px("XAGUSD",b,a);
+          if(b<=0){b=1;a=1;}
+          g_bracket_xag.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",shutdown_cb); }
+
+        // Index/FX/Oil bracket engines
+        fc_bracket_snap(g_bracket_sp,     "US500.F");
+        fc_bracket_snap(g_bracket_nq,     "USTEC.F");
+        fc_bracket_snap(g_bracket_us30,   "DJ30.F");
+        fc_bracket_snap(g_bracket_nas100, "NAS100");
+        fc_bracket_snap(g_bracket_ger30,  "GER40");
+        fc_bracket_snap(g_bracket_uk100,  "UK100");
+        fc_bracket_snap(g_bracket_estx50, "ESTX50");
+        fc_bracket_snap(g_bracket_brent,  "BRENT");
+        fc_bracket_snap(g_bracket_eurusd, "EURUSD");
+        fc_bracket_snap(g_bracket_gbpusd, "GBPUSD");
+        fc_bracket_snap(g_bracket_audusd, "AUDUSD");
+        fc_bracket_snap(g_bracket_nzdusd, "NZDUSD");
+        fc_bracket_snap(g_bracket_usdjpy, "USDJPY");
+
+        // Gold stack, flow, latency
+        { double b=0,a=0; snap_px("GOLD.F",b,a);
+          if(b<=0){b=1;a=1;}
+          g_gold_stack.force_close(b,a,shutdown_cb);
+          g_gold_flow.force_close(b,a,shutdown_cb); }
+        { double b=0,a=0; snap_px("GOLD.F",b,a);
+          if(b<=0){b=1;a=1;}
+          double s_bid=0,s_ask=0; snap_px("XAGUSD",s_bid,s_ask);
+          if(s_bid<=0){s_bid=b*0.0185;s_ask=a*0.0185;}
+          g_le_stack.force_close_all(b,a,s_bid,s_ask,g_rtt_last,
+              [&](const omega::TradeRecord& tr){shutdown_cb(tr);}); }
+
+        // Cross-asset engines (VWAP, TrendPB, ORB, Carry, etc.)
+        { double b=0,a=0;
+          snap_px("US500.F",b,a); if(b>0&&a>0){g_ca_esnq.force_close(b,a,shutdown_cb);g_orb_us.force_close(b,a,shutdown_cb);g_vwap_rev_sp.force_close(b,a,shutdown_cb);}
+          snap_px("USTEC.F",b,a); if(b>0&&a>0){g_vwap_rev_nq.force_close(b,a,shutdown_cb);}
+          snap_px("EURUSD",b,a);  if(b>0&&a>0){g_vwap_rev_eurusd.force_close(b,a,shutdown_cb);}
+          snap_px("GER40",b,a);   if(b>0&&a>0){g_orb_ger30.force_close(b,a,shutdown_cb);g_vwap_rev_ger40.force_close(b,a,shutdown_cb);g_trend_pb_ger40.force_close(b,a,shutdown_cb);}
+          snap_px("GOLD.F",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb);}
+          snap_px("XAGUSD",b,a);  if(b>0&&a>0){g_orb_silver.force_close(b,a,shutdown_cb);}
+          snap_px("UK100",b,a);   if(b>0&&a>0){g_orb_uk100.force_close(b,a,shutdown_cb);}
+          snap_px("ESTX50",b,a);  if(b>0&&a>0){g_orb_estx50.force_close(b,a,shutdown_cb);}
+          snap_px("USOIL.F",b,a); if(b>0&&a>0){g_ca_eia_fade.force_close(b,a,shutdown_cb);g_ca_brent_wti.force_close(b,a,shutdown_cb);}
+          snap_px("USDJPY",b,a);  if(b>0&&a>0){g_ca_carry_unwind.force_close(b,a,shutdown_cb);}
+          { double ab=0,aa=0,nb=0,na=0;
+            snap_px("GBPUSD",b,a); snap_px("AUDUSD",ab,aa); snap_px("NZDUSD",nb,na);
+            if(b>0&&a>0){g_ca_fx_cascade.force_close(b,a,shutdown_cb);}
+            if(ab>0&&aa>0){g_ca_fx_cascade.force_close_audusd(ab,aa,shutdown_cb);}
+            if(nb>0&&na>0){g_ca_fx_cascade.force_close_nzdusd(nb,na,shutdown_cb);} }
+        }
+        std::cout << "[OMEGA-SHUTDOWN] All positions closed\n";
+
+        // ── STEP 3: NOW unsubscribe and logout (prices no longer needed) ───────
         if (g_quote_ready.load()) {
             const std::string unsub_all = fix_build_md_unsub_all(g_quote_seq++);
             SSL_write(ssl, unsub_all.c_str(), static_cast<int>(unsub_all.size()));
@@ -7099,8 +7210,9 @@ static void quote_loop() {
         }
 
         g_quote_ready.store(false);
-        g_md_subscribed.store(false);  // clear — session ending
-        g_connected_since.store(0);  // reset stability timer on disconnect
+        g_md_subscribed.store(false);
+        g_connected_since.store(0);
+        // Old force-close block removed — positions already closed above in STEP 2
         auto fc = [](auto& eng, const char* sym) {
             if (!eng.pos.active) return;
             double bid = 0.0, ask = 0.0;
@@ -7116,11 +7228,8 @@ static void quote_loop() {
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     });
         };
-        fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F");
-        fc(g_eng_us30, "DJ30.F"); fc(g_eng_nas100, "NAS100");
-        fc(g_eng_ger30, "GER40"); fc(g_eng_uk100, "UK100");
-        fc(g_eng_estx50, "ESTX50"); fc(g_eng_xag, "XAGUSD"); fc(g_eng_eurusd, "EURUSD");
-        fc(g_eng_gbpusd, "GBPUSD");
+        // Old force-close calls removed — all positions closed in STEP 2 above
+        (void)fc;  // suppress unused warning
         // Force-close bracket engines — look up current prices from book
         {
             double bxag_bid = 0.0, bxag_ask = 0.0;
@@ -7184,33 +7293,11 @@ static void quote_loop() {
                     handle_closed_trade(tr);
                     send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                 };
-            // FIX: snapshot prices BEFORE unsubscribe clears g_bids/g_asks
-            // Previously ca_get_px returned 0/0 after unsub, silently skipping force-close
-            // Now we use the last known prices cached before disconnect
-            std::unordered_map<std::string,double> px_snap_b, px_snap_a;
-            {
-                std::lock_guard<std::mutex> lk(g_book_mtx);
-                px_snap_b = g_bids;
-                px_snap_a = g_asks;
-            }
-            auto ca_get_px = [&px_snap_b, &px_snap_a](const char* s, double& b, double& a) {
+            auto ca_get_px = [](const char* s, double& b, double& a) {
                 b = 0.0; a = 0.0;
-                // Try snapshot first (populated before unsub)
-                const auto bi = px_snap_b.find(s); if (bi != px_snap_b.end()) b = bi->second;
-                const auto ai = px_snap_a.find(s); if (ai != px_snap_a.end()) a = ai->second;
-                // Fallback to live book if snapshot empty
-                if (b <= 0.0 || a <= 0.0) {
-                    std::lock_guard<std::mutex> lk(g_book_mtx);
-                    const auto bi2 = g_bids.find(s); if (bi2 != g_bids.end()) b = bi2->second;
-                    const auto ai2 = g_asks.find(s); if (ai2 != g_asks.end()) a = ai2->second;
-                }
-                // Last resort: use a synthetic spread from the position entry price
-                // This ensures positions are ALWAYS closed even with no price data
-                if (b <= 0.0 || a <= 0.0) {
-                    // Find any active VWAP/cross position for this symbol and use entry price
-                    // as a rough exit — better than leaving position open indefinitely
-                    b = 1.0; a = 1.0;  // non-zero sentinel to allow force_close to proceed
-                }
+                std::lock_guard<std::mutex> lk(g_book_mtx);
+                const auto bi = g_bids.find(s); if (bi != g_bids.end()) b = bi->second;
+                const auto ai = g_asks.find(s); if (ai != g_asks.end()) a = ai->second;
             };
             double ca_b = 0.0, ca_a = 0.0;
             ca_get_px("US500.F", ca_b, ca_a);
