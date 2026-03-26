@@ -472,8 +472,10 @@ static std::string buildHistoryJson()
     // Try common locations in order
     static const char* PATHS[] = {
         "logs/trades/omega_trade_closes.csv",
+        "C:\\Omega\\logs\\trades\\omega_trade_closes.csv",
         "C:\\Omega\\build\\Release\\logs\\trades\\omega_trade_closes.csv",
         "../logs/trades/omega_trade_closes.csv",
+        "..\\..\\logs\\trades\\omega_trade_closes.csv",
     };
 
     FILE* f = nullptr;
@@ -622,8 +624,10 @@ static std::string buildDailySummaryJson()
     char daily_path[256];
     static const char* DAILY_DIRS[] = {
         "logs/trades",
+        "C:\\Omega\\logs\\trades",
         "C:\\Omega\\build\\Release\\logs\\trades",
         "../logs/trades",
+        "..\\..\\logs\\trades",
     };
 
     FILE* f = nullptr;
@@ -637,7 +641,10 @@ static std::string buildDailySummaryJson()
     if (!f) {
         static const char* FULL_PATHS[] = {
             "logs/trades/omega_trade_closes.csv",
+            "C:\\Omega\\logs\\trades\\omega_trade_closes.csv",
             "C:\\Omega\\build\\Release\\logs\\trades\\omega_trade_closes.csv",
+            "../logs/trades/omega_trade_closes.csv",
+            "..\\..\\logs\\trades\\omega_trade_closes.csv",
         };
         for (auto p : FULL_PATHS) { f = fopen(p, "r"); if (f) break; }
     }
