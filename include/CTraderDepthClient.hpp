@@ -309,6 +309,14 @@ private:
             }
         }
         std::cout << "[CTRADER] Symbol list: " << id_to_name_.size() << " total, " << sub_ids.size() << " to subscribe\n";
+        // Always log gold-related symbols for debugging
+        for (const auto& kv : id_to_name_) {
+            const std::string& n = kv.second;
+            if (n.find("XAU") != std::string::npos ||
+                n.find("GOLD") != std::string::npos ||
+                n.find("Gold") != std::string::npos)
+                std::cout << "[CTRADER] Gold candidate: " << n << " id=" << kv.first << "\n";
+        }
         // Always dump all symbols so we can diagnose name mismatches
         if (dump_all_symbols || sub_ids.empty()) {
             std::cout << "[CTRADER] Available symbols:\n";
