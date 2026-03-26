@@ -3358,7 +3358,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         std::lock_guard<std::mutex> lk(g_l2_mtx);
         auto getImb = [&](const std::string& s) -> double {
             auto it = g_l2_books.find(s);
-            return (it != g_l2_books.end()) ? it->second.imbalance() : 0.5;
+            // Only return real imbalance when the book has actual data.
+            // An empty book (subscribed but no events yet) also returns 0.5
+            // from imbalance() — indistinguishable from the neutral fallback.
+            // has_data() ensures we only use books with real depth events.
+            return (it != g_l2_books.end() && it->second.has_data())
+                ? it->second.imbalance() : 0.5;
         };
         g_macro_ctx.sp_l2_imbalance     = getImb("US500.F");
         g_macro_ctx.nq_l2_imbalance     = getImb("USTEC.F");

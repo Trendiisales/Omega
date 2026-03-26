@@ -488,7 +488,7 @@ private:
     // Consecutive HIGH_RISK ticks while candidate_stable=true — used for revocation
     int     m_high_risk_ticks      = 0;
     // Fix 2: reduced from 4 — supervisor was too slow to stabilise
-    static constexpr int REGIME_HOLD_TICKS     = 2;
+    static constexpr int REGIME_HOLD_TICKS     = 1;  // was 2 — single non-blocking tick enough to stabilize
     // Fix 2: minimum ms a regime must hold before switching (prevents tick-by-tick flipping)
     static constexpr int64_t REGIME_HOLD_MS    = 1500;  // 1.5 seconds — faster regime promotion
     // HIGH_RISK must hold this many consecutive ticks to revoke a stable candidate.
