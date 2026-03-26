@@ -5957,7 +5957,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double gf_atr = g_gold_flow.current_atr();
                 if (gf_atr > 0.0) {
                     const double gf_mid    = (bid + ask) * 0.5;
-                    const bool   gf_long   = (g_macro_ctx.gold_l2_imbalance > 0.5);
+                    // Direction proxy must match GFE_LONG_THRESHOLD (0.75) / GFE_SHORT_THRESHOLD (0.25).
+                    // The engine only counts l2_imb > 0.75 as a long tick and < 0.25 as a short tick.
+                    // Using 0.5 as the threshold would score the WRONG direction for imb in [0.25, 0.75]
+                    // — ticks the engine counts as neutral but the gate treats as directional.
+                    // At actual signal time l2_imb is always well above 0.75 (stale check also confirms > 0.60),
+                    // so this fix has no practical P&L effect but keeps the gate internally consistent.
+                    const bool   gf_long   = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
                     const double gf_tp_est = gf_long
                         ? gf_mid + gf_atr * 2.0
                         : gf_mid - gf_atr * 2.0;
