@@ -1064,11 +1064,14 @@ public:
         const double spread = ask - bid;
 
         if (pos_.active) {
+            // FIX: always manage open position regardless of session gate
+            // Previously the session gate (h >= 22) returned early BEFORE manage()
+            // causing positions to hold open all night until force-closed on shutdown
             pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
             return {};
         }
 
-        // Session gate: London/NY (08:00-22:00 UTC)
+        // Session gate: London/NY (08:00-22:00 UTC) — entry only, not exit
         struct tm ti{}; ca_utc_time(ti);
         const int h = ti.tm_hour;
         if (h < 8 || h >= 22) return {};
