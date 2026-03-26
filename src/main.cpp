@@ -1330,6 +1330,29 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     return 1.0;  // Unknown symbol: no scaling (safe fallback)
 }
 
+// ── Live trade telemetry helper — static free function, callable from any context ──
+// Cannot be a lambda: MSVC refuses to call local lambdas defined inside another lambda
+// even when non-capturing. Free function has no such restriction.
+static void push_live_trade(const char* sym, const char* eng, bool il,
+                             double entry, double tp, double sl,
+                             double sz, int64_t ts)
+{
+    double cb = 0.0, ca = 0.0;
+    {
+        std::lock_guard<std::mutex> lk(g_book_mtx);
+        auto bi = g_bids.find(sym);
+        auto ai = g_asks.find(sym);
+        if (bi != g_bids.end()) cb = bi->second;
+        if (ai != g_asks.end()) ca = ai->second;
+    }
+    const double cur = il ? cb : ca;
+    const double tv  = tick_value_multiplier(sym);
+    const double pnl = (il ? (cur - entry) : (entry - cur)) * sz * tv;
+    // AddLiveTrade(symbol, engine, side, entry, current, tp, sl, size, pnl, tick_value, entry_ts)
+    g_telemetry.AddLiveTrade(sym, eng, il ? "LONG" : "SHORT",
+        entry, cur, tp, sl, sz, pnl, tv, ts);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // compute_size() — risk-based position sizing
 //
@@ -3842,57 +3865,38 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Rebuilds live_trades[] from scratch every 250ms.
             // Each open position contributes one entry with current floating P&L.
             g_telemetry.ClearLiveTrades();
-            // Per-trade live P&L — direct calls, no lambda/macro
-            // AddLiveTrade(sym, eng, side, entry, current, tp, sl, size, pnl, tick_value, entry_ts)
-            {
-                auto add_lt = [](const char* sym, const char* eng, bool il,
-                                 double entry, double tp, double sl,
-                                 double sz, int64_t ts) {
-                    double cb = 0.0, ca = 0.0;
-                    {
-                        std::lock_guard<std::mutex> lk(g_book_mtx);
-                        auto bi = g_bids.find(sym);
-                        auto ai = g_asks.find(sym);
-                        if (bi != g_bids.end()) cb = bi->second;
-                        if (ai != g_asks.end()) ca = ai->second;
-                    }
-                    const double cur = il ? cb : ca;
-                    const double tv  = tick_value_multiplier(sym);
-                    const double pnl = (il ? (cur - entry) : (entry - cur)) * sz * tv;
-                    g_telemetry.AddLiveTrade(sym, eng, il ? "LONG" : "SHORT",
-                        entry, cur, tp, sl, sz, pnl, tv, ts);
-                };
-                if (g_gold_flow.pos.active)
-                    add_lt("GOLD.F","GoldFlow",
-                           g_gold_flow.pos.is_long, g_gold_flow.pos.entry,
-                           0.0, g_gold_flow.pos.sl,
-                           g_gold_flow.pos.size, g_gold_flow.pos.entry_ts);
-                if (g_gold_stack.has_open_position())
-                    add_lt("GOLD.F", g_gold_stack.live_engine(),
-                           g_gold_stack.live_is_long(), g_gold_stack.live_entry(),
-                           g_gold_stack.live_tp(),      g_gold_stack.live_sl(),
-                           g_gold_stack.live_size(),    (int64_t)std::time(nullptr));
-                if (g_bracket_gold.pos.active)
-                    add_lt("GOLD.F","Bracket",
-                           g_bracket_gold.pos.is_long, g_bracket_gold.pos.entry,
-                           g_bracket_gold.pos.tp,      g_bracket_gold.pos.sl,
-                           g_bracket_gold.pos.size,    g_bracket_gold.pos.entry_ts);
-                if (g_eng_sp.pos.active)
-                    add_lt("US500.F","Breakout", g_eng_sp.pos.is_long(),
-                           g_eng_sp.pos.entry, 0.0, 0.0, g_eng_sp.pos.size, (int64_t)0);
-                if (g_eng_nq.pos.active)
-                    add_lt("USTEC.F","Breakout", g_eng_nq.pos.is_long(),
-                           g_eng_nq.pos.entry, 0.0, 0.0, g_eng_nq.pos.size, (int64_t)0);
-                if (g_eng_cl.pos.active)
-                    add_lt("USOIL.F","Breakout", g_eng_cl.pos.is_long(),
-                           g_eng_cl.pos.entry, 0.0, 0.0, g_eng_cl.pos.size, (int64_t)0);
-                if (g_eng_xag.pos.active)
-                    add_lt("XAGUSD","Breakout",  g_eng_xag.pos.is_long(),
-                           g_eng_xag.pos.entry,  0.0, 0.0, g_eng_xag.pos.size, (int64_t)0);
-                if (g_eng_eurusd.pos.active)
-                    add_lt("EURUSD","Breakout",  g_eng_eurusd.pos.is_long(),
-                           g_eng_eurusd.pos.entry, 0.0, 0.0, g_eng_eurusd.pos.size, (int64_t)0);
-            }
+            // Per-trade live P&L — calls push_live_trade() static free function
+            // push_live_trade(sym, eng, is_long, entry, tp, sl, size, entry_ts)
+            if (g_gold_flow.pos.active)
+                push_live_trade("GOLD.F","GoldFlow",
+                    g_gold_flow.pos.is_long, g_gold_flow.pos.entry,
+                    0.0, g_gold_flow.pos.sl,
+                    g_gold_flow.pos.size, g_gold_flow.pos.entry_ts);
+            if (g_gold_stack.has_open_position())
+                push_live_trade("GOLD.F", g_gold_stack.live_engine(),
+                    g_gold_stack.live_is_long(), g_gold_stack.live_entry(),
+                    g_gold_stack.live_tp(),       g_gold_stack.live_sl(),
+                    g_gold_stack.live_size(),     (int64_t)std::time(nullptr));
+            if (g_bracket_gold.pos.active)
+                push_live_trade("GOLD.F","Bracket",
+                    g_bracket_gold.pos.is_long, g_bracket_gold.pos.entry,
+                    g_bracket_gold.pos.tp,      g_bracket_gold.pos.sl,
+                    g_bracket_gold.pos.size,    g_bracket_gold.pos.entry_ts);
+            if (g_eng_sp.pos.active)
+                push_live_trade("US500.F","Breakout", g_eng_sp.pos.is_long(),
+                    g_eng_sp.pos.entry, 0.0, 0.0, g_eng_sp.pos.size, (int64_t)0);
+            if (g_eng_nq.pos.active)
+                push_live_trade("USTEC.F","Breakout", g_eng_nq.pos.is_long(),
+                    g_eng_nq.pos.entry, 0.0, 0.0, g_eng_nq.pos.size, (int64_t)0);
+            if (g_eng_cl.pos.active)
+                push_live_trade("USOIL.F","Breakout", g_eng_cl.pos.is_long(),
+                    g_eng_cl.pos.entry, 0.0, 0.0, g_eng_cl.pos.size, (int64_t)0);
+            if (g_eng_xag.pos.active)
+                push_live_trade("XAGUSD","Breakout", g_eng_xag.pos.is_long(),
+                    g_eng_xag.pos.entry, 0.0, 0.0, g_eng_xag.pos.size, (int64_t)0);
+            if (g_eng_eurusd.pos.active)
+                push_live_trade("EURUSD","Breakout", g_eng_eurusd.pos.is_long(),
+                    g_eng_eurusd.pos.entry, 0.0, 0.0, g_eng_eurusd.pos.size, (int64_t)0);
         }
     }
 
