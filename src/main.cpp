@@ -7168,8 +7168,8 @@ static void quote_loop() {
         // Gold stack, flow, latency
         { double b=0,a=0; snap_px("GOLD.F",b,a);
           if(b<=0){b=1;a=1;}
-          g_gold_stack.force_close(b,a,shutdown_cb);
-          g_gold_flow.force_close(b,a,shutdown_cb); }
+          { std::function<void(const omega::TradeRecord&)> _gs_cb=shutdown_cb; g_gold_stack.force_close(b,a,g_rtt_last,g_macroDetector.regime().c_str(),_gs_cb); }
+          g_gold_flow.force_close(b,a,std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),shutdown_cb); }
         { double b=0,a=0; snap_px("GOLD.F",b,a);
           if(b<=0){b=1;a=1;}
           double s_bid=0,s_ask=0; snap_px("XAGUSD",s_bid,s_ask);
@@ -7255,7 +7255,7 @@ static void quote_loop() {
             sbk(g_bracket_usdjpy,"USDJPY");
 
             // Gold stack + flow + latency
-            { double b,a; get_px("GOLD.F",b,a); g_gold_stack.force_close(b,a,scb); g_gold_flow.force_close(b,a,scb); }
+            { double b,a; get_px("GOLD.F",b,a); { std::function<void(const omega::TradeRecord&)> _gs_cb2=scb; g_gold_stack.force_close(b,a,g_rtt_last,g_macroDetector.regime().c_str(),_gs_cb2); } g_gold_flow.force_close(b,a,std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),scb); }
             { double b,a,sb,sa; get_px("GOLD.F",b,a); get_px("XAGUSD",sb,sa);
               g_le_stack.force_close_all(b,a,sb,sa,g_rtt_last,[&](const omega::TradeRecord& tr){scb(tr);}); }
 
