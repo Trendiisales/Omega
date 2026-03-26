@@ -583,38 +583,45 @@ public:
                     }
                 }
             }
-            // Manage pyramid position — trailing stop, not fixed TP/SL.
-            // The pyramid leg rides the same move as the main position.
-            // Trail: once move >= 50% of initial TP distance, trail SL to lock profit.
+            // Manage pyramid position — tiered trailing stop.
+            // pyramid_count tells us which add-on this is (1=first, 2=second).
+            // Each add-on uses progressively tighter trailing to lock profits faster.
+            // Base leg: wide trail (ridden by main position management above)
+            // Pyramid 1: medium trail — BE at 25% TP, trail at 50%, lock 60% at 1R
+            // Pyramid 2: tight trail  — BE at 15% TP, trail at 35%, lock 70% at 1R
             if (pos.pyramid_count > 0 && pos.pyramid_entry > 0.0 && !pos.pyramid_pending) {
                 const double pyr_move = pos.is_long
                     ? (bid - pos.pyramid_entry)
                     : (pos.pyramid_entry - ask);
                 const double pyr_tp_dist = std::fabs(pos.pyramid_tp - pos.pyramid_entry);
 
-                // Progressive trail on pyramid leg
+                // Tier multipliers: pyramid 1 = medium, pyramid 2 = tight
+                const double be_pct    = (pos.pyramid_count == 1) ? 0.25 : 0.15;
+                const double trail_pct = (pos.pyramid_count == 1) ? 0.50 : 0.35;
+                const double lock_pct  = (pos.pyramid_count == 1) ? 0.60 : 0.70;
+
                 if (pyr_move > 0.0 && pyr_tp_dist > 0.0) {
-                    // BE lock at 30% of TP distance
-                    if (pyr_move >= pyr_tp_dist * 0.30) {
-                        const double be_lock = pos.is_long
-                            ? std::max(pos.pyramid_sl, pos.pyramid_entry)
-                            : std::min(pos.pyramid_sl, pos.pyramid_entry);
-                        pos.pyramid_sl = be_lock;
+                    // BE lock
+                    if (pyr_move >= pyr_tp_dist * be_pct) {
+                        const double be = pos.is_long ? pos.pyramid_entry : pos.pyramid_entry;
+                        if ((pos.is_long  && be > pos.pyramid_sl) ||
+                            (!pos.is_long && be < pos.pyramid_sl))
+                            pos.pyramid_sl = be;
                     }
-                    // Trail at 60% of TP: lock 40% of move
-                    if (pyr_move >= pyr_tp_dist * 0.60) {
+                    // Start trailing
+                    if (pyr_move >= pyr_tp_dist * trail_pct) {
                         const double trail = pos.is_long
-                            ? (pos.pyramid_entry + pyr_move * 0.40)
-                            : (pos.pyramid_entry - pyr_move * 0.40);
+                            ? (pos.pyramid_entry + pyr_move * lock_pct)
+                            : (pos.pyramid_entry - pyr_move * lock_pct);
                         if ((pos.is_long  && trail > pos.pyramid_sl) ||
                             (!pos.is_long && trail < pos.pyramid_sl))
                             pos.pyramid_sl = trail;
                     }
-                    // Trail at 100%+ TP: trail at 70% of MFE — let runners run
+                    // At full TP distance: tighten to 80% of MFE locked
                     if (pyr_move >= pyr_tp_dist) {
                         const double trail = pos.is_long
-                            ? (pos.pyramid_entry + pyr_move * 0.70)
-                            : (pos.pyramid_entry - pyr_move * 0.70);
+                            ? (pos.pyramid_entry + pyr_move * 0.80)
+                            : (pos.pyramid_entry - pyr_move * 0.80);
                         if ((pos.is_long  && trail > pos.pyramid_sl) ||
                             (!pos.is_long && trail < pos.pyramid_sl))
                             pos.pyramid_sl = trail;
@@ -626,7 +633,8 @@ public:
                     const char* r = (pos.pyramid_sl > pos.pyramid_entry + 0.001 ||
                                      pos.pyramid_sl < pos.pyramid_entry - 0.001)
                                     ? "TRAIL_HIT" : (pyr_move > 0 ? "BE_HIT" : "SL_HIT");
-                    std::cout << "[ENG-" << symbol << "] PYRAMID " << r
+                    std::cout << "[ENG-" << symbol << "] PYRAMID-" << pos.pyramid_count
+                              << " " << r
                               << " sl=" << pos.pyramid_sl
                               << " move=" << pyr_move << "\n";
                     std::cout.flush();

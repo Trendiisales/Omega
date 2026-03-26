@@ -1120,35 +1120,70 @@ class GoldPositionManager {
         legs_.erase(legs_.begin() + static_cast<long>(idx));
     }
 
-    void apply_tight_trail(GoldPos& leg, double mid) {
+    // apply_tiered_trail: each leg gets progressively tighter trailing.
+    // leg_idx 0 = base leg (widest trail — ride the full move)
+    // leg_idx 1 = first pyramid add-on (tighter)
+    // leg_idx 2 = second add-on (tighter still)
+    // leg_idx 3+ = tightest (maximum profit protection on deepest entries)
+    //
+    // EA approach: flat $25 trail on everything.
+    // Omega improvement: base rides wide, pyramids lock in profits faster.
+    // This means on a reversal, base might give back $25 but pyramids only
+    // give back $10-15, locking the compounded profit.
+    void apply_tiered_trail(GoldPos& leg, double mid, size_t leg_idx) {
         const double move = leg.is_long ? (mid - leg.entry) : (leg.entry - mid);
-        if (move >= LOCK_ARM_MOVE) {
+
+        // Tier parameters: [lock_arm, lock_gain, trail_arm1, trail_dist1, trail_arm2, trail_dist2]
+        // Base leg (idx=0): wide — mirrors EA's $25 trail philosophy
+        // Pyramid 1 (idx=1): medium — 60% of base trail distances
+        // Pyramid 2 (idx=2): tight — 40% of base trail distances
+        // Pyramid 3+ (idx≥3): tightest — 25% of base trail distances
+        const double tier_mult = (leg_idx == 0) ? 1.00 :
+                                 (leg_idx == 1) ? 0.60 :
+                                 (leg_idx == 2) ? 0.40 : 0.25;
+
+        const double lock_arm   = LOCK_ARM_MOVE  * tier_mult;
+        const double lock_gain  = LOCK_GAIN      * tier_mult;
+        const double trail_arm1 = TRAIL_ARM_1    * tier_mult;
+        const double trail_d1   = TRAIL_DIST_1   * tier_mult;
+        const double trail_arm2 = TRAIL_ARM_2    * tier_mult;
+        const double trail_d2   = TRAIL_DIST_2   * tier_mult;
+
+        // BE lock
+        if (move >= lock_arm) {
             if (leg.is_long) {
-                const double be_lock = leg.entry + LOCK_GAIN;
-                if (be_lock > leg.sl) leg.sl = be_lock;
+                const double be = leg.entry + lock_gain;
+                if (be > leg.sl) leg.sl = be;
             } else {
-                const double be_lock = leg.entry - LOCK_GAIN;
-                if (be_lock < leg.sl) leg.sl = be_lock;
+                const double be = leg.entry - lock_gain;
+                if (be < leg.sl) leg.sl = be;
             }
         }
-        if (move >= TRAIL_ARM_1) {
+        // Stage 1 trail
+        if (move >= trail_arm1) {
             if (leg.is_long) {
-                const double trail = mid - TRAIL_DIST_1;
+                const double trail = mid - trail_d1;
                 if (trail > leg.sl) leg.sl = trail;
             } else {
-                const double trail = mid + TRAIL_DIST_1;
+                const double trail = mid + trail_d1;
                 if (trail < leg.sl) leg.sl = trail;
             }
         }
-        if (move >= TRAIL_ARM_2) {
+        // Stage 2 trail (tight)
+        if (move >= trail_arm2) {
             if (leg.is_long) {
-                const double trail = mid - TRAIL_DIST_2;
+                const double trail = mid - trail_d2;
                 if (trail > leg.sl) leg.sl = trail;
             } else {
-                const double trail = mid + TRAIL_DIST_2;
+                const double trail = mid + trail_d2;
                 if (trail < leg.sl) leg.sl = trail;
             }
         }
+    }
+
+    // Legacy wrapper — keep for any callers that don't pass leg_idx
+    void apply_tight_trail(GoldPos& leg, double mid) {
+        apply_tiered_trail(leg, mid, 0);
     }
 
     static bool regime_allows_pyramid(const char* regime) {
@@ -1333,7 +1368,8 @@ public:
                 continue;
             }
 
-            apply_tight_trail(leg, mid);
+            // Tiered trail: base leg (idx 0) wide, pyramids progressively tighter
+            apply_tiered_trail(leg, mid, static_cast<size_t>(i));
 
             const bool tp_hit = leg.is_long ? (ask >= leg.tp) : (bid <= leg.tp);
             if (tp_hit) {
