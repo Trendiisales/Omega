@@ -3883,19 +3883,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_bracket_gold.pos.tp,      g_bracket_gold.pos.sl,
                     g_bracket_gold.pos.size,    g_bracket_gold.pos.entry_ts);
             if (g_eng_sp.pos.active)
-                push_live_trade("US500.F","Breakout", g_eng_sp.pos.is_long(),
+                push_live_trade("US500.F","Breakout", g_eng_sp.pos.is_long,
                     g_eng_sp.pos.entry, 0.0, 0.0, g_eng_sp.pos.size, (int64_t)0);
             if (g_eng_nq.pos.active)
-                push_live_trade("USTEC.F","Breakout", g_eng_nq.pos.is_long(),
+                push_live_trade("USTEC.F","Breakout", g_eng_nq.pos.is_long,
                     g_eng_nq.pos.entry, 0.0, 0.0, g_eng_nq.pos.size, (int64_t)0);
             if (g_eng_cl.pos.active)
-                push_live_trade("USOIL.F","Breakout", g_eng_cl.pos.is_long(),
+                push_live_trade("USOIL.F","Breakout", g_eng_cl.pos.is_long,
                     g_eng_cl.pos.entry, 0.0, 0.0, g_eng_cl.pos.size, (int64_t)0);
             if (g_eng_xag.pos.active)
-                push_live_trade("XAGUSD","Breakout", g_eng_xag.pos.is_long(),
+                push_live_trade("XAGUSD","Breakout", g_eng_xag.pos.is_long,
                     g_eng_xag.pos.entry, 0.0, 0.0, g_eng_xag.pos.size, (int64_t)0);
             if (g_eng_eurusd.pos.active)
-                push_live_trade("EURUSD","Breakout", g_eng_eurusd.pos.is_long(),
+                push_live_trade("EURUSD","Breakout", g_eng_eurusd.pos.is_long,
                     g_eng_eurusd.pos.entry, 0.0, 0.0, g_eng_eurusd.pos.size, (int64_t)0);
         }
     }
