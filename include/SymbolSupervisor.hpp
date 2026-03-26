@@ -228,6 +228,13 @@ public:
             regime     = Regime::QUIET_COMPRESSION;
             confidence = compression_score * exec_score;
             reason     = "flat_undirected_treated_as_compression";
+        } else if (dir_score < 0.5 && expansion_score < 0.3) {
+            // Ambiguous with slight momentum but no real expansion — still treat as compression.
+            // Previously fell to HIGH_RISK ("no_dominant_regime") blocking all trading.
+            // A market with moderate dir_score but no expansion is not trending — it's coiling.
+            regime     = Regime::QUIET_COMPRESSION;
+            confidence = compression_score * exec_score;
+            reason     = "weak_momentum_treated_as_compression";
         } else {
             // Fix 2: genuine low-confidence — compute real score, don't hardcode 0.5
             regime     = Regime::HIGH_RISK_NO_TRADE;
