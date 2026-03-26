@@ -1327,6 +1327,8 @@ function updateDashboard(d){
   const bv=document.getElementById('buildVersion');
   if(bv&&d.build_version){bv.textContent=d.build_version;const bb=document.getElementById('buildBadge');if(bb)bb.title='Built: '+(d.build_time||'?');}
 
+)OMEGA23"
+R"OMEGA23B(
   // Session badge
   const sb=document.getElementById('sessionBadge');
   if(sb){const now=new Date(),m=now.getUTCHours()*60+now.getUTCMinutes();
@@ -1452,7 +1454,7 @@ function updateDashboard(d){
   renderAsiaGate(d);
   renderCrossAsset(d);
 }
-)OMEGA23"
+)OMEGA23B"
 R"OMEGA24(
 
 function setConn(ok){
