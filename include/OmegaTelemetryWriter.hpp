@@ -220,6 +220,10 @@ struct OmegaTelemetrySnapshot
     int32_t sl_cooldown_secs_remaining[MAX_COOLDOWN_SYMBOLS]; // seconds left on each
     int     sl_cooldown_count;          // how many symbols are in cooldown right now
 
+    // --- L2 data quality ---
+    int     ctrader_l2_live;  // 1 = cTrader depth client received at least 1 event
+    int     gold_l2_real;     // 1 = GOLD.F book has non-zero size data (vs FIX-only 0.5 fallback)
+
     // --- Asia FX gate ---
     int     asia_fx_gate_open;          // 1 = trading allowed (gate open), 0 = session-blocked
 
@@ -249,6 +253,26 @@ struct OmegaTelemetrySnapshot
     };
     CrossAssetEngineState ca_engines[MAX_CA_ENGINES];
     int ca_engine_count;   // how many slots are populated
+
+    // ── Live open trades — per-trade real-time P&L ────────────────────────────
+    // Updated every 250ms by the unrealised P&L push in main.cpp.
+    // GUI uses this to show per-trade floating P&L in real time.
+    static constexpr int MAX_LIVE_TRADES = 16;
+    struct LiveTrade {
+        char   symbol[12];    // "GOLD.F", "XAGUSD", etc.
+        char   engine[24];    // "GoldFlow", "GoldStack/CompBreakout", etc.
+        char   side[6];       // "LONG" or "SHORT"
+        double entry;         // fill price
+        double current;       // current bid (LONG) or ask (SHORT) for P&L calc
+        double tp;            // take profit price
+        double sl;            // stop loss price
+        double size;          // lots
+        double live_pnl;      // current floating P&L in USD (updated every 250ms)
+        double tick_value;    // USD per point per lot (for display)
+        int64_t entry_ts;     // epoch seconds of entry
+    };
+    LiveTrade live_trades[MAX_LIVE_TRADES];
+    int live_trade_count = 0;
 
     // --- ExecutionCostGuard session stats ---
     int64_t cost_guard_blocked_total;
@@ -313,6 +337,9 @@ class OmegaTelemetryWriter
 private:
     HANDLE              m_map;
     OmegaTelemetrySnapshot* m_snap;
+public:
+    OmegaTelemetrySnapshot* snap() const { return m_snap; }
+private:
 
     // Last valid prices (prevents zero-price bug)
     double lv_sp_bid=0,     lv_sp_ask=0;
@@ -509,6 +536,34 @@ public:
             m_snap->usdjpy_comp_low=comp_low; m_snap->usdjpy_recent_vol_pct=recent_vol_pct;
             m_snap->usdjpy_baseline_vol_pct=baseline_vol_pct; m_snap->usdjpy_signals=signals;
         }
+    }
+
+    // Update the live open trades array — called every 250ms by the unrealised push.
+    // Clears and rebuilds from scratch each call so stale entries never persist.
+    void ClearLiveTrades() {
+        if (!m_snap) return;
+        m_snap->live_trade_count = 0;
+    }
+    void AddLiveTrade(const char* symbol, const char* engine, const char* side,
+                      double entry, double current, double tp, double sl,
+                      double size, double live_pnl, double tick_value, int64_t entry_ts)
+    {
+        if (!m_snap) return;
+        int idx = m_snap->live_trade_count;
+        if (idx >= OmegaTelemetrySnapshot::MAX_LIVE_TRADES) return;
+        auto& lt = m_snap->live_trades[idx];
+        strncpy_s(lt.symbol,  symbol,  11);
+        strncpy_s(lt.engine,  engine,  23);
+        strncpy_s(lt.side,    side,     5);
+        lt.entry      = entry;
+        lt.current    = current;
+        lt.tp         = tp;
+        lt.sl         = sl;
+        lt.size       = size;
+        lt.live_pnl   = live_pnl;
+        lt.tick_value = tick_value;
+        lt.entry_ts   = entry_ts;
+        ++m_snap->live_trade_count;
     }
 
     void UpdateBracketState(const char* sym, int phase, double hi, double lo)

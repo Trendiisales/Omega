@@ -399,7 +399,7 @@ class ImpulseContinuationEngine : public EngineBase {
     // $40 allows entries throughout a strong trend while still blocking parabolic exhaustion.
     // MIN_VWAP_DIST kept at 1.50 — still need some VWAP dislocation to confirm trend.
     static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=40.0,MAX_SPREAD=2.20;
-    static constexpr int TP_TICKS=300,SL_TICKS=50; // $5.00 SL — matches real gold noise floor. EA used $25 but at 0.01 lots that's meaningless.
+    static constexpr int TP_TICKS=300,SL_TICKS=250; // EA-matched: TP=$30, SL=$25
     // MAX_ENTRIES_PER_TREND reduced 4→2: 4 stacked entries in the same trend leg
     // creates catastrophic exposure on reversal — the 00:20 cluster proved this.
     // 2 entries capture the dominant move without compounding reversal risk.
@@ -546,7 +546,7 @@ class SessionMomentumEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=60;
     static constexpr double IMPULSE_MIN=3.50,MAX_SPREAD=2.50;
-    static constexpr int TP_TICKS=300,SL_TICKS=50; // $5.00 SL — real noise floor. Was $20 (200 ticks) → produced 0.01 lot sizing.
+    static constexpr int TP_TICKS=300,SL_TICKS=200; // EA-matched: TP=$30, SL=$20
     // IMPULSE_MIN raised 1.60→3.50: $1.60 range over 60 ticks is normal London
     // micro-noise. $3.50 is the minimum for a genuine directional session open move.
     // Observed losing trade: 3s hold, $0.20 gross, $0.18 slip → $0.02 net.
@@ -628,7 +628,7 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class VWAPSnapbackEngine : public EngineBase {
     static constexpr double VWAP_DEV_ENTRY=3.5,VWAP_DEV_STRONG=5.5,MOMENTUM_SPIKE=2.5,MAX_SPREAD=4.00;
-    static constexpr int TP_TICKS=250,SL_TICKS=50; // $5.00 SL — normalised to noise floor.
+    static constexpr int TP_TICKS=250,SL_TICKS=200; // EA-matched: TP=$25, SL=$20
     // TP $3.50 (35 ticks), SL $1.50 (15 ticks) — 2.3:1 R:R
     // SL raised from 8 ($0.80): was at spread noise floor. A single ask/bid bounce
     // would stop out the trade before it could develop. $1.50 = 2x spread.
@@ -1032,7 +1032,7 @@ public:
 class GoldPositionManager {
     static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
-    static constexpr int    MAX_PYRAMID_LEGS = 3;  // base + 2 add-ons — capped to prevent over-pyramiding
+    static constexpr int    MAX_PYRAMID_LEGS = 5;  // base + 4 add-ons — ride full trending days
     static constexpr double PYR_COVER_MOVE   = 5.00;  // EA-matched: add only after $5 confirmed move
     static constexpr double PYR_MIN_STEP     = 3.00;  // minimum $3 between pyramid levels
     static constexpr int64_t PYR_ADD_COOLDOWN_SEC = 60; // 60s between add-ons — confirm trend
@@ -1138,12 +1138,9 @@ class GoldPositionManager {
         // Pyramid 1 (idx=1): medium — 60% of base trail distances
         // Pyramid 2 (idx=2): tight — 40% of base trail distances
         // Pyramid 3+ (idx≥3): tightest — 25% of base trail distances
-        // Minimum tier_mult raised: 0.25x was strangling pyramid legs — lock_arm=$0.375
-        // caused SL to snap within 4 ticks, then $1.25 slippage turned every exit red.
-        // Now: base=1.00x, pyr1=0.80x, pyr2=0.65x — still tighter than base but survivable.
         const double tier_mult = (leg_idx == 0) ? 1.00 :
-                                 (leg_idx == 1) ? 0.80 :
-                                 (leg_idx == 2) ? 0.65 : 0.65;
+                                 (leg_idx == 1) ? 0.60 :
+                                 (leg_idx == 2) ? 0.40 : 0.25;
 
         const double lock_arm   = LOCK_ARM_MOVE  * tier_mult;
         const double lock_gain  = LOCK_GAIN      * tier_mult;
@@ -1257,19 +1254,10 @@ class GoldPositionManager {
                          : fill_px - pyr_tp_dist;
         // SL for pyramid leg: locked to main entry's BE + buffer
         // This means the pyramid leg can only lose back to where the base entered
-        // pyr_sl_lock: allow $2.00 BELOW base entry so pyramid has real SL room.
-        // Old code: lock = base_entry exactly. When pyramid fills $1 above base,
-        // max(fill-$10, base_entry) = base_entry → only $1 SL room → trail snaps
-        // it to entry+$0.24 after $0.60 move → slippage ($1.25) > gross profit.
-        // Fix: lock = base_entry - $2.00 (LONG) / + $2.00 (SHORT).
-        // This means worst case a pyramid gives back the base profit + $2 — acceptable.
-        const double PYR_SL_BUFFER = 2.00;  // $2 below base entry = real SL floor
-        const double pyr_sl_lock = is_long
-            ? legs_.front().entry - PYR_SL_BUFFER
-            : legs_.front().entry + PYR_SL_BUFFER;
+        const double pyr_sl_lock = legs_.front().entry;  // base entry = absolute worst case
         const double pyr_sl_raw  = is_long ? fill_px - PYR_SL_TICKS * TICK_SIZE
                                            : fill_px + PYR_SL_TICKS * TICK_SIZE;
-        // SL = best of: $10 from fill OR base_entry - $2 floor
+        // SL must be at least at base entry (never lose below base BE)
         leg.sl = is_long ? std::max(pyr_sl_raw, pyr_sl_lock)
                          : std::min(pyr_sl_raw, pyr_sl_lock);
         leg.mfe      = 0;
@@ -1293,14 +1281,6 @@ class GoldPositionManager {
 public:
     bool active() const { return !legs_.empty(); }
     size_t leg_count() const { return legs_.size(); }
-
-    // Live position accessors for GUI per-trade P&L display
-    double base_entry()   const { return legs_.empty() ? 0.0 : legs_.front().entry; }
-    bool   base_is_long() const { return legs_.empty() ? true : legs_.front().is_long; }
-    double base_sl()      const { return legs_.empty() ? 0.0 : legs_.front().sl; }
-    double base_tp()      const { return legs_.empty() ? 0.0 : legs_.front().tp; }
-    double base_size()    const { return legs_.empty() ? 0.0 : legs_.front().size; }
-    const char* base_engine() const { return legs_.empty() ? "" : legs_.front().engine; }
 
     // Patch the base leg size after compute_size() runs in main.cpp.
     // on_tick() opens the position with the sub-engine default size (e.g. 0.01).
@@ -1726,21 +1706,6 @@ public:
     void set_has_open_position(bool v) { (void)v; }
 
     bool has_open_position() const { return pos_mgr_.active(); }
-
-    // Clear SL cooldown immediately — used by reversal logic when GoldFlow
-    // SL_HIT and drift has reversed direction. Allows GoldStack counter-entry
-    // without waiting the full 120s cooldown.
-    void clear_sl_cooldown() { sl_cooldown_until_ = 0; }
-
-    int64_t sl_cooldown_until() const { return sl_cooldown_until_; }
-
-    // Live position accessors for GUI per-trade P&L — delegated from pos_mgr_
-    double      live_entry()    const { return pos_mgr_.base_entry(); }
-    bool        live_is_long()  const { return pos_mgr_.base_is_long(); }
-    double      live_sl()       const { return pos_mgr_.base_sl(); }
-    double      live_tp()       const { return pos_mgr_.base_tp(); }
-    double      live_size()     const { return pos_mgr_.base_size(); }
-    const char* live_engine()   const { return pos_mgr_.base_engine(); }
 
     // Call immediately after on_tick() returns a valid signal to apply the
     // risk-adjusted lot size from compute_size(). Without this, the ledger

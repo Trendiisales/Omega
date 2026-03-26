@@ -149,10 +149,26 @@ R"OMEGA1(
   letter-spacing:-0.5px;text-shadow:0 0 20px currentColor;line-height:1;margin:4px 0 2px;}
 .pnl-pos{color:var(--green)}.pnl-neg{color:var(--red)}
 .pnl-sub{font-size:11px;color:var(--t2);}
-.stat-card{background:var(--glass);border:1px solid var(--border);border-radius:10px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 6px;}
-.stat-n{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:700;color:var(--blue);}
-.stat-l{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-top:3px;}
+.stat-card{background:var(--glass);border:1px solid var(--border);border-radius:8px;
+  display:flex;flex-direction:row;align-items:center;gap:8px;padding:5px 10px;min-width:0;}
+.stat-n{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;color:var(--blue);}
+.stat-l{font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;}
+/* Live trades panel */
+.live-trade-row{display:flex;align-items:center;gap:8px;padding:3px 8px;border-radius:5px;
+  background:rgba(255,255,255,0.025);border:1px solid var(--border);font-size:11px;font-family:'IBM Plex Mono',monospace;}
+.lt-sym{color:var(--amber);font-weight:700;min-width:52px;}
+.lt-side-long{color:var(--green);}
+.lt-side-short{color:var(--red);}
+.lt-pnl-pos{color:var(--green);font-weight:700;}
+.lt-pnl-neg{color:var(--red);font-weight:700;}
+.lt-meta{color:var(--t3);font-size:10px;}
+/* Daily limit bar */
+.limit-bar-wrap{flex:1;height:4px;background:rgba(255,255,255,0.07);border-radius:2px;overflow:hidden;}
+.limit-bar-fill{height:100%;border-radius:2px;transition:width 0.5s;}
+/* L2 status dot */
+.l2-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:3px;}
+.l2-dot-live{background:var(--green);}
+.l2-dot-dead{background:var(--t3);}
 
 /* Engine grid — all 15 engines in a responsive grid */
 .eng-section{flex-shrink:0;}
@@ -463,32 +479,42 @@ R"OMEGA3(
 
     <!-- Stats bar -->
     <div class="stats-bar">
+      <!-- ── Compact stat bar ───────────────────────────────────────── -->
       <div class="pnl-card">
-        <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;display:flex;align-items:center;">
-          <span class="pnl-live-dot no-pos" id="pnlLiveDot"></span>Daily P&amp;L
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="pnl-live-dot no-pos" id="pnlLiveDot"></span>
+          <span style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;">Daily P&amp;L</span>
+          <span class="pnl-num pnl-pos" id="pnlVal" style="font-size:18px;margin-left:2px;">+$0.00</span>
+          <span style="font-size:10px;color:var(--amber);margin-left:2px;" id="pnlNzd">NZ$0</span>
         </div>
-        <div class="pnl-num pnl-pos" id="pnlVal">+$0.00</div>
-        <div class="pnl-float-row">
-          <div class="pnl-float-item">
-            <span class="pnl-float-lbl">Closed</span>
-            <span class="pnl-float-val" id="pnlClosed" style="color:var(--t1)">$0.00</span>
-          </div>
-          <div class="pnl-float-item">
-            <span class="pnl-float-lbl">Floating</span>
-            <span class="pnl-float-val" id="pnlFloating" style="color:var(--t2)">$0.00</span>
-          </div>
-          <div class="pnl-float-item">
-            <span class="pnl-float-lbl">NZD≈</span>
-            <span class="pnl-float-val" id="pnlNzd" style="color:var(--amber)">$0.00</span>
-          </div>
+        <div style="display:flex;gap:10px;margin-top:3px;font-size:10px;font-family:'IBM Plex Mono',monospace;">
+          <span style="color:var(--t3)">C:<span id="pnlClosed" style="color:var(--t1)">$0</span></span>
+          <span style="color:var(--t3)">F:<span id="pnlFloating" style="color:var(--t2)">--</span></span>
+          <span style="color:var(--t3)" id="pnlSub">0T</span>
         </div>
-        <div class="pnl-sub" id="pnlSub">0 trades · 0.0% win</div>
-        <div style="font-size:10px;color:var(--t2);margin-top:2px;" id="pnlGrossSub"></div>
+        <!-- Daily loss limit progress bar -->
+        <div style="display:flex;align-items:center;gap:5px;margin-top:4px;">
+          <span style="font-size:9px;color:var(--t3);">LIMIT</span>
+          <div class="limit-bar-wrap"><div class="limit-bar-fill" id="limitBarFill" style="width:0%;background:var(--green)"></div></div>
+          <span style="font-size:9px;color:var(--t3);" id="limitPct">0%</span>
+        </div>
+        <div style="font-size:9px;color:var(--t3);margin-top:2px;" id="pnlGrossSub"></div>
       </div>
-      <div class="stat-card"><div class="stat-n" id="statWins" style="color:var(--green)">0</div><div class="stat-l">Wins</div></div>
-      <div class="stat-card"><div class="stat-n" id="statLosses" style="color:var(--red)">0</div><div class="stat-l">Losses</div></div>
-      <div class="stat-card"><div class="stat-n" id="statAvgWin" style="color:var(--teal)">$0</div><div class="stat-l">Avg Win</div></div>
-      <div class="stat-card"><div class="stat-n" id="statMaxDD" style="color:var(--red)">$0</div><div class="stat-l">Max DD</div></div>
+      <!-- Compact stats -->
+      <div class="stat-card"><div class="stat-l">W</div><div class="stat-n" id="statWins" style="color:var(--green)">0</div></div>
+      <div class="stat-card"><div class="stat-l">L</div><div class="stat-n" id="statLosses" style="color:var(--red)">0</div></div>
+      <div class="stat-card"><div class="stat-l">AVG</div><div class="stat-n" id="statAvgWin" style="color:var(--teal)">$0</div></div>
+      <div class="stat-card"><div class="stat-l">DD</div><div class="stat-n" id="statMaxDD" style="color:var(--red)">$0</div></div>
+      <!-- L2 status indicator -->
+      <div class="stat-card" title="cTrader L2 depth feed status">
+        <div class="stat-l">L2</div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="font-size:9px;"><span class="l2-dot l2-dot-dead" id="l2DotGold"></span><span style="color:var(--t2)" id="l2LblGold">GOLD</span></div>
+          <div style="font-size:9px;"><span class="l2-dot l2-dot-dead" id="l2DotCt"></span><span style="color:var(--t2)" id="l2LblCt">CT</span></div>
+        </div>
+      </div>
+      <!-- Live open trades panel -->
+      <div id="liveTradesPanel" style="display:flex;flex-direction:column;gap:3px;justify-content:center;min-width:0;flex:1;"></div>
     </div>
 
 )OMEGA3"
@@ -1274,33 +1300,102 @@ function updateDashboard(d){
 
 
 
-  // PnL
+  // ── Compact stat bar + live trades ──────────────────────────────────────
   const pnl=safe(d.daily_pnl),gross=safe(d.gross_daily_pnl);
   const closed=safe(d.closed_pnl), floating=safe(d.open_unrealised_pnl);
-  const NZD_RATE=1.66; // approx USD→NZD (update if needed)
+  const NZD_RATE=1.66;
+  const DAILY_LIMIT=120.0; // must match config daily_loss_limit USD
+
+  // Main P&L value
   const pE=document.getElementById('pnlVal');
-  if(pE){pE.textContent=(pnl>=0?'+':'-')+'$'+Math.abs(pnl).toFixed(2);pE.className='pnl-num '+(pnl>=0?'pnl-pos':'pnl-neg');}
+  if(pE){pE.textContent=(pnl>=0?'+':'')+pnl.toFixed(2);pE.className='pnl-num '+(pnl>=0?'pnl-pos':'pnl-neg');}
+
+  // Closed / Floating compact
   const cEl=document.getElementById('pnlClosed');
-  if(cEl){cEl.textContent=(closed>=0?'+':'-')+'$'+Math.abs(closed).toFixed(2);cEl.style.color=closed>=0?'var(--green)':'var(--red)';}
+  if(cEl){cEl.textContent=(closed>=0?'+':'')+closed.toFixed(2);cEl.style.color=closed>=0?'var(--green)':'var(--red)';}
   const fEl=document.getElementById('pnlFloating');
   if(fEl){
-    const hasFloat=Math.abs(floating)>0.001;
-    fEl.textContent=hasFloat?((floating>=0?'+':'-')+'$'+Math.abs(floating).toFixed(2)):'--';
+    const hf=Math.abs(floating)>0.001;
+    fEl.textContent=hf?((floating>=0?'+':'')+floating.toFixed(2)):'--';
     fEl.style.color=floating>0.01?'var(--green)':floating<-0.01?'var(--red)':'var(--t2)';
   }
+
+  // NZD equiv
   const nEl=document.getElementById('pnlNzd');
-  if(nEl){const nzd=pnl*NZD_RATE;nEl.textContent=(nzd>=0?'+':'-')+'NZ$'+Math.abs(nzd).toFixed(2);nEl.style.color=nzd>=0?'var(--amber)':'var(--red)';}
-  // Live dot — pulses green when position open, grey when flat
+  if(nEl){const nzd=pnl*NZD_RATE;nEl.textContent=(nzd>=0?'+':'')+'NZ$'+Math.abs(nzd).toFixed(0);nEl.style.color=nzd>=0?'var(--amber)':'var(--red)';}
+
+  // Live dot
   const dotEl=document.getElementById('pnlLiveDot');
-  if(dotEl){const hasOpen=Math.abs(floating)>0.001;dotEl.className='pnl-live-dot'+(hasOpen?'':' no-pos');}
-  txt('pnlSub',safe(d.total_trades)+' trades · '+safe(d.win_rate).toFixed(1)+'% win');
+  const hasOpen=(d.live_trades&&d.live_trades.length>0)||Math.abs(floating)>0.001;
+  if(dotEl)dotEl.className='pnl-live-dot'+(hasOpen?'':' no-pos');
+
+  // Compact trade count
+  const subEl=document.getElementById('pnlSub');
+  if(subEl)subEl.textContent=safe(d.total_trades)+'T '+(safe(d.wins))+'W/'+(safe(d.losses))+'L';
+
+  // Gross/slip sub
   const gSub=document.getElementById('pnlGrossSub');
-  if(gSub&&gross!==0){const slip=Math.abs(gross-pnl);gSub.textContent='gross '+(gross>=0?'+':'-')+'$'+Math.abs(gross).toFixed(2)+' · slip -$'+slip.toFixed(2);}
-  const sw=document.getElementById('statWins'),sl=document.getElementById('statLosses');
-  if(sw)sw.textContent=safe(d.wins);if(sl)sl.textContent=safe(d.losses);
+  if(gSub&&Math.abs(gross)>0.01){const slip=Math.abs(gross-pnl);gSub.textContent='slip -$'+slip.toFixed(2);}
+
+  // Compact stats
+  const sw=document.getElementById('statWins'),slE=document.getElementById('statLosses');
+  if(sw)sw.textContent=safe(d.wins);if(slE)slE.textContent=safe(d.losses);
   const saw=document.getElementById('statAvgWin'),smd=document.getElementById('statMaxDD');
   if(saw)saw.textContent='$'+safe(d.avg_win).toFixed(0);
   if(smd)smd.textContent='$'+safe(d.max_drawdown).toFixed(0);
+
+  // Daily loss limit bar
+  const lossUsd=Math.max(0,-closed-floating);
+  const limitPct=Math.min(100,lossUsd/DAILY_LIMIT*100);
+  const limitFill=document.getElementById('limitBarFill');
+  const limitLbl=document.getElementById('limitPct');
+  if(limitFill){
+    limitFill.style.width=limitPct.toFixed(1)+'%';
+    limitFill.style.background=limitPct<50?'var(--green)':limitPct<80?'var(--amber)':'var(--red)';
+  }
+  if(limitLbl)limitLbl.textContent=limitPct.toFixed(0)+'%';
+
+  // L2 status dots
+  const ctLive=!!(d.ctrader_l2_live);
+  const goldReal=!!(d.gold_l2_real);
+  const l2Dot=document.getElementById('l2DotGold');
+  const l2Ct=document.getElementById('l2DotCt');
+  const l2LblG=document.getElementById('l2LblGold');
+  const l2LblC=document.getElementById('l2LblCt');
+  if(l2Dot)l2Dot.className='l2-dot '+(goldReal?'l2-dot-live':'l2-dot-dead');
+  if(l2Ct)l2Ct.className='l2-dot '+(ctLive?'l2-dot-live':'l2-dot-dead');
+  if(l2LblG)l2LblG.style.color=goldReal?'var(--green)':'var(--t3)';
+  if(l2LblC)l2LblC.style.color=ctLive?'var(--green)':'var(--t3)';
+
+  // ── Live open trades panel ──────────────────────────────────────────────
+  const ltPanel=document.getElementById('liveTradesPanel');
+  if(ltPanel){
+    const trades=d.live_trades||[];
+    if(trades.length===0){
+      ltPanel.innerHTML='<div style="font-size:10px;color:var(--t3);padding:4px 8px;">No open positions</div>';
+    } else {
+      ltPanel.innerHTML=trades.map(lt=>{
+        const isLong=lt.side==='LONG';
+        const pnlCls=lt.live_pnl>=0?'lt-pnl-pos':'lt-pnl-neg';
+        const sideCls=isLong?'lt-side-long':'lt-side-short';
+        const held=lt.held_sec<60?lt.held_sec+'s':Math.floor(lt.held_sec/60)+'m'+(lt.held_sec%60)+'s';
+        const distSl=lt.dist_sl!=null?lt.dist_sl.toFixed(2):'?';
+        const pnlStr=(lt.live_pnl>=0?'+':'')+lt.live_pnl.toFixed(2);
+        const nzdPnl=(lt.live_pnl*NZD_RATE);
+        const nzdStr=(nzdPnl>=0?'+':'')+nzdPnl.toFixed(0);
+        return '<div class="live-trade-row">'
+          +'<span class="lt-sym">'+lt.symbol+'</span>'
+          +'<span class="'+sideCls+'">'+lt.side+'</span>'
+          +'<span style="color:var(--t2)">@'+lt.entry.toFixed(lt.symbol.includes('USD')&&!lt.symbol.includes('GOLD')?4:2)+'</span>'
+          +'<span class="'+pnlCls+'">'+pnlStr+'</span>'
+          +'<span style="color:var(--amber);font-size:10px;">'+nzdStr+'nzd</span>'
+          +'<span class="lt-meta">SL±'+distSl+'</span>'
+          +'<span class="lt-meta">'+lt.engine+'</span>'
+          +'<span class="lt-meta">'+held+'</span>'
+          +'</div>';
+      }).join('');
+    }
+  }
 
   // Latency
   const rl=safe(d.fix_rtt_last),r50=safe(d.fix_rtt_p50),r95=safe(d.fix_rtt_p95);

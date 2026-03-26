@@ -224,6 +224,12 @@ public:
     std::mutex*                             l2_mtx   = nullptr;
     std::unordered_map<std::string,L2Book>* l2_books = nullptr;
 
+    // Callback: write derived L2 scalars (imbalance, microprice_bias, has_data)
+    // to per-symbol atomics — called after every depth event, no lock required.
+    // Registered by main.cpp at startup. Signature:
+    //   (internal_name, imbalance, microprice_bias, has_data)
+    std::function<void(const std::string&, double, double, bool)> atomic_l2_write_fn;
+
     std::atomic<bool>     running{false};
     std::atomic<bool>     depth_active{false};
     std::atomic<uint64_t> depth_events_total{0};
@@ -386,8 +392,19 @@ private:
             else if (ask) book.apply_new(id,ask,sz,false);
         }
         for (uint64_t did : PB::get_packed_varints(fields, 5)) book.apply_del(did);
+        // Build L2Book snapshot outside the lock — to_l2book() is O(N log N) sort
+        const L2Book rebuilt = book.to_l2book();
+
+        // Hot path: write atomic derived scalars — zero lock, zero contention with FIX tick
+        if (atomic_l2_write_fn) {
+            atomic_l2_write_fn(name,
+                rebuilt.imbalance(),
+                rebuilt.microprice_bias(),
+                rebuilt.has_data());
+        }
+
+        // Cold path: write full book under mutex for GUI depth panel (walls, vacuums, slopes)
         if (l2_mtx && l2_books) {
-            const L2Book rebuilt = book.to_l2book();
             std::lock_guard<std::mutex> lk(*l2_mtx);
             (*l2_books)[name] = rebuilt;
         }

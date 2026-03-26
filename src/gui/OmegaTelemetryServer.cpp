@@ -145,6 +145,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"asia_fx_gate_open\":%d,"
         "\"cfg_max_trades_per_cycle\":%d,\"cfg_max_open_positions\":%d,"
         "\"sl_cooldown_count\":%d,"
+        "\"ctrader_l2_live\":%d,\"gold_l2_real\":%d,"
         "\"xau_phase\":%d,\"xau_comp_high\":%.4f,\"xau_comp_low\":%.4f,"
         "\"xau_recent_vol_pct\":%.4f,\"xau_baseline_vol_pct\":%.4f,\"xau_signals\":%d,"
         "\"brent_phase\":%d,\"brent_comp_high\":%.4f,\"brent_comp_low\":%.4f,"
@@ -197,6 +198,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->asia_fx_gate_open,
         s->cfg_max_trades_per_cycle, s->cfg_max_open_positions,
         s->sl_cooldown_count,
+        s->ctrader_l2_live, s->gold_l2_real,
         s->xau_phase, s->xau_comp_high, s->xau_comp_low,
         s->xau_recent_vol_pct, s->xau_baseline_vol_pct, s->xau_signals,
         s->brent_phase, s->brent_comp_high, s->brent_comp_low,
@@ -421,6 +423,34 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         // Cross-asset engines: active==1
         for (int i = 0; i < s->ca_engine_count; ++i) {
             if (s->ca_engines[i].active) addPos(s->ca_engines[i].symbol);
+        }
+        result += "]";
+    }
+
+    // live_trades array — per-trade real-time P&L, updated every 250ms
+    {
+        result += ","live_trades":[";
+        bool first_lt = true;
+        for (int i = 0; i < s->live_trade_count; ++i) {
+            const auto& lt = s->live_trades[i];
+            if (!first_lt) result += ',';
+            first_lt = false;
+            char row[512];
+            const double dist_to_sl = lt.is_long[0]=='L'
+                ? lt.current - lt.sl : lt.sl - lt.current;
+            const double dist_to_tp = lt.tp > 0.0
+                ? (lt.is_long[0]=='L' ? lt.tp - lt.current : lt.current - lt.tp) : 0.0;
+            const int64_t held_sec = static_cast<int64_t>(std::time(nullptr)) - lt.entry_ts;
+            snprintf(row, sizeof(row),
+                "{"symbol":"%s","engine":"%s","side":"%s","
+                ""entry":%.4f,"current":%.4f,"tp":%.4f,"sl":%.4f,"
+                ""size":%.4f,"live_pnl":%.2f,"tick_value":%.1f,"
+                ""held_sec":%lld,"dist_sl":%.2f,"dist_tp":%.2f}",
+                lt.symbol, lt.engine, lt.side,
+                lt.entry, lt.current, lt.tp, lt.sl,
+                lt.size, lt.live_pnl, lt.tick_value,
+                (long long)held_sec, dist_to_sl, dist_to_tp);
+            result += row;
         }
         result += "]";
     }

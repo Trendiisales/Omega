@@ -450,6 +450,16 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 #include "GoldFlowEngine.hpp"
 static omega::GoldBracketEngine   g_bracket_gold;
 static GoldFlowEngine             g_gold_flow;
+
+// ── Trend-day multi-engine state ─────────────────────────────────────────────
+// Tracks GoldFlow exit details so CompBreakout/Bracket can re-enter on trend days
+// and GoldStack can fast-reverse after a reversal signal.
+static std::atomic<int64_t>  g_gold_flow_exit_ts{0};      // epoch sec of last GoldFlow exit
+static std::atomic<int>      g_gold_flow_exit_dir{0};     // +1=was long, -1=was short
+static std::atomic<int>      g_gold_flow_exit_reason{0};  // 0=other 1=SL_HIT 2=trail/BE
+// When GoldFlow SL_HIT and drift reverses: allow GoldStack fast counter-entry
+// by bypassing the 120s SL cooldown. Window = 60s from flow exit.
+static std::atomic<int64_t>  g_gold_reversal_window_until{0};
 static omega::SilverBracketEngine g_bracket_xag;
 // US equity index bracket engines — arms both sides on compression,
 // captures the move regardless of direction. Eliminates wrong-direction losses.
@@ -712,6 +722,58 @@ static std::unordered_map<std::string,double>  g_asks;
 // L2Level and L2Book are defined in OmegaFIX.hpp (moved 2026-03-24 for 264=5 upgrade)
 static std::mutex                                g_l2_mtx;
 static std::unordered_map<std::string, L2Book>   g_l2_books;
+
+// ── Per-symbol atomic L2 derived scalars ──────────────────────────────────
+// Written by cTrader depth thread after each depth event — zero lock on hot path.
+// FIX tick loop reads these directly without holding g_l2_mtx.
+// Full L2Book (walls, vacuums, book_slope) still uses g_l2_mtx — cold path only.
+//
+// WHY NOT atomic<L2Book>: L2Book=168 bytes. atomic<T> over 16 bytes is NOT
+// lock-free on x86-64 — MSVC falls back to a hidden internal mutex, which is
+// strictly worse. atomic<double>=8 bytes, aligned = genuine lock-free MOV.
+struct AtomicL2 {
+    std::atomic<double> imbalance{0.5};       // bid_vol/(bid_vol+ask_vol), 0..1
+    std::atomic<double> microprice_bias{0.0}; // microprice - mid, signed
+    std::atomic<bool>   has_data{false};      // true when book has non-zero sizes
+};
+static AtomicL2 g_l2_gold;    // GOLD.F
+static AtomicL2 g_l2_sp;      // US500.F
+static AtomicL2 g_l2_nq;      // USTEC.F
+static AtomicL2 g_l2_cl;      // USOIL.F
+static AtomicL2 g_l2_xag;     // XAGUSD
+static AtomicL2 g_l2_eur;     // EURUSD
+static AtomicL2 g_l2_gbp;     // GBPUSD
+static AtomicL2 g_l2_aud;     // AUDUSD
+static AtomicL2 g_l2_nzd;     // NZDUSD
+static AtomicL2 g_l2_jpy;     // USDJPY
+static AtomicL2 g_l2_ger40;   // GER40
+static AtomicL2 g_l2_uk100;   // UK100
+static AtomicL2 g_l2_estx50;  // ESTX50
+static AtomicL2 g_l2_brent;   // BRENT
+static AtomicL2 g_l2_nas;     // NAS100
+static AtomicL2 g_l2_us30;    // DJ30.F
+
+// Map symbol name to AtomicL2* — used by cTrader write path and FIX tick read path
+static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
+    if (sym=="GOLD.F"||sym=="GOLD"||sym=="XAUUSD") return &g_l2_gold;
+    if (sym=="US500.F")  return &g_l2_sp;
+    if (sym=="USTEC.F")  return &g_l2_nq;
+    if (sym=="USOIL.F")  return &g_l2_cl;
+    if (sym=="XAGUSD")   return &g_l2_xag;
+    if (sym=="EURUSD")   return &g_l2_eur;
+    if (sym=="GBPUSD")   return &g_l2_gbp;
+    if (sym=="AUDUSD")   return &g_l2_aud;
+    if (sym=="NZDUSD")   return &g_l2_nzd;
+    if (sym=="USDJPY")   return &g_l2_jpy;
+    if (sym=="GER40")    return &g_l2_ger40;
+    if (sym=="UK100")    return &g_l2_uk100;
+    if (sym=="ESTX50")   return &g_l2_estx50;
+    if (sym=="BRENT")    return &g_l2_brent;
+    if (sym=="NAS100")   return &g_l2_nas;
+    if (sym=="DJ30.F")   return &g_l2_us30;
+    return nullptr;
+}
+
 
 // RTT
 static double              g_rtt_last = 0.0, g_rtt_p50 = 0.0, g_rtt_p95 = 0.0;
@@ -3435,42 +3497,87 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.uk100_compressing = (g_eng_uk100.phase  == omega::Phase::COMPRESSION
                                   || g_eng_uk100.phase  == omega::Phase::BREAKOUT_WATCH);
 
-    // L2 imbalance — read from book and push into MacroContext
-    {
-        std::lock_guard<std::mutex> lk(g_l2_mtx);
-        auto getImb = [&](const std::string& s) -> double {
-            auto it = g_l2_books.find(s);
-            // Only return real imbalance when the book has actual data.
-            // An empty book (subscribed but no events yet) also returns 0.5
-            // from imbalance() — indistinguishable from the neutral fallback.
-            // has_data() ensures we only use books with real depth events.
-            return (it != g_l2_books.end() && it->second.has_data())
-                ? it->second.imbalance() : 0.5;
-        };
-        g_macro_ctx.sp_l2_imbalance     = getImb("US500.F");
-        g_macro_ctx.nq_l2_imbalance     = getImb("USTEC.F");
-        g_macro_ctx.nas_l2_imbalance    = getImb("NAS100");
-        g_macro_ctx.us30_l2_imbalance   = getImb("DJ30.F");
-        g_macro_ctx.gold_l2_imbalance   = getImb("GOLD.F");
-        g_macro_ctx.xag_l2_imbalance    = getImb("XAGUSD");
-        g_macro_ctx.eur_l2_imbalance    = getImb("EURUSD");
-        g_macro_ctx.gbp_l2_imbalance    = getImb("GBPUSD");
-        g_macro_ctx.cl_l2_imbalance     = getImb("USOIL.F");
-        g_macro_ctx.brent_l2_imbalance  = getImb("BRENT");
-        // Previously hardcoded 0.5 — now wired (added 2026-03-24)
-        g_macro_ctx.ger40_l2_imbalance  = getImb("GER40");
-        g_macro_ctx.uk100_l2_imbalance  = getImb("UK100");
-        g_macro_ctx.estx50_l2_imbalance = getImb("ESTX50");
-        g_macro_ctx.aud_l2_imbalance    = getImb("AUDUSD");
-        g_macro_ctx.nzd_l2_imbalance    = getImb("NZDUSD");
-        g_macro_ctx.jpy_l2_imbalance    = getImb("USDJPY");
+    // ── L2 hot path: read atomic scalars — zero lock, zero contention ────────
+    // cTrader depth thread writes imbalance/microprice_bias/has_data atomically
+    // after each depth event. FIX tick reads here with no mutex required.
+    // Full L2Book (walls, vacuums) still read under g_l2_mtx below — cold path only.
+    g_macro_ctx.gold_l2_imbalance   = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.sp_l2_imbalance     = g_l2_sp.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.nq_l2_imbalance     = g_l2_nq.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.cl_l2_imbalance     = g_l2_cl.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.xag_l2_imbalance    = g_l2_xag.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.eur_l2_imbalance    = g_l2_eur.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.gbp_l2_imbalance    = g_l2_gbp.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.aud_l2_imbalance    = g_l2_aud.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.nzd_l2_imbalance    = g_l2_nzd.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.jpy_l2_imbalance    = g_l2_jpy.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.ger40_l2_imbalance  = g_l2_ger40.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.uk100_l2_imbalance  = g_l2_uk100.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.estx50_l2_imbalance = g_l2_estx50.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.brent_l2_imbalance  = g_l2_brent.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.nas_l2_imbalance    = g_l2_nas.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.us30_l2_imbalance   = g_l2_us30.imbalance.load(std::memory_order_relaxed);
 
-        // ── Microstructure signals — only meaningful when cTrader depth active ──
-        // All methods degrade gracefully to neutral when size data is absent.
-        auto getBook = [&](const std::string& s) -> const L2Book* {
-            auto it = g_l2_books.find(s);
-            return (it != g_l2_books.end() && it->second.has_data()) ? &it->second : nullptr;
+    // Microprice bias — also lock-free from atomics
+    g_macro_ctx.gold_microprice_bias = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.sp_microprice_bias   = g_l2_sp.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.xag_microprice_bias  = g_l2_xag.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.cl_microprice_bias   = g_l2_cl.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.eur_microprice_bias  = g_l2_eur.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.gbp_microprice_bias  = g_l2_gbp.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.aud_microprice_bias  = g_l2_aud.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.nzd_microprice_bias  = g_l2_nzd.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.jpy_microprice_bias  = g_l2_jpy.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.ger40_microprice_bias= g_l2_ger40.microprice_bias.load(std::memory_order_relaxed);
+
+    // ── L2 quality flags — lock-free reads ────────────────────────────────
+    g_macro_ctx.ctrader_l2_live = (g_ctrader_depth.depth_events_total.load() > 0);
+    g_macro_ctx.gold_l2_real    = g_l2_gold.has_data.load(std::memory_order_relaxed);
+    g_macro_ctx.sp_l2_real      = g_l2_sp.has_data.load(std::memory_order_relaxed);
+    g_macro_ctx.cl_l2_real      = g_l2_cl.has_data.load(std::memory_order_relaxed);
+
+    // Log L2 status once per minute — diagnose BlackBull tag-271 / cTrader size issue
+    {
+        static int64_t s_l2_log = 0;
+        const int64_t now_l2 = nowSec();
+        if (now_l2 - s_l2_log >= 60) {
+            s_l2_log = now_l2;
+            printf("[L2-STATUS] ctrader_live=%d events=%llu gold_real=%d gold_imb=%.3f "
+                   "gold_mp=%.3f sp_real=%d cl_real=%d\n",
+                   (int)g_macro_ctx.ctrader_l2_live,
+                   (unsigned long long)g_ctrader_depth.depth_events_total.load(),
+                   (int)g_macro_ctx.gold_l2_real,
+                   g_macro_ctx.gold_l2_imbalance,
+                   g_macro_ctx.gold_microprice_bias,
+                   (int)g_macro_ctx.sp_l2_real,
+                   (int)g_macro_ctx.cl_l2_real);
+            fflush(stdout);
+        }
+    }
+
+    // ── Cold path: snapshot all needed books under ONE lock ─────────────────
+    // Previously called getBook() per-symbol with a lock per call — 12 locks/tick.
+    // Now: one lock, copy all books, release, process outside — zero contention window.
+    // Only walls/vacuums/book_slope/GUI push need the full book; microprice_bias
+    // already comes from atomics above.
+    struct ColdSnap { L2Book book; bool valid = false; };
+    std::unordered_map<std::string, ColdSnap> cold_snap;
+    {
+        static constexpr const char* COLD_SYMS[] = {
+            "GOLD.F","US500.F","XAGUSD","USOIL.F","EURUSD","GBPUSD",
+            "AUDUSD","NZDUSD","USDJPY","GER40","UK100","ESTX50","BRENT"
         };
+        std::lock_guard<std::mutex> lk(g_l2_mtx);
+        for (const char* sym : COLD_SYMS) {
+            auto it = g_l2_books.find(sym);
+            if (it != g_l2_books.end() && it->second.has_data())
+                cold_snap[sym] = {it->second, true};
+        }
+    }
+    auto getBook = [&](const std::string& s) -> const L2Book* {
+        auto it = cold_snap.find(s);
+        return (it != cold_snap.end() && it->second.valid) ? &it->second.book : nullptr;
+    };
         // Push L2 book levels to telemetry for GUI depth panel
         auto pushL2 = [&](const char* sym, const L2Book* b) {
             if (!b) return;
@@ -3482,7 +3589,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_telemetry.UpdateL2Book(sym, bp, bs, nb, ap, as_, na);
         };
         if (const L2Book* b = getBook("GOLD.F")) {
-            g_macro_ctx.gold_microprice_bias = b->microprice_bias();
             g_macro_ctx.gold_book_slope      = b->book_slope();
             g_macro_ctx.gold_vacuum_ask      = b->liquidity_vacuum_ask();
             g_macro_ctx.gold_vacuum_bid      = b->liquidity_vacuum_bid();
@@ -3491,7 +3597,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             pushL2("GOLD.F", b);
         }
         if (const L2Book* b = getBook("US500.F")) {
-            g_macro_ctx.sp_microprice_bias   = b->microprice_bias();
             g_macro_ctx.sp_book_slope        = b->book_slope();
             g_macro_ctx.sp_vacuum_ask        = b->liquidity_vacuum_ask();
             g_macro_ctx.sp_vacuum_bid        = b->liquidity_vacuum_bid();
@@ -3499,9 +3604,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.sp_wall_below        = b->wall_below(b->ask_count > 0 ? b->asks[0].price : 0.0);
             pushL2("US500.F", b);
         }
-        if (const L2Book* b = getBook("XAGUSD"))  { g_macro_ctx.xag_microprice_bias = b->microprice_bias(); pushL2("XAGUSD", b); }
+        if (const L2Book* b = getBook("XAGUSD"))  { pushL2("XAGUSD", b); }
         if (const L2Book* b = getBook("USOIL.F")) {
-            g_macro_ctx.cl_microprice_bias   = b->microprice_bias();
             g_macro_ctx.cl_vacuum_ask        = b->liquidity_vacuum_ask();
             g_macro_ctx.cl_vacuum_bid        = b->liquidity_vacuum_bid();
         }
@@ -3509,7 +3613,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // These previously used L2 imbalance < 0.30 as a vacuum proxy.
         // Now populated from real book data for full L2 scoring parity with GOLD/SP.
         if (const L2Book* b = getBook("EURUSD")) {
-            g_macro_ctx.eur_microprice_bias = b->microprice_bias();
             g_macro_ctx.eur_vacuum_ask      = b->liquidity_vacuum_ask();
             g_macro_ctx.eur_vacuum_bid      = b->liquidity_vacuum_bid();
             g_macro_ctx.eur_wall_above      = b->wall_above(g_macro_ctx.eur_mid_price);
@@ -3517,30 +3620,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             pushL2("EURUSD", b);
         }
         if (const L2Book* b = getBook("GBPUSD")) {
-            g_macro_ctx.gbp_microprice_bias = b->microprice_bias();
             g_macro_ctx.gbp_vacuum_ask      = b->liquidity_vacuum_ask();
             g_macro_ctx.gbp_vacuum_bid      = b->liquidity_vacuum_bid();
             g_macro_ctx.gbp_wall_above      = b->wall_above(g_macro_ctx.gbp_mid_price);
             g_macro_ctx.gbp_wall_below      = b->wall_below(g_macro_ctx.gbp_mid_price);
         }
         if (const L2Book* b = getBook("AUDUSD")) {
-            g_macro_ctx.aud_microprice_bias = b->microprice_bias();
             g_macro_ctx.aud_vacuum_ask      = b->liquidity_vacuum_ask();
             g_macro_ctx.aud_vacuum_bid      = b->liquidity_vacuum_bid();
         }
         if (const L2Book* b = getBook("NZDUSD")) {
-            g_macro_ctx.nzd_microprice_bias = b->microprice_bias();
             g_macro_ctx.nzd_vacuum_ask      = b->liquidity_vacuum_ask();
             g_macro_ctx.nzd_vacuum_bid      = b->liquidity_vacuum_bid();
         }
         if (const L2Book* b = getBook("USDJPY")) {
-            g_macro_ctx.jpy_microprice_bias = b->microprice_bias();
             g_macro_ctx.jpy_vacuum_ask      = b->liquidity_vacuum_ask();
             g_macro_ctx.jpy_vacuum_bid      = b->liquidity_vacuum_bid();
         }
         // EU equity vacuum (for bracket L2 gate)
         if (const L2Book* b = getBook("GER40")) {
-            g_macro_ctx.ger40_microprice_bias = b->microprice_bias();
             g_macro_ctx.ger40_vacuum_ask      = b->liquidity_vacuum_ask();
             g_macro_ctx.ger40_vacuum_bid      = b->liquidity_vacuum_bid();
             g_macro_ctx.ger40_wall_above      = b->wall_above(
@@ -3734,13 +3832,65 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Push combined (closed + unrealised) to GUI so it shows live floating P&L
             const double closed = g_omegaLedger.dailyPnl();
             g_telemetry.UpdateStats(
-                closed + unr,                       // daily_pnl = closed + floating
+                closed + unr,
                 g_omegaLedger.grossDailyPnl() + unr,
                 g_omegaLedger.maxDD(),
                 g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
                 g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0,
-                closed,   // closed only
-                unr);     // floating only
+                closed, unr);
+
+            // ── Per-trade live P&L update ─────────────────────────────────────
+            // Rebuilds live_trades[] from scratch every 250ms.
+            // Each open position contributes one entry with current floating P&L.
+            g_telemetry.ClearLiveTrades();
+            auto push_live = [&](const char* sym, const char* eng, bool is_long,
+                                 double entry, double tp, double sl,
+                                 double size, int64_t entry_ts) {
+                double cur_bid = 0, cur_ask = 0;
+                { std::lock_guard<std::mutex> lk(g_book_mtx);
+                  auto bi = g_bids.find(sym); auto ai = g_asks.find(sym);
+                  if (bi != g_bids.end()) cur_bid = bi->second;
+                  if (ai != g_asks.end()) cur_ask = ai->second; }
+                const double cur = is_long ? cur_bid : cur_ask;
+                const double move = is_long ? (cur - entry) : (entry - cur);
+                const double tv = tick_value_multiplier(sym);
+                const double pnl = move * size * tv;
+                g_telemetry.AddLiveTrade(sym, eng, is_long ? "LONG" : "SHORT",
+                    entry, cur, tp, sl, size, pnl, tv, entry_ts);
+            };
+            // GoldFlow
+            if (g_gold_flow.pos.active)
+                push_live("GOLD.F", "GoldFlow",
+                    g_gold_flow.pos.is_long, g_gold_flow.pos.entry,
+                    0.0, g_gold_flow.pos.sl,
+                    g_gold_flow.pos.size, g_gold_flow.pos.entry_ts);
+            // GoldStack (base leg)
+            if (g_gold_stack.has_open_position())
+                push_live("GOLD.F", g_gold_stack.live_engine(),
+                    g_gold_stack.live_is_long(),
+                    g_gold_stack.live_entry(),
+                    g_gold_stack.live_tp(),
+                    g_gold_stack.live_sl(),
+                    g_gold_stack.live_size(),
+                    static_cast<int64_t>(std::time(nullptr)));
+            // GoldBracket
+            if (g_bracket_gold.pos.active)
+                push_live("GOLD.F", "Bracket",
+                    g_bracket_gold.pos.is_long, g_bracket_gold.pos.entry,
+                    g_bracket_gold.pos.tp, g_bracket_gold.pos.sl,
+                    g_bracket_gold.pos.size, g_bracket_gold.pos.entry_ts);
+            // Cross-asset engines (SP, NQ, Oil, etc)
+            auto push_ca = [&](bool active, bool is_long, double entry, double tp,
+                                double sl, double size, int64_t ts,
+                                const char* sym, const char* eng) {
+                if (!active) return;
+                push_live(sym, eng, is_long, entry, tp, sl, size, ts);
+            };
+            push_ca(g_eng_sp.pos.active,   g_eng_sp.pos.is_long(),   g_eng_sp.pos.entry,   0,0, g_eng_sp.pos.size,   0, "US500.F", "Breakout");
+            push_ca(g_eng_nq.pos.active,   g_eng_nq.pos.is_long(),   g_eng_nq.pos.entry,   0,0, g_eng_nq.pos.size,   0, "USTEC.F", "Breakout");
+            push_ca(g_eng_cl.pos.active,   g_eng_cl.pos.is_long(),   g_eng_cl.pos.entry,   0,0, g_eng_cl.pos.size,   0, "USOIL.F", "Breakout");
+            push_ca(g_eng_xag.pos.active,  g_eng_xag.pos.is_long(),  g_eng_xag.pos.entry,  0,0, g_eng_xag.pos.size,  0, "XAGUSD",  "Breakout");
+            push_ca(g_eng_eurusd.pos.active,g_eng_eurusd.pos.is_long(),g_eng_eurusd.pos.entry,0,0,g_eng_eurusd.pos.size,0,"EURUSD","Breakout");
         }
     }
 
@@ -5653,20 +5803,76 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
     else if (sym == "GOLD.F")  {
         // ── Gold master exclusion gate ────────────────────────────────────────
-        // ANY open gold position across ALL 5 engines blocks new entries.
-        // This is the single source of truth — individual engine checks below
-        // use specific subsets for clarity but this master gate via symbol_gate()
-        // enforces the 1-position-at-a-time invariant at the top level.
+        // Default: ANY open gold position blocks new entries (1-at-a-time invariant).
+        // TREND DAY exception: when |ewm_drift| > 5.0 AND vol_ratio > 1.5,
+        //   allow CompBreakout to re-enter within 90s of GoldFlow exiting (trail/BE).
+        //   CompBreakout is the safest re-entry — tight $3 SL, EWM drift gated.
+        //   Bracket can also arm (not fire) in parallel with GoldFlow.
+        // REVERSAL exception: GoldFlow SL_HIT + drift now in opposite direction
+        //   → GoldStack counter-entry allowed within 60s (bypasses SL cooldown).
         const bool gold_any_open =
             g_gold_stack.has_open_position()    ||
             g_le_stack.has_open_position()      ||
             g_bracket_gold.has_open_position()  ||
-            g_gold_flow.has_open_position()     ||   // ADDED: was missing
-            g_trend_pb_gold.has_open_position();     // ADDED: was missing
+            g_gold_flow.has_open_position()     ||
+            g_trend_pb_gold.has_open_position();
+
+        // ── Trend day detection ───────────────────────────────────────────────
+        const double gold_ewm_drift_now = g_gold_stack.ewm_drift();
+        const double gold_recent_vol_now = g_gold_stack.recent_vol_pct();
+        const double gold_base_vol_now   = g_gold_stack.base_vol_pct();
+        const double gold_vol_ratio_now  = (gold_base_vol_now > 0.0)
+            ? gold_recent_vol_now / gold_base_vol_now : 0.0;
+        // Strong trend: drift > $5 sustained + vol expanding 50%+ above baseline
+        const bool gold_trend_day = (std::fabs(gold_ewm_drift_now) >= 5.0)
+                                    && (gold_vol_ratio_now >= 1.5);
+        // Trend direction: +1 long trend, -1 short trend
+        // gold_trend_dir: +1 long trend, -1 short trend (used for future per-engine bias filter)
+        (void)(gold_trend_day ? (gold_ewm_drift_now > 0 ? 1 : -1) : 0);
+
+        // ── Reversal window check ─────────────────────────────────────────────
+        // Active when GoldFlow was SL_HIT and drift has now reversed direction.
+        const int64_t now_s_gate = static_cast<int64_t>(std::time(nullptr));
+        const bool in_reversal_window = (g_gold_reversal_window_until.load() > now_s_gate);
+        const int  flow_exit_dir      = g_gold_flow_exit_dir.load();
+        // Reversal confirmed: drift now points OPPOSITE to the failed flow direction
+        const bool drift_reversed = in_reversal_window && (
+            (flow_exit_dir ==  1 && gold_ewm_drift_now < -2.0)  // was long, now bearish drift
+         || (flow_exit_dir == -1 && gold_ewm_drift_now >  2.0)  // was short, now bullish drift
+        );
+        if (drift_reversed) {
+            // Tell GoldStack to bypass its SL cooldown this tick
+            g_gold_stack.clear_sl_cooldown();
+            static int64_t s_rev_log = 0;
+            if (now_s_gate - s_rev_log > 10) {
+                s_rev_log = now_s_gate;
+                printf("[GOLD-REVERSAL] Drift reversed — GoldStack cooldown cleared for counter-entry\n");
+                fflush(stdout);
+            }
+        }
+
+        // ── Trend-day re-entry: allow CompBreakout after GoldFlow trail exit ──
+        // If GoldFlow closed via trail/BE (not SL), price may still be trending.
+        // CompBreakout can re-enter within 90s IF trend direction matches.
+        const int64_t flow_exit_ts    = g_gold_flow_exit_ts.load();
+        const int     flow_exit_reason = g_gold_flow_exit_reason.load();  // 2=trail/BE
+        const bool trend_reentry_ok = gold_trend_day
+            && !g_gold_flow.has_open_position()   // flow must be closed
+            && !g_bracket_gold.has_open_position()
+            && !g_le_stack.has_open_position()
+            && !g_trend_pb_gold.has_open_position()
+            && (flow_exit_reason == 2)            // trail/BE exit, not SL
+            && (now_s_gate - flow_exit_ts <= 90); // within 90s of flow closing
+
         // Session-aware gold cap: dead zone 05-07 UTC → no new entries
         const int gold_session_slot = g_macro_ctx.session_slot;
         const bool gold_session_ok = (gold_session_slot != 0);
+        // On trend day re-entry: allow GoldStack even with gold_stack open position
+        // (CompBreakout won't fire if stack is already open — handled in stack gate below)
         const bool gold_can_enter = gold_session_ok && symbol_gate("GOLD.F", gold_any_open);
+        // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
+        const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
+            && gold_session_ok && symbol_gate("GOLD.F", false);
 
         // Run supervisor — uses g_eng_xag as vol/phase proxy since gold has
         // its own GoldStack (not a BreakoutEngine). We use a dedicated gold
@@ -5770,12 +5976,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
             const bool stack_can_enter = gold_sdec.allow_breakout
                                          && !g_bracket_gold.has_open_position()
-                                         && !g_gold_flow.has_open_position()      // ADDED
-                                         && !g_trend_pb_gold.has_open_position()  // ADDED
+                                         && !g_gold_flow.has_open_position()
+                                         && !g_trend_pb_gold.has_open_position()
                                          && vol_expanding
                                          && conf_ok;
+            // Trend-day re-entry: allow CompBreakout specifically when GoldFlow
+            // closed via trail/BE on a strong trend. Stack handles the EWM drift
+            // direction gate internally so only trend-aligned signals fire.
+            // Also allow reversal counter-entry when drift_reversed is confirmed.
+            const bool stack_enter_effective = (stack_can_enter && gold_can_enter)
+                || (gold_can_enter_trend_reentry && vol_expanding)
+                || (drift_reversed && gold_can_enter);
             const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close,
-                                                    stack_can_enter && gold_can_enter);
+                                                    stack_enter_effective);
             if (gsig.valid) {
                 // ── VWAP counter-trend guard ──────────────────────────────────
                 // Block signals that trade against the VWAP direction.
@@ -6191,6 +6404,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // Close broker position with a market order (same as bracket_on_close)
                 const bool close_is_long = (tr.side == "SHORT"); // flip to close
                 send_live_order("GOLD.F", close_is_long, tr.size, tr.exitPrice);
+
+                // ── Trend-day / reversal state update ────────────────────────
+                const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
+                const int exit_dir = (tr.side == "LONG") ? 1 : -1;
+                g_gold_flow_exit_ts.store(now_s);
+                g_gold_flow_exit_dir.store(exit_dir);
+                const bool is_sl = (tr.exitReason == "SL_HIT");
+                g_gold_flow_exit_reason.store(is_sl ? 1 : 2);
+                // Reversal window: if flow was stopped out, allow GoldStack to
+                // fast-reverse (bypass 120s SL cooldown) for 60s.
+                // Requires drift to be in OPPOSITE direction at time of next tick.
+                if (is_sl) {
+                    g_gold_reversal_window_until.store(now_s + 60);
+                    printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s — reversal window open 60s\n",
+                           tr.side.c_str());
+                    fflush(stdout);
+                }
             };
             if (gf_tick_ok) g_gold_flow.on_tick(bid, ask,
                 g_macro_ctx.gold_l2_imbalance,
@@ -6369,6 +6599,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const int h2 = ti_asia.tm_hour;
         const int asia_open = (!g_cfg.asia_fx_asia_only || (h2 >= 22 || h2 < 7)) ? 1 : 0;
         g_telemetry.UpdateAsiaCfg(asia_open, g_cfg.max_trades_per_cycle, g_cfg.max_open_positions);
+        // Push L2 quality flags so GUI shows cTrader status and gold_l2_real indicator
+        if (g_telemetry.snap()) {
+            g_telemetry.snap()->ctrader_l2_live = g_macro_ctx.ctrader_l2_live ? 1 : 0;
+            g_telemetry.snap()->gold_l2_real     = g_macro_ctx.gold_l2_real     ? 1 : 0;
+        }
     }
 
     // ── Cross-asset engine live state snapshot ───────────────────────────────
@@ -8554,6 +8789,16 @@ int main(int argc, char* argv[])
         g_ctrader_depth.ctid_account_id     = g_cfg.ctrader_ctid_account_id;
         g_ctrader_depth.l2_mtx              = &g_l2_mtx;
         g_ctrader_depth.l2_books            = &g_l2_books;
+        // Register atomic write callback — cTrader thread writes derived scalars
+        // (imbalance, microprice_bias, has_data) lock-free after each depth event.
+        // FIX tick reads these atomics directly with no mutex contention at all.
+        g_ctrader_depth.atomic_l2_write_fn = [](const std::string& sym, double imb, double mp, bool hd) noexcept {
+            AtomicL2* al = get_atomic_l2(sym);
+            if (!al) return;
+            al->imbalance.store(imb, std::memory_order_relaxed);
+            al->microprice_bias.store(mp, std::memory_order_relaxed);
+            al->has_data.store(hd, std::memory_order_relaxed);
+        };
         // Subscribe depth only for actively traded symbols — not passive cross-pairs.
         // cTrader drops connection when too many depth streams are requested at once.
         for (int i = 0; i < OMEGA_NSYMS; ++i)

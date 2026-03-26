@@ -128,6 +128,18 @@ struct MacroContext {
     bool        estx50_vacuum_ask = false;
     bool        estx50_vacuum_bid = false;
 
+    // ── L2 data quality flags ─────────────────────────────────────────────────
+    // ctrader_l2_live: true when cTrader depth client has received at least 1 event
+    //   AND at least one symbol book has real non-zero size data.
+    //   Separate from per-symbol has_data() — this is the global connectivity flag.
+    // gold_l2_real: true specifically when GOLD.F book has non-zero bid+ask sizes.
+    //   When false, GoldFlow uses drift-persistence fallback (price-based, not book-based).
+    //   This isolates the BlackBull tag-271 issue: FIX sends no sizes, cTrader may or may not.
+    bool        ctrader_l2_live  = false;
+    bool        gold_l2_real     = false;
+    bool        sp_l2_real       = false;
+    bool        cl_l2_real       = false;
+
     // Session time slot — updated every tick
     // 0=dead(05-07 UTC), 1=London(07-09), 2=London_core(09-12),
     // 3=overlap(12-14), 4=NY(14-17), 5=NY_late(17-22), 6=Asia(22-05)
