@@ -129,7 +129,7 @@ Write-Host "  Build OK" -ForegroundColor Green
 # ── Step 6: Start Omega ───────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "[6] Starting Omega..." -ForegroundColor Yellow
-Start-Process "C:\Omega\build\Release\Omega.exe" -WorkingDirectory "C:\Omega"
+& "C:\Omega\build\Release\Omega.exe"
 Start-Sleep 6
 
 # ── Step 7: Post-start verification ──────────────────────────────────────────
