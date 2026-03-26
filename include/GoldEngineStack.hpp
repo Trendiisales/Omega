@@ -1032,7 +1032,7 @@ public:
 class GoldPositionManager {
     static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
-    static constexpr int    MAX_PYRAMID_LEGS = 5;  // base + 4 add-ons — ride full trending days
+    static constexpr int    MAX_PYRAMID_LEGS = 3;  // base + 2 add-ons — capped to prevent over-pyramiding
     static constexpr double PYR_COVER_MOVE   = 5.00;  // EA-matched: add only after $5 confirmed move
     static constexpr double PYR_MIN_STEP     = 3.00;  // minimum $3 between pyramid levels
     static constexpr int64_t PYR_ADD_COOLDOWN_SEC = 60; // 60s between add-ons — confirm trend
@@ -1138,9 +1138,12 @@ class GoldPositionManager {
         // Pyramid 1 (idx=1): medium — 60% of base trail distances
         // Pyramid 2 (idx=2): tight — 40% of base trail distances
         // Pyramid 3+ (idx≥3): tightest — 25% of base trail distances
+        // Minimum tier_mult raised: 0.25x was strangling pyramid legs — lock_arm=$0.375
+        // caused SL to snap within 4 ticks, then $1.25 slippage turned every exit red.
+        // Now: base=1.00x, pyr1=0.80x, pyr2=0.65x — still tighter than base but survivable.
         const double tier_mult = (leg_idx == 0) ? 1.00 :
-                                 (leg_idx == 1) ? 0.60 :
-                                 (leg_idx == 2) ? 0.40 : 0.25;
+                                 (leg_idx == 1) ? 0.80 :
+                                 (leg_idx == 2) ? 0.65 : 0.65;
 
         const double lock_arm   = LOCK_ARM_MOVE  * tier_mult;
         const double lock_gain  = LOCK_GAIN      * tier_mult;
@@ -1254,10 +1257,19 @@ class GoldPositionManager {
                          : fill_px - pyr_tp_dist;
         // SL for pyramid leg: locked to main entry's BE + buffer
         // This means the pyramid leg can only lose back to where the base entered
-        const double pyr_sl_lock = legs_.front().entry;  // base entry = absolute worst case
+        // pyr_sl_lock: allow $2.00 BELOW base entry so pyramid has real SL room.
+        // Old code: lock = base_entry exactly. When pyramid fills $1 above base,
+        // max(fill-$10, base_entry) = base_entry → only $1 SL room → trail snaps
+        // it to entry+$0.24 after $0.60 move → slippage ($1.25) > gross profit.
+        // Fix: lock = base_entry - $2.00 (LONG) / + $2.00 (SHORT).
+        // This means worst case a pyramid gives back the base profit + $2 — acceptable.
+        const double PYR_SL_BUFFER = 2.00;  // $2 below base entry = real SL floor
+        const double pyr_sl_lock = is_long
+            ? legs_.front().entry - PYR_SL_BUFFER
+            : legs_.front().entry + PYR_SL_BUFFER;
         const double pyr_sl_raw  = is_long ? fill_px - PYR_SL_TICKS * TICK_SIZE
                                            : fill_px + PYR_SL_TICKS * TICK_SIZE;
-        // SL must be at least at base entry (never lose below base BE)
+        // SL = best of: $10 from fill OR base_entry - $2 floor
         leg.sl = is_long ? std::max(pyr_sl_raw, pyr_sl_lock)
                          : std::min(pyr_sl_raw, pyr_sl_lock);
         leg.mfe      = 0;

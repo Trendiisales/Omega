@@ -76,6 +76,13 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .ph-comp{background:var(--amber-dim);color:var(--amber);}
 .ph-brk{background:var(--green-dim);color:var(--green);animation:brk-blink 0.7s ease-in-out infinite;}
 @keyframes brk-blink{0%,100%{opacity:1}50%{opacity:0.5}}
+.pnl-live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:5px;animation:pnl-pulse 1s ease-in-out infinite;}
+.pnl-live-dot.no-pos{background:var(--t3);animation:none;}
+@keyframes pnl-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(0.7)}}
+.pnl-float-row{display:flex;gap:12px;margin-top:4px;font-size:11px;}
+.pnl-float-item{display:flex;flex-direction:column;align-items:center;}
+.pnl-float-lbl{font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;}
+.pnl-float-val{font-size:13px;font-weight:600;font-family:'IBM Plex Mono',monospace;}
 .vd{width:1px;height:24px;background:var(--border);margin:0 3px;flex-shrink:0;}
 
 /* ── HEADER RIGHT ── */
@@ -457,8 +464,24 @@ R"OMEGA3(
     <!-- Stats bar -->
     <div class="stats-bar">
       <div class="pnl-card">
-        <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;">Daily P&amp;L</div>
+        <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;display:flex;align-items:center;">
+          <span class="pnl-live-dot no-pos" id="pnlLiveDot"></span>Daily P&amp;L
+        </div>
         <div class="pnl-num pnl-pos" id="pnlVal">+$0.00</div>
+        <div class="pnl-float-row">
+          <div class="pnl-float-item">
+            <span class="pnl-float-lbl">Closed</span>
+            <span class="pnl-float-val" id="pnlClosed" style="color:var(--t1)">$0.00</span>
+          </div>
+          <div class="pnl-float-item">
+            <span class="pnl-float-lbl">Floating</span>
+            <span class="pnl-float-val" id="pnlFloating" style="color:var(--t2)">$0.00</span>
+          </div>
+          <div class="pnl-float-item">
+            <span class="pnl-float-lbl">NZD≈</span>
+            <span class="pnl-float-val" id="pnlNzd" style="color:var(--amber)">$0.00</span>
+          </div>
+        </div>
         <div class="pnl-sub" id="pnlSub">0 trades · 0.0% win</div>
         <div style="font-size:10px;color:var(--t2);margin-top:2px;" id="pnlGrossSub"></div>
       </div>
@@ -1253,8 +1276,23 @@ function updateDashboard(d){
 
   // PnL
   const pnl=safe(d.daily_pnl),gross=safe(d.gross_daily_pnl);
+  const closed=safe(d.closed_pnl), floating=safe(d.open_unrealised_pnl);
+  const NZD_RATE=1.66; // approx USD→NZD (update if needed)
   const pE=document.getElementById('pnlVal');
   if(pE){pE.textContent=(pnl>=0?'+':'-')+'$'+Math.abs(pnl).toFixed(2);pE.className='pnl-num '+(pnl>=0?'pnl-pos':'pnl-neg');}
+  const cEl=document.getElementById('pnlClosed');
+  if(cEl){cEl.textContent=(closed>=0?'+':'-')+'$'+Math.abs(closed).toFixed(2);cEl.style.color=closed>=0?'var(--green)':'var(--red)';}
+  const fEl=document.getElementById('pnlFloating');
+  if(fEl){
+    const hasFloat=Math.abs(floating)>0.001;
+    fEl.textContent=hasFloat?((floating>=0?'+':'-')+'$'+Math.abs(floating).toFixed(2)):'--';
+    fEl.style.color=floating>0.01?'var(--green)':floating<-0.01?'var(--red)':'var(--t2)';
+  }
+  const nEl=document.getElementById('pnlNzd');
+  if(nEl){const nzd=pnl*NZD_RATE;nEl.textContent=(nzd>=0?'+':'-')+'NZ$'+Math.abs(nzd).toFixed(2);nEl.style.color=nzd>=0?'var(--amber)':'var(--red)';}
+  // Live dot — pulses green when position open, grey when flat
+  const dotEl=document.getElementById('pnlLiveDot');
+  if(dotEl){const hasOpen=Math.abs(floating)>0.001;dotEl.className='pnl-live-dot'+(hasOpen?'':' no-pos');}
   txt('pnlSub',safe(d.total_trades)+' trades · '+safe(d.win_rate).toFixed(1)+'% win');
   const gSub=document.getElementById('pnlGrossSub');
   if(gSub&&gross!==0){const slip=Math.abs(gross-pnl);gSub.textContent='gross '+(gross>=0?'+':'-')+'$'+Math.abs(gross).toFixed(2)+' · slip -$'+slip.toFixed(2);}

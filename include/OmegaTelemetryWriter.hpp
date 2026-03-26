@@ -46,8 +46,10 @@ struct OmegaTelemetrySnapshot
     double brent_bid;  double brent_ask;
 
     // --- P&L ---
-    double daily_pnl;       // net P&L after slippage (what you actually made)
-    double gross_daily_pnl; // gross P&L before slippage (for transparency display)
+    double daily_pnl;           // net P&L after slippage (closed + floating combined)
+    double gross_daily_pnl;     // gross P&L before slippage
+    double closed_pnl;          // closed trades only — no floating
+    double open_unrealised_pnl; // floating P&L on open positions only
     double max_drawdown;
 
     // --- Latency ---
@@ -410,20 +412,23 @@ public:
     }
 
     void UpdateStats(double pnl, double gross_pnl, double dd, int trades, int w, int l,
-                     double wr, double avg_w, double avg_l, int orders, int fills)
+                     double wr, double avg_w, double avg_l, int orders, int fills,
+                     double closed_pnl = 0.0, double open_unrealised = 0.0)
     {
         if (!m_snap) return;
-        m_snap->daily_pnl       = pnl;
-        m_snap->gross_daily_pnl = gross_pnl;
-        m_snap->max_drawdown    = dd;
-        m_snap->total_trades    = trades;
-        m_snap->wins            = w;
-        m_snap->losses          = l;
-        m_snap->win_rate        = wr;
-        m_snap->avg_win         = avg_w;
-        m_snap->avg_loss        = avg_l;
-        m_snap->total_orders    = orders;
-        m_snap->total_fills     = fills;
+        m_snap->daily_pnl           = pnl;
+        m_snap->gross_daily_pnl     = gross_pnl;
+        m_snap->closed_pnl          = closed_pnl;
+        m_snap->open_unrealised_pnl = open_unrealised;
+        m_snap->max_drawdown        = dd;
+        m_snap->total_trades        = trades;
+        m_snap->wins                = w;
+        m_snap->losses              = l;
+        m_snap->win_rate            = wr;
+        m_snap->avg_win             = avg_w;
+        m_snap->avg_loss            = avg_l;
+        m_snap->total_orders        = orders;
+        m_snap->total_fills         = fills;
     }
 
     void UpdateLatency(double last, double p50, double p95)

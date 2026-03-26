@@ -3100,7 +3100,9 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_omegaLedger.grossDailyPnl() + (g_open_unrealised_cents.load() / 100.0),
         g_omegaLedger.maxDD(),
         g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
-        g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
+        g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0,
+        g_omegaLedger.dailyPnl(),                     // closed only
+        g_open_unrealised_cents.load() / 100.0);      // floating only
     // NOTE: do NOT call UpdateLastSignal("CLOSED") here — the GUI treats "CLOSED"
     // identically to "NONE" and resets the last-signal panel to "Waiting for first signal..."
     // on every single trade close. The last_signal panel should show the last ENTRY signal,
@@ -3736,7 +3738,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_omegaLedger.grossDailyPnl() + unr,
                 g_omegaLedger.maxDD(),
                 g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
-                g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
+                g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0,
+                closed,   // closed only
+                unr);     // floating only
         }
     }
 
@@ -7537,11 +7541,12 @@ int main(int argc, char* argv[])
         3.0,    // RR: 3.0 -- on a $10 range this gives $30 TP.
                 //   Trail rides $50-100+ moves on trending days like today ($400 drop).
         90000,  // cooldown_ms: 90s -- prevents re-arm into thin liquidity.
-        10.0,   // MIN_RANGE -- raised 6.0->10.0pts.
-                //   Evidence: 6pt ranges get swept in seconds on trending days.
-                //   The losers (7s, 53s BREAKOUT_FAIL) all had 6.0-6.5pt ranges.
-                //   The winner (56min TRAIL_HIT +$99) had a 15.95pt range.
-                //   10pt compression = real structure. At $4200, 10pt = 0.24%.
+        5.0,    // MIN_RANGE — lowered 10.0→5.0pts.
+                //   MIN_RANGE=10 blocked the entire morning session (gold range was $7).
+                //   At $5000 gold, $5 = 0.10% — real structural compression, not noise.
+                //   ATR_RANGE_K=1.5 means eff_min = max(atr*1.5, 5.0).
+                //   With 20-tick ATR ~$3: eff_min = max($4.5, $5.0) = $5.0 → arms at $6+ ranges.
+                //   The losers at 6pt had ATR noise ~= range — ATR_RANGE_K gate still catches those.
                 //   A $400 trending day will have many 10pt+ compressions to trade.
         0.05,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms

@@ -124,6 +124,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"usdjpy_bid\":%.4f,\"usdjpy_ask\":%.4f,"
         "\"brent_bid\":%.4f,\"brent_ask\":%.4f,"
         "\"daily_pnl\":%.2f,\"gross_daily_pnl\":%.2f,\"max_drawdown\":%.2f,"
+        "\"closed_pnl\":%.2f,\"open_unrealised_pnl\":%.2f,"
         "\"fix_rtt_last\":%.2f,\"fix_rtt_p50\":%.2f,\"fix_rtt_p95\":%.2f,"
         "\"total_trades\":%d,\"wins\":%d,\"losses\":%d,\"win_rate\":%.1f,"
         "\"avg_win\":%.2f,\"avg_loss\":%.2f,"
@@ -175,6 +176,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->audusd_bid, s->audusd_ask, s->nzdusd_bid, s->nzdusd_ask,
         s->usdjpy_bid, s->usdjpy_ask, s->brent_bid,  s->brent_ask,
         s->daily_pnl, s->gross_daily_pnl, s->max_drawdown,
+        s->closed_pnl, s->open_unrealised_pnl,
         s->fix_rtt_last, s->fix_rtt_p50, s->fix_rtt_p95,
         trades, wins, s->losses, wr,
         s->avg_win, s->avg_loss,
