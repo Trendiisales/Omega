@@ -215,6 +215,11 @@ public:
     std::string client_id, client_secret, access_token, refresh_token;
     int64_t     ctid_account_id = 0;
     std::unordered_set<std::string> symbol_whitelist;
+    bool        dump_all_symbols = false;  // if true, log ALL broker symbols on connect
+
+    // Alias map: broker_name → internal_name
+    // Populated when broker uses different names than our internal names.
+    std::unordered_map<std::string,std::string> name_alias;
 
     std::mutex*                             l2_mtx   = nullptr;
     std::unordered_map<std::string,L2Book>* l2_books = nullptr;
@@ -243,6 +248,7 @@ private:
     std::thread thread_;
     std::unordered_map<std::string,CTDepthBook>  depth_books_;
     std::unordered_map<uint64_t,std::string>     id_to_name_;
+    std::unordered_map<uint64_t,std::string>     id_to_internal_;  // id → internal name (with alias)
     std::vector<uint8_t> recv_buf_;
 
     void loop() {
@@ -283,7 +289,7 @@ private:
 
         // Parse SymbolsListRes — field 3 = repeated ProtoOALightSymbol
         // ProtoOALightSymbol: field 1=symbolId(int64), field 2=symbolName(string)
-        id_to_name_.clear(); depth_books_.clear();
+        id_to_name_.clear(); depth_books_.clear(); id_to_internal_.clear();
         std::vector<int64_t> sub_ids;
         for (const auto& f : PB::parse(payload)) {
             if (f.field_num != 3 || f.wire_type != 2) continue;
@@ -294,14 +300,23 @@ private:
             id_to_name_[uint64_t(sid)] = sname;
             if (symbol_whitelist.count(sname)) {
                 sub_ids.push_back(sid);
-                depth_books_[sname] = CTDepthBook{};
-                std::cout << "[CTRADER] Subscribe depth: " << sname << " id=" << sid << "\n";
+                // Use alias if available (e.g. broker "GOLD" → internal "GOLD.F")
+                const std::string internal_name = name_alias.count(sname) ? name_alias.at(sname) : sname;
+                depth_books_[internal_name] = CTDepthBook{};
+                id_to_internal_[uint64_t(sid)] = internal_name;
+                std::cout << "[CTRADER] Subscribe depth: " << sname << " id=" << sid
+                          << (internal_name != sname ? " (alias→" + internal_name + ")" : "") << "\n";
             }
         }
         std::cout << "[CTRADER] Symbol list: " << id_to_name_.size() << " total, " << sub_ids.size() << " to subscribe\n";
+        // Always dump all symbols so we can diagnose name mismatches
+        if (dump_all_symbols || sub_ids.empty()) {
+            std::cout << "[CTRADER] Available symbols:\n";
+            for (const auto& kv : id_to_name_)
+                std::cout << "[CTRADER]  avail: " << kv.second << " id=" << kv.first << "\n";
+        }
         if (sub_ids.empty()) {
             std::cerr << "[CTRADER] No whitelisted symbols matched — check whitelist names vs broker\n";
-            int n=0; for(const auto& kv:id_to_name_) { std::cout<<"[CTRADER]  avail: "<<kv.second<<" id="<<kv.first<<"\n"; if(++n>=20) break; }
             return false;
         }
 
@@ -338,8 +353,9 @@ private:
         const auto fields = PB::parse(payload);
         const uint64_t sym_id = PB::get_varint(fields, 3);
         if (!sym_id) return;
-        const auto it = id_to_name_.find(sym_id);
-        if (it == id_to_name_.end()) return;
+        // Use internal name (alias-resolved) for book lookup
+        const auto it = id_to_internal_.find(sym_id);
+        if (it == id_to_internal_.end()) return;
         const std::string& name = it->second;
         auto& book = depth_books_[name];
         for (const auto& qb : PB::get_repeated_bytes(fields, 4)) {

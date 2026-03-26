@@ -7899,6 +7899,20 @@ int main(int argc, char* argv[])
             g_ctrader_depth.symbol_whitelist.insert(OMEGA_SYMS[i].name);
         for (const auto& e : g_ext_syms)
             if (e.name[0] != 0) g_ctrader_depth.symbol_whitelist.insert(e.name);
+        // Alternate broker names for gold/silver — broker may not use .F suffix
+        g_ctrader_depth.symbol_whitelist.insert("GOLD");
+        g_ctrader_depth.symbol_whitelist.insert("XAUUSD");
+        g_ctrader_depth.symbol_whitelist.insert("SILVER");
+        g_ctrader_depth.symbol_whitelist.insert("XAGUSD");
+        g_ctrader_depth.symbol_whitelist.insert("NGAS");
+        g_ctrader_depth.symbol_whitelist.insert("VIX");
+        g_ctrader_depth.dump_all_symbols = true;  // log all available symbols on connect
+        // Alias map: broker name → internal name used by getImb/getBook
+        g_ctrader_depth.name_alias["GOLD"]    = "GOLD.F";
+        g_ctrader_depth.name_alias["XAUUSD"]  = "GOLD.F";
+        g_ctrader_depth.name_alias["SILVER"]  = "XAGUSD";
+        g_ctrader_depth.name_alias["NGAS"]    = "NGAS.F";
+        g_ctrader_depth.name_alias["VIX"]     = "VIX.F";
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
     } else {
