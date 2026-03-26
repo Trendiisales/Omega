@@ -338,18 +338,29 @@ private:
         auto last_hb = std::chrono::steady_clock::now();
         auto last_diag = std::chrono::steady_clock::now();
         uint64_t ev_min = 0;
+        std::unordered_map<std::string,uint64_t> ev_per_sym;
         while (running.load()) {
             const auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now-last_hb).count()>=10) { send_msg(ssl,PB::heartbeat()); last_hb=now; }
             if (std::chrono::duration_cast<std::chrono::seconds>(now-last_diag).count()>=60) {
                 std::cout<<"[CTRADER-STATUS] events_total="<<depth_events_total.load()<<" this_min="<<ev_min<<" symbols="<<depth_books_.size()<<"\n";
-                ev_min=0; last_diag=now;
+                // Log which symbols are receiving events
+                for (const auto& kv : ev_per_sym)
+                    if (kv.first == "GOLD.F" || kv.first == "XAUUSD" || kv.second == 0)
+                        std::cout<<"[CTRADER-EVTS] "<<kv.first<<"="<<kv.second<<"\n";
+                ev_min=0; ev_per_sym.clear(); last_diag=now;
             }
             uint32_t pt; std::vector<uint8_t> payload;
             const int rc = read_one(ssl, pt, payload, 100);
             if (rc < 0) { std::cerr<<"[CTRADER] Connection error\n"; return; }
             if (rc == 0) continue;
-            if      (pt==2155) { on_depth_event(payload); ++depth_events_total; ++ev_min; }
+            if      (pt==2155) { on_depth_event(payload); ++depth_events_total; ++ev_min;
+                                  // Count per-symbol for diagnostics
+                                  const auto fields2 = PB::parse(payload);
+                                  const uint64_t sid2 = PB::get_varint(fields2, 3);
+                                  const auto iit = id_to_internal_.find(sid2);
+                                  if (iit != id_to_internal_.end()) ++ev_per_sym[iit->second];
+                                }
             else if (pt==2142) { const auto ef=PB::parse(payload); std::cerr<<"[CTRADER] Error: "<<PB::get_string(ef,2)<<" — "<<PB::get_string(ef,3)<<"\n"; if(PB::get_string(ef,2)=="OA_AUTH_TOKEN_EXPIRED"){if(!refresh_token.empty())send_msg(ssl,PB::refresh_token_req(refresh_token)); return;} }
             else if (pt==2174) { const auto rf=PB::parse(payload); const std::string na=PB::get_string(rf,2); if(!na.empty()){access_token=na;refresh_token=PB::get_string(rf,3);std::cout<<"[CTRADER] Token refreshed\n";} }
             else if (pt==51)   { send_msg(ssl,PB::heartbeat()); }
