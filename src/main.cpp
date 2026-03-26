@@ -5922,13 +5922,44 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && !g_trend_pb_gold.has_open_position()) { // ADDED: prevent stack with TrendPB
             g_gold_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
                                        ? g_cfg.risk_per_trade_usd : GFE_RISK_DOLLARS;
+
+            // ── Pre-tick cost gate for GoldFlowEngine ─────────────────────────
+            // GoldFlowEngine enters internally (pos.active=true inside enter()),
+            // so main.cpp cannot intercept between signal and entry the way
+            // enter_directional() does for all other engines.
+            // Solution: estimate cost viability BEFORE calling on_tick().
+            // If current spread cannot be covered by the expected trade gross,
+            // skip this tick entirely — engine never sees it, no phantom entry.
+            //
+            // Estimates use pre-entry ATR (available before on_tick):
+            //   sl_pts  = ATR × GFE_ATR_SL_MULT (1.0)   — matches engine exactly
+            //   tp_dist = sl_pts × 2.0                   — 2R, matches partial exit arm
+            //   lot     = risk_dollars / (sl_pts × 100)  — matches engine sizing formula
+            //             clamped to [GFE_MIN_LOT, 0.08] — matches GFE_MAX_LOT_FLOW
+            // ATR=0 means warmup incomplete — engine will return without entering,
+            // so skipping is a pure no-op in that case.
+            bool gf_cost_ok = true;
+            {
+                const double gf_atr = g_gold_flow.current_atr();
+                if (gf_atr > 0.0) {
+                    const double gf_sl_pts  = gf_atr * GFE_ATR_SL_MULT;
+                    const double gf_tp_dist = gf_sl_pts * 2.0;
+                    const double gf_lot_est = std::max(GFE_MIN_LOT,
+                        std::min(0.08, g_gold_flow.risk_dollars / (gf_sl_pts * 100.0)));
+                    if (!ExecutionCostGuard::is_viable("GOLD.F", ask - bid, gf_tp_dist, gf_lot_est)) {
+                        g_telemetry.IncrCostBlocked();
+                        gf_cost_ok = false;
+                    }
+                }
+            }
+
             auto flow_on_close = [&](const omega::TradeRecord& tr) {
                 handle_closed_trade(tr);
                 // Close broker position with a market order (same as bracket_on_close)
                 const bool close_is_long = (tr.side == "SHORT"); // flip to close
                 send_live_order("GOLD.F", close_is_long, tr.size, tr.exitPrice);
             };
-            g_gold_flow.on_tick(bid, ask,
+            if (gf_cost_ok) g_gold_flow.on_tick(bid, ask,
                 g_macro_ctx.gold_l2_imbalance,
                 g_gold_stack.ewm_drift(),
                 now_ms_g, flow_on_close,
