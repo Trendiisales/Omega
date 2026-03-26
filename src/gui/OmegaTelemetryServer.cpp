@@ -427,29 +427,37 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         result += "]";
     }
 
-    // live_trades array — per-trade real-time P&L, updated every 250ms
+    // live_trades array -- per-trade real-time P&L, updated every 250ms
     {
-        result += ","live_trades":[";
+        result += ",\"live_trades\":[";
         bool first_lt = true;
         for (int i = 0; i < s->live_trade_count; ++i) {
             const auto& lt = s->live_trades[i];
             if (!first_lt) result += ',';
             first_lt = false;
             char row[512];
-            const double dist_to_sl = lt.is_long[0]=='L'
-                ? lt.current - lt.sl : lt.sl - lt.current;
-            const double dist_to_tp = lt.tp > 0.0
-                ? (lt.is_long[0]=='L' ? lt.tp - lt.current : lt.current - lt.tp) : 0.0;
+            const double dist_to_sl = lt.is_long
+                ? (lt.current - lt.sl) : (lt.sl - lt.current);
+            const double dist_to_tp = (lt.tp > 0.0)
+                ? (lt.is_long ? (lt.tp - lt.current) : (lt.current - lt.tp)) : 0.0;
             const int64_t held_sec = static_cast<int64_t>(std::time(nullptr)) - lt.entry_ts;
             snprintf(row, sizeof(row),
-                "{"symbol":"%s","engine":"%s","side":"%s","
-                ""entry":%.4f,"current":%.4f,"tp":%.4f,"sl":%.4f,"
-                ""size":%.4f,"live_pnl":%.2f,"tick_value":%.1f,"
-                ""held_sec":%lld,"dist_sl":%.2f,"dist_tp":%.2f}",
-                lt.symbol, lt.engine, lt.side,
-                lt.entry, lt.current, lt.tp, lt.sl,
-                lt.size, lt.live_pnl, lt.tick_value,
-                (long long)held_sec, dist_to_sl, dist_to_tp);
+                "{\"symbol\":\"%s\",\"engine\":\"%s\","
+                "\"side\":\"%s\","
+                "\"entry\":%.4f,\"current\":%.4f,"
+                "\"tp\":%.4f,\"sl\":%.4f,"
+                "\"size\":%.4f,\"live_pnl\":%.2f,"
+                "\"tick_value\":%.1f,"
+                "\"held_sec\":%lld,"
+                "\"dist_sl\":%.2f,\"dist_tp\":%.2f}",
+                lt.symbol, lt.engine,
+                lt.side,
+                lt.entry, lt.current,
+                lt.tp, lt.sl,
+                lt.size, lt.live_pnl,
+                lt.tick_value,
+                (long long)held_sec,
+                dist_to_sl, dist_to_tp);
             result += row;
         }
         result += "]";

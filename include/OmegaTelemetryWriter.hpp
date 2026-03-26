@@ -262,6 +262,7 @@ struct OmegaTelemetrySnapshot
         char   symbol[12];    // "GOLD.F", "XAGUSD", etc.
         char   engine[24];    // "GoldFlow", "GoldStack/CompBreakout", etc.
         char   side[6];       // "LONG" or "SHORT"
+        int    is_long;       // 1=LONG 0=SHORT — used for dist_to_sl/tp calc
         double entry;         // fill price
         double current;       // current bid (LONG) or ask (SHORT) for P&L calc
         double tp;            // take profit price
@@ -555,6 +556,7 @@ public:
         strncpy_s(lt.symbol,  symbol,  11);
         strncpy_s(lt.engine,  engine,  23);
         strncpy_s(lt.side,    side,     5);
+        lt.is_long    = (side[0] == 'L') ? 1 : 0;
         lt.entry      = entry;
         lt.current    = current;
         lt.tp         = tp;
