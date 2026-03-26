@@ -78,16 +78,16 @@ static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- 
 static constexpr double GFE_ATR_EWM_ALPHA     = 0.05;  // EWM smoothing alpha for ATR (20-tick equivalent half-life)
 static constexpr double GFE_ATR_MIN           = 2.0;   // ATR floor in $pts -- prevents sub-$2 SL on dead tape
 static constexpr double GFE_ATR_SL_MULT       = 1.0;   // SL = ATR * this
-static constexpr double GFE_TRAIL_STAGE2_MULT = 1.0;   // trail at 1.0x ATR from stage 2
+static constexpr double GFE_TRAIL_STAGE2_MULT = 1.5;   // EA-matched: wider initial trail, ride moves
 static constexpr double GFE_TRAIL_STAGE3_MULT = 0.5;   // tighten to 0.5x ATR at stage 3
-static constexpr double GFE_TRAIL_STAGE4_MULT = 0.3;   // tighten to 0.3x ATR at stage 4
+static constexpr double GFE_TRAIL_STAGE4_MULT = 0.5;   // EA-matched: wider trail at stage4, ride full moves
 static constexpr double GFE_BE_ATR_MULT       = 1.0;   // BE lock at 1x ATR profit
 static constexpr double GFE_STAGE2_ATR_MULT   = 2.0;   // start trail at 2x ATR profit
-static constexpr double GFE_STAGE3_ATR_MULT   = 5.0;   // tighten at 5x ATR profit
-static constexpr double GFE_STAGE4_ATR_MULT   = 10.0;  // tighten again at 10x ATR profit
+static constexpr double GFE_STAGE3_ATR_MULT   = 8.0;   // EA-matched: only tighten after 8x ATR profit
+static constexpr double GFE_STAGE4_ATR_MULT   = 15.0;  // EA-matched: only tighten at 15x ATR profit
 static constexpr double GFE_MAX_SPREAD        = 2.5;   // pts — London gold spread $1.50-$4.00; old 0.6 blocked all entries
 static constexpr int    GFE_MIN_HOLD_MS       = 5000;   // 5s minimum hold
-static constexpr int    GFE_MAX_HOLD_MS       = 1800000; // 30 min absolute max hold — prevents indefinite holds on flat tape
+static constexpr int    GFE_MAX_HOLD_MS       = 3600000; // 60 min — EA has no hold limit, keep generous — prevents indefinite holds on flat tape
                                                           // If the trail has not advanced past Stage 2 by 30 min, the thesis is stale.
                                                           // Observed: held 31 min with no exit because gold went flat after entry,
                                                           // Stage 1 BE locked but trail never tightened — exit at BE/mid.

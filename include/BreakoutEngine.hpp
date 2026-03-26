@@ -1013,7 +1013,10 @@ public:
 
             pos.active          = true;
             pos.is_long         = is_long;
-            pos.entry           = mid;
+            // Use realistic fill price: LONG fills at ask, SHORT fills at bid.
+            // This matches what the broker actually executes and makes shadow
+            // P&L directly comparable to live results.
+            pos.entry           = is_long ? ask : bid;
             pos.tp              = edge.tp_price;
             pos.sl              = edge.sl_price;
             pos.size            = edge.size;
@@ -1035,7 +1038,7 @@ public:
             BreakoutSignal sig;
             sig.valid            = true;
             sig.is_long          = is_long;
-            sig.entry            = mid;
+            sig.entry            = is_long ? ask : bid;  // realistic fill: ask for long, bid for short
             sig.tp               = edge.tp_price;
             sig.sl               = edge.sl_price;
             sig.reason           = is_long ? "COMP_BREAK_LONG" : "COMP_BREAK_SHORT";

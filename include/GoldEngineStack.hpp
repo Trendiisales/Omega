@@ -350,11 +350,12 @@ public:
             history_.push_back(s.mid);
             return noSignal();
         }
-        Signal sig; sig.entry=s.mid; sig.size=0.01;  // fallback min_lot — overridden by compute_size() in main
+        Signal sig; sig.entry=s.mid; sig.size=0.01;  // entry updated after direction known below
         if(s.mid>hi+eff_breakout_mult){
             // EWM drift check: don't go LONG when drift is strongly negative (momentum against)
             if(ewm_drift_ < -3.0) { history_.push_back(s.mid); return noSignal(); }
             sig.valid=true; sig.side=TradeSide::LONG;
+            sig.entry=s.ask;  // realistic fill: LONG fills at ask
             sig.confidence=std::min(1.5,(s.mid-hi)/eff_breakout_mult);
             sig.tp=TP_TICKS; sig.sl=SL_TICKS;
             strncpy(sig.reason,"COMPRESSION_BREAK_LONG",31);
@@ -365,6 +366,7 @@ public:
             // EWM drift check: don't go SHORT when drift is strongly positive (momentum against)
             if(ewm_drift_ > +3.0) { history_.push_back(s.mid); return noSignal(); }
             sig.valid=true; sig.side=TradeSide::SHORT;
+            sig.entry=s.bid;  // realistic fill: SHORT fills at bid
             sig.confidence=std::min(1.5,(lo-s.mid)/eff_breakout_mult);
             sig.tp=TP_TICKS; sig.sl=SL_TICKS;
             strncpy(sig.reason,"COMPRESSION_BREAK_SHORT",31);
@@ -397,7 +399,7 @@ class ImpulseContinuationEngine : public EngineBase {
     // $40 allows entries throughout a strong trend while still blocking parabolic exhaustion.
     // MIN_VWAP_DIST kept at 1.50 — still need some VWAP dislocation to confirm trend.
     static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=40.0,MAX_SPREAD=2.20;
-    static constexpr int TP_TICKS=40,SL_TICKS=16;
+    static constexpr int TP_TICKS=300,SL_TICKS=250; // EA-matched: TP=$30, SL=$25
     // MAX_ENTRIES_PER_TREND reduced 4→2: 4 stacked entries in the same trend leg
     // creates catastrophic exposure on reversal — the 00:20 cluster proved this.
     // 2 entries capture the dominant move without compounding reversal risk.
@@ -528,7 +530,7 @@ public:
             Signal sig; sig.valid=true;
             sig.side=(dir==1)?TradeSide::LONG:TradeSide::SHORT;
             sig.confidence=std::min(1.5,(impulse_high_-impulse_low_)/(IMPULSE_MIN*2.0));
-            sig.size=0.01; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // fallback min_lot
+            sig.size=0.01; sig.entry=(dir==1?s.ask:s.bid); sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // realistic fill
             strncpy(sig.reason,dir==1?"IMPULSE_CONT_LONG":"IMPULSE_CONT_SHORT",31);
             strncpy(sig.engine,"ImpulseContinuation",31);
             return sig;
@@ -544,7 +546,7 @@ class SessionMomentumEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=60;
     static constexpr double IMPULSE_MIN=3.50,MAX_SPREAD=2.50;
-    static constexpr int TP_TICKS=60,SL_TICKS=25;
+    static constexpr int TP_TICKS=300,SL_TICKS=200; // EA-matched: TP=$30, SL=$20
     // IMPULSE_MIN raised 1.60→3.50: $1.60 range over 60 ticks is normal London
     // micro-noise. $3.50 is the minimum for a genuine directional session open move.
     // Observed losing trade: 3s hold, $0.20 gross, $0.18 slip → $0.02 net.
@@ -606,7 +608,7 @@ public:
             recent_move = s.mid - history_[history_.size() - 5];
         }
         static constexpr double RECENT_MOVE_MIN = 0.30; // must still be moving $0.30 in signal direction
-        Signal sig; sig.size=0.01; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // fallback min_lot
+        Signal sig; sig.size=0.01; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // entry fixed after side set
         if(dhi<dlo&&s.mid>s.vwap&&recent_move<-RECENT_MOVE_MIN){
             sig.valid=true; sig.side=TradeSide::LONG; sig.confidence=conf;
             strncpy(sig.reason,"SESSION_MOM_LONG",31); strncpy(sig.engine,"SessionMomentum",31);
@@ -626,7 +628,7 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class VWAPSnapbackEngine : public EngineBase {
     static constexpr double VWAP_DEV_ENTRY=3.5,VWAP_DEV_STRONG=5.5,MOMENTUM_SPIKE=2.5,MAX_SPREAD=4.00;
-    static constexpr int TP_TICKS=35,SL_TICKS=15;
+    static constexpr int TP_TICKS=250,SL_TICKS=200; // EA-matched: TP=$25, SL=$20
     // TP $3.50 (35 ticks), SL $1.50 (15 ticks) — 2.3:1 R:R
     // SL raised from 8 ($0.80): was at spread noise floor. A single ask/bid bounce
     // would stop out the trade before it could develop. $1.50 = 2x spread.
@@ -660,7 +662,7 @@ public:
         else return noSignal();
         Signal sig; sig.valid=true; sig.side=side;
         sig.confidence=std::min(1.5,std::fabs(z)/(VWAP_DEV_ENTRY*2.0));
-        sig.size=0.01; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // fallback min_lot
+        sig.size=0.01; sig.entry=(sig.side==TradeSide::LONG?s.ask:s.bid); sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // realistic fill
         strncpy(sig.reason,"VWAP_DEV",31); strncpy(sig.engine,"VWAP_SNAPBACK",31);
         last_signal_=now; signal_count_++;
         return sig;
@@ -742,7 +744,7 @@ public:
         if (side == TradeSide::SHORT && s.trend >  0.30) return noSignal();
         if (side == TradeSide::LONG  && s.trend < -0.30) return noSignal();
         Signal sig; sig.valid=true; sig.side=side; sig.confidence=0.95;
-        sig.size=BASE_SIZE; sig.entry=s.mid; sig.tp=SL_TICKS*2; sig.sl=SL_TICKS;
+        sig.size=BASE_SIZE; sig.entry=(side==TradeSide::SHORT?s.bid:s.ask); sig.tp=SL_TICKS*2; sig.sl=SL_TICKS;  // realistic fill
         strncpy(sig.reason,side==TradeSide::SHORT?"SWEEP_SHORT":"SWEEP_LONG",31);
         strncpy(sig.engine,"LiquiditySweepPro",31);
         signal_count_++; return sig;
@@ -830,7 +832,7 @@ public:
         TradeSide side=(s.mid>s.vwap)?TradeSide::SHORT:TradeSide::LONG;
         int tp=std::max(6,std::min(16,(int)((dv*TP_RATIO)/0.1)));
         Signal sig; sig.valid=true; sig.side=side; sig.confidence=0.96;
-        sig.size=BASE_SIZE; sig.entry=s.mid; sig.tp=tp; sig.sl=SL_TICKS;
+        sig.size=BASE_SIZE; sig.entry=(side==TradeSide::SHORT?s.bid:s.ask); sig.tp=tp; sig.sl=SL_TICKS;  // realistic fill
         strncpy(sig.reason,side==TradeSide::SHORT?"PRESSURE_SWEEP_SHORT":"PRESSURE_SWEEP_LONG",31);
         strncpy(sig.engine,"LiquiditySweepPressure",31);
         signal_count_++; return sig;

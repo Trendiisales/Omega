@@ -5644,7 +5644,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // already blocks signals during its own 50-tick warmup.
             const double gold_vol_ratio = (gold_base_vol > 0.0)
                 ? gold_recent_vol / gold_base_vol : 0.0;
-            const bool vol_expanding = (gold_base_vol <= 0.0) || (gold_vol_ratio >= 1.10);
+            // Threshold lowered 1.10 → 1.02: require only a minimal vol expansion
+            // (2% above baseline). The EA comparison fires on any momentum candle;
+            // 1.10 was blocking valid London/NY setups where vol barely expands.
+            // The supervisor's own vol_ratio check and confidence gate still apply.
+            const bool vol_expanding = (gold_base_vol <= 0.0) || (gold_vol_ratio >= 1.02);
 
             // ── Confidence threshold ──────────────────────────────────────────
             const bool conf_ok = (gold_sdec.confidence >= 0.45);

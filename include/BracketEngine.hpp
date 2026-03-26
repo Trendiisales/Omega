@@ -243,7 +243,8 @@ public:
             //   At $100 move:   SL at ~$98.50 behind entry — position stays open all day
             {
                 const double initial_range = std::fabs(m_locked_hi - m_locked_lo);
-                const double trail_dist    = std::max(initial_range * 0.25, spread * 2.0);
+                // EA-matched trail: hold 2x longer before tightening stop
+                const double trail_dist    = std::max(initial_range * 0.50, spread * 2.0);
                 const double tp_dist       = std::fabs(pos.tp - pos.entry); // initial target dist
                 const double trail_move    = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
 
