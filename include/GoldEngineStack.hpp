@@ -1204,15 +1204,26 @@ class GoldPositionManager {
 
         const GoldPos& leader = legs_.front();
         const double leader_move = leader.is_long ? (mid - leader.entry) : (leader.entry - mid);
-        if (leader_move < PYR_COVER_MOVE) return false;
+
+        // Dynamic cover move: pyramid fires at 35% of the base TP distance.
+        // Fixed $5 was wrong — on a $30 TP trade, $5 = only 17% of the way.
+        // All 4 pyramids would stack in the first $5 before price reaches TP.
+        // 35% of $30 TP = $10.50 — first pyramid after meaningful progress.
+        // Each subsequent pyramid also needs 35% of TP from the LAST add-on entry.
+        // Floor: $3 minimum (prevents pyramiding on tiny sub-$10 moves).
+        const double base_tp_dist = std::fabs(leader.tp - leader.entry);
+        const double dyn_cover = std::max(3.0, base_tp_dist * 0.35);
+        const double dyn_step  = std::max(2.0, base_tp_dist * 0.20);
+
+        if (leader_move < dyn_cover) return false;
         for (const auto& leg : legs_) {
             if (!leg_profit_locked(leg)) return false;
         }
 
         const GoldPos& last = legs_.back();
         const double move = last.is_long ? (mid - last.entry) : (last.entry - mid);
-        if (move < PYR_COVER_MOVE) return false;
-        if (std::fabs(mid - last_add_price_) < PYR_MIN_STEP) return false;
+        if (move < dyn_cover) return false;
+        if (std::fabs(mid - last_add_price_) < dyn_step) return false;
         return true;
     }
 
@@ -1227,8 +1238,20 @@ class GoldPositionManager {
         // Realistic fill: LONG pyramid fills at ask, SHORT at bid
         const double fill_px = is_long ? (mid + spread * 0.5) : (mid - spread * 0.5);
         leg.entry    = fill_px;
-        leg.tp       = is_long ? fill_px + PYR_TP_TICKS * TICK_SIZE
-                               : fill_px - PYR_TP_TICKS * TICK_SIZE;
+        // Pyramid TP: use the base leg's remaining TP distance from fill price.
+        // This aligns all pyramid exits near the same target zone as the base leg.
+        // e.g. base TP at $4,405, pyramid entered at $4,420:
+        //   remaining dist = 4420 - 4405 = $15 → pyramid TP = $4,405 (base TP level)
+        // If pyramid entry is already past base TP, use PYR_TP_TICKS as fallback.
+        const double base_tp      = legs_.front().tp;
+        const double remaining_to_base_tp = is_long
+            ? (base_tp - fill_px)
+            : (fill_px - base_tp);
+        const double pyr_tp_dist = (remaining_to_base_tp > TICK_SIZE * 5)
+            ? remaining_to_base_tp                      // still has room to base TP
+            : static_cast<double>(PYR_TP_TICKS) * TICK_SIZE;  // beyond base TP, use ticks
+        leg.tp = is_long ? fill_px + pyr_tp_dist
+                         : fill_px - pyr_tp_dist;
         // SL for pyramid leg: locked to main entry's BE + buffer
         // This means the pyramid leg can only lose back to where the base entered
         const double pyr_sl_lock = legs_.front().entry;  // base entry = absolute worst case
