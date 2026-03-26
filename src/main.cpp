@@ -3389,6 +3389,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             auto it = g_l2_books.find(s);
             return (it != g_l2_books.end() && it->second.has_data()) ? &it->second : nullptr;
         };
+        // Push L2 book levels to telemetry for GUI depth panel
+        auto pushL2 = [&](const char* sym, const L2Book* b) {
+            if (!b) return;
+            double bp[5]{}, bs[5]{}, ap[5]{}, as_[5]{};
+            const int nb = b->bid_count < 5 ? b->bid_count : 5;
+            const int na = b->ask_count < 5 ? b->ask_count : 5;
+            for (int i=0;i<nb;++i){bp[i]=b->bids[i].price;bs[i]=b->bids[i].size;}
+            for (int i=0;i<na;++i){ap[i]=b->asks[i].price;as_[i]=b->asks[i].size;}
+            g_telemetry.UpdateL2Book(sym, bp, bs, nb, ap, as_, na);
+        };
         if (const L2Book* b = getBook("GOLD.F")) {
             g_macro_ctx.gold_microprice_bias = b->microprice_bias();
             g_macro_ctx.gold_book_slope      = b->book_slope();
@@ -3396,7 +3406,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.gold_vacuum_bid      = b->liquidity_vacuum_bid();
             g_macro_ctx.gold_wall_above      = b->wall_above(g_macro_ctx.gold_mid_price);
             g_macro_ctx.gold_wall_below      = b->wall_below(g_macro_ctx.gold_mid_price);
-            g_telemetry.UpdateL2Book("GOLD.F", b);
+            pushL2("GOLD.F", b);
         }
         if (const L2Book* b = getBook("US500.F")) {
             g_macro_ctx.sp_microprice_bias   = b->microprice_bias();
@@ -3405,9 +3415,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.sp_vacuum_bid        = b->liquidity_vacuum_bid();
             g_macro_ctx.sp_wall_above        = b->wall_above(b->bid_count > 0 ? b->bids[0].price : 0.0);
             g_macro_ctx.sp_wall_below        = b->wall_below(b->ask_count > 0 ? b->asks[0].price : 0.0);
-            g_telemetry.UpdateL2Book("US500.F", b);
+            pushL2("US500.F", b);
         }
-        if (const L2Book* b = getBook("XAGUSD"))  { g_macro_ctx.xag_microprice_bias = b->microprice_bias(); g_telemetry.UpdateL2Book("XAGUSD", b); }
+        if (const L2Book* b = getBook("XAGUSD"))  { g_macro_ctx.xag_microprice_bias = b->microprice_bias(); pushL2("XAGUSD", b); }
         if (const L2Book* b = getBook("USOIL.F")) {
             g_macro_ctx.cl_microprice_bias   = b->microprice_bias();
             g_macro_ctx.cl_vacuum_ask        = b->liquidity_vacuum_ask();
@@ -3422,7 +3432,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.eur_vacuum_bid      = b->liquidity_vacuum_bid();
             g_macro_ctx.eur_wall_above      = b->wall_above(g_macro_ctx.eur_mid_price);
             g_macro_ctx.eur_wall_below      = b->wall_below(g_macro_ctx.eur_mid_price);
-            g_telemetry.UpdateL2Book("EURUSD", b);
+            pushL2("EURUSD", b);
         }
         if (const L2Book* b = getBook("GBPUSD")) {
             g_macro_ctx.gbp_microprice_bias = b->microprice_bias();

@@ -570,14 +570,18 @@ public:
         m_snap->l2_active=active;
     }
 
-    void UpdateL2Book(const char* sym, const L2Book* book) {
-        if (!m_snap || !book) return;
-        auto copy = [&](OmegaTelemetrySnapshot::L2Level* bid_out, int& nb,
-                        OmegaTelemetrySnapshot::L2Level* ask_out, int& na) {
-            nb = std::min(book->bid_count, OmegaTelemetrySnapshot::L2_DEPTH);
-            na = std::min(book->ask_count, OmegaTelemetrySnapshot::L2_DEPTH);
-            for (int i = 0; i < nb; ++i) { bid_out[i].price = book->bids[i].price; bid_out[i].size = book->bids[i].size; }
-            for (int i = 0; i < na; ++i) { ask_out[i].price = book->asks[i].price; ask_out[i].size = book->asks[i].size; }
+    // Update L2 book depth levels for a symbol (called from main.cpp with real L2Book data)
+    // Takes raw arrays to avoid including OmegaFIX.hpp in this header.
+    void UpdateL2Book(const char* sym,
+                      const double* bid_prices, const double* bid_sizes, int nb,
+                      const double* ask_prices, const double* ask_sizes, int na) {
+        if (!m_snap) return;
+        auto copy = [&](OmegaTelemetrySnapshot::L2Level* bid_out, int& out_nb,
+                        OmegaTelemetrySnapshot::L2Level* ask_out, int& out_na) {
+            out_nb = nb < OmegaTelemetrySnapshot::L2_DEPTH ? nb : OmegaTelemetrySnapshot::L2_DEPTH;
+            out_na = na < OmegaTelemetrySnapshot::L2_DEPTH ? na : OmegaTelemetrySnapshot::L2_DEPTH;
+            for (int i = 0; i < out_nb; ++i) { bid_out[i].price = bid_prices[i]; bid_out[i].size = bid_sizes[i]; }
+            for (int i = 0; i < out_na; ++i) { ask_out[i].price = ask_prices[i]; ask_out[i].size = ask_sizes[i]; }
         };
         const std::string s(sym);
         if      (s == "GOLD.F")  copy(m_snap->l2_book_gold_bid, m_snap->l2_book_gold_bids, m_snap->l2_book_gold_ask, m_snap->l2_book_gold_asks);
