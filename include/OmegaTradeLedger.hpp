@@ -85,30 +85,31 @@ inline void apply_realistic_costs(TradeRecord& tr,
                                   double commission_per_side,
                                   double tick_mult)
 {
-    tr.slip_entry_pct = 0.0;  // unused — cost now derived from spreadAtEntry directly
-    tr.slip_exit_pct  = 0.0;  // unused — exit has no cost gap (bid/ask used for TP/SL)
-    tr.comm_per_side  = commission_per_side;
+    tr.comm_per_side = commission_per_side;
 
-    // ── Exact cost model derived from engine mechanics ───────────────────────
-    // Entry: engine records pos.entry = mid. Real fill on LONG = ask = mid + spread/2.
-    //        Cost = spread_at_entry/2 × tick_mult × size.
-    //
-    // Exit:  TP fires when bid >= TP level → closePos(pos.tp) → exit recorded at pos.tp.
-    //        SL fires when bid <= SL level → closePos(pos.sl) → exit recorded at pos.sl.
-    //        Real fill = bid at that moment = pos.tp or pos.sl exactly.
-    //        Shadow exit = pos.tp or pos.sl exactly.
-    //        No cost gap on exit — engine already uses aggressive bid/ask for checks.
-    //
-    // For non-index instruments (FX, commodities) the engine also uses mid for entry,
-    // so the same half-spread model applies. The slip_pct approach approximated this
-    // but overcounted on index CFDs (price level 46,000 × 0.006% = 2.8pts, exceeding TP).
-    //
-    // tr.spreadAtEntry is set at entry time (= ask - bid in price points).
+    // ENTRY SLIPPAGE:
+    //   Engine records pos.entry = mid. Real fill: LONG=ask, SHORT=bid.
+    //   Cost = half-spread x tick_mult x size (= crossing the spread once).
     tr.slippage_entry = (tr.spreadAtEntry / 2.0) * tick_mult * tr.size;
-    tr.slippage_exit  = 0.0;  // TP/SL checks use bid/ask — exit fill = TP/SL level exactly
-    tr.commission     = commission_per_side * 2.0 * tr.size; // entry + exit, already in USD
+    tr.slip_entry_pct = (tr.entryPrice > 0.0)
+        ? (tr.spreadAtEntry / 2.0) / tr.entryPrice * 100.0 : 0.0;
 
-    // tr.pnl must already be in USD before this call
+    // EXIT SLIPPAGE:
+    //   TP_HIT    : fills at exact TP level. Zero exit slippage.
+    //   All others: SL/trail/timeout/scratch/force-close all cost half a spread.
+    //               SL in a fast move fills ~0.5 spread worse than the stop level.
+    //               Timeout/scratch = market close at mid = half spread to cross.
+    {
+        const double half = (tr.spreadAtEntry / 2.0) * tick_mult * tr.size;
+        tr.slippage_exit = (tr.exitReason == "TP_HIT") ? 0.0 : half;
+        tr.slip_exit_pct = (tr.exitPrice > 0.0)
+            ? (tr.spreadAtEntry / 2.0) / tr.exitPrice * 100.0 : 0.0;
+    }
+
+    // COMMISSION: $3/side (entry+exit) for FX/metals. $0 for indices/oil.
+    tr.commission = commission_per_side * 2.0 * tr.size;
+
+    // NET P&L = gross minus all execution costs
     tr.net_pnl = tr.pnl - tr.slippage_entry - tr.slippage_exit - tr.commission;
 }
 
