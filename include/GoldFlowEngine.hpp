@@ -137,6 +137,7 @@ struct GoldFlowEngine {
         double  atr_at_entry  = 0.0;  // ATR when trade was entered
         bool    be_locked     = false;
         int     trail_stage   = 0;    // 0=initial SL, 1=BE, 2=trail1, 3=trail2, 4=trail3
+        bool    stage2_tight  = false; // true = L2 was weakening at Stage 2 arm → use tight trail (0.5x ATR)
         int64_t entry_ts      = 0;
     } pos;
 
@@ -178,7 +179,7 @@ struct GoldFlowEngine {
 
         // Manage open position
         if (phase == Phase::LIVE) {
-            manage_position(bid, ask, mid, spread, now_ms, on_close);
+            manage_position(bid, ask, mid, spread, l2_imb, now_ms, on_close);
             return;
         }
 
@@ -485,6 +486,7 @@ private:
         pos.atr_at_entry = m_atr;
         pos.be_locked    = false;
         pos.trail_stage  = 0;
+        pos.stage2_tight = false;
         pos.entry_ts     = now_ms / 1000; // seconds
         phase            = Phase::LIVE;
         ++m_trade_id;
@@ -508,7 +510,7 @@ private:
     }
 
     void manage_position(double bid, double ask, double mid, double spread,
-                         int64_t now_ms, CloseCallback on_close) noexcept
+                         double l2_imb, int64_t now_ms, CloseCallback on_close) noexcept
     {
         if (!pos.active) return;
 
@@ -528,16 +530,33 @@ private:
             std::cout.flush();
         }
 
-        // Stage 2: trail at 1.0x ATR behind MFE, starts at 2x ATR profit
+        // Stage 2: trail at 1.0x ATR behind MFE, starts at 2x ATR profit.
+        // L2 confirmation at transition: if imbalance has weakened (order-flow no longer
+        // confirms the direction), arm with a tight 0.5x ATR trail immediately rather than
+        // waiting for Stage 3. This prevents the Stage 2 1x-ATR trail from giving back
+        // excess profit on mean-reverting days where flow fades after the initial move.
         if (pos.trail_stage < 2 && move >= atr * GFE_STAGE2_ATR_MULT) {
+            const bool l2_confirming = (pos.is_long ? l2_imb >= 0.55 : l2_imb <= 0.45);
+            pos.stage2_tight = !l2_confirming;
             pos.trail_stage = 2;
-            std::cout << "[GOLD-FLOW] TRAIL-STAGE2 trail=1xATR move=" << move << "\n";
+            std::cout << "[GOLD-FLOW] TRAIL-STAGE2"
+                      << (pos.stage2_tight ? " TIGHT(L2-weak)" : " NORMAL(L2-ok)")
+                      << " trail=" << (pos.stage2_tight ? "0.5x" : "1.0x")
+                      << "ATR move=" << move << " l2=" << l2_imb << "\n";
             std::cout.flush();
         }
         if (pos.trail_stage == 2) {
+            // Use tight trail if L2 was weakening at Stage 2 arm, normal trail otherwise.
+            // If L2 recovers after arming tight, upgrade to normal — don't stay tight forever.
+            if (pos.stage2_tight && (pos.is_long ? l2_imb >= 0.65 : l2_imb <= 0.35)) {
+                pos.stage2_tight = false;
+                std::cout << "[GOLD-FLOW] TRAIL-STAGE2 L2 recovered — upgrading to normal trail\n";
+                std::cout.flush();
+            }
+            const double stage2_mult = pos.stage2_tight ? GFE_TRAIL_STAGE3_MULT : GFE_TRAIL_STAGE2_MULT;
             const double trail_sl = pos.is_long
-                ? (pos.entry + pos.mfe - atr * GFE_TRAIL_STAGE2_MULT)
-                : (pos.entry - pos.mfe + atr * GFE_TRAIL_STAGE2_MULT);
+                ? (pos.entry + pos.mfe - atr * stage2_mult)
+                : (pos.entry - pos.mfe + atr * stage2_mult);
             if ((pos.is_long && trail_sl > pos.sl) || (!pos.is_long && trail_sl < pos.sl)) {
                 pos.sl = trail_sl;
             }

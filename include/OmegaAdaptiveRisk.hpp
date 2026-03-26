@@ -962,6 +962,32 @@ public:
             }
         }
 
+        // 9. Equity curve scalar — graduated size reduction as today's loss accumulates.
+        // 0–10% of daily limit consumed = no reduction (normal operations, small fluctuations).
+        // 10–50% consumed = linear ramp from 1.0× down to 0.5×.
+        // Above 50% consumed = fixed 0.5× until the hard daily-loss-limit stop fires.
+        // Rationale: the hard stop is binary (full size → dead stop). This adds a graduated
+        // response so the system naturally trades smaller as the day deteriorates, reducing
+        // the rate at which the hard limit is approached. Mirrors how DE Shaw / Winton apply
+        // intra-session capital reduction on losing days.
+        // Uses daily_loss_usd already passed in — no additional state or callbacks needed.
+        if (daily_limit_usd > 0.0) {
+            const double loss_pct = std::max(0.0, daily_loss_usd) / daily_limit_usd;
+            if (loss_pct > 0.10) {
+                const double eq_scale = std::max(0.50, 1.0 - loss_pct);
+                static thread_local int64_t s_eq_log = 0;
+                const int64_t now_s = static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+                if (now_s - s_eq_log > 120) {
+                    s_eq_log = now_s;
+                    std::printf("[ADAPTIVE-RISK] %s equity_curve_scale=%.2f (daily_loss=%.0f%% of limit)\n",
+                                symbol.c_str(), eq_scale, loss_pct * 100.0);
+                }
+                lot *= eq_scale;
+            }
+        }
+
         // Floor to 0.01 lots, round to 2dp
         lot = std::max(0.01, std::floor(lot * 100.0 + 0.5) / 100.0);
         return lot;

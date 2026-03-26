@@ -4779,7 +4779,38 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // ATR-normalised SL floor — same logic as breakout dispatch
         const double sl_abs  = g_adaptive_risk.vol_scaler.atr_sl_floor(
             std::string(esym), sl_abs_raw);
-        const double tp_dist = (tp > 0) ? std::fabs(entry - tp) : sl_abs * 2.0;
+
+        // ── ATR-based TP scaling ──────────────────────────────────────────────
+        // On high-volatility days (e.g. gold ATR $25 vs normal $10), a fixed
+        // percentage TP exits 3× too early. Scale TP proportionally with the
+        // ratio of current ATR to the rolling slow-ATR baseline.
+        // Bounds: 0.70× (protect low-vol entries) to 2.50× (cap on extreme days).
+        // Only applies when the caller provided a real TP (tp > 0); the 2R default
+        // fallback is already sized relative to sl_abs and does not need scaling.
+        double tp_scaled = tp;
+        if (tp > 0) {
+            const double atr_fast_v = g_adaptive_risk.vol_scaler.atr_fast(std::string(esym));
+            const double atr_slow_v = g_adaptive_risk.vol_scaler.atr_slow(std::string(esym));
+            if (atr_fast_v > 0.0 && atr_slow_v > 0.0) {
+                const double atr_ratio = std::min(2.50, atr_fast_v / atr_slow_v);
+                const double atr_tp_mult = std::max(0.70, std::min(2.50, atr_ratio));
+                if (atr_tp_mult > 1.05 || atr_tp_mult < 0.95) {  // only log meaningful changes
+                    static thread_local int64_t s_atr_tp_log = 0;
+                    if (nowSec() - s_atr_tp_log > 30) {
+                        s_atr_tp_log = nowSec();
+                        std::printf("[ATR-TP-SCALE] %s %s tp=%.5f->%.5f (atr_fast=%.4f atr_slow=%.4f ratio=%.2f mult=%.2f)\n",
+                                    esym, is_long ? "LONG" : "SHORT",
+                                    tp, is_long ? entry + (tp - entry) * atr_tp_mult
+                                                : entry - (entry - tp) * atr_tp_mult,
+                                    atr_fast_v, atr_slow_v, atr_ratio, atr_tp_mult);
+                    }
+                }
+                tp_scaled = is_long
+                    ? entry + (tp - entry) * atr_tp_mult
+                    : entry - (entry - tp) * atr_tp_mult;
+            }
+        }
+        const double tp_dist = (tp_scaled > 0) ? std::fabs(entry - tp_scaled) : sl_abs * 2.0;
         const double base_lot_raw = compute_size(esym, sl_abs, ask - bid, fallback_lot);
         // Vol-regime size scale — CRUSH=1.10x, HIGH=0.75x, NORMAL=1.0x
         const double base_lot = base_lot_raw * static_cast<double>(
@@ -4929,7 +4960,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 vacuum_in_dir   = is_long ? g_macro_ctx.estx50_vacuum_ask : g_macro_ctx.estx50_vacuum_bid;
             }
 
-            const double tp_for_score = tp > 0 ? tp : entry + (is_long?1:-1)*sl_abs*2.0;
+            const double tp_for_score = tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*sl_abs*2.0;
             const int edge_score = g_edges.entry_score_l2(
                 esym, entry, is_long, tp_for_score, nowSec(),
                 microprice_bias, l2_imbalance, vacuum_in_dir, wall_to_tp);
@@ -5003,7 +5034,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         cross_engine_dedup_stamp(std::string(esym));
         g_last_directional_lot = final_lot;  // expose for caller pos_.size patch
         // Arm partial exit and fire
-        g_partial_exit.arm(esym, is_long, entry, tp > 0 ? tp : entry + (is_long?1:-1)*tp_dist,
+        g_partial_exit.arm(esym, is_long, entry, tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
                            sl, final_lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
         send_live_order(esym, is_long, final_lot, entry);
         return true;
@@ -5791,12 +5822,37 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                             !gold_impulse_regime &&
                                             ((gold_trend.bias == 1  && g_bracket_gold.pos.is_long) ||
                                              (gold_trend.bias == -1 && !g_bracket_gold.pos.is_long));
+
+            // ── Trend-direction cooldown bypass ───────────────────────────────
+            // On a trending day, the bracket closes via TRAIL_HIT and enters the 90s
+            // cooldown. The next compression may appear within 60s. The cooldown is
+            // correct for the counter-trend leg (prevent re-arming into the same bad
+            // direction), but the TREND-DIRECTION leg should be able to re-arm as soon
+            // as new structure qualifies — the trend is the thesis, not a risk.
+            // Bypass: when trend bias is active AND the bracket is in COOLDOWN AND the
+            // structure gates (freq, spread, session) all pass, allow re-arm.
+            // Safety: london_open_noise and IMPULSE regime blocks still apply.
+            const bool in_cooldown_phase = (g_bracket_gold.phase == omega::BracketPhase::COOLDOWN);
+            const bool trend_dir_bypasses_cooldown =
+                (gold_trend.bias != 0) && in_cooldown_phase &&
+                !gold_impulse_regime &&
+                !in_london_open_noise;
+            if (trend_dir_bypasses_cooldown) {
+                static int64_t s_bypass_log = 0;
+                if (now_ms_g - s_bypass_log > 10000) {
+                    s_bypass_log = now_ms_g;
+                    printf("[BRACKET-COOLDOWN-BYPASS] GOLD.F bias=%d — trend leg bypasses 90s cooldown\n",
+                           gold_trend.bias);
+                }
+            }
+
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok
                                       && (!bracket_open || gold_is_pyramiding)
+                                      && (!in_cooldown_phase || trend_dir_bypasses_cooldown)  // cooldown bypass
                                       && !g_gold_stack.has_open_position()
-                                      && !g_gold_flow.has_open_position()      // ADDED
-                                      && !g_trend_pb_gold.has_open_position()  // ADDED
-                                      && !g_le_stack.has_open_position()       // ADDED
+                                      && !g_gold_flow.has_open_position()
+                                      && !g_trend_pb_gold.has_open_position()
+                                      && !g_le_stack.has_open_position()
                                       && asia_trend_ok
                                       && !gold_trend_blocked
                                       && !in_london_open_noise;
@@ -5830,6 +5886,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                               << " trend_blocked=" << gold_trend_blocked
                               << " pyramid_ok="    << gold_pyramid_ok
                               << " impulse_block=" << gold_impulse_regime
+                              << " cd_bypass="     << trend_dir_bypasses_cooldown
                               << " pyr_sl_age_s="  << ((now_ms_g - gold_trend.last_pyramid_sl_ms) / 1000)
                               << " brk_hi="        << std::setprecision(2) << g_bracket_gold.bracket_high
                               << " brk_lo="        << g_bracket_gold.bracket_low
