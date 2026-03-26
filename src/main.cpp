@@ -3396,6 +3396,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.gold_vacuum_bid      = b->liquidity_vacuum_bid();
             g_macro_ctx.gold_wall_above      = b->wall_above(g_macro_ctx.gold_mid_price);
             g_macro_ctx.gold_wall_below      = b->wall_below(g_macro_ctx.gold_mid_price);
+            g_telemetry.UpdateL2Book("GOLD.F", b);
         }
         if (const L2Book* b = getBook("US500.F")) {
             g_macro_ctx.sp_microprice_bias   = b->microprice_bias();
@@ -3404,8 +3405,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.sp_vacuum_bid        = b->liquidity_vacuum_bid();
             g_macro_ctx.sp_wall_above        = b->wall_above(b->bid_count > 0 ? b->bids[0].price : 0.0);
             g_macro_ctx.sp_wall_below        = b->wall_below(b->ask_count > 0 ? b->asks[0].price : 0.0);
+            g_telemetry.UpdateL2Book("US500.F", b);
         }
-        if (const L2Book* b = getBook("XAGUSD"))  g_macro_ctx.xag_microprice_bias = b->microprice_bias();
+        if (const L2Book* b = getBook("XAGUSD"))  { g_macro_ctx.xag_microprice_bias = b->microprice_bias(); g_telemetry.UpdateL2Book("XAGUSD", b); }
         if (const L2Book* b = getBook("USOIL.F")) {
             g_macro_ctx.cl_microprice_bias   = b->microprice_bias();
             g_macro_ctx.cl_vacuum_ask        = b->liquidity_vacuum_ask();
@@ -3420,6 +3422,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.eur_vacuum_bid      = b->liquidity_vacuum_bid();
             g_macro_ctx.eur_wall_above      = b->wall_above(g_macro_ctx.eur_mid_price);
             g_macro_ctx.eur_wall_below      = b->wall_below(g_macro_ctx.eur_mid_price);
+            g_telemetry.UpdateL2Book("EURUSD", b);
         }
         if (const L2Book* b = getBook("GBPUSD")) {
             g_macro_ctx.gbp_microprice_bias = b->microprice_bias();
@@ -4492,7 +4495,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double mid_price = (bid + ask) * 0.5;
             if (mid_price <= 0.0) return false;
             const double spread_pct = (ask - bid) / mid_price * 100.0;
-            if (spread_pct > sup.cfg.max_spread_pct) {
+            // Use >= with a small epsilon to handle floating-point equality at limit
+            if (spread_pct >= sup.cfg.max_spread_pct * 1.001) {
+                static thread_local int64_t s_last_log = 0;
+                if (nowSec() - s_last_log > 30) {
+                    s_last_log = nowSec();
+                    printf("[BRACKET-SPREAD-BLOCK] %s spread_pct=%.3f%% >= max=%.3f%%\n",
+                           sym.c_str(), spread_pct, sup.cfg.max_spread_pct);
+                }
                 ++g_gov_spread;
                 return true;
             }

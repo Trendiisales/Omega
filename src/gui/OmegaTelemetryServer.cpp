@@ -326,6 +326,25 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
             s->l2_eur, s->l2_gbp, s->l2_aud,
             s->l2_nzd, s->l2_jpy, s->l2_active);
         result += l2;
+
+        // L2 book depth levels for panel display
+        auto appendBook = [&](const char* sym,
+                               const OmegaTelemetrySnapshot::L2Level* bids, int nb,
+                               const OmegaTelemetrySnapshot::L2Level* asks, int na) {
+            char buf[1024]; int pos = 0;
+            pos += snprintf(buf+pos, sizeof(buf)-pos, ",\"%s_bids\":[", sym);
+            for (int i = 0; i < nb && i < OmegaTelemetrySnapshot::L2_DEPTH; ++i)
+                pos += snprintf(buf+pos, sizeof(buf)-pos, "%s{\"p\":%.2f,\"s\":%.2f}", i?",":"", bids[i].price, bids[i].size);
+            pos += snprintf(buf+pos, sizeof(buf)-pos, "],\"%s_asks\":[", sym);
+            for (int i = 0; i < na && i < OmegaTelemetrySnapshot::L2_DEPTH; ++i)
+                pos += snprintf(buf+pos, sizeof(buf)-pos, "%s{\"p\":%.2f,\"s\":%.2f}", i?",":"", asks[i].price, asks[i].size);
+            pos += snprintf(buf+pos, sizeof(buf)-pos, "]");
+            result += buf;
+        };
+        appendBook("gold",  s->l2_book_gold_bid, s->l2_book_gold_bids, s->l2_book_gold_ask, s->l2_book_gold_asks);
+        appendBook("sp",    s->l2_book_sp_bid,   s->l2_book_sp_bids,   s->l2_book_sp_ask,   s->l2_book_sp_asks);
+        appendBook("eur",   s->l2_book_eur_bid,  s->l2_book_eur_bids,  s->l2_book_eur_ask,  s->l2_book_eur_asks);
+        appendBook("xag",   s->l2_book_xag_bid,  s->l2_book_xag_bids,  s->l2_book_xag_ask,  s->l2_book_xag_asks);
     }
 
     // Real-time cluster dollar exposure

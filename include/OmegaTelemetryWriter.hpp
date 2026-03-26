@@ -258,6 +258,18 @@ struct OmegaTelemetrySnapshot
     double l2_eur, l2_gbp, l2_aud, l2_nzd, l2_jpy;
     int    l2_active;  // 1 = cTrader depth feed live
 
+    // L2 book depth levels for panel display (top 5 bid/ask for key symbols)
+    struct L2Level { double price; double size; };
+    static constexpr int L2_DEPTH = 5;
+    L2Level l2_book_gold_bid[L2_DEPTH]{}, l2_book_gold_ask[L2_DEPTH]{};
+    L2Level l2_book_sp_bid[L2_DEPTH]{},   l2_book_sp_ask[L2_DEPTH]{};
+    L2Level l2_book_eur_bid[L2_DEPTH]{},  l2_book_eur_ask[L2_DEPTH]{};
+    L2Level l2_book_xag_bid[L2_DEPTH]{},  l2_book_xag_ask[L2_DEPTH]{};
+    int l2_book_gold_bids = 0, l2_book_gold_asks = 0;
+    int l2_book_sp_bids   = 0, l2_book_sp_asks   = 0;
+    int l2_book_eur_bids  = 0, l2_book_eur_asks  = 0;
+    int l2_book_xag_bids  = 0, l2_book_xag_asks  = 0;
+
     // --- Per-engine live session P&L (closed trades, USD) ---
     // Updated on each trade close from handle_closed_trade.
     // Allows GUI to show which engines are contributing vs dragging.
@@ -556,6 +568,22 @@ public:
         m_snap->l2_eur=eur; m_snap->l2_gbp=gbp; m_snap->l2_aud=aud;
         m_snap->l2_nzd=nzd; m_snap->l2_jpy=jpy;
         m_snap->l2_active=active;
+    }
+
+    void UpdateL2Book(const char* sym, const L2Book* book) {
+        if (!m_snap || !book) return;
+        auto copy = [&](OmegaTelemetrySnapshot::L2Level* bid_out, int& nb,
+                        OmegaTelemetrySnapshot::L2Level* ask_out, int& na) {
+            nb = std::min(book->bid_count, OmegaTelemetrySnapshot::L2_DEPTH);
+            na = std::min(book->ask_count, OmegaTelemetrySnapshot::L2_DEPTH);
+            for (int i = 0; i < nb; ++i) { bid_out[i].price = book->bids[i].price; bid_out[i].size = book->bids[i].size; }
+            for (int i = 0; i < na; ++i) { ask_out[i].price = book->asks[i].price; ask_out[i].size = book->asks[i].size; }
+        };
+        const std::string s(sym);
+        if      (s == "GOLD.F")  copy(m_snap->l2_book_gold_bid, m_snap->l2_book_gold_bids, m_snap->l2_book_gold_ask, m_snap->l2_book_gold_asks);
+        else if (s == "US500.F") copy(m_snap->l2_book_sp_bid,   m_snap->l2_book_sp_bids,   m_snap->l2_book_sp_ask,   m_snap->l2_book_sp_asks);
+        else if (s == "EURUSD")  copy(m_snap->l2_book_eur_bid,  m_snap->l2_book_eur_bids,  m_snap->l2_book_eur_ask,  m_snap->l2_book_eur_asks);
+        else if (s == "XAGUSD")  copy(m_snap->l2_book_xag_bid,  m_snap->l2_book_xag_bids,  m_snap->l2_book_xag_ask,  m_snap->l2_book_xag_asks);
     }
 
     // Accumulate per-engine session P&L from closed trades.
