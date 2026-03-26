@@ -515,8 +515,8 @@ static constexpr int64_t BRACKET_L2_EXTEND_MS      = 60000;  // L2 confirmation 
 static constexpr int64_t BRACKET_L2_SHORTEN_MS     = 60000;  // L2 opposition shortens block by 1min
 static constexpr double  L2_STRONG_THRESHOLD       = 0.70;   // bid-heavy: long pressure
 static constexpr double  L2_WEAK_THRESHOLD         = 0.30;   // ask-heavy: short pressure
-static constexpr double  PYRAMID_SIZE_MULT         = 0.50;   // pyramid at half normal size
-static constexpr double  L2_PYRAMID_THRESHOLD      = 0.72;   // stronger L2 required for pyramid
+static constexpr double  PYRAMID_SIZE_MULT         = 0.75;   // EA-matched: 75% size add-on for aggressive compounding
+static constexpr double  L2_PYRAMID_THRESHOLD      = 0.68;   // pyramid fires on solid (not extreme) L2 confirmation
 static constexpr int64_t PYRAMID_SL_COOLDOWN_MS    = 120000; // 2min cooldown after any pyramid SL hit
 
 struct BracketExitRecord {

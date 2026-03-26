@@ -49,9 +49,9 @@ struct OpenPos
     int64_t entry_ts        = 0;
     double  spread_at_entry = 0.0;
     char    regime[32]      = {};
-    // Pyramid tracking — one add-on per trade in expansion regime
+    // Pyramid tracking — up to 2 add-ons per trade in expansion regime
     bool    pyramid_armed   = false;
-    bool    pyramid_done    = false;
+    int     pyramid_count   = 0;      // number of add-ons sent (max 2)
     bool    pyramid_pending = false;  // set by engine, cleared by main.cpp after order sent
     double  pyramid_entry   = 0.0;
     double  pyramid_tp      = 0.0;
@@ -541,8 +541,8 @@ public:
             // When trail1 arm is crossed and regime is EXPANSION_BREAKOUT or TREND,
             // set pyramid_pending=true so main.cpp can send the add-on order on the
             // next tick. main.cpp checks pos.pyramid_pending, sends the order, then
-            // clears the flag. One add-on only (pyramid_done guards re-entry).
-            if (!pos.pyramid_done) {
+            // clears the flag. Up to 2 add-ons allowed (pyramid_count tracks how many).
+            if (pos.pyramid_count < 2) {
                 const double sl_pct_now = (pos.sl_pct > 0.0) ? pos.sl_pct : SL_PCT;
                 const double trail1_arm_pct = sl_pct_now * 1.00;
                 const double move_pct_now = pos.is_long
@@ -558,12 +558,13 @@ public:
                 }
                 // Arm and open pyramid: must be armed, not yet done,
                 // and macro regime must be expansion/trend
-                if (pos.pyramid_armed && !pos.pyramid_done && macro_regime) {
+                if (pos.pyramid_armed && pos.pyramid_count < 2 && macro_regime) {
                     const bool exp_regime =
                         (std::strncmp(macro_regime, "EXPANSION_BREAKOUT", 18) == 0) ||
                         (std::strncmp(macro_regime, "TREND_CONTINUATION", 18) == 0);
                     if (exp_regime) {
-                        pos.pyramid_done    = true;
+                        pos.pyramid_count++;
+                        pos.pyramid_armed   = false;  // re-arm for next add-on
                         pos.pyramid_pending = true;   // main.cpp clears this after sending the order
                         pos.pyramid_entry   = mid;
                         // Pyramid TP: same as main position TP
@@ -582,18 +583,52 @@ public:
                     }
                 }
             }
-            // Manage pyramid position TP/SL — only once main.cpp has sent the order
-            // (pyramid_pending cleared). If still pending, skip management this tick.
-            if (pos.pyramid_done && pos.pyramid_entry > 0.0 && !pos.pyramid_pending) {
-                const bool pyr_tp = pos.is_long ? (bid >= pos.pyramid_tp) : (ask <= pos.pyramid_tp);
-                const bool pyr_sl = pos.is_long ? (bid <= pos.pyramid_sl) : (ask >= pos.pyramid_sl);
-                if (pyr_tp) {
-                    std::cout << "[ENG-" << symbol << "] PYRAMID TP hit=" << pos.pyramid_tp << "\n";
-                    std::cout.flush();
-                    pos.pyramid_entry = 0.0;  // close pyramid tracking
+            // Manage pyramid position — trailing stop, not fixed TP/SL.
+            // The pyramid leg rides the same move as the main position.
+            // Trail: once move >= 50% of initial TP distance, trail SL to lock profit.
+            if (pos.pyramid_count > 0 && pos.pyramid_entry > 0.0 && !pos.pyramid_pending) {
+                const double pyr_move = pos.is_long
+                    ? (bid - pos.pyramid_entry)
+                    : (pos.pyramid_entry - ask);
+                const double pyr_tp_dist = std::fabs(pos.pyramid_tp - pos.pyramid_entry);
+
+                // Progressive trail on pyramid leg
+                if (pyr_move > 0.0 && pyr_tp_dist > 0.0) {
+                    // BE lock at 30% of TP distance
+                    if (pyr_move >= pyr_tp_dist * 0.30) {
+                        const double be_lock = pos.is_long
+                            ? std::max(pos.pyramid_sl, pos.pyramid_entry)
+                            : std::min(pos.pyramid_sl, pos.pyramid_entry);
+                        pos.pyramid_sl = be_lock;
+                    }
+                    // Trail at 60% of TP: lock 40% of move
+                    if (pyr_move >= pyr_tp_dist * 0.60) {
+                        const double trail = pos.is_long
+                            ? (pos.pyramid_entry + pyr_move * 0.40)
+                            : (pos.pyramid_entry - pyr_move * 0.40);
+                        if ((pos.is_long  && trail > pos.pyramid_sl) ||
+                            (!pos.is_long && trail < pos.pyramid_sl))
+                            pos.pyramid_sl = trail;
+                    }
+                    // Trail at 100%+ TP: trail at 70% of MFE — let runners run
+                    if (pyr_move >= pyr_tp_dist) {
+                        const double trail = pos.is_long
+                            ? (pos.pyramid_entry + pyr_move * 0.70)
+                            : (pos.pyramid_entry - pyr_move * 0.70);
+                        if ((pos.is_long  && trail > pos.pyramid_sl) ||
+                            (!pos.is_long && trail < pos.pyramid_sl))
+                            pos.pyramid_sl = trail;
+                    }
                 }
-                else if (pyr_sl) {
-                    std::cout << "[ENG-" << symbol << "] PYRAMID SL hit=" << pos.pyramid_sl << "\n";
+
+                const bool pyr_sl_hit = pos.is_long ? (bid <= pos.pyramid_sl) : (ask >= pos.pyramid_sl);
+                if (pyr_sl_hit) {
+                    const char* r = (pos.pyramid_sl > pos.pyramid_entry + 0.001 ||
+                                     pos.pyramid_sl < pos.pyramid_entry - 0.001)
+                                    ? "TRAIL_HIT" : (pyr_move > 0 ? "BE_HIT" : "SL_HIT");
+                    std::cout << "[ENG-" << symbol << "] PYRAMID " << r
+                              << " sl=" << pos.pyramid_sl
+                              << " move=" << pyr_move << "\n";
                     std::cout.flush();
                     pos.pyramid_entry = 0.0;
                 }

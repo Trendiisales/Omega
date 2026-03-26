@@ -1032,12 +1032,12 @@ public:
 class GoldPositionManager {
     static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
-    static constexpr int    MAX_PYRAMID_LEGS = 3;  // base + 2 add-ons
-    static constexpr double PYR_COVER_MOVE   = 0.80;
-    static constexpr double PYR_MIN_STEP     = 0.70;
-    static constexpr int64_t PYR_ADD_COOLDOWN_SEC = 4;
-    static constexpr int    PYR_TP_TICKS     = 25;
-    static constexpr int    PYR_SL_TICKS     = 12;
+    static constexpr int    MAX_PYRAMID_LEGS = 5;  // base + 4 add-ons — ride full trending days
+    static constexpr double PYR_COVER_MOVE   = 5.00;  // EA-matched: add only after $5 confirmed move
+    static constexpr double PYR_MIN_STEP     = 3.00;  // minimum $3 between pyramid levels
+    static constexpr int64_t PYR_ADD_COOLDOWN_SEC = 60; // 60s between add-ons — confirm trend
+    static constexpr int    PYR_TP_TICKS     = 250;  // EA-matched: $25 TP on pyramid legs
+    static constexpr int    PYR_SL_TICKS     = 100;  // EA-matched: $10 SL on pyramid legs
 
     // ── Runtime members — set via set_cfg() from GoldStackCfg ─────────────
     // Defaults match calibrated constexpr values prior to config-driven refactor.
@@ -1185,17 +1185,23 @@ class GoldPositionManager {
         if (legs_.empty() || static_cast<int>(legs_.size()) >= MAX_PYRAMID_LEGS) return;
         const bool is_long = legs_.front().is_long;
         // Inherit size from the base leg so pyramid add-ons match the position scale.
-        // Base entries use sig.size (e.g. 0.02 from sub-engines). Using CONTRACT_SIZE=1.0
-        // here would make pyramid legs 50x larger than the base — a critical size mismatch.
         const double base_size = legs_.front().size;
         GoldPos leg;
         leg.active   = true;
         leg.is_long  = is_long;
-        leg.entry    = mid;
-        leg.tp       = is_long ? mid + PYR_TP_TICKS * TICK_SIZE
-                               : mid - PYR_TP_TICKS * TICK_SIZE;
-        leg.sl       = is_long ? mid - PYR_SL_TICKS * TICK_SIZE
-                               : mid + PYR_SL_TICKS * TICK_SIZE;
+        // Realistic fill: LONG pyramid fills at ask, SHORT at bid
+        const double fill_px = is_long ? (mid + spread * 0.5) : (mid - spread * 0.5);
+        leg.entry    = fill_px;
+        leg.tp       = is_long ? fill_px + PYR_TP_TICKS * TICK_SIZE
+                               : fill_px - PYR_TP_TICKS * TICK_SIZE;
+        // SL for pyramid leg: locked to main entry's BE + buffer
+        // This means the pyramid leg can only lose back to where the base entered
+        const double pyr_sl_lock = legs_.front().entry;  // base entry = absolute worst case
+        const double pyr_sl_raw  = is_long ? fill_px - PYR_SL_TICKS * TICK_SIZE
+                                           : fill_px + PYR_SL_TICKS * TICK_SIZE;
+        // SL must be at least at base entry (never lose below base BE)
+        leg.sl = is_long ? std::max(pyr_sl_raw, pyr_sl_lock)
+                         : std::min(pyr_sl_raw, pyr_sl_lock);
         leg.mfe      = 0;
         leg.mae      = 0;
         leg.size     = base_size;  // match base leg size — not CONTRACT_SIZE=1.0
