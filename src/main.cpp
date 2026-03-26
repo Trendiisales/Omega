@@ -1174,6 +1174,13 @@ static std::string log_root_dir() {
         const size_t slash = g_cfg.log_file.find_last_of("/\\");
         if (slash != std::string::npos) return g_cfg.log_file.substr(0, slash);
     }
+    // FIX: use absolute path so logs always go to C:\Omega\logs
+    // regardless of whether exe runs from build\Release\ or project root
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const std::string abs = "C:\\Omega\\logs";
+    fs::create_directories(fs::path(abs), ec);
+    if (!ec) return abs;
     return "logs";
 }
 
@@ -2921,6 +2928,7 @@ static void maybe_reset_daily_ledger() {
     const double session_final_pnl = g_omegaLedger.dailyPnl();
 
     g_omegaLedger.resetDaily();
+    g_open_unrealised_cents.store(0);  // FIX: reset floating P&L at midnight
     {
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         g_sym_risk.clear();
