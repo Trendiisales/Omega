@@ -837,9 +837,15 @@ static std::atomic<int64_t> g_connected_since{0};  // unix seconds of last succe
 static std::atomic<bool>  g_ext_md_refresh_needed{false};
 static std::atomic<bool>  g_md_subscribed{false};   // true once OMEGA-MD-ALL is active on this session
 
+// Live unrealised P&L — updated every tick, read by GUI and risk gates.
+// Stored as int64 (cents) to allow lock-free atomic read/write.
+// GUI daily_pnl = closed_pnl + g_open_unrealised_pnl_cents / 100.0
+static std::atomic<int64_t> g_open_unrealised_cents{0};
+
 // Shadow CSV
 static std::ofstream g_shadow_csv;
 static std::ofstream g_trade_close_csv;
+static std::ofstream g_trade_open_csv;   // entry-time log — one row per position opened
 static std::mutex    g_trade_close_csv_mtx;
 
 struct PerfStats {
@@ -872,6 +878,10 @@ static std::string perf_key_from_trade(const omega::TradeRecord& tr) {
 }
 
 static std::string build_trade_close_csv_row(const omega::TradeRecord& tr);
+static void write_trade_open_log(const std::string& symbol, const std::string& engine,
+                                  const std::string& side, double entry_px, double tp,
+                                  double sl, double size, double spread_at_entry,
+                                  const std::string& regime, const std::string& reason);
 static void print_perf_stats() {
     std::lock_guard<std::mutex> lk(g_perf_mtx);
     if (g_perf.empty()) return;
@@ -1092,6 +1102,7 @@ static std::streambuf*   g_orig_cout = nullptr;
 static std::unique_ptr<RollingCsvLogger> g_daily_trade_close_log;
 static std::unique_ptr<RollingCsvLogger> g_daily_gold_trade_close_log;
 static std::unique_ptr<RollingCsvLogger> g_daily_shadow_trade_log;
+static std::unique_ptr<RollingCsvLogger> g_daily_trade_open_log;   // entry-time rolling log
 
 // FIX recv buffer — owned by extract_messages() as a static local
 
@@ -2023,6 +2034,65 @@ static void write_shadow_csv(const omega::TradeRecord& tr) {
         const int64_t bucket_ts = tr.exitTs > 0 ? tr.exitTs : nowSec();
         g_daily_shadow_trade_log->append_row(bucket_ts, build_trade_close_csv_row(tr));
     }
+}
+
+// ── Trade open logger ─────────────────────────────────────────────────────────
+// Called at the moment of entry — before any close event.
+// Provides an audit trail of every position opened with full context.
+// Uses the same TradeRecord struct populated at entry time (exitPrice/pnl are 0).
+static std::mutex g_trade_open_csv_mtx;
+
+static void write_trade_open_log(const std::string& symbol,
+                                  const std::string& engine,
+                                  const std::string& side,
+                                  double entry_px,
+                                  double tp,
+                                  double sl,
+                                  double size,
+                                  double spread_at_entry,
+                                  const std::string& regime,
+                                  const std::string& reason)
+{
+    const int64_t ts   = nowSec();
+    const std::string ts_utc = utc_iso8601(ts);
+    const std::string day    = utc_weekday_name(ts);
+
+    // Build CSV row
+    std::ostringstream o;
+    o << ts
+      << ',' << csv_quote(ts_utc)
+      << ',' << csv_quote(day)
+      << ',' << csv_quote(symbol)
+      << ',' << csv_quote(engine)
+      << ',' << csv_quote(side)
+      << std::fixed << std::setprecision(4)
+      << ',' << entry_px
+      << ',' << tp
+      << ',' << sl
+      << ',' << size
+      << std::setprecision(4)
+      << ',' << spread_at_entry
+      << ',' << csv_quote(regime)
+      << ',' << csv_quote(reason);
+    const std::string row = o.str();
+
+    // Persistent file — survives restarts via append mode
+    {
+        std::lock_guard<std::mutex> lk(g_trade_open_csv_mtx);
+        if (g_trade_open_csv.is_open()) {
+            g_trade_open_csv << row << '\n';
+            g_trade_open_csv.flush();
+        }
+    }
+    // Daily rolling log
+    if (g_daily_trade_open_log)
+        g_daily_trade_open_log->append_row(ts, row);
+
+    printf("[TRADE-OPEN] %s %s %s entry=%.4f tp=%.4f sl=%.4f size=%.4f spread=%.4f regime=%s reason=%s\n",
+           symbol.c_str(), side.c_str(), engine.c_str(),
+           entry_px, tp, sl, size, spread_at_entry,
+           regime.c_str(), reason.c_str());
+    fflush(stdout);
 }
 
 static std::string trade_ref_from_record(const omega::TradeRecord& tr) {
@@ -3018,7 +3088,9 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         }
     }
     g_telemetry.UpdateStats(
-        g_omegaLedger.dailyPnl(), g_omegaLedger.grossDailyPnl(), g_omegaLedger.maxDD(),
+        g_omegaLedger.dailyPnl() + (g_open_unrealised_cents.load() / 100.0),
+        g_omegaLedger.grossDailyPnl() + (g_open_unrealised_cents.load() / 100.0),
+        g_omegaLedger.maxDD(),
         g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
         g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
     // NOTE: do NOT call UpdateLastSignal("CLOSED") here — the GUI treats "CLOSED"
@@ -3637,6 +3709,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         return total;
     };
+
+    // ── Push unrealised P&L to global atomic every 250ms ────────────────────
+    // This feeds the GUI daily_pnl display (closed + floating) and persists
+    // across the tick so handle_closed_trade can read it without recomputing.
+    {
+        static thread_local int64_t s_last_unr_push = 0;
+        const int64_t now_ms_unr = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        if (now_ms_unr - s_last_unr_push >= 250) {
+            s_last_unr_push = now_ms_unr;
+            const double unr = open_unrealised_pnl();
+            g_open_unrealised_cents.store(static_cast<int64_t>(unr * 100.0));
+            // Push combined (closed + unrealised) to GUI so it shows live floating P&L
+            const double closed = g_omegaLedger.dailyPnl();
+            g_telemetry.UpdateStats(
+                closed + unr,                       // daily_pnl = closed + floating
+                g_omegaLedger.grossDailyPnl() + unr,
+                g_omegaLedger.maxDD(),
+                g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
+                g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0);
+        }
+    }
 
     auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
         // Shadow mode enforces all risk gates identically to LIVE.
@@ -5033,6 +5127,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // All gates passed — stamp cross-engine dedup NOW (not at check time)
         cross_engine_dedup_stamp(std::string(esym));
         g_last_directional_lot = final_lot;  // expose for caller pos_.size patch
+        // Log entry to trade opens CSV before firing
+        write_trade_open_log(esym,
+            "directional",                       // refined by caller via UpdateLastSignal
+            is_long ? "LONG" : "SHORT",
+            entry,
+            tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
+            sl, final_lot, ask - bid,
+            regime.empty() ? "?" : regime,
+            "ENTRY");
         // Arm partial exit and fire
         g_partial_exit.arm(esym, is_long, entry, tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
                            sl, final_lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
@@ -5747,6 +5850,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         if (!ExecutionCostGuard::is_viable("GOLD.F", ask - bid, gold_tp_dist, gold_lot)) {
                             g_telemetry.IncrCostBlocked();
                         } else {
+                            // Log entry
+                            write_trade_open_log("GOLD.F", gsig.engine,
+                                gsig.is_long ? "LONG" : "SHORT",
+                                gsig.entry,
+                                gsig.entry + (gsig.is_long ? 1.0 : -1.0) * gold_tp_dist,
+                                gsig.entry - (gsig.is_long ? 1.0 : -1.0) * gold_sl_abs,
+                                gold_lot, ask - bid, gold_stack_regime, gsig.reason);
                             // Arm partial exit for gold stack entries
                             g_partial_exit.arm("GOLD.F", gsig.is_long, gsig.entry,
                                                gsig.entry + (gsig.is_long ? 1.0 : -1.0) * gold_tp_dist,
@@ -5948,14 +6058,32 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     std::string long_id, short_id;
                     if (gold_trend.bias != 0) {
                         const bool long_is_trend = (gold_trend.bias == 1);
-                        long_id  = send_live_order("GOLD.F", true,
-                            long_is_trend  ? bg_lot : (bg_lot * 0.5), bgsigs.long_entry);
-                        short_id = send_live_order("GOLD.F", false,
-                            !long_is_trend ? bg_lot : (bg_lot * 0.5), bgsigs.short_entry);
+                        const double long_lot  = long_is_trend  ? bg_lot : (bg_lot * 0.5);
+                        const double short_lot = !long_is_trend ? bg_lot : (bg_lot * 0.5);
+                        write_trade_open_log("GOLD.F", "BracketGold", "LONG",
+                            bgsigs.long_entry,
+                            bgsigs.long_entry + (bgsigs.long_entry - bgsigs.short_entry) * 1.5,
+                            bgsigs.short_entry, long_lot, ask - bid,
+                            gold_stack_regime, gold_is_pyramiding ? "BRACKET_PYRAMID" : "BRACKET_ARM");
+                        write_trade_open_log("GOLD.F", "BracketGold", "SHORT",
+                            bgsigs.short_entry,
+                            bgsigs.short_entry - (bgsigs.long_entry - bgsigs.short_entry) * 1.5,
+                            bgsigs.long_entry, short_lot, ask - bid,
+                            gold_stack_regime, gold_is_pyramiding ? "BRACKET_PYRAMID" : "BRACKET_ARM");
+                        long_id  = send_live_order("GOLD.F", true,  long_lot,  bgsigs.long_entry);
+                        short_id = send_live_order("GOLD.F", false, short_lot, bgsigs.short_entry);
                         printf("[BRACKET-L2] GOLD.F bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",
                                gold_trend.bias, bg_lot, bg_lot * 0.5,
                                g_macro_ctx.gold_l2_imbalance);
                     } else {
+                        write_trade_open_log("GOLD.F", "BracketGold", "LONG",
+                            bgsigs.long_entry,
+                            bgsigs.long_entry + (bgsigs.long_entry - bgsigs.short_entry) * 1.5,
+                            bgsigs.short_entry, bg_lot, ask - bid, gold_stack_regime, "BRACKET_ARM");
+                        write_trade_open_log("GOLD.F", "BracketGold", "SHORT",
+                            bgsigs.short_entry,
+                            bgsigs.short_entry - (bgsigs.long_entry - bgsigs.short_entry) * 1.5,
+                            bgsigs.long_entry, bg_lot, ask - bid, gold_stack_regime, "BRACKET_ARM");
                         long_id  = send_live_order("GOLD.F", true,  bg_lot, bgsigs.long_entry);
                         short_id = send_live_order("GOLD.F", false, bg_lot, bgsigs.short_entry);
                     }
@@ -6112,6 +6240,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_gold_flow.pos.entry, "L2_FLOW",
                     "FLOW", regime.c_str(), "GOLD_FLOW",
                     0.0, g_gold_flow.pos.sl);
+                // Log entry
+                write_trade_open_log("GOLD.F", "GoldFlow",
+                    g_gold_flow.pos.is_long ? "LONG" : "SHORT",
+                    g_gold_flow.pos.entry, 0.0, g_gold_flow.pos.sl,
+                    g_gold_flow.pos.size, ask - bid, regime, "L2_FLOW");
                 // Arm partial exit: TP1 at 1R, TP2 at 2R (gold flow has no fixed TP)
                 const double gf_sl_abs_pe = std::fabs(g_gold_flow.pos.entry - g_gold_flow.pos.sl);
                 if (gf_sl_abs_pe > 0.0) {
@@ -8049,6 +8182,27 @@ int main(int argc, char* argv[])
             gold_dir, "omega_gold_trade_closes", header);
         g_daily_shadow_trade_log = std::make_unique<RollingCsvLogger>(
             shadow_trade_dir, "omega_shadow_trades", header);
+
+        // Trade opens CSV — entry-time audit log, persists across restarts
+        const std::string opens_header =
+            "entry_ts_unix,entry_ts_utc,entry_utc_weekday,"
+            "symbol,engine,side,"
+            "entry_px,tp,sl,size,"
+            "spread_at_entry,regime,reason";
+        const std::string opens_csv_path = trade_dir + "/omega_trade_opens.csv";
+        ensure_parent_dir(opens_csv_path);
+        g_trade_open_csv.open(opens_csv_path, std::ios::app);
+        if (!g_trade_open_csv.is_open()) {
+            std::cerr << "[OMEGA-FATAL] Failed to open trade opens CSV: " << opens_csv_path << "\n";
+            return 1;
+        }
+        g_trade_open_csv.seekp(0, std::ios::end);
+        if (g_trade_open_csv.tellp() == std::streampos(0))
+            g_trade_open_csv << opens_header << '\n';
+        std::cout << "[OMEGA] Trade Opens CSV: " << opens_csv_path << "\n";
+        g_daily_trade_open_log = std::make_unique<RollingCsvLogger>(
+            trade_dir, "omega_trade_opens", opens_header);
+
         std::cout << "[OMEGA] Daily Trade Logs: " << trade_dir
                   << "/omega_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)\n";
         std::cout << "[OMEGA] Daily Gold Logs: " << gold_dir
@@ -8260,7 +8414,9 @@ int main(int argc, char* argv[])
     if (g_daily_trade_close_log) g_daily_trade_close_log->close();
     if (g_daily_gold_trade_close_log) g_daily_gold_trade_close_log->close();
     if (g_daily_shadow_trade_log) g_daily_shadow_trade_log->close();
+    if (g_daily_trade_open_log) g_daily_trade_open_log->close();
     g_trade_close_csv.close();
+    g_trade_open_csv.close();
     g_shadow_csv.close();
     // ── Edge systems shutdown — persist TOD + Kelly data ─────────────────────
     g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
