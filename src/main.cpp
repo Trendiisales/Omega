@@ -6156,13 +6156,30 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && !g_trend_pb_gold.has_open_position()) {
             const auto tpb = g_trend_pb_gold.on_tick("GOLD.F", bid, ask, ca_on_close);
             if (tpb.valid) {
-                g_telemetry.UpdateLastSignal("GOLD.F",
-                    tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
-                    "TREND_PB", regime.c_str(), "TREND_PB",
-                    tpb.tp, tpb.sl);
-                if (!enter_directional("GOLD.F", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true))
+                // ── EWM drift direction filter — prevents TrendPB firing against macro trend ──
+                // Problem: during a strong downtrend a bounce pushes EMA9>EMA21>EMA50
+                // temporarily, triggering a false LONG signal into the macro downtrend.
+                // GoldStack EWM drift is the cleanest macro direction indicator available.
+                //   drift < -1.0 = confirmed down pressure → suppress LONG TrendPB
+                //   drift > +1.0 = confirmed up pressure  → suppress SHORT TrendPB
+                //   |drift| < 1.0 = neutral / ranging     → allow both directions
+                const double gold_drift = g_gold_stack.ewm_drift();
+                const bool drift_ok = (tpb.is_long  && gold_drift >= -1.0) ||  // long ok unless strongly down
+                                      (!tpb.is_long && gold_drift <=  1.0);     // short ok unless strongly up
+                if (!drift_ok) {
+                    printf("[TRENDPB-GOLD] %s suppressed — EWM drift=%.2f opposes direction\n",
+                           tpb.is_long ? "LONG" : "SHORT", gold_drift);
+                    fflush(stdout);
                     g_trend_pb_gold.cancel();
-                    else g_trend_pb_gold.patch_size(g_last_directional_lot);
+                } else {
+                    g_telemetry.UpdateLastSignal("GOLD.F",
+                        tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
+                        "TREND_PB", regime.c_str(), "TREND_PB",
+                        tpb.tp, tpb.sl);
+                    if (!enter_directional("GOLD.F", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true))
+                        g_trend_pb_gold.cancel();
+                        else g_trend_pb_gold.patch_size(g_last_directional_lot);
+                }
             }
         }
     }
