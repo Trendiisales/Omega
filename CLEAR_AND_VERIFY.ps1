@@ -1,5 +1,4 @@
 # CLEAR_AND_VERIFY.ps1
-# Run from C:\Omega on the VPS after git pull + rebuild
 
 Write-Host ""
 Write-Host "=== OMEGA CLEAR + VERIFY ===" -ForegroundColor Cyan
@@ -10,27 +9,45 @@ Write-Host "[1] Stopping Omega..." -ForegroundColor Yellow
 try { Stop-Process -Name Omega -Force -ErrorAction Stop; Start-Sleep 2; Write-Host "  Stopped." -ForegroundColor Green }
 catch { Write-Host "  Not running." -ForegroundColor Gray }
 
-# Step 2: Clear trade CSVs
+# Step 2: Clear ALL trade CSVs - every location the code writes to
 Write-Host ""
-Write-Host "[2] Clearing trade history CSVs..." -ForegroundColor Yellow
-$csvPaths = @(
-    "C:\Omega\logs\omega_trade_opens.csv",
-    "C:\Omega\logs\omega_trade_closes.csv",
-    "C:\Omega\logs\omega_trades.csv",
-    "C:\Omega\omega_trade_opens.csv",
-    "C:\Omega\omega_trade_closes.csv",
-    "C:\Omega\omega_trades.csv",
-    "C:\Omega\build\Release\omega_trade_opens.csv",
-    "C:\Omega\build\Release\omega_trade_closes.csv",
-    "C:\Omega\build\Release\omega_trades.csv"
+Write-Host "[2] Clearing ALL trade CSVs..." -ForegroundColor Yellow
+
+$csvDirs = @(
+    "C:\Omega\logs\trades",
+    "C:\Omega\logs\shadow\trades",
+    "C:\Omega\logs",
+    "C:\Omega",
+    "C:\Omega\build\Release\logs\trades",
+    "C:\Omega\build\Release"
 )
-foreach ($csv in $csvPaths) {
-    if (Test-Path $csv) {
-        Remove-Item $csv -Force
-        Write-Host "  DELETED: $csv" -ForegroundColor Red
-    } else {
-        Write-Host "  not found: $csv" -ForegroundColor DarkGray
+
+$patterns = @(
+    "omega_trade_opens*.csv",
+    "omega_trade_closes*.csv",
+    "omega_gold_trade_closes*.csv",
+    "omega_shadow_trades*.csv",
+    "omega_trades*.csv"
+)
+
+$deleted = 0
+foreach ($dir in $csvDirs) {
+    if (Test-Path $dir) {
+        foreach ($pat in $patterns) {
+            $files = Get-ChildItem -Path $dir -Filter $pat -ErrorAction SilentlyContinue
+            foreach ($f in $files) {
+                Remove-Item $f.FullName -Force
+                Write-Host "  DELETED: $($f.FullName)" -ForegroundColor Red
+                $deleted++
+            }
+        }
     }
+}
+
+if ($deleted -eq 0) {
+    Write-Host "  No CSV files found to delete." -ForegroundColor Gray
+} else {
+    Write-Host "  Deleted $deleted file(s) total." -ForegroundColor Green
 }
 
 # Step 3: Verify log directory
@@ -49,16 +66,15 @@ Write-Host "  Expected log: $logFile"
 if (Test-Path $logFile) {
     $size = (Get-Item $logFile).Length
     Write-Host "  EXISTS - $size bytes" -ForegroundColor Green
-    Write-Host "  Last 5 lines:" -ForegroundColor Gray
     Get-Content $logFile -Tail 5 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 } else {
-    Write-Host "  NOT YET CREATED (will appear on first Omega startup)" -ForegroundColor Yellow
+    Write-Host "  Not yet created (will appear on startup)" -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "  All files in C:\Omega\logs:"
-Get-ChildItem "C:\Omega\logs" | ForEach-Object {
-    Write-Host ("    " + $_.Name + "  " + [math]::Round($_.Length/1KB,1) + "KB  " + $_.LastWriteTime) -ForegroundColor Gray
+Get-ChildItem "C:\Omega\logs" -Recurse | ForEach-Object {
+    Write-Host ("    " + $_.FullName + "  " + [math]::Round($_.Length/1KB,1) + "KB") -ForegroundColor Gray
 }
 
 # Step 4: Rebuild
@@ -81,13 +97,12 @@ Start-Sleep 5
 Write-Host ""
 Write-Host "[6] Post-start log check..." -ForegroundColor Yellow
 if (Test-Path $logFile) {
-    Write-Host "  Log created: $logFile" -ForegroundColor Green
-    Get-Content $logFile -Tail 10 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    Write-Host "  Log created OK: $logFile" -ForegroundColor Green
+    Get-Content $logFile -Tail 8 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 } else {
-    Write-Host "  Log not yet written - wait 5s and check manually" -ForegroundColor Yellow
+    Write-Host "  Log not yet written - check manually in 5s" -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "=== DONE ===" -ForegroundColor Cyan
 Write-Host "GUI: http://185.167.119.59:7779" -ForegroundColor Green
-Write-Host "P&L card now shows Closed / Floating / NZD rows with live pulse dot" -ForegroundColor Green
