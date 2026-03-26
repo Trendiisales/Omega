@@ -3568,10 +3568,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             "AUDUSD","NZDUSD","USDJPY","GER40","UK100","ESTX50","BRENT"
         };
         std::lock_guard<std::mutex> lk(g_l2_mtx);
-        for (const char* sym : COLD_SYMS) {
-            auto it = g_l2_books.find(sym);
+        for (const char* cold_sym : COLD_SYMS) {
+            auto it = g_l2_books.find(cold_sym);
             if (it != g_l2_books.end() && it->second.has_data())
-                cold_snap[sym] = {it->second, true};
+                cold_snap[cold_sym] = {it->second, true};
         }
     }
     auto getBook = [&](const std::string& s) -> const L2Book* {
@@ -3654,7 +3654,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.estx50_vacuum_ask = b->liquidity_vacuum_ask();
             g_macro_ctx.estx50_vacuum_bid = b->liquidity_vacuum_bid();
         }
-    }
 
     // ── CVD direction → MacroContext ──────────────────────────────────────────
     // Push CVD direction and divergence flags into MacroContext so all engines
