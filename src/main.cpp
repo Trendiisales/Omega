@@ -7906,7 +7906,7 @@ int main(int argc, char* argv[])
         g_ctrader_depth.symbol_whitelist.insert("XAGUSD");
         g_ctrader_depth.symbol_whitelist.insert("NGAS");
         g_ctrader_depth.symbol_whitelist.insert("VIX");
-        g_ctrader_depth.dump_all_symbols = true;  // log all available symbols on connect
+        g_ctrader_depth.dump_all_symbols = false;  // disabled: 1473-symbol dump floods stdout
         // Alias map: broker name → internal name used by getImb/getBook
         g_ctrader_depth.name_alias["GOLD"]    = "GOLD.F";
         g_ctrader_depth.name_alias["XAUUSD"]  = "GOLD.F";
