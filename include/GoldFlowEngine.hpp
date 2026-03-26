@@ -465,7 +465,7 @@ private:
         // Cap at 0.08 lots: prevents oversizing when ATR collapses on overnight tape.
         // Round to 0.001 lot precision (many brokers support this for gold).
         // Old rounding to 0.01 could inflate risk by up to 1% per trade.
-        static constexpr double GFE_MAX_LOT_FLOW = 0.08;
+        static constexpr double GFE_MAX_LOT_FLOW = 0.50;  // raised 0.08→0.50: matches max_lot_gold. At ATR=$2 SL, $30 risk = 0.15 lots — 0.08 cap was cutting that to $16 max loss.
         static constexpr double GFE_LOT_STEP     = 0.001; // broker lot precision
         const double tick_mult = 100.0;
         double size = risk_dollars / (sl_pts * tick_mult);
