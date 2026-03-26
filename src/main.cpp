@@ -7413,10 +7413,15 @@ int main(int argc, char* argv[])
             apply_supervisor(g_sup_estx50, "ESTX50",  g_sym_cfg.get("ESTX50"),  g_cfg.eu_index_max_spread_pct);
             apply_supervisor(g_sup_xag,    "XAGUSD",  g_sym_cfg.get("XAGUSD"),  g_cfg.silver_max_spread_pct);
             apply_supervisor(g_sup_eurusd, "EURUSD",  g_sym_cfg.get("EURUSD"),  g_cfg.fx_max_spread_pct);
-            apply_supervisor(g_sup_gbpusd, "GBPUSD",  g_sym_cfg.get("GBPUSD"),  g_cfg.fx_max_spread_pct);
-            apply_supervisor(g_sup_audusd, "AUDUSD",  g_sym_cfg.get("AUDUSD"),  g_cfg.fx_max_spread_pct);
-            apply_supervisor(g_sup_nzdusd, "NZDUSD",  g_sym_cfg.get("NZDUSD"),  g_cfg.fx_max_spread_pct);
-            apply_supervisor(g_sup_usdjpy, "USDJPY",  g_sym_cfg.get("USDJPY"),  g_cfg.fx_max_spread_pct);
+            apply_supervisor(g_sup_gbpusd, "GBPUSD",  g_sym_cfg.get("GBPUSD"),  g_cfg.gbpusd_max_spread_pct);
+            // AUDUSD/NZDUSD: use their dedicated max_spread_pct (0.030/0.035), NOT
+            // fx_max_spread_pct (0.017). During Asia session AUD/NZD spreads widen to
+            // ~2-3 pips (~0.025-0.030%), which exceeds 0.017% and locks the supervisor
+            // in permanent HIGH_RISK_NO_TRADE. Their own spread thresholds were already
+            // calibrated for this — apply_supervisor was ignoring them.
+            apply_supervisor(g_sup_audusd, "AUDUSD",  g_sym_cfg.get("AUDUSD"),  g_cfg.audusd_max_spread_pct);
+            apply_supervisor(g_sup_nzdusd, "NZDUSD",  g_sym_cfg.get("NZDUSD"),  g_cfg.nzdusd_max_spread_pct);
+            apply_supervisor(g_sup_usdjpy, "USDJPY",  g_sym_cfg.get("USDJPY"),  g_cfg.usdjpy_max_spread_pct);
             apply_supervisor(g_sup_brent,  "BRENT", g_sym_cfg.get("BRENT"), g_cfg.brent_max_spread_pct);
             apply_supervisor(g_sup_gold,   "GOLD.F",  g_sym_cfg.get("GOLD.F"),  g_cfg.bracket_gold_max_spread_pct);
             std::cout << "[SUPERVISOR] All supervisors configured from " << sym_ini << "\n";

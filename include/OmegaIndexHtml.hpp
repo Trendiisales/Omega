@@ -181,6 +181,24 @@ R"OMEGA1(
 .eng-prox-fill{height:100%;border-radius:2px;transition:width 0.3s,background 0.3s;}
 .eng-l2{position:relative;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;margin-top:3px;}
 .eng-l2-fill{position:absolute;top:0;height:100%;border-radius:2px;transition:width 0.25s,background 0.25s,left 0.25s;}
+/* ── L2 DEPTH PANEL ── */
+.depth-wrap{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:6px 8px;}
+.depth-side{display:flex;flex-direction:column;gap:2px;}
+.depth-side-hd{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;text-align:center;padding:2px 0 4px;}
+.depth-side-hd.bid{color:var(--green);}.depth-side-hd.ask{color:var(--red);}
+.depth-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px;font-size:10px;font-family:'IBM Plex Mono',monospace;padding:1px 4px;border-radius:3px;position:relative;overflow:hidden;}
+.depth-row .depth-bg{position:absolute;top:0;bottom:0;right:0;border-radius:3px;transition:width 0.25s;}
+.depth-row.bid .depth-bg{background:rgba(0,217,126,0.10);}.depth-row.ask .depth-bg{background:rgba(255,51,85,0.10);}
+.depth-px{position:relative;z-index:1;color:var(--t1);font-weight:600;}
+.depth-sz{position:relative;z-index:1;color:var(--t3);font-size:9px;text-align:right;}
+.depth-row.bid .depth-px{color:var(--green);}.depth-row.ask .depth-px{color:var(--red);}
+.depth-imb-bar{height:4px;background:rgba(255,255,255,0.05);border-radius:2px;margin:3px 8px 2px;position:relative;overflow:hidden;}
+.depth-imb-fill{position:absolute;top:0;height:100%;transition:all 0.3s;border-radius:2px;}
+.depth-sym-sel{display:flex;gap:4px;padding:6px 8px 2px;flex-wrap:wrap;}
+.depth-sym-btn{font-size:9px;font-weight:700;letter-spacing:1px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:rgba(255,255,255,0.03);color:var(--t2);cursor:pointer;transition:all 0.15s;text-transform:uppercase;}
+.depth-sym-btn.active{border-color:rgba(245,200,66,0.5);background:rgba(245,200,66,0.10);color:var(--gold);}
+.depth-sym-btn:hover:not(.active){border-color:var(--border2);color:var(--t1);}
+.depth-empty{text-align:center;color:var(--t3);font-size:11px;padding:14px 8px;}
 .eng-prox-pct{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t2);
   min-width:26px;text-align:right;transition:color 0.3s;flex-shrink:0;}
 /* Signal count badge */
@@ -593,6 +611,37 @@ R"OMEGA5(
 
 
 
+    <!-- L2 Order Book Depth Panel -->
+    <div class="card" id="depthCard">
+      <div class="card-hd" style="justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="dot" style="background:var(--gold)"></span>L2 Order Book
+          <span style="font-size:9px;font-weight:400;color:var(--t3);letter-spacing:0;text-transform:none;">depth levels</span>
+        </div>
+        <span id="depthImbBadge" style="font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;color:var(--t2);">IMB --</span>
+      </div>
+      <div class="depth-sym-sel">
+        <button class="depth-sym-btn active" onclick="setDepthSym('gold')" id="dbtngold">GOLD</button>
+        <button class="depth-sym-btn" onclick="setDepthSym('sp')" id="dbtnsp">SP500</button>
+        <button class="depth-sym-btn" onclick="setDepthSym('eur')" id="dbtnneur">EUR</button>
+        <button class="depth-sym-btn" onclick="setDepthSym('xag')" id="dbtnxag">XAG</button>
+      </div>
+      <!-- imbalance bar: bid pressure left (green), ask pressure right (red) -->
+      <div class="depth-imb-bar">
+        <div class="depth-imb-fill" id="depthImbFill" style="width:50%;left:50%;background:var(--t3);transform:translateX(-50%);"></div>
+      </div>
+      <div class="depth-wrap">
+        <div class="depth-side">
+          <div class="depth-side-hd bid">&#9650; BIDS</div>
+          <div id="depthBidRows"></div>
+        </div>
+        <div class="depth-side">
+          <div class="depth-side-hd ask">&#9660; ASKS</div>
+          <div id="depthAskRows"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Per-Engine P&L Attribution -->
     <div class="card" id="engAttribCard">
       <div class="card-hd"><span class="dot" style="background:var(--green)"></span>Engine Attribution <span style="font-size:9px;font-weight:400;color:var(--t3);letter-spacing:0;text-transform:none;margin-left:6px;">session P&amp;L by engine type</span></div>
@@ -709,6 +758,103 @@ function updateL2Bar(cellId, imb, active) {
     f.style.left = (50 - pct) + '%'; f.style.width = pct + '%'; f.style.background = 'var(--red)';
   }
 }
+
+// ── L2 Depth Panel ─────────────────────────────────────────────────────────
+// Renders top-N bid/ask levels for the selected symbol.
+// Symbol key maps to JSON fields emitted by appendBook() in OmegaTelemetryServer.cpp:
+//   gold → gold_bids / gold_asks
+//   sp   → sp_bids   / sp_asks
+//   eur  → eur_bids  / eur_asks
+//   xag  → xag_bids  / xag_asks
+// Each level: { p: price, s: size }
+// imbalance drawn as a centred bar: bid vol left (green), ask vol right (red).
+let _depthSym = 'gold';   // currently selected symbol key
+const _depthSymL2Key = { gold:'l2_gold', sp:'l2_sp', eur:'l2_eur', xag:'l2_xag' };
+const _depthMaxRows = 5;  // levels to show per side
+
+function setDepthSym(sym) {
+  _depthSym = sym;
+  // Update button active states
+  ['gold','sp','eur','xag'].forEach(s => {
+    const b = document.getElementById('dbtn' + (s === 'eur' ? 'neur' : s));
+    if (b) b.className = 'depth-sym-btn' + (s === sym ? ' active' : '');
+  });
+}
+
+function updateDepthPanel(d) {
+  const sym = _depthSym;
+  const bids = d[sym + '_bids'];
+  const asks = d[sym + '_asks'];
+  const bidEl  = document.getElementById('depthBidRows');
+  const askEl  = document.getElementById('depthAskRows');
+  const imbEl  = document.getElementById('depthImbFill');
+  const badge  = document.getElementById('depthImbBadge');
+  if (!bidEl || !askEl) return;
+
+  // If no data, show placeholder
+  if (!bids || !bids.length || !asks || !asks.length) {
+    bidEl.innerHTML = '<div class="depth-empty">no data</div>';
+    askEl.innerHTML = '<div class="depth-empty">no data</div>';
+    if (imbEl) { imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t3)'; }
+    if (badge) { badge.textContent = 'IMB --'; badge.style.color = 'var(--t2)'; }
+    return;
+  }
+
+  // Sort: bids descending (best bid first), asks ascending (best ask first)
+  const sortedBids = [...bids].sort((a,b) => b.p - a.p).slice(0, _depthMaxRows);
+  const sortedAsks = [...asks].sort((a,b) => a.p - b.p).slice(0, _depthMaxRows);
+
+  // Total volume for relative bar sizing
+  const totalBidVol = sortedBids.reduce((s,r) => s + r.s, 0);
+  const totalAskVol = sortedAsks.reduce((s,r) => s + r.s, 0);
+  const maxVol = Math.max(totalBidVol, totalAskVol, 0.001);
+
+  // Determine decimal places from price magnitude
+  const refPx = sortedBids[0] ? sortedBids[0].p : (sortedAsks[0] ? sortedAsks[0].p : 1);
+  const dec = refPx > 100 ? 2 : (refPx > 1 ? 4 : 5);
+
+  function renderRows(rows, side) {
+    if (!rows.length) return '<div class="depth-empty">—</div>';
+    return rows.map(r => {
+      const barPct = Math.round(Math.min(100, (r.s / maxVol) * 100));
+      const sizeStr = r.s >= 1000 ? (r.s/1000).toFixed(1)+'k' : r.s.toFixed(r.s < 1 ? 3 : 2);
+      return `<div class="depth-row ${side}">` +
+        `<div class="depth-bg" style="width:${barPct}%"></div>` +
+        `<span class="depth-px">${r.p.toFixed(dec)}</span>` +
+        `<span class="depth-sz">${sizeStr}</span>` +
+        `</div>`;
+    }).join('');
+  }
+
+  bidEl.innerHTML = renderRows(sortedBids, 'bid');
+  askEl.innerHTML = renderRows(sortedAsks, 'ask');
+
+  // Imbalance bar: bid vol vs ask vol (total, not just top-N, but we only have top-N)
+  const imb = totalBidVol / (totalBidVol + totalAskVol + 0.0001);
+  const imbPct = Math.round(imb * 100);
+  // Use the scalar imbalance from telemetry if available (more accurate)
+  const scalarImb = safe(d[_depthSymL2Key[sym]], 0.5);
+  const dispImb = (scalarImb !== 0.5) ? scalarImb : imb;
+  const dev = dispImb - 0.5;
+  if (imbEl) {
+    if (Math.abs(dev) < 0.03) {
+      imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t2)';
+    } else if (dev > 0) {
+      const p = Math.min(50, dev * 200);
+      imbEl.style.width=p+'%'; imbEl.style.left='50%'; imbEl.style.background='var(--green)';
+    } else {
+      const p = Math.min(50, -dev * 200);
+      imbEl.style.left=(50-p)+'%'; imbEl.style.width=p+'%'; imbEl.style.background='var(--red)';
+    }
+  }
+  if (badge) {
+    const imbLabel = (dispImb * 100).toFixed(0);
+    const bidDom = dispImb > 0.55, askDom = dispImb < 0.45;
+    badge.textContent = 'IMB ' + imbLabel + '%' + (bidDom ? ' B▲' : askDom ? ' A▼' : '');
+    badge.style.color = bidDom ? 'var(--green)' : askDom ? 'var(--red)' : 'var(--t2)';
+  }
+}
+
 )OMEGA16"
 R"OMEGA17(
 
@@ -1099,6 +1245,9 @@ function updateDashboard(d){
   // cTrader L2 status indicator in FIX session panel
   const l2badge = document.getElementById('ctL2Badge');
   if(l2badge) { l2badge.textContent = l2on ? 'L2 ●' : 'L2 ○'; l2badge.style.color = l2on ? 'var(--green)' : 'var(--t2)'; }
+
+  // L2 depth panel — renders order book levels for selected symbol
+  updateDepthPanel(d);
 
 
 

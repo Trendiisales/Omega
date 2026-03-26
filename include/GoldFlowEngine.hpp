@@ -86,8 +86,12 @@ static constexpr double GFE_STAGE2_ATR_MULT   = 2.0;   // start trail at 2x ATR 
 static constexpr double GFE_STAGE3_ATR_MULT   = 5.0;   // tighten at 5x ATR profit
 static constexpr double GFE_STAGE4_ATR_MULT   = 10.0;  // tighten again at 10x ATR profit
 static constexpr double GFE_MAX_SPREAD        = 2.5;   // pts — London gold spread $1.50-$4.00; old 0.6 blocked all entries
-static constexpr int    GFE_MIN_HOLD_MS       = 5000;  // 5s minimum hold
-static constexpr int    GFE_COOLDOWN_MS       = 30000; // 30s cooldown after exit
+static constexpr int    GFE_MIN_HOLD_MS       = 5000;   // 5s minimum hold
+static constexpr int    GFE_MAX_HOLD_MS       = 1800000; // 30 min absolute max hold — prevents indefinite holds on flat tape
+                                                          // If the trail has not advanced past Stage 2 by 30 min, the thesis is stale.
+                                                          // Observed: held 31 min with no exit because gold went flat after entry,
+                                                          // Stage 1 BE locked but trail never tightened — exit at BE/mid.
+static constexpr int    GFE_COOLDOWN_MS       = 30000;  // 30s cooldown after exit
 static constexpr double GFE_RISK_DOLLARS      = 30.0;  // $ risk per trade (fallback)
 static constexpr double GFE_MIN_LOT           = 0.01;
 static constexpr double GFE_MAX_LOT           = 1.0;
@@ -567,6 +571,29 @@ private:
             if ((pos.is_long && trail_sl > pos.sl) || (!pos.is_long && trail_sl < pos.sl)) {
                 pos.sl = trail_sl;
             }
+        }
+
+        // ---- Max hold timeout -------------------------------------------
+        // If the trade has been open longer than GFE_MAX_HOLD_MS and trail
+        // stage is still 0 or 1 (never advanced to real trailing), the thesis
+        // is stale. Exit at market to free capital for the next signal.
+        // Stage 2+ means profit is building — allow the trail to work.
+        // Session-aware: Asia gets 60 min max (thin tape moves slowly).
+        const bool is_low_qual = (m_last_session_slot == 6 || m_last_session_slot == 0);
+        const int64_t eff_max_hold = is_low_qual
+            ? static_cast<int64_t>(GFE_MAX_HOLD_MS) * 2   // 60 min in Asia
+            : static_cast<int64_t>(GFE_MAX_HOLD_MS);       // 30 min normal
+        const int64_t held_ms = now_ms - (pos.entry_ts * 1000LL);
+        if (held_ms >= eff_max_hold && pos.trail_stage < 2) {
+            std::cout << "[GOLD-FLOW] MAX_HOLD_TIMEOUT"
+                      << " held=" << held_ms / 1000 << "s"
+                      << " stage=" << pos.trail_stage
+                      << " move=" << move
+                      << " — exiting stale thesis\n";
+            std::cout.flush();
+            const double exit_px = pos.is_long ? bid : ask;
+            close_position(exit_px, "MAX_HOLD_TIMEOUT", now_ms, on_close);
+            return;
         }
 
         // ---- SL check ---------------------------------------------------
