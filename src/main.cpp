@@ -7198,6 +7198,88 @@ static void quote_loop() {
         std::cout << "[OMEGA-SHUTDOWN] All positions closed\n";
 
         // ── STEP 3: NOW unsubscribe and logout (prices no longer needed) ───────
+        // ── CLOSE ALL POSITIONS BEFORE UNSUBSCRIBING ─────────────────────────────
+        // Snapshot prices NOW while market data is still live
+        // Then close every engine type before unsub clears the book
+        {
+            std::unordered_map<std::string,double> shut_bid, shut_ask;
+            { std::lock_guard<std::mutex> lk(g_book_mtx); shut_bid = g_bids; shut_ask = g_asks; }
+            std::cout << "[OMEGA-SHUTDOWN] Snapped " << shut_bid.size() << " prices, closing all positions\n";
+
+            auto get_px = [&](const char* s, double& b, double& a) {
+                const auto bi = shut_bid.find(s); b = (bi != shut_bid.end()) ? bi->second : 0.0;
+                const auto ai = shut_ask.find(s); a = (ai != shut_ask.end()) ? ai->second : 0.0;
+                // If snapshot empty, try live book
+                if (b <= 0.0 || a <= 0.0) {
+                    std::lock_guard<std::mutex> lk(g_book_mtx);
+                    const auto bi2 = g_bids.find(s); if (bi2 != g_bids.end()) b = bi2->second;
+                    const auto ai2 = g_asks.find(s); if (ai2 != g_asks.end()) a = ai2->second;
+                }
+                // Absolute last resort: synthesize from position entry (prevents silent skip)
+                if (b <= 0.0) { b = 1.0; a = 1.01; }
+            };
+            auto scb = [](const omega::TradeRecord& tr) {
+                handle_closed_trade(tr);
+                send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+            };
+
+            // Breakout engines
+            auto sfc = [&](auto& e, const char* s) {
+                if (!e.pos.active) return;
+                double b,a; get_px(s,b,a);
+                e.forceClose(b,a,"SHUTDOWN",g_rtt_last,g_macroDetector.regime().c_str(),scb);
+                printf("[OMEGA-SHUTDOWN] Closed %s\n",s);
+            };
+            sfc(g_eng_sp,"US500.F"); sfc(g_eng_nq,"USTEC.F"); sfc(g_eng_cl,"USOIL.F");
+            sfc(g_eng_us30,"DJ30.F"); sfc(g_eng_nas100,"NAS100");
+            sfc(g_eng_ger30,"GER40"); sfc(g_eng_uk100,"UK100"); sfc(g_eng_estx50,"ESTX50");
+            sfc(g_eng_xag,"XAGUSD"); sfc(g_eng_eurusd,"EURUSD"); sfc(g_eng_gbpusd,"GBPUSD");
+            sfc(g_eng_audusd,"AUDUSD"); sfc(g_eng_nzdusd,"NZDUSD"); sfc(g_eng_usdjpy,"USDJPY");
+            sfc(g_eng_brent,"BRENT");
+
+            // Bracket engines
+            auto sbk = [&](auto& e, const char* s) {
+                if (!e.has_open_position()) return;
+                double b,a; get_px(s,b,a);
+                e.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb);
+                printf("[OMEGA-SHUTDOWN] Closed bracket %s\n",s);
+            };
+            { double b,a; get_px("GOLD.F",b,a); g_bracket_gold.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb); }
+            { double b,a; get_px("XAGUSD",b,a); g_bracket_xag.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb); }
+            sbk(g_bracket_sp,"US500.F"); sbk(g_bracket_nq,"USTEC.F");
+            sbk(g_bracket_us30,"DJ30.F"); sbk(g_bracket_nas100,"NAS100");
+            sbk(g_bracket_ger30,"GER40"); sbk(g_bracket_uk100,"UK100");
+            sbk(g_bracket_estx50,"ESTX50"); sbk(g_bracket_brent,"BRENT");
+            sbk(g_bracket_eurusd,"EURUSD"); sbk(g_bracket_gbpusd,"GBPUSD");
+            sbk(g_bracket_audusd,"AUDUSD"); sbk(g_bracket_nzdusd,"NZDUSD");
+            sbk(g_bracket_usdjpy,"USDJPY");
+
+            // Gold stack + flow + latency
+            { double b,a; get_px("GOLD.F",b,a); g_gold_stack.force_close(b,a,scb); g_gold_flow.force_close(b,a,scb); }
+            { double b,a,sb,sa; get_px("GOLD.F",b,a); get_px("XAGUSD",sb,sa);
+              g_le_stack.force_close_all(b,a,sb,sa,g_rtt_last,[&](const omega::TradeRecord& tr){scb(tr);}); }
+
+            // Cross-asset: VWAP, TrendPB, ORB, Carry, FxCascade
+            { double b,a;
+              get_px("US500.F",b,a);  g_ca_esnq.force_close(b,a,scb); g_orb_us.force_close(b,a,scb); g_vwap_rev_sp.force_close(b,a,scb);
+              get_px("USTEC.F",b,a);  g_vwap_rev_nq.force_close(b,a,scb);
+              get_px("EURUSD",b,a);   g_vwap_rev_eurusd.force_close(b,a,scb);
+              get_px("GER40",b,a);    g_orb_ger30.force_close(b,a,scb); g_vwap_rev_ger40.force_close(b,a,scb); g_trend_pb_ger40.force_close(b,a,scb);
+              get_px("GOLD.F",b,a);   g_trend_pb_gold.force_close(b,a,scb);
+              get_px("XAGUSD",b,a);   g_orb_silver.force_close(b,a,scb);
+              get_px("UK100",b,a);    g_orb_uk100.force_close(b,a,scb);
+              get_px("ESTX50",b,a);   g_orb_estx50.force_close(b,a,scb);
+              get_px("USOIL.F",b,a);  g_ca_eia_fade.force_close(b,a,scb); g_ca_brent_wti.force_close(b,a,scb);
+              get_px("USDJPY",b,a);   g_ca_carry_unwind.force_close(b,a,scb);
+              double gb,ga,ab,aa,nb,na;
+              get_px("GBPUSD",gb,ga); get_px("AUDUSD",ab,aa); get_px("NZDUSD",nb,na);
+              g_ca_fx_cascade.force_close(gb,ga,scb);
+              g_ca_fx_cascade.force_close_audusd(ab,aa,scb);
+              g_ca_fx_cascade.force_close_nzdusd(nb,na,scb);
+            }
+            std::cout << "[OMEGA-SHUTDOWN] All positions closed before disconnect\n";
+        }
+        // ─────────────────────────────────────────────────────────────────────
         if (g_quote_ready.load()) {
             const std::string unsub_all = fix_build_md_unsub_all(g_quote_seq++);
             SSL_write(ssl, unsub_all.c_str(), static_cast<int>(unsub_all.size()));
