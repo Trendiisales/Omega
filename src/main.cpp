@@ -3878,18 +3878,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_bracket_gold.pos.is_long, g_bracket_gold.pos.entry,
                     g_bracket_gold.pos.tp, g_bracket_gold.pos.sl,
                     g_bracket_gold.pos.size, g_bracket_gold.pos.entry_ts);
-            // Cross-asset engines (SP, NQ, Oil, etc)
-            auto push_ca = [&](bool active, bool is_long, double entry, double tp,
-                                double sl, double size, int64_t ts,
-                                const char* sym, const char* eng) {
-                if (!active) return;
-                push_live(sym, eng, is_long, entry, tp, sl, size, ts);
-            };
-            push_ca(g_eng_sp.pos.active,   g_eng_sp.pos.is_long(),   g_eng_sp.pos.entry,   0,0, g_eng_sp.pos.size,   0, "US500.F", "Breakout");
-            push_ca(g_eng_nq.pos.active,   g_eng_nq.pos.is_long(),   g_eng_nq.pos.entry,   0,0, g_eng_nq.pos.size,   0, "USTEC.F", "Breakout");
-            push_ca(g_eng_cl.pos.active,   g_eng_cl.pos.is_long(),   g_eng_cl.pos.entry,   0,0, g_eng_cl.pos.size,   0, "USOIL.F", "Breakout");
-            push_ca(g_eng_xag.pos.active,  g_eng_xag.pos.is_long(),  g_eng_xag.pos.entry,  0,0, g_eng_xag.pos.size,  0, "XAGUSD",  "Breakout");
-            push_ca(g_eng_eurusd.pos.active,g_eng_eurusd.pos.is_long(),g_eng_eurusd.pos.entry,0,0,g_eng_eurusd.pos.size,0,"EURUSD","Breakout");
+            // Cross-asset engines — inlined to avoid nested lambda capture (MSVC C4573)
+            if (g_eng_sp.pos.active)    push_live("US500.F","Breakout",g_eng_sp.pos.is_long(),   g_eng_sp.pos.entry,   0.0,0.0,g_eng_sp.pos.size,   0);
+            if (g_eng_nq.pos.active)    push_live("USTEC.F","Breakout",g_eng_nq.pos.is_long(),   g_eng_nq.pos.entry,   0.0,0.0,g_eng_nq.pos.size,   0);
+            if (g_eng_cl.pos.active)    push_live("USOIL.F","Breakout",g_eng_cl.pos.is_long(),   g_eng_cl.pos.entry,   0.0,0.0,g_eng_cl.pos.size,   0);
+            if (g_eng_xag.pos.active)   push_live("XAGUSD", "Breakout",g_eng_xag.pos.is_long(),  g_eng_xag.pos.entry,  0.0,0.0,g_eng_xag.pos.size,  0);
+            if (g_eng_eurusd.pos.active) push_live("EURUSD","Breakout",g_eng_eurusd.pos.is_long(),g_eng_eurusd.pos.entry,0.0,0.0,g_eng_eurusd.pos.size,0);
         }
     }
 
