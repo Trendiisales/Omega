@@ -3842,48 +3842,36 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Rebuilds live_trades[] from scratch every 250ms.
             // Each open position contributes one entry with current floating P&L.
             g_telemetry.ClearLiveTrades();
-            auto push_live = [&](const char* sym, const char* eng, bool is_long,
-                                 double entry, double tp, double sl,
-                                 double size, int64_t entry_ts) {
-                double cur_bid = 0, cur_ask = 0;
-                { std::lock_guard<std::mutex> lk(g_book_mtx);
-                  auto bi = g_bids.find(sym); auto ai = g_asks.find(sym);
-                  if (bi != g_bids.end()) cur_bid = bi->second;
-                  if (ai != g_asks.end()) cur_ask = ai->second; }
-                const double cur = is_long ? cur_bid : cur_ask;
-                const double move = is_long ? (cur - entry) : (entry - cur);
-                const double tv = tick_value_multiplier(sym);
-                const double pnl = move * size * tv;
-                g_telemetry.AddLiveTrade(sym, eng, is_long ? "LONG" : "SHORT",
-                    entry, cur, tp, sl, size, pnl, tv, entry_ts);
-            };
-            // GoldFlow
+            // Per-trade live P&L — fully inlined, no lambda (avoids MSVC nested capture bug)
+            #define ADD_LIVE(SYM,ENG,IL,ENT,TP,SL,SZ,TS) do {                 double _cb=0,_ca=0;                 { std::lock_guard<std::mutex> _lk(g_book_mtx);                   auto _bi=g_bids.find(SYM); auto _ai=g_asks.find(SYM);                   if(_bi!=g_bids.end())_cb=_bi->second;                   if(_ai!=g_asks.end())_ca=_ai->second; }                 double _cur=(IL)?_cb:_ca;                 double _tv=tick_value_multiplier(SYM);                 double _pnl=((IL)?(_cur-(ENT)):(ENT)-_cur)*(SZ)*_tv;                 g_telemetry.AddLiveTrade(SYM,ENG,(IL)?"LONG":"SHORT",                     ENT,_cur,TP,SL,SZ,_pnl,_tv,TS);             } while(0)
             if (g_gold_flow.pos.active)
-                push_live("GOLD.F", "GoldFlow",
-                    g_gold_flow.pos.is_long, g_gold_flow.pos.entry,
-                    0.0, g_gold_flow.pos.sl,
-                    g_gold_flow.pos.size, g_gold_flow.pos.entry_ts);
-            // GoldStack (base leg)
+                ADD_LIVE("GOLD.F","GoldFlow",g_gold_flow.pos.is_long,
+                    g_gold_flow.pos.entry,0.0,g_gold_flow.pos.sl,
+                    g_gold_flow.pos.size,g_gold_flow.pos.entry_ts);
             if (g_gold_stack.has_open_position())
-                push_live("GOLD.F", g_gold_stack.live_engine(),
-                    g_gold_stack.live_is_long(),
-                    g_gold_stack.live_entry(),
-                    g_gold_stack.live_tp(),
-                    g_gold_stack.live_sl(),
-                    g_gold_stack.live_size(),
-                    static_cast<int64_t>(std::time(nullptr)));
-            // GoldBracket
+                ADD_LIVE("GOLD.F",g_gold_stack.live_engine(),g_gold_stack.live_is_long(),
+                    g_gold_stack.live_entry(),g_gold_stack.live_tp(),g_gold_stack.live_sl(),
+                    g_gold_stack.live_size(),(int64_t)std::time(nullptr));
             if (g_bracket_gold.pos.active)
-                push_live("GOLD.F", "Bracket",
-                    g_bracket_gold.pos.is_long, g_bracket_gold.pos.entry,
-                    g_bracket_gold.pos.tp, g_bracket_gold.pos.sl,
-                    g_bracket_gold.pos.size, g_bracket_gold.pos.entry_ts);
-            // Cross-asset engines — inlined to avoid nested lambda capture (MSVC C4573)
-            if (g_eng_sp.pos.active)    push_live("US500.F","Breakout",g_eng_sp.pos.is_long(),   g_eng_sp.pos.entry,   0.0,0.0,g_eng_sp.pos.size,   0);
-            if (g_eng_nq.pos.active)    push_live("USTEC.F","Breakout",g_eng_nq.pos.is_long(),   g_eng_nq.pos.entry,   0.0,0.0,g_eng_nq.pos.size,   0);
-            if (g_eng_cl.pos.active)    push_live("USOIL.F","Breakout",g_eng_cl.pos.is_long(),   g_eng_cl.pos.entry,   0.0,0.0,g_eng_cl.pos.size,   0);
-            if (g_eng_xag.pos.active)   push_live("XAGUSD", "Breakout",g_eng_xag.pos.is_long(),  g_eng_xag.pos.entry,  0.0,0.0,g_eng_xag.pos.size,  0);
-            if (g_eng_eurusd.pos.active) push_live("EURUSD","Breakout",g_eng_eurusd.pos.is_long(),g_eng_eurusd.pos.entry,0.0,0.0,g_eng_eurusd.pos.size,0);
+                ADD_LIVE("GOLD.F","Bracket",g_bracket_gold.pos.is_long,
+                    g_bracket_gold.pos.entry,g_bracket_gold.pos.tp,g_bracket_gold.pos.sl,
+                    g_bracket_gold.pos.size,g_bracket_gold.pos.entry_ts);
+            if (g_eng_sp.pos.active)
+                ADD_LIVE("US500.F","Breakout",(bool)g_eng_sp.pos.is_long(),
+                    g_eng_sp.pos.entry,0.0,0.0,g_eng_sp.pos.size,(int64_t)0);
+            if (g_eng_nq.pos.active)
+                ADD_LIVE("USTEC.F","Breakout",(bool)g_eng_nq.pos.is_long(),
+                    g_eng_nq.pos.entry,0.0,0.0,g_eng_nq.pos.size,(int64_t)0);
+            if (g_eng_cl.pos.active)
+                ADD_LIVE("USOIL.F","Breakout",(bool)g_eng_cl.pos.is_long(),
+                    g_eng_cl.pos.entry,0.0,0.0,g_eng_cl.pos.size,(int64_t)0);
+            if (g_eng_xag.pos.active)
+                ADD_LIVE("XAGUSD","Breakout",(bool)g_eng_xag.pos.is_long(),
+                    g_eng_xag.pos.entry,0.0,0.0,g_eng_xag.pos.size,(int64_t)0);
+            if (g_eng_eurusd.pos.active)
+                ADD_LIVE("EURUSD","Breakout",(bool)g_eng_eurusd.pos.is_long(),
+                    g_eng_eurusd.pos.entry,0.0,0.0,g_eng_eurusd.pos.size,(int64_t)0);
+            #undef ADD_LIVE
         }
     }
 
