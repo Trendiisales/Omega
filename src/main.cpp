@@ -5923,22 +5923,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_gold_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
                                        ? g_cfg.risk_per_trade_usd : GFE_RISK_DOLLARS;
 
-            // ── Pre-tick cost gate for GoldFlowEngine ─────────────────────────
+            // ── Pre-tick gate block — THREE checks before on_tick is called ──
             // GoldFlowEngine enters internally (pos.active=true inside enter()),
-            // so main.cpp cannot intercept between signal and entry the way
-            // enter_directional() does for all other engines.
-            // Solution: estimate cost viability BEFORE calling on_tick().
-            // If current spread cannot be covered by the expected trade gross,
-            // skip this tick entirely — engine never sees it, no phantom entry.
-            //
-            // Estimates use pre-entry ATR (available before on_tick):
-            //   sl_pts  = ATR × GFE_ATR_SL_MULT (1.0)   — matches engine exactly
-            //   tp_dist = sl_pts × 2.0                   — 2R, matches partial exit arm
-            //   lot     = risk_dollars / (sl_pts × 100)  — matches engine sizing formula
-            //             clamped to [GFE_MIN_LOT, 0.08] — matches GFE_MAX_LOT_FLOW
-            // ATR=0 means warmup incomplete — engine will return without entering,
-            // so skipping is a pure no-op in that case.
-            bool gf_cost_ok = true;
+            // so main.cpp cannot intercept between signal and entry. All blocking
+            // must happen here, before the tick reaches the engine.
+            bool gf_tick_ok = true;
+
+            // ── Gate 1: Cost viability ─────────────────────────────────────────
+            // Estimates match engine sizing: sl=ATR×1.0, tp=sl×2 (2R), lot=risk/sl/100
+            // ATR=0 (warmup) → gf_tick_ok stays true; engine returns before entering.
             {
                 const double gf_atr = g_gold_flow.current_atr();
                 if (gf_atr > 0.0) {
@@ -5948,7 +5941,40 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         std::min(0.08, g_gold_flow.risk_dollars / (gf_sl_pts * 100.0)));
                     if (!ExecutionCostGuard::is_viable("GOLD.F", ask - bid, gf_tp_dist, gf_lot_est)) {
                         g_telemetry.IncrCostBlocked();
-                        gf_cost_ok = false;
+                        gf_tick_ok = false;
+                    }
+                }
+            }
+
+            // ── Gate 2: L2 microstructure edge score ──────────────────────────
+            // All other entry paths score 7 microstructure signals via entry_score_l2
+            // and block at <= -3. GoldFlow is L2-based internally but skips:
+            //   CVD divergence, PDH/PDL proximity, round number resistance,
+            //   order flow absorption, volume profile node.
+            // Apply the same gate here. Use 2R estimate as TP for scoring.
+            // Skip when ATR=0 (warmup) — engine won't enter anyway.
+            if (gf_tick_ok) {
+                const double gf_atr = g_gold_flow.current_atr();
+                if (gf_atr > 0.0) {
+                    const double gf_mid    = (bid + ask) * 0.5;
+                    const bool   gf_long   = (g_macro_ctx.gold_l2_imbalance > 0.5);
+                    const double gf_tp_est = gf_long
+                        ? gf_mid + gf_atr * 2.0
+                        : gf_mid - gf_atr * 2.0;
+                    const int gf_score = g_edges.entry_score_l2(
+                        "GOLD.F", gf_mid, gf_long, gf_tp_est, nowSec(),
+                        g_macro_ctx.gold_microprice_bias,
+                        g_macro_ctx.gold_l2_imbalance,
+                        gf_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid,
+                        gf_long ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below);
+                    if (gf_score <= -3) {
+                        printf("[GF-EDGE-BLOCK] GOLD.F %s score=%d (micro=%.4f l2=%.3f vac=%d wall=%d) — blocked\n",
+                               gf_long ? "LONG" : "SHORT", gf_score,
+                               g_macro_ctx.gold_microprice_bias, g_macro_ctx.gold_l2_imbalance,
+                               (gf_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid) ? 1 : 0,
+                               (gf_long ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below) ? 1 : 0);
+                        fflush(stdout);
+                        gf_tick_ok = false;
                     }
                 }
             }
@@ -5959,12 +5985,60 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool close_is_long = (tr.side == "SHORT"); // flip to close
                 send_live_order("GOLD.F", close_is_long, tr.size, tr.exitPrice);
             };
-            if (gf_cost_ok) g_gold_flow.on_tick(bid, ask,
+            if (gf_tick_ok) g_gold_flow.on_tick(bid, ask,
                 g_macro_ctx.gold_l2_imbalance,
                 g_gold_stack.ewm_drift(),
                 now_ms_g, flow_on_close,
                 g_macro_ctx.session_slot);
             if (g_gold_flow.has_open_position()) {
+                // ── Post-entry: apply regime weight + adaptive risk sizing ─────
+                // GoldFlowEngine computes lot = risk_dollars / (sl_pts × 100) internally.
+                // It cannot apply regime weight (GOLD_FLOW: 0.80 RISK_ON, 1.50 RISK_OFF),
+                // Kelly scaling, DD throttle, or vol regime scaler — those require the
+                // AdaptiveRiskManager which lives in main.cpp.
+                // Pattern: same as TrendPB (patch_size after entry, before partial exit arm).
+                // The engine's internal lot is the BASE — we scale it here, then overwrite.
+                {
+                    const double gf_regime_wt = static_cast<double>(
+                        g_regime_adaptor.weight(omega::regime::EngineClass::GOLD_FLOW));
+                    double gf_daily_loss = 0.0; int gf_consec = 0;
+                    {
+                        std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+                        auto it = g_sym_risk.find("GOLD.F");
+                        if (it != g_sym_risk.end()) {
+                            gf_daily_loss = std::max(0.0, -it->second.daily_pnl);
+                            gf_consec     = it->second.consec_losses;
+                        }
+                    }
+                    // Base lot = what the engine computed (risk_dollars / sl / 100)
+                    const double gf_base = g_gold_flow.pos.size;
+                    // Apply regime weight, then adaptive risk (Kelly + DD throttle + vol)
+                    const double gf_adjusted = g_adaptive_risk.adjusted_lot(
+                        "GOLD.F",
+                        gf_base * gf_regime_wt,
+                        gf_daily_loss, g_cfg.daily_loss_limit, gf_consec);
+                    // Hard clamp: max_lot_gold is the safety ceiling
+                    const double gf_final = std::max(GFE_MIN_LOT,
+                        std::min(gf_adjusted, g_cfg.max_lot_gold));
+                    // Max loss per trade dollar cap (same backstop as gold stack path)
+                    const double gf_sl_abs = std::fabs(g_gold_flow.pos.entry - g_gold_flow.pos.sl);
+                    double gf_lot = gf_final;
+                    if (g_cfg.max_loss_per_trade_usd > 0.0 && gf_sl_abs > 0.0) {
+                        const double max_loss_lot = g_cfg.max_loss_per_trade_usd / (gf_sl_abs * 100.0);
+                        if (gf_lot > max_loss_lot) {
+                            gf_lot = std::max(GFE_MIN_LOT,
+                                std::floor(max_loss_lot * 100.0 + 0.5) / 100.0);
+                            printf("[MAX-LOSS-CAP] GOLD.F FLOW lot capped %.4f→%.4f (sl=$%.2f max=$%.0f)\n",
+                                   gf_final, gf_lot, gf_sl_abs * 100.0 * gf_final, g_cfg.max_loss_per_trade_usd);
+                        }
+                    }
+                    if (gf_lot != g_gold_flow.pos.size) {
+                        printf("[GF-SIZE] GOLD.F FLOW size %.4f→%.4f (regime_wt=%.2f kelly/dd/vol applied)\n",
+                               g_gold_flow.pos.size, gf_lot, gf_regime_wt);
+                        g_gold_flow.pos.size = gf_lot;  // patch directly — pos is public
+                    }
+                }
+
                 // Flow engine entered -- telemetry
                 g_telemetry.UpdateLastSignal("GOLD.F",
                     g_gold_flow.pos.is_long ? "LONG" : "SHORT",
@@ -5972,11 +6046,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     "FLOW", regime.c_str(), "GOLD_FLOW",
                     0.0, g_gold_flow.pos.sl);
                 // Arm partial exit: TP1 at 1R, TP2 at 2R (gold flow has no fixed TP)
-                const double gf_sl_abs = std::fabs(g_gold_flow.pos.entry - g_gold_flow.pos.sl);
-                if (gf_sl_abs > 0.0) {
+                const double gf_sl_abs_pe = std::fabs(g_gold_flow.pos.entry - g_gold_flow.pos.sl);
+                if (gf_sl_abs_pe > 0.0) {
                     // TP2 = entry ± 2R (PartialExitManager sets TP1 = midpoint internally)
                     const double gf_tp2 = g_gold_flow.pos.entry +
-                        (g_gold_flow.pos.is_long ? gf_sl_abs * 2.0 : -gf_sl_abs * 2.0);
+                        (g_gold_flow.pos.is_long ? gf_sl_abs_pe * 2.0 : -gf_sl_abs_pe * 2.0);
                     g_partial_exit.arm("GOLD.F", g_gold_flow.pos.is_long,
                         g_gold_flow.pos.entry, gf_tp2, g_gold_flow.pos.sl,
                         g_gold_flow.pos.size,
