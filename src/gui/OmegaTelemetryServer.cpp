@@ -644,7 +644,6 @@ static std::string buildDailySummaryJson()
             "C:\\Omega\\logs\\trades\\omega_trade_closes.csv",
             "C:\\Omega\\build\\Release\\logs\\trades\\omega_trade_closes.csv",
             "../logs/trades/omega_trade_closes.csv",
-            "..\\..\\logs\\trades\\omega_trade_closes.csv",
         };
         for (auto p : FULL_PATHS) { f = fopen(p, "r"); if (f) break; }
     }
