@@ -7994,6 +7994,95 @@ int main(int argc, char* argv[])
                         "hold_sec,exit_reason,spread_at_entry,latency_ms,regime\n";
     std::cout << "[OMEGA] Shadow CSV: " << shadow_csv_path << "\n";
 
+    // ── Startup ledger reload — restore today's closed trades from CSV ───────
+    // g_omegaLedger is in-memory only and resets on restart. On restart mid-session
+    // the GUI shows daily_pnl=$0 and total_trades=0 even though trades happened.
+    // Fix: read today's daily rotating trade CSV on startup and replay into ledger
+    // so daily P&L, win/loss counts, and engine attribution are correct immediately.
+    // Reads: logs/trades/omega_trade_closes_YYYY-MM-DD.csv (full detail format).
+    // Only replays if today's file exists — no-op on first startup of the day.
+    {
+        const auto t_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti_now{}; gmtime_s(&ti_now, &t_now);
+        char today_date[16];
+        snprintf(today_date, sizeof(today_date), "%04d-%02d-%02d",
+                 ti_now.tm_year+1900, ti_now.tm_mon+1, ti_now.tm_mday);
+        const std::string reload_path =
+            log_root_dir() + "/trades/omega_trade_closes_" + today_date + ".csv";
+
+        std::ifstream reload_f(reload_path);
+        if (reload_f.is_open()) {
+            int reloaded = 0;
+            std::string line;
+            std::getline(reload_f, line); // skip header
+            while (std::getline(reload_f, line)) {
+                if (line.empty()) continue;
+                // Parse CSV: trade_id(0), trade_ref(1), entry_ts_unix(2), entry_ts_utc(3),
+                // entry_wd(4), exit_ts_unix(5), exit_ts_utc(6), exit_wd(7),
+                // symbol(8), engine(9), side(10),
+                // entry_px(11), exit_px(12), tp(13), sl(14), size(15),
+                // gross_pnl(16), net_pnl(17), slip_e(18), slip_x(19), comm(20),
+                // slip_epct(21), slip_xpct(22), comm_side(23),
+                // mfe(24), mae(25), hold_sec(26), spread(27), lat(28),
+                // regime(29), exit_reason(30)
+                std::vector<std::string> tok;
+                tok.reserve(32);
+                std::string cell;
+                bool in_q = false;
+                for (char c : line) {
+                    if (c == '"') { in_q = !in_q; continue; }
+                    if (c == ',' && !in_q) { tok.push_back(cell); cell.clear(); continue; }
+                    cell += c;
+                }
+                tok.push_back(cell);
+                if (tok.size() < 20) continue;
+
+                omega::TradeRecord tr;
+                tr.id         = std::stoi(tok[0].empty() ? "0" : tok[0]);
+                tr.entryTs    = std::stoll(tok[2].empty() ? "0" : tok[2]);
+                tr.exitTs     = std::stoll(tok[5].empty() ? "0" : tok[5]);
+                tr.symbol     = tok[8];
+                tr.engine     = tok[9];
+                tr.side       = tok[10];
+                tr.entryPrice = std::stod(tok[11].empty() ? "0" : tok[11]);
+                tr.exitPrice  = std::stod(tok[12].empty() ? "0" : tok[12]);
+                tr.tp         = std::stod(tok[13].empty() ? "0" : tok[13]);
+                tr.sl         = std::stod(tok[14].empty() ? "0" : tok[14]);
+                tr.size       = std::stod(tok[15].empty() ? "0" : tok[15]);
+                tr.pnl        = std::stod(tok[16].empty() ? "0" : tok[16]);
+                tr.net_pnl    = std::stod(tok[17].empty() ? "0" : tok[17]);
+                tr.slippage_entry = std::stod(tok[18].empty() ? "0" : tok[18]);
+                tr.slippage_exit  = std::stod(tok[19].empty() ? "0" : tok[19]);
+                tr.commission     = tok.size() > 20 ? std::stod(tok[20].empty() ? "0" : tok[20]) : 0.0;
+                tr.mfe            = tok.size() > 24 ? std::stod(tok[24].empty() ? "0" : tok[24]) : 0.0;
+                tr.mae            = tok.size() > 25 ? std::stod(tok[25].empty() ? "0" : tok[25]) : 0.0;
+                tr.spreadAtEntry  = tok.size() > 27 ? std::stod(tok[27].empty() ? "0" : tok[27]) : 0.0;
+                tr.regime         = tok.size() > 29 ? tok[29] : "";
+                tr.exitReason     = tok.size() > 30 ? tok[30] : "";
+
+                if (tr.symbol.empty() || tr.entryTs == 0) continue;
+
+                g_omegaLedger.record(tr);
+                // Also restore engine P&L attribution in telemetry
+                g_telemetry.AccumEnginePnl(tr.engine.c_str(), tr.net_pnl);
+                ++reloaded;
+            }
+            reload_f.close();
+            if (reloaded > 0) {
+                std::cout << "[OMEGA] Startup reload: " << reloaded
+                          << " trades from " << reload_path
+                          << " → daily_pnl=$" << std::fixed << std::setprecision(2)
+                          << g_omegaLedger.dailyPnl() << "\n";
+            } else {
+                std::cout << "[OMEGA] Startup reload: " << reload_path
+                          << " found but empty (first run of day)\n";
+            }
+        } else {
+            std::cout << "[OMEGA] Startup reload: no today CSV yet ("
+                      << reload_path << ") — clean start\n";
+        }
+    }
+
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
         std::cerr << "[OMEGA] WSAStartup failed\n"; return 1;

@@ -114,7 +114,7 @@ struct OmegaTelemetrySnapshot
     int  xau_signals;
 
     // --- Signal history ring buffer (5 most recent signals) ---
-    static constexpr int MAX_SIGNAL_HISTORY = 5;
+    static constexpr int MAX_SIGNAL_HISTORY = 50;
 
     // --- Per-symbol bracket engine state ---
     // phase: 0=IDLE, 1=ARMED, 2=PENDING, 3=LIVE, 4=COOLDOWN

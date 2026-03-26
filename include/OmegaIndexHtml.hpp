@@ -1438,7 +1438,33 @@ R"OMEGA26(
 function httpPoll(){if(wsConnected)return;fetch('/api/telemetry').then(r=>r.json()).then(updateDashboard).catch(()=>setConn(false));})OMEGA26"
 R"OMEGA27(
 
-function pollTrades(){fetch('/api/trades').then(r=>r.json()).then(renderTrades).catch(()=>{});}
+
+// pollTrades — reads /api/history which serves from the disk CSV file.
+// This survives restarts: yesterday's +$57 shows up immediately on reload.
+// Falls back to /api/trades (in-memory) only if /api/history fails.
+function pollTrades(){
+  fetch('/api/history')
+    .then(r=>r.json())
+    .then(trades=>{
+      renderTrades(trades);
+      // Also update daily summary banner from /api/daily
+      fetch('/api/daily')
+        .then(r=>r.json())
+        .then(s=>{
+          const el=document.getElementById('tradeCount');
+          if(el&&s&&s.total_trades>0){
+            const pnl=s.net_pnl||0;
+            el.textContent=s.total_trades+' closed · '+s.wins+'W/'+(s.total_trades-s.wins)+'L · '+(pnl>=0?'+':'-')+'$'+Math.abs(pnl).toFixed(2)+(s.source==='csv'?' (from disk)':'');
+          }
+        })
+        .catch(()=>{});
+    })
+    .catch(()=>{
+      // Fallback to memory
+      fetch('/api/trades').then(r=>r.json()).then(renderTrades).catch(()=>{});
+    });
+}
+
 
 setInterval(()=>{const el=document.getElementById('clock');if(el)el.textContent=new Date().toUTCString().slice(17,25)+' UTC';},1000);
 connectWS();
