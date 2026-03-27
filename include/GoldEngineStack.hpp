@@ -2926,7 +2926,7 @@ class DXYDivergenceEngine : public EngineBase {
     }
 
 public:
-    DXYDivergenceEngine() : EngineBase("DXYDivergence", 1.15) {}
+    DXYDivergenceEngine() : EngineBase("DXYDivergence", 1.15) { enabled_ = false; } // DISABLED: uses gold VWAP only, no actual DXY data — fires at local highs on trend days → 3 SL hits 11:43-12:50 UTC 27-Mar. Needs real DXY feed before re-enabling.
 
     void reset() override {
         gold_buf_.clear();

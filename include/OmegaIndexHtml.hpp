@@ -1400,7 +1400,11 @@ R"OMEGA23B(
       const sessionActive=safe(d.session_tradeable)===1;
       // Only warn after 5 min uptime (warmup period) + session must be active
       const warmedUp=uptime>300;
-      if(sessionActive&&warmedUp){
+      // Suppress on weekends — Saturday after 13:00 UTC and all of Sunday
+      const nowD=new Date();
+      const dow=nowD.getUTCDay(); // 0=Sun,6=Sat
+      const isWeekend=(dow===0)||(dow===6&&nowD.getUTCHours()>=13);
+      if(sessionActive&&warmedUp&&!isWeekend){
         const sinceEntry=lastEntry>0?(now-lastEntry):uptime;
         const sinceSignal=lastSignal>0?(now-lastSignal):uptime;
         // Warn thresholds: amber at 20min no entry, red at 40min
