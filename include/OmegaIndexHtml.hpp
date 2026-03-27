@@ -225,13 +225,13 @@ R"OMEGA1(
   padding:1px 4px;border-radius:3px;background:rgba(245,200,66,0.1);}
 
 /* Signal + trade area */
-.sig-trade-area{flex:1;display:flex;flex-direction:column;gap:8px;min-height:0;overflow:hidden;}
-.last-sig{flex-shrink:0;max-height:38vh;overflow-y:auto;background:var(--glass);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
+.sig-trade-area{flex:1;display:flex;flex-direction:column;gap:6px;min-height:0;overflow:hidden;}
+.last-sig{flex-shrink:0;background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:6px 12px;}
 .sig-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:center;}
 .sig-field-lbl{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;}
 .sig-field-val{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;}
 
-.trades-card{flex:1;min-height:220px;background:var(--glass);border:1px solid var(--border);border-radius:10px;
+.trades-card{flex:1;min-height:260px;background:var(--glass);border:1px solid var(--border);border-radius:10px;
   display:flex;flex-direction:column;overflow:hidden;}
 .trades-scroll{flex:1;overflow-y:auto;}
 .trades-scroll::-webkit-scrollbar{width:3px;}
@@ -569,11 +569,11 @@ R"OMEGA5(
     <!-- Last signal + trades -->
     <div class="sig-trade-area">
       <div class="last-sig">
-        <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:5px;display:flex;align-items:center;gap:6px;">
-          <span style="width:4px;height:4px;border-radius:50%;background:var(--amber);flex-shrink:0;display:inline-block;"></span>Last Signals
-          <button id="bellBtn" onclick="toggleBell()" style="margin-left:auto;background:rgba(255,214,0,.1);border:1px solid rgba(255,214,0,0.4);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:9px;color:#ffd600;font-family:inherit;font-weight:700;">🔔 ARM BELL</button>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+          <span style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Last Signals</span>
+          <button id="bellBtn" onclick="toggleBell()" style="margin-left:auto;background:rgba(255,214,0,.1);border:1px solid rgba(255,214,0,0.3);border-radius:3px;padding:0 5px;cursor:pointer;font-size:9px;color:#ffd600;font-family:inherit;line-height:18px;">BELL</button>
         </div>
-        <div id="lastSignalDetail"><span style="color:var(--t2);font-size:12px;">Waiting for first signal…</span></div>
+        <div id="lastSignalDetail" style="display:flex;flex-direction:column;gap:1px;"><span style="color:var(--t2);font-size:11px;">Waiting for first signal…</span></div>
       </div>
 
       <!-- SL Cooldown Panel -->
@@ -976,11 +976,9 @@ R"OMEGA18(
 
 function renderLastSignal(d){
   const el=document.getElementById('lastSignalDetail');if(!el)return;
-  const hist=d.signal_history||[];
-  if(hist.length===0){el.innerHTML='<span style="color:var(--t2);font-size:12px;">Waiting for first signal…</span>';return;}
-  // Compact one-line-per-signal table with full detail on hover expansion for latest
+  const hist=(d.signal_history||[]).slice(0,3);
+  if(hist.length===0){el.innerHTML='<span style="color:var(--t2);font-size:11px;">Waiting for first signal…</span>';return;}
   const latest=hist[0];
-  // Build compact rows for all signals
   const rows=hist.map((s,i)=>{
     const isBracket=s.side==='BRACKET';
     const sc=isBracket?'var(--amber)':s.side==='LONG'?'var(--green)':'var(--red)';
@@ -999,13 +997,13 @@ function renderLastSignal(d){
     const latest_badge=i===0?'<span style="font-size:9px;color:var(--gold);padding:0 4px;background:rgba(255,214,0,0.15);border-radius:2px;border:1px solid rgba(255,214,0,0.3)">LATEST</span>':'';
     const engBadge=eng?`<span style="font-size:9px;color:var(--blue);padding:0 4px;background:rgba(0,136,255,0.1);border-radius:2px">${eng}</span>`:'';
     const rowBg=i===0?'rgba(255,214,0,0.04)':'';
-    return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);background:${rowBg};flex-wrap:wrap">
+    return `<div style="display:flex;align-items:center;gap:5px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04);background:${rowBg};overflow:hidden">
       ${latest_badge}
-      <span style="color:var(--blue);font-weight:700;font-size:12px;min-width:68px">${s.symbol||'--'}</span>
-      <span style="color:${sc};font-weight:700;font-size:12px;min-width:46px">${isBracket?'BRKT':s.side}</span>
+      <span style="color:var(--blue);font-weight:700;font-size:11px;min-width:62px">${s.symbol||'--'}</span>
+      <span style="color:${sc};font-weight:700;font-size:11px;min-width:40px">${isBracket?'BKT':s.side}</span>
       <span style="color:var(--amber);font-family:'IBM Plex Mono',monospace;font-size:11px">${entry>0?entry.toFixed(dec):'--'}</span>
       ${tpStr}${slStr}${rrStr}
-      <span style="color:var(--t2);font-size:10px;flex:1;text-align:right;min-width:60px">${s.reason||''}</span>
+      <span style="color:var(--t2);font-size:10px;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.reason||''}</span>
       ${engBadge}
     </div>`;
   }).join('');
