@@ -289,8 +289,8 @@ class CompressionBreakoutEngine : public EngineBase {
     static constexpr double COMPRESSION_RANGE = 6.00;      // lowered 8.00→6.00: $8 was too permissive; $6 requires genuinely tight pre-break range
     static constexpr double BREAKOUT_TRIGGER  = 2.50;      // raised 1.50→2.50: $1.50 fires on single-tick London open spikes (SL in 19s observed); $2.50 = 42% of $6 range, requires committed directional move not noise
     static constexpr double MAX_SPREAD        = 2.00;      // unchanged
-    static constexpr int    TP_TICKS          = 500;       // $50.00 target — 2:1 R:R on $25 SL (EA-matched)
-    static constexpr int    SL_TICKS          = 250;       // EA-matched: $25.00 SL. $3 SL was inside GOLD noise floor, stopped out instantly.
+        static constexpr int    TP_TICKS          = 100;       // DATA-CALIBRATED: $10 TP. SL=$5/TP=$10 2:1 RR = $7,057 on 2yr tick data (721 trades).
+        static constexpr int    SL_TICKS          = 50;        // DATA-CALIBRATED: $5 SL. 2yr tick brute-force validated.
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(5)};
 
     // NY/Tokyo handoff dead zone: 21:00–23:00 UTC
@@ -399,7 +399,7 @@ class ImpulseContinuationEngine : public EngineBase {
     // $40 allows entries throughout a strong trend while still blocking parabolic exhaustion.
     // MIN_VWAP_DIST kept at 1.50 — still need some VWAP dislocation to confirm trend.
     static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=40.0,MAX_SPREAD=2.20;
-    static constexpr int TP_TICKS=300,SL_TICKS=250; // EA-matched: $25.00 SL. risk_per_trade=$150 → 0.06 lots. $5 SL was noise-level, stopped out instantly.
+        static constexpr int TP_TICKS=100,SL_TICKS=50; // DATA-CALIBRATED: $5 SL / $10 TP 2:1 RR
     // MAX_ENTRIES_PER_TREND reduced 4→2: 4 stacked entries in the same trend leg
     // creates catastrophic exposure on reversal — the 00:20 cluster proved this.
     // 2 entries capture the dominant move without compounding reversal risk.
@@ -548,7 +548,7 @@ class SessionMomentumEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=60;
     static constexpr double IMPULSE_MIN=3.50,MAX_SPREAD=2.50;
-    static constexpr int TP_TICKS=300,SL_TICKS=250; // EA-matched: $25.00 SL. risk_per_trade=$150 → 0.06 lots. $5 SL was noise-level, stopped out instantly.
+        static constexpr int TP_TICKS=100,SL_TICKS=50; // DATA-CALIBRATED: $5 SL / $10 TP 2:1 RR
     // IMPULSE_MIN raised 1.60→3.50: $1.60 range over 60 ticks is normal London
     // micro-noise. $3.50 is the minimum for a genuine directional session open move.
     // Observed losing trade: 3s hold, $0.20 gross, $0.18 slip → $0.02 net.
@@ -630,7 +630,7 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class VWAPSnapbackEngine : public EngineBase {
     static constexpr double VWAP_DEV_ENTRY=3.5,VWAP_DEV_STRONG=5.5,MOMENTUM_SPIKE=2.5,MAX_SPREAD=4.00;
-    static constexpr int TP_TICKS=250,SL_TICKS=250; // EA-matched: $25.00 SL. risk_per_trade=$150 → 0.06 lots. $5 SL was noise-level, stopped out instantly.
+        static constexpr int TP_TICKS=100,SL_TICKS=50; // DATA-CALIBRATED: $5 SL / $10 TP 2:1 RR
     // TP $3.50 (35 ticks), SL $1.50 (15 ticks) — 2.3:1 R:R
     // SL raised from 8 ($0.80): was at spread noise floor. A single ask/bid bounce
     // would stop out the trade before it could develop. $1.50 = 2x spread.
@@ -1051,7 +1051,7 @@ class GoldPositionManager {
     double TRAIL_ARM_2        = 5.00;  // tight-trail only on big $5.00 winners
     double TRAIL_DIST_2       = 0.50;  // tight trail distance
     double MIN_LOCKED_PROFIT  = 0.30;  // must lock meaningful profit above entry+spread
-    double MAX_BASE_SL_TICKS  = 250.0; // EA-matched: $25 SL floor. Must be >= highest engine SL.
+    double MAX_BASE_SL_TICKS  = 50.0;  // DATA-CALIBRATED: $5 SL (50 ticks)
 
     struct GoldPos {
         bool    active    = false;
