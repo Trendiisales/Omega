@@ -198,18 +198,18 @@ public:
 
     explicit SpEngine(const char* sym) noexcept {
         symbol                = sym;
-        VOL_THRESH_PCT        = 0.040;
+        VOL_THRESH_PCT        = 0.060;  // SIM: raised 0.040→0.060, WR 27% on SP — need stronger compression signal
         TP_PCT                = 0.600;
         SL_PCT                = 0.350;
         COMPRESSION_LOOKBACK  = 20;
         BASELINE_LOOKBACK     = 80;
-        COMPRESSION_THRESHOLD = 0.85;
+        COMPRESSION_THRESHOLD = 0.70;  // SIM: tightened 0.85→0.70 — only fire on genuinely tight compression
         MAX_HOLD_SEC          = 1200;
-        MIN_GAP_SEC           = 60;
+        MIN_GAP_SEC           = 90;    // SIM: raised 60→90s gap between entries
         MAX_SPREAD_PCT        = 0.04;
-        MOMENTUM_THRESH_PCT   = 0.006;
-        MIN_BREAKOUT_PCT      = 0.03;
-        WATCH_TIMEOUT_SEC     = 240;  // 2 min
+        MOMENTUM_THRESH_PCT   = 0.010; // SIM: raised 0.006→0.010 — need real momentum not noise
+        MIN_BREAKOUT_PCT      = 0.06;  // SIM: raised 0.03→0.06 — bigger breakout required
+        WATCH_TIMEOUT_SEC     = 240;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -252,18 +252,18 @@ public:
 
     explicit NqEngine(const char* sym) noexcept {
         symbol                = sym;
-        VOL_THRESH_PCT        = 0.050;
+        VOL_THRESH_PCT        = 0.070;  // SIM: raised 0.050→0.070, WR 28.6% — filter out low-vol fakeouts
         TP_PCT                = 0.700;
         SL_PCT                = 0.400;
         COMPRESSION_LOOKBACK  = 18;
         BASELINE_LOOKBACK     = 70;
-        COMPRESSION_THRESHOLD = 0.85;
+        COMPRESSION_THRESHOLD = 0.70;  // SIM: tightened 0.85→0.70 — require real compression
         MAX_HOLD_SEC          = 1200;
-        MIN_GAP_SEC           = 60;
+        MIN_GAP_SEC           = 90;    // SIM: raised 60→90s
         MAX_SPREAD_PCT        = 0.05;
-        MOMENTUM_THRESH_PCT   = 0.005;
-        MIN_BREAKOUT_PCT      = 0.04;
-        WATCH_TIMEOUT_SEC     = 240;  // 2 min
+        MOMENTUM_THRESH_PCT   = 0.010; // SIM: raised 0.005→0.010
+        MIN_BREAKOUT_PCT      = 0.08;  // SIM: raised 0.04→0.08 — require committed move
+        WATCH_TIMEOUT_SEC     = 240;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -363,18 +363,18 @@ public:
 
     explicit Us30Engine(const char* sym) noexcept {
         symbol                = sym;
-        VOL_THRESH_PCT        = 0.035;
+        VOL_THRESH_PCT        = 0.060;  // SIM: raised 0.035→0.060, 0% WR on DJ30 — much stronger filter
         TP_PCT                = 0.800;
         SL_PCT                = 0.350;
         COMPRESSION_LOOKBACK  = 20;
         BASELINE_LOOKBACK     = 80;
-        COMPRESSION_THRESHOLD = 0.85;
+        COMPRESSION_THRESHOLD = 0.70;  // SIM: tightened 0.85→0.70
         MAX_HOLD_SEC          = 1200;
-        MIN_GAP_SEC           = 60;
+        MIN_GAP_SEC           = 120;   // SIM: raised 60→120s — DJ30 needs more time between entries
         MAX_SPREAD_PCT        = 0.05;
-        MOMENTUM_THRESH_PCT   = 0.006;
-        MIN_BREAKOUT_PCT      = 0.04;
-        WATCH_TIMEOUT_SEC     = 240;  // 2.5 min
+        MOMENTUM_THRESH_PCT   = 0.010; // SIM: raised 0.006→0.010
+        MIN_BREAKOUT_PCT      = 0.08;  // SIM: raised 0.04→0.08
+        WATCH_TIMEOUT_SEC     = 240;
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,

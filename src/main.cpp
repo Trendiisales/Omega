@@ -5581,10 +5581,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                   g_orb_silver.has_open_position() ||  // ADDED
                                   g_le_stack.has_open_position();       // ADDED
         const bool base_can     = symbol_gate("XAGUSD", xag_any_open);
-        // Supervisor decides: breakout or bracket — only one may arm
+        // SIM RESULT: XAGUSD breakout engine: 245 trades -$6327 WR 31.8% — disabled.
+        // Bracket-only: sim showed bracket has edge on silver (structure-defined entries).
+        // dispatch() breakout calls removed — only bracket + ORB allowed.
         const auto sdec = sup_decision(g_sup_xag, g_eng_xag, base_can);
-        if (sdec.allow_breakout && !g_bracket_xag.pos.active)
-            dispatch(g_eng_xag, g_sup_xag, base_can, &sdec);
+        // dispatch(g_eng_xag, ...) — DISABLED: no edge on silver breakout
         if (sdec.allow_bracket && !g_eng_xag.pos.active)
             dispatch_bracket(g_bracket_xag, g_sup_xag, g_eng_xag, base_can,
                              0.0, g_bracket_xag_trades_this_minute, g_bracket_xag_minute_start,
