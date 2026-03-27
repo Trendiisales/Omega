@@ -6026,6 +6026,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // ── Regime weight: boost gold in RISK_OFF, reduce in RISK_ON ──
                     const float regime_wt  = g_regime_adaptor.weight(
                         omega::regime::EngineClass::GOLD_STACK);
+                    // ── Vol-regime multiplier: scale lot by inverse volatility ──
+                    // gold_vol_ratio_now = recent_vol / base_vol (30-bar / 300-bar).
+                    // High vol = overheated tape = reduce size to protect capital.
+                    // Low vol  = calm ranging tape = increase size (better fill quality).
+                    // Calibration from 718k bars: vol_ratio buckets predict 2.7x move range.
+                    // Clamp [0.5, 1.3] so we never halve or over-size more than 30%.
+                    // MeanReversion and IntradaySeasonality benefit most from this gate.
+                    const double vol_regime_mult = std::max(0.5, std::min(1.3,
+                        gold_vol_ratio_now > 0.0
+                            ? (gold_vol_ratio_now < 0.7  ? 1.25 :   // very calm  → 1.25x
+                               gold_vol_ratio_now < 1.0  ? 1.10 :   // calm       → 1.10x
+                               gold_vol_ratio_now < 1.5  ? 1.00 :   // normal     → 1.00x
+                               gold_vol_ratio_now < 2.0  ? 0.80 :   // elevated   → 0.80x
+                                                            0.60)    // extreme    → 0.60x
+                            : 1.0));
                     // ── Adaptive risk: DD throttle + Kelly on gold ─────────────
                     double gold_daily_loss = 0.0; int gold_consec = 0;
                     {
@@ -6037,7 +6052,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         }
                     }
                     const double gold_adaptive = g_adaptive_risk.adjusted_lot(
-                        "GOLD.F", base_lot * conf_mult * static_cast<double>(regime_wt),
+                        "GOLD.F", base_lot * conf_mult * static_cast<double>(regime_wt) * vol_regime_mult,
                         gold_daily_loss, g_cfg.daily_loss_limit, gold_consec);
                     // Re-clamp to max_lot_gold: adjusted_lot applies Kelly which can
                     // multiply past the compute_size cap. Cap must be the final word.

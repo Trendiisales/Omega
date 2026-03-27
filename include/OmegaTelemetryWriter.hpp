@@ -665,7 +665,8 @@ public:
             if (strstr(engine_type, "MEAN_REV") || strstr(engine_type, "MeanReversion")
              || strstr(engine_type, "MEAN-REV"))   return 6;
             if (strstr(engine_type, "GOLD_STACK") || strstr(engine_type, "GOLD-STACK")
-             || strstr(engine_type, "GoldStack"))  return 2;
+             || strstr(engine_type, "GoldStack")
+             || strstr(engine_type, "IntradaySeasonality"))  return 2;
             if (strstr(engine_type, "GOLD_FLOW")  || strstr(engine_type, "L2_FLOW"))  return 3;
             if (strstr(engine_type, "ORB")   || strstr(engine_type, "VWAP")
              || strstr(engine_type, "TREND") || strstr(engine_type, "CROSS")
