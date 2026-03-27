@@ -50,12 +50,13 @@ struct OpenPos
     double  spread_at_entry = 0.0;
     char    regime[32]      = {};
     // Pyramid tracking — up to 2 add-ons per trade in expansion regime
-    bool    pyramid_armed   = false;
-    int     pyramid_count   = 0;      // number of add-ons sent (max 2)
-    bool    pyramid_pending = false;  // set by engine, cleared by main.cpp after order sent
-    double  pyramid_entry   = 0.0;
-    double  pyramid_tp      = 0.0;
-    double  pyramid_sl      = 0.0;
+    bool    pyramid_armed    = false;
+    int     pyramid_count    = 0;      // number of add-ons sent (max 2 regime-gated + 2 extended)
+    bool    pyramid_pending  = false;  // set by engine, cleared by main.cpp after order sent
+    double  pyramid_entry    = 0.0;
+    double  pyramid_tp       = 0.0;
+    double  pyramid_sl       = 0.0;
+    int64_t pyramid_last_ts  = 0;     // timestamp of last pyramid fire (any type)
     // Regime at entry — for regime-flip exit
     char    entry_regime[32] = {};   // supervisor regime name at entry time
 };
@@ -564,9 +565,10 @@ public:
                         (std::strncmp(macro_regime, "TREND_CONTINUATION", 18) == 0);
                     if (exp_regime) {
                         pos.pyramid_count++;
-                        pos.pyramid_armed   = false;  // re-arm for next add-on
-                        pos.pyramid_pending = true;   // main.cpp clears this after sending the order
-                        pos.pyramid_entry   = mid;
+                        pos.pyramid_armed    = false;  // re-arm for next add-on
+                        pos.pyramid_pending  = true;   // main.cpp clears this after sending the order
+                        pos.pyramid_last_ts  = nowSec();
+                        pos.pyramid_entry    = mid;
                         // Pyramid TP: same as main position TP
                         pos.pyramid_tp = pos.tp;
                         // Pyramid SL: locked to BE (main entry ± small buffer)
@@ -690,10 +692,51 @@ public:
                 if (trail_in_profit) {
                     // Trail is protecting profit — ride until SL or TP hits.
                     // Log every MAX_HOLD_SEC so we know it is alive.
+                    const int64_t held_now = nowSec() - pos.entry_ts;
                     std::cout << "[ENG-" << symbol << "] TIMEOUT-SUPPRESSED trail in profit"
-                              << " held=" << (nowSec() - pos.entry_ts) << "s"
+                              << " held=" << held_now << "s"
                               << " sl=" << pos.sl << " entry=" << pos.entry
                               << " mfe=" << pos.mfe << "\n";
+                    std::cout.flush();
+
+                    // ── EXTENDED PYRAMID on long runners ──────────────────────
+                    // The move is real — profit is locked. Add-on once per
+                    // MAX_HOLD_SEC interval regardless of regime (up to 2 extended
+                    // add-ons, pyramid_count 3 and 4). SL for the add-on is set to
+                    // the current trail SL (already in profit) so add-on risk is
+                    // bounded to zero or better. Requires Trail2 arm (2x SL) move
+                    // to be met first — don't add into a weak/stalling move.
+                    {
+                        const int64_t now_ts       = nowSec();
+                        const int64_t since_last    = (pos.pyramid_last_ts > 0)
+                            ? (now_ts - pos.pyramid_last_ts)
+                            : held_now;
+                        const double  sl_pct_ext   = (pos.sl_pct > 0.0) ? pos.sl_pct : SL_PCT;
+                        const double  min_move_pct = sl_pct_ext * 2.0;
+                        const double  move_pct_ext = pos.is_long
+                            ? (mid - pos.entry) / pos.entry * 100.0
+                            : (pos.entry - mid) / pos.entry * 100.0;
+
+                        const bool gap_ok     = since_last  >= static_cast<int64_t>(MAX_HOLD_SEC);
+                        const bool count_ok   = pos.pyramid_count < 4;  // 2 normal + 2 extended
+                        const bool not_pend   = !pos.pyramid_pending;
+                        const bool move_ok    = move_pct_ext >= min_move_pct;
+
+                        if (gap_ok && count_ok && not_pend && move_ok) {
+                            pos.pyramid_count++;
+                            pos.pyramid_pending = true;
+                            pos.pyramid_last_ts = now_ts;
+                            pos.pyramid_entry   = mid;
+                            pos.pyramid_tp      = pos.tp;
+                            pos.pyramid_sl      = pos.sl;  // locked at current trail — zero+ risk
+                            std::cout << "[ENG-" << symbol << "] EXTENDED-PYRAMID #" << pos.pyramid_count
+                                      << " held=" << held_now << "s"
+                                      << " entry=" << mid
+                                      << " sl=" << pos.pyramid_sl << " (trail-locked)"
+                                      << " move=" << move_pct_ext << "%\n";
+                            std::cout.flush();
+                        }
+                    }
                     return {};
                 }
                 // Not in profit — apply normal timeout.

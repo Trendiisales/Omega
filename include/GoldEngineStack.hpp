@@ -3288,7 +3288,7 @@ public:
 class GoldPositionManager {
     static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
-    static constexpr int    MAX_PYRAMID_LEGS = 3;  // base + 2 add-ons — capped to prevent over-pyramiding
+    static constexpr int    MAX_PYRAMID_LEGS = 5;  // base + 2 regime-gated + 2 extended on long runners
     static constexpr double PYR_COVER_MOVE   = 5.00;  // EA-matched: add only after $5 confirmed move
     static constexpr double PYR_MIN_STEP     = 3.00;  // minimum $3 between pyramid levels
     static constexpr int64_t PYR_ADD_COOLDOWN_SEC = 60; // 60s between add-ons — confirm trend
@@ -3706,6 +3706,32 @@ public:
                     printf("[GOLD-STACK-TIMEOUT-SUPPRESSED] %s hold=%lds trail in profit sl=%.2f entry=%.2f mfe=%.2f\n",
                            leg.engine, (long)(now - leg.entry_ts), leg.sl, leg.entry, leg.mfe);
                     fflush(stdout);
+
+                    // ── EXTENDED PYRAMID on long runners ──────────────────────
+                    // Profit is locked — add-on regardless of regime. Fires once
+                    // per MAX_HOLD_SEC interval, up to MAX_PYRAMID_LEGS total.
+                    // SL for the new leg = current trail SL of the base leg
+                    // (already in profit), so add-on risk is zero or better.
+                    // Requires TRAIL_ARM_1 ($2.50) move minimum — no adding into stall.
+                    {
+                        const int64_t since_last = now - last_add_ts_;
+                        const double  base_move  = leg.is_long
+                            ? (mid - leg.entry) : (leg.entry - mid);
+                        const bool ext_ok =
+                            static_cast<int>(legs_.size()) < MAX_PYRAMID_LEGS &&
+                            since_last >= static_cast<int64_t>(MAX_HOLD_SEC)  &&
+                            base_move  >= TRAIL_ARM_1                         &&
+                            leg_profit_locked(leg);
+                        if (ext_ok) {
+                            printf("[GOLD-STACK-EXTENDED-PYRAMID] leg=%s legs=%d hold=%lds move=%.2f\n",
+                                   leg.engine, (int)legs_.size(),
+                                   (long)(now - leg.entry_ts), base_move);
+                            fflush(stdout);
+                            add_pyramid_leg(mid, ask - bid, latency_ms, regime);
+                            // Override the new leg's SL to the base leg's trail SL
+                            if (!legs_.empty()) legs_.back().sl = leg.sl;
+                        }
+                    }
                     continue;  // ride it — trail or TP will close
                 }
                 // Not in profit — apply normal timeout.
