@@ -5584,36 +5584,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "XAGUSD") {
-        const bool xag_any_open = g_eng_xag.pos.active        ||
-                                  g_bracket_xag.pos.active    ||
-                                  g_orb_silver.has_open_position() ||  // ADDED
-                                  g_le_stack.has_open_position();       // ADDED
-        const bool base_can     = symbol_gate("XAGUSD", xag_any_open);
-        // SIM RESULT: XAGUSD breakout engine: 245 trades -$6327 WR 31.8% — disabled.
-        // Bracket-only: sim showed bracket has edge on silver (structure-defined entries).
-        // dispatch() breakout calls removed — only bracket + ORB allowed.
-        const auto sdec = sup_decision(g_sup_xag, g_eng_xag, base_can);
-        // dispatch(g_eng_xag, ...) — DISABLED: no edge on silver breakout
-        if (sdec.allow_bracket && !g_eng_xag.pos.active)
-            dispatch_bracket(g_bracket_xag, g_sup_xag, g_eng_xag, base_can,
-                             0.0, g_bracket_xag_trades_this_minute, g_bracket_xag_minute_start,
-                             g_macro_ctx.xag_l2_imbalance, &sdec);
-        // Silver COMEX opening range 13:30 UTC
-        if (!g_orb_silver.has_open_position() && base_can) {
-            const auto orb = g_orb_silver.on_tick(sym, bid, ask, ca_on_close);
-            if (orb.valid) {
-                g_telemetry.UpdateLastSignal("XAGUSD", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-                if (!enter_directional("XAGUSD", orb.is_long, orb.entry, orb.sl, orb.tp))
-                    g_orb_silver.cancel();
-                    else g_orb_silver.patch_size(g_last_directional_lot);
-            }
-        }
-        // Lead-lag: HARD DISABLED on XAGUSD.
-        // SIM evidence: 3 iterations negative EV on non-gold symbols.
-        // Historical trade: XAGUSD SHORT 67.63->68.93 FORCE_CLOSE -$66.48 (LEAD_LAG).
-        // Only GOLD.F and USOIL.F are permitted until live validation is complete.
-        // Re-enable after 30+ days positive GOLD expectancy confirmed on shadow data.
-        // g_le_stack.on_tick_silver() call removed to prevent any XAGUSD entries.
+        // XAGUSD FULLY DISABLED — all silver engines hard-gated.
+        // Evidence:
+        //   - Bracket sim: no positive edge validated on XAGUSD
+        //   - ORB silver: fires at 13:30 UTC, no sim data to support
+        //   - LeadLag: already removed (XAGUSD SHORT -$66.48 from disk)
+        //   - Gold-only policy: only GOLD.F + USOIL.F active until 30+ days
+        //     of positive live shadow data confirms non-gold symbol edge.
+        // All three engines (bracket_xag, orb_silver, le_stack) remain
+        // instantiated for position tracking / force_close safety, but
+        // no new entries are permitted.
+        (void)bid; (void)ask;  // suppress unused-variable warnings
     }
     else if (sym == "EURUSD") {
         g_macro_ctx.eur_mid_price = (bid + ask) * 0.5;  // for wall_above/below context
