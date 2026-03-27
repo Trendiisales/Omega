@@ -5,7 +5,7 @@
 Write-Host ""
 Write-Host "=== OMEGA CLEAR + VERIFY ===" -ForegroundColor Cyan
 
-# ── Step 1: Stop Omega ────────────────────────────────────────────────────────
+# -- Step 1: Stop Omega --------------------------------------------------------
 Write-Host ""
 Write-Host "[1] Stopping Omega..." -ForegroundColor Yellow
 try {
@@ -16,14 +16,14 @@ try {
     Write-Host "  Not running." -ForegroundColor Gray
 }
 
-# ── Step 2: PRESERVE trade CSVs — only wipe open-position state files ─────────
+# -- Step 2: PRESERVE trade CSVs  -  only wipe open-position state files ---------
 Write-Host ""
 Write-Host "[2] Preserving ALL trade history CSVs..." -ForegroundColor Green
 Write-Host "  NOTE: Historical trade data is NEVER deleted." -ForegroundColor Cyan
 Write-Host "  Only open-position state files are cleared on restart." -ForegroundColor Cyan
 
-# Only delete the opens log (tracks currently open positions — stale after restart)
-# NEVER delete closes, shadow, gold, or tod files — these are the historical record
+# Only delete the opens log (tracks currently open positions  -  stale after restart)
+# NEVER delete closes, shadow, gold, or tod files  -  these are the historical record
 $stateOnlyPatterns = @(
     "omega_trade_opens.csv",
     "omega_trade_opens_*.csv"
@@ -53,7 +53,7 @@ if ($deleted -eq 0) {
     Write-Host "  Cleared $deleted state file(s). Trade history preserved." -ForegroundColor Green
 }
 
-# ── Step 3: Show what historical data exists ──────────────────────────────────
+# -- Step 3: Show what historical data exists ----------------------------------
 Write-Host ""
 Write-Host "[3] Historical trade data on disk:" -ForegroundColor Yellow
 $histPatterns = @("omega_trade_closes*.csv","omega_shadow*.csv","omega_gold*.csv","omega_shadow_trades*.csv")
@@ -72,10 +72,10 @@ foreach ($dir in $histDirs) {
     }
 }
 if ($totalRows -eq 0) {
-    Write-Host "  No historical trade data yet — will accumulate from first trade." -ForegroundColor Yellow
+    Write-Host "  No historical trade data yet  -  will accumulate from first trade." -ForegroundColor Yellow
 }
 
-# ── Step 4: Verify log directory ─────────────────────────────────────────────
+# -- Step 4: Verify log directory ---------------------------------------------
 Write-Host ""
 Write-Host "[4] Verifying C:\Omega\logs..." -ForegroundColor Yellow
 foreach ($d in @("C:\Omega\logs","C:\Omega\logs\trades","C:\Omega\logs\gold","C:\Omega\logs\shadow\trades")) {
@@ -107,7 +107,7 @@ Get-ChildItem "C:\Omega\logs" -Recurse -ErrorAction SilentlyContinue | ForEach-O
     Write-Host ("    " + $_.FullName + "  " + $size) -ForegroundColor Gray
 }
 
-# ── Step 5: Rebuild ───────────────────────────────────────────────────────────
+# -- Step 5: Rebuild -----------------------------------------------------------
 Write-Host ""
 Write-Host "[5] Rebuilding..." -ForegroundColor Yellow
 cmake --build C:\Omega\build --config Release
@@ -117,13 +117,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  Build OK" -ForegroundColor Green
 
-# ── Step 6: Start Omega ───────────────────────────────────────────────────────
+# -- Step 6: Start Omega -------------------------------------------------------
 Write-Host ""
 Write-Host "[6] Starting Omega..." -ForegroundColor Yellow
 & "C:\Omega\build\Release\Omega.exe"
 Start-Sleep 6
 
-# ── Step 7: Post-start verification ──────────────────────────────────────────
+# -- Step 7: Post-start verification ------------------------------------------
 Write-Host ""
 Write-Host "[7] Post-start checks..." -ForegroundColor Yellow
 
