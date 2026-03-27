@@ -7466,6 +7466,49 @@ static void quote_loop() {
                 if (SSL_write(ssl, hb.c_str(), static_cast<int>(hb.size())) <= 0) break;
             }
 
+            // ── Stale symbol auto-resubscribe ─────────────────────────────────
+            // Broker occasionally drops individual symbol subscriptions silently
+            // (observed: GOLD.F stops streaming while all others continue).
+            // Every 60s check all primary symbols — if any has gone silent for
+            // > 45s, force a full re-subscribe to recover the dropped feed.
+            {
+                static auto last_stale_check = now;
+                if (std::chrono::duration_cast<std::chrono::seconds>(
+                        now - last_stale_check).count() >= 60 && g_quote_ready.load()) {
+                    last_stale_check = now;
+                    bool any_stale = false;
+                    const int64_t now_ms_sc = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    // Check primary symbols only (the ones we always subscribe)
+                    static const char* primary_syms[] = {
+                        "GOLD.F","US500.F","USTEC.F","DJ30.F","NAS100","USOIL.F"
+                    };
+                    for (const char* psym : primary_syms) {
+                        std::lock_guard<std::mutex> lk(g_last_tick_mtx);
+                        auto it = g_last_tick_ts.find(psym);
+                        if (it == g_last_tick_ts.end() ||
+                            (now_ms_sc - it->second) > 45000) {
+                            printf("[STALE-RESUB] %s silent >45s — forcing full re-subscribe\n", psym);
+                            fflush(stdout);
+                            any_stale = true;
+                            break;
+                        }
+                    }
+                    if (any_stale) {
+                        const std::string unsub_s = fix_build_md_unsub_all(g_quote_seq++);
+                        if (!unsub_s.empty()) SSL_write(ssl, unsub_s.c_str(), static_cast<int>(unsub_s.size()));
+                        Sleep(150);
+                        const std::string resub_s = fix_build_md_subscribe_all(g_quote_seq++);
+                        if (!resub_s.empty()) {
+                            SSL_write(ssl, resub_s.c_str(), static_cast<int>(resub_s.size()));
+                            g_md_subscribed.store(true);
+                            printf("[STALE-RESUB] Full re-subscribe sent\n");
+                            fflush(stdout);
+                        }
+                    }
+                }
+            }
+
             // RTT ping every 5s
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_ping).count() >= 5) {
                 last_ping = now;
