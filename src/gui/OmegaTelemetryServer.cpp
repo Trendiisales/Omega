@@ -967,10 +967,36 @@ void OmegaTelemetryServer::run(int port)
         std::string body, ct = "text/html";
         int status = 200;
 
-        if (strstr(buf, "GET /api/telemetry"))    { ct = "application/json"; body = buildTelemetryJson(snap_); }
-        else if (strstr(buf, "GET /api/trades"))  { ct = "application/json"; body = buildTradesJson(); }
-        else if (strstr(buf, "GET /api/history")) { ct = "application/json"; body = buildHistoryJson(); }
-        else if (strstr(buf, "GET /api/daily"))   { ct = "application/json"; body = buildDailySummaryJson(); }
+        if (strstr(buf, "GET /api/telemetry"))        { ct = "application/json"; body = buildTelemetryJson(snap_); }
+        else if (strstr(buf, "GET /api/trades"))      { ct = "application/json"; body = buildTradesJson(); }
+        else if (strstr(buf, "GET /api/history"))     { ct = "application/json"; body = buildHistoryJson(); }
+        else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
+        else if (strstr(buf, "GET /api/shadow_csv"))  {
+            // Serve the full shadow CSV for remote analysis — tries all known paths
+            ct = "text/csv";
+            const char* paths[] = {
+                "C:\\Omega\\logs\\trades\\omega_trade_closes.csv",
+                "C:\\Omega\\logs\\shadow\\omega_shadow.csv",
+                "logs/trades/omega_trade_closes.csv",
+                "logs/shadow/omega_shadow.csv",
+                "../logs/trades/omega_trade_closes.csv",
+                nullptr
+            };
+            for (int pi = 0; paths[pi]; ++pi) {
+                FILE* f = fopen(paths[pi], "r");
+                if (!f) continue;
+                fseek(f, 0, SEEK_END);
+                long sz = ftell(f);
+                fseek(f, 0, SEEK_SET);
+                if (sz > 0) {
+                    body.resize(static_cast<size_t>(sz));
+                    fread(&body[0], 1, static_cast<size_t>(sz), f);
+                }
+                fclose(f);
+                if (!body.empty()) break;
+            }
+            if (body.empty()) { status = 404; body = "no shadow data yet"; ct = "text/plain"; }
+        }
         else if (strstr(buf, "GET /version"))     {
             ct = "application/json";
             char vbuf[256];
