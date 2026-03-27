@@ -49,14 +49,24 @@ struct OpenPos
     int64_t entry_ts        = 0;
     double  spread_at_entry = 0.0;
     char    regime[32]      = {};
-    // Pyramid tracking — up to 2 add-ons per trade in expansion regime
-    bool    pyramid_armed    = false;
-    int     pyramid_count    = 0;      // number of add-ons sent (max 2 regime-gated + 2 extended)
-    bool    pyramid_pending  = false;  // set by engine, cleared by main.cpp after order sent
-    double  pyramid_entry    = 0.0;
-    double  pyramid_tp       = 0.0;
-    double  pyramid_sl       = 0.0;
-    int64_t pyramid_last_ts  = 0;     // timestamp of last pyramid fire (any type)
+    // Pyramid tracking — up to 4 add-ons (2 regime-gated + 2 extended on long runners).
+    // Each add-on is tracked independently via pyramid_addons[] so trailing stops
+    // never overwrite each other. Tightens progressively: addon 0 widest, addon 3 tightest.
+    static constexpr int MAX_PYRAMID_ADDONS = 4;
+    struct PyramidAddon {
+        bool   active  = false;
+        double entry   = 0.0;   // fill price of this add-on
+        double sl      = 0.0;   // trailing SL (ratchets forward only)
+        double tp_dist = 0.0;   // 2R projected distance from add-on entry
+    };
+    bool         pyramid_armed    = false;
+    int          pyramid_count    = 0;     // total add-ons sent so far
+    bool         pyramid_pending  = false; // engine sets → main.cpp sends order, clears flag
+    double       pyramid_entry    = 0.0;   // pending add-on entry price (for main.cpp sizing)
+    double       pyramid_tp       = 0.0;   // pending add-on TP (for main.cpp)
+    double       pyramid_sl       = 0.0;   // pending add-on initial SL (for main.cpp)
+    int64_t      pyramid_last_ts  = 0;     // unix-sec timestamp of last pyramid fire
+    PyramidAddon pyramid_addons[MAX_PYRAMID_ADDONS] = {};
     // Regime at entry — for regime-flip exit
     char    entry_regime[32] = {};   // supervisor regime name at entry time
 };
@@ -557,116 +567,114 @@ public:
                 }
             }
 
-            // ── PYRAMID ADD-ON ────────────────────────────────────────────────
-            // When trail1 arm is crossed and regime is EXPANSION_BREAKOUT or TREND,
-            // set pyramid_pending=true so main.cpp can send the add-on order on the
-            // next tick. main.cpp checks pos.pyramid_pending, sends the order, then
-            // clears the flag. Up to 2 add-ons allowed (pyramid_count tracks how many).
-            if (pos.pyramid_count < 2) {
-                const double sl_pct_now = (pos.sl_pct > 0.0) ? pos.sl_pct : SL_PCT;
+            // ── PYRAMID ADD-ON FIRE ──────────────────────────────────────────
+            // Trigger 1 (regime-gated, count<2): trail1 arm + trending regime.
+            // Trigger 2 (extended, count 2-3):   fired in timeout-suppressed block.
+            // Both paths register in pyramid_addons[] for independent trailing.
+            if (pos.pyramid_count < 2 && !pos.pyramid_pending) {
+                const double sl_pct_now     = (pos.sl_pct > 0.0) ? pos.sl_pct : SL_PCT;
                 const double trail1_arm_pct = sl_pct_now * 1.00;
-                const double move_pct_now = pos.is_long
+                const double move_pct_now   = pos.is_long
                     ? (mid - pos.entry) / pos.entry * 100.0
                     : (pos.entry - mid) / pos.entry * 100.0;
-                if (move_pct_now >= trail1_arm_pct) {
-                    if (!pos.pyramid_armed) {
-                        pos.pyramid_armed = true;
-                        std::cout << "[ENG-" << symbol << "] PYRAMID ARMED"
-                                  << " move_pct=" << move_pct_now << "% arm=" << trail1_arm_pct << "%\n";
-                        std::cout.flush();
-                    }
+                if (move_pct_now >= trail1_arm_pct && !pos.pyramid_armed) {
+                    pos.pyramid_armed = true;
+                    std::cout << "[ENG-" << symbol << "] PYRAMID ARMED"
+                              << " move=" << move_pct_now << "% arm=" << trail1_arm_pct << "%\n";
+                    std::cout.flush();
                 }
-                // Arm and open pyramid: must be armed, not yet done,
-                // and macro regime must be expansion/trend
-                if (pos.pyramid_armed && pos.pyramid_count < 2 && macro_regime) {
+                if (pos.pyramid_armed && macro_regime) {
                     const bool exp_regime =
                         (std::strncmp(macro_regime, "EXPANSION_BREAKOUT", 18) == 0) ||
                         (std::strncmp(macro_regime, "TREND_CONTINUATION", 18) == 0) ||
-                        (std::strncmp(macro_regime, "TREND",              5)  == 0) ||
-                        (std::strncmp(macro_regime, "IMPULSE",            7)  == 0) ||
-                        (std::strncmp(macro_regime, "RISK_ON",            7)  == 0);
+                        (std::strncmp(macro_regime, "TREND",               5) == 0) ||
+                        (std::strncmp(macro_regime, "IMPULSE",             7) == 0) ||
+                        (std::strncmp(macro_regime, "RISK_ON",             7) == 0);
                     if (exp_regime) {
+                        const int idx = pos.pyramid_count; // 0-based slot
                         pos.pyramid_count++;
-                        pos.pyramid_armed    = false;  // re-arm for next add-on
-                        pos.pyramid_pending  = true;   // main.cpp clears this after sending the order
-                        pos.pyramid_last_ts  = nowSec();
-                        pos.pyramid_entry    = mid;
-                        // Pyramid TP: same as main position TP
-                        pos.pyramid_tp = pos.tp;
-                        // Pyramid SL: locked to BE (main entry ± small buffer)
-                        const double be_buffer = mid * (sl_pct_now * 0.10) / 100.0;
-                        pos.pyramid_sl = pos.is_long
-                            ? pos.entry + be_buffer
-                            : pos.entry - be_buffer;
-                        std::cout << "[ENG-" << symbol << "] PYRAMID PENDING"
-                                  << " entry=" << mid
-                                  << " tp=" << pos.pyramid_tp
-                                  << " sl=" << pos.pyramid_sl
+                        pos.pyramid_armed   = false;
+                        pos.pyramid_pending = true;
+                        pos.pyramid_last_ts = nowSec();
+                        pos.pyramid_entry   = mid;
+                        pos.pyramid_tp      = pos.tp;
+                        pos.pyramid_sl      = pos.sl; // add-on SL = current base trail (zero+ risk)
+                        if (idx < OpenPos::MAX_PYRAMID_ADDONS) {
+                            pos.pyramid_addons[idx].active  = true;
+                            pos.pyramid_addons[idx].entry   = mid;
+                            pos.pyramid_addons[idx].sl      = pos.sl;
+                            // 2R from add-on entry using base SL distance as 1R
+                            pos.pyramid_addons[idx].tp_dist = std::fabs(pos.entry - pos.sl) * 2.0;
+                        }
+                        std::cout << "[ENG-" << symbol << "] PYRAMID #" << pos.pyramid_count
+                                  << " PENDING entry=" << mid << " sl=" << pos.pyramid_sl
                                   << " regime=" << macro_regime << "\n";
                         std::cout.flush();
                     }
                 }
             }
-            // Manage pyramid position — tiered trailing stop.
-            // pyramid_count tells us which add-on this is (1=first, 2=second).
-            // Each add-on uses progressively tighter trailing to lock profits faster.
-            // Base leg: wide trail (ridden by main position management above)
-            // Pyramid 1: medium trail — BE at 25% TP, trail at 50%, lock 60% at 1R
-            // Pyramid 2: tight trail  — BE at 15% TP, trail at 35%, lock 70% at 1R
-            if (pos.pyramid_count > 0 && pos.pyramid_entry > 0.0 && !pos.pyramid_pending) {
-                const double pyr_move = pos.is_long
-                    ? (bid - pos.pyramid_entry)
-                    : (pos.pyramid_entry - ask);
-                const double pyr_tp_dist = std::fabs(pos.pyramid_tp - pos.pyramid_entry);
 
-                // Tier multipliers: pyramid 1 = medium, pyramid 2 = tight
-                const double be_pct    = (pos.pyramid_count == 1) ? 0.25 : 0.15;
-                const double trail_pct = (pos.pyramid_count == 1) ? 0.50 : 0.35;
-                const double lock_pct  = (pos.pyramid_count == 1) ? 0.60 : 0.70;
-
-                if (pyr_move > 0.0 && pyr_tp_dist > 0.0) {
+            // ── PYRAMID ADD-ON TRAILING ───────────────────────────────────────
+            // Each add-on managed independently. Trail tightens with addon index:
+            //   Addon 0: BE@0.3R, trail@0.5R→lock60%, tight@1.0R→lock85%
+            //   Addon 1: BE@0.2R, trail@0.4R→lock70%, tight@0.8R→lock85%
+            //   Addon 2: BE@0.1R, trail@0.3R→lock75%, tight@0.6R→lock85%
+            //   Addon 3: BE immediately, trail@0.2R→lock80%, tight@0.4R→lock85%
+            // Later pyramids protect more — correct for compounding runs.
+            for (int ai = 0; ai < OpenPos::MAX_PYRAMID_ADDONS; ++ai) {
+                OpenPos::PyramidAddon& addon = pos.pyramid_addons[ai];
+                if (!addon.active) continue;
+                const double addon_move = pos.is_long
+                    ? (bid - addon.entry) : (addon.entry - ask);
+                const double tp = (addon.tp_dist > 0.0) ? addon.tp_dist : 1.0;
+                // Per-tier thresholds
+                const double be_r    = (ai==0)?0.30:(ai==1)?0.20:(ai==2)?0.10:0.00;
+                const double tr_r    = (ai==0)?0.50:(ai==1)?0.40:(ai==2)?0.30:0.20;
+                const double tgt_r   = (ai==0)?1.00:(ai==1)?0.80:(ai==2)?0.60:0.40;
+                const double tr_lock = (ai==0)?0.60:(ai==1)?0.70:(ai==2)?0.75:0.80;
+                if (addon_move > 0.0) {
                     // BE lock
-                    if (pyr_move >= pyr_tp_dist * be_pct) {
-                        const double be = pos.is_long ? pos.pyramid_entry : pos.pyramid_entry;
-                        if ((pos.is_long  && be > pos.pyramid_sl) ||
-                            (!pos.is_long && be < pos.pyramid_sl))
-                            pos.pyramid_sl = be;
+                    if (addon_move >= tp * be_r) {
+                        if (( pos.is_long && addon.entry > addon.sl) ||
+                            (!pos.is_long && addon.entry < addon.sl))
+                            addon.sl = addon.entry;
                     }
-                    // Start trailing
-                    if (pyr_move >= pyr_tp_dist * trail_pct) {
+                    // Standard trail — locks tr_lock fraction of move behind MFE
+                    if (addon_move >= tp * tr_r) {
                         const double trail = pos.is_long
-                            ? (pos.pyramid_entry + pyr_move * lock_pct)
-                            : (pos.pyramid_entry - pyr_move * lock_pct);
-                        if ((pos.is_long  && trail > pos.pyramid_sl) ||
-                            (!pos.is_long && trail < pos.pyramid_sl))
-                            pos.pyramid_sl = trail;
+                            ? (addon.entry + addon_move * tr_lock)
+                            : (addon.entry - addon_move * tr_lock);
+                        if (( pos.is_long && trail > addon.sl) ||
+                            (!pos.is_long && trail < addon.sl))
+                            addon.sl = trail;
                     }
-                    // At full TP distance: tighten to 80% of MFE locked
-                    if (pyr_move >= pyr_tp_dist) {
+                    // Tight trail — locks 85% of move, rides the cascade
+                    if (addon_move >= tp * tgt_r) {
                         const double trail = pos.is_long
-                            ? (pos.pyramid_entry + pyr_move * 0.80)
-                            : (pos.pyramid_entry - pyr_move * 0.80);
-                        if ((pos.is_long  && trail > pos.pyramid_sl) ||
-                            (!pos.is_long && trail < pos.pyramid_sl))
-                            pos.pyramid_sl = trail;
+                            ? (addon.entry + addon_move * 0.85)
+                            : (addon.entry - addon_move * 0.85);
+                        if (( pos.is_long && trail > addon.sl) ||
+                            (!pos.is_long && trail < addon.sl))
+                            addon.sl = trail;
                     }
                 }
-
-                const bool pyr_sl_hit = pos.is_long ? (bid <= pos.pyramid_sl) : (ask >= pos.pyramid_sl);
-                if (pyr_sl_hit) {
-                    const char* r = (pos.pyramid_sl > pos.pyramid_entry + 0.001 ||
-                                     pos.pyramid_sl < pos.pyramid_entry - 0.001)
-                                    ? "TRAIL_HIT" : (pyr_move > 0 ? "BE_HIT" : "SL_HIT");
-                    std::cout << "[ENG-" << symbol << "] PYRAMID-" << pos.pyramid_count
-                              << " " << r
-                              << " sl=" << pos.pyramid_sl
-                              << " move=" << pyr_move << "\n";
+                // SL hit — signal main.cpp and deactivate
+                const bool sl_hit = pos.is_long ? (bid <= addon.sl) : (ask >= addon.sl);
+                if (sl_hit) {
+                    const char* why = (addon.sl > addon.entry + 0.001 ||
+                                       addon.sl < addon.entry - 0.001)
+                        ? "TRAIL_HIT" : (addon_move > 0 ? "BE_HIT" : "SL_HIT");
+                    std::cout << "[ENG-" << symbol << "] ADDON-" << (ai+1)
+                              << " " << why << " sl=" << addon.sl
+                              << " entry=" << addon.entry << " move=" << addon_move << "\n";
                     std::cout.flush();
-                    pos.pyramid_entry = 0.0;
+                    pos.pyramid_sl    = addon.sl;    // main.cpp dispatches close on this
+                    pos.pyramid_entry = addon.entry;
+                    addon.active      = false;
                 }
             }
 
-            // ── BREAKOUT FAILURE SCRATCH ──────────────────────────────────────
+                        // ── BREAKOUT FAILURE SCRATCH ──────────────────────────────────────
             // If within first 120s the price moves against us by > 0.08% of entry,
             // the breakout is confirmed false — cut immediately. Do NOT hold a
             // wrong-direction break for 20 minutes hoping for reversal.
@@ -745,12 +753,20 @@ public:
                         const bool move_ok    = move_pct_ext >= min_move_pct;
 
                         if (gap_ok && count_ok && not_pend && move_ok) {
+                            const int idx = pos.pyramid_count; // 0-based slot
                             pos.pyramid_count++;
                             pos.pyramid_pending = true;
                             pos.pyramid_last_ts = now_ts;
                             pos.pyramid_entry   = mid;
                             pos.pyramid_tp      = pos.tp;
-                            pos.pyramid_sl      = pos.sl;  // locked at current trail — zero+ risk
+                            pos.pyramid_sl      = pos.sl; // current trail SL = zero+ risk
+                            // Register in addons array for independent tight trailing
+                            if (idx < OpenPos::MAX_PYRAMID_ADDONS) {
+                                pos.pyramid_addons[idx].active  = true;
+                                pos.pyramid_addons[idx].entry   = mid;
+                                pos.pyramid_addons[idx].sl      = pos.sl;
+                                pos.pyramid_addons[idx].tp_dist = std::fabs(pos.entry - pos.sl) * 2.0;
+                            }
                             std::cout << "[ENG-" << symbol << "] EXTENDED-PYRAMID #" << pos.pyramid_count
                                       << " held=" << held_now << "s"
                                       << " entry=" << mid

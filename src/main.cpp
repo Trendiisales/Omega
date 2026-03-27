@@ -4084,6 +4084,36 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const int slot = g_macro_ctx.session_slot;
                 if      (slot == 0) session_cap = std::min(session_cap, 1); // dead zone 05-07 UTC
                 else if (slot == 6) session_cap = std::min(session_cap, 2); // Asia 22-05 UTC
+                // ── Asia breakout quality gate ────────────────────────────────
+                // Allow Asia trading but only when volatility is genuinely expanding
+                // (real breakout move, not Asia chop). Require vol_ratio >= 2.0:
+                // recent_vol is 2× the 512-tick baseline = committed directional move.
+                // This gates ALL symbols in Asia — if the market is ranging/choppy,
+                // no new entries. When gold breaks $15+ or indices spike, vol_ratio
+                // easily clears 2.0 and the gate opens. Fail-open if base_vol=0 (warmup).
+                if (slot == 6) {
+                    const double asia_base  = g_gold_stack.base_vol_pct();
+                    const double asia_recent = g_gold_stack.recent_vol_pct();
+                    const double asia_ratio = (asia_base > 0.0) ? (asia_recent / asia_base) : 3.0;
+                    if (asia_ratio < 2.0) {
+                        static int64_t s_asia_block_log = 0;
+                        const int64_t now_ab = static_cast<int64_t>(std::time(nullptr));
+                        if (now_ab - s_asia_block_log >= 300) { // log every 5min
+                            s_asia_block_log = now_ab;
+                            printf("[ASIA-GATE] No breakout — vol_ratio=%.2f (need>=2.0), blocking new entries\n",
+                                   asia_ratio);
+                            fflush(stdout);
+                        }
+                        return false;
+                    }
+                    static int64_t s_asia_open_log = 0;
+                    const int64_t now_ao = static_cast<int64_t>(std::time(nullptr));
+                    if (now_ao - s_asia_open_log >= 300) {
+                        s_asia_open_log = now_ao;
+                        printf("[ASIA-GATE] BREAKOUT ACTIVE vol_ratio=%.2f — entries allowed\n", asia_ratio);
+                        fflush(stdout);
+                    }
+                }
                 // overlap (slot 3) and London/NY get full cap
                 if (open_positions >= session_cap) {
                     ++g_gov_pos;
@@ -4106,13 +4136,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             // ── Session watermark drawdown ────────────────────────────────────
             // Stop if drawdown from intra-day P&L peak exceeds watermark_pct
-            // of the reference level (daily_profit_target if set, else daily_loss_limit).
+            // of daily_loss_limit. Always uses daily_loss_limit as reference so the
+            // dollar threshold is predictable regardless of daily_profit_target setting.
+            // e.g. watermark=0.27, daily_loss_limit=$450 → threshold=$121 drawdown.
             if (g_cfg.session_watermark_pct > 0.0) {
                 const double peak_pnl   = g_omegaLedger.peakDailyPnl();
                 const double daily_pnl  = g_omegaLedger.dailyPnl();
                 const double drawdown   = peak_pnl - daily_pnl;
-                const double reference  = (g_cfg.daily_profit_target > 0.0)
-                    ? g_cfg.daily_profit_target : g_cfg.daily_loss_limit;
+                const double reference  = g_cfg.daily_loss_limit; // always loss_limit — not profit_target
                 const double threshold  = reference * g_cfg.session_watermark_pct;
                 if (peak_pnl > 0.0 && drawdown >= threshold) {
                     static int64_t s_last_wm_log = 0;
