@@ -1522,7 +1522,9 @@ public:
 
     GoldEngineStack() {
         engines_.push_back(std::make_unique<CompressionBreakoutEngine>());
-        engines_.push_back(std::make_unique<ImpulseContinuationEngine>());
+        // SIM: ImpulseContinuation WR 41.7% -$641 across 3 iterations. Disabled.
+        // SessionMomentum captures same directional signal at 53.3% WR +$723.
+        // engines_.push_back(std::make_unique<ImpulseContinuationEngine>());
         engines_.push_back(std::make_unique<SessionMomentumEngine>());
         engines_.push_back(std::make_unique<VWAPSnapbackEngine>());
         engines_.push_back(std::make_unique<LiquiditySweepProEngine>());

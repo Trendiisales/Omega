@@ -5347,8 +5347,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_orb_us.has_open_position() ||      // ADDED
             g_vwap_rev_sp.has_open_position());   // ADDED
         const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
-        if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
-            dispatch(g_eng_sp, g_sup_sp, base_can_sp, &sdec_sp);
+        // SIM: SP breakout WR 31.6% -$105. No edge on US500 compression breakout. Disabled.
+        // if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
+        //     dispatch(g_eng_sp, g_sup_sp, base_can_sp, &sdec_sp);
         // SIM: BracketEngine on indices — no edge. Disabled.
         // if (sdec_sp.allow_bracket && !g_eng_sp.pos.active)
         //     dispatch_bracket(g_bracket_sp, ...);
@@ -5406,8 +5407,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_bracket_nq.pos.active              ||
             g_vwap_rev_nq.has_open_position());     // ADDED
         const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
-        if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
-            dispatch(g_eng_nq, g_sup_nq, base_can_nq, &sdec_nq);
+        // SIM: NQ breakout WR 26.1% -$1167. Worst index performer. Disabled.
+        // if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
+        //     dispatch(g_eng_nq, g_sup_nq, base_can_nq, &sdec_nq);
         // SIM: BracketEngine on indices — no edge. Disabled.
         // const bool nas100_bracket_open = g_bracket_nas100.has_open_position();
         // if (sdec_nq.allow_bracket && !g_eng_nq.pos.active && !nas100_bracket_open)
@@ -5475,12 +5477,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "DJ30.F") {
         const bool base_can_us30 = symbol_gate("DJ30.F", g_eng_us30.pos.active || g_bracket_us30.pos.active);
         const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30);
-        if (sdec_us30.allow_breakout && !g_bracket_us30.pos.active)
-            dispatch(g_eng_us30, g_sup_us30, base_can_us30, &sdec_us30);
-        if (sdec_us30.allow_bracket && !g_eng_us30.pos.active)
-            dispatch_bracket(g_bracket_us30, g_sup_us30, g_eng_us30, base_can_us30,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             g_macro_ctx.us30_l2_imbalance, &sdec_us30);
+        // SIM: DJ30 breakout WR 23.5% -$736, bracket also negative. Both disabled.
+        // if (sdec_us30.allow_breakout && !g_bracket_us30.pos.active)
+        //     dispatch(g_eng_us30, g_sup_us30, base_can_us30, &sdec_us30);
+        // if (sdec_us30.allow_bracket && !g_eng_us30.pos.active)
+        //     dispatch_bracket(g_bracket_us30, ...);
+        (void)sdec_us30;
     }
     else if (sym == "GER40") {
         const bool base_can_ger = symbol_gate("GER40",
@@ -5490,8 +5492,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_vwap_rev_ger40.has_open_position() || // ADDED
             g_trend_pb_ger40.has_open_position());  // ADDED
         const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger);
-        if (sdec_ger.allow_breakout && !g_bracket_ger30.pos.active)
-            dispatch(g_eng_ger30, g_sup_ger30, base_can_ger, &sdec_ger);
+        // SIM: EU index breakout — no edge. Disabled.
+        // if (sdec_ger.allow_breakout && !g_bracket_ger30.pos.active)
+        //     dispatch(g_eng_ger30, g_sup_ger30, base_can_ger, &sdec_ger);
         // SIM: BracketEngine on indices — no edge. Disabled.
         // if (sdec_ger.allow_bracket && !g_eng_ger30.pos.active)
         //     dispatch_bracket(g_bracket_ger30, ...);
@@ -5534,8 +5537,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "UK100") {
         const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active);
         const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk);
-        if (sdec_uk.allow_breakout && !g_bracket_uk100.pos.active)
-            dispatch(g_eng_uk100, g_sup_uk100, base_can_uk, &sdec_uk);
+        // SIM: EU index breakout — no edge. Disabled.
+        // if (sdec_uk.allow_breakout && !g_bracket_uk100.pos.active)
+        //     dispatch(g_eng_uk100, g_sup_uk100, base_can_uk, &sdec_uk);
         // SIM: BracketEngine on indices — no edge. Disabled.
         // if (sdec_uk.allow_bracket && !g_eng_uk100.pos.active)
         //     dispatch_bracket(g_bracket_uk100, ...);
@@ -5553,8 +5557,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "ESTX50") {
         const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active);
         const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx);
-        if (sdec_estx.allow_breakout && !g_bracket_estx50.pos.active)
-            dispatch(g_eng_estx50, g_sup_estx50, base_can_estx, &sdec_estx);
+        // SIM: EU index breakout — no edge. Disabled.
+        // if (sdec_estx.allow_breakout && !g_bracket_estx50.pos.active)
+        //     dispatch(g_eng_estx50, g_sup_estx50, base_can_estx, &sdec_estx);
         // SIM: BracketEngine on indices — no edge. Disabled.
         // if (sdec_estx.allow_bracket && !g_eng_estx50.pos.active)
         //     dispatch_bracket(g_bracket_estx50, ...);
@@ -5793,8 +5798,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "NAS100") {
         const bool base_can_nas = symbol_gate("NAS100", g_eng_nas100.pos.active || g_bracket_nas100.pos.active);
         const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas);
-        if (sdec_nas.allow_breakout && !g_bracket_nas100.pos.active)
-            dispatch(g_eng_nas100, g_sup_nas100, base_can_nas, &sdec_nas);
+        // SIM: NAS100 breakout — no edge (correlated with NQ which is also disabled). Disabled.
+        // if (sdec_nas.allow_breakout && !g_bracket_nas100.pos.active)
+        //     dispatch(g_eng_nas100, g_sup_nas100, base_can_nas, &sdec_nas);
         // SIM: BracketEngine on indices — no edge. Disabled.
         // const bool ustec_bracket_open = g_bracket_nq.has_open_position();
         // if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active && !ustec_bracket_open)
