@@ -1260,6 +1260,14 @@ public:
         if (!is_long && tp >= mid) return {};
         if (tp_dist <= 0.0)        return {};
 
+        // R:R gate: require at least 1.5:1 before generating signal.
+        // Prevents signal spam when EMA9 is nearly coincident with EMA50
+        // (tight EMA stack = ranging market = tiny TP = R:R < 0.5).
+        // These signals would just clutter the GUI and all fail the RR-FLOOR
+        // in enter_directional anyway — catch them here instead.
+        const double sl_dist_check = std::fabs(mid - sl);
+        if (sl_dist_check > 0.0 && (tp_dist / sl_dist_check) < 1.5) return {};
+
         // Cost gate
         // Cost check removed: enter_directional() performs the definitive
         // cost check with the actual computed lot size. Checking here with

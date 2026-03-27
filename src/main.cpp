@@ -6750,13 +6750,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     fflush(stdout);
                     g_trend_pb_gold.cancel();
                 } else {
-                    g_telemetry.UpdateLastSignal("GOLD.F",
-                        tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
-                        "TREND_PB", regime.c_str(), "TREND_PB",
-                        tpb.tp, tpb.sl);
-                    if (!enter_directional("GOLD.F", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true))
+                    // UpdateLastSignal AFTER enter_directional succeeds — only show trades that actually fired
+                    if (!enter_directional("GOLD.F", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true)) {
                         g_trend_pb_gold.cancel();
-                        else g_trend_pb_gold.patch_size(g_last_directional_lot);
+                    } else {
+                        g_trend_pb_gold.patch_size(g_last_directional_lot);
+                        g_telemetry.UpdateLastSignal("GOLD.F",
+                            tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
+                            "TREND_PB", regime.c_str(), "TREND_PB",
+                            tpb.tp, tpb.sl);
+                    }
                 }
             }
         }
