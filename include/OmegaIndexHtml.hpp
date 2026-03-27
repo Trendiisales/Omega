@@ -22,7 +22,6 @@ R"OMEGA0(
   --glass:rgba(11,16,26,0.88);--border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.1);
   --t1:#e8edf5;--t2:#8a9ab8;--t3:#4a5878;
   --gold:#f5c842;--gold2:#ffe680;--gold-dim:rgba(245,200,66,0.12);
-  --silver:#9ab4cc;--silver-dim:rgba(154,180,204,0.1);
   --green:#00d97e;--red:#ff3355;--amber:#ff8800;--blue:#2ea8ff;
   --purple:#a47fff;--cyan:#00c8f0;--teal:#00e0b0;
   --green-dim:rgba(0,217,126,0.12);--red-dim:rgba(255,51,85,0.1);
@@ -64,10 +63,8 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .htk{display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;
   border:1px solid var(--border);background:rgba(255,255,255,0.02);white-space:nowrap;cursor:default;}
 .htk.gold{border-color:rgba(245,200,66,0.3);background:var(--gold-dim);}
-.htk.silver{border-color:rgba(154,180,204,0.25);background:var(--silver-dim);}
 .htk-sym{font-size:10px;font-weight:700;letter-spacing:1px;color:var(--t2);}
 .htk.gold .htk-sym{color:var(--gold);}
-.htk.silver .htk-sym{color:var(--silver);}
 .htk-b{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--green);}
 .htk-a{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--red);}
 .htk-sep{color:var(--t3);font-size:11px;}
@@ -110,13 +107,12 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
   padding:5px 6px;border-radius:6px;margin-bottom:2px;border:1px solid transparent;transition:background 0.15s;}
 .sym-row:hover{background:rgba(255,255,255,0.025);}
 .sym-row.r-gold{border-color:rgba(245,200,66,0.15);background:rgba(245,200,66,0.04);}
-.sym-row.r-silver{border-color:rgba(154,180,204,0.12);background:rgba(154,180,204,0.03);}
 .sym-row.r-primary{border-color:rgba(46,168,255,0.1);}
 .sym-row.r-fx{border-color:rgba(0,200,240,0.1);}
 .sym-row.r-asia{border-color:rgba(0,224,176,0.1);}
 .sym-row.r-eu{border-color:rgba(157,127,255,0.1);}
 .sym-nm{font-size:10px;font-weight:700;letter-spacing:0.5px;}
-.c-gold{color:var(--gold)}.c-silver{color:var(--silver)}.c-blue{color:var(--blue)}
+.c-gold{color:var(--gold)}.c-blue{color:var(--blue)}
 .c-cyan{color:var(--cyan)}.c-teal{color:var(--teal)}.c-purple{color:var(--purple)}.c-t2{color:var(--t2)}
 .px-pair{display:grid;grid-template-columns:1fr 8px 1fr;align-items:center;gap:0;}
 .bid{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--green);
@@ -370,12 +366,6 @@ R"OMEGA3(
           <div class="px-pair"><span class="bid" id="goldBid">----</span><span class="px-sep">|</span><span class="ask" id="goldAsk">----</span></div>
           <span class="sprd" id="goldSpread">--</span>
         </div>
-        <div class="sym-row r-silver">
-          <span class="sym-nm c-silver">XAGUSD</span>
-          <div class="px-pair"><span class="bid" id="xagBid">----</span><span class="px-sep">|</span><span class="ask" id="xagAsk">----</span></div>
-          <span class="sprd" id="xagSpread">--</span>
-        </div>
-
         <div class="sym-section-label">▶ US Indices &amp; Oil</div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">US500.F</span>
@@ -559,9 +549,8 @@ R"OMEGA4(
 
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">★ Metals Engines</div>
-      <div class="eng-grid" style="grid-template-columns:repeat(2,1fr)">
+      <div class="eng-grid" style="grid-template-columns:repeat(1,1fr)">
         <div class="eng-cell" id="engXAU" style="border-color:rgba(245,200,66,0.2);background:rgba(245,200,66,0.04);"><div class="eng-sym" style="color:var(--gold)">GOLD.F</div><div class="eng-ph eph-flat" id="engXAUPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engXAUBid" style="color:var(--gold)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAUAsk" style="color:var(--red)">--</span></div><div class="eng-vol" id="engXAUVol">--</div><div class="eng-sigs" id="engXAUSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engXAUProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engXAUPct"></span></div><div class="eng-l2" id="engXAUL2"><div class="eng-l2-fill" id="engXAUL2F" style="width:50%;background:var(--t3)"></div></div></div>
-        <div class="eng-cell" id="engXAG" style="border-color:rgba(154,180,204,0.2);background:rgba(154,180,204,0.03);"><div class="eng-sym" style="color:var(--silver)">XAGUSD</div><div class="eng-ph eph-flat" id="engXAGPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engXAGBid" style="color:var(--silver)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAGAsk" style="color:var(--red)">--</span></div><div class="eng-vol" id="engXAGVol">--</div><div class="eng-sigs" id="engXAGSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engXAGProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engXAGPct"></span></div><div class="eng-l2" id="engXAGL2"><div class="eng-l2-fill" id="engXAGL2F" style="width:50%;background:var(--t3)"></div></div></div>
       </div>
     </div>
 )OMEGA4"
@@ -673,7 +662,6 @@ R"OMEGA5(
         <button class="depth-sym-btn active" onclick="setDepthSym('gold')" id="dbtngold">GOLD</button>
         <button class="depth-sym-btn" onclick="setDepthSym('sp')" id="dbtnsp">SP500</button>
         <button class="depth-sym-btn" onclick="setDepthSym('eur')" id="dbtnneur">EUR</button>
-        <button class="depth-sym-btn" onclick="setDepthSym('xag')" id="dbtnxag">XAG</button>
       </div>
       <!-- imbalance bar: bid pressure left (green), ask pressure right (red) -->
       <div class="depth-imb-bar">
@@ -815,17 +803,16 @@ function updateL2Bar(cellId, imb, active) {
 //   gold → gold_bids / gold_asks
 //   sp   → sp_bids   / sp_asks
 //   eur  → eur_bids  / eur_asks
-//   xag  → xag_bids  / xag_asks
 // Each level: { p: price, s: size }
 // imbalance drawn as a centred bar: bid vol left (green), ask vol right (red).
 let _depthSym = 'gold';   // currently selected symbol key
-const _depthSymL2Key = { gold:'l2_gold', sp:'l2_sp', eur:'l2_eur', xag:'l2_xag' };
+const _depthSymL2Key = { gold:'l2_gold', sp:'l2_sp', eur:'l2_eur' };
 const _depthMaxRows = 5;  // levels to show per side
 
 function setDepthSym(sym) {
   _depthSym = sym;
   // Update button active states
-  ['gold','sp','eur','xag'].forEach(s => {
+  ['gold','sp','eur'].forEach(s => {
     const b = document.getElementById('dbtn' + (s === 'eur' ? 'neur' : s));
     if (b) b.className = 'depth-sym-btn' + (s === sym ? ' active' : '');
   });
@@ -1179,7 +1166,7 @@ function renderCrossAsset(d){
   // Friendly display names
   const NAMES={
     'ORB_US':'ORB US','ORB_GER40':'ORB GER','ORB_UK100':'ORB UK',
-    'ORB_ESTX50':'ORB ESTX','ORB_XAG':'ORB XAG',
+    'ORB_ESTX50':'ORB ESTX',
     'VWAP_SP':'VWAP SP','VWAP_NQ':'VWAP NQ','VWAP_GER40':'VWAP GER','VWAP_EUR':'VWAP EUR',
     'TRENDPB_GOLD':'TPB GOLD','TRENDPB_GER':'TPB GER',
     'FXCASC_GBP':'CASCADE','ESNQ_DIV':'ES/NQ DIV','CARRY_UNW':'CARRY UNW'
@@ -1242,7 +1229,6 @@ function updateDashboard(d){
 
   // Left column
   px('goldBid',d.gold_bid,2);px('goldAsk',d.gold_ask,2);sprd('goldSpread',d.gold_bid,d.gold_ask);
-  px('xagBid',d.xag_bid,3);px('xagAsk',d.xag_ask,3);sprd('xagSpread',d.xag_bid,d.xag_ask);
   px('spBid',d.sp_bid,2);px('spAsk',d.sp_ask,2);sprd('spSpread',d.sp_bid,d.sp_ask);
   px('nqBid',d.nq_bid,2);px('nqAsk',d.nq_ask,2);sprd('nqSpread',d.nq_bid,d.nq_ask);
   px('djBid',d.dj_bid,2);px('djAsk',d.dj_ask,2);
@@ -1280,7 +1266,6 @@ function updateDashboard(d){
   updateEngCell('engNZD','engNZDPhase','engNZDVol','engNZDSig',d.nzdusd_phase,d.nzdusd_recent_vol_pct,d.nzdusd_baseline_vol_pct,d.nzdusd_signals,d.nzdusd_comp_high,d.nzdusd_comp_low,d.nzdusd_bid,d.nzdusd_ask,5,isLive('NZDUSD'),null);
   updateEngCell('engJPY','engJPYPhase','engJPYVol','engJPYSig',d.usdjpy_phase,d.usdjpy_recent_vol_pct,d.usdjpy_baseline_vol_pct,d.usdjpy_signals,d.usdjpy_comp_high,d.usdjpy_comp_low,d.usdjpy_bid,d.usdjpy_ask,3,isLive('USDJPY'),null);
   updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('GOLD.F'),d.brackets&&d.brackets.gold);
-  updateEngCell('engXAG','engXAGPhase','engXAGVol','engXAGSig',d.xag_phase,d.xag_recent_vol_pct,d.xag_baseline_vol_pct,d.xag_signals,0,0,d.xag_bid,d.xag_ask,3,isLive('XAGUSD'),d.brackets&&d.brackets.xag);
   // L2 imbalance bars
   const l2on = d.l2_active === 1;
   updateL2Bar('engSP',d.l2_sp,l2on); updateL2Bar('engNQ',d.l2_nq,l2on);
@@ -1291,7 +1276,7 @@ function updateDashboard(d){
   updateL2Bar('engEUR',d.l2_eur,l2on); updateL2Bar('engGBP',d.l2_gbp,l2on);
   updateL2Bar('engAUD',d.l2_aud,l2on); updateL2Bar('engNZD',d.l2_nzd,l2on);
   updateL2Bar('engJPY',d.l2_jpy,l2on);
-  updateL2Bar('engXAU',d.l2_gold,l2on); updateL2Bar('engXAG',d.l2_xag,l2on);
+  updateL2Bar('engXAU',d.l2_gold,l2on);
   // cTrader L2 status indicator in FIX session panel
   const l2badge = document.getElementById('ctL2Badge');
   if(l2badge) { l2badge.textContent = l2on ? 'L2 ●' : 'L2 ○'; l2badge.style.color = l2on ? 'var(--green)' : 'var(--t2)'; }
