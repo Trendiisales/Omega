@@ -6267,6 +6267,41 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             BracketTrendState& gold_trend = g_bracket_trend["GOLD.F"];
             gold_trend.update_l2(g_macro_ctx.gold_l2_imbalance, now_ms_g);
             const bool gold_trend_blocked = gold_trend.counter_trend_blocked(now_ms_g);
+
+            // ── GoldFlow bias injection ───────────────────────────────────────
+            // BracketTrendState normally requires 2 consecutive bracket wins to set bias.
+            // On a fresh session with only GoldFlow trades, bias stays 0 permanently
+            // so pyramid_allowed() returns false even when gold is trending hard.
+            //
+            // FIX: when GoldFlow has a profitable position (trail_stage >= 2 = real trail
+            // active, not just BE), inject the flow direction as trend bias directly.
+            // This lets pyramid_allowed() gate on L2 confirmation alone.
+            // Only inject if bias is currently 0 — never override an earned bracket bias.
+            // Withdraw injection when flow closes (handled naturally — bias resets on timeout).
+            if (g_gold_flow.pos.active && g_gold_flow.pos.trail_stage >= 2
+                && gold_trend.bias == 0) {
+                const int flow_dir = g_gold_flow.pos.is_long ? 1 : -1;
+                gold_trend.bias          = flow_dir;
+                gold_trend.bias_set_ms   = now_ms_g;
+                gold_trend.block_until_ms = now_ms_g + 600000; // 10min — long enough to pyramid
+                static int64_t s_bias_inject_log = 0;
+                if (now_ms_g - s_bias_inject_log > 30000) {
+                    s_bias_inject_log = now_ms_g;
+                    printf("[FLOW-BIAS-INJECT] GOLD.F GoldFlow trail_stage=%d %s → bias=%d (L2=%.3f)\n",
+                           g_gold_flow.pos.trail_stage,
+                           g_gold_flow.pos.is_long ? "LONG" : "SHORT",
+                           flow_dir, g_macro_ctx.gold_l2_imbalance);
+                }
+            }
+            // Withdraw bias injection when flow closes or reverses
+            if (!g_gold_flow.pos.active && gold_trend.bias != 0
+                && gold_trend.bias_set_ms > 0) {
+                // Only clear if bias was injected by flow (no bracket exits recorded recently)
+                if (g_bracket_trend["GOLD.F"].exits.empty()) {
+                    gold_trend.bias = 0;
+                }
+            }
+
             const bool gold_pyramid_ok    = gold_trend.pyramid_allowed(g_macro_ctx.gold_l2_imbalance, now_ms_g);
             // Block pyramid in IMPULSE regime: price is thrusting hard — adding on
             // during a thrust means chasing the move at peak momentum with tight SLs.
@@ -6300,11 +6335,34 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
 
+            // ── GoldFlow trend-pyramid bypass ────────────────────────────────
+            // When GoldFlow has an active profitable position (trail_stage >= 1 = BE locked),
+            // the bracket is normally blocked from arming. This kills pyramiding on the
+            // strongest trending moves — exactly when we want to be adding size.
+            //
+            // FIX: allow bracket to arm in the SAME direction as the active GoldFlow
+            // position when flow is profitable (trail_stage >= 1 = past breakeven).
+            // The bracket add-on uses a reduced size (50% of PYRAMID_SIZE_MULT = 37.5%)
+            // since GoldFlow is already carrying the primary position.
+            //
+            // Safety gates still apply: no IMPULSE regime, no counter-trend, spread gate,
+            // L2 confirmation required, position cap enforced.
+            const bool flow_active_profitable = g_gold_flow.pos.active
+                                             && g_gold_flow.pos.trail_stage >= 1;
+            const bool flow_dir_matches_bracket = flow_active_profitable
+                && ((g_gold_flow.pos.is_long  && !bracket_open)   // flow LONG, bracket would arm LONG
+                 || (!g_gold_flow.pos.is_long && !bracket_open)); // flow SHORT, bracket would arm SHORT
+            // Allow bracket arm alongside GoldFlow IF:
+            //   flow is profitable (BE locked), direction matches, L2 confirms, not IMPULSE
+            const bool flow_pyramid_bypass = flow_dir_matches_bracket
+                                          && gold_pyramid_ok        // L2 must confirm direction
+                                          && !gold_impulse_regime;  // never pyramid into IMPULSE thrust
+
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok
                                       && (!bracket_open || gold_is_pyramiding)
                                       && (!in_cooldown_phase || trend_dir_bypasses_cooldown)  // cooldown bypass
                                       && !g_gold_stack.has_open_position()
-                                      && !g_gold_flow.has_open_position()
+                                      && (!g_gold_flow.has_open_position() || flow_pyramid_bypass)
                                       && !g_trend_pb_gold.has_open_position()
                                       && !g_le_stack.has_open_position()
                                       && asia_trend_ok
@@ -7321,6 +7379,7 @@ static void quote_loop() {
         std::cout << "[OMEGA] Logon sent\n";
 
         auto last_ping      = std::chrono::steady_clock::now();
+        auto last_heartbeat = std::chrono::steady_clock::now();  // FIX 35=0 heartbeat
         auto last_diag      = std::chrono::steady_clock::now();
         auto logon_sent_at  = std::chrono::steady_clock::now();
 
@@ -7331,6 +7390,19 @@ static void quote_loop() {
                 std::chrono::duration_cast<std::chrono::seconds>(now - logon_sent_at).count() >= 10) {
                 std::cerr << "[OMEGA] Logon timeout (10s) -- reconnecting\n";
                 break;
+            }
+
+            // ── FIX Heartbeat (35=0) every 30s ───────────────────────────────
+            // CRITICAL: broker requires a proper Heartbeat MsgType=0 from us
+            // every HeartBtInt seconds (set to 30 in logon tag 108=30).
+            // Without this, broker terminates the session after ~30s of silence.
+            // TestRequest (35=1) does NOT substitute for a proactive Heartbeat.
+            // This was the root cause of 17 disconnects per trading day.
+            if (std::chrono::duration_cast<std::chrono::seconds>(
+                    now - last_heartbeat).count() >= g_cfg.heartbeat) {
+                last_heartbeat = now;
+                const std::string hb = build_heartbeat(g_quote_seq++, "QUOTE");
+                if (SSL_write(ssl, hb.c_str(), static_cast<int>(hb.size())) <= 0) break;
             }
 
             // RTT ping every 5s

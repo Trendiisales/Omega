@@ -76,7 +76,7 @@ static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- 
                                                         // producing SL of $0.3–5 depending on micro-volatility.
                                                         // 100 ticks = ~10-30s, EWM-smoothed, stable across sessions.
 static constexpr double GFE_ATR_EWM_ALPHA     = 0.05;  // EWM smoothing alpha for ATR (20-tick equivalent half-life)
-static constexpr double GFE_ATR_MIN           = 2.0;   // ATR floor in $pts -- prevents sub-$2 SL on dead tape
+static constexpr double GFE_ATR_MIN           = 0.5;   // ATR floor in $pts -- lowered 2.0→0.5: real ATR drives trail tightness. Spread gate (GFE_MAX_SPREAD=$0.60) already prevents entries on dead tape so $2 floor was overcautious and artificially widened trails on active sessions.
 static constexpr double GFE_ATR_SL_MULT       = 1.0;   // SL = ATR * this
 static constexpr double GFE_TRAIL_STAGE2_MULT = 1.5;   // EA-matched: wider initial trail, ride moves
 static constexpr double GFE_TRAIL_STAGE3_MULT = 0.5;   // tighten to 0.5x ATR at stage 3
