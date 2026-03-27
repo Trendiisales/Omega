@@ -225,14 +225,14 @@ R"OMEGA1(
   padding:1px 4px;border-radius:3px;background:rgba(245,200,66,0.1);}
 
 /* Signal + trade area */
-.sig-trade-area{flex:1;display:grid;grid-template-rows:auto 1fr;gap:8px;min-height:0;overflow:hidden;}
-.last-sig{flex-shrink:0;background:var(--glass);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
+.sig-trade-area{flex:1;display:flex;flex-direction:column;gap:8px;min-height:0;overflow:hidden;}
+.last-sig{flex-shrink:0;max-height:38vh;overflow-y:auto;background:var(--glass);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
 .sig-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:center;}
 .sig-field-lbl{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;}
 .sig-field-val{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;}
 
-.trades-card{flex:1;background:var(--glass);border:1px solid var(--border);border-radius:10px;
-  display:flex;flex-direction:column;overflow:hidden;min-height:0;}
+.trades-card{flex:1;min-height:220px;background:var(--glass);border:1px solid var(--border);border-radius:10px;
+  display:flex;flex-direction:column;overflow:hidden;}
 .trades-scroll{flex:1;overflow-y:auto;}
 .trades-scroll::-webkit-scrollbar{width:3px;}
 .trades-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px;}
@@ -569,11 +569,11 @@ R"OMEGA5(
     <!-- Last signal + trades -->
     <div class="sig-trade-area">
       <div class="last-sig">
-        <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
-          <span style="width:4px;height:4px;border-radius:50%;background:var(--amber);flex-shrink:0;display:inline-block;"></span>Last Signal
+        <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;margin-bottom:5px;display:flex;align-items:center;gap:6px;">
+          <span style="width:4px;height:4px;border-radius:50%;background:var(--amber);flex-shrink:0;display:inline-block;"></span>Last Signals
           <button id="bellBtn" onclick="toggleBell()" style="margin-left:auto;background:rgba(255,214,0,.1);border:1px solid rgba(255,214,0,0.4);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:9px;color:#ffd600;font-family:inherit;font-weight:700;">🔔 ARM BELL</button>
         </div>
-        <div id="lastSignalDetail"><span style="color:var(--t2);font-size:13px;">Waiting for first signal…</span></div>
+        <div id="lastSignalDetail"><span style="color:var(--t2);font-size:12px;">Waiting for first signal…</span></div>
       </div>
 
       <!-- SL Cooldown Panel -->
@@ -591,9 +591,9 @@ R"OMEGA5(
           <table>
             <thead><tr>
               <th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th>
-              <th>Held</th><th>Result</th><th>Reason</th><th>Regime</th><th>Bracket</th><th>Gross</th><th>Slip</th><th>Net</th>
+              <th>Held</th><th>Result</th><th>Engine / Reason</th><th>Gross</th><th>Slip</th><th style="color:var(--green)">Net $$</th>
             </tr></thead>
-            <tbody id="tradesBody"><tr><td colspan="13" class="no-data">No trades yet</td></tr></tbody>
+            <tbody id="tradesBody"><tr><td colspan="11" class="no-data">No trades yet</td></tr></tbody>
 
           </table>
         </div>
@@ -977,84 +977,39 @@ R"OMEGA18(
 function renderLastSignal(d){
   const el=document.getElementById('lastSignalDetail');if(!el)return;
   const hist=d.signal_history||[];
-  if(hist.length===0){
-    el.innerHTML='<span style="color:var(--t2);font-size:13px;">Waiting for first signal…</span>';return;}
-  el.innerHTML=hist.map((s,i)=>{
+  if(hist.length===0){el.innerHTML='<span style="color:var(--t2);font-size:12px;">Waiting for first signal…</span>';return;}
+  // Compact one-line-per-signal table with full detail on hover expansion for latest
+  const latest=hist[0];
+  // Build compact rows for all signals
+  const rows=hist.map((s,i)=>{
     const isBracket=s.side==='BRACKET';
-    const age=i===0?'<span style="font-size:10px;color:var(--gold);margin-left:6px;padding:1px 5px;background:rgba(255,214,0,0.12);border-radius:3px;border:1px solid rgba(255,214,0,0.3)">LATEST</span>':'';
-    // Regime badges
-    const sup=s.sup_regime||'';
-    const mac=s.macro||'';
-    const eng=s.engine||'';
-    const supCol=sup.includes('EXPANSION')||sup.includes('TREND')?'var(--green)':sup.includes('QUIET')||sup.includes('REVERSAL')?'var(--amber)':'var(--t2)';
-    const macCol=mac==='RISK_ON'?'var(--green)':mac==='RISK_OFF'?'var(--red)':'var(--amber)';
-    const engCol=eng==='BRACKET'?'var(--cyan)':eng==='LE'?'var(--purple, #b388ff)':'var(--blue)';
-    const regimeBadges=`<span style="display:inline-flex;gap:4px;align-items:center;margin-left:6px">
-      ${sup?`<span style="font-size:10px;color:${supCol};background:rgba(255,255,255,0.05);border-radius:3px;padding:1px 5px;border:1px solid rgba(255,255,255,0.1)">${sup}</span>`:''}
-      ${mac?`<span style="font-size:10px;color:${macCol};background:rgba(255,255,255,0.05);border-radius:3px;padding:1px 5px;border:1px solid rgba(255,255,255,0.1)">${mac}</span>`:''}
-      ${eng?`<span style="font-size:10px;color:${engCol};background:rgba(255,255,255,0.05);border-radius:3px;padding:1px 5px;border:1px solid rgba(255,255,255,0.1)">${eng}</span>`:''}
-    </span>`;
-
-    // ── TP / SL price boxes + R:R bar ─────────────────────────────────────
-    const tp=s.tp||0; const sl=s.sl||0; const entry=s.price||0;
-    let tpSlRow='';
-    if(!isBracket && tp>0 && sl>0 && entry>0){
-      const isLong=s.side==='LONG';
-      const tpDist=Math.abs(tp-entry);
-      const slDist=Math.abs(sl-entry);
-      const rr=slDist>0?(tpDist/slDist):0;
-      const rrColor=rr>=2?'var(--green)':rr>=1.5?'var(--amber)':'var(--red)';
-      // R:R bar: green portion = tp distance, red = sl distance, proportional
-      const total=tpDist+slDist;
-      const tpPct=total>0?Math.round(tpDist/total*100):50;
-      const slPct=100-tpPct;
-      // Determine decimal places from price magnitude
-      const dec=entry>100?2:entry>1?4:5;
-      tpSlRow=`<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">
-        <span style="font-size:10px;color:var(--t2);min-width:36px">ENTRY</span>
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--amber);background:rgba(255,214,0,0.1);border:1px solid rgba(255,214,0,0.3);border-radius:3px;padding:1px 7px">${entry.toFixed(dec)}</span>
-        <span style="font-size:10px;color:var(--t2)">→</span>
-        <span style="font-size:10px;color:var(--green);font-weight:700">TP</span>
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--green);background:rgba(0,217,126,0.12);border:1px solid rgba(0,217,126,0.4);border-radius:3px;padding:1px 7px">${tp.toFixed(dec)}</span>
-        <span style="font-size:10px;color:var(--t2);margin-left:2px">(${isLong?'+':'−'}${tpDist.toFixed(dec)})</span>
-        <span style="font-size:10px;color:var(--red);font-weight:700;margin-left:4px">SL</span>
-        <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--red);background:rgba(255,51,85,0.12);border:1px solid rgba(255,51,85,0.4);border-radius:3px;padding:1px 7px">${sl.toFixed(dec)}</span>
-        <span style="font-size:10px;color:var(--t2);margin-left:2px">(${isLong?'−':'+'}${slDist.toFixed(dec)})</span>
-        <span style="display:inline-flex;align-items:center;gap:4px;margin-left:6px">
-          <div style="width:48px;height:5px;border-radius:3px;overflow:hidden;display:flex">
-            <div style="width:${tpPct}%;background:rgba(0,217,126,0.7)"></div>
-            <div style="width:${slPct}%;background:rgba(255,51,85,0.7)"></div>
-          </div>
-          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:${rrColor};font-weight:700">${rr.toFixed(1)}R</span>
-        </span>
-      </div>`;
-    } else if(isBracket && s.reason){
-      // Bracket: show HI/LO levels from reason string
-      const hiM=s.reason.match(/HI:([\d.]+)/);
-      const loM=s.reason.match(/LO:([\d.]+)/);
-      const hi=hiM?parseFloat(hiM[1]):0;
-      const lo=loM?parseFloat(loM[1]):0;
-      const range=hi&&lo?(hi-lo).toFixed(2):'--';
-      tpSlRow=`<div style="display:flex;align-items:center;gap:6px;margin-top:4px">
-        <span style="font-size:10px;color:var(--t2)">RANGE</span>
-        <span style="background:rgba(0,217,126,0.15);border:1px solid var(--green);border-radius:3px;padding:1px 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--green)">▲ ${hi>0?hi.toFixed(2):'--'}</span>
-        <span style="background:rgba(255,51,85,0.15);border:1px solid var(--red);border-radius:3px;padding:1px 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--red)">▼ ${lo>0?lo.toFixed(2):'--'}</span>
-        <span style="color:var(--t2);font-size:11px">Δ${range}</span>
-      </div>`;
-    }
-
     const sc=isBracket?'var(--amber)':s.side==='LONG'?'var(--green)':'var(--red)';
-    const sideLabel=isBracket?'BRACKET ⟺':s.side;
-    const reasonLabel=!isBracket?`<span style="color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:11px;margin-left:4px">${s.reason||''}</span>`:'';
-    return `<div class="sig-row" style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);opacity:${1-i*0.15}">
-      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px">
-        <span style="color:var(--blue);font-weight:700;min-width:72px;display:inline-block">${s.symbol||'--'}</span>
-        <span style="color:${sc};font-weight:700;min-width:60px;display:inline-block">${sideLabel}</span>
-        ${reasonLabel}${regimeBadges}${age}
-      </div>
-      ${tpSlRow}
+    const eng=s.engine||'';
+    const dec=(s.price||0)>100?2:(s.price||0)>1?4:5;
+    const entry=s.price||0;
+    const tp=s.tp||0; const sl=s.sl||0;
+    const isLong=s.side==='LONG';
+    const tpDist=tp>0&&entry>0?Math.abs(tp-entry):0;
+    const slDist=sl>0&&entry>0?Math.abs(sl-entry):0;
+    const rr=slDist>0?(tpDist/slDist):0;
+    const rrCol=rr>=2?'var(--green)':rr>=1.5?'var(--amber)':'var(--red)';
+    const rrStr=rr>0?`<span style="color:${rrCol};font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700">${rr.toFixed(1)}R</span>`:'';
+    const tpStr=tp>0?`<span style="color:var(--green);font-family:'IBM Plex Mono',monospace;font-size:10px">tp:${tp.toFixed(dec)}</span>`:'';
+    const slStr=sl>0?`<span style="color:var(--red);font-family:'IBM Plex Mono',monospace;font-size:10px">sl:${sl.toFixed(dec)}</span>`:'';
+    const latest_badge=i===0?'<span style="font-size:9px;color:var(--gold);padding:0 4px;background:rgba(255,214,0,0.15);border-radius:2px;border:1px solid rgba(255,214,0,0.3)">LATEST</span>':'';
+    const engBadge=eng?`<span style="font-size:9px;color:var(--blue);padding:0 4px;background:rgba(0,136,255,0.1);border-radius:2px">${eng}</span>`:'';
+    const rowBg=i===0?'rgba(255,214,0,0.04)':'';
+    return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);background:${rowBg};flex-wrap:wrap">
+      ${latest_badge}
+      <span style="color:var(--blue);font-weight:700;font-size:12px;min-width:68px">${s.symbol||'--'}</span>
+      <span style="color:${sc};font-weight:700;font-size:12px;min-width:46px">${isBracket?'BRKT':s.side}</span>
+      <span style="color:var(--amber);font-family:'IBM Plex Mono',monospace;font-size:11px">${entry>0?entry.toFixed(dec):'--'}</span>
+      ${tpStr}${slStr}${rrStr}
+      <span style="color:var(--t2);font-size:10px;flex:1;text-align:right;min-width:60px">${s.reason||''}</span>
+      ${engBadge}
     </div>`;
   }).join('');
+  el.innerHTML=rows;
 }
 )OMEGA18"
 R"OMEGA19(
@@ -1094,7 +1049,7 @@ R"OMEGA21(
 
 function renderTrades(trades){
   const el=document.getElementById('tradesBody'),cE=document.getElementById('tradeCount');
-  if(!trades||trades.length===0){el.innerHTML='<tr><td colspan="12" class="no-data">No trades yet</td></tr>';if(cE)cE.textContent='';return;}
+  if(!trades||trades.length===0){el.innerHTML='<tr><td colspan="11" class="no-data">No trades yet</td></tr>';if(cE)cE.textContent='';return;}
   const closed=trades.filter(t=>t.exitReason&&t.exitReason!=='');
   if(_bellBootCount<0){_bellBootCount=closed.length;_lastTradeCount=closed.length;}
   if(_bellEnabled&&closed.length>_lastTradeCount&&_lastTradeCount>=_bellBootCount){const pnl=safe(closed[0].net_pnl);pnl>0?_playWinBell():_playLossBell();}
@@ -1125,20 +1080,22 @@ function renderTrades(trades){
     const regCol=tReg.includes('EXPANSION')||tReg.includes('TREND')?'var(--green)':tReg.includes('QUIET')?'var(--amber)':'var(--t2)';
     const engBadge=tEng?`<span style="font-size:9px;color:var(--cyan);margin-left:3px">${tEng}</span>`:'';
     const regimeCell=`<span style="color:${regCol};font-size:10px">${tReg||'--'}</span>${engBadge}`;
+    // Engine + reason combined cell
+    const engName=(t.engine||'').replace('Engine','').replace('GoldFlow','GFlow').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag');
+    const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('BE_HIT','BE');
+    const engReasonCell=`<span style="color:var(--cyan);font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
     return `<tr style="background:${rowBg}">
-      <td style="color:var(--t2);font-size:12px">${fmtUTC(safe(t.entryTs))}</td>
-      <td style="color:var(--blue);font-weight:700">${t.symbol||'--'}</td>
+      <td style="color:var(--t2);font-size:11px">${fmtUTC(safe(t.entryTs))}</td>
+      <td style="color:var(--blue);font-weight:700;font-size:13px">${t.symbol||'--'}</td>
       <td style="color:${sc};font-weight:700">${t.side||'--'}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;font-size:13px">${safe(t.price)>0?safe(t.price).toFixed(2):'--'}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;color:var(--t2);font-size:13px">${isOpen?'<span style="color:var(--blue);font-size:12px">open</span>':safe(t.exitPrice)>0?safe(t.exitPrice).toFixed(2):'--'}</td>
-      <td style="color:var(--t2);font-size:12px">${heldStr}</td>
-      <td style="font-weight:700;color:${rc}">${result}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;color:var(--gold);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'--':(t.exitReason||'--')}</td>
-      <td style="font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${regimeCell}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--t2)">${(t.bracket_hi&&t.bracket_lo&&t.bracket_hi>0)?('↑'+safe(t.bracket_hi).toFixed(2)+' ↓'+safe(t.bracket_lo).toFixed(2)):'--'}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;color:${gross>=0?'var(--green)':'var(--red)'};font-size:13px">${grossD}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;color:var(--red);font-size:12px">${slipD}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;color:${netC};font-weight:700">${netD}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:12px">${safe(t.price)>0?safe(t.price).toFixed(2):'--'}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;color:var(--t2);font-size:12px">${isOpen?'<span style="color:var(--blue);font-size:11px">open</span>':safe(t.exitPrice)>0?safe(t.exitPrice).toFixed(2):'--'}</td>
+      <td style="color:var(--t2);font-size:11px">${heldStr}</td>
+      <td style="font-weight:700;color:${rc};font-size:13px">${result}</td>
+      <td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${engReasonCell}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;color:${gross>=0?'var(--green)':'var(--red)'};font-size:12px">${grossD}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;color:var(--red);font-size:11px">${slipD}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;color:${netC};font-weight:900;font-size:14px;letter-spacing:-0.3px">${netD}</td>
     </tr>`;
   }).join('');
 }
