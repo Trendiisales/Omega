@@ -463,18 +463,37 @@ public:
             // ── REGIME-FLIP EXIT (Gold pattern) ──────────────────────────────
             // If supervisor regime changes after REGIME_FLIP_MIN_HOLD_SEC,
             // the structure that justified entry has changed — exit at mid.
+            // Exception: if the trail has already moved past breakeven the trade
+            // is self-funding. Let the trail manage the exit — a regime flip on a
+            // winner just means the market is transitioning, not reversing.
             // Cap at SL if price has blown past it (reconnect/sparse tick safety).
             if (macro_regime && pos.entry_regime[0] != '\0' &&
                 std::strncmp(macro_regime, pos.entry_regime, 31) != 0 &&
                 (nowSec() - pos.entry_ts) >= REGIME_FLIP_MIN_HOLD_SEC) {
-                const bool sl_breached = pos.is_long ? (mid < pos.sl) : (mid > pos.sl);
-                const double flip_exit = sl_breached ? pos.sl : mid;
-                std::cout << "[ENG-" << symbol << "] REGIME_FLIP exit="
-                          << flip_exit << " was=" << pos.entry_regime
-                          << " now=" << macro_regime << "\n";
-                std::cout.flush();
-                closePos(flip_exit, "REGIME_FLIP", latency_ms, macro_regime, on_close);
-                return {};
+                const double sl_pct_rf    = (pos.sl_pct > 0.0) ? pos.sl_pct : SL_PCT;
+                const double lock_gain_rf = sl_pct_rf * 0.10;
+                const double be_long_rf   = pos.entry * (1.0 + lock_gain_rf / 100.0);
+                const double be_short_rf  = pos.entry * (1.0 - lock_gain_rf / 100.0);
+                const bool trail_locked   = pos.is_long ? (pos.sl >= be_long_rf)
+                                                        : (pos.sl <= be_short_rf);
+                if (trail_locked) {
+                    std::cout << "[ENG-" << symbol << "] REGIME_FLIP-SUPPRESSED trail in profit"
+                              << " was=" << pos.entry_regime << " now=" << macro_regime
+                              << " sl=" << pos.sl << " entry=" << pos.entry << "\n";
+                    std::cout.flush();
+                    // Update entry_regime so this only logs once per flip, not every tick.
+                    std::strncpy(pos.entry_regime, macro_regime, 31);
+                    pos.entry_regime[31] = '\0';
+                } else {
+                    const bool sl_breached = pos.is_long ? (mid < pos.sl) : (mid > pos.sl);
+                    const double flip_exit = sl_breached ? pos.sl : mid;
+                    std::cout << "[ENG-" << symbol << "] REGIME_FLIP exit="
+                              << flip_exit << " was=" << pos.entry_regime
+                              << " now=" << macro_regime << "\n";
+                    std::cout.flush();
+                    closePos(flip_exit, "REGIME_FLIP", latency_ms, macro_regime, on_close);
+                    return {};
+                }
             }
 
             // TP/SL checks use the aggressive fill side of the spread.

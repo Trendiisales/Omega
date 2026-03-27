@@ -3656,15 +3656,27 @@ public:
             if (regime && leg.regime[0] != '\0' &&
                 std::strncmp(regime, leg.regime, 31) != 0 &&
                 held_so_far >= 60) {
-                // Cap exit at SL if price has blown through — same logic as TIMEOUT.
-                // Sparse ticks during reconnect can cause price to drift past SL
-                // without triggering the explicit SL check above. REGIME_FLIP at
-                // raw mid could then record a loss larger than the intended stop.
-                const bool sl_breached = leg.is_long ? (mid < leg.sl) : (mid > leg.sl);
-                const double regime_flip_exit = sl_breached ? leg.sl : mid;
-                close_leg(static_cast<size_t>(i), regime_flip_exit, "REGIME_FLIP", latency_ms, regime, on_close);
-                closed_any = true;
-                continue;
+                // If the trail has moved past breakeven, the position is
+                // self-funding — let the trail manage the exit. A regime flip
+                // on a winner just means the market is transitioning, not reversing.
+                if (leg_profit_locked(leg)) {
+                    printf("[GOLD-STACK-REGIME_FLIP-SUPPRESSED] %s hold=%lds trail in profit sl=%.2f entry=%.2f\n",
+                           leg.engine, (long)held_so_far, leg.sl, leg.entry);
+                    fflush(stdout);
+                    // Update regime so this logs once per flip, not every tick.
+                    std::strncpy(leg.regime, regime, 31);
+                    leg.regime[31] = '\0';
+                } else {
+                    // Cap exit at SL if price has blown through — same logic as TIMEOUT.
+                    // Sparse ticks during reconnect can cause price to drift past SL
+                    // without triggering the explicit SL check above. REGIME_FLIP at
+                    // raw mid could then record a loss larger than the intended stop.
+                    const bool sl_breached = leg.is_long ? (mid < leg.sl) : (mid > leg.sl);
+                    const double regime_flip_exit = sl_breached ? leg.sl : mid;
+                    close_leg(static_cast<size_t>(i), regime_flip_exit, "REGIME_FLIP", latency_ms, regime, on_close);
+                    closed_any = true;
+                    continue;
+                }
             }
 
             // Tiered trail: base leg (idx 0) wide, pyramids progressively tighter
