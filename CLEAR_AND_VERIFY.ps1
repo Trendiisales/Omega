@@ -16,43 +16,31 @@ try {
     Write-Host "  Not running." -ForegroundColor Gray
 }
 
-# ── Step 2: Delete ALL trade CSVs ────────────────────────────────────────────
+# ── Step 2: PRESERVE trade CSVs — only wipe open-position state files ─────────
 Write-Host ""
-Write-Host "[2] Deleting ALL trade CSVs (every write + read path)..." -ForegroundColor Yellow
+Write-Host "[2] Preserving ALL trade history CSVs..." -ForegroundColor Green
+Write-Host "  NOTE: Historical trade data is NEVER deleted." -ForegroundColor Cyan
+Write-Host "  Only open-position state files are cleared on restart." -ForegroundColor Cyan
 
-# Every directory main.cpp writes to AND every fallback TelemetryServer reads from
-$allDirs = @(
-    "C:\Omega\logs\trades",
-    "C:\Omega\logs\gold",
-    "C:\Omega\logs\shadow\trades",
-    "C:\Omega\logs\shadow",
-    "C:\Omega\logs",
-    "C:\Omega\build\Release\logs\trades",
-    "C:\Omega\build\Release\logs",
-    "C:\Omega\build\Release",
-    "C:\Omega"
-)
-
-# Every filename pattern written by main.cpp or read by TelemetryServer
-$allPatterns = @(
-    "omega_trade_closes*.csv",
-    "omega_trade_opens*.csv",
-    "omega_gold_trade_closes*.csv",
-    "omega_shadow_trades*.csv",
-    "omega_shadow*.csv",
-    "omega_trades*.csv",
-    "omega_tod_buckets.csv",
-    "day_results.csv"
+# Only delete the opens log (tracks currently open positions — stale after restart)
+# NEVER delete closes, shadow, gold, or tod files — these are the historical record
+$stateOnlyPatterns = @(
+    "omega_trade_opens.csv",
+    "omega_trade_opens_*.csv"
 )
 
 $deleted = 0
-foreach ($dir in $allDirs) {
+$stateDirs = @(
+    "C:\Omega\logs\trades",
+    "C:\Omega\build\Release\logs\trades"
+)
+foreach ($dir in $stateDirs) {
     if (Test-Path $dir) {
-        foreach ($pat in $allPatterns) {
+        foreach ($pat in $stateOnlyPatterns) {
             $files = Get-ChildItem -Path $dir -Filter $pat -ErrorAction SilentlyContinue
             foreach ($f in $files) {
                 Remove-Item $f.FullName -Force
-                Write-Host "  DELETED: $($f.FullName)" -ForegroundColor Red
+                Write-Host "  CLEARED (state only): $($f.FullName)" -ForegroundColor Yellow
                 $deleted++
             }
         }
@@ -60,28 +48,31 @@ foreach ($dir in $allDirs) {
 }
 
 if ($deleted -eq 0) {
-    Write-Host "  No CSV files found to delete." -ForegroundColor DarkGray
+    Write-Host "  No state files to clear." -ForegroundColor DarkGray
 } else {
-    Write-Host "  Total deleted: $deleted file(s)" -ForegroundColor Green
+    Write-Host "  Cleared $deleted state file(s). Trade history preserved." -ForegroundColor Green
 }
 
-# ── Step 3: Verify nothing remains ───────────────────────────────────────────
+# ── Step 3: Show what historical data exists ──────────────────────────────────
 Write-Host ""
-Write-Host "[3] Verifying no trade CSVs remain..." -ForegroundColor Yellow
-$remaining = 0
-foreach ($dir in $allDirs) {
+Write-Host "[3] Historical trade data on disk:" -ForegroundColor Yellow
+$histPatterns = @("omega_trade_closes*.csv","omega_shadow*.csv","omega_gold*.csv","omega_shadow_trades*.csv")
+$histDirs = @("C:\Omega\logs\trades","C:\Omega\logs\shadow","C:\Omega\logs\shadow\trades","C:\Omega\logs\gold")
+$totalRows = 0
+foreach ($dir in $histDirs) {
     if (Test-Path $dir) {
-        foreach ($pat in $allPatterns) {
+        foreach ($pat in $histPatterns) {
             $files = Get-ChildItem -Path $dir -Filter $pat -ErrorAction SilentlyContinue
             foreach ($f in $files) {
-                Write-Host "  STILL EXISTS: $($f.FullName)" -ForegroundColor Red
-                $remaining++
+                $rows = (Get-Content $f.FullName -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
+                $totalRows += $rows
+                Write-Host "  PRESERVED: $($f.FullName)  $([math]::Round($f.Length/1KB,1))KB  ($rows rows)" -ForegroundColor Green
             }
         }
     }
 }
-if ($remaining -eq 0) {
-    Write-Host "  Clean - no trade CSVs remaining." -ForegroundColor Green
+if ($totalRows -eq 0) {
+    Write-Host "  No historical trade data yet — will accumulate from first trade." -ForegroundColor Yellow
 }
 
 # ── Step 4: Verify log directory ─────────────────────────────────────────────
@@ -157,4 +148,4 @@ foreach ($dir in @("C:\Omega\logs\trades","C:\Omega\logs\gold")) {
 Write-Host ""
 Write-Host "=== DONE ===" -ForegroundColor Cyan
 Write-Host "GUI: http://185.167.119.59:7779" -ForegroundColor Green
-Write-Host "Trade history panel should now show 0 trades." -ForegroundColor Green
+Write-Host "Trade history is PRESERVED across restarts." -ForegroundColor Green
