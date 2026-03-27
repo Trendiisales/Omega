@@ -3695,6 +3695,20 @@ public:
             }
 
             if (now - leg.entry_ts >= MAX_HOLD_SEC) {
+                // If the trail has moved SL past breakeven the position is a winner —
+                // suppress the timeout and let the trailing stop handle the exit.
+                // Cutting a running trade at an arbitrary time cap defeats the purpose
+                // of progressive trailing entirely.
+                const bool trail_in_profit = leg.is_long
+                    ? (leg.sl >= leg.entry + LOCK_GAIN)
+                    : (leg.sl <= leg.entry - LOCK_GAIN);
+                if (trail_in_profit) {
+                    printf("[GOLD-STACK-TIMEOUT-SUPPRESSED] %s hold=%lds trail in profit sl=%.2f entry=%.2f mfe=%.2f\n",
+                           leg.engine, (long)(now - leg.entry_ts), leg.sl, leg.entry, leg.mfe);
+                    fflush(stdout);
+                    continue;  // ride it — trail or TP will close
+                }
+                // Not in profit — apply normal timeout.
                 // Cap timeout exit at SL if price has blown through — prevents a
                 // position being held 10min at a price far beyond the intended stop.
                 // Incident: ImpulseContinuation SHORT timed out at 5013.15 (mid)

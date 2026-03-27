@@ -677,6 +677,26 @@ public:
             }
 
             if (nowSec() - pos.entry_ts >= static_cast<int64_t>(MAX_HOLD_SEC)) {
+                // If the trail has moved to profit (SL past breakeven), the position
+                // is a winner — suppress the timeout and let the trailing stop handle
+                // the exit naturally. Killing a running trade at an arbitrary time cap
+                // is exactly what the trail exists to prevent.
+                const double sl_pct_now   = (pos.sl_pct > 0.0) ? pos.sl_pct : SL_PCT;
+                const double lock_gain_pct = sl_pct_now * 0.10;
+                const double be_long  = pos.entry * (1.0 + lock_gain_pct / 100.0);
+                const double be_short = pos.entry * (1.0 - lock_gain_pct / 100.0);
+                const bool trail_in_profit = pos.is_long ? (pos.sl >= be_long)
+                                                         : (pos.sl <= be_short);
+                if (trail_in_profit) {
+                    // Trail is protecting profit — ride until SL or TP hits.
+                    // Log every MAX_HOLD_SEC so we know it is alive.
+                    std::cout << "[ENG-" << symbol << "] TIMEOUT-SUPPRESSED trail in profit"
+                              << " held=" << (nowSec() - pos.entry_ts) << "s"
+                              << " sl=" << pos.sl << " entry=" << pos.entry
+                              << " mfe=" << pos.mfe << "\n";
+                    return {};
+                }
+                // Not in profit — apply normal timeout.
                 // Cap timeout exit at SL if price has blown through — mirrors the
                 // GoldStack fix. Sparse ticks on reconnect can allow price to pass
                 // the SL level without triggering the check above. Without this,

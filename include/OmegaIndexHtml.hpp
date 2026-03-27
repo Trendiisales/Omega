@@ -462,6 +462,16 @@ R"OMEGA3(
       </div>
     </div>
 
+    <!-- ── Cross-Asset Engines Panel ── -->
+    <div class="eng-section" style="margin-top:4px;" id="caEngSection">
+      <div class="eng-section-label" style="display:flex;align-items:center;gap:6px;">
+        ⚡ Cross-Asset
+        <span id="caBlockedBadge" style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid rgba(255,136,0,0.3);color:var(--amber);font-family:'IBM Plex Mono',monospace;display:none;">0 blocked</span>
+        <span id="caActiveBadge" style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid rgba(0,217,126,0.3);color:var(--green);font-family:'IBM Plex Mono',monospace;margin-left:auto;display:none;">● LIVE</span>
+      </div>
+      <div id="caEngGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:4px;"></div>
+    </div>
+
   </div>
 
   <!-- ── CENTRE ── -->
@@ -555,16 +565,6 @@ R"OMEGA4(
     </div>
 )OMEGA4"
 R"OMEGA5(
-
-    <!-- ── Cross-Asset Engines Panel ── -->
-    <div class="eng-section" style="margin-top:6px;" id="caEngSection">
-      <div class="eng-section-label" style="display:flex;align-items:center;gap:8px;">
-        ⚡ Cross-Asset Engines
-        <span id="caBlockedBadge" style="font-size:10px;padding:1px 7px;border-radius:3px;border:1px solid rgba(255,136,0,0.3);color:var(--amber);font-family:'IBM Plex Mono',monospace;display:none;">0 blocked</span>
-        <span id="caActiveBadge" style="font-size:10px;padding:1px 7px;border-radius:3px;border:1px solid rgba(0,217,126,0.3);color:var(--green);font-family:'IBM Plex Mono',monospace;margin-left:auto;display:none;">● LIVE</span>
-      </div>
-      <div id="caEngGrid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:5px;"></div>
-    </div>
 
     <!-- Watchdog banner — shown when session is active but no trade in 20min -->
     <div id="watchdogBanner" style="display:none;margin:0 0 6px 0;padding:7px 12px;background:rgba(255,136,0,0.10);border:1px solid rgba(255,136,0,0.45);border-radius:7px;display:none;align-items:center;gap:10px;">
