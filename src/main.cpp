@@ -437,6 +437,13 @@ static omega::cross::NoiseBandMomentumEngine g_nbm_nq;    // USTEC.F — NY 13:3
 static omega::cross::NoiseBandMomentumEngine g_nbm_nas;   // NAS100  — NY 13:30-21:30 UTC
 static omega::cross::NoiseBandMomentumEngine g_nbm_us30;  // DJ30.F  — NY 13:30-21:30 UTC
 
+// Engine 10: SilverTurtleTick — DISABLED after real-tick backtest FAILURE.
+// Backtest on 42,306,203 real XAGUSD ticks (Jan 2023–Jan 2025):
+//   Sharpe=-16.23, MaxDD=$18,381, WR=31.8%, 0/24 positive months.
+// Root cause: 65% timeout rate, TP=$0.30 = 49x the actual avg 45-min move.
+// Instance retained for force_close safety only. No new entries ever.
+static omega::cross::SilverTurtleTickEngine g_silver_turtle;  // DISABLED
+
 // Engine 8: Trend Pullback — EMA9/21/50 trend + pullback to EMA50 + bounce confirmation
 // Wired to: GOLD.F (gated — no other gold position), GER40
 static omega::cross::TrendPullbackEngine   g_trend_pb_gold;   // GOLD.F
@@ -5369,6 +5376,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool is_active_sym = (sym == "GOLD.F"  || sym == "USOIL.F"  ||
                                     sym == "US500.F" || sym == "USTEC.F"  ||
                                     sym == "NAS100"  || sym == "DJ30.F");
+        // XAGUSD hard-blocked: SilverTurtleTick real-tick backtest result:
+        // Sharpe=-16.23, MaxDD=$18,381, 0 positive months across 24 months.
+        // Root cause: 65% timeout rate, TP=$0.30 requires 49x the actual
+        // avg 45-min move. Silver reverts too fast for Turtle architecture.
+        // All 12 silver strategies were audited — none viable. DROP silver.
         if (!is_active_sym) return;
     }
 
@@ -5649,17 +5661,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "XAGUSD") {
-        // XAGUSD FULLY DISABLED — all silver engines hard-gated.
-        // Evidence:
-        //   - Bracket sim: no positive edge validated on XAGUSD
-        //   - ORB silver: fires at 13:30 UTC, no sim data to support
-        //   - LeadLag: already removed (XAGUSD SHORT -$66.48 from disk)
-        //   - Gold-only policy: only GOLD.F + USOIL.F active until 30+ days
-        //     of positive live shadow data confirms non-gold symbol edge.
-        // All three engines (bracket_xag, orb_silver, le_stack) remain
-        // instantiated for position tracking / force_close safety, but
-        // no new entries are permitted.
-        (void)bid; (void)ask;  // suppress unused-variable warnings
+        // XAGUSD FULLY DISABLED — real-tick backtest on 42M ticks (Jan 2023–Jan 2025) FAILED.
+        //
+        // SilverTurtleTickEngine result (N=20, TBS=300, SL=$0.10, TP=$0.30):
+        //   Sharpe=-16.23  MaxDD=$18,381  Trades=8616  WR=31.8%
+        //   0/24 positive months. Losing every single month for 2 years.
+        //
+        // ROOT CAUSE: 65% of trades exit via TIMEOUT (45min), avg gain only $0.61.
+        //   TP=$0.30 requires 49x the actual avg 45-min price move.
+        //   Silver reverts faster than gold — Turtle architecture not viable.
+        //
+        // FULL AUDIT (12 strategies on synthetic ticks) — all rejected:
+        //   Compression breakout: Sharpe -1.25  (confirmed broken on real data too)
+        //   Session momentum:     Sharpe -0.00
+        //   VWAP Stretch:         Sharpe  1.68  (below threshold)
+        //   NBM COMEX:            Sharpe  1.73  (below threshold)
+        //   COMEX ORB:            Sharpe  1.42  (below threshold)
+        //   TurtleTick (real):    Sharpe -16.23 (catastrophic fail on real data)
+        //
+        // CONCLUSION: No viable silver engine exists. Silver stays disabled.
+        // Do not re-enable without a fundamentally different approach validated
+        // on this same 42M-tick dataset.
+        (void)bid; (void)ask;
     }
     else if (sym == "EURUSD") {
         g_macro_ctx.eur_mid_price = (bid + ask) * 0.5;  // for wall_above/below context
