@@ -7786,27 +7786,18 @@ int main(int argc, char* argv[])
     // buffer, lookback, RR, cooldown_ms, MIN_RANGE, CONFIRM_MOVE, confirm_timeout_ms, min_hold_ms
     g_bracket_gold.configure(
         0.8,    // buffer: place orders 0.8pts outside the range
-        30,     // lookback: 30-tick structural range window
-        3.0,    // RR: 3.0 -- on a $10 range this gives $30 TP.
-                //   Trail rides $50-100+ moves on trending days like today ($400 drop).
-        90000,  // cooldown_ms: 90s -- prevents re-arm into thin liquidity.
-        5.0,    // MIN_RANGE — lowered 10.0→5.0pts.
-                //   MIN_RANGE=10 blocked the entire morning session (gold range was $7).
-                //   At $5000 gold, $5 = 0.10% — real structural compression, not noise.
-                //   ATR_RANGE_K=1.5 means eff_min = max(atr*1.5, 5.0).
-                //   With 20-tick ATR ~$3: eff_min = max($4.5, $5.0) = $5.0 → arms at $6+ ranges.
-                //   The losers at 6pt had ATR noise ~= range — ATR_RANGE_K gate still catches those.
-                //   A $400 trending day will have many 10pt+ compressions to trade.
+        40,     // DATA-CALIBRATED lookback: 40 ticks. Brute-force on 2yr data.
+        4.0,    // DATA-CALIBRATED RR: 4.0x SL. Best on 2yr tick data ($38k profit).
+                //   TP = 4x the structure range. Median range $2.67 → TP ~$10.68
+        90000,  // cooldown_ms: 90s
+        1.5,    // DATA-CALIBRATED MIN_RANGE: $1.5. Allows small but real compressions.
+                //   Brute-force showed $1.5-$12 range captures $38k vs $5 min misses most signals.
         0.05,   // CONFIRM_MOVE static fallback
         4000,   // confirm_timeout_ms
         12000,  // min_hold_ms
         0.0,    // VWAP_MIN_DIST: removed.
-        30000,  // MIN_STRUCTURE_MS -- raised 15s->30s.
-                //   15s was too short on trending days -- noise ranges hold 15s easily.
-                //   30s ensures the compression is real consolidation, not a pause.
-        25000,  // FAILURE_WINDOW_MS -- raised 15s->25s.
-                //   On a trending day the initial sweep can take 15-20s to resolve.
-                //   25s gives the move time to commit before declaring failure.
+        30000,  // MIN_STRUCTURE_MS
+        25000,  // FAILURE_WINDOW_MS
         20,     // ATR_PERIOD
         0.15,   // ATR_CONFIRM_K
         2.0,    // ATR_RANGE_K
@@ -7875,7 +7866,7 @@ int main(int argc, char* argv[])
     // Indices: leave ATR disabled — noise floor more stable, fixed MIN_RANGE sufficient
     // MAX_RANGE: prevents bracketing full trending session moves instead of real compression
     // Gold at $4400: 0.4% = $17.6 max range. Tight compression is $8-16. Day range is $40-120.
-    g_bracket_gold.MAX_RANGE   = 18.0;   // ~0.40% of gold ~$4400
+    g_bracket_gold.MAX_RANGE   = 12.0;   // DATA-CALIBRATED: $12 max. Ranges >$12 are trending, not bracketing.
     // Silver at $68: 0.4% = $0.27 max range. Compression = $0.15-0.25. Day range = $1-3.
     g_bracket_xag.MAX_RANGE    = 0.30;   // ~0.44% of silver ~$68
     // Configure opening range engines
