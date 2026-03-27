@@ -1299,6 +1299,12 @@ public:
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
+    // Live position accessors for GUI telemetry
+    bool   open_is_long() const { return pos_.is_long; }
+    double open_entry()   const { return pos_.entry;   }
+    double open_sl()      const { return pos_.sl;      }
+    double open_tp()      const { return pos_.tp;      }
+    double open_size()    const { return pos_.size;    }
 
     // Expose EMAs for telemetry / external inspection
     double ema9()  const { return ema9_;  }
@@ -1452,6 +1458,13 @@ public:
     void force_close(double bid, double ask, CloseCb on_close) {
         pos_.force_close(bid, ask, on_close);
     }
+    // Live position accessors for GUI telemetry
+    bool   open_is_long() const { return pos_.is_long; }
+    double open_entry()   const { return pos_.entry;   }
+    double open_sl()      const { return pos_.sl;      }
+    double open_tp()      const { return pos_.tp;      }
+    double open_size()    const { return pos_.size;    }
+
     double session_open_price() const { return session_open_; }
     double current_vwap()       const { return vwap_;         }
     double current_band_half()  const { return band_half_entry_; }
