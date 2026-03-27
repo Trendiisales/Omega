@@ -514,7 +514,9 @@ R"OMEGA3(
         </div>
       </div>
       <!-- Live open trades panel -->
-      <div id="liveTradesPanel" style="display:flex;flex-direction:column;gap:3px;justify-content:center;min-width:0;flex:1;"></div>
+      <div id="liveTradesPanelOuter" style="flex:1;min-width:0;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:4px;transition:border-color 0.3s,box-shadow 0.3s;">
+        <div id="liveTradesPanel" style="display:flex;flex-direction:column;gap:2px;"></div>
+      </div>
     </div>
 
 )OMEGA3"
@@ -1322,24 +1324,46 @@ function updateDashboard(d){
   const ltPanel=document.getElementById('liveTradesPanel');
   if(ltPanel){
     const trades=d.live_trades||[];
+    // Update panel border/glow when positions are open
+    const ltOuter=document.getElementById('liveTradesPanelOuter');
+    const totalFloat=trades.reduce((s,lt)=>s+lt.live_pnl,0);
+    if(ltOuter){
+      if(trades.length>0){
+        const bc=totalFloat>=0?'rgba(0,217,126,0.35)':'rgba(255,59,59,0.35)';
+        ltOuter.style.borderColor=bc;
+        ltOuter.style.boxShadow='0 0 8px '+bc;
+      } else {
+        ltOuter.style.borderColor='rgba(255,255,255,0.08)';
+        ltOuter.style.boxShadow='none';
+      }
+    }
     if(trades.length===0){
-      ltPanel.innerHTML='<div style="font-size:10px;color:var(--t3);padding:4px 8px;">No open positions</div>';
+      ltPanel.innerHTML='<div style="font-size:10px;color:var(--t3);padding:4px 8px;text-align:center;">No open positions</div>';
     } else {
-      ltPanel.innerHTML=trades.map(lt=>{
+      // Summary header: count + total floating
+      const totalSign=totalFloat>=0?'+':'';
+      const totalCol=totalFloat>=0?'var(--green)':'var(--red)';
+      const totalNzd=(totalFloat*NZD_RATE);
+      const hdr='<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px 4px;border-bottom:1px solid rgba(255,255,255,0.07);margin-bottom:3px;">'
+        +'<span style="font-size:10px;color:var(--t2);font-weight:700;letter-spacing:1px;text-transform:uppercase;">'+trades.length+' OPEN</span>'
+        +'<span style="font-family:IBM Plex Mono,monospace;font-size:13px;font-weight:900;color:'+totalCol+'">'+totalSign+totalFloat.toFixed(2)+'</span>'
+        +'<span style="font-size:10px;color:var(--t3);">NZ$'+totalSign+(totalNzd).toFixed(0)+'</span>'
+        +'</div>';
+      ltPanel.innerHTML=hdr+trades.map(lt=>{
         const isLong=lt.side==='LONG';
         const pnlCls=lt.live_pnl>=0?'lt-pnl-pos':'lt-pnl-neg';
         const sideCls=isLong?'lt-side-long':'lt-side-short';
+        const sideArrow=isLong?'▲':'▼';
         const held=lt.held_sec<60?lt.held_sec+'s':Math.floor(lt.held_sec/60)+'m'+(lt.held_sec%60)+'s';
         const distSl=lt.dist_sl!=null?lt.dist_sl.toFixed(2):'?';
         const pnlStr=(lt.live_pnl>=0?'+':'')+lt.live_pnl.toFixed(2);
-        const nzdPnl=(lt.live_pnl*NZD_RATE);
-        const nzdStr=(nzdPnl>=0?'+':'')+nzdPnl.toFixed(0);
-        return '<div class="live-trade-row">'
+        const rowBg=lt.live_pnl>=0?'rgba(0,217,126,0.05)':'rgba(255,59,59,0.05)';
+        const dp=lt.symbol.includes('USD')&&!lt.symbol.includes('GOLD')?4:2;
+        return '<div class="live-trade-row" style="background:'+rowBg+';border-radius:4px;margin-bottom:2px;">'
           +'<span class="lt-sym">'+lt.symbol+'</span>'
-          +'<span class="'+sideCls+'">'+lt.side+'</span>'
-          +'<span style="color:var(--t2)">@'+lt.entry.toFixed(lt.symbol.includes('USD')&&!lt.symbol.includes('GOLD')?4:2)+'</span>'
-          +'<span class="'+pnlCls+'">'+pnlStr+'</span>'
-          +'<span style="color:var(--amber);font-size:10px;">'+nzdStr+'nzd</span>'
+          +'<span class="'+sideCls+'" style="font-weight:900">'+sideArrow+' '+lt.side+'</span>'
+          +'<span style="color:var(--t2);font-family:IBM Plex Mono,monospace;font-size:11px;">@'+lt.entry.toFixed(dp)+'</span>'
+          +'<span class="'+pnlCls+'" style="font-size:13px;font-weight:900;">'+pnlStr+'</span>'
           +'<span class="lt-meta">SL±'+distSl+'</span>'
           +'<span class="lt-meta">'+lt.engine+'</span>'
           +'<span class="lt-meta">'+held+'</span>'

@@ -3895,8 +3895,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Rebuilds live_trades[] from scratch every 250ms.
             // Each open position contributes one entry with current floating P&L.
             g_telemetry.ClearLiveTrades();
-            // Per-trade live P&L — calls push_live_trade() static free function
-            // push_live_trade(sym, eng, is_long, entry, tp, sl, size, entry_ts)
+            // Per-trade live P&L — push_live_trade(sym, eng, is_long, entry, tp, sl, size, ts)
+            // ── Gold engines ────────────────────────────────────────────────
             if (g_gold_flow.pos.active)
                 push_live_trade("GOLD.F","GoldFlow",
                     g_gold_flow.pos.is_long, g_gold_flow.pos.entry,
@@ -3912,21 +3912,156 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_bracket_gold.pos.is_long, g_bracket_gold.pos.entry,
                     g_bracket_gold.pos.tp,      g_bracket_gold.pos.sl,
                     g_bracket_gold.pos.size,    g_bracket_gold.pos.entry_ts);
+            if (g_trend_pb_gold.has_open_position())
+                push_live_trade("GOLD.F","TrendPB",
+                    g_trend_pb_gold.open_is_long(), g_trend_pb_gold.open_entry(),
+                    0.0, g_trend_pb_gold.open_sl(),
+                    g_trend_pb_gold.open_size(), (int64_t)std::time(nullptr));
+            if (g_nbm_gold_london.has_open_position())
+                push_live_trade("GOLD.F","NBM-London",
+                    g_nbm_gold_london.open_is_long(), g_nbm_gold_london.open_entry(),
+                    0.0, 0.0, g_nbm_gold_london.open_size(), (int64_t)std::time(nullptr));
+            // ── US indices ──────────────────────────────────────────────────
             if (g_eng_sp.pos.active)
-                push_live_trade("US500.F","Breakout", g_eng_sp.pos.is_long,
-                    g_eng_sp.pos.entry, 0.0, 0.0, g_eng_sp.pos.size, (int64_t)0);
+                push_live_trade("US500.F","BE", g_eng_sp.pos.is_long,
+                    g_eng_sp.pos.entry, g_eng_sp.pos.tp, g_eng_sp.pos.sl,
+                    g_eng_sp.pos.size, g_eng_sp.pos.entry_ts);
             if (g_eng_nq.pos.active)
-                push_live_trade("USTEC.F","Breakout", g_eng_nq.pos.is_long,
-                    g_eng_nq.pos.entry, 0.0, 0.0, g_eng_nq.pos.size, (int64_t)0);
+                push_live_trade("USTEC.F","BE", g_eng_nq.pos.is_long,
+                    g_eng_nq.pos.entry, g_eng_nq.pos.tp, g_eng_nq.pos.sl,
+                    g_eng_nq.pos.size, g_eng_nq.pos.entry_ts);
+            if (g_eng_us30.pos.active)
+                push_live_trade("DJ30.F","BE", g_eng_us30.pos.is_long,
+                    g_eng_us30.pos.entry, g_eng_us30.pos.tp, g_eng_us30.pos.sl,
+                    g_eng_us30.pos.size, g_eng_us30.pos.entry_ts);
+            if (g_eng_nas100.pos.active)
+                push_live_trade("NAS100","BE", g_eng_nas100.pos.is_long,
+                    g_eng_nas100.pos.entry, g_eng_nas100.pos.tp, g_eng_nas100.pos.sl,
+                    g_eng_nas100.pos.size, g_eng_nas100.pos.entry_ts);
+            if (g_bracket_sp.pos.active)
+                push_live_trade("US500.F","Bracket", g_bracket_sp.pos.is_long,
+                    g_bracket_sp.pos.entry, g_bracket_sp.pos.tp, g_bracket_sp.pos.sl,
+                    g_bracket_sp.pos.size, g_bracket_sp.pos.entry_ts);
+            if (g_bracket_nq.pos.active)
+                push_live_trade("USTEC.F","Bracket", g_bracket_nq.pos.is_long,
+                    g_bracket_nq.pos.entry, g_bracket_nq.pos.tp, g_bracket_nq.pos.sl,
+                    g_bracket_nq.pos.size, g_bracket_nq.pos.entry_ts);
+            if (g_bracket_us30.pos.active)
+                push_live_trade("DJ30.F","Bracket", g_bracket_us30.pos.is_long,
+                    g_bracket_us30.pos.entry, g_bracket_us30.pos.tp, g_bracket_us30.pos.sl,
+                    g_bracket_us30.pos.size, g_bracket_us30.pos.entry_ts);
+            if (g_bracket_nas100.pos.active)
+                push_live_trade("NAS100","Bracket", g_bracket_nas100.pos.is_long,
+                    g_bracket_nas100.pos.entry, g_bracket_nas100.pos.tp, g_bracket_nas100.pos.sl,
+                    g_bracket_nas100.pos.size, g_bracket_nas100.pos.entry_ts);
+            if (g_nbm_sp.has_open_position())
+                push_live_trade("US500.F","NBM", g_nbm_sp.open_is_long(),
+                    g_nbm_sp.open_entry(), 0.0, 0.0, g_nbm_sp.open_size(), (int64_t)std::time(nullptr));
+            if (g_nbm_nq.has_open_position())
+                push_live_trade("USTEC.F","NBM", g_nbm_nq.open_is_long(),
+                    g_nbm_nq.open_entry(), 0.0, 0.0, g_nbm_nq.open_size(), (int64_t)std::time(nullptr));
+            if (g_nbm_nas.has_open_position())
+                push_live_trade("NAS100","NBM", g_nbm_nas.open_is_long(),
+                    g_nbm_nas.open_entry(), 0.0, 0.0, g_nbm_nas.open_size(), (int64_t)std::time(nullptr));
+            if (g_nbm_us30.has_open_position())
+                push_live_trade("DJ30.F","NBM", g_nbm_us30.open_is_long(),
+                    g_nbm_us30.open_entry(), 0.0, 0.0, g_nbm_us30.open_size(), (int64_t)std::time(nullptr));
+            // ── EU indices ──────────────────────────────────────────────────
+            if (g_eng_ger30.pos.active)
+                push_live_trade("GER40","BE", g_eng_ger30.pos.is_long,
+                    g_eng_ger30.pos.entry, g_eng_ger30.pos.tp, g_eng_ger30.pos.sl,
+                    g_eng_ger30.pos.size, g_eng_ger30.pos.entry_ts);
+            if (g_eng_uk100.pos.active)
+                push_live_trade("UK100","BE", g_eng_uk100.pos.is_long,
+                    g_eng_uk100.pos.entry, g_eng_uk100.pos.tp, g_eng_uk100.pos.sl,
+                    g_eng_uk100.pos.size, g_eng_uk100.pos.entry_ts);
+            if (g_eng_estx50.pos.active)
+                push_live_trade("ESTX50","BE", g_eng_estx50.pos.is_long,
+                    g_eng_estx50.pos.entry, g_eng_estx50.pos.tp, g_eng_estx50.pos.sl,
+                    g_eng_estx50.pos.size, g_eng_estx50.pos.entry_ts);
+            if (g_bracket_ger30.pos.active)
+                push_live_trade("GER40","Bracket", g_bracket_ger30.pos.is_long,
+                    g_bracket_ger30.pos.entry, g_bracket_ger30.pos.tp, g_bracket_ger30.pos.sl,
+                    g_bracket_ger30.pos.size, g_bracket_ger30.pos.entry_ts);
+            if (g_bracket_uk100.pos.active)
+                push_live_trade("UK100","Bracket", g_bracket_uk100.pos.is_long,
+                    g_bracket_uk100.pos.entry, g_bracket_uk100.pos.tp, g_bracket_uk100.pos.sl,
+                    g_bracket_uk100.pos.size, g_bracket_uk100.pos.entry_ts);
+            if (g_bracket_estx50.pos.active)
+                push_live_trade("ESTX50","Bracket", g_bracket_estx50.pos.is_long,
+                    g_bracket_estx50.pos.entry, g_bracket_estx50.pos.tp, g_bracket_estx50.pos.sl,
+                    g_bracket_estx50.pos.size, g_bracket_estx50.pos.entry_ts);
+            if (g_trend_pb_ger40.has_open_position())
+                push_live_trade("GER40","TrendPB", g_trend_pb_ger40.open_is_long(),
+                    g_trend_pb_ger40.open_entry(), 0.0, g_trend_pb_ger40.open_sl(),
+                    g_trend_pb_ger40.open_size(), (int64_t)std::time(nullptr));
+            // ── Oil/commodities ─────────────────────────────────────────────
             if (g_eng_cl.pos.active)
-                push_live_trade("USOIL.F","Breakout", g_eng_cl.pos.is_long,
-                    g_eng_cl.pos.entry, 0.0, 0.0, g_eng_cl.pos.size, (int64_t)0);
+                push_live_trade("USOIL.F","BE", g_eng_cl.pos.is_long,
+                    g_eng_cl.pos.entry, g_eng_cl.pos.tp, g_eng_cl.pos.sl,
+                    g_eng_cl.pos.size, g_eng_cl.pos.entry_ts);
+            if (g_eng_brent.pos.active)
+                push_live_trade("BRENT","BE", g_eng_brent.pos.is_long,
+                    g_eng_brent.pos.entry, g_eng_brent.pos.tp, g_eng_brent.pos.sl,
+                    g_eng_brent.pos.size, g_eng_brent.pos.entry_ts);
+            if (g_bracket_brent.pos.active)
+                push_live_trade("BRENT","Bracket", g_bracket_brent.pos.is_long,
+                    g_bracket_brent.pos.entry, g_bracket_brent.pos.tp, g_bracket_brent.pos.sl,
+                    g_bracket_brent.pos.size, g_bracket_brent.pos.entry_ts);
             if (g_eng_xag.pos.active)
-                push_live_trade("XAGUSD","Breakout", g_eng_xag.pos.is_long,
-                    g_eng_xag.pos.entry, 0.0, 0.0, g_eng_xag.pos.size, (int64_t)0);
+                push_live_trade("XAGUSD","BE", g_eng_xag.pos.is_long,
+                    g_eng_xag.pos.entry, g_eng_xag.pos.tp, g_eng_xag.pos.sl,
+                    g_eng_xag.pos.size, g_eng_xag.pos.entry_ts);
+            if (g_nbm_oil_london.has_open_position())
+                push_live_trade("USOIL.F","NBM-London", g_nbm_oil_london.open_is_long(),
+                    g_nbm_oil_london.open_entry(), 0.0, 0.0, g_nbm_oil_london.open_size(), (int64_t)std::time(nullptr));
+            // ── FX ──────────────────────────────────────────────────────────
             if (g_eng_eurusd.pos.active)
-                push_live_trade("EURUSD","Breakout", g_eng_eurusd.pos.is_long,
-                    g_eng_eurusd.pos.entry, 0.0, 0.0, g_eng_eurusd.pos.size, (int64_t)0);
+                push_live_trade("EURUSD","BE", g_eng_eurusd.pos.is_long,
+                    g_eng_eurusd.pos.entry, g_eng_eurusd.pos.tp, g_eng_eurusd.pos.sl,
+                    g_eng_eurusd.pos.size, g_eng_eurusd.pos.entry_ts);
+            if (g_eng_gbpusd.pos.active)
+                push_live_trade("GBPUSD","BE", g_eng_gbpusd.pos.is_long,
+                    g_eng_gbpusd.pos.entry, g_eng_gbpusd.pos.tp, g_eng_gbpusd.pos.sl,
+                    g_eng_gbpusd.pos.size, g_eng_gbpusd.pos.entry_ts);
+            if (g_eng_audusd.pos.active)
+                push_live_trade("AUDUSD","BE", g_eng_audusd.pos.is_long,
+                    g_eng_audusd.pos.entry, g_eng_audusd.pos.tp, g_eng_audusd.pos.sl,
+                    g_eng_audusd.pos.size, g_eng_audusd.pos.entry_ts);
+            if (g_eng_nzdusd.pos.active)
+                push_live_trade("NZDUSD","BE", g_eng_nzdusd.pos.is_long,
+                    g_eng_nzdusd.pos.entry, g_eng_nzdusd.pos.tp, g_eng_nzdusd.pos.sl,
+                    g_eng_nzdusd.pos.size, g_eng_nzdusd.pos.entry_ts);
+            if (g_eng_usdjpy.pos.active)
+                push_live_trade("USDJPY","BE", g_eng_usdjpy.pos.is_long,
+                    g_eng_usdjpy.pos.entry, g_eng_usdjpy.pos.tp, g_eng_usdjpy.pos.sl,
+                    g_eng_usdjpy.pos.size, g_eng_usdjpy.pos.entry_ts);
+            if (g_bracket_eurusd.pos.active)
+                push_live_trade("EURUSD","Bracket", g_bracket_eurusd.pos.is_long,
+                    g_bracket_eurusd.pos.entry, g_bracket_eurusd.pos.tp, g_bracket_eurusd.pos.sl,
+                    g_bracket_eurusd.pos.size, g_bracket_eurusd.pos.entry_ts);
+            if (g_bracket_gbpusd.pos.active)
+                push_live_trade("GBPUSD","Bracket", g_bracket_gbpusd.pos.is_long,
+                    g_bracket_gbpusd.pos.entry, g_bracket_gbpusd.pos.tp, g_bracket_gbpusd.pos.sl,
+                    g_bracket_gbpusd.pos.size, g_bracket_gbpusd.pos.entry_ts);
+            if (g_bracket_audusd.pos.active)
+                push_live_trade("AUDUSD","Bracket", g_bracket_audusd.pos.is_long,
+                    g_bracket_audusd.pos.entry, g_bracket_audusd.pos.tp, g_bracket_audusd.pos.sl,
+                    g_bracket_audusd.pos.size, g_bracket_audusd.pos.entry_ts);
+            if (g_bracket_nzdusd.pos.active)
+                push_live_trade("NZDUSD","Bracket", g_bracket_nzdusd.pos.is_long,
+                    g_bracket_nzdusd.pos.entry, g_bracket_nzdusd.pos.tp, g_bracket_nzdusd.pos.sl,
+                    g_bracket_nzdusd.pos.size, g_bracket_nzdusd.pos.entry_ts);
+            if (g_bracket_usdjpy.pos.active)
+                push_live_trade("USDJPY","Bracket", g_bracket_usdjpy.pos.is_long,
+                    g_bracket_usdjpy.pos.entry, g_bracket_usdjpy.pos.tp, g_bracket_usdjpy.pos.sl,
+                    g_bracket_usdjpy.pos.size, g_bracket_usdjpy.pos.entry_ts);
+            if (g_ca_fx_cascade.has_open_position())
+                push_live_trade("GBPUSD","FxCascade", g_ca_fx_cascade.open_is_long(),
+                    g_ca_fx_cascade.open_entry(), 0.0, 0.0, g_ca_fx_cascade.open_size(), (int64_t)std::time(nullptr));
+            if (g_ca_carry_unwind.has_open_position())
+                push_live_trade("USDJPY","CarryUnw", g_ca_carry_unwind.open_is_long(),
+                    g_ca_carry_unwind.open_entry(), 0.0, 0.0, g_ca_carry_unwind.open_size(), (int64_t)std::time(nullptr));
         }
     }
 
