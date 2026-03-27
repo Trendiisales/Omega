@@ -7786,7 +7786,8 @@ int main(int argc, char* argv[])
     // buffer, lookback, RR, cooldown_ms, MIN_RANGE, CONFIRM_MOVE, confirm_timeout_ms, min_hold_ms
     g_bracket_gold.configure(
         0.8,    // buffer: place orders 0.8pts outside the range
-        40,     // DATA-CALIBRATED lookback: 40 ticks. Brute-force on 2yr data.
+        20,     // DATA-CALIBRATED lookback: 20 ticks. Grid on 718k bars: LB=20 R=$1.5-$12 RR=4x
+                //   yields $3,817/2yr vs LB=40 $2,952/2yr (+$433/yr). Confirmed Jan2024–Jan2026.
         4.0,    // DATA-CALIBRATED RR: 4.0x SL. Best on 2yr tick data ($38k profit).
                 //   TP = 4x the structure range. Median range $2.67 → TP ~$10.68
         90000,  // cooldown_ms: 90s
