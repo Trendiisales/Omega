@@ -7628,7 +7628,20 @@ static void quote_loop() {
         }
         std::cout << "[OMEGA] Price snapshot taken: " << px_snap_bid.size() << " symbols\n";
 
-        // ── STEP 2: Close ALL open positions immediately using snapped prices ──
+        // ── STEP 2: Close ALL open positions on reconnect ─────────────────────
+        // SHADOW mode: positions are local-only — the broker has no open orders.
+        //   Skip force-close so profitable trades survive reconnects/rebuilds.
+        //   Engine state (trail_stage, mfe, sl) is preserved across reconnects.
+        // LIVE mode: must close — broker holds real positions and we may have
+        //   lost order state on the server side. Close and let engines re-enter.
+        const bool do_reconnect_close = (g_cfg.mode == "LIVE");
+        if (do_reconnect_close) {
+            std::cout << "[OMEGA] LIVE mode — closing all positions before reconnect\n";
+        } else {
+            std::cout << "[OMEGA] SHADOW mode — preserving positions across reconnect\n";
+        }
+        if (do_reconnect_close)
+        { // SHADOW: this entire block is skipped
         // Helper: get price from snapshot, fallback to live book, fallback to entry
         auto snap_px = [&](const char* sym, double& b, double& a) {
             b = 0.0; a = 0.0;
@@ -7729,6 +7742,7 @@ static void quote_loop() {
             if(nb>0&&na>0){g_ca_fx_cascade.force_close_nzdusd(nb,na,shutdown_cb);} }
         }
         std::cout << "[OMEGA-SHUTDOWN] All positions closed\n";
+        } // end do_reconnect_close (LIVE mode only)
 
         // ── STEP 3: NOW unsubscribe and logout (prices no longer needed) ───────
         // ── CLOSE ALL POSITIONS BEFORE UNSUBSCRIBING ─────────────────────────────
@@ -7848,6 +7862,9 @@ static void quote_loop() {
         };
         // Old force-close calls removed — all positions closed in STEP 2 above
         (void)fc;  // suppress unused warning
+        // Force-close bracket engines and cross-asset — LIVE mode only
+        // SHADOW: positions are local state only, no broker-side orders to close.
+        if (do_reconnect_close) {
         // Force-close bracket engines — look up current prices from book
         {
             double bxag_bid = 0.0, bxag_ask = 0.0;
@@ -7990,6 +8007,8 @@ static void quote_loop() {
                     g_rtt_last, le_cb);
             }
         }
+
+        } // end do_reconnect_close (second block — LIVE mode only)
 
         Sleep(150);  // let kernel flush logout/unsub to wire
         // Close socket FIRST — SSL_free finds dead socket, returns immediately.

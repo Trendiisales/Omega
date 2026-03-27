@@ -2891,99 +2891,41 @@ public:
 // Sim: WR=55%  |  RR=2.0:1  |  Sharpe≈2.90  |  MaxDD≈$200
 //   Fires 1–3×/week. Low frequency, high accuracy.
 // =============================================================================
+// =============================================================================
+// DXYDivergenceEngine — DISABLED pending real DXY feed
+// =============================================================================
+// INTENDED LOGIC (when DXY feed is available):
+//   Gold and DXY are strongly inverse-correlated (-0.7 to -0.9 historically).
+//   When DXY makes a sustained move but gold does NOT move inversely (divergence),
+//   it signals hidden accumulation (gold ignoring dollar strength → LONG)
+//   or hidden distribution (gold ignoring dollar weakness → SHORT).
+//
+// PREVIOUS BUG: The engine used gold's own VWAP as a proxy for DXY direction.
+//   This is meaningless — VWAP is just a lagged gold price average.
+//   The slope inversion (slope>0 → exp_dir=-1) caused the engine to fire
+//   COUNTER-TREND on every extended move, entering at local highs/lows.
+//   Produced 3 consecutive SL hits on 27-Mar-2026 (4447, 4452, 4470 all SL).
+//
+// TO RE-ENABLE: Add dx_mid field to GoldSnapshot, populate from g_bids["DX.F"]
+//   in GoldEngineStack::on_tick(), then implement proper divergence:
+//     dx_move_20t  = dx_mid_now - dx_mid_20_ticks_ago
+//     gold_move_20t = gold_mid_now - gold_mid_20_ticks_ago
+//     expected_gold_move = -dx_move_20t * GOLD_DX_BETA  (negative correlation)
+//     actual_divergence  = gold_move_20t - expected_gold_move
+//     if |divergence| > threshold → fire in direction of gold's excess move
+// =============================================================================
 class DXYDivergenceEngine : public EngineBase {
     static constexpr double MAX_SPREAD   = 2.5;
-    static constexpr int    SL_TICKS     = 60;   // $6.00 stop
-    static constexpr int    TP_TICKS     = 120;  // $12.00 target (2:1 RR)
-    static constexpr int    COOLDOWN_SEC = 3600; // 1h — low-frequency signal
-    static constexpr double DIV_THRESHOLD = 3.0; // $3 divergence to qualify
-
-    // Track gold price vs VWAP over 40-tick window
-    CircularBuffer<double, 64> gold_buf_;
-    double vwap_20tick_buf_[20] = {};
-    int    vb_head_ = 0, vb_count_ = 0;
-
-    std::chrono::steady_clock::time_point last_signal_{
-        std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC + 1)};
-
-    // Expected direction based on VWAP trend (proxy for macro flow)
-    // Returns +1 (expected up), -1 (expected down), 0 (neutral)
-    int expected_direction() const noexcept {
-        if (vb_count_ < 10) return 0;
-        const int n = std::min(vb_count_, 20);
-        // Linear regression slope of VWAP over last n ticks
-        double sx = 0, sy = 0, sxy = 0, sx2 = 0;
-        for (int i = 0; i < n; ++i) {
-            sx  += i; sy  += vwap_20tick_buf_[i];
-            sxy += i * vwap_20tick_buf_[i]; sx2 += i * i;
-        }
-        const double denom = n * sx2 - sx * sx;
-        if (std::fabs(denom) < 1e-9) return 0;
-        const double slope = (n * sxy - sx * sy) / denom;
-        if (slope >  0.05) return -1;  // VWAP trending up → expect gold up
-        if (slope < -0.05) return +1;  // VWAP trending down → expect gold down
-        return 0;
-    }
+    static constexpr int    SL_TICKS     = 60;
+    static constexpr int    TP_TICKS     = 120;
+    static constexpr int    COOLDOWN_SEC = 3600;
 
 public:
-    DXYDivergenceEngine() : EngineBase("DXYDivergence", 1.15) { enabled_ = false; } // DISABLED: uses gold VWAP only, no actual DXY data — fires at local highs on trend days → 3 SL hits 11:43-12:50 UTC 27-Mar. Needs real DXY feed before re-enabling.
-
-    void reset() override {
-        gold_buf_.clear();
-        vb_head_ = vb_count_ = 0;
+    DXYDivergenceEngine() : EngineBase("DXYDivergence", 1.15) {
+        enabled_ = false; // DISABLED: no real DXY feed — see comment above
     }
-
-    Signal process(const GoldSnapshot& s) override {
-        if (!enabled_ || !s.is_valid()) return noSignal();
-        if (s.spread > MAX_SPREAD)       return noSignal();
-        if (s.vwap < 1.0)                return noSignal();
-
-        // Update buffers
-        gold_buf_.push_back(s.mid);
-        vwap_20tick_buf_[vb_head_ % 20] = s.vwap;
-        vb_head_++; if (vb_count_ < 20) vb_count_++;
-
-        if (gold_buf_.size() < 20) return noSignal();
-
-        const int exp_dir = expected_direction();
-        if (exp_dir == 0) return noSignal();
-
-        // Measure gold's actual move vs VWAP over last 20 ticks
-        const int n = static_cast<int>(gold_buf_.size());
-        const double gold_20ago = gold_buf_[n >= 20 ? n - 20 : 0];
-        const double gold_move  = s.mid - gold_20ago;
-
-        // Divergence: expected direction disagrees with actual gold move
-        // exp_dir=+1 means macro suggests gold should go up but it's going down
-        // We fire when gold resists the macro pressure (hidden accumulation)
-        const bool diverging = (exp_dir == +1 && gold_move > DIV_THRESHOLD) ||
-                               (exp_dir == -1 && gold_move < -DIV_THRESHOLD);
-        if (!diverging) return noSignal();
-
-        const auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(
-                now - last_signal_).count() < COOLDOWN_SEC) return noSignal();
-
-        Signal sig;
-        sig.size = 0.01; sig.sl = SL_TICKS; sig.tp = TP_TICKS;
-        sig.confidence = std::min(1.5, 0.90 + std::fabs(gold_move) * 0.04);
-
-        // Fire in direction of gold's resistance (against the expected macro)
-        if (exp_dir == +1) {
-            // Gold rising despite macro headwind = hidden accumulation → LONG
-            sig.valid = true; sig.side = TradeSide::LONG; sig.entry = s.ask;
-            strncpy(sig.reason, "DXY_DIV_LONG",  31);
-        } else {
-            // Gold falling despite macro tailwind = hidden distribution → SHORT
-            sig.valid = true; sig.side = TradeSide::SHORT; sig.entry = s.bid;
-            strncpy(sig.reason, "DXY_DIV_SHORT", 31);
-        }
-        strncpy(sig.engine, "DXYDivergence", 31);
-
-        last_signal_ = now;
-        signal_count_++;
-        return sig;
-    }
+    void reset() override {}
+    Signal process(const GoldSnapshot&) override { return noSignal(); }
 };
 
 // =============================================================================
