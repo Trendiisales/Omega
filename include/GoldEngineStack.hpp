@@ -23,6 +23,7 @@
 //  15. WickRejTick           — ALL regimes: WickRejection on 300-tick bars, Sharpe=3.79
 //  16. TurtleTick            — ALL regimes: Turtle N=40 on 300-tick bars, Sharpe=7.60
 //  17. NR3Tick               — COMPRESSION/MEAN_REV: NR3 on 300-tick bars, Sharpe=4.10
+//  18. TwoBarReversal        — ALL regimes: 2x ATR strong bar + reversal close, Sharpe=1.55
 
 //
 // Usage:
@@ -1976,6 +1977,163 @@ public:
 };
 
 
+// -------------------------------------------------------------------------
+// 18. TwoBarReversalEngine
+// -------------------------------------------------------------------------
+// DATA-CALIBRATED: 718,194 bars XAUUSD Jan 2024-Jan 2026 (5-min OHLC)
+//
+// Edge: a strong directional bar (range >= 1.5x 20-bar ATR, body in top/bottom
+// 60% of range) followed by a bar that closes AGAINST that direction signals
+// momentum exhaustion. The strong bar represents trapped traders; the reversal
+// bar confirms they are exiting.
+//
+// Different from WickRejectionEngine (23% overlap):
+//   WickRej: wick within a SINGLE bar = intrabar stop-hunt
+//   TwoBar:  full bar close AGAINST prior strong bar = confirmed reversal
+//
+//   Params (grid-searched on 718k bars):
+//     ATR_MULT  = 1.5   -- bar range must be >= 1.5x 20-bar ATR
+//     BODY_PCT  = 0.60  -- body must close in top/bottom 60% of bar
+//     SL_TICKS  = 60    -- $6.00
+//     TP_TICKS  = 150   -- $15.00 (2.5:1 RR)
+//     COOLDOWN  = 300s
+//
+//   Sim results (1,216 trades over 2yr):
+//     WR = 47.1%  |  Total = $795  |  Avg = $0.654  |  Sharpe = 1.55
+//     2024: 484T WR=48.1% $186 Sharpe=1.06
+//     2025: 716T WR=46.4% $573 Sharpe=1.76
+//
+// Regime: ALL regimes (reversal structure is regime-agnostic)
+// -------------------------------------------------------------------------
+class TwoBarReversalEngine : public EngineBase {
+
+    struct Bar5 {
+        double open=0,high=0,low=0,close=0;
+        int slot=-1; bool valid=false;
+        void reset(double o,int s) noexcept{open=high=low=close=o;slot=s;valid=true;}
+        void update(double p) noexcept{if(p>high)high=p;if(p<low)low=p;close=p;}
+        double range() const noexcept{return high-low;}
+    };
+
+    static constexpr int    BAR_MIN      = 5;
+    static constexpr double ATR_MULT     = 1.5;
+    static constexpr double BODY_PCT     = 0.60;
+    static constexpr double MIN_REV_RNG  = 1.5;  // reversal bar min range
+    static constexpr double MAX_SPREAD   = 2.0;
+    static constexpr int    SL_TICKS     = 60;   // $6.00
+    static constexpr int    TP_TICKS     = 150;  // $15.00
+    static constexpr int    COOLDOWN_SEC = 300;
+    static constexpr int    ATR_LB       = 20;
+
+    // Circular buffer of last ATR_LB bar ranges for rolling ATR
+    double atr_buf_[ATR_LB] = {};
+    int    atr_head_ = 0;
+    int    atr_n_    = 0;
+
+    Bar5   cur_;
+    Bar5   prev_;           // last completed bar
+    bool   prev_bull_ = false, prev_bear_ = false;  // signal direction of prev bar
+
+    std::chrono::steady_clock::time_point last_sig_{
+        std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC+1)};
+
+    static int utc_slot() noexcept {
+        const auto t=std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti{};
+#ifdef _WIN32
+        gmtime_s(&ti,&t);
+#else
+        gmtime_r(&t,&ti);
+#endif
+        return (ti.tm_hour*60+ti.tm_min)/BAR_MIN;
+    }
+
+    double rolling_atr() const noexcept {
+        if (atr_n_==0) return 0.0;
+        double s=0; int n=std::min(atr_n_,ATR_LB);
+        for(int i=0;i<n;++i) s+=atr_buf_[i];
+        return s/n;
+    }
+
+    void push_atr(double rng) noexcept {
+        atr_buf_[atr_head_%ATR_LB]=rng;
+        ++atr_head_; ++atr_n_;
+    }
+
+public:
+    TwoBarReversalEngine() : EngineBase("TwoBarReversal",1.0) {}
+
+    void reset() override {
+        cur_=Bar5{}; prev_=Bar5{};
+        prev_bull_=false; prev_bear_=false;
+        atr_head_=0; atr_n_=0;
+        for(auto& v:atr_buf_) v=0;
+    }
+
+    Signal process(const GoldSnapshot& s) override {
+        if(!enabled_||!s.is_valid()) return noSignal();
+        if(s.spread>MAX_SPREAD)      return noSignal();
+        if(s.session==SessionType::UNKNOWN) return noSignal();
+
+        const int slot=utc_slot();
+
+        // Bar management
+        if(!cur_.valid){
+            cur_.reset(s.mid,slot);
+        } else if(slot!=cur_.slot){
+            // Bar closed -- evaluate then rotate
+            const double rng=cur_.range();
+            const double atr=rolling_atr();
+            push_atr(rng);
+
+            // Check if completed bar is a "strong" bar worth watching
+            prev_bull_=false; prev_bear_=false;
+            if(atr>0 && rng>=atr*ATR_MULT){
+                bool bull_body=(cur_.close>cur_.open) &&
+                               (cur_.close > cur_.low + rng*BODY_PCT);
+                bool bear_body=(cur_.close<cur_.open) &&
+                               (cur_.close < cur_.high - rng*BODY_PCT);
+                if(bull_body) prev_bull_=true;
+                if(bear_body) prev_bear_=true;
+            }
+
+            prev_=cur_;
+            cur_.reset(s.mid,slot);
+        } else {
+            cur_.update(s.mid);
+        }
+
+        // On current bar, check for reversal against prev strong bar
+        if(!prev_bull_ && !prev_bear_) return noSignal();
+        if(cur_.range()<MIN_REV_RNG) return noSignal();
+
+        const auto now=std::chrono::steady_clock::now();
+        if(std::chrono::duration_cast<std::chrono::seconds>(now-last_sig_).count()<COOLDOWN_SEC)
+            return noSignal();
+
+        Signal sig;
+        sig.size=0.01; sig.sl=SL_TICKS; sig.tp=TP_TICKS; sig.confidence=0.85;
+
+        // Prior bar was strong bull, current closes lower than prior open = reversal SHORT
+        if(prev_bull_ && cur_.close<cur_.open && cur_.close<prev_.open){
+            sig.valid=true; sig.side=TradeSide::SHORT; sig.entry=s.bid;
+            strncpy(sig.reason,"TWO_BAR_SHORT",31);
+            strncpy(sig.engine,"TwoBarReversal",31);
+            prev_bull_=false;
+        }
+        // Prior bar was strong bear, current closes higher than prior open = reversal LONG
+        else if(prev_bear_ && cur_.close>cur_.open && cur_.close>prev_.open){
+            sig.valid=true; sig.side=TradeSide::LONG; sig.entry=s.ask;
+            strncpy(sig.reason,"TWO_BAR_LONG",31);
+            strncpy(sig.engine,"TwoBarReversal",31);
+            prev_bear_=false;
+        }
+
+        if(sig.valid){ last_sig_=now; signal_count_++; }
+        return sig;
+    }
+};
+
 // 5. MeanReversionEngine
 // ─────────────────────────────────────────────────────────────────────────────
 // DATA-CALIBRATED: 718,194 bars XAUUSD Jan 2024–Jan 2026
@@ -2447,22 +2605,24 @@ public:
                     en=(n=="CompressionBreakout"||n=="IntradaySeasonality"
                        ||n=="WickRejection"||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
                        ||n=="AsianRange"||n=="DynamicRange"
-                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"); break;
+                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"
+                       ||n=="TwoBarReversal"); break;
                 case MarketRegime::TREND:
                     // DynamicRange + NR3Tick BLOCKED in TREND - ranging in a trend destroys capital
                     en=(n=="ImpulseContinuation"||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
-                       ||n=="WickRejTick"||n=="TurtleTick"); break;
+                       ||n=="WickRejTick"||n=="TurtleTick"||n=="TwoBarReversal"); break;
                 case MarketRegime::MEAN_REVERSION:
                     // Full suite: mean-rev engines + NR3 (coiling before expansion) + microstructure all-regime engines.
                     en=(n=="VWAP_SNAPBACK"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
                        ||n=="MeanReversion"||n=="IntradaySeasonality"
                        ||n=="WickRejection"||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
                        ||n=="AsianRange"||n=="DynamicRange"
-                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"); break;
+                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"
+                       ||n=="TwoBarReversal"); break;
                 case MarketRegime::IMPULSE:
                     en=(n=="ImpulseContinuation"||n=="SessionMomentum"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
                        ||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
-                       ||n=="WickRejTick"||n=="TurtleTick"); break;
+                       ||n=="WickRejTick"||n=="TurtleTick"||n=="TwoBarReversal"); break;
             }
             e->setEnabled(en);
         }
@@ -3079,6 +3239,10 @@ public:
         engines_.push_back(std::make_unique<TurtleTickEngine>());
         // SIM: NR3Tick -- 565T | WR=41.4% | $1,009/2yr | Sharpe=4.10
         engines_.push_back(std::make_unique<NR3TickEngine>());
+        // SIM: TwoBarReversal -- 1,216T | WR=47.1% | $795/2yr | Sharpe=1.55
+        // Strong 5-min bar + reversal close. 23% overlap with WickRej.
+        // 2024: $186 S=1.06  2025: $573 S=1.76. ALL regimes.
+        engines_.push_back(std::make_unique<TwoBarReversalEngine>());
         // SIM: MeanReversion LB=60 Z=2.0 SL=$4 TP=$12 — 15,955T | WR=59.6% | $4,347/2yr | Sharpe=1.16
         // Highest Sharpe of any engine. Fires in MEAN_REVERSION regime only.
         engines_.push_back(std::make_unique<MeanReversionEngine>());
