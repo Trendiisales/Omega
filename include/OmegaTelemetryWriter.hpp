@@ -670,7 +670,8 @@ public:
              || strstr(engine_type, "WickRejection")
              || strstr(engine_type, "DonchianBreakout")
              || strstr(engine_type, "NR3Breakout")
-             || strstr(engine_type, "SpikeFade"))  return 2;
+             || strstr(engine_type, "SpikeFade")
+             || strstr(engine_type, "AsianRange"))  return 2;
             if (strstr(engine_type, "GOLD_FLOW")  || strstr(engine_type, "L2_FLOW"))  return 3;
             if (strstr(engine_type, "ORB")   || strstr(engine_type, "VWAP")
              || strstr(engine_type, "TREND") || strstr(engine_type, "CROSS")
