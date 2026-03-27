@@ -676,7 +676,12 @@ public:
              || strstr(engine_type, "WickRejTick")
              || strstr(engine_type, "TurtleTick")
              || strstr(engine_type, "NR3Tick")
-             || strstr(engine_type, "TwoBarReversal"))  return 2;
+             || strstr(engine_type, "TwoBarReversal")
+             || strstr(engine_type, "LondonFixMomentum")
+             || strstr(engine_type, "VWAPStretchReversion")
+             || strstr(engine_type, "ORBNewYork")
+             || strstr(engine_type, "DXYDivergence")
+             || strstr(engine_type, "SessionOpenMomentum"))  return 2;
             if (strstr(engine_type, "GOLD_FLOW")  || strstr(engine_type, "L2_FLOW"))  return 3;
             if (strstr(engine_type, "ORB")   || strstr(engine_type, "VWAP")
              || strstr(engine_type, "TREND") || strstr(engine_type, "CROSS")
