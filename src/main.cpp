@@ -437,6 +437,13 @@ static omega::cross::NoiseBandMomentumEngine g_nbm_nq;    // USTEC.F — NY 13:3
 static omega::cross::NoiseBandMomentumEngine g_nbm_nas;   // NAS100  — NY 13:30-21:30 UTC
 static omega::cross::NoiseBandMomentumEngine g_nbm_us30;  // DJ30.F  — NY 13:30-21:30 UTC
 
+// NBM London session engines (07:00-13:30 UTC) — covers the gap before NY open.
+// GOLD.F and USOIL.F are the most liquid instruments in the London window.
+// Session anchor = London open (07:00 UTC). Same ATR/band logic as NY engines.
+// These are additional instances — the gold stack and oil engines remain primary.
+static omega::cross::NoiseBandMomentumEngine g_nbm_gold_london;  // GOLD.F  — London 07:00-13:30 UTC
+static omega::cross::NoiseBandMomentumEngine g_nbm_oil_london;   // USOIL.F — London 07:00-13:30 UTC
+
 // Engine 10: SilverTurtleTick — DISABLED after real-tick backtest FAILURE.
 // Backtest on 42,306,203 real XAGUSD ticks (Jan 2023–Jan 2025):
 //   Sharpe=-16.23, MaxDD=$18,381, WR=31.8%, 0/24 positive months.
@@ -3453,7 +3460,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         + static_cast<int>(g_nbm_sp.has_open_position())
                         + static_cast<int>(g_nbm_nq.has_open_position())
                         + static_cast<int>(g_nbm_nas.has_open_position())
-                        + static_cast<int>(g_nbm_us30.has_open_position());
+                        + static_cast<int>(g_nbm_us30.has_open_position())
+                        + static_cast<int>(g_nbm_gold_london.has_open_position())
+                        + static_cast<int>(g_nbm_oil_london.has_open_position());
         const int eu_eq = static_cast<int>(g_eng_ger30.pos.active)
                         + static_cast<int>(g_eng_uk100.pos.active)
                         + static_cast<int>(g_eng_estx50.pos.active)
@@ -4061,7 +4070,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_nbm_sp.has_open_position()) +
                 static_cast<int>(g_nbm_nq.has_open_position()) +
                 static_cast<int>(g_nbm_nas.has_open_position()) +
-                static_cast<int>(g_nbm_us30.has_open_position());
+                static_cast<int>(g_nbm_us30.has_open_position()) +
+                static_cast<int>(g_nbm_gold_london.has_open_position()) +
+                static_cast<int>(g_nbm_oil_london.has_open_position());
             // ── Session-aware position cap ────────────────────────────────
             // Asia = max 2 (low liquidity, wide spreads, few signals worth taking)
             // Dead zone (05-07 UTC) = max 1 (preparation period, no fresh data)
@@ -4266,7 +4277,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_nbm_sp.has_open_position()) +
             static_cast<int>(g_nbm_nq.has_open_position()) +
             static_cast<int>(g_nbm_nas.has_open_position()) +
-            static_cast<int>(g_nbm_us30.has_open_position());
+            static_cast<int>(g_nbm_us30.has_open_position()) +
+            static_cast<int>(g_nbm_gold_london.has_open_position()) +
+            static_cast<int>(g_nbm_oil_london.has_open_position());
         // Session-aware cap (mirrors independent_symbols path)
         int session_cap2 = g_cfg.max_open_positions;
         const int slot2 = g_macro_ctx.session_slot;
@@ -5560,6 +5573,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     else g_ca_brent_wti.patch_size(g_last_directional_lot); }
                 }
             }
+            // NBM London session (07:00-13:30 UTC) on USOIL.F
+            if (!g_nbm_oil_london.has_open_position()
+                && !g_ca_eia_fade.has_open_position()
+                && !g_ca_brent_wti.has_open_position()
+                && base_can) {
+                const auto nbm_oil = g_nbm_oil_london.on_tick(sym, bid, ask, ca_on_close);
+                if (nbm_oil.valid) {
+                    g_telemetry.UpdateLastSignal("USOIL.F",
+                        nbm_oil.is_long ? "LONG" : "SHORT", nbm_oil.entry,
+                        nbm_oil.reason, "NBM_LONDON", regime.c_str(), "NBM_LONDON",
+                        nbm_oil.tp, nbm_oil.sl);
+                    if (!enter_directional("USOIL.F", nbm_oil.is_long, nbm_oil.entry,
+                                           nbm_oil.sl, nbm_oil.tp))
+                        g_nbm_oil_london.cancel();
+                    else g_nbm_oil_london.patch_size(g_last_directional_lot);
+                }
+            }
         }
     }
     else if (sym == "DJ30.F") {
@@ -6730,6 +6760,29 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
         }
+
+        // ── NBM London session (07:00-13:30 UTC) on GOLD.F ───────────────────
+        // Runs independently of the gold stack/flow/bracket — pure momentum
+        // engine using London open as session anchor. Gated: no other gold pos.
+        if (gold_can_enter
+            && !g_nbm_gold_london.has_open_position()
+            && !g_gold_stack.has_open_position()
+            && !g_gold_flow.has_open_position()
+            && !g_bracket_gold.has_open_position()
+            && !g_trend_pb_gold.has_open_position()
+            && !g_le_stack.has_open_position()) {
+            const auto nbm_lon = g_nbm_gold_london.on_tick(sym, bid, ask, ca_on_close);
+            if (nbm_lon.valid) {
+                g_telemetry.UpdateLastSignal("GOLD.F",
+                    nbm_lon.is_long ? "LONG" : "SHORT", nbm_lon.entry,
+                    nbm_lon.reason, "NBM_LONDON", regime.c_str(), "NBM_LONDON",
+                    nbm_lon.tp, nbm_lon.sl);
+                if (!enter_directional("GOLD.F", nbm_lon.is_long, nbm_lon.entry,
+                                       nbm_lon.sl, nbm_lon.tp))
+                    g_nbm_gold_london.cancel();
+                else g_nbm_gold_london.patch_size(g_last_directional_lot);
+            }
+        }
     }
     else {
         // Confirmation-only symbol (VIX, ES, NAS100, DX etc) -- no engine dispatch
@@ -7611,7 +7664,8 @@ static void quote_loop() {
           snap_px("DJ30.F",b,a);  if(b>0&&a>0){g_nbm_us30.force_close(b,a,shutdown_cb);}
           snap_px("EURUSD",b,a);  if(b>0&&a>0){g_vwap_rev_eurusd.force_close(b,a,shutdown_cb);}
           snap_px("GER40",b,a);   if(b>0&&a>0){g_orb_ger30.force_close(b,a,shutdown_cb);g_vwap_rev_ger40.force_close(b,a,shutdown_cb);g_trend_pb_ger40.force_close(b,a,shutdown_cb);}
-          snap_px("GOLD.F",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb);}
+          snap_px("GOLD.F",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb);g_nbm_gold_london.force_close(b,a,shutdown_cb);}
+          snap_px("USOIL.F",b,a); if(b>0&&a>0){g_nbm_oil_london.force_close(b,a,shutdown_cb);}  // London NBM oil
           snap_px("XAGUSD",b,a);  if(b>0&&a>0){g_orb_silver.force_close(b,a,shutdown_cb);}
           snap_px("UK100",b,a);   if(b>0&&a>0){g_orb_uk100.force_close(b,a,shutdown_cb);}
           snap_px("ESTX50",b,a);  if(b>0&&a>0){g_orb_estx50.force_close(b,a,shutdown_cb);}
@@ -7695,7 +7749,8 @@ static void quote_loop() {
               get_px("DJ30.F",b,a);   g_nbm_us30.force_close(b,a,scb);
               get_px("EURUSD",b,a);   g_vwap_rev_eurusd.force_close(b,a,scb);
               get_px("GER40",b,a);    g_orb_ger30.force_close(b,a,scb); g_vwap_rev_ger40.force_close(b,a,scb); g_trend_pb_ger40.force_close(b,a,scb);
-              get_px("GOLD.F",b,a);   g_trend_pb_gold.force_close(b,a,scb);
+              get_px("GOLD.F",b,a);   g_trend_pb_gold.force_close(b,a,scb); g_nbm_gold_london.force_close(b,a,scb);
+              get_px("USOIL.F",b,a);  g_nbm_oil_london.force_close(b,a,scb);  // London NBM oil
               get_px("XAGUSD",b,a);   g_orb_silver.force_close(b,a,scb);
               get_px("UK100",b,a);    g_orb_uk100.force_close(b,a,scb);
               get_px("ESTX50",b,a);   g_orb_estx50.force_close(b,a,scb);
@@ -8065,6 +8120,21 @@ int main(int argc, char* argv[])
     g_vwap_rev_ger40.EXTENSION_THRESH_PCT = 0.20; g_vwap_rev_ger40.COOLDOWN_SEC = 180;
     // EURUSD: 0.12% extension threshold (FX moves more precisely, smaller range)
     g_vwap_rev_eurusd.EXTENSION_THRESH_PCT = 0.12; g_vwap_rev_eurusd.COOLDOWN_SEC = 120;
+    // ── NBM London session engines (07:00-13:30 UTC) ────────────────────────────
+    // Covers the gap before NY open. Gold and oil are liquid from London open.
+    // Uses same ATR/band logic as NY engines but anchored to London open price.
+    g_nbm_gold_london.SESSION_OPEN_UTC  =  7;  g_nbm_gold_london.SESSION_OPEN_MIN  =  0;
+    g_nbm_gold_london.SESSION_CLOSE_UTC = 13;  g_nbm_gold_london.SESSION_CLOSE_MIN = 30;
+    g_nbm_gold_london.MAX_SPREAD_PCT    = 0.02;  // gold spread tighter than indices
+    g_nbm_gold_london.WARMUP_TICKS      = 120;
+    g_nbm_gold_london.COOLDOWN_SEC      = 600;
+
+    g_nbm_oil_london.SESSION_OPEN_UTC  =  7;  g_nbm_oil_london.SESSION_OPEN_MIN  =  0;
+    g_nbm_oil_london.SESSION_CLOSE_UTC = 13;  g_nbm_oil_london.SESSION_CLOSE_MIN = 30;
+    g_nbm_oil_london.MAX_SPREAD_PCT    = 0.05;
+    g_nbm_oil_london.WARMUP_TICKS      = 120;
+    g_nbm_oil_london.COOLDOWN_SEC      = 600;
+
     // TrendPullbackEngine params — per-instrument tuning
     // Gold: wider pullback band (noise floor $8-20), 90s cooldown
     g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.08;  // 0.08% of gold price = ~$3.50 at $4400
