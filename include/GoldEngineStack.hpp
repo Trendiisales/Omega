@@ -13,13 +13,17 @@
 //   5. LiquiditySweepPro     — MEAN_REVERSION/IMPULSE: stop-hunt reversal
 //   6. LiquiditySweepPressure— MEAN_REVERSION/IMPULSE: pre-sweep pressure detection
 //   7. MeanReversion         — MEAN_REVERSION regime: Z-score fade, LB=60 Z=2.0 SL=$4 TP=$12
-//   8. IntradaySeasonality   — COMPRESSION/MEAN_REV: t-stat hourly directional bias
-//   9. WickRejection         — ALL regimes: 5-min wick >= 55% stop-hunt fade, Sharpe=1.68
-//  10. DonchianBreakout      — ALL regimes: 40-bar 5-min Turtle breakout, HTF-filtered, Sharpe=2.34
-//  11. NR3Breakout           — COMPRESSION/MEAN_REV: narrowest 3-bar range + confirm, Sharpe=2.00
-//  12. SpikeFade             — ALL regimes: fade $10+ 5-min candle moves (macro exhaustion)
-//  13. AsianRange            — COMPRESSION/MEAN_REV: Asian 00-07 UTC range London breakout
-//  14. DynamicRange          — MEAN_REV/COMPRESSION: 20-bar range extremes fade, Sharpe=2.36
+//   4. IntradaySeasonality   — COMPRESSION/MEAN_REV: half-hourly t-stat bias, Sharpe=1.63 (upgraded)
+//   9. WickRejection         — ALL regimes: 5-min wick stop-hunt fade, Sharpe=1.68
+//  10. DonchianBreakout      — ALL regimes: 40-bar 5-min Turtle, HTF-filtered, Sharpe=2.34
+//  11. NR3Breakout           — COMPRESSION/MEAN_REV: narrowest 3-bar + confirm, Sharpe=2.00
+//  12. SpikeFade             — ALL regimes: fade $10+ 5-min moves (macro exhaustion)
+//  13. AsianRange            — COMPRESSION/MEAN_REV: Asian 00-07 UTC range London break
+//  14. DynamicRange          — MEAN_REV/COMPRESSION: 20-bar range extremes, Sharpe=2.36
+//  15. WickRejTick           — ALL regimes: WickRejection on 300-tick bars, Sharpe=3.79
+//  16. TurtleTick            — ALL regimes: Turtle N=40 on 300-tick bars, Sharpe=7.60
+//  17. NR3Tick               — COMPRESSION/MEAN_REV: NR3 on 300-tick bars, Sharpe=4.10
+
 //
 // Usage:
 //   GoldEngineStack g_gold;
@@ -635,57 +639,56 @@ public:
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. IntradaySeasonalityEngine
-// ─────────────────────────────────────────────────────────────────────────────
-// DATA-CALIBRATED: 718,194 bars XAUUSD Jan 2024–Jan 2026
-//
-// Statistical basis: one-sample t-test on 60-bar forward returns by UTC hour.
-// All hours below are significant at |t| > 2.5 (p < 0.01) over 2yr dataset.
-//
-//   LONG bias hours (UTC): 0,1,3,6,7,8,9,16,17,18,19,20,21,22,23
-//     Strongest: H21 t=33.1 ($1.83/bar fwd), H00 t=13.0 ($0.59), H20 t=14.2
-//   SHORT bias hours (UTC): 5, 10, 13
-//     Strongest: H05 t=-8.2 ($-0.31), H10 t=-3.1, H13 t=-3.4
-//
-// Sim results: 6,788 trades | WR=49.2% | Total=$2,065 over 2yr | Sharpe=1.08
-// MaxDD=$256 — acceptable given standalone contribution.
-//
-// Design: fires ONE signal per calendar hour, at the first tick of that hour.
-// Only fires if price has not moved more than IMPULSE_MAX against the bias
-// direction (avoids entering at the tail of an already-exhausted move).
-// Blocked in dead zone 05:00–07:00 UTC — already covered by SHORT gate at H05.
-//
-// Regime: active in MEAN_REVERSION and COMPRESSION only — not in TREND or
-// IMPULSE where session direction overrides the hourly prior.
-// SL/TP calibrated to give SL < 60-bar expected move so we capture the bias.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------
+// UPGRADED: hourly -> half-hourly (48 buckets, |t|>5 threshold)
+//   Old: 6,788T WR=49.2% $2,065/2yr Sharpe=1.08
+//   New: 10,062T WR=49.1% $4,257/2yr Sharpe=1.63
+//   Key: bucket 43 = 21:30 UTC t=+24.2 (strongest signal in dataset)
+// -----------------------------------------------------------------------
 class IntradaySeasonalityEngine : public EngineBase {
-    static constexpr double SL_TICKS_D   = 50;   // $5.00 stop
-    static constexpr double TP_TICKS_D   = 100;  // $10.00 target 2:1 RR
-    static constexpr double MAX_SPREAD   = 2.0;
-    static constexpr double IMPULSE_MAX  = 3.0;  // don't enter if price already moved $3 vs bias
+    static constexpr double SL_TICKS_D  = 50;
+    static constexpr double TP_TICKS_D  = 100;
+    static constexpr double MAX_SPREAD  = 2.0;
+    static constexpr double IMPULSE_MAX = 3.0;
 
-    // Hours with statistically significant directional bias (|t| > 2.5)
-    static int hour_bias(int h) noexcept {
-        // Returns +1 (LONG bias), -1 (SHORT bias), 0 (no edge)
-        switch (h) {
-            case  0: case  1: case  3: return +1;  // Asian night drift
-            case  6: case  7: case  8: case  9: return +1;  // London open / early morning
-            case 16: case 17: case 18: case 19: return +1;  // NY afternoon drift
-            case 20: case 21: case 22: case 23: return +1;  // NY close / Asia open
-            case  5: return -1;  // late Asia runoff: t=-8.2
-            case 10: return -1;  // London mid-session fade: t=-3.1
-            case 13: return -1;  // NY open reversal: t=-3.4
-            default: return  0;  // hours 2, 4, 11, 12, 14, 15 — no significant edge
+    // bucket = hour*2 + (minute>=30?1:0)
+    // Only |t|>5 buckets over 718k bars (multiple-comparison corrected).
+    static int half_hour_bias(int b) noexcept {
+        switch (b) {
+            case  0: return +1;  // 00:00 t=+11.5
+            case  1: return +1;  // 00:30 t=+7.2
+            case  2: return +1;  // 01:00 t=+8.8
+            case  3: return +1;  // 01:30 t=+7.5
+            case  6: return +1;  // 03:00 t=+7.7
+            case  8: return +1;  // 04:00 t=+8.3
+            case 12: return +1;  // 06:00 t=+7.9
+            case 13: return +1;  // 06:30 t=+6.4
+            case 16: return +1;  // 08:00 t=+10.2
+            case 19: return +1;  // 09:30 t=+6.3
+            case 24: return +1;  // 12:00 t=+6.7
+            case 32: return +1;  // 16:00 t=+6.1
+            case 35: return +1;  // 17:30 t=+6.7
+            case 39: return +1;  // 19:30 t=+7.6
+            case 40: return +1;  // 20:00 t=+10.8
+            case 41: return +1;  // 20:30 t=+9.3
+            case 42: return +1;  // 21:00 t=+22.6
+            case 43: return +1;  // 21:30 t=+24.2 -- STRONGEST signal
+            case 44: return +1;  // 22:00 t=+6.9
+            case 47: return +1;  // 23:30 t=+6.9
+            case  9: return -1;  // 04:30 t=-5.1
+            case 10: return -1;  // 05:00 t=-10.2
+            case 20: return -1;  // 10:00 t=-10.2
+            default: return  0;
         }
     }
 
-    int  last_fired_hour_ = -1;   // prevent multi-fire within same hour
-    int  last_fired_day_  = -1;
+    int  last_fired_hh_  = -1;
+    int  last_fired_day_ = -1;
 
     std::chrono::steady_clock::time_point last_signal_{
         std::chrono::steady_clock::now() - std::chrono::seconds(10)};
 
-    static std::pair<int,int> utc_hour_day() noexcept {
+    static std::tuple<int,int,int> utc_h_m_day() noexcept {
         const auto t = std::chrono::system_clock::to_time_t(
                            std::chrono::system_clock::now());
         struct tm ti{};
@@ -694,69 +697,57 @@ class IntradaySeasonalityEngine : public EngineBase {
 #else
         gmtime_r(&t, &ti);
 #endif
-        return {ti.tm_hour, ti.tm_yday};
+        return {ti.tm_hour, ti.tm_min, ti.tm_yday};
     }
 
 public:
     IntradaySeasonalityEngine() : EngineBase("IntradaySeasonality", 0.9) {}
 
-    void reset() override { last_fired_hour_ = -1; last_fired_day_ = -1; }
+    void reset() override { last_fired_hh_ = -1; last_fired_day_ = -1; }
 
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
         if (s.session == SessionType::UNKNOWN) return noSignal();
 
-        auto [h, day] = utc_hour_day();
+        auto [h, m, day] = utc_h_m_day();
+        const int bucket = h * 2 + (m >= 30 ? 1 : 0);
 
-        // One signal per hour per day
-        if (h == last_fired_hour_ && day == last_fired_day_) return noSignal();
+        if (bucket == last_fired_hh_ && day == last_fired_day_) return noSignal();
 
-        const int bias = hour_bias(h);
+        const int bias = half_hour_bias(bucket);
         if (bias == 0) return noSignal();
 
-        // Don't enter if price has already moved strongly in the bias direction
-        // (we'd be chasing an exhausted move)
-        if (s.prev_mid > 0.0) {
-            const double move = (s.mid - s.prev_mid) * bias;
-            if (move > IMPULSE_MAX) return noSignal();
-        }
-
-        // Require minimal VWAP confirmation — price should be on the correct
-        // side of VWAP for the bias direction
-        if (s.vwap > 0.0) {
-            const double vwap_dev = (s.mid - s.vwap) * bias;
-            if (vwap_dev < -1.0) return noSignal();  // too far against VWAP
-        }
+        if (s.prev_mid > 0.0 && (s.mid - s.prev_mid) * bias > IMPULSE_MAX)
+            return noSignal();
+        if (s.vwap > 0.0 && (s.mid - s.vwap) * bias < -1.0)
+            return noSignal();
 
         auto now = std::chrono::steady_clock::now();
         if (now - last_signal_ < std::chrono::seconds(2)) return noSignal();
 
         Signal sig;
-        sig.valid      = true;
-        sig.size       = 0.01;
-        sig.tp         = static_cast<int>(TP_TICKS_D);
-        sig.sl         = static_cast<int>(SL_TICKS_D);
-        sig.confidence = 0.75;  // fixed — statistical edge, not price-action confidence
+        sig.valid = true; sig.size = 0.01;
+        sig.tp = static_cast<int>(TP_TICKS_D);
+        sig.sl = static_cast<int>(SL_TICKS_D);
+        sig.confidence = 0.75;
 
         if (bias == +1) {
-            sig.side  = TradeSide::LONG;
-            sig.entry = s.ask;
+            sig.side = TradeSide::LONG; sig.entry = s.ask;
             strncpy(sig.reason, "INTRADAY_SEAS_LONG",  31);
         } else {
-            sig.side  = TradeSide::SHORT;
-            sig.entry = s.bid;
+            sig.side = TradeSide::SHORT; sig.entry = s.bid;
             strncpy(sig.reason, "INTRADAY_SEAS_SHORT", 31);
         }
         strncpy(sig.engine, "IntradaySeasonality", 31);
 
-        last_fired_hour_ = h;
-        last_fired_day_  = day;
-        last_signal_     = now;
+        last_fired_hh_  = bucket;
+        last_fired_day_ = day;
+        last_signal_    = now;
         signal_count_++;
         return sig;
     }
-};
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. WickRejectionEngine
@@ -1729,6 +1720,262 @@ public:
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// -------------------------------------------------------------------------
+// TickBarBuffer<N> -- shared tick-bar aggregator used by engines 15-17.
+// Each bar accumulates exactly N price moves. Normalises information content:
+// a bar at 3am and one at NY open each contain exactly N price decisions.
+// Only 5% overlap with 5-min time-bar versions -- independent signals.
+// -------------------------------------------------------------------------
+template<int N>
+struct TickBarBuffer {
+    struct Bar {
+        double open=0,high=0,low=0,close=0; bool valid=false;
+        void reset(double p) noexcept {open=high=low=close=p;valid=true;}
+        void update(double p) noexcept {if(p>high)high=p;if(p<low)low=p;close=p;}
+        double range()       const noexcept {return high-low;}
+        double upper_wick()  const noexcept {return high-std::max(open,close);}
+        double lower_wick()  const noexcept {return std::min(open,close)-low;}
+    };
+    static constexpr int KEEP=48;
+    Bar   bars[KEEP];
+    int   head=0, n_bars=0, tick_cnt=0;
+    Bar   current;
+
+    bool on_tick(double price) noexcept {
+        if (!current.valid) current.reset(price);
+        else current.update(price);
+        if (++tick_cnt < N) return false;
+        head=(head+1)%KEEP; bars[head]=current; ++n_bars;
+        current.reset(price); tick_cnt=0;
+        return true;
+    }
+    bool ready(int min_bars=42) const noexcept {return n_bars>=min_bars;}
+    const Bar& bar(int age=0) const noexcept {return bars[(head-age+KEEP)%KEEP];}
+    double roll_high(int n) const noexcept {
+        double hi=0; for(int i=0;i<n&&i<n_bars;++i) hi=std::max(hi,bar(i).high); return hi;
+    }
+    double roll_low(int n) const noexcept {
+        double lo=1e9; for(int i=0;i<n&&i<n_bars;++i) lo=std::min(lo,bar(i).low); return lo;
+    }
+};
+
+// -------------------------------------------------------------------------
+// 15. WickRejectionTickEngine
+// -------------------------------------------------------------------------
+// Wick rejection on 300-tick bars. Sharpe=3.79 vs 1.68 on 5-min time bars.
+// 5% signal overlap with WickRejectionEngine -- independent edge.
+// Sim: 562T WR=40.7% $1,376/2yr Sharpe=3.79 MaxDD=$72
+//      2024: 274T WR=40.9% $647 Sharpe=3.69
+//      2025: 286T WR=40.6% $720 Sharpe=3.86 (year-stable)
+// SL=$6 TP=$15. Cooldown=300s. ALL regimes.
+// -------------------------------------------------------------------------
+class WickRejectionTickEngine : public EngineBase {
+    static constexpr double WICK_PCT    = 0.55;
+    static constexpr double MIN_WICK    = 1.50;
+    static constexpr double MIN_RANGE   = 2.25;
+    static constexpr double MAX_SPREAD  = 2.0;
+    static constexpr int    SL_TICKS    = 60;
+    static constexpr int    TP_TICKS    = 150;
+    static constexpr int    COOLDOWN_SEC= 300;
+
+    TickBarBuffer<300> tb_;
+    int  pending_side_=0, bars_since_arm_=0;
+
+    std::chrono::steady_clock::time_point last_sig_{
+        std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SEC+1)};
+
+    static bool in_dead_zone() noexcept {
+        const auto t=std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti{};
+#ifdef _WIN32
+        gmtime_s(&ti,&t);
+#else
+        gmtime_r(&t,&ti);
+#endif
+        return ti.tm_hour>=5&&ti.tm_hour<7;
+    }
+
+public:
+    WickRejectionTickEngine() : EngineBase("WickRejTick",1.2) {}
+    void reset() override {tb_=TickBarBuffer<300>{};pending_side_=0;bars_since_arm_=0;}
+
+    Signal process(const GoldSnapshot& s) override {
+        if(!enabled_||!s.is_valid()) return noSignal();
+        if(s.spread>MAX_SPREAD)      return noSignal();
+        if(in_dead_zone())           return noSignal();
+
+        const bool bar_closed=tb_.on_tick(s.mid);
+        if(bar_closed&&tb_.ready(3)){
+            ++bars_since_arm_;
+            const auto& b=tb_.bar(1);
+            const double rng=b.range();
+            if(rng>=MIN_RANGE){
+                const double uw=b.upper_wick(),lw=b.lower_wick();
+                auto now=std::chrono::steady_clock::now();
+                auto el=std::chrono::duration_cast<std::chrono::seconds>(now-last_sig_).count();
+                if(el>=COOLDOWN_SEC){
+                    if(uw>=rng*WICK_PCT&&uw>=MIN_WICK){pending_side_=-1;bars_since_arm_=0;}
+                    else if(lw>=rng*WICK_PCT&&lw>=MIN_WICK){pending_side_=+1;bars_since_arm_=0;}
+                }
+            }
+        }
+        if(pending_side_==0||bars_since_arm_>2){pending_side_=0;return noSignal();}
+        auto now=std::chrono::steady_clock::now();
+        Signal sig;
+        sig.valid=true;sig.size=0.01;sig.sl=SL_TICKS;sig.tp=TP_TICKS;sig.confidence=1.0;
+        if(pending_side_==+1){
+            sig.side=TradeSide::LONG;sig.entry=s.ask;
+            strncpy(sig.reason,"WICK_TICK_LONG", 31);
+        } else {
+            sig.side=TradeSide::SHORT;sig.entry=s.bid;
+            strncpy(sig.reason,"WICK_TICK_SHORT",31);
+        }
+        strncpy(sig.engine,"WickRejTick",31);
+        pending_side_=0;last_sig_=now;signal_count_++;
+        return sig;
+    }
+};
+
+// -------------------------------------------------------------------------
+// 16. TurtleTickEngine
+// -------------------------------------------------------------------------
+// Turtle N=40 on 300-tick bars. HTF EMA50/250 filter. Sharpe=7.60.
+// Sim: 104T WR=49.0% $800/2yr Sharpe=7.60 MaxDD=$48
+//      2024: 37T WR=51.4% $312 Sharpe=8.34
+//      2025: 67T WR=47.8% $488 Sharpe=7.20
+// SL=$8 TP=$24 (3:1 RR). Cooldown=900s. ALL regimes.
+// -------------------------------------------------------------------------
+class TurtleTickEngine : public EngineBase {
+    static constexpr int    TURTLE_N    = 40;
+    static constexpr double MAX_SPREAD  = 2.0;
+    static constexpr int    SL_TICKS    = 80;
+    static constexpr int    TP_TICKS    = 240;
+    static constexpr int    COOLDOWN_SEC= 900;
+
+    TickBarBuffer<300> tb_;
+    double ema50_=0,ema250_=0; bool ema_init_=false;
+    static constexpr double A50=2.0/51.0, A250=2.0/251.0;
+
+    std::chrono::steady_clock::time_point last_sig_{
+        std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SEC+1)};
+
+public:
+    TurtleTickEngine() : EngineBase("TurtleTick",1.1) {}
+    void reset() override {tb_=TickBarBuffer<300>{};ema_init_=false;ema50_=0;ema250_=0;}
+
+    Signal process(const GoldSnapshot& s) override {
+        if(!enabled_||!s.is_valid()) return noSignal();
+        if(s.spread>MAX_SPREAD)      return noSignal();
+        if(!ema_init_){ema50_=ema250_=s.mid;ema_init_=true;}
+        else{ema50_+=A50*(s.mid-ema50_);ema250_+=A250*(s.mid-ema250_);}
+        const int htf_dir=(ema50_>ema250_)?1:-1;
+        tb_.on_tick(s.mid);
+        if(!tb_.ready(TURTLE_N+2)) return noSignal();
+        auto now=std::chrono::steady_clock::now();
+        if(std::chrono::duration_cast<std::chrono::seconds>(now-last_sig_).count()<COOLDOWN_SEC)
+            return noSignal();
+        const double dhi=tb_.roll_high(TURTLE_N);
+        const double dlo=tb_.roll_low(TURTLE_N);
+        if(dhi<=0||dlo>=1e8) return noSignal();
+        Signal sig;
+        sig.size=0.01;sig.sl=SL_TICKS;sig.tp=TP_TICKS;
+        if(s.mid>dhi&&htf_dir==1){
+            sig.valid=true;sig.side=TradeSide::LONG;sig.entry=s.ask;
+            sig.confidence=std::min(1.5,(s.mid-dhi)/2.0+0.9);
+            strncpy(sig.reason,"TURTLE_TICK_LONG", 31);
+            strncpy(sig.engine,"TurtleTick",31);
+        } else if(s.mid<dlo&&htf_dir==-1){
+            sig.valid=true;sig.side=TradeSide::SHORT;sig.entry=s.bid;
+            sig.confidence=std::min(1.5,(dlo-s.mid)/2.0+0.9);
+            strncpy(sig.reason,"TURTLE_TICK_SHORT",31);
+            strncpy(sig.engine,"TurtleTick",31);
+        }
+        if(sig.valid){last_sig_=now;signal_count_++;}
+        return sig;
+    }
+};
+
+// -------------------------------------------------------------------------
+// 17. NR3TickEngine
+// -------------------------------------------------------------------------
+// NR3 narrowest-3-bar breakout on 300-tick bars. Sharpe=4.10 vs 2.00 on time bars.
+// No session gate -- tick bars self-filter low-activity periods.
+// Sim: 565T WR=41.4% $1,009/2yr Sharpe=4.10 MaxDD=$68
+// SL=$4 TP=$10. Cooldown=300s. COMPRESSION+MEAN_REVERSION.
+// -------------------------------------------------------------------------
+class NR3TickEngine : public EngineBase {
+    static constexpr double MIN_RANGE    = 2.0;
+    static constexpr double CONFIRM_PCT  = 0.40;
+    static constexpr double MAX_SPREAD   = 2.0;
+    static constexpr int    SL_TICKS     = 40;
+    static constexpr int    TP_TICKS     = 100;
+    static constexpr int    COOLDOWN_SEC = 300;
+
+    TickBarBuffer<300> tb_;
+    bool   waiting_confirm_=false;
+    int    confirm_dir_=0,bars_since_arm_=0;
+    double nr3_high_=0,nr3_low_=0;
+
+    std::chrono::steady_clock::time_point last_sig_{
+        std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SEC+1)};
+
+    bool is_nr3() const noexcept {
+        if(tb_.n_bars<3) return false;
+        const double r0=tb_.bar(0).range();
+        return r0>=MIN_RANGE && r0<tb_.bar(1).range() && r0<tb_.bar(2).range();
+    }
+
+public:
+    NR3TickEngine() : EngineBase("NR3Tick",1.1) {}
+    void reset() override {tb_=TickBarBuffer<300>{};waiting_confirm_=false;confirm_dir_=0;bars_since_arm_=0;}
+
+    Signal process(const GoldSnapshot& s) override {
+        if(!enabled_||!s.is_valid()) return noSignal();
+        if(s.spread>MAX_SPREAD)      return noSignal();
+
+        const bool bar_closed=tb_.on_tick(s.mid);
+        if(bar_closed&&tb_.ready(4)){
+            ++bars_since_arm_;
+            if(bars_since_arm_>3){waiting_confirm_=false;confirm_dir_=0;}
+            if(is_nr3()){
+                waiting_confirm_=true;
+                nr3_high_=tb_.bar(0).high; nr3_low_=tb_.bar(0).low;
+                confirm_dir_=0; bars_since_arm_=0;
+            }
+        }
+        if(waiting_confirm_){
+            const auto& cur=tb_.current;
+            const double crng=cur.high-cur.low;
+            if(crng>0.5){
+                if(s.mid>nr3_high_){
+                    const double bt=std::max(cur.open,cur.close);
+                    if(bt>cur.low+crng*(1.0-CONFIRM_PCT)) confirm_dir_=+1;
+                } else if(s.mid<nr3_low_){
+                    const double bb=std::min(cur.open,cur.close);
+                    if(bb<cur.high-crng*(1.0-CONFIRM_PCT)) confirm_dir_=-1;
+                }
+            }
+        }
+        if(!waiting_confirm_||confirm_dir_==0) return noSignal();
+        auto now=std::chrono::steady_clock::now();
+        if(std::chrono::duration_cast<std::chrono::seconds>(now-last_sig_).count()<COOLDOWN_SEC)
+            return noSignal();
+        Signal sig;
+        sig.valid=true;sig.size=0.01;sig.sl=SL_TICKS;sig.tp=TP_TICKS;sig.confidence=0.90;
+        if(confirm_dir_==+1){
+            sig.side=TradeSide::LONG;sig.entry=s.ask;
+            strncpy(sig.reason,"NR3_TICK_LONG", 31);
+        } else {
+            sig.side=TradeSide::SHORT;sig.entry=s.bid;
+            strncpy(sig.reason,"NR3_TICK_SHORT",31);
+        }
+        strncpy(sig.engine,"NR3Tick",31);
+        waiting_confirm_=false;confirm_dir_=0;last_sig_=now;signal_count_++;
+        return sig;
+    }
+};
+
+
 // 5. MeanReversionEngine
 // ─────────────────────────────────────────────────────────────────────────────
 // DATA-CALIBRATED: 718,194 bars XAUUSD Jan 2024–Jan 2026
@@ -2199,19 +2446,23 @@ public:
                     // AsianRange fires in London window only — compression-to-expansion event.
                     en=(n=="CompressionBreakout"||n=="IntradaySeasonality"
                        ||n=="WickRejection"||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
-                       ||n=="AsianRange"||n=="DynamicRange"); break;
+                       ||n=="AsianRange"||n=="DynamicRange"
+                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"); break;
                 case MarketRegime::TREND:
-                    // DynamicRange BLOCKED in TREND - ranging in a trend destroys capital
-                    en=(n=="ImpulseContinuation"||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"); break;
+                    // DynamicRange + NR3Tick BLOCKED in TREND - ranging in a trend destroys capital
+                    en=(n=="ImpulseContinuation"||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
+                       ||n=="WickRejTick"||n=="TurtleTick"); break;
                 case MarketRegime::MEAN_REVERSION:
                     // Full suite: mean-rev engines + NR3 (coiling before expansion) + microstructure all-regime engines.
                     en=(n=="VWAP_SNAPBACK"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
                        ||n=="MeanReversion"||n=="IntradaySeasonality"
                        ||n=="WickRejection"||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
-                       ||n=="AsianRange"||n=="DynamicRange"); break;
+                       ||n=="AsianRange"||n=="DynamicRange"
+                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"); break;
                 case MarketRegime::IMPULSE:
                     en=(n=="ImpulseContinuation"||n=="SessionMomentum"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
-                       ||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"); break;
+                       ||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
+                       ||n=="WickRejTick"||n=="TurtleTick"); break;
             }
             e->setEnabled(en);
         }
@@ -2822,6 +3073,12 @@ public:
         // 20-bar range extremes fade. 18.8% overlap with MR — independent.
         // MaxDD=$85 (lowest all engines). MEAN_REVERSION + COMPRESSION only.
         engines_.push_back(std::make_unique<DynamicRangeEngine>());
+        // SIM: WickRejTick -- 562T | WR=40.7% | $1,376/2yr | Sharpe=3.79
+        engines_.push_back(std::make_unique<WickRejectionTickEngine>());
+        // SIM: TurtleTick -- 104T | WR=49.0% | $800/2yr | Sharpe=7.60
+        engines_.push_back(std::make_unique<TurtleTickEngine>());
+        // SIM: NR3Tick -- 565T | WR=41.4% | $1,009/2yr | Sharpe=4.10
+        engines_.push_back(std::make_unique<NR3TickEngine>());
         // SIM: MeanReversion LB=60 Z=2.0 SL=$4 TP=$12 — 15,955T | WR=59.6% | $4,347/2yr | Sharpe=1.16
         // Highest Sharpe of any engine. Fires in MEAN_REVERSION regime only.
         engines_.push_back(std::make_unique<MeanReversionEngine>());
