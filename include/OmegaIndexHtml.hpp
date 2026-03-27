@@ -513,10 +513,10 @@ R"OMEGA3(
           <div style="font-size:9px;"><span class="l2-dot l2-dot-dead" id="l2DotCt"></span><span style="color:var(--t2)" id="l2LblCt">CT</span></div>
         </div>
       </div>
-      <!-- Live open trades panel -->
-      <div id="liveTradesPanelOuter" style="flex:1;min-width:0;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:4px;transition:border-color 0.3s,box-shadow 0.3s;">
-        <div id="liveTradesPanel" style="display:flex;flex-direction:column;gap:2px;"></div>
-      </div>
+    </div>
+    <!-- Live open trades panel — full width below stats bar, prominent when positions open -->
+    <div id="liveTradesPanelOuter" style="border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:4px 6px;transition:border-color 0.3s,box-shadow 0.3s;flex-shrink:0;">
+      <div id="liveTradesPanel" style="display:flex;flex-direction:column;gap:2px;"></div>
     </div>
 
 )OMEGA3"
@@ -1338,8 +1338,10 @@ function updateDashboard(d){
       }
     }
     if(trades.length===0){
-      ltPanel.innerHTML='<div style="font-size:10px;color:var(--t3);padding:4px 8px;text-align:center;">No open positions</div>';
+      if(ltOuter) ltOuter.style.display='none';
+      ltPanel.innerHTML='';
     } else {
+      if(ltOuter) ltOuter.style.display='';
       // Summary header: count + total floating
       const totalSign=totalFloat>=0?'+':'';
       const totalCol=totalFloat>=0?'var(--green)':'var(--red)';
