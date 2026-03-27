@@ -697,6 +697,7 @@ R"OMEGA5(
       <div style="padding:6px 10px 4px;">
         <div class="eng-row"><span class="eng-lbl">BREAKOUT</span><span class="eng-pnl" id="engPnlBreakout">$0</span><span class="eng-cnt" id="engCntBreakout">0</span></div>
         <div class="eng-row"><span class="eng-lbl">BRACKET</span><span class="eng-pnl" id="engPnlBracket">$0</span><span class="eng-cnt" id="engCntBracket">0</span></div>
+        <div class="eng-row"><span class="eng-lbl">MEAN REV</span><span class="eng-pnl" id="engPnlMeanRev">$0</span><span class="eng-cnt" id="engCntMeanRev">0</span></div>
         <div class="eng-row"><span class="eng-lbl">GOLD STACK</span><span class="eng-pnl" id="engPnlGoldStack">$0</span><span class="eng-cnt" id="engCntGoldStack">0</span></div>
         <div class="eng-row"><span class="eng-lbl">GOLD FLOW</span><span class="eng-pnl" id="engPnlGoldFlow">$0</span><span class="eng-cnt" id="engCntGoldFlow">0</span></div>
         <div class="eng-row"><span class="eng-lbl">CROSS-ASSET</span><span class="eng-pnl" id="engPnlCross">$0</span><span class="eng-cnt" id="engCntCross">0</span></div>
@@ -1484,6 +1485,7 @@ R"OMEGA23B(
     const pairs=[
       ['Breakout',   ep.breakout,   et.breakout],
       ['Bracket',    ep.bracket,    et.bracket],
+      ['MeanRev',    ep.mean_rev,   et.mean_rev],
       ['GoldStack',  ep.gold_stack, et.gold_stack],
       ['GoldFlow',   ep.gold_flow,  et.gold_flow],
       ['Cross',      ep.cross,      et.cross],

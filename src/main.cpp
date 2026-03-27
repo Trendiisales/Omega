@@ -5608,22 +5608,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     else g_orb_silver.patch_size(g_last_directional_lot);
             }
         }
-        // Lead-lag: not supervisor-gated (intermarket signal, not regime-based)
-        // base_can now includes orb_silver and le_stack in xag_any_open above.
-        // ORB silver check is redundant but kept for clarity.
-        if (base_can && !g_orb_silver.has_open_position()) {  // ADDED: explicit ORB guard
-            const auto ll_sig = g_le_stack.on_tick_silver(bid, ask, rtt_check, ca_on_close);
-            if (ll_sig.valid) {
-                g_telemetry.UpdateLastSignal("XAGUSD",
-                    ll_sig.is_long ? "LONG" : "SHORT", ll_sig.entry, ll_sig.reason,
-                    "LEAD_LAG", regime.c_str(), "LE",
-                    ll_sig.tp, ll_sig.sl);
-                printf("[LEAD-LAG-SIZE] XAGUSD sl_abs=%.4f spread=%.4f (enter_directional)\n",
-                       std::fabs(ll_sig.entry - ll_sig.sl), ask - bid);
-                if (!enter_directional("XAGUSD", ll_sig.is_long, ll_sig.entry, ll_sig.sl, ll_sig.tp, ll_sig.size))
-                    g_le_stack.force_close_all(bid, ask, bid, ask, 0.0, ca_on_close);
-            }
-        }
+        // Lead-lag: HARD DISABLED on XAGUSD.
+        // SIM evidence: 3 iterations negative EV on non-gold symbols.
+        // Historical trade: XAGUSD SHORT 67.63->68.93 FORCE_CLOSE -$66.48 (LEAD_LAG).
+        // Only GOLD.F and USOIL.F are permitted until live validation is complete.
+        // Re-enable after 30+ days positive GOLD expectancy confirmed on shadow data.
+        // g_le_stack.on_tick_silver() call removed to prevent any XAGUSD entries.
     }
     else if (sym == "EURUSD") {
         g_macro_ctx.eur_mid_price = (bid + ask) * 0.5;  // for wall_above/below context

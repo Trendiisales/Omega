@@ -300,18 +300,20 @@ struct OmegaTelemetrySnapshot
     // --- Per-engine live session P&L (closed trades, USD) ---
     // Updated on each trade close from handle_closed_trade.
     // Allows GUI to show which engines are contributing vs dragging.
-    double eng_pnl_breakout   = 0.0;  // all CRTP BreakoutEngine instances
-    double eng_pnl_bracket    = 0.0;  // all BracketEngine instances
-    double eng_pnl_gold_stack = 0.0;  // GoldEngineStack (6 gold engines)
-    double eng_pnl_gold_flow  = 0.0;  // GoldFlowEngine
-    double eng_pnl_cross      = 0.0;  // all CrossAsset engines (ORB/VWAP/TrendPB/etc)
-    double eng_pnl_latency    = 0.0;  // LatencyEdgeStack
+    double eng_pnl_breakout      = 0.0;  // all CRTP BreakoutEngine instances
+    double eng_pnl_bracket       = 0.0;  // all BracketEngine instances
+    double eng_pnl_gold_stack    = 0.0;  // GoldEngineStack (gold engines excl. MeanReversion)
+    double eng_pnl_gold_flow     = 0.0;  // GoldFlowEngine
+    double eng_pnl_cross         = 0.0;  // all CrossAsset engines (ORB/VWAP/TrendPB/etc)
+    double eng_pnl_latency       = 0.0;  // LatencyEdgeStack
+    double eng_pnl_mean_rev      = 0.0;  // MeanReversionEngine (GoldEngineStack)
     int    eng_trades_breakout   = 0;
     int    eng_trades_bracket    = 0;
     int    eng_trades_gold_stack = 0;
     int    eng_trades_gold_flow  = 0;
     int    eng_trades_cross      = 0;
     int    eng_trades_latency    = 0;
+    int    eng_trades_mean_rev   = 0;
 
     // --- Real-time dollar exposure per correlation cluster ---
     // Each value = sum of (lot * tick_value_multiplier) for all OPEN positions in cluster.
@@ -660,6 +662,8 @@ public:
         const auto classify = [&]() {
             if (!engine_type) return 0;
             if (strstr(engine_type, "BRACKET"))    return 1;
+            if (strstr(engine_type, "MEAN_REV") || strstr(engine_type, "MeanReversion")
+             || strstr(engine_type, "MEAN-REV"))   return 6;
             if (strstr(engine_type, "GOLD_STACK") || strstr(engine_type, "GOLD-STACK")
              || strstr(engine_type, "GoldStack"))  return 2;
             if (strstr(engine_type, "GOLD_FLOW")  || strstr(engine_type, "L2_FLOW"))  return 3;
@@ -679,6 +683,7 @@ public:
             case 3: m_snap->eng_pnl_gold_flow  += net_pnl; ++m_snap->eng_trades_gold_flow;  break;
             case 4: m_snap->eng_pnl_cross      += net_pnl; ++m_snap->eng_trades_cross;      break;
             case 5: m_snap->eng_pnl_latency    += net_pnl; ++m_snap->eng_trades_latency;    break;
+            case 6: m_snap->eng_pnl_mean_rev   += net_pnl; ++m_snap->eng_trades_mean_rev;   break;
         }
     }
 
