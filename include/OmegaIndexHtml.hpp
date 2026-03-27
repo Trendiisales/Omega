@@ -566,6 +566,16 @@ R"OMEGA5(
       <div id="caEngGrid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:5px;"></div>
     </div>
 
+    <!-- Watchdog banner — shown when session is active but no trade in 20min -->
+    <div id="watchdogBanner" style="display:none;margin:0 0 6px 0;padding:7px 12px;background:rgba(255,136,0,0.10);border:1px solid rgba(255,136,0,0.45);border-radius:7px;display:none;align-items:center;gap:10px;">
+      <span style="font-size:13px;color:var(--amber)">⚠</span>
+      <div style="flex:1">
+        <span style="font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:1px;">No trades firing</span>
+        <span id="watchdogMsg" style="font-size:11px;color:var(--t2);margin-left:6px;"></span>
+      </div>
+      <span id="watchdogAge" style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--amber);font-weight:700;white-space:nowrap;"></span>
+    </div>
+
     <!-- Last signal + trades -->
     <div class="sig-trade-area">
       <div class="last-sig">
@@ -1377,6 +1387,50 @@ R"OMEGA23B(
     sb.textContent=sess;sb.style.color=col;}
 
   // Uptime
+  // ── Watchdog: warn if no trades firing during active session ──────────────
+  {
+    const banner=document.getElementById('watchdogBanner');
+    const msg=document.getElementById('watchdogMsg');
+    const age=document.getElementById('watchdogAge');
+    if(banner){
+      const now=Math.floor(Date.now()/1000);
+      const uptime=safe(d.uptime_sec);
+      const lastEntry=safe(d.last_entry_ts);
+      const lastSignal=safe(d.last_signal_ts);
+      const sessionActive=safe(d.session_tradeable)===1;
+      // Only warn after 5 min uptime (warmup period) + session must be active
+      const warmedUp=uptime>300;
+      if(sessionActive&&warmedUp){
+        const sinceEntry=lastEntry>0?(now-lastEntry):uptime;
+        const sinceSignal=lastSignal>0?(now-lastSignal):uptime;
+        // Warn thresholds: amber at 20min no entry, red at 40min
+        const WARN_SECS=1200; const CRIT_SECS=2400;
+        if(sinceEntry>=WARN_SECS){
+          banner.style.display='flex';
+          const mins=Math.floor(sinceEntry/60);
+          const isCrit=sinceEntry>=CRIT_SECS;
+          banner.style.borderColor=isCrit?'rgba(255,51,85,0.6)':'rgba(255,136,0,0.45)';
+          banner.style.background=isCrit?'rgba(255,51,85,0.10)':'rgba(255,136,0,0.10)';
+          const col=isCrit?'var(--red)':'var(--amber)';
+          banner.querySelector('span').style.color=col;
+          banner.querySelector('.watchdog-lbl')||0;
+          if(age) age.style.color=col;
+          if(age) age.textContent=mins+'m idle';
+          if(msg){
+            if(sinceSignal>=WARN_SECS)
+              msg.textContent='— no signals or entries. Check log for blocks.';
+            else
+              msg.textContent='— signals generating but entries blocked. Check R:R / spread / gates.';
+          }
+        } else {
+          banner.style.display='none';
+        }
+      } else {
+        banner.style.display='none';
+      }
+    }
+  }
+
   const ub=document.getElementById('uptimeBadge');
   if(ub&&d.uptime_sec!=null){const s=d.uptime_sec,h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60;
     ub.textContent='UP '+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0');

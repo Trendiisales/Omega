@@ -234,6 +234,8 @@ struct OmegaTelemetrySnapshot
     // --- Uptime ---
     int64_t uptime_sec;    // seconds since process start — written each tick by main loop
     int64_t start_time;    // unix timestamp of process start — set once at init
+    int64_t last_entry_ts;    // unix ts of last trade entry (0 = none this session)
+    int64_t last_signal_ts;   // unix ts of last signal generated
 
     // --- Cross-asset engine live state (Engines 1–8 + ORB instances) ---
     // One slot per named engine instance. Written each tick by main.cpp.
@@ -609,6 +611,12 @@ public:
         m_snap->sig_head  = (idx + 1) % OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY;
         if (m_snap->sig_count < OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY)
             ++m_snap->sig_count;
+        m_snap->last_signal_ts = static_cast<int64_t>(std::time(nullptr));
+    }
+
+    void UpdateLastEntryTs() {
+        if (!m_snap) return;
+        m_snap->last_entry_ts = static_cast<int64_t>(std::time(nullptr));
     }
 
     void UpdateMacroRegime(double vix, const char* regime, double es_nq_div)

@@ -5365,6 +5365,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_partial_exit.arm(esym, is_long, entry, tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
                            sl, final_lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
         send_live_order(esym, is_long, final_lot, entry);
+        g_telemetry.UpdateLastEntryTs();  // watchdog: stamp last successful entry
         return true;
     };
 
