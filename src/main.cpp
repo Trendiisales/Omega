@@ -4135,21 +4135,31 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
             // ── Session watermark drawdown ────────────────────────────────────
-            // Stop if drawdown from intra-day P&L peak exceeds watermark_pct
-            // of daily_loss_limit. Always uses daily_loss_limit as reference so the
-            // dollar threshold is predictable regardless of daily_profit_target setting.
-            // e.g. watermark=0.27, daily_loss_limit=$450 → threshold=$121 drawdown.
+            // Stop if drawdown from intra-day peak exceeds threshold AND daily P&L
+            // is still negative (i.e. we are actually losing money today).
+            //
+            // Critical rule: if daily_pnl > 0 the day is profitable — NEVER stop
+            // trading because of a drawdown from peak. A $800 day that pulls back
+            // $121 is still +$679. Stopping there is wrong. Only protect against
+            // real capital loss: drawdown threshold fires only when daily_pnl <= 0.
+            //
+            // Threshold = watermark_pct * daily_loss_limit (always fixed reference).
+            // e.g. 0.27 * $450 = $121. If daily_pnl goes negative by $121 → stop.
             if (g_cfg.session_watermark_pct > 0.0) {
                 const double peak_pnl   = g_omegaLedger.peakDailyPnl();
                 const double daily_pnl  = g_omegaLedger.dailyPnl();
                 const double drawdown   = peak_pnl - daily_pnl;
-                const double reference  = g_cfg.daily_loss_limit; // always loss_limit — not profit_target
+                const double reference  = g_cfg.daily_loss_limit;
                 const double threshold  = reference * g_cfg.session_watermark_pct;
-                if (peak_pnl > 0.0 && drawdown >= threshold) {
+                // Only block if: (a) we've given back threshold from peak AND
+                //                (b) the day is net negative — still profitable = ride on
+                const bool drawdown_hit = (peak_pnl > 0.0 && drawdown >= threshold);
+                const bool day_negative = (daily_pnl <= 0.0);
+                if (drawdown_hit && day_negative) {
                     static int64_t s_last_wm_log = 0;
                     if (nowSec() - s_last_wm_log > 60) {
                         s_last_wm_log = nowSec();
-                        printf("[OMEGA-RISK] Session watermark hit: peak=$%.2f current=$%.2f drawdown=$%.2f (limit=$%.2f) — no new entries\n",
+                        printf("[OMEGA-RISK] Watermark: peak=$%.2f current=$%.2f drawdown=$%.2f >= $%.2f AND day negative — no new entries\n",
                                peak_pnl, daily_pnl, drawdown, threshold);
                     }
                     return false;
@@ -4325,10 +4335,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (g_cfg.daily_profit_target > 0.0 &&
             g_omegaLedger.dailyPnl() >= g_cfg.daily_profit_target) return false;
         if (g_cfg.session_watermark_pct > 0.0) {
-            const double peak = g_omegaLedger.peakDailyPnl();
-            const double ref  = (g_cfg.daily_profit_target > 0.0)
-                ? g_cfg.daily_profit_target : g_cfg.daily_loss_limit;
-            if (peak > 0.0 && (peak - g_omegaLedger.dailyPnl()) >= ref * g_cfg.session_watermark_pct)
+            const double peak      = g_omegaLedger.peakDailyPnl();
+            const double daily_pnl = g_omegaLedger.dailyPnl();
+            const double drawdown  = peak - daily_pnl;
+            const double threshold = g_cfg.daily_loss_limit * g_cfg.session_watermark_pct;
+            // Only block when day is actually net negative — never kill a profitable day
+            if (peak > 0.0 && drawdown >= threshold && daily_pnl <= 0.0)
                 return false;
         }
         if (g_cfg.hourly_loss_limit > 0.0) {
