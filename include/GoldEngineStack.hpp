@@ -399,7 +399,7 @@ class ImpulseContinuationEngine : public EngineBase {
     // $40 allows entries throughout a strong trend while still blocking parabolic exhaustion.
     // MIN_VWAP_DIST kept at 1.50 — still need some VWAP dislocation to confirm trend.
     static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=40.0,MAX_SPREAD=2.20;
-    static constexpr int TP_TICKS=300,SL_TICKS=50; // $5.00 SL — matches real gold noise floor. EA used $25 but at 0.01 lots that's meaningless.
+    static constexpr int TP_TICKS=300,SL_TICKS=250; // EA-matched: $25.00 SL. risk_per_trade=$150 → 0.06 lots. $5 SL was noise-level, stopped out instantly.
     // MAX_ENTRIES_PER_TREND reduced 4→2: 4 stacked entries in the same trend leg
     // creates catastrophic exposure on reversal — the 00:20 cluster proved this.
     // 2 entries capture the dominant move without compounding reversal risk.
@@ -546,7 +546,7 @@ class SessionMomentumEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=60;
     static constexpr double IMPULSE_MIN=3.50,MAX_SPREAD=2.50;
-    static constexpr int TP_TICKS=300,SL_TICKS=50; // $5.00 SL — real noise floor. Was $20 (200 ticks) → produced 0.01 lot sizing.
+    static constexpr int TP_TICKS=300,SL_TICKS=250; // EA-matched: $25.00 SL. risk_per_trade=$150 → 0.06 lots. $5 SL was noise-level, stopped out instantly.
     // IMPULSE_MIN raised 1.60→3.50: $1.60 range over 60 ticks is normal London
     // micro-noise. $3.50 is the minimum for a genuine directional session open move.
     // Observed losing trade: 3s hold, $0.20 gross, $0.18 slip → $0.02 net.
@@ -628,7 +628,7 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 class VWAPSnapbackEngine : public EngineBase {
     static constexpr double VWAP_DEV_ENTRY=3.5,VWAP_DEV_STRONG=5.5,MOMENTUM_SPIKE=2.5,MAX_SPREAD=4.00;
-    static constexpr int TP_TICKS=250,SL_TICKS=50; // $5.00 SL — normalised to noise floor.
+    static constexpr int TP_TICKS=250,SL_TICKS=250; // EA-matched: $25.00 SL. risk_per_trade=$150 → 0.06 lots. $5 SL was noise-level, stopped out instantly.
     // TP $3.50 (35 ticks), SL $1.50 (15 ticks) — 2.3:1 R:R
     // SL raised from 8 ($0.80): was at spread noise floor. A single ask/bid bounce
     // would stop out the trade before it could develop. $1.50 = 2x spread.
