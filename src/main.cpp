@@ -428,6 +428,15 @@ static omega::cross::VWAPReversionEngine   g_vwap_rev_nq;     // USTEC.F
 static omega::cross::VWAPReversionEngine   g_vwap_rev_ger40;  // GER40
 static omega::cross::VWAPReversionEngine   g_vwap_rev_eurusd; // EURUSD
 
+// Engine 9: Noise Band Momentum — Zarattini/Aziz/Maroy research (Sharpe 3.0-5.9)
+// Rolling ATR noise band since session open. Entry on band breakout.
+// VWAP crossing is primary stop. One instance per instrument.
+// Wired to: US500.F, USTEC.F, NAS100, DJ30.F
+static omega::cross::NoiseBandMomentumEngine g_nbm_sp;    // US500.F — NY 13:30-21:30 UTC
+static omega::cross::NoiseBandMomentumEngine g_nbm_nq;    // USTEC.F — NY 13:30-21:30 UTC
+static omega::cross::NoiseBandMomentumEngine g_nbm_nas;   // NAS100  — NY 13:30-21:30 UTC
+static omega::cross::NoiseBandMomentumEngine g_nbm_us30;  // DJ30.F  — NY 13:30-21:30 UTC
+
 // Engine 8: Trend Pullback — EMA9/21/50 trend + pullback to EMA50 + bounce confirmation
 // Wired to: GOLD.F (gated — no other gold position), GER40
 static omega::cross::TrendPullbackEngine   g_trend_pb_gold;   // GOLD.F
@@ -3433,7 +3442,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         + static_cast<int>(g_ca_esnq.has_open_position())
                         + static_cast<int>(g_vwap_rev_sp.has_open_position())
                         + static_cast<int>(g_vwap_rev_nq.has_open_position())
-                        + static_cast<int>(g_orb_us.has_open_position());
+                        + static_cast<int>(g_orb_us.has_open_position())
+                        + static_cast<int>(g_nbm_sp.has_open_position())
+                        + static_cast<int>(g_nbm_nq.has_open_position())
+                        + static_cast<int>(g_nbm_nas.has_open_position())
+                        + static_cast<int>(g_nbm_us30.has_open_position());
         const int eu_eq = static_cast<int>(g_eng_ger30.pos.active)
                         + static_cast<int>(g_eng_uk100.pos.active)
                         + static_cast<int>(g_eng_estx50.pos.active)
@@ -4037,7 +4050,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_eng_brent.pos.active) +
                 static_cast<int>(g_gold_stack.has_open_position()) +
                 static_cast<int>(g_le_stack.has_open_position()) +
-                static_cast<int>(g_gold_flow.has_open_position());  // gold flow positions count toward global cap
+                static_cast<int>(g_gold_flow.has_open_position()) +  // gold flow positions count toward global cap
+                static_cast<int>(g_nbm_sp.has_open_position()) +
+                static_cast<int>(g_nbm_nq.has_open_position()) +
+                static_cast<int>(g_nbm_nas.has_open_position()) +
+                static_cast<int>(g_nbm_us30.has_open_position());
             // ── Session-aware position cap ────────────────────────────────
             // Asia = max 2 (low liquidity, wide spreads, few signals worth taking)
             // Dead zone (05-07 UTC) = max 1 (preparation period, no fresh data)
@@ -4238,7 +4255,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_eng_brent.pos.active) +
             static_cast<int>(g_gold_stack.has_open_position()) +
             static_cast<int>(g_le_stack.has_open_position()) +
-            static_cast<int>(g_gold_flow.has_open_position());  // gold flow positions count toward global cap
+            static_cast<int>(g_gold_flow.has_open_position()) +  // gold flow positions count toward global cap
+            static_cast<int>(g_nbm_sp.has_open_position()) +
+            static_cast<int>(g_nbm_nq.has_open_position()) +
+            static_cast<int>(g_nbm_nas.has_open_position()) +
+            static_cast<int>(g_nbm_us30.has_open_position());
         // Session-aware cap (mirrors independent_symbols path)
         int session_cap2 = g_cfg.max_open_positions;
         const int slot2 = g_macro_ctx.session_slot;
@@ -5340,11 +5361,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
 
     // ── ACTIVE SYMBOLS GATE ───────────────────────────────────────────────────
-    // SIM-VALIDATED: Only GOLD.F and USOIL.F have proven edge.
-    // All other symbols (indices, FX, silver) showed negative expectancy
-    // across 4 simulation iterations. Hard-blocked here until re-validated.
+    // SIM-VALIDATED: GOLD.F and USOIL.F have proven compression edge.
+    // US indices (US500.F, USTEC.F, NAS100, DJ30.F) now routed for
+    // NoiseBandMomentumEngine — Zarattini/Maroy research (Sharpe 3.0-5.9).
+    // All other symbols remain hard-blocked until re-validated.
     {
-        const bool is_active_sym = (sym == "GOLD.F" || sym == "USOIL.F");
+        const bool is_active_sym = (sym == "GOLD.F"  || sym == "USOIL.F"  ||
+                                    sym == "US500.F" || sym == "USTEC.F"  ||
+                                    sym == "NAS100"  || sym == "DJ30.F");
         if (!is_active_sym) return;
     }
 
@@ -5354,7 +5378,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_eng_sp.pos.active          ||
             g_bracket_sp.pos.active      ||
             g_orb_us.has_open_position() ||      // ADDED
-            g_vwap_rev_sp.has_open_position());   // ADDED
+            g_vwap_rev_sp.has_open_position()  || // ADDED
+            g_nbm_sp.has_open_position());        // NBM
         const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
         // SIM: SP breakout WR 31.6% -$105. No edge on US500 compression breakout. Disabled.
         // if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
@@ -5409,12 +5434,27 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
         }
+        // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
+        // Fires when price breaks out of rolling ATR noise band from session open.
+        // Primary stop: VWAP crossing. Gated: no other US500.F position open.
+        if (!g_nbm_sp.has_open_position() && !g_orb_us.has_open_position() &&
+            !g_vwap_rev_sp.has_open_position() && base_can_sp) {
+            const auto nbm = g_nbm_sp.on_tick(sym, bid, ask, ca_on_close);
+            if (nbm.valid) {
+                g_telemetry.UpdateLastSignal("US500.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
+                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
+                if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                    g_nbm_sp.cancel();
+                else g_nbm_sp.patch_size(g_last_directional_lot);
+            }
+        }
     }
     else if (sym == "USTEC.F") {
         const bool base_can_nq = symbol_gate("USTEC.F",
             g_eng_nq.pos.active                  ||
             g_bracket_nq.pos.active              ||
-            g_vwap_rev_nq.has_open_position());     // ADDED
+            g_vwap_rev_nq.has_open_position()    ||  // ADDED
+            g_nbm_nq.has_open_position());            // NBM
         const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
         // SIM: NQ breakout WR 26.1% -$1167. Worst index performer. Disabled.
         // if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
@@ -5442,6 +5482,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         g_vwap_rev_nq.cancel();
                     else g_vwap_rev_nq.patch_size(g_last_directional_lot);
                 }
+            }
+        }
+        // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
+        if (!g_nbm_nq.has_open_position() && !g_vwap_rev_nq.has_open_position() && base_can_nq) {
+            const auto nbm = g_nbm_nq.on_tick(sym, bid, ask, ca_on_close);
+            if (nbm.valid) {
+                g_telemetry.UpdateLastSignal("USTEC.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
+                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
+                if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                    g_nbm_nq.cancel();
+                else g_nbm_nq.patch_size(g_last_directional_lot);
             }
         }
     }
@@ -5484,7 +5535,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "DJ30.F") {
-        const bool base_can_us30 = symbol_gate("DJ30.F", g_eng_us30.pos.active || g_bracket_us30.pos.active);
+        const bool base_can_us30 = symbol_gate("DJ30.F",
+            g_eng_us30.pos.active      ||
+            g_bracket_us30.pos.active  ||
+            g_nbm_us30.has_open_position()); // NBM
         const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30);
         // SIM: DJ30 breakout WR 23.5% -$736, bracket also negative. Both disabled.
         // if (sdec_us30.allow_breakout && !g_bracket_us30.pos.active)
@@ -5492,6 +5546,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // if (sdec_us30.allow_bracket && !g_eng_us30.pos.active)
         //     dispatch_bracket(g_bracket_us30, ...);
         (void)sdec_us30;
+        // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
+        if (!g_nbm_us30.has_open_position() && base_can_us30) {
+            const auto nbm = g_nbm_us30.on_tick(sym, bid, ask, ca_on_close);
+            if (nbm.valid) {
+                g_telemetry.UpdateLastSignal("DJ30.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
+                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
+                if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                    g_nbm_us30.cancel();
+                else g_nbm_us30.patch_size(g_last_directional_lot);
+            }
+        }
     }
     else if (sym == "GER40") {
         const bool base_can_ger = symbol_gate("GER40",
@@ -5772,7 +5837,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "NAS100") {
-        const bool base_can_nas = symbol_gate("NAS100", g_eng_nas100.pos.active || g_bracket_nas100.pos.active);
+        const bool base_can_nas = symbol_gate("NAS100",
+            g_eng_nas100.pos.active      ||
+            g_bracket_nas100.pos.active  ||
+            g_nbm_nas.has_open_position()); // NBM
         const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas);
         // SIM: NAS100 breakout — no edge (correlated with NQ which is also disabled). Disabled.
         // if (sdec_nas.allow_breakout && !g_bracket_nas100.pos.active)
@@ -5781,6 +5849,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // const bool ustec_bracket_open = g_bracket_nq.has_open_position();
         // if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active && !ustec_bracket_open)
         //     dispatch_bracket(g_bracket_nas100, ...);
+        (void)sdec_nas;
+        // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
+        if (!g_nbm_nas.has_open_position() && base_can_nas) {
+            const auto nbm = g_nbm_nas.on_tick(sym, bid, ask, ca_on_close);
+            if (nbm.valid) {
+                g_telemetry.UpdateLastSignal("NAS100", nbm.is_long?"LONG":"SHORT", nbm.entry,
+                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
+                if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                    g_nbm_nas.cancel();
+                else g_nbm_nas.patch_size(g_last_directional_lot);
+            }
+        }
     }
     else if (sym == "GOLD.F")  {
         // ── Gold master exclusion gate ────────────────────────────────────────
@@ -7414,8 +7494,10 @@ static void quote_loop() {
 
         // Cross-asset engines (VWAP, TrendPB, ORB, Carry, etc.)
         { double b=0,a=0;
-          snap_px("US500.F",b,a); if(b>0&&a>0){g_ca_esnq.force_close(b,a,shutdown_cb);g_orb_us.force_close(b,a,shutdown_cb);g_vwap_rev_sp.force_close(b,a,shutdown_cb);}
-          snap_px("USTEC.F",b,a); if(b>0&&a>0){g_vwap_rev_nq.force_close(b,a,shutdown_cb);}
+          snap_px("US500.F",b,a); if(b>0&&a>0){g_ca_esnq.force_close(b,a,shutdown_cb);g_orb_us.force_close(b,a,shutdown_cb);g_vwap_rev_sp.force_close(b,a,shutdown_cb);g_nbm_sp.force_close(b,a,shutdown_cb);}
+          snap_px("USTEC.F",b,a); if(b>0&&a>0){g_vwap_rev_nq.force_close(b,a,shutdown_cb);g_nbm_nq.force_close(b,a,shutdown_cb);}
+          snap_px("NAS100",b,a);  if(b>0&&a>0){g_nbm_nas.force_close(b,a,shutdown_cb);}
+          snap_px("DJ30.F",b,a);  if(b>0&&a>0){g_nbm_us30.force_close(b,a,shutdown_cb);}
           snap_px("EURUSD",b,a);  if(b>0&&a>0){g_vwap_rev_eurusd.force_close(b,a,shutdown_cb);}
           snap_px("GER40",b,a);   if(b>0&&a>0){g_orb_ger30.force_close(b,a,shutdown_cb);g_vwap_rev_ger40.force_close(b,a,shutdown_cb);g_trend_pb_ger40.force_close(b,a,shutdown_cb);}
           snap_px("GOLD.F",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb);}
@@ -7496,8 +7578,10 @@ static void quote_loop() {
 
             // Cross-asset: VWAP, TrendPB, ORB, Carry, FxCascade
             { double b,a;
-              get_px("US500.F",b,a);  g_ca_esnq.force_close(b,a,scb); g_orb_us.force_close(b,a,scb); g_vwap_rev_sp.force_close(b,a,scb);
-              get_px("USTEC.F",b,a);  g_vwap_rev_nq.force_close(b,a,scb);
+              get_px("US500.F",b,a);  g_ca_esnq.force_close(b,a,scb); g_orb_us.force_close(b,a,scb); g_vwap_rev_sp.force_close(b,a,scb); g_nbm_sp.force_close(b,a,scb);
+              get_px("USTEC.F",b,a);  g_vwap_rev_nq.force_close(b,a,scb); g_nbm_nq.force_close(b,a,scb);
+              get_px("NAS100",b,a);   g_nbm_nas.force_close(b,a,scb);
+              get_px("DJ30.F",b,a);   g_nbm_us30.force_close(b,a,scb);
               get_px("EURUSD",b,a);   g_vwap_rev_eurusd.force_close(b,a,scb);
               get_px("GER40",b,a);    g_orb_ger30.force_close(b,a,scb); g_vwap_rev_ger40.force_close(b,a,scb); g_trend_pb_ger40.force_close(b,a,scb);
               get_px("GOLD.F",b,a);   g_trend_pb_gold.force_close(b,a,scb);
