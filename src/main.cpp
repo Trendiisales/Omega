@@ -5349,10 +5349,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
         if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
             dispatch(g_eng_sp, g_sup_sp, base_can_sp, &sdec_sp);
-        if (sdec_sp.allow_bracket && !g_eng_sp.pos.active)
-            dispatch_bracket(g_bracket_sp, g_sup_sp, g_eng_sp, base_can_sp,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             g_macro_ctx.sp_l2_imbalance, &sdec_sp);
+        // SIM: BracketEngine on indices — no edge. Disabled.
+        // if (sdec_sp.allow_bracket && !g_eng_sp.pos.active)
+        //     dispatch_bracket(g_bracket_sp, ...);
         // Cross-asset: ES/NQ divergence engine.
         // enabled=false by default — set esnq_enabled=true in [cross_asset] config once
         // shadow validates signal quality. on_tick() always drains open positions even
@@ -5409,12 +5408,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
         if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
             dispatch(g_eng_nq, g_sup_nq, base_can_nq, &sdec_nq);
-        // Cross-symbol guard: USTEC and NAS100 are correlated — don't hold brackets on both
-        const bool nas100_bracket_open = g_bracket_nas100.has_open_position();
-        if (sdec_nq.allow_bracket && !g_eng_nq.pos.active && !nas100_bracket_open)
-            dispatch_bracket(g_bracket_nq, g_sup_nq, g_eng_nq, base_can_nq,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             g_macro_ctx.nq_l2_imbalance, &sdec_nq);
+        // SIM: BracketEngine on indices — no edge. Disabled.
+        // const bool nas100_bracket_open = g_bracket_nas100.has_open_position();
+        // if (sdec_nq.allow_bracket && !g_eng_nq.pos.active && !nas100_bracket_open)
+        //     dispatch_bracket(g_bracket_nq, ...);
         // VWAP Reversion: NQ over-extension from daily open (VWAP proxy).
         // Same fix as US500.F: was ORB midpoint → dead before 13:30 UTC (entire London blocked).
         if (!g_vwap_rev_nq.has_open_position() && base_can_nq) {
@@ -5495,10 +5492,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger);
         if (sdec_ger.allow_breakout && !g_bracket_ger30.pos.active)
             dispatch(g_eng_ger30, g_sup_ger30, base_can_ger, &sdec_ger);
-        if (sdec_ger.allow_bracket && !g_eng_ger30.pos.active)
-            dispatch_bracket(g_bracket_ger30, g_sup_ger30, g_eng_ger30, base_can_ger,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             g_macro_ctx.ger40_l2_imbalance, &sdec_ger);
+        // SIM: BracketEngine on indices — no edge. Disabled.
+        // if (sdec_ger.allow_bracket && !g_eng_ger30.pos.active)
+        //     dispatch_bracket(g_bracket_ger30, ...);
         // Opening range breakout: Xetra open 08:00 UTC
         if (!g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position() && base_can_ger) {  // ADDED !vwap check
             const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
@@ -5540,10 +5536,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk);
         if (sdec_uk.allow_breakout && !g_bracket_uk100.pos.active)
             dispatch(g_eng_uk100, g_sup_uk100, base_can_uk, &sdec_uk);
-        if (sdec_uk.allow_bracket && !g_eng_uk100.pos.active)
-            dispatch_bracket(g_bracket_uk100, g_sup_uk100, g_eng_uk100, base_can_uk,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             g_macro_ctx.uk100_l2_imbalance, &sdec_uk);
+        // SIM: BracketEngine on indices — no edge. Disabled.
+        // if (sdec_uk.allow_bracket && !g_eng_uk100.pos.active)
+        //     dispatch_bracket(g_bracket_uk100, ...);
         // Opening range breakout: LSE open 08:00 UTC, 15-min range window
         if (!g_orb_uk100.has_open_position() && base_can_uk) {
             const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
@@ -5560,10 +5555,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx);
         if (sdec_estx.allow_breakout && !g_bracket_estx50.pos.active)
             dispatch(g_eng_estx50, g_sup_estx50, base_can_estx, &sdec_estx);
-        if (sdec_estx.allow_bracket && !g_eng_estx50.pos.active)
-            dispatch_bracket(g_bracket_estx50, g_sup_estx50, g_eng_estx50, base_can_estx,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             g_macro_ctx.estx50_l2_imbalance, &sdec_estx);
+        // SIM: BracketEngine on indices — no edge. Disabled.
+        // if (sdec_estx.allow_bracket && !g_eng_estx50.pos.active)
+        //     dispatch_bracket(g_bracket_estx50, ...);
         // Opening range breakout: Euronext open 09:00 UTC, 15-min range window
         if (!g_orb_estx50.has_open_position() && base_can_estx) {
             const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
@@ -5635,10 +5629,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         if (sdec_fx.allow_breakout && !g_bracket_eurusd.pos.active)
             dispatch(g_eng_eurusd, g_sup_eurusd, base_can_fx, &sdec_fx);
-        if (sdec_fx.allow_bracket && !g_eng_eurusd.pos.active)
-            dispatch_bracket(g_bracket_eurusd, g_sup_eurusd, g_eng_eurusd, base_can_fx,
-                             0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start,
-                             g_macro_ctx.eur_l2_imbalance, &sdec_fx);
+        // SIM: BracketEngine on FX — no edge. 25 trades WR 20% -$935. Disabled.
+        // if (sdec_fx.allow_bracket && !g_eng_eurusd.pos.active)
+        //     dispatch_bracket(g_bracket_eurusd, ...);
         // VWAP Reversion: EURUSD over-extension from daily open (VWAP proxy)
         // Tracks the first tick of each calendar day as the day's reference anchor.
         if (!g_vwap_rev_eurusd.has_open_position() && base_can_fx) {
@@ -5688,10 +5681,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_fx2 = sup_decision(g_sup_gbpusd, g_eng_gbpusd, base_can_fx2);
         if (sdec_fx2.allow_breakout && !g_bracket_gbpusd.pos.active)
             dispatch(g_eng_gbpusd, g_sup_gbpusd, base_can_fx2, &sdec_fx2);
-        if (sdec_fx2.allow_bracket && !g_eng_gbpusd.pos.active && !any_fx_bracket_active)
-            dispatch_bracket(g_bracket_gbpusd, g_sup_gbpusd, g_eng_gbpusd, base_can_fx2,
-                             0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start,
-                             g_macro_ctx.gbp_l2_imbalance, &sdec_fx2);
+        // SIM: BracketEngine on FX — no edge. 26 trades WR 15% -$1272. Disabled.
+        // if (sdec_fx2.allow_bracket && !g_eng_gbpusd.pos.active && !any_fx_bracket_active)
+        //     dispatch_bracket(g_bracket_gbpusd, ...);
         // FX cascade: EURUSD-driven GBPUSD entry.
         // Gate: per-leg check (not aggregate) so AUD/NZD legs can fire simultaneously.
         if (!g_ca_fx_cascade.has_open_gbpusd() && base_can_fx2) {
@@ -5723,7 +5715,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const auto sd_aud = sup_decision(g_sup_audusd, g_eng_audusd, bc_aud);
                 if (sd_aud.allow_breakout && !g_bracket_audusd.pos.active) dispatch(g_eng_audusd, g_sup_audusd, bc_aud, &sd_aud);
                 if (sd_aud.allow_bracket && !g_eng_audusd.pos.active && !any_fx_bracket_active)
-                    dispatch_bracket(g_bracket_audusd, g_sup_audusd, g_eng_audusd, bc_aud, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5, &sd_aud);
+                    // SIM: BracketEngine on FX — no edge. Disabled.
+                    // dispatch_bracket(g_bracket_audusd, ...);
                 // FX cascade: EURUSD-driven AUDUSD entry (0.73 corr).
                 // Per-leg gate: fires independently of GBP/NZD leg state.
                 if (!g_ca_fx_cascade.has_open_audusd() && bc_aud) {
@@ -5740,8 +5733,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.pos.active);
                 const auto sd_nzd = sup_decision(g_sup_nzdusd, g_eng_nzdusd, bc_nzd);
                 if (sd_nzd.allow_breakout && !g_bracket_nzdusd.pos.active) dispatch(g_eng_nzdusd, g_sup_nzdusd, bc_nzd, &sd_nzd);
-                if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active && !any_fx_bracket_active)
-                    dispatch_bracket(g_bracket_nzdusd, g_sup_nzdusd, g_eng_nzdusd, bc_nzd, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5, &sd_nzd);
+                // SIM: BracketEngine on FX — no edge. Disabled.
+                // if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active && !any_fx_bracket_active)
+                //     dispatch_bracket(g_bracket_nzdusd, ...);
                 // FX cascade: EURUSD-driven NZDUSD entry (0.69 corr).
                 // Per-leg gate: fires independently of GBP/AUD leg state.
                 if (!g_ca_fx_cascade.has_open_nzdusd() && bc_nzd) {
@@ -5758,8 +5752,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.pos.active);
                 const auto sd_jpy = sup_decision(g_sup_usdjpy, g_eng_usdjpy, bc_jpy);
                 if (sd_jpy.allow_breakout && !g_bracket_usdjpy.pos.active) dispatch(g_eng_usdjpy, g_sup_usdjpy, bc_jpy, &sd_jpy);
-                if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active && !any_fx_bracket_active)
-                    dispatch_bracket(g_bracket_usdjpy, g_sup_usdjpy, g_eng_usdjpy, bc_jpy, 0.0, g_bracket_fx_trades_this_minute, g_bracket_fx_minute_start, 0.5, &sd_jpy);
+                // SIM: BracketEngine on FX — no edge. Disabled.
+                // if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active && !any_fx_bracket_active)
+                //     dispatch_bracket(g_bracket_usdjpy, ...);
                 // Carry unwind: VIX spike + JPY bid
                 if (!g_ca_carry_unwind.has_open_position() && bc_jpy) {
                     const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close);
@@ -5790,10 +5785,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto sdec_brent = sup_decision(g_sup_brent, g_eng_brent, base_can_brent);
             if (sdec_brent.allow_breakout && !g_bracket_brent.pos.active)
                 dispatch(g_eng_brent, g_sup_brent, base_can_brent, &sdec_brent);
-            if (sdec_brent.allow_bracket && !g_eng_brent.pos.active)
-                dispatch_bracket(g_bracket_brent, g_sup_brent, g_eng_brent, base_can_brent,
-                                 0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                                 g_macro_ctx.brent_l2_imbalance, &sdec_brent);
+            // SIM: BracketEngine on commodities — no edge. Disabled.
+            // if (sdec_brent.allow_bracket && !g_eng_brent.pos.active)
+            //     dispatch_bracket(g_bracket_brent, ...);
         }
     }
     else if (sym == "NAS100") {
@@ -5801,12 +5795,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas);
         if (sdec_nas.allow_breakout && !g_bracket_nas100.pos.active)
             dispatch(g_eng_nas100, g_sup_nas100, base_can_nas, &sdec_nas);
-        // Cross-symbol guard: NAS100 and USTEC are correlated — don't hold brackets on both
-        const bool ustec_bracket_open = g_bracket_nq.has_open_position();
-        if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active && !ustec_bracket_open)
-            dispatch_bracket(g_bracket_nas100, g_sup_nas100, g_eng_nas100, base_can_nas,
-                             0.0, g_bracket_idx_trades_this_minute, g_bracket_idx_minute_start,
-                             g_macro_ctx.nq_l2_imbalance, &sdec_nas);
+        // SIM: BracketEngine on indices — no edge. Disabled.
+        // const bool ustec_bracket_open = g_bracket_nq.has_open_position();
+        // if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active && !ustec_bracket_open)
+        //     dispatch_bracket(g_bracket_nas100, ...);
     }
     else if (sym == "GOLD.F")  {
         // ── Gold master exclusion gate ────────────────────────────────────────

@@ -466,8 +466,10 @@ public:
         // Dead zone (slot 0 → UNKNOWN) remains fully blocked.
         if(s.session==SessionType::UNKNOWN) return noSignal();
         const bool is_asia = (s.session==SessionType::ASIAN);
-        // In Asia: require a larger 20-tick net move and tighter spread
-        const double eff_net20_min  = is_asia ? 3.00 : 1.50;  // raised from 1.50 in Asia
+        // SIM: ImpulseCont WR 43.8% negative at net20_min=1.50. Raised to 5.0/7.0.
+        // Require a genuine $5 net move over 20 ticks (London/NY) before considering entry.
+        // Asia: $7 — thinner tape, mean-reverting, need stronger conviction.
+        const double eff_net20_min  = is_asia ? 7.00 : 5.00;
         const double eff_max_spread = is_asia ? 1.50 : MAX_SPREAD;
         if(s.spread > eff_max_spread) return noSignal();
         if(price_history_.size()>=20){
