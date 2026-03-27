@@ -1173,6 +1173,12 @@ class NR3BreakoutEngine : public EngineBase {
     static constexpr int    TP_TICKS     = 100;   // $10.00
     static constexpr int    COOLDOWN_SEC = 300;
     static constexpr int    SESSION_START= 7;     // 07:00 UTC
+    // Vol-ratio gate: NR3 fires in ranging/coiling conditions, not hot trending tape.
+    // Injected each tick from GoldEngineStack via set_vol_ratio().
+    // Gate: vol_ratio > 1.5 = market too volatile for NR3 coiling pattern.
+    // Data: NR3 WR 39.6% when vol<1.2 vs degraded quality in trending tape.
+    double vol_ratio_ = 1.0;
+    static constexpr double VOL_GATE = 1.5;
     static constexpr int    SESSION_END  = 17;    // 17:00 UTC
 
     Bar5  bars_[N+1];    // last N completed bars
@@ -1210,6 +1216,8 @@ class NR3BreakoutEngine : public EngineBase {
 public:
     NR3BreakoutEngine() : EngineBase("NR3Breakout", 1.1) {}
 
+    void set_vol_ratio(double vr) noexcept { vol_ratio_ = vr; }
+
     void reset() override {
         for(auto& b:bars_) b=Bar5{}; cur_=Bar5{};
         n_complete_=0; waiting_confirm_=false; confirm_dir_=0;
@@ -1218,6 +1226,8 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
+        // Vol gate: NR3 is a coiling pattern — invalid in trending/hot tape
+        if (vol_ratio_ > VOL_GATE)        return noSignal();
 
         int hour;
         const int slot = utc_slot_and_hour(hour);
@@ -2667,25 +2677,45 @@ public:
             }
         }
 
-        // Inject current EWM drift into CompressionBreakoutEngine and MeanReversionEngine
-        // so both can block trades that go against confirmed momentum direction.
-        // MeanReversionEngine uses it as an ADX-proxy trend gate (|drift|>4.0 = no MR).
+        // Inject EWM drift and vol_ratio into engines that need them.
+        // CompressionBreakout + MeanReversion: drift gate for momentum blocking.
+        // NR3Breakout: vol_ratio gate for coiling-tape detection.
+        const double cur_vol_ratio = (baseline_vol_pct_ > 0.0)
+            ? governor_.window_range() / (last_mid_ > 0 ? last_mid_ : 1.0)
+              * 100.0 / baseline_vol_pct_
+            : 1.0;
         for (auto& e : engines_) {
-            if (e->getName() == "CompressionBreakout") {
+            const auto& nm = e->getName();
+            if (nm == "CompressionBreakout") {
                 static_cast<CompressionBreakoutEngine*>(e.get())->set_ewm_drift(governor_.ewm_drift());
-            } else if (e->getName() == "MeanReversion") {
+            } else if (nm == "MeanReversion") {
                 static_cast<MeanReversionEngine*>(e.get())->set_ewm_drift(governor_.ewm_drift());
+            } else if (nm == "NR3Breakout") {
+                static_cast<NR3BreakoutEngine*>(e.get())->set_vol_ratio(cur_vol_ratio);
             }
         }
 
-        // Slow path: best confidence×weight
+        // Collect ALL valid signals this tick, pick best + apply confluence boost.
+        // Confluence: 2+ engines agree direction -> boost confidence 1.40x (3+: 1.60x).
+        // Data: Wick+Donchian agreement lifts WR 43.4%->51.9%, avg $0.17->$2.26.
+        // Boost flows to conf_mult in main.cpp gold_stack sizing (caps at 1.25x lot).
         Signal best; double best_score=0;
+        int long_count=0, short_count=0;
         for(auto& e:engines_){
             if(e->getName()=="ImpulseContinuation"||!e->isEnabled()) continue;
             Signal s=e->process(snap);
             if(!s.valid) continue;
             double score=s.confidence*e->weight_;
             if(score>best_score){ best_score=score; best=s; }
+            if(s.side==TradeSide::LONG)  ++long_count;
+            if(s.side==TradeSide::SHORT) ++short_count;
+        }
+        if(best.valid){
+            const int agree=(best.side==TradeSide::LONG ? long_count : short_count);
+            if(agree>=2){
+                const double boost=(agree>=3)?1.60:1.40;
+                best.confidence=std::min(1.5, best.confidence*boost);
+            }
         }
         if(best.valid){
             if (!entry_quality_ok(best, best_score, snap, now_s)) return GoldSignal{};
