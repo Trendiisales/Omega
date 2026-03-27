@@ -5941,11 +5941,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // REVERSAL exception: GoldFlow SL_HIT + drift now in opposite direction
         //   → GoldStack counter-entry allowed within 60s (bypasses SL cooldown).
         const bool gold_any_open =
-            g_gold_stack.has_open_position()    ||
-            g_le_stack.has_open_position()      ||
-            g_bracket_gold.has_open_position()  ||
-            g_gold_flow.has_open_position()     ||
-            g_trend_pb_gold.has_open_position();
+            g_gold_stack.has_open_position()        ||
+            g_le_stack.has_open_position()          ||
+            g_bracket_gold.has_open_position()      ||
+            g_gold_flow.has_open_position()         ||
+            g_trend_pb_gold.has_open_position()     ||
+            g_nbm_gold_london.has_open_position();  // London NBM also blocks other gold engines
 
         // ── Trend day detection ───────────────────────────────────────────────
         const double gold_ewm_drift_now = g_gold_stack.ewm_drift();
@@ -6396,8 +6397,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                       && !g_trend_pb_gold.has_open_position()
                                       && !g_le_stack.has_open_position()
                                       && asia_trend_ok
-                                      && !gold_trend_blocked
                                       && !in_london_open_noise;
+            // NOTE: gold_trend_blocked (counter_trend_blocked) is intentionally NOT here.
+            // It blocks the counter-trend ARM direction via arm_allowed(), not can_arm_bracket itself.
+            // Having it here blocked ALL bracket arming when FLOW-BIAS-INJECT set bias,
+            // which is exactly when we WANT pyramiding to be possible.
 
             // ── Gold bracket gate diagnostic — prints every 10s ───────────────
             {
@@ -6555,7 +6559,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const double gf_sl_pts  = gf_atr * GFE_ATR_SL_MULT;
                     const double gf_tp_dist = gf_sl_pts * 2.0;
                     const double gf_lot_est = std::max(GFE_MIN_LOT,
-                        std::min(0.08, g_gold_flow.risk_dollars / (gf_sl_pts * 100.0)));
+                        std::min(0.50, g_gold_flow.risk_dollars / (gf_sl_pts * 100.0)));  // cap matches GFE_MAX_LOT_FLOW
                     if (!ExecutionCostGuard::is_viable("GOLD.F", ask - bid, gf_tp_dist, gf_lot_est)) {
                         g_telemetry.IncrCostBlocked();
                         gf_tick_ok = false;
