@@ -5339,6 +5339,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
 
+    // ── ACTIVE SYMBOLS GATE ───────────────────────────────────────────────────
+    // SIM-VALIDATED: Only GOLD.F and USOIL.F have proven edge.
+    // All other symbols (indices, FX, silver) showed negative expectancy
+    // across 4 simulation iterations. Hard-blocked here until re-validated.
+    {
+        const bool is_active_sym = (sym == "GOLD.F" || sym == "USOIL.F");
+        if (!is_active_sym) return;
+    }
+
     // ── Routing — every symbol goes through supervisor ────────────────────────
     if (sym == "US500.F") {
         const bool base_can_sp = symbol_gate("US500.F",
