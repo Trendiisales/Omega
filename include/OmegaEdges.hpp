@@ -385,7 +385,12 @@ public:
         auto& s = state_[sym];
         s.history.push_back(spread);
         if ((int)s.history.size() > window_ticks) s.history.pop_front();
-        if ((int)s.history.size() >= 20) {
+        // FIX: require minimum 50 ticks before gate activates.
+        // With only 20 ticks, a single wide startup spread dominates std_dev
+        // and makes every subsequent normal spread look like a 5σ anomaly.
+        // Log showed: USOIL spread=0.08 z=5.48 on tick ~21 — false positive.
+        // 50 ticks = enough to build a stable median and std_dev.
+        if ((int)s.history.size() >= 50) {
             // Compute median
             std::vector<double> sorted(s.history.begin(), s.history.end());
             std::sort(sorted.begin(), sorted.end());
@@ -397,7 +402,7 @@ public:
             double sq = 0.0;
             for (double v : sorted) sq += (v - s.median) * (v - s.median);
             s.std_dev = std::sqrt(sq / n);
-            s.ready = (n >= 20);
+            s.ready = true;
         }
     }
 

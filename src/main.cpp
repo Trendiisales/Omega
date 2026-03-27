@@ -5070,6 +5070,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double sl_abs  = g_adaptive_risk.vol_scaler.atr_sl_floor(
             std::string(esym), sl_abs_raw);
 
+        // ── ATR SL expansion → proportional TP adjustment ────────────────────
+        // FIX: when atr_sl_floor expands the SL (sl_abs > sl_abs_raw),
+        // the TP must scale by the same ratio to preserve original R:R.
+        // Without this: USOIL sl_raw=0.5 → sl_floor=2.0, tp=1.5 unchanged
+        //   → R:R = 0.75 → RR-FLOOR blocks every trade when ATR is elevated.
+        // With this:    sl expands 4×, tp expands 4× → R:R preserved → OK.
+        double tp_rr_adjusted = tp;
+        if (tp > 0.0 && sl_abs > sl_abs_raw * 1.01 && sl_abs_raw > 1e-9) {
+            const double expand_ratio = sl_abs / sl_abs_raw;
+            const double tp_dist_raw  = std::fabs(entry - tp);
+            const double tp_dist_adj  = tp_dist_raw * expand_ratio;
+            tp_rr_adjusted = is_long ? entry + tp_dist_adj : entry - tp_dist_adj;
+            std::printf("[ATR-SL-EXPAND] %s sl_raw=%.5f->sl_floor=%.5f (x%.2f) tp=%.5f->%.5f\n",
+                        esym, sl_abs_raw, sl_abs, expand_ratio, tp, tp_rr_adjusted);
+        }
+
         // ── ATR-based TP scaling ──────────────────────────────────────────────
         // On high-volatility days (e.g. gold ATR $25 vs normal $10), a fixed
         // percentage TP exits 3× too early. Scale TP proportionally with the
@@ -5077,7 +5093,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Bounds: 0.70× (protect low-vol entries) to 2.50× (cap on extreme days).
         // Only applies when the caller provided a real TP (tp > 0); the 2R default
         // fallback is already sized relative to sl_abs and does not need scaling.
-        double tp_scaled = tp;
+        double tp_scaled = tp_rr_adjusted;
         if (tp > 0) {
             const double atr_fast_v = g_adaptive_risk.vol_scaler.atr_fast(std::string(esym));
             const double atr_slow_v = g_adaptive_risk.vol_scaler.atr_slow(std::string(esym));
