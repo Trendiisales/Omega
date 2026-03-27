@@ -289,8 +289,8 @@ class CompressionBreakoutEngine : public EngineBase {
     static constexpr double COMPRESSION_RANGE = 6.00;      // lowered 8.00→6.00: $8 was too permissive; $6 requires genuinely tight pre-break range
     static constexpr double BREAKOUT_TRIGGER  = 2.50;      // raised 1.50→2.50: $1.50 fires on single-tick London open spikes (SL in 19s observed); $2.50 = 42% of $6 range, requires committed directional move not noise
     static constexpr double MAX_SPREAD        = 2.00;      // unchanged
-    static constexpr int    TP_TICKS          = 80;        // $8.00 target — 2.67:1 R:R on $3.00 SL
-    static constexpr int    SL_TICKS          = 30;        // raised 25→30: $3.00 stop matches new $3.00 trigger; avoids instant stop-out on breakout retest
+    static constexpr int    TP_TICKS          = 500;       // $50.00 target — 2:1 R:R on $25 SL (EA-matched)
+    static constexpr int    SL_TICKS          = 250;       // EA-matched: $25.00 SL. $3 SL was inside GOLD noise floor, stopped out instantly.
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(5)};
 
     // NY/Tokyo handoff dead zone: 21:00–23:00 UTC
@@ -1049,7 +1049,7 @@ class GoldPositionManager {
     double TRAIL_ARM_2        = 5.00;  // tight-trail only on big $5.00 winners
     double TRAIL_DIST_2       = 0.50;  // tight trail distance
     double MIN_LOCKED_PROFIT  = 0.30;  // must lock meaningful profit above entry+spread
-    double MAX_BASE_SL_TICKS  = 30.0;  // cap must be >= highest engine SL (CB uses 30)
+    double MAX_BASE_SL_TICKS  = 250.0; // EA-matched: $25 SL floor. Must be >= highest engine SL.
 
     struct GoldPos {
         bool    active    = false;
