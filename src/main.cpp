@@ -5683,11 +5683,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // These four pairs share high USD-correlation: simultaneous brackets create
         // duplicated directional USD exposure. EURUSD is intentionally excluded —
         // different liquidity tier and independent signal flow.
-        const bool any_fx_bracket_active =
-            g_bracket_gbpusd.has_open_position() ||
-            g_bracket_audusd.has_open_position() ||
-            g_bracket_nzdusd.has_open_position() ||
-            g_bracket_usdjpy.has_open_position();
+        // any_fx_bracket_active removed: GBPUSD bracket disabled (SIM: 26T WR 15%)
         const bool base_can_fx2 = symbol_gate("GBPUSD",
             g_eng_gbpusd.pos.active                    ||
             g_bracket_gbpusd.pos.active                ||
