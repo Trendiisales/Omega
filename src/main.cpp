@@ -357,6 +357,7 @@ struct OmegaConfig {
 
 static OmegaConfig         g_cfg;
 static std::atomic<bool>   g_running(true);
+static std::atomic<bool>   g_emergency_close(false);  // set by GUI button → closes all positions immediately
 
 // ── cTrader Open API depth client — parallel to FIX, read-only L2 feed ───────
 static CTraderDepthClient  g_ctrader_depth;
@@ -6123,10 +6124,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                     stack_enter_effective);
             if (gsig.valid) {
                 // ── VWAP counter-trend guard ──────────────────────────────────
-                // Block signals that trade against the VWAP direction.
-                // SHORT when price > VWAP = counter-trend. LONG when price < VWAP = fine.
-                // 0.1% tolerance band to avoid blocking entries right at VWAP.
-                const bool vwap_valid    = (gold_vwap_now > 0.0);
+                // Only block MEAN-REVERSION engines trading against VWAP trend.
+                // Trend-following engines (CompressionBreakout, ImpulseContinuation,
+                // NR3Breakout, TrendPullback etc.) SHOULD enter above VWAP on longs
+                // and below VWAP on shorts — that IS the trend.
+                // Only block if this is a mean-reversion signal fading into the trend.
+                const bool is_mean_rev_engine =
+                    (std::strcmp(gsig.engine, "MeanReversion")       == 0) ||
+                    (std::strcmp(gsig.engine, "VWAPStretchReversion") == 0) ||
+                    (std::strcmp(gsig.engine, "SessionMomentum")      == 0);
+                const bool vwap_valid    = (gold_vwap_now > 0.0) && is_mean_rev_engine;
                 const bool direction_ok  = !vwap_valid
                     || (gsig.is_long  && gold_mid_now <= gold_vwap_now * 1.001)
                     || (!gsig.is_long && gold_mid_now >= gold_vwap_now * 0.999);

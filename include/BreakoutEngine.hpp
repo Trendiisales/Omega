@@ -581,7 +581,10 @@ public:
                 if (pos.pyramid_armed && pos.pyramid_count < 2 && macro_regime) {
                     const bool exp_regime =
                         (std::strncmp(macro_regime, "EXPANSION_BREAKOUT", 18) == 0) ||
-                        (std::strncmp(macro_regime, "TREND_CONTINUATION", 18) == 0);
+                        (std::strncmp(macro_regime, "TREND_CONTINUATION", 18) == 0) ||
+                        (std::strncmp(macro_regime, "TREND",              5)  == 0) ||
+                        (std::strncmp(macro_regime, "IMPULSE",            7)  == 0) ||
+                        (std::strncmp(macro_regime, "RISK_ON",            7)  == 0);
                     if (exp_regime) {
                         pos.pyramid_count++;
                         pos.pyramid_armed    = false;  // re-arm for next add-on
