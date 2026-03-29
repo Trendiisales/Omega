@@ -3173,7 +3173,8 @@ public:
                     // range requirement and EWM drift gate prevent it firing into trend noise.
                     en=(n=="CompressionBreakout"||n=="ImpulseContinuation"
                        ||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
-                       ||n=="WickRejTick"||n=="TurtleTick"||n=="TwoBarReversal"
+                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"
+                       ||n=="TwoBarReversal"
                        ||n=="ORBNewYork"||n=="DXYDivergence"||n=="LondonFixMomentum"
                        ||n=="SessionOpenMomentum"); break;
                 case MarketRegime::MEAN_REVERSION:
@@ -3202,7 +3203,8 @@ public:
                     en=(n=="CompressionBreakout"||n=="ImpulseContinuation"
                        ||n=="SessionMomentum"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
                        ||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
-                       ||n=="WickRejTick"||n=="TurtleTick"||n=="TwoBarReversal"
+                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"
+                       ||n=="TwoBarReversal"
                        ||n=="ORBNewYork"||n=="DXYDivergence"||n=="LondonFixMomentum"
                        ||n=="SessionOpenMomentum"); break;
             }
