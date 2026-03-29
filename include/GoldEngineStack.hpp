@@ -3166,7 +3166,13 @@ public:
                     // SessionOpenMomentum: active in TREND (momentum continuation).
                     // DXYDivergence: active (intermarket divergence valid in trends).
                     // LondonFixMomentum: active (fix occurs in all regimes).
-                    en=(n=="ImpulseContinuation"||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
+                    // CompressionBreakout added to TREND: a trending market produces
+                    // repeated compressions (consolidations) before each leg extension.
+                    // CB fires on those compression breaks — it IS a trend-following tool
+                    // when the move is already $15+ confirmed. The internal $6 compression
+                    // range requirement and EWM drift gate prevent it firing into trend noise.
+                    en=(n=="CompressionBreakout"||n=="ImpulseContinuation"
+                       ||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
                        ||n=="WickRejTick"||n=="TurtleTick"||n=="TwoBarReversal"
                        ||n=="ORBNewYork"||n=="DXYDivergence"||n=="LondonFixMomentum"
                        ||n=="SessionOpenMomentum"); break;
@@ -3191,7 +3197,10 @@ public:
                     // DXYDivergence: active (divergence signals before/during impulse moves).
                     // LondonFixMomentum: active.
                     // VWAPStretchReversion: BLOCKED in IMPULSE (fade impossible in impulse).
-                    en=(n=="ImpulseContinuation"||n=="SessionMomentum"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
+                    // CompressionBreakout added to IMPULSE: impulse moves are preceded
+                    // by micro-compressions (the coil before the break). CB catches these.
+                    en=(n=="CompressionBreakout"||n=="ImpulseContinuation"
+                       ||n=="SessionMomentum"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
                        ||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
                        ||n=="WickRejTick"||n=="TurtleTick"||n=="TwoBarReversal"
                        ||n=="ORBNewYork"||n=="DXYDivergence"||n=="LondonFixMomentum"
@@ -4287,26 +4296,86 @@ private:
 
     void apply_asian_session_overrides(SessionType session) {
         if (session != SessionType::ASIAN) return;
-        // Asian session: only CompressionBreakout is allowed.
-        // ImpulseContinuation REMOVED from this override (was previously included).
+
+        // ── Asian session engine policy ───────────────────────────────────────
         //
-        // WHY: ImpulseContinuation requires an established directional trend with
-        // clear impulse + pullback structure. During Asian hours (00:00-07:00 UTC)
-        // gold moves are thin, choppy, and lack the sustained directional flow the
-        // engine needs. Allowing it bypassed the RegimeGovernor's correct decision
-        // to disable it in MEAN_REVERSION — which is the dominant Asian regime.
+        // CHOP PROTECTION (dominant case — MR/COMPRESSION regime):
+        //   Only CompressionBreakout is allowed.
+        //   Asian tape is thin and mean-reverting ~80% of sessions.
+        //   Incident Mar 17 2026 00:47 UTC: ImpulseContinuation fired SHORT in
+        //   MR regime, $4.26 below VWAP already reverting up — $205 loss.
+        //   All other engines require more ticks/structure than Asia provides
+        //   in normal ranging conditions.
         //
-        // INCIDENT (Mar 17 2026 00:47 UTC): ImpulseContinuation fired SHORT in
-        // MEAN_REVERSION regime. Gold was $4.26 below VWAP=5015, already
-        // mean-reverting upward. Result: $205 loss (2.05 pts × $100/pt).
+        // TREND EXCEPTION (TREND or IMPULSE regime confirmed by governor):
+        //   A confirmed TREND/IMPULSE means the 80-tick window range has exceeded
+        //   $15 (TE threshold) and held for CONFIRM_TICKS=5 consecutive ticks.
+        //   This is NOT Asian chop — this is a genuine institutional move:
+        //   a $100 Sunday gap, an Asia macro event, a China open surge.
+        //   Enable trend-following engines that have their own internal HTF
+        //   direction filters — they will NOT fire counter-trend.
         //
-        // CompressionBreakout is safe in Asia — it requires only a compression
-        // range break, which is a self-contained price structure signal that works
-        // in any session. The dead-zone gate (21:00-23:00) blocks the worst hours.
+        // PROTECTION LAYERS THAT REMAIN ACTIVE EVEN IN TREND MODE:
+        //   1. RegimeGovernor: CONFIRM_TICKS=5 required before TREND confirmed.
+        //      Single-tick noise cannot unlock this path.
+        //   2. DonchianBreakout: HTF EMA50/250 filter — fires SHORT only when
+        //      EMA50 < EMA250. Self-protecting against counter-trend.
+        //   3. TurtleTick: identical EMA50/250 filter. Same protection.
+        //   4. NR3Tick: requires confirmed squeeze breakout (CONFIRM_PCT=0.40).
+        //   5. WickRejectionTickEngine: wick >= 55% bar range, MIN_WICK=$1.50,
+        //      bar range >= $2.25 — not noise.
+        //   6. TwoBarReversal: ATR_MULT=1.5x strong bar — not thin-tape noise.
+        //   7. SpikeFade: requires $10+ candle move — genuine macro event only.
+        //   8. entry_quality_ok(): GENERAL_MIN_SCORE=1.20 gate on all signals.
+        //   9. SIDE_CHOP_PAUSE: 2 SL hits in 300s triggers 300s pause per side.
+        //  10. MIN_ENTRY_GAP_SEC=90: cannot re-enter within 90s of last entry.
+        //  11. HARD_SL_GLOBAL_COOLDOWN=120s: any SL hit triggers 120s full stop.
+        //  12. MAX_ENTRY_SPREAD=$2.50: applies to all stack entries regardless.
+        //  13. GoldFlow Asia hardening: ATR>=$5, ATR/spread>=4x, 90% persistence.
+        //      Spread gate raised to $2.50 to handle gap-open spreads (see below).
+        //
+        // NOT enabled in Asia even during TREND:
+        //   - ImpulseContinuation: disabled entirely (WR too low in practice)
+        //   - SessionMomentum: wrong window (07:15-10:30, 13:15-15:30 UTC only)
+        //   - MeanReversion / VWAPSnapback: mean-rev wrong in a trend
+        //   - LiquiditySweepPro: counter-trend fade — wrong in a trend
+        //   - DynamicRange: range mean-reversion — wrong in a trend
+        //   - AsianRange: fires 07:00-11:00 UTC only (London window)
+
+        const bool asia_trend = (current_regime_ == MarketRegime::TREND ||
+                                 current_regime_ == MarketRegime::IMPULSE);
+
         for (auto& e : engines_) {
-            if (e->getName() == "CompressionBreakout") {
+            const auto& n = e->getName();
+
+            // CompressionBreakout: always enabled (safe in all Asian regimes —
+            // requires its own compression range < $6, so it self-gates in trends)
+            if (n == "CompressionBreakout") {
                 e->setEnabled(true);
+                continue;
             }
+
+            // Trend-following engines: only when regime confirms a genuine move.
+            // Each has its own internal HTF direction filter (EMA50/250 or equiv)
+            // so they cannot fire counter-trend even if enabled here.
+            if (asia_trend) {
+                if (n == "TurtleTick"      ||  // EMA50/250 HTF + 40-bar tick channel
+                    n == "NR3Tick"         ||  // confirmed squeeze breakout required
+                    n == "WickRejTick"     ||  // wick>=55% of bar, $1.50 min wick
+                    n == "TwoBarReversal"  ||  // ATR_MULT=1.5x strong bar required
+                    n == "SpikeFade"       ||  // $10+ candle — genuine event only
+                    n == "DonchianBreakout") { // EMA50/250 HTF filter (bar buffer
+                                               // needs ~200min to warm; valid on
+                                               // running sessions, not fresh starts)
+                    e->setEnabled(true);
+                }
+            }
+        }
+
+        if (asia_trend) {
+            printf("[GOLD-ASIA-TREND] Regime=%s — trend engines enabled in Asia\n",
+                   current_regime_ == MarketRegime::TREND ? "TREND" : "IMPULSE");
+            fflush(stdout);
         }
     }
 

@@ -6134,9 +6134,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double gold_base_vol_now   = g_gold_stack.base_vol_pct();
         const double gold_vol_ratio_now  = (gold_base_vol_now > 0.0)
             ? gold_recent_vol_now / gold_base_vol_now : 0.0;
-        // Strong trend: drift > $5 sustained + vol expanding 50%+ above baseline
-        const bool gold_trend_day = (std::fabs(gold_ewm_drift_now) >= 5.0)
-                                    && (gold_vol_ratio_now >= 1.5);
+        // Strong trend: drift > $3 sustained + any vol expansion above baseline.
+        // Lowered from drift>=5.0 + ratio>=1.5:
+        //   $5 drift requires a very established trend — misses the first legs.
+        //   ratio>=1.5 fails on Sunday open when baseline_vol is not yet warmed.
+        //   $3 drift is still unambiguous directional pressure (not chop).
+        //   ratio>=1.0 = any vol expansion above baseline — correct for gap opens.
+        const bool gold_trend_day = (std::fabs(gold_ewm_drift_now) >= 3.0)
+                                    && (gold_vol_ratio_now >= 1.0 || gold_vol_ratio_now == 0.0);
         // Trend direction: +1 long trend, -1 short trend
         // gold_trend_dir: +1 long trend, -1 short trend (used for future per-engine bias filter)
         (void)(gold_trend_day ? (gold_ewm_drift_now > 0 ? 1 : -1) : 0);

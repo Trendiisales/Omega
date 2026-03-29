@@ -103,12 +103,19 @@ static constexpr int    GFE_MOMENTUM_BUF_SIZE = 64;    // independent momentum h
 // Asia gold (22:00-07:00 UTC) has: thin liquidity, micro-oscillations that fake
 // directional flow, tight ATR that produces SL easily hit by noise.
 // These thresholds require genuinely committed moves before entry.
-static constexpr double GFE_ASIA_ATR_MIN           = 5.0;    // $5 ATR floor (vs $2 normal) — rejects dead/thin tape
-static constexpr double GFE_ASIA_MAX_SPREAD        = 1.5;    // $1.50 max spread (vs $2.50 normal) — tighter liquidity requirement
+static constexpr double GFE_ASIA_ATR_MIN           = 5.0;    // $5 ATR floor (vs $0.50 normal) — rejects dead/thin tape
+static constexpr double GFE_ASIA_MAX_SPREAD        = 2.5;    // raised $1.50→$2.50: $1.50 blocked gap-open moves where spread
+                                                              // is temporarily $2-3 even as ATR is $15+. The ATR/spread ratio
+                                                              // guard (GFE_ASIA_ATR_SPREAD_RATIO=4.0) is the real noise filter:
+                                                              // on a $100 drop ATR>=$15, spread $2.50 → ratio=6.0 >> 4.0 → PASS.
+                                                              // On thin chop ATR=$2, spread $2.50 → ratio=0.8 << 4.0 → BLOCK.
+                                                              // The spread cap alone was a blunt instrument; ratio does it better.
 static constexpr double GFE_ASIA_DRIFT_MIN         = 0.50;   // drift must exceed $0.50 (vs $0 normal) — real directional pressure
 static constexpr double GFE_ASIA_MOMENTUM_MIN      = 0.30;   // mid must move $0.30+ over momentum ticks (vs $0 normal)
 static constexpr int    GFE_ASIA_COOLDOWN_MS       = 60000;  // 60s cooldown (vs 30s normal) — fewer attempts on bad tape
-static constexpr double GFE_ASIA_ATR_SPREAD_RATIO  = 4.0;    // ATR must be >= 4x spread — reject noise-dominated tape
+static constexpr double GFE_ASIA_ATR_SPREAD_RATIO  = 4.0;    // ATR must be >= 4x spread — the primary noise filter.
+                                                              // $100 drop: ATR~$15, spread $2 → ratio=7.5 → PASS.
+                                                              // Normal chop: ATR~$2, spread $1.50 → ratio=1.3 → BLOCK.
 // Persistence thresholds for Asia: 90% of window must be directional (vs 75% normal)
 // On choppy tape, 75% easily fills from random oscillations. 90% requires real conviction.
 static constexpr int    GFE_ASIA_FAST_DIR_THRESHOLD = (GFE_FAST_TICKS * 9) / 10;  // 27/30 ticks
