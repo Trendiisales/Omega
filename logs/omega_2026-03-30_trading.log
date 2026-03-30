@@ -1,0 +1,21 @@
+[OMEGA-RISK] UTC day rollover — per-symbol risk state reset
+[TICK] XAGUSD 68.17/68.20
+[TICK] NAS100 22947.55/22948.75
+[TICK] USTEC.F 23129.94/23132.65
+[GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.67 l2_imb=0.792 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1774828804 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+[TICK] US500.F 6368.72/6369.53
+[OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=7.207ms cap=120ms lat_ok=1 session=ACTIVE
+[OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+[OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+[OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+[GOLD-DIAG] regime=IMPULSE vwap=4477.27 vol_range=0.00
+[OMEGA] Price snapshot taken: 19 symbols
+[OMEGA] SHADOW mode — preserving positions across reconnect
+[OMEGA-SHUTDOWN] Snapped 19 prices, closing all positions
+[OMEGA-SHUTDOWN] All positions closed before disconnect
+[OMEGA] Unsubscribed market data before disconnect
+[OMEGA] Logout sent
+[OMEGA-TRADE] Logout sent
+[OMEGA] Shutdown
+[CTRADER] Stopped
+[OMEGA-TRADE] Disconnected -- reconnecting
