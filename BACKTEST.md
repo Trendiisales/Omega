@@ -130,7 +130,7 @@ Result: every cooldown, hold-time gate, and session filter advances with simulat
 
 ## After Running — Validate Spot Price Fix
 
-The backtest data is `xauusd_merged_24months.csv` — XAUUSD spot prices, which now correctly map to `GOLD.F` engines after the ID 41/2660 routing fix (commit `08c0cf6`).
+The backtest data is `xauusd_merged_24months.csv` — XAUUSD spot prices, which now correctly map to `XAUUSD` engines after the ID 41/2660 routing fix (commit `08c0cf6`).
 
 Shadow P&L history before that fix is **unreliable** (calculated on futures price). Use this backtest as the authoritative baseline going forward.
 
