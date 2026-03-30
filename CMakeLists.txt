@@ -92,8 +92,15 @@ add_dependencies(Omega omega_version_header)
 
 # Step 3 — add the sentinel as a source file dep on main.cpp so MSVC sees a
 # changed input and recompiles it every time the sentinel timestamp updates.
+# Also explicitly list all .hpp headers as dependencies so MSVC recompiles
+# main.cpp whenever ANY header changes — without this, header-only changes
+# (e.g. GoldFlowEngine.hpp, SymbolSupervisor.hpp) are silently ignored and
+# the old binary keeps running with stale logic.
+file(GLOB OMEGA_HEADERS "${CMAKE_SOURCE_DIR}/include/*.hpp")
 set_property(SOURCE "${CMAKE_SOURCE_DIR}/src/main.cpp"
-    APPEND PROPERTY OBJECT_DEPENDS "${VERSION_SENTINEL}"
+    APPEND PROPERTY OBJECT_DEPENDS
+        "${VERSION_SENTINEL}"
+        ${OMEGA_HEADERS}
 )
 
 target_include_directories(Omega PRIVATE ${CMAKE_SOURCE_DIR}/include)
