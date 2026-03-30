@@ -387,9 +387,10 @@ private:
             const auto qf = PB::parse(qb);
             const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,3);
             const uint64_t bid=PB::get_varint(qf,4), ask=PB::get_varint(qf,5);
-            if (!id||!sz) continue;
-            if (bid)      book.apply_new(id,bid,sz,true);
-            else if (ask) book.apply_new(id,ask,sz,false);
+            if (!id) continue;  // id=0 is invalid; sz=0 allowed (cTrader may send 0-size to indicate price level)
+            const uint64_t eff_sz = sz ? sz : 100; // default 1 lot if size missing
+            if (bid)      book.apply_new(id,bid,eff_sz,true);
+            else if (ask) book.apply_new(id,ask,eff_sz,false);
         }
         for (uint64_t did : PB::get_packed_varints(fields, 5)) book.apply_del(did);
         // Build L2Book snapshot outside the lock — to_l2book() is O(N log N) sort
