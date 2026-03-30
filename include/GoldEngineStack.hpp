@@ -4306,15 +4306,15 @@ public:
         if (!pos_mgr_.active()) return false;
         const double entry   = pos_mgr_.base_entry();
         const bool   is_long = pos_mgr_.base_is_long();
-        // We don't have direct access to bid/ask here — use SL position as proxy.
-        // If trail is armed the SL will have moved above entry (long) or below (short).
-        const double sl = pos_mgr_.base_sl();
+        const double sl      = pos_mgr_.base_sl();
         if (entry <= 0.0 || sl <= 0.0) return false;
-        // For longs: SL moves up as trail arms. If SL > entry - TRAIL_ARM_1 the trail fired.
-        // For shorts: SL moves down.
-        const double sl_move = is_long ? (sl - (entry - TRAIL_ARM_1))
-                                       : ((entry + TRAIL_ARM_1) - sl);
-        return sl_move > 0.0;  // SL has moved past the trail arm threshold
+        // Trail is armed when SL has moved past entry in the profit direction.
+        // Threshold: $5 move minimum (conservative — config uses $10 arm but SL
+        // moves gradually so $5 SL displacement = confirmed profitable trail).
+        const double arm = 5.0;
+        const double sl_move = is_long ? (sl - (entry - arm))
+                                       : ((entry + arm) - sl);
+        return sl_move > 0.0;
     }
 
     // Clear SL cooldown immediately — used by reversal logic when GoldFlow
