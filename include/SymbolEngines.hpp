@@ -132,7 +132,7 @@ struct MacroContext {
     // ctrader_l2_live: true when cTrader depth client has received at least 1 event
     //   AND at least one symbol book has real non-zero size data.
     //   Separate from per-symbol has_data() — this is the global connectivity flag.
-    // gold_l2_real: true specifically when GOLD.F book has non-zero bid+ask sizes.
+    // gold_l2_real: true specifically when XAUUSD book has non-zero bid+ask sizes.
     //   When false, GoldFlow uses drift-persistence fallback (price-based, not book-based).
     //   This isolates the BlackBull tag-271 issue: FIX sends no sizes, cTrader may or may not.
     bool        ctrader_l2_live  = false;
