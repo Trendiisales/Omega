@@ -48,6 +48,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <functional>
+#include <iostream>
 #include <memory>
 
 // ── Platform: memory-mapped I/O ──────────────────────────────────────────────
@@ -287,7 +288,7 @@ struct GoldRunner {
 };
 
 struct FlowRunner {
-    omega::GoldFlowEngine eng;
+    GoldFlowEngine eng;
     FlowRunner(){}
     void tick(const TickRow& r){
         auto c=cb();
