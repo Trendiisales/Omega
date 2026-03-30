@@ -6304,7 +6304,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
         // Write GoldFlow state to telemetry for GUI pyramid indicator
         {
-            auto* snap = g_telemetry.GetSnap();
+            auto* snap = g_telemetry.snap();
             if (snap) {
                 snap->gf_trail_stage    = gf_open ? g_gold_flow.pos.trail_stage : 0;
                 snap->gf_stack_unlocked = gf_winning ? 1 : 0;
