@@ -1084,6 +1084,12 @@ private:
         file_.open(current_path_, std::ios::app);
         file_buf_    = file_.is_open() ? file_.rdbuf() : nullptr;
         current_day_ = utc_day_of_year();
+        // Re-redirect C-level stdout to the new day's log file so printf stays in sync.
+        // On day rollover this ensures printf output doesn't keep going to the old file.
+        if (file_.is_open()) {
+            freopen(current_path_.c_str(), "a", stdout);
+            setvbuf(stdout, nullptr, _IOLBF, 4096);
+        }
         purge_old_logs();
     }
 
@@ -9468,20 +9474,50 @@ int main(int argc, char* argv[])
 
     // Open log file and tee stdout into it
     // Rolling log: logs/omega_YYYY-MM-DD.log, UTC daily rotation, 5-file retention
+    // CRITICAL: must redirect BOTH C++ std::cout AND C-level stdout (printf).
+    // Previously only std::cout was teed — all printf/fflush(stdout) calls in
+    // GoldFlowEngine, GoldEngineStack, CrossAssetEngines were invisible in logs.
+    // Fix: freopen the log file onto stdout fd, then sync std::cout to it.
     {
         const std::string log_dir = log_root_dir();
+        // Build today's log path (same naming as RollingTeeBuffer)
+        {
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            fs::create_directories(fs::path(log_dir), ec);
+        }
+        auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        struct tm ti_log{}; gmtime_s(&ti_log, &t);
+        char date_buf[16];
+        std::snprintf(date_buf, sizeof(date_buf), "%04d-%02d-%02d",
+                      ti_log.tm_year + 1900, ti_log.tm_mon + 1, ti_log.tm_mday);
+        const std::string log_path = log_dir + "/omega_" + std::string(date_buf) + ".log";
+
+        // Redirect C-level stdout to the log file (append mode).
+        // This captures ALL printf/fflush(stdout) calls from every engine.
+        FILE* redirected = freopen(log_path.c_str(), "a", stdout);
+        if (!redirected) {
+            std::cerr << "[OMEGA-FATAL] Failed to freopen stdout to " << log_path << "\n";
+            return 1;
+        }
+        // Make printf output line-buffered so it flushes on every \n
+        setvbuf(stdout, nullptr, _IOLBF, 4096);
+
+        // Sync std::cout to the redirected stdout so both streams write to the same fd
         g_orig_cout = std::cout.rdbuf();
         g_tee_buf   = new RollingTeeBuffer(g_orig_cout, log_dir);
         if (!g_tee_buf->is_open()) {
-            std::cerr << "[OMEGA-FATAL] Failed to open rolling log under " << log_dir << "\n";
+            std::cerr << "[OMEGA-FATAL] Failed to open rolling tee log under " << log_dir << "\n";
             delete g_tee_buf;
             g_tee_buf = nullptr;
             return 1;
         }
         std::cout.rdbuf(g_tee_buf);
-        std::cerr.rdbuf(g_tee_buf);  // tee stderr too — nothing gets lost
+        std::cerr.rdbuf(g_tee_buf);  // tee stderr too
         std::cout << "[OMEGA] Rolling log: " << g_tee_buf->current_path()
                   << " (UTC daily rotation, 5-file retention)\n";
+        std::cout << "[OMEGA] printf→log: " << log_path
+                  << " (C stdout redirected — all engine diagnostics captured)\n";
     }
 
     {
