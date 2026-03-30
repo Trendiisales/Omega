@@ -6904,7 +6904,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     fflush(stdout);
                 }
             };
-            if (gf_tick_ok) {
+            // CRITICAL: always call on_tick when position is open so manage_position()
+            // runs every tick and checks the SL. gf_tick_ok gates NEW entries only —
+            // if on_tick is skipped while LIVE, the SL is never checked and the
+            // position runs unmanaged. GFE.on_tick() returns immediately after
+            // manage_position() when Phase==LIVE, so entry gates are never reached.
+            if (gf_tick_ok || g_gold_flow.has_open_position()) {
                 // ── Post-close reversal drift reset ───────────────────────────
                 // Problem: ewm_slow (α=0.005) has a 200-tick half-life. After a
                 // 60pt DROP it reaches drift≈-40. When price then SURGES 80pts,
