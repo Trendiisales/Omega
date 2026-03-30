@@ -337,6 +337,35 @@ struct GoldFlowEngine {
 
     double current_atr() const noexcept { return m_atr; }
 
+    // seed() — pre-warm ATR and direction windows from a single price on reconnect.
+    // Without this the engine is blind for GFE_ATR_PERIOD (100) ticks after every
+    // restart/reconnect — blocking all entries until warmup completes.
+    // Assumes flat/neutral market at seed price (conservative: no directional bias).
+    // No-op if already warmed up.
+    void seed(double mid) noexcept {
+        if (mid <= 0.0 || m_atr_warmup_ticks >= GFE_ATR_PERIOD) return;
+
+        // Seed ATR with conservative typical GOLD tick range
+        const double seed_range = 0.35;
+        m_atr_ewm          = seed_range;
+        m_atr_warmup_ticks = GFE_ATR_PERIOD;
+        m_atr              = std::max(GFE_ATR_MIN, m_atr_ewm);
+        m_last_mid_atr     = mid;
+
+        // Seed momentum window flat (no directional bias)
+        m_momentum_window.clear();
+        for (int i = 0; i < GFE_SLOW_TICKS; ++i)
+            m_momentum_window.push_back(mid);
+
+        // Seed direction windows neutral
+        m_fast_window.clear();
+        m_slow_window.clear();
+        m_fast_long_count = m_fast_short_count = 0;
+        m_slow_long_count = m_slow_short_count = 0;
+        for (int i = 0; i < GFE_FAST_TICKS; ++i) m_fast_window.push_back(0);
+        for (int i = 0; i < GFE_SLOW_TICKS;  ++i) m_slow_window.push_back(0);
+    }
+
     // -------------------------------------------------------------------------
 private:
 
