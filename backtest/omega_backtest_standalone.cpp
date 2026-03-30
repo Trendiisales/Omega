@@ -299,8 +299,21 @@ static inline int utc_yday(int64_t ts_ms) {
     int h,m,w,y; utc_break(ts_ms,h,m,w,y); return y;
 }
 static inline bool in_dead_zone(int64_t ts_ms) {
-    int h = utc_hour(ts_ms);
+    // Selective dead zone:
+    //   21:00-23:00 UTC: blocks FADE engines only (MR, DynamicRange, SpikeFade).
+    //                    Trend-following engines (CB, NR3, Donchian) are ALLOWED -
+    //                    Sydney open has real directional moves (e.g. 30 Mar: -43pt at 22:36).
+    //   05:00-07:00 UTC: kept for ALL engines - thin pre-London tape, real fills are bad.
+    //                    Evidence: GOLD SHORT timeout Mar 18 06:03 UTC.
+    // This function is used ONLY by fade engines. Trend engines use in_trend_dead_zone().
+    const int h = utc_hour(ts_ms);
     return (h >= 21 && h < 23) || (h >= 5 && h < 7);
+}
+
+// Trend-following engines skip 05:00-07:00 but ARE allowed 21:00-23:00 (Sydney open)
+static inline bool in_trend_dead_zone(int64_t ts_ms) {
+    const int h = utc_hour(ts_ms);
+    return (h >= 5 && h < 7);  // only London pre-open is blocked for trend engines
 }
 static inline bool in_session_window(int64_t ts_ms) {
     int m = utc_hhmm(ts_ms);
@@ -634,7 +647,7 @@ struct CompressionBreakout : EngineBase {
         update_atr(t);  // maintain rolling ATR every tick
 
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
-        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
+        if (in_trend_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, 1000)) { ++cooldown_filtered; return {}; }
 
         bool is_asia       = (utc_hour(t.ts_ms) >= 22 || utc_hour(t.ts_ms) < 5);
@@ -713,7 +726,7 @@ struct WickRejection : EngineBase {
         (void)vwap; (void)drift;
         update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
-        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
+        if (in_trend_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
 
         int bm = bar_minute(t.ts_ms, BAR_MINS);
         if (bm != bar_bm) {
@@ -765,7 +778,7 @@ struct DonchianBreakout : EngineBase {
         (void)vwap; (void)drift;
         update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
-        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
+        if (in_trend_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
         int bm = bar_minute(t.ts_ms, BAR_MINS);
@@ -811,7 +824,7 @@ struct NR3Breakout : EngineBase {
         (void)vwap; (void)drift;
         update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
-        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
+        if (in_trend_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
         int bm = bar_minute(t.ts_ms, BAR_MINS);
@@ -870,7 +883,7 @@ struct IntradaySeasonality : EngineBase {
         (void)vwap; (void)drift;
         update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
-        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
+        if (in_trend_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
 
         int hh  = half_hour_bucket(t.ts_ms);
         int day = utc_yday(t.ts_ms);

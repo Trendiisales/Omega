@@ -320,7 +320,18 @@ class CompressionBreakoutEngine : public EngineBase {
     //   05:00–07:00 UTC — late Asia/Sydney runoff: Tokyo volume exhausted,
     //                     London not yet open, spreads widen, moves fade
     //                     Evidence: GOLD SHORT timeout Mar 18 06:03 UTC
+    // Dead zone policy (updated):
+    //   21:00-23:00 UTC dead zone REMOVED. Sydney open is now a valid session.
+    //   Evidence: 30 Mar 2026 saw 43pt CB-SHORT setup at 22:36 UTC (Sydney).
+    //   Regime gate + ATR floor + spread filter are sufficient quality controls.
+    //   05:00-07:00 UTC dead zone REPLACED by ATR/spread quality gate below.
+    //   Evidence of bad fills kept: GOLD SHORT timeout 06:03 UTC Mar 18.
+    //   Hard time blocks are gone - quality gates make the call now.
     static bool in_handoff_dead_zone() noexcept {
+        return false;  // no hard time blocks - quality gates handle this
+    }
+
+    static bool in_london_preopen_thinzone() noexcept {
         const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti{};
 #ifdef _WIN32
@@ -329,8 +340,7 @@ class CompressionBreakoutEngine : public EngineBase {
         gmtime_r(&t, &ti);
 #endif
         const int h = ti.tm_hour;
-        return (h >= 21 && h < 23) ||  // NY/Tokyo handoff
-               (h >= 5  && h < 7);     // late Asia runoff → London dead zone
+        return (h >= 5 && h < 7);  // 05:00-07:00 UTC only
     }
 
 public:
@@ -353,7 +363,9 @@ public:
         const double eff_max_spread    = is_asia_session ? MAX_SPREAD * 0.60 : MAX_SPREAD;   // tighter spread in Asia = real moves only
         const double eff_breakout_mult = is_asia_session ? BREAKOUT_TRIGGER * 1.40 : BREAKOUT_TRIGGER; // 40% larger range required
         if(s.spread > eff_max_spread) return noSignal();
-        if(in_handoff_dead_zone()) return noSignal(); // NY/Tokyo handoff — no compression trades
+        // Quality gate for 05:00-07:00 UTC thin zone: allow entry only if ATR is >= 3x spread
+        // (real directional move, not noise). No hard time blocks.
+        if (in_london_preopen_thinzone() && s.atr > 0.1 && s.atr < s.spread * 3.0) return noSignal();
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
         if(history_.size() < WINDOW){
@@ -846,17 +858,11 @@ class WickRejectionEngine : public EngineBase {
     }
 
     static bool in_dead_zone() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
-        struct tm ti{};
-#ifdef _WIN32
-        gmtime_s(&ti, &t);
-#else
-        gmtime_r(&t, &ti);
-#endif
-        const int h = ti.tm_hour;
-        return (h >= 5 && h < 7);  // late Asia/London dead zone
+        return false;  // hard time block removed — ATR/spread quality gate handles thin tape
     }
+
+    // Quality check for 05:00-07:00 UTC thin zone
+    static bool in_london_preopen(int h) noexcept { return h >= 5 && h < 7; }
 
     // ── Evaluate a completed bar for wick rejection signal ───────────────────
     int evaluate_bar(const Bar& b) const noexcept {
@@ -1028,18 +1034,7 @@ class DonchianBreakoutEngine : public EngineBase {
         return (ti.tm_hour * 60 + ti.tm_min) / BAR_MIN;
     }
 
-    static bool in_dead_zone() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
-        struct tm ti{};
-#ifdef _WIN32
-        gmtime_s(&ti, &t);
-#else
-        gmtime_r(&t, &ti);
-#endif
-        const int h = ti.tm_hour;
-        return (h >= 5 && h < 7);
-    }
+    static bool in_dead_zone() noexcept { return false; }
 
     double don_high() const noexcept {
         if (n_complete_ < N) return 0;
@@ -1790,14 +1785,7 @@ class WickRejectionTickEngine : public EngineBase {
         std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SEC+1)};
 
     static bool in_dead_zone() noexcept {
-        const auto t=std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        struct tm ti{};
-#ifdef _WIN32
-        gmtime_s(&ti,&t);
-#else
-        gmtime_r(&t,&ti);
-#endif
-        return ti.tm_hour>=5&&ti.tm_hour<7;
+        return false;  // hard time block removed
     }
 
 public:
@@ -2181,9 +2169,9 @@ class MeanReversionEngine : public EngineBase {
 
     // Block the same dead zone used by CompressionBreakout:
     //   05:00–07:00 UTC — late Asia/London pre-open: thin liquidity, erratic fills.
+        // Fade engine dead zone: block Sydney chop (21-23 UTC) and London pre-open (05-07 UTC).
     static bool in_dead_zone() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                            std::chrono::system_clock::now());
+        const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -2191,7 +2179,7 @@ class MeanReversionEngine : public EngineBase {
         gmtime_r(&t, &ti);
 #endif
         const int h = ti.tm_hour;
-        return (h >= 5 && h < 7);
+        return (h >= 21 && h < 23) || (h >= 5 && h < 7);
     }
 
     // Compute rolling mean and std over the last LOOKBACK ticks in history_.
