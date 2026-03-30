@@ -40,7 +40,7 @@ struct ExecutionCostGuard {
             commission_per_lot = 6.0;
             slippage_pts       = 0.020;
             tick_usd_per_lot   = 667.0;
-        } else if (s == "GOLD.F") {
+        } else if (s == "XAUUSD") {
             commission_per_lot = 6.0;
             slippage_pts       = 0.30;
             tick_usd_per_lot   = 100.0;
@@ -95,7 +95,7 @@ struct ExecutionCostGuard {
         const std::string s(sym);
         if      (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" || s == "NZDUSD") tick_usd_per_lot = 100000.0;
         else if (s == "USDJPY")    tick_usd_per_lot = 667.0;
-        else if (s == "GOLD.F")    tick_usd_per_lot = 100.0;
+        else if (s == "XAUUSD")    tick_usd_per_lot = 100.0;
         else if (s == "XAGUSD")    tick_usd_per_lot = 5000.0;
         else if (s == "GER40")     tick_usd_per_lot = 1.10;
         else if (s == "UK100")     tick_usd_per_lot = 1.27;
