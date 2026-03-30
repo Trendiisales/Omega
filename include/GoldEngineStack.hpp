@@ -3259,8 +3259,12 @@ public:
             return false;
         }
 
-        // EWM warming up (<512 ticks) — use L2 as confirmation
-        return l2_directional;
+        // EWM warming up (<512 ticks) — L2 primary, early EWM as fallback
+        // If L2 neutral but EWM shows early trend signal, allow entry.
+        // Prevents missing fast moves during the 8-min EWM warmup window.
+        if (l2_directional) return true;
+        if (std::fabs(d) > 3.0) return true;  // $3 early EWM spread = trend signal
+        return false;
     }
     static const char* name(MarketRegime r){
         switch(r){
