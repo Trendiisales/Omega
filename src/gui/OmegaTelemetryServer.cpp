@@ -366,14 +366,22 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
             if (s->l2_book_gold_bids > 0 && s->l2_book_gold_asks > 0)
                 gf_mid = (s->l2_book_gold_bid[0].price + s->l2_book_gold_ask[0].price) * 0.5;
             const double basis = (gf_mid > 0.0 && spot_mid > 0.0) ? (spot_mid - gf_mid) : 0.0;
-            // Build offset copies on the stack
+            // Build offset copies — only show levels on correct side of spot
+            // GOLD.F can have inverted book due to futures basis; filter to sane levels
             OmegaTelemetrySnapshot::L2Level obids[OmegaTelemetrySnapshot::L2_DEPTH];
             OmegaTelemetrySnapshot::L2Level oasks[OmegaTelemetrySnapshot::L2_DEPTH];
-            for (int i = 0; i < s->l2_book_gold_bids; ++i)
-                obids[i] = { s->l2_book_gold_bid[i].price + basis, s->l2_book_gold_bid[i].size };
-            for (int i = 0; i < s->l2_book_gold_asks; ++i)
-                oasks[i] = { s->l2_book_gold_ask[i].price + basis, s->l2_book_gold_ask[i].size };
-            appendBook("gold", obids, s->l2_book_gold_bids, oasks, s->l2_book_gold_asks);
+            int nb_ok = 0, na_ok = 0;
+            for (int i = 0; i < s->l2_book_gold_bids; ++i) {
+                const double p = s->l2_book_gold_bid[i].price + basis;
+                if (p <= spot_mid + 2.0)  // bid must be at or below spot (allow tiny buffer)
+                    obids[nb_ok++] = { p, s->l2_book_gold_bid[i].size };
+            }
+            for (int i = 0; i < s->l2_book_gold_asks; ++i) {
+                const double p = s->l2_book_gold_ask[i].price + basis;
+                if (p >= spot_mid - 2.0)  // ask must be at or above spot
+                    oasks[na_ok++] = { p, s->l2_book_gold_ask[i].size };
+            }
+            appendBook("gold", obids, nb_ok, oasks, na_ok);
         }
         appendBook("sp",    s->l2_book_sp_bid,   s->l2_book_sp_bids,   s->l2_book_sp_ask,   s->l2_book_sp_asks);
         appendBook("eur",   s->l2_book_eur_bid,  s->l2_book_eur_bids,  s->l2_book_eur_ask,  s->l2_book_eur_asks);
