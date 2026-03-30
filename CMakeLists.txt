@@ -116,9 +116,54 @@ add_custom_command(TARGET Omega POST_BUILD
     COMMENT "Copying config files to build output directory"
 )
 
+# =============================================================================
+# OmegaBacktest — native C++ backtester (no FIX / OpenSSL / WS deps)
+# 500K–2M ticks/sec vs ~21K in Python.  Build: cmake --build build --target OmegaBacktest
+# =============================================================================
+add_executable(OmegaBacktest
+    backtest/OmegaBacktest.cpp
+    src/SymbolConfig.cpp
+)
+target_include_directories(OmegaBacktest PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(OmegaBacktest PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(OmegaBacktest PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+    target_link_libraries(OmegaBacktest PRIVATE ws2_32)
+else()
+    target_compile_options(OmegaBacktest PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(OmegaBacktest PRIVATE OMEGA_BACKTEST)
+    target_link_libraries(OmegaBacktest PRIVATE pthread)
+endif()
+add_custom_command(TARGET OmegaBacktest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/symbols.ini"
+        "$<TARGET_FILE_DIR:OmegaBacktest>/symbols.ini"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/config/omega_config.ini"
+        "$<TARGET_FILE_DIR:OmegaBacktest>/omega_config.ini"
+    COMMENT "Copying config → OmegaBacktest"
+)
+
 message(STATUS "========================================")
 message(STATUS "OMEGA — Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "OpenSSL:    ${OPENSSL_VERSION}")
 message(STATUS "Git hash:   regenerated on every build")
+message(STATUS "OmegaBacktest: standalone (no OpenSSL)")
 message(STATUS "========================================")
