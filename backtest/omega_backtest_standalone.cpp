@@ -390,42 +390,119 @@ struct Pos {
     int     side         = 0;
     double  entry_mid    = 0;
     double  entry_spread = 0;
-    double  tp_mid       = 0;
-    double  sl_mid       = 0;
+    double  tp_mid       = 0;   // fixed TP (only used before trail arms)
+    double  sl_mid       = 0;   // current SL (advances as trail progresses)
     int64_t open_ts      = 0;
-    double  mfe          = 0;
+    double  mfe          = 0;   // max favourable excursion in pts
     double  mae          = 0;
+    double  atr_at_entry = 0.0; // ATR captured at entry — drives trail steps
+    int     trail_stage  = 0;   // 0=initial, 1=BE, 2=trail1(1.5xATR), 3=trail2(0.5xATR), 4=trail3(0.3xATR)
     static constexpr double MULT = 1.0;
 
-    void open(int s, double mid, double spread, double tp_pts, double sl_pts, int64_t ts) {
-        active       = true;
-        side         = s;
-        entry_mid    = mid;
-        entry_spread = spread;
-        tp_mid       = mid + s * tp_pts;
-        sl_mid       = mid - s * sl_pts;
-        open_ts      = ts;
-        mfe = mae    = 0;
+    // Trail stage thresholds (in ATR multiples of profit)
+    static constexpr double STAGE1_ATR = 1.0;  // BE lock at 1x ATR profit
+    static constexpr double STAGE2_ATR = 2.0;  // trail starts at 2x ATR profit
+    static constexpr double STAGE3_ATR = 5.0;  // tighten trail at 5x ATR profit
+    static constexpr double STAGE4_ATR = 10.0; // tightest trail at 10x ATR profit
+
+    // Trail distances (in ATR multiples behind MFE)
+    static constexpr double TRAIL2_DIST = 1.5; // 1.5x ATR behind MFE — ride initial move
+    static constexpr double TRAIL3_DIST = 0.5; // 0.5x ATR at stage 3
+    static constexpr double TRAIL4_DIST = 0.3; // 0.3x ATR — ride the cascade
+
+    void open(int s, double mid, double spread, double tp_pts, double sl_pts,
+              int64_t ts, double atr = 0.0) {
+        active        = true;
+        side          = s;
+        entry_mid     = mid;
+        entry_spread  = spread;
+        tp_mid        = mid + s * tp_pts;
+        sl_mid        = mid - s * sl_pts;
+        open_ts       = ts;
+        mfe = mae     = 0;
+        atr_at_entry  = atr;
+        trail_stage   = 0;
     }
 
     bool manage(const Tick& t, int max_hold_sec,
                 double& pnl, std::string& reason) {
         if (!active) return false;
 
-        double cur_mid = t.mid();
-        double move    = side * (cur_mid - entry_mid);
+        const double cur_mid = t.mid();
+        const double move    = side * (cur_mid - entry_mid);
         if (move  > mfe) mfe =  move;
         if (-move > mae) mae = -move;
 
-        bool hit_tp  = (side ==  1) ? (cur_mid >= tp_mid) : (cur_mid <= tp_mid);
-        bool hit_sl  = (side ==  1) ? (cur_mid <= sl_mid) : (cur_mid >= sl_mid);
-        bool timeout = ((t.ts_ms - open_ts) / 1000 >= max_hold_sec);
+        // ── Progressive trailing stop (mirrors GoldFlowEngine 4-stage logic) ──
+        // Only engages if we have a valid ATR at entry. If ATR=0 (engines that
+        // don't pass ATR), falls back to fixed TP/SL behaviour.
+        if (atr_at_entry > 0.1) {
+            const double atr = atr_at_entry;
+
+            // Stage 1: lock BE at 1x ATR profit
+            if (trail_stage < 1 && move >= atr * STAGE1_ATR) {
+                sl_mid      = entry_mid;  // SL moves to entry (BE)
+                trail_stage = 1;
+            }
+
+            // Stage 2: trail at 1.5x ATR behind MFE, starts at 2x ATR profit
+            if (trail_stage < 2 && move >= atr * STAGE2_ATR) {
+                trail_stage = 2;
+            }
+            if (trail_stage == 2) {
+                const double trail = side == 1
+                    ? (entry_mid + mfe - atr * TRAIL2_DIST)
+                    : (entry_mid - mfe + atr * TRAIL2_DIST);
+                if ((side ==  1 && trail > sl_mid) ||
+                    (side == -1 && trail < sl_mid))
+                    sl_mid = trail;
+            }
+
+            // Stage 3: tighten to 0.5x ATR at 5x ATR profit
+            if (trail_stage < 3 && move >= atr * STAGE3_ATR) {
+                trail_stage = 3;
+            }
+            if (trail_stage == 3) {
+                const double trail = side == 1
+                    ? (entry_mid + mfe - atr * TRAIL3_DIST)
+                    : (entry_mid - mfe + atr * TRAIL3_DIST);
+                if ((side ==  1 && trail > sl_mid) ||
+                    (side == -1 && trail < sl_mid))
+                    sl_mid = trail;
+            }
+
+            // Stage 4: tighten to 0.3x ATR at 10x ATR profit — ride the cascade
+            if (trail_stage < 4 && move >= atr * STAGE4_ATR) {
+                trail_stage = 4;
+            }
+            if (trail_stage == 4) {
+                const double trail = side == 1
+                    ? (entry_mid + mfe - atr * TRAIL4_DIST)
+                    : (entry_mid - mfe + atr * TRAIL4_DIST);
+                if ((side ==  1 && trail > sl_mid) ||
+                    (side == -1 && trail < sl_mid))
+                    sl_mid = trail;
+            }
+        }
+
+        // ── Exit conditions ───────────────────────────────────────────────────
+        // Fixed TP only fires if trail hasn't yet armed (stage < 2) — once trailing
+        // starts, the trail is the exit mechanism. This matches live engine behaviour.
+        const bool hit_tp  = (trail_stage < 2) &&
+                             ((side ==  1) ? (cur_mid >= tp_mid) : (cur_mid <= tp_mid));
+        const bool hit_sl  = (side ==  1) ? (cur_mid <= sl_mid) : (cur_mid >= sl_mid);
+        const bool timeout = ((t.ts_ms - open_ts) / 1000 >= max_hold_sec);
 
         if (hit_tp || hit_sl || timeout) {
-            double exit_mid        = hit_tp ? tp_mid : (hit_sl ? sl_mid : cur_mid);
-            double round_trip_cost = (entry_spread + t.spread()) * 0.5;
+            double exit_mid;
+            if      (hit_tp)  exit_mid = tp_mid;
+            else if (hit_sl)  exit_mid = sl_mid;
+            else              exit_mid = cur_mid;
+            const double round_trip_cost = (entry_spread + t.spread()) * 0.5;
             pnl    = side * (exit_mid - entry_mid) * MULT - round_trip_cost;
-            reason = hit_tp ? "TP" : (hit_sl ? "SL" : "TIMEOUT");
+            reason = hit_tp ? "TP"
+                   : hit_sl ? (trail_stage >= 1 ? "TRAIL_HIT" : "SL")
+                   : "TIMEOUT";
             active = false;
             return true;
         }
@@ -484,8 +561,9 @@ struct Sig {
     int    side    = 0;
     double mid     = 0;     // mid price at signal
     double spread  = 0;     // spread at signal
-    double tp_pts  = 0;     // gross TP from mid
+    double tp_pts  = 0;     // gross TP from mid (initial fixed TP; overridden by trail once Stage2 armed)
     double sl_pts  = 0;     // gross SL from mid
+    double atr     = 0.0;   // ATR at signal time — drives trailing stop stages (0 = trail disabled)
 };
 
 // =============================================================================
@@ -504,6 +582,33 @@ struct EngineBase {
     int64_t last_sig_ts = 0;
     bool cooldown(int64_t ts_ms, int ms) const {
         return (ts_ms - last_sig_ts) < ms;
+    }
+
+    // ── Shared ATR tracker (EWM, α=0.05, ~20-tick half-life) ─────────────────
+    // All engines inherit this. Call update_atr(t) on every tick to maintain a
+    // live ATR. Engines pass atr() into Sig so the trailing stop knows step size.
+    // ATR is 0.0 until at least ATR_WARMUP ticks have been seen.
+    static constexpr int    ATR_WARMUP = 50;   // ticks before ATR is trusted
+    static constexpr double ATR_ALPHA  = 0.05; // EWM alpha ≈ 20-tick half-life
+    static constexpr double ATR_MIN    = 0.30; // floor — prevents sub-tick SL
+    double  m_atr_ewm     = 0.0;
+    double  m_atr_last_mid= 0.0;
+    int     m_atr_ticks   = 0;
+
+    void update_atr(const Tick& t) noexcept {
+        const double mid = t.mid();
+        if (m_atr_last_mid > 0.0) {
+            const double rng = std::fabs(mid - m_atr_last_mid);
+            if (m_atr_ewm == 0.0) m_atr_ewm = rng;
+            else m_atr_ewm = ATR_ALPHA * rng + (1.0 - ATR_ALPHA) * m_atr_ewm;
+            ++m_atr_ticks;
+        }
+        m_atr_last_mid = mid;
+    }
+
+    double atr() const noexcept {
+        if (m_atr_ticks < ATR_WARMUP) return 0.0; // not warmed — trail disabled
+        return std::max(ATR_MIN, m_atr_ewm);
     }
 };
 
@@ -526,11 +631,13 @@ struct CompressionBreakout : EngineBase {
     const char* name() const override { return "CompressionBreakout"; }
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
+        update_atr(t);  // maintain rolling ATR every tick
+
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, 1000)) { ++cooldown_filtered; return {}; }
 
-        bool is_asia    = (utc_hour(t.ts_ms) >= 22 || utc_hour(t.ts_ms) < 5);
+        bool is_asia       = (utc_hour(t.ts_ms) >= 22 || utc_hour(t.ts_ms) < 5);
         double eff_spread  = is_asia ? SPREAD   * 0.60 : SPREAD;
         double eff_trigger = is_asia ? TRIGGER  * 1.40 : TRIGGER;
         if (t.spread() > eff_spread) { ++spread_filtered; return {}; }
@@ -544,25 +651,40 @@ struct CompressionBreakout : EngineBase {
         }
 
         hist.push(t.mid());
-
-        // Only evaluate once window is full
         if (!window_ready) return {};
 
         double rng = prev_hi - prev_lo;
         if (rng > RANGE) return {};  // not compressed
+
+        // ── Dynamic TP scaling ────────────────────────────────────────────────
+        // On trend days ATR is large — fixed $10 TP exits too early.
+        // Scale TP = max(10.0, ATR × 2.5), cap at $30.
+        // SL stays fixed ($5) — keeps RR >= 2:1 even on small ATR.
+        const double cur_atr = atr();
+        const double dyn_tp  = (cur_atr > 0.1)
+            ? std::min(30.0, std::max(TP, cur_atr * 2.5))
+            : TP;
+
+        // ── Min trade value gate ──────────────────────────────────────────────
+        // Skip if expected gross (TP × $1/pt × 0.01 lot = TP cents) < 1.5×
+        // estimated round-trip slippage (spread × 1.5 × 2 legs).
+        // At 0.01 lot: $1/pt. TP=$10 → $0.10 gross. Spread=$0.45 → $0.68 slip.
+        // Gate kills the -$2.52/-$3.57 trades where sl < spread.
+        const double slippage_est = t.spread() * 1.5;  // one-way cost at 0.01 lot
+        if (dyn_tp < slippage_est * 1.5) { return {}; }
 
         // Mid of the NEW tick vs the PRIOR window boundary
         if (t.mid() > prev_hi + eff_trigger) {
             if (drift < -3.0) return {};
             hist.clear();
             last_sig_ts = t.ts_ms;
-            return {true, +1, t.mid(), t.spread(), TP, SL};
+            return {true, +1, t.mid(), t.spread(), dyn_tp, SL, cur_atr};
         }
         if (t.mid() < prev_lo - eff_trigger) {
             if (drift > +3.0) return {};
             hist.clear();
             last_sig_ts = t.ts_ms;
-            return {true, -1, t.mid(), t.spread(), TP, SL};
+            return {true, -1, t.mid(), t.spread(), dyn_tp, SL, cur_atr};
         }
         return {};
     }
@@ -589,6 +711,7 @@ struct WickRejection : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
+        update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
 
@@ -616,7 +739,7 @@ struct WickRejection : EngineBase {
         if (pending != 0 && !cooldown(t.ts_ms, COOLDOWN)) {
             int s = pending; pending = 0;
             last_sig_ts = t.ts_ms;
-            return {true, s, t.mid(), t.spread(), TP, SL};
+            return {true, s, t.mid(), t.spread(), TP, SL, atr()};
         }
         return {};
     }
@@ -640,6 +763,7 @@ struct DonchianBreakout : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
+        update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
@@ -660,8 +784,8 @@ struct DonchianBreakout : EngineBase {
         double chi = bars[0].first, clo = bars[0].second;
         for (auto& b : bars) { if(b.first>chi) chi=b.first; if(b.second<clo) clo=b.second; }
 
-        if (t.mid() > chi) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL}; }
-        if (t.mid() < clo) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL}; }
+        if (t.mid() > chi) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL,atr()}; }
+        if (t.mid() < clo) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL,atr()}; }
         return {};
     }
 };
@@ -685,6 +809,7 @@ struct NR3Breakout : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
+        update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
@@ -709,8 +834,8 @@ struct NR3Breakout : EngineBase {
         }
 
         if (armed && nr_hi > 0) {
-            if (t.mid() > nr_hi) { armed=false; last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL}; }
-            if (t.mid() < nr_lo) { armed=false; last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL}; }
+            if (t.mid() > nr_hi) { armed=false; last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL,atr()}; }
+            if (t.mid() < nr_lo) { armed=false; last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL,atr()}; }
         }
         return {};
     }
@@ -743,6 +868,7 @@ struct IntradaySeasonality : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
+        update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
 
@@ -760,7 +886,7 @@ struct IntradaySeasonality : EngineBase {
 
         last_hh = hh; last_day = day;
         last_sig_ts = t.ts_ms;
-        return {true, b, t.mid(), t.spread(), TP, SL};
+        return {true, b, t.mid(), t.spread(), TP, SL, atr()};
     }
 };
 
@@ -780,6 +906,7 @@ struct SessionMomentum : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)drift;
+        update_atr(t);
         if (!in_session_window(t.ts_ms)) return {};
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (cooldown(t.ts_ms, 1000)) { ++cooldown_filtered; return {}; }
@@ -796,11 +923,11 @@ struct SessionMomentum : EngineBase {
 
         if (dhi < dlo && t.mid() > vwap && rec5 < -0.30) {
             hist.clear(); last_sig_ts=t.ts_ms;
-            return {true,+1,t.mid(),t.spread(),TP,SL};
+            return {true,+1,t.mid(),t.spread(),TP,SL,atr()};
         }
         if (dlo < dhi && t.mid() < vwap && rec5 > +0.30) {
             hist.clear(); last_sig_ts=t.ts_ms;
-            return {true,-1,t.mid(),t.spread(),TP,SL};
+            return {true,-1,t.mid(),t.spread(),TP,SL,atr()};
         }
         return {};
     }
@@ -821,10 +948,21 @@ struct MeanReversion : EngineBase {
     const char* name() const override { return "MeanReversion"; }
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
-        (void)vwap; (void)drift;
+        (void)vwap;
+        update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
+
+        // ── Trend-regime gate ─────────────────────────────────────────────────
+        // Block ALL MeanReversion entries when EWM drift confirms a strong trend.
+        // On a 121pt trend day, every MR short is a trade against a steamroller.
+        // |drift| > 5.0 = sustained directional EWM movement — not noise.
+        // drift > 0 = uptrend: block shorts. drift < 0 = downtrend: block longs.
+        // Both sides blocked at |drift| > 8 (confirmed strong trend — no MR at all).
+        if (std::fabs(drift) > 1.5) return {};        // strong trend: disable MR entirely
+        if (drift >  0.8) { /* uptrend: only allow LONG MR */ }
+        if (drift < -0.8) { /* downtrend: only allow SHORT MR */ }
 
         hist.push(t.mid());
         if ((int)hist.size() < LB) return {};
@@ -838,8 +976,11 @@ struct MeanReversion : EngineBase {
         if (sd < 0.01) return {};
 
         double z = (t.mid() - mean) / sd;
-        if (z < -Z_ENTRY) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL}; }
-        if (z >  Z_ENTRY) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL}; }
+        // Block counter-trend fades: no SHORT when drift bullish, no LONG when bearish
+        if (z < -Z_ENTRY && drift < -0.8) return {};  // LONG in downtrend — skip
+        if (z >  Z_ENTRY && drift >  0.8) return {};  // SHORT in uptrend — skip
+        if (z < -Z_ENTRY) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL,atr()}; }
+        if (z >  Z_ENTRY) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL,atr()}; }
         return {};
     }
 };
@@ -860,15 +1001,23 @@ struct SpikeFade : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
+        update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
+        // ── Trend-regime gate: only fade spikes that go AGAINST the trend ─────
+        // A $10 spike in the trend direction on a trend day is a continuation,
+        // not a spike to fade. Only fire SpikeFade when the spike contradicts drift.
         int bm = bar_minute(t.ts_ms, BAR_MINS);
         if (bm != bar_bm) { bar_open = t.mid(); bar_bm = bm; return {}; }
 
         double move = t.mid() - bar_open;
-        if (move >  MIN_MOVE) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL}; }
-        if (move < -MIN_MOVE) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL}; }
+        // Spike UP but drift strongly bullish → continuation, not fade
+        if (move >  MIN_MOVE && drift >  0.8) return {};
+        // Spike DOWN but drift strongly bearish → continuation, not fade
+        if (move < -MIN_MOVE && drift < -0.8) return {};
+        if (move >  MIN_MOVE) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL,atr()}; }
+        if (move < -MIN_MOVE) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL,atr()}; }
         return {};
     }
 };
@@ -890,10 +1039,17 @@ struct DynamicRange : EngineBase {
     const char* name() const override { return "DynamicRange"; }
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
-        (void)vwap; (void)drift;
+        (void)vwap;
+        update_atr(t);
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
+
+        // ── Trend-regime gate: disable range-fade during strong trends ────────
+        // DynamicRange fades to range extremes — valid in ranging markets only.
+        // When drift confirms trend (|drift|>6), range extremes are breakout
+        // continuations, not fade setups. Gate entirely above |drift|=8.
+        if (std::fabs(drift) > 1.5) return {};    // strong trend: disable range fade
 
         int bm = bar_minute(t.ts_ms, BAR_MINS);
         if (bm != bar_bm) {
@@ -906,8 +1062,11 @@ struct DynamicRange : EngineBase {
         for(auto&b:bars){if(b.first>rhi)rhi=b.first;if(b.second<rlo)rlo=b.second;}
 
         double band = (rhi - rlo) * 0.15;
-        if (t.mid() >= rhi - band) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL}; }
-        if (t.mid() <= rlo + band) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL}; }
+        // Additional: don't fade high (SHORT) if drift bullish, don't fade low (LONG) if bearish
+        if (t.mid() >= rhi - band && drift < -0.8) return {};  // SHORT at high, but downtrend
+        if (t.mid() <= rlo + band && drift >  0.8) return {};  // LONG  at low,  but uptrend
+        if (t.mid() >= rhi - band) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL,atr()}; }
+        if (t.mid() <= rlo + band) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL,atr()}; }
         return {};
     }
 };
@@ -946,7 +1105,7 @@ struct Runner {
         }
         if (!pos.active) {
             Sig sig = eng->on_tick(t, vwap, drift);
-            if (sig.valid) pos.open(sig.side, sig.mid, sig.spread, sig.tp_pts, sig.sl_pts, t.ts_ms);
+            if (sig.valid) pos.open(sig.side, sig.mid, sig.spread, sig.tp_pts, sig.sl_pts, t.ts_ms, sig.atr);
         }
     }
 };

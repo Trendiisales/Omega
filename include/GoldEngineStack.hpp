@@ -4249,6 +4249,27 @@ private:
     bool entry_quality_ok(const Signal& s, double score, const GoldSnapshot& snap, int64_t now_s) const {
         if (snap.spread > MAX_ENTRY_SPREAD) return false;
         if (snap.vwap > 0.0 && std::fabs(s.entry - snap.vwap) < MIN_VWAP_DISLOCATION) return false;
+
+        // ── Min trade value gate ─────────────────────────────────────────────
+        // Kill entries where expected gross profit < 1.5× round-trip slippage.
+        // Prevents the -$2.52/-$3.57 trades where TP sits inside the spread band.
+        // s.tp is in price ticks (100 ticks = $10 at 0.01 lot, $1/pt).
+        // tp_usd  = s.tp * 0.10  (ticks → USD at 0.01 lot)
+        // slip    = spread × 1.5 (one-way; ×2 round-trip factored into the 1.5 gate)
+        if (s.tp > 0.0 && snap.spread > 0.0) {
+            const double tp_usd       = s.tp * 0.10;       // TP in USD at base 0.01 lot
+            const double slippage_est = snap.spread * 1.5; // estimated one-way cost
+            if (tp_usd < slippage_est * 1.5) {
+                std::cout << "[GOLD-QUALITY] MIN_TRADE_GATE blocked:"
+                          << " engine=" << (s.engine[0] ? s.engine : "?")
+                          << " tp_usd=" << tp_usd
+                          << " slip_est=" << slippage_est
+                          << " spread=" << snap.spread << "\n";
+                std::cout.flush();
+                return false;
+            }
+        }
+
         if (s.engine[0] != '\0' && std::strcmp(s.engine, "ImpulseContinuation") == 0) {
             if (s.confidence < IMPULSE_MIN_CONFIDENCE || score < IMPULSE_MIN_SCORE) return false;
         } else if (s.engine[0] != '\0' && std::strcmp(s.engine, "CompressionBreakout") == 0) {
