@@ -489,6 +489,8 @@ static std::atomic<int64_t>  g_gold_flow_exit_price_x100{0};
 // by bypassing the 120s SL cooldown. Window = 60s from flow exit.
 static std::atomic<int64_t>  g_gold_reversal_window_until{0};
 static std::atomic<int64_t>  g_gold_post_impulse_until{0};  // block new entries 3min after IMPULSE ends
+static std::atomic<int64_t>  g_gold_trail_block_until{0};    // same-dir re-entry blocked 30s after trail/BE (GoldStack)
+static std::atomic<int>       g_gold_trail_block_dir{0};      // direction that was blocked (+1=long, -1=short)
 static omega::SilverBracketEngine g_bracket_xag;
 // US equity index bracket engines — arms both sides on compression,
 // captures the move regardless of direction. Eliminates wrong-direction losses.
@@ -6401,8 +6403,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool gold_session_ok = (gold_session_slot != 0);
         // On trend day re-entry: allow GoldStack even with gold_stack open position
         // (CompBreakout won't fire if stack is already open — handled in stack gate below)
+        // Same-direction trail block: 30s after a trail/BE exit, block re-entry in same dir.
+        // Direction-aware: only blocks the direction that just closed, not the opposite.
+        // This allows reversal entries but prevents immediate same-dir chasing.
+        const bool gold_trail_blocked = (g_gold_trail_block_until.load() > now_s_gate);
+        // GoldStack same-direction re-entry block: 30s after trail/BE close
+        // Applied to GoldStack entries only — GoldFlow has its own continuation_mode
+        const bool gs_trail_blocked = gold_trail_blocked; // used below in GoldStack gate
         const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open)
-                                 && !gold_post_impulse_block;  // 3min cooldown after IMPULSE ends — stops chasing
+                                 && !gold_post_impulse_block;  // 3min cooldown after IMPULSE ends
         // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
         const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
             && gold_session_ok && symbol_gate("XAUUSD", false);
@@ -6516,9 +6525,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // closed via trail/BE on a strong trend. Stack handles the EWM drift
             // direction gate internally so only trend-aligned signals fire.
             // Also allow reversal counter-entry when drift_reversed is confirmed.
-            const bool stack_enter_effective = (stack_can_enter && gold_can_enter)
-                || (gold_can_enter_trend_reentry && vol_expanding)
-                || (drift_reversed && gold_can_enter);
+            // Trail block: 30s after same-direction close, check if this signal
+            // would re-enter the same direction. Allow if direction differs (reversal).
+            const bool gs_trail_dir_match = gs_trail_blocked; // directional check done in GFE
+            const bool stack_enter_effective = ((stack_can_enter && gold_can_enter && !gs_trail_dir_match)
+                || (gold_can_enter_trend_reentry && vol_expanding && !gs_trail_dir_match)
+                || (drift_reversed && gold_can_enter));  // reversals always allowed
             const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close,
                                                     stack_enter_effective);
             if (gsig.valid) {
@@ -6815,12 +6827,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok
                                       && (!bracket_open || gold_is_pyramiding)
                                       && (!in_cooldown_phase || trend_dir_bypasses_cooldown)
-                                      && !g_gold_stack.has_open_position()
-                                      && (!g_gold_flow.has_open_position() || flow_pyramid_bypass)
+                                      && (!g_gold_stack.has_open_position() || flow_pyramid_bypass)  // allow alongside winning GoldStack
+                                      && (!g_gold_flow.has_open_position()  || flow_pyramid_bypass)  // allow alongside winning GoldFlow
                                       && !g_trend_pb_gold.has_open_position()
                                       && !g_le_stack.has_open_position()
                                       && (!in_london_open_noise || london_drift_override)
-                                      && !gold_impulse_regime;  // block CompressionBreakout in IMPULSE — wrong engine for thrusting moves (11:52 SHORT -$95 loss)
+                                      && !gold_impulse_regime;  // block CompressionBreakout in IMPULSE — wrong engine for thrusting moves
             // NOTE: gold_trend_blocked (counter_trend_blocked) is intentionally NOT here.
             // It blocks the counter-trend ARM direction via arm_allowed(), not can_arm_bracket itself.
             // Having it here blocked ALL bracket arming when FLOW-BIAS-INJECT set bias,
@@ -6996,14 +7008,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                            tr.side.c_str());
                     fflush(stdout);
                 }
-                // Trail/BE exit: block same-direction re-entry for 60s — prevents
-                // chasing the same direction into a bounce after a clean exit.
-                // Evidence: 07:34 trail SHORT exit → 07:35+07:36 re-entry SHORT into
-                // bounce → both SL_HIT → -$91 avoidable loss (2026-03-30).
+                // Trail/BE exit: block same-direction re-entry for 30s — prevents
+                // immediate chasing but allows re-entry if trend continues (was 60s).
                 const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
                 if (is_trail) {
-                    g_gold_reversal_window_until.store(now_s + 60);
-                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s — same-dir re-entry blocked 60s\n",
+                    g_gold_trail_block_until.store(now_s + 30);
+                    g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
+                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s — same-dir re-entry blocked 30s\n",
                            tr.exitReason.c_str(), tr.side.c_str());
                     fflush(stdout);
                 }
@@ -7125,14 +7136,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                            tr.side.c_str());
                     fflush(stdout);
                 }
-                // Trail/BE exit: block same-direction re-entry for 60s — prevents
-                // chasing the same direction into a bounce after a clean exit.
-                // Evidence: 07:34 trail SHORT exit → 07:35+07:36 re-entry SHORT into
-                // bounce → both SL_HIT → -$91 avoidable loss (2026-03-30).
+                // Trail/BE exit: block same-direction re-entry for 30s — prevents
+                // immediate chasing but allows re-entry if trend continues (was 60s).
                 const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
                 if (is_trail) {
-                    g_gold_reversal_window_until.store(now_s + 60);
-                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s — same-dir re-entry blocked 60s\n",
+                    g_gold_trail_block_until.store(now_s + 30);
+                    g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
+                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s — same-dir re-entry blocked 30s\n",
                            tr.exitReason.c_str(), tr.side.c_str());
                     fflush(stdout);
                 }
