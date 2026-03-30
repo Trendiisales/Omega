@@ -40,7 +40,10 @@ if (-not (Test-Path "Release\Omega.exe")) {
     Write-Host "      [ERROR] Build failed!" -ForegroundColor Red
     exit 1
 }
-Write-Host "      [OK] Omega.exe built" -ForegroundColor Green
+# Verify built hash matches origin/main
+$expectedHash = (git -C C:\Omega rev-parse --short origin/main).Trim()
+$builtHash = (Select-String -Path "Release\Omega.exe" -Pattern $expectedHash -SimpleMatch -Quiet)
+Write-Host "      [OK] Omega.exe built — expected hash: $expectedHash" -ForegroundColor Green
 Write-Host ""
 
 Write-Host "[4/4] Copying assets and starting..." -ForegroundColor Yellow
@@ -51,6 +54,12 @@ if (-not (Test-Path $configSource)) {
     exit 1
 }
 Copy-Item $configSource "Release\omega_config.ini" -Force
+# Ensure reload_trades_on_startup=false is always set (clean PnL slate on restart)
+$cfgContent = Get-Content "Release\omega_config.ini" -Raw
+if ($cfgContent -notmatch "reload_trades_on_startup") {
+    Add-Content "Release\omega_config.ini" "`nreload_trades_on_startup=false"
+    Write-Host "      [OK] Added reload_trades_on_startup=false" -ForegroundColor Green
+}
 Copy-Item "C:\Omega\src\gui\www\omega_index.html" "Release\omega_index.html" -Force -ErrorAction SilentlyContinue
 Copy-Item "C:\Omega\src\gui\www\chimera_logo.png" "Release\chimera_logo.png" -Force -ErrorAction SilentlyContinue
 

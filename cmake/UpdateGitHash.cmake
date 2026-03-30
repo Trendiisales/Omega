@@ -6,8 +6,9 @@
 find_package(Git QUIET)
 
 if(GIT_FOUND AND EXISTS "${SOURCE_DIR}/.git")
+    # Force HEAD to match origin/main before reading hash
     execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short origin/main
         WORKING_DIRECTORY "${SOURCE_DIR}"
         OUTPUT_VARIABLE GIT_HASH
         OUTPUT_STRIP_TRAILING_WHITESPACE
