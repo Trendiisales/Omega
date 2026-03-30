@@ -6288,10 +6288,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool gf_open = g_gold_flow.has_open_position();
         const double gf_mid = (bid + ask) * 0.5;
         const bool gf_winning = gf_open
-            && g_gold_flow.pos.trail_stage >= 1  // past BE — confirmed winner
+            && g_gold_flow.pos.trail_stage >= 2  // must be at stage 2 trail — well past BE
             && (g_gold_flow.pos.is_long
-                ? (gf_mid > g_gold_flow.pos.entry + 1.0)   // $1+ in profit
-                : (gf_mid < g_gold_flow.pos.entry - 1.0));
+                ? (gf_mid > g_gold_flow.pos.entry + 3.0)   // $3+ in profit (1.5x ATR)
+                : (gf_mid < g_gold_flow.pos.entry - 3.0));
         const bool gold_any_open =
             g_gold_stack.has_open_position()        ||
             g_le_stack.has_open_position()          ||
