@@ -224,7 +224,16 @@ struct GoldFlowEngine {
         // In that case use DRIFT-PERSISTENCE mode: EWM drift sustained for
         // GFE_DRIFT_PERSIST_TICKS consecutive ticks + stronger momentum threshold.
         // This is still a real confirmation signal — just price-based not book-based.
+        //
+        // CRITICAL: If L2 was live earlier this session but is now 0.500 (neutral),
+        // it means the depth feed dropped mid-session. Block entries entirely rather
+        // than falling back to drift — a temporarily broken feed is not the same as
+        // a structurally unavailable feed (different broker). Drift fallback caused
+        // massive overtrading when depth feed dropped today (10+ losses vs 3 on Friday).
         const bool l2_data_live = (std::fabs(l2_imb - 0.5) > 0.001);
+        // Track whether L2 was ever live this session — if it was and now isn't, block
+        if (l2_data_live) m_l2_was_live = true;
+        if (!l2_data_live && m_l2_was_live && !is_low_quality_session) return; // L2 dropped mid-session — block
 
         // Session-aware persistence thresholds: Asia requires 90% dominance, normal 75%
         // Continuation mode: lower persistence threshold for first re-entry after
@@ -580,6 +589,7 @@ private:
 
     // ATR calculation -- EWM-smoothed tick-to-tick range, 100-tick warmup
     double              m_atr           = 0.0;   // exposed ATR (0 until warmup complete)
+    bool                m_l2_was_live   = false; // true once L2 imbalance != 0.5 seen this session
     std::deque<double>  m_atr_price_window;         // rolling mid price window for range-based ATR
     double              m_atr_ewm       = 0.0;   // internal EWM accumulator
     double              m_last_mid_atr  = 0.0;   // previous mid for tick-range computation
