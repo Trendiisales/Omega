@@ -146,7 +146,7 @@ class GoldFeatures {
 
     // UTC hour → SessionType
     static SessionType classify_session() {
-        auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        auto t = std::time(nullptr);
         struct tm ti{}; 
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -163,7 +163,7 @@ class GoldFeatures {
 
     // Reset cumulative VWAP at UTC midnight each day
     void check_daily_reset() {
-        auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -332,7 +332,7 @@ class CompressionBreakoutEngine : public EngineBase {
     }
 
     static bool in_london_preopen_thinzone() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -365,7 +365,7 @@ public:
         if(s.spread > eff_max_spread) return noSignal();
         // Quality gate for 05:00-07:00 UTC thin zone: allow entry only if ATR is >= 3x spread
         // (real directional move, not noise). No hard time blocks.
-        if (in_london_preopen_thinzone() && s.atr > 0.1 && s.atr < s.spread * 3.0) return noSignal();
+        if (in_london_preopen_thinzone() && s.spread > MAX_SPREAD * 0.70) return noSignal();  // thin zone: only allow tight spreads
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
         if(history_.size() < WINDOW){
@@ -512,7 +512,7 @@ public:
         // SessionMomentumEngine already skips this window (starts at 07:15).
         // Incident: 07:05 LONG at 4415.24 → SL hit in 2s, -$8.88 net.
         {
-            const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            const auto t = std::time(nullptr);
             struct tm u{};
 #ifdef _WIN32
             gmtime_s(&u, &t);
@@ -589,7 +589,7 @@ class SessionMomentumEngine : public EngineBase {
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::milliseconds(1000)};
 
     static bool in_session_window(){
-        auto t=std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        auto t=std::time(nullptr);
         struct tm u{}; 
 #ifdef _WIN32
         gmtime_s(&u,&t);
@@ -706,8 +706,7 @@ class IntradaySeasonalityEngine : public EngineBase {
         std::chrono::steady_clock::now() - std::chrono::seconds(10)};
 
     static std::tuple<int,int,int> utc_h_m_day() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -841,8 +840,7 @@ class WickRejectionEngine : public EngineBase {
 
     // ── UTC helpers ───────────────────────────────────────────────────────────
     static int utc_minute_of_day() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -1023,8 +1021,7 @@ class DonchianBreakoutEngine : public EngineBase {
         std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC + 1)};
 
     static int utc_slot() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -1185,8 +1182,7 @@ class NR3BreakoutEngine : public EngineBase {
         std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC + 1)};
 
     static int utc_slot_and_hour(int& hour_out) noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -1342,8 +1338,7 @@ class SpikeFadeEngine : public EngineBase {
         std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC + 1)};
 
     static int utc_slot() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -1474,8 +1469,7 @@ class AsianRangeEngine : public EngineBase {
         std::chrono::steady_clock::now() - std::chrono::seconds(3700)};
 
     static void utc_hms(int& h, int& m, int& yday) noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -1626,8 +1620,7 @@ class DynamicRangeEngine : public EngineBase {
         std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC + 1)};
 
     static int utc_slot() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -2030,7 +2023,7 @@ class TwoBarReversalEngine : public EngineBase {
         std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC+1)};
 
     static int utc_slot() noexcept {
-        const auto t=std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        const auto t=std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti,&t);
@@ -2171,7 +2164,7 @@ class MeanReversionEngine : public EngineBase {
     //   05:00–07:00 UTC — late Asia/London pre-open: thin liquidity, erratic fills.
         // Fade engine dead zone: block Sydney chop (21-23 UTC) and London pre-open (05-07 UTC).
     static bool in_dead_zone() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -2531,8 +2524,7 @@ class LondonFixMomentumEngine : public EngineBase {
         std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC + 1)};
 
     static std::tuple<int,int,int> utc_h_m_day() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -2656,8 +2648,7 @@ class VWAPStretchReversionEngine : public EngineBase {
     }
 
     static int utc_mins() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -2770,8 +2761,7 @@ class OpeningRangeBreakoutNYEngine : public EngineBase {
     }
 
     static std::tuple<int,int,int> utc_h_m_day() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);
@@ -2962,8 +2952,7 @@ class SessionOpenMomentumEngine : public EngineBase {
         std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC + 1)};
 
     static std::tuple<int,int,int> utc_h_m_day() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-                           std::chrono::system_clock::now());
+        const auto t = std::time(nullptr);
         struct tm ti{};
 #ifdef _WIN32
         gmtime_s(&ti, &t);

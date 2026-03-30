@@ -216,42 +216,20 @@ namespace chrono {
     #pragma warning(disable: 4003)
 #endif
 
-// Final, working token-replacement approach:
-// In the std::chrono namespace, inject our simulated clock as the 
-// names that engine headers reference.
-namespace std {
-namespace chrono {
-    // Replace steady_clock with our simulated clock.
-    // Using 'using' declarations shadows the real names within this TU
-    // when engine code does: using namespace std::chrono; or
-    //                        std::chrono::steady_clock::now()
-    // This technique works because the lookup finds our declaration first.
-    struct steady_clock {
-        using rep        = omega::bt::OmegaBtClock::rep;
-        using period     = omega::bt::OmegaBtClock::period;
-        using duration   = omega::bt::OmegaBtClock::duration;
-        using time_point = omega::bt::OmegaBtClock::time_point;
-        static constexpr bool is_steady = true;
-        static time_point now() noexcept { return omega::bt::OmegaBtClock::now(); }
-    };
-
-    struct system_clock {
-        using rep        = omega::bt::OmegaBtClock::rep;
-        using period     = omega::bt::OmegaBtClock::period;
-        using duration   = omega::bt::OmegaBtClock::duration;
-        using time_point = omega::bt::OmegaBtClock::time_point;
-        static constexpr bool is_steady = false;
-        static time_point now() noexcept { return omega::bt::OmegaBtClock::now(); }
-        static std::time_t to_time_t(const time_point& tp) noexcept {
-            return omega::bt::OmegaBtClock::to_time_t(tp);
-        }
-        static time_point from_time_t(std::time_t t) noexcept {
-            return omega::bt::OmegaBtClock::from_time_t(t);
-        }
-    };
-
-} // namespace chrono
-} // namespace std
+// MSVC-compatible approach: use #define to alias the clock names.
+// This works on MSVC, GCC, and Clang without requiring struct redefinition
+// in the std namespace (which MSVC C2011 rejects).
+// The #defines must appear BEFORE engine headers are included in OmegaBacktest.cpp.
+//
+// Engine code uses: std::chrono::steady_clock::now()
+//                   std::chrono::system_clock::now()
+// After the #define, the preprocessor replaces steady_clock/system_clock tokens
+// with OmegaBtClock throughout the translation unit.
+//
+// Note: these macros are scoped to the backtest TU only since this header
+// is force-included only for the OmegaBacktest target.
+#define steady_clock OmegaBtClock
+#define system_clock OmegaBtClock
 
 // Verify the shim is active
 static_assert(true, "OmegaTimeShim.hpp loaded — simulated clock active");
