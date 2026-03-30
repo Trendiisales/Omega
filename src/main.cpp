@@ -6490,12 +6490,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool in_dead_zone  = (g_macro_ctx.session_slot == 0);
             const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
             // Asia trend gate: only apply when GOLD specifically has real L2 data.
-            // Use gold_l2_imbalance as the sole indicator — it stays at exactly 0.500
-            // (hardcoded neutral fallback) when no real depth data is received for GOLD.
-            // microprice_bias is NOT used here — it can be non-zero from stale/sparse data.
-            const bool gold_has_l2 = (std::fabs(g_macro_ctx.gold_l2_imbalance - 0.5) > 0.001);
+            // Use has_data flag — set true by depth handler when any non-zero level received.
+            // OLD: used |imbalance - 0.5| > 0.001 which was fragile:
+            //   a neutral live book (equal bid/ask) reads 0.500-0.501 and was incorrectly
+            //   treated as "has L2", causing asia_ok=0 when the book is live but balanced.
+            //   Today: l2_imb=0.501 → gold_has_l2=true → is_drift_trending(0.501)=false → BLOCKED.
+            const bool gold_has_l2 = g_l2_gold.has_data.load(std::memory_order_relaxed);
             const bool asia_trend_ok = !in_asia_slot
-                || !gold_has_l2  // no real GOLD L2 data → fail-open
+                || !gold_has_l2  // no real GOLD L2 data -> fail-open
                 || g_gold_stack.is_drift_trending(g_macro_ctx.gold_l2_imbalance);
 
             // London open noise guard: 07:00-07:15 UTC — first 15min of London open
@@ -6611,14 +6613,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                           && gold_pyramid_ok        // L2 must confirm direction
                                           && !gold_impulse_regime;  // never pyramid into IMPULSE thrust
 
+            // asia_trend_ok removed from bracket gate:
+            //   The BracketEngine (CompressionBreakout) has its own Asia quality gates:
+            //   $6 compression range, $2.50 trigger, spread filter, ATR floor.
+            //   asia_trend_ok was blocking ALL bracket entries in Asia when L2 was
+            //   neutral (0.501) — which is correct behaviour for GoldFlowEngine (L2-driven)
+            //   but wrong for CompressionBreakout (structure-driven).
+            //   asia_trend_ok still gates GoldFlow entries (via gold_can_enter chain).
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok
                                       && (!bracket_open || gold_is_pyramiding)
-                                      && (!in_cooldown_phase || trend_dir_bypasses_cooldown)  // cooldown bypass
+                                      && (!in_cooldown_phase || trend_dir_bypasses_cooldown)
                                       && !g_gold_stack.has_open_position()
                                       && (!g_gold_flow.has_open_position() || flow_pyramid_bypass)
                                       && !g_trend_pb_gold.has_open_position()
                                       && !g_le_stack.has_open_position()
-                                      && asia_trend_ok
                                       && !in_london_open_noise;
             // NOTE: gold_trend_blocked (counter_trend_blocked) is intentionally NOT here.
             // It blocks the counter-trend ARM direction via arm_allowed(), not can_arm_bracket itself.

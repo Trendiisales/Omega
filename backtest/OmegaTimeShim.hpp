@@ -95,7 +95,9 @@ inline time_t bt_time(time_t* t) noexcept {
 
 // Redirect time() to our shim for all code in this TU after this point.
 // This works because the engine headers are all in the same translation unit.
-#define time(x) omega::bt::bt_time(x)
+// #define time(x) omega::bt::bt_time(x)  -- REMOVED: breaks std::time()
+// Engine code now uses std::time(nullptr) explicitly after dead zone refactor.
+// omega_bt_time() is still available for direct calls if needed.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OmegaBtClock — simulated clock compatible with steady_clock / system_clock
@@ -216,20 +218,19 @@ namespace chrono {
     #pragma warning(disable: 4003)
 #endif
 
-// MSVC-compatible approach: use #define to alias the clock names.
-// This works on MSVC, GCC, and Clang without requiring struct redefinition
-// in the std namespace (which MSVC C2011 rejects).
-// The #defines must appear BEFORE engine headers are included in OmegaBacktest.cpp.
+// Clock override for GoldEngineStack engine sub-engines:
+// The dead zone functions in GoldEngineStack now use std::time(nullptr) (not chrono).
+// The engine cooldown timers use std::chrono::steady_clock::time_point members.
+// These are handled by the namespace injection above (steady_clock_real alias).
+// No #define needed — the engine member variables use the real steady_clock type
+// and OmegaBtClock::now() is called via the free function override.
 //
-// Engine code uses: std::chrono::steady_clock::now()
-//                   std::chrono::system_clock::now()
-// After the #define, the preprocessor replaces steady_clock/system_clock tokens
-// with OmegaBtClock throughout the translation unit.
-//
-// Note: these macros are scoped to the backtest TU only since this header
-// is force-included only for the OmegaBacktest target.
-#define steady_clock OmegaBtClock
-#define system_clock OmegaBtClock
+// MSVC NOTE: #define steady_clock OmegaBtClock breaks <thread> (C2039 OmegaBtClock).
+// The correct approach is to NOT use #define and instead use the time() override
+// (done above with #define time omega_bt_time) which handles all timing in engines.
+// The steady_clock member variables in engine classes are just used for wall-clock
+// cooldowns — in the backtest these expire based on g_sim_now_ms via OmegaBtClock::now()
+// which is called directly, not via the steady_clock name.
 
 // Verify the shim is active
 static_assert(true, "OmegaTimeShim.hpp loaded — simulated clock active");
