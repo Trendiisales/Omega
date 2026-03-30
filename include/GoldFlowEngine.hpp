@@ -1,6 +1,6 @@
 // =============================================================================
 //  GoldFlowEngine.hpp
-//  L2 order-flow engine for GOLD.F
+//  L2 order-flow engine for XAUUSD
 //
 //  Architecture (prop-desk methodology):
 //
@@ -718,7 +718,7 @@ private:
     {
         omega::TradeRecord tr;
         tr.id           = m_trade_id;
-        tr.symbol       = "GOLD.F";
+        tr.symbol       = "XAUUSD";
         tr.side         = pos.is_long ? "LONG" : "SHORT";
         tr.entryPrice   = pos.entry;
         tr.exitPrice    = exit_px;
