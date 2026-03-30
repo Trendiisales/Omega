@@ -311,7 +311,7 @@ struct CrossRunner {
     BtVwap vwap;
     CrossRunner(){}
     void tick(const TickRow& r){
-        const std::string sym = "GOLD.F";
+        const std::string sym = "XAUUSD";
         const double mid  = (r.bid+r.ask)*0.5;
         const double vw   = vwap.update(mid, r.ts_ms);
         auto c=cb();
@@ -323,7 +323,7 @@ struct CrossRunner {
 };
 
 struct BreakRunner {
-    omega::BreakoutEngine    bke{"GOLD.F"};
+    omega::BreakoutEngine    bke{"XAUUSD"};
     omega::GoldBracketEngine gbe;
     double lat;
     BreakRunner(double l):lat(l){}
