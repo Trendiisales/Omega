@@ -4596,9 +4596,14 @@ private:
         }
 
         if (asia_trend) {
-            printf("[GOLD-ASIA-TREND] Regime=%s — trend engines enabled in Asia\n",
-                   current_regime_ == MarketRegime::TREND ? "TREND" : "IMPULSE");
-            fflush(stdout);
+            static int64_t s_last_asia_log = 0;
+            const int64_t now_al = static_cast<int64_t>(std::time(nullptr));
+            if (now_al - s_last_asia_log >= 30) {  // rate-limit to once per 30s
+                s_last_asia_log = now_al;
+                printf("[GOLD-ASIA-TREND] Regime=%s — trend engines enabled in Asia\n",
+                       current_regime_ == MarketRegime::TREND ? "TREND" : "IMPULSE");
+                fflush(stdout);
+            }
         }
     }
 
