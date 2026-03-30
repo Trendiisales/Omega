@@ -330,7 +330,7 @@ struct BreakRunner {
     BreakRunner(double l):lat(l){}
     void tick(const TickRow& r){
         auto c=cb();
-        bke.update(r.bid,r.ask,lat,"UNKNOWN",c);
+        (void)bke.update(r.bid,r.ask,lat,"UNKNOWN",c);
         (void)gbe.on_tick(r.bid,r.ask,(long long)r.ts_ms,true,"UNKNOWN",c);
     }
 };

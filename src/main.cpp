@@ -6877,11 +6877,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     fflush(stdout);
                 }
             };
-            if (gf_tick_ok) g_gold_flow.on_tick(bid, ask,
-                g_macro_ctx.gold_l2_imbalance,
-                g_gold_stack.ewm_drift(),
-                now_ms_g, flow_on_close,
-                g_macro_ctx.session_slot);
+            if (gf_tick_ok) {
+                // ── Inject macro trend bias before each tick ──────────────────
+                // gold_momentum = (mid - VWAP) / mid * 100 — computed above from GoldStack
+                // gold_sdec.confidence and regime from SymbolSupervisor — computed above
+                // These block GFE from entering counter-trend on strong directional days.
+                const bool sup_trend = (gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
+                g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence, sup_trend);
+                g_gold_flow.on_tick(bid, ask,
+                    g_macro_ctx.gold_l2_imbalance,
+                    g_gold_stack.ewm_drift(),
+                    now_ms_g, flow_on_close,
+                    g_macro_ctx.session_slot);
+            }
             if (g_gold_flow.has_open_position()) {
                 // ── Post-entry: apply regime weight + adaptive risk sizing ─────
                 // GoldFlowEngine computes lot = risk_dollars / (sl_pts × 100) internally.

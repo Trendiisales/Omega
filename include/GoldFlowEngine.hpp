@@ -288,17 +288,38 @@ struct GoldFlowEngine {
         // Skip this check if ATR not yet built (is_impulsive() returns true in that case).
         const bool price_expanding = is_impulsive();
 
+        // ── Macro trend bias filter ───────────────────────────────────────────
+        // Block counter-trend entries when VWAP deviation signals strong directionality.
+        // Without this, GFE's local EWM momentum catches micro-pullbacks INSIDE a trend
+        // and fires counter-trend entries (evidence: 3× SHORT at 4440 on +120pt Friday).
+        //
+        // Two-level gate (BOTH must agree to block):
+        //   Level 1: |momentum| > 0.05% of price = price meaningfully above/below VWAP
+        //   Level 2 (soft): supervisor conf > 1.5 OR it's a TREND_CONTINUATION regime
+        //     → Level 2 off when VWAP not yet warmed (momentum=0) → no false blocks
+        //
+        // SHORT blocked when: momentum > +0.05%  (price above VWAP = uptrend)
+        // LONG  blocked when: momentum < -0.05%  (price below VWAP = downtrend)
+        // Neutral zone (-0.05%, +0.05%): both directions open — no regime detected
+        static constexpr double GFE_TREND_BIAS_THRESHOLD = 0.05; // % of price
+        const bool vwap_trend_up   = (m_trend_momentum >  GFE_TREND_BIAS_THRESHOLD)
+                                   && (m_sup_conf > 1.5 || m_sup_is_trend);
+        const bool vwap_trend_down = (m_trend_momentum < -GFE_TREND_BIAS_THRESHOLD)
+                                   && (m_sup_conf > 1.5 || m_sup_is_trend);
+
         const bool long_signal  = fast_long
                                   && slow_long
                                   && ewm_drift > drift_threshold
                                   && momentum > momentum_floor
-                                  && price_expanding;
+                                  && price_expanding
+                                  && !vwap_trend_down;   // don't go long in confirmed downtrend
 
         const bool short_signal = fast_short
                                   && slow_short
                                   && ewm_drift < -drift_threshold
                                   && momentum < -momentum_floor
-                                  && price_expanding;
+                                  && price_expanding
+                                  && !vwap_trend_up;     // don't go short in confirmed uptrend
 
         if (!long_signal && !short_signal) return;
 
@@ -355,7 +376,22 @@ struct GoldFlowEngine {
         return (m_range_hi - m_range_lo) >= GFE_IMPULSE_ATR_MULT * m_atr;
     }
 
-    // ── ATR state persistence ─────────────────────────────────────────────────
+    // ── Macro trend bias — set each tick from main.cpp before on_tick() ─────
+    // Prevents GFE entering counter-trend on strong directional days.
+    // bias > +GFE_TREND_BIAS_THRESHOLD → macro trend is UP   → block SHORT entries
+    // bias < -GFE_TREND_BIAS_THRESHOLD → macro trend is DOWN → block LONG entries
+    // bias in (-threshold, +threshold) → no bias → both directions allowed
+    // Source: gold_momentum = (mid - VWAP) / mid * 100 from GoldEngineStack.
+    //   VWAP deviation > +0.05% = price firmly above session VWAP = uptrend.
+    //   Confirmed by supervisor TREND_CONTINUATION confidence > 1.5 as secondary check.
+    // Evidence: Friday 27 Mar — engine went SHORT 3× at 4440 during a +120pt UP day.
+    //   At entry: gold_momentum = +0.86% (price 0.86% above VWAP). A SHORT here was
+    //   directly counter-trend. All 3 exits were FORCE_CLOSE. Net: +$317 vs $3,550 missed.
+    void set_trend_bias(double momentum_pct, double supervisor_conf, bool sup_is_trend) noexcept {
+        m_trend_momentum   = momentum_pct;
+        m_sup_conf         = supervisor_conf;
+        m_sup_is_trend     = sup_is_trend;
+    }
     // save_atr_state: write current ATR to disk at rollover/shutdown
     // load_atr_state: restore on startup — bypasses 100-tick warmup blind zone
     void save_atr_state(const std::string& path) const noexcept {
@@ -387,11 +423,19 @@ struct GoldFlowEngine {
     void seed(double mid) noexcept {
         if (mid <= 0.0 || m_atr_warmup_ticks >= GFE_ATR_PERIOD) return;
 
-        // Seed ATR with conservative typical GOLD tick range
-        const double seed_range = 0.35;
+        // Seed ATR with a realistic XAUUSD cold-start value.
+        // OLD: 0.35 = the typical bid-ask spread, NOT an ATR.
+        //   m_atr = max(GFE_ATR_MIN=0.5, 0.35) = 0.5 → SL = 0.5pt → stopped by noise.
+        //   Evidence: all 3 Friday trades logged atr=2.00 because GFE_ATR_MIN was
+        //   previously 2.0 — when we lowered the floor to 0.5 the seed became useless.
+        // NEW: 2.5pts = realistic Asia/quiet-session ATR for XAUUSD at ~$4500.
+        //   London/NY sessions have higher ATR (5-15pts) so this is conservative.
+        //   Ensures SL = 2.5pts minimum on cold start — survives normal pullbacks.
+        //   load_atr_state() is called first; seed() is a no-op if file loaded.
+        const double seed_range = 2.5;
         m_atr_ewm          = seed_range;
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
-        m_atr              = std::max(GFE_ATR_MIN, m_atr_ewm);
+        m_atr              = seed_range;  // no floor needed — 2.5 > GFE_ATR_MIN already
         m_last_mid_atr     = mid;
 
         // Seed momentum window flat (no directional bias)
@@ -477,6 +521,11 @@ private:
     int64_t m_cooldown_start   = 0;
     int     m_trade_id         = 0;
     double  m_spread_at_entry  = 0.0;
+
+    // Macro trend bias — updated each tick via set_trend_bias() before on_tick()
+    double  m_trend_momentum   = 0.0;  // (mid-VWAP)/mid*100 from GoldEngineStack
+    double  m_sup_conf         = 0.0;  // supervisor confidence score
+    bool    m_sup_is_trend     = false; // supervisor classified TREND_CONTINUATION
     int     m_last_session_slot = -1;
 
     void update_atr(double spread, double mid) noexcept {
