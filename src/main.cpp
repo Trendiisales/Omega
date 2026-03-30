@@ -5691,6 +5691,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     else g_ca_esnq.patch_size(g_last_directional_lot);
             }
         }
+        // ── US500.F manage blocks — ALWAYS run when position open (SL/trail fix) ──
+        if (g_orb_us.has_open_position())       { g_orb_us.on_tick(sym, bid, ask, ca_on_close); }
+        if (g_vwap_rev_sp.has_open_position())  { g_vwap_rev_sp.on_tick(sym, bid, ask, 0.0, ca_on_close); }
+        if (g_nbm_sp.has_open_position())       { g_nbm_sp.on_tick(sym, bid, ask, ca_on_close); }
+
         if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {  // ADDED !vwap check
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
@@ -5752,6 +5757,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // const bool nas100_bracket_open = g_bracket_nas100.has_open_position();
         // if (sdec_nq.allow_bracket && !g_eng_nq.pos.active && !nas100_bracket_open)
         //     dispatch_bracket(g_bracket_nq, ...);
+        // ── USTEC.F manage blocks — ALWAYS run when position open (SL/trail fix) ──
+        if (g_vwap_rev_nq.has_open_position()) { g_vwap_rev_nq.on_tick(sym, bid, ask, 0.0, ca_on_close); }
+        if (g_nbm_nq.has_open_position())      { g_nbm_nq.on_tick(sym, bid, ask, ca_on_close); }
+
         // VWAP Reversion: NQ over-extension from daily open (VWAP proxy).
         // Same fix as US500.F: was ORB midpoint → dead before 13:30 UTC (entire London blocked).
         if (!g_vwap_rev_nq.has_open_position() && base_can_nq) {
@@ -5802,6 +5811,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto sdec = sup_decision(g_sup_cl, g_eng_cl, base_can);
             if (sdec.allow_breakout)
                 dispatch(g_eng_cl, g_sup_cl, base_can);
+            // ── USOIL.F manage blocks — ALWAYS run when position open (SL/trail fix) ──
+            if (g_ca_eia_fade.has_open_position())   { g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close); }
+            if (g_ca_brent_wti.has_open_position())  {
+                double brent_b2 = 0.0, brent_a2 = 0.0;
+                { std::lock_guard<std::mutex> lk(g_book_mtx);
+                  const auto bi2 = g_bids.find("BRENT"); if (bi2 != g_bids.end()) brent_b2 = bi2->second;
+                  const auto ai2 = g_asks.find("BRENT"); if (ai2 != g_asks.end()) brent_a2 = ai2->second; }
+                const double brent_mid2 = (brent_b2 > 0 && brent_a2 > 0) ? (brent_b2+brent_a2)*0.5 : 0.0;
+                if (brent_mid2 > 0) g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid2, ca_on_close);
+            }
+            if (g_nbm_oil_london.has_open_position()) { g_nbm_oil_london.on_tick(sym, bid, ask, ca_on_close); }
+
             // EIA fade engine — only when BrentWTI not already open
             if (!g_ca_eia_fade.has_open_position() && !g_ca_brent_wti.has_open_position() && base_can) {  // ADDED !brent check
                 const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close);
@@ -5852,6 +5873,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // if (sdec_us30.allow_bracket && !g_eng_us30.pos.active)
         //     dispatch_bracket(g_bracket_us30, ...);
         (void)sdec_us30;
+        // ── DJ30.F manage block — ALWAYS run when position open (SL/trail fix) ──
+        if (g_nbm_us30.has_open_position()) { g_nbm_us30.on_tick(sym, bid, ask, ca_on_close); }
+
         // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
         if (!g_nbm_us30.has_open_position() && base_can_us30) {
             const auto nbm = g_nbm_us30.on_tick(sym, bid, ask, ca_on_close);
@@ -5878,6 +5902,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // SIM: BracketEngine on indices — no edge. Disabled.
         // if (sdec_ger.allow_bracket && !g_eng_ger30.pos.active)
         //     dispatch_bracket(g_bracket_ger30, ...);
+        // ── GER40 manage blocks — ALWAYS run when position open (SL/trail fix) ──
+        if (g_orb_ger30.has_open_position())      { g_orb_ger30.on_tick(sym, bid, ask, ca_on_close); }
+        if (g_vwap_rev_ger40.has_open_position()) {
+            const double ger_vwap_mgmt = (g_orb_ger30.range_high() + g_orb_ger30.range_low()) > 0.0
+                ? (g_orb_ger30.range_high() + g_orb_ger30.range_low()) * 0.5 : 0.0;
+            g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap_mgmt, ca_on_close);
+        }
+        if (g_trend_pb_ger40.has_open_position()) { g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close); }
+
         // Opening range breakout: Xetra open 08:00 UTC
         if (!g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position() && base_can_ger) {  // ADDED !vwap check
             const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
@@ -5923,6 +5956,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // SIM: BracketEngine on indices — no edge. Disabled.
         // if (sdec_uk.allow_bracket && !g_eng_uk100.pos.active)
         //     dispatch_bracket(g_bracket_uk100, ...);
+        // ── UK100 manage block — ALWAYS run when position open (SL/trail fix) ──
+        if (g_orb_uk100.has_open_position()) { g_orb_uk100.on_tick(sym, bid, ask, ca_on_close); }
+
         // Opening range breakout: LSE open 08:00 UTC, 15-min range window
         if (!g_orb_uk100.has_open_position() && base_can_uk) {
             const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
@@ -5943,6 +5979,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // SIM: BracketEngine on indices — no edge. Disabled.
         // if (sdec_estx.allow_bracket && !g_eng_estx50.pos.active)
         //     dispatch_bracket(g_bracket_estx50, ...);
+        // ── ESTX50 manage block — ALWAYS run when position open (SL/trail fix) ──
+        if (g_orb_estx50.has_open_position()) { g_orb_estx50.on_tick(sym, bid, ask, ca_on_close); }
+
         // Opening range breakout: Euronext open 09:00 UTC, 15-min range window
         if (!g_orb_estx50.has_open_position() && base_can_estx) {
             const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
@@ -5999,6 +6038,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // SIM: BracketEngine on FX — no edge. 25 trades WR 20% -$935. Disabled.
         // if (sdec_fx.allow_bracket && !g_eng_eurusd.pos.active)
         //     dispatch_bracket(g_bracket_eurusd, ...);
+        // ── EURUSD manage block — ALWAYS run when position open (SL/trail fix) ──
+        if (g_vwap_rev_eurusd.has_open_position()) { g_vwap_rev_eurusd.on_tick(sym, bid, ask, 0.0, ca_on_close); }
+
         // VWAP Reversion: EURUSD over-extension from daily open (VWAP proxy)
         // Tracks the first tick of each calendar day as the day's reference anchor.
         if (!g_vwap_rev_eurusd.has_open_position() && base_can_fx) {
@@ -6047,6 +6089,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // SIM: BracketEngine on FX — no edge. 26 trades WR 15% -$1272. Disabled.
         // if (sdec_fx2.allow_bracket && !g_eng_gbpusd.pos.active && !any_fx_bracket_active)
         //     dispatch_bracket(g_bracket_gbpusd, ...);
+        // ── GBPUSD manage block — ALWAYS run when position open (SL/trail fix) ──
+        if (g_ca_fx_cascade.has_open_gbpusd()) { g_ca_fx_cascade.on_tick_gbpusd(bid, ask, ca_on_close); }
+
         // FX cascade: EURUSD-driven GBPUSD entry.
         // Gate: per-leg check (not aggregate) so AUD/NZD legs can fire simultaneously.
         if (!g_ca_fx_cascade.has_open_gbpusd() && base_can_fx2) {
@@ -6080,6 +6125,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (sd_aud.allow_bracket && !g_eng_audusd.pos.active && !any_fx_bracket_active)
                     // SIM: BracketEngine on FX — no edge. Disabled.
                     // dispatch_bracket(g_bracket_audusd, ...);
+                // ── AUDUSD manage block — ALWAYS run when position open (SL/trail fix) ──
+                if (g_ca_fx_cascade.has_open_audusd()) { g_ca_fx_cascade.on_tick_audusd(bid, ask, ca_on_close); }
+
                 // FX cascade: EURUSD-driven AUDUSD entry (0.73 corr).
                 // Per-leg gate: fires independently of GBP/NZD leg state.
                 if (!g_ca_fx_cascade.has_open_audusd() && bc_aud) {
@@ -6099,6 +6147,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // SIM: BracketEngine on FX — no edge. Disabled.
                 // if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active && !any_fx_bracket_active)
                 //     dispatch_bracket(g_bracket_nzdusd, ...);
+                // ── NZDUSD manage block — ALWAYS run when position open (SL/trail fix) ──
+                if (g_ca_fx_cascade.has_open_nzdusd()) { g_ca_fx_cascade.on_tick_nzdusd(bid, ask, ca_on_close); }
+
                 // FX cascade: EURUSD-driven NZDUSD entry (0.69 corr).
                 // Per-leg gate: fires independently of GBP/AUD leg state.
                 if (!g_ca_fx_cascade.has_open_nzdusd() && bc_nzd) {
@@ -6118,6 +6169,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // SIM: BracketEngine on FX — no edge. Disabled.
                 // if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active && !any_fx_bracket_active)
                 //     dispatch_bracket(g_bracket_usdjpy, ...);
+                // ── USDJPY manage block — ALWAYS run when position open (SL/trail fix) ──
+                if (g_ca_carry_unwind.has_open_position()) { g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close); }
+
                 // Carry unwind: VIX spike + JPY bid
                 if (!g_ca_carry_unwind.has_open_position() && bc_jpy) {
                     const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close);
@@ -6167,6 +6221,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // if (sdec_nas.allow_bracket && !g_eng_nas100.pos.active && !ustec_bracket_open)
         //     dispatch_bracket(g_bracket_nas100, ...);
         (void)sdec_nas;
+        // ── NAS100 manage block — ALWAYS run when position open (SL/trail fix) ──
+        if (g_nbm_nas.has_open_position()) { g_nbm_nas.on_tick(sym, bid, ask, ca_on_close); }
+
         // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
         if (!g_nbm_nas.has_open_position() && base_can_nas) {
             const auto nbm = g_nbm_nas.on_tick(sym, bid, ask, ca_on_close);
@@ -6838,6 +6895,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                            tr.side.c_str());
                     fflush(stdout);
                 }
+                // Trail/BE exit: block same-direction re-entry for 60s — prevents
+                // chasing the same direction into a bounce after a clean exit.
+                // Evidence: 07:34 trail SHORT exit → 07:35+07:36 re-entry SHORT into
+                // bounce → both SL_HIT → -$91 avoidable loss (2026-03-30).
+                const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
+                if (is_trail) {
+                    g_gold_reversal_window_until.store(now_s + 60);
+                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s — same-dir re-entry blocked 60s\n",
+                           tr.exitReason.c_str(), tr.side.c_str());
+                    fflush(stdout);
+                }
             };
             g_gold_flow.on_tick(bid, ask,
                 g_macro_ctx.gold_l2_imbalance,
@@ -6945,6 +7013,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_gold_reversal_window_until.store(now_s + 60);
                     printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s — reversal window open 60s\n",
                            tr.side.c_str());
+                    fflush(stdout);
+                }
+                // Trail/BE exit: block same-direction re-entry for 60s — prevents
+                // chasing the same direction into a bounce after a clean exit.
+                // Evidence: 07:34 trail SHORT exit → 07:35+07:36 re-entry SHORT into
+                // bounce → both SL_HIT → -$91 avoidable loss (2026-03-30).
+                const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
+                if (is_trail) {
+                    g_gold_reversal_window_until.store(now_s + 60);
+                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s — same-dir re-entry blocked 60s\n",
+                           tr.exitReason.c_str(), tr.side.c_str());
                     fflush(stdout);
                 }
             };
