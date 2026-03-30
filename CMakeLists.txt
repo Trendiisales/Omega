@@ -123,7 +123,7 @@ add_custom_command(TARGET Omega POST_BUILD
 add_custom_command(TARGET Omega POST_BUILD
     COMMAND powershell -NonInteractive -NoProfile -ExecutionPolicy Bypass
             -File "${CMAKE_SOURCE_DIR}/push_log.ps1"
-    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            -RepoRoot "${CMAKE_SOURCE_DIR}"
     COMMENT "Pushing latest.log to git..."
 )
 
