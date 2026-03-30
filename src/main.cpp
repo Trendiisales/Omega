@@ -4252,31 +4252,49 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 else if (slot == 6) session_cap = std::min(session_cap, 2); // Asia 22-05 UTC
                 // ── Asia breakout quality gate ────────────────────────────────
                 // Allow Asia trading but only when volatility is genuinely expanding
-                // (real breakout move, not Asia chop). Require vol_ratio >= 2.0:
-                // recent_vol is 2× the 512-tick baseline = committed directional move.
-                // This gates ALL symbols in Asia — if the market is ranging/choppy,
-                // no new entries. When gold breaks $15+ or indices spike, vol_ratio
-                // easily clears 2.0 and the gate opens. Fail-open if base_vol=0 (warmup).
+                // (real breakout move, not Asia chop). Two-path gate:
+                //   PATH A (sustained): vol_ratio >= 2.0 — recent 80-tick range is 2×
+                //     the slow EWM baseline. Proves the move has been running long
+                //     enough to fill the governor window. Works well once a move
+                //     is underway but lags ~28 ticks (4-5 min) on move onset.
+                //   PATH B (fast-onset): |ewm_drift| >= 1.5pts — GoldEngineStack
+                //     fast EWM (α=0.05) has separated from slow (α=0.005) by $1.50+.
+                //     Fires ~7 ticks (70s) into a 1pt/tick surge, catching the move
+                //     while the ratio gate is still blocked by an elevated baseline
+                //     carried over from a big prior session (e.g. Friday's 211pt day
+                //     inflates base_vol via α=0.002, blocking all of Monday morning).
+                //   Root cause of Monday 30 Mar 2026 zero trades: Asia session,
+                //   Friday base_vol elevated at ~0.35%, Monday pre-surge vol ~0.04%.
+                //   Ratio = 0.13 → entire strong downtrend+surge blocked all session.
+                //   EWM drift would have opened the gate 70s into each move.
+                //   Fail-open if base_vol=0 (warmup): ratio = 3.0 → PATH A passes.
                 if (slot == 6) {
-                    const double asia_base  = g_gold_stack.base_vol_pct();
+                    const double asia_base   = g_gold_stack.base_vol_pct();
                     const double asia_recent = g_gold_stack.recent_vol_pct();
-                    const double asia_ratio = (asia_base > 0.0) ? (asia_recent / asia_base) : 3.0;
-                    if (asia_ratio < 2.0) {
+                    const double asia_ratio  = (asia_base > 0.0) ? (asia_recent / asia_base) : 3.0;
+                    // PATH B: fast-onset EWM drift bypass — catches first ~70s of a surge
+                    // before the 80-tick window fills. $1.50 threshold = real directional
+                    // pressure; random chop produces |drift| < 0.5 consistently.
+                    const double asia_ewm_drift = std::fabs(g_gold_stack.ewm_drift());
+                    const bool asia_fast_breakout = (asia_ewm_drift >= 1.5);
+                    if (asia_ratio < 2.0 && !asia_fast_breakout) {
                         static int64_t s_asia_block_log = 0;
                         const int64_t now_ab = static_cast<int64_t>(std::time(nullptr));
-                        if (now_ab - s_asia_block_log >= 300) { // log every 5min
+                        if (now_ab - s_asia_block_log >= 60) { // log every 60s (was 5min — too infrequent to diagnose)
                             s_asia_block_log = now_ab;
-                            printf("[ASIA-GATE] No breakout — vol_ratio=%.2f (need>=2.0), blocking new entries\n",
-                                   asia_ratio);
+                            printf("[ASIA-GATE] BLOCKED — vol_ratio=%.2f drift=%.3f (need ratio>=2.0 OR |drift|>=1.5)\n",
+                                   asia_ratio, g_gold_stack.ewm_drift());
                             fflush(stdout);
                         }
                         return false;
                     }
                     static int64_t s_asia_open_log = 0;
                     const int64_t now_ao = static_cast<int64_t>(std::time(nullptr));
-                    if (now_ao - s_asia_open_log >= 300) {
+                    if (now_ao - s_asia_open_log >= 60) {
                         s_asia_open_log = now_ao;
-                        printf("[ASIA-GATE] BREAKOUT ACTIVE vol_ratio=%.2f — entries allowed\n", asia_ratio);
+                        const char* path = (asia_fast_breakout && asia_ratio < 2.0) ? "PATH-B(drift)" : "PATH-A(ratio)";
+                        printf("[ASIA-GATE] OPEN via %s — vol_ratio=%.2f drift=%.3f\n",
+                               path, asia_ratio, g_gold_stack.ewm_drift());
                         fflush(stdout);
                     }
                 }
