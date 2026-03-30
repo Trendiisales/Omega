@@ -9746,7 +9746,7 @@ int main(int argc, char* argv[])
         g_ctrader_depth.symbol_whitelist.insert("XAGUSD");
         g_ctrader_depth.symbol_whitelist.insert("NGAS");
         g_ctrader_depth.symbol_whitelist.insert("VIX");
-        g_ctrader_depth.dump_all_symbols = false;  // disabled: 1473-symbol dump floods stdout
+        g_ctrader_depth.dump_all_symbols = true;  // TEMP: dump all symbols to diagnose L2 issue
         // Alias map: broker name → internal name used by getImb/getBook
         g_ctrader_depth.name_alias["GOLD"]    = "XAUUSD";
         g_ctrader_depth.name_alias["GOLD.F"]  = "XAUUSD";  // Friday: broker sent depth as GOLD.F id=2660
