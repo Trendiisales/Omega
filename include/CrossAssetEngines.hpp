@@ -1081,17 +1081,18 @@ public:
     // on_close: trade close callback
     CrossSignal on_tick(const std::string& sym, double bid, double ask,
                         double vwap, CloseCb on_close) noexcept {
-        if (!enabled || bid <= 0 || ask <= 0 || vwap <= 0) return {};
+        if (!enabled || bid <= 0 || ask <= 0) return {};
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
 
         if (pos_.active) {
-            // FIX: always manage open position regardless of session gate
-            // Previously the session gate (h >= 22) returned early BEFORE manage()
-            // causing positions to hold open all night until force-closed on shutdown
+            // Always manage open position — vwap=0 is fine for management (SL/TP/trail)
+            // vwap only needed for entry signal, not for exit management
             pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
             return {};
         }
+        // Entry only: require valid vwap
+        if (vwap <= 0) return {};
 
         // Session gate: London/NY (08:00-22:00 UTC) — entry only, not exit
         struct tm ti{}; ca_utc_time(ti);
