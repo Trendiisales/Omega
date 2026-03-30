@@ -16,7 +16,7 @@
 // All positions are paper-tracked in SHADOW mode, real orders in LIVE mode.
 //
 // HOW THEY WORK:
-//   on_tick_gold(bid, ask, latency_ms) — call on every GOLD.F tick
+//   on_tick_gold(bid, ask, latency_ms) — call on every XAUUSD tick
 //   on_tick_silver(bid, ask)           — call on every XAGUSD tick
 //   has_open_position()                — position management query
 //   signal_log()                       — last signal detail string
@@ -77,7 +77,7 @@ struct LePosition {
     double  mae             = 0.0;
     double  spread_at_entry = 0.0;
     int64_t entry_ts        = 0;
-    char    symbol[16]      = {};   // explicit symbol string e.g. "GOLD.F" "XAGUSD"
+    char    symbol[16]      = {};   // explicit symbol string e.g. "XAUUSD" "XAGUSD"
     char    engine[32]      = {};
     char    reason[32]      = {};
 };
@@ -156,7 +156,7 @@ public:
         pos.mae             = 0.0;
         pos.spread_at_entry = spread;
         pos.entry_ts        = le_now_sec();
-        strncpy(pos.symbol, symbol ? symbol : "GOLD.F", 15);
+        strncpy(pos.symbol, symbol ? symbol : "XAUUSD", 15);
         strncpy(pos.engine, sig.engine, 31);
         strncpy(pos.reason, sig.reason, 31);
     }
@@ -174,7 +174,7 @@ private:
                const char* regime, CloseCb& on_close) noexcept {
         omega::TradeRecord tr;
         tr.id          = trade_id_++;
-        tr.symbol      = std::string(pos.symbol[0] ? pos.symbol : "GOLD.F");
+        tr.symbol      = std::string(pos.symbol[0] ? pos.symbol : "XAUUSD");
         tr.side        = pos.is_long ? "LONG" : "SHORT";
         tr.entryPrice  = pos.entry;
         tr.exitPrice   = exit_px;
@@ -283,7 +283,7 @@ public:
 
     using CloseCb = LePositionManager::CloseCb;
 
-    // Call on every GOLD.F tick
+    // Call on every XAUUSD tick
     void on_tick_gold(double bid, double ask) noexcept {
         if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return;
         const double spread = ask - bid;
@@ -448,7 +448,7 @@ public:
 // With 0.3ms RTT we can fade this dislocation before slower traders react.
 //
 // MECHANISM:
-//   - Tracks a rolling 20-tick median spread on GOLD.F
+//   - Tracks a rolling 20-tick median spread on XAUUSD
 //   - When instantaneous spread exceeds median × SPREAD_SPIKE_RATIO,
 //     a dislocation is detected
 //   - The direction of entry is AGAINST the spike:
@@ -542,7 +542,7 @@ public:
             pos_mgr_.manage(bid, ask, latency_ms, "SPREAD_DISLOC", on_close, MAX_HOLD_SEC);
         }
 
-        // New-entry gate: blocked when another GOLD.F engine already has a position
+        // New-entry gate: blocked when another XAUUSD engine already has a position
         if (!can_enter) { prev_mid_ = mid; return {}; }
 
         // Update spread history
@@ -604,7 +604,7 @@ public:
         sig.size    = 0.01;  // fallback min_lot — compute_size() in main overrides this
         sig.reason  = is_long ? "SPREAD_SPIKE_FADE_LONG" : "SPREAD_SPIKE_FADE_SHORT";
 
-        pos_mgr_.open(sig, spread, "GOLD.F");
+        pos_mgr_.open(sig, spread, "XAUUSD");
 
         printf("[SPREAD-DISLOC-ENTRY] Gold %s entry=%.2f tp=%.2f sl=%.2f "
                "spread=%.2f median=%.2f ratio=%.1f\n",
@@ -760,7 +760,7 @@ public:
             pos_mgr_.manage(bid, ask, latency_ms, "EVENT_COMP", on_close, MAX_HOLD_SEC);
         }
 
-        // New-entry gate: blocked when another GOLD.F engine already has a position
+        // New-entry gate: blocked when another XAUUSD engine already has a position
         if (!can_enter) return {};
 
         // Update compression window
@@ -824,7 +824,7 @@ public:
         sig.size    = 0.01;  // fallback min_lot — compute_size() in main overrides this
         sig.reason  = long_break ? "EVENT_BREAK_LONG" : "EVENT_BREAK_SHORT";
 
-        pos_mgr_.open(sig, spread, "GOLD.F");
+        pos_mgr_.open(sig, spread, "XAUUSD");
 
         printf("[EVENT-COMP-ENTRY] Gold %s entry=%.2f tp=%.2f sl=%.2f "
                "range=$%.2f trigger=$%.2f secs_to_ev=%d\n",
@@ -879,7 +879,7 @@ struct LatencyEdgeCfg {
 // LatencyEdgeStack — public interface wired into Omega's on_tick
 // =============================================================================
 // Single object per process. Call:
-//   on_tick_gold(bid, ask, latency_ms, on_close)   — every GOLD.F tick
+//   on_tick_gold(bid, ask, latency_ms, on_close)   — every XAUUSD tick
 //   on_tick_silver(bid, ask, latency_ms, on_close)  — every XAGUSD tick
 //   has_open_position()                             — any position open
 //   force_close_all(...)                            — disconnect/session end
