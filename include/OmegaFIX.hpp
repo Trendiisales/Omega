@@ -40,11 +40,11 @@ struct ExtSymbolDef { int id; const char* name; };
 static SymbolDef OMEGA_SYMS[] = {
     { 2642, "US500.F" }, { 2643, "USTEC.F" }, { 2632, "USOIL.F" },
     { 4462, "VIX.F"   }, { 2638, "DX.F"    }, { 2637, "DJ30.F"  },
-    {  110, "NAS100"  }, {   41, "GOLD.F"  }, { 2631, "NGAS.F"  },
+    {  110, "NAS100"  }, {   41, "XAUUSD" }, { 2631, "NGAS.F"  },
     // FIX ID 41 = XAUUSD spot on BlackBull (confirmed seclist_raw.txt line 209).
     // Previously 2660 = GOLD.F futures, priced ~$20-25 above XAUUSD spot.
     // BlackBull watchlist, chart, and trades all reference XAUUSD (ID 41).
-    // Internal name "GOLD.F" unchanged throughout — only the FIX subscription
+    // Internal name "XAUUSD" throughout — only the FIX subscription
     // ID and order routing ID changes. Fixed 30-Mar-2026.
 };
 static const int OMEGA_NSYMS = 9;
