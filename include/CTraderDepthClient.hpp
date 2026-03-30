@@ -306,7 +306,7 @@ private:
             id_to_name_[uint64_t(sid)] = sname;
             if (symbol_whitelist.count(sname)) {
                 sub_ids.push_back(sid);
-                // Use alias if available (e.g. broker "GOLD" → internal "GOLD.F")
+                // Use alias if available (e.g. broker "GOLD" → internal "XAUUSD")
                 const std::string internal_name = name_alias.count(sname) ? name_alias.at(sname) : sname;
                 depth_books_[internal_name] = CTDepthBook{};
                 id_to_internal_[uint64_t(sid)] = internal_name;
@@ -352,7 +352,7 @@ private:
                 std::cout<<"[CTRADER-STATUS] events_total="<<depth_events_total.load()<<" this_min="<<ev_min<<" symbols="<<depth_books_.size()<<"\n";
                 // Log which symbols are receiving events
                 for (const auto& kv : ev_per_sym)
-                    if (kv.first == "GOLD.F" || kv.first == "XAUUSD" || kv.second == 0)
+                    if (kv.first == "XAUUSD" || kv.second == 0)
                         std::cout<<"[CTRADER-EVTS] "<<kv.first<<"="<<kv.second<<"\n";
                 ev_min=0; ev_per_sym.clear(); last_diag=now;
             }
