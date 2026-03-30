@@ -1,6 +1,6 @@
 // =============================================================================
 //  GoldFlowEngine.hpp
-//  L2 order-flow engine for XAUUSD
+//  L2 order-flow engine for GOLD.F
 //
 //  Architecture (prop-desk methodology):
 //
@@ -103,7 +103,7 @@ static constexpr int    GFE_MOMENTUM_BUF_SIZE = 64;    // independent momentum h
 // Asia gold (22:00-07:00 UTC) has: thin liquidity, micro-oscillations that fake
 // directional flow, tight ATR that produces SL easily hit by noise.
 // These thresholds require genuinely committed moves before entry.
-static constexpr double GFE_ASIA_ATR_MIN           = 5.0;    // $5 ATR floor (vs $0.50 normal) — rejects dead/thin tape
+static constexpr double GFE_ASIA_ATR_MIN           = 1.5;    // $1.5 ATR floor — real XAUUSD Asia ATR is 1.5-3.5pts; 5.0 was blocking all legitimate Asia moves
 static constexpr double GFE_ASIA_MAX_SPREAD        = 2.5;    // raised $1.50→$2.50: $1.50 blocked gap-open moves where spread
                                                               // is temporarily $2-3 even as ATR is $15+. The ATR/spread ratio
                                                               // guard (GFE_ASIA_ATR_SPREAD_RATIO=4.0) is the real noise filter:
@@ -118,10 +118,10 @@ static constexpr double GFE_ASIA_ATR_SPREAD_RATIO  = 4.0;    // ATR must be >= 4
                                                               // Normal chop: ATR~$2, spread $1.50 → ratio=1.3 → BLOCK.
 // Persistence thresholds for Asia: 90% of window must be directional (vs 75% normal)
 // On choppy tape, 75% easily fills from random oscillations. 90% requires real conviction.
-static constexpr int    GFE_ASIA_FAST_DIR_THRESHOLD = (GFE_FAST_TICKS * 9) / 10;  // 27/30 ticks
-static constexpr int    GFE_ASIA_SLOW_DIR_THRESHOLD = (GFE_SLOW_TICKS * 9) / 10;  // 90/100 ticks
+static constexpr int    GFE_ASIA_FAST_DIR_THRESHOLD = (GFE_FAST_TICKS * 4) / 5;   // 24/30 ticks (80%) — was 90%, too strict for Asia tape
+static constexpr int    GFE_ASIA_SLOW_DIR_THRESHOLD = (GFE_SLOW_TICKS * 4) / 5;   // 80/100 ticks (80%) — was 90%
 // Dominance: max 2 opposing ticks in fast window (vs 7 normal)
-static constexpr int    GFE_ASIA_DOMINANCE_MAX_OPPOSING = 2;
+static constexpr int    GFE_ASIA_DOMINANCE_MAX_OPPOSING = 4;  // 13% opposing allowed — was 2 (6.6%) which rejected any micro-oscillation
 
 // -----------------------------------------------------------------------------
 struct GoldFlowEngine {
@@ -282,15 +282,23 @@ struct GoldFlowEngine {
         // Prevents entries on sub-$0.10 momentum ticks that dominate choppy overnight tape.
         const double momentum_floor = is_low_quality_session ? GFE_ASIA_MOMENTUM_MIN : 0.0;
 
+        // ── Chop filter: require price to be actually moving, not oscillating ──
+        // Even with clean tick direction, if price range < 0.8x ATR it's noise.
+        // Reduces false entries on dead tape / tight-range chop during Asia.
+        // Skip this check if ATR not yet built (is_impulsive() returns true in that case).
+        const bool price_expanding = is_impulsive();
+
         const bool long_signal  = fast_long
                                   && slow_long
                                   && ewm_drift > drift_threshold
-                                  && momentum > momentum_floor;
+                                  && momentum > momentum_floor
+                                  && price_expanding;
 
         const bool short_signal = fast_short
                                   && slow_short
                                   && ewm_drift < -drift_threshold
-                                  && momentum < -momentum_floor;
+                                  && momentum < -momentum_floor
+                                  && price_expanding;
 
         if (!long_signal && !short_signal) return;
 
@@ -337,6 +345,16 @@ struct GoldFlowEngine {
 
     double current_atr() const noexcept { return m_atr; }
 
+    // is_impulsive(): true when recent price range >= GFE_IMPULSE_ATR_MULT * ATR
+    // Chop = price oscillates within noise band (range < ATR) → skip entry
+    // Impulse = price expands beyond noise band (range >= ATR) → allow entry
+    // Core chop/noise filter: tick direction can be clean but if price hasn't
+    // actually moved beyond normal noise it's not worth trading.
+    bool is_impulsive() const noexcept {
+        if (m_atr <= 0.0 || m_range_hi <= m_range_lo) return true; // no data, allow
+        return (m_range_hi - m_range_lo) >= GFE_IMPULSE_ATR_MULT * m_atr;
+    }
+
     // seed() — pre-warm ATR and direction windows from a single price on reconnect.
     // Without this the engine is blind for GFE_ATR_PERIOD (100) ticks after every
     // restart/reconnect — blocking all entries until warmup completes.
@@ -356,6 +374,19 @@ struct GoldFlowEngine {
         m_momentum_window.clear();
         for (int i = 0; i < GFE_SLOW_TICKS; ++i)
             m_momentum_window.push_back(mid);
+
+        // Seed range window flat
+        m_range_window.clear();
+        for (int i = 0; i < GFE_RANGE_WINDOW; ++i) m_range_window.push_back(mid);
+        m_range_hi = mid; m_range_lo = mid;
+
+        // Range expansion tracking — update hi/lo window
+        m_range_window.push_back(mid);
+        if ((int)m_range_window.size() > GFE_RANGE_WINDOW) m_range_window.pop_front();
+        if ((int)m_range_window.size() >= 5) {
+            m_range_hi = *std::max_element(m_range_window.begin(), m_range_window.end());
+            m_range_lo = *std::min_element(m_range_window.begin(), m_range_window.end());
+        }
 
         // Seed direction windows neutral
         m_fast_window.clear();
@@ -407,6 +438,17 @@ private:
     // Tracks ewm_drift direction over GFE_DRIFT_PERSIST_TICKS=20 ticks.
     // Replaces L2 persistence windows when broker doesn't send tag-271 size data.
     std::deque<int> m_drift_persist_window;
+
+    // ── Range expansion tracker — chop vs impulse detection ─────────────────
+    // Tracks price range over last N ticks to detect whether a move is
+    // larger than normal noise (impulse) or within chop band (noise).
+    // Updated every tick. Used to gate entries: only trade when price is
+    // expanding beyond the recent noise band.
+    static constexpr int    GFE_RANGE_WINDOW    = 50;   // 50 ticks ~5-10s
+    static constexpr double GFE_IMPULSE_ATR_MULT = 0.8; // move must be >0.8x ATR to be impulsive
+    std::deque<double> m_range_window;   // recent mid prices for hi/lo calc
+    double m_range_hi = 0.0;
+    double m_range_lo = 0.0;
 
     int64_t m_cooldown_start   = 0;
     int     m_trade_id         = 0;
@@ -676,7 +718,7 @@ private:
     {
         omega::TradeRecord tr;
         tr.id           = m_trade_id;
-        tr.symbol       = "XAUUSD";
+        tr.symbol       = "GOLD.F";
         tr.side         = pos.is_long ? "LONG" : "SHORT";
         tr.entryPrice   = pos.entry;
         tr.exitPrice    = exit_px;
