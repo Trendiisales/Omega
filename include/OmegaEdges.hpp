@@ -179,7 +179,7 @@ public:
 
     // tick_sizes: per-symbol minimum tick (gold=0.10, silver=0.001, indices=0.25, fx=0.00001)
     std::unordered_map<std::string, double> tick_sizes = {
-        {"GOLD.F",  0.10}, {"XAGUSD",  0.001}, {"USOIL.F", 0.01}, {"BRENT",   0.01},
+        {"XAUUSD",  0.10}, {"XAGUSD",  0.001}, {"USOIL.F", 0.01}, {"BRENT",   0.01},
         {"US500.F", 0.25}, {"USTEC.F", 0.25},  {"DJ30.F",  1.0},  {"NAS100",  0.25},
         {"GER40",   0.5},  {"UK100",   0.5},   {"ESTX50",  0.5},
         {"EURUSD",  0.00001},{"GBPUSD", 0.00001},{"AUDUSD", 0.00001},
@@ -469,7 +469,7 @@ public:
     // Gold: every $50 is a big figure ($2000, $2050 etc), $25 is a half
     // FX: every 100 pips is a big figure
     std::unordered_map<std::string, double> round_increments = {
-        {"GOLD.F",  50.0},   {"XAGUSD",   0.50},  {"USOIL.F",  1.0},  {"BRENT",   1.0},
+        {"XAUUSD",  50.0},   {"XAGUSD",   0.50},  {"USOIL.F",  1.0},  {"BRENT",   1.0},
         {"US500.F", 100.0},  {"USTEC.F",  500.0}, {"DJ30.F",   500.0},{"NAS100",  500.0},
         {"GER40",   100.0},  {"UK100",    100.0}, {"ESTX50",   50.0},
         {"EURUSD",  0.0100}, {"GBPUSD",   0.0100},{"AUDUSD",   0.0100},
@@ -908,7 +908,7 @@ public:
     std::unordered_map<std::string, SymState> state_;
 
     static double bucket_size(const std::string& sym) noexcept {
-        if (sym == "GOLD.F")  return BUCKET_GOLD;
+        if (sym == "XAUUSD")  return BUCKET_GOLD;
         if (sym == "XAGUSD")  return BUCKET_SILVER;
         if (sym == "USOIL.F" || sym == "BRENT") return BUCKET_OIL;
         if (sym == "US500.F" || sym == "USTEC.F" || sym == "DJ30.F" || sym == "NAS100")
