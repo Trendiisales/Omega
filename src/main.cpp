@@ -6966,7 +6966,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool sup_trend = (gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
                 // wall_ahead: significant L2 wall within 2×ATR ahead of current price.
                 // Used by GFE to tighten Stage 2 trail before the wall absorbs momentum.
-                const double gf_atr_now = std::max(2.5, g_gold_flow.current_atr());
                 const bool gf_wall_ahead = g_gold_flow.has_open_position()
                     && (g_gold_flow.pos.is_long  ? g_macro_ctx.gold_wall_above
                                                  : g_macro_ctx.gold_wall_below);
