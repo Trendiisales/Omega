@@ -3297,7 +3297,7 @@ public:
 // calls on_close with a filled TradeRecord when trade exits.
 // ─────────────────────────────────────────────────────────────────────────────
 class GoldPositionManager {
-    static constexpr double TICK_SIZE     = 0.10;  // GOLD.F minimum price increment
+    static constexpr double TICK_SIZE     = 0.10;  // XAUUSD minimum price increment
     static constexpr double CONTRACT_SIZE = 1.0;   // notional per trade unit
     static constexpr int    MAX_PYRAMID_LEGS = 5;  // base + 2 regime-gated + 2 extended on long runners
     static constexpr double PYR_COVER_MOVE   = 5.00;  // EA-matched: add only after $5 confirmed move
@@ -3347,7 +3347,7 @@ class GoldPositionManager {
     void emit_close(const GoldPos& leg, double exit_px, const char* why,
                     double latency_ms, const char* regime,
                     std::function<void(const omega::TradeRecord&)>& on_close) {
-        // Safety guard: exit_px should never be zero or negative for GOLD.F.
+        // Safety guard: exit_px should never be zero or negative for XAUUSD.
         // If it is, fall back to entry price (flat trade) and log the anomaly.
         if (exit_px <= 0.0) {
             printf("[GOLD-STACK-WARN] emit_close called with exit_px=%.4f why=%s entry=%.4f — clamping to entry\n",
@@ -3357,7 +3357,7 @@ class GoldPositionManager {
         }
         omega::TradeRecord tr;
         tr.id          = trade_id_++;
-        tr.symbol      = "GOLD.F";
+        tr.symbol      = "XAUUSD";
         tr.side        = leg.is_long ? "LONG" : "SHORT";
         tr.entryPrice  = leg.entry;
         tr.exitPrice   = exit_px;
