@@ -107,7 +107,7 @@ static omega::MacroRegimeDetector g_macroDetector;
 static omega::BreakoutEngine g_eng_sp("US500.F");
 static omega::BreakoutEngine g_eng_nq("USTEC.F");
 static omega::BreakoutEngine g_eng_cl("USOIL.F");
-static omega::BreakoutEngine g_eng_xau("GOLD.F");  // Gold — Tokyo+London+NY sessions
+static omega::BreakoutEngine g_eng_xau("XAUUSD");  // Gold — Tokyo+London+NY sessions
 
 // Book
 static std::mutex                              g_book_mtx;
@@ -193,7 +193,7 @@ static std::string build_logon(int seq, const char* subID) {
 // ─────────────────────────────────────────────────────────────────────────────
 // BlackBull symbol ID map (from SecurityList — hardcoded, no runtime discovery)
 // Primary trading: US500.F, USTEC.F, USOIL.F
-// Confirmation:    VIX.F, DX.F, DJ30.F, NAS100, GOLD.F, NGAS.F, ES, DX
+// Confirmation:    VIX.F, DX.F, DJ30.F, NAS100, XAUUSD, NGAS.F, ES, DX
 // ─────────────────────────────────────────────────────────────────────────────
 struct SymbolDef { int id; const char* name; };
 static const SymbolDef OMEGA_SYMS[] = {
@@ -206,7 +206,7 @@ static const SymbolDef OMEGA_SYMS[] = {
     { 2638, "DX.F"     },
     { 2637, "DJ30.F"   },
     {  110, "NAS100"   },
-    { 2660, "GOLD.F"   },
+    { 2660, "XAUUSD"   },
     { 2631, "NGAS.F"   },
     { 3225, "ES"       },
     { 3173, "DX"       },
@@ -484,7 +484,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     if      (sym == "US500.F") eng = &g_eng_sp;
     else if (sym == "USTEC.F") eng = &g_eng_nq;
     else if (sym == "USOIL.F") eng = &g_eng_cl;
-    else if (sym == "GOLD.F")  eng = &g_eng_xau;
+    else if (sym == "XAUUSD")  eng = &g_eng_xau;
     else {
         g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, 0, g_gov_consec);
         return;
@@ -707,7 +707,7 @@ static void quote_loop() {
                         g_omegaLedger.record(tr); write_shadow_csv(tr);
                     });
         };
-        fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F"); fc(g_eng_xau, "GOLD.F");
+        fc(g_eng_sp, "US500.F"); fc(g_eng_nq, "USTEC.F"); fc(g_eng_cl, "USOIL.F"); fc(g_eng_xau, "XAUUSD");
 
         SSL_shutdown(ssl); SSL_free(ssl); closesocket(static_cast<SOCKET>(sock));
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
