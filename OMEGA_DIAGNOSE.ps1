@@ -138,7 +138,7 @@ $shadowSignalEventRows = if ($shadowSignalEventFiles) { Import-CsvSet $shadowSig
 $logLines = if ($logFiles) { @(Get-LogLines $logFiles) } else { @() }
 
 $expectedSymbols = @(
-    "US500.F", "USTEC.F", "USOIL.F", "GOLD.F",
+    "US500.F", "USTEC.F", "USOIL.F", "XAUUSD",
     "DJ30.F", "GER40", "UK100", "ESTX50", "XAGUSD", "EURUSD", "UKBRENT"
 )
 
@@ -168,12 +168,12 @@ if ($tradeRows.Count -gt 0) {
         Sort-Object net_pnl -Descending |
         Format-Table -AutoSize
 
-    $goldTrades = @($tradeRows | Where-Object { $_.symbol -eq "GOLD.F" })
+    $goldTrades = @($tradeRows | Where-Object { $_.symbol -eq "XAUUSD" })
     if ($goldTrades.Count -gt 0) {
         Write-Host "`n--- GOLD SUMMARY ---" -ForegroundColor Yellow
         $goldOverall = New-Stats
         foreach ($r in $goldTrades) { Add-Stats -Stats $goldOverall -Row $r }
-        Finish-Stats -Name "GOLD.F" -Stats $goldOverall | Format-Table -AutoSize
+        Finish-Stats -Name "XAUUSD" -Stats $goldOverall | Format-Table -AutoSize
 
         Write-Host "`n--- GOLD BY ENGINE ---" -ForegroundColor Yellow
         Get-StatsReport $goldTrades { param($r) if ([string]::IsNullOrWhiteSpace("$($r.engine)")) { "UNKNOWN_ENGINE" } else { "$($r.engine)" } } |
