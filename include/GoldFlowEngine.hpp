@@ -357,6 +357,28 @@ struct GoldFlowEngine {
         return phase == Phase::LIVE;
     }
 
+    bool is_in_cooldown() const noexcept {
+        return phase == Phase::COOLDOWN;
+    }
+
+    // reset_drift_persistence() — clears the 20-tick drift-persistence window.
+    // Called alongside GoldEngineStack::reset_drift_on_reversal() when a confirmed
+    // reversal is detected after a GFE close. Without this, the old directional
+    // ticks (e.g. 18/20 SHORT ticks from Move 1) block the LONG signal for another
+    // 14 ticks even after the EWM drift has been snapped. Clearing the window lets
+    // incoming LONG ticks immediately build the 14/20 threshold needed to fire.
+    void reset_drift_persistence() noexcept {
+        m_drift_persist_window.clear();
+        // Also reset the fast/slow direction windows — they still contain stale ticks
+        // from the prior move. Without this, even with positive drift, the persistence
+        // gate requires 23/30 LONG ticks to accumulate. Clearing lets fresh ticks dominate.
+        m_fast_window.clear(); m_slow_window.clear();
+        m_fast_long_count = m_fast_short_count = 0;
+        m_slow_long_count = m_slow_short_count = 0;
+        printf("[GFE-PERSIST-RESET] Direction windows cleared for reversal\n");
+        fflush(stdout);
+    }
+
     // Force-close any open position (used during disconnect cleanup)
     void force_close(double bid, double ask, int64_t now_ms, CloseCallback on_close) noexcept {
         if (!has_open_position()) return;

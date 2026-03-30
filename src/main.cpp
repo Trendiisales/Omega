@@ -6926,11 +6926,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                             ? (bid - exit_px)   // reversal = price moved UP since close
                             : (exit_px - bid);  // was LONG, reversal = price moved DOWN
                         if (reversal_dist >= min_reversal) {
-                            g_gold_stack.reset_drift_on_reversal(reversal_dist);
-                            s_drift_reset_done = true;  // one-shot per close
-                            printf("[DRIFT-RESET] GFE close_dir=%+d exit=%.2f now=%.2f reversal=%.1fpt (min=%.1f) — drift snapped\n",
-                                   gf_close_dir, exit_px, bid, reversal_dist, min_reversal);
-                            fflush(stdout);
+                            // Don't snap during cooldown — GFE won't enter anyway,
+                            // and the snap would be wasted. Wait until cooldown clears.
+                            if (!g_gold_flow.is_in_cooldown()) {
+                                g_gold_stack.reset_drift_on_reversal(reversal_dist);
+                                // Also clear GFE's direction persistence windows so
+                                // fresh reversal ticks build the new direction signal
+                                // immediately rather than fighting 20 old opposing ticks.
+                                g_gold_flow.reset_drift_persistence();
+                                s_drift_reset_done = true;  // one-shot per close
+                                printf("[DRIFT-RESET] GFE close_dir=%+d exit=%.2f now=%.2f reversal=%.1fpt (min=%.1f) — drift+persistence snapped\n",
+                                       gf_close_dir, exit_px, bid, reversal_dist, min_reversal);
+                                fflush(stdout);
+                            }
                         }
                     }
                 }
