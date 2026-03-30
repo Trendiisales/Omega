@@ -356,7 +356,25 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
             pos += snprintf(buf+pos, sizeof(buf)-pos, "]");
             result += buf;
         };
-        appendBook("gold",  nullptr, 0, nullptr, 0);  // gold book suppressed — uses GOLD.F depth (different price), imbalance used internally only
+        // Gold book: GOLD.F prices offset by basis to align with XAUUSD spot
+        // GOLD.F is the depth source; spot bid/ask from FIX gives us the basis offset.
+        // This way the book displays correctly relative to the XAUUSD spot price.
+        {
+            const double spot_mid  = (s->gold_bid + s->gold_ask) * 0.5;
+            // Compute GOLD.F book mid from raw levels
+            double gf_mid = 0.0;
+            if (s->l2_book_gold_bids > 0 && s->l2_book_gold_asks > 0)
+                gf_mid = (s->l2_book_gold_bid[0].price + s->l2_book_gold_ask[0].price) * 0.5;
+            const double basis = (gf_mid > 0.0 && spot_mid > 0.0) ? (spot_mid - gf_mid) : 0.0;
+            // Build offset copies on the stack
+            OmegaTelemetrySnapshot::L2Level obids[OmegaTelemetrySnapshot::L2_DEPTH];
+            OmegaTelemetrySnapshot::L2Level oasks[OmegaTelemetrySnapshot::L2_DEPTH];
+            for (int i = 0; i < s->l2_book_gold_bids; ++i)
+                obids[i] = { s->l2_book_gold_bid[i].price + basis, s->l2_book_gold_bid[i].size };
+            for (int i = 0; i < s->l2_book_gold_asks; ++i)
+                oasks[i] = { s->l2_book_gold_ask[i].price + basis, s->l2_book_gold_ask[i].size };
+            appendBook("gold", obids, s->l2_book_gold_bids, oasks, s->l2_book_gold_asks);
+        }
         appendBook("sp",    s->l2_book_sp_bid,   s->l2_book_sp_bids,   s->l2_book_sp_ask,   s->l2_book_sp_asks);
         appendBook("eur",   s->l2_book_eur_bid,  s->l2_book_eur_bids,  s->l2_book_eur_ask,  s->l2_book_eur_asks);
         appendBook("xag",   s->l2_book_xag_bid,  s->l2_book_xag_bids,  s->l2_book_xag_ask,  s->l2_book_xag_asks);
