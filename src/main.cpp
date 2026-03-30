@@ -6804,6 +6804,48 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
         }
 
+        // ── GoldFlowEngine position management — ALWAYS runs when position open ──
+        // CRITICAL: manage_position() must run on every XAUUSD tick to check SL/trail.
+        // Previously this was inside the entry guard (!has_open_position()) which meant
+        // once a position was open, manage_position was NEVER called → SL never checked
+        // → position ran unmanaged indefinitely. Fix: run on_tick unconditionally when
+        // position is open, before the entry guard blocks further processing.
+        if (g_gold_flow.has_open_position()) {
+            // Inject trend bias (wall detection for trail tightening)
+            const bool sup_trend_mgmt = (gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
+            const bool gf_wall_mgmt   = g_gold_flow.pos.is_long
+                                        ? g_macro_ctx.gold_wall_above
+                                        : g_macro_ctx.gold_wall_below;
+            g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence,
+                                       sup_trend_mgmt, gf_wall_mgmt);
+            auto flow_mgmt_cb = [&](const omega::TradeRecord& tr) {
+                handle_closed_trade(tr);
+                // PARTIAL_1R: position still open, don't corrupt exit state
+                if (tr.exitReason == std::string("PARTIAL_1R")) return;
+                const bool close_is_long = (tr.side == "SHORT");
+                send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
+                const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
+                const int exit_dir = (tr.side == "LONG") ? 1 : -1;
+                g_gold_flow_exit_ts.store(now_s);
+                g_gold_flow_exit_dir.store(exit_dir);
+                g_gold_flow_exit_price_x100.store(
+                    static_cast<int64_t>(tr.exitPrice * 100.0));
+                const bool is_sl = (tr.exitReason == "SL_HIT");
+                g_gold_flow_exit_reason.store(is_sl ? 1 : 2);
+                if (is_sl) {
+                    g_gold_reversal_window_until.store(now_s + 60);
+                    printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s — reversal window open 60s\n",
+                           tr.side.c_str());
+                    fflush(stdout);
+                }
+            };
+            g_gold_flow.on_tick(bid, ask,
+                g_macro_ctx.gold_l2_imbalance,
+                g_gold_stack.ewm_drift(),
+                now_ms_g, flow_mgmt_cb,
+                g_macro_ctx.session_slot);
+        }
+
         // GoldFlowEngine: L2 order-flow directional engine.
         // Fires only when no other gold position is open.
         // Entry: L2 imbalance persistence + EWM drift + momentum all confirm.
@@ -6882,6 +6924,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
             auto flow_on_close = [&](const omega::TradeRecord& tr) {
                 handle_closed_trade(tr);
+                // PARTIAL_1R: position still open — don't corrupt exit state
+                if (tr.exitReason == std::string("PARTIAL_1R")) return;
                 // Close broker position with a market order (same as bracket_on_close)
                 const bool close_is_long = (tr.side == "SHORT"); // flip to close
                 send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
@@ -6904,12 +6948,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     fflush(stdout);
                 }
             };
-            // CRITICAL: always call on_tick when position is open so manage_position()
-            // runs every tick and checks the SL. gf_tick_ok gates NEW entries only —
-            // if on_tick is skipped while LIVE, the SL is never checked and the
-            // position runs unmanaged. GFE.on_tick() returns immediately after
-            // manage_position() when Phase==LIVE, so entry gates are never reached.
-            if (gf_tick_ok || g_gold_flow.has_open_position()) {
+            // Entry only: on_tick for new entries when no position is open.
+            // Position management (SL/trail) is handled in the unconditional
+            // manage block above this entry guard.
+            if (gf_tick_ok) {
                 // ── Post-close reversal drift reset ───────────────────────────
                 // Problem: ewm_slow (α=0.005) has a 200-tick half-life. After a
                 // 60pt DROP it reaches drift≈-40. When price then SURGES 80pts,
