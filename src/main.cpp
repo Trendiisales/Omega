@@ -1084,12 +1084,6 @@ private:
         file_.open(current_path_, std::ios::app);
         file_buf_    = file_.is_open() ? file_.rdbuf() : nullptr;
         current_day_ = utc_day_of_year();
-        // Re-redirect C-level stdout to the new day's log file so printf stays in sync.
-        // On day rollover this ensures printf output doesn't keep going to the old file.
-        if (file_.is_open()) {
-            freopen(current_path_.c_str(), "a", stdout);
-            setvbuf(stdout, nullptr, _IOLBF, 4096);
-        }
         purge_old_logs();
     }
 
