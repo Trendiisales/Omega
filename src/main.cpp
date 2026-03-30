@@ -1944,7 +1944,23 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
         const std::string& name = entry.second;
         if (id <= 0 || name.empty()) continue;
 
-        g_id_to_sym[id] = name;
+        // Special handling for GOLD.F: we subscribe to ID 41 (XAUUSD spot) and
+        // route it internally as "GOLD.F". The SecurityList also contains:
+        //   ID 41   -> "XAUUSD"  (spot  — this is what we want, must map to "GOLD.F")
+        //   ID 2660 -> "GOLD.F"  (futures, ~$25 above spot — must NOT route to engines)
+        // Without intervention, SecurityList would overwrite g_id_to_sym[41]="XAUUSD"
+        // (breaking spot routing) and g_id_to_sym[2660]="GOLD.F" (injecting futures
+        // price into gold engines whenever a 2660 tick arrives).
+        if (id == 41) {
+            // Force spot ID 41 to always resolve to internal name "GOLD.F"
+            g_id_to_sym[41] = "GOLD.F";
+        } else if (name == "GOLD.F") {
+            // This is the futures entry (ID 2660). Map it to a sentinel name so
+            // any stray futures ticks are silently dropped as unknown symbol.
+            g_id_to_sym[id] = "GOLD.F.FUTURES.IGNORED";
+        } else {
+            g_id_to_sym[id] = name;
+        }
 
         for (int i = 0; i < OMEGA_NSYMS; ++i) {
             if (name == OMEGA_SYMS[i].name && OMEGA_SYMS[i].id != id) {
