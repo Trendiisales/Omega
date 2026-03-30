@@ -6410,6 +6410,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // GoldStack same-direction re-entry block: 30s after trail/BE close
         // Applied to GoldStack entries only — GoldFlow has its own continuation_mode
         const bool gs_trail_blocked = gold_trail_blocked; // used below in GoldStack gate
+        // NY close noise block: 22:00-22:10 UTC — spread spikes as NY closes
+        // Block GoldFlow+GoldStack entries to avoid 2s SL hits from session close spikes
+        const bool in_ny_close_noise = [&]() -> bool {
+            struct tm ti_ny{}; const auto t_ny = std::chrono::system_clock::to_time_t(
+                std::chrono::system_clock::now());
+            gmtime_s(&ti_ny, &t_ny);
+            const int mins_utc = ti_ny.tm_hour * 60 + ti_ny.tm_min;
+            return (mins_utc >= 1320 && mins_utc < 1330);  // 22:00-22:10 UTC
+        }();
         const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open)
                                  && !gold_post_impulse_block;  // 3min cooldown after IMPULSE ends
         // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
@@ -7051,17 +7060,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // GoldFlowEngine enters internally (pos.active=true inside enter()),
             // so main.cpp cannot intercept between signal and entry. All blocking
             // must happen here, before the tick reaches the engine.
-            // ── NY close noise block: 22:00-22:10 UTC ────────────────────────
-            // NY session closes at 22:00 UTC — spreads widen, price spikes as
-            // positions close. Block GoldFlow for 10 minutes at NY close.
-            // Evidence: 22:00:26 LONG 4516.17 SL hit in 2s = -$133 (spread spike)
-            const bool in_ny_close_noise = [&]() -> bool {
-                struct tm ti_ny{}; const auto t_ny = std::chrono::system_clock::to_time_t(
-                    std::chrono::system_clock::now());
-                gmtime_s(&ti_ny, &t_ny);
-                const int mins_utc = ti_ny.tm_hour * 60 + ti_ny.tm_min;
-                return (mins_utc >= 1320 && mins_utc < 1330);  // 22:00-22:10 UTC
-            }();
             bool gf_tick_ok = !in_ny_close_noise;
 
             // ── Gate 1: Cost viability ─────────────────────────────────────────
