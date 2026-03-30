@@ -463,34 +463,60 @@ struct GoldFlowEngine {
         m_wall_ahead       = wall_ahead;
     }
     // save_atr_state: write current ATR to disk at rollover/shutdown
-    // load_atr_state: restore on startup — bypasses 100-tick warmup blind zone
+    // Saves the RANGE-based ATR (m_atr) + timestamp so load can validate freshness.
+    // load_atr_state: restore on startup — bypasses 100-tick warmup blind zone.
+    // Only accepts saved values that are:
+    //   1. Range-based ATR >= GFE_ATR_MIN (not tick-to-tick noise)
+    //   2. Saved within the last 4 hours (not overnight stale)
+    //   3. Saved during an active session (ATR >= 1.5pts)
     void save_atr_state(const std::string& path) const noexcept {
         if (m_atr_warmup_ticks < GFE_ATR_PERIOD) return;
         FILE* f = fopen(path.c_str(), "w");
         if (!f) return;
-        fprintf(f, "atr_ewm=%.6f warmed=1 last_mid=%.5f\n", m_atr_ewm, m_last_mid_atr);
+        const int64_t now_s = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        // Save range-based m_atr (not raw atr_ewm which is tick-to-tick noise)
+        fprintf(f, "atr=%.6f atr_ewm=%.6f warmed=1 last_mid=%.5f saved_ts=%lld\n",
+                m_atr, m_atr_ewm, m_last_mid_atr, (long long)now_s);
         fclose(f);
     }
     void load_atr_state(const std::string& path) noexcept {
         if (m_atr_warmup_ticks >= GFE_ATR_PERIOD) return;
         FILE* f = fopen(path.c_str(), "r");
         if (!f) return;
-        double atr_ewm = 0.0, last_mid = 0.0; int warmed = 0;
-        if (fscanf(f, "atr_ewm=%lf warmed=%d last_mid=%lf", &atr_ewm, &warmed, &last_mid) == 3
-            && warmed == 1 && atr_ewm > 0.0) {
-            // Reject stale/unrealistic ATR values — if loaded ATR is below 1.0pt
-            // it reflects a dead/overnight session and will cause SL=spread_floor
-            // entries that get stopped instantly in active London/NY conditions.
-            // Force re-seed from live ticks instead.
-            if (atr_ewm < 1.0) {
-                printf("[GFE] ATR state rejected (atr_ewm=%.4f < 1.0 — stale/overnight) — will re-seed\n", atr_ewm);
-            } else {
-                m_atr_ewm = atr_ewm; m_atr_warmup_ticks = GFE_ATR_PERIOD;
-                m_atr = std::max(GFE_ATR_MIN, m_atr_ewm); m_last_mid_atr = last_mid;
-                printf("[GFE] ATR state loaded: atr_ewm=%.4f m_atr=%.4f\n", m_atr_ewm, m_atr);
-            }
-        }
+        double atr = 0.0, atr_ewm = 0.0, last_mid = 0.0;
+        long long saved_ts = 0;
+        int warmed = 0;
+        const int parsed = fscanf(f, "atr=%lf atr_ewm=%lf warmed=%d last_mid=%lf saved_ts=%lld",
+                                  &atr, &atr_ewm, &warmed, &last_mid, &saved_ts);
         fclose(f);
+
+        if (parsed < 3 || warmed != 1 || atr <= 0.0) return;
+
+        const int64_t now_s = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const int64_t age_s = now_s - saved_ts;
+
+        // Reject if saved more than 4 hours ago — overnight/weekend stale
+        if (saved_ts > 0 && age_s > 4 * 3600) {
+            printf("[GFE] ATR state rejected (age=%lldmin > 240min — too stale)\n",
+                   (long long)(age_s / 60));
+            return;
+        }
+        // Reject if ATR is below active session minimum — was saved during dead tape
+        if (atr < 1.5) {
+            printf("[GFE] ATR state rejected (atr=%.4f < 1.5 — dead session value)\n", atr);
+            return;
+        }
+        // Valid — restore
+        m_atr              = std::max(GFE_ATR_MIN, atr);
+        m_atr_ewm          = atr_ewm > 0.0 ? atr_ewm : m_atr;
+        m_atr_warmup_ticks = GFE_ATR_PERIOD;
+        m_last_mid_atr     = last_mid;
+        printf("[GFE] ATR state loaded: atr=%.4f age=%lldmin\n",
+               m_atr, (long long)(age_s / 60));
     }
 
     // seed() — pre-warm ATR and direction windows from a single price on reconnect.

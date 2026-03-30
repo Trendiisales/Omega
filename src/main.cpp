@@ -8081,6 +8081,8 @@ static void quote_loop() {
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_diag).count() >= 60) {
                 last_diag = now;
                 if (g_tee_buf) g_tee_buf->force_rotate_check();  // ensure daily log rolls at UTC midnight even if stdout is quiet
+                // Save ATR state every 60s so restarts always have a fresh, valid value
+                g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
                 std::cout << "[OMEGA-DIAG] PnL=" << g_omegaLedger.dailyPnl()
                           << " T=" << g_omegaLedger.total()
                           << " WR=" << g_omegaLedger.winRate() << "%"
