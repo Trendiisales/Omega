@@ -488,6 +488,7 @@ static std::atomic<int64_t>  g_gold_flow_exit_price_x100{0};
 // When GoldFlow SL_HIT and drift reverses: allow GoldStack fast counter-entry
 // by bypassing the 120s SL cooldown. Window = 60s from flow exit.
 static std::atomic<int64_t>  g_gold_reversal_window_until{0};
+static std::atomic<int64_t>  g_gold_post_impulse_until{0};  // block new entries 3min after IMPULSE ends
 static omega::SilverBracketEngine g_bracket_xag;
 // US equity index bracket engines — arms both sides on compression,
 // captures the move regardless of direction. Eliminates wrong-direction losses.
@@ -6342,8 +6343,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const int64_t now_s_gate = static_cast<int64_t>(std::time(nullptr));
         const bool in_reversal_window = (g_gold_reversal_window_until.load() > now_s_gate);
         const int  flow_exit_dir      = g_gold_flow_exit_dir.load();
+        // Block reversal window if gold is in IMPULSE regime — a SL in IMPULSE often
+        // means the move is still going, not reversing. Counter-entries here cause big losses
+        // (11:26 SHORT -$98 fired into 4539->4577 LONG impulse after 11:22 BE_HIT).
+        const bool impulse_blocks_reversal = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
         // Reversal confirmed: drift now points OPPOSITE to the failed flow direction
-        const bool drift_reversed = in_reversal_window && (
+        const bool drift_reversed = in_reversal_window && !impulse_blocks_reversal && (
             (flow_exit_dir ==  1 && gold_ewm_drift_now < -2.0)  // was long, now bearish drift
          || (flow_exit_dir == -1 && gold_ewm_drift_now >  2.0)  // was short, now bullish drift
         );
@@ -6376,7 +6381,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool gold_session_ok = (gold_session_slot != 0);
         // On trend day re-entry: allow GoldStack even with gold_stack open position
         // (CompBreakout won't fire if stack is already open — handled in stack gate below)
-        const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open);
+        const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open)
+                                 && !gold_post_impulse_block;  // 3min cooldown after IMPULSE ends — stops chasing
         // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
         const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
             && gold_session_ok && symbol_gate("XAUUSD", false);
@@ -6419,6 +6425,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         //   SessionMomentum LONG blocked when price < VWAP.
         //   IMPULSE regime alone no longer permits counter-trend entries.
         const char* gold_stack_regime   = g_gold_stack.regime_name();
+        // Track IMPULSE→non-IMPULSE transition — set 3min post-impulse cooldown
+        // Prevents chasing entries immediately after a big move ends (11:59-12:03 3x SL losses)
+        {
+            static bool s_was_impulse = false;
+            const bool is_impulse_now = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
+            if (s_was_impulse && !is_impulse_now) {
+                const int64_t now_pi = static_cast<int64_t>(std::time(nullptr));
+                g_gold_post_impulse_until.store(now_pi + 180);  // 3 min cooldown
+                printf("[POST-IMPULSE] Regime left IMPULSE — blocking new entries 3min\n");
+                fflush(stdout);
+            }
+            s_was_impulse = is_impulse_now;
+        }
+        const bool gold_post_impulse_block = (g_gold_post_impulse_until.load() >
+            static_cast<int64_t>(std::time(nullptr)));
         const double gold_gov_hi        = g_gold_stack.governor_hi();
         const double gold_gov_lo        = g_gold_stack.governor_lo();
         const double gold_mid_now       = (bid + ask) * 0.5;
@@ -6794,7 +6815,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                       && (!g_gold_flow.has_open_position() || flow_pyramid_bypass)
                                       && !g_trend_pb_gold.has_open_position()
                                       && !g_le_stack.has_open_position()
-                                      && (!in_london_open_noise || london_drift_override);
+                                      && (!in_london_open_noise || london_drift_override)
+                                      && !gold_impulse_regime;  // block CompressionBreakout in IMPULSE — wrong engine for thrusting moves (11:52 SHORT -$95 loss)
             // NOTE: gold_trend_blocked (counter_trend_blocked) is intentionally NOT here.
             // It blocks the counter-trend ARM direction via arm_allowed(), not can_arm_bracket itself.
             // Having it here blocked ALL bracket arming when FLOW-BIAS-INJECT set bias,
