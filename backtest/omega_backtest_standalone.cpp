@@ -950,32 +950,41 @@ struct SessionMomentum : EngineBase {
 // ENGINE 7 — MeanReversion (Z-score)
 // =============================================================================
 struct MeanReversion : EngineBase {
-    static constexpr int    LB      = 60;
-    static constexpr double Z_ENTRY = 2.0;
-    static constexpr double SPREAD  = 0.80;
-    static constexpr double TP      = 12.0;
-    static constexpr double SL      = 4.0;
-    static constexpr int    COOLDOWN= 60 * 1000;
+    static constexpr int    LB           = 60;
+    static constexpr double Z_ENTRY      = 2.5;   // raised 2.0→2.5: genuine outliers only, not pullbacks
+    static constexpr double SPREAD       = 0.80;
+    static constexpr double TP           = 12.0;
+    static constexpr double SL           = 4.0;
+    static constexpr int    COOLDOWN     = 90 * 1000;  // raised 60s→90s: fewer signals in trends
+    static constexpr int    TREND_WINDOW = 500;         // ticks to look back for trend detection
+    static constexpr double TREND_THRESH = 4.0;         // $4 net in 500 ticks = clearly trending
 
-    CB<64> hist;
+    CB<512> trend_hist;  // longer window for trend detection
+    CB<64>  hist;
     const char* name() const override { return "MeanReversion"; }
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap;
         update_atr(t);
+        trend_hist.push(t.mid());
+
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
-        // ── Trend-regime gate ─────────────────────────────────────────────────
-        // Block ALL MeanReversion entries when EWM drift confirms a strong trend.
-        // On a 121pt trend day, every MR short is a trade against a steamroller.
-        // |drift| > 5.0 = sustained directional EWM movement — not noise.
-        // drift > 0 = uptrend: block shorts. drift < 0 = downtrend: block longs.
-        // Both sides blocked at |drift| > 8 (confirmed strong trend — no MR at all).
-        if (std::fabs(drift) > 1.5) return {};        // strong trend: disable MR entirely
-        if (drift >  0.8) { /* uptrend: only allow LONG MR */ }
-        if (drift < -0.8) { /* downtrend: only allow SHORT MR */ }
+        // ── Trend-regime gate (dual layer) ────────────────────────────────────
+        // Layer 1: EWM drift gate — catches fast directional ticks
+        if (std::fabs(drift) > 1.5) return {};
+
+        // Layer 2: 200-tick net displacement — catches sustained trend even when
+        // EWM drift dips neutral during pullbacks inside a +70pt rally.
+        // Evidence: +72pt day, drift was neutral 25% of ticks — MR fired shorts into it.
+        // $8 in 200 ticks (~3-5 min) is a clear trend, not a ranging market.
+        if ((int)trend_hist.size() >= TREND_WINDOW) {
+            const double net = trend_hist[trend_hist.size()-1]
+                             - trend_hist[trend_hist.size()-TREND_WINDOW];
+            if (std::fabs(net) > TREND_THRESH) return {};  // trending — no MR
+        }
 
         hist.push(t.mid());
         if ((int)hist.size() < LB) return {};
@@ -989,9 +998,9 @@ struct MeanReversion : EngineBase {
         if (sd < 0.01) return {};
 
         double z = (t.mid() - mean) / sd;
-        // Block counter-trend fades: no SHORT when drift bullish, no LONG when bearish
-        if (z < -Z_ENTRY && drift < -0.8) return {};  // LONG in downtrend — skip
-        if (z >  Z_ENTRY && drift >  0.8) return {};  // SHORT in uptrend — skip
+        // Final directional guard: don't fade strong side
+        if (z < -Z_ENTRY && drift < -0.5) return {};
+        if (z >  Z_ENTRY && drift >  0.5) return {};
         if (z < -Z_ENTRY) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL,atr()}; }
         if (z >  Z_ENTRY) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL,atr()}; }
         return {};
@@ -1039,13 +1048,16 @@ struct SpikeFade : EngineBase {
 // ENGINE 9 — DynamicRange (20-bar range extremes fade)
 // =============================================================================
 struct DynamicRange : EngineBase {
-    static constexpr int    BARS     = 20;
-    static constexpr int    BAR_MINS = 5;
-    static constexpr double SPREAD   = 0.80;
-    static constexpr double TP       = 8.0;
-    static constexpr double SL       = 4.0;
-    static constexpr int    COOLDOWN = 60 * 1000;
+    static constexpr int    BARS         = 20;
+    static constexpr int    BAR_MINS     = 5;
+    static constexpr double SPREAD       = 0.80;
+    static constexpr double TP           = 8.0;
+    static constexpr double SL           = 4.0;
+    static constexpr int    COOLDOWN     = 60 * 1000;
+    static constexpr int    TREND_WINDOW = 500;
+    static constexpr double TREND_THRESH = 4.0;
 
+    CB<512> trend_hist;
     double bar_h=0, bar_l=0; int bar_bm=-1;
     std::deque<std::pair<double,double>> bars;
 
@@ -1054,15 +1066,21 @@ struct DynamicRange : EngineBase {
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap;
         update_atr(t);
+        trend_hist.push(t.mid());
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
-        // ── Trend-regime gate: disable range-fade during strong trends ────────
-        // DynamicRange fades to range extremes — valid in ranging markets only.
-        // When drift confirms trend (|drift|>6), range extremes are breakout
-        // continuations, not fade setups. Gate entirely above |drift|=8.
-        if (std::fabs(drift) > 1.5) return {};    // strong trend: disable range fade
+        // ── Trend-regime gate (dual layer) ────────────────────────────────────
+        // Layer 1: EWM drift
+        if (std::fabs(drift) > 1.5) return {};
+
+        // Layer 2: 200-tick net displacement — blocks fade during sustained trends
+        if ((int)trend_hist.size() >= TREND_WINDOW) {
+            const double net = trend_hist[trend_hist.size()-1]
+                             - trend_hist[trend_hist.size()-TREND_WINDOW];
+            if (std::fabs(net) > TREND_THRESH) return {};
+        }
 
         int bm = bar_minute(t.ts_ms, BAR_MINS);
         if (bm != bar_bm) {
@@ -1075,9 +1093,8 @@ struct DynamicRange : EngineBase {
         for(auto&b:bars){if(b.first>rhi)rhi=b.first;if(b.second<rlo)rlo=b.second;}
 
         double band = (rhi - rlo) * 0.15;
-        // Additional: don't fade high (SHORT) if drift bullish, don't fade low (LONG) if bearish
-        if (t.mid() >= rhi - band && drift < -0.8) return {};  // SHORT at high, but downtrend
-        if (t.mid() <= rlo + band && drift >  0.8) return {};  // LONG  at low,  but uptrend
+        if (t.mid() >= rhi - band && drift < -0.5) return {};
+        if (t.mid() <= rlo + band && drift >  0.5) return {};
         if (t.mid() >= rhi - band) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL,atr()}; }
         if (t.mid() <= rlo + band) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL,atr()}; }
         return {};
