@@ -26,7 +26,12 @@ class MacroRegimeDetector
 {
 public:
     // VIX thresholds
-    double VIX_HIGH = 28.0;
+    // VIX_HIGH raised 28→35: tariff/macro volatility environment keeps VIX 25-32
+    // indefinitely. At 28 the engine shuts down after 20 ticks on every session.
+    // Individual engines have their own spread/ATR/L2 quality gates — they don't
+    // need VIX to block entries. RISK_OFF at 35+ = genuine crisis (GFC, COVID).
+    // Below 35, engine entry gates handle quality filtering per-instrument.
+    double VIX_HIGH = 35.0;
     double VIX_LOW  = 20.0;
 
     // DXY fast-rise threshold — % change over DXY_WINDOW ticks that signals
