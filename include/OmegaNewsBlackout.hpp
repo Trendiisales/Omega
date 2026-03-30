@@ -111,7 +111,7 @@ public:
                 // NFP affects all USD pairs and US indices
                 w.symbols   = {"US500.F","USTEC.F","DJ30.F","NAS100",
                                 "EURUSD","GBPUSD","AUDUSD","NZDUSD","USDJPY",
-                                "GOLD.F","XAGUSD","USOIL.F","BRENT"};
+                                "XAUUSD","XAGUSD","USOIL.F","BRENT"};
                 w.label     = "NFP";
                 result.push_back(w);
             }
@@ -126,7 +126,7 @@ public:
                 w.start_utc = wed - pre_minutes_cpi  * 60;
                 w.end_utc   = wed + post_minutes_cpi * 60;
                 w.symbols   = {"US500.F","USTEC.F","DJ30.F","NAS100",
-                                "EURUSD","GBPUSD","GOLD.F","XAGUSD"};
+                                "EURUSD","GBPUSD","XAUUSD","XAGUSD"};
                 w.label     = "CPI_APPROX";
                 result.push_back(w);
             }
@@ -318,7 +318,7 @@ private:
 //
 // Symbols blocked per event country:
 //   USD → US500.F, USTEC.F, DJ30.F, NAS100, EURUSD, GBPUSD, AUDUSD, NZDUSD,
-//          USDJPY, GOLD.F, XAGUSD, USOIL.F, BRENT
+//          USDJPY, XAUUSD, XAGUSD, USOIL.F, BRENT
 //   EUR → EURUSD, GER40, ESTX50
 //   GBP → GBPUSD, UK100
 //   JPY → USDJPY
@@ -374,7 +374,7 @@ private:
     static std::unordered_set<std::string> syms_for_country(const std::string& country) {
         if (country == "USD") return {"US500.F","USTEC.F","DJ30.F","NAS100",
                                        "EURUSD","GBPUSD","AUDUSD","NZDUSD","USDJPY",
-                                       "GOLD.F","XAGUSD","USOIL.F","BRENT"};
+                                       "XAUUSD","XAGUSD","USOIL.F","BRENT"};
         if (country == "EUR") return {"EURUSD","GER40","ESTX50"};
         if (country == "GBP") return {"GBPUSD","UK100"};
         if (country == "JPY") return {"USDJPY"};
