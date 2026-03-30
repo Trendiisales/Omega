@@ -116,6 +116,17 @@ add_custom_command(TARGET Omega POST_BUILD
     COMMENT "Copying config files to build output directory"
 )
 
+# ── Push current log to git after every successful build ─────────────────────
+# Copies logs/omega_YYYY-MM-DD.log → logs/latest.log and force-pushes to
+# origin/main so the log is always readable without needing VPS access.
+# push_log.ps1 exits cleanly if no log file exists yet (first ever build).
+add_custom_command(TARGET Omega POST_BUILD
+    COMMAND powershell -NonInteractive -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/push_log.ps1"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Pushing latest.log to git..."
+)
+
 # =============================================================================
 # OmegaBacktest — native C++ backtester (no FIX / OpenSSL / WS deps)
 # 500K–2M ticks/sec vs ~21K in Python.  Build: cmake --build build --target OmegaBacktest

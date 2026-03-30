@@ -7,6 +7,8 @@ build/
 *.lib
 logs/
 *.log
+# Exception: always track the latest log so Claude can parse it
+!logs/latest.log
 omega_shadow.csv
 CMakeFiles/
 CMakeCache.txt
