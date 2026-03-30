@@ -507,9 +507,12 @@ public:
         // Require ATR >= 3x spread in Asia. Dead zone already blocked (UNKNOWN).
         // Uses ewm_drift as ATR proxy since GoldSnapshot has no direct ATR field.
         if (is_asia) {
-            const double implied_atr = std::fabs(s.ewm_drift) > 0.0
-                                       ? std::max(std::fabs(s.ewm_drift) * 0.5, 1.5)
-                                       : 1.5;  // floor: Asia ATR always >= $1.5
+            // Use price_history_ range as ATR proxy (ewm_drift not in GoldSnapshot).
+            // MinMaxCircularBuffer tracks the full-window max/min natively — O(1).
+            // Floor at 1.5 so the gate doesn't block on a cold/empty buffer.
+            const double implied_atr = (price_history_.size() >= 5)
+                ? std::max(price_history_.range(), 1.5)
+                : (s.volatility > 0.0 ? std::max(s.volatility * 2.5, 1.5) : 1.5);
             if (s.spread > 0.0 && implied_atr / s.spread < 3.0) return noSignal();
         }
         if(price_history_.size()>=20){
