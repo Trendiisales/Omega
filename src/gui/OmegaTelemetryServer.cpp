@@ -403,7 +403,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         if (s->sp_phase    == 3) addPos("US500.F");
         if (s->nq_phase    == 3) addPos("USTEC.F");
         if (s->cl_phase    == 3) addPos("USOIL.F");
-        if (s->xau_phase   == 3) addPos("GOLD.F");
+        if (s->xau_phase   == 3) addPos("XAUUSD");
         if (s->brent_phase == 3) addPos("BRENT");
         if (s->xag_phase   == 3) addPos("XAGUSD");
         if (s->eurusd_phase  == 3) addPos("EURUSD");
@@ -420,7 +420,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         if (s->bkt_uk.phase   == 3) addPos("UK100");
         if (s->bkt_estx.phase == 3) addPos("ESTX50");
         if (s->bkt_xag.phase  == 3) addPos("XAGUSD");
-        if (s->bkt_gold.phase == 3) addPos("GOLD.F");
+        if (s->bkt_gold.phase == 3) addPos("XAUUSD");
         if (s->bkt_eur.phase  == 3) addPos("EURUSD");
         if (s->bkt_gbp.phase  == 3) addPos("GBPUSD");
         if (s->bkt_brent.phase== 3) addPos("BRENT");

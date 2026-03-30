@@ -362,7 +362,7 @@ R"OMEGA3(
 
         <div class="sym-section-label">★ Precious Metals</div>
         <div class="sym-row r-gold">
-          <span class="sym-nm c-gold">GOLD.F</span>
+          <span class="sym-nm c-gold">XAUUSD</span>
           <div class="px-pair"><span class="bid" id="goldBid">----</span><span class="px-sep">|</span><span class="ask" id="goldAsk">----</span></div>
           <span class="sprd" id="goldSpread">--</span>
         </div>
@@ -562,7 +562,7 @@ R"OMEGA4(
     <div class="eng-section" style="margin-top:6px;">
       <div class="eng-section-label">★ Metals Engines</div>
       <div class="eng-grid" style="grid-template-columns:repeat(1,1fr)">
-        <div class="eng-cell" id="engXAU" style="border-color:rgba(245,200,66,0.2);background:rgba(245,200,66,0.04);"><div class="eng-sym" style="color:var(--gold)">GOLD.F</div><div class="eng-ph eph-flat" id="engXAUPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engXAUBid" style="color:var(--gold)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAUAsk" style="color:var(--red)">--</span></div><div class="eng-vol" id="engXAUVol">--</div><div class="eng-sigs" id="engXAUSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engXAUProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engXAUPct"></span></div><div class="eng-l2" id="engXAUL2"><div class="eng-l2-fill" id="engXAUL2F" style="width:50%;background:var(--t3)"></div></div></div>
+        <div class="eng-cell" id="engXAU" style="border-color:rgba(245,200,66,0.2);background:rgba(245,200,66,0.04);"><div class="eng-sym" style="color:var(--gold)">XAUUSD</div><div class="eng-ph eph-flat" id="engXAUPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engXAUBid" style="color:var(--gold)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAUAsk" style="color:var(--red)">--</span></div><div class="eng-vol" id="engXAUVol">--</div><div class="eng-sigs" id="engXAUSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engXAUProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engXAUPct"></span></div><div class="eng-l2" id="engXAUL2"><div class="eng-l2-fill" id="engXAUL2F" style="width:50%;background:var(--t3)"></div></div></div>
       </div>
     </div>
 )OMEGA4"
@@ -1232,7 +1232,7 @@ function updateDashboard(d){
   updateEngCell('engAUD','engAUDPhase','engAUDVol','engAUDSig',d.audusd_phase,d.audusd_recent_vol_pct,d.audusd_baseline_vol_pct,d.audusd_signals,d.audusd_comp_high,d.audusd_comp_low,d.audusd_bid,d.audusd_ask,5,isLive('AUDUSD'),null);
   updateEngCell('engNZD','engNZDPhase','engNZDVol','engNZDSig',d.nzdusd_phase,d.nzdusd_recent_vol_pct,d.nzdusd_baseline_vol_pct,d.nzdusd_signals,d.nzdusd_comp_high,d.nzdusd_comp_low,d.nzdusd_bid,d.nzdusd_ask,5,isLive('NZDUSD'),null);
   updateEngCell('engJPY','engJPYPhase','engJPYVol','engJPYSig',d.usdjpy_phase,d.usdjpy_recent_vol_pct,d.usdjpy_baseline_vol_pct,d.usdjpy_signals,d.usdjpy_comp_high,d.usdjpy_comp_low,d.usdjpy_bid,d.usdjpy_ask,3,isLive('USDJPY'),null);
-  updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('GOLD.F'),d.brackets&&d.brackets.gold);
+  updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('XAUUSD'),d.brackets&&d.brackets.gold);
   // L2 imbalance bars
   const l2on = d.l2_active === 1;
   updateL2Bar('engSP',d.l2_sp,l2on); updateL2Bar('engNQ',d.l2_nq,l2on);
