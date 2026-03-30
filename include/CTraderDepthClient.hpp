@@ -26,7 +26,7 @@
 //   8. SubscribeDepthRes   (pt=2157)
 //   9. DepthEvent          (pt=2155)  continuous stream
 //      symbolId(f3), newQuotes(f4,repeated), deletedQuotes(f5,packed)
-//      DepthQuote: id(f1), size(f3), bid(f4), ask(f5)
+//      DepthQuote: id(f1), size(f2), bid(f3), ask(f4)  — official proto field numbers
 //
 // HEARTBEAT: pt=51, empty payload, every 10s
 // =============================================================================
@@ -385,8 +385,8 @@ private:
         auto& book = depth_books_[name];
         for (const auto& qb : PB::get_repeated_bytes(fields, 4)) {
             const auto qf = PB::parse(qb);
-            const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,3);
-            const uint64_t bid=PB::get_varint(qf,4), ask=PB::get_varint(qf,5);
+            const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,2);
+            const uint64_t bid=PB::get_varint(qf,3), ask=PB::get_varint(qf,4);
             if (!id||!sz) continue;
             if (bid)      book.apply_new(id,bid,sz,true);
             else if (ask) book.apply_new(id,ask,sz,false);
