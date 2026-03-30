@@ -106,6 +106,7 @@ struct OmegaConfig {
     int    max_trades_per_cycle  = 1;       // ranking window: max candidates to promote per cycle
 
     // Risk
+    bool   reload_trades_on_startup = true;  // false = ignore today's trade CSV on startup (clean PnL slate)
     double daily_loss_limit  = 200.0;
     double daily_profit_target = 0.0;   // 0=disabled. Stop new entries once daily P&L >= this.
                                         // Recommended: set to 1.5× daily_loss_limit once live.
@@ -2659,6 +2660,7 @@ static void load_config(const std::string& path) {
         }
         if (section == "risk") {
             if (k=="max_positions")        g_cfg.max_open_positions = safe_stoi(v, k);
+            if (k=="reload_trades_on_startup") g_cfg.reload_trades_on_startup = (v=="true"||v=="1");
             if (k=="daily_loss_limit")     g_cfg.daily_loss_limit  = safe_stod(v, k);
             if (k=="daily_profit_target")  g_cfg.daily_profit_target = safe_stod(v, k);
             if (k=="max_loss_per_trade_usd") g_cfg.max_loss_per_trade_usd = safe_stod(v, k);
@@ -9594,7 +9596,9 @@ int main(int argc, char* argv[])
             log_root_dir() + "/trades/omega_trade_closes_" + today_date + ".csv";
 
         std::ifstream reload_f(reload_path);
-        if (reload_f.is_open()) {
+        if (!g_cfg.reload_trades_on_startup) {
+            std::cout << "[OMEGA] Startup reload: DISABLED (reload_trades_on_startup=false) — clean PnL slate\n";
+        } else if (reload_f.is_open()) {
             int reloaded = 0;
             std::string line;
             std::getline(reload_f, line); // skip header
