@@ -700,6 +700,11 @@ R"OMEGA5(
         <div class="eng-row"><span class="eng-lbl">MEAN REV</span><span class="eng-pnl" id="engPnlMeanRev">$0</span><span class="eng-cnt" id="engCntMeanRev">0</span></div>
         <div class="eng-row"><span class="eng-lbl">GOLD STACK</span><span class="eng-pnl" id="engPnlGoldStack">$0</span><span class="eng-cnt" id="engCntGoldStack">0</span></div>
         <div class="eng-row"><span class="eng-lbl">GOLD FLOW</span><span class="eng-pnl" id="engPnlGoldFlow">$0</span><span class="eng-cnt" id="engCntGoldFlow">0</span></div>
+        <div id="gfPyramidRow" style="display:none;margin:2px 0 4px;padding:4px 8px;border-radius:6px;background:rgba(0,255,150,0.08);border:1px solid rgba(0,255,150,0.3);">
+          <span style="font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.8px;">&#9650; STACK UNLOCKED</span>
+          <span id="gfPyramidStage" style="font-size:9px;color:var(--t2);margin-left:6px;">stage 0</span>
+          <span id="gfPyramidProfit" style="font-size:9px;color:var(--green);margin-left:6px;font-weight:700;">$0</span>
+        </div>
         <div class="eng-row"><span class="eng-lbl">CROSS-ASSET</span><span class="eng-pnl" id="engPnlCross">$0</span><span class="eng-cnt" id="engCntCross">0</span></div>
         <div class="eng-row"><span class="eng-lbl">LATENCY</span><span class="eng-pnl" id="engPnlLatency">$0</span><span class="eng-cnt" id="engCntLatency">0</span></div>
       </div>
@@ -1522,6 +1527,16 @@ R"OMEGA23B(
       if(p){p.textContent=(v>=0?'+':'')+v.toFixed(2);p.style.color=v>0?'var(--green)':v<0?'var(--red)':' var(--t2)';}
       if(c){c.textContent=safe(cnt)+'t';}
     });
+    // GoldFlow pyramid indicator
+    const gfRow=document.getElementById('gfPyramidRow');
+    const gfStage=document.getElementById('gfPyramidStage');
+    const gfProfit=document.getElementById('gfPyramidProfit');
+    const unlocked=safe(d.gf_stack_unlocked)>0;
+    if(gfRow){gfRow.style.display=unlocked?'block':'none';}
+    if(unlocked){
+      if(gfStage){gfStage.textContent='stage '+safe(d.gf_trail_stage);}
+      if(gfProfit){const p=safe(d.gf_profit_usd);gfProfit.textContent=(p>=0?'+$':'$')+p.toFixed(2);}
+    }
   }
 
   // ── Multi-day throttle badge ──────────────────────────────────────────────

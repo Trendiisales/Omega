@@ -164,7 +164,8 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"usdjpy_recent_vol_pct\":%.4f,\"usdjpy_baseline_vol_pct\":%.4f,\"usdjpy_signals\":%d,"
         "\"build_version\":\"%s\",\"build_time\":\"%s\","
         "\"uptime_sec\":%lld,"
-        "\"last_entry_ts\":%lld,\"last_signal_ts\":%lld",
+        "\"last_entry_ts\":%lld,\"last_signal_ts\":%lld,"
+        "\"gf_trail_stage\":%d,\"gf_profit_usd\":%.2f,\"gf_stack_unlocked\":%d",
         s->sp_bid,     s->sp_ask,     s->nq_bid,  s->nq_ask,
         s->cl_bid,     s->cl_ask,     s->vix_bid, s->vix_ask,
         s->dx_bid,     s->dx_ask,     s->dj_bid,  s->dj_ask,
@@ -218,7 +219,8 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->usdjpy_recent_vol_pct, s->usdjpy_baseline_vol_pct, s->usdjpy_signals,
         s->build_version, s->build_time,
         (long long)s->uptime_sec,
-        (long long)s->last_entry_ts, (long long)s->last_signal_ts
+        (long long)s->last_entry_ts, (long long)s->last_signal_ts,
+        s->gf_trail_stage, s->gf_profit_usd, s->gf_stack_unlocked
     );
 
     // Append signal_history ring buffer as JSON array (newest first)

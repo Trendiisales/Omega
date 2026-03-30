@@ -223,6 +223,10 @@ struct OmegaTelemetrySnapshot
     // --- L2 data quality ---
     int     ctrader_l2_live;  // 1 = cTrader depth client received at least 1 event
     int     gold_l2_real;     // 1 = XAUUSD book has non-zero size data (vs FIX-only 0.5 fallback)
+    // GoldFlow live position state — for GUI pyramid indicator
+    int     gf_trail_stage   = 0;   // 0=none/initial, 1=BE, 2=trail1, 3=trail2, 4=trail3
+    double  gf_profit_usd    = 0.0; // current unrealised profit in USD
+    int     gf_stack_unlocked = 0;  // 1 = GoldFlow is winning, stack is free to add
 
     // --- Asia FX gate ---
     int     asia_fx_gate_open;          // 1 = trading allowed (gate open), 0 = session-blocked

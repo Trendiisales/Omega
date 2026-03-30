@@ -6302,6 +6302,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_trend_pb_gold.has_open_position()     ||
             g_nbm_gold_london.has_open_position();  // London NBM also blocks other gold engines
 
+        // Write GoldFlow state to telemetry for GUI pyramid indicator
+        {
+            auto* snap = g_telemetry.GetSnap();
+            if (snap) {
+                snap->gf_trail_stage    = gf_open ? g_gold_flow.pos.trail_stage : 0;
+                snap->gf_stack_unlocked = gf_winning ? 1 : 0;
+                if (gf_open) {
+                    const double gf_move = g_gold_flow.pos.is_long
+                        ? (gf_mid - g_gold_flow.pos.entry)
+                        : (g_gold_flow.pos.entry - gf_mid);
+                    snap->gf_profit_usd = gf_move * g_gold_flow.pos.size * 100.0;
+                } else {
+                    snap->gf_profit_usd = 0.0;
+                }
+            }
+        }
+
         // ── Trend day detection ───────────────────────────────────────────────
         const double gold_ewm_drift_now = g_gold_stack.ewm_drift();
         const double gold_recent_vol_now = g_gold_stack.recent_vol_pct();
