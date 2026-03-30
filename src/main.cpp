@@ -6295,8 +6295,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && (g_gold_flow.pos.is_long
                 ? (gf_mid > g_gold_flow.pos.entry + 5.0)   // $5+ in profit before stack joins
                 : (gf_mid < g_gold_flow.pos.entry - 5.0));
+        // GoldStack winning: allow bracket pyramid when GoldStack has a live profitable position
+        // ($10+ move = trail armed, same direction). Mirrors gf_winning logic for GoldFlow.
+        const bool gs_open = g_gold_stack.has_open_position();
+        const bool gs_winning = gs_open && g_gold_stack.has_profitable_trail();
         const bool gold_any_open =
-            g_gold_stack.has_open_position()        ||
+            (gs_open && !gs_winning)                ||  // GoldStack blocks unless profitable trail
             g_le_stack.has_open_position()          ||
             g_bracket_gold.has_open_position()      ||
             (gf_open && !gf_winning)                ||  // GoldFlow blocks unless it's a confirmed winner
@@ -6790,7 +6794,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                  || (!g_gold_flow.pos.is_long && !bracket_open)); // flow SHORT, bracket would arm SHORT
             // Allow bracket arm alongside GoldFlow IF:
             //   flow is profitable (BE locked), direction matches, L2 confirms, not IMPULSE
-            const bool flow_pyramid_bypass = flow_dir_matches_bracket
+            const bool flow_pyramid_bypass = (flow_dir_matches_bracket || gs_winning)
                                           && gold_pyramid_ok        // L2 must confirm direction
                                           && !gold_impulse_regime;  // never pyramid into IMPULSE thrust
 

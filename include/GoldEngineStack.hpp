@@ -4299,6 +4299,24 @@ public:
 
     bool has_open_position() const { return pos_mgr_.active(); }
 
+    // True when GoldStack has an active position that has moved >= TRAIL_ARM_1 ($10)
+    // in profit — i.e. the trail is armed and we're in a confirmed winner.
+    // Used by main.cpp to allow bracket pyramid alongside a winning GoldStack position.
+    bool has_profitable_trail() const {
+        if (!pos_mgr_.active()) return false;
+        const double entry   = pos_mgr_.base_entry();
+        const bool   is_long = pos_mgr_.base_is_long();
+        // We don't have direct access to bid/ask here — use SL position as proxy.
+        // If trail is armed the SL will have moved above entry (long) or below (short).
+        const double sl = pos_mgr_.base_sl();
+        if (entry <= 0.0 || sl <= 0.0) return false;
+        // For longs: SL moves up as trail arms. If SL > entry - TRAIL_ARM_1 the trail fired.
+        // For shorts: SL moves down.
+        const double sl_move = is_long ? (sl - (entry - TRAIL_ARM_1))
+                                       : ((entry + TRAIL_ARM_1) - sl);
+        return sl_move > 0.0;  // SL has moved past the trail arm threshold
+    }
+
     // Clear SL cooldown immediately — used by reversal logic when GoldFlow
     // SL_HIT and drift has reversed direction. Allows GoldStack counter-entry
     // without waiting the full 120s cooldown.
