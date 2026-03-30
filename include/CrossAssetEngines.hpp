@@ -1136,6 +1136,11 @@ public:
             return {};
         }
 
+        // Update momentum window
+        mid_window_[mid_window_pos_] = mid;
+        mid_window_pos_ = (mid_window_pos_ + 1) % TREND_WINDOW;
+        if (mid_window_count_ < TREND_WINDOW) ++mid_window_count_;
+
         // Reversal tick: previous price was further from VWAP, now ticking back
         // above_vwap: price was above → reversal means prev > mid (tick down toward VWAP)
         // below_vwap: price was below → reversal means prev < mid (tick up toward VWAP)
@@ -1147,6 +1152,23 @@ public:
         prev_mid_ = mid;
 
         if (!reversal_tick) return {};
+
+        // ── Trend momentum filter ─────────────────────────────────────────────
+        // Block VWAP_REV entry if price has been trending strongly AWAY from VWAP
+        // over the last 20 ticks — this is a trend, not a reversion setup.
+        // USTEC dropped 134pts in one session — single reversal tick is not enough
+        // confirmation when momentum is strongly directional.
+        if (mid_window_count_ >= TREND_WINDOW) {
+            // Oldest price in window
+            const double oldest = mid_window_[mid_window_pos_];
+            const double trend_move = mid - oldest;
+            // If trend is moving AWAY from VWAP (same direction as current extension)
+            // AND the move over 20 ticks exceeds 0.5x the extension threshold, block.
+            const double block_thresh = vwap * EXTENSION_THRESH_PCT * 0.5 / 100.0;
+            const bool trending_away = above_vwap ? (trend_move > block_thresh)   // above VWAP, still going up
+                                                  : (trend_move < -block_thresh);  // below VWAP, still going down
+            if (trending_away) return {};  // strong trend away — not a reversion yet
+        }
 
         // Entry: toward VWAP
         const bool is_long = !above_vwap;  // if above VWAP → short; below → long
@@ -1200,6 +1222,11 @@ private:
     CrossPosition pos_;
     double  prev_mid_       = 0.0;
     int64_t cooldown_until_ = 0;
+    // Momentum tracking: rolling window of last 20 mids to detect strong trend
+    static constexpr int TREND_WINDOW = 20;
+    double  mid_window_[TREND_WINDOW] = {};
+    int     mid_window_pos_           = 0;
+    int     mid_window_count_         = 0;
 };
 
 // =============================================================================
