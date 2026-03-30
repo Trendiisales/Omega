@@ -6282,11 +6282,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         //   Bracket can also arm (not fire) in parallel with GoldFlow.
         // REVERSAL exception: GoldFlow SL_HIT + drift now in opposite direction
         //   → GoldStack counter-entry allowed within 60s (bypasses SL cooldown).
+        // GoldFlow open: only block other engines if GoldFlow is NOT in profit or
+        // is in early stage (stage=0, no trail yet). If GoldFlow is trailing (stage>=1)
+        // on a winner, allow GoldStack to add a position in the same direction.
+        const bool gf_open = g_gold_flow.has_open_position();
+        const double gf_mid = (bid + ask) * 0.5;
+        const bool gf_winning = gf_open
+            && g_gold_flow.pos.trail_stage >= 1  // past BE — confirmed winner
+            && (g_gold_flow.pos.is_long
+                ? (gf_mid > g_gold_flow.pos.entry + 1.0)   // $1+ in profit
+                : (gf_mid < g_gold_flow.pos.entry - 1.0));
         const bool gold_any_open =
             g_gold_stack.has_open_position()        ||
             g_le_stack.has_open_position()          ||
             g_bracket_gold.has_open_position()      ||
-            g_gold_flow.has_open_position()         ||
+            (gf_open && !gf_winning)                ||  // GoldFlow blocks unless it's a confirmed winner
             g_trend_pb_gold.has_open_position()     ||
             g_nbm_gold_london.has_open_position();  // London NBM also blocks other gold engines
 
