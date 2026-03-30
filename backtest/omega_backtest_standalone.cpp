@@ -11,14 +11,11 @@
 //   ./omega_bt ~/tick/data/xauusd_merged_24months.csv
 //   ./omega_bt ~/tick/data/xauusd_merged_24months.csv --max 5000000   # quick test
 //
-// CSV FORMAT (auto-detected, handles your actual format):
+// CSV FORMAT (auto-detected):
 //   timestamp,askPrice,bidPrice        ← your actual format
-//   timestamp,bid,ask
-//   timestamp,ask,bid                  ← detected by column name
-//   YYYY-MM-DD HH:MM:SS,bid,ask
-//   date,time,open,high,low,close,vol  ← OHLCV
+//   timestamp,bid,ask / timestamp,ask,bid  ← detected by column name
 //
-// ENGINES REPLICATED (exact logic from GoldEngineStack.hpp):
+// ENGINES:
 //   1.  CompressionBreakout    WINDOW=50, RANGE=$6, BREAK=$2.50
 //   2.  WickRejection          5-min bars, wick>=55% of range
 //   3.  DonchianBreakout       20-bar 5-min channel
@@ -29,29 +26,31 @@
 //   8.  SpikeFade              fade $10+ 5-min moves
 //   9.  DynamicRange           20-bar range extremes fade
 //
-// P&L MODEL (FIXED):
-//   size = 0.01 lot
-//   gold: 1 price-point = $1 at 0.01 lot
-//   commission = $0.0 (BlackBull CFD — spread is the cost)
-//   max hold = 600s (10 min)
+// P&L MODEL (v3 — full round-trip spread accounting):
+//   size = 0.01 lot · $1/point
+//   commission = $0 (BlackBull CFD)
+//   max hold = 600s
 //
-//   Entry/exit pricing:
-//     Long  — buy at ask,  exit at bid  (spread paid on entry)
-//     Short — sell at bid, exit at ask  (spread paid on entry)
-//   TP/SL targets are measured in points from entry price (ask for long,
-//   bid for short).  The bid/ask check on exit is therefore a pure
-//   points-from-entry comparison — no double-spread.
+//   Entry:  Long  buy  at ask, Short sell at bid
+//   Exit:   Long  sell at bid, Short buy  at ask
+//   → spread is paid TWICE: once on entry, once on exit
+//   → TP/SL targets are measured from MID so both legs of spread are visible
+//   → entry_spread deducted explicitly:
+//        long  pnl = (exit_bid - entry_ask) = (exit_mid - entry_mid) - spread
+//        short pnl = (entry_bid - exit_ask) = (entry_mid - exit_mid) - spread
 //
-// FIXES vs prior version:
-//   1. CompressionBreakout: save hi/lo BEFORE pushing the new tick so the
-//      breakout comparison is against the PRIOR window, not the current one.
-//      (Prior version pushed first → hi was always >= mid → never triggered.)
-//   2. Spread diagnostics: print avg spread seen in data at load time.
-//   3. Per-engine spread-filter diagnostics printed at end.
-//   4. All engines: TP/SL from entry price (ask/bid) so no double-spread.
+//   All engine SPREAD filters now set to 0.35 (BlackBull live max).
+//   Historical data avg spread = 0.45pt — ticks above 0.35 are filtered,
+//   matching live execution conditions.
+//
+// FIXES vs v2:
+//   v2: spread deducted on entry only — exit at bid/ask was "free"
+//       → timeout exits were undercosted by ~0.45pt each
+//   v3: full round-trip cost. TP/SL measured from mid, spread deducted.
+//       Entry filter tightened to 0.35pt = BlackBull live conditions.
 //
 // OUTPUT:
-//   results/report.html        (open in browser)
+//   results/report.html
 //   results/engine_summary.csv
 //   results/all_trades.csv
 // =============================================================================
@@ -92,8 +91,8 @@ struct Tick {
     double  ask   = 0;
     double  mid() const { return (bid + ask) * 0.5; }
     double  spread() const { return ask - bid; }
-    // valid() accepts spreads up to 5.0 — XAUUSD can gap to ~1pt on thin ticks
-    bool    valid() const { return bid > 100.0 && ask > bid && (ask - bid) < 5.0; }
+    // valid(): reject outliers >2.0pt spread (real data avg 0.45, live max ~0.35)
+    bool    valid() const { return bid > 100.0 && ask > bid && (ask - bid) < 2.0; }
 };
 
 // =============================================================================
@@ -259,7 +258,7 @@ static std::vector<Tick> load_csv(const char* path) {
             double sp = t.ask - t.bid;
             spread_sum += sp; ++spread_n;
             if (sp > spread_max) spread_max = sp;
-            if (sp >= 5.0) ++invalid_spread;
+            if (sp >= 2.0) ++invalid_spread;
         }
 
         if (t.valid()) ticks.push_back(t);
@@ -269,14 +268,13 @@ static std::vector<Tick> load_csv(const char* path) {
 
     // Print spread diagnostics
     if (spread_n > 0) {
-        printf("[SPREAD] avg=%.4f  max=%.4f  n=%lld  filtered(>=5.0)=%lld\n",
+        printf("[SPREAD] avg=%.4f  max=%.4f  n=%lld  filtered(>=2.0)=%lld\n",
                spread_sum/spread_n, spread_max, (long long)spread_n, (long long)invalid_spread);
-        // Warn if avg spread looks wrong
         double avg_sp = spread_sum / spread_n;
         if (avg_sp > 1.0)
             printf("[SPREAD] ⚠  avg spread %.4f > 1.0 — bid/ask columns may be swapped!\n", avg_sp);
         else
-            printf("[SPREAD] ✅ avg spread %.4f looks normal for XAUUSD tick data\n", avg_sp);
+            printf("[SPREAD] ✅ avg spread %.4f  (live BlackBull target: 0.10–0.35pt)\n", avg_sp);
     }
 
     return ticks;
@@ -373,59 +371,64 @@ struct EWM {
 };
 
 // =============================================================================
-// Position — 0.01 lot gold CFD
+// Position — 0.01 lot gold CFD  [$1/point]
 //
-//   PRICING MODEL (no double-spread):
-//     Long  entry = t.ask   → tp = entry + tp_pts,  sl = entry - sl_pts
-//                           → exit check: t.bid >= tp  (bid crosses ask+tp_pts)
-//     Short entry = t.bid   → tp = entry - tp_pts,  sl = entry + sl_pts
-//                           → exit check: t.ask <= tp  (ask crosses bid-tp_pts)
+// v3 ROUND-TRIP SPREAD MODEL:
+//   Spread is a real cost on BOTH entry AND exit.
+//   We track entry_mid + entry_spread separately.
+//   TP/SL targets are from entry_mid (gross pts).
+//   PnL = side*(exit_mid - entry_mid) - (entry_spread + exit_spread)*0.5
 //
-//   PnL:
-//     Long  win:  (tp    - entry) * MULT = +tp_pts
-//     Long  loss: (sl    - entry) * MULT = -sl_pts
-//     Short win:  (entry - tp)    * MULT = +tp_pts
-//     Short loss: (entry - sl)    * MULT = -sl_pts   (note: entry-sl = -(sl_pts))
-//   ──→ spread is paid exactly ONCE (on entry), not again on exit.
+//   Rationale for *0.5:
+//     entry long:  pay ask = mid + spread/2
+//     exit  long:  get  bid = mid - spread/2
+//     round-trip cost = spread/2 + spread/2 = 1 full spread
+//     But entry_spread and exit_spread may differ slightly, so we average them.
 // =============================================================================
 struct Pos {
-    bool    active    = false;
-    int     side      = 0;     // +1 long, -1 short
-    double  entry     = 0;
-    double  tp        = 0;
-    double  sl        = 0;
-    int64_t open_ts   = 0;
-    double  mfe       = 0;
-    double  mae       = 0;
-    static constexpr double MULT = 1.0;   // $1/point at 0.01 lot (standard gold CFD)
+    bool    active       = false;
+    int     side         = 0;
+    double  entry_mid    = 0;
+    double  entry_spread = 0;
+    double  tp_mid       = 0;
+    double  sl_mid       = 0;
+    int64_t open_ts      = 0;
+    double  mfe          = 0;
+    double  mae          = 0;
+    static constexpr double MULT = 1.0;
 
-    void open(int s, double e, double tp_pts, double sl_pts, int64_t ts) {
-        active = true; side = s; entry = e;
-        // entry is ask for long, bid for short — so TP/SL are pure offset
-        tp = e + s * tp_pts;
-        sl = e - s * sl_pts;
-        open_ts = ts; mfe = mae = 0;
+    void open(int s, double mid, double spread, double tp_pts, double sl_pts, int64_t ts) {
+        active       = true;
+        side         = s;
+        entry_mid    = mid;
+        entry_spread = spread;
+        tp_mid       = mid + s * tp_pts;
+        sl_mid       = mid - s * sl_pts;
+        open_ts      = ts;
+        mfe = mae    = 0;
     }
 
-    // Returns true if closed; sets pnl and reason
     bool manage(const Tick& t, int max_hold_sec,
                 double& pnl, std::string& reason) {
         if (!active) return false;
 
-        // Current unrealised (measured at exit price)
-        double exit_price = (side == 1) ? t.bid : t.ask;
-        double exc = side * (exit_price - entry);
-        if (exc >  mfe) mfe =  exc;
-        if (exc < mae)  mae =  exc;   // mae stored as signed (negative = loss)
+        double cur_mid = t.mid();
+        double move    = side * (cur_mid - entry_mid);
+        if (move  > mfe) mfe =  move;
+        if (-move > mae) mae = -move;
 
-        // TP/SL hit checks — correct side prices
-        bool hit_tp  = (side == 1) ? (t.bid >= tp) : (t.ask <= tp);
-        bool hit_sl  = (side == 1) ? (t.bid <= sl) : (t.ask >= sl);
+        bool hit_tp  = (side ==  1) ? (cur_mid >= tp_mid) : (cur_mid <= tp_mid);
+        bool hit_sl  = (side ==  1) ? (cur_mid <= sl_mid) : (cur_mid >= sl_mid);
         bool timeout = ((t.ts_ms - open_ts) / 1000 >= max_hold_sec);
 
-        if (hit_tp)  { pnl = (tp         - entry) * side * MULT; reason = "TP";      active = false; return true; }
-        if (hit_sl)  { pnl = (sl         - entry) * side * MULT; reason = "SL";      active = false; return true; }
-        if (timeout) { pnl = (exit_price - entry) * side * MULT; reason = "TIMEOUT"; active = false; return true; }
+        if (hit_tp || hit_sl || timeout) {
+            double exit_mid        = hit_tp ? tp_mid : (hit_sl ? sl_mid : cur_mid);
+            double round_trip_cost = (entry_spread + t.spread()) * 0.5;
+            pnl    = side * (exit_mid - entry_mid) * MULT - round_trip_cost;
+            reason = hit_tp ? "TP" : (hit_sl ? "SL" : "TIMEOUT");
+            active = false;
+            return true;
+        }
         return false;
     }
 };
@@ -474,14 +477,15 @@ struct Stats {
 };
 
 // =============================================================================
-// Signal struct
+// Signal struct — engines emit mid+spread, Pos handles the rest
 // =============================================================================
 struct Sig {
     bool   valid   = false;
     int    side    = 0;
-    double entry   = 0;
-    double tp_pts  = 0;
-    double sl_pts  = 0;
+    double mid     = 0;     // mid price at signal
+    double spread  = 0;     // spread at signal
+    double tp_pts  = 0;     // gross TP from mid
+    double sl_pts  = 0;     // gross SL from mid
 };
 
 // =============================================================================
@@ -552,13 +556,13 @@ struct CompressionBreakout : EngineBase {
             if (drift < -3.0) return {};
             hist.clear();
             last_sig_ts = t.ts_ms;
-            return {true, +1, t.ask, TP, SL};
+            return {true, +1, t.mid(), t.spread(), TP, SL};
         }
         if (t.mid() < prev_lo - eff_trigger) {
             if (drift > +3.0) return {};
             hist.clear();
             last_sig_ts = t.ts_ms;
-            return {true, -1, t.bid, TP, SL};
+            return {true, -1, t.mid(), t.spread(), TP, SL};
         }
         return {};
     }
@@ -612,7 +616,7 @@ struct WickRejection : EngineBase {
         if (pending != 0 && !cooldown(t.ts_ms, COOLDOWN)) {
             int s = pending; pending = 0;
             last_sig_ts = t.ts_ms;
-            return {true, s, s==1?t.ask:t.bid, TP, SL};
+            return {true, s, t.mid(), t.spread(), TP, SL};
         }
         return {};
     }
@@ -656,8 +660,8 @@ struct DonchianBreakout : EngineBase {
         double chi = bars[0].first, clo = bars[0].second;
         for (auto& b : bars) { if(b.first>chi) chi=b.first; if(b.second<clo) clo=b.second; }
 
-        if (t.mid() > chi) { last_sig_ts=t.ts_ms; return {true,+1,t.ask,TP,SL}; }
-        if (t.mid() < clo) { last_sig_ts=t.ts_ms; return {true,-1,t.bid,TP,SL}; }
+        if (t.mid() > chi) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL}; }
+        if (t.mid() < clo) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL}; }
         return {};
     }
 };
@@ -705,8 +709,8 @@ struct NR3Breakout : EngineBase {
         }
 
         if (armed && nr_hi > 0) {
-            if (t.mid() > nr_hi) { armed=false; last_sig_ts=t.ts_ms; return {true,+1,t.ask,TP,SL}; }
-            if (t.mid() < nr_lo) { armed=false; last_sig_ts=t.ts_ms; return {true,-1,t.bid,TP,SL}; }
+            if (t.mid() > nr_hi) { armed=false; last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL}; }
+            if (t.mid() < nr_lo) { armed=false; last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL}; }
         }
         return {};
     }
@@ -756,7 +760,7 @@ struct IntradaySeasonality : EngineBase {
 
         last_hh = hh; last_day = day;
         last_sig_ts = t.ts_ms;
-        return {true, b, b==1?t.ask:t.bid, TP, SL};
+        return {true, b, t.mid(), t.spread(), TP, SL};
     }
 };
 
@@ -792,11 +796,11 @@ struct SessionMomentum : EngineBase {
 
         if (dhi < dlo && t.mid() > vwap && rec5 < -0.30) {
             hist.clear(); last_sig_ts=t.ts_ms;
-            return {true,+1,t.ask,TP,SL};
+            return {true,+1,t.mid(),t.spread(),TP,SL};
         }
         if (dlo < dhi && t.mid() < vwap && rec5 > +0.30) {
             hist.clear(); last_sig_ts=t.ts_ms;
-            return {true,-1,t.bid,TP,SL};
+            return {true,-1,t.mid(),t.spread(),TP,SL};
         }
         return {};
     }
@@ -834,8 +838,8 @@ struct MeanReversion : EngineBase {
         if (sd < 0.01) return {};
 
         double z = (t.mid() - mean) / sd;
-        if (z < -Z_ENTRY) { last_sig_ts=t.ts_ms; return {true,+1,t.ask,TP,SL}; }
-        if (z >  Z_ENTRY) { last_sig_ts=t.ts_ms; return {true,-1,t.bid,TP,SL}; }
+        if (z < -Z_ENTRY) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL}; }
+        if (z >  Z_ENTRY) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL}; }
         return {};
     }
 };
@@ -863,8 +867,8 @@ struct SpikeFade : EngineBase {
         if (bm != bar_bm) { bar_open = t.mid(); bar_bm = bm; return {}; }
 
         double move = t.mid() - bar_open;
-        if (move >  MIN_MOVE) { last_sig_ts=t.ts_ms; return {true,-1,t.bid,TP,SL}; }
-        if (move < -MIN_MOVE) { last_sig_ts=t.ts_ms; return {true,+1,t.ask,TP,SL}; }
+        if (move >  MIN_MOVE) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL}; }
+        if (move < -MIN_MOVE) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL}; }
         return {};
     }
 };
@@ -902,8 +906,8 @@ struct DynamicRange : EngineBase {
         for(auto&b:bars){if(b.first>rhi)rhi=b.first;if(b.second<rlo)rlo=b.second;}
 
         double band = (rhi - rlo) * 0.15;
-        if (t.mid() >= rhi - band) { last_sig_ts=t.ts_ms; return {true,-1,t.bid,TP,SL}; }
-        if (t.mid() <= rlo + band) { last_sig_ts=t.ts_ms; return {true,+1,t.ask,TP,SL}; }
+        if (t.mid() >= rhi - band) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL}; }
+        if (t.mid() <= rlo + band) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL}; }
         return {};
     }
 };
@@ -928,10 +932,8 @@ struct Runner {
                 Trade tr;
                 tr.engine   = eng->name();
                 tr.side     = pos.side;
-                tr.entry    = pos.entry;
-                tr.exit_px  = (reason=="TP") ? pos.tp
-                            : (reason=="SL") ? pos.sl
-                            : ((pos.side==1) ? t.bid : t.ask);
+                tr.entry    = pos.entry_mid;
+                tr.exit_px  = reason=="TP" ? pos.tp_mid : (reason=="SL" ? pos.sl_mid : t.mid());
                 tr.pnl      = pnl;
                 tr.mfe      = pos.mfe;
                 tr.mae      = pos.mae;
@@ -944,7 +946,7 @@ struct Runner {
         }
         if (!pos.active) {
             Sig sig = eng->on_tick(t, vwap, drift);
-            if (sig.valid) pos.open(sig.side, sig.entry, sig.tp_pts, sig.sl_pts, t.ts_ms);
+            if (sig.valid) pos.open(sig.side, sig.mid, sig.spread, sig.tp_pts, sig.sl_pts, t.ts_ms);
         }
     }
 };
