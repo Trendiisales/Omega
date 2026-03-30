@@ -6896,11 +6896,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bracket_gold.bracket_low);
             const auto bgsigs = g_bracket_gold.get_signals();
             if (bgsigs.valid) {
+                // Pyramid: use tighter SL than normal bracket — cap pyramid risk at 50% of base risk
+                // Normal bracket SL can be $5-7 wide; pyramid add-ons use half that
+                const double raw_sl_dist = std::fabs(bgsigs.long_entry - bgsigs.long_sl);
+                const double pyr_sl_dist = (gold_is_pyramiding || flow_pyramid_bypass)
+                    ? std::min(raw_sl_dist, 3.0)  // cap pyramid SL at $3 distance
+                    : raw_sl_dist;
                 const double base_bg_lot = compute_size("XAUUSD",
-                    std::fabs(bgsigs.long_entry - bgsigs.long_sl), ask - bid,
+                    pyr_sl_dist, ask - bid,
                     g_bracket_gold.ENTRY_SIZE);
-                const double bg_lot = gold_is_pyramiding
-                    ? (base_bg_lot * PYRAMID_SIZE_MULT) : base_bg_lot;
+                const double bg_lot = (gold_is_pyramiding || flow_pyramid_bypass)
+                    ? std::min(base_bg_lot * PYRAMID_SIZE_MULT, 0.20)  // cap pyramid lot at 0.20
+                    : base_bg_lot;
                 // Cost guard: bracket TP dist = SL dist * RR
                 const double bg_tp_dist = std::fabs(bgsigs.long_entry - bgsigs.long_sl) * g_bracket_gold.RR;
                 const bool bg_cost_ok = ExecutionCostGuard::is_viable("XAUUSD", ask - bid, bg_tp_dist, bg_lot);
