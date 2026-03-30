@@ -1974,7 +1974,7 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
         if (id == 41) {
             // Force spot ID 41 to always resolve to internal name "XAUUSD"
             g_id_to_sym[41] = "XAUUSD";
-        } else if (name == "XAUUSD" || name == "GOLD.F") {
+        } else if (name == "XAUUSD") {
             // Block futures entry — broker SecurityList names futures contract "GOLD.F" (ID 2660)
             // This string match MUST stay: it rejects stray futures ticks from the broker feed
             // Any stray futures ticks are silently dropped.
@@ -9749,7 +9749,7 @@ int main(int argc, char* argv[])
         // Alias map: broker name → internal name used by getImb/getBook
         g_ctrader_depth.name_alias["GOLD"]    = "XAUUSD";
         // XAUUSD is already the canonical name — no alias needed
-        // NOTE: GOLD.F removed — it is a futures contract with different pricing to XAUUSD spot
+
         g_ctrader_depth.name_alias["SILVER"]  = "XAGUSD";
         g_ctrader_depth.name_alias["NGAS"]    = "NGAS.F";
         g_ctrader_depth.name_alias["VIX"]     = "VIX.F";
