@@ -355,6 +355,30 @@ struct GoldFlowEngine {
         return (m_range_hi - m_range_lo) >= GFE_IMPULSE_ATR_MULT * m_atr;
     }
 
+    // ── ATR state persistence ─────────────────────────────────────────────────
+    // save_atr_state: write current ATR to disk at rollover/shutdown
+    // load_atr_state: restore on startup — bypasses 100-tick warmup blind zone
+    void save_atr_state(const std::string& path) const noexcept {
+        if (m_atr_warmup_ticks < GFE_ATR_PERIOD) return;
+        FILE* f = fopen(path.c_str(), "w");
+        if (!f) return;
+        fprintf(f, "atr_ewm=%.6f warmed=1 last_mid=%.5f\n", m_atr_ewm, m_last_mid_atr);
+        fclose(f);
+    }
+    void load_atr_state(const std::string& path) noexcept {
+        if (m_atr_warmup_ticks >= GFE_ATR_PERIOD) return;
+        FILE* f = fopen(path.c_str(), "r");
+        if (!f) return;
+        double atr_ewm = 0.0, last_mid = 0.0; int warmed = 0;
+        if (fscanf(f, "atr_ewm=%lf warmed=%d last_mid=%lf", &atr_ewm, &warmed, &last_mid) == 3
+            && warmed == 1 && atr_ewm > 0.0) {
+            m_atr_ewm = atr_ewm; m_atr_warmup_ticks = GFE_ATR_PERIOD;
+            m_atr = std::max(GFE_ATR_MIN, m_atr_ewm); m_last_mid_atr = last_mid;
+            printf("[GFE] ATR state loaded: atr_ewm=%.4f m_atr=%.4f\n", m_atr_ewm, m_atr);
+        }
+        fclose(f);
+    }
+
     // seed() — pre-warm ATR and direction windows from a single price on reconnect.
     // Without this the engine is blind for GFE_ATR_PERIOD (100) ticks after every
     // restart/reconnect — blocking all entries until warmup completes.
