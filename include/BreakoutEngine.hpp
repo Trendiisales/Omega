@@ -1331,7 +1331,7 @@ protected:
 
 // ==============================================================================
 // Concrete engine — standard CRTP policy (no extra overrides needed)
-// Used for GOLD.F (the gold multi-stack handles the rest).
+// Used for XAUUSD (the gold multi-stack handles the rest).
 // Per-instrument typed engines (SpEngine, NqEngine, OilEngine) and MacroContext
 // live in SymbolEngines.hpp which includes this file.
 // ==============================================================================
