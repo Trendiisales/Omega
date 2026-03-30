@@ -858,17 +858,33 @@ static int     g_last_ledger_utc_day = -1;
 // If last_tick_age > STALE_QUOTE_SEC while positions are open → widen SLs and
 // alert. A frozen feed with open positions is the most dangerous state.
 static std::mutex                              g_last_tick_mtx;
-static std::unordered_map<std::string,int64_t> g_last_tick_ts;  // symbol → unix ms
-static constexpr int64_t STALE_QUOTE_SEC = 30;  // 30s without tick = genuinely stale feed
-                                                  // (was 8s — too tight for slow FX/index symbols
-                                                  //  which legitimately go 10-20s between ticks)
+static std::unordered_map<std::string,int64_t> g_last_tick_ts;   // symbol → unix ms of last tick
+static std::unordered_map<std::string,double>  g_last_tick_bid;  // symbol → last bid price
+static std::unordered_map<std::string,int>     g_frozen_count;   // symbol → consecutive identical ticks
+static constexpr int64_t STALE_QUOTE_SEC  = 30;   // 30s without tick = genuinely stale feed
+static constexpr int     FROZEN_TICK_MAX  = 20;   // 20 consecutive identical bids = frozen feed
+                                                   // At ~1 tick/10s: 20 ticks = 3.3 min of freeze
+                                                   // Evidence: GOLD.F sent 4522.47 for 1318/1552 ticks
+                                                   // (84% of Monday session) — never triggered silence
+                                                   // check because timestamps updated. Price-freeze
+                                                   // detection catches this category of broken feed.
 
 // Record a tick receipt (called from on_tick per symbol)
-static inline void stale_watchdog_ping(const std::string& sym) {
+// Also tracks consecutive identical bids for frozen-feed detection.
+static inline void stale_watchdog_ping(const std::string& sym, double bid = 0.0) {
     const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     std::lock_guard<std::mutex> lk(g_last_tick_mtx);
     g_last_tick_ts[sym] = now_ms;
+    if (bid > 0.0) {
+        auto it = g_last_tick_bid.find(sym);
+        if (it != g_last_tick_bid.end() && std::fabs(it->second - bid) < 0.001) {
+            g_frozen_count[sym]++;
+        } else {
+            g_frozen_count[sym] = 0;
+            g_last_tick_bid[sym] = bid;
+        }
+    }
 }
 
 // Returns true if symbol has received a tick within STALE_QUOTE_SEC
@@ -3361,7 +3377,7 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
 // ─────────────────────────────────────────────────────────────────────────────
 static void on_tick(const std::string& sym, double bid, double ask) {
     { std::lock_guard<std::mutex> lk(g_book_mtx); g_bids[sym] = bid; g_asks[sym] = ask; }
-    stale_watchdog_ping(sym);  // record tick receipt for frozen-feed detection
+    stale_watchdog_ping(sym, bid);  // record tick + price for frozen-feed detection
 
     // ── Edge system updates (every tick, every symbol) ────────────────────────
     {
@@ -6948,7 +6964,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // gold_sdec.confidence and regime from SymbolSupervisor — computed above
                 // These block GFE from entering counter-trend on strong directional days.
                 const bool sup_trend = (gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
-                g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence, sup_trend);
+                // wall_ahead: significant L2 wall within 2×ATR ahead of current price.
+                // Used by GFE to tighten Stage 2 trail before the wall absorbs momentum.
+                const double gf_atr_now = std::max(2.5, g_gold_flow.current_atr());
+                const bool gf_wall_ahead = g_gold_flow.has_open_position()
+                    && (g_gold_flow.pos.is_long  ? g_macro_ctx.gold_wall_above
+                                                 : g_macro_ctx.gold_wall_below);
+                g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence,
+                                           sup_trend, gf_wall_ahead);
                 g_gold_flow.on_tick(bid, ask,
                     g_macro_ctx.gold_l2_imbalance,
                     g_gold_stack.ewm_drift(),
@@ -7806,10 +7829,25 @@ static void quote_loop() {
                     for (const char* psym : primary_syms) {
                         std::lock_guard<std::mutex> lk(g_last_tick_mtx);
                         auto it = g_last_tick_ts.find(psym);
+                        // Check 1: silence — no tick for 45s
                         if (it == g_last_tick_ts.end() ||
                             (now_ms_sc - it->second) > 45000) {
                             printf("[STALE-RESUB] %s silent >45s — forcing full re-subscribe\n", psym);
                             fflush(stdout);
+                            any_stale = true;
+                            break;
+                        }
+                        // Check 2: frozen price — N consecutive identical bids
+                        // Catches broker sending repeated last-price instead of live feed.
+                        // Evidence: GOLD.F sent 4522.47 for 1318/1552 ticks (84% of session)
+                        // — timestamps updated so silence check never fired, but price never moved.
+                        // At FROZEN_TICK_MAX=20 ticks (~3.3 min at Asia tick rate), re-subscribe.
+                        auto fc = g_frozen_count.find(psym);
+                        if (fc != g_frozen_count.end() && fc->second >= FROZEN_TICK_MAX) {
+                            printf("[STALE-RESUB] %s frozen price x%d ticks (bid=%.5f) — forcing re-subscribe\n",
+                                   psym, fc->second, g_last_tick_bid.count(psym) ? g_last_tick_bid.at(psym) : 0.0);
+                            fflush(stdout);
+                            g_frozen_count[psym] = 0;  // reset so we don't re-trigger immediately
                             any_stale = true;
                             break;
                         }

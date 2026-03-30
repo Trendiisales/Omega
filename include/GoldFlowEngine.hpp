@@ -82,6 +82,8 @@ static constexpr double GFE_TRAIL_STAGE2_MULT = 1.5;   // EA-matched: wider init
 static constexpr double GFE_TRAIL_STAGE3_MULT = 0.5;   // tighten to 0.5x ATR at stage 3
 static constexpr double GFE_TRAIL_STAGE4_MULT = 0.5;   // EA-matched: wider trail at stage4, ride full moves
 static constexpr double GFE_BE_ATR_MULT       = 1.0;   // BE lock at 1x ATR profit
+static constexpr double GFE_PARTIAL_EXIT_R    = 1.0;   // take 50% off at 1R profit — locks win before trail
+static constexpr double GFE_PARTIAL_EXIT_FRAC = 0.50;  // fraction to close at partial exit trigger
 static constexpr double GFE_STAGE2_ATR_MULT   = 2.0;   // start trail at 2x ATR profit
 static constexpr double GFE_STAGE3_ATR_MULT   = 8.0;   // EA-matched: only tighten after 8x ATR profit
 static constexpr double GFE_STAGE4_ATR_MULT   = 15.0;  // EA-matched: only tighten at 15x ATR profit
@@ -145,6 +147,8 @@ struct GoldFlowEngine {
         bool    be_locked     = false;
         int     trail_stage   = 0;    // 0=initial SL, 1=BE, 2=trail1, 3=trail2, 4=trail3
         bool    stage2_tight  = false; // true = L2 was weakening at Stage 2 arm → use tight trail (0.5x ATR)
+        bool    partial_closed = false; // true = 50% partial exit already taken at 1R
+        double  full_size      = 0.0;   // original size before partial — used for reporting
         int64_t entry_ts      = 0;
     } pos;
 
@@ -217,8 +221,19 @@ struct GoldFlowEngine {
         const bool l2_data_live = (std::fabs(l2_imb - 0.5) > 0.001);
 
         // Session-aware persistence thresholds: Asia requires 90% dominance, normal 75%
-        const int eff_fast_thresh = is_low_quality_session ? GFE_ASIA_FAST_DIR_THRESHOLD : GFE_FAST_DIR_THRESHOLD;
-        const int eff_slow_thresh = is_low_quality_session ? GFE_ASIA_SLOW_DIR_THRESHOLD : GFE_SLOW_DIR_THRESHOLD;
+        // Continuation mode: lower persistence threshold for first re-entry after
+        // a profitable close. 60% instead of 75% (18/30 instead of 23/30 fast ticks).
+        // Clears if expired or after entry (entry() clears fast/slow windows).
+        if (m_continuation_mode && now_ms > m_continuation_expires_ms) {
+            m_continuation_mode = false;
+        }
+        const bool cont_mode = m_continuation_mode && !is_low_quality_session;
+        const int eff_fast_thresh = is_low_quality_session ? GFE_ASIA_FAST_DIR_THRESHOLD
+                                  : (cont_mode ? (GFE_FAST_TICKS * 3 / 5)  // 60% = 18/30
+                                               : GFE_FAST_DIR_THRESHOLD);   // 75% = 23/30
+        const int eff_slow_thresh = is_low_quality_session ? GFE_ASIA_SLOW_DIR_THRESHOLD
+                                  : (cont_mode ? (GFE_SLOW_TICKS * 3 / 5)  // 60% = 60/100
+                                               : GFE_SLOW_DIR_THRESHOLD);   // 75% = 75/100
 
         bool fast_long, fast_short, slow_long, slow_short;
         if (l2_data_live) {
@@ -409,10 +424,12 @@ struct GoldFlowEngine {
     // Evidence: Friday 27 Mar — engine went SHORT 3× at 4440 during a +120pt UP day.
     //   At entry: gold_momentum = +0.86% (price 0.86% above VWAP). A SHORT here was
     //   directly counter-trend. All 3 exits were FORCE_CLOSE. Net: +$317 vs $3,550 missed.
-    void set_trend_bias(double momentum_pct, double supervisor_conf, bool sup_is_trend) noexcept {
+    void set_trend_bias(double momentum_pct, double supervisor_conf, bool sup_is_trend,
+                        bool wall_ahead = false) noexcept {
         m_trend_momentum   = momentum_pct;
         m_sup_conf         = supervisor_conf;
         m_sup_is_trend     = sup_is_trend;
+        m_wall_ahead       = wall_ahead;
     }
     // save_atr_state: write current ATR to disk at rollover/shutdown
     // load_atr_state: restore on startup — bypasses 100-tick warmup blind zone
@@ -548,6 +565,15 @@ private:
     double  m_trend_momentum   = 0.0;  // (mid-VWAP)/mid*100 from GoldEngineStack
     double  m_sup_conf         = 0.0;  // supervisor confidence score
     bool    m_sup_is_trend     = false; // supervisor classified TREND_CONTINUATION
+    bool    m_wall_ahead       = false; // significant L2 wall within 2×ATR ahead of entry
+
+    // Continuation mode: set after a profitable close (TRAIL_HIT/BE_HIT).
+    // Lowers persistence threshold from 75% → 60% for first re-entry only.
+    // Allows faster re-entry when trend is still active post close rather than
+    // waiting for a full 30-tick window to refill from scratch.
+    // Cleared after one use (next entry) or if cooldown expires without entry.
+    bool    m_continuation_mode = false;
+    int64_t m_continuation_expires_ms = 0; // ms timestamp when mode expires
     int     m_last_session_slot = -1;
 
     void update_atr(double spread, double mid) noexcept {
@@ -658,9 +684,11 @@ private:
         pos.mfe          = 0.0;
         pos.atr_at_entry = m_atr;
         pos.be_locked    = false;
-        pos.trail_stage  = 0;
-        pos.stage2_tight = false;
-        pos.entry_ts     = now_ms / 1000; // seconds
+        pos.trail_stage   = 0;
+        pos.stage2_tight  = false;
+        pos.partial_closed = false;
+        pos.full_size      = size;
+        pos.entry_ts      = now_ms / 1000; // seconds
         phase            = Phase::LIVE;
         ++m_trade_id;
 
@@ -670,6 +698,7 @@ private:
         m_fast_window.clear();
         m_slow_window.clear();
         m_drift_persist_window.clear();
+        m_continuation_mode = false;  // one-shot — clears after first re-entry
 
         std::cout << "[GOLD-FLOW] ENTRY " << (is_long ? "LONG" : "SHORT")
                   << " @ " << std::fixed << std::setprecision(2) << entry_px
@@ -692,6 +721,57 @@ private:
 
         // Track MFE
         if (move > pos.mfe) pos.mfe = move;
+
+        // ---- Partial exit at 1R: lock 50% of position before trail activates ----
+        // Fires once when profit first reaches 1×ATR. Closes GFE_PARTIAL_EXIT_FRAC (50%)
+        // of the position at market. Remaining half runs the full progressive trail.
+        // Benefit: guarantees a winner on the position even if trail gives back all profit.
+        // Evidence: Friday 3 FORCE_CLOSEs all exited near breakeven — partial exit would
+        // have locked +$150-300 on each before the trail had a chance to close at 0.
+        // The partial close fires a callback so main.cpp can send the broker order.
+        // Uses the same on_close callback — main.cpp handles it as a normal exit.
+        if (!pos.partial_closed && move >= atr * GFE_PARTIAL_EXIT_R) {
+            const double partial_size = std::floor(pos.size * GFE_PARTIAL_EXIT_FRAC / 0.001) * 0.001;
+            if (partial_size >= GFE_MIN_LOT) {
+                const double partial_px = pos.is_long ? bid : ask;
+                const double partial_pnl = (pos.is_long ? (partial_px - pos.entry)
+                                                        : (pos.entry - partial_px))
+                                           * partial_size;
+                // Fire partial close callback
+                omega::TradeRecord ptr;
+                ptr.id           = m_trade_id;
+                ptr.symbol       = "XAUUSD";
+                ptr.side         = pos.is_long ? "LONG" : "SHORT";
+                ptr.entryPrice   = pos.entry;
+                ptr.exitPrice    = partial_px;
+                ptr.sl           = pos.sl;
+                ptr.size         = partial_size;
+                ptr.pnl          = partial_pnl;
+                ptr.mfe          = pos.mfe * partial_size;
+                ptr.mae          = 0.0;
+                ptr.entryTs      = pos.entry_ts;
+                ptr.exitTs       = now_ms / 1000;
+                ptr.exitReason   = "PARTIAL_1R";
+                ptr.engine       = "GoldFlowEngine";
+                ptr.regime       = "FLOW";
+                ptr.spreadAtEntry = m_spread_at_entry;
+                // Reduce position size — remaining half runs the trail
+                pos.size         -= partial_size;
+                pos.partial_closed = true;
+                std::cout << "[GOLD-FLOW] PARTIAL-EXIT 1R"
+                          << (pos.is_long ? " LONG" : " SHORT")
+                          << " @ " << std::fixed << std::setprecision(2) << partial_px
+                          << " partial_size=" << partial_size
+                          << " remaining=" << pos.size
+                          << " pnl_pts=" << (partial_pnl / partial_size)
+                          << " pnl_usd=" << (partial_pnl * 100.0) << "\n";
+                std::cout.flush();
+                if (on_close) on_close(ptr);
+            } else {
+                // Position too small to split — just mark as done so we don't retry
+                pos.partial_closed = true;
+            }
+        }
 
         // ---- Progressive trail stages ------------------------------------
         // Stage 1: BE lock at 1x ATR profit
@@ -726,7 +806,11 @@ private:
                 std::cout << "[GOLD-FLOW] TRAIL-STAGE2 L2 recovered — upgrading to normal trail\n";
                 std::cout.flush();
             }
-            const double stage2_mult = pos.stage2_tight ? GFE_TRAIL_STAGE3_MULT : GFE_TRAIL_STAGE2_MULT;
+            // Tighten trail if L2 wall sits within 2×ATR ahead — wall will absorb
+            // momentum and push price back. Tighter trail locks more profit.
+            const bool wall_tighten = m_wall_ahead && !pos.stage2_tight;
+            const double stage2_mult = (pos.stage2_tight || wall_tighten)
+                                       ? GFE_TRAIL_STAGE3_MULT : GFE_TRAIL_STAGE2_MULT;
             const double trail_sl = pos.is_long
                 ? (pos.entry + pos.mfe - atr * stage2_mult)
                 : (pos.entry - pos.mfe + atr * stage2_mult);
@@ -843,6 +927,21 @@ private:
                   << " stage=" << pos.trail_stage
                   << " held=" << held_s << "s\n";
         std::cout.flush();
+
+        // Set continuation mode on profitable close (trail or BE, not SL).
+        // Allows faster re-entry when trend is still active.
+        // Expires after 3× cooldown to prevent stale mode on ranging days.
+        const bool was_profitable = (std::strcmp(reason, "SL_HIT") != 0
+                                  && std::strcmp(reason, "MAX_HOLD_TIMEOUT") != 0
+                                  && std::strcmp(reason, "FORCE_CLOSE") != 0);
+        if (was_profitable && tr.pnl > 0.0) {
+            m_continuation_mode       = true;
+            const int64_t eff_cd      = (m_last_session_slot == 6 || m_last_session_slot == 0)
+                                        ? GFE_ASIA_COOLDOWN_MS : GFE_COOLDOWN_MS;
+            m_continuation_expires_ms = now_ms + eff_cd * 3; // 90s normal, 180s Asia
+        } else {
+            m_continuation_mode = false;
+        }
 
         pos             = OpenPos{};
         phase           = Phase::COOLDOWN;

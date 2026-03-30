@@ -498,9 +498,20 @@ public:
         // SIM: ImpulseCont WR 43.8% negative at net20_min=1.50. Raised to 5.0/7.0.
         // Require a genuine $5 net move over 20 ticks (London/NY) before considering entry.
         // Asia: $7 — thinner tape, mean-reverting, need stronger conviction.
-        const double eff_net20_min  = is_asia ? 7.00 : 5.00;
-        const double eff_max_spread = is_asia ? 1.50 : MAX_SPREAD;
+        const double eff_net20_min   = is_asia ? 7.00 : 5.00;
+        const double eff_max_spread  = is_asia ? 1.50 : MAX_SPREAD;
         if(s.spread > eff_max_spread) return noSignal();
+        // Asia ATR quality gate: mirrors GFE_ASIA_ATR_SPREAD_RATIO=4.0.
+        // ImpulseCont TP=100ticks/SL=50ticks — at ATR=$2, SL=$1.25pt.
+        // If spread=$1.50, SL is barely 1x spread — noise-stopped instantly.
+        // Require ATR >= 3x spread in Asia. Dead zone already blocked (UNKNOWN).
+        // Uses ewm_drift as ATR proxy since GoldSnapshot has no direct ATR field.
+        if (is_asia) {
+            const double implied_atr = std::fabs(s.ewm_drift) > 0.0
+                                       ? std::max(std::fabs(s.ewm_drift) * 0.5, 1.5)
+                                       : 1.5;  // floor: Asia ATR always >= $1.5
+            if (s.spread > 0.0 && implied_atr / s.spread < 3.0) return noSignal();
+        }
         if(price_history_.size()>=20){
             double net20=price_history_.back()-price_history_[price_history_.size()-20];
             if(std::fabs(net20)<eff_net20_min) return noSignal();
