@@ -3157,6 +3157,9 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                   << " @ "      << tr.exitPrice << "\n";
         std::cout.flush();
         write_trade_close_logs(tr);   // CSV audit trail only — no risk state change
+        // Add to ledger so GUI shows partial close and bell fires correctly (win sound)
+        g_omegaLedger.record(tr);
+        g_telemetry.AccumEnginePnl(tr.engine.c_str(), tr.net_pnl);
         return;
     }
 
