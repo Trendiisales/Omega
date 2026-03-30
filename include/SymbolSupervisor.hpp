@@ -108,14 +108,18 @@ public:
             // We cannot use the scores computed later (not yet computed here),
             // so use a fast proxy: if vol is clearly expanding + momentum strong,
             // break cooldown early. This avoids missing the best entry.
-            const double fast_vol_ratio = (base_vol_pct > 0.0)
-                                          ? (recent_vol_pct / base_vol_pct) : 1.0;
+            // Cap vol_ratio at 1.5 — high volatility alone must NOT bypass cooldown.
+            // Previously uncapped ratio caused fast_score=1.0 constantly in volatile
+            // markets, making cooldown completely ineffective (bypassed every tick).
+            // Early exit now requires strong directional edge AND momentum, not just vol.
+            const double fast_vol_ratio = std::min(1.5, (base_vol_pct > 0.0)
+                                          ? (recent_vol_pct / base_vol_pct) : 1.0);
             const double fast_dir       = std::fabs(momentum_pct)
                                           / (cfg.momentum_trend_thresh * 2.0 + 0.001);
             const double fast_edge      = std::min(0.15, net_edge_pct * 8.0);
             const double fast_score     = std::min(1.0,
-                fast_vol_ratio * 0.4 + fast_dir * 0.4 + fast_edge * 3.0);
-            const bool early_exit = (fast_score > 0.45);
+                fast_vol_ratio * 0.2 + fast_dir * 0.5 + fast_edge * 5.0);
+            const bool early_exit = (fast_score > 0.75);
             if (!early_exit) {
                 SupervisorDecision b{};
                 b.regime        = Regime::HIGH_RISK_NO_TRADE;
