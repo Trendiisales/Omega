@@ -1948,6 +1948,16 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
 
         for (int i = 0; i < OMEGA_NSYMS; ++i) {
             if (name == OMEGA_SYMS[i].name && OMEGA_SYMS[i].id != id) {
+                // GOLD.F is pinned to ID 41 (XAUUSD spot). The SecurityList also
+                // contains ID 2660 named "GOLD.F" (futures, ~$25 above spot).
+                // Block that from overwriting our intentional spot subscription.
+                if (std::string(OMEGA_SYMS[i].name) == "GOLD.F") {
+                    std::cout << "[OMEGA-SECURITY] GOLD.F pin: keeping id="
+                              << OMEGA_SYMS[i].id << " (XAUUSD spot), blocking id="
+                              << id << " (futures)\n";
+                    std::cout.flush();
+                    continue;
+                }
                 std::cout << "[OMEGA-SECURITY] primary id update " << name
                           << " " << OMEGA_SYMS[i].id << " -> " << id << "\n";
                 OMEGA_SYMS[i].id = id;
