@@ -3135,6 +3135,31 @@ static void maybe_reset_daily_ledger() {
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
 
+    // ── PARTIAL_1R fast path ──────────────────────────────────────────────────
+    // A PARTIAL_1R record means 50% of the position was closed at 1R profit.
+    // The trade is NOT fully closed — the remaining half is still live.
+    // MUST NOT update: ledger, P&L, consecutive loss counter, fast-loss streak,
+    // perf tracker, adaptive risk, equity, TOD gate, or partial_exit.reset().
+    // All of those assume a fully closed trade and corrupt state if called here.
+    // Only log the partial close for audit/CSV purposes.
+    if (tr.exitReason == "PARTIAL_1R") {
+        const double mult = tick_value_multiplier(tr.symbol);
+        tr.pnl *= mult; tr.mfe *= mult; tr.mae *= mult;
+        double cps = 0.0;
+        { const std::string& s = tr.symbol;
+          if (s=="EURUSD"||s=="GBPUSD"||s=="AUDUSD"||s=="NZDUSD"||
+              s=="USDJPY"||s=="XAUUSD"||s=="XAGUSD") cps = 3.0; }
+        omega::apply_realistic_costs(tr, cps, mult);
+        std::cout << "[PARTIAL-CLOSE] " << tr.symbol
+                  << " gross=$" << std::fixed << std::setprecision(2) << tr.pnl
+                  << " net=$"   << tr.net_pnl
+                  << " size="   << tr.size
+                  << " @ "      << tr.exitPrice << "\n";
+        std::cout.flush();
+        write_trade_close_logs(tr);   // CSV audit trail only — no risk state change
+        return;
+    }
+
     // Step 1: Scale raw price-point P&L to USD using per-instrument contract size.
     // This MUST happen before apply_realistic_costs so slippage is computed in USD.
     // Previously apply_realistic_costs ran first with raw price values, causing
@@ -5609,8 +5634,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             regime.empty() ? "?" : regime,
             "ENTRY");
         // Arm partial exit and fire
-        g_partial_exit.arm(esym, is_long, entry, tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
-                           sl, final_lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
+        // XAUUSD is excluded: GoldFlow arms g_partial_exit explicitly after entry
+        // with the correct ATR and 2R TP2 (line ~7222), and GoldStack arms at signal
+        // time (line ~6573). Arming here would double-arm with wrong TP2 = enter_directional's
+        // tp_scaled (often 0), causing a phantom second partial order on the same position.
+        if (std::string(esym) != "XAUUSD") {
+            g_partial_exit.arm(esym, is_long, entry, tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
+                               sl, final_lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
+        }
         send_live_order(esym, is_long, final_lot, entry);
         g_telemetry.UpdateLastEntryTs();  // watchdog: stamp last successful entry
         return true;
@@ -5621,7 +5652,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // When TP1 is hit: sends a market close for the first half and moves SL to BE.
     // When TP2/trailing SL is hit: sends final close for the remainder.
     // Applies in all modes — shadow simulates the close without sending a real order.
-    if (g_partial_exit.active(sym)) {
+    // XAUUSD + GFE open: GoldFlowEngine manages its own partial internally via
+    // manage_position() → PARTIAL_1R callback. Skip here to prevent duplicate orders.
+    const bool gfe_owns_partial = (sym == "XAUUSD" && g_gold_flow.has_open_position());
+    if (g_partial_exit.active(sym) && !gfe_owns_partial) {
         double pe_price = 0.0, pe_lot = 0.0;
         using PE = omega::partial::CloseAction;
         const PE act = g_partial_exit.tick(sym, mid, bid, ask, pe_price, pe_lot);
@@ -6876,9 +6910,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence,
                                        sup_trend_mgmt, gf_wall_mgmt);
             auto flow_mgmt_cb = [&](const omega::TradeRecord& tr) {
+                // PARTIAL_1R: position still open — send partial broker close,
+                // log via handle_closed_trade (which now returns early for PARTIAL_1R
+                // skipping all risk accounting), then return. Do NOT touch exit state.
+                if (tr.exitReason == std::string("PARTIAL_1R")) {
+                    if (g_cfg.mode == "LIVE") {
+                        const bool close_is_long = (tr.side == "SHORT");
+                        send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
+                    }
+                    handle_closed_trade(tr);
+                    return;
+                }
                 handle_closed_trade(tr);
-                // PARTIAL_1R: position still open, don't corrupt exit state
-                if (tr.exitReason == std::string("PARTIAL_1R")) return;
                 const bool close_is_long = (tr.side == "SHORT");
                 send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
                 const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
@@ -6991,9 +7034,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
 
             auto flow_on_close = [&](const omega::TradeRecord& tr) {
+                // PARTIAL_1R: position still open — send partial broker close,
+                // log via handle_closed_trade (returns early, skips risk accounting),
+                // then return. Do NOT touch exit state or reversal window.
+                if (tr.exitReason == std::string("PARTIAL_1R")) {
+                    if (g_cfg.mode == "LIVE") {
+                        const bool close_is_long = (tr.side == "SHORT");
+                        send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
+                    }
+                    handle_closed_trade(tr);
+                    return;
+                }
                 handle_closed_trade(tr);
-                // PARTIAL_1R: position still open — don't corrupt exit state
-                if (tr.exitReason == std::string("PARTIAL_1R")) return;
                 // Close broker position with a market order (same as bracket_on_close)
                 const bool close_is_long = (tr.side == "SHORT"); // flip to close
                 send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
@@ -7170,17 +7222,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_gold_flow.pos.is_long ? "LONG" : "SHORT",
                     g_gold_flow.pos.entry, 0.0, g_gold_flow.pos.sl,
                     g_gold_flow.pos.size, ask - bid, regime, "L2_FLOW");
-                // Arm partial exit: TP1 at 1R, TP2 at 2R (gold flow has no fixed TP)
-                const double gf_sl_abs_pe = std::fabs(g_gold_flow.pos.entry - g_gold_flow.pos.sl);
-                if (gf_sl_abs_pe > 0.0) {
-                    // TP2 = entry ± 2R (PartialExitManager sets TP1 = midpoint internally)
-                    const double gf_tp2 = g_gold_flow.pos.entry +
-                        (g_gold_flow.pos.is_long ? gf_sl_abs_pe * 2.0 : -gf_sl_abs_pe * 2.0);
-                    g_partial_exit.arm("XAUUSD", g_gold_flow.pos.is_long,
-                        g_gold_flow.pos.entry, gf_tp2, g_gold_flow.pos.sl,
-                        g_gold_flow.pos.size,
-                        g_adaptive_risk.vol_scaler.atr_fast("XAUUSD"));
-                }
+                // NOTE: g_partial_exit is NOT armed here for GFE.
+                // GoldFlowEngine manages its own partial exit internally via
+                // manage_position() → PARTIAL_1R callback (GFE_PARTIAL_EXIT_R, 50% at 1R).
+                // The g_partial_exit tick check is skipped when gfe_owns_partial=true
+                // to prevent duplicate broker orders. GoldStack arms g_partial_exit
+                // directly at signal time for its own positions.
             }
         }
 
