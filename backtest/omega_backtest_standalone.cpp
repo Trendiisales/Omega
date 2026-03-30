@@ -20,23 +20,35 @@
 //
 // ENGINES REPLICATED (exact logic from GoldEngineStack.hpp):
 //   1.  CompressionBreakout    WINDOW=50, RANGE=$6, BREAK=$2.50
-//   2.  ImpulseContinuation
-//   3.  SessionMomentum
-//   4.  IntradaySeasonality
-//   5.  WickRejection          5-min bars, wick>=55% of range
-//   6.  DonchianBreakout       20-bar 5-min channel
-//   7.  NR3Breakout            narrowest-3-bar 5-min
-//   8.  MeanReversion          Z-score fade, LB=60
-//   9.  SpikeFade              fade $10+ 5-min moves
-//  10.  AsianRange             00-07 UTC range → London break
-//  11.  DynamicRange           20-bar range extremes fade
-//  12.  TwoBarReversal         2×ATR strong bar + reversal
+//   2.  WickRejection          5-min bars, wick>=55% of range
+//   3.  DonchianBreakout       20-bar 5-min channel
+//   4.  NR3Breakout            narrowest-3-bar 5-min
+//   5.  IntradaySeasonality
+//   6.  SessionMomentum
+//   7.  MeanReversion          Z-score fade, LB=60
+//   8.  SpikeFade              fade $10+ 5-min moves
+//   9.  DynamicRange           20-bar range extremes fade
 //
-// P&L MODEL:
+// P&L MODEL (FIXED):
 //   size = 0.01 lot
-//   gold: 1 price-point = $1 at 0.01 lot  (NOT $100 — the Python bug)
+//   gold: 1 price-point = $1 at 0.01 lot
 //   commission = $0.0 (BlackBull CFD — spread is the cost)
-//   max hold = 600s (10 min, matching GoldStack config)
+//   max hold = 600s (10 min)
+//
+//   Entry/exit pricing:
+//     Long  — buy at ask,  exit at bid  (spread paid on entry)
+//     Short — sell at bid, exit at ask  (spread paid on entry)
+//   TP/SL targets are measured in points from entry price (ask for long,
+//   bid for short).  The bid/ask check on exit is therefore a pure
+//   points-from-entry comparison — no double-spread.
+//
+// FIXES vs prior version:
+//   1. CompressionBreakout: save hi/lo BEFORE pushing the new tick so the
+//      breakout comparison is against the PRIOR window, not the current one.
+//      (Prior version pushed first → hi was always >= mid → never triggered.)
+//   2. Spread diagnostics: print avg spread seen in data at load time.
+//   3. Per-engine spread-filter diagnostics printed at end.
+//   4. All engines: TP/SL from entry price (ask/bid) so no double-spread.
 //
 // OUTPUT:
 //   results/report.html        (open in browser)
@@ -80,7 +92,8 @@ struct Tick {
     double  ask   = 0;
     double  mid() const { return (bid + ask) * 0.5; }
     double  spread() const { return ask - bid; }
-    bool    valid() const { return bid > 0 && ask > bid && (ask - bid) < 50.0; }
+    // valid() accepts spreads up to 5.0 — XAUUSD can gap to ~1pt on thin ticks
+    bool    valid() const { return bid > 100.0 && ask > bid && (ask - bid) < 5.0; }
 };
 
 // =============================================================================
@@ -105,11 +118,8 @@ static inline int64_t fparse_i64(const char* s, const char** e) noexcept {
 
 // Parse various datetime strings → epoch ms
 static int64_t parse_datetime(const char* s) noexcept {
-    // Try numeric first
     if (s[0] >= '0' && s[0] <= '9') {
-        // Check if it's YYYY-MM-DD or YYYY.MM.DD
         if ((s[4] == '-' || s[4] == '.') && s[7] == s[4]) {
-            // Date string — parse as tm
             struct tm ti{};
             ti.tm_year = (s[0]-'0')*1000+(s[1]-'0')*100+(s[2]-'0')*10+(s[3]-'0') - 1900;
             ti.tm_mon  = (s[5]-'0')*10+(s[6]-'0') - 1;
@@ -130,10 +140,9 @@ static int64_t parse_datetime(const char* s) noexcept {
             }
             return static_cast<int64_t>(ep) * 1000LL + ms;
         }
-        // Pure number
         const char* e;
         int64_t v = fparse_i64(s, &e);
-        return v < 2000000000LL ? v * 1000LL : v;  // seconds → ms if < year 2033
+        return v < 2000000000LL ? v * 1000LL : v;
     }
     return 0;
 }
@@ -159,38 +168,33 @@ static std::vector<Tick> load_csv(const char* path) {
     if (sz >= 3 && (uint8_t)p[0]==0xEF && (uint8_t)p[1]==0xBB && (uint8_t)p[2]==0xBF) p += 3;
 
     // Parse header to detect column order
-    // Your file: timestamp,askPrice,bidPrice
-    // We need to know which col is bid and which is ask
     int col_ts = 0, col_first = 1, col_second = 2;
-    bool first_is_ask = false;  // if true: col1=ask, col2=bid
+    bool first_is_ask = false;
 
     {
-        const char* hl = p;
         std::string hdr;
         while (p < end && *p != '\n') { hdr += (char)(*p); ++p; }
         if (p < end) ++p;
 
-        // Lowercase for detection
         std::string h = hdr;
         for (auto& c : h) c = (char)tolower((unsigned char)c);
 
-        // Find column positions by name
-        // Split by comma
         std::vector<std::string> cols;
         std::stringstream ss(h);
         std::string tok;
         while (std::getline(ss, tok, ',')) {
-            // trim whitespace
             while (!tok.empty() && (tok.front()==' '||tok.front()=='\r')) tok.erase(0,1);
             while (!tok.empty() && (tok.back()==' '||tok.back()=='\r')) tok.pop_back();
             cols.push_back(tok);
         }
 
-        // Detect ask vs bid column order
+        // Print header info for diagnostics
+        printf("[CSV]  Header columns: ");
+        for (int i=0;i<(int)cols.size();++i) printf("[%d]%s ", i, cols[i].c_str());
+        printf("\n");
+
         for (int i = 0; i < (int)cols.size(); ++i) {
             if (cols[i] == "askprice" || cols[i] == "ask_price" || cols[i] == "ask") {
-                // ask comes before bid → first_is_ask = true
-                // check if bid comes after
                 for (int j = i+1; j < (int)cols.size(); ++j) {
                     if (cols[j] == "bidprice" || cols[j] == "bid_price" || cols[j] == "bid") {
                         col_first   = i;
@@ -213,20 +217,22 @@ static std::vector<Tick> load_csv(const char* path) {
                 break;
             }
         }
-        // Fallback: if header has >4 columns assume OHLCV
-        (void)hl;
+        printf("[CSV]  col_first=%d col_second=%d first_is_ask=%s\n",
+               col_first, col_second, first_is_ask ? "YES (ask,bid)" : "NO (bid,ask)");
     }
 
     int64_t prev_ts = 0;
+    // Spread diagnostics
+    double spread_sum = 0; int64_t spread_n = 0;
+    double spread_max = 0;
+    int64_t invalid_spread = 0;
 
     while (p < end) {
         while (p < end && (*p == '\r' || *p == '\n')) ++p;
         if (p >= end) break;
 
-        // Parse row into columns
         std::array<const char*, 8> col_start{};
         int ncols = 0;
-        const char* row_start = p;
         col_start[ncols++] = p;
         while (p < end && *p != '\n' && *p != '\r') {
             if (*p == ',' && ncols < 8) col_start[ncols++] = p + 1;
@@ -236,7 +242,6 @@ static std::vector<Tick> load_csv(const char* path) {
         if (ncols < 3) continue;
 
         Tick t;
-        // Timestamp
         t.ts_ms = parse_datetime(col_start[col_ts]);
         if (t.ts_ms <= 0) t.ts_ms = prev_ts + 1;
         if (t.ts_ms <= prev_ts) t.ts_ms = prev_ts + 1;
@@ -249,16 +254,36 @@ static std::vector<Tick> load_csv(const char* path) {
         if (first_is_ask) { t.ask = v1; t.bid = v2; }
         else              { t.bid = v1; t.ask = v2; }
 
+        // Track spread stats before valid() filter
+        if (t.bid > 100.0 && t.ask > t.bid) {
+            double sp = t.ask - t.bid;
+            spread_sum += sp; ++spread_n;
+            if (sp > spread_max) spread_max = sp;
+            if (sp >= 5.0) ++invalid_spread;
+        }
+
         if (t.valid()) ticks.push_back(t);
-        (void)row_start;
     }
 
     munmap(const_cast<char*>(data), sz);
+
+    // Print spread diagnostics
+    if (spread_n > 0) {
+        printf("[SPREAD] avg=%.4f  max=%.4f  n=%lld  filtered(>=5.0)=%lld\n",
+               spread_sum/spread_n, spread_max, (long long)spread_n, (long long)invalid_spread);
+        // Warn if avg spread looks wrong
+        double avg_sp = spread_sum / spread_n;
+        if (avg_sp > 1.0)
+            printf("[SPREAD] ⚠  avg spread %.4f > 1.0 — bid/ask columns may be swapped!\n", avg_sp);
+        else
+            printf("[SPREAD] ✅ avg spread %.4f looks normal for XAUUSD tick data\n", avg_sp);
+    }
+
     return ticks;
 }
 
 // =============================================================================
-// UTC time helpers (no stdlib date nonsense — manual decomposition)
+// UTC time helpers
 // =============================================================================
 static void utc_break(int64_t ts_ms, int& hour, int& minute, int& wday, int& yday) {
     time_t t = (time_t)(ts_ms / 1000);
@@ -293,7 +318,7 @@ static inline int bar_minute(int64_t ts_ms, int bar_mins) {
 }
 
 // =============================================================================
-// Circular buffer (power-of-2 size for speed)
+// Circular buffer (power-of-2 size)
 // =============================================================================
 template<size_t N>
 struct CB {
@@ -348,12 +373,20 @@ struct EWM {
 };
 
 // =============================================================================
-// Position  — 0.01 lot gold CFD
-//   P&L: (exit - entry) * lot_size * tick_multiplier
-//   For gold CFD at 0.01 lot: 1 point = $1 * 0.01 = $0.01... 
-//   Actually: BlackBull gold CFD — 1 lot = 100 oz, pip = $0.01/oz = $1/lot
-//   0.01 lot → $0.01 per point. That's tiny.
-//   Standard: 1 lot gold = $100/point, 0.01 lot = $1/point. Use that.
+// Position — 0.01 lot gold CFD
+//
+//   PRICING MODEL (no double-spread):
+//     Long  entry = t.ask   → tp = entry + tp_pts,  sl = entry - sl_pts
+//                           → exit check: t.bid >= tp  (bid crosses ask+tp_pts)
+//     Short entry = t.bid   → tp = entry - tp_pts,  sl = entry + sl_pts
+//                           → exit check: t.ask <= tp  (ask crosses bid-tp_pts)
+//
+//   PnL:
+//     Long  win:  (tp    - entry) * MULT = +tp_pts
+//     Long  loss: (sl    - entry) * MULT = -sl_pts
+//     Short win:  (entry - tp)    * MULT = +tp_pts
+//     Short loss: (entry - sl)    * MULT = -sl_pts   (note: entry-sl = -(sl_pts))
+//   ──→ spread is paid exactly ONCE (on entry), not again on exit.
 // =============================================================================
 struct Pos {
     bool    active    = false;
@@ -364,32 +397,35 @@ struct Pos {
     int64_t open_ts   = 0;
     double  mfe       = 0;
     double  mae       = 0;
-    static constexpr double LOT  = 0.01;
     static constexpr double MULT = 1.0;   // $1/point at 0.01 lot (standard gold CFD)
 
     void open(int s, double e, double tp_pts, double sl_pts, int64_t ts) {
         active = true; side = s; entry = e;
+        // entry is ask for long, bid for short — so TP/SL are pure offset
         tp = e + s * tp_pts;
         sl = e - s * sl_pts;
         open_ts = ts; mfe = mae = 0;
     }
 
-    // Returns true if closed, sets pnl and reason
+    // Returns true if closed; sets pnl and reason
     bool manage(const Tick& t, int max_hold_sec,
                 double& pnl, std::string& reason) {
         if (!active) return false;
-        double price = side == 1 ? t.bid : t.ask;
-        double exc   = side * (price - entry);
+
+        // Current unrealised (measured at exit price)
+        double exit_price = (side == 1) ? t.bid : t.ask;
+        double exc = side * (exit_price - entry);
         if (exc >  mfe) mfe =  exc;
-        if (exc < -mae) mae = -exc;
+        if (exc < mae)  mae =  exc;   // mae stored as signed (negative = loss)
 
-        bool hit_tp = side==1 ? t.bid>=tp : t.ask<=tp;
-        bool hit_sl = side==1 ? t.bid<=sl : t.ask>=sl;
-        bool timeout= (t.ts_ms - open_ts) / 1000 >= max_hold_sec;
+        // TP/SL hit checks — correct side prices
+        bool hit_tp  = (side == 1) ? (t.bid >= tp) : (t.ask <= tp);
+        bool hit_sl  = (side == 1) ? (t.bid <= sl) : (t.ask >= sl);
+        bool timeout = ((t.ts_ms - open_ts) / 1000 >= max_hold_sec);
 
-        if (hit_tp) { pnl = (tp    - entry) * side * MULT; reason = "TP";      active=false; return true; }
-        if (hit_sl) { pnl = (sl    - entry) * side * MULT; reason = "SL";      active=false; return true; }
-        if (timeout){ pnl = (price - entry) * side * MULT; reason = "TIMEOUT"; active=false; return true; }
+        if (hit_tp)  { pnl = (tp         - entry) * side * MULT; reason = "TP";      active = false; return true; }
+        if (hit_sl)  { pnl = (sl         - entry) * side * MULT; reason = "SL";      active = false; return true; }
+        if (timeout) { pnl = (exit_price - entry) * side * MULT; reason = "TIMEOUT"; active = false; return true; }
         return false;
     }
 };
@@ -456,6 +492,11 @@ struct EngineBase {
     virtual const char* name() const = 0;
     virtual Sig on_tick(const Tick& t, double vwap, double drift) = 0;
 
+    // Diagnostics
+    int64_t spread_filtered = 0;
+    int64_t dead_zone_filtered = 0;
+    int64_t cooldown_filtered = 0;
+
     int64_t last_sig_ts = 0;
     bool cooldown(int64_t ts_ms, int ms) const {
         return (ts_ms - last_sig_ts) < ms;
@@ -464,42 +505,56 @@ struct EngineBase {
 
 // =============================================================================
 // ENGINE 1 — CompressionBreakout
-// Exact replica of GoldEngineStack CompressionBreakoutEngine
+//
+// FIX: Save hi/lo from the PRIOR window before pushing the new tick.
+//      Then test if the NEW tick breaks out beyond PRIOR hi/lo + trigger.
+//      Previously: push → compute hi/lo → compare → hi always >= mid → 0 trades.
 // =============================================================================
 struct CompressionBreakout : EngineBase {
     static constexpr int    WINDOW  = 50;
     static constexpr double RANGE   = 6.00;
     static constexpr double TRIGGER = 2.50;
-    static constexpr double SPREAD  = 2.00;
-    static constexpr double TP      = 10.0;  // $10
-    static constexpr double SL      = 5.0;   // $5
+    static constexpr double SPREAD  = 0.80;  // realistic XAUUSD tick spread
+    static constexpr double TP      = 10.0;
+    static constexpr double SL      = 5.0;
 
     CB<64> hist;
     const char* name() const override { return "CompressionBreakout"; }
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
-        if (t.spread() > SPREAD) return {};
-        if (in_dead_zone(t.ts_ms)) return {};
-        if (cooldown(t.ts_ms, 1000)) return {};
+        if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
+        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
+        if (cooldown(t.ts_ms, 1000)) { ++cooldown_filtered; return {}; }
 
-        bool is_asia = (utc_hour(t.ts_ms) >= 22 || utc_hour(t.ts_ms) < 5);
+        bool is_asia    = (utc_hour(t.ts_ms) >= 22 || utc_hour(t.ts_ms) < 5);
         double eff_spread  = is_asia ? SPREAD   * 0.60 : SPREAD;
         double eff_trigger = is_asia ? TRIGGER  * 1.40 : TRIGGER;
-        if (t.spread() > eff_spread) return {};
+        if (t.spread() > eff_spread) { ++spread_filtered; return {}; }
+
+        // ── FIX: capture hi/lo of the CURRENT window BEFORE adding new tick ──
+        double prev_hi = 0, prev_lo = 0;
+        bool   window_ready = (hist.size() >= (size_t)WINDOW);
+        if (window_ready) {
+            prev_hi = hist.hi();
+            prev_lo = hist.lo();
+        }
 
         hist.push(t.mid());
-        if (hist.size() < WINDOW) return {};
 
-        double hi = hist.hi(), lo = hist.lo(), rng = hi - lo;
-        if (rng > RANGE) return {};
+        // Only evaluate once window is full
+        if (!window_ready) return {};
 
-        if (t.mid() > hi + eff_trigger) {
+        double rng = prev_hi - prev_lo;
+        if (rng > RANGE) return {};  // not compressed
+
+        // Mid of the NEW tick vs the PRIOR window boundary
+        if (t.mid() > prev_hi + eff_trigger) {
             if (drift < -3.0) return {};
             hist.clear();
             last_sig_ts = t.ts_ms;
             return {true, +1, t.ask, TP, SL};
         }
-        if (t.mid() < lo - eff_trigger) {
+        if (t.mid() < prev_lo - eff_trigger) {
             if (drift > +3.0) return {};
             hist.clear();
             last_sig_ts = t.ts_ms;
@@ -517,30 +572,31 @@ struct WickRejection : EngineBase {
     static constexpr double WICK_PCT  = 0.55;
     static constexpr double MIN_WICK  = 1.50;
     static constexpr double MIN_RANGE = 2.25;
-    static constexpr double SPREAD    = 2.00;
+    static constexpr double SPREAD    = 0.80;
     static constexpr double TP        = 15.0;
     static constexpr double SL        = 6.0;
-    static constexpr int    COOLDOWN  = 300 * 1000;  // ms
+    static constexpr int    COOLDOWN  = 300 * 1000;
 
     double bar_o=0, bar_h=0, bar_l=0, bar_c=0;
     int    bar_bm = -1;
-    int    pending = 0;  // +1/-1
+    int    pending = 0;
 
     const char* name() const override { return "WickRejection"; }
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
-        if (t.spread() > SPREAD) return {};
-        if (in_dead_zone(t.ts_ms)) return {};
+        if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
+        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
 
         int bm = bar_minute(t.ts_ms, BAR_MINS);
         if (bm != bar_bm) {
-            // close bar
             if (bar_bm >= 0 && bar_h > 0) {
                 double rng = bar_h - bar_l;
                 if (rng >= MIN_RANGE) {
-                    double upper = bar_h - std::max(bar_o, bar_c);
-                    double lower = std::min(bar_o, bar_c) - bar_l;
+                    double body_hi = std::max(bar_o, bar_c);
+                    double body_lo = std::min(bar_o, bar_c);
+                    double upper = bar_h - body_hi;
+                    double lower = body_lo - bar_l;
                     if (upper >= MIN_WICK && upper / rng >= WICK_PCT) pending = -1;
                     else if (lower >= MIN_WICK && lower / rng >= WICK_PCT) pending = +1;
                 }
@@ -568,21 +624,21 @@ struct WickRejection : EngineBase {
 struct DonchianBreakout : EngineBase {
     static constexpr int    BAR_MINS = 5;
     static constexpr int    CHANNEL  = 20;
-    static constexpr double SPREAD   = 2.50;
+    static constexpr double SPREAD   = 1.00;
     static constexpr double TP       = 12.0;
     static constexpr double SL       = 5.0;
     static constexpr int    COOLDOWN = 180 * 1000;
 
     double bar_h=0, bar_l=0; int bar_bm=-1;
-    std::deque<std::pair<double,double>> bars;  // (hi, lo) per closed bar
+    std::deque<std::pair<double,double>> bars;
 
     const char* name() const override { return "DonchianBreakout"; }
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
-        if (t.spread() > SPREAD) return {};
-        if (in_dead_zone(t.ts_ms)) return {};
-        if (cooldown(t.ts_ms, COOLDOWN)) return {};
+        if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
+        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
+        if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
         int bm = bar_minute(t.ts_ms, BAR_MINS);
         if (bm != bar_bm) {
@@ -611,7 +667,7 @@ struct DonchianBreakout : EngineBase {
 // =============================================================================
 struct NR3Breakout : EngineBase {
     static constexpr int    BAR_MINS = 5;
-    static constexpr double SPREAD   = 2.00;
+    static constexpr double SPREAD   = 0.80;
     static constexpr double TP       = 10.0;
     static constexpr double SL       = 4.0;
     static constexpr int    COOLDOWN = 120 * 1000;
@@ -625,9 +681,9 @@ struct NR3Breakout : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
-        if (t.spread() > SPREAD) return {};
-        if (in_dead_zone(t.ts_ms)) return {};
-        if (cooldown(t.ts_ms, COOLDOWN)) return {};
+        if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
+        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
+        if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
         int bm = bar_minute(t.ts_ms, BAR_MINS);
         if (bm != bar_bm) {
@@ -660,19 +716,18 @@ struct NR3Breakout : EngineBase {
 // ENGINE 5 — IntradaySeasonality
 // =============================================================================
 struct IntradaySeasonality : EngineBase {
-    static constexpr double SPREAD = 2.00;
+    static constexpr double SPREAD = 0.80;
     static constexpr double TP     = 10.0;
     static constexpr double SL     = 5.0;
 
-    // Half-hour bucket biases (|t-stat| > 5 only, from GoldEngineStack)
     static int bias(int hh) {
         static const int B[48] = {
-         1, 1, 1, 1, 0, 0, 1, 0,  // 0-7
-         1, -1,-1, 0, 1, 1, 0, 0, // 8-15
-         1, 0, 0, 1, -1, 0, 0, 0, // 16-23
-         1, 0, 0, 0, 0, 0, 0, 0,  // 24-31
-         1, 0, 0, 1, 0, 0, 0, 1,  // 32-39
-         1, 1, 1, 1, 1, 1, 0, 1,  // 40-47
+         1, 1, 1, 1, 0, 0, 1, 0,
+         1,-1,-1, 0, 1, 1, 0, 0,
+         1, 0, 0, 1,-1, 0, 0, 0,
+         1, 0, 0, 0, 0, 0, 0, 0,
+         1, 0, 0, 1, 0, 0, 0, 1,
+         1, 1, 1, 1, 1, 1, 0, 1,
         };
         return (hh >= 0 && hh < 48) ? B[hh] : 0;
     }
@@ -684,8 +739,8 @@ struct IntradaySeasonality : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
-        if (t.spread() > SPREAD) return {};
-        if (in_dead_zone(t.ts_ms)) return {};
+        if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
+        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
 
         int hh  = half_hour_bucket(t.ts_ms);
         int day = utc_yday(t.ts_ms);
@@ -711,7 +766,7 @@ struct IntradaySeasonality : EngineBase {
 struct SessionMomentum : EngineBase {
     static constexpr int    WINDOW   = 60;
     static constexpr double IMP_MIN  = 3.50;
-    static constexpr double SPREAD   = 2.50;
+    static constexpr double SPREAD   = 0.80;
     static constexpr double VWAP_DEV = 1.50;
     static constexpr double TP       = 10.0;
     static constexpr double SL       = 5.0;
@@ -722,8 +777,8 @@ struct SessionMomentum : EngineBase {
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)drift;
         if (!in_session_window(t.ts_ms)) return {};
-        if (t.spread() > SPREAD) return {};
-        if (cooldown(t.ts_ms, 1000)) return {};
+        if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
+        if (cooldown(t.ts_ms, 1000)) { ++cooldown_filtered; return {}; }
 
         hist.push(t.mid());
         if ((int)hist.size() < WINDOW) return {};
@@ -753,7 +808,7 @@ struct SessionMomentum : EngineBase {
 struct MeanReversion : EngineBase {
     static constexpr int    LB      = 60;
     static constexpr double Z_ENTRY = 2.0;
-    static constexpr double SPREAD  = 2.00;
+    static constexpr double SPREAD  = 0.80;
     static constexpr double TP      = 12.0;
     static constexpr double SL      = 4.0;
     static constexpr int    COOLDOWN= 60 * 1000;
@@ -763,14 +818,13 @@ struct MeanReversion : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
-        if (t.spread() > SPREAD) return {};
-        if (in_dead_zone(t.ts_ms)) return {};
-        if (cooldown(t.ts_ms, COOLDOWN)) return {};
+        if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
+        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
+        if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
         hist.push(t.mid());
         if ((int)hist.size() < LB) return {};
 
-        // compute mean and stddev
         double sum = 0;
         for (size_t i=0; i<hist.size(); ++i) sum += hist[i];
         double mean = sum / hist.size();
@@ -792,7 +846,7 @@ struct MeanReversion : EngineBase {
 struct SpikeFade : EngineBase {
     static constexpr int    BAR_MINS = 5;
     static constexpr double MIN_MOVE = 10.0;
-    static constexpr double SPREAD   = 3.00;
+    static constexpr double SPREAD   = 1.00;
     static constexpr double TP       = 5.0;
     static constexpr double SL       = 8.0;
     static constexpr int    COOLDOWN = 30 * 60 * 1000;
@@ -802,8 +856,8 @@ struct SpikeFade : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
-        if (t.spread() > SPREAD) return {};
-        if (cooldown(t.ts_ms, COOLDOWN)) return {};
+        if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
+        if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
         int bm = bar_minute(t.ts_ms, BAR_MINS);
         if (bm != bar_bm) { bar_open = t.mid(); bar_bm = bm; return {}; }
@@ -821,7 +875,7 @@ struct SpikeFade : EngineBase {
 struct DynamicRange : EngineBase {
     static constexpr int    BARS     = 20;
     static constexpr int    BAR_MINS = 5;
-    static constexpr double SPREAD   = 2.00;
+    static constexpr double SPREAD   = 0.80;
     static constexpr double TP       = 8.0;
     static constexpr double SL       = 4.0;
     static constexpr int    COOLDOWN = 60 * 1000;
@@ -833,9 +887,9 @@ struct DynamicRange : EngineBase {
 
     Sig on_tick(const Tick& t, double vwap, double drift) override {
         (void)vwap; (void)drift;
-        if (t.spread() > SPREAD) return {};
-        if (in_dead_zone(t.ts_ms)) return {};
-        if (cooldown(t.ts_ms, COOLDOWN)) return {};
+        if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
+        if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
+        if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
         int bm = bar_minute(t.ts_ms, BAR_MINS);
         if (bm != bar_bm) {
@@ -847,7 +901,6 @@ struct DynamicRange : EngineBase {
         double rhi=bars[0].first, rlo=bars[0].second;
         for(auto&b:bars){if(b.first>rhi)rhi=b.first;if(b.second<rlo)rlo=b.second;}
 
-        // Fade extremes
         double band = (rhi - rlo) * 0.15;
         if (t.mid() >= rhi - band) { last_sig_ts=t.ts_ms; return {true,-1,t.bid,TP,SL}; }
         if (t.mid() <= rlo + band) { last_sig_ts=t.ts_ms; return {true,+1,t.ask,TP,SL}; }
@@ -869,7 +922,6 @@ struct Runner {
     }
 
     void tick(const Tick& t, double vwap, double drift) {
-        // Manage open position first
         if (pos.active) {
             double pnl; std::string reason;
             if (pos.manage(t, max_hold_sec, pnl, reason)) {
@@ -877,8 +929,9 @@ struct Runner {
                 tr.engine   = eng->name();
                 tr.side     = pos.side;
                 tr.entry    = pos.entry;
-                tr.exit_px  = pos.side==1 ? (reason=="TP"?pos.tp:(reason=="SL"?pos.sl:t.bid))
-                                          : (reason=="TP"?pos.tp:(reason=="SL"?pos.sl:t.ask));
+                tr.exit_px  = (reason=="TP") ? pos.tp
+                            : (reason=="SL") ? pos.sl
+                            : ((pos.side==1) ? t.bid : t.ask);
                 tr.pnl      = pnl;
                 tr.mfe      = pos.mfe;
                 tr.mae      = pos.mae;
@@ -889,7 +942,6 @@ struct Runner {
                 return;
             }
         }
-        // Request new signal only when flat
         if (!pos.active) {
             Sig sig = eng->on_tick(t, vwap, drift);
             if (sig.valid) pos.open(sig.side, sig.entry, sig.tp_pts, sig.sl_pts, t.ts_ms);
@@ -902,7 +954,6 @@ struct Runner {
 // =============================================================================
 static void write_html(const std::vector<Runner>& runners,
                        int64_t tick_count, double elapsed_s) {
-    // Sort by pnl desc
     std::vector<const Runner*> sorted;
     for (auto& r : runners) sorted.push_back(&r);
     std::sort(sorted.begin(), sorted.end(),
@@ -934,12 +985,10 @@ static void write_html(const std::vector<Runner>& runners,
             struct tm ti{}; gmtime_r(&ts, &ti);
             char mo[8]; strftime(mo, 8, "%Y-%m", &ti);
             std::string mos(mo);
-            if (monthly[r->stats.name].find(mos) == monthly[r->stats.name].end()) {
-                bool found = false;
-                for (auto& m : months_ordered) if (m == mos) { found = true; break; }
-                if (!found) months_ordered.push_back(mos);
-            }
             monthly[r->stats.name][mos] += t.pnl;
+            bool found = false;
+            for (auto& m : months_ordered) if (m == mos) { found = true; break; }
+            if (!found) months_ordered.push_back(mos);
         }
     }
     std::sort(months_ordered.begin(), months_ordered.end());
@@ -1041,17 +1090,15 @@ int main(int argc, char** argv) {
         if (!strcmp(argv[i], "--hold") && i+1<argc) max_hold  = atoi(argv[++i]);
     }
 
-    // Make results dir
     mkdir(RESULTS_DIR, 0755);
 
     printf("================================================================\n");
-    printf("  Omega C++ Backtester\n");
+    printf("  Omega C++ Backtester  [v2 — spread-correct PnL + CB fix]\n");
     printf("  File    : %s\n", csv_path);
     printf("  MaxHold : %ds    MaxTicks: %s\n",
            max_hold, max_ticks ? std::to_string(max_ticks).c_str() : "all");
     printf("================================================================\n");
 
-    // Load
     printf("[LOAD] Reading CSV...\n");
     auto t0l = std::chrono::steady_clock::now();
     std::vector<Tick> ticks = load_csv(csv_path);
@@ -1061,7 +1108,13 @@ int main(int argc, char** argv) {
 
     if (ticks.empty()) { fprintf(stderr,"[ERROR] No valid ticks\n"); return 1; }
 
-    // Date range
+    // Print a few sample ticks for sanity check
+    printf("[SAMPLE] First 3 ticks:\n");
+    for (int i=0;i<3&&i<(int)ticks.size();++i)
+        printf("  [%d] ts=%lld bid=%.5f ask=%.5f mid=%.5f spread=%.5f\n",
+               i, (long long)ticks[i].ts_ms,
+               ticks[i].bid, ticks[i].ask, ticks[i].mid(), ticks[i].spread());
+
     {
         time_t a=ticks.front().ts_ms/1000, b=ticks.back().ts_ms/1000;
         struct tm ma{},mb{}; gmtime_r(&a,&ma); gmtime_r(&b,&mb);
@@ -1069,7 +1122,6 @@ int main(int argc, char** argv) {
         printf("[RANGE] %s → %s (%zu ticks)\n", sa, sb, ticks.size());
     }
 
-    // Build runners
     std::vector<Runner> runners;
     runners.emplace_back(std::make_unique<CompressionBreakout>());
     runners.emplace_back(std::make_unique<WickRejection>());
@@ -1131,7 +1183,20 @@ int main(int argc, char** argv) {
     printf("  TOTAL  %d trades  PnL=%+.2f  (0.01 lot · $1/pt · no commission)\n\n",
            total_trades, total_pnl);
 
-    // Write outputs
+    // Spread filter diagnostics
+    printf("================================================================\n");
+    printf("  Filter diagnostics\n");
+    printf("  %-28s %12s %12s %12s\n", "Engine", "SpreadFilt", "DeadZone", "Cooldown");
+    printf("  %s\n", std::string(72,'-').c_str());
+    for (auto* r : sorted) {
+        printf("  %-28s %12lld %12lld %12lld\n",
+               r->eng->name(),
+               (long long)r->eng->spread_filtered,
+               (long long)r->eng->dead_zone_filtered,
+               (long long)r->eng->cooldown_filtered);
+    }
+    printf("================================================================\n\n");
+
     printf("[OUTPUT] Writing reports...\n");
     write_trades_csv(runners);
     write_summary_csv(runners);
