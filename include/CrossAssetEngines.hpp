@@ -119,6 +119,8 @@ struct CrossPosition {
     double  spread_at_entry = 0.0;
     int64_t entry_ts        = 0;
     bool    be_locked_      = false; // true once SL moved to breakeven
+    bool    tp_extended_    = false; // true once TP has been extended past initial target
+    double  init_tp_dist_   = 0.0;  // cached original TP distance for trail calc after extension
     char    symbol[16]      = {};
     char    engine[32]      = {};
     char    reason[32]      = {};
@@ -136,7 +138,8 @@ struct CrossPosition {
         // ── Profit lock-in: BE + trailing stop ───────────────────────────────
         // BE lock: once move >= 50% of initial TP distance, move SL to entry+spread
         // Trail: once move >= 75% of TP distance, trail SL at 40% of TP distance behind peak
-        const double tp_dist = std::fabs(tp - entry);
+        const double tp_dist = tp_extended_ ? init_tp_dist_ : std::fabs(tp - entry);
+        if (!tp_extended_) init_tp_dist_ = tp_dist;  // cache original TP dist
         if (tp_dist > 0.0) {
             const double be_threshold    = tp_dist * 0.50;  // lock BE at 50% to TP
             const double trail_threshold = tp_dist * 0.75;  // start trail at 75% to TP
@@ -161,6 +164,23 @@ struct CrossPosition {
         const bool tp_hit = is_long ? (bid >= tp) : (ask <= tp);
         const bool sl_hit = is_long ? (bid <= sl) : (ask >= sl);
         const bool timed_out = (ca_now_sec() - entry_ts) >= max_hold_sec;
+
+        // ── TP hit: don't close fully — extend TP and tighten trail ──────────
+        // When price reaches initial TP (VWAP), lock BE tightly and extend TP
+        // by 1x the original TP distance to capture continuation moves.
+        // Trail tightens to 25% of original TP dist behind peak.
+        // Only extend once (tp_extended_ flag).
+        if (tp_hit && !tp_extended_ && tp_dist > 0.0) {
+            tp_extended_ = true;
+            // Extend TP by 1x original dist (ride continuation)
+            tp = is_long ? (tp + tp_dist) : (tp - tp_dist);
+            // Tighten trail: 15% of original TP dist behind peak MFE
+            const double tight_sl = is_long ? (entry + mfe - tp_dist * 0.15)
+                                            : (entry - mfe + tp_dist * 0.15);
+            if (is_long  && tight_sl > sl) sl = tight_sl;
+            if (!is_long && tight_sl < sl) sl = tight_sl;
+            return false;  // don't close — ride continuation
+        }
 
         const char* reason_str = tp_hit ? "TP_HIT" : (sl_hit ? "SL_HIT" : "TIMEOUT");
         double exit_px = tp_hit ? tp : (sl_hit ? sl : mid);
@@ -188,7 +208,7 @@ struct CrossPosition {
         size            = sig.size;
         spread_at_entry = spread;
         entry_ts        = ca_now_sec();
-        mfe = mae = 0.0; be_locked_ = false;
+        mfe = mae = 0.0; be_locked_ = false; tp_extended_ = false; init_tp_dist_ = 0.0;
 #ifdef _WIN32
         strncpy_s(symbol, sig.symbol, 15);
         strncpy_s(engine, sig.engine, 31);
