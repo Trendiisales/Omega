@@ -1955,7 +1955,8 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
             // Force spot ID 41 to always resolve to internal name "XAUUSD"
             g_id_to_sym[41] = "XAUUSD";
         } else if (name == "XAUUSD" || name == "GOLD.F") {
-            // Block futures entry (broker names it "GOLD.F", ID 2660)
+            // Block futures entry — broker SecurityList names futures contract "GOLD.F" (ID 2660)
+            // This string match MUST stay: it rejects stray futures ticks from the broker feed
             // Any stray futures ticks are silently dropped.
             g_id_to_sym[id] = "XAUUSD.FUTURES.IGNORED";
         } else {
