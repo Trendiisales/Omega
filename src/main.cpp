@@ -3397,8 +3397,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_htf_filter.update(sym, mid);
     }  // end edge system updates
 
-    // Seed vol history on first tick after reconnect — avoids 80-tick warmup dead zone.
-    // seed() is a no-op if m_prices is already populated.
+    // Seed vol history on first tick after reconnect — avoids warmup dead zone.
+    // seed() is a no-op if already warmed up.
     {
         const double mid = (bid + ask) * 0.5;
         if      (sym == "US500.F") g_eng_sp.seed(mid);
@@ -3416,6 +3416,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "NZDUSD")  g_eng_nzdusd.seed(mid);
         else if (sym == "USDJPY")  g_eng_usdjpy.seed(mid);
         else if (sym == "BRENT")   g_eng_brent.seed(mid);
+        else if (sym == "GOLD.F" || sym == "XAUUSD") {
+            g_gold_flow.seed(mid);  // pre-warms ATR + direction windows
+        }
     }
 
     // Rate-limit tick logging — max 1 line per symbol per 30s to keep logs readable.
