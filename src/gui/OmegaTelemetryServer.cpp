@@ -356,33 +356,10 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
             pos += snprintf(buf+pos, sizeof(buf)-pos, "]");
             result += buf;
         };
-        // Gold book: GOLD.F prices offset by basis to align with XAUUSD spot
-        // GOLD.F is the depth source; spot bid/ask from FIX gives us the basis offset.
-        // This way the book displays correctly relative to the XAUUSD spot price.
-        {
-            const double spot_mid  = (s->gold_bid + s->gold_ask) * 0.5;
-            // Compute GOLD.F book mid from raw levels
-            double gf_mid = 0.0;
-            if (s->l2_book_gold_bids > 0 && s->l2_book_gold_asks > 0)
-                gf_mid = (s->l2_book_gold_bid[0].price + s->l2_book_gold_ask[0].price) * 0.5;
-            const double basis = (gf_mid > 0.0 && spot_mid > 0.0) ? (spot_mid - gf_mid) : 0.0;
-            // Build offset copies — only show levels on correct side of spot
-            // GOLD.F can have inverted book due to futures basis; filter to sane levels
-            OmegaTelemetrySnapshot::L2Level obids[OmegaTelemetrySnapshot::L2_DEPTH];
-            OmegaTelemetrySnapshot::L2Level oasks[OmegaTelemetrySnapshot::L2_DEPTH];
-            int nb_ok = 0, na_ok = 0;
-            for (int i = 0; i < s->l2_book_gold_bids; ++i) {
-                const double p = s->l2_book_gold_bid[i].price + basis;
-                if (p <= spot_mid + 2.0)  // bid must be at or below spot (allow tiny buffer)
-                    obids[nb_ok++] = { p, s->l2_book_gold_bid[i].size };
-            }
-            for (int i = 0; i < s->l2_book_gold_asks; ++i) {
-                const double p = s->l2_book_gold_ask[i].price + basis;
-                if (p >= spot_mid - 2.0)  // ask must be at or above spot
-                    oasks[na_ok++] = { p, s->l2_book_gold_ask[i].size };
-            }
-            appendBook("gold", obids, nb_ok, oasks, na_ok);
-        }
+        // Gold book: suppress raw price levels — GOLD.F futures prices differ from
+        // XAUUSD spot and cannot be displayed correctly. L2 imbalance (0.723 etc)
+        // is used internally for trading signals only. GUI shows empty book.
+        appendBook("gold", nullptr, 0, nullptr, 0);
         appendBook("sp",    s->l2_book_sp_bid,   s->l2_book_sp_bids,   s->l2_book_sp_ask,   s->l2_book_sp_asks);
         appendBook("eur",   s->l2_book_eur_bid,  s->l2_book_eur_bids,  s->l2_book_eur_ask,  s->l2_book_eur_asks);
         appendBook("xag",   s->l2_book_xag_bid,  s->l2_book_xag_bids,  s->l2_book_xag_ask,  s->l2_book_xag_asks);
