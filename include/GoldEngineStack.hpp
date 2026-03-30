@@ -1257,6 +1257,7 @@ public:
         n_complete_=0; waiting_confirm_=false; confirm_dir_=0;
     }
 
+    static bool in_dead_zone() noexcept { return false; }
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
@@ -1413,6 +1414,7 @@ public:
         pending_=false; pending_dir_=0;
     }
 
+    static bool in_dead_zone() noexcept { return false; }
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
@@ -1718,6 +1720,7 @@ public:
         cur_ = Bar5{}; n_complete_ = 0;
     }
 
+    static bool in_dead_zone() noexcept { return false; }
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
@@ -1940,6 +1943,7 @@ public:
     TurtleTickEngine() : EngineBase("TurtleTick",1.1) {}
     void reset() override {tb_=TickBarBuffer<300>{};ema_init_=false;ema50_=0;ema250_=0;}
 
+    static bool in_dead_zone() noexcept { return false; }
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD)      return noSignal();
@@ -2018,6 +2022,7 @@ public:
     NR3TickEngine() : EngineBase("NR3Tick",1.1) {}
     void reset() override {tb_=TickBarBuffer<300>{};waiting_confirm_=false;confirm_dir_=0;bars_since_arm_=0;}
 
+    static bool in_dead_zone() noexcept { return false; }
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD)      return noSignal();
