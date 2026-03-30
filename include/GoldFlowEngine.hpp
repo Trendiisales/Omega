@@ -81,7 +81,7 @@ static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- 
                                                         // producing SL of $0.3–5 depending on micro-volatility.
                                                         // 100 ticks = ~10-30s, EWM-smoothed, stable across sessions.
 static constexpr double GFE_ATR_EWM_ALPHA     = 0.05;  // EWM smoothing alpha for ATR (20-tick equivalent half-life)
-static constexpr double GFE_ATR_MIN           = 0.5;   // ATR floor in $pts -- lowered 2.0→0.5: real ATR drives trail tightness. Spread gate (GFE_MAX_SPREAD=$0.60) already prevents entries on dead tape so $2 floor was overcautious and artificially widened trails on active sessions.
+static constexpr double GFE_ATR_MIN           = 2.0;   // ATR floor in $pts -- restored to 2.0: London/NY gold moves 5-15pts, 0.5 floor was causing SL=spread_floor=0.66 stops on every entry. 2.0 ensures minimum viable SL distance.
 static constexpr double GFE_ATR_SL_MULT       = 1.0;   // SL = ATR * this
 static constexpr double GFE_TRAIL_STAGE2_MULT = 1.5;   // EA-matched: wider initial trail, ride moves
 static constexpr double GFE_TRAIL_STAGE3_MULT = 0.5;   // tighten to 0.5x ATR at stage 3
@@ -477,9 +477,17 @@ struct GoldFlowEngine {
         double atr_ewm = 0.0, last_mid = 0.0; int warmed = 0;
         if (fscanf(f, "atr_ewm=%lf warmed=%d last_mid=%lf", &atr_ewm, &warmed, &last_mid) == 3
             && warmed == 1 && atr_ewm > 0.0) {
-            m_atr_ewm = atr_ewm; m_atr_warmup_ticks = GFE_ATR_PERIOD;
-            m_atr = std::max(GFE_ATR_MIN, m_atr_ewm); m_last_mid_atr = last_mid;
-            printf("[GFE] ATR state loaded: atr_ewm=%.4f m_atr=%.4f\n", m_atr_ewm, m_atr);
+            // Reject stale/unrealistic ATR values — if loaded ATR is below 1.0pt
+            // it reflects a dead/overnight session and will cause SL=spread_floor
+            // entries that get stopped instantly in active London/NY conditions.
+            // Force re-seed from live ticks instead.
+            if (atr_ewm < 1.0) {
+                printf("[GFE] ATR state rejected (atr_ewm=%.4f < 1.0 — stale/overnight) — will re-seed\n", atr_ewm);
+            } else {
+                m_atr_ewm = atr_ewm; m_atr_warmup_ticks = GFE_ATR_PERIOD;
+                m_atr = std::max(GFE_ATR_MIN, m_atr_ewm); m_last_mid_atr = last_mid;
+                printf("[GFE] ATR state loaded: atr_ewm=%.4f m_atr=%.4f\n", m_atr_ewm, m_atr);
+            }
         }
         fclose(f);
     }
@@ -686,7 +694,7 @@ private:
         //          spread=$0.60 → min SL=$1.80, ATR=$2 → SL=$2 (ATR wins).
         // The spread gate (GFE_MAX_SPREAD=$0.60) already caps spread at entry.
         const double atr_sl  = m_atr * GFE_ATR_SL_MULT;
-        const double min_sl  = spread * 3.0;
+        const double min_sl  = spread * 5.0;  // raised 3x→5x: 3x was 0.66pts on 0.22 spread, too tight for London gold vol
         const double sl_pts  = std::max(atr_sl, min_sl);
         if (sl_pts <= 0.0) return;
 
