@@ -6657,6 +6657,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             //   neutral (0.501) — which is correct behaviour for GoldFlowEngine (L2-driven)
             //   but wrong for CompressionBreakout (structure-driven).
             //   asia_trend_ok still gates GoldFlow entries (via gold_can_enter chain).
+            // London open noise bypass: if a strong directional move is already
+            // underway (|ewm_drift| >= 3.0), allow bracket arming despite the noise
+            // window. A genuine breakout produces drift >> 3.0 quickly. The sweep
+            // that caused the original loss (entire $7.80 range in one bar) would
+            // NOT produce sustained drift >= 3.0 — it was a spike, not a trend.
+            const bool london_drift_override = in_london_open_noise
+                && (std::fabs(g_gold_stack.ewm_drift()) >= 3.0);
             const bool can_arm_bracket = gold_can_enter && gold_freq_ok
                                       && (!bracket_open || gold_is_pyramiding)
                                       && (!in_cooldown_phase || trend_dir_bypasses_cooldown)
@@ -6664,7 +6671,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                       && (!g_gold_flow.has_open_position() || flow_pyramid_bypass)
                                       && !g_trend_pb_gold.has_open_position()
                                       && !g_le_stack.has_open_position()
-                                      && !in_london_open_noise;
+                                      && (!in_london_open_noise || london_drift_override);
             // NOTE: gold_trend_blocked (counter_trend_blocked) is intentionally NOT here.
             // It blocks the counter-trend ARM direction via arm_allowed(), not can_arm_bracket itself.
             // Having it here blocked ALL bracket arming when FLOW-BIAS-INJECT set bias,
