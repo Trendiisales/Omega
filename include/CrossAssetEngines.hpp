@@ -121,6 +121,7 @@ struct CrossPosition {
     bool    be_locked_      = false; // true once SL moved to breakeven
     bool    tp_extended_    = false; // true once TP has been extended past initial target
     double  init_tp_dist_   = 0.0;  // cached original TP distance for trail calc after extension
+    bool    allow_tp_extend = true;  // set false for mean-reversion engines that must close at TP
     char    symbol[16]      = {};
     char    engine[32]      = {};
     char    reason[32]      = {};
@@ -170,7 +171,7 @@ struct CrossPosition {
         // by 1x the original TP distance to capture continuation moves.
         // Trail tightens to 25% of original TP dist behind peak.
         // Only extend once (tp_extended_ flag).
-        if (tp_hit && !tp_extended_ && tp_dist > 0.0) {
+        if (tp_hit && !tp_extended_ && tp_dist > 0.0 && allow_tp_extend) {
             tp_extended_ = true;
             // Extend TP by 1x original dist (ride continuation)
             tp = is_long ? (tp + tp_dist) : (tp - tp_dist);
@@ -208,7 +209,7 @@ struct CrossPosition {
         size            = sig.size;
         spread_at_entry = spread;
         entry_ts        = ca_now_sec();
-        mfe = mae = 0.0; be_locked_ = false; tp_extended_ = false; init_tp_dist_ = 0.0;
+        mfe = mae = 0.0; be_locked_ = false; tp_extended_ = false; init_tp_dist_ = 0.0;  // allow_tp_extend preserved across trades
 #ifdef _WIN32
         strncpy_s(symbol, sig.symbol, 15);
         strncpy_s(engine, sig.engine, 31);
@@ -364,6 +365,7 @@ public:
         sig.reason  = is_long ? "NQ_LAGS_ES" : "ES_LAGS_NQ";
 
         pos_.open(sig, spread);
+        pos_.allow_tp_extend = false;  // EsNqDiv: mean-reversion, close at target
         last_div_at_entry_ = div;
         cooldown_until_    = ca_now_sec() + COOLDOWN_SEC;
         printf("[ESNQ-DIV] %s %s div=%.5f confirmed=%dticks entry=%.2f tp=%.2f sl=%.2f\n",
@@ -479,6 +481,7 @@ public:
         sig.reason  = spike_up ? "EIA_FADE_SHORT" : "EIA_FADE_LONG";
 
         pos_.open(sig, spread);
+        pos_.allow_tp_extend = false;  // OilFade: mean-reversion, close at target
         armed_ = true;
         printf("[OIL-EIA-FADE] %s spike=%.3f%% entry=%.4f tp=%.4f sl=%.4f\n",
                is_long?"LONG":"SHORT", spike_pct, mid, sig.tp, sig.sl);
@@ -574,6 +577,7 @@ public:
         sig.reason  = "WTI_DISCOUNT_CATCH";
 
         pos_.open(sig, spread);
+        pos_.allow_tp_extend = false;  // BrentWti: mean-reversion, close at target
         cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
         printf("[BRENT-WTI] Spread=%.2f WTI LONG entry=%.4f tp=%.4f sl=%.4f\n",
                brent_wti_spread, wti_mid, sig.tp, sig.sl);
