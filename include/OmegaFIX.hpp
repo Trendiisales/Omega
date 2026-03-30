@@ -40,7 +40,13 @@ struct ExtSymbolDef { int id; const char* name; };
 static SymbolDef OMEGA_SYMS[] = {
     { 2642, "US500.F" }, { 2643, "USTEC.F" }, { 2632, "USOIL.F" },
     { 4462, "VIX.F"   }, { 2638, "DX.F"    }, { 2637, "DJ30.F"  },
-    {  110, "NAS100"  }, { 2660, "GOLD.F"  }, { 2631, "NGAS.F"  },
+    {  110, "NAS100"  }, { 2664, "GOLD.F"  }, { 2631, "NGAS.F"  },
+    // ID HISTORY — DO NOT REUSE:
+    // 2660 = SILVER.F on BlackBull. Was incorrectly set as GOLD.F ID.
+    // Silver ticks on 2660 were routing into on_tick("GOLD.F"),
+    // displaying silver price (~4462) as the gold price on the dashboard.
+    // Real gold ticks on 2664 were silently dropped as unknown ID.
+    // Fixed 30-Mar-2026.
 };
 static const int OMEGA_NSYMS = 9;
 
