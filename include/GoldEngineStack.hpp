@@ -3624,7 +3624,15 @@ class GoldPositionManager {
 
     static bool regime_allows_pyramid(const char* regime) {
         if (!regime) return false;
-        return std::strcmp(regime, "TREND") == 0 || std::strcmp(regime, "IMPULSE") == 0;
+        // Allow pyramid in TREND and IMPULSE — strong directional regimes.
+        // Also allow MEAN_REVERSION and COMPRESSION: if leg_profit_locked passes
+        // (SL above entry) AND leader_move >= dyn_cover, the move is real regardless
+        // of regime label. Blocking pyramid in COMPRESSION caused missed pyramids on
+        // big moves (e.g. 4518->4523 WickRejection LONG that made +$127 with no add-ons).
+        return std::strcmp(regime, "TREND") == 0
+            || std::strcmp(regime, "IMPULSE") == 0
+            || std::strcmp(regime, "MEAN_REVERSION") == 0
+            || std::strcmp(regime, "COMPRESSION") == 0;
     }
 
     bool leg_profit_locked(const GoldPos& leg) const {
