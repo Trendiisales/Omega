@@ -9740,6 +9740,7 @@ int main(int argc, char* argv[])
             if (e.name[0] != 0) g_ctrader_depth.symbol_whitelist.insert(e.name);
         // Alternate broker names for gold/silver — broker may not use .F suffix
         g_ctrader_depth.symbol_whitelist.insert("GOLD");
+        g_ctrader_depth.symbol_whitelist.insert("GOLD.F");  // broker uses GOLD.F id=2660 for depth
         g_ctrader_depth.symbol_whitelist.insert("XAUUSD");
         g_ctrader_depth.symbol_whitelist.insert("SILVER");
         g_ctrader_depth.symbol_whitelist.insert("XAGUSD");
@@ -9748,6 +9749,7 @@ int main(int argc, char* argv[])
         g_ctrader_depth.dump_all_symbols = false;  // disabled: 1473-symbol dump floods stdout
         // Alias map: broker name → internal name used by getImb/getBook
         g_ctrader_depth.name_alias["GOLD"]    = "XAUUSD";
+        g_ctrader_depth.name_alias["GOLD.F"]  = "XAUUSD";  // Friday: broker sent depth as GOLD.F id=2660
         // XAUUSD is already the canonical name — no alias needed
         g_ctrader_depth.name_alias["SILVER"]  = "XAGUSD";
         g_ctrader_depth.name_alias["NGAS"]    = "NGAS.F";
