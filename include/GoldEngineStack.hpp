@@ -625,6 +625,7 @@ public:
         if(!enabled_||!s.is_valid()) return noSignal();
         if(!in_session_window()) return noSignal();
         if(s.spread>MAX_SPREAD) return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
         history_.push_back(s.mid);
@@ -909,6 +910,26 @@ public:
         if (s.spread > MAX_SPREAD)       return noSignal();
         if (s.session == SessionType::UNKNOWN) return noSignal();
         if (in_dead_zone())              return noSignal();
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
 
         const int mod = utc_minute_of_day();
         const int slot = bar_slot(mod);
@@ -1074,6 +1095,16 @@ public:
         if (s.spread > MAX_SPREAD)       return noSignal();
         if (s.session == SessionType::UNKNOWN) return noSignal();
         if (in_dead_zone())              return noSignal();
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
 
         // Update HTF EMAs on every tick
         if (!ema_init_) { ema50_ = ema250_ = s.mid; ema_init_ = true; }
@@ -1229,6 +1260,18 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
+        if (in_dead_zone())              return noSignal();
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
         // Vol gate: NR3 is a coiling pattern — invalid in trending/hot tape
         if (vol_ratio_ > VOL_GATE)        return noSignal();
 
@@ -1373,6 +1416,18 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
+        if (in_dead_zone())              return noSignal();
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
         if (s.session == SessionType::UNKNOWN) return noSignal();
 
         const int slot = utc_slot();
@@ -1667,6 +1722,17 @@ public:
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
         if (s.session == SessionType::UNKNOWN) return noSignal();
+        if (in_dead_zone())              return noSignal();
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
 
         const int slot = utc_slot();
 
@@ -1803,6 +1869,17 @@ public:
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD)      return noSignal();
         if(in_dead_zone())           return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
 
         const bool bar_closed=tb_.on_tick(s.mid);
         if(bar_closed&&tb_.ready(3)){
@@ -1866,6 +1943,18 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD)      return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
+        if(in_dead_zone())           return noSignal();
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
         if(!ema_init_){ema50_=ema250_=s.mid;ema_init_=true;}
         else{ema50_+=A50*(s.mid-ema50_);ema250_+=A250*(s.mid-ema250_);}
         const int htf_dir=(ema50_>ema250_)?1:-1;
@@ -1932,6 +2021,18 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if(!enabled_||!s.is_valid()) return noSignal();
         if(s.spread>MAX_SPREAD)      return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
+        if(in_dead_zone())           return noSignal();
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
 
         const bool bar_closed=tb_.on_tick(s.mid);
         if(bar_closed&&tb_.ready(4)){
@@ -2226,6 +2327,16 @@ public:
         if (s.spread > MAX_SPREAD)       return noSignal();
         if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone
         if (in_dead_zone())              return noSignal();
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
 
         // Trend gate: block mean-reversion entries when EWM drift signals strong trend.
         // Threshold |4.0| calibrated from walk-forward: MR WR 55% when trending,
@@ -2559,6 +2670,7 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
 
         auto [h, m, day] = utc_h_m_day();
         const int mins = h * 60 + m;
@@ -2683,6 +2795,17 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
+        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
+        // Tighten spread cap to 0.80pt in Asia — real directional moves have tight spreads.
+        // Also block when ATR proxy (volatility*2.5) < 3x spread — SL within spread noise.
+        if (s.session == SessionType::ASIAN) {
+            if (s.spread > 0.80) return noSignal();
+            if (s.volatility > 0.0 && s.spread > 0.0) {
+                const double atr_proxy = s.volatility * 2.5;
+                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
+            }
+        }
 
         // Session gate: overlap + NY only (13:00–17:00 UTC)
         const int mins = utc_mins();
@@ -2796,6 +2919,7 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
 
         auto [h, m, day] = utc_h_m_day();
         const int mins = h * 60 + m;
@@ -2988,6 +3112,7 @@ public:
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
 
         auto [h, m, day] = utc_h_m_day();
         const int mins = h * 60 + m;
