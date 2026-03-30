@@ -6338,6 +6338,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // gold_trend_dir: +1 long trend, -1 short trend (used for future per-engine bias filter)
         (void)(gold_trend_day ? (gold_ewm_drift_now > 0 ? 1 : -1) : 0);
 
+        // ── Gold regime helpers ──────────────────────────────────────────────
+        const char* gold_stack_regime   = g_gold_stack.regime_name();
+        {
+            static bool s_was_impulse = false;
+            const bool is_impulse_now = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
+            if (s_was_impulse && !is_impulse_now) {
+                const int64_t now_pi = static_cast<int64_t>(std::time(nullptr));
+                g_gold_post_impulse_until.store(now_pi + 180);  // 3 min cooldown
+                printf("[POST-IMPULSE] Regime left IMPULSE — blocking new entries 3min\n");
+                fflush(stdout);
+            }
+            s_was_impulse = is_impulse_now;
+        }
+        const bool gold_post_impulse_block = (g_gold_post_impulse_until.load() >
+            static_cast<int64_t>(std::time(nullptr)));
+
         // ── Reversal window check ─────────────────────────────────────────────
         // Active when GoldFlow was SL_HIT and drift has now reversed direction.
         const int64_t now_s_gate = static_cast<int64_t>(std::time(nullptr));
@@ -6424,22 +6440,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         //   SessionMomentum SHORT blocked when price > VWAP (price above mean = no short).
         //   SessionMomentum LONG blocked when price < VWAP.
         //   IMPULSE regime alone no longer permits counter-trend entries.
-        const char* gold_stack_regime   = g_gold_stack.regime_name();
-        // Track IMPULSE→non-IMPULSE transition — set 3min post-impulse cooldown
-        // Prevents chasing entries immediately after a big move ends (11:59-12:03 3x SL losses)
-        {
-            static bool s_was_impulse = false;
-            const bool is_impulse_now = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
-            if (s_was_impulse && !is_impulse_now) {
-                const int64_t now_pi = static_cast<int64_t>(std::time(nullptr));
-                g_gold_post_impulse_until.store(now_pi + 180);  // 3 min cooldown
-                printf("[POST-IMPULSE] Regime left IMPULSE — blocking new entries 3min\n");
-                fflush(stdout);
-            }
-            s_was_impulse = is_impulse_now;
-        }
-        const bool gold_post_impulse_block = (g_gold_post_impulse_until.load() >
-            static_cast<int64_t>(std::time(nullptr)));
         const double gold_gov_hi        = g_gold_stack.governor_hi();
         const double gold_gov_lo        = g_gold_stack.governor_lo();
         const double gold_mid_now       = (bid + ask) * 0.5;

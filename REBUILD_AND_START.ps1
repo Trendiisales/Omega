@@ -18,7 +18,6 @@ Write-Host "[2/4] Syncing to origin/main..." -ForegroundColor Yellow
 Set-Location C:\Omega
 git fetch origin
 git checkout main
-# Deterministic deploy: always build exact remote head.
 git reset --hard origin/main
 $localHead  = (git rev-parse HEAD).Trim()
 $remoteHead = (git rev-parse origin/main).Trim()
@@ -40,10 +39,8 @@ if (-not (Test-Path "Release\Omega.exe")) {
     Write-Host "      [ERROR] Build failed!" -ForegroundColor Red
     exit 1
 }
-# Verify built hash matches origin/main
 $expectedHash = (git -C C:\Omega rev-parse --short origin/main).Trim()
-$builtHash = (Select-String -Path "Release\Omega.exe" -Pattern $expectedHash -SimpleMatch -Quiet)
-Write-Host "      [OK] Omega.exe built — expected hash: $expectedHash" -ForegroundColor Green
+Write-Host "      [OK] Omega.exe built - hash: $expectedHash" -ForegroundColor Green
 Write-Host ""
 
 Write-Host "[4/4] Copying assets and starting..." -ForegroundColor Yellow
@@ -54,7 +51,6 @@ if (-not (Test-Path $configSource)) {
     exit 1
 }
 Copy-Item $configSource "Release\omega_config.ini" -Force
-# Ensure reload_trades_on_startup=false is always set (clean PnL slate on restart)
 $cfgContent = Get-Content "Release\omega_config.ini" -Raw
 if ($cfgContent -notmatch "reload_trades_on_startup") {
     Add-Content "Release\omega_config.ini" "`nreload_trades_on_startup=false"
@@ -65,8 +61,8 @@ Copy-Item "C:\Omega\src\gui\www\chimera_logo.png" "Release\chimera_logo.png" -Fo
 
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "  Rebuild complete. Check version:" -ForegroundColor Cyan
-Write-Host "  http://185.167.119.59:7779/version" -ForegroundColor Cyan
+Write-Host "  Rebuild complete. Hash: $expectedHash" -ForegroundColor Cyan
+Write-Host "  GUI: http://185.167.119.59:7779" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
