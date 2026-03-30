@@ -6528,9 +6528,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Trail block: 30s after same-direction close, check if this signal
             // would re-enter the same direction. Allow if direction differs (reversal).
             const bool gs_trail_dir_match = gs_trail_blocked; // directional check done in GFE
-            const bool stack_enter_effective = ((stack_can_enter && gold_can_enter && !gs_trail_dir_match)
-                || (gold_can_enter_trend_reentry && vol_expanding && !gs_trail_dir_match)
-                || (drift_reversed && gold_can_enter));  // reversals always allowed
+            const bool stack_enter_effective = ((stack_can_enter && gold_can_enter && !gs_trail_dir_match && !in_ny_close_noise)
+                || (gold_can_enter_trend_reentry && vol_expanding && !gs_trail_dir_match && !in_ny_close_noise)
+                || (drift_reversed && gold_can_enter && !in_ny_close_noise));  // reversals also blocked at NY close
             const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close,
                                                     stack_enter_effective);
             if (gsig.valid) {
@@ -7051,7 +7051,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // GoldFlowEngine enters internally (pos.active=true inside enter()),
             // so main.cpp cannot intercept between signal and entry. All blocking
             // must happen here, before the tick reaches the engine.
-            bool gf_tick_ok = true;
+            // ── NY close noise block: 22:00-22:10 UTC ────────────────────────
+            // NY session closes at 22:00 UTC — spreads widen, price spikes as
+            // positions close. Block GoldFlow for 10 minutes at NY close.
+            // Evidence: 22:00:26 LONG 4516.17 SL hit in 2s = -$133 (spread spike)
+            const bool in_ny_close_noise = [&]() -> bool {
+                struct tm ti_ny{}; const auto t_ny = std::chrono::system_clock::to_time_t(
+                    std::chrono::system_clock::now());
+                gmtime_s(&ti_ny, &t_ny);
+                const int mins_utc = ti_ny.tm_hour * 60 + ti_ny.tm_min;
+                return (mins_utc >= 1320 && mins_utc < 1330);  // 22:00-22:10 UTC
+            }();
+            bool gf_tick_ok = !in_ny_close_noise;
 
             // ── Gate 1: Cost viability ─────────────────────────────────────────
             // Estimates match engine sizing: sl=ATR×1.0, tp=sl×2 (2R), lot=risk/sl/100
