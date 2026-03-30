@@ -7123,6 +7123,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 enter_directional("XAUUSD", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size);
             }
         }
+        // ── TrendPullbackEngine position management — ALWAYS runs when position open ──
+        // CRITICAL: on_tick() handles SL/trail internally when pos_.active, but it was
+        // only called inside the entry guard (!has_open_position()), so once a position
+        // opened the manage path was NEVER reached → SL never checked → unmanaged trades.
+        // Fix: call on_tick unconditionally when position is open (manage-only path),
+        // before the entry guard. on_tick returns {} immediately after manage when active.
+        if (g_trend_pb_gold.has_open_position()) {
+            g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
+        }
+
         // Trend Pullback: EMA9/21/50 — only when no other XAUUSD position is open.
         // TrendPullbackEngine ticks every call (EMA update), but only signals when
         // EMA stack is aligned AND price pulls back to EMA50 with a bounce tick.
@@ -7163,6 +7173,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                 }
             }
+        }
+
+        // ── NBM London position management — ALWAYS runs when position open ──
+        // CRITICAL: same bug as TrendPB and GFE — on_tick() was only called inside the
+        // entry guard, so _manage_position() (SL/VWAP trail) was never reached once a
+        // position was open. Fix: call on_tick unconditionally when position is open.
+        // on_tick returns {} immediately after _manage_position() when pos_.active.
+        if (g_nbm_gold_london.has_open_position()) {
+            g_nbm_gold_london.on_tick(sym, bid, ask, ca_on_close);
         }
 
         // ── NBM London session (07:00-13:30 UTC) on XAUUSD ───────────────────
