@@ -118,6 +118,7 @@ struct CrossPosition {
     double  mae             = 0.0;
     double  spread_at_entry = 0.0;
     int64_t entry_ts        = 0;
+    bool    be_locked_      = false; // true once SL moved to breakeven
     char    symbol[16]      = {};
     char    engine[32]      = {};
     char    reason[32]      = {};
@@ -132,6 +133,31 @@ struct CrossPosition {
         if (move >  mfe) mfe =  move;
         if (-move > mae) mae = -move;
 
+        // ── Profit lock-in: BE + trailing stop ───────────────────────────────
+        // BE lock: once move >= 50% of initial TP distance, move SL to entry+spread
+        // Trail: once move >= 75% of TP distance, trail SL at 40% of TP distance behind peak
+        const double tp_dist = std::fabs(tp - entry);
+        if (tp_dist > 0.0) {
+            const double be_threshold    = tp_dist * 0.50;  // lock BE at 50% to TP
+            const double trail_threshold = tp_dist * 0.75;  // start trail at 75% to TP
+            const double trail_dist      = tp_dist * 0.40;  // trail 40% of TP dist behind peak
+            if (move >= be_threshold && !be_locked_) {
+                // Lock breakeven — SL moves to entry (+ tiny buffer for spread)
+                be_locked_ = true;
+                const double be_sl = is_long ? (entry + spread_at_entry)
+                                             : (entry - spread_at_entry);
+                if (is_long  && be_sl > sl) sl = be_sl;
+                if (!is_long && be_sl < sl) sl = be_sl;
+            }
+            if (move >= trail_threshold) {
+                // Trail SL behind MFE
+                const double trail_sl = is_long ? (entry + mfe - trail_dist)
+                                                : (entry - mfe + trail_dist);
+                if (is_long  && trail_sl > sl) sl = trail_sl;
+                if (!is_long && trail_sl < sl) sl = trail_sl;
+            }
+        }
+
         const bool tp_hit = is_long ? (bid >= tp) : (ask <= tp);
         const bool sl_hit = is_long ? (bid <= sl) : (ask >= sl);
         const bool timed_out = (ca_now_sec() - entry_ts) >= max_hold_sec;
@@ -140,15 +166,11 @@ struct CrossPosition {
         double exit_px = tp_hit ? tp : (sl_hit ? sl : mid);
 
         if (tp_hit || sl_hit || timed_out) {
-            // On timeout: cap exit at SL if price has blown through.
-            // A sparse-tick reconnect can let price drift past SL without triggering
-            // the explicit sl_hit check. Without this, timeout records a loss larger
-            // than the intended stop — same fix applied in GoldPositionManager and BracketEngine.
             if (timed_out && !sl_hit && !tp_hit) {
                 const bool sl_breached = is_long ? (mid < sl) : (mid > sl);
                 if (sl_breached) {
                     exit_px    = sl;
-                    reason_str = "SL_HIT";  // price was past SL at timeout — report as SL, not TIMEOUT
+                    reason_str = "SL_HIT";
                 }
             }
             emit(exit_px, reason_str, on_close);
@@ -166,7 +188,7 @@ struct CrossPosition {
         size            = sig.size;
         spread_at_entry = spread;
         entry_ts        = ca_now_sec();
-        mfe = mae = 0.0;
+        mfe = mae = 0.0; be_locked_ = false;
 #ifdef _WIN32
         strncpy_s(symbol, sig.symbol, 15);
         strncpy_s(engine, sig.engine, 31);
