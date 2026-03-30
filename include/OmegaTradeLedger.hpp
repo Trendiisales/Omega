@@ -24,7 +24,7 @@ namespace omega {
 struct TradeRecord
 {
     int         id          = 0;
-    std::string symbol;          // "US500.F", "USTEC.F", "GOLD.F", etc.
+    std::string symbol;          // "US500.F", "USTEC.F", "XAUUSD", etc.
     std::string side;            // "LONG" / "SHORT"
     double      entryPrice  = 0;
     double      exitPrice   = 0;
@@ -66,13 +66,13 @@ struct TradeRecord
 // are in USD.
 //
 // tick_mult: dollar value per price-point per lot from tick_value_multiplier().
-//   e.g. XAGUSD=5000, USOIL.F=1000, GOLD.F=100, US500.F=1, EURUSD=100000
+//   e.g. XAGUSD=5000, USOIL.F=1000, XAUUSD=100, US500.F=1, EURUSD=100000
 //   This is required to convert price-point slippage into USD correctly.
 //   Without it, slippage on a $5000/pt instrument would be ~$0.08 instead of
 //   ~$8, making net_pnl ≈ gross_pnl and the cost model meaningless.
 //
 // Instrument slippage presets (one-way, % of price):
-//   GOLD.F / XAGUSD          : 0.010% — gold/silver tick friction
+//   XAUUSD / XAGUSD          : 0.010% — gold/silver tick friction
 //   USOIL.F / UKBRENT        : 0.012% — oil slightly wider intraday
 //   USTEC.F / US500.F / DJ30 : 0.006% — liquid equity index futures
 //   GER40 / UK100 / ESTX50   : 0.008% — European index CFDs, slightly wider
