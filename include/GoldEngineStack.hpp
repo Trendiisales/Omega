@@ -3197,6 +3197,47 @@ public:
     // ewm_drift > 0 = bullish drift, < 0 = bearish drift, |drift| > 8 = significant
     double ewm_drift() const { return ewm_init_ ? (ewm_fast_ - ewm_slow_) : 0.0; }
 
+    // reset_drift_on_reversal() — called after a GoldFlow close when price
+    // immediately reverses direction (e.g. short closes then price surges up).
+    //
+    // Problem: ewm_slow (α=0.005) is a 200-tick half-life average.
+    // After a 60pt DROP, ewm_drift reaches ~-40. When price then SURGES 80pts
+    // the slow EWM takes 150+ ticks (~25 min) to recover to positive drift.
+    // During that recovery window GFE cannot enter LONG — it sees negative drift
+    // and the direction filter blocks it. The entire surge is missed.
+    //
+    // Fix: when a reversal is confirmed (price moved >= reversal_pts in the
+    // opposite direction since the last close), snap ewm_slow toward ewm_fast
+    // by a fraction proportional to the reversal magnitude. This is NOT a full
+    // reset — it just removes the stale directional memory so fresh ticks can
+    // immediately establish the new drift direction.
+    //
+    // Safety: only snaps TOWARD fast, never past it. No directional bias is
+    // injected — the snap just shrinks the legacy gap so new ticks dominate.
+    // Chop protection: reversal_pts floor (caller passes 2×ATR minimum) prevents
+    // noise from triggering spurious resets.
+    void reset_drift_on_reversal(double reversal_pts) noexcept {
+        if (!ewm_init_ || reversal_pts <= 0.0) return;
+        // Full snap: set ewm_slow = ewm_fast → drift becomes 0 immediately.
+        //
+        // Rationale: partial snap (e.g. 1-exp(-x/20)) was tested and rejected:
+        //   - After a 60pt drop, drift ≈ -40. Even a 40pt reversal only reduces
+        //     drift to -5.4 (86% snap). GFE still can't fire LONG (needs drift > 0.30).
+        //     Recovery from -5.4 takes ~114 more ticks = another 19 minutes missed.
+        //   - Full snap sets drift = 0. Then 3 ticks of 1.33pt/tick surge → drift = +0.35.
+        //     GFE LONG fires in ~30 seconds instead of 25 minutes.
+        //
+        // Safety: caller already verified reversal >= 2×ATR (5pt minimum) before
+        // calling here. A 5pt move in the new direction is genuine — not noise.
+        // Combined with one-shot-per-close + 120s window in main.cpp, false snaps
+        // are impossible in normal market conditions.
+        const double old_drift = ewm_fast_ - ewm_slow_;
+        ewm_slow_ = ewm_fast_;  // drift = 0; next tick in new direction fires GFE
+        printf("[DRIFT-RESET] reversal=%.1fpt old_drift=%.2f -> 0.00 (full snap)\n",
+               reversal_pts, old_drift);
+        fflush(stdout);
+    }
+
     // is_drift_trending() — Asia bracket gate.
     // Returns true if a real directional trend is detected, false if confirmed chop.
     //
@@ -4136,6 +4177,14 @@ public:
     // classified as MEAN_REVERSION due to lag in CONFIRM_TICKS.
     double ewm_drift()                              const { return governor_.ewm_drift(); }
     bool   is_drift_trending(double l2_imb = 0.5)  const { return governor_.is_drift_trending(l2_imb); }
+    // Reset stale EWM drift after a confirmed price reversal.
+    // Called from main.cpp when GoldFlow closes and price immediately moves
+    // >= reversal_pts in the opposite direction. Snaps ewm_slow toward
+    // ewm_fast so the new move direction registers within a few ticks
+    // instead of waiting 150+ ticks for the slow EWM to recover naturally.
+    void reset_drift_on_reversal(double reversal_pts) noexcept {
+        governor_.reset_drift_on_reversal(reversal_pts);
+    }
     // recent_vol_pct: governor 80-tick range as pct of price
     // base_vol_pct:   EWM-smoothed baseline (doesn't chase trends — stays elevated)
     double recent_vol_pct() const {

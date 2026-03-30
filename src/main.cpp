@@ -481,6 +481,9 @@ static GoldFlowEngine             g_gold_flow;
 static std::atomic<int64_t>  g_gold_flow_exit_ts{0};      // epoch sec of last GoldFlow exit
 static std::atomic<int>      g_gold_flow_exit_dir{0};     // +1=was long, -1=was short
 static std::atomic<int>      g_gold_flow_exit_reason{0};  // 0=other 1=SL_HIT 2=trail/BE
+// Price at last GoldFlow exit * 100 stored as integer (atomic double workaround)
+// Used to detect post-close reversal magnitude for drift reset.
+static std::atomic<int64_t>  g_gold_flow_exit_price_x100{0};
 // When GoldFlow SL_HIT and drift reverses: allow GoldStack fast counter-entry
 // by bypassing the 120s SL cooldown. Window = 60s from flow exit.
 static std::atomic<int64_t>  g_gold_reversal_window_until{0};
@@ -6865,6 +6868,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const int exit_dir = (tr.side == "LONG") ? 1 : -1;
                 g_gold_flow_exit_ts.store(now_s);
                 g_gold_flow_exit_dir.store(exit_dir);
+                g_gold_flow_exit_price_x100.store(static_cast<int64_t>(tr.exitPrice * 100.0));
                 const bool is_sl = (tr.exitReason == "SL_HIT");
                 g_gold_flow_exit_reason.store(is_sl ? 1 : 2);
                 // Reversal window: if flow was stopped out, allow GoldStack to
@@ -6878,6 +6882,59 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             };
             if (gf_tick_ok) {
+                // ── Post-close reversal drift reset ───────────────────────────
+                // Problem: ewm_slow (α=0.005) has a 200-tick half-life. After a
+                // 60pt DROP it reaches drift≈-40. When price then SURGES 80pts,
+                // drift stays negative for 150+ ticks (~25 min). GFE cannot enter
+                // LONG because drift < threshold — entire surge missed.
+                //
+                // Fix: when GoldFlow has closed AND price has moved >= 2×ATR in the
+                // OPPOSITE direction since the close, snap ewm_slow toward ewm_fast.
+                // Snap magnitude is proportional to reversal size (5pt=20%, 60pt=95%).
+                // This removes stale directional memory so new ticks immediately
+                // establish the reversed drift. Fresh entry fires within ~3-5 ticks.
+                //
+                // Safety gates:
+                //   1. Only fires when GFE has NO open position (pos.active=false)
+                //   2. Minimum 2×ATR reversal required (2×2.5=5pt floor) — noise immune
+                //   3. 120s window: only resets within 2min of the close
+                //   4. One-shot per close: g_drift_reset_done flag prevents repeat resets
+                //   5. Does NOT fire if GFE is in cooldown (wrong direction would enter)
+                {
+                    static bool s_drift_reset_done = false;
+                    static int64_t s_last_close_ts = 0;
+                    const int64_t  gf_close_ts  = g_gold_flow_exit_ts.load();
+                    const int      gf_close_dir = g_gold_flow_exit_dir.load();
+                    const int64_t  exit_px_x100 = g_gold_flow_exit_price_x100.load();
+                    const double   exit_px      = exit_px_x100 > 0
+                                                  ? static_cast<double>(exit_px_x100) / 100.0
+                                                  : 0.0;
+                    // Reset the done flag when a new close is recorded
+                    if (gf_close_ts != s_last_close_ts) {
+                        s_drift_reset_done = false;
+                        s_last_close_ts    = gf_close_ts;
+                    }
+                    if (!s_drift_reset_done
+                        && !g_gold_flow.has_open_position()
+                        && gf_close_ts > 0
+                        && exit_px > 0.0
+                        && (now_ms_g / 1000 - gf_close_ts) <= 120)  // within 2 min of close
+                    {
+                        const double gf_atr       = std::max(2.5, g_gold_flow.current_atr());
+                        const double min_reversal  = gf_atr * 2.0;  // 5pt floor at default ATR
+                        const double reversal_dist = (gf_close_dir == -1)  // was SHORT
+                            ? (bid - exit_px)   // reversal = price moved UP since close
+                            : (exit_px - bid);  // was LONG, reversal = price moved DOWN
+                        if (reversal_dist >= min_reversal) {
+                            g_gold_stack.reset_drift_on_reversal(reversal_dist);
+                            s_drift_reset_done = true;  // one-shot per close
+                            printf("[DRIFT-RESET] GFE close_dir=%+d exit=%.2f now=%.2f reversal=%.1fpt (min=%.1f) — drift snapped\n",
+                                   gf_close_dir, exit_px, bid, reversal_dist, min_reversal);
+                            fflush(stdout);
+                        }
+                    }
+                }
+
                 // ── Inject macro trend bias before each tick ──────────────────
                 // gold_momentum = (mid - VWAP) / mid * 100 — computed above from GoldStack
                 // gold_sdec.confidence and regime from SymbolSupervisor — computed above
