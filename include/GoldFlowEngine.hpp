@@ -69,8 +69,13 @@ static constexpr double GFE_LONG_THRESHOLD    = 0.75;  // bid-heavy: long signal
 static constexpr double GFE_SHORT_THRESHOLD   = 0.25;  // ask-heavy: short signal
 static constexpr double GFE_DRIFT_MIN         = 0.0;   // drift must be non-zero same dir
 // Drift-persistence fallback (used when L2 size data is unavailable — imbalance always 0.5)
-static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 0.30; // drift pts/tick to count as directional
-static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 20;   // rolling window for drift persistence check
+// Threshold raised 0.30→1.5: on choppy London tape drift oscillates ±1.5 constantly,
+// filling the 20-tick window with false directional ticks. Need genuine sustained drift.
+// Evidence: 2026-03-30 trades fired with drift swinging +2.2/-1.8 every 10s = pure chop.
+static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 1.5;  // was 0.30 — too loose for chop
+// Window raised 20→40: 20 ticks (~2-4s London) is trivially filled by any spike.
+// 40 ticks requires sustained directional pressure over ~4-8s of real tape.
+static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 40;   // was 20 — too short
 static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- raised 20→100:
                                                         // 20-tick hi-lo range was a 2-second window,
                                                         // producing SL of $0.3–5 depending on micro-volatility.
@@ -244,13 +249,27 @@ struct GoldFlowEngine {
             slow_short = (m_slow_short_count >= eff_slow_thresh);
         } else {
             // Fallback path: L2 unavailable — use drift persistence counter
-            // Update drift persistence window
+            // Update drift persistence window (stores raw drift values for chop detection)
             const int drift_dir = (ewm_drift > GFE_DRIFT_FALLBACK_THRESHOLD)  ?  1
                                  : (ewm_drift < -GFE_DRIFT_FALLBACK_THRESHOLD) ? -1
                                  : 0;
             m_drift_persist_window.push_back(drift_dir);
+            m_drift_val_window.push_back(ewm_drift);  // raw values for range check
             if ((int)m_drift_persist_window.size() > GFE_DRIFT_PERSIST_TICKS)
                 m_drift_persist_window.pop_front();
+            if ((int)m_drift_val_window.size() > GFE_DRIFT_PERSIST_TICKS)
+                m_drift_val_window.pop_front();
+
+            // ── Chop guard: if drift range (max-min) > 4.0 over window, market
+            // is oscillating — do not enter regardless of persistence count.
+            // Evidence: 2026-03-30 drift swung +2.2/-1.8 every 10s; persistence
+            // window filled with 14/20 directional ticks from noise alone.
+            double drift_min = ewm_drift, drift_max = ewm_drift;
+            for (double v : m_drift_val_window) {
+                if (v < drift_min) drift_min = v;
+                if (v > drift_max) drift_max = v;
+            }
+            const bool drift_choppy = (drift_max - drift_min) > 4.0;
 
             int drift_long_count = 0, drift_short_count = 0;
             for (int d : m_drift_persist_window) {
@@ -259,8 +278,18 @@ struct GoldFlowEngine {
             }
             // Require 70% of drift ticks directional (stricter than L2 path's 75% of 30)
             const int drift_thresh = (GFE_DRIFT_PERSIST_TICKS * 7) / 10;
-            fast_long  = (drift_long_count  >= drift_thresh);
-            fast_short = (drift_short_count >= drift_thresh);
+            fast_long  = !drift_choppy && (drift_long_count  >= drift_thresh);
+            fast_short = !drift_choppy && (drift_short_count >= drift_thresh);
+            if (drift_choppy) {
+                static int64_t s_chop_log = 0;
+                if (now_ms - s_chop_log > 10000) {
+                    s_chop_log = now_ms;
+                    std::cout << "[GFE-CHOP] drift range=" << (drift_max - drift_min)
+                              << " (min=" << drift_min << " max=" << drift_max
+                              << ") — chop guard active, no entry\n";
+                    std::cout.flush();
+                }
+            }
             // For slow confirmation, require the same drift ratio over the full window
             slow_long  = fast_long;   // drift persistence IS the slow confirmation
             slow_short = fast_short;
@@ -384,6 +413,7 @@ struct GoldFlowEngine {
     // incoming LONG ticks immediately build the 14/20 threshold needed to fire.
     void reset_drift_persistence() noexcept {
         m_drift_persist_window.clear();
+        m_drift_val_window.clear();
         // Also reset the fast/slow direction windows — they still contain stale ticks
         // from the prior move. Without this, even with positive drift, the persistence
         // gate requires 23/30 LONG ticks to accumulate. Clearing lets fresh ticks dominate.
@@ -544,7 +574,8 @@ private:
     // Drift persistence fallback (used when L2 size data is unavailable — imbalance always 0.5)
     // Tracks ewm_drift direction over GFE_DRIFT_PERSIST_TICKS=20 ticks.
     // Replaces L2 persistence windows when broker doesn't send tag-271 size data.
-    std::deque<int> m_drift_persist_window;
+    std::deque<int>    m_drift_persist_window;  // direction counts for fallback persistence
+    std::deque<double> m_drift_val_window;       // raw drift values for chop range guard
 
     // ── Range expansion tracker — chop vs impulse detection ─────────────────
     // Tracks price range over last N ticks to detect whether a move is
@@ -698,6 +729,7 @@ private:
         m_fast_window.clear();
         m_slow_window.clear();
         m_drift_persist_window.clear();
+        m_drift_val_window.clear();
         m_continuation_mode = false;  // one-shot — clears after first re-entry
 
         std::cout << "[GOLD-FLOW] ENTRY " << (is_long ? "LONG" : "SHORT")
