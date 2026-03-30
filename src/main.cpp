@@ -7964,11 +7964,14 @@ static void quote_loop() {
         std::cout << "[OMEGA-SHUTDOWN] All positions closed\n";
         } // end do_reconnect_close (LIVE mode only)
 
-        // ── STEP 3: NOW unsubscribe and logout (prices no longer needed) ───────
-        // ── CLOSE ALL POSITIONS BEFORE UNSUBSCRIBING ─────────────────────────────
-        // Snapshot prices NOW while market data is still live
-        // Then close every engine type before unsub clears the book
-        {
+        // ── STEP 3: Unsubscribe and logout ──────────────────────────────────────
+        // SHADOW mode: do NOT close positions — they survive the reconnect.
+        //   Engine state (entry, sl, trail, mfe) is all in-process memory and
+        //   persists across the TCP disconnect/reconnect cycle. We only unsub
+        //   and logout the FIX session, not the engine positions.
+        // LIVE mode: close all positions before unsubscribing — broker holds
+        //   real orders and we cannot guarantee state recovery after reconnect.
+        if (do_reconnect_close) {
             std::unordered_map<std::string,double> shut_bid, shut_ask;
             { std::lock_guard<std::mutex> lk(g_book_mtx); shut_bid = g_bids; shut_ask = g_asks; }
             std::cout << "[OMEGA-SHUTDOWN] Snapped " << shut_bid.size() << " prices, closing all positions\n";
@@ -8048,6 +8051,9 @@ static void quote_loop() {
               g_ca_fx_cascade.force_close_nzdusd(nb,na,scb);
             }
             std::cout << "[OMEGA-SHUTDOWN] All positions closed before disconnect\n";
+        } // end LIVE mode position close
+        else {
+            std::cout << "[OMEGA-SHADOW] Positions preserved across reconnect — skipping force-close\n";
         }
         // ─────────────────────────────────────────────────────────────────────
         if (g_quote_ready.load()) {
