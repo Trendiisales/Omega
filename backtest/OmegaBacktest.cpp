@@ -284,7 +284,7 @@ struct GoldRunner {
     omega::gold::GoldEngineStack eng;
     double lat;
     GoldRunner(double l):lat(l){}
-    void tick(const TickRow& r){ auto c=cb(); eng.on_tick(r.bid,r.ask,lat,c); }
+    void tick(const TickRow& r){ auto c=cb(); (void)eng.on_tick(r.bid,r.ask,lat,c); }
 };
 
 struct FlowRunner {
@@ -293,7 +293,7 @@ struct FlowRunner {
     void tick(const TickRow& r){
         auto c=cb();
         // l2_imb=0.5 (neutral), ewm_drift=0.0 — not available in tick CSV
-        eng.on_tick(r.bid,r.ask,0.5,0.0,r.ts_ms,c);
+        (void)eng.on_tick(r.bid,r.ask,0.5,0.0,r.ts_ms,c);
     }
 };
 
@@ -301,7 +301,7 @@ struct LatencyRunner {
     omega::latency::LatencyEdgeStack eng;
     double lat;
     LatencyRunner(double l):lat(l){}
-    void tick(const TickRow& r){ auto c=cb(); eng.on_tick_gold(r.bid,r.ask,lat,c); }
+    void tick(const TickRow& r){ auto c=cb(); (void)eng.on_tick_gold(r.bid,r.ask,lat,c); }
 };
 
 struct CrossRunner {
@@ -316,10 +316,10 @@ struct CrossRunner {
         const double mid  = (r.bid+r.ask)*0.5;
         const double vw   = vwap.update(mid, r.ts_ms);
         auto c=cb();
-        orb.on_tick(sym,r.bid,r.ask,c);
-        vrev.on_tick(sym,r.bid,r.ask,vw,c);
-        tpb.on_tick(sym,r.bid,r.ask,c);
-        nbe.on_tick(sym,r.bid,r.ask,c);
+        (void)orb.on_tick(sym,r.bid,r.ask,c);
+        (void)vrev.on_tick(sym,r.bid,r.ask,vw,c);
+        (void)tpb.on_tick(sym,r.bid,r.ask,c);
+        (void)nbe.on_tick(sym,r.bid,r.ask,c);
     }
 };
 
