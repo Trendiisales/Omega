@@ -77,6 +77,7 @@ static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 1.5;  // was 0.30 — too
 // 40 ticks requires sustained directional pressure over ~4-8s of real tape.
 static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 40;   // was 20 — too short
 static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- raised 20→100:
+static constexpr int    GFE_ATR_RANGE_WINDOW  = 20;    // rolling price window for range-based ATR — 20 ticks ~2-4s London tape, captures real session moves not micro tick-to-tick noise
                                                         // 20-tick hi-lo range was a 2-second window,
                                                         // producing SL of $0.3–5 depending on micro-volatility.
                                                         // 100 ticks = ~10-30s, EWM-smoothed, stable across sessions.
@@ -509,11 +510,17 @@ struct GoldFlowEngine {
         //   London/NY sessions have higher ATR (5-15pts) so this is conservative.
         //   Ensures SL = 2.5pts minimum on cold start — survives normal pullbacks.
         //   load_atr_state() is called first; seed() is a no-op if file loaded.
-        const double seed_range = 2.5;
+        // Seed with 3.0pts — conservative London session range (actual is 5-15pts).
+        // Range-based ATR will update this quickly from live ticks.
+        const double seed_range = 3.0;
         m_atr_ewm          = seed_range;
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
-        m_atr              = seed_range;  // no floor needed — 2.5 > GFE_ATR_MIN already
+        m_atr              = seed_range;
         m_last_mid_atr     = mid;
+        // Pre-fill price window at seed mid so range calc starts immediately
+        m_atr_price_window.clear();
+        for (int i = 0; i < GFE_ATR_RANGE_WINDOW; ++i)
+            m_atr_price_window.push_back(mid);
 
         // Seed momentum window flat (no directional bias)
         m_momentum_window.clear();
@@ -547,6 +554,7 @@ private:
 
     // ATR calculation -- EWM-smoothed tick-to-tick range, 100-tick warmup
     double              m_atr           = 0.0;   // exposed ATR (0 until warmup complete)
+    std::deque<double>  m_atr_price_window;         // rolling mid price window for range-based ATR
     double              m_atr_ewm       = 0.0;   // internal EWM accumulator
     double              m_last_mid_atr  = 0.0;   // previous mid for tick-range computation
     int                 m_atr_warmup_ticks = 0;  // counts ticks until GFE_ATR_PERIOD reached
@@ -616,13 +624,23 @@ private:
     int     m_last_session_slot = -1;
 
     void update_atr(double spread, double mid) noexcept {
-        // ATR: EWM-smoothed tick-to-tick range
-        if (m_last_mid_atr > 0.0) {
-            const double tick_range = std::max(std::fabs(mid - m_last_mid_atr), spread);
+        // ATR: EWM-smoothed using RANGE over a rolling price window.
+        // Previously used tick-to-tick moves (0.05-0.20pts) which produced
+        // tiny ATR values even on active London tape. Now uses the actual
+        // hi-lo range over the last GFE_ATR_RANGE_WINDOW ticks — this
+        // matches real session volatility and is what drives SL sizing.
+        m_atr_price_window.push_back(mid);
+        if ((int)m_atr_price_window.size() > GFE_ATR_RANGE_WINDOW)
+            m_atr_price_window.pop_front();
+
+        if (m_last_mid_atr > 0.0 && (int)m_atr_price_window.size() >= GFE_ATR_RANGE_WINDOW) {
+            const double hi = *std::max_element(m_atr_price_window.begin(), m_atr_price_window.end());
+            const double lo = *std::min_element(m_atr_price_window.begin(), m_atr_price_window.end());
+            const double window_range = std::max(hi - lo, spread);
             if (m_atr_ewm <= 0.0)
-                m_atr_ewm = tick_range;
+                m_atr_ewm = window_range;
             else
-                m_atr_ewm = GFE_ATR_EWM_ALPHA * tick_range + (1.0 - GFE_ATR_EWM_ALPHA) * m_atr_ewm;
+                m_atr_ewm = GFE_ATR_EWM_ALPHA * window_range + (1.0 - GFE_ATR_EWM_ALPHA) * m_atr_ewm;
         }
         m_last_mid_atr = mid;
 
