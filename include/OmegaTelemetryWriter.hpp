@@ -107,7 +107,7 @@ struct OmegaTelemetrySnapshot
     double cl_baseline_vol_pct;
     int  cl_signals;
 
-    // GOLD.F
+    // XAUUSD
     int  xau_phase;
     double xau_comp_high;
     double xau_comp_low;
@@ -130,7 +130,7 @@ struct OmegaTelemetrySnapshot
     BracketState bkt_uk;      // UK100
     BracketState bkt_estx;    // ESTX50
     BracketState bkt_xag;     // XAGUSD
-    BracketState bkt_gold;    // GOLD.F
+    BracketState bkt_gold;    // XAUUSD
     BracketState bkt_eur;     // EURUSD
     BracketState bkt_gbp;     // GBPUSD
     BracketState bkt_brent;   // UKBRENT
@@ -222,7 +222,7 @@ struct OmegaTelemetrySnapshot
 
     // --- L2 data quality ---
     int     ctrader_l2_live;  // 1 = cTrader depth client received at least 1 event
-    int     gold_l2_real;     // 1 = GOLD.F book has non-zero size data (vs FIX-only 0.5 fallback)
+    int     gold_l2_real;     // 1 = XAUUSD book has non-zero size data (vs FIX-only 0.5 fallback)
 
     // --- Asia FX gate ---
     int     asia_fx_gate_open;          // 1 = trading allowed (gate open), 0 = session-blocked
@@ -261,7 +261,7 @@ struct OmegaTelemetrySnapshot
     // GUI uses this to show per-trade floating P&L in real time.
     static constexpr int MAX_LIVE_TRADES = 16;
     struct LiveTrade {
-        char   symbol[12];    // "GOLD.F", "XAGUSD", etc.
+        char   symbol[12];    // "XAUUSD", "XAGUSD", etc.
         char   engine[24];    // "GoldFlow", "GoldStack/CompBreakout", etc.
         char   side[6];       // "LONG" or "SHORT"
         int    is_long;       // 1=LONG 0=SHORT — used for dist_to_sl/tp calc
@@ -323,7 +323,7 @@ struct OmegaTelemetrySnapshot
     double exposure_us_equity;  // US500, USTEC, DJ30, NAS100
     double exposure_eu_equity;  // GER40, UK100, ESTX50
     double exposure_oil;        // USOIL.F, BRENT
-    double exposure_metals;     // GOLD.F, XAGUSD
+    double exposure_metals;     // XAUUSD, XAGUSD
     double exposure_jpy_risk;   // USDJPY, AUDUSD, NZDUSD
     double exposure_eur_gbp;    // EURUSD, GBPUSD
     double exposure_total;      // sum of |cluster| across all clusters
@@ -426,7 +426,7 @@ public:
         else if (!strcmp(sym,"DX.F"))    { lv_dx_bid=bid;     lv_dx_ask=ask;     m_snap->dx_bid=bid;     m_snap->dx_ask=ask; }
         else if (!strcmp(sym,"DJ30.F"))  { lv_dj_bid=bid;     lv_dj_ask=ask;     m_snap->dj_bid=bid;     m_snap->dj_ask=ask; }
         else if (!strcmp(sym,"NAS100"))  { lv_nas_bid=bid;    lv_nas_ask=ask;    m_snap->nas_bid=bid;    m_snap->nas_ask=ask; }
-        else if (!strcmp(sym,"GOLD.F"))  { lv_gold_bid=bid;   lv_gold_ask=ask;   m_snap->gold_bid=bid;   m_snap->gold_ask=ask; }
+        else if (!strcmp(sym,"XAUUSD"))  { lv_gold_bid=bid;   lv_gold_ask=ask;   m_snap->gold_bid=bid;   m_snap->gold_ask=ask; }
         else if (!strcmp(sym,"NGAS.F"))  { lv_ngas_bid=bid;   lv_ngas_ask=ask;   m_snap->ngas_bid=bid;   m_snap->ngas_ask=ask; }
         else if (!strcmp(sym,"ES"))      { lv_es_bid=bid;     lv_es_ask=ask;     m_snap->es_bid=bid;     m_snap->es_ask=ask; }
         else if (!strcmp(sym,"DX"))      { lv_dxcash_bid=bid; lv_dxcash_ask=ask; m_snap->dxcash_bid=bid; m_snap->dxcash_ask=ask; }
@@ -508,7 +508,7 @@ public:
             m_snap->cl_phase=phase; m_snap->cl_comp_high=comp_high;
             m_snap->cl_comp_low=comp_low; m_snap->cl_recent_vol_pct=recent_vol_pct;
             m_snap->cl_baseline_vol_pct=baseline_vol_pct; m_snap->cl_signals=signals;
-        } else if (!strcmp(sym,"GOLD.F")) {
+        } else if (!strcmp(sym,"XAUUSD")) {
             m_snap->xau_phase=phase; m_snap->xau_comp_high=comp_high;
             m_snap->xau_comp_low=comp_low; m_snap->xau_recent_vol_pct=recent_vol_pct;
             m_snap->xau_baseline_vol_pct=baseline_vol_pct; m_snap->xau_signals=signals;
@@ -586,7 +586,7 @@ public:
         else if (!strcmp(sym,"UK100"))   set(m_snap->bkt_uk);
         else if (!strcmp(sym,"ESTX50"))  set(m_snap->bkt_estx);
         else if (!strcmp(sym,"XAGUSD"))  set(m_snap->bkt_xag);
-        else if (!strcmp(sym,"GOLD.F"))  set(m_snap->bkt_gold);
+        else if (!strcmp(sym,"XAUUSD"))  set(m_snap->bkt_gold);
         else if (!strcmp(sym,"EURUSD"))  set(m_snap->bkt_eur);
         else if (!strcmp(sym,"GBPUSD"))  set(m_snap->bkt_gbp);
         else if (!strcmp(sym,"BRENT")) set(m_snap->bkt_brent);
@@ -656,7 +656,7 @@ public:
             for (int i = 0; i < out_na; ++i) { ask_out[i].price = ask_prices[i]; ask_out[i].size = ask_sizes[i]; }
         };
         const std::string s(sym);
-        if      (s == "GOLD.F")  copy(m_snap->l2_book_gold_bid, m_snap->l2_book_gold_bids, m_snap->l2_book_gold_ask, m_snap->l2_book_gold_asks);
+        if      (s == "XAUUSD")  copy(m_snap->l2_book_gold_bid, m_snap->l2_book_gold_bids, m_snap->l2_book_gold_ask, m_snap->l2_book_gold_asks);
         else if (s == "US500.F") copy(m_snap->l2_book_sp_bid,   m_snap->l2_book_sp_bids,   m_snap->l2_book_sp_ask,   m_snap->l2_book_sp_asks);
         else if (s == "EURUSD")  copy(m_snap->l2_book_eur_bid,  m_snap->l2_book_eur_bids,  m_snap->l2_book_eur_ask,  m_snap->l2_book_eur_asks);
         else if (s == "XAGUSD")  copy(m_snap->l2_book_xag_bid,  m_snap->l2_book_xag_bids,  m_snap->l2_book_xag_ask,  m_snap->l2_book_xag_asks);
