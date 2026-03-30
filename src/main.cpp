@@ -138,7 +138,7 @@ struct OmegaConfig {
     double account_equity     = 10000.0; // account size for edge-based position sizing
     // Per-symbol hard cap on lot size — safety net regardless of computed size.
     // Prevents a misconfigured risk_per_trade from opening an oversized position.
-    double max_lot_gold    = 0.50;   // GOLD.F max lots per trade
+    double max_lot_gold    = 0.50;   // XAUUSD max lots per trade
     double max_lot_indices = 0.20;   // SP/NQ/DJ30/NAS100/EU indices max lots
     double max_lot_oil     = 0.50;   // USOIL.F / UKBRENT max lots
     double max_lot_silver  = 0.20;   // XAGUSD max lots
@@ -408,7 +408,7 @@ static omega::MacroContext g_macro_ctx;
 
 // Multi-engine gold stack -- CompressionBreakout + ImpulseContinuation +
 // SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
-// Primary gold executor — sole handler for all GOLD.F ticks.
+// Primary gold executor — sole handler for all XAUUSD ticks.
 static omega::gold::GoldEngineStack g_gold_stack;
 // Cross-asset engines
 static omega::cross::EsNqDivergenceEngine  g_ca_esnq;
@@ -439,10 +439,10 @@ static omega::cross::NoiseBandMomentumEngine g_nbm_nas;   // NAS100  — NY 13:3
 static omega::cross::NoiseBandMomentumEngine g_nbm_us30;  // DJ30.F  — NY 13:30-21:30 UTC
 
 // NBM London session engines (07:00-13:30 UTC) — covers the gap before NY open.
-// GOLD.F and USOIL.F are the most liquid instruments in the London window.
+// XAUUSD and USOIL.F are the most liquid instruments in the London window.
 // Session anchor = London open (07:00 UTC). Same ATR/band logic as NY engines.
 // These are additional instances — the gold stack and oil engines remain primary.
-static omega::cross::NoiseBandMomentumEngine g_nbm_gold_london;  // GOLD.F  — London 07:00-13:30 UTC
+static omega::cross::NoiseBandMomentumEngine g_nbm_gold_london;  // XAUUSD  — London 07:00-13:30 UTC
 static omega::cross::NoiseBandMomentumEngine g_nbm_oil_london;   // USOIL.F — London 07:00-13:30 UTC
 
 // Engine 10: SilverTurtleTick — DISABLED after real-tick backtest FAILURE.
@@ -453,8 +453,8 @@ static omega::cross::NoiseBandMomentumEngine g_nbm_oil_london;   // USOIL.F — 
 static omega::cross::SilverTurtleTickEngine g_silver_turtle;  // DISABLED
 
 // Engine 8: Trend Pullback — EMA9/21/50 trend + pullback to EMA50 + bounce confirmation
-// Wired to: GOLD.F (gated — no other gold position), GER40
-static omega::cross::TrendPullbackEngine   g_trend_pb_gold;   // GOLD.F
+// Wired to: XAUUSD (gated — no other gold position), GER40
+static omega::cross::TrendPullbackEngine   g_trend_pb_gold;   // XAUUSD
 static omega::cross::TrendPullbackEngine   g_trend_pb_ger40;  // GER40
 
 // Co-location latency edge engines -- GoldSilverLeadLag + GoldSpreadDislocation
@@ -760,7 +760,7 @@ struct AtomicL2 {
     std::atomic<double> microprice_bias{0.0}; // microprice - mid, signed
     std::atomic<bool>   has_data{false};      // true when book has non-zero sizes
 };
-static AtomicL2 g_l2_gold;    // GOLD.F
+static AtomicL2 g_l2_gold;    // XAUUSD
 static AtomicL2 g_l2_sp;      // US500.F
 static AtomicL2 g_l2_nq;      // USTEC.F
 static AtomicL2 g_l2_cl;      // USOIL.F
@@ -779,7 +779,7 @@ static AtomicL2 g_l2_us30;    // DJ30.F
 
 // Map symbol name to AtomicL2* — used by cTrader write path and FIX tick read path
 static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
-    if (sym=="GOLD.F"||sym=="GOLD"||sym=="XAUUSD") return &g_l2_gold;
+    if (sym=="XAUUSD"||sym=="GOLD") return &g_l2_gold;
     if (sym=="US500.F")  return &g_l2_sp;
     if (sym=="USTEC.F")  return &g_l2_nq;
     if (sym=="USOIL.F")  return &g_l2_cl;
@@ -953,11 +953,11 @@ static std::string perf_key_from_trade(const omega::TradeRecord& tr) {
     // Route gold trades to the specific engine that generated them,
     // not a single "GOLD_STACK" bucket. This prevents auto-disable
     // from misfiring when losses are from flow/bracket, not the stack.
-    if (tr.symbol == "GOLD.F") {
-        if (tr.engine.find("BRACKET") != std::string::npos)   return "GOLD.F_BRACKET";
+    if (tr.symbol == "XAUUSD") {
+        if (tr.engine.find("BRACKET") != std::string::npos)   return "XAUUSD_BRACKET";
         if (tr.engine.find("L2_FLOW") != std::string::npos ||
-            tr.engine.find("GOLD_FLOW") != std::string::npos) return "GOLD.F_FLOW";
-        if (tr.engine.find("LEAD_LAG") != std::string::npos)  return "GOLD.F_LATENCY";
+            tr.engine.find("GOLD_FLOW") != std::string::npos) return "XAUUSD_FLOW";
+        if (tr.engine.find("LEAD_LAG") != std::string::npos)  return "XAUUSD_LATENCY";
         return "GOLD_STACK";  // CompressionBreakout / Impulse / SessionMom / VWAPSnap / SweepPro
     }
     return tr.symbol;
@@ -1301,7 +1301,7 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     // COMMODITIES (confirmed from BlackBull instrument pages):
     //   USOIL.F  = 1,000 barrels/lot  → $1000/pt  (verified: 0.57pt × $1000 = $570 ✓)
     //   UKBRENT  = 1,000 barrels/lot  → $1000/pt  (scraped: "1,000 barrel")
-    //   GOLD.F   = 100 troy oz/lot    → $100/pt   (BlackBull XAUUSD spec: 100 oz)
+    //   XAUUSD   = 100 troy oz/lot    → $100/pt   (BlackBull XAUUSD spec: 100 oz)
     //   XAGUSD   = 5,000 troy oz/lot  → $5000/pt  (scraped: "5,000 oz")
     //
     // FX (industry standard):
@@ -1316,7 +1316,7 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     // ─────────────────────────────────────────────────────────────────────────
     if (symbol == "USOIL.F")  return 1000.0;  // WTI CFD future: 1,000 barrels/lot ✓ verified
     if (symbol == "BRENT")  return 1000.0;  // Brent CFD future: 1,000 barrels/lot ✓ scraped
-    if (symbol == "GOLD.F")   return 100.0;   // Gold spot CFD: 100 troy oz/lot ✓ confirmed
+    if (symbol == "XAUUSD")   return 100.0;   // Gold spot CFD: 100 troy oz/lot ✓ confirmed
     if (symbol == "XAGUSD")   return 5000.0;  // Silver spot CFD: 5,000 troy oz/lot ✓ scraped
     if (symbol == "EURUSD")   return 100000.0;// FX major: 100,000 units/lot ✓ standard
     if (symbol == "GBPUSD")   return 100000.0;// FX major: 100,000 units/lot
@@ -1431,7 +1431,7 @@ static double compute_size(const std::string& symbol,
     // Per-symbol safety cap (ceiling) and minimum floor
     double cap = g_cfg.max_lot_indices; // safe default for unknown index CFDs
     double flr = g_cfg.min_lot_indices;
-    if      (symbol == "GOLD.F")                               { cap = g_cfg.max_lot_gold;    flr = g_cfg.min_lot_gold; }
+    if      (symbol == "XAUUSD")                               { cap = g_cfg.max_lot_gold;    flr = g_cfg.min_lot_gold; }
     else if (symbol == "EURUSD")                               { cap = g_cfg.max_lot_fx;      flr = g_cfg.min_lot_fx; }
     else if (symbol == "GBPUSD")                               { cap = g_cfg.max_lot_gbpusd;  flr = g_cfg.min_lot_gbpusd; }
     else if (symbol == "AUDUSD")                               { cap = g_cfg.max_lot_audusd;  flr = g_cfg.min_lot_audusd; }
@@ -1839,7 +1839,7 @@ static void handle_execution_report(const std::string& msg) {
                 std::cerr.flush();
                 // CRITICAL FIX: notify bracket engines of rejection so they
                 // don't stay stuck in PENDING with no open broker position.
-                if (it->second.symbol == "GOLD.F")   g_bracket_gold.on_reject();
+                if (it->second.symbol == "XAUUSD")   g_bracket_gold.on_reject();
                 if (it->second.symbol == "XAGUSD")   g_bracket_xag.on_reject();
                 if (it->second.symbol == "US500.F")  g_bracket_sp.on_reject();
                 if (it->second.symbol == "USTEC.F")  g_bracket_nq.on_reject();
@@ -1862,7 +1862,7 @@ static void handle_execution_report(const std::string& msg) {
                         const double fill_qty = std::stod(lastQty);
                         if (fill_px > 0.0 && fill_qty > 0.0) {
                             const bool is_long_fill = (it->second.side == "LONG");
-                            if (it->second.symbol == "GOLD.F") {
+                            if (it->second.symbol == "XAUUSD") {
                                 g_bracket_gold.confirm_fill(is_long_fill, fill_px, fill_qty);
                                 // Cancel other leg — engine fires cancel_order_fn internally
                                 const std::string& cancel_id = is_long_fill
@@ -1944,31 +1944,31 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
         const std::string& name = entry.second;
         if (id <= 0 || name.empty()) continue;
 
-        // Special handling for GOLD.F: we subscribe to ID 41 (XAUUSD spot) and
-        // route it internally as "GOLD.F". The SecurityList also contains:
-        //   ID 41   -> "XAUUSD"  (spot  — this is what we want, must map to "GOLD.F")
-        //   ID 2660 -> "GOLD.F"  (futures, ~$25 above spot — must NOT route to engines)
+        // Special handling for XAUUSD: we subscribe to ID 41 (XAUUSD spot) and
+        // route it internally as "XAUUSD". The SecurityList also contains:
+        //   ID 41   -> "XAUUSD"  (spot  — this is what we want, must map to "XAUUSD")
+        //   ID 2660 -> "XAUUSD"  (futures, ~$25 above spot — must NOT route to engines)
         // Without intervention, SecurityList would overwrite g_id_to_sym[41]="XAUUSD"
-        // (breaking spot routing) and g_id_to_sym[2660]="GOLD.F" (injecting futures
+        // (breaking spot routing) and g_id_to_sym[2660]="XAUUSD" (injecting futures
         // price into gold engines whenever a 2660 tick arrives).
         if (id == 41) {
-            // Force spot ID 41 to always resolve to internal name "GOLD.F"
-            g_id_to_sym[41] = "GOLD.F";
-        } else if (name == "GOLD.F") {
-            // This is the futures entry (ID 2660). Map it to a sentinel name so
-            // any stray futures ticks are silently dropped as unknown symbol.
-            g_id_to_sym[id] = "GOLD.F.FUTURES.IGNORED";
+            // Force spot ID 41 to always resolve to internal name "XAUUSD"
+            g_id_to_sym[41] = "XAUUSD";
+        } else if (name == "XAUUSD" || name == "GOLD.F") {
+            // Block futures entry (broker names it "GOLD.F", ID 2660)
+            // Any stray futures ticks are silently dropped.
+            g_id_to_sym[id] = "XAUUSD.FUTURES.IGNORED";
         } else {
             g_id_to_sym[id] = name;
         }
 
         for (int i = 0; i < OMEGA_NSYMS; ++i) {
             if (name == OMEGA_SYMS[i].name && OMEGA_SYMS[i].id != id) {
-                // GOLD.F is pinned to ID 41 (XAUUSD spot). The SecurityList also
-                // contains ID 2660 named "GOLD.F" (futures, ~$25 above spot).
+                // XAUUSD is pinned to ID 41 (XAUUSD spot). The SecurityList also
+                // contains ID 2660 named "XAUUSD" (futures, ~$25 above spot).
                 // Block that from overwriting our intentional spot subscription.
-                if (std::string(OMEGA_SYMS[i].name) == "GOLD.F") {
-                    std::cout << "[OMEGA-SECURITY] GOLD.F pin: keeping id="
+                if (std::string(OMEGA_SYMS[i].name) == "XAUUSD") {
+                    std::cout << "[OMEGA-SECURITY] XAUUSD pin: keeping id="
                               << OMEGA_SYMS[i].id << " (XAUUSD spot), blocking id="
                               << id << " (futures)\n";
                     std::cout.flush();
@@ -2294,7 +2294,7 @@ static void write_trade_close_logs(const omega::TradeRecord& tr) {
     }
     const int64_t bucket_ts = tr.exitTs > 0 ? tr.exitTs : nowSec();
     if (g_daily_trade_close_log) g_daily_trade_close_log->append_row(bucket_ts, row);
-    if (tr.symbol == "GOLD.F" && g_daily_gold_trade_close_log)
+    if (tr.symbol == "XAUUSD" && g_daily_gold_trade_close_log)
         g_daily_gold_trade_close_log->append_row(bucket_ts, row);
 }
 
@@ -3020,7 +3020,7 @@ static void sanitize_config() noexcept {
                   << "[CONFIG]   example sizes at current risk ($" << r << " max loss per trade):\n"
                   << "[CONFIG]     USOIL.F  ~" << oil_size  << " lots  (SL≈$0.48, max_loss≈$"  << std::round(oil_size  * 0.478 * 1000) << ")\n"
                   << "[CONFIG]     XAGUSD   ~" << xag_size  << " lots  (SL≈$0.32, max_loss≈$"  << std::round(xag_size  * 0.324 * 5000) << ")\n"
-                  << "[CONFIG]     GOLD.F   ~" << gold_size << " lots  (SL≈$10.4, max_loss≈$"  << std::round(gold_size * 10.4  * 100)  << ")\n"
+                  << "[CONFIG]     XAUUSD   ~" << gold_size << " lots  (SL≈$10.4, max_loss≈$"  << std::round(gold_size * 10.4  * 100)  << ")\n"
                   << "[CONFIG]     US500.F  ~" << sp_size   << " lots  (SL≈22.3pts@$50/pt, max_loss≈$"  << std::round(sp_size   * 22.3  * 50)   << ")\n"
                   << "[CONFIG]     USTEC.F  ~" << nq_size   << " lots  (SL≈78.0pts@$20/pt, max_loss≈$"  << std::round(nq_size   * 78.0  * 20)   << ")\n"
                   << "[CONFIG]     DJ30.F   ~" << dj_size   << " lots  (SL≈40.0pts@$5/pt,  max_loss≈$"  << std::round(dj_size   * 40.0  * 5)    << ")\n"
@@ -3134,7 +3134,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
             const std::string& s = tr.symbol;
             if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" ||
                 s == "NZDUSD" || s == "USDJPY" ||
-                s == "GOLD.F" || s == "XAGUSD")
+                s == "XAUUSD" || s == "XAGUSD")
                 comm_per_side = 3.0;  // $3/side = $6 round-trip per lot
         }
         omega::apply_realistic_costs(tr, comm_per_side, mult);
@@ -3263,7 +3263,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         notify(g_sup_cl,     "USOIL.F"); notify(g_sup_us30,   "DJ30.F");
         notify(g_sup_nas100, "NAS100");  notify(g_sup_ger30,   "GER40");
         notify(g_sup_uk100,  "UK100");   notify(g_sup_estx50,  "ESTX50");
-        notify(g_sup_xag,    "XAGUSD");  notify(g_sup_gold,    "GOLD.F");
+        notify(g_sup_xag,    "XAGUSD");  notify(g_sup_gold,    "XAUUSD");
         notify(g_sup_eurusd, "EURUSD");  notify(g_sup_gbpusd,  "GBPUSD");
         notify(g_sup_audusd, "AUDUSD");  notify(g_sup_nzdusd,  "NZDUSD");
         notify(g_sup_usdjpy, "USDJPY");  notify(g_sup_brent,   "BRENT");
@@ -3370,7 +3370,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Use the per-symbol L2 imbalance from MacroContext (updated just above this)
         {
             double l2_imb = 0.5;  // neutral fallback
-            if      (sym == "GOLD.F")  l2_imb = g_macro_ctx.gold_l2_imbalance;
+            if      (sym == "XAUUSD")  l2_imb = g_macro_ctx.gold_l2_imbalance;
             else if (sym == "US500.F") l2_imb = g_macro_ctx.sp_l2_imbalance;
             else if (sym == "USTEC.F") l2_imb = g_macro_ctx.nq_l2_imbalance;
             else if (sym == "XAGUSD")  l2_imb = g_macro_ctx.xag_l2_imbalance;
@@ -3416,7 +3416,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "NZDUSD")  g_eng_nzdusd.seed(mid);
         else if (sym == "USDJPY")  g_eng_usdjpy.seed(mid);
         else if (sym == "BRENT")   g_eng_brent.seed(mid);
-        else if (sym == "GOLD.F" || sym == "XAUUSD") {
+        else if (sym == "XAUUSD") {
             g_gold_flow.seed(mid);  // pre-warms ATR + direction windows
         }
     }
@@ -3646,7 +3646,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     std::unordered_map<std::string, ColdSnap> cold_snap;
     {
         static constexpr const char* COLD_SYMS[] = {
-            "GOLD.F","US500.F","XAGUSD","USOIL.F","EURUSD","GBPUSD",
+            "XAUUSD","US500.F","XAGUSD","USOIL.F","EURUSD","GBPUSD",
             "AUDUSD","NZDUSD","USDJPY","GER40","UK100","ESTX50","BRENT"
         };
         std::lock_guard<std::mutex> lk(g_l2_mtx);
@@ -3670,13 +3670,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             for (int i=0;i<na;++i){ap[i]=b->asks[i].price;as_[i]=b->asks[i].size;}
             g_telemetry.UpdateL2Book(sym, bp, bs, nb, ap, as_, na);
         };
-        if (const L2Book* b = getBook("GOLD.F")) {
+        if (const L2Book* b = getBook("XAUUSD")) {
             g_macro_ctx.gold_book_slope      = b->book_slope();
             g_macro_ctx.gold_vacuum_ask      = b->liquidity_vacuum_ask();
             g_macro_ctx.gold_vacuum_bid      = b->liquidity_vacuum_bid();
             g_macro_ctx.gold_wall_above      = b->wall_above(g_macro_ctx.gold_mid_price);
             g_macro_ctx.gold_wall_below      = b->wall_below(g_macro_ctx.gold_mid_price);
-            pushL2("GOLD.F", b);
+            pushL2("XAUUSD", b);
         }
         if (const L2Book* b = getBook("US500.F")) {
             g_macro_ctx.sp_book_slope        = b->book_slope();
@@ -3748,7 +3748,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             bear = cs.bearish_divergence();
         };
         bool dummy_b = false, dummy_b2 = false;
-        upd_cvd(g_macro_ctx.gold_cvd_dir,   g_macro_ctx.gold_cvd_bull_div, g_macro_ctx.gold_cvd_bear_div, "GOLD.F");
+        upd_cvd(g_macro_ctx.gold_cvd_dir,   g_macro_ctx.gold_cvd_bull_div, g_macro_ctx.gold_cvd_bear_div, "XAUUSD");
         upd_cvd(g_macro_ctx.sp_cvd_dir,     g_macro_ctx.sp_cvd_bull_div,   g_macro_ctx.sp_cvd_bear_div,   "US500.F");
         upd_cvd(g_macro_ctx.nq_cvd_dir,     dummy_b,  dummy_b2,  "USTEC.F");
         upd_cvd(g_macro_ctx.eurusd_cvd_dir, dummy_b,  dummy_b2,  "EURUSD");
@@ -3857,7 +3857,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         total += be_pnl(g_bracket_uk100.pos,  "UK100");
         total += be_pnl(g_bracket_estx50.pos, "ESTX50");
         total += be_pnl(g_bracket_xag.pos,    "XAGUSD");
-        total += be_pnl(g_bracket_gold.pos,   "GOLD.F");
+        total += be_pnl(g_bracket_gold.pos,   "XAUUSD");
         total += be_pnl(g_bracket_brent.pos,  "BRENT");
         total += be_pnl(g_bracket_eurusd.pos, "EURUSD");
         total += be_pnl(g_bracket_gbpusd.pos, "GBPUSD");
@@ -3887,13 +3887,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Gold flow
         if (g_gold_flow.pos.active) {
             std::lock_guard<std::mutex> lk(g_book_mtx);
-            auto bi = g_bids.find("GOLD.F"); auto ai = g_asks.find("GOLD.F");
+            auto bi = g_bids.find("XAUUSD"); auto ai = g_asks.find("XAUUSD");
             if (bi != g_bids.end() && ai != g_asks.end()) {
                 const double mid = (bi->second + ai->second) * 0.5;
                 const double move = g_gold_flow.pos.is_long
                     ? (mid - g_gold_flow.pos.entry)
                     : (g_gold_flow.pos.entry - mid);
-                total += move * g_gold_flow.pos.size * 100.0;  // GOLD.F tick mult
+                total += move * g_gold_flow.pos.size * 100.0;  // XAUUSD tick mult
             }
         }
         return total;
@@ -3927,27 +3927,27 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Per-trade live P&L — push_live_trade(sym, eng, is_long, entry, tp, sl, size, ts)
             // ── Gold engines ────────────────────────────────────────────────
             if (g_gold_flow.pos.active)
-                push_live_trade("GOLD.F","GoldFlow",
+                push_live_trade("XAUUSD","GoldFlow",
                     g_gold_flow.pos.is_long, g_gold_flow.pos.entry,
                     0.0, g_gold_flow.pos.sl,
                     g_gold_flow.pos.size, g_gold_flow.pos.entry_ts);
             if (g_gold_stack.has_open_position())
-                push_live_trade("GOLD.F", g_gold_stack.live_engine(),
+                push_live_trade("XAUUSD", g_gold_stack.live_engine(),
                     g_gold_stack.live_is_long(), g_gold_stack.live_entry(),
                     g_gold_stack.live_tp(),       g_gold_stack.live_sl(),
                     g_gold_stack.live_size(),     (int64_t)std::time(nullptr));
             if (g_bracket_gold.pos.active)
-                push_live_trade("GOLD.F","Bracket",
+                push_live_trade("XAUUSD","Bracket",
                     g_bracket_gold.pos.is_long, g_bracket_gold.pos.entry,
                     g_bracket_gold.pos.tp,      g_bracket_gold.pos.sl,
                     g_bracket_gold.pos.size,    g_bracket_gold.pos.entry_ts);
             if (g_trend_pb_gold.has_open_position())
-                push_live_trade("GOLD.F","TrendPB",
+                push_live_trade("XAUUSD","TrendPB",
                     g_trend_pb_gold.open_is_long(), g_trend_pb_gold.open_entry(),
                     0.0, g_trend_pb_gold.open_sl(),
                     g_trend_pb_gold.open_size(), (int64_t)std::time(nullptr));
             if (g_nbm_gold_london.has_open_position())
-                push_live_trade("GOLD.F","NBM-London",
+                push_live_trade("XAUUSD","NBM-London",
                     g_nbm_gold_london.open_is_long(), g_nbm_gold_london.open_entry(),
                     0.0, 0.0, g_nbm_gold_london.open_size(), (int64_t)std::time(nullptr));
             // ── US indices ──────────────────────────────────────────────────
@@ -4134,7 +4134,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     auto symbol_gate = [&](const std::string& symbol, bool symbol_has_open_position) -> bool {
         const bool shadow_mode = (g_cfg.mode == "SHADOW");
-        if (symbol == "GOLD.F" && g_disable_gold_stack) return false;
+        if (symbol == "XAUUSD" && g_disable_gold_stack) return false;
         // Connection stability gate: block new entries for N seconds after reconnect.
         // Prevents opening positions on the first tick after logon when the FIX session
         // may be unstable — avoids the open→immediate-FORCE_CLOSE pattern seen in logs.
@@ -4154,7 +4154,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (shadow_mode) {
             // Optional shadow pilot mode: keep GOLD stack live and run USTEC pilot only.
             if (g_cfg.shadow_ustec_pilot_only &&
-                symbol != "GOLD.F" && symbol != "USTEC.F") {
+                symbol != "XAUUSD" && symbol != "USTEC.F") {
                 return false;
             }
             if (g_cfg.shadow_ustec_pilot_only && symbol == "USTEC.F") {
@@ -4757,7 +4757,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     sym, eng.pos.is_long);
                 bool wall_in_dir = false;
                 const std::string_view psv(sym);
-                if      (psv == "GOLD.F")  wall_in_dir = eng.pos.is_long
+                if      (psv == "XAUUSD")  wall_in_dir = eng.pos.is_long
                     ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below;
                 else if (psv == "US500.F" || psv == "USTEC.F" ||
                          psv == "DJ30.F"  || psv == "NAS100")
@@ -5115,7 +5115,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 bool bkt_vac_ask = false, bkt_vac_bid = false;
                 bool bkt_wall_above = false, bkt_wall_below = false;
                 const std::string_view sv_bkt(sym);
-                if (sv_bkt == "GOLD.F") {
+                if (sv_bkt == "XAUUSD") {
                     bkt_microprice  = g_macro_ctx.gold_microprice_bias;
                     bkt_vac_ask     = g_macro_ctx.gold_vacuum_ask;
                     bkt_vac_bid     = g_macro_ctx.gold_vacuum_bid;
@@ -5363,7 +5363,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             ec = EC::FX_CASCADE;
         else if (sv == "USDJPY")
             ec = EC::FX_CARRY;
-        else if (sv == "GOLD.F")
+        else if (sv == "XAUUSD")
             ec = EC::GOLD_STACK; // shouldn't reach here — gold has bespoke path
 
         const float regime_wt = g_regime_adaptor.weight(ec);
@@ -5406,7 +5406,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             else if (sv == "USDJPY")   vwap = g_eng_usdjpy.vwap();
             else if (sv == "USOIL.F") vwap = g_eng_cl.vwap();
             else if (sv == "BRENT")   vwap = g_eng_brent.vwap();
-            else if (sv == "GOLD.F")  vwap = g_gold_stack.vwap();
+            else if (sv == "XAUUSD")  vwap = g_gold_stack.vwap();
             if (!g_edges.vwap_gate(entry, vwap)) {
                 printf("[VWAP-CHOP] %s %s entry=%.4f vwap=%.4f dist=%.3f%% — in chop zone, skipping\n",
                        esym, is_long?"LONG":"SHORT", entry, vwap,
@@ -5433,7 +5433,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             bool   vacuum_in_dir   = false;
             bool   wall_to_tp      = false;
 
-            if      (sv == "GOLD.F") {
+            if      (sv == "XAUUSD") {
                 microprice_bias = g_macro_ctx.gold_microprice_bias;
                 l2_imbalance    = g_macro_ctx.gold_l2_imbalance;
                 vacuum_in_dir   = is_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid;
@@ -5606,12 +5606,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
 
     // ── ACTIVE SYMBOLS GATE ───────────────────────────────────────────────────
-    // SIM-VALIDATED: GOLD.F and USOIL.F have proven compression edge.
+    // SIM-VALIDATED: XAUUSD and USOIL.F have proven compression edge.
     // US indices (US500.F, USTEC.F, NAS100, DJ30.F) now routed for
     // NoiseBandMomentumEngine — Zarattini/Maroy research (Sharpe 3.0-5.9).
     // All other symbols remain hard-blocked until re-validated.
     {
-        const bool is_active_sym = (sym == "GOLD.F"  || sym == "USOIL.F"  ||
+        const bool is_active_sym = (sym == "XAUUSD"  || sym == "USOIL.F"  ||
                                     sym == "US500.F" || sym == "USTEC.F"  ||
                                     sym == "NAS100"  || sym == "DJ30.F");
         // XAGUSD hard-blocked: SilverTurtleTick real-tick backtest result:
@@ -5756,9 +5756,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_ca_eia_fade.has_open_position()   ||  // ADDED
                 g_ca_brent_wti.has_open_position());    // ADDED
             // NOTE: USOIL.F bracket is disabled — it was incorrectly sharing
-            // g_bracket_gold (GOLD.F's GoldBracketEngine). That engine's confirm_fill,
-            // on_reject, and pending order IDs are wired to GOLD.F fills only.
-            // An oil bracket position would corrupt GOLD.F bracket state.
+            // g_bracket_gold (XAUUSD's GoldBracketEngine). That engine's confirm_fill,
+            // on_reject, and pending order IDs are wired to XAUUSD fills only.
+            // An oil bracket position would corrupt XAUUSD bracket state.
             // Oil needs its own dedicated BracketEngine before bracket can be enabled.
             const auto sdec = sup_decision(g_sup_cl, g_eng_cl, base_can);
             if (sdec.allow_breakout)
@@ -6140,7 +6140,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
         }
     }
-    else if (sym == "GOLD.F")  {
+    else if (sym == "XAUUSD")  {
         // ── Gold master exclusion gate ────────────────────────────────────────
         // Default: ANY open gold position blocks new entries (1-at-a-time invariant).
         // TREND DAY exception: when |ewm_drift| > 5.0 AND vol_ratio > 1.5,
@@ -6214,10 +6214,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool gold_session_ok = (gold_session_slot != 0);
         // On trend day re-entry: allow GoldStack even with gold_stack open position
         // (CompBreakout won't fire if stack is already open — handled in stack gate below)
-        const bool gold_can_enter = gold_session_ok && symbol_gate("GOLD.F", gold_any_open);
+        const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open);
         // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
         const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
-            && gold_session_ok && symbol_gate("GOLD.F", false);
+            && gold_session_ok && symbol_gate("XAUUSD", false);
 
         // Run supervisor — uses g_eng_xag as vol/phase proxy since gold has
         // its own GoldStack (not a BreakoutEngine). We use a dedicated gold
@@ -6225,7 +6225,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // For gold we track phase/vol from the bracket engine's internal data.
         int fb_gold = 0;
         { std::lock_guard<std::mutex> lk(g_false_break_mtx);
-          auto it = g_false_break_counts.find("GOLD.F"); if (it != g_false_break_counts.end()) fb_gold = it->second; }
+          auto it = g_false_break_counts.find("XAUUSD"); if (it != g_false_break_counts.end()) fb_gold = it->second; }
         // ── Gold supervisor — REAL measured volatility (no synthetic injection) ──
         //
         // REMOVED: synthetic vol mapping (IMPULSE→0.25%, COMPRESSION→0.04%, etc.)
@@ -6357,7 +6357,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                            gold_mid_now, gold_vwap_now, gold_vol_ratio, gsig.engine);
                     fflush(stdout);
                 } else {
-                    g_telemetry.UpdateLastSignal("GOLD.F",
+                    g_telemetry.UpdateLastSignal("XAUUSD",
                         gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason,
                         omega::regime_name(gold_sdec.regime), regime.c_str(), "BREAKOUT",
                         gsig.entry + (gsig.is_long ? 1.0 : -1.0) * gsig.tp_ticks * 0.10,
@@ -6365,14 +6365,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const double gold_sl_abs_raw = gsig.sl_ticks * 0.10;
                     // ATR-normalised SL floor for gold — same logic as other engines
                     const double gold_sl_abs = g_adaptive_risk.vol_scaler.atr_sl_floor(
-                        "GOLD.F", gold_sl_abs_raw);
+                        "XAUUSD", gold_sl_abs_raw);
 
                     // ── Confidence-scaled sizing ──────────────────────────────
                     // Scale by supervisor confidence: conf=0.45→0.65×, conf=0.80→1.08×
                     // Formula: clamp(0.40 + conf*0.85, 0.65, 1.25)
                     const double conf_mult = std::max(0.65, std::min(1.25,
                                                 0.40 + gold_sdec.confidence * 0.85));
-                    const double base_lot  = compute_size("GOLD.F", gold_sl_abs, ask - bid,
+                    const double base_lot  = compute_size("XAUUSD", gold_sl_abs, ask - bid,
                                                           gsig.size > 0.0 ? gsig.size : 0.02);
                     // ── Regime weight: boost gold in RISK_OFF, reduce in RISK_ON ──
                     const float regime_wt  = g_regime_adaptor.weight(
@@ -6396,14 +6396,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     double gold_daily_loss = 0.0; int gold_consec = 0;
                     {
                         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
-                        auto it = g_sym_risk.find("GOLD.F");
+                        auto it = g_sym_risk.find("XAUUSD");
                         if (it != g_sym_risk.end()) {
                             gold_daily_loss = std::max(0.0, -it->second.daily_pnl);
                             gold_consec     = it->second.consec_losses;
                         }
                     }
                     const double gold_adaptive = g_adaptive_risk.adjusted_lot(
-                        "GOLD.F", base_lot * conf_mult * static_cast<double>(regime_wt) * vol_regime_mult,
+                        "XAUUSD", base_lot * conf_mult * static_cast<double>(regime_wt) * vol_regime_mult,
                         gold_daily_loss, g_cfg.daily_loss_limit, gold_consec);
                     // Re-clamp to max_lot_gold: adjusted_lot applies Kelly which can
                     // multiply past the compute_size cap. Cap must be the final word.
@@ -6414,7 +6414,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         const double max_loss_lot = g_cfg.max_loss_per_trade_usd / (gold_sl_abs * 100.0);
                         if (gold_lot > max_loss_lot) {
                             const double capped = std::max(0.01, std::floor(max_loss_lot * 100.0 + 0.5) / 100.0);
-                            printf("[MAX-LOSS-CAP] GOLD.F lot capped %.4f→%.4f (sl=$%.2f max=$%.0f)\n",
+                            printf("[MAX-LOSS-CAP] XAUUSD lot capped %.4f→%.4f (sl=$%.2f max=$%.0f)\n",
                                    gold_lot, capped, gold_sl_abs * 100.0 * gold_lot, g_cfg.max_loss_per_trade_usd);
                             gold_lot = capped;
                         }
@@ -6438,23 +6438,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // Cost guard: ensure gold TP covers spread + commission + slippage
                     {
                         const double gold_tp_dist = gsig.tp_ticks * 0.10;  // ticks → pts (gold tick = $0.10)
-                        if (!ExecutionCostGuard::is_viable("GOLD.F", ask - bid, gold_tp_dist, gold_lot)) {
+                        if (!ExecutionCostGuard::is_viable("XAUUSD", ask - bid, gold_tp_dist, gold_lot)) {
                             g_telemetry.IncrCostBlocked();
                         } else {
                             // Log entry
-                            write_trade_open_log("GOLD.F", gsig.engine,
+                            write_trade_open_log("XAUUSD", gsig.engine,
                                 gsig.is_long ? "LONG" : "SHORT",
                                 gsig.entry,
                                 gsig.entry + (gsig.is_long ? 1.0 : -1.0) * gold_tp_dist,
                                 gsig.entry - (gsig.is_long ? 1.0 : -1.0) * gold_sl_abs,
                                 gold_lot, ask - bid, gold_stack_regime, gsig.reason);
                             // Arm partial exit for gold stack entries
-                            g_partial_exit.arm("GOLD.F", gsig.is_long, gsig.entry,
+                            g_partial_exit.arm("XAUUSD", gsig.is_long, gsig.entry,
                                                gsig.entry + (gsig.is_long ? 1.0 : -1.0) * gold_tp_dist,
                                                gsig.entry - (gsig.is_long ? 1.0 : -1.0) * gold_sl_abs,
                                                gold_lot,
-                                               g_adaptive_risk.vol_scaler.atr_fast("GOLD.F"));
-                            send_live_order("GOLD.F", gsig.is_long, gold_lot, gsig.entry);
+                                               g_adaptive_risk.vol_scaler.atr_fast("XAUUSD"));
+                            send_live_order("XAUUSD", gsig.is_long, gold_lot, gsig.entry);
                         }
                     }
                 }
@@ -6510,12 +6510,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 return (mins_utc >= 420 && mins_utc < 435);  // 07:00-07:15 UTC
             }();
 
-            // ── Trend bias: handled generically via g_bracket_trend["GOLD.F"] ─
+            // ── Trend bias: handled generically via g_bracket_trend["XAUUSD"] ─
             // Counter-trend suppression, L2 extension/shortening, and pyramiding
             // are all applied inside dispatch_bracket via BracketTrendState.
             // Gold uses the same system as all other bracket symbols.
             // Dead zone (05:00-07:00 UTC): not hard-blocked — spread/regime gates suffice.
-            BracketTrendState& gold_trend = g_bracket_trend["GOLD.F"];
+            BracketTrendState& gold_trend = g_bracket_trend["XAUUSD"];
             gold_trend.update_l2(g_macro_ctx.gold_l2_imbalance, now_ms_g);
             const bool gold_trend_blocked = gold_trend.counter_trend_blocked(now_ms_g);
 
@@ -6538,7 +6538,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static int64_t s_bias_inject_log = 0;
                 if (now_ms_g - s_bias_inject_log > 30000) {
                     s_bias_inject_log = now_ms_g;
-                    printf("[FLOW-BIAS-INJECT] GOLD.F GoldFlow trail_stage=%d %s → bias=%d (L2=%.3f)\n",
+                    printf("[FLOW-BIAS-INJECT] XAUUSD GoldFlow trail_stage=%d %s → bias=%d (L2=%.3f)\n",
                            g_gold_flow.pos.trail_stage,
                            g_gold_flow.pos.is_long ? "LONG" : "SHORT",
                            flow_dir, g_macro_ctx.gold_l2_imbalance);
@@ -6548,7 +6548,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (!g_gold_flow.pos.active && gold_trend.bias != 0
                 && gold_trend.bias_set_ms > 0) {
                 // Only clear if bias was injected by flow (no bracket exits recorded recently)
-                if (g_bracket_trend["GOLD.F"].exits.empty()) {
+                if (g_bracket_trend["XAUUSD"].exits.empty()) {
                     gold_trend.bias = 0;
                 }
             }
@@ -6581,7 +6581,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static int64_t s_bypass_log = 0;
                 if (now_ms_g - s_bypass_log > 10000) {
                     s_bypass_log = now_ms_g;
-                    printf("[BRACKET-COOLDOWN-BYPASS] GOLD.F bias=%d — trend leg bypasses 90s cooldown\n",
+                    printf("[BRACKET-COOLDOWN-BYPASS] XAUUSD bias=%d — trend leg bypasses 90s cooldown\n",
                            gold_trend.bias);
                 }
             }
@@ -6675,20 +6675,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 (bracket_open || gold_bracket_armed) ? can_manage : can_arm_bracket,
                 regime.c_str(), bracket_on_close, gold_vwap_now,
                 g_macro_ctx.gold_l2_imbalance);
-            g_telemetry.UpdateBracketState("GOLD.F",
+            g_telemetry.UpdateBracketState("XAUUSD",
                 static_cast<int>(g_bracket_gold.phase),
                 g_bracket_gold.bracket_high,
                 g_bracket_gold.bracket_low);
             const auto bgsigs = g_bracket_gold.get_signals();
             if (bgsigs.valid) {
-                const double base_bg_lot = compute_size("GOLD.F",
+                const double base_bg_lot = compute_size("XAUUSD",
                     std::fabs(bgsigs.long_entry - bgsigs.long_sl), ask - bid,
                     g_bracket_gold.ENTRY_SIZE);
                 const double bg_lot = gold_is_pyramiding
                     ? (base_bg_lot * PYRAMID_SIZE_MULT) : base_bg_lot;
                 // Cost guard: bracket TP dist = SL dist * RR
                 const double bg_tp_dist = std::fabs(bgsigs.long_entry - bgsigs.long_sl) * g_bracket_gold.RR;
-                const bool bg_cost_ok = ExecutionCostGuard::is_viable("GOLD.F", ask - bid, bg_tp_dist, bg_lot);
+                const bool bg_cost_ok = ExecutionCostGuard::is_viable("XAUUSD", ask - bid, bg_tp_dist, bg_lot);
                 if (!bg_cost_ok) {
                     g_telemetry.IncrCostBlocked();
                 } else {
@@ -6696,10 +6696,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     snprintf(bg_reason, sizeof(bg_reason), "HI:%.2f LO:%.2f bias:%d l2:%.2f",
                              bgsigs.long_entry, bgsigs.short_entry,
                              gold_trend.bias, g_macro_ctx.gold_l2_imbalance);
-                    g_telemetry.UpdateLastSignal("GOLD.F", "BRACKET", bgsigs.long_entry, bg_reason,
+                    g_telemetry.UpdateLastSignal("XAUUSD", "BRACKET", bgsigs.long_entry, bg_reason,
                         omega::regime_name(gold_sdec.regime), regime.c_str(), "BRACKET",
                         bgsigs.long_tp, bgsigs.long_sl);
-                    std::cout << "\033[1;33m[BRACKET] GOLD.F"
+                    std::cout << "\033[1;33m[BRACKET] XAUUSD"
                               << " sup_regime=" << omega::regime_name(gold_sdec.regime)
                               << " bracket_score=" << gold_sdec.bracket_score
                               << " winner=" << gold_sdec.winner
@@ -6712,38 +6712,38 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         const bool long_is_trend = (gold_trend.bias == 1);
                         const double long_lot  = long_is_trend  ? bg_lot : (bg_lot * 0.5);
                         const double short_lot = !long_is_trend ? bg_lot : (bg_lot * 0.5);
-                        write_trade_open_log("GOLD.F", "BracketGold", "LONG",
+                        write_trade_open_log("XAUUSD", "BracketGold", "LONG",
                             bgsigs.long_entry,
                             bgsigs.long_entry + (bgsigs.long_entry - bgsigs.short_entry) * 1.5,
                             bgsigs.short_entry, long_lot, ask - bid,
                             gold_stack_regime, gold_is_pyramiding ? "BRACKET_PYRAMID" : "BRACKET_ARM");
-                        write_trade_open_log("GOLD.F", "BracketGold", "SHORT",
+                        write_trade_open_log("XAUUSD", "BracketGold", "SHORT",
                             bgsigs.short_entry,
                             bgsigs.short_entry - (bgsigs.long_entry - bgsigs.short_entry) * 1.5,
                             bgsigs.long_entry, short_lot, ask - bid,
                             gold_stack_regime, gold_is_pyramiding ? "BRACKET_PYRAMID" : "BRACKET_ARM");
-                        long_id  = send_live_order("GOLD.F", true,  long_lot,  bgsigs.long_entry);
-                        short_id = send_live_order("GOLD.F", false, short_lot, bgsigs.short_entry);
-                        printf("[BRACKET-L2] GOLD.F bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",
+                        long_id  = send_live_order("XAUUSD", true,  long_lot,  bgsigs.long_entry);
+                        short_id = send_live_order("XAUUSD", false, short_lot, bgsigs.short_entry);
+                        printf("[BRACKET-L2] XAUUSD bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",
                                gold_trend.bias, bg_lot, bg_lot * 0.5,
                                g_macro_ctx.gold_l2_imbalance);
                     } else {
-                        write_trade_open_log("GOLD.F", "BracketGold", "LONG",
+                        write_trade_open_log("XAUUSD", "BracketGold", "LONG",
                             bgsigs.long_entry,
                             bgsigs.long_entry + (bgsigs.long_entry - bgsigs.short_entry) * 1.5,
                             bgsigs.short_entry, bg_lot, ask - bid, gold_stack_regime, "BRACKET_ARM");
-                        write_trade_open_log("GOLD.F", "BracketGold", "SHORT",
+                        write_trade_open_log("XAUUSD", "BracketGold", "SHORT",
                             bgsigs.short_entry,
                             bgsigs.short_entry - (bgsigs.long_entry - bgsigs.short_entry) * 1.5,
                             bgsigs.long_entry, bg_lot, ask - bid, gold_stack_regime, "BRACKET_ARM");
-                        long_id  = send_live_order("GOLD.F", true,  bg_lot, bgsigs.long_entry);
-                        short_id = send_live_order("GOLD.F", false, bg_lot, bgsigs.short_entry);
+                        long_id  = send_live_order("XAUUSD", true,  bg_lot, bgsigs.long_entry);
+                        short_id = send_live_order("XAUUSD", false, bg_lot, bgsigs.short_entry);
                     }
                     g_bracket_gold.pending_long_clOrdId  = long_id;
                     g_bracket_gold.pending_short_clOrdId = short_id;
                     // Tag pyramid arms so bracket_on_close can enforce SL cooldown
                     if (gold_is_pyramiding) {
-                        g_pyramid_clordids.insert(std::string("GOLD.F"));
+                        g_pyramid_clordids.insert(std::string("XAUUSD"));
                     }
                     ++g_bracket_gold_trades_this_minute;
                 }
@@ -6780,7 +6780,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const double gf_tp_dist = gf_sl_pts * 2.0;
                     const double gf_lot_est = std::max(GFE_MIN_LOT,
                         std::min(0.50, g_gold_flow.risk_dollars / (gf_sl_pts * 100.0)));  // cap matches GFE_MAX_LOT_FLOW
-                    if (!ExecutionCostGuard::is_viable("GOLD.F", ask - bid, gf_tp_dist, gf_lot_est)) {
+                    if (!ExecutionCostGuard::is_viable("XAUUSD", ask - bid, gf_tp_dist, gf_lot_est)) {
                         g_telemetry.IncrCostBlocked();
                         gf_tick_ok = false;
                     }
@@ -6809,13 +6809,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         ? gf_mid + gf_atr * 2.0
                         : gf_mid - gf_atr * 2.0;
                     const int gf_score = g_edges.entry_score_l2(
-                        "GOLD.F", gf_mid, gf_long, gf_tp_est, nowSec(),
+                        "XAUUSD", gf_mid, gf_long, gf_tp_est, nowSec(),
                         g_macro_ctx.gold_microprice_bias,
                         g_macro_ctx.gold_l2_imbalance,
                         gf_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid,
                         gf_long ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below);
                     if (gf_score <= -3) {
-                        printf("[GF-EDGE-BLOCK] GOLD.F %s score=%d (micro=%.4f l2=%.3f vac=%d wall=%d) — blocked\n",
+                        printf("[GF-EDGE-BLOCK] XAUUSD %s score=%d (micro=%.4f l2=%.3f vac=%d wall=%d) — blocked\n",
                                gf_long ? "LONG" : "SHORT", gf_score,
                                g_macro_ctx.gold_microprice_bias, g_macro_ctx.gold_l2_imbalance,
                                (gf_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid) ? 1 : 0,
@@ -6830,7 +6830,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 handle_closed_trade(tr);
                 // Close broker position with a market order (same as bracket_on_close)
                 const bool close_is_long = (tr.side == "SHORT"); // flip to close
-                send_live_order("GOLD.F", close_is_long, tr.size, tr.exitPrice);
+                send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
 
                 // ── Trend-day / reversal state update ────────────────────────
                 const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
@@ -6868,7 +6868,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     double gf_daily_loss = 0.0; int gf_consec = 0;
                     {
                         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
-                        auto it = g_sym_risk.find("GOLD.F");
+                        auto it = g_sym_risk.find("XAUUSD");
                         if (it != g_sym_risk.end()) {
                             gf_daily_loss = std::max(0.0, -it->second.daily_pnl);
                             gf_consec     = it->second.consec_losses;
@@ -6878,7 +6878,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const double gf_base = g_gold_flow.pos.size;
                     // Apply regime weight, then adaptive risk (Kelly + DD throttle + vol)
                     const double gf_adjusted = g_adaptive_risk.adjusted_lot(
-                        "GOLD.F",
+                        "XAUUSD",
                         gf_base * gf_regime_wt,
                         gf_daily_loss, g_cfg.daily_loss_limit, gf_consec);
                     // Hard clamp: max_lot_gold is the safety ceiling
@@ -6892,25 +6892,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         if (gf_lot > max_loss_lot) {
                             gf_lot = std::max(GFE_MIN_LOT,
                                 std::floor(max_loss_lot * 100.0 + 0.5) / 100.0);
-                            printf("[MAX-LOSS-CAP] GOLD.F FLOW lot capped %.4f→%.4f (sl=$%.2f max=$%.0f)\n",
+                            printf("[MAX-LOSS-CAP] XAUUSD FLOW lot capped %.4f→%.4f (sl=$%.2f max=$%.0f)\n",
                                    gf_final, gf_lot, gf_sl_abs * 100.0 * gf_final, g_cfg.max_loss_per_trade_usd);
                         }
                     }
                     if (gf_lot != g_gold_flow.pos.size) {
-                        printf("[GF-SIZE] GOLD.F FLOW size %.4f→%.4f (regime_wt=%.2f kelly/dd/vol applied)\n",
+                        printf("[GF-SIZE] XAUUSD FLOW size %.4f→%.4f (regime_wt=%.2f kelly/dd/vol applied)\n",
                                g_gold_flow.pos.size, gf_lot, gf_regime_wt);
                         g_gold_flow.pos.size = gf_lot;  // patch directly — pos is public
                     }
                 }
 
                 // Flow engine entered -- telemetry
-                g_telemetry.UpdateLastSignal("GOLD.F",
+                g_telemetry.UpdateLastSignal("XAUUSD",
                     g_gold_flow.pos.is_long ? "LONG" : "SHORT",
                     g_gold_flow.pos.entry, "L2_FLOW",
                     "FLOW", regime.c_str(), "GOLD_FLOW",
                     0.0, g_gold_flow.pos.sl);
                 // Log entry
-                write_trade_open_log("GOLD.F", "GoldFlow",
+                write_trade_open_log("XAUUSD", "GoldFlow",
                     g_gold_flow.pos.is_long ? "LONG" : "SHORT",
                     g_gold_flow.pos.entry, 0.0, g_gold_flow.pos.sl,
                     g_gold_flow.pos.size, ask - bid, regime, "L2_FLOW");
@@ -6920,10 +6920,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // TP2 = entry ± 2R (PartialExitManager sets TP1 = midpoint internally)
                     const double gf_tp2 = g_gold_flow.pos.entry +
                         (g_gold_flow.pos.is_long ? gf_sl_abs_pe * 2.0 : -gf_sl_abs_pe * 2.0);
-                    g_partial_exit.arm("GOLD.F", g_gold_flow.pos.is_long,
+                    g_partial_exit.arm("XAUUSD", g_gold_flow.pos.is_long,
                         g_gold_flow.pos.entry, gf_tp2, g_gold_flow.pos.sl,
                         g_gold_flow.pos.size,
-                        g_adaptive_risk.vol_scaler.atr_fast("GOLD.F"));
+                        g_adaptive_risk.vol_scaler.atr_fast("XAUUSD"));
                 }
             }
         }
@@ -6937,16 +6937,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && !g_trend_pb_gold.has_open_position()) { // ADDED: prevent stack with TrendPB
             const auto le_sig = g_le_stack.on_tick_gold(bid, ask, rtt_check, ca_on_close, gold_can_enter);
             if (le_sig.valid) {
-                g_telemetry.UpdateLastSignal("GOLD.F",
+                g_telemetry.UpdateLastSignal("XAUUSD",
                     le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason,
                     "LEAD_LAG", regime.c_str(), "LE",
                     le_sig.tp, le_sig.sl);
-                printf("[LE-SIZE] GOLD.F eng=%s sl_abs=%.2f spread=%.2f (enter_directional)\n",
+                printf("[LE-SIZE] XAUUSD eng=%s sl_abs=%.2f spread=%.2f (enter_directional)\n",
                        le_sig.engine, std::fabs(le_sig.entry - le_sig.sl), ask - bid);
-                enter_directional("GOLD.F", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size);
+                enter_directional("XAUUSD", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size);
             }
         }
-        // Trend Pullback: EMA9/21/50 — only when no other GOLD.F position is open.
+        // Trend Pullback: EMA9/21/50 — only when no other XAUUSD position is open.
         // TrendPullbackEngine ticks every call (EMA update), but only signals when
         // EMA stack is aligned AND price pulls back to EMA50 with a bounce tick.
         // Gated strictly: gold has many concurrent engines, no stacking allowed.
@@ -6956,7 +6956,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && !g_le_stack.has_open_position()
             && !g_gold_flow.has_open_position()
             && !g_trend_pb_gold.has_open_position()) {
-            const auto tpb = g_trend_pb_gold.on_tick("GOLD.F", bid, ask, ca_on_close);
+            const auto tpb = g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
             if (tpb.valid) {
                 // ── EWM drift direction filter — prevents TrendPB firing against macro trend ──
                 // Problem: during a strong downtrend a bounce pushes EMA9>EMA21>EMA50
@@ -6975,11 +6975,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_trend_pb_gold.cancel();
                 } else {
                     // UpdateLastSignal AFTER enter_directional succeeds — only show trades that actually fired
-                    if (!enter_directional("GOLD.F", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true)) {
+                    if (!enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true)) {
                         g_trend_pb_gold.cancel();
                     } else {
                         g_trend_pb_gold.patch_size(g_last_directional_lot);
-                        g_telemetry.UpdateLastSignal("GOLD.F",
+                        g_telemetry.UpdateLastSignal("XAUUSD",
                             tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
                             "TREND_PB", regime.c_str(), "TREND_PB",
                             tpb.tp, tpb.sl);
@@ -6988,7 +6988,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
         }
 
-        // ── NBM London session (07:00-13:30 UTC) on GOLD.F ───────────────────
+        // ── NBM London session (07:00-13:30 UTC) on XAUUSD ───────────────────
         // Runs independently of the gold stack/flow/bracket — pure momentum
         // engine using London open as session anchor. Gated: no other gold pos.
         if (gold_can_enter
@@ -7000,11 +7000,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && !g_le_stack.has_open_position()) {
             const auto nbm_lon = g_nbm_gold_london.on_tick(sym, bid, ask, ca_on_close);
             if (nbm_lon.valid) {
-                g_telemetry.UpdateLastSignal("GOLD.F",
+                g_telemetry.UpdateLastSignal("XAUUSD",
                     nbm_lon.is_long ? "LONG" : "SHORT", nbm_lon.entry,
                     nbm_lon.reason, "NBM_LONDON", regime.c_str(), "NBM_LONDON",
                     nbm_lon.tp, nbm_lon.sl);
-                if (!enter_directional("GOLD.F", nbm_lon.is_long, nbm_lon.entry,
+                if (!enter_directional("XAUUSD", nbm_lon.is_long, nbm_lon.entry,
                                        nbm_lon.sl, nbm_lon.tp))
                     g_nbm_gold_london.cancel();
                 else g_nbm_gold_london.patch_size(g_last_directional_lot);
@@ -7094,7 +7094,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         ca("VWAP_EUR",  "EURUSD",  g_vwap_rev_eurusd.has_open_position(), false, 0,0,0, 0.0,         0);
 
         // Trend Pullback — ref_price = EMA50 (dynamic SL)
-        ca("TRENDPB_GOLD","GOLD.F", g_trend_pb_gold.has_open_position(),  false, 0,0,0, g_trend_pb_gold.ema50(),  0);
+        ca("TRENDPB_GOLD","XAUUSD", g_trend_pb_gold.has_open_position(),  false, 0,0,0, g_trend_pb_gold.ema50(),  0);
         ca("TRENDPB_GER", "GER40",  g_trend_pb_ger40.has_open_position(), false, 0,0,0, g_trend_pb_ger40.ema50(), 0);
 
         // FX Cascade — one entry covers all three legs; armed state not stored here
@@ -7165,7 +7165,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             add_bkt(sn->sp_phase,     "US500.F");
             add_bkt(sn->nq_phase,     "USTEC.F");
             add_bkt(sn->cl_phase,     "USOIL.F");
-            add_bkt(sn->xau_phase,    "GOLD.F");
+            add_bkt(sn->xau_phase,    "XAUUSD");
             add_bkt(sn->brent_phase,  "BRENT");
             add_bkt(sn->xag_phase,    "XAGUSD");
             add_bkt(sn->eurusd_phase, "EURUSD");
@@ -7181,7 +7181,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             add_bkt(sn->bkt_uk.phase,    "UK100");
             add_bkt(sn->bkt_estx.phase,  "ESTX50");
             add_bkt(sn->bkt_xag.phase,   "XAGUSD");
-            add_bkt(sn->bkt_gold.phase,  "GOLD.F");
+            add_bkt(sn->bkt_gold.phase,  "XAUUSD");
             add_bkt(sn->bkt_eur.phase,   "EURUSD");
             add_bkt(sn->bkt_gbp.phase,   "GBPUSD");
             add_bkt(sn->bkt_brent.phase, "BRENT");
@@ -7306,7 +7306,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             }
             sym = it->second;
         } catch (...) {
-            // Broker sent string name in 55= (e.g. "GOLD.F") -- look up directly
+            // Broker sent string name in 55= (e.g. "XAUUSD") -- look up directly
             for (int i = 0; i < OMEGA_NSYMS; ++i) {
                 if (sym_raw == OMEGA_SYMS[i].name) { sym = OMEGA_SYMS[i].name; break; }
             }
@@ -7687,7 +7687,7 @@ static void quote_loop() {
 
             // ── Stale symbol auto-resubscribe ─────────────────────────────────
             // Broker occasionally drops individual symbol subscriptions silently
-            // (observed: GOLD.F stops streaming while all others continue).
+            // (observed: XAUUSD stops streaming while all others continue).
             // Every 60s check all primary symbols — if any has gone silent for
             // > 45s, force a full re-subscribe to recover the dropped feed.
             {
@@ -7700,7 +7700,7 @@ static void quote_loop() {
                         std::chrono::system_clock::now().time_since_epoch()).count();
                     // Check primary symbols only (the ones we always subscribe)
                     static const char* primary_syms[] = {
-                        "GOLD.F","US500.F","USTEC.F","DJ30.F","NAS100","USOIL.F"
+                        "XAUUSD","US500.F","USTEC.F","DJ30.F","NAS100","USOIL.F"
                     };
                     for (const char* psym : primary_syms) {
                         std::lock_guard<std::mutex> lk(g_last_tick_mtx);
@@ -7905,7 +7905,7 @@ static void quote_loop() {
         fc_snap(g_eng_brent,  "BRENT");
 
         // Gold/Silver bracket engines
-        { double b=0,a=0; snap_px("GOLD.F",b,a);
+        { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
           g_bracket_gold.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",shutdown_cb); }
         { double b=0,a=0; snap_px("XAGUSD",b,a);
@@ -7928,11 +7928,11 @@ static void quote_loop() {
         fc_bracket_snap(g_bracket_usdjpy, "USDJPY");
 
         // Gold stack, flow, latency
-        { double b=0,a=0; snap_px("GOLD.F",b,a);
+        { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
           g_gold_stack.force_close(b,a,g_rtt_last,shutdown_cb);
           g_gold_flow.force_close(b,a,std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),shutdown_cb); }
-        { double b=0,a=0; snap_px("GOLD.F",b,a);
+        { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
           double s_bid=0,s_ask=0; snap_px("XAGUSD",s_bid,s_ask);
           if(s_bid<=0){s_bid=b*0.0185;s_ask=a*0.0185;}
@@ -7947,7 +7947,7 @@ static void quote_loop() {
           snap_px("DJ30.F",b,a);  if(b>0&&a>0){g_nbm_us30.force_close(b,a,shutdown_cb);}
           snap_px("EURUSD",b,a);  if(b>0&&a>0){g_vwap_rev_eurusd.force_close(b,a,shutdown_cb);}
           snap_px("GER40",b,a);   if(b>0&&a>0){g_orb_ger30.force_close(b,a,shutdown_cb);g_vwap_rev_ger40.force_close(b,a,shutdown_cb);g_trend_pb_ger40.force_close(b,a,shutdown_cb);}
-          snap_px("GOLD.F",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb);g_nbm_gold_london.force_close(b,a,shutdown_cb);}
+          snap_px("XAUUSD",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb);g_nbm_gold_london.force_close(b,a,shutdown_cb);}
           snap_px("USOIL.F",b,a); if(b>0&&a>0){g_nbm_oil_london.force_close(b,a,shutdown_cb);}  // London NBM oil
           snap_px("XAGUSD",b,a);  if(b>0&&a>0){g_orb_silver.force_close(b,a,shutdown_cb);}
           snap_px("UK100",b,a);   if(b>0&&a>0){g_orb_uk100.force_close(b,a,shutdown_cb);}
@@ -8010,7 +8010,7 @@ static void quote_loop() {
                 e.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb);
                 printf("[OMEGA-SHUTDOWN] Closed bracket %s\n",s);
             };
-            { double b,a; get_px("GOLD.F",b,a); g_bracket_gold.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb); }
+            { double b,a; get_px("XAUUSD",b,a); g_bracket_gold.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb); }
             { double b,a; get_px("XAGUSD",b,a); g_bracket_xag.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb); }
             sbk(g_bracket_sp,"US500.F"); sbk(g_bracket_nq,"USTEC.F");
             sbk(g_bracket_us30,"DJ30.F"); sbk(g_bracket_nas100,"NAS100");
@@ -8021,8 +8021,8 @@ static void quote_loop() {
             sbk(g_bracket_usdjpy,"USDJPY");
 
             // Gold stack + flow + latency
-            { double b,a; get_px("GOLD.F",b,a); g_gold_stack.force_close(b,a,g_rtt_last,scb); g_gold_flow.force_close(b,a,std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),scb); }
-            { double b,a,sb,sa; get_px("GOLD.F",b,a); get_px("XAGUSD",sb,sa);
+            { double b,a; get_px("XAUUSD",b,a); g_gold_stack.force_close(b,a,g_rtt_last,scb); g_gold_flow.force_close(b,a,std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),scb); }
+            { double b,a,sb,sa; get_px("XAUUSD",b,a); get_px("XAGUSD",sb,sa);
               g_le_stack.force_close_all(b,a,sb,sa,g_rtt_last,[&](const omega::TradeRecord& tr){scb(tr);}); }
 
             // Cross-asset: VWAP, TrendPB, ORB, Carry, FxCascade
@@ -8033,7 +8033,7 @@ static void quote_loop() {
               get_px("DJ30.F",b,a);   g_nbm_us30.force_close(b,a,scb);
               get_px("EURUSD",b,a);   g_vwap_rev_eurusd.force_close(b,a,scb);
               get_px("GER40",b,a);    g_orb_ger30.force_close(b,a,scb); g_vwap_rev_ger40.force_close(b,a,scb); g_trend_pb_ger40.force_close(b,a,scb);
-              get_px("GOLD.F",b,a);   g_trend_pb_gold.force_close(b,a,scb); g_nbm_gold_london.force_close(b,a,scb);
+              get_px("XAUUSD",b,a);   g_trend_pb_gold.force_close(b,a,scb); g_nbm_gold_london.force_close(b,a,scb);
               get_px("USOIL.F",b,a);  g_nbm_oil_london.force_close(b,a,scb);  // London NBM oil
               get_px("XAGUSD",b,a);   g_orb_silver.force_close(b,a,scb);
               get_px("UK100",b,a);    g_orb_uk100.force_close(b,a,scb);
@@ -8100,8 +8100,8 @@ static void quote_loop() {
         {
             double bgld_bid = 0.0, bgld_ask = 0.0;
             { std::lock_guard<std::mutex> lk(g_book_mtx);
-              const auto bi = g_bids.find("GOLD.F"); if (bi != g_bids.end()) bgld_bid = bi->second;
-              const auto ai = g_asks.find("GOLD.F"); if (ai != g_asks.end()) bgld_ask = ai->second; }
+              const auto bi = g_bids.find("XAUUSD"); if (bi != g_bids.end()) bgld_bid = bi->second;
+              const auto ai = g_asks.find("XAUUSD"); if (ai != g_asks.end()) bgld_ask = ai->second; }
             if (bgld_bid > 0.0 && bgld_ask > 0.0)
                 g_bracket_gold.forceClose(bgld_bid, bgld_ask, "FORCE_CLOSE", g_rtt_last, "",
                     [](const omega::TradeRecord& tr) {
@@ -8189,16 +8189,16 @@ static void quote_loop() {
             // Each leg uses the GBPUSD price as approximation — acceptable for emergency
             // disconnect close since the pairs are highly correlated and positions are 0.01 lot.
             // The individual on_tick_audusd/nzdusd calls above already handle manage() on each tick.
-            // GOLD.F TrendPullback
-            ca_get_px("GOLD.F", ca_b, ca_a);
+            // XAUUSD TrendPullback
+            ca_get_px("XAUUSD", ca_b, ca_a);
             if (ca_b > 0.0 && ca_a > 0.0) { g_trend_pb_gold.force_close(ca_b, ca_a, ca_cb); }
         }
         // Force-close GoldEngineStack
         {
             double g_bid = 0.0, g_ask = 0.0, s_bid = 0.0, s_ask = 0.0;
             { std::lock_guard<std::mutex> lk(g_book_mtx);
-              const auto bi = g_bids.find("GOLD.F"); if (bi != g_bids.end()) g_bid = bi->second;
-              const auto ai = g_asks.find("GOLD.F"); if (ai != g_asks.end()) g_ask = ai->second;
+              const auto bi = g_bids.find("XAUUSD"); if (bi != g_bids.end()) g_bid = bi->second;
+              const auto ai = g_asks.find("XAUUSD"); if (ai != g_asks.end()) g_ask = ai->second;
               const auto sbi = g_bids.find("XAGUSD"); if (sbi != g_bids.end()) s_bid = sbi->second;
               const auto sai = g_asks.find("XAGUSD"); if (sai != g_asks.end()) s_ask = sai->second; }
             if (g_bid > 0.0 && g_ask > 0.0) {
@@ -8665,7 +8665,7 @@ int main(int argc, char* argv[])
                 if (c.max_spread       > 0.0) eng.MAX_SPREAD          = c.max_spread;
                 // SLIPPAGE_BUFFER intentionally NOT set here — configure() has correct values
             };
-            apply_bracket(g_bracket_gold,   g_sym_cfg.get("GOLD.F"));
+            apply_bracket(g_bracket_gold,   g_sym_cfg.get("XAUUSD"));
             apply_bracket(g_bracket_xag,    g_sym_cfg.get("XAGUSD"));
             apply_bracket(g_bracket_sp,     g_sym_cfg.get("US500.F"));
             apply_bracket(g_bracket_nq,     g_sym_cfg.get("USTEC.F"));
@@ -8726,7 +8726,7 @@ int main(int argc, char* argv[])
             apply_supervisor(g_sup_nzdusd, "NZDUSD",  g_sym_cfg.get("NZDUSD"),  g_cfg.nzdusd_max_spread_pct);
             apply_supervisor(g_sup_usdjpy, "USDJPY",  g_sym_cfg.get("USDJPY"),  g_cfg.usdjpy_max_spread_pct);
             apply_supervisor(g_sup_brent,  "BRENT", g_sym_cfg.get("BRENT"), g_cfg.brent_max_spread_pct);
-            apply_supervisor(g_sup_gold,   "GOLD.F",  g_sym_cfg.get("GOLD.F"),  g_cfg.bracket_gold_max_spread_pct);
+            apply_supervisor(g_sup_gold,   "XAUUSD",  g_sym_cfg.get("XAUUSD"),  g_cfg.bracket_gold_max_spread_pct);
             std::cout << "[SUPERVISOR] All supervisors configured from " << sym_ini << "\n";
             std::cout << "[SYMCFG] All engine params overridden from " << sym_ini << "\n";
         } else {
@@ -8750,7 +8750,7 @@ int main(int argc, char* argv[])
             g_sup_cl.symbol     = "USOIL.F"; g_sup_us30.symbol   = "DJ30.F";
             g_sup_nas100.symbol = "NAS100";  g_sup_ger30.symbol  = "GER40";
             g_sup_uk100.symbol  = "UK100";   g_sup_estx50.symbol = "ESTX50";
-            g_sup_xag.symbol    = "XAGUSD";  g_sup_gold.symbol   = "GOLD.F";
+            g_sup_xag.symbol    = "XAGUSD";  g_sup_gold.symbol   = "XAUUSD";
             g_sup_eurusd.symbol = "EURUSD";  g_sup_gbpusd.symbol = "GBPUSD";
             g_sup_audusd.symbol = "AUDUSD";  g_sup_nzdusd.symbol = "NZDUSD";
             g_sup_usdjpy.symbol = "USDJPY";  g_sup_brent.symbol  = "BRENT";
@@ -9089,7 +9089,7 @@ int main(int argc, char* argv[])
               << "% vol=" << g_eng_brent.VOL_THRESH_PCT << "% mom=" << g_eng_brent.MOMENTUM_THRESH_PCT
               << "% brk=" << g_eng_brent.MIN_BREAKOUT_PCT << "% gap=" << g_eng_brent.MIN_GAP_SEC
               << "s hold=" << g_eng_brent.MAX_HOLD_SEC << "s spread=" << g_eng_brent.MAX_SPREAD_PCT << "%\n"
-              << "[OMEGA-PARAMS] GOLD.F   GoldEngineStack active | gap=" << g_cfg.gs_cfg.min_entry_gap_sec
+              << "[OMEGA-PARAMS] XAUUSD   GoldEngineStack active | gap=" << g_cfg.gs_cfg.min_entry_gap_sec
               << "s hold=" << g_cfg.gs_cfg.max_hold_sec << "s vwap_min=" << g_cfg.gs_cfg.min_vwap_dislocation
               << " spread_max=" << g_cfg.gs_cfg.max_entry_spread << "\n"
               << "[OMEGA-PARAMS] GoldStack MIN_ENTRY_GAP=30s MAX_HOLD=600s REGIME_FLIP_MIN=60s\n"
@@ -9356,8 +9356,8 @@ int main(int argc, char* argv[])
         g_ctrader_depth.symbol_whitelist.insert("VIX");
         g_ctrader_depth.dump_all_symbols = false;  // disabled: 1473-symbol dump floods stdout
         // Alias map: broker name → internal name used by getImb/getBook
-        g_ctrader_depth.name_alias["GOLD"]    = "GOLD.F";
-        g_ctrader_depth.name_alias["XAUUSD"]  = "GOLD.F";
+        g_ctrader_depth.name_alias["GOLD"]    = "XAUUSD";
+        // XAUUSD is already the canonical name — no alias needed
         g_ctrader_depth.name_alias["SILVER"]  = "XAGUSD";
         g_ctrader_depth.name_alias["NGAS"]    = "NGAS.F";
         g_ctrader_depth.name_alias["VIX"]     = "VIX.F";
