@@ -3087,6 +3087,7 @@ static void maybe_reset_daily_ledger() {
     g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
     // Save Kelly performance history (persists win-rate/expectancy across restarts)
     g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
+    g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
     g_edges.reset_daily();  // resets CVD session hi/lo; prev_day updates via on_tick
     g_edges.fill_quality.print_summary();  // log fill quality summary at rollover
 
@@ -8967,6 +8968,16 @@ int main(int argc, char* argv[])
             g_adaptive_risk.load_perf(kelly_dir);
         }
 
+        // Load GoldFlowEngine ATR state — eliminates 100-tick blind zone on restart
+        {
+            const std::string atr_path = log_root_dir() + "/gold_flow_atr.dat";
+            g_gold_flow.load_atr_state(atr_path);  // real ATR if file exists
+            g_gold_flow.seed(0.0);                  // conservative fallback if not
+            printf("[GFE] Startup ATR: m_atr=%.4f (%s)\n",
+                   g_gold_flow.current_atr(),
+                   g_gold_flow.current_atr() > 0.0 ? "warmed" : "cold-seeded");
+        }
+
         // Multi-day drawdown throttle: load history, log startup state
         {
             const std::string md_path = log_root_dir() + "/day_results.csv";
@@ -9423,6 +9434,7 @@ int main(int argc, char* argv[])
     // Save Kelly performance on shutdown (not just rollover) so intra-session
     // trades survive process restart without re-warming for 15+ trades.
     g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
+    g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
     g_adaptive_risk.print_summary();
     if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); delete g_tee_buf; g_tee_buf = nullptr; }
     WSACleanup();
