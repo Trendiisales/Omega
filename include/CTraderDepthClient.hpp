@@ -563,23 +563,35 @@ private:
         if (!wait_for(ssl, 2157, 10000, pt, payload)) { std::cerr << "[CTRADER] SubscribeDepthRes timeout\n"; return false; }
         std::cout << "[CTRADER] Subscribed to " << sub_ids.size() << " symbols\n";
 
-        // ?? Request historical OHLC bars + subscribe live bar updates ?????????
-        // For each bar_subscription: request 200 M1 + 100 M5 bars (non-blocking,
-        // responses handled in recv_loop). Then subscribe live bar pushes.
+        // Request historical OHLC bars + subscribe live bar updates.
+        // Send requests per-symbol and check for error (pt=2142) after each set.
+        // Some instruments (cash indices like GER40 id=1899) do not support
+        // trendbars -- broker returns INVALID_REQUEST which drops the connection.
+        // By checking after each symbol we can skip failing ones without aborting.
         for (auto& kv : bar_subscriptions) {
             const std::string& name = kv.first;
             const int64_t sid = kv.second.sym_id;
             if (sid <= 0) continue;
-            // Historical M1 bars (period=1, count=200)
             send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 1, 200));
-            // Historical M5 bars (period=5, count=100)
             send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 5, 100));
-            // Subscribe live M1 bar closes
             send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, sid, 1));
-            // Subscribe live M5 bar closes
             send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, sid, 5));
             std::cout << "[CTRADER-BARS] Requested M1+M5 history + live for " << name
                       << " (id=" << sid << ")\n";
+            // Poll 300ms for error response -- if broker rejects, log and mark failed
+            uint32_t echeck_pt = 0; std::vector<uint8_t> echeck_payload;
+            const int erc = read_one(ssl, echeck_pt, echeck_payload, 300);
+            if (erc > 0 && echeck_pt == 2142) {
+                const auto ef = PB::parse(echeck_payload);
+                std::cerr << "[CTRADER-BARS] " << name << " id=" << sid
+                          << " trendbars rejected: " << PB::get_string(ef, 2)
+                          << " -- disabling bars for this symbol\n";
+                kv.second.sym_id = -1;  // mark failed -- recv_loop skips it
+            } else if (erc > 0 && echeck_pt == 2138) {
+                on_trendbars_res(echeck_payload);  // got first history response early
+            } else if (erc > 0 && echeck_pt == 51) {
+                send_msg(ssl, PB::heartbeat());
+            }
         }
         return true;
     }
