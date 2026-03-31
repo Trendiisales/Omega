@@ -67,6 +67,11 @@ class BracketEngineBase
 public:
     // ── Config ────────────────────────────────────────────────────────────────
     int    STRUCTURE_LOOKBACK  = 30;
+    // Cold-start entry gate — ticks received before arming is allowed.
+    // BracketEngine has no seed() but m_window fills from tick 1 and
+    // STRUCTURE_LOOKBACK=30 means it can arm in ~3s on a fast feed.
+    // At ~5-10 ticks/s: 150 ticks ≈ 15-30s of real market data.
+    int    MIN_ENTRY_TICKS    = 150;
     double BUFFER              = 0.3;
     double RR                  = 1.5;
     int    COOLDOWN_MS         = 120000;
@@ -376,9 +381,19 @@ public:
 
         // ── Maintain structure window ─────────────────────────────────────────
         m_window.push_back(mid);
+        ++m_ticks_received;  // always — cold-start gate
+
         if (static_cast<int>(m_window.size()) > STRUCTURE_LOOKBACK * 2)
             m_window.pop_front();
         if (static_cast<int>(m_window.size()) < STRUCTURE_LOOKBACK) return;
+
+        // ── Cold-start entry gate ────────────────────────────────────────────────
+        // m_window fills from tick 1; STRUCTURE_LOOKBACK=30 means the engine
+        // can arm within 3s of startup on a fast feed. Block IDLE→ARMED transition
+        // until MIN_ENTRY_TICKS real ticks have been received.
+        // ARMED/PENDING/LIVE/COOLDOWN phases pass through — only fresh arming blocked.
+        const bool cold_start_blocked = (m_ticks_received < MIN_ENTRY_TICKS
+                                         && phase == BracketPhase::IDLE);
 
         // ── Volatility-scaled minimum range ───────────────────────────────────
         // ATR_PERIOD > 0: compute true price-range volatility (hi-lo of mid over
@@ -427,6 +442,8 @@ public:
         // shouldTrade() gate — only resets to IDLE from IDLE, not from ARMED.
         // If we are already ARMED (structure was valid), a single-tick shouldTrade
         // failure (e.g. transient spread spike) must not destroy the timer.
+        if (cold_start_blocked) return;
+
         if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, vwap)) {
             if (phase != BracketPhase::ARMED) {
                 phase = BracketPhase::IDLE; bracket_high = 0.0; bracket_low = 0.0;
@@ -559,6 +576,7 @@ protected:
     int64_t m_cooldown_start  = 0;
     int64_t m_armed_ts        = 0;
     int     m_trade_id        = 0;
+    int     m_ticks_received  = 0;  // raw tick count since construction — cold-start gate
     double  m_l2_imbalance    = 0.5;
     int     m_inside_ticks    = 0;  // consecutive ticks mid was inside bracket — for MIN_BREAK_TICKS gate
 
@@ -786,3 +804,4 @@ public:
 };
 
 } // namespace omega
+
