@@ -145,7 +145,12 @@ static constexpr double GFE_ASIA_MAX_SPREAD        = 2.5;    // raised $1.50?$2.
                                                               // on a $100 drop ATR>=$15, spread $2.50 ? ratio=6.0 >> 4.0 ? PASS.
                                                               // On thin chop ATR=$2, spread $2.50 ? ratio=0.8 << 4.0 ? BLOCK.
                                                               // The spread cap alone was a blunt instrument; ratio does it better.
-static constexpr double GFE_ASIA_DRIFT_MIN         = 0.50;   // drift must exceed $0.50 (vs $0 normal) -- real directional pressure
+static constexpr double GFE_ASIA_DRIFT_MIN         = 1.50;   // ALIGNED with outer asia_trend_ok gate (main.cpp: |drift|>=1.5).
+                                                              // Was 0.50: GoldFlow inner gate allowed entries at $0.50 drift while
+                                                              // the outer bracket/flow gate required $1.50. Gap meant GFE fired
+                                                              // on weak Asia moves that had already been blocked at the outer gate,
+                                                              // creating phantom entries in log with no corresponding bracket entry.
+                                                              // Both gates now require $1.50 -- consistent Asia drift threshold.
 static constexpr double GFE_ASIA_MOMENTUM_MIN      = 0.30;   // mid must move $0.30+ over momentum ticks (vs $0 normal)
 static constexpr int    GFE_ASIA_COOLDOWN_MS       = 60000;  // 60s cooldown (vs 30s normal) -- fewer attempts on bad tape
 static constexpr double GFE_ASIA_ATR_SPREAD_RATIO  = 4.0;    // ATR must be >= 4x spread -- the primary noise filter.
