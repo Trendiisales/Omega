@@ -95,15 +95,16 @@ static constexpr double GFE_ATR_MIN           = 5.0;   // raised 2.0→5.0: XAUU
                                                         // 5pt minimum = 0.11% = survives a real tick move.
                                                         // VIX27 day real ATR is 8-18pts, this is a safe floor.
 static constexpr double GFE_ATR_SL_MULT       = 1.0;   // SL = ATR * this
-static constexpr double GFE_TRAIL_STAGE2_MULT = 0.50;  // trail 0.5×ATR behind MFE from stage 2 on
-static constexpr double GFE_TRAIL_STAGE3_MULT = 0.35;  // tighten to 0.35×ATR at stage 3 (3×ATR profit)
-static constexpr double GFE_TRAIL_STAGE4_MULT = 0.25;  // tighten to 0.25×ATR at stage 4 (8×ATR — ride cascade)
-static constexpr double GFE_BE_ATR_MULT       = 1.0;   // BE lock at 1×ATR profit
-static constexpr double GFE_PARTIAL_EXIT_R    = 1.0;   // take 50% off at 1×ATR profit — locks win before trail
+// Trail distance constants — used only by staircase remainder trail
+static constexpr double GFE_TRAIL_STAGE2_MULT = 0.50;  // kept for GUI stage display compat
+static constexpr double GFE_TRAIL_STAGE3_MULT = 0.35;  // kept for GUI stage display compat
+static constexpr double GFE_TRAIL_STAGE4_MULT = 0.25;  // kept for GUI stage display compat
+static constexpr double GFE_BE_ATR_MULT       = 1.0;   // BE lock fires with stair step 1
+static constexpr double GFE_PARTIAL_EXIT_R    = 1.0;   // stair step 1 trigger (1×ATR)
 static constexpr double GFE_PARTIAL_EXIT_FRAC = 0.50;  // fraction to close at partial exit trigger
-static constexpr double GFE_STAGE2_ATR_MULT   = 1.0;   // trail arms at 1×ATR — SAME as BE lock, always trailing
-static constexpr double GFE_STAGE3_ATR_MULT   = 3.0;   // tighten trail at 3×ATR profit (was 8×)
-static constexpr double GFE_STAGE4_ATR_MULT   = 8.0;   // final tighten at 8×ATR — ride cascade (was 15×)
+static constexpr double GFE_STAGE2_ATR_MULT   = 1.0;   // stair step 1 (same as BE)
+static constexpr double GFE_STAGE3_ATR_MULT   = 2.0;   // stair step 2
+static constexpr double GFE_STAGE4_ATR_MULT   = 6.0;   // full trail stage (GUI badge)
 static constexpr double GFE_MAX_SPREAD        = 2.5;   // pts — London gold spread $1.50-$4.00; old 0.6 blocked all entries
 static constexpr int    GFE_MIN_HOLD_MS       = 5000;   // 5s minimum hold
 static constexpr int    GFE_MAX_HOLD_MS       = 3600000; // 60 min — EA has no hold limit, keep generous — prevents indefinite holds on flat tape
@@ -886,150 +887,125 @@ private:
         // Track MFE
         if (move > pos.mfe) pos.mfe = move;
 
-        // ---- Partial exit at 1R: lock 50% of position before trail activates ----
-        // Fires once when profit first reaches 1×ATR. Closes GFE_PARTIAL_EXIT_FRAC (50%)
-        // of the position at market. Remaining half runs the full progressive trail.
-        // Benefit: guarantees a winner on the position even if trail gives back all profit.
-        // Evidence: Friday 3 FORCE_CLOSEs all exited near breakeven — partial exit would
-        // have locked +$150-300 on each before the trail had a chance to close at 0.
-        // The partial close fires a callback so main.cpp can send the broker order.
-        // Uses the same on_close callback — main.cpp handles it as a normal exit.
-        if (!pos.partial_closed && move >= atr * GFE_PARTIAL_EXIT_R) {
-            const double partial_size = std::floor(pos.size * GFE_PARTIAL_EXIT_FRAC / 0.001) * 0.001;
-            if (partial_size >= GFE_MIN_LOT) {
-                const double partial_px = pos.is_long ? bid : ask;
-                const double partial_pnl = (pos.is_long ? (partial_px - pos.entry)
-                                                        : (pos.entry - partial_px))
-                                           * partial_size;
-                // Fire partial close callback
-                omega::TradeRecord ptr;
-                ptr.id           = m_trade_id;
-                ptr.symbol       = "XAUUSD";
-                ptr.side         = pos.is_long ? "LONG" : "SHORT";
-                ptr.entryPrice   = pos.entry;
-                ptr.exitPrice    = partial_px;
-                ptr.sl           = pos.sl;
-                ptr.size         = partial_size;
-                ptr.pnl          = partial_pnl;
-                ptr.mfe          = pos.mfe * partial_size;
-                ptr.mae          = 0.0;
-                ptr.entryTs      = pos.entry_ts;
-                ptr.exitTs       = now_ms / 1000;
-                ptr.exitReason   = "PARTIAL_1R";
-                ptr.engine       = "GoldFlowEngine";
-                ptr.regime       = "FLOW";
-                ptr.spreadAtEntry = m_spread_at_entry;
-                // Reduce position size — remaining half runs the trail
-                pos.size         -= partial_size;
-                pos.partial_closed = true;
-                std::cout << "[GOLD-FLOW] PARTIAL-EXIT 1R"
-                          << (pos.is_long ? " LONG" : " SHORT")
-                          << " @ " << std::fixed << std::setprecision(2) << partial_px
-                          << " partial_size=" << partial_size
-                          << " remaining=" << pos.size
-                          << " pnl_pts=" << (partial_pnl / partial_size)
-                          << " pnl_usd=" << (partial_pnl * 100.0) << "\n";
-                std::cout.flush();
-                if (on_close) on_close(ptr);
-            } else {
-                // Position too small to split — just mark as done so we don't retry
-                pos.partial_closed = true;
+        // ══════════════════════════════════════════════════════════════════════
+        // STAIRCASE BANKING — bank profit every ATR step, SL locks to each exit
+        //
+        // Design: every time profit reaches another ATR multiple, close 33% of
+        // the REMAINING position at market and move SL to that exit price.
+        // This means you can NEVER give back what was banked at a prior step.
+        //
+        // Step 1: +1×ATR → close 33% of full size,  SL → entry (BE)
+        // Step 2: +2×ATR → close 33% of remaining,  SL → step1 exit price
+        // Step 3: +3×ATR → close 33% of remaining,  SL → step2 exit price
+        // Final:  remainder trails 0.25×ATR behind MFE peak (very tight)
+        //
+        // SL for each step is the EXIT PRICE of that step + small buffer
+        // so a tick back through the exit price doesn't immediately stop out.
+        // Buffer = 0.25×ATR (covers spread + 1 tick noise).
+        //
+        // On a 16pt move (e.g. 4569→4553 with ATR=13.5):
+        //   Step 1 fires at 4555.9 → bank $192, SL=4559.2 (not 4569!)
+        //   If reverses from 4553 → SL hit at 4559.2 → exit with $292 extra
+        //   Total: $484 LOCKED vs $0 with old BE-only system
+        // ══════════════════════════════════════════════════════════════════════
+        static constexpr double STEP_FRAC   = 0.33;  // close 33% each step
+        static constexpr double SL_BUFFER   = 0.25;  // SL buffer = 0.25×ATR beyond exit
+
+        // Helper to fire a partial close record and update position
+        auto fire_stair = [&](int step_num, const char* label) {
+            const double exit_px   = pos.is_long ? bid : ask;
+            const double close_qty = std::floor(pos.size * STEP_FRAC / 0.001) * 0.001;
+            if (close_qty < GFE_MIN_LOT) {
+                // Position too small to split further — mark step done
+                if (step_num == 1) pos.partial_closed   = true;
+                else               pos.partial_closed_2 = true;
+                return;
             }
+            const double pnl = (pos.is_long ? (exit_px - pos.entry)
+                                            : (pos.entry - exit_px)) * close_qty;
+
+            omega::TradeRecord ptr;
+            ptr.id            = m_trade_id;
+            ptr.symbol        = "XAUUSD";
+            ptr.side          = pos.is_long ? "LONG" : "SHORT";
+            ptr.entryPrice    = pos.entry;
+            ptr.exitPrice     = exit_px;
+            ptr.sl            = pos.sl;
+            ptr.size          = close_qty;
+            ptr.pnl           = pnl;
+            ptr.mfe           = pos.mfe * close_qty;
+            ptr.mae           = 0.0;
+            ptr.entryTs       = pos.entry_ts;
+            ptr.exitTs        = now_ms / 1000;
+            ptr.exitReason    = label;
+            ptr.engine        = "GoldFlowEngine";
+            ptr.regime        = "FLOW";
+            ptr.spreadAtEntry = m_spread_at_entry;
+
+            // Lock SL to exit price + buffer — can never give back this profit
+            const double new_sl = pos.is_long
+                ? (exit_px - atr * SL_BUFFER)   // LONG: SL below exit
+                : (exit_px + atr * SL_BUFFER);   // SHORT: SL above exit
+            if (pos.is_long  && new_sl > pos.sl) pos.sl = new_sl;
+            if (!pos.is_long && new_sl < pos.sl) pos.sl = new_sl;
+
+            pos.size -= close_qty;
+            if (step_num == 1) { pos.partial_closed   = true; pos.be_locked = true; }
+            else               { pos.partial_closed_2 = true; }
+
+            std::cout << "[GOLD-FLOW] STAIR-" << label
+                      << (pos.is_long ? " LONG" : " SHORT")
+                      << " @ " << std::fixed << std::setprecision(2) << exit_px
+                      << " qty=" << close_qty
+                      << " remaining=" << pos.size
+                      << " pnl_pts=" << std::setprecision(2) << (pnl / close_qty)
+                      << " pnl_usd=" << std::setprecision(0) << (pnl * 100.0)
+                      << " new_sl=" << std::setprecision(2) << pos.sl << "\n";
+            std::cout.flush();
+            if (on_close) on_close(ptr);
+        };
+
+        // Step 1: +1×ATR — bank first 33%, SL → entry+buffer
+        if (!pos.partial_closed && move >= atr * 1.0) {
+            fire_stair(1, "PARTIAL_1R");
         }
 
-        // ---- Progressive trail stages ------------------------------------
-        // Stage 1: BE lock at 1x ATR profit
-        if (pos.trail_stage < 1 && move >= atr * GFE_BE_ATR_MULT) {
-            pos.sl = pos.entry;
-            pos.be_locked = true;
-            pos.trail_stage = 1;
-            std::cout << "[GOLD-FLOW] TRAIL-STAGE1 BE move=" << move << " atr=" << atr << "\n";
-            std::cout.flush();
+        // Step 2: +2×ATR — bank another 33% of remaining, SL → step1 exit
+        if (pos.partial_closed && !pos.partial_closed_2 && move >= atr * 2.0) {
+            fire_stair(2, "PARTIAL_2R");
         }
 
-        // Stage 2: trail at 1.0x ATR behind MFE, starts at 2x ATR profit.
-        // L2 confirmation at transition: if imbalance has weakened (order-flow no longer
-        // confirms the direction), arm with a tight 0.5x ATR trail immediately rather than
-        // waiting for Stage 3. This prevents the Stage 2 1x-ATR trail from giving back
-        // excess profit on mean-reverting days where flow fades after the initial move.
-        if (pos.trail_stage < 2 && move >= atr * GFE_STAGE2_ATR_MULT) {
-            const bool l2_confirming = (pos.is_long ? l2_imb >= 0.55 : l2_imb <= 0.45);
-            pos.stage2_tight = !l2_confirming;
-            pos.trail_stage = 2;
-            std::cout << "[GOLD-FLOW] TRAIL-STAGE2"
-                      << (pos.stage2_tight ? " TIGHT(L2-weak)" : " NORMAL(L2-ok)")
-                      << " trail=" << (pos.stage2_tight ? "0.5x" : "1.0x")
-                      << "ATR move=" << move << " l2=" << l2_imb << "\n";
-            std::cout.flush();
-        }
-        if (pos.trail_stage == 2) {
-            // Use tight trail if L2 was weakening at Stage 2 arm, normal trail otherwise.
-            // If L2 recovers after arming tight, upgrade to normal — don't stay tight forever.
-            if (pos.stage2_tight && (pos.is_long ? l2_imb >= 0.65 : l2_imb <= 0.35)) {
-                pos.stage2_tight = false;
-                std::cout << "[GOLD-FLOW] TRAIL-STAGE2 L2 recovered — upgrading to normal trail\n";
-                std::cout.flush();
-            }
-            // Tighten trail if L2 wall sits within 2×ATR ahead — wall will absorb
-            // momentum and push price back. Tighter trail locks more profit.
-            const bool wall_tighten = m_wall_ahead && !pos.stage2_tight;
-            const double stage2_mult = (pos.stage2_tight || wall_tighten)
-                                       ? GFE_TRAIL_STAGE3_MULT : GFE_TRAIL_STAGE2_MULT;
+        // Remainder: tight trail 0.25×ATR behind MFE peak
+        // Starts after step 1 (be_locked=true) — always active, never idle
+        if (pos.be_locked && pos.mfe > 0.0) {
             const double trail_sl = pos.is_long
-                ? (pos.entry + pos.mfe - atr * stage2_mult)
-                : (pos.entry - pos.mfe + atr * stage2_mult);
-            if ((pos.is_long && trail_sl > pos.sl) || (!pos.is_long && trail_sl < pos.sl)) {
+                ? (pos.entry + pos.mfe - atr * 0.25)
+                : (pos.entry - pos.mfe + atr * 0.25);
+            if ((pos.is_long  && trail_sl > pos.sl) ||
+                (!pos.is_long && trail_sl < pos.sl)) {
                 pos.sl = trail_sl;
             }
         }
 
-        // Stage 3: tighten trail to 0.5x ATR at 5x ATR profit
-        if (pos.trail_stage < 3 && move >= atr * GFE_STAGE3_ATR_MULT) {
-            pos.trail_stage = 3;
-            std::cout << "[GOLD-FLOW] TRAIL-STAGE3 trail=0.5xATR move=" << move << "\n";
-            std::cout.flush();
-        }
-        if (pos.trail_stage == 3) {
-            const double trail_sl = pos.is_long
-                ? (pos.entry + pos.mfe - atr * GFE_TRAIL_STAGE3_MULT)
-                : (pos.entry - pos.mfe + atr * GFE_TRAIL_STAGE3_MULT);
-            if ((pos.is_long && trail_sl > pos.sl) || (!pos.is_long && trail_sl < pos.sl)) {
-                pos.sl = trail_sl;
-            }
-        }
-
-        // Stage 4: tighten to 0.3x ATR at 10x ATR profit -- ride the cascade
-        if (pos.trail_stage < 4 && move >= atr * GFE_STAGE4_ATR_MULT) {
-            pos.trail_stage = 4;
-            std::cout << "[GOLD-FLOW] TRAIL-STAGE4 trail=0.3xATR RIDING CASCADE move=" << move << "\n";
-            std::cout.flush();
-        }
-        if (pos.trail_stage == 4) {
-            const double trail_sl = pos.is_long
-                ? (pos.entry + pos.mfe - atr * GFE_TRAIL_STAGE4_MULT)
-                : (pos.entry - pos.mfe + atr * GFE_TRAIL_STAGE4_MULT);
-            if ((pos.is_long && trail_sl > pos.sl) || (!pos.is_long && trail_sl < pos.sl)) {
-                pos.sl = trail_sl;
-            }
-        }
+        // Advance trail_stage for GUI display (stage badge in live map)
+        if (pos.trail_stage < 1 && pos.be_locked)          pos.trail_stage = 1;
+        if (pos.trail_stage < 2 && pos.partial_closed_2)   pos.trail_stage = 2;
+        if (pos.trail_stage < 3 && move >= atr * 3.0)      pos.trail_stage = 3;
+        if (pos.trail_stage < 4 && move >= atr * 6.0)      pos.trail_stage = 4;
 
         // ---- Max hold timeout -------------------------------------------
-        // If the trade has been open longer than GFE_MAX_HOLD_MS and trail
-        // stage is still 0 or 1 (never advanced to real trailing), the thesis
-        // is stale. Exit at market to free capital for the next signal.
-        // Stage 2+ means profit is building — allow the trail to work.
-        // Session-aware: Asia gets 60 min max (thin tape moves slowly).
+        // Only exit at timeout if step 1 hasn't fired yet (no profit banked).
+        // Once step 1 fires, the staircase manages the exit — no timeout needed.
         const bool is_low_qual = (m_last_session_slot == 6 || m_last_session_slot == 0);
         const int64_t eff_max_hold = is_low_qual
-            ? static_cast<int64_t>(GFE_MAX_HOLD_MS) * 2   // 60 min in Asia
-            : static_cast<int64_t>(GFE_MAX_HOLD_MS);       // 30 min normal
+            ? static_cast<int64_t>(GFE_MAX_HOLD_MS) * 2
+            : static_cast<int64_t>(GFE_MAX_HOLD_MS);
         const int64_t held_ms = now_ms - (pos.entry_ts * 1000LL);
-        if (held_ms >= eff_max_hold && pos.trail_stage < 2) {
+        if (held_ms >= eff_max_hold && !pos.partial_closed) {
             std::cout << "[GOLD-FLOW] MAX_HOLD_TIMEOUT"
                       << " held=" << held_ms / 1000 << "s"
-                      << " stage=" << pos.trail_stage
                       << " move=" << move
-                      << " — exiting stale thesis\n";
+                      << " — no step banked, exiting stale thesis\n";
             std::cout.flush();
             const double exit_px = pos.is_long ? bid : ask;
             close_position(exit_px, "MAX_HOLD_TIMEOUT", now_ms, on_close);
@@ -1040,19 +1016,11 @@ private:
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
         if (!sl_hit) return;
 
-        // Always honour a hard SL hit immediately, regardless of time held.
-        // OLD code blocked exits when held_ms < 5s AND trail_stage == 0 to
-        // "avoid spread bounce". This caused the engine to hold a full 1xATR
-        // loss open on a genuine false signal entry, which is exactly wrong.
-        // The spread gate on entry (GFE_MAX_SPREAD=$0.60) already filters
-        // entries where spread noise could fake-hit the SL on the first tick.
-
         // ---- Exit -------------------------------------------------------
         const double exit_px = pos.is_long ? bid : ask;
         const char*  reason  = pos.be_locked
-            ? (pos.sl > pos.entry + 0.01 || pos.sl < pos.entry - 0.01 ? "TRAIL_HIT" : "BE_HIT")
+            ? (std::fabs(pos.sl - pos.entry) > 0.01 ? "TRAIL_HIT" : "BE_HIT")
             : "SL_HIT";
-
         close_position(exit_px, reason, now_ms, on_close);
     }
 
