@@ -1014,6 +1014,10 @@ static void print_perf_stats() {
 // RollingTeeBuffer — mirrors stdout to a daily rolling log file
 // Rotates at UTC midnight. Keeps LOG_KEEP_DAYS files, deletes older ones.
 // File naming: logs/omega_YYYY-MM-DD.log
+// Thread-safe: mtx_ serialises all streambuf operations.
+// Without this mutex the FIX thread and cTrader depth thread both write to
+// std::cout concurrently, corrupting at_line_start_ and the ofstream state
+// -> undefined behaviour -> crash ~30s into startup during the book burst.
 // ─────────────────────────────────────────────────────────────────────────────
 class RollingTeeBuffer : public std::streambuf {
 public:
@@ -1027,6 +1031,7 @@ public:
 
     int overflow(int c) override {
         if (c == EOF) return !EOF;
+        std::lock_guard<std::mutex> lk(mtx_);
         check_rotate();
         orig_->sputc(static_cast<char>(c));
         if (file_buf_) {
@@ -1042,11 +1047,12 @@ public:
         }
         return c;
     }
+
     std::streamsize xsputn(const char* s, std::streamsize n) override {
+        std::lock_guard<std::mutex> lk(mtx_);
         check_rotate();
         orig_->sputn(s, n);
         if (file_buf_) {
-            // Write with per-line timestamp injection
             const char* p   = s;
             const char* end = s + n;
             while (p < end) {
@@ -1070,17 +1076,19 @@ public:
         return n;
     }
 
-    std::string current_path() const { return current_path_; }
-    bool is_open() const { return file_.is_open(); }
+    std::string current_path() const { std::lock_guard<std::mutex> lk(mtx_); return current_path_; }
+    bool is_open() const { std::lock_guard<std::mutex> lk(mtx_); return file_.is_open(); }
 
-    void force_rotate_check() { check_rotate(); }
+    void force_rotate_check() { std::lock_guard<std::mutex> lk(mtx_); check_rotate(); }
 
     void flush_and_close() {
+        std::lock_guard<std::mutex> lk(mtx_);
         if (file_.is_open()) { file_.flush(); file_.close(); }
         file_buf_ = nullptr;
     }
 
 private:
+    mutable std::mutex mtx_;  // serialises all writes — FIX + cTrader threads both use std::cout
     std::streambuf* orig_;
     std::string     log_dir_;
     std::ofstream   file_;
@@ -2947,16 +2955,7 @@ static void load_config(const std::string& path) {
         }
         if (section == "latency_edge") {
             auto& le = g_cfg.le_cfg;
-            // GoldSilverLeadLag
-            if (k=="lead_lag_gold_signal_move")    le.lead_lag_gold_signal_move    = safe_stod(v, k);
-            if (k=="lead_lag_silver_min_reaction") le.lead_lag_silver_min_reaction = safe_stod(v, k);
-            if (k=="lead_lag_silver_tp")           le.lead_lag_silver_tp           = safe_stod(v, k);
-            if (k=="lead_lag_silver_sl")           le.lead_lag_silver_sl           = safe_stod(v, k);
-            if (k=="lead_lag_signal_expiry_ms")    le.lead_lag_signal_expiry_ms    = safe_stoi(v, k);
-            if (k=="lead_lag_max_spread_gold")     le.lead_lag_max_spread_gold     = safe_stod(v, k);
-            if (k=="lead_lag_max_spread_silver")   le.lead_lag_max_spread_silver   = safe_stod(v, k);
-            if (k=="lead_lag_cooldown_sec")        le.lead_lag_cooldown_sec        = safe_stoi(v, k);
-            if (k=="lead_lag_max_hold_sec")        le.lead_lag_max_hold_sec        = safe_stoi(v, k);
+            // GoldSilverLeadLag DELETED — keys silently ignored for backward compat with old ini files
             // GoldSpreadDislocation
             if (k=="spread_disloc_spike_ratio")    le.spread_disloc_spike_ratio    = safe_stod(v, k);
             if (k=="spread_disloc_min_median")     le.spread_disloc_min_median     = safe_stod(v, k);
@@ -4026,11 +4025,30 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_telemetry.ClearLiveTrades();
             // Per-trade live P&L — push_live_trade(sym, eng, is_long, entry, tp, sl, size, ts)
             // ── Gold engines ────────────────────────────────────────────────
-            if (g_gold_flow.pos.active)
-                push_live_trade("XAUUSD","GoldFlow",
+            if (g_gold_flow.pos.active) {
+                // TP for GoldFlow = next stage trigger price (there is no fixed TP —
+                // the engine trails. The next stage price is the meaningful target).
+                // Stage triggers: 1x/2x/8x/15x ATR profit from entry.
+                static constexpr double GF_STAGE_MULTS[] = {
+                    GFE_BE_ATR_MULT,     // stage 0 → 1: 1x ATR
+                    GFE_STAGE2_ATR_MULT, // stage 1 → 2: 2x ATR
+                    GFE_STAGE3_ATR_MULT, // stage 2 → 3: 8x ATR
+                    GFE_STAGE4_ATR_MULT, // stage 3 → 4: 15x ATR
+                };
+                const int   cur_stage = g_gold_flow.pos.trail_stage;
+                const double atr_e    = g_gold_flow.pos.atr_at_entry;
+                double gf_tp = 0.0;
+                if (atr_e > 0.0 && cur_stage < 4) {
+                    const double next_mult = GF_STAGE_MULTS[cur_stage];
+                    gf_tp = g_gold_flow.pos.is_long
+                        ? g_gold_flow.pos.entry + atr_e * next_mult
+                        : g_gold_flow.pos.entry - atr_e * next_mult;
+                }
+                push_live_trade("XAUUSD", "GoldFlow",
                     g_gold_flow.pos.is_long, g_gold_flow.pos.entry,
-                    0.0, g_gold_flow.pos.sl,
+                    gf_tp, g_gold_flow.pos.sl,
                     g_gold_flow.pos.size, g_gold_flow.pos.entry_ts);
+            }
             if (g_gold_stack.has_open_position())
                 push_live_trade("XAUUSD", g_gold_stack.live_engine(),
                     g_gold_stack.live_is_long(), g_gold_stack.live_entry(),
@@ -6379,6 +6397,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (snap) {
                 snap->gf_trail_stage    = gf_open ? g_gold_flow.pos.trail_stage : 0;
                 snap->gf_stack_unlocked = gf_winning ? 1 : 0;
+                snap->gf_atr_at_entry   = gf_open ? g_gold_flow.pos.atr_at_entry : 0.0;
                 if (gf_open) {
                     const double gf_move = g_gold_flow.pos.is_long
                         ? (gf_mid - g_gold_flow.pos.entry)
@@ -9476,6 +9495,38 @@ int main(int argc, char* argv[])
     // LatencyEdgeStack config — applies all [latency_edge] ini values.
     // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
     g_le_stack.configure(g_cfg.le_cfg);
+
+    // ── SHELVED ENGINE DISABLE — 2026-03-31 ──────────────────────────────────
+    // Engines disabled based on live performance audit. Each engine's own
+    // guard (if (!enabled_) return noSignal()) prevents new entries.
+    // Existing positions (if any) are still drained via has_open_position() paths.
+    // Re-enable by removing the line or setting enabled=true after shadow revalidation.
+    //
+    // NBM (NoiseBandMomentum): live data insufficient, not validated.
+    // Shelved pending 50+ shadow trades with positive expectancy.
+    g_nbm_sp.enabled     = false;
+    g_nbm_nq.enabled     = false;
+    g_nbm_nas.enabled    = false;
+    g_nbm_us30.enabled   = false;
+    g_nbm_gold_london.enabled = false;
+    g_nbm_oil_london.enabled  = false;
+    //
+    // ORB (OpeningRange): no live data. Shelved pending shadow validation.
+    g_orb_us.enabled     = false;
+    g_orb_ger30.enabled  = false;
+    g_orb_uk100.enabled  = false;
+    g_orb_estx50.enabled = false;
+    g_orb_silver.enabled = false;
+    //
+    // Cross-asset: EIA fade, BrentWTI spread, FX cascade, carry unwind.
+    // All have insufficient live data. Shelved pending shadow validation.
+    g_ca_eia_fade.enabled    = false;
+    g_ca_brent_wti.enabled   = false;
+    g_ca_fx_cascade.enabled  = false;
+    g_ca_carry_unwind.enabled = false;
+    // ESNQ: already guarded by esnq_enabled=false in config. Belt-and-suspenders.
+    g_ca_esnq.enabled        = false;
+    // ── END SHELVED ENGINE DISABLE ────────────────────────────────────────────
 
     // ── Adaptive intelligence layer startup ───────────────────────────────────
     {
