@@ -740,7 +740,7 @@ R"OMEGA6(
 
 <script>
 'use strict';
-let wsConnected=false,lastData={},_bellEnabled=false,_lastTradeCount=0,_bellBootCount=-1,_audioCtx=null;
+let wsConnected=false,lastData={},_bellEnabled=false,_lastTradeCount=0,_bellBootCount=-1,_audioCtx=null,_lastOpenCount=0,_openBootDone=false;
 
 function safe(v,d=0){const n=Number(v);return isNaN(n)?d:n;})OMEGA6"
 R"OMEGA7(
@@ -765,6 +765,7 @@ function _playWinBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audio
 R"OMEGA11(
 
 function _playLossBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sawtooth';o.frequency.setValueAtTime(280,t);o.frequency.linearRampToValueAtTime(130,t+0.3);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.8,t+0.01);g.gain.exponentialRampToValueAtTime(0.001,t+0.5);o.start(t);o.stop(t+0.55);}catch(e){}}
+function _playEntryBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime;[[0,600,900],[0.12,750,1100]].forEach(([dt,f1,f2])=>{[f1,f2].forEach((freq,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(0,t+dt);g.gain.linearRampToValueAtTime(i?0.6:1.2,t+dt+0.005);g.gain.exponentialRampToValueAtTime(0.001,t+dt+0.25);o.start(t+dt);o.stop(t+dt+0.3);});});}catch(e){}}
 )OMEGA11"
 R"OMEGA12(
 
@@ -1329,6 +1330,10 @@ function updateDashboard(d){
   const ltPanel=document.getElementById('liveTradesPanel');
   if(ltPanel){
     const trades=d.live_trades||[];
+    // Fire entry bell when a new position opens
+    if(!_openBootDone){_lastOpenCount=trades.length;_openBootDone=true;}
+    if(_bellEnabled&&trades.length>_lastOpenCount)_playEntryBell();
+    _lastOpenCount=trades.length;
     // Update panel border/glow when positions are open
     const ltOuter=document.getElementById('liveTradesPanelOuter');
     const totalFloat=trades.reduce((s,lt)=>s+lt.live_pnl,0);
@@ -1655,3 +1660,4 @@ pollTrades();
 
 ;
 } // namespace omega_gui
+
