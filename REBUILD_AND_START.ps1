@@ -77,8 +77,43 @@ Copy-Item ".\chimera_logo.png" "C:\Omega\chimera_logo.png" -Force -ErrorAction S
 New-Item -ItemType Directory -Path "C:\Omega\logs" -Force | Out-Null
 Write-Host "      [OK] C:\Omega\logs ready" -ForegroundColor Green
 
+# ==============================================================================
+# PRE-LIVE CONFIG CHECK -- warns if testing values are active
+# ==============================================================================
+$configFile = "C:\Omega\config\omega_config.ini"
+$watermark = (Select-String -Path $configFile -Pattern "session_watermark_pct=(\S+)").Matches[0].Groups[1].Value
+$mode      = (Select-String -Path $configFile -Pattern "^mode=(\S+)").Matches[0].Groups[1].Value
+
+Write-Host ""
+Write-Host "=======================================================" -ForegroundColor Yellow
+Write-Host "  CONFIG CHECK" -ForegroundColor Yellow
+Write-Host "=======================================================" -ForegroundColor Yellow
+Write-Host "  mode                  = $mode" -ForegroundColor Cyan
+Write-Host "  session_watermark_pct = $watermark" -ForegroundColor Cyan
+
+$testingActive = $false
+
+if ([double]$watermark -eq 0.0) {
+    Write-Host ""
+    Write-Host "  *** WARNING: session_watermark_pct=0.0 (TESTING VALUE) ***" -ForegroundColor Red
+    Write-Host "  *** No drawdown protection active                        ***" -ForegroundColor Red
+    Write-Host "  *** Set to 0.27 in config/omega_config.ini before LIVE   ***" -ForegroundColor Red
+    Write-Host "  *** See PRE_LIVE_CHECKLIST.md for full checklist         ***" -ForegroundColor Red
+    $testingActive = $true
+}
+
+if ($mode -eq "LIVE" -and $testingActive) {
+    Write-Host ""
+    Write-Host "  *** FATAL: mode=LIVE with testing values active ***" -ForegroundColor Red
+    Write-Host "  *** Fix config before running in LIVE mode       ***" -ForegroundColor Red
+    Write-Host "  *** See PRE_LIVE_CHECKLIST.md                    ***" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "=======================================================" -ForegroundColor Yellow
+Write-Host ""
+
 # Run from C:\Omega so all paths resolve correctly
-# Tee output to log file at shell level as belt-and-suspenders
 Set-Location C:\Omega
 Write-Host "Starting Omega.exe from C:\Omega" -ForegroundColor Cyan
 .\Omega.exe omega_config.ini
