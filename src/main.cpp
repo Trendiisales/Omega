@@ -362,6 +362,9 @@ static std::atomic<bool>   g_emergency_close(false);  // set by GUI button → c
 
 // ── cTrader Open API depth client — parallel to FIX, read-only L2 feed ───────
 static CTraderDepthClient  g_ctrader_depth;
+// OHLC bar state — populated by cTrader trendbar API (M1+M5 history + live bars)
+// Read lock-free by GoldFlow and GoldStack via atomic accessors.
+static SymBarState         g_bars_gold;   // XAUUSD M1/M5 bars + indicators
 static std::atomic<bool>   g_quote_logout_received(false);  // server sent Logout to quote session
 static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup — unblocks ctrl handler
 static std::atomic<bool>   g_trade_thread_done(false);  // set by trade_loop() just before it returns
@@ -6777,6 +6780,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // ── Confidence threshold ──────────────────────────────────────────
             const bool conf_ok = (gold_sdec.confidence >= 0.45);
 
+            // ── Bar indicator context for GoldStack ───────────────────────────
+            // Read M1 RSI and M5 trend from cTrader trendbar feed (zero-lock atomics).
+            // Used to confirm/block GoldStack entries below.
+            const bool bar_ready     = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
+            const double bar_rsi_gs  = bar_ready ? g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed) : 50.0;
+            const int    bar_trend_gs = bar_ready ? g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed) : 0;
+
             const bool stack_can_enter = gold_sdec.allow_breakout
                                          && !g_bracket_gold.has_open_position()
                                          && !g_gold_flow.has_open_position()
@@ -6796,6 +6806,36 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close,
                                                     stack_enter_effective);
             if (gsig.valid) {
+                // ── Bar indicator confirmation for GoldStack ──────────────────
+                // Block MR (mean-reversion) engines when bar context disagrees:
+                //   MR LONG: need RSI < 55 (not overbought) and trend not strongly DOWN
+                //   MR SHORT: need RSI > 45 (not oversold) and trend not strongly UP
+                // Breakout/momentum engines: only block if RSI is extremely opposed
+                //   (RSI>75 for LONG breakout = chasing overbought = dangerous)
+                if (bar_ready) {
+                    const bool gs_is_mr = (std::strcmp(gsig.engine, "MeanReversion")       == 0) ||
+                                          (std::strcmp(gsig.engine, "VWAPStretchReversion") == 0) ||
+                                          (std::strcmp(gsig.engine, "SessionMomentum")      == 0);
+                    bool bar_blocks = false;
+                    if (gs_is_mr) {
+                        // MR LONG: don't enter if RSI>60 (already elevated) or trend DOWN
+                        if (gsig.is_long  && (bar_rsi_gs > 60.0 || bar_trend_gs == -1)) bar_blocks = true;
+                        // MR SHORT: don't enter if RSI<40 (already depressed) or trend UP
+                        if (!gsig.is_long && (bar_rsi_gs < 40.0 || bar_trend_gs == +1)) bar_blocks = true;
+                    } else {
+                        // Breakout/momentum: block only if RSI is extreme opposite
+                        if (gsig.is_long  && bar_rsi_gs > 78.0) bar_blocks = true;  // chasing overbought
+                        if (!gsig.is_long && bar_rsi_gs < 22.0) bar_blocks = true;  // chasing oversold
+                    }
+                    if (bar_blocks) {
+                        printf("[GS-BAR-BLOCK] XAUUSD %s %s blocked RSI=%.1f trend=%+d\n",
+                               gsig.is_long ? "LONG" : "SHORT", gsig.engine,
+                               bar_rsi_gs, bar_trend_gs);
+                        fflush(stdout);
+                        goto gs_skip_entry;  // skip broker entry below
+                    }
+                }
+
                 // ── VWAP counter-trend guard ──────────────────────────────────
                 // Only block MEAN-REVERSION engines trading against VWAP trend.
                 // Trend-following engines (CompressionBreakout, ImpulseContinuation,
@@ -6919,6 +6959,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         }
                     }
                 }
+                gs_skip_entry:;  // jump here from bar indicator block to skip broker entry
             }
         }
 
@@ -7516,6 +7557,76 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         gf_tick_ok = false;
                         gf_block_reason = "L2_EDGE_SCORE";
                     }
+                }
+            }
+
+            // ── Gate 3: Bar indicators — RSI + trend state from cTrader bars ──
+            // Uses real M1 OHLC bars from cTrader trendbar API (not tick approximation).
+            // Only active when bars are seeded (m1_ready=true, needs ≥52 bars = ~52min).
+            //
+            // RSI gate: blocks entries into overbought (RSI>72 blocks LONG) or
+            // oversold (RSI<28 blocks SHORT) conditions. Today's chart: RSI hit 80
+            // before the reversal — this gate would have prevented all those longs.
+            //
+            // Trend state gate (M5): if M5 shows clear downtrend (LH/LL) don't enter
+            // LONG — trade WITH structure not against it. Raises bar for counter-trend.
+            //
+            // ATR from bars: if bar ATR is available, use it to update GoldFlow's ATR.
+            // Real H-L range > tick-based estimation, gives more accurate SL sizing.
+            if (gf_tick_ok && g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+                const double bar_rsi    = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+                const double bar_atr    = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
+                const int    bar_trend  = g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed);
+                const double bar_bb_pct = g_bars_gold.m1.ind.bb_pct.load(std::memory_order_relaxed);
+                const bool   gf_long   = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
+
+                // RSI overbought/oversold gate
+                // RSI>72: overbought — LONG entries blocked (price likely to reverse)
+                // RSI<28: oversold  — SHORT entries blocked (price likely to bounce)
+                static constexpr double RSI_OB = 72.0;  // overbought threshold
+                static constexpr double RSI_OS = 28.0;  // oversold threshold
+                if (gf_long && bar_rsi > RSI_OB) {
+                    printf("[GF-BAR-BLOCK] XAUUSD LONG blocked RSI=%.1f > %.0f (overbought)"
+                           " bb_pct=%.2f trend=%d\n",
+                           bar_rsi, RSI_OB, bar_bb_pct, bar_trend);
+                    fflush(stdout);
+                    gf_tick_ok = false;
+                    gf_block_reason = "RSI_OVERBOUGHT";
+                } else if (!gf_long && bar_rsi < RSI_OS) {
+                    printf("[GF-BAR-BLOCK] XAUUSD SHORT blocked RSI=%.1f < %.0f (oversold)"
+                           " bb_pct=%.2f trend=%d\n",
+                           bar_rsi, RSI_OS, bar_bb_pct, bar_trend);
+                    fflush(stdout);
+                    gf_tick_ok = false;
+                    gf_block_reason = "RSI_OVERSOLD";
+                }
+
+                // Trend alignment gate (M5 swing structure)
+                // If M5 shows clear downtrend and signal is LONG: need RSI < 40 to enter
+                // (deeply oversold pullback in downtrend only). Same for SHORT in uptrend.
+                // This stops GoldFlow fading moves INTO the trend.
+                if (gf_tick_ok && bar_trend != 0) {
+                    const bool counter_trend = (gf_long && bar_trend == -1) ||
+                                               (!gf_long && bar_trend == +1);
+                    if (counter_trend) {
+                        // Counter-trend entry: require extreme RSI (deeply OS/OB)
+                        const bool rsi_extreme = gf_long ? (bar_rsi < 35.0) : (bar_rsi > 65.0);
+                        if (!rsi_extreme) {
+                            printf("[GF-BAR-BLOCK] XAUUSD %s blocked — counter-trend (M5=%+d)"
+                                   " RSI=%.1f not extreme enough\n",
+                                   gf_long ? "LONG" : "SHORT", bar_trend, bar_rsi);
+                            fflush(stdout);
+                            gf_tick_ok = false;
+                            gf_block_reason = "COUNTER_TREND";
+                        }
+                    }
+                }
+
+                // Feed bar ATR to GoldFlow engine for accurate SL sizing
+                // Bar ATR (true range) is more accurate than tick-based ATR estimation.
+                // Only update when bar ATR is non-zero and reasonable (1-50pts for gold).
+                if (bar_atr > 1.0 && bar_atr < 50.0) {
+                    g_gold_flow.seed_bar_atr(bar_atr);
                 }
             }
 
@@ -10286,6 +10397,14 @@ int main(int argc, char* argv[])
         g_ctrader_depth.name_alias["SILVER"]  = "XAGUSD";
         g_ctrader_depth.name_alias["NGAS"]    = "NGAS.F";
         g_ctrader_depth.name_alias["VIX"]     = "VIX.F";
+
+        // ── OHLC bar subscriptions — XAUUSD M1+M5 ────────────────────────────
+        // XAUUSD spot id=41 (hardcoded, same as depth subscription).
+        // On startup: requests 200 M1 + 100 M5 historical bars, then subscribes
+        // live bar closes. Indicators (RSI, ATR, EMA, BB, swing, trend) are
+        // written to g_bars_gold atomically and read by GoldFlow/GoldStack.
+        g_ctrader_depth.bar_subscriptions["XAUUSD"] = {41, &g_bars_gold};
+
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
     } else {

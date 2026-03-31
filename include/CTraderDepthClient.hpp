@@ -63,6 +63,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include "OmegaFIX.hpp"
+#include "OHLCBarEngine.hpp"
 
 // =============================================================================
 // Minimal hand-rolled protobuf encode/decode — no external library
@@ -231,6 +232,16 @@ public:
     // Signature: (symbol, best_bid, best_ask)
     std::function<void(const std::string&, double, double)> on_tick_fn;
 
+    // ── OHLC bar engines — trendbar API ──────────────────────────────────────
+    // Wire before start(). Client requests 200 M1 + 100 M5 bars on startup,
+    // then subscribes to live bar close pushes (pt=2220).
+    // bar_subscriptions: internal_name → {symbol_id, SymBarState*}
+    struct BarSub { int64_t sym_id = 0; SymBarState* state = nullptr; };
+    std::unordered_map<std::string, BarSub> bar_subscriptions;
+
+    // Optional: called after each bar close + indicator recompute
+    std::function<void(const std::string&, int /*period*/, const OHLCBar&)> on_bar_fn;
+
     // Callback: write derived L2 scalars (imbalance, microprice_bias, has_data)
     // to per-symbol atomics — called after every depth event, no lock required.
     // Registered by main.cpp at startup. Signature:
@@ -371,6 +382,25 @@ private:
         if (!send_msg(ssl, PB::subscribe_depth_req(ctid_account_id, sub_ids))) return false;
         if (!wait_for(ssl, 2157, 10000, pt, payload)) { std::cerr << "[CTRADER] SubscribeDepthRes timeout\n"; return false; }
         std::cout << "[CTRADER] Subscribed to " << sub_ids.size() << " symbols\n";
+
+        // ── Request historical OHLC bars + subscribe live bar updates ─────────
+        // For each bar_subscription: request 200 M1 + 100 M5 bars (non-blocking,
+        // responses handled in recv_loop). Then subscribe live bar pushes.
+        for (auto& kv : bar_subscriptions) {
+            const std::string& name = kv.first;
+            const int64_t sid = kv.second.sym_id;
+            if (sid <= 0) continue;
+            // Historical M1 bars (period=1, count=200)
+            send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 1, 200));
+            // Historical M5 bars (period=5, count=100)
+            send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 5, 100));
+            // Subscribe live M1 bar closes
+            send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, sid, 1));
+            // Subscribe live M5 bar closes
+            send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, sid, 5));
+            std::cout << "[CTRADER-BARS] Requested M1+M5 history + live for " << name
+                      << " (id=" << sid << ")\n";
+        }
         return true;
     }
 
@@ -395,16 +425,109 @@ private:
             if (rc < 0) { std::cerr<<"[CTRADER] Connection error\n"; return; }
             if (rc == 0) continue;
             if      (pt==2155) { on_depth_event(payload); ++depth_events_total; ++ev_min;
-                                  // Count per-symbol for diagnostics
                                   const auto fields2 = PB::parse(payload);
                                   const uint64_t sid2 = PB::get_varint(fields2, 3);
                                   const auto iit = id_to_internal_.find(sid2);
                                   if (iit != id_to_internal_.end()) ++ev_per_sym[iit->second];
                                 }
+            else if (pt==2138) { on_trendbars_res(payload); }   // historical bars response
+            else if (pt==2220) { on_live_trendbar(payload); }   // live bar close push
+            else if (pt==2221) { /* subscribe trendbar res — no action needed */ }
             else if (pt==2142) { const auto ef=PB::parse(payload); std::cerr<<"[CTRADER] Error: "<<PB::get_string(ef,2)<<" — "<<PB::get_string(ef,3)<<"\n"; if(PB::get_string(ef,2)=="OA_AUTH_TOKEN_EXPIRED"){if(!refresh_token.empty())send_msg(ssl,PB::refresh_token_req(refresh_token)); return;} }
             else if (pt==2174) { const auto rf=PB::parse(payload); const std::string na=PB::get_string(rf,2); if(!na.empty()){access_token=na;refresh_token=PB::get_string(rf,3);std::cout<<"[CTRADER] Token refreshed\n";} }
             else if (pt==51)   { send_msg(ssl,PB::heartbeat()); }
             else if (pt==2148||pt==2164) { std::cerr<<"[CTRADER] Disconnect pt="<<pt<<"\n"; return; }
+        }
+    }
+
+    // ── ProtoOAGetTrendbarsRes (pt=2138) — historical bars response ───────────
+    // field 2: ctidTraderAccountId
+    // field 3: symbolId
+    // field 5: period (uint32: 1=M1, 5=M5, etc.)
+    // field 4: repeated ProtoOATrendbar bytes
+    void on_trendbars_res(const std::vector<uint8_t>& payload) {
+        const auto f = PB::parse(payload);
+        const uint64_t sym_id = PB::get_varint(f, 3);
+        const uint32_t period = uint32_t(PB::get_varint(f, 5));
+        const auto it = id_to_internal_.find(sym_id);
+        if (it == id_to_internal_.end()) return;
+        const std::string& name = it->second;
+        const auto bit = bar_subscriptions.find(name);
+        if (bit == bar_subscriptions.end() || !bit->second.state) return;
+        SymBarState* state = bit->second.state;
+
+        // Parse repeated trendbar messages (field 4)
+        const auto bar_fields = PB::get_repeated_bytes(f, 4);
+        if (bar_fields.empty()) return;
+
+        std::vector<OHLCBar> bars;
+        bars.reserve(bar_fields.size());
+        for (const auto& bf : bar_fields) {
+            const OHLCBar bar = PB::parse_trendbar(bf);
+            if (bar.close > 0 && bar.ts_min > 0) bars.push_back(bar);
+        }
+        // Sort chronologically (oldest first)
+        std::sort(bars.begin(), bars.end(),
+                  [](const OHLCBar& a, const OHLCBar& b){ return a.ts_min < b.ts_min; });
+
+        if (period == 1) {
+            state->m1.seed(bars);
+            std::cout << "[CTRADER-BARS] " << name << " M1: seeded " << bars.size()
+                      << " bars, ATR=" << std::fixed << std::setprecision(2)
+                      << state->m1.ind.atr14.load()
+                      << " RSI=" << std::setprecision(1) << state->m1.ind.rsi14.load()
+                      << " trend=" << state->m5.ind.trend_state.load() << "\n";
+        } else if (period == 5) {
+            state->m5.seed(bars);
+            std::cout << "[CTRADER-BARS] " << name << " M5: seeded " << bars.size()
+                      << " bars, trend=" << state->m5.ind.trend_state.load()
+                      << " swing_hi=" << std::setprecision(2) << state->m5.ind.swing_high.load()
+                      << " swing_lo=" << state->m5.ind.swing_low.load() << "\n";
+        }
+        if (on_bar_fn && !bars.empty()) {
+            on_bar_fn(name, int(period), bars.back());
+        }
+    }
+
+    // ── ProtoOASpotEvent with live trendbar (pt=2220 push) ────────────────────
+    // ProtoOALiveTrendBar response — same structure as trendbar but sent live
+    // field 2: ctidTraderAccountId
+    // field 3: symbolId
+    // field 4: ProtoOATrendbar (bytes, same as historical)
+    // field 5: period
+    void on_live_trendbar(const std::vector<uint8_t>& payload) {
+        const auto f = PB::parse(payload);
+        const uint64_t sym_id = PB::get_varint(f, 3);
+        const uint32_t period = uint32_t(PB::get_varint(f, 5));
+        const auto it = id_to_internal_.find(sym_id);
+        if (it == id_to_internal_.end()) return;
+        const std::string& name = it->second;
+        const auto bit = bar_subscriptions.find(name);
+        if (bit == bar_subscriptions.end() || !bit->second.state) return;
+        SymBarState* state = bit->second.state;
+
+        // Parse the single trendbar (field 4)
+        for (const auto& fi : f) {
+            if (fi.field_num == 4 && fi.wire_type == 2) {
+                const OHLCBar bar = PB::parse_trendbar(fi.bytes);
+                if (bar.close <= 0) continue;
+                if (period == 1) {
+                    state->m1.add_bar(bar);
+                    printf("[CTRADER-BARS] %s M1 bar close=%.2f RSI=%.1f ATR=%.2f BB_PCT=%.2f "
+                           "EMA9=%.2f trend=%d\n",
+                           name.c_str(), bar.close,
+                           state->m1.ind.rsi14.load(), state->m1.ind.atr14.load(),
+                           state->m1.ind.bb_pct.load(), state->m1.ind.ema9.load(),
+                           state->m5.ind.trend_state.load());
+                } else if (period == 5) {
+                    state->m5.add_bar(bar);
+                    printf("[CTRADER-BARS] %s M5 bar trend=%d swing_hi=%.2f swing_lo=%.2f\n",
+                           name.c_str(), state->m5.ind.trend_state.load(),
+                           state->m5.ind.swing_high.load(), state->m5.ind.swing_low.load());
+                }
+                if (on_bar_fn) on_bar_fn(name, int(period), bar);
+                break;
+            }
         }
     }
 

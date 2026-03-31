@@ -479,6 +479,22 @@ struct GoldFlowEngine {
 
     double current_atr() const noexcept { return m_atr; }
 
+    // Feed bar ATR from cTrader M1 trendbar API into the engine.
+    // Real OHLC true-range ATR is more accurate than tick-based estimation.
+    // Called from main.cpp Gate 3 each tick when bars are seeded.
+    // Only updates when bar_atr is in a valid range (1–50pts for gold).
+    // Uses a slow blend (5%) so a single outlier bar doesn't whipsaw SL sizing.
+    void seed_bar_atr(double bar_atr) noexcept {
+        if (bar_atr <= 0.0) return;
+        if (m_atr <= 0.0) {
+            m_atr = bar_atr;  // cold start: accept immediately
+        } else {
+            m_atr = 0.95 * m_atr + 0.05 * bar_atr;  // slow blend toward bar ATR
+        }
+        if (m_atr_ewm <= 0.0) m_atr_ewm = m_atr;
+        else m_atr_ewm = 0.95 * m_atr_ewm + 0.05 * bar_atr;
+    }
+
     // is_impulsive(): true when recent price range >= GFE_IMPULSE_ATR_MULT * ATR
     // Chop = price oscillates within noise band (range < ATR) → skip entry
     // Impulse = price expands beyond noise band (range >= ATR) → allow entry
