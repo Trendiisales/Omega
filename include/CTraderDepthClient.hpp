@@ -499,7 +499,8 @@ private:
                                   if (iit != id_to_internal_.end()) ++ev_per_sym[iit->second];
                                 }
             else if (pt==2138) { on_trendbars_res(payload); }   // historical bars response
-            else if (pt==2220) { on_live_trendbar(payload); }   // live bar close push
+            else if (pt==2217) { on_live_trendbar(payload); }   // live bar close push (ProtoOALiveTrendBar)
+            else if (pt==2220) { /* subscribe trendbar req echo — ignore */ }
             else if (pt==2221) { /* subscribe trendbar res — no action needed */ }
             else if (pt==2142) { const auto ef=PB::parse(payload); std::cerr<<"[CTRADER] Error: "<<PB::get_string(ef,2)<<" — "<<PB::get_string(ef,3)<<"\n"; if(PB::get_string(ef,2)=="OA_AUTH_TOKEN_EXPIRED"){if(!refresh_token.empty())send_msg(ssl,PB::refresh_token_req(refresh_token)); return;} }
             else if (pt==2174) { const auto rf=PB::parse(payload); const std::string na=PB::get_string(rf,2); if(!na.empty()){access_token=na;refresh_token=PB::get_string(rf,3);std::cout<<"[CTRADER] Token refreshed\n";} }
@@ -652,22 +653,21 @@ private:
                 rebuilt.has_data());
         }
 
+        // Cold path: write full book under mutex for GUI depth panel (walls, vacuums, slopes)
+        // MUST happen BEFORE on_tick_fn so trading decisions see the freshly updated book.
+        if (l2_mtx && l2_books) {
+            std::lock_guard<std::mutex> lk(*l2_mtx);
+            (*l2_books)[name] = rebuilt;
+        }
+
         // ── Primary price tick — drives on_tick() with cTrader real-time price ─
-        // Extract best bid/ask from rebuilt book and call on_tick_fn.
-        // This is faster and more accurate than the FIX quote feed which can lag
-        // by 0.5-2pts during fast markets due to FIX gateway batching/throttling.
+        // Called AFTER l2_books update so cold_snap inside on_tick sees current book.
         if (on_tick_fn && rebuilt.bid_count > 0 && rebuilt.ask_count > 0) {
             const double best_bid = rebuilt.bids[0].price;
             const double best_ask = rebuilt.asks[0].price;
             if (best_bid > 0.0 && best_ask > 0.0 && best_ask > best_bid) {
                 on_tick_fn(name, best_bid, best_ask);
             }
-        }
-
-        // Cold path: write full book under mutex for GUI depth panel (walls, vacuums, slopes)
-        if (l2_mtx && l2_books) {
-            std::lock_guard<std::mutex> lk(*l2_mtx);
-            (*l2_books)[name] = rebuilt;
         }
         // Stamp time of last real depth event for stale detection in main loop
         last_depth_event_ms.store(
