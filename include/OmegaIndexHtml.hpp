@@ -744,7 +744,7 @@ R"OMEGA6(
 
 <script>
 'use strict';
-let wsConnected=false,lastData={},_bellEnabled=false,_lastTradeCount=0,_bellBootCount=-1,_audioCtx=null,_lastOpenCount=0,_openBootDone=false;
+let wsConnected=false,lastData={},_bellEnabled=false,_lastTradeCount=0,_bellBootCount=-1,_audioCtx=null,_lastOpenCount=0,_openBootDone=false,_ltFingerprint='';
 
 function safe(v,d=0){const n=Number(v);return isNaN(n)?d:n;})OMEGA6"
 R"OMEGA7(
@@ -1481,37 +1481,277 @@ function updateDashboard(d){
     if(trades.length===0){
       if(ltOuter) ltOuter.style.display='none';
       ltPanel.innerHTML='';
+      _ltFingerprint='';
     } else {
       if(ltOuter) ltOuter.style.display='';
-      // Summary header: count + total floating
       const totalSign=totalFloat>=0?'+':'';
       const totalCol=totalFloat>=0?'var(--green)':'var(--red)';
       const totalNzd=(totalFloat*NZD_RATE);
-      const hdr='<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px 4px;border-bottom:1px solid rgba(255,255,255,0.07);margin-bottom:3px;">'
+      const hdr='<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px 6px;border-bottom:1px solid rgba(255,255,255,0.07);margin-bottom:4px;">'
         +'<span style="font-size:10px;color:var(--t2);font-weight:700;letter-spacing:1px;text-transform:uppercase;">'+trades.length+' OPEN</span>'
         +'<span style="font-family:IBM Plex Mono,monospace;font-size:13px;font-weight:900;color:'+totalCol+'">'+totalSign+totalFloat.toFixed(2)+'</span>'
         +'<span style="font-size:10px;color:var(--t3);">NZ$'+totalSign+(totalNzd).toFixed(0)+'</span>'
         +'</div>';
-      ltPanel.innerHTML=hdr+trades.map(lt=>{
-        const isLong=lt.side==='LONG';
-        const pnlCls=lt.live_pnl>=0?'lt-pnl-pos':'lt-pnl-neg';
-        const sideCls=isLong?'lt-side-long':'lt-side-short';
-        const sideArrow=isLong?'▲':'▼';
-        const held=lt.held_sec<60?lt.held_sec+'s':Math.floor(lt.held_sec/60)+'m'+(lt.held_sec%60)+'s';
-        const distSl=lt.dist_sl!=null?lt.dist_sl.toFixed(2):'?';
-        const pnlStr=(lt.live_pnl>=0?'+':'')+lt.live_pnl.toFixed(2);
-        const rowBg=lt.live_pnl>=0?'rgba(0,217,126,0.05)':'rgba(255,59,59,0.05)';
-        const dp=lt.symbol.includes('USD')&&!lt.symbol.includes('GOLD')?4:2;
-        return '<div class="live-trade-row" style="background:'+rowBg+';border-radius:4px;margin-bottom:2px;">'
-          +'<span class="lt-sym">'+lt.symbol+'</span>'
-          +'<span class="'+sideCls+'" style="font-weight:900">'+sideArrow+' '+lt.side+'</span>'
-          +'<span style="color:var(--t2);font-family:IBM Plex Mono,monospace;font-size:11px;">@'+lt.entry.toFixed(dp)+'</span>'
-          +'<span class="'+pnlCls+'" style="font-size:13px;font-weight:900;">'+pnlStr+'</span>'
-          +'<span class="lt-meta">SL±'+distSl+'</span>'
-          +'<span class="lt-meta">'+lt.engine+'</span>'
-          +'<span class="lt-meta">'+held+'</span>'
-          +'</div>';
+
+      // GoldFlow trail stage from snapshot — applies to the GoldFlow live trade
+      const gfStage = safe(d.gf_trail_stage);  // 0=initial 1=BE 2=trail1 3=trail2 4=trail3
+
+      // Fingerprint: rebuild HTML only when pnl shifts >$0.05, SL moves, stage changes, or current price tick changes 2dp
+      const ltFp = trades.map(lt=>
+        lt.symbol+'|'+lt.side+'|'+lt.engine+'|'+lt.entry.toFixed(2)+'|'
+        +lt.current.toFixed(2)+'|'+lt.sl.toFixed(2)+'|'+lt.tp.toFixed(2)+'|'
+        +lt.live_pnl.toFixed(1)
+      ).join(';') + '|gf'+gfStage;
+      if(ltFp === _ltFingerprint) return;  // nothing meaningful changed — skip innerHTML rebuild
+      _ltFingerprint = ltFp;
+      const STAGE_LABEL = ['INITIAL','BE LOCK','TRAIL 1','TRAIL 2','TRAIL 3'];
+      const STAGE_COL   = ['var(--t3)','var(--amber)','var(--cyan)','var(--blue)','var(--green)'];
+
+      const maps = trades.map(lt => {
+        const isLong  = lt.side === 'LONG';
+        const entry   = lt.entry;
+        const cur     = lt.current;
+        const sl      = lt.sl;
+        const tp      = lt.tp;   // may be 0 for GoldFlow
+        const pnl     = lt.live_pnl;
+        const held    = lt.held_sec < 60 ? lt.held_sec+'s' : Math.floor(lt.held_sec/60)+'m'+(lt.held_sec%60)+'s';
+        const dp      = lt.symbol.includes('USD')&&!lt.symbol.includes('GOLD') ? 4 : 2;
+        const isGF    = lt.engine === 'GoldFlow';
+        const stage   = isGF ? gfStage : 0;
+        const pnlCol  = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        const pnlStr  = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+        const rowBg   = pnl >= 0 ? 'rgba(0,217,126,0.04)' : 'rgba(255,51,85,0.04)';
+
+        // ── Price ladder geometry ──────────────────────────────────────────
+        // Collect all known prices, build a min/max range with 15% padding
+        // so labels never clip at edges.
+        const pts = [entry, cur, sl > 0 ? sl : null, tp > 0 ? tp : null].filter(x=>x!==null);
+        const rawLo = Math.min(...pts);
+        const rawHi = Math.max(...pts);
+        const pad   = (rawHi - rawLo) * 0.18 || entry * 0.001; // fallback if all same price
+        const lo    = rawLo - pad;
+        const hi    = rawHi + pad;
+        const range = hi - lo;
+
+        // Convert price to % position along the bar (0=left=low, 100=right=high)
+        const pct = p => Math.max(1, Math.min(99, ((p - lo) / range) * 100));
+
+        const W = 100; // work in percentage units, rendered as %
+
+        // Key positions
+        const xEntry = pct(entry);
+        const xCur   = pct(cur);
+        const xSl    = sl > 0 ? pct(sl) : null;
+        const xTp    = tp > 0 ? pct(tp) : null;
+        const xBe    = stage >= 1 ? pct(entry) : null; // BE = entry (SL moved to entry)
+
+        // Zone fills: loss zone (SL→entry) red, profit zone (entry→TP or entry→cur) green
+        const zEntryPct  = xEntry;
+        const zSlPct     = xSl !== null ? xSl : (isLong ? 1 : 99);
+        const lossPctL   = Math.min(zEntryPct, zSlPct);
+        const lossPctW   = Math.abs(zEntryPct - zSlPct);
+        const profZoneL  = xTp !== null
+          ? Math.min(xEntry, xTp)
+          : (isLong ? xEntry : xCur);
+        const profZoneW  = xTp !== null
+          ? Math.abs(xTp - xEntry)
+          : Math.abs(xEntry - xCur);
+
+        // Trail stage badge
+        const stageBadge = isGF && stage > 0
+          ? `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;
+              background:rgba(0,0,0,0.3);border:1px solid ${STAGE_COL[stage]};
+              color:${STAGE_COL[stage]};margin-left:5px;letter-spacing:0.5px;">${STAGE_LABEL[stage]}</span>`
+          : '';
+
+        // Pyramid indicator for GoldFlow stage >= 2
+        const pyramidBadge = isGF && stage >= 2
+          ? `<span style="font-size:9px;color:var(--gold);margin-left:4px;">▲${stage-1}</span>`
+          : '';
+
+        // ── SVG bar ───────────────────────────────────────────────────────
+        // Height 28px. Zones behind, tick marks on top, needle for current price.
+        const svg = `<svg width="100%" height="28" style="display:block;overflow:visible" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="lossGrad${lt.entry.toFixed(0)}" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="rgba(255,51,85,0.22)"/>
+              <stop offset="100%" stop-color="rgba(255,51,85,0.06)"/>
+            </linearGradient>
+            <linearGradient id="profGrad${lt.entry.toFixed(0)}" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="rgba(0,217,126,0.06)"/>
+              <stop offset="100%" stop-color="rgba(0,217,126,0.22)"/>
+            </linearGradient>
+          </defs>
+
+          <!-- track -->
+          <rect x="0%" y="12" width="100%" height="4" rx="2" fill="rgba(255,255,255,0.06)"/>
+
+          <!-- loss zone: SL → entry -->
+          ${xSl !== null ? `<rect x="${lossPctL}%" y="12" width="${lossPctW}%" height="4"
+            fill="url(#lossGrad${lt.entry.toFixed(0)})" rx="1"/>` : ''}
+
+          <!-- profit zone: entry → TP (or entry → current if no TP) -->
+          <rect x="${profZoneL}%" y="12" width="${profZoneW}%" height="4"
+            fill="url(#profGrad${lt.entry.toFixed(0)})" rx="1"/>
+
+          <!-- SL tick -->
+          ${xSl !== null ? `
+          <line x1="${xSl}%" y1="8" x2="${xSl}%" y2="22" stroke="rgba(255,51,85,0.9)" stroke-width="1.5"/>
+          <text x="${xSl}%" y="7" text-anchor="middle" fill="rgba(255,51,85,0.9)"
+            font-size="8" font-family="IBM Plex Mono,monospace">SL</text>
+          <text x="${xSl}%" y="27" text-anchor="middle" fill="rgba(255,51,85,0.7)"
+            font-size="7.5" font-family="IBM Plex Mono,monospace">${sl.toFixed(dp)}</text>
+          ` : ''}
+
+          <!-- Entry tick -->
+          <line x1="${xEntry}%" y1="7" x2="${xEntry}%" y2="23" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-dasharray="2,2"/>
+          <text x="${xEntry}%" y="6" text-anchor="middle" fill="rgba(255,255,255,0.5)"
+            font-size="8" font-family="IBM Plex Mono,monospace">IN</text>
+
+          <!-- BE marker (only when stage >= 1 — SL moved to entry) -->
+          ${stage >= 1 ? `
+          <circle cx="${xEntry}%" cy="14" r="3" fill="none" stroke="${STAGE_COL[1]}" stroke-width="1.5"/>
+          <text x="${xEntry}%" y="27" text-anchor="middle" fill="${STAGE_COL[1]}"
+            font-size="7.5" font-family="IBM Plex Mono,monospace">BE</text>
+          ` : ''}
+
+          <!-- TP tick -->
+          ${xTp !== null ? `
+          <line x1="${xTp}%" y1="8" x2="${xTp}%" y2="22" stroke="rgba(0,217,126,0.9)" stroke-width="1.5"/>
+          <text x="${xTp}%" y="7" text-anchor="middle" fill="rgba(0,217,126,0.9)"
+            font-size="8" font-family="IBM Plex Mono,monospace">TP</text>
+          <text x="${xTp}%" y="27" text-anchor="middle" fill="rgba(0,217,126,0.7)"
+            font-size="7.5" font-family="IBM Plex Mono,monospace">${tp.toFixed(dp)}</text>
+          ` : ''}
+
+          <!-- Current price needle — diamond shape, glows -->
+          <polygon points="${xCur}%,6 ${xCur}%-3,14 ${xCur}%,22 ${xCur}%+3,14"
+            fill="${pnl >= 0 ? 'var(--green)' : 'var(--red)'}"
+            style="filter:drop-shadow(0 0 3px ${pnl >= 0 ? 'rgba(0,217,126,0.8)' : 'rgba(255,51,85,0.8)'})"
+            transform="translate(0,0)"/>
+        </svg>`;
+
+        // Polygon points with calc() don't work in SVG — use viewBox approach instead
+        // Rewrite needle as proper SVG with numeric coords via a viewBox
+        const VW = 600; // viewBox width units
+        const toVB = p => (p / 100) * VW; // % → viewBox units
+        const nx = toVB(xCur);
+        const needle = `<polygon points="${nx},4 ${nx-5},14 ${nx},24 ${nx+5},14"
+          fill="${pnl >= 0 ? '#00d97e' : '#ff3355'}"
+          style="filter:drop-shadow(0 0 4px ${pnl >= 0 ? 'rgba(0,217,126,0.9)' : 'rgba(255,51,85,0.9)'})"/>`;
+
+        const svgFinal = `<svg viewBox="0 0 ${VW} 28" width="100%" height="28"
+            style="display:block;overflow:visible" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="lg${toVB(xEntry).toFixed(0)}r" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#ff3355" stop-opacity="0.25"/>
+              <stop offset="100%" stop-color="#ff3355" stop-opacity="0.06"/>
+            </linearGradient>
+            <linearGradient id="lg${toVB(xEntry).toFixed(0)}g" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#00d97e" stop-opacity="0.06"/>
+              <stop offset="100%" stop-color="#00d97e" stop-opacity="0.25"/>
+            </linearGradient>
+          </defs>
+
+          <!-- track -->
+          <rect x="0" y="12" width="${VW}" height="4" rx="2" fill="rgba(255,255,255,0.06)"/>
+
+          <!-- loss zone -->
+          ${xSl !== null ? `<rect x="${toVB(lossPctL)}" y="12"
+            width="${toVB(lossPctW)}" height="4" rx="1"
+            fill="url(#lg${toVB(xEntry).toFixed(0)}r)"/>` : ''}
+
+          <!-- profit zone -->
+          <rect x="${toVB(profZoneL)}" y="12"
+            width="${toVB(profZoneW)}" height="4" rx="1"
+            fill="url(#lg${toVB(xEntry).toFixed(0)}g)"/>
+
+          <!-- SL -->
+          ${xSl !== null ? `
+            <line x1="${toVB(xSl)}" y1="8" x2="${toVB(xSl)}" y2="22"
+              stroke="#ff3355" stroke-width="1.5" stroke-opacity="0.85"/>
+            <text x="${toVB(xSl)}" y="7" text-anchor="middle"
+              fill="#ff3355" font-size="7" font-family="IBM Plex Mono,monospace">SL</text>
+            <text x="${toVB(xSl)}" y="28" text-anchor="middle"
+              fill="#ff3355" font-size="6.5" font-family="IBM Plex Mono,monospace"
+              fill-opacity="0.7">${sl.toFixed(dp)}</text>
+          ` : ''}
+
+          <!-- Entry -->
+          <line x1="${toVB(xEntry)}" y1="7" x2="${toVB(xEntry)}" y2="23"
+            stroke="rgba(255,255,255,0.4)" stroke-width="1" stroke-dasharray="3,2"/>
+          <text x="${toVB(xEntry)}" y="6" text-anchor="middle"
+            fill="rgba(255,255,255,0.45)" font-size="7" font-family="IBM Plex Mono,monospace">IN</text>
+
+          <!-- BE ring (stage >= 1) -->
+          ${stage >= 1 ? `
+            <circle cx="${toVB(xEntry)}" cy="14" r="4"
+              fill="none" stroke="#ff8800" stroke-width="1.5" stroke-opacity="0.9"/>
+            <text x="${toVB(xEntry)}" y="28" text-anchor="middle"
+              fill="#ff8800" font-size="6.5" font-family="IBM Plex Mono,monospace">BE</text>
+          ` : ''}
+
+          <!-- TP -->
+          ${xTp !== null ? `
+            <line x1="${toVB(xTp)}" y1="8" x2="${toVB(xTp)}" y2="22"
+              stroke="#00d97e" stroke-width="1.5" stroke-opacity="0.85"/>
+            <text x="${toVB(xTp)}" y="7" text-anchor="middle"
+              fill="#00d97e" font-size="7" font-family="IBM Plex Mono,monospace">TP</text>
+            <text x="${toVB(xTp)}" y="28" text-anchor="middle"
+              fill="#00d97e" font-size="6.5" font-family="IBM Plex Mono,monospace"
+              fill-opacity="0.7">${tp.toFixed(dp)}</text>
+          ` : ''}
+
+          <!-- Trail stop line (stage >= 2 — SL has moved beyond entry) -->
+          ${isGF && stage >= 2 && sl > 0 ? `
+            <line x1="${toVB(xSl)}" y1="10" x2="${toVB(xSl)}" y2="20"
+              stroke="${STAGE_COL[stage]}" stroke-width="2" stroke-opacity="0.9"/>
+            <text x="${toVB(xSl)}" y="6" text-anchor="middle"
+              fill="${STAGE_COL[stage]}" font-size="7" font-family="IBM Plex Mono,monospace">TSL</text>
+          ` : ''}
+
+          <!-- Current price needle -->
+          ${needle}
+        </svg>`;
+
+        return `<div style="background:${rowBg};border:1px solid rgba(255,255,255,0.06);
+            border-radius:6px;padding:6px 8px 4px;margin-bottom:5px;">
+          <!-- Header row -->
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <span style="font-family:IBM Plex Mono,monospace;font-size:12px;font-weight:700;
+              color:${isLong?'var(--gold)':'var(--purple)'};">${lt.symbol}</span>
+            <span style="font-size:10px;font-weight:700;color:${isLong?'var(--green)':'var(--red)'};">
+              ${isLong?'▲':'▼'} ${lt.side}</span>
+            <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--t3);">
+              @${entry.toFixed(dp)}</span>
+            <span style="font-family:IBM Plex Mono,monospace;font-size:11px;font-weight:700;
+              color:var(--t2);">→ ${cur.toFixed(dp)}</span>
+            <span style="font-family:IBM Plex Mono,monospace;font-size:13px;font-weight:900;
+              color:${pnlCol};margin-left:auto;">${pnlStr}</span>
+            <span style="font-size:10px;color:var(--t3);">${held}</span>
+          </div>
+          <!-- Engine + stage badges -->
+          <div style="display:flex;align-items:center;gap:4px;margin-bottom:5px;">
+            <span style="font-size:9px;color:var(--cyan);padding:1px 5px;background:rgba(0,200,240,0.08);
+              border-radius:3px;border:1px solid rgba(0,200,240,0.2);">${lt.engine}</span>
+            ${stageBadge}${pyramidBadge}
+            ${sl > 0 ? `<span style="font-size:9px;color:var(--t3);margin-left:2px;">
+              SL dist: <span style="color:var(--red);font-family:IBM Plex Mono,monospace;">
+              ${lt.dist_sl!=null?lt.dist_sl.toFixed(2):'?'}</span></span>` : ''}
+            ${tp > 0 ? `<span style="font-size:9px;color:var(--t3);">
+              TP dist: <span style="color:var(--green);font-family:IBM Plex Mono,monospace;">
+              ${lt.dist_tp!=null?lt.dist_tp.toFixed(2):'?'}</span></span>` : ''}
+            ${tp > 0 && sl > 0 ? `<span style="font-size:9px;color:var(--t3);">
+              RR: <span style="font-family:IBM Plex Mono,monospace;color:${
+                (lt.dist_tp/lt.dist_sl)>=2?'var(--green)':(lt.dist_tp/lt.dist_sl)>=1?'var(--amber)':'var(--red)'
+              };">${(lt.dist_tp/lt.dist_sl).toFixed(1)}R</span></span>` : ''}
+          </div>
+          <!-- Price ladder SVG -->
+          <div style="padding:0 2px 2px;">${svgFinal}</div>
+        </div>`;
       }).join('');
+
+      ltPanel.innerHTML = hdr + maps;
     }
   }
 
