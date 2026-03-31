@@ -66,6 +66,10 @@ struct SymbolConfig
     bool   breakout_in_trend       = true;
     int    cooldown_fail_threshold = 20;
     int    cooldown_duration_ms    = 120000;
+    // Trend-direction bracket — fires in IMPULSE regime, one side only
+    // SL = GoldStack.atr() * trend_bracket_sl_mult (ATR-based, not range-based)
+    bool   trend_bracket_enabled   = false;  // off by default — enabled via symbols.ini
+    double trend_bracket_sl_mult   = 1.2;    // SL = ATR * this. 1.2 = $18 on ATR=$15 day
 };
 
 // ==============================================================================
@@ -92,3 +96,4 @@ private:
     std::unordered_map<std::string, SymbolConfig> configs_;
     SymbolConfig default_config_;  // returned when symbol not found
 };
+
