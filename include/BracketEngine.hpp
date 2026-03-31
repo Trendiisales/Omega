@@ -244,7 +244,7 @@ public:
             {
                 const double initial_range = std::fabs(m_locked_hi - m_locked_lo);
                 // EA-matched trail: hold 2x longer before tightening stop
-                const double trail_dist    = std::max(initial_range * 0.50, spread * 2.0);
+                const double trail_dist    = std::max(initial_range * 0.25, spread * 2.0);  // tightened 0.50→0.25: trail tighter, lock more profit
                 const double tp_dist       = std::fabs(pos.tp - pos.entry); // initial target dist
                 const double trail_move    = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
 
@@ -272,6 +272,16 @@ public:
                             std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP2 lock_half move=" << trail_move << "\n";
                         }
                     }
+                    // Step 2.5: Lock 75% of TP at 1.5R — new step for tighter locking
+                    if (trail_move >= tp_dist * 1.5 && pos.sl_locked_to_be) {
+                        const double lock25 = pos.is_long
+                            ? pos.entry + tp_dist * 0.75
+                            : pos.entry - tp_dist * 0.75;
+                        if ((pos.is_long && lock25 > pos.sl) || (!pos.is_long && lock25 < pos.sl)) {
+                            pos.sl = lock25;
+                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP2.5 lock_75pct move=" << trail_move << "\n";
+                        }
+                    }
                     // Step 3: Lock full 1R at 2R
                     if (trail_move >= tp_dist * 2.0 && pos.sl_locked_to_be) {
                         const double lock3 = pos.is_long
@@ -282,8 +292,8 @@ public:
                             std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP3 lock_1R move=" << trail_move << "\n";
                         }
                     }
-                    // Step 4: Free-running trail at MFE - trail_dist (3R+)
-                    if (trail_move >= tp_dist * 3.0 && pos.sl_locked_to_be) {
+                    // Step 4: Free-running trail at MFE - trail_dist (2R+ — was 3R)
+                    if (trail_move >= tp_dist * 2.0 && pos.sl_locked_to_be) {
                         const double trail_sl = pos.is_long
                             ? (pos.entry + pos.mfe - trail_dist)
                             : (pos.entry - pos.mfe + trail_dist);

@@ -6417,9 +6417,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Direction-aware: only blocks the direction that just closed, not the opposite.
         // This allows reversal entries but prevents immediate same-dir chasing.
         const bool gold_trail_blocked = (g_gold_trail_block_until.load() > now_s_gate);
-        // GoldStack same-direction re-entry block: 30s after trail/BE close
-        // Applied to GoldStack entries only — GoldFlow has its own continuation_mode
-        const bool gs_trail_blocked = gold_trail_blocked; // used below in GoldStack gate
+        // GoldStack direction-aware trail block — only block SAME direction as last close
+        // Opposite direction entries always allowed (reversal trades)
+        // g_gold_trail_block_dir: +1=last close was LONG (block new LONGs), -1=SHORT (block new SHORTs)
+        // gs_trail_blocked passed to stack_enter_effective below — GoldStack checks signal direction internally
+        const bool gs_trail_blocked = gold_trail_blocked; // direction check done inside GoldStack signal gate
         // Session transition noise blocks — spread spikes at open/close
         // NY close (22:00-22:10 UTC) and Sydney open (00:00-00:15 UTC)
         const bool in_ny_close_noise = [&]() -> bool {

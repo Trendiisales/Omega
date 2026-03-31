@@ -153,6 +153,13 @@ struct CrossPosition {
                 if (is_long  && be_sl > sl) sl = be_sl;
                 if (!is_long && be_sl < sl) sl = be_sl;
             }
+            // Mid-lock: at 50% of TP, lock 25% of TP above entry
+            if (move >= tp_dist * 0.50 && be_locked_) {
+                const double mid_lock = is_long ? (entry + tp_dist * 0.25)
+                                                : (entry - tp_dist * 0.25);
+                if (is_long  && mid_lock > sl) sl = mid_lock;
+                if (!is_long && mid_lock < sl) sl = mid_lock;
+            }
             if (move >= trail_threshold) {
                 // Trail SL tightly behind MFE — 20% of TP dist = much tighter lock
                 const double trail_sl = is_long ? (entry + mfe - trail_dist)
