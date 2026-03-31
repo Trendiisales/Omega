@@ -9870,11 +9870,12 @@ int main(int argc, char* argv[])
     // TrendPullbackEngine params — per-instrument tuning
     // Gold: wider pullback band (noise floor $8-20), 90s cooldown
     g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.08;  // 0.08% of gold price = ~$3.50 at $4400
-    g_trend_pb_gold.EMA_WARMUP_TICKS  = 100;    // gold needs more warmup — fewer ticks/sec
+    // EMA_WARMUP_TICKS uses class default (500) — matches new time-based EMA alphas
+    // Gold: ~5 ticks/sec = 500 ticks = 100s warmup. Load from disk bypasses this.
     g_trend_pb_gold.COOLDOWN_SEC      = 90;
     // GER40: tighter band (index moves more cleanly around EMAs)
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500
-    g_trend_pb_ger40.EMA_WARMUP_TICKS = 60;
+    // GER40: ~5 ticks/sec = 500 ticks = 100s. Load from disk bypasses this.
     g_trend_pb_ger40.COOLDOWN_SEC     = 120;
     // Load warm EMA state — skips EMA_WARMUP_TICKS cold period on restart
     g_trend_pb_gold.load_state(log_root_dir()  + "/trend_pb_gold.dat");

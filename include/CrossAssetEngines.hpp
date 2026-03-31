@@ -1432,11 +1432,19 @@ private:
 class TrendPullbackEngine {
 public:
     double  PULLBACK_BAND_PCT = 0.05;    // price within 0.05% of EMA50 = "at EMA50"
-    double  EMA9_ALPHA        = 2.0 / (9.0  + 1.0);
-    double  EMA21_ALPHA       = 2.0 / (21.0 + 1.0);
-    double  EMA50_ALPHA       = 2.0 / (50.0 + 1.0);
-    double  ATR_ALPHA         = 2.0 / (14.0 + 1.0); // EWM ATR-14 for trail sizing
-    int     EMA_WARMUP_TICKS  = 60;     // ticks before EMAs are trusted
+    // EMA alphas calibrated for ~10 ticks/sec (London gold rate).
+    // Using tick-count periods directly produced EMAs with half-life <1s
+    // (EMA9 at alpha=0.2 = 3-tick half-life = 0.3s) — flipping trend
+    // direction every few ticks and firing opposite-direction entries.
+    // Now calibrated to time-equivalent periods:
+    //   EMA9  ≈ 9s  (N=90  ticks @ 10/s)
+    //   EMA21 ≈ 21s (N=210 ticks @ 10/s)
+    //   EMA50 ≈ 50s (N=500 ticks @ 10/s)
+    double  EMA9_ALPHA        = 2.0 / (90.0  + 1.0);
+    double  EMA21_ALPHA       = 2.0 / (210.0 + 1.0);
+    double  EMA50_ALPHA       = 2.0 / (500.0 + 1.0);
+    double  ATR_ALPHA         = 2.0 / (140.0 + 1.0); // ATR-14 equivalent in ticks
+    int     EMA_WARMUP_TICKS  = 500;    // ticks before EMAs are trusted (EMA50=500tick period)
     int     MAX_HOLD_SEC      = 86400;  // no timeout — ATR trail manages exit
     int     COOLDOWN_SEC      = 120;
     bool    enabled           = true;
@@ -1545,6 +1553,7 @@ public:
                 fflush(stdout);
                 pos_.reset();
                 be_locked_ = false;
+                prev_at_ema50_ = false;  // reset confirmation state on close
                 cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
                 if (on_close) on_close(tr);
             }
