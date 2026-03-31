@@ -1446,7 +1446,7 @@ public:
     double  ATR_ALPHA         = 2.0 / (140.0 + 1.0); // ATR-14 equivalent in ticks
     int     EMA_WARMUP_TICKS  = 500;    // ticks before EMAs are trusted (EMA50=500tick period)
     int     MAX_HOLD_SEC      = 86400;  // no timeout — ATR trail manages exit
-    int     COOLDOWN_SEC      = 120;
+    int     COOLDOWN_SEC      = 300;  // raised 120→300: 2-min re-entries on thin tape caused direction-flip losses
     bool    enabled           = true;
     // ATR trail params (data-validated on gold: 2x ATR arm, 1x ATR trail)
     double  TRAIL_ARM_ATR_MULT  = 2.0;  // arm trail after price moves 2x ATR from entry
@@ -1567,6 +1567,32 @@ public:
                 printf("[TREND-PB] %s %s CLOSE @%.3f reason=%s pnl=%.2f atr=%.3f trail_sl=%.3f\n",
                        sym.c_str(), tr.side.c_str(), exit_px, reason, tr.pnl, atr, pos_.sl);
                 fflush(stdout);
+                // Track consecutive SL hits for direction block
+                if (std::strcmp(reason, "SL_HIT") == 0) {
+                    if (pos_.is_long) {
+                        ++m_consec_sl_long_;
+                        m_consec_sl_short_ = 0;
+                        if (m_consec_sl_long_ >= 2) {
+                            m_long_blocked_until_ = ca_now_sec() + 600; // 10 min block
+                            m_consec_sl_long_ = 0;
+                            printf("[TREND-PB] %s LONG blocked 10min after 2 consec SL hits\n", sym.c_str());
+                            fflush(stdout);
+                        }
+                    } else {
+                        ++m_consec_sl_short_;
+                        m_consec_sl_long_ = 0;
+                        if (m_consec_sl_short_ >= 2) {
+                            m_short_blocked_until_ = ca_now_sec() + 600;
+                            m_consec_sl_short_ = 0;
+                            printf("[TREND-PB] %s SHORT blocked 10min after 2 consec SL hits\n", sym.c_str());
+                            fflush(stdout);
+                        }
+                    }
+                } else {
+                    // Profitable exit — reset consecutive SL counters
+                    m_consec_sl_long_ = 0;
+                    m_consec_sl_short_ = 0;
+                }
                 pos_.reset();
                 be_locked_ = false;
                 prev_at_ema50_ = false;  // reset confirmation state on close
@@ -1578,12 +1604,23 @@ public:
 
         if (tick_count_ < EMA_WARMUP_TICKS) return {};
 
-        // Session gate: London/NY (08:00-22:00 UTC)
+        // Session gate: London/NY only
+        // 08:00-20:00 UTC for indices — post-London (20:00-22:00) is thin tape
+        // with wide spreads and EMA flipping, causing direction-alternating losses.
+        // XAUUSD trades 23h/day so gold gets the full 08:00-22:00 window.
         struct tm ti{}; ca_utc_time(ti);
         const int h = ti.tm_hour;
-        if (h < 8 || h >= 22) return {};
+        const bool is_gold = (sym.find("XAU") != std::string::npos);
+        const int session_end = is_gold ? 22 : 20;  // indices stop at 20:00 UTC
+        if (h < 8 || h >= session_end) return {};
 
         if (ca_now_sec() < cooldown_until_) return {};
+
+        // Direction block: after 2 consecutive SL hits in same direction,
+        // block that direction for 10 minutes — market is not trending that way
+        const int64_t now_cs = ca_now_sec();
+        const bool long_dir_blocked  = (now_cs < m_long_blocked_until_);
+        const bool short_dir_blocked = (now_cs < m_short_blocked_until_);
 
         // Trend detection — all three EMAs must be stacked
         const bool uptrend   = (ema9_ > ema21_) && (ema21_ > ema50_);
@@ -1608,6 +1645,10 @@ public:
         if (!bounce_up && !bounce_down) return {};
 
         const bool is_long = uptrend;
+
+        // Apply direction block
+        if (is_long  && long_dir_blocked)  return {};
+        if (!is_long && short_dir_blocked) return {};
 
         // Initial TP = EMA9 (first target — trail takes over from there)
         // SL = EMA50, floored to minimum viable distance per symbol
@@ -1760,7 +1801,12 @@ private:
     double  ema21_         = 0.0;
     double  ema50_         = 0.0;
     double  atr_           = 0.0;  // EWM ATR-14 for trail sizing
-    bool    m_using_bar_emas_ = false;  // true when bar EMAs injected via seed_bar_emas()
+    bool    m_using_bar_emas_ = false;
+    // Consecutive SL tracker — block direction after 2 consecutive SL hits
+    int     m_consec_sl_long_  = 0;   // consecutive long SL hits
+    int     m_consec_sl_short_ = 0;   // consecutive short SL hits
+    int64_t m_long_blocked_until_  = 0;  // epoch sec, long blocked after 2 consec SL
+    int64_t m_short_blocked_until_ = 0;  // epoch sec, short blocked after 2 consec SL  // true when bar EMAs injected via seed_bar_emas()
     int     tick_count_    = 0;
     bool    prev_at_ema50_ = false;
     double  prev_mid_      = 0.0;
