@@ -10931,7 +10931,7 @@ int main(int argc, char* argv[])
         g_ctrader_depth.symbol_whitelist.insert("XAGUSD");
         g_ctrader_depth.symbol_whitelist.insert("NGAS");
         g_ctrader_depth.symbol_whitelist.insert("VIX");
-        g_ctrader_depth.dump_all_symbols = true;   // AUDIT: dump symbol list to verify USOIL.F id=2632 vs Brent
+        g_ctrader_depth.dump_all_symbols = false;  // audit complete -- USOIL.F id=2632 confirmed
         // Alias map: broker name ? internal name used by getImb/getBook
         // XAUUSD is already the canonical name -- no alias needed
 
