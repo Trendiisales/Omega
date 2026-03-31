@@ -1585,18 +1585,50 @@ public:
         const bool is_long = uptrend;
 
         // Initial TP = EMA9 (first target — trail takes over from there)
-        // SL = EMA50
-        const double tp      = ema9_;
-        const double tp_dist = std::fabs(tp - mid);
-        const double sl      = ema50_;
+        // SL = EMA50, floored to minimum viable distance per symbol
+        const double tp_raw  = ema9_;
+        const double sl_raw  = ema50_;
 
-        if (is_long  && tp <= mid) return {};
-        if (!is_long && tp >= mid) return {};
-        if (tp_dist <= 0.0)        return {};
+        if (is_long  && tp_raw <= mid) return {};
+        if (!is_long && tp_raw >= mid) return {};
 
-        // R:R gate: 1.5:1 minimum
-        const double sl_dist_check = std::fabs(mid - sl);
-        if (sl_dist_check > 0.0 && (tp_dist / sl_dist_check) < 1.5) return {};
+        // ── Minimum SL distance — per symbol ATR floor ────────────────────
+        // SL=EMA50 can be <0.1pt when EMAs are compressed = less than spread.
+        // Cost guard correctly rejects these (SL < spread = unviable).
+        // Floor: enough distance that SL survives spread noise.
+        //   USTEC.F: min 3.0pts  (spread ~2.7pts, need room)
+        //   US500.F: min 1.5pts  (spread ~0.8pts)
+        //   GER40:   min 3.0pts  (spread ~1.7pts)
+        //   XAUUSD:  min 2.0pts  (spread ~2.2pts)
+        //   Default: 1.0pt
+        const double min_sl_dist =
+            (sym == "USTEC.F")                        ? 3.0  :
+            (sym == "US500.F")                        ? 1.5  :
+            (sym == "GER40")                          ? 3.0  :
+            (sym.find("XAU") != std::string::npos)   ? 2.0  : 1.0;
+
+        // Also floor to 2x spread so SL is never within noise of entry
+        const double spread_floor = spread * 2.0;
+        const double eff_min_sl   = std::max(min_sl_dist, spread_floor);
+
+        // Apply floor: if EMA50 is too close, push SL out to eff_min_sl
+        const double sl_raw_dist  = std::fabs(mid - sl_raw);
+        const double sl_dist      = std::max(sl_raw_dist, eff_min_sl);
+        const double sl = is_long ? (mid - sl_dist) : (mid + sl_dist);
+
+        // TP: must be at least 1.5x SL distance from entry (R:R gate)
+        const double tp_raw_dist  = std::fabs(tp_raw - mid);
+        const double min_tp_dist  = sl_dist * 1.5;
+        const double tp_dist      = std::max(tp_raw_dist, min_tp_dist);
+        const double tp = is_long ? (mid + tp_dist) : (mid - tp_dist);
+
+        if (tp_dist <= 0.0 || sl_dist <= 0.0) return {};
+
+        // R:R gate: 1.5:1 minimum (redundant after floor but kept as safety)
+        if ((tp_dist / sl_dist) < 1.5) return {};
+
+        // Hard reject if SL is still tiny after flooring (shouldn't happen but safety)
+        if (sl_dist < spread * 1.5) return {};
 
         CrossSignal sig;
         sig.valid   = true;
