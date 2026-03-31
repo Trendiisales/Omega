@@ -3807,7 +3807,60 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.sp_l2_real      = g_l2_sp.has_data.load(std::memory_order_relaxed);
     g_macro_ctx.cl_l2_real      = g_l2_cl.has_data.load(std::memory_order_relaxed);
 
-    // Log L2 status once per minute — diagnose BlackBull tag-271 / cTrader size issue
+    // ── L2 size-dead watchdog — warn at 5s, force-restart at 10s ──────────────
+    // cTrader sends depth events (prices arrive) but size=0 on all levels.
+    // has_data()=false → GoldFlow blind, no L2 signal. Unacceptable.
+    // 5s dead = warn every tick. 10s dead = force stop/start depth feed.
+    {
+        static int64_t s_l2_dead_since  = 0;  // when sizes first went zero
+        static int64_t s_l2_warn_last   = 0;  // last warn print
+        static int64_t s_l2_restart_cnt = 0;  // how many restarts this session
+        const int64_t  now_wd           = nowSec();
+
+        // gold_l2_real = has_data() = price AND non-zero size on both sides
+        const bool gold_size_dead = g_macro_ctx.ctrader_l2_live
+                                    && !g_macro_ctx.gold_l2_real;
+
+        if (gold_size_dead) {
+            if (s_l2_dead_since == 0) s_l2_dead_since = now_wd;
+            const int64_t dead_sec = now_wd - s_l2_dead_since;
+
+            // Warn every 5s while dead
+            if (now_wd - s_l2_warn_last >= 5) {
+                s_l2_warn_last = now_wd;
+                printf("[L2-DEAD] *** GOLD L2 SIZE=0 for %llds"
+                       " — GoldFlow blind, restart pending at 10s ***\n",
+                       (long long)dead_sec);
+                fflush(stdout);
+            }
+
+            // Force-restart at 10s
+            if (dead_sec >= 10) {
+                ++s_l2_restart_cnt;
+                printf("[L2-RESTART] Gold L2 size dead %llds"
+                       " — forcing depth feed restart #%lld\n",
+                       (long long)dead_sec, (long long)s_l2_restart_cnt);
+                fflush(stdout);
+                g_ctrader_depth.stop();
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                g_ctrader_depth.start();
+                s_l2_dead_since = 0;
+                s_l2_warn_last  = 0;
+            }
+        } else {
+            if (s_l2_dead_since != 0) {
+                printf("[L2-RECOVERED] Gold L2 sizes live again after %llds"
+                       " (restarts this session: %lld)\n",
+                       (long long)(now_wd - s_l2_dead_since),
+                       (long long)s_l2_restart_cnt);
+                fflush(stdout);
+                s_l2_dead_since = 0;
+                s_l2_warn_last  = 0;
+            }
+        }
+    }
+
+    // Log L2 status once per minute
     {
         static int64_t s_l2_log = 0;
         const int64_t now_l2 = nowSec();

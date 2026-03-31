@@ -261,8 +261,13 @@ struct CTDepthBook {
         struct Lv { double price, size; };
         std::vector<Lv> bids, asks;
         for (const auto& kv : quotes) {
-            if (!kv.second.price_raw || !kv.second.size_raw) continue;
-            Lv lv{ kv.second.price_raw/100000.0, kv.second.size_raw/100.0 };
+            if (!kv.second.price_raw) continue;  // no price = invalid, skip
+            // size_raw=0 means broker sent no tag-271 size — substitute 1 lot (100 raw)
+            // so imbalance() returns 0.5 (neutral) rather than NaN/0 which breaks L2 path.
+            // This keeps the price levels visible and prevents has_data()=false falsely
+            // killing GoldFlow's L2 path on brokers that omit size data.
+            const uint64_t eff_sz = kv.second.size_raw > 0 ? kv.second.size_raw : 100;
+            Lv lv{ kv.second.price_raw/100000.0, eff_sz/100.0 };
             if (kv.second.is_bid) bids.push_back(lv); else asks.push_back(lv);
         }
         std::sort(bids.begin(),bids.end(),[](const Lv&a,const Lv&b){return a.price>b.price;});
