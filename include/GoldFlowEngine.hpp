@@ -100,6 +100,13 @@ static constexpr int    GFE_MAX_HOLD_MS       = 3600000; // 60 min — EA has no
                                                           // Observed: held 31 min with no exit because gold went flat after entry,
                                                           // Stage 1 BE locked but trail never tightened — exit at BE/mid.
 static constexpr int    GFE_COOLDOWN_MS       = 30000;  // 30s cooldown after exit
+// Minimum ticks that must be RECEIVED (not just warmed-up) before any entry is
+// allowed. seed() and load_atr_state() bypass the ATR warmup counter so the
+// engine can fire within seconds of a restart on seeded data. This guard is
+// unconditional — it cannot be bypassed by seed or load — and ensures the
+// persistence windows have been fed enough REAL market ticks before entry.
+// At ~5 ticks/s Asia / ~10 ticks/s London: 150 ticks ≈ 15-30s real time.
+static constexpr int    GFE_MIN_ENTRY_TICKS   = 150;   // ~15-30s real time before first entry allowed
 static constexpr double GFE_RISK_DOLLARS      = 30.0;  // $ risk per trade (fallback)
 static constexpr double GFE_MIN_LOT           = 0.01;
 static constexpr double GFE_MAX_LOT           = 1.0;
@@ -202,6 +209,18 @@ struct GoldFlowEngine {
 
         // ── FIX (claim 3): Block ALL signal accumulation until ATR is warmed up ──
         if (m_atr_warmup_ticks < GFE_ATR_PERIOD) return;
+
+        // ── Cold-start entry gate — cannot be bypassed by seed() or load_atr_state() ──
+        // seed() sets m_atr_warmup_ticks = GFE_ATR_PERIOD immediately, bypassing the
+        // 100-tick ATR gate above. That means entries could fire within seconds of a
+        // restart on seeded data before the persistence windows contain real market
+        // ticks. m_ticks_received is incremented every tick in update_atr() and is
+        // never touched by seed/load — it is the only uncircumventable warmup guard.
+        // If ALL telemetry fields are zero (xau_recent_vol_pct=0, xau_baseline_vol_pct=0)
+        // then this gate is what prevents entry. Block signal accumulation too so the
+        // persistence windows do not pre-fill with cold-start ticks that will fire
+        // immediately once the gate lifts.
+        if (m_ticks_received < GFE_MIN_ENTRY_TICKS) return;
 
         // ── FIX (claim 4): Update persistence BEFORE spread gate ──────────────
         update_persistence(l2_imb, now_ms);
@@ -594,6 +613,8 @@ private:
     double              m_atr_ewm       = 0.0;   // internal EWM accumulator
     double              m_last_mid_atr  = 0.0;   // previous mid for tick-range computation
     int                 m_atr_warmup_ticks = 0;  // counts ticks until GFE_ATR_PERIOD reached
+    int                 m_ticks_received   = 0;  // raw tick count since construction — NEVER reset by seed/load
+                                                  // used as the cold-start entry gate (see GFE_MIN_ENTRY_TICKS)
     std::deque<double>  m_atr_window;             // spread data (retained for compat)
     // Momentum buffer: SEPARATE from ATR buffer.
     // OLD: m_mid_window was shared — ATR_PERIOD*3 trim implicitly controlled momentum history.
@@ -683,6 +704,8 @@ private:
         ++m_atr_warmup_ticks;
         if (m_atr_warmup_ticks >= GFE_ATR_PERIOD)
             m_atr = std::max(GFE_ATR_MIN, m_atr_ewm);
+        // Always increment — not reset by seed() or load_atr_state()
+        ++m_ticks_received;
 
         m_atr_window.push_back(spread);
         if ((int)m_atr_window.size() > GFE_ATR_PERIOD * 3)
@@ -1044,3 +1067,4 @@ private:
         if (on_close) on_close(tr);
     }
 };
+
