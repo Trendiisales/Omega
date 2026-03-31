@@ -37,9 +37,12 @@ Write-Host ""
 # [2/7] Sync to origin/main
 Write-Host "[2/7] Syncing to origin/main..." -ForegroundColor Yellow
 Set-Location $OmegaDir
-git fetch origin 2>&1 | Out-Null
-git checkout main 2>&1 | Out-Null
-git reset --hard origin/main 2>&1 | Out-Null
+# Capture all git housekeeping output to $null.
+# Under $ErrorActionPreference="Stop", any native command writing to stderr triggers
+# a terminating error even when piped to Out-Null. Assigning to $null suppresses that.
+$null = git fetch origin 2>&1
+$null = git checkout main 2>&1          # "Already on 'main'" goes to stderr -- normal, not an error
+$null = git reset --hard origin/main 2>&1
 
 $localHead  = (git rev-parse HEAD).Trim()
 $remoteHead = (git rev-parse origin/main).Trim()
@@ -56,8 +59,8 @@ Write-Host "[3/7] Clean build..." -ForegroundColor Yellow
 Remove-Item -Path "$OmegaDir\build" -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 Set-Location "$OmegaDir\build"
-cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1 | Out-Null
-cmake --build . --config Release 2>&1
+$null = cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1   # configure output not useful -- suppress
+cmake --build . --config Release 2>&1              # build output stays visible for error diagnosis
 
 if (-not (Test-Path $BuildExe)) {
     Write-Host "      [ERROR] Build failed -- $BuildExe not found" -ForegroundColor Red

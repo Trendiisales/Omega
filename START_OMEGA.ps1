@@ -52,7 +52,7 @@ if ($stampHash -ne $currentHash) {
 }
 
 # [3] Verify git HEAD matches stamp
-git fetch origin 2>&1 | Out-Null
+$null = git fetch origin 2>&1
 $localHead  = (git rev-parse HEAD).Trim()
 $remoteHead = (git rev-parse origin/main).Trim()
 

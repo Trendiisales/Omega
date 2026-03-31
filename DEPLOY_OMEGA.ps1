@@ -53,14 +53,14 @@ Write-Host ""
 # ------------------------------------------------------------------------------
 Write-Host "[2/8] Pulling latest from GitHub..." -ForegroundColor Yellow
 Set-Location $OmegaDir
-git fetch origin 2>&1 | Out-Null
+$null = git fetch origin 2>&1
 
 # Detect if this deploy script itself changed -- if so, re-exec the new version.
 # PowerShell loads the entire script into memory before running any of it, so
 # git reset --hard below overwrites the file but the OLD code keeps running.
 # Fix: detect diff, reset, then re-launch so the new script version executes.
 $scriptChanged = (git diff HEAD origin/main -- DEPLOY_OMEGA.ps1 2>&1)
-git reset --hard origin/main 2>&1 | Out-Null
+$null = git reset --hard origin/main 2>&1
 
 # Force-write symbols.ini directly from git object store (bypasses encoding drift)
 git show HEAD:symbols.ini | Out-File -FilePath "$OmegaDir\symbols.ini" -Encoding utf8 -Force
@@ -84,8 +84,8 @@ if (Test-Path "$OmegaDir\build") {
 }
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 Set-Location "$OmegaDir\build"
-cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1 | Out-Null
-cmake --build . --config Release 2>&1
+$null = cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1   # configure output not useful -- suppress
+cmake --build . --config Release 2>&1              # build output stays visible for error diagnosis
 
 if (-not (Test-Path $BuildExe)) {
     Write-Host "" -ForegroundColor Red
