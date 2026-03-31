@@ -10945,7 +10945,9 @@ int main(int argc, char* argv[])
         g_ctrader_depth.name_alias["SP500"]    = "US500.F";
         g_ctrader_depth.name_alias["SPX500"]   = "US500.F";
         g_ctrader_depth.name_alias["USTEC"]    = "USTEC.F";
-        g_ctrader_depth.name_alias["NAS100"]   = "USTEC.F";  // map cash NAS100 to futures
+        // NAS100 is NOT aliased to USTEC.F -- it is a separate cash instrument.
+        // The NBM engine runs on "NAS100" and needs its own on_tick() calls.
+        // USTEC.F (futures) and NAS100 (cash) have different prices.
         g_ctrader_depth.name_alias["NASDAQ"]   = "USTEC.F";
         g_ctrader_depth.name_alias["TECH100"]  = "USTEC.F";
         g_ctrader_depth.name_alias["US30"]     = "DJ30.F";
