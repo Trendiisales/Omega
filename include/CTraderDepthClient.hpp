@@ -535,11 +535,13 @@ private:
             }
 
             // Resolve bar subscription IDs (for US500.F, USTEC.F, GER40 etc.)
+            // EXACT MATCH ONLY -- never resolve via alias. SPX500/NAS100/etc. must
+            // not resolve US500.F/USTEC.F bar subs -- wrong instrument, causes
+            // INVALID_REQUEST when broker rejects trendbar req for cash index id.
             for (auto& bkv : bar_subscriptions) {
                 const std::string& binternal = bkv.first;
                 if (bkv.second.sym_id != 0) continue;
-                const std::string check = name_alias.count(sname) ? name_alias.at(sname) : sname;
-                if (check == binternal || sname == binternal) {
+                if (sname == binternal) {
                     bkv.second.sym_id = sid;
                     std::cout << "[CTRADER-BARS] Resolved bar sub: " << binternal
                               << " id=" << sid << "\n";
