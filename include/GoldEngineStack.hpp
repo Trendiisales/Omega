@@ -4239,6 +4239,7 @@ public:
                     const double score = s.confidence * 1.1; // engine weight for ImpulseContinuation
                     if (!entry_quality_ok(s, score, snap, now_s)) return GoldSignal{};
                     GoldSignal gs=to_gold_signal(s);
+                    apply_vol_scaled_sl(gs);
                     pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
                     has_open_pos_=true;
                     last_entry_ts_=now_s;
@@ -4291,6 +4292,7 @@ public:
         if(best.valid){
             if (!entry_quality_ok(best, best_score, snap, now_s)) return GoldSignal{};
             GoldSignal gs=to_gold_signal(best);
+            apply_vol_scaled_sl(gs);
             pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
             has_open_pos_=true;
             last_entry_ts_=now_s;
@@ -4662,6 +4664,33 @@ private:
         g.size = s.size > 0.0 ? s.size : 0.01;  // sub-engine size carries through; 0.01 fallback, never 1.0
         strncpy(g.engine,s.engine,31); strncpy(g.reason,s.reason,31);
         return g;
+    }
+
+    // vol_scaled_sl: scale CB (and ImpulseCont) SL/TP with current vol_range.
+    // Problem: fixed SL_TICKS=50 ($5) gets hit by normal noise on high-vol moves.
+    // During today's 120pt selloff, vol_range=50pts → noise easily exceeds $5.
+    // Solution: SL = clamp(vol_range * 0.20, $5, $15), TP = SL * 2.0 (maintains 2:1 RR).
+    // Risk-based sizing in main.cpp compensates: wider SL = smaller size = same $ risk.
+    // Applies ONLY to CompressionBreakout and ImpulseContinuation — engines that fire
+    // at the START of a move where vol_range reflects real current volatility.
+    // Does NOT apply to: WickRejection, DonchianBreakout, etc. (different SL logic).
+    void apply_vol_scaled_sl(GoldSignal& gs) const noexcept {
+        const std::string eng(gs.engine);
+        if (eng != "CompressionBreakout" && eng != "ImpulseContinuation") return;
+        const double vr = vol_filter_.current_range();
+        if (vr <= 0.0) return;
+        // Scale: 0.20 × vol_range, clamped [$5, $15] = [50 ticks, 150 ticks]
+        const double sl_pts  = std::max(5.0, std::min(15.0, vr * 0.20));
+        const double sl_ticks = sl_pts / 0.10;   // convert $ to ticks (0.10 per tick)
+        const double tp_ticks = sl_ticks * 2.0;  // always 2:1 RR
+        if (sl_ticks > gs.sl_ticks) {  // only widen, never tighten below engine's own floor
+            printf("[CB-VOL-SL] %s vol_range=%.1f sl=%.0fticks($%.0f) tp=%.0fticks($%.0f) "
+                   "[was sl=%.0f tp=%.0f]\n",
+                   gs.engine, vr, sl_ticks, sl_pts, tp_ticks, sl_pts*2.0,
+                   gs.sl_ticks, gs.tp_ticks);
+            gs.sl_ticks = sl_ticks;
+            gs.tp_ticks = tp_ticks;
+        }
     }
 };
 
