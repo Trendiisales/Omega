@@ -1101,13 +1101,18 @@ private:
 class VWAPReversionEngine {
 public:
     double  EXTENSION_THRESH_PCT = 0.20; // price must be >0.20% from VWAP to qualify
-    double  EXTENSION_SL_RATIO   = 0.60; // SL = extension × 0.60 past entry (away from VWAP)
+    double  EXTENSION_SL_RATIO   = 0.60; // SL = extension × 0.60 past entry (further from VWAP)
+    double  MAE_EXIT_RATIO       = 0.50; // exit early if adverse move > 0.50 × TP dist
+                                         // thesis dead — price trending away not reverting
     int     MAX_HOLD_SEC         = 900;  // 15 min — VWAP pull should happen fast
     int     COOLDOWN_SEC         = 180;  // 3 min between entries
+    int     MIN_SESSION_MIN      = 120;  // only enter after 2hrs of session data (10:00 UTC)
+                                         // avoids firing on London pre-open noise where daily
+                                         // open proxy has only 30-60min of price history
     bool    enabled              = true;
-    // Confluence thresholds — compared in on_tick to score signal quality
-    double  CONF_VIX_THRESH      = 18.0; // VIX above this = elevated vol confirms extension
-    double  CONF_L2_THRESH       = 0.12; // L2 imbalance deviation from 0.5 to confirm direction
+    // Confluence thresholds
+    double  CONF_VIX_THRESH      = 18.0;
+    double  CONF_L2_THRESH       = 0.12;
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
@@ -1125,6 +1130,22 @@ public:
         const double spread = ask - bid;
 
         if (pos_.active) {
+            // ── MAE early exit — mean-reversion thesis invalidation ────────────
+            // If price moves more than MAE_EXIT_RATIO × TP distance AGAINST us,
+            // the reversion isn't happening — price is trending away.
+            // Exit immediately rather than bleeding to the full 15min timeout.
+            const double mid_now = (bid + ask) * 0.5;
+            const double adverse = pos_.is_long ? (pos_.entry - mid_now)
+                                                : (mid_now - pos_.entry);
+            const double tp_dist_pos = std::fabs(pos_.tp - pos_.entry);
+            if (adverse > tp_dist_pos * MAE_EXIT_RATIO && tp_dist_pos > 0.0) {
+                printf("[VWAP-REV] %s MAE exit — adverse=%.2f > %.2f (%.0f%% of TP dist) — thesis dead\n",
+                       sym.c_str(), adverse, tp_dist_pos * MAE_EXIT_RATIO,
+                       MAE_EXIT_RATIO * 100.0);
+                fflush(stdout);
+                pos_.force_close(bid, ask, on_close);
+                return {};
+            }
             pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
             return {};
         }
@@ -1134,6 +1155,14 @@ public:
         struct tm ti{}; ca_utc_time(ti);
         const int h = ti.tm_hour;
         if (h < 8 || h >= 22) return {};
+
+        // ── Minimum session time gate ─────────────────────────────────────────
+        // Daily open proxy is unreliable until enough intraday price history
+        // has accumulated. London opens at 08:00 UTC — at 08:30 there are only
+        // 30min of data and any drift from the open is normal price discovery,
+        // not a real VWAP dislocation. Require MIN_SESSION_MIN of session data.
+        const int session_min_elapsed = (h - 8) * 60 + ti.tm_min;
+        if (session_min_elapsed < MIN_SESSION_MIN) return {};
 
         if (ca_now_sec() < cooldown_until_) return {};
 
@@ -1183,9 +1212,9 @@ public:
         //                     Bid-heavy (imb > 0.5+thresh) = bullish pressure → long
         //                     Ask-heavy (imb < 0.5-thresh) = bearish pressure → short
         int score = 1;
-        // Session overlap bonus
-        const int hm = h * 60 + ti.tm_min;
-        if (hm >= (13*60+30) && hm < (17*60)) ++score;
+        // Session overlap bonus: NY/London overlap 13:30-17:00 UTC = 5.5-9hrs into session
+        // session_min_elapsed is minutes since 08:00 UTC
+        if (session_min_elapsed >= (5*60+30) && session_min_elapsed < (9*60)) ++score;
         // VIX bonus
         if (vix > CONF_VIX_THRESH) ++score;
         // L2 directional confirmation
