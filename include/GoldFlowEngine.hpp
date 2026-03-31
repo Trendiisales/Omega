@@ -207,9 +207,11 @@ struct GoldFlowEngine {
         // Feed ATR and momentum history (always — warmup must run every tick)
         update_atr(spread, mid);
 
-        // Cooldown phase
+        // Cooldown phase — duration set by exit reason (see close_position)
         if (phase == Phase::COOLDOWN) {
-            if (now_ms - m_cooldown_start >= eff_cooldown)
+            const int cd = (m_exit_cooldown_ms > 0) ? m_exit_cooldown_ms
+                         : (is_low_quality_session  ? GFE_ASIA_COOLDOWN_MS : GFE_COOLDOWN_MS);
+            if (now_ms - m_cooldown_start >= cd)
                 phase = Phase::IDLE;
             else return;
         }
@@ -722,6 +724,7 @@ private:
     double m_range_lo = 0.0;
 
     int64_t m_cooldown_start   = 0;
+    int     m_exit_cooldown_ms = 0;  // cooldown duration set per exit reason
     int     m_trade_id         = 0;
     double  m_spread_at_entry  = 0.0;
 
@@ -1077,6 +1080,24 @@ private:
                   << " stage=" << pos.trail_stage
                   << " held=" << held_s << "s\n";
         std::cout.flush();
+
+        // ── Differentiated cooldown by exit reason ────────────────────────────
+        // TRAIL_HIT: trade was profitable and trend gave confirmation → re-enter fast
+        //   10s: the reversal is now in progress, want to catch it quickly
+        // BE_HIT: breakeven on remainder after partial — trend may continue
+        //   15s: slight pause to confirm direction, then allow re-entry
+        // SL_HIT: full stop hit — thesis failed, need time to reassess
+        //   45s: longer pause, don't re-enter into the same failed setup
+        // FORCE_CLOSE / MAX_HOLD_TIMEOUT: stale thesis
+        //   30s: standard pause
+        // default (other): 30s
+        int exit_cooldown_ms = GFE_COOLDOWN_MS;  // 30s default
+        if      (std::strcmp(reason, "TRAIL_HIT")         == 0) exit_cooldown_ms = 10000;
+        else if (std::strcmp(reason, "BE_HIT")            == 0) exit_cooldown_ms = 15000;
+        else if (std::strcmp(reason, "SL_HIT")            == 0) exit_cooldown_ms = 45000;
+        else if (std::strcmp(reason, "FORCE_CLOSE")       == 0) exit_cooldown_ms = 30000;
+        else if (std::strcmp(reason, "MAX_HOLD_TIMEOUT")  == 0) exit_cooldown_ms = 30000;
+        m_exit_cooldown_ms = exit_cooldown_ms;
 
         // Set continuation mode on profitable close (trail or BE, not SL).
         // Allows faster re-entry when trend is still active.
