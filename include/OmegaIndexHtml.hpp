@@ -877,80 +877,117 @@ function setDepthSym(sym) {
   });
 }
 
-function updateDepthPanel(d) {
-  const sym = _depthSym;
-  const bids = d[sym + '_bids'];
-  const asks = d[sym + '_asks'];
-  const bidEl  = document.getElementById('depthBidRows');
-  const askEl  = document.getElementById('depthAskRows');
-  const imbEl  = document.getElementById('depthImbFill');
-  const badge  = document.getElementById('depthImbBadge');
-  if (!bidEl || !askEl) return;
+// ── Depth panel row pool ────────────────────────────────────────────────────
+// Pre-built DOM rows. On first call we create _depthMaxRows rows per side and
+// keep them alive forever. Each tick we update only the cells whose values
+// actually changed — zero innerHTML rewrites during normal operation.
+const _depthRows = { bid: [], ask: [] };
+let   _depthRowsReady = false;
 
-  // If no data, show placeholder
+function _ensureDepthRows() {
+  if (_depthRowsReady) return;
+  ['bid','ask'].forEach(side => {
+    const container = document.getElementById('depth' + (side==='bid'?'Bid':'Ask') + 'Rows');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let i = 0; i < _depthMaxRows; i++) {
+      const row  = document.createElement('div');
+      row.className = 'depth-row ' + side;
+      row.style.display = 'none';            // hidden until we have data
+      const bg   = document.createElement('div');  bg.className  = 'depth-bg';
+      const px   = document.createElement('span'); px.className  = 'depth-px';
+      const sz   = document.createElement('span'); sz.className  = 'depth-sz';
+      row.appendChild(bg); row.appendChild(px); row.appendChild(sz);
+      container.appendChild(row);
+      _depthRows[side].push({ row, bg, px, sz, lastP: null, lastS: null, lastBar: null });
+    }
+  });
+  _depthRowsReady = true;
+}
+
+function updateDepthPanel(d) {
+  _ensureDepthRows();
+  const sym   = _depthSym;
+  const bids  = d[sym + '_bids'];
+  const asks  = d[sym + '_asks'];
+  const imbEl = document.getElementById('depthImbFill');
+  const badge = document.getElementById('depthImbBadge');
+
+  // No data — hide all rows, show placeholder text via first row
   if (!bids || !bids.length || !asks || !asks.length) {
-    bidEl.innerHTML = '<div class="depth-empty">no data</div>';
-    askEl.innerHTML = '<div class="depth-empty">no data</div>';
+    ['bid','ask'].forEach(side => {
+      _depthRows[side].forEach((r,i) => {
+        if (i === 0) { r.px.textContent = 'no data'; r.sz.textContent = ''; r.bg.style.width='0%'; r.row.style.display=''; }
+        else r.row.style.display = 'none';
+        r.lastP = null; r.lastS = null;
+      });
+    });
     if (imbEl) { imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t3)'; }
     if (badge) { badge.textContent = 'IMB --'; badge.style.color = 'var(--t2)'; }
     return;
   }
 
-  // Sort: bids descending (best bid first), asks ascending (best ask first)
+  // Sort levels
   const sortedBids = [...bids].sort((a,b) => b.p - a.p).slice(0, _depthMaxRows);
   const sortedAsks = [...asks].sort((a,b) => a.p - b.p).slice(0, _depthMaxRows);
 
-  // Total volume for relative bar sizing
   const totalBidVol = sortedBids.reduce((s,r) => s + r.s, 0);
   const totalAskVol = sortedAsks.reduce((s,r) => s + r.s, 0);
   const maxVol = Math.max(totalBidVol, totalAskVol, 0.001);
 
-  // Determine decimal places from price magnitude
   const refPx = sortedBids[0] ? sortedBids[0].p : (sortedAsks[0] ? sortedAsks[0].p : 1);
-  const dec = refPx > 100 ? 2 : (refPx > 1 ? 4 : 5);
+  const dec   = refPx > 100 ? 2 : (refPx > 1 ? 4 : 5);
 
-  function renderRows(rows, side) {
-    if (!rows.length) return '<div class="depth-empty">—</div>';
-    return rows.map(r => {
-      const barPct = Math.round(Math.min(100, (r.s / maxVol) * 100));
-      const sizeStr = r.s >= 1000 ? (r.s/1000).toFixed(1)+'k' : r.s.toFixed(r.s < 1 ? 3 : 2);
-      return `<div class="depth-row ${side}">` +
-        `<div class="depth-bg" style="width:${barPct}%"></div>` +
-        `<span class="depth-px">${r.p.toFixed(dec)}</span>` +
-        `<span class="depth-sz">${sizeStr}</span>` +
-        `</div>`;
-    }).join('');
+  // Surgical per-cell update — only touch DOM nodes whose value changed
+  function patchRows(levels, side) {
+    const pool = _depthRows[side];
+    for (let i = 0; i < _depthMaxRows; i++) {
+      const cell = pool[i];
+      if (i >= levels.length) {
+        // hide unused rows
+        if (cell.row.style.display !== 'none') cell.row.style.display = 'none';
+        cell.lastP = null; cell.lastS = null;
+        continue;
+      }
+      const lvl     = levels[i];
+      const pStr    = lvl.p.toFixed(dec);
+      const sStr    = lvl.s >= 1000 ? (lvl.s/1000).toFixed(1)+'k' : lvl.s.toFixed(lvl.s < 1 ? 3 : 2);
+      const barPct  = Math.round(Math.min(100, (lvl.s / maxVol) * 100));
+
+      if (cell.row.style.display === 'none') cell.row.style.display = '';
+      if (cell.lastP !== pStr)  { cell.px.textContent = pStr;  cell.lastP = pStr; }
+      if (cell.lastS !== sStr)  { cell.sz.textContent = sStr;  cell.lastS = sStr; }
+      if (cell.lastBar !== barPct) { cell.bg.style.width = barPct+'%'; cell.lastBar = barPct; }
+    }
   }
 
-  // Only re-render if prices changed — prevents flicker on every WS tick
-  const newBidHtml = renderRows(sortedBids, 'bid');
-  const newAskHtml = renderRows(sortedAsks, 'ask');
-  if (bidEl.innerHTML !== newBidHtml) bidEl.innerHTML = newBidHtml;
-  if (askEl.innerHTML !== newAskHtml) askEl.innerHTML = newAskHtml;
+  patchRows(sortedBids, 'bid');
+  patchRows(sortedAsks, 'ask');
 
-  // Imbalance bar: bid vol vs ask vol (total, not just top-N, but we only have top-N)
-  const imb = totalBidVol / (totalBidVol + totalAskVol + 0.0001);
-  const imbPct = Math.round(imb * 100);
-  // Use the scalar imbalance from telemetry if available (more accurate)
+  // Imbalance bar — only update style when value changes meaningfully
+  const imb       = totalBidVol / (totalBidVol + totalAskVol + 0.0001);
   const scalarImb = safe(d[_depthSymL2Key[sym]], 0.5);
-  const dispImb = (scalarImb !== 0.5) ? scalarImb : imb;
-  const dev = dispImb - 0.5;
+  const dispImb   = (scalarImb !== 0.5) ? scalarImb : imb;
+  const dev       = dispImb - 0.5;
   if (imbEl) {
     if (Math.abs(dev) < 0.03) {
       imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t2)';
     } else if (dev > 0) {
-      const p = Math.min(50, dev * 200);
+      const p = Math.min(50, dev * 200).toFixed(1);
       imbEl.style.width=p+'%'; imbEl.style.left='50%'; imbEl.style.background='var(--green)';
     } else {
-      const p = Math.min(50, -dev * 200);
+      const p = Math.min(50, -dev * 200).toFixed(1);
       imbEl.style.left=(50-p)+'%'; imbEl.style.width=p+'%'; imbEl.style.background='var(--red)';
     }
   }
   if (badge) {
     const imbLabel = (dispImb * 100).toFixed(0);
     const bidDom = dispImb > 0.55, askDom = dispImb < 0.45;
-    badge.textContent = 'IMB ' + imbLabel + '%' + (bidDom ? ' B▲' : askDom ? ' A▼' : '');
-    badge.style.color = bidDom ? 'var(--green)' : askDom ? 'var(--red)' : 'var(--t2)';
+    const newTxt = 'IMB ' + imbLabel + '%' + (bidDom ? ' B▲' : askDom ? ' A▼' : '');
+    if (badge.textContent !== newTxt) {
+      badge.textContent = newTxt;
+      badge.style.color = bidDom ? 'var(--green)' : askDom ? 'var(--red)' : 'var(--t2)';
+    }
   }
 }
 
