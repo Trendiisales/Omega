@@ -104,22 +104,27 @@ public:
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         if (now_ms < m_cooldown_until_ms) {
-            // Peek at scores to check for early-exit condition.
-            // We cannot use the scores computed later (not yet computed here),
-            // so use a fast proxy: if vol is clearly expanding + momentum strong,
-            // break cooldown early. This avoids missing the best entry.
-            // Cap vol_ratio at 1.5 — high volatility alone must NOT bypass cooldown.
-            // Previously uncapped ratio caused fast_score=1.0 constantly in volatile
-            // markets, making cooldown completely ineffective (bypassed every tick).
-            // Early exit now requires strong directional edge AND momentum, not just vol.
+            // Early exit only on genuinely exceptional signal — ALL three components
+            // must be strong simultaneously. Previously threshold=0.75 with weight
+            // distribution that let normal momentum alone score 0.78+ every tick,
+            // making cooldown completely ineffective (bypassed on every tick).
+            //
+            // New formula: all three must contribute meaningfully:
+            //   vol_ratio >= 2.0x baseline  (real expansion, not just normal vol)
+            //   momentum  >= 3x trend_thresh (strong directional move, not drift)
+            //   net_edge  >= meaningful positive edge
+            // Score must exceed 0.90 — requires all three, not just one.
             const double fast_vol_ratio = std::min(1.5, (base_vol_pct > 0.0)
                                           ? (recent_vol_pct / base_vol_pct) : 1.0);
             const double fast_dir       = std::fabs(momentum_pct)
-                                          / (cfg.momentum_trend_thresh * 2.0 + 0.001);
+                                          / (cfg.momentum_trend_thresh * 3.0 + 0.001); // was *2.0
             const double fast_edge      = std::min(0.15, net_edge_pct * 8.0);
             const double fast_score     = std::min(1.0,
-                fast_vol_ratio * 0.2 + fast_dir * 0.5 + fast_edge * 5.0);
-            const bool early_exit = (fast_score > 0.75);
+                fast_vol_ratio * 0.2 + fast_dir * 0.4 + fast_edge * 8.0); // edge weighted more
+            const bool early_exit = (fast_score > 0.90  // raised 0.75→0.90
+                                  && fast_vol_ratio > 1.2   // must have real vol expansion
+                                  && fast_dir > 0.8          // must have real momentum
+                                  && fast_edge > 0.01);      // must have positive edge
             if (!early_exit) {
                 SupervisorDecision b{};
                 b.regime        = Regime::HIGH_RISK_NO_TRADE;
@@ -135,7 +140,7 @@ public:
                 last_ = b;
                 return b;
             }
-            // Strong signal — break cooldown early
+            // Genuinely strong signal — break cooldown early
             m_cooldown_until_ms = 0;
             m_consecutive_blocks = 0;
             std::cout << "[SUPERVISOR-" << symbol << "] COOLDOWN EARLY EXIT"

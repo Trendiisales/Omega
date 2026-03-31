@@ -64,7 +64,10 @@
 //  Config constants
 // -----------------------------------------------------------------------------
 static constexpr int    GFE_FAST_TICKS        = 30;    // fast persistence window
-static constexpr int    GFE_SLOW_TICKS        = 100;   // slow confirmation window
+static constexpr int    GFE_SLOW_TICKS        = 60;    // slow confirmation window — lowered 100→60:
+                                                        // 100 ticks @10/s = 10s of unbroken flow required.
+                                                        // Any micro-oscillation in a grind reset the window.
+                                                        // 60 ticks = ~6s, still meaningful confirmation.
 static constexpr double GFE_LONG_THRESHOLD    = 0.75;  // bid-heavy: long signal
 static constexpr double GFE_SHORT_THRESHOLD   = 0.25;  // ask-heavy: short signal
 static constexpr double GFE_DRIFT_MIN         = 0.0;   // drift must be non-zero same dir
