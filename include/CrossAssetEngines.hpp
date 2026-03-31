@@ -1510,14 +1510,22 @@ public:
                 if (!pos_.is_long && trail_sl < pos_.sl) pos_.sl = trail_sl;
             }
 
-            // 3) EMA50 floor — always trail above/below EMA50 in trend direction
-            // (if EMA50 crosses above trail SL for longs, use EMA50 — trend is tightening)
-            if (pos_.is_long  && ema50_ > pos_.sl) pos_.sl = ema50_;
-            if (!pos_.is_long && ema50_ < pos_.sl) pos_.sl = ema50_;
+            // 3) EMA50 floor — only apply when NOT using bar EMAs
+            // With bar EMAs: ema50_ is the 50-min average = approximately the entry level.
+            // Using it as SL floor causes instant stops (SL=entry or above).
+            // With tick EMAs (fallback): ema50 updates fast enough to be a valid floor.
+            if (!m_using_bar_emas_) {
+                if (pos_.is_long  && ema50_ > pos_.sl) pos_.sl = ema50_;
+                if (!pos_.is_long && ema50_ < pos_.sl) pos_.sl = ema50_;
+            }
 
             // Check SL / timeout
-            const bool sl_hit    = pos_.is_long ? (bid <= pos_.sl) : (ask >= pos_.sl);
-            const bool timed_out = (ca_now_sec() - pos_.entry_ts) >= MAX_HOLD_SEC;
+            // Minimum hold: don't check SL for first 2s — prevents entry-tick exits
+            // caused by spread noise or stale EMA50 floor firing immediately
+            const int64_t held_s = ca_now_sec() - pos_.entry_ts;
+            const bool sl_hit    = (held_s >= 2) &&
+                                   (pos_.is_long ? (bid <= pos_.sl) : (ask >= pos_.sl));
+            const bool timed_out = held_s >= MAX_HOLD_SEC;
             if (sl_hit || timed_out) {
                 const double exit_px = sl_hit ? pos_.sl : mid;
                 const char*  reason  = sl_hit ? "SL_HIT" : "TIMEOUT";
