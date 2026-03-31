@@ -4848,7 +4848,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
             // Also block pyramid during session transition noise windows
-            if (in_ny_close_noise) pyr_l2_ok = false;
+            {
+                struct tm ti_pyr{}; const auto t_pyr = std::chrono::system_clock::to_time_t(
+                    std::chrono::system_clock::now());
+                gmtime_s(&ti_pyr, &t_pyr);
+                const int mins_pyr = ti_pyr.tm_hour * 60 + ti_pyr.tm_min;
+                const bool in_transition = (mins_pyr >= 1320 && mins_pyr < 1330)
+                                        || (mins_pyr >= 0    && mins_pyr < 15);
+                if (in_transition) pyr_l2_ok = false;
+            }
             if (pyr_l2_ok && cost_ok(sym.c_str(), pyr_sl_abs, pyr_lot))
                 send_live_order(sym, eng.pos.is_long, pyr_lot, eng.pos.pyramid_entry);
         }
