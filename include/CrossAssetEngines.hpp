@@ -1115,10 +1115,20 @@ public:
     // Confluence thresholds
     double  CONF_VIX_THRESH      = 18.0;
     double  CONF_L2_THRESH       = 0.12;
-    // Rolling EWM VWAP alpha — blends daily_open toward current price over ~120 ticks
-    // α=0.016 ≈ 2hr half-life at 1 tick/min. On trend days the EWM VWAP follows price,
-    // so "distance from VWAP" stays meaningful rather than growing all day.
-    static constexpr double EWM_VWAP_ALPHA = 0.016;
+    // Rolling EWM VWAP alpha — TIME-BASED not tick-count-based.
+    // Target: ~2hr half-life regardless of tick frequency.
+    // Each tick we compute decay = 1 - exp(-dt / HALF_LIFE_SEC)
+    // At dt=1s: decay≈0.0096% per second. After 7200s (2hr): ~50% decayed.
+    // This is invariant to whether NQ ticks 10×/sec or 1×/min.
+    static constexpr double EWM_VWAP_HALF_LIFE_SEC = 7200.0;  // 2hr
+
+    // Reset the EWM VWAP anchor — called by main.cpp at session open.
+    void reset_ewm_vwap(double anchor) noexcept {
+        ewm_vwap_      = anchor;
+        last_tick_sec_ = 0;  // will be set on first tick after reset
+        printf("[VWAP-REV] EWM VWAP reset to %.4f (session anchor)\n", anchor);
+        fflush(stdout);
+    }
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
@@ -1135,13 +1145,27 @@ public:
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
 
-        // ── Rolling EWM VWAP — adapts to trends, doesn't anchor to stale open ─
-        // Seed on first tick with the daily open. Each tick blends mid toward
-        // the EWM. α=0.016 ≈ 2hr half-life: on trend days the VWAP tracks price
-        // so "extension" always reflects recent deviation, not accumulated drift.
-        // This fixes the core issue: daily open at 08:00 becomes irrelevant by 13:30.
-        if (ewm_vwap_ <= 0.0 && vwap_seed > 0.0) ewm_vwap_ = vwap_seed;
-        if (ewm_vwap_ > 0.0) ewm_vwap_ += EWM_VWAP_ALPHA * (mid - ewm_vwap_);
+        // ── Rolling EWM VWAP — time-based decay, 2hr half-life ───────────────
+        // Uses wall-clock elapsed seconds so decay is invariant to tick frequency.
+        // NQ ticks ~10x/sec in NY session. Tick-count alpha would decay in minutes.
+        // Time-based: α = 1 - exp(-dt/T½) where T½=7200s. After 2hrs: 50% decayed.
+        // Seed on first tick of session with the anchor price from main.cpp.
+        if (ewm_vwap_ <= 0.0 && vwap_seed > 0.0) {
+            ewm_vwap_      = vwap_seed;
+            last_tick_sec_ = ca_now_sec();
+        }
+        if (ewm_vwap_ > 0.0) {
+            const int64_t now_sec = ca_now_sec();
+            const double dt = (last_tick_sec_ > 0)
+                ? static_cast<double>(now_sec - last_tick_sec_)
+                : 0.0;
+            last_tick_sec_ = now_sec;
+            if (dt > 0.0 && dt < 3600.0) {  // sanity: ignore gaps > 1hr (reconnect)
+                // α = 1 - e^(-dt/T½). For dt=1s, T½=7200s: α≈0.000139
+                const double alpha = 1.0 - std::exp(-dt / EWM_VWAP_HALF_LIFE_SEC);
+                ewm_vwap_ += alpha * (mid - ewm_vwap_);
+            }
+        }
         const double vwap = (ewm_vwap_ > 0.0) ? ewm_vwap_ : vwap_seed;
         if (vwap <= 0) return {};
 
@@ -1365,7 +1389,8 @@ private:
     CrossPosition pos_;
     double  prev_mid_           = 0.0;
     int64_t cooldown_until_     = 0;
-    double  ewm_vwap_           = 0.0;  // rolling EWM VWAP — adapts to trend
+    double  ewm_vwap_           = 0.0;  // rolling time-based EWM VWAP
+    int64_t last_tick_sec_      = 0;    // wall-clock seconds of last tick (for time-decay)
     bool    timeout_extended_   = false; // true once timeout extension has been used
     // TP flip cooldown — blocks opposite direction after TP hit
     bool    tp_flip_block_long_ = false;

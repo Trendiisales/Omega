@@ -177,6 +177,74 @@ inline std::vector<uint8_t> refresh_token_req(const std::string& rt) {
 
 } // namespace PB
 
+// =============================================================================
+// PB trendbar message builders — defined here so write_field_varint/frame_msg
+// are in scope. OHLCBarEngine.hpp is included AFTER this namespace.
+// =============================================================================
+namespace PB {
+
+// ProtoOAGetTrendbarsReq (pt=2137)
+// period: 1=M1, 5=M5, 7=M15, 8=M30, 9=H1  (ProtoOATrendbarPeriod enum)
+// count: max bars to return (up to 4800)
+inline std::vector<uint8_t> get_trendbars_req(
+    int64_t ctid, int64_t sym_id, uint32_t period,
+    uint32_t count = 200, int64_t from_ms = 0, int64_t to_ms = 0)
+{
+    std::vector<uint8_t> inner;
+    write_field_varint(inner, 2, uint64_t(ctid));
+    write_field_varint(inner, 3, uint64_t(sym_id));
+    write_field_varint(inner, 4, uint64_t(period));
+    if (from_ms > 0) write_field_varint(inner, 5, uint64_t(from_ms));
+    if (to_ms   > 0) write_field_varint(inner, 6, uint64_t(to_ms));
+    if (count   > 0) write_field_varint(inner, 7, uint64_t(count));
+    return frame_msg(2137, inner);
+}
+
+// ProtoOASubscribeLiveTrendbarReq (pt=2220)
+inline std::vector<uint8_t> subscribe_trendbar_req(
+    int64_t ctid, int64_t sym_id, uint32_t period)
+{
+    std::vector<uint8_t> inner;
+    write_field_varint(inner, 2, uint64_t(ctid));
+    write_field_varint(inner, 3, uint64_t(sym_id));
+    write_field_varint(inner, 4, uint64_t(period));
+    return frame_msg(2220, inner);
+}
+
+// Parse ProtoOATrendbar bytes into OHLCBar
+// Prices scaled by 100000 (e.g. 464254 = 4642.54)
+// Deltas are relative to close: open=close+openDelta, high=close+highDelta, low=close-lowDelta
+// openDelta uses sint64 zigzag encoding; high/lowDelta are plain uint64
+inline OHLCBar parse_trendbar(const std::vector<uint8_t>& bytes,
+                               double price_scale = 100000.0)
+{
+    OHLCBar bar;
+    const auto f = parse(bytes);
+    const uint64_t ts_min    = get_varint(f, 2);
+    const uint64_t close_raw = get_varint(f, 3);
+    const uint64_t vol       = get_varint(f, 5);
+    // openDelta: sint64 zigzag — iterate fields to find wire_type=0 field 6
+    int64_t open_delta = 0;
+    for (const auto& fi : f) {
+        if (fi.field_num == 6 && fi.wire_type == 0) {
+            const uint64_t zz = fi.varint;
+            open_delta = static_cast<int64_t>((zz >> 1) ^ (-(int64_t)(zz & 1)));
+            break;
+        }
+    }
+    const uint64_t high_delta = get_varint(f, 7);
+    const uint64_t low_delta  = get_varint(f, 8);
+    bar.ts_min = int64_t(ts_min);
+    bar.close  = double(close_raw) / price_scale;
+    bar.open   = double(int64_t(close_raw) + open_delta) / price_scale;
+    bar.high   = double(close_raw + high_delta) / price_scale;
+    bar.low    = double(int64_t(close_raw) - int64_t(low_delta)) / price_scale;
+    bar.volume = vol;
+    return bar;
+}
+
+} // namespace PB (trendbar additions)
+
 
 // =============================================================================
 // Incremental order book

@@ -6807,35 +6807,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                     stack_enter_effective);
             if (gsig.valid) {
                 // ── Bar indicator confirmation for GoldStack ──────────────────
-                // Block MR (mean-reversion) engines when bar context disagrees:
-                //   MR LONG: need RSI < 55 (not overbought) and trend not strongly DOWN
-                //   MR SHORT: need RSI > 45 (not oversold) and trend not strongly UP
-                // Breakout/momentum engines: only block if RSI is extremely opposed
-                //   (RSI>75 for LONG breakout = chasing overbought = dangerous)
+                bool gs_bar_blocked = false;
                 if (bar_ready) {
                     const bool gs_is_mr = (std::strcmp(gsig.engine, "MeanReversion")       == 0) ||
                                           (std::strcmp(gsig.engine, "VWAPStretchReversion") == 0) ||
                                           (std::strcmp(gsig.engine, "SessionMomentum")      == 0);
-                    bool bar_blocks = false;
                     if (gs_is_mr) {
-                        // MR LONG: don't enter if RSI>60 (already elevated) or trend DOWN
-                        if (gsig.is_long  && (bar_rsi_gs > 60.0 || bar_trend_gs == -1)) bar_blocks = true;
-                        // MR SHORT: don't enter if RSI<40 (already depressed) or trend UP
-                        if (!gsig.is_long && (bar_rsi_gs < 40.0 || bar_trend_gs == +1)) bar_blocks = true;
+                        if (gsig.is_long  && (bar_rsi_gs > 60.0 || bar_trend_gs == -1)) gs_bar_blocked = true;
+                        if (!gsig.is_long && (bar_rsi_gs < 40.0 || bar_trend_gs == +1)) gs_bar_blocked = true;
                     } else {
-                        // Breakout/momentum: block only if RSI is extreme opposite
-                        if (gsig.is_long  && bar_rsi_gs > 78.0) bar_blocks = true;  // chasing overbought
-                        if (!gsig.is_long && bar_rsi_gs < 22.0) bar_blocks = true;  // chasing oversold
+                        if (gsig.is_long  && bar_rsi_gs > 78.0) gs_bar_blocked = true;
+                        if (!gsig.is_long && bar_rsi_gs < 22.0) gs_bar_blocked = true;
                     }
-                    if (bar_blocks) {
+                    if (gs_bar_blocked) {
                         printf("[GS-BAR-BLOCK] XAUUSD %s %s blocked RSI=%.1f trend=%+d\n",
                                gsig.is_long ? "LONG" : "SHORT", gsig.engine,
                                bar_rsi_gs, bar_trend_gs);
                         fflush(stdout);
-                        goto gs_skip_entry;  // skip broker entry below
                     }
                 }
-
+                if (!gs_bar_blocked) {
                 // ── VWAP counter-trend guard ──────────────────────────────────
                 // Only block MEAN-REVERSION engines trading against VWAP trend.
                 // Trend-following engines (CompressionBreakout, ImpulseContinuation,
@@ -6959,7 +6950,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         }
                     }
                 }
-                gs_skip_entry:;  // jump here from bar indicator block to skip broker entry
+                } // end !gs_bar_blocked
             }
         }
 
