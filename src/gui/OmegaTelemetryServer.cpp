@@ -868,7 +868,7 @@ bool OmegaTelemetryServer::wsSendFrame(SOCKET s, const std::string& payload)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WebSocket broadcast loop — 250ms push
+// WebSocket broadcast loop — 1000ms push
 // ─────────────────────────────────────────────────────────────────────────────
 
 void OmegaTelemetryServer::wsBroadcastLoop()
@@ -908,7 +908,6 @@ void OmegaTelemetryServer::wsBroadcastLoop()
                     const std::string resp = wsHandshakeResponse(std::string(buf, static_cast<size_t>(n)));
                     if (!resp.empty()) {
                         send(c, resp.c_str(), static_cast<int>(resp.size()), 0);
-                        std::lock_guard<std::mutex> lk(ws_mutex_);
                         ws_clients_.push_back(c);
                     } else { closesocket(c); }
                 } else { closesocket(c); }
@@ -921,7 +920,6 @@ void OmegaTelemetryServer::wsBroadcastLoop()
             // Update uptime every broadcast — independent of FIX tick rate
             if (snap_ && snap_->start_time > 0)
                 snap_->uptime_sec = static_cast<int64_t>(std::time(nullptr)) - snap_->start_time;
-            std::lock_guard<std::mutex> lk(ws_mutex_);
             if (!ws_clients_.empty()) {
                 const std::string payload = buildTelemetryJson(snap_);
                 std::vector<SOCKET> alive;
