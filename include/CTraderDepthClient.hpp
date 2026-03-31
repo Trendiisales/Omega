@@ -224,6 +224,13 @@ public:
     std::mutex*                             l2_mtx   = nullptr;
     std::unordered_map<std::string,L2Book>* l2_books = nullptr;
 
+    // ── Price tick callback — DRIVES TRADING DECISIONS ───────────────────────
+    // Called on every depth event with best bid/ask from cTrader matching engine.
+    // This replaces the FIX quote feed as the primary price source for on_tick().
+    // FIX feed becomes fallback only (used when cTrader depth is stale/disconnected).
+    // Signature: (symbol, best_bid, best_ask)
+    std::function<void(const std::string&, double, double)> on_tick_fn;
+
     // Callback: write derived L2 scalars (imbalance, microprice_bias, has_data)
     // to per-symbol atomics — called after every depth event, no lock required.
     // Registered by main.cpp at startup. Signature:
@@ -452,6 +459,18 @@ private:
                 rebuilt.imbalance(),
                 rebuilt.microprice_bias(),
                 rebuilt.has_data());
+        }
+
+        // ── Primary price tick — drives on_tick() with cTrader real-time price ─
+        // Extract best bid/ask from rebuilt book and call on_tick_fn.
+        // This is faster and more accurate than the FIX quote feed which can lag
+        // by 0.5-2pts during fast markets due to FIX gateway batching/throttling.
+        if (on_tick_fn && rebuilt.bid_count > 0 && rebuilt.ask_count > 0) {
+            const double best_bid = rebuilt.bids[0].price;
+            const double best_ask = rebuilt.asks[0].price;
+            if (best_bid > 0.0 && best_ask > 0.0 && best_ask > best_bid) {
+                on_tick_fn(name, best_bid, best_ask);
+            }
         }
 
         // Cold path: write full book under mutex for GUI depth panel (walls, vacuums, slopes)

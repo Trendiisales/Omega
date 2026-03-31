@@ -454,9 +454,13 @@ static omega::cross::NoiseBandMomentumEngine g_nbm_oil_london;   // USOIL.F — 
 static omega::cross::SilverTurtleTickEngine g_silver_turtle;  // DISABLED
 
 // Engine 8: Trend Pullback — EMA9/21/50 trend + pullback to EMA50 + bounce confirmation
-// Wired to: XAUUSD (gated — no other gold position), GER40
+// Wired to: XAUUSD (gated — no other gold position), GER40, USTEC.F, US500.F
+// TrendPullback handles slow grind trades that VWAPReversion times out on.
+// Enters on EMA50 pullback, trails ATR behind MFE, no timeout.
 static omega::cross::TrendPullbackEngine   g_trend_pb_gold;   // XAUUSD
 static omega::cross::TrendPullbackEngine   g_trend_pb_ger40;  // GER40
+static omega::cross::TrendPullbackEngine   g_trend_pb_nq;     // USTEC.F
+static omega::cross::TrendPullbackEngine   g_trend_pb_sp;     // US500.F
 
 // Co-location latency edge stack — GoldSpreadDislocation + GoldEventCompression.
 // GoldSilverLeadLag DELETED 2026-03-31. Both remaining engines run MANAGE-ONLY
@@ -805,6 +809,48 @@ static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
     return nullptr;
 }
 
+
+// ── cTrader depth tick staleness tracker ─────────────────────────────────────
+// Stores the last time (ms) a cTrader depth event arrived per symbol.
+// FIX W/X suppresses on_tick when cTrader depth is fresh (<500ms) —
+// prevents the 1pt lag from FIX gateway batching in fast markets.
+static std::atomic<int64_t> g_ct_ms_xauusd{0}, g_ct_ms_sp{0},  g_ct_ms_nq{0},
+                             g_ct_ms_cl{0},    g_ct_ms_xag{0},  g_ct_ms_eur{0},
+                             g_ct_ms_gbp{0},   g_ct_ms_aud{0},  g_ct_ms_nzd{0},
+                             g_ct_ms_jpy{0},   g_ct_ms_ger40{0},g_ct_ms_uk100{0},
+                             g_ct_ms_brent{0}, g_ct_ms_nas{0},  g_ct_ms_us30{0};
+
+static std::atomic<int64_t>* get_ctrader_tick_ms_ptr(const std::string& sym) noexcept {
+    if (sym=="XAUUSD")  return &g_ct_ms_xauusd;
+    if (sym=="US500.F") return &g_ct_ms_sp;
+    if (sym=="USTEC.F") return &g_ct_ms_nq;
+    if (sym=="USOIL.F") return &g_ct_ms_cl;
+    if (sym=="XAGUSD")  return &g_ct_ms_xag;
+    if (sym=="EURUSD")  return &g_ct_ms_eur;
+    if (sym=="GBPUSD")  return &g_ct_ms_gbp;
+    if (sym=="AUDUSD")  return &g_ct_ms_aud;
+    if (sym=="NZDUSD")  return &g_ct_ms_nzd;
+    if (sym=="USDJPY")  return &g_ct_ms_jpy;
+    if (sym=="GER40")   return &g_ct_ms_ger40;
+    if (sym=="UK100")   return &g_ct_ms_uk100;
+    if (sym=="BRENT")   return &g_ct_ms_brent;
+    if (sym=="NAS100")  return &g_ct_ms_nas;
+    if (sym=="DJ30.F")  return &g_ct_ms_us30;
+    return nullptr;
+}
+static void set_ctrader_tick_ms(const std::string& sym, int64_t ms) noexcept {
+    auto* p = get_ctrader_tick_ms_ptr(sym);
+    if (p) p->store(ms, std::memory_order_relaxed);
+}
+static bool ctrader_depth_is_live(const std::string& sym) noexcept {
+    auto* p = get_ctrader_tick_ms_ptr(sym);
+    if (!p) return false;
+    const int64_t last = p->load(std::memory_order_relaxed);
+    if (last == 0) return false;
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    return (now_ms - last) < 500;  // fresh if cTrader event arrived within 500ms
+}
 
 // RTT
 static double              g_rtt_last = 0.0, g_rtt_p50 = 0.0, g_rtt_p95 = 0.0;
@@ -5829,9 +5875,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_sp = symbol_gate("US500.F",
             g_eng_sp.pos.active          ||
             g_bracket_sp.pos.active      ||
-            g_orb_us.has_open_position() ||      // ADDED
-            g_vwap_rev_sp.has_open_position()  || // ADDED
-            g_nbm_sp.has_open_position());        // NBM
+            g_orb_us.has_open_position() ||
+            g_vwap_rev_sp.has_open_position()  ||
+            g_trend_pb_sp.has_open_position()  ||  // TrendPullback SP
+            g_nbm_sp.has_open_position());
         const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
         // SIM: SP breakout WR 31.6% -$105. No edge on US500 compression breakout. Disabled.
         // if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
@@ -5879,16 +5926,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Previously used ORB range midpoint → dead before 13:30 UTC (entire London session blocked).
         // Daily-open anchor matches EURUSD approach and covers full 07:00-22:00 session.
         if (!g_vwap_rev_sp.has_open_position() && !g_orb_us.has_open_position() && base_can_sp) {  // ADDED !orb check
-            static double s_sp_daily_open = 0.0;
-            static int    s_sp_last_day   = -1;
-            const auto t_sp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            struct tm ti_sp; gmtime_s(&ti_sp, &t_sp);
-            if (ti_sp.tm_yday != s_sp_last_day) {
-                s_sp_daily_open = (bid + ask) * 0.5;
-                s_sp_last_day   = ti_sp.tm_yday;
+            // ── SP VWAP anchor: NY session open (13:30 UTC) ───────────────────
+            // Using NY open not midnight UTC — NQ/SP have almost no volume at
+            // midnight UTC (NZ midday). NY open is the correct liquidity anchor.
+            // Each UTC day the anchor resets at 13:30 UTC (first tick after NY open).
+            static double  s_sp_ny_open      = 0.0;
+            static int     s_sp_ny_open_day  = -1;
+            static bool    s_sp_ny_armed     = false;
+            {
+                const auto t_sp = std::chrono::system_clock::to_time_t(
+                    std::chrono::system_clock::now());
+                struct tm ti_sp; gmtime_s(&ti_sp, &t_sp);
+                const int hm = ti_sp.tm_hour * 60 + ti_sp.tm_min;
+                const bool in_ny_open = (hm >= 13*60+30);
+                if (in_ny_open && ti_sp.tm_yday != s_sp_ny_open_day) {
+                    s_sp_ny_open     = (bid + ask) * 0.5;
+                    s_sp_ny_open_day = ti_sp.tm_yday;
+                    s_sp_ny_armed    = true;
+                    g_vwap_rev_sp.reset_ewm_vwap(s_sp_ny_open);  // re-anchor EWM
+                }
             }
-            if (s_sp_daily_open > 0.0) {
-                const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, s_sp_daily_open, ca_on_close,
+            if (s_sp_ny_armed && s_sp_ny_open > 0.0) {
+                const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, s_sp_ny_open, ca_on_close,
                     g_macro_ctx.vix, g_macro_ctx.sp_l2_imbalance);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("US500.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
@@ -5939,21 +5998,29 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             };
             g_vwap_rev_nq.on_tick(sym, bid, ask, 0.0, vwap_nq_cb);
         }
+        if (g_trend_pb_nq.has_open_position()) { g_trend_pb_nq.on_tick(sym, bid, ask, ca_on_close); }
         if (g_nbm_nq.has_open_position())      { g_nbm_nq.on_tick(sym, bid, ask, ca_on_close); }
 
-        // VWAP Reversion: NQ over-extension from daily open (VWAP proxy).
-        // Same fix as US500.F: was ORB midpoint → dead before 13:30 UTC (entire London blocked).
+        // VWAP Reversion: NQ — anchored to NY open (13:30 UTC), not midnight.
+        // NQ barely trades at midnight UTC (NZ midday). NY open is the correct anchor.
         if (!g_vwap_rev_nq.has_open_position() && base_can_nq) {
-            static double s_nq_daily_open = 0.0;
-            static int    s_nq_last_day   = -1;
-            const auto t_nq = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            struct tm ti_nq; gmtime_s(&ti_nq, &t_nq);
-            if (ti_nq.tm_yday != s_nq_last_day) {
-                s_nq_daily_open = (bid + ask) * 0.5;
-                s_nq_last_day   = ti_nq.tm_yday;
+            static double  s_nq_ny_open      = 0.0;
+            static int     s_nq_ny_open_day  = -1;
+            static bool    s_nq_ny_armed     = false;
+            {
+                const auto t_nq = std::chrono::system_clock::to_time_t(
+                    std::chrono::system_clock::now());
+                struct tm ti_nq; gmtime_s(&ti_nq, &t_nq);
+                const int hm = ti_nq.tm_hour * 60 + ti_nq.tm_min;
+                if (hm >= 13*60+30 && ti_nq.tm_yday != s_nq_ny_open_day) {
+                    s_nq_ny_open     = (bid + ask) * 0.5;
+                    s_nq_ny_open_day = ti_nq.tm_yday;
+                    s_nq_ny_armed    = true;
+                    g_vwap_rev_nq.reset_ewm_vwap(s_nq_ny_open);
+                }
             }
-            if (s_nq_daily_open > 0.0) {
-                const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, s_nq_daily_open, ca_on_close,
+            if (s_nq_ny_armed && s_nq_ny_open > 0.0) {
+                const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, s_nq_ny_open, ca_on_close,
                     g_macro_ctx.vix, g_macro_ctx.nq_l2_imbalance);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("USTEC.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
@@ -5964,6 +6031,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         g_vwap_rev_nq.cancel();
                     else g_vwap_rev_nq.patch_size(g_last_directional_lot);
                 }
+            }
+        }
+        // TrendPullback: EMA9/21/50 stack grind trades — no timeout, ATR trail.
+        // Catches slow trends that VWAPReversion times out on.
+        // Only fires when VWAP position is flat — they share the same direction thesis.
+        if (!g_trend_pb_nq.has_open_position() && !g_vwap_rev_nq.has_open_position()
+            && !g_nbm_nq.has_open_position() && base_can_nq) {
+            const auto tp_sig = g_trend_pb_nq.on_tick(sym, bid, ask, ca_on_close);
+            if (tp_sig.valid) {
+                g_telemetry.UpdateLastSignal("USTEC.F", tp_sig.is_long?"LONG":"SHORT",
+                    tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
+                    tp_sig.tp, tp_sig.sl);
+                if (!enter_directional("USTEC.F", tp_sig.is_long, tp_sig.entry,
+                                       tp_sig.sl, tp_sig.tp, 0.01, true))
+                    g_trend_pb_nq.cancel();
+                else g_trend_pb_nq.patch_size(g_last_directional_lot);
             }
         }
         // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
@@ -6239,19 +6322,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_vwap_rev_eurusd.on_tick(sym, bid, ask, 0.0, vwap_eur_cb);
         }
 
-        // VWAP Reversion: EURUSD over-extension from daily open (VWAP proxy)
-        // Tracks the first tick of each calendar day as the day's reference anchor.
+        // VWAP Reversion: EURUSD — anchored to London open (08:00 UTC).
+        // EUR/USD primary session is London (08:00-17:00 UTC).
+        // Using midnight UTC gave a stale 8hr anchor by NY open.
         if (!g_vwap_rev_eurusd.has_open_position() && base_can_fx) {
-            static double s_eur_daily_open = 0.0;
-            static int    s_eur_last_day   = -1;
-            const auto t_eur = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            struct tm ti_eur; gmtime_s(&ti_eur, &t_eur);
-            if (ti_eur.tm_yday != s_eur_last_day) {
-                s_eur_daily_open = (bid + ask) * 0.5;  // first tick of day = VWAP proxy
-                s_eur_last_day   = ti_eur.tm_yday;
+            static double  s_eur_london_open     = 0.0;
+            static int     s_eur_london_open_day = -1;
+            {
+                const auto t_eur = std::chrono::system_clock::to_time_t(
+                    std::chrono::system_clock::now());
+                struct tm ti_eur; gmtime_s(&ti_eur, &t_eur);
+                const bool in_london = (ti_eur.tm_hour >= 8);
+                if (in_london && ti_eur.tm_yday != s_eur_london_open_day) {
+                    s_eur_london_open     = (bid + ask) * 0.5;
+                    s_eur_london_open_day = ti_eur.tm_yday;
+                    g_vwap_rev_eurusd.reset_ewm_vwap(s_eur_london_open);
+                }
             }
-            if (s_eur_daily_open > 0.0) {
-                const auto vr = g_vwap_rev_eurusd.on_tick(sym, bid, ask, s_eur_daily_open, ca_on_close,
+            if (s_eur_london_open > 0.0) {
+                const auto vr = g_vwap_rev_eurusd.on_tick(sym, bid, ask, s_eur_london_open, ca_on_close,
                     g_macro_ctx.vix, g_macro_ctx.eur_l2_imbalance);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("EURUSD", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
@@ -6930,9 +7019,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool gold_pyramid_ok    = gold_trend.pyramid_allowed(g_macro_ctx.gold_l2_imbalance, now_ms_g);
             // Block pyramid in IMPULSE regime: price is thrusting hard — adding on
             // during a thrust means chasing the move at peak momentum with tight SLs.
-            // All 4 PYRAMID SL-hits in the 00:26 cluster had regime=IMPULSE.
             const bool gold_impulse_regime = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
-            const bool gold_is_pyramiding = gold_pyramid_ok && bracket_open &&
+
+            // ── Exhaustion check: don't pyramid at local extremes ─────────────
+            // If price has already moved >4pts from the bracket entry in the pyramid
+            // direction AND the last tick reversed (price retracing), the move may
+            // be exhausted. This is exactly what happened: SHORT entry 4621, pyramid
+            // at 4614 (-7pts) = price already extended, then V-reversed to 4620.
+            // Also: require bracket position to be profitable before pyramiding —
+            // no sense adding to a position that hasn't proven itself yet.
+            const bool bracket_profitable = bracket_open &&
+                (g_bracket_gold.pos.is_long
+                    ? (gf_mid > g_bracket_gold.pos.entry + 2.0)   // LONG needs $2+ in profit
+                    : (gf_mid < g_bracket_gold.pos.entry - 2.0)); // SHORT needs $2+ in profit
+            const bool gold_is_pyramiding = gold_pyramid_ok && bracket_profitable &&
                                             !gold_impulse_regime &&
                                             ((gold_trend.bias == 1  && g_bracket_gold.pos.is_long) ||
                                              (gold_trend.bias == -1 && !g_bracket_gold.pos.is_long));
@@ -8150,9 +8250,16 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             if (ask <= 0.0) { const auto it = g_asks.find(sym); if (it != g_asks.end()) ask = it->second; }
         }
         if (bid > 0.0 && ask > 0.0) {
-            on_tick(sym, bid, ask);
+            // ── FIX price fallback — only use when cTrader depth is stale ────
+            // cTrader depth drives on_tick() as primary source (see on_tick_fn above).
+            // If cTrader depth is live (<500ms since last event) for this symbol,
+            // suppress FIX on_tick to avoid using batched/lagging FIX prices.
+            // FIX is still the primary ORDER EXECUTION channel — this only affects
+            // price data used for trading signal decisions.
+            if (!ctrader_depth_is_live(sym)) {
+                on_tick(sym, bid, ask);
+            }
         }
-        // else: book not yet seeded for this symbol, drop silently
         return;
     }
 
@@ -10138,6 +10245,18 @@ int main(int argc, char* argv[])
         g_ctrader_depth.ctid_account_id     = g_cfg.ctrader_ctid_account_id;
         g_ctrader_depth.l2_mtx              = &g_l2_mtx;
         g_ctrader_depth.l2_books            = &g_l2_books;
+        // ── PRIMARY PRICE SOURCE: cTrader depth → on_tick ────────────────────
+        // cTrader Open API streams every tick from the matching engine directly.
+        // FIX quote feed can lag 0.5-2pts in fast markets due to gateway batching.
+        // Proven: screenshot shows FIX=4643.54 while cTrader depth=4642.54 (1pt off).
+        // Solution: cTrader depth drives on_tick() as primary price source.
+        // FIX W/X handler calls on_tick() ONLY when cTrader depth is stale (>500ms).
+        g_ctrader_depth.on_tick_fn = [](const std::string& sym, double bid, double ask) noexcept {
+            // Track last cTrader tick time per symbol for FIX fallback staleness check
+            set_ctrader_tick_ms(sym, std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            on_tick(sym, bid, ask);
+        };
         // Register atomic write callback — cTrader thread writes derived scalars
         // (imbalance, microprice_bias, has_data) lock-free after each depth event.
         // FIX tick reads these atomics directly with no mutex contention at all.
