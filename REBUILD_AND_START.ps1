@@ -73,6 +73,11 @@ Copy-Item ".\omega_config.ini" "C:\Omega\omega_config.ini" -Force
 Copy-Item ".\omega_index.html" "C:\Omega\omega_index.html" -Force -ErrorAction SilentlyContinue
 Copy-Item ".\chimera_logo.png" "C:\Omega\chimera_logo.png" -Force -ErrorAction SilentlyContinue
 
+# Ensure logs directory exists before starting
+New-Item -ItemType Directory -Path "C:\Omega\logs" -Force | Out-Null
+Write-Host "      [OK] C:\Omega\logs ready" -ForegroundColor Green
+
 # Run from C:\Omega so all paths (logs, config, assets) resolve correctly
 Set-Location C:\Omega
+Write-Host "Starting Omega.exe from $(Get-Location)..." -ForegroundColor Cyan
 .\Omega.exe omega_config.ini
