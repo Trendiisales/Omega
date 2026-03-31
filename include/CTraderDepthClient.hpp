@@ -435,12 +435,12 @@ private:
             const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,3);
             const uint64_t bid=PB::get_varint(qf,4), ask=PB::get_varint(qf,5);
             if (!id) continue;  // id=0 is invalid
-            // Do NOT substitute fake size — if sz=0 the level has no real size data.
-            // to_l2book() skips sz=0 levels, so has_data stays false for symbols
-            // where the broker sends price levels but no sizes (e.g. XAUUSD spot on BB FIX).
-            // We only get here via cTrader Open API which DOES send real sizes for XAUUSD.
-            if (bid)      book.apply_new(id, bid, sz, true);
-            else if (ask) book.apply_new(id, ask, sz, false);
+            // cTrader sends real sizes for all symbols including XAUUSD.
+            // sz is in cents (sz=200 = 2 lots). Default to 100 (1 lot) if
+            // sz=0 is received — should not happen on cTrader but guards against it.
+            const uint64_t eff_sz = (sz > 0) ? sz : 100;
+            if (bid)      book.apply_new(id, bid, eff_sz, true);
+            else if (ask) book.apply_new(id, ask, eff_sz, false);
         }
         for (uint64_t did : PB::get_packed_varints(fields, 5)) book.apply_del(did);
         // Build L2Book snapshot outside the lock — to_l2book() is O(N log N) sort
@@ -546,5 +546,6 @@ private:
         while(running.load()&&std::chrono::steady_clock::now()<d) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 };
+
 
 
