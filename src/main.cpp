@@ -1030,8 +1030,15 @@ public:
         check_rotate();
         orig_->sputc(static_cast<char>(c));
         if (file_buf_) {
+            if (at_line_start_ && c != '\n') {
+                write_ts_prefix();
+                at_line_start_ = false;
+            }
             file_buf_->sputc(static_cast<char>(c));
-            if (c == '\n') file_.flush();  // flush on newline — log always current
+            if (c == '\n') {
+                file_.flush();
+                at_line_start_ = true;
+            }
         }
         return c;
     }
@@ -1039,9 +1046,26 @@ public:
         check_rotate();
         orig_->sputn(s, n);
         if (file_buf_) {
-            file_buf_->sputn(s, n);
-            bool has_newline = (std::memchr(s, '\n', static_cast<size_t>(n)) != nullptr);
-            if (has_newline || n > 256) file_.flush();
+            // Write with per-line timestamp injection
+            const char* p   = s;
+            const char* end = s + n;
+            while (p < end) {
+                if (at_line_start_) {
+                    write_ts_prefix();
+                    at_line_start_ = false;
+                }
+                const char* nl = static_cast<const char*>(
+                    std::memchr(p, '\n', static_cast<size_t>(end - p)));
+                if (nl) {
+                    file_buf_->sputn(p, (nl - p) + 1);
+                    at_line_start_ = true;
+                    p = nl + 1;
+                } else {
+                    file_buf_->sputn(p, end - p);
+                    break;
+                }
+            }
+            file_.flush();
         }
         return n;
     }
@@ -1063,6 +1087,21 @@ private:
     std::streambuf* file_buf_ = nullptr;
     std::string     current_path_;
     int             current_day_ = -1;
+    bool            at_line_start_ = true;  // true when next char starts a new line
+
+    void write_ts_prefix() {
+        // UTC HH:MM:SS prefix injected into file only (not console)
+        auto now = std::chrono::system_clock::now();
+        auto t   = std::chrono::system_clock::to_time_t(now);
+        auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       now.time_since_epoch()) % 1000;
+        struct tm ti{};
+        gmtime_s(&ti, &t);
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d ",
+                      ti.tm_hour, ti.tm_min, ti.tm_sec);
+        file_buf_->sputn(buf, 9);
+    }
 
     static std::string utc_date_str() {
         auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -2197,7 +2236,7 @@ static void write_shadow_csv(const omega::TradeRecord& tr) {
         g_shadow_csv.flush();
     }
     if (g_daily_shadow_trade_log) {
-        const int64_t bucket_ts = tr.exitTs > 0 ? tr.exitTs : nowSec();
+        const int64_t bucket_ts = nowSec();  // wall-clock for file date
         g_daily_shadow_trade_log->append_row(bucket_ts, build_trade_close_csv_row(tr));
     }
 }
@@ -2316,7 +2355,7 @@ static void write_trade_close_logs(const omega::TradeRecord& tr) {
             g_trade_close_csv.flush();
         }
     }
-    const int64_t bucket_ts = tr.exitTs > 0 ? tr.exitTs : nowSec();
+    const int64_t bucket_ts = nowSec();  // always use wall-clock for file date — exitTs could be stale on reload
     if (g_daily_trade_close_log) g_daily_trade_close_log->append_row(bucket_ts, row);
     if (tr.symbol == "XAUUSD" && g_daily_gold_trade_close_log)
         g_daily_gold_trade_close_log->append_row(bucket_ts, row);
