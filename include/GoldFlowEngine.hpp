@@ -85,7 +85,10 @@ static constexpr int    GFE_ATR_RANGE_WINDOW  = 20;    // rolling price window f
                                                         // producing SL of $0.3–5 depending on micro-volatility.
                                                         // 100 ticks = ~10-30s, EWM-smoothed, stable across sessions.
 static constexpr double GFE_ATR_EWM_ALPHA     = 0.05;  // EWM smoothing alpha for ATR (20-tick equivalent half-life)
-static constexpr double GFE_ATR_MIN           = 2.0;   // ATR floor in $pts -- restored to 2.0: London/NY gold moves 5-15pts, 0.5 floor was causing SL=spread_floor=0.66 stops on every entry. 2.0 ensures minimum viable SL distance.
+static constexpr double GFE_ATR_MIN           = 5.0;   // raised 2.0→5.0: XAUUSD@$4554, 2pt ATR = 0.044%
+                                                        // = noise level, hit by spread fluctuation alone.
+                                                        // 5pt minimum = 0.11% = survives a real tick move.
+                                                        // VIX27 day real ATR is 8-18pts, this is a safe floor.
 static constexpr double GFE_ATR_SL_MULT       = 1.0;   // SL = ATR * this
 static constexpr double GFE_TRAIL_STAGE2_MULT = 1.5;   // EA-matched: wider initial trail, ride moves
 static constexpr double GFE_TRAIL_STAGE3_MULT = 0.5;   // tighten to 0.5x ATR at stage 3
@@ -502,6 +505,12 @@ struct GoldFlowEngine {
     //   3. Saved during an active session (ATR >= 1.5pts)
     void save_atr_state(const std::string& path) const noexcept {
         if (m_atr_warmup_ticks < GFE_ATR_PERIOD) return;
+        // Do not save a near-zero or unrealistically small ATR — it would corrupt
+        // the next startup. Gold ATR below 3pts is dead-tape noise, not a usable seed.
+        if (m_atr < 3.0) {
+            printf("[GFE] ATR save skipped (atr=%.4f < 3.0 — too small to be useful)\n", m_atr);
+            return;
+        }
         FILE* f = fopen(path.c_str(), "w");
         if (!f) return;
         const int64_t now_s = static_cast<int64_t>(
@@ -523,7 +532,11 @@ struct GoldFlowEngine {
                                   &atr, &atr_ewm, &warmed, &last_mid, &saved_ts);
         fclose(f);
 
-        if (parsed < 3 || warmed != 1 || atr <= 0.0) return;
+        if (parsed < 3 || warmed != 1 || atr <= 0.0) {
+            printf("[GFE] ATR state rejected (bad format or zero atr — parsed=%d atr=%.4f)\n",
+                   parsed, atr);
+            return;
+        }
 
         const int64_t now_s = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::seconds>(
@@ -536,9 +549,11 @@ struct GoldFlowEngine {
                    (long long)(age_s / 60));
             return;
         }
-        // Reject if ATR is below active session minimum — was saved during dead tape
-        if (atr < 1.5) {
-            printf("[GFE] ATR state rejected (atr=%.4f < 1.5 — dead session value)\n", atr);
+        // Reject if ATR is below minimum viable — saved during dead tape or format mismatch.
+        // Raised 1.5→5.0: a $2 ATR on XAUUSD@$4554 produces a 0.044% SL = noise level.
+        // Any valid London/NY session ATR is >= 5pts. Dead tape / corrupt values are < 3pts.
+        if (atr < 5.0) {
+            printf("[GFE] ATR state rejected (atr=%.4f < 5.0 — dead session or stale value)\n", atr);
             return;
         }
         // Valid — restore
