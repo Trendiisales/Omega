@@ -1060,11 +1060,20 @@ private:
         const bool was_profitable = (std::strcmp(reason, "SL_HIT") != 0
                                   && std::strcmp(reason, "MAX_HOLD_TIMEOUT") != 0
                                   && std::strcmp(reason, "FORCE_CLOSE") != 0);
-        if (was_profitable && tr.pnl > 0.0) {
+        // Set continuation when:
+        //   a) Normal profitable exit (trail/BE with positive PnL), OR
+        //   b) BE_HIT on the remaining half after PARTIAL_1R already locked profit.
+        //      In this case tr.pnl is ~0 (exited at entry) but the trade was a winner.
+        //      Without this, BE_HIT on partial remainder kills continuation mode
+        //      and the engine sits in 60s Asia cooldown while the trend continues.
+        const bool partial_was_taken = pos.partial_closed;
+        const bool set_continuation  = was_profitable
+                                     && (tr.pnl > 0.0 || partial_was_taken);
+        if (set_continuation) {
             m_continuation_mode       = true;
-            const int64_t eff_cd      = (m_last_session_slot == 6 || m_last_session_slot == 0)
-                                        ? GFE_ASIA_COOLDOWN_MS : GFE_COOLDOWN_MS;
-            m_continuation_expires_ms = now_ms + eff_cd * 3; // 90s normal, 180s Asia
+            // Continuation cooldown: always use normal 30s (not 60s Asia).
+            // Trend is established — 60s Asia cooldown misses the continuation move.
+            m_continuation_expires_ms = now_ms + GFE_COOLDOWN_MS * 3; // 90s
         } else {
             m_continuation_mode = false;
         }
