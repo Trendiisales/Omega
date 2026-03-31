@@ -436,6 +436,20 @@ private:
                 std::cout << "[CTRADER] Subscribe depth: " << sname << " id=" << sid
                           << (internal_name != sname ? " (alias->" + internal_name + ")" : "") << "\n";
             }
+            // ── Resolve bar subscription IDs from symbol list ──────────────────
+            // bar_subscriptions registered with sym_id=0 get their ID filled here.
+            // Covers US500.F, USTEC.F, GER40 — IDs vary by broker, resolved dynamically.
+            for (auto& bkv : bar_subscriptions) {
+                const std::string& binternal = bkv.first;
+                if (bkv.second.sym_id != 0) continue;  // already set (XAUUSD=41 hardcoded)
+                // Match by internal name or alias
+                const std::string check = name_alias.count(sname) ? name_alias.at(sname) : sname;
+                if (check == binternal || sname == binternal) {
+                    bkv.second.sym_id = sid;
+                    std::cout << "[CTRADER-BARS] Resolved bar sub: " << binternal
+                              << " id=" << sid << "\n";
+                }
+            }
         }
         if (!xauusd_pinned) {
             std::cerr << "[CTRADER] CRITICAL: XAUUSD spot id=" << XAUUSD_SPOT_ID

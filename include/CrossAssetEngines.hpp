@@ -1464,11 +1464,19 @@ public:
         // EMA + ATR update — always runs regardless of position state
         if (ema9_  <= 0.0) { ema9_ = ema21_ = ema50_ = mid; prev_mid_ = mid; }
         const double tick_move = std::fabs(mid - prev_mid_);
-        if (atr_ <= 0.0) atr_ = tick_move > 0 ? tick_move : 0.5; // seed
-        else             atr_ += ATR_ALPHA * (tick_move - atr_);
-        ema9_  += EMA9_ALPHA  * (mid - ema9_);
-        ema21_ += EMA21_ALPHA * (mid - ema21_);
-        ema50_ += EMA50_ALPHA * (mid - ema50_);
+        // When bar EMAs are injected (m_using_bar_emas_=true), skip tick EMA update.
+        // Bar EMAs from real M1 closes are far more accurate — don't pollute with ticks.
+        // ATR still updates from ticks for intra-bar SL sizing precision.
+        if (!m_using_bar_emas_) {
+            if (atr_ <= 0.0) atr_ = tick_move > 0 ? tick_move : 0.5;
+            else             atr_ += ATR_ALPHA * (tick_move - atr_);
+            ema9_  += EMA9_ALPHA  * (mid - ema9_);
+            ema21_ += EMA21_ALPHA * (mid - ema21_);
+            ema50_ += EMA50_ALPHA * (mid - ema50_);
+        } else {
+            // Bar EMA mode: only update ATR from ticks (intra-bar precision)
+            if (atr_ > 0.0) atr_ += ATR_ALPHA * (tick_move - atr_);
+        }
         prev_mid_ = mid;
         ++tick_count_;
 
@@ -1673,6 +1681,24 @@ public:
     double open_size()    const { return pos_.size;    }
     double current_atr()  const { return atr_;         }
 
+    // ── Bar EMA injection — replaces tick EMAs with real M1 bar closes ───────
+    // Called each tick from main.cpp when g_bars_sp/nq/ger are ready.
+    // Bar EMAs (computed from 200 M1 OHLC closes) are far more accurate than
+    // tick-based EMAs which had half-life of 0.3s at 10 ticks/sec.
+    // Also seeds ATR from bar ATR14 — true range is better than tick range.
+    void seed_bar_emas(double e9, double e21, double e50, double bar_atr) noexcept {
+        if (e9 <= 0.0 || e50 <= 0.0) return;
+        ema9_  = e9;
+        ema21_ = e21;
+        ema50_ = e50;
+        if (bar_atr > 0.0) atr_ = bar_atr;
+        // Mark as warmed — bar data is always valid after m1_ready
+        if (tick_count_ < EMA_WARMUP_TICKS) tick_count_ = EMA_WARMUP_TICKS;
+        m_using_bar_emas_ = true;
+    }
+
+    bool using_bar_emas() const { return m_using_bar_emas_; }
+
     // Expose EMAs for telemetry / external inspection
     double ema9()  const { return ema9_;  }
     double ema21() const { return ema21_; }
@@ -1726,6 +1752,7 @@ private:
     double  ema21_         = 0.0;
     double  ema50_         = 0.0;
     double  atr_           = 0.0;  // EWM ATR-14 for trail sizing
+    bool    m_using_bar_emas_ = false;  // true when bar EMAs injected via seed_bar_emas()
     int     tick_count_    = 0;
     bool    prev_at_ema50_ = false;
     double  prev_mid_      = 0.0;

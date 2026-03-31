@@ -365,6 +365,9 @@ static CTraderDepthClient  g_ctrader_depth;
 // OHLC bar state — populated by cTrader trendbar API (M1+M5 history + live bars)
 // Read lock-free by GoldFlow and GoldStack via atomic accessors.
 static SymBarState         g_bars_gold;   // XAUUSD M1/M5 bars + indicators
+static SymBarState         g_bars_sp;     // US500.F M1/M5 bars + indicators
+static SymBarState         g_bars_nq;     // USTEC.F M1/M5 bars + indicators
+static SymBarState         g_bars_ger;    // GER40   M1/M5 bars + indicators
 static std::atomic<bool>   g_quote_logout_received(false);  // server sent Logout to quote session
 static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup — unblocks ctrl handler
 static std::atomic<bool>   g_trade_thread_done(false);  // set by trade_loop() just before it returns
@@ -6026,6 +6029,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_vwap_rev_sp.on_tick(sym, bid, ask, 0.0, vwap_sp_cb);
         }
         if (g_nbm_sp.has_open_position())       { g_nbm_sp.on_tick(sym, bid, ask, ca_on_close); }
+        // Seed TrendPB with real M1 bar EMAs from cTrader trendbar API
+        if (g_bars_sp.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+            g_trend_pb_sp.seed_bar_emas(
+                g_bars_sp.m1.ind.ema9.load(std::memory_order_relaxed),
+                g_bars_sp.m1.ind.ema21.load(std::memory_order_relaxed),
+                g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed),
+                g_bars_sp.m1.ind.atr14.load(std::memory_order_relaxed));
+        }
         if (g_trend_pb_sp.has_open_position())  { g_trend_pb_sp.on_tick(sym, bid, ask, ca_on_close); }
 
         if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {  // ADDED !vwap check
@@ -6146,6 +6157,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 ca_on_close(tr);
             };
             g_vwap_rev_nq.on_tick(sym, bid, ask, 0.0, vwap_nq_cb);
+        }
+        // Seed TrendPB NQ with real M1 bar EMAs
+        if (g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+            g_trend_pb_nq.seed_bar_emas(
+                g_bars_nq.m1.ind.ema9.load(std::memory_order_relaxed),
+                g_bars_nq.m1.ind.ema21.load(std::memory_order_relaxed),
+                g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed),
+                g_bars_nq.m1.ind.atr14.load(std::memory_order_relaxed));
         }
         if (g_trend_pb_nq.has_open_position()) { g_trend_pb_nq.on_tick(sym, bid, ask, ca_on_close); }
         if (g_nbm_nq.has_open_position())      { g_nbm_nq.on_tick(sym, bid, ask, ca_on_close); }
@@ -6341,6 +6360,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 ca_on_close(tr);
             };
             g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap_mgmt, vwap_ger_cb);
+        }
+        // Seed TrendPB GER40 with real M1 bar EMAs
+        if (g_bars_ger.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+            g_trend_pb_ger40.seed_bar_emas(
+                g_bars_ger.m1.ind.ema9.load(std::memory_order_relaxed),
+                g_bars_ger.m1.ind.ema21.load(std::memory_order_relaxed),
+                g_bars_ger.m1.ind.ema50.load(std::memory_order_relaxed),
+                g_bars_ger.m1.ind.atr14.load(std::memory_order_relaxed));
         }
         if (g_trend_pb_ger40.has_open_position()) { g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close); }
 
@@ -8333,6 +8360,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // opened the manage path was NEVER reached → SL never checked → unmanaged trades.
         // Fix: call on_tick unconditionally when position is open (manage-only path),
         // before the entry guard. on_tick returns {} immediately after manage when active.
+        // Seed gold TrendPB with real M1 bar EMAs from cTrader trendbar API
+        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+            g_trend_pb_gold.seed_bar_emas(
+                g_bars_gold.m1.ind.ema9.load(std::memory_order_relaxed),
+                g_bars_gold.m1.ind.ema21.load(std::memory_order_relaxed),
+                g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed),
+                g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed));
+        }
         if (g_trend_pb_gold.has_open_position()) {
             g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
         }
@@ -10881,7 +10916,12 @@ int main(int argc, char* argv[])
         // On startup: requests 200 M1 + 100 M5 historical bars, then subscribes
         // live bar closes. Indicators (RSI, ATR, EMA, BB, swing, trend) are
         // written to g_bars_gold atomically and read by GoldFlow/GoldStack.
-        g_ctrader_depth.bar_subscriptions["XAUUSD"] = {41, &g_bars_gold};
+        g_ctrader_depth.bar_subscriptions["XAUUSD"]   = {41, &g_bars_gold};
+        // Index bar subscriptions — sym_id resolved dynamically from SymbolsListRes
+        // EMA9/21/50 + trend_state from real M1 bars replaces tick-based EMAs in TrendPB
+        g_ctrader_depth.bar_subscriptions["US500.F"] = {0,  &g_bars_sp};
+        g_ctrader_depth.bar_subscriptions["USTEC.F"] = {0,  &g_bars_nq};
+        g_ctrader_depth.bar_subscriptions["GER40"]   = {0,  &g_bars_ger};
 
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
