@@ -80,7 +80,12 @@ static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 1.5;  // was 0.30 — too
 // 40 ticks requires sustained directional pressure over ~4-8s of real tape.
 static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 40;   // was 20 — too short
 static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- raised 20→100:
-static constexpr int    GFE_ATR_RANGE_WINDOW  = 20;    // rolling price window for range-based ATR — 20 ticks ~2-4s London tape, captures real session moves not micro tick-to-tick noise
+static constexpr int    GFE_ATR_RANGE_WINDOW  = 100;   // raised 20→100: 20 ticks = 2s window at London
+                                                        // = pure spread noise ($0.2-0.5pts), not real ATR.
+                                                        // 100 ticks = ~10s, captures genuine intrabar moves.
+                                                        // Evidence: 20-tick range was 0.3pts on active tape,
+                                                        // EWM smoothed to ~0.5pts → ATR_MIN floor of 5pts
+                                                        // was the only thing preventing $0.5 SLs.
                                                         // 20-tick hi-lo range was a 2-second window,
                                                         // producing SL of $0.3–5 depending on micro-volatility.
                                                         // 100 ticks = ~10-30s, EWM-smoothed, stable across sessions.
@@ -558,7 +563,7 @@ struct GoldFlowEngine {
         }
         // Valid — restore
         m_atr              = std::max(GFE_ATR_MIN, atr);
-        m_atr_seed_lock    = GFE_ATR_RANGE_WINDOW * 3; // hold loaded ATR for 60 ticks before EWM takes over
+        m_atr_seed_lock    = 200; // hold loaded ATR for 200 ticks (~20s London) before EWM takes over
         m_atr_ewm          = atr_ewm > 0.0 ? atr_ewm : m_atr;
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
         m_last_mid_atr     = last_mid;
@@ -598,7 +603,7 @@ struct GoldFlowEngine {
         m_atr_ewm          = seed_range;
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
         m_atr              = seed_range;
-        m_atr_seed_lock    = GFE_ATR_RANGE_WINDOW * 3; // hold seed for 60 ticks before EWM takes over
+        m_atr_seed_lock    = 200; // hold seed for 200 ticks (~20s London) before EWM takes over
         m_last_mid_atr     = mid;
         // Pre-fill price window at seed mid so range calc starts immediately
         m_atr_price_window.clear();
