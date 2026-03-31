@@ -7235,16 +7235,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
             const bool in_dead_zone  = (g_macro_ctx.session_slot == 0);
             const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
-            // Asia trend gate: only apply when GOLD specifically has real L2 data.
-            // Use has_data flag -- set true by depth handler when any non-zero level received.
-            // OLD: used |imbalance - 0.5| > 0.001 which was fragile:
-            //   a neutral live book (equal bid/ask) reads 0.500-0.501 and was incorrectly
-            //   treated as "has L2", causing asia_ok=0 when the book is live but balanced.
-            //   Today: l2_imb=0.501 ? gold_has_l2=true ? is_drift_trending(0.501)=false ? BLOCKED.
-            const bool gold_has_l2 = g_l2_gold.has_data.load(std::memory_order_relaxed);
+            // Asia trend gate: require meaningful price drift in Asia slot.
+            // OLD: used is_drift_trending(l2_imbalance) -- passed L2 imbalance into
+            //   a function that checks book skew. With neutral book (imb=0.502) it
+            //   returned false even during a $7 EWM drift. Big Asia moves were missed.
+            // NEW: use EWM drift directly. If |drift| >= 1.5 in Asia, a real trend
+            //   is underway regardless of book balance. L2 still gates inside GoldFlow
+            //   (SIGNAL_STALE check) but the outer bracket/flow gate uses drift.
+            const double gold_ewm_drift_abs = std::fabs(g_gold_stack.ewm_drift());
             const bool asia_trend_ok = !in_asia_slot
-                || !gold_has_l2  // no real GOLD L2 data -> fail-open
-                || g_gold_stack.is_drift_trending(g_macro_ctx.gold_l2_imbalance);
+                || (gold_ewm_drift_abs >= 1.5);  // $1.50+ drift = real directional move
 
             // London open noise guard: 07:00-07:15 UTC -- first 15min of London open
             // has violent liquidity sweeps as Asian orders get repriced. The gold stack
@@ -7880,8 +7880,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double gf_atr = g_gold_flow.current_atr();
                 if (gf_atr > 0.0) {
                     const double gf_mid_local = (bid + ask) * 0.5;
-                    // Direction proxy: GFE counts l2_imb > 0.75 as long, < 0.25 as short.
-                    const bool   gf_long   = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
+                    // Direction proxy: primary = L2 imbalance (>0.75 long, <0.25 short).
+                    // Fallback = EWM drift when book is neutral (0.25-0.75 range).
+                    // Neutral book + strong drift = real move hidden by split orders.
+                    const double gf_l2 = g_macro_ctx.gold_l2_imbalance;
+                    const double gf_drift = g_gold_stack.ewm_drift();
+                    const bool   gf_long  = (gf_l2 > GFE_LONG_THRESHOLD)
+                                         || (gf_l2 >= 0.40 && gf_l2 <= 0.60 && gf_drift > 1.0);
                     const double gf_tp_est = gf_long
                         ? gf_mid_local + gf_atr * 2.0
                         : gf_mid_local - gf_atr * 2.0;

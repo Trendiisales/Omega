@@ -452,18 +452,23 @@ struct GoldFlowEngine {
         //
         // BROKER FALLBACK: BlackBull's FIX feed sends tag 269= (side) but NOT tag 271=
         // (MDEntrySize). With zero sizes on both sides, imbalance() returns exactly 0.5
-        // Stale imbalance check -- only when L2 data is actually live
-        // (l2_data_live declared above in persistence section)
+        // Stale imbalance check -- only when L2 data is actually live.
+        // Strong drift (>$3) overrides the stale check -- a $3+ EWM drift signals
+        // a genuine directional move regardless of book balance. Large traders
+        // often split orders across both sides (neutral book) while still moving
+        // price strongly. The 22:00 UTC $20 drop had drift=7 but imb=0.502 -- the
+        // stale check was blocking valid high-momentum entries.
         if (l2_data_live) {
-            if (long_signal  && l2_imb < 0.60) {
+            const double strong_drift = 3.0;  // $3+ drift overrides stale check
+            if (long_signal  && l2_imb < 0.60 && ewm_drift < strong_drift) {
                 std::cout << "[GOLD-FLOW] SIGNAL_STALE long -- imb=" << l2_imb
-                          << " (need >0.60 at entry)\n";
+                          << " (need >0.60 or drift>" << strong_drift << ")\n";
                 std::cout.flush();
                 return;
             }
-            if (short_signal && l2_imb > 0.40) {
+            if (short_signal && l2_imb > 0.40 && ewm_drift > -strong_drift) {
                 std::cout << "[GOLD-FLOW] SIGNAL_STALE short -- imb=" << l2_imb
-                          << " (need <0.40 at entry)\n";
+                          << " (need <0.40 or drift<-" << strong_drift << ")\n";
                 std::cout.flush();
                 return;
             }
