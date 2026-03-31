@@ -528,7 +528,6 @@ private:
                 }
             }
         }
-        const bool xauusd_pinned = (xauusd_spot_id >= 0);
         std::cout << "[CTRADER] Symbol list: " << id_to_name_.size() << " total, " << sub_ids.size() << " to subscribe\n";
         if (dump_all_symbols) {
             std::cout << "[CTRADER] Available symbols:\n";
