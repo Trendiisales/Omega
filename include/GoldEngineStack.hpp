@@ -3839,7 +3839,8 @@ public:
     // Called every tick while position is open. Manages TP/SL/timeout.
     // Returns true if position was closed this tick.
     bool manage(double bid, double ask, double latency_ms, const char* regime,
-                std::function<void(const omega::TradeRecord&)>& on_close) {
+                std::function<void(const omega::TradeRecord&)>& on_close,
+                double cur_atr = 0.0) {
         if (legs_.empty()) return false;
         double mid = (bid + ask) * 0.5;
         bool closed_any = false;
@@ -3884,7 +3885,7 @@ public:
             }
 
             // Tiered trail: base leg (idx 0) wide, pyramids progressively tighter
-            apply_tiered_trail(leg, mid, static_cast<size_t>(i), governor_.window_range());
+            apply_tiered_trail(leg, mid, static_cast<size_t>(i), cur_atr);
 
             const bool tp_hit = leg.is_long ? (ask >= leg.tp) : (bid <= leg.tp);
             if (tp_hit) {
@@ -4141,7 +4142,8 @@ public:
             };
         }
         bool just_closed = pos_mgr_.manage(bid, ask, latency_ms,
-                                           current_regime_name(), wrapped_close);
+                                           current_regime_name(), wrapped_close,
+                                           governor_.window_range());
 
         // If a position closed this tick, stamp last_entry_ts_ to now so the
         // MIN_ENTRY_GAP_SEC check below cannot be bypassed by same-tick re-entry.
