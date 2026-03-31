@@ -540,6 +540,7 @@ struct GoldFlowEngine {
         }
         // Valid — restore
         m_atr              = std::max(GFE_ATR_MIN, atr);
+        m_atr_seed_lock    = GFE_ATR_RANGE_WINDOW * 3; // hold loaded ATR for 60 ticks before EWM takes over
         m_atr_ewm          = atr_ewm > 0.0 ? atr_ewm : m_atr;
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
         m_last_mid_atr     = last_mid;
@@ -579,6 +580,7 @@ struct GoldFlowEngine {
         m_atr_ewm          = seed_range;
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
         m_atr              = seed_range;
+        m_atr_seed_lock    = GFE_ATR_RANGE_WINDOW * 3; // hold seed for 60 ticks before EWM takes over
         m_last_mid_atr     = mid;
         // Pre-fill price window at seed mid so range calc starts immediately
         m_atr_price_window.clear();
@@ -622,6 +624,7 @@ private:
     double              m_atr_ewm       = 0.0;   // internal EWM accumulator
     double              m_last_mid_atr  = 0.0;   // previous mid for tick-range computation
     int                 m_atr_warmup_ticks = 0;  // counts ticks until GFE_ATR_PERIOD reached
+    int                 m_atr_seed_lock    = 0;  // ticks remaining where EWM cannot overwrite seeded ATR
     int                 m_ticks_received   = 0;  // raw tick count since construction — NEVER reset by seed/load
                                                   // used as the cold-start entry gate (see GFE_MIN_ENTRY_TICKS)
     std::deque<double>  m_atr_window;             // spread data (retained for compat)
@@ -711,8 +714,13 @@ private:
         m_last_mid_atr = mid;
 
         ++m_atr_warmup_ticks;
-        if (m_atr_warmup_ticks >= GFE_ATR_PERIOD)
-            m_atr = std::max(GFE_ATR_MIN, m_atr_ewm);
+        if (m_atr_warmup_ticks >= GFE_ATR_PERIOD) {
+            if (m_atr_seed_lock > 0) {
+                --m_atr_seed_lock;  // EWM blocked — seed/loaded ATR still in control
+            } else {
+                m_atr = std::max(GFE_ATR_MIN, m_atr_ewm);
+            }
+        }
         // Always increment — not reset by seed() or load_atr_state()
         ++m_ticks_received;
 
