@@ -382,15 +382,38 @@ private:
         const auto it = id_to_internal_.find(sym_id);
         if (it == id_to_internal_.end()) return;
         const std::string& name = it->second;
+        // DIAGNOSTIC: log first 5 depth events per symbol to verify sizes are real
+        static std::unordered_map<std::string,int> s_diag_count;
+        if (s_diag_count[name] < 5) {
+            ++s_diag_count[name];
+            const auto& qbs = PB::get_repeated_bytes(fields, 4);
+            std::cout << "[CTRADER-BOOK] " << name << " id=" << sym_id
+                      << " levels=" << qbs.size();
+            for (const auto& qb : qbs) {
+                const auto qf = PB::parse(qb);
+                const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,3);
+                const uint64_t bid=PB::get_varint(qf,4), ask=PB::get_varint(qf,5);
+                std::cout << " [id=" << id
+                          << " sz=" << sz
+                          << (bid ? " bid=" : " ask=")
+                          << (bid ? bid : ask) << "/100000=" 
+                          << (bid ? bid : ask)/100000.0 << "]";
+            }
+            std::cout << "\n";
+            std::cout.flush();
+        }
         auto& book = depth_books_[name];
         for (const auto& qb : PB::get_repeated_bytes(fields, 4)) {
             const auto qf = PB::parse(qb);
             const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,3);
             const uint64_t bid=PB::get_varint(qf,4), ask=PB::get_varint(qf,5);
-            if (!id) continue;  // id=0 is invalid; sz=0 allowed (cTrader may send 0-size to indicate price level)
-            const uint64_t eff_sz = sz ? sz : 100; // default 1 lot if size missing
-            if (bid)      book.apply_new(id,bid,eff_sz,true);
-            else if (ask) book.apply_new(id,ask,eff_sz,false);
+            if (!id) continue;  // id=0 is invalid
+            // Do NOT substitute fake size — if sz=0 the level has no real size data.
+            // to_l2book() skips sz=0 levels, so has_data stays false for symbols
+            // where the broker sends price levels but no sizes (e.g. XAUUSD spot on BB FIX).
+            // We only get here via cTrader Open API which DOES send real sizes for XAUUSD.
+            if (bid)      book.apply_new(id, bid, sz, true);
+            else if (ask) book.apply_new(id, ask, sz, false);
         }
         for (uint64_t did : PB::get_packed_varints(fields, 5)) book.apply_del(did);
         // Build L2Book snapshot outside the lock — to_l2book() is O(N log N) sort
@@ -496,3 +519,4 @@ private:
         while(running.load()&&std::chrono::steady_clock::now()<d) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 };
+
