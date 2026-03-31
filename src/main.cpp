@@ -5856,7 +5856,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
         // ── US500.F manage blocks — ALWAYS run when position open (SL/trail fix) ──
         if (g_orb_us.has_open_position())       { g_orb_us.on_tick(sym, bid, ask, ca_on_close); }
-        if (g_vwap_rev_sp.has_open_position())  { g_vwap_rev_sp.on_tick(sym, bid, ask, 0.0, ca_on_close); }
+        if (g_vwap_rev_sp.has_open_position())  {
+            auto vwap_sp_cb = [&](const omega::TradeRecord& tr) {
+                if (tr.exitReason == "TP_HIT") g_vwap_rev_sp.notify_tp_hit(tr.side == "LONG");
+                ca_on_close(tr);
+            };
+            g_vwap_rev_sp.on_tick(sym, bid, ask, 0.0, vwap_sp_cb);
+        }
         if (g_nbm_sp.has_open_position())       { g_nbm_sp.on_tick(sym, bid, ask, ca_on_close); }
 
         if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {  // ADDED !vwap check
@@ -5926,7 +5932,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // if (sdec_nq.allow_bracket && !g_eng_nq.pos.active && !nas100_bracket_open)
         //     dispatch_bracket(g_bracket_nq, ...);
         // ── USTEC.F manage blocks — ALWAYS run when position open (SL/trail fix) ──
-        if (g_vwap_rev_nq.has_open_position()) { g_vwap_rev_nq.on_tick(sym, bid, ask, 0.0, ca_on_close); }
+        if (g_vwap_rev_nq.has_open_position()) {
+            auto vwap_nq_cb = [&](const omega::TradeRecord& tr) {
+                if (tr.exitReason == "TP_HIT") g_vwap_rev_nq.notify_tp_hit(tr.side == "LONG");
+                ca_on_close(tr);
+            };
+            g_vwap_rev_nq.on_tick(sym, bid, ask, 0.0, vwap_nq_cb);
+        }
         if (g_nbm_nq.has_open_position())      { g_nbm_nq.on_tick(sym, bid, ask, ca_on_close); }
 
         // VWAP Reversion: NQ over-extension from daily open (VWAP proxy).
@@ -6079,7 +6091,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (g_vwap_rev_ger40.has_open_position()) {
             const double ger_vwap_mgmt = (g_orb_ger30.range_high() + g_orb_ger30.range_low()) > 0.0
                 ? (g_orb_ger30.range_high() + g_orb_ger30.range_low()) * 0.5 : 0.0;
-            g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap_mgmt, ca_on_close);
+            auto vwap_ger_cb = [&](const omega::TradeRecord& tr) {
+                if (tr.exitReason == "TP_HIT") g_vwap_rev_ger40.notify_tp_hit(tr.side == "LONG");
+                ca_on_close(tr);
+            };
+            g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap_mgmt, vwap_ger_cb);
         }
         if (g_trend_pb_ger40.has_open_position()) { g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close); }
 
@@ -6215,7 +6231,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // if (sdec_fx.allow_bracket && !g_eng_eurusd.pos.active)
         //     dispatch_bracket(g_bracket_eurusd, ...);
         // ── EURUSD manage block — ALWAYS run when position open (SL/trail fix) ──
-        if (g_vwap_rev_eurusd.has_open_position()) { g_vwap_rev_eurusd.on_tick(sym, bid, ask, 0.0, ca_on_close); }
+        if (g_vwap_rev_eurusd.has_open_position()) {
+            auto vwap_eur_cb = [&](const omega::TradeRecord& tr) {
+                if (tr.exitReason == "TP_HIT") g_vwap_rev_eurusd.notify_tp_hit(tr.side == "LONG");
+                ca_on_close(tr);
+            };
+            g_vwap_rev_eurusd.on_tick(sym, bid, ask, 0.0, vwap_eur_cb);
+        }
 
         // VWAP Reversion: EURUSD over-extension from daily open (VWAP proxy)
         // Tracks the first tick of each calendar day as the day's reference anchor.

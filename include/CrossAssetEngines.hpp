@@ -1100,71 +1100,98 @@ private:
 // =============================================================================
 class VWAPReversionEngine {
 public:
-    double  EXTENSION_THRESH_PCT = 0.20; // price must be >0.20% from VWAP to qualify
+    double  EXTENSION_THRESH_PCT = 0.20; // price must be >0.20% from EWM-VWAP to qualify
     double  EXTENSION_SL_RATIO   = 0.60; // SL = extension × 0.60 past entry (further from VWAP)
     double  MAE_EXIT_RATIO       = 0.50; // exit early if adverse move > 0.50 × TP dist
-    double  MAX_EXTENSION_PCT    = 0.80; // block entry if extension > 0.80% of price
-                                         // above this = day's accumulated TREND not a dislocation
-                                         // daily open proxy too stale to use as VWAP reference
-    int     MAX_HOLD_SEC         = 900;  // 15 min — VWAP pull should happen fast
+    double  MAX_EXTENSION_PCT    = 0.80; // block entry if extension > 0.80% — stale VWAP proxy
+    int     MAX_HOLD_SEC         = 900;  // 15 min base timeout
     int     COOLDOWN_SEC         = 180;  // 3 min between normal entries
     int     MAE_COOLDOWN_SEC     = 600;  // 10 min after MAE exit — thesis was wrong, don't retry
     int     CONSEC_FC_BLOCK_SEC  = 1800; // 30 min block after 2 consecutive MAE exits same direction
+    int     TP_FLIP_COOLDOWN_SEC = 1200; // 20 min after TP: block OPPOSITE direction
+                                          // TP = price crossed VWAP; trend may continue same way
     int     MIN_SESSION_MIN      = 120;  // only enter after 2hrs of session data (10:00 UTC)
     bool    enabled              = true;
     // Confluence thresholds
     double  CONF_VIX_THRESH      = 18.0;
     double  CONF_L2_THRESH       = 0.12;
+    // Rolling EWM VWAP alpha — blends daily_open toward current price over ~120 ticks
+    // α=0.016 ≈ 2hr half-life at 1 tick/min. On trend days the EWM VWAP follows price,
+    // so "distance from VWAP" stays meaningful rather than growing all day.
+    static constexpr double EWM_VWAP_ALPHA = 0.016;
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
     // sym:      instrument symbol string
     // bid/ask:  current quotes
-    // vwap:     daily VWAP (caller computes — daily open used as proxy)
+    // vwap:     daily open (seed value — engine maintains rolling EWM VWAP internally)
     // on_close: trade close callback
     // vix:      current VIX level (0 = unknown, skip confluence factor)
     // l2_imb:   L2 order book imbalance 0..1 (0.5 = neutral)
     CrossSignal on_tick(const std::string& sym, double bid, double ask,
-                        double vwap, CloseCb on_close,
+                        double vwap_seed, CloseCb on_close,
                         double vix = 0.0, double l2_imb = 0.5) noexcept {
         if (!enabled || bid <= 0 || ask <= 0) return {};
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
 
+        // ── Rolling EWM VWAP — adapts to trends, doesn't anchor to stale open ─
+        // Seed on first tick with the daily open. Each tick blends mid toward
+        // the EWM. α=0.016 ≈ 2hr half-life: on trend days the VWAP tracks price
+        // so "extension" always reflects recent deviation, not accumulated drift.
+        // This fixes the core issue: daily open at 08:00 becomes irrelevant by 13:30.
+        if (ewm_vwap_ <= 0.0 && vwap_seed > 0.0) ewm_vwap_ = vwap_seed;
+        if (ewm_vwap_ > 0.0) ewm_vwap_ += EWM_VWAP_ALPHA * (mid - ewm_vwap_);
+        const double vwap = (ewm_vwap_ > 0.0) ? ewm_vwap_ : vwap_seed;
+        if (vwap <= 0) return {};
+
         if (pos_.active) {
-            // ── MAE early exit — mean-reversion thesis invalidation ────────────
-            const double mid_now = (bid + ask) * 0.5;
-            const double adverse = pos_.is_long ? (pos_.entry - mid_now)
-                                                : (mid_now - pos_.entry);
+            // ── Progressive timeout: extend if still moving toward VWAP ──────
+            // Standard 15min timeout cuts positions that are slowly reverting.
+            // If price is still trending toward TP at timeout, extend by 5min.
+            // This lets slow-moving reversions complete instead of timing out.
+            const double move_toward = pos_.is_long ? (mid - pos_.entry)
+                                                    : (pos_.entry - mid);
             const double tp_dist_pos = std::fabs(pos_.tp - pos_.entry);
+            const int64_t held = ca_now_sec() - pos_.entry_ts;
+            if (held >= MAX_HOLD_SEC) {
+                const double progress = tp_dist_pos > 0 ? move_toward / tp_dist_pos : 0.0;
+                if (progress > 0.30) {
+                    // Still 30%+ toward TP and moving right way — extend 5min, once
+                    if (!timeout_extended_) {
+                        timeout_extended_ = true;
+                        printf("[VWAP-REV] %s timeout extended — progress=%.0f%% still trending toward TP\n",
+                               sym.c_str(), progress * 100.0);
+                        fflush(stdout);
+                        // managed by MAX_HOLD_SEC in manage() — bump entry_ts to extend
+                        pos_.entry_ts = ca_now_sec() - MAX_HOLD_SEC + 300; // 5min extension
+                    }
+                }
+            }
+
+            // ── MAE early exit — mean-reversion thesis invalidation ────────────
+            const double adverse = pos_.is_long ? (pos_.entry - mid)
+                                                : (mid - pos_.entry);
             if (adverse > tp_dist_pos * MAE_EXIT_RATIO && tp_dist_pos > 0.0) {
                 printf("[VWAP-REV] %s MAE exit — adverse=%.2f > %.2f (%.0f%% of TP dist) — thesis dead\n",
                        sym.c_str(), adverse, tp_dist_pos * MAE_EXIT_RATIO,
                        MAE_EXIT_RATIO * 100.0);
                 fflush(stdout);
-                // Track consecutive MAE exits in same direction for blocking
                 const bool this_long = pos_.is_long;
                 pos_.force_close(bid, ask, on_close);
-                // Extended cooldown after MAE exit — don't immediately re-enter
-                // into the same trending market that just invalidated the thesis
+                timeout_extended_ = false;
                 cooldown_until_ = ca_now_sec() + MAE_COOLDOWN_SEC;
-                // Consecutive FC tracking: if same direction as last FC, increment
                 if (last_fc_long_ == this_long) {
                     ++consec_fc_same_dir_;
                 } else {
                     consec_fc_same_dir_ = 1;
                     last_fc_long_       = this_long;
                 }
-                // After 2 consecutive FCs in same direction, block that direction
-                // for CONSEC_FC_BLOCK_SEC — structural trend, not a reversion setup
                 if (consec_fc_same_dir_ >= 2) {
-                    fc_block_long_    = this_long;
-                    fc_block_until_   = ca_now_sec() + CONSEC_FC_BLOCK_SEC;
-                    printf("[VWAP-REV] %s consecutive MAE=%d in %s direction — blocking %s for %ds\n",
-                           sym.c_str(), consec_fc_same_dir_,
-                           this_long ? "LONG" : "SHORT",
-                           this_long ? "LONG" : "SHORT",
-                           CONSEC_FC_BLOCK_SEC);
+                    fc_block_long_  = this_long;
+                    fc_block_until_ = ca_now_sec() + CONSEC_FC_BLOCK_SEC;
+                    printf("[VWAP-REV] %s %d consecutive MAE in %s direction — blocking 30min\n",
+                           sym.c_str(), consec_fc_same_dir_, this_long ? "LONG" : "SHORT");
                     fflush(stdout);
                 }
                 return {};
@@ -1172,28 +1199,32 @@ public:
             pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
             return {};
         }
-        if (vwap <= 0) return {};
+
+        // Reset extension flag on new trade cycle
+        timeout_extended_ = false;
 
         // Session gate: London/NY (08:00-22:00 UTC) — entry only, not exit
         struct tm ti{}; ca_utc_time(ti);
         const int h = ti.tm_hour;
         if (h < 8 || h >= 22) return {};
 
-        // ── Minimum session time gate ─────────────────────────────────────────
-        // Daily open proxy is unreliable until enough intraday price history
-        // has accumulated. London opens at 08:00 UTC — at 08:30 there are only
-        // 30min of data and any drift from the open is normal price discovery,
-        // not a real VWAP dislocation. Require MIN_SESSION_MIN of session data.
+        // Minimum session time gate (10:00 UTC minimum)
         const int session_min_elapsed = (h - 8) * 60 + ti.tm_min;
         if (session_min_elapsed < MIN_SESSION_MIN) return {};
 
         if (ca_now_sec() < cooldown_until_) return {};
 
+        // ── TP flip cooldown — block opposite direction after TP hit ──────────
+        // After a TP hit, block the OPPOSITE direction for TP_FLIP_COOLDOWN_SEC.
+        // LONG TP → block SHORT. SHORT TP → block LONG.
+        if (tp_flip_until_ > ca_now_sec()) {
+            const bool would_be_long = (mid < vwap);
+            if (would_be_long == tp_flip_block_long_) return {};  // blocked direction
+        }
+
         // ── Consecutive FC direction block ────────────────────────────────────
-        // After 2 MAE exits in the same direction, that direction is structurally
-        // trending — it's not reverting. Block that direction until block expires.
         if (fc_block_until_ > ca_now_sec()) {
-            const bool is_long_signal = (mid < vwap); // below VWAP = would be LONG
+            const bool is_long_signal = (mid < vwap);
             if (is_long_signal == fc_block_long_) return {};
         }
 
@@ -1308,15 +1339,37 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
-    void cancel()  noexcept { pos_.reset(); }
-    void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void cancel()  noexcept { pos_.reset(); timeout_extended_ = false; }
+    void force_close(double bid, double ask, CloseCb on_close) {
+        pos_.force_close(bid, ask, on_close);
+        timeout_extended_ = false;
+    }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
-    void rollback() noexcept { pos_.reset(); }
+    void rollback() noexcept { pos_.reset(); timeout_extended_ = false; }
+
+    // Called by main.cpp when a TP_HIT close is confirmed for this engine.
+    // Sets a flip cooldown blocking the opposite direction for TP_FLIP_COOLDOWN_SEC.
+    // Prevents LONG TP → immediate SHORT into continued uptrend.
+    void notify_tp_hit(bool was_long) noexcept {
+        tp_flip_block_long_ = !was_long;  // block the OPPOSITE direction
+        tp_flip_until_      = ca_now_sec() + TP_FLIP_COOLDOWN_SEC;
+        consec_fc_same_dir_ = 0;          // TP hit = trend day over, reset FC counter
+        printf("[VWAP-REV] TP hit (%s) — blocking %s entries for %ds\n",
+               was_long ? "LONG" : "SHORT",
+               was_long ? "SHORT" : "LONG",
+               TP_FLIP_COOLDOWN_SEC);
+        fflush(stdout);
+    }
 
 private:
     CrossPosition pos_;
     double  prev_mid_           = 0.0;
     int64_t cooldown_until_     = 0;
+    double  ewm_vwap_           = 0.0;  // rolling EWM VWAP — adapts to trend
+    bool    timeout_extended_   = false; // true once timeout extension has been used
+    // TP flip cooldown — blocks opposite direction after TP hit
+    bool    tp_flip_block_long_ = false;
+    int64_t tp_flip_until_      = 0;
     // Consecutive MAE exit tracking — blocks direction after 2 FCs in a row
     int     consec_fc_same_dir_ = 0;
     bool    last_fc_long_       = false;
