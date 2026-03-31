@@ -3487,7 +3487,7 @@ class GoldPositionManager {
 
     // ── Runtime members — set via set_cfg() from GoldStackCfg ─────────────
     // Defaults match calibrated constexpr values prior to config-driven refactor.
-    int    MAX_HOLD_SEC       = 600;   // 10 min: matches main config max_hold_sec
+    int    MAX_HOLD_SEC       = 1800;  // 30 min: raised from 10min — slow trend entries need room
     double LOCK_ARM_MOVE      = 1.50;  // lock only after genuine $1.50 move
     double LOCK_GAIN          = 0.60;  // $0.60 lock above entry
     double TRAIL_ARM_1        = 2.50;  // trail after $2.50 move
@@ -3576,7 +3576,7 @@ class GoldPositionManager {
     // Omega improvement: base rides wide, pyramids lock in profits faster.
     // This means on a reversal, base might give back $25 but pyramids only
     // give back $10-15, locking the compounded profit.
-    void apply_tiered_trail(GoldPos& leg, double mid, size_t leg_idx) {
+    void apply_tiered_trail(GoldPos& leg, double mid, size_t leg_idx, double cur_atr = 0.0) {
         const double move = leg.is_long ? (mid - leg.entry) : (leg.entry - mid);
 
         // Tier parameters: [lock_arm, lock_gain, trail_arm1, trail_dist1, trail_arm2, trail_dist2]
@@ -3594,9 +3594,15 @@ class GoldPositionManager {
         const double lock_arm   = LOCK_ARM_MOVE  * tier_mult;
         const double lock_gain  = LOCK_GAIN      * tier_mult;
         const double trail_arm1 = TRAIL_ARM_1    * tier_mult;
-        const double trail_d1   = TRAIL_DIST_1   * tier_mult;
         const double trail_arm2 = TRAIL_ARM_2    * tier_mult;
-        const double trail_d2   = TRAIL_DIST_2   * tier_mult;
+        // Trail distances: when cur_atr>0 treat cfg values as ATR multipliers.
+        // TRAIL_DIST_1=0.80 → 0.80×ATR (wide — ride the move, same philosophy as GoldFlow)
+        // TRAIL_DIST_2=0.50 → 0.50×ATR (tighter on big runners)
+        // When cur_atr==0 (warmup): fall back to raw dollar values (legacy behaviour).
+        const double trail_d1   = (cur_atr > 0.0) ? (TRAIL_DIST_1 * cur_atr * tier_mult)
+                                                   : (TRAIL_DIST_1 * tier_mult);
+        const double trail_d2   = (cur_atr > 0.0) ? (TRAIL_DIST_2 * cur_atr * tier_mult)
+                                                   : (TRAIL_DIST_2 * tier_mult);
 
         // BE lock
         if (move >= lock_arm) {
@@ -3632,7 +3638,7 @@ class GoldPositionManager {
 
     // Legacy wrapper — keep for any callers that don't pass leg_idx
     void apply_tight_trail(GoldPos& leg, double mid) {
-        apply_tiered_trail(leg, mid, 0);
+        apply_tiered_trail(leg, mid, 0, 0.0);
     }
 
     static bool regime_allows_pyramid(const char* regime) {
@@ -3878,7 +3884,7 @@ public:
             }
 
             // Tiered trail: base leg (idx 0) wide, pyramids progressively tighter
-            apply_tiered_trail(leg, mid, static_cast<size_t>(i));
+            apply_tiered_trail(leg, mid, static_cast<size_t>(i), governor_.window_range());
 
             const bool tp_hit = leg.is_long ? (ask >= leg.tp) : (bid <= leg.tp);
             if (tp_hit) {
@@ -4000,13 +4006,13 @@ struct GoldStackCfg {
     double  max_entry_spread            = 2.50;  // max spread at entry (absolute $) — matches GoldEngineStack runtime default
     int64_t min_entry_gap_sec           = 90;   // min gap between any two entries
     // ── Position manager ────────────────────────────────────────────────────
-    int     max_hold_sec                = 600;  // position timeout
+    int     max_hold_sec                = 1800; // position timeout — raised 600→1800: 10min killed valid slow trend entries
     double  lock_arm_move               = 1.50; // move required before locking breakeven
     double  lock_gain                   = 0.60; // breakeven lock distance above entry
-    double  trail_arm_1                 = 2.50; // move required to arm first trail
-    double  trail_dist_1                = 0.80; // first trail distance behind mid
-    double  trail_arm_2                 = 5.00; // move required to arm tight trail
-    double  trail_dist_2                = 0.50; // tight trail distance behind mid
+    double  trail_arm_1                 = 2.50; // move required to arm first trail (absolute $)
+    double  trail_dist_1                = 0.80; // first trail = 0.80x ATR behind mid (ATR mult when cur_atr>0)
+    double  trail_arm_2                 = 5.00; // move required to arm tight trail (absolute $)
+    double  trail_dist_2                = 0.50; // tight trail = 0.50x ATR behind mid (ATR mult when cur_atr>0)
     double  min_locked_profit           = 0.30; // min profit that must be locked
     double  max_base_sl_ticks           = 30.0; // SL cap for base entries (ticks)
     // ── LiquiditySweepPro ───────────────────────────────────────────────────

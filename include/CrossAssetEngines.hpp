@@ -1520,8 +1520,23 @@ public:
                 tr.exitReason = reason;
                 tr.engine     = "TrendPullback";
                 tr.spreadAtEntry = pos_.spread_at_entry;
-                const double tick_val = (sym.find("XAU") != std::string::npos) ? 100.0
-                                      : (sym.find("US500") != std::string::npos) ? 50.0 : 1.0;
+                // Full symbol→tick_value table — must match tick_value_multiplier() in main.cpp
+                // XAUUSD=100, US500.F=50, USTEC.F=20, DJ30.F=5, GER40=1.10, UK100=1.33,
+                // ESTX50=1.10, NAS100=1, EURUSD/GBPUSD/etc=100000, others=1
+                const double tick_val =
+                    (sym.find("XAU")   != std::string::npos) ? 100.0   :
+                    (sym == "US500.F")                        ? 50.0    :
+                    (sym == "USTEC.F")                        ? 20.0    :
+                    (sym == "DJ30.F")                         ? 5.0     :
+                    (sym == "GER40")                          ? 1.10    :
+                    (sym == "UK100")                          ? 1.33    :
+                    (sym == "ESTX50")                         ? 1.10    :
+                    (sym == "NAS100")                         ? 1.0     :
+                    (sym == "USOIL.F" || sym == "BRENT")      ? 1000.0  :
+                    (sym == "XAGUSD")                         ? 5000.0  :
+                    (sym.find("USD") != std::string::npos ||
+                     sym.find("EUR") != std::string::npos ||
+                     sym.find("GBP") != std::string::npos)   ? 100000.0 : 1.0;
                 tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px))
                          * pos_.size * tick_val;
                 tr.net_pnl = tr.pnl;

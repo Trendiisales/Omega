@@ -19,11 +19,11 @@
 //  SIZING: risk_dollars / SL_pts
 //    Fixed dollar risk per trade. Adapts automatically to volatility.
 //
-//  EXIT: Progressive ATR-based trail (4 stages)
-//    Stage 1 (1x ATR profit):  SL -> breakeven. Trade is free.
-//    Stage 2 (2x ATR profit):  trail at 1.0x ATR behind MFE
-//    Stage 3 (5x ATR profit):  trail tightens to 0.5x ATR behind MFE
-//    Stage 4 (10x ATR profit): trail tightens to 0.3x ATR -- ride the cascade
+//  EXIT: Staircase + Tiered trail
+//    Step 1 (+1x ATR):  bank 33%, SL → entry (BE). Trail arms at 1.0x ATR.
+//    Step 2 (+2x ATR):  bank 33% of remainder. Trail tightens to 0.5x ATR.
+//    Step 3 (+3x ATR):  bank 33% of remainder. Trail tightens to 0.25x ATR.
+//    Final remainder:   0.25x ATR tight trail — protect every tick.
 //
 //  This captures $100-400 trend moves while keeping risk tight on entry.
 //  On today's $400 gold drop: enter short at compression, trail tightens
@@ -95,10 +95,12 @@ static constexpr double GFE_ATR_MIN           = 5.0;   // raised 2.0→5.0: XAUU
                                                         // 5pt minimum = 0.11% = survives a real tick move.
                                                         // VIX27 day real ATR is 8-18pts, this is a safe floor.
 static constexpr double GFE_ATR_SL_MULT       = 1.0;   // SL = ATR * this
-// Trail distance constants — used only by staircase remainder trail
-static constexpr double GFE_TRAIL_STAGE2_MULT = 0.50;  // kept for GUI stage display compat
-static constexpr double GFE_TRAIL_STAGE3_MULT = 0.35;  // kept for GUI stage display compat
-static constexpr double GFE_TRAIL_STAGE4_MULT = 0.25;  // kept for GUI stage display compat
+// Trail distance constants — tiered trail now uses inline trail_mult in manage_position().
+// These constants are retired (tiered: 1.0x→0.5x→0.25x ATR by staircase stage).
+// Kept as named values only for any external code that may reference them.
+static constexpr double GFE_TRAIL_STAGE2_MULT = 0.50;  // retired — see tiered trail in manage_position
+static constexpr double GFE_TRAIL_STAGE3_MULT = 0.25;  // retired — was 0.35
+static constexpr double GFE_TRAIL_STAGE4_MULT = 0.25;  // retired — final stage
 static constexpr double GFE_BE_ATR_MULT       = 1.0;   // BE lock fires with stair step 1
 static constexpr double GFE_PARTIAL_EXIT_R    = 1.0;   // stair step 1 trigger (1×ATR)
 static constexpr double GFE_PARTIAL_EXIT_FRAC = 0.50;  // fraction to close at partial exit trigger

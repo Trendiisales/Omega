@@ -4709,6 +4709,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_vwap_rev_eurusd.has_open_position()) +
             static_cast<int>(g_trend_pb_gold.has_open_position()) +
             static_cast<int>(g_trend_pb_ger40.has_open_position()) +
+            static_cast<int>(g_trend_pb_nq.has_open_position()) +    // TrendPB USTEC
+            static_cast<int>(g_trend_pb_sp.has_open_position()) +    // TrendPB US500
             static_cast<int>(g_eng_eurusd.pos.active) +
             static_cast<int>(g_eng_gbpusd.pos.active) +
             static_cast<int>(g_eng_audusd.pos.active) +
