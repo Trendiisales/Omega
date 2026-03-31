@@ -82,4 +82,4 @@ Write-Host "      [OK] C:\Omega\logs ready" -ForegroundColor Green
 Set-Location C:\Omega
 $logFile = "C:\Omega\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
 Write-Host "Starting Omega.exe - log: $logFile" -ForegroundColor Cyan
-.\Omega.exe omega_config.ini 2>&1 | Tee-Object -FilePath $logFile -Append
+.\Omega.exe omega_config.ini *>&1 | Tee-Object -FilePath $logFile -Append
