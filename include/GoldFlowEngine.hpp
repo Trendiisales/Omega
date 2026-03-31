@@ -162,19 +162,20 @@ struct GoldFlowEngine {
     enum class Phase { IDLE, FLOW_BUILDING, LIVE, COOLDOWN } phase = Phase::IDLE;
 
     struct OpenPos {
-        bool    active        = false;
-        bool    is_long       = false;
-        double  entry         = 0.0;
-        double  sl            = 0.0;
-        double  size          = 0.01;
-        double  mfe           = 0.0;  // max favourable excursion (pts)
-        double  atr_at_entry  = 0.0;  // ATR when trade was entered
-        bool    be_locked     = false;
-        int     trail_stage   = 0;    // 0=initial SL, 1=BE, 2=trail1, 3=trail2, 4=trail3
-        bool    stage2_tight  = false; // true = L2 was weakening at Stage 2 arm → use tight trail (0.5x ATR)
-        bool    partial_closed = false; // true = 50% partial exit already taken at 1R
-        double  full_size      = 0.0;   // original size before partial — used for reporting
-        int64_t entry_ts      = 0;
+        bool    active           = false;
+        bool    is_long          = false;
+        double  entry            = 0.0;
+        double  sl               = 0.0;
+        double  size             = 0.01;
+        double  mfe              = 0.0;  // max favourable excursion (pts)
+        double  atr_at_entry     = 0.0;  // ATR when trade was entered
+        bool    be_locked        = false;
+        int     trail_stage      = 0;    // 0=initial, 1=step1, 2=step2, 3=full trail, 4=extended
+        bool    stage2_tight     = false; // unused by staircase — kept for ABI compat
+        bool    partial_closed   = false; // true = stair step 1 (PARTIAL_1R) already taken
+        bool    partial_closed_2 = false; // true = stair step 2 (PARTIAL_2R) already taken
+        double  full_size        = 0.0;  // original size before any partial — for reporting
+        int64_t entry_ts         = 0;
     } pos;
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
@@ -847,11 +848,12 @@ private:
         pos.size         = size;
         pos.mfe          = 0.0;
         pos.atr_at_entry = m_atr;
-        pos.be_locked    = false;
-        pos.trail_stage   = 0;
-        pos.stage2_tight  = false;
-        pos.partial_closed = false;
-        pos.full_size      = size;
+        pos.be_locked        = false;
+        pos.trail_stage      = 0;
+        pos.stage2_tight     = false;
+        pos.partial_closed   = false;
+        pos.partial_closed_2 = false;
+        pos.full_size        = size;
         pos.entry_ts      = now_ms / 1000; // seconds
         phase            = Phase::LIVE;
         ++m_trade_id;
