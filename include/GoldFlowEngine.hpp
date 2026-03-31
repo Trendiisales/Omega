@@ -552,21 +552,30 @@ struct GoldFlowEngine {
     // restart/reconnect — blocking all entries until warmup completes.
     // Assumes flat/neutral market at seed price (conservative: no directional bias).
     // No-op if already warmed up.
-    void seed(double mid) noexcept {
+    // seed() — vix_level passed from main.cpp so seed ATR scales with
+    // real observed volatility rather than a hardcoded flat value.
+    // Called on first XAUUSD tick after restart. load_atr_state() runs first;
+    // if a valid recent ATR file exists this is a no-op (warmup already set).
+    void seed(double mid, double vix_level = 0.0) noexcept {
         if (mid <= 0.0 || m_atr_warmup_ticks >= GFE_ATR_PERIOD) return;
 
-        // Seed ATR with a realistic XAUUSD cold-start value.
-        // OLD: 0.35 = the typical bid-ask spread, NOT an ATR.
-        //   m_atr = max(GFE_ATR_MIN=0.5, 0.35) = 0.5 → SL = 0.5pt → stopped by noise.
-        //   Evidence: all 3 Friday trades logged atr=2.00 because GFE_ATR_MIN was
-        //   previously 2.0 — when we lowered the floor to 0.5 the seed became useless.
-        // NEW: 2.5pts = realistic Asia/quiet-session ATR for XAUUSD at ~$4500.
-        //   London/NY sessions have higher ATR (5-15pts) so this is conservative.
-        //   Ensures SL = 2.5pts minimum on cold start — survives normal pullbacks.
-        //   load_atr_state() is called first; seed() is a no-op if file loaded.
-        // Seed with 3.0pts — conservative London session range (actual is 5-15pts).
-        // Range-based ATR will update this quickly from live ticks.
-        const double seed_range = 3.0;
+        // VIX-scaled ATR seed — matches real observed XAUUSD ATR ranges:
+        //   VIX < 15  (quiet)    → ATR ~5pts   Asia dead tape
+        //   VIX 15-20 (normal)   → ATR ~8pts   normal London/NY
+        //   VIX 20-25 (elevated) → ATR ~12pts  active trending day
+        //   VIX 25+   (high vol) → ATR ~18pts  macro event / panic
+        // Evidence: today VIX=27, gold moved $140, 3pt seed produced a 2pt SL
+        // that got stopped on the first micro-fluctuation after entry.
+        // If vix_level not provided (0.0), use conservative 10pts.
+        double seed_range;
+        if      (vix_level <= 0.0)  seed_range = 10.0;  // unknown — use safe default
+        else if (vix_level <  15.0) seed_range =  5.0;  // quiet
+        else if (vix_level <  20.0) seed_range =  8.0;  // normal
+        else if (vix_level <  25.0) seed_range = 12.0;  // elevated
+        else                        seed_range = 18.0;  // high vol — VIX 25+
+        printf("[GFE-SEED] mid=%.2f vix=%.1f seed_atr=%.1f (SL will be ~%.1fpts)\n",
+               mid, vix_level, seed_range, seed_range);
+        fflush(stdout);
         m_atr_ewm          = seed_range;
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
         m_atr              = seed_range;
