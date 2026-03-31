@@ -399,9 +399,38 @@ struct GoldFlowEngine {
 
         // Drift threshold: session-aware + L2-availability-aware.
         // Normal session: L2 available = just non-zero, L2 unavailable = $0.30 fallback.
-        // Asia/dead zone: always at least $0.50 drift required -- micro-oscillations don't count.
+        // Asia/dead zone: drift gate uses TWO paths so both impulse moves AND slow grinds fire:
+        //
+        //   PATH A (instantaneous): |ewm_drift| >= GFE_ASIA_DRIFT_MIN ($1.50)
+        //     Catches fast impulse moves -- a $1.50+ drift spike means clear direction NOW.
+        //     This is the original gate.
+        //
+        //   PATH B (persistence): drift has been directional for >= 70% of last 20 ticks,
+        //     regardless of current instantaneous magnitude.
+        //     Catches slow grinding trends where drift builds from $0.3 to $0.8 steadily
+        //     without ever spiking to $1.50. These are the trends that were being missed
+        //     entirely (image 3: gradual 23:15-00:07 UTC uptrend, drift ~0.5-1.0).
+        //     Only valid when the drift_persist_window is full (>= GFE_DRIFT_PERSIST_TICKS
+        //     ticks have accumulated) AND the chop guard is NOT triggered.
+        //     Reuses the already-computed fast_long / fast_short flags from the persistence
+        //     window above -- those ARE the 70% directional check.
+        //
+        // Either path satisfies the Asia drift requirement. Normal session threshold unchanged.
         double drift_threshold = l2_data_live ? GFE_DRIFT_MIN : GFE_DRIFT_FALLBACK_THRESHOLD;
-        if (is_low_quality_session) drift_threshold = std::max(drift_threshold, GFE_ASIA_DRIFT_MIN);
+        if (is_low_quality_session) {
+            // Check persistence path: fast_long/short are already 70%-directional flags
+            const bool drift_persistent_long  = fast_long;
+            const bool drift_persistent_short = fast_short;
+            const bool drift_persistent = drift_persistent_long || drift_persistent_short;
+            // If persistence path passes, lower threshold to fallback ($0.50) so the
+            // instantaneous check doesn't re-block a confirmed persistent trend.
+            // If persistence path fails, require full $1.50 spike (original behaviour).
+            if (drift_persistent) {
+                drift_threshold = std::max(drift_threshold, GFE_DRIFT_FALLBACK_THRESHOLD);
+            } else {
+                drift_threshold = std::max(drift_threshold, GFE_ASIA_DRIFT_MIN);
+            }
+        }
 
         // Momentum floor: Asia requires $0.30+ price movement (vs any non-zero normally).
         // Prevents entries on sub-$0.10 momentum ticks that dominate choppy overnight tape.
@@ -1294,9 +1323,21 @@ private:
                 // to price distance needed to guarantee locked_usd on remainder
                 const double locked_usd  = tier_now * DOLLAR_RATCHET_STEP * DOLLAR_RATCHET_KEEP;
                 const double locked_pts  = locked_usd / (pos.size * 100.0);
+
+                // BREATHING ROOM GUARD: ratchet SL must be at least 0.5*ATR from entry.
+                // Without this, at small lot sizes (0.15 lots) tier-1 locks only $40,
+                // placing SL only 2.67pts from entry. On a fast 19s move the trade
+                // hits $57 open PnL, ratchet fires, SL moves to entry+2.67 -- then any
+                // $0.20 retracement clips it immediately.
+                // Evidence: 22:57 LONG @4677.70, MFE=$3.83, exit SL_HIT @4680.18 net=$33.
+                // Fix: locked_pts must be >= 0.5*ATR so SL stays outside normal noise.
+                // This does NOT reduce locked profit -- it delays the ratchet firing until
+                // the trade has moved enough that the SL placement makes geometric sense.
+                const double min_locked_pts = m_atr * 0.5;
+                const double eff_locked_pts = std::max(locked_pts, min_locked_pts);
                 const double ratchet_sl  = pos.is_long
-                    ? (pos.entry + locked_pts)
-                    : (pos.entry - locked_pts);
+                    ? (pos.entry + eff_locked_pts)
+                    : (pos.entry - eff_locked_pts);
 
                 const bool sl_improves = pos.is_long
                     ? (ratchet_sl > pos.sl)
@@ -1311,7 +1352,8 @@ private:
                               << " open_pnl_full=$" << std::fixed << std::setprecision(0)
                               << open_pnl_usd_full
                               << " locked=$" << locked_usd
-                              << " locked_pts=" << std::setprecision(2) << locked_pts
+                              << " locked_pts=" << std::setprecision(2) << eff_locked_pts
+                              << (eff_locked_pts > locked_pts ? "(atr_floor)" : "")
                               << " new_sl=" << ratchet_sl
                               << " be_locked=" << pos.be_locked
                               << (pos.is_long ? " LONG" : " SHORT") << "\n";

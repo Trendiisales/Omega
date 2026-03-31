@@ -7891,9 +7891,30 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
                 return false;
             }();
-            bool gf_tick_ok = !in_ny_close_noise && !in_london_open_noise_gf;
+            // Gate 0c: same-direction trail block (60s after trail/BE exit).
+            // gold_trail_blocked is computed in the outer gate (gold_can_enter) but
+            // gold_can_enter does NOT re-check direction -- it only sets can_enter=true
+            // if no position is open. GoldFlow has its own entry path here and was
+            // NOT checking trail_block before calling on_tick. This caused the re-entry
+            // at 22:38:46 (16s after TRAIL_HIT at 22:38:30) at the exact peak -$168.
+            // Fix: block gf_tick_ok when trail_block active in the SAME direction.
+            // Opposite-direction entries are still allowed (reversal trades).
+            const bool gf_trail_same_dir = gold_trail_blocked && [&]() -> bool {
+                // g_gold_trail_block_dir: +1 = last close was LONG (block new LONGs)
+                //                         -1 = last close was SHORT (block new SHORTs)
+                const int  block_dir   = g_gold_trail_block_dir.load();
+                const double gf_drift  = g_gold_stack.ewm_drift();
+                const double gf_l2     = g_macro_ctx.gold_l2_imbalance;
+                // Direction probe: use L2 if live, drift otherwise
+                const bool likely_long = (gf_l2 > GFE_LONG_THRESHOLD)
+                                      || (gf_l2 >= 0.40 && gf_l2 <= 0.60 && gf_drift > 1.0);
+                return (block_dir ==  1 && likely_long)   // was long, about to enter long
+                    || (block_dir == -1 && !likely_long); // was short, about to enter short
+            }();
+            bool gf_tick_ok = !in_ny_close_noise && !in_london_open_noise_gf && !gf_trail_same_dir;
             const char* gf_block_reason = in_ny_close_noise        ? "NY_CLOSE_NOISE"
                                         : in_london_open_noise_gf  ? "LONDON_OPEN_NOISE"
+                                        : gf_trail_same_dir        ? "TRAIL_BLOCK_SAME_DIR"
                                         : nullptr;
 
             // ?? Gate 1: Cost viability ?????????????????????????????????????????
