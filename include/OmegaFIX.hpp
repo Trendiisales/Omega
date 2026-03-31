@@ -40,19 +40,15 @@ struct ExtSymbolDef { int id; const char* name; };
 static SymbolDef OMEGA_SYMS[] = {
     { 2642, "US500.F" }, { 2643, "USTEC.F" }, { 2632, "USOIL.F" },
     { 4462, "VIX.F"   }, { 2638, "DX.F"    }, { 2637, "DJ30.F"  },
-    // NAS100 (id=110) REMOVED: duplicate of USTEC.F, both track Nasdaq 100.
-    // USTEC.F (id=2643) is the futures CFD -- lower spread, better liquidity.
-    // NAS100 (cash) had all engines disabled; removing from symbol table entirely.
-    {   41, "XAUUSD" }, { 2631, "NGAS.F"  },
+    {  110, "NAS100"  },  // NAS100 cash -- id=110 confirmed from broker symbol list.
+                          // NBM engine (NoiseBandMomentum) is active on this symbol.
+                          // USTEC.F (id=2643) is separate futures CFD -- both needed.
+    {   41, "XAUUSD"  }, { 2631, "NGAS.F"  },
     // FIX ID 41 = XAUUSD spot on BlackBull (confirmed seclist_raw.txt line 209).
-    // USOIL.F (id=2632): BlackBull prices this at ~$102 -- audit 2026-04-01 shows
-    // this is NOT WTI (~$70) nor standard Brent (~$75). Both USOIL.F and BRENT
-    // show ~$102 prices suggesting they track the same instrument.
-    // BrentWtiSpreadEngine is DISABLED until correct symbols are confirmed.
-    // TODO: run dump_all_symbols=true on next connect and verify against
-    // BlackBull instrument spec page for id=2632.
+    // USOIL.F (id=2632): BlackBull prices this at ~$102 -- may be Brent-priced.
+    // BrentWtiSpreadEngine DISABLED until correct instrument confirmed.
 };
-static const int OMEGA_NSYMS = 8;
+static const int OMEGA_NSYMS = 9;
 
 static std::vector<ExtSymbolDef> g_ext_syms = {
     {0,"GER40"},{0,"UK100"},{0,"ESTX50"},{0,"XAGUSD"},

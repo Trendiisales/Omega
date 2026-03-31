@@ -2200,14 +2200,18 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
             for (int i = 0; i < OMEGA_NSYMS; ++i)
                 if (name == OMEGA_SYMS[i].name) { is_primary = true; break; }
             if (!is_primary) {
-                // Try broker alias matching for symbols we care about.
-                // BlackBull may send UKBRENT instead of BRENT, GER30 instead of GER40, etc.
+                // Broker alias matching for ext symbols -- BlackBull FIX may send
+                // alternate names. Maps broker FIX name -> g_ext_syms index.
                 struct AliasMap { const char* broker; size_t ext_idx; };
                 static const AliasMap aliases[] = {
-                    {"UKBRENT",  5}, {"BRENT.F",  5},
-                    {"GER30",    0}, {"GER40",    0}, {"DAX",      0},
-                    {"UK100",    1}, {"FTSE",     1},
-                    {"ESTX50",   2}, {"STOXX50",  2}, {"SX5E",     2},
+                    // Brent oil: index 5
+                    {"UKBRENT",   5}, {"BRENT.F",   5},
+                    // GER40: index 0
+                    {"GER30",     0}, {"GER40",     0}, {"DAX",       0}, {"DAX40",    0},
+                    // UK100: index 1
+                    {"UK100",     1}, {"FTSE",      1}, {"FTSE100",   1},
+                    // ESTX50: index 2
+                    {"ESTX50",    2}, {"STOXX50",   2}, {"SX5E",      2}, {"EUSTX50",  2},
                 };
                 bool alias_matched = false;
                 for (const auto& a : aliases) {
