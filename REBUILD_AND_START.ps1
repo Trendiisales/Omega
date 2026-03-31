@@ -37,12 +37,15 @@ Write-Host ""
 # [2/7] Sync to origin/main
 Write-Host "[2/7] Syncing to origin/main..." -ForegroundColor Yellow
 Set-Location $OmegaDir
-# Capture all git housekeeping output to $null.
-# Under $ErrorActionPreference="Stop", any native command writing to stderr triggers
-# a terminating error even when piped to Out-Null. Assigning to $null suppresses that.
-$null = git fetch origin 2>&1
-$null = git checkout main 2>&1          # "Already on 'main'" goes to stderr -- normal, not an error
-$null = git reset --hard origin/main 2>&1
+# git commands write informational messages to stderr ("Already on 'main'", fetch progress, etc.).
+# PowerShell with $ErrorActionPreference="Stop" treats ANY native stderr as a terminating error.
+# Workaround: drop to Continue for git housekeeping, then restore Stop for the rest of the script.
+$savedPref = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+git fetch origin 2>&1 | Out-Null
+git checkout main 2>&1 | Out-Null        # "Already on 'main'" is normal stderr, not an error
+git reset --hard origin/main 2>&1 | Out-Null
+$ErrorActionPreference = $savedPref
 
 $localHead  = (git rev-parse HEAD).Trim()
 $remoteHead = (git rev-parse origin/main).Trim()
@@ -59,8 +62,11 @@ Write-Host "[3/7] Clean build..." -ForegroundColor Yellow
 Remove-Item -Path "$OmegaDir\build" -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 Set-Location "$OmegaDir\build"
-$null = cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1   # configure output not useful -- suppress
-cmake --build . --config Release 2>&1              # build output stays visible for error diagnosis
+$savedPrefCmake = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1 | Out-Null   # configure output not useful -- suppress
+$ErrorActionPreference = $savedPrefCmake
+cmake --build . --config Release 2>&1                  # build output stays visible for error diagnosis
 
 if (-not (Test-Path $BuildExe)) {
     Write-Host "      [ERROR] Build failed -- $BuildExe not found" -ForegroundColor Red

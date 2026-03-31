@@ -52,7 +52,10 @@ if ($stampHash -ne $currentHash) {
 }
 
 # [3] Verify git HEAD matches stamp
-$null = git fetch origin 2>&1
+$savedPref = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+git fetch origin 2>&1 | Out-Null
+$ErrorActionPreference = $savedPref
 $localHead  = (git rev-parse HEAD).Trim()
 $remoteHead = (git rev-parse origin/main).Trim()
 
