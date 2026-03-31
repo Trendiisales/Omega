@@ -7302,6 +7302,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Entry: L2 imbalance persistence + EWM drift + momentum all confirm.
         // SL: ATR(20) * 1.0 -- volatility-sized, not bracket-range-sized.
         // Trail: progressive ATR-based stages that tighten as profit grows.
+        // ── Outer gate diagnostic — fires when gold_can_enter or sibling gates block ─
+        {
+            static int64_t s_outer_gate_log = 0;
+            const bool any_gold_open = g_bracket_gold.has_open_position()
+                                    || g_gold_stack.has_open_position()
+                                    || g_gold_flow.has_open_position()
+                                    || g_le_stack.has_open_position()
+                                    || g_trend_pb_gold.has_open_position();
+            if (!gold_can_enter && !any_gold_open && nowSec() - s_outer_gate_log >= 30) {
+                s_outer_gate_log = nowSec();
+                printf("[GF-OUTER-BLOCK] gold_can_enter=0 session_ok=%d trail_block=%d "
+                       "post_impulse=%d symbol_gate=%d any_open=%d\n",
+                       (g_macro_ctx.session_slot != 0) ? 1 : 0,
+                       gold_trail_blocked ? 1 : 0,
+                       gold_post_impulse_block ? 1 : 0,
+                       (!gold_trail_blocked && !gold_post_impulse_block) ? 1 : 0,
+                       any_gold_open ? 1 : 0);
+                fflush(stdout);
+            }
+        }
         if (gold_can_enter
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
@@ -7316,6 +7336,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // so main.cpp cannot intercept between signal and entry. All blocking
             // must happen here, before the tick reaches the engine.
             bool gf_tick_ok = !in_ny_close_noise;
+            const char* gf_block_reason = in_ny_close_noise ? "NY_CLOSE_NOISE" : nullptr;
 
             // ── Gate 1: Cost viability ─────────────────────────────────────────
             // Estimates match engine sizing: sl=ATR×1.0, tp=sl×2 (2R), lot=risk/sl/100
@@ -7326,10 +7347,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const double gf_sl_pts  = gf_atr * GFE_ATR_SL_MULT;
                     const double gf_tp_dist = gf_sl_pts * 2.0;
                     const double gf_lot_est = std::max(GFE_MIN_LOT,
-                        std::min(0.50, g_gold_flow.risk_dollars / (gf_sl_pts * 100.0)));  // cap matches GFE_MAX_LOT_FLOW
+                        std::min(0.50, g_gold_flow.risk_dollars / (gf_sl_pts * 100.0)));
                     if (!ExecutionCostGuard::is_viable("XAUUSD", ask - bid, gf_tp_dist, gf_lot_est)) {
                         g_telemetry.IncrCostBlocked();
                         gf_tick_ok = false;
+                        gf_block_reason = "COST_GATE";
                     }
                 }
             }
@@ -7345,31 +7367,58 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double gf_atr = g_gold_flow.current_atr();
                 if (gf_atr > 0.0) {
                     const double gf_mid_local = (bid + ask) * 0.5;
-                    // Direction proxy must match GFE_LONG_THRESHOLD (0.75) / GFE_SHORT_THRESHOLD (0.25).
-                    // The engine only counts l2_imb > 0.75 as a long tick and < 0.25 as a short tick.
-                    // Using 0.5 as the threshold would score the WRONG direction for imb in [0.25, 0.75]
-                    // — ticks the engine counts as neutral but the gate treats as directional.
-                    // At actual signal time l2_imb is always well above 0.75 (stale check also confirms > 0.60),
-                    // so this fix has no practical P&L effect but keeps the gate internally consistent.
+                    // Direction proxy: GFE counts l2_imb > 0.75 as long, < 0.25 as short.
+                    // Using 0.5 threshold here would score wrong direction for neutral imb.
                     const bool   gf_long   = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
                     const double gf_tp_est = gf_long
                         ? gf_mid_local + gf_atr * 2.0
                         : gf_mid_local - gf_atr * 2.0;
+                    const bool gf_vac  = gf_long ? g_macro_ctx.gold_vacuum_ask  : g_macro_ctx.gold_vacuum_bid;
+                    const bool gf_wall = gf_long ? g_macro_ctx.gold_wall_above  : g_macro_ctx.gold_wall_below;
+                    const bool gf_absorb = g_edges.absorption.is_absorbing("XAUUSD", gf_long);
                     const int gf_score = g_edges.entry_score_l2(
                         "XAUUSD", gf_mid_local, gf_long, gf_tp_est, nowSec(),
                         g_macro_ctx.gold_microprice_bias,
                         g_macro_ctx.gold_l2_imbalance,
-                        gf_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid,
-                        gf_long ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below);
+                        gf_vac, gf_wall);
                     if (gf_score <= -3) {
-                        printf("[GF-EDGE-BLOCK] XAUUSD %s score=%d (micro=%.4f l2=%.3f vac=%d wall=%d) — blocked\n",
+                        printf("[GF-EDGE-BLOCK] XAUUSD %s score=%d micro=%.4f l2=%.3f vac=%d wall=%d absorb=%d — blocked\n",
                                gf_long ? "LONG" : "SHORT", gf_score,
                                g_macro_ctx.gold_microprice_bias, g_macro_ctx.gold_l2_imbalance,
-                               (gf_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid) ? 1 : 0,
-                               (gf_long ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below) ? 1 : 0);
+                               gf_vac ? 1 : 0, gf_wall ? 1 : 0, gf_absorb ? 1 : 0);
                         fflush(stdout);
                         gf_tick_ok = false;
+                        gf_block_reason = "L2_EDGE_SCORE";
                     }
+                }
+            }
+
+            // ── Diagnostic: which gate is holding, throttled 30s ──────────────
+            // Fires whenever gf_tick_ok=false so logs show exactly what is blocking.
+            // Replaces the opaque "NO TRADES FIRING" GUI banner with a specific reason.
+            if (!gf_tick_ok) {
+                static int64_t s_gf_gate_log_ts = 0;
+                if (nowSec() - s_gf_gate_log_ts >= 30) {
+                    s_gf_gate_log_ts = nowSec();
+                    const bool gf_dir = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
+                    printf("[GF-GATE-BLOCK] reason=%s atr=%.2f spread=%.3f "
+                           "l2=%.3f micro=%.4f "
+                           "wall_below=%d wall_above=%d absorb=%d vac_ask=%d vac_bid=%d "
+                           "trail_block=%d post_impulse=%d ny_noise=%d gold_can_enter=%d\n",
+                           gf_block_reason ? gf_block_reason : "UNKNOWN",
+                           g_gold_flow.current_atr(), ask - bid,
+                           g_macro_ctx.gold_l2_imbalance,
+                           g_macro_ctx.gold_microprice_bias,
+                           g_macro_ctx.gold_wall_below ? 1 : 0,
+                           g_macro_ctx.gold_wall_above ? 1 : 0,
+                           g_edges.absorption.is_absorbing("XAUUSD", gf_dir) ? 1 : 0,
+                           g_macro_ctx.gold_vacuum_ask ? 1 : 0,
+                           g_macro_ctx.gold_vacuum_bid ? 1 : 0,
+                           gold_trail_blocked ? 1 : 0,
+                           gold_post_impulse_block ? 1 : 0,
+                           in_ny_close_noise ? 1 : 0,
+                           gold_can_enter ? 1 : 0);
+                    fflush(stdout);
                 }
             }
 
