@@ -4024,7 +4024,9 @@ public:
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
     GoldEngineStack() {
-        engines_.push_back(std::make_unique<CompressionBreakoutEngine>());
+        // SHELVED: CompressionBreakout — 0% WR live, 7s avg hold, instant SL hits.
+        // False breakout / stop-hunt pattern. Re-enable after fix + 50 shadow validates.
+        // engines_.push_back(std::make_unique<CompressionBreakoutEngine>());
         // SIM: ImpulseContinuation WR 41.7% -$641 across 3 iterations. Disabled.
         // SessionMomentum captures same directional signal at 53.3% WR +$723.
         // engines_.push_back(std::make_unique<ImpulseContinuationEngine>());
@@ -4032,60 +4034,38 @@ public:
         // SIM: IntradaySeasonality — 6,788T | WR=49.2% | $2,065/2yr | Sharpe=1.08
         // Fires once/hour at first tick. COMPRESSION + MEAN_REVERSION regimes.
         engines_.push_back(std::make_unique<IntradaySeasonalityEngine>());
-        // SIM: WickRejection — 3,810T | WR=46.0% | $3,014/2yr | Sharpe=1.68
-        // 5-min candle wick>=55% of range = stop-hunt fade. ALL regimes.
-        // Consistent: $1,164 in 2024, $1,850 in 2025. MaxDD=$185.
-        engines_.push_back(std::make_unique<WickRejectionEngine>());
+        // SHELVED: WickRejection — live performance 0% WR, MFE/MAE ratio 0.87x.
+        // Re-enable after 50+ shadow trades show positive expectancy.
+        // engines_.push_back(std::make_unique<WickRejectionEngine>());
         // SIM: DonchianBreakout — 3,383T | WR=29.6% | $3,125/2yr | Sharpe=1.60
-        // 10-bar 5-min channel break with HTF EMA50/250 filter. ALL regimes.
-        // $765 in 2024, $2,290 in 2025. MaxDD=$124. 3:1 RR momentum follow.
         engines_.push_back(std::make_unique<DonchianBreakoutEngine>());
         // SIM: NR3Breakout — 1,421T | WR=39.1% | $1,108/2yr | Sharpe=2.00
-        // Narrowest 3-bar 5-min range + confirm. COMPRESSION + MEAN_REVERSION.
-        // Highest Sharpe of new engines. Session 07-17 UTC only. MaxDD=$79.
         engines_.push_back(std::make_unique<NR3BreakoutEngine>());
         // SIM: SpikeFade — 402T | WR=54.5% | $456/2yr
-        // Fade $10+ 5-min moves (macro exhaustion). ALL regimes. 30-min cooldown.
         engines_.push_back(std::make_unique<SpikeFadeEngine>());
         // SIM: AsianRange — 382T | WR=49.7% | $279/2yr | Sharpe=1.60
-        // Asian 00-07 UTC range breakout at London open. Independent edge.
-        // COMPRESSION + MEAN_REVERSION regimes. 07-11 UTC fire window.
         engines_.push_back(std::make_unique<AsianRangeEngine>());
         // SIM: DynamicRange — 10,299T | WR=43.4% | $6,772/2yr | Sharpe=2.36
-        // 20-bar range extremes fade. 18.8% overlap with MR — independent.
-        // MaxDD=$85 (lowest all engines). MEAN_REVERSION + COMPRESSION only.
         engines_.push_back(std::make_unique<DynamicRangeEngine>());
-        // SIM: WickRejTick -- 562T | WR=40.7% | $1,376/2yr | Sharpe=3.79
-        engines_.push_back(std::make_unique<WickRejectionTickEngine>());
+        // SHELVED: WickRejTick — shelved with WickRejection pending live revalidation.
+        // engines_.push_back(std::make_unique<WickRejectionTickEngine>());
         // SIM: TurtleTick -- 104T | WR=49.0% | $800/2yr | Sharpe=7.60
         engines_.push_back(std::make_unique<TurtleTickEngine>());
         // SIM: NR3Tick -- 565T | WR=41.4% | $1,009/2yr | Sharpe=4.10
         engines_.push_back(std::make_unique<NR3TickEngine>());
         // SIM: TwoBarReversal -- 1,216T | WR=47.1% | $795/2yr | Sharpe=1.55
-        // Strong 5-min bar + reversal close. 23% overlap with WickRej.
-        // 2024: $186 S=1.06  2025: $573 S=1.76. ALL regimes.
         engines_.push_back(std::make_unique<TwoBarReversalEngine>());
         // SIM: MeanReversion LB=60 Z=2.0 SL=$4 TP=$12 — 15,955T | WR=59.6% | $4,347/2yr | Sharpe=1.16
-        // Highest Sharpe of any engine. Fires in MEAN_REVERSION regime only.
         engines_.push_back(std::make_unique<MeanReversionEngine>());
         engines_.push_back(std::make_unique<VWAPSnapbackEngine>());
         engines_.push_back(std::make_unique<LiquiditySweepProEngine>());
         engines_.push_back(std::make_unique<LiquiditySweepPressureEngine>());
-        // ── NEW ENGINES (19-23) ───────────────────────────────────────────────
-        // 19. LondonFixMomentum — 15:00 UTC LBMA fix direction continuation.
-        //     WR=58% RR=1.8:1 Sharpe~2.60. Once/day 15:00-17:00 UTC.
         engines_.push_back(std::make_unique<LondonFixMomentumEngine>());
-        // 20. VWAPStretchReversion — 2-sigma VWAP fade with deceleration.
-        //     WR=51% RR=2.2:1 Sharpe~1.80. Overlap/NY only. COMP+MR regimes.
         engines_.push_back(std::make_unique<VWAPStretchReversionEngine>());
-        // 21. ORBNewYork — 13:30-14:00 UTC opening range breakout.
-        //     WR=54% RR=1.9:1 Sharpe~1.45. Once/day. TREND+IMPULSE+MR only.
         engines_.push_back(std::make_unique<OpeningRangeBreakoutNYEngine>());
-        // 22. DXYDivergence — intermarket correlation break. Hidden accumulation.
-        //     WR=55% RR=2.0:1 Sharpe~2.90. Low freq 1-3x/week. ALL regimes.
-        engines_.push_back(std::make_unique<DXYDivergenceEngine>());
-        // 23. SessionOpenMomentum — first-bar momentum at London/NY/Tokyo open.
-        //     WR=56% RR=1.7:1 Sharpe~1.55. Up to 3x/day. TREND+IMPULSE only.
+        // SHELVED: DXYDivergence — live performance 50% WR net $-0.04 over 2 trades.
+        // Requires real DXY feed validation. Re-enable after feed confirmed.
+        // engines_.push_back(std::make_unique<DXYDivergenceEngine>());
         engines_.push_back(std::make_unique<SessionOpenMomentumEngine>());
     }
 

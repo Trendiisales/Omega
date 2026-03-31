@@ -1265,10 +1265,15 @@ public:
     double  EMA9_ALPHA        = 2.0 / (9.0  + 1.0);
     double  EMA21_ALPHA       = 2.0 / (21.0 + 1.0);
     double  EMA50_ALPHA       = 2.0 / (50.0 + 1.0);
+    double  ATR_ALPHA         = 2.0 / (14.0 + 1.0); // EWM ATR-14 for trail sizing
     int     EMA_WARMUP_TICKS  = 60;     // ticks before EMAs are trusted
-    int     MAX_HOLD_SEC      = 600;    // 10 min — pullback entries should resolve fast
+    int     MAX_HOLD_SEC      = 86400;  // no timeout — ATR trail manages exit
     int     COOLDOWN_SEC      = 120;
     bool    enabled           = true;
+    // ATR trail params (data-validated on gold: 2x ATR arm, 1x ATR trail)
+    double  TRAIL_ARM_ATR_MULT  = 2.0;  // arm trail after price moves 2x ATR from entry
+    double  TRAIL_DIST_ATR_MULT = 1.0;  // trail SL 1x ATR behind peak MFE
+    double  BE_ATR_MULT         = 1.0;  // lock BE after 1x ATR profit
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
@@ -1278,19 +1283,86 @@ public:
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
 
-        // EMA update — always runs regardless of position state
-        if (ema9_  <= 0.0) { ema9_ = ema21_ = ema50_ = mid; }  // seed on first tick
+        // EMA + ATR update — always runs regardless of position state
+        if (ema9_  <= 0.0) { ema9_ = ema21_ = ema50_ = mid; prev_mid_ = mid; }
+        const double tick_move = std::fabs(mid - prev_mid_);
+        if (atr_ <= 0.0) atr_ = tick_move > 0 ? tick_move : 0.5; // seed
+        else             atr_ += ATR_ALPHA * (tick_move - atr_);
         ema9_  += EMA9_ALPHA  * (mid - ema9_);
         ema21_ += EMA21_ALPHA * (mid - ema21_);
         ema50_ += EMA50_ALPHA * (mid - ema50_);
+        prev_mid_ = mid;
         ++tick_count_;
 
         if (pos_.active) {
-            // Update SL to EMA50 (trailing the slow EMA in trend direction)
-            // Only tighten — never move SL against us
+            // ── ATR-based trail — replaces old TP-extension trail ─────────────
+            // BE lock: after 1x ATR profit, move SL to entry
+            // Trail arm: after 2x ATR profit, trail SL at 1x ATR behind peak MFE
+            // EMA50 floor: SL never falls below EMA50 (trend invalidation level)
+            const double move = pos_.is_long ? (mid - pos_.entry) : (pos_.entry - mid);
+            if (pos_.mfe < move) pos_.mfe = move;  // track MFE manually
+            const double atr = atr_ > 0.01 ? atr_ : 0.5; // safety floor
+
+            // 1) BE lock at 1x ATR
+            if (!be_locked_ && move >= atr * BE_ATR_MULT) {
+                be_locked_ = true;
+                const double be_sl = pos_.is_long ? pos_.entry + spread
+                                                  : pos_.entry - spread;
+                if (pos_.is_long  && be_sl > pos_.sl) pos_.sl = be_sl;
+                if (!pos_.is_long && be_sl < pos_.sl) pos_.sl = be_sl;
+                printf("[TREND-PB] %s BE locked atr=%.3f entry=%.3f sl=%.3f\n",
+                       sym.c_str(), atr, pos_.entry, pos_.sl);
+                fflush(stdout);
+            }
+
+            // 2) ATR trail arm at 2x ATR — trail SL at 1x ATR behind peak
+            if (move >= atr * TRAIL_ARM_ATR_MULT) {
+                const double trail_sl = pos_.is_long
+                    ? (pos_.entry + pos_.mfe - atr * TRAIL_DIST_ATR_MULT)
+                    : (pos_.entry - pos_.mfe + atr * TRAIL_DIST_ATR_MULT);
+                if (pos_.is_long  && trail_sl > pos_.sl) pos_.sl = trail_sl;
+                if (!pos_.is_long && trail_sl < pos_.sl) pos_.sl = trail_sl;
+            }
+
+            // 3) EMA50 floor — always trail above/below EMA50 in trend direction
+            // (if EMA50 crosses above trail SL for longs, use EMA50 — trend is tightening)
             if (pos_.is_long  && ema50_ > pos_.sl) pos_.sl = ema50_;
             if (!pos_.is_long && ema50_ < pos_.sl) pos_.sl = ema50_;
-            pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
+
+            // Check SL / timeout
+            const bool sl_hit    = pos_.is_long ? (bid <= pos_.sl) : (ask >= pos_.sl);
+            const bool timed_out = (ca_now_sec() - pos_.entry_ts) >= MAX_HOLD_SEC;
+            if (sl_hit || timed_out) {
+                const double exit_px = sl_hit ? pos_.sl : mid;
+                const char*  reason  = sl_hit ? "SL_HIT" : "TIMEOUT";
+                omega::TradeRecord tr;
+                tr.symbol     = sym;
+                tr.side       = pos_.is_long ? "LONG" : "SHORT";
+                tr.entryPrice = pos_.entry;
+                tr.exitPrice  = exit_px;
+                tr.tp         = pos_.tp;
+                tr.sl         = pos_.sl;
+                tr.size       = pos_.size;
+                tr.mfe        = pos_.mfe;
+                tr.mae        = pos_.mae;
+                tr.entryTs    = pos_.entry_ts;
+                tr.exitTs     = ca_now_sec();
+                tr.exitReason = reason;
+                tr.engine     = "TrendPullback";
+                tr.spread_at_entry = pos_.spread_at_entry;
+                const double tick_val = (sym.find("XAU") != std::string::npos) ? 100.0
+                                      : (sym.find("US500") != std::string::npos) ? 50.0 : 1.0;
+                tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px))
+                         * pos_.size * tick_val;
+                tr.net_pnl = tr.pnl;
+                printf("[TREND-PB] %s %s CLOSE @%.3f reason=%s pnl=%.2f atr=%.3f trail_sl=%.3f\n",
+                       sym.c_str(), tr.side.c_str(), exit_px, reason, tr.pnl, atr, pos_.sl);
+                fflush(stdout);
+                pos_.reset();
+                be_locked_ = false;
+                cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
+                if (on_close) on_close(tr);
+            }
             return {};
         }
 
@@ -1313,47 +1385,33 @@ public:
         const bool at_ema50 = std::fabs(mid - ema50_) < band;
         if (!at_ema50) {
             prev_at_ema50_ = false;
-            prev_mid_      = mid;
             return {};
         }
 
         // Bounce confirmation: prev tick was also at EMA50, now ticking away in trend direction
         if (!prev_at_ema50_) {
             prev_at_ema50_ = true;
-            prev_mid_      = mid;
             return {};
         }
-        const bool bounce_up   = uptrend   && (mid > prev_mid_);
-        const bool bounce_down = downtrend && (mid < prev_mid_);
-        prev_mid_ = mid;
+        const bool bounce_up   = uptrend   && (mid > ema50_);
+        const bool bounce_down = downtrend && (mid < ema50_);
         if (!bounce_up && !bounce_down) return {};
 
         const bool is_long = uptrend;
 
-        // TP = EMA9 level (price was there before pullback)
+        // Initial TP = EMA9 (first target — trail takes over from there)
+        // SL = EMA50
         const double tp      = ema9_;
         const double tp_dist = std::fabs(tp - mid);
-        // SL = EMA50 (trend invalidated if EMA50 breached)
         const double sl      = ema50_;
 
-        // Sanity: TP must be in the right direction
         if (is_long  && tp <= mid) return {};
         if (!is_long && tp >= mid) return {};
         if (tp_dist <= 0.0)        return {};
 
-        // R:R gate: require at least 1.5:1 before generating signal.
-        // Prevents signal spam when EMA9 is nearly coincident with EMA50
-        // (tight EMA stack = ranging market = tiny TP = R:R < 0.5).
-        // These signals would just clutter the GUI and all fail the RR-FLOOR
-        // in enter_directional anyway — catch them here instead.
+        // R:R gate: 1.5:1 minimum
         const double sl_dist_check = std::fabs(mid - sl);
         if (sl_dist_check > 0.0 && (tp_dist / sl_dist_check) < 1.5) return {};
-
-        // Cost gate
-        // Cost check removed: enter_directional() performs the definitive
-        // cost check with the actual computed lot size. Checking here with
-        // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
-        // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
         CrossSignal sig;
         sig.valid   = true;
@@ -1367,25 +1425,27 @@ public:
         sig.reason  = is_long ? "TREND_PB_LONG" : "TREND_PB_SHORT";
 
         pos_.open(sig, spread);
+        be_locked_      = false;
         cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
-        printf("[TREND-PB] %s %s ema9=%.4f ema21=%.4f ema50=%.4f entry=%.4f tp=%.4f sl=%.4f\n",
+        printf("[TREND-PB] %s %s ema9=%.4f ema21=%.4f ema50=%.4f entry=%.4f sl=%.4f atr=%.3f\n",
                sym.c_str(), is_long?"LONG":"SHORT",
-               ema9_, ema21_, ema50_, mid, sig.tp, sig.sl);
+               ema9_, ema21_, ema50_, mid, sig.sl, atr_);
         fflush(stdout);
         return sig;
     }
 
     bool has_open_position() const { return pos_.active; }
-    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
-    void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void cancel() noexcept { pos_.reset(); be_locked_ = false; }
+    void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); be_locked_ = false; }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
-    void rollback() noexcept { pos_.reset(); }
+    void rollback() noexcept { pos_.reset(); be_locked_ = false; }
     // Live position accessors for GUI telemetry
     bool   open_is_long() const { return pos_.is_long; }
     double open_entry()   const { return pos_.entry;   }
     double open_sl()      const { return pos_.sl;      }
     double open_tp()      const { return pos_.tp;      }
     double open_size()    const { return pos_.size;    }
+    double current_atr()  const { return atr_;         }
 
     // Expose EMAs for telemetry / external inspection
     double ema9()  const { return ema9_;  }
@@ -1397,9 +1457,11 @@ private:
     double  ema9_          = 0.0;
     double  ema21_         = 0.0;
     double  ema50_         = 0.0;
+    double  atr_           = 0.0;  // EWM ATR-14 for trail sizing
     int     tick_count_    = 0;
     bool    prev_at_ema50_ = false;
     double  prev_mid_      = 0.0;
+    bool    be_locked_     = false;
     int64_t cooldown_until_ = 0;
 };
 

@@ -198,247 +198,13 @@ private:
     }
 };
 
+
 // =============================================================================
-// ENGINE 1 — GoldSilverLeadLag
+// ENGINE 1 — GoldSilverLeadLag — DELETED
+// Deleted 2026-03-31: -$66.48 on 1 trade, held 68min (latency edge held ~70x too long).
+// Silver correlation edge not validated. XAG trading suspended.
 // =============================================================================
-// Gold and silver are correlated ~0.85. When gold makes a sustained directional
-// move, silver typically follows. Edge: enter silver before it reprices.
-//
-// REDESIGN (2026-03) — original problem: arming on a single 20-tick window
-// caused excessive false signals from normal gold noise ($0.50-$1.50 wiggles).
-// The arm fired on every minor fluctuation, not just genuine momentum.
-//
-// FIX: require CONFIRM_WINDOWS consecutive qualifying gold windows before arming.
-//   - Each window = GOLD_WINDOW ticks
-//   - Each window must show >= GOLD_SIGNAL_MOVE in the SAME direction
-//   - If direction flips between windows, counter resets
-//   - This means gold must sustain the move for 3×20 = 60 ticks (~4-12 seconds)
-//     before silver is considered — genuine momentum, not a wiggle
-//
-// ADDITIONAL FIX: silver trend pre-check at arm time (not just at entry).
-//   - At the moment gold qualifies, check silver's last SILVER_CHECK_TICKS ticks
-//   - If silver has already moved >= SILVER_TREND_THRESH in gold's direction,
-//     the edge is gone — silver is already repricing. Do not arm.
-//   - This prevents entering silver that's already in motion.
-//
-// Parameters unchanged from last calibration — thresholds were correct,
-// the arming logic was the problem.
-// =============================================================================
-class GoldSilverLeadLag {
-    double  GOLD_SIGNAL_MOVE    = 2.00;   // $2.00 gold move per window
-    double  SILVER_MIN_REACTION = 0.05;   // silver must not have moved this at entry
-    double  SILVER_TP           = 0.50;   // $0.50 target
-    double  SILVER_SL           = 0.25;   // $0.25 stop
-    int64_t SIGNAL_EXPIRY_MS    = 500;    // arm expires after 500ms
-    double  MAX_SPREAD_GOLD     = 1.50;
-    double  MAX_SPREAD_SILVER   = 0.15;
-    int     COOLDOWN_SEC        = 300;
-    int     MAX_HOLD_SEC        = 60;
 
-    static constexpr int GOLD_WINDOW       = 20;   // ticks per measurement window
-    static constexpr int CONFIRM_WINDOWS   = 3;    // consecutive qualifying windows required
-    static constexpr int SILVER_CHECK_TICKS = 10;  // ticks to check silver pre-movement
-    static constexpr double SILVER_TREND_THRESH = 0.04; // if silver already moved $0.04, edge gone
-
-    // Gold window — rolling measurement
-    std::deque<double> gold_window_;
-    int     window_confirm_count_  = 0;   // consecutive qualifying windows in same direction
-    bool    window_confirm_long_   = false;
-    double  gold_prev_mid_         = 0.0;
-
-    // Silver pre-check window
-    std::deque<double> silver_check_window_;
-
-    // Armed signal state
-    bool    armed_         = false;
-    bool    armed_long_    = false;
-    double  gold_arm_mid_  = 0.0;
-    int64_t arm_time_ms_   = 0;
-
-    double  silver_prev_mid_ = 0.0;
-    int64_t last_entry_sec_  = 0;
-    int     trade_count_     = 0;
-
-    LePositionManager pos_mgr_;
-
-public:
-    bool has_open_position() const { return pos_mgr_.pos.active; }
-    int  trade_count()       const { return trade_count_; }
-
-    void configure(double gold_signal_move, double silver_min_reaction,
-                   double silver_tp, double silver_sl,
-                   int64_t signal_expiry_ms,
-                   double max_spread_gold, double max_spread_silver,
-                   int cooldown_sec, int max_hold_sec) {
-        GOLD_SIGNAL_MOVE    = gold_signal_move;
-        SILVER_MIN_REACTION = silver_min_reaction;
-        SILVER_TP           = silver_tp;
-        SILVER_SL           = silver_sl;
-        SIGNAL_EXPIRY_MS    = signal_expiry_ms;
-        MAX_SPREAD_GOLD     = max_spread_gold;
-        MAX_SPREAD_SILVER   = max_spread_silver;
-        COOLDOWN_SEC        = cooldown_sec;
-        MAX_HOLD_SEC        = max_hold_sec;
-    }
-
-    using CloseCb = LePositionManager::CloseCb;
-
-    // Call on every XAUUSD tick
-    void on_tick_gold(double bid, double ask) noexcept {
-        if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return;
-        const double spread = ask - bid;
-        if (spread > MAX_SPREAD_GOLD) {
-            // Spread blown — disqualify current arm and reset confirmation
-            armed_                = false;
-            window_confirm_count_ = 0;
-            return;
-        }
-        const double mid = (bid + ask) * 0.5;
-        gold_window_.push_back(mid);
-        if ((int)gold_window_.size() > GOLD_WINDOW)
-            gold_window_.pop_front();
-        gold_prev_mid_ = mid;
-
-        if ((int)gold_window_.size() < GOLD_WINDOW) return;
-
-        const double oldest = gold_window_.front();
-        const double move   = mid - oldest;  // signed
-
-        if (std::fabs(move) < GOLD_SIGNAL_MOVE) {
-            // Window does not qualify — reset counter
-            window_confirm_count_ = 0;
-            return;
-        }
-
-        const bool is_long = (move > 0.0);
-
-        if (window_confirm_count_ > 0 && window_confirm_long_ != is_long) {
-            // Direction flipped — restart from 1
-            window_confirm_count_ = 1;
-            window_confirm_long_  = is_long;
-            return;
-        }
-
-        ++window_confirm_count_;
-        window_confirm_long_ = is_long;
-
-        if (window_confirm_count_ < CONFIRM_WINDOWS) return;
-
-        // 3 consecutive qualifying windows in same direction — check silver trend
-        // before arming. If silver is already moving in gold's direction, edge is gone.
-        if (!silver_check_window_.empty()) {
-            const double s_oldest = silver_check_window_.front();
-            const double s_newest = silver_check_window_.back();
-            const double s_move   = s_newest - s_oldest;
-            const bool silver_already_long  = (is_long  && s_move >=  SILVER_TREND_THRESH);
-            const bool silver_already_short = (!is_long && s_move <= -SILVER_TREND_THRESH);
-            if (silver_already_long || silver_already_short) {
-                // Silver already repricing — no edge
-                window_confirm_count_ = 0;
-                return;
-            }
-        }
-
-        // Arm signal — only if not already armed in same direction
-        if (!armed_ || armed_long_ != is_long) {
-            armed_                = true;
-            armed_long_           = is_long;
-            gold_arm_mid_         = mid;
-            arm_time_ms_          = le_now_ms();
-            window_confirm_count_ = 0;  // reset so next arm requires fresh 3 windows
-            printf("[LEAD-LAG-ARM] Gold $%.2f over %d windows × %d ticks → %s | arm_mid=%.2f\n",
-                   move, CONFIRM_WINDOWS, GOLD_WINDOW, is_long ? "LONG" : "SHORT", mid);
-            fflush(stdout);
-        }
-    }
-
-    // Call on every XAGUSD tick
-    LeSignal on_tick_silver(double bid, double ask, double latency_ms,
-                            CloseCb on_close) noexcept {
-        if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return {};
-        const double spread_silver = ask - bid;
-        const double mid           = (bid + ask) * 0.5;
-
-        // Maintain silver pre-check window for gold's use
-        silver_check_window_.push_back(mid);
-        if ((int)silver_check_window_.size() > SILVER_CHECK_TICKS)
-            silver_check_window_.pop_front();
-
-        // Always manage open position first
-        if (pos_mgr_.pos.active) {
-            pos_mgr_.manage(bid, ask, latency_ms, "LEAD_LAG", on_close, MAX_HOLD_SEC);
-        }
-
-        if (!armed_) { silver_prev_mid_ = mid; return {}; }
-
-        // Expiry check
-        const int64_t age_ms = le_now_ms() - arm_time_ms_;
-        if (age_ms > SIGNAL_EXPIRY_MS) {
-            armed_ = false;
-            silver_prev_mid_ = mid;
-            return {};
-        }
-
-        // Spread gate
-        if (spread_silver > MAX_SPREAD_SILVER) {
-            silver_prev_mid_ = mid;
-            return {};
-        }
-
-        // Cooldown
-        if (le_now_sec() - last_entry_sec_ < COOLDOWN_SEC) {
-            silver_prev_mid_ = mid;
-            return {};
-        }
-
-        if (pos_mgr_.pos.active) { silver_prev_mid_ = mid; return {}; }
-
-        // Entry pre-check: has silver already moved in gold's direction since arm?
-        if (silver_prev_mid_ > 0.0) {
-            const double silver_move  = mid - silver_prev_mid_;
-            const bool already_long   = (silver_move >=  SILVER_MIN_REACTION);
-            const bool already_short  = (silver_move <= -SILVER_MIN_REACTION);
-            if ((armed_long_ && already_long) || (!armed_long_ && already_short)) {
-                armed_ = false;
-                silver_prev_mid_ = mid;
-                return {};
-            }
-        }
-
-        // Edge confirmed — enter silver
-        const bool entry_long = armed_long_;
-        armed_ = false;
-        last_entry_sec_ = le_now_sec();
-        ++trade_count_;
-
-        LeSignal sig;
-        sig.valid   = true;
-        sig.is_long = entry_long;
-        sig.entry   = mid;
-        sig.tp      = entry_long ? mid + SILVER_TP : mid - SILVER_TP;
-        sig.sl      = entry_long ? mid - SILVER_SL : mid + SILVER_SL;
-        sig.size    = 0.01;
-        sig.engine  = "GoldSilverLeadLag";
-        sig.reason  = entry_long ? "GOLD_LEADS_LONG" : "GOLD_LEADS_SHORT";
-
-        pos_mgr_.open(sig, spread_silver, "XAGUSD");
-
-        printf("[LEAD-LAG-ENTRY] Silver %s entry=%.4f tp=%.4f sl=%.4f "
-               "gold_moved=%.2f age_ms=%lld\n",
-               sig.is_long ? "LONG" : "SHORT",
-               sig.entry, sig.tp, sig.sl,
-               std::fabs(gold_prev_mid_ - gold_arm_mid_),
-               (long long)age_ms);
-        fflush(stdout);
-
-        silver_prev_mid_ = mid;
-        return sig;
-    }
-
-    void force_close(double bid, double ask, double latency_ms, CloseCb on_close) {
-        pos_mgr_.force_close(bid, ask, latency_ms, "LEAD_LAG", on_close);
-    }
-};
 
 // =============================================================================
 // ENGINE 2 — GoldSpreadDislocation
@@ -880,24 +646,17 @@ struct LatencyEdgeCfg {
 // =============================================================================
 // Single object per process. Call:
 //   on_tick_gold(bid, ask, latency_ms, on_close)   — every XAUUSD tick
-//   on_tick_silver(bid, ask, latency_ms, on_close)  — every XAGUSD tick
 //   has_open_position()                             — any position open
 //   force_close_all(...)                            — disconnect/session end
-// Returns LeSignal from each call so main.cpp can dispatch live orders
-// and update telemetry without the stack needing to know about those systems.
+//
+// GoldSilverLeadLag DELETED 2026-03-31 — see tombstone above.
+// Remaining: SpreadDislocation + EventCompression (manage-only, drain existing).
 // =============================================================================
 class LatencyEdgeStack {
 public:
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
-    // Apply all config-driven parameters. Call once after load_config().
     void configure(const LatencyEdgeCfg& c) {
-        lead_lag_.configure(
-            c.lead_lag_gold_signal_move, c.lead_lag_silver_min_reaction,
-            c.lead_lag_silver_tp,        c.lead_lag_silver_sl,
-            c.lead_lag_signal_expiry_ms,
-            c.lead_lag_max_spread_gold,  c.lead_lag_max_spread_silver,
-            c.lead_lag_cooldown_sec,     c.lead_lag_max_hold_sec);
         spread_disloc_.configure(
             c.spread_disloc_spike_ratio, c.spread_disloc_min_median,
             c.spread_disloc_max_median,  c.spread_disloc_tp,
@@ -916,68 +675,37 @@ public:
         fflush(stdout);
     }
 
-    // Returns valid signal if SpreadDislocation or EventCompression fired this tick.
-    // can_enter=false blocks new entries but still manages any existing open position
-    // to its TP/SL/timeout — existing positions must always be drained regardless.
+    // SpreadDislocation + EventCompression manage-only (no new entries — latency
+    // edge requires <1ms RTT, VPS RTT is ~68ms). Drain existing positions only.
     LeSignal on_tick_gold(double bid, double ask, double latency_ms,
-                          CloseCb on_close, bool can_enter = true) noexcept {
-        // Lead-lag: update gold window every tick (always, even when can_enter=false)
-        // so the 3-window confirmation counter stays current.
-        lead_lag_.on_tick_gold(bid, ask);
-
-        // SpreadDislocation + EventCompression DISABLED for new entries.
-        // These are microstructure/latency-dependent engines. With SO_RCVTIMEO=200ms
-        // on the socket, data can be up to 200ms stale — latency edge is gone.
-        // Drain any existing open positions, then return no signal.
-        spread_disloc_.on_tick(bid, ask, latency_ms, on_close, false);  // manage only
-        event_comp_.on_tick(bid, ask, latency_ms, on_close, false);     // manage only
-
+                          CloseCb on_close, bool /*can_enter*/ = true) noexcept {
+        spread_disloc_.on_tick(bid, ask, latency_ms, on_close, false);
+        event_comp_.on_tick(bid, ask, latency_ms, on_close, false);
         return {};
     }
 
-    // Returns valid signal if lead-lag fired on this silver tick.
-    LeSignal on_tick_silver(double bid, double ask, double latency_ms,
-                            CloseCb on_close) noexcept {
-        return lead_lag_.on_tick_silver(bid, ask, latency_ms, on_close);
-    }
-
     bool has_open_position() const noexcept {
-        return lead_lag_.has_open_position() ||
-               spread_disloc_.has_open_position() ||
+        return spread_disloc_.has_open_position() ||
                event_comp_.has_open_position();
     }
 
     void force_close_all(double gold_bid, double gold_ask,
-                         double silver_bid, double silver_ask,
+                         double /*silver_bid*/, double /*silver_ask*/,
                          double latency_ms, CloseCb on_close) noexcept {
         spread_disloc_.force_close(gold_bid, gold_ask, latency_ms, on_close);
         event_comp_.force_close(gold_bid, gold_ask, latency_ms, on_close);
-        lead_lag_.force_close(silver_bid, silver_ask, latency_ms, on_close);
     }
 
     void print_stats() const noexcept {
-        printf("[LATENCY-EDGE] LeadLag trades=%d  SpreadDisloc trades=%d  EventComp trades=%d\n",
-               lead_lag_.trade_count(),
+        printf("[LATENCY-EDGE] SpreadDisloc trades=%d  EventComp trades=%d\n",
                spread_disloc_.trade_count(),
                event_comp_.trade_count());
         fflush(stdout);
     }
 
 private:
-    GoldSilverLeadLag     lead_lag_;
     GoldSpreadDislocation spread_disloc_;
     GoldEventCompression  event_comp_;
-    LeSignal              last_gold_signal_;
-    LeSignal              last_silver_signal_;
-
-    static void log_entry(const LeSignal& sig, const char* sym) noexcept {
-        printf("[LE-ENTRY] %s %s entry=%.4f tp=%.4f sl=%.4f eng=%s reason=%s\n",
-               sym,
-               sig.is_long ? "LONG" : "SHORT",
-               sig.entry, sig.tp, sig.sl,
-               sig.engine, sig.reason);
-        fflush(stdout);
-    }
 };
 
 } // namespace latency
