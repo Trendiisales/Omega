@@ -5950,6 +5950,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
             if (s_sp_ny_armed && s_sp_ny_open > 0.0) {
+                // ── Spread anomaly gate for VWAPReversion ────────────────────
+                // VWAPReversion is a mean-reversion strategy — it needs settled price.
+                // Wide spread = news/thin liquidity = reversion target unreliable.
+                // Track 100-tick rolling avg spread for this symbol.
+                static std::deque<double> s_vwap_sp_spread_hist;
+                {
+                    s_vwap_sp_spread_hist.push_back(ask - bid);
+                    if (s_vwap_sp_spread_hist.size() > 100) s_vwap_sp_spread_hist.pop_front();
+                }
+                double sp_spread_avg = 0.0;
+                for (double sv : s_vwap_sp_spread_hist) sp_spread_avg += sv;
+                if (!s_vwap_sp_spread_hist.empty()) sp_spread_avg /= s_vwap_sp_spread_hist.size();
+                const bool sp_spread_ok = (sp_spread_avg < 0.5)
+                                        || ((ask - bid) <= sp_spread_avg * 1.8);
+                if (sp_spread_ok) {
                 const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, s_sp_ny_open, ca_on_close,
                     g_macro_ctx.vix, g_macro_ctx.sp_l2_imbalance);
                 if (vr.valid) {
@@ -5962,6 +5977,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         g_vwap_rev_sp.cancel();
                     else g_vwap_rev_sp.patch_size(g_last_directional_lot);
                 }
+                } // sp_spread_ok
             }
         }
         // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
@@ -6023,6 +6039,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
             if (s_nq_ny_armed && s_nq_ny_open > 0.0) {
+                // ── Spread anomaly gate for VWAPReversion ────────────────────
+                static std::deque<double> s_vwap_nq_spread_hist;
+                {
+                    s_vwap_nq_spread_hist.push_back(ask - bid);
+                    if (s_vwap_nq_spread_hist.size() > 100) s_vwap_nq_spread_hist.pop_front();
+                }
+                double nq_spread_avg = 0.0;
+                for (double sv : s_vwap_nq_spread_hist) nq_spread_avg += sv;
+                if (!s_vwap_nq_spread_hist.empty()) nq_spread_avg /= s_vwap_nq_spread_hist.size();
+                const bool nq_spread_ok = (nq_spread_avg < 0.5)
+                                        || ((ask - bid) <= nq_spread_avg * 1.8);
+                if (nq_spread_ok) {
                 const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, s_nq_ny_open, ca_on_close,
                     g_macro_ctx.vix, g_macro_ctx.nq_l2_imbalance);
                 if (vr.valid) {
@@ -6034,6 +6062,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         g_vwap_rev_nq.cancel();
                     else g_vwap_rev_nq.patch_size(g_last_directional_lot);
                 }
+                } // nq_spread_ok
             }
         }
         // TrendPullback: EMA9/21/50 stack grind trades — no timeout, ATR trail.
@@ -6970,6 +6999,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const int64_t now_ms_g = static_cast<long long>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+
+        // ── Bar metric updates — every XAUUSD tick ────────────────────────────
+        // update_tick_metrics: rolling spread avg + tick rate/accel/storm
+        // update_volume_delta: rolling L2 buy/sell pressure (-1..+1)
+        // These feed: spread_ratio (wide-spread gate), tick_storm (suppress
+        // VWAPRev entries during momentum), vol_delta_ratio (confluence scoring)
+        g_bars_gold.m1.update_tick_metrics(ask - bid, now_ms_g);
+        g_bars_gold.m1.update_volume_delta(g_macro_ctx.gold_l2_imbalance);
+
         if (gold_spread_ok) {
             if (now_ms_g - g_bracket_gold_minute_start >= 60000) {
                 g_bracket_gold_minute_start       = now_ms_g;
@@ -7621,6 +7659,171 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
 
+            // ── Gate 4: New bar-derived signal quality gates ──────────────────
+            // Active when m1_ready=true (same condition as Gate 3).
+            // All gates below are additive — any can independently block entry.
+            if (gf_tick_ok && g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+                const bool   gf_long_g4  = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
+
+                // ── Gate 4a: Spread anomaly ───────────────────────────────────
+                // Rolling 200-tick average spread acts as session baseline.
+                // If current spread > 1.5× baseline: news hit / thin liquidity.
+                // Cost doubles at this point — no edge to justify entry.
+                // Evidence: spread spikes to 5-8pts before FOMC announcements
+                // while ATR is valid; old GFE_MAX_SPREAD was a flat cap, not adaptive.
+                {
+                    const double spread_ratio = g_bars_gold.m1.ind.spread_ratio
+                                                    .load(std::memory_order_relaxed);
+                    const double spread_avg   = g_bars_gold.m1.ind.spread_avg
+                                                    .load(std::memory_order_relaxed);
+                    if (spread_avg > 0.5 && spread_ratio > OHLCBarEngine::SPREAD_WIDE_RATIO) {
+                        static int64_t s_spread_gate_log = 0;
+                        if (nowSec() - s_spread_gate_log >= 30) {
+                            s_spread_gate_log = nowSec();
+                            printf("[GF-BAR-BLOCK] XAUUSD %s blocked SPREAD_ANOMALY"
+                                   " spread=%.2f avg=%.2f ratio=%.2f\n",
+                                   gf_long_g4 ? "LONG" : "SHORT",
+                                   ask - bid, spread_avg, spread_ratio);
+                            fflush(stdout);
+                        }
+                        gf_tick_ok = false;
+                        gf_block_reason = "SPREAD_ANOMALY";
+                    }
+                }
+
+                // ── Gate 4b: RSI divergence — upgrade/downgrade signal ────────
+                // RSI divergence does NOT block entries outright (divergence alone
+                // is not precise enough in timing). Instead it:
+                //   bull_div active + SHORT signal → block SHORT (momentum fading up)
+                //   bear_div active + LONG signal  → block LONG  (momentum fading down)
+                // Divergence must have strength >= 3 RSI pts to count (noise filter).
+                // This prevents false blocks from micro-divergences in choppy ranges.
+                if (gf_tick_ok) {
+                    const bool   bull_div    = g_bars_gold.m1.ind.rsi_bull_div
+                                                   .load(std::memory_order_relaxed);
+                    const bool   bear_div    = g_bars_gold.m1.ind.rsi_bear_div
+                                                   .load(std::memory_order_relaxed);
+                    const double div_strength = g_bars_gold.m1.ind.rsi_div_strength
+                                                    .load(std::memory_order_relaxed);
+                    if (bear_div && div_strength >= 3.0 && gf_long_g4) {
+                        // Bearish divergence: buying momentum weakening → block LONG
+                        printf("[GF-BAR-BLOCK] XAUUSD LONG blocked RSI_BEAR_DIV"
+                               " strength=%.1f RSI pts — momentum fading\n", div_strength);
+                        fflush(stdout);
+                        gf_tick_ok = false;
+                        gf_block_reason = "RSI_BEAR_DIV";
+                    } else if (bull_div && div_strength >= 3.0 && !gf_long_g4) {
+                        // Bullish divergence: selling momentum weakening → block SHORT
+                        printf("[GF-BAR-BLOCK] XAUUSD SHORT blocked RSI_BULL_DIV"
+                               " strength=%.1f RSI pts — momentum fading\n", div_strength);
+                        fflush(stdout);
+                        gf_tick_ok = false;
+                        gf_block_reason = "RSI_BULL_DIV";
+                    }
+                }
+
+                // ── Gate 4c: Tick storm — suppress entries during momentum rush ─
+                // When tick_rate >= 8/s, price is moving fast and aggressively.
+                // GoldFlow entries during a tick storm catch the tail end of a move
+                // — the big players are already positioned.
+                // Block VWAPReversion entries during tick storm (mean-reversion needs
+                // settled price; a storm means the move is still in progress).
+                // GoldFlow: allow tick-storm entries ONLY when in continuation mode
+                // (already confirmed the trend) — otherwise block to avoid chasing.
+                if (gf_tick_ok) {
+                    const bool   tick_storm     = g_bars_gold.m1.ind.tick_storm
+                                                      .load(std::memory_order_relaxed);
+                    const double tick_rate      = g_bars_gold.m1.ind.tick_rate
+                                                      .load(std::memory_order_relaxed);
+                    const bool   cont_mode      = g_gold_flow.is_in_continuation_mode();
+                    if (tick_storm && !cont_mode) {
+                        static int64_t s_storm_log = 0;
+                        if (nowSec() - s_storm_log >= 15) {
+                            s_storm_log = nowSec();
+                            printf("[GF-BAR-BLOCK] XAUUSD %s blocked TICK_STORM"
+                                   " rate=%.1f/s — not in continuation mode\n",
+                                   gf_long_g4 ? "LONG" : "SHORT", tick_rate);
+                            fflush(stdout);
+                        }
+                        gf_tick_ok = false;
+                        gf_block_reason = "TICK_STORM";
+                    }
+                }
+
+                // ── Gate 4d: ATR slope + VWAP direction coherence (log-only) ──
+                // ATR slope and VWAP direction are informational for now:
+                //   atr_expanding + vwap aligned with signal = high confidence
+                //   atr_contracting + vwap opposing = lower confidence
+                // Logged to diagnose missed/poor trades — not yet a hard block.
+                // Will be promoted to hard gate after a session of data collection.
+                {
+                    const bool   atr_exp      = g_bars_gold.m1.ind.atr_expanding
+                                                    .load(std::memory_order_relaxed);
+                    const bool   atr_contract = g_bars_gold.m1.ind.atr_contracting
+                                                    .load(std::memory_order_relaxed);
+                    const double atr_slope    = g_bars_gold.m1.ind.atr_slope
+                                                    .load(std::memory_order_relaxed);
+                    const int    vwap_dir     = g_bars_gold.m1.ind.vwap_direction
+                                                    .load(std::memory_order_relaxed);
+                    const double vol_delta    = g_bars_gold.m1.ind.vol_delta_ratio
+                                                    .load(std::memory_order_relaxed);
+                    static int64_t s_coherence_log = 0;
+                    if (nowSec() - s_coherence_log >= 60) {
+                        s_coherence_log = nowSec();
+                        printf("[GF-BAR-INFO] XAUUSD %s atr_slope=%.3f atr_exp=%d atr_con=%d"
+                               " vwap_dir=%+d vol_delta=%.3f tick_rate=%.1f\n",
+                               gf_long_g4 ? "LONG" : "SHORT",
+                               atr_slope, atr_exp ? 1 : 0, atr_contract ? 1 : 0,
+                               vwap_dir, vol_delta,
+                               g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed));
+                        fflush(stdout);
+                    }
+                }
+
+                // ── Gate 4e: BBW squeeze → log + arm breakout watch ───────────
+                // bb_squeeze = price coiling at N-bar band-width minimum.
+                // This is the direct fix for the GoldStack regime lag issue noted
+                // in the session summary: "16:35 surge missed because GoldStack was
+                // in MR regime when breakout started."
+                // When squeeze fires: log it prominently. Future: wire into GoldStack
+                // regime detector to override MR → BREAKOUT_WATCH.
+                {
+                    const bool bb_sq      = g_bars_gold.m1.ind.bb_squeeze
+                                                .load(std::memory_order_relaxed);
+                    const int  sq_bars    = g_bars_gold.m1.ind.bb_squeeze_bars
+                                                .load(std::memory_order_relaxed);
+                    const double bb_w     = g_bars_gold.m1.ind.bb_width
+                                                .load(std::memory_order_relaxed);
+                    const double bb_w_min = g_bars_gold.m1.ind.bb_width_min
+                                                .load(std::memory_order_relaxed);
+                    if (bb_sq && sq_bars == 1) {
+                        // Log the moment squeeze is first detected
+                        printf("[GF-BBW-SQUEEZE] XAUUSD SQUEEZE DETECTED"
+                               " bb_width=%.5f bb_width_min=%.5f sq_bars=%d"
+                               " — breakout setup forming\n",
+                               bb_w, bb_w_min, sq_bars);
+                        fflush(stdout);
+                    }
+                    // Squeeze active: GoldFlow counter-trend entries get extra blocking.
+                    // When bands are coiling, price is about to break one way hard —
+                    // counter-trend entries into a squeeze almost always lose.
+                    if (gf_tick_ok && bb_sq && sq_bars >= 3) {
+                        const int    bar_trend_sq  = g_bars_gold.m5.ind.trend_state
+                                                         .load(std::memory_order_relaxed);
+                        const bool   counter_sq    = (gf_long_g4  && bar_trend_sq == -1)
+                                                  || (!gf_long_g4 && bar_trend_sq == +1);
+                        if (counter_sq) {
+                            printf("[GF-BAR-BLOCK] XAUUSD %s blocked BBW_SQUEEZE_COUNTER"
+                                   " sq_bars=%d M5_trend=%+d — coiling against trend\n",
+                                   gf_long_g4 ? "LONG" : "SHORT", sq_bars, bar_trend_sq);
+                            fflush(stdout);
+                            gf_tick_ok = false;
+                            gf_block_reason = "BBW_SQUEEZE_COUNTER";
+                        }
+                    }
+                }
+            }
+
             // ── Diagnostic: which gate is holding, throttled 30s ──────────────
             // Fires whenever gf_tick_ok=false so logs show exactly what is blocking.
             // Replaces the opaque "NO TRADES FIRING" GUI banner with a specific reason.
@@ -7629,12 +7832,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (nowSec() - s_gf_gate_log_ts >= 30) {
                     s_gf_gate_log_ts = nowSec();
                     const bool gf_dir = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
-                    printf("[GF-GATE-BLOCK] reason=%s atr=%.2f spread=%.3f "
+                    const double spread_ratio = g_bars_gold.m1.ind.spread_ratio
+                                                    .load(std::memory_order_relaxed);
+                    const double tick_rate    = g_bars_gold.m1.ind.tick_rate
+                                                    .load(std::memory_order_relaxed);
+                    const bool   bb_sq        = g_bars_gold.m1.ind.bb_squeeze
+                                                    .load(std::memory_order_relaxed);
+                    const bool   bull_div     = g_bars_gold.m1.ind.rsi_bull_div
+                                                    .load(std::memory_order_relaxed);
+                    const bool   bear_div     = g_bars_gold.m1.ind.rsi_bear_div
+                                                    .load(std::memory_order_relaxed);
+                    printf("[GF-GATE-BLOCK] reason=%s atr=%.2f spread=%.3f spread_ratio=%.2f "
                            "l2=%.3f micro=%.4f "
                            "wall_below=%d wall_above=%d absorb=%d vac_ask=%d vac_bid=%d "
-                           "trail_block=%d post_impulse=%d ny_noise=%d gold_can_enter=%d\n",
+                           "trail_block=%d post_impulse=%d ny_noise=%d gold_can_enter=%d "
+                           "tick_rate=%.1f bb_sq=%d bull_div=%d bear_div=%d\n",
                            gf_block_reason ? gf_block_reason : "UNKNOWN",
-                           g_gold_flow.current_atr(), ask - bid,
+                           g_gold_flow.current_atr(), ask - bid, spread_ratio,
                            g_macro_ctx.gold_l2_imbalance,
                            g_macro_ctx.gold_microprice_bias,
                            g_macro_ctx.gold_wall_below ? 1 : 0,
@@ -7645,7 +7859,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                            gold_trail_blocked ? 1 : 0,
                            gold_post_impulse_block ? 1 : 0,
                            in_ny_close_noise ? 1 : 0,
-                           gold_can_enter ? 1 : 0);
+                           gold_can_enter ? 1 : 0,
+                           tick_rate, bb_sq ? 1 : 0,
+                           bull_div ? 1 : 0, bear_div ? 1 : 0);
                     fflush(stdout);
                 }
             }
