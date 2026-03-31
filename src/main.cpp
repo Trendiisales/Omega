@@ -3878,18 +3878,33 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 fflush(stdout);
             }
 
-            // Force-restart at 10s
-            if (dead_sec >= 10) {
+            // Force-restart at 10s — with backoff after 3 attempts
+            // If broker structurally never sends sizes, stop hammering the connection.
+            // After 3 restarts: give up restarting, warn every 60s instead.
+            // GoldFlow already handles no-L2 via drift-persistence fallback.
+            static const int L2_MAX_RESTARTS = 3;
+            if (dead_sec >= 10 && s_l2_restart_cnt < L2_MAX_RESTARTS) {
                 ++s_l2_restart_cnt;
                 printf("[L2-RESTART] Gold L2 size dead %llds"
-                       " — forcing depth feed restart #%lld\n",
-                       (long long)dead_sec, (long long)s_l2_restart_cnt);
+                       " — forcing depth feed restart #%lld (max %d)\n",
+                       (long long)dead_sec, (long long)s_l2_restart_cnt,
+                       L2_MAX_RESTARTS);
                 fflush(stdout);
                 g_ctrader_depth.stop();
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 g_ctrader_depth.start();
                 s_l2_dead_since = 0;
                 s_l2_warn_last  = 0;
+            } else if (dead_sec >= 10 && s_l2_restart_cnt >= L2_MAX_RESTARTS) {
+                // Broker does not send L2 sizes — drift-persistence mode permanent
+                // Warn once per minute only, no more restarts
+                if (now_wd - s_l2_warn_last >= 60) {
+                    s_l2_warn_last = now_wd;
+                    printf("[L2-NO-SIZE] Broker not sending L2 sizes after %d restarts."
+                           " GoldFlow using drift-persistence. dead=%llds\n",
+                           L2_MAX_RESTARTS, (long long)dead_sec);
+                    fflush(stdout);
+                }
             }
         } else {
             if (s_l2_dead_since != 0) {
