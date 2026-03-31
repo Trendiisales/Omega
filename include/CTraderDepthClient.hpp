@@ -632,25 +632,42 @@ private:
         const auto it = id_to_internal_.find(sym_id);
         if (it == id_to_internal_.end()) return;
         const std::string& name = it->second;
-        // DIAGNOSTIC: log first 5 depth events per symbol to verify sizes are real
+        // DIAGNOSTIC: log first 10 depth events per symbol — full raw field dump
         static std::unordered_map<std::string,int> s_diag_count;
-        if (s_diag_count[name] < 5) {
+        if (s_diag_count[name] < 10) {
             ++s_diag_count[name];
             const auto& qbs = PB::get_repeated_bytes(fields, 4);
-            std::cout << "[CTRADER-BOOK] " << name << " id=" << sym_id
-                      << " levels=" << qbs.size();
-            for (const auto& qb : qbs) {
+            printf("[CTRADER-BOOK] %s id=%llu levels=%zu\n",
+                   name.c_str(), (unsigned long long)sym_id, qbs.size());
+            for (size_t qi = 0; qi < qbs.size() && qi < 3; ++qi) {
+                const auto& qb = qbs[qi];
                 const auto qf = PB::parse(qb);
-                const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,3);
-                const uint64_t bid=PB::get_varint(qf,4), ask=PB::get_varint(qf,5);
-                std::cout << " [id=" << id
-                          << " sz=" << sz
-                          << (bid ? " bid=" : " ask=")
-                          << (bid ? bid : ask) << "/100000=" 
-                          << (bid ? bid : ask)/100000.0 << "]";
+                // Dump ALL parsed fields so we can see exactly what broker sends
+                printf("  quote[%zu] raw_bytes=%zu fields=%zu:\n",
+                       qi, qb.size(), qf.size());
+                for (const auto& fld : qf) {
+                    printf("    field_%d wire%d = %llu\n",
+                           fld.field_num, fld.wire_type,
+                           (unsigned long long)fld.varint);
+                }
+                const uint64_t qid=PB::get_varint(qf,1);
+                const uint64_t sz =PB::get_varint(qf,3);
+                const uint64_t bid=PB::get_varint(qf,4);
+                const uint64_t ask=PB::get_varint(qf,5);
+                printf("  -> id=%llu sz=%llu bid=%llu ask=%llu price=%.5f\n",
+                       (unsigned long long)qid,
+                       (unsigned long long)sz,
+                       (unsigned long long)bid,
+                       (unsigned long long)ask,
+                       (bid?bid:ask)/100000.0);
             }
-            std::cout << "\n";
-            std::cout.flush();
+            // Also dump raw hex of first quote bytes for verification
+            if (!qbs.empty() && qbs[0].size() <= 32) {
+                printf("  raw_hex:");
+                for (uint8_t b : qbs[0]) printf(" %02x", b);
+                printf("\n");
+            }
+            fflush(stdout);
         }
         auto& book = depth_books_[name];
         for (const auto& qb : PB::get_repeated_bytes(fields, 4)) {

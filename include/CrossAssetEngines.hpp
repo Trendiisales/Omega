@@ -1627,6 +1627,14 @@ public:
         const bool downtrend = (ema9_ < ema21_) && (ema21_ < ema50_);
         if (!uptrend && !downtrend) return {};
 
+        // M5 structural trend gate — when bar EMAs active, require M5 agrees
+        // Prevents LONG during confirmed M5 downtrend and vice versa
+        // m5_trend_state_=0 (flat/unknown) allows signals from EMA stack alone
+        if (m_using_bar_emas_ && m5_trend_state_ != 0) {
+            if (uptrend   && m5_trend_state_ < 0) return {};
+            if (downtrend && m5_trend_state_ > 0) return {};
+        }
+
         // Pullback detection: price at EMA50 band
         const double band = mid * PULLBACK_BAND_PCT / 100.0;
         const bool at_ema50 = std::fabs(mid - ema50_) < band;
@@ -1746,6 +1754,9 @@ public:
         m_using_bar_emas_ = true;
     }
 
+    // Seed M5 structural trend — gates signal direction
+    void seed_m5_trend(int trend_state) noexcept { m5_trend_state_ = trend_state; }
+
     bool using_bar_emas() const { return m_using_bar_emas_; }
 
     // Expose EMAs for telemetry / external inspection
@@ -1802,6 +1813,7 @@ private:
     double  ema50_         = 0.0;
     double  atr_           = 0.0;  // EWM ATR-14 for trail sizing
     bool    m_using_bar_emas_ = false;
+    int     m5_trend_state_   = 0;     // +1=uptrend, -1=downtrend, 0=flat (from M5 bars)
     // Consecutive SL tracker — block direction after 2 consecutive SL hits
     int     m_consec_sl_long_  = 0;   // consecutive long SL hits
     int     m_consec_sl_short_ = 0;   // consecutive short SL hits

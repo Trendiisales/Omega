@@ -6050,6 +6050,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bars_sp.m1.ind.ema21.load(std::memory_order_relaxed),
                 g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed),
                 g_bars_sp.m1.ind.atr14.load(std::memory_order_relaxed));
+            g_trend_pb_sp.seed_m5_trend(g_bars_sp.m5.ind.trend_state.load(std::memory_order_relaxed));
         }
         if (g_trend_pb_sp.has_open_position())  { g_trend_pb_sp.on_tick(sym, bid, ask, ca_on_close); }
 
@@ -6179,6 +6180,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bars_nq.m1.ind.ema21.load(std::memory_order_relaxed),
                 g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed),
                 g_bars_nq.m1.ind.atr14.load(std::memory_order_relaxed));
+            g_trend_pb_nq.seed_m5_trend(g_bars_nq.m5.ind.trend_state.load(std::memory_order_relaxed));
         }
         if (g_trend_pb_nq.has_open_position()) { g_trend_pb_nq.on_tick(sym, bid, ask, ca_on_close); }
         if (g_nbm_nq.has_open_position())      { g_nbm_nq.on_tick(sym, bid, ask, ca_on_close); }
@@ -6382,6 +6384,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bars_ger.m1.ind.ema21.load(std::memory_order_relaxed),
                 g_bars_ger.m1.ind.ema50.load(std::memory_order_relaxed),
                 g_bars_ger.m1.ind.atr14.load(std::memory_order_relaxed));
+            g_trend_pb_ger40.seed_m5_trend(g_bars_ger.m5.ind.trend_state.load(std::memory_order_relaxed));
         }
         if (g_trend_pb_ger40.has_open_position()) { g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close); }
 
@@ -8381,6 +8384,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bars_gold.m1.ind.ema21.load(std::memory_order_relaxed),
                 g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed),
                 g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed));
+            g_trend_pb_gold.seed_m5_trend(g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed));
         }
         if (g_trend_pb_gold.has_open_position()) {
             g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
