@@ -668,7 +668,10 @@ private:
     // Updated every tick. Used to gate entries: only trade when price is
     // expanding beyond the recent noise band.
     static constexpr int    GFE_RANGE_WINDOW    = 50;   // 50 ticks ~5-10s
-    static constexpr double GFE_IMPULSE_ATR_MULT = 0.8; // move must be >0.8x ATR to be impulsive
+    static constexpr double GFE_IMPULSE_ATR_MULT = 0.3; // lowered 0.8->0.3: burst-only filter was
+                                                         // blocking slow grinding trends (vol_range=2.56
+                                                         // vs ATR~18 = ratio 0.14, blocked at 0.8).
+                                                         // 0.3x ATR still kills dead flat tape.
     std::deque<double> m_range_window;   // recent mid prices for hi/lo calc
     double m_range_hi = 0.0;
     double m_range_lo = 0.0;
