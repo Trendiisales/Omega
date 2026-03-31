@@ -6122,15 +6122,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
         // Fires when price breaks out of rolling ATR noise band from session open.
         // Primary stop: VWAP crossing. Gated: no other US500.F position open.
-        if (!g_nbm_sp.has_open_position() && !g_orb_us.has_open_position() &&
-            !g_vwap_rev_sp.has_open_position() && base_can_sp) {
-            const auto nbm = g_nbm_sp.on_tick(sym, bid, ask, ca_on_close);
-            if (nbm.valid) {
-                g_telemetry.UpdateLastSignal("US500.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
-                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
-                    g_nbm_sp.cancel();
-                else g_nbm_sp.patch_size(g_last_directional_lot);
+        // Asia gate: mirrors TrendPB gate -- NBM needs real US equity session liquidity.
+        // Block in slot 6 (Asia), slot 0 (dead zone 05-07 UTC), slot 5 (NY late thin tape)
+        // unless M1 bars are seeded AND M5 shows a confirmed trend (same guard as TrendPB).
+        {
+            const bool sp_nbm_offhours = (g_macro_ctx.session_slot == 6 ||
+                                          g_macro_ctx.session_slot == 0 ||
+                                          g_macro_ctx.session_slot == 5);
+            const bool sp_nbm_bars_ok  = g_bars_sp.m1.ind.m1_ready.load(std::memory_order_relaxed);
+            const int  sp_nbm_m5_trend = g_bars_sp.m5.ind.trend_state.load(std::memory_order_relaxed);
+            const bool sp_nbm_gate_ok  = !sp_nbm_offhours || (sp_nbm_bars_ok && sp_nbm_m5_trend != 0);
+            if (!g_nbm_sp.has_open_position() && !g_orb_us.has_open_position() &&
+                !g_vwap_rev_sp.has_open_position() && base_can_sp && sp_nbm_gate_ok) {
+                const auto nbm = g_nbm_sp.on_tick(sym, bid, ask, ca_on_close);
+                if (nbm.valid) {
+                    g_telemetry.UpdateLastSignal("US500.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
+                        nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
+                    if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                        g_nbm_sp.cancel();
+                    else g_nbm_sp.patch_size(g_last_directional_lot);
+                }
             }
         }
         // TrendPullback: EMA9/21/50 stack grind trades -- no timeout, ATR trail.
@@ -6767,14 +6778,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (g_nbm_nas.has_open_position()) { g_nbm_nas.on_tick(sym, bid, ask, ca_on_close); }
 
         // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
-        if (!g_nbm_nas.has_open_position() && base_can_nas) {
-            const auto nbm = g_nbm_nas.on_tick(sym, bid, ask, ca_on_close);
-            if (nbm.valid) {
-                g_telemetry.UpdateLastSignal("NAS100", nbm.is_long?"LONG":"SHORT", nbm.entry,
-                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
-                    g_nbm_nas.cancel();
-                else g_nbm_nas.patch_size(g_last_directional_lot);
+        // Asia gate: NAS100 is a US cash instrument -- no edge during Asia thin tape.
+        // Mirror USTEC.F gate: block slot 6 (Asia), slot 0 (dead zone), slot 5 (NY late)
+        // unless M1 bars seeded AND M5 trend confirmed (same bars as USTEC.F / g_bars_nq).
+        {
+            const bool nas_nbm_offhours = (g_macro_ctx.session_slot == 6 ||
+                                           g_macro_ctx.session_slot == 0 ||
+                                           g_macro_ctx.session_slot == 5);
+            const bool nas_nbm_bars_ok  = g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed);
+            const int  nas_nbm_m5_trend = g_bars_nq.m5.ind.trend_state.load(std::memory_order_relaxed);
+            const bool nas_nbm_gate_ok  = !nas_nbm_offhours || (nas_nbm_bars_ok && nas_nbm_m5_trend != 0);
+            if (!g_nbm_nas.has_open_position() && base_can_nas && nas_nbm_gate_ok) {
+                const auto nbm = g_nbm_nas.on_tick(sym, bid, ask, ca_on_close);
+                if (nbm.valid) {
+                    g_telemetry.UpdateLastSignal("NAS100", nbm.is_long?"LONG":"SHORT", nbm.entry,
+                        nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
+                    if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                        g_nbm_nas.cancel();
+                    else g_nbm_nas.patch_size(g_last_directional_lot);
+                }
             }
         }
     }
@@ -7846,12 +7868,33 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_gold_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
                                        ? g_cfg.risk_per_trade_usd : GFE_RISK_DOLLARS;
 
-            // ?? Pre-tick gate block -- THREE checks before on_tick is called ??
+            // ?? Pre-tick gate block -- FOUR checks before on_tick is called ???
             // GoldFlowEngine enters internally (pos.active=true inside enter()),
             // so main.cpp cannot intercept between signal and entry. All blocking
             // must happen here, before the tick reaches the engine.
-            bool gf_tick_ok = !in_ny_close_noise;
-            const char* gf_block_reason = in_ny_close_noise ? "NY_CLOSE_NOISE" : nullptr;
+            // Gate 0a: NY close noise (21:00-22:00 UTC)
+            // Gate 0b: London open noise (07:00-07:15 UTC) -- same reason as bracket.
+            //   Evidence: SHORT 07:00:34 SL_HIT -$7.97 -- entire $7.80 spread/sweep absorbed.
+            //   GoldEngineStack already blocks its own engines in this window (line ~549).
+            //   GoldFlow did NOT have this guard. This adds parity.
+            //   Exception: if |ewm_drift| >= 3.0 a genuine gap-open is underway -- allow it.
+            const bool in_london_open_noise_gf = [&]() -> bool {
+                if (!g_gold_flow.has_open_position()) {  // only block NEW entries
+                    const auto t_gf = std::chrono::system_clock::to_time_t(
+                        std::chrono::system_clock::now());
+                    struct tm ti_gf{}; gmtime_s(&ti_gf, &t_gf);
+                    const int mins_gf = ti_gf.tm_hour * 60 + ti_gf.tm_min;
+                    if (mins_gf >= 420 && mins_gf < 435) {  // 07:00-07:15 UTC
+                        const double drift_abs = std::fabs(g_gold_stack.ewm_drift());
+                        return drift_abs < 3.0;  // allow gap-open moves, block sweep noise
+                    }
+                }
+                return false;
+            }();
+            bool gf_tick_ok = !in_ny_close_noise && !in_london_open_noise_gf;
+            const char* gf_block_reason = in_ny_close_noise        ? "NY_CLOSE_NOISE"
+                                        : in_london_open_noise_gf  ? "LONDON_OPEN_NOISE"
+                                        : nullptr;
 
             // ?? Gate 1: Cost viability ?????????????????????????????????????????
             // Estimates match engine sizing: sl=ATR?1.0, tp=sl?2 (2R), lot=risk/sl/100
