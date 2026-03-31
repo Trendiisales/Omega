@@ -3709,7 +3709,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         std::lock_guard<std::mutex> lk(g_l2_mtx);
         for (const char* cold_sym : COLD_SYMS) {
             auto it = g_l2_books.find(cold_sym);
-            if (it != g_l2_books.end() && it->second.has_data())
+            // Use bid_count OR ask_count > 0 — cTrader sends incremental one-sided
+            // updates so ask_count may be 0 when bids arrive first and vice versa.
+            // has_data() requires BOTH sides which causes empty book on startup.
+            if (it != g_l2_books.end() &&
+                (it->second.bid_count > 0 || it->second.ask_count > 0))
                 cold_snap[cold_sym] = {it->second, true};
         }
     }
