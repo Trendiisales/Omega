@@ -3190,6 +3190,7 @@ public:
 enum class MarketRegime { COMPRESSION, TREND, MEAN_REVERSION, IMPULSE };
 
 class RegimeGovernor {
+    friend class GoldEngineStack;  // allow save/load warm-restart access
     MinMaxCircularBuffer<double,128> history_;
     MarketRegime current_=MarketRegime::MEAN_REVERSION;
     MarketRegime candidate_=MarketRegime::MEAN_REVERSION;
@@ -4361,6 +4362,54 @@ public:
         for(const auto& e:engines_)
             printf("[GOLD-ENGINE] %-26s signals=%llu\n",
                    e->getName().c_str(),(unsigned long long)e->signal_count_);
+        fflush(stdout);
+    }
+
+    // ── Warm-restart persistence ──────────────────────────────────────────────
+    // Saves vol baseline + governor EWM state so next restart skips the
+    // 400-600 tick cold warmup for GoldStack regime detection.
+    void save_atr_state(const std::string& path) const noexcept {
+        FILE* fp = fopen(path.c_str(), "w");
+        if (!fp) return;
+        fprintf(fp, "ewm_vol_baseline=%.6f\n", ewm_vol_baseline_);
+        fprintf(fp, "baseline_vol_pct=%.6f\n", baseline_vol_pct_);
+        fprintf(fp, "ewm_vol_init=%d\n",        ewm_vol_init_ ? 1 : 0);
+        fprintf(fp, "gov_ewm_fast=%.6f\n",      governor_.ewm_fast_);
+        fprintf(fp, "gov_ewm_slow=%.6f\n",      governor_.ewm_slow_);
+        fprintf(fp, "gov_ewm_init=%d\n",        governor_.ewm_init_ ? 1 : 0);
+        fprintf(fp, "saved_ts=%lld\n",          (long long)std::time(nullptr));
+        fclose(fp);
+    }
+
+    void load_atr_state(const std::string& path) noexcept {
+        FILE* fp = fopen(path.c_str(), "r");
+        if (!fp) return;
+        char line[128];
+        int64_t saved_ts = 0;
+        while (fgets(line, sizeof(line), fp)) {
+            char key[64]; double val = 0.0;
+            if (sscanf(line, "%63[^=]=%lf", key, &val) != 2) continue;
+            const std::string k(key);
+            if      (k == "ewm_vol_baseline") ewm_vol_baseline_ = val;
+            else if (k == "baseline_vol_pct") baseline_vol_pct_ = val;
+            else if (k == "ewm_vol_init")     ewm_vol_init_     = (val > 0.5);
+            else if (k == "gov_ewm_fast")     governor_.ewm_fast_ = val;
+            else if (k == "gov_ewm_slow")     governor_.ewm_slow_ = val;
+            else if (k == "gov_ewm_init")     governor_.ewm_init_ = (val > 0.5);
+            else if (k == "saved_ts")         saved_ts = static_cast<int64_t>(val);
+        }
+        fclose(fp);
+        // Discard state older than 4 hours (overnight gap / weekend)
+        const int64_t age = static_cast<int64_t>(std::time(nullptr)) - saved_ts;
+        if (age > 4 * 3600 || age < 0) {
+            ewm_vol_baseline_ = 0.0; baseline_vol_pct_ = 0.0; ewm_vol_init_ = false;
+            governor_.ewm_fast_ = 0.0; governor_.ewm_slow_ = 0.0; governor_.ewm_init_ = false;
+            printf("[GOLDSTACK] State stale (age=%llds) — cold start\n", (long long)age);
+            return;
+        }
+        printf("[GOLDSTACK] Warm restart: ewm_vol_baseline=%.4f gov_ewm_fast=%.2f"
+               " gov_ewm_slow=%.2f age=%llds\n",
+               ewm_vol_baseline_, governor_.ewm_fast_, governor_.ewm_slow_, (long long)age);
         fflush(stdout);
     }
 

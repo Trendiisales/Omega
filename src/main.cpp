@@ -3238,6 +3238,11 @@ static void maybe_reset_daily_ledger() {
     // Save Kelly performance history (persists win-rate/expectancy across restarts)
     g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
     g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
+    g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
+    g_trend_pb_gold.save_state(log_root_dir()  + "/trend_pb_gold.dat");
+    g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
+    g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
+    g_trend_pb_sp.save_state(log_root_dir()    + "/trend_pb_sp.dat");
     g_edges.reset_daily();  // resets CVD session hi/lo; prev_day updates via on_tick
     g_edges.fill_quality.print_summary();  // log fill quality summary at rollover
 
@@ -4435,6 +4440,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_vwap_rev_eurusd.has_open_position()) +
                 static_cast<int>(g_trend_pb_gold.has_open_position()) +
                 static_cast<int>(g_trend_pb_ger40.has_open_position()) +
+                static_cast<int>(g_trend_pb_nq.has_open_position()) +    // TrendPB USTEC
+                static_cast<int>(g_trend_pb_sp.has_open_position()) +    // TrendPB US500
                 static_cast<int>(g_eng_eurusd.pos.active) +
                 static_cast<int>(g_eng_gbpusd.pos.active) +
                 static_cast<int>(g_eng_audusd.pos.active) +
@@ -5922,6 +5929,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_vwap_rev_sp.on_tick(sym, bid, ask, 0.0, vwap_sp_cb);
         }
         if (g_nbm_sp.has_open_position())       { g_nbm_sp.on_tick(sym, bid, ask, ca_on_close); }
+        if (g_trend_pb_sp.has_open_position())  { g_trend_pb_sp.on_tick(sym, bid, ask, ca_on_close); }
 
         if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {  // ADDED !vwap check
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
@@ -6002,12 +6010,29 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 else g_nbm_sp.patch_size(g_last_directional_lot);
             }
         }
+        // TrendPullback: EMA9/21/50 stack grind trades — no timeout, ATR trail.
+        // Catches slow trends that VWAPReversion times out on.
+        // Only fires when all other US500.F positions are flat.
+        if (!g_trend_pb_sp.has_open_position() && !g_vwap_rev_sp.has_open_position()
+            && !g_nbm_sp.has_open_position() && base_can_sp) {
+            const auto tp_sig = g_trend_pb_sp.on_tick(sym, bid, ask, ca_on_close);
+            if (tp_sig.valid) {
+                g_telemetry.UpdateLastSignal("US500.F", tp_sig.is_long?"LONG":"SHORT",
+                    tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
+                    tp_sig.tp, tp_sig.sl);
+                if (!enter_directional("US500.F", tp_sig.is_long, tp_sig.entry,
+                                       tp_sig.sl, tp_sig.tp, 0.01, true))
+                    g_trend_pb_sp.cancel();
+                else g_trend_pb_sp.patch_size(g_last_directional_lot);
+            }
+        }
     }
     else if (sym == "USTEC.F") {
         const bool base_can_nq = symbol_gate("USTEC.F",
             g_eng_nq.pos.active                  ||
             g_bracket_nq.pos.active              ||
-            g_vwap_rev_nq.has_open_position()    ||  // ADDED
+            g_vwap_rev_nq.has_open_position()    ||
+            g_trend_pb_nq.has_open_position()    ||  // TrendPullback NQ
             g_nbm_nq.has_open_position());            // NBM
         const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
         // SIM: NQ breakout WR 26.1% -$1167. Worst index performer. Disabled.
@@ -7862,12 +7887,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                 }
 
-                // ── Gate 4d: ATR slope + VWAP direction coherence (log-only) ──
-                // ATR slope and VWAP direction are informational for now:
-                //   atr_expanding + vwap aligned with signal = high confidence
-                //   atr_contracting + vwap opposing = lower confidence
-                // Logged to diagnose missed/poor trades — not yet a hard block.
-                // Will be promoted to hard gate after a session of data collection.
+                // ── Gate 4d: ATR slope + VWAP direction coherence (HARD GATE) ──
+                // Promoted from log-only: atr_contracting + vwap opposing signal = block.
+                //   atr_expanding + vwap aligned  → high confidence, pass
+                //   atr_contracting + vwap opposing → structural headwind, BLOCK
+                //   all other combos               → pass with log
                 {
                     const bool   atr_exp      = g_bars_gold.m1.ind.atr_expanding
                                                     .load(std::memory_order_relaxed);
@@ -7879,15 +7903,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                     .load(std::memory_order_relaxed);
                     const double vol_delta    = g_bars_gold.m1.ind.vol_delta_ratio
                                                     .load(std::memory_order_relaxed);
+                    // Hard block: contracting vol + VWAP opposing signal direction
+                    const bool vwap_opposing  = (gf_long_g4  && vwap_dir == -1)
+                                             || (!gf_long_g4 && vwap_dir == +1);
+                    if (gf_tick_ok && atr_contract && vwap_opposing) {
+                        printf("[GF-BAR-BLOCK] XAUUSD %s blocked GATE4D_ATR_CONTRACT_VWAP_OPPOSE"
+                               " atr_slope=%.3f atr_con=1 vwap_dir=%+d\n",
+                               gf_long_g4 ? "LONG" : "SHORT", atr_slope, vwap_dir);
+                        fflush(stdout);
+                        gf_tick_ok = false;
+                        gf_block_reason = "GATE4D_ATR_CONTRACT_VWAP_OPPOSE";
+                    }
+                    // Diagnostic log throttled 60s — shows regime even when not blocking
                     static int64_t s_coherence_log = 0;
                     if (nowSec() - s_coherence_log >= 60) {
                         s_coherence_log = nowSec();
                         printf("[GF-BAR-INFO] XAUUSD %s atr_slope=%.3f atr_exp=%d atr_con=%d"
-                               " vwap_dir=%+d vol_delta=%.3f tick_rate=%.1f\n",
+                               " vwap_dir=%+d vol_delta=%.3f tick_rate=%.1f gate4d=%s\n",
                                gf_long_g4 ? "LONG" : "SHORT",
                                atr_slope, atr_exp ? 1 : 0, atr_contract ? 1 : 0,
                                vwap_dir, vol_delta,
-                               g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed));
+                               g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed),
+                               (atr_contract && vwap_opposing) ? "BLOCK" : "pass");
                         fflush(stdout);
                     }
                 }
@@ -9034,6 +9071,11 @@ static void quote_loop() {
                 if (g_tee_buf) g_tee_buf->force_rotate_check();  // ensure daily log rolls at UTC midnight even if stdout is quiet
                 // Save ATR state every 60s so restarts always have a fresh, valid value
                 g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
+                g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
+                g_trend_pb_gold.save_state(log_root_dir()  + "/trend_pb_gold.dat");
+                g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
+                g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
+                g_trend_pb_sp.save_state(log_root_dir()    + "/trend_pb_sp.dat");
                 std::cout << "[OMEGA-DIAG] PnL=" << g_omegaLedger.dailyPnl()
                           << " T=" << g_omegaLedger.total()
                           << " WR=" << g_omegaLedger.winRate() << "%"
@@ -9234,8 +9276,8 @@ static void quote_loop() {
 
         // Cross-asset engines (VWAP, TrendPB, ORB, Carry, etc.)
         { double b=0,a=0;
-          snap_px("US500.F",b,a); if(b>0&&a>0){g_ca_esnq.force_close(b,a,shutdown_cb);g_orb_us.force_close(b,a,shutdown_cb);g_vwap_rev_sp.force_close(b,a,shutdown_cb);g_nbm_sp.force_close(b,a,shutdown_cb);}
-          snap_px("USTEC.F",b,a); if(b>0&&a>0){g_vwap_rev_nq.force_close(b,a,shutdown_cb);g_nbm_nq.force_close(b,a,shutdown_cb);}
+          snap_px("US500.F",b,a); if(b>0&&a>0){g_ca_esnq.force_close(b,a,shutdown_cb);g_orb_us.force_close(b,a,shutdown_cb);g_vwap_rev_sp.force_close(b,a,shutdown_cb);g_nbm_sp.force_close(b,a,shutdown_cb);g_trend_pb_sp.force_close(b,a,shutdown_cb);}
+          snap_px("USTEC.F",b,a); if(b>0&&a>0){g_vwap_rev_nq.force_close(b,a,shutdown_cb);g_nbm_nq.force_close(b,a,shutdown_cb);g_trend_pb_nq.force_close(b,a,shutdown_cb);}
           snap_px("NAS100",b,a);  if(b>0&&a>0){g_nbm_nas.force_close(b,a,shutdown_cb);}
           snap_px("DJ30.F",b,a);  if(b>0&&a>0){g_nbm_us30.force_close(b,a,shutdown_cb);}
           snap_px("EURUSD",b,a);  if(b>0&&a>0){g_vwap_rev_eurusd.force_close(b,a,shutdown_cb);}
@@ -9737,6 +9779,11 @@ int main(int argc, char* argv[])
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500
     g_trend_pb_ger40.EMA_WARMUP_TICKS = 60;
     g_trend_pb_ger40.COOLDOWN_SEC     = 120;
+    // Load warm EMA state — skips EMA_WARMUP_TICKS cold period on restart
+    g_trend_pb_gold.load_state(log_root_dir()  + "/trend_pb_gold.dat");
+    g_trend_pb_ger40.load_state(log_root_dir() + "/trend_pb_ger40.dat");
+    g_trend_pb_nq.load_state(log_root_dir()    + "/trend_pb_nq.dat");
+    g_trend_pb_sp.load_state(log_root_dir()    + "/trend_pb_sp.dat");
     g_bracket_gold.cancel_order_fn = [](const std::string& id) { send_cancel_order(id); };
     g_bracket_xag.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
 
@@ -10308,6 +10355,12 @@ int main(int argc, char* argv[])
                    g_gold_flow.current_atr() > 0.0 ? "warmed" : "cold-seeded");
         }
 
+        // Load GoldStack vol baseline + governor EWM — skips 400-tick regime warmup
+        {
+            const std::string gs_path = log_root_dir() + "/gold_stack_state.dat";
+            g_gold_stack.load_atr_state(gs_path);
+        }
+
         // Multi-day drawdown throttle: load history, log startup state
         {
             const std::string md_path = log_root_dir() + "/day_results.csv";
@@ -10788,6 +10841,11 @@ int main(int argc, char* argv[])
     // trades survive process restart without re-warming for 15+ trades.
     g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
     g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
+    g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
+    g_trend_pb_gold.save_state(log_root_dir()  + "/trend_pb_gold.dat");
+    g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
+    g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
+    g_trend_pb_sp.save_state(log_root_dir()    + "/trend_pb_sp.dat");
     g_adaptive_risk.print_summary();
     if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); delete g_tee_buf; g_tee_buf = nullptr; }
     WSACleanup();

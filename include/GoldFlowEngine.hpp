@@ -117,8 +117,11 @@ static constexpr int    GFE_COOLDOWN_MS       = 30000;  // 30s cooldown after ex
 // engine can fire within seconds of a restart on seeded data. This guard is
 // unconditional — it cannot be bypassed by seed or load — and ensures the
 // persistence windows have been fed enough REAL market ticks before entry.
-// At ~5 ticks/s Asia / ~10 ticks/s London: 150 ticks ≈ 15-30s real time.
-static constexpr int    GFE_MIN_ENTRY_TICKS   = 150;   // ~15-30s real time before first entry allowed
+// At ~5 ticks/s Asia / ~10 ticks/s London: 50 ticks ≈ 5-10s real time.
+// Reduced from 150: ATR loads from disk (gold_flow_atr.dat) so the 100-tick
+// ATR blind zone is already bypassed. 50 ticks is enough for persistence
+// windows to fill with real market data before first entry is allowed.
+static constexpr int    GFE_MIN_ENTRY_TICKS   = 50;    // ~5-10s real time before first entry allowed
 static constexpr double GFE_RISK_DOLLARS      = 30.0;  // $ risk per trade (fallback)
 static constexpr double GFE_MIN_LOT           = 0.01;
 static constexpr double GFE_MAX_LOT           = 1.0;

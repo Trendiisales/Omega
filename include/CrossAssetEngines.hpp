@@ -1622,6 +1622,48 @@ public:
     double ema21() const { return ema21_; }
     double ema50() const { return ema50_; }
 
+    // ── Warm-restart persistence ─────────────────────────────────────────────
+    // Saves EMA9/21/50 + ATR so next restart skips EMA_WARMUP_TICKS cold period.
+    // State is discarded if older than 4 hours (overnight gap / weekend).
+    void save_state(const std::string& path) const noexcept {
+        if (tick_count_ < EMA_WARMUP_TICKS) return;  // don't save cold state
+        FILE* fp = fopen(path.c_str(), "w");
+        if (!fp) return;
+        fprintf(fp, "ema9=%.6f\n",    ema9_);
+        fprintf(fp, "ema21=%.6f\n",   ema21_);
+        fprintf(fp, "ema50=%.6f\n",   ema50_);
+        fprintf(fp, "atr=%.6f\n",     atr_);
+        fprintf(fp, "saved_ts=%lld\n", (long long)std::time(nullptr));
+        fclose(fp);
+    }
+
+    void load_state(const std::string& path) noexcept {
+        if (has_open_position()) return;  // never overwrite live position state
+        FILE* fp = fopen(path.c_str(), "r");
+        if (!fp) return;
+        char line[128];
+        double e9=0, e21=0, e50=0, atr=0;
+        int64_t saved_ts = 0;
+        while (fgets(line, sizeof(line), fp)) {
+            char key[32]; double val = 0.0;
+            if (sscanf(line, "%31[^=]=%lf", key, &val) != 2) continue;
+            const std::string k(key);
+            if      (k == "ema9")     e9       = val;
+            else if (k == "ema21")    e21      = val;
+            else if (k == "ema50")    e50      = val;
+            else if (k == "atr")      atr      = val;
+            else if (k == "saved_ts") saved_ts = static_cast<int64_t>(val);
+        }
+        fclose(fp);
+        const int64_t age = static_cast<int64_t>(std::time(nullptr)) - saved_ts;
+        if (age > 4 * 3600 || age < 0 || e9 <= 0.0 || e50 <= 0.0) return;
+        ema9_       = e9;
+        ema21_      = e21;
+        ema50_      = e50;
+        atr_        = (atr > 0.0) ? atr : atr_;
+        tick_count_ = EMA_WARMUP_TICKS;  // mark as warmed — skip blind zone
+    }
+
 private:
     CrossPosition pos_;
     double  ema9_          = 0.0;
