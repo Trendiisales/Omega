@@ -366,6 +366,21 @@ public:
         // Quality gate for 05:00-07:00 UTC thin zone: allow entry only if ATR is >= 3x spread
         // (real directional move, not noise). No hard time blocks.
         if (in_london_preopen_thinzone() && s.spread > MAX_SPREAD * 0.70) return noSignal();  // thin zone: only allow tight spreads
+        // Asia dead zone: 01:00-05:00 UTC — Sydney volume exhausted, Tokyo gold thin,
+        // London not open. No directional edge. Evidence: 03:34 UTC CB-LONG $130 loss.
+        // Note: 22:00-01:00 UTC (Sydney open) remains allowed with quality gates.
+        if (is_asia_session) {
+            const auto t2 = std::time(nullptr);
+            struct tm ti2{}; gmtime_s(&ti2, &t2);
+            const int h2 = ti2.tm_hour;
+            if (h2 >= 1 && h2 < 5) return noSignal();  // 01:00-05:00 UTC dead zone
+        }
+        // Asia volatility floor: require implied ATR >= $4 before firing in Asia.
+        // A compression breakout in dead tape is just noise — need real moves behind it.
+        if (is_asia_session && s.volatility > 0.0) {
+            const double implied_atr = s.volatility * 2.5;
+            if (implied_atr < 4.0) return noSignal();
+        }
         auto now=std::chrono::steady_clock::now();
         if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
         if(history_.size() < WINDOW){
