@@ -6896,7 +6896,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
             if (can_arm_trend_bracket) {
                 // Get current ATR from GoldStack for SL sizing
-                const double trend_atr      = g_gold_stack.current_atr();
+                // Use GoldFlow ATR — it has current_atr() tracking real tick volatility.
+                // GoldStack uses volatility * 2.5 proxy; GoldFlow has the proper EWM ATR.
+                // Fallback to vol_range() * 0.5 if GoldFlow ATR not yet warmed.
+                const double gf_atr        = g_gold_flow.current_atr();
+                const double trend_atr      = (gf_atr > 2.0) ? gf_atr
+                                            : (g_gold_stack.vol_range() > 0.0
+                                               ? g_gold_stack.vol_range() * 0.5
+                                               : 15.0);  // absolute fallback $15 on VIX27 day
                 const double sl_mult        = xau_sym_cfg.trend_bracket_sl_mult;
                 const double trend_sl_dist  = std::max(trend_atr * sl_mult, 5.0); // floor $5
                 const bool   is_long_trend  = (gold_trend.bias == 1);
