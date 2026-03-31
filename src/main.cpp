@@ -3793,7 +3793,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         auto it = cold_snap.find(s);
         return (it != cold_snap.end() && it->second.valid) ? &it->second.book : nullptr;
     };
-        // Push L2 book levels to telemetry for GUI depth panel
+        // Push L2 book levels to telemetry for GUI depth panel.
+        // Always push exactly 5 levels — pad with price=0/size=0 if book has fewer.
+        // This prevents the JS depth panel from showing/hiding rows as cTrader sends
+        // partial incremental updates (bid_count fluctuates 1-5 between ticks).
+        // Zero-size levels render as invisible rows (zero-width bar, empty size) — stable.
         auto pushL2 = [&](const char* sym, const L2Book* b) {
             if (!b) return;
             double bp[5]{}, bs[5]{}, ap[5]{}, as_[5]{};
@@ -3801,7 +3805,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const int na = b->ask_count < 5 ? b->ask_count : 5;
             for (int i=0;i<nb;++i){bp[i]=b->bids[i].price;bs[i]=b->bids[i].size;}
             for (int i=0;i<na;++i){ap[i]=b->asks[i].price;as_[i]=b->asks[i].size;}
-            g_telemetry.UpdateL2Book(sym, bp, bs, nb, ap, as_, na);
+            // Always pass count=5 so GUI always receives 5 levels (zeroes are invisible)
+            g_telemetry.UpdateL2Book(sym, bp, bs, 5, ap, as_, 5);
         };
         if (const L2Book* b = getBook("XAUUSD")) {
             g_macro_ctx.gold_book_slope      = b->book_slope();

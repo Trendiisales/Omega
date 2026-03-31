@@ -903,7 +903,7 @@ function _ensureDepthRows() {
     for (let i = 0; i < _depthMaxRows; i++) {
       const row  = document.createElement('div');
       row.className = 'depth-row ' + side;
-      row.style.display = 'none';            // hidden until we have data
+      // Rows are always visible — blank when no data, never toggled hidden
       const bg   = document.createElement('div');  bg.className  = 'depth-bg';
       const px   = document.createElement('span'); px.className  = 'depth-px';
       const sz   = document.createElement('span'); sz.className  = 'depth-sz';
@@ -926,10 +926,12 @@ function updateDepthPanel(d) {
   // ── No data path ─────────────────────────────────────────────────────────
   if (!bids || !bids.length || !asks || !asks.length) {
     ['bid','ask'].forEach(side => {
-      _depthRows[side].forEach((r,i) => {
-        if (i === 0) { r.px.textContent = 'no data'; r.sz.textContent = ''; r.bg.style.width='0%'; r.row.style.display=''; }
-        else r.row.style.display = 'none';
-        r.lastP = null; r.lastS = null;
+      _depthRows[side].forEach(r => {
+        // Keep rows visible but blank — no display toggle
+        if (r.row.style.display === 'none') r.row.style.display = '';
+        if (r.lastP !== '')  { r.px.textContent = ''; r.lastP = ''; }
+        if (r.lastS !== '')  { r.sz.textContent = ''; r.lastS = ''; }
+        if (r.lastBar !== 0) { r.bg.style.width = '0%'; r.lastBar = 0; }
       });
     });
     if (imbEl) { imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t3)'; }
@@ -1002,19 +1004,27 @@ function updateDepthPanel(d) {
     const pool = _depthRows[side];
     for (let i = 0; i < _depthMaxRows; i++) {
       const cell = pool[i];
-      if (i >= levels.length) {
-        if (cell.row.style.display !== 'none') cell.row.style.display = 'none';
-        cell.lastP = null; cell.lastS = null;
+      const lvl  = i < levels.length ? levels[i] : null;
+      // Zero-price = padding level (server always sends 5, pads with p=0/s=0 when book shallow)
+      const hasData = lvl && lvl.p > 0 && lvl.s > 0;
+
+      // Always keep row visible — never toggle display. Blank rows are invisible
+      // due to empty text + zero-width bar. Toggling display causes the jump.
+      if (cell.row.style.display === 'none') cell.row.style.display = '';
+
+      if (!hasData) {
+        if (cell.lastP !== '')  { cell.px.textContent = ''; cell.lastP = ''; }
+        if (cell.lastS !== '')  { cell.sz.textContent = ''; cell.lastS = ''; }
+        if (cell.lastBar !== 0) { cell.bg.style.width = '0%'; cell.lastBar = 0; }
         continue;
       }
-      const lvl    = levels[i];
+
       const pStr   = lvl.p.toFixed(dec);
       const sStr   = lvl.s >= 1000 ? (lvl.s/1000).toFixed(1)+'k' : lvl.s.toFixed(lvl.s < 1 ? 3 : 2);
       const barPct = Math.round(Math.min(100, (lvl.s / maxVol) * 100));
 
-      if (cell.row.style.display === 'none') cell.row.style.display = '';
-      if (cell.lastP !== pStr)  { cell.px.textContent = pStr;  cell.lastP = pStr; }
-      if (cell.lastS !== sStr)  { cell.sz.textContent = sStr;  cell.lastS = sStr; }
+      if (cell.lastP !== pStr)   { cell.px.textContent = pStr;  cell.lastP = pStr; }
+      if (cell.lastS !== sStr)   { cell.sz.textContent = sStr;  cell.lastS = sStr; }
       if (cell.lastBar !== barPct) { cell.bg.style.width = barPct+'%'; cell.lastBar = barPct; }
     }
   }
