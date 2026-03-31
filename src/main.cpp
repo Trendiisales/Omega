@@ -7368,7 +7368,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (gf_atr > 0.0) {
                     const double gf_mid_local = (bid + ask) * 0.5;
                     // Direction proxy: GFE counts l2_imb > 0.75 as long, < 0.25 as short.
-                    // Using 0.5 threshold here would score wrong direction for neutral imb.
                     const bool   gf_long   = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
                     const double gf_tp_est = gf_long
                         ? gf_mid_local + gf_atr * 2.0
@@ -7381,11 +7380,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         g_macro_ctx.gold_microprice_bias,
                         g_macro_ctx.gold_l2_imbalance,
                         gf_vac, gf_wall);
-                    if (gf_score <= -3) {
-                        printf("[GF-EDGE-BLOCK] XAUUSD %s score=%d micro=%.4f l2=%.3f vac=%d wall=%d absorb=%d — blocked\n",
+                    // In continuation mode (after profitable partial), trend is confirmed.
+                    // Relax block threshold from -3 to -4 — don't block on borderline scores.
+                    const bool cont_active = g_gold_flow.is_in_continuation_mode();
+                    const int gf_block_threshold = cont_active ? -4 : -3;
+                    if (gf_score <= gf_block_threshold) {
+                        printf("[GF-EDGE-BLOCK] XAUUSD %s score=%d micro=%.4f l2=%.3f vac=%d wall=%d absorb=%d cont=%d — blocked\n",
                                gf_long ? "LONG" : "SHORT", gf_score,
                                g_macro_ctx.gold_microprice_bias, g_macro_ctx.gold_l2_imbalance,
-                               gf_vac ? 1 : 0, gf_wall ? 1 : 0, gf_absorb ? 1 : 0);
+                               gf_vac ? 1 : 0, gf_wall ? 1 : 0, gf_absorb ? 1 : 0,
+                               cont_active ? 1 : 0);
                         fflush(stdout);
                         gf_tick_ok = false;
                         gf_block_reason = "L2_EDGE_SCORE";

@@ -95,15 +95,15 @@ static constexpr double GFE_ATR_MIN           = 5.0;   // raised 2.0→5.0: XAUU
                                                         // 5pt minimum = 0.11% = survives a real tick move.
                                                         // VIX27 day real ATR is 8-18pts, this is a safe floor.
 static constexpr double GFE_ATR_SL_MULT       = 1.0;   // SL = ATR * this
-static constexpr double GFE_TRAIL_STAGE2_MULT = 1.5;   // EA-matched: wider initial trail, ride moves
-static constexpr double GFE_TRAIL_STAGE3_MULT = 0.5;   // tighten to 0.5x ATR at stage 3
-static constexpr double GFE_TRAIL_STAGE4_MULT = 0.5;   // EA-matched: wider trail at stage4, ride full moves
-static constexpr double GFE_BE_ATR_MULT       = 1.0;   // BE lock at 1x ATR profit
-static constexpr double GFE_PARTIAL_EXIT_R    = 1.0;   // take 50% off at 1R profit — locks win before trail
+static constexpr double GFE_TRAIL_STAGE2_MULT = 0.50;  // trail 0.5×ATR behind MFE from stage 2 on
+static constexpr double GFE_TRAIL_STAGE3_MULT = 0.35;  // tighten to 0.35×ATR at stage 3 (3×ATR profit)
+static constexpr double GFE_TRAIL_STAGE4_MULT = 0.25;  // tighten to 0.25×ATR at stage 4 (8×ATR — ride cascade)
+static constexpr double GFE_BE_ATR_MULT       = 1.0;   // BE lock at 1×ATR profit
+static constexpr double GFE_PARTIAL_EXIT_R    = 1.0;   // take 50% off at 1×ATR profit — locks win before trail
 static constexpr double GFE_PARTIAL_EXIT_FRAC = 0.50;  // fraction to close at partial exit trigger
-static constexpr double GFE_STAGE2_ATR_MULT   = 2.0;   // start trail at 2x ATR profit
-static constexpr double GFE_STAGE3_ATR_MULT   = 8.0;   // EA-matched: only tighten after 8x ATR profit
-static constexpr double GFE_STAGE4_ATR_MULT   = 15.0;  // EA-matched: only tighten at 15x ATR profit
+static constexpr double GFE_STAGE2_ATR_MULT   = 1.0;   // trail arms at 1×ATR — SAME as BE lock, always trailing
+static constexpr double GFE_STAGE3_ATR_MULT   = 3.0;   // tighten trail at 3×ATR profit (was 8×)
+static constexpr double GFE_STAGE4_ATR_MULT   = 8.0;   // final tighten at 8×ATR — ride cascade (was 15×)
 static constexpr double GFE_MAX_SPREAD        = 2.5;   // pts — London gold spread $1.50-$4.00; old 0.6 blocked all entries
 static constexpr int    GFE_MIN_HOLD_MS       = 5000;   // 5s minimum hold
 static constexpr int    GFE_MAX_HOLD_MS       = 3600000; // 60 min — EA has no hold limit, keep generous — prevents indefinite holds on flat tape
@@ -443,6 +443,10 @@ struct GoldFlowEngine {
 
     bool is_in_cooldown() const noexcept {
         return phase == Phase::COOLDOWN;
+    }
+
+    bool is_in_continuation_mode() const noexcept {
+        return m_continuation_mode;
     }
 
     // reset_drift_persistence() — clears the 20-tick drift-persistence window.
