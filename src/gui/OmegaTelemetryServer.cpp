@@ -356,8 +356,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
             pos += snprintf(buf+pos, sizeof(buf)-pos, "]");
             result += buf;
         };
-        // Gold book: now uses real XAUUSD spot data from cTrader id=41 (pinned).
-        // GOLD.F suppression removed -- prices are correct XAUUSD spot prices.
+        // Gold book: XAUUSD spot data from cTrader (pinned by ID then name).
         appendBook("gold", s->l2_book_gold_bid, s->l2_book_gold_bids,
                            s->l2_book_gold_ask, s->l2_book_gold_asks);
         appendBook("sp",    s->l2_book_sp_bid,   s->l2_book_sp_bids,   s->l2_book_sp_ask,   s->l2_book_sp_asks);

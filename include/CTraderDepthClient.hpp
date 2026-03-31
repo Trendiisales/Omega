@@ -410,15 +410,15 @@ private:
         //
         // Pass 2: pick the SINGLE correct XAUUSD spot entry:
         //   Primary:  id == 41  (BlackBull FIX confirmed spot ID, immutable)
-        //   Fallback: sname == "XAUUSD" and id != any known-futures id
-        //   Never subscribe: GOLD.F, GOLD, XAUUSD.P, or any XAU* other than
+        //   Fallback: sname == "XAUUSD" and id != known-futures id and not a .P contract
+        //   Never subscribe: gold futures, XAUUSD.P, or any XAU* other than
         //                    the one chosen spot entry.
         //
-        // GOLD.F (id=2660) is ALWAYS blocked regardless of whitelist.
+        // Gold futures (id=2660) is ALWAYS blocked regardless of whitelist.
         // No alias may remap "XAUUSD" to anything -- it is its own internal name.
 
-        static constexpr uint64_t XAUUSD_FIX_ID   = 41;    // BlackBull FIX/cTrader spot -- confirmed
-        static constexpr uint64_t GOLDF_FUTURES_ID = 2660;  // BlackBull GOLD.F futures -- always blocked
+        static constexpr uint64_t XAUUSD_FIX_ID      = 41;    // BlackBull FIX/cTrader spot -- confirmed
+        static constexpr uint64_t GOLD_FUTURES_ID     = 2660;  // BlackBull gold futures -- always blocked
 
         // Pass 1: parse the full symbol list
         id_to_name_.clear(); depth_books_.clear(); id_to_internal_.clear();
@@ -436,7 +436,7 @@ private:
 
         // Pass 2: find the correct XAUUSD spot entry
         // Primary: id == XAUUSD_FIX_ID (41)
-        // Fallback: sname == "XAUUSD" and id != GOLDF_FUTURES_ID and not a .P contract
+        // Fallback: sname == "XAUUSD" and id != GOLD_FUTURES_ID and not a .P contract
         int64_t xauusd_spot_id = -1;
         std::string xauusd_spot_name;
         for (const auto& e : all_syms) {
@@ -452,7 +452,7 @@ private:
             // FIX id not found -- name-based fallback
             for (const auto& e : all_syms) {
                 if (e.sname == "XAUUSD"
-                    && uint64_t(e.sid) != GOLDF_FUTURES_ID
+                    && uint64_t(e.sid) != GOLD_FUTURES_ID
                     && e.sname.find(".P") == std::string::npos) {
                     xauusd_spot_id   = e.sid;
                     xauusd_spot_name = e.sname;
@@ -466,7 +466,7 @@ private:
             depth_books_["XAUUSD"] = CTDepthBook{};
             id_to_internal_[uint64_t(xauusd_spot_id)] = "XAUUSD";
             std::cout << "[CTRADER] PINNED: XAUUSD spot id=" << xauusd_spot_id
-                      << " (" << xauusd_spot_name << ") -- all other XAU/GOLD blocked\n";
+                      << " (" << xauusd_spot_name << ") -- all other XAU/gold blocked\n";
         } else {
             std::cerr << "[CTRADER] CRITICAL: cannot identify XAUUSD spot -- no id=41 and no"
                          " name=XAUUSD in symbol list. L2 will be unavailable for gold.\n";
@@ -477,8 +477,8 @@ private:
         if (xauusd_spot_id >= 0) sub_ids.push_back(xauusd_spot_id);  // gold always first
 
         for (const auto& e : all_syms) {
-            const int64_t sid   = e.sid;
-            const std::string& sname = e.sname;
+            const int64_t sid         = e.sid;
+            const std::string& sname  = e.sname;
 
             // Skip: the XAUUSD spot we already registered
             if (sid == xauusd_spot_id) {
@@ -489,12 +489,13 @@ private:
                 continue;
             }
 
-            // HARD BLOCK: GOLD.F and every other XAU/GOLD variant
-            // This is unconditional -- whitelist cannot override it.
-            if (sname == "GOLD.F" || sname == "GOLD" ||
-                sname.find("XAU") != std::string::npos) {
+            // HARD BLOCK: gold futures and every other XAU/gold variant.
+            // Unconditional -- whitelist cannot override.
+            if (uint64_t(sid) == GOLD_FUTURES_ID ||
+                sname.find("XAU") != std::string::npos ||
+                sname == "GOLD" || sname == "XAUUSD") {
                 std::cout << "[CTRADER] BLOCKED: " << sname << " id=" << sid
-                          << " (XAU/GOLD non-spot)\n";
+                          << " (gold non-spot)\n";
                 continue;
             }
 

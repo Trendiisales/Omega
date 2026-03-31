@@ -925,10 +925,8 @@ static std::unordered_map<std::string,int>     g_frozen_count;   // symbol ? con
 static constexpr int64_t STALE_QUOTE_SEC  = 30;   // 30s without tick = genuinely stale feed
 static constexpr int     FROZEN_TICK_MAX  = 20;   // 20 consecutive identical bids = frozen feed
                                                    // At ~1 tick/10s: 20 ticks = 3.3 min of freeze
-                                                   // Evidence: GOLD.F sent 4522.47 for 1318/1552 ticks
-                                                   // (84% of Monday session) -- never triggered silence
-                                                   // check because timestamps updated. Price-freeze
-                                                   // detection catches this category of broken feed.
+                                                   // Price-freeze detection catches brokers that
+                                                   // repeat last-price with updated timestamps.
 
 // Record a tick receipt (called from on_tick per symbol)
 // Also tracks consecutive identical bids for frozen-feed detection.
@@ -2145,9 +2143,7 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
             // Force spot ID 41 to always resolve to internal name "XAUUSD"
             g_id_to_sym[41] = "XAUUSD";
         } else if (name == "XAUUSD") {
-            // Block futures entry -- broker SecurityList names futures contract "GOLD.F" (ID 2660)
-            // This string match MUST stay: it rejects stray futures ticks from the broker feed
-            // Any stray futures ticks are silently dropped.
+            // Block stray futures ticks from broker FIX feed (ID 2660) -- routed to dead key
             g_id_to_sym[id] = "XAUUSD.FUTURES.IGNORED";
         } else {
             g_id_to_sym[id] = name;
@@ -9184,8 +9180,7 @@ static void quote_loop() {
                         }
                         // Check 2: frozen price -- N consecutive identical bids
                         // Catches broker sending repeated last-price instead of live feed.
-                        // Evidence: GOLD.F sent 4522.47 for 1318/1552 ticks (84% of session)
-                        // -- timestamps updated so silence check never fired, but price never moved.
+                        // Broker repeated last-price with updated timestamps -- price never moved.
                         // At FROZEN_TICK_MAX=20 ticks (~3.3 min at Asia tick rate), re-subscribe.
                         auto fc = g_frozen_count.find(psym);
                         if (fc != g_frozen_count.end() && fc->second >= FROZEN_TICK_MAX) {
