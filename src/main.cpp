@@ -5154,13 +5154,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
         const auto bsigs = bracket_eng.get_signals();
         if (bsigs.valid) {
-            const double base_lot = compute_size(sym,
-                std::fabs(bsigs.long_entry - bsigs.long_sl), ask - bid,
+            const double raw_sl_dist = std::fabs(bsigs.long_entry - bsigs.long_sl);
+            // Pyramid: cap SL and lot to limit add-on risk
+            const double eff_sl_dist = is_pyramiding
+                ? std::min(raw_sl_dist, raw_sl_dist * 0.5)  // 50% of natural SL for pyramids
+                : raw_sl_dist;
+            const double base_lot = compute_size(sym, eff_sl_dist, ask - bid,
                 bracket_eng.ENTRY_SIZE);
-            const double lot = is_pyramiding ? (base_lot * PYRAMID_SIZE_MULT) : base_lot;
+            const double raw_lot = is_pyramiding ? (base_lot * PYRAMID_SIZE_MULT) : base_lot;
+            // Cap pyramid lot at 50% of normal max lot for this symbol
+            const double max_pyr_lot = is_pyramiding ? 0.10 : 1.0;  // indices: max 0.10 lots pyramid
+            const double lot = std::min(raw_lot, max_pyr_lot);
             // Cost guard: ensure spread+cost is covered by bracket TP distance
             {
-                const double tp_dist = std::fabs(bsigs.long_entry - bsigs.long_sl) *
+                const double tp_dist = raw_sl_dist *
                     (bracket_eng.RR > 0.0 ? bracket_eng.RR : 1.5);
                 if (!ExecutionCostGuard::is_viable(sym.c_str(), ask - bid, tp_dist, lot)) {
                     g_telemetry.IncrCostBlocked();
