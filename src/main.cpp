@@ -6875,6 +6875,112 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Having it here blocked ALL bracket arming when FLOW-BIAS-INJECT set bias,
             // which is exactly when we WANT pyramiding to be possible.
 
+            // ── Trend-direction bracket (IMPULSE regime) ──────────────────────────
+            // When gold_impulse_regime=true the symmetric bracket is blocked because
+            // compression geometry breaks down in a thrust.
+            // This path fires ONE-SIDED: only the trend-direction stop order is sent.
+            // SL is ATR-based (not range-based) so it reflects actual trend volatility.
+            // Controlled by TREND_BRACKET_ENABLED and TREND_BRACKET_SL_MULT in symbols.ini.
+            const auto& xau_sym_cfg = g_sym_cfg.get("XAUUSD");
+            const bool can_arm_trend_bracket =
+                xau_sym_cfg.trend_bracket_enabled
+                && gold_impulse_regime           // only in IMPULSE/thrusting moves
+                && gold_trend.bias != 0          // established trend direction required
+                && gold_can_enter                // all standard risk/session gates
+                && gold_freq_ok
+                && !bracket_open                 // no existing bracket position
+                && !g_gold_flow.has_open_position()
+                && !g_gold_stack.has_open_position()
+                && !in_cooldown_phase
+                && !in_london_open_noise;
+
+            if (can_arm_trend_bracket) {
+                // Get current ATR from GoldStack for SL sizing
+                const double trend_atr      = g_gold_stack.current_atr();
+                const double sl_mult        = xau_sym_cfg.trend_bracket_sl_mult;
+                const double trend_sl_dist  = std::max(trend_atr * sl_mult, 5.0); // floor $5
+                const bool   is_long_trend  = (gold_trend.bias == 1);
+
+                // Entry: stop order at bracket edge in trend direction
+                const double trend_entry    = is_long_trend ? g_bracket_gold.bracket_high
+                                                            : g_bracket_gold.bracket_low;
+                if (trend_entry > 0.0) {
+                    // SL: ATR-based behind entry, not the opposite bracket level
+                    const double trend_sl   = is_long_trend ? (trend_entry - trend_sl_dist)
+                                                            : (trend_entry + trend_sl_dist);
+                    // TP: range × RR in trend direction (same as normal bracket)
+                    const double brk_range  = g_bracket_gold.bracket_high - g_bracket_gold.bracket_low;
+                    const double trend_tp   = is_long_trend
+                        ? (trend_entry + brk_range * g_bracket_gold.RR)
+                        : (trend_entry - brk_range * g_bracket_gold.RR);
+
+                    // Sizing: risk-based on ATR SL
+                    const double tb_lot     = std::min(
+                        compute_size("XAUUSD", trend_sl_dist, ask - bid, g_bracket_gold.ENTRY_SIZE),
+                        0.30);  // hard cap at 0.30 lots for trend bracket
+
+                    // Cost viability check
+                    const double tb_tp_dist = std::fabs(trend_tp - trend_entry);
+                    const bool tb_cost_ok   = ExecutionCostGuard::is_viable(
+                        "XAUUSD", ask - bid, tb_tp_dist, tb_lot);
+
+                    if (tb_cost_ok && tb_lot >= 0.01) {
+                        printf("[TREND-BRACKET] XAUUSD %s entry=%.2f sl=%.2f(dist=%.2f) tp=%.2f"
+                               " atr=%.2f mult=%.1f lot=%.4f bias=%d drift=%.2f\n",
+                               is_long_trend ? "LONG" : "SHORT",
+                               trend_entry, trend_sl, trend_sl_dist, trend_tp,
+                               trend_atr, sl_mult, tb_lot, gold_trend.bias,
+                               gold_ewm_drift_now);
+                        fflush(stdout);
+
+                        // Send ONLY trend-direction stop order — no counter leg
+                        write_trade_open_log("XAUUSD", "TrendBracket",
+                            is_long_trend ? "LONG" : "SHORT",
+                            trend_entry, trend_tp, trend_sl, tb_lot,
+                            ask - bid, gold_stack_regime, "TREND_BRACKET_ARM");
+
+                        const std::string tb_id = send_live_order(
+                            "XAUUSD", is_long_trend, tb_lot, trend_entry);
+
+                        // Register with bracket engine as one-sided pending
+                        // pending_both carries the filled side only
+                        omega::BracketBothSignals tb_sig;
+                        tb_sig.valid        = true;
+                        tb_sig.size         = tb_lot;
+                        if (is_long_trend) {
+                            tb_sig.long_entry  = trend_entry;
+                            tb_sig.long_sl     = trend_sl;
+                            tb_sig.long_tp     = trend_tp;
+                            tb_sig.short_entry = 0.0;  // no counter leg
+                            tb_sig.short_sl    = 0.0;
+                            tb_sig.short_tp    = 0.0;
+                            g_bracket_gold.pending_long_clOrdId  = tb_id;
+                            g_bracket_gold.pending_short_clOrdId = "";  // nothing to cancel
+                        } else {
+                            tb_sig.short_entry = trend_entry;
+                            tb_sig.short_sl    = trend_sl;
+                            tb_sig.short_tp    = trend_tp;
+                            tb_sig.long_entry  = 0.0;  // no counter leg
+                            tb_sig.long_sl     = 0.0;
+                            tb_sig.long_tp     = 0.0;
+                            g_bracket_gold.pending_short_clOrdId = tb_id;
+                            g_bracket_gold.pending_long_clOrdId  = "";  // nothing to cancel
+                        }
+                        g_bracket_gold.pending_both = tb_sig;
+                        g_bracket_gold.phase = omega::BracketPhase::PENDING;
+                        g_bracket_gold.ENTRY_SIZE = tb_lot;
+                        g_telemetry.UpdateLastSignal("XAUUSD", "TREND_BRACKET",
+                            trend_entry, "TREND_DIRECTION_ONLY",
+                            gold_stack_regime, regime.c_str(), "TREND_BRACKET",
+                            trend_tp, trend_sl);
+                        ++g_bracket_gold_trades_this_minute;
+                    } else {
+                        printf("[TREND-BRACKET] XAUUSD BLOCKED cost_ok=%d lot=%.4f tp_dist=%.2f\n",
+                               (int)tb_cost_ok, tb_lot, tb_tp_dist);
+                    }
+                }
+            }
+
             // ── Gold bracket gate diagnostic — prints every 10s ───────────────
             {
                 static int64_t s_last_brk_diag = 0;
