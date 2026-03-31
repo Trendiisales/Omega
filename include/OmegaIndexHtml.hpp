@@ -573,7 +573,7 @@ R"OMEGA4(
 R"OMEGA5(
 
     <!-- Watchdog banner — shown when session is active but no trade in 20min -->
-    <div id="watchdogBanner" style="display:none;margin:0 0 6px 0;padding:7px 12px;background:rgba(255,136,0,0.10);border:1px solid rgba(255,136,0,0.45);border-radius:7px;display:none;align-items:center;gap:10px;">
+    <div id="watchdogBanner" style="display:none;margin:0 0 6px 0;padding:7px 12px;background:rgba(255,136,0,0.10);border:1px solid rgba(255,136,0,0.45);border-radius:7px;align-items:center;gap:10px;">
       <span style="font-size:13px;color:var(--amber)">⚠</span>
       <div style="flex:1">
         <span style="font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:1px;">No trades firing</span>
@@ -639,7 +639,7 @@ R"OMEGA5(
       <div class="fix-item"><span class="fix-lbl">Seq Gaps <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">missed msgs</span></span><span class="fix-val" id="fixGaps" style="color:var(--t1)">0</span></div>
       <div class="fix-item"><span class="fix-lbl">Orders <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">sent</span></span><span class="fix-val" id="fixOrders" style="color:var(--t1)">0</span></div>
       <div class="fix-item"><span class="fix-lbl">Fills <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">executions</span></span><span class="fix-val" id="fixFills" style="color:var(--t1)">0</span></div>
-      <div class="fix-item"><span class="fix-lbl">BUILD <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">git hash</span></span><span class="fix-val" id="buildVersion" style="color:var(--t2);font-size:9px">...</span></div>
+      <div class="fix-item"><span class="fix-lbl">BUILD <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">git hash</span></span><span class="fix-val" id="buildVersionRight" style="color:var(--t2);font-size:9px">...</span></div>
     </div>
 
     <!-- Governor Blocks -->
@@ -681,7 +681,7 @@ R"OMEGA5(
       </div>
       <!-- imbalance bar: bid pressure left (green), ask pressure right (red) -->
       <div class="depth-imb-bar">
-        <div class="depth-imb-fill" id="depthImbFill" style="width:50%;left:50%;background:var(--t3);transform:translateX(-50%);"></div>
+        <div class="depth-imb-fill" id="depthImbFill" style="width:2px;left:50%;background:var(--t3);"></div>
       </div>
       <div class="depth-wrap">
         <div class="depth-side">
@@ -877,8 +877,9 @@ let   _depthLastSizeUpdate = 0;  // timestamp of last size-only repaint
 
 function setDepthSym(sym) {
   _depthSym = sym;
-  // Force repaint on symbol switch by clearing the cached best prices
+  // Force full repaint on symbol switch — clear price cache AND size throttle
   delete _depthLastBest[sym];
+  _depthLastSizeUpdate = 0;   // new symbol should show sizes immediately
   // Update button active states
   ['gold','sp','eur'].forEach(s => {
     const b = document.getElementById('dbtn' + (s === 'eur' ? 'neur' : s));
@@ -950,7 +951,7 @@ function updateDepthPanel(d) {
         r.lastP = null; r.lastS = null;
       });
     });
-    if (imbEl) { imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t3)'; }
+    if (imbEl) { imbEl.style.transform=''; imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t3)'; }
     if (badge) { badge.textContent = 'IMB --'; badge.style.color = 'var(--t2)'; }
     return;
   }
@@ -998,6 +999,7 @@ function updateDepthPanel(d) {
   const dispImb   = (scalarImb !== 0.5) ? scalarImb : imb;
   const dev       = dispImb - 0.5;
   if (imbEl) {
+    imbEl.style.transform = '';   // always clear — initial HTML had translateX which persists otherwise
     if (Math.abs(dev) < 0.03) {
       imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t2)';
     } else if (dev > 0) {
@@ -1316,19 +1318,19 @@ function updateDashboard(d){
   pxDir('dirSp',d.sp_bid,d.sp_ask,0.5);
   px('nqBid',d.nq_bid,2);px('nqAsk',d.nq_ask,2);sprd('nqSpread',d.nq_bid,d.nq_ask);
   pxDir('dirNq',d.nq_bid,d.nq_ask,0.5);
-  px('djBid',d.dj_bid,2);px('djAsk',d.dj_ask,2);
+  px('djBid',d.dj_bid,2);px('djAsk',d.dj_ask,2);sprd('djSpread',d.dj_bid,d.dj_ask);
   pxDir('dirDj',d.dj_bid,d.dj_ask,1.0);
-  px('nasBid',d.nas_bid,2);px('nasAsk',d.nas_ask,2);
+  px('nasBid',d.nas_bid,2);px('nasAsk',d.nas_ask,2);sprd('nasSpread',d.nas_bid,d.nas_ask);
   pxDir('dirNas',d.nas_bid,d.nas_ask,0.5);
   px('clBid',d.cl_bid,2);px('clAsk',d.cl_ask,2);sprd('clSpread',d.cl_bid,d.cl_ask);
   pxDir('dirCl',d.cl_bid,d.cl_ask,0.02);
   px('brentBid',d.brent_bid,2);px('brentAsk',d.brent_ask,2);sprd('brentSpread',d.brent_bid,d.brent_ask);
   pxDir('dirBrent',d.brent_bid,d.brent_ask,0.02);
-  px('ger30Bid',d.ger30_bid,2);px('ger30Ask',d.ger30_ask,2);
+  px('ger30Bid',d.ger30_bid,2);px('ger30Ask',d.ger30_ask,2);sprd('ger30Spread',d.ger30_bid,d.ger30_ask);
   pxDir('dirGer',d.ger30_bid,d.ger30_ask,0.5);
-  px('uk100Bid',d.uk100_bid,2);px('uk100Ask',d.uk100_ask,2);
+  px('uk100Bid',d.uk100_bid,2);px('uk100Ask',d.uk100_ask,2);sprd('uk100Spread',d.uk100_bid,d.uk100_ask);
   pxDir('dirUk',d.uk100_bid,d.uk100_ask,0.5);
-  px('estx50Bid',d.estx50_bid,2);px('estx50Ask',d.estx50_ask,2);
+  px('estx50Bid',d.estx50_bid,2);px('estx50Ask',d.estx50_ask,2);sprd('estx50Spread',d.estx50_bid,d.estx50_ask);
   pxDir('dirEstx',d.estx50_bid,d.estx50_ask,0.5);
   px('eurBid',d.eurusd_bid,5);px('eurAsk',d.eurusd_ask,5);sprd('eurSpread',d.eurusd_bid,d.eurusd_ask);
   pxDir('dirEur',d.eurusd_bid,d.eurusd_ask,0.00005);
@@ -1535,6 +1537,8 @@ function updateDashboard(d){
   // Build version
   const bv=document.getElementById('buildVersion');
   if(bv&&d.build_version){bv.textContent=d.build_version;const bb=document.getElementById('buildBadge');if(bb)bb.title='Built: '+(d.build_time||'?');}
+  const bvr=document.getElementById('buildVersionRight');
+  if(bvr&&d.build_version)bvr.textContent=d.build_version;
 
 )OMEGA23"
 R"OMEGA23B(
@@ -1580,7 +1584,6 @@ R"OMEGA23B(
           banner.style.background=isCrit?'rgba(255,51,85,0.10)':'rgba(255,136,0,0.10)';
           const col=isCrit?'var(--red)':'var(--amber)';
           banner.querySelector('span').style.color=col;
-          banner.querySelector('.watchdog-lbl')||0;
           if(age) age.style.color=col;
           if(age) age.textContent=mins+'m idle';
           if(msg){
