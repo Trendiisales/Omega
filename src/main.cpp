@@ -6136,17 +6136,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // TrendPullback: EMA9/21/50 stack grind trades -- no timeout, ATR trail.
         // Catches slow trends that VWAPReversion times out on.
         // Only fires when all other US500.F positions are flat.
-        if (!g_trend_pb_sp.has_open_position() && !g_vwap_rev_sp.has_open_position()
-            && !g_nbm_sp.has_open_position() && base_can_sp) {
-            const auto tp_sig = g_trend_pb_sp.on_tick(sym, bid, ask, ca_on_close);
-            if (tp_sig.valid) {
-                g_telemetry.UpdateLastSignal("US500.F", tp_sig.is_long?"LONG":"SHORT",
-                    tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
-                    tp_sig.tp, tp_sig.sl);
-                if (!enter_directional("US500.F", tp_sig.is_long, tp_sig.entry,
-                                       tp_sig.sl, tp_sig.tp, 0.01, true))
-                    g_trend_pb_sp.cancel();
-                else g_trend_pb_sp.patch_size(g_last_directional_lot);
+        // Asia gate: block during Asia/dead-zone unless M5 trend confirmed + bars seeded.
+        {
+            const bool sp_in_offhours = (g_macro_ctx.session_slot == 6 || g_macro_ctx.session_slot == 0);
+            const bool sp_bars_ready  = g_bars_sp.m1.ind.m1_ready.load(std::memory_order_relaxed);
+            const int  sp_m5_trend    = g_bars_sp.m5.ind.trend_state.load(std::memory_order_relaxed);
+            const bool sp_trendpb_ok  = !sp_in_offhours || (sp_bars_ready && sp_m5_trend != 0);
+            if (!g_trend_pb_sp.has_open_position() && !g_vwap_rev_sp.has_open_position()
+                && !g_nbm_sp.has_open_position() && base_can_sp && sp_trendpb_ok) {
+                const auto tp_sig = g_trend_pb_sp.on_tick(sym, bid, ask, ca_on_close);
+                if (tp_sig.valid) {
+                    g_telemetry.UpdateLastSignal("US500.F", tp_sig.is_long?"LONG":"SHORT",
+                        tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
+                        tp_sig.tp, tp_sig.sl);
+                    if (!enter_directional("US500.F", tp_sig.is_long, tp_sig.entry,
+                                           tp_sig.sl, tp_sig.tp, 0.01, true))
+                        g_trend_pb_sp.cancel();
+                    else g_trend_pb_sp.patch_size(g_last_directional_lot);
+                }
             }
         }
     }
@@ -6233,28 +6240,52 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // TrendPullback: EMA9/21/50 stack grind trades -- no timeout, ATR trail.
         // Catches slow trends that VWAPReversion times out on.
         // Only fires when VWAP position is flat -- they share the same direction thesis.
-        if (!g_trend_pb_nq.has_open_position() && !g_vwap_rev_nq.has_open_position()
-            && !g_nbm_nq.has_open_position() && base_can_nq) {
-            const auto tp_sig = g_trend_pb_nq.on_tick(sym, bid, ask, ca_on_close);
-            if (tp_sig.valid) {
-                g_telemetry.UpdateLastSignal("USTEC.F", tp_sig.is_long?"LONG":"SHORT",
-                    tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
-                    tp_sig.tp, tp_sig.sl);
-                if (!enter_directional("USTEC.F", tp_sig.is_long, tp_sig.entry,
-                                       tp_sig.sl, tp_sig.tp, 0.01, true))
-                    g_trend_pb_nq.cancel();
-                else g_trend_pb_nq.patch_size(g_last_directional_lot);
+        //
+        // Asia/dead-zone gate: block during Asia (slot=6, 22-05 UTC) and dead zone
+        // (slot=0, 05-07 UTC) unless M5 trend is clearly established AND M1 bars seeded.
+        // Without real bar EMAs the engine uses tick-based EMAs that are meaningless
+        // at Asia open -- produces 0-second SL hits from spread noise.
+        {
+            const int slot_nq = g_macro_ctx.session_slot;
+            const bool nq_in_offhours = (slot_nq == 6 || slot_nq == 0);
+            const bool nq_bars_ready  = g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed);
+            const int  nq_m5_trend    = g_bars_nq.m5.ind.trend_state.load(std::memory_order_relaxed);
+            // During off-hours: only trade if M1 bars seeded AND M5 shows clear trend
+            const bool nq_trendpb_ok  = !nq_in_offhours || (nq_bars_ready && nq_m5_trend != 0);
+
+            if (!g_trend_pb_nq.has_open_position() && !g_vwap_rev_nq.has_open_position()
+                && !g_nbm_nq.has_open_position() && base_can_nq && nq_trendpb_ok) {
+                const auto tp_sig = g_trend_pb_nq.on_tick(sym, bid, ask, ca_on_close);
+                if (tp_sig.valid) {
+                    g_telemetry.UpdateLastSignal("USTEC.F", tp_sig.is_long?"LONG":"SHORT",
+                        tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
+                        tp_sig.tp, tp_sig.sl);
+                    if (!enter_directional("USTEC.F", tp_sig.is_long, tp_sig.entry,
+                                           tp_sig.sl, tp_sig.tp, 0.01, true))
+                        g_trend_pb_nq.cancel();
+                    else g_trend_pb_nq.patch_size(g_last_directional_lot);
+                }
             }
         }
         // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
-        if (!g_nbm_nq.has_open_position() && !g_vwap_rev_nq.has_open_position() && base_can_nq) {
-            const auto nbm = g_nbm_nq.on_tick(sym, bid, ask, ca_on_close);
-            if (nbm.valid) {
-                g_telemetry.UpdateLastSignal("USTEC.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
-                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
-                    g_nbm_nq.cancel();
-                else g_nbm_nq.patch_size(g_last_directional_lot);
+        // Same Asia gate -- NBM needs real momentum, not Asia drift noise.
+        {
+            const int slot_nq2 = g_macro_ctx.session_slot;
+            const bool nq_in_offhours2 = (slot_nq2 == 6 || slot_nq2 == 0);
+            const bool nq_bars_ready2  = g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed);
+            const int  nq_m5_trend2    = g_bars_nq.m5.ind.trend_state.load(std::memory_order_relaxed);
+            const bool nq_nbm_ok       = !nq_in_offhours2 || (nq_bars_ready2 && nq_m5_trend2 != 0);
+
+            if (!g_nbm_nq.has_open_position() && !g_vwap_rev_nq.has_open_position()
+                && base_can_nq && nq_nbm_ok) {
+                const auto nbm = g_nbm_nq.on_tick(sym, bid, ask, ca_on_close);
+                if (nbm.valid) {
+                    g_telemetry.UpdateLastSignal("USTEC.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
+                        nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
+                    if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                        g_nbm_nq.cancel();
+                    else g_nbm_nq.patch_size(g_last_directional_lot);
+                }
             }
         }
     }
@@ -6341,14 +6372,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (g_nbm_us30.has_open_position()) { g_nbm_us30.on_tick(sym, bid, ask, ca_on_close); }
 
         // NoiseBandMomentum: Zarattini/Maroy intraday momentum (Sharpe 3.0-5.9).
-        if (!g_nbm_us30.has_open_position() && base_can_us30) {
-            const auto nbm = g_nbm_us30.on_tick(sym, bid, ask, ca_on_close);
-            if (nbm.valid) {
-                g_telemetry.UpdateLastSignal("DJ30.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
-                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
-                    g_nbm_us30.cancel();
-                else g_nbm_us30.patch_size(g_last_directional_lot);
+        // Asia gate: DJ30 is a US instrument -- no edge in Asia thin liquidity.
+        // Only trade during London(1), core(2), overlap(3), NY open(4), NY late(5).
+        {
+            const int slot_us30 = g_macro_ctx.session_slot;
+            const bool us30_session_ok = (slot_us30 >= 1 && slot_us30 <= 5);
+            if (!g_nbm_us30.has_open_position() && base_can_us30 && us30_session_ok) {
+                const auto nbm = g_nbm_us30.on_tick(sym, bid, ask, ca_on_close);
+                if (nbm.valid) {
+                    g_telemetry.UpdateLastSignal("DJ30.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
+                        nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
+                    if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                        g_nbm_us30.cancel();
+                    else g_nbm_us30.patch_size(g_last_directional_lot);
+                }
             }
         }
     }
@@ -6416,15 +6453,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
         }
-        // Trend Pullback: EMA9/21/50 stack -- fires only when no other GER40 position open
-        if (!g_trend_pb_ger40.has_open_position() && base_can_ger
-            && !g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position()) {
-            const auto tp_sig = g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close);
-            if (tp_sig.valid) {
-                g_telemetry.UpdateLastSignal("GER40", tp_sig.is_long?"LONG":"SHORT", tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB", tp_sig.tp, tp_sig.sl);
-                if (!enter_directional("GER40", tp_sig.is_long, tp_sig.entry, tp_sig.sl, tp_sig.tp, 0.01, true))
-                    g_trend_pb_ger40.cancel();
-                    else g_trend_pb_ger40.patch_size(g_last_directional_lot);
+        // Trend Pullback: EMA9/21/50 stack -- fires only when no other GER40 position open.
+        // Session gate: GER40 is EU -- only trade London/EU hours (slots 1-3, 07-14 UTC).
+        // Asia and NY late have no edge on European indices.
+        {
+            const int slot_ger = g_macro_ctx.session_slot;
+            const bool ger_session_ok = (slot_ger >= 1 && slot_ger <= 3);
+            if (!g_trend_pb_ger40.has_open_position() && base_can_ger && ger_session_ok
+                && !g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position()) {
+                const auto tp_sig = g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close);
+                if (tp_sig.valid) {
+                    g_telemetry.UpdateLastSignal("GER40", tp_sig.is_long?"LONG":"SHORT", tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB", tp_sig.tp, tp_sig.sl);
+                    if (!enter_directional("GER40", tp_sig.is_long, tp_sig.entry, tp_sig.sl, tp_sig.tp, 0.01, true))
+                        g_trend_pb_ger40.cancel();
+                        else g_trend_pb_ger40.patch_size(g_last_directional_lot);
+                }
             }
         }
     }
