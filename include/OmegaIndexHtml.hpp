@@ -1457,6 +1457,8 @@ function updateDashboard(d){
   if(l2LblG)l2LblG.style.color=goldReal?'var(--green)':'var(--t3)';
   if(l2LblC)l2LblC.style.color=ctLive?'var(--green)':'var(--t3)';
 
+)OMEGA23"
+R"OMEGA23C(
   // ── Live open trades panel ──────────────────────────────────────────────
   const ltPanel=document.getElementById('liveTradesPanel');
   if(ltPanel){
@@ -1637,6 +1639,8 @@ function updateDashboard(d){
             transform="translate(0,0)"/>
         </svg>`;
 
+)OMEGA23C"
+R"OMEGA23D(
         // Polygon points with calc() don't work in SVG — use viewBox approach instead
         // Rewrite needle as proper SVG with numeric coords via a viewBox
         const VW = 600; // viewBox width units
@@ -1788,7 +1792,7 @@ function updateDashboard(d){
   const bvr=document.getElementById('buildVersionRight');
   if(bvr&&d.build_version)bvr.textContent=d.build_version;
 
-)OMEGA23"
+)OMEGA23D"
 R"OMEGA23B(
   // Session badge
   const sb=document.getElementById('sessionBadge');

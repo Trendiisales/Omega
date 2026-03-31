@@ -1357,7 +1357,7 @@ public:
                 tr.exitTs     = ca_now_sec();
                 tr.exitReason = reason;
                 tr.engine     = "TrendPullback";
-                tr.spread_at_entry = pos_.spread_at_entry;
+                tr.spreadAtEntry = pos_.spread_at_entry;
                 const double tick_val = (sym.find("XAU") != std::string::npos) ? 100.0
                                       : (sym.find("US500") != std::string::npos) ? 50.0 : 1.0;
                 tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px))
