@@ -1133,7 +1133,17 @@ public:
     std::string current_path() const { std::lock_guard<std::mutex> lk(mtx_); return current_path_; }
     bool is_open() const { std::lock_guard<std::mutex> lk(mtx_); return file_.is_open(); }
 
-    void force_rotate_check() { std::lock_guard<std::mutex> lk(mtx_); check_rotate(); }
+    void force_rotate_check() {
+        std::lock_guard<std::mutex> lk(mtx_);
+        const std::string before = current_path_;
+        check_rotate();
+        // If file rotated, write a header so we know log is alive
+        if (current_path_ != before && file_buf_) {
+            const std::string hdr = "[OMEGA-LOG] Daily rotation — new log: " + current_path_ + "\n";
+            file_buf_->sputn(hdr.c_str(), (std::streamsize)hdr.size());
+            file_.flush();
+        }
+    }
 
     void flush_and_close() {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -1184,18 +1194,34 @@ private:
 
     void open_today() {
         if (file_.is_open()) { file_.flush(); file_.close(); file_buf_ = nullptr; }
-        _mkdir(log_dir_.c_str());
+        // Use filesystem::create_directories — _mkdir returns -1 if dir exists
+        // which was silently ignored, but more importantly create_directories
+        // handles nested paths and Unicode correctly on Windows.
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        fs::create_directories(fs::path(log_dir_), ec);
         current_path_ = log_dir_ + "/omega_" + utc_date_str() + ".log";
         file_.open(current_path_, std::ios::app);
         file_buf_    = file_.is_open() ? file_.rdbuf() : nullptr;
-        current_day_ = utc_day_of_year();
+        current_day_      = utc_day_of_year();
+        current_date_str_ = utc_date_str();
+        if (!file_.is_open()) {
+            // Print direct to orig_ (console) — tee not usable if file failed
+            const std::string msg = "[OMEGA-LOG-FAIL] Cannot open log: " + current_path_ + "
+";
+            if (orig_) orig_->sputn(msg.c_str(), (std::streamsize)msg.size());
+        }
         purge_old_logs();
     }
 
     void check_rotate() {
-        if (utc_day_of_year() != current_day_)
+        // Compare full date string not just day-of-year — day-of-year wraps
+        // at year boundary and can miss the Jan 1 rotation.
+        if (utc_date_str() != current_date_str_)
             open_today();
     }
+
+    std::string current_date_str_; // set in open_today via utc_date_str()
 
     void purge_old_logs() {
         // Enumerate logs/omega_*.log and delete files older than LOG_KEEP_DAYS
@@ -3810,6 +3836,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.gold_l2_real    = g_l2_gold.has_data.load(std::memory_order_relaxed);
     g_macro_ctx.sp_l2_real      = g_l2_sp.has_data.load(std::memory_order_relaxed);
     g_macro_ctx.cl_l2_real      = g_l2_cl.has_data.load(std::memory_order_relaxed);
+
+    // ── Midnight log rotation — every tick check, guaranteed rotation ───────────
+    // force_rotate_check runs every 60s in diagnostic loop but if stdout is
+    // quiet it may not fire. Check every tick so rotation is never missed.
+    if (g_tee_buf) {
+        static int64_t s_last_rotate_check = 0;
+        const int64_t now_rot = nowSec();
+        if (now_rot - s_last_rotate_check >= 5) {  // check every 5s max
+            s_last_rotate_check = now_rot;
+            g_tee_buf->force_rotate_check();
+        }
+    }
 
     // ── L2 size-dead watchdog — warn at 5s, force-restart at 10s ──────────────
     // cTrader sends depth events (prices arrive) but size=0 on all levels.
