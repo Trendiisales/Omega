@@ -77,7 +77,9 @@ Copy-Item ".\chimera_logo.png" "C:\Omega\chimera_logo.png" -Force -ErrorAction S
 New-Item -ItemType Directory -Path "C:\Omega\logs" -Force | Out-Null
 Write-Host "      [OK] C:\Omega\logs ready" -ForegroundColor Green
 
-# Run from C:\Omega so all paths (logs, config, assets) resolve correctly
+# Run from C:\Omega so all paths resolve correctly
+# Tee output to log file at shell level as belt-and-suspenders
 Set-Location C:\Omega
-Write-Host "Starting Omega.exe from $(Get-Location)..." -ForegroundColor Cyan
-.\Omega.exe omega_config.ini
+$logFile = "C:\Omega\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
+Write-Host "Starting Omega.exe — log: $logFile" -ForegroundColor Cyan
+.\Omega.exe omega_config.ini 2>&1 | Tee-Object -FilePath $logFile -Append

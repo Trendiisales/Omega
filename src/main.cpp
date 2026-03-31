@@ -10675,58 +10675,25 @@ int main(int argc, char* argv[])
     build_id_map();
 
     // Open log file and tee stdout into it
-    // ── Log file — direct FILE* redirect, no RollingTeeBuffer complexity ───────
-    // freopen stdout+stderr to C:\Omega\logs\omega_YYYY-MM-DD.log
-    // This is the simplest possible approach — no class, no mutex, no is_open check.
-    // Daily rotation handled by a watchdog thread that reopens at UTC midnight.
+    // Log file: stdout/stderr teed to file via RollingTeeBuffer
+    // g_tee_buf wires std::cout -> file. Console output preserved.
     {
         const std::string log_dir = "C:\\Omega\\logs";
-        // Ensure directory exists
-        CreateDirectoryA(log_dir.c_str(), nullptr);  // fine if already exists
-        // Build today's log path
-        auto now_t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        struct tm ti{}; gmtime_s(&ti, &now_t);
-        char datebuf[32];
-        snprintf(datebuf, sizeof(datebuf), "%04d-%02d-%02d",
-                 ti.tm_year+1900, ti.tm_mon+1, ti.tm_mday);
-        const std::string log_path = log_dir + "\\omega_" + datebuf + ".log";
-        // Redirect stdout and stderr — append mode so restarts don't clobber
-        if (!freopen(log_path.c_str(), "a", stdout)) {
-            fprintf(stderr, "[OMEGA-FATAL] Cannot open log %s errno=%d\n",
-                    log_path.c_str(), errno);
-        } else {
-            setvbuf(stdout, nullptr, _IOLBF, 0);  // line-buffered
-            freopen(log_path.c_str(), "a", stderr);
-            setvbuf(stderr, nullptr, _IOLBF, 0);
-            printf("[OMEGA] Log file: %s\n", log_path.c_str());
-            fflush(stdout);
-        }
-        // Also keep g_tee_buf = nullptr — RollingTeeBuffer not used
+        CreateDirectoryA(log_dir.c_str(), nullptr);
         g_orig_cout = std::cout.rdbuf();
-        // Midnight rotation thread — reopens log file at UTC midnight
-        std::thread([](){
-            char last_date[16] = {};
-            while (true) {
-                std::this_thread::sleep_for(std::chrono::seconds(10));
-                auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-                struct tm ti2{}; gmtime_s(&ti2, &t);
-                char d[16];
-                snprintf(d, sizeof(d), "%04d-%02d-%02d",
-                         ti2.tm_year+1900, ti2.tm_mon+1, ti2.tm_mday);
-                if (strcmp(d, last_date) != 0 && last_date[0] != 0) {
-                    // Date changed — reopen log
-                    const std::string np = std::string("C:\\Omega\\logs\\omega_") + d + ".log";
-                    fflush(stdout);
-                    freopen(np.c_str(), "a", stdout);
-                    freopen(np.c_str(), "a", stderr);
-                    setvbuf(stdout, nullptr, _IOLBF, 0);
-                    setvbuf(stderr, nullptr, _IOLBF, 0);
-                    printf("[OMEGA] Log rotated: %s\n", np.c_str());
-                    fflush(stdout);
-                }
-                memcpy(last_date, d, sizeof(d));
-            }
-        }).detach();
+        g_tee_buf   = new RollingTeeBuffer(g_orig_cout, log_dir);
+        if (!g_tee_buf->is_open()) {
+            // Log failed — print to stderr (not tee'd) and continue without log
+            // Do NOT return 1 — process must keep running
+            fprintf(stderr, "[OMEGA-LOG-WARN] Cannot open log under %s — continuing without log\n",
+                    log_dir.c_str());
+            delete g_tee_buf;
+            g_tee_buf = nullptr;
+        } else {
+            std::cout.rdbuf(g_tee_buf);
+            std::cerr.rdbuf(g_tee_buf);
+            std::cout << "[OMEGA] Log: " << g_tee_buf->current_path() << "\n";
+        }
     }
 
     {
