@@ -127,8 +127,22 @@ inline std::vector<Field> parse(const uint8_t* data, size_t len) {
         Field f; f.field_num = int(tag>>3); f.wire_type = int(tag&7);
         if      (f.wire_type == 0) { f.varint = read_varint(data, len, pos); }
         else if (f.wire_type == 2) { uint64_t sz = read_varint(data,len,pos); if(pos+sz>len) break; f.bytes.assign(data+pos,data+pos+sz); pos+=sz; }
-        else if (f.wire_type == 1) { pos+=8; continue; }
-        else if (f.wire_type == 5) { pos+=4; continue; }
+        else if (f.wire_type == 1) {
+            // fixed64 — read 8 bytes little-endian into varint so get_varint() works
+            if (pos+8 > len) break;
+            f.varint = uint64_t(data[pos]) | (uint64_t(data[pos+1])<<8) |
+                       (uint64_t(data[pos+2])<<16) | (uint64_t(data[pos+3])<<24) |
+                       (uint64_t(data[pos+4])<<32) | (uint64_t(data[pos+5])<<40) |
+                       (uint64_t(data[pos+6])<<48) | (uint64_t(data[pos+7])<<56);
+            pos+=8;
+        }
+        else if (f.wire_type == 5) {
+            // fixed32 — read 4 bytes little-endian
+            if (pos+4 > len) break;
+            f.varint = uint64_t(data[pos]) | (uint64_t(data[pos+1])<<8) |
+                       (uint64_t(data[pos+2])<<16) | (uint64_t(data[pos+3])<<24);
+            pos+=4;
+        }
         else break;
         fields.push_back(std::move(f));
     }
