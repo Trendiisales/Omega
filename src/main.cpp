@@ -1210,8 +1210,7 @@ private:
         current_date_str_ = utc_date_str();
         if (!file_.is_open()) {
             // Print direct to orig_ (console) — tee not usable if file failed
-            const std::string msg = "[OMEGA-LOG-FAIL] Cannot open log: " + current_path_ + "
-";
+            const std::string msg = "[OMEGA-LOG-FAIL] Cannot open log: " + current_path_ + "\n";
             if (orig_) orig_->sputn(msg.c_str(), (std::streamsize)msg.size());
         }
         purge_old_logs();

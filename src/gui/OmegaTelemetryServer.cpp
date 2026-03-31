@@ -994,7 +994,7 @@ void OmegaTelemetryServer::run(int port)
                 fclose(fp);
                 break;
             }
-            if (body.empty()) body = "{"error":"symbols_resolved.json not found — connect cTrader first"}";
+            if (body.empty()) body = "{\"error\":\"symbols_resolved.json not found - connect cTrader first\"}";
         }
         else if (strstr(buf, "GET /api/telemetry"))        { ct = "application/json"; body = buildTelemetryJson(snap_); }
         else if (strstr(buf, "GET /api/trades"))      { ct = "application/json"; body = buildTradesJson(); }
