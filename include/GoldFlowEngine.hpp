@@ -202,7 +202,6 @@ struct GoldFlowEngine {
         // Session classification: Asia (slot 6) and dead zone (slot 0) are low-quality tape
         const bool is_low_quality_session = (session_slot == 6 || session_slot == 0);
         const double eff_max_spread = is_low_quality_session ? GFE_ASIA_MAX_SPREAD : GFE_MAX_SPREAD;
-        const int    eff_cooldown   = is_low_quality_session ? GFE_ASIA_COOLDOWN_MS : GFE_COOLDOWN_MS;
 
         // Feed ATR and momentum history (always — warmup must run every tick)
         update_atr(spread, mid);
