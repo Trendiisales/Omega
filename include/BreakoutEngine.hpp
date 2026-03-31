@@ -536,11 +536,14 @@ public:
                     ? (mid - pos.entry) / pos.entry * 100.0
                     : (pos.entry - mid) / pos.entry * 100.0;
 
-                const double lock_arm   = sl_pct * 0.50;
-                const double trail1_arm = sl_pct * 1.00;
-                const double trail2_arm = sl_pct * 2.00;
-                const double trail1_dist = sl_pct * 0.40;
-                const double trail2_dist = sl_pct * 0.25;
+                const double lock_arm   = sl_pct * 0.50;   // BE at 50% of SL in profit
+                // Trail arms now TP-relative not SL-relative — arms much sooner on
+                // breakout trades where TP >> SL (e.g. USTEC: TP=93pts, SL=58pts)
+                const double tp_pct     = (TP_PCT > 0.0) ? TP_PCT : sl_pct * 1.6;
+                const double trail1_arm = tp_pct * 0.60;   // trail at 60% of TP (was 1×SL = ~2.5×TP for 1.6R trades)
+                const double trail2_arm = tp_pct * 1.00;   // tight trail at TP (was 2×SL)
+                const double trail1_dist = sl_pct * 0.30;  // slightly tighter dist (was 0.40)
+                const double trail2_dist = sl_pct * 0.15;  // much tighter on big winners (was 0.25)
                 const double lock_gain   = sl_pct * 0.10;
 
                 if (move_pct >= trail2_arm) {
