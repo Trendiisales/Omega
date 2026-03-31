@@ -3474,7 +3474,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Pass VIX level so seed ATR scales to actual volatility regime.
             // VIX 27 day → seed_atr=18pts → SL=18pts — survives real moves.
             // VIX 15 day → seed_atr=5pts  → SL=5pts  — appropriate for quiet tape.
-            g_gold_flow.seed(mid, g_macro_ctx.vix_level);
+            g_gold_flow.seed(mid, g_macro_ctx.vix);
         }
     }
 
@@ -9419,7 +9419,7 @@ int main(int argc, char* argv[])
             g_gold_flow.load_atr_state(atr_path);  // real ATR if file exists
             // Pass VIX at startup — if VIX feed not yet live this gives 10pt default
             // which is far safer than the old 3pt hardcoded seed
-            g_gold_flow.seed(0.0, g_macro_ctx.vix_level);  // VIX-scaled fallback if no ATR file
+            g_gold_flow.seed(0.0, g_macro_ctx.vix);  // VIX-scaled fallback if no ATR file
             printf("[GFE] Startup ATR: m_atr=%.4f (%s)\n",
                    g_gold_flow.current_atr(),
                    g_gold_flow.current_atr() > 0.0 ? "warmed" : "cold-seeded");
