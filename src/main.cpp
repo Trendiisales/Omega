@@ -6138,7 +6138,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Only fires when all other US500.F positions are flat.
         // Asia gate: block during Asia/dead-zone unless M5 trend confirmed + bars seeded.
         {
-            const bool sp_in_offhours = (g_macro_ctx.session_slot == 6 || g_macro_ctx.session_slot == 0);
+            const bool sp_in_offhours = (g_macro_ctx.session_slot == 6 || g_macro_ctx.session_slot == 0 || g_macro_ctx.session_slot == 5); // slot5=NY late thin tape
             const bool sp_bars_ready  = g_bars_sp.m1.ind.m1_ready.load(std::memory_order_relaxed);
             const int  sp_m5_trend    = g_bars_sp.m5.ind.trend_state.load(std::memory_order_relaxed);
             const bool sp_trendpb_ok  = !sp_in_offhours || (sp_bars_ready && sp_m5_trend != 0);
@@ -6247,7 +6247,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // at Asia open -- produces 0-second SL hits from spread noise.
         {
             const int slot_nq = g_macro_ctx.session_slot;
-            const bool nq_in_offhours = (slot_nq == 6 || slot_nq == 0);
+            const bool nq_in_offhours = (slot_nq == 6 || slot_nq == 0 || slot_nq == 5);
+            // slot 5 = NY late (17:00-22:00 UTC): US indices thin after NY close.
+            // Same gate as Asia -- only trade if M1 bars seeded AND M5 trend confirmed.
             const bool nq_bars_ready  = g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed);
             const int  nq_m5_trend    = g_bars_nq.m5.ind.trend_state.load(std::memory_order_relaxed);
             // During off-hours: only trade if M1 bars seeded AND M5 shows clear trend
@@ -6271,7 +6273,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Same Asia gate -- NBM needs real momentum, not Asia drift noise.
         {
             const int slot_nq2 = g_macro_ctx.session_slot;
-            const bool nq_in_offhours2 = (slot_nq2 == 6 || slot_nq2 == 0);
+            const bool nq_in_offhours2 = (slot_nq2 == 6 || slot_nq2 == 0 || slot_nq2 == 5); // slot5=NY late thin tape
             const bool nq_bars_ready2  = g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed);
             const int  nq_m5_trend2    = g_bars_nq.m5.ind.trend_state.load(std::memory_order_relaxed);
             const bool nq_nbm_ok       = !nq_in_offhours2 || (nq_bars_ready2 && nq_m5_trend2 != 0);
@@ -7692,7 +7694,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // immediate chasing but allows re-entry if trend continues (was 60s).
                 const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
                 if (is_trail) {
-                    g_gold_trail_block_until.store(now_s + 30);
+                    g_gold_trail_block_until.store(now_s + 60);
                     g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
                     printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 30s\n",
                            tr.exitReason.c_str(), tr.side.c_str());
@@ -8242,7 +8244,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // immediate chasing but allows re-entry if trend continues (was 60s).
                 const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
                 if (is_trail) {
-                    g_gold_trail_block_until.store(now_s + 30);
+                    g_gold_trail_block_until.store(now_s + 60);
                     g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
                     printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 30s\n",
                            tr.exitReason.c_str(), tr.side.c_str());
