@@ -176,6 +176,18 @@ struct GoldFlowEngine {
         bool    partial_closed_2 = false; // true = stair step 2 (PARTIAL_2R) already taken
         double  full_size        = 0.0;  // original size before any partial — for reporting
         int64_t entry_ts         = 0;
+        // ── Dollar-ratchet lock ───────────────────────────────────────────────
+        // Tracks the highest dollar-ratchet tier that has been locked in.
+        // Each tier represents a $50 profit interval. At each tier the SL is
+        // moved to guarantee (tier × $50) - $10 of profit is kept regardless
+        // of future price action.
+        // Example with 0.1 lot (1pt=$10):
+        //   Tier 1 ($50 open): SL → entry + 4pts  (locks $40 minimum)
+        //   Tier 2 ($100 open): SL → entry + 9pts  (locks $90 minimum)
+        //   Tier 3 ($150 open): SL → entry + 14pts (locks $140 minimum)
+        // Ratchet only moves SL forward — never backward.
+        int     dollar_lock_tier = 0;    // highest tier fired (0=none)
+        double  dollar_lock_sl   = 0.0;  // SL level set by dollar ratchet
     } pos;
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
@@ -873,6 +885,8 @@ private:
         pos.partial_closed_2 = false;
         pos.full_size        = size;
         pos.entry_ts      = now_ms / 1000; // seconds
+        pos.dollar_lock_tier = 0;          // reset dollar ratchet for new trade
+        pos.dollar_lock_sl   = 0.0;
         phase            = Phase::LIVE;
         ++m_trade_id;
 
@@ -930,6 +944,16 @@ private:
         // ══════════════════════════════════════════════════════════════════════
         static constexpr double STEP_FRAC   = 0.33;  // close 33% each step
         static constexpr double SL_BUFFER   = 0.25;  // SL buffer = 0.25×ATR beyond exit
+
+        // ── Dollar-ratchet constants ──────────────────────────────────────────
+        // DOLLAR_RATCHET_STEP: open profit interval at which ratchet advances ($50)
+        // DOLLAR_RATCHET_KEEP: fraction of each step that is locked in (80%)
+        //   At $50 open: lock $40. At $100 open: lock $90. At $150: lock $140.
+        // DOLLAR_RATCHET_MIN_TIER: ratchet only activates after step 1 (BE locked).
+        //   Prevents premature SL tightening before the trade has breathed.
+        // Tick value: 1 lot XAUUSD = $100/pt. So $50 / (size × $100/pt) = pts per tier.
+        static constexpr double DOLLAR_RATCHET_STEP = 50.0;   // $50 per tier
+        static constexpr double DOLLAR_RATCHET_KEEP = 0.80;   // keep 80% of each tier
 
         // Helper to fire a partial close record and update position
         auto fire_stair = [&](int step_num, const char* label) {
@@ -1004,6 +1028,59 @@ private:
             if ((pos.is_long  && trail_sl > pos.sl) ||
                 (!pos.is_long && trail_sl < pos.sl)) {
                 pos.sl = trail_sl;
+            }
+        }
+
+        // ── Dollar-ratchet lock ───────────────────────────────────────────────
+        // Runs AFTER the ATR trail — the ratchet can only move the SL further
+        // in the profit direction, never backward.
+        //
+        // Mechanism:
+        //   open_pnl_usd = move (pts) × size (lots) × 100 ($/pt/lot)
+        //   tier = floor(open_pnl_usd / $50)  — how many $50 increments we're at
+        //   If tier > pos.dollar_lock_tier: advance ratchet
+        //   locked_usd = tier × $50 × 0.80   — keep 80% of each $50 band
+        //   locked_pts = locked_usd / (size × 100)
+        //   ratchet_sl = entry + locked_pts   (LONG) / entry - locked_pts (SHORT)
+        //   SL = max(existing_sl, ratchet_sl) — one-way ratchet only
+        //
+        // This guarantees: once price hits $50 open profit, you cannot lose more
+        // than $10 on the remaining position from that point. At $100 you're
+        // guaranteed at least $90 banked. At $150 at least $140. Etc.
+        //
+        // Only activates when be_locked=true (step 1 fired) — the trade has
+        // already banked 33% via the staircase at that point.
+        if (pos.be_locked && pos.size > 0.0) {
+            // Current open P&L in USD on the REMAINING position
+            const double open_pnl_usd = move * pos.size * 100.0;
+            const int    tier_now     = static_cast<int>(open_pnl_usd / DOLLAR_RATCHET_STEP);
+
+            if (tier_now > pos.dollar_lock_tier && tier_now >= 1) {
+                // Advance to new tier — compute the SL that locks in 80% of this tier
+                const double locked_usd  = tier_now * DOLLAR_RATCHET_STEP * DOLLAR_RATCHET_KEEP;
+                const double locked_pts  = locked_usd / (pos.size * 100.0);
+                const double ratchet_sl  = pos.is_long
+                    ? (pos.entry + locked_pts)
+                    : (pos.entry - locked_pts);
+
+                // Only move SL in profit direction — never tighten a profitable SL backward
+                const bool sl_improves = pos.is_long
+                    ? (ratchet_sl > pos.sl)
+                    : (ratchet_sl < pos.sl);
+
+                if (sl_improves) {
+                    pos.sl              = ratchet_sl;
+                    pos.dollar_lock_sl  = ratchet_sl;
+                    pos.dollar_lock_tier = tier_now;
+
+                    std::cout << "[GOLD-FLOW] DOLLAR-RATCHET tier=" << tier_now
+                              << " open_pnl=$" << std::fixed << std::setprecision(0) << open_pnl_usd
+                              << " locked=$" << locked_usd
+                              << " locked_pts=" << std::setprecision(2) << locked_pts
+                              << " new_sl=" << ratchet_sl
+                              << (pos.is_long ? " LONG" : " SHORT") << "\n";
+                    std::cout.flush();
+                }
             }
         }
 
