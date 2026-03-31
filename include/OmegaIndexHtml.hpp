@@ -868,8 +868,17 @@ let _depthSym = 'gold';   // currently selected symbol key
 const _depthSymL2Key = { gold:'l2_gold', sp:'l2_sp', eur:'l2_eur' };
 const _depthMaxRows = 5;  // levels to show per side
 
+// Last best bid/ask seen per symbol — used to gate repaints.
+// WS pushes at 250ms but the book only needs repainting when a price level
+// actually changes. Sizes-only changes (volume shifting at same price) are
+// allowed through at most once per 500ms to avoid thrashing on busy tape.
+const _depthLastBest = {};   // key -> { bid: str, ask: str }
+let   _depthLastSizeUpdate = 0;  // timestamp of last size-only repaint
+
 function setDepthSym(sym) {
   _depthSym = sym;
+  // Force repaint on symbol switch by clearing the cached best prices
+  delete _depthLastBest[sym];
   // Update button active states
   ['gold','sp','eur'].forEach(s => {
     const b = document.getElementById('dbtn' + (s === 'eur' ? 'neur' : s));
@@ -912,6 +921,25 @@ function updateDepthPanel(d) {
   const asks  = d[sym + '_asks'];
   const imbEl = document.getElementById('depthImbFill');
   const badge = document.getElementById('depthImbBadge');
+
+  // ── Price-change gate ────────────────────────────────────────────────────
+  // WS fires at 250ms. Only repaint when best bid or ask price changes.
+  // Size-only changes (volume at same price) repaint at most every 500ms.
+  if (bids && bids.length && asks && asks.length) {
+    const sortedB = [...bids].sort((a,b) => b.p - a.p);
+    const sortedA = [...asks].sort((a,b) => a.p - b.p);
+    const refPx0  = sortedB[0] ? sortedB[0].p : 1;
+    const dec0    = refPx0 > 100 ? 2 : (refPx0 > 1 ? 4 : 5);
+    const bestBid = sortedB[0] ? sortedB[0].p.toFixed(dec0) : '';
+    const bestAsk = sortedA[0] ? sortedA[0].p.toFixed(dec0) : '';
+    const cached  = _depthLastBest[sym];
+    const priceChanged = !cached || cached.bid !== bestBid || cached.ask !== bestAsk;
+    const now = Date.now();
+    const sizeUpdateDue = (now - _depthLastSizeUpdate) >= 500;
+    if (!priceChanged && !sizeUpdateDue) return;   // nothing to repaint
+    _depthLastBest[sym] = { bid: bestBid, ask: bestAsk };
+    if (!priceChanged) _depthLastSizeUpdate = now;
+  }
 
   // No data — hide all rows, show placeholder text via first row
   if (!bids || !bids.length || !asks || !asks.length) {
