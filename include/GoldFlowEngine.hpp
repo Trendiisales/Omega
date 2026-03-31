@@ -1207,13 +1207,29 @@ private:
             fire_stair(2, "PARTIAL_2R");
         }
 
-        // Remainder: tight trail 0.25×ATR behind MFE peak
-        // Uses atr_live (70% entry + 30% current) so trail reflects actual vol.
-        // Starts after step 1 (be_locked=true) — always active, never idle
+        // ── Tiered trail — widens while momentum runs, tightens as each step banks ──
+        //
+        // Fixed 0.25×ATR was firing on the same candle that triggered step 1,
+        // exiting mid-move before the full extension was reached.
+        //
+        // Trail distance shrinks as each partial locks more profit:
+        //   Before step 2 fires (step 1 done, move still running): 1.0×ATR
+        //     → full ATR of breathing room while momentum is live
+        //   After step 2, move < 3×ATR (move maturing):           0.5×ATR
+        //     → step 2 banked another 33%, tighten slightly
+        //   After step 3 fires / move >= 3×ATR (final remainder):  0.25×ATR
+        //     → final squeeze — protect every tick of remaining profit
+        //
+        // One-way ratchet — SL never moves backward.
+        // Uses atr_live (70% entry + 30% current ATR).
         if (pos.be_locked && pos.mfe > 0.0) {
+            const double trail_mult =
+                (!pos.partial_closed_2)   ? 1.00 :  // step1 done, step2 pending — stay wide
+                (move < atr * 3.0)        ? 0.50 :  // step2 done, below 3×ATR — mid tighten
+                                            0.25;   // step3 territory / final remainder
             const double trail_sl = pos.is_long
-                ? (pos.entry + pos.mfe - atr_live * 0.25)
-                : (pos.entry - pos.mfe + atr_live * 0.25);
+                ? (pos.entry + pos.mfe - atr_live * trail_mult)
+                : (pos.entry - pos.mfe + atr_live * trail_mult);
             if ((pos.is_long  && trail_sl > pos.sl) ||
                 (!pos.is_long && trail_sl < pos.sl)) {
                 pos.sl = trail_sl;
