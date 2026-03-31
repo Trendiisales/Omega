@@ -1,8 +1,8 @@
 #pragma once
 // ==============================================================================
-// BreakoutEngine — CRTP policy-based compression breakout engine
+// BreakoutEngine -- CRTP policy-based compression breakout engine
 // One instance per primary symbol (MES, MNQ, MCL).
-// CRTP eliminates all virtual dispatch — hot path is fully inlined.
+// CRTP eliminates all virtual dispatch -- hot path is fully inlined.
 // ==============================================================================
 #include <deque>
 #include <array>
@@ -28,7 +28,7 @@ struct BreakoutSignal
     double      tp               = 0.0;
     double      sl               = 0.0;
     const char* reason           = "";
-    // Edge model outputs — available for ranking
+    // Edge model outputs -- available for ranking
     double      net_edge         = 0.0;
     double      breakout_strength= 0.0;
     double      momentum_score   = 0.0;
@@ -45,11 +45,11 @@ struct OpenPos
     double  size            = 1.0;
     double  mfe             = 0.0;
     double  mae             = 0.0;
-    double  sl_pct          = 0.0;  // SL% used at entry — drives trail arm thresholds
+    double  sl_pct          = 0.0;  // SL% used at entry -- drives trail arm thresholds
     int64_t entry_ts        = 0;
     double  spread_at_entry = 0.0;
     char    regime[32]      = {};
-    // Pyramid tracking — up to 4 add-ons (2 regime-gated + 2 extended on long runners).
+    // Pyramid tracking -- up to 4 add-ons (2 regime-gated + 2 extended on long runners).
     // Each add-on is tracked independently via pyramid_addons[] so trailing stops
     // never overwrite each other. Tightens progressively: addon 0 widest, addon 3 tightest.
     static constexpr int MAX_PYRAMID_ADDONS = 4;
@@ -61,18 +61,18 @@ struct OpenPos
     };
     bool         pyramid_armed    = false;
     int          pyramid_count    = 0;     // total add-ons sent so far
-    bool         pyramid_pending  = false; // engine sets → main.cpp sends order, clears flag
+    bool         pyramid_pending  = false; // engine sets ? main.cpp sends order, clears flag
     double       pyramid_entry    = 0.0;   // pending add-on entry price (for main.cpp sizing)
     double       pyramid_tp       = 0.0;   // pending add-on TP (for main.cpp)
     double       pyramid_sl       = 0.0;   // pending add-on initial SL (for main.cpp)
     int64_t      pyramid_last_ts  = 0;     // unix-sec timestamp of last pyramid fire
     PyramidAddon pyramid_addons[MAX_PYRAMID_ADDONS] = {};
-    // Regime at entry — for regime-flip exit
+    // Regime at entry -- for regime-flip exit
     char    entry_regime[32] = {};   // supervisor regime name at entry time
 };
 
 // ==============================================================================
-// Edge model — signal strength, cost model, exhaustion filter, adaptive TP/SL
+// Edge model -- signal strength, cost model, exhaustion filter, adaptive TP/SL
 // ==============================================================================
 
 struct EdgeConfig {
@@ -81,9 +81,9 @@ struct EdgeConfig {
     double min_edge_bp       = 6.0;
     double exhaustion_mult   = 3.0;
     double min_edge_buffer   = 0.0;
-    // Adaptive TP multiplier — compressed in LOW/CRUSH vol regimes so TP fills.
+    // Adaptive TP multiplier -- compressed in LOW/CRUSH vol regimes so TP fills.
     // Set by RegimeAdaptor each tick: CRUSH=0.70, LOW=0.85, NORMAL=1.00, HIGH=1.15.
-    // A 3× ATR TP in a dead session never fills; compressing to 0.70× catches the
+    // A 3? ATR TP in a dead session never fills; compressing to 0.70? catches the
     // mean-reversion that actually occurs in compressed, low-vol tape.
     // Hard floor: tp_vol_mult is clamped to >= 0.60 so R:R never drops below ~2:1.
     double tp_vol_mult       = 1.0;
@@ -118,18 +118,18 @@ inline EdgeResult compute_edge_and_execution(
     // With spread*0.5 tolerance, this is always >= spread*0.5 when we get here.
     if (breakout_move <= 0.0) return r;
 
-    // ── Exhaustion filter ─────────────────────────────────────────────────────
+    // ?? Exhaustion filter ?????????????????????????????????????????????????????
     if (breakout_move > comp_range * cfg.exhaustion_mult) return r;
 
-    // ── Cost model ───────────────────────────────────────────────────────────
-    // cost = spread * 0.5 (half-spread — mid-based move already net of half spread)
+    // ?? Cost model ???????????????????????????????????????????????????????????
+    // cost = spread * 0.5 (half-spread -- mid-based move already net of half spread)
     const double cost      = spread * cfg.cost_spread_mult;
     const double net_move  = breakout_move - cost;
 
-    // ── Edge in basis points ──────────────────────────────────────────────────
+    // ?? Edge in basis points ??????????????????????????????????????????????????
     const double edge_bp   = (mid > 0.0) ? (net_move / mid * 10000.0) : 0.0;
 
-    // ── Validation ───────────────────────────────────────────────────────────
+    // ?? Validation ???????????????????????????????????????????????????????????
     // Both conditions must pass:
     //   1. net_move > comp_range * min_range_factor  (meaningful relative to structure)
     //   2. edge_bp  >= min_edge_bp                   (meaningful relative to price)
@@ -137,11 +137,11 @@ inline EdgeResult compute_edge_and_execution(
                          (edge_bp  >= cfg.min_edge_bp);
     if (!edge_ok) return r;
 
-    // ── TP / SL ───────────────────────────────────────────────────────────────
-    // TP raised from comp_range×0.8 to comp_range×1.6 (4:1 R:R vs prior 2:1).
-    // Rationale: with TP=0.8×range, trail2 arm (2×SL=0.8×range) = TP exactly.
-    // Trail2 never fires — trade exits at fixed TP, capping every genuine run.
-    // At 1.6×range: trail2 fires at 0.8×range, then trails the remaining move.
+    // ?? TP / SL ???????????????????????????????????????????????????????????????
+    // TP raised from comp_range?0.8 to comp_range?1.6 (4:1 R:R vs prior 2:1).
+    // Rationale: with TP=0.8?range, trail2 arm (2?SL=0.8?range) = TP exactly.
+    // Trail2 never fires -- trade exits at fixed TP, capping every genuine run.
+    // At 1.6?range: trail2 fires at 0.8?range, then trails the remaining move.
     // This matches Gold's engine R:R profile (TP=80ticks, SL=30ticks = 2.67:1).
     //
     // tp_vol_mult compresses TP in LOW/CRUSH vol regimes so the target actually fills.
@@ -150,17 +150,17 @@ inline EdgeResult compute_edge_and_execution(
     const double tp_dist = comp_range * 1.6 * tp_vol_mult_clamped;
     const double sl_dist = std::max(comp_range * 0.4, spread * 1.5);
 
-    // ── R:R validity gate ─────────────────────────────────────────────────────
+    // ?? R:R validity gate ?????????????????????????????????????????????????????
     // Reject if sl_dist >= tp_dist (R:R < 1:1 before spread cost).
-    // Fires when spread dominates comp_range×0.4 — wide-spread Asia session.
-    // Example: USTEC comp_range=2pts spread=3.24pts → sl=4.86 tp=1.6 → R:R=0.33
+    // Fires when spread dominates comp_range?0.4 -- wide-spread Asia session.
+    // Example: USTEC comp_range=2pts spread=3.24pts ? sl=4.86 tp=1.6 ? R:R=0.33
     // A trade with sl >= tp has negative expectancy before costs. Block it.
     if (sl_dist >= tp_dist) return r;
 
     r.tp_price = is_long ? mid + tp_dist : mid - tp_dist;
     r.sl_price = is_long ? mid - sl_dist : mid + sl_dist;
 
-    // ── Position sizing ───────────────────────────────────────────────────────
+    // ?? Position sizing ???????????????????????????????????????????????????????
     const double risk_per_trade = account_equity * 0.002;
     r.size = (sl_dist > 0.0) ? (risk_per_trade / sl_dist) : 0.01;
     if (r.size < 0.01) r.size = 0.01;
@@ -177,7 +177,7 @@ inline EdgeResult compute_edge_and_execution(
 }
 
 // ==============================================================================
-// Trade ranking + selection — scores and filters candidates, picks best setup
+// Trade ranking + selection -- scores and filters candidates, picks best setup
 // ==============================================================================
 
 struct RankingConfig {
@@ -231,7 +231,7 @@ inline double compute_trade_score(
     const TradeCandidate& t, const RankingConfig& cfg) noexcept
 {
     if (!t.valid) return -1.0;
-    // Normalize net_edge by entry price — removes price-scale bias across symbols.
+    // Normalize net_edge by entry price -- removes price-scale bias across symbols.
     // Gold net_edge=2.0 at price=4850 = 0.041% vs EURUSD net_edge=0.0002 at 1.08 = 0.019%.
     // Without normalization gold always dominates ranking regardless of setup quality.
     const double norm_edge = (t.entry > 0.0) ? (t.net_edge / t.entry) : 0.0;
@@ -248,7 +248,7 @@ inline std::vector<TradeCandidate> select_best_trades(
     for (auto& t : candidates)
         t.score = compute_trade_score(t, cfg);
 
-    // Remove only invalid candidates — do NOT gate on min_score_threshold.
+    // Remove only invalid candidates -- do NOT gate on min_score_threshold.
     // Ranking selects the best when multiple signals compete; it must never
     // block a single valid signal that already passed the edge model.
     candidates.erase(
@@ -278,16 +278,16 @@ template<typename Derived>
 class BreakoutEngineBase
 {
 public:
-    // ── Config — set before first tick ───────────────────────────────────────
+    // ?? Config -- set before first tick ???????????????????????????????????????
     double      VOL_THRESH_PCT        = 0.050;
     double      TP_PCT                = 0.400;
     double      SL_PCT                = 2.000;
     int         COMPRESSION_LOOKBACK  = 50;
     int         BASELINE_LOOKBACK     = 200;
-    // Cold-start entry gate — ticks that must be received before ANY entry.
+    // Cold-start entry gate -- ticks that must be received before ANY entry.
     // seed() pre-fills m_prices bypassing the COMPRESSION_LOOKBACK size check,
     // so without this guard the engine can fire within ticks of a restart.
-    // At ~5-10 ticks/s: 150 ticks ≈ 15-30s real market data before first entry.
+    // At ~5-10 ticks/s: 150 ticks ? 15-30s real market data before first entry.
     int         MIN_ENTRY_TICKS       = 150;
     double      COMPRESSION_THRESHOLD = 0.80;  // enter compression when ratio < this
     double      COMP_EXIT_THRESHOLD   = 0.95;  // hysteresis: stay compressed while ratio < this, exit when >= this
@@ -301,10 +301,10 @@ public:
     EdgeConfig  EDGE_CFG;
     int         MAX_TRADES_PER_MIN    = 2;
     double      ENTRY_SIZE            = 0.01;
-    bool        AGGRESSIVE_SHADOW     = false;  // deprecated — no longer used, kept for ABI compatibility only
+    bool        AGGRESSIVE_SHADOW     = false;  // deprecated -- no longer used, kept for ABI compatibility only
     const char* symbol                = "???";
     int         WATCH_TIMEOUT_SEC     = 300;
-    // ── Compression stability params (spec values) ────────────────────────────
+    // ?? Compression stability params (spec values) ????????????????????????????
     // range_tolerance: compression range may expand up to this multiple of the
     // initial range before it is considered a genuine breakout of structure.
     // 1.25 = allow 25% range expansion before declaring structure broken.
@@ -320,18 +320,18 @@ public:
     // Prevents immediate churn on entry. 12 = per spec.
     int         COMP_MIN_LIFE_TICKS   = 12;
     // re-entry cooldown: ticks to wait in FLAT after a failed arm before
-    // allowing next compression detection. Stops COMPRESSION→fail churn.
+    // allowing next compression detection. Stops COMPRESSION?fail churn.
     int         COMP_REENTRY_DELAY    = 5;
     // confirm_ticks: price must stay OUTSIDE the compression boundary for this
     // many consecutive ticks before the breakout signal fires.
-    // Mirrors MIN_BREAK_TICKS in BracketEngine — prevents single-tick sweep
+    // Mirrors MIN_BREAK_TICKS in BracketEngine -- prevents single-tick sweep
     // spikes (e.g. London open liquidity sweeps) from triggering a real entry.
     // The counter resets to 0 if price pulls back inside the range on any tick.
     // 0 = disabled (legacy behaviour, fires on first qualifying tick).
     // Recommended: 3 for gold/silver, 2 for FX/indices.
     int         MIN_CONFIRM_TICKS     = 0;
 
-    // ── Observable state (read by telemetry thread) ───────────────────────────
+    // ?? Observable state (read by telemetry thread) ???????????????????????????
     Phase   phase          = Phase::FLAT;
     double  comp_high      = 0.0;
     double  comp_low       = 0.0;
@@ -354,30 +354,30 @@ public:
     }
 
 private:
-    // ── Momentum window (20 ticks) ────────────────────────────────────────────
+    // ?? Momentum window (20 ticks) ????????????????????????????????????????????
     std::deque<double> m_momentum_window;   // last 20 mids for momentum gate
     static constexpr int MOMENTUM_WINDOW = 20;
 
-    // ── Range window (50 ticks) for structural break gate ────────────────────
+    // ?? Range window (50 ticks) for structural break gate ????????????????????
     std::deque<double> m_range_window;      // last 50 mids for hi/lo range
     static constexpr int RANGE_WINDOW = 50;
 
-    // ── Rate limiter ──────────────────────────────────────────────────────────
+    // ?? Rate limiter ??????????????????????????????????????????????????????????
     std::deque<int64_t> m_trade_times;      // timestamps of recent entries
 
-    // ── Tick direction counter ────────────────────────────────────────────────
+    // ?? Tick direction counter ????????????????????????????????????????????????
     // +N = N consecutive upticks, -N = N consecutive downticks. Reset on flip.
     // Breakout with 2+ ticks in direction = real order flow, not a spike.
     int    m_tick_run       = 0;
     int    m_ticks_received = 0;  // raw tick count since construction, never reset by seed()
     double m_last_mid  = 0.0;
 
-    // ── Watch phase timing ────────────────────────────────────────────────────
+    // ?? Watch phase timing ????????????????????????????????????????????????????
     int64_t m_watch_start_ts = 0;  // unix seconds when BREAKOUT_WATCH started
 
 public:
 
-    // ── Telemetry accessors ───────────────────────────────────────────────────
+    // ?? Telemetry accessors ???????????????????????????????????????????????????
     // Returns unix-second timestamp until which SL cooldown is active (0 = not cooling)
     int64_t sl_cooldown_until() const noexcept { return m_sl_cooldown_until; }
     // Returns current daily VWAP (tick-weighted, resets UTC midnight). 0 if not warmed up.
@@ -386,7 +386,7 @@ public:
         return (side == 0 || side == 1) ? m_side_pause_until[static_cast<size_t>(side)] : 0;
     }
 
-    // ── Default CRTP hooks ────────────────────────────────────────────────────
+    // ?? Default CRTP hooks ????????????????????????????????????????????????????
     bool shouldTrade(double /*bid*/, double /*ask*/,
                      double spread_pct, double latency_ms) const noexcept
     {
@@ -394,9 +394,9 @@ public:
     }
     void onSignal(const BreakoutSignal& /*sig*/) const noexcept {}
 
-    // ── update() — call on every tick ────────────────────────────────────────
-    // can_enter=true  → full processing including new entries
-    // can_enter=false → warmup + position management only, no new entries
+    // ?? update() -- call on every tick ????????????????????????????????????????
+    // can_enter=true  ? full processing including new entries
+    // can_enter=false ? warmup + position management only, no new entries
     [[nodiscard]] BreakoutSignal update(double bid, double ask,
                                         double latency_ms,
                                         const char* macro_regime,
@@ -404,7 +404,7 @@ public:
                                         bool can_enter = true) noexcept
     {
         if (bid <= 0.0 || ask <= 0.0) return {};
-        ++m_ticks_received;  // always — not reset by seed()
+        ++m_ticks_received;  // always -- not reset by seed()
 
         const double mid        = (bid + ask) * 0.5;
         const double spread     = ask - bid;
@@ -414,7 +414,7 @@ public:
         if (static_cast<int>(m_prices.size()) > BASELINE_LOOKBACK * 2)
             m_prices.pop_front();
 
-        // ── VWAP update (daily reset at UTC midnight) ─────────────────────
+        // ?? VWAP update (daily reset at UTC midnight) ?????????????????????
         {
             const auto t_v = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
             struct tm ti_v{};
@@ -458,12 +458,12 @@ public:
 
         if (static_cast<int>(m_prices.size()) < COMPRESSION_LOOKBACK + 1) return {};
 
-        // ── Cold-start entry gate ────────────────────────────────────────────────
+        // ?? Cold-start entry gate ????????????????????????????????????????????????
         // seed() pre-fills m_prices with BASELINE_LOOKBACK copies of a single mid
         // price, bypassing the size check above on the very first real tick.
         // m_ticks_received counts raw ticks received since construction and is
-        // never reset by seed() — it cannot be circumvented.
-        // Position management (SL/TP/trail) still runs — only new entries blocked.
+        // never reset by seed() -- it cannot be circumvented.
+        // Position management (SL/TP/trail) still runs -- only new entries blocked.
         if (m_ticks_received < MIN_ENTRY_TICKS && can_enter) {
             can_enter = false;  // allow warmup processing, block new entries
         }
@@ -471,7 +471,7 @@ public:
         // Compute volatilities
         // During warmup (< BASELINE_LOOKBACK ticks): use the longest window we have
         // so compression detection is meaningful from the start.
-        // Without this, base_vol = recent_vol → in_compression always false → FLAT forever.
+        // Without this, base_vol = recent_vol ? in_compression always false ? FLAT forever.
         recent_vol_pct = rangePct(m_prices.cend() - COMPRESSION_LOOKBACK, m_prices.cend());
         if (static_cast<int>(m_prices.size()) >= BASELINE_LOOKBACK) {
             base_vol_pct = rangePct(m_prices.cend() - BASELINE_LOOKBACK, m_prices.cend());
@@ -481,17 +481,17 @@ public:
             base_vol_pct = rangePct(m_prices.cbegin(), m_prices.cend());
         }
 
-        // ── Manage open position ──────────────────────────────────────────────
+        // ?? Manage open position ??????????????????????????????????????????????
         if (pos.active) {
             const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
             if (move  > pos.mfe) pos.mfe =  move;
             if (-move > pos.mae) pos.mae = -move;
 
-            // ── REGIME-FLIP EXIT (Gold pattern) ──────────────────────────────
+            // ?? REGIME-FLIP EXIT (Gold pattern) ??????????????????????????????
             // If supervisor regime changes after REGIME_FLIP_MIN_HOLD_SEC,
-            // the structure that justified entry has changed — exit at mid.
+            // the structure that justified entry has changed -- exit at mid.
             // Exception: if the trail has already moved past breakeven the trade
-            // is self-funding. Let the trail manage the exit — a regime flip on a
+            // is self-funding. Let the trail manage the exit -- a regime flip on a
             // winner just means the market is transitioning, not reversing.
             // Cap at SL if price has blown past it (reconnect/sparse tick safety).
             if (macro_regime && pos.entry_regime[0] != '\0' &&
@@ -531,19 +531,19 @@ public:
             if ( pos.is_long && bid <= pos.sl) { closePos(pos.sl,  "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
             if (!pos.is_long && ask >= pos.sl) { closePos(pos.sl,  "SL_HIT",  latency_ms, macro_regime, on_close); return {}; }
 
-            // ── TRAILING STOP ─────────────────────────────────────────────────
+            // ?? TRAILING STOP ?????????????????????????????????????????????????
             // Arms and distances are SL-relative, not fixed %.
             // Fixed % arms were dead code for most instruments:
-            //   SP500/GER40/UK100/EURUSD: lock arm (0.60%) >= TP → trail never fired
-            //   NQ/DJ30/NAS100/Silver:    trail1 arm (1.00%) >= TP → only lock fired
+            //   SP500/GER40/UK100/EURUSD: lock arm (0.60%) >= TP ? trail never fired
+            //   NQ/DJ30/NAS100/Silver:    trail1 arm (1.00%) >= TP ? only lock fired
             //
             // NEW: all thresholds derived from pos.sl_pct (SL% used at entry).
-            //   Lock  arm  = 0.50 × SL_PCT  → arms at 50% of risk taken
-            //   Trail1 arm = 1.00 × SL_PCT  → arms once we're 1× SL in profit
-            //   Trail2 arm = 2.00 × SL_PCT  → tight trail once 2× SL in profit
-            //   Trail1 dist= 0.40 × SL_PCT  → trail 40% of SL behind mid
-            //   Trail2 dist= 0.25 × SL_PCT  → tight trail 25% of SL behind mid
-            //   Lock gain  = 0.10 × SL_PCT  → lock entry + 10% of SL as buffer
+            //   Lock  arm  = 0.50 ? SL_PCT  ? arms at 50% of risk taken
+            //   Trail1 arm = 1.00 ? SL_PCT  ? arms once we're 1? SL in profit
+            //   Trail2 arm = 2.00 ? SL_PCT  ? tight trail once 2? SL in profit
+            //   Trail1 dist= 0.40 ? SL_PCT  ? trail 40% of SL behind mid
+            //   Trail2 dist= 0.25 ? SL_PCT  ? tight trail 25% of SL behind mid
+            //   Lock gain  = 0.10 ? SL_PCT  ? lock entry + 10% of SL as buffer
             //
             // With SL_PCT stored in pos.sl_pct at entry, every instrument gets
             // correctly scaled arms regardless of absolute price level.
@@ -554,31 +554,31 @@ public:
                     : (pos.entry - mid) / pos.entry * 100.0;
 
                 const double lock_arm   = sl_pct * 0.50;   // BE at 50% of SL in profit
-                // Trail arms now TP-relative not SL-relative — arms much sooner on
+                // Trail arms now TP-relative not SL-relative -- arms much sooner on
                 // breakout trades where TP >> SL (e.g. USTEC: TP=93pts, SL=58pts)
                 const double tp_pct     = (TP_PCT > 0.0) ? TP_PCT : sl_pct * 1.6;
-                const double trail1_arm = tp_pct * 0.60;   // trail at 60% of TP (was 1×SL = ~2.5×TP for 1.6R trades)
-                const double trail2_arm = tp_pct * 1.00;   // tight trail at TP (was 2×SL)
+                const double trail1_arm = tp_pct * 0.60;   // trail at 60% of TP (was 1?SL = ~2.5?TP for 1.6R trades)
+                const double trail2_arm = tp_pct * 1.00;   // tight trail at TP (was 2?SL)
                 const double trail1_dist = sl_pct * 0.30;  // slightly tighter dist (was 0.40)
                 const double trail2_dist = sl_pct * 0.15;  // much tighter on big winners (was 0.25)
                 const double lock_gain   = sl_pct * 0.10;
 
                 if (move_pct >= trail2_arm) {
-                    // Tight trail: 0.25×SL behind mid
+                    // Tight trail: 0.25?SL behind mid
                     const double trail = pos.is_long
                         ? mid * (1.0 - trail2_dist / 100.0)
                         : mid * (1.0 + trail2_dist / 100.0);
                     if ( pos.is_long && trail > pos.sl) pos.sl = trail;
                     if (!pos.is_long && trail < pos.sl) pos.sl = trail;
                 } else if (move_pct >= trail1_arm) {
-                    // Standard trail: 0.40×SL behind mid
+                    // Standard trail: 0.40?SL behind mid
                     const double trail = pos.is_long
                         ? mid * (1.0 - trail1_dist / 100.0)
                         : mid * (1.0 + trail1_dist / 100.0);
                     if ( pos.is_long && trail > pos.sl) pos.sl = trail;
                     if (!pos.is_long && trail < pos.sl) pos.sl = trail;
                 } else if (move_pct >= lock_arm) {
-                    // Lock breakeven + 0.10×SL buffer
+                    // Lock breakeven + 0.10?SL buffer
                     const double be = pos.is_long
                         ? pos.entry * (1.0 + lock_gain / 100.0)
                         : pos.entry * (1.0 - lock_gain / 100.0);
@@ -587,7 +587,7 @@ public:
                 }
             }
 
-            // ── PYRAMID ADD-ON FIRE ──────────────────────────────────────────
+            // ?? PYRAMID ADD-ON FIRE ??????????????????????????????????????????
             // Trigger 1 (regime-gated, count<2): trail1 arm + trending regime.
             // Trigger 2 (extended, count 2-3):   fired in timeout-suppressed block.
             // Both paths register in pyramid_addons[] for independent trailing.
@@ -634,13 +634,13 @@ public:
                 }
             }
 
-            // ── PYRAMID ADD-ON TRAILING ───────────────────────────────────────
+            // ?? PYRAMID ADD-ON TRAILING ???????????????????????????????????????
             // Each add-on managed independently. Trail tightens with addon index:
-            //   Addon 0: BE@0.3R, trail@0.5R→lock60%, tight@1.0R→lock85%
-            //   Addon 1: BE@0.2R, trail@0.4R→lock70%, tight@0.8R→lock85%
-            //   Addon 2: BE@0.1R, trail@0.3R→lock75%, tight@0.6R→lock85%
-            //   Addon 3: BE immediately, trail@0.2R→lock80%, tight@0.4R→lock85%
-            // Later pyramids protect more — correct for compounding runs.
+            //   Addon 0: BE@0.3R, trail@0.5R?lock60%, tight@1.0R?lock85%
+            //   Addon 1: BE@0.2R, trail@0.4R?lock70%, tight@0.8R?lock85%
+            //   Addon 2: BE@0.1R, trail@0.3R?lock75%, tight@0.6R?lock85%
+            //   Addon 3: BE immediately, trail@0.2R?lock80%, tight@0.4R?lock85%
+            // Later pyramids protect more -- correct for compounding runs.
             for (int ai = 0; ai < OpenPos::MAX_PYRAMID_ADDONS; ++ai) {
                 OpenPos::PyramidAddon& addon = pos.pyramid_addons[ai];
                 if (!addon.active) continue;
@@ -659,7 +659,7 @@ public:
                             (!pos.is_long && addon.entry < addon.sl))
                             addon.sl = addon.entry;
                     }
-                    // Standard trail — locks tr_lock fraction of move behind MFE
+                    // Standard trail -- locks tr_lock fraction of move behind MFE
                     if (addon_move >= tp * tr_r) {
                         const double trail = pos.is_long
                             ? (addon.entry + addon_move * tr_lock)
@@ -668,7 +668,7 @@ public:
                             (!pos.is_long && trail < addon.sl))
                             addon.sl = trail;
                     }
-                    // Tight trail — locks 85% of move, rides the cascade
+                    // Tight trail -- locks 85% of move, rides the cascade
                     if (addon_move >= tp * tgt_r) {
                         const double trail = pos.is_long
                             ? (addon.entry + addon_move * 0.85)
@@ -678,7 +678,7 @@ public:
                             addon.sl = trail;
                     }
                 }
-                // SL hit — signal main.cpp and deactivate
+                // SL hit -- signal main.cpp and deactivate
                 const bool sl_hit = pos.is_long ? (bid <= addon.sl) : (ask >= addon.sl);
                 if (sl_hit) {
                     const char* why = (addon.sl > addon.entry + 0.001 ||
@@ -694,9 +694,9 @@ public:
                 }
             }
 
-                        // ── BREAKOUT FAILURE SCRATCH ──────────────────────────────────────
+                        // ?? BREAKOUT FAILURE SCRATCH ??????????????????????????????????????
             // If within first 120s the price moves against us by > 0.08% of entry,
-            // the breakout is confirmed false — cut immediately. Do NOT hold a
+            // the breakout is confirmed false -- cut immediately. Do NOT hold a
             // wrong-direction break for 20 minutes hoping for reversal.
             // Data: USTEC SHORT held 20min at -$20 vs SL $100 away. Scratch saves
             // ~$10-15 by exiting at first confirmation of failure (~60-90s in).
@@ -719,7 +719,7 @@ public:
                     if (adverse_pct > scratch_limit) {
                         std::cout << "[SCRATCH] " << symbol
                                   << (pos.is_long ? " LONG" : " SHORT")
-                                  << " false breakout — adverse=" << adverse_pct
+                                  << " false breakout -- adverse=" << adverse_pct
                                   << "% limit=" << scratch_limit
                                   << "% in " << held_sec << "s\n";
                         closePos(mid, "SCRATCH", latency_ms, macro_regime, on_close);
@@ -730,7 +730,7 @@ public:
 
             if (nowSec() - pos.entry_ts >= static_cast<int64_t>(MAX_HOLD_SEC)) {
                 // If the trail has moved to profit (SL past breakeven), the position
-                // is a winner — suppress the timeout and let the trailing stop handle
+                // is a winner -- suppress the timeout and let the trailing stop handle
                 // the exit naturally. Killing a running trade at an arbitrary time cap
                 // is exactly what the trail exists to prevent.
                 const double sl_pct_now   = (pos.sl_pct > 0.0) ? pos.sl_pct : SL_PCT;
@@ -740,7 +740,7 @@ public:
                 const bool trail_in_profit = pos.is_long ? (pos.sl >= be_long)
                                                          : (pos.sl <= be_short);
                 if (trail_in_profit) {
-                    // Trail is protecting profit — ride until SL or TP hits.
+                    // Trail is protecting profit -- ride until SL or TP hits.
                     // Log every MAX_HOLD_SEC so we know it is alive.
                     const int64_t held_now = nowSec() - pos.entry_ts;
                     std::cout << "[ENG-" << symbol << "] TIMEOUT-SUPPRESSED trail in profit"
@@ -749,13 +749,13 @@ public:
                               << " mfe=" << pos.mfe << "\n";
                     std::cout.flush();
 
-                    // ── EXTENDED PYRAMID on long runners ──────────────────────
-                    // The move is real — profit is locked. Add-on once per
+                    // ?? EXTENDED PYRAMID on long runners ??????????????????????
+                    // The move is real -- profit is locked. Add-on once per
                     // MAX_HOLD_SEC interval regardless of regime (up to 2 extended
                     // add-ons, pyramid_count 3 and 4). SL for the add-on is set to
                     // the current trail SL (already in profit) so add-on risk is
                     // bounded to zero or better. Requires Trail2 arm (2x SL) move
-                    // to be met first — don't add into a weak/stalling move.
+                    // to be met first -- don't add into a weak/stalling move.
                     {
                         const int64_t now_ts       = nowSec();
                         const int64_t since_last    = (pos.pyramid_last_ts > 0)
@@ -797,8 +797,8 @@ public:
                     }
                     return {};
                 }
-                // Not in profit — apply normal timeout.
-                // Cap timeout exit at SL if price has blown through — mirrors the
+                // Not in profit -- apply normal timeout.
+                // Cap timeout exit at SL if price has blown through -- mirrors the
                 // GoldStack fix. Sparse ticks on reconnect can allow price to pass
                 // the SL level without triggering the check above. Without this,
                 // a 10-25min timeout fills at whatever mid is, not the intended stop.
@@ -811,7 +811,7 @@ public:
             return {};
         }
 
-        // ── Phase FSM ─────────────────────────────────────────────────────────
+        // ?? Phase FSM ?????????????????????????????????????????????????????????
         // Hysteresis: two thresholds prevent threshold flickering.
         //   Enter compression:  ratio < COMPRESSION_THRESHOLD (0.80)
         //   Stay  compression:  ratio < COMP_EXIT_THRESHOLD   (0.95)
@@ -825,9 +825,9 @@ public:
                 --m_comp_reentry_wait;
                 return {};
             }
-            // ── SUPERVISOR GATE (Leak 1 fix) ─────────────────────────────────
+            // ?? SUPERVISOR GATE (Leak 1 fix) ?????????????????????????????????
             // can_enter=false means supervisor says no-trade (or session/daily-loss gate).
-            // Do NOT enter compression — stay FLAT until supervisor clears.
+            // Do NOT enter compression -- stay FLAT until supervisor clears.
             // This closes the gap where allow=0 was advisory: engines were entering
             // COMPRESSION freely and only hit the supervisor check at final execution.
             if (!can_enter) {
@@ -836,13 +836,13 @@ public:
                 if (now_s - s_last_sup_block_log >= 10) {
                     s_last_sup_block_log = now_s;
                     std::cout << "[ENG-" << symbol
-                              << "] FLAT: supervisor gate — compression blocked (can_enter=0)\n";
+                              << "] FLAT: supervisor gate -- compression blocked (can_enter=0)\n";
                     std::cout.flush();
                 }
                 return {};
             }
-            // ── GOLD-EQUIVALENT RISK GATES ────────────────────────────────────
-            // Global SL cooldown: any recent stop → wait before new compression
+            // ?? GOLD-EQUIVALENT RISK GATES ????????????????????????????????????
+            // Global SL cooldown: any recent stop ? wait before new compression
             if (nowSec() < m_sl_cooldown_until) return {};
 
             // VWAP dislocation gate: don't enter near VWAP (mean-reversion zone)
@@ -868,16 +868,16 @@ public:
             return {};
         }
 
-        // ── COMPRESSION phase ─────────────────────────────────────────────────
+        // ?? COMPRESSION phase ?????????????????????????????????????????????????
         if (phase == Phase::COMPRESSION) {
-            // ── SUPERVISOR GATE (Leak 2 fix) ─────────────────────────────────
+            // ?? SUPERVISOR GATE (Leak 2 fix) ?????????????????????????????????
             // Supervisor flipped to no-trade while engine was already in COMPRESSION.
-            // Abort back to FLAT immediately — do not continue building setup.
+            // Abort back to FLAT immediately -- do not continue building setup.
             // COMP_REENTRY_DELAY is NOT applied here: this was an external veto, not a
             // failed setup. Engine should re-arm cleanly when supervisor clears.
             if (!can_enter) {
                 std::cout << "[ENG-" << symbol
-                          << "] COMPRESSION aborted — supervisor gate (can_enter=0)\n";
+                          << "] COMPRESSION aborted -- supervisor gate (can_enter=0)\n";
                 std::cout.flush();
                 phase                  = Phase::FLAT;
                 m_compression_ticks    = 0;
@@ -885,14 +885,14 @@ public:
                 m_comp_initial_range   = 0.0;
                 return {};
             }
-            // Always extend range — price probing the boundary is part of structure
+            // Always extend range -- price probing the boundary is part of structure
             if (mid > comp_high) comp_high = mid;
             if (mid < comp_low)  comp_low  = mid;
 
             const double comp_range   = comp_high - comp_low;
             const double comp_midpt   = (comp_high + comp_low) * 0.5;
 
-            // ── Check three reset conditions ──────────────────────────────────
+            // ?? Check three reset conditions ??????????????????????????????????
             // Reset only when ALL THREE are true for COMP_VIOLATION_TICKS consecutive ticks.
             // Single-condition or single-tick violations are absorbed.
 
@@ -927,9 +927,9 @@ public:
             if (all_violated) {
                 ++m_comp_violation_ticks;
                 if (m_comp_violation_ticks < COMP_VIOLATION_TICKS) {
-                    return {};  // absorb — need COMP_VIOLATION_TICKS consecutive violations
+                    return {};  // absorb -- need COMP_VIOLATION_TICKS consecutive violations
                 }
-                // Genuine structure break — reset
+                // Genuine structure break -- reset
                 std::cout << std::fixed << std::setprecision(5)
                           << "[ENG-" << symbol << "] COMPRESSION broken"
                           << " ratio=" << vol_ratio
@@ -947,17 +947,17 @@ public:
                 return {};
             }
 
-            // Not all conditions violated — reset violation counter
+            // Not all conditions violated -- reset violation counter
             m_comp_violation_ticks = 0;
 
-            // ── Arm check ─────────────────────────────────────────────────────
+            // ?? Arm check ?????????????????????????????????????????????????????
             // Arm when ratio is still well inside compression (< 0.75).
-            // Previous logic armed at the 0.80–0.95 boundary — by then vol had
+            // Previous logic armed at the 0.80-0.95 boundary -- by then vol had
             // already started expanding and the breakout was often already in motion.
             // Arming at < 0.75 means we're ARMED while price is still coiling,
-            // ready to fire the moment it breaks — not after.
+            // ready to fire the moment it breaks -- not after.
             if (vol_ratio >= 0.75) {
-                return {};  // still building — wait for deeper compression before arming
+                return {};  // still building -- wait for deeper compression before arming
             }
 
             // Require minimum range
@@ -970,10 +970,10 @@ public:
                           << " ticks=" << m_compression_ticks << "\n";
                 std::cout.unsetf(std::ios::fixed);
                 std::cout.flush();
-                return {};  // stay — range may grow
+                return {};  // stay -- range may grow
             }
 
-            // ── ARM ───────────────────────────────────────────────────────────
+            // ?? ARM ???????????????????????????????????????????????????????????
             phase                  = Phase::BREAKOUT_WATCH;
             m_compression_ticks    = 0;
             m_comp_violation_ticks = 0;
@@ -991,12 +991,12 @@ public:
             // Fall through to BREAKOUT_WATCH check on this same tick
         }
 
-        // ── BREAKOUT_WATCH phase ──────────────────────────────────────────────
+        // ?? BREAKOUT_WATCH phase ??????????????????????????????????????????????
         if (phase == Phase::BREAKOUT_WATCH) {
             // Trigger OUTSIDE the range with spread*0.5 tolerance.
             // Previous trigger (comp_high - range*0.15) fired INSIDE the range,
             // giving breakout_move = mid - comp_high = negative. That made net_move
-            // always negative → edge always failed. Fix: require mid to clear the
+            // always negative ? edge always failed. Fix: require mid to clear the
             // level by spread*0.5 so move is always positive and meaningful.
             const double tol        = spread * 0.5;
             const bool   long_break  = (mid >= comp_high + tol);
@@ -1008,20 +1008,20 @@ public:
                     // structure_gone: vol has fully normalised well above baseline.
                     // Threshold must be >> COMPRESSION_THRESHOLD (0.80-0.85) to avoid
                     // resetting the engine the moment compression ends (vol ~0.85 baseline).
-                    // Only reset when vol is clearly back to full expansion (1.5× baseline).
+                    // Only reset when vol is clearly back to full expansion (1.5? baseline).
                     const bool structure_gone = (base_vol_pct > 0.0) &&
                                                 (recent_vol_pct > base_vol_pct * 1.50);
                     if (structure_gone) {
-                        std::cout << "[ENG-" << symbol << "] WATCH timeout — structure gone"
+                        std::cout << "[ENG-" << symbol << "] WATCH timeout -- structure gone"
                                   << " rv=" << recent_vol_pct << "% bv=" << base_vol_pct
                                   << "% elapsed=" << elapsed << "s, resetting\n";
                         std::cout.flush();
                         phase = Phase::FLAT;
                         m_break_confirm_ticks = 0;
                     } else {
-                        // Stay ARMED — extend watch window, keep same comp_high/comp_low
+                        // Stay ARMED -- extend watch window, keep same comp_high/comp_low
                         m_watch_start_ts = nowSec();
-                        std::cout << "[ENG-" << symbol << "] WATCH extended — structure intact"
+                        std::cout << "[ENG-" << symbol << "] WATCH extended -- structure intact"
                                   << " hi=" << comp_high << " lo=" << comp_low
                                   << " rv=" << recent_vol_pct << "% bv=" << base_vol_pct << "%\n";
                         std::cout.flush();
@@ -1030,7 +1030,7 @@ public:
                 return {};
             }
 
-            // Price has exited the compression range — confirmed breakout
+            // Price has exited the compression range -- confirmed breakout
             std::cout << std::fixed << std::setprecision(5)
                       << "[ENG-" << symbol << "] BREAKOUT attempt"
                       << (long_break?" LONG":" SHORT")
@@ -1041,16 +1041,16 @@ public:
 
             const bool is_long = long_break;
 
-            // ── GATE 1: Session/position gate ────────────────────────────────
+            // ?? GATE 1: Session/position gate ????????????????????????????????
             if (!can_enter) {
                 // can_enter=false = position/session/daily-loss gate.
-                // Don't reset phase — stay ARMED, wait for gate to clear.
+                // Don't reset phase -- stay ARMED, wait for gate to clear.
                 return {};
             }
 
-            // ── GATE 2: Spread/instrument gate ───────────────────────────────
+            // ?? GATE 2: Spread/instrument gate ???????????????????????????????
             // Instrument-specific: spread too wide, EIA window for oil, etc.
-            // Non-resetting — spread may tighten on next tick.
+            // Non-resetting -- spread may tighten on next tick.
             if (!static_cast<Derived*>(this)->shouldTrade(bid, ask, spread_pct, latency_ms)) {
                 std::cout << "[ENG-" << symbol << "] BLOCKED: spread/instrument"
                           << " spread=" << spread_pct << "%\n";
@@ -1058,7 +1058,7 @@ public:
                 return {};  // wait, don't reset
             }
 
-            // ── GATE 3: Rate limiter ──────────────────────────────────────────
+            // ?? GATE 3: Rate limiter ??????????????????????????????????????????
             {
                 const int64_t now_sec = nowSec();
                 while (!m_trade_times.empty() && now_sec - m_trade_times.front() > 60)
@@ -1071,7 +1071,7 @@ public:
                 }
             }
 
-            // ── GATE 4: Min gap ───────────────────────────────────────────────
+            // ?? GATE 4: Min gap ???????????????????????????????????????????????
             {
                 const int64_t now_ts = nowSec();
                 // Same-level re-entry guard: don't re-enter within SL_PCT band of recent exit
@@ -1093,10 +1093,10 @@ public:
 
             const int64_t now = nowSec(); // used by entry block below
 
-            // ── GATE 5: Confirmation move (tick-sustained) ────────────────────
+            // ?? GATE 5: Confirmation move (tick-sustained) ????????????????????
             // Require price to clear the level by comp_range*0.25 AND hold
             // outside for MIN_CONFIRM_TICKS consecutive ticks before firing.
-            // Single-tick clearance (old behaviour) fired on sweep spikes —
+            // Single-tick clearance (old behaviour) fired on sweep spikes --
             // London open liquidity sweep hit comp_high + tolerance in 1 tick,
             // SL hit in 19s. MIN_CONFIRM_TICKS=3 means the spike must sustain
             // for ~0.3-0.9s at London tick rates before a signal is generated.
@@ -1106,21 +1106,21 @@ public:
                 const double confirm        = comp_range_now * 0.25;
                 const double clearance      = is_long ? (mid - comp_high) : (comp_low - mid);
                 if (clearance < confirm) {
-                    m_break_confirm_ticks = 0;  // pulled back inside — reset counter
-                    return {};  // wait — stay ARMED, don't reset
+                    m_break_confirm_ticks = 0;  // pulled back inside -- reset counter
+                    return {};  // wait -- stay ARMED, don't reset
                 }
-                // Price is outside with sufficient clearance — accumulate ticks
+                // Price is outside with sufficient clearance -- accumulate ticks
                 if (MIN_CONFIRM_TICKS > 0) {
                     ++m_break_confirm_ticks;
                     if (m_break_confirm_ticks < MIN_CONFIRM_TICKS) {
-                        return {};  // not yet sustained — stay ARMED, wait
+                        return {};  // not yet sustained -- stay ARMED, wait
                     }
-                    // Sustained for MIN_CONFIRM_TICKS — confirmed, fall through
+                    // Sustained for MIN_CONFIRM_TICKS -- confirmed, fall through
                     m_break_confirm_ticks = 0;
                 }
             }
 
-            // ── GATE 6: Edge model ────────────────────────────────────────────
+            // ?? GATE 6: Edge model ????????????????????????????????????????????
             const double breakout_move = is_long
                 ? (mid - comp_high) : (comp_low - mid);
             double momentum_pct = 0.0;
@@ -1229,18 +1229,18 @@ public:
 protected:
     std::deque<double> m_prices;
     int64_t            m_last_signal_ts       = 0;
-    // Same-level re-entry guard — prevents re-entering same failed compression
+    // Same-level re-entry guard -- prevents re-entering same failed compression
     double             m_last_exit_price      = 0.0;
     int64_t            m_last_exit_ts         = 0;
-    static constexpr double  SAME_LEVEL_BAND_MULT = 1.0;  // band = SL_PCT × 1.0 of price
+    static constexpr double  SAME_LEVEL_BAND_MULT = 1.0;  // band = SL_PCT ? 1.0 of price
     static constexpr int64_t SAME_LEVEL_SEC       = 60;
 
-    // ── Gold-equivalent risk controls (ported from GoldEngineStack) ───────
-    // Global SL cooldown: any stop hit → block new entries for GLOBAL_SL_COOLDOWN_SEC
+    // ?? Gold-equivalent risk controls (ported from GoldEngineStack) ???????
+    // Global SL cooldown: any stop hit ? block new entries for GLOBAL_SL_COOLDOWN_SEC
     int64_t            m_sl_cooldown_until    = 0;
     static constexpr int64_t GLOBAL_SL_COOLDOWN_SEC = 120;
 
-    // Side-specific chop detection: 2 SL hits same side in window → pause that side
+    // Side-specific chop detection: 2 SL hits same side in window ? pause that side
     // side 0 = LONG, side 1 = SHORT
     std::array<int64_t, 2>             m_side_pause_until{{0, 0}};
     std::array<std::deque<int64_t>, 2> m_side_sl_times;
@@ -1248,23 +1248,23 @@ protected:
     static constexpr int64_t SIDE_CHOP_PAUSE_SEC    = 300;
     static constexpr int     SIDE_CHOP_TRIGGER      = 2;
 
-    // VWAP tracking — daily cumulative tick average, resets at UTC midnight
+    // VWAP tracking -- daily cumulative tick average, resets at UTC midnight
     double             m_vwap_cum_pv          = 0.0;  // sum(price)
     double             m_vwap_cum_vol         = 0.0;  // tick count
     double             m_vwap                 = 0.0;  // current VWAP
     int                m_vwap_last_day        = -1;   // last UTC day-of-year
     // VWAP dislocation gate: don't enter within VWAP_MIN_DIST_PCT of VWAP
     // Set to 0 to disable. Calibrated per instrument class at startup.
-    double             VWAP_MIN_DIST_PCT      = 0.05; // % of mid — 0.05% default
+    double             VWAP_MIN_DIST_PCT      = 0.05; // % of mid -- 0.05% default
 
     // Regime-flip exit: if supervisor regime changes while in trade (>= 60s)
-    // close the position — the market structure that justified entry has changed
+    // close the position -- the market structure that justified entry has changed
     static constexpr int64_t REGIME_FLIP_MIN_HOLD_SEC = 60;
     int                m_trade_id             = 0;
     int                m_compression_ticks    = 0;   // ticks spent in COMPRESSION phase
     int                m_comp_violation_ticks = 0;   // consecutive ticks where ALL reset conditions are true
     int                m_comp_reentry_wait    = 0;   // countdown before re-detecting compression after reset
-    double             m_comp_initial_range   = 0.0; // comp range captured at tick 3 — used for range_tolerance check
+    double             m_comp_initial_range   = 0.0; // comp range captured at tick 3 -- used for range_tolerance check
     int                m_break_confirm_ticks  = 0;   // consecutive ticks price has stayed outside comp boundary (Gate 5)
 
     static int64_t nowSec() noexcept {
@@ -1316,10 +1316,10 @@ protected:
         m_last_exit_price = exit_px;
         m_last_exit_ts    = nowSec();
 
-        // ── Gold-equivalent SL cooldown + chop detection ─────────────────
+        // ?? Gold-equivalent SL cooldown + chop detection ?????????????????
         if (std::strcmp(reason, "SL_HIT") == 0) {
             const int64_t now_s = nowSec();
-            // Global SL cooldown — block all new entries for GLOBAL_SL_COOLDOWN_SEC
+            // Global SL cooldown -- block all new entries for GLOBAL_SL_COOLDOWN_SEC
             m_sl_cooldown_until = now_s + GLOBAL_SL_COOLDOWN_SEC;
             std::cout << "[ENG-" << symbol << "] SL_COOLDOWN "
                       << GLOBAL_SL_COOLDOWN_SEC << "s\n";
@@ -1350,7 +1350,7 @@ protected:
 };
 
 // ==============================================================================
-// Concrete engine — standard CRTP policy (no extra overrides needed)
+// Concrete engine -- standard CRTP policy (no extra overrides needed)
 // Used for XAUUSD (the gold multi-stack handles the rest).
 // Per-instrument typed engines (SpEngine, NqEngine, OilEngine) and MacroContext
 // live in SymbolEngines.hpp which includes this file.

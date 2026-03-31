@@ -1,6 +1,6 @@
 #pragma once
 // ==============================================================================
-// SymbolConfig.hpp — per-symbol parameter store
+// SymbolConfig.hpp -- per-symbol parameter store
 //
 // SINGLE SOURCE OF TRUTH for all per-symbol tuning.
 // symbols.ini is loaded at startup. apply_bracket() in main.cpp applies these
@@ -18,7 +18,7 @@
 //   SLIPPAGE_BUFFER=0.08  ; price-unit slippage estimate (not basis points)
 //   COOLDOWN_MS=30000     ; post-trade cooldown in ms
 //   BRACKET_RR=3.0        ; bracket-specific RR (overrides TP_MULT for brackets)
-//   MAX_RANGE=22.0        ; bracket range ceiling — blocks bracketing trending day-ranges
+//   MAX_RANGE=22.0        ; bracket range ceiling -- blocks bracketing trending day-ranges
 //   BRACKET_LOOKBACK=30   ; tick lookback for structural range
 // ==============================================================================
 #include <string>
@@ -43,14 +43,14 @@ struct SymbolConfig
     // Entry filter
     double max_spread        = 0.0;
     double min_edge_bp       = 0.0;
-    double slippage_est_bp   = 0.0;  // basis-point slippage — for breakout engines
+    double slippage_est_bp   = 0.0;  // basis-point slippage -- for breakout engines
     double min_breakout_pct  = 0.0;
     int    min_confirm_ticks = 0;    // consecutive ticks price must stay outside comp boundary before signal fires (0=disabled)
 
     // Bracket-specific overrides (symbols.ini owns these, configure() is fallback only)
     double slippage_buffer   = 0.0;   // SLIPPAGE_BUFFER: price-unit slip for bracket cost model (0=use configure default)
     int    cooldown_ms       = 0;     // COOLDOWN_MS: post-trade cooldown (0=use configure default)
-    double bracket_rr        = 0.0;   // BRACKET_RR: bracket R:R ratio (0=use TP_MULT) — NOT used as MAX_RANGE anymore
+    double bracket_rr        = 0.0;   // BRACKET_RR: bracket R:R ratio (0=use TP_MULT) -- NOT used as MAX_RANGE anymore
     double max_range         = 0.0;   // MAX_RANGE: bracket range ceiling in price units (0=disabled). Prevents bracketing full day-range trending moves.
     int    bracket_lookback  = 0;     // BRACKET_LOOKBACK: tick lookback for structure (0=use configure default)
 
@@ -66,14 +66,14 @@ struct SymbolConfig
     bool   breakout_in_trend       = true;
     int    cooldown_fail_threshold = 20;
     int    cooldown_duration_ms    = 120000;
-    // Trend-direction bracket — fires in IMPULSE regime, one side only
+    // Trend-direction bracket -- fires in IMPULSE regime, one side only
     // SL = GoldStack.atr() * trend_bracket_sl_mult (ATR-based, not range-based)
-    bool   trend_bracket_enabled   = false;  // off by default — enabled via symbols.ini
+    bool   trend_bracket_enabled   = false;  // off by default -- enabled via symbols.ini
     double trend_bracket_sl_mult   = 1.2;    // SL = ATR * this. 1.2 = $18 on ATR=$15 day
 };
 
 // ==============================================================================
-// SymbolConfigManager — loads symbols.ini, provides per-symbol lookup
+// SymbolConfigManager -- loads symbols.ini, provides per-symbol lookup
 // ==============================================================================
 class SymbolConfigManager
 {

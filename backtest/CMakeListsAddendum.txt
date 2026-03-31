@@ -2,12 +2,12 @@
 # PASTE THIS BLOCK INTO THE BOTTOM OF CMakeLists.txt
 # (after the existing Omega target and before the closing message block)
 #
-# OmegaBacktest — standalone C++ backtester
+# OmegaBacktest -- standalone C++ backtester
 # No FIX / OpenSSL / WebSocket dependencies.
-# Compiles in ~10s. Runs at 500K–2M ticks/sec vs ~21K in Python.
+# Compiles in ~10s. Runs at 500K-2M ticks/sec vs ~21K in Python.
 # =============================================================================
 
-# ── Backtest executable ───────────────────────────────────────────────────────
+# ?? Backtest executable ???????????????????????????????????????????????????????
 add_executable(OmegaBacktest
     backtest/OmegaBacktest.cpp
     src/SymbolConfig.cpp          # needed by SymbolConfig.hpp include chain
@@ -20,7 +20,7 @@ target_include_directories(OmegaBacktest PRIVATE
     ${CMAKE_SOURCE_DIR}/backtest
 )
 
-# ── Compiler flags ────────────────────────────────────────────────────────────
+# ?? Compiler flags ????????????????????????????????????????????????????????????
 if(MSVC)
     target_compile_options(OmegaBacktest PRIVATE
         /O2
@@ -62,7 +62,7 @@ else()
     target_link_libraries(OmegaBacktest PRIVATE pthread)
 endif()
 
-# ── Post-build: copy config next to binary ────────────────────────────────────
+# ?? Post-build: copy config next to binary ????????????????????????????????????
 add_custom_command(TARGET OmegaBacktest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/symbols.ini"
@@ -70,7 +70,7 @@ add_custom_command(TARGET OmegaBacktest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/omega_config.ini"
         "$<TARGET_FILE_DIR:OmegaBacktest>/omega_config.ini"
-    COMMENT "Copying config → OmegaBacktest output dir"
+    COMMENT "Copying config ? OmegaBacktest output dir"
 )
 
 message(STATUS "OmegaBacktest target configured (no OpenSSL dependency)")

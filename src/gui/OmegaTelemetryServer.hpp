@@ -1,16 +1,16 @@
 #pragma once
 // ==============================================================================
-// OmegaTelemetryServer — HTTP :7779 + WebSocket :7780
+// OmegaTelemetryServer -- HTTP :7779 + WebSocket :7780
 // Reads OmegaTelemetrySharedMemory and serves GUI + JSON API.
 //
 // Threading model:
-//   thread_    — HTTP accept loop (read-only access to snap_)
-//   ws_thread_ — WS accept + broadcast loop (sole owner of ws_clients_)
+//   thread_    -- HTTP accept loop (read-only access to snap_)
+//   ws_thread_ -- WS accept + broadcast loop (sole owner of ws_clients_)
 //
-// ws_clients_ is exclusively owned by ws_thread_ — no mutex needed.
+// ws_clients_ is exclusively owned by ws_thread_ -- no mutex needed.
 // snap_ is a raw pointer set once before threads start, then read-only
-// from both threads simultaneously — no synchronisation needed.
-// running_ is std::atomic<bool> — correct for cross-thread stop signal.
+// from both threads simultaneously -- no synchronisation needed.
+// running_ is std::atomic<bool> -- correct for cross-thread stop signal.
 // ==============================================================================
 #include <atomic>
 #include <thread>

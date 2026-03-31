@@ -1,7 +1,7 @@
 // =============================================================================
 // omega_backtest_standalone.cpp
 //
-// Self-contained C++ backtester for Mac/Linux — NO cmake, NO engine headers,
+// Self-contained C++ backtester for Mac/Linux -- NO cmake, NO engine headers,
 // NO OpenSSL. Compiles with a single clang++ command.
 //
 // BUILD (Mac):
@@ -12,8 +12,8 @@
 //   ./omega_bt ~/tick/data/xauusd_merged_24months.csv --max 5000000   # quick test
 //
 // CSV FORMAT (auto-detected):
-//   timestamp,askPrice,bidPrice        ← your actual format
-//   timestamp,bid,ask / timestamp,ask,bid  ← detected by column name
+//   timestamp,askPrice,bidPrice        ? your actual format
+//   timestamp,bid,ask / timestamp,ask,bid  ? detected by column name
 //
 // ENGINES:
 //   1.  CompressionBreakout    WINDOW=50, RANGE=$6, BREAK=$2.50
@@ -26,26 +26,26 @@
 //   8.  SpikeFade              fade $10+ 5-min moves
 //   9.  DynamicRange           20-bar range extremes fade
 //
-// P&L MODEL (v3 — full round-trip spread accounting):
-//   size = 0.01 lot · $1/point
+// P&L MODEL (v3 -- full round-trip spread accounting):
+//   size = 0.01 lot ? $1/point
 //   commission = $0 (BlackBull CFD)
 //   max hold = 600s
 //
 //   Entry:  Long  buy  at ask, Short sell at bid
 //   Exit:   Long  sell at bid, Short buy  at ask
-//   → spread is paid TWICE: once on entry, once on exit
-//   → TP/SL targets are measured from MID so both legs of spread are visible
-//   → entry_spread deducted explicitly:
+//   ? spread is paid TWICE: once on entry, once on exit
+//   ? TP/SL targets are measured from MID so both legs of spread are visible
+//   ? entry_spread deducted explicitly:
 //        long  pnl = (exit_bid - entry_ask) = (exit_mid - entry_mid) - spread
 //        short pnl = (entry_bid - exit_ask) = (entry_mid - exit_mid) - spread
 //
 //   All engine SPREAD filters now set to 0.35 (BlackBull live max).
-//   Historical data avg spread = 0.45pt — ticks above 0.35 are filtered,
+//   Historical data avg spread = 0.45pt -- ticks above 0.35 are filtered,
 //   matching live execution conditions.
 //
 // FIXES vs v2:
-//   v2: spread deducted on entry only — exit at bid/ask was "free"
-//       → timeout exits were undercosted by ~0.45pt each
+//   v2: spread deducted on entry only -- exit at bid/ask was "free"
+//       ? timeout exits were undercosted by ~0.45pt each
 //   v3: full round-trip cost. TP/SL measured from mid, spread deducted.
 //       Entry filter tightened to 0.35pt = BlackBull live conditions.
 //
@@ -79,7 +79,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-// ── output dir ───────────────────────────────────────────────────────────────
+// ?? output dir ???????????????????????????????????????????????????????????????
 static const char* RESULTS_DIR = "results";
 
 // =============================================================================
@@ -115,7 +115,7 @@ static inline int64_t fparse_i64(const char* s, const char** e) noexcept {
     return v;
 }
 
-// Parse various datetime strings → epoch ms
+// Parse various datetime strings ? epoch ms
 static int64_t parse_datetime(const char* s) noexcept {
     if (s[0] >= '0' && s[0] <= '9') {
         if ((s[4] == '-' || s[4] == '.') && s[7] == s[4]) {
@@ -272,9 +272,9 @@ static std::vector<Tick> load_csv(const char* path) {
                spread_sum/spread_n, spread_max, (long long)spread_n, (long long)invalid_spread);
         double avg_sp = spread_sum / spread_n;
         if (avg_sp > 1.0)
-            printf("[SPREAD] ⚠  avg spread %.4f > 1.0 — bid/ask columns may be swapped!\n", avg_sp);
+            printf("[SPREAD] ?  avg spread %.4f > 1.0 -- bid/ask columns may be swapped!\n", avg_sp);
         else
-            printf("[SPREAD] ✅ avg spread %.4f  (live BlackBull target: 0.10–0.35pt)\n", avg_sp);
+            printf("[SPREAD] ? avg spread %.4f  (live BlackBull target: 0.10-0.35pt)\n", avg_sp);
     }
 
     return ticks;
@@ -384,7 +384,7 @@ struct EWM {
 };
 
 // =============================================================================
-// Position — 0.01 lot gold CFD  [$1/point]
+// Position -- 0.01 lot gold CFD  [$1/point]
 //
 // v3 ROUND-TRIP SPREAD MODEL:
 //   Spread is a real cost on BOTH entry AND exit.
@@ -408,7 +408,7 @@ struct Pos {
     int64_t open_ts      = 0;
     double  mfe          = 0;   // max favourable excursion in pts
     double  mae          = 0;
-    double  atr_at_entry = 0.0; // ATR captured at entry — drives trail steps
+    double  atr_at_entry = 0.0; // ATR captured at entry -- drives trail steps
     int     trail_stage  = 0;   // 0=initial, 1=BE, 2=trail1(1.5xATR), 3=trail2(0.5xATR), 4=trail3(0.3xATR)
     static constexpr double MULT = 1.0;
 
@@ -419,9 +419,9 @@ struct Pos {
     static constexpr double STAGE4_ATR = 10.0; // tightest trail at 10x ATR profit
 
     // Trail distances (in ATR multiples behind MFE)
-    static constexpr double TRAIL2_DIST = 1.5; // 1.5x ATR behind MFE — ride initial move
+    static constexpr double TRAIL2_DIST = 1.5; // 1.5x ATR behind MFE -- ride initial move
     static constexpr double TRAIL3_DIST = 0.5; // 0.5x ATR at stage 3
-    static constexpr double TRAIL4_DIST = 0.3; // 0.3x ATR — ride the cascade
+    static constexpr double TRAIL4_DIST = 0.3; // 0.3x ATR -- ride the cascade
 
     void open(int s, double mid, double spread, double tp_pts, double sl_pts,
               int64_t ts, double atr = 0.0) {
@@ -446,7 +446,7 @@ struct Pos {
         if (move  > mfe) mfe =  move;
         if (-move > mae) mae = -move;
 
-        // ── Progressive trailing stop (mirrors GoldFlowEngine 4-stage logic) ──
+        // ?? Progressive trailing stop (mirrors GoldFlowEngine 4-stage logic) ??
         // Only engages if we have a valid ATR at entry. If ATR=0 (engines that
         // don't pass ATR), falls back to fixed TP/SL behaviour.
         if (atr_at_entry > 0.1) {
@@ -484,7 +484,7 @@ struct Pos {
                     sl_mid = trail;
             }
 
-            // Stage 4: tighten to 0.3x ATR at 10x ATR profit — ride the cascade
+            // Stage 4: tighten to 0.3x ATR at 10x ATR profit -- ride the cascade
             if (trail_stage < 4 && move >= atr * STAGE4_ATR) {
                 trail_stage = 4;
             }
@@ -498,8 +498,8 @@ struct Pos {
             }
         }
 
-        // ── Exit conditions ───────────────────────────────────────────────────
-        // Fixed TP only fires if trail hasn't yet armed (stage < 2) — once trailing
+        // ?? Exit conditions ???????????????????????????????????????????????????
+        // Fixed TP only fires if trail hasn't yet armed (stage < 2) -- once trailing
         // starts, the trail is the exit mechanism. This matches live engine behaviour.
         const bool hit_tp  = (trail_stage < 2) &&
                              ((side ==  1) ? (cur_mid >= tp_mid) : (cur_mid <= tp_mid));
@@ -567,7 +567,7 @@ struct Stats {
 };
 
 // =============================================================================
-// Signal struct — engines emit mid+spread, Pos handles the rest
+// Signal struct -- engines emit mid+spread, Pos handles the rest
 // =============================================================================
 struct Sig {
     bool   valid   = false;
@@ -576,7 +576,7 @@ struct Sig {
     double spread  = 0;     // spread at signal
     double tp_pts  = 0;     // gross TP from mid (initial fixed TP; overridden by trail once Stage2 armed)
     double sl_pts  = 0;     // gross SL from mid
-    double atr     = 0.0;   // ATR at signal time — drives trailing stop stages (0 = trail disabled)
+    double atr     = 0.0;   // ATR at signal time -- drives trailing stop stages (0 = trail disabled)
 };
 
 // =============================================================================
@@ -597,13 +597,13 @@ struct EngineBase {
         return (ts_ms - last_sig_ts) < ms;
     }
 
-    // ── Shared ATR tracker (EWM, α=0.05, ~20-tick half-life) ─────────────────
+    // ?? Shared ATR tracker (EWM, ?=0.05, ~20-tick half-life) ?????????????????
     // All engines inherit this. Call update_atr(t) on every tick to maintain a
     // live ATR. Engines pass atr() into Sig so the trailing stop knows step size.
     // ATR is 0.0 until at least ATR_WARMUP ticks have been seen.
     static constexpr int    ATR_WARMUP = 50;   // ticks before ATR is trusted
-    static constexpr double ATR_ALPHA  = 0.05; // EWM alpha ≈ 20-tick half-life
-    static constexpr double ATR_MIN    = 0.30; // floor — prevents sub-tick SL
+    static constexpr double ATR_ALPHA  = 0.05; // EWM alpha ? 20-tick half-life
+    static constexpr double ATR_MIN    = 0.30; // floor -- prevents sub-tick SL
     double  m_atr_ewm     = 0.0;
     double  m_atr_last_mid= 0.0;
     int     m_atr_ticks   = 0;
@@ -620,17 +620,17 @@ struct EngineBase {
     }
 
     double atr() const noexcept {
-        if (m_atr_ticks < ATR_WARMUP) return 0.0; // not warmed — trail disabled
+        if (m_atr_ticks < ATR_WARMUP) return 0.0; // not warmed -- trail disabled
         return std::max(ATR_MIN, m_atr_ewm);
     }
 };
 
 // =============================================================================
-// ENGINE 1 — CompressionBreakout
+// ENGINE 1 -- CompressionBreakout
 //
 // FIX: Save hi/lo from the PRIOR window before pushing the new tick.
 //      Then test if the NEW tick breaks out beyond PRIOR hi/lo + trigger.
-//      Previously: push → compute hi/lo → compare → hi always >= mid → 0 trades.
+//      Previously: push ? compute hi/lo ? compare ? hi always >= mid ? 0 trades.
 // =============================================================================
 struct CompressionBreakout : EngineBase {
     static constexpr int    WINDOW  = 50;
@@ -655,7 +655,7 @@ struct CompressionBreakout : EngineBase {
         double eff_trigger = is_asia ? TRIGGER  * 1.40 : TRIGGER;
         if (t.spread() > eff_spread) { ++spread_filtered; return {}; }
 
-        // ── FIX: capture hi/lo of the CURRENT window BEFORE adding new tick ──
+        // ?? FIX: capture hi/lo of the CURRENT window BEFORE adding new tick ??
         double prev_hi = 0, prev_lo = 0;
         bool   window_ready = (hist.size() >= (size_t)WINDOW);
         if (window_ready) {
@@ -669,19 +669,19 @@ struct CompressionBreakout : EngineBase {
         double rng = prev_hi - prev_lo;
         if (rng > RANGE) return {};  // not compressed
 
-        // ── Dynamic TP scaling ────────────────────────────────────────────────
-        // On trend days ATR is large — fixed $10 TP exits too early.
-        // Scale TP = max(10.0, ATR × 2.5), cap at $30.
-        // SL stays fixed ($5) — keeps RR >= 2:1 even on small ATR.
+        // ?? Dynamic TP scaling ????????????????????????????????????????????????
+        // On trend days ATR is large -- fixed $10 TP exits too early.
+        // Scale TP = max(10.0, ATR ? 2.5), cap at $30.
+        // SL stays fixed ($5) -- keeps RR >= 2:1 even on small ATR.
         const double cur_atr = atr();
         const double dyn_tp  = (cur_atr > 0.1)
             ? std::min(30.0, std::max(TP, cur_atr * 2.5))
             : TP;
 
-        // ── Min trade value gate ──────────────────────────────────────────────
-        // Skip if expected gross (TP × $1/pt × 0.01 lot = TP cents) < 1.5×
-        // estimated round-trip slippage (spread × 1.5 × 2 legs).
-        // At 0.01 lot: $1/pt. TP=$10 → $0.10 gross. Spread=$0.45 → $0.68 slip.
+        // ?? Min trade value gate ??????????????????????????????????????????????
+        // Skip if expected gross (TP ? $1/pt ? 0.01 lot = TP cents) < 1.5?
+        // estimated round-trip slippage (spread ? 1.5 ? 2 legs).
+        // At 0.01 lot: $1/pt. TP=$10 ? $0.10 gross. Spread=$0.45 ? $0.68 slip.
         // Gate kills the -$2.52/-$3.57 trades where sl < spread.
         const double slippage_est = t.spread() * 1.5;  // one-way cost at 0.01 lot
         if (dyn_tp < slippage_est * 1.5) { return {}; }
@@ -704,7 +704,7 @@ struct CompressionBreakout : EngineBase {
 };
 
 // =============================================================================
-// ENGINE 2 — WickRejection (5-min bars)
+// ENGINE 2 -- WickRejection (5-min bars)
 // =============================================================================
 struct WickRejection : EngineBase {
     static constexpr int    BAR_MINS  = 5;
@@ -759,7 +759,7 @@ struct WickRejection : EngineBase {
 };
 
 // =============================================================================
-// ENGINE 3 — DonchianBreakout (5-min bars, 20-bar channel)
+// ENGINE 3 -- DonchianBreakout (5-min bars, 20-bar channel)
 // =============================================================================
 struct DonchianBreakout : EngineBase {
     static constexpr int    BAR_MINS = 5;
@@ -804,7 +804,7 @@ struct DonchianBreakout : EngineBase {
 };
 
 // =============================================================================
-// ENGINE 4 — NR3Breakout (narrowest 3-bar 5-min)
+// ENGINE 4 -- NR3Breakout (narrowest 3-bar 5-min)
 // =============================================================================
 struct NR3Breakout : EngineBase {
     static constexpr int    BAR_MINS = 5;
@@ -855,7 +855,7 @@ struct NR3Breakout : EngineBase {
 };
 
 // =============================================================================
-// ENGINE 5 — IntradaySeasonality
+// ENGINE 5 -- IntradaySeasonality
 // =============================================================================
 struct IntradaySeasonality : EngineBase {
     static constexpr double SPREAD = 0.80;
@@ -904,7 +904,7 @@ struct IntradaySeasonality : EngineBase {
 };
 
 // =============================================================================
-// ENGINE 6 — SessionMomentum
+// ENGINE 6 -- SessionMomentum
 // =============================================================================
 struct SessionMomentum : EngineBase {
     static constexpr int    WINDOW   = 60;
@@ -947,15 +947,15 @@ struct SessionMomentum : EngineBase {
 };
 
 // =============================================================================
-// ENGINE 7 — MeanReversion (Z-score)
+// ENGINE 7 -- MeanReversion (Z-score)
 // =============================================================================
 struct MeanReversion : EngineBase {
     static constexpr int    LB           = 60;
-    static constexpr double Z_ENTRY      = 2.5;   // raised 2.0→2.5: genuine outliers only, not pullbacks
+    static constexpr double Z_ENTRY      = 2.5;   // raised 2.0?2.5: genuine outliers only, not pullbacks
     static constexpr double SPREAD       = 0.80;
     static constexpr double TP           = 12.0;
     static constexpr double SL           = 4.0;
-    static constexpr int    COOLDOWN     = 90 * 1000;  // raised 60s→90s: fewer signals in trends
+    static constexpr int    COOLDOWN     = 90 * 1000;  // raised 60s?90s: fewer signals in trends
     static constexpr int    TREND_WINDOW = 500;         // ticks to look back for trend detection
     static constexpr double TREND_THRESH = 4.0;         // $4 net in 500 ticks = clearly trending
 
@@ -972,18 +972,18 @@ struct MeanReversion : EngineBase {
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
-        // ── Trend-regime gate (dual layer) ────────────────────────────────────
-        // Layer 1: EWM drift gate — catches fast directional ticks
+        // ?? Trend-regime gate (dual layer) ????????????????????????????????????
+        // Layer 1: EWM drift gate -- catches fast directional ticks
         if (std::fabs(drift) > 1.5) return {};
 
-        // Layer 2: 200-tick net displacement — catches sustained trend even when
+        // Layer 2: 200-tick net displacement -- catches sustained trend even when
         // EWM drift dips neutral during pullbacks inside a +70pt rally.
-        // Evidence: +72pt day, drift was neutral 25% of ticks — MR fired shorts into it.
+        // Evidence: +72pt day, drift was neutral 25% of ticks -- MR fired shorts into it.
         // $8 in 200 ticks (~3-5 min) is a clear trend, not a ranging market.
         if ((int)trend_hist.size() >= TREND_WINDOW) {
             const double net = trend_hist[trend_hist.size()-1]
                              - trend_hist[trend_hist.size()-TREND_WINDOW];
-            if (std::fabs(net) > TREND_THRESH) return {};  // trending — no MR
+            if (std::fabs(net) > TREND_THRESH) return {};  // trending -- no MR
         }
 
         hist.push(t.mid());
@@ -1008,7 +1008,7 @@ struct MeanReversion : EngineBase {
 };
 
 // =============================================================================
-// ENGINE 8 — SpikeFade ($10+ 5-min move)
+// ENGINE 8 -- SpikeFade ($10+ 5-min move)
 // =============================================================================
 struct SpikeFade : EngineBase {
     static constexpr int    BAR_MINS = 5;
@@ -1027,16 +1027,16 @@ struct SpikeFade : EngineBase {
         if (t.spread() > SPREAD) { ++spread_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
-        // ── Trend-regime gate: only fade spikes that go AGAINST the trend ─────
+        // ?? Trend-regime gate: only fade spikes that go AGAINST the trend ?????
         // A $10 spike in the trend direction on a trend day is a continuation,
         // not a spike to fade. Only fire SpikeFade when the spike contradicts drift.
         int bm = bar_minute(t.ts_ms, BAR_MINS);
         if (bm != bar_bm) { bar_open = t.mid(); bar_bm = bm; return {}; }
 
         double move = t.mid() - bar_open;
-        // Spike UP but drift strongly bullish → continuation, not fade
+        // Spike UP but drift strongly bullish ? continuation, not fade
         if (move >  MIN_MOVE && drift >  0.8) return {};
-        // Spike DOWN but drift strongly bearish → continuation, not fade
+        // Spike DOWN but drift strongly bearish ? continuation, not fade
         if (move < -MIN_MOVE && drift < -0.8) return {};
         if (move >  MIN_MOVE) { last_sig_ts=t.ts_ms; return {true,-1,t.mid(),t.spread(),TP,SL,atr()}; }
         if (move < -MIN_MOVE) { last_sig_ts=t.ts_ms; return {true,+1,t.mid(),t.spread(),TP,SL,atr()}; }
@@ -1045,7 +1045,7 @@ struct SpikeFade : EngineBase {
 };
 
 // =============================================================================
-// ENGINE 9 — DynamicRange (20-bar range extremes fade)
+// ENGINE 9 -- DynamicRange (20-bar range extremes fade)
 // =============================================================================
 struct DynamicRange : EngineBase {
     static constexpr int    BARS         = 20;
@@ -1071,11 +1071,11 @@ struct DynamicRange : EngineBase {
         if (in_dead_zone(t.ts_ms)) { ++dead_zone_filtered; return {}; }
         if (cooldown(t.ts_ms, COOLDOWN)) { ++cooldown_filtered; return {}; }
 
-        // ── Trend-regime gate (dual layer) ────────────────────────────────────
+        // ?? Trend-regime gate (dual layer) ????????????????????????????????????
         // Layer 1: EWM drift
         if (std::fabs(drift) > 1.5) return {};
 
-        // Layer 2: 200-tick net displacement — blocks fade during sustained trends
+        // Layer 2: 200-tick net displacement -- blocks fade during sustained trends
         if ((int)trend_hist.size() >= TREND_WINDOW) {
             const double net = trend_hist[trend_hist.size()-1]
                              - trend_hist[trend_hist.size()-TREND_WINDOW];
@@ -1102,7 +1102,7 @@ struct DynamicRange : EngineBase {
 };
 
 // =============================================================================
-// Runner — owns one engine + its position + its stats
+// Runner -- owns one engine + its position + its stats
 // =============================================================================
 struct Runner {
     std::unique_ptr<EngineBase> eng;
@@ -1213,15 +1213,15 @@ th{background:#1e293b;color:#94a3b8;padding:.6rem 1rem;text-align:left;font-size
 td{padding:.55rem 1rem;border-bottom:1px solid #1e293b;font-size:.9rem}
 tr:hover td{background:#1e293b} h2{color:#94a3b8;font-size:1rem;text-transform:uppercase;margin:2rem 0 .5rem}
 </style></head><body>
-<h1>⚡ Omega Backtest Report</h1>
+<h1>? Omega Backtest Report</h1>
 <div class="meta">%lld ticks &nbsp;|&nbsp; %.1fs elapsed &nbsp;|&nbsp; %.0f K t/s</div>
-<h2>Engine Performance (0.01 lot · $1/point · 600s max hold)</h2>
+<h2>Engine Performance (0.01 lot ? $1/point ? 600s max hold)</h2>
 <table><tr><th>Engine</th><th>Trades</th><th>Win Rate</th>
 <th>Total PnL</th><th>Avg PnL</th><th>Max DD</th><th>Sharpe</th></tr>
 %s</table>
 <h2>Monthly PnL</h2>
 <table>%s%s</table>
-<p style="color:#475569;font-size:.8rem">0.01 lot · $1/point · no commission · 600s max hold</p>
+<p style="color:#475569;font-size:.8rem">0.01 lot ? $1/point ? no commission ? 600s max hold</p>
 </body></html>)",
         (long long)tick_count, elapsed_s, tick_count / elapsed_s / 1000.0,
         rows.c_str(), mo_header.c_str(), mo_rows.c_str());
@@ -1284,7 +1284,7 @@ int main(int argc, char** argv) {
     mkdir(RESULTS_DIR, 0755);
 
     printf("================================================================\n");
-    printf("  Omega C++ Backtester  [v2 — spread-correct PnL + CB fix]\n");
+    printf("  Omega C++ Backtester  [v2 -- spread-correct PnL + CB fix]\n");
     printf("  File    : %s\n", csv_path);
     printf("  MaxHold : %ds    MaxTicks: %s\n",
            max_hold, max_ticks ? std::to_string(max_ticks).c_str() : "all");
@@ -1310,7 +1310,7 @@ int main(int argc, char** argv) {
         time_t a=ticks.front().ts_ms/1000, b=ticks.back().ts_ms/1000;
         struct tm ma{},mb{}; gmtime_r(&a,&ma); gmtime_r(&b,&mb);
         char sa[20],sb[20]; strftime(sa,20,"%Y-%m-%d",&ma); strftime(sb,20,"%Y-%m-%d",&mb);
-        printf("[RANGE] %s → %s (%zu ticks)\n", sa, sb, ticks.size());
+        printf("[RANGE] %s ? %s (%zu ticks)\n", sa, sb, ticks.size());
     }
 
     std::vector<Runner> runners;
@@ -1328,7 +1328,7 @@ int main(int argc, char** argv) {
     VWAP vwap_calc;
     EWM  ewm_calc;
 
-    printf("[RUN] %zu engines × %zu ticks...\n\n", runners.size(), ticks.size());
+    printf("[RUN] %zu engines ? %zu ticks...\n\n", runners.size(), ticks.size());
     auto t0r = std::chrono::steady_clock::now();
     const int64_t N = (int64_t)ticks.size();
     int64_t last_p = 0;
@@ -1365,13 +1365,13 @@ int main(int argc, char** argv) {
     double total_pnl = 0; int total_trades = 0;
     for (auto* r : sorted) {
         const auto& s = r->stats;
-        const char* flag = s.equity >= 0 ? "✅" : "❌";
+        const char* flag = s.equity >= 0 ? "?" : "?";
         printf("  %s %-26s %7d %5.1f%% %+10.2f %7.2f %8.2f\n",
                flag, s.name.c_str(), s.n(), s.wr(), s.equity, s.sharpe(), s.dd);
         total_pnl += s.equity; total_trades += s.n();
     }
     printf("  %s\n", std::string(72,'-').c_str());
-    printf("  TOTAL  %d trades  PnL=%+.2f  (0.01 lot · $1/pt · no commission)\n\n",
+    printf("  TOTAL  %d trades  PnL=%+.2f  (0.01 lot ? $1/pt ? no commission)\n\n",
            total_trades, total_pnl);
 
     // Spread filter diagnostics
@@ -1393,6 +1393,6 @@ int main(int argc, char** argv) {
     write_summary_csv(runners);
     write_html(runners, N, run_s);
 
-    printf("\n✅  open %s/report.html\n\n", RESULTS_DIR);
+    printf("\n?  open %s/report.html\n\n", RESULTS_DIR);
     return 0;
 }

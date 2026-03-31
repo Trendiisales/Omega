@@ -1,20 +1,20 @@
 #pragma once
 // ==============================================================================
-// BracketEngine — CRTP true-bracket breakout engine
+// BracketEngine -- CRTP true-bracket breakout engine
 //
 // TRUE BRACKET behaviour:
 //   Once a structural range is locked, BOTH sides are armed simultaneously.
 //   The engine emits TWO pending signals (long above high, short below low).
 //   main.cpp sends BOTH stop orders to the broker.
-//   Whichever fills first → that becomes the live position.
+//   Whichever fills first ? that becomes the live position.
 //   The other order is cancelled via the stored clOrdId.
 //
 // State machine:
-//   IDLE     → not enough data / range too small
-//   ARMED    → bracket locked, MIN_STRUCTURE_MS timer running
-//   PENDING  → both orders sent, waiting for first fill via confirm_fill()
-//   LIVE     → one side filled, other cancelled, managing position
-//   COOLDOWN → post-close cooldown
+//   IDLE     ? not enough data / range too small
+//   ARMED    ? bracket locked, MIN_STRUCTURE_MS timer running
+//   PENDING  ? both orders sent, waiting for first fill via confirm_fill()
+//   LIVE     ? one side filled, other cancelled, managing position
+//   COOLDOWN ? post-close cooldown
 //
 // Used by: GoldBracketEngine (XAUUSD), SilverBracketEngine (XAGUSD)
 // ==============================================================================
@@ -48,7 +48,7 @@ struct BracketSignal {
     const char* reason  = "";
 };
 
-// Both-sides signal — main.cpp sends two stop orders when this is non-empty
+// Both-sides signal -- main.cpp sends two stop orders when this is non-empty
 struct BracketBothSignals {
     bool   valid         = false;
     double long_entry    = 0.0;
@@ -65,12 +65,12 @@ template<typename Derived>
 class BracketEngineBase
 {
 public:
-    // ── Config ────────────────────────────────────────────────────────────────
+    // ?? Config ????????????????????????????????????????????????????????????????
     int    STRUCTURE_LOOKBACK  = 30;
-    // Cold-start entry gate — ticks received before arming is allowed.
+    // Cold-start entry gate -- ticks received before arming is allowed.
     // BracketEngine has no seed() but m_window fills from tick 1 and
     // STRUCTURE_LOOKBACK=30 means it can arm in ~3s on a fast feed.
-    // At ~5-10 ticks/s: 150 ticks ≈ 15-30s of real market data.
+    // At ~5-10 ticks/s: 150 ticks ? 15-30s of real market data.
     int    MIN_ENTRY_TICKS    = 150;
     double BUFFER              = 0.3;
     double RR                  = 1.5;
@@ -89,9 +89,9 @@ public:
     double ENTRY_SIZE          = 0.01;
     double SL_PCT              = 0.0;
     // PENDING_TIMEOUT_SEC: how long to wait for price to hit a bracket level.
-    // LIVE mode: 60s is fine — broker holds the stop orders, we just wait for fill ACK.
+    // LIVE mode: 60s is fine -- broker holds the stop orders, we just wait for fill ACK.
     // SHADOW mode: price must cross the level within this window for fill simulation.
-    // Gold often consolidates 2-5 min after compressing — 60s was expiring before break.
+    // Gold often consolidates 2-5 min after compressing -- 60s was expiring before break.
     // Default 300s (5 min). Set per-engine in main.cpp after configure().
     int    PENDING_TIMEOUT_SEC = 300;
     // MIN_BREAK_TICKS: consecutive ticks price must stay INSIDE the bracket before
@@ -104,9 +104,9 @@ public:
     // counter reaches MIN_BREAK_TICKS does arm_both_sides() fire.
     int    MIN_BREAK_TICKS     = 0;
     const char* symbol         = "???";
-    bool   shadow_mode         = false;  // set by main.cpp — enables price-triggered fill sim in PENDING
+    bool   shadow_mode         = false;  // set by main.cpp -- enables price-triggered fill sim in PENDING
 
-    // ── Observable state ──────────────────────────────────────────────────────
+    // ?? Observable state ??????????????????????????????????????????????????????
     BracketPhase phase        = BracketPhase::IDLE;
     double       bracket_high = 0.0;
     double       bracket_low  = 0.0;
@@ -143,7 +143,7 @@ public:
     // Set by main.cpp so engine can cancel broker orders directly on timeout/reject
     CancelCallback cancel_order_fn;
 
-    // ── configure() ──────────────────────────────────────────────────────────
+    // ?? configure() ??????????????????????????????????????????????????????????
     void configure(double buffer,
                    int    lookback,
                    double rr,
@@ -186,7 +186,7 @@ public:
         return out;
     }
 
-    // ── on_tick() ─────────────────────────────────────────────────────────────
+    // ?? on_tick() ?????????????????????????????????????????????????????????????
     void on_tick(double bid, double ask, long long /*ts_ms*/,
                  bool can_enter,
                  const char* macro_regime,
@@ -194,7 +194,7 @@ public:
                  double vwap = 0.0,
                  double l2_imbalance = 0.5) noexcept
     {
-        // Store latest L2 imbalance — used in arm_both_sides() for direction bias logging
+        // Store latest L2 imbalance -- used in arm_both_sides() for direction bias logging
         m_l2_imbalance = l2_imbalance;
         if (bid <= 0.0 || ask <= 0.0) return;
         const double mid        = (bid + ask) * 0.5;
@@ -202,14 +202,14 @@ public:
         const double spread_pct = (mid > 0.0) ? (spread / mid * 100.0) : 999.0;
         const int64_t now       = nowSec();
 
-        // ── COOLDOWN ──────────────────────────────────────────────────────────
+        // ?? COOLDOWN ??????????????????????????????????????????????????????????
         if (phase == BracketPhase::COOLDOWN) {
             if (now - m_cooldown_start >= static_cast<int64_t>(COOLDOWN_MS / 1000))
                 phase = BracketPhase::IDLE;
             else return;
         }
 
-        // ── LIVE: manage open position ────────────────────────────────────────
+        // ?? LIVE: manage open position ????????????????????????????????????????
         if (phase == BracketPhase::LIVE) {
             if (!pos.active) return;
             const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
@@ -217,7 +217,7 @@ public:
             if (-move > pos.mae) pos.mae = -move;
 
             // Breakout failure: price re-crosses midpoint of bracket
-            // FAILURE_WINDOW_MS divided by 1000 uses integer truncation — values < 1000ms
+            // FAILURE_WINDOW_MS divided by 1000 uses integer truncation -- values < 1000ms
             // truncate to 0, disabling the window. Use ceiling division to preserve small values.
             if (FAILURE_WINDOW_MS > 0 &&
                 (now - pos.entry_ts) < static_cast<int64_t>((FAILURE_WINDOW_MS + 999) / 1000)) {
@@ -232,24 +232,24 @@ public:
 
             if ((now - pos.entry_ts) < static_cast<int64_t>(MIN_HOLD_MS / 1000)) return;
 
-            // ── Stepped trailing stop — rides multi-hour trends ──────────────
+            // ?? Stepped trailing stop -- rides multi-hour trends ??????????????
             // Instead of a fixed TP that exits at 1R, we use a stepped trail:
-            //   Step 1 (40% of TP dist):  SL → breakeven. Position is free.
-            //   Step 2 (100% = 1R):       SL → entry + 50% of TP dist. Lock half.
-            //   Step 3 (200% = 2R):       SL → entry + 100% of TP dist. Lock full 1R.
+            //   Step 1 (40% of TP dist):  SL ? breakeven. Position is free.
+            //   Step 2 (100% = 1R):       SL ? entry + 50% of TP dist. Lock half.
+            //   Step 3 (200% = 2R):       SL ? entry + 100% of TP dist. Lock full 1R.
             //   Step 4 (300%+ = 3R+):     Trail SL at MFE - trail_dist (25% of initial range).
             //                              This is the "ride the cascade" zone.
-            // There is NO fixed TP — position runs until trail stop is hit.
+            // There is NO fixed TP -- position runs until trail stop is hit.
             // On a $6 range / RR=3.0 initial setup:
             //   trail_dist = 6 * 0.25 = $1.50 trail
-            //   At 1R ($18 in): SL → $9 locked
-            //   At 2R ($36 in): SL → $18 locked
+            //   At 1R ($18 in): SL ? $9 locked
+            //   At 2R ($36 in): SL ? $18 locked
             //   At 3R ($54 in): SL trails $1.50 behind MFE
-            //   At $100 move:   SL at ~$98.50 behind entry — position stays open all day
+            //   At $100 move:   SL at ~$98.50 behind entry -- position stays open all day
             {
                 const double initial_range = std::fabs(m_locked_hi - m_locked_lo);
                 // EA-matched trail: hold 2x longer before tightening stop
-                const double trail_dist    = std::max(initial_range * 0.25, spread * 2.0);  // tightened 0.50→0.25: trail tighter, lock more profit
+                const double trail_dist    = std::max(initial_range * 0.25, spread * 2.0);  // tightened 0.50?0.25: trail tighter, lock more profit
                 const double tp_dist       = std::fabs(pos.tp - pos.entry); // initial target dist
                 const double trail_move    = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
 
@@ -277,7 +277,7 @@ public:
                             std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP2 lock_half move=" << trail_move << "\n";
                         }
                     }
-                    // Step 2.5: Lock 75% of TP at 1.5R — new step for tighter locking
+                    // Step 2.5: Lock 75% of TP at 1.5R -- new step for tighter locking
                     if (trail_move >= tp_dist * 1.5 && pos.sl_locked_to_be) {
                         const double lock25 = pos.is_long
                             ? pos.entry + tp_dist * 0.75
@@ -297,7 +297,7 @@ public:
                             std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP3 lock_1R move=" << trail_move << "\n";
                         }
                     }
-                    // Step 4: Free-running trail at MFE - trail_dist (2R+ — was 3R)
+                    // Step 4: Free-running trail at MFE - trail_dist (2R+ -- was 3R)
                     if (trail_move >= tp_dist * 2.0 && pos.sl_locked_to_be) {
                         const double trail_sl = pos.is_long
                             ? (pos.entry + pos.mfe - trail_dist)
@@ -311,7 +311,7 @@ public:
                 }
             }
 
-            // No fixed TP — trail stop exits the position
+            // No fixed TP -- trail stop exits the position
             // SL check handles all exits: initial SL, BE, stepped locks, and trail
             if ( pos.is_long && bid <= pos.sl) {
                 const char* r = pos.sl_locked_to_be
@@ -326,10 +326,10 @@ public:
             return;
         }
 
-        // ── PENDING: both orders out, waiting for first fill ──────────────────
+        // ?? PENDING: both orders out, waiting for first fill ??????????????????
         if (phase == BracketPhase::PENDING) {
             if (!can_enter) {
-                std::cout << "[BRACKET-" << symbol << "] PENDING CANCELLED — session/risk gate closed\n";
+                std::cout << "[BRACKET-" << symbol << "] PENDING CANCELLED -- session/risk gate closed\n";
                 std::cout.flush();
                 cancel_both_broker_orders();
                 reset();
@@ -337,7 +337,7 @@ public:
             }
             if ((now - m_armed_ts) > static_cast<int64_t>(PENDING_TIMEOUT_SEC)) {
                 std::cout << "[BRACKET-" << symbol << "] PENDING TIMEOUT after " << PENDING_TIMEOUT_SEC
-                          << "s — price never hit bracket hi=" << m_locked_hi
+                          << "s -- price never hit bracket hi=" << m_locked_hi
                           << " lo=" << m_locked_lo
                           << " last_mid=" << std::fixed << std::setprecision(4) << ((bid+ask)*0.5)
                           << " dist_to_hi=" << (m_locked_hi - (bid+ask)*0.5)
@@ -364,14 +364,14 @@ public:
             return;
         }
 
-        // ── Entry gate ────────────────────────────────────────────────────────
-        // While ARMED: preserve the timer — do NOT reset m_armed_ts.
+        // ?? Entry gate ????????????????????????????????????????????????????????
+        // While ARMED: preserve the timer -- do NOT reset m_armed_ts.
         // A can_enter=false blip means we can't arm new structure, but
         // structure that already qualified should not lose its timer.
         if (!can_enter) {
             if (phase == BracketPhase::ARMED) {
-                // Timer preserved — do not touch m_armed_ts
-                std::cout << "[BRACKET-" << symbol << "] ARMED HOLD — can_enter=false blip, timer preserved\n";
+                // Timer preserved -- do not touch m_armed_ts
+                std::cout << "[BRACKET-" << symbol << "] ARMED HOLD -- can_enter=false blip, timer preserved\n";
                 std::cout.flush();
                 return;
             }
@@ -379,23 +379,23 @@ public:
             return;
         }
 
-        // ── Maintain structure window ─────────────────────────────────────────
+        // ?? Maintain structure window ?????????????????????????????????????????
         m_window.push_back(mid);
-        ++m_ticks_received;  // always — cold-start gate
+        ++m_ticks_received;  // always -- cold-start gate
 
         if (static_cast<int>(m_window.size()) > STRUCTURE_LOOKBACK * 2)
             m_window.pop_front();
         if (static_cast<int>(m_window.size()) < STRUCTURE_LOOKBACK) return;
 
-        // ── Cold-start entry gate ────────────────────────────────────────────────
+        // ?? Cold-start entry gate ????????????????????????????????????????????????
         // m_window fills from tick 1; STRUCTURE_LOOKBACK=30 means the engine
-        // can arm within 3s of startup on a fast feed. Block IDLE→ARMED transition
+        // can arm within 3s of startup on a fast feed. Block IDLE?ARMED transition
         // until MIN_ENTRY_TICKS real ticks have been received.
-        // ARMED/PENDING/LIVE/COOLDOWN phases pass through — only fresh arming blocked.
+        // ARMED/PENDING/LIVE/COOLDOWN phases pass through -- only fresh arming blocked.
         const bool cold_start_blocked = (m_ticks_received < MIN_ENTRY_TICKS
                                          && phase == BracketPhase::IDLE);
 
-        // ── Volatility-scaled minimum range ───────────────────────────────────
+        // ?? Volatility-scaled minimum range ???????????????????????????????????
         // ATR_PERIOD > 0: compute true price-range volatility (hi-lo of mid over
         // ATR_PERIOD ticks from m_window). This is the actual market noise floor.
         // eff_min_range = max(recent_volatility * ATR_RANGE_K, MIN_RANGE).
@@ -404,14 +404,14 @@ public:
         // quiet Asian session (noise $3-5) but also during London open (noise $12-20)
         // where a $6 bracket SL sits well inside normal noise and gets swept.
         // Scaling to recent volatility raises the floor automatically when the
-        // market is noisy — a bracket must be LARGER than noise to be valid.
+        // market is noisy -- a bracket must be LARGER than noise to be valid.
         //
         // ATR_RANGE_K tuning guide (set per-symbol in main.cpp):
-        //   Gold:   ATR_PERIOD=20, ATR_RANGE_K=1.5  → eff_min = max($6, noise*1.5)
-        //           London noise ~$8-12 → eff_min rises to $12-18 automatically
+        //   Gold:   ATR_PERIOD=20, ATR_RANGE_K=1.5  ? eff_min = max($6, noise*1.5)
+        //           London noise ~$8-12 ? eff_min rises to $12-18 automatically
         //   Silver: ATR_PERIOD=20, ATR_RANGE_K=1.5
         //   FX:     ATR_PERIOD=20, ATR_RANGE_K=1.8  (tighter price, higher multiplier)
-        //   Indices: leave disabled (ATR_PERIOD=0) — noise floor more stable
+        //   Indices: leave disabled (ATR_PERIOD=0) -- noise floor more stable
         if (ATR_PERIOD > 0 && static_cast<int>(m_window.size()) >= ATR_PERIOD) {
             const int    n    = static_cast<int>(m_window.size());
             const auto   vbeg = m_window.begin() + (n - ATR_PERIOD);
@@ -423,7 +423,7 @@ public:
                                      ? std::max(atr * ATR_RANGE_K, MIN_RANGE)
                                      : MIN_RANGE;
 
-        // ── Structural range ──────────────────────────────────────────────────
+        // ?? Structural range ??????????????????????????????????????????????????
         const auto   wbegin = m_window.end() - STRUCTURE_LOOKBACK;
         const auto   wend   = m_window.end();   // inclusive of current tick
         const double shi    = *std::max_element(wbegin, wend);
@@ -431,7 +431,7 @@ public:
         const double range  = shi - slo;
 
         if (range < eff_min_range) {
-            // While ARMED: hold state — don't reset timer on transient range collapse.
+            // While ARMED: hold state -- don't reset timer on transient range collapse.
             // Rolling window shrinks naturally as trend pushes through it.
             if (phase != BracketPhase::ARMED) {
                 phase = BracketPhase::IDLE; bracket_high = 0.0; bracket_low = 0.0;
@@ -439,7 +439,7 @@ public:
             return;
         }
 
-        // shouldTrade() gate — only resets to IDLE from IDLE, not from ARMED.
+        // shouldTrade() gate -- only resets to IDLE from IDLE, not from ARMED.
         // If we are already ARMED (structure was valid), a single-tick shouldTrade
         // failure (e.g. transient spread spike) must not destroy the timer.
         if (cold_start_blocked) return;
@@ -455,7 +455,7 @@ public:
         bracket_high = shi + buf;
         bracket_low  = slo - buf;
 
-        // ── IDLE → ARMED ──────────────────────────────────────────────────────
+        // ?? IDLE ? ARMED ??????????????????????????????????????????????????????
         if (phase == BracketPhase::IDLE) {
             phase      = BracketPhase::ARMED;
             m_armed_ts = nowSec();
@@ -466,17 +466,17 @@ public:
             return;
         }
 
-        // ── ARMED → PENDING: fire both orders once structure has held ─────────
+        // ?? ARMED ? PENDING: fire both orders once structure has held ?????????
         if (phase == BracketPhase::ARMED) {
             if (MIN_STRUCTURE_MS > 0 &&
                 (nowSec() - m_armed_ts) < static_cast<int64_t>(MIN_STRUCTURE_MS / 1000))
                 return;
 
-            // ── Sweep gate (MIN_BREAK_TICKS) ─────────────────────────────────
+            // ?? Sweep gate (MIN_BREAK_TICKS) ?????????????????????????????????
             // Only fires arm_both_sides() when price has been inside the bracket
             // for MIN_BREAK_TICKS consecutive ticks. Guards against London open
             // liquidity sweeps where price spikes through a bracket level in 1
-            // tick then snaps back — causing a fill at the worst possible price.
+            // tick then snaps back -- causing a fill at the worst possible price.
             // Each tick inside increments counter; any tick outside resets it.
             // When MIN_BREAK_TICKS=0 (default) this block is skipped entirely.
             if (MIN_BREAK_TICKS > 0) {
@@ -495,11 +495,11 @@ public:
                 if (m_inside_ticks < MIN_BREAK_TICKS) {
                     return;
                 }
-                // Threshold reached — reset counter and fall through to arm
+                // Threshold reached -- reset counter and fall through to arm
                 m_inside_ticks = 0;
                 std::cout << "[BRACKET-" << symbol << "] SWEEP-CONFIRMED"
                           << " inside_ticks>=" << MIN_BREAK_TICKS
-                          << " mid=" << mid << " — arming\n";
+                          << " mid=" << mid << " -- arming\n";
                 std::cout.flush();
             }
 
@@ -507,7 +507,7 @@ public:
         }
     }
 
-    // ── confirm_fill() ────────────────────────────────────────────────────────
+    // ?? confirm_fill() ????????????????????????????????????????????????????????
     // Called by main.cpp when one side fills.
     // is_long_filled: true = long (buy stop) filled, false = short (sell stop) filled.
     void confirm_fill(bool is_long_filled, double actual_price, double actual_size) noexcept {
@@ -540,8 +540,8 @@ public:
     }
 
     void on_reject() noexcept {
-        // One side rejected — cancel the other side on the broker then reset
-        std::cout << "[BRACKET-" << symbol << "] REJECTED — cancelling other leg and resetting\n";
+        // One side rejected -- cancel the other side on the broker then reset
+        std::cout << "[BRACKET-" << symbol << "] REJECTED -- cancelling other leg and resetting\n";
         std::cout.flush();
         cancel_both_broker_orders();
         reset();
@@ -560,7 +560,7 @@ public:
     }
 
 protected:
-    // ── cancel_both_broker_orders() ───────────────────────────────────────────
+    // ?? cancel_both_broker_orders() ???????????????????????????????????????????
     // Fires cancel_order_fn for both pending legs if they exist.
     // Called on: timeout, session gate close, reject, forceClose while PENDING.
     void cancel_both_broker_orders() noexcept {
@@ -576,11 +576,11 @@ protected:
     int64_t m_cooldown_start  = 0;
     int64_t m_armed_ts        = 0;
     int     m_trade_id        = 0;
-    int     m_ticks_received  = 0;  // raw tick count since construction — cold-start gate
+    int     m_ticks_received  = 0;  // raw tick count since construction -- cold-start gate
     double  m_l2_imbalance    = 0.5;
-    int     m_inside_ticks    = 0;  // consecutive ticks mid was inside bracket — for MIN_BREAK_TICKS gate
+    int     m_inside_ticks    = 0;  // consecutive ticks mid was inside bracket -- for MIN_BREAK_TICKS gate
 
-    // Locked at the moment both orders are sent — never change after PENDING
+    // Locked at the moment both orders are sent -- never change after PENDING
     double m_locked_hi        = 0.0;
     double m_locked_lo        = 0.0;
     double m_locked_long_sl   = 0.0;
@@ -596,7 +596,7 @@ protected:
     void arm_both_sides(double spread, const char* macro_regime) noexcept {
         const double dist = bracket_high - bracket_low;
 
-        // ── Max spread gate ──────────────────────────────────────────────────
+        // ?? Max spread gate ??????????????????????????????????????????????????
         // Block entry if current spread exceeds configured maximum.
         // Prevents firing into wide-spread conditions where round-trip cost
         // eats the entire expected edge.
@@ -609,10 +609,10 @@ protected:
             return;
         }
 
-        // ── Hard range floor — checked on RAW structural range, not spread-padded dist ──
+        // ?? Hard range floor -- checked on RAW structural range, not spread-padded dist ??
         // dist = (shi + spread*0.5) - (slo - spread*0.5) = raw_range + spread.
         // Checking dist < MIN_RANGE allows a $0.18 structure range + $0.12 spread
-        // to pass MIN_RANGE=$0.30 — the SL is then $0.30 wide but the STRUCTURE
+        // to pass MIN_RANGE=$0.30 -- the SL is then $0.30 wide but the STRUCTURE
         // that justified the bracket was only $0.18. Any normal tick sweeps it.
         // Fix: derive raw_range from dist and spread, check that separately.
         const double raw_range = dist - spread; // dist = raw_range + spread (buf = spread*0.5 each side)
@@ -626,10 +626,10 @@ protected:
             return;
         }
 
-        // ── Hard range ceiling — prevents bracketing trending day-moves ───────
+        // ?? Hard range ceiling -- prevents bracketing trending day-moves ???????
         // Without this, a 30-tick window during a London open trend captures
         // the entire session range (e.g. ESTX50 79.8pts = 1.4% of price).
-        // That's not compression — it's the full daily move. Bracketing it
+        // That's not compression -- it's the full daily move. Bracketing it
         // means SL = 79.8pts, BREAKOUT_FAIL midpoint = 40pts from entry,
         // and the trade fails in seconds because there's no real compression.
         // MAX_RANGE=0 disables the cap. Set per-symbol to ~0.4% of price.
@@ -642,13 +642,13 @@ protected:
             return;
         }
 
-        // ── Spread viability check (mandatory, runs before any other calc) ───
+        // ?? Spread viability check (mandatory, runs before any other calc) ???
         // A trade is only viable if the SL distance covers:
         //   - entry spread (paid on open)
         //   - exit spread (paid on close)
         //   - slippage on both sides
         // If dist <= round_trip_cost the trade has negative expectancy before
-        // it even moves — spread alone will push it to SL.
+        // it even moves -- spread alone will push it to SL.
         const double round_trip_cost = (spread * 2.0) + (SLIPPAGE_BUFFER * 2.0);
         if (dist <= round_trip_cost) {
             std::cout << "[BRACKET-" << symbol << "] BLOCKED: spread_not_covered"
@@ -713,7 +713,7 @@ protected:
         ++signal_count;
         ++m_trade_id;
 
-        // L2 imbalance direction note — informational, does not gate the trade.
+        // L2 imbalance direction note -- informational, does not gate the trade.
         // >0.65 = bid-heavy (bullish pressure, long leg favoured)
         // <0.35 = ask-heavy (bearish pressure, short leg favoured)
         // 0.35-0.65 = balanced (both legs equally likely)

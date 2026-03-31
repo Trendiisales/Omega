@@ -1,19 +1,19 @@
 #pragma once
 // =============================================================================
-// CrossAssetEngines.hpp — Cross-asset and event-driven engines
+// CrossAssetEngines.hpp -- Cross-asset and event-driven engines
 //
 // These engines exploit relationships BETWEEN instruments and SCHEDULED EVENTS.
-// All data they need is already flowing in the system — no new feeds required.
+// All data they need is already flowing in the system -- no new feeds required.
 //
 // ENGINES:
-//   1. EsNqDivergenceEngine  — ES/NQ diverge >threshold → enter laggard
-//   2. OilEventFadeEngine    — EIA inventory spike → fade 50% of move
-//   3. BrentWtiSpreadEngine  — Brent/WTI spread >$5 → enter convergence
-//   4. FxCascadeEngine       — EURUSD breaks → arm GBPUSD + AUDUSD + NZDUSD
-//   5. CarryUnwindEngine     — VIX spike + USDJPY falling → short USDJPY
-//   6. OpeningRangeEngine    — Time-anchored first-30-min range breakout
-//   7. VWAPReversionEngine   — Price extends from daily VWAP → enter on reversal tick
-//   8. TrendPullbackEngine   — EMA-9/21/50 trend + pullback to slow EMA with bounce
+//   1. EsNqDivergenceEngine  -- ES/NQ diverge >threshold ? enter laggard
+//   2. OilEventFadeEngine    -- EIA inventory spike ? fade 50% of move
+//   3. BrentWtiSpreadEngine  -- Brent/WTI spread >$5 ? enter convergence
+//   4. FxCascadeEngine       -- EURUSD breaks ? arm GBPUSD + AUDUSD + NZDUSD
+//   5. CarryUnwindEngine     -- VIX spike + USDJPY falling ? short USDJPY
+//   6. OpeningRangeEngine    -- Time-anchored first-30-min range breakout
+//   7. VWAPReversionEngine   -- Price extends from daily VWAP ? enter on reversal tick
+//   8. TrendPullbackEngine   -- EMA-9/21/50 trend + pullback to slow EMA with bounce
 //
 // COST ENFORCEMENT (ExecutionCostGuard):
 //   Every engine's on_tick() checks execution costs before firing any signal.
@@ -38,9 +38,9 @@
 namespace omega {
 namespace cross {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Shared helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 static inline int64_t ca_now_sec() noexcept {
     return std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -58,9 +58,9 @@ static inline void ca_utc_time(struct tm& ti) noexcept {
 #endif
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CrossSignal — what every cross-asset engine returns
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
+// CrossSignal -- what every cross-asset engine returns
+// ?????????????????????????????????????????????????????????????????????????????
 struct CrossSignal {
     bool        valid             = false;
     bool        is_long           = true;
@@ -75,18 +75,18 @@ struct CrossSignal {
                                         // main.cpp scales risk multiplier from this
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ExecutionCostGuard — enforces cost floors BEFORE any trade is allowed
+// ?????????????????????????????????????????????????????????????????????????????
+// ExecutionCostGuard -- enforces cost floors BEFORE any trade is allowed
 //
 // BlackBull ECN real execution costs (commission + spread + slippage):
 //
 //   Forex majors:  ~$10/lot  (spread $2, commission $6, slippage $2)
 //   Gold:          ~$9/lot   (spread $1.5, commission $6, slippage $1.5)
 //   Silver:        ~$12/lot  (spread $3, commission $6, slippage $3)
-//   NAS100:        ~$7/lot   (spread $3, slippage $4 — no commission)
-//   US30:          ~$10/lot  (spread $4, slippage $6 — no commission)
-//   GER40:         ~$4.5/lot (spread $2, slippage $2.5 — no commission)
-//   Oil:           ~$4.5/lot (spread $2.5, slippage $2 — no commission)
+//   NAS100:        ~$7/lot   (spread $3, slippage $4 -- no commission)
+//   US30:          ~$10/lot  (spread $4, slippage $6 -- no commission)
+//   GER40:         ~$4.5/lot (spread $2, slippage $2.5 -- no commission)
+//   Oil:           ~$4.5/lot (spread $2.5, slippage $2 -- no commission)
 //
 // Break-even minimum move (0.01 lot trade, costs already scaled):
 //   Forex:  ~1 pip   (~$0.10 at 0.01 lot)
@@ -99,16 +99,16 @@ struct CrossSignal {
 //
 // Usage: before entering any trade, call is_viable(sym, spread, tp_dist, lot).
 // Returns false (block trade) if expected_gross < total_cost.
-// All engines call this — NO trade fires without clearing it.
-// ─────────────────────────────────────────────────────────────────────────────
+// All engines call this -- NO trade fires without clearing it.
+// ?????????????????????????????????????????????????????????????????????????????
 // ExecutionCostGuard is defined in OmegaCostGuard.hpp (included early in main.cpp
 // before templated lambdas so MSVC can resolve it at template definition time).
 #include "OmegaCostGuard.hpp"
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CrossPosition — shared open position tracker (simple, one per engine)
-// CrossPosition — shared open position tracker (simple, one per engine)
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
+// CrossPosition -- shared open position tracker (simple, one per engine)
+// CrossPosition -- shared open position tracker (simple, one per engine)
+// ?????????????????????????????????????????????????????????????????????????????
 struct CrossPosition {
     bool    active          = false;
     bool    is_long         = true;
@@ -138,7 +138,7 @@ struct CrossPosition {
         if (move >  mfe) mfe =  move;
         if (-move > mae) mae = -move;
 
-        // ── Profit lock-in: BE + trailing stop ───────────────────────────────
+        // ?? Profit lock-in: BE + trailing stop ???????????????????????????????
         // BE lock: once move >= 50% of initial TP distance, move SL to entry+spread
         // Trail: once move >= 75% of TP distance, trail SL at 40% of TP distance behind peak
         const double tp_dist = tp_extended_ ? init_tp_dist_ : std::fabs(tp - entry);
@@ -146,9 +146,9 @@ struct CrossPosition {
         if (tp_dist > 0.0) {
             const double be_threshold    = tp_dist * 0.40;  // lock BE at 40% to TP (was 50%)
             const double trail_threshold = tp_dist * 0.60;  // start trail at 60% to TP (was 75%)
-            const double trail_dist      = tp_dist * 0.20;  // trail 20% of TP dist behind peak (was 40% — too loose)
+            const double trail_dist      = tp_dist * 0.20;  // trail 20% of TP dist behind peak (was 40% -- too loose)
             if (move >= be_threshold && !be_locked_) {
-                // Lock breakeven — SL moves to entry (+ tiny buffer for spread)
+                // Lock breakeven -- SL moves to entry (+ tiny buffer for spread)
                 be_locked_ = true;
                 const double be_sl = is_long ? (entry + spread_at_entry)
                                              : (entry - spread_at_entry);
@@ -163,7 +163,7 @@ struct CrossPosition {
                 if (!is_long && mid_lock < sl) sl = mid_lock;
             }
             if (move >= trail_threshold) {
-                // Trail SL tightly behind MFE — 20% of TP dist = much tighter lock
+                // Trail SL tightly behind MFE -- 20% of TP dist = much tighter lock
                 const double trail_sl = is_long ? (entry + mfe - trail_dist)
                                                 : (entry - mfe + trail_dist);
                 if (is_long  && trail_sl > sl) sl = trail_sl;
@@ -175,7 +175,7 @@ struct CrossPosition {
         const bool sl_hit = is_long ? (bid <= sl) : (ask >= sl);
         const bool timed_out = (ca_now_sec() - entry_ts) >= max_hold_sec;
 
-        // ── TP hit: don't close fully — extend TP and tighten trail ──────────
+        // ?? TP hit: don't close fully -- extend TP and tighten trail ??????????
         // When price reaches initial TP (VWAP), lock BE tightly and extend TP
         // by 1x the original TP distance to capture continuation moves.
         // Trail tightens to 25% of original TP dist behind peak.
@@ -189,7 +189,7 @@ struct CrossPosition {
                                             : (entry - mfe + tp_dist * 0.15);
             if (is_long  && tight_sl > sl) sl = tight_sl;
             if (!is_long && tight_sl < sl) sl = tight_sl;
-            return false;  // don't close — ride continuation
+            return false;  // don't close -- ride continuation
         }
 
         const char* reason_str = tp_hit ? "TP_HIT" : (sl_hit ? "SL_HIT" : "TIMEOUT");
@@ -235,11 +235,11 @@ struct CrossPosition {
         const double mid = (bid + ask) * 0.5;
         emit(mid, "FORCE_CLOSE", on_close);
     }
-    // Patch lot size after enter_directional succeeds — corrects the hardcoded
+    // Patch lot size after enter_directional succeeds -- corrects the hardcoded
     // 0.01 fallback with the actual risk-sized lot for accurate shadow P&L.
     void patch_size(double lot) noexcept { if (active && lot > 0.0) size = lot; }
 
-    // Silent reset — clears internal state without recording a trade.
+    // Silent reset -- clears internal state without recording a trade.
     // Use this when rolling back a phantom position (enter_directional rejected
     // the trade after pos_.open() had already been called). No broker order
     // was sent, so no trade record should be written.
@@ -271,16 +271,16 @@ private:
 };
 
 // =============================================================================
-// ENGINE 1 — EsNqDivergenceEngine
+// ENGINE 1 -- EsNqDivergenceEngine
 // =============================================================================
 // When US500 and USTEC diverge significantly (one leads, one lags), the laggard
 // catches up. The divergence signal already lives in MacroRegimeDetector but is
 // only used as a gate. This engine trades it.
 //
-// Signal: esNqDivergence() > DIV_ENTRY_THRESH → enter laggard in leader's direction.
+// Signal: esNqDivergence() > DIV_ENTRY_THRESH ? enter laggard in leader's direction.
 // esNqDivergence() = ES_return - NQ_return over DIV_WINDOW ticks (60 ticks).
-// Positive = ES outperforming NQ → NQ should catch up → long NQ / short ES.
-// Negative = NQ outperforming ES → ES should catch up → long ES / short NQ.
+// Positive = ES outperforming NQ ? NQ should catch up ? long NQ / short ES.
+// Negative = NQ outperforming ES ? ES should catch up ? long ES / short NQ.
 //
 // Only fires during NY session (13:30-17:00 UTC) when both are liquid.
 // Cost check: TP move must cover spread + slippage (no commission for indices).
@@ -288,13 +288,13 @@ private:
 // =============================================================================
 // SIGNAL QUALITY FIX (2026-03):
 //   Original engine fired on any single tick where div > threshold. This caused
-//   excessive entries on normal ES/NQ spread fluctuations — the divergence value
+//   excessive entries on normal ES/NQ spread fluctuations -- the divergence value
 //   bounces above threshold momentarily then reverses with no actual lag.
 //
 //   Fix: require divergence to remain above threshold for CONFIRM_TICKS consecutive
 //   ticks on the same symbol before firing. This filters single-tick noise while
 //   still catching genuine sustained divergences (which persist 5-15+ ticks).
-//   CONFIRM_TICKS=3: at 5-15 ticks/sec, 3 ticks = 200-600ms — enough to confirm
+//   CONFIRM_TICKS=3: at 5-15 ticks/sec, 3 ticks = 200-600ms -- enough to confirm
 //   a real lag without losing the edge (convergence takes 5-30s).
 //
 //   Enabled via [cross_asset] esnq_enabled=true in omega_config.ini.
@@ -316,7 +316,7 @@ public:
     CrossSignal on_tick(const std::string& sym, double bid, double ask,
                         double div, CloseCb on_close) noexcept {
         if (bid <= 0 || ask <= 0) return {};
-        // Always manage open position even when disabled — drain existing pos.
+        // Always manage open position even when disabled -- drain existing pos.
         if (pos_.active) {
             pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
             return {};
@@ -336,7 +336,7 @@ public:
         const double spread = ask - bid;
 
         // Determine if this tick qualifies and in which direction.
-        // Laggard-long only — shorting the leader is unreliable.
+        // Laggard-long only -- shorting the leader is unreliable.
         bool qualifies = false;
         bool is_long   = true;
         if      (div >  DIV_ENTRY_THRESH && sym == "USTEC.F") { qualifies = true; is_long = true; }
@@ -351,11 +351,11 @@ public:
         ++confirm_count_;
         if (confirm_count_ < CONFIRM_TICKS) return {};  // not yet confirmed
 
-        confirm_count_ = 0;  // reset — don't fire every subsequent tick
+        confirm_count_ = 0;  // reset -- don't fire every subsequent tick
 
         const double tp      = mid * (1.0 + (is_long ? 1 : -1) * TP_PCT / 100.0);
         const double sl      = mid * (1.0 - (is_long ? 1 : -1) * SL_PCT / 100.0);
-        // tp_dist removed — cost check now in enter_directional with real lot size
+        // tp_dist removed -- cost check now in enter_directional with real lot size
 
         // Cost check removed: enter_directional() performs the definitive
         // cost check with the actual computed lot size. Checking here with
@@ -387,7 +387,7 @@ public:
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
-    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
@@ -401,7 +401,7 @@ private:
 };
 
 // =============================================================================
-// ENGINE 2 — OilEventFadeEngine
+// ENGINE 2 -- OilEventFadeEngine
 // =============================================================================
 // EIA crude inventory release: Wednesday 14:30 UTC.
 // Pattern: initial spike in one direction (0.3-0.8%), then 65-70% probability
@@ -410,8 +410,8 @@ private:
 // Logic:
 //   1. Start monitoring at 14:30 UTC on Wednesdays
 //   2. Capture price at 14:30:00 (pre-release baseline)
-//   3. If price spikes >SPIKE_THRESH in first 15s → arm fade in opposite direction
-//   4. Enter fade at 14:30:15 (15s after release — initial spike absorbed)
+//   3. If price spikes >SPIKE_THRESH in first 15s ? arm fade in opposite direction
+//   4. Enter fade at 14:30:15 (15s after release -- initial spike absorbed)
 //   5. TP = 50% of spike distance, SL = full spike distance
 //   6. Exit by 14:45 at latest
 // Cost check: TP move (50% spike) must exceed oil execution floor.
@@ -422,7 +422,7 @@ public:
     double  TP_RATIO         = 0.50;  // TP = 50% of spike distance
     double  SL_RATIO         = 1.20;  // SL = 120% of spike (slightly past spike high)
     int     ENTRY_DELAY_SEC  = 15;    // wait 15s after release for spike to complete
-    int     MAX_HOLD_SEC     = 900;   // 15 min — fade should resolve quickly
+    int     MAX_HOLD_SEC     = 900;   // 15 min -- fade should resolve quickly
     bool    enabled          = true;
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
@@ -463,14 +463,14 @@ public:
         const double spike_pct = (mid - baseline_) / baseline_ * 100.0;
         if (std::fabs(spike_pct) < SPIKE_THRESH_PCT) return {}; // no spike
 
-        // Spike confirmed — fade it
+        // Spike confirmed -- fade it
         const bool spike_up = (spike_pct > 0.0);
         const double spike_dist = std::fabs(mid - baseline_);
         const bool is_long = !spike_up;  // fade: if spiked up, go short
 
         const double tp = is_long ? mid + spike_dist * TP_RATIO : mid - spike_dist * TP_RATIO;
         const double sl = is_long ? mid - spike_dist * SL_RATIO : mid + spike_dist * SL_RATIO;
-        // tp_dist removed — cost check now in enter_directional with real lot size
+        // tp_dist removed -- cost check now in enter_directional with real lot size
 
         // Cost gate
         // Cost check removed: enter_directional() performs the definitive
@@ -502,7 +502,7 @@ public:
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
-    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
@@ -522,15 +522,15 @@ private:
 };
 
 // =============================================================================
-// ENGINE 3 — BrentWtiSpreadEngine
+// ENGINE 3 -- BrentWtiSpreadEngine
 // =============================================================================
 // Brent and WTI crude normally trade within $2-4 of each other.
 // When the spread widens significantly (>SPREAD_THRESH), one converges back.
 // Historically: Brent typically converges DOWN to WTI (Brent is the premium leg).
 //
-// Signal: |brent_mid - wti_mid| > SPREAD_THRESH → enter the laggard.
+// Signal: |brent_mid - wti_mid| > SPREAD_THRESH ? enter the laggard.
 // If Brent > WTI by more than threshold: short Brent OR long WTI.
-// We prefer entering the cheaper leg (WTI long) — smaller spread cost.
+// We prefer entering the cheaper leg (WTI long) -- smaller spread cost.
 //
 // Session: London/NY only (07:00-22:00 UTC).
 // Cost check: TP convergence distance must exceed oil execution floor.
@@ -539,14 +539,14 @@ class BrentWtiSpreadEngine {
 public:
     double  SPREAD_THRESH  = 5.00;   // $5 Brent/WTI spread triggers entry
     double  TP_DIST        = 1.50;   // $1.50 convergence target
-    double  SL_DIST        = 2.00;   // $2.00 SL — if spread widens further
-    int     MAX_HOLD_SEC   = 3600;   // 1 hour — spread can take time to converge
+    double  SL_DIST        = 2.00;   // $2.00 SL -- if spread widens further
+    int     MAX_HOLD_SEC   = 3600;   // 1 hour -- spread can take time to converge
     int     COOLDOWN_SEC   = 600;    // 10 min between entries
     bool    enabled        = true;
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
-    // Call on every USOIL.F tick — pass current Brent price from book
+    // Call on every USOIL.F tick -- pass current Brent price from book
     CrossSignal on_tick_wti(double wti_bid, double wti_ask, double brent_mid,
                             CloseCb on_close) noexcept {
         if (!enabled || wti_bid <= 0 || brent_mid <= 0) return {};
@@ -573,10 +573,10 @@ public:
         // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
         // 0.01 (passes), real lot failed enter_directional, force_close fired.
 
-        // Brent premium too high → WTI should catch up (long WTI)
+        // Brent premium too high ? WTI should catch up (long WTI)
         CrossSignal sig;
         sig.valid   = true;
-        sig.is_long = true;  // long WTI — cheaper leg catches up
+        sig.is_long = true;  // long WTI -- cheaper leg catches up
         sig.entry   = wti_mid;
         sig.tp      = wti_mid + TP_DIST;
         sig.sl      = wti_mid - SL_DIST;
@@ -598,7 +598,7 @@ public:
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
-    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
@@ -609,20 +609,20 @@ private:
 };
 
 // =============================================================================
-// ENGINE 4 — FxCascadeEngine
+// ENGINE 4 -- FxCascadeEngine
 // =============================================================================
 // When EURUSD fires a breakout (phase transitions to FLAT after signal),
 // correlated FX pairs follow within 100-500ms. With 0.3ms RTT we arm a
 // bracket on GBPUSD/AUDUSD/NZDUSD in the same direction before they react.
 //
 // Correlation structure (USD as base):
-//   EURUSD ↑ → GBPUSD ↑ (0.88 corr), AUDUSD ↑ (0.73), NZDUSD ↑ (0.69)
-//   EURUSD ↑ → USDJPY ↓ (−0.65, inverse because JPY is quote)
+//   EURUSD ? ? GBPUSD ? (0.88 corr), AUDUSD ? (0.73), NZDUSD ? (0.69)
+//   EURUSD ? ? USDJPY ? (?0.65, inverse because JPY is quote)
 //
-// Signal: EURUSD breakout fires (external flag set by main.cpp) →
+// Signal: EURUSD breakout fires (external flag set by main.cpp) ?
 //         arm bracket on GBPUSD/AUDUSD/NZDUSD in same direction within CASCADE_WINDOW_MS.
 //
-// Each pair gets its own independent CrossPosition — GBPUSD/AUDUSD/NZDUSD
+// Each pair gets its own independent CrossPosition -- GBPUSD/AUDUSD/NZDUSD
 // can all enter simultaneously on the same EURUSD signal (different instruments,
 // not duplicate exposure). Each has its own cooldown.
 //
@@ -630,8 +630,8 @@ private:
 // =============================================================================
 class FxCascadeEngine {
 public:
-    int64_t CASCADE_WINDOW_MS  = 200;   // tightened 500→200ms: live RTT is 3-9ms, 200ms is ample
-    double  TP_PCT             = 0.08;  // raised 0.06→0.08: 8pip TP clears cost guard at ratio≥1.5×
+    int64_t CASCADE_WINDOW_MS  = 200;   // tightened 500?200ms: live RTT is 3-9ms, 200ms is ample
+    double  TP_PCT             = 0.08;  // raised 0.06?0.08: 8pip TP clears cost guard at ratio?1.5?
     double  SL_PCT             = 0.04;  // 4pip SL
     int     MAX_HOLD_SEC       = 120;
     int     COOLDOWN_SEC       = 60;
@@ -645,22 +645,22 @@ public:
         armed_long_    = is_long;
         armed_ts_ms_   = ca_now_ms();
         armed_         = true;
-        printf("[FX-CASCADE] EURUSD %s fired — cascade armed (GBPUSD+AUDUSD+NZDUSD)\n",
+        printf("[FX-CASCADE] EURUSD %s fired -- cascade armed (GBPUSD+AUDUSD+NZDUSD)\n",
                is_long ? "LONG" : "SHORT");
         fflush(stdout);
     }
 
-    // ── GBPUSD tick ──────────────────────────────────────────────────────────
+    // ?? GBPUSD tick ??????????????????????????????????????????????????????????
     CrossSignal on_tick_gbpusd(double bid, double ask, CloseCb on_close) noexcept {
         return tick_pair(bid, ask, on_close, pos_gbp_, cooldown_gbp_, "GBPUSD");
     }
 
-    // ── AUDUSD tick ──────────────────────────────────────────────────────────
+    // ?? AUDUSD tick ??????????????????????????????????????????????????????????
     CrossSignal on_tick_audusd(double bid, double ask, CloseCb on_close) noexcept {
         return tick_pair(bid, ask, on_close, pos_aud_, cooldown_aud_, "AUDUSD");
     }
 
-    // ── NZDUSD tick ──────────────────────────────────────────────────────────
+    // ?? NZDUSD tick ??????????????????????????????????????????????????????????
     CrossSignal on_tick_nzdusd(double bid, double ask, CloseCb on_close) noexcept {
         return tick_pair(bid, ask, on_close, pos_nzd_, cooldown_nzd_, "NZDUSD");
     }
@@ -669,14 +669,14 @@ public:
         return pos_gbp_.active || pos_aud_.active || pos_nzd_.active;
     }
 
-    // Per-leg open checks — used by main.cpp to gate each cascade leg independently.
+    // Per-leg open checks -- used by main.cpp to gate each cascade leg independently.
     // This is critical: the cascade is designed to enter ALL three legs on a EURUSD signal.
     // Using the aggregate has_open_position() blocks AUD/NZD once GBP fires, defeating
     // the multi-leg purpose entirely. Per-leg gates allow concurrent cascade positions.
     bool has_open_gbpusd() const { return pos_gbp_.active; }
     bool has_open_audusd() const { return pos_aud_.active; }
     bool has_open_nzdusd() const { return pos_nzd_.active; }
-    // Unrealised PnL helpers — return first active leg (GBP > AUD > NZD)
+    // Unrealised PnL helpers -- return first active leg (GBP > AUD > NZD)
     double open_entry()   const {
         if (pos_gbp_.active) return pos_gbp_.entry;
         if (pos_aud_.active) return pos_aud_.entry;
@@ -695,7 +695,7 @@ public:
         return 0.0;
     }
 
-    // Force-close all legs — each pair uses its own current price.
+    // Force-close all legs -- each pair uses its own current price.
     // Called on disconnect; gbpusd_bid/ask used as fallback for AUD/NZD if zeroed.
     void rollback_gbp() noexcept { pos_gbp_.reset(); }
     void rollback_aud() noexcept { pos_aud_.reset(); }
@@ -718,7 +718,7 @@ public:
     void patch_size_nzd(double lot) noexcept { pos_nzd_.patch_size(lot); }
 
 private:
-    // Shared armed state — set by notify_eurusd_signal(), consumed per-pair independently
+    // Shared armed state -- set by notify_eurusd_signal(), consumed per-pair independently
     bool    armed_       = false;
     bool    armed_long_  = true;
     int64_t armed_ts_ms_ = 0;
@@ -745,16 +745,16 @@ private:
 
         if (!armed_) return {};
         if (ca_now_ms() - armed_ts_ms_ > CASCADE_WINDOW_MS) {
-            armed_ = false;  // window expired — disarm entirely
+            armed_ = false;  // window expired -- disarm entirely
             return {};
         }
         if (ca_now_sec() < cooldown) return {};
 
         const double tp = armed_long_ ? mid * (1.0 + TP_PCT/100.0) : mid * (1.0 - TP_PCT/100.0);
         const double sl = armed_long_ ? mid * (1.0 - SL_PCT/100.0) : mid * (1.0 + SL_PCT/100.0);
-        // tp_dist removed — cost check now in enter_directional with real lot size
+        // tp_dist removed -- cost check now in enter_directional with real lot size
 
-        // Cost gate — Forex pairs carry commission + spread + slippage ~$10/lot
+        // Cost gate -- Forex pairs carry commission + spread + slippage ~$10/lot
         // Cost check removed: enter_directional() performs the definitive
         // cost check with the actual computed lot size. Checking here with
         // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
@@ -781,15 +781,15 @@ private:
 };
 
 // =============================================================================
-// ENGINE 5 — CarryUnwindEngine (improved: 4-factor confirmation)
+// ENGINE 5 -- CarryUnwindEngine (improved: 4-factor confirmation)
 // =============================================================================
 // USDJPY carry trade unwind. Original fired on VIX tick + any USDJPY dip,
-// including dips within bull-market uptrends — a lagging signal problem.
+// including dips within bull-market uptrends -- a lagging signal problem.
 //
 // Improved signal requires ALL FOUR to be true:
 //   1. VIX > VIX_SPIKE_THRESH AND surged > VIX_SURGE_PCT (risk-off confirmed)
 //   2. USDJPY down > USDJPY_MOVE_PCT in short 60-tick window (momentum)
-//   3. fast EMA < slow EMA — medium-term downtrend established
+//   3. fast EMA < slow EMA -- medium-term downtrend established
 //      Prevents shorting a dip in an ongoing uptrend
 //   4. Realized vol > REALVOL_MIN_PCT over 30-tick window (options skew proxy)
 //      Low realized vol = dead tape noise, not a real unwind
@@ -806,7 +806,7 @@ public:
     // Medium-term trend EMAs (~20-tick fast, ~60-tick slow)
     double  TREND_FAST_ALPHA  = 2.0 / (20.0 + 1.0);
     double  TREND_SLOW_ALPHA  = 2.0 / (60.0 + 1.0);
-    // Realized vol filter — min 30-tick hi-lo range / mid
+    // Realized vol filter -- min 30-tick hi-lo range / mid
     double  REALVOL_MIN_PCT   = 0.04; // 4bp min realized vol
     bool    enabled           = true;
 
@@ -843,22 +843,22 @@ public:
         if ((int)vix_window_.size()    < WINDOW_TICKS)  return {};
         if ((int)realvol_window_.size() < REALVOL_TICKS) return {};
 
-        // ── Filter 1: VIX spike ───────────────────────────────────────────────
+        // ?? Filter 1: VIX spike ???????????????????????????????????????????????
         const double vix_start = vix_window_.front();
         const double vix_surge = (vix_now - vix_start) / vix_start * 100.0;
         if (vix_now  < VIX_SPIKE_THRESH) return {};
         if (vix_surge < VIX_SURGE_PCT)   return {};
 
-        // ── Filter 2: Short-term USDJPY momentum (must be falling) ───────────
+        // ?? Filter 2: Short-term USDJPY momentum (must be falling) ???????????
         const double price_start = price_window_.front();
         const double price_move  = (mid - price_start) / price_start * 100.0;
         if (price_move > -USDJPY_MOVE_PCT) return {};
 
-        // ── Filter 3: Medium-term downtrend (fast EMA < slow EMA) ────────────
+        // ?? Filter 3: Medium-term downtrend (fast EMA < slow EMA) ????????????
         // Prevents shorting a dip within an established uptrend
         if (ema_fast_ >= ema_slow_) return {};
 
-        // ── Filter 4: Realized vol confirms energy (options skew proxy) ───────
+        // ?? Filter 4: Realized vol confirms energy (options skew proxy) ???????
         // Low realized vol = noise, not a real risk-off unwind
         const double rv_hi  = *std::max_element(realvol_window_.begin(), realvol_window_.end());
         const double rv_lo  = *std::min_element(realvol_window_.begin(), realvol_window_.end());
@@ -869,7 +869,7 @@ public:
 
         const double tp      = mid * (1.0 - TP_PCT/100.0);
         const double sl      = mid * (1.0 + SL_PCT/100.0);
-        // tp_dist removed — cost check now in enter_directional with real lot size
+        // tp_dist removed -- cost check now in enter_directional with real lot size
 
         // Cost check removed: enter_directional() performs the definitive
         // cost check with the actual computed lot size. Checking here with
@@ -900,7 +900,7 @@ public:
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
-    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
@@ -918,7 +918,7 @@ private:
 };
 
 // =============================================================================
-// ENGINE 6 — OpeningRangeEngine
+// ENGINE 6 -- OpeningRangeEngine
 // =============================================================================
 // Time-anchored opening range breakout. Tracks the high/low of the first
 // RANGE_WINDOW_MIN minutes after a session open, then brackets those levels.
@@ -939,8 +939,8 @@ public:
     int     RANGE_WINDOW_MIN   = 30;   // build range over first 30 minutes
     double  BUFFER_PCT         = 0.03; // enter 0.03% beyond range edge
     double  TP_PCT             = 0.10; // TP = 0.10% beyond entry
-    double  SL_PCT             = 0.06; // SL = 0.06% — inside range
-    int     MAX_HOLD_SEC       = 1800; // 30 min — ORB resolves quickly
+    double  SL_PCT             = 0.06; // SL = 0.06% -- inside range
+    int     MAX_HOLD_SEC       = 1800; // 30 min -- ORB resolves quickly
     int     OPEN_HOUR          = 13;   // session open hour UTC
     int     OPEN_MIN           = 30;   // session open minute UTC
     bool    enabled            = true;
@@ -994,7 +994,7 @@ public:
         if (mid > range_high_ + buffer) {
             const double tp = mid * (1.0 + TP_PCT/100.0);
             const double sl = mid * (1.0 - SL_PCT/100.0);
-        // tp_dist removed — cost check now in enter_directional with real lot size
+        // tp_dist removed -- cost check now in enter_directional with real lot size
             // Cost gate
             // Cost check removed: enter_directional() performs the definitive
             // cost check with the actual computed lot size. Checking here with
@@ -1022,7 +1022,7 @@ public:
         if (mid < range_low_ - buffer) {
             const double tp = mid * (1.0 - TP_PCT/100.0);
             const double sl = mid * (1.0 + SL_PCT/100.0);
-        // tp_dist removed — cost check now in enter_directional with real lot size
+        // tp_dist removed -- cost check now in enter_directional with real lot size
             // Cost gate
             // Cost check removed: enter_directional() performs the definitive
             // cost check with the actual computed lot size. Checking here with
@@ -1050,7 +1050,7 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
-    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
+    void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
@@ -1059,14 +1059,14 @@ public:
     double range_high() const { return range_high_; }
     double range_low()  const { return range_low_;  }
 
-    // Reset range state — call on reconnect so a partial pre-disconnect range
+    // Reset range state -- call on reconnect so a partial pre-disconnect range
     // (e.g. 10 minutes into the 30-minute window) does not trigger on stale data.
     // The daily reset in on_tick() handles normal day boundaries.
     void reset_range() noexcept {
         range_high_ = 0.0;
         range_low_  = 0.0;
         armed_      = false;
-        // Do NOT reset last_day_ — daily reset logic still uses it
+        // Do NOT reset last_day_ -- daily reset logic still uses it
     }
 
 private:
@@ -1078,7 +1078,7 @@ private:
 };
 
 // =============================================================================
-// ENGINE 7 — VWAPReversionEngine
+// ENGINE 7 -- VWAPReversionEngine
 // =============================================================================
 // Price that extends significantly from the daily VWAP has a strong mean-
 // reversion tendency, particularly in indices and liquid FX pairs. The entry
@@ -1089,10 +1089,10 @@ private:
 //   2. Price then ticks back toward VWAP (reversal tick confirmed)
 //   3. Enter in the direction of VWAP (long if price below VWAP, short above)
 //   4. TP = VWAP level (full reversion)
-//   5. SL = extension × EXTENSION_SL_RATIO beyond current price (away from VWAP)
+//   5. SL = extension ? EXTENSION_SL_RATIO beyond current price (away from VWAP)
 //
 // Suited for: GER40, US500.F, USTEC.F, EURUSD (liquid, mean-reverting).
-// Not suited for: strongly trending sessions — gated by extension threshold.
+// Not suited for: strongly trending sessions -- gated by extension threshold.
 //
 // Session: London open to NY close (08:00-22:00 UTC).
 //
@@ -1101,12 +1101,12 @@ private:
 class VWAPReversionEngine {
 public:
     double  EXTENSION_THRESH_PCT = 0.20; // price must be >0.20% from EWM-VWAP to qualify
-    double  EXTENSION_SL_RATIO   = 0.60; // SL = extension × 0.60 past entry (further from VWAP)
-    double  MAE_EXIT_RATIO       = 0.50; // exit early if adverse move > 0.50 × TP dist
-    double  MAX_EXTENSION_PCT    = 0.80; // block entry if extension > 0.80% — stale VWAP proxy
+    double  EXTENSION_SL_RATIO   = 0.60; // SL = extension ? 0.60 past entry (further from VWAP)
+    double  MAE_EXIT_RATIO       = 0.50; // exit early if adverse move > 0.50 ? TP dist
+    double  MAX_EXTENSION_PCT    = 0.80; // block entry if extension > 0.80% -- stale VWAP proxy
     int     MAX_HOLD_SEC         = 900;  // 15 min base timeout
     int     COOLDOWN_SEC         = 180;  // 3 min between normal entries
-    int     MAE_COOLDOWN_SEC     = 600;  // 10 min after MAE exit — thesis was wrong, don't retry
+    int     MAE_COOLDOWN_SEC     = 600;  // 10 min after MAE exit -- thesis was wrong, don't retry
     int     CONSEC_FC_BLOCK_SEC  = 1800; // 30 min block after 2 consecutive MAE exits same direction
     int     TP_FLIP_COOLDOWN_SEC = 1200; // 20 min after TP: block OPPOSITE direction
                                           // TP = price crossed VWAP; trend may continue same way
@@ -1115,14 +1115,14 @@ public:
     // Confluence thresholds
     double  CONF_VIX_THRESH      = 18.0;
     double  CONF_L2_THRESH       = 0.12;
-    // Rolling EWM VWAP alpha — TIME-BASED not tick-count-based.
+    // Rolling EWM VWAP alpha -- TIME-BASED not tick-count-based.
     // Target: ~2hr half-life regardless of tick frequency.
     // Each tick we compute decay = 1 - exp(-dt / HALF_LIFE_SEC)
-    // At dt=1s: decay≈0.0096% per second. After 7200s (2hr): ~50% decayed.
-    // This is invariant to whether NQ ticks 10×/sec or 1×/min.
+    // At dt=1s: decay?0.0096% per second. After 7200s (2hr): ~50% decayed.
+    // This is invariant to whether NQ ticks 10?/sec or 1?/min.
     static constexpr double EWM_VWAP_HALF_LIFE_SEC = 7200.0;  // 2hr
 
-    // Reset the EWM VWAP anchor — called by main.cpp at session open.
+    // Reset the EWM VWAP anchor -- called by main.cpp at session open.
     void reset_ewm_vwap(double anchor) noexcept {
         ewm_vwap_      = anchor;
         last_tick_sec_ = 0;  // will be set on first tick after reset
@@ -1134,7 +1134,7 @@ public:
 
     // sym:      instrument symbol string
     // bid/ask:  current quotes
-    // vwap:     daily open (seed value — engine maintains rolling EWM VWAP internally)
+    // vwap:     daily open (seed value -- engine maintains rolling EWM VWAP internally)
     // on_close: trade close callback
     // vix:      current VIX level (0 = unknown, skip confluence factor)
     // l2_imb:   L2 order book imbalance 0..1 (0.5 = neutral)
@@ -1145,10 +1145,10 @@ public:
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
 
-        // ── Rolling EWM VWAP — time-based decay, 2hr half-life ───────────────
+        // ?? Rolling EWM VWAP -- time-based decay, 2hr half-life ???????????????
         // Uses wall-clock elapsed seconds so decay is invariant to tick frequency.
         // NQ ticks ~10x/sec in NY session. Tick-count alpha would decay in minutes.
-        // Time-based: α = 1 - exp(-dt/T½) where T½=7200s. After 2hrs: 50% decayed.
+        // Time-based: ? = 1 - exp(-dt/T?) where T?=7200s. After 2hrs: 50% decayed.
         // Seed on first tick of session with the anchor price from main.cpp.
         if (ewm_vwap_ <= 0.0 && vwap_seed > 0.0) {
             ewm_vwap_      = vwap_seed;
@@ -1161,7 +1161,7 @@ public:
                 : 0.0;
             last_tick_sec_ = now_sec;
             if (dt > 0.0 && dt < 3600.0) {  // sanity: ignore gaps > 1hr (reconnect)
-                // α = 1 - e^(-dt/T½). For dt=1s, T½=7200s: α≈0.000139
+                // ? = 1 - e^(-dt/T?). For dt=1s, T?=7200s: ??0.000139
                 const double alpha = 1.0 - std::exp(-dt / EWM_VWAP_HALF_LIFE_SEC);
                 ewm_vwap_ += alpha * (mid - ewm_vwap_);
             }
@@ -1170,7 +1170,7 @@ public:
         if (vwap <= 0) return {};
 
         if (pos_.active) {
-            // ── Progressive timeout: extend if still moving toward VWAP ──────
+            // ?? Progressive timeout: extend if still moving toward VWAP ??????
             // Standard 15min timeout cuts positions that are slowly reverting.
             // If price is still trending toward TP at timeout, extend by 5min.
             // This lets slow-moving reversions complete instead of timing out.
@@ -1181,23 +1181,23 @@ public:
             if (held >= MAX_HOLD_SEC) {
                 const double progress = tp_dist_pos > 0 ? move_toward / tp_dist_pos : 0.0;
                 if (progress > 0.30) {
-                    // Still 30%+ toward TP and moving right way — extend 5min, once
+                    // Still 30%+ toward TP and moving right way -- extend 5min, once
                     if (!timeout_extended_) {
                         timeout_extended_ = true;
-                        printf("[VWAP-REV] %s timeout extended — progress=%.0f%% still trending toward TP\n",
+                        printf("[VWAP-REV] %s timeout extended -- progress=%.0f%% still trending toward TP\n",
                                sym.c_str(), progress * 100.0);
                         fflush(stdout);
-                        // managed by MAX_HOLD_SEC in manage() — bump entry_ts to extend
+                        // managed by MAX_HOLD_SEC in manage() -- bump entry_ts to extend
                         pos_.entry_ts = ca_now_sec() - MAX_HOLD_SEC + 300; // 5min extension
                     }
                 }
             }
 
-            // ── MAE early exit — mean-reversion thesis invalidation ────────────
+            // ?? MAE early exit -- mean-reversion thesis invalidation ????????????
             const double adverse = pos_.is_long ? (pos_.entry - mid)
                                                 : (mid - pos_.entry);
             if (adverse > tp_dist_pos * MAE_EXIT_RATIO && tp_dist_pos > 0.0) {
-                printf("[VWAP-REV] %s MAE exit — adverse=%.2f > %.2f (%.0f%% of TP dist) — thesis dead\n",
+                printf("[VWAP-REV] %s MAE exit -- adverse=%.2f > %.2f (%.0f%% of TP dist) -- thesis dead\n",
                        sym.c_str(), adverse, tp_dist_pos * MAE_EXIT_RATIO,
                        MAE_EXIT_RATIO * 100.0);
                 fflush(stdout);
@@ -1214,7 +1214,7 @@ public:
                 if (consec_fc_same_dir_ >= 2) {
                     fc_block_long_  = this_long;
                     fc_block_until_ = ca_now_sec() + CONSEC_FC_BLOCK_SEC;
-                    printf("[VWAP-REV] %s %d consecutive MAE in %s direction — blocking 30min\n",
+                    printf("[VWAP-REV] %s %d consecutive MAE in %s direction -- blocking 30min\n",
                            sym.c_str(), consec_fc_same_dir_, this_long ? "LONG" : "SHORT");
                     fflush(stdout);
                 }
@@ -1227,7 +1227,7 @@ public:
         // Reset extension flag on new trade cycle
         timeout_extended_ = false;
 
-        // Session gate: London/NY (08:00-22:00 UTC) — entry only, not exit
+        // Session gate: London/NY (08:00-22:00 UTC) -- entry only, not exit
         struct tm ti{}; ca_utc_time(ti);
         const int h = ti.tm_hour;
         if (h < 8 || h >= 22) return {};
@@ -1238,15 +1238,15 @@ public:
 
         if (ca_now_sec() < cooldown_until_) return {};
 
-        // ── TP flip cooldown — block opposite direction after TP hit ──────────
+        // ?? TP flip cooldown -- block opposite direction after TP hit ??????????
         // After a TP hit, block the OPPOSITE direction for TP_FLIP_COOLDOWN_SEC.
-        // LONG TP → block SHORT. SHORT TP → block LONG.
+        // LONG TP ? block SHORT. SHORT TP ? block LONG.
         if (tp_flip_until_ > ca_now_sec()) {
             const bool would_be_long = (mid < vwap);
             if (would_be_long == tp_flip_block_long_) return {};  // blocked direction
         }
 
-        // ── Consecutive FC direction block ────────────────────────────────────
+        // ?? Consecutive FC direction block ????????????????????????????????????
         if (fc_block_until_ > ca_now_sec()) {
             const bool is_long_signal = (mid < vwap);
             if (is_long_signal == fc_block_long_) return {};
@@ -1262,17 +1262,17 @@ public:
             return {};
         }
 
-        // ── Maximum extension cap ─────────────────────────────────────────────
+        // ?? Maximum extension cap ?????????????????????????????????????????????
         // If price is MORE than MAX_EXTENSION_PCT from VWAP, the "dislocation"
         // is the day's accumulated trend, not a mean-reversion setup.
         // The daily-open VWAP proxy becomes unreliable when price has moved >0.5%
-        // — at that point it's a trend day and fading it consistently loses.
-        // Evidence: USTEC at 13:30 was 0.58% above daily open — every SHORT FC'd.
+        // -- at that point it's a trend day and fading it consistently loses.
+        // Evidence: USTEC at 13:30 was 0.58% above daily open -- every SHORT FC'd.
         if (abs_dev_pct > MAX_EXTENSION_PCT) {
             static thread_local int64_t s_ext_log = 0;
             if (ca_now_sec() - s_ext_log >= 300) {
                 s_ext_log = ca_now_sec();
-                printf("[VWAP-REV] %s extension %.3f%% > max %.3f%% — stale VWAP, skip\n",
+                printf("[VWAP-REV] %s extension %.3f%% > max %.3f%% -- stale VWAP, skip\n",
                        sym.c_str(), abs_dev_pct, MAX_EXTENSION_PCT);
                 fflush(stdout);
             }
@@ -1302,18 +1302,18 @@ public:
 
         const bool is_long = !above_vwap;
 
-        // ── Confluence scoring ────────────────────────────────────────────────
+        // ?? Confluence scoring ????????????????????????????????????????????????
         // Score 1-4: each factor adds 1 point to the signal quality.
-        // main.cpp uses the score to scale risk: 1=1×, 2=1.5×, 3=2×, 4=3×
+        // main.cpp uses the score to scale risk: 1=1?, 2=1.5?, 3=2?, 4=3?
         //
-        // Factor 1 (always):  base signal — price extended beyond threshold + reversal tick
+        // Factor 1 (always):  base signal -- price extended beyond threshold + reversal tick
         // Factor 2:           NY/London overlap session (13:30-17:00 UTC)
         //                     Historically the strongest mean-reversion window.
         // Factor 3:           Elevated VIX (> CONF_VIX_THRESH)
         //                     High vol = larger extensions, larger snapbacks.
         // Factor 4:           L2 order book confirms direction
-        //                     Bid-heavy (imb > 0.5+thresh) = bullish pressure → long
-        //                     Ask-heavy (imb < 0.5-thresh) = bearish pressure → short
+        //                     Bid-heavy (imb > 0.5+thresh) = bullish pressure ? long
+        //                     Ask-heavy (imb < 0.5-thresh) = bearish pressure ? short
         int score = 1;
         // Session overlap bonus: NY/London overlap 13:30-17:00 UTC = 5.5-9hrs into session
         // session_min_elapsed is minutes since 08:00 UTC
@@ -1322,15 +1322,15 @@ public:
         if (vix > CONF_VIX_THRESH) ++score;
         // L2 directional confirmation
         const double l2_dev = l2_imb - 0.5;
-        const bool l2_confirms = is_long  ? (l2_dev >  CONF_L2_THRESH)   // bid-heavy → long
-                                           : (l2_dev < -CONF_L2_THRESH);  // ask-heavy → short
+        const bool l2_confirms = is_long  ? (l2_dev >  CONF_L2_THRESH)   // bid-heavy ? long
+                                           : (l2_dev < -CONF_L2_THRESH);  // ask-heavy ? short
         if (l2_confirms) ++score;
 
         // TP = VWAP level (full reversion)
         const double tp      = vwap;
         const double tp_dist = std::fabs(tp - mid);
 
-        // SL = extension × SL_RATIO past entry (further from VWAP)
+        // SL = extension ? SL_RATIO past entry (further from VWAP)
         const double extension_abs = std::fabs(mid - vwap);
         const double sl_offset     = extension_abs * EXTENSION_SL_RATIO;
         const double sl = above_vwap ? (mid + sl_offset) : (mid - sl_offset);
@@ -1373,12 +1373,12 @@ public:
 
     // Called by main.cpp when a TP_HIT close is confirmed for this engine.
     // Sets a flip cooldown blocking the opposite direction for TP_FLIP_COOLDOWN_SEC.
-    // Prevents LONG TP → immediate SHORT into continued uptrend.
+    // Prevents LONG TP ? immediate SHORT into continued uptrend.
     void notify_tp_hit(bool was_long) noexcept {
         tp_flip_block_long_ = !was_long;  // block the OPPOSITE direction
         tp_flip_until_      = ca_now_sec() + TP_FLIP_COOLDOWN_SEC;
         consec_fc_same_dir_ = 0;          // TP hit = trend day over, reset FC counter
-        printf("[VWAP-REV] TP hit (%s) — blocking %s entries for %ds\n",
+        printf("[VWAP-REV] TP hit (%s) -- blocking %s entries for %ds\n",
                was_long ? "LONG" : "SHORT",
                was_long ? "SHORT" : "LONG",
                TP_FLIP_COOLDOWN_SEC);
@@ -1392,10 +1392,10 @@ private:
     double  ewm_vwap_           = 0.0;  // rolling time-based EWM VWAP
     int64_t last_tick_sec_      = 0;    // wall-clock seconds of last tick (for time-decay)
     bool    timeout_extended_   = false; // true once timeout extension has been used
-    // TP flip cooldown — blocks opposite direction after TP hit
+    // TP flip cooldown -- blocks opposite direction after TP hit
     bool    tp_flip_block_long_ = false;
     int64_t tp_flip_until_      = 0;
-    // Consecutive MAE exit tracking — blocks direction after 2 FCs in a row
+    // Consecutive MAE exit tracking -- blocks direction after 2 FCs in a row
     int     consec_fc_same_dir_ = 0;
     bool    last_fc_long_       = false;
     bool    fc_block_long_      = false;
@@ -1407,7 +1407,7 @@ private:
 };
 
 // =============================================================================
-// ENGINE 8 — TrendPullbackEngine
+// ENGINE 8 -- TrendPullbackEngine
 // =============================================================================
 // EMA-9/21/50 trend detection: when all three EMAs are stacked in order
 // (EMA9 > EMA21 > EMA50 for uptrend, or reverse for downtrend), the dominant
@@ -1416,16 +1416,16 @@ private:
 //
 // Signal logic:
 //   1. EMA9 > EMA21 > EMA50 (uptrend) OR EMA9 < EMA21 < EMA50 (downtrend)
-//   2. Price pulls back to EMA50 ± PULLBACK_BAND_PCT
+//   2. Price pulls back to EMA50 ? PULLBACK_BAND_PCT
 //   3. Price then bounces back toward trend direction (one confirmation tick)
 //   4. Enter in trend direction
-//   5. TP = EMA9 level (trend continuation target — price already was there)
+//   5. TP = EMA9 level (trend continuation target -- price already was there)
 //   6. SL = EMA50 (if price breaches EMA50 on close, trend is invalidated)
 //
 // EMA update: computed in on_tick() from each new mid price.
 // Warm-up: requires EMA_WARMUP_TICKS before any signal (EMA must be stable).
 //
-// Session: London/NY (08:00-22:00 UTC) — no trend pullbacks in dead Asian hours.
+// Session: London/NY (08:00-22:00 UTC) -- no trend pullbacks in dead Asian hours.
 //
 // Cost check: TP distance (EMA9 - entry) must cover execution floor.
 // =============================================================================
@@ -1434,19 +1434,19 @@ public:
     double  PULLBACK_BAND_PCT = 0.05;    // price within 0.05% of EMA50 = "at EMA50"
     // EMA alphas calibrated for ~10 ticks/sec (London gold rate).
     // Using tick-count periods directly produced EMAs with half-life <1s
-    // (EMA9 at alpha=0.2 = 3-tick half-life = 0.3s) — flipping trend
+    // (EMA9 at alpha=0.2 = 3-tick half-life = 0.3s) -- flipping trend
     // direction every few ticks and firing opposite-direction entries.
     // Now calibrated to time-equivalent periods:
-    //   EMA9  ≈ 9s  (N=90  ticks @ 10/s)
-    //   EMA21 ≈ 21s (N=210 ticks @ 10/s)
-    //   EMA50 ≈ 50s (N=500 ticks @ 10/s)
+    //   EMA9  ? 9s  (N=90  ticks @ 10/s)
+    //   EMA21 ? 21s (N=210 ticks @ 10/s)
+    //   EMA50 ? 50s (N=500 ticks @ 10/s)
     double  EMA9_ALPHA        = 2.0 / (90.0  + 1.0);
     double  EMA21_ALPHA       = 2.0 / (210.0 + 1.0);
     double  EMA50_ALPHA       = 2.0 / (500.0 + 1.0);
     double  ATR_ALPHA         = 2.0 / (140.0 + 1.0); // ATR-14 equivalent in ticks
     int     EMA_WARMUP_TICKS  = 500;    // ticks before EMAs are trusted (EMA50=500tick period)
-    int     MAX_HOLD_SEC      = 86400;  // no timeout — ATR trail manages exit
-    int     COOLDOWN_SEC      = 300;  // raised 120→300: 2-min re-entries on thin tape caused direction-flip losses
+    int     MAX_HOLD_SEC      = 86400;  // no timeout -- ATR trail manages exit
+    int     COOLDOWN_SEC      = 300;  // raised 120?300: 2-min re-entries on thin tape caused direction-flip losses
     bool    enabled           = true;
     // ATR trail params (data-validated on gold: 2x ATR arm, 1x ATR trail)
     double  TRAIL_ARM_ATR_MULT  = 2.0;  // arm trail after price moves 2x ATR from entry
@@ -1461,11 +1461,11 @@ public:
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
 
-        // EMA + ATR update — always runs regardless of position state
+        // EMA + ATR update -- always runs regardless of position state
         if (ema9_  <= 0.0) { ema9_ = ema21_ = ema50_ = mid; prev_mid_ = mid; }
         const double tick_move = std::fabs(mid - prev_mid_);
         // When bar EMAs are injected (m_using_bar_emas_=true), skip tick EMA update.
-        // Bar EMAs from real M1 closes are far more accurate — don't pollute with ticks.
+        // Bar EMAs from real M1 closes are far more accurate -- don't pollute with ticks.
         // ATR still updates from ticks for intra-bar SL sizing precision.
         if (!m_using_bar_emas_) {
             if (atr_ <= 0.0) atr_ = tick_move > 0 ? tick_move : 0.5;
@@ -1481,7 +1481,7 @@ public:
         ++tick_count_;
 
         if (pos_.active) {
-            // ── ATR-based trail — replaces old TP-extension trail ─────────────
+            // ?? ATR-based trail -- replaces old TP-extension trail ?????????????
             // BE lock: after 1x ATR profit, move SL to entry
             // Trail arm: after 2x ATR profit, trail SL at 1x ATR behind peak MFE
             // EMA50 floor: SL never falls below EMA50 (trend invalidation level)
@@ -1501,7 +1501,7 @@ public:
                 fflush(stdout);
             }
 
-            // 2) ATR trail arm at 2x ATR — trail SL at 1x ATR behind peak
+            // 2) ATR trail arm at 2x ATR -- trail SL at 1x ATR behind peak
             if (move >= atr * TRAIL_ARM_ATR_MULT) {
                 const double trail_sl = pos_.is_long
                     ? (pos_.entry + pos_.mfe - atr * TRAIL_DIST_ATR_MULT)
@@ -1510,7 +1510,7 @@ public:
                 if (!pos_.is_long && trail_sl < pos_.sl) pos_.sl = trail_sl;
             }
 
-            // 3) EMA50 floor — only apply when NOT using bar EMAs
+            // 3) EMA50 floor -- only apply when NOT using bar EMAs
             // With bar EMAs: ema50_ is the 50-min average = approximately the entry level.
             // Using it as SL floor causes instant stops (SL=entry or above).
             // With tick EMAs (fallback): ema50 updates fast enough to be a valid floor.
@@ -1520,7 +1520,7 @@ public:
             }
 
             // Check SL / timeout
-            // Minimum hold: don't check SL for first 2s — prevents entry-tick exits
+            // Minimum hold: don't check SL for first 2s -- prevents entry-tick exits
             // caused by spread noise or stale EMA50 floor firing immediately
             const int64_t held_s = ca_now_sec() - pos_.entry_ts;
             const bool sl_hit    = (held_s >= 2) &&
@@ -1544,7 +1544,7 @@ public:
                 tr.exitReason = reason;
                 tr.engine     = "TrendPullback";
                 tr.spreadAtEntry = pos_.spread_at_entry;
-                // Full symbol→tick_value table — must match tick_value_multiplier() in main.cpp
+                // Full symbol?tick_value table -- must match tick_value_multiplier() in main.cpp
                 // XAUUSD=100, US500.F=50, USTEC.F=20, DJ30.F=5, GER40=1.10, UK100=1.33,
                 // ESTX50=1.10, NAS100=1, EURUSD/GBPUSD/etc=100000, others=1
                 const double tick_val =
@@ -1589,7 +1589,7 @@ public:
                         }
                     }
                 } else {
-                    // Profitable exit — reset consecutive SL counters
+                    // Profitable exit -- reset consecutive SL counters
                     m_consec_sl_long_ = 0;
                     m_consec_sl_short_ = 0;
                 }
@@ -1605,7 +1605,7 @@ public:
         if (tick_count_ < EMA_WARMUP_TICKS) return {};
 
         // Session gate: London/NY only
-        // 08:00-20:00 UTC for indices — post-London (20:00-22:00) is thin tape
+        // 08:00-20:00 UTC for indices -- post-London (20:00-22:00) is thin tape
         // with wide spreads and EMA flipping, causing direction-alternating losses.
         // XAUUSD trades 23h/day so gold gets the full 08:00-22:00 window.
         struct tm ti{}; ca_utc_time(ti);
@@ -1617,17 +1617,17 @@ public:
         if (ca_now_sec() < cooldown_until_) return {};
 
         // Direction block: after 2 consecutive SL hits in same direction,
-        // block that direction for 10 minutes — market is not trending that way
+        // block that direction for 10 minutes -- market is not trending that way
         const int64_t now_cs = ca_now_sec();
         const bool long_dir_blocked  = (now_cs < m_long_blocked_until_);
         const bool short_dir_blocked = (now_cs < m_short_blocked_until_);
 
-        // Trend detection — all three EMAs must be stacked
+        // Trend detection -- all three EMAs must be stacked
         const bool uptrend   = (ema9_ > ema21_) && (ema21_ > ema50_);
         const bool downtrend = (ema9_ < ema21_) && (ema21_ < ema50_);
         if (!uptrend && !downtrend) return {};
 
-        // M5 structural trend gate — when bar EMAs active, require M5 agrees
+        // M5 structural trend gate -- when bar EMAs active, require M5 agrees
         // Prevents LONG during confirmed M5 downtrend and vice versa
         // m5_trend_state_=0 (flat/unknown) allows signals from EMA stack alone
         if (m_using_bar_emas_ && m5_trend_state_ != 0) {
@@ -1658,7 +1658,7 @@ public:
         if (is_long  && long_dir_blocked)  return {};
         if (!is_long && short_dir_blocked) return {};
 
-        // Initial TP = EMA9 (first target — trail takes over from there)
+        // Initial TP = EMA9 (first target -- trail takes over from there)
         // SL = EMA50, floored to minimum viable distance per symbol
         const double tp_raw  = ema9_;
         const double sl_raw  = ema50_;
@@ -1666,7 +1666,7 @@ public:
         if (is_long  && tp_raw <= mid) return {};
         if (!is_long && tp_raw >= mid) return {};
 
-        // ── Minimum SL distance — per symbol ATR floor ────────────────────
+        // ?? Minimum SL distance -- per symbol ATR floor ????????????????????
         // SL=EMA50 can be <0.1pt when EMAs are compressed = less than spread.
         // Cost guard correctly rejects these (SL < spread = unviable).
         // Floor: enough distance that SL survives spread noise.
@@ -1738,23 +1738,23 @@ public:
     double open_size()    const { return pos_.size;    }
     double current_atr()  const { return atr_;         }
 
-    // ── Bar EMA injection — replaces tick EMAs with real M1 bar closes ───────
+    // ?? Bar EMA injection -- replaces tick EMAs with real M1 bar closes ???????
     // Called each tick from main.cpp when g_bars_sp/nq/ger are ready.
     // Bar EMAs (computed from 200 M1 OHLC closes) are far more accurate than
     // tick-based EMAs which had half-life of 0.3s at 10 ticks/sec.
-    // Also seeds ATR from bar ATR14 — true range is better than tick range.
+    // Also seeds ATR from bar ATR14 -- true range is better than tick range.
     void seed_bar_emas(double e9, double e21, double e50, double bar_atr) noexcept {
         if (e9 <= 0.0 || e50 <= 0.0) return;
         ema9_  = e9;
         ema21_ = e21;
         ema50_ = e50;
         if (bar_atr > 0.0) atr_ = bar_atr;
-        // Mark as warmed — bar data is always valid after m1_ready
+        // Mark as warmed -- bar data is always valid after m1_ready
         if (tick_count_ < EMA_WARMUP_TICKS) tick_count_ = EMA_WARMUP_TICKS;
         m_using_bar_emas_ = true;
     }
 
-    // Seed M5 structural trend — gates signal direction
+    // Seed M5 structural trend -- gates signal direction
     void seed_m5_trend(int trend_state) noexcept { m5_trend_state_ = trend_state; }
 
     bool using_bar_emas() const { return m_using_bar_emas_; }
@@ -1764,7 +1764,7 @@ public:
     double ema21() const { return ema21_; }
     double ema50() const { return ema50_; }
 
-    // ── Warm-restart persistence ─────────────────────────────────────────────
+    // ?? Warm-restart persistence ?????????????????????????????????????????????
     // Saves EMA9/21/50 + ATR so next restart skips EMA_WARMUP_TICKS cold period.
     // State is discarded if older than 4 hours (overnight gap / weekend).
     void save_state(const std::string& path) const noexcept {
@@ -1803,7 +1803,7 @@ public:
         ema21_      = e21;
         ema50_      = e50;
         atr_        = (atr > 0.0) ? atr : atr_;
-        tick_count_ = EMA_WARMUP_TICKS;  // mark as warmed — skip blind zone
+        tick_count_ = EMA_WARMUP_TICKS;  // mark as warmed -- skip blind zone
     }
 
 private:
@@ -1814,7 +1814,7 @@ private:
     double  atr_           = 0.0;  // EWM ATR-14 for trail sizing
     bool    m_using_bar_emas_ = false;
     int     m5_trend_state_   = 0;     // +1=uptrend, -1=downtrend, 0=flat (from M5 bars)
-    // Consecutive SL tracker — block direction after 2 consecutive SL hits
+    // Consecutive SL tracker -- block direction after 2 consecutive SL hits
     int     m_consec_sl_long_  = 0;   // consecutive long SL hits
     int     m_consec_sl_short_ = 0;   // consecutive short SL hits
     int64_t m_long_blocked_until_  = 0;  // epoch sec, long blocked after 2 consec SL
@@ -1828,7 +1828,7 @@ private:
 
 
 // =============================================================================
-// ENGINE 9 — NoiseBandMomentumEngine
+// ENGINE 9 -- NoiseBandMomentumEngine
 // =============================================================================
 // Highest-Sharpe documented indices strategy in peer-reviewed research.
 //
@@ -2057,7 +2057,7 @@ private:
 
 
 // =============================================================================
-// ENGINE 10 — SilverTurtleTickEngine (XAGUSD)
+// ENGINE 10 -- SilverTurtleTickEngine (XAGUSD)
 // =============================================================================
 // Turtle N=20 on 300-tick bars. HTF EMA50/250 filter. XAGUSD-calibrated.
 //
@@ -2067,7 +2067,7 @@ private:
 //   2yr total: $3,079 on 0.02 lots. Stable across normal/trending/choppy/volatile.
 //
 //   ALL other silver strategies REJECTED:
-//     Compression breakout: Sharpe -1.25  (existing engine — correctly disabled)
+//     Compression breakout: Sharpe -1.25  (existing engine -- correctly disabled)
 //     SessionMomentum: Sharpe -0.00       (no directional edge intraday)
 //     VWAP Stretch:    Sharpe 1.68        (below threshold)
 //     NBM COMEX:       Sharpe 1.73        (below threshold)
@@ -2075,11 +2075,11 @@ private:
 //     Industrial timing: Sharpe 3.65 BUT only 192 trades / 2yr = statistically thin
 //
 // CALIBRATION vs gold TurtleTick (engine 16):
-//   N=20 (gold uses 40) — silver is faster/thinner, shorter lookback needed
-//   SL=$0.10 (0.31% at $32) vs gold SL=$8.00 (0.18%) — proportionally similar
-//   TP=$0.30 (3:1 RR) vs gold TP=$24.00 (3:1 RR) — same RR geometry
-//   MAX_SPREAD=$0.15 — silver spread $0.03-0.08 normal, $0.12+ = avoid
-//   Cooldown=900s — identical to gold
+//   N=20 (gold uses 40) -- silver is faster/thinner, shorter lookback needed
+//   SL=$0.10 (0.31% at $32) vs gold SL=$8.00 (0.18%) -- proportionally similar
+//   TP=$0.30 (3:1 RR) vs gold TP=$24.00 (3:1 RR) -- same RR geometry
+//   MAX_SPREAD=$0.15 -- silver spread $0.03-0.08 normal, $0.12+ = avoid
+//   Cooldown=900s -- identical to gold
 //
 // SESSION: ALL sessions (tick bars self-filter dead periods naturally)
 // REGIME: ALL regimes

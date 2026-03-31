@@ -1,34 +1,34 @@
 #pragma once
 // =============================================================================
-// OHLCBarEngine.hpp — OHLC bar data from cTrader ProtoOA trendbar API
+// OHLCBarEngine.hpp -- OHLC bar data from cTrader ProtoOA trendbar API
 //
 // Uses the SAME cTrader SSL connection as CTraderDepthClient.
 // On startup (after auth): requests 200 M1 + 100 M5 historical bars.
 // Subscribes to live bar close events (pt=2220).
 //
 // Computes per-bar for XAUUSD (and any subscribed symbol):
-//   • EMA9 / EMA21 / EMA50  (on M1 close)
-//   • RSI(14)               (on M1 close)
-//   • ATR(14)               (on M1 H-L range) — replaces tick ATR
-//   • Bollinger(20,2)       (on M1 close)
-//   • Swing high/low        (3-bar pivot on M5)
-//   • Trend state           (HH/HL = UP, LH/LL = DOWN, else FLAT)
+//   ? EMA9 / EMA21 / EMA50  (on M1 close)
+//   ? RSI(14)               (on M1 close)
+//   ? ATR(14)               (on M1 H-L range) -- replaces tick ATR
+//   ? Bollinger(20,2)       (on M1 close)
+//   ? Swing high/low        (3-bar pivot on M5)
+//   ? Trend state           (HH/HL = UP, LH/LL = DOWN, else FLAT)
 //
 // NEW ENHANCEMENTS (2026-04-01):
-//   • BBW squeeze detector  — Bollinger Band Width at N-bar low → breakout imminent
-//   • ATR slope (3-bar)     — expanding vs contracting volatility regime detection
-//   • RSI divergence        — price/RSI divergence at confirmed swing pivots
-//   • VWAP slope            — direction of EMA50 proxy (rising/flat/falling)
-//   • Rolling spread avg    — baseline spread for wide-spread entry blocking
-//   • Tick speed/accel      — ticks/sec + acceleration, real-time vol proxy
-//   • Volume delta          — L2 imbalance converted to rolling buy/sell pressure
+//   ? BBW squeeze detector  -- Bollinger Band Width at N-bar low ? breakout imminent
+//   ? ATR slope (3-bar)     -- expanding vs contracting volatility regime detection
+//   ? RSI divergence        -- price/RSI divergence at confirmed swing pivots
+//   ? VWAP slope            -- direction of EMA50 proxy (rising/flat/falling)
+//   ? Rolling spread avg    -- baseline spread for wide-spread entry blocking
+//   ? Tick speed/accel      -- ticks/sec + acceleration, real-time vol proxy
+//   ? Volume delta          -- L2 imbalance converted to rolling buy/sell pressure
 //
-// All outputs exposed as atomics — zero-lock hot path from FIX thread.
+// All outputs exposed as atomics -- zero-lock hot path from FIX thread.
 //
 // ProtoOA trendbar message types (same framing as depth client):
-//   2137 = GetTrendbarsReq    → request historical bars
-//   2138 = GetTrendbarsRes    → response (repeated bars)
-//   2220 = SubscribeLiveTrendbarReq → subscribe live bar push
+//   2137 = GetTrendbarsReq    ? request historical bars
+//   2138 = GetTrendbarsRes    ? response (repeated bars)
+//   2220 = SubscribeLiveTrendbarReq ? subscribe live bar push
 //   2221 = UnsubscribeLiveTrendbarReq
 //   2155 = SpotEvent / live trendbar push (same pt as depth, check symbolId)
 //   Actually: live trendbar push uses pt=2215 (ProtoOASpotEvent with bar)
@@ -39,7 +39,7 @@
 //   field 6 = open   (int64, relative to close: close + open_delta)
 //   field 7 = high   (int64, delta above close: close + high_delta)
 //   field 8 = low    (int64, delta below close: close - low_delta; note: negative)
-//   field 2 = utcTimestampInMinutes (uint64) — bar open time in minutes since epoch
+//   field 2 = utcTimestampInMinutes (uint64) -- bar open time in minutes since epoch
 //   field 3 = close  (uint64, absolute price * 100000)
 //
 // All prices in cTrader are integers scaled by 100000.
@@ -60,7 +60,7 @@
 #include <chrono>
 
 // =============================================================================
-// OHLCBar — one closed candle
+// OHLCBar -- one closed candle
 // =============================================================================
 struct OHLCBar {
     int64_t  ts_min = 0;   // open time in minutes since Unix epoch (UTC)
@@ -72,14 +72,14 @@ struct OHLCBar {
 };
 
 // =============================================================================
-// BarIndicators — atomic outputs read by trading engines
+// BarIndicators -- atomic outputs read by trading engines
 // =============================================================================
 struct BarIndicators {
-    // ── Original indicators ───────────────────────────────────────────────────
+    // ?? Original indicators ???????????????????????????????????????????????????
     std::atomic<double> ema9  {0.0};
     std::atomic<double> ema21 {0.0};
     std::atomic<double> ema50 {0.0};
-    std::atomic<double> rsi14 {50.0}; // 0–100; 50 = neutral/uninitialised
+    std::atomic<double> rsi14 {50.0}; // 0-100; 50 = neutral/uninitialised
     std::atomic<double> atr14 {0.0};  // true range ATR from bars (replaces tick ATR)
     std::atomic<double> bb_upper{0.0};// Bollinger upper band
     std::atomic<double> bb_mid  {0.0};// Bollinger mid (20-SMA)
@@ -94,17 +94,17 @@ struct BarIndicators {
     std::atomic<bool>   m1_ready{false}; // true once >=50 M1 bars loaded
     std::atomic<bool>   m5_ready{false}; // true once >=20 M5 bars loaded
 
-    // ── NEW: BBW squeeze detector ─────────────────────────────────────────────
-    // bb_width = (upper - lower) / mid  — normalised band width
+    // ?? NEW: BBW squeeze detector ?????????????????????????????????????????????
+    // bb_width = (upper - lower) / mid  -- normalised band width
     // bb_squeeze = true when BBW is at its lowest in BB_SQUEEZE_LOOKBACK bars
-    // A squeeze = volatility compression → breakout imminent
+    // A squeeze = volatility compression ? breakout imminent
     // Used by GoldStack to arm a "breakout mode" when bands are tight
     std::atomic<double> bb_width       {0.0};  // current normalised BBW
     std::atomic<double> bb_width_min   {0.0};  // N-bar min BBW (squeeze level)
     std::atomic<bool>   bb_squeeze     {false}; // true when BBW at N-bar low
     std::atomic<int>    bb_squeeze_bars{0};     // consecutive bars BBW has been contracting
 
-    // ── NEW: ATR slope (3-bar) ────────────────────────────────────────────────
+    // ?? NEW: ATR slope (3-bar) ????????????????????????????????????????????????
     // atr_slope > 0: ATR expanding (breakout/trending regime)
     // atr_slope < 0: ATR contracting (mean-reversion / compression regime)
     // atr_expanding  = true when ATR increasing for 3 consecutive bars
@@ -113,50 +113,50 @@ struct BarIndicators {
     std::atomic<bool>   atr_expanding  {false}; // true = consecutive ATR expansion
     std::atomic<bool>   atr_contracting{false}; // true = consecutive ATR contraction
 
-    // ── NEW: RSI divergence ───────────────────────────────────────────────────
+    // ?? NEW: RSI divergence ???????????????????????????????????????????????????
     // rsi_bull_div = bullish divergence: price lower low, RSI higher low
-    //   → potential bounce / reversal up
+    //   ? potential bounce / reversal up
     // rsi_bear_div = bearish divergence: price higher high, RSI lower high
-    //   → potential top / reversal down
+    //   ? potential top / reversal down
     // rsi_div_strength = magnitude of RSI divergence in RSI points
     std::atomic<bool>   rsi_bull_div   {false}; // bullish price/RSI divergence active
     std::atomic<bool>   rsi_bear_div   {false}; // bearish price/RSI divergence active
     std::atomic<double> rsi_div_strength{0.0};  // magnitude of divergence (RSI pts)
 
-    // ── NEW: VWAP slope ───────────────────────────────────────────────────────
-    // vwap_slope: EMA50 change over 3 bars — proxy for rolling VWAP direction
+    // ?? NEW: VWAP slope ???????????????????????????????????????????????????????
+    // vwap_slope: EMA50 change over 3 bars -- proxy for rolling VWAP direction
     // vwap_direction: +1=rising, -1=falling, 0=flat
     // Rising VWAP + LONG signal = with-trend = higher confidence
     // Flat VWAP = mean-reversion setups active
     std::atomic<double> vwap_slope     {0.0};  // slope of EMA50 proxy (pts/3 bars)
     std::atomic<int>    vwap_direction {0};     // +1=rising, -1=falling, 0=flat
 
-    // ── NEW: Rolling spread avg + anomaly gate ────────────────────────────────
-    // spread_avg: rolling 200-tick average spread — session baseline
+    // ?? NEW: Rolling spread avg + anomaly gate ????????????????????????????????
+    // spread_avg: rolling 200-tick average spread -- session baseline
     // spread_ratio: current_spread / spread_avg
-    //   > SPREAD_WIDE_RATIO (1.5): spread anomaly — news/thin liquidity, block entries
-    //   < 0.8: spread tightening (pre-move compression) — normal entry zone
+    //   > SPREAD_WIDE_RATIO (1.5): spread anomaly -- news/thin liquidity, block entries
+    //   < 0.8: spread tightening (pre-move compression) -- normal entry zone
     // Updated per tick via update_tick_metrics()
     std::atomic<double> spread_avg     {0.0};  // rolling avg spread (pts)
     std::atomic<double> spread_ratio   {1.0};  // current / avg spread ratio
 
-    // ── NEW: Tick speed + acceleration ───────────────────────────────────────
+    // ?? NEW: Tick speed + acceleration ???????????????????????????????????????
     // tick_rate: ticks per second over last 2 seconds (rolling)
-    // tick_accel: change in tick rate vs 5s ago — positive = accelerating
+    // tick_accel: change in tick rate vs 5s ago -- positive = accelerating
     // tick_storm: true when tick_rate > TICK_STORM_THRESH (8/s) = momentum move
     // High tick rate = use tighter momentum confirmation; suppress mean-reversion
-    // Low tick rate (<1/s) = dead tape / Asia — normal filters still apply
+    // Low tick rate (<1/s) = dead tape / Asia -- normal filters still apply
     std::atomic<double> tick_rate      {0.0};  // ticks/sec (2s rolling window)
     std::atomic<double> tick_accel     {0.0};  // rate change vs 5s ago
     std::atomic<bool>   tick_storm     {false}; // true when tick_rate >= 8/s
 
-    // ── NEW: Volume delta (buy vs sell pressure from L2) ─────────────────────
+    // ?? NEW: Volume delta (buy vs sell pressure from L2) ?????????????????????
     // vol_delta: current tick's L2 pressure converted to -1..+1
     //   +1 = fully bid-heavy (aggressive buying)
     //   -1 = fully ask-heavy (aggressive selling)
     // vol_delta_ratio: 100-tick rolling average of vol_delta
-    //   Sustained positive = buy pressure building → supports LONG
-    //   Sustained negative = sell pressure building → supports SHORT
+    //   Sustained positive = buy pressure building ? supports LONG
+    //   Sustained negative = sell pressure building ? supports SHORT
     std::atomic<double> vol_delta      {0.0};  // current tick signed delta
     std::atomic<double> vol_delta_ratio{0.0};  // 100-tick rolling average
 
@@ -166,7 +166,7 @@ struct BarIndicators {
 };
 
 // =============================================================================
-// OHLCBarEngine — core computation (non-threaded, called from cTrader thread)
+// OHLCBarEngine -- core computation (non-threaded, called from cTrader thread)
 // =============================================================================
 class OHLCBarEngine {
 public:
@@ -180,7 +180,7 @@ public:
     static constexpr int  VOL_MA_P  = 20;
     static constexpr int  MIN_BARS  = 52;   // need at least 52 bars before emitting
 
-    // ── New constants ─────────────────────────────────────────────────────────
+    // ?? New constants ?????????????????????????????????????????????????????????
     // BBW squeeze: look back 20 bars to find band-width minimum
     static constexpr int    BB_SQUEEZE_LOOKBACK  = 20;
     // ATR slope: measure over 3 bars
@@ -204,9 +204,9 @@ public:
     // Indicators exposed to other threads
     BarIndicators ind;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // add_bar() — call on every newly-closed bar
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
+    // add_bar() -- call on every newly-closed bar
+    // ?????????????????????????????????????????????????????????????????????????
     void add_bar(const OHLCBar& bar) {
         bars_.push_back(bar);
         if (bars_.size() > 300) bars_.pop_front();
@@ -228,9 +228,9 @@ public:
         if (!ind.m1_ready.load() && n >= MIN_BARS) ind.m1_ready.store(true);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // seed() — bulk load historical bars on startup
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
+    // seed() -- bulk load historical bars on startup
+    // ?????????????????????????????????????????????????????????????????????????
     void seed(const std::vector<OHLCBar>& historical) {
         bars_.clear();
         for (const auto& b : historical) bars_.push_back(b);
@@ -255,14 +255,14 @@ public:
 
     int bar_count() const { return static_cast<int>(bars_.size()); }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // update_tick_metrics() — call every tick from on_tick() in main.cpp
+    // ?????????????????????????????????????????????????????????????????????????
+    // update_tick_metrics() -- call every tick from on_tick() in main.cpp
     //   spread : current ask - bid
     //   now_ms : current epoch milliseconds
     // Updates: spread_avg, spread_ratio, tick_rate, tick_accel, tick_storm
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void update_tick_metrics(double spread, int64_t now_ms) noexcept {
-        // ── Rolling spread average ─────────────────────────────────────────────
+        // ?? Rolling spread average ?????????????????????????????????????????????
         spread_window_.push_back(spread);
         if (static_cast<int>(spread_window_.size()) > SPREAD_AVG_TICKS)
             spread_window_.pop_front();
@@ -275,7 +275,7 @@ public:
             ind.spread_ratio.store(ratio, std::memory_order_relaxed);
         }
 
-        // ── Tick speed + acceleration ──────────────────────────────────────────
+        // ?? Tick speed + acceleration ??????????????????????????????????????????
         tick_timestamps_.push_back(now_ms);
         // Trim timestamps older than the longest window needed
         const int64_t oldest_needed = now_ms - static_cast<int64_t>(
@@ -308,14 +308,14 @@ public:
         ind.tick_accel.store(rate_now - rate_old, std::memory_order_relaxed);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // update_volume_delta() — call every tick from on_tick() when L2 is live
+    // ?????????????????????????????????????????????????????????????????????????
+    // update_volume_delta() -- call every tick from on_tick() when L2 is live
     //   l2_imb: 0..1 from L2Book::imbalance()
     //     > 0.5 = bid-heavy (buying pressure)
     //     < 0.5 = ask-heavy (selling pressure)
     //     = 0.5 = neutral / L2 unavailable
     // Updates: vol_delta (current tick), vol_delta_ratio (100-tick rolling avg)
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void update_volume_delta(double l2_imb) noexcept {
         // Convert 0..1 imbalance to -1..+1 signed delta
         const double delta = (l2_imb - 0.5) * 2.0;
@@ -336,7 +336,7 @@ public:
 private:
     std::deque<OHLCBar> bars_;
 
-    // ── Original private state ────────────────────────────────────────────────
+    // ?? Original private state ????????????????????????????????????????????????
     double ema9_  = 0.0, ema21_ = 0.0, ema50_ = 0.0;
     bool   ema_init_ = false;
     double rsi_avg_gain_ = 0.0, rsi_avg_loss_ = 0.0;
@@ -344,7 +344,7 @@ private:
     double atr_avg_ = 0.0;
     bool   atr_init_ = false;
 
-    // ── New private state ─────────────────────────────────────────────────────
+    // ?? New private state ?????????????????????????????????????????????????????
     // ATR history ring buffer for slope calculation
     std::deque<double> atr_history_;
 
@@ -362,9 +362,9 @@ private:
     std::deque<int64_t> tick_timestamps_;
     std::deque<double>  vol_delta_window_;
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     // _update_ema()
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void _update_ema() {
         const int n = static_cast<int>(bars_.size());
         if (!ema_init_ && n >= EMA50_P) {
@@ -395,9 +395,9 @@ private:
         ind.ema50.store(ema50_, std::memory_order_relaxed);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     // _update_rsi()
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void _update_rsi() {
         const int n = static_cast<int>(bars_.size());
         if (n < RSI_P + 1) return;
@@ -431,9 +431,9 @@ private:
         ind.rsi14.store(rsi, std::memory_order_relaxed);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     // _update_atr()
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void _update_atr() {
         const int n = static_cast<int>(bars_.size());
         if (n < ATR_P + 1) return;
@@ -475,9 +475,9 @@ private:
             atr_history_.pop_front();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     // _update_bollinger()
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void _update_bollinger() {
         const int n = static_cast<int>(bars_.size());
         if (n < BB_P) return;
@@ -500,9 +500,9 @@ private:
         ind.bb_pct  .store(std::max(0.0, std::min(1.0, pct)), std::memory_order_relaxed);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     // _update_volume_ratio()
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void _update_volume_ratio() {
         const int n = static_cast<int>(bars_.size());
         if (n < VOL_MA_P + 1) return;
@@ -513,9 +513,9 @@ private:
         ind.vol_ratio.store(ratio, std::memory_order_relaxed);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     // _update_swing_and_trend()
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void _update_swing_and_trend() {
         const int n = static_cast<int>(bars_.size());
         if (n < SWING_P * 2 + 1) return;
@@ -548,16 +548,16 @@ private:
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     // NEW: _update_bbw_squeeze()
     // Bollinger Band Width = (upper - lower) / mid (normalised ratio)
-    // Squeeze = current BBW is at its N-bar minimum → coiling, breakout imminent
+    // Squeeze = current BBW is at its N-bar minimum ? coiling, breakout imminent
     // Called once per bar after _update_bollinger().
     //
     // The GoldStack "regime lag" issue from session notes: 16:35 surge was missed
     // because GoldStack was in MR regime during a band squeeze that preceded the
     // breakout. bb_squeeze = true should arm a "breakout watch" state in GoldStack.
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void _update_bbw_squeeze() {
         const int n = static_cast<int>(bars_.size());
         if (n < BB_P + BB_SQUEEZE_LOOKBACK) return;
@@ -571,7 +571,7 @@ private:
         ind.bb_width.store(bbw_now, std::memory_order_relaxed);
 
         // Find minimum BBW over the last BB_SQUEEZE_LOOKBACK bars
-        // Recompute Bollinger for each lookback step (once per bar, not per tick — acceptable cost)
+        // Recompute Bollinger for each lookback step (once per bar, not per tick -- acceptable cost)
         double bbw_min = bbw_now;
         for (int k = 1; k <= BB_SQUEEZE_LOOKBACK; ++k) {
             const int end_idx = n - k;
@@ -603,14 +603,14 @@ private:
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     // NEW: _update_atr_slope()
     // ATR slope over last ATR_SLOPE_BARS (3) bars.
     // Positive = volatility expanding = breakout/momentum mode
     // Negative = volatility contracting = mean-reversion / compression mode
     // atr_expanding  = each of last 3 bars had higher ATR than previous
     // atr_contracting = each of last 3 bars had lower ATR than previous
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void _update_atr_slope() {
         const int sz = static_cast<int>(atr_history_.size());
         if (sz < ATR_SLOPE_BARS + 1) return;
@@ -649,26 +649,26 @@ private:
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     // NEW: _update_rsi_divergence()
     // Detects classic price/RSI divergence at confirmed M1 swing pivots.
     //
     // BEARISH divergence (bear div): price higher high, RSI lower high
-    //   → buying momentum weakening; expect reversal or correction
-    //   → used by Gate 3 to tighten short signal confirmation
-    //   → used as confluence bonus on SHORT signals
+    //   ? buying momentum weakening; expect reversal or correction
+    //   ? used by Gate 3 to tighten short signal confirmation
+    //   ? used as confluence bonus on SHORT signals
     //
     // BULLISH divergence (bull div): price lower low, RSI higher low
-    //   → selling momentum weakening; expect bounce
-    //   → used as confluence bonus on LONG signals
-    //   → especially reliable when RSI < 40 at the low
+    //   ? selling momentum weakening; expect bounce
+    //   ? used as confluence bonus on LONG signals
+    //   ? especially reliable when RSI < 40 at the low
     //
     // Note: RSI at each pivot is the RSI value *at that bar*, not current RSI.
-    // We approximate by storing current RSI when the pivot is detected —
+    // We approximate by storing current RSI when the pivot is detected --
     // since pivots require SWING_P (3) bars confirmation lag, the RSI stored
     // is the RSI from 3 bars after the pivot bar. This is a slight overestimate
     // of the actual pivot RSI but preserves the divergence sign reliably.
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     void _update_rsi_divergence() {
         const int n = static_cast<int>(bars_.size());
         if (n < SWING_P * 2 + RSI_P + 2) return;
@@ -738,9 +738,9 @@ private:
         ind.rsi_div_strength.store(div_strength, std::memory_order_relaxed);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // ?????????????????????????????????????????????????????????????????????????
     // NEW: _update_vwap_slope()
-    // Uses EMA50 as rolling VWAP proxy — volume data is not available in
+    // Uses EMA50 as rolling VWAP proxy -- volume data is not available in
     // the bar engine (cTrader doesn't send volume in trendbar messages reliably).
     // EMA50 is the slowest EMA we compute and closely tracks the session anchor.
     //
@@ -749,13 +749,13 @@ private:
     // This is mathematically exact for the EWM formula used.
     //
     // slope > +VWAP_SLOPE_FLAT_THR: session VWAP proxy is rising
-    //   → uptrend context; SHORT entries need extra confirmation
-    //   → GoldFlow LONG entries have tailwind
+    //   ? uptrend context; SHORT entries need extra confirmation
+    //   ? GoldFlow LONG entries have tailwind
     // slope < -VWAP_SLOPE_FLAT_THR: session VWAP proxy is falling
-    //   → downtrend context; LONG entries need extra confirmation
-    // |slope| < VWAP_SLOPE_FLAT_THR: VWAP flat → mean-reversion mode
-    //   → VWAPReversion entries have highest expected value
-    // ─────────────────────────────────────────────────────────────────────────
+    //   ? downtrend context; LONG entries need extra confirmation
+    // |slope| < VWAP_SLOPE_FLAT_THR: VWAP flat ? mean-reversion mode
+    //   ? VWAPReversion entries have highest expected value
+    // ?????????????????????????????????????????????????????????????????????????
     void _update_vwap_slope() {
         if (!ema_init_) return;
         const int n = static_cast<int>(bars_.size());
@@ -783,18 +783,18 @@ private:
 };
 
 // =============================================================================
-// Per-symbol bar engine registry — maps symbol name to engine + indicators
+// Per-symbol bar engine registry -- maps symbol name to engine + indicators
 // =============================================================================
 struct SymBarState {
     OHLCBarEngine m1;   // 1-minute bars
-    OHLCBarEngine m5;   // 5-minute bars — swing/trend use this
+    OHLCBarEngine m5;   // 5-minute bars -- swing/trend use this
     // Expose combined indicators:
     //   RSI, EMA, ATR, BB, BBW squeeze, ATR slope, RSI div, VWAP slope from M1
     //   trend_state, swing from M5
 };
 
 // =============================================================================
-// Global bar state registry — accessed by trading engines
+// Global bar state registry -- accessed by trading engines
 // =============================================================================
 // Declare globally in main.cpp:
 //   SymBarState g_bars_gold;   // XAUUSD

@@ -1,5 +1,5 @@
 # ==============================================================================
-#                   OMEGA — START (no rebuild)
+#                   OMEGA -- START (no rebuild)
 # ==============================================================================
 $ErrorActionPreference = "Stop"
 
@@ -17,7 +17,7 @@ if ($localHead -ne $remoteHead) {
 }
 
 if (-not (Test-Path $exe)) {
-    Write-Host "[ERROR] Omega.exe not found — run REBUILD_AND_START.ps1 first" -ForegroundColor Red
+    Write-Host "[ERROR] Omega.exe not found -- run REBUILD_AND_START.ps1 first" -ForegroundColor Red
     exit 1
 }
 

@@ -7,7 +7,7 @@
 #include <vector>
 
 // ==============================================================================
-// OmegaTelemetrySnapshot — shared memory block written by main loop,
+// OmegaTelemetrySnapshot -- shared memory block written by main loop,
 // read by OmegaTelemetryServer (GUI). Uses a different named mapping
 // ("Global\\OmegaTelemetrySharedMemory") so it does not conflict with
 // ChimeraMetals which uses "Global\\ChimeraTelemetrySharedMemory".
@@ -48,7 +48,7 @@ struct OmegaTelemetrySnapshot
     // --- P&L ---
     double daily_pnl;           // net P&L after slippage (closed + floating combined)
     double gross_daily_pnl;     // gross P&L before slippage
-    double closed_pnl;          // closed trades only — no floating
+    double closed_pnl;          // closed trades only -- no floating
     double open_unrealised_pnl; // floating P&L on open positions only
     double max_drawdown;
 
@@ -200,7 +200,7 @@ struct OmegaTelemetrySnapshot
     char   sig_macro     [MAX_SIGNAL_HISTORY][16];  // macro regime e.g. "RISK_ON"
     char   sig_engine    [MAX_SIGNAL_HISTORY][16];  // engine type e.g. "BREAKOUT" / "BRACKET"
     int    sig_head;   // index of most recent signal (0-based, wraps)
-    int    sig_count;  // how many valid entries (0–5)
+    int    sig_count;  // how many valid entries (0-5)
 
     // --- Regime indicators ---
     double vix_level;
@@ -223,11 +223,11 @@ struct OmegaTelemetrySnapshot
     // --- L2 data quality ---
     int     ctrader_l2_live;  // 1 = cTrader depth client received at least 1 event
     int     gold_l2_real;     // 1 = XAUUSD book has non-zero size data (vs FIX-only 0.5 fallback)
-    // GoldFlow live position state — for GUI pyramid indicator
+    // GoldFlow live position state -- for GUI pyramid indicator
     int     gf_trail_stage   = 0;   // 0=none/initial, 1=BE, 2=trail1, 3=trail2, 4=trail3
     double  gf_profit_usd    = 0.0; // current unrealised profit in USD
     int     gf_stack_unlocked = 0;  // 1 = GoldFlow is winning, stack is free to add
-    double  gf_atr_at_entry  = 0.0; // ATR value at trade entry — used to compute stage trigger prices for GUI
+    double  gf_atr_at_entry  = 0.0; // ATR value at trade entry -- used to compute stage trigger prices for GUI
 
     // --- Asia FX gate ---
     int     asia_fx_gate_open;          // 1 = trading allowed (gate open), 0 = session-blocked
@@ -237,12 +237,12 @@ struct OmegaTelemetrySnapshot
     int     cfg_max_open_positions;     // current value of max_open_positions
 
     // --- Uptime ---
-    int64_t uptime_sec;    // seconds since process start — written each tick by main loop
-    int64_t start_time;    // unix timestamp of process start — set once at init
+    int64_t uptime_sec;    // seconds since process start -- written each tick by main loop
+    int64_t start_time;    // unix timestamp of process start -- set once at init
     int64_t last_entry_ts;    // unix ts of last trade entry (0 = none this session)
     int64_t last_signal_ts;   // unix ts of last signal generated
 
-    // --- Cross-asset engine live state (Engines 1–8 + ORB instances) ---
+    // --- Cross-asset engine live state (Engines 1-8 + ORB instances) ---
     // One slot per named engine instance. Written each tick by main.cpp.
     // active=1 means position is currently open.
     static constexpr int MAX_CA_ENGINES = 20;
@@ -254,14 +254,14 @@ struct OmegaTelemetrySnapshot
         double entry;          // entry price (valid when active=1)
         double tp;             // TP price
         double sl;             // SL price
-        double ref_price;      // VWAP / EMA50 / ORB range mid — context reference
+        double ref_price;      // VWAP / EMA50 / ORB range mid -- context reference
         int    cost_blocked;   // cumulative count of COST-GUARD blocks this session
         int    signals_today;  // signals fired today
     };
     CrossAssetEngineState ca_engines[MAX_CA_ENGINES];
     int ca_engine_count;   // how many slots are populated
 
-    // ── Live open trades — per-trade real-time P&L ────────────────────────────
+    // ?? Live open trades -- per-trade real-time P&L ????????????????????????????
     // Updated every 250ms by the unrealised P&L push in main.cpp.
     // GUI uses this to show per-trade floating P&L in real time.
     static constexpr int MAX_LIVE_TRADES = 16;
@@ -269,7 +269,7 @@ struct OmegaTelemetrySnapshot
         char   symbol[12];    // "XAUUSD", "XAGUSD", etc.
         char   engine[24];    // "GoldFlow", "GoldStack/CompBreakout", etc.
         char   side[6];       // "LONG" or "SHORT"
-        int    is_long;       // 1=LONG 0=SHORT — used for dist_to_sl/tp calc
+        int    is_long;       // 1=LONG 0=SHORT -- used for dist_to_sl/tp calc
         double entry;         // fill price
         double current;       // current bid (LONG) or ask (SHORT) for P&L calc
         double tp;            // take profit price
@@ -340,7 +340,7 @@ struct OmegaTelemetrySnapshot
 };
 
 // ==============================================================================
-// OmegaTelemetryWriter — writes to the shared memory snapshot
+// OmegaTelemetryWriter -- writes to the shared memory snapshot
 // ==============================================================================
 class OmegaTelemetryWriter
 {
@@ -548,7 +548,7 @@ public:
         }
     }
 
-    // Update the live open trades array — called every 250ms by the unrealised push.
+    // Update the live open trades array -- called every 250ms by the unrealised push.
     // Clears and rebuilds from scratch each call so stale entries never persist.
     void ClearLiveTrades() {
         if (!m_snap) return;

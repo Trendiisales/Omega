@@ -1,6 +1,6 @@
 #pragma once
 // =============================================================================
-// CTraderDepthClient.hpp — cTrader Open API v2 Depth-of-Market feed
+// CTraderDepthClient.hpp -- cTrader Open API v2 Depth-of-Market feed
 //
 // PROTOCOL (from official proto source):
 //
@@ -26,7 +26,7 @@
 //   8. SubscribeDepthRes   (pt=2157)
 //   9. DepthEvent          (pt=2155)  continuous stream
 //      symbolId(f3), newQuotes(f4,repeated), deletedQuotes(f5,packed)
-//      DepthQuote: id(f1), size(f3), bid(f4), ask(f5)  — official proto field numbers (OpenApiModelMessages.proto)
+//      DepthQuote: id(f1), size(f3), bid(f4), ask(f5)  -- official proto field numbers (OpenApiModelMessages.proto)
 //
 // HEARTBEAT: pt=51, empty payload, every 10s
 // =============================================================================
@@ -66,7 +66,7 @@
 #include "OHLCBarEngine.hpp"
 
 // =============================================================================
-// Minimal hand-rolled protobuf encode/decode — no external library
+// Minimal hand-rolled protobuf encode/decode -- no external library
 // =============================================================================
 namespace PB {
 
@@ -128,7 +128,7 @@ inline std::vector<Field> parse(const uint8_t* data, size_t len) {
         if      (f.wire_type == 0) { f.varint = read_varint(data, len, pos); }
         else if (f.wire_type == 2) { uint64_t sz = read_varint(data,len,pos); if(pos+sz>len) break; f.bytes.assign(data+pos,data+pos+sz); pos+=sz; }
         else if (f.wire_type == 1) {
-            // fixed64 — read 8 bytes little-endian into varint so get_varint() works
+            // fixed64 -- read 8 bytes little-endian into varint so get_varint() works
             if (pos+8 > len) break;
             f.varint = uint64_t(data[pos]) | (uint64_t(data[pos+1])<<8) |
                        (uint64_t(data[pos+2])<<16) | (uint64_t(data[pos+3])<<24) |
@@ -137,7 +137,7 @@ inline std::vector<Field> parse(const uint8_t* data, size_t len) {
             pos+=8;
         }
         else if (f.wire_type == 5) {
-            // fixed32 — read 4 bytes little-endian
+            // fixed32 -- read 4 bytes little-endian
             if (pos+4 > len) break;
             f.varint = uint64_t(data[pos]) | (uint64_t(data[pos+1])<<8) |
                        (uint64_t(data[pos+2])<<16) | (uint64_t(data[pos+3])<<24);
@@ -192,7 +192,7 @@ inline std::vector<uint8_t> refresh_token_req(const std::string& rt) {
 } // namespace PB
 
 // =============================================================================
-// PB trendbar message builders — defined here so write_field_varint/frame_msg
+// PB trendbar message builders -- defined here so write_field_varint/frame_msg
 // are in scope. OHLCBarEngine.hpp is included AFTER this namespace.
 // =============================================================================
 namespace PB {
@@ -237,7 +237,7 @@ inline OHLCBar parse_trendbar(const std::vector<uint8_t>& bytes,
     const uint64_t ts_min    = get_varint(f, 2);
     const uint64_t close_raw = get_varint(f, 3);
     const uint64_t vol       = get_varint(f, 5);
-    // openDelta: sint64 zigzag — iterate fields to find wire_type=0 field 6
+    // openDelta: sint64 zigzag -- iterate fields to find wire_type=0 field 6
     int64_t open_delta = 0;
     for (const auto& fi : f) {
         if (fi.field_num == 6 && fi.wire_type == 0) {
@@ -276,7 +276,7 @@ struct CTDepthBook {
         std::vector<Lv> bids, asks;
         for (const auto& kv : quotes) {
             if (!kv.second.price_raw) continue;  // no price = invalid, skip
-            // size_raw=0 means broker sent no tag-271 size — substitute 1 lot (100 raw)
+            // size_raw=0 means broker sent no tag-271 size -- substitute 1 lot (100 raw)
             // so imbalance() returns 0.5 (neutral) rather than NaN/0 which breaks L2 path.
             // This keeps the price levels visible and prevents has_data()=false falsely
             // killing GoldFlow's L2 path on brokers that omit size data.
@@ -305,24 +305,24 @@ public:
     std::unordered_set<std::string> symbol_whitelist;
     bool        dump_all_symbols = false;  // if true, log ALL broker symbols on connect
 
-    // Alias map: broker_name → internal_name
+    // Alias map: broker_name ? internal_name
     // Populated when broker uses different names than our internal names.
     std::unordered_map<std::string,std::string> name_alias;
 
     std::mutex*                             l2_mtx   = nullptr;
     std::unordered_map<std::string,L2Book>* l2_books = nullptr;
 
-    // ── Price tick callback — DRIVES TRADING DECISIONS ───────────────────────
+    // ?? Price tick callback -- DRIVES TRADING DECISIONS ???????????????????????
     // Called on every depth event with best bid/ask from cTrader matching engine.
     // This replaces the FIX quote feed as the primary price source for on_tick().
     // FIX feed becomes fallback only (used when cTrader depth is stale/disconnected).
     // Signature: (symbol, best_bid, best_ask)
     std::function<void(const std::string&, double, double)> on_tick_fn;
 
-    // ── OHLC bar engines — trendbar API ──────────────────────────────────────
+    // ?? OHLC bar engines -- trendbar API ??????????????????????????????????????
     // Wire before start(). Client requests 200 M1 + 100 M5 bars on startup,
     // then subscribes to live bar close pushes (pt=2220).
-    // bar_subscriptions: internal_name → {symbol_id, SymBarState*}
+    // bar_subscriptions: internal_name ? {symbol_id, SymBarState*}
     struct BarSub { int64_t sym_id = 0; SymBarState* state = nullptr; };
     std::unordered_map<std::string, BarSub> bar_subscriptions;
 
@@ -330,7 +330,7 @@ public:
     std::function<void(const std::string&, int /*period*/, const OHLCBar&)> on_bar_fn;
 
     // Callback: write derived L2 scalars (imbalance, microprice_bias, has_data)
-    // to per-symbol atomics — called after every depth event, no lock required.
+    // to per-symbol atomics -- called after every depth event, no lock required.
     // Registered by main.cpp at startup. Signature:
     //   (internal_name, imbalance, microprice_bias, has_data)
     std::function<void(const std::string&, double, double, bool)> atomic_l2_write_fn;
@@ -343,7 +343,7 @@ public:
     std::atomic<bool>     running{false};
     std::atomic<bool>     depth_active{false};
     std::atomic<uint64_t> depth_events_total{0};
-    // Timestamp (ms since epoch) of most recent depth event — used to detect
+    // Timestamp (ms since epoch) of most recent depth event -- used to detect
     // a silent feed stall: connection alive but broker stopped sending quotes.
     // Common during thin Asian session. Checked by main loop: if age > 30s,
     // l2_active is set to 0 and the L2 badge goes grey even if TCP is up.
@@ -352,7 +352,7 @@ public:
     bool configured() const { return !client_id.empty() && !access_token.empty() && ctid_account_id > 0; }
 
     void start() {
-        if (!configured()) { std::cout << "[CTRADER] Depth feed disabled — add [ctrader_api] to omega_config.ini\n"; return; }
+        if (!configured()) { std::cout << "[CTRADER] Depth feed disabled -- add [ctrader_api] to omega_config.ini\n"; return; }
         if (running.exchange(true)) return;
         thread_ = std::thread([this]{ loop(); });
         std::cout << "[CTRADER] Depth client started (ctid=" << ctid_account_id << ")\n";
@@ -364,7 +364,7 @@ private:
     std::thread thread_;
     std::unordered_map<std::string,CTDepthBook>  depth_books_;
     std::unordered_map<uint64_t,std::string>     id_to_name_;
-    std::unordered_map<uint64_t,std::string>     id_to_internal_;  // id → internal name (with alias)
+    std::unordered_map<uint64_t,std::string>     id_to_internal_;  // id ? internal name (with alias)
     std::vector<uint8_t> recv_buf_;
 
     void loop() {
@@ -375,15 +375,15 @@ private:
             std::cout << "[CTRADER] Connecting live.ctraderapi.com:5035\n";
             sock_t sock = BAD_SOCK;
             SSL* ssl = connect_ssl("live.ctraderapi.com", 5035, sock);
-            if (!ssl) { std::cerr << "[CTRADER] Connect failed — retry " << backoff << "ms\n"; sleep_ms(backoff); backoff=std::min(backoff*2,300000); continue; }
+            if (!ssl) { std::cerr << "[CTRADER] Connect failed -- retry " << backoff << "ms\n"; sleep_ms(backoff); backoff=std::min(backoff*2,300000); continue; }
             recv_buf_.clear();
             backoff = 5000;
             if (!do_auth(ssl)) { ssl_close(ssl,sock); sleep_ms(5000); continue; }
             depth_active.store(true);
-            std::cout << "[CTRADER] Depth feed ACTIVE — " << depth_books_.size() << " symbols\n";
+            std::cout << "[CTRADER] Depth feed ACTIVE -- " << depth_books_.size() << " symbols\n";
             recv_loop(ssl, sock);
             ssl_close(ssl,sock); depth_active.store(false);
-            if (running.load()) { std::cerr << "[CTRADER] Disconnected — retry " << backoff << "ms\n"; sleep_ms(backoff); backoff=std::min(backoff*2,300000); }
+            if (running.load()) { std::cerr << "[CTRADER] Disconnected -- retry " << backoff << "ms\n"; sleep_ms(backoff); backoff=std::min(backoff*2,300000); }
         }
         std::cout << "[CTRADER] Stopped\n";
     }
@@ -403,17 +403,17 @@ private:
         if (!send_msg(ssl, PB::symbols_list_req(ctid_account_id))) return false;
         if (!wait_for(ssl, 2115, 20000, pt, payload)) { std::cerr << "[CTRADER] SymbolsListRes timeout\n"; return false; }
 
-        // ── XAUUSD spot pin — mirrors FIX side g_id_to_sym[41]="XAUUSD" ─────────
+        // ?? XAUUSD spot pin -- mirrors FIX side g_id_to_sym[41]="XAUUSD" ?????????
         // BlackBull cTrader symbol list contains two gold entries:
         //   id=41   -> "XAUUSD"  (spot  ~$4580)  <- the one we want
         //   id=2660 -> "GOLD.F"  (futures ~$5200) <- must never be subscribed
         // Confirmed 2026-03-31 via dump_all_symbols diagnostic run.
-        // XAUUSD_SPOT_ID=41 is IMMUTABLE — hardcoded exactly as FIX pins spot to id=41.
+        // XAUUSD_SPOT_ID=41 is IMMUTABLE -- hardcoded exactly as FIX pins spot to id=41.
         // Even if broker renames the symbol or reorders the list, we subscribe
         // id=41 directly and route it to internal name "XAUUSD".
-        static constexpr uint64_t XAUUSD_SPOT_ID = 41;  // BlackBull XAUUSD spot — immutable
+        static constexpr uint64_t XAUUSD_SPOT_ID = 41;  // BlackBull XAUUSD spot -- immutable
 
-        // Parse SymbolsListRes — field 3 = repeated ProtoOALightSymbol
+        // Parse SymbolsListRes -- field 3 = repeated ProtoOALightSymbol
         // ProtoOALightSymbol: field 1=symbolId(int64), field 2=symbolName(string)
         id_to_name_.clear(); depth_books_.clear(); id_to_internal_.clear();
         std::vector<int64_t> sub_ids;
@@ -426,7 +426,7 @@ private:
             if (sid <= 0 || sname.empty()) continue;
             id_to_name_[uint64_t(sid)] = sname;
 
-            // ── XAUUSD spot pin — id=41 is hardcoded, non-negotiable ──────────────────
+            // ?? XAUUSD spot pin -- id=41 is hardcoded, non-negotiable ??????????????????
             if (uint64_t(sid) == XAUUSD_SPOT_ID) {
                 sub_ids.push_back(sid);
                 depth_books_["XAUUSD"] = CTDepthBook{};
@@ -436,7 +436,7 @@ private:
                           << " (" << sname << ") -- futures blocked\n";
                 continue;
             }
-            // Block all other XAU/GOLD variants — any ID that is not 41 must not
+            // Block all other XAU/GOLD variants -- any ID that is not 41 must not
             // route to XAUUSD. This permanently excludes GOLD.F (id=2660) and any
             // future renamed contracts.
             if (sname.find("XAU") != std::string::npos ||
@@ -446,7 +446,7 @@ private:
                 continue;
             }
 
-            // All other whitelisted symbols — normal name-based subscription
+            // All other whitelisted symbols -- normal name-based subscription
             if (symbol_whitelist.count(sname)) {
                 sub_ids.push_back(sid);
                 const std::string internal_name = name_alias.count(sname) ? name_alias.at(sname) : sname;
@@ -455,9 +455,9 @@ private:
                 std::cout << "[CTRADER] Subscribe depth: " << sname << " id=" << sid
                           << (internal_name != sname ? " (alias->" + internal_name + ")" : "") << "\n";
             }
-            // ── Resolve bar subscription IDs from symbol list ──────────────────
+            // ?? Resolve bar subscription IDs from symbol list ??????????????????
             // bar_subscriptions registered with sym_id=0 get their ID filled here.
-            // Covers US500.F, USTEC.F, GER40 — IDs vary by broker, resolved dynamically.
+            // Covers US500.F, USTEC.F, GER40 -- IDs vary by broker, resolved dynamically.
             for (auto& bkv : bar_subscriptions) {
                 const std::string& binternal = bkv.first;
                 if (bkv.second.sym_id != 0) continue;  // already set (XAUUSD=41 hardcoded)
@@ -489,7 +489,7 @@ private:
         if (!wait_for(ssl, 2157, 10000, pt, payload)) { std::cerr << "[CTRADER] SubscribeDepthRes timeout\n"; return false; }
         std::cout << "[CTRADER] Subscribed to " << sub_ids.size() << " symbols\n";
 
-        // ── Request historical OHLC bars + subscribe live bar updates ─────────
+        // ?? Request historical OHLC bars + subscribe live bar updates ?????????
         // For each bar_subscription: request 200 M1 + 100 M5 bars (non-blocking,
         // responses handled in recv_loop). Then subscribe live bar pushes.
         for (auto& kv : bar_subscriptions) {
@@ -538,16 +538,16 @@ private:
                                 }
             else if (pt==2138) { on_trendbars_res(payload); }   // historical bars response
             else if (pt==2217) { on_live_trendbar(payload); }   // live bar close push (ProtoOALiveTrendBar)
-            else if (pt==2220) { /* subscribe trendbar req echo — ignore */ }
-            else if (pt==2221) { /* subscribe trendbar res — no action needed */ }
-            else if (pt==2142) { const auto ef=PB::parse(payload); std::cerr<<"[CTRADER] Error: "<<PB::get_string(ef,2)<<" — "<<PB::get_string(ef,3)<<"\n"; if(PB::get_string(ef,2)=="OA_AUTH_TOKEN_EXPIRED"){if(!refresh_token.empty())send_msg(ssl,PB::refresh_token_req(refresh_token)); return;} }
+            else if (pt==2220) { /* subscribe trendbar req echo -- ignore */ }
+            else if (pt==2221) { /* subscribe trendbar res -- no action needed */ }
+            else if (pt==2142) { const auto ef=PB::parse(payload); std::cerr<<"[CTRADER] Error: "<<PB::get_string(ef,2)<<" -- "<<PB::get_string(ef,3)<<"\n"; if(PB::get_string(ef,2)=="OA_AUTH_TOKEN_EXPIRED"){if(!refresh_token.empty())send_msg(ssl,PB::refresh_token_req(refresh_token)); return;} }
             else if (pt==2174) { const auto rf=PB::parse(payload); const std::string na=PB::get_string(rf,2); if(!na.empty()){access_token=na;refresh_token=PB::get_string(rf,3);std::cout<<"[CTRADER] Token refreshed\n";} }
             else if (pt==51)   { send_msg(ssl,PB::heartbeat()); }
             else if (pt==2148||pt==2164) { std::cerr<<"[CTRADER] Disconnect pt="<<pt<<"\n"; return; }
         }
     }
 
-    // ── ProtoOAGetTrendbarsRes (pt=2138) — historical bars response ───────────
+    // ?? ProtoOAGetTrendbarsRes (pt=2138) -- historical bars response ???????????
     // field 2: ctidTraderAccountId
     // field 3: symbolId
     // field 5: period (uint32: 1=M1, 5=M5, etc.)
@@ -596,8 +596,8 @@ private:
         }
     }
 
-    // ── ProtoOASpotEvent with live trendbar (pt=2220 push) ────────────────────
-    // ProtoOALiveTrendBar response — same structure as trendbar but sent live
+    // ?? ProtoOASpotEvent with live trendbar (pt=2220 push) ????????????????????
+    // ProtoOALiveTrendBar response -- same structure as trendbar but sent live
     // field 2: ctidTraderAccountId
     // field 3: symbolId
     // field 4: ProtoOATrendbar (bytes, same as historical)
@@ -646,7 +646,7 @@ private:
         const auto it = id_to_internal_.find(sym_id);
         if (it == id_to_internal_.end()) return;
         const std::string& name = it->second;
-        // DIAGNOSTIC: log first 10 depth events per symbol — full raw field dump
+        // DIAGNOSTIC: log first 10 depth events per symbol -- full raw field dump
         static std::unordered_map<std::string,int> s_diag_count;
         if (s_diag_count[name] < 10) {
             ++s_diag_count[name];
@@ -691,16 +691,16 @@ private:
             if (!id) continue;  // id=0 is invalid
             // cTrader sends real sizes for all symbols including XAUUSD.
             // sz is in cents (sz=200 = 2 lots). Default to 100 (1 lot) if
-            // sz=0 is received — should not happen on cTrader but guards against it.
+            // sz=0 is received -- should not happen on cTrader but guards against it.
             const uint64_t eff_sz = (sz > 0) ? sz : 100;
             if (bid)      book.apply_new(id, bid, eff_sz, true);
             else if (ask) book.apply_new(id, ask, eff_sz, false);
         }
         for (uint64_t did : PB::get_packed_varints(fields, 5)) book.apply_del(did);
-        // Build L2Book snapshot outside the lock — to_l2book() is O(N log N) sort
+        // Build L2Book snapshot outside the lock -- to_l2book() is O(N log N) sort
         const L2Book rebuilt = book.to_l2book();
 
-        // Hot path: write atomic derived scalars — zero lock, zero contention with FIX tick
+        // Hot path: write atomic derived scalars -- zero lock, zero contention with FIX tick
         if (atomic_l2_write_fn) {
             atomic_l2_write_fn(name,
                 rebuilt.imbalance(),
@@ -715,7 +715,7 @@ private:
             (*l2_books)[name] = rebuilt;
         }
 
-        // ── Primary price tick — drives on_tick() with cTrader real-time price ─
+        // ?? Primary price tick -- drives on_tick() with cTrader real-time price ?
         // Called AFTER l2_books update so cold_snap inside on_tick sees current book.
         if (on_tick_fn && rebuilt.bid_count > 0 && rebuilt.ask_count > 0) {
             const double best_bid = rebuilt.bids[0].price;
@@ -744,7 +744,7 @@ private:
             else {
                 int e=SSL_get_error(ssl,n);
                 if (e==SSL_ERROR_WANT_READ) { std::this_thread::sleep_for(std::chrono::milliseconds(5)); continue; }
-                // On Windows SO_RCVTIMEO expiry comes back as SSL_ERROR_SYSCALL + WSAETIMEDOUT — treat as timeout not error
+                // On Windows SO_RCVTIMEO expiry comes back as SSL_ERROR_SYSCALL + WSAETIMEDOUT -- treat as timeout not error
                 if (e==SSL_ERROR_SYSCALL) {
                     #ifdef _WIN32
                     if (WSAGetLastError()==WSAETIMEDOUT||WSAGetLastError()==0) break;
@@ -780,7 +780,7 @@ private:
             if (rc==0) continue;
             if (pt==expected) { pt_out=pt; payload_out=payload; return true; }
             if (pt==51)   { send_msg(ssl,PB::heartbeat()); continue; }
-            if (pt==2142) { const auto ef=PB::parse(payload); std::cerr<<"[CTRADER] Error: "<<PB::get_string(ef,2)<<" — "<<PB::get_string(ef,3)<<"\n"; return false; }
+            if (pt==2142) { const auto ef=PB::parse(payload); std::cerr<<"[CTRADER] Error: "<<PB::get_string(ef,2)<<" -- "<<PB::get_string(ef,3)<<"\n"; return false; }
         }
         std::cerr<<"[CTRADER] Timeout waiting for pt="<<expected<<"\n"; return false;
     }

@@ -7,7 +7,7 @@
 
 namespace omega {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Realistic cost model for shadow simulation.
 // All values are per-unit (same unit as size).
 //
@@ -16,11 +16,11 @@ namespace omega {
 //                       Applied as adverse fill: LONG pays ask+slip, SHORT sells bid-slip.
 // slippage_exit_pct   : one-way slippage on exit (TP fills at TP-slip LONG, SL at SL-slip LONG).
 // commission_per_side : flat $ commission per side (entry + exit both charged).
-//                       Default $0.0 (BlackBull CFD/futures — spread is the cost).
+//                       Default $0.0 (BlackBull CFD/futures -- spread is the cost).
 //                       Set to 3.50 for CME futures (round-turn $7).
 //
 // net_pnl = gross_pnl - total_slippage_cost - total_commission_cost
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct TradeRecord
 {
     int         id          = 0;
@@ -31,8 +31,8 @@ struct TradeRecord
     double      tp          = 0;
     double      sl          = 0;
     double      size        = 1.0;
-    double      pnl         = 0;   // gross pnl (price difference × size, no costs)
-    double      mfe         = 0;   // max favourable excursion (price units × size)
+    double      pnl         = 0;   // gross pnl (price difference ? size, no costs)
+    double      mfe         = 0;   // max favourable excursion (price units ? size)
     double      mae         = 0;   // max adverse excursion
     int64_t     entryTs     = 0;   // unix seconds
     int64_t     exitTs      = 0;
@@ -42,24 +42,24 @@ struct TradeRecord
     std::string engine      = "BreakoutEngine";
     std::string regime;            // macro regime at time of trade
 
-    // ── Realistic cost fields (populated by apply_realistic_costs()) ─────────
+    // ?? Realistic cost fields (populated by apply_realistic_costs()) ?????????
     double      slippage_entry  = 0;  // $ slippage cost on entry (adverse fill vs mid)
     double      slippage_exit   = 0;  // $ slippage cost on exit
     double      commission      = 0;  // $ total commission (both sides)
     double      net_pnl         = 0;  // pnl - slippage_entry - slippage_exit - commission
 
-    // ── Convenience: cost parameters used (set by apply_realistic_costs()) ───
+    // ?? Convenience: cost parameters used (set by apply_realistic_costs()) ???
     double      slip_entry_pct  = 0;  // entry slippage rate applied
     double      slip_exit_pct   = 0;  // exit slippage rate applied
     double      comm_per_side   = 0;  // commission per side applied
 
-    // ── Bracket metadata (only set for bracket engine trades) ────────────────
+    // ?? Bracket metadata (only set for bracket engine trades) ????????????????
     double      bracket_hi      = 0;  // upper boundary of the bracket range at arm time
     double      bracket_lo      = 0;  // lower boundary of the bracket range at arm time
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// apply_realistic_costs — fills TradeRecord cost fields for shadow simulation.
+// ?????????????????????????????????????????????????????????????????????????????
+// apply_realistic_costs -- fills TradeRecord cost fields for shadow simulation.
 //
 // CALL ORDER: invoke this AFTER tr.pnl has been scaled to USD by tick_mult.
 // All output cost fields (slippage_entry, slippage_exit, commission, net_pnl)
@@ -69,18 +69,18 @@ struct TradeRecord
 //   e.g. XAGUSD=5000, USOIL.F=1000, XAUUSD=100, US500.F=1, EURUSD=100000
 //   This is required to convert price-point slippage into USD correctly.
 //   Without it, slippage on a $5000/pt instrument would be ~$0.08 instead of
-//   ~$8, making net_pnl ≈ gross_pnl and the cost model meaningless.
+//   ~$8, making net_pnl ? gross_pnl and the cost model meaningless.
 //
 // Instrument slippage presets (one-way, % of price):
-//   XAUUSD / XAGUSD          : 0.010% — gold/silver tick friction
-//   USOIL.F / UKBRENT        : 0.012% — oil slightly wider intraday
-//   USTEC.F / US500.F / DJ30 : 0.006% — liquid equity index futures
-//   GER40 / UK100 / ESTX50   : 0.008% — European index CFDs, slightly wider
-//   EURUSD                   : 0.003% — FX major, very liquid
+//   XAUUSD / XAGUSD          : 0.010% -- gold/silver tick friction
+//   USOIL.F / UKBRENT        : 0.012% -- oil slightly wider intraday
+//   USTEC.F / US500.F / DJ30 : 0.006% -- liquid equity index futures
+//   GER40 / UK100 / ESTX50   : 0.008% -- European index CFDs, slightly wider
+//   EURUSD                   : 0.003% -- FX major, very liquid
 //   default                  : 0.008%
 //
-// Commission: 0.0 per side (BlackBull CFD — cost is embedded in spread).
-// ─────────────────────────────────────────────────────────────────────────────
+// Commission: 0.0 per side (BlackBull CFD -- cost is embedded in spread).
+// ?????????????????????????????????????????????????????????????????????????????
 inline void apply_realistic_costs(TradeRecord& tr,
                                   double commission_per_side,
                                   double tick_mult)
@@ -126,8 +126,8 @@ public:
         if (pnl_for_stats > 0) { m_wins++; m_sum_win += pnl_for_stats; }
         else                   { m_losses++; m_sum_loss += std::abs(pnl_for_stats); }
         m_daily_pnl       += pnl_for_stats;
-        m_cumulative_pnl  += pnl_for_stats;  // never resets — true equity tracking
-        m_gross_daily_pnl += tr.pnl;   // gross before costs — for display transparency
+        m_cumulative_pnl  += pnl_for_stats;  // never resets -- true equity tracking
+        m_gross_daily_pnl += tr.pnl;   // gross before costs -- for display transparency
         if (m_daily_pnl - m_peak_pnl < -m_max_dd) m_max_dd = m_peak_pnl - m_daily_pnl;
         if (m_daily_pnl > m_peak_pnl) m_peak_pnl = m_daily_pnl;
     }
@@ -198,7 +198,7 @@ private:
     std::vector<TradeRecord>  m_trades;
     double m_daily_pnl       = 0;
     double m_gross_daily_pnl = 0;
-    double m_cumulative_pnl  = 0;  // never reset — survives daily rollover
+    double m_cumulative_pnl  = 0;  // never reset -- survives daily rollover
     double m_peak_pnl        = 0;
     double m_max_dd          = 0;
     int    m_wins      = 0;

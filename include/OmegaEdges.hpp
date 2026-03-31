@@ -1,6 +1,6 @@
 #pragma once
 // =============================================================================
-// OmegaEdges.hpp — Seven institutional-grade trading edges
+// OmegaEdges.hpp -- Seven institutional-grade trading edges
 //
 //  1. CumulativeVolumeDelta (CVD)
 //     Tick-classified buy/sell volume running total. Divergence between price
@@ -13,7 +13,7 @@
 //
 //  3. RelativeSpreadGate
 //     Z-score of current spread vs 200-tick rolling median per symbol.
-//     Replaces fixed max_spread_pct — detects anomalous liquidity conditions
+//     Replaces fixed max_spread_pct -- detects anomalous liquidity conditions
 //     regardless of absolute spread level.
 //
 //  4. RoundNumberFilter
@@ -57,18 +57,18 @@
 
 namespace omega { namespace edges {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 1. CumulativeVolumeDelta (CVD)
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Classifies each tick as buyer-initiated (price >= prev_ask) or
 // seller-initiated (price <= prev_bid). Accumulates a running signed total.
 //
 // CVD divergence signal:
-//   Price makes new high, CVD does NOT make new high → distribution → SHORT
-//   Price makes new low,  CVD does NOT make new low  → absorption  → LONG
+//   Price makes new high, CVD does NOT make new high ? distribution ? SHORT
+//   Price makes new low,  CVD does NOT make new low  ? absorption  ? LONG
 //
 // Per-symbol. Thread-safe via mutex. Resets at UTC day rollover.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct CVDState {
     double  cvd          = 0.0;   // running cumulative delta
     double  session_high = 0.0;   // highest CVD this session
@@ -90,9 +90,9 @@ struct CVDState {
         const double mid = (bid + ask) * 0.5;
 
         // Tick classification (Lee-Ready heuristic):
-        //   mid >= prev_ask → buyer initiated (lifted offer)
-        //   mid <= prev_bid → seller initiated (hit bid)
-        //   otherwise       → use midpoint direction (quote rule)
+        //   mid >= prev_ask ? buyer initiated (lifted offer)
+        //   mid <= prev_bid ? seller initiated (hit bid)
+        //   otherwise       ? use midpoint direction (quote rule)
         double delta = 0.0;
         if (prev_bid > 0 && prev_ask > 0) {
             // Estimate trade size from spread/tick relationship (unit = 1 lot equivalent)
@@ -122,7 +122,7 @@ struct CVDState {
     }
 
     // Bearish divergence: price made new high but CVD did not
-    // → institutions are distributing into the rally
+    // ? institutions are distributing into the rally
     bool bearish_divergence() const noexcept {
         if ((int)price_window.size() < WINDOW) return false;
         const double p_now  = price_window.back();
@@ -135,7 +135,7 @@ struct CVDState {
     }
 
     // Bullish divergence: price made new low but CVD did not
-    // → institutions are absorbing selling
+    // ? institutions are absorbing selling
     bool bullish_divergence() const noexcept {
         if ((int)price_window.size() < WINDOW) return false;
         const double p_now  = price_window.back();
@@ -194,7 +194,7 @@ public:
         state_[sym].update(bid, ask, ts);
     }
 
-    // Returns snapshot (copy) — safe to read outside lock after update()
+    // Returns snapshot (copy) -- safe to read outside lock after update()
     CVDState get(const std::string& sym) const noexcept {
         std::lock_guard<std::mutex> lk(mtx);
         auto it = state_.find(sym);
@@ -212,16 +212,16 @@ private:
 };
 
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 2. TimeOfDayGate
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Records each trade outcome per 30-minute UTC bucket per symbol/engine pair.
 // After MIN_TRADES samples, blocks entry during buckets where win-rate is
 // below threshold OR EV (avg net P&L per trade) is negative.
 //
-// This is the "adaptive session filter" used by firms like Virtu and Optiver —
+// This is the "adaptive session filter" used by firms like Virtu and Optiver --
 // they measure edge empirically and shut off engines during proven dead windows.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct TODBucket {
     int     trades    = 0;
     int     wins      = 0;
@@ -241,7 +241,7 @@ public:
     std::unordered_map<std::string, TODBucket> buckets;
     mutable std::mutex mtx;
 
-    // Record trade outcome — call from handle_closed_trade
+    // Record trade outcome -- call from handle_closed_trade
     void record(const std::string& sym, const std::string& engine,
                 int64_t entry_ts_sec, double net_pnl) noexcept {
         const int bucket = utc_bucket(entry_ts_sec);
@@ -253,7 +253,7 @@ public:
         b.total_pnl += net_pnl;
     }
 
-    // Check if entry is allowed — returns false if bucket is known-negative
+    // Check if entry is allowed -- returns false if bucket is known-negative
     bool allow(const std::string& sym, const std::string& engine,
                int64_t now_sec) const noexcept {
         if (!enabled) return true;
@@ -320,12 +320,12 @@ public:
     // Instead of binary block/allow, returns a continuous scale based on
     // the bucket's historical win rate and EV vs the target thresholds.
     //
-    // Scale mapping (applied AFTER allow() returns true — never blocks):
-    //   WR >= 0.60 AND EV > 0         → 1.00 (full size — strong bucket)
-    //   WR >= 0.55 AND EV > 0         → 0.90
-    //   WR >= 0.50 AND EV > -0.50     → 0.75
-    //   WR >= min_win_rate (0.40)      → 0.60 (marginal — reduce but allow)
-    //   < min_trades (cold bucket)    → 1.00 (no data = no penalty)
+    // Scale mapping (applied AFTER allow() returns true -- never blocks):
+    //   WR >= 0.60 AND EV > 0         ? 1.00 (full size -- strong bucket)
+    //   WR >= 0.55 AND EV > 0         ? 0.90
+    //   WR >= 0.50 AND EV > -0.50     ? 0.75
+    //   WR >= min_win_rate (0.40)      ? 0.60 (marginal -- reduce but allow)
+    //   < min_trades (cold bucket)    ? 1.00 (no data = no penalty)
     double size_scale(const std::string& sym, const std::string& engine,
                       int64_t now_sec) const noexcept {
         if (!enabled) return 1.0;
@@ -335,13 +335,13 @@ public:
         auto it = buckets.find(key);
         if (it == buckets.end()) return 1.0;
         const auto& b = it->second;
-        if (b.trades < min_trades) return 1.0;  // cold bucket — no penalty
+        if (b.trades < min_trades) return 1.0;  // cold bucket -- no penalty
         const double wr = b.win_rate();
         const double ev = b.avg_ev();
         if (wr >= 0.60 && ev > 0.0)   return 1.00;
         if (wr >= 0.55 && ev > 0.0)   return 0.90;
         if (wr >= 0.50 && ev > -0.50) return 0.75;
-        return 0.60;  // marginal bucket — allow but reduce
+        return 0.60;  // marginal bucket -- allow but reduce
     }
 
 private:
@@ -353,20 +353,20 @@ private:
 };
 
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 3. RelativeSpreadGate
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Tracks rolling 200-tick median spread per symbol.
 // Blocks entry when current spread is Z standard deviations above median.
 // This replaces fixed max_spread_pct thresholds.
 //
-// A $2.00 spread on gold in London = normal (Z≈0). The same spread at 05:30
-// UTC = Z≈3.5 = anomalous = likely a liquidity gap or quote stale.
-// ─────────────────────────────────────────────────────────────────────────────
+// A $2.00 spread on gold in London = normal (Z?0). The same spread at 05:30
+// UTC = Z?3.5 = anomalous = likely a liquidity gap or quote stale.
+// ?????????????????????????????????????????????????????????????????????????????
 class RelativeSpreadGate {
 public:
     int    window_ticks  = 200;
-    double max_z_score   = 2.5;   // block if spread > median + 2.5σ
+    double max_z_score   = 2.5;   // block if spread > median + 2.5?
     double min_median    = 0.0;   // don't block if median itself is tiny (warmup)
     bool   enabled       = true;
 
@@ -387,8 +387,8 @@ public:
         if ((int)s.history.size() > window_ticks) s.history.pop_front();
         // FIX: require minimum 50 ticks before gate activates.
         // With only 20 ticks, a single wide startup spread dominates std_dev
-        // and makes every subsequent normal spread look like a 5σ anomaly.
-        // Log showed: USOIL spread=0.08 z=5.48 on tick ~21 — false positive.
+        // and makes every subsequent normal spread look like a 5? anomaly.
+        // Log showed: USOIL spread=0.08 z=5.48 on tick ~21 -- false positive.
         // 50 ticks = enough to build a stable median and std_dev.
         if ((int)s.history.size() >= 50) {
             // Compute median
@@ -435,7 +435,7 @@ public:
         return (it != state_.end()) ? it->second.median : 0.0;
     }
 
-    // Reset all spread history — call on reconnect so stale pre-reconnect
+    // Reset all spread history -- call on reconnect so stale pre-reconnect
     // medians (computed during low-liquidity period) don't block the first
     // legitimate entries on a fresh connection. History rebuilds in 20 ticks.
     void reset_all() noexcept {
@@ -448,9 +448,9 @@ private:
 };
 
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 4. RoundNumberFilter
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Detects proximity to psychological price levels.
 // Dealers defend big figures; order clusters at round numbers create
 // absorption zones that either stop breakouts or become powerful confluences.
@@ -459,10 +459,10 @@ private:
 // For FX EURUSD at 1.0850: big figure = 1.0800, half = 1.0850, etc.
 //
 // Usage patterns:
-//   - Breakout TARGET hits a round number → higher TP hit probability
-//   - Breakout ORIGIN is at a round number → likely defended, lower probability
-//   - Bracket arm level is just below a round number → stop-hunt risk
-// ─────────────────────────────────────────────────────────────────────────────
+//   - Breakout TARGET hits a round number ? higher TP hit probability
+//   - Breakout ORIGIN is at a round number ? likely defended, lower probability
+//   - Bracket arm level is just below a round number ? stop-hunt risk
+// ?????????????????????????????????????????????????????????????????????????????
 class RoundNumberFilter {
 public:
     // Per-symbol round number granularity (price units)
@@ -534,17 +534,17 @@ private:
 };
 
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 5. PreviousDayLevels
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Tracks the prior UTC-day's high, low, and close per symbol.
 // Compression breakouts near PDH/PDL have higher follow-through because:
-//   - PDH = known prior resistance → break above = momentum with conviction
-//   - PDL = known prior support   → break below = capitulation
+//   - PDH = known prior resistance ? break above = momentum with conviction
+//   - PDL = known prior support   ? break below = capitulation
 //   - Midpoint (PDM) = VWAP proxy for daily mean reversion
 //
 // Also flags "inside day" setups (current range contained within prior range).
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct DayLevels {
     double high  = 0.0;
     double low   = 1e18;
@@ -580,7 +580,7 @@ public:
         }
 
         if (today != cur.day) {
-            // Day rolled — save current as previous, start fresh
+            // Day rolled -- save current as previous, start fresh
             cur.close = mid;
             prev = cur;
             cur.day  = today;
@@ -654,9 +654,9 @@ private:
 };
 
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 6. FxFixWindowEngine
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // The WM/Reuters FX benchmark fixes are the most predictable directional
 // events in currency markets. Institutional rebalancing creates known
 // directional pressure at known times.
@@ -672,7 +672,7 @@ private:
 //
 // Signal: enter 2 minutes before fix in the direction of accumulated flow,
 //         exit at or just after the fix. 5-minute TP, 3-minute SL.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct FixSignal {
     bool   valid    = false;
     bool   is_long  = false;
@@ -736,7 +736,7 @@ public:
         if (now_sec - last_london_sec_ < cooldown_sec) return {};
 
         const int day_min      = static_cast<int>((now_sec % 86400) / 60);
-        const bool arm_window  = (day_min == 1253);               // 20:53 UTC — arm
+        const bool arm_window  = (day_min == 1253);               // 20:53 UTC -- arm
         const bool fire_window = (day_min >= 1255 && day_min <= 1257); // 20:55-20:57 UTC
 
         if (arm_window) {
@@ -774,9 +774,9 @@ private:
 };
 
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 7. FillQualityTracker
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Records fill price vs signal mid price for every entry.
 // Tracks:
 //   fill_slippage = |fill_price - signal_mid| / signal_mid * 10000 (bps)
@@ -784,7 +784,7 @@ private:
 //
 // When rolling adverse selection score exceeds threshold, sets a warning flag.
 // The adaptive risk system can use this to reduce size or skip entries.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct FillRecord {
     double signal_mid;  // mid price at signal generation
     double fill_price;  // actual fill price
@@ -809,7 +809,7 @@ public:
 
     mutable std::mutex mtx;
 
-    // Record a fill — call when order fills (on ExecutionReport with fill price)
+    // Record a fill -- call when order fills (on ExecutionReport with fill price)
     void record_fill(const std::string& sym, double signal_mid,
                      double fill_price, bool is_long, int64_t ts_sec) noexcept {
         if (!enabled || signal_mid <= 0) return;
@@ -852,7 +852,7 @@ public:
             const double avg = total / kv.second.size();
             printf("  %-10s  fills=%3d  avg_slip=%.2fbps  %s\n",
                 kv.first.c_str(), (int)kv.second.size(), avg,
-                avg > adverse_threshold_bps ? "⚠ ADVERSE" : "ok");
+                avg > adverse_threshold_bps ? "? ADVERSE" : "ok");
         }
     }
 
@@ -868,15 +868,15 @@ private:
 // At each price bucket, counts how many ticks price has spent there.
 //
 // HIGH-NODE ENTRY (price has spent a lot of time here):
-//   - Market Profile theory: high-node areas are VALUE areas — price returns here.
+//   - Market Profile theory: high-node areas are VALUE areas -- price returns here.
 //   - A breakout from a high-node is a lower-probability move; market tends to
 //     pull back to that node. Score: -1.
 //
-// LOW-NODE ENTRY (price rarely visits here — "thin" area):
+// LOW-NODE ENTRY (price rarely visits here -- "thin" area):
 //   - Price moves fast through thin areas with little resistance or support.
 //   - Breakouts into thin areas have strong follow-through. Score: +1.
 //
-// Implementation: bucket = floor(price / bucket_size) × bucket_size
+// Implementation: bucket = floor(price / bucket_size) ? bucket_size
 //   bucket_size calibrated per instrument so there are ~50-100 meaningful buckets:
 //   GOLD: $2.00 buckets, SILVER: $0.25, SP500: 5pts, FX: 20 pips
 // =============================================================================
@@ -891,7 +891,7 @@ public:
     static constexpr double BUCKET_FX      = 0.0020; // 20 pip buckets
     static constexpr double BUCKET_USDJPY  = 0.20;   // 20 pip buckets in JPY
 
-    // Window: max ticks to keep in profile (rolling — old ticks fall off)
+    // Window: max ticks to keep in profile (rolling -- old ticks fall off)
     static constexpr int PROFILE_WINDOW = 2000;  // ~5-10 minutes at typical rates
 
     // Thresholds: what fraction of max-node count is HIGH vs LOW
@@ -899,7 +899,7 @@ public:
     static constexpr double LOW_NODE_FRAC  = 0.12;  // bucket <= 12% of max = thin area
 
     struct SymState {
-        std::unordered_map<int, int> profile;  // bucket_idx → tick_count
+        std::unordered_map<int, int> profile;  // bucket_idx ? tick_count
         std::deque<int>              history;  // ordered bucket_idx of last N ticks
         int                          max_count = 0;
     };
@@ -945,7 +945,7 @@ public:
                 it->second--;
                 if (it->second <= 0) s.profile.erase(it);
             }
-            // Recompute max (amortised — only when max bucket was evicted)
+            // Recompute max (amortised -- only when max bucket was evicted)
             if (s.max_count > 0) {
                 int new_max = 0;
                 for (const auto& kv : s.profile)
@@ -955,9 +955,9 @@ public:
         }
     }
 
-    // Returns: +1 if entry is in a thin (low-node) area → fast follow-through
+    // Returns: +1 if entry is in a thin (low-node) area ? fast follow-through
     //           0 if neutral
-    //          -1 if entry is at a high-node (value area) → likely to revert
+    //          -1 if entry is at a high-node (value area) ? likely to revert
     int score(const std::string& sym, double entry) const noexcept {
         const double bs = bucket_size(sym);
         if (bs <= 0.0) return 0;
@@ -972,8 +972,8 @@ public:
         const int count = (pit != s.profile.end()) ? pit->second : 0;
         const double frac = static_cast<double>(count) / s.max_count;
 
-        if (frac >= HIGH_NODE_FRAC) return -1;  // high-value area — avoid
-        if (frac <= LOW_NODE_FRAC)  return +1;  // thin area — fast moves
+        if (frac >= HIGH_NODE_FRAC) return -1;  // high-value area -- avoid
+        if (frac <= LOW_NODE_FRAC)  return +1;  // thin area -- fast moves
         return 0;
     }
 
@@ -990,7 +990,7 @@ public:
 // =============================================================================
 // 9. OrderFlowAbsorptionDetector
 // =============================================================================
-// Detects when price and order book imbalance diverge — the institutional
+// Detects when price and order book imbalance diverge -- the institutional
 // signature of a failing breakout.
 //
 // Pattern: price rising (long breakout candidate) but L2 is ask-heavy
@@ -1001,7 +1001,7 @@ public:
 //   (imbalance > 0.60) for N consecutive ticks = buyers absorbing the move.
 //   Hard block on shorts.
 //
-// Based on: Jovanovic & Menkveld (2016), Kirilenko et al. (2017) — absorption
+// Based on: Jovanovic & Menkveld (2016), Kirilenko et al. (2017) -- absorption
 // of aggressive order flow by passive large traders is the primary reversal signal.
 // =============================================================================
 class OrderFlowAbsorptionDetector {
@@ -1063,12 +1063,12 @@ public:
 };
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EdgeContext — single object holding all edge systems
+// ?????????????????????????????????????????????????????????????????????????????
+// EdgeContext -- single object holding all edge systems
 // Declare one global: static omega::edges::EdgeContext g_edges;
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-// VPINDetector — Volume-synchronised Probability of Informed trading
+// ?????????????????????????????????????????????????????????????????????????????
+// ?????????????????????????????????????????????????????????????????????????????
+// VPINDetector -- Volume-synchronised Probability of Informed trading
 //
 // Standard VPIN uses equal-volume buckets. We use a simplified tick-based
 // version that is computationally cheap and works without real volume data:
@@ -1078,15 +1078,15 @@ public:
 //   - VPIN in [0, 1]: 0 = balanced flow, 1 = one-sided (informed)
 //
 // When VPIN > high_threshold (default 0.60): informed flow detected.
-//   → Reduce lot size by 50% (via size_scale() < 1.0)
-//   → Optionally block entry entirely (block_above = 0.75)
+//   ? Reduce lot size by 50% (via size_scale() < 1.0)
+//   ? Optionally block entry entirely (block_above = 0.75)
 //
 // This catches institutional flow that doesn't show as L2 wall/vacuum.
 // Two Sigma / Citadel measure VPIN every bucket and reduce size on elevation.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct VPINDetector {
     int    bucket_size     = 50;    // ticks per bucket
-    int    window_buckets  = 10;    // rolling window (10 × 50 = 500 ticks)
+    int    window_buckets  = 10;    // rolling window (10 ? 50 = 500 ticks)
     double high_threshold  = 0.60;  // VPIN above this = informed flow
     double block_threshold = 0.80;  // VPIN above this = block entry entirely
     bool   enabled         = true;
@@ -1138,7 +1138,7 @@ struct VPINDetector {
         return sum / bv.size();
     }
 
-    // Size multiplier: 1.0 (normal) → 0.5 (high informed flow) → 0.0 (block)
+    // Size multiplier: 1.0 (normal) ? 0.5 (high informed flow) ? 0.0 (block)
     double size_scale(const std::string& sym) const {
         if (!enabled) return 1.0;
         const double v = vpin(sym);
@@ -1171,7 +1171,7 @@ struct EdgeContext {
     OrderFlowAbsorptionDetector absorption;       // Edge 9: institutional absorption
     VPINDetector               vpin;              // Edge 10: informed order flow toxicity
 
-    // ── entry_score: original 4-signal score (-4..+4) ──────────────────────
+    // ?? entry_score: original 4-signal score (-4..+4) ??????????????????????
     int entry_score(const std::string& sym, double entry, bool is_long,
                     double tp, int64_t now_sec) const noexcept {
         int score = 0;
@@ -1186,7 +1186,7 @@ struct EdgeContext {
         return score;
     }
 
-    // ── entry_score_l2: full microstructure score including L2 signals ──────
+    // ?? entry_score_l2: full microstructure score including L2 signals ??????
     // Extended version that incorporates:
     //   - All original signals (CVD, PDH/PDL, round numbers)
     //   - Microprice bias confirmation/contradiction
@@ -1196,7 +1196,7 @@ struct EdgeContext {
     //   - Volume profile (thin area = follow-through; node = reversion)
     //
     // Score range: -7..+7
-    // Hard block threshold: <= -3 (same as before — now more selective)
+    // Hard block threshold: <= -3 (same as before -- now more selective)
     // Lot boost threshold:  >= +3 (more signals required for boost)
     int entry_score_l2(const std::string& sym,
                        double entry,
@@ -1213,11 +1213,11 @@ struct EdgeContext {
         // Start with base score (CVD, PDH/PDL, round numbers)
         int score = entry_score(sym, entry, is_long, tp, now_sec);
 
-        // ── Microprice bias ───────────────────────────────────────────────────
+        // ?? Microprice bias ???????????????????????????????????????????????????
         // Microprice = weighted midpoint accounting for queue sizes.
         // If microprice is above mid (bias > 0), next tick is more likely up.
         // Confirms longs, contradicts shorts, and vice versa.
-        // Threshold: 0.05pts for FX/indices, 0.50pts for gold — scale by price.
+        // Threshold: 0.05pts for FX/indices, 0.50pts for gold -- scale by price.
         // Use a relative threshold: bias as pct of entry.
         if (entry > 0.0) {
             const double bias_pct = std::fabs(microprice_bias) / entry * 100.0;
@@ -1230,26 +1230,26 @@ struct EdgeContext {
             }
         }
 
-        // ── Liquidity vacuum ──────────────────────────────────────────────────
+        // ?? Liquidity vacuum ??????????????????????????????????????????????????
         // Thin top-3 levels on the side we're heading toward = fast move.
         // vacuum_in_dir: caller passes vacuum_ask for longs, vacuum_bid for shorts.
         // This is one of the strongest short-term momentum confirmations available.
         if (vacuum_in_dir) score += 2;
 
-        // ── Wall to TP ────────────────────────────────────────────────────────
+        // ?? Wall to TP ????????????????????????????????????????????????????????
         // Large resting order between entry and TP = target may not be reached.
         // Penalty -2 (was -3): walls are frequently absorbed by institutional flow,
         // -3 made a single wall an unconditional block regardless of other signals.
         // Combined with absorption (-2) still reaches the -3 block threshold.
         if (wall_to_tp) score -= 2;
 
-        // ── Order flow absorption ─────────────────────────────────────────────
+        // ?? Order flow absorption ?????????????????????????????????????????????
         // Institutional signature: price moving in breakout direction but book
         // is heavily loaded against the move. Someone big is fading this.
         // Only apply when absorption has been confirmed (N consecutive ticks).
         if (absorption.is_absorbing(sym, is_long)) score -= 2;
 
-        // ── Volume profile ────────────────────────────────────────────────────
+        // ?? Volume profile ????????????????????????????????????????????????????
         // +1 if entry is in thin area (fast follow-through)
         // -1 if entry is at high-volume node (price magnet, likely to revert)
         score += vol_profile.score(sym, entry);
@@ -1257,14 +1257,14 @@ struct EdgeContext {
         return score;
     }
 
-    // ── VWAP chop gate ────────────────────────────────────────────────────────
+    // ?? VWAP chop gate ????????????????????????????????????????????????????????
     // Returns true (allow entry) if price is sufficiently far from VWAP.
-    // Entries near VWAP have no directional edge — VWAP is the mean-reversion
+    // Entries near VWAP have no directional edge -- VWAP is the mean-reversion
     // anchor; breakouts from inside the VWAP zone chop back constantly.
-    // Threshold: 0.05% of price (5bp) — tight enough to catch real chop,
+    // Threshold: 0.05% of price (5bp) -- tight enough to catch real chop,
     // loose enough not to block genuine momentum that happens to be near VWAP.
     bool vwap_gate(double entry, double vwap, double threshold_pct = 0.05) const noexcept {
-        if (vwap <= 0.0) return true;  // no VWAP data — allow
+        if (vwap <= 0.0) return true;  // no VWAP data -- allow
         const double dist_pct = std::fabs(entry - vwap) / vwap * 100.0;
         return dist_pct >= threshold_pct;
     }

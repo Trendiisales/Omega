@@ -1,6 +1,6 @@
 #pragma once
 // =============================================================================
-// OmegaTimeShim.hpp — Simulated clock for Omega C++ backtester
+// OmegaTimeShim.hpp -- Simulated clock for Omega C++ backtester
 //
 // MUST be included as the very first header in OmegaBacktest.cpp before any
 // engine header. The CMakeLists backtest target passes /FI (MSVC) or
@@ -21,7 +21,7 @@
 //   engine across 2 years instead of ~10,000+. Results are completely wrong.
 //
 // HOW IT WORKS:
-//   1. Provides g_bt_now_ms — global simulated epoch milliseconds.
+//   1. Provides g_bt_now_ms -- global simulated epoch milliseconds.
 //      The backtest loop sets this from the CSV timestamp before each on_tick().
 //
 //   2. Overrides time() in this translation unit by providing omega_bt_time()
@@ -29,7 +29,7 @@
 //      included AFTER this file in the same TU, every call to time(nullptr)
 //      in the engine headers resolves to our shim.
 //
-//   3. Provides OmegaBtClock — a drop-in for steady_clock/system_clock with
+//   3. Provides OmegaBtClock -- a drop-in for steady_clock/system_clock with
 //      now() returning time_points derived from g_bt_now_ms. Engine headers
 //      are patched in this TU via:
 //        #define steady_clock  OmegaBtClock
@@ -55,9 +55,9 @@
 #include <chrono>
 #include <atomic>
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Global simulated time state
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 namespace omega { namespace bt {
 
 // Current simulated epoch time in milliseconds. Set by the tick loop.
@@ -75,13 +75,13 @@ inline int64_t sim_now_sec() noexcept {
 
 }} // namespace omega::bt
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Override time() — replaces all time(nullptr) calls in engine headers
+// ?????????????????????????????????????????????????????????????????????????????
+// Override time() -- replaces all time(nullptr) calls in engine headers
 // included in this TU. This is safe because all engine headers are
 // header-only and compiled into a single TU (OmegaBacktest.cpp).
 //
 // We forward-declare then define to avoid conflicting with <ctime>.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 namespace omega { namespace bt {
 
 // Our replacement for C time().
@@ -99,8 +99,8 @@ inline time_t bt_time(time_t* t) noexcept {
 // Engine code now uses std::time(nullptr) explicitly after dead zone refactor.
 // omega_bt_time() is still available for direct calls if needed.
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OmegaBtClock — simulated clock compatible with steady_clock / system_clock
+// ?????????????????????????????????????????????????????????????????????????????
+// OmegaBtClock -- simulated clock compatible with steady_clock / system_clock
 //
 // Uses the same time_point type as steady_clock so all duration arithmetic
 // (now - last_signal < 1s, etc.) in existing engine code compiles unchanged.
@@ -111,7 +111,7 @@ inline time_t bt_time(time_t* t) noexcept {
 // We anchor our simulated steady_clock to the sim start by computing
 // (sim_ms - first_sim_ms) as the offset, which keeps duration differences
 // correct regardless of the absolute epoch value.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 namespace omega { namespace bt {
 
 inline int64_t g_sim_start_ms = 0;   // set on first tick
@@ -133,7 +133,7 @@ struct OmegaBtClock {
         return time_point(std::chrono::duration_cast<duration>(dur));
     }
 
-    // system_clock compatibility — to_time_t / from_time_t
+    // system_clock compatibility -- to_time_t / from_time_t
     static std::time_t to_time_t(const time_point& tp) noexcept {
         return static_cast<std::time_t>(
             std::chrono::duration_cast<std::chrono::seconds>(
@@ -148,7 +148,7 @@ struct OmegaBtClock {
 
 }} // namespace omega::bt
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Redirect steady_clock and system_clock to OmegaBtClock for all engine
 // headers included after this point in this TU.
 //
@@ -158,12 +158,12 @@ struct OmegaBtClock {
 //   std::chrono::system_clock::now()
 // ...we need to redirect inside the std::chrono namespace. We do this by
 // injecting type aliases that shadow the real clocks.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 namespace std {
 namespace chrono {
 
     // Inject OmegaBtClock as aliases that shadow the real clocks.
-    // Engine headers use these names — the alias picks up our simulated clock.
+    // Engine headers use these names -- the alias picks up our simulated clock.
     using steady_clock_real  = steady_clock;
     using system_clock_real  = system_clock;
 
@@ -177,7 +177,7 @@ namespace chrono {
 // The correct non-UB approach: provide nowSec() override at the omega::bt level.
 // Engine code calls nowSec() which calls system_clock::now().
 // We intercept by providing a free nowSec() in the global scope that the
-// engine's static member function will shadow — but static member functions
+// engine's static member function will shadow -- but static member functions
 // can't be overridden this way.
 //
 // DEFINITIVE APPROACH: We inject a global variable and use token replacement
@@ -195,19 +195,19 @@ namespace chrono {
 //   auto now = std::chrono::steady_clock::now();
 // by injecting into std::chrono BEFORE the engine headers are parsed.
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // The actual working approach for MSVC/GCC/Clang C++20:
 // We leverage that all engine headers are compiled in ONE translation unit.
 // We reopen the std::chrono namespace and replace steady_clock and system_clock
 // with type aliases to our simulated clock. This is technically UB (modifying
 // std namespace) but is standard practice for testing/simulation and works on
 // all three compilers.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 
 // Save the real clocks first (done above via _real aliases).
 
 // Now provide simulated versions as the primary names via #define.
-// We use #define at the token level — this works because engine code uses:
+// We use #define at the token level -- this works because engine code uses:
 //   std::chrono::steady_clock::now()
 //   std::chrono::system_clock::now()
 // The macro replaces the TYPE NAME token, not a function call.
@@ -222,15 +222,15 @@ namespace chrono {
 // The dead zone functions in GoldEngineStack now use std::time(nullptr) (not chrono).
 // The engine cooldown timers use std::chrono::steady_clock::time_point members.
 // These are handled by the namespace injection above (steady_clock_real alias).
-// No #define needed — the engine member variables use the real steady_clock type
+// No #define needed -- the engine member variables use the real steady_clock type
 // and OmegaBtClock::now() is called via the free function override.
 //
 // MSVC NOTE: #define steady_clock OmegaBtClock breaks <thread> (C2039 OmegaBtClock).
 // The correct approach is to NOT use #define and instead use the time() override
 // (done above with #define time omega_bt_time) which handles all timing in engines.
 // The steady_clock member variables in engine classes are just used for wall-clock
-// cooldowns — in the backtest these expire based on g_sim_now_ms via OmegaBtClock::now()
+// cooldowns -- in the backtest these expire based on g_sim_now_ms via OmegaBtClock::now()
 // which is called directly, not via the steady_clock name.
 
 // Verify the shim is active
-static_assert(true, "OmegaTimeShim.hpp loaded — simulated clock active");
+static_assert(true, "OmegaTimeShim.hpp loaded -- simulated clock active");

@@ -31,7 +31,7 @@ struct MacroContext {
     bool        nq_open   = false; // USTEC position open (cross-symbol guard)
     bool        oil_open  = false; // USOIL position open
 
-    // Cross-symbol compression alignment — set in on_tick from engine phases
+    // Cross-symbol compression alignment -- set in on_tick from engine phases
     // true = that symbol is currently in COMPRESSION or BREAKOUT_WATCH
     bool        sp_compressing   = false;
     bool        nq_compressing   = false;
@@ -39,7 +39,7 @@ struct MacroContext {
     bool        ger30_compressing= false;
     bool        uk100_compressing= false;
 
-    // L2 book imbalance per symbol — bid_size / (bid_size + ask_size) at top 3 levels
+    // L2 book imbalance per symbol -- bid_size / (bid_size + ask_size) at top 3 levels
     // 0.5 = balanced, >0.65 = bid-heavy (bullish pressure), <0.35 = ask-heavy (bearish)
     double      sp_l2_imbalance   = 0.5;
     double      nq_l2_imbalance   = 0.5;
@@ -51,7 +51,7 @@ struct MacroContext {
     double      gbp_l2_imbalance  = 0.5;
     double      cl_l2_imbalance   = 0.5;
     double      brent_l2_imbalance = 0.5;
-    // Previously missing — added 2026-03-24
+    // Previously missing -- added 2026-03-24
     double      ger40_l2_imbalance  = 0.5;
     double      uk100_l2_imbalance  = 0.5;
     double      estx50_l2_imbalance = 0.5;
@@ -59,7 +59,7 @@ struct MacroContext {
     double      nzd_l2_imbalance    = 0.5;
     double      jpy_l2_imbalance    = 0.5;
 
-    // ── Microstructure signals — per key symbol ───────────────────────────────
+    // ?? Microstructure signals -- per key symbol ???????????????????????????????
     // Populated every tick from g_l2_books when cTrader depth feed is active.
     // Degrade gracefully to neutral (0/0.5/false) when no depth data.
     // Used as entry filters: confirm breakout direction before entry.
@@ -70,7 +70,7 @@ struct MacroContext {
     double      sp_microprice_bias   = 0.0;
     double      xag_microprice_bias  = 0.0;
     double      cl_microprice_bias   = 0.0;
-    // FX microprice bias — now populated from real L2 book
+    // FX microprice bias -- now populated from real L2 book
     double      eur_microprice_bias  = 0.0;
     double      gbp_microprice_bias  = 0.0;
     double      aud_microprice_bias  = 0.0;
@@ -84,22 +84,22 @@ struct MacroContext {
     double      sp_book_slope   = 0.0;
 
     // Liquidity vacuum: true when top-3 levels on a side are very thin
-    // → fast impulse likely in that direction
-    bool        gold_vacuum_ask = false;  // ask thin → up impulse
-    bool        gold_vacuum_bid = false;  // bid thin → down impulse
+    // ? fast impulse likely in that direction
+    bool        gold_vacuum_ask = false;  // ask thin ? up impulse
+    bool        gold_vacuum_bid = false;  // bid thin ? down impulse
     bool        sp_vacuum_ask   = false;
     bool        sp_vacuum_bid   = false;
     bool        cl_vacuum_ask   = false;
     bool        cl_vacuum_bid   = false;
 
-    // Wall detection: large single level > 4× average → likely price rejection
+    // Wall detection: large single level > 4? average ? likely price rejection
     double      gold_mid_price  = 0.0;   // needed for wall_above/below context
     bool        gold_wall_above = false;
     bool        gold_wall_below = false;
     bool        sp_wall_above   = false;
     bool        sp_wall_below   = false;
 
-    // FX vacuum/wall — Priority 6 backlog (previously L2 imbalance proxy only)
+    // FX vacuum/wall -- Priority 6 backlog (previously L2 imbalance proxy only)
     // Now populated from actual L2 book data same as GOLD/SP/OIL.
     bool        eur_vacuum_ask  = false;
     bool        eur_vacuum_bid  = false;
@@ -128,10 +128,10 @@ struct MacroContext {
     bool        estx50_vacuum_ask = false;
     bool        estx50_vacuum_bid = false;
 
-    // ── L2 data quality flags ─────────────────────────────────────────────────
+    // ?? L2 data quality flags ?????????????????????????????????????????????????
     // ctrader_l2_live: true when cTrader depth client has received at least 1 event
     //   AND at least one symbol book has real non-zero size data.
-    //   Separate from per-symbol has_data() — this is the global connectivity flag.
+    //   Separate from per-symbol has_data() -- this is the global connectivity flag.
     // gold_l2_real: true specifically when XAUUSD book has non-zero bid+ask sizes.
     //   When false, GoldFlow uses drift-persistence fallback (price-based, not book-based).
     //   This isolates the BlackBull tag-271 issue: FIX sends no sizes, cTrader may or may not.
@@ -140,12 +140,12 @@ struct MacroContext {
     bool        sp_l2_real       = false;
     bool        cl_l2_real       = false;
 
-    // Session time slot — updated every tick
+    // Session time slot -- updated every tick
     // 0=dead(05-07 UTC), 1=London(07-09), 2=London_core(09-12),
     // 3=overlap(12-14), 4=NY(14-17), 5=NY_late(17-22), 6=Asia(22-05)
     int         session_slot = 0;
 
-    // ── CVD (Cumulative Volume Delta) direction per key symbol ───────────────
+    // ?? CVD (Cumulative Volume Delta) direction per key symbol ???????????????
     // +1 = buying dominates last 50 ticks, -1 = selling, 0 = neutral
     // Populated every tick from g_edges.cvd. Degrade to 0 when no data.
     int         gold_cvd_dir   = 0;
@@ -162,8 +162,8 @@ struct MacroContext {
 };
 
 // Returns session slot multiplier for MIN_BREAKOUT_PCT scaling.
-// London open and NY open have highest follow-through — allow tighter gates.
-// Dead zone and late NY have lowest follow-through — require wider moves.
+// London open and NY open have highest follow-through -- allow tighter gates.
+// Dead zone and late NY have lowest follow-through -- require wider moves.
 inline double session_breakout_mult(int slot) noexcept {
     switch (slot) {
         case 1: return 0.70;  // London open  07-09: best breakouts, loosen gate 30%
@@ -198,17 +198,17 @@ public:
 
     explicit SpEngine(const char* sym) noexcept {
         symbol                = sym;
-        VOL_THRESH_PCT        = 0.060;  // SIM: raised 0.040→0.060, WR 27% on SP — need stronger compression signal
+        VOL_THRESH_PCT        = 0.060;  // SIM: raised 0.040?0.060, WR 27% on SP -- need stronger compression signal
         TP_PCT                = 0.600;
         SL_PCT                = 0.350;
         COMPRESSION_LOOKBACK  = 20;
         BASELINE_LOOKBACK     = 80;
-        COMPRESSION_THRESHOLD = 0.70;  // SIM: tightened 0.85→0.70 — only fire on genuinely tight compression
+        COMPRESSION_THRESHOLD = 0.70;  // SIM: tightened 0.85?0.70 -- only fire on genuinely tight compression
         MAX_HOLD_SEC          = 1200;
-        MIN_GAP_SEC           = 90;    // SIM: raised 60→90s gap between entries
+        MIN_GAP_SEC           = 90;    // SIM: raised 60?90s gap between entries
         MAX_SPREAD_PCT        = 0.04;
-        MOMENTUM_THRESH_PCT   = 0.010; // SIM: raised 0.006→0.010 — need real momentum not noise
-        MIN_BREAKOUT_PCT      = 0.06;  // SIM: raised 0.03→0.06 — bigger breakout required
+        MOMENTUM_THRESH_PCT   = 0.010; // SIM: raised 0.006?0.010 -- need real momentum not noise
+        MIN_BREAKOUT_PCT      = 0.06;  // SIM: raised 0.03?0.06 -- bigger breakout required
         WATCH_TIMEOUT_SEC     = 240;
     }
 
@@ -252,17 +252,17 @@ public:
 
     explicit NqEngine(const char* sym) noexcept {
         symbol                = sym;
-        VOL_THRESH_PCT        = 0.070;  // SIM: raised 0.050→0.070, WR 28.6% — filter out low-vol fakeouts
+        VOL_THRESH_PCT        = 0.070;  // SIM: raised 0.050?0.070, WR 28.6% -- filter out low-vol fakeouts
         TP_PCT                = 0.700;
         SL_PCT                = 0.400;
         COMPRESSION_LOOKBACK  = 18;
         BASELINE_LOOKBACK     = 70;
-        COMPRESSION_THRESHOLD = 0.70;  // SIM: tightened 0.85→0.70 — require real compression
+        COMPRESSION_THRESHOLD = 0.70;  // SIM: tightened 0.85?0.70 -- require real compression
         MAX_HOLD_SEC          = 1200;
-        MIN_GAP_SEC           = 90;    // SIM: raised 60→90s
+        MIN_GAP_SEC           = 90;    // SIM: raised 60?90s
         MAX_SPREAD_PCT        = 0.05;
-        MOMENTUM_THRESH_PCT   = 0.010; // SIM: raised 0.005→0.010
-        MIN_BREAKOUT_PCT      = 0.08;  // SIM: raised 0.04→0.08 — require committed move
+        MOMENTUM_THRESH_PCT   = 0.010; // SIM: raised 0.005?0.010
+        MIN_BREAKOUT_PCT      = 0.08;  // SIM: raised 0.04?0.08 -- require committed move
         WATCH_TIMEOUT_SEC     = 240;
     }
 
@@ -351,7 +351,7 @@ private:
 // INSTRUMENT: US equity index. Less tech-heavy than NQ, steadier than SP.
 // TP 0.80%, SL 0.35%, VOL_THRESH 0.035%, MIN_GAP 180s, MAX_HOLD 1200s
 //
-// GATES: same macro gates as SP/NQ — divergence, VIX panic.
+// GATES: same macro gates as SP/NQ -- divergence, VIX panic.
 // Slightly looser VOL_THRESH than SP (Dow is slower-moving).
 // ==============================================================================
 class Us30Engine final : public BreakoutEngineBase<Us30Engine>
@@ -363,17 +363,17 @@ public:
 
     explicit Us30Engine(const char* sym) noexcept {
         symbol                = sym;
-        VOL_THRESH_PCT        = 0.060;  // SIM: raised 0.035→0.060, 0% WR on DJ30 — much stronger filter
+        VOL_THRESH_PCT        = 0.060;  // SIM: raised 0.035?0.060, 0% WR on DJ30 -- much stronger filter
         TP_PCT                = 0.800;
         SL_PCT                = 0.350;
         COMPRESSION_LOOKBACK  = 20;
         BASELINE_LOOKBACK     = 80;
-        COMPRESSION_THRESHOLD = 0.70;  // SIM: tightened 0.85→0.70
+        COMPRESSION_THRESHOLD = 0.70;  // SIM: tightened 0.85?0.70
         MAX_HOLD_SEC          = 1200;
-        MIN_GAP_SEC           = 120;   // SIM: raised 60→120s — DJ30 needs more time between entries
+        MIN_GAP_SEC           = 120;   // SIM: raised 60?120s -- DJ30 needs more time between entries
         MAX_SPREAD_PCT        = 0.05;
-        MOMENTUM_THRESH_PCT   = 0.010; // SIM: raised 0.006→0.010
-        MIN_BREAKOUT_PCT      = 0.08;  // SIM: raised 0.04→0.08
+        MOMENTUM_THRESH_PCT   = 0.010; // SIM: raised 0.006?0.010
+        MIN_BREAKOUT_PCT      = 0.08;  // SIM: raised 0.04?0.08
         WATCH_TIMEOUT_SEC     = 240;
     }
 
@@ -435,10 +435,10 @@ public:
 // EuIndexEngine -- GER40, UK100, ESTX50
 //
 // European equity indices. Correlated with US equity regime (VIX-driven).
-// ES/NQ divergence is a US-only signal — not applicable here.
+// ES/NQ divergence is a US-only signal -- not applicable here.
 // VIX panic blocks all equity index trading universally.
 // L2 imbalance available for GER40/UK100/ESTX50 via MacroContext fields
-// (ger30_l2_imbalance etc) — but MacroContext does not have these fields yet.
+// (ger30_l2_imbalance etc) -- but MacroContext does not have these fields yet.
 // Gate on VIX only for now; div gate excluded (EUR/GBP-listed, not ES/NQ).
 // ==============================================================================
 class EuIndexEngine final : public BreakoutEngineBase<EuIndexEngine>
@@ -449,7 +449,7 @@ public:
 
     explicit EuIndexEngine(const char* sym) noexcept {
         symbol = sym;
-        // Defaults — overwritten by apply_generic_index_config() at startup
+        // Defaults -- overwritten by apply_generic_index_config() at startup
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,
@@ -469,7 +469,7 @@ public:
 //
 // Commodity. Not equity-regime correlated (same logic as OilEngine for WTI).
 // VIX panic at 50 (liquidity crisis threshold, not equity regime threshold).
-// EIA inventory window blocked same as WTI — same release, same impact.
+// EIA inventory window blocked same as WTI -- same release, same impact.
 // ==============================================================================
 class BrentEngine final : public BreakoutEngineBase<BrentEngine>
 {
@@ -479,7 +479,7 @@ public:
 
     explicit BrentEngine(const char* sym) noexcept {
         symbol = sym;
-        // Defaults — overwritten by apply_generic_brent_config() at startup
+        // Defaults -- overwritten by apply_generic_brent_config() at startup
     }
 
     bool shouldTrade(double /*bid*/, double /*ask*/,

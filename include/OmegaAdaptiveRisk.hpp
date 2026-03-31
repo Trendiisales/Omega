@@ -1,13 +1,13 @@
 #pragma once
 // ==============================================================================
 // OmegaAdaptiveRisk.hpp
-// Adaptive risk layer — closes the gap between Omega and institutional quant systems.
+// Adaptive risk layer -- closes the gap between Omega and institutional quant systems.
 //
 // Components:
-//   1. SymbolPerformanceTracker  — rolling win-rate, expectancy, Sharpe per symbol
-//   2. KellySizer                — Kelly-fraction + vol-normalised lot sizing
-//   3. DrawdownThrottle          — progressive size reduction as daily loss grows
-//   4. CorrelationHeatGuard      — prevents correlated symbols stacking exposure
+//   1. SymbolPerformanceTracker  -- rolling win-rate, expectancy, Sharpe per symbol
+//   2. KellySizer                -- Kelly-fraction + vol-normalised lot sizing
+//   3. DrawdownThrottle          -- progressive size reduction as daily loss grows
+//   4. CorrelationHeatGuard      -- prevents correlated symbols stacking exposure
 //
 // Usage in main.cpp:
 //   #include "OmegaAdaptiveRisk.hpp"
@@ -18,7 +18,7 @@
 //
 //   Before sending an order:
 //     double lot = g_adaptive_risk.adjusted_size(symbol, base_lot, daily_pnl_so_far, daily_limit);
-//     if (!g_adaptive_risk.corr_heat_ok(symbol)) return;  // skip — too much correlated exposure
+//     if (!g_adaptive_risk.corr_heat_ok(symbol)) return;  // skip -- too much correlated exposure
 // ==============================================================================
 
 #include <string>
@@ -42,12 +42,12 @@
 
 namespace omega { namespace risk {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 1. SymbolPerformanceTracker
 //    Rolling window of the last N trades per symbol.
 //    Computes: win_rate, avg_win, avg_loss, expectancy, Sharpe estimate.
 //    Thread-safe via internal mutex.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct SymbolPerformanceTracker {
     // Window sizes
     static constexpr int WINDOW_SHORT = 20;   // recent edge (Kelly uses this)
@@ -67,7 +67,7 @@ struct SymbolPerformanceTracker {
         if ((int)buf_.size() > WINDOW_LONG) buf_.pop_front();
     }
 
-    // Win rate over last N trades (0–1)
+    // Win rate over last N trades (0-1)
     double win_rate(int n = WINDOW_SHORT) const {
         std::lock_guard<std::mutex> lk(mtx_);
         int wins = 0, total = 0;
@@ -85,7 +85,7 @@ struct SymbolPerformanceTracker {
         return cnt > 0 ? sum / cnt : 0.0;
     }
 
-    // Average loss (positive USD — absolute value)
+    // Average loss (positive USD -- absolute value)
     double avg_loss(int n = WINDOW_SHORT) const {
         std::lock_guard<std::mutex> lk(mtx_);
         double sum = 0; int cnt = 0, total = 0;
@@ -103,7 +103,7 @@ struct SymbolPerformanceTracker {
     }
 
     // Simplified Sharpe estimate: mean(pnl) / stdev(pnl) over window
-    // Annualised using average hold_sec → trades_per_year approximation
+    // Annualised using average hold_sec ? trades_per_year approximation
     double sharpe(int n = WINDOW_SHORT) const {
         std::lock_guard<std::mutex> lk(mtx_);
         if ((int)buf_.size() < 4) return 0.0;
@@ -134,7 +134,7 @@ struct SymbolPerformanceTracker {
         return (mean / stdev) * std::sqrt(trades_per_year);
     }
 
-    // Sortino ratio — like Sharpe but only penalises downside volatility.
+    // Sortino ratio -- like Sharpe but only penalises downside volatility.
     // Preferred by DE Shaw / Two Sigma for strategies with skewed returns.
     // Annualised the same way as sharpe().
     double sortino(int n = WINDOW_SHORT) const {
@@ -162,7 +162,7 @@ struct SymbolPerformanceTracker {
         for (double v : pnls) {
             if (v < 0) { down_var += v * v; ++down_n; }
         }
-        if (down_n == 0) return 99.0;  // no losses — arbitrarily high
+        if (down_n == 0) return 99.0;  // no losses -- arbitrarily high
         const double down_stdev = std::sqrt(down_var / pnls.size());
         if (down_stdev < 1e-9) return 0.0;
 
@@ -170,7 +170,7 @@ struct SymbolPerformanceTracker {
         return (mean / down_stdev) * std::sqrt(trades_per_year);
     }
 
-    // Calmar ratio — annualised return / max drawdown.
+    // Calmar ratio -- annualised return / max drawdown.
     // Used by DE Shaw for regime-based sizing decisions.
     // Returns 0 if not enough data or no drawdown.
     double calmar(int n = WINDOW_LONG) const {
@@ -204,7 +204,7 @@ struct SymbolPerformanceTracker {
     }
 
     // Lag-1 trade return autocorrelation.
-    // Positive autocorr (>0.2) = losses cluster → edge is regime-dependent.
+    // Positive autocorr (>0.2) = losses cluster ? edge is regime-dependent.
     // When autocorr > 0.2, apply consecutive-loss lot reduction.
     // Returns 0 if insufficient data.
     double autocorrelation(int n = WINDOW_SHORT) const {
@@ -245,7 +245,7 @@ struct SymbolPerformanceTracker {
         // Normal approximation to binomial
         const double z = (wins - n * 0.5) / std::sqrt(n * 0.25);
         // One-sided p-value: P(Z > z) approximated via erfc
-        // erfc(z/sqrt(2))/2 — standard normal CDF complement
+        // erfc(z/sqrt(2))/2 -- standard normal CDF complement
         const double p = 0.5 * std::erfc(z / std::sqrt(2.0));
         return p;
     }
@@ -261,20 +261,20 @@ struct SymbolPerformanceTracker {
         return (int)buf_.size();
     }
 
-    // Persist trade results to CSV — append-only
+    // Persist trade results to CSV -- append-only
     // Format: timestamp,pnl,hold_sec
-    // Overwrite (not append) — write the current ring buffer as the canonical state.
+    // Overwrite (not append) -- write the current ring buffer as the canonical state.
     // append caused the file to double on every restart, loading 5x data after 5 restarts.
     void save_csv(const std::string& path) const noexcept {
         std::lock_guard<std::mutex> lk(mtx_);
-        std::ofstream f(path, std::ios::trunc);  // overwrite — ring buffer IS the state
+        std::ofstream f(path, std::ios::trunc);  // overwrite -- ring buffer IS the state
         if (!f.is_open()) return;
         for (const auto& r : buf_)
             f << r.ts << "," << r.pnl << "," << r.hold_sec << "\n";
     }
 
     // Load trade history from CSV on startup.
-    // Deduplicates by timestamp — skips records already in buf_ to prevent
+    // Deduplicates by timestamp -- skips records already in buf_ to prevent
     // double-counting if save/load cycle runs multiple times per session.
     void load_csv(const std::string& path) noexcept {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -296,7 +296,7 @@ struct SymbolPerformanceTracker {
         }
     }
 
-    // Confidence: 0 (cold/unreliable) → 1.0 (full window, stable)
+    // Confidence: 0 (cold/unreliable) ? 1.0 (full window, stable)
     // Used to blend between fixed sizing and Kelly sizing during warmup
     double confidence() const {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -308,7 +308,7 @@ private:
     std::deque<TradeResult> buf_;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 2. KellySizer
 //    Kelly fraction: f* = (W/L * P - (1-P)) / (W/L)
 //    where P = win_rate, W = avg_win, L = avg_loss
@@ -317,27 +317,27 @@ private:
 //    Bayesian shrinkage on win-rate prevents wild oscillation at small N:
 //      blended_wr = (N*raw_wr + prior_N*0.50) / (N + prior_N)
 //      Shrinks toward 50% at small N, releases toward raw_wr as N grows.
-//    Size clamped between 50%–150% of base.
+//    Size clamped between 50%-150% of base.
 //    Only activates at >= MIN_TRADES samples.
 //
 //    WARNING: kelly_fraction MUST remain <= 0.40. Full Kelly (1.0) maximises
 //    geometric growth in theory but expected drawdown to 50% peak is near-
-//    certain over time. Institutional standard: 0.25–0.40×. Default 0.25.
-// ─────────────────────────────────────────────────────────────────────────────
+//    certain over time. Institutional standard: 0.25-0.40?. Default 0.25.
+// ?????????????????????????????????????????????????????????????????????????????
 struct KellySizer {
-    double kelly_fraction   = 0.25;  // fractional Kelly — MUST be <= 0.40
+    double kelly_fraction   = 0.25;  // fractional Kelly -- MUST be <= 0.40
     double min_scale        = 0.50;  // never size below 50% of base
     double max_scale        = 1.50;  // never size above 150% of base
     int    min_trades       = 15;    // minimum trades before Kelly activates
     int    bayesian_prior_n = 20;    // shrinkage strength (higher = more conservative)
 
     // Bayesian-shrunk win rate toward 50% prior.
-    // At N=20: 60% raw → ~55% shrunk. At N=100: ~59%. At N=∞: 60% (raw).
+    // At N=20: 60% raw ? ~55% shrunk. At N=100: ~59%. At N=?: 60% (raw).
     double bayesian_win_rate(double raw_wr, int n) const noexcept {
         return (n * raw_wr + bayesian_prior_n * 0.50) / (n + bayesian_prior_n);
     }
 
-    // Returns lot size multiplier (0.5–1.5). Uses shrunk WR to avoid
+    // Returns lot size multiplier (0.5-1.5). Uses shrunk WR to avoid
     // oversizing from small-sample win-rate estimates.
     double size_multiplier(const SymbolPerformanceTracker& tracker) const {
         const int n = tracker.trade_count();
@@ -358,25 +358,25 @@ struct KellySizer {
         return 1.0 + conf * (clamped - 1.0);
     }
 
-    // Returns the shrunk WR actually used for sizing (not raw) — for logging
+    // Returns the shrunk WR actually used for sizing (not raw) -- for logging
     double effective_win_rate(const SymbolPerformanceTracker& tracker) const {
         return bayesian_win_rate(tracker.win_rate(), tracker.trade_count());
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 3. DrawdownThrottle
 //    Progressive size reduction based on current daily PnL vs daily limit.
 //    Stages:
-//      daily_loss < 40% of limit  → 100% size (normal)
-//      daily_loss 40–60%          → 75% size
-//      daily_loss 60–80%          → 50% size
-//      daily_loss 80–100%         → 25% size
-//      daily_loss >= 100%         → 0% (hard stop — handled upstream)
+//      daily_loss < 40% of limit  ? 100% size (normal)
+//      daily_loss 40-60%          ? 75% size
+//      daily_loss 60-80%          ? 50% size
+//      daily_loss 80-100%         ? 25% size
+//      daily_loss >= 100%         ? 0% (hard stop -- handled upstream)
 //    Also tracks consecutive loss streak for intra-session throttle.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct DrawdownThrottle {
-    // Returns size multiplier (0.25 – 1.0) based on how deep into daily limit
+    // Returns size multiplier (0.25 - 1.0) based on how deep into daily limit
     double size_scale(double daily_loss_usd,   // current session loss (positive = loss)
                       double daily_limit_usd   // daily_loss_limit from config
                       ) const noexcept {
@@ -388,7 +388,7 @@ struct DrawdownThrottle {
         return 0.25;
     }
 
-    // Consecutive-loss streak throttle — independent of daily PnL
+    // Consecutive-loss streak throttle -- independent of daily PnL
     // Reduces size after runs of losses even if total PnL is still small
     double streak_scale(int consec_losses) const noexcept {
         if (consec_losses < 2) return 1.00;
@@ -405,13 +405,13 @@ struct DrawdownThrottle {
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 3b. DrawdownVelocityGuard
-//     Rate-of-loss circuit breaker — fires when losses are accumulating FAST,
+//     Rate-of-loss circuit breaker -- fires when losses are accumulating FAST,
 //     not just when a daily total is hit.
 //
 //     Losing $200 over 8 hours is a bad day. Losing $200 in 20 minutes is a
-//     broken algo or a black-swan event — you should stop immediately.
+//     broken algo or a black-swan event -- you should stop immediately.
 //
 //     Logic: maintain a ring buffer of (timestamp, pnl) for closed trades.
 //     On each new_entries_allowed() call, sum pnl over the last `window_sec`
@@ -423,7 +423,7 @@ struct DrawdownThrottle {
 //     Usage in main.cpp (in symbol_gate, after hourly loss check):
 //       g_adaptive_risk.dd_velocity.record_trade(nowSec(), net_pnl);
 //       if (!g_adaptive_risk.dd_velocity.new_entries_allowed(nowSec())) return false;
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct DrawdownVelocityGuard {
     int    window_sec     = 1800;   // 30-minute rolling window
     double threshold_usd  = 0.0;   // 0 = disabled; set e.g. 0.5 * daily_loss_limit
@@ -454,7 +454,7 @@ struct DrawdownVelocityGuard {
             static int64_t s_last_log = 0;
             if (now_sec - s_last_log > 30) {
                 s_last_log = now_sec;
-                std::printf("[DD-VELOCITY] Halt active — %llds remaining\n",
+                std::printf("[DD-VELOCITY] Halt active -- %llds remaining\n",
                             (long long)(halt_until_ - now_sec));
             }
             return false;
@@ -467,7 +467,7 @@ struct DrawdownVelocityGuard {
         for (const auto& r : buf_) rolling += r.pnl;
         if (rolling < -threshold_usd) {
             halt_until_ = now_sec + halt_sec;
-            std::printf("[DD-VELOCITY] TRIGGERED — rolling %ds loss=$%.2f threshold=$%.2f — halting %ds\n",
+            std::printf("[DD-VELOCITY] TRIGGERED -- rolling %ds loss=$%.2f threshold=$%.2f -- halting %ds\n",
                         window_sec, rolling, -threshold_usd, halt_sec);
             return false;
         }
@@ -490,7 +490,7 @@ struct DrawdownVelocityGuard {
 };
 //     Persistent memory of session-end PnL across UTC days.
 //     Written to logs/day_results.csv at rollover; read back on startup.
-//     Logic: 3+ consecutive losing days → halve all sizes next session.
+//     Logic: 3+ consecutive losing days ? halve all sizes next session.
 //            1 winning day resets the streak.
 //
 //     File format (append-only, one row per day):
@@ -500,7 +500,7 @@ struct DrawdownVelocityGuard {
 //       At startup:   g_adaptive_risk.multiday.load(path);
 //       At rollover:  g_adaptive_risk.multiday.record_day(date_str, net_pnl, path);
 //       Before entry: double scale = g_adaptive_risk.multiday.size_scale();
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct MultiDayDrawdownThrottle {
     int    trigger_days   = 3;     // consecutive losing days before throttle fires
     double throttle_scale = 0.50;  // multiply sizes by this when throttle active
@@ -583,7 +583,7 @@ struct MultiDayDrawdownThrottle {
     double size_scale() const noexcept {
         const int streak = consecutive_losing_days();
         if (streak >= trigger_days) {
-            std::printf("[MULTIDAY-THROTTLE] ACTIVE — %d consecutive losing days → scale=%.2f\n",
+            std::printf("[MULTIDAY-THROTTLE] ACTIVE -- %d consecutive losing days ? scale=%.2f\n",
                         streak, throttle_scale);
             return throttle_scale;
         }
@@ -607,23 +607,23 @@ private:
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 4. CorrelationHeatGuard
 //    Prevents stacking highly correlated positions simultaneously.
 //    Symbols are grouped by asset class / correlation cluster.
 //    Max concurrent positions per cluster is enforced.
 //
 //    Clusters:
-//      US_EQUITY  : US500, USTEC, DJ30, NAS100  — near-perfect correlation
-//      EU_EQUITY  : GER40, UK100, ESTX50         — high correlation
-//      OIL        : USOIL.F, BRENT               — tight spread
-//      METALS     : XAUUSD, XAGUSD               — correlated but different vol
-//      JPY_RISK   : USDJPY, AUDUSD, NZDUSD       — carry/risk-off cluster
-//      EUR_GBP    : EURUSD, GBPUSD               — G10 major correlation
+//      US_EQUITY  : US500, USTEC, DJ30, NAS100  -- near-perfect correlation
+//      EU_EQUITY  : GER40, UK100, ESTX50         -- high correlation
+//      OIL        : USOIL.F, BRENT               -- tight spread
+//      METALS     : XAUUSD, XAGUSD               -- correlated but different vol
+//      JPY_RISK   : USDJPY, AUDUSD, NZDUSD       -- carry/risk-off cluster
+//      EUR_GBP    : EURUSD, GBPUSD               -- G10 major correlation
 //
 //    Default max open per cluster = 2 (allows diversification within cluster
 //    but prevents all 4 US equity engines firing simultaneously).
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 enum class CorrCluster {
     US_EQUITY,   // US500 USTEC DJ30 NAS100
     EU_EQUITY,   // GER40 UK100 ESTX50
@@ -688,7 +688,7 @@ struct CorrelationHeatGuard {
         return open < max_allowed;
     }
 
-    // For logging — returns cluster name
+    // For logging -- returns cluster name
     static const char* cluster_name(const std::string& symbol) {
         switch (symbol_to_cluster(symbol)) {
             case CorrCluster::US_EQUITY: return "US_EQUITY";
@@ -702,22 +702,22 @@ struct CorrelationHeatGuard {
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // 5. VolatilityRegimeScaler
 //    Computes a 20-period ATR per symbol from tick stream.
-//    When ATR is elevated vs its own 100-period average → reduce size.
-//    When ATR is compressed → normal size (breakout premium).
+//    When ATR is elevated vs its own 100-period average ? reduce size.
+//    When ATR is compressed ? normal size (breakout premium).
 //
 //    This is separate from ATR in BracketEngine (which gates minimum range).
-//    This one gates LOT SIZE — high vol = same dollar risk but smaller position.
-// ─────────────────────────────────────────────────────────────────────────────
+//    This one gates LOT SIZE -- high vol = same dollar risk but smaller position.
+// ?????????????????????????????????????????????????????????????????????????????
 struct VolatilityRegimeScaler {
     static constexpr int ATR_FAST   = 20;
     static constexpr int ATR_SLOW   = 100;
 
-    double high_vol_scale  = 0.70;  // size × 0.70 when ATR > 1.5× baseline
+    double high_vol_scale  = 0.70;  // size ? 0.70 when ATR > 1.5? baseline
     double normal_scale    = 1.00;
-    double low_vol_scale   = 1.10;  // slight size boost when ATR < 0.7× baseline (compressed)
+    double low_vol_scale   = 1.10;  // slight size boost when ATR < 0.7? baseline (compressed)
 
     struct SymATR {
         std::deque<double> ranges;  // |high - low| per tick or |tick_delta|
@@ -770,10 +770,10 @@ struct VolatilityRegimeScaler {
 
     // ATR-normalised SL floor.
     // Problem: when compression range is very tight (CRUSH regime),
-    // sl_dist = comp_range × 0.4 is tiny → lot size balloons dangerously.
+    // sl_dist = comp_range ? 0.4 is tiny ? lot size balloons dangerously.
     // A $50 risk with sl_abs = 0.5pts on GOLD = 1.0 lot (should be ~0.05).
     //
-    // Solution: never size from an SL smaller than ATR_SLOW × atr_sl_mult.
+    // Solution: never size from an SL smaller than ATR_SLOW ? atr_sl_mult.
     // Default atr_sl_mult = 0.5: SL floor = half of the slow ATR baseline.
     // This is the same principle used by top prop firms (Tower, Virtu, DRW):
     //   "size to the market's natural tick noise, not to the setup width"
@@ -790,12 +790,12 @@ struct VolatilityRegimeScaler {
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AdaptiveRiskManager — unified facade used by main.cpp
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
+// AdaptiveRiskManager -- unified facade used by main.cpp
+// ?????????????????????????????????????????????????????????????????????????????
 class AdaptiveRiskManager {
 public:
-    // ── Config (set once at startup or from config file) ─────────────────────
+    // ?? Config (set once at startup or from config file) ?????????????????????
     bool   kelly_enabled          = true;
     bool   dd_throttle_enabled    = true;
     bool   corr_heat_enabled      = true;
@@ -808,7 +808,7 @@ public:
     // Minimum fills before fill-quality reduction fires (mirrors FillQualityTracker::window)
     int    fill_quality_min_fills = 10;
 
-    // Per-symbol performance trackers — keyed by canonical symbol name
+    // Per-symbol performance trackers -- keyed by canonical symbol name
     std::unordered_map<std::string, SymbolPerformanceTracker> perf;
 
     KellySizer                  kelly;
@@ -823,22 +823,22 @@ public:
     // In practice main.cpp calls set_fill_quality_tracker(&g_edges.fill_quality).
     void* fill_quality_tracker_ptr = nullptr;
 
-    // Setter called by main.cpp — pass &g_edges.fill_quality
+    // Setter called by main.cpp -- pass &g_edges.fill_quality
     template<typename T>
     void set_fill_quality_tracker(T* ptr) { fill_quality_tracker_ptr = static_cast<void*>(ptr); }
 
-    // ── Record a closed trade ─────────────────────────────────────────────────
+    // ?? Record a closed trade ?????????????????????????????????????????????????
     void record_trade(const std::string& symbol, double net_pnl, double hold_sec) {
         perf[symbol].record(net_pnl, hold_sec);
     }
 
-    // ── Update volatility state (call each tick per symbol with |price_delta|) ─
+    // ?? Update volatility state (call each tick per symbol with |price_delta|) ?
     void update_vol(const std::string& symbol, double abs_price_delta) {
         if (vol_regime_enabled)
             vol_scaler.update(symbol, abs_price_delta);
     }
 
-    // ── Update correlation cluster counts (call once per on_tick) ────────────
+    // ?? Update correlation cluster counts (call once per on_tick) ????????????
     void update_cluster_counts(
         int us_equity_open, int eu_equity_open, int oil_open,
         int metals_open, int jpy_risk_open, int eur_gbp_open) {
@@ -851,7 +851,7 @@ public:
         corr_heat.update(CorrCluster::EUR_GBP,   eur_gbp_open);
     }
 
-    // ── Main entry point: compute adjusted lot size ───────────────────────────
+    // ?? Main entry point: compute adjusted lot size ???????????????????????????
     // base_lot          : raw lot size from compute_size()
     // daily_loss_usd    : current session loss (positive = loss amount)
     // daily_limit_usd   : config daily_loss_limit
@@ -910,7 +910,7 @@ public:
         }
 
         // 6. Autocorrelation-based consecutive-loss reduction.
-        // When lag-1 trade return autocorrelation > 0.2, losses are clustering —
+        // When lag-1 trade return autocorrelation > 0.2, losses are clustering --
         // the edge is regime-dependent and we are likely trading in the wrong regime.
         // Reduce size by 25% until the cluster clears (autocorr drops below 0.15).
         // This is on top of the streak_scale already applied in DrawdownThrottle.
@@ -925,7 +925,7 @@ public:
                             std::chrono::system_clock::now().time_since_epoch()).count());
                     if (now_s - s_ac_log > 120) {
                         s_ac_log = now_s;
-                        std::printf("[ADAPTIVE-RISK] %s autocorr=%.2f>0.20 — loss_cluster reduction 0.75x\n",
+                        std::printf("[ADAPTIVE-RISK] %s autocorr=%.2f>0.20 -- loss_cluster reduction 0.75x\n",
                                     symbol.c_str(), ac);
                     }
                     lot *= 0.75;
@@ -934,8 +934,8 @@ public:
         }
 
         // 7. Weekend gap size reduction.
-        // Friday 21:00 UTC → Sunday 22:00 UTC: markets closed, gap risk high.
-        // GOLD/metals can gap 1.5–2% on Sunday open. Halve size during gap window.
+        // Friday 21:00 UTC ? Sunday 22:00 UTC: markets closed, gap risk high.
+        // GOLD/metals can gap 1.5-2% on Sunday open. Halve size during gap window.
         // Threshold registered as a callback by main.cpp to avoid circular include.
         if (weekend_gap_scale_fn) {
             const double gap_scale = weekend_gap_scale_fn();
@@ -943,7 +943,7 @@ public:
         }
 
         // 8. VPIN informed-flow size reduction.
-        // When VPIN is elevated (0.60–0.79) halve size — informed institutional flow
+        // When VPIN is elevated (0.60-0.79) halve size -- informed institutional flow
         // is present and adverse selection risk is high. Above 0.80 is blocked entirely
         // in symbol_gate before this function is reached.
         if (vpin_scale_fn) {
@@ -962,15 +962,15 @@ public:
             }
         }
 
-        // 9. Equity curve scalar — graduated size reduction as today's loss accumulates.
-        // 0–10% of daily limit consumed = no reduction (normal operations, small fluctuations).
-        // 10–50% consumed = linear ramp from 1.0× down to 0.5×.
-        // Above 50% consumed = fixed 0.5× until the hard daily-loss-limit stop fires.
-        // Rationale: the hard stop is binary (full size → dead stop). This adds a graduated
+        // 9. Equity curve scalar -- graduated size reduction as today's loss accumulates.
+        // 0-10% of daily limit consumed = no reduction (normal operations, small fluctuations).
+        // 10-50% consumed = linear ramp from 1.0? down to 0.5?.
+        // Above 50% consumed = fixed 0.5? until the hard daily-loss-limit stop fires.
+        // Rationale: the hard stop is binary (full size ? dead stop). This adds a graduated
         // response so the system naturally trades smaller as the day deteriorates, reducing
         // the rate at which the hard limit is approached. Mirrors how DE Shaw / Winton apply
         // intra-session capital reduction on losing days.
-        // Uses daily_loss_usd already passed in — no additional state or callbacks needed.
+        // Uses daily_loss_usd already passed in -- no additional state or callbacks needed.
         if (daily_limit_usd > 0.0) {
             const double loss_pct = std::max(0.0, daily_loss_usd) / daily_limit_usd;
             if (loss_pct > 0.10) {
@@ -998,14 +998,14 @@ public:
     std::function<bool(const std::string&)> fill_quality_check_fn;
 
     // Callback registered by main.cpp: returns size multiplier for weekend gap window.
-    // Returns 0.5 during Fri 21:00–Sun 22:00 UTC, 1.0 otherwise.
+    // Returns 0.5 during Fri 21:00-Sun 22:00 UTC, 1.0 otherwise.
     std::function<double()> weekend_gap_scale_fn;
 
     // Callback registered by main.cpp: returns VPIN size scale for a symbol.
     // Returns 0.5 when VPIN >= high_threshold, 1.0 when below.
     std::function<double(const std::string&)> vpin_scale_fn;
 
-    // ── Correlation heat check ─────────────────────────────────────────────────
+    // ?? Correlation heat check ?????????????????????????????????????????????????
     // Returns false if opening a new position in this symbol would exceed
     // the correlation cluster budget. Call before every entry.
     bool corr_heat_ok(const std::string& symbol) const {
@@ -1018,7 +1018,7 @@ public:
         return ok;
     }
 
-    // ── Persist/restore Kelly performance data ─────────────────────────────
+    // ?? Persist/restore Kelly performance data ?????????????????????????????
     // Called at startup (load) and UTC rollover (save) alongside TOD gate.
     void save_perf(const std::string& dir) const {
         for (const auto& kv : perf) {
@@ -1051,7 +1051,7 @@ public:
         std::printf("[ADAPTIVE-RISK] Kelly perf loaded from %s\n", dir.c_str());
     }
 
-    // ── Performance summary (for GUI / logging) ───────────────────────────────
+    // ?? Performance summary (for GUI / logging) ???????????????????????????????
     void print_summary() const {
         for (const auto& kv : perf) {
             const auto& sym = kv.first;
@@ -1081,7 +1081,7 @@ public:
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // PortfolioVaR
 // Correlation-adjusted risk exposure across clusters.
 //
@@ -1089,7 +1089,7 @@ public:
 // If XAUUSD long + USDJPY short both move against you on a single DXY spike,
 // the combined loss can breach the daily limit before either individual SL fires.
 //
-// Approach: each open position contributes dollar risk (size × mid × tick_mult).
+// Approach: each open position contributes dollar risk (size ? mid ? tick_mult).
 // Cluster betas to DXY (rough but fast, no covariance matrix needed):
 //   METALS: beta = -0.6  (gold rises when USD falls, falls when USD spikes)
 //   JPY_RISK: beta = +0.5  (USDJPY rises with USD)
@@ -1098,19 +1098,19 @@ public:
 //   OIL: beta = -0.3   (oil priced in USD, loose inverse)
 //   EU_EQUITY: beta = -0.3
 //
-// Portfolio VaR proxy = sqrt( sum( (cluster_dollar_risk × beta)^2 ) )
+// Portfolio VaR proxy = sqrt( sum( (cluster_dollar_risk ? beta)^2 ) )
 // This approximates 1-sigma dollar loss if DXY moves 1% adversely.
-// Gate: if portfolio_var > var_limit_usd → block new entries until exposure drops.
+// Gate: if portfolio_var > var_limit_usd ? block new entries until exposure drops.
 //
 // Usage in main.cpp symbol_gate:
 //   g_portfolio_var.update("METALS", metals_dollar_risk);
 //   if (g_portfolio_var.exceeds_limit()) return false;
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct PortfolioVaR {
-    double var_limit_usd = 0.0;  // 0 = disabled; set to e.g. 1.5 × daily_loss_limit at init
+    double var_limit_usd = 0.0;  // 0 = disabled; set to e.g. 1.5 ? daily_loss_limit at init
 
     struct ClusterExposure {
-        double dollar_risk = 0.0;  // sum of (lot × mid × tick_mult) for open positions
+        double dollar_risk = 0.0;  // sum of (lot ? mid ? tick_mult) for open positions
         double dxy_beta    = 0.0;  // sensitivity to DXY move
     };
 
@@ -1134,7 +1134,7 @@ struct PortfolioVaR {
         if (it != clusters_.end()) it->second.dollar_risk = dollar_risk;
     }
 
-    // Compute portfolio VaR proxy: sqrt(sum((dollar_risk × beta)^2))
+    // Compute portfolio VaR proxy: sqrt(sum((dollar_risk ? beta)^2))
     // Represents approximate 1-sigma loss on a 1% adverse DXY move.
     double compute() const {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -1155,7 +1155,7 @@ struct PortfolioVaR {
                 std::chrono::system_clock::now().time_since_epoch()).count());
             if (now_s - s_last_log > 30) {
                 s_last_log = now_s;
-                std::printf("[PORTFOLIO-VAR] VaR=%.2f exceeds limit=%.2f — blocking new entries\n",
+                std::printf("[PORTFOLIO-VAR] VaR=%.2f exceeds limit=%.2f -- blocking new entries\n",
                             var, var_limit_usd);
             }
             return true;
@@ -1171,7 +1171,7 @@ struct PortfolioVaR {
         std::lock_guard<std::mutex> lk(mtx_);
         for (const auto& kv : clusters_) {
             if (kv.second.dollar_risk > 0.01)
-                std::printf("  %s: $%.2f × beta=%.2f → contrib=%.2f\n",
+                std::printf("  %s: $%.2f ? beta=%.2f ? contrib=%.2f\n",
                             kv.first.c_str(), kv.second.dollar_risk,
                             kv.second.dxy_beta,
                             kv.second.dollar_risk * kv.second.dxy_beta);

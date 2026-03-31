@@ -1,29 +1,29 @@
 #pragma once
 // ==============================================================================
-// OmegaFIX.hpp — BlackBull cTrader FIX 4.4 constants and symbol tables
+// OmegaFIX.hpp -- BlackBull cTrader FIX 4.4 constants and symbol tables
 //
-// ── DEPTH UPGRADE (2026-03-24) ──────────────────────────────────────────────
+// ?? DEPTH UPGRADE (2026-03-24) ??????????????????????????????????????????????
 // 264=5 (5-level depth) replaces 264=1 (top-of-book only).
 // Evidence for compatibility:
-//   • BlackBull cTrader GUI shows live DoM with 4+ levels AND real size data
+//   ? BlackBull cTrader GUI shows live DoM with 4+ levels AND real size data
 //     (confirmed from BRENT screenshot: bid 5000/10000/85000/500 visible)
-//   • cTrader FIX 4.4 spec supports 264=N for N levels on DMA accounts
-//   • L2Book parser already handles up to 5 levels (bid_count<5 check present)
-//   • 271 (MDEntrySize) parsing already in place
+//   ? cTrader FIX 4.4 spec supports 264=N for N levels on DMA accounts
+//   ? L2Book parser already handles up to 5 levels (bid_count<5 check present)
+//   ? 271 (MDEntrySize) parsing already in place
 //
 // FALLBACK SAFETY:
 //   If BlackBull rejects 264=5 (MarketDataRequestReject, 35=Y), the handler
 //   in dispatch_fix() sets g_md_depth_fallback=true and re-subscribes at 264=1.
 //   This prevents the ghost session loop. The fallback is permanent for the
-//   session — if 264=5 is rejected, the session stays at 264=1 forever.
+//   session -- if 264=5 is rejected, the session stays at 264=1 forever.
 //
 // ORIGINAL CONSTRAINTS (still enforced where applicable):
 //   265 (MDUpdateType)  : MUST be 0 (full refresh only).
-//   267 (NoMDEntryTypes): MUST be 2 — bid(0) + ask(1) only.
+//   267 (NoMDEntryTypes): MUST be 2 -- bid(0) + ask(1) only.
 //   269 (MDEntryType)   : 0=bid, 1=ask ONLY.
 //   263 (SubReqType)    : 1=subscribe, 2=unsubscribe ONLY.
 //
-// FIX message builders live in main.cpp under "// ── IMMUTABLE FIX SECTION ──"
+// FIX message builders live in main.cpp under "// ?? IMMUTABLE FIX SECTION ??"
 // Symbol IDs and tables live here.
 // ==============================================================================
 #include <string>
@@ -41,11 +41,11 @@ static SymbolDef OMEGA_SYMS[] = {
     { 2642, "US500.F" }, { 2643, "USTEC.F" }, { 2632, "USOIL.F" },
     { 4462, "VIX.F"   }, { 2638, "DX.F"    }, { 2637, "DJ30.F"  },
     // NAS100 (id=110) REMOVED: duplicate of USTEC.F, both track Nasdaq 100.
-    // USTEC.F (id=2643) is the futures CFD — lower spread, better liquidity.
+    // USTEC.F (id=2643) is the futures CFD -- lower spread, better liquidity.
     // NAS100 (cash) had all engines disabled; removing from symbol table entirely.
     {   41, "XAUUSD" }, { 2631, "NGAS.F"  },
     // FIX ID 41 = XAUUSD spot on BlackBull (confirmed seclist_raw.txt line 209).
-    // USOIL.F (id=2632): BlackBull prices this at ~$102 — audit 2026-04-01 shows
+    // USOIL.F (id=2632): BlackBull prices this at ~$102 -- audit 2026-04-01 shows
     // this is NOT WTI (~$70) nor standard Brent (~$75). Both USOIL.F and BRENT
     // show ~$102 prices suggesting they track the same instrument.
     // BrentWtiSpreadEngine is DISABLED until correct symbols are confirmed.
@@ -60,9 +60,9 @@ static std::vector<ExtSymbolDef> g_ext_syms = {
     {0,"NZDUSD"},{0,"USDJPY"}
 };
 
-// ── Depth capability flags ───────────────────────────────────────────────────
+// ?? Depth capability flags ???????????????????????????????????????????????????
 // g_md_depth_ok: starts true (we request 264=5). Set false if broker rejects.
-// g_md_depth_fallback: set true by 35=Y handler — triggers re-sub at 264=1.
+// g_md_depth_fallback: set true by 35=Y handler -- triggers re-sub at 264=1.
 // Both are written only from the quote thread (dispatch_fix context).
 static std::atomic<bool> g_md_depth_ok{true};
 static std::atomic<bool> g_md_depth_fallback{false};
@@ -89,29 +89,29 @@ static void build_id_map() {
 }
 
 // =============================================================================
-// L2Book — up to 5 levels per symbol
+// L2Book -- up to 5 levels per symbol
 // Fed from cTrader Open API ProtoOADepthEvent (real multi-level) when active,
 // falls back to FIX 264=1 single-level when cTrader feed is not connected.
 // All methods degrade gracefully when size data is absent (no false blocks).
 //
-// ── MICROSTRUCTURE SIGNAL SUITE ─────────────────────────────────────────────
+// ?? MICROSTRUCTURE SIGNAL SUITE ?????????????????????????????????????????????
 // Stateless signals (only current snapshot needed):
-//   imbalance()          — bid_vol / (bid+ask)  vol,  0=ask-heavy, 1=bid-heavy
-//   ratio3()             — bid/ask ratio top-3 levels: >1.5 strong bid
-//   microprice()         — (bid×ask_sz + ask×bid_sz) / (bid_sz+ask_sz)
+//   imbalance()          -- bid_vol / (bid+ask)  vol,  0=ask-heavy, 1=bid-heavy
+//   ratio3()             -- bid/ask ratio top-3 levels: >1.5 strong bid
+//   microprice()         -- (bid?ask_sz + ask?bid_sz) / (bid_sz+ask_sz)
 //                          predicts next tick direction vs mid
-//   book_slope()         — weighted directional bias: +ve=buy pressure
-//   wall_above(mid)      — largest ask level > 4× avg → resistance ceiling
-//   wall_below(mid)      — largest bid level > 4× avg → support floor
-//   liquidity_vacuum_ask()— top-3 ask vol thin → upward impulse likely
-//   liquidity_vacuum_bid()— top-3 bid vol thin → downward impulse likely
-//   depth_supports_long/short() — enough liquidity to fill our size
-//   is_sweep_long/short()       — tick volume exceeds L1 size (FIX only)
+//   book_slope()         -- weighted directional bias: +ve=buy pressure
+//   wall_above(mid)      -- largest ask level > 4? avg ? resistance ceiling
+//   wall_below(mid)      -- largest bid level > 4? avg ? support floor
+//   liquidity_vacuum_ask()-- top-3 ask vol thin ? upward impulse likely
+//   liquidity_vacuum_bid()-- top-3 bid vol thin ? downward impulse likely
+//   depth_supports_long/short() -- enough liquidity to fill our size
+//   is_sweep_long/short()       -- tick volume exceeds L1 size (FIX only)
 //
-// Stateful signals (need previous snapshot — in CTDepthBook, CTraderDepthClient.hpp):
-//   queue_pull_up()      — ask L1 shrank >50% → sellers pulled → up impulse
-//   queue_pull_down()    — bid L1 shrank >50% → buyers pulled → down impulse
-//   pull_ratio()         — total book volume shrank >35% → thin book alert
+// Stateful signals (need previous snapshot -- in CTDepthBook, CTraderDepthClient.hpp):
+//   queue_pull_up()      -- ask L1 shrank >50% ? sellers pulled ? up impulse
+//   queue_pull_down()    -- bid L1 shrank >50% ? buyers pulled ? down impulse
+//   pull_ratio()         -- total book volume shrank >35% ? thin book alert
 // =============================================================================
 struct L2Level { double price = 0.0; double size = 0.0; };
 
@@ -121,7 +121,7 @@ struct L2Book {
     int     bid_count  = 0;
     int     ask_count  = 0;
 
-    // ── Imbalance 0..1 ───────────────────────────────────────────────────────
+    // ?? Imbalance 0..1 ???????????????????????????????????????????????????????
     // bid_vol / (bid_vol + ask_vol) across top `levels` levels.
     // 0.5 = balanced | >0.65 = bid-heavy | <0.35 = ask-heavy
     double imbalance(int levels = 5) const noexcept {
@@ -134,7 +134,7 @@ struct L2Book {
         return (tot > 0.0) ? (bs / tot) : 0.5;
     }
 
-    // ── 3-level bid/ask ratio ────────────────────────────────────────────────
+    // ?? 3-level bid/ask ratio ????????????????????????????????????????????????
     // >1.5 = strong bid pressure (long-friendly)
     // <0.67 = strong ask pressure (short-friendly)
     double ratio3() const noexcept {
@@ -147,10 +147,10 @@ struct L2Book {
         return bs / as;
     }
 
-    // ── Microprice ───────────────────────────────────────────────────────────
+    // ?? Microprice ???????????????????????????????????????????????????????????
     // Weighted midpoint that accounts for L1 queue sizes.
-    // microprice > mid → upward pressure (buyers have smaller queue to exhaust)
-    // microprice < mid → downward pressure
+    // microprice > mid ? upward pressure (buyers have smaller queue to exhaust)
+    // microprice < mid ? downward pressure
     // Returns mid (best_bid+best_ask)*0.5 when sizes are 0 (graceful fallback).
     double microprice() const noexcept {
         if (bid_count == 0 || ask_count == 0) return 0.0;
@@ -168,7 +168,7 @@ struct L2Book {
         return microprice() - mid;
     }
 
-    // ── Book slope ───────────────────────────────────────────────────────────
+    // ?? Book slope ???????????????????????????????????????????????????????????
     // Weighted sum across all levels: bid pressure - ask pressure.
     // Each level weighted by 1/(1+distance_from_mid) so near levels count more.
     // Positive = buy pressure building; negative = sell pressure building.
@@ -194,13 +194,13 @@ struct L2Book {
         return (bid_wt - ask_wt) / total;  // -1..+1
     }
 
-    // ── Liquidity vacuum ─────────────────────────────────────────────────────
-    // True when top-3 levels on a side are very thin — price can move fast.
+    // ?? Liquidity vacuum ?????????????????????????????????????????????????????
+    // True when top-3 levels on a side are very thin -- price can move fast.
     // threshold: fraction of average total book volume per level.
-    // Default 0.15 = top-3 ask is <15% of average → vacuum on ask side → up impulse.
+    // Default 0.15 = top-3 ask is <15% of average ? vacuum on ask side ? up impulse.
     // When sizes are 0 (no data), always returns false (never triggers falsely).
     bool liquidity_vacuum_ask(double threshold = 0.15) const noexcept {
-        // Thin ask side → upward impulse likely (buyers face little resistance)
+        // Thin ask side ? upward impulse likely (buyers face little resistance)
         if (ask_count == 0) return false;
         double ask3 = 0.0;
         const int an = std::min(ask_count, 3);
@@ -216,7 +216,7 @@ struct L2Book {
         return (ask3 / 3.0) < (avg_per_level * threshold);
     }
     bool liquidity_vacuum_bid(double threshold = 0.15) const noexcept {
-        // Thin bid side → downward impulse likely (sellers face little support)
+        // Thin bid side ? downward impulse likely (sellers face little support)
         if (bid_count == 0) return false;
         double bid3 = 0.0;
         const int bn = std::min(bid_count, 3);
@@ -231,8 +231,8 @@ struct L2Book {
         return (bid3 / 3.0) < (avg_per_level * threshold);
     }
 
-    // ── Liquidity wall detection ──────────────────────────────────────────────
-    // True when a single level holds > wall_mult × average level size.
+    // ?? Liquidity wall detection ??????????????????????????????????????????????
+    // True when a single level holds > wall_mult ? average level size.
     // wall_above(mid): resistance ceiling above current price (ask side)
     // wall_below(mid): support floor below current price (bid side)
     // Default wall_mult=4.0 per microstructure literature.
@@ -257,7 +257,7 @@ struct L2Book {
         return false;
     }
 
-    // ── Best wall: largest single level on a side (0=bid, 1=ask) ────────────
+    // ?? Best wall: largest single level on a side (0=bid, 1=ask) ????????????
     double wall_size(int side) const noexcept {
         double mx = 0.0;
         if (side == 0) { for (int i=0;i<bid_count&&i<5;++i) if(bids[i].size>mx) mx=bids[i].size; }
@@ -265,9 +265,9 @@ struct L2Book {
         return mx;
     }
 
-    // ── Depth support: enough liquidity to absorb our position ───────────────
+    // ?? Depth support: enough liquidity to absorb our position ???????????????
     // Returns true if top-3 bid/ask sum >= position_lots * cushion.
-    // When sizes are 0 (no depth data), always returns true — never blocks.
+    // When sizes are 0 (no depth data), always returns true -- never blocks.
     bool depth_supports_long(double position_lots, double cushion = 3.0) const noexcept {
         double bs = 0.0;
         const int bn = std::min(bid_count, 3);
@@ -283,7 +283,7 @@ struct L2Book {
         return as >= (position_lots * cushion);
     }
 
-    // ── Sweep detection ──────────────────────────────────────────────────────
+    // ?? Sweep detection ??????????????????????????????????????????????????????
     // True when last tick volume exceeds level-1 size * 1.5 AND imbalance
     // confirms the direction. Used with FIX tag-271 tick volume.
     bool is_sweep_long(double sweep_vol) const noexcept {

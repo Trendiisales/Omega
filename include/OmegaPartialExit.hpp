@@ -1,7 +1,7 @@
 #pragma once
 // ==============================================================================
 // OmegaPartialExit.hpp
-// Partial close / split TP system — closes 50% of position at TP1 (1R),
+// Partial close / split TP system -- closes 50% of position at TP1 (1R),
 // then trails the remainder toward TP2 (original TP).
 //
 // Why this matters vs best systems:
@@ -18,7 +18,7 @@
 //
 // Integration points in main.cpp:
 //   1. On entry: g_partial_exit[symbol].arm(is_long, entry, tp1, tp2, sl, lot)
-//   2. Each tick: g_partial_exit[symbol].update(mid, bid, ask) → may return CloseAction
+//   2. Each tick: g_partial_exit[symbol].update(mid, bid, ask) ? may return CloseAction
 //   3. On CloseAction::PARTIAL: send_live_order(symbol, close_dir, half_lot, price)
 //      then call .on_partial_filled() to transition to trailing mode
 //   4. On CloseAction::FULL: send final close order, then .reset()
@@ -46,8 +46,8 @@ struct PartialExitState {
     bool   active       = false;
     bool   is_long      = false;
     double entry        = 0;
-    double tp1          = 0;     // 1R target — close 50% here
-    double tp2          = 0;     // original full TP — close remainder here
+    double tp1          = 0;     // 1R target -- close 50% here
+    double tp2          = 0;     // original full TP -- close remainder here
     double sl_original  = 0;
     double sl_current   = 0;     // moves to breakeven after TP1, then trails
     double lot_original = 0;     // original full lot
@@ -73,11 +73,11 @@ struct PartialExitState {
         lot_remaining = lot;
         tp1_done      = false;
         trail_best    = ent;
-        // Trail step: if ATR available use 0.5×ATR, else 0.3×(tp1-entry)
+        // Trail step: if ATR available use 0.5?ATR, else 0.3?(tp1-entry)
         const double raw_step = std::fabs(t1 - ent) * 0.30;
         trail_step = (atr_approx > 0) ? (atr_approx * 0.5) : raw_step;
-        // Minimum trail step per instrument class — prevents noise-triggered
-        // exits on tight-range instruments where ATR×0.5 < 1 tick:
+        // Minimum trail step per instrument class -- prevents noise-triggered
+        // exits on tight-range instruments where ATR?0.5 < 1 tick:
         //   FX majors:  0.0002 (2 pips) minimum
         //   Gold:       $0.50 minimum
         //   Silver:     $0.05 minimum
@@ -132,7 +132,7 @@ struct PartialExitState {
         const double exec_price = is_long ? bid : ask; // close at bid (long) / ask (short)
 
         if (!tp1_done) {
-            // ── Pre-TP1: check if TP1 is hit ──────────────────────────────
+            // ?? Pre-TP1: check if TP1 is hit ??????????????????????????????
             const bool tp1_hit = is_long ? (mid >= tp1) : (mid <= tp1);
             if (tp1_hit) {
                 tp1_done      = true;
@@ -141,19 +141,19 @@ struct PartialExitState {
                 const double be_buffer = entry * 0.0005;
                 sl_current = is_long ? (entry + be_buffer) : (entry - be_buffer);
                 trail_best  = mid;
-                std::printf("[PARTIAL-EXIT] TP1 hit: partial close %.2f lots @ %.5f  SL→BE %.5f\n",
+                std::printf("[PARTIAL-EXIT] TP1 hit: partial close %.2f lots @ %.5f  SL?BE %.5f\n",
                             lot_original - lot_remaining, exec_price, sl_current);
                 return CloseAction::PARTIAL;
             }
 
-            // ── Check original SL ─────────────────────────────────────────
+            // ?? Check original SL ?????????????????????????????????????????
             const bool sl_hit = is_long ? (mid <= sl_current) : (mid >= sl_current);
             if (sl_hit) {
                 std::printf("[PARTIAL-EXIT] SL hit before TP1: full close @ %.5f\n", exec_price);
                 return CloseAction::FULL;
             }
         } else {
-            // ── Post-TP1: trail the remaining half ─────────────────────────
+            // ?? Post-TP1: trail the remaining half ?????????????????????????
             const double new_sl = update_trail(mid);
             (void)new_sl;
 
@@ -178,21 +178,21 @@ struct PartialExitState {
 
     // Called by main.cpp after sending the partial close order
     void on_partial_filled() {
-        // Nothing extra — tp1_done=true already set in tick()
+        // Nothing extra -- tp1_done=true already set in tick()
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PartialExitManager — per-symbol tracker, thread-safe
+// ?????????????????????????????????????????????????????????????????????????????
+// PartialExitManager -- per-symbol tracker, thread-safe
 // Manages one PartialExitState per symbol.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 class PartialExitManager {
 public:
     bool enabled = true;
 
     // Arm a new position for partial exit management
     // symbol: canonical symbol name
-    // TP1 is typically entry ± 1×risk (1R), TP2 is original full TP
+    // TP1 is typically entry ? 1?risk (1R), TP2 is original full TP
     void arm(const std::string& symbol,
              bool   is_long,
              double entry,
@@ -208,7 +208,7 @@ public:
         s.arm(is_long, entry, tp1, tp_full, sl, lot, atr_approx);
     }
 
-    // Update each tick — returns CloseAction and fills out_price / out_lot
+    // Update each tick -- returns CloseAction and fills out_price / out_lot
     CloseAction tick(const std::string& symbol,
                      double mid, double bid, double ask,
                      double& out_price, double& out_lot) {

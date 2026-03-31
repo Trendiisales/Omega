@@ -54,13 +54,13 @@ target_link_libraries(Omega
     ws2_32
 )
 
-# ── Build version stamp ──────────────────────────────────────────────────────
+# ?? Build version stamp ??????????????????????????????????????????????????????
 # Rewrites include/version_generated.hpp on EVERY build and forces main.cpp
 # to recompile so the banner always shows the current commit hash.
 #
 # Why this approach:
 #   - add_custom_command(OUTPUT ...) only reruns when the output is MISSING or
-#     stale vs listed deps — since version_generated.hpp has no deps it is
+#     stale vs listed deps -- since version_generated.hpp has no deps it is
 #     always "up to date" and CMake skips it entirely.
 #   - Even if the file is rewritten, MSVC skips recompiling main.cpp unless the
 #     file's mtime changes.
@@ -73,7 +73,7 @@ find_package(Git QUIET)
 set(VERSION_HEADER   "${CMAKE_SOURCE_DIR}/include/version_generated.hpp")
 set(VERSION_SENTINEL "${CMAKE_BINARY_DIR}/version_sentinel.h")
 
-# Step 1 — custom target marked ALL: runs UpdateGitHash.cmake unconditionally
+# Step 1 -- custom target marked ALL: runs UpdateGitHash.cmake unconditionally
 # every build. Writes both the real header and a sentinel with current timestamp.
 add_custom_target(omega_version_header ALL
     COMMAND ${CMAKE_COMMAND}
@@ -87,13 +87,13 @@ add_custom_target(omega_version_header ALL
     COMMENT "Regenerating git hash header..."
 )
 
-# Step 2 — make Omega depend on the target so it runs before linking
+# Step 2 -- make Omega depend on the target so it runs before linking
 add_dependencies(Omega omega_version_header)
 
-# Step 3 — add the sentinel as a source file dep on main.cpp so MSVC sees a
+# Step 3 -- add the sentinel as a source file dep on main.cpp so MSVC sees a
 # changed input and recompiles it every time the sentinel timestamp updates.
 # Also explicitly list all .hpp headers as dependencies so MSVC recompiles
-# main.cpp whenever ANY header changes — without this, header-only changes
+# main.cpp whenever ANY header changes -- without this, header-only changes
 # (e.g. GoldFlowEngine.hpp, SymbolSupervisor.hpp) are silently ignored and
 # the old binary keeps running with stale logic.
 file(GLOB OMEGA_HEADERS "${CMAKE_SOURCE_DIR}/include/*.hpp")
@@ -105,12 +105,12 @@ set_property(SOURCE "${CMAKE_SOURCE_DIR}/src/main.cpp"
 
 target_include_directories(Omega PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-# ── Copy config files to build output directory ───────────────────────────────
+# ?? Copy config files to build output directory ???????????????????????????????
 # symbols.ini and omega_config.ini must live next to Omega.exe at runtime.
 # This POST_BUILD step copies them automatically on every build so the binary
 # always has the latest config without manual copying.
 add_custom_command(TARGET Omega POST_BUILD
-    # Canonical source is config/symbols.ini — sync root copy then deploy both
+    # Canonical source is config/symbols.ini -- sync root copy then deploy both
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/symbols.ini"
         "${CMAKE_SOURCE_DIR}/symbols.ini"
@@ -123,8 +123,8 @@ add_custom_command(TARGET Omega POST_BUILD
     COMMENT "Copying config files to build output directory"
 )
 
-# ── Push current log to git after every successful build ─────────────────────
-# Copies logs/omega_YYYY-MM-DD.log → logs/latest.log and force-pushes to
+# ?? Push current log to git after every successful build ?????????????????????
+# Copies logs/omega_YYYY-MM-DD.log ? logs/latest.log and force-pushes to
 # origin/main so the log is always readable without needing VPS access.
 # push_log.ps1 exits cleanly if no log file exists yet (first ever build).
 add_custom_command(TARGET Omega POST_BUILD
@@ -135,8 +135,8 @@ add_custom_command(TARGET Omega POST_BUILD
 )
 
 # =============================================================================
-# OmegaBacktest — native C++ backtester (no FIX / OpenSSL / WS deps)
-# 500K–2M ticks/sec vs ~21K in Python.  Build: cmake --build build --target OmegaBacktest
+# OmegaBacktest -- native C++ backtester (no FIX / OpenSSL / WS deps)
+# 500K-2M ticks/sec vs ~21K in Python.  Build: cmake --build build --target OmegaBacktest
 # =============================================================================
 add_executable(OmegaBacktest
     backtest/OmegaBacktest.cpp
@@ -175,11 +175,11 @@ add_custom_command(TARGET OmegaBacktest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/omega_config.ini"
         "$<TARGET_FILE_DIR:OmegaBacktest>/omega_config.ini"
-    COMMENT "Copying config → OmegaBacktest"
+    COMMENT "Copying config ? OmegaBacktest"
 )
 
 message(STATUS "========================================")
-message(STATUS "OMEGA — Commodities & Indices System")
+message(STATUS "OMEGA -- Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "OpenSSL:    ${OPENSSL_VERSION}")
 message(STATUS "Git hash:   regenerated on every build")

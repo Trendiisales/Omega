@@ -4,7 +4,7 @@
 #include <iostream>
 #include <algorithm>
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ?? helpers ???????????????????????????????????????????????????????????????????
 static std::string trim(const std::string& s)
 {
     size_t l = s.find_first_not_of(" \t\r\n");
@@ -28,7 +28,7 @@ static int get_int(const std::unordered_map<std::string,std::string>& kv,
     try { return std::stoi(it->second); } catch(...) { return def; }
 }
 
-// ── SymbolConfigManager::load ─────────────────────────────────────────────────
+// ?? SymbolConfigManager::load ?????????????????????????????????????????????????
 bool SymbolConfigManager::load(const std::string& path)
 {
     std::ifstream file(path);
@@ -58,7 +58,7 @@ bool SymbolConfigManager::load(const std::string& path)
         cfg.slippage_est_bp  = get_double(kv, "SLIPPAGE_EST_BP",  0.0);
         cfg.min_breakout_pct = get_double(kv, "MIN_BREAKOUT_PCT", 0.0);
         cfg.min_confirm_ticks= get_int   (kv, "MIN_CONFIRM_TICKS",0);
-        // Bracket-specific overrides — if present in ini, apply_bracket() will use them
+        // Bracket-specific overrides -- if present in ini, apply_bracket() will use them
         cfg.slippage_buffer  = get_double(kv, "SLIPPAGE_BUFFER",  0.0);
         cfg.cooldown_ms      = get_int   (kv, "COOLDOWN_MS",      0);
         cfg.bracket_rr       = get_double(kv, "BRACKET_RR",       0.0);
@@ -90,9 +90,9 @@ bool SymbolConfigManager::load(const std::string& path)
                   << " MAX_SPREAD="   << cfg.max_spread << "\n";
 
         bool cfg_warn = false;
-        if (cfg.max_spread <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": MAX_SPREAD=0 — spread gate disabled\n";                cfg_warn = true; }
-        if (cfg.tp_mult    <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": TP_MULT=0 — TP will equal entry, trade closes flat\n";  cfg_warn = true; }
-        if (cfg.sl_mult    <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": SL_MULT=0 — SL will equal entry, trade closes flat\n";  cfg_warn = true; }
+        if (cfg.max_spread <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": MAX_SPREAD=0 -- spread gate disabled\n";                cfg_warn = true; }
+        if (cfg.tp_mult    <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": TP_MULT=0 -- TP will equal entry, trade closes flat\n";  cfg_warn = true; }
+        if (cfg.sl_mult    <= 0.0) { std::cerr << "[SYMCFG] WARN " << current_section << ": SL_MULT=0 -- SL will equal entry, trade closes flat\n";  cfg_warn = true; }
         if (!cfg_warn) std::cout << "[SYMCFG] " << current_section << " OK\n";
 
         kv.clear();
@@ -122,12 +122,12 @@ bool SymbolConfigManager::load(const std::string& path)
     return !configs_.empty();
 }
 
-// ── SymbolConfigManager::get ──────────────────────────────────────────────────
+// ?? SymbolConfigManager::get ??????????????????????????????????????????????????
 const SymbolConfig& SymbolConfigManager::get(const std::string& symbol) const
 {
     auto it = configs_.find(symbol);
     if (it != configs_.end()) return it->second;
-    std::cerr << "[SYMCFG] WARNING: no config for '" << symbol << "' — using defaults\n";
+    std::cerr << "[SYMCFG] WARNING: no config for '" << symbol << "' -- using defaults\n";
     return default_config_;
 }
 

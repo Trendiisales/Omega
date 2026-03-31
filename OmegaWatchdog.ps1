@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Omega process watchdog — monitors Omega.exe and auto-restarts on crash.
+    Omega process watchdog -- monitors Omega.exe and auto-restarts on crash.
 
 .DESCRIPTION
     Runs as a background service on the VPS. Checks Omega.exe every 15 seconds.
@@ -10,7 +10,7 @@
 
     CRITICAL SAFETY:
     - On restart, waits for connection_warmup_sec (default 30s) before Omega
-      will accept new entries — this is enforced inside Omega itself.
+      will accept new entries -- this is enforced inside Omega itself.
     - If Omega crashes 3 times within 10 minutes, watchdog pauses 5 minutes
       before the next restart attempt (prevents crash-restart loops).
     - Sends a desktop notification on crash + restart (Windows toast).
@@ -29,7 +29,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Continue"
 
-# ── Configuration ──────────────────────────────────────────────────────────────
+# ?? Configuration ??????????????????????????????????????????????????????????????
 $OmegaDir     = "C:\Omega"
 $OmegaExe     = "C:\Omega\build\Release\Omega.exe"
 $LogFile      = "C:\Omega\logs\watchdog.log"
@@ -39,7 +39,7 @@ $MaxCrashesIn10Min = 3      # Crash loop threshold
 $CrashLoopPauseSec = 300    # Pause if crash loop detected (5 minutes)
 $MaxRestarts       = 0      # 0 = unlimited restarts
 
-# ── Logging ────────────────────────────────────────────────────────────────────
+# ?? Logging ????????????????????????????????????????????????????????????????????
 $null = New-Item -ItemType Directory -Force -Path (Split-Path $LogFile)
 
 function Write-WatchdogLog {
@@ -50,7 +50,7 @@ function Write-WatchdogLog {
     Add-Content -Path $LogFile -Value $line -Encoding UTF8
 }
 
-# ── Toast notification (Windows 10/11) ────────────────────────────────────────
+# ?? Toast notification (Windows 10/11) ????????????????????????????????????????
 function Send-Notification {
     param([string]$Title, [string]$Body)
     try {
@@ -66,11 +66,11 @@ function Send-Notification {
         [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(
             "Omega Watchdog").Show($toast)
     } catch {
-        # Toast not available on all Windows versions — silent fail
+        # Toast not available on all Windows versions -- silent fail
     }
 }
 
-# ── Crash loop detector ────────────────────────────────────────────────────────
+# ?? Crash loop detector ????????????????????????????????????????????????????????
 $crashTimes = [System.Collections.Generic.Queue[DateTime]]::new()
 
 function Test-CrashLoop {
@@ -86,10 +86,10 @@ function Record-Crash {
     $crashTimes.Enqueue((Get-Date))
 }
 
-# ── Start Omega ────────────────────────────────────────────────────────────────
+# ?? Start Omega ????????????????????????????????????????????????????????????????
 function Start-Omega {
     if (-not (Test-Path $OmegaExe)) {
-        Write-WatchdogLog "Omega.exe not found at $OmegaExe — cannot start" "ERROR"
+        Write-WatchdogLog "Omega.exe not found at $OmegaExe -- cannot start" "ERROR"
         return $null
     }
     Write-WatchdogLog "Starting Omega.exe..."
@@ -97,14 +97,14 @@ function Start-Omega {
                           -WorkingDirectory $OmegaDir `
                           -PassThru `
                           -WindowStyle Normal
-    Write-WatchdogLog "Omega.exe started — PID $($proc.Id)"
+    Write-WatchdogLog "Omega.exe started -- PID $($proc.Id)"
     return $proc
 }
 
-# ── Main watchdog loop ─────────────────────────────────────────────────────────
+# ?? Main watchdog loop ?????????????????????????????????????????????????????????
 Write-WatchdogLog "=== Omega Watchdog started ===" "INFO"
 Write-WatchdogLog "Monitoring: $OmegaExe  check_interval=${CheckIntervalSec}s"
-Write-WatchdogLog "Crash loop threshold: $MaxCrashesIn10Min crashes/10min → ${CrashLoopPauseSec}s pause"
+Write-WatchdogLog "Crash loop threshold: $MaxCrashesIn10Min crashes/10min ? ${CrashLoopPauseSec}s pause"
 
 $restartCount = 0
 $omegaProc    = $null
@@ -112,7 +112,7 @@ $omegaProc    = $null
 # Check if Omega is already running
 $existing = Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($existing) {
-    Write-WatchdogLog "Omega already running — attaching to PID $($existing.Id)"
+    Write-WatchdogLog "Omega already running -- attaching to PID $($existing.Id)"
     $omegaProc = $existing
 } else {
     $omegaProc = Start-Omega
@@ -133,34 +133,34 @@ while ($true) {
     }
 
     if ($isRunning) {
-        # All good — log heartbeat every 5 minutes
+        # All good -- log heartbeat every 5 minutes
         if ((Get-Date).Minute % 5 -eq 0 -and (Get-Date).Second -lt $CheckIntervalSec) {
-            Write-WatchdogLog "Omega.exe alive — PID $($omegaProc.Id)  uptime=$(
+            Write-WatchdogLog "Omega.exe alive -- PID $($omegaProc.Id)  uptime=$(
                 [int]((Get-Date) - $omegaProc.StartTime).TotalMinutes)min" "DEBUG"
         }
         continue
     }
 
-    # ── Omega is not running ──────────────────────────────────────────────────
+    # ?? Omega is not running ??????????????????????????????????????????????????
     $exitCode = if ($null -ne $omegaProc -and $omegaProc.HasExited) { $omegaProc.ExitCode } else { "unknown" }
-    Write-WatchdogLog "Omega.exe exited (exit_code=$exitCode) — crash detected" "WARN"
+    Write-WatchdogLog "Omega.exe exited (exit_code=$exitCode) -- crash detected" "WARN"
     Send-Notification "Omega Crashed" "Exit code: $exitCode. Restarting in ${RestartDelaySec}s..."
     Record-Crash
 
     # Check for crash loop
     if (Test-CrashLoop) {
-        Write-WatchdogLog "CRASH LOOP DETECTED ($MaxCrashesIn10Min crashes in 10min) — pausing ${CrashLoopPauseSec}s before restart" "ERROR"
+        Write-WatchdogLog "CRASH LOOP DETECTED ($MaxCrashesIn10Min crashes in 10min) -- pausing ${CrashLoopPauseSec}s before restart" "ERROR"
         Send-Notification "Omega Crash Loop" "$MaxCrashesIn10Min crashes in 10min. Pausing ${CrashLoopPauseSec}s."
         Start-Sleep -Seconds $CrashLoopPauseSec
     } else {
-        # Normal restart delay — allows broker to clean up any partial orders
+        # Normal restart delay -- allows broker to clean up any partial orders
         Write-WatchdogLog "Waiting ${RestartDelaySec}s for broker cleanup..."
         Start-Sleep -Seconds $RestartDelaySec
     }
 
     # Check restart limit
     if ($MaxRestarts -gt 0 -and $restartCount -ge $MaxRestarts) {
-        Write-WatchdogLog "Max restarts ($MaxRestarts) reached — watchdog stopping" "ERROR"
+        Write-WatchdogLog "Max restarts ($MaxRestarts) reached -- watchdog stopping" "ERROR"
         break
     }
 
@@ -171,10 +171,10 @@ while ($true) {
 
     if ($null -ne $omegaProc) {
         Send-Notification "Omega Restarted" "PID $($omegaProc.Id). Omega will block entries for warmup period."
-        Write-WatchdogLog "Omega.exe restart #$restartCount successful — PID $($omegaProc.Id)"
+        Write-WatchdogLog "Omega.exe restart #$restartCount successful -- PID $($omegaProc.Id)"
         Write-WatchdogLog "NOTE: Omega enforces connection_warmup_sec before accepting new entries"
     } else {
-        Write-WatchdogLog "Restart #$restartCount FAILED — $OmegaExe not found or failed to launch" "ERROR"
+        Write-WatchdogLog "Restart #$restartCount FAILED -- $OmegaExe not found or failed to launch" "ERROR"
         Start-Sleep -Seconds 30
     }
 }

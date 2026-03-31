@@ -1,14 +1,14 @@
 #pragma once
 // ==============================================================================
 // OmegaNewsBlackout.hpp
-// Economic news calendar integration — prevents trading during high-impact events.
+// Economic news calendar integration -- prevents trading during high-impact events.
 //
 // Hardcoded recurring events (weekly schedule):
 //   - NFP (Non-Farm Payrolls): 1st Friday 13:30 UTC
 //   - FOMC (Federal Reserve): typically 6 meetings/year, 19:00 UTC announcement
-//   - CPI (US): 2nd Wednesday-ish 13:30 UTC — approximated as any Wed 13:25-13:40 UTC
+//   - CPI (US): 2nd Wednesday-ish 13:30 UTC -- approximated as any Wed 13:25-13:40 UTC
 //   - EIA Oil inventory: Wednesday 15:30 UTC
-//   - BoE/ECB: various — approximated on configurable list
+//   - BoE/ECB: various -- approximated on configurable list
 //
 // Dynamic: also provides a manual blackout API so the operator can add
 // ad-hoc blackouts (e.g. "block all trading for next 30 minutes") from config
@@ -34,9 +34,9 @@
 
 namespace omega { namespace news {
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BlackoutWindow — a time window during which certain symbols are blocked
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
+// BlackoutWindow -- a time window during which certain symbols are blocked
+// ?????????????????????????????????????????????????????????????????????????????
 struct BlackoutWindow {
     int64_t start_utc;   // unix seconds
     int64_t end_utc;     // unix seconds
@@ -53,11 +53,11 @@ struct BlackoutWindow {
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // RecurringEventScheduler
 // Generates blackout windows for the current week based on UTC calendar.
-// Does NOT require internet access — uses known weekly/monthly schedule.
-// ─────────────────────────────────────────────────────────────────────────────
+// Does NOT require internet access -- uses known weekly/monthly schedule.
+// ?????????????????????????????????????????????????????????????????????????????
 class RecurringEventScheduler {
 public:
     // Blackout before/after high-impact events
@@ -86,7 +86,7 @@ public:
         std::vector<BlackoutWindow> result;
         struct tm week_start = utc_monday(any_ts_in_week);
 
-        // EIA Oil Inventory — every Wednesday 15:30 UTC
+        // EIA Oil Inventory -- every Wednesday 15:30 UTC
         if (block_eia) {
             const int64_t wed = epoch_of_weekday(week_start, 3, 15, 30); // Wed = day_offset 2
             if (wed > 0) {
@@ -99,7 +99,7 @@ public:
             }
         }
 
-        // NFP — 1st Friday of the month, 13:30 UTC
+        // NFP -- 1st Friday of the month, 13:30 UTC
         // Approximate: we block all Fridays 13:25-13:50 UTC (false positives OK,
         // missing a Friday is safe, losing a few Friday London trades is worth it)
         if (block_nfp) {
@@ -117,7 +117,7 @@ public:
             }
         }
 
-        // US CPI — approximated as 2nd Wednesday, 13:30 UTC
+        // US CPI -- approximated as 2nd Wednesday, 13:30 UTC
         // Conservative: block ALL Wednesdays 13:25 UTC as potential data release
         if (block_cpi) {
             const int64_t wed = epoch_of_weekday(week_start, 3, 13, 30);
@@ -132,9 +132,9 @@ public:
             }
         }
 
-        // FOMC — 8 meetings per year, Wednesdays 19:00 UTC announcement
+        // FOMC -- 8 meetings per year, Wednesdays 19:00 UTC announcement
         // We block ALL Wednesdays 18:55-19:30 UTC as conservative approximation
-        // This is ~2 Wednesday sessions per month blocked — acceptable trade-off
+        // This is ~2 Wednesday sessions per month blocked -- acceptable trade-off
         if (block_fomc) {
             const int64_t wed = epoch_of_weekday(week_start, 3, 19, 0);
             if (wed > 0) {
@@ -148,7 +148,7 @@ public:
             }
         }
 
-        // ECB decision — Thursdays, 12:15 UTC (approx 6x per year)
+        // ECB decision -- Thursdays, 12:15 UTC (approx 6x per year)
         // Conservative: block equity and EUR instruments Thursdays 12:10-12:40 UTC
         if (block_cb) {
             const int64_t thu = epoch_of_weekday(week_start, 4, 12, 15); // Thu = day_offset 3
@@ -166,7 +166,7 @@ public:
     }
 
 private:
-    // Returns UTC epoch for day-of-week (1=Mon…5=Fri) at HH:MM in the same week as week_start
+    // Returns UTC epoch for day-of-week (1=Mon...5=Fri) at HH:MM in the same week as week_start
     // week_start = struct tm of Monday 00:00 UTC for the current week
     static int64_t epoch_of_weekday(const struct tm& monday, int day_1indexed,
                                     int hour, int min) noexcept {
@@ -193,7 +193,7 @@ private:
 #else
         gmtime_r(&t, &ti);
 #endif
-        // tm_wday: 0=Sun, 1=Mon…6=Sat
+        // tm_wday: 0=Sun, 1=Mon...6=Sat
         int days_since_monday = (ti.tm_wday == 0) ? 6 : (ti.tm_wday - 1);
         t -= static_cast<time_t>(days_since_monday) * 86400;
 #ifdef _WIN32
@@ -206,9 +206,9 @@ private:
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// NewsBlackout — main class used by main.cpp
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
+// NewsBlackout -- main class used by main.cpp
+// ?????????????????????????????????????????????????????????????????????????????
 class NewsBlackout {
 public:
     RecurringEventScheduler scheduler;
@@ -222,7 +222,7 @@ public:
     mutable std::vector<BlackoutWindow> cached_windows_;
     mutable int64_t             cache_day_ = -1;  // UTC day number of last build
 
-    // ── Main check ────────────────────────────────────────────────────────────
+    // ?? Main check ????????????????????????????????????????????????????????????
     bool is_blocked(const std::string& symbol, int64_t now_sec) const {
         if (!enabled) return false;
 
@@ -304,7 +304,7 @@ private:
 
 }} // namespace omega::news
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // LiveCalendarFetcher
 // Fetches the Forex Factory weekly calendar XML and injects exact HIGH-impact
 // blackout windows into a NewsBlackout instance.
@@ -317,15 +317,15 @@ private:
 // Falls back to the hardcoded recurring scheduler on any network failure.
 //
 // Symbols blocked per event country:
-//   USD → US500.F, USTEC.F, DJ30.F, NAS100, EURUSD, GBPUSD, AUDUSD, NZDUSD,
+//   USD ? US500.F, USTEC.F, DJ30.F, NAS100, EURUSD, GBPUSD, AUDUSD, NZDUSD,
 //          USDJPY, XAUUSD, XAGUSD, USOIL.F, BRENT
-//   EUR → EURUSD, GER40, ESTX50
-//   GBP → GBPUSD, UK100
-//   JPY → USDJPY
-//   AUD → AUDUSD
-//   NZD → NZDUSD
-//   CAD → USOIL.F, BRENT
-// ─────────────────────────────────────────────────────────────────────────────
+//   EUR ? EURUSD, GER40, ESTX50
+//   GBP ? GBPUSD, UK100
+//   JPY ? USDJPY
+//   AUD ? AUDUSD
+//   NZD ? NZDUSD
+//   CAD ? USOIL.F, BRENT
+// ?????????????????????????????????????????????????????????????????????????????
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -352,7 +352,7 @@ public:
 
         std::string xml;
         if (!fetch_https("nfs.faireconomy.media", "/ff_calendar_thisweek.xml", xml)) {
-            std::printf("[NEWS-CAL] Live calendar fetch failed — using hardcoded schedule\n");
+            std::printf("[NEWS-CAL] Live calendar fetch failed -- using hardcoded schedule\n");
             return false;
         }
         const int injected = parse_and_inject(xml, blackout, now_sec);
@@ -360,7 +360,7 @@ public:
         return injected > 0;
     }
 
-    // Call every tick — only actually re-fetches after refresh_interval_sec
+    // Call every tick -- only actually re-fetches after refresh_interval_sec
     void check_and_refresh(NewsBlackout& blackout, int64_t now_sec) {
         if (!enabled) return;
         if (now_sec - last_refresh_sec_ >= refresh_interval_sec)
@@ -381,7 +381,7 @@ private:
         if (country == "AUD") return {"AUDUSD"};
         if (country == "NZD") return {"NZDUSD"};
         if (country == "CAD") return {"USOIL.F","BRENT"};
-        return {}; // unknown country — block all
+        return {}; // unknown country -- block all
     }
 
     // Extract inner text of first <tag>...</tag> in xml starting from pos
@@ -396,7 +396,7 @@ private:
         return xml.substr(s + open.size(), e - (s + open.size()));
     }
 
-    // Parse "Jan 26, 2025" or "2025-01-26" date strings → UTC midnight unix seconds
+    // Parse "Jan 26, 2025" or "2025-01-26" date strings ? UTC midnight unix seconds
     static int64_t parse_date(const std::string& d) {
         struct tm t{};
         // Try ISO format first: 2025-01-26T08:30:00-0500
@@ -409,8 +409,8 @@ private:
         return 0;
     }
 
-    // Parse "8:30am" / "8:30pm" / "All Day" → seconds offset from midnight UTC
-    // FF times are US Eastern — convert to UTC (+5h EST, +4h EDT)
+    // Parse "8:30am" / "8:30pm" / "All Day" ? seconds offset from midnight UTC
+    // FF times are US Eastern -- convert to UTC (+5h EST, +4h EDT)
     // We use a conservative +5h (EST) offset; EDT adds 1h over-protection = acceptable
     static int parse_time_offset(const std::string& t) {
         if (t.empty() || t == "All Day" || t == "Tentative") return 13 * 3600; // noon default
@@ -422,7 +422,7 @@ private:
         int min = std::stoi(t.substr(colon + 1, 2));
         if (pm && hr != 12) hr += 12;
         if (am && hr == 12) hr = 0;
-        // Convert from US Eastern to UTC: +5h (conservative — EST, never under-estimates)
+        // Convert from US Eastern to UTC: +5h (conservative -- EST, never under-estimates)
         hr += 5;
         return hr * 3600 + min * 60;
     }

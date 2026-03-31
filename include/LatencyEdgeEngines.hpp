@@ -1,17 +1,17 @@
 #pragma once
 // =============================================================================
-// LatencyEdgeEngines.hpp — Co-location Speed Advantage Engines
+// LatencyEdgeEngines.hpp -- Co-location Speed Advantage Engines
 //
 // These engines are designed specifically for the 0.3-4ms RTT advantage of a
 // co-located VPS. They exploit timing edges unavailable to retail traders on
 // home connections (20-100ms RTT).
 //
 // ENGINES (ACTIVE):
-//   2. GoldSpreadDislocation — Large order hits Gold book → fade the spike
-//   3. GoldEventCompression  — Tight pre-news compression → early breakout entry
+//   2. GoldSpreadDislocation -- Large order hits Gold book ? fade the spike
+//   3. GoldEventCompression  -- Tight pre-news compression ? early breakout entry
 //
 // DELETED:
-//   1. GoldSilverLeadLag — DELETED 2026-03-31. -$66 on 1 trade, held 68min.
+//   1. GoldSilverLeadLag -- DELETED 2026-03-31. -$66 on 1 trade, held 68min.
 //      Silver trading suspended. XAG correlation edge not validated.
 //
 // NOTE: SpreadDislocation + EventCompression currently run in MANAGE-ONLY mode.
@@ -33,9 +33,9 @@
 namespace omega {
 namespace latency {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 static inline int64_t le_now_sec() noexcept {
     return std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -46,30 +46,30 @@ static inline int64_t le_now_ms() noexcept {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LeSignal — what these engines return on a new entry
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
+// LeSignal -- what these engines return on a new entry
+// ?????????????????????????????????????????????????????????????????????????????
 struct LeSignal {
     bool        valid     = false;
     bool        is_long   = true;
     double      entry     = 0.0;
     double      tp        = 0.0;
     double      sl        = 0.0;
-    double      size      = 0.01;  // fallback min_lot — overridden by compute_size() in main
+    double      size      = 0.01;  // fallback min_lot -- overridden by compute_size() in main
     const char* engine    = "";
     const char* reason    = "";
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LePosition — open position managed by each engine
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
+// LePosition -- open position managed by each engine
+// ?????????????????????????????????????????????????????????????????????????????
 struct LePosition {
     bool    active          = false;
     bool    is_long         = true;
     double  entry           = 0.0;
     double  tp              = 0.0;
     double  sl              = 0.0;
-    double  size            = 0.01;  // fallback min_lot — overridden by compute_size() in main
+    double  size            = 0.01;  // fallback min_lot -- overridden by compute_size() in main
     double  mfe             = 0.0;
     double  mae             = 0.0;
     double  spread_at_entry = 0.0;
@@ -79,9 +79,9 @@ struct LePosition {
     char    reason[32]      = {};
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LePositionManager — manages one open position with TP/SL/trail/timeout
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
+// LePositionManager -- manages one open position with TP/SL/trail/timeout
+// ?????????????????????????????????????????????????????????????????????????????
 class LePositionManager {
 public:
     LePosition pos;
@@ -98,7 +98,7 @@ public:
         if (move > pos.mfe) pos.mfe = move;
         if (-move > pos.mae) pos.mae = -move;
 
-        // Trailing stop — same 3-stage logic as BreakoutEngine
+        // Trailing stop -- same 3-stage logic as BreakoutEngine
         const double move_pct = pos.entry > 0.0 ? move / pos.entry * 100.0 : 0.0;
         if (move_pct >= 1.60) {
             const double trail = pos.is_long
@@ -125,13 +125,13 @@ public:
         const bool timeout = (le_now_sec() - pos.entry_ts) >= max_hold_sec;
 
         if (tp_hit || sl_hit || timeout) {
-            // Cap timeout at SL if price has blown through — prevents holding to
+            // Cap timeout at SL if price has blown through -- prevents holding to
             // timeout at a price far beyond the intended stop due to sparse ticks.
             double exit_px;
             if (tp_hit)       exit_px = pos.tp;
             else if (sl_hit)  exit_px = pos.sl;
             else {
-                // timeout — use mid, but cap at SL if breached
+                // timeout -- use mid, but cap at SL if breached
                 const bool sl_breached = pos.is_long ? (mid < pos.sl) : (mid > pos.sl);
                 exit_px = sl_breached ? pos.sl : mid;
             }
@@ -197,14 +197,14 @@ private:
 
 
 // =============================================================================
-// ENGINE 1 — GoldSilverLeadLag — DELETED
+// ENGINE 1 -- GoldSilverLeadLag -- DELETED
 // Deleted 2026-03-31: -$66.48 on 1 trade, held 68min (latency edge held ~70x too long).
 // Silver correlation edge not validated. XAG trading suspended.
 // =============================================================================
 
 
 // =============================================================================
-// ENGINE 2 — GoldSpreadDislocation
+// ENGINE 2 -- GoldSpreadDislocation
 // =============================================================================
 // When a large order hits the gold book, the spread momentarily widens as
 // the bid or ask is taken out. The price typically snaps back within 50-200ms.
@@ -212,36 +212,36 @@ private:
 //
 // MECHANISM:
 //   - Tracks a rolling 20-tick median spread on XAUUSD
-//   - When instantaneous spread exceeds median × SPREAD_SPIKE_RATIO,
+//   - When instantaneous spread exceeds median ? SPREAD_SPIKE_RATIO,
 //     a dislocation is detected
 //   - The direction of entry is AGAINST the spike:
-//       Ask spike (ask jumped up) → price was pushed up → fade SHORT
-//       Bid spike (bid dropped)   → price was pushed down → fade LONG
-//   - This works because market makers reprice immediately — the spike
+//       Ask spike (ask jumped up) ? price was pushed up ? fade SHORT
+//       Bid spike (bid dropped)   ? price was pushed down ? fade LONG
+//   - This works because market makers reprice immediately -- the spike
 //     is a momentary dislocation, not a true directional move
 //
 // PARAMETERS:
-//   SPREAD_SPIKE_RATIO = 2.5   — spread must be 2.5× its median to qualify
-//   MIN_MEDIAN_SPREAD  = $0.30 — only active when gold is liquid (spread > $0.30)
-//   MAX_MEDIAN_SPREAD  = $1.20 — stop trading if normally wide (illiquid session)
-//   TP                 = $0.30 — fade target: snap back to pre-spike mid
-//   SL                 = $0.15 — tight: if spread stays wide, we're wrong
-//   COOLDOWN_SEC       = 15    — fast cooldown, these happen frequently
-//   MAX_HOLD_SEC       = 30    — snaps back quickly or not at all
-//   SESSION GATE       = London/NY only (07:00-20:00 UTC) — spread dislocations
+//   SPREAD_SPIKE_RATIO = 2.5   -- spread must be 2.5? its median to qualify
+//   MIN_MEDIAN_SPREAD  = $0.30 -- only active when gold is liquid (spread > $0.30)
+//   MAX_MEDIAN_SPREAD  = $1.20 -- stop trading if normally wide (illiquid session)
+//   TP                 = $0.30 -- fade target: snap back to pre-spike mid
+//   SL                 = $0.15 -- tight: if spread stays wide, we're wrong
+//   COOLDOWN_SEC       = 15    -- fast cooldown, these happen frequently
+//   MAX_HOLD_SEC       = 30    -- snaps back quickly or not at all
+//   SESSION GATE       = London/NY only (07:00-20:00 UTC) -- spread dislocations
 //                        in Asia are real moves, not noise
 // =============================================================================
 class GoldSpreadDislocation {
-    // Runtime members — set via configure() from LatencyEdgeCfg.
+    // Runtime members -- set via configure() from LatencyEdgeCfg.
     // Defaults match calibrated constexpr values prior to config-driven refactor.
     double SPREAD_SPIKE_RATIO = 2.5;
     double MIN_MEDIAN_SPREAD  = 0.30;
     double MAX_MEDIAN_SPREAD  = 1.20;
     double TP                 = 0.30;
     double SL                 = 0.15;
-    int    COOLDOWN_SEC       = 60;   // raised from 15s — 3 SL hits in 45s was possible
+    int    COOLDOWN_SEC       = 60;   // raised from 15s -- 3 SL hits in 45s was possible
     int    MAX_HOLD_SEC       = 30;
-    static constexpr int SPREAD_WINDOW = 20;  // structural — buffer size, not tunable
+    static constexpr int SPREAD_WINDOW = 20;  // structural -- buffer size, not tunable
 
     std::deque<double> spread_history_;  // last 20 spreads
     double prev_mid_   = 0.0;
@@ -269,7 +269,7 @@ class GoldSpreadDislocation {
         const int h = ti.tm_hour;
         // London + NY: 07:00-20:00 UTC
         // Asia window: 22:00-05:00 UTC (Tokyo open, NZ/AU morning)
-        // Dead zone 05:00-07:00 and 20:00-22:00 remain blocked — thin liquidity.
+        // Dead zone 05:00-07:00 and 20:00-22:00 remain blocked -- thin liquidity.
         // Spread dislocations in Asia are real moves (comment confirmed this was wrong to block).
         return (h >= 7 && h < 20) || h >= 22 || h < 5;
     }
@@ -292,7 +292,7 @@ public:
     using CloseCb = LePositionManager::CloseCb;
 
     // can_enter=false: manage existing position to closure but block all new entries.
-    // This is the simultaneous-position guard — called with gold_can_enter from main.
+    // This is the simultaneous-position guard -- called with gold_can_enter from main.
     LeSignal on_tick(double bid, double ask, double latency_ms,
                      CloseCb on_close, bool can_enter = true) noexcept {
         if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return {};
@@ -300,7 +300,7 @@ public:
         const double spread = ask - bid;
         const double mid    = (bid + ask) * 0.5;
 
-        // Always manage open position — TP/SL/timeout must run regardless of can_enter
+        // Always manage open position -- TP/SL/timeout must run regardless of can_enter
         if (pos_mgr_.pos.active) {
             pos_mgr_.manage(bid, ask, latency_ms, "SPREAD_DISLOC", on_close, MAX_HOLD_SEC);
         }
@@ -347,11 +347,11 @@ public:
         // If prev_mid is valid, compare ask and bid movement to prev state
         if (prev_mid_ <= 0.0) { prev_mid_ = mid; return {}; }
 
-        // If mid jumped up (ask was taken) → fade SHORT back to prev level
-        // If mid jumped down (bid was taken) → fade LONG back to prev level
+        // If mid jumped up (ask was taken) ? fade SHORT back to prev level
+        // If mid jumped down (bid was taken) ? fade LONG back to prev level
         const double mid_jump = mid - prev_mid_;
-        const bool   is_long  = (mid_jump < -0.10);  // mid dropped → fade LONG
-        const bool   is_short = (mid_jump >  0.10);  // mid jumped  → fade SHORT
+        const bool   is_long  = (mid_jump < -0.10);  // mid dropped ? fade LONG
+        const bool   is_short = (mid_jump >  0.10);  // mid jumped  ? fade SHORT
 
         if (!is_long && !is_short) { prev_mid_ = mid; return {}; }
 
@@ -364,7 +364,7 @@ public:
         sig.entry   = mid;
         sig.tp      = is_long ? mid + TP  : mid - TP;
         sig.sl      = is_long ? mid - SL  : mid + SL;
-        sig.size    = 0.01;  // fallback min_lot — compute_size() in main overrides this
+        sig.size    = 0.01;  // fallback min_lot -- compute_size() in main overrides this
         sig.reason  = is_long ? "SPREAD_SPIKE_FADE_LONG" : "SPREAD_SPIKE_FADE_SHORT";
 
         pos_mgr_.open(sig, spread, "XAUUSD");
@@ -386,7 +386,7 @@ public:
 };
 
 // =============================================================================
-// ENGINE 3 — GoldEventCompression
+// ENGINE 3 -- GoldEventCompression
 // =============================================================================
 // Before major scheduled economic releases, gold compresses extremely tightly
 // as traders flatten positions. The moment the number hits, gold explodes.
@@ -401,23 +401,23 @@ public:
 //
 // SCHEDULED EVENTS (UTC):
 //   Monday    N/A (market still settling)
-//   Tuesday   12:30 — US CPI (second Tuesday of month — approximated as weekly)
-//   Wednesday 14:30 — EIA Oil (handled by OilEngine separately)
-//   Wednesday 18:00 — FOMC (8x/year — approximated as weekly check)
-//   Thursday  12:30 — US Initial Jobless Claims (every Thursday)
-//   Friday    12:30 — US NFP (first Friday of month — approximated as weekly)
+//   Tuesday   12:30 -- US CPI (second Tuesday of month -- approximated as weekly)
+//   Wednesday 14:30 -- EIA Oil (handled by OilEngine separately)
+//   Wednesday 18:00 -- FOMC (8x/year -- approximated as weekly check)
+//   Thursday  12:30 -- US Initial Jobless Claims (every Thursday)
+//   Friday    12:30 -- US NFP (first Friday of month -- approximated as weekly)
 //
 // PARAMETERS:
-//   PRE_EVENT_WINDOW_SEC = 90   — start watching 90s before event
-//   EVENT_COMP_RANGE     = $0.40 — gold must compress into $0.40 range (tight)
-//   EVENT_TRIGGER        = $0.15 — enter at $0.15 beyond range (vs normal $0.35)
-//   TP                   = $3.00 — event moves are large — $3 target
-//   SL                   = $0.80 — event stop — bigger than normal to survive spike
-//   COMP_WINDOW          = 20    — ticks to measure compression
-//   MAX_HOLD_SEC         = 300   — 5 min — event moves need time to develop
+//   PRE_EVENT_WINDOW_SEC = 90   -- start watching 90s before event
+//   EVENT_COMP_RANGE     = $0.40 -- gold must compress into $0.40 range (tight)
+//   EVENT_TRIGGER        = $0.15 -- enter at $0.15 beyond range (vs normal $0.35)
+//   TP                   = $3.00 -- event moves are large -- $3 target
+//   SL                   = $0.80 -- event stop -- bigger than normal to survive spike
+//   COMP_WINDOW          = 20    -- ticks to measure compression
+//   MAX_HOLD_SEC         = 300   -- 5 min -- event moves need time to develop
 // =============================================================================
 class GoldEventCompression {
-    // Runtime members — set via configure() from LatencyEdgeCfg.
+    // Runtime members -- set via configure() from LatencyEdgeCfg.
     // Defaults match calibrated constexpr values prior to config-driven refactor.
     double EVENT_COMP_RANGE = 0.40;
     double EVENT_TRIGGER    = 0.15;
@@ -426,7 +426,7 @@ class GoldEventCompression {
     int    MAX_HOLD_SEC     = 300;
     double MAX_SPREAD       = 2.00;  // spreads widen pre-event
     int    COOLDOWN_SEC     = 600;   // 10 min between event trades
-    // Fixed structural constants — not tunable via config
+    // Fixed structural constants -- not tunable via config
     static constexpr int PRE_EVENT_WINDOW_SEC = 90;
     static constexpr int COMP_WINDOW          = 20;
     static constexpr int MAX_DAILY_TRADES     = 4;
@@ -470,14 +470,14 @@ class GoldEventCompression {
         const int secs = mins * 60 + ti.tm_sec;
 
         // Event times in seconds from midnight UTC
-        // Thursday 12:30 UTC — US Jobless Claims (every week, reliable)
-        // Tuesday  12:30 UTC — US CPI/PPI (approximate — treat as weekly)
-        // Friday   12:30 UTC — NFP (approximate — treat as weekly)
-        // Wednesday 18:00 UTC — FOMC approximate
+        // Thursday 12:30 UTC -- US Jobless Claims (every week, reliable)
+        // Tuesday  12:30 UTC -- US CPI/PPI (approximate -- treat as weekly)
+        // Friday   12:30 UTC -- NFP (approximate -- treat as weekly)
+        // Wednesday 18:00 UTC -- FOMC approximate
         struct EventDef { int wday; int event_sec; };
         static const EventDef EVENTS[] = {
             {2, 12*3600+30*60},  // Tuesday  12:30
-            {4, 12*3600+30*60},  // Thursday 12:30 (Jobless Claims — every week)
+            {4, 12*3600+30*60},  // Thursday 12:30 (Jobless Claims -- every week)
             {5, 12*3600+30*60},  // Friday   12:30 (NFP week)
             {3, 18*3600+0*60},   // Wednesday 18:00 (FOMC)
         };
@@ -510,7 +510,7 @@ public:
     using CloseCb = LePositionManager::CloseCb;
 
     // can_enter=false: manage existing position to closure but block all new entries.
-    // This is the simultaneous-position guard — called with gold_can_enter from main.
+    // This is the simultaneous-position guard -- called with gold_can_enter from main.
     LeSignal on_tick(double bid, double ask, double latency_ms,
                      CloseCb on_close, bool can_enter = true) noexcept {
         if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return {};
@@ -518,7 +518,7 @@ public:
         const double spread = ask - bid;
         const double mid    = (bid + ask) * 0.5;
 
-        // Always manage open position — TP/SL/timeout must run regardless of can_enter
+        // Always manage open position -- TP/SL/timeout must run regardless of can_enter
         if (pos_mgr_.pos.active) {
             pos_mgr_.manage(bid, ask, latency_ms, "EVENT_COMP", on_close, MAX_HOLD_SEC);
         }
@@ -584,7 +584,7 @@ public:
         sig.entry   = mid;
         sig.tp      = long_break ? mid + TP  : mid - TP;
         sig.sl      = long_break ? mid - SL  : mid + SL;
-        sig.size    = 0.01;  // fallback min_lot — compute_size() in main overrides this
+        sig.size    = 0.01;  // fallback min_lot -- compute_size() in main overrides this
         sig.reason  = long_break ? "EVENT_BREAK_LONG" : "EVENT_BREAK_SHORT";
 
         pos_mgr_.open(sig, spread, "XAUUSD");
@@ -605,12 +605,12 @@ public:
 };
 
 // =============================================================================
-// LatencyEdgeCfg — all tunable parameters for LatencyEdgeStack in one struct.
+// LatencyEdgeCfg -- all tunable parameters for LatencyEdgeStack in one struct.
 // Populated from [latency_edge] ini section by main.cpp, then passed to
 // LatencyEdgeStack::configure(). Default values match prior constexpr calibration.
 // =============================================================================
 struct LatencyEdgeCfg {
-    // GoldSilverLeadLag DELETED — fields removed
+    // GoldSilverLeadLag DELETED -- fields removed
     // GoldSpreadDislocation
     double  spread_disloc_spike_ratio    = 2.5;
     double  spread_disloc_min_median     = 0.30;
@@ -630,14 +630,14 @@ struct LatencyEdgeCfg {
 };
 
 // =============================================================================
-// LatencyEdgeStack — public interface wired into Omega's on_tick
+// LatencyEdgeStack -- public interface wired into Omega's on_tick
 // =============================================================================
 // Single object per process. Call:
-//   on_tick_gold(bid, ask, latency_ms, on_close)   — every XAUUSD tick
-//   has_open_position()                             — any position open
-//   force_close_all(...)                            — disconnect/session end
+//   on_tick_gold(bid, ask, latency_ms, on_close)   -- every XAUUSD tick
+//   has_open_position()                             -- any position open
+//   force_close_all(...)                            -- disconnect/session end
 //
-// GoldSilverLeadLag DELETED 2026-03-31 — see tombstone above.
+// GoldSilverLeadLag DELETED 2026-03-31 -- see tombstone above.
 // Remaining: SpreadDislocation + EventCompression (manage-only, drain existing).
 // =============================================================================
 class LatencyEdgeStack {
@@ -663,7 +663,7 @@ public:
         fflush(stdout);
     }
 
-    // SpreadDislocation + EventCompression manage-only (no new entries — latency
+    // SpreadDislocation + EventCompression manage-only (no new entries -- latency
     // edge requires <1ms RTT, VPS RTT is ~68ms). Drain existing positions only.
     LeSignal on_tick_gold(double bid, double ask, double latency_ms,
                           CloseCb on_close, bool /*can_enter*/ = true) noexcept {

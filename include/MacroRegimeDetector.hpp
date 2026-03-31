@@ -10,11 +10,11 @@ namespace omega {
 // MacroRegimeDetector
 // Classifies macro regime as RISK_ON / RISK_OFF / NEUTRAL using three signals:
 //
-//   1. VIX level         — fear gauge; primary signal
-//   2. DXY momentum      — USD strength; early warning independent of VIX
+//   1. VIX level         -- fear gauge; primary signal
+//   2. DXY momentum      -- USD strength; early warning independent of VIX
 //      Rising DXY = USD bid = risk-off (carry unwind, EM flight to safety)
 //      Falling DXY = risk-on (yield-seeking, USD sold for risk assets)
-//   3. ES/NQ divergence  — cross-asset confirmation
+//   3. ES/NQ divergence  -- cross-asset confirmation
 //
 // Regime logic:
 //   RISK_OFF: VIX >= VIX_HIGH  OR  (DXY rising fast AND VIX > VIX_LOW)
@@ -26,20 +26,20 @@ class MacroRegimeDetector
 {
 public:
     // VIX thresholds
-    // VIX_HIGH raised 28→35: tariff/macro volatility environment keeps VIX 25-32
+    // VIX_HIGH raised 28?35: tariff/macro volatility environment keeps VIX 25-32
     // indefinitely. At 28 the engine shuts down after 20 ticks on every session.
-    // Individual engines have their own spread/ATR/L2 quality gates — they don't
+    // Individual engines have their own spread/ATR/L2 quality gates -- they don't
     // need VIX to block entries. RISK_OFF at 35+ = genuine crisis (GFC, COVID).
     // Below 35, engine entry gates handle quality filtering per-instrument.
     double VIX_HIGH = 35.0;
     double VIX_LOW  = 20.0;
 
-    // DXY fast-rise threshold — % change over DXY_WINDOW ticks that signals
+    // DXY fast-rise threshold -- % change over DXY_WINDOW ticks that signals
     // a risk-off USD bid. 0.15% = 15bp over ~60 ticks is a meaningful move.
-    // DXY momentum thresholds — expressed as % change (e.g. 0.15 = 0.15% = 15bp)
+    // DXY momentum thresholds -- expressed as % change (e.g. 0.15 = 0.15% = 15bp)
     // Comparison: dxyReturn() returns fraction (e.g. 0.0015) vs threshold / 100
     double DXY_RISK_OFF_PCT  =  0.15;   // +0.15% DXY over window = risk-off signal
-    // DXY_RISK_ON_PCT reserved for future: "falling DXY confirms RISK_ON" — not yet implemented
+    // DXY_RISK_ON_PCT reserved for future: "falling DXY confirms RISK_ON" -- not yet implemented
     // double DXY_RISK_ON_PCT = -0.10;
 
     int DIV_WINDOW = 60;
@@ -79,7 +79,7 @@ public:
         // Primary: VIX level
         if (m_vix >= VIX_HIGH) return "RISK_OFF";
 
-        // DXY momentum — early warning
+        // DXY momentum -- early warning
         const double dxy_ret = dxyReturn();
         const bool dxy_risk_off = (dxy_ret >= DXY_RISK_OFF_PCT / 100.0);
 
@@ -133,31 +133,31 @@ private:
 
 namespace omega {
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HTFBiasFilter — Higher-Timeframe Bias Filter
+// ?????????????????????????????????????????????????????????????????????????????
+// HTFBiasFilter -- Higher-Timeframe Bias Filter
 //
 // Problem: engines fire on their own timeframe without checking higher-TF
 // structure. A 1-min ORB entry into a 4H supply zone is low-probability.
 // Jane Street requires 2/3 timeframe agreement before adding risk.
 //
-// Approach: track two rolling windows per symbol —
-//   "daily" (last D_WINDOW ticks ≈ a session) and
-//   "intraday" (last ID_WINDOW ticks ≈ an hour).
+// Approach: track two rolling windows per symbol --
+//   "daily" (last D_WINDOW ticks ? a session) and
+//   "intraday" (last ID_WINDOW ticks ? an hour).
 // Bias = (recent_mid - window_open) / window_open
 //
 //   BULLISH: both daily and intraday positive
 //   BEARISH: both daily and intraday negative
 //   NEUTRAL: mixed or insufficient data
 //
-// Usage in symbol_gate (additive — doesn't block, reduces size):
+// Usage in symbol_gate (additive -- doesn't block, reduces size):
 //   auto bias = g_htf_filter.bias(symbol);
-//   if (is_long && bias == HTFBias::BEARISH) → 0.5× size
-//   if (is_long && bias == HTFBias::BULLISH) → normal size
+//   if (is_long && bias == HTFBias::BEARISH) ? 0.5? size
+//   if (is_long && bias == HTFBias::BULLISH) ? normal size
 //
 // NOTE: We don't hard-block on HTF bias (too many false negatives in ranging
 // markets), but size is halved when bias opposes direction. Engines that
 // already have regime gating get this as an additional soft filter.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 
 enum class HTFBias { BULLISH, BEARISH, NEUTRAL };
 
@@ -205,7 +205,7 @@ public:
         const bool id_bull = id_ret >  bias_threshold;
         const bool id_bear = id_ret < -bias_threshold;
 
-        // Require both TFs to agree (Jane Street 2/3 rule — we use 2/2 for conservatism)
+        // Require both TFs to agree (Jane Street 2/3 rule -- we use 2/2 for conservatism)
         if (d_bull && id_bull) return HTFBias::BULLISH;
         if (d_bear && id_bear) return HTFBias::BEARISH;
         return HTFBias::NEUTRAL;
@@ -218,7 +218,7 @@ public:
         if (b == HTFBias::NEUTRAL)                  return 0.75;
         if (is_long  && b == HTFBias::BULLISH)      return 1.00;
         if (!is_long && b == HTFBias::BEARISH)      return 1.00;
-        // Opposing bias — halve size, don't block entirely
+        // Opposing bias -- halve size, don't block entirely
         return 0.50;
     }
 

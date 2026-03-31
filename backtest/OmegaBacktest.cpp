@@ -1,13 +1,13 @@
 // =============================================================================
-// OmegaBacktest.cpp — Native C++ backtester for all Omega engine families
+// OmegaBacktest.cpp -- Native C++ backtester for all Omega engine families
 //
-// Replaces Python backtest.py. Targets 500K–2M ticks/second vs ~21K in Python.
+// Replaces Python backtest.py. Targets 500K-2M ticks/second vs ~21K in Python.
 //
 // CRITICAL: OmegaTimeShim.hpp MUST be the first include. It redirects
 // std::chrono::steady_clock, system_clock, and time() so all engine cooldowns,
 // session filters, and hold-time gates advance with CSV timestamps rather than
 // wall clock. Without the shim, a fast backtest produces completely wrong
-// trade counts — cooldown gates either never expire (wall clock too fast) or
+// trade counts -- cooldown gates either never expire (wall clock too fast) or
 // constantly expire, depending on the gate type.
 //
 // BUILD:
@@ -22,11 +22,11 @@
 //   --warmup  <n>      ticks before recording trades     (default: 5000)
 //   --engine  <list>   comma list: gold,flow,latency,cross,breakout (default: all)
 //
-// TICK CSV — auto-detected formats:
+// TICK CSV -- auto-detected formats:
 //   A:  timestamp_ms,bid,ask
 //   B:  timestamp_ms,bid,ask,vol
 //   C:  YYYY.MM.DD,HH:MM:SS.mmm,bid,ask,vol   (Dukascopy)
-//   D:  timestamp_ms,open,high,low,close,vol   (OHLCV — uses close±0.15 spread)
+//   D:  timestamp_ms,open,high,low,close,vol   (OHLCV -- uses close?0.15 spread)
 //
 // OUTPUT:
 //   Console       live progress + per-engine summary table
@@ -34,10 +34,10 @@
 //   bt_report.csv per-engine aggregate stats
 // =============================================================================
 
-// ── Time shim — MUST be first, before ANY chrono or engine header ────────────
+// ?? Time shim -- MUST be first, before ANY chrono or engine header ????????????
 #include "OmegaTimeShim.hpp"
 
-// ── Standard library (after shim — chrono types are now simulated) ───────────
+// ?? Standard library (after shim -- chrono types are now simulated) ???????????
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -51,7 +51,7 @@
 #include <iostream>
 #include <memory>
 
-// ── Platform: memory-mapped I/O ──────────────────────────────────────────────
+// ?? Platform: memory-mapped I/O ??????????????????????????????????????????????
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  define NOMINMAX
@@ -63,7 +63,7 @@
 #  include <unistd.h>
 #endif
 
-// ── Omega engine headers (all clock calls redirect to simulated time) ────────
+// ?? Omega engine headers (all clock calls redirect to simulated time) ????????
 #include "../include/OmegaTradeLedger.hpp"
 #include "../include/GoldEngineStack.hpp"
 #include "../include/GoldFlowEngine.hpp"
@@ -145,7 +145,7 @@ static inline int64_t fast_i64(const char* s, const char** e) noexcept {
     return v;
 }
 
-// YYYY.MM.DD + HH:MM:SS.mmm → epoch ms (Dukascopy)
+// YYYY.MM.DD + HH:MM:SS.mmm ? epoch ms (Dukascopy)
 static int64_t duka_ts(const char* d, const char* t) noexcept {
     int y  = (d[0]-'0')*1000+(d[1]-'0')*100+(d[2]-'0')*10+(d[3]-'0');
     int mo = (d[5]-'0')*10+(d[6]-'0');
@@ -292,7 +292,7 @@ struct FlowRunner {
     FlowRunner(){}
     void tick(const TickRow& r){
         auto c=cb();
-        // l2_imb=0.5 (neutral), ewm_drift=0.0 — not available in tick CSV
+        // l2_imb=0.5 (neutral), ewm_drift=0.0 -- not available in tick CSV
         (void)eng.on_tick(r.bid,r.ask,0.5,0.0,r.ts_ms,c);
     }
 };
@@ -388,7 +388,7 @@ static void write_trades(const char* path){
                 (long long)(t.exitTs-t.entryTs), t.exitReason.c_str(),
                 t.spreadAtEntry, t.latencyMs, t.regime.c_str());
     fclose(f);
-    printf("[OUTPUT] %zu trade records → %s\n", store::recs.size(), path);
+    printf("[OUTPUT] %zu trade records ? %s\n", store::recs.size(), path);
 }
 static void write_report(const char* path){
     FILE* f=fopen(path,"w"); if(!f)return;
@@ -400,7 +400,7 @@ static void write_report(const char* path){
         fprintf(f,"%s,%lld,%.2f,%.4f,%.4f,%.4f,%.1f,%.3f\n",
                 s->name.c_str(),(long long)s->n,s->wr(),s->pnl,s->avg(),s->dd,s->avgh(),s->sharpe());
     fclose(f);
-    printf("[OUTPUT] Engine report  → %s\n", path);
+    printf("[OUTPUT] Engine report  ? %s\n", path);
 }
 
 // =============================================================================
@@ -419,7 +419,7 @@ int main(int argc, char** argv){
            cfg.breakout?"Breakout/Bracket":"");
     printf("================================================================\n");
 
-    // ── Load CSV ─────────────────────────────────────────────────────────────
+    // ?? Load CSV ?????????????????????????????????????????????????????????????
     MemMappedFile mf;
     if(!mf.open(cfg.csv)){fprintf(stderr,"[ERROR] Cannot open: %s\n",cfg.csv);return 1;}
     printf("[LOAD] %.1f MB...\n", mf.size/1e6);
@@ -444,14 +444,14 @@ int main(int argc, char** argv){
 #endif
         char sa[20],sb[20];
         strftime(sa,20,"%Y-%m-%d",&ma); strftime(sb,20,"%Y-%m-%d",&mb);
-        printf("[RANGE] %s → %s\n", sa, sb);
+        printf("[RANGE] %s ? %s\n", sa, sb);
     }
 
     // Warmup cutoff
     if(cfg.warm>0 && cfg.warm<(int64_t)ticks.size())
         store::warmup_sec = ticks[(size_t)cfg.warm].ts_ms/1000;
 
-    // ── Construct engines ─────────────────────────────────────────────────────
+    // ?? Construct engines ?????????????????????????????????????????????????????
     std::unique_ptr<GoldRunner>    rg;
     std::unique_ptr<FlowRunner>    rf;
     std::unique_ptr<LatencyRunner> rl;
@@ -464,7 +464,7 @@ int main(int argc, char** argv){
     if(cfg.cross)   rc = std::make_unique<CrossRunner>();
     if(cfg.breakout)rb = std::make_unique<BreakRunner>(cfg.lat);
 
-    // ── Tick loop ─────────────────────────────────────────────────────────────
+    // ?? Tick loop ?????????????????????????????????????????????????????????????
     printf("[RUN] Starting tick loop...\n\n");
     const auto t0r  = std::chrono::steady_clock_real::now();
     const int64_t N = (int64_t)ticks.size();
@@ -473,7 +473,7 @@ int main(int argc, char** argv){
     for(int64_t i=0; i<N; ++i){
         const TickRow& r = ticks[(size_t)i];
 
-        // ADVANCE SIMULATED TIME — must happen before any engine call
+        // ADVANCE SIMULATED TIME -- must happen before any engine call
         omega::bt::set_sim_time(r.ts_ms);
 
         if(rg) rg->tick(r);
@@ -498,7 +498,7 @@ int main(int argc, char** argv){
         std::chrono::steady_clock_real::now()-t0r).count();
     printf("\n\n[RUN] %lld ticks in %.1fs = %.0f K t/s\n\n",(long long)N,rs,N/rs/1000.0);
 
-    // ── Summary table ─────────────────────────────────────────────────────────
+    // ?? Summary table ?????????????????????????????????????????????????????????
     printf("================================================================\n");
     printf("  PER-ENGINE RESULTS (warmup %lld ticks excluded)\n",(long long)cfg.warm);
     printf("================================================================\n");

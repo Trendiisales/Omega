@@ -1,13 +1,13 @@
 #pragma once
 // ==============================================================================
-// SymbolSupervisor — per-symbol regime classifier + engine permission layer
+// SymbolSupervisor -- per-symbol regime classifier + engine permission layer
 //
 // Fixes applied vs original:
-//   1. Hard winner score floor: min_winner_score — blocks 0.12 vs 0.09 noise
+//   1. Hard winner score floor: min_winner_score -- blocks 0.12 vs 0.09 noise
 //   2. Explicit no-trade dominance: low confidence gives real score, not 0.5
-//   3. Bracket eagerness guard: min_bracket_score — higher floor for bracket
+//   3. Bracket eagerness guard: min_bracket_score -- higher floor for bracket
 //   4. Edge quality feedback: net_edge_pct param boosts breakout score
-//   5. Slippage is dynamic in edge model — not supervisor's domain
+//   5. Slippage is dynamic in edge model -- not supervisor's domain
 //   6. Bad-regime memory: cooldown after N consecutive blocked decisions
 // ==============================================================================
 #include <string>
@@ -41,11 +41,11 @@ inline const char* regime_name(Regime r) noexcept {
 struct SupervisorConfig {
     bool   allow_bracket           = true;
     bool   allow_breakout          = true;
-    double min_regime_confidence   = 0.45;  // was 0.55 — too tight, caused allow=1/0 alternation
+    double min_regime_confidence   = 0.45;  // was 0.55 -- too tight, caused allow=1/0 alternation
     double min_engine_win_margin   = 0.10;
-    // Fix 1+2: absolute winner score floor — both engines scoring low blocks the trade
+    // Fix 1+2: absolute winner score floor -- both engines scoring low blocks the trade
     double min_winner_score        = 0.25;
-    // Fix 3: bracket-specific floor — higher because bracket places two live orders
+    // Fix 3: bracket-specific floor -- higher because bracket places two live orders
     double min_bracket_score       = 0.35;
     int    max_false_breaks        = 2;
     double max_spread_pct          = 0.10;
@@ -58,7 +58,7 @@ struct SupervisorConfig {
     double momentum_trend_thresh   = 0.015;
     bool   bracket_in_quiet_comp   = true;
     bool   breakout_in_trend       = true;
-    // Fix 6: bad-regime memory — raised threshold to 20 (was 3, fired constantly)
+    // Fix 6: bad-regime memory -- raised threshold to 20 (was 3, fired constantly)
     int     cooldown_fail_threshold = 20;
     int64_t cooldown_duration_ms    = 120000; // 2 minutes
 };
@@ -97,14 +97,14 @@ public:
         const double spread = ask - bid;
         if (mid <= 0.0) return last_;
 
-        // Fix 6: cooldown check — block everything during penalty period
-        // Early exit allowed if signal is very strong (top_score > 0.45) — market
+        // Fix 6: cooldown check -- block everything during penalty period
+        // Early exit allowed if signal is very strong (top_score > 0.45) -- market
         // may have become genuinely good during cooldown window
         const int64_t now_ms = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         if (now_ms < m_cooldown_until_ms) {
-            // Early exit only on genuinely exceptional signal — ALL three components
+            // Early exit only on genuinely exceptional signal -- ALL three components
             // must be strong simultaneously. Previously threshold=0.75 with weight
             // distribution that let normal momentum alone score 0.78+ every tick,
             // making cooldown completely ineffective (bypassed on every tick).
@@ -113,7 +113,7 @@ public:
             //   vol_ratio >= 2.0x baseline  (real expansion, not just normal vol)
             //   momentum  >= 3x trend_thresh (strong directional move, not drift)
             //   net_edge  >= meaningful positive edge
-            // Score must exceed 0.90 — requires all three, not just one.
+            // Score must exceed 0.90 -- requires all three, not just one.
             const double fast_vol_ratio = std::min(1.5, (base_vol_pct > 0.0)
                                           ? (recent_vol_pct / base_vol_pct) : 1.0);
             const double fast_dir       = std::fabs(momentum_pct)
@@ -121,7 +121,7 @@ public:
             const double fast_edge      = std::min(0.15, net_edge_pct * 8.0);
             const double fast_score     = std::min(1.0,
                 fast_vol_ratio * 0.2 + fast_dir * 0.4 + fast_edge * 8.0); // edge weighted more
-            const bool early_exit = (fast_score > 0.90  // raised 0.75→0.90
+            const bool early_exit = (fast_score > 0.90  // raised 0.75?0.90
                                   && fast_vol_ratio > 1.2   // must have real vol expansion
                                   && fast_dir > 0.8          // must have real momentum
                                   && fast_edge > 0.01);      // must have positive edge
@@ -140,7 +140,7 @@ public:
                 last_ = b;
                 return b;
             }
-            // Genuinely strong signal — break cooldown early
+            // Genuinely strong signal -- break cooldown early
             m_cooldown_until_ms = 0;
             m_consecutive_blocks = 0;
             std::cout << "[SUPERVISOR-" << symbol << "] COOLDOWN EARLY EXIT"
@@ -151,9 +151,9 @@ public:
         const double spread_pct = spread / mid * 100.0;
         // cold_start: base_vol_pct not yet computed (engine buffer < BASELINE_LOOKBACK).
         // Previously fell back to vol_ratio=1.0 which lands in the ambiguous zone
-        // (not < compression_thresh, not enough dir for expansion) → HIGH_RISK every tick.
+        // (not < compression_thresh, not enough dir for expansion) ? HIGH_RISK every tick.
         // The engine itself still guards against entries during warmup, so passing
-        // QUIET_COMPRESSION here is safe — it just lets ticks accumulate unblocked.
+        // QUIET_COMPRESSION here is safe -- it just lets ticks accumulate unblocked.
         const bool   cold_start = (base_vol_pct <= 0.0);
         const double vol_ratio  = cold_start
                                   ? 0.5   // force into QUIET_COMPRESSION during warmup
@@ -162,21 +162,21 @@ public:
         const double comp_pct   = (mid > 0.0 && comp_range > 0.0) ? (comp_range / mid) : 0.0;
         const double mom_abs    = std::fabs(momentum_pct);
 
-        // ── Feature scores ─────────────────────────────────────────────────────
+        // ?? Feature scores ?????????????????????????????????????????????????????
         // compression_score: measures how compressed the market is.
         // Previously gated on in_compression (engine phase), causing a deadlock:
         //   supervisor needs in_compression=true to classify QUIET_COMPRESSION
         //   engine needs QUIET_COMPRESSION to enter compression
-        //   → FX engines could never start, especially overnight low-vol pairs.
+        //   ? FX engines could never start, especially overnight low-vol pairs.
         // Fix: vol_suppression is computable from vol_ratio alone.
         // tightness uses comp_range if available (engine in compression), else 1.0
-        // (fully tight — no structural range data yet, assume max tightness).
+        // (fully tight -- no structural range data yet, assume max tightness).
         double compression_score = 0.0;
         {
             const double vol_suppression = std::max(0.0, 1.0 - vol_ratio);
             const double tightness = (in_compression && comp_pct > 0.0)
                 ? std::max(0.0, 1.0 - comp_pct * 200.0)
-                : 1.0;  // no range data yet — assume fully tight
+                : 1.0;  // no range data yet -- assume fully tight
             compression_score = (tightness + vol_suppression) * 0.5;
         }
         const double expansion_score = std::max(0.0,
@@ -189,11 +189,11 @@ public:
             static_cast<double>(false_break_count)
             / static_cast<double>(cfg.max_false_breaks + 1));
 
-        // Fix 4: edge quality boost — capped lower (0.15) and scaled conservatively (×8)
+        // Fix 4: edge quality boost -- capped lower (0.15) and scaled conservatively (?8)
         // to prevent weak structure + high edge dominating the score
         const double edge_boost = std::min(0.15, std::max(0.0, net_edge_pct * 8.0));
 
-        // ── Regime classification ──────────────────────────────────────────────
+        // ?? Regime classification ??????????????????????????????????????????????
         Regime      regime     = Regime::UNKNOWN;
         double      confidence = 0.0;
         const char* reason     = "";
@@ -229,29 +229,29 @@ public:
             confidence = trap_risk * exec_score;
             reason     = "weak_follow_through";
         } else if (dir_score < 0.2) {
-            // Ambiguous zone: vol_ratio in compression–expansion band (0.85–1.0) with no
+            // Ambiguous zone: vol_ratio in compression-expansion band (0.85-1.0) with no
             // directional momentum. Previously fell to HIGH_RISK "no_dominant_regime",
-            // permanently blocking all engines. A flat undirected market is compression —
+            // permanently blocking all engines. A flat undirected market is compression --
             // classify it so the engine can accumulate ticks and eventually trade.
             // The engine's own compression/breakout gates remain active.
             regime     = Regime::QUIET_COMPRESSION;
             confidence = compression_score * exec_score;
             reason     = "flat_undirected_treated_as_compression";
         } else if (dir_score < 0.5 && expansion_score < 0.3) {
-            // Ambiguous with slight momentum but no real expansion — still treat as compression.
+            // Ambiguous with slight momentum but no real expansion -- still treat as compression.
             // Previously fell to HIGH_RISK ("no_dominant_regime") blocking all trading.
-            // A market with moderate dir_score but no expansion is not trending — it's coiling.
+            // A market with moderate dir_score but no expansion is not trending -- it's coiling.
             regime     = Regime::QUIET_COMPRESSION;
             confidence = compression_score * exec_score;
             reason     = "weak_momentum_treated_as_compression";
         } else {
-            // Fix 2: genuine low-confidence — compute real score, don't hardcode 0.5
+            // Fix 2: genuine low-confidence -- compute real score, don't hardcode 0.5
             regime     = Regime::HIGH_RISK_NO_TRADE;
             confidence = compression_score * 0.3 + expansion_score * 0.3 + dir_score * 0.4;
             reason     = "no_dominant_regime";
         }
 
-        // ── Engine scores ──────────────────────────────────────────────────────
+        // ?? Engine scores ??????????????????????????????????????????????????????
         double bracket_score  = 0.0;
         double breakout_score = 0.0;
 
@@ -281,7 +281,7 @@ public:
                 break;
         }
 
-        // ── Regime hysteresis ─────────────────────────────────────────────────
+        // ?? Regime hysteresis ?????????????????????????????????????????????????
         // Key insight from live session: HIGH_RISK_NO_TRADE was resetting the
         // candidate counter, so tradeable regimes could never accumulate the
         // required hold ticks. A single noisy HIGH_RISK tick wiped all progress.
@@ -289,7 +289,7 @@ public:
         // Rules:
         //   CHOP/HIGH_RISK: block trading immediately but do NOT reset the
         //     candidate counter for a previously-building tradeable regime.
-        //     The candidate keeps building — we just don't trade yet.
+        //     The candidate keeps building -- we just don't trade yet.
         //   Tradeable regimes: must hold REGIME_HOLD_TICKS consecutive ticks.
         //     A single HIGH_RISK tick between two EXPANSION ticks is noise.
         //   Regime change to different tradeable regime: reset counter.
@@ -323,9 +323,9 @@ public:
         // KEY FIX: candidate_stable must NOT depend on is_blocking_regime.
         // Previously: candidate_stable = (count >= HOLD) && !is_blocking
         // This meant any single HIGH_RISK noise tick forced stable=false regardless
-        // of accumulated count — the hysteresis gave zero protection.
+        // of accumulated count -- the hysteresis gave zero protection.
         // Now: once count >= HOLD_TICKS, the regime is considered stable.
-        // A blocking tick does NOT revoke stability — it is absorbed as noise.
+        // A blocking tick does NOT revoke stability -- it is absorbed as noise.
         // Stability is only broken when a genuinely different tradeable regime
         // accumulates its own HOLD_TICKS count (handled by the reset below).
         const bool candidate_stable = (m_candidate_count >= REGIME_HOLD_TICKS);
@@ -339,13 +339,13 @@ public:
 
         // Scores for the stable regime.
         // When blocking regime (HIGH_RISK/CHOP), scores are 0 by definition.
-        // Always reuse last cached non-zero scores — never let a blocking tick zero out a valid setup.
+        // Always reuse last cached non-zero scores -- never let a blocking tick zero out a valid setup.
         // Previously only activated when candidate_stable=true, but supervisor flips too fast
         // for candidate_stable to accumulate, causing score collapse on every noisy tick.
         double stable_bracket  = 0.0;
         double stable_breakout = 0.0;
         if (is_blocking_regime) {
-            // Always use cache — blocking tick must never zero a valid score
+            // Always use cache -- blocking tick must never zero a valid score
             stable_bracket  = m_last_stable_bracket;
             stable_breakout = m_last_stable_breakout;
         } else {
@@ -359,15 +359,15 @@ public:
                     m_last_stable_breakout = breakout_score;
                     break;
                 default:
-                    // Don't clear cache — keep last valid scores
+                    // Don't clear cache -- keep last valid scores
                     stable_bracket  = m_last_stable_bracket;
                     stable_breakout = m_last_stable_breakout;
                     break;
             }
         }
 
-        // ── Permission decision ───────────────────────────────────────────────
-        // CHOP always blocks immediately — genuine structure failure, not noise.
+        // ?? Permission decision ???????????????????????????????????????????????
+        // CHOP always blocks immediately -- genuine structure failure, not noise.
         //
         // HIGH_RISK uses symmetric hysteresis:
         //   Promotion:  tradeable regime must hold REGIME_HOLD_TICKS before allow=1
@@ -413,7 +413,7 @@ public:
             else if (high_risk) d.reason = "high_risk_no_trade";
             else                d.reason = "score_below_threshold";
             // Increment consecutive-block counter on CHOP or persistent HIGH_RISK.
-            // Previously only CHOP incremented — a symbol stuck in permanent HIGH_RISK
+            // Previously only CHOP incremented -- a symbol stuck in permanent HIGH_RISK
             // (e.g. permanently wide spreads) would never trigger the cooldown and would
             // log every tick silently forever.
             if (chop || high_risk) {
@@ -427,8 +427,8 @@ public:
             m_consecutive_blocks = 0;
             d.reason = "valid_signal";
 
-            // ── Regime-gated permission ───────────────────────────────────────
-            // QUIET_COMPRESSION = price is coiling, not breaking — only bracket allowed
+            // ?? Regime-gated permission ???????????????????????????????????????
+            // QUIET_COMPRESSION = price is coiling, not breaking -- only bracket allowed
             // EXPANSION_BREAKOUT / TREND_CONTINUATION = breakout allowed
             // breakout_in_trend:    if false, block breakout during TREND_CONTINUATION
             // bracket_in_quiet_comp: if false, block bracket during QUIET_COMPRESSION
@@ -455,7 +455,7 @@ public:
             }
         }
 
-        // Log on change — includes top_score and threshold for tuning visibility
+        // Log on change -- includes top_score and threshold for tuning visibility
         if (d.regime != last_.regime || d.winner != last_.winner
                 || d.in_cooldown != last_.in_cooldown) {
             std::cout << "[SUPERVISOR-" << symbol << "]"
@@ -478,7 +478,7 @@ public:
 
     const SupervisorDecision& last() const noexcept { return last_; }
 
-    // Call after a winning trade — decay failure counter
+    // Call after a winning trade -- decay failure counter
     void on_trade_success() noexcept {
         m_consecutive_blocks = std::max(0, m_consecutive_blocks - 1);
     }
@@ -494,12 +494,12 @@ private:
     // Score cache: last valid scores from a non-blocking tick
     double  m_last_stable_bracket  = 0.0;
     double  m_last_stable_breakout = 0.0;
-    // Consecutive HIGH_RISK ticks while candidate_stable=true — used for revocation
+    // Consecutive HIGH_RISK ticks while candidate_stable=true -- used for revocation
     int     m_high_risk_ticks      = 0;
-    // Fix 2: reduced from 4 — supervisor was too slow to stabilise
-    static constexpr int REGIME_HOLD_TICKS     = 1;  // was 2 — single non-blocking tick enough to stabilize
+    // Fix 2: reduced from 4 -- supervisor was too slow to stabilise
+    static constexpr int REGIME_HOLD_TICKS     = 1;  // was 2 -- single non-blocking tick enough to stabilize
     // Fix 2: minimum ms a regime must hold before switching (prevents tick-by-tick flipping)
-    static constexpr int64_t REGIME_HOLD_MS    = 1500;  // 1.5 seconds — faster regime promotion
+    static constexpr int64_t REGIME_HOLD_MS    = 1500;  // 1.5 seconds -- faster regime promotion
     // HIGH_RISK must hold this many consecutive ticks to revoke a stable candidate.
     // 5 ticks at ~1-3 ticks/sec = 2-5 seconds of sustained HIGH_RISK before revoke.
     // Single noisy ticks (1-2) are absorbed. Genuine sustained HIGH_RISK (5+) revokes.

@@ -1,7 +1,7 @@
 #pragma once
 // ==============================================================================
 // OmegaCostGuard.hpp
-// ExecutionCostGuard — extracted from CrossAssetEngines.hpp so it can be
+// ExecutionCostGuard -- extracted from CrossAssetEngines.hpp so it can be
 // included early in main.cpp before any templated lambdas reference it.
 //
 // MSVC requires identifiers used inside templated lambdas to be visible at the
@@ -108,7 +108,7 @@ struct ExecutionCostGuard {
         return tp_dist_pts * tick_usd_per_lot * lot;
     }
 
-    // Gate: returns true if the trade is viable (expected gross > total cost × ratio).
+    // Gate: returns true if the trade is viable (expected gross > total cost ? ratio).
     static bool is_viable(const char* sym, double spread_pts, double tp_dist_pts,
                            double lot, double cost_ratio_min = 1.5) noexcept {
         const double cost  = estimated_cost_usd(sym, spread_pts, lot);

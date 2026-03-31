@@ -4,24 +4,24 @@
 // Regime-adaptive engine weight system.
 //
 // MacroRegimeDetector already classifies RISK_ON / RISK_OFF / NEUTRAL.
-// Currently this is advisory only — it logs but does not gate entries.
+// Currently this is advisory only -- it logs but does not gate entries.
 // This module wires regime into engine PARAMETERS:
 //
-//   RISK_OFF → suppress US equity breakout/bracket (equities fall in risk-off)
-//              tighten GOLD compression threshold (gold compression → breakout more reliable)
+//   RISK_OFF ? suppress US equity breakout/bracket (equities fall in risk-off)
+//              tighten GOLD compression threshold (gold compression ? breakout more reliable)
 //              boost Gold stack (gold = risk-off beneficiary)
 //              block FX cascade entry (volatile carry unwinds)
 //
-//   RISK_ON  → allow all equity engines at full weight
+//   RISK_ON  ? allow all equity engines at full weight
 //              tighten Gold stack (gold rarely trends in risk-on)
 //              boost FX carry and equity breakout
 //
-//   NEUTRAL  → normal weights everywhere
+//   NEUTRAL  ? normal weights everywhere
 //
 // Also tracks the rolling volatility regime per session:
-//   HIGH_VOL  → compress lot sizes, widen spread tolerances
-//   LOW_VOL   → normal sizes, normal spreads
-//   CRUSH     → extreme compression — ideal for breakout entries
+//   HIGH_VOL  ? compress lot sizes, widen spread tolerances
+//   LOW_VOL   ? normal sizes, normal spreads
+//   CRUSH     ? extreme compression -- ideal for breakout entries
 //
 // Usage:
 //   static omega::regime::RegimeAdaptor g_regime_adaptor;
@@ -42,9 +42,9 @@
 
 namespace omega { namespace regime {
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EngineClass — logical grouping of engines for regime weighting
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
+// EngineClass -- logical grouping of engines for regime weighting
+// ?????????????????????????????????????????????????????????????????????????????
 enum class EngineClass {
     US_EQUITY_BREAKOUT,   // SP, NQ, DJ30, NAS100 CRTP breakout
     US_EQUITY_BRACKET,    // SP, NQ, DJ30, NAS100 bracket
@@ -64,11 +64,11 @@ enum class EngineClass {
     LATENCY_EDGE,         // LatencyEdgeStack
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 // RegimeWeightTable
 // Per-class weight multiplier for each macro regime.
 // Weight 1.0 = normal, 0.5 = half size, 2.0 = double size, 0.0 = blocked.
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 struct RegimeWeightTable {
     // [RISK_ON, NEUTRAL, RISK_OFF]
     // Index: 0=RISK_ON, 1=NEUTRAL, 2=RISK_OFF
@@ -115,10 +115,10 @@ struct RegimeWeightTable {
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SessionVolRegime — rolling intra-session volatility classification
+// ?????????????????????????????????????????????????????????????????????????????
+// SessionVolRegime -- rolling intra-session volatility classification
 // Computes true range per N-second bucket, classifies as CRUSH/LOW/NORMAL/HIGH
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
 enum class VolRegime { CRUSH, LOW, NORMAL, HIGH };
 
 struct SessionVolRegime {
@@ -175,7 +175,7 @@ struct SessionVolRegime {
 
     float size_scale() const {
         switch (classify()) {
-            case VolRegime::CRUSH:  return 1.10f;  // slightly larger — breakout imminent
+            case VolRegime::CRUSH:  return 1.10f;  // slightly larger -- breakout imminent
             case VolRegime::LOW:    return 1.00f;
             case VolRegime::NORMAL: return 1.00f;
             case VolRegime::HIGH:   return 0.75f;  // reduce in high vol
@@ -194,9 +194,9 @@ struct SessionVolRegime {
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RegimeAdaptor — unified facade
-// ─────────────────────────────────────────────────────────────────────────────
+// ?????????????????????????????????????????????????????????????????????????????
+// RegimeAdaptor -- unified facade
+// ?????????????????????????????????????????????????????????????????????????????
 class RegimeAdaptor {
 public:
     bool enabled = true;
@@ -206,18 +206,18 @@ public:
     // Per-symbol session vol regime trackers
     std::unordered_map<std::string, SessionVolRegime> sym_vol;
 
-    // ── Confirmed macro regime (with dwell-time filter) ──────────────────────
-    // Problem: DXY/VIX can oscillate ±threshold repeatedly, causing the regime
+    // ?? Confirmed macro regime (with dwell-time filter) ??????????????????????
+    // Problem: DXY/VIX can oscillate ?threshold repeatedly, causing the regime
     // to flip every few bars. Each flip triggers size adjustments and blocked
     // engines, creating whipsaw costs and inconsistent entry behaviour.
     //
-    // Solution: two-state system — candidate and confirmed.
+    // Solution: two-state system -- candidate and confirmed.
     //   - candidate_regime: raw output from MacroRegimeDetector (updates every tick)
     //   - last_regime:      confirmed regime, only changes after candidate has been
     //                       stable for at least dwell_bars ticks without reverting.
     //
     // dwell_bars = 20 (default): regime must persist 20 consecutive ticks to confirm.
-    // At 1-tick-per-second on FX, this is ~20 seconds — fast enough to catch real
+    // At 1-tick-per-second on FX, this is ~20 seconds -- fast enough to catch real
     // regime shifts, slow enough to ignore noise.
     std::string last_regime      = "NEUTRAL";   // confirmed (used by weight/blocked)
     std::string candidate_regime = "NEUTRAL";   // unconfirmed candidate
@@ -226,24 +226,24 @@ public:
     double      last_vix         = 0.0;
     int64_t     last_ts          = 0;
 
-    // Update macro state — applies dwell-time filter before changing confirmed regime.
+    // Update macro state -- applies dwell-time filter before changing confirmed regime.
     // Call each time MacroRegimeDetector produces a new regime string.
     void update(const std::string& regime, double vix, int64_t now_sec) {
         last_vix = vix;
         last_ts  = now_sec;
 
         if (regime == candidate_regime) {
-            // Candidate is holding — increment counter
+            // Candidate is holding -- increment counter
             if (++candidate_count >= dwell_bars && regime != last_regime) {
-                // Candidate has been stable long enough — confirm the change
-                std::printf("[REGIME] Confirmed regime change: %s → %s  VIX=%.1f  (held %d ticks)\n",
+                // Candidate has been stable long enough -- confirm the change
+                std::printf("[REGIME] Confirmed regime change: %s ? %s  VIX=%.1f  (held %d ticks)\n",
                             last_regime.c_str(), regime.c_str(), vix, candidate_count);
                 last_regime = regime;
             }
         } else {
-            // New candidate — reset counter
+            // New candidate -- reset counter
             if (regime != last_regime) {
-                std::printf("[REGIME] Candidate regime: %s → %s  VIX=%.1f  (need %d ticks to confirm)\n",
+                std::printf("[REGIME] Candidate regime: %s ? %s  VIX=%.1f  (need %d ticks to confirm)\n",
                             last_regime.c_str(), regime.c_str(), vix, dwell_bars);
             }
             candidate_regime = regime;
@@ -277,10 +277,10 @@ public:
     }
 
     // Adaptive TP multiplier per vol regime.
-    // CRUSH=0.70 — compressed tape, mean-reversion target, TP must be tight to fill.
-    // LOW=0.85   — quieter than normal, compress slightly.
-    // NORMAL=1.00 — standard TP, no adjustment.
-    // HIGH=1.15  — momentum in play, let the trade run a bit further.
+    // CRUSH=0.70 -- compressed tape, mean-reversion target, TP must be tight to fill.
+    // LOW=0.85   -- quieter than normal, compress slightly.
+    // NORMAL=1.00 -- standard TP, no adjustment.
+    // HIGH=1.15  -- momentum in play, let the trade run a bit further.
     float tp_vol_mult(const std::string& sym) const {
         if (!enabled) return 1.0f;
         auto it = sym_vol.find(sym);
@@ -294,7 +294,7 @@ public:
         }
     }
 
-    // Combined size multiplier: regime weight × vol scale
+    // Combined size multiplier: regime weight ? vol scale
     float combined_size_scale(EngineClass ec, const std::string& sym) const {
         if (!enabled) return 1.0f;
         return weight(ec) * vol_size_scale(sym);

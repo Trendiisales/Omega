@@ -1,5 +1,5 @@
 #pragma once
-// AUTO-GENERATED — split into chunks to stay under MSVC 16KB string literal limit.
+// AUTO-GENERATED -- split into chunks to stay under MSVC 16KB string literal limit.
 namespace omega_gui {
 static const char* INDEX_HTML =
 R"OMEGA0(
@@ -11,7 +11,7 @@ R"OMEGA0(
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store,no-cache,must-revalidate">
-<title>Omega — Trading Desk</title>
+<title>Omega -- Trading Desk</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzA1MDgwZCIvPgogIDx0ZXh0IHg9IjE2IiB5PSIyMyIgZm9udC1mYW1pbHk9InNlcmlmIiBmb250LXNpemU9IjIwIiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iI2Y1Yzg0MiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+zqk8L3RleHQ+Cjwvc3ZnPg==">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -34,11 +34,11 @@ body{font-family:'Syne',sans-serif;background:var(--bg0);color:var(--t1);
 body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
   background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.018) 3px,rgba(0,0,0,0.018) 4px);}
 
-/* ── LAYOUT ── */
+/* ?? LAYOUT ?? */
 .desk{display:grid;grid-template-rows:52px 1fr;height:100vh;gap:0;padding:8px;gap:8px;}
 .main{display:grid;grid-template-columns:320px 1fr 300px;gap:8px;overflow:hidden;min-height:0;}
 
-/* ── CARD ── */
+/* ?? CARD ?? */
 .card{background:var(--glass);border:1px solid var(--border);border-radius:10px;
   backdrop-filter:blur(20px);position:relative;overflow:hidden;}
 .card-hd{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2.5px;
@@ -46,7 +46,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
 .card-hd .dot{width:4px;height:4px;border-radius:50%;flex-shrink:0;}
 .card-body{padding:10px 12px;}
 
-/* ── HEADER ── */
+/* ?? HEADER ?? */
 header{background:var(--glass);border:1px solid var(--border);border-radius:10px;
   display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;
   padding:0 14px;backdrop-filter:blur(24px);box-shadow:0 2px 20px rgba(0,0,0,0.5);}
@@ -58,7 +58,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;}
 .logo-sub{font-size:9px;color:var(--t2);letter-spacing:3px;text-transform:uppercase;margin-top:1px;}
 
-/* ── HEADER TICKERS ── */
+/* ?? HEADER TICKERS ?? */
 .hdr-tickers{display:flex;align-items:center;gap:4px;justify-content:center;overflow:hidden;}
 .htk{display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;
   border:1px solid var(--border);background:rgba(255,255,255,0.02);white-space:nowrap;cursor:default;}
@@ -82,7 +82,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .pnl-float-val{font-size:13px;font-weight:600;font-family:'IBM Plex Mono',monospace;}
 .vd{width:1px;height:24px;background:var(--border);margin:0 3px;flex-shrink:0;}
 
-/* ── HEADER RIGHT ── */
+/* ?? HEADER RIGHT ?? */
 .hbar{display:flex;align-items:center;gap:6px;flex-shrink:0;}
 .badge{padding:3px 8px;border-radius:5px;font-family:'IBM Plex Mono',monospace;font-size:10px;
   font-weight:600;border:1px solid var(--border);background:rgba(255,255,255,0.03);white-space:nowrap;}
@@ -93,10 +93,10 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .dot-bad{background:var(--red);}
 @keyframes sonar{0%{box-shadow:0 0 0 0 rgba(0,217,126,0.6)}70%{box-shadow:0 0 0 6px rgba(0,217,126,0)}100%{box-shadow:0 0 0 0 rgba(0,217,126,0)}}
 
-/* ── LEFT COLUMN ── */
+/* ?? LEFT COLUMN ?? */
 .col-left{grid-column:1;display:flex;flex-direction:column;gap:8px;overflow:hidden;min-height:0;}
 
-/* Market data table — compact two-column grid */
+/* Market data table -- compact two-column grid */
 .mkt-card{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;}
 .mkt-body{flex:1;overflow-y:auto;padding:6px 8px;}
 .mkt-body::-webkit-scrollbar{width:3px;}
@@ -122,7 +122,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .px-sep{color:var(--t2);font-size:11px;text-align:center;}
 .sprd{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t2);
   text-align:right;white-space:nowrap;}
-/* ── Direction arrow — shown next to each symbol name ── */
+/* ?? Direction arrow -- shown next to each symbol name ?? */
 .dir-arrow{font-size:10px;font-weight:700;margin-left:3px;opacity:0;transition:opacity 0.4s;}
 .dir-arrow.up{color:var(--green);opacity:1;}
 .dir-arrow.down{color:var(--red);opacity:1;}
@@ -136,7 +136,7 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 )OMEGA0"
 R"OMEGA1(
 
-/* ── CENTRE COLUMN ── */
+/* ?? CENTRE COLUMN ?? */
 .col-centre{grid-column:2;display:flex;flex-direction:column;gap:8px;overflow:hidden;min-height:0;}
 
 /* Stats row */
@@ -170,7 +170,7 @@ R"OMEGA1(
 .l2-dot-live{background:var(--green);}
 .l2-dot-dead{background:var(--t3);}
 
-/* Engine grid — all 15 engines in a responsive grid */
+/* Engine grid -- all 15 engines in a responsive grid */
 .eng-section{flex-shrink:0;}
 .eng-section-label{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;padding:0 2px 5px;display:flex;align-items:center;gap:0;}
 .eng-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;}
@@ -198,13 +198,13 @@ R"OMEGA1(
   display:flex;justify-content:center;gap:3px;align-items:center;line-height:1;}
 .eng-bid{color:var(--green);}.eng-ask{color:var(--red);}.eng-sep{color:var(--t2);font-size:11px;}
 .eng-vol{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#a8bbd4;margin-top:2px;line-height:1.3;}
-/* Proximity bar — shows how close price is to compression boundary */
+/* Proximity bar -- shows how close price is to compression boundary */
 .eng-prox{width:calc(100% - 8px);display:flex;align-items:center;gap:4px;margin:3px 4px 0;}
 .eng-prox-track{flex:1;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;}
 .eng-prox-fill{height:100%;border-radius:2px;transition:width 0.3s,background 0.3s;}
 .eng-l2{position:relative;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;margin-top:3px;}
 .eng-l2-fill{position:absolute;top:0;height:100%;border-radius:2px;transition:width 0.25s,background 0.25s,left 0.25s;}
-/* ── L2 DEPTH PANEL ── */
+/* ?? L2 DEPTH PANEL ?? */
 .depth-wrap{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:6px 8px;}
 .depth-side{display:flex;flex-direction:column;gap:2px;}
 .depth-side-hd{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;text-align:center;padding:2px 0 4px;}
@@ -247,7 +247,7 @@ td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:
   font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;}
 .no-data{text-align:center;color:var(--t2);padding:24px;font-size:13px;}
 
-/* ── RIGHT COLUMN ── */
+/* ?? RIGHT COLUMN ?? */
 .col-right{grid-column:3;display:flex;flex-direction:column;gap:8px;overflow-y:auto;}
 .col-right::-webkit-scrollbar{width:3px;}
 .col-right::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px;}
@@ -305,7 +305,7 @@ R"OMEGA2(
 <body>
 <div class="desk">
 
-<!-- ══ HEADER ══ -->
+<!-- ?? HEADER ?? -->
 <header>
   <div class="logo">
     <div class="logo-img"></div>
@@ -335,7 +335,7 @@ R"OMEGA2(
     </div>
     <div style="width:1px;height:28px;background:var(--border);"></div>
     <div style="text-align:center;">
-      <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">ES÷NQ</div>
+      <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">ES?NQ</div>
       <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:var(--blue);" id="esNqDivHdr">--</div>
     </div>
   </div>
@@ -343,34 +343,34 @@ R"OMEGA2(
   <div class="hbar">
     <span id="modeBadge" class="badge shadow">SHADOW</span>
     <span class="badge" id="uptimeBadge" style="color:var(--t2)">UP 00:00:00</span>
-    <span class="badge" id="sessionBadge" style="color:var(--t2)">── UTC</span>
+    <span class="badge" id="sessionBadge" style="color:var(--t2)">?? UTC</span>
     <span class="badge"><span class="dot-conn dot-bad" id="connDot"></span><span id="connText">Connecting</span></span>
     <span class="badge" id="fixQuoteHdr" style="color:var(--red)">Q:--</span>
-    <span class="badge" id="ctL2Badge" style="color:var(--t2);font-family:'IBM Plex Mono',monospace;font-size:10px;">L2 ○</span>
-    <span id="buildBadge" class="badge" style="color:var(--amber);font-size:9px;font-weight:700;letter-spacing:1.5px" title="Git hash — built version">⬡ <span id="buildVersion">...</span></span>
+    <span class="badge" id="ctL2Badge" style="color:var(--t2);font-family:'IBM Plex Mono',monospace;font-size:10px;">L2 ?</span>
+    <span id="buildBadge" class="badge" style="color:var(--amber);font-size:9px;font-weight:700;letter-spacing:1.5px" title="Git hash -- built version">? <span id="buildVersion">...</span></span>
     <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--t2)" id="clock">--:--:-- UTC</span>
   </div>
 </header>)OMEGA2"
 R"OMEGA3(
 
 
-<!-- ══ MAIN ══ -->
+<!-- ?? MAIN ?? -->
 <div class="main">
 
-  <!-- ── LEFT: Market Data + Regime ── -->
+  <!-- ?? LEFT: Market Data + Regime ?? -->
   <div class="col-left">
 
     <div class="card mkt-card">
       <div class="card-hd"><span class="dot" style="background:var(--cyan)"></span>Market Data</div>
       <div class="mkt-body">
 
-        <div class="sym-section-label">★ Precious Metals</div>
+        <div class="sym-section-label">? Precious Metals</div>
         <div class="sym-row r-gold">
           <span class="sym-nm c-gold">XAUUSD<span class="dir-arrow" id="dirGold"></span></span>
           <div class="px-pair"><span class="bid" id="goldBid">----</span><span class="px-sep">|</span><span class="ask" id="goldAsk">----</span></div>
           <span class="sprd" id="goldSpread">--</span>
         </div>
-        <div class="sym-section-label">▶ US Indices &amp; Oil</div>
+        <div class="sym-section-label">? US Indices &amp; Oil</div>
         <div class="sym-row r-primary">
           <span class="sym-nm c-blue">US500.F<span class="dir-arrow" id="dirSp"></span></span>
           <div class="px-pair"><span class="bid" id="spBid">----</span><span class="px-sep">|</span><span class="ask" id="spAsk">----</span></div>
@@ -402,7 +402,7 @@ R"OMEGA3(
           <span class="sprd" id="brentSpread">--</span>
         </div>
 
-        <div class="sym-section-label">◈ EU Indices</div>
+        <div class="sym-section-label">? EU Indices</div>
         <div class="sym-row r-eu">
           <span class="sym-nm c-purple">GER40<span class="dir-arrow" id="dirGer"></span></span>
           <div class="px-pair"><span class="bid" id="ger30Bid">----</span><span class="px-sep">|</span><span class="ask" id="ger30Ask">----</span></div>
@@ -419,7 +419,7 @@ R"OMEGA3(
           <span class="sprd" id="estx50Spread">--</span>
         </div>
 
-        <div class="sym-section-label">⬡ FX Majors</div>
+        <div class="sym-section-label">? FX Majors</div>
         <div class="sym-row r-fx">
           <span class="sym-nm c-cyan">EURUSD<span class="dir-arrow" id="dirEur"></span></span>
           <div class="px-pair"><span class="bid" id="eurBid">----</span><span class="px-sep">|</span><span class="ask" id="eurAsk">----</span></div>
@@ -430,7 +430,7 @@ R"OMEGA3(
           <div class="px-pair"><span class="bid" id="gbpBid">----</span><span class="px-sep">|</span><span class="ask" id="gbpAsk">----</span></div>
           <span class="sprd" id="gbpSpread">--</span>
         </div>
-        <div class="sym-section-label">🌏 Asia FX</div>
+        <div class="sym-section-label">? Asia FX</div>
         <div class="sym-row r-asia">
           <span class="sym-nm c-teal">AUDUSD<span class="dir-arrow" id="dirAud"></span></span>
           <div class="px-pair"><span class="bid" id="audBid">----</span><span class="px-sep">|</span><span class="ask" id="audAsk">----</span></div>
@@ -447,7 +447,7 @@ R"OMEGA3(
           <span class="sprd" id="jpySpread">--</span>
         </div>
 
-        <div class="sym-section-label">◈ Confirmation</div>
+        <div class="sym-section-label">? Confirmation</div>
         <div class="sym-row">
           <span class="sym-nm c-t2">VIX.F<span class="dir-arrow" id="dirVix"></span></span>
           <div class="px-pair"><span class="bid" id="vixBid">--</span><span class="px-sep">|</span><span class="ask" id="vixAsk">--</span></div>
@@ -466,24 +466,24 @@ R"OMEGA3(
       </div>
     </div>
 
-    <!-- ── Cross-Asset Engines Panel ── -->
+    <!-- ?? Cross-Asset Engines Panel ?? -->
     <div class="eng-section" style="margin-top:4px;" id="caEngSection">
       <div class="eng-section-label" style="display:flex;align-items:center;gap:6px;">
-        ⚡ Cross-Asset
+        ? Cross-Asset
         <span id="caBlockedBadge" style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid rgba(255,136,0,0.3);color:var(--amber);font-family:'IBM Plex Mono',monospace;display:none;">0 blocked</span>
-        <span id="caActiveBadge" style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid rgba(0,217,126,0.3);color:var(--green);font-family:'IBM Plex Mono',monospace;margin-left:auto;display:none;">● LIVE</span>
+        <span id="caActiveBadge" style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid rgba(0,217,126,0.3);color:var(--green);font-family:'IBM Plex Mono',monospace;margin-left:auto;display:none;">? LIVE</span>
       </div>
       <div id="caEngGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:4px;"></div>
     </div>
 
   </div>
 
-  <!-- ── CENTRE ── -->
+  <!-- ?? CENTRE ?? -->
   <div class="col-centre">
 
     <!-- Stats bar -->
     <div class="stats-bar">
-      <!-- ── Compact stat bar ───────────────────────────────────────── -->
+      <!-- ?? Compact stat bar ????????????????????????????????????????? -->
       <div class="pnl-card">
         <div style="display:flex;align-items:center;gap:6px;">
           <span class="pnl-live-dot no-pos" id="pnlLiveDot"></span>
@@ -518,7 +518,7 @@ R"OMEGA3(
         </div>
       </div>
     </div>
-    <!-- Live open trades panel — full width below stats bar, prominent when positions open -->
+    <!-- Live open trades panel -- full width below stats bar, prominent when positions open -->
     <div id="liveTradesPanelOuter" style="border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:4px 6px;transition:border-color 0.3s,box-shadow 0.3s;flex-shrink:0;">
       <div id="liveTradesPanel" style="display:flex;flex-direction:column;gap:2px;"></div>
     </div>
@@ -526,9 +526,9 @@ R"OMEGA3(
 )OMEGA3"
 R"OMEGA4(
 
-    <!-- Engine state — ALL 15 engines in 3 groups -->
+    <!-- Engine state -- ALL 15 engines in 3 groups -->
     <div class="eng-section">
-      <div class="eng-section-label">⚡ US / Oil Engines</div>
+      <div class="eng-section-label">? US / Oil Engines</div>
       <div class="eng-grid eng-grid-5">
         <div class="eng-cell" id="engSP"><div class="eng-sym c-blue">US500</div><div class="eng-ph eph-flat" id="engSPPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engSPBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engSPAsk">--</span></div><div class="eng-vol" id="engSPVol">--</div><div class="eng-sigs" id="engSPSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engSPProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engSPPct"></span></div><div class="eng-l2" id="engSPL2"><div class="eng-l2-fill" id="engSPL2F" style="width:50%;background:var(--t3)"></div></div></div>
         <div class="eng-cell" id="engNQ"><div class="eng-sym c-blue">USTEC</div><div class="eng-ph eph-flat" id="engNQPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engNQBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engNQAsk">--</span></div><div class="eng-vol" id="engNQVol">--</div><div class="eng-sigs" id="engNQSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engNQProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engNQPct"></span></div><div class="eng-l2" id="engNQL2"><div class="eng-l2-fill" id="engNQL2F" style="width:50%;background:var(--t3)"></div></div></div>
@@ -541,7 +541,7 @@ R"OMEGA4(
 
 
     <div class="eng-section" style="margin-top:6px;">
-      <div class="eng-section-label">◈ EU Indices + Brent</div>
+      <div class="eng-section-label">? EU Indices + Brent</div>
       <div class="eng-grid" style="grid-template-columns:repeat(4,1fr)">
         <div class="eng-cell" id="engGER"><div class="eng-sym c-purple">GER40</div><div class="eng-ph eph-flat" id="engGERPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engGERBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engGERAsk">--</span></div><div class="eng-vol" id="engGERVol">--</div><div class="eng-sigs" id="engGERSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engGERProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engGERPct"></span></div><div class="eng-l2" id="engGERL2"><div class="eng-l2-fill" id="engGERL2F" style="width:50%;background:var(--t3)"></div></div></div>
         <div class="eng-cell" id="engUK"><div class="eng-sym c-purple">UK100</div><div class="eng-ph eph-flat" id="engUKPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engUKBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engUKAsk">--</span></div><div class="eng-vol" id="engUKVol">--</div><div class="eng-sigs" id="engUKSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engUKProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engUKPct"></span></div><div class="eng-l2" id="engUKL2"><div class="eng-l2-fill" id="engUKL2F" style="width:50%;background:var(--t3)"></div></div></div>
@@ -553,7 +553,7 @@ R"OMEGA4(
 
 
     <div class="eng-section" style="margin-top:6px;">
-      <div class="eng-section-label">◇ FX + Asia Engines <span id="asiaGateBadge" style="font-size:10px;margin-left:8px;padding:1px 7px;border-radius:3px;border:1px solid rgba(255,255,255,0.15);color:var(--t2);white-space:nowrap;flex-shrink:0;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">ASIA FX: --</span></div>
+      <div class="eng-section-label">? FX + Asia Engines <span id="asiaGateBadge" style="font-size:10px;margin-left:8px;padding:1px 7px;border-radius:3px;border:1px solid rgba(255,255,255,0.15);color:var(--t2);white-space:nowrap;flex-shrink:0;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">ASIA FX: --</span></div>
       <div class="eng-grid" style="grid-template-columns:repeat(5,1fr)">
         <div class="eng-cell" id="engEUR"><div class="eng-sym c-cyan">EURUSD</div><div class="eng-ph eph-flat" id="engEURPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engEURBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engEURAsk">--</span></div><div class="eng-vol" id="engEURVol">--</div><div class="eng-sigs" id="engEURSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engEURProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engEURPct"></span></div><div class="eng-l2" id="engEURL2"><div class="eng-l2-fill" id="engEURL2F" style="width:50%;background:var(--t3)"></div></div></div>
         <div class="eng-cell" id="engGBP"><div class="eng-sym c-cyan">GBPUSD</div><div class="eng-ph eph-flat" id="engGBPPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engGBPBid">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engGBPAsk">--</span></div><div class="eng-vol" id="engGBPVol">--</div><div class="eng-sigs" id="engGBPSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engGBPProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engGBPPct"></span></div><div class="eng-l2" id="engGBPL2"><div class="eng-l2-fill" id="engGBPL2F" style="width:50%;background:var(--t3)"></div></div></div>
@@ -564,7 +564,7 @@ R"OMEGA4(
     </div>
 
     <div class="eng-section" style="margin-top:6px;">
-      <div class="eng-section-label">★ Metals Engines</div>
+      <div class="eng-section-label">? Metals Engines</div>
       <div class="eng-grid" style="grid-template-columns:repeat(1,1fr)">
         <div class="eng-cell" id="engXAU" style="border-color:rgba(245,200,66,0.2);background:rgba(245,200,66,0.04);"><div class="eng-sym" style="color:var(--gold)">XAUUSD</div><div class="eng-ph eph-flat" id="engXAUPhase">FLAT</div><div class="eng-px"><span class="eng-bid" id="engXAUBid" style="color:var(--gold)">--</span><span class="eng-sep">|</span><span class="eng-ask" id="engXAUAsk" style="color:var(--red)">--</span></div><div class="eng-vol" id="engXAUVol">--</div><div class="eng-sigs" id="engXAUSig">0 signals</div><div class="eng-prox"><div class="eng-prox-track"><div class="eng-prox-fill" id="engXAUProx" style="width:0%;background:var(--t3)"></div></div><span class="eng-prox-pct" id="engXAUPct"></span></div><div class="eng-l2" id="engXAUL2"><div class="eng-l2-fill" id="engXAUL2F" style="width:50%;background:var(--t3)"></div></div></div>
       </div>
@@ -572,9 +572,9 @@ R"OMEGA4(
 )OMEGA4"
 R"OMEGA5(
 
-    <!-- Watchdog banner — shown when session is active but no trade in 20min -->
+    <!-- Watchdog banner -- shown when session is active but no trade in 20min -->
     <div id="watchdogBanner" style="display:none;margin:0 0 6px 0;padding:7px 12px;background:rgba(255,136,0,0.10);border:1px solid rgba(255,136,0,0.45);border-radius:7px;align-items:center;gap:10px;">
-      <span style="font-size:13px;color:var(--amber)">⚠</span>
+      <span style="font-size:13px;color:var(--amber)">?</span>
       <div style="flex:1">
         <span style="font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:1px;">No trades firing</span>
         <span id="watchdogMsg" style="font-size:11px;color:var(--t2);margin-left:6px;"></span>
@@ -589,12 +589,12 @@ R"OMEGA5(
           <span style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Last Signals</span>
           <button id="bellBtn" onclick="toggleBell()" style="margin-left:auto;background:rgba(255,214,0,.1);border:1px solid rgba(255,214,0,0.3);border-radius:3px;padding:0 5px;cursor:pointer;font-size:9px;color:#ffd600;font-family:inherit;line-height:18px;">BELL</button>
         </div>
-        <div id="lastSignalDetail" style="display:flex;flex-direction:column;gap:1px;"><span style="color:var(--t2);font-size:11px;">Waiting for first signal…</span></div>
+        <div id="lastSignalDetail" style="display:flex;flex-direction:column;gap:1px;"><span style="color:var(--t2);font-size:11px;">Waiting for first signal...</span></div>
       </div>
 
       <!-- SL Cooldown Panel -->
       <div id="slCooldownSection" style="display:none;margin:0 0 8px 0;padding:6px 10px;background:rgba(255,51,85,0.07);border:1px solid rgba(255,51,85,0.2);border-radius:6px;">
-        <div style="font-size:10px;color:var(--red);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;font-weight:700;">⚠ SL Cooldown Active</div>
+        <div style="font-size:10px;color:var(--red);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;font-weight:700;">? SL Cooldown Active</div>
         <div id="slCooldownPanel"></div>
       </div>
 
@@ -617,7 +617,7 @@ R"OMEGA5(
     </div>
   </div>
 
-  <!-- ── RIGHT COLUMN ── -->
+  <!-- ?? RIGHT COLUMN ?? -->
   <div class="col-right">
 
     <!-- FIX Latency -->
@@ -645,11 +645,11 @@ R"OMEGA5(
     <!-- Governor Blocks -->
     <div class="card">
       <div class="card-hd"><span class="dot" style="background:var(--amber)"></span>Governor Blocks</div>
-      <div class="gov-item" title="Trades blocked because spread is too wide — entry cost exceeds edge threshold"><span class="gov-lbl">SPREAD <span style="font-size:9px;color:var(--t3)">wide spread</span></span><div class="gov-bar"><div class="gov-fill" id="gbarSpread" style="width:0%"></div></div><span class="gov-n" id="gnSpread">0</span></div>
-      <div class="gov-item" title="Trades blocked because FIX round-trip latency exceeded the configured cap — stale prices"><span class="gov-lbl">LATENCY <span style="font-size:9px;color:var(--t3)">rtt cap</span></span><div class="gov-bar"><div class="gov-fill" id="gbarLat" style="width:0%"></div></div><span class="gov-n" id="gnLat">0</span></div>
-      <div class="gov-item" title="Trades blocked because daily P&amp;L loss limit was hit — engine shut down for the day"><span class="gov-lbl">P&amp;L LIMIT <span style="font-size:9px;color:var(--t3)">daily cap</span></span><div class="gov-bar"><div class="gov-fill" id="gbarPnl" style="width:0%"></div></div><span class="gov-n" id="gnPnl">0</span></div>
-      <div class="gov-item" title="Trades blocked because max open positions reached — waiting for existing trades to close"><span class="gov-lbl">POSITIONS <span style="font-size:9px;color:var(--t3)">cap reached</span></span><div class="gov-bar"><div class="gov-fill" id="gbarPos" style="width:0%"></div></div><span class="gov-n" id="gnPos">0</span></div>
-      <div class="gov-item" title="Trades blocked due to consecutive losses — cooling off after a losing streak"><span class="gov-lbl">CONSEC LOSS <span style="font-size:9px;color:var(--t3)">streak block</span></span><div class="gov-bar"><div class="gov-fill" id="gbarConsec" style="width:0%"></div></div><span class="gov-n" id="gnConsec">0</span></div>
+      <div class="gov-item" title="Trades blocked because spread is too wide -- entry cost exceeds edge threshold"><span class="gov-lbl">SPREAD <span style="font-size:9px;color:var(--t3)">wide spread</span></span><div class="gov-bar"><div class="gov-fill" id="gbarSpread" style="width:0%"></div></div><span class="gov-n" id="gnSpread">0</span></div>
+      <div class="gov-item" title="Trades blocked because FIX round-trip latency exceeded the configured cap -- stale prices"><span class="gov-lbl">LATENCY <span style="font-size:9px;color:var(--t3)">rtt cap</span></span><div class="gov-bar"><div class="gov-fill" id="gbarLat" style="width:0%"></div></div><span class="gov-n" id="gnLat">0</span></div>
+      <div class="gov-item" title="Trades blocked because daily P&amp;L loss limit was hit -- engine shut down for the day"><span class="gov-lbl">P&amp;L LIMIT <span style="font-size:9px;color:var(--t3)">daily cap</span></span><div class="gov-bar"><div class="gov-fill" id="gbarPnl" style="width:0%"></div></div><span class="gov-n" id="gnPnl">0</span></div>
+      <div class="gov-item" title="Trades blocked because max open positions reached -- waiting for existing trades to close"><span class="gov-lbl">POSITIONS <span style="font-size:9px;color:var(--t3)">cap reached</span></span><div class="gov-bar"><div class="gov-fill" id="gbarPos" style="width:0%"></div></div><span class="gov-n" id="gnPos">0</span></div>
+      <div class="gov-item" title="Trades blocked due to consecutive losses -- cooling off after a losing streak"><span class="gov-lbl">CONSEC LOSS <span style="font-size:9px;color:var(--t3)">streak block</span></span><div class="gov-bar"><div class="gov-fill" id="gbarConsec" style="width:0%"></div></div><span class="gov-n" id="gnConsec">0</span></div>
       <div style="font-size:10px;color:var(--t2);padding:5px 10px;text-align:right;" id="govTotal">Total: 0</div>
     </div>
 
@@ -756,7 +756,7 @@ R"OMEGA8(
 function toggleBell(){
   _bellEnabled=!_bellEnabled;
   const b=document.getElementById('bellBtn');
-  if(b){b.textContent=_bellEnabled?'🔔 ARMED':'🔔 ARM BELL';b.style.color=_bellEnabled?'var(--green)':'#ffd600';b.style.borderColor=_bellEnabled?'rgba(0,217,126,0.4)':'rgba(255,214,0,0.4)';}
+  if(b){b.textContent=_bellEnabled?'? ARMED':'? ARM BELL';b.style.color=_bellEnabled?'var(--green)':'#ffd600';b.style.borderColor=_bellEnabled?'rgba(0,217,126,0.4)':'rgba(255,214,0,0.4)';}
   if(_bellEnabled&&!_audioCtx){try{_audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(_audioCtx.state==='suspended')_audioCtx.resume();}catch(e){}}
   if(_bellEnabled&&_audioCtx)_playTestBell();
 })OMEGA8"
@@ -782,15 +782,15 @@ function px(id,val,dec){
   const el=document.getElementById(id);if(!el)return;
   const v=safe(val);if(v<=0)return;
   const s=v.toFixed(dec||2);
-  if(_pxCache[id]===s)return;   // value unchanged — skip DOM write entirely
+  if(_pxCache[id]===s)return;   // value unchanged -- skip DOM write entirely
   _pxCache[id]=s;
   el.textContent=s;
 }
 
 // pxDir: updates the direction arrow for a symbol given its current bid+ask.
-// dirId  — the id of the <span class="dir-arrow"> element
-// bid/ask — raw values from telemetry
-// threshold — minimum mid movement to flip arrow (default 0.0001, caller can override for indices)
+// dirId  -- the id of the <span class="dir-arrow"> element
+// bid/ask -- raw values from telemetry
+// threshold -- minimum mid movement to flip arrow (default 0.0001, caller can override for indices)
 function pxDir(dirId,bid,ask,threshold){
   const el=document.getElementById(dirId);if(!el)return;
   const b=safe(bid),a=safe(ask);
@@ -799,14 +799,14 @@ function pxDir(dirId,bid,ask,threshold){
   const thr=threshold||0.0001;
   const prev=_midCache[dirId];
   _midCache[dirId]=mid;
-  if(!prev||prev<=0)return;          // first tick — no direction yet
+  if(!prev||prev<=0)return;          // first tick -- no direction yet
   if(mid>prev+thr){
-    if(el.textContent!=='▲'||el.className!=='dir-arrow up'){
-      el.textContent='▲';el.className='dir-arrow up';
+    if(el.textContent!=='?'||el.className!=='dir-arrow up'){
+      el.textContent='?';el.className='dir-arrow up';
     }
   } else if(mid<prev-thr){
-    if(el.textContent!=='▼'||el.className!=='dir-arrow down'){
-      el.textContent='▼';el.className='dir-arrow down';
+    if(el.textContent!=='?'||el.className!=='dir-arrow down'){
+      el.textContent='?';el.className='dir-arrow down';
     }
   }
   // if within threshold: leave arrow as-is (last known direction stays visible)
@@ -825,7 +825,7 @@ function setHdrPhase(id,phase){
   const p=safe(phase);
   if(p===0){el.className='htk-ph ph-flat';el.textContent='FLAT';}
   else if(p===1){el.className='htk-ph ph-comp';el.textContent='COMP';}
-  else{el.className='htk-ph ph-brk';el.textContent='BRK ⚡';}
+  else{el.className='htk-ph ph-brk';el.textContent='BRK ?';}
 }
 )OMEGA15"
 R"OMEGA16(
@@ -834,7 +834,7 @@ function updateL2Bar(cellId, imb, active) {
   const f = document.getElementById(cellId + 'L2F');
   if (!f) return;
   const v = (imb == null || !active) ? 0.5 : Math.max(0, Math.min(1, imb));
-  // Bar is centered at 50% — left half = ask pressure (red), right half = bid pressure (green)
+  // Bar is centered at 50% -- left half = ask pressure (red), right half = bid pressure (green)
   // imb=0.5 (neutral): small grey pip at center
   // imb>0.5 (bid heavy): green bar grows right from center
   // imb<0.5 (ask heavy): red bar grows left from center
@@ -846,38 +846,38 @@ function updateL2Bar(cellId, imb, active) {
   if (Math.abs(dev) < 0.05) {
     f.style.width = '2px'; f.style.left = '50%'; f.style.background = 'var(--t2)';
   } else if (dev > 0) {
-    // bid heavy — green bar from center rightward
+    // bid heavy -- green bar from center rightward
     const pct = Math.min(50, dev * 200);
     f.style.width = pct + '%'; f.style.left = '50%'; f.style.background = 'var(--green)';
   } else {
-    // ask heavy — red bar from center leftward
+    // ask heavy -- red bar from center leftward
     const pct = Math.min(50, -dev * 200);
     f.style.left = (50 - pct) + '%'; f.style.width = pct + '%'; f.style.background = 'var(--red)';
   }
 }
 
-// ── L2 Depth Panel ─────────────────────────────────────────────────────────
+// ?? L2 Depth Panel ?????????????????????????????????????????????????????????
 // Renders top-N bid/ask levels for the selected symbol.
 // Symbol key maps to JSON fields emitted by appendBook() in OmegaTelemetryServer.cpp:
-//   gold → gold_bids / gold_asks
-//   sp   → sp_bids   / sp_asks
-//   eur  → eur_bids  / eur_asks
+//   gold ? gold_bids / gold_asks
+//   sp   ? sp_bids   / sp_asks
+//   eur  ? eur_bids  / eur_asks
 // Each level: { p: price, s: size }
 // imbalance drawn as a centred bar: bid vol left (green), ask vol right (red).
 let _depthSym = 'gold';   // currently selected symbol key
 const _depthSymL2Key = { gold:'l2_gold', sp:'l2_sp', eur:'l2_eur' };
 const _depthMaxRows = 5;  // levels to show per side
 
-// Last best bid/ask seen per symbol — used to gate repaints.
+// Last best bid/ask seen per symbol -- used to gate repaints.
 // WS pushes at 1000ms but the book only needs repainting when a price level
 // actually changes. Sizes-only changes (volume shifting at same price) are
 // allowed through at most once per 500ms to avoid thrashing on busy tape.
-const _depthLastBest = {};   // key -> { fp: string } — fingerprint of all visible price levels
+const _depthLastBest = {};   // key -> { fp: string } -- fingerprint of all visible price levels
 let   _depthLastSizeUpdate = 0;  // timestamp of last size-only repaint
 
 function setDepthSym(sym) {
   _depthSym = sym;
-  // Force full repaint on symbol switch — clear price cache AND size throttle
+  // Force full repaint on symbol switch -- clear price cache AND size throttle
   delete _depthLastBest[sym];
   _depthLastSizeUpdate = 0;   // new symbol should show sizes immediately
   // Update button active states
@@ -887,10 +887,10 @@ function setDepthSym(sym) {
   });
 }
 
-// ── Depth panel row pool ────────────────────────────────────────────────────
+// ?? Depth panel row pool ????????????????????????????????????????????????????
 // Pre-built DOM rows. On first call we create _depthMaxRows rows per side and
 // keep them alive forever. Each tick we update only the cells whose values
-// actually changed — zero innerHTML rewrites during normal operation.
+// actually changed -- zero innerHTML rewrites during normal operation.
 const _depthRows = { bid: [], ask: [] };
 let   _depthRowsReady = false;
 
@@ -903,7 +903,7 @@ function _ensureDepthRows() {
     for (let i = 0; i < _depthMaxRows; i++) {
       const row  = document.createElement('div');
       row.className = 'depth-row ' + side;
-      // Rows are always visible — blank when no data, never toggled hidden
+      // Rows are always visible -- blank when no data, never toggled hidden
       const bg   = document.createElement('div');  bg.className  = 'depth-bg';
       const px   = document.createElement('span'); px.className  = 'depth-px';
       const sz   = document.createElement('span'); sz.className  = 'depth-sz';
@@ -923,11 +923,11 @@ function updateDepthPanel(d) {
   const imbEl = document.getElementById('depthImbFill');
   const badge = document.getElementById('depthImbBadge');
 
-  // ── No data path ─────────────────────────────────────────────────────────
+  // ?? No data path ?????????????????????????????????????????????????????????
   if (!bids || !bids.length || !asks || !asks.length) {
     ['bid','ask'].forEach(side => {
       _depthRows[side].forEach(r => {
-        // Keep rows visible but blank — no display toggle
+        // Keep rows visible but blank -- no display toggle
         if (r.row.style.display === 'none') r.row.style.display = '';
         if (r.lastP !== '')  { r.px.textContent = ''; r.lastP = ''; }
         if (r.lastS !== '')  { r.sz.textContent = ''; r.lastS = ''; }
@@ -940,17 +940,17 @@ function updateDepthPanel(d) {
     return;
   }
 
-  // ── Sort once — used for both gate and render ─────────────────────────────
+  // ?? Sort once -- used for both gate and render ?????????????????????????????
   const sortedBids = [...bids].sort((a,b) => b.p - a.p).slice(0, _depthMaxRows);
   const sortedAsks = [...asks].sort((a,b) => a.p - b.p).slice(0, _depthMaxRows);
 
   const refPx = sortedBids[0] ? sortedBids[0].p : (sortedAsks[0] ? sortedAsks[0].p : 1);
   const dec   = refPx > 100 ? 2 : (refPx > 1 ? 4 : 5);
 
-  // ── Book fingerprint gate ─────────────────────────────────────────────────
+  // ?? Book fingerprint gate ?????????????????????????????????????????????????
   // Build a compact string of all visible price levels. patchRows already
   // diffs per-cell, but we skip even calling it when nothing changed at all.
-  // Sizes are intentionally excluded from the fingerprint — they shift every
+  // Sizes are intentionally excluded from the fingerprint -- they shift every
   // tick on a live book and would defeat gating entirely. Size bar widths are
   // throttled separately via _depthLastSizeUpdate.
   const priceFp = sortedBids.map(l=>l.p.toFixed(dec)).join(',')
@@ -962,7 +962,7 @@ function updateDepthPanel(d) {
   const priceChanged = !cached || cached.fp !== priceFp;
   const sizeUpdateDue = (now - _depthLastSizeUpdate) >= 500;
 
-  // Always update imbalance badge — it's a cheap text compare, no DOM writes unless changed.
+  // Always update imbalance badge -- it's a cheap text compare, no DOM writes unless changed.
   // Row repaint only happens when price levels change OR size throttle fires.
   const totalBidVol = sortedBids.reduce((s,r) => s + r.s, 0);
   const totalAskVol = sortedAsks.reduce((s,r) => s + r.s, 0);
@@ -984,7 +984,7 @@ function updateDepthPanel(d) {
   if (badge) {
     const imbLabel = (dispImb * 100).toFixed(0);
     const bidDom = dispImb > 0.55, askDom = dispImb < 0.45;
-    const newTxt = 'IMB ' + imbLabel + '%' + (bidDom ? ' B▲' : askDom ? ' A▼' : '');
+    const newTxt = 'IMB ' + imbLabel + '%' + (bidDom ? ' B?' : askDom ? ' A?' : '');
     if (badge.textContent !== newTxt) {
       badge.textContent = newTxt;
       badge.style.color = bidDom ? 'var(--green)' : askDom ? 'var(--red)' : 'var(--t2)';
@@ -995,9 +995,9 @@ function updateDepthPanel(d) {
   if (!priceChanged && !sizeUpdateDue) return;
 
   _depthLastBest[sym] = { fp: priceFp };
-  if (!priceChanged) _depthLastSizeUpdate = now;  // size-only update — record time
+  if (!priceChanged) _depthLastSizeUpdate = now;  // size-only update -- record time
 
-  // ── Surgical per-cell row update ──────────────────────────────────────────
+  // ?? Surgical per-cell row update ??????????????????????????????????????????
   const maxVol = Math.max(totalBidVol, totalAskVol, 0.001);
 
   function patchRows(levels, side) {
@@ -1008,7 +1008,7 @@ function updateDepthPanel(d) {
       // Zero-price = padding level (server always sends 5, pads with p=0/s=0 when book shallow)
       const hasData = lvl && lvl.p > 0 && lvl.s > 0;
 
-      // Always keep row visible — never toggle display. Blank rows are invisible
+      // Always keep row visible -- never toggle display. Blank rows are invisible
       // due to empty text + zero-width bar. Toggling display causes the jump.
       if (cell.row.style.display === 'none') cell.row.style.display = '';
 
@@ -1048,21 +1048,21 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
   else if(bktPhase===1||bktPhase===3)cell.className='eng-cell ph2'; // ARMED/LIVE bracket
   else cell.className='eng-cell'+(p===1?' ph1':p===2?' ph2':'');
   if(ph){
-    if(isLive){ph.className='eng-ph eph-live';ph.textContent='LIVE ●';}
-    else if(bktPhase===3){ph.className='eng-ph eph-live';ph.textContent='BKT LIVE ●';}
-    else if(bktPhase===2){ph.className='eng-ph eph-brk';ph.textContent='BKT PENDING ⏳';}
-    else if(bktPhase===1){ph.className='eng-ph eph-comp';ph.textContent='BKT ARMED ⟺';}
+    if(isLive){ph.className='eng-ph eph-live';ph.textContent='LIVE ?';}
+    else if(bktPhase===3){ph.className='eng-ph eph-live';ph.textContent='BKT LIVE ?';}
+    else if(bktPhase===2){ph.className='eng-ph eph-brk';ph.textContent='BKT PENDING ?';}
+    else if(bktPhase===1){ph.className='eng-ph eph-comp';ph.textContent='BKT ARMED ?';}
     else if(p===0){ph.className='eng-ph eph-flat';ph.textContent='FLAT';}
     else if(p===1){ph.className='eng-ph eph-comp';ph.textContent='COMPRESSING';}
-    else{ph.className='eng-ph eph-brk';ph.textContent='BREAKOUT ⚡';}
+    else{ph.className='eng-ph eph-brk';ph.textContent='BREAKOUT ?';}
   }
   if(vol){
     if(bktActive){
       // Show bracket levels prominently
       const bhi=safe(bkt.hi).toFixed(d),blo=safe(bkt.lo).toFixed(d);
-      vol.innerHTML='<span style="color:var(--green)">▲'+bhi+'</span> <span style="color:var(--red)">▼'+blo+'</span>';
+      vol.innerHTML='<span style="color:var(--green)">?'+bhi+'</span> <span style="color:var(--red)">?'+blo+'</span>';
     } else if(p===1&&safe(hi)>0){
-      vol.textContent='range: '+safe(hi).toFixed(d)+'↑'+safe(lo).toFixed(d);
+      vol.textContent='range: '+safe(hi).toFixed(d)+'?'+safe(lo).toFixed(d);
     } else if(safe(rv)>0){
       vol.textContent='vol: '+safe(rv).toFixed(2)+'% / '+safe(bv).toFixed(2)+'%';
     } else vol.innerHTML='';
@@ -1074,7 +1074,7 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
   if(bidEl&&safe(bid)>0)bidEl.textContent=safe(bid).toFixed(d);
   if(askEl&&safe(ask)>0)askEl.textContent=safe(ask).toFixed(d);
 
-  // Proximity bar — how close is price to breaking the compression boundary?
+  // Proximity bar -- how close is price to breaking the compression boundary?
   // p=0(FLAT): empty. p=1(COMP): fill = how tight compression is (rv/bv inverted).
   // p=2(BREAKOUT_WATCH): fill = how far price has moved through range toward boundary.
   const prox=document.getElementById(cellId+'Prox');
@@ -1086,7 +1086,7 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
     }
     else if(p===1){
       // Compression tightness: lower rv/bv = tighter = closer to breakout
-      // Shows how compressed vol is relative to baseline — higher % = tighter compression
+      // Shows how compressed vol is relative to baseline -- higher % = tighter compression
       const ratio=safe(bv)>0?safe(rv)/safe(bv):1;
       const pct=Math.max(0,Math.min(100,(1-ratio)*200));
       prox.style.width=pct+'%';
@@ -1118,7 +1118,7 @@ R"OMEGA18(
 function renderLastSignal(d){
   const el=document.getElementById('lastSignalDetail');if(!el)return;
   const hist=(d.signal_history||[]).slice(0,3);
-  if(hist.length===0){el.innerHTML='<span style="color:var(--t2);font-size:11px;">Waiting for first signal…</span>';return;}
+  if(hist.length===0){el.innerHTML='<span style="color:var(--t2);font-size:11px;">Waiting for first signal...</span>';return;}
   const latest=hist[0];
   const rows=hist.map((s,i)=>{
     const isBracket=s.side==='BRACKET';
@@ -1194,13 +1194,13 @@ function renderTrades(trades){
   if(_bellEnabled&&closed.length>_lastTradeCount&&_lastTradeCount>=_bellBootCount){const pnl=safe(closed[0].net_pnl);pnl>0?_playWinBell():_playLossBell();}
   _lastTradeCount=closed.length;
   const wins=closed.filter(t=>safe(t.net_pnl)>0).length,losses=closed.filter(t=>safe(t.net_pnl)<0).length,totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
-  // BUG FIX 1: trade count header — was (totalNet>=0?'+':'') now (totalNet>=0?'+':'-')
-  if(cE)cE.textContent=closed.length+' closed · '+wins+'W/'+losses+'L · '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
+  // BUG FIX 1: trade count header -- was (totalNet>=0?'+':'') now (totalNet>=0?'+':'-')
+  if(cE)cE.textContent=closed.length+' closed ? '+wins+'W/'+losses+'L ? '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
   const now=Math.floor(Date.now()/1000);
   el.innerHTML=trades.slice(0,60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
     const win=net>0,loss=net<0,sc=t.side==='LONG'?'var(--green)':'var(--red)';
-    const reason=t.exitReason||'',result=isOpen?'🔵':reason==='TP_HIT'?'✅TP':reason==='SL_HIT'?'❌SL':reason==='TRAIL_HIT'?'🏃TR':reason==='BE_HIT'?'🔒BE':reason==='TIMEOUT'?'⌛TO':'⚡FC';
+    const reason=t.exitReason||'',result=isOpen?'?':reason==='TP_HIT'?'?TP':reason==='SL_HIT'?'?SL':reason==='TRAIL_HIT'?'?TR':reason==='BE_HIT'?'?BE':reason==='TIMEOUT'?'?TO':'?FC';
     const rc=isOpen?'var(--blue)':win?'var(--green)':loss?'var(--red)':'var(--t2)';
     const netC=win?'var(--green)':loss?'var(--red)':'var(--t2)';
     let heldStr='--';
@@ -1210,10 +1210,10 @@ function renderTrades(trades){
 
     else if(safe(t.entryTs)>0&&safe(t.exitTs)>0){const s=safe(t.exitTs)-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
     const rowBg=isOpen?'rgba(46,168,255,0.06)':win?'rgba(0,217,126,0.05)':loss?'rgba(255,51,85,0.05)':'';
-    // BUG FIX 2: gross column — was (gross>=0?'+':'') now (gross>=0?'+':'-')
+    // BUG FIX 2: gross column -- was (gross>=0?'+':'') now (gross>=0?'+':'-')
     const grossD=isOpen?'':(gross>=0?'+':'-')+'$'+Math.abs(gross).toFixed(2);
     const slipD=isOpen?'':slip>0?'-$'+slip.toFixed(2):'--';
-    // BUG FIX 3: net column — was (net>=0?'+':'') now (net>=0?'+':'-')
+    // BUG FIX 3: net column -- was (net>=0?'+':'') now (net>=0?'+':'-')
     const netD=isOpen?'<span style="color:var(--t2);font-size:10px">live</span>':(net>=0?'+':'-')+'$'+Math.abs(net).toFixed(2);
     const tReg=t.regime||'';const tEng=t.engine||'';
     const regCol=tReg.includes('EXPANSION')||tReg.includes('TREND')?'var(--green)':tReg.includes('QUIET')?'var(--amber)':'var(--t2)';
@@ -1286,7 +1286,7 @@ function renderCrossAsset(d){
     const type=typeOf(e.name);
     const col=TYPE_COL[type]||'var(--t2)';
     const isActive=e.active===1;
-    const dir=e.is_long?'▲ LONG':'▼ SHORT';
+    const dir=e.is_long?'? LONG':'? SHORT';
     const dirCol=e.is_long?'var(--green)':'var(--red)';
     const bg=isActive?'rgba(0,217,126,0.07)':'rgba(255,255,255,0.02)';
     const border=isActive?'1px solid rgba(0,217,126,0.25)':'1px solid rgba(255,255,255,0.06)';
@@ -1362,7 +1362,7 @@ function updateDashboard(d){
   px('ngasBid',d.ngas_bid,2);px('ngasAsk',d.ngas_ask,2);
   pxDir('dirNgas',d.ngas_bid,d.ngas_ask,0.005);
 
-  // Engine cells — US/Oil group (sp_phase etc from telemetry)
+  // Engine cells -- US/Oil group (sp_phase etc from telemetry)
   const live=d.open_positions||[];
   const isLive=sym=>Array.isArray(live)&&live.some(p=>p.symbol===sym);
   updateEngCell('engSP','engSPPhase','engSPVol','engSPSig',d.sp_phase,d.sp_recent_vol_pct,d.sp_baseline_vol_pct,d.sp_signals,d.sp_comp_high,d.sp_comp_low,d.sp_bid,d.sp_ask,2,isLive('US500.F'),d.brackets&&d.brackets.sp);
@@ -1393,14 +1393,14 @@ function updateDashboard(d){
   updateL2Bar('engXAU',d.l2_gold,l2on);
   // cTrader L2 status indicator in FIX session panel
   const l2badge = document.getElementById('ctL2Badge');
-  if(l2badge) { l2badge.textContent = l2on ? 'L2 ●' : 'L2 ○'; l2badge.style.color = l2on ? 'var(--green)' : 'var(--t2)'; }
+  if(l2badge) { l2badge.textContent = l2on ? 'L2 ?' : 'L2 ?'; l2badge.style.color = l2on ? 'var(--green)' : 'var(--t2)'; }
 
-  // L2 depth panel — renders order book levels for selected symbol
+  // L2 depth panel -- renders order book levels for selected symbol
   updateDepthPanel(d);
 
 
 
-  // ── Compact stat bar + live trades ──────────────────────────────────────
+  // ?? Compact stat bar + live trades ??????????????????????????????????????
   const pnl=safe(d.daily_pnl),gross=safe(d.gross_daily_pnl);
   const closed=safe(d.closed_pnl), floating=safe(d.open_unrealised_pnl);
   const NZD_RATE=1.66;
@@ -1469,7 +1469,7 @@ function updateDashboard(d){
 
 )OMEGA23"
 R"OMEGA23C(
-  // ── Live open trades panel ──────────────────────────────────────────────
+  // ?? Live open trades panel ??????????????????????????????????????????????
   const ltPanel=document.getElementById('liveTradesPanel');
   if(ltPanel){
     const trades=d.live_trades||[];
@@ -1505,12 +1505,12 @@ R"OMEGA23C(
         +'<span style="font-size:10px;color:var(--t3);">NZ$'+totalSign+(totalNzd).toFixed(0)+'</span>'
         +'</div>';
 
-      // GoldFlow trail stage from snapshot — applies to the GoldFlow live trade
+      // GoldFlow trail stage from snapshot -- applies to the GoldFlow live trade
       const gfStage    = safe(d.gf_trail_stage);  // 0=initial 1=BE 2=trail1 3=trail2 4=trail3
-      const gfAtrEntry = safe(d.gf_atr_at_entry); // ATR at entry — used to show next stage target
+      const gfAtrEntry = safe(d.gf_atr_at_entry); // ATR at entry -- used to show next stage target
       // Next-stage ATR multipliers matching GoldFlowEngine.hpp constants
-      const GF_NEXT_MULT = [1.0, 2.0, 8.0, 15.0]; // stage 0→1, 1→2, 2→3, 3→4
-      const GF_NEXT_LABEL = ['1× ATR → BE', '2× ATR → Trail', '8× ATR → Tighten', '15× ATR → Final', 'MAX'];
+      const GF_NEXT_MULT = [1.0, 2.0, 8.0, 15.0]; // stage 0?1, 1?2, 2?3, 3?4
+      const GF_NEXT_LABEL = ['1? ATR ? BE', '2? ATR ? Trail', '8? ATR ? Tighten', '15? ATR ? Final', 'MAX'];
 
       // Fingerprint: rebuild HTML only when pnl shifts >$0.05, SL moves, stage changes, or current price tick changes 2dp
       const ltFp = trades.map(lt=>
@@ -1518,7 +1518,7 @@ R"OMEGA23C(
         +lt.current.toFixed(2)+'|'+lt.sl.toFixed(2)+'|'+lt.tp.toFixed(2)+'|'
         +lt.live_pnl.toFixed(1)
       ).join(';') + '|gf'+gfStage+'|atr'+gfAtrEntry.toFixed(2);
-      if(ltFp === _ltFingerprint) return;  // nothing meaningful changed — skip innerHTML rebuild
+      if(ltFp === _ltFingerprint) return;  // nothing meaningful changed -- skip innerHTML rebuild
       _ltFingerprint = ltFp;
       const STAGE_LABEL = ['INITIAL','BE LOCK','TRAIL 1','TRAIL 2','TRAIL 3'];
       const STAGE_COL   = ['var(--t3)','var(--amber)','var(--cyan)','var(--blue)','var(--green)'];
@@ -1540,7 +1540,7 @@ R"OMEGA23C(
         // Label for the TP tick: GoldFlow shows next stage target, others show TP
         const tpLabel = isGF && stage < 4 ? GF_NEXT_LABEL[stage] : 'TP';
 
-        // ── Price ladder geometry ──────────────────────────────────────────
+        // ?? Price ladder geometry ??????????????????????????????????????????
         // Collect all known prices, build a min/max range with 15% padding
         // so labels never clip at edges.
         const pts = [entry, cur, sl > 0 ? sl : null, tp > 0 ? tp : null].filter(x=>x!==null);
@@ -1563,7 +1563,7 @@ R"OMEGA23C(
         const xTp    = tp > 0 ? pct(tp) : null;
         const xBe    = stage >= 1 ? pct(entry) : null; // BE = entry (SL moved to entry)
 
-        // Zone fills: loss zone (SL→entry) red, profit zone (entry→TP or entry→cur) green
+        // Zone fills: loss zone (SL?entry) red, profit zone (entry?TP or entry?cur) green
         const zEntryPct  = xEntry;
         const zSlPct     = xSl !== null ? xSl : (isLong ? 1 : 99);
         const lossPctL   = Math.min(zEntryPct, zSlPct);
@@ -1584,10 +1584,10 @@ R"OMEGA23C(
 
         // Pyramid indicator for GoldFlow stage >= 2
         const pyramidBadge = isGF && stage >= 2
-          ? `<span style="font-size:9px;color:var(--gold);margin-left:4px;">▲${stage-1}</span>`
+          ? `<span style="font-size:9px;color:var(--gold);margin-left:4px;">?${stage-1}</span>`
           : '';
 
-        // ── SVG bar ───────────────────────────────────────────────────────
+        // ?? SVG bar ???????????????????????????????????????????????????????
         // Height 28px. Zones behind, tick marks on top, needle for current price.
         const svg = `<svg width="100%" height="28" style="display:block;overflow:visible" preserveAspectRatio="none">
           <defs>
@@ -1604,11 +1604,11 @@ R"OMEGA23C(
           <!-- track -->
           <rect x="0%" y="12" width="100%" height="4" rx="2" fill="rgba(255,255,255,0.06)"/>
 
-          <!-- loss zone: SL → entry -->
+          <!-- loss zone: SL ? entry -->
           ${xSl !== null ? `<rect x="${lossPctL}%" y="12" width="${lossPctW}%" height="4"
             fill="url(#lossGrad${lt.entry.toFixed(0)})" rx="1"/>` : ''}
 
-          <!-- profit zone: entry → TP (or entry → current if no TP) -->
+          <!-- profit zone: entry ? TP (or entry ? current if no TP) -->
           <rect x="${profZoneL}%" y="12" width="${profZoneW}%" height="4"
             fill="url(#profGrad${lt.entry.toFixed(0)})" rx="1"/>
 
@@ -1626,7 +1626,7 @@ R"OMEGA23C(
           <text x="${xEntry}%" y="6" text-anchor="middle" fill="rgba(255,255,255,0.5)"
             font-size="8" font-family="IBM Plex Mono,monospace">IN</text>
 
-          <!-- BE marker (only when stage >= 1 — SL moved to entry) -->
+          <!-- BE marker (only when stage >= 1 -- SL moved to entry) -->
           ${stage >= 1 ? `
           <circle cx="${xEntry}%" cy="14" r="3" fill="none" stroke="${STAGE_COL[1]}" stroke-width="1.5"/>
           <text x="${xEntry}%" y="27" text-anchor="middle" fill="${STAGE_COL[1]}"
@@ -1642,7 +1642,7 @@ R"OMEGA23C(
             font-size="7.5" font-family="IBM Plex Mono,monospace">${tp.toFixed(dp)}</text>
           ` : ''}
 
-          <!-- Current price needle — diamond shape, glows -->
+          <!-- Current price needle -- diamond shape, glows -->
           <polygon points="${xCur}%,6 ${xCur}%-3,14 ${xCur}%,22 ${xCur}%+3,14"
             fill="${pnl >= 0 ? 'var(--green)' : 'var(--red)'}"
             style="filter:drop-shadow(0 0 3px ${pnl >= 0 ? 'rgba(0,217,126,0.8)' : 'rgba(255,51,85,0.8)'})"
@@ -1651,10 +1651,10 @@ R"OMEGA23C(
 
 )OMEGA23C"
 R"OMEGA23D(
-        // Polygon points with calc() don't work in SVG — use viewBox approach instead
+        // Polygon points with calc() don't work in SVG -- use viewBox approach instead
         // Rewrite needle as proper SVG with numeric coords via a viewBox
         const VW = 600; // viewBox width units
-        const toVB = p => (p / 100) * VW; // % → viewBox units
+        const toVB = p => (p / 100) * VW; // % ? viewBox units
         const nx = toVB(xCur);
         const needle = `<polygon points="${nx},4 ${nx-5},14 ${nx},24 ${nx+5},14"
           fill="${pnl >= 0 ? '#00d97e' : '#ff3355'}"
@@ -1722,7 +1722,7 @@ R"OMEGA23D(
               fill-opacity="0.7">${tp.toFixed(dp)}</text>
           ` : ''}
 
-          <!-- Trail stop line (stage >= 2 — SL has moved beyond entry) -->
+          <!-- Trail stop line (stage >= 2 -- SL has moved beyond entry) -->
           ${isGF && stage >= 2 && sl > 0 ? `
             <line x1="${toVB(xSl)}" y1="10" x2="${toVB(xSl)}" y2="20"
               stroke="${STAGE_COL[stage]}" stroke-width="2" stroke-opacity="0.9"/>
@@ -1741,11 +1741,11 @@ R"OMEGA23D(
             <span style="font-family:IBM Plex Mono,monospace;font-size:12px;font-weight:700;
               color:${isLong?'var(--gold)':'var(--purple)'};">${lt.symbol}</span>
             <span style="font-size:10px;font-weight:700;color:${isLong?'var(--green)':'var(--red)'};">
-              ${isLong?'▲':'▼'} ${lt.side}</span>
+              ${isLong?'?':'?'} ${lt.side}</span>
             <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--t3);">
               @${entry.toFixed(dp)}</span>
             <span style="font-family:IBM Plex Mono,monospace;font-size:11px;font-weight:700;
-              color:var(--t2);">→ ${cur.toFixed(dp)}</span>
+              color:var(--t2);">? ${cur.toFixed(dp)}</span>
             <span style="font-family:IBM Plex Mono,monospace;font-size:13px;font-weight:900;
               color:${pnlCol};margin-left:auto;">${pnlStr}</span>
             <span style="font-size:10px;color:var(--t3);">${held}</span>
@@ -1816,7 +1816,7 @@ R"OMEGA23B(
     sb.textContent=sess;sb.style.color=col;}
 
   // Uptime
-  // ── Watchdog: warn if no trades firing during active session ──────────────
+  // ?? Watchdog: warn if no trades firing during active session ??????????????
   {
     const banner=document.getElementById('watchdogBanner');
     const msg=document.getElementById('watchdogMsg');
@@ -1829,7 +1829,7 @@ R"OMEGA23B(
       const sessionActive=safe(d.session_tradeable)===1;
       // Only warn after 5 min uptime (warmup period) + session must be active
       const warmedUp=uptime>300;
-      // Suppress on weekends — Saturday after 13:00 UTC and all of Sunday
+      // Suppress on weekends -- Saturday after 13:00 UTC and all of Sunday
       const nowD=new Date();
       const dow=nowD.getUTCDay(); // 0=Sun,6=Sat
       const isWeekend=(dow===0)||(dow===6&&nowD.getUTCHours()>=13);
@@ -1850,9 +1850,9 @@ R"OMEGA23B(
           if(age) age.textContent=mins+'m idle';
           if(msg){
             if(sinceSignal>=WARN_SECS)
-              msg.textContent='— no signals or entries. Check log for blocks.';
+              msg.textContent='-- no signals or entries. Check log for blocks.';
             else
-              msg.textContent='— signals generating but entries blocked. Check R:R / spread / gates.';
+              msg.textContent='-- signals generating but entries blocked. Check R:R / spread / gates.';
           }
         } else {
           banner.style.display='none';
@@ -1876,7 +1876,7 @@ R"OMEGA23B(
     if(b)b.style.width=(n/maxG*100)+'%';if(ni)ni.textContent=n;});
   txt('govTotal','Total: '+(gs+gl+gp+gpos+gc));
 
-  // ── Cluster Exposure panel ────────────────────────────────────────────────
+  // ?? Cluster Exposure panel ????????????????????????????????????????????????
   {
     const clusters=[
       ['US',  safe(d.exposure_us_equity), 'expBarUS',  'expValUS'],
@@ -1905,7 +1905,7 @@ R"OMEGA23B(
     if(totEl){totEl.textContent='$'+tot.toFixed(0);totEl.style.color=tot>5000?'var(--amber)':'var(--t1)';}
   }
 
-  // ── Engine P&L attribution ────────────────────────────────────────────────
+  // ?? Engine P&L attribution ????????????????????????????????????????????????
   if (d.eng_pnl) {
     const ep=d.eng_pnl, et=d.eng_trades||{};
     const pairs=[
@@ -1936,7 +1936,7 @@ R"OMEGA23B(
     }
   }
 
-  // ── Multi-day throttle badge ──────────────────────────────────────────────
+  // ?? Multi-day throttle badge ??????????????????????????????????????????????
   {
     const streak=safe(d.multiday_consec_loss_days);
     const scale=safe(d.multiday_scale,1);
@@ -1949,7 +1949,7 @@ R"OMEGA23B(
     if(sEl){sEl.textContent=Math.round(scale*100)+'%';sEl.style.color=scale<1?'var(--red)':'var(--green)';}
   }
 
-  // Regime — header strip
+  // Regime -- header strip
   const vix=safe(d.vix_level),reg=d.macro_regime||'NEUTRAL',div=safe(d.es_nq_divergence);
   const vHdr=document.getElementById('vixLevelHdr');
 
@@ -1978,7 +1978,7 @@ R"OMEGA23B(
     const p=safe(s.phase),col=p===1?'var(--amber)':p===2?'var(--green)':'var(--t2)',label=p===0?'FLAT':p===1?'COMP':'BRK';
     const phEl=document.getElementById('comp'+s.id+'Ph');if(phEl){phEl.textContent=label;phEl.style.color=col;}
     const dtEl=document.getElementById('comp'+s.id+'Det');
-    if(dtEl){if(p===1&&safe(s.hi)>0)dtEl.textContent=safe(s.hi).toFixed(2)+'↑'+safe(s.lo).toFixed(2);
+    if(dtEl){if(p===1&&safe(s.hi)>0)dtEl.textContent=safe(s.hi).toFixed(2)+'?'+safe(s.lo).toFixed(2);
     else dtEl.textContent='vol '+safe(s.rv).toFixed(3)+'%';}
   });
 
@@ -2012,7 +2012,7 @@ function httpPoll(){if(wsConnected)return;fetch('/api/telemetry').then(r=>r.json
 R"OMEGA27(
 
 
-// pollTrades — reads /api/history which serves from the disk CSV file.
+// pollTrades -- reads /api/history which serves from the disk CSV file.
 // This survives restarts: yesterday's +$57 shows up immediately on reload.
 // Falls back to /api/trades (in-memory) only if /api/history fails.
 function pollTrades(){
@@ -2027,7 +2027,7 @@ function pollTrades(){
           const el=document.getElementById('tradeCount');
           if(el&&s&&s.total_trades>0){
             const pnl=s.net_pnl||0;
-            el.textContent=s.total_trades+' closed · '+s.wins+'W/'+(s.total_trades-s.wins)+'L · '+(pnl>=0?'+':'-')+'$'+Math.abs(pnl).toFixed(2)+(s.source==='csv'?' (from disk)':'');
+            el.textContent=s.total_trades+' closed ? '+s.wins+'W/'+(s.total_trades-s.wins)+'L ? '+(pnl>=0?'+':'-')+'$'+Math.abs(pnl).toFixed(2)+(s.source==='csv'?' (from disk)':'');
           }
         })
         .catch(()=>{});

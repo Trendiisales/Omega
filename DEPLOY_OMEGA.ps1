@@ -20,7 +20,7 @@ Write-Host "[2/5] Pulling latest from GitHub..." -ForegroundColor Yellow
 Set-Location C:\Omega
 git fetch origin
 
-# Check if the deploy script itself will change — if so, re-exec the new version.
+# Check if the deploy script itself will change -- if so, re-exec the new version.
 # PowerShell loads the entire script into memory before running any of it, so
 # git reset --hard below would overwrite the file but the OLD code keeps running.
 # Fix: detect if the script differs from origin/main and re-launch if so.
