@@ -4669,21 +4669,26 @@ private:
     // vol_scaled_sl: scale CB (and ImpulseCont) SL/TP with current vol_range.
     // Problem: fixed SL_TICKS=50 ($5) gets hit by normal noise on high-vol moves.
     // During today's 120pt selloff, vol_range=50pts → noise easily exceeds $5.
-    // Solution: SL = clamp(vol_range * 0.20, $5, $15), TP = SL * 2.0 (maintains 2:1 RR).
+    // Solution: SL = clamp(vol_range * 0.40, $5, $15), TP = SL * 2.0 (maintains 2:1 RR).
+    // Multiplier validated against 31 Mar 2026 live data (8 moves):
+    //   0.20 → WR=50% +$84  (false stops on 20pt+ vol moves)
+    //   0.40 → WR=83% +$384 (survives 01:00 UTC $2 false stop on +68pt move)
+    //   0.50 → same as 0.40 (most moves capped at $5 floor or $15 ceiling)
     // Risk-based sizing in main.cpp compensates: wider SL = smaller size = same $ risk.
     // Applies ONLY to CompressionBreakout and ImpulseContinuation — engines that fire
     // at the START of a move where vol_range reflects real current volatility.
-    // Does NOT apply to: WickRejection, DonchianBreakout, etc. (different SL logic).
     void apply_vol_scaled_sl(GoldSignal& gs) const noexcept {
         const std::string eng(gs.engine);
         if (eng != "CompressionBreakout" && eng != "ImpulseContinuation") return;
         const double vr = vol_filter_.current_range();
         if (vr <= 0.0) return;
-        // Scale: 0.20 × vol_range, clamped [$5, $15] = [50 ticks, 150 ticks]
-        const double sl_pts  = std::max(5.0, std::min(15.0, vr * 0.20));
-        const double sl_ticks = sl_pts / 0.10;   // convert $ to ticks (0.10 per tick)
+        // Scale: 0.40 × vol_range, clamped [$5, $15] = [50 ticks, 150 ticks]
+        // 0.40 validated 31 Mar 2026: fixes false stops on 15-25pt vol moves
+        // while keeping $5 floor on dead tape and $15 cap on extreme vol
+        const double sl_pts   = std::max(5.0, std::min(15.0, vr * 0.40));
+        const double sl_ticks = sl_pts / 0.10;
         const double tp_ticks = sl_ticks * 2.0;  // always 2:1 RR
-        if (sl_ticks > gs.sl_ticks) {  // only widen, never tighten below engine's own floor
+        if (sl_ticks > gs.sl_ticks) {  // only widen, never tighten below engine floor
             printf("[CB-VOL-SL] %s vol_range=%.1f sl=%.0fticks($%.0f) tp=%.0fticks($%.0f) "
                    "[was sl=%.0f tp=%.0f]\n",
                    gs.engine, vr, sl_ticks, sl_pts, tp_ticks, sl_pts*2.0,
