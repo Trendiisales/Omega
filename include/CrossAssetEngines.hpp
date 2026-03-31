@@ -142,9 +142,9 @@ struct CrossPosition {
         const double tp_dist = tp_extended_ ? init_tp_dist_ : std::fabs(tp - entry);
         if (!tp_extended_) init_tp_dist_ = tp_dist;  // cache original TP dist
         if (tp_dist > 0.0) {
-            const double be_threshold    = tp_dist * 0.50;  // lock BE at 50% to TP
-            const double trail_threshold = tp_dist * 0.75;  // start trail at 75% to TP
-            const double trail_dist      = tp_dist * 0.40;  // trail 40% of TP dist behind peak
+            const double be_threshold    = tp_dist * 0.40;  // lock BE at 40% to TP (was 50%)
+            const double trail_threshold = tp_dist * 0.60;  // start trail at 60% to TP (was 75%)
+            const double trail_dist      = tp_dist * 0.20;  // trail 20% of TP dist behind peak (was 40% — too loose)
             if (move >= be_threshold && !be_locked_) {
                 // Lock breakeven — SL moves to entry (+ tiny buffer for spread)
                 be_locked_ = true;
@@ -154,7 +154,7 @@ struct CrossPosition {
                 if (!is_long && be_sl < sl) sl = be_sl;
             }
             if (move >= trail_threshold) {
-                // Trail SL behind MFE
+                // Trail SL tightly behind MFE — 20% of TP dist = much tighter lock
                 const double trail_sl = is_long ? (entry + mfe - trail_dist)
                                                 : (entry - mfe + trail_dist);
                 if (is_long  && trail_sl > sl) sl = trail_sl;
