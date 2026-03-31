@@ -1103,12 +1103,14 @@ public:
     double  EXTENSION_THRESH_PCT = 0.20; // price must be >0.20% from VWAP to qualify
     double  EXTENSION_SL_RATIO   = 0.60; // SL = extension × 0.60 past entry (further from VWAP)
     double  MAE_EXIT_RATIO       = 0.50; // exit early if adverse move > 0.50 × TP dist
-                                         // thesis dead — price trending away not reverting
+    double  MAX_EXTENSION_PCT    = 0.80; // block entry if extension > 0.80% of price
+                                         // above this = day's accumulated TREND not a dislocation
+                                         // daily open proxy too stale to use as VWAP reference
     int     MAX_HOLD_SEC         = 900;  // 15 min — VWAP pull should happen fast
-    int     COOLDOWN_SEC         = 180;  // 3 min between entries
+    int     COOLDOWN_SEC         = 180;  // 3 min between normal entries
+    int     MAE_COOLDOWN_SEC     = 600;  // 10 min after MAE exit — thesis was wrong, don't retry
+    int     CONSEC_FC_BLOCK_SEC  = 1800; // 30 min block after 2 consecutive MAE exits same direction
     int     MIN_SESSION_MIN      = 120;  // only enter after 2hrs of session data (10:00 UTC)
-                                         // avoids firing on London pre-open noise where daily
-                                         // open proxy has only 30-60min of price history
     bool    enabled              = true;
     // Confluence thresholds
     double  CONF_VIX_THRESH      = 18.0;
@@ -1131,9 +1133,6 @@ public:
 
         if (pos_.active) {
             // ── MAE early exit — mean-reversion thesis invalidation ────────────
-            // If price moves more than MAE_EXIT_RATIO × TP distance AGAINST us,
-            // the reversion isn't happening — price is trending away.
-            // Exit immediately rather than bleeding to the full 15min timeout.
             const double mid_now = (bid + ask) * 0.5;
             const double adverse = pos_.is_long ? (pos_.entry - mid_now)
                                                 : (mid_now - pos_.entry);
@@ -1143,7 +1142,31 @@ public:
                        sym.c_str(), adverse, tp_dist_pos * MAE_EXIT_RATIO,
                        MAE_EXIT_RATIO * 100.0);
                 fflush(stdout);
+                // Track consecutive MAE exits in same direction for blocking
+                const bool this_long = pos_.is_long;
                 pos_.force_close(bid, ask, on_close);
+                // Extended cooldown after MAE exit — don't immediately re-enter
+                // into the same trending market that just invalidated the thesis
+                cooldown_until_ = ca_now_sec() + MAE_COOLDOWN_SEC;
+                // Consecutive FC tracking: if same direction as last FC, increment
+                if (last_fc_long_ == this_long) {
+                    ++consec_fc_same_dir_;
+                } else {
+                    consec_fc_same_dir_ = 1;
+                    last_fc_long_       = this_long;
+                }
+                // After 2 consecutive FCs in same direction, block that direction
+                // for CONSEC_FC_BLOCK_SEC — structural trend, not a reversion setup
+                if (consec_fc_same_dir_ >= 2) {
+                    fc_block_long_    = this_long;
+                    fc_block_until_   = ca_now_sec() + CONSEC_FC_BLOCK_SEC;
+                    printf("[VWAP-REV] %s consecutive MAE=%d in %s direction — blocking %s for %ds\n",
+                           sym.c_str(), consec_fc_same_dir_,
+                           this_long ? "LONG" : "SHORT",
+                           this_long ? "LONG" : "SHORT",
+                           CONSEC_FC_BLOCK_SEC);
+                    fflush(stdout);
+                }
                 return {};
             }
             pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
@@ -1166,6 +1189,14 @@ public:
 
         if (ca_now_sec() < cooldown_until_) return {};
 
+        // ── Consecutive FC direction block ────────────────────────────────────
+        // After 2 MAE exits in the same direction, that direction is structurally
+        // trending — it's not reverting. Block that direction until block expires.
+        if (fc_block_until_ > ca_now_sec()) {
+            const bool is_long_signal = (mid < vwap); // below VWAP = would be LONG
+            if (is_long_signal == fc_block_long_) return {};
+        }
+
         // Compute deviation from VWAP
         const double deviation_pct = (mid - vwap) / vwap * 100.0;
         const bool   above_vwap    = (deviation_pct > 0.0);
@@ -1173,6 +1204,23 @@ public:
 
         if (abs_dev_pct < EXTENSION_THRESH_PCT) {
             prev_mid_ = mid;
+            return {};
+        }
+
+        // ── Maximum extension cap ─────────────────────────────────────────────
+        // If price is MORE than MAX_EXTENSION_PCT from VWAP, the "dislocation"
+        // is the day's accumulated trend, not a mean-reversion setup.
+        // The daily-open VWAP proxy becomes unreliable when price has moved >0.5%
+        // — at that point it's a trend day and fading it consistently loses.
+        // Evidence: USTEC at 13:30 was 0.58% above daily open — every SHORT FC'd.
+        if (abs_dev_pct > MAX_EXTENSION_PCT) {
+            static thread_local int64_t s_ext_log = 0;
+            if (ca_now_sec() - s_ext_log >= 300) {
+                s_ext_log = ca_now_sec();
+                printf("[VWAP-REV] %s extension %.3f%% > max %.3f%% — stale VWAP, skip\n",
+                       sym.c_str(), abs_dev_pct, MAX_EXTENSION_PCT);
+                fflush(stdout);
+            }
             return {};
         }
 
@@ -1267,8 +1315,13 @@ public:
 
 private:
     CrossPosition pos_;
-    double  prev_mid_       = 0.0;
-    int64_t cooldown_until_ = 0;
+    double  prev_mid_           = 0.0;
+    int64_t cooldown_until_     = 0;
+    // Consecutive MAE exit tracking — blocks direction after 2 FCs in a row
+    int     consec_fc_same_dir_ = 0;
+    bool    last_fc_long_       = false;
+    bool    fc_block_long_      = false;
+    int64_t fc_block_until_     = 0;
     static constexpr int TREND_WINDOW = 20;
     double  mid_window_[TREND_WINDOW] = {};
     int     mid_window_pos_           = 0;
