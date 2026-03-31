@@ -6,20 +6,17 @@
 // co-located VPS. They exploit timing edges unavailable to retail traders on
 // home connections (20-100ms RTT).
 //
-// ENGINES:
-//   1. GoldSilverLeadLag     — Gold fires signal → enter Silver before it reacts
+// ENGINES (ACTIVE):
 //   2. GoldSpreadDislocation — Large order hits Gold book → fade the spike
 //   3. GoldEventCompression  — Tight pre-news compression → early breakout entry
 //
-// All engines are fully independent from GoldEngineStack and CRTP engines.
-// Each maintains its own position, P&L tracking, and cooldown state.
-// All positions are paper-tracked in SHADOW mode, real orders in LIVE mode.
+// DELETED:
+//   1. GoldSilverLeadLag — DELETED 2026-03-31. -$66 on 1 trade, held 68min.
+//      Silver trading suspended. XAG correlation edge not validated.
 //
-// HOW THEY WORK:
-//   on_tick_gold(bid, ask, latency_ms) — call on every XAUUSD tick
-//   on_tick_silver(bid, ask)           — call on every XAGUSD tick
-//   has_open_position()                — position management query
-//   signal_log()                       — last signal detail string
+// NOTE: SpreadDislocation + EventCompression currently run in MANAGE-ONLY mode.
+// New entries disabled (RTT ~68ms, latency edge requires <1ms). Existing
+// positions drained to TP/SL. Re-enable new entries if RTT drops below 5ms.
 // =============================================================================
 
 #include <cstdint>

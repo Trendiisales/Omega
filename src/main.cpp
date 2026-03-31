@@ -458,9 +458,9 @@ static omega::cross::SilverTurtleTickEngine g_silver_turtle;  // DISABLED
 static omega::cross::TrendPullbackEngine   g_trend_pb_gold;   // XAUUSD
 static omega::cross::TrendPullbackEngine   g_trend_pb_ger40;  // GER40
 
-// Co-location latency edge engines -- GoldSilverLeadLag + GoldSpreadDislocation
-// + GoldEventCompression. Fully independent from GoldEngineStack and CRTP engines.
-// These exploit the 0.3-4ms RTT advantage of the co-located VPS.
+// Co-location latency edge stack — GoldSpreadDislocation + GoldEventCompression.
+// GoldSilverLeadLag DELETED 2026-03-31. Both remaining engines run MANAGE-ONLY
+// (new entries disabled — RTT ~68ms, edge requires <1ms).
 static omega::latency::LatencyEdgeStack g_le_stack;
 
 // ── Cross-engine deduplication — file-scope so dispatch lambda can see it ──
