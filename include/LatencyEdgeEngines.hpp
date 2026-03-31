@@ -613,16 +613,7 @@ public:
 // LatencyEdgeStack::configure(). Default values match prior constexpr calibration.
 // =============================================================================
 struct LatencyEdgeCfg {
-    // GoldSilverLeadLag
-    double  lead_lag_gold_signal_move    = 2.00;
-    double  lead_lag_silver_min_reaction = 0.05;
-    double  lead_lag_silver_tp           = 0.50;
-    double  lead_lag_silver_sl           = 0.25;
-    int64_t lead_lag_signal_expiry_ms    = 500;
-    double  lead_lag_max_spread_gold     = 1.50;
-    double  lead_lag_max_spread_silver   = 0.15;
-    int     lead_lag_cooldown_sec        = 300;
-    int     lead_lag_max_hold_sec        = 60;
+    // GoldSilverLeadLag DELETED — fields removed
     // GoldSpreadDislocation
     double  spread_disloc_spike_ratio    = 2.5;
     double  spread_disloc_min_median     = 0.30;

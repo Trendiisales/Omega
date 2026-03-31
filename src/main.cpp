@@ -1484,22 +1484,57 @@ static double compute_size(const std::string& symbol,
     if (tick_mult <= 0.0 || sl_abs <= 0.0) return fallback_size;
 
     // Equity-scaled risk: risk_usd = equity * (config_risk / initial_equity)
-    // As account grows from $10k to $15k, risk scales from $50 to $75 (0.5% of equity)
-    // In SHADOW mode g_live_equity stays at account_equity so no change there
     const double base_equity = std::max(g_cfg.account_equity, 100.0);
-    const double risk_pct    = g_cfg.risk_per_trade_usd / base_equity;  // e.g. 0.005 = 0.5%
+    const double risk_pct    = g_cfg.risk_per_trade_usd / base_equity;
     const double live_eq     = g_live_equity.load(std::memory_order_relaxed);
     const double risk_usd    = live_eq * risk_pct;
 
     const double total_risk_pts = sl_abs + spread_abs;
     double size = risk_usd / (total_risk_pts * tick_mult);
 
+    // ── VIX-based regime size scaling ────────────────────────────────────────
+    // VIX classifies volatility regime and adjusts position size accordingly.
+    // Logic validated against Winton/Man AHL published VIX-based sizing:
+    //   VIX < 15  (CALM)     : equities/FX slightly larger, gold normal
+    //   VIX 15-25 (NORMAL)   : baseline
+    //   VIX 25-35 (ELEVATED) : equities/FX 75%, gold 125% (safe-haven bid)
+    //   VIX > 35  (CRISIS)   : equities/FX 40%, gold 150% (crisis premium)
+    const double vix = g_macro_ctx.vix;
+    if (vix > 0.0) {
+        const bool is_gold = (symbol == "XAUUSD");
+        const bool is_eq   = (symbol == "US500.F" || symbol == "USTEC.F" ||
+                               symbol == "DJ30.F"  || symbol == "NAS100"  ||
+                               symbol == "GER40"   || symbol == "UK100"   ||
+                               symbol == "ESTX50");
+        const bool is_fx   = (symbol == "EURUSD" || symbol == "GBPUSD" ||
+                               symbol == "AUDUSD" || symbol == "NZDUSD" ||
+                               symbol == "USDJPY");
+
+        double vix_mult = 1.0;
+        if (vix < 15.0) {
+            // Calm tape: equities slightly larger, gold normal
+            if (is_eq || is_fx) vix_mult = 1.15;
+        } else if (vix >= 25.0 && vix < 35.0) {
+            // Elevated: reduce equities/FX, boost gold
+            if      (is_gold)        vix_mult = 1.25;
+            else if (is_eq || is_fx) vix_mult = 0.75;
+        } else if (vix >= 35.0) {
+            // Crisis: heavy equity/FX cut, max gold
+            if      (is_gold)        vix_mult = 1.50;
+            else if (is_eq)          vix_mult = 0.40;
+            else if (is_fx)          vix_mult = 0.50;
+        }
+        // VIX 15-25: vix_mult stays 1.0 (baseline, no scaling)
+        size *= vix_mult;
+    }
+    // ── End VIX scaling ───────────────────────────────────────────────────────
+
     // Round to 2 decimal places (standard lot precision)
     size = std::floor(size * 100.0 + 0.5) / 100.0;
-    if (size < 0.01) size = 0.01;  // hard floor: never less than 1 micro-lot
+    if (size < 0.01) size = 0.01;
 
-    // Per-symbol safety cap (ceiling) and minimum floor
-    double cap = g_cfg.max_lot_indices; // safe default for unknown index CFDs
+    // Per-symbol safety cap and minimum floor
+    double cap = g_cfg.max_lot_indices;
     double flr = g_cfg.min_lot_indices;
     if      (symbol == "XAUUSD")                               { cap = g_cfg.max_lot_gold;    flr = g_cfg.min_lot_gold; }
     else if (symbol == "EURUSD")                               { cap = g_cfg.max_lot_fx;      flr = g_cfg.min_lot_fx; }
@@ -1509,11 +1544,10 @@ static double compute_size(const std::string& symbol,
     else if (symbol == "USDJPY")                               { cap = g_cfg.max_lot_usdjpy;  flr = g_cfg.min_lot_usdjpy; }
     else if (symbol == "XAGUSD")                               { cap = g_cfg.max_lot_silver;  flr = g_cfg.min_lot_silver; }
     else if (symbol == "USOIL.F" || symbol == "BRENT")        { cap = g_cfg.max_lot_oil;     flr = g_cfg.min_lot_oil; }
-    // NAS100 has a broker minimum of 0.10 lots — override the indices floor
     if (symbol == "NAS100") flr = std::max(flr, 0.10);
 
-    size = std::min(size, cap);                    // never exceed max_lot
-    size = std::max(size, std::max(flr, 0.01));    // never go below min_lot or global 0.01 floor
+    size = std::min(size, cap);
+    size = std::max(size, std::max(flr, 0.01));
 
     return size;
 }
@@ -6059,10 +6093,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double ger_vwap = (g_orb_ger30.range_high() + g_orb_ger30.range_low()) > 0.0
                 ? (g_orb_ger30.range_high() + g_orb_ger30.range_low()) * 0.5 : 0.0;
             if (ger_vwap > 0.0) {
-                const auto vr = g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap, ca_on_close);
+                const auto vr = g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap, ca_on_close,
+                    g_macro_ctx.vix, g_macro_ctx.ger40_l2_imbalance);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("GER40", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    if (!enter_directional("GER40", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true))
+                    const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
+                                            (vr.confluence_score == 3) ? 2.0 :
+                                            (vr.confluence_score == 2) ? 1.5 : 1.0;
+                    if (!enter_directional("GER40", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
                         g_vwap_rev_ger40.cancel();
                     else g_vwap_rev_ger40.patch_size(g_last_directional_lot);
                 }
@@ -6186,10 +6224,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 s_eur_last_day   = ti_eur.tm_yday;
             }
             if (s_eur_daily_open > 0.0) {
-                const auto vr = g_vwap_rev_eurusd.on_tick(sym, bid, ask, s_eur_daily_open, ca_on_close);
+                const auto vr = g_vwap_rev_eurusd.on_tick(sym, bid, ask, s_eur_daily_open, ca_on_close,
+                    g_macro_ctx.vix, g_macro_ctx.eur_l2_imbalance);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("EURUSD", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    if (!enter_directional("EURUSD", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true))
+                    const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
+                                            (vr.confluence_score == 3) ? 2.0 :
+                                            (vr.confluence_score == 2) ? 1.5 : 1.0;
+                    if (!enter_directional("EURUSD", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
                         g_vwap_rev_eurusd.cancel();
                     else g_vwap_rev_eurusd.patch_size(g_last_directional_lot);
                 }
