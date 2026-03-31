@@ -284,6 +284,11 @@ public:
     double      SL_PCT                = 2.000;
     int         COMPRESSION_LOOKBACK  = 50;
     int         BASELINE_LOOKBACK     = 200;
+    // Cold-start entry gate — ticks that must be received before ANY entry.
+    // seed() pre-fills m_prices bypassing the COMPRESSION_LOOKBACK size check,
+    // so without this guard the engine can fire within ticks of a restart.
+    // At ~5-10 ticks/s: 150 ticks ≈ 15-30s real market data before first entry.
+    int         MIN_ENTRY_TICKS       = 150;
     double      COMPRESSION_THRESHOLD = 0.80;  // enter compression when ratio < this
     double      COMP_EXIT_THRESHOLD   = 0.95;  // hysteresis: stay compressed while ratio < this, exit when >= this
     int         MAX_HOLD_SEC          = 1500;
@@ -363,7 +368,8 @@ private:
     // ── Tick direction counter ────────────────────────────────────────────────
     // +N = N consecutive upticks, -N = N consecutive downticks. Reset on flip.
     // Breakout with 2+ ticks in direction = real order flow, not a spike.
-    int    m_tick_run  = 0;
+    int    m_tick_run       = 0;
+    int    m_ticks_received = 0;  // raw tick count since construction, never reset by seed()
     double m_last_mid  = 0.0;
 
     // ── Watch phase timing ────────────────────────────────────────────────────
@@ -398,6 +404,7 @@ public:
                                         bool can_enter = true) noexcept
     {
         if (bid <= 0.0 || ask <= 0.0) return {};
+        ++m_ticks_received;  // always — not reset by seed()
 
         const double mid        = (bid + ask) * 0.5;
         const double spread     = ask - bid;
@@ -450,6 +457,16 @@ public:
         m_last_mid = mid;
 
         if (static_cast<int>(m_prices.size()) < COMPRESSION_LOOKBACK + 1) return {};
+
+        // ── Cold-start entry gate ────────────────────────────────────────────────
+        // seed() pre-fills m_prices with BASELINE_LOOKBACK copies of a single mid
+        // price, bypassing the size check above on the very first real tick.
+        // m_ticks_received counts raw ticks received since construction and is
+        // never reset by seed() — it cannot be circumvented.
+        // Position management (SL/TP/trail) still runs — only new entries blocked.
+        if (m_ticks_received < MIN_ENTRY_TICKS && can_enter) {
+            can_enter = false;  // allow warmup processing, block new entries
+        }
 
         // Compute volatilities
         // During warmup (< BASELINE_LOOKBACK ticks): use the longest window we have
@@ -1345,3 +1362,4 @@ public:
 };
 
 } // namespace omega
+
