@@ -881,8 +881,11 @@ function updateDepthPanel(d) {
     }).join('');
   }
 
-  bidEl.innerHTML = renderRows(sortedBids, 'bid');
-  askEl.innerHTML = renderRows(sortedAsks, 'ask');
+  // Only re-render if prices changed — prevents flicker on every WS tick
+  const newBidHtml = renderRows(sortedBids, 'bid');
+  const newAskHtml = renderRows(sortedAsks, 'ask');
+  if (bidEl.innerHTML !== newBidHtml) bidEl.innerHTML = newBidHtml;
+  if (askEl.innerHTML !== newAskHtml) askEl.innerHTML = newAskHtml;
 
   // Imbalance bar: bid vol vs ask vol (total, not just top-N, but we only have top-N)
   const imb = totalBidVol / (totalBidVol + totalAskVol + 0.0001);
