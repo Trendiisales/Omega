@@ -293,10 +293,21 @@ private:
         if (!send_msg(ssl, PB::symbols_list_req(ctid_account_id))) return false;
         if (!wait_for(ssl, 2115, 20000, pt, payload)) { std::cerr << "[CTRADER] SymbolsListRes timeout\n"; return false; }
 
+        // ── XAUUSD spot pin — mirrors FIX side g_id_to_sym[41]="XAUUSD" ─────────
+        // BlackBull cTrader symbol list contains two gold entries:
+        //   id=41   -> "XAUUSD"  (spot  ~$4580)  <- the one we want
+        //   id=2660 -> "GOLD.F"  (futures ~$5200) <- must never be subscribed
+        // Confirmed 2026-03-31 via dump_all_symbols diagnostic run.
+        // XAUUSD_SPOT_ID=41 is IMMUTABLE — hardcoded exactly as FIX pins spot to id=41.
+        // Even if broker renames the symbol or reorders the list, we subscribe
+        // id=41 directly and route it to internal name "XAUUSD".
+        static constexpr uint64_t XAUUSD_SPOT_ID = 41;  // BlackBull XAUUSD spot — immutable
+
         // Parse SymbolsListRes — field 3 = repeated ProtoOALightSymbol
         // ProtoOALightSymbol: field 1=symbolId(int64), field 2=symbolName(string)
         id_to_name_.clear(); depth_books_.clear(); id_to_internal_.clear();
         std::vector<int64_t> sub_ids;
+        bool xauusd_pinned = false;
         for (const auto& f : PB::parse(payload)) {
             if (f.field_num != 3 || f.wire_type != 2) continue;
             const auto sf = PB::parse(f.bytes);
@@ -304,33 +315,49 @@ private:
             const std::string sname = PB::get_string(sf, 2);
             if (sid <= 0 || sname.empty()) continue;
             id_to_name_[uint64_t(sid)] = sname;
+
+            // ── XAUUSD spot pin — id=41 is hardcoded, non-negotiable ──────────────────
+            if (uint64_t(sid) == XAUUSD_SPOT_ID) {
+                sub_ids.push_back(sid);
+                depth_books_["XAUUSD"] = CTDepthBook{};
+                id_to_internal_[uint64_t(sid)] = "XAUUSD";
+                xauusd_pinned = true;
+                std::cout << "[CTRADER] PINNED: XAUUSD spot id=" << sid
+                          << " (" << sname << ") -- futures blocked\n";
+                continue;
+            }
+            // Block all other XAU/GOLD variants — any ID that is not 41 must not
+            // route to XAUUSD. This permanently excludes GOLD.F (id=2660) and any
+            // future renamed contracts.
+            if (sname.find("XAU") != std::string::npos ||
+                sname == "GOLD.F" || sname == "GOLD") {
+                std::cout << "[CTRADER] BLOCKED: " << sname << " id=" << sid
+                          << " -- not XAUUSD spot (pinned id=" << XAUUSD_SPOT_ID << ")\n";
+                continue;
+            }
+
+            // All other whitelisted symbols — normal name-based subscription
             if (symbol_whitelist.count(sname)) {
                 sub_ids.push_back(sid);
-                // Use alias if available (e.g. broker "GOLD" → internal "XAUUSD")
                 const std::string internal_name = name_alias.count(sname) ? name_alias.at(sname) : sname;
                 depth_books_[internal_name] = CTDepthBook{};
                 id_to_internal_[uint64_t(sid)] = internal_name;
                 std::cout << "[CTRADER] Subscribe depth: " << sname << " id=" << sid
-                          << (internal_name != sname ? " (alias→" + internal_name + ")" : "") << "\n";
+                          << (internal_name != sname ? " (alias->" + internal_name + ")" : "") << "\n";
             }
         }
-        std::cout << "[CTRADER] Symbol list: " << id_to_name_.size() << " total, " << sub_ids.size() << " to subscribe\n";
-        // Always log gold-related symbols for debugging
-        for (const auto& kv : id_to_name_) {
-            const std::string& n = kv.second;
-            if (n.find("XAU") != std::string::npos ||
-                n.find("GOLD") != std::string::npos ||
-                n.find("Gold") != std::string::npos)
-                std::cout << "[CTRADER] Gold candidate: " << n << " id=" << kv.first << "\n";
+        if (!xauusd_pinned) {
+            std::cerr << "[CTRADER] CRITICAL: XAUUSD spot id=" << XAUUSD_SPOT_ID
+                      << " not in symbol list -- broker may have changed IDs\n";
         }
-        // Always dump all symbols so we can diagnose name mismatches
-        if (dump_all_symbols || sub_ids.empty()) {
+        std::cout << "[CTRADER] Symbol list: " << id_to_name_.size() << " total, " << sub_ids.size() << " to subscribe\n";
+        if (dump_all_symbols) {
             std::cout << "[CTRADER] Available symbols:\n";
             for (const auto& kv : id_to_name_)
                 std::cout << "[CTRADER]  avail: " << kv.second << " id=" << kv.first << "\n";
         }
         if (sub_ids.empty()) {
-            std::cerr << "[CTRADER] No whitelisted symbols matched — check whitelist names vs broker\n";
+            std::cerr << "[CTRADER] No symbols to subscribe\n";
             return false;
         }
 
@@ -519,4 +546,5 @@ private:
         while(running.load()&&std::chrono::steady_clock::now()<d) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 };
+
 
