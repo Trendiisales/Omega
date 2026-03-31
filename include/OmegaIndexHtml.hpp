@@ -872,7 +872,7 @@ const _depthMaxRows = 5;  // levels to show per side
 // WS pushes at 250ms but the book only needs repainting when a price level
 // actually changes. Sizes-only changes (volume shifting at same price) are
 // allowed through at most once per 500ms to avoid thrashing on busy tape.
-const _depthLastBest = {};   // key -> { bid: str, ask: str }
+const _depthLastBest = {};   // key -> { fp: string } — fingerprint of all visible price levels
 let   _depthLastSizeUpdate = 0;  // timestamp of last size-only repaint
 
 function setDepthSym(sym) {
@@ -923,26 +923,7 @@ function updateDepthPanel(d) {
   const imbEl = document.getElementById('depthImbFill');
   const badge = document.getElementById('depthImbBadge');
 
-  // ── Price-change gate ────────────────────────────────────────────────────
-  // WS fires at 250ms. Only repaint when best bid or ask price changes.
-  // Size-only changes (volume at same price) repaint at most every 500ms.
-  if (bids && bids.length && asks && asks.length) {
-    const sortedB = [...bids].sort((a,b) => b.p - a.p);
-    const sortedA = [...asks].sort((a,b) => a.p - b.p);
-    const refPx0  = sortedB[0] ? sortedB[0].p : 1;
-    const dec0    = refPx0 > 100 ? 2 : (refPx0 > 1 ? 4 : 5);
-    const bestBid = sortedB[0] ? sortedB[0].p.toFixed(dec0) : '';
-    const bestAsk = sortedA[0] ? sortedA[0].p.toFixed(dec0) : '';
-    const cached  = _depthLastBest[sym];
-    const priceChanged = !cached || cached.bid !== bestBid || cached.ask !== bestAsk;
-    const now = Date.now();
-    const sizeUpdateDue = (now - _depthLastSizeUpdate) >= 500;
-    if (!priceChanged && !sizeUpdateDue) return;   // nothing to repaint
-    _depthLastBest[sym] = { bid: bestBid, ask: bestAsk };
-    if (!priceChanged) _depthLastSizeUpdate = now;
-  }
-
-  // No data — hide all rows, show placeholder text via first row
+  // ── No data path ─────────────────────────────────────────────────────────
   if (!bids || !bids.length || !asks || !asks.length) {
     ['bid','ask'].forEach(side => {
       _depthRows[side].forEach((r,i) => {
@@ -951,63 +932,51 @@ function updateDepthPanel(d) {
         r.lastP = null; r.lastS = null;
       });
     });
-    if (imbEl) { imbEl.style.transform=''; imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t3)'; }
+    if (imbEl) { imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t3)'; }
     if (badge) { badge.textContent = 'IMB --'; badge.style.color = 'var(--t2)'; }
+    delete _depthLastBest[sym];
     return;
   }
 
-  // Sort levels
+  // ── Sort once — used for both gate and render ─────────────────────────────
   const sortedBids = [...bids].sort((a,b) => b.p - a.p).slice(0, _depthMaxRows);
   const sortedAsks = [...asks].sort((a,b) => a.p - b.p).slice(0, _depthMaxRows);
-
-  const totalBidVol = sortedBids.reduce((s,r) => s + r.s, 0);
-  const totalAskVol = sortedAsks.reduce((s,r) => s + r.s, 0);
-  const maxVol = Math.max(totalBidVol, totalAskVol, 0.001);
 
   const refPx = sortedBids[0] ? sortedBids[0].p : (sortedAsks[0] ? sortedAsks[0].p : 1);
   const dec   = refPx > 100 ? 2 : (refPx > 1 ? 4 : 5);
 
-  // Surgical per-cell update — only touch DOM nodes whose value changed
-  function patchRows(levels, side) {
-    const pool = _depthRows[side];
-    for (let i = 0; i < _depthMaxRows; i++) {
-      const cell = pool[i];
-      if (i >= levels.length) {
-        // hide unused rows
-        if (cell.row.style.display !== 'none') cell.row.style.display = 'none';
-        cell.lastP = null; cell.lastS = null;
-        continue;
-      }
-      const lvl     = levels[i];
-      const pStr    = lvl.p.toFixed(dec);
-      const sStr    = lvl.s >= 1000 ? (lvl.s/1000).toFixed(1)+'k' : lvl.s.toFixed(lvl.s < 1 ? 3 : 2);
-      const barPct  = Math.round(Math.min(100, (lvl.s / maxVol) * 100));
+  // ── Book fingerprint gate ─────────────────────────────────────────────────
+  // Build a compact string of all visible price levels. patchRows already
+  // diffs per-cell, but we skip even calling it when nothing changed at all.
+  // Sizes are intentionally excluded from the fingerprint — they shift every
+  // tick on a live book and would defeat gating entirely. Size bar widths are
+  // throttled separately via _depthLastSizeUpdate.
+  const priceFp = sortedBids.map(l=>l.p.toFixed(dec)).join(',')
+                + '|'
+                + sortedAsks.map(l=>l.p.toFixed(dec)).join(',');
 
-      if (cell.row.style.display === 'none') cell.row.style.display = '';
-      if (cell.lastP !== pStr)  { cell.px.textContent = pStr;  cell.lastP = pStr; }
-      if (cell.lastS !== sStr)  { cell.sz.textContent = sStr;  cell.lastS = sStr; }
-      if (cell.lastBar !== barPct) { cell.bg.style.width = barPct+'%'; cell.lastBar = barPct; }
-    }
-  }
+  const now = Date.now();
+  const cached = _depthLastBest[sym];
+  const priceChanged = !cached || cached.fp !== priceFp;
+  const sizeUpdateDue = (now - _depthLastSizeUpdate) >= 500;
 
-  patchRows(sortedBids, 'bid');
-  patchRows(sortedAsks, 'ask');
-
-  // Imbalance bar — only update style when value changes meaningfully
+  // Always update imbalance badge — it's a cheap text compare, no DOM writes unless changed.
+  // Row repaint only happens when price levels change OR size throttle fires.
+  const totalBidVol = sortedBids.reduce((s,r) => s + r.s, 0);
+  const totalAskVol = sortedAsks.reduce((s,r) => s + r.s, 0);
   const imb       = totalBidVol / (totalBidVol + totalAskVol + 0.0001);
   const scalarImb = safe(d[_depthSymL2Key[sym]], 0.5);
   const dispImb   = (scalarImb !== 0.5) ? scalarImb : imb;
   const dev       = dispImb - 0.5;
+
   if (imbEl) {
-    imbEl.style.transform = '';   // always clear — initial HTML had translateX which persists otherwise
-    if (Math.abs(dev) < 0.03) {
-      imbEl.style.width='2px'; imbEl.style.left='50%'; imbEl.style.background='var(--t2)';
-    } else if (dev > 0) {
-      const p = Math.min(50, dev * 200).toFixed(1);
-      imbEl.style.width=p+'%'; imbEl.style.left='50%'; imbEl.style.background='var(--green)';
-    } else {
-      const p = Math.min(50, -dev * 200).toFixed(1);
-      imbEl.style.left=(50-p)+'%'; imbEl.style.width=p+'%'; imbEl.style.background='var(--red)';
+    // Quantise to 1% steps to avoid style writes on micro-drift
+    const newW  = Math.abs(dev) < 0.03 ? '2px' : Math.min(50, Math.abs(dev) * 200).toFixed(0)+'%';
+    const newL  = dev <= 0 ? (50 - Math.min(50, -dev * 200)).toFixed(0)+'%' : '50%';
+    const newBg = Math.abs(dev) < 0.03 ? 'var(--t2)' : dev > 0 ? 'var(--green)' : 'var(--red)';
+    if (imbEl._w !== newW || imbEl._l !== newL || imbEl._bg !== newBg) {
+      imbEl.style.width = newW; imbEl.style.left = newL; imbEl.style.background = newBg;
+      imbEl._w = newW; imbEl._l = newL; imbEl._bg = newBg;
     }
   }
   if (badge) {
@@ -1019,6 +988,39 @@ function updateDepthPanel(d) {
       badge.style.color = bidDom ? 'var(--green)' : askDom ? 'var(--red)' : 'var(--t2)';
     }
   }
+
+  // Skip row repaint entirely if neither price levels nor size throttle fired
+  if (!priceChanged && !sizeUpdateDue) return;
+
+  _depthLastBest[sym] = { fp: priceFp };
+  if (!priceChanged) _depthLastSizeUpdate = now;  // size-only update — record time
+
+  // ── Surgical per-cell row update ──────────────────────────────────────────
+  const maxVol = Math.max(totalBidVol, totalAskVol, 0.001);
+
+  function patchRows(levels, side) {
+    const pool = _depthRows[side];
+    for (let i = 0; i < _depthMaxRows; i++) {
+      const cell = pool[i];
+      if (i >= levels.length) {
+        if (cell.row.style.display !== 'none') cell.row.style.display = 'none';
+        cell.lastP = null; cell.lastS = null;
+        continue;
+      }
+      const lvl    = levels[i];
+      const pStr   = lvl.p.toFixed(dec);
+      const sStr   = lvl.s >= 1000 ? (lvl.s/1000).toFixed(1)+'k' : lvl.s.toFixed(lvl.s < 1 ? 3 : 2);
+      const barPct = Math.round(Math.min(100, (lvl.s / maxVol) * 100));
+
+      if (cell.row.style.display === 'none') cell.row.style.display = '';
+      if (cell.lastP !== pStr)  { cell.px.textContent = pStr;  cell.lastP = pStr; }
+      if (cell.lastS !== sStr)  { cell.sz.textContent = sStr;  cell.lastS = sStr; }
+      if (cell.lastBar !== barPct) { cell.bg.style.width = barPct+'%'; cell.lastBar = barPct; }
+    }
+  }
+
+  patchRows(sortedBids, 'bid');
+  patchRows(sortedAsks, 'ask');
 }
 
 )OMEGA16"
