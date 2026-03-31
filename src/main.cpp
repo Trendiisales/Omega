@@ -786,7 +786,7 @@ static AtomicL2 g_l2_us30;    // DJ30.F
 
 // Map symbol name to AtomicL2* — used by cTrader write path and FIX tick read path
 static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
-    if (sym=="XAUUSD"||sym=="GOLD") return &g_l2_gold;
+    if (sym=="XAUUSD") return &g_l2_gold;
     if (sym=="US500.F")  return &g_l2_sp;
     if (sym=="USTEC.F")  return &g_l2_nq;
     if (sym=="USOIL.F")  return &g_l2_cl;
@@ -9812,17 +9812,13 @@ int main(int argc, char* argv[])
         for (const auto& e : g_ext_syms)
             if (e.name[0] != 0) g_ctrader_depth.symbol_whitelist.insert(e.name);
         // Alternate broker names for gold/silver — broker may not use .F suffix
-        g_ctrader_depth.symbol_whitelist.insert("GOLD");
-        g_ctrader_depth.symbol_whitelist.insert("GOLD.F");  // GOLD.F has real order book; XAUUSD spot depth is flat 0.5
         g_ctrader_depth.symbol_whitelist.insert("XAUUSD");
         g_ctrader_depth.symbol_whitelist.insert("SILVER");
         g_ctrader_depth.symbol_whitelist.insert("XAGUSD");
         g_ctrader_depth.symbol_whitelist.insert("NGAS");
         g_ctrader_depth.symbol_whitelist.insert("VIX");
-        g_ctrader_depth.dump_all_symbols = false;  // disabled: 1473-symbol dump floods stdout
+        g_ctrader_depth.dump_all_symbols = true;   // TEMPORARY: dump symbol list to find correct XAUUSD cTrader ID
         // Alias map: broker name → internal name used by getImb/getBook
-        g_ctrader_depth.name_alias["GOLD"]    = "XAUUSD";
-        g_ctrader_depth.name_alias["GOLD.F"]  = "XAUUSD";  // GOLD.F depth -> XAUUSD imbalance (direction only, price not used)
         // XAUUSD is already the canonical name — no alias needed
 
         g_ctrader_depth.name_alias["SILVER"]  = "XAGUSD";
@@ -9892,3 +9888,4 @@ int main(int argc, char* argv[])
     g_shutdown_done.store(true);  // unblock console_ctrl_handler — process may now exit
     return 0;
 }
+
