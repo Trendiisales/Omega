@@ -67,6 +67,8 @@ bool SymbolConfigManager::load(const std::string& path)
 
         // Supervisor fields
         cfg.allow_bracket          = get_int   (kv, "ALLOW_BRACKET",          1) != 0;
+        cfg.trend_bracket_enabled  = get_int   (kv, "TREND_BRACKET_ENABLED",  0) != 0;
+        cfg.trend_bracket_sl_mult  = get_double(kv, "TREND_BRACKET_SL_MULT",  1.2);
         cfg.allow_breakout         = get_int   (kv, "ALLOW_BREAKOUT",         1) != 0;
         cfg.min_regime_confidence  = get_double(kv, "MIN_REGIME_CONFIDENCE",  0.55);
         cfg.min_engine_win_margin  = get_double(kv, "MIN_ENGINE_WIN_MARGIN",  0.10);
@@ -133,3 +135,4 @@ bool SymbolConfigManager::has(const std::string& symbol) const
 {
     return configs_.find(symbol) != configs_.end();
 }
+
