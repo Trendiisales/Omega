@@ -482,6 +482,11 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 #include "GoldFlowEngine.hpp"
 static omega::GoldBracketEngine   g_bracket_gold;
 static GoldFlowEngine             g_gold_flow;
+// Reload instance: independent GoldFlowEngine for continuation entries.
+// Fires after g_gold_flow banks PARTIAL_1R and confirms price still moving.
+// Managed exactly like g_gold_flow but never arms its own reload (avoids cascade).
+// Shares all session/risk gates. Counted toward gold open position cap.
+static GoldFlowEngine             g_gold_flow_reload;
 
 // ── Trend-day multi-engine state ─────────────────────────────────────────────
 // Tracks GoldFlow exit details so CompBreakout/Bracket can re-enter on trend days
@@ -3689,6 +3694,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const int metals = static_cast<int>(g_gold_stack.has_open_position())
                          + static_cast<int>(g_bracket_gold.pos.active)
                          + static_cast<int>(g_gold_flow.has_open_position())
+                         + static_cast<int>(g_gold_flow_reload.has_open_position())
                          + static_cast<int>(g_eng_xag.pos.active)
                          + static_cast<int>(g_bracket_xag.pos.active)
                          + static_cast<int>(g_orb_silver.has_open_position());
@@ -4437,7 +4443,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_eng_brent.pos.active) +
                 static_cast<int>(g_gold_stack.has_open_position()) +
                 static_cast<int>(g_le_stack.has_open_position()) +
-                static_cast<int>(g_gold_flow.has_open_position()) +  // gold flow positions count toward global cap
+                static_cast<int>(g_gold_flow.has_open_position()) +        // gold flow
+                static_cast<int>(g_gold_flow_reload.has_open_position()) + // reload instance
                 static_cast<int>(g_nbm_sp.has_open_position()) +
                 static_cast<int>(g_nbm_nq.has_open_position()) +
                 static_cast<int>(g_nbm_nas.has_open_position()) +
@@ -4703,7 +4710,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_eng_brent.pos.active) +
             static_cast<int>(g_gold_stack.has_open_position()) +
             static_cast<int>(g_le_stack.has_open_position()) +
-            static_cast<int>(g_gold_flow.has_open_position()) +  // gold flow positions count toward global cap
+            static_cast<int>(g_gold_flow.has_open_position()) +        // gold flow
+            static_cast<int>(g_gold_flow_reload.has_open_position()) + // reload instance
             static_cast<int>(g_nbm_sp.has_open_position()) +
             static_cast<int>(g_nbm_nq.has_open_position()) +
             static_cast<int>(g_nbm_nas.has_open_position()) +
@@ -7489,74 +7497,104 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_macro_ctx.session_slot);
         }
 
+        // ── GoldFlow reload manage — ALWAYS runs when reload position open ─────
+        // Mirrors the main flow manage block exactly. The reload instance is an
+        // independent GoldFlowEngine — it has its own SL, trail, ratchet, staircase.
+        // It does NOT arm further reloads (only main flow arms reloads).
+        if (g_gold_flow_reload.has_open_position()) {
+            g_gold_flow_reload.set_trend_bias(gold_momentum, gold_sdec.confidence,
+                (gold_sdec.regime == omega::Regime::TREND_CONTINUATION),
+                g_gold_flow_reload.pos.is_long
+                    ? g_macro_ctx.gold_wall_above
+                    : g_macro_ctx.gold_wall_below);
+            auto reload_mgmt_cb = [&](const omega::TradeRecord& tr) {
+                if (tr.exitReason == std::string("PARTIAL_1R")) {
+                    if (g_cfg.mode == "LIVE") {
+                        send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                    }
+                    handle_closed_trade(tr);
+                    return;
+                }
+                handle_closed_trade(tr);
+                send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                // Reload exits do not set reversal windows — main flow owns those.
+                printf("[GF-RELOAD] POSITION CLOSED reason=%s pnl_raw=%.4f\n",
+                       tr.exitReason.c_str(), tr.pnl);
+                fflush(stdout);
+            };
+            g_gold_flow_reload.on_tick(bid, ask,
+                g_macro_ctx.gold_l2_imbalance,
+                g_gold_stack.ewm_drift(),
+                now_ms_g, reload_mgmt_cb,
+                g_macro_ctx.session_slot);
+        }
+
         // ── GoldFlow reload — continuation entry after PARTIAL_1R ─────────────
         // When stair step 1 banks the first 33% and arms a reload, try_reload()
         // is called every tick until it fires, cancels, or times out (5s).
         //
         // The reload enters a NEW fresh full-size position in the same direction
-        // alongside the original remainder. This means:
-        //   - Original remainder: still running with ratchet + trail protection
-        //   - Reload position: fresh entry, full ATR stop, full risk sizing
+        // ── GoldFlow reload entry — fires g_gold_flow_reload after PARTIAL_1R ──
+        // When main flow banks step 1 and arms a reload, try_reload() checks
+        // confirmation conditions each tick. When it returns true (signal fired),
+        // we seed and enter on the independent g_gold_flow_reload instance.
         //
-        // If the move continues: both positions profit.
-        // If the move reverses after reload fires: remainder exits at ratchet
-        //   lock level (keeping most of banked profit), reload exits at SL
-        //   (controlled loss = risk_per_trade). Net: still profitable on balance.
+        // Gate is intentionally LIGHTER than gold_can_enter:
+        //   - Session must be valid (not dead zone)
+        //   - No reload already open (only one reload at a time)
+        //   - No NY close noise
+        //   - Not in the same direction as a fresh SL_HIT block
+        //   - try_reload() internal gates: timeout, retrace, drift, confirmation ticks
         //
-        // Safety: reload is ONLY attempted when:
-        //   gold_can_enter is true (all session/risk/latency gates pass)
-        //   No bracket or stack position would create a stack conflict
-        //   try_reload() internal gates all pass (drift, spread, retrace, timeout)
+        // We do NOT require gold_can_enter (which checks symbol_gate → max_positions).
+        // A reload is a continuation of an already-validated trade, not a new signal.
+        // If max_positions is the only thing blocking, the reload should still fire.
         if (g_gold_flow.reload_pending()
-            && gold_can_enter
-            && !g_bracket_gold.has_open_position()
-            && !g_gold_stack.has_open_position()
-            && !g_le_stack.has_open_position()
-            && !g_trend_pb_gold.has_open_position()
+            && !g_gold_flow_reload.has_open_position()
+            && g_macro_ctx.session_slot != 0   // not dead zone
             && !in_ny_close_noise) {
 
-            const double gf_mid_reload = (bid + ask) * 0.5;
-            const bool fired = g_gold_flow.try_reload(
-                bid, ask, gf_mid_reload, ask - bid,
+            const double gf_mid_r = (bid + ask) * 0.5;
+            const bool signal = g_gold_flow.try_reload(
+                bid, ask, gf_mid_r, ask - bid,
                 g_gold_stack.ewm_drift(),
-                now_ms_g,
-                [&](const omega::TradeRecord& tr) {
-                    // Reload partial or full close — same handling as flow_on_close
-                    // but without the reversal/trail-block state updates (those are
-                    // set by the main position close, not the reload).
-                    if (tr.exitReason == std::string("PARTIAL_1R")) {
-                        if (g_cfg.mode == "LIVE") {
-                            const bool close_is_long = (tr.side == "SHORT");
-                            send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
-                        }
-                        handle_closed_trade(tr);
-                        return;
-                    }
-                    handle_closed_trade(tr);
-                    const bool close_is_long = (tr.side == "SHORT");
-                    send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
-                    // Reload exits don't set reversal windows or trail blocks —
-                    // the main position manages those when it closes.
-                });
+                now_ms_g);
 
-            if (fired) {
-                // Reload entry succeeded — apply same post-entry sizing as main flow
-                if (g_gold_flow.has_open_position()) {
-                    const double gf_regime_wt = 1.0; // standard weight for reload
-                    const double reload_base_lot = g_gold_flow.pos.size;
-                    const double reload_lot = std::max(GFE_MIN_LOT,
-                        std::min(0.50, reload_base_lot * gf_regime_wt));
-                    if (std::fabs(reload_lot - reload_base_lot) > 0.001)
-                        g_gold_flow.pos.size = reload_lot;
+            if (signal) {
+                // try_reload() confirmed — fire directly on reload instance
+                const bool reload_long = g_gold_flow.reload_is_long();
+                const double reload_atr = g_gold_flow.reload_atr();
+
+                g_gold_flow_reload.risk_dollars = g_gold_flow.risk_dollars;
+
+                // Seed bar ATR if available for accurate SL sizing
+                double atr_for_reload = reload_atr;
+                if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+                    const double bar_atr_r = g_bars_gold.m1.ind.atr14
+                                                .load(std::memory_order_relaxed);
+                    if (bar_atr_r > 1.0 && bar_atr_r < 50.0)
+                        atr_for_reload = 0.7 * reload_atr + 0.3 * bar_atr_r;
+                }
+
+                const bool entered = g_gold_flow_reload.force_entry(
+                    reload_long, bid, ask, atr_for_reload, now_ms_g);
+
+                if (entered) {
                     if (g_cfg.mode == "LIVE") {
-                        send_live_order("XAUUSD", g_gold_flow.pos.is_long,
-                                        g_gold_flow.pos.size, g_gold_flow.pos.entry);
+                        send_live_order("XAUUSD",
+                            g_gold_flow_reload.pos.is_long,
+                            g_gold_flow_reload.pos.size,
+                            g_gold_flow_reload.pos.entry);
                     }
-                    printf("[GF-RELOAD] ENTRY SENT %s lot=%.3f entry=%.2f sl=%.2f\n",
-                           g_gold_flow.pos.is_long ? "LONG" : "SHORT",
-                           g_gold_flow.pos.size,
-                           g_gold_flow.pos.entry,
-                           g_gold_flow.pos.sl);
+                    printf("[GF-RELOAD] ENTRY FIRED %s lot=%.3f entry=%.2f sl=%.2f atr=%.2f\n",
+                           g_gold_flow_reload.pos.is_long ? "LONG" : "SHORT",
+                           g_gold_flow_reload.pos.size,
+                           g_gold_flow_reload.pos.entry,
+                           g_gold_flow_reload.pos.sl,
+                           atr_for_reload);
+                    fflush(stdout);
+                } else {
+                    printf("[GF-RELOAD] ENTRY FAILED — force_entry returned false\n");
                     fflush(stdout);
                 }
             }
@@ -7573,6 +7611,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool any_gold_open = g_bracket_gold.has_open_position()
                                     || g_gold_stack.has_open_position()
                                     || g_gold_flow.has_open_position()
+                                    || g_gold_flow_reload.has_open_position()
                                     || g_le_stack.has_open_position()
                                     || g_trend_pb_gold.has_open_position();
             if (!gold_can_enter && !any_gold_open && nowSec() - s_outer_gate_log >= 30) {
@@ -9181,8 +9220,11 @@ static void quote_loop() {
         // Gold stack, flow, latency
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
+          const int64_t now_ms_sd = std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::system_clock::now().time_since_epoch()).count();
           g_gold_stack.force_close(b,a,g_rtt_last,shutdown_cb);
-          g_gold_flow.force_close(b,a,std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),shutdown_cb); }
+          g_gold_flow.force_close(b,a,now_ms_sd,shutdown_cb);
+          g_gold_flow_reload.force_close(b,a,now_ms_sd,shutdown_cb); }
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
           double s_bid=0,s_ask=0; snap_px("XAGUSD",s_bid,s_ask);
@@ -9275,7 +9317,12 @@ static void quote_loop() {
             sbk(g_bracket_usdjpy,"USDJPY");
 
             // Gold stack + flow + latency
-            { double b,a; get_px("XAUUSD",b,a); g_gold_stack.force_close(b,a,g_rtt_last,scb); g_gold_flow.force_close(b,a,std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),scb); }
+            { double b,a; get_px("XAUUSD",b,a);
+              const int64_t now_ms_scb = std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::system_clock::now().time_since_epoch()).count();
+              g_gold_stack.force_close(b,a,g_rtt_last,scb);
+              g_gold_flow.force_close(b,a,now_ms_scb,scb);
+              g_gold_flow_reload.force_close(b,a,now_ms_scb,scb); }
             { double b,a,sb,sa; get_px("XAUUSD",b,a); get_px("XAGUSD",sb,sa);
               g_le_stack.force_close_all(b,a,sb,sa,g_rtt_last,[&](const omega::TradeRecord& tr){scb(tr);}); }
 

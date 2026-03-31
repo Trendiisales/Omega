@@ -493,6 +493,12 @@ struct GoldFlowEngine {
         return m_reload_pending ? (m_reload_is_long ? 1 : -1) : 0;
     }
 
+    // reload_is_long(): direction of armed reload
+    bool reload_is_long() const noexcept { return m_reload_is_long; }
+
+    // reload_atr(): ATR at time of arming — for main.cpp to size the reload
+    double reload_atr() const noexcept { return m_reload_atr_at_arm; }
+
     // cancel_reload(): disarm without firing — called when conditions fail
     void cancel_reload() noexcept {
         if (m_reload_pending) {
@@ -508,33 +514,32 @@ struct GoldFlowEngine {
     //   bid/ask/mid: current quotes
     //   ewm_drift:   current GoldStack drift (direction confirmation)
     //   now_ms:      current epoch ms
-    //   on_close:    trade close callback (same as normal on_tick)
     //
-    // Returns true if a reload entry was successfully fired.
+    // Returns true when all confirmation gates pass — main.cpp then fires
+    // force_entry() on g_gold_flow_reload (separate independent instance).
     // Returns false if still waiting for confirmation OR if cancelled.
     //
     // Safety gates (ALL must pass to fire):
-    //   1. Price moved >= RELOAD_MIN_CONFIRM further in reload direction since arm
-    //   2. No retrace >= RELOAD_CANCEL_RETRACE × ATR from best price since arm
-    //   3. Spread <= original entry spread × 1.5 (not anomalously wide)
-    //   4. Drift still in reload direction (not already reversed)
-    //   5. Armed within RELOAD_TIMEOUT_MS (5 seconds) — don't chase a stale signal
-    //   6. At least RELOAD_MIN_CONFIRM_TICKS ticks of confirmation (not a spike)
+    //   1. Price moved >= RELOAD_MIN_CONFIRM_PTS further in reload direction since arm
+    //   2. No retrace >= RELOAD_CANCEL_RETRACE × ATR from arm price
+    //   3. Spread <= original entry spread × 1.5
+    //   4. Drift still aligned with reload direction
+    //   5. Armed within RELOAD_TIMEOUT_MS (5s) — don't chase stale signal
+    //   6. At least RELOAD_MIN_CONFIRM_TICKS ticks of confirmation
     //
-    static constexpr double  RELOAD_MIN_CONFIRM_PTS   = 0.3;  // min pts move after arm to confirm
-    static constexpr double  RELOAD_CANCEL_RETRACE    = 0.5;  // cancel if retraces 0.5×ATR from arm
-    static constexpr int64_t RELOAD_TIMEOUT_MS        = 5000; // cancel if not fired within 5s
+    static constexpr double  RELOAD_MIN_CONFIRM_PTS   = 0.3;  // min pts move after arm
+    static constexpr double  RELOAD_CANCEL_RETRACE    = 0.5;  // cancel if retraces 0.5×ATR
+    static constexpr int64_t RELOAD_TIMEOUT_MS        = 5000; // 5s timeout
     static constexpr int     RELOAD_MIN_CONFIRM_TICKS = 3;    // minimum confirmation ticks
 
     bool try_reload(double bid, double ask, double mid, double spread,
-                    double ewm_drift, int64_t now_ms,
-                    CloseCallback on_close) noexcept
+                    double ewm_drift, int64_t now_ms) noexcept
     {
         if (!m_reload_pending) return false;
 
         ++m_reload_tick_count;
 
-        // ── Timeout gate ───────────────────────────────────────────────────────
+        // ── Timeout gate ──────────────────────────────────────────────────────
         if (now_ms - m_reload_armed_ms > RELOAD_TIMEOUT_MS) {
             printf("[GFE-RELOAD] TIMEOUT after %dms — cancelled\n",
                    static_cast<int>(now_ms - m_reload_armed_ms));
@@ -543,14 +548,12 @@ struct GoldFlowEngine {
             return false;
         }
 
-        // ── Retrace cancel gate ────────────────────────────────────────────────
-        // If price has retraced >= RELOAD_CANCEL_RETRACE × ATR from the arm price
-        // back against the reload direction, the move is not continuing — cancel.
+        // ── Retrace cancel gate ───────────────────────────────────────────────
         const double retrace = m_reload_is_long
-            ? (m_reload_price_at_arm - mid)   // LONG reload: retrace = price fell
-            : (mid - m_reload_price_at_arm);  // SHORT reload: retrace = price rose
+            ? (m_reload_price_at_arm - mid)
+            : (mid - m_reload_price_at_arm);
         if (retrace >= m_reload_atr_at_arm * RELOAD_CANCEL_RETRACE) {
-            printf("[GFE-RELOAD] RETRACE_CANCEL retrace=%.2f >= %.2f×ATR(%.2f) — move reversing\n",
+            printf("[GFE-RELOAD] RETRACE_CANCEL retrace=%.2f >= %.2f×ATR(%.2f)\n",
                    retrace, RELOAD_CANCEL_RETRACE, m_reload_atr_at_arm);
             fflush(stdout);
             cancel_reload();
@@ -558,53 +561,42 @@ struct GoldFlowEngine {
         }
 
         // ── Drift gate ────────────────────────────────────────────────────────
-        // Drift must still be in reload direction — if it has already reversed
-        // the trend is done and re-entering would chase a top/bottom.
         const bool drift_aligned = m_reload_is_long ? (ewm_drift >= 0.0) : (ewm_drift <= 0.0);
         if (!drift_aligned) {
-            printf("[GFE-RELOAD] DRIFT_CANCEL drift=%.3f not aligned with %s reload\n",
+            printf("[GFE-RELOAD] DRIFT_CANCEL drift=%.3f not aligned with %s\n",
                    ewm_drift, m_reload_is_long ? "LONG" : "SHORT");
             fflush(stdout);
             cancel_reload();
             return false;
         }
 
-        // ── Confirmation: price must have moved further in reload direction ────
+        // ── Confirmation: price still moving in reload direction ──────────────
         const double progress = m_reload_is_long
-            ? (mid - m_reload_price_at_arm)   // positive = moved further up
-            : (m_reload_price_at_arm - mid);  // positive = moved further down
-        if (progress < RELOAD_MIN_CONFIRM_PTS) return false; // still waiting
-        if (m_reload_tick_count < RELOAD_MIN_CONFIRM_TICKS) return false; // need more ticks
+            ? (mid - m_reload_price_at_arm)
+            : (m_reload_price_at_arm - mid);
+        if (progress < RELOAD_MIN_CONFIRM_PTS) return false;
+        if (m_reload_tick_count < RELOAD_MIN_CONFIRM_TICKS) return false;
 
         // ── Spread gate ───────────────────────────────────────────────────────
         if (spread > m_spread_at_entry * 1.5) {
-            printf("[GFE-RELOAD] SPREAD_CANCEL spread=%.3f > %.3f×entry_spread — too wide\n",
-                   spread, 1.5 * m_spread_at_entry);
+            printf("[GFE-RELOAD] SPREAD_CANCEL spread=%.3f > 1.5×entry_spread=%.3f\n",
+                   spread, m_spread_at_entry);
             fflush(stdout);
             cancel_reload();
             return false;
         }
 
         // ── ATR gate ──────────────────────────────────────────────────────────
-        if (m_atr <= 0.0) {
-            cancel_reload();
-            return false;
-        }
+        if (m_atr <= 0.0) { cancel_reload(); return false; }
 
-        // ── ALL GATES PASSED — fire reload entry ──────────────────────────────
-        printf("[GFE-RELOAD] FIRE %s @ %.2f progress=%.2f pts ticks=%d drift=%.3f\n",
+        // ── ALL GATES PASSED ──────────────────────────────────────────────────
+        printf("[GFE-RELOAD] SIGNAL %s @ %.2f progress=%.2fpts ticks=%d drift=%.3f atr=%.2f\n",
                m_reload_is_long ? "LONG" : "SHORT",
-               mid, progress, m_reload_tick_count, ewm_drift);
+               mid, progress, m_reload_tick_count, ewm_drift, m_atr);
         fflush(stdout);
 
-        m_reload_pending   = false;
+        m_reload_pending    = false;
         m_reload_tick_count = 0;
-
-        // Enter a fresh full-size position in the same direction.
-        // Uses current ATR for SL sizing — reflects current volatility.
-        // The original position (remainder after PARTIAL_1R) keeps running
-        // independently with its own SL/trail/ratchet.
-        enter(m_reload_is_long, mid, bid, ask, spread, now_ms);
         return true;
     }
 
@@ -798,6 +790,27 @@ struct GoldFlowEngine {
     }
 
     // -------------------------------------------------------------------------
+    // force_entry() — direct entry bypass for reload instance.
+    // Called by main.cpp after try_reload() signals confirmation.
+    // Skips all persistence/drift gates — confirmation already validated by try_reload().
+    // Seeds ATR from provided value and fires enter() immediately.
+    // Returns true if entry succeeded (phase == LIVE after call).
+    bool force_entry(bool is_long, double bid, double ask,
+                     double atr_seed, int64_t now_ms) noexcept {
+        if (has_open_position()) return false;
+        // Seed ATR so SL sizing is correct immediately
+        if (atr_seed > 0.0) {
+            m_atr              = std::max(GFE_ATR_MIN, atr_seed);
+            m_atr_ewm          = m_atr;
+            m_atr_warmup_ticks = GFE_ATR_PERIOD; // skip warmup
+            m_ticks_received   = GFE_MIN_ENTRY_TICKS; // skip cold-start gate
+            m_atr_seed_lock    = 50; // hold for 50 ticks before EWM takes over
+        }
+        const double mid = (bid + ask) * 0.5;
+        enter(is_long, mid, bid, ask, ask - bid, now_ms);
+        return has_open_position();
+    }
+
 private:
 
     // ATR calculation -- EWM-smoothed tick-to-tick range, 100-tick warmup
@@ -1055,7 +1068,17 @@ private:
     {
         if (!pos.active) return;
 
-        const double atr      = pos.atr_at_entry; // use ATR at entry for consistent steps
+        // atr_step: frozen at entry — used for staircase step triggers only.
+        // Keeps step distances consistent even as gold vol changes mid-trade.
+        const double atr_step = pos.atr_at_entry;
+        // atr_live: current market ATR — used for trail and ratchet SL placement.
+        // After step 1 the trade is in profit — use live ATR so trail reflects
+        // actual current volatility. Blend: 70% entry + 30% live prevents a
+        // single volatile bar from wildly moving the SL.
+        const double atr_live = (m_atr > 0.0)
+            ? (0.70 * pos.atr_at_entry + 0.30 * m_atr)
+            : pos.atr_at_entry;
+        const double atr      = atr_step; // alias for staircase steps (keep old name)
         const double move     = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
 
         // Track MFE
@@ -1182,11 +1205,12 @@ private:
         }
 
         // Remainder: tight trail 0.25×ATR behind MFE peak
+        // Uses atr_live (70% entry + 30% current) so trail reflects actual vol.
         // Starts after step 1 (be_locked=true) — always active, never idle
         if (pos.be_locked && pos.mfe > 0.0) {
             const double trail_sl = pos.is_long
-                ? (pos.entry + pos.mfe - atr * 0.25)
-                : (pos.entry - pos.mfe + atr * 0.25);
+                ? (pos.entry + pos.mfe - atr_live * 0.25)
+                : (pos.entry - pos.mfe + atr_live * 0.25);
             if ((pos.is_long  && trail_sl > pos.sl) ||
                 (!pos.is_long && trail_sl < pos.sl)) {
                 pos.sl = trail_sl;
@@ -1194,52 +1218,55 @@ private:
         }
 
         // ── Dollar-ratchet lock ───────────────────────────────────────────────
-        // Runs AFTER the ATR trail — the ratchet can only move the SL further
-        // in the profit direction, never backward.
+        // Runs AFTER the ATR trail — one-way ratchet, only moves SL forward.
         //
-        // Mechanism:
-        //   open_pnl_usd = move (pts) × size (lots) × 100 ($/pt/lot)
-        //   tier = floor(open_pnl_usd / $50)  — how many $50 increments we're at
-        //   If tier > pos.dollar_lock_tier: advance ratchet
-        //   locked_usd = tier × $50 × 0.80   — keep 80% of each $50 band
-        //   locked_pts = locked_usd / (size × 100)
-        //   ratchet_sl = entry + locked_pts   (LONG) / entry - locked_pts (SHORT)
-        //   SL = max(existing_sl, ratchet_sl) — one-way ratchet only
+        // DESIGN FIX from audit:
+        //   Previously used pos.size (remaining lots) for USD calc. After PARTIAL_1R
+        //   reduces size from 0.15→0.10 lots, the $50 tier required 7pts on 0.10
+        //   lots = correct for the REMAINDER. But the user experience is "lock in
+        //   $50 of total trade profit" — which means we measure against full_size.
         //
-        // This guarantees: once price hits $50 open profit, you cannot lose more
-        // than $10 on the remaining position from that point. At $100 you're
-        // guaranteed at least $90 banked. At $150 at least $140. Etc.
+        //   Using full_size: at 0.15 lots, $50 tier fires at 50/(0.15×100) = 3.33pts
+        //   Using remaining: at 0.10 lots, $50 tier fires at 50/(0.10×100) = 5.00pts
         //
-        // Only activates when be_locked=true (step 1 fired) — the trade has
-        // already banked 33% via the staircase at that point.
-        if (pos.be_locked && pos.size > 0.0) {
-            // Current open P&L in USD on the REMAINING position
-            const double open_pnl_usd = move * pos.size * 100.0;
-            const int    tier_now     = static_cast<int>(open_pnl_usd / DOLLAR_RATCHET_STEP);
+        //   We use full_size for the TIER TRIGGER (when to advance the ratchet)
+        //   but remaining size for LOCKED_PTS (how much price movement locks the $).
+        //   This correctly represents "I want $50 of the original trade locked in."
+        //
+        // Active from first tick — no be_locked gate.
+        // Before step 1: ratchet moves SL from loss territory toward BE.
+        // After step 1:  ratchet locks profit above the staircase SL.
+        // Both improve the worst-case outcome.
+        if (pos.size > 0.0 && pos.full_size > 0.0) {
+            // Tier trigger: measure total trade open P&L using full_size
+            const double open_pnl_usd_full = move * pos.full_size * 100.0;
+            const int    tier_now = static_cast<int>(open_pnl_usd_full / DOLLAR_RATCHET_STEP);
 
             if (tier_now > pos.dollar_lock_tier && tier_now >= 1) {
-                // Advance to new tier — compute the SL that locks in 80% of this tier
+                // SL placement: use remaining size so locked_pts correctly maps
+                // to price distance needed to guarantee locked_usd on remainder
                 const double locked_usd  = tier_now * DOLLAR_RATCHET_STEP * DOLLAR_RATCHET_KEEP;
                 const double locked_pts  = locked_usd / (pos.size * 100.0);
                 const double ratchet_sl  = pos.is_long
                     ? (pos.entry + locked_pts)
                     : (pos.entry - locked_pts);
 
-                // Only move SL in profit direction — never tighten a profitable SL backward
                 const bool sl_improves = pos.is_long
                     ? (ratchet_sl > pos.sl)
                     : (ratchet_sl < pos.sl);
 
                 if (sl_improves) {
-                    pos.sl              = ratchet_sl;
-                    pos.dollar_lock_sl  = ratchet_sl;
+                    pos.sl               = ratchet_sl;
+                    pos.dollar_lock_sl   = ratchet_sl;
                     pos.dollar_lock_tier = tier_now;
 
                     std::cout << "[GOLD-FLOW] DOLLAR-RATCHET tier=" << tier_now
-                              << " open_pnl=$" << std::fixed << std::setprecision(0) << open_pnl_usd
+                              << " open_pnl_full=$" << std::fixed << std::setprecision(0)
+                              << open_pnl_usd_full
                               << " locked=$" << locked_usd
                               << " locked_pts=" << std::setprecision(2) << locked_pts
                               << " new_sl=" << ratchet_sl
+                              << " be_locked=" << pos.be_locked
                               << (pos.is_long ? " LONG" : " SHORT") << "\n";
                     std::cout.flush();
                 }
