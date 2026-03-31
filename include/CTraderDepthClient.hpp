@@ -321,6 +321,11 @@ public:
     //   (internal_name, imbalance, microprice_bias, has_data)
     std::function<void(const std::string&, double, double, bool)> atomic_l2_write_fn;
 
+    // Check if a symbol has an active depth subscription (by internal name)
+    bool has_depth_subscription(const std::string& internal_name) const noexcept {
+        return depth_books_.count(internal_name) > 0;
+    }
+
     std::atomic<bool>     running{false};
     std::atomic<bool>     depth_active{false};
     std::atomic<uint64_t> depth_events_total{0};

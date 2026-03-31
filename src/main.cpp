@@ -8856,6 +8856,15 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             // FIX is still the primary ORDER EXECUTION channel — this only affects
             // price data used for trading signal decisions.
             if (!ctrader_depth_is_live(sym)) {
+                // FIX fallback active — log once per symbol so it's visible
+                static std::unordered_set<std::string> s_fix_fallback_logged;
+                if (!s_fix_fallback_logged.count(sym)) {
+                    s_fix_fallback_logged.insert(sym);
+                    printf("[FIX-FALLBACK] %s using FIX prices (cTrader depth not live)"
+                           " — check [CTRADER-AUDIT] output for subscription status\n",
+                           sym.c_str());
+                    fflush(stdout);
+                }
                 on_tick(sym, bid, ask);
             }
         }
@@ -10907,9 +10916,55 @@ int main(int argc, char* argv[])
         // Alias map: broker name → internal name used by getImb/getBook
         // XAUUSD is already the canonical name — no alias needed
 
-        g_ctrader_depth.name_alias["SILVER"]  = "XAGUSD";
-        g_ctrader_depth.name_alias["NGAS"]    = "NGAS.F";
-        g_ctrader_depth.name_alias["VIX"]     = "VIX.F";
+        // ── cTrader broker name → internal name aliases ─────────────────────
+        // BlackBull may use different names in cTrader Open API vs FIX feed.
+        // All variants observed or expected mapped here.
+        // Rule: internal name = FIX name (OMEGA_SYMS/g_ext_syms) — aliases
+        //       translate broker cTrader names to our internal names.
+        // US indices
+        g_ctrader_depth.name_alias["US500"]    = "US500.F";
+        g_ctrader_depth.name_alias["SP500"]    = "US500.F";
+        g_ctrader_depth.name_alias["SPX500"]   = "US500.F";
+        g_ctrader_depth.name_alias["USTEC"]    = "USTEC.F";
+        g_ctrader_depth.name_alias["NAS100"]   = "USTEC.F";  // map cash NAS100 to futures
+        g_ctrader_depth.name_alias["NASDAQ"]   = "USTEC.F";
+        g_ctrader_depth.name_alias["TECH100"]  = "USTEC.F";
+        g_ctrader_depth.name_alias["US30"]     = "DJ30.F";
+        g_ctrader_depth.name_alias["DJ30"]     = "DJ30.F";
+        g_ctrader_depth.name_alias["DOW30"]    = "DJ30.F";
+        g_ctrader_depth.name_alias["DOWJONES"] = "DJ30.F";
+        // Metals
+        g_ctrader_depth.name_alias["SILVER"]   = "XAGUSD";
+        g_ctrader_depth.name_alias["XAGUSD"]   = "XAGUSD";
+        // Oil — USOIL.F id=2632 shows ~$102; may be Brent priced instrument
+        // Aliases cover all known BlackBull oil names until dump_all_symbols confirms
+        g_ctrader_depth.name_alias["USOIL"]    = "USOIL.F";
+        g_ctrader_depth.name_alias["WTI"]      = "USOIL.F";
+        g_ctrader_depth.name_alias["CRUDE"]    = "USOIL.F";
+        g_ctrader_depth.name_alias["OIL"]      = "USOIL.F";
+        g_ctrader_depth.name_alias["UKBRENT"]  = "BRENT";
+        g_ctrader_depth.name_alias["BRENT.F"]  = "BRENT";
+        // EU indices
+        g_ctrader_depth.name_alias["GER30"]    = "GER40";   // old broker name
+        g_ctrader_depth.name_alias["DAX"]      = "GER40";
+        g_ctrader_depth.name_alias["DAX40"]    = "GER40";
+        g_ctrader_depth.name_alias["FTSE100"]  = "UK100";
+        g_ctrader_depth.name_alias["FTSE"]     = "UK100";
+        g_ctrader_depth.name_alias["UK100"]    = "UK100";
+        g_ctrader_depth.name_alias["STOXX50"]  = "ESTX50";
+        g_ctrader_depth.name_alias["SX5E"]     = "ESTX50";
+        g_ctrader_depth.name_alias["EUSTX50"]  = "ESTX50";
+        // FX
+        g_ctrader_depth.name_alias["EUR/USD"]  = "EURUSD";
+        g_ctrader_depth.name_alias["GBP/USD"]  = "GBPUSD";
+        g_ctrader_depth.name_alias["AUD/USD"]  = "AUDUSD";
+        g_ctrader_depth.name_alias["NZD/USD"]  = "NZDUSD";
+        g_ctrader_depth.name_alias["USD/JPY"]  = "USDJPY";
+        // Other
+        g_ctrader_depth.name_alias["NGAS"]     = "NGAS.F";
+        g_ctrader_depth.name_alias["NATGAS"]   = "NGAS.F";
+        g_ctrader_depth.name_alias["VIX"]      = "VIX.F";
+        g_ctrader_depth.name_alias["VOLX"]     = "VIX.F";
 
         // ── OHLC bar subscriptions — XAUUSD M1+M5 ────────────────────────────
         // XAUUSD spot id=41 (hardcoded, same as depth subscription).
@@ -10925,6 +10980,30 @@ int main(int argc, char* argv[])
 
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
+
+        // ── Symbol subscription cross-check ──────────────────────────────────
+        // Runs 5s after start() — by then SymbolsListRes should have arrived
+        // and all bar/depth subscriptions resolved.
+        // Logs WARNING for any symbol that will fall back to FIX prices.
+        std::thread([&]() {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            std::cout << "[CTRADER-AUDIT] Symbol subscription check:\n";
+            // Check primary symbols
+            for (int i = 0; i < OMEGA_NSYMS; ++i) {
+                const std::string& name = OMEGA_SYMS[i].name;
+                const bool has_ct = g_ctrader_depth.has_depth_subscription(name);
+                std::cout << "[CTRADER-AUDIT]   " << name
+                          << (has_ct ? " -> cTrader OK" : " -> *** FIX FALLBACK ONLY ***") << "\n";
+            }
+            // Check ext symbols
+            for (const auto& e : g_ext_syms) {
+                if (e.name[0] == 0) continue;
+                const bool has_ct = g_ctrader_depth.has_depth_subscription(e.name);
+                std::cout << "[CTRADER-AUDIT]   " << e.name
+                          << (has_ct ? " -> cTrader OK" : " -> *** FIX FALLBACK ONLY ***") << "\n";
+            }
+            std::cout.flush();
+        }).detach();
     } else {
         std::cout << "[CTRADER] Depth feed disabled — add [ctrader_api] to omega_config.ini\n";
     }
