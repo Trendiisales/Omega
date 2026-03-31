@@ -1247,6 +1247,8 @@ public:
         sig.confluence_score = score;
 
         pos_.open(sig, spread);
+        pos_.allow_tp_extend = false;  // VWAP reversion: close AT VWAP, do not extend past it
+                                       // Mean-reversion edge ends when price returns to VWAP
         cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
         printf("[VWAP-REV] %s %s vwap=%.4f mid=%.4f dev=%.3f%% tp=%.4f sl=%.4f "
                "score=%d vix=%.1f l2=%.3f\n",
