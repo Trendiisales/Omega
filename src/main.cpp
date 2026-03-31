@@ -1384,14 +1384,18 @@ static std::string log_root_dir() {
         const size_t slash = g_cfg.log_file.find_last_of("/\\");
         if (slash != std::string::npos) return g_cfg.log_file.substr(0, slash);
     }
-    // FIX: use absolute path so logs always go to C:\Omega\logs
-    // regardless of whether exe runs from build\Release\ or project root
+    // Always absolute path — exe runs from C:\Omega\build\Release\
+    // Relative "logs" fallback silently lost all logs to build dir. Removed.
     namespace fs = std::filesystem;
     std::error_code ec;
     const std::string abs = "C:\\Omega\\logs";
     fs::create_directories(fs::path(abs), ec);
-    if (!ec) return abs;
-    return "logs";
+    if (ec) {
+        fprintf(stderr, "[OMEGA-FATAL] Cannot create log dir %s: %s\n",
+                abs.c_str(), ec.message().c_str());
+        fflush(stderr);
+    }
+    return abs;  // always absolute path — no relative fallback
 }
 
 static std::string resolve_audit_log_path(const std::string& configured_path,

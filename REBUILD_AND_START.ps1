@@ -67,4 +67,12 @@ Write-Host "=======================================================" -Foreground
 Write-Host ""
 
 Set-Location Release
+# Copy exe + config to C:\Omega root so it always runs from the right working directory
+Copy-Item ".\Omega.exe" "C:\Omega\Omega.exe" -Force
+Copy-Item ".\omega_config.ini" "C:\Omega\omega_config.ini" -Force
+Copy-Item ".\omega_index.html" "C:\Omega\omega_index.html" -Force -ErrorAction SilentlyContinue
+Copy-Item ".\chimera_logo.png" "C:\Omega\chimera_logo.png" -Force -ErrorAction SilentlyContinue
+
+# Run from C:\Omega so all paths (logs, config, assets) resolve correctly
+Set-Location C:\Omega
 .\Omega.exe omega_config.ini
