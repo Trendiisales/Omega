@@ -562,8 +562,6 @@ private:
         if (!send_msg(ssl, PB::subscribe_depth_req(ctid_account_id, sub_ids))) return false;
         if (!wait_for(ssl, 2157, 10000, pt, payload)) { std::cerr << "[CTRADER] SubscribeDepthRes timeout\n"; return false; }
         std::cout << "[CTRADER] Subscribed to " << sub_ids.size() << " symbols\n";
-        // Bar requests sent from recv_loop on first iteration -- after connection confirmed stable.
-        bars_requested_ = false;
         return true;
     }
 
