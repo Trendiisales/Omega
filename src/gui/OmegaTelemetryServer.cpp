@@ -916,7 +916,7 @@ void OmegaTelemetryServer::wsBroadcastLoop()
         }
 
         const auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_broadcast).count() >= 250) {
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_broadcast).count() >= 1000) {
             last_broadcast = now;
             // Update uptime every broadcast — independent of FIX tick rate
             if (snap_ && snap_->start_time > 0)

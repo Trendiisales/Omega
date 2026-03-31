@@ -869,7 +869,7 @@ const _depthSymL2Key = { gold:'l2_gold', sp:'l2_sp', eur:'l2_eur' };
 const _depthMaxRows = 5;  // levels to show per side
 
 // Last best bid/ask seen per symbol — used to gate repaints.
-// WS pushes at 250ms but the book only needs repainting when a price level
+// WS pushes at 1000ms but the book only needs repainting when a price level
 // actually changes. Sizes-only changes (volume shifting at same price) are
 // allowed through at most once per 500ms to avoid thrashing on busy tape.
 const _depthLastBest = {};   // key -> { fp: string } — fingerprint of all visible price levels
