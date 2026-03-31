@@ -1190,7 +1190,7 @@ function renderTrades(trades){
   el.innerHTML=trades.slice(0,60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
     const win=net>0,loss=net<0,sc=t.side==='LONG'?'var(--green)':'var(--red)';
-    const reason=t.exitReason||'',result=isOpen?'🔵':reason==='TP_HIT'?'✅TP':reason==='SL_HIT'?'❌SL':reason==='TRAIL_HIT'?'🏃TR':reason==='BE_HIT'?'🔒BE':reason==='TIMEOUT'?'⏱TO':'⚡FC';
+    const reason=t.exitReason||'',result=isOpen?'🔵':reason==='TP_HIT'?'✅TP':reason==='SL_HIT'?'❌SL':reason==='TRAIL_HIT'?'🏃TR':reason==='BE_HIT'?'🔒BE':reason==='TIMEOUT'?'⌛TO':'⚡FC';
     const rc=isOpen?'var(--blue)':win?'var(--green)':loss?'var(--red)':'var(--t2)';
     const netC=win?'var(--green)':loss?'var(--red)':'var(--t2)';
     let heldStr='--';
