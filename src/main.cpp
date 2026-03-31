@@ -7489,6 +7489,79 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_macro_ctx.session_slot);
         }
 
+        // ── GoldFlow reload — continuation entry after PARTIAL_1R ─────────────
+        // When stair step 1 banks the first 33% and arms a reload, try_reload()
+        // is called every tick until it fires, cancels, or times out (5s).
+        //
+        // The reload enters a NEW fresh full-size position in the same direction
+        // alongside the original remainder. This means:
+        //   - Original remainder: still running with ratchet + trail protection
+        //   - Reload position: fresh entry, full ATR stop, full risk sizing
+        //
+        // If the move continues: both positions profit.
+        // If the move reverses after reload fires: remainder exits at ratchet
+        //   lock level (keeping most of banked profit), reload exits at SL
+        //   (controlled loss = risk_per_trade). Net: still profitable on balance.
+        //
+        // Safety: reload is ONLY attempted when:
+        //   gold_can_enter is true (all session/risk/latency gates pass)
+        //   No bracket or stack position would create a stack conflict
+        //   try_reload() internal gates all pass (drift, spread, retrace, timeout)
+        if (g_gold_flow.reload_pending()
+            && gold_can_enter
+            && !g_bracket_gold.has_open_position()
+            && !g_gold_stack.has_open_position()
+            && !g_le_stack.has_open_position()
+            && !g_trend_pb_gold.has_open_position()
+            && !in_ny_close_noise) {
+
+            const double gf_mid_reload = (bid + ask) * 0.5;
+            const bool fired = g_gold_flow.try_reload(
+                bid, ask, gf_mid_reload, ask - bid,
+                g_gold_stack.ewm_drift(),
+                now_ms_g,
+                [&](const omega::TradeRecord& tr) {
+                    // Reload partial or full close — same handling as flow_on_close
+                    // but without the reversal/trail-block state updates (those are
+                    // set by the main position close, not the reload).
+                    if (tr.exitReason == std::string("PARTIAL_1R")) {
+                        if (g_cfg.mode == "LIVE") {
+                            const bool close_is_long = (tr.side == "SHORT");
+                            send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
+                        }
+                        handle_closed_trade(tr);
+                        return;
+                    }
+                    handle_closed_trade(tr);
+                    const bool close_is_long = (tr.side == "SHORT");
+                    send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
+                    // Reload exits don't set reversal windows or trail blocks —
+                    // the main position manages those when it closes.
+                });
+
+            if (fired) {
+                // Reload entry succeeded — apply same post-entry sizing as main flow
+                if (g_gold_flow.has_open_position()) {
+                    const double gf_regime_wt = 1.0; // standard weight for reload
+                    const double reload_base_lot = g_gold_flow.pos.size;
+                    const double reload_lot = std::max(GFE_MIN_LOT,
+                        std::min(0.50, reload_base_lot * gf_regime_wt));
+                    if (std::fabs(reload_lot - reload_base_lot) > 0.001)
+                        g_gold_flow.pos.size = reload_lot;
+                    if (g_cfg.mode == "LIVE") {
+                        send_live_order("XAUUSD", g_gold_flow.pos.is_long,
+                                        g_gold_flow.pos.size, g_gold_flow.pos.entry);
+                    }
+                    printf("[GF-RELOAD] ENTRY SENT %s lot=%.3f entry=%.2f sl=%.2f\n",
+                           g_gold_flow.pos.is_long ? "LONG" : "SHORT",
+                           g_gold_flow.pos.size,
+                           g_gold_flow.pos.entry,
+                           g_gold_flow.pos.sl);
+                    fflush(stdout);
+                }
+            }
+        }
+
         // GoldFlowEngine: L2 order-flow directional engine.
         // Fires only when no other gold position is open.
         // Entry: L2 imbalance persistence + EWM drift + momentum all confirm.

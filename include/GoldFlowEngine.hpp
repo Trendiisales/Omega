@@ -483,6 +483,131 @@ struct GoldFlowEngine {
         fflush(stdout);
     }
 
+    // ── Reload API — called from main.cpp ─────────────────────────────────────
+    // reload_pending(): true when a PARTIAL_1R has fired and a reload entry is
+    //   waiting for confirmation ticks.
+    bool reload_pending() const noexcept { return m_reload_pending; }
+
+    // reload_direction(): +1 = reload is LONG, -1 = reload is SHORT
+    int  reload_direction() const noexcept {
+        return m_reload_pending ? (m_reload_is_long ? 1 : -1) : 0;
+    }
+
+    // cancel_reload(): disarm without firing — called when conditions fail
+    void cancel_reload() noexcept {
+        if (m_reload_pending) {
+            printf("[GFE-RELOAD] CANCELLED price_at_arm=%.2f tick_count=%d\n",
+                   m_reload_price_at_arm, m_reload_tick_count);
+            fflush(stdout);
+        }
+        m_reload_pending   = false;
+        m_reload_tick_count = 0;
+    }
+
+    // try_reload(): called every tick from main.cpp when reload_pending().
+    //   bid/ask/mid: current quotes
+    //   ewm_drift:   current GoldStack drift (direction confirmation)
+    //   now_ms:      current epoch ms
+    //   on_close:    trade close callback (same as normal on_tick)
+    //
+    // Returns true if a reload entry was successfully fired.
+    // Returns false if still waiting for confirmation OR if cancelled.
+    //
+    // Safety gates (ALL must pass to fire):
+    //   1. Price moved >= RELOAD_MIN_CONFIRM further in reload direction since arm
+    //   2. No retrace >= RELOAD_CANCEL_RETRACE × ATR from best price since arm
+    //   3. Spread <= original entry spread × 1.5 (not anomalously wide)
+    //   4. Drift still in reload direction (not already reversed)
+    //   5. Armed within RELOAD_TIMEOUT_MS (5 seconds) — don't chase a stale signal
+    //   6. At least RELOAD_MIN_CONFIRM_TICKS ticks of confirmation (not a spike)
+    //
+    static constexpr double  RELOAD_MIN_CONFIRM_PTS   = 0.3;  // min pts move after arm to confirm
+    static constexpr double  RELOAD_CANCEL_RETRACE    = 0.5;  // cancel if retraces 0.5×ATR from arm
+    static constexpr int64_t RELOAD_TIMEOUT_MS        = 5000; // cancel if not fired within 5s
+    static constexpr int     RELOAD_MIN_CONFIRM_TICKS = 3;    // minimum confirmation ticks
+
+    bool try_reload(double bid, double ask, double mid, double spread,
+                    double ewm_drift, int64_t now_ms,
+                    CloseCallback on_close) noexcept
+    {
+        if (!m_reload_pending) return false;
+
+        ++m_reload_tick_count;
+
+        // ── Timeout gate ───────────────────────────────────────────────────────
+        if (now_ms - m_reload_armed_ms > RELOAD_TIMEOUT_MS) {
+            printf("[GFE-RELOAD] TIMEOUT after %dms — cancelled\n",
+                   static_cast<int>(now_ms - m_reload_armed_ms));
+            fflush(stdout);
+            cancel_reload();
+            return false;
+        }
+
+        // ── Retrace cancel gate ────────────────────────────────────────────────
+        // If price has retraced >= RELOAD_CANCEL_RETRACE × ATR from the arm price
+        // back against the reload direction, the move is not continuing — cancel.
+        const double retrace = m_reload_is_long
+            ? (m_reload_price_at_arm - mid)   // LONG reload: retrace = price fell
+            : (mid - m_reload_price_at_arm);  // SHORT reload: retrace = price rose
+        if (retrace >= m_reload_atr_at_arm * RELOAD_CANCEL_RETRACE) {
+            printf("[GFE-RELOAD] RETRACE_CANCEL retrace=%.2f >= %.2f×ATR(%.2f) — move reversing\n",
+                   retrace, RELOAD_CANCEL_RETRACE, m_reload_atr_at_arm);
+            fflush(stdout);
+            cancel_reload();
+            return false;
+        }
+
+        // ── Drift gate ────────────────────────────────────────────────────────
+        // Drift must still be in reload direction — if it has already reversed
+        // the trend is done and re-entering would chase a top/bottom.
+        const bool drift_aligned = m_reload_is_long ? (ewm_drift >= 0.0) : (ewm_drift <= 0.0);
+        if (!drift_aligned) {
+            printf("[GFE-RELOAD] DRIFT_CANCEL drift=%.3f not aligned with %s reload\n",
+                   ewm_drift, m_reload_is_long ? "LONG" : "SHORT");
+            fflush(stdout);
+            cancel_reload();
+            return false;
+        }
+
+        // ── Confirmation: price must have moved further in reload direction ────
+        const double progress = m_reload_is_long
+            ? (mid - m_reload_price_at_arm)   // positive = moved further up
+            : (m_reload_price_at_arm - mid);  // positive = moved further down
+        if (progress < RELOAD_MIN_CONFIRM_PTS) return false; // still waiting
+        if (m_reload_tick_count < RELOAD_MIN_CONFIRM_TICKS) return false; // need more ticks
+
+        // ── Spread gate ───────────────────────────────────────────────────────
+        if (spread > m_spread_at_entry * 1.5) {
+            printf("[GFE-RELOAD] SPREAD_CANCEL spread=%.3f > %.3f×entry_spread — too wide\n",
+                   spread, 1.5 * m_spread_at_entry);
+            fflush(stdout);
+            cancel_reload();
+            return false;
+        }
+
+        // ── ATR gate ──────────────────────────────────────────────────────────
+        if (m_atr <= 0.0) {
+            cancel_reload();
+            return false;
+        }
+
+        // ── ALL GATES PASSED — fire reload entry ──────────────────────────────
+        printf("[GFE-RELOAD] FIRE %s @ %.2f progress=%.2f pts ticks=%d drift=%.3f\n",
+               m_reload_is_long ? "LONG" : "SHORT",
+               mid, progress, m_reload_tick_count, ewm_drift);
+        fflush(stdout);
+
+        m_reload_pending   = false;
+        m_reload_tick_count = 0;
+
+        // Enter a fresh full-size position in the same direction.
+        // Uses current ATR for SL sizing — reflects current volatility.
+        // The original position (remainder after PARTIAL_1R) keeps running
+        // independently with its own SL/trail/ratchet.
+        enter(m_reload_is_long, mid, bid, ask, spread, now_ms);
+        return true;
+    }
+
     // Force-close any open position (used during disconnect cleanup)
     void force_close(double bid, double ask, int64_t now_ms, CloseCallback on_close) noexcept {
         if (!has_open_position()) return;
@@ -754,6 +879,21 @@ private:
     int64_t m_continuation_expires_ms = 0; // ms timestamp when mode expires
     int     m_last_session_slot = -1;
 
+    // ── Reload state ──────────────────────────────────────────────────────────
+    // Armed when PARTIAL_1R fires (step 1 of staircase banks first 33%).
+    // main.cpp reads reload_pending() each tick and calls try_reload() when:
+    //   1. Price moved >= RELOAD_MIN_CONFIRM pts further in reload direction
+    //   2. Spread is normal (not anomalous)
+    //   3. No reversal of >= RELOAD_CANCEL_RETRACE × ATR since arming
+    //   4. Reload armed within RELOAD_TIMEOUT_MS (timed out = cancel)
+    // Consumed on first successful reload entry or on timeout/cancel.
+    bool    m_reload_pending      = false; // true = reload armed, waiting confirmation
+    bool    m_reload_is_long      = false; // direction (same as original trade)
+    double  m_reload_price_at_arm = 0.0;  // mid price when reload was armed
+    double  m_reload_atr_at_arm   = 0.0;  // ATR at arm time (for SL + cancel calc)
+    int64_t m_reload_armed_ms     = 0;    // epoch ms when armed
+    int     m_reload_tick_count   = 0;    // confirmation tick counter
+
     void update_atr(double spread, double mid) noexcept {
         // ATR: EWM-smoothed using RANGE over a rolling price window.
         // Previously used tick-to-tick moves (0.05-0.20pts) which produced
@@ -1007,6 +1147,28 @@ private:
                       << " new_sl=" << std::setprecision(2) << pos.sl << "\n";
             std::cout.flush();
             if (on_close) on_close(ptr);
+
+            // ── Arm reload on step 1 (PARTIAL_1R) ────────────────────────────
+            // After banking the first 33%, arm a reload so a fresh full-size
+            // position can be entered if the move continues.
+            // The reload fires when main.cpp calls try_reload() and confirms:
+            //   price is still moving in the same direction (not reversing)
+            //   drift is still aligned
+            //   spread is normal
+            // This gives us: original remainder (protected by ratchet) PLUS a
+            // fresh full-size position catching the continuation.
+            if (step_num == 1) {
+                m_reload_pending       = true;
+                m_reload_is_long       = pos.is_long;
+                m_reload_price_at_arm  = (pos.is_long ? bid : ask); // current price at arm
+                m_reload_atr_at_arm    = atr;
+                m_reload_armed_ms      = now_ms;
+                m_reload_tick_count    = 0;
+                printf("[GFE-RELOAD] ARMED %s @ %.2f atr=%.2f — waiting confirmation\n",
+                       pos.is_long ? "LONG" : "SHORT",
+                       m_reload_price_at_arm, atr);
+                fflush(stdout);
+            }
         };
 
         // Step 1: +1×ATR — bank first 33%, SL → entry+buffer
@@ -1202,6 +1364,9 @@ private:
         pos             = OpenPos{};
         phase           = Phase::COOLDOWN;
         m_cooldown_start = now_ms;
+
+        // Cancel any pending reload — position is fully closed, reload is moot
+        cancel_reload();
 
         if (on_close) on_close(tr);
     }
