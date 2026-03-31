@@ -10992,12 +10992,12 @@ int main(int argc, char* argv[])
         // On startup: requests 200 M1 + 100 M5 historical bars, then subscribes
         // live bar closes. Indicators (RSI, ATR, EMA, BB, swing, trend) are
         // written to g_bars_gold atomically and read by GoldFlow/GoldStack.
-        g_ctrader_depth.bar_subscriptions["XAUUSD"]   = {41, &g_bars_gold};
-        // Index bar subscriptions -- sym_id resolved dynamically from SymbolsListRes
-        // EMA9/21/50 + trend_state from real M1 bars replaces tick-based EMAs in TrendPB
+        g_ctrader_depth.bar_subscriptions["XAUUSD"]  = {41, &g_bars_gold};
         g_ctrader_depth.bar_subscriptions["US500.F"] = {0,  &g_bars_sp};
         g_ctrader_depth.bar_subscriptions["USTEC.F"] = {0,  &g_bars_nq};
-        g_ctrader_depth.bar_subscriptions["GER40"]   = {0,  &g_bars_ger};
+        // GER40 (id=1899) removed: broker returns INVALID_REQUEST for trendbar
+        // requests on this cash CFD -- drops the depth connection immediately.
+        // g_trend_pb_ger40 falls back to tick-based EMAs.
 
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
