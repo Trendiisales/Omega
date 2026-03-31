@@ -4811,8 +4811,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // We send the add-on order here and clear the flag so it fires exactly once.
         if (eng.pos.pyramid_pending && eng.pos.pyramid_entry > 0.0) {
             eng.pos.pyramid_pending = false;
-            const double pyr_sl_abs = std::fabs(eng.pos.pyramid_entry - eng.pos.pyramid_sl);
-            const double pyr_lot    = compute_size(sym, pyr_sl_abs, ask - bid, eng.ENTRY_SIZE) * 0.5;
+            const double pyr_sl_abs_raw = std::fabs(eng.pos.pyramid_entry - eng.pos.pyramid_sl);
+            const double pyr_sl_abs = std::min(pyr_sl_abs_raw, 3.0);  // cap pyramid SL at $3
+            const double pyr_lot    = std::min(compute_size(sym, pyr_sl_abs, ask - bid, eng.ENTRY_SIZE) * 0.5, 0.20);  // cap lot at 0.20
             std::cout << "\033[1;36m[PYRAMID] " << sym
                       << " " << (eng.pos.is_long ? "LONG" : "SHORT")
                       << " add-on entry=" << eng.pos.pyramid_entry
@@ -4846,6 +4847,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                            absorbing?1:0, wall_in_dir?1:0);
                 }
             }
+            // Also block pyramid during session transition noise windows
+            if (in_ny_close_noise) pyr_l2_ok = false;
             if (pyr_l2_ok && cost_ok(sym.c_str(), pyr_sl_abs, pyr_lot))
                 send_live_order(sym, eng.pos.is_long, pyr_lot, eng.pos.pyramid_entry);
         }
@@ -6410,14 +6413,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // GoldStack same-direction re-entry block: 30s after trail/BE close
         // Applied to GoldStack entries only — GoldFlow has its own continuation_mode
         const bool gs_trail_blocked = gold_trail_blocked; // used below in GoldStack gate
-        // NY close noise block: 22:00-22:10 UTC — spread spikes as NY closes
-        // Block GoldFlow+GoldStack entries to avoid 2s SL hits from session close spikes
+        // Session transition noise blocks — spread spikes at open/close
+        // NY close (22:00-22:10 UTC) and Sydney open (00:00-00:15 UTC)
         const bool in_ny_close_noise = [&]() -> bool {
             struct tm ti_ny{}; const auto t_ny = std::chrono::system_clock::to_time_t(
                 std::chrono::system_clock::now());
             gmtime_s(&ti_ny, &t_ny);
             const int mins_utc = ti_ny.tm_hour * 60 + ti_ny.tm_min;
-            return (mins_utc >= 1320 && mins_utc < 1330);  // 22:00-22:10 UTC
+            return (mins_utc >= 1320 && mins_utc < 1330)  // 22:00-22:10 UTC NY close
+                || (mins_utc >= 0    && mins_utc < 15);   // 00:00-00:15 UTC Sydney open
         }();
         const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open)
                                  && !gold_post_impulse_block;  // 3min cooldown after IMPULSE ends
