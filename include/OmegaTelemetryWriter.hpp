@@ -227,6 +227,7 @@ struct OmegaTelemetrySnapshot
     int     gf_trail_stage   = 0;   // 0=none/initial, 1=BE, 2=trail1, 3=trail2, 4=trail3
     double  gf_profit_usd    = 0.0; // current unrealised profit in USD
     int     gf_stack_unlocked = 0;  // 1 = GoldFlow is winning, stack is free to add
+    double  gf_atr_at_entry  = 0.0; // ATR value at trade entry — used to compute stage trigger prices for GUI
 
     // --- Asia FX gate ---
     int     asia_fx_gate_open;          // 1 = trading allowed (gate open), 0 = session-blocked

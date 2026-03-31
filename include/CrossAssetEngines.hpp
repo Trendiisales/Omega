@@ -62,15 +62,17 @@ static inline void ca_utc_time(struct tm& ti) noexcept {
 // CrossSignal — what every cross-asset engine returns
 // ─────────────────────────────────────────────────────────────────────────────
 struct CrossSignal {
-    bool        valid    = false;
-    bool        is_long  = true;
-    double      entry    = 0.0;
-    double      tp       = 0.0;
-    double      sl       = 0.0;
-    double      size     = 0.01;
-    const char* symbol   = "";
-    const char* engine   = "";
-    const char* reason   = "";
+    bool        valid             = false;
+    bool        is_long           = true;
+    double      entry             = 0.0;
+    double      tp                = 0.0;
+    double      sl                = 0.0;
+    double      size              = 0.01;
+    const char* symbol            = "";
+    const char* engine            = "";
+    const char* reason            = "";
+    int         confluence_score  = 1;  // 1-4: how many confirming factors aligned
+                                        // main.cpp scales risk multiplier from this
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1103,26 +1105,29 @@ public:
     int     MAX_HOLD_SEC         = 900;  // 15 min — VWAP pull should happen fast
     int     COOLDOWN_SEC         = 180;  // 3 min between entries
     bool    enabled              = true;
+    // Confluence thresholds — compared in on_tick to score signal quality
+    double  CONF_VIX_THRESH      = 18.0; // VIX above this = elevated vol confirms extension
+    double  CONF_L2_THRESH       = 0.12; // L2 imbalance deviation from 0.5 to confirm direction
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
     // sym:      instrument symbol string
     // bid/ask:  current quotes
-    // vwap:     daily VWAP (caller computes — GoldStack exposes vwap(), others use rolling)
+    // vwap:     daily VWAP (caller computes — daily open used as proxy)
     // on_close: trade close callback
+    // vix:      current VIX level (0 = unknown, skip confluence factor)
+    // l2_imb:   L2 order book imbalance 0..1 (0.5 = neutral)
     CrossSignal on_tick(const std::string& sym, double bid, double ask,
-                        double vwap, CloseCb on_close) noexcept {
+                        double vwap, CloseCb on_close,
+                        double vix = 0.0, double l2_imb = 0.5) noexcept {
         if (!enabled || bid <= 0 || ask <= 0) return {};
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
 
         if (pos_.active) {
-            // Always manage open position — vwap=0 is fine for management (SL/TP/trail)
-            // vwap only needed for entry signal, not for exit management
             pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
             return {};
         }
-        // Entry only: require valid vwap
         if (vwap <= 0) return {};
 
         // Session gate: London/NY (08:00-22:00 UTC) — entry only, not exit
@@ -1137,7 +1142,6 @@ public:
         const bool   above_vwap    = (deviation_pct > 0.0);
         const double abs_dev_pct   = std::fabs(deviation_pct);
 
-        // Must be extended beyond threshold
         if (abs_dev_pct < EXTENSION_THRESH_PCT) {
             prev_mid_ = mid;
             return {};
@@ -1148,79 +1152,84 @@ public:
         mid_window_pos_ = (mid_window_pos_ + 1) % TREND_WINDOW;
         if (mid_window_count_ < TREND_WINDOW) ++mid_window_count_;
 
-        // Reversal tick: previous price was further from VWAP, now ticking back
-        // above_vwap: price was above → reversal means prev > mid (tick down toward VWAP)
-        // below_vwap: price was below → reversal means prev < mid (tick up toward VWAP)
-        if (prev_mid_ <= 0.0) {
-            prev_mid_ = mid;
-            return {};
-        }
+        // Reversal tick: price ticking back toward VWAP
+        if (prev_mid_ <= 0.0) { prev_mid_ = mid; return {}; }
         const bool reversal_tick = above_vwap ? (mid < prev_mid_) : (mid > prev_mid_);
         prev_mid_ = mid;
-
         if (!reversal_tick) return {};
 
-        // ── Trend momentum filter ─────────────────────────────────────────────
-        // Block VWAP_REV entry if price has been trending strongly AWAY from VWAP
-        // over the last 20 ticks — this is a trend, not a reversion setup.
-        // USTEC dropped 134pts in one session — single reversal tick is not enough
-        // confirmation when momentum is strongly directional.
+        // Trend momentum filter: block if still trending away from VWAP
         if (mid_window_count_ >= TREND_WINDOW) {
-            // Oldest price in window
-            const double oldest = mid_window_[mid_window_pos_];
-            const double trend_move = mid - oldest;
-            // If trend is moving AWAY from VWAP (same direction as current extension)
-            // AND the move over 20 ticks exceeds 0.5x the extension threshold, block.
+            const double oldest      = mid_window_[mid_window_pos_];
+            const double trend_move  = mid - oldest;
             const double block_thresh = vwap * EXTENSION_THRESH_PCT * 0.5 / 100.0;
-            const bool trending_away = above_vwap ? (trend_move > block_thresh)   // above VWAP, still going up
-                                                  : (trend_move < -block_thresh);  // below VWAP, still going down
-            if (trending_away) return {};  // strong trend away — not a reversion yet
+            const bool trending_away = above_vwap ? (trend_move > block_thresh)
+                                                  : (trend_move < -block_thresh);
+            if (trending_away) return {};
         }
 
-        // Entry: toward VWAP
-        const bool is_long = !above_vwap;  // if above VWAP → short; below → long
+        const bool is_long = !above_vwap;
+
+        // ── Confluence scoring ────────────────────────────────────────────────
+        // Score 1-4: each factor adds 1 point to the signal quality.
+        // main.cpp uses the score to scale risk: 1=1×, 2=1.5×, 3=2×, 4=3×
+        //
+        // Factor 1 (always):  base signal — price extended beyond threshold + reversal tick
+        // Factor 2:           NY/London overlap session (13:30-17:00 UTC)
+        //                     Historically the strongest mean-reversion window.
+        // Factor 3:           Elevated VIX (> CONF_VIX_THRESH)
+        //                     High vol = larger extensions, larger snapbacks.
+        // Factor 4:           L2 order book confirms direction
+        //                     Bid-heavy (imb > 0.5+thresh) = bullish pressure → long
+        //                     Ask-heavy (imb < 0.5-thresh) = bearish pressure → short
+        int score = 1;
+        // Session overlap bonus
+        const int hm = h * 60 + ti.tm_min;
+        if (hm >= (13*60+30) && hm < (17*60)) ++score;
+        // VIX bonus
+        if (vix > CONF_VIX_THRESH) ++score;
+        // L2 directional confirmation
+        const double l2_dev = l2_imb - 0.5;
+        const bool l2_confirms = is_long  ? (l2_dev >  CONF_L2_THRESH)   // bid-heavy → long
+                                           : (l2_dev < -CONF_L2_THRESH);  // ask-heavy → short
+        if (l2_confirms) ++score;
 
         // TP = VWAP level (full reversion)
         const double tp      = vwap;
         const double tp_dist = std::fabs(tp - mid);
 
-        // SL = extension distance × SL_RATIO, placed past the current price
-        // (further from VWAP than entry). If above VWAP (short): SL is above entry.
+        // SL = extension × SL_RATIO past entry (further from VWAP)
         const double extension_abs = std::fabs(mid - vwap);
         const double sl_offset     = extension_abs * EXTENSION_SL_RATIO;
         const double sl = above_vwap ? (mid + sl_offset) : (mid - sl_offset);
 
-        // Sanity: TP must be closer to mid than SL (valid R:R geometry)
         if (tp_dist <= 0.0 || tp_dist < sl_offset * 0.5) return {};
 
-        // Cost gate: TP to VWAP distance must cover execution costs
-        // Cost check removed: enter_directional() performs the definitive
-        // cost check with the actual computed lot size. Checking here with
-        // hardcoded 0.01 lots caused phantom trades: engine opened pos_ at
-        // 0.01 (passes), real lot failed enter_directional, force_close fired.
-
         CrossSignal sig;
-        sig.valid   = true;
-        sig.is_long = is_long;
-        sig.entry   = mid;
-        sig.tp      = tp;
-        sig.sl      = sl;
-        sig.size    = 0.01;
-        sig.symbol  = sym.c_str();
-        sig.engine  = "VWAPReversion";
-        sig.reason  = is_long ? "VWAP_REV_LONG" : "VWAP_REV_SHORT";
+        sig.valid            = true;
+        sig.is_long          = is_long;
+        sig.entry            = mid;
+        sig.tp               = tp;
+        sig.sl               = sl;
+        sig.size             = 0.01;
+        sig.symbol           = sym.c_str();
+        sig.engine           = "VWAPReversion";
+        sig.reason           = is_long ? "VWAP_REV_LONG" : "VWAP_REV_SHORT";
+        sig.confluence_score = score;
 
         pos_.open(sig, spread);
         cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
-        printf("[VWAP-REV] %s %s vwap=%.4f mid=%.4f dev=%.3f%% tp=%.4f sl=%.4f\n",
+        printf("[VWAP-REV] %s %s vwap=%.4f mid=%.4f dev=%.3f%% tp=%.4f sl=%.4f "
+               "score=%d vix=%.1f l2=%.3f\n",
                sym.c_str(), is_long?"LONG":"SHORT",
-               vwap, mid, deviation_pct, sig.tp, sig.sl);
+               vwap, mid, deviation_pct, sig.tp, sig.sl,
+               score, vix, l2_imb);
         fflush(stdout);
         return sig;
     }
 
     bool has_open_position() const { return pos_.active; }
-    void cancel() noexcept { pos_.reset(); }  // phantom rollback — no trade recorded
+    void cancel()  noexcept { pos_.reset(); }
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
@@ -1229,7 +1238,6 @@ private:
     CrossPosition pos_;
     double  prev_mid_       = 0.0;
     int64_t cooldown_until_ = 0;
-    // Momentum tracking: rolling window of last 20 mids to detect strong trend
     static constexpr int TREND_WINDOW = 20;
     double  mid_window_[TREND_WINDOW] = {};
     int     mid_window_pos_           = 0;

@@ -1494,14 +1494,18 @@ function updateDashboard(d){
         +'</div>';
 
       // GoldFlow trail stage from snapshot — applies to the GoldFlow live trade
-      const gfStage = safe(d.gf_trail_stage);  // 0=initial 1=BE 2=trail1 3=trail2 4=trail3
+      const gfStage    = safe(d.gf_trail_stage);  // 0=initial 1=BE 2=trail1 3=trail2 4=trail3
+      const gfAtrEntry = safe(d.gf_atr_at_entry); // ATR at entry — used to show next stage target
+      // Next-stage ATR multipliers matching GoldFlowEngine.hpp constants
+      const GF_NEXT_MULT = [1.0, 2.0, 8.0, 15.0]; // stage 0→1, 1→2, 2→3, 3→4
+      const GF_NEXT_LABEL = ['1× ATR → BE', '2× ATR → Trail', '8× ATR → Tighten', '15× ATR → Final', 'MAX'];
 
       // Fingerprint: rebuild HTML only when pnl shifts >$0.05, SL moves, stage changes, or current price tick changes 2dp
       const ltFp = trades.map(lt=>
         lt.symbol+'|'+lt.side+'|'+lt.engine+'|'+lt.entry.toFixed(2)+'|'
         +lt.current.toFixed(2)+'|'+lt.sl.toFixed(2)+'|'+lt.tp.toFixed(2)+'|'
         +lt.live_pnl.toFixed(1)
-      ).join(';') + '|gf'+gfStage;
+      ).join(';') + '|gf'+gfStage+'|atr'+gfAtrEntry.toFixed(2);
       if(ltFp === _ltFingerprint) return;  // nothing meaningful changed — skip innerHTML rebuild
       _ltFingerprint = ltFp;
       const STAGE_LABEL = ['INITIAL','BE LOCK','TRAIL 1','TRAIL 2','TRAIL 3'];
@@ -1521,6 +1525,8 @@ function updateDashboard(d){
         const pnlCol  = pnl >= 0 ? 'var(--green)' : 'var(--red)';
         const pnlStr  = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
         const rowBg   = pnl >= 0 ? 'rgba(0,217,126,0.04)' : 'rgba(255,51,85,0.04)';
+        // Label for the TP tick: GoldFlow shows next stage target, others show TP
+        const tpLabel = isGF && stage < 4 ? GF_NEXT_LABEL[stage] : 'TP';
 
         // ── Price ladder geometry ──────────────────────────────────────────
         // Collect all known prices, build a min/max range with 15% padding
@@ -1696,7 +1702,7 @@ function updateDashboard(d){
             <line x1="${toVB(xTp)}" y1="8" x2="${toVB(xTp)}" y2="22"
               stroke="#00d97e" stroke-width="1.5" stroke-opacity="0.85"/>
             <text x="${toVB(xTp)}" y="7" text-anchor="middle"
-              fill="#00d97e" font-size="7" font-family="IBM Plex Mono,monospace">TP</text>
+              fill="#00d97e" font-size="7" font-family="IBM Plex Mono,monospace">${tpLabel}</text>
             <text x="${toVB(xTp)}" y="28" text-anchor="middle"
               fill="#00d97e" font-size="6.5" font-family="IBM Plex Mono,monospace"
               fill-opacity="0.7">${tp.toFixed(dp)}</text>

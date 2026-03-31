@@ -5843,12 +5843,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 s_sp_last_day   = ti_sp.tm_yday;
             }
             if (s_sp_daily_open > 0.0) {
-                const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, s_sp_daily_open, ca_on_close);
+                const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, s_sp_daily_open, ca_on_close,
+                    g_macro_ctx.vix, g_macro_ctx.sp_l2_imbalance);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("US500.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true))
+                    // Confluence size scaling: score 1=1× 2=1.5× 3=2× 4=3×
+                    const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
+                                            (vr.confluence_score == 3) ? 2.0 :
+                                            (vr.confluence_score == 2) ? 1.5 : 1.0;
+                    if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
                         g_vwap_rev_sp.cancel();
-                    else g_vwap_rev_sp.patch_size(g_last_directional_lot); // rollback phantom pos
+                    else g_vwap_rev_sp.patch_size(g_last_directional_lot);
                 }
             }
         }
@@ -5897,10 +5902,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 s_nq_last_day   = ti_nq.tm_yday;
             }
             if (s_nq_daily_open > 0.0) {
-                const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, s_nq_daily_open, ca_on_close);
+                const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, s_nq_daily_open, ca_on_close,
+                    g_macro_ctx.vix, g_macro_ctx.nq_l2_imbalance);
                 if (vr.valid) {
                     g_telemetry.UpdateLastSignal("USTEC.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01, true))
+                    const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
+                                            (vr.confluence_score == 3) ? 2.0 :
+                                            (vr.confluence_score == 2) ? 1.5 : 1.0;
+                    if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
                         g_vwap_rev_nq.cancel();
                     else g_vwap_rev_nq.patch_size(g_last_directional_lot);
                 }
