@@ -122,6 +122,10 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 .px-sep{color:var(--t2);font-size:11px;text-align:center;}
 .sprd{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t2);
   text-align:right;white-space:nowrap;}
+/* ── Direction arrow — shown next to each symbol name ── */
+.dir-arrow{font-size:10px;font-weight:700;margin-left:3px;opacity:0;transition:opacity 0.4s;}
+.dir-arrow.up{color:var(--green);opacity:1;}
+.dir-arrow.down{color:var(--red);opacity:1;}
 
 /* Regime card */
 .regime-card{flex-shrink:0;}
@@ -362,100 +366,100 @@ R"OMEGA3(
 
         <div class="sym-section-label">★ Precious Metals</div>
         <div class="sym-row r-gold">
-          <span class="sym-nm c-gold">XAUUSD</span>
+          <span class="sym-nm c-gold">XAUUSD<span class="dir-arrow" id="dirGold"></span></span>
           <div class="px-pair"><span class="bid" id="goldBid">----</span><span class="px-sep">|</span><span class="ask" id="goldAsk">----</span></div>
           <span class="sprd" id="goldSpread">--</span>
         </div>
         <div class="sym-section-label">▶ US Indices &amp; Oil</div>
         <div class="sym-row r-primary">
-          <span class="sym-nm c-blue">US500.F</span>
+          <span class="sym-nm c-blue">US500.F<span class="dir-arrow" id="dirSp"></span></span>
           <div class="px-pair"><span class="bid" id="spBid">----</span><span class="px-sep">|</span><span class="ask" id="spAsk">----</span></div>
           <span class="sprd" id="spSpread">--</span>
         </div>
         <div class="sym-row r-primary">
-          <span class="sym-nm c-blue">USTEC.F</span>
+          <span class="sym-nm c-blue">USTEC.F<span class="dir-arrow" id="dirNq"></span></span>
           <div class="px-pair"><span class="bid" id="nqBid">----</span><span class="px-sep">|</span><span class="ask" id="nqAsk">----</span></div>
           <span class="sprd" id="nqSpread">--</span>
         </div>
         <div class="sym-row r-primary">
-          <span class="sym-nm c-blue">DJ30.F</span>
+          <span class="sym-nm c-blue">DJ30.F<span class="dir-arrow" id="dirDj"></span></span>
           <div class="px-pair"><span class="bid" id="djBid">----</span><span class="px-sep">|</span><span class="ask" id="djAsk">----</span></div>
           <span class="sprd" id="djSpread">--</span>
         </div>
         <div class="sym-row r-primary">
-          <span class="sym-nm c-blue">NAS100</span>
+          <span class="sym-nm c-blue">NAS100<span class="dir-arrow" id="dirNas"></span></span>
           <div class="px-pair"><span class="bid" id="nasBid">----</span><span class="px-sep">|</span><span class="ask" id="nasAsk">----</span></div>
           <span class="sprd" id="nasSpread">--</span>
         </div>
         <div class="sym-row r-primary">
-          <span class="sym-nm c-blue">USOIL.F</span>
+          <span class="sym-nm c-blue">USOIL.F<span class="dir-arrow" id="dirCl"></span></span>
           <div class="px-pair"><span class="bid" id="clBid">----</span><span class="px-sep">|</span><span class="ask" id="clAsk">----</span></div>
           <span class="sprd" id="clSpread">--</span>
         </div>
         <div class="sym-row r-primary">
-          <span class="sym-nm c-blue">UKBRENT</span>
+          <span class="sym-nm c-blue">UKBRENT<span class="dir-arrow" id="dirBrent"></span></span>
           <div class="px-pair"><span class="bid" id="brentBid">----</span><span class="px-sep">|</span><span class="ask" id="brentAsk">----</span></div>
           <span class="sprd" id="brentSpread">--</span>
         </div>
 
         <div class="sym-section-label">◈ EU Indices</div>
         <div class="sym-row r-eu">
-          <span class="sym-nm c-purple">GER40</span>
+          <span class="sym-nm c-purple">GER40<span class="dir-arrow" id="dirGer"></span></span>
           <div class="px-pair"><span class="bid" id="ger30Bid">----</span><span class="px-sep">|</span><span class="ask" id="ger30Ask">----</span></div>
           <span class="sprd" id="ger30Spread">--</span>
         </div>
         <div class="sym-row r-eu">
-          <span class="sym-nm c-purple">UK100</span>
+          <span class="sym-nm c-purple">UK100<span class="dir-arrow" id="dirUk"></span></span>
           <div class="px-pair"><span class="bid" id="uk100Bid">----</span><span class="px-sep">|</span><span class="ask" id="uk100Ask">----</span></div>
           <span class="sprd" id="uk100Spread">--</span>
         </div>
         <div class="sym-row r-eu">
-          <span class="sym-nm c-purple">ESTX50</span>
+          <span class="sym-nm c-purple">ESTX50<span class="dir-arrow" id="dirEstx"></span></span>
           <div class="px-pair"><span class="bid" id="estx50Bid">----</span><span class="px-sep">|</span><span class="ask" id="estx50Ask">----</span></div>
           <span class="sprd" id="estx50Spread">--</span>
         </div>
 
         <div class="sym-section-label">⬡ FX Majors</div>
         <div class="sym-row r-fx">
-          <span class="sym-nm c-cyan">EURUSD</span>
+          <span class="sym-nm c-cyan">EURUSD<span class="dir-arrow" id="dirEur"></span></span>
           <div class="px-pair"><span class="bid" id="eurBid">----</span><span class="px-sep">|</span><span class="ask" id="eurAsk">----</span></div>
           <span class="sprd" id="eurSpread">--</span>
         </div>
         <div class="sym-row r-fx" style="border-color:rgba(0,200,240,0.18);background:rgba(0,200,240,0.04);">
-          <span class="sym-nm c-cyan">GBPUSD</span>
+          <span class="sym-nm c-cyan">GBPUSD<span class="dir-arrow" id="dirGbp"></span></span>
           <div class="px-pair"><span class="bid" id="gbpBid">----</span><span class="px-sep">|</span><span class="ask" id="gbpAsk">----</span></div>
           <span class="sprd" id="gbpSpread">--</span>
         </div>
         <div class="sym-section-label">🌏 Asia FX</div>
         <div class="sym-row r-asia">
-          <span class="sym-nm c-teal">AUDUSD</span>
+          <span class="sym-nm c-teal">AUDUSD<span class="dir-arrow" id="dirAud"></span></span>
           <div class="px-pair"><span class="bid" id="audBid">----</span><span class="px-sep">|</span><span class="ask" id="audAsk">----</span></div>
           <span class="sprd" id="audSpread">--</span>
         </div>
         <div class="sym-row r-asia">
-          <span class="sym-nm c-teal">NZDUSD</span>
+          <span class="sym-nm c-teal">NZDUSD<span class="dir-arrow" id="dirNzd"></span></span>
           <div class="px-pair"><span class="bid" id="nzdBid">----</span><span class="px-sep">|</span><span class="ask" id="nzdAsk">----</span></div>
           <span class="sprd" id="nzdSpread">--</span>
         </div>
         <div class="sym-row r-asia">
-          <span class="sym-nm" style="color:var(--purple)">USDJPY</span>
+          <span class="sym-nm" style="color:var(--purple)">USDJPY<span class="dir-arrow" id="dirJpy"></span></span>
           <div class="px-pair"><span class="bid" id="jpyBid">----</span><span class="px-sep">|</span><span class="ask" id="jpyAsk">----</span></div>
           <span class="sprd" id="jpySpread">--</span>
         </div>
 
         <div class="sym-section-label">◈ Confirmation</div>
         <div class="sym-row">
-          <span class="sym-nm c-t2">VIX.F</span>
+          <span class="sym-nm c-t2">VIX.F<span class="dir-arrow" id="dirVix"></span></span>
           <div class="px-pair"><span class="bid" id="vixBid">--</span><span class="px-sep">|</span><span class="ask" id="vixAsk">--</span></div>
           <span class="sprd" id="vixSpread">--</span>
         </div>
         <div class="sym-row">
-          <span class="sym-nm c-t2">DX.F</span>
+          <span class="sym-nm c-t2">DX.F<span class="dir-arrow" id="dirDx"></span></span>
           <div class="px-pair"><span class="bid" id="dxBid">--</span><span class="px-sep">|</span><span class="ask" id="dxAsk">--</span></div>
           <span class="sprd" id="dxSpread">--</span>
         </div>
         <div class="sym-row">
-          <span class="sym-nm c-t2">NGAS.F</span>
+          <span class="sym-nm c-t2">NGAS.F<span class="dir-arrow" id="dirNgas"></span></span>
           <div class="px-pair"><span class="bid" id="ngasBid">--</span><span class="px-sep">|</span><span class="ask" id="ngasAsk">--</span></div>
           <span class="sprd" id="ngasSpread">--</span>
         </div>
@@ -769,7 +773,44 @@ function _playEntryBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_aud
 )OMEGA11"
 R"OMEGA12(
 
-function px(id,val,dec){const el=document.getElementById(id);if(!el)return;const v=safe(val);if(v>0)el.textContent=v.toFixed(dec||2);})OMEGA12"
+// _pxCache: avoids DOM writes when price hasn't changed (eliminates L2 flicker)
+// _midCache: tracks previous mid-price per symbol for direction arrows
+const _pxCache={};
+const _midCache={};
+
+function px(id,val,dec){
+  const el=document.getElementById(id);if(!el)return;
+  const v=safe(val);if(v<=0)return;
+  const s=v.toFixed(dec||2);
+  if(_pxCache[id]===s)return;   // value unchanged — skip DOM write entirely
+  _pxCache[id]=s;
+  el.textContent=s;
+}
+
+// pxDir: updates the direction arrow for a symbol given its current bid+ask.
+// dirId  — the id of the <span class="dir-arrow"> element
+// bid/ask — raw values from telemetry
+// threshold — minimum mid movement to flip arrow (default 0.0001, caller can override for indices)
+function pxDir(dirId,bid,ask,threshold){
+  const el=document.getElementById(dirId);if(!el)return;
+  const b=safe(bid),a=safe(ask);
+  if(b<=0||a<=0)return;
+  const mid=(b+a)/2;
+  const thr=threshold||0.0001;
+  const prev=_midCache[dirId];
+  _midCache[dirId]=mid;
+  if(!prev||prev<=0)return;          // first tick — no direction yet
+  if(mid>prev+thr){
+    if(el.textContent!=='▲'||el.className!=='dir-arrow up'){
+      el.textContent='▲';el.className='dir-arrow up';
+    }
+  } else if(mid<prev-thr){
+    if(el.textContent!=='▼'||el.className!=='dir-arrow down'){
+      el.textContent='▼';el.className='dir-arrow down';
+    }
+  }
+  // if within threshold: leave arrow as-is (last known direction stays visible)
+})OMEGA12"
 R"OMEGA13(
 
 function sprd(id,bid,ask){const el=document.getElementById(id);if(!el)return;const b=safe(bid),a=safe(ask);if(b>0&&a>0)el.textContent=(a-b).toFixed(2);})OMEGA13"
@@ -1205,24 +1246,42 @@ function updateDashboard(d){
 
   // Left column
   px('goldBid',d.gold_bid,2);px('goldAsk',d.gold_ask,2);sprd('goldSpread',d.gold_bid,d.gold_ask);
+  pxDir('dirGold',d.gold_bid,d.gold_ask,0.05);
   px('spBid',d.sp_bid,2);px('spAsk',d.sp_ask,2);sprd('spSpread',d.sp_bid,d.sp_ask);
+  pxDir('dirSp',d.sp_bid,d.sp_ask,0.5);
   px('nqBid',d.nq_bid,2);px('nqAsk',d.nq_ask,2);sprd('nqSpread',d.nq_bid,d.nq_ask);
+  pxDir('dirNq',d.nq_bid,d.nq_ask,0.5);
   px('djBid',d.dj_bid,2);px('djAsk',d.dj_ask,2);
+  pxDir('dirDj',d.dj_bid,d.dj_ask,1.0);
   px('nasBid',d.nas_bid,2);px('nasAsk',d.nas_ask,2);
+  pxDir('dirNas',d.nas_bid,d.nas_ask,0.5);
   px('clBid',d.cl_bid,2);px('clAsk',d.cl_ask,2);sprd('clSpread',d.cl_bid,d.cl_ask);
+  pxDir('dirCl',d.cl_bid,d.cl_ask,0.02);
   px('brentBid',d.brent_bid,2);px('brentAsk',d.brent_ask,2);sprd('brentSpread',d.brent_bid,d.brent_ask);
+  pxDir('dirBrent',d.brent_bid,d.brent_ask,0.02);
   px('ger30Bid',d.ger30_bid,2);px('ger30Ask',d.ger30_ask,2);
+  pxDir('dirGer',d.ger30_bid,d.ger30_ask,0.5);
   px('uk100Bid',d.uk100_bid,2);px('uk100Ask',d.uk100_ask,2);
+  pxDir('dirUk',d.uk100_bid,d.uk100_ask,0.5);
   px('estx50Bid',d.estx50_bid,2);px('estx50Ask',d.estx50_ask,2);
+  pxDir('dirEstx',d.estx50_bid,d.estx50_ask,0.5);
   px('eurBid',d.eurusd_bid,5);px('eurAsk',d.eurusd_ask,5);sprd('eurSpread',d.eurusd_bid,d.eurusd_ask);
+  pxDir('dirEur',d.eurusd_bid,d.eurusd_ask,0.00005);
   px('gbpBid',d.gbpusd_bid,5);px('gbpAsk',d.gbpusd_ask,5);sprd('gbpSpread',d.gbpusd_bid,d.gbpusd_ask);
+  pxDir('dirGbp',d.gbpusd_bid,d.gbpusd_ask,0.00005);
   px('audBid',d.audusd_bid,5);px('audAsk',d.audusd_ask,5);sprd('audSpread',d.audusd_bid,d.audusd_ask);
+  pxDir('dirAud',d.audusd_bid,d.audusd_ask,0.00005);
   px('nzdBid',d.nzdusd_bid,5);px('nzdAsk',d.nzdusd_ask,5);sprd('nzdSpread',d.nzdusd_bid,d.nzdusd_ask);
+  pxDir('dirNzd',d.nzdusd_bid,d.nzdusd_ask,0.00005);
   px('jpyBid',d.usdjpy_bid,3);px('jpyAsk',d.usdjpy_ask,3);sprd('jpySpread',d.usdjpy_bid,d.usdjpy_ask);
+  pxDir('dirJpy',d.usdjpy_bid,d.usdjpy_ask,0.005);
 
   px('vixBid',d.vix_bid,2);px('vixAsk',d.vix_ask,2);
+  pxDir('dirVix',d.vix_bid,d.vix_ask,0.02);
   px('dxBid',d.dx_bid,2);px('dxAsk',d.dx_ask,2);
+  pxDir('dirDx',d.dx_bid,d.dx_ask,0.02);
   px('ngasBid',d.ngas_bid,2);px('ngasAsk',d.ngas_ask,2);
+  pxDir('dirNgas',d.ngas_bid,d.ngas_ask,0.005);
 
   // Engine cells — US/Oil group (sp_phase etc from telemetry)
   const live=d.open_positions||[];
