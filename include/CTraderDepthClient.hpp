@@ -199,18 +199,25 @@ namespace PB {
 
 // ProtoOAGetTrendbarsReq (pt=2137)
 // period: 1=M1, 5=M5, 7=M15, 8=M30, 9=H1  (ProtoOATrendbarPeriod enum)
-// count: max bars to return (up to 4800)
+// fromTimestamp (field 5) and toTimestamp (field 6) are REQUIRED by the cTrader API.
+// Sending only count without timestamps causes INVALID_REQUEST and disconnects.
+// count: max bars -- we derive from_ms = now - count*period_minutes*60*1000
 inline std::vector<uint8_t> get_trendbars_req(
-    int64_t ctid, int64_t sym_id, uint32_t period,
-    uint32_t count = 200, int64_t from_ms = 0, int64_t to_ms = 0)
+    int64_t ctid, int64_t sym_id, uint32_t period, uint32_t count = 200)
 {
+    // Compute time window: to=now, from=now minus (count * period_ms)
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const int64_t period_ms = int64_t(period) * 60 * 1000;
+    const int64_t from_ms   = now_ms - int64_t(count) * period_ms;
+    const int64_t to_ms     = now_ms;
     std::vector<uint8_t> inner;
     write_field_varint(inner, 2, uint64_t(ctid));
     write_field_varint(inner, 3, uint64_t(sym_id));
     write_field_varint(inner, 4, uint64_t(period));
-    if (from_ms > 0) write_field_varint(inner, 5, uint64_t(from_ms));
-    if (to_ms   > 0) write_field_varint(inner, 6, uint64_t(to_ms));
-    if (count   > 0) write_field_varint(inner, 7, uint64_t(count));
+    write_field_varint(inner, 5, uint64_t(from_ms));
+    write_field_varint(inner, 6, uint64_t(to_ms));
+    write_field_varint(inner, 7, uint64_t(count));
     return frame_msg(2137, inner);
 }
 
@@ -474,7 +481,11 @@ private:
 
         // Pass 3: subscribe non-gold symbols and resolve bar subscription IDs
         std::vector<int64_t> sub_ids;
-        if (xauusd_spot_id >= 0) sub_ids.push_back(xauusd_spot_id);  // gold always first
+        std::unordered_set<std::string> subscribed_internals;  // dedup by internal name
+        if (xauusd_spot_id >= 0) {
+            sub_ids.push_back(xauusd_spot_id);
+            subscribed_internals.insert("XAUUSD");
+        }
 
         for (const auto& e : all_syms) {
             const int64_t sid         = e.sid;
@@ -502,18 +513,25 @@ private:
             // All other whitelisted symbols -- normal name-based subscription
             if (symbol_whitelist.count(sname)) {
                 // Alias: translate broker name to internal name.
-                // XAUUSD is never in the alias map -- it is its own internal name
-                // and is handled above. Any alias entry for "XAUUSD" would be a bug.
+                // XAUUSD is never in the alias map -- handled above.
                 if (name_alias.count("XAUUSD")) {
                     std::cerr << "[CTRADER] BUG: name_alias[\"XAUUSD\"] exists -- removing\n";
                     name_alias.erase("XAUUSD");
                 }
                 const std::string internal_name = name_alias.count(sname) ? name_alias.at(sname) : sname;
-                sub_ids.push_back(sid);
-                depth_books_[internal_name] = CTDepthBook{};
-                id_to_internal_[uint64_t(sid)] = internal_name;
-                std::cout << "[CTRADER] Subscribe depth: " << sname << " id=" << sid
-                          << (internal_name != sname ? " (alias->" + internal_name + ")" : "") << "\n";
+                // Dedup: skip if this internal name is already subscribed via another broker name.
+                // Example: VIX.F (direct) + VIX (alias->VIX.F) would otherwise send two sub requests.
+                if (subscribed_internals.count(internal_name)) {
+                    std::cout << "[CTRADER] SKIP-DUP: " << sname << " id=" << sid
+                              << " -> " << internal_name << " (already subscribed)\n";
+                } else {
+                    sub_ids.push_back(sid);
+                    subscribed_internals.insert(internal_name);
+                    depth_books_[internal_name] = CTDepthBook{};
+                    id_to_internal_[uint64_t(sid)] = internal_name;
+                    std::cout << "[CTRADER] Subscribe depth: " << sname << " id=" << sid
+                              << (internal_name != sname ? " (alias->" + internal_name + ")" : "") << "\n";
+                }
             }
 
             // Resolve bar subscription IDs (for US500.F, USTEC.F, GER40 etc.)
@@ -605,7 +623,18 @@ private:
             else if (pt==2217) { on_live_trendbar(payload); }   // live bar close push (ProtoOALiveTrendBar)
             else if (pt==2220) { /* subscribe trendbar req echo -- ignore */ }
             else if (pt==2221) { /* subscribe trendbar res -- no action needed */ }
-            else if (pt==2142) { const auto ef=PB::parse(payload); std::cerr<<"[CTRADER] Error: "<<PB::get_string(ef,2)<<" -- "<<PB::get_string(ef,3)<<"\n"; if(PB::get_string(ef,2)=="OA_AUTH_TOKEN_EXPIRED"){if(!refresh_token.empty())send_msg(ssl,PB::refresh_token_req(refresh_token)); return;} }
+            else if (pt==2142) {
+                const auto ef=PB::parse(payload);
+                const std::string ec=PB::get_string(ef,2);
+                const std::string em=PB::get_string(ef,3);
+                std::cerr<<"[CTRADER] Error: "<<ec<<" -- "<<em<<"\n";
+                if (ec=="OA_AUTH_TOKEN_EXPIRED") {
+                    if (!refresh_token.empty()) send_msg(ssl,PB::refresh_token_req(refresh_token));
+                    return;
+                }
+                // INVALID_REQUEST and other non-fatal errors: log and continue.
+                // Do NOT return -- one bad request must not kill the whole feed.
+            }
             else if (pt==2174) { const auto rf=PB::parse(payload); const std::string na=PB::get_string(rf,2); if(!na.empty()){access_token=na;refresh_token=PB::get_string(rf,3);std::cout<<"[CTRADER] Token refreshed\n";} }
             else if (pt==51)   { send_msg(ssl,PB::heartbeat()); }
             else if (pt==2148||pt==2164) { std::cerr<<"[CTRADER] Disconnect pt="<<pt<<"\n"; return; }
