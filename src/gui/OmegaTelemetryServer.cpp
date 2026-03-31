@@ -974,7 +974,29 @@ void OmegaTelemetryServer::run(int port)
         std::string body, ct = "text/html";
         int status = 200;
 
-        if (strstr(buf, "GET /api/telemetry"))        { ct = "application/json"; body = buildTelemetryJson(snap_); }
+        if (strstr(buf, "GET /api/symbols")) {
+            // Serve the resolved symbol map written by main process on connect
+            ct = "application/json";
+            const char* paths[] = {
+                "C:\\Omega\\logs\\symbols_resolved.json",
+                "logs/symbols_resolved.json",
+                "../logs/symbols_resolved.json",
+                nullptr
+            };
+            for (int pi = 0; paths[pi]; ++pi) {
+                FILE* fp = fopen(paths[pi], "r");
+                if (!fp) continue;
+                fseek(fp, 0, SEEK_END); long sz = ftell(fp); fseek(fp, 0, SEEK_SET);
+                if (sz > 0 && sz < 1024*1024) {
+                    body.resize(sz);
+                    fread(&body[0], 1, sz, fp);
+                }
+                fclose(fp);
+                break;
+            }
+            if (body.empty()) body = "{"error":"symbols_resolved.json not found — connect cTrader first"}";
+        }
+        else if (strstr(buf, "GET /api/telemetry"))        { ct = "application/json"; body = buildTelemetryJson(snap_); }
         else if (strstr(buf, "GET /api/trades"))      { ct = "application/json"; body = buildTradesJson(); }
         else if (strstr(buf, "GET /api/history"))     { ct = "application/json"; body = buildHistoryJson(); }
         else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
