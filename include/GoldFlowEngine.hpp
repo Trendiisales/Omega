@@ -72,13 +72,16 @@ static constexpr double GFE_LONG_THRESHOLD    = 0.75;  // bid-heavy: long signal
 static constexpr double GFE_SHORT_THRESHOLD   = 0.25;  // ask-heavy: short signal
 static constexpr double GFE_DRIFT_MIN         = 0.0;   // drift must be non-zero same dir
 // Drift-persistence fallback (used when L2 size data is unavailable — imbalance always 0.5)
-// Threshold raised 0.30→1.5: on choppy London tape drift oscillates ±1.5 constantly,
-// filling the 20-tick window with false directional ticks. Need genuine sustained drift.
-// Evidence: 2026-03-30 trades fired with drift swinging +2.2/-1.8 every 10s = pure chop.
-static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 1.5;  // was 0.30 — too loose for chop
-// Window raised 20→40: 20 ticks (~2-4s London) is trivially filled by any spike.
-// 40 ticks requires sustained directional pressure over ~4-8s of real tape.
-static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 40;   // was 20 — too short
+// On BlackBull, L2 size data is NEVER sent (tag-271 always omitted) so this is the
+// PERMANENT operating mode, not an exceptional fallback. Threshold lowered 1.5→0.5:
+// 1.5 was calibrated for mid-session L2 dropout protection but blocks real slow trends
+// where ewm_drift reaches $0.8-$1.2 but never $1.5. The chop guard (drift range>4.0)
+// handles chop protection — that's the correct filter, not a high threshold.
+static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 0.5;  // was 1.5 — too strict for no-L2 broker
+// 20 ticks (~2s London) — sufficient for real directional moves.
+// The chop guard (drift range > 4.0) blocks oscillating markets regardless.
+// 40 was too long for slow grinding trends where drift is consistent but small.
+static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 20;   // was 40 — too long for no-L2 broker
 static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- raised 20→100:
 static constexpr int    GFE_ATR_RANGE_WINDOW  = 100;   // raised 20→100: 20 ticks = 2s window at London
                                                         // = pure spread noise ($0.2-0.5pts), not real ATR.
@@ -282,7 +285,20 @@ struct GoldFlowEngine {
         // massive overtrading when depth feed dropped today (10+ losses vs 3 on Friday).
         const bool l2_data_live = (std::fabs(l2_imb - 0.5) > 0.001);
         // Track whether L2 was ever live this session — if it was and now isn't, block
-        if (l2_data_live) m_l2_was_live = true;
+        if (l2_data_live) {
+            m_l2_was_live = true;
+        } else if (!m_l2_was_live) {
+            // L2 never live this session — log once so it's visible in startup output
+            static bool s_no_l2_logged = false;
+            if (!s_no_l2_logged && m_ticks_received >= GFE_MIN_ENTRY_TICKS) {
+                s_no_l2_logged = true;
+                printf("[GFE] *** L2 SIZE DATA UNAVAILABLE — broker not sending tag-271. "
+                       "Operating in drift-persistence mode permanently. "
+                       "threshold=%.1f persist_ticks=%d ***\n",
+                       GFE_DRIFT_FALLBACK_THRESHOLD, GFE_DRIFT_PERSIST_TICKS);
+                fflush(stdout);
+            }
+        }
         if (!l2_data_live && m_l2_was_live && !is_low_quality_session) return; // L2 dropped mid-session — block
 
         // Session-aware persistence thresholds: Asia requires 90% dominance, normal 75%
