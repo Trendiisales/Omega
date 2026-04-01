@@ -9438,6 +9438,75 @@ static void quote_loop() {
                 // Latency edge engines stats
                 g_le_stack.print_stats();
                 print_perf_stats();
+
+                // ================================================================
+                // SYSTEM HEALTH WATCHDOG -- fires every 30s during active session
+                // Detects critical failures and writes [SYSTEM-ALERT] to log so
+                // the GUI header can flash red. No phones needed -- just read the log.
+                // ================================================================
+                {
+                    const bool sess_active = session_tradeable();
+                    const int64_t now_s    = nowSec();
+
+                    // Track per-check state
+                    static int64_t s_last_depth_events = 0;
+                    static int64_t s_last_depth_check_s = 0;
+                    static int64_t s_depth_dead_since   = 0;
+                    static int64_t s_no_trade_since     = 0;
+                    static int64_t s_last_trade_count   = 0;
+
+                    const int64_t depth_now = (int64_t)g_ctrader_depth.depth_events_total.load();
+                    const bool    l2_live   = g_macro_ctx.ctrader_l2_live;
+                    const bool    gold_seeded = g_bars_gold.m15.ind.m1_ready.load(std::memory_order_relaxed);
+                    const int64_t trade_count = g_omegaLedger.total();
+
+                    // --- Alert 1: L2 depth feed dead ---
+                    if (l2_live && depth_now == s_last_depth_events && s_last_depth_check_s > 0) {
+                        if (s_depth_dead_since == 0) s_depth_dead_since = now_s;
+                        const int64_t dead_secs = now_s - s_depth_dead_since;
+                        if (dead_secs >= 30) {
+                            std::cout << "[SYSTEM-ALERT] L2_DEAD depth_events frozen for "
+                                      << dead_secs << "s -- cTrader feed may have dropped\n";
+                            g_telemetry.SetHealthAlert("L2 FEED DEAD " + std::to_string(dead_secs) + "s");
+                        }
+                    } else {
+                        s_depth_dead_since = 0;
+                    }
+                    s_last_depth_events  = depth_now;
+                    s_last_depth_check_s = now_s;
+
+                    // --- Alert 2: Gold M15 bars never seeded ---
+                    static int64_t s_startup_s = 0;
+                    if (s_startup_s == 0) s_startup_s = now_s;
+                    const int64_t uptime = now_s - s_startup_s;
+                    if (!gold_seeded && uptime > 30) {
+                        std::cout << "[SYSTEM-ALERT] GOLD_BARS_UNSEEDED M15 bars not seeded after "
+                                  << uptime << "s -- TrendPullback gold running blind\n";
+                        g_telemetry.SetHealthAlert("GOLD BARS UNSEEDED");
+                    }
+
+                    // --- Alert 3: No trades during active session for 45+ minutes ---
+                    if (sess_active) {
+                        if (trade_count == s_last_trade_count) {
+                            if (s_no_trade_since == 0) s_no_trade_since = now_s;
+                            const int64_t idle_mins = (now_s - s_no_trade_since) / 60;
+                            if (idle_mins >= 45) {
+                                std::cout << "[SYSTEM-ALERT] NO_TRADES session active for "
+                                          << idle_mins << "min with no trades -- check gates\n";
+                                g_telemetry.SetHealthAlert("NO TRADES " + std::to_string(idle_mins) + "min");
+                            }
+                        } else {
+                            s_no_trade_since  = 0;
+                            s_last_trade_count = trade_count;
+                        }
+                    }
+
+                    // --- Clear alert if all healthy ---
+                    if (l2_live && gold_seeded && depth_now > s_last_depth_events) {
+                        g_telemetry.ClearHealthAlert();
+                    }
+                }
+                // ================================================================
             }
 
             // ?? Depth fallback poll: if 264=5 was rejected mid-session ?????????

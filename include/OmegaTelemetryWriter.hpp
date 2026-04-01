@@ -78,6 +78,9 @@ struct OmegaTelemetrySnapshot
     char build_version[32]; // git hash, e.g. "f60cebb"
     char build_time[48];    // build timestamp
 
+    // --- System health alert (empty = healthy, non-empty = problem description) ---
+    char health_alert[64]; // e.g. "L2 FEED DEAD 45s" or "GOLD BARS UNSEEDED"
+
     // --- Session ---
     char session_name[32];
     int  session_tradeable;
@@ -781,6 +784,15 @@ public:
     }
 
     void SetMode(const char* m) { if (m_snap) strcpy_s(m_snap->mode, m); }
+    void SetHealthAlert(const std::string& msg) {
+        if (!m_snap) return;
+        strncpy_s(m_snap->health_alert, msg.c_str(), 63);
+        m_snap->health_alert[63] = '\0';
+    }
+    void ClearHealthAlert() {
+        if (!m_snap) return;
+        m_snap->health_alert[0] = '\0';
+    }
 
     // Update a single cross-asset engine slot by name (upsert by name match)
     void UpdateCrossAsset(const char* name, const char* symbol,

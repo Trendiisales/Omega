@@ -690,7 +690,8 @@ private:
             // Only the initial startup request succeeds. TrendPullback EMAs are seeded
             // once at startup and remain valid for the session (EMAs move slowly).
             // Re-enable this block if the broker ever supports live trendbar push (pt=2220).
-            if (false && !bar_repoll_disabled && now >= bar_repoll_next) {
+            static constexpr bool bar_repoll_enabled = false; // disabled: broker rejects with INVALID_REQUEST
+            if (bar_repoll_enabled && !bar_repoll_disabled && now >= bar_repoll_next) {
                 bar_repoll_next = now + std::chrono::seconds(65);
                 for (const auto& bkv : bar_subscriptions) {
                     const int64_t sid = bkv.second.sym_id;
