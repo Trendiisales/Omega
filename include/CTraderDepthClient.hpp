@@ -241,6 +241,24 @@ inline std::vector<uint8_t> get_trendbars_req(
     return frame_msg(2137, inner);
 }
 
+// ProtoOAGetTickDataReq (pt=2145)
+// Request raw tick history -- BlackBull serves this even when GetTrendbarsReq is blocked.
+// We use this to build M15/M5 bars ourselves from tick data.
+// type: 1=BID, 2=ASK  -- we request BID (field 4)
+// fromTimestamp/toTimestamp: milliseconds UTC (fields 5/6)
+// hours_back: how many hours of ticks to fetch (200 M15 bars = 50 hours)
+inline std::vector<uint8_t> get_tick_data_req(
+    int64_t ctid, int64_t sym_id, int64_t from_ms, int64_t to_ms, int type = 1)
+{
+    std::vector<uint8_t> inner;
+    write_field_varint(inner, 2, uint64_t(ctid));
+    write_field_varint(inner, 3, uint64_t(sym_id));
+    write_field_varint(inner, 4, uint64_t(type)); // 1=BID, 2=ASK
+    write_field_varint(inner, 5, uint64_t(from_ms));
+    write_field_varint(inner, 6, uint64_t(to_ms));
+    return frame_msg(2145, inner);
+}
+
 // ProtoOASubscribeLiveTrendbarReq (pt=2220)
 inline std::vector<uint8_t> subscribe_trendbar_req(
     int64_t ctid, int64_t sym_id, uint32_t period)
@@ -763,10 +781,7 @@ private:
                         std::cerr << "[CTRADER] Connection dropped after bar req "
                                   << last_sent.name << " period=" << last_sent.period
                                   << " -- marking as failed, will skip on reconnect\n";
-                        // Only persist M1 to disk -- M5/M7 only fail on repoll (now disabled)
-                        if (last_sent.period == 1) {
-                            save_bar_failed(bar_failed_path_);
-                        }
+                        save_bar_failed(bar_failed_path_);  // persist across restarts
                     }
                 }
                 std::cerr<<"[CTRADER] Connection error\n";
@@ -783,6 +798,7 @@ private:
                                   if (iit != id_to_internal_.end()) ++ev_per_sym[iit->second];
                                 }
             else if (pt==2138) { on_trendbars_res(payload); }   // historical bars response
+            else if (pt==2146) { on_tick_data_res(payload); }   // tick data response -- used to build bars when trendbar blocked
             else if (pt==2217) { on_live_trendbar(payload); }   // live bar close push (ProtoOALiveTrendBar)
             else if (pt==2220) { /* subscribe trendbar req echo -- ignore */ }
             else if (pt==2221) { /* subscribe trendbar res -- no action needed */ }
@@ -810,10 +826,34 @@ private:
                     // Only add to failed set for INVALID_REQUEST (malformed req) -- not UNSUPPORTED
                     if (ec == "INVALID_REQUEST") {
                         bar_failed_reqs.insert(failed.name + ":" + std::to_string(failed.period));
-                        // Only persist M1 to disk -- M5/M7 only fail on the repoll cycle
-                        // (now disabled). Persisting M5/M7 would block bar seeding on restart.
+                        // Only persist M1 to disk -- M5/M7 only fail on repoll (now disabled)
                         if (failed.period == 1) {
                             save_bar_failed(bar_failed_path_);
+                        }
+                        // TICK FALLBACK: if GetTrendbarsReq was rejected for M5 or M15,
+                        // try GetTickDataReq instead -- same data, different API endpoint.
+                        // BlackBull serves tick history even when trendbar history is blocked.
+                        if ((failed.period == 5 || failed.period == 7) && !failed.is_live) {
+                            const auto bit = bar_subscriptions.find(failed.name);
+                            if (bit != bar_subscriptions.end() && bit->second.sym_id > 0) {
+                                const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch()).count();
+                                // 50 hours back = 200 M15 bars worth of tick data
+                                const int64_t from_ms = now_ms - 50LL * 3600LL * 1000LL;
+                                std::cerr << "[CTRADER-BARS] GetTrendbarsReq rejected for " << failed.name
+                                          << " -- falling back to GetTickDataReq (pt=2145)\n";
+                                // Queue tick data request -- add to end of send queue
+                                PendingSend tick_req;
+                                tick_req.name    = failed.name;
+                                tick_req.sid     = bit->second.sym_id;
+                                tick_req.period  = failed.period;  // remember which bar period we want
+                                tick_req.count   = 0;   // not used for tick req
+                                tick_req.is_live = false;
+                                tick_req.is_spots = false;
+                                // Send immediately since we're already in the recv loop
+                                send_msg(ssl, PB::get_tick_data_req(ctid_account_id, bit->second.sym_id,
+                                                                     from_ms, now_ms, 1)); // 1=BID
+                            }
                         }
                     }
                     std::cerr << "[CTRADER-BARS] " << ec << " for " << failed.name
@@ -840,6 +880,102 @@ private:
             else if (pt==2174) { const auto rf=PB::parse(payload); const std::string na=PB::get_string(rf,2); if(!na.empty()){access_token=na;refresh_token=PB::get_string(rf,3);std::cout<<"[CTRADER] Token refreshed\n";} }
             else if (pt==51)   { send_msg(ssl,PB::heartbeat()); }
             else if (pt==2148||pt==2164) { std::cerr<<"[CTRADER] Disconnect pt="<<pt<<"\n"; return; }
+        }
+    }
+
+    // ProtoOAGetTickDataRes (pt=2146)
+    // Ticks are delta-encoded: first tick has absolute timestamp ms, subsequent ticks have delta ms.
+    // ProtoOATickData fields: 1=timestamp (ms absolute/delta), 2=bid (scaled), 3=ask (scaled)
+    // Scale: XAUUSD/XAGUSD = /1000, FX = /100000, indices = /100
+    // We build M15 and M5 OHLC bars from ticks and seed bar state directly.
+    void on_tick_data_res(const std::vector<uint8_t>& payload) {
+        // Find which symbol this response is for -- from last pending bar send
+        if (bar_send_idx == 0 || bar_send_idx > bar_send_queue.size()) return;
+        const std::string name = bar_send_queue[bar_send_idx - 1].name;
+        const auto bit = bar_subscriptions.find(name);
+        if (bit == bar_subscriptions.end() || !bit->second.state) return;
+        SymBarState* state = bit->second.state;
+
+        const auto f = PB::parse(payload);
+        // field 3 = repeated ProtoOATickData
+        const auto tick_fields = PB::get_repeated_bytes(f, 3);
+        if (tick_fields.empty()) {
+            std::cout << "[CTRADER-TICKS] " << name << ": empty response\n";
+            return;
+        }
+
+        // Price scale: gold/silver /1000, FX /100000, indices /100
+        double scale = 1.0/100000.0;
+        if (name == "XAUUSD" || name == "XAGUSD") scale = 1.0/1000.0;
+        else if (name == "US500.F" || name == "USTEC.F" || name == "DJ30.F" ||
+                 name == "NAS100"  || name == "GER40"   || name == "UK100" ||
+                 name == "ESTX50"  || name == "USOIL.F" || name == "BRENT") scale = 1.0/100.0;
+
+        // Delta-decode and build bars
+        std::vector<OHLCBar> m15_bars, m5_bars;
+        int64_t cur_ts_ms = 0;
+        OHLCBar cur15{}, cur5{};
+        bool in15 = false, in5 = false;
+        const int64_t M15_MS = 15LL * 60LL * 1000LL;
+        const int64_t M5_MS  =  5LL * 60LL * 1000LL;
+
+        for (const auto& tf : tick_fields) {
+            const auto td = PB::parse(tf);
+            const int64_t ts_delta  = (int64_t)PB::get_varint(td, 1);
+            const uint64_t bid_raw  = PB::get_varint(td, 2);
+            if (bid_raw == 0) continue;
+            cur_ts_ms += ts_delta;
+            const double mid = (double)bid_raw * scale;
+            if (mid < 0.0001 || mid > 1000000.0) continue;
+
+            // M15 aggregation
+            const int64_t b15 = (cur_ts_ms / M15_MS) * M15_MS;
+            if (!in15 || b15 != cur15.ts_min * 60000LL) {
+                if (in15) m15_bars.push_back(cur15);
+                cur15.ts_min = b15 / 60000LL;
+                cur15.open = cur15.high = cur15.low = cur15.close = mid;
+                in15 = true;
+            } else {
+                if (mid > cur15.high) cur15.high = mid;
+                if (mid < cur15.low)  cur15.low  = mid;
+                cur15.close = mid;
+            }
+            // M5 aggregation
+            const int64_t b5 = (cur_ts_ms / M5_MS) * M5_MS;
+            if (!in5 || b5 != cur5.ts_min * 60000LL) {
+                if (in5) m5_bars.push_back(cur5);
+                cur5.ts_min = b5 / 60000LL;
+                cur5.open = cur5.high = cur5.low = cur5.close = mid;
+                in5 = true;
+            } else {
+                if (mid > cur5.high) cur5.high = mid;
+                if (mid < cur5.low)  cur5.low  = mid;
+                cur5.close = mid;
+            }
+        }
+        if (in15) m15_bars.push_back(cur15);
+        if (in5)  m5_bars.push_back(cur5);
+
+        // Sort chronologically (should already be in order)
+        auto cmp = [](const OHLCBar& a, const OHLCBar& b){ return a.ts_min < b.ts_min; };
+        std::sort(m15_bars.begin(), m15_bars.end(), cmp);
+        std::sort(m5_bars.begin(),  m5_bars.end(),  cmp);
+
+        if (!m5_bars.empty()) {
+            state->m5.seed(m5_bars);
+            std::cout << "[CTRADER-BARS] " << name << " M5 (ticks): seeded " << m5_bars.size()
+                      << " bars, trend=" << state->m5.ind.trend_state.load() << "\n";
+        }
+        if (!m15_bars.empty()) {
+            state->m15.seed(m15_bars);
+            std::cout << "[CTRADER-BARS] " << name << " M15 (ticks): seeded " << m15_bars.size()
+                      << " bars, EMA9=" << std::fixed << std::setprecision(2) << state->m15.ind.ema9.load()
+                      << " EMA50=" << state->m15.ind.ema50.load()
+                      << " ATR=" << state->m15.ind.atr14.load() << "\n";
+        }
+        if (on_bar_fn && (!m15_bars.empty() || !m5_bars.empty())) {
+            const auto& last = m15_bars.empty() ? m5_bars.back() : m15_bars.back();
+            on_bar_fn(name, m15_bars.empty() ? 5 : 7, last);
         }
     }
 
