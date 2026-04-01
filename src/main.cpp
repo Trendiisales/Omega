@@ -6363,11 +6363,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // NoiseBandMomentumEngine -- Zarattini/Maroy research (Sharpe 3.0-5.9).
     // All other symbols remain hard-blocked until re-validated.
     {
-        // NON-GOLD BLOCKED: stabilising gold first. Re-enable once gold P&L is consistent.
-        const bool is_active_sym = (sym == "XAUUSD");
-        // const bool is_active_sym = (sym == "XAUUSD"  || sym == "USOIL.F"  ||
-        //                             sym == "US500.F" || sym == "USTEC.F"  ||
-        //                             sym == "NAS100"  || sym == "DJ30.F");
+        // All symbols active -- bars now built from FIX ticks directly, no broker bar API needed
+        const bool is_active_sym = (sym == "XAUUSD"  || sym == "USOIL.F"  ||
+                                    sym == "US500.F" || sym == "USTEC.F"  ||
+                                    sym == "NAS100"  || sym == "DJ30.F");
         // XAGUSD hard-blocked: SilverTurtleTick real-tick backtest result:
         // Sharpe=-16.23, MaxDD=$18,381, 0 positive months across 24 months.
         // Root cause: 65% timeout rate, TP=$0.30 requires 49x the actual
@@ -6378,6 +6377,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // ?? Routing -- every symbol goes through supervisor ????????????????????????
     if (sym == "US500.F") {
+        // FIX-tick bar builder for US500.F M1/M5
+        {
+            static OHLCBar s_sp1{}, s_sp5{};
+            static int64_t s_sp1_start = 0, s_sp5_start = 0;
+            const double sp_mid = (bid + ask) * 0.5;
+            const int64_t now_ms_s = static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            const int64_t b1 = (now_ms_s /  60000LL) *  60000LL;
+            const int64_t b5 = (now_ms_s / 300000LL) * 300000LL;
+            auto upd = [](OHLCBar& c, int64_t& ps, int64_t bs, double m, OHLCBarEngine& e) {
+                if (ps == 0) { c = {bs/60000LL,m,m,m,m}; ps = bs; }
+                else if (bs != ps) { e.add_bar(c); c = {bs/60000LL,m,m,m,m}; ps = bs; }
+                else { if(m>c.high)c.high=m; if(m<c.low)c.low=m; c.close=m; }
+            };
+            upd(s_sp1, s_sp1_start, b1, sp_mid, g_bars_sp.m1);
+            upd(s_sp5, s_sp5_start, b5, sp_mid, g_bars_sp.m5);
+        }
         const bool base_can_sp = symbol_gate("US500.F",
             g_eng_sp.pos.active          ||
             g_bracket_sp.pos.active      ||
@@ -6544,6 +6561,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "USTEC.F") {
+        // FIX-tick bar builder for USTEC.F M1/M5
+        {
+            static OHLCBar s_nq1{}, s_nq5{};
+            static int64_t s_nq1_start = 0, s_nq5_start = 0;
+            const double nq_mid = (bid + ask) * 0.5;
+            const int64_t now_ms_n = static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            const int64_t b1 = (now_ms_n /  60000LL) *  60000LL;
+            const int64_t b5 = (now_ms_n / 300000LL) * 300000LL;
+            auto upd = [](OHLCBar& c, int64_t& ps, int64_t bs, double m, OHLCBarEngine& e) {
+                if (ps == 0) { c = {bs/60000LL,m,m,m,m}; ps = bs; }
+                else if (bs != ps) { e.add_bar(c); c = {bs/60000LL,m,m,m,m}; ps = bs; }
+                else { if(m>c.high)c.high=m; if(m<c.low)c.low=m; c.close=m; }
+            };
+            upd(s_nq1, s_nq1_start, b1, nq_mid, g_bars_nq.m1);
+            upd(s_nq5, s_nq5_start, b5, nq_mid, g_bars_nq.m5);
+        }
         const bool base_can_nq = symbol_gate("USTEC.F",
             g_eng_nq.pos.active                  ||
             g_bracket_nq.pos.active              ||
@@ -7563,12 +7598,43 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 std::chrono::system_clock::now().time_since_epoch()).count());
 
         // ?? Bar metric updates -- every XAUUSD tick ????????????????????????????
-        // update_tick_metrics: rolling spread avg + tick rate/accel/storm
-        // update_volume_delta: rolling L2 buy/sell pressure (-1..+1)
-        // These feed: spread_ratio (wide-spread gate), tick_storm (suppress
-        // VWAPRev entries during momentum), vol_delta_ratio (confluence scoring)
         g_bars_gold.m1.update_tick_metrics(ask - bid, now_ms_g);
         g_bars_gold.m1.update_volume_delta(g_macro_ctx.gold_l2_imbalance);
+
+        // ?? FIX-tick bar builder -- accumulates ticks into M1/M5/M15 OHLC bars ??
+        // Broker blocks GetTrendbarsReq, but we receive every tick via FIX already.
+        // Accumulate into current bar. On minute boundary close + call add_bar().
+        {
+            static OHLCBar s_cur1{}, s_cur5{}, s_cur15{};
+            static int64_t s_bar1_start = 0, s_bar5_start = 0, s_bar15_start = 0;
+            const double mid = (bid + ask) * 0.5;
+            const int64_t bar1_start  = (now_ms_g /  60000LL) *  60000LL;
+            const int64_t bar5_start  = (now_ms_g / 300000LL) * 300000LL;
+            const int64_t bar15_start = (now_ms_g / 900000LL) * 900000LL;
+
+            auto update_bar = [&](OHLCBar& cur, int64_t& prev_start,
+                                  int64_t bar_start, OHLCBarEngine& eng) {
+                if (prev_start == 0) {
+                    // First tick ever
+                    cur = {bar_start/60000LL, mid, mid, mid, mid};
+                    prev_start = bar_start;
+                } else if (bar_start != prev_start) {
+                    // Bar closed -- submit and start new
+                    if (prev_start > 0) eng.add_bar(cur);
+                    cur = {bar_start/60000LL, mid, mid, mid, mid};
+                    prev_start = bar_start;
+                } else {
+                    // Same bar -- update OHLC
+                    if (mid > cur.high) cur.high = mid;
+                    if (mid < cur.low)  cur.low  = mid;
+                    cur.close = mid;
+                }
+            };
+
+            update_bar(s_cur1,  s_bar1_start,  bar1_start,  g_bars_gold.m1);
+            update_bar(s_cur5,  s_bar5_start,  bar5_start,  g_bars_gold.m5);
+            update_bar(s_cur15, s_bar15_start, bar15_start, g_bars_gold.m15);
+        }
 
         if (gold_spread_ok) {
             if (now_ms_g - g_bracket_gold_minute_start >= 60000) {
