@@ -12,19 +12,42 @@ if(GIT_FOUND AND EXISTS "${SOURCE_DIR}/.git")
     # The GUI then shows the log-push hash instead of the fix commit, making it
     # impossible to verify what code is running (root cause of 7-week stale binary).
     # Fix: find last commit that touched src/ include/ CMakeLists.txt or *.ini
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} log --oneline -1
-            -- src include CMakeLists.txt omega_config.ini symbols.ini
-               DEPLOY_OMEGA.ps1 OmegaWatchdog.ps1
-        WORKING_DIRECTORY "${SOURCE_DIR}"
-        OUTPUT_VARIABLE GIT_SRC_LINE
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-    # Extract short hash from "abcdef1 commit message" format
-    string(REGEX REPLACE "^([a-f0-9]+) .*" "\\1" GIT_HASH "${GIT_SRC_LINE}")
-    if("${GIT_HASH}" STREQUAL "" OR "${GIT_HASH}" STREQUAL "${GIT_SRC_LINE}")
-        # Fallback to HEAD short hash if log parse failed
+    # Walk recent commits looking for the first one that touches non-logs/ files.
+    # This is the same logic as DEPLOY_OMEGA.ps1 step [3/9] -- skips log-push commits.
+    # Using a cmake script loop is more portable than path-based git log args.
+    set(GIT_HASH "")
+    set(_SEARCH_LIMIT 20)
+    set(_IDX 0)
+    while(NOT GIT_HASH AND _IDX LESS _SEARCH_LIMIT)
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} log --oneline -1 --skip=${_IDX}
+            WORKING_DIRECTORY "${SOURCE_DIR}"
+            OUTPUT_VARIABLE _COMMIT_LINE
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+        string(REGEX REPLACE "^([a-f0-9]+) .*" "\\1" _SHORT_HASH "${_COMMIT_LINE}")
+        if(NOT "${_SHORT_HASH}" STREQUAL "" AND NOT "${_SHORT_HASH}" STREQUAL "${_COMMIT_LINE}")
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} show --name-only --format= ${_SHORT_HASH}
+                WORKING_DIRECTORY "${SOURCE_DIR}"
+                OUTPUT_VARIABLE _FILES_CHANGED
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+            # Check if any changed file is outside logs/
+            string(REPLACE "\n" ";" _FILES_LIST "${_FILES_CHANGED}")
+            foreach(_F ${_FILES_LIST})
+                if(_F AND NOT "${_F}" MATCHES "^logs/")
+                    set(GIT_HASH "${_SHORT_HASH}")
+                    break()
+                endif()
+            endforeach()
+        endif()
+        math(EXPR _IDX "${_IDX} + 1")
+    endwhile()
+    if("${GIT_HASH}" STREQUAL "")
+        # Fallback to HEAD short hash
         execute_process(
             COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
             WORKING_DIRECTORY "${SOURCE_DIR}"

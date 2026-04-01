@@ -94,20 +94,31 @@ Write-Host ""
 # ------------------------------------------------------------------------------
 Write-Host "[3/9] Computing source hash..." -ForegroundColor Yellow
 
-$srcLogLine = (git log --oneline -1 -- `
-    src include CMakeLists.txt `
-    omega_config.ini symbols.ini `
-    DEPLOY_OMEGA.ps1 OmegaWatchdog.ps1 START_OMEGA.ps1 `
-    push_log.ps1 cmake 2>&1).Trim()
-
-if ($srcLogLine -match '^([a-f0-9]+)\s+') {
-    $sourceHash = (git rev-parse $Matches[1]).Trim()
-    $sourceHashShort = $Matches[1]
-} else {
-    # Fallback: HEAD if no source commit found
+# Walk recent commits, skip any that only touch logs/
+# This is more reliable than path-based git log which has PowerShell
+# backtick line-continuation issues on some Windows PowerShell versions.
+$sourceHash = ""
+$sourceHashShort = ""
+$recentCommits = (git log --oneline -20 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
+foreach ($commitLine in $recentCommits) {
+    if ($commitLine -notmatch '^([a-f0-9]+)\s+') { continue }
+    $shortHash = $Matches[1]
+    $fullHash  = (git rev-parse $shortHash 2>$null).Trim()
+    # Get all files this commit touches
+    $filesChanged = (git show --name-only --format="" $fullHash 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
+    $nonLogFiles  = $filesChanged | Where-Object { -not $_.StartsWith("logs/") }
+    if ($nonLogFiles) {
+        # Found a commit that touches real files -- this is our source hash
+        $sourceHash      = $fullHash
+        $sourceHashShort = $shortHash
+        break
+    }
+}
+if (-not $sourceHash) {
+    # Fallback: HEAD if nothing found in last 20 commits
     $sourceHash = $gitHeadFull
     $sourceHashShort = $gitHeadFull.Substring(0, 7)
-    Write-Host "      [WARN] Could not find source commit -- using HEAD" -ForegroundColor Yellow
+    Write-Host "      [WARN] Could not find source commit in last 20 -- using HEAD" -ForegroundColor Yellow
 }
 
 if ($sourceHash -ne $gitHeadFull) {
@@ -123,14 +134,32 @@ Write-Host ""
 # [4/9] Build
 # ------------------------------------------------------------------------------
 Write-Host "[4/9] Building from $sourceHashShort ..." -ForegroundColor Yellow
-if (Test-Path "$OmegaDir\build") {
-    Remove-Item -Path "$OmegaDir\build" -Recurse -Force
+# INCREMENTAL BUILD: only wipe and reconfigure if CMakeCache.txt is missing
+# or if CMakeLists.txt changed since last build. A full wipe adds 3-5 minutes
+# every deploy -- incremental builds take ~30s when only a few files changed.
+$needsReconfigure = $false
+if (-not (Test-Path "$OmegaDir\build\CMakeCache.txt")) {
+    $needsReconfigure = $true
+    Write-Host "      [INFO] No CMake cache -- full configure required" -ForegroundColor Cyan
+} else {
+    # Check if CMakeLists.txt is newer than cache
+    $cacheTime = (Get-Item "$OmegaDir\build\CMakeCache.txt").LastWriteTimeUtc
+    $cmakeTime = (Get-Item "$OmegaDir\CMakeLists.txt").LastWriteTimeUtc
+    if ($cmakeTime -gt $cacheTime) {
+        $needsReconfigure = $true
+        Write-Host "      [INFO] CMakeLists.txt changed -- reconfiguring" -ForegroundColor Cyan
+    }
 }
+
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 Set-Location "$OmegaDir\build"
 $savedPrefCmake = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1 | Out-Null
+if ($needsReconfigure) {
+    cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1 | Out-Null
+} else {
+    Write-Host "      [INFO] Using existing CMake cache -- incremental build" -ForegroundColor Cyan
+}
 $ErrorActionPreference = $savedPrefCmake
 cmake --build . --config Release 2>&1
 
@@ -213,16 +242,15 @@ if (-not (Test-Path $StampFile)) {
         $errors += "GIT_HASH MISMATCH: stamp=$($vGitHash.Substring(0,7)) expected=$sourceHashShort"
     }
 
-    # Check 3: source hash must NOT be a log-only commit (logs/ only = log-push)
-    # We check that the commit touched at least one non-logs file.
-    # Uses the same path list as the source-hash query in step [3/9].
-    $srcFilesInCommit = (git show --stat $vGitHash -- `
-        src include CMakeLists.txt `
-        omega_config.ini symbols.ini `
-        DEPLOY_OMEGA.ps1 OmegaWatchdog.ps1 START_OMEGA.ps1 `
-        push_log.ps1 cmake 2>$null)
-    if (-not $srcFilesInCommit) {
-        $errors += "GIT_HASH $($vGitHash.Substring(0,7)) touches NO tracked source files -- this is a log-push commit, not a code commit"
+    # Check 3: source hash must NOT be a log-only commit.
+    # A log-push commit touches ONLY logs/latest.log -- nothing else.
+    # Detection: get ALL files changed in the commit, check if any are outside logs/.
+    # This is simpler and more reliable than checking specific paths with backtick
+    # line continuation (which is fragile in PowerShell).
+    $allFilesInCommit = (git show --name-only --format="" $vGitHash 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
+    $nonLogFiles = $allFilesInCommit | Where-Object { -not $_.StartsWith("logs/") }
+    if (-not $nonLogFiles) {
+        $errors += "GIT_HASH $($vGitHash.Substring(0,7)) only touches logs/ -- this is a log-push commit, not a code commit. Deploy pipeline error."
     }
 
     # Check 4: all required fields present
