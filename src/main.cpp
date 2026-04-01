@@ -6347,9 +6347,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // NoiseBandMomentumEngine -- Zarattini/Maroy research (Sharpe 3.0-5.9).
     // All other symbols remain hard-blocked until re-validated.
     {
-        const bool is_active_sym = (sym == "XAUUSD"  || sym == "USOIL.F"  ||
-                                    sym == "US500.F" || sym == "USTEC.F"  ||
-                                    sym == "NAS100"  || sym == "DJ30.F");
+        // NON-GOLD BLOCKED: stabilising gold first. Re-enable once gold P&L is consistent.
+        const bool is_active_sym = (sym == "XAUUSD");
+        // const bool is_active_sym = (sym == "XAUUSD"  || sym == "USOIL.F"  ||
+        //                             sym == "US500.F" || sym == "USTEC.F"  ||
+        //                             sym == "NAS100"  || sym == "DJ30.F");
         // XAGUSD hard-blocked: SilverTurtleTick real-tick backtest result:
         // Sharpe=-16.23, MaxDD=$18,381, 0 positive months across 24 months.
         // Root cause: 65% timeout rate, TP=$0.30 requires 49x the actual
