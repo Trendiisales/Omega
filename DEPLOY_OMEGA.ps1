@@ -446,48 +446,8 @@ if ($still) {
 $ErrorActionPreference = $savedPrefKill
 Write-Host "  [OK] Omega not running." -ForegroundColor Green
 
-$statusFile = "$OmegaDir\logs\startup_status.txt"
-
-# Clear any previous status
-if (Test-Path $statusFile) { Remove-Item $statusFile -Force }
-
-# Launch Omega in background so we can monitor startup
-$proc = Start-Process -FilePath ".\Omega.exe" -ArgumentList "omega_config.ini" -PassThru -NoNewWindow
-
-# Wait up to 150s for startup_status.txt to appear and contain OK or FAIL
-Write-Host "Waiting for startup verification (up to 150s)..." -ForegroundColor Yellow
-$deadline = (Get-Date).AddSeconds(150)
-$startupOk = $false
-while ((Get-Date) -lt $deadline) {
-    Start-Sleep -Seconds 2
-    if (Test-Path $statusFile) {
-        $status = Get-Content $statusFile -Raw
-        if ($status -match "^OK:") {
-            Write-Host "" 
-            Write-Host "  *** STARTUP OK ***" -ForegroundColor Green
-            Write-Host "  $status" -ForegroundColor Green
-            $startupOk = $true
-            break
-        } elseif ($status -match "^FAIL:") {
-            Write-Host ""
-            Write-Host "  *** STARTUP FAILED ***" -ForegroundColor Red
-            Write-Host "  $status" -ForegroundColor Red
-            Write-Host "  Killing Omega process..." -ForegroundColor Red
-            if (!$proc.HasExited) { $proc.Kill() }
-            Write-Host ""
-            Write-Host "  Fix the issue above and redeploy." -ForegroundColor Yellow
-            exit 1
-        }
-        # STARTING = still initialising, keep waiting
-    }
-}
-
-if (-not $startupOk) {
-    Write-Host ""
-    Write-Host "  *** STARTUP TIMEOUT -- no status after 150s ***" -ForegroundColor Red
-    Write-Host "  Check logs/latest.log for errors" -ForegroundColor Red
-    if (!$proc.HasExited) { $proc.Kill() }
-    exit 1
-}
-
-Write-Host "  Omega is running. PID=$($proc.Id)" -ForegroundColor Green
+# Run Omega in the FOREGROUND -- Ctrl+C kills it cleanly, no restart loop.
+Write-Host "  Launching Omega.exe in foreground (Ctrl+C to stop)..." -ForegroundColor Cyan
+& ".\Omega.exe" "omega_config.ini"
+Write-Host ""
+Write-Host "  Omega exited." -ForegroundColor Yellow
