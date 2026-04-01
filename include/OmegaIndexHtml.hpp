@@ -1194,9 +1194,15 @@ function renderTrades(trades){
   if(_bellBootCount<0){_bellBootCount=closed.length;_lastTradeCount=closed.length;}
   if(_bellEnabled&&closed.length>_lastTradeCount&&_lastTradeCount>=_bellBootCount){const pnl=safe(closed[0].net_pnl);pnl>0?_playWinBell():_playLossBell();}
   _lastTradeCount=closed.length;
-  const wins=closed.filter(t=>safe(t.net_pnl)>0).length,losses=closed.filter(t=>safe(t.net_pnl)<0).length,totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
-  // BUG FIX 1: trade count header -- was (totalNet>=0?'+':'') now (totalNet>=0?'+':'-')
-  if(cE)cE.textContent=closed.length+' closed ? '+wins+'W/'+losses+'L ? '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
+  // TOTALS FIX: exclude PARTIAL_1R/PARTIAL_2R from W/L/trade count.
+  // Partials are banking events on an open position -- not completed trades.
+  // Counting them inflates total_trades and distorts W/L. PnL dollars are
+  // still correct (real money banked) but the count header should only
+  // reflect fully-closed positions (TRAIL/SL/TP/BE/FC exits).
+  const isPartial=t=>t.exitReason==='PARTIAL_1R'||t.exitReason==='PARTIAL_2R';
+  const fullClosed=closed.filter(t=>!isPartial(t));
+  const wins=fullClosed.filter(t=>safe(t.net_pnl)>0).length,losses=fullClosed.filter(t=>safe(t.net_pnl)<0).length,totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
+  if(cE)cE.textContent=fullClosed.length+' closed → '+wins+'W/'+losses+'L → '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
   const now=Math.floor(Date.now()/1000);
   el.innerHTML=trades.slice(0,60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);

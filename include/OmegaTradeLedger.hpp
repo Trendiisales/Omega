@@ -123,8 +123,17 @@ public:
         // net_pnl is used for all stats (after slippage + commission)
         const double pnl_for_stats = (tr.net_pnl != 0.0 || tr.slippage_entry != 0.0)
                                      ? tr.net_pnl : tr.pnl;
-        if (pnl_for_stats > 0) { m_wins++; m_sum_win += pnl_for_stats; }
-        else                   { m_losses++; m_sum_loss += std::abs(pnl_for_stats); }
+        // TOTALS FIX: PARTIAL_1R and PARTIAL_2R are banking events on an open position.
+        // The dollars are real and must be counted in daily_pnl (broker paid them out).
+        // But they must NOT count as wins/losses in the trade count -- doing so inflates
+        // total_trades, distorts W/L ratio, and causes the GUI header to show e.g.
+        // "8 closed 7W/1L" when only 4 full positions were taken (4 partials + 4 finals).
+        // Only fully-closed positions (TRAIL/SL/TP/BE/FC exits) count as trades.
+        const bool is_partial = (tr.exitReason == "PARTIAL_1R" || tr.exitReason == "PARTIAL_2R");
+        if (!is_partial) {
+            if (pnl_for_stats > 0) { m_wins++; m_sum_win += pnl_for_stats; }
+            else                   { m_losses++; m_sum_loss += std::abs(pnl_for_stats); }
+        }
         m_daily_pnl       += pnl_for_stats;
         m_cumulative_pnl  += pnl_for_stats;  // never resets -- true equity tracking
         m_gross_daily_pnl += tr.pnl;   // gross before costs -- for display transparency

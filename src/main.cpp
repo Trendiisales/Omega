@@ -4491,16 +4491,30 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (g_cfg.ustec_pilot_require_latency && !lat_ok) return false;
                 if (g_cfg.ustec_pilot_block_risk_off && regime == "RISK_OFF") return false;
             }
-            // ?? Fast-loss streak gate -- applies in all modes ??????????????????
-            // 3 consecutive fast bad losses triggers loss_pause_sec cooldown.
-            {
-                std::lock_guard<std::mutex> lk2(g_sym_risk_mtx);
-                auto it = g_shadow_quality.find(symbol);
-                if (it != g_shadow_quality.end() && it->second.pause_until > nowSec()) {
-                    return false;
-                }
-            }
             // SHADOW pilot mode filters
+        }
+        // ?? Fast-loss streak gate -- ALL modes (LIVE + SHADOW) ????????????????
+        // BUG FIX: was inside if(shadow_mode) block -- never fired in LIVE mode.
+        // Comment said "applies in all modes" but code contradicted it.
+        // Evidence: 01:57 SHORT SL_HIT + 01:58 SHORT SL_HIT both allowed through
+        // in LIVE -- fast_loss_streak never reached 3 because gate never checked.
+        // Fix: moved outside shadow_mode block. Now fires in both modes.
+        // 3 consecutive fast bad losses (SL/scratch/timeout <=120s) triggers
+        // loss_pause_sec cooldown on that symbol.
+        {
+            std::lock_guard<std::mutex> lk2(g_sym_risk_mtx);
+            auto it = g_shadow_quality.find(symbol);
+            if (it != g_shadow_quality.end() && it->second.pause_until > nowSec()) {
+                static std::unordered_map<std::string,int64_t> s_fls_log;
+                const int64_t now_fls = nowSec();
+                if (now_fls - s_fls_log[symbol] >= 30) {
+                    s_fls_log[symbol] = now_fls;
+                    printf("[FAST-LOSS-BLOCK] %s fast-loss pause active -- blocking entry\n",
+                           symbol.c_str());
+                    fflush(stdout);
+                }
+                return false;
+            }
         }
         if (symbol_has_open_position) {
             // Do NOT increment g_gov_pos here -- this fires every tick while any
@@ -7913,9 +7927,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const int  block_dir   = g_gold_trail_block_dir.load();
                 const double gf_drift  = g_gold_stack.ewm_drift();
                 const double gf_l2     = g_macro_ctx.gold_l2_imbalance;
-                // Direction probe: use L2 if live, drift otherwise
-                const bool likely_long = (gf_l2 > GFE_LONG_THRESHOLD)
-                                      || (gf_l2 >= 0.40 && gf_l2 <= 0.60 && gf_drift > 1.0);
+                // Direction probe: use L2 if live, drift otherwise.
+                // BUG FIX: when L2 is neutral (0.40-0.60) AND drift is weak (<1.0),
+                // the old probe returned likely_long=false, which meant block_dir=1
+                // (was LONG) never matched -- 22:38:46 LONG re-entered 51s after
+                // 22:37:55 TRAIL exit because L2=0.500 and drift<1.0 failed the probe.
+                // Fix: neutral L2 + weak drift = direction unknown = block BOTH.
+                // Only allow a reversal entry when direction is unambiguous:
+                //   L2 strongly skewed (>0.75 or <0.25), OR drift >= 2.0.
+                const bool l2_strong_long  = (gf_l2 > GFE_LONG_THRESHOLD);          // >0.75
+                const bool l2_strong_short = (gf_l2 < (1.0 - GFE_LONG_THRESHOLD));  // <0.25
+                const bool drift_clear     = std::fabs(gf_drift) >= 2.0;
+                const bool neutral_book    = !l2_strong_long && !l2_strong_short && !drift_clear;
+                // If book is neutral: block regardless of direction (can't confirm reversal)
+                if (neutral_book) return true;
+                const bool likely_long = l2_strong_long
+                                      || (!l2_strong_short && gf_drift > 1.0);
                 return (block_dir ==  1 && likely_long)   // was long, about to enter long
                     || (block_dir == -1 && !likely_long); // was short, about to enter short
             }();
@@ -11166,17 +11193,34 @@ int main(int argc, char* argv[])
         g_ctrader_depth.name_alias["VIX"]      = "VIX.F";
         g_ctrader_depth.name_alias["VOLX"]     = "VIX.F";
 
-        // ?? OHLC bar subscriptions -- XAUUSD M1+M5 ????????????????????????????
+        // ?? OHLC bar subscriptions -- XAUUSD M1+M5 only ???????????????????
         // XAUUSD spot id=41 (hardcoded, same as depth subscription).
         // On startup: requests 200 M1 + 100 M5 historical bars, then subscribes
         // live bar closes. Indicators (RSI, ATR, EMA, BB, swing, trend) are
         // written to g_bars_gold atomically and read by GoldFlow/GoldStack.
+        //
+        // REMOVED: US500.F and USTEC.F bar subscriptions.
+        // ROOT CAUSE OF SESSION DESTRUCTION: BlackBull broker returns INVALID_REQUEST
+        // for trendbar requests on US500.F and USTEC.F (cash/futures index instruments).
+        // This causes read_one() to return rc=-1 (SSL connection drop) on EVERY reconnect,
+        // immediately after the depth feed becomes stable. Effect:
+        //   1. Reconnect cycle fires every 5s indefinitely
+        //   2. XAUUSD M1 bars never seed (interrupted before 52 bars load)
+        //   3. m1_ready=false -> Gates 3+4 inactive -> naked GoldFlow entries
+        //   4. At 02:39 this caused a full process shutdown, missing the 8-min uptrend
+        //
+        // Evidence from logs: every single reconnect shows exactly:
+        //   [CTRADER-BARS] USTEC.F history req period=1 count=200
+        //   [CTRADER] Error:  -- INVALID_REQUEST
+        //   [CTRADER] Connection error
+        //
+        // GER40 was removed earlier for the same reason (id=1899, same INVALID_REQUEST).
+        // US500.F and USTEC.F now use tick-based vol estimation (same as GER40 fallback).
+        // g_bars_sp and g_bars_nq remain allocated -- indicators just won't be seeded.
+        // Engines that read g_bars_sp/g_bars_nq already handle m1_ready=false gracefully.
         g_ctrader_depth.bar_subscriptions["XAUUSD"]  = {41, &g_bars_gold};
-        g_ctrader_depth.bar_subscriptions["US500.F"] = {0,  &g_bars_sp};
-        g_ctrader_depth.bar_subscriptions["USTEC.F"] = {0,  &g_bars_nq};
-        // GER40 (id=1899) removed: broker returns INVALID_REQUEST for trendbar
-        // requests on this cash CFD -- drops the depth connection immediately.
-        // g_trend_pb_ger40 falls back to tick-based EMAs.
+        // US500.F: {0, &g_bars_sp} -- REMOVED: INVALID_REQUEST drops connection
+        // USTEC.F: {0, &g_bars_nq} -- REMOVED: INVALID_REQUEST drops connection
 
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";

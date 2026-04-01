@@ -738,9 +738,17 @@ static std::string buildDailySummaryJson()
         const double net = atof(fields[17]);
         const double grs = atof(fields[16]);
         char eng[64]={}; strncpy(eng,fields[9],sizeof(eng)-1);
-        ++n; total+=net; gross+=grs;
-        if(net>0) ++wins;
-        auto& e=by_eng[eng]; ++e.n; e.pnl+=net; if(net>0)++e.w;
+        char exit_rsn[64]={}; if(nf>30) strncpy(exit_rsn,fields[30],sizeof(exit_rsn)-1);
+        // TOTALS FIX: exclude PARTIAL_1R/PARTIAL_2R from trade count and W/L.
+        // Dollars still accumulated (real money banked) but count/wins/losses not.
+        const bool is_partial = (strncmp(exit_rsn,"PARTIAL_1R",10)==0 ||
+                                  strncmp(exit_rsn,"PARTIAL_2R",10)==0);
+        total+=net; gross+=grs;
+        if(!is_partial){
+            ++n;
+            if(net>0) ++wins;
+            auto& e=by_eng[eng]; ++e.n; e.pnl+=net; if(net>0)++e.w;
+        }
     }
     fclose(f);
 
