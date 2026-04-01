@@ -678,8 +678,7 @@ private:
         for (const auto& s : pending_live_subs)  bar_send_queue.push_back({s.name, s.sid, s.period, 0, true, false});
         size_t bar_send_idx = 0;
         auto   bar_send_next   = std::chrono::steady_clock::now() + std::chrono::seconds(10); // wait for depth subscription ACK before sending bar reqs
-        auto   bar_repoll_next = std::chrono::steady_clock::now() + std::chrono::seconds(65);
-        bool   bar_repoll_disabled = false;  // set true when broker rejects bar reqs
+        // bar_repoll_next and bar_repoll_disabled removed -- repoll disabled (#if 0 below)
 
         while (running.load()) {
             const auto now = std::chrono::steady_clock::now();
