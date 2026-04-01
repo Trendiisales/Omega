@@ -312,6 +312,7 @@ public:
     int64_t     ctid_account_id = 0;
     std::unordered_set<std::string> symbol_whitelist;
     bool        dump_all_symbols = false;  // if true, log ALL broker symbols on connect
+    std::unordered_set<std::string> bar_failed_reqs; // persists across reconnects
 
     // Alias map: broker_name ? internal_name
     // Populated when broker uses different names than our internal names.
@@ -586,8 +587,6 @@ private:
         // Track bar requests that previously got INVALID_REQUEST -- skip them.
         // Persists across reconnects within this process lifetime.
         // Key format: "SYMBOL:PERIOD" e.g. "XAUUSD:1"
-        static std::unordered_set<std::string> bar_failed_reqs;
-
         std::vector<BarReq> pending_bar_reqs;
         for (const auto& bkv : bar_subscriptions) {
             const int64_t sid = bkv.second.sym_id;
