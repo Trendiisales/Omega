@@ -116,7 +116,11 @@ static constexpr double GFE_STAGE3_ATR_MULT   = 2.0;   // stair step 2
 static constexpr double GFE_STAGE4_ATR_MULT   = 6.0;   // full trail stage (GUI badge)
 static constexpr double GFE_MAX_SPREAD        = 2.5;   // pts -- London gold spread $1.50-$4.00; old 0.6 blocked all entries
 static constexpr int    GFE_MIN_HOLD_MS       = 5000;   // 5s minimum hold
-static constexpr int    GFE_MAX_HOLD_MS       = 3600000; // 60 min -- EA has no hold limit, keep generous -- prevents indefinite holds on flat tape
+#ifndef GFE_MAX_HOLD_OVERRIDE
+static constexpr int    GFE_MAX_HOLD_MS       = 3600000; // 60 min
+#else
+static constexpr int    GFE_MAX_HOLD_MS       = GFE_MAX_HOLD_OVERRIDE;
+#endif
                                                           // If the trail has not advanced past Stage 2 by 30 min, the thesis is stale.
                                                           // Observed: held 31 min with no exit because gold went flat after entry,
                                                           // Stage 1 BE locked but trail never tightened -- exit at BE/mid.
@@ -1408,7 +1412,11 @@ private:
         // At 0.15 lots: fires at 3.33pts. At 0.30 lots: fires at 1.67pts.
         // After banking 33%, SL locks to entry+buffer (BE) -- remainder runs free.
         // This is exactly what was requested: "bank the $50 we have, let it run."
-        static constexpr double STEP1_DOLLAR_TRIGGER = 20.0;  // $20 open PnL fires step 1 (was $50 -- never fired at 0.06 lots with ATR=5)
+#ifndef GFE_STEP1_OVERRIDE
+        static constexpr double STEP1_DOLLAR_TRIGGER = 20.0;
+#else
+        static constexpr double STEP1_DOLLAR_TRIGGER = GFE_STEP1_OVERRIDE;
+#endif
         if (!pos.partial_closed && open_pnl_usd_full >= STEP1_DOLLAR_TRIGGER) {
             fire_stair(1, "PARTIAL_1R");
         }
