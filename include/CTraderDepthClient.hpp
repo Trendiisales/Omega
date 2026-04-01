@@ -842,15 +842,7 @@ private:
                                 const int64_t from_ms = now_ms - 50LL * 3600LL * 1000LL;
                                 std::cerr << "[CTRADER-BARS] GetTrendbarsReq rejected for " << failed.name
                                           << " -- falling back to GetTickDataReq (pt=2145)\n";
-                                // Queue tick data request -- add to end of send queue
-                                PendingSend tick_req;
-                                tick_req.name    = failed.name;
-                                tick_req.sid     = bit->second.sym_id;
-                                tick_req.period  = failed.period;  // remember which bar period we want
-                                tick_req.count   = 0;   // not used for tick req
-                                tick_req.is_live = false;
-                                tick_req.is_spots = false;
-                                // Send immediately since we're already in the recv loop
+                                last_bar_req_name_ = failed.name;
                                 send_msg(ssl, PB::get_tick_data_req(ctid_account_id, bit->second.sym_id,
                                                                      from_ms, now_ms, 1)); // 1=BID
                             }
@@ -883,15 +875,18 @@ private:
         }
     }
 
+    // Tracks the last bar request symbol name -- used by on_tick_data_res
+    // to know which symbol the tick response belongs to
+    std::string last_bar_req_name_;
+
     // ProtoOAGetTickDataRes (pt=2146)
     // Ticks are delta-encoded: first tick has absolute timestamp ms, subsequent ticks have delta ms.
     // ProtoOATickData fields: 1=timestamp (ms absolute/delta), 2=bid (scaled), 3=ask (scaled)
     // Scale: XAUUSD/XAGUSD = /1000, FX = /100000, indices = /100
     // We build M15 and M5 OHLC bars from ticks and seed bar state directly.
     void on_tick_data_res(const std::vector<uint8_t>& payload) {
-        // Find which symbol this response is for -- from last pending bar send
-        if (bar_send_idx == 0 || bar_send_idx > bar_send_queue.size()) return;
-        const std::string name = bar_send_queue[bar_send_idx - 1].name;
+        const std::string name = last_bar_req_name_;
+        if (name.empty()) return;
         const auto bit = bar_subscriptions.find(name);
         if (bit == bar_subscriptions.end() || !bit->second.state) return;
         SymBarState* state = bit->second.state;
