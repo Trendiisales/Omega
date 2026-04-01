@@ -7220,10 +7220,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                gold_lot,
                                                g_adaptive_risk.vol_scaler.atr_fast("XAUUSD"));
                             send_live_order("XAUUSD", gsig.is_long, gold_lot, gsig.entry);
-                        }
-                    }
-                }
-                } // end !gs_bar_blocked
+                            g_telemetry.UpdateLastEntryTs();  // watchdog: GoldStack entry counts as activity
             }
         }
 
@@ -7646,6 +7643,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                             gold_stack_regime, gold_is_pyramiding ? "BRACKET_PYRAMID" : "BRACKET_ARM");
                         long_id  = send_live_order("XAUUSD", true,  long_lot,  bgsigs.long_entry);
                         short_id = send_live_order("XAUUSD", false, short_lot, bgsigs.short_entry);
+                        g_telemetry.UpdateLastEntryTs();  // watchdog: bracket (biased) entry
                         printf("[BRACKET-L2] XAUUSD bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",
                                gold_trend.bias, bg_lot, bg_lot * 0.5,
                                g_macro_ctx.gold_l2_imbalance);
@@ -7660,6 +7658,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                             bgsigs.long_entry, bg_lot, ask - bid, gold_stack_regime, "BRACKET_ARM");
                         long_id  = send_live_order("XAUUSD", true,  bg_lot, bgsigs.long_entry);
                         short_id = send_live_order("XAUUSD", false, bg_lot, bgsigs.short_entry);
+                        g_telemetry.UpdateLastEntryTs();  // watchdog: bracket (neutral) entry
                     }
                     g_bracket_gold.pending_long_clOrdId  = long_id;
                     g_bracket_gold.pending_short_clOrdId = short_id;
@@ -7823,6 +7822,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                             g_gold_flow_reload.pos.size,
                             g_gold_flow_reload.pos.entry);
                     }
+                    g_telemetry.UpdateLastEntryTs();  // watchdog: GoldFlow reload entry
                     printf("[GF-RELOAD] ENTRY FIRED %s lot=%.3f entry=%.2f sl=%.2f atr=%.2f\n",
                            g_gold_flow_reload.pos.is_long ? "LONG" : "SHORT",
                            g_gold_flow_reload.pos.size,
@@ -8457,6 +8457,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_gold_flow.pos.entry, "L2_FLOW",
                     "FLOW", regime.c_str(), "GOLD_FLOW",
                     0.0, g_gold_flow.pos.sl);
+                g_telemetry.UpdateLastEntryTs();  // watchdog: GoldFlow entry counts as activity
                 // Log entry
                 write_trade_open_log("XAUUSD", "GoldFlow",
                     g_gold_flow.pos.is_long ? "LONG" : "SHORT",
