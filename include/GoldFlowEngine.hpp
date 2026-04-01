@@ -1254,8 +1254,16 @@ private:
             }
         };
 
-        // Step 1: +1?ATR -- bank first 33%, SL ? entry+buffer
-        if (!pos.partial_closed && move >= atr * 1.0) {
+        // Step 1: DOLLAR trigger -- bank first 33% the moment trade is up $50.
+        // Previously triggered at +1*ATR price distance (e.g. 10pts at ATR=10).
+        // Problem: ATR=10 requires a $10 move = $150 gross at 0.15 lots.
+        // Most Asia trades only move 3-4pts and reverse before ever reaching step 1.
+        // Fix: fire as soon as open PnL on full position >= $50.
+        // At 0.15 lots: fires at 3.33pts. At 0.30 lots: fires at 1.67pts.
+        // After banking 33%, SL locks to entry+buffer (BE) -- remainder runs free.
+        // This is exactly what was requested: "bank the $50 we have, let it run."
+        static constexpr double STEP1_DOLLAR_TRIGGER = 50.0;  // $50 open PnL fires step 1
+        if (!pos.partial_closed && open_pnl_usd_full >= STEP1_DOLLAR_TRIGGER) {
             fire_stair(1, "PARTIAL_1R");
         }
 
@@ -1313,9 +1321,12 @@ private:
         // Before step 1: ratchet moves SL from loss territory toward BE.
         // After step 1:  ratchet locks profit above the staircase SL.
         // Both improve the worst-case outcome.
+        //
+        // open_pnl_usd_full: hoisted here so staircase step 1 dollar trigger can use it.
+        const double open_pnl_usd_full = (pos.full_size > 0.0)
+            ? (move * pos.full_size * 100.0) : 0.0;
         if (pos.size > 0.0 && pos.full_size > 0.0) {
             // Tier trigger: measure total trade open P&L using full_size
-            const double open_pnl_usd_full = move * pos.full_size * 100.0;
             const int    tier_now = static_cast<int>(open_pnl_usd_full / DOLLAR_RATCHET_STEP);
 
             if (tier_now > pos.dollar_lock_tier && tier_now >= 1) {
