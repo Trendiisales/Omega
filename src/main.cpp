@@ -8948,14 +8948,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
 
         // Trend Pullback: EMA9/21/50 -- only when no other XAUUSD position is open.
-        // TrendPullbackEngine ticks every call (EMA update), but only signals when
-        // EMA stack is aligned AND price pulls back to EMA50 with a bounce tick.
-        // Gated strictly: gold has many concurrent engines, no stacking allowed.
+        // TrendPullback: M15 swing trades (1-3hr hold, 20-50pt targets).
+        // Can run CONCURRENTLY with GoldFlow (10s scalp) -- different timeframes,
+        // different position sizes, independent SL/TP levels, no conflict.
+        // Still blocked by bracket and LatencyEdge (those are structural/speed trades
+        // that would directly conflict with a swing position at the same level).
+        // GoldStack (tick-pattern engine) also blocked -- shares exact same entry zone.
         if (gold_can_enter
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
             && !g_le_stack.has_open_position()
-            && !g_gold_flow.has_open_position()
+            // GoldFlow concurrent allowed -- it's a 10s scalp, TPB is a 1-3hr swing
             && !g_trend_pb_gold.has_open_position()) {
             const auto tpb = g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
             if (tpb.valid) {

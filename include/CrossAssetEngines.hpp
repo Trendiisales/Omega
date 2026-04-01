@@ -1519,6 +1519,67 @@ public:
                 if (!pos_.is_long && ema50_ < pos_.sl) pos_.sl = ema50_;
             }
 
+            // ?? Immediate reversal guard (M15 scale) ??????????????????????????
+            // If within first 60s price moves >3pts adverse with zero MFE:
+            // entry was wrong from the start -- close before the full SL fires.
+            // Scaled larger than GoldFlow (2pt/15s) because M15 EMAs need more
+            // breathing room -- spread noise on gold is ~0.35pt.
+            {
+                const int64_t held_s  = ca_now_sec() - pos_.entry_ts;
+                const double  adverse = pos_.is_long ? (pos_.entry - mid)
+                                                     : (mid - pos_.entry);
+                if (held_s <= 60 && adverse > 3.0 && pos_.mfe < 0.20) {
+                    printf("[TREND-PB] %s IMM-REVERSAL adverse=%.2f in %llds mfe=%.2f -- bail\n",
+                           sym.c_str(), adverse, (long long)held_s, pos_.mfe);
+                    fflush(stdout);
+                    const double exit_px = pos_.is_long ? bid : ask;
+                    omega::TradeRecord tr;
+                    tr.symbol = sym; tr.side = pos_.is_long?"LONG":"SHORT";
+                    tr.entryPrice=pos_.entry; tr.exitPrice=exit_px;
+                    tr.tp=pos_.tp; tr.sl=pos_.sl; tr.size=pos_.size;
+                    tr.mfe=pos_.mfe; tr.mae=adverse;
+                    tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
+                    tr.exitReason="IMM_REVERSAL"; tr.engine="TrendPullback";
+                    tr.spreadAtEntry=pos_.spread_at_entry;
+                    pos_.reset(); be_locked_=false; prev_at_ema50_=false;
+                    cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
+                    if (on_close) on_close(tr);
+                    return {};
+                }
+            }
+
+            // ?? Time-stop-in-loss (M15 scale) ?????????????????????????????????????????
+            // If losing >2pts after 5 minutes with MFE <1pt: thesis is dead.
+            // M15 swing should show SOME movement in 5 minutes. If it hasn't,
+            // the EMA50 level is not holding and the trend has reversed.
+            // Only fires before BE is locked -- once BE locked the trail manages exit.
+            {
+                const int64_t held_s  = ca_now_sec() - pos_.entry_ts;
+                const double  adverse = pos_.is_long ? (pos_.entry - mid)
+                                                     : (mid - pos_.entry);
+                if (!be_locked_
+                    && held_s > 300        // 5 minutes
+                    && adverse > 2.0       // losing >2pts
+                    && pos_.mfe < 1.0) {   // never went 1pt in our favour
+                    printf("[TREND-PB] %s TIME-STOP adverse=%.2f held=%llds mfe=%.2f -- dead thesis\n",
+                           sym.c_str(), adverse, (long long)held_s, pos_.mfe);
+                    fflush(stdout);
+                    const double exit_px = pos_.is_long ? bid : ask;
+                    omega::TradeRecord tr;
+                    tr.symbol = sym; tr.side = pos_.is_long?"LONG":"SHORT";
+                    tr.entryPrice=pos_.entry; tr.exitPrice=exit_px;
+                    tr.tp=pos_.tp; tr.sl=pos_.sl; tr.size=pos_.size;
+                    tr.mfe=pos_.mfe; tr.mae=adverse;
+                    tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
+                    tr.exitReason="TIME_STOP"; tr.engine="TrendPullback";
+                    tr.spreadAtEntry=pos_.spread_at_entry;
+                    pos_.reset(); be_locked_=false; prev_at_ema50_=false;
+                    cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
+                    if (on_close) on_close(tr);
+                    return {};
+                }
+            }
+
             // Check SL / timeout
             // Minimum hold: don't check SL for first 2s -- prevents entry-tick exits
             // caused by spread noise or stale EMA50 floor firing immediately
