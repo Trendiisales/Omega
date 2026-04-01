@@ -74,12 +74,13 @@ $ErrorActionPreference = $savedPref
 
 git show HEAD:symbols.ini | Out-File -FilePath "$OmegaDir\symbols.ini" -Encoding utf8 -Force
 
-if ($scriptChanged) {
+# Only restart if script changed AND this is not already a restarted instance
+if ($scriptChanged -and -not $env:OMEGA_DEPLOY_RESTARTED) {
     Write-Host "      [RESTART] Deploy script updated -- re-launching new version..." -ForegroundColor Cyan
+    $env:OMEGA_DEPLOY_RESTARTED = "1"
     & "$OmegaDir\DEPLOY_OMEGA.ps1"
     return
 }
-
 $gitHeadFull = (git rev-parse HEAD).Trim()
 Write-Host "      [OK] HEAD = $gitHeadFull  ($(git log --oneline -1))" -ForegroundColor DarkGray
 Write-Host ""
