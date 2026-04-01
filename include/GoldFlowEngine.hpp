@@ -846,10 +846,19 @@ struct GoldFlowEngine {
                 std::chrono::system_clock::now().time_since_epoch()).count());
         const int64_t age_s = now_s - saved_ts;
 
+        // Reject if saved_ts is 0, negative, or in the future -- corrupted file
+        if (saved_ts <= 0 || saved_ts > now_s) {
+            printf("[GFE] ATR state rejected (saved_ts=%lld invalid -- corrupted file, deleting)\n",
+                   (long long)saved_ts);
+            remove(path.c_str());  // delete so it doesn't keep loading
+            return;
+        }
+
         // Reject if saved more than 4 hours ago -- overnight/weekend stale
-        if (saved_ts > 0 && age_s > 4 * 3600) {
-            printf("[GFE] ATR state rejected (age=%lldmin > 240min -- too stale)\n",
+        if (age_s > 4 * 3600) {
+            printf("[GFE] ATR state rejected (age=%lldmin > 240min -- too stale, deleting)\n",
                    (long long)(age_s / 60));
+            remove(path.c_str());
             return;
         }
         // Reject if ATR is below minimum viable -- saved during dead tape or format mismatch.

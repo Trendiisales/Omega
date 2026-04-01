@@ -1861,8 +1861,14 @@ public:
             else if (k == "saved_ts") saved_ts = static_cast<int64_t>(val);
         }
         fclose(fp);
-        const int64_t age = static_cast<int64_t>(std::time(nullptr)) - saved_ts;
-        if (age > 4 * 3600 || age < 0 || e9 <= 0.0 || e50 <= 0.0) return;
+        const int64_t now_ts = static_cast<int64_t>(std::time(nullptr));
+        const int64_t age    = now_ts - saved_ts;
+        // Delete and reject if: timestamp invalid, too stale (>4hr), or bad EMAs
+        if (saved_ts <= 0 || saved_ts > now_ts || age > 4 * 3600 || age < 0
+            || e9 <= 0.0 || e50 <= 0.0) {
+            remove(path.c_str());  // delete so it doesn't keep reloading corrupt data
+            return;
+        }
         ema9_       = e9;
         ema21_      = e21;
         ema50_      = e50;
