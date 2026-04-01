@@ -97,7 +97,11 @@ static constexpr double GFE_ATR_MIN           = 5.0;   // raised 2.0?5.0: XAUUSD
                                                         // = noise level, hit by spread fluctuation alone.
                                                         // 5pt minimum = 0.11% = survives a real tick move.
                                                         // VIX27 day real ATR is 8-18pts, this is a safe floor.
-static constexpr double GFE_ATR_SL_MULT       = 1.0;   // SL = ATR * this
+#ifndef GFE_ATR_SL_MULT_OVERRIDE
+static constexpr double GFE_ATR_SL_MULT       = 1.0;
+#else
+static constexpr double GFE_ATR_SL_MULT       = GFE_ATR_SL_MULT_OVERRIDE;
+#endif   // SL = ATR * this
 // Trail distance constants -- tiered trail now uses inline trail_mult in manage_position().
 // These constants are retired (tiered: 1.0x?0.5x?0.25x ATR by staircase stage).
 // Kept as named values only for any external code that may reference them.
@@ -145,7 +149,11 @@ static constexpr double GFE_ASIA_MAX_SPREAD        = 2.5;    // raised $1.50?$2.
                                                               // on a $100 drop ATR>=$15, spread $2.50 ? ratio=6.0 >> 4.0 ? PASS.
                                                               // On thin chop ATR=$2, spread $2.50 ? ratio=0.8 << 4.0 ? BLOCK.
                                                               // The spread cap alone was a blunt instrument; ratio does it better.
-static constexpr double GFE_ASIA_DRIFT_MIN         = 1.50;   // ALIGNED with outer asia_trend_ok gate (main.cpp: |drift|>=1.5).
+#ifndef GFE_ASIA_DRIFT_MIN_OVERRIDE
+static constexpr double GFE_ASIA_DRIFT_MIN         = 1.50;
+#else
+static constexpr double GFE_ASIA_DRIFT_MIN         = GFE_ASIA_DRIFT_MIN_OVERRIDE;
+#endif   // ALIGNED with outer asia_trend_ok gate (main.cpp: |drift|>=1.5).
                                                               // Was 0.50: GoldFlow inner gate allowed entries at $0.50 drift while
                                                               // the outer bracket/flow gate required $1.50. Gap meant GFE fired
                                                               // on weak Asia moves that had already been blocked at the outer gate,
