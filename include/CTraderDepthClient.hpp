@@ -730,18 +730,22 @@ private:
                 // entire queue immediately to stop the reconnect loop.
                 // The connection itself stays alive (do NOT return here).
                 const bool is_bar_error = (ec == "INVALID_REQUEST" || ec == "UNSUPPORTED_MESSAGE");
-                if (is_bar_error) {
-                    // Broker is rejecting bar requests -- drain entire queue immediately.
-                    // Both INVALID_REQUEST and UNSUPPORTED_MESSAGE cause broker-side disconnect
-                    // if we keep sending. Mark everything failed and stop all bar requests.
-                    std::cerr << "[CTRADER-BARS] " << ec << " -- draining all bar requests, "
-                              << "broker does not support trendbar protocol\n";
-                    for (size_t qi = 0; qi < bar_send_queue.size(); ++qi)
-                        bar_failed_reqs.insert(bar_send_queue[qi].name + ":" + std::to_string(bar_send_queue[qi].period));
-                    bar_send_idx = bar_send_queue.size();
-                    bar_repoll_disabled = true;  // stop 65s repoll permanently
-                    std::cerr << "[CTRADER-BARS] *** Trendbar requests permanently disabled this session ***\n"
-                              << "[CTRADER-BARS] *** Gate 0d fallback will activate after 5min ***\n";
+                if (is_bar_error && bar_send_idx > 0 && bar_send_idx <= bar_send_queue.size()) {
+                    const auto& failed = bar_send_queue[bar_send_idx - 1];
+                    bar_failed_reqs.insert(failed.name + ":" + std::to_string(failed.period));
+                    std::cerr << "[CTRADER-BARS] " << ec << " for " << failed.name
+                              << " period=" << failed.period << " -- skipping on future reconnects\n";
+                    if (ec == "UNSUPPORTED_MESSAGE") {
+                        // Full protocol unsupported -- drain all and stop repoll
+                        for (size_t qi = bar_send_idx; qi < bar_send_queue.size(); ++qi)
+                            bar_failed_reqs.insert(bar_send_queue[qi].name + ":" + std::to_string(bar_send_queue[qi].period));
+                        bar_send_idx = bar_send_queue.size();
+                        bar_repoll_disabled = true;
+                        std::cerr << "[CTRADER-BARS] UNSUPPORTED_MESSAGE -- trendbar protocol disabled\n"
+                                  << "[CTRADER-BARS] Gate 0d fallback activates after 5min\n";
+                    }
+                    if (failed.name == "XAUUSD" && failed.period == 1)
+                        std::cerr << "[CTRADER-BARS] *** XAUUSD M1 rejected -- Gate 0d will block GoldFlow ***\n";
                 }
                 // Do NOT return -- one bad bar request must not kill the depth feed.
             }
