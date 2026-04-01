@@ -563,53 +563,75 @@ private:
         if (!wait_for(ssl, 2157, 10000, pt, payload)) { std::cerr << "[CTRADER] SubscribeDepthRes timeout\n"; return false; }
         std::cout << "[CTRADER] Subscribed to " << sub_ids.size() << " symbols\n";
 
-        // ?? Request historical bars + subscribe live bar closes per registered symbol ??
-        // Send AFTER depth subscription is confirmed. Each bar_subscriptions entry
-        // with a resolved sym_id gets:
-        //   - 200 M1 bars  (period=1, ~3.3 hours)
-        //   - 100 M5 bars  (period=5, ~8.3 hours)
-        //   - 50  M15 bars (period=7, ~12.5 hours) -- XAUUSD only, for TrendPB
-        // Live subscriptions (pt=2220) follow immediately after history requests.
-        for (const auto& bkv : bar_subscriptions) {
-            const int64_t sid = bkv.second.sym_id;
-            if (sid <= 0) {
-                std::cout << "[CTRADER-BARS] " << bkv.first
-                          << " -- sym_id unresolved, skipping bar requests\n";
-                continue;
-            }
-            const bool is_gold = (bkv.first == "XAUUSD");
-
-            // M1 history + live sub
-            send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 1, 200));
-            send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, sid, 1));
-
-            // M5 history + live sub
-            send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 5, 100));
-            send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, sid, 5));
-
-            // M15 history + live sub -- gold only (TrendPB swing timeframe)
-            if (is_gold) {
-                send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 7, 50));
-                send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, sid, 7));
-                std::cout << "[CTRADER-BARS] " << bkv.first
-                          << " bar requests sent: M1(200) M5(100) M15(50) + live subs\n";
-            } else {
-                std::cout << "[CTRADER-BARS] " << bkv.first
-                          << " bar requests sent: M1(200) M5(100) + live subs\n";
-            }
-        }
+        // ?? Bar history requests deferred to recv_loop (staggered) ??
+        // Sending trendbar reqs during auth causes INVALID_REQUEST / broker
+        // connection drop -- confirmed in prior sessions. Fired from recv_loop
+        // 2s after depth is stable, 200ms between each send.
 
         return true;
     }
 
     void recv_loop(SSL* ssl, sock_t) {
-        auto last_hb = std::chrono::steady_clock::now();
+        auto last_hb   = std::chrono::steady_clock::now();
         auto last_diag = std::chrono::steady_clock::now();
         uint64_t ev_min = 0;
         std::unordered_map<std::string,uint64_t> ev_per_sym;
+
+        // ?? Staggered bar requests ??
+        // Fired once per connection, 2s after entering recv_loop so the depth
+        // feed is stable. 200ms gap between each message avoids broker rate-limit.
+        // Struct: {sym_name, sym_id, period, count}
+        struct BarReq { std::string name; int64_t sid; uint32_t period; uint32_t count; };
+        std::vector<BarReq> pending_bar_reqs;
+        for (const auto& bkv : bar_subscriptions) {
+            const int64_t sid = bkv.second.sym_id;
+            if (sid <= 0) continue;
+            const bool is_gold = (bkv.first == "XAUUSD");
+            pending_bar_reqs.push_back({bkv.first, sid, 1, 200});   // M1 history
+            pending_bar_reqs.push_back({bkv.first, sid, 5, 100});   // M5 history
+            if (is_gold)
+                pending_bar_reqs.push_back({bkv.first, sid, 7, 50}); // M15 history -- gold TrendPB only
+        }
+        // Live subscriptions queued after history requests (sent in same staggered loop)
+        struct LiveSub { std::string name; int64_t sid; uint32_t period; };
+        std::vector<LiveSub> pending_live_subs;
+        for (const auto& bkv : bar_subscriptions) {
+            const int64_t sid = bkv.second.sym_id;
+            if (sid <= 0) continue;
+            const bool is_gold = (bkv.first == "XAUUSD");
+            pending_live_subs.push_back({bkv.first, sid, 1});
+            pending_live_subs.push_back({bkv.first, sid, 5});
+            if (is_gold) pending_live_subs.push_back({bkv.first, sid, 7});
+        }
+        // Merge: send all history reqs first, then all live subs, each 200ms apart
+        struct PendingSend { std::string name; int64_t sid; uint32_t period; uint32_t count; bool is_live; };
+        std::vector<PendingSend> bar_send_queue;
+        for (const auto& r : pending_bar_reqs)  bar_send_queue.push_back({r.name, r.sid, r.period, r.count, false});
+        for (const auto& s : pending_live_subs)  bar_send_queue.push_back({s.name, s.sid, s.period, 0, true});
+        size_t bar_send_idx = 0;
+        auto   bar_send_next = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+
         while (running.load()) {
             const auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now-last_hb).count()>=10) { send_msg(ssl,PB::heartbeat()); last_hb=now; }
+
+            // ?? Staggered bar request dispatch ??
+            // One message per 200ms tick until queue is drained.
+            // History requests go first, then live subscriptions.
+            if (bar_send_idx < bar_send_queue.size() && now >= bar_send_next) {
+                const auto& req = bar_send_queue[bar_send_idx];
+                if (req.is_live) {
+                    send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, req.sid, req.period));
+                    std::cout << "[CTRADER-BARS] " << req.name << " live sub period=" << req.period << "\n";
+                } else {
+                    send_msg(ssl, PB::get_trendbars_req(ctid_account_id, req.sid, req.period, req.count));
+                    std::cout << "[CTRADER-BARS] " << req.name << " history req period=" << req.period
+                              << " count=" << req.count << "\n";
+                }
+                ++bar_send_idx;
+                bar_send_next = now + std::chrono::milliseconds(200);
+            }
+
             if (std::chrono::duration_cast<std::chrono::seconds>(now-last_diag).count()>=60) {
                 std::cout<<"[CTRADER-STATUS] events_total="<<depth_events_total.load()<<" this_min="<<ev_min<<" symbols="<<depth_books_.size()<<"\n";
                 // Always log XAUUSD event count so a stuck feed is immediately visible.
