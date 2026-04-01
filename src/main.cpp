@@ -8885,6 +8885,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // CRITICAL: on_tick() handles SL/trail internally when pos_.active, but it was
         // only called inside the entry guard (!has_open_position()), so once a position
         // opened the manage path was NEVER reached ? SL never checked ? unmanaged trades.
+        // Seed M15 bar EMAs into TrendPullback gold every tick -- mirrors SP/NQ pattern.
+        // The Duka seed sets m_using_bar_emas_=true at startup, but after restart the
+        // M15 bar engine accumulates live bars and must continuously refresh the EMAs.
+        // Without this, gold TrendPullback silently falls back to tick EMAs (half-life
+        // 0.3s at 10 ticks/sec) after the Duka seed state expires (4hr stale cutoff).
+        // Use m15 bars (not m1): gold TrendPullback is a swing engine -- EMA9/21/50
+        // on 15-min bars = half-lives of 47min/109min/260min -- correct for the timeframe.
+        if (g_bars_gold.m15.ind.m1_ready.load(std::memory_order_relaxed)) {
+            g_trend_pb_gold.seed_bar_emas(
+                g_bars_gold.m15.ind.ema9.load(std::memory_order_relaxed),
+                g_bars_gold.m15.ind.ema21.load(std::memory_order_relaxed),
+                g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
+                g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
+            g_trend_pb_gold.seed_m5_trend(
+                g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed));
+        }
         // TrendPullback gold position management -- always runs when position open
         if (g_trend_pb_gold.has_open_position()) {
             g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
