@@ -1408,13 +1408,13 @@ private:
         // At 0.15 lots: fires at 3.33pts. At 0.30 lots: fires at 1.67pts.
         // After banking 33%, SL locks to entry+buffer (BE) -- remainder runs free.
         // This is exactly what was requested: "bank the $50 we have, let it run."
-        static constexpr double STEP1_DOLLAR_TRIGGER = 50.0;  // $50 open PnL fires step 1
+        static constexpr double STEP1_DOLLAR_TRIGGER = 20.0;  // $20 open PnL fires step 1 (was $50 -- never fired at 0.06 lots with ATR=5)
         if (!pos.partial_closed && open_pnl_usd_full >= STEP1_DOLLAR_TRIGGER) {
             fire_stair(1, "PARTIAL_1R");
         }
 
         // Step 2: +2?ATR -- bank another 33% of remaining, SL ? step1 exit
-        if (pos.partial_closed && !pos.partial_closed_2 && move >= atr * 2.0) {
+        if (pos.partial_closed && !pos.partial_closed_2 && move >= atr * 1.5) {  // was 2.0 -- lowered to 1.5 (7.5pts at ATR=5, reachable)
             fire_stair(2, "PARTIAL_2R");
         }
 
