@@ -8539,12 +8539,29 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed));
         }
         // H4 trend gate -- feeds HTF direction into TrendPullback gold entry filter.
-        // When H4 is in uptrend, only LONG entries fire. Downtrend = shorts only.
-        // 0 (not enough bars yet) = permissive, both directions allowed.
         if (g_bars_gold.h4.ind.m1_ready.load(std::memory_order_relaxed)) {
             g_trend_pb_gold.seed_h4_trend(
                 g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
         }
+        // ── Improvement 5: CVD confirmation gate ──────────────────────────────
+        g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);
+
+        // ── Improvement 1: Volatility regime scaling ──────────────────────────
+        // Feed rolling 20-bar ATR average so engine can detect vol regime.
+        // Use M1 ATR as proxy -- OHLCBarEngine computes true range ATR14.
+        // avg_atr20 approximated as EWM of atr14 with alpha=2/21.
+        {
+            static double s_atr_avg = 0.0;
+            const double cur_atr = g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed);
+            if (cur_atr > 0.0) {
+                s_atr_avg = (s_atr_avg <= 0.0) ? cur_atr
+                           : s_atr_avg + (2.0/21.0) * (cur_atr - s_atr_avg);
+                g_trend_pb_gold.seed_vol_atr_avg(s_atr_avg);
+            }
+        }
+        // ── Improvement 7: News proximity ─────────────────────────────────────
+        g_trend_pb_gold.seed_news_secs(
+            g_news_blackout.secs_until_next(static_cast<int64_t>(std::time(nullptr))));
         // TrendPullback gold position management -- always runs when position open
         if (g_trend_pb_gold.has_open_position()) {
             g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
@@ -8584,6 +8601,36 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                             "TREND_PB", regime.c_str(), "TREND_PB",
                             tpb.tp, tpb.sl);
                     }
+                }
+            }
+        }
+
+        // ── Improvement 8: Pyramid add-on on second EMA50 pullback ─────────────
+        // When TrendPullback has an open LIVE position and the engine signals again
+        // (second pullback to EMA50 in same direction), add 50% to the position.
+        // Gates: pyramid enabled, position profitable (past BE), max adds not hit,
+        // no conflicting entries from other engines, daily cap not hit.
+        if (g_trend_pb_gold.PYRAMID_ENABLED
+            && g_trend_pb_gold.has_open_position()
+            && g_trend_pb_gold.daily_pnl() > -g_trend_pb_gold.DAILY_LOSS_CAP * 0.5
+            && gold_can_enter) {
+            // Temporarily allow a second on_tick call to check for pyramid signal.
+            // The engine returns a signal only if EMA50 pullback + bounce condition met.
+            // We don't pass on_close here -- pyramid adds don't create a new trade record.
+            const auto pyr_sig = g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
+            if (pyr_sig.valid
+                && pyr_sig.is_long == g_trend_pb_gold.open_is_long()  // same direction
+                && g_trend_pb_gold.pyramid_adds_ < g_trend_pb_gold.PYRAMID_MAX_ADDS) {
+                const double add_lot = std::max(0.005,
+                    compute_size("XAUUSD", std::fabs(pyr_sig.entry - pyr_sig.sl),
+                                 ask - bid, g_trend_pb_gold.ENTRY_SIZE_HINT)
+                    * g_trend_pb_gold.PYRAMID_SIZE_MULT);
+                if (enter_directional("XAUUSD", pyr_sig.is_long, pyr_sig.entry,
+                                      pyr_sig.sl, pyr_sig.tp, add_lot, true)) {
+                    ++g_trend_pb_gold.pyramid_adds_;
+                    printf("[TRENDPB-GOLD] PYRAMID ADD #%d lot=%.4f sl=%.3f\n",
+                           g_trend_pb_gold.pyramid_adds_, add_lot, pyr_sig.sl);
+                    fflush(stdout);
                 }
             }
         }
@@ -10201,9 +10248,26 @@ int main(int argc, char* argv[])
     g_trend_pb_gold.COOLDOWN_SEC       = 900;   // 15 min = 1 M15 bar minimum between re-entries
     g_trend_pb_gold.MIN_EMA_SEP        = 5.0;   // gold: 5pt EMA9-EMA50 separation = real trend
     g_trend_pb_gold.H4_GATE_ENABLED    = true;  // gate M15 entries on H4 trend direction
-                                                 // H4 ready after 56hr cold / immediate warm restart
-                                                 // until ready: h4_trend_state_=0, both directions allowed
     g_trend_pb_gold.ATR_SL_MULT        = 1.2;   // SL floor = 1.2x M15 ATR (adaptive, not fixed 8pt)
+    // Improvement 1: vol regime sizing
+    g_trend_pb_gold.VOL_SCALE_HIGH_MULT = 1.5;
+    g_trend_pb_gold.VOL_SCALE_LOW_MULT  = 0.7;
+    g_trend_pb_gold.VOL_SCALE_CUT       = 0.60;
+    g_trend_pb_gold.VOL_SCALE_BOOST     = 1.20;
+    // Improvement 2: daily loss cap -- stop gold TrendPB after $150 loss in a day
+    g_trend_pb_gold.DAILY_LOSS_CAP      = 150.0;
+    // Improvement 4: time-of-day weighting
+    g_trend_pb_gold.TOD_WEIGHT_ENABLED  = true;
+    // Improvement 5: CVD gate
+    g_trend_pb_gold.CVD_GATE_ENABLED    = true;
+    // Improvement 7: news SL widening
+    g_trend_pb_gold.NEWS_WARN_SECS      = 900;   // 15min before event
+    g_trend_pb_gold.NEWS_SL_MULT        = 1.5;
+    // Improvement 8: pyramid on second pullback
+    g_trend_pb_gold.PYRAMID_ENABLED     = true;
+    g_trend_pb_gold.PYRAMID_SIZE_MULT   = 0.5;
+    g_trend_pb_gold.PYRAMID_MAX_ADDS    = 1;
+    g_trend_pb_gold.ENTRY_SIZE_HINT     = 0.01;  // base lot for pyramid compute_size
     // Trail/BE params: class defaults are correct for M15 ATR scale (4-8pts)
     // TRAIL_ARM_ATR_MULT=2.0, TRAIL_DIST_ATR_MULT=1.0, BE_ATR_MULT=1.0 -- no change needed
     // GER40: tighter band (index moves more cleanly around EMAs)

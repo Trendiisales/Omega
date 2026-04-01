@@ -384,6 +384,8 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    int     pyramid_adds_   = 0;     // public: read/written by main.cpp pyramid dispatch
+    double  ENTRY_SIZE_HINT = 0.01;  // hint for compute_size in pyramid
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
@@ -1442,6 +1444,42 @@ public:
     // ATR-scaled SL floor: replaces fixed 8pt. SL = max(EMA50_dist, ATR_SL_MULT * ATR).
     // Adapts to volatility: quiet (ATR=4pt)->floor=4.8pt, volatile (ATR=12pt)->floor=14.4pt.
     double  ATR_SL_MULT       = 1.2;   // 1.2x ATR SL floor -- set per-symbol in main.cpp
+
+    // ── Improvement 1: Volatility regime sizing scalar ────────────────────────
+    // When M15 ATR > VOL_SCALE_HIGH_MULT * avg_atr20 → cut size by VOL_SCALE_CUT
+    // When M15 ATR < VOL_SCALE_LOW_MULT  * avg_atr20 → boost size by VOL_SCALE_BOOST
+    // Disabled when VOL_SCALE_HIGH_MULT=0.
+    double  VOL_SCALE_HIGH_MULT = 1.5;   // ATR > 1.5x avg → volatile regime
+    double  VOL_SCALE_LOW_MULT  = 0.7;   // ATR < 0.7x avg → quiet regime
+    double  VOL_SCALE_CUT       = 0.60;  // size multiplier in volatile regime
+    double  VOL_SCALE_BOOST     = 1.20;  // size multiplier in quiet regime
+
+    // ── Improvement 2: Per-engine daily loss cap ──────────────────────────────
+    double  DAILY_LOSS_CAP      = 0.0;   // max daily loss in dollars; 0=disabled
+                                          // set per-symbol in main.cpp
+
+    // ── Improvement 4: Time-of-day weighting ─────────────────────────────────
+    // Best gold M15 windows: London open (07:00-09:30 UTC) and NY open (13:30-15:00 UTC)
+    // Mid-session (10:00-13:30 UTC): false pullbacks -- half size
+    // Outside preferred windows: full size allowed (session gate already limits hours)
+    bool    TOD_WEIGHT_ENABLED  = false; // enable per-symbol; gold=true in main.cpp
+
+    // ── Improvement 5: CVD confirmation gate ─────────────────────────────────
+    // Require CVD direction agrees with entry direction.
+    // cvd_dir: +1=buy pressure, -1=sell pressure, 0=neutral (permissive)
+    // Set via seed_cvd() each tick.
+    bool    CVD_GATE_ENABLED    = false; // enable per-symbol; gold=true in main.cpp
+
+    // ── Improvement 7: News proximity SL widening ─────────────────────────────
+    // When a news event is <NEWS_WARN_SECS away, widen the SL by NEWS_SL_MULT.
+    // Prevents being stopped out by the pre-event spike before the real move.
+    int64_t NEWS_WARN_SECS      = 900;  // 15 minutes before event
+    double  NEWS_SL_MULT        = 1.5;  // widen SL 50% when news imminent
+
+    // ── Improvement 8: Pyramiding on second pullback ──────────────────────────
+    bool    PYRAMID_ENABLED     = false; // enable per-symbol; gold=true in main.cpp
+    double  PYRAMID_SIZE_MULT   = 0.5;  // add-on = 50% of original size
+    int     PYRAMID_MAX_ADDS    = 1;    // max 1 pyramid add-on
     // EMA alphas calibrated for ~10 ticks/sec (London gold rate).
     // Using tick-count periods directly produced EMAs with half-life <1s
     // (EMA9 at alpha=0.2 = 3-tick half-life = 0.3s) -- flipping trend
@@ -1509,6 +1547,22 @@ public:
                 printf("[TREND-PB] %s BE locked atr=%.3f entry=%.3f sl=%.3f\n",
                        sym.c_str(), atr, pos_.entry, pos_.sl);
                 fflush(stdout);
+            }
+
+            // ── Improvement 6: Partial exit at 1R ────────────────────────────────
+            // Take 50% off when price reaches 1x TP distance (1R).
+            // Locks profit on half; lets remaining 50% ride the trail.
+            // Only fires once per trade (partial_done_ flag).
+            if (!partial_done_ && move >= std::fabs(pos_.tp - pos_.entry) * 0.95) {
+                const double exit_px = pos_.is_long ? bid : ask;
+                partial_exit(exit_px, 0.5, sym, "PARTIAL_1R", on_close);
+                // Tighten trail after partial -- protect the locked portion
+                // Move SL to breakeven + 25% of initial TP dist immediately
+                const double be_plus = pos_.is_long
+                    ? pos_.entry + std::fabs(pos_.tp - pos_.entry) * 0.25
+                    : pos_.entry - std::fabs(pos_.tp - pos_.entry) * 0.25;
+                if ((pos_.is_long && be_plus > pos_.sl) || (!pos_.is_long && be_plus < pos_.sl))
+                    pos_.sl = be_plus;
             }
 
             // 2) ATR trail arm at 2x ATR -- trail SL at 1x ATR behind peak
@@ -1615,6 +1669,7 @@ public:
                 tr.exitReason = reason;
                 tr.engine     = "TrendPullback";
                 tr.spreadAtEntry = pos_.spread_at_entry;
+                record_daily_pnl(tr.pnl);  // track for daily cap
                 // Full symbol?tick_value table -- must match tick_value_multiplier() in main.cpp
                 // XAUUSD=100, US500.F=50, USTEC.F=20, DJ30.F=5, GER40=1.10, UK100=1.33,
                 // ESTX50=1.10, NAS100=1, EURUSD/GBPUSD/etc=100000, others=1
@@ -1665,7 +1720,9 @@ public:
                     m_consec_sl_short_ = 0;
                 }
                 pos_.reset();
-                be_locked_ = false;
+                be_locked_    = false;
+                partial_done_ = false;
+                pyramid_adds_ = 0;
                 prev_at_ema50_ = false;  // reset confirmation state on close
                 cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
                 if (on_close) on_close(tr);
@@ -1757,6 +1814,59 @@ public:
             }
         }
 
+        // ── Improvement 2: Daily loss cap ────────────────────────────────────
+        // Reset at midnight. If today's P&L is worse than -DAILY_LOSS_CAP, stop.
+        if (DAILY_LOSS_CAP > 0.0) {
+            const int64_t today = static_cast<int64_t>(std::time(nullptr)) / 86400;
+            if (today != daily_pnl_day_) { daily_pnl_ = 0.0; daily_pnl_day_ = today; }
+            if (daily_pnl_ <= -DAILY_LOSS_CAP) {
+                printf("[TREND-PB] %s DAILY_CAP hit pnl=%.2f cap=%.2f -- no more entries today\n",
+                       sym.c_str(), daily_pnl_, DAILY_LOSS_CAP);
+                fflush(stdout);
+                return {};
+            }
+        }
+
+        // ── Improvement 4: Time-of-day weighting ─────────────────────────────
+        // Best windows for gold M15: London open 07-09:30, NY open 13:30-15:00.
+        // Mid-session 10:00-13:30: thin tape, false pullbacks.
+        // Outside session gate (handled upstream) this is already blocked.
+        // Here we record a size scalar that main.cpp applies via patch_size().
+        // We set a signal reason suffix so the caller can inspect it.
+        double tod_size_mult = 1.0;
+        if (TOD_WEIGHT_ENABLED) {
+            struct tm ti{}; ca_utc_time(ti);
+            const int hmins = ti.tm_hour * 60 + ti.tm_min;
+            const bool prime = (hmins >= 420 && hmins < 570)   // 07:00-09:30
+                            || (hmins >= 810 && hmins < 900);   // 13:30-15:00
+            const bool mid   = (hmins >= 600 && hmins < 810);  // 10:00-13:30
+            tod_size_mult = prime ? 1.0 : mid ? 0.5 : 0.8;
+        }
+
+        // ── Improvement 5: CVD confirmation gate ─────────────────────────────
+        // CVD must agree with entry direction. Neutral (0) = permissive.
+        if (CVD_GATE_ENABLED && cvd_dir_ != 0) {
+            if (is_long  && cvd_dir_ < 0) {
+                printf("[TREND-PB] %s LONG blocked by CVD sell pressure\n", sym.c_str());
+                fflush(stdout);
+                return {};
+            }
+            if (!is_long && cvd_dir_ > 0) {
+                printf("[TREND-PB] %s SHORT blocked by CVD buy pressure\n", sym.c_str());
+                fflush(stdout);
+                return {};
+            }
+        }
+
+        // ── Improvement 1: Volatility regime size scalar ──────────────────────
+        double vol_size_mult = 1.0;
+        if (VOL_SCALE_HIGH_MULT > 0.0 && avg_atr20_ > 0.0 && atr_ > 0.0) {
+            if      (atr_ > avg_atr20_ * VOL_SCALE_HIGH_MULT) vol_size_mult = VOL_SCALE_CUT;
+            else if (atr_ < avg_atr20_ * VOL_SCALE_LOW_MULT)  vol_size_mult = VOL_SCALE_BOOST;
+        }
+        // Combined size multiplier (applied after compute_size in main.cpp via patch_size)
+        const double size_mult = tod_size_mult * vol_size_mult;
+
         // SL = EMA50, floored to ATR-scaled minimum (not fixed 8pt).
         // ATR_SL_MULT * ATR adapts to current volatility:
         //   Quiet session (ATR=4pt):    floor = 1.2 * 4  = 4.8pt
@@ -1773,8 +1883,6 @@ public:
         const double sl = is_long ? (mid - sl_dist) : (mid + sl_dist);
 
         // TP = ATR-based fixed distance: 2.5x ATR for gold (~20-25pts typical)
-        // This matches what the MT5 Momentum_BUY/Reversal_BUY EAs target.
-        // EMA9 as TP was wrong on tick EMAs -- EMA9 at 3-4tps is always <3pts away.
         const double atr_safe  = atr_ > 2.0 ? atr_ : 10.0;  // floor at 10pts
         const double tp_dist   = std::max(atr_safe * 2.5, sl_dist * 2.0);  // min 2:1 R:R
         const double tp = is_long ? (mid + tp_dist) : (mid - tp_dist);
@@ -1782,23 +1890,40 @@ public:
         if (tp_dist <= 0.0 || sl_dist <= 0.0) return {};
         if (sl_dist < spread * 1.5) return {};
 
+        // ── Improvement 7: News proximity SL widening ─────────────────────────
+        // Widen SL when a major event is <NEWS_WARN_SECS away.
+        // Avoids being stopped out by pre-event spike before the real move.
+        double news_sl_mult = 1.0;
+        if (news_secs_until_ < NEWS_WARN_SECS) {
+            news_sl_mult = NEWS_SL_MULT;
+            printf("[TREND-PB] %s NEWS imminent in %llds -- SL widened x%.1f\n",
+                   sym.c_str(), (long long)news_secs_until_, NEWS_SL_MULT);
+            fflush(stdout);
+        }
+        const double final_sl_dist = sl_dist * news_sl_mult;
+        const double final_sl = is_long ? (mid - final_sl_dist) : (mid + final_sl_dist);
+
         CrossSignal sig;
         sig.valid   = true;
         sig.is_long = is_long;
         sig.entry   = mid;
         sig.tp      = tp;
-        sig.sl      = sl;
-        sig.size    = 0.01;
+        sig.sl      = final_sl;
+        sig.size    = 0.01 * size_mult;  // vol+TOD scalar baked in; main.cpp may override
         sig.symbol  = sym.c_str();
         sig.engine  = "TrendPullback";
         sig.reason  = is_long ? "TREND_PB_LONG" : "TREND_PB_SHORT";
 
         pos_.open(sig, spread);
         be_locked_      = false;
+        partial_done_   = false;
+        pyramid_adds_   = 0;
         cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
-        printf("[TREND-PB] %s %s ema9=%.4f ema21=%.4f ema50=%.4f entry=%.4f sl=%.4f atr=%.3f\n",
+        printf("[TREND-PB] %s %s ema9=%.4f ema21=%.4f ema50=%.4f entry=%.4f sl=%.4f atr=%.3f"
+               " size_mult=%.2f news_in=%llds\n",
                sym.c_str(), is_long?"LONG":"SHORT",
-               ema9_, ema21_, ema50_, mid, sig.sl, atr_);
+               ema9_, ema21_, ema50_, mid, final_sl, atr_,
+               size_mult, (long long)news_secs_until_);
         fflush(stdout);
         return sig;
     }
@@ -1835,6 +1960,39 @@ public:
     // Seed M5 structural trend -- gates signal direction
     void seed_m5_trend(int trend_state) noexcept { m5_trend_state_ = trend_state; }
     void seed_h4_trend(int trend_state) noexcept { h4_trend_state_ = trend_state; }
+    void seed_cvd(int cvd_dir) noexcept { cvd_dir_ = cvd_dir; }
+    void seed_vol_atr_avg(double avg_atr) noexcept { avg_atr20_ = avg_atr; }
+    void seed_news_secs(int64_t secs_until) noexcept { news_secs_until_ = secs_until; }
+
+    // Record a closed trade P&L for daily cap tracking
+    void record_daily_pnl(double pnl) noexcept {
+        daily_pnl_ += pnl;
+        // Reset at UTC midnight
+        const int64_t today = static_cast<int64_t>(std::time(nullptr)) / 86400;
+        if (today != daily_pnl_day_) { daily_pnl_ = pnl; daily_pnl_day_ = today; }
+    }
+    double daily_pnl() const noexcept { return daily_pnl_; }
+
+    // Partial exit: close fraction of position, reduce size
+    // Returns PnL of the partial close
+    double partial_exit(double exit_px, double fraction, const std::string& sym,
+                        const char* reason, CloseCb& on_close) noexcept {
+        if (!pos_.active || fraction <= 0.0 || fraction >= 1.0) return 0.0;
+        const double close_size = pos_.size * fraction;
+        const double rem_size   = pos_.size - close_size;
+        const double tick_val =
+            (sym.find("XAU") != std::string::npos) ? 100.0 :
+            (sym == "US500.F") ? 50.0 : (sym == "USTEC.F") ? 20.0 : 1.0;
+        const double pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px))
+                           * close_size * tick_val;
+        printf("[TREND-PB] %s PARTIAL EXIT %.0f%% @%.3f reason=%s pnl=%.2f remaining=%.4f\n",
+               sym.c_str(), fraction*100, exit_px, reason, pnl, rem_size);
+        fflush(stdout);
+        record_daily_pnl(pnl);
+        partial_done_ = true;
+        pos_.size = rem_size;  // shrink live position size
+        return pnl;
+    }
 
     bool using_bar_emas() const { return m_using_bar_emas_; }
 
@@ -1900,6 +2058,12 @@ private:
     bool    m_using_bar_emas_ = false;
     int     m5_trend_state_   = 0;     // +1=uptrend, -1=downtrend, 0=flat (from M5 bars)
     int     h4_trend_state_   = 0;     // +1=uptrend, -1=downtrend, 0=flat (from H4 bars -- HTF gate)
+    int     cvd_dir_          = 0;     // +1=buy pressure, -1=sell, 0=neutral (from seed_cvd)
+    double  avg_atr20_        = 0.0;   // 20-bar rolling ATR average for vol regime scaling
+    int64_t news_secs_until_  = INT64_MAX; // seconds until next news event (from seed_news_secs)
+    double  daily_pnl_        = 0.0;   // today's net P&L for this engine instance
+    int64_t daily_pnl_day_    = 0;     // UTC day of daily_pnl_ (for reset)
+    bool    partial_done_     = false; // true after first partial exit this trade
     // Consecutive SL tracker -- block direction after 2 consecutive SL hits
     int     m_consec_sl_long_  = 0;   // consecutive long SL hits
     int     m_consec_sl_short_ = 0;   // consecutive short SL hits

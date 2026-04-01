@@ -245,6 +245,23 @@ public:
         return false;
     }
 
+    // Returns seconds until the next blackout window starts (any symbol).
+    // Returns INT64_MAX if no upcoming window within 24 hours.
+    // Used to widen SL / tighten trail when a news event is imminent.
+    int64_t secs_until_next(int64_t now_sec) const {
+        if (!enabled) return INT64_MAX;
+        rebuild_cache_if_needed(now_sec);
+        std::lock_guard<std::mutex> lk(cache_mtx_);
+        int64_t nearest = INT64_MAX;
+        for (const auto& w : cached_windows_) {
+            if (w.start_utc > now_sec) {
+                const int64_t diff = w.start_utc - now_sec;
+                if (diff < nearest) nearest = diff;
+            }
+        }
+        return nearest;
+    }
+
     // Add a manual blackout (e.g. "block all for 30 minutes")
     void add_manual(int64_t start_sec, int64_t end_sec,
                     const std::string& label,
