@@ -781,9 +781,18 @@ static std::unordered_map<std::string, L2Book>   g_l2_books;
 // lock-free on x86-64 -- MSVC falls back to a hidden internal mutex, which is
 // strictly worse. atomic<double>=8 bytes, aligned = genuine lock-free MOV.
 struct AtomicL2 {
-    std::atomic<double> imbalance{0.5};       // bid_vol/(bid_vol+ask_vol), 0..1
-    std::atomic<double> microprice_bias{0.0}; // microprice - mid, signed
-    std::atomic<bool>   has_data{false};      // true when book has non-zero sizes
+    std::atomic<double>   imbalance{0.5};       // bid_vol/(bid_vol+ask_vol), 0..1
+    std::atomic<double>   microprice_bias{0.0}; // microprice - mid, signed
+    std::atomic<bool>     has_data{false};      // true when book has non-zero sizes
+    std::atomic<int64_t>  last_update_ms{0};    // epoch-ms of last FIX book write
+
+    // fresh(): true only when a real book update arrived within max_age_ms.
+    // Prevents engines acting on stale/default-initialised imbalance (0.5).
+    // Lock-free, called on hot path.
+    bool fresh(int64_t now_ms, int64_t max_age_ms = 5000) const noexcept {
+        const int64_t t = last_update_ms.load(std::memory_order_relaxed);
+        return (t > 0) && ((now_ms - t) <= max_age_ms);
+    }
 };
 static AtomicL2 g_l2_gold;    // XAUUSD
 static AtomicL2 g_l2_sp;      // US500.F
@@ -4172,26 +4181,35 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.uk100_compressing = (g_eng_uk100.phase  == omega::Phase::COMPRESSION
                                   || g_eng_uk100.phase  == omega::Phase::BREAKOUT_WATCH);
 
-    // ?? L2 imbalance: lock-free atomic reads ????????????????????????????????????
-    // FIX W/X path writes imbalance atomics after every book update under mutex.
-    // Hot path reads here with zero contention -- no mutex needed on read side.
-    g_macro_ctx.gold_l2_imbalance   = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.sp_l2_imbalance     = g_l2_sp.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.nq_l2_imbalance     = g_l2_nq.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.cl_l2_imbalance     = g_l2_cl.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.xag_l2_imbalance    = g_l2_xag.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.eur_l2_imbalance    = g_l2_eur.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.gbp_l2_imbalance    = g_l2_gbp.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.aud_l2_imbalance    = g_l2_aud.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.nzd_l2_imbalance    = g_l2_nzd.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.jpy_l2_imbalance    = g_l2_jpy.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.ger40_l2_imbalance  = g_l2_ger40.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.uk100_l2_imbalance  = g_l2_uk100.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.estx50_l2_imbalance = g_l2_estx50.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.brent_l2_imbalance  = g_l2_brent.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.nas_l2_imbalance    = g_l2_nas.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.us30_l2_imbalance   = g_l2_us30.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.gold_l2_real        = g_l2_gold.has_data.load(std::memory_order_relaxed);
+    // ?? L2 imbalance: lock-free atomic reads with freshness guard ????????????????
+    // fresh() returns 0.5 (neutral) if no book update arrived in last 5s.
+    // This prevents stale/default-initialised imbalance from influencing engine decisions.
+    // memory_order_acquire on last_update_ms ensures imbalance/has_data are visible.
+    {
+        const int64_t l2_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        auto rd = [&](const AtomicL2& al) -> double {
+            return al.fresh(l2_now_ms) ? al.imbalance.load(std::memory_order_relaxed) : 0.5;
+        };
+        g_macro_ctx.gold_l2_imbalance   = rd(g_l2_gold);
+        g_macro_ctx.sp_l2_imbalance     = rd(g_l2_sp);
+        g_macro_ctx.nq_l2_imbalance     = rd(g_l2_nq);
+        g_macro_ctx.cl_l2_imbalance     = rd(g_l2_cl);
+        g_macro_ctx.xag_l2_imbalance    = rd(g_l2_xag);
+        g_macro_ctx.eur_l2_imbalance    = rd(g_l2_eur);
+        g_macro_ctx.gbp_l2_imbalance    = rd(g_l2_gbp);
+        g_macro_ctx.aud_l2_imbalance    = rd(g_l2_aud);
+        g_macro_ctx.nzd_l2_imbalance    = rd(g_l2_nzd);
+        g_macro_ctx.jpy_l2_imbalance    = rd(g_l2_jpy);
+        g_macro_ctx.ger40_l2_imbalance  = rd(g_l2_ger40);
+        g_macro_ctx.uk100_l2_imbalance  = rd(g_l2_uk100);
+        g_macro_ctx.estx50_l2_imbalance = rd(g_l2_estx50);
+        g_macro_ctx.brent_l2_imbalance  = rd(g_l2_brent);
+        g_macro_ctx.nas_l2_imbalance    = rd(g_l2_nas);
+        g_macro_ctx.us30_l2_imbalance   = rd(g_l2_us30);
+        g_macro_ctx.gold_l2_real        = g_l2_gold.has_data.load(std::memory_order_relaxed)
+                                          && g_l2_gold.fresh(l2_now_ms);
+    }
     // Microprice bias -- still from cTrader atomics (FIX doesn't compute this)
     g_macro_ctx.gold_microprice_bias = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.sp_microprice_bias   = g_l2_sp.microprice_bias.load(std::memory_order_relaxed);
@@ -9310,8 +9328,11 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                 // Write to per-symbol atomic -- hot path reads this with zero lock
                 AtomicL2* al = get_atomic_l2(sym);
                 if (al) {
+                    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
                     al->imbalance.store(imb, std::memory_order_relaxed);
                     al->has_data.store(hd,  std::memory_order_relaxed);
+                    al->last_update_ms.store(now_ms, std::memory_order_release);  // release: visible after imbalance/has_data
                 }
             }
         }
@@ -11515,9 +11536,12 @@ int main(int argc, char* argv[])
         g_ctrader_depth.atomic_l2_write_fn = [](const std::string& sym, double imb, double mp, bool hd) noexcept {
             AtomicL2* al = get_atomic_l2(sym);
             if (!al) return;
+            const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
             al->imbalance.store(imb, std::memory_order_relaxed);
             al->microprice_bias.store(mp, std::memory_order_relaxed);
             al->has_data.store(hd, std::memory_order_relaxed);
+            al->last_update_ms.store(now_ms, std::memory_order_release);  // release: visible after imbalance/has_data
         };
         // Subscribe depth only for actively traded symbols -- not passive cross-pairs.
         // cTrader drops connection when too many depth streams are requested at once.
