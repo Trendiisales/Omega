@@ -10050,11 +10050,35 @@ int main(int argc, char* argv[])
     g_nbm_oil_london.COOLDOWN_SEC      = 600;
 
     // TrendPullbackEngine params -- per-instrument tuning
-    // Gold: wider pullback band (noise floor $8-20), 90s cooldown
-    g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.08;  // 0.08% of gold price = ~$3.50 at $4400
-    // EMA_WARMUP_TICKS uses class default (500) -- matches new time-based EMA alphas
-    // Gold: ~5 ticks/sec = 500 ticks = 100s warmup. Load from disk bypasses this.
-    g_trend_pb_gold.COOLDOWN_SEC      = 90;
+    //
+    // GOLD (M15 bar EMAs -- seeded from g_bars_gold.m15):
+    //   EMAs come from OHLCBarEngine on 50 M15 bars:
+    //     EMA9  half-life = 3.1 bars = 47 min
+    //     EMA21 half-life = 7.3 bars = 109 min
+    //     EMA50 half-life = 17.3 bars = 260 min = 4.3 hours
+    //
+    //   PULLBACK_BAND_PCT: the critical setting.
+    //   Old value (0.08%) = ±3.7pts at $4700. With M15 EMA50 representing
+    //   4.3h weighted average, price is typically 10-30pts from EMA50 during
+    //   an active trend. 0.08% = never fires. Must be wide enough to detect
+    //   genuine pullbacks TO the M15 EMA50 level.
+    //   0.50% = ±23.5pts at $4700. Fires when price is within ~24pts of
+    //   the M15 EMA50 -- correct for pullback-to-slow-average strategy.
+    //   Upper bound: 1.0% = ±47pts -- too loose, fires mid-trend constantly.
+    //
+    //   COOLDOWN_SEC: M15 trade = swing trade, minimum 1 M15 bar (15min)
+    //   between signals. 900s (15min) = 1 full M15 bar -- prevents rapid
+    //   re-entry on the same pullback level.
+    //
+    //   TRAIL_ARM/DIST: ATR from M15 bars = 4-8pts typical. 2x arm = 8-16pts
+    //   before trailing. 1x dist = 4-8pt trail. Correct for swing scale.
+    //   Leave at class defaults (2.0x arm, 1.0x dist, 1.0x BE).
+    //
+    //   BE_ATR_MULT: lock BE at 1x M15 ATR (~5pts). Unchanged -- good.
+    g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.50;  // M15: ±23.5pts at $4700. Old 0.08% (±3.7pts) never fired.
+    g_trend_pb_gold.COOLDOWN_SEC       = 900;   // 15 min = 1 M15 bar minimum between re-entries
+    // Trail/BE params: class defaults are correct for M15 ATR scale (4-8pts)
+    // TRAIL_ARM_ATR_MULT=2.0, TRAIL_DIST_ATR_MULT=1.0, BE_ATR_MULT=1.0 -- no change needed
     // GER40: tighter band (index moves more cleanly around EMAs)
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500
     // GER40: ~5 ticks/sec = 500 ticks = 100s. Load from disk bypasses this.

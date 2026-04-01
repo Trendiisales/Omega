@@ -1673,13 +1673,16 @@ public:
         //   USTEC.F: min 3.0pts  (spread ~2.7pts, need room)
         //   US500.F: min 1.5pts  (spread ~0.8pts)
         //   GER40:   min 3.0pts  (spread ~1.7pts)
-        //   XAUUSD:  min 2.0pts  (spread ~2.2pts)
+        //   XAUUSD:  min 5.0pts  -- raised from 2.0: M15 EMA50 is 4.3h average,
+        //            SL at EMA50 must survive normal M15 noise (3-6pts per bar).
+        //            2.0pt floor was being hit constantly and producing 2pt SLs
+        //            on M15 swing trades that stopped out on single-tick noise.
         //   Default: 1.0pt
         const double min_sl_dist =
             (sym == "USTEC.F")                        ? 3.0  :
             (sym == "US500.F")                        ? 1.5  :
             (sym == "GER40")                          ? 3.0  :
-            (sym.find("XAU") != std::string::npos)   ? 2.0  : 1.0;
+            (sym.find("XAU") != std::string::npos)   ? 5.0  : 1.0;
 
         // Also floor to 2x spread so SL is never within noise of entry
         const double spread_floor = spread * 2.0;
