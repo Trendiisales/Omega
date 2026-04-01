@@ -429,14 +429,21 @@ Write-Host ""
 
 Set-Location $OmegaDir
 
-# Kill any existing Omega process first
-$existing = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
-if ($existing) {
-    Write-Host "  Stopping existing Omega process (PID=$($existing.Id))..." -ForegroundColor Yellow
-    $existing | Stop-Process -Force
-    Start-Sleep -Seconds 2
-    Write-Host "  Stopped." -ForegroundColor Yellow
+# Kill any existing Omega process -- use taskkill /T to kill entire process tree
+Write-Host "  Killing any existing Omega processes..." -ForegroundColor Yellow
+taskkill /F /IM Omega.exe /T 2>$null | Out-Null
+Start-Sleep -Seconds 1
+# Double-check with Stop-Process as fallback
+Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+# Confirm dead
+$still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if ($still) {
+    Write-Host "  WARNING: Omega still running (PID=$($still.Id)) -- trying again..." -ForegroundColor Red
+    $still | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3
 }
+Write-Host "  [OK] Omega not running." -ForegroundColor Green
 
 $statusFile = "$OmegaDir\logs\startup_status.txt"
 
