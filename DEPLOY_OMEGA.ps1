@@ -162,13 +162,24 @@ if ($needsReconfigure) {
 }
 $ErrorActionPreference = $savedPrefCmake
 cmake --build . --config Release 2>&1
+$buildExitCode = $LASTEXITCODE
+
+if ($buildExitCode -ne 0) {
+    Write-Host "" -ForegroundColor Red
+    Write-Host "  *** BUILD FAILED (exit code $buildExitCode) ***" -ForegroundColor Red
+    Write-Host "  *** Compile errors above. Aborting deploy. ***" -ForegroundColor Red
+    Write-Host "  *** Previous binary at $OmegaExe is unchanged. ***" -ForegroundColor Red
+    Write-Host "" -ForegroundColor Red
+    Set-Location $OmegaDir
+    exit 1
+}
 
 if (-not (Test-Path $BuildExe)) {
     Write-Host "" -ForegroundColor Red
     Write-Host "  *** BUILD FAILED -- $BuildExe not found ***" -ForegroundColor Red
     Write-Host "  *** Aborting. Previous binary at $OmegaExe is unchanged. ***" -ForegroundColor Red
     Write-Host "" -ForegroundColor Red
-    Read-Host "Press Enter to exit"
+    Set-Location $OmegaDir
     exit 1
 }
 Write-Host "      [OK] Build succeeded" -ForegroundColor Green
