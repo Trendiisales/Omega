@@ -690,8 +690,10 @@ private:
             // Only the initial startup request succeeds. TrendPullback EMAs are seeded
             // once at startup and remain valid for the session (EMAs move slowly).
             // Re-enable this block if the broker ever supports live trendbar push (pt=2220).
-            static constexpr bool bar_repoll_enabled = false; // disabled: broker rejects with INVALID_REQUEST
-            if (bar_repoll_enabled && !bar_repoll_disabled && now >= bar_repoll_next) {
+            // Periodic repoll disabled -- broker rejects GetTrendbarsReq on repoll with INVALID_REQUEST.
+            // Re-enable if broker ever supports it.
+#if 0
+            if (!bar_repoll_disabled && now >= bar_repoll_next) {
                 bar_repoll_next = now + std::chrono::seconds(65);
                 for (const auto& bkv : bar_subscriptions) {
                     const int64_t sid = bkv.second.sym_id;
@@ -701,10 +703,11 @@ private:
                         return bar_failed_reqs.count(bkv.first + ":" + std::to_string(p)) > 0;
                     };
                     if (!failed(1)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 1, 60));
-                    if (!failed(5)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 5, 50)); // 50 M5 = ~4hrs refresh
+                    if (!failed(5)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 5, 50));
                     if (is_gold && !failed(7)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 7, 200));
                 }
             }
+#endif
 
             // ?? Staggered bar request dispatch ??
             // One message per 200ms tick until queue is drained.
