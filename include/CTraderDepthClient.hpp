@@ -197,6 +197,25 @@ inline std::vector<uint8_t> refresh_token_req(const std::string& rt) {
 // =============================================================================
 namespace PB {
 
+// ProtoOASubscribeSpotsReq (pt=2129) -- REQUIRED before live trendbar subscription
+// field 2: ctidTraderAccountId, field 3: repeated symbolId
+inline std::vector<uint8_t> subscribe_spots_req(int64_t ctid, const std::vector<int64_t>& sym_ids) {
+    std::vector<uint8_t> inner;
+    write_field_varint(inner, 2, uint64_t(ctid));
+    for (int64_t id : sym_ids) write_field_varint(inner, 3, uint64_t(id));
+    return frame_msg(2129, inner);
+}
+
+// ProtoOASubscribeLiveTrendbarReq (pt=2135) -- requires spots subscription first
+// field 2: ctidTraderAccountId, field 3: symbolId, field 4: period
+inline std::vector<uint8_t> subscribe_live_trendbar_req(int64_t ctid, int64_t sym_id, uint32_t period) {
+    std::vector<uint8_t> inner;
+    write_field_varint(inner, 2, uint64_t(ctid));
+    write_field_varint(inner, 3, uint64_t(sym_id));
+    write_field_varint(inner, 4, uint64_t(period));
+    return frame_msg(2135, inner);
+}
+
 // ProtoOAGetTrendbarsReq (pt=2137)
 // period: 1=M1, 5=M5, 7=M15, 8=M30, 9=H1  (ProtoOATrendbarPeriod enum)
 // fromTimestamp (field 5) and toTimestamp (field 6) are REQUIRED by the cTrader API.
@@ -620,9 +639,20 @@ private:
         }
         // Merge: send all history reqs first, then live subs only for non-failed symbols
         struct PendingSend { std::string name; int64_t sid; uint32_t period; uint32_t count; bool is_live; };
+        // Spots subscription required before live trendbar subscription.
+        // Send spots sub for each symbol first, then live trendbar sub.
+        struct PendingSend { std::string name; int64_t sid; uint32_t period; uint32_t count; bool is_live; bool is_spots; };
         std::vector<PendingSend> bar_send_queue;
-        for (const auto& r : pending_bar_reqs)  bar_send_queue.push_back({r.name, r.sid, r.period, r.count, false});
-        for (const auto& s : pending_live_subs)  bar_send_queue.push_back({s.name, s.sid, s.period, 0, true});
+        // 1. Spots subscriptions (required first)
+        for (const auto& bkv : bar_subscriptions) {
+            const int64_t sid = bkv.second.sym_id;
+            if (sid <= 0) continue;
+            bar_send_queue.push_back({bkv.first, sid, 0, 0, false, true});
+        }
+        // 2. Historical bar requests
+        for (const auto& r : pending_bar_reqs)  bar_send_queue.push_back({r.name, r.sid, r.period, r.count, false, false});
+        // 3. Live trendbar subscriptions (pt=2135, requires spots sub)
+        for (const auto& s : pending_live_subs)  bar_send_queue.push_back({s.name, s.sid, s.period, 0, true, false});
         size_t bar_send_idx = 0;
         auto   bar_send_next   = std::chrono::steady_clock::now() + std::chrono::seconds(10); // wait for depth subscription ACK before sending bar reqs
         auto   bar_repoll_next = std::chrono::steady_clock::now() + std::chrono::seconds(65);
@@ -654,9 +684,13 @@ private:
             // History requests go first, then live subscriptions.
             if (bar_send_idx < bar_send_queue.size() && now >= bar_send_next) {
                 const auto& req = bar_send_queue[bar_send_idx];
-                if (req.is_live) {
-                    send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, req.sid, req.period));
-                    std::cout << "[CTRADER-BARS] " << req.name << " live sub period=" << req.period << "\n";
+                if (req.is_spots) {
+                    send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, {req.sid}));
+                    std::cout << "[CTRADER-BARS] " << req.name << " spots sub sent\n";
+                } else if (req.is_live) {
+                    // pt=2135 ProtoOASubscribeLiveTrendbarReq (requires spots sub first)
+                    send_msg(ssl, PB::subscribe_live_trendbar_req(ctid_account_id, req.sid, req.period));
+                    std::cout << "[CTRADER-BARS] " << req.name << " live trendbar sub period=" << req.period << "\n";
                 } else {
                     send_msg(ssl, PB::get_trendbars_req(ctid_account_id, req.sid, req.period, req.count));
                     std::cout << "[CTRADER-BARS] " << req.name << " history req period=" << req.period
@@ -706,7 +740,10 @@ private:
                 return;
             }
             if (rc == 0) continue;
-            if      (pt==2155) { on_depth_event(payload); ++depth_events_total; ++ev_min;
+            if      (pt==2130) { std::cout << "[CTRADER-BARS] Spots sub ACK\n"; } // ProtoOASubscribeSpotsRes
+            else if (pt==2131) { on_spot_event(payload); }  // ProtoOASpotEvent -- may contain trendbar field 6
+            else if (pt==2136) { std::cout << "[CTRADER-BARS] Live trendbar sub ACK\n"; } // ProtoOASubscribeLiveTrendbarRes
+            else if (pt==2155) { on_depth_event(payload); ++depth_events_total; ++ev_min;
                                   const auto fields2 = PB::parse(payload);
                                   const uint64_t sid2 = PB::get_varint(fields2, 3);
                                   const auto iit = id_to_internal_.find(sid2);
@@ -809,6 +846,43 @@ private:
         }
         if (on_bar_fn && !bars.empty()) {
             on_bar_fn(name, int(period), bars.back());
+        }
+    }
+
+    // ?? ProtoOASpotEvent (pt=2131) -- contains trendbar in field 6 after live sub ????
+    // field 2: ctidTraderAccountId, field 3: symbolId, field 4: bid, field 5: ask
+    // field 6: repeated ProtoOATrendbar (only present after SubscribeLiveTrendbarReq)
+    void on_spot_event(const std::vector<uint8_t>& payload) {
+        const auto f = PB::parse(payload);
+        const uint64_t sym_id = PB::get_varint(f, 3);
+        const auto it = id_to_internal_.find(sym_id);
+        if (it == id_to_internal_.end()) return;
+        const std::string& name = it->second;
+        const auto bit = bar_subscriptions.find(name);
+        if (bit == bar_subscriptions.end() || !bit->second.state) return;
+        SymBarState* state = bit->second.state;
+
+        // Extract trendbar from field 6 (repeated ProtoOATrendbar)
+        for (const auto& fi : f) {
+            if (fi.field_num == 6 && fi.wire_type == 2) {
+                // ProtoOATrendbar: field 2=period, field 3=low, field 4=deltaOpen,
+                //                  field 5=deltaClose, field 6=deltaHigh, field 7=volume,
+                //                  field 8=utcTimestampInMinutes
+                const auto tb = PB::parse(fi.bytes);
+                uint32_t period = uint32_t(PB::get_varint(tb, 2));
+                const OHLCBar bar = PB::parse_trendbar(fi.bytes);
+                if (bar.close <= 0) continue;
+                if (period == 1) {
+                    state->m1.add_bar(bar);
+                    printf("[CTRADER-BARS] %s M1 spot-bar close=%.2f RSI=%.1f ATR=%.2f\n",
+                           name.c_str(), bar.close,
+                           state->m1.ind.rsi14.load(), state->m1.ind.atr14.load());
+                } else if (period == 5) {
+                    state->m5.add_bar(bar);
+                } else if (period == 7) {
+                    state->m15.add_bar(bar);
+                }
+            }
         }
     }
 
