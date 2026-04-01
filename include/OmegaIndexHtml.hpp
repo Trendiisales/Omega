@@ -335,7 +335,7 @@ R"OMEGA2(
     </div>
     <div style="width:1px;height:28px;background:var(--border);"></div>
     <div style="text-align:center;">
-      <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">ES?NQ</div>
+      <div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">ES-NQ</div>
       <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:var(--blue);" id="esNqDivHdr">--</div>
     </div>
   </div>
@@ -575,7 +575,7 @@ R"OMEGA5(
 
     <!-- Watchdog banner -- shown when session is active but no trade in 20min -->
     <div id="watchdogBanner" style="display:none;margin:0 0 6px 0;padding:7px 12px;background:rgba(255,136,0,0.10);border:1px solid rgba(255,136,0,0.45);border-radius:7px;align-items:center;gap:10px;">
-      <span style="font-size:13px;color:var(--amber)">?</span>
+      <span style="font-size:13px;color:var(--amber)">&#9888;</span>
       <div style="flex:1">
         <span style="font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:1px;">No trades firing</span>
         <span id="watchdogMsg" style="font-size:11px;color:var(--t2);margin-left:6px;"></span>
@@ -802,12 +802,12 @@ function pxDir(dirId,bid,ask,threshold){
   _midCache[dirId]=mid;
   if(!prev||prev<=0)return;          // first tick -- no direction yet
   if(mid>prev+thr){
-    if(el.textContent!=='?'||el.className!=='dir-arrow up'){
-      el.textContent='?';el.className='dir-arrow up';
+    if(el.textContent!=='\u25b2'||el.className!=='dir-arrow up'){
+      el.textContent='\u25b2';el.className='dir-arrow up';
     }
   } else if(mid<prev-thr){
-    if(el.textContent!=='?'||el.className!=='dir-arrow down'){
-      el.textContent='?';el.className='dir-arrow down';
+    if(el.textContent!=='\u25bc'||el.className!=='dir-arrow down'){
+      el.textContent='\u25bc';el.className='dir-arrow down';
     }
   }
   // if within threshold: leave arrow as-is (last known direction stays visible)
@@ -985,7 +985,7 @@ function updateDepthPanel(d) {
   if (badge) {
     const imbLabel = (dispImb * 100).toFixed(0);
     const bidDom = dispImb > 0.55, askDom = dispImb < 0.45;
-    const newTxt = 'IMB ' + imbLabel + '%' + (bidDom ? ' B?' : askDom ? ' A?' : '');
+    const newTxt = 'IMB ' + imbLabel + '%' + (bidDom ? ' B^' : askDom ? ' Av' : '');
     if (badge.textContent !== newTxt) {
       badge.textContent = newTxt;
       badge.style.color = bidDom ? 'var(--green)' : askDom ? 'var(--red)' : 'var(--t2)';
@@ -1063,7 +1063,7 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
       const bhi=safe(bkt.hi).toFixed(d),blo=safe(bkt.lo).toFixed(d);
       vol.innerHTML='<span style="color:var(--green)">?'+bhi+'</span> <span style="color:var(--red)">?'+blo+'</span>';
     } else if(p===1&&safe(hi)>0){
-      vol.textContent='range: '+safe(hi).toFixed(d)+'?'+safe(lo).toFixed(d);
+      vol.textContent='range: '+safe(hi).toFixed(d)+'-'+safe(lo).toFixed(d);
     } else if(safe(rv)>0){
       vol.textContent='vol: '+safe(rv).toFixed(2)+'% / '+safe(bv).toFixed(2)+'%';
     } else vol.innerHTML='';
@@ -1400,7 +1400,7 @@ function updateDashboard(d){
   updateL2Bar('engXAU',d.l2_gold,l2on);
   // cTrader L2 status indicator in FIX session panel
   const l2badge = document.getElementById('ctL2Badge');
-  if(l2badge) { l2badge.textContent = l2on ? 'L2 ?' : 'L2 ?'; l2badge.style.color = l2on ? 'var(--green)' : 'var(--t2)'; }
+  if(l2badge) { l2badge.textContent = l2on ? 'L2 \u2713' : 'L2 \u00d7'; l2badge.style.color = l2on ? 'var(--green)' : 'var(--t2)'; }
 
   // L2 depth panel -- renders order book levels for selected symbol
   updateDepthPanel(d);
@@ -1750,7 +1750,7 @@ R"OMEGA23D(
             <span style="font-family:IBM Plex Mono,monospace;font-size:12px;font-weight:700;
               color:${isLong?'var(--gold)':'var(--purple)'};">${lt.symbol}</span>
             <span style="font-size:10px;font-weight:700;color:${isLong?'var(--green)':'var(--red)'};">
-              ${isLong?'?':'?'} ${lt.side}</span>
+              ${isLong?'&#9650;':'&#9660;'} ${lt.side}</span>
             <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--t3);">
               @${entry.toFixed(dp)}</span>
             <span style="font-family:IBM Plex Mono,monospace;font-size:11px;font-weight:700;
@@ -1987,7 +1987,7 @@ R"OMEGA23B(
     const p=safe(s.phase),col=p===1?'var(--amber)':p===2?'var(--green)':'var(--t2)',label=p===0?'FLAT':p===1?'COMP':'BRK';
     const phEl=document.getElementById('comp'+s.id+'Ph');if(phEl){phEl.textContent=label;phEl.style.color=col;}
     const dtEl=document.getElementById('comp'+s.id+'Det');
-    if(dtEl){if(p===1&&safe(s.hi)>0)dtEl.textContent=safe(s.hi).toFixed(2)+'?'+safe(s.lo).toFixed(2);
+    if(dtEl){if(p===1&&safe(s.hi)>0)dtEl.textContent=safe(s.hi).toFixed(2)+'-'+safe(s.lo).toFixed(2);
     else dtEl.textContent='vol '+safe(s.rv).toFixed(3)+'%';}
   });
 
@@ -2036,7 +2036,7 @@ function pollTrades(){
           const el=document.getElementById('tradeCount');
           if(el&&s&&s.total_trades>0){
             const pnl=s.net_pnl||0;
-            el.textContent=s.total_trades+' closed ? '+s.wins+'W/'+(s.total_trades-s.wins)+'L ? '+(pnl>=0?'+':'-')+'$'+Math.abs(pnl).toFixed(2)+(s.source==='csv'?' (from disk)':'');
+            el.textContent=s.total_trades+' closed | '+s.wins+'W/'+(s.total_trades-s.wins)+'L | '+(pnl>=0?'+':'-')+'$'+Math.abs(pnl).toFixed(2)+(s.source==='csv'?' (from disk)':'');
           }
         })
         .catch(()=>{});
