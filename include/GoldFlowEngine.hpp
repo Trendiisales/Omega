@@ -98,7 +98,7 @@ static constexpr double GFE_ATR_MIN           = 5.0;   // raised 2.0?5.0: XAUUSD
                                                         // 5pt minimum = 0.11% = survives a real tick move.
                                                         // VIX27 day real ATR is 8-18pts, this is a safe floor.
 #ifndef GFE_ATR_SL_MULT_OVERRIDE
-static constexpr double GFE_ATR_SL_MULT       = 1.0;
+static constexpr double GFE_ATR_SL_MULT       = 1.5;
 #else
 static constexpr double GFE_ATR_SL_MULT       = GFE_ATR_SL_MULT_OVERRIDE;
 #endif   // SL = ATR * this
