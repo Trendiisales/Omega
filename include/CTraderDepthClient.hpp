@@ -763,7 +763,10 @@ private:
                         std::cerr << "[CTRADER] Connection dropped after bar req "
                                   << last_sent.name << " period=" << last_sent.period
                                   << " -- marking as failed, will skip on reconnect\n";
-                        save_bar_failed(bar_failed_path_);  // persist across restarts
+                        // Only persist M1 to disk -- M5/M7 only fail on repoll (now disabled)
+                        if (last_sent.period == 1) {
+                            save_bar_failed(bar_failed_path_);
+                        }
                     }
                 }
                 std::cerr<<"[CTRADER] Connection error\n";
@@ -807,7 +810,11 @@ private:
                     // Only add to failed set for INVALID_REQUEST (malformed req) -- not UNSUPPORTED
                     if (ec == "INVALID_REQUEST") {
                         bar_failed_reqs.insert(failed.name + ":" + std::to_string(failed.period));
-                        save_bar_failed(bar_failed_path_);  // persist across restarts
+                        // Only persist M1 to disk -- M5/M7 only fail on the repoll cycle
+                        // (now disabled). Persisting M5/M7 would block bar seeding on restart.
+                        if (failed.period == 1) {
+                            save_bar_failed(bar_failed_path_);
+                        }
                     }
                     std::cerr << "[CTRADER-BARS] " << ec << " for " << failed.name
                               << " period=" << failed.period << " is_live=" << failed.is_live << "\n";
