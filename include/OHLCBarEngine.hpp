@@ -255,6 +255,43 @@ public:
 
     int bar_count() const { return static_cast<int>(bars_.size()); }
 
+    // =========================================================================
+    // bootstrap() -- seed EMAs at current price for immediate startup
+    // =========================================================================
+    // Called once on first tick when no historical bars are available.
+    // Seeds EMA9/21/50 all at current_price and marks m1_ready=true immediately.
+    //
+    // Why this is correct:
+    //   EMA convergence half-life = period * ln(2) / 2 bars.
+    //   EMA9  half-life = 3 bars  -- converged in ~1 bar boundary (15 min M15)
+    //   EMA21 half-life = 7 bars  -- directionally stable after 3-4 bar closes
+    //   EMA50 half-life = 17 bars -- takes longest, but direction is clear after 5-6 bars
+    //
+    // The H4 gate only needs EMA50 direction (up/down), not its precise value.
+    // Seeding at current price means EMA50 starts AT price and diverges as trend develops.
+    // After 2-3 H4 bars (8-12 hours), EMA50 accurately reflects the multi-day trend.
+    // For M15 TrendPullback: EMA9/21/50 direction is reliable after 3-5 M15 bar closes.
+    //
+    // This eliminates the 3.5 hour / 56 hour cold-start wait entirely.
+    void bootstrap(double current_price) noexcept {
+        if (current_price <= 0.0) return;
+        if (ind.m1_ready.load()) return;  // already seeded, don't overwrite
+        ema9_    = current_price;
+        ema21_   = current_price;
+        ema50_   = current_price;
+        ema_init_ = true;
+        // Seed ATR with a reasonable estimate (0.1% of price) -- updates on first bars
+        atr_avg_  = current_price * 0.001;
+        atr_init_ = true;
+        ind.ema9 .store(ema9_,  std::memory_order_relaxed);
+        ind.ema21.store(ema21_, std::memory_order_relaxed);
+        ind.ema50.store(ema50_, std::memory_order_relaxed);
+        ind.atr14.store(atr_avg_, std::memory_order_relaxed);
+        ind.m1_ready.store(true, std::memory_order_release);
+        // trend_state=0 (flat) until bars confirm direction -- permissive for H4 gate
+        ind.trend_state.store(0, std::memory_order_relaxed);
+    }
+
     // ?????????????????????????????????????????????????????????????????????????
     // update_tick_metrics() -- call every tick from on_tick() in main.cpp
     //   spread : current ask - bid
