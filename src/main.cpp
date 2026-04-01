@@ -6398,12 +6398,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_vwap_rev_ger40.has_open_position() || // ADDED
             g_trend_pb_ger40.has_open_position());  // ADDED
         const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger);
-        // SIM: EU index breakout -- no edge. Disabled.
-        // if (sdec_ger.allow_breakout && !g_bracket_ger30.pos.active)
-        //     dispatch(g_eng_ger30, g_sup_ger30, base_can_ger, &sdec_ger);
-        // SIM: BracketEngine on indices -- no edge. Disabled.
-        // if (sdec_ger.allow_bracket && !g_eng_ger30.pos.active)
-        //     dispatch_bracket(g_bracket_ger30, ...);
         // ?? GER40 manage blocks -- ALWAYS run when position open (SL/trail fix) ??
         if (g_orb_ger30.has_open_position())      { g_orb_ger30.on_tick(sym, bid, ask, ca_on_close); }
         if (g_vwap_rev_ger40.has_open_position()) {
@@ -6415,62 +6409,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             };
             g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap_mgmt, vwap_ger_cb);
         }
-        // Seed TrendPB GER40 with real M1 bar EMAs
-        if (g_bars_ger.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
-            g_trend_pb_ger40.seed_bar_emas(
-                g_bars_ger.m1.ind.ema9.load(std::memory_order_relaxed),
-                g_bars_ger.m1.ind.ema21.load(std::memory_order_relaxed),
-                g_bars_ger.m1.ind.ema50.load(std::memory_order_relaxed),
-                g_bars_ger.m1.ind.atr14.load(std::memory_order_relaxed));
-            g_trend_pb_ger40.seed_m5_trend(g_bars_ger.m5.ind.trend_state.load(std::memory_order_relaxed));
-        }
         if (g_trend_pb_ger40.has_open_position()) { g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close); }
 
-        // Opening range breakout: Xetra open 08:00 UTC
-        if (!g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position() && base_can_ger) {  // ADDED !vwap check
-            const auto orb = g_orb_ger30.on_tick(sym, bid, ask, ca_on_close);
-            if (orb.valid) {
-                g_telemetry.UpdateLastSignal("GER40", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-                if (!enter_directional("GER40", orb.is_long, orb.entry, orb.sl, orb.tp))
-                    g_orb_ger30.cancel();
-                    else g_orb_ger30.patch_size(g_last_directional_lot);
-            }
-        }
-        // VWAP Reversion: GER40 over-extension from Xetra ORB range midpoint
-        if (!g_vwap_rev_ger40.has_open_position() && !g_orb_ger30.has_open_position() && base_can_ger) {  // ADDED !orb check
-            const double ger_vwap = (g_orb_ger30.range_high() + g_orb_ger30.range_low()) > 0.0
-                ? (g_orb_ger30.range_high() + g_orb_ger30.range_low()) * 0.5 : 0.0;
-            if (ger_vwap > 0.0) {
-                const auto vr = g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap, ca_on_close,
-                    g_macro_ctx.vix, g_macro_ctx.ger40_l2_imbalance);
-                if (vr.valid) {
-                    g_telemetry.UpdateLastSignal("GER40", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                    const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
-                                            (vr.confluence_score == 3) ? 2.0 :
-                                            (vr.confluence_score == 2) ? 1.5 : 1.0;
-                    if (!enter_directional("GER40", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
-                        g_vwap_rev_ger40.cancel();
-                    else g_vwap_rev_ger40.patch_size(g_last_directional_lot);
-                }
-            }
-        }
-        // Trend Pullback: EMA9/21/50 stack -- fires only when no other GER40 position open.
-        // Session gate: GER40 is EU -- only trade London/EU hours (slots 1-3, 07-14 UTC).
-        // Asia and NY late have no edge on European indices.
-        {
-            const int slot_ger = g_macro_ctx.session_slot;
-            const bool ger_session_ok = (slot_ger >= 1 && slot_ger <= 3);
-            if (!g_trend_pb_ger40.has_open_position() && base_can_ger && ger_session_ok
-                && !g_orb_ger30.has_open_position() && !g_vwap_rev_ger40.has_open_position()) {
-                const auto tp_sig = g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close);
-                if (tp_sig.valid) {
-                    g_telemetry.UpdateLastSignal("GER40", tp_sig.is_long?"LONG":"SHORT", tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB", tp_sig.tp, tp_sig.sl);
-                    if (!enter_directional("GER40", tp_sig.is_long, tp_sig.entry, tp_sig.sl, tp_sig.tp, 0.01, true))
-                        g_trend_pb_ger40.cancel();
-                        // patch_size removed -- enter_directional already sized correctly
-                }
-            }
-        }
+        // GER40 NEW ENTRIES DISABLED -- taken out of play
+        (void)sdec_ger;
     }
     else if (sym == "UK100") {
         const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active);
@@ -11293,18 +11235,19 @@ int main(int argc, char* argv[])
         // g_bars_sp and g_bars_nq remain allocated -- indicators just won't be seeded.
         // Engines that read g_bars_sp/g_bars_nq already handle m1_ready=false gracefully.
         g_ctrader_depth.bar_subscriptions["XAUUSD"]  = {41,   &g_bars_gold};
-        g_ctrader_depth.bar_subscriptions["US500.F"] = {2642, &g_bars_sp};
-        g_ctrader_depth.bar_subscriptions["USTEC.F"] = {2643, &g_bars_nq};
-        g_ctrader_depth.bar_subscriptions["GER40"]   = {1899, &g_bars_ger};
+        // Index M5 bar subscriptions removed -- broker returns INVALID_REQUEST for
+        // US500.F/USTEC.F/GER40 M5, which drops the connection before XAUUSD M15
+        // response arrives. Re-add when broker M5 support is confirmed for indices.
+        // g_ctrader_depth.bar_subscriptions["US500.F"] = {2642, &g_bars_sp};
+        // g_ctrader_depth.bar_subscriptions["USTEC.F"] = {2643, &g_bars_nq};
+        // g_ctrader_depth.bar_subscriptions["GER40"]   = {1899, &g_bars_ger};
         // NAS100 (id=110) and DJ30.F (id=2637) use breakout engines, no TrendPB, no bar sub needed
 
         // Pre-seed M1 as failed for all index symbols -- broker sends INVALID_REQUEST
         // for M1 on indices (same as XAUUSD) which drops the connection.
         // Only M5 will be requested. M5 history works fine (same API the chart uses).
         // XAUUSD:1 is already persisted in ctrader_bar_failed.txt from first run.
-        for (const std::string& sym : {"US500.F", "USTEC.F", "GER40"}) {
-            g_ctrader_depth.bar_failed_reqs.insert(sym + ":1");
-        }
+        // Index bar subscriptions removed (see above) -- no M1 pre-seeding needed.
 
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
