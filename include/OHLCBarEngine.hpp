@@ -789,10 +789,15 @@ struct SymBarState {
     OHLCBarEngine m1;   // 1-minute bars
     OHLCBarEngine m5;   // 5-minute bars -- swing/trend use this
     OHLCBarEngine m15;  // 15-minute bars -- TrendPB swing trades (XAUUSD only)
+    OHLCBarEngine h4;   // 4-hour bars   -- HTF regime gate for TrendPB (XAUUSD only)
+                        //   EMA9/21/50 half-lives: 18h / 42h / 100h
+                        //   trend_state gates M15 entry direction
+                        //   m1_ready=true after 14 H4 bars = 56 hours (warm restart immediate)
     // Expose combined indicators:
     //   RSI, EMA, ATR, BB, BBW squeeze, ATR slope, RSI div, VWAP slope from M1
     //   trend_state, swing from M5
     //   trend_state, swing, EMA9/21/50 from M15 (gold TrendPB only)
+    //   trend_state, EMA9/21/50 from H4  (gold HTF gate only)
 };
 
 // =============================================================================

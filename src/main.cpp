@@ -7190,14 +7190,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_bars_gold.m1.update_tick_metrics(ask - bid, now_ms_g);
         g_bars_gold.m1.update_volume_delta(g_macro_ctx.gold_l2_imbalance);
 
-        // ?? FIX-tick bar builder -- accumulates ticks into M1/M5/M15 OHLC bars ??
+        // ?? FIX-tick bar builder -- accumulates ticks into M1/M5/M15/H4 OHLC bars ??
         {
-            static OHLCBar s_cur1{}, s_cur5{}, s_cur15{};
-            static int64_t s_bar1_ms = 0, s_bar5_ms = 0, s_bar15_ms = 0;
+            static OHLCBar s_cur1{}, s_cur5{}, s_cur15{}, s_cur_h4{};
+            static int64_t s_bar1_ms = 0, s_bar5_ms = 0, s_bar15_ms = 0, s_bar_h4_ms = 0;
             const double xau_mid     = (bid + ask) * 0.5;
-            const int64_t b1  = (now_ms_g /  60000LL) *  60000LL;
-            const int64_t b5  = (now_ms_g / 300000LL) * 300000LL;
-            const int64_t b15 = (now_ms_g / 900000LL) * 900000LL;
+            const int64_t b1  = (now_ms_g /   60000LL) *   60000LL;
+            const int64_t b5  = (now_ms_g /  300000LL) *  300000LL;
+            const int64_t b15 = (now_ms_g /  900000LL) *  900000LL;
+            const int64_t bh4 = (now_ms_g / 14400000LL) * 14400000LL;  // 4h = 14400s
             // M1
             if (s_bar1_ms == 0) { s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
             else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
@@ -7210,6 +7211,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (s_bar15_ms == 0) { s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15; }
             else if (b15 != s_bar15_ms) { g_bars_gold.m15.add_bar(s_cur15); s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15; }
             else { if(xau_mid>s_cur15.high)s_cur15.high=xau_mid; if(xau_mid<s_cur15.low)s_cur15.low=xau_mid; s_cur15.close=xau_mid; }
+            // H4 -- HTF regime gate for TrendPullback gold
+            // 14 H4 bars = 56 hours to warm cold. trend_state drives seed_h4_trend().
+            if (s_bar_h4_ms == 0) { s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4; }
+            else if (bh4 != s_bar_h4_ms) { g_bars_gold.h4.add_bar(s_cur_h4); s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4; }
+            else { if(xau_mid>s_cur_h4.high)s_cur_h4.high=xau_mid; if(xau_mid<s_cur_h4.low)s_cur_h4.low=xau_mid; s_cur_h4.close=xau_mid; }
         }
 
         if (gold_spread_ok) {
@@ -8531,6 +8537,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
             g_trend_pb_gold.seed_m5_trend(
                 g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed));
+        }
+        // H4 trend gate -- feeds HTF direction into TrendPullback gold entry filter.
+        // When H4 is in uptrend, only LONG entries fire. Downtrend = shorts only.
+        // 0 (not enough bars yet) = permissive, both directions allowed.
+        if (g_bars_gold.h4.ind.m1_ready.load(std::memory_order_relaxed)) {
+            g_trend_pb_gold.seed_h4_trend(
+                g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
         }
         // TrendPullback gold position management -- always runs when position open
         if (g_trend_pb_gold.has_open_position()) {
@@ -10186,12 +10199,20 @@ int main(int argc, char* argv[])
     //   BE_ATR_MULT: lock BE at 1x M15 ATR (~5pts). Unchanged -- good.
     g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.50;  // M15: ±23.5pts at $4700. Old 0.08% (±3.7pts) never fired.
     g_trend_pb_gold.COOLDOWN_SEC       = 900;   // 15 min = 1 M15 bar minimum between re-entries
+    g_trend_pb_gold.MIN_EMA_SEP        = 5.0;   // gold: 5pt EMA9-EMA50 separation = real trend
+    g_trend_pb_gold.H4_GATE_ENABLED    = true;  // gate M15 entries on H4 trend direction
+                                                 // H4 ready after 56hr cold / immediate warm restart
+                                                 // until ready: h4_trend_state_=0, both directions allowed
+    g_trend_pb_gold.ATR_SL_MULT        = 1.2;   // SL floor = 1.2x M15 ATR (adaptive, not fixed 8pt)
     // Trail/BE params: class defaults are correct for M15 ATR scale (4-8pts)
     // TRAIL_ARM_ATR_MULT=2.0, TRAIL_DIST_ATR_MULT=1.0, BE_ATR_MULT=1.0 -- no change needed
     // GER40: tighter band (index moves more cleanly around EMAs)
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500
-    // GER40: ~5 ticks/sec = 500 ticks = 100s. Load from disk bypasses this.
     g_trend_pb_ger40.COOLDOWN_SEC     = 120;
+    g_trend_pb_ger40.MIN_EMA_SEP      = 15.0;
+    // NQ/SP: configured in separate block below
+    g_trend_pb_nq.MIN_EMA_SEP         = 25.0;
+    g_trend_pb_sp.MIN_EMA_SEP         = 15.0;
     // Load warm EMA state -- skips EMA_WARMUP_TICKS cold period on restart
     g_trend_pb_gold.load_state(log_root_dir()  + "/trend_pb_gold.dat");
     g_trend_pb_ger40.load_state(log_root_dir() + "/trend_pb_ger40.dat");

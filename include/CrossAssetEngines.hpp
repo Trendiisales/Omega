@@ -1433,6 +1433,15 @@ class TrendPullbackEngine {
 public:
     double  PULLBACK_BAND_PCT = 0.15;    // price within 0.15% of EMA50 = "at EMA50"
                                           // widened from 0.05%: tick EMA50 drifts faster than bar EMA50
+    double  MIN_EMA_SEP       = 10.0;   // minimum EMA9-EMA50 separation to confirm real trend
+                                         // Gold: 5pt, SP500: 15pt, USTEC: 25pt -- set per-symbol in main.cpp
+    // H4 directional gate: +1=uptrend (longs only), -1=downtrend (shorts only), 0=flat (both)
+    // Eliminates counter-trend M15 entries -- primary mechanism for reducing losses.
+    // Set via seed_h4_trend() each tick when g_bars_gold.h4 is ready.
+    bool    H4_GATE_ENABLED   = false;  // enable per-symbol in main.cpp (gold only initially)
+    // ATR-scaled SL floor: replaces fixed 8pt. SL = max(EMA50_dist, ATR_SL_MULT * ATR).
+    // Adapts to volatility: quiet (ATR=4pt)->floor=4.8pt, volatile (ATR=12pt)->floor=14.4pt.
+    double  ATR_SL_MULT       = 1.2;   // 1.2x ATR SL floor -- set per-symbol in main.cpp
     // EMA alphas calibrated for ~10 ticks/sec (London gold rate).
     // Using tick-count periods directly produced EMAs with half-life <1s
     // (EMA9 at alpha=0.2 = 3-tick half-life = 0.3s) -- flipping trend
@@ -1695,8 +1704,7 @@ public:
         // Indices: require 10pt separation.
         // Without this, a shallow stack from stale/misaligned seed data fires bad trades.
         const double ema_span = std::fabs(ema9_ - ema50_);
-        const double min_sep  = (sym.find("XAU") != std::string::npos) ? 5.0 : 10.0;
-        if (ema_span < min_sep) return {};
+        if (ema_span < MIN_EMA_SEP) return {};
         if (!uptrend && !downtrend) return {};
 
         // M5 structural trend gate -- when bar EMAs active, require M5 agrees
@@ -1731,16 +1739,37 @@ public:
         // Apply direction block (fixed: was checking wrong direction)
         if (is_long  && long_dir_blocked)  return {};
         if (!is_long && short_dir_blocked) return {};
-        if (!is_long && long_dir_blocked)  return {};
 
-        // SL = EMA50, floored to minimum viable distance
-        const double sl_raw  = ema50_;
-        const double min_sl_dist =
-            (sym.find("XAU") != std::string::npos) ? 8.0 : 3.0;
+        // H4 directional gate: only trade in HTF trend direction
+        // h4_trend_state_: +1=uptrend, -1=downtrend, 0=flat/unknown
+        // When H4_GATE_ENABLED and H4 trend is known, block counter-trend entries.
+        // 0 (flat/not enough bars) = permissive -- both directions allowed.
+        if (H4_GATE_ENABLED && h4_trend_state_ != 0) {
+            if (is_long  && h4_trend_state_ < 0) {
+                printf("[TREND-PB] %s LONG blocked by H4 downtrend\n", sym.c_str());
+                fflush(stdout);
+                return {};
+            }
+            if (!is_long && h4_trend_state_ > 0) {
+                printf("[TREND-PB] %s SHORT blocked by H4 uptrend\n", sym.c_str());
+                fflush(stdout);
+                return {};
+            }
+        }
+
+        // SL = EMA50, floored to ATR-scaled minimum (not fixed 8pt).
+        // ATR_SL_MULT * ATR adapts to current volatility:
+        //   Quiet session (ATR=4pt):    floor = 1.2 * 4  = 4.8pt
+        //   Normal London  (ATR=8pt):   floor = 1.2 * 8  = 9.6pt
+        //   Volatile open  (ATR=12pt):  floor = 1.2 * 12 = 14.4pt
+        // This prevents both: SL too tight in volatile conditions (noise stop-out),
+        // and SL too wide in quiet conditions (unnecessary risk).
+        const double sl_raw      = ema50_;
+        const double atr_floor   = (atr_ > 0.5) ? atr_ * ATR_SL_MULT : 0.0;
         const double spread_floor = spread * 2.0;
-        const double eff_min_sl   = std::max(min_sl_dist, spread_floor);
-        const double sl_raw_dist  = std::fabs(mid - sl_raw);
-        const double sl_dist      = std::max(sl_raw_dist, eff_min_sl);
+        const double eff_min_sl  = std::max({atr_floor, spread_floor, 3.0});
+        const double sl_raw_dist = std::fabs(mid - sl_raw);
+        const double sl_dist     = std::max(sl_raw_dist, eff_min_sl);
         const double sl = is_long ? (mid - sl_dist) : (mid + sl_dist);
 
         // TP = ATR-based fixed distance: 2.5x ATR for gold (~20-25pts typical)
@@ -1805,6 +1834,7 @@ public:
 
     // Seed M5 structural trend -- gates signal direction
     void seed_m5_trend(int trend_state) noexcept { m5_trend_state_ = trend_state; }
+    void seed_h4_trend(int trend_state) noexcept { h4_trend_state_ = trend_state; }
 
     bool using_bar_emas() const { return m_using_bar_emas_; }
 
@@ -1869,6 +1899,7 @@ private:
     double  atr_           = 0.0;  // EWM ATR-14 for trail sizing
     bool    m_using_bar_emas_ = false;
     int     m5_trend_state_   = 0;     // +1=uptrend, -1=downtrend, 0=flat (from M5 bars)
+    int     h4_trend_state_   = 0;     // +1=uptrend, -1=downtrend, 0=flat (from H4 bars -- HTF gate)
     // Consecutive SL tracker -- block direction after 2 consecutive SL hits
     int     m_consec_sl_long_  = 0;   // consecutive long SL hits
     int     m_consec_sl_short_ = 0;   // consecutive short SL hits
