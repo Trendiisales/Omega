@@ -443,7 +443,10 @@ $statusFile = "$OmegaDir\logs\startup_status.txt"
 if (Test-Path $statusFile) { Remove-Item $statusFile -Force }
 
 # Launch Omega in background so we can monitor startup
-$proc = Start-Process -FilePath ".\Omega.exe" -ArgumentList "omega_config.ini" -PassThru -NoNewWindow
+$proc = Start-Process -FilePath ".\Omega.exe" -ArgumentList "omega_config.ini" -PassThru `
+    -RedirectStandardOutput "logs\omega_stdout.log" `
+    -RedirectStandardError  "logs\omega_stderr.log" `
+    -WindowStyle Hidden
 
 # Wait up to 150s for startup_status.txt to appear and contain OK or FAIL
 Write-Host "Waiting for startup verification (up to 150s)..." -ForegroundColor Yellow
