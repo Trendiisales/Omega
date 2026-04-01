@@ -659,8 +659,12 @@ private:
             };
             if (!skip(1)) pending_bar_reqs.push_back({bkv.first, sid, 1, 200});
             else std::cout << "[CTRADER-BARS] Skipping " << bkv.first << " M1 (prev INVALID_REQUEST)\n";
-            if (!skip(5)) pending_bar_reqs.push_back({bkv.first, sid, 5, 200}); // 200 M5 = 16hrs for EMA50 separation on all symbols
-            if (is_gold && !skip(7)) pending_bar_reqs.push_back({bkv.first, sid, 7, 200}); // 200 M15 = 50hrs, enough for EMA50 proper separation
+            // NOTE: GetTrendbarsReq (pt=2137) returns INVALID_REQUEST for this account.
+            // Use GetTickDataReq (pt=2145) instead -- broker serves tick history.
+            // We mark M5/M7 as "tick" requests by using period=105/107 as a sentinel.
+            // The actual send code below checks for these and sends pt=2145 instead.
+            if (!skip(5)) pending_bar_reqs.push_back({bkv.first, sid, 105, 200}); // 105 = M5 via tick
+            if (is_gold && !skip(7)) pending_bar_reqs.push_back({bkv.first, sid, 107, 200}); // 107 = M15 via tick
         }
         // Live subscriptions queued after history requests (sent in same staggered loop)
         struct LiveSub { std::string name; int64_t sid; uint32_t period; };
@@ -735,9 +739,18 @@ private:
                     send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, req.sid));
                     std::cout << "[CTRADER-BARS] " << req.name << " spots sub sent\n";
                 } else if (req.is_live) {
-                    // pt=2135 ProtoOASubscribeLiveTrendbarReq (requires spots sub first)
                     send_msg(ssl, PB::subscribe_live_trendbar_req(ctid_account_id, req.sid, req.period));
                     std::cout << "[CTRADER-BARS] " << req.name << " live trendbar sub period=" << req.period << "\n";
+                } else if (req.period == 105 || req.period == 107) {
+                    // Tick data fallback: GetTrendbarsReq blocked, use GetTickDataReq (pt=2145)
+                    // 50 hours of ticks = 200 M15 bars. period 105=M5, 107=M15.
+                    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    const int64_t from_ms = now_ms - 50LL * 3600LL * 1000LL;
+                    last_bar_req_name_ = req.name;
+                    send_msg(ssl, PB::get_tick_data_req(ctid_account_id, req.sid, from_ms, now_ms, 1));
+                    std::cout << "[CTRADER-BARS] " << req.name << " tick data req (fallback for period="
+                              << (req.period - 100) << ")\n";
                 } else {
                     send_msg(ssl, PB::get_trendbars_req(ctid_account_id, req.sid, req.period, req.count));
                     std::cout << "[CTRADER-BARS] " << req.name << " history req period=" << req.period
