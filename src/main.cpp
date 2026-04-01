@@ -7969,17 +7969,38 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // The engine will NOT enter during warmup regardless of signal strength.
             // Once seeded, all gates operate normally -- no change to live behaviour.
             if (gf_tick_ok && !g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
-                static int64_t s_warmup_log = 0;
+                // Gate 0d: block until M1 bars seeded.
+                // Exception: if bars have been unavailable for > 5 min (broker doesn't
+                // support trendbar protocol e.g. BlackBull UNSUPPORTED_MESSAGE), allow
+                // entries without bar gates rather than blocking ALL GoldFlow permanently.
+                static int64_t s_warmup_log     = 0;
+                static int64_t s_bars_first_miss = 0;  // first time we saw bars not ready
                 const int64_t now_wup = static_cast<int64_t>(std::time(nullptr));
-                if (now_wup - s_warmup_log >= 30) {
-                    s_warmup_log = now_wup;
-                    printf("[GF-GATE-BLOCK] reason=BARS_NOT_READY -- GoldFlow blocked until "
-                           "M1 bars seeded (need %d bars, Gates 3+4 inactive without them)\n",
-                           52);
-                    fflush(stdout);
+                if (s_bars_first_miss == 0) s_bars_first_miss = now_wup;
+                const int64_t bars_missing_secs = now_wup - s_bars_first_miss;
+                const bool bars_permanently_unavailable = (bars_missing_secs > 300); // 5 min
+                if (bars_permanently_unavailable) {
+                    // Broker confirmed no trendbar support -- allow entries without bar gates.
+                    // Log once per 5 min so operator knows we're running in degraded mode.
+                    if (now_wup - s_warmup_log >= 300) {
+                        s_warmup_log = now_wup;
+                        printf("[GF-GATE-0D] BARS_UNAVAILABLE >5min -- running without bar gates "
+                               "(broker trendbar unsupported). Gates 3+4 inactive.\n");
+                        fflush(stdout);
+                    }
+                    // gf_tick_ok stays true -- entry allowed without bar confirmation
+                } else {
+                    if (now_wup - s_warmup_log >= 30) {
+                        s_warmup_log = now_wup;
+                        printf("[GF-GATE-BLOCK] reason=BARS_NOT_READY -- GoldFlow blocked until "
+                               "M1 bars seeded (need %d bars, Gates 3+4 inactive without them). "
+                               "Will allow entries in %llds if bars never seed.\n",
+                               52, (long long)(300 - bars_missing_secs));
+                        fflush(stdout);
+                    }
+                    gf_tick_ok = false;
+                    gf_block_reason = "BARS_NOT_READY";
                 }
-                gf_tick_ok = false;
-                gf_block_reason = "BARS_NOT_READY";
             }
 
             // ?? Gate 0e: Compression regime block ???????????????????????????

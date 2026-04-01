@@ -700,21 +700,29 @@ private:
                     if (!refresh_token.empty()) send_msg(ssl,PB::refresh_token_req(refresh_token));
                     return;
                 }
-                // INVALID_REQUEST on a bar request: broker rejects this symbol/period.
-                // Track it so we skip it on all future reconnects -- don't hammer broker.
+                // INVALID_REQUEST or UNSUPPORTED_MESSAGE on a bar request.
+                // UNSUPPORTED_MESSAGE = broker has no trendbar support at all -- drain the
+                // entire queue immediately to stop the reconnect loop.
                 // The connection itself stays alive (do NOT return here).
-                if (ec=="INVALID_REQUEST" && bar_send_idx > 0 && bar_send_idx <= bar_send_queue.size()) {
+                const bool is_bar_error = (ec == "INVALID_REQUEST" || ec == "UNSUPPORTED_MESSAGE");
+                if (is_bar_error && bar_send_idx > 0 && bar_send_idx <= bar_send_queue.size()) {
                     const auto& failed = bar_send_queue[bar_send_idx - 1];
                     bar_failed_reqs.insert(failed.name + ":" + std::to_string(failed.period));
-                    std::cerr << "[CTRADER-BARS] INVALID_REQUEST for " << failed.name
+                    std::cerr << "[CTRADER-BARS] " << ec << " for " << failed.name
                               << " period=" << failed.period
-                              << " -- skipping this request on all future reconnects\n";
-                    // If this is XAUUSD M1 bars, mark m1_ready as permanently unavailable
-                    // so Gate 0d logs clearly and doesn't just silently block all entries.
+                              << " -- skipping on all future reconnects\n";
+                    if (ec == "UNSUPPORTED_MESSAGE") {
+                        // Drain entire remaining queue -- stop sending bar reqs this session.
+                        std::cerr << "[CTRADER-BARS] UNSUPPORTED_MESSAGE -- broker has no trendbar support\n"
+                                  << "[CTRADER-BARS] Draining bar queue, no more bar requests this session\n";
+                        for (size_t qi = bar_send_idx; qi < bar_send_queue.size(); ++qi)
+                            bar_failed_reqs.insert(bar_send_queue[qi].name + ":" + std::to_string(bar_send_queue[qi].period));
+                        bar_send_idx = bar_send_queue.size();
+                    }
                     if (failed.name == "XAUUSD" && failed.period == 1) {
                         std::cerr << "[CTRADER-BARS] *** XAUUSD M1 bars rejected by broker ***\n"
                                   << "[CTRADER-BARS] *** Gate 0d will block GoldFlow entries ***\n"
-                                  << "[CTRADER-BARS] *** Check broker trendbar permissions   ***\n";
+                                  << "[CTRADER-BARS] *** Contact BlackBull to enable trendbar permissions ***\n";
                     }
                 }
                 // Do NOT return -- one bad bar request must not kill the depth feed.
