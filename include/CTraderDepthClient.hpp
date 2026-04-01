@@ -618,7 +618,7 @@ private:
             if (!skip(1)) pending_bar_reqs.push_back({bkv.first, sid, 1, 200});
             else std::cout << "[CTRADER-BARS] Skipping " << bkv.first << " M1 (prev INVALID_REQUEST)\n";
             if (!skip(5)) pending_bar_reqs.push_back({bkv.first, sid, 5, 100});
-            if (is_gold && !skip(7)) pending_bar_reqs.push_back({bkv.first, sid, 7, 50});
+            if (is_gold && !skip(7)) pending_bar_reqs.push_back({bkv.first, sid, 7, 200}); // 200 M15 = 50hrs, enough for EMA50 proper separation
         }
         // Live subscriptions queued after history requests (sent in same staggered loop)
         struct LiveSub { std::string name; int64_t sid; uint32_t period; };
@@ -674,7 +674,7 @@ private:
                     };
                     if (!failed(1)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 1, 60));
                     if (!failed(5)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 5, 20));
-                    if (is_gold && !failed(7)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 7, 10));
+                    if (is_gold && !failed(7)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 7, 200));
                 }
             }
 
@@ -762,25 +762,38 @@ private:
                     return;
                 }
                 // INVALID_REQUEST or UNSUPPORTED_MESSAGE on a bar request.
-                // UNSUPPORTED_MESSAGE = broker has no trendbar support at all -- drain the
-                // entire queue immediately to stop the reconnect loop.
-                // The connection itself stays alive (do NOT return here).
+                // KEY DISTINCTION:
+                //   UNSUPPORTED_MESSAGE on a LIVE sub (pt=2220) = broker doesn't support
+                //   live trendbar streaming. But GetTrendbarsReq (pt=2137) for HISTORY
+                //   still works fine -- the cTrader chart itself uses this exact call.
+                //   Solution: only disable LIVE subs on UNSUPPORTED_MESSAGE.
+                //   History repoll (pt=2137 every 65s) continues unaffected.
+                //
+                //   INVALID_REQUEST = specific req malformed -- skip that symbol/period.
                 const bool is_bar_error = (ec == "INVALID_REQUEST" || ec == "UNSUPPORTED_MESSAGE");
                 if (is_bar_error && bar_send_idx > 0 && bar_send_idx <= bar_send_queue.size()) {
                     const auto& failed = bar_send_queue[bar_send_idx - 1];
-                    bar_failed_reqs.insert(failed.name + ":" + std::to_string(failed.period));
-                    std::cerr << "[CTRADER-BARS] " << ec << " for " << failed.name
-                              << " period=" << failed.period << " -- skipping on future reconnects\n";
-                    if (ec == "UNSUPPORTED_MESSAGE") {
-                        // Full protocol unsupported -- drain all and stop repoll
-                        for (size_t qi = bar_send_idx; qi < bar_send_queue.size(); ++qi)
-                            bar_failed_reqs.insert(bar_send_queue[qi].name + ":" + std::to_string(bar_send_queue[qi].period));
-                        bar_send_idx = bar_send_queue.size();
-                        bar_repoll_disabled = true;
-                        std::cerr << "[CTRADER-BARS] UNSUPPORTED_MESSAGE -- trendbar protocol disabled\n"
-                                  << "[CTRADER-BARS] Gate 0d fallback activates after 5min\n";
+                    // Only add to failed set for INVALID_REQUEST (malformed req) -- not UNSUPPORTED
+                    if (ec == "INVALID_REQUEST") {
+                        bar_failed_reqs.insert(failed.name + ":" + std::to_string(failed.period));
                     }
-                    if (failed.name == "XAUUSD" && failed.period == 1)
+                    std::cerr << "[CTRADER-BARS] " << ec << " for " << failed.name
+                              << " period=" << failed.period << " is_live=" << failed.is_live << "\n";
+                    if (ec == "UNSUPPORTED_MESSAGE") {
+                        // Broker doesn't support live trendbar streaming (pt=2220).
+                        // Drain only the REMAINING LIVE subs from the queue -- leave history reqs alone.
+                        // History repoll (pt=2137) still works and cTrader chart proves it.
+                        for (size_t qi = bar_send_idx; qi < bar_send_queue.size(); ++qi) {
+                            if (bar_send_queue[qi].is_live) {
+                                // Skip live subs only
+                                bar_send_idx = qi + 1;
+                            }
+                        }
+                        // Do NOT set bar_repoll_disabled -- history repoll continues every 65s
+                        std::cerr << "[CTRADER-BARS] UNSUPPORTED live trendbar sub -- "
+                                  << "live subs disabled but history repoll (pt=2137) continues\n";
+                    }
+                    if (failed.name == "XAUUSD" && failed.period == 1 && ec == "INVALID_REQUEST")
                         std::cerr << "[CTRADER-BARS] *** XAUUSD M1 rejected -- Gate 0d will block GoldFlow ***\n";
                 }
                 // Do NOT return -- one bad bar request must not kill the depth feed.
