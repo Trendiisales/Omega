@@ -507,8 +507,9 @@ R"OMEGA3(
       <!-- Compact stats -->
       <div class="stat-card"><div class="stat-l">W</div><div class="stat-n" id="statWins" style="color:var(--green)">0</div></div>
       <div class="stat-card"><div class="stat-l">L</div><div class="stat-n" id="statLosses" style="color:var(--red)">0</div></div>
-      <div class="stat-card"><div class="stat-l">AVG</div><div class="stat-n" id="statAvgWin" style="color:var(--teal)">$0</div></div>
-      <div class="stat-card"><div class="stat-l">DD</div><div class="stat-n" id="statMaxDD" style="color:var(--red)">$0</div></div>
+      <div class="stat-card" title="Avg win / Avg loss"><div class="stat-l">AVG W</div><div class="stat-n" id="statAvgWin" style="color:var(--teal)">$0</div></div>
+      <div class="stat-card" title="Average loss per losing trade"><div class="stat-l">AVG L</div><div class="stat-n" id="statAvgLoss" style="color:var(--red)">$0</div></div>
+      <div class="stat-card" title="Max intraday drawdown from peak PnL"><div class="stat-l">DD</div><div class="stat-n" id="statMaxDD" style="color:var(--red)">$0</div></div>
       <!-- L2 status indicator -->
       <div class="stat-card" title="cTrader L2 depth feed status">
         <div class="stat-l">L2</div>
@@ -1441,7 +1442,9 @@ function updateDashboard(d){
   const sw=document.getElementById('statWins'),slE=document.getElementById('statLosses');
   if(sw)sw.textContent=safe(d.wins);if(slE)slE.textContent=safe(d.losses);
   const saw=document.getElementById('statAvgWin'),smd=document.getElementById('statMaxDD');
+  const sal=document.getElementById('statAvgLoss');
   if(saw)saw.textContent='$'+safe(d.avg_win).toFixed(0);
+  if(sal)sal.textContent='$'+safe(d.avg_loss).toFixed(0);
   if(smd)smd.textContent='$'+safe(d.max_drawdown).toFixed(0);
 
   // Daily loss limit bar
