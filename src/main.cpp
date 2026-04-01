@@ -10528,14 +10528,8 @@ int main(int argc, char* argv[])
     g_trend_pb_nq.load_state(log_root_dir()    + "/trend_pb_nq.dat");
     g_trend_pb_sp.load_state(log_root_dir()    + "/trend_pb_sp.dat");
 
-    // Bar data for TrendPullback:
-    // - XAUUSD M15: Dukascopy HTTPS seed (broker blocks GetTrendbarsReq for this account)
-    // - Indices M5: cTrader bar requests still attempted (may work depending on account type)
-    // Dukascopy thread fires 5s after FIX logon to avoid network contention.
-    std::thread([](){
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        seed_trendpullback_from_dukascopy();
-    }).detach();
+    // TrendPullback disabled -- Dukascopy seed removed.
+    // Bar data will come from cTrader tick data (pt=2145) when TrendPullback is re-enabled.
     g_bracket_gold.cancel_order_fn = [](const std::string& id) { send_cancel_order(id); };
     g_bracket_xag.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
 
@@ -11716,32 +11710,9 @@ int main(int argc, char* argv[])
         std::cout << "[STARTUP-CHECK] Gold L2 live (" << elapsed() << "s)\n";
         std::cout.flush();
 
-        // --- Check 3: Gold M15 bars seeded ---
-        // cTrader sends bar history request ~10s after depth connects
-        // Allow 60s total from depth connect
-        const auto t2 = std::chrono::steady_clock::now();
-        bool bars_ok = false;
-        while (std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - t2).count() < 60) {
-            if (g_bars_gold.m15.ind.m1_ready.load(std::memory_order_relaxed)) { bars_ok = true; break; }
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-        }
-        if (!bars_ok) {
-            write_status("FAIL: Gold M15 bars not seeded -- TrendPullback running blind. Dukascopy fetch may have failed -- check network connectivity to datafeed.dukascopy.com");
-            return;
-        }
-        std::cout << "[STARTUP-CHECK] Gold M15 bars seeded (" << elapsed() << "s)\n";
-        std::cout.flush();
-
         // --- All checks passed ---
-        const double ema9  = g_bars_gold.m15.ind.ema9.load(std::memory_order_relaxed);
-        const double ema50 = g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed);
-        const double atr   = g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed);
-        const double imb   = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-        write_status("OK: cTrader live, L2 live (imb=" + std::to_string(imb).substr(0,5) +
-                     "), M15 seeded EMA9=" + std::to_string(ema9).substr(0,7) +
-                     " EMA50=" + std::to_string(ema50).substr(0,7) +
-                     " ATR=" + std::to_string(atr).substr(0,5));
+        const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+        write_status("OK: cTrader live, L2 live (imb=" + std::to_string(imb).substr(0,5) + ")");
     }).detach();
     // =========================================================================
     std::thread trade_thread(trade_loop);
