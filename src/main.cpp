@@ -6147,7 +6147,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     if (!enter_directional("US500.F", tp_sig.is_long, tp_sig.entry,
                                            tp_sig.sl, tp_sig.tp, 0.01, true))
                         g_trend_pb_sp.cancel();
-                    else g_trend_pb_sp.patch_size(g_last_directional_lot);
+                    // patch_size removed -- enter_directional already sized correctly
+                    // patch_size(g_last_directional_lot) would corrupt size with last ANY-symbol lot
                 }
             }
         }
@@ -6260,7 +6261,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     if (!enter_directional("USTEC.F", tp_sig.is_long, tp_sig.entry,
                                            tp_sig.sl, tp_sig.tp, 0.01, true))
                         g_trend_pb_nq.cancel();
-                    else g_trend_pb_nq.patch_size(g_last_directional_lot);
+                    // patch_size removed -- enter_directional already sized correctly
                 }
             }
         }
@@ -6463,7 +6464,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_telemetry.UpdateLastSignal("GER40", tp_sig.is_long?"LONG":"SHORT", tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB", tp_sig.tp, tp_sig.sl);
                     if (!enter_directional("GER40", tp_sig.is_long, tp_sig.entry, tp_sig.sl, tp_sig.tp, 0.01, true))
                         g_trend_pb_ger40.cancel();
-                        else g_trend_pb_ger40.patch_size(g_last_directional_lot);
+                        // patch_size removed -- enter_directional already sized correctly
                 }
             }
         }
@@ -8595,7 +8596,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     if (!enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true)) {
                         g_trend_pb_gold.cancel();
                     } else {
-                        g_trend_pb_gold.patch_size(g_last_directional_lot);
+                        // patch_size removed -- enter_directional already sized correctly
+                        // patch_size(g_last_directional_lot) was corrupting size with last ANY-symbol lot
                         g_telemetry.UpdateLastSignal("XAUUSD",
                             tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
                             "TREND_PB", regime.c_str(), "TREND_PB",
