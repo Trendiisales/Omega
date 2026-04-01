@@ -4732,39 +4732,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // to 0.5 * daily_loss_limit). When active, halts new entries 15 min.
             if (!g_adaptive_risk.dd_velocity.new_entries_allowed(nowSec())) return false;
             // ?? Portfolio VaR gate ????????????????????????????????????????????
-            // Blocks new entries when correlation-adjusted exposure exceeds limit.
-            // Catches scenario where XAUUSD long + USDJPY short both move against
-            // you on a single DXY spike -- per-trade limits alone don't catch this.
-            if (g_portfolio_var.exceeds_limit()) return false;
-            // ?? VPIN gate -- informed order flow toxicity ??????????????????????
-            // Blocks entry when VPIN > 0.80 (extreme one-sided institutional flow).
-            // VPIN > 0.60 triggers 50% size reduction (applied in adjusted_lot path).
-            // Catches institutional flow that doesn't show as L2 wall/vacuum.
-            if (g_edges.vpin.is_blocked(symbol)) {
-                static thread_local int64_t s_vpin_log = 0;
-                if (nowSec() - s_vpin_log > 30) {
-                    s_vpin_log = nowSec();
-                    std::printf("[VPIN] %s VPIN=%.2f >= %.2f -- blocking entry (informed flow)\n",
-                                symbol.c_str(), g_edges.vpin.vpin(symbol),
-                                g_edges.vpin.block_threshold);
-                }
-                return false;
-            }
+            // REMOVED: portfolio_VaR -- redundant with per-trade max_loss, false blocks on correlated positions
+            // REMOVED: VPIN -- BlackBull L2 volume unreliable, causes false blocks
+            // REMOVED: TOD gate -- needs 30 trades/bucket to activate, currently zero data = pure false blocks
+            // REMOVED: corr_heat -- with 1-2 open positions max never adds value, only blocks
             // ?? News blackout gate ????????????????????????????????????????????
             if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
-            // ?? Time-of-day gate -- block known-negative 30-min buckets ?????????
-            // Uses live win-rate/EV data from closed trades. No-op until 30 trades
-            // per bucket are recorded. Applies in all modes -- shadow is a simulation.
-            {
-                if (!g_edges.tod.allow(symbol, "ALL", nowSec())) {
-                    static thread_local int64_t s_tod_log = 0;
-                    if (nowSec() - s_tod_log > 120) {
-                        s_tod_log = nowSec();
-                        printf("[TOD-GATE] %s blocked in current 30-min bucket\n", symbol.c_str());
-                    }
-                    return false;
-                }
-            }
             // ?? Relative spread Z-score gate ??????????????????????????????????
             // Block if current spread is anomalous vs rolling 200-tick median.
             // Applies in all modes -- shadow is a simulation.
@@ -4788,8 +4761,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             // ?? Regime block gate -- applied in all modes ??????????????????????
             if (g_regime_adaptor.equity_blocked(symbol)) return false;
-            // ?? Correlation heat gate -- applied in all modes ??????????????????
-            if (!g_adaptive_risk.corr_heat_ok(symbol)) return false;
             return !symbol_risk_blocked(symbol);
         }
         // Legacy global portfolio mode.
@@ -4885,8 +4856,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
         // ?? Regime block gate -- applied in all modes ??????????????????????????
         if (g_regime_adaptor.equity_blocked(symbol)) return false;
-        // ?? Correlation heat gate -- applied in all modes ??????????????????????
-        if (!g_adaptive_risk.corr_heat_ok(symbol)) return false;
+        // REMOVED: corr_heat -- with 1-2 open positions max never adds value, only blocks
         return true;
     };
 
@@ -8090,51 +8060,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
 
-            // ?? Gate 2: L2 microstructure edge score ??????????????????????????
-            // All other entry paths score 7 microstructure signals via entry_score_l2
-            // and block at <= -3. GoldFlow is L2-based internally but skips:
-            //   CVD divergence, PDH/PDL proximity, round number resistance,
-            //   order flow absorption, volume profile node.
-            // Apply the same gate here. Use 2R estimate as TP for scoring.
-            // Skip when ATR=0 (warmup) -- engine won't enter anyway.
-            if (gf_tick_ok) {
-                const double gf_atr = g_gold_flow.current_atr();
-                if (gf_atr > 0.0) {
-                    const double gf_mid_local = (bid + ask) * 0.5;
-                    // Direction proxy: primary = L2 imbalance (>0.75 long, <0.25 short).
-                    // Fallback = EWM drift when book is neutral (0.25-0.75 range).
-                    // Neutral book + strong drift = real move hidden by split orders.
-                    const double gf_l2 = g_macro_ctx.gold_l2_imbalance;
-                    const double gf_drift = g_gold_stack.ewm_drift();
-                    const bool   gf_long  = (gf_l2 > GFE_LONG_THRESHOLD)
-                                         || (gf_l2 >= 0.40 && gf_l2 <= 0.60 && gf_drift > 1.0);
-                    const double gf_tp_est = gf_long
-                        ? gf_mid_local + gf_atr * 2.0
-                        : gf_mid_local - gf_atr * 2.0;
-                    const bool gf_vac  = gf_long ? g_macro_ctx.gold_vacuum_ask  : g_macro_ctx.gold_vacuum_bid;
-                    const bool gf_wall = gf_long ? g_macro_ctx.gold_wall_above  : g_macro_ctx.gold_wall_below;
-                    const bool gf_absorb = g_edges.absorption.is_absorbing("XAUUSD", gf_long);
-                    const int gf_score = g_edges.entry_score_l2(
-                        "XAUUSD", gf_mid_local, gf_long, gf_tp_est, nowSec(),
-                        g_macro_ctx.gold_microprice_bias,
-                        g_macro_ctx.gold_l2_imbalance,
-                        gf_vac, gf_wall);
-                    // In continuation mode (after profitable partial), trend is confirmed.
-                    // Relax block threshold from -3 to -4 -- don't block on borderline scores.
-                    const bool cont_active = g_gold_flow.is_in_continuation_mode();
-                    const int gf_block_threshold = cont_active ? -4 : -3;
-                    if (gf_score <= gf_block_threshold) {
-                        printf("[GF-EDGE-BLOCK] XAUUSD %s score=%d micro=%.4f l2=%.3f vac=%d wall=%d absorb=%d cont=%d -- blocked\n",
-                               gf_long ? "LONG" : "SHORT", gf_score,
-                               g_macro_ctx.gold_microprice_bias, g_macro_ctx.gold_l2_imbalance,
-                               gf_vac ? 1 : 0, gf_wall ? 1 : 0, gf_absorb ? 1 : 0,
-                               cont_active ? 1 : 0);
-                        fflush(stdout);
-                        gf_tick_ok = false;
-                        gf_block_reason = "L2_EDGE_SCORE";
-                    }
-                }
-            }
+            // REMOVED: Gate 2 L2 microstructure edge score -- BlackBull L2 data is
+            // synthetic (cTrader depth feed unreliable at this broker), scoring consistently
+            // returns 0 or negative on valid setups causing false blocks.
 
             // ?? Gate 3: Bar indicators -- RSI + trend state from cTrader bars ??
             // Uses real M1 OHLC bars from cTrader trendbar API (not tick approximation).
