@@ -26,6 +26,7 @@ clang++ -O3 -std=c++20 \
     -I"$REPO/src" \
     -I"$REPO/backtest" \
     -include "$REPO/backtest/OmegaTimeShim.hpp" \
+    -include "$REPO/backtest/mac_compat.hpp" \
     -DOMEGA_BACKTEST \
     -Wno-unused-parameter \
     -Wno-unused-function \

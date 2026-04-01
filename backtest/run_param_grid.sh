@@ -94,6 +94,7 @@ for VWAP in $VWAP_ROOMS; do
         "$REPO/src/SymbolConfig.cpp" \
         -I"$REPO" -I"$REPO/include" -I"$REPO/src" -I"$REPO/backtest" \
         -include "$REPO/backtest/OmegaTimeShim.hpp" \
+        -include "$REPO/backtest/mac_compat.hpp" \
         -DOMEGA_BACKTEST \
         -DGFE_ATR_SL_MULT_OVERRIDE=$ATR \
         -DGFE_ASIA_DRIFT_MIN_OVERRIDE=$DRIFT \
