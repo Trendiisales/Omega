@@ -406,6 +406,7 @@ struct Cfg {
     const char* trd   = "bt_trades.csv";
     int64_t     warm  = 5000;
     bool gold=true, flow=true, latency=true, cross=true, breakout=true;
+    bool quiet=false;
 };
 static Cfg parse(int argc, char** argv){
     Cfg c;
@@ -474,12 +475,18 @@ int main(int argc, char** argv){
     // Suppress engine verbose output when --quiet
     // Engines use std::cout heavily (entry/exit/ratchet logs).
     // Redirect to /dev/null so only the progress bar and summary show.
+#ifndef _WIN32
     FILE* devnull = nullptr;
     if (cfg.quiet) {
         devnull = fopen("/dev/null", "w");
         if (devnull) { fflush(stdout); dup2(fileno(devnull), STDOUT_FILENO); }
-        // Keep stderr for errors and progress bar (goes to terminal via \r)
     }
+#else
+    if (cfg.quiet) {
+        FILE* devnull = fopen("NUL", "w");
+        if (devnull) { fflush(stdout); _dup2(_fileno(devnull), _fileno(stdout)); }
+    }
+#endif
 
     printf("================================================================\n");
     printf("  Omega C++ Backtester\n");
