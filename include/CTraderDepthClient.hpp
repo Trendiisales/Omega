@@ -582,15 +582,24 @@ private:
         // feed is stable. 200ms gap between each message avoids broker rate-limit.
         // Struct: {sym_name, sym_id, period, count}
         struct BarReq { std::string name; int64_t sid; uint32_t period; uint32_t count; };
+        // Track bar requests that previously got INVALID_REQUEST -- skip them.
+        // Persists across reconnects within this process lifetime.
+        // Key format: "SYMBOL:PERIOD" e.g. "XAUUSD:1"
+        static std::unordered_set<std::string> bar_failed_reqs;
+
         std::vector<BarReq> pending_bar_reqs;
         for (const auto& bkv : bar_subscriptions) {
             const int64_t sid = bkv.second.sym_id;
             if (sid <= 0) continue;
             const bool is_gold = (bkv.first == "XAUUSD");
-            pending_bar_reqs.push_back({bkv.first, sid, 1, 200});   // M1 history
-            pending_bar_reqs.push_back({bkv.first, sid, 5, 100});   // M5 history
-            if (is_gold)
-                pending_bar_reqs.push_back({bkv.first, sid, 7, 50}); // M15 history -- gold TrendPB only
+            // Skip requests that previously caused INVALID_REQUEST
+            auto skip = [&](uint32_t p) {
+                return bar_failed_reqs.count(bkv.first + ":" + std::to_string(p)) > 0;
+            };
+            if (!skip(1)) pending_bar_reqs.push_back({bkv.first, sid, 1, 200});
+            else std::cout << "[CTRADER-BARS] Skipping " << bkv.first << " M1 (prev INVALID_REQUEST)\n";
+            if (!skip(5)) pending_bar_reqs.push_back({bkv.first, sid, 5, 100});
+            if (is_gold && !skip(7)) pending_bar_reqs.push_back({bkv.first, sid, 7, 50});
         }
         // Live subscriptions queued after history requests (sent in same staggered loop)
         struct LiveSub { std::string name; int64_t sid; uint32_t period; };
@@ -653,7 +662,24 @@ private:
             }
             uint32_t pt; std::vector<uint8_t> payload;
             const int rc = read_one(ssl, pt, payload, 100);
-            if (rc < 0) { std::cerr<<"[CTRADER] Connection error\n"; return; }
+            if (rc < 0) {
+                // Connection error. If bar requests were recently sent, broker may have
+                // rejected them at TCP level (sends RST after INVALID_REQUEST in some
+                // BlackBull firmware versions). Mark any in-flight bar request as failed
+                // so it's skipped on reconnect -- prevents the infinite reconnect loop.
+                if (bar_send_idx > 0 && bar_send_idx <= bar_send_queue.size()) {
+                    const auto& last_sent = bar_send_queue[bar_send_idx - 1];
+                    const std::string key = last_sent.name + ":" + std::to_string(last_sent.period);
+                    if (!bar_failed_reqs.count(key)) {
+                        bar_failed_reqs.insert(key);
+                        std::cerr << "[CTRADER] Connection dropped after bar req "
+                                  << last_sent.name << " period=" << last_sent.period
+                                  << " -- marking as failed, will skip on reconnect\n";
+                    }
+                }
+                std::cerr<<"[CTRADER] Connection error\n";
+                return;
+            }
             if (rc == 0) continue;
             if      (pt==2155) { on_depth_event(payload); ++depth_events_total; ++ev_min;
                                   const auto fields2 = PB::parse(payload);
@@ -674,8 +700,24 @@ private:
                     if (!refresh_token.empty()) send_msg(ssl,PB::refresh_token_req(refresh_token));
                     return;
                 }
-                // INVALID_REQUEST and other non-fatal errors: log and continue.
-                // Do NOT return -- one bad request must not kill the whole feed.
+                // INVALID_REQUEST on a bar request: broker rejects this symbol/period.
+                // Track it so we skip it on all future reconnects -- don't hammer broker.
+                // The connection itself stays alive (do NOT return here).
+                if (ec=="INVALID_REQUEST" && bar_send_idx > 0 && bar_send_idx <= bar_send_queue.size()) {
+                    const auto& failed = bar_send_queue[bar_send_idx - 1];
+                    bar_failed_reqs.insert(failed.name + ":" + std::to_string(failed.period));
+                    std::cerr << "[CTRADER-BARS] INVALID_REQUEST for " << failed.name
+                              << " period=" << failed.period
+                              << " -- skipping this request on all future reconnects\n";
+                    // If this is XAUUSD M1 bars, mark m1_ready as permanently unavailable
+                    // so Gate 0d logs clearly and doesn't just silently block all entries.
+                    if (failed.name == "XAUUSD" && failed.period == 1) {
+                        std::cerr << "[CTRADER-BARS] *** XAUUSD M1 bars rejected by broker ***\n"
+                                  << "[CTRADER-BARS] *** Gate 0d will block GoldFlow entries ***\n"
+                                  << "[CTRADER-BARS] *** Check broker trendbar permissions   ***\n";
+                    }
+                }
+                // Do NOT return -- one bad bar request must not kill the depth feed.
             }
             else if (pt==2174) { const auto rf=PB::parse(payload); const std::string na=PB::get_string(rf,2); if(!na.empty()){access_token=na;refresh_token=PB::get_string(rf,3);std::cout<<"[CTRADER] Token refreshed\n";} }
             else if (pt==51)   { send_msg(ssl,PB::heartbeat()); }
