@@ -213,10 +213,16 @@ if (-not (Test-Path $StampFile)) {
         $errors += "GIT_HASH MISMATCH: stamp=$($vGitHash.Substring(0,7)) expected=$sourceHashShort"
     }
 
-    # Check 3: source hash must NOT be a log-only commit
-    $srcFilesInCommit = (git show --stat $vGitHash -- src include CMakeLists.txt 2>$null)
+    # Check 3: source hash must NOT be a log-only commit (logs/ only = log-push)
+    # We check that the commit touched at least one non-logs file.
+    # Uses the same path list as the source-hash query in step [3/9].
+    $srcFilesInCommit = (git show --stat $vGitHash -- `
+        src include CMakeLists.txt `
+        omega_config.ini symbols.ini `
+        DEPLOY_OMEGA.ps1 OmegaWatchdog.ps1 START_OMEGA.ps1 `
+        push_log.ps1 cmake 2>$null)
     if (-not $srcFilesInCommit) {
-        $errors += "GIT_HASH $($vGitHash.Substring(0,7)) touches NO source files -- this is a log-push commit, not a code commit"
+        $errors += "GIT_HASH $($vGitHash.Substring(0,7)) touches NO tracked source files -- this is a log-push commit, not a code commit"
     }
 
     # Check 4: all required fields present
