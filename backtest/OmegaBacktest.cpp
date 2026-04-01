@@ -283,17 +283,52 @@ struct BtVwap {
 struct GoldRunner {
     omega::gold::GoldEngineStack eng;
     double lat;
+    // EWM drift for GoldStack sub-engines (same computation as FlowRunner)
+    double ewm_fast_ = 0.0, ewm_slow_ = 0.0;
+    bool   ewm_init_ = false;
+    static constexpr double ALPHA_FAST = 0.05;
+    static constexpr double ALPHA_SLOW = 0.005;
     GoldRunner(double l):lat(l){}
-    void tick(const TickRow& r){ auto c=cb(); (void)eng.on_tick(r.bid,r.ask,lat,c); }
+    void tick(const TickRow& r){
+        const double mid = (r.bid + r.ask) * 0.5;
+        if (!ewm_init_) { ewm_fast_ = mid; ewm_slow_ = mid; ewm_init_ = true; }
+        ewm_fast_ = ALPHA_FAST * mid + (1.0 - ALPHA_FAST) * ewm_fast_;
+        ewm_slow_ = ALPHA_SLOW * mid + (1.0 - ALPHA_SLOW) * ewm_slow_;
+        // GoldEngineStack::on_tick recomputes its own EWM internally,
+        // but we also call it here so the external drift is consistent.
+        auto c=cb();
+        (void)eng.on_tick(r.bid,r.ask,lat,c);
+    }
 };
 
 struct FlowRunner {
     GoldFlowEngine eng;
+    // EWM drift computed locally from tick prices.
+    // Mirrors GoldEngineStack::governor_ EWM computation exactly:
+    //   fast alpha=0.05 (~20-tick half-life)
+    //   slow alpha=0.005 (~200-tick half-life)
+    // drift = fast - slow: positive = bullish, negative = bearish.
+    // This is the same signal GoldFlowEngine receives in live trading.
+    // Previously hardcoded to 0.0 -- made GoldFlow completely blind and
+    // produced invalid all-negative backtest results.
+    double ewm_fast_ = 0.0, ewm_slow_ = 0.0;
+    bool   ewm_init_ = false;
+    int64_t tick_count_ = 0;
+    static constexpr double ALPHA_FAST = 0.05;
+    static constexpr double ALPHA_SLOW = 0.005;
+
     FlowRunner(){}
     void tick(const TickRow& r){
+        const double mid = (r.bid + r.ask) * 0.5;
+        // Warm up EWM
+        if (!ewm_init_) { ewm_fast_ = mid; ewm_slow_ = mid; ewm_init_ = true; }
+        ewm_fast_ = ALPHA_FAST * mid + (1.0 - ALPHA_FAST) * ewm_fast_;
+        ewm_slow_ = ALPHA_SLOW * mid + (1.0 - ALPHA_SLOW) * ewm_slow_;
+        const double ewm_drift = ewm_fast_ - ewm_slow_;
+        ++tick_count_;
         auto c=cb();
-        // l2_imb=0.5 (neutral), ewm_drift=0.0 -- not available in tick CSV
-        (void)eng.on_tick(r.bid,r.ask,0.5,0.0,r.ts_ms,c);
+        // l2_imb=0.5 (neutral book -- no L2 in CSV, drift carries the signal)
+        (void)eng.on_tick(r.bid, r.ask, 0.5, ewm_drift, r.ts_ms, c);
     }
 };
 
