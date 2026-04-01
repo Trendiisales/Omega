@@ -36,8 +36,13 @@ clang++ -O3 -std=c++20 \
     -pthread \
     2>&1
 
+if [ ! -f "$OUT" ]; then
+    echo ""
+    echo "*** BUILD FAILED -- binary not created ***"
+    exit 1
+fi
 echo ""
-echo "Done: $OUT"
+echo "Done: $OUT  ($(date))"
 echo ""
 echo "Usage:"
 echo "  $OUT <ticks.csv> --engine flow --warmup 10000 --report results/flow.csv --quiet"
