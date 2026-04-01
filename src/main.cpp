@@ -4225,64 +4225,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // has_data()=false ? GoldFlow blind, no L2 signal. Unacceptable.
     // 5s dead = warn every tick. 10s dead = force stop/start depth feed.
     {
-        static int64_t s_l2_dead_since  = 0;  // when sizes first went zero
-        static int64_t s_l2_warn_last   = 0;  // last warn print
-        static int64_t s_l2_restart_cnt = 0;  // how many restarts this session
-        const int64_t  now_wd           = nowSec();
-
-        // gold_l2_real = has_data() = price AND non-zero size on both sides
+        // XAUUSD gets zero cTrader depth events on this account -- broker doesn't send them.
+        // L2 imbalance comes from the FIX feed instead (g_l2_books via atomic writes).
+        // No restart logic needed -- just log once if truly dead after 60s.
         const bool gold_size_dead = g_macro_ctx.ctrader_l2_live
                                     && !g_macro_ctx.gold_l2_real;
-
         if (gold_size_dead) {
-            if (s_l2_dead_since == 0) s_l2_dead_since = now_wd;
-            const int64_t dead_sec = now_wd - s_l2_dead_since;
-
-            // Warn every 5s while dead
-            if (now_wd - s_l2_warn_last >= 5) {
-                s_l2_warn_last = now_wd;
-                printf("[L2-DEAD] *** GOLD L2 SIZE=0 for %llds"
-                       " -- GoldFlow blind, restart pending at 10s ***\n",
-                       (long long)dead_sec);
-                fflush(stdout);
-            }
-
-            // Give the book 60s to fill both sides before declaring dead.
-            // cTrader sends incremental updates -- bid and ask sides fill separately.
-            // 10s was too aggressive and cleared the book before it could stabilise.
-            static const int L2_MAX_RESTARTS = 1;
-            if (dead_sec >= 60 && s_l2_restart_cnt < L2_MAX_RESTARTS) {
-                ++s_l2_restart_cnt;
-                printf("[L2-RESTART] Gold L2 size dead %llds"
-                       " -- forcing depth feed restart #%lld (max %d)\n",
-                       (long long)dead_sec, (long long)s_l2_restart_cnt,
-                       L2_MAX_RESTARTS);
-                fflush(stdout);
-                g_ctrader_depth.stop();
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                g_ctrader_depth.start();
-                s_l2_dead_since = 0;
-                s_l2_warn_last  = 0;
-            } else if (dead_sec >= 60 && s_l2_restart_cnt >= L2_MAX_RESTARTS) {
-                // Broker does not send L2 sizes -- drift-persistence mode permanent
-                // Warn once per minute only, no more restarts
-                if (now_wd - s_l2_warn_last >= 60) {
-                    s_l2_warn_last = now_wd;
-                    printf("[L2-NO-SIZE] Broker not sending L2 sizes after %d restarts."
-                           " GoldFlow using drift-persistence. dead=%llds\n",
-                           L2_MAX_RESTARTS, (long long)dead_sec);
+            static int64_t s_warn_once = 0;
+            const int64_t now_wd = nowSec();
+            if (s_warn_once == 0) s_warn_once = now_wd;
+            if (now_wd - s_warn_once >= 60) {
+                static bool s_warned = false;
+                if (!s_warned) {
+                    printf("[L2-INFO] XAUUSD cTrader depth events=0 -- using FIX L2 (normal for this account)\n");
                     fflush(stdout);
+                    s_warned = true;
                 }
-            }
-        } else {
-            if (s_l2_dead_since != 0) {
-                printf("[L2-RECOVERED] Gold L2 sizes live again after %llds"
-                       " (restarts this session: %lld)\n",
-                       (long long)(now_wd - s_l2_dead_since),
-                       (long long)s_l2_restart_cnt);
-                fflush(stdout);
-                s_l2_dead_since = 0;
-                s_l2_warn_last  = 0;
             }
         }
     }
@@ -4341,12 +4299,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         auto pushL2 = [&](const char* sym, const L2Book* b) {
             if (!b) return;
             double bp[5]{}, bs[5]{}, ap[5]{}, as_[5]{};
-            const int nb = b->bid_count < 5 ? b->bid_count : 5;
-            const int na = b->ask_count < 5 ? b->ask_count : 5;
+            const int nb = std::min(b->bid_count, 5);
+            const int na = std::min(b->ask_count, 5);
             for (int i=0;i<nb;++i){bp[i]=b->bids[i].price;bs[i]=b->bids[i].size;}
             for (int i=0;i<na;++i){ap[i]=b->asks[i].price;as_[i]=b->asks[i].size;}
-            // Always pass count=5 so GUI always receives 5 levels (zeroes are invisible)
-            g_telemetry.UpdateL2Book(sym, bp, bs, 5, ap, as_, 5);
+            g_telemetry.UpdateL2Book(sym, bp, bs, nb, ap, as_, na);
         };
         if (const L2Book* b = getBook("XAUUSD")) {
             g_macro_ctx.gold_book_slope      = b->book_slope();
