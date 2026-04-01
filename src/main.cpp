@@ -7925,6 +7925,36 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                         : gf_trail_same_dir        ? "TRAIL_BLOCK_SAME_DIR"
                                         : nullptr;
 
+            // ?? Gate 0d: Bar warmup guard ????????????????????????????????????????
+            // Gates 3 and 4 (RSI, M5 trend, ATR slope, VWAP coherence, spread anomaly,
+            // RSI divergence, BB squeeze) all require m1_ready=true (>=52 M1 bars seeded).
+            // On a cold start or post-shutdown restart, m1_ready=false for the first
+            // ~2 minutes while bar history loads. During this window Gates 3+4 are
+            // completely inactive -- GoldFlow has NO RSI, NO trend, NO ATR/VWAP filter.
+            //
+            // Evidence: 02:31:12 LONG @ 4689.01 fired 70s after restart. Process started
+            // at 02:30:01, USTEC bar req got INVALID_REQUEST at 02:30:04 dropping the
+            // connection. XAUUSD bars never seeded. m1_ready=false. All bar gates skipped.
+            // asia_trend_ok (drift=1.59 >= 1.5) and SUPERVISOR (TREND_CONTINUATION
+            // conf=1.58) passed -- entry fired naked into a downtrend. SL hit -$83.76.
+            //
+            // Fix: hard-block GoldFlow entries until m1_ready=true.
+            // The engine will NOT enter during warmup regardless of signal strength.
+            // Once seeded, all gates operate normally -- no change to live behaviour.
+            if (gf_tick_ok && !g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+                static int64_t s_warmup_log = 0;
+                const int64_t now_wup = static_cast<int64_t>(std::time(nullptr));
+                if (now_wup - s_warmup_log >= 30) {
+                    s_warmup_log = now_wup;
+                    printf("[GF-GATE-BLOCK] reason=BARS_NOT_READY -- GoldFlow blocked until "
+                           "M1 bars seeded (need %d bars, Gates 3+4 inactive without them)\n",
+                           52);
+                    fflush(stdout);
+                }
+                gf_tick_ok = false;
+                gf_block_reason = "BARS_NOT_READY";
+            }
+
             // ?? Gate 1: Cost viability ?????????????????????????????????????????
             // Estimates match engine sizing: sl=ATR?1.0, tp=sl?2 (2R), lot=risk/sl/100
             // ATR=0 (warmup) ? gf_tick_ok stays true; engine returns before entering.
