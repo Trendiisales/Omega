@@ -8862,19 +8862,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // CRITICAL: on_tick() handles SL/trail internally when pos_.active, but it was
         // only called inside the entry guard (!has_open_position()), so once a position
         // opened the manage path was NEVER reached ? SL never checked ? unmanaged trades.
-        // Fix: call on_tick unconditionally when position is open (manage-only path),
-        // before the entry guard. on_tick returns {} immediately after manage when active.
-        // Seed gold TrendPB with real M15 bar EMAs from cTrader trendbar API.
-        // M15 is the correct timeframe for TrendPB swing trades -- wider EMA stack,
-        // fewer false pullbacks vs M1. M1/M5 fields untouched (GoldFlow/GoldStack).
-        if (g_bars_gold.m15.ind.m1_ready.load(std::memory_order_relaxed)) {
-            g_trend_pb_gold.seed_bar_emas(
-                g_bars_gold.m15.ind.ema9.load(std::memory_order_relaxed),
-                g_bars_gold.m15.ind.ema21.load(std::memory_order_relaxed),
-                g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
-                g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
-            g_trend_pb_gold.seed_m5_trend(g_bars_gold.m15.ind.trend_state.load(std::memory_order_relaxed));
-        }
+        // TrendPullback gold position management -- always runs when position open
         if (g_trend_pb_gold.has_open_position()) {
             g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
         }
@@ -8886,10 +8874,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Still blocked by bracket and LatencyEdge (those are structural/speed trades
         // that would directly conflict with a swing position at the same level).
         // GoldStack (tick-pattern engine) also blocked -- shares exact same entry zone.
-        // TrendPullback gold DISABLED -- Dukascopy seed has price offset vs BlackBull.
-        // Re-enable once cTrader tick data bar seeding is confirmed working.
-        // All gold trading via GoldFlow + GoldStack + Bracket only.
-#if 0
+        // TrendPullback gold -- re-enabled with tick-EMA-correct TP (ATR-based, not EMA9)
+        // and widened pullback band (0.15% not 0.05%).
+        // Does NOT require bar data -- runs on tick EMAs with proper time-equivalent alphas.
         if (gold_can_enter
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
@@ -8917,7 +8904,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
         }
-#endif
 
         // ?? NBM London position management -- ALWAYS runs when position open ??
         // CRITICAL: same bug as TrendPB and GFE -- on_tick() was only called inside the

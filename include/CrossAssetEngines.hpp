@@ -1431,7 +1431,8 @@ private:
 // =============================================================================
 class TrendPullbackEngine {
 public:
-    double  PULLBACK_BAND_PCT = 0.05;    // price within 0.05% of EMA50 = "at EMA50"
+    double  PULLBACK_BAND_PCT = 0.15;    // price within 0.15% of EMA50 = "at EMA50"
+                                          // widened from 0.05%: tick EMA50 drifts faster than bar EMA50
     // EMA alphas calibrated for ~10 ticks/sec (London gold rate).
     // Using tick-count periods directly produced EMAs with half-life <1s
     // (EMA9 at alpha=0.2 = 3-tick half-life = 0.3s) -- flipping trend
@@ -1706,7 +1707,9 @@ public:
             if (downtrend && m5_trend_state_ > 0) return {};
         }
 
-        // Pullback detection: price at EMA50 band
+        // Pullback detection: price within band of EMA50
+        // Widened from 0.05% to 0.15% -- tick EMA50 drifts faster than bar EMA50
+        // so price appears "always near" EMA50 with a tight band.
         const double band = mid * PULLBACK_BAND_PCT / 100.0;
         const bool at_ema50 = std::fabs(mid - ema50_) < band;
         if (!at_ema50) {
@@ -1725,57 +1728,29 @@ public:
 
         const bool is_long = uptrend;
 
-        // Apply direction block
+        // Apply direction block (fixed: was checking wrong direction)
         if (is_long  && long_dir_blocked)  return {};
         if (!is_long && short_dir_blocked) return {};
+        if (!is_long && long_dir_blocked)  return {};
 
-        // Initial TP = EMA9 (first target -- trail takes over from there)
-        // SL = EMA50, floored to minimum viable distance per symbol
-        const double tp_raw  = ema9_;
+        // SL = EMA50, floored to minimum viable distance
         const double sl_raw  = ema50_;
-
-        if (is_long  && tp_raw <= mid) return {};
-        if (!is_long && tp_raw >= mid) return {};
-
-        // ?? Minimum SL distance -- per symbol ATR floor ????????????????????
-        // SL=EMA50 can be <0.1pt when EMAs are compressed = less than spread.
-        // Cost guard correctly rejects these (SL < spread = unviable).
-        // Floor: enough distance that SL survives spread noise.
-        //   USTEC.F: min 3.0pts  (spread ~2.7pts, need room)
-        //   US500.F: min 1.5pts  (spread ~0.8pts)
-        //   GER40:   min 3.0pts  (spread ~1.7pts)
-        //   XAUUSD:  min 5.0pts  -- raised from 2.0: M15 EMA50 is 4.3h average,
-        //            SL at EMA50 must survive normal M15 noise (3-6pts per bar).
-        //            2.0pt floor was being hit constantly and producing 2pt SLs
-        //            on M15 swing trades that stopped out on single-tick noise.
-        //   Default: 1.0pt
         const double min_sl_dist =
-            (sym == "USTEC.F")                        ? 3.0  :
-            (sym == "US500.F")                        ? 1.5  :
-            (sym == "GER40")                          ? 3.0  :
-            (sym.find("XAU") != std::string::npos)   ? 5.0  : 1.0;
-
-        // Also floor to 2x spread so SL is never within noise of entry
+            (sym.find("XAU") != std::string::npos) ? 8.0 : 3.0;
         const double spread_floor = spread * 2.0;
         const double eff_min_sl   = std::max(min_sl_dist, spread_floor);
-
-        // Apply floor: if EMA50 is too close, push SL out to eff_min_sl
         const double sl_raw_dist  = std::fabs(mid - sl_raw);
         const double sl_dist      = std::max(sl_raw_dist, eff_min_sl);
         const double sl = is_long ? (mid - sl_dist) : (mid + sl_dist);
 
-        // TP: must be at least 1.5x SL distance from entry (R:R gate)
-        const double tp_raw_dist  = std::fabs(tp_raw - mid);
-        const double min_tp_dist  = sl_dist * 1.5;
-        const double tp_dist      = std::max(tp_raw_dist, min_tp_dist);
+        // TP = ATR-based fixed distance: 2.5x ATR for gold (~20-25pts typical)
+        // This matches what the MT5 Momentum_BUY/Reversal_BUY EAs target.
+        // EMA9 as TP was wrong on tick EMAs -- EMA9 at 3-4tps is always <3pts away.
+        const double atr_safe  = atr_ > 2.0 ? atr_ : 10.0;  // floor at 10pts
+        const double tp_dist   = std::max(atr_safe * 2.5, sl_dist * 2.0);  // min 2:1 R:R
         const double tp = is_long ? (mid + tp_dist) : (mid - tp_dist);
 
         if (tp_dist <= 0.0 || sl_dist <= 0.0) return {};
-
-        // R:R gate: 1.5:1 minimum (redundant after floor but kept as safety)
-        if ((tp_dist / sl_dist) < 1.5) return {};
-
-        // Hard reject if SL is still tiny after flooring (shouldn't happen but safety)
         if (sl_dist < spread * 1.5) return {};
 
         CrossSignal sig;
