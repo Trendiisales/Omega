@@ -179,8 +179,24 @@ static std::vector<TickRow> parse_csv(const MemMappedFile& f) {
     const char* end = p + f.size;
     // BOM
     if (f.size>=3&&(uint8_t)p[0]==0xEF&&(uint8_t)p[1]==0xBB&&(uint8_t)p[2]==0xBF) p+=3;
-    // Header row
-    if (*p && (*p<'0'||*p>'9')) { while(p<end&&*p!='\n')++p; if(p<end)++p; }
+    // Header row -- detect ask/bid column order from header names
+    // Your file: timestamp,askPrice,bidPrice  (ask first)
+    // Standard:  timestamp,bid,ask            (bid first)
+    bool ask_first = false;
+    if (*p && (*p<'0'||*p>'9')) {
+        // Scan header for "ask" appearing before "bid"
+        const char* hdr = p;
+        const char* ask_pos = nullptr;
+        const char* bid_pos = nullptr;
+        while (p<end && *p!='\n') {
+            if (!ask_pos && (p[0]=='a'||p[0]=='A') && (p[1]=='s'||p[1]=='S') && (p[2]=='k'||p[2]=='K')) ask_pos=p;
+            if (!bid_pos && (p[0]=='b'||p[0]=='B') && (p[1]=='i'||p[1]=='I') && (p[2]=='d'||p[2]=='D')) bid_pos=p;
+            ++p;
+        }
+        if (ask_pos && bid_pos && ask_pos < bid_pos) ask_first = true;
+        if (p<end) ++p;
+    }
+    if (ask_first) fprintf(stderr, "[CSV] ask-first format detected -- swapping columns\n");
     Fmt fmt = sniff(p);
 
     while (p < end) {
@@ -203,8 +219,11 @@ static std::vector<TickRow> parse_csv(const MemMappedFile& f) {
             r.bid=cl-0.15; r.ask=cl+0.15;
         } else {
             r.ts_ms=fast_i64(p,&nx);p=nx;if(*p==',')++p;
-            r.bid  =fast_f(p,&nx); p=nx;if(*p==',')++p;
-            r.ask  =fast_f(p,&nx); p=nx;
+            double c1=fast_f(p,&nx); p=nx;if(*p==',')++p;
+            double c2=fast_f(p,&nx); p=nx;
+            // Assign based on detected column order
+            if (ask_first) { r.ask=c1; r.bid=c2; }
+            else            { r.bid=c1; r.ask=c2; }
         }
         while(p<end&&*p!='\n')++p;
         if(r.ts_ms>0&&r.bid>0&&r.ask>r.bid) v.push_back(r);
