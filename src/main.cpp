@@ -6017,7 +6017,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     esnq.tp, esnq.sl);
                 if (!enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp))
                     g_ca_esnq.cancel();
-                    else g_ca_esnq.patch_size(_edl);
+                    else g_ca_esnq.patch_size(g_last_directional_lot);
             }
         }
         // ?? US500.F manage blocks -- ALWAYS run when position open (SL/trail fix) ??
@@ -6047,7 +6047,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_telemetry.UpdateLastSignal("US500.F", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
                 if (!enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp))
                     g_orb_us.cancel();
-                    else g_orb_us.patch_size(_edl);
+                    else g_orb_us.patch_size(g_last_directional_lot);
             }
         }
         // VWAP Reversion: enter when price reverses back toward daily VWAP after over-extension.
@@ -6101,7 +6101,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                             (vr.confluence_score == 2) ? 1.5 : 1.0;
                     if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
                         g_vwap_rev_sp.cancel();
-                    else g_vwap_rev_sp.patch_size(_edl);
+                    else g_vwap_rev_sp.patch_size(g_last_directional_lot);
                 }
                 } // sp_spread_ok
             }
@@ -6127,7 +6127,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
                     if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
                         g_nbm_sp.cancel();
-                    else g_nbm_sp.patch_size(_edl);
+                    else g_nbm_sp.patch_size(g_last_directional_lot);
                 }
             }
         }
@@ -6151,7 +6151,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                            tp_sig.sl, tp_sig.tp, 0.01, true))
                         g_trend_pb_sp.cancel();
                     // patch_size removed -- enter_directional already sized correctly
-                    // patch_size(_edl) would corrupt size with last ANY-symbol lot
+                    // patch_size(g_last_directional_lot) would corrupt size with last ANY-symbol lot
                 }
             }
         }
@@ -6231,7 +6231,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                             (vr.confluence_score == 2) ? 1.5 : 1.0;
                     if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
                         g_vwap_rev_nq.cancel();
-                    else g_vwap_rev_nq.patch_size(_edl);
+                    else g_vwap_rev_nq.patch_size(g_last_directional_lot);
                 }
                 } // nq_spread_ok
             }
@@ -6285,7 +6285,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
                     if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
                         g_nbm_nq.cancel();
-                    else g_nbm_nq.patch_size(_edl);
+                    else g_nbm_nq.patch_size(g_last_directional_lot);
                 }
             }
         }
@@ -6323,7 +6323,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (!g_ca_eia_fade.has_open_position() && !g_ca_brent_wti.has_open_position() && base_can) {  // ADDED !brent check
                 const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close);
                 if (ef.valid) { if (!enter_directional(sym.c_str(), ef.is_long, ef.entry, ef.sl, ef.tp)) g_ca_eia_fade.cancel();
-                    else g_ca_eia_fade.patch_size(_edl); }
+                    else g_ca_eia_fade.patch_size(g_last_directional_lot); }
             }
             // Brent/WTI spread engine -- only when EIA not already open
             if (!g_ca_brent_wti.has_open_position() && !g_ca_eia_fade.has_open_position() && base_can) {  // ADDED !eia check
@@ -6335,7 +6335,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (brent_mid > 0) {
                     const auto bw = g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid, ca_on_close);
                     if (bw.valid) { if (!enter_directional(sym.c_str(), bw.is_long, bw.entry, bw.sl, bw.tp)) g_ca_brent_wti.cancel();
-                    else g_ca_brent_wti.patch_size(_edl); }
+                    else g_ca_brent_wti.patch_size(g_last_directional_lot); }
                 }
             }
             // NBM London session (07:00-13:30 UTC) on USOIL.F
@@ -6352,7 +6352,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     if (!enter_directional("USOIL.F", nbm_oil.is_long, nbm_oil.entry,
                                            nbm_oil.sl, nbm_oil.tp))
                         g_nbm_oil_london.cancel();
-                    else g_nbm_oil_london.patch_size(_edl);
+                    else g_nbm_oil_london.patch_size(g_last_directional_lot);
                 }
             }
         }
@@ -6385,7 +6385,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
                     if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
                         g_nbm_us30.cancel();
-                    else g_nbm_us30.patch_size(_edl);
+                    else g_nbm_us30.patch_size(g_last_directional_lot);
                 }
             }
         }
@@ -6433,7 +6433,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_telemetry.UpdateLastSignal("GER40", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
                 if (!enter_directional("GER40", orb.is_long, orb.entry, orb.sl, orb.tp))
                     g_orb_ger30.cancel();
-                    else g_orb_ger30.patch_size(_edl);
+                    else g_orb_ger30.patch_size(g_last_directional_lot);
             }
         }
         // VWAP Reversion: GER40 over-extension from Xetra ORB range midpoint
@@ -6450,7 +6450,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                             (vr.confluence_score == 2) ? 1.5 : 1.0;
                     if (!enter_directional("GER40", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
                         g_vwap_rev_ger40.cancel();
-                    else g_vwap_rev_ger40.patch_size(_edl);
+                    else g_vwap_rev_ger40.patch_size(g_last_directional_lot);
                 }
             }
         }
@@ -6491,7 +6491,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_telemetry.UpdateLastSignal("UK100", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
                 if (!enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp))
                     g_orb_uk100.cancel();
-                    else g_orb_uk100.patch_size(_edl);
+                    else g_orb_uk100.patch_size(g_last_directional_lot);
             }
         }
     }
@@ -6514,7 +6514,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_telemetry.UpdateLastSignal("ESTX50", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
                 if (!enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp))
                     g_orb_estx50.cancel();
-                    else g_orb_estx50.patch_size(_edl);
+                    else g_orb_estx50.patch_size(g_last_directional_lot);
             }
         }
     }
@@ -6599,7 +6599,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                             (vr.confluence_score == 2) ? 1.5 : 1.0;
                     if (!enter_directional("EURUSD", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
                         g_vwap_rev_eurusd.cancel();
-                    else g_vwap_rev_eurusd.patch_size(_edl);
+                    else g_vwap_rev_eurusd.patch_size(g_last_directional_lot);
                 }
             }
         }
@@ -6720,7 +6720,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         g_telemetry.UpdateLastSignal("USDJPY", cu.is_long?"LONG":"SHORT", cu.entry, cu.reason, "CARRY_UNWIND", regime.c_str(), "CARRY_UNWIND", cu.tp, cu.sl);
                         if (!enter_directional("USDJPY", cu.is_long, cu.entry, cu.sl, cu.tp, 0.01, true))
                             g_ca_carry_unwind.cancel();
-                    else g_ca_carry_unwind.patch_size(_edl);
+                    else g_ca_carry_unwind.patch_size(g_last_directional_lot);
                     }
                 }
                 // Tokyo fix window (00:55-01:00 UTC) -- mechanical JPY rebalancing flow
@@ -6783,7 +6783,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
                     if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
                         g_nbm_nas.cancel();
-                    else g_nbm_nas.patch_size(_edl);
+                    else g_nbm_nas.patch_size(g_last_directional_lot);
                 }
             }
         }
@@ -8600,7 +8600,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         g_trend_pb_gold.cancel();
                     } else {
                         // patch_size removed -- enter_directional already sized correctly
-                        // patch_size(_edl) was corrupting size with last ANY-symbol lot
+                        // patch_size(g_last_directional_lot) was corrupting size with last ANY-symbol lot
                         g_telemetry.UpdateLastSignal("XAUUSD",
                             tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
                             "TREND_PB", regime.c_str(), "TREND_PB",
@@ -8638,7 +8638,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (!enter_directional("XAUUSD", nbm_lon.is_long, nbm_lon.entry,
                                        nbm_lon.sl, nbm_lon.tp))
                     g_nbm_gold_london.cancel();
-                else g_nbm_gold_london.patch_size(_edl);
+                else g_nbm_gold_london.patch_size(g_last_directional_lot);
             }
         }
     }
