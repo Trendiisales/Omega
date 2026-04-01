@@ -7948,13 +7948,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const int64_t now_wup = static_cast<int64_t>(std::time(nullptr));
                 if (s_bars_first_miss == 0) s_bars_first_miss = now_wup;
                 const int64_t bars_missing_secs = now_wup - s_bars_first_miss;
-                const bool bars_permanently_unavailable = (bars_missing_secs > 300); // 5 min
+                const bool bars_permanently_unavailable = (bars_missing_secs > 120); // 2 min -- reduced from 5min: BlackBull confirmed no trendbar, no point waiting longer
                 if (bars_permanently_unavailable) {
                     // Broker confirmed no trendbar support -- allow entries without bar gates.
                     // Log once per 5 min so operator knows we're running in degraded mode.
                     if (now_wup - s_warmup_log >= 300) {
                         s_warmup_log = now_wup;
-                        printf("[GF-GATE-0D] BARS_UNAVAILABLE >5min -- running without bar gates "
+                        printf("[GF-GATE-0D] BARS_UNAVAILABLE >2min -- running without bar gates "
                                "(broker trendbar unsupported). Gates 3+4 inactive.\n");
                         fflush(stdout);
                     }
@@ -7965,7 +7965,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         printf("[GF-GATE-BLOCK] reason=BARS_NOT_READY -- GoldFlow blocked until "
                                "M1 bars seeded (need %d bars, Gates 3+4 inactive without them). "
                                "Will allow entries in %llds if bars never seed.\n",
-                               52, (long long)(300 - bars_missing_secs));
+                               52, (long long)(120 - bars_missing_secs));
                         fflush(stdout);
                     }
                     gf_tick_ok = false;
@@ -8085,10 +8085,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool   gf_long   = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
 
                 // RSI overbought/oversold gate
-                // RSI>72: overbought -- LONG entries blocked (price likely to reverse)
-                // RSI<28: oversold  -- SHORT entries blocked (price likely to bounce)
-                static constexpr double RSI_OB = 72.0;  // overbought threshold
-                static constexpr double RSI_OS = 28.0;  // oversold threshold
+                // RSI>80: extreme overbought -- LONG entries blocked
+                // RSI<20: extreme oversold   -- SHORT entries blocked
+                // Loosened 72/28->80/20: 72/28 was blocking valid momentum entries mid-trend
+                static constexpr double RSI_OB = 80.0;  // overbought threshold
+                static constexpr double RSI_OS = 20.0;  // oversold threshold
                 if (gf_long && bar_rsi > RSI_OB) {
                     printf("[GF-BAR-BLOCK] XAUUSD LONG blocked RSI=%.1f > %.0f (overbought)"
                            " bb_pct=%.2f trend=%d\n",
@@ -8166,58 +8167,27 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                 }
 
-                // ?? Gate 4b: RSI divergence -- upgrade/downgrade signal ????????
-                // RSI divergence does NOT block entries outright (divergence alone
-                // is not precise enough in timing). Instead it:
-                //   bull_div active + SHORT signal ? block SHORT (momentum fading up)
-                //   bear_div active + LONG signal  ? block LONG  (momentum fading down)
-                // Divergence must have strength >= 3 RSI pts to count (noise filter).
-                // This prevents false blocks from micro-divergences in choppy ranges.
-                if (gf_tick_ok) {
-                    const bool   bull_div    = g_bars_gold.m1.ind.rsi_bull_div
-                                                   .load(std::memory_order_relaxed);
-                    const bool   bear_div    = g_bars_gold.m1.ind.rsi_bear_div
-                                                   .load(std::memory_order_relaxed);
-                    const double div_strength = g_bars_gold.m1.ind.rsi_div_strength
-                                                    .load(std::memory_order_relaxed);
-                    if (bear_div && div_strength >= 3.0 && gf_long_g4) {
-                        // Bearish divergence: buying momentum weakening ? block LONG
-                        printf("[GF-BAR-BLOCK] XAUUSD LONG blocked RSI_BEAR_DIV"
-                               " strength=%.1f RSI pts -- momentum fading\n", div_strength);
-                        fflush(stdout);
-                        gf_tick_ok = false;
-                        gf_block_reason = "RSI_BEAR_DIV";
-                    } else if (bull_div && div_strength >= 3.0 && !gf_long_g4) {
-                        // Bullish divergence: selling momentum weakening ? block SHORT
-                        printf("[GF-BAR-BLOCK] XAUUSD SHORT blocked RSI_BULL_DIV"
-                               " strength=%.1f RSI pts -- momentum fading\n", div_strength);
-                        fflush(stdout);
-                        gf_tick_ok = false;
-                        gf_block_reason = "RSI_BULL_DIV";
-                    }
-                }
+                // REMOVED: Gate 4b RSI divergence -- imprecise timing, more false blocks than real saves
 
                 // ?? Gate 4c: Tick storm -- suppress entries during momentum rush ?
                 // When tick_rate >= 8/s, price is moving fast and aggressively.
-                // GoldFlow entries during a tick storm catch the tail end of a move
-                // -- the big players are already positioned.
-                // Block VWAPReversion entries during tick storm (mean-reversion needs
-                // settled price; a storm means the move is still in progress).
-                // GoldFlow: allow tick-storm entries ONLY when in continuation mode
-                // (already confirmed the trend) -- otherwise block to avoid chasing.
+                // Block UNLESS: continuation mode OR EWM drift >3.0 (strong breakout move).
+                // drift>3.0 = real directional momentum, not noise -- allow entry on breakouts.
                 if (gf_tick_ok) {
                     const bool   tick_storm     = g_bars_gold.m1.ind.tick_storm
                                                       .load(std::memory_order_relaxed);
                     const double tick_rate      = g_bars_gold.m1.ind.tick_rate
                                                       .load(std::memory_order_relaxed);
                     const bool   cont_mode      = g_gold_flow.is_in_continuation_mode();
-                    if (tick_storm && !cont_mode) {
+                    const double ewm_drift_abs  = std::fabs(g_gold_stack.ewm_drift());
+                    const bool   strong_breakout = (ewm_drift_abs >= 3.0); // real move, not chasing
+                    if (tick_storm && !cont_mode && !strong_breakout) {
                         static int64_t s_storm_log = 0;
                         if (nowSec() - s_storm_log >= 15) {
                             s_storm_log = nowSec();
                             printf("[GF-BAR-BLOCK] XAUUSD %s blocked TICK_STORM"
-                                   " rate=%.1f/s -- not in continuation mode\n",
-                                   gf_long_g4 ? "LONG" : "SHORT", tick_rate);
+                                   " rate=%.1f/s drift=%.2f -- not continuation or breakout\n",
+                                   gf_long_g4 ? "LONG" : "SHORT", tick_rate, ewm_drift_abs);
                             fflush(stdout);
                         }
                         gf_tick_ok = false;
