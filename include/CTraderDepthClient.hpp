@@ -199,10 +199,10 @@ namespace PB {
 
 // ProtoOASubscribeSpotsReq (pt=2129) -- REQUIRED before live trendbar subscription
 // field 2: ctidTraderAccountId, field 3: repeated symbolId
-inline std::vector<uint8_t> subscribe_spots_req(int64_t ctid, const std::vector<int64_t>& sym_ids) {
+inline std::vector<uint8_t> subscribe_spots_req(int64_t ctid, int64_t sym_id) {
     std::vector<uint8_t> inner;
     write_field_varint(inner, 2, uint64_t(ctid));
-    for (int64_t id : sym_ids) write_field_varint(inner, 3, uint64_t(id));
+    write_field_varint(inner, 3, uint64_t(sym_id));
     return frame_msg(2129, inner);
 }
 
@@ -638,7 +638,6 @@ private:
             if (is_gold && !skip(7)) pending_live_subs.push_back({bkv.first, sid, 7});
         }
         // Merge: send all history reqs first, then live subs only for non-failed symbols
-        struct PendingSend { std::string name; int64_t sid; uint32_t period; uint32_t count; bool is_live; };
         // Spots subscription required before live trendbar subscription.
         // Send spots sub for each symbol first, then live trendbar sub.
         struct PendingSend { std::string name; int64_t sid; uint32_t period; uint32_t count; bool is_live; bool is_spots; };
@@ -685,7 +684,7 @@ private:
             if (bar_send_idx < bar_send_queue.size() && now >= bar_send_next) {
                 const auto& req = bar_send_queue[bar_send_idx];
                 if (req.is_spots) {
-                    send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, {req.sid}));
+                    send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, req.sid));
                     std::cout << "[CTRADER-BARS] " << req.name << " spots sub sent\n";
                 } else if (req.is_live) {
                     // pt=2135 ProtoOASubscribeLiveTrendbarReq (requires spots sub first)

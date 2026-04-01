@@ -44,6 +44,7 @@
 #  define WIN32_LEAN_AND_MEAN
 #  define NOMINMAX
 #  include <windows.h>
+#  include <io.h>      // _dup, _dup2, _close on Windows
 #else
 #  include <fcntl.h>
 #  include <sys/mman.h>
