@@ -71,8 +71,25 @@ if ($scriptChanged) {
     return
 }
 
-$gitHead = (git rev-parse HEAD).Trim()
-Write-Host "      [OK] HEAD $gitHead  ($(git log --oneline -1))" -ForegroundColor Green
+# SOURCE HASH FIX: stamp the last commit that touched real source files.
+# HEAD may be a log-push commit (logs/latest.log only) -- no code changes.
+# Stamping HEAD was the root cause of the 7-week stale binary issue:
+#   stamp showed a log-push hash, watchdog could not match it to source,
+#   exe kept running stale code silently.
+# Fix: find last commit touching src/ include/ CMakeLists.txt *.ini *.ps1
+# That hash is what the running binary was actually built from.
+$gitHeadRaw = (git rev-parse HEAD).Trim()
+$srcCommit = (git log --oneline -- src include CMakeLists.txt omega_config.ini symbols.ini DEPLOY_OMEGA.ps1 OmegaWatchdog.ps1 | Select-Object -First 1)
+if ($srcCommit) {
+    $gitHead = (git rev-parse ($srcCommit.Split(" ")[0])).Trim()
+} else {
+    $gitHead = $gitHeadRaw
+}
+Write-Host "      [OK] HEAD (git)  = $gitHeadRaw" -ForegroundColor DarkGray
+Write-Host "      [OK] SRC commit  = $gitHead  (last source change)" -ForegroundColor Green
+if ($gitHead -ne $gitHeadRaw) {
+    Write-Host "      [NOTE] HEAD is a log-push -- stamping source commit instead" -ForegroundColor Cyan
+}
 Write-Host ""
 
 # ------------------------------------------------------------------------------

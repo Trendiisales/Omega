@@ -6,14 +6,33 @@
 find_package(Git QUIET)
 
 if(GIT_FOUND AND EXISTS "${SOURCE_DIR}/.git")
-    # Force HEAD to match origin/main before reading hash
+    # SOURCE HASH FIX: use the last commit that touched real source files.
+    # git rev-parse HEAD / origin/main returns the log-push commit when the
+    # deploy script pushes logs after building -- that commit has no code changes.
+    # The GUI then shows the log-push hash instead of the fix commit, making it
+    # impossible to verify what code is running (root cause of 7-week stale binary).
+    # Fix: find last commit that touched src/ include/ CMakeLists.txt or *.ini
     execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short origin/main
+        COMMAND ${GIT_EXECUTABLE} log --oneline -1
+            -- src include CMakeLists.txt omega_config.ini symbols.ini
+               DEPLOY_OMEGA.ps1 OmegaWatchdog.ps1
         WORKING_DIRECTORY "${SOURCE_DIR}"
-        OUTPUT_VARIABLE GIT_HASH
+        OUTPUT_VARIABLE GIT_SRC_LINE
         OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET
     )
+    # Extract short hash from "abcdef1 commit message" format
+    string(REGEX REPLACE "^([a-f0-9]+) .*" "\\1" GIT_HASH "${GIT_SRC_LINE}")
+    if("${GIT_HASH}" STREQUAL "" OR "${GIT_HASH}" STREQUAL "${GIT_SRC_LINE}")
+        # Fallback to HEAD short hash if log parse failed
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+            WORKING_DIRECTORY "${SOURCE_DIR}"
+            OUTPUT_VARIABLE GIT_HASH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+    endif()
     execute_process(
         COMMAND ${GIT_EXECUTABLE} log -1 --format=%ci HEAD
         WORKING_DIRECTORY "${SOURCE_DIR}"
