@@ -10576,15 +10576,15 @@ int main(int argc, char* argv[])
     // Engines disabled based on live performance audit. Each engine's own
     // guard (if (!enabled_) return noSignal()) prevents new entries.
     // Existing positions (if any) are still drained via has_open_position() paths.
-    // Re-enable by removing the line or setting enabled=true after shadow revalidation.
     //
-    // NBM (NoiseBandMomentum): live data insufficient, not validated.
-    // Shelved pending 50+ shadow trades with positive expectancy.
+    // NBM indices: live data insufficient, not validated. Still shelved.
     g_nbm_sp.enabled     = false;
     g_nbm_nq.enabled     = false;
     g_nbm_nas.enabled    = false;
     g_nbm_us30.enabled   = false;
-    g_nbm_gold_london.enabled = false;
+    // NBM gold london: RE-ENABLED 2026-04-01 -- live MT5 data confirms the logic
+    // (London open ATR breakout, 51min hold, +$185). Omega NBM is identical concept.
+    g_nbm_gold_london.enabled = true;
     g_nbm_oil_london.enabled  = false;
     //
     // ORB (OpeningRange): no live data. Shelved pending shadow validation.
