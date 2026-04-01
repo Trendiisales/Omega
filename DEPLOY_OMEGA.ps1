@@ -394,6 +394,23 @@ New-Item -ItemType Directory -Path "$OmegaDir\logs"        -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\shadow" -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\trades" -Force | Out-Null
 
+# Push log to git AFTER stamp is validated -- correct order ensures HEAD moves
+# AFTER the source hash is captured, so the next deploy sees the right commit.
+# The log push commit (logs/latest.log only) will be HEAD, but our source hash
+# walk skips it and finds the real source commit. This is the correct sequence:
+#   1. Build (source hash captured at step [3/9])
+#   2. Stamp written + validated (step [6/9] + [7/9])
+#   3. Log pushed here (HEAD moves to log-push commit -- harmless now)
+#   4. Omega starts
+Write-Host "Pushing log to git..." -ForegroundColor DarkGray
+$savedPrefLog = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+powershell -NonInteractive -NoProfile -ExecutionPolicy Bypass `
+    -File "$OmegaDir\push_log.ps1" -RepoRoot "$OmegaDir" 2>&1 | Out-Null
+$ErrorActionPreference = $savedPrefLog
+Write-Host "      [OK] Log pushed (stamp already written -- hash is safe)" -ForegroundColor DarkGray
+Write-Host ""
+
 Write-Host "Starting Omega.exe  [source=$sourceHashShort  mode=$mode]..." -ForegroundColor Cyan
 Write-Host "  GUI -> http://185.167.119.59:7779" -ForegroundColor Green
 Write-Host ""

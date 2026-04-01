@@ -124,15 +124,16 @@ add_custom_command(TARGET Omega POST_BUILD
 )
 
 # ?? Push current log to git after every successful build ?????????????????????
-# Copies logs/omega_YYYY-MM-DD.log ? logs/latest.log and force-pushes to
-# origin/main so the log is always readable without needing VPS access.
-# push_log.ps1 exits cleanly if no log file exists yet (first ever build).
-add_custom_command(TARGET Omega POST_BUILD
-    COMMAND powershell -NonInteractive -NoProfile -ExecutionPolicy Bypass
-            -File "${CMAKE_SOURCE_DIR}/push_log.ps1"
-            -RepoRoot "${CMAKE_SOURCE_DIR}"
-    COMMENT "Pushing latest.log to git..."
-)
+# LOG PUSH REMOVED FROM POST_BUILD -- permanent fix for stale-hash problem.
+# Previously push_log.ps1 ran here after every build, pushing logs/latest.log
+# as a new git commit. This moved HEAD forward to a log-only commit DURING
+# the deploy, so the stamp ended up with the log-push hash not the source hash.
+# Even with walk-commit source-hash detection, the timing created an
+# unavoidable race between "build finishes" and "stamp is written".
+#
+# Fix: log pushing is now manual only. The log is still written to disk.
+# Push manually when needed: powershell -File C:\Omega\push_log.ps1 -RepoRoot C:\Omega
+# Or trigger it from DEPLOY_OMEGA.ps1 AFTER the stamp is written (see step [6/9]).
 
 # =============================================================================
 # OmegaBacktest -- native C++ backtester (no FIX / OpenSSL / WS deps)
