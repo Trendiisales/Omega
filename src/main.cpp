@@ -4177,36 +4177,44 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // sends ask-side quotes only for XAUUSD. The FIX W/X feed sends full bid+ask book
     // and merges both sides into g_l2_books -- this is what the GUI displays correctly.
     // Trading engines must use the same source as the GUI.
+    // Rate-limited to once per 500ms -- g_l2_mtx is also held by cTrader depth thread
+    // and locking it on every tick causes contention at 60-80 ticks/sec.
     {
-        std::lock_guard<std::mutex> lk(g_l2_mtx);
-        auto read_imb = [&](const std::string& sym) -> double {
-            auto it = g_l2_books.find(sym);
-            if (it == g_l2_books.end()) return 0.5;
-            return it->second.imbalance();
-        };
-        auto read_hd = [&](const std::string& sym) -> bool {
-            auto it = g_l2_books.find(sym);
-            if (it == g_l2_books.end()) return false;
-            return it->second.has_data();
-        };
-        g_macro_ctx.gold_l2_imbalance   = read_imb("XAUUSD");
-        g_macro_ctx.sp_l2_imbalance     = read_imb("US500.F");
-        g_macro_ctx.nq_l2_imbalance     = read_imb("USTEC.F");
-        g_macro_ctx.cl_l2_imbalance     = read_imb("USOIL.F");
-        g_macro_ctx.xag_l2_imbalance    = read_imb("XAGUSD");
-        g_macro_ctx.eur_l2_imbalance    = read_imb("EURUSD");
-        g_macro_ctx.gbp_l2_imbalance    = read_imb("GBPUSD");
-        g_macro_ctx.aud_l2_imbalance    = read_imb("AUDUSD");
-        g_macro_ctx.nzd_l2_imbalance    = read_imb("NZDUSD");
-        g_macro_ctx.jpy_l2_imbalance    = read_imb("USDJPY");
-        g_macro_ctx.ger40_l2_imbalance  = read_imb("GER40");
-        g_macro_ctx.uk100_l2_imbalance  = read_imb("UK100");
-        g_macro_ctx.estx50_l2_imbalance = read_imb("ESTX50");
-        g_macro_ctx.brent_l2_imbalance  = read_imb("BRENT");
-        g_macro_ctx.nas_l2_imbalance    = read_imb("NAS100");
-        g_macro_ctx.us30_l2_imbalance   = read_imb("DJ30.F");
-        // gold_l2_real: true when FIX book has both bid AND ask sides
-        g_macro_ctx.gold_l2_real        = read_hd("XAUUSD");
+        static int64_t s_last_l2_read_ms = 0;
+        const int64_t now_ms_l2 = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        if (now_ms_l2 - s_last_l2_read_ms >= 500) {
+            s_last_l2_read_ms = now_ms_l2;
+            std::lock_guard<std::mutex> lk(g_l2_mtx);
+            auto read_imb = [&](const std::string& sym) -> double {
+                auto it = g_l2_books.find(sym);
+                if (it == g_l2_books.end()) return 0.5;
+                return it->second.imbalance();
+            };
+            auto read_hd = [&](const std::string& sym) -> bool {
+                auto it = g_l2_books.find(sym);
+                if (it == g_l2_books.end()) return false;
+                return it->second.has_data();
+            };
+            g_macro_ctx.gold_l2_imbalance   = read_imb("XAUUSD");
+            g_macro_ctx.sp_l2_imbalance     = read_imb("US500.F");
+            g_macro_ctx.nq_l2_imbalance     = read_imb("USTEC.F");
+            g_macro_ctx.cl_l2_imbalance     = read_imb("USOIL.F");
+            g_macro_ctx.xag_l2_imbalance    = read_imb("XAGUSD");
+            g_macro_ctx.eur_l2_imbalance    = read_imb("EURUSD");
+            g_macro_ctx.gbp_l2_imbalance    = read_imb("GBPUSD");
+            g_macro_ctx.aud_l2_imbalance    = read_imb("AUDUSD");
+            g_macro_ctx.nzd_l2_imbalance    = read_imb("NZDUSD");
+            g_macro_ctx.jpy_l2_imbalance    = read_imb("USDJPY");
+            g_macro_ctx.ger40_l2_imbalance  = read_imb("GER40");
+            g_macro_ctx.uk100_l2_imbalance  = read_imb("UK100");
+            g_macro_ctx.estx50_l2_imbalance = read_imb("ESTX50");
+            g_macro_ctx.brent_l2_imbalance  = read_imb("BRENT");
+            g_macro_ctx.nas_l2_imbalance    = read_imb("NAS100");
+            g_macro_ctx.us30_l2_imbalance   = read_imb("DJ30.F");
+            g_macro_ctx.gold_l2_real        = read_hd("XAUUSD");
+        }
     }
 
     // Microprice bias -- still from cTrader atomics (FIX doesn't compute this)
@@ -6387,13 +6395,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     std::chrono::system_clock::now().time_since_epoch()).count());
             const int64_t b1 = (now_ms_s /  60000LL) *  60000LL;
             const int64_t b5 = (now_ms_s / 300000LL) * 300000LL;
-            auto upd = [](OHLCBar& c, int64_t& ps, int64_t bs, double m, OHLCBarEngine& e) {
-                if (ps == 0) { c = {bs/60000LL,m,m,m,m}; ps = bs; }
-                else if (bs != ps) { e.add_bar(c); c = {bs/60000LL,m,m,m,m}; ps = bs; }
-                else { if(m>c.high)c.high=m; if(m<c.low)c.low=m; c.close=m; }
-            };
-            upd(s_sp1, s_sp1_start, b1, sp_mid, g_bars_sp.m1);
-            upd(s_sp5, s_sp5_start, b5, sp_mid, g_bars_sp.m5);
+            if (s_sp1_start == 0) { s_sp1 = {b1/60000LL,sp_mid,sp_mid,sp_mid,sp_mid}; s_sp1_start = b1; }
+            else if (b1 != s_sp1_start) { g_bars_sp.m1.add_bar(s_sp1); s_sp1 = {b1/60000LL,sp_mid,sp_mid,sp_mid,sp_mid}; s_sp1_start = b1; }
+            else { if(sp_mid>s_sp1.high)s_sp1.high=sp_mid; if(sp_mid<s_sp1.low)s_sp1.low=sp_mid; s_sp1.close=sp_mid; }
+            if (s_sp5_start == 0) { s_sp5 = {b5/60000LL,sp_mid,sp_mid,sp_mid,sp_mid}; s_sp5_start = b5; }
+            else if (b5 != s_sp5_start) { g_bars_sp.m5.add_bar(s_sp5); s_sp5 = {b5/60000LL,sp_mid,sp_mid,sp_mid,sp_mid}; s_sp5_start = b5; }
+            else { if(sp_mid>s_sp5.high)s_sp5.high=sp_mid; if(sp_mid<s_sp5.low)s_sp5.low=sp_mid; s_sp5.close=sp_mid; }
         }
         const bool base_can_sp = symbol_gate("US500.F",
             g_eng_sp.pos.active          ||
@@ -6571,13 +6578,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     std::chrono::system_clock::now().time_since_epoch()).count());
             const int64_t b1 = (now_ms_n /  60000LL) *  60000LL;
             const int64_t b5 = (now_ms_n / 300000LL) * 300000LL;
-            auto upd = [](OHLCBar& c, int64_t& ps, int64_t bs, double m, OHLCBarEngine& e) {
-                if (ps == 0) { c = {bs/60000LL,m,m,m,m}; ps = bs; }
-                else if (bs != ps) { e.add_bar(c); c = {bs/60000LL,m,m,m,m}; ps = bs; }
-                else { if(m>c.high)c.high=m; if(m<c.low)c.low=m; c.close=m; }
-            };
-            upd(s_nq1, s_nq1_start, b1, nq_mid, g_bars_nq.m1);
-            upd(s_nq5, s_nq5_start, b5, nq_mid, g_bars_nq.m5);
+            if (s_nq1_start == 0) { s_nq1 = {b1/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq1_start = b1; }
+            else if (b1 != s_nq1_start) { g_bars_nq.m1.add_bar(s_nq1); s_nq1 = {b1/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq1_start = b1; }
+            else { if(nq_mid>s_nq1.high)s_nq1.high=nq_mid; if(nq_mid<s_nq1.low)s_nq1.low=nq_mid; s_nq1.close=nq_mid; }
+            if (s_nq5_start == 0) { s_nq5 = {b5/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq5_start = b5; }
+            else if (b5 != s_nq5_start) { g_bars_nq.m5.add_bar(s_nq5); s_nq5 = {b5/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq5_start = b5; }
+            else { if(nq_mid>s_nq5.high)s_nq5.high=nq_mid; if(nq_mid<s_nq5.low)s_nq5.low=nq_mid; s_nq5.close=nq_mid; }
         }
         const bool base_can_nq = symbol_gate("USTEC.F",
             g_eng_nq.pos.active                  ||
@@ -7604,31 +7610,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // ?? FIX-tick bar builder -- accumulates ticks into M1/M5/M15 OHLC bars ??
         {
             static OHLCBar s_cur1{}, s_cur5{}, s_cur15{};
-            static int64_t s_bar1_start = 0, s_bar5_start = 0, s_bar15_start = 0;
-            const double xau_mid = (bid + ask) * 0.5;
-            const int64_t bar1_start  = (now_ms_g /  60000LL) *  60000LL;
-            const int64_t bar5_start  = (now_ms_g / 300000LL) * 300000LL;
-            const int64_t bar15_start = (now_ms_g / 900000LL) * 900000LL;
-
-            auto update_bar = [&](OHLCBar& cur, int64_t& prev_start,
-                                  int64_t bar_start, OHLCBarEngine& eng) {
-                if (prev_start == 0) {
-                    cur = {bar_start/60000LL, xau_mid, xau_mid, xau_mid, xau_mid};
-                    prev_start = bar_start;
-                } else if (bar_start != prev_start) {
-                    if (prev_start > 0) eng.add_bar(cur);
-                    cur = {bar_start/60000LL, xau_mid, xau_mid, xau_mid, xau_mid};
-                    prev_start = bar_start;
-                } else {
-                    if (xau_mid > cur.high) cur.high = xau_mid;
-                    if (xau_mid < cur.low)  cur.low  = xau_mid;
-                    cur.close = xau_mid;
-                }
-            };
-
-            update_bar(s_cur1,  s_bar1_start,  bar1_start,  g_bars_gold.m1);
-            update_bar(s_cur5,  s_bar5_start,  bar5_start,  g_bars_gold.m5);
-            update_bar(s_cur15, s_bar15_start, bar15_start, g_bars_gold.m15);
+            static int64_t s_bar1_ms = 0, s_bar5_ms = 0, s_bar15_ms = 0;
+            const double xau_mid     = (bid + ask) * 0.5;
+            const int64_t b1  = (now_ms_g /  60000LL) *  60000LL;
+            const int64_t b5  = (now_ms_g / 300000LL) * 300000LL;
+            const int64_t b15 = (now_ms_g / 900000LL) * 900000LL;
+            // M1
+            if (s_bar1_ms == 0) { s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
+            else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
+            else { if(xau_mid>s_cur1.high)s_cur1.high=xau_mid; if(xau_mid<s_cur1.low)s_cur1.low=xau_mid; s_cur1.close=xau_mid; }
+            // M5
+            if (s_bar5_ms == 0) { s_cur5 = {b5/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar5_ms = b5; }
+            else if (b5 != s_bar5_ms) { g_bars_gold.m5.add_bar(s_cur5); s_cur5 = {b5/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar5_ms = b5; }
+            else { if(xau_mid>s_cur5.high)s_cur5.high=xau_mid; if(xau_mid<s_cur5.low)s_cur5.low=xau_mid; s_cur5.close=xau_mid; }
+            // M15
+            if (s_bar15_ms == 0) { s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15; }
+            else if (b15 != s_bar15_ms) { g_bars_gold.m15.add_bar(s_cur15); s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15; }
+            else { if(xau_mid>s_cur15.high)s_cur15.high=xau_mid; if(xau_mid<s_cur15.low)s_cur15.low=xau_mid; s_cur15.close=xau_mid; }
         }
 
         if (gold_spread_ok) {
