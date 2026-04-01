@@ -1127,8 +1127,22 @@ private:
         //          spread=$0.60 ? min SL=$1.80, ATR=$2 ? SL=$2 (ATR wins).
         // The spread gate (GFE_MAX_SPREAD=$0.60) already caps spread at entry.
         const double atr_sl  = m_atr * GFE_ATR_SL_MULT;
-        const double min_sl  = spread * 5.0;  // raised 3x?5x: 3x was 0.66pts on 0.22 spread, too tight for London gold vol
-        const double sl_pts  = std::max(atr_sl, min_sl);
+        const double min_sl  = spread * 5.0;  // raised 3x->5x: 3x was 0.66pts on 0.22 spread, too tight for London gold vol
+        // ?? Asia gap-risk SL floor ???????????????????????????????????????
+        // Asia (22:00-05:00 UTC, session_slot=6) has thin liquidity -- price can gap
+        // 5-10pts through a tight SL in a single tick, converting a $30 intended risk
+        // into a $150+ actual loss. Evidence: LONG @4719.65 @ 00:28 UTC, SL=1.76pts,
+        // fill @ 4710.65 = 9pt gap = $123 EXTRA beyond risk_dollars.
+        //
+        // Fix: enforce a minimum SL of GFE_ASIA_SL_MIN_PTS during Asia.
+        // Wider SL = fewer ticks, smaller size (risk_dollars / sl_pts stays constant),
+        // so the INTENDED dollar risk is unchanged -- but gap fill stays within bounds.
+        // GFE_ASIA_SL_MIN_PTS=4.0: covers the typical 3-5pt Asia gap observed in logs.
+        // Note: this does NOT increase dollar risk -- it reduces lot size proportionally.
+        static constexpr double GFE_ASIA_SL_MIN_PTS = 4.0; // pts -- wider SL = smaller lots = same $ risk
+        const bool is_asia_session = (m_last_session_slot == 6);
+        const double asia_sl_floor = is_asia_session ? GFE_ASIA_SL_MIN_PTS : 0.0;
+        const double sl_pts  = std::max({atr_sl, min_sl, asia_sl_floor});
         if (sl_pts <= 0.0) return;
 
         // Size: fixed dollar risk / SL_pts
@@ -1191,6 +1205,45 @@ private:
                          double l2_imb, int64_t now_ms, CloseCallback on_close) noexcept
     {
         if (!pos.active) return;
+
+        // ?? Post-fill gap protection ??????????????????????????????????????????
+        // Problem: SL is placed at pos.sl (e.g. 4717.89) but on a gap tick the broker
+        // fills at the next available price (e.g. 4710.65) -- 7pts worse than intended.
+        // manage_position sees bid=4710 the FIRST tick after the gap. At that point
+        // sl_hit fires and exits at bid -- correct, but the loss is 5x intended.
+        //
+        // We cannot prevent the gap fill itself (broker-side). We CAN:
+        //   A) Detect it immediately (loss already > max_loss_per_trade_usd at entry)
+        //   B) Log it clearly so it's visible in the log
+        //
+        // Additionally: if price is adversely far from entry (MAE > gap_threshold)
+        // AND no meaningful MFE has occurred, the trade is already a runaway loser.
+        // Force-close immediately rather than waiting for SL to be reached tick-by-tick.
+        //
+        // gap_threshold = 2x the intended SL distance. If we're already 2x SL adverse
+        // within the first few seconds, this is not normal SL management -- it's a gap.
+        // Minimum gap threshold = GFE_GAP_FORCE_CLOSE_PTS (absolute floor, not just 2x SL).
+        static constexpr double GFE_GAP_FORCE_CLOSE_PTS = 6.0; // force-close if adverse > 6pts AND no MFE
+        static constexpr double GFE_GAP_MFE_EXCUSE       = 0.5; // ignore if MFE ever reached 0.5pts (trade had a real chance)
+        {
+            const double adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+            const double intended_sl_dist = std::fabs(pos.entry - pos.sl);
+            const double gap_threshold = std::max(GFE_GAP_FORCE_CLOSE_PTS,
+                                                  intended_sl_dist * 2.0);
+            if (adverse > gap_threshold && pos.mfe < GFE_GAP_MFE_EXCUSE) {
+                const double loss_pts = adverse;
+                const double loss_usd = loss_pts * pos.size * 100.0;
+                printf("[GOLD-FLOW] GAP-CLOSE %s adverse=%.2f > threshold=%.2f"
+                       " (intended_sl=%.2f mfe=%.2f) loss_usd=%.2f -- force close
+",
+                       pos.is_long ? "LONG" : "SHORT",
+                       adverse, gap_threshold, intended_sl_dist, pos.mfe, loss_usd);
+                fflush(stdout);
+                const double exit_px = pos.is_long ? bid : ask;
+                close_position(exit_px, "GAP_CLOSE", now_ms, on_close);
+                return;
+            }
+        }
 
         // atr_step: frozen at entry -- used for staircase step triggers only.
         // Keeps step distances consistent even as gold vol changes mid-trade.
