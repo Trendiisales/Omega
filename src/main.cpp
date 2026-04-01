@@ -8491,14 +8491,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // opened the manage path was NEVER reached ? SL never checked ? unmanaged trades.
         // Fix: call on_tick unconditionally when position is open (manage-only path),
         // before the entry guard. on_tick returns {} immediately after manage when active.
-        // Seed gold TrendPB with real M1 bar EMAs from cTrader trendbar API
-        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+        // Seed gold TrendPB with real M15 bar EMAs from cTrader trendbar API.
+        // M15 is the correct timeframe for TrendPB swing trades -- wider EMA stack,
+        // fewer false pullbacks vs M1. M1/M5 fields untouched (GoldFlow/GoldStack).
+        if (g_bars_gold.m15.ind.m1_ready.load(std::memory_order_relaxed)) {
             g_trend_pb_gold.seed_bar_emas(
-                g_bars_gold.m1.ind.ema9.load(std::memory_order_relaxed),
-                g_bars_gold.m1.ind.ema21.load(std::memory_order_relaxed),
-                g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed),
-                g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed));
-            g_trend_pb_gold.seed_m5_trend(g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed));
+                g_bars_gold.m15.ind.ema9.load(std::memory_order_relaxed),
+                g_bars_gold.m15.ind.ema21.load(std::memory_order_relaxed),
+                g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
+                g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
+            g_trend_pb_gold.seed_m5_trend(g_bars_gold.m15.ind.trend_state.load(std::memory_order_relaxed));
         }
         if (g_trend_pb_gold.has_open_position()) {
             g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);

@@ -788,9 +788,11 @@ private:
 struct SymBarState {
     OHLCBarEngine m1;   // 1-minute bars
     OHLCBarEngine m5;   // 5-minute bars -- swing/trend use this
+    OHLCBarEngine m15;  // 15-minute bars -- TrendPB swing trades (XAUUSD only)
     // Expose combined indicators:
     //   RSI, EMA, ATR, BB, BBW squeeze, ATR slope, RSI div, VWAP slope from M1
     //   trend_state, swing from M5
+    //   trend_state, swing, EMA9/21/50 from M15 (gold TrendPB only)
 };
 
 // =============================================================================

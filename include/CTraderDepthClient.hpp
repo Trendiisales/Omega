@@ -562,6 +562,43 @@ private:
         if (!send_msg(ssl, PB::subscribe_depth_req(ctid_account_id, sub_ids))) return false;
         if (!wait_for(ssl, 2157, 10000, pt, payload)) { std::cerr << "[CTRADER] SubscribeDepthRes timeout\n"; return false; }
         std::cout << "[CTRADER] Subscribed to " << sub_ids.size() << " symbols\n";
+
+        // ?? Request historical bars + subscribe live bar closes per registered symbol ??
+        // Send AFTER depth subscription is confirmed. Each bar_subscriptions entry
+        // with a resolved sym_id gets:
+        //   - 200 M1 bars  (period=1, ~3.3 hours)
+        //   - 100 M5 bars  (period=5, ~8.3 hours)
+        //   - 50  M15 bars (period=7, ~12.5 hours) -- XAUUSD only, for TrendPB
+        // Live subscriptions (pt=2220) follow immediately after history requests.
+        for (const auto& bkv : bar_subscriptions) {
+            const int64_t sid = bkv.second.sym_id;
+            if (sid <= 0) {
+                std::cout << "[CTRADER-BARS] " << bkv.first
+                          << " -- sym_id unresolved, skipping bar requests\n";
+                continue;
+            }
+            const bool is_gold = (bkv.first == "XAUUSD");
+
+            // M1 history + live sub
+            send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 1, 200));
+            send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, sid, 1));
+
+            // M5 history + live sub
+            send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 5, 100));
+            send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, sid, 5));
+
+            // M15 history + live sub -- gold only (TrendPB swing timeframe)
+            if (is_gold) {
+                send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 7, 50));
+                send_msg(ssl, PB::subscribe_trendbar_req(ctid_account_id, sid, 7));
+                std::cout << "[CTRADER-BARS] " << bkv.first
+                          << " bar requests sent: M1(200) M5(100) M15(50) + live subs\n";
+            } else {
+                std::cout << "[CTRADER-BARS] " << bkv.first
+                          << " bar requests sent: M1(200) M5(100) + live subs\n";
+            }
+        }
+
         return true;
     }
 
@@ -667,6 +704,14 @@ private:
                       << " bars, trend=" << state->m5.ind.trend_state.load()
                       << " swing_hi=" << std::setprecision(2) << state->m5.ind.swing_high.load()
                       << " swing_lo=" << state->m5.ind.swing_low.load() << "\n";
+        } else if (period == 7) {
+            state->m15.seed(bars);
+            std::cout << "[CTRADER-BARS] " << name << " M15: seeded " << bars.size()
+                      << " bars, trend=" << state->m15.ind.trend_state.load()
+                      << " EMA9=" << std::setprecision(2) << state->m15.ind.ema9.load()
+                      << " EMA21=" << state->m15.ind.ema21.load()
+                      << " EMA50=" << state->m15.ind.ema50.load()
+                      << " ATR=" << state->m15.ind.atr14.load() << "\n";
         }
         if (on_bar_fn && !bars.empty()) {
             on_bar_fn(name, int(period), bars.back());
@@ -708,6 +753,13 @@ private:
                     printf("[CTRADER-BARS] %s M5 bar trend=%d swing_hi=%.2f swing_lo=%.2f\n",
                            name.c_str(), state->m5.ind.trend_state.load(),
                            state->m5.ind.swing_high.load(), state->m5.ind.swing_low.load());
+                } else if (period == 7) {
+                    state->m15.add_bar(bar);
+                    printf("[CTRADER-BARS] %s M15 bar close=%.2f trend=%d EMA9=%.2f EMA21=%.2f EMA50=%.2f ATR=%.2f\n",
+                           name.c_str(), bar.close,
+                           state->m15.ind.trend_state.load(),
+                           state->m15.ind.ema9.load(), state->m15.ind.ema21.load(),
+                           state->m15.ind.ema50.load(), state->m15.ind.atr14.load());
                 }
                 if (on_bar_fn) on_bar_fn(name, int(period), bar);
                 break;
