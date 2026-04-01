@@ -321,7 +321,11 @@ struct FlowRunner {
         // session_slot: 0=dead, 1=London, 2=London_core, 3=overlap, 4=NY, 5=NY_late, 6=Asia
         const time_t ts_sec = (time_t)(r.ts_ms / 1000);
         struct tm utc{};
+#ifdef _WIN32
+        gmtime_s(&utc, &ts_sec);
+#else
         gmtime_r(&ts_sec, &utc);
+#endif
         const int hhmm = utc.tm_hour * 100 + utc.tm_min;
         int session_slot = 0;
         if      (hhmm >= 600  && hhmm < 800)  session_slot = 1;
