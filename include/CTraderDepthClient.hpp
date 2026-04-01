@@ -217,7 +217,7 @@ inline std::vector<uint8_t> get_trendbars_req(
     write_field_varint(inner, 4, uint64_t(period));
     write_field_varint(inner, 5, uint64_t(from_ms));
     write_field_varint(inner, 6, uint64_t(to_ms));
-    write_field_varint(inner, 7, uint64_t(count));
+    // field 7 (count) does not exist in ProtoOAGetTrendbarsReq -- omit or causes INVALID_REQUEST
     return frame_msg(2137, inner);
 }
 
