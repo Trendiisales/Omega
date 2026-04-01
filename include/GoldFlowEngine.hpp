@@ -1287,11 +1287,22 @@ private:
         //
         // One-way ratchet -- SL never moves backward.
         // Uses atr_live (70% entry + 30% current ATR).
+        // Trail distances after each step:
+        //   Step 1 done, no wall ahead:  0.50*ATR  (was 1.00 -- too wide, missed 4700 reversal)
+        //   Step 1 done, wall ahead:     0.25*ATR  (price hit resistance, tighten immediately)
+        //   Step 2 done, move < 3*ATR:   0.25*ATR  (step 2 banked, tighten further)
+        //   Move >= 3*ATR (final):       0.20*ATR  (final squeeze on runner)
+        //
+        // The wall_ahead flag is set by set_trend_bias() when significant L2 wall
+        // is detected within 2*ATR of current price. Evidence: 4700 resistance caused
+        // immediate reversal after LONG entry, trail at 1.0*ATR gave 10pts of room
+        // before exiting -- entire move was given back. 0.5*ATR and wall tighten fix this.
         if (pos.be_locked && pos.mfe > 0.0) {
             const double trail_mult =
-                (!pos.partial_closed_2)   ? 1.00 :  // step1 done, step2 pending -- stay wide
-                (move < atr * 3.0)        ? 0.50 :  // step2 done, below 3?ATR -- mid tighten
-                                            0.25;   // step3 territory / final remainder
+                (!pos.partial_closed_2 && m_wall_ahead) ? 0.25 :  // wall ahead: tighten now
+                (!pos.partial_closed_2)                 ? 0.50 :  // step1 done, running free
+                (move < atr * 3.0)                      ? 0.25 :  // step2 done, mid tighten
+                                                          0.20;   // final remainder squeeze
             const double trail_sl = pos.is_long
                 ? (pos.entry + pos.mfe - atr_live * trail_mult)
                 : (pos.entry - pos.mfe + atr_live * trail_mult);
