@@ -336,7 +336,14 @@ struct FlowRunner {
     static constexpr double ALPHA_FAST = 0.05;
     static constexpr double ALPHA_SLOW = 0.005;
 
-    FlowRunner(){}
+    FlowRunner(){
+        // Set realistic risk per trade so lot sizing matches live system.
+        // GFE_RISK_DOLLARS default ($30) at 5pt SL = 0.06 lots.
+        // STEP1_DOLLAR_TRIGGER=$50 needs 50/(0.06*100)=8.3pt to fire -- realistic.
+        // Without this, default 0.01-lot sizing needs 50pt move to trigger staircase
+        // which never happens, causing every trade to hit MAX_HOLD_TIMEOUT.
+        eng.risk_dollars = 30.0;  // matches live risk_per_trade_usd
+    }
     void tick(const TickRow& r){
         const double mid = (r.bid + r.ask) * 0.5;
         // Warm up EWM
