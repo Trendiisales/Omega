@@ -685,9 +685,12 @@ private:
             const auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now-last_hb).count()>=10) { send_msg(ssl,PB::heartbeat()); last_hb=now; }
 
-            // Periodic re-poll of bar history (every 65s) for symbols that don't support
-            // live trendbar subscriptions. Keeps bar indicators fresh without live push.
-            if (!bar_repoll_disabled && now >= bar_repoll_next) {
+            // Periodic repoll disabled -- broker (BlackBull) returns INVALID_REQUEST
+            // for GetTrendbarsReq (pt=2137) on the repoll cycle, dropping the connection.
+            // Only the initial startup request succeeds. TrendPullback EMAs are seeded
+            // once at startup and remain valid for the session (EMAs move slowly).
+            // Re-enable this block if the broker ever supports live trendbar push (pt=2220).
+            if (false && !bar_repoll_disabled && now >= bar_repoll_next) {
                 bar_repoll_next = now + std::chrono::seconds(65);
                 for (const auto& bkv : bar_subscriptions) {
                     const int64_t sid = bkv.second.sym_id;
