@@ -365,6 +365,9 @@ static CTraderDepthClient  g_ctrader_depth;
 // OHLC bar state -- populated by cTrader trendbar API (M1+M5 history + live bars)
 // Read lock-free by GoldFlow and GoldStack via atomic accessors.
 static SymBarState         g_bars_gold;   // XAUUSD M1/M5 bars + indicators
+// Set true only when XAUUSD M15 bars are seeded from live cTrader tick data (not Dukascopy).
+// TrendPullback gold is blocked until this is true to prevent Dukascopy offset misalignment.
+static std::atomic<bool>   g_bars_gold_from_live_ticks{false};
 static SymBarState         g_bars_sp;     // US500.F M1/M5 bars + indicators
 static SymBarState         g_bars_nq;     // USTEC.F M1/M5 bars + indicators
 static SymBarState         g_bars_ger;    // GER40   M1/M5 bars + indicators
@@ -4247,12 +4250,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 fflush(stdout);
             }
 
-            // Force-restart at 10s -- with backoff after 3 attempts
-            // If broker structurally never sends sizes, stop hammering the connection.
-            // After 3 restarts: give up restarting, warn every 60s instead.
-            // GoldFlow already handles no-L2 via drift-persistence fallback.
-            static const int L2_MAX_RESTARTS = 3;
-            if (dead_sec >= 10 && s_l2_restart_cnt < L2_MAX_RESTARTS) {
+            // Give the book 60s to fill both sides before declaring dead.
+            // cTrader sends incremental updates -- bid and ask sides fill separately.
+            // 10s was too aggressive and cleared the book before it could stabilise.
+            static const int L2_MAX_RESTARTS = 1;
+            if (dead_sec >= 60 && s_l2_restart_cnt < L2_MAX_RESTARTS) {
                 ++s_l2_restart_cnt;
                 printf("[L2-RESTART] Gold L2 size dead %llds"
                        " -- forcing depth feed restart #%lld (max %d)\n",
@@ -4264,7 +4266,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_ctrader_depth.start();
                 s_l2_dead_since = 0;
                 s_l2_warn_last  = 0;
-            } else if (dead_sec >= 10 && s_l2_restart_cnt >= L2_MAX_RESTARTS) {
+            } else if (dead_sec >= 60 && s_l2_restart_cnt >= L2_MAX_RESTARTS) {
                 // Broker does not send L2 sizes -- drift-persistence mode permanent
                 // Warn once per minute only, no more restarts
                 if (now_wd - s_l2_warn_last >= 60) {
@@ -8884,11 +8886,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Still blocked by bracket and LatencyEdge (those are structural/speed trades
         // that would directly conflict with a swing position at the same level).
         // GoldStack (tick-pattern engine) also blocked -- shares exact same entry zone.
-        if (gold_can_enter
+        // TrendPullback gold DISABLED -- Dukascopy seed has price offset vs BlackBull.
+        // Re-enable once cTrader tick data bar seeding is confirmed working.
+        // All gold trading via GoldFlow + GoldStack + Bracket only.
+        const bool tpb_gold_armed = false;
+        if (tpb_gold_armed
+            && gold_can_enter
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
-            && !g_le_stack.has_open_position()
-            // GoldFlow concurrent allowed -- it's a 10s scalp, TPB is a 1-3hr swing
+            && !g_le_stack.has_open_position()\
             && !g_trend_pb_gold.has_open_position()) {
             const auto tpb = g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
             if (tpb.valid) {
@@ -10442,7 +10448,11 @@ int main(int argc, char* argv[])
     //   A $20 bracket in $12 noise is valid -- genuine compression above noise.
     // Silver: proportionally similar (~$0.10-0.40 noise). ATR_RANGE_K=1.5.
     // FX (EURUSD etc.): noise ~0.0003-0.0008. ATR_RANGE_K=1.8 (tighter price, more sensitive).
-    g_bracket_gold.ATR_PERIOD  = 20;  g_bracket_gold.ATR_RANGE_K  = 1.5;
+    // Gold bracket: ATR_RANGE_K=0 disables ATR floor -- use MIN_RANGE=1.0pt directly.
+    // With VIX at 24 gold compresses to 1-3pt ranges which ATR_RANGE_K=1.5 rejects (needs 15pt).
+    // The bracket window itself defines the range -- 1pt minimum just filters single-tick noise.
+    g_bracket_gold.ATR_PERIOD  = 20;  g_bracket_gold.ATR_RANGE_K  = 0.0;
+    g_bracket_gold.MIN_RANGE   = 1.0;
     g_bracket_xag.ATR_PERIOD   = 20;  g_bracket_xag.ATR_RANGE_K   = 1.5;
     g_bracket_eurusd.ATR_PERIOD = 20; g_bracket_eurusd.ATR_RANGE_K = 1.8;
     g_bracket_gbpusd.ATR_PERIOD = 20; g_bracket_gbpusd.ATR_RANGE_K = 1.8;
@@ -11505,6 +11515,13 @@ int main(int argc, char* argv[])
             set_ctrader_tick_ms(sym, std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
             on_tick(sym, bid, ask);
+        };
+        // Stamp per-symbol tick time on EVERY depth event, not just when both sides present.
+        // This prevents gold_size_dead from firing during incremental book fill and
+        // triggering connection restarts that clear the book before L2 can stabilise.
+        g_ctrader_depth.on_live_tick_ms_fn = [](const std::string& sym) noexcept {
+            set_ctrader_tick_ms(sym, std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
         };
         // Register atomic write callback -- cTrader thread writes derived scalars
         // (imbalance, microprice_bias, has_data) lock-free after each depth event.

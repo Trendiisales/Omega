@@ -398,6 +398,11 @@ public:
 
     // Optional: called after each bar close + indicator recompute
     std::function<void(const std::string&, int /*period*/, const OHLCBar&)> on_bar_fn;
+    // Called when a symbol's bars are seeded from LIVE cTrader tick data (not external seeds).
+    std::function<void(const std::string& /*sym*/)> on_live_bars_fn;
+    // Called on every depth event for a symbol -- used to stamp per-symbol live tick time
+    // so ctrader_depth_is_live() works correctly even before both book sides are present.
+    std::function<void(const std::string& /*sym*/)> on_live_tick_ms_fn;
 
     // Callback: write derived L2 scalars (imbalance, microprice_bias, has_data)
     // to per-symbol atomics -- called after every depth event, no lock required.
@@ -980,6 +985,8 @@ private:
                       << " bars, EMA9=" << std::fixed << std::setprecision(2) << state->m15.ind.ema9.load()
                       << " EMA50=" << state->m15.ind.ema50.load()
                       << " ATR=" << state->m15.ind.atr14.load() << "\n";
+            // Signal that TrendPullback can now use live-aligned bars
+            if (on_live_bars_fn) on_live_bars_fn(name);
         }
         if (on_bar_fn && (!m15_bars.empty() || !m5_bars.empty())) {
             const auto& last = m15_bars.empty() ? m5_bars.back() : m15_bars.back();
@@ -1206,6 +1213,13 @@ private:
             std::lock_guard<std::mutex> lk(*l2_mtx);
             (*l2_books)[name] = rebuilt;
         }
+
+        // Stamp per-symbol depth event time BEFORE on_tick_fn check.
+        // ctrader_depth_is_live() uses this to decide FIX vs cTrader price.
+        // Previously only stamped inside on_tick_fn (requires both sides) --
+        // that caused ctrader_depth_is_live=false during incremental book build,
+        // triggering spurious L2-DEAD restarts that cleared the book before it filled.
+        if (on_live_tick_ms_fn) on_live_tick_ms_fn(name);
 
         // ?? Primary price tick -- drives on_tick() with cTrader real-time price ?
         // Called AFTER l2_books update so cold_snap inside on_tick sees current book.
