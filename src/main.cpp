@@ -8889,37 +8889,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // TrendPullback gold DISABLED -- Dukascopy seed has price offset vs BlackBull.
         // Re-enable once cTrader tick data bar seeding is confirmed working.
         // All gold trading via GoldFlow + GoldStack + Bracket only.
-        const bool tpb_gold_armed = false;
-        if (tpb_gold_armed
-            && gold_can_enter
+#if 0
+        if (gold_can_enter
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
-            && !g_le_stack.has_open_position()\
+            && !g_le_stack.has_open_position()
             && !g_trend_pb_gold.has_open_position()) {
             const auto tpb = g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
             if (tpb.valid) {
-                // ?? EWM drift direction filter -- prevents TrendPB firing against macro trend ??
-                // Problem: during a strong downtrend a bounce pushes EMA9>EMA21>EMA50
-                // temporarily, triggering a false LONG signal into the macro downtrend.
-                // GoldStack EWM drift is the cleanest macro direction indicator available.
-                //   drift < -1.0 = confirmed down pressure ? suppress LONG TrendPB
-                //   drift > +1.0 = confirmed up pressure  ? suppress SHORT TrendPB
-                //   |drift| < 1.0 = neutral / ranging     ? allow both directions
                 const double gold_drift = g_gold_stack.ewm_drift();
-                const bool drift_ok = (tpb.is_long  && gold_drift >= -1.0) ||  // long ok unless strongly down
-                                      (!tpb.is_long && gold_drift <=  1.0);     // short ok unless strongly up
+                const bool drift_ok = (tpb.is_long  && gold_drift >= -1.0) ||
+                                      (!tpb.is_long && gold_drift <=  1.0);
                 if (!drift_ok) {
                     printf("[TRENDPB-GOLD] %s suppressed -- EWM drift=%.2f opposes direction\n",
                            tpb.is_long ? "LONG" : "SHORT", gold_drift);
                     fflush(stdout);
                     g_trend_pb_gold.cancel();
                 } else {
-                    // UpdateLastSignal AFTER enter_directional succeeds -- only show trades that actually fired
                     if (!enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true)) {
                         g_trend_pb_gold.cancel();
                     } else {
-                        // patch_size removed -- enter_directional already sized correctly
-                        // patch_size(g_last_directional_lot) was corrupting size with last ANY-symbol lot
                         g_telemetry.UpdateLastSignal("XAUUSD",
                             tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
                             "TREND_PB", regime.c_str(), "TREND_PB",
@@ -8928,6 +8917,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
         }
+#endif
 
         // ?? NBM London position management -- ALWAYS runs when position open ??
         // CRITICAL: same bug as TrendPB and GFE -- on_tick() was only called inside the
