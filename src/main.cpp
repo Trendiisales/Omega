@@ -1519,8 +1519,6 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
 
 // =============================================================================
 
-}
-
 
 // ?? Live trade telemetry helper -- static free function, callable from any context ??
 // Cannot be a lambda: MSVC refuses to call local lambdas defined inside another lambda
@@ -8630,7 +8628,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double pyr_tp_dist = std::max(pyr_atr * 2.5, pyr_sl_dist * 2.0);
                 const double pyr_tp      = pyr_long ? (pyr_mid + pyr_tp_dist) : (pyr_mid - pyr_tp_dist);
                 const double add_lot     = std::max(0.005,
-                    compute_size("XAUUSD", pyr_sl_dist, ask - bid, g_trend_pb_gold.ENTRY_SIZE_HINT)
+                    compute_size("XAUUSD", pyr_sl_dist, ask - bid, 0.01)  // 0.01 = base pyramid lot
                     * g_trend_pb_gold.PYRAMID_SIZE_MULT);
                 if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true)) {
                     ++g_trend_pb_gold.pyramid_adds_;
@@ -10275,7 +10273,6 @@ int main(int argc, char* argv[])
     g_trend_pb_gold.PYRAMID_ENABLED     = true;
     g_trend_pb_gold.PYRAMID_SIZE_MULT   = 0.5;
     g_trend_pb_gold.PYRAMID_MAX_ADDS    = 1;
-    g_trend_pb_gold.ENTRY_SIZE_HINT     = 0.01;  // base lot for pyramid compute_size
     // Trail/BE params: class defaults are correct for M15 ATR scale (4-8pts)
     // TRAIL_ARM_ATR_MULT=2.0, TRAIL_DIST_ATR_MULT=1.0, BE_ATR_MULT=1.0 -- no change needed
     // GER40: tighter band (index moves more cleanly around EMAs)

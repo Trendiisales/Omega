@@ -384,8 +384,6 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
-    int     pyramid_adds_   = 0;     // public: read/written by main.cpp pyramid dispatch
-    double  ENTRY_SIZE_HINT = 0.01;  // hint for compute_size in pyramid
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
@@ -1835,12 +1833,12 @@ public:
         // We set a signal reason suffix so the caller can inspect it.
         double tod_size_mult = 1.0;
         if (TOD_WEIGHT_ENABLED) {
-            struct tm ti{}; ca_utc_time(ti);
-            const int hmins = ti.tm_hour * 60 + ti.tm_min;
-            const bool prime = (hmins >= 420 && hmins < 570)   // 07:00-09:30
-                            || (hmins >= 810 && hmins < 900);   // 13:30-15:00
-            const bool mid   = (hmins >= 600 && hmins < 810);  // 10:00-13:30
-            tod_size_mult = prime ? 1.0 : mid ? 0.5 : 0.8;
+            struct tm tod_ti{}; ca_utc_time(tod_ti);
+            const int hmins = tod_ti.tm_hour * 60 + tod_ti.tm_min;
+            const bool prime    = (hmins >= 420 && hmins < 570)   // 07:00-09:30
+                               || (hmins >= 810 && hmins < 900);   // 13:30-15:00
+            const bool mid_sess = (hmins >= 600 && hmins < 810);  // 10:00-13:30
+            tod_size_mult = prime ? 1.0 : mid_sess ? 0.5 : 0.8;
         }
 
         // ── Improvement 5: CVD confirmation gate ─────────────────────────────
@@ -1929,6 +1927,7 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    int     pyramid_adds_   = 0;     // public: read/written by main.cpp pyramid dispatch
     void cancel() noexcept { pos_.reset(); be_locked_ = false; }
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); be_locked_ = false; }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
