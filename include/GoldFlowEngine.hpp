@@ -475,9 +475,26 @@ struct GoldFlowEngine {
         if ((int)m_struct_slow.size() > GFE_STRUCT_SLOW) m_struct_slow.pop_front();
 
         // Guard A: dollar distance from VWAP (no supervisor dependency)
-        const bool vwap_warmed     = (m_vwap_pts_dev != 0.0);
-        const bool vwap_trend_down = vwap_warmed && (m_vwap_pts_dev < -GFE_VWAP_BLOCK_PTS);
-        const bool vwap_trend_up   = vwap_warmed && (m_vwap_pts_dev >  GFE_VWAP_BLOCK_PTS);
+        // Two sub-cases:
+        //   A1 -- TREND guard: price is below VWAP (downtrend) -> block LONG
+        //                      price is above VWAP (uptrend)   -> block SHORT
+        //   A2 -- OVEREXTENSION guard: price is already >GFE_VWAP_OVEREXT_PTS above VWAP
+        //         -> block LONG (chasing completed pump, reversal risk)
+        //         price is already >GFE_VWAP_OVEREXT_PTS below VWAP
+        //         -> block SHORT (chasing completed dump, bounce risk)
+        //   Evidence: LONG @4719.65 @00:28 UTC -- price was +9.62pts above VWAP (4710).
+        //   Neither trend guard nor structure guard fired because price was above VWAP
+        //   (correct direction by VWAP) and no lower-high yet (pump just peaked).
+        //   The move had already happened -- entering long 9.62pts above VWAP was chasing.
+        //   GFE_VWAP_OVEREXT_PTS=7.0: chosen conservatively. A 7pt extension on gold
+        //   (~0.15% of price) is a real directional move, not spread noise.
+        //   Does not block normal entries where VWAP drift is 1-5pts (most valid signals).
+        static constexpr double GFE_VWAP_OVEREXT_PTS  = 7.0; // pts -- block if already overextended
+        const bool vwap_warmed      = (m_vwap_pts_dev != 0.0);
+        const bool vwap_trend_down  = vwap_warmed && (m_vwap_pts_dev < -GFE_VWAP_BLOCK_PTS);
+        const bool vwap_trend_up    = vwap_warmed && (m_vwap_pts_dev >  GFE_VWAP_BLOCK_PTS);
+        const bool vwap_overext_up  = vwap_warmed && (m_vwap_pts_dev >  GFE_VWAP_OVEREXT_PTS);
+        const bool vwap_overext_dn  = vwap_warmed && (m_vwap_pts_dev < -GFE_VWAP_OVEREXT_PTS);
 
         // Guard B: rolling structure (lower-high = downtrend, higher-low = uptrend)
         const bool struct_full = ((int)m_struct_fast.size() >= GFE_STRUCT_FAST
@@ -495,17 +512,19 @@ struct GoldFlowEngine {
             struct_higher_low = (fast_lo - slow_lo) >= atr_struct;  // fast low  > slow low  by 1 ATR
         }
 
-        // Combined block: either guard is sufficient
-        const bool block_long  = vwap_trend_down || struct_lower_high;
-        const bool block_short = vwap_trend_up   || struct_higher_low;
+        // Combined block: any guard is sufficient
+        // block_long:  A1(price below VWAP) OR A2(overextended above VWAP) OR B(lower-high)
+        // block_short: A1(price above VWAP) OR A2(overextended below VWAP) OR B(higher-low)
+        const bool block_long  = vwap_trend_down || vwap_overext_up || struct_lower_high;
+        const bool block_short = vwap_trend_up   || vwap_overext_dn || struct_higher_low;
 
         if (block_long || block_short) {
             static int64_t s_bias_log = 0;
             if (now_ms - s_bias_log >= 5000) {
                 s_bias_log = now_ms;
-                printf("[GOLD-FLOW] TREND-BLOCK block_long=%d block_short=%d vwap_pts=%.2f(lim=%.1f) lower_hi=%d higher_lo=%d atr=%.2f\n",
+                printf("[GOLD-FLOW] TREND-BLOCK block_long=%d block_short=%d vwap_pts=%.2f(trend=%.1f overext=%.1f) lower_hi=%d higher_lo=%d atr=%.2f\n",
                        (int)block_long, (int)block_short,
-                       m_vwap_pts_dev, GFE_VWAP_BLOCK_PTS,
+                       m_vwap_pts_dev, GFE_VWAP_BLOCK_PTS, GFE_VWAP_OVEREXT_PTS,
                        (int)struct_lower_high, (int)struct_higher_low, atr_struct);
                 fflush(stdout);
             }
