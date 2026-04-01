@@ -205,10 +205,12 @@ namespace PB {
 inline std::vector<uint8_t> get_trendbars_req(
     int64_t ctid, int64_t sym_id, uint32_t period, uint32_t count = 200)
 {
-    // Compute time window: to=now, from=now minus (count * period_ms)
-    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+    // cTrader ProtoOAGetTrendbarsReq timestamps are in MILLISECONDS (UTC epoch ms).
+    // fromTimestamp (field 5) and toTimestamp (field 6) are required.
+    // Max range per request: 5000 bars. M1x200 = 200 minutes -- well within limit.
+    const int64_t now_ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    const int64_t period_ms = int64_t(period) * 60 * 1000;
+    const int64_t period_ms = int64_t(period) * 60LL * 1000LL;
     const int64_t from_ms   = now_ms - int64_t(count) * period_ms;
     const int64_t to_ms     = now_ms;
     std::vector<uint8_t> inner;
@@ -217,7 +219,6 @@ inline std::vector<uint8_t> get_trendbars_req(
     write_field_varint(inner, 4, uint64_t(period));
     write_field_varint(inner, 5, uint64_t(from_ms));
     write_field_varint(inner, 6, uint64_t(to_ms));
-    // field 7 (count) does not exist in ProtoOAGetTrendbarsReq -- omit or causes INVALID_REQUEST
     return frame_msg(2137, inner);
 }
 
@@ -624,7 +625,7 @@ private:
         for (const auto& r : pending_bar_reqs)  bar_send_queue.push_back({r.name, r.sid, r.period, r.count, false});
         for (const auto& s : pending_live_subs)  bar_send_queue.push_back({s.name, s.sid, s.period, 0, true});
         size_t bar_send_idx = 0;
-        auto   bar_send_next   = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        auto   bar_send_next   = std::chrono::steady_clock::now() + std::chrono::seconds(10); // wait for depth subscription ACK before sending bar reqs
         auto   bar_repoll_next = std::chrono::steady_clock::now() + std::chrono::seconds(65);
         bool   bar_repoll_disabled = false;  // set true when broker rejects bar reqs
 
