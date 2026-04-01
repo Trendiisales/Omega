@@ -988,6 +988,39 @@ public:
             }
         }
 
+        // 10. Equity curve momentum upscaling.
+        // When recent trades are strong (rolling win rate on last 10 full closes > 70%
+        // AND daily P&L is positive), allow up to 1.20x normal size.
+        // Rationale: Kelly says bet more when edge is confirmed. If the last 10 trades
+        // are going well today, we have regime confirmation -- the engine is in sync
+        // with market conditions. Scale up modestly (max 1.20x, never aggressive).
+        // Ramp: 70-80% WR = 1.05x, 80-90% WR = 1.10x, >90% WR = 1.15x, and daily
+        // P&L must be positive (don't scale up on a lucky streak in a losing day).
+        // Only applies when Kelly is active (>= min_trades) -- not during warmup.
+        if (kelly_enabled && daily_loss_usd < 0.0) {  // daily_loss_usd < 0 means we are UP
+            auto it = perf.find(symbol);
+            if (it != perf.end() && it->second.trade_count() >= kelly.min_trades) {
+                const double recent_wr = it->second.win_rate(10);  // last 10 trades
+                double up_scale = 1.0;
+                if      (recent_wr > 0.90) up_scale = 1.15;
+                else if (recent_wr > 0.80) up_scale = 1.10;
+                else if (recent_wr > 0.70) up_scale = 1.05;
+                if (up_scale > 1.0) {
+                    static thread_local int64_t s_up_log = 0;
+                    const int64_t now_up = static_cast<int64_t>(
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count());
+                    if (now_up - s_up_log > 300) {
+                        s_up_log = now_up;
+                        std::printf("[ADAPTIVE-RISK] %s equity_upscale=%.2f "
+                                    "(recent_wr=%.0f%% last 10, daily P&L positive)\n",
+                                    symbol.c_str(), up_scale, recent_wr * 100.0);
+                    }
+                    lot *= up_scale;
+                }
+            }
+        }
+
         // Floor to 0.01 lots, round to 2dp
         lot = std::max(0.01, std::floor(lot * 100.0 + 0.5) / 100.0);
         return lot;

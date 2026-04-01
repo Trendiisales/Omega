@@ -7982,9 +7982,70 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 gf_block_reason = "BARS_NOT_READY";
             }
 
+            // ?? Gate 0e: Compression regime block ???????????????????????????
+            // During COMPRESSION with low vol_range, no directional follow-through.
+            // Evidence: 01:57 -$97, 01:58 -$86, 02:31 -$84, 03:01 -$85 all fired
+            // in COMPRESSION regime. Profitable runs happened during IMPULSE/TREND.
+            if (gf_tick_ok) {
+                const bool in_compression = (std::strcmp(gold_stack_regime, "COMPRESSION") == 0
+                                          || std::strcmp(gold_stack_regime, "QUIET_COMPRESSION") == 0);
+                static constexpr double GF_COMPRESSION_VOL_FLOOR = 2.0; // pts
+                const double vol_range_now = g_gold_stack.vol_range();
+                if (in_compression && vol_range_now >= 0.0 && vol_range_now < GF_COMPRESSION_VOL_FLOOR) {
+                    static int64_t s_comp_log = 0;
+                    if (static_cast<int64_t>(std::time(nullptr)) - s_comp_log >= 30) {
+                        s_comp_log = static_cast<int64_t>(std::time(nullptr));
+                        printf("[GF-GATE-BLOCK] reason=COMPRESSION_NO_VOL regime=%s "
+                               "vol_range=%.2f < %.1fpts -- no directional follow-through\n",
+                               gold_stack_regime, vol_range_now, GF_COMPRESSION_VOL_FLOOR);
+                        fflush(stdout);
+                    }
+                    gf_tick_ok = false;
+                    gf_block_reason = "COMPRESSION_NO_VOL";
+                }
+            }
+
+            // ?? Gate 0f: Room-to-target (R:R geometry check) ????????????????
+            // Verify price has at least GF_MIN_VWAP_ROOM_R * ATR of room to VWAP
+            // when VWAP is a headwind (entering against VWAP pull).
+            // Root cause of 0.48x payoff ratio: entries when price is already near
+            // VWAP -- move stalls, trail never fires, SL hit on reversal.
+            // Exception: entering WITH VWAP momentum (moving toward it) = not a headwind.
+            if (gf_tick_ok) {
+                const double gf_atr_rt   = g_gold_flow.current_atr();
+                const double gf_vwap_rt  = g_gold_stack.vwap();
+                if (gf_atr_rt > 0.0 && gf_vwap_rt > 0.0) {
+                    const double gf_mid_rt   = (bid + ask) * 0.5;
+                    const double vwap_dist   = std::fabs(gf_mid_rt - gf_vwap_rt);
+                    const double gf_l2_rt    = g_macro_ctx.gold_l2_imbalance;
+                    const double gf_drft_rt  = g_gold_stack.ewm_drift();
+                    const bool   gf_long_rt  = (gf_l2_rt > GFE_LONG_THRESHOLD)
+                                            || (gf_l2_rt >= 0.40 && gf_l2_rt <= 0.60 && gf_drft_rt > 1.0);
+                    // VWAP headwind: entering away from VWAP = VWAP will fight us
+                    const bool vwap_headwind = (gf_long_rt  && gf_mid_rt > gf_vwap_rt)
+                                            || (!gf_long_rt && gf_mid_rt < gf_vwap_rt);
+                    static constexpr double GF_MIN_VWAP_ROOM_R = 1.5;
+                    if (vwap_headwind && vwap_dist < gf_atr_rt * GF_MIN_VWAP_ROOM_R) {
+                        static int64_t s_room_log = 0;
+                        if (static_cast<int64_t>(std::time(nullptr)) - s_room_log >= 30) {
+                            s_room_log = static_cast<int64_t>(std::time(nullptr));
+                            printf("[GF-GATE-BLOCK] reason=NO_ROOM_TO_TARGET %s "
+                                   "vwap=%.2f mid=%.2f dist=%.2fpts atr=%.2f need=%.2fpts (%.1fR of %.1fR)\n",
+                                   gf_long_rt ? "LONG" : "SHORT",
+                                   gf_vwap_rt, gf_mid_rt, vwap_dist, gf_atr_rt,
+                                   gf_atr_rt * GF_MIN_VWAP_ROOM_R,
+                                   vwap_dist / gf_atr_rt, GF_MIN_VWAP_ROOM_R);
+                            fflush(stdout);
+                        }
+                        gf_tick_ok = false;
+                        gf_block_reason = "NO_ROOM_TO_TARGET";
+                    }
+                }
+            }
+
             // ?? Gate 1: Cost viability ?????????????????????????????????????????
-            // Estimates match engine sizing: sl=ATR?1.0, tp=sl?2 (2R), lot=risk/sl/100
-            // ATR=0 (warmup) ? gf_tick_ok stays true; engine returns before entering.
+            // Estimates match engine sizing: sl=ATR*1.0, tp=sl*2 (2R), lot=risk/sl/100
+            // ATR=0 (warmup) -> gf_tick_ok stays true; engine returns before entering.
             {
                 const double gf_atr = g_gold_flow.current_atr();
                 if (gf_atr > 0.0) {
