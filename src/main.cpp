@@ -4172,51 +4172,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.uk100_compressing = (g_eng_uk100.phase  == omega::Phase::COMPRESSION
                                   || g_eng_uk100.phase  == omega::Phase::BREAKOUT_WATCH);
 
-    // ?? L2 imbalance: read from g_l2_books which is FIX-sourced and has BOTH sides ??
-    // g_l2_gold.imbalance (cTrader atomic) is ask-only because BlackBull cTrader depth
-    // sends ask-side quotes only for XAUUSD. The FIX W/X feed sends full bid+ask book
-    // and merges both sides into g_l2_books -- this is what the GUI displays correctly.
-    // Trading engines must use the same source as the GUI.
-    // Rate-limited to once per 500ms -- g_l2_mtx is also held by cTrader depth thread
-    // and locking it on every tick causes contention at 60-80 ticks/sec.
-    {
-        static int64_t s_last_l2_read_ms = 0;
-        const int64_t now_ms_l2 = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        if (now_ms_l2 - s_last_l2_read_ms >= 500) {
-            s_last_l2_read_ms = now_ms_l2;
-            std::lock_guard<std::mutex> lk(g_l2_mtx);
-            auto read_imb = [&](const std::string& sym) -> double {
-                auto it = g_l2_books.find(sym);
-                if (it == g_l2_books.end()) return 0.5;
-                return it->second.imbalance();
-            };
-            auto read_hd = [&](const std::string& sym) -> bool {
-                auto it = g_l2_books.find(sym);
-                if (it == g_l2_books.end()) return false;
-                return it->second.has_data();
-            };
-            g_macro_ctx.gold_l2_imbalance   = read_imb("XAUUSD");
-            g_macro_ctx.sp_l2_imbalance     = read_imb("US500.F");
-            g_macro_ctx.nq_l2_imbalance     = read_imb("USTEC.F");
-            g_macro_ctx.cl_l2_imbalance     = read_imb("USOIL.F");
-            g_macro_ctx.xag_l2_imbalance    = read_imb("XAGUSD");
-            g_macro_ctx.eur_l2_imbalance    = read_imb("EURUSD");
-            g_macro_ctx.gbp_l2_imbalance    = read_imb("GBPUSD");
-            g_macro_ctx.aud_l2_imbalance    = read_imb("AUDUSD");
-            g_macro_ctx.nzd_l2_imbalance    = read_imb("NZDUSD");
-            g_macro_ctx.jpy_l2_imbalance    = read_imb("USDJPY");
-            g_macro_ctx.ger40_l2_imbalance  = read_imb("GER40");
-            g_macro_ctx.uk100_l2_imbalance  = read_imb("UK100");
-            g_macro_ctx.estx50_l2_imbalance = read_imb("ESTX50");
-            g_macro_ctx.brent_l2_imbalance  = read_imb("BRENT");
-            g_macro_ctx.nas_l2_imbalance    = read_imb("NAS100");
-            g_macro_ctx.us30_l2_imbalance   = read_imb("DJ30.F");
-            g_macro_ctx.gold_l2_real        = read_hd("XAUUSD");
-        }
-    }
-
+    // ?? L2 imbalance: lock-free atomic reads ????????????????????????????????????
+    // FIX W/X path writes imbalance atomics after every book update under mutex.
+    // Hot path reads here with zero contention -- no mutex needed on read side.
+    g_macro_ctx.gold_l2_imbalance   = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.sp_l2_imbalance     = g_l2_sp.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.nq_l2_imbalance     = g_l2_nq.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.cl_l2_imbalance     = g_l2_cl.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.xag_l2_imbalance    = g_l2_xag.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.eur_l2_imbalance    = g_l2_eur.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.gbp_l2_imbalance    = g_l2_gbp.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.aud_l2_imbalance    = g_l2_aud.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.nzd_l2_imbalance    = g_l2_nzd.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.jpy_l2_imbalance    = g_l2_jpy.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.ger40_l2_imbalance  = g_l2_ger40.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.uk100_l2_imbalance  = g_l2_uk100.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.estx50_l2_imbalance = g_l2_estx50.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.brent_l2_imbalance  = g_l2_brent.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.nas_l2_imbalance    = g_l2_nas.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.us30_l2_imbalance   = g_l2_us30.imbalance.load(std::memory_order_relaxed);
+    g_macro_ctx.gold_l2_real        = g_l2_gold.has_data.load(std::memory_order_relaxed);
     // Microprice bias -- still from cTrader atomics (FIX doesn't compute this)
     g_macro_ctx.gold_microprice_bias = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.sp_microprice_bias   = g_l2_sp.microprice_bias.load(std::memory_order_relaxed);
@@ -9359,16 +9334,27 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             }
             // Store L2 book
             if (book.bid_count > 0 || book.ask_count > 0) {
-                std::lock_guard<std::mutex> lk(g_l2_mtx);
-                auto& stored = g_l2_books[sym];
-                // Merge: only update sides we received
-                if (book.bid_count > 0) {
-                    stored.bid_count = book.bid_count;
-                    for (int i = 0; i < book.bid_count; ++i) stored.bids[i] = book.bids[i];
+                double imb = 0.5;
+                bool   hd  = false;
+                {
+                    std::lock_guard<std::mutex> lk(g_l2_mtx);
+                    auto& stored = g_l2_books[sym];
+                    if (book.bid_count > 0) {
+                        stored.bid_count = book.bid_count;
+                        for (int i = 0; i < book.bid_count; ++i) stored.bids[i] = book.bids[i];
+                    }
+                    if (book.ask_count > 0) {
+                        stored.ask_count = book.ask_count;
+                        for (int i = 0; i < book.ask_count; ++i) stored.asks[i] = book.asks[i];
+                    }
+                    imb = stored.imbalance();
+                    hd  = stored.has_data();
                 }
-                if (book.ask_count > 0) {
-                    stored.ask_count = book.ask_count;
-                    for (int i = 0; i < book.ask_count; ++i) stored.asks[i] = book.asks[i];
+                // Write to per-symbol atomic -- hot path reads this with zero lock
+                AtomicL2* al = get_atomic_l2(sym);
+                if (al) {
+                    al->imbalance.store(imb, std::memory_order_relaxed);
+                    al->has_data.store(hd,  std::memory_order_relaxed);
                 }
             }
         }
@@ -11762,16 +11748,8 @@ int main(int argc, char* argv[])
         bool l2_ok = false;
         while (std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - t1).count() < 30) {
-            double imb = 0.5;
-            bool hd = false;
-            {
-                std::lock_guard<std::mutex> lk(g_l2_mtx);
-                auto it = g_l2_books.find("XAUUSD");
-                if (it != g_l2_books.end()) {
-                    imb = it->second.imbalance();
-                    hd  = it->second.has_data();
-                }
-            }
+            const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+            const bool   hd  = g_l2_gold.has_data.load(std::memory_order_relaxed);
             if (hd || imb < 0.499 || imb > 0.501) { l2_ok = true; break; }
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
@@ -11788,12 +11766,7 @@ int main(int argc, char* argv[])
         std::cout.flush();
 
         // --- All checks passed ---
-        double imb = 0.5;
-        {
-            std::lock_guard<std::mutex> lk(g_l2_mtx);
-            auto it = g_l2_books.find("XAUUSD");
-            if (it != g_l2_books.end()) imb = it->second.imbalance();
-        }
+        const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
         write_status("OK: cTrader live, L2 live (imb=" + std::to_string(imb).substr(0,5) + ")");
     }).detach();
     // =========================================================================
