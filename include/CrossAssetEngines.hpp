@@ -1730,15 +1730,18 @@ public:
 
         if (tick_count_ < EMA_WARMUP_TICKS) return {};
 
-        // Session gate: London/NY only
-        // 08:00-20:00 UTC for indices -- post-London (20:00-22:00) is thin tape
-        // with wide spreads and EMA flipping, causing direction-alternating losses.
-        // XAUUSD trades 23h/day so gold gets the full 08:00-22:00 window.
+        // Session gate: indices only (thin tape post-London)
+        // Gold trades 23h/day -- trend is a trend regardless of session.
+        // H4 gate, CVD gate, EMA separation and MIN_EMA_SEP already filter noise.
+        // Removing the 08:00 gate means Asian trends like the 4580->4800 move are caught.
         struct tm ti{}; ca_utc_time(ti);
         const int h = ti.tm_hour;
         const bool is_gold = (sym.find("XAU") != std::string::npos);
-        const int session_end = is_gold ? 22 : 20;  // indices stop at 20:00 UTC
-        if (h < 8 || h >= session_end) return {};
+        if (!is_gold) {
+            // Indices: London open to post-NY close only (08:00-20:00 UTC)
+            if (h < 8 || h >= 20) return {};
+        }
+        // Gold: no session gate -- 24h trend following
 
         if (ca_now_sec() < cooldown_until_) return {};
 
@@ -1826,18 +1829,17 @@ public:
         }
 
         // ── Improvement 4: Time-of-day weighting ─────────────────────────────
-        // Best windows for gold M15: London open 07-09:30, NY open 13:30-15:00.
-        // Mid-session 10:00-13:30: thin tape, false pullbacks.
-        // Outside session gate (handled upstream) this is already blocked.
-        // Here we record a size scalar that main.cpp applies via patch_size().
-        // We set a signal reason suffix so the caller can inspect it.
+        // Gold 24h: Asian trending hours get full size when trend is clear.
+        // Prime: London open 07-09:30, NY open 13:30-15:00, Asian trend 00:00-07:00
+        // Reduced: Mid-session 10:00-13:30 (positioning noise)
         double tod_size_mult = 1.0;
         if (TOD_WEIGHT_ENABLED) {
             struct tm tod_ti{}; ca_utc_time(tod_ti);
             const int hmins = tod_ti.tm_hour * 60 + tod_ti.tm_min;
-            const bool prime    = (hmins >= 420 && hmins < 570)   // 07:00-09:30
-                               || (hmins >= 810 && hmins < 900);   // 13:30-15:00
-            const bool mid_sess = (hmins >= 600 && hmins < 810);  // 10:00-13:30
+            const bool prime    = (hmins >= 420 && hmins < 570)   // 07:00-09:30 London open
+                               || (hmins >= 810 && hmins < 900)   // 13:30-15:00 NY open
+                               || (hmins <  420);                  // 00:00-07:00 Asian trend
+            const bool mid_sess = (hmins >= 600 && hmins < 810);  // 10:00-13:30 thin tape
             tod_size_mult = prime ? 1.0 : mid_sess ? 0.5 : 0.8;
         }
 

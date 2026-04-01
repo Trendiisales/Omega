@@ -8575,7 +8575,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // TrendPullback gold -- re-enabled with tick-EMA-correct TP (ATR-based, not EMA9)
         // and widened pullback band (0.15% not 0.05%).
         // Does NOT require bar data -- runs on tick EMAs with proper time-equivalent alphas.
-        if (gold_can_enter
+        // TrendPullback gold: 24h entry gate -- trend is a trend regardless of session.
+        // Uses symbol_gate (risk/max_positions) but NOT session slot gate.
+        // Only hard blocks: dead-zone spread spike window (05:00-06:30 UTC) and NY close noise.
+        const bool tpb_gold_session_ok = !in_ny_close_noise && (gold_session_slot != 0 || [&](){
+            // Allow slot 0 (05:00-07:00) ONLY after 06:30 when spreads have normalised
+            struct tm ti_s{}; auto t_s = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            gmtime_s(&ti_s, &t_s);
+            return (ti_s.tm_hour * 60 + ti_s.tm_min) >= 390; // 06:30 UTC
+        }());
+        const bool tpb_gold_can_enter = tpb_gold_session_ok
+                                     && symbol_gate("XAUUSD", gold_any_open)
+                                     && !gold_post_impulse_block;
+        if (tpb_gold_can_enter
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
             && !g_le_stack.has_open_position()
@@ -8611,7 +8623,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && g_trend_pb_gold.has_open_position()
             && g_trend_pb_gold.pyramid_adds_ < g_trend_pb_gold.PYRAMID_MAX_ADDS
             && g_trend_pb_gold.daily_pnl() > -g_trend_pb_gold.DAILY_LOSS_CAP * 0.5
-            && gold_can_enter) {
+            && tpb_gold_can_enter) {
             const double pyr_mid    = (bid + ask) * 0.5;
             const double pyr_ema50  = g_trend_pb_gold.ema50();
             const double pyr_band   = pyr_mid * g_trend_pb_gold.PULLBACK_BAND_PCT / 100.0;
