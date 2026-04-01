@@ -1,15 +1,6 @@
 // =============================================================================
 // OmegaBacktest.cpp -- Native C++ backtester for all Omega engine families
 //
-// Replaces Python backtest.py. Targets 500K-2M ticks/second vs ~21K in Python.
-//
-// CRITICAL: OmegaTimeShim.hpp MUST be the first include. It redirects
-// std::chrono::steady_clock, system_clock, and time() so all engine cooldowns,
-// session filters, and hold-time gates advance with CSV timestamps rather than
-// wall clock. Without the shim, a fast backtest produces completely wrong
-// trade counts -- cooldown gates either never expire (wall clock too fast) or
-// constantly expire, depending on the gate type.
-//
 // BUILD:
 //   cmake --build build --target OmegaBacktest --config Release
 //
@@ -26,7 +17,7 @@
 //   A:  timestamp_ms,bid,ask
 //   B:  timestamp_ms,bid,ask,vol
 //   C:  YYYY.MM.DD,HH:MM:SS.mmm,bid,ask,vol   (Dukascopy)
-//   D:  timestamp_ms,open,high,low,close,vol   (OHLCV -- uses close?0.15 spread)
+//   D:  timestamp_ms,open,high,low,close,vol   (OHLCV -- uses close±0.15 spread)
 //
 // OUTPUT:
 //   Console       live progress + per-engine summary table
@@ -34,10 +25,8 @@
 //   bt_report.csv per-engine aggregate stats
 // =============================================================================
 
-// ?? Time shim -- MUST be first, before ANY chrono or engine header ????????????
 #include "OmegaTimeShim.hpp"
 
-// ?? Standard library (after shim -- chrono types are now simulated) ???????????
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -51,7 +40,6 @@
 #include <iostream>
 #include <memory>
 
-// ?? Platform: memory-mapped I/O ??????????????????????????????????????????????
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  define NOMINMAX
@@ -63,7 +51,6 @@
 #  include <unistd.h>
 #endif
 
-// ?? Omega engine headers (all clock calls redirect to simulated time) ????????
 #include "../include/OmegaTradeLedger.hpp"
 #include "../include/GoldEngineStack.hpp"
 #include "../include/GoldFlowEngine.hpp"
@@ -145,7 +132,6 @@ static inline int64_t fast_i64(const char* s, const char** e) noexcept {
     return v;
 }
 
-// YYYY.MM.DD + HH:MM:SS.mmm ? epoch ms (Dukascopy)
 static int64_t duka_ts(const char* d, const char* t) noexcept {
     int y  = (d[0]-'0')*1000+(d[1]-'0')*100+(d[2]-'0')*10+(d[3]-'0');
     int mo = (d[5]-'0')*10+(d[6]-'0');
@@ -177,15 +163,9 @@ static std::vector<TickRow> parse_csv(const MemMappedFile& f) {
     std::vector<TickRow> v; v.reserve(130'000'000);
     const char* p   = f.data;
     const char* end = p + f.size;
-    // BOM
     if (f.size>=3&&(uint8_t)p[0]==0xEF&&(uint8_t)p[1]==0xBB&&(uint8_t)p[2]==0xBF) p+=3;
-    // Header row -- detect ask/bid column order from header names
-    // Your file: timestamp,askPrice,bidPrice  (ask first)
-    // Standard:  timestamp,bid,ask            (bid first)
     bool ask_first = false;
     if (*p && (*p<'0'||*p>'9')) {
-        // Scan header for "ask" appearing before "bid"
-        const char* hdr = p;
         const char* ask_pos = nullptr;
         const char* bid_pos = nullptr;
         while (p<end && *p!='\n') {
@@ -212,16 +192,15 @@ static std::vector<TickRow> parse_csv(const MemMappedFile& f) {
             r.ask=fast_f(p,&nx);p=nx;
         } else if (fmt == Fmt::OHLCV) {
             r.ts_ms=fast_i64(p,&nx);p=nx;if(*p==',')++p;
-            fast_f(p,&nx);p=nx;if(*p==',')++p;  // open
-            fast_f(p,&nx);p=nx;if(*p==',')++p;  // high
-            fast_f(p,&nx);p=nx;if(*p==',')++p;  // low
+            fast_f(p,&nx);p=nx;if(*p==',')++p;
+            fast_f(p,&nx);p=nx;if(*p==',')++p;
+            fast_f(p,&nx);p=nx;if(*p==',')++p;
             double cl=fast_f(p,&nx);p=nx;
             r.bid=cl-0.15; r.ask=cl+0.15;
         } else {
             r.ts_ms=fast_i64(p,&nx);p=nx;if(*p==',')++p;
             double c1=fast_f(p,&nx); p=nx;if(*p==',')++p;
             double c2=fast_f(p,&nx); p=nx;
-            // Assign based on detected column order
             if (ask_first) { r.ask=c1; r.bid=c2; }
             else            { r.bid=c1; r.ask=c2; }
         }
@@ -277,7 +256,7 @@ namespace store {
 static auto cb() { return [](const omega::TradeRecord& t){ store::add(t); }; }
 
 // =============================================================================
-// VWAP tracker for CrossAsset engines (resets daily in simulated time)
+// VWAP tracker
 // =============================================================================
 struct BtVwap {
     double pv=0, vol=0; int day=-1;
@@ -302,7 +281,6 @@ struct BtVwap {
 struct GoldRunner {
     omega::gold::GoldEngineStack eng;
     double lat;
-    // EWM drift for GoldStack sub-engines (same computation as FlowRunner)
     double ewm_fast_ = 0.0, ewm_slow_ = 0.0;
     bool   ewm_init_ = false;
     static constexpr double ALPHA_FAST = 0.05;
@@ -313,8 +291,6 @@ struct GoldRunner {
         if (!ewm_init_) { ewm_fast_ = mid; ewm_slow_ = mid; ewm_init_ = true; }
         ewm_fast_ = ALPHA_FAST * mid + (1.0 - ALPHA_FAST) * ewm_fast_;
         ewm_slow_ = ALPHA_SLOW * mid + (1.0 - ALPHA_SLOW) * ewm_slow_;
-        // GoldEngineStack::on_tick recomputes its own EWM internally,
-        // but we also call it here so the external drift is consistent.
         auto c=cb();
         (void)eng.on_tick(r.bid,r.ask,lat,c);
     }
@@ -322,14 +298,6 @@ struct GoldRunner {
 
 struct FlowRunner {
     GoldFlowEngine eng;
-    // EWM drift computed locally from tick prices.
-    // Mirrors GoldEngineStack::governor_ EWM computation exactly:
-    //   fast alpha=0.05 (~20-tick half-life)
-    //   slow alpha=0.005 (~200-tick half-life)
-    // drift = fast - slow: positive = bullish, negative = bearish.
-    // This is the same signal GoldFlowEngine receives in live trading.
-    // Previously hardcoded to 0.0 -- made GoldFlow completely blind and
-    // produced invalid all-negative backtest results.
     double ewm_fast_ = 0.0, ewm_slow_ = 0.0;
     bool   ewm_init_ = false;
     int64_t tick_count_ = 0;
@@ -337,23 +305,16 @@ struct FlowRunner {
     static constexpr double ALPHA_SLOW = 0.005;
 
     FlowRunner(){
-        // Set realistic risk per trade so lot sizing matches live system.
-        // GFE_RISK_DOLLARS default ($30) at 5pt SL = 0.06 lots.
-        // STEP1_DOLLAR_TRIGGER=$50 needs 50/(0.06*100)=8.3pt to fire -- realistic.
-        // Without this, default 0.01-lot sizing needs 50pt move to trigger staircase
-        // which never happens, causing every trade to hit MAX_HOLD_TIMEOUT.
-        eng.risk_dollars = 30.0;  // matches live risk_per_trade_usd
+        eng.risk_dollars = 30.0;
     }
     void tick(const TickRow& r){
         const double mid = (r.bid + r.ask) * 0.5;
-        // Warm up EWM
         if (!ewm_init_) { ewm_fast_ = mid; ewm_slow_ = mid; ewm_init_ = true; }
         ewm_fast_ = ALPHA_FAST * mid + (1.0 - ALPHA_FAST) * ewm_fast_;
         ewm_slow_ = ALPHA_SLOW * mid + (1.0 - ALPHA_SLOW) * ewm_slow_;
         const double ewm_drift = ewm_fast_ - ewm_slow_;
         ++tick_count_;
         auto c=cb();
-        // l2_imb=0.5 (neutral book -- no L2 in CSV, drift carries the signal)
         (void)eng.on_tick(r.bid, r.ask, 0.5, ewm_drift, r.ts_ms, c);
     }
 };
@@ -452,7 +413,7 @@ static void write_trades(const char* path){
                 (long long)(t.exitTs-t.entryTs), t.exitReason.c_str(),
                 t.spreadAtEntry, t.latencyMs, t.regime.c_str());
     fclose(f);
-    printf("[OUTPUT] %zu trade records ? %s\n", store::recs.size(), path);
+    printf("[OUTPUT] %zu trade records -> %s\n", store::recs.size(), path);
 }
 static void write_report(const char* path){
     FILE* f=fopen(path,"w"); if(!f)return;
@@ -464,7 +425,7 @@ static void write_report(const char* path){
         fprintf(f,"%s,%lld,%.2f,%.4f,%.4f,%.4f,%.1f,%.3f\n",
                 s->name.c_str(),(long long)s->n,s->wr(),s->pnl,s->avg(),s->dd,s->avgh(),s->sharpe());
     fclose(f);
-    printf("[OUTPUT] Engine report  ? %s\n", path);
+    printf("[OUTPUT] Engine report  -> %s\n", path);
 }
 
 // =============================================================================
@@ -472,59 +433,45 @@ static void write_report(const char* path){
 // =============================================================================
 int main(int argc, char** argv){
     Cfg cfg = parse(argc,argv);
-    // Suppress engine verbose output when --quiet
-    // Engines use std::cout heavily (entry/exit/ratchet logs).
-    // Redirect to /dev/null so only the progress bar and summary show.
+
+    // Save original stdout fd BEFORE redirecting, so we can restore it for summary.
+    int stdout_saved = -1;
 #ifndef _WIN32
     FILE* devnull = nullptr;
     if (cfg.quiet) {
+        stdout_saved = dup(STDOUT_FILENO);
         devnull = fopen("/dev/null", "w");
         if (devnull) { fflush(stdout); dup2(fileno(devnull), STDOUT_FILENO); }
     }
 #else
     if (cfg.quiet) {
+        stdout_saved = _dup(_fileno(stdout));
         FILE* devnull = fopen("NUL", "w");
         if (devnull) { fflush(stdout); _dup2(_fileno(devnull), _fileno(stdout)); }
     }
 #endif
 
-    printf("================================================================\n");
-    printf("  Omega C++ Backtester\n");
-    printf("  File    : %s\n", cfg.csv);
-    printf("  Latency : %.1f ms    Warmup: %lld ticks\n", cfg.lat, (long long)cfg.warm);
-    printf("  Engines : %s%s%s%s%s\n",
-           cfg.gold?"GoldStack ":"", cfg.flow?"GoldFlow ":"",
-           cfg.latency?"LatencyEdge ":"", cfg.cross?"CrossAsset ":"",
-           cfg.breakout?"Breakout/Bracket":"");
-    printf("================================================================\n");
-
     // ?? Load CSV ?????????????????????????????????????????????????????????????
     MemMappedFile mf;
     if(!mf.open(cfg.csv)){fprintf(stderr,"[ERROR] Cannot open: %s\n",cfg.csv);return 1;}
-    printf("[LOAD] %.1f MB...\n", mf.size/1e6);
 
-    // Use real wall clock for wall-time measurements (saved alias in shim)
     const auto t0p = std::chrono::steady_clock_real::now();
     std::vector<TickRow> ticks = parse_csv(mf);
     const double ps = std::chrono::duration<double>(
         std::chrono::steady_clock_real::now()-t0p).count();
 
     if(ticks.empty()){fprintf(stderr,"[ERROR] No valid ticks parsed.\n");return 1;}
-    printf("[LOAD] %zu ticks in %.1fs (%.0f K t/s)\n", ticks.size(),ps,ticks.size()/ps/1000.0);
 
-    // Date range display
-    {
-        const time_t a=ticks.front().ts_ms/1000, b=ticks.back().ts_ms/1000;
-        struct tm ma{},mb{};
+    // Date range
+    time_t ta=ticks.front().ts_ms/1000, tb=ticks.back().ts_ms/1000;
+    struct tm ma{},mb{};
 #ifdef _WIN32
-        gmtime_s(&ma,&a); gmtime_s(&mb,&b);
+    gmtime_s(&ma,&ta); gmtime_s(&mb,&tb);
 #else
-        gmtime_r(&a,&ma); gmtime_r(&b,&mb);
+    gmtime_r(&ta,&ma); gmtime_r(&tb,&mb);
 #endif
-        char sa[20],sb[20];
-        strftime(sa,20,"%Y-%m-%d",&ma); strftime(sb,20,"%Y-%m-%d",&mb);
-        printf("[RANGE] %s ? %s\n", sa, sb);
-    }
+    char sa[20],sb[20];
+    strftime(sa,20,"%Y-%m-%d",&ma); strftime(sb,20,"%Y-%m-%d",&mb);
 
     // Warmup cutoff
     if(cfg.warm>0 && cfg.warm<(int64_t)ticks.size())
@@ -544,15 +491,12 @@ int main(int argc, char** argv){
     if(cfg.breakout)rb = std::make_unique<BreakRunner>(cfg.lat);
 
     // ?? Tick loop ?????????????????????????????????????????????????????????????
-    printf("[RUN] Starting tick loop...\n\n");
     const auto t0r  = std::chrono::steady_clock_real::now();
     const int64_t N = (int64_t)ticks.size();
     int64_t last_p  = 0;
 
     for(int64_t i=0; i<N; ++i){
         const TickRow& r = ticks[(size_t)i];
-
-        // ADVANCE SIMULATED TIME -- must happen before any engine call
         omega::bt::set_sim_time(r.ts_ms);
 
         if(rg) rg->tick(r);
@@ -566,18 +510,44 @@ int main(int argc, char** argv){
             const double el = std::chrono::duration<double>(
                 std::chrono::steady_clock_real::now()-t0r).count();
             const double tps = el>0?i/el:0;
-            printf("\r  [%5.1f%%]  %lld ticks | %5.0fs | %5.0f K t/s | %lld trades | ETA %4.0fs   ",
+            // Progress goes to stderr so it always shows regardless of quiet
+            fprintf(stderr, "\r  [%5.1f%%]  %lld ticks | %5.0fs | %5.0f K t/s | %lld trades | ETA %4.0fs   ",
                    100.0*i/N,(long long)i,el,tps/1000.0,(long long)store::recs.size(),
                    tps>0?(N-i)/tps:0);
-            fflush(stdout);
         }
     }
 
     const double rs = std::chrono::duration<double>(
         std::chrono::steady_clock_real::now()-t0r).count();
-    printf("\n\n[RUN] %lld ticks in %.1fs = %.0f K t/s\n\n",(long long)N,rs,N/rs/1000.0);
+
+    // ?? Restore stdout before printing summary ???????????????????????????????????????
+#ifndef _WIN32
+    if (cfg.quiet && stdout_saved >= 0) {
+        fflush(stdout);
+        dup2(stdout_saved, STDOUT_FILENO);
+        close(stdout_saved);
+        if (devnull) fclose(devnull);
+    }
+#else
+    if (cfg.quiet && stdout_saved >= 0) {
+        fflush(stdout);
+        _dup2(stdout_saved, _fileno(stdout));
+        _close(stdout_saved);
+    }
+#endif
 
     // ?? Summary table ?????????????????????????????????????????????????????????
+    fprintf(stderr, "\n");
+    printf("================================================================\n");
+    printf("  Omega C++ Backtester\n");
+    printf("  File    : %s\n", cfg.csv);
+    printf("  Ticks   : %lld  in %.1fs (%.0f K t/s)\n", (long long)N, ps, N/ps/1000.0);
+    printf("  Range   : %s -> %s\n", sa, sb);
+    printf("  Engines : %s%s%s%s%s\n",
+           cfg.gold?"GoldStack ":"", cfg.flow?"GoldFlow ":"",
+           cfg.latency?"LatencyEdge ":"", cfg.cross?"CrossAsset ":"",
+           cfg.breakout?"Breakout/Bracket":"");
+    printf("  Run     : %.1fs = %.0f K t/s\n", rs, N/rs/1000.0);
     printf("================================================================\n");
     printf("  PER-ENGINE RESULTS (warmup %lld ticks excluded)\n",(long long)cfg.warm);
     printf("================================================================\n");
