@@ -10444,7 +10444,7 @@ int main(int argc, char* argv[])
     // With VIX at 24 gold compresses to 1-3pt ranges which ATR_RANGE_K=1.5 rejects (needs 15pt).
     // The bracket window itself defines the range -- 1pt minimum just filters single-tick noise.
     g_bracket_gold.ATR_PERIOD  = 20;  g_bracket_gold.ATR_RANGE_K  = 0.0;
-    g_bracket_gold.MIN_RANGE   = 1.0;
+    g_bracket_gold.MIN_RANGE   = 2.5;  // raised 1.0->2.5: 1pt fired on tick noise, 2.5pt = real compression floor
     g_bracket_xag.ATR_PERIOD   = 20;  g_bracket_xag.ATR_RANGE_K   = 1.5;
     g_bracket_eurusd.ATR_PERIOD = 20; g_bracket_eurusd.ATR_RANGE_K = 1.8;
     g_bracket_gbpusd.ATR_PERIOD = 20; g_bracket_gbpusd.ATR_RANGE_K = 1.8;
@@ -10518,12 +10518,25 @@ int main(int argc, char* argv[])
     //   BE_ATR_MULT: lock BE at 1x M15 ATR (~5pts). Unchanged -- good.
     g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.50;  // M15: ±23.5pts at $4700. Old 0.08% (±3.7pts) never fired.
     g_trend_pb_gold.COOLDOWN_SEC       = 900;   // 15 min = 1 M15 bar minimum between re-entries
+    g_trend_pb_gold.MIN_EMA_SEP        = 5.0;   // gold: 5pt separation = real trend confirmed
     // Trail/BE params: class defaults are correct for M15 ATR scale (4-8pts)
     // TRAIL_ARM_ATR_MULT=2.0, TRAIL_DIST_ATR_MULT=1.0, BE_ATR_MULT=1.0 -- no change needed
     // GER40: tighter band (index moves more cleanly around EMAs)
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500
     // GER40: ~5 ticks/sec = 500 ticks = 100s. Load from disk bypasses this.
     g_trend_pb_ger40.COOLDOWN_SEC     = 120;
+    g_trend_pb_ger40.MIN_EMA_SEP      = 15.0;  // GER40 at ~22500: 15pt sep = meaningful trend
+    // USTEC.F (NQ) at ~22500: 10pt default fires on thin tape (EMA noise).
+    // 25pt separation = ~0.11% of price -- confirmed trend, not flicker.
+    // PULLBACK_BAND_PCT: 0.08% = ±18pts at 22500. Tight enough for real pullback detection.
+    // COOLDOWN_SEC: 300s (5min) -- indices move faster than gold, but still need breathing room
+    g_trend_pb_nq.PULLBACK_BAND_PCT   = 0.08;
+    g_trend_pb_nq.COOLDOWN_SEC        = 300;
+    g_trend_pb_nq.MIN_EMA_SEP         = 25.0;  // NQ at ~22500: 25pt = 0.11%, blocks thin-stack noise entries
+    // US500.F (SP) at ~6200: 0.08% = ±5pts. 15pt sep = confirmed trend.
+    g_trend_pb_sp.PULLBACK_BAND_PCT   = 0.08;
+    g_trend_pb_sp.COOLDOWN_SEC        = 300;
+    g_trend_pb_sp.MIN_EMA_SEP         = 15.0;  // SP at ~6200: 15pt = 0.24%, meaningful EMA stack separation
     // Load warm EMA state -- skips EMA_WARMUP_TICKS cold period on restart
     g_trend_pb_gold.load_state(log_root_dir()  + "/trend_pb_gold.dat");
     g_trend_pb_ger40.load_state(log_root_dir() + "/trend_pb_ger40.dat");

@@ -1432,6 +1432,8 @@ private:
 class TrendPullbackEngine {
 public:
     double  PULLBACK_BAND_PCT = 0.15;    // price within 0.15% of EMA50 = "at EMA50"
+    double  MIN_EMA_SEP       = 10.0;   // minimum EMA9-EMA50 separation to confirm real trend
+                                         // Gold: 5pt, SP500: 15pt, USTEC: 25pt -- set per-symbol in main.cpp
                                           // widened from 0.05%: tick EMA50 drifts faster than bar EMA50
     // EMA alphas calibrated for ~10 ticks/sec (London gold rate).
     // Using tick-count periods directly produced EMAs with half-life <1s
@@ -1695,8 +1697,7 @@ public:
         // Indices: require 10pt separation.
         // Without this, a shallow stack from stale/misaligned seed data fires bad trades.
         const double ema_span = std::fabs(ema9_ - ema50_);
-        const double min_sep  = (sym.find("XAU") != std::string::npos) ? 5.0 : 10.0;
-        if (ema_span < min_sep) return {};
+        if (ema_span < MIN_EMA_SEP) return {};
         if (!uptrend && !downtrend) return {};
 
         // M5 structural trend gate -- when bar EMAs active, require M5 agrees
@@ -1731,7 +1732,6 @@ public:
         // Apply direction block (fixed: was checking wrong direction)
         if (is_long  && long_dir_blocked)  return {};
         if (!is_long && short_dir_blocked) return {};
-        if (!is_long && long_dir_blocked)  return {};
 
         // SL = EMA50, floored to minimum viable distance
         const double sl_raw  = ema50_;
