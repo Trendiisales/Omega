@@ -641,7 +641,7 @@ private:
             };
             if (!skip(1)) pending_bar_reqs.push_back({bkv.first, sid, 1, 200});
             else std::cout << "[CTRADER-BARS] Skipping " << bkv.first << " M1 (prev INVALID_REQUEST)\n";
-            if (!skip(5)) pending_bar_reqs.push_back({bkv.first, sid, 5, 100});
+            if (!skip(5)) pending_bar_reqs.push_back({bkv.first, sid, 5, 200}); // 200 M5 = 16hrs for EMA50 separation on all symbols
             if (is_gold && !skip(7)) pending_bar_reqs.push_back({bkv.first, sid, 7, 200}); // 200 M15 = 50hrs, enough for EMA50 proper separation
         }
         // Live subscriptions queued after history requests (sent in same staggered loop)
@@ -697,7 +697,7 @@ private:
                         return bar_failed_reqs.count(bkv.first + ":" + std::to_string(p)) > 0;
                     };
                     if (!failed(1)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 1, 60));
-                    if (!failed(5)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 5, 20));
+                    if (!failed(5)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 5, 50)); // 50 M5 = ~4hrs refresh
                     if (is_gold && !failed(7)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 7, 200));
                 }
             }

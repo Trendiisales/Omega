@@ -1895,6 +1895,236 @@ static void seed_trendpullback_from_dukascopy() {
     fflush(stdout);
 }
 
+// =============================================================================
+// Yahoo Finance M5 Bar Seed -- feeds TrendPullback for index instruments
+// =============================================================================
+// Same approach as Dukascopy for gold M15, but using Yahoo Finance JSON API.
+// Yahoo returns M5 OHLCV for futures/indices via simple HTTPS GET -- no auth.
+//
+// Symbol mapping (Yahoo -> internal):
+//   ES=F  -> US500.F  (S&P 500 futures, ~$50/pt)
+//   NQ=F  -> USTEC.F  (Nasdaq futures, ~$20/pt)
+//   ^GDAXI -> GER40   (DAX cash index, ~$1/pt -- no futures on Yahoo)
+//
+// Price offset: Yahoo ES=F and BlackBull US500.F track the same underlying.
+// GER40: Yahoo ^GDAXI cash vs BlackBull GER40 spot -- essentially same price.
+//
+// Fetches 5 days of M5 bars (~200 bars per trading day, ~1000 total).
+// Keeps last 200 for EMA computation -- enough for EMA50 proper separation.
+// =============================================================================
+
+struct YahooSeedCfg {
+    const char* yahoo_sym;    // Yahoo Finance ticker
+    const char* internal_sym; // Internal name for logging
+    double      price_mult;   // Multiplier if needed (1.0 = no adjust)
+    TrendPullbackEngine* engine;
+    SymBarState*         bars;
+};
+
+// Simple HTTPS GET via existing OpenSSL infrastructure -- same as Dukascopy
+static std::vector<uint8_t> yahoo_https_get(const char* host, const std::string& path) {
+    std::vector<uint8_t> result;
+    struct addrinfo hints{}, *res = nullptr;
+    hints.ai_family   = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, "443", &hints, &res) != 0 || !res) return result;
+
+#ifdef _WIN32
+    SOCKET s = ::socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (s == INVALID_SOCKET) { freeaddrinfo(res); return result; }
+    DWORD to = 10000;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&to, sizeof(to));
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (const char*)&to, sizeof(to));
+#else
+    int s = ::socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (s < 0) { freeaddrinfo(res); return result; }
+    struct timeval to{10, 0};
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &to, sizeof(to));
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &to, sizeof(to));
+#endif
+    if (::connect(s, res->ai_addr, (int)res->ai_addrlen) != 0) {
+        freeaddrinfo(res);
+#ifdef _WIN32
+        closesocket(s);
+#else
+        close(s);
+#endif
+        return result;
+    }
+    freeaddrinfo(res);
+
+    SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+    if (!ctx) goto yf_cleanup;
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+    SSL_CTX_set_quiet_shutdown(ctx, 1);
+    {
+        SSL* ssl = SSL_new(ctx);
+        if (!ssl) { SSL_CTX_free(ctx); goto yf_cleanup; }
+#ifdef _WIN32
+        SSL_set_fd(ssl, (int)s);
+#else
+        SSL_set_fd(ssl, s);
+#endif
+        SSL_set_tlsext_host_name(ssl, host);
+        if (SSL_connect(ssl) > 0) {
+            std::string req =
+                "GET " + path + " HTTP/1.0\r\n"
+                "Host: " + host + "\r\n"
+                "User-Agent: Mozilla/5.0\r\n"
+                "Accept: application/json\r\n"
+                "Connection: close\r\n\r\n";
+            SSL_write(ssl, req.c_str(), (int)req.size());
+
+            std::vector<uint8_t> raw;
+            raw.reserve(131072);
+            uint8_t buf[8192];
+            int n;
+            while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0)
+                raw.insert(raw.end(), buf, buf + n);
+
+            // Find end of HTTP headers
+            size_t hdr_end = 0;
+            for (size_t i = 0; i + 3 < raw.size(); ++i) {
+                if (raw[i]=='\r'&&raw[i+1]=='\n'&&raw[i+2]=='\r'&&raw[i+3]=='\n') {
+                    hdr_end = i + 4; break;
+                }
+            }
+            if (hdr_end > 0 && hdr_end < raw.size()) {
+                std::string hdr(raw.begin(), raw.begin() + std::min(hdr_end,(size_t)200));
+                if (hdr.find("200") != std::string::npos)
+                    result.assign(raw.begin() + hdr_end, raw.end());
+            }
+        }
+        SSL_shutdown(ssl); SSL_free(ssl);
+        SSL_CTX_free(ctx);
+    }
+
+yf_cleanup:
+#ifdef _WIN32
+    closesocket(s);
+#else
+    close(s);
+#endif
+    return result;
+}
+
+static void seed_index_from_yahoo(const YahooSeedCfg& cfg) {
+    // Yahoo Finance v8 API: 5 days of M5 bars
+    // URL-encode ^ for index symbols
+    std::string yahoo_sym = cfg.yahoo_sym;
+    std::string encoded;
+    for (char c : yahoo_sym) {
+        if (c == '^') encoded += "%5E";
+        else          encoded += c;
+    }
+    const std::string path =
+        "/v8/finance/chart/" + encoded + "?interval=5m&range=5d";
+
+    auto raw = yahoo_https_get("query1.finance.yahoo.com", path);
+    if (raw.empty()) {
+        printf("[YAHOO-SEED] %s: HTTP fetch failed\n", cfg.internal_sym);
+        fflush(stdout);
+        return;
+    }
+
+    // Parse JSON using Python (same approach as Dukascopy lzma decompress)
+    // Write JSON to temp file, extract timestamps+closes via Python
+    const std::string tmp_json = std::string(std::getenv("TEMP") ? std::getenv("TEMP") : "/tmp")
+                                 + "\\omega_yahoo.json";
+    const std::string tmp_csv  = std::string(std::getenv("TEMP") ? std::getenv("TEMP") : "/tmp")
+                                 + "\\omega_yahoo_bars.csv";
+
+    FILE* f = fopen(tmp_json.c_str(), "wb");
+    if (!f) return;
+    fwrite(raw.data(), 1, raw.size(), f);
+    fclose(f);
+
+    std::string cmd =
+        "python -c \""
+        "import json,sys;"
+        "d=json.load(open(r'" + tmp_json + "'));"
+        "r=d['chart']['result'][0];"
+        "ts=r['timestamp'];"
+        "q=r['indicators']['quote'][0];"
+        "o,h,l,c=q['open'],q['high'],q['low'],q['close'];"
+        "rows=[(ts[i],o[i],h[i],l[i],c[i]) for i in range(len(ts)) if c[i] and o[i]];"
+        "open(r'" + tmp_csv + "','w').write('\\n'.join(f\\\"{r[0]},{r[1]:.4f},{r[2]:.4f},{r[3]:.4f},{r[4]:.4f}\\\" for r in rows))"
+        "\" 2>nul";
+    if (system(cmd.c_str()) != 0) {
+        // Try python3
+        cmd.replace(cmd.find("python "), 7, "python3 ");
+        system(cmd.c_str());
+    }
+
+    // Read CSV back
+    std::vector<OHLCBar> bars;
+    f = fopen(tmp_csv.c_str(), "r");
+    if (!f) { printf("[YAHOO-SEED] %s: parse failed\n", cfg.internal_sym); fflush(stdout); return; }
+
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        long long ts_sec; double o, h, l, c;
+        if (sscanf(line, "%lld,%lf,%lf,%lf,%lf", &ts_sec, &o, &h, &l, &c) == 5) {
+            OHLCBar bar;
+            bar.ts_min = ts_sec / 60;
+            bar.open   = o * cfg.price_mult;
+            bar.high   = h * cfg.price_mult;
+            bar.low    = l * cfg.price_mult;
+            bar.close  = c * cfg.price_mult;
+            bars.push_back(bar);
+        }
+    }
+    fclose(f);
+    remove(tmp_json.c_str());
+    remove(tmp_csv.c_str());
+
+    if (bars.size() < 14) {
+        printf("[YAHOO-SEED] %s: only %zu bars -- need >=14\n", cfg.internal_sym, bars.size());
+        fflush(stdout);
+        return;
+    }
+
+    // Sort chronological, keep last 200
+    std::sort(bars.begin(), bars.end(), [](const OHLCBar& a, const OHLCBar& b){ return a.ts_min < b.ts_min; });
+    if (bars.size() > 200) bars.erase(bars.begin(), bars.end() - 200);
+
+    // Seed bar engine
+    cfg.bars->m5.seed(bars);
+
+    // Seed TrendPullback with M5 EMAs
+    const double e9  = cfg.bars->m5.ind.ema9.load();
+    const double e21 = cfg.bars->m5.ind.ema21.load();
+    const double e50 = cfg.bars->m5.ind.ema50.load();
+    const double atr = cfg.bars->m5.ind.atr14.load();
+    const int trend  = cfg.bars->m5.ind.trend_state.load();
+
+    if (e9 <= 0.0 || e50 <= 0.0 || atr <= 0.0) {
+        printf("[YAHOO-SEED] %s: invalid EMAs after seed (e9=%.2f e50=%.2f atr=%.2f)\n",
+               cfg.internal_sym, e9, e50, atr);
+        fflush(stdout);
+        return;
+    }
+
+    cfg.engine->seed_bar_emas(e9, e21, e50, atr);
+    cfg.engine->seed_m5_trend(trend);
+
+    printf("[YAHOO-SEED] %s M5 seeded: %zu bars, last=%.2f "
+           "EMA9=%.2f EMA21=%.2f EMA50=%.2f ATR=%.2f trend=%+d\n",
+           cfg.internal_sym, bars.size(), bars.back().close,
+           e9, e21, e50, atr, trend);
+    fflush(stdout);
+}
+
+static void seed_indices_from_yahoo() {
+    const YahooSeedCfg configs[] = {
+        {"ES=F",    "US500.F",  1.0, &g_trend_pb_sp,  &g_bars_sp},
+        {"NQ=F",    "USTEC.F",  1.0, &g_trend_pb_nq,  &g_bars_nq},
+        {"^GDAXI",  "GER40",    1.0, &g_trend_pb_ger40, &g_bars_ger},
+    };
+    for (const auto& cfg : configs)
+        seed_index_from_yahoo(cfg);
+}
+
 // ?? Live trade telemetry helper -- static free function, callable from any context ??
 // Cannot be a lambda: MSVC refuses to call local lambdas defined inside another lambda
 // even when non-capturing. Free function has no such restriction.
@@ -10540,6 +10770,13 @@ int main(int argc, char* argv[])
         std::this_thread::sleep_for(std::chrono::seconds(5));
         seed_trendpullback_from_dukascopy();
     }).detach();
+    // Yahoo Finance M5 seed for index TrendPullback engines (US500, USTEC, GER40).
+    // Same pattern as Dukascopy: fetch real bar history on startup, bypasses broker
+    // bar request failures. Without this: tick EMAs fire on noise every minute.
+    std::thread([](){
+        std::this_thread::sleep_for(std::chrono::seconds(7)); // slight offset from gold seed
+        seed_indices_from_yahoo();
+    }).detach();
     g_bracket_gold.cancel_order_fn = [](const std::string& id) { send_cancel_order(id); };
     g_bracket_xag.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
 
@@ -11613,9 +11850,19 @@ int main(int argc, char* argv[])
         // US500.F and USTEC.F now use tick-based vol estimation (same as GER40 fallback).
         // g_bars_sp and g_bars_nq remain allocated -- indicators just won't be seeded.
         // Engines that read g_bars_sp/g_bars_nq already handle m1_ready=false gracefully.
-        g_ctrader_depth.bar_subscriptions["XAUUSD"]  = {41, &g_bars_gold};
-        // US500.F: {0, &g_bars_sp} -- REMOVED: INVALID_REQUEST drops connection
-        // USTEC.F: {0, &g_bars_nq} -- REMOVED: INVALID_REQUEST drops connection
+        g_ctrader_depth.bar_subscriptions["XAUUSD"]  = {41,   &g_bars_gold};
+        g_ctrader_depth.bar_subscriptions["US500.F"] = {2642, &g_bars_sp};
+        g_ctrader_depth.bar_subscriptions["USTEC.F"] = {2643, &g_bars_nq};
+        g_ctrader_depth.bar_subscriptions["GER40"]   = {1899, &g_bars_ger};
+        // NAS100 (id=110) and DJ30.F (id=2637) use breakout engines, no TrendPB, no bar sub needed
+
+        // Pre-seed M1 as failed for all index symbols -- broker sends INVALID_REQUEST
+        // for M1 on indices (same as XAUUSD) which drops the connection.
+        // Only M5 will be requested. M5 history works fine (same API the chart uses).
+        // XAUUSD:1 is already persisted in ctrader_bar_failed.txt from first run.
+        for (const std::string& sym : {"US500.F", "USTEC.F", "GER40"}) {
+            g_ctrader_depth.bar_failed_reqs.insert(sym + ":1");
+        }
 
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
