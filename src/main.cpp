@@ -6888,7 +6888,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool is_impulse_now = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
             if (s_was_impulse && !is_impulse_now) {
                 const int64_t now_pi = static_cast<int64_t>(std::time(nullptr));
-                g_gold_post_impulse_until.store(now_pi + 180);  // 3 min cooldown
+                g_gold_post_impulse_until.store(now_pi + 45);  // 45s cooldown after IMPULSE ends -- lowered 180->45: 3min was blocking entire London morning on micro-spikes
                 printf("[POST-IMPULSE] Regime left IMPULSE -- blocking new entries 3min\n");
                 fflush(stdout);
             }
@@ -8011,7 +8011,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool in_compression = (std::strcmp(gold_stack_regime, "COMPRESSION") == 0
                                           || std::strcmp(gold_stack_regime, "QUIET_COMPRESSION") == 0);
                 #ifndef GF_COMPRESSION_VOL_FLOOR_OVERRIDE
-                static constexpr double GF_COMPRESSION_VOL_FLOOR = 2.0; // pts
+                static constexpr double GF_COMPRESSION_VOL_FLOOR = 0.8; // pts -- lowered 2.0->0.8: with ATR=10, a 1.2pt coil is a valid breakout setup not noise
                 #else
                 static constexpr double GF_COMPRESSION_VOL_FLOOR = GF_COMPRESSION_VOL_FLOOR_OVERRIDE;
                 #endif
@@ -8050,7 +8050,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const bool vwap_headwind = (gf_long_rt  && gf_mid_rt > gf_vwap_rt)
                                             || (!gf_long_rt && gf_mid_rt < gf_vwap_rt);
                     #ifndef GF_MIN_VWAP_ROOM_R_OVERRIDE
-                    static constexpr double GF_MIN_VWAP_ROOM_R = 1.5;
+                    static constexpr double GF_MIN_VWAP_ROOM_R = 0.75; // lowered 1.5->0.75: 1.5xATR=15pts was blocking entries 9pts from VWAP -- that IS the setup
                     #else
                     static constexpr double GF_MIN_VWAP_ROOM_R = GF_MIN_VWAP_ROOM_R_OVERRIDE;
                     #endif
