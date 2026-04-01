@@ -1200,7 +1200,7 @@ function renderTrades(trades){
   el.innerHTML=trades.slice(0,60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
     const win=net>0,loss=net<0,sc=t.side==='LONG'?'var(--green)':'var(--red)';
-    const reason=t.exitReason||'',result=isOpen?'?':reason==='TP_HIT'?'?TP':reason==='SL_HIT'?'?SL':reason==='TRAIL_HIT'?'?TR':reason==='BE_HIT'?'?BE':reason==='TIMEOUT'?'?TO':'?FC';
+    const reason=t.exitReason||'',result=isOpen?'⬤':reason==='TP_HIT'?'✓TP':reason==='SL_HIT'?'✗SL':reason==='TRAIL_HIT'?'✓TR':reason==='BE_HIT'?'✓BE':reason==='TIMEOUT'?'✗TO':reason==='PARTIAL_1R'?'$P1':reason==='PARTIAL_2R'?'$P2':'✓FC';
     const rc=isOpen?'var(--blue)':win?'var(--green)':loss?'var(--red)':'var(--t2)';
     const netC=win?'var(--green)':loss?'var(--red)':'var(--t2)';
     let heldStr='--';
@@ -1221,7 +1221,7 @@ function renderTrades(trades){
     const regimeCell=`<span style="color:${regCol};font-size:10px">${tReg||'--'}</span>${engBadge}`;
     // Engine + reason combined cell
     const engName=(t.engine||'').replace('Engine','').replace('GoldFlow','GFlow').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag');
-    const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('BE_HIT','BE');
+    const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('BE_HIT','BE').replace('PARTIAL_1R','P1-BANK').replace('PARTIAL_2R','P2-BANK').replace('MAX_HOLD_TIMEOUT','T/O');
     const engReasonCell=`<span style="color:var(--cyan);font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
     return `<tr style="background:${rowBg}">
       <td style="color:var(--t2);font-size:11px">${fmtUTC(safe(t.entryTs))}</td>
