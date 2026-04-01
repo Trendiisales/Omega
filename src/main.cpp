@@ -10291,9 +10291,16 @@ int main(int argc, char* argv[])
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500
     g_trend_pb_ger40.COOLDOWN_SEC     = 120;
     g_trend_pb_ger40.MIN_EMA_SEP      = 15.0;
-    // NQ/SP: configured in separate block below
+    // NQ/SP TrendPullback: daily loss cap + tighter controls
+    // Without DAILY_LOSS_CAP, NQ TrendPullback fired 7 consecutive losing entries
+    // during the Apr 2 tariff crash (NQ dropped ~1000pts). Each SL hit was $12-13,
+    // but the direction block (2 consec SL hits = 10min pause) was the only guard.
+    // Daily loss cap stops the engine entirely after a bad sequence.
     g_trend_pb_nq.MIN_EMA_SEP         = 25.0;
+    g_trend_pb_nq.DAILY_LOSS_CAP      = 80.0;   // $80 daily cap: ~6 SL hits at $12 each
     g_trend_pb_sp.MIN_EMA_SEP         = 15.0;
+    g_trend_pb_sp.DAILY_LOSS_CAP      = 80.0;   // same cap for SP
+    g_trend_pb_ger40.DAILY_LOSS_CAP   = 80.0;   // GER40 too -- no cap was previously set
     // Load warm EMA state -- skips EMA_WARMUP_TICKS cold period on restart
     g_trend_pb_gold.load_state(log_root_dir()  + "/trend_pb_gold.dat");
     g_trend_pb_ger40.load_state(log_root_dir() + "/trend_pb_ger40.dat");
