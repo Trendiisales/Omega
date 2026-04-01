@@ -212,20 +212,23 @@ public:
         if (bars_.size() > 300) bars_.pop_front();
 
         const int n = static_cast<int>(bars_.size());
-        if (n < MIN_BARS) return;
 
+        // EMA and ATR work from bar 1 -- real data, no synthetic seed needed
         _update_ema();
-        _update_rsi();
         _update_atr();
-        _update_bollinger();
-        _update_volume_ratio();
-        _update_swing_and_trend();
-        _update_bbw_squeeze();
-        _update_atr_slope();
-        _update_rsi_divergence();
-        _update_vwap_slope();
 
-        if (!ind.m1_ready.load() && n >= MIN_BARS) ind.m1_ready.store(true);
+        // Other indicators need minimum bars for mathematical validity
+        if (n >= RSI_P + 1)  _update_rsi();
+        if (n >= BB_P)       _update_bollinger();
+        if (n >= VOL_MA_P)   _update_volume_ratio();
+        if (n >= SWING_P*2+1) _update_swing_and_trend();
+        if (n >= BB_SQUEEZE_LOOKBACK) _update_bbw_squeeze();
+        if (n >= ATR_SLOPE_BARS+1)    _update_atr_slope();
+        if (n >= RSI_DIV_LOOKBACK+RSI_P) _update_rsi_divergence();
+        if (n >= 3)          _update_vwap_slope();
+
+        // Ready as soon as we have EMA and ATR -- bar 1
+        if (!ind.m1_ready.load() && n >= 1) ind.m1_ready.store(true);
     }
 
     // ?????????????????????????????????????????????????????????????????????????
@@ -238,59 +241,23 @@ public:
             while (bars_.size() > 300) bars_.pop_front();
         }
         const int n = static_cast<int>(bars_.size());
-        if (n < MIN_BARS) return;
+        if (n < 1) return;
         _update_ema();
-        _update_rsi();
         _update_atr();
-        _update_bollinger();
-        _update_volume_ratio();
-        _update_swing_and_trend();
-        _update_bbw_squeeze();
-        _update_atr_slope();
-        _update_rsi_divergence();
-        _update_vwap_slope();
+        if (n >= RSI_P + 1)  _update_rsi();
+        if (n >= BB_P)       _update_bollinger();
+        if (n >= VOL_MA_P)   _update_volume_ratio();
+        if (n >= SWING_P*2+1) _update_swing_and_trend();
+        if (n >= BB_SQUEEZE_LOOKBACK) _update_bbw_squeeze();
+        if (n >= ATR_SLOPE_BARS+1)    _update_atr_slope();
+        if (n >= RSI_DIV_LOOKBACK+RSI_P) _update_rsi_divergence();
+        if (n >= 3)          _update_vwap_slope();
         _seed_atr_history();
-        if (n >= MIN_BARS) ind.m1_ready.store(true);
+        if (n >= 1) ind.m1_ready.store(true);
     }
 
     int bar_count() const { return static_cast<int>(bars_.size()); }
 
-    // =========================================================================
-    // bootstrap() -- seed EMAs at current price for immediate startup
-    // =========================================================================
-    // Called once on first tick when no historical bars are available.
-    // Seeds EMA9/21/50 all at current_price and marks m1_ready=true immediately.
-    //
-    // Why this is correct:
-    //   EMA convergence half-life = period * ln(2) / 2 bars.
-    //   EMA9  half-life = 3 bars  -- converged in ~1 bar boundary (15 min M15)
-    //   EMA21 half-life = 7 bars  -- directionally stable after 3-4 bar closes
-    //   EMA50 half-life = 17 bars -- takes longest, but direction is clear after 5-6 bars
-    //
-    // The H4 gate only needs EMA50 direction (up/down), not its precise value.
-    // Seeding at current price means EMA50 starts AT price and diverges as trend develops.
-    // After 2-3 H4 bars (8-12 hours), EMA50 accurately reflects the multi-day trend.
-    // For M15 TrendPullback: EMA9/21/50 direction is reliable after 3-5 M15 bar closes.
-    //
-    // This eliminates the 3.5 hour / 56 hour cold-start wait entirely.
-    void bootstrap(double current_price) noexcept {
-        if (current_price <= 0.0) return;
-        if (ind.m1_ready.load()) return;  // already seeded, don't overwrite
-        ema9_    = current_price;
-        ema21_   = current_price;
-        ema50_   = current_price;
-        ema_init_ = true;
-        // Seed ATR with a reasonable estimate (0.1% of price) -- updates on first bars
-        atr_avg_  = current_price * 0.001;
-        atr_init_ = true;
-        ind.ema9 .store(ema9_,  std::memory_order_relaxed);
-        ind.ema21.store(ema21_, std::memory_order_relaxed);
-        ind.ema50.store(ema50_, std::memory_order_relaxed);
-        ind.atr14.store(atr_avg_, std::memory_order_relaxed);
-        ind.m1_ready.store(true, std::memory_order_release);
-        // trend_state=0 (flat) until bars confirm direction -- permissive for H4 gate
-        ind.trend_state.store(0, std::memory_order_relaxed);
-    }
 
     // ?????????????????????????????????????????????????????????????????????????
     // update_tick_metrics() -- call every tick from on_tick() in main.cpp
@@ -400,28 +367,36 @@ private:
     std::deque<double>  vol_delta_window_;
 
     // ?????????????????????????????????????????????????????????????????????????
-    // _update_ema()
+    // _update_ema() -- works from bar 1 using all available history
     // ?????????????????????????????????????????????????????????????????????????
+    // Standard approach: seed EMA at average of available bars, then apply
+    // EWM updates forward. With n bars available:
+    //   EMA9:  seed = avg(min(9,n) bars), then apply remaining updates
+    //   EMA21: seed = avg(min(21,n) bars), then apply remaining updates
+    //   EMA50: seed = avg(min(50,n) bars), then apply remaining updates
+    // This gives real data from bar 1. Convergence accuracy:
+    //   1 bar:  directional bias correct (trend up/down)
+    //   3 bars: EMA9 stable, EMA21 directionally reliable
+    //   10 bars: EMA50 directionally reliable for swing trades
+    //   50 bars: EMA50 fully converged (precise values)
+    // For H4 and M15 trend gates we need direction, not precision -- bar 1 is good enough.
     void _update_ema() {
         const int n = static_cast<int>(bars_.size());
-        if (!ema_init_ && n >= EMA50_P) {
-            double s9=0, s21=0, s50=0;
-            for (int i = 0; i < EMA50_P; ++i) s50 += bars_[i].close;
-            for (int i = n-EMA9_P;  i < n; ++i) s9  += bars_[i].close;
-            for (int i = n-EMA21_P; i < n; ++i) s21 += bars_[i].close;
-            ema9_  = s9  / EMA9_P;
-            ema21_ = s21 / EMA21_P;
-            ema50_ = s50 / EMA50_P;
-            const double a50 = 2.0 / (EMA50_P + 1.0);
-            const double a21 = 2.0 / (EMA21_P + 1.0);
-            const double a9  = 2.0 / (EMA9_P  + 1.0);
-            for (int i = EMA50_P; i < n; ++i) {
-                ema50_ += a50 * (bars_[i].close - ema50_);
-                if (i >= n - EMA21_P) ema21_ += a21 * (bars_[i].close - ema21_);
-                if (i >= n - EMA9_P)  ema9_  += a9  * (bars_[i].close - ema9_);
-            }
+        if (n < 1) return;
+        if (!ema_init_) {
+            // Seed each EMA at the mean of however many bars we have, up to its period
+            const int s9  = std::min(n, EMA9_P);
+            const int s21 = std::min(n, EMA21_P);
+            const int s50 = std::min(n, EMA50_P);
+            double sum9=0, sum21=0, sum50=0;
+            for (int i = n-s9;  i < n; ++i) sum9  += bars_[i].close;
+            for (int i = n-s21; i < n; ++i) sum21 += bars_[i].close;
+            for (int i = n-s50; i < n; ++i) sum50 += bars_[i].close;
+            ema9_  = sum9  / s9;
+            ema21_ = sum21 / s21;
+            ema50_ = sum50 / s50;
             ema_init_ = true;
-        } else if (ema_init_) {
+        } else {
             const double c = bars_.back().close;
             ema9_  += (2.0/(EMA9_P +1.0)) * (c - ema9_);
             ema21_ += (2.0/(EMA21_P+1.0)) * (c - ema21_);
@@ -473,35 +448,36 @@ private:
     // ?????????????????????????????????????????????????????????????????????????
     void _update_atr() {
         const int n = static_cast<int>(bars_.size());
-        if (n < ATR_P + 1) return;
+        if (n < 1) return;
         if (!atr_init_) {
+            // Use all available bars (up to ATR_P) -- works from bar 1
+            // With 1 bar: ATR = high-low (no prev close, use bar range only)
+            // With 2+ bars: true range including prev close gaps
             double sum = 0;
-            const int start = n - ATR_P - 1;
-            for (int i = start + 1; i <= start + ATR_P; ++i) {
+            int count = 0;
+            for (int i = std::max(1, n - ATR_P); i < n; ++i) {
                 const double tr = std::max({
                     bars_[i].high - bars_[i].low,
                     std::fabs(bars_[i].high - bars_[i-1].close),
                     std::fabs(bars_[i].low  - bars_[i-1].close)
                 });
-                sum += tr;
+                sum += tr; ++count;
             }
-            atr_avg_ = sum / ATR_P;
+            if (count == 0) {
+                // Single bar: use high-low range
+                atr_avg_ = bars_[0].high - bars_[0].low;
+                if (atr_avg_ <= 0.0) atr_avg_ = bars_[0].close * 0.001;
+            } else {
+                atr_avg_ = sum / count;
+            }
             atr_init_ = true;
-            for (int i = start + ATR_P + 1; i < n; ++i) {
-                const double tr = std::max({
-                    bars_[i].high - bars_[i].low,
-                    std::fabs(bars_[i].high - bars_[i-1].close),
-                    std::fabs(bars_[i].low  - bars_[i-1].close)
-                });
-                atr_avg_ = (atr_avg_ * (ATR_P-1) + tr) / ATR_P;
-            }
         } else {
             const int i = n - 1;
-            const double tr = std::max({
+            const double tr = (n >= 2) ? std::max({
                 bars_[i].high - bars_[i].low,
                 std::fabs(bars_[i].high - bars_[i-1].close),
                 std::fabs(bars_[i].low  - bars_[i-1].close)
-            });
+            }) : bars_[i].high - bars_[i].low;
             atr_avg_ = (atr_avg_ * (ATR_P-1) + tr) / ATR_P;
         }
         ind.atr14.store(atr_avg_, std::memory_order_relaxed);

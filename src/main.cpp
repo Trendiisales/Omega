@@ -5968,8 +5968,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // ?? Routing -- every symbol goes through supervisor ????????????????????????
     if (sym == "US500.F") {
-        // Bootstrap SP bar engines on first tick
-        { static bool s_sp_boot=false; if(!s_sp_boot){ g_bars_sp.m1.bootstrap((bid+ask)*0.5); g_bars_sp.m5.bootstrap((bid+ask)*0.5); s_sp_boot=true; } }
         // FIX-tick bar builder for US500.F M1/M5
         {
             static OHLCBar s_sp1{}, s_sp5{};
@@ -6153,8 +6151,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "USTEC.F") {
-        // Bootstrap NQ bar engines on first tick
-        { static bool s_nq_boot=false; if(!s_nq_boot){ g_bars_nq.m1.bootstrap((bid+ask)*0.5); g_bars_nq.m5.bootstrap((bid+ask)*0.5); s_nq_boot=true; } }
         // FIX-tick bar builder for USTEC.F M1/M5
         {
             static OHLCBar s_nq1{}, s_nq5{};
@@ -7193,25 +7189,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // ?? Bar metric updates -- every XAUUSD tick ????????????????????????????
         g_bars_gold.m1.update_tick_metrics(ask - bid, now_ms_g);
         g_bars_gold.m1.update_volume_delta(g_macro_ctx.gold_l2_imbalance);
-
-        // Bootstrap all gold bar timeframes on first tick -- no cold-start wait.
-        // EMA9/21/50 seeded at current price, converge as bars close.
-        // M15 direction reliable after 3-5 bar closes (~45-75 min).
-        // H4 direction reliable after 2-3 bar closes (~8-12 hours).
-        // trend_state=0 (permissive) until bars confirm direction.
-        {
-            static bool s_bootstrapped = false;
-            if (!s_bootstrapped) {
-                const double xau_boot = (bid + ask) * 0.5;
-                g_bars_gold.m1.bootstrap(xau_boot);
-                g_bars_gold.m5.bootstrap(xau_boot);
-                g_bars_gold.m15.bootstrap(xau_boot);
-                g_bars_gold.h4.bootstrap(xau_boot);
-                s_bootstrapped = true;
-                printf("[BARS-GOLD] Bootstrap at %.3f -- M1/M5/M15/H4 EMA seeded immediately\n", xau_boot);
-                fflush(stdout);
-            }
-        }
 
         // ?? FIX-tick bar builder -- accumulates ticks into M1/M5/M15/H4 OHLC bars ??
         {
