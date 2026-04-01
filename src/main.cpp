@@ -6996,6 +6996,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double gold_momentum      = (gold_vwap_now > 0.0 && gold_mid_now > 0.0)
             ? ((gold_mid_now - gold_vwap_now) / gold_mid_now * 100.0)
             : 0.0;
+        // Dollar-native VWAP deviation -- passed to GoldFlow trend bias filter.
+        // Positive = price above VWAP, negative = price below VWAP, in raw gold points.
+        const double gold_vwap_pts = (gold_vwap_now > 0.0) ? (gold_mid_now - gold_vwap_now) : 0.0;
         const bool gold_is_compressing  = (strcmp(gold_stack_regime,"COMPRESSION")==0);
 
         // REAL vol measurements from GoldEngineStack (tick-by-tick, no hardcoding)
@@ -7682,7 +7685,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                         ? g_macro_ctx.gold_wall_above
                                         : g_macro_ctx.gold_wall_below;
             g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence,
-                                       sup_trend_mgmt, gf_wall_mgmt);
+                                       sup_trend_mgmt, gf_wall_mgmt, gold_vwap_pts);
             auto flow_mgmt_cb = [&](const omega::TradeRecord& tr) {
                 // PARTIAL_1R: position still open -- send partial broker close,
                 // log via handle_closed_trade (which now returns early for PARTIAL_1R
@@ -7739,7 +7742,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 (gold_sdec.regime == omega::Regime::TREND_CONTINUATION),
                 g_gold_flow_reload.pos.is_long
                     ? g_macro_ctx.gold_wall_above
-                    : g_macro_ctx.gold_wall_below);
+                    : g_macro_ctx.gold_wall_below,
+                gold_vwap_pts);
             auto reload_mgmt_cb = [&](const omega::TradeRecord& tr) {
                 if (tr.exitReason == std::string("PARTIAL_1R")) {
                     if (g_cfg.mode == "LIVE") {
@@ -8391,7 +8395,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     && (g_gold_flow.pos.is_long  ? g_macro_ctx.gold_wall_above
                                                  : g_macro_ctx.gold_wall_below);
                 g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence,
-                                           sup_trend, gf_wall_ahead);
+                                           sup_trend, gf_wall_ahead, gold_vwap_pts);
                 g_gold_flow.on_tick(bid, ask,
                     g_macro_ctx.gold_l2_imbalance,
                     g_gold_stack.ewm_drift(),

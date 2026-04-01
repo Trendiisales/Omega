@@ -442,38 +442,90 @@ struct GoldFlowEngine {
         // Skip this check if ATR not yet built (is_impulsive() returns true in that case).
         const bool price_expanding = is_impulsive();
 
-        // ?? Macro trend bias filter ???????????????????????????????????????????
-        // Block counter-trend entries when VWAP deviation signals strong directionality.
-        // Without this, GFE's local EWM momentum catches micro-pullbacks INSIDE a trend
-        // and fires counter-trend entries (evidence: 3? SHORT at 4440 on +120pt Friday).
+        // ?? Macro trend bias filter -- DOLLAR-BASED (not % of price) ???????????
+        // Old system: 0.05% of price (~2.36pts at gold $4712) + supervisor conf gate.
+        // Problem: supervisor returns COMPRESSION/EXPANSION during intraday downtrends
+        //   so the second condition fails and longs are never blocked.
+        // Problem 2: 2.36pt threshold too loose -- VWAP chases price, gap stays narrow.
         //
-        // Two-level gate (BOTH must agree to block):
-        //   Level 1: |momentum| > 0.05% of price = price meaningfully above/below VWAP
-        //   Level 2 (soft): supervisor conf > 1.5 OR it's a TREND_CONTINUATION regime
-        //     ? Level 2 off when VWAP not yet warmed (momentum=0) ? no false blocks
+        // New system: TWO independent dollar-point guards, either one sufficient to block.
         //
-        // SHORT blocked when: momentum > +0.05%  (price above VWAP = uptrend)
-        // LONG  blocked when: momentum < -0.05%  (price below VWAP = downtrend)
-        // Neutral zone (-0.05%, +0.05%): both directions open -- no regime detected
-        static constexpr double GFE_TREND_BIAS_THRESHOLD = 0.05; // % of price
-        const bool vwap_trend_up   = (m_trend_momentum >  GFE_TREND_BIAS_THRESHOLD)
-                                   && (m_sup_conf > 1.5 || m_sup_is_trend);
-        const bool vwap_trend_down = (m_trend_momentum < -GFE_TREND_BIAS_THRESHOLD)
-                                   && (m_sup_conf > 1.5 || m_sup_is_trend);
+        // GUARD A -- VWAP dollar distance (replaces the % threshold):
+        //   LONG  blocked when price is more than GFE_VWAP_BLOCK_PTS below VWAP
+        //   SHORT blocked when price is more than GFE_VWAP_BLOCK_PTS above VWAP
+        //   No supervisor dependency -- VWAP distance alone is the signal.
+        //   $3.0 chosen: meaningful separation (not spread noise), fires reliably
+        //   during 10+ pt intraday trends without over-blocking tight-range sessions.
+        //   Only active when VWAP is warmed (m_vwap_pts_dev != 0.0).
+        //
+        // GUARD B -- Rolling structure: lower-high (downtrend) / higher-low (uptrend):
+        //   Tracks 20-tick and 60-tick price highs/lows.
+        //   LONG  blocked when 20-tick high < 60-tick high (making lower highs)
+        //   SHORT blocked when 20-tick low  > 60-tick low  (making higher lows)
+        //   Requires both windows full before activating (cold-start safe).
+        //   Only blocks when the gap is >= 1x ATR -- ignores noise-level structure.
+        //
+        // VWAP bias kept as soft confirmation for telemetry / future use.
+        static constexpr double GFE_VWAP_BLOCK_PTS = 3.0; // pts below/above VWAP to block
+
+        // Update structure windows
+        m_struct_fast.push_back(mid);
+        m_struct_slow.push_back(mid);
+        if ((int)m_struct_fast.size() > GFE_STRUCT_FAST) m_struct_fast.pop_front();
+        if ((int)m_struct_slow.size() > GFE_STRUCT_SLOW) m_struct_slow.pop_front();
+
+        // Guard A: dollar distance from VWAP (no supervisor dependency)
+        const bool vwap_warmed     = (m_vwap_pts_dev != 0.0);
+        const bool vwap_trend_down = vwap_warmed && (m_vwap_pts_dev < -GFE_VWAP_BLOCK_PTS);
+        const bool vwap_trend_up   = vwap_warmed && (m_vwap_pts_dev >  GFE_VWAP_BLOCK_PTS);
+
+        // Guard B: rolling structure (lower-high = downtrend, higher-low = uptrend)
+        const bool struct_full = ((int)m_struct_fast.size() >= GFE_STRUCT_FAST
+                               && (int)m_struct_slow.size() >= GFE_STRUCT_SLOW);
+        const double atr_struct = (m_atr > 0.01) ? m_atr : 1.0;
+        bool struct_lower_high = false;  // lower highs = downtrend structure
+        bool struct_higher_low = false;  // higher lows = uptrend structure
+        if (struct_full) {
+            const double fast_hi = *std::max_element(m_struct_fast.begin(), m_struct_fast.end());
+            const double slow_hi = *std::max_element(m_struct_slow.begin(), m_struct_slow.end());
+            const double fast_lo = *std::min_element(m_struct_fast.begin(), m_struct_fast.end());
+            const double slow_lo = *std::min_element(m_struct_slow.begin(), m_struct_slow.end());
+            // Only trigger when the gap is at least 1x ATR to ignore noise-level structure
+            struct_lower_high = (slow_hi - fast_hi) >= atr_struct;  // fast high < slow high by 1 ATR
+            struct_higher_low = (fast_lo - slow_lo) >= atr_struct;  // fast low  > slow low  by 1 ATR
+        }
+
+        // Combined block: either guard is sufficient
+        const bool block_long  = vwap_trend_down || struct_lower_high;
+        const bool block_short = vwap_trend_up   || struct_higher_low;
+
+        if (block_long || block_short) {
+            static int64_t s_bias_log = 0;
+            if (now_ms - s_bias_log >= 5000) {
+                s_bias_log = now_ms;
+                printf("[GOLD-FLOW] TREND-BLOCK block_long=%d block_short=%d"
+                       " vwap_pts=%.2f(lim=%.1f) lower_hi=%d higher_lo=%d atr=%.2f
+",
+                       (int)block_long, (int)block_short,
+                       m_vwap_pts_dev, GFE_VWAP_BLOCK_PTS,
+                       (int)struct_lower_high, (int)struct_higher_low, atr_struct);
+                fflush(stdout);
+            }
+        }
 
         const bool long_signal  = fast_long
                                   && slow_long
                                   && ewm_drift > drift_threshold
                                   && momentum > momentum_floor
                                   && price_expanding
-                                  && !vwap_trend_down;   // don't go long in confirmed downtrend
+                                  && !block_long;   // blocked by VWAP distance OR lower-high structure
 
         const bool short_signal = fast_short
                                   && slow_short
                                   && ewm_drift < -drift_threshold
                                   && momentum < -momentum_floor
                                   && price_expanding
-                                  && !vwap_trend_up;     // don't go short in confirmed uptrend
+                                  && !block_short;  // blocked by VWAP distance OR higher-low structure
 
         if (!long_signal && !short_signal) return;
 
@@ -706,9 +758,12 @@ struct GoldFlowEngine {
     // Evidence: Friday 27 Mar -- engine went SHORT 3? at 4440 during a +120pt UP day.
     //   At entry: gold_momentum = +0.86% (price 0.86% above VWAP). A SHORT here was
     //   directly counter-trend. All 3 exits were FORCE_CLOSE. Net: +$317 vs $3,550 missed.
+    // vwap_pts = mid - vwap in raw gold points (e.g. +3.5 = price $3.50 above VWAP)
+    // This is the dollar-native signal -- replaces the fragile % threshold.
     void set_trend_bias(double momentum_pct, double supervisor_conf, bool sup_is_trend,
-                        bool wall_ahead = false) noexcept {
+                        bool wall_ahead = false, double vwap_pts = 0.0) noexcept {
         m_trend_momentum   = momentum_pct;
+        m_vwap_pts_dev     = vwap_pts;
         m_sup_conf         = supervisor_conf;
         m_sup_is_trend     = sup_is_trend;
         m_wall_ahead       = wall_ahead;
@@ -939,9 +994,18 @@ private:
 
     // Macro trend bias -- updated each tick via set_trend_bias() before on_tick()
     double  m_trend_momentum   = 0.0;  // (mid-VWAP)/mid*100 from GoldEngineStack
+    double  m_vwap_pts_dev     = 0.0;  // mid - VWAP in raw points (dollar-native)
     double  m_sup_conf         = 0.0;  // supervisor confidence score
     bool    m_sup_is_trend     = false; // supervisor classified TREND_CONTINUATION
     bool    m_wall_ahead       = false; // significant L2 wall within 2?ATR ahead of entry
+
+    // Rolling structure windows for lower-high / higher-low detection
+    // LONG blocked when 20-tick high < 60-tick high (lower highs = downtrend structure)
+    // SHORT blocked when 20-tick low  > 60-tick low  (higher lows = uptrend structure)
+    static constexpr int GFE_STRUCT_FAST = 20;
+    static constexpr int GFE_STRUCT_SLOW = 60;
+    std::deque<double> m_struct_fast;
+    std::deque<double> m_struct_slow;
 
     // Continuation mode: set after a profitable close (TRAIL_HIT/BE_HIT).
     // Lowers persistence threshold from 75% ? 60% for first re-entry only.
