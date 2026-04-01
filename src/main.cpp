@@ -11337,6 +11337,88 @@ int main(int argc, char* argv[])
     }
 
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
+
+    // =========================================================================
+    // STARTUP VERIFICATION THREAD
+    // Checks all critical systems within 120s of launch.
+    // Writes C:\Omega\logs\startup_status.txt:
+    //   "OK"   = all systems go
+    //   "FAIL: <reason>" = something is broken
+    // DEPLOY_OMEGA.ps1 reads this file and aborts + alerts if FAIL.
+    // =========================================================================
+    std::thread([](){
+        const std::string status_path = log_root_dir() + "/startup_status.txt";
+        // Write STARTING immediately so deploy script knows process launched
+        { std::ofstream f(status_path); f << "STARTING\n"; }
+
+        const auto t0 = std::chrono::steady_clock::now();
+        auto elapsed = [&]{ return std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - t0).count(); };
+
+        auto write_status = [&](const std::string& s) {
+            std::ofstream f(status_path);
+            f << s << "\n";
+            std::cout << "[STARTUP-CHECK] " << s << "\n";
+            std::cout.flush();
+        };
+
+        // --- Check 1: cTrader depth connects within 60s ---
+        // cTrader waits 30s before first connect attempt, then 5-15s to auth
+        while (elapsed() < 65) {
+            if (g_ctrader_depth.depth_active.load()) break;
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+        if (!g_ctrader_depth.depth_active.load()) {
+            write_status("FAIL: cTrader depth not connected after 65s -- check token/network");
+            return;
+        }
+        std::cout << "[STARTUP-CHECK] cTrader depth connected (" << elapsed() << "s)\n";
+        std::cout.flush();
+
+        // --- Check 2: L2 imbalance moving (not stuck at cold 0.5) ---
+        // Wait up to 30s for at least one real L2 update
+        const auto t1 = std::chrono::steady_clock::now();
+        bool l2_ok = false;
+        while (std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - t1).count() < 30) {
+            if (g_l2_gold.has_data.load(std::memory_order_relaxed)) { l2_ok = true; break; }
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        if (!l2_ok) {
+            write_status("FAIL: Gold L2 data not flowing after 30s -- imbalance stuck at 0.5, GoldFlow blind");
+            return;
+        }
+        std::cout << "[STARTUP-CHECK] Gold L2 live (" << elapsed() << "s)\n";
+        std::cout.flush();
+
+        // --- Check 3: Gold M15 bars seeded ---
+        // cTrader sends bar history request ~10s after depth connects
+        // Allow 60s total from depth connect
+        const auto t2 = std::chrono::steady_clock::now();
+        bool bars_ok = false;
+        while (std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - t2).count() < 60) {
+            if (g_bars_gold.m15.ind.m1_ready.load(std::memory_order_relaxed)) { bars_ok = true; break; }
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+        if (!bars_ok) {
+            write_status("FAIL: Gold M15 bars not seeded -- TrendPullback running blind, check bar_failed file");
+            return;
+        }
+        std::cout << "[STARTUP-CHECK] Gold M15 bars seeded (" << elapsed() << "s)\n";
+        std::cout.flush();
+
+        // --- All checks passed ---
+        const double ema9  = g_bars_gold.m15.ind.ema9.load(std::memory_order_relaxed);
+        const double ema50 = g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed);
+        const double atr   = g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed);
+        const double imb   = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+        write_status("OK: cTrader live, L2 live (imb=" + std::to_string(imb).substr(0,5) +
+                     "), M15 seeded EMA9=" + std::to_string(ema9).substr(0,7) +
+                     " EMA50=" + std::to_string(ema50).substr(0,7) +
+                     " ATR=" + std::to_string(atr).substr(0,5));
+    }).detach();
+    // =========================================================================
     std::thread trade_thread(trade_loop);
     Sleep(500);  // Give trade connection 500ms head start before quote loop
     quote_loop();  // blocks until g_running=false
