@@ -98,7 +98,7 @@ static constexpr double GFE_ATR_MIN           = 5.0;   // raised 2.0?5.0: XAUUSD
                                                         // 5pt minimum = 0.11% = survives a real tick move.
                                                         // VIX27 day real ATR is 8-18pts, this is a safe floor.
 #ifndef GFE_ATR_SL_MULT_OVERRIDE
-static constexpr double GFE_ATR_SL_MULT       = 1.5;
+static constexpr double GFE_ATR_SL_MULT       = 1.0;  // SL = 1x ATR -- reduced from 1.5: losers were -10pts, winners only +3.4pts avg. Tighter SL fires sooner, same $ loss with max_loss cap.
 #else
 static constexpr double GFE_ATR_SL_MULT       = GFE_ATR_SL_MULT_OVERRIDE;
 #endif   // SL = ATR * this
@@ -1274,7 +1274,53 @@ private:
             }
         }
 
-        // atr_step: frozen at entry -- used for staircase step triggers only.
+        // ?? Immediate reversal guard ??????????????????????????????????????????
+        // If within first 15s price is already >2pts adverse AND zero MFE:
+        // the thesis was wrong from tick 1 -- close immediately.
+        // Catches entries like 22:38 LONG@4693.62 -> 4688.28 in 27s (-$168).
+        // Without this guard: SL sits at 4683, trade bleeds full -$168.
+        // With this guard: closes at ~4691 after 15s = ~-$30 instead.
+        {
+            const int64_t held_s  = (now_ms / 1000) - pos.entry_ts;
+            const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+            const double  imm_rev_thresh = std::max(2.0, m_atr * 0.30); // 2pt floor or 0.3xATR
+            if (held_s <= 15 && adverse > imm_rev_thresh && pos.mfe < 0.10) {
+                printf("[GOLD-FLOW] IMM-REVERSAL %s adverse=%.2f > %.2f in %llds, mfe=%.2f -- wrong thesis, bail\n",
+                       pos.is_long ? "LONG" : "SHORT",
+                       adverse, imm_rev_thresh, (long long)held_s, pos.mfe);
+                fflush(stdout);
+                const double exit_px = pos.is_long ? bid : ask;
+                close_position(exit_px, "IMM_REVERSAL", now_ms, on_close);
+                return;
+            }
+        }
+
+        // ?? Time-stop-in-loss ???????????????????????????????????????????????????
+        // If position has been losing for >45s straight with no meaningful MFE
+        // AND adverse move > 1.0pt: the setup never worked. Close and move on.
+        // Catches: 20:00 LONG held 21min losing the entire time (-$154).
+        // Without this: bleeds to full SL over minutes.
+        // With this: exits at ~1pt loss after 45s = ~-$10 instead of -$154.
+        // Guard: only fires if NO step has been banked (partial_closed=false).
+        // Once step1 fires the staircase manages the exit -- no time stop needed.
+        {
+            const int64_t held_s  = (now_ms / 1000) - pos.entry_ts;
+            const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+            static constexpr double TIME_STOP_ADVERSE_PTS = 1.0;  // losing >1pt
+            static constexpr int64_t TIME_STOP_SECS       = 45;   // for >45s straight
+            if (!pos.partial_closed
+                && held_s > TIME_STOP_SECS
+                && adverse > TIME_STOP_ADVERSE_PTS
+                && pos.mfe < TIME_STOP_ADVERSE_PTS * 0.5) {  // never went even 0.5pt in our favour
+                printf("[GOLD-FLOW] TIME-STOP %s adverse=%.2f held=%llds mfe=%.2f -- thesis dead\n",
+                       pos.is_long ? "LONG" : "SHORT",
+                       adverse, (long long)held_s, pos.mfe);
+                fflush(stdout);
+                const double exit_px = pos.is_long ? bid : ask;
+                close_position(exit_px, "TIME_STOP", now_ms, on_close);
+                return;
+            }
+        }
         // Keeps step distances consistent even as gold vol changes mid-trade.
         const double atr_step = pos.atr_at_entry;
         // atr_live: current market ATR -- used for trail and ratchet SL placement.
