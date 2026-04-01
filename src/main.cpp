@@ -11494,6 +11494,10 @@ int main(int argc, char* argv[])
         g_ctrader_depth.ctid_account_id     = g_cfg.ctrader_ctid_account_id;
         g_ctrader_depth.l2_mtx              = &g_l2_mtx;
         g_ctrader_depth.l2_books            = &g_l2_books;
+        // Load bar requests that previously caused INVALID_REQUEST -- skip them on startup
+        // This prevents the M1/M5 bar request reconnect loop on every process restart.
+        g_ctrader_depth.bar_failed_path_    = log_root_dir() + "/ctrader_bar_failed.txt";
+        g_ctrader_depth.load_bar_failed(g_ctrader_depth.bar_failed_path_);
         // ?? PRIMARY PRICE SOURCE: cTrader depth ? on_tick ????????????????????
         // cTrader Open API streams every tick from the matching engine directly.
         // FIX quote feed can lag 0.5-2pts in fast markets due to gateway batching.

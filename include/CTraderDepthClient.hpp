@@ -330,8 +330,32 @@ public:
     std::string client_id, client_secret, access_token, refresh_token;
     int64_t     ctid_account_id = 0;
     std::unordered_set<std::string> symbol_whitelist;
-    bool        dump_all_symbols = false;  // if true, log ALL broker symbols on connect
-    std::unordered_set<std::string> bar_failed_reqs; // persists across reconnects
+    bool        dump_all_symbols = false;
+    std::unordered_set<std::string> bar_failed_reqs;
+    std::string bar_failed_path_ = "logs/ctrader_bar_failed.txt"; // path for persistence
+
+    // Persist bar_failed_reqs across process restarts so M1/M5 that caused
+    // INVALID_REQUEST on one run don't reconnect-loop on the next run.
+    void save_bar_failed(const std::string& path) const {
+        FILE* f = fopen(path.c_str(), "w");
+        if (!f) return;
+        for (const auto& k : bar_failed_reqs) fprintf(f, "%s\n", k.c_str());
+        fclose(f);
+    }
+    void load_bar_failed(const std::string& path) {
+        FILE* f = fopen(path.c_str(), "r");
+        if (!f) return;
+        char buf[128];
+        while (fgets(buf, sizeof(buf), f)) {
+            size_t n = strlen(buf);
+            while (n > 0 && (buf[n-1]=='\n'||buf[n-1]=='\r')) buf[--n]=0;
+            if (n > 0) {
+                bar_failed_reqs.insert(buf);
+                std::cout << "[CTRADER-BARS] Loaded failed req from disk: " << buf << "\n";
+            }
+        }
+        fclose(f);
+    }
 
     // Alias map: broker_name ? internal_name
     // Populated when broker uses different names than our internal names.
@@ -733,6 +757,7 @@ private:
                         std::cerr << "[CTRADER] Connection dropped after bar req "
                                   << last_sent.name << " period=" << last_sent.period
                                   << " -- marking as failed, will skip on reconnect\n";
+                        save_bar_failed(bar_failed_path_);  // persist across restarts
                     }
                 }
                 std::cerr<<"[CTRADER] Connection error\n";
@@ -776,6 +801,7 @@ private:
                     // Only add to failed set for INVALID_REQUEST (malformed req) -- not UNSUPPORTED
                     if (ec == "INVALID_REQUEST") {
                         bar_failed_reqs.insert(failed.name + ":" + std::to_string(failed.period));
+                        save_bar_failed(bar_failed_path_);  // persist across restarts
                     }
                     std::cerr << "[CTRADER-BARS] " << ec << " for " << failed.name
                               << " period=" << failed.period << " is_live=" << failed.is_live << "\n";
