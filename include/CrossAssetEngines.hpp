@@ -1878,7 +1878,6 @@ public:
         const double eff_min_sl  = std::max({atr_floor, spread_floor, 3.0});
         const double sl_raw_dist = std::fabs(mid - sl_raw);
         const double sl_dist     = std::max(sl_raw_dist, eff_min_sl);
-        const double sl = is_long ? (mid - sl_dist) : (mid + sl_dist);
 
         // TP = ATR-based fixed distance: 2.5x ATR for gold (~20-25pts typical)
         const double atr_safe  = atr_ > 2.0 ? atr_ : 10.0;  // floor at 10pts
