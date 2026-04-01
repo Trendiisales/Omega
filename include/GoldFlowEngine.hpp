@@ -1254,6 +1254,12 @@ private:
             }
         };
 
+        // open_pnl_usd_full: total trade P&L in USD measured against full original size.
+        // Computed here (above staircase steps) so both step 1 dollar trigger and the
+        // dollar ratchet below can share it without duplication.
+        const double open_pnl_usd_full = (pos.full_size > 0.0)
+            ? (move * pos.full_size * 100.0) : 0.0;
+
         // Step 1: DOLLAR trigger -- bank first 33% the moment trade is up $50.
         // Previously triggered at +1*ATR price distance (e.g. 10pts at ATR=10).
         // Problem: ATR=10 requires a $10 move = $150 gross at 0.15 lots.
@@ -1332,12 +1338,8 @@ private:
         // Before step 1: ratchet moves SL from loss territory toward BE.
         // After step 1:  ratchet locks profit above the staircase SL.
         // Both improve the worst-case outcome.
-        //
-        // open_pnl_usd_full: hoisted here so staircase step 1 dollar trigger can use it.
-        const double open_pnl_usd_full = (pos.full_size > 0.0)
-            ? (move * pos.full_size * 100.0) : 0.0;
         if (pos.size > 0.0 && pos.full_size > 0.0) {
-            // Tier trigger: measure total trade open P&L using full_size
+            // Tier trigger: uses open_pnl_usd_full computed above staircase steps
             const int    tier_now = static_cast<int>(open_pnl_usd_full / DOLLAR_RATCHET_STEP);
 
             if (tier_now > pos.dollar_lock_tier && tier_now >= 1) {
