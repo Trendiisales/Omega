@@ -8606,30 +8606,36 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
 
         // ── Improvement 8: Pyramid add-on on second EMA50 pullback ─────────────
-        // When TrendPullback has an open LIVE position and the engine signals again
-        // (second pullback to EMA50 in same direction), add 50% to the position.
-        // Gates: pyramid enabled, position profitable (past BE), max adds not hit,
-        // no conflicting entries from other engines, daily cap not hit.
+        // When TrendPullback is live, check for second pullback directly from EMA state.
+        // NEVER call on_tick() again while position is open -- that runs double management.
+        // Instead: read EMA50 and check the same pullback+bounce condition manually.
         if (g_trend_pb_gold.PYRAMID_ENABLED
             && g_trend_pb_gold.has_open_position()
+            && g_trend_pb_gold.pyramid_adds_ < g_trend_pb_gold.PYRAMID_MAX_ADDS
             && g_trend_pb_gold.daily_pnl() > -g_trend_pb_gold.DAILY_LOSS_CAP * 0.5
             && gold_can_enter) {
-            // Temporarily allow a second on_tick call to check for pyramid signal.
-            // The engine returns a signal only if EMA50 pullback + bounce condition met.
-            // We don't pass on_close here -- pyramid adds don't create a new trade record.
-            const auto pyr_sig = g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
-            if (pyr_sig.valid
-                && pyr_sig.is_long == g_trend_pb_gold.open_is_long()  // same direction
-                && g_trend_pb_gold.pyramid_adds_ < g_trend_pb_gold.PYRAMID_MAX_ADDS) {
-                const double add_lot = std::max(0.005,
-                    compute_size("XAUUSD", std::fabs(pyr_sig.entry - pyr_sig.sl),
-                                 ask - bid, g_trend_pb_gold.ENTRY_SIZE_HINT)
+            const double pyr_mid    = (bid + ask) * 0.5;
+            const double pyr_ema50  = g_trend_pb_gold.ema50();
+            const double pyr_band   = pyr_mid * g_trend_pb_gold.PULLBACK_BAND_PCT / 100.0;
+            const bool   pyr_long   = g_trend_pb_gold.open_is_long();
+            const bool   at_ema50   = std::fabs(pyr_mid - pyr_ema50) < pyr_band;
+            // Only add when: at EMA50, price bouncing in trade direction, already profitable (BE locked)
+            const double open_entry = g_trend_pb_gold.open_entry();
+            const bool   in_profit  = pyr_long ? (bid > open_entry) : (ask < open_entry);
+            const bool   bouncing   = pyr_long ? (pyr_mid > pyr_ema50) : (pyr_mid < pyr_ema50);
+            if (at_ema50 && bouncing && in_profit) {
+                const double pyr_atr     = g_trend_pb_gold.current_atr();
+                const double pyr_sl_dist = std::max(pyr_atr * g_trend_pb_gold.ATR_SL_MULT, 3.0);
+                const double pyr_sl      = pyr_long ? (pyr_mid - pyr_sl_dist) : (pyr_mid + pyr_sl_dist);
+                const double pyr_tp_dist = std::max(pyr_atr * 2.5, pyr_sl_dist * 2.0);
+                const double pyr_tp      = pyr_long ? (pyr_mid + pyr_tp_dist) : (pyr_mid - pyr_tp_dist);
+                const double add_lot     = std::max(0.005,
+                    compute_size("XAUUSD", pyr_sl_dist, ask - bid, g_trend_pb_gold.ENTRY_SIZE_HINT)
                     * g_trend_pb_gold.PYRAMID_SIZE_MULT);
-                if (enter_directional("XAUUSD", pyr_sig.is_long, pyr_sig.entry,
-                                      pyr_sig.sl, pyr_sig.tp, add_lot, true)) {
+                if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true)) {
                     ++g_trend_pb_gold.pyramid_adds_;
-                    printf("[TRENDPB-GOLD] PYRAMID ADD #%d lot=%.4f sl=%.3f\n",
-                           g_trend_pb_gold.pyramid_adds_, add_lot, pyr_sig.sl);
+                    printf("[TRENDPB-GOLD] PYRAMID ADD #%d lot=%.4f sl=%.3f tp=%.3f\n",
+                           g_trend_pb_gold.pyramid_adds_, add_lot, pyr_sl, pyr_tp);
                     fflush(stdout);
                 }
             }

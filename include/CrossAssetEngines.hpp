@@ -1555,7 +1555,7 @@ public:
             // Only fires once per trade (partial_done_ flag).
             if (!partial_done_ && move >= std::fabs(pos_.tp - pos_.entry) * 0.95) {
                 const double exit_px = pos_.is_long ? bid : ask;
-                partial_exit(exit_px, 0.5, sym, "PARTIAL_1R", on_close);
+                partial_exit(exit_px, 0.5, sym, "PARTIAL_1R");
                 // Tighten trail after partial -- protect the locked portion
                 // Move SL to breakeven + 25% of initial TP dist immediately
                 const double be_plus = pos_.is_long
@@ -1976,7 +1976,7 @@ public:
     // Partial exit: close fraction of position, reduce size
     // Returns PnL of the partial close
     double partial_exit(double exit_px, double fraction, const std::string& sym,
-                        const char* reason, CloseCb& on_close) noexcept {
+                        const char* reason) noexcept {
         if (!pos_.active || fraction <= 0.0 || fraction >= 1.0) return 0.0;
         const double close_size = pos_.size * fraction;
         const double rem_size   = pos_.size - close_size;
