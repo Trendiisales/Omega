@@ -109,27 +109,35 @@ function Test-BinaryStamp {
     }
 
     $stampLines  = Get-Content $StampFile -ErrorAction SilentlyContinue
-    $stampHash   = (($stampLines | Where-Object { $_ -match '^EXE_SHA256=' }) -replace '^EXE_SHA256=', '').Trim()
-    $stampGit    = (($stampLines | Where-Object { $_ -match '^GIT_HASH=' })   -replace '^GIT_HASH=',   '').Trim()
-    $stampTime   = (($stampLines | Where-Object { $_ -match '^BUILD_TIME=' })  -replace '^BUILD_TIME=',  '').Trim()
+    $stampHash   = (($stampLines | Where-Object { $_ -match '^EXE_SHA256=' })      -replace '^EXE_SHA256=',     '').Trim()
+    $stampGit    = (($stampLines | Where-Object { $_ -match '^GIT_HASH=' })        -replace '^GIT_HASH=',       '').Trim()
+    $stampShort  = (($stampLines | Where-Object { $_ -match '^GIT_HASH_SHORT=' })  -replace '^GIT_HASH_SHORT=', '').Trim()
+    $stampTime   = (($stampLines | Where-Object { $_ -match '^BUILD_TIME=' })      -replace '^BUILD_TIME=',     '').Trim()
     $currentHash = (Get-FileHash -Path $OmegaExe -Algorithm SHA256).Hash.Trim()
+    $displayHash = if ($stampShort) { $stampShort } else { $stampGit.Substring(0, [Math]::Min(7,$stampGit.Length)) }
 
     if ([string]::IsNullOrWhiteSpace($stampHash)) {
-        Write-WatchdogLog "STALE-CHECK: Stamp file exists but EXE_SHA256 field is empty -- corrupt stamp" "ERROR"
-        Send-Notification "Omega Watchdog - CORRUPT STAMP" "Stamp file corrupt. Run DEPLOY_OMEGA.ps1"
+        Write-WatchdogLog "STALE-CHECK: Stamp EXE_SHA256 field empty -- corrupt stamp" "ERROR"
+        Send-Notification "Omega Watchdog - CORRUPT STAMP" "Stamp corrupt. Run DEPLOY_OMEGA.ps1"
+        return $false
+    }
+
+    if ([string]::IsNullOrWhiteSpace($stampGit)) {
+        Write-WatchdogLog "STALE-CHECK: Stamp GIT_HASH field empty -- corrupt stamp" "ERROR"
+        Send-Notification "Omega Watchdog - CORRUPT STAMP" "Stamp GIT_HASH missing. Run DEPLOY_OMEGA.ps1"
         return $false
     }
 
     if ($stampHash -ne $currentHash) {
         Write-WatchdogLog "STALE-CHECK: EXE HASH MISMATCH -- RESTART BLOCKED" "ERROR"
-        Write-WatchdogLog "STALE-CHECK: stamp_hash=$($stampHash.Substring(0,16))...  exe_hash=$($currentHash.Substring(0,16))..." "ERROR"
-        Write-WatchdogLog "STALE-CHECK: stamp_git=$stampGit  built=$stampTime" "ERROR"
-        Write-WatchdogLog "STALE-CHECK: Omega.exe was modified after last deploy. Run DEPLOY_OMEGA.ps1 to redeploy." "ERROR"
-        Send-Notification "Omega Watchdog - STALE EXE BLOCKED" "Exe hash mismatch. Run DEPLOY_OMEGA.ps1. Watchdog will NOT restart until fixed."
+        Write-WatchdogLog "STALE-CHECK: stamp_sha256=$($stampHash.Substring(0,16))...  exe_sha256=$($currentHash.Substring(0,16))..." "ERROR"
+        Write-WatchdogLog "STALE-CHECK: source_commit=$displayHash  built=$stampTime" "ERROR"
+        Write-WatchdogLog "STALE-CHECK: Omega.exe was replaced after last deploy. Run DEPLOY_OMEGA.ps1." "ERROR"
+        Send-Notification "Omega Watchdog - STALE EXE BLOCKED" "Exe hash mismatch. source=$displayHash. Run DEPLOY_OMEGA.ps1."
         return $false
     }
 
-    Write-WatchdogLog "STALE-CHECK: OK  git=$stampGit  sha256=$($currentHash.Substring(0,16))...  built=$stampTime" "INFO"
+    Write-WatchdogLog "STALE-CHECK: OK  source=$displayHash  sha256=$($currentHash.Substring(0,16))...  built=$stampTime" "INFO"
     return $true
 }
 
