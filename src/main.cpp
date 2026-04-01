@@ -7602,12 +7602,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_bars_gold.m1.update_volume_delta(g_macro_ctx.gold_l2_imbalance);
 
         // ?? FIX-tick bar builder -- accumulates ticks into M1/M5/M15 OHLC bars ??
-        // Broker blocks GetTrendbarsReq, but we receive every tick via FIX already.
-        // Accumulate into current bar. On minute boundary close + call add_bar().
         {
             static OHLCBar s_cur1{}, s_cur5{}, s_cur15{};
             static int64_t s_bar1_start = 0, s_bar5_start = 0, s_bar15_start = 0;
-            const double mid = (bid + ask) * 0.5;
+            const double xau_mid = (bid + ask) * 0.5;
             const int64_t bar1_start  = (now_ms_g /  60000LL) *  60000LL;
             const int64_t bar5_start  = (now_ms_g / 300000LL) * 300000LL;
             const int64_t bar15_start = (now_ms_g / 900000LL) * 900000LL;
@@ -7615,19 +7613,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             auto update_bar = [&](OHLCBar& cur, int64_t& prev_start,
                                   int64_t bar_start, OHLCBarEngine& eng) {
                 if (prev_start == 0) {
-                    // First tick ever
-                    cur = {bar_start/60000LL, mid, mid, mid, mid};
+                    cur = {bar_start/60000LL, xau_mid, xau_mid, xau_mid, xau_mid};
                     prev_start = bar_start;
                 } else if (bar_start != prev_start) {
-                    // Bar closed -- submit and start new
                     if (prev_start > 0) eng.add_bar(cur);
-                    cur = {bar_start/60000LL, mid, mid, mid, mid};
+                    cur = {bar_start/60000LL, xau_mid, xau_mid, xau_mid, xau_mid};
                     prev_start = bar_start;
                 } else {
-                    // Same bar -- update OHLC
-                    if (mid > cur.high) cur.high = mid;
-                    if (mid < cur.low)  cur.low  = mid;
-                    cur.close = mid;
+                    if (xau_mid > cur.high) cur.high = xau_mid;
+                    if (xau_mid < cur.low)  cur.low  = xau_mid;
+                    cur.close = xau_mid;
                 }
             };
 
