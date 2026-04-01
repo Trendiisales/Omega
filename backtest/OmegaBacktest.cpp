@@ -409,7 +409,8 @@ static Cfg parse(int argc, char** argv){
             "  --report  <f>   engine summary CSV    (default bt_report.csv)\n"
             "  --trades  <f>   trade records CSV     (default bt_trades.csv)\n"
             "  --warmup  <n>   warmup ticks          (default 5000)\n"
-            "  --engine  <l>   gold,flow,latency,cross,breakout\n");
+            "  --engine  <l>   gold,flow,latency,cross,breakout\n"
+            "  --quiet         suppress engine log output (recommended)\n");
         exit(1);
     }
     c.csv=argv[1];
@@ -418,6 +419,7 @@ static Cfg parse(int argc, char** argv){
         else if(!strcmp(argv[i],"--report")&&i+1<argc) c.rep=argv[++i];
         else if(!strcmp(argv[i],"--trades")&&i+1<argc) c.trd=argv[++i];
         else if(!strcmp(argv[i],"--warmup")&&i+1<argc) c.warm=atoll(argv[++i]);
+        else if(!strcmp(argv[i],"--quiet")) c.quiet=true;
         else if(!strcmp(argv[i],"--engine")&&i+1<argc){
             const char* e=argv[++i];
             c.gold=!!strstr(e,"gold"); c.flow=!!strstr(e,"flow");
@@ -462,6 +464,15 @@ static void write_report(const char* path){
 // =============================================================================
 int main(int argc, char** argv){
     Cfg cfg = parse(argc,argv);
+    // Suppress engine verbose output when --quiet
+    // Engines use std::cout heavily (entry/exit/ratchet logs).
+    // Redirect to /dev/null so only the progress bar and summary show.
+    FILE* devnull = nullptr;
+    if (cfg.quiet) {
+        devnull = fopen("/dev/null", "w");
+        if (devnull) { fflush(stdout); dup2(fileno(devnull), STDOUT_FILENO); }
+        // Keep stderr for errors and progress bar (goes to terminal via \r)
+    }
 
     printf("================================================================\n");
     printf("  Omega C++ Backtester\n");

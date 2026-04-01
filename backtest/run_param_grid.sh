@@ -108,7 +108,7 @@ for VWAP in $VWAP_ROOMS; do
     for P in 1 2 3; do
         PERIOD_FILE="$TMPDIR/period_${P}.csv"
         REPORT="$TMPDIR/report_${ATR}_${DRIFT}_${COMP}_${VWAP}_p${P}.csv"
-        "$TMPBIN" "$PERIOD_FILE" --engine flow --warmup $WARMUP --report "$REPORT" > /dev/null 2>&1
+        "$TMPBIN" "$PERIOD_FILE" --engine flow --warmup $WARMUP --quiet --report "$REPORT" > /dev/null 2>&1
         # Extract flow line from report
         if [ -f "$REPORT" ]; then
             FLOWLINE=$(grep "GoldFlow\|flow" "$REPORT" 2>/dev/null | head -1)
