@@ -503,9 +503,7 @@ struct GoldFlowEngine {
             static int64_t s_bias_log = 0;
             if (now_ms - s_bias_log >= 5000) {
                 s_bias_log = now_ms;
-                printf("[GOLD-FLOW] TREND-BLOCK block_long=%d block_short=%d"
-                       " vwap_pts=%.2f(lim=%.1f) lower_hi=%d higher_lo=%d atr=%.2f
-",
+                printf("[GOLD-FLOW] TREND-BLOCK block_long=%d block_short=%d vwap_pts=%.2f(lim=%.1f) lower_hi=%d higher_lo=%d atr=%.2f\n",
                        (int)block_long, (int)block_short,
                        m_vwap_pts_dev, GFE_VWAP_BLOCK_PTS,
                        (int)struct_lower_high, (int)struct_higher_low, atr_struct);
@@ -1233,9 +1231,7 @@ private:
             if (adverse > gap_threshold && pos.mfe < GFE_GAP_MFE_EXCUSE) {
                 const double loss_pts = adverse;
                 const double loss_usd = loss_pts * pos.size * 100.0;
-                printf("[GOLD-FLOW] GAP-CLOSE %s adverse=%.2f > threshold=%.2f"
-                       " (intended_sl=%.2f mfe=%.2f) loss_usd=%.2f -- force close
-",
+                printf("[GOLD-FLOW] GAP-CLOSE %s adverse=%.2f > threshold=%.2f (intended_sl=%.2f mfe=%.2f) loss_usd=%.2f -- force close\n",
                        pos.is_long ? "LONG" : "SHORT",
                        adverse, gap_threshold, intended_sl_dist, pos.mfe, loss_usd);
                 fflush(stdout);
