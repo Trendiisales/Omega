@@ -517,19 +517,46 @@ static std::string buildTradesJson()
 static std::string buildHistoryJson()
 {
     // Determine path: same logic as main.cpp log_root_dir() + /trades/omega_trade_closes.csv
-    // Try common locations in order
-    static const char* PATHS[] = {
-        "logs/trades/omega_trade_closes.csv",
-        "C:\\Omega\\logs\\trades\\omega_trade_closes.csv",
-        "C:\\Omega\\build\\Release\\logs\\trades\\omega_trade_closes.csv",
-        "../logs/trades/omega_trade_closes.csv",
-        "..\\..\\logs\\trades\\omega_trade_closes.csv",
+    // Read TODAY's daily file -- matches the stats header exactly.
+    // The old code read omega_trade_closes.csv (cumulative all-time rolling file)
+    // which caused the trade table to show trades from previous days, making
+    // the PnL in the table disagree with the daily PnL in the header.
+    char today[16] = {};
+    {
+        time_t t = time(nullptr);
+        struct tm ti{};
+#ifdef _WIN32
+        gmtime_s(&ti, &t);
+#else
+        gmtime_r(&t, &ti);
+#endif
+        snprintf(today, sizeof(today), "%04d-%02d-%02d",
+                 ti.tm_year+1900, ti.tm_mon+1, ti.tm_mday);
+    }
+    static const char* DAILY_DIRS[] = {
+        "logs/trades",
+        "C:\\Omega\\logs\\trades",
+        "C:\\Omega\\build\\Release\\logs\\trades",
+        "../logs/trades",
+        "..\\..\\logs\\trades",
     };
-
+    char daily_path[512];
     FILE* f = nullptr;
-    for (auto p : PATHS) {
-        f = fopen(p, "r");
+    for (auto d : DAILY_DIRS) {
+        snprintf(daily_path, sizeof(daily_path), "%s/omega_trade_closes_%s.csv", d, today);
+        f = fopen(daily_path, "r");
         if (f) break;
+    }
+    // Fallback to cumulative CSV only if no daily file yet (first trade of the day)
+    if (!f) {
+        static const char* FULL_PATHS[] = {
+            "logs/trades/omega_trade_closes.csv",
+            "C:\\Omega\\logs\\trades\\omega_trade_closes.csv",
+            "C:\\Omega\\build\\Release\\logs\\trades\\omega_trade_closes.csv",
+            "../logs/trades/omega_trade_closes.csv",
+            "..\\..\\logs\\trades\\omega_trade_closes.csv",
+        };
+        for (auto p : FULL_PATHS) { f = fopen(p, "r"); if (f) break; }
     }
 
     if (!f) {
