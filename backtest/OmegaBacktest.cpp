@@ -316,7 +316,22 @@ struct FlowRunner {
         const double ewm_drift = ewm_fast_ - ewm_slow_;
         ++tick_count_;
         auto c=cb();
-        (void)eng.on_tick(r.bid, r.ask, 0.5, ewm_drift, r.ts_ms, c);
+
+        // Compute session slot from UTC time so session filters work in backtest.
+        // session_slot: 0=dead, 1=London, 2=London_core, 3=overlap, 4=NY, 5=NY_late, 6=Asia
+        const time_t ts_sec = (time_t)(r.ts_ms / 1000);
+        struct tm utc{};
+        gmtime_r(&ts_sec, &utc);
+        const int hhmm = utc.tm_hour * 100 + utc.tm_min;
+        int session_slot = 0;
+        if      (hhmm >= 600  && hhmm < 800)  session_slot = 1;
+        else if (hhmm >= 800  && hhmm < 1000) session_slot = 2;
+        else if (hhmm >= 1200 && hhmm < 1630) session_slot = 3;
+        else if (hhmm >= 1630 && hhmm < 1900) session_slot = 4;
+        else if (hhmm >= 1900 && hhmm < 2100) session_slot = 5;
+        else if (hhmm >= 100  && hhmm < 600)  session_slot = 6;
+
+        (void)eng.on_tick(r.bid, r.ask, 0.5, ewm_drift, r.ts_ms, c, session_slot);
     }
 };
 
