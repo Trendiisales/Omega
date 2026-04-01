@@ -4172,28 +4172,44 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.uk100_compressing = (g_eng_uk100.phase  == omega::Phase::COMPRESSION
                                   || g_eng_uk100.phase  == omega::Phase::BREAKOUT_WATCH);
 
-    // ?? L2 hot path: read atomic scalars -- zero lock, zero contention ????????
-    // cTrader depth thread writes imbalance/microprice_bias/has_data atomically
-    // after each depth event. FIX tick reads here with no mutex required.
-    // Full L2Book (walls, vacuums) still read under g_l2_mtx below -- cold path only.
-    g_macro_ctx.gold_l2_imbalance   = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.sp_l2_imbalance     = g_l2_sp.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.nq_l2_imbalance     = g_l2_nq.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.cl_l2_imbalance     = g_l2_cl.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.xag_l2_imbalance    = g_l2_xag.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.eur_l2_imbalance    = g_l2_eur.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.gbp_l2_imbalance    = g_l2_gbp.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.aud_l2_imbalance    = g_l2_aud.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.nzd_l2_imbalance    = g_l2_nzd.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.jpy_l2_imbalance    = g_l2_jpy.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.ger40_l2_imbalance  = g_l2_ger40.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.uk100_l2_imbalance  = g_l2_uk100.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.estx50_l2_imbalance = g_l2_estx50.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.brent_l2_imbalance  = g_l2_brent.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.nas_l2_imbalance    = g_l2_nas.imbalance.load(std::memory_order_relaxed);
-    g_macro_ctx.us30_l2_imbalance   = g_l2_us30.imbalance.load(std::memory_order_relaxed);
+    // ?? L2 imbalance: read from g_l2_books which is FIX-sourced and has BOTH sides ??
+    // g_l2_gold.imbalance (cTrader atomic) is ask-only because BlackBull cTrader depth
+    // sends ask-side quotes only for XAUUSD. The FIX W/X feed sends full bid+ask book
+    // and merges both sides into g_l2_books -- this is what the GUI displays correctly.
+    // Trading engines must use the same source as the GUI.
+    {
+        std::lock_guard<std::mutex> lk(g_l2_mtx);
+        auto read_imb = [&](const std::string& sym) -> double {
+            auto it = g_l2_books.find(sym);
+            if (it == g_l2_books.end()) return 0.5;
+            return it->second.imbalance();
+        };
+        auto read_hd = [&](const std::string& sym) -> bool {
+            auto it = g_l2_books.find(sym);
+            if (it == g_l2_books.end()) return false;
+            return it->second.has_data();
+        };
+        g_macro_ctx.gold_l2_imbalance   = read_imb("XAUUSD");
+        g_macro_ctx.sp_l2_imbalance     = read_imb("US500.F");
+        g_macro_ctx.nq_l2_imbalance     = read_imb("USTEC.F");
+        g_macro_ctx.cl_l2_imbalance     = read_imb("USOIL.F");
+        g_macro_ctx.xag_l2_imbalance    = read_imb("XAGUSD");
+        g_macro_ctx.eur_l2_imbalance    = read_imb("EURUSD");
+        g_macro_ctx.gbp_l2_imbalance    = read_imb("GBPUSD");
+        g_macro_ctx.aud_l2_imbalance    = read_imb("AUDUSD");
+        g_macro_ctx.nzd_l2_imbalance    = read_imb("NZDUSD");
+        g_macro_ctx.jpy_l2_imbalance    = read_imb("USDJPY");
+        g_macro_ctx.ger40_l2_imbalance  = read_imb("GER40");
+        g_macro_ctx.uk100_l2_imbalance  = read_imb("UK100");
+        g_macro_ctx.estx50_l2_imbalance = read_imb("ESTX50");
+        g_macro_ctx.brent_l2_imbalance  = read_imb("BRENT");
+        g_macro_ctx.nas_l2_imbalance    = read_imb("NAS100");
+        g_macro_ctx.us30_l2_imbalance   = read_imb("DJ30.F");
+        // gold_l2_real: true when FIX book has both bid AND ask sides
+        g_macro_ctx.gold_l2_real        = read_hd("XAUUSD");
+    }
 
-    // Microprice bias -- also lock-free from atomics
+    // Microprice bias -- still from cTrader atomics (FIX doesn't compute this)
     g_macro_ctx.gold_microprice_bias = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.sp_microprice_bias   = g_l2_sp.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.xag_microprice_bias  = g_l2_xag.microprice_bias.load(std::memory_order_relaxed);
@@ -4207,9 +4223,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // ?? L2 quality flags -- lock-free reads ????????????????????????????????
     g_macro_ctx.ctrader_l2_live = (g_ctrader_depth.depth_events_total.load() > 0);
-    g_macro_ctx.gold_l2_real    = g_l2_gold.has_data.load(std::memory_order_relaxed);
-    g_macro_ctx.sp_l2_real      = g_l2_sp.has_data.load(std::memory_order_relaxed);
-    g_macro_ctx.cl_l2_real      = g_l2_cl.has_data.load(std::memory_order_relaxed);
+    // gold_l2_real now set from g_l2_books in the mutex block above
 
     // ?? Midnight log rotation -- every tick check, guaranteed rotation ???????????
     // force_rotate_check runs every 60s in diagnostic loop but if stdout is
@@ -11683,28 +11697,30 @@ int main(int argc, char* argv[])
         // --- Check 2: L2 depth events flowing for XAUUSD ---
         // Check that cTrader is actually sending depth events (any side, not necessarily both).
         // has_data() requires BOTH bid AND ask sides simultaneously -- too strict at startup
-        // since cTrader sends incremental one-sided updates that take time to fill both sides.
-        // Instead check depth_events_total > 0 (any event received) AND imbalance != exactly 0.5
-        // (which is only the cold default -- any real data shifts it slightly).
+        // Check FIX book (g_l2_books) which has real bid+ask from the FIX W/X feed.
+        // cTrader atomic (g_l2_gold.imbalance) is ask-only from BlackBull depth.
         const auto t1 = std::chrono::steady_clock::now();
         bool l2_ok = false;
         while (std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - t1).count() < 30) {
-            const bool events_flowing = g_ctrader_depth.depth_events_total.load() > 10;
-            const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-            const bool imb_real = (imb < 0.499 || imb > 0.501);  // moved from cold default
-            if (events_flowing && imb_real) { l2_ok = true; break; }
-            // Also accept if has_data becomes true (both sides filled)
-            if (g_l2_gold.has_data.load(std::memory_order_relaxed)) { l2_ok = true; break; }
+            double imb = 0.5;
+            bool hd = false;
+            {
+                std::lock_guard<std::mutex> lk(g_l2_mtx);
+                auto it = g_l2_books.find("XAUUSD");
+                if (it != g_l2_books.end()) {
+                    imb = it->second.imbalance();
+                    hd  = it->second.has_data();
+                }
+            }
+            if (hd || imb < 0.499 || imb > 0.501) { l2_ok = true; break; }
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         if (!l2_ok) {
-            // Don't fail deploy if depth events are flowing but book is one-sided
-            // This happens when XAUUSD only sends ask-side updates at session start
             const bool events_flowing = g_ctrader_depth.depth_events_total.load() > 10;
             if (events_flowing) {
-                write_status("OK: cTrader live, L2 events flowing (book still filling -- imbalance not yet real)");
-                return;  // don't kill process, L2 will stabilise
+                write_status("OK: cTrader live, L2 events flowing (book still filling)");
+                return;
             }
             write_status("FAIL: Gold L2 data not flowing after 30s -- no depth events received");
             return;
@@ -11713,7 +11729,12 @@ int main(int argc, char* argv[])
         std::cout.flush();
 
         // --- All checks passed ---
-        const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+        double imb = 0.5;
+        {
+            std::lock_guard<std::mutex> lk(g_l2_mtx);
+            auto it = g_l2_books.find("XAUUSD");
+            if (it != g_l2_books.end()) imb = it->second.imbalance();
+        }
         write_status("OK: cTrader live, L2 live (imb=" + std::to_string(imb).substr(0,5) + ")");
     }).detach();
     // =========================================================================
