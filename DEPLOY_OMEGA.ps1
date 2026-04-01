@@ -427,6 +427,16 @@ Write-Host "  GUI -> http://185.167.119.59:7779" -ForegroundColor Green
 Write-Host ""
 
 Set-Location $OmegaDir
+
+# Kill any existing Omega process first
+$existing = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if ($existing) {
+    Write-Host "  Stopping existing Omega process (PID=$($existing.Id))..." -ForegroundColor Yellow
+    $existing | Stop-Process -Force
+    Start-Sleep -Seconds 2
+    Write-Host "  Stopped." -ForegroundColor Yellow
+}
+
 $statusFile = "$OmegaDir\logs\startup_status.txt"
 
 # Clear any previous status
