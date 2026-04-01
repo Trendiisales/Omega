@@ -1688,6 +1688,16 @@ public:
         const bool downtrend = (ema9_ < ema21_) && (ema21_ < ema50_);
         if (!uptrend && !downtrend) return {};
 
+        // Minimum EMA separation -- stack must be meaningfully separated.
+        // EMA9-EMA50 < min_sep means EMAs are flat/noise, not a real trend.
+        // Gold: require 5pt separation (typical clean trend = 15-40pt).
+        // Indices: require 10pt separation.
+        // Without this, a shallow stack from stale/misaligned seed data fires bad trades.
+        const double ema_span = std::fabs(ema9_ - ema50_);
+        const double min_sep  = (sym.find("XAU") != std::string::npos) ? 5.0 : 10.0;
+        if (ema_span < min_sep) return {};
+        if (!uptrend && !downtrend) return {};
+
         // M5 structural trend gate -- when bar EMAs active, require M5 agrees
         // Prevents LONG during confirmed M5 downtrend and vice versa
         // m5_trend_state_=0 (flat/unknown) allows signals from EMA stack alone
