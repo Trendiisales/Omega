@@ -604,25 +604,49 @@ private:
         // Live subscriptions queued after history requests (sent in same staggered loop)
         struct LiveSub { std::string name; int64_t sid; uint32_t period; };
         std::vector<LiveSub> pending_live_subs;
+        // Live trendbar subscriptions (pt=2220) cause UNSUPPORTED_MESSAGE on some brokers.
+        // Skip live subs for any symbol/period that already failed a history request.
+        // For symbols that work, add live sub after history req.
         for (const auto& bkv : bar_subscriptions) {
             const int64_t sid = bkv.second.sym_id;
             if (sid <= 0) continue;
             const bool is_gold = (bkv.first == "XAUUSD");
-            pending_live_subs.push_back({bkv.first, sid, 1});
-            pending_live_subs.push_back({bkv.first, sid, 5});
-            if (is_gold) pending_live_subs.push_back({bkv.first, sid, 7});
+            auto skip = [&](uint32_t p) {
+                return bar_failed_reqs.count(bkv.first + ":" + std::to_string(p)) > 0;
+            };
+            if (!skip(1)) pending_live_subs.push_back({bkv.first, sid, 1});
+            if (!skip(5)) pending_live_subs.push_back({bkv.first, sid, 5});
+            if (is_gold && !skip(7)) pending_live_subs.push_back({bkv.first, sid, 7});
         }
-        // Merge: send all history reqs first, then all live subs, each 200ms apart
+        // Merge: send all history reqs first, then live subs only for non-failed symbols
         struct PendingSend { std::string name; int64_t sid; uint32_t period; uint32_t count; bool is_live; };
         std::vector<PendingSend> bar_send_queue;
         for (const auto& r : pending_bar_reqs)  bar_send_queue.push_back({r.name, r.sid, r.period, r.count, false});
         for (const auto& s : pending_live_subs)  bar_send_queue.push_back({s.name, s.sid, s.period, 0, true});
         size_t bar_send_idx = 0;
-        auto   bar_send_next = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        auto   bar_send_next  = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        auto   bar_repoll_next = std::chrono::steady_clock::now() + std::chrono::seconds(65);
 
         while (running.load()) {
             const auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now-last_hb).count()>=10) { send_msg(ssl,PB::heartbeat()); last_hb=now; }
+
+            // Periodic re-poll of bar history (every 65s) for symbols that don't support
+            // live trendbar subscriptions. Keeps bar indicators fresh without live push.
+            if (now >= bar_repoll_next) {
+                bar_repoll_next = now + std::chrono::seconds(65);
+                for (const auto& bkv : bar_subscriptions) {
+                    const int64_t sid = bkv.second.sym_id;
+                    if (sid <= 0) continue;
+                    const bool is_gold = (bkv.first == "XAUUSD");
+                    auto failed = [&](uint32_t p) {
+                        return bar_failed_reqs.count(bkv.first + ":" + std::to_string(p)) > 0;
+                    };
+                    if (!failed(1)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 1, 60));
+                    if (!failed(5)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 5, 20));
+                    if (is_gold && !failed(7)) send_msg(ssl, PB::get_trendbars_req(ctid_account_id, sid, 7, 10));
+                }
+            }
 
             // ?? Staggered bar request dispatch ??
             // One message per 200ms tick until queue is drained.
