@@ -7221,6 +7221,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                g_adaptive_risk.vol_scaler.atr_fast("XAUUSD"));
                             send_live_order("XAUUSD", gsig.is_long, gold_lot, gsig.entry);
                             g_telemetry.UpdateLastEntryTs();  // watchdog: GoldStack entry counts as activity
+                        }
+                    }
+                }
+                } // end !gs_bar_blocked
             }
         }
 
