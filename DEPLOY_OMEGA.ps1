@@ -466,21 +466,21 @@ if ($still) {
 $ErrorActionPreference = $savedPrefKill
 Write-Host "  [OK] Omega not running." -ForegroundColor Green
 
-# Launch Omega in FOREGROUND -- Ctrl+C in this terminal kills it directly.
-# Watchdog is disabled during testing. Start-Process with -Wait keeps Omega
-# attached to the terminal so Ctrl+C propagates correctly.
+# Kill watchdog if running
 Write-Host "  Killing watchdog if running..." -ForegroundColor Yellow
 Get-Process -Name "powershell" -ErrorAction SilentlyContinue | ForEach-Object {
     $cmdline = (Get-WmiObject Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue).CommandLine
     if ($cmdline -match "OmegaWatchdog") { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
 }
-Write-Host "  Launching Omega.exe in foreground (Ctrl+C to stop)..." -ForegroundColor Cyan
 # Remove deploy sentinel
 if (Test-Path $sentinelFile) { Remove-Item $sentinelFile -Force }
 
+# Launch Omega in background (no -Wait) so VERIFY_STARTUP can run alongside it.
+# No watchdog = Ctrl+C kills the process via taskkill. No auto-restart.
+Write-Host "  Launching Omega.exe (Ctrl+C then: taskkill /F /IM Omega.exe to stop)..." -ForegroundColor Cyan
 $omegaProc = Start-Process -FilePath ".\Omega.exe" -ArgumentList "omega_config.ini" `
-                            -WorkingDirectory $OmegaDir -PassThru -NoNewWindow -Wait
-Write-Host "  Omega exited (PID $($omegaProc.Id))." -ForegroundColor DarkGray
+                            -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
+Write-Host "  Omega PID: $($omegaProc.Id)" -ForegroundColor DarkGray
 Write-Host ""
 
 # Pause 3s so Omega writes first log lines before verifier starts tailing
@@ -494,6 +494,7 @@ $savedPrefVerify = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec 45 -OmegaDir $OmegaDir
 $ErrorActionPreference = $savedPrefVerify
+Write-Host "  Omega running in background (PID $($omegaProc.Id)). Use: taskkill /F /IM Omega.exe to stop." -ForegroundColor Green
 
 Write-Host ""
 Write-Host "  Omega is running in background (PID $($omegaProc.Id))." -ForegroundColor Green
