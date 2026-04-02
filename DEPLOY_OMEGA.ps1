@@ -466,16 +466,21 @@ if ($still) {
 $ErrorActionPreference = $savedPrefKill
 Write-Host "  [OK] Omega not running." -ForegroundColor Green
 
-# Launch Omega in BACKGROUND so VERIFY_STARTUP can tail the log alongside it.
-# After the 45s verification window, we print the report and Omega keeps running.
-# Ctrl+C in this terminal will NOT kill Omega -- use QUICK_RESTART.ps1 to stop it.
-Write-Host "  Launching Omega.exe in background..." -ForegroundColor Cyan
-# Remove deploy sentinel before starting -- watchdog will re-attach normally
+# Launch Omega in FOREGROUND -- Ctrl+C in this terminal kills it directly.
+# Watchdog is disabled during testing. Start-Process with -Wait keeps Omega
+# attached to the terminal so Ctrl+C propagates correctly.
+Write-Host "  Killing watchdog if running..." -ForegroundColor Yellow
+Get-Process -Name "powershell" -ErrorAction SilentlyContinue | ForEach-Object {
+    $cmdline = (Get-WmiObject Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue).CommandLine
+    if ($cmdline -match "OmegaWatchdog") { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+}
+Write-Host "  Launching Omega.exe in foreground (Ctrl+C to stop)..." -ForegroundColor Cyan
+# Remove deploy sentinel
 if (Test-Path $sentinelFile) { Remove-Item $sentinelFile -Force }
 
 $omegaProc = Start-Process -FilePath ".\Omega.exe" -ArgumentList "omega_config.ini" `
-                            -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
-Write-Host "  Omega PID: $($omegaProc.Id)" -ForegroundColor DarkGray
+                            -WorkingDirectory $OmegaDir -PassThru -NoNewWindow -Wait
+Write-Host "  Omega exited (PID $($omegaProc.Id))." -ForegroundColor DarkGray
 Write-Host ""
 
 # Pause 3s so Omega writes first log lines before verifier starts tailing
