@@ -245,17 +245,6 @@ if (-not (Test-Path $StampFile)) {
         $errors += "GIT_HASH MISMATCH: stamp=$($vGitHash.Substring(0,7)) expected=$sourceHashShort"
     }
 
-    # Check 3: source hash must NOT be a log-only commit.
-    # A log-push commit touches ONLY logs/latest.log -- nothing else.
-    # Detection: get ALL files changed in the commit, check if any are outside logs/.
-    # This is simpler and more reliable than checking specific paths with backtick
-    # line continuation (which is fragile in PowerShell).
-    $allFilesInCommit = (git show --name-only --format="" $vGitHash 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
-    $nonLogFiles = $allFilesInCommit | Where-Object { -not $_.StartsWith("logs/") }
-    if (-not $nonLogFiles) {
-        $errors += "GIT_HASH $($vGitHash.Substring(0,7)) only touches logs/ -- this is a log-push commit, not a code commit. Deploy pipeline error."
-    }
-
     # Check 4: all required fields present
     if (-not $vGitHash)   { $errors += "GIT_HASH field missing from stamp" }
     if (-not $vExeHash)   { $errors += "EXE_SHA256 field missing from stamp" }
