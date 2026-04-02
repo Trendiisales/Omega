@@ -4078,8 +4078,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (h >= 12 && h < 14) g_macro_ctx.session_slot = 3; // Overlap
         else if (h >= 14 && h < 17) g_macro_ctx.session_slot = 4; // NY open
         else if (h >= 17 && h < 22) g_macro_ctx.session_slot = 5; // NY late
-        else if (h >= 22 || h < 5)  g_macro_ctx.session_slot = 6; // Asia
-        else                         g_macro_ctx.session_slot = 1; // 05-07 UTC: was dead zone, now London pre-open
+        // FIX 2026-04-02: 22:00-23:59 UTC = Sydney open -- real volume, real moves.
+        // Old boundary (h>=22) wrongly put 22:00-05:00 all into Asia (slot 6),
+        // blocking gold entries at 23:xx UTC during genuine directional Sydney moves.
+        // RSI<37 + $15 VWAP displacement moves at 23:xx were completely missed.
+        // New: Asia (slot 6) = 00:00-04:59 UTC only (deep Asia, Tokyo thin hours).
+        //      22:00-23:59 UTC = slot 5 continuation (Sydney, same gates as NY late).
+        else if (h >= 22)           g_macro_ctx.session_slot = 5; // Sydney open (22-00 UTC) -- NOT Asia
+        else if (h < 5)             g_macro_ctx.session_slot = 6; // Deep Asia (00:00-04:59 UTC)
+        else                        g_macro_ctx.session_slot = 1; // 05-07 UTC: London pre-open
     }
 
     // Cross-symbol compression state -- engine is in COMPRESSION or BREAKOUT_WATCH
@@ -7662,11 +7669,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double gf_mid_now    = (bid + ask) * 0.5;
             const double vwap_disp     = (gf_vwap_now > 0.0)
                 ? std::fabs(gf_mid_now - gf_vwap_now) : 0.0;
+            // FIX 2026-04-02: RSI threshold raised 32->37 and vwap_disp lowered 8->6.
+            // At 23:21 UTC RSI was 35-40 during a clear $15 crash -- old threshold
+            // of 32 never fired. RSI<37 catches genuine bearish momentum without
+            // triggering on normal 50-tick oscillation (RSI stays 40-60 in chop).
+            // vwap_disp >6 catches $10-15 macro moves that are clearly non-noise.
+            // NOTE: this bypass is now less critical because 22:00-00:00 UTC is
+            // slot 5 (not slot 6), so in_asia_slot=false for Sydney moves.
+            // The bypass still matters for 00:00-05:00 UTC deep Asia crashes.
             const bool asia_crash_bypass =
-                (rsi_for_gate > 0.0 && rsi_for_gate < 32.0)           // RSI crash -- no drift needed
-                || (rsi_for_gate > 68.0)                               // RSI rally
-                || (drift_for_gate < -1.5 && vwap_disp > 8.0)         // drift + displacement
-                || (drift_for_gate >  1.5 && vwap_disp > 8.0);        // drift + displacement up
+                (rsi_for_gate > 0.0 && rsi_for_gate < 37.0)           // RSI crash -- no drift needed (was 32)
+                || (rsi_for_gate > 63.0)                               // RSI rally (was 68)
+                || (drift_for_gate < -1.5 && vwap_disp > 6.0)         // drift + displacement (was 8)
+                || (drift_for_gate >  1.5 && vwap_disp > 6.0);        // drift + displacement up (was 8)
+
             // Schmitt trigger on asia_trend_ok -- hysteresis prevents flapping.
             // Lowered arm threshold 2.5->1.2: log shows drift reaching -1.7 during
             // a 125pt crash. Old 2.5 threshold never fired. 1.2 fires on real moves.
