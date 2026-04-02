@@ -1950,6 +1950,9 @@ public:
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); be_locked_ = false; }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); be_locked_ = false; }
+    // Reset cooldown immediately -- used by crash override in main.cpp
+    // to bypass re-entry delay when gold is in a strong directional move.
+    void force_cooldown_expire() noexcept { cooldown_until_ = 0; }
     // Live position accessors for GUI telemetry
     bool   open_is_long() const { return pos_.is_long; }
     double open_entry()   const { return pos_.entry;   }

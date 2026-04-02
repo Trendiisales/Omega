@@ -8672,6 +8672,40 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool tpb_gold_can_enter = tpb_gold_session_ok
                                      && symbol_gate("XAUUSD", gold_any_open)
                                      && !gold_post_impulse_block;
+
+        // ?? CRASH CONTINUATION OVERRIDE ????????????????????????????????????????
+        // When gold is crashing hard (>30pt in the last ~15min window), the
+        // TrendPullback cooldown is bypassed if no position is open.
+        // This catches second and third legs of crash moves that the 60s cooldown
+        // (previously 900s) would still block.
+        // Condition: gold has moved >30pt from recent high (60-tick window),
+        //            RSI < 30 (oversold confirms direction), no open position,
+        //            and we are not in the 10-min direction block.
+        // Implementation: temporarily reset cooldown if conditions met.
+        {
+            const double rsi_now = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+            const double gold_mid_now = (bid + ask) * 0.5;
+            // Use gold stack EWM drift as crash proxy: drift < -5 = strong downtrend
+            const double drift_now = g_gold_stack.ewm_drift();
+            const bool crash_mode = (drift_now < -5.0 && rsi_now < 35.0 && rsi_now > 0.0)
+                                 || (drift_now >  5.0 && rsi_now > 65.0);
+            if (crash_mode
+                && tpb_gold_can_enter
+                && !g_trend_pb_gold.has_open_position()
+                && !g_bracket_gold.has_open_position()
+                && !g_gold_stack.has_open_position()) {
+                // Force cooldown to expire so on_tick() can generate a signal
+                g_trend_pb_gold.force_cooldown_expire();
+                static int64_t s_crash_log = 0;
+                if (nowSec() - s_crash_log > 30) {
+                    s_crash_log = nowSec();
+                    printf("[CRASH-OVERRIDE] drift=%.2f RSI=%.1f -- TrendPB cooldown bypassed\n",
+                           drift_now, rsi_now);
+                    fflush(stdout);
+                }
+            }
+        }
+
         if (tpb_gold_can_enter
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
@@ -8688,9 +8722,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     fflush(stdout);
                     g_trend_pb_gold.cancel();
                 } else {
-                    if (!enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true)) {
+                    const double tpb_lot = enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true);
+                    if (!tpb_lot) {
                         g_trend_pb_gold.cancel();
                     } else {
+                        // Patch pos_.size with actual risk-computed lot so shadow PnL is correct
+                        // Without this: pos_.size=0.01 but PnL computed against internal size -> 100x inflation
+                        g_trend_pb_gold.patch_size(tpb_lot);
                         g_telemetry.UpdateLastSignal("XAUUSD",
                             tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
                             "TREND_PB", regime.c_str(), "TREND_PB",
@@ -10350,7 +10388,7 @@ int main(int argc, char* argv[])
     //
     //   BE_ATR_MULT: lock BE at 1x M15 ATR (~5pts). Unchanged -- good.
     g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.50;  // M15: ±23.5pts at $4700. Old 0.08% (±3.7pts) never fired.
-    g_trend_pb_gold.COOLDOWN_SEC       = 900;   // 15 min = 1 M15 bar minimum between re-entries
+    g_trend_pb_gold.COOLDOWN_SEC       = 60;    // 60s cooldown -- reduced from 900s (15min was insane, missed 100pt moves)
     g_trend_pb_gold.MIN_EMA_SEP        = 5.0;   // gold: 5pt EMA9-EMA50 separation = real trend
     g_trend_pb_gold.H4_GATE_ENABLED    = true;  // gate M15 entries on H4 trend direction
     g_trend_pb_gold.ATR_SL_MULT        = 1.2;   // SL floor = 1.2x M15 ATR (adaptive, not fixed 8pt)
