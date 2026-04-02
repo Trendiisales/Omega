@@ -1680,22 +1680,12 @@ public:
                 // Full symbol?tick_value table -- must match tick_value_multiplier() in main.cpp
                 // XAUUSD=100, US500.F=50, USTEC.F=20, DJ30.F=5, GER40=1.10, UK100=1.33,
                 // ESTX50=1.10, NAS100=1, EURUSD/GBPUSD/etc=100000, others=1
-                const double tick_val =
-                    (sym.find("XAU")   != std::string::npos) ? 100.0   :
-                    (sym == "US500.F")                        ? 50.0    :
-                    (sym == "USTEC.F")                        ? 20.0    :
-                    (sym == "DJ30.F")                         ? 5.0     :
-                    (sym == "GER40")                          ? 1.10    :
-                    (sym == "UK100")                          ? 1.33    :
-                    (sym == "ESTX50")                         ? 1.10    :
-                    (sym == "NAS100")                         ? 1.0     :
-                    (sym == "USOIL.F" || sym == "BRENT")      ? 1000.0  :
-                    (sym == "XAGUSD")                         ? 5000.0  :
-                    (sym.find("USD") != std::string::npos ||
-                     sym.find("EUR") != std::string::npos ||
-                     sym.find("GBP") != std::string::npos)   ? 100000.0 : 1.0;
+                // P&L in raw price-points * size only.
+                // handle_closed_trade() applies tick_value_multiplier() once to convert
+                // to USD. Do NOT multiply by tick_val here -- double-counting caused
+                // 100x inflation ($8.44 displayed as $844 for XAUUSD).
                 tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px))
-                         * pos_.size * tick_val;
+                         * pos_.size;
                 tr.net_pnl = tr.pnl;
                 printf("[TREND-PB] %s %s CLOSE @%.3f reason=%s pnl=%.2f atr=%.3f trail_sl=%.3f\n",
                        sym.c_str(), tr.side.c_str(), exit_px, reason, tr.pnl, atr, pos_.sl);
