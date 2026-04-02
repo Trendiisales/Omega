@@ -746,16 +746,22 @@ private:
                 } else if (req.is_live) {
                     send_msg(ssl, PB::subscribe_live_trendbar_req(ctid_account_id, req.sid, req.period));
                     std::cout << "[CTRADER-BARS] " << req.name << " live trendbar sub period=" << req.period << "\n";
-                } else if (req.period == 105 || req.period == 107) {
-                    // Tick data fallback: GetTrendbarsReq blocked, use GetTickDataReq (pt=2145)
-                    // 50 hours of ticks = 200 M15 bars. period 105=M5, 107=M15.
+                } else if (req.period == 105 || req.period == 107 || req.period == 1) {
+                    // Tick data fallback for ALL bar history requests.
+                    // GetTrendbarsReq (pt=2137) crashes the TCP connection on BlackBull with
+                    // INVALID_REQUEST -- confirmed across all periods (M1/M5/M15).
+                    // GetTickDataReq (pt=2145) serves the same raw price history without
+                    // crashing. We build OHLC bars from ticks in on_tick_data_res().
+                    // period sentinels: 105=M5, 107=M15, 1=M1 (all use tick fallback now)
+                    // Window: 50 hours covers 200 M15 bars or 3000 M1 bars.
                     const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count();
                     const int64_t from_ms = now_ms - 50LL * 3600LL * 1000LL;
                     last_bar_req_name_ = req.name;
+                    const int display_period = (req.period > 100) ? (req.period - 100) : req.period;
                     send_msg(ssl, PB::get_tick_data_req(ctid_account_id, req.sid, from_ms, now_ms, 1));
-                    std::cout << "[CTRADER-BARS] " << req.name << " tick data req (fallback for period="
-                              << (req.period - 100) << ")\n";
+                    std::cout << "[CTRADER-BARS] " << req.name << " tick data req (period="
+                              << display_period << " via pt=2145, avoids pt=2137 crash)\n";
                 } else {
                     send_msg(ssl, PB::get_trendbars_req(ctid_account_id, req.sid, req.period, req.count));
                     std::cout << "[CTRADER-BARS] " << req.name << " history req period=" << req.period
@@ -787,22 +793,24 @@ private:
             uint32_t pt; std::vector<uint8_t> payload;
             const int rc = read_one(ssl, pt, payload, 100);
             if (rc < 0) {
-                // Connection error. If bar requests were recently sent, broker may have
-                // rejected them at TCP level (sends RST after INVALID_REQUEST in some
-                // BlackBull firmware versions). Mark any in-flight bar request as failed
-                // so it's skipped on reconnect -- prevents the infinite reconnect loop.
+                // TCP connection dropped.
+                // CRITICAL: if this happened during the bar request startup sequence,
+                // BlackBull sent a TCP RST in response to a GetTrendbarsReq (pt=2137).
+                // Since we now route ALL bar requests through GetTickDataReq (pt=2145),
+                // this should no longer happen. But if it does for any reason,
+                // mark the last bar request as permanently failed and reconnect --
+                // do NOT propagate the error upward without logging it clearly.
                 if (bar_send_idx > 0 && bar_send_idx <= bar_send_queue.size()) {
                     const auto& last_sent = bar_send_queue[bar_send_idx - 1];
                     const std::string key = last_sent.name + ":" + std::to_string(last_sent.period);
                     if (!bar_failed_reqs.count(key)) {
                         bar_failed_reqs.insert(key);
-                        std::cerr << "[CTRADER] Connection dropped after bar req "
-                                  << last_sent.name << " period=" << last_sent.period
-                                  << " -- marking as failed, will skip on reconnect\n";
-                        save_bar_failed(bar_failed_path_);  // persist across restarts
+                        save_bar_failed(bar_failed_path_);
+                        std::cerr << "[CTRADER] TCP drop after bar req " << last_sent.name
+                                  << " period=" << last_sent.period << " -- marked failed, skipping on reconnect\n";
                     }
                 }
-                std::cerr<<"[CTRADER] Connection error\n";
+                std::cerr << "[CTRADER] Connection error -- reconnecting\n";
                 return;
             }
             if (rc == 0) continue;

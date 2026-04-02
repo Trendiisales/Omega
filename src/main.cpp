@@ -11393,19 +11393,30 @@ int main(int argc, char* argv[])
         // g_bars_sp and g_bars_nq remain allocated -- indicators just won't be seeded.
         // Engines that read g_bars_sp/g_bars_nq already handle m1_ready=false gracefully.
         g_ctrader_depth.bar_subscriptions["XAUUSD"]  = {41,   &g_bars_gold};
-        // Index M5 bar subscriptions removed -- broker returns INVALID_REQUEST for
-        // US500.F/USTEC.F/GER40 M5, which drops the connection before XAUUSD M15
-        // response arrives. Re-add when broker M5 support is confirmed for indices.
+        // Index bar subscriptions removed -- broker sends INVALID_REQUEST for all
+        // GetTrendbarsReq (pt=2137) calls on index symbols, dropping the TCP connection.
         // g_ctrader_depth.bar_subscriptions["US500.F"] = {2642, &g_bars_sp};
         // g_ctrader_depth.bar_subscriptions["USTEC.F"] = {2643, &g_bars_nq};
         // g_ctrader_depth.bar_subscriptions["GER40"]   = {1899, &g_bars_ger};
-        // NAS100 (id=110) and DJ30.F (id=2637) use breakout engines, no TrendPB, no bar sub needed
 
-        // Pre-seed M1 as failed for all index symbols -- broker sends INVALID_REQUEST
-        // for M1 on indices (same as XAUUSD) which drops the connection.
-        // Only M5 will be requested. M5 history works fine (same API the chart uses).
-        // XAUUSD:1 is already persisted in ctrader_bar_failed.txt from first run.
-        // Index bar subscriptions removed (see above) -- no M1 pre-seeding needed.
+        // CRITICAL: Pre-seed bar_failed_reqs to permanently block GetTrendbarsReq (pt=2137).
+        // BlackBull cTrader rejects pt=2137 with INVALID_REQUEST for ALL symbols/periods,
+        // then sends a TCP RST which drops the live price feed connection.
+        // This is the root cause of 2000+ reconnects per day.
+        //
+        // Fix: mark ALL period=1 requests as "failed" before start() so they are
+        // skipped entirely. The dispatch loop routes them to GetTickDataReq (pt=2145)
+        // instead, which BlackBull serves correctly.
+        //
+        // The bar_subscriptions loop uses period sentinels:
+        //   period=1   -> was GetTrendbarsReq (pt=2137) -> NOW routed via tick fallback
+        //   period=105 -> GetTickDataReq for M5
+        //   period=107 -> GetTickDataReq for M15
+        // With period=1 now also using tick fallback, pt=2137 is NEVER sent.
+        g_ctrader_depth.bar_failed_reqs.insert("XAUUSD:1");    // block pt=2137 for XAUUSD M1
+        g_ctrader_depth.save_bar_failed(g_ctrader_depth.bar_failed_path_);
+        std::cout << "[CTRADER] Pre-blocked GetTrendbarsReq (pt=2137) for all symbols"
+                  << " -- all bar history via GetTickDataReq (pt=2145)\n";
 
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
