@@ -1190,9 +1190,18 @@ R"OMEGA21(
 function renderTrades(trades){
   const el=document.getElementById('tradesBody'),cE=document.getElementById('tradeCount');
   if(!trades||trades.length===0){el.innerHTML='<tr><td colspan="11" class="no-data">No trades yet</td></tr>';if(cE)cE.textContent='';return;}
+  // All closed events -- includes PARTIAL_1R/PARTIAL_2R as well as full closes.
+  // Partials are real money banked and deserve their own bell (win or loss by net_pnl).
   const closed=trades.filter(t=>t.exitReason&&t.exitReason!=='');
   if(_bellBootCount<0){_bellBootCount=closed.length;_lastTradeCount=closed.length;}
-  if(_bellEnabled&&closed.length>_lastTradeCount&&_lastTradeCount>=_bellBootCount){const pnl=safe(closed[0].net_pnl);pnl>0?_playWinBell():_playLossBell();}
+  if(_bellEnabled&&closed.length>_lastTradeCount&&_lastTradeCount>=_bellBootCount){
+    // Use the NEWEST trade -- closed[closed.length-1], not closed[0] (oldest).
+    // buildHistoryJson serves CSV top-to-bottom so index 0 is always the first
+    // trade of the day, not the one that just fired.
+    const newest=closed[closed.length-1];
+    const pnl=safe(newest?newest.net_pnl:0);
+    pnl>0?_playWinBell():_playLossBell();
+  }
   _lastTradeCount=closed.length;
   // TOTALS FIX: exclude PARTIAL_1R/PARTIAL_2R from W/L/trade count.
   // Partials are banking events on an open position -- not completed trades.
