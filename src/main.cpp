@@ -3347,7 +3347,8 @@ static void maybe_reset_daily_ledger() {
           g_hourly_pnl_records.pop_front(); }
     // Save TOD gate data and reset CVD session accumulators
     g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
-    // Save Kelly performance history (persists win-rate/expectancy across restarts)
+    g_edges.fill_quality.save_csv(log_root_dir() + "/fill_quality.csv");
+    g_edges.fill_quality.print_summary();
     g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
     g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
     g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
@@ -3360,7 +3361,6 @@ static void maybe_reset_daily_ledger() {
     g_bars_gold.m15.save_indicators(log_root_dir() + "/bars_gold_m15.dat");
     g_bars_gold.h4 .save_indicators(log_root_dir() + "/bars_gold_h4.dat");
     g_edges.reset_daily();  // resets CVD session hi/lo; prev_day updates via on_tick
-    g_edges.fill_quality.print_summary();  // log fill quality summary at rollover
 
     // Multi-day throttle: record this session's final PnL before resetting the ledger.
     // Must happen BEFORE g_omegaLedger.resetDaily() would clear it -- but resetDaily()
@@ -11130,6 +11130,9 @@ int main(int argc, char* argv[])
             g_edges.tod.min_avg_ev_usd = -2.0; // block if avg EV < -$2/trade
             g_edges.tod.enabled      = true;  // active in all modes -- shadow is a simulation
         }
+        // Fill quality: load persisted fill history so adverse selection detection is
+        // active from the first trade -- no minimum fill count, history survives restarts.
+        g_edges.fill_quality.load_csv(log_root_dir() + "/fill_quality.csv");
         // Spread Z-score gate: starts building after first 20 ticks per symbol
         g_edges.spread_gate.window_ticks = 200;
         g_edges.spread_gate.max_z_score  = 3.0; // conservative: 3? anomaly
@@ -11878,9 +11881,10 @@ int main(int argc, char* argv[])
     g_trade_close_csv.close();
     g_trade_open_csv.close();
     g_shadow_csv.close();
-    // ?? Edge systems shutdown -- persist TOD + Kelly data ?????????????????????
+    // ?? Edge systems shutdown -- persist TOD + Kelly + fill quality data ????????
     g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
     g_edges.tod.print_worst(15);
+    g_edges.fill_quality.save_csv(log_root_dir() + "/fill_quality.csv");
     g_edges.fill_quality.print_summary();
     // Save Kelly performance on shutdown (not just rollover) so intra-session
     // trades survive process restart without re-warming for 15+ trades.
@@ -11899,4 +11903,5 @@ int main(int argc, char* argv[])
     g_shutdown_done.store(true);  // unblock console_ctrl_handler -- process may now exit
     return 0;
 }
+
 
