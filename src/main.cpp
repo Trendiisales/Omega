@@ -8073,7 +8073,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // Also bypass during confirmed crash (RSI<35, drift<-4): the crash IS the
                 // volatility signal. Blocking GoldFlow because vol_range is stale is wrong.
                 const bool vol_unseeded  = (vol_range_now == 0.0);
-                const bool gf_crash_bypass = asia_crash_bypass;  // reuse crash flag from bracket gate
+                const bool gf_crash_bypass = crash_impulse_bypass;  // RSI<35+drift<-4 or RSI>65+drift>4
                 if (in_compression && !vol_unseeded && !gf_crash_bypass
                     && vol_range_now >= 0.0 && vol_range_now < GF_COMPRESSION_VOL_FLOOR) {
                     static int64_t s_comp_log = 0;
