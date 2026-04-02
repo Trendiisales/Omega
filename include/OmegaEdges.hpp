@@ -803,9 +803,9 @@ struct FillRecord {
 
 class FillQualityTracker {
 public:
-    int    window_trades    = 50;    // rolling window for adverse selection detection
+    int    window_trades         = 50;   // rolling window size (hard cap, not a minimum)
     double adverse_threshold_bps = 2.0;  // avg slippage > 2bp = adverse selection warning
-    bool   enabled          = true;
+    bool   enabled               = true;
 
     mutable std::mutex mtx;
 
@@ -819,7 +819,8 @@ public:
         if ((int)q.size() > window_trades) q.pop_front();
     }
 
-    // Rolling average slippage in bps for a symbol
+    // Rolling average slippage in bps for a symbol.
+    // Returns 0.0 only if there are truly no fills -- 1 fill is a valid data point.
     double avg_slippage_bps(const std::string& sym) const noexcept {
         std::lock_guard<std::mutex> lk(mtx);
         auto it = queues_.find(sym);
@@ -830,30 +831,67 @@ public:
     }
 
     // Is this symbol showing signs of adverse selection?
+    // No minimum fill count -- history persists across restarts so even 1 fill is real data.
     bool adverse_selection_detected(const std::string& sym) const noexcept {
         if (!enabled) return false;
-        const auto& q = [&]() -> const std::deque<FillRecord>& {
-            static const std::deque<FillRecord> empty;
-            std::lock_guard<std::mutex> lk(mtx);
-            auto it = queues_.find(sym);
-            return (it != queues_.end()) ? it->second : empty;
-        }();
-        if ((int)q.size() < 3) return false;   // need enough data (lowered 10→3 for low-frequency gold sessions)
-        return avg_slippage_bps(sym) > adverse_threshold_bps;
+        std::lock_guard<std::mutex> lk(mtx);
+        auto it = queues_.find(sym);
+        if (it == queues_.end() || it->second.empty()) return false;
+        double total = 0.0;
+        for (const auto& r : it->second) total += r.slippage_bps();
+        return (total / it->second.size()) > adverse_threshold_bps;
     }
 
     void print_summary() const noexcept {
         std::lock_guard<std::mutex> lk(mtx);
         printf("[FILL-QUALITY] Fill quality summary (%d-trade window):\n", window_trades);
         for (const auto& kv : queues_) {
-            if (kv.second.size() < 3) continue;  // match adverse_selection min (lowered 5→3)
+            if (kv.second.empty()) continue;
             double total = 0;
             for (const auto& r : kv.second) total += r.slippage_bps();
             const double avg = total / kv.second.size();
             printf("  %-10s  fills=%3d  avg_slip=%.2fbps  %s\n",
                 kv.first.c_str(), (int)kv.second.size(), avg,
-                avg > adverse_threshold_bps ? "? ADVERSE" : "ok");
+                avg > adverse_threshold_bps ? "ADVERSE" : "ok");
         }
+    }
+
+    // Persist fill history across restarts -- same pattern as TOD/Kelly save/load.
+    // CSV format: sym,signal_mid,fill_price,is_long,ts_sec
+    void save_csv(const std::string& path) const noexcept {
+        std::lock_guard<std::mutex> lk(mtx);
+        FILE* f = fopen(path.c_str(), "w");
+        if (!f) { printf("[FILL-QUALITY] save_csv: cannot open %s\n", path.c_str()); return; }
+        fprintf(f, "sym,signal_mid,fill_price,is_long,ts_sec\n");
+        for (const auto& kv : queues_) {
+            for (const auto& r : kv.second) {
+                fprintf(f, "%s,%.6f,%.6f,%d,%lld\n",
+                    kv.first.c_str(), r.signal_mid, r.fill_price,
+                    r.is_long ? 1 : 0, (long long)r.ts_sec);
+            }
+        }
+        fclose(f);
+        printf("[FILL-QUALITY] Saved fill history to %s\n", path.c_str());
+    }
+
+    void load_csv(const std::string& path) noexcept {
+        std::lock_guard<std::mutex> lk(mtx);
+        FILE* f = fopen(path.c_str(), "r");
+        if (!f) { printf("[FILL-QUALITY] load_csv: no history at %s (cold start)\n", path.c_str()); return; }
+        char line[256];
+        fgets(line, sizeof(line), f);  // skip header
+        int loaded = 0;
+        while (fgets(line, sizeof(line), f)) {
+            char sym[32]; double smid, fprice; int islong; long long ts;
+            if (sscanf(line, "%31[^,],%lf,%lf,%d,%lld", sym, &smid, &fprice, &islong, &ts) == 5) {
+                auto& q = queues_[sym];
+                q.push_back({smid, fprice, islong != 0, (int64_t)ts});
+                if ((int)q.size() > window_trades) q.pop_front();
+                ++loaded;
+            }
+        }
+        fclose(f);
+        printf("[FILL-QUALITY] Loaded %d fill records from %s\n", loaded, path.c_str());
     }
 
 private:
@@ -1279,4 +1317,5 @@ struct EdgeContext {
 };
 
 }} // namespace omega::edges
+
 
