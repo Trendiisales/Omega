@@ -364,15 +364,40 @@ public:
         FILE* f = fopen(path.c_str(), "r");
         if (!f) return;
         char buf[128];
+        bool rewrite = false;
         while (fgets(buf, sizeof(buf), f)) {
-            size_t n = strlen(buf);
-            while (n > 0 && (buf[n-1]=='\n'||buf[n-1]=='\r')) buf[--n]=0;
-            if (n > 0) {
-                bar_failed_reqs.insert(buf);
-                std::cout << "[CTRADER-BARS] Loaded failed req from disk: " << buf << "\n";
+            // Strip BOM and whitespace
+            char* p = buf;
+            if ((unsigned char)p[0]==0xEF&&(unsigned char)p[1]==0xBB&&(unsigned char)p[2]==0xBF) p+=3;
+            size_t n = strlen(p);
+            while (n > 0 && (p[n-1]=='\n'||p[n-1]=='\r'||p[n-1]==' ')) p[--n]=0;
+            if (n == 0) continue;
+            // SANITISE: only period=0 and period=1 should ever be persisted.
+            // Periods 5 (M5) and 7 (M15) were incorrectly written by older versions
+            // when GetTrendbarsReq was rejected -- they poisoned the failed list and
+            // caused the M15 tick fallback to also be skipped every restart.
+            // Strip them here and rewrite the file clean.
+            const std::string key(p);
+            const auto colon = key.rfind(':');
+            if (colon != std::string::npos) {
+                try {
+                    const int period = std::stoi(key.substr(colon + 1));
+                    if (period != 0 && period != 1) {
+                        std::cout << "[CTRADER-BARS] Dropping stale failed entry '" << key
+                                  << "' (period=" << period << " should not be persisted)\n";
+                        rewrite = true;
+                        continue;  // do NOT add to bar_failed_reqs
+                    }
+                } catch (...) {}
             }
+            bar_failed_reqs.insert(key);
+            std::cout << "[CTRADER-BARS] Loaded failed req from disk: " << key << "\n";
         }
         fclose(f);
+        if (rewrite) {
+            save_bar_failed(path);  // rewrite file without stale entries
+            std::cout << "[CTRADER-BARS] Rewrote " << path << " -- removed stale period entries\n";
+        }
     }
 
     // Alias map: broker_name ? internal_name
