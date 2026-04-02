@@ -45668,3 +45668,24 @@
 11:02:54 [CTRADER-BARS] Spots sub ACK
 11:02:54 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.49 bracket=0.61 breakout=0.40 top_score=0.61 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
 11:02:55 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.43 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+11:03:02 [SUPERVISOR-XAUUSD] regime=EXPANSION_BREAKOUT conf=0.72 bracket=0.31 breakout=0.76 top_score=0.76 threshold=0.25 winner=BREAKOUT allow=1 cooldown=0 reason=valid_signal
+11:03:02 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.47 bracket=0.59 breakout=0.40 top_score=0.59 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+11:03:05 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.91 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+11:03:14 [OMEGA-DIAG] PnL=20.28 T=22 WR=54.55% RTTp95=5.35ms cap=120.00ms lat_ok=1 session=ACTIVE
+11:03:14 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+11:03:14 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+11:03:14 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+11:03:14 [GOLD-DIAG] regime=COMPRESSION vwap=4622.53 vol_range=2.52
+11:03:14 [TICK] EURUSD 1.15/1.15
+11:03:14 [TICK] NAS100 23633.25/23634.45
+11:03:15 [TICK] USTEC.F 23814.44/23817.15
+11:03:15 [TICK] XAUUSD 4623.76/4623.98
+11:03:15 [TICK] UK100 10350.10/10351.20
+11:03:15 [TICK] XAGUSD 71.00/71.03
+11:03:15 [TICK] GER40 22824.15/22825.15
+11:03:15 [TICK] ESTX50 5620.40/5621.90
+11:03:15 [TICK] US500.F 6536.72/6537.53
+11:03:15 [TICK] NZDUSD 0.57/0.57
+11:03:15 [TICK] BRENT 106.81/106.92
+11:03:15 [TICK] GBPUSD 1.32/1.32
+11:03:15 [TICK] AUDUSD 0.69/0.69
