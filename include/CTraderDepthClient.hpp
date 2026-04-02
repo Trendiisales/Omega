@@ -669,13 +669,17 @@ private:
             // On cold start (no .dat files): send M15 tick request to bootstrap.
             // The m15.ind.m1_ready flag gates whether we queue the request.
             if (!skip(1)) {
-                // Only request tick data if bars not already seeded from disk
+                // Only request tick data if bars not already seeded from disk.
+                // bkv.second.state is the SymBarState* for this symbol.
                 // m1_ready is set in main.cpp load_indicators() before start() is called
-                // so this check correctly skips the request on warm restarts
-                if (!state->m15.ind.m1_ready.load(std::memory_order_relaxed) && is_gold) {
+                // so this check correctly skips the request on warm restarts.
+                const bool already_seeded = is_gold
+                    && bkv.second.state
+                    && bkv.second.state->m15.ind.m1_ready.load(std::memory_order_relaxed);
+                if (is_gold && !already_seeded) {
                     pending_bar_reqs.push_back({bkv.first, sid, 107, 200}); // M15 via tick (cold start only)
                     std::cout << "[CTRADER-BARS] " << bkv.first
-                              << " cold start -- requesting M15 tick data (no .dat file)\n";
+                              << " cold start -- requesting M15 tick data (no bars_gold_m15.dat)\n";
                 } else if (is_gold) {
                     std::cout << "[CTRADER-BARS] " << bkv.first
                               << " bars already seeded from disk -- skipping tick data request\n";

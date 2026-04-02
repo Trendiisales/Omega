@@ -795,6 +795,7 @@ private:
     }
 
     // =========================================================================
+public:
     // Persistence -- save/load indicator state so restart is instant.
     // Eliminates the need for any tick data request at startup.
     // All bar-computed indicators (EMA, ATR, RSI, trend, swing) are restored
