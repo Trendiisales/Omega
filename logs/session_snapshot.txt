@@ -1,15 +1,15 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-02 15:26:21 UTC
+Generated : 2026-04-02 15:31:22 UTC
 ============================================================
-[ATR-DAT] atr=4.625626 atr_ewm=4.625626 warmed=1 last_mid=4668.63000 saved_ts=1775143580
-[ATR-WARN] atr=4.625626 <= 5.0 -- may still be floor-pinned
+[ATR-DAT] atr=5.589089 atr_ewm=5.589089 warmed=1 last_mid=4670.87000 saved_ts=1775143881
+[ATR-OK]   atr=5.589089 healthy
 
-[DIAG]        15:26:20 [OMEGA-DIAG] PnL=-149.469 T=46 WR=36.9565% RTTp95=6.189ms cap=120ms lat_ok=1 session=ACTIVE
-[GOLD-DIAG]   15:26:20 [GOLD-DIAG] regime=COMPRESSION vwap=4633.85 vol_range=2.73
-[BRK-DIAG]    15:26:11 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=3.28 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
-[SUPERVISOR]  15:24:48 [SUPERVISOR-XAUUSD] IN_COOLDOWN until +119s
-[VIX]         15:25:56 [TICK] VIX.F 25.14/25.50
-[GOLD-PRICE]  15:26:03 [TICK] XAUUSD 4665.09/4665.31
+[DIAG]        15:31:21 [OMEGA-DIAG] PnL=-149.469 T=46 WR=36.9565% RTTp95=5.938ms cap=120ms lat_ok=1 session=ACTIVE
+[GOLD-DIAG]   15:31:21 [GOLD-DIAG] regime=COMPRESSION vwap=4634.75 vol_range=1.44
+[BRK-DIAG]    15:31:13 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-1.26 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+[SUPERVISOR]  15:29:41 [SUPERVISOR-XAUUSD] IN_COOLDOWN until +119s
+[VIX]         15:31:09 [TICK] VIX.F 25.01/25.38
+[GOLD-PRICE]  15:31:04 [TICK] XAUUSD 4670.87/4671.09
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
