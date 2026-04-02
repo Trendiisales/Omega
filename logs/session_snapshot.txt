@@ -1,20 +1,21 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-02 23:26:23 UTC
+Generated : 2026-04-02 23:27:06 UTC
 ============================================================
 [ATR-DAT] atr=1.814754 atr_ewm=1.814754 warmed=1 last_mid=4673.78000 saved_ts=1775172026
 [ATR-WARN] atr=1.814754 AT FLOOR -- check seed
 
 [DIAG]        23:20:26 [OMEGA-DIAG] PnL=-386.639 T=72 WR=34.7222% RTTp95=4.018ms cap=120ms lat_ok=1 session=ACTIVE
 [GOLD-DIAG]   23:20:26 [GOLD-DIAG] regime=COMPRESSION[TICK] US500.F 6621. vwap=4670.97 vol_range=0.00
-[BRK-DIAG]    23:20:26 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.23 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
-[VIX]         23:20:15 [TICK] VIX.F 24.48/24.86
-[GOLD-PRICE]  23:20:26 [TICK] XAUUSD 4677.03/4677.25
+[BRK-DIAG]    23:26:23 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.23 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+[SUPERVISOR]  23:26:23 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.92 bracket=0.98 breakout=0.00 top_score=0.98 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+[VIX]         23:26:59 [TICK] VIX.F 24.47/24.87
+[GOLD-PRICE]  23:26:23 [TICK] XAUUSD 4677.03/4677.25
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
 [STARTUP-REPORT-BEGIN]
   OMEGA STARTUP REPORT
-  Generated : 2026-04-02 20:12:42 UTC
+  Generated : 2026-04-02 23:27:06 UTC
   Log file  : C:\Omega\logs\latest.log
   Collected : 34 lines over 45s
   Result    : PASS=0  FAIL=0  WARN=3  INFO=10
@@ -39,7 +40,7 @@ Generated : 2026-04-02 23:26:23 UTC
   [INFO]  First Signal           No signal in first 45s
                                        Normal if market quiet or in compression.
   [INFO]  Impulse Ghost          No impulse ghost blocks seen
-  [INFO]  Build Stamp            commit=75f9089  built=2026-04-02 20:11:49 UTC
+  [INFO]  Build Stamp            commit=4451c32  built=2026-04-02 23:26:14 UTC
   ========================================================================
   RESULT: PASS=0  FAIL=0  WARN=3  INFO=10
 [STARTUP-REPORT-END]
