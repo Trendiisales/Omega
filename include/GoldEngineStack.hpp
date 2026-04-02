@@ -115,6 +115,10 @@ struct GoldSnapshot {
     double vwap=0, volatility=0, trend=0, sweep_size=0, prev_mid=0;
     double dx_mid=0;   // DX.F (Dollar Index) mid price -- populated from g_macroDetector in main.cpp
     SessionType session = SessionType::UNKNOWN;
+    // supervisor_regime: string name of current omega::Regime from gold_sdec.
+    // Set in GoldEngineStack::on_tick() from current_regime_name().
+    // Used by engines to filter on macro regime without needing omega::Regime headers.
+    const char* supervisor_regime = "";
     bool is_valid() const { return bid>0 && ask>0 && bid<ask; }
 };
 
@@ -3249,8 +3253,11 @@ public:
         // In EXPANSION_BREAKOUT or TREND_CONTINUATION the divergence reading is
         // noise -- gold is trending hard, DXY divergence entries go counter-trend.
         // Evidence: 07:34 LONG on $180 down-day, 3 SL hits on 27-Mar EXPANSION day.
-        if (s.regime == RegimeType::EXPANSION_BREAKOUT ||
-            s.regime == RegimeType::TREND_CONTINUATION) return noSignal();
+        if (s.supervisor_regime != nullptr) {
+            const bool trending = (std::strcmp(s.supervisor_regime, "EXPANSION_BREAKOUT") == 0
+                                || std::strcmp(s.supervisor_regime, "TREND_CONTINUATION") == 0);
+            if (trending) return noSignal();
+        }
 
         gold_hist_.push_back(s.mid);
         dx_hist_.push_back(s.dx_mid);
@@ -4422,6 +4429,7 @@ public:
         snap.bid=bid; snap.ask=ask;
         snap.prev_mid=(last_mid_>0)?last_mid_:((bid+ask)*0.5);
         snap.dx_mid = dx_mid;  // DX.F mid from main.cpp -- used by DXYDivergenceEngine
+        snap.supervisor_regime = current_regime_name(); // regime string for engine filtering
         features_.update(snap,bid,ask);
         last_mid_=snap.mid;
         // Keep VolatilityFilter history current on every tick -- not just when

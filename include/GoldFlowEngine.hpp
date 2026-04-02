@@ -1690,9 +1690,7 @@ private:
                     }
                     const int64_t suppress_held = (now_ms - m_sl_suppress_start_ms) / 1000;
                     if (suppress_held < 30) {
-                        printf("[GOLD-FLOW] SL-HOLD %s rsi=%.1f trend=%+d bb=%.2f"
-                               " held=%llds suppress=%llds -- bar context says hold
-",
+                        printf("[GOLD-FLOW] SL-HOLD %s rsi=%.1f trend=%+d bb=%.2f held=%llds suppress=%llds -- bar context says hold\n",
                                pos.is_long ? "LONG" : "SHORT",
                                m_bar_rsi14, m_bar_trend, m_bar_bb_pct,
                                (long long)held_s, (long long)suppress_held);
@@ -1700,8 +1698,7 @@ private:
                         return;  // suppress SL this tick
                     }
                     // Suppression expired -- fall through to SL exit
-                    printf("[GOLD-FLOW] SL-HOLD expired after 30s -- exiting
-");
+                    printf("[GOLD-FLOW] SL-HOLD expired after 30s -- exiting\n");
                     fflush(stdout);
                 }
             }
