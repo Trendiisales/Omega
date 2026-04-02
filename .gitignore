@@ -5,10 +5,20 @@ build/
 *.ilk
 *.exp
 *.lib
-logs/
-*.log
-# Exception: always track the latest log so Claude can parse it
+# logs/ directory: do NOT ignore the directory itself (git cannot negate files
+# inside an ignored directory). Ignore *.log files explicitly instead, then
+# whitelist specific files we need tracked.
+logs/*.log
+# Always track latest.log so Claude can read session output
 !logs/latest.log
+# Startup report: overwritten every restart, pushed so Claude can parse PASS/FAIL
+!logs/startup_report.txt
+# Session snapshot: structured state extract -- Claude's primary read target
+!logs/session_snapshot.txt
+# ATR state: seed values that survive restarts -- primary + backup copy
+!logs/gold_flow_atr.dat
+!logs/gold_flow_atr_backup.dat
+!logs/gold_stack_state.dat
 omega_shadow.csv
 CMakeFiles/
 CMakeCache.txt
@@ -18,6 +28,6 @@ cmake_install.cmake
 *.sln
 
 # Config: canonical defaults are in config/omega_config.ini in the repo.
-# The VPS keeps its own live tuned version — ignore local edits so git pull
+# The VPS keeps its own live tuned version -- ignore local edits so git pull
 # never gets blocked. Run: git checkout config/omega_config.ini to reset to defaults.
 config/omega_config.ini

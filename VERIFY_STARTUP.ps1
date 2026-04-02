@@ -446,3 +446,13 @@ $reportLines.Add("RESULT: PASS=$passCount  FAIL=$failCount  WARN=$warnCount  INF
 $reportLines | Out-File -FilePath $ReportFile -Encoding utf8 -Force
 Write-Host "  [OK] startup_report.txt written to $ReportFile" -ForegroundColor Green
 Write-Host ""
+
+# Push startup_report + session_snapshot + ATR dat to git so Claude can parse them
+Write-Host "  Pushing state files to git..." -ForegroundColor DarkGray
+$savedPrefPush = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+powershell -NonInteractive -NoProfile -ExecutionPolicy Bypass `
+    -File "$OmegaDir\push_log.ps1" -RepoRoot "$OmegaDir" 2>&1 | Out-Null
+$ErrorActionPreference = $savedPrefPush
+Write-Host "  [OK] startup_report + session_snapshot + ATR dat pushed to git" -ForegroundColor Green
+Write-Host ""

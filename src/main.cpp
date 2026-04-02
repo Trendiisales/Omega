@@ -9988,6 +9988,11 @@ static void quote_loop() {
                 // Save ATR state every 60s so restarts always have a fresh, valid value
                 g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
                 g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
+                // Belt-and-suspenders: write backup ATR every 60s
+                // If primary gold_flow_atr.dat gets corrupted on a hard crash (process killed
+                // mid-write), gold_flow_atr_backup.dat has the value from ~60s earlier.
+                // push_log.ps1 tracks both files so Claude can verify ATR health any time.
+                g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr_backup.dat");
                 g_trend_pb_gold.save_state(log_root_dir()  + "/trend_pb_gold.dat");
                 g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
                 g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
