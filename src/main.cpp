@@ -6298,6 +6298,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double tick_val = tick_value_multiplier(esym);
             portfolio_sl_risk_add(sl_abs, final_lot, tick_val);
         }
+        // ?? Entry log -- every trade every engine every symbol ??????????????
+        // Previously only GoldFlow/GoldStack printed entry lines.
+        // VWAPRev TrendPB NBM ORB were silent -- impossible to audit live.
+        printf("[ENTRY] %s %s @ %.5f sl=%.5f tp=%.5f lot=%.4f sl_pts=%.5f
+",
+               esym, is_long ? "LONG" : "SHORT",
+               entry, sl,
+               tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
+               final_lot, sl_abs);
+        fflush(stdout);
         send_live_order(esym, is_long, final_lot, entry);
         g_telemetry.UpdateLastEntryTs();  // watchdog: stamp last successful entry
         return final_lot;
