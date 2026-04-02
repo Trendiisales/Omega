@@ -4006,7 +4006,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (h >= 14 && h < 17) g_macro_ctx.session_slot = 4; // NY open
         else if (h >= 17 && h < 22) g_macro_ctx.session_slot = 5; // NY late
         else if (h >= 22 || h < 5)  g_macro_ctx.session_slot = 6; // Asia
-        else                         g_macro_ctx.session_slot = 0; // Dead zone 05-07
+        else                         g_macro_ctx.session_slot = 1; // 05-07 UTC: was dead zone, now London pre-open
     }
 
     // Cross-symbol compression state -- engine is in COMPRESSION or BREAKOUT_WATCH
