@@ -466,11 +466,32 @@ if ($still) {
 $ErrorActionPreference = $savedPrefKill
 Write-Host "  [OK] Omega not running." -ForegroundColor Green
 
-# Run Omega in the FOREGROUND -- Ctrl+C kills it cleanly, no restart loop.
-Write-Host "  Launching Omega.exe in foreground (Ctrl+C to stop)..." -ForegroundColor Cyan
+# Launch Omega in BACKGROUND so VERIFY_STARTUP can tail the log alongside it.
+# After the 45s verification window, we print the report and Omega keeps running.
+# Ctrl+C in this terminal will NOT kill Omega -- use QUICK_RESTART.ps1 to stop it.
+Write-Host "  Launching Omega.exe in background..." -ForegroundColor Cyan
 # Remove deploy sentinel before starting -- watchdog will re-attach normally
 if (Test-Path $sentinelFile) { Remove-Item $sentinelFile -Force }
 
-& ".\Omega.exe" "omega_config.ini"
+$omegaProc = Start-Process -FilePath ".\Omega.exe" -ArgumentList "omega_config.ini" `
+                            -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
+Write-Host "  Omega PID: $($omegaProc.Id)" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "  Omega exited." -ForegroundColor Yellow
+
+# Pause 3s so Omega writes first log lines before verifier starts tailing
+Start-Sleep -Seconds 3
+
+# Run startup verifier -- captures first 45s of logs, writes startup_report.txt
+Write-Host "  Running VERIFY_STARTUP.ps1 (45s)..." -ForegroundColor Cyan
+Write-Host "  startup_report.txt -> C:\Omega\logs\startup_report.txt" -ForegroundColor DarkGray
+Write-Host ""
+$savedPrefVerify = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec 45 -OmegaDir $OmegaDir
+$ErrorActionPreference = $savedPrefVerify
+
+Write-Host ""
+Write-Host "  Omega is running in background (PID $($omegaProc.Id))." -ForegroundColor Green
+Write-Host "  To stop:   taskkill /F /IM Omega.exe" -ForegroundColor DarkGray
+Write-Host "  To restart: .\QUICK_RESTART.ps1" -ForegroundColor DarkGray
+Write-Host "  To re-check: .\VERIFY_STARTUP.ps1" -ForegroundColor DarkGray
