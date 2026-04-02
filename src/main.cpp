@@ -7124,6 +7124,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // multiply past the compute_size cap. Cap must be the final word.
                     double gold_lot = std::max(0.01,
                         std::min(gold_adaptive, g_cfg.max_lot_gold));
+                    // ?? Cross-asset size filters for GoldStack ????????????????
+                    {
+                        const bool gs_is_long = gsig.is_long;
+                        double gs_xa_mult = 1.0;
+                        // DXY momentum
+                        const double dxy_ret = g_macroDetector.dxyReturn();
+                        const double dxy_thr = g_macroDetector.DXY_RISK_OFF_PCT / 100.0;
+                        if (gs_is_long  && dxy_ret >  dxy_thr) gs_xa_mult *= 0.70;
+                        if (!gs_is_long && dxy_ret < -dxy_thr) gs_xa_mult *= 0.70;
+                        // HTF bias
+                        gs_xa_mult *= g_htf_filter.size_scale("XAUUSD", gs_is_long);
+                        // Macro: don't short gold in RISK_OFF
+                        if (g_macro_ctx.regime == "RISK_OFF" && !gs_is_long) gs_xa_mult *= 0.60;
+                        gs_xa_mult = std::max(0.30, std::min(1.20, gs_xa_mult));
+                        if (gs_xa_mult != 1.0)
+                            printf("[XA-FILTER] XAUUSD STACK %s mult=%.2f DXY=%.4f HTF=%s macro=%s\n",
+                                   gs_is_long?"LONG":"SHORT", gs_xa_mult, dxy_ret,
+                                   g_htf_filter.bias_name("XAUUSD"), g_macro_ctx.regime.c_str());
+                        gold_lot = std::max(0.01, std::min(gold_lot * gs_xa_mult, g_cfg.max_lot_gold));
+                    }
                     // Max loss per trade dollar cap (gold stack bypasses enter_directional)
                     if (g_cfg.max_loss_per_trade_usd > 0.0 && gold_sl_abs > 0.0) {
                         const double max_loss_lot = g_cfg.max_loss_per_trade_usd / (gold_sl_abs * 100.0);
@@ -8471,9 +8491,63 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // Hard clamp: max_lot_gold is the safety ceiling
                     const double gf_final = std::max(GFE_MIN_LOT,
                         std::min(gf_adjusted, g_cfg.max_lot_gold));
+                    // ?? Cross-asset size filters ??? [RENTECH GAP #1, #3] ?????
+                    // Apply DXY momentum, HTF bias, and macro regime soft filters.
+                    // These reduce size (never block) -- gold can be safe haven in RISK_OFF.
+                    double gf_cross_mult = 1.0;
+                    {
+                        const bool gf_is_long = g_gold_flow.pos.is_long;
+
+                        // 1. DXY MOMENTUM (cross-asset filter)
+                        // Rising DXY = USD strength = headwind for gold LONG.
+                        // Falling DXY = USD weakness = tailwind for gold LONG.
+                        // dxyReturn() = fractional return over last 60 DX.F ticks.
+                        const double dxy_ret = g_macroDetector.dxyReturn();
+                        const double dxy_risk_off_thr = g_macroDetector.DXY_RISK_OFF_PCT / 100.0;
+                        if (gf_is_long && dxy_ret > dxy_risk_off_thr) {
+                            // DXY rising fast -- gold LONG opposes dollar strength
+                            gf_cross_mult *= 0.70;
+                            printf("[XA-FILTER] XAUUSD LONG vs rising DXY (ret=%.4f) -- size x0.70\n", dxy_ret);
+                        } else if (!gf_is_long && dxy_ret > dxy_risk_off_thr) {
+                            // DXY rising + gold SHORT -- momentum aligned, slight boost
+                            gf_cross_mult *= 1.10;
+                        } else if (gf_is_long && dxy_ret < -dxy_risk_off_thr) {
+                            // DXY falling + gold LONG -- momentum aligned, slight boost
+                            gf_cross_mult *= 1.10;
+                        }
+
+                        // 2. HTF BIAS FILTER (Jane Street 2-TF agreement rule)
+                        // HTFBiasFilter tracks daily + intraday price direction.
+                        // Opposing bias = halve size. Aligned = full size. Neutral = 0.75x.
+                        const double htf_mult = g_htf_filter.size_scale("XAUUSD", gf_is_long);
+                        if (htf_mult < 1.0) {
+                            printf("[XA-FILTER] XAUUSD %s HTF bias=%s -- size x%.2f\n",
+                                   gf_is_long ? "LONG" : "SHORT",
+                                   g_htf_filter.bias_name("XAUUSD"), htf_mult);
+                        }
+                        gf_cross_mult *= htf_mult;
+
+                        // 3. MACRO REGIME (VIX + DXY combined)
+                        // RISK_OFF: gold is safe haven -- don't reduce LONGs, reduce SHORTs
+                        // RISK_ON:  gold loses safe haven bid -- reduce LONGs slightly
+                        const std::string& macro = g_macro_ctx.regime;
+                        if (macro == "RISK_OFF" && !gf_is_long) {
+                            // Shorting gold in a flight-to-safety = low edge
+                            gf_cross_mult *= 0.60;
+                            printf("[XA-FILTER] XAUUSD SHORT in RISK_OFF -- size x0.60\n");
+                        } else if (macro == "RISK_ON" && gf_is_long) {
+                            // Gold LONG when risk appetite is high = mild headwind
+                            gf_cross_mult *= 0.85;
+                        }
+
+                        gf_cross_mult = std::max(0.30, std::min(1.20, gf_cross_mult)); // clamp [0.30, 1.20]
+                    }
+                    const double gf_final_xa = std::max(GFE_MIN_LOT,
+                        std::min(gf_final * gf_cross_mult, g_cfg.max_lot_gold));
+
                     // Max loss per trade dollar cap (same backstop as gold stack path)
                     const double gf_sl_abs = std::fabs(g_gold_flow.pos.entry - g_gold_flow.pos.sl);
-                    double gf_lot = gf_final;
+                    double gf_lot = gf_final_xa;
                     if (g_cfg.max_loss_per_trade_usd > 0.0 && gf_sl_abs > 0.0) {
                         const double max_loss_lot = g_cfg.max_loss_per_trade_usd / (gf_sl_abs * 100.0);
                         if (gf_lot > max_loss_lot) {

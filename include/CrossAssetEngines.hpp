@@ -1535,8 +1535,9 @@ public:
             if (pos_.mfe < move) pos_.mfe = move;  // track MFE manually
             const double atr = atr_ > 0.01 ? atr_ : 0.5; // safety floor
 
-            // 1) BE lock at 1x ATR
-            if (!be_locked_ && move >= atr * BE_ATR_MULT) {
+            // 1) BE lock at 1x ATR (floor 3pt -- ATR=0 must not lock BE instantly)
+            const double be_arm_thresh = std::max(atr * BE_ATR_MULT, 3.0);
+            if (!be_locked_ && move >= be_arm_thresh) {
                 be_locked_ = true;
                 const double be_sl = pos_.is_long ? pos_.entry + spread
                                                   : pos_.entry - spread;
@@ -1564,10 +1565,18 @@ public:
             }
 
             // 2) ATR trail arm at 2x ATR -- trail SL at 1x ATR behind peak
-            if (move >= atr * TRAIL_ARM_ATR_MULT) {
+            // FLOOR: minimum arm threshold and trail distance so ATR=0 (unseeded)
+            // doesn't cause immediate arm + zero-buffer exit at MFE peak.
+            // On cold start (ATR not seeded from bars): atr_≈0 -> trail arms
+            // on first tick of profit and SL placed exactly at MFE price.
+            // Any reversal tick exits immediately = misses the full move.
+            // Fix: floor arm at 5pt, trail dist at 3pt (gold spread noise floor).
+            const double trail_arm_thresh = std::max(atr * TRAIL_ARM_ATR_MULT, 5.0);
+            const double trail_dist_pts   = std::max(atr * TRAIL_DIST_ATR_MULT, 3.0);
+            if (move >= trail_arm_thresh) {
                 const double trail_sl = pos_.is_long
-                    ? (pos_.entry + pos_.mfe - atr * TRAIL_DIST_ATR_MULT)
-                    : (pos_.entry - pos_.mfe + atr * TRAIL_DIST_ATR_MULT);
+                    ? (pos_.entry + pos_.mfe - trail_dist_pts)
+                    : (pos_.entry - pos_.mfe + trail_dist_pts);
                 if (pos_.is_long  && trail_sl > pos_.sl) pos_.sl = trail_sl;
                 if (!pos_.is_long && trail_sl < pos_.sl) pos_.sl = trail_sl;
             }
