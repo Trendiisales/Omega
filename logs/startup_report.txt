@@ -20,6 +20,6 @@ Result    : PASS=  FAIL=  WARN=2  INFO=8
                                      Mixed blocks -- normal filtering behaviour.
 [INFO]  First Signal           No signal in first 45s
                                      Normal if market quiet or in compression.
-[INFO]  Build Stamp            commit=a077480  built=2026-04-02 08:34:48 UTC
+[INFO]  Build Stamp            commit=ab99d2a  built=2026-04-02 09:23:25 UTC
 ========================================================================
 RESULT: PASS=  FAIL=  WARN=2  INFO=8
