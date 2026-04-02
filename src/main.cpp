@@ -9750,6 +9750,11 @@ static void trade_loop() {
         auto last_ping      = std::chrono::steady_clock::now();
         auto logon_sent_at  = std::chrono::steady_clock::now();
 
+        // Track whether this is a proactive self-initiated refresh vs forced drop.
+        // Same fix applied to quote_loop: BlackBull hard-kills TCP at ~15min.
+        // Breaking ourselves at 13min gives a 1-2s gap instead of 115s.
+        bool s_proactive_reconnect_trade = false;
+
         while (g_running.load()) {
             const auto now = std::chrono::steady_clock::now();
 
@@ -9757,6 +9762,20 @@ static void trade_loop() {
             if (!g_trade_ready.load() &&
                 std::chrono::duration_cast<std::chrono::seconds>(now - logon_sent_at).count() >= 10) {
                 std::cerr << "[OMEGA-TRADE] Logon timeout (10s) -- reconnecting\n";
+                break;
+            }
+
+            // ?? Proactive session refresh at 13min ???????????????????????????????
+            // BlackBull terminates TCP at ~15min on the TRADE session too (same broker,
+            // same TCP keepalive policy). Fix mirrors quote_loop: break cleanly at 780s
+            // before broker kills us. backoff_ms stays 1000 (not doubled) on clean cycle.
+            // 780s = 13 minutes. BlackBull hard-kills at ~900s (15min).
+            if (g_trade_ready.load() &&
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    now - logon_sent_at).count() >= 780) {
+                std::cout << "[OMEGA-TRADE] Proactive session refresh at 13min -- reconnecting before broker timeout\n";
+                fflush(stdout);
+                s_proactive_reconnect_trade = true;
                 break;
             }
 
@@ -9862,9 +9881,19 @@ static void trade_loop() {
         // returns immediately rather than attempting any I/O.
         if (sock >= 0) closesocket(static_cast<SOCKET>(sock));
         SSL_free(ssl);
-        std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
-        // Interruptible reconnect wait -- exits within 10ms on shutdown
-        for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
+
+        if (s_proactive_reconnect_trade) {
+            // Clean proactive cycle -- broker did NOT kill us. Reset backoff to 1000
+            // (not doubled) and use a short 200ms pause before reconnecting.
+            backoff_ms = 1000;
+            s_proactive_reconnect_trade = false;
+            std::cout << "[OMEGA-TRADE] Clean proactive cycle -- reconnecting in 200ms\n";
+            for (int i = 0; i < 20 && g_running.load(); ++i) Sleep(10);
+        } else {
+            std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
+            // Interruptible reconnect wait -- exits within 10ms on shutdown
+            for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
+        }
     }
     g_trade_thread_done.store(true);  // signal main() that trade_loop has fully exited
 }
@@ -11711,8 +11740,25 @@ int main(int argc, char* argv[])
 
         // Load GoldFlowEngine ATR state -- eliminates 100-tick blind zone on restart
         {
-            const std::string atr_path = log_root_dir() + "/gold_flow_atr.dat";
-            g_gold_flow.load_atr_state(atr_path);  // real ATR if file exists
+            const std::string atr_path        = log_root_dir() + "/gold_flow_atr.dat";
+            const std::string atr_backup_path = log_root_dir() + "/gold_flow_atr_backup.dat";
+
+            g_gold_flow.load_atr_state(atr_path);  // try primary first
+
+            // If primary failed (corrupt, missing, stale), fall back to backup (~60s older).
+            // Backup is written every 60s so it survives a hard kill that corrupts the primary.
+            if (g_gold_flow.current_atr() <= 0.0) {
+                printf("[GFE] Primary ATR load failed -- trying backup %s\n",
+                       atr_backup_path.c_str());
+                g_gold_flow.load_atr_state(atr_backup_path);
+                if (g_gold_flow.current_atr() > 0.0) {
+                    printf("[GFE] ATR restored from backup: atr=%.4f\n",
+                           g_gold_flow.current_atr());
+                } else {
+                    printf("[GFE] ATR backup also failed -- cold seed will be used\n");
+                }
+            }
+
             // Pass VIX at startup -- if VIX feed not yet live this gives 10pt default
             // which is far safer than the old 3pt hardcoded seed
             g_gold_flow.seed(0.0, g_macro_ctx.vix);  // VIX-scaled fallback if no ATR file
