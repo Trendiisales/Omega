@@ -548,20 +548,12 @@ static std::string buildHistoryJson()
         if (f) break;
     }
     // Fallback to cumulative CSV only if no daily file yet (first trade of the day)
+    // DO NOT fall back -- if today's file doesn't exist, no trades happened today.
+    // Returning the cumulative all-time CSV shows yesterday's trades after UTC midnight,
+    // which is wrong: the GUI shows stale data that doesn't match the daily PnL header.
     if (!f) {
-        static const char* FULL_PATHS[] = {
-            "logs/trades/omega_trade_closes.csv",
-            "C:\\Omega\\logs\\trades\\omega_trade_closes.csv",
-            "C:\\Omega\\build\\Release\\logs\\trades\\omega_trade_closes.csv",
-            "../logs/trades/omega_trade_closes.csv",
-            "..\\..\\logs\\trades\\omega_trade_closes.csv",
-        };
-        for (auto p : FULL_PATHS) { f = fopen(p, "r"); if (f) break; }
-    }
-
-    if (!f) {
-        // Fall back to in-memory snapshot
-        return buildTradesJson();
+        // No trades today -- return empty array, not yesterday's data
+        return "[]";
     }
 
     std::string out;

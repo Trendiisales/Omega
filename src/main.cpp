@@ -4398,8 +4398,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
 
     auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
-        // Shadow mode enforces all risk gates identically to LIVE.
-        // The only shadow exemption is that orders are not sent to the broker.
+        // SHADOW MODE: bypass ALL daily loss limits and consecutive loss pauses.
+        // Testing must never be blocked by risk caps -- no real money at risk.
+        // The only gates that apply in shadow are session/spread/latency (structural).
+        if (g_cfg.mode == "SHADOW") return false;
+
+        // LIVE MODE only: enforce all risk gates below.
         std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
         auto& st = g_sym_risk[symbol];
         if (st.daily_pnl < -g_cfg.daily_loss_limit) {
@@ -4704,7 +4708,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Fires when loss rate in rolling 30-min window exceeds threshold.
             // Threshold is configured as dd_velocity.threshold_usd (set in init
             // to 0.5 * daily_loss_limit). When active, halts new entries 15 min.
-            if (!g_adaptive_risk.dd_velocity.new_entries_allowed(nowSec())) return false;
+            if (!shadow_mode && !g_adaptive_risk.dd_velocity.new_entries_allowed(nowSec())) return false;  // shadow: no rate-of-loss block
             // ?? Portfolio VaR gate ????????????????????????????????????????????
             // REMOVED: portfolio_VaR -- redundant with per-trade max_loss, false blocks on correlated positions
             // REMOVED: VPIN -- BlackBull L2 volume unreliable, causes false blocks
@@ -4807,7 +4811,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (!pos_budget_ok) ++g_gov_pos;
         if (!pos_budget_ok) return false;
         // ?? Daily profit target / session watermark / hourly throttle ?????????
-        // Applied in all modes including SHADOW -- shadow is an exact simulation.
+        // SHADOW MODE: skip all PnL-based gates. Testing must never be blocked.
+        // LIVE MODE: enforce all limits below.
+        if (!shadow_mode) {
         if (g_cfg.daily_profit_target > 0.0 &&
             g_omegaLedger.dailyPnl() >= g_cfg.daily_profit_target) return false;
         if (g_cfg.session_watermark_pct > 0.0) {
@@ -4826,6 +4832,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                   if (r.ts_sec >= nowSec() - HOURLY_WINDOW_SEC) rolling += r.net_pnl; }
             if (rolling < -g_cfg.hourly_loss_limit) return false;
         }
+        } // end !shadow_mode PnL gates
         // ?? News blackout gate ????????????????????????????????????????????????
         if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
         // ?? Regime block gate -- applied in all modes ??????????????????????????
