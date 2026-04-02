@@ -10125,15 +10125,18 @@ static void quote_loop() {
             };
             // CrossAsset / NBM / ORB / VWAP / TrendPB stale purge (force_close(b,a,cb))
             // NOTE: pos_ is private on all CrossAsset engines so we cannot check entry_ts.
-            // This is safe: CrossAsset max hold is 5-30min -- prior-day carry is impossible
-            // in practice. Closing an active same-day position on reconnect is harmless in
-            // SHADOW mode -- the engine re-enters on the next qualifying tick.
+            // CrossAsset / NBM / ORB / VWAP stale purge.
+            // All CA engine classes now expose open_entry_ts() so we can perform a real
+            // UTC-day staleness check -- same logic as BreakoutEngine / BracketEngine.
+            // Prior behaviour (always-close on reconnect) was killing profitable same-day
+            // positions on normal mid-session reconnects (NOT the $844 scenario).
             auto stale_ca = [&](auto& eng, const char* sym) {
                 if (!eng.has_open_position()) return;
+                if (!is_stale(eng.open_entry_ts())) return;  // same-day position -- preserve it
                 double b=0,a=0; stale_px(sym,b,a);
                 if (b<=0) return;
                 eng.force_close(b, a, stale_cb);
-                printf("[STALE-CLOSE] Purged CA/NBM/ORB %s on reconnect\n", sym); fflush(stdout);
+                printf("[STALE-CLOSE] Purged prior-day CA/NBM/ORB/VWAP %s\n", sym); fflush(stdout);
             };
 
             // -- Gold engines (original) --
@@ -10150,9 +10153,15 @@ static void quote_loop() {
                 if (g_gold_stack.has_open_position() && is_stale(g_gold_stack.live_entry_ts()))
                     { g_gold_stack.force_close(xb_rc, xa_rc, g_rtt_last, stale_cb);
                       std::cout << "[STALE-CLOSE] Purged prior-day GoldStack\n"; }
-                if (g_le_stack.has_open_position() && xb_rc > 0 && xa_rc > 0)
+                // LEStack: has_open_position() is true if either sub-engine is live.
+                // live_entry_ts() not exposed -- LEStack max hold is ~2min so prior-day
+                // carry is only possible after a very long disconnect. Close only if stale
+                // by checking the internal SpreadDisloc engine's pos timestamp via force_close
+                // guard: we always close LEStack on reconnect (same as before) -- its
+                // positions are so short-lived that any surviving position IS stale.
+                if (g_le_stack.has_open_position())
                     { g_le_stack.force_close_all(xb_rc, xa_rc, xb_rc, xa_rc, g_rtt_last, stale_cb);
-                      std::cout << "[STALE-CLOSE] Purged prior-day LEStack\n"; }
+                      std::cout << "[STALE-CLOSE] Purged LEStack on reconnect (max hold ~2min, always stale)\n"; }
             }
             // -- Breakout engines (all symbols) --
             stale_beng(g_eng_sp,     "US500.F");
@@ -10202,9 +10211,21 @@ static void quote_loop() {
             stale_ca(g_vwap_rev_nq,     "USTEC.F");
             stale_ca(g_vwap_rev_ger40,  "GER40");
             stale_ca(g_vwap_rev_eurusd, "EURUSD");
-            stale_ca(g_trend_pb_sp,     "US500.F");
-            stale_ca(g_trend_pb_nq,     "USTEC.F");
-            stale_ca(g_trend_pb_ger40,  "GER40");
+            // TrendPullback engines: all expose open_entry_ts() -- use explicit is_stale()
+            // guard so we handle them exactly like g_trend_pb_gold (not always-close).
+            // stale_ca() now also checks is_stale() but keeping these explicit is clearer.
+            if (g_trend_pb_sp.has_open_position() && is_stale(g_trend_pb_sp.open_entry_ts())) {
+                double b=0,a=0; stale_px("US500.F",b,a);
+                if (b>0) { g_trend_pb_sp.force_close(b,a,stale_cb);
+                           printf("[STALE-CLOSE] Purged prior-day TrendPullback-SP\n"); fflush(stdout); } }
+            if (g_trend_pb_nq.has_open_position() && is_stale(g_trend_pb_nq.open_entry_ts())) {
+                double b=0,a=0; stale_px("USTEC.F",b,a);
+                if (b>0) { g_trend_pb_nq.force_close(b,a,stale_cb);
+                           printf("[STALE-CLOSE] Purged prior-day TrendPullback-NQ\n"); fflush(stdout); } }
+            if (g_trend_pb_ger40.has_open_position() && is_stale(g_trend_pb_ger40.open_entry_ts())) {
+                double b=0,a=0; stale_px("GER40",b,a);
+                if (b>0) { g_trend_pb_ger40.force_close(b,a,stale_cb);
+                           printf("[STALE-CLOSE] Purged prior-day TrendPullback-GER40\n"); fflush(stdout); } }
             stale_ca(g_ca_esnq,         "US500.F");
             stale_ca(g_ca_eia_fade,     "USOIL.F");
             stale_ca(g_ca_brent_wti,    "USOIL.F");

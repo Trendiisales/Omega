@@ -384,6 +384,7 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    int64_t open_entry_ts()     const { return pos_.entry_ts;  }  // UTC seconds -- stale-position detection
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
@@ -499,6 +500,7 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    int64_t open_entry_ts()     const { return pos_.entry_ts;  }  // UTC seconds -- stale-position detection
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
@@ -595,6 +597,7 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    int64_t open_entry_ts()     const { return pos_.entry_ts;  }  // UTC seconds -- stale-position detection
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
@@ -897,6 +900,7 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    int64_t open_entry_ts()     const { return pos_.entry_ts;  }  // UTC seconds -- stale-position detection
     double open_entry()   const { return pos_.entry; }
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
@@ -1050,6 +1054,7 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    int64_t open_entry_ts()     const { return pos_.entry_ts;  }  // UTC seconds -- stale-position detection
     void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
     void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
@@ -1363,6 +1368,7 @@ public:
     }
 
     bool has_open_position() const { return pos_.active; }
+    int64_t open_entry_ts()     const { return pos_.entry_ts;  }  // UTC seconds -- stale-position detection
     void cancel()  noexcept { pos_.reset(); timeout_extended_ = false; }
     void force_close(double bid, double ask, CloseCb on_close) {
         pos_.force_close(bid, ask, on_close);
@@ -2215,6 +2221,7 @@ public:
     }
 
     bool has_open_position() const  { return pos_.active;   }
+    int64_t open_entry_ts()     const { return pos_.entry_ts;  }  // UTC seconds -- stale-position detection
     void cancel()   noexcept        { pos_.reset();          }
     void rollback() noexcept        { pos_.reset();          }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
