@@ -61,51 +61,57 @@ target_link_libraries(Omega
 )
 
 # ?? Build version stamp ??????????????????????????????????????????????????????
-# Rewrites include/version_generated.hpp on EVERY build and forces main.cpp
-# to recompile so the banner always shows the current commit hash.
+# Git hash + build time are injected as compiler /D defines -- no generated
+# header, no sentinel, no forced recompile of main.cpp every build.
 #
-# Why this approach:
-#   - add_custom_command(OUTPUT ...) only reruns when the output is MISSING or
-#     stale vs listed deps -- since version_generated.hpp has no deps it is
-#     always "up to date" and CMake skips it entirely.
-#   - Even if the file is rewritten, MSVC skips recompiling main.cpp unless the
-#     file's mtime changes.
-#   - Solution: ALL custom_target (always runs) writes a BYPRODUCTS sentinel
-#     file with a fresh timestamp every build. main.cpp lists that sentinel as
-#     a source dep via set_property, forcing recompile whenever it changes.
+# HOW IT WORKS:
+#   1. UpdateGitHash.cmake runs at cmake CONFIGURE time (not build time).
+#      It writes a small .cmake file with set(OMEGA_GIT_HASH ...) etc.
+#   2. We include() that file to get the variables into CMake scope.
+#   3. target_compile_definitions() passes them as /DOMEGA_GIT_HASH="abc123"
+#   4. main.cpp uses #ifndef guards with fallback to "unknown".
+#
+# RESULT: main.cpp only recompiles when it or its .hpp deps actually change.
+# PCH saves 40-60% on every real recompile. Clean build still shows correct hash.
+#
+# To get a fresh hash without a full rebuild: cmake --fresh -B build (reconfigures).
+# DEPLOY_OMEGA.ps1 already does this on every deploy via cmake -B build.
 
 find_package(Git QUIET)
 
-set(VERSION_HEADER   "${CMAKE_SOURCE_DIR}/include/version_generated.hpp")
-set(VERSION_SENTINEL "${CMAKE_BINARY_DIR}/version_sentinel.h")
+set(VERSION_CMAKE_FILE "${CMAKE_BINARY_DIR}/omega_version.cmake")
 
-# Step 1 -- custom target marked ALL: runs UpdateGitHash.cmake unconditionally
-# every build. Writes both the real header and a sentinel with current timestamp.
-add_custom_target(omega_version_header ALL
+execute_process(
     COMMAND ${CMAKE_COMMAND}
             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
-            -DOUTPUT_FILE=${VERSION_HEADER}
-            -DSENTINEL_FILE=${VERSION_SENTINEL}
+            -DOUTPUT_FILE=${VERSION_CMAKE_FILE}
             -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
             -P ${CMAKE_SOURCE_DIR}/cmake/UpdateGitHash.cmake
-    BYPRODUCTS "${VERSION_HEADER}" "${VERSION_SENTINEL}"
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Regenerating git hash header..."
 )
 
-# Step 2 -- make Omega depend on the target so it runs before linking
-add_dependencies(Omega omega_version_header)
+# Read the computed variables into CMake scope
+if(EXISTS "${VERSION_CMAKE_FILE}")
+    include("${VERSION_CMAKE_FILE}")
+else()
+    set(OMEGA_GIT_HASH   "unknown")
+    set(OMEGA_GIT_DATE   "unknown")
+    set(OMEGA_BUILD_TIME "unknown")
+endif()
 
-# Step 3 -- add the sentinel as a source file dep on main.cpp so MSVC sees a
-# changed input and recompiles it every time the sentinel timestamp updates.
-# Also explicitly list all .hpp headers as dependencies so MSVC recompiles
-# main.cpp whenever ANY header changes -- without this, header-only changes
-# (e.g. GoldFlowEngine.hpp, SymbolSupervisor.hpp) are silently ignored and
-# the old binary keeps running with stale logic.
+# Pass as compiler defines -- no header file needed, no forced recompile
+target_compile_definitions(Omega PRIVATE
+    OMEGA_GIT_HASH="${OMEGA_GIT_HASH}"
+    OMEGA_GIT_DATE="${OMEGA_GIT_DATE}"
+    OMEGA_BUILD_TIME="${OMEGA_BUILD_TIME}"
+)
+
+# Engine headers as OBJECT_DEPENDS -- main.cpp recompiles when headers change.
+# The sentinel (old approach) has been removed -- it caused a full recompile
+# on every build regardless of whether anything changed, making PCH useless.
 file(GLOB OMEGA_HEADERS "${CMAKE_SOURCE_DIR}/include/*.hpp")
 set_property(SOURCE "${CMAKE_SOURCE_DIR}/src/main.cpp"
     APPEND PROPERTY OBJECT_DEPENDS
-        "${VERSION_SENTINEL}"
         ${OMEGA_HEADERS}
 )
 
