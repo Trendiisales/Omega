@@ -666,21 +666,23 @@ private:
             // GetTickDataReq (pt=2145) -- only sent when OHLCBarEngine state files
             // are missing (cold start). When bars_gold_m15.dat exists (normal case),
             // m1_ready is already true from load_indicators() and no request is needed.
-            // On cold start (no .dat files): send M15 tick request to bootstrap.
-            // The m15.ind.m1_ready flag gates whether we queue the request.
-            if (!skip(1)) {
-                // Only request tick data if bars not already seeded from disk.
-                // bkv.second.state is the SymBarState* for this symbol.
-                // m1_ready is set in main.cpp load_indicators() before start() is called
-                // so this check correctly skips the request on warm restarts.
+            //
+            // BUG FIX: M15 tick request was gated on !skip(1) -- but "XAUUSD:1" is
+            // pre-seeded into bar_failed_reqs to block GetTrendbarsReq for M1.
+            // This caused skip(1)=true which ALSO blocked the M15 tick request,
+            // leaving bars permanently unseeded every session. The two are unrelated:
+            // M1 trendbar being blocked does NOT mean M15 tick data is unavailable.
+            // Fix: gate M15 tick request on !skip(107) instead -- its own period key.
+            // skip(107) is never set, so M15 request always fires on cold start.
+            {
                 const bool already_seeded = is_gold
                     && bkv.second.state
                     && bkv.second.state->m15.ind.m1_ready.load(std::memory_order_relaxed);
-                if (is_gold && !already_seeded) {
+                if (is_gold && !already_seeded && !skip(107)) {
                     pending_bar_reqs.push_back({bkv.first, sid, 107, 200}); // M15 via tick (cold start only)
                     std::cout << "[CTRADER-BARS] " << bkv.first
                               << " cold start -- requesting M15 tick data (no bars_gold_m15.dat)\n";
-                } else if (is_gold) {
+                } else if (is_gold && already_seeded) {
                     std::cout << "[CTRADER-BARS] " << bkv.first
                               << " bars already seeded from disk -- skipping tick data request\n";
                 }
