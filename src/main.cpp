@@ -3267,8 +3267,22 @@ static void maybe_reset_daily_ledger() {
           const auto ai = g_asks.find("XAUUSD"); if (ai != g_asks.end()) xau_a = ai->second; }
         if (xau_b > 0.0 && xau_a > 0.0) {
             auto midnight_cb = [](const omega::TradeRecord& tr) {
-                // Book into OLD day ledger (before resetDaily below) so PnL lands correctly
-                handle_closed_trade(tr);
+                // Book into OLD day ledger (before resetDaily below) so PnL lands correctly.
+                // Cannot call handle_closed_trade() here -- it is defined later in this file.
+                // Minimal inline: apply tick_val, costs, record to ledger.
+                omega::TradeRecord t = tr;
+                const double mult = tick_value_multiplier(t.symbol);
+                t.pnl *= mult; t.mfe *= mult; t.mae *= mult;
+                double cps = 0.0;
+                { const std::string& s = t.symbol;
+                  if (s=="XAUUSD"||s=="XAGUSD"||s=="EURUSD"||s=="GBPUSD"||
+                      s=="AUDUSD"||s=="NZDUSD"||s=="USDJPY") cps = 3.0; }
+                omega::apply_realistic_costs(t, cps, mult);
+                g_omegaLedger.record(t);
+                g_telemetry.AccumEnginePnl(t.engine.c_str(), t.net_pnl);
+                printf("[MIDNIGHT-ROLLOVER] Closed %s %s pnl=$%.2f reason=%s\n",
+                       t.symbol.c_str(), t.engine.c_str(), t.net_pnl, t.exitReason.c_str());
+                fflush(stdout);
             };
             const int64_t fc_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
@@ -3296,7 +3310,7 @@ static void maybe_reset_daily_ledger() {
                 g_le_stack.force_close_all(xau_b, xau_a,
                     xag_b > 0.0 ? xag_b : xau_b * 0.0185,
                     xag_a > 0.0 ? xag_a : xau_a * 0.0185,
-                    midnight_cb);
+                    g_rtt_last, midnight_cb);
                 std::cout << "[MIDNIGHT-ROLLOVER] Force-closed LatencyEdge positions\n";
             }
             std::cout.flush();
