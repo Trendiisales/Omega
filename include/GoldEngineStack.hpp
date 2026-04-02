@@ -3962,12 +3962,13 @@ public:
     size_t leg_count() const { return legs_.size(); }
 
     // Live position accessors for GUI per-trade P&L display
-    double base_entry()   const { return legs_.empty() ? 0.0 : legs_.front().entry; }
-    bool   base_is_long() const { return legs_.empty() ? true : legs_.front().is_long; }
-    double base_sl()      const { return legs_.empty() ? 0.0 : legs_.front().sl; }
-    double base_tp()      const { return legs_.empty() ? 0.0 : legs_.front().tp; }
-    double base_size()    const { return legs_.empty() ? 0.0 : legs_.front().size; }
-    const char* base_engine() const { return legs_.empty() ? "" : legs_.front().engine; }
+    double  base_entry()    const { return legs_.empty() ? 0.0   : legs_.front().entry;    }
+    bool    base_is_long()  const { return legs_.empty() ? true  : legs_.front().is_long;  }
+    double  base_sl()       const { return legs_.empty() ? 0.0   : legs_.front().sl;       }
+    double  base_tp()       const { return legs_.empty() ? 0.0   : legs_.front().tp;       }
+    double  base_size()     const { return legs_.empty() ? 0.0   : legs_.front().size;     }
+    int64_t base_entry_ts() const { return legs_.empty() ? 0     : legs_.front().entry_ts; }  // UTC seconds
+    const char* base_engine() const { return legs_.empty() ? "" : legs_.front().engine;   }
 
     // Patch the base leg size after compute_size() runs in main.cpp.
     // on_tick() opens the position with the sub-engine default size (e.g. 0.01).
@@ -4543,12 +4544,13 @@ public:
     int64_t sl_cooldown_until() const { return sl_cooldown_until_; }
 
     // Live position accessors for GUI per-trade P&L -- delegated from pos_mgr_
-    double      live_entry()    const { return pos_mgr_.base_entry(); }
-    bool        live_is_long()  const { return pos_mgr_.base_is_long(); }
-    double      live_sl()       const { return pos_mgr_.base_sl(); }
-    double      live_tp()       const { return pos_mgr_.base_tp(); }
-    double      live_size()     const { return pos_mgr_.base_size(); }
-    const char* live_engine()   const { return pos_mgr_.base_engine(); }
+    double      live_entry()    const { return pos_mgr_.base_entry();    }
+    bool        live_is_long()  const { return pos_mgr_.base_is_long();  }
+    double      live_sl()       const { return pos_mgr_.base_sl();       }
+    double      live_tp()       const { return pos_mgr_.base_tp();       }
+    double      live_size()     const { return pos_mgr_.base_size();     }
+    int64_t     live_entry_ts() const { return pos_mgr_.base_entry_ts(); }  // UTC seconds -- stale detection
+    const char* live_engine()   const { return pos_mgr_.base_engine();   }
 
     // Call immediately after on_tick() returns a valid signal to apply the
     // risk-adjusted lot size from compute_size(). Without this, the ledger
