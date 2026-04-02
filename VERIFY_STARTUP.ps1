@@ -176,7 +176,7 @@ if ($seedLine) {
 
 # --- CHECK 2: ATR State (loaded from disk vs cold) ---------------------------
 $atrLoaded  = Find-Last "GFE\] ATR state loaded"
-$atrRejected= Find-All  "GFE\] ATR state rejected"
+$atrRejected= @(Find-All  "GFE\] ATR state rejected")
 $atrStartup = Find-Last "GFE\] Startup ATR"
 
 if ($atrLoaded) {
@@ -203,8 +203,8 @@ foreach ($l in $gfGateLines) {
     if ($l -match "atr=([0-9.]+)") { $atrValues += [double]$Matches[1] }
 }
 if ($atrValues.Count -gt 0) {
-    $distinctAtrs = $atrValues | Sort-Object -Unique
-    $allFive = ($distinctAtrs | Where-Object { $_ -ne 5.0 }).Count -eq 0
+    $distinctAtrs = @($atrValues | Sort-Object -Unique)
+    $allFive = (@($distinctAtrs | Where-Object { $_ -ne 5.0 }).Count -eq 0)
     if ($allFive -and $distinctAtrs.Count -gt 1) {
         Add-Result "ATR Running Value" "FAIL" "atr=5.00 flat ($($atrValues.Count) gate checks)" "ATR still pinned at floor -- GFE_ATR_MIN fix may not be running."
     } elseif ($distinctAtrs[0] -le 5.0 -and $distinctAtrs.Count -eq 1) {
@@ -235,9 +235,9 @@ if ($volLine) {
 }
 
 # --- CHECK 5: in_dead_zone = 0 -----------------------------------------------
-$brkLines = Find-All "GOLD-BRK-DIAG"
+$brkLines = @(Find-All "GOLD-BRK-DIAG")
 if ($brkLines.Count -gt 0) {
-    $dzLines = $brkLines | Where-Object { $_ -match "in_dead_zone=1" }
+    $dzLines = @($brkLines | Where-Object { $_ -match "in_dead_zone=1" })
     if ($dzLines.Count -gt 0) {
         Add-Result "Dead Zone" "FAIL" "in_dead_zone=1 on $($dzLines.Count) bars" "Dead zone still active -- check session_start_utc config."
     } else {
@@ -360,7 +360,7 @@ if ($firstSignal) {
 }
 
 # --- CHECK 12: Impulse ghost block -------------------------------------------
-$ghostLines = Find-All "GF-IMPULSE-GHOST.*Blocked"
+$ghostLines = @(Find-All "GF-IMPULSE-GHOST.*Blocked")
 if ($ghostLines.Count -gt 0) {
     $lastGhost = $ghostLines[-1]
     if ($lastGhost -match "only ([0-9]+) ticks, need ([0-9]+)") {
@@ -390,10 +390,10 @@ if (Test-Path $stampFile) {
 # ------------------------------------------------------------------------------
 # Render results to console + report file
 # ------------------------------------------------------------------------------
-$passCount = ($results | Where-Object { $_.Status -eq "PASS" }).Count
-$failCount = ($results | Where-Object { $_.Status -eq "FAIL" }).Count
-$warnCount = ($results | Where-Object { $_.Status -eq "WARN" }).Count
-$infoCount = ($results | Where-Object { $_.Status -eq "INFO" }).Count
+$passCount = @($results | Where-Object { $_.Status -eq "PASS" }).Count
+$failCount = @($results | Where-Object { $_.Status -eq "FAIL" }).Count
+$warnCount = @($results | Where-Object { $_.Status -eq "WARN" }).Count
+$infoCount = @($results | Where-Object { $_.Status -eq "INFO" }).Count
 
 $reportLines = [System.Collections.Generic.List[string]]::new()
 $reportLines.Add("OMEGA STARTUP REPORT")

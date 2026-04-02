@@ -3460,6 +3460,7 @@ static void maybe_reset_daily_ledger() {
     g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
     g_trend_pb_sp.save_state(log_root_dir()    + "/trend_pb_sp.dat");
     // Save OHLCBarEngine indicator state -- eliminates tick data request on restart
+    g_bars_gold.m1 .save_indicators(log_root_dir() + "/bars_gold_m1.dat");
     g_bars_gold.m5 .save_indicators(log_root_dir() + "/bars_gold_m5.dat");
     g_bars_gold.m15.save_indicators(log_root_dir() + "/bars_gold_m15.dat");
     g_bars_gold.h4 .save_indicators(log_root_dir() + "/bars_gold_h4.dat");
@@ -10233,7 +10234,8 @@ static void quote_loop() {
                 // or missing -> cold start -> M15 tick request times out -> never seeded.
                 // With 60s saves and 12h age limit, bars are always valid on restart.
                 if (g_bars_gold.m5 .ind.m1_ready.load(std::memory_order_relaxed))
-                    g_bars_gold.m5 .save_indicators(log_root_dir() + "/bars_gold_m5.dat");
+                    g_bars_gold.m1 .save_indicators(log_root_dir() + "/bars_gold_m1.dat");
+    g_bars_gold.m5 .save_indicators(log_root_dir() + "/bars_gold_m5.dat");
                 if (g_bars_gold.m15.ind.m1_ready.load(std::memory_order_relaxed))
                     g_bars_gold.m15.save_indicators(log_root_dir() + "/bars_gold_m15.dat");
                 if (g_bars_gold.h4 .ind.m1_ready.load(std::memory_order_relaxed))
@@ -11289,6 +11291,7 @@ int main(int argc, char* argv[])
     // This eliminates the 2-minute GoldFlow bar gate delay on every restart.
     {
         const std::string base = log_root_dir();
+        const bool m1_ok  = g_bars_gold.m1 .load_indicators(base + "/bars_gold_m1.dat");
         const bool m5_ok  = g_bars_gold.m5 .load_indicators(base + "/bars_gold_m5.dat");
         const bool m15_ok = g_bars_gold.m15.load_indicators(base + "/bars_gold_m15.dat");
         const bool h4_ok  = g_bars_gold.h4 .load_indicators(base + "/bars_gold_h4.dat");
@@ -11299,8 +11302,20 @@ int main(int argc, char* argv[])
                 g_bars_gold.m15.ind.ema21.load(std::memory_order_relaxed),
                 g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
                 g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
-            // Immediately seed M5 trend direction gate -- use M1 EMA crossover not swing pivot
-            if (m5_ok) {
+            // M1 EMA crossover for bar trend gate -- loaded from disk, no 15-min warmup
+            if (m1_ok) {
+                const double st_e9  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
+                const double st_e50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
+                const int st_trend  = (st_e9 > 0.0 && st_e50 > 0.0)
+                    ? (st_e9 < st_e50 ? -1 : +1) : 0;
+                g_trend_pb_gold.seed_m5_trend(st_trend);
+                printf("[STARTUP] M1 bar state loaded: EMA9=%.2f EMA50=%.2f RSI=%.1f trend=%+d"
+                       " -- GoldFlow/GoldStack bar gates active immediately\n",
+                       st_e9, st_e50,
+                       g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
+                       st_trend);
+            } else if (m5_ok) {
+                // Fallback: seed trend from M5 if M1 not available
                 const double st_e9  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
                 const double st_e50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
                 const int st_trend  = (st_e9 > 0.0 && st_e50 > 0.0)
@@ -11312,14 +11327,14 @@ int main(int argc, char* argv[])
                 g_trend_pb_gold.seed_h4_trend(
                     g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
             }
-            printf("[STARTUP] Bar state loaded: M5=%s M15=%s H4=%s"
-                   " EMA50=%.2f ATR=%.2f H4_trend=%d -- m1_ready=true instant\n",
-                   m5_ok?"ok":"cold", m15_ok?"ok":"cold", h4_ok?"ok":"cold",
+            printf("[STARTUP] Bar state loaded: M1=%s M5=%s M15=%s H4=%s"
+                   " EMA50=%.2f ATR=%.2f H4_trend=%d\n",
+                   m1_ok?"ok":"cold", m5_ok?"ok":"cold", m15_ok?"ok":"cold", h4_ok?"ok":"cold",
                    g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
                    g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed),
                    g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
         } else {
-            printf("[STARTUP] No bar state on disk (cold start) -- requesting M15 tick data\n");
+            printf("[STARTUP] No bar state on disk (cold start) -- 15min M1 warmup required\n");
         }
         fflush(stdout);
     }
