@@ -475,26 +475,24 @@ Get-Process -Name "powershell" -ErrorAction SilentlyContinue | ForEach-Object {
 # Remove deploy sentinel
 if (Test-Path $sentinelFile) { Remove-Item $sentinelFile -Force }
 
-# Launch Omega in background (no -Wait) so VERIFY_STARTUP can run alongside it.
-# No watchdog = Ctrl+C kills the process via taskkill. No auto-restart.
-Write-Host "  Launching Omega.exe (Ctrl+C then: taskkill /F /IM Omega.exe to stop)..." -ForegroundColor Cyan
-$omegaProc = Start-Process -FilePath ".\Omega.exe" -ArgumentList "omega_config.ini" `
-                            -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
-Write-Host "  Omega PID: $($omegaProc.Id)" -ForegroundColor DarkGray
-Write-Host ""
+# Launch VERIFY_STARTUP in background first so it can tail logs during startup
+Write-Host "  Starting startup verifier in background (45s)..." -ForegroundColor Cyan
+$verifyJob = Start-Job -ScriptBlock {
+    param($dir)
+    & "$dir\VERIFY_STARTUP.ps1" -WaitSec 45 -OmegaDir $dir
+} -ArgumentList $OmegaDir
 
-# Pause 3s so Omega writes first log lines before verifier starts tailing
-Start-Sleep -Seconds 3
+# Small pause so verifier is ready before Omega starts writing
+Start-Sleep -Seconds 1
 
-# Run startup verifier -- captures first 45s of logs, writes startup_report.txt
-Write-Host "  Running VERIFY_STARTUP.ps1 (45s)..." -ForegroundColor Cyan
-Write-Host "  startup_report.txt -> C:\Omega\logs\startup_report.txt" -ForegroundColor DarkGray
-Write-Host ""
-$savedPrefVerify = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-& "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec 45 -OmegaDir $OmegaDir
-$ErrorActionPreference = $savedPrefVerify
-Write-Host "  Omega running in background (PID $($omegaProc.Id)). Use: taskkill /F /IM Omega.exe to stop." -ForegroundColor Green
+# Launch Omega in FOREGROUND -- Ctrl+C kills it directly, no restart loop
+Write-Host "  Launching Omega.exe in foreground -- Ctrl+C to stop..." -ForegroundColor Cyan
+& ".\Omega.exe" "omega_config.ini"
+
+# Omega exited (Ctrl+C or crash) -- collect verifier output
+Write-Host "" 
+Write-Host "  Omega stopped." -ForegroundColor Yellow
+Receive-Job $verifyJob -Wait -AutoRemoveJob | Out-Null
 
 Write-Host ""
 Write-Host "  Omega is running in background (PID $($omegaProc.Id))." -ForegroundColor Green
