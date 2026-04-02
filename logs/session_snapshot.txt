@@ -1,15 +1,15 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-02 14:44:15 UTC
+Generated : 2026-04-02 14:50:17 UTC
 ============================================================
-[ATR-DAT] atr=9.534231 atr_ewm=9.534231 warmed=1 last_mid=4694.03000 saved_ts=1775141054
-[ATR-OK]   atr=9.534231 healthy
+[ATR-DAT] atr=8.885338 atr_ewm=8.885338 warmed=1 last_mid=4687.03000 saved_ts=1775141416
+[ATR-OK]   atr=8.885338 healthy
 
-[DIAG]        14:44:14 [OMEGA-DIAG] PnL=-140.006 T=43 WR=37.2093% RTTp95=16.706ms cap=120ms lat_ok=1 session=ACTIVE
-[GOLD-DIAG]   14:44:14 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4622.93 vol_range=4.82
-[BRK-DIAG]    14:44:08 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=2.20 l2_imb=0.501 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4645.30 brk_lo=4635.05 range=10.25 session_slot=4
-[SUPERVISOR]  14:43:16 [SUPERVISOR-XAUUSD] IN_COOLDOWN until +119s
-[VIX]         14:44:04 [TICK] VIX.F 24.61/24.98
-[GOLD-PRICE]  14:43:55 [TICK] XAUUSD 4694.04/4694.26
+[DIAG]        14:50:16 [OMEGA-DIAG] PnL=-140.006 T=43 WR=37.2093% RTTp95=18.008ms cap=120ms lat_ok=1 session=ACTIVE
+[GOLD-DIAG]   14:50:16 [GOLD-DIAG] regime=IMPULSE vwap=4625.21 vol_range=4.57
+[BRK-DIAG]    14:50:11 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-4.21 l2_imb=0.513 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+[SUPERVISOR]  14:50:08 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=1.00 bracket=0.68 breakout=0.40 top_score=0.68 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=chop_detected
+[VIX]         14:50:09 [TICK] VIX.F 24.84/25.20
+[GOLD-PRICE]  14:49:56 [TICK] XAUUSD 4680.64/4680.86
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
