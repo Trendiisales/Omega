@@ -7033,9 +7033,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // to block entries when the crash is clearly continuing.
         const double rsi_for_gate = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
         const double drift_for_gate = g_gold_stack.ewm_drift();
+        // Lowered drift threshold -4.0 -> -1.5: EWM drift only reaches -1.7 during
+        // a 125pt crash because the EWM smooths it. RSI<32 alone is sufficient.
         const bool crash_impulse_bypass = (rsi_for_gate > 0.0)
-            && ((rsi_for_gate < 35.0 && drift_for_gate < -4.0)   // strong crash = ignore post-impulse
-             || (rsi_for_gate > 65.0 && drift_for_gate >  4.0)); // strong rally = ignore post-impulse
+            && ((rsi_for_gate < 32.0)                              // RSI crash -- drift not needed
+             || (rsi_for_gate > 68.0)                             // RSI rally -- drift not needed
+             || (rsi_for_gate < 35.0 && drift_for_gate < -1.5)   // drift+RSI confirmation
+             || (rsi_for_gate > 65.0 && drift_for_gate >  1.5)); // drift+RSI confirmation
         const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open)
                                  && (!gold_post_impulse_block || crash_impulse_bypass);
         // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
@@ -7430,22 +7434,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // causing constant flapping that prevents the bracket from ever arming.
             // At 2.5 the gate is stable -- only real directional pressure clears it.
             //
-            // CRASH BYPASS: if RSI<35 and drift<-4 (strong crash confirmed), bypass Asia
-            // drift gate entirely. A 130pt selloff IS the signal -- drift gating it out
-            // is exactly wrong. Same logic as crash_impulse_bypass above.
-            const bool asia_crash_bypass = (rsi_for_gate > 0.0 && rsi_for_gate < 35.0
-                                            && drift_for_gate < -4.0)
-                                        || (rsi_for_gate > 65.0 && drift_for_gate > 4.0);
-            // Schmitt trigger on asia_trend_ok -- hysteresis prevents flapping when
-            // drift oscillates near the threshold. Without this a drift of 2.4-2.6
-            // flips the gate on/off every few ticks, blocking entries mid-move then
-            // unblocking 2s later (too late to catch the entry).
-            // ON  threshold: drift >= 2.5 (arms the gate)
-            // OFF threshold: drift <  1.5 (must drop meaningfully before blocking again)
-            // Between 1.5-2.5: hold previous state -- no flip.
+            // CRASH BYPASS: macro crash/rally -- bypass Asia drift gate entirely.
+            // OLD: required drift < -4.0. During a slow 125pt grind, EWM drift
+            // only reaches -1.7 even though price fell $125. The EWM smooths it.
+            // FIX: use RSI alone as the primary gate -- RSI<32 = genuine crash,
+            // no drift threshold needed. Drift just confirms the direction.
+            // Also bypass if price has moved > $15 from VWAP (macro displacement).
+            const double gf_vwap_now   = g_gold_stack.vwap();
+            const double gf_mid_now    = (bid + ask) * 0.5;
+            const double vwap_disp     = (gf_vwap_now > 0.0)
+                ? std::fabs(gf_mid_now - gf_vwap_now) : 0.0;
+            const bool asia_crash_bypass =
+                (rsi_for_gate > 0.0 && rsi_for_gate < 32.0)           // RSI crash -- no drift needed
+                || (rsi_for_gate > 68.0)                               // RSI rally
+                || (drift_for_gate < -1.5 && vwap_disp > 8.0)         // drift + displacement
+                || (drift_for_gate >  1.5 && vwap_disp > 8.0);        // drift + displacement up
+            // Schmitt trigger on asia_trend_ok -- hysteresis prevents flapping.
+            // Lowered arm threshold 2.5->1.2: log shows drift reaching -1.7 during
+            // a 125pt crash. Old 2.5 threshold never fired. 1.2 fires on real moves.
+            // OFF threshold kept at 0.6 (was 1.5) -- tighter so it doesn't linger.
             static thread_local bool s_asia_trend_armed = false;
-            if      (gold_ewm_drift_abs >= 2.5) s_asia_trend_armed = true;
-            else if (gold_ewm_drift_abs <  1.5) s_asia_trend_armed = false;
+            if      (gold_ewm_drift_abs >= 1.2) s_asia_trend_armed = true;
+            else if (gold_ewm_drift_abs <  0.6) s_asia_trend_armed = false;
             const bool asia_trend_ok = !in_asia_slot
                 || asia_crash_bypass
                 || s_asia_trend_armed;
@@ -8153,11 +8163,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool bars_permanently_unavailable = (bars_missing_secs > 120); // 2 min -- reduced from 5min: BlackBull confirmed no trendbar, no point waiting longer
                 if (bars_permanently_unavailable) {
                     // Broker confirmed no trendbar support -- allow entries without bar gates.
-                    // Log once per 5 min so operator knows we're running in degraded mode.
+                    // CRITICAL: cap lot size when bars unavailable. Without real ATR,
+                    // GoldFlow falls back to atr=5.00 floor which produces 0.16 lots
+                    // at $80 risk. A $5 SL on 0.16 lots = -$80 + costs = -$43 loss.
+                    // With capped lot (0.01), the same SL costs -$5. Much safer.
+                    g_gold_flow.ENTRY_SIZE = 0.01;  // degrade gracefully -- no ATR, no big sizing
                     if (now_wup - s_warmup_log >= 300) {
                         s_warmup_log = now_wup;
                         printf("[GF-GATE-0D] BARS_UNAVAILABLE >2min -- running without bar gates "
-                               "(broker trendbar unsupported). Gates 3+4 inactive.\n");
+                               "(broker trendbar unsupported). Gates 3+4 inactive. LOT CAPPED 0.01\n");
                         fflush(stdout);
                     }
                     // gf_tick_ok stays true -- entry allowed without bar confirmation
@@ -8194,8 +8208,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // Also bypass during confirmed crash (RSI<35, drift<-4): the crash IS the
                 // volatility signal. Blocking GoldFlow because vol_range is stale is wrong.
                 const bool vol_unseeded  = (vol_range_now == 0.0);
-                const bool gf_crash_bypass = crash_impulse_bypass;  // RSI<35+drift<-4 or RSI>65+drift>4
-                if (in_compression && !vol_unseeded && !gf_crash_bypass
+                const bool gf_crash_bypass = crash_impulse_bypass;  // RSI crash/rally bypass
+                // Also bypass vol floor when vwap displacement > $15 -- macro move,
+                // bars not being seeded should not block an obvious directional trade.
+                const bool macro_displacement_bypass = (vwap_disp > 15.0);
+                if (in_compression && !vol_unseeded && !gf_crash_bypass && !macro_displacement_bypass
                     && vol_range_now >= 0.0 && vol_range_now < GF_COMPRESSION_VOL_FLOOR) {
                     static int64_t s_comp_log = 0;
                     if (static_cast<int64_t>(std::time(nullptr)) - s_comp_log >= 30) {
