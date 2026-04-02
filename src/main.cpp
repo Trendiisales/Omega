@@ -11168,6 +11168,11 @@ int main(int argc, char* argv[])
     // Improvement 7: news SL widening
     g_trend_pb_gold.NEWS_WARN_SECS      = 900;   // 15min before event
     g_trend_pb_gold.NEWS_SL_MULT        = 1.5;
+    // Widen pullback band: 0.15% -> 0.50% (±23pts at 4620)
+    // Default 0.15% = ±6.9pts. On a $20 trending move price is 20pts from EMA50
+    // and never enters the band -- engine silent on all clean trends.
+    // 0.50% allows entry when price is trending away from EMA50 but still directional.
+    g_trend_pb_gold.PULLBACK_BAND_PCT   = 0.50;
     // Improvement 8: pyramid on second pullback
     g_trend_pb_gold.PYRAMID_ENABLED     = true;
     g_trend_pb_gold.PYRAMID_SIZE_MULT   = 0.5;
