@@ -6337,7 +6337,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bars_sp.m1.ind.ema21.load(std::memory_order_relaxed),
                 g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed),
                 g_bars_sp.m1.ind.atr14.load(std::memory_order_relaxed));
-            g_trend_pb_sp.seed_m5_trend(g_bars_sp.m5.ind.trend_state.load(std::memory_order_relaxed));
+            {   // FIX: M1 EMA crossover replaces M5 swing trend_state (15min lag)
+                const double sp_s_e9  = g_bars_sp.m1.ind.ema9 .load(std::memory_order_relaxed);
+                const double sp_s_e50 = g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed);
+                const int sp_ema_trend = (sp_s_e9 > 0.0 && sp_s_e50 > 0.0)
+                    ? (sp_s_e9 < sp_s_e50 ? -1 : +1) : 0;
+                g_trend_pb_sp.seed_m5_trend(sp_ema_trend);
+            }
         }
         if (g_trend_pb_sp.has_open_position())  { g_trend_pb_sp.on_tick(sym, bid, ask, ca_on_close); }
 
@@ -6417,7 +6423,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                           g_macro_ctx.session_slot == 0 ||
                                           g_macro_ctx.session_slot == 5);
             const bool sp_nbm_bars_ok  = g_bars_sp.m1.ind.m1_ready.load(std::memory_order_relaxed);
-            const int  sp_nbm_m5_trend = g_bars_sp.m5.ind.trend_state.load(std::memory_order_relaxed);
+            const double sp_nbm_ema9   = g_bars_sp.m1.ind.ema9 .load(std::memory_order_relaxed);
+            const double sp_nbm_ema50  = g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed);
+            const int  sp_nbm_m5_trend = (sp_nbm_ema9 > 0.0 && sp_nbm_ema50 > 0.0)
+                ? (sp_nbm_ema9 < sp_nbm_ema50 ? -1 : +1) : 0;  // M1 EMA crossover
             const bool sp_nbm_gate_ok  = !sp_nbm_offhours || (sp_nbm_bars_ok && sp_nbm_m5_trend != 0);
             if (!g_nbm_sp.has_open_position() && !g_orb_us.has_open_position() &&
                 !g_vwap_rev_sp.has_open_position() && base_can_sp && sp_nbm_gate_ok) {
@@ -6438,7 +6447,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         {
             const bool sp_in_offhours = (g_macro_ctx.session_slot == 6 || g_macro_ctx.session_slot == 0 || g_macro_ctx.session_slot == 5); // slot5=NY late thin tape
             const bool sp_bars_ready  = g_bars_sp.m1.ind.m1_ready.load(std::memory_order_relaxed);
-            const int  sp_m5_trend    = g_bars_sp.m5.ind.trend_state.load(std::memory_order_relaxed);
+            const double sp_tpb_ema9  = g_bars_sp.m1.ind.ema9 .load(std::memory_order_relaxed);
+            const double sp_tpb_ema50 = g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed);
+            const int  sp_m5_trend    = (sp_tpb_ema9 > 0.0 && sp_tpb_ema50 > 0.0)
+                ? (sp_tpb_ema9 < sp_tpb_ema50 ? -1 : +1) : 0;  // M1 EMA crossover
             const bool sp_trendpb_ok  = !sp_in_offhours || (sp_bars_ready && sp_m5_trend != 0);
             if (!g_trend_pb_sp.has_open_position() && !g_vwap_rev_sp.has_open_position()
                 && !g_nbm_sp.has_open_position() && base_can_sp && sp_trendpb_ok) {
@@ -6503,7 +6515,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bars_nq.m1.ind.ema21.load(std::memory_order_relaxed),
                 g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed),
                 g_bars_nq.m1.ind.atr14.load(std::memory_order_relaxed));
-            g_trend_pb_nq.seed_m5_trend(g_bars_nq.m5.ind.trend_state.load(std::memory_order_relaxed));
+            {   // FIX: M1 EMA crossover replaces M5 swing trend_state (15min lag)
+                const double nq_s_e9  = g_bars_nq.m1.ind.ema9 .load(std::memory_order_relaxed);
+                const double nq_s_e50 = g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed);
+                const int nq_ema_trend = (nq_s_e9 > 0.0 && nq_s_e50 > 0.0)
+                    ? (nq_s_e9 < nq_s_e50 ? -1 : +1) : 0;
+                g_trend_pb_nq.seed_m5_trend(nq_ema_trend);
+            }
         }
         if (g_trend_pb_nq.has_open_position()) { g_trend_pb_nq.on_tick(sym, bid, ask, ca_on_close); }
         if (g_nbm_nq.has_open_position())      { g_nbm_nq.on_tick(sym, bid, ask, ca_on_close); }
@@ -6567,8 +6585,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // slot 5 = NY late (17:00-22:00 UTC): US indices thin after NY close.
             // Same gate as Asia -- only trade if M1 bars seeded AND M5 trend confirmed.
             const bool nq_bars_ready  = g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed);
-            const int  nq_m5_trend    = g_bars_nq.m5.ind.trend_state.load(std::memory_order_relaxed);
-            // During off-hours: only trade if M1 bars seeded AND M5 shows clear trend
+            const double nq_tpb_ema9  = g_bars_nq.m1.ind.ema9 .load(std::memory_order_relaxed);
+            const double nq_tpb_ema50 = g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed);
+            const int  nq_m5_trend    = (nq_tpb_ema9 > 0.0 && nq_tpb_ema50 > 0.0)
+                ? (nq_tpb_ema9 < nq_tpb_ema50 ? -1 : +1) : 0;  // M1 EMA crossover
+            // During off-hours: only trade if M1 bars seeded AND EMA trend confirmed
             const bool nq_trendpb_ok  = !nq_in_offhours || (nq_bars_ready && nq_m5_trend != 0);
 
             if (!g_trend_pb_nq.has_open_position() && !g_vwap_rev_nq.has_open_position()
@@ -6591,7 +6612,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const int slot_nq2 = g_macro_ctx.session_slot;
             const bool nq_in_offhours2 = (slot_nq2 == 6 || slot_nq2 == 0 || slot_nq2 == 5); // slot5=NY late thin tape
             const bool nq_bars_ready2  = g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed);
-            const int  nq_m5_trend2    = g_bars_nq.m5.ind.trend_state.load(std::memory_order_relaxed);
+            const double nq_nbm_ema9   = g_bars_nq.m1.ind.ema9 .load(std::memory_order_relaxed);
+            const double nq_nbm_ema50  = g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed);
+            const int  nq_m5_trend2    = (nq_nbm_ema9 > 0.0 && nq_nbm_ema50 > 0.0)
+                ? (nq_nbm_ema9 < nq_nbm_ema50 ? -1 : +1) : 0;  // M1 EMA crossover
             const bool nq_nbm_ok       = !nq_in_offhours2 || (nq_bars_ready2 && nq_m5_trend2 != 0);
 
             if (!g_nbm_nq.has_open_position() && !g_vwap_rev_nq.has_open_position()
@@ -7033,7 +7057,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                            g_macro_ctx.session_slot == 0 ||
                                            g_macro_ctx.session_slot == 5);
             const bool nas_nbm_bars_ok  = g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed);
-            const int  nas_nbm_m5_trend = g_bars_nq.m5.ind.trend_state.load(std::memory_order_relaxed);
+            const double nas_nbm_ema9   = g_bars_nq.m1.ind.ema9 .load(std::memory_order_relaxed);
+            const double nas_nbm_ema50  = g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed);
+            const int  nas_nbm_m5_trend = (nas_nbm_ema9 > 0.0 && nas_nbm_ema50 > 0.0)
+                ? (nas_nbm_ema9 < nas_nbm_ema50 ? -1 : +1) : 0;  // M1 EMA crossover
             const bool nas_nbm_gate_ok  = !nas_nbm_offhours || (nas_nbm_bars_ok && nas_nbm_m5_trend != 0);
             if (!g_nbm_nas.has_open_position() && base_can_nas && nas_nbm_gate_ok) {
                 const auto nbm = g_nbm_nas.on_tick(sym, bid, ask, ca_on_close);
@@ -7209,9 +7236,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double vwap_dz  = g_gold_stack.vwap();
             const double mid_dz   = (bid + ask) * 0.5;
             const double vdisp_dz = (vwap_dz > 0.0) ? std::fabs(mid_dz - vwap_dz) : 0.0;
-            const bool rsi_extreme  = (rsi_dz > 0.0) && (rsi_dz < 30.0 || rsi_dz > 70.0);
+            // FIX 2026-04-02: unified thresholds -- 30/70->38/62, vwap 15->10
+            const bool rsi_extreme  = (rsi_dz > 0.0) && (rsi_dz < 38.0 || rsi_dz > 62.0);
             const bool drift_strong = std::fabs(drift_dz) >= 5.0;
-            const bool vwap_far     = vdisp_dz >= 15.0;
+            const bool vwap_far     = vdisp_dz >= 10.0;
             if (rsi_extreme || drift_strong || vwap_far) {
                 static int64_t s_dz_log = 0;
                 const int64_t now_dz = static_cast<int64_t>(std::time(nullptr));
@@ -7682,10 +7710,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double vwap_disp     = (gf_vwap_now > 0.0)
                 ? std::fabs(gf_mid_now - gf_vwap_now) : 0.0;
             const bool asia_crash_bypass =
-                (rsi_for_gate > 0.0 && rsi_for_gate < 32.0)           // RSI crash -- no drift needed
-                || (rsi_for_gate > 68.0)                               // RSI rally
-                || (drift_for_gate < -1.5 && vwap_disp > 8.0)         // drift + displacement
-                || (drift_for_gate >  1.5 && vwap_disp > 8.0);        // drift + displacement up
+                // FIX 2026-04-02: unified thresholds 32->38, 68->62, vwap 8->6
+                (rsi_for_gate > 0.0 && rsi_for_gate < 38.0)
+                || (rsi_for_gate > 62.0)
+                || (drift_for_gate < -1.5 && vwap_disp > 6.0)
+                || (drift_for_gate >  1.5 && vwap_disp > 6.0);
             // Schmitt trigger on asia_trend_ok -- hysteresis prevents flapping.
             // Lowered arm threshold 2.5->1.2: log shows drift reaching -1.7 during
             // a 125pt crash. Old 2.5 threshold never fired. 1.2 fires on real moves.
@@ -8128,13 +8157,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // When RSI confirms trade direction and price isn't at the extreme band,
             // manage_position() suppresses the SL for up to 30s to avoid noise exits.
             if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+                const double ctx_e9  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
+                const double ctx_e50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
+                const int ctx_trend  = (ctx_e9 > 0.0 && ctx_e50 > 0.0)
+                    ? (ctx_e9 < ctx_e50 ? -1 : +1) : 0;
                 g_gold_flow.set_bar_context(
                     g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
-                    g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed),
+                    ctx_trend,
                     g_bars_gold.m1.ind.bb_pct.load(std::memory_order_relaxed));
                 g_gold_flow_reload.set_bar_context(
                     g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
-                    g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed),
+                    ctx_trend,
                     g_bars_gold.m1.ind.bb_pct.load(std::memory_order_relaxed));
             }
             auto flow_mgmt_cb = [&](const omega::TradeRecord& tr) {
@@ -9130,8 +9163,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bars_gold.m15.ind.ema21.load(std::memory_order_relaxed),
                 g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
                 g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
-            g_trend_pb_gold.seed_m5_trend(
-                g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed));
+            // FIX 2026-04-02: seed M5 trend from M1 EMA crossover, not M5 swing pivot (15+ min lag)
+            {
+                const double tpb_ema9  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
+                const double tpb_ema50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
+                const int tpb_trend = (tpb_ema9 > 0.0 && tpb_ema50 > 0.0)
+                    ? (tpb_ema9 < tpb_ema50 ? -1 : +1) : 0;
+                g_trend_pb_gold.seed_m5_trend(tpb_trend);
+            }
         }
         // H4 trend gate -- feeds HTF direction into TrendPullback gold entry filter.
         if (g_bars_gold.h4.ind.m1_ready.load(std::memory_order_relaxed)) {
@@ -11246,10 +11285,13 @@ int main(int argc, char* argv[])
                 g_bars_gold.m15.ind.ema21.load(std::memory_order_relaxed),
                 g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
                 g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
-            // Immediately seed M5 trend direction gate
+            // Immediately seed M5 trend direction gate -- use M1 EMA crossover not swing pivot
             if (m5_ok) {
-                g_trend_pb_gold.seed_m5_trend(
-                    g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed));
+                const double st_e9  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
+                const double st_e50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
+                const int st_trend  = (st_e9 > 0.0 && st_e50 > 0.0)
+                    ? (st_e9 < st_e50 ? -1 : +1) : 0;
+                g_trend_pb_gold.seed_m5_trend(st_trend);
             }
             // Immediately seed H4 HTF trend gate -- no need to wait for first tick
             if (h4_ok) {
