@@ -3692,6 +3692,9 @@ public:
         if(history_.size()<WINDOW)return false;
         return history_.range()>=VOL_THRESHOLD;
     }
+    // update(): push mid into history without gating -- keeps vol_range current
+    // even when allow() isn't being called (e.g. position open, entry blocked).
+    void update(double mid) { history_.push_back(mid); }
     double current_range() const { return history_.empty()?0:history_.range(); }
     // seed(): pre-fill history so allow() is not blind for the first 50 ticks
     // after a restart. Called from load_atr_state() using the saved EWM baseline
@@ -4415,6 +4418,10 @@ public:
         snap.dx_mid = dx_mid;  // DX.F mid from main.cpp -- used by DXYDivergenceEngine
         features_.update(snap,bid,ask);
         last_mid_=snap.mid;
+        // Keep VolatilityFilter history current on every tick -- not just when
+        // allow() is called inside the entry path. This ensures vol_range()
+        // diagnostic is accurate even when position is open or entry is blocked.
+        vol_filter_.update(snap.mid);
 
         // Update long-window baseline for supervisor vol_ratio
         baseline_buf_.push_back(snap.mid);
@@ -4680,14 +4687,17 @@ public:
         // cold-start delay that was blocking all gold entries 40s-4min on every restart.
         // FIX: vol_range=0.00 on startup was causing engines to miss entire volatile moves.
         if (ewm_vol_baseline_ > 0.0) {
-            // Derive approximate mid from saved vol pct.
-            // ewm_vol_baseline_ = vol as fraction of mid. baseline_vol_pct_ = vol/mid*100.
-            // mid = ewm_vol_baseline_ / (baseline_vol_pct_ / 100)
-            double seed_mid = 3000.0;  // safe XAUUSD fallback
-            if (baseline_vol_pct_ > 0.0)
-                seed_mid = ewm_vol_baseline_ / (baseline_vol_pct_ / 100.0);
-            if (seed_mid < 1000.0 || seed_mid > 10000.0) seed_mid = 3000.0;
-            vol_filter_.seed(seed_mid);
+            // Use gov_ewm_fast as seed mid -- it's the actual gold price EWM,
+            // saved and loaded reliably. The baseline_vol_pct_ calculation was
+            // producing 3000 (fallback) because baseline_vol_pct_ wasn't being
+            // persisted correctly. gov_ewm_fast IS the price -- use it directly.
+            double seed_mid = governor_.ewm_fast_;
+            if (seed_mid < 1000.0 || seed_mid > 15000.0)
+                seed_mid = governor_.ewm_slow_;  // fallback to slow EWM
+            if (seed_mid < 1000.0 || seed_mid > 15000.0)
+                seed_mid = 0.0;  // give up, cold start
+            if (seed_mid > 0.0)
+                vol_filter_.seed(seed_mid);
         }
     }
 
