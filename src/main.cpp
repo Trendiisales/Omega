@@ -10971,6 +10971,34 @@ int main(int argc, char* argv[])
                 sup->cfg.cooldown_fail_threshold = 20;
         }
     }
+    // ?? Hot-reload config watcher ??????????????????????????????????????????????
+    // Watches omega_config.ini every 2s. On change: re-runs load_config() +
+    // sanitize_config() + all apply_engine_config() calls -- zero downtime,
+    // no position closes, no reconnect. Change any param in the .ini and it
+    // takes effect within 2 seconds without rebooting Omega.
+    // NOT reloadable: FIX host/port/credentials, mode (SHADOW/LIVE), code changes.
+    OmegaHotReload::start(cfg_path, [&cfg_path]() {
+        load_config(cfg_path);
+        sanitize_config();
+        apply_engine_config(g_eng_sp);
+        apply_engine_config(g_eng_nq);
+        apply_engine_config(g_eng_cl);
+        apply_engine_config(g_eng_us30);
+        apply_engine_config(g_eng_nas100);
+        apply_generic_index_config(g_eng_ger30);
+        apply_generic_index_config(g_eng_uk100);
+        apply_generic_index_config(g_eng_estx50);
+        apply_generic_silver_config(g_eng_xag);
+        apply_generic_fx_config(g_eng_eurusd);
+        apply_generic_gbpusd_config(g_eng_gbpusd);
+        apply_generic_audusd_config(g_eng_audusd);
+        apply_generic_nzdusd_config(g_eng_nzdusd);
+        apply_generic_usdjpy_config(g_eng_usdjpy);
+        apply_generic_brent_config(g_eng_brent);
+        printf("[HOT-RELOAD] All engine configs refreshed\n");
+        fflush(stdout);
+    });
+
     // ?? Position sizing ???????????????????????????????????????????????????????
     // ENTRY_SIZE on each engine is the FALLBACK lot used only when
     // risk_per_trade_usd == 0. When risk sizing is active, compute_size()
@@ -11889,6 +11917,8 @@ int main(int argc, char* argv[])
     g_trade_close_csv.close();
     g_trade_open_csv.close();
     g_shadow_csv.close();
+    // Stop hot-reload watcher before saving state -- prevents reload during shutdown
+    OmegaHotReload::stop();
     // ?? Edge systems shutdown -- persist TOD + Kelly + fill quality data ????????
     g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
     g_edges.tod.print_worst(15);
