@@ -1867,19 +1867,27 @@ public:
         // Combined size multiplier (applied after compute_size in main.cpp via patch_size)
         const double size_mult = tod_size_mult * vol_size_mult;
 
-        // SL = EMA50, floored to ATR-scaled minimum (not fixed 8pt).
-        // ATR_SL_MULT * ATR adapts to current volatility:
-        //   Quiet session (ATR=4pt):    floor = 1.2 * 4  = 4.8pt
-        //   Normal London  (ATR=8pt):   floor = 1.2 * 8  = 9.6pt
-        //   Volatile open  (ATR=12pt):  floor = 1.2 * 12 = 14.4pt
-        // This prevents both: SL too tight in volatile conditions (noise stop-out),
-        // and SL too wide in quiet conditions (unnecessary risk).
+        // SL placed PAST EMA50 with ATR buffer -- not AT the EMA50 level.
+        //
+        // BUG (fixed): previous code set sl_dist = max(|mid-ema50|, atr_floor).
+        // When price is AT EMA50 (which is the entry trigger), |mid-ema50| is tiny.
+        // If atr_ is also small (tick ATR during flat tape), sl_dist = tiny -> instant SL hit.
+        // Example: entry=4778.62 SHORT, ema50=4783.20 -> sl_dist=4.58pt -> SL=4783.20
+        // Gold wicks +4.58pt (normal noise), SL hit. Then continues -134pt. Wasted.
+        //
+        // FIX: sl_dist = EMA50_distance + ATR_buffer
+        // SL is placed a buffer PAST EMA50, not at EMA50.
+        // Price can touch and briefly pierce EMA50 without stopping out.
+        //   ATR=4pt:  buffer=4.8pt -> sl_dist = EMA50_dist + 4.8pt
+        //   ATR=8pt:  buffer=9.6pt -> sl_dist = EMA50_dist + 9.6pt
+        //   ATR=53pt: buffer=63pt  -> sl_dist = EMA50_dist + 63pt (crash day)
+        // Minimum buffer: max(atr*ATR_SL_MULT, spread*3, 5.0)
         const double sl_raw      = ema50_;
-        const double atr_floor   = (atr_ > 0.5) ? atr_ * ATR_SL_MULT : 0.0;
-        const double spread_floor = spread * 2.0;
-        const double eff_min_sl  = std::max({atr_floor, spread_floor, 3.0});
+        const double atr_floor   = (atr_ > 0.5) ? atr_ * ATR_SL_MULT : 5.0;
+        const double spread_floor = spread * 3.0;
+        const double sl_buffer   = std::max({atr_floor, spread_floor, 5.0});
         const double sl_raw_dist = std::fabs(mid - sl_raw);
-        const double sl_dist     = std::max(sl_raw_dist, eff_min_sl);
+        const double sl_dist     = sl_raw_dist + sl_buffer;  // PAST EMA50, not AT it
 
         // TP = ATR-based fixed distance: 2.5x ATR for gold (~20-25pts typical)
         const double atr_safe  = atr_ > 2.0 ? atr_ : 10.0;  // floor at 10pts
