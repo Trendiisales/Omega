@@ -45490,3 +45490,21 @@
 10:44:56 [CTRADER-BARS] XAUUSD spots sub sent
 10:44:56 [CTRADER-BARS] Spots sub ACK
 10:44:57 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=3.79 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+10:45:07 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=3.57 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+10:45:17 [OMEGA-DIAG] PnL=-20.76 T=21 WR=52.38% RTTp95=3.35ms cap=120.00ms lat_ok=1 session=ACTIVE
+10:45:17 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+10:45:17 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+10:45:17 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+10:45:17 [GOLD-DIAG] regime=COMPRESSION vwap=4624.88 vol_range=1.13
+10:45:17 [TICK] GER40 22820.25/22821.25
+10:45:17 [TICK] ESTX50 5615.50/5617.00
+10:45:17 [TICK] GBPUSD 1.32/1.32
+10:45:17 [TICK] UK100 10337.60/10338.70
+10:45:17 [TICK] XAUUSD 4624.60/4624.82
+10:45:17 [TICK] XAGUSD 70.83/70.86
+10:45:17 [TICK] NAS100 23625.05/23626.25
+10:45:18 [TICK] AUDUSD 0.69/0.69
+10:45:18 [TICK] USOIL.F 108.09/108.16
+10:45:18 [TICK] DJ30.F 46302.10/46307.90
+10:45:18 [TICK] USTEC.F 23806.07/23808.78
+10:45:18 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=2.64 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
