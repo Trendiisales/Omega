@@ -7055,10 +7055,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 s_impulse_ticks = 0;
             }
             if (s_was_impulse && !is_impulse_now) {
-                g_gold_post_impulse_until.store(now_pi + 45);
-                printf("[POST-IMPULSE] Regime left IMPULSE after %d ticks -- blocking 45s\n",
-                       s_impulse_ticks);
-                fflush(stdout);
+                // Only block if IMPULSE lasted >= 3 ticks -- a real move, not a flicker.
+                // 0-1 tick IMPULSE = regime noise (supervisor oscillating), not a real
+                // impulse ending. Blocking 45s on noise was killing entries during the
+                // actual downtrend we needed to trade.
+                if (s_impulse_ticks >= 3) {
+                    g_gold_post_impulse_until.store(now_pi + 45);
+                    printf("[POST-IMPULSE] Regime left IMPULSE after %d ticks -- blocking 45s\n",
+                           s_impulse_ticks);
+                    fflush(stdout);
+                } else {
+                    printf("[POST-IMPULSE] Regime flicker (%d ticks) -- no block\n",
+                           s_impulse_ticks);
+                    fflush(stdout);
+                }
             }
             s_was_impulse = is_impulse_now;
             // Expose impulse stability for GoldFlow gate below
@@ -7124,8 +7134,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double vwap_dz  = g_gold_stack.vwap();
             const double mid_dz   = (bid + ask) * 0.5;
             const double vdisp_dz = (vwap_dz > 0.0) ? std::fabs(mid_dz - vwap_dz) : 0.0;
-            const bool rsi_extreme  = (rsi_dz > 0.0) && (rsi_dz < 32.0 || rsi_dz > 68.0);
-            const bool drift_strong = std::fabs(drift_dz) >= 3.0;
+            const bool rsi_extreme  = (rsi_dz > 0.0) && (rsi_dz < 30.0 || rsi_dz > 70.0);
+            const bool drift_strong = std::fabs(drift_dz) >= 5.0;
             const bool vwap_far     = vdisp_dz >= 15.0;
             if (rsi_extreme || drift_strong || vwap_far) {
                 static int64_t s_dz_log = 0;
