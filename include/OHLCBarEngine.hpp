@@ -793,9 +793,92 @@ private:
         else if (slope < -VWAP_SLOPE_FLAT_THR) direction = -1;
         ind.vwap_direction.store(direction, std::memory_order_relaxed);
     }
-};
 
-// =============================================================================
+    // =========================================================================
+    // Persistence -- save/load indicator state so restart is instant.
+    // Eliminates the need for any tick data request at startup.
+    // All bar-computed indicators (EMA, ATR, RSI, trend, swing) are restored
+    // from disk and m1_ready is set true immediately on load.
+    // =========================================================================
+    void save_indicators(const std::string& path) const noexcept {
+        if (!ind.m1_ready.load()) return;  // don't save cold state
+        FILE* f = fopen(path.c_str(), "w");
+        if (!f) return;
+        fprintf(f, "saved_ts=%lld\n",  (long long)std::time(nullptr));
+        fprintf(f, "ema9=%.6f\n",      ind.ema9.load());
+        fprintf(f, "ema21=%.6f\n",     ind.ema21.load());
+        fprintf(f, "ema50=%.6f\n",     ind.ema50.load());
+        fprintf(f, "atr14=%.6f\n",     ind.atr14.load());
+        fprintf(f, "rsi14=%.4f\n",     ind.rsi14.load());
+        fprintf(f, "bb_upper=%.4f\n",  ind.bb_upper.load());
+        fprintf(f, "bb_mid=%.4f\n",    ind.bb_mid.load());
+        fprintf(f, "bb_lower=%.4f\n",  ind.bb_lower.load());
+        fprintf(f, "bb_pct=%.4f\n",    ind.bb_pct.load());
+        fprintf(f, "trend_state=%d\n", ind.trend_state.load());
+        fprintf(f, "swing_high=%.4f\n",ind.swing_high.load());
+        fprintf(f, "swing_low=%.4f\n", ind.swing_low.load());
+        fclose(f);
+    }
+
+    // Returns true if state loaded successfully and m1_ready set.
+    bool load_indicators(const std::string& path) noexcept {
+        FILE* f = fopen(path.c_str(), "r");
+        if (!f) return false;
+        char line[128];
+        double e9=0, e21=0, e50=0, atr=0, rsi=50, bbu=0, bbm=0, bbl=0, bbp=0.5;
+        double swhi=0, swlo=0;
+        int trend=0;
+        long long saved_ts = 0;
+        while (fgets(line, sizeof(line), f)) {
+            char key[32]; double val=0;
+            if (sscanf(line, "%31[^=]=%lf", key, &val) == 2) {
+                std::string k(key);
+                if      (k=="saved_ts")   saved_ts = (long long)val;
+                else if (k=="ema9")       e9    = val;
+                else if (k=="ema21")      e21   = val;
+                else if (k=="ema50")      e50   = val;
+                else if (k=="atr14")      atr   = val;
+                else if (k=="rsi14")      rsi   = val;
+                else if (k=="bb_upper")   bbu   = val;
+                else if (k=="bb_mid")     bbm   = val;
+                else if (k=="bb_lower")   bbl   = val;
+                else if (k=="bb_pct")     bbp   = val;
+                else if (k=="trend_state")trend = (int)val;
+                else if (k=="swing_high") swhi  = val;
+                else if (k=="swing_low")  swlo  = val;
+            }
+        }
+        fclose(f);
+        const long long now_ts = (long long)std::time(nullptr);
+        const long long age    = now_ts - saved_ts;
+        // Reject if: invalid timestamp, future timestamp, or older than 4 hours
+        if (saved_ts <= 0 || saved_ts > now_ts || age > 4 * 3600 || e9 <= 0 || e50 <= 0) {
+            remove(path.c_str());
+            printf("[OHLC] Bar state rejected (age=%llds e9=%.2f e50=%.2f) -- cold start\n",
+                   age, e9, e50);
+            return false;
+        }
+        // Restore all indicators
+        ind.ema9       .store(e9,    std::memory_order_relaxed);
+        ind.ema21      .store(e21,   std::memory_order_relaxed);
+        ind.ema50      .store(e50,   std::memory_order_relaxed);
+        ind.atr14      .store(atr,   std::memory_order_relaxed);
+        ind.rsi14      .store(rsi,   std::memory_order_relaxed);
+        ind.bb_upper   .store(bbu,   std::memory_order_relaxed);
+        ind.bb_mid     .store(bbm,   std::memory_order_relaxed);
+        ind.bb_lower   .store(bbl,   std::memory_order_relaxed);
+        ind.bb_pct     .store(bbp,   std::memory_order_relaxed);
+        ind.trend_state.store(trend, std::memory_order_relaxed);
+        ind.swing_high .store(swhi,  std::memory_order_relaxed);
+        ind.swing_low  .store(swlo,  std::memory_order_relaxed);
+        // Mark ready -- this is the key: unblocks all bar-gated entries immediately
+        ind.m1_ready   .store(true,  std::memory_order_relaxed);
+        printf("[OHLC] Bar state loaded: EMA50=%.2f ATR=%.2f RSI=%.1f trend=%d age=%llds\n",
+               e50, atr, rsi, trend, age);
+        fflush(stdout);
+        return true;
+    }
+};
 // Per-symbol bar engine registry -- maps symbol name to engine + indicators
 // =============================================================================
 struct SymBarState {

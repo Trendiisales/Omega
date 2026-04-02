@@ -662,14 +662,25 @@ private:
             auto skip = [&](uint32_t p) {
                 return bar_failed_reqs.count(bkv.first + ":" + std::to_string(p)) > 0;
             };
-            if (!skip(1)) pending_bar_reqs.push_back({bkv.first, sid, 1, 200});
-            else std::cout << "[CTRADER-BARS] Skipping " << bkv.first << " M1 (prev INVALID_REQUEST)\n";
-            // NOTE: GetTrendbarsReq (pt=2137) returns INVALID_REQUEST for this account.
-            // Use GetTickDataReq (pt=2145) instead -- broker serves tick history.
-            // We mark M5/M7 as "tick" requests by using period=105/107 as a sentinel.
-            // The actual send code below checks for these and sends pt=2145 instead.
-            if (!skip(5)) pending_bar_reqs.push_back({bkv.first, sid, 105, 200}); // 105 = M5 via tick
-            if (is_gold && !skip(7)) pending_bar_reqs.push_back({bkv.first, sid, 107, 200}); // 107 = M15 via tick
+            // GetTrendbarsReq (pt=2137) crashes BlackBull -- permanently blocked.
+            // GetTickDataReq (pt=2145) -- only sent when OHLCBarEngine state files
+            // are missing (cold start). When bars_gold_m15.dat exists (normal case),
+            // m1_ready is already true from load_indicators() and no request is needed.
+            // On cold start (no .dat files): send M15 tick request to bootstrap.
+            // The m15.ind.m1_ready flag gates whether we queue the request.
+            if (!skip(1)) {
+                // Only request tick data if bars not already seeded from disk
+                // m1_ready is set in main.cpp load_indicators() before start() is called
+                // so this check correctly skips the request on warm restarts
+                if (!state->m15.ind.m1_ready.load(std::memory_order_relaxed) && is_gold) {
+                    pending_bar_reqs.push_back({bkv.first, sid, 107, 200}); // M15 via tick (cold start only)
+                    std::cout << "[CTRADER-BARS] " << bkv.first
+                              << " cold start -- requesting M15 tick data (no .dat file)\n";
+                } else if (is_gold) {
+                    std::cout << "[CTRADER-BARS] " << bkv.first
+                              << " bars already seeded from disk -- skipping tick data request\n";
+                }
+            }
         }
         // Live subscriptions queued after history requests (sent in same staggered loop)
         struct LiveSub { std::string name; int64_t sid; uint32_t period; };

@@ -3287,6 +3287,10 @@ static void maybe_reset_daily_ledger() {
     g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
     g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
     g_trend_pb_sp.save_state(log_root_dir()    + "/trend_pb_sp.dat");
+    // Save OHLCBarEngine indicator state -- eliminates tick data request on restart
+    g_bars_gold.m5 .save_indicators(log_root_dir() + "/bars_gold_m5.dat");
+    g_bars_gold.m15.save_indicators(log_root_dir() + "/bars_gold_m15.dat");
+    g_bars_gold.h4 .save_indicators(log_root_dir() + "/bars_gold_h4.dat");
     g_edges.reset_daily();  // resets CVD session hi/lo; prev_day updates via on_tick
     g_edges.fill_quality.print_summary();  // log fill quality summary at rollover
 
@@ -10316,8 +10320,31 @@ int main(int argc, char* argv[])
     g_trend_pb_nq.load_state(log_root_dir()    + "/trend_pb_nq.dat");
     g_trend_pb_sp.load_state(log_root_dir()    + "/trend_pb_sp.dat");
 
+    // Load OHLCBarEngine indicator state -- instant warm restart, no tick data request needed.
+    // If .dat files exist and are <4hr old: m1_ready=true immediately on first tick.
+    // Bars update live from on_spot_event (M15 bar closes pushed by broker every 15min).
+    // This eliminates the 2-minute GoldFlow bar gate delay on every restart.
+    {
+        const std::string base = log_root_dir();
+        const bool m5_ok  = g_bars_gold.m5 .load_indicators(base + "/bars_gold_m5.dat");
+        const bool m15_ok = g_bars_gold.m15.load_indicators(base + "/bars_gold_m15.dat");
+        const bool h4_ok  = g_bars_gold.h4 .load_indicators(base + "/bars_gold_h4.dat");
+        if (m15_ok) {
+            // Immediately seed TrendPullback with the restored bar EMAs
+            g_trend_pb_gold.seed_bar_emas(
+                g_bars_gold.m15.ind.ema9 .load(std::memory_order_relaxed),
+                g_bars_gold.m15.ind.ema21.load(std::memory_order_relaxed),
+                g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
+                g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
+            printf("[STARTUP] Bar state loaded: M5=%s M15=%s H4=%s -- m1_ready=true, no tick request needed\n",
+                   m5_ok?"ok":"cold", m15_ok?"ok":"cold", h4_ok?"ok":"cold");
+        } else {
+            printf("[STARTUP] No bar state on disk -- will seed from pt=2145 tick data (takes ~30s)\n");
+        }
+        fflush(stdout);
+    }
+
     // TrendPullback gold: M15 bar EMAs seeded live from g_bars_gold.m15 each tick.
-    // Bar data will come from cTrader tick data (pt=2145) when TrendPullback is re-enabled.
     g_bracket_gold.cancel_order_fn = [](const std::string& id) { send_cancel_order(id); };
     g_bracket_xag.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
 
