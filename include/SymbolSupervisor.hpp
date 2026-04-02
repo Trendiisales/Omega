@@ -389,11 +389,26 @@ public:
 
         const double top_score = std::max(stable_bracket, stable_breakout);
 
-        // Update HIGH_RISK revocation counter
+        // Update HIGH_RISK revocation counter.
+        // CRITICAL FIX: do NOT reset m_high_risk_ticks on a single valid tick.
+        // The log shows alternating valid/HR ticks every ~1-2s. With the old reset,
+        // m_high_risk_ticks never accumulated to HIGH_RISK_REVOKE_TICKS (5) because
+        // each valid tick reset it to 0. The supervisor blocked every other tick all session.
+        // Fix: only reset after HIGH_RISK_CLEAR_TICKS consecutive non-HR ticks.
+        // This lets HR count accumulate through noisy valid ticks to reach revoke threshold.
         if (regime == Regime::HIGH_RISK_NO_TRADE && candidate_stable) {
             ++m_high_risk_ticks;
+            m_clear_ticks = 0;  // reset clear counter -- we are still in HR
+        } else if (candidate_stable) {
+            // Non-HR tick -- only clear after sustained non-HR run
+            ++m_clear_ticks;
+            if (m_clear_ticks >= HIGH_RISK_CLEAR_TICKS) {
+                m_high_risk_ticks = 0;
+                m_clear_ticks     = 0;
+            }
         } else {
             m_high_risk_ticks = 0;
+            m_clear_ticks     = 0;
         }
 
         // Update CHOP revocation counter -- same hysteresis pattern as HIGH_RISK.
@@ -511,6 +526,9 @@ private:
     double  m_last_stable_breakout = 0.0;
     // Consecutive HIGH_RISK ticks while candidate_stable=true -- used for revocation
     int     m_high_risk_ticks      = 0;
+    // Consecutive non-HR ticks needed to clear m_high_risk_ticks.
+    // Prevents alternating HR/valid pattern from permanently blocking.
+    int     m_clear_ticks          = 0;
     // Consecutive CHOP ticks -- CHOP now uses same hysteresis as HIGH_RISK.
     // Root cause: a 150pt sustained downtrend tips into QUIET_COMPRESSION vol territory,
     // trap_risk > 0.4 flips one tick to CHOP_REVERSAL, instant block, locked forever.
@@ -525,6 +543,8 @@ private:
     // 5 ticks at ~1-3 ticks/sec = 2-5 seconds of sustained HIGH_RISK before revoke.
     // Single noisy ticks (1-2) are absorbed. Genuine sustained HIGH_RISK (5+) revokes.
     static constexpr int HIGH_RISK_REVOKE_TICKS = 5;
+    // Non-HR ticks required to clear the HR counter (prevents rapid alternation blocking)
+    static constexpr int HIGH_RISK_CLEAR_TICKS  = 3;
     // CHOP must sustain for this many ticks before blocking.
     // 8 ticks ~ 3-8 seconds. Genuine chop sustains; a trend leg dipping into
     // low-vol classification for 1-2 ticks does not.

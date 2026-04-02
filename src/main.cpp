@@ -920,8 +920,12 @@ struct SymbolRiskState {
     int64_t pause_until = 0;
 };
 struct ShadowQualityState {
-    int     fast_loss_streak = 0;
-    int64_t pause_until      = 0;
+    int     fast_loss_streak  = 0;
+    int64_t pause_until       = 0;
+    // Per-engine consecutive SL tracking -- keyed by "symbol:engine"
+    // 4 consecutive SL_HIT -> engine culled until session restart
+    int     engine_consec_sl  = 0;
+    bool    engine_culled     = false;
 };
 static std::mutex g_sym_risk_mtx;
 static std::unordered_map<std::string, SymbolRiskState> g_sym_risk;
@@ -3657,6 +3661,38 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                 --qs.fast_loss_streak;
             }
         }
+        // ?? Per-engine consecutive SL culling ???????????????????????????
+        // Tracks SL_HIT exits per engine (not FORCE_CLOSE -- those are artifacts).
+        // After ENGINE_CULL_SL_LIMIT consecutive SL hits the engine is culled:
+        //   - blocked from new entries for the rest of the session
+        //   - resets on session restart (g_shadow_quality.clear() in on_session_start)
+        // Resets to 0 on any profitable exit.
+        if (tr.exitReason == "SL_HIT") {
+            static constexpr int ENGINE_CULL_SL_LIMIT = 4;
+            const std::string eng_key = tr.symbol + ":" + tr.engine;
+            auto& eq = g_shadow_quality[eng_key];
+            if (!eq.engine_culled) {
+                ++eq.engine_consec_sl;
+                if (eq.engine_consec_sl >= ENGINE_CULL_SL_LIMIT) {
+                    eq.engine_culled = true;
+                    std::cout << "\033[1;31m[ENGINE-CULLED] " << eng_key
+                              << " -- " << ENGINE_CULL_SL_LIMIT
+                              << " consecutive SL hits. Disabled until session restart.\033[0m\n";
+                    std::cout.flush();
+                } else {
+                    std::cout << "[ENGINE-SL-STREAK] " << eng_key
+                              << " consec_sl=" << eq.engine_consec_sl
+                              << "/" << ENGINE_CULL_SL_LIMIT << "\n";
+                }
+            }
+        } else if (tr.net_pnl > 0.0 && tr.exitReason != "FORCE_CLOSE") {
+            // Profitable clean exit resets the streak for this engine
+            const std::string eng_key = tr.symbol + ":" + tr.engine;
+            auto& eq = g_shadow_quality[eng_key];
+            if (eq.engine_consec_sl > 0 && !eq.engine_culled) {
+                eq.engine_consec_sl = 0;
+            }
+        }
     }
     {
         std::lock_guard<std::mutex> lk(g_perf_mtx);
@@ -3745,11 +3781,27 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
 
     // ?? Feed closed trade into adaptive risk tracker ??????????????????????????
     // hold_sec: time position was open (entryTs/exitTs are unix seconds)
+    //
+    // FORCE_CLOSE EXCLUSION: Do NOT count FORCE_CLOSE exits in Kelly/Sharpe/expectancy.
+    // FORCE_CLOSE fires on disconnect, shutdown, or mid-session restart -- the P&L
+    // reflects where price happened to be at restart, not trade outcome. Including
+    // these in win-rate poisons Kelly sizing: a restart during a winning trade looks
+    // like a random loss; a restart during a losing trade looks like a random win.
+    // Only count: SL_HIT, TP_HIT, TRAIL_HIT, BE_HIT, TIMEOUT, SCRATCH -- clean exits.
     {
         const double hold_sec = static_cast<double>(
             tr.exitTs > tr.entryTs ? tr.exitTs - tr.entryTs : 1);
-        g_adaptive_risk.record_trade(tr.symbol, tr.net_pnl, hold_sec);
-        // Drawdown velocity: track rate-of-loss in rolling 30-min window
+        const bool is_clean_exit = (tr.exitReason != "FORCE_CLOSE" &&
+                                    tr.exitReason != "SHUTDOWN"    &&
+                                    tr.exitReason != "DISCONNECT");
+        if (is_clean_exit) {
+            g_adaptive_risk.record_trade(tr.symbol, tr.net_pnl, hold_sec);
+        } else {
+            printf("[PERF-SKIP] %s %s exit=%s pnl=%.2f -- excluded from Kelly/Sharpe (not a clean exit)\n",
+                   tr.symbol.c_str(), tr.engine.c_str(), tr.exitReason.c_str(), tr.net_pnl);
+            fflush(stdout);
+        }
+        // Drawdown velocity always tracked -- FORCE_CLOSE IS a real loss if it happens
         g_adaptive_risk.dd_velocity.record_trade(nowSec(), tr.net_pnl);
     }
 
@@ -3799,6 +3851,44 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
 // Tick handler -- called for every bid/ask update
 // ?????????????????????????????????????????????????????????????????????????????
 static void on_tick(const std::string& sym, double bid, double ask) {
+    // ?? Tick spike filter ???????????????????????????????????????????????
+    // Reject ticks where mid moves > 5x slow ATR in a single step.
+    // Broker bad ticks (gold at 46420 instead of 4642) distort ATR, VWAP,
+    // and can trigger entries on garbage data. Hard reject -- drops tick
+    // entirely before any engine state is touched.
+    // Threshold: 5 * atr_slow. Gold ATR_SLOW~10pts -> threshold=50pts.
+    // A real $50 gold move in a single tick is physically impossible.
+    // Warmup: skip filter until atr_slow is populated (~100 ticks/symbol).
+    {
+        static std::mutex                              s_spike_mtx;
+        static std::unordered_map<std::string, double> s_prev_mid;
+
+        if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return;  // bad quote
+
+        const double mid = (bid + ask) * 0.5;
+        double prev = 0.0;
+        {
+            std::lock_guard<std::mutex> lk(s_spike_mtx);
+            auto it = s_prev_mid.find(sym);
+            if (it != s_prev_mid.end()) prev = it->second;
+            s_prev_mid[sym] = mid;
+        }
+
+        if (prev > 0.0) {
+            const double atr_s = g_adaptive_risk.vol_scaler.atr_slow(sym);
+            if (atr_s > 0.0) {
+                const double move      = std::fabs(mid - prev);
+                const double threshold = 5.0 * atr_s;
+                if (move > threshold) {
+                    printf("[TICK-SPIKE] %s REJECTED mid=%.5f prev=%.5f move=%.5f threshold=%.5f (5xATR_SLOW)\n",
+                           sym.c_str(), mid, prev, move, threshold);
+                    fflush(stdout);
+                    return;  // drop tick -- no engine state updated
+                }
+            }
+        }
+    }
+
     { std::lock_guard<std::mutex> lk(g_book_mtx); g_bids[sym] = bid; g_asks[sym] = ask; }
     stale_watchdog_ping(sym, bid);  // record tick + price for frozen-feed detection
 
@@ -4654,7 +4744,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         return false;
     };
 
-    auto symbol_gate = [&](const std::string& symbol, bool symbol_has_open_position) -> bool {
+    auto symbol_gate = [&](const std::string& symbol, bool symbol_has_open_position, const std::string& engine_name = "") -> bool {
         const bool shadow_mode = (g_cfg.mode == "SHADOW");
         if (symbol == "XAUUSD" && g_disable_gold_stack) return false;
         // Connection stability gate: block new entries for N seconds after reconnect.
@@ -4707,6 +4797,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     fflush(stdout);
                 }
                 return false;
+            }
+            // ?? Per-engine cull gate ???????????????????????????????????????????
+            // engine_name is passed by can_enter() callers; empty string = no gate.
+            // After ENGINE_CULL_SL_LIMIT consecutive SL_HIT the engine is blocked
+            // for the rest of the session. Logged once per 60s to avoid log spam.
+            if (!engine_name.empty()) {
+                const std::string eng_key = symbol + ":" + engine_name;
+                auto eit = g_shadow_quality.find(eng_key);
+                if (eit != g_shadow_quality.end() && eit->second.engine_culled) {
+                    static std::unordered_map<std::string,int64_t> s_cull_log;
+                    const int64_t now_cull = nowSec();
+                    if (now_cull - s_cull_log[eng_key] >= 60) {
+                        s_cull_log[eng_key] = now_cull;
+                        printf("[ENGINE-CULLED-BLOCK] %s culled -- blocked until session restart\n",
+                               eng_key.c_str());
+                        fflush(stdout);
+                    }
+                    return false;
+                }
             }
         }
         if (symbol_has_open_position) {
