@@ -396,7 +396,22 @@ public:
             m_high_risk_ticks = 0;
         }
 
-        const bool chop      = (regime == Regime::CHOP_REVERSAL);
+        // Update CHOP revocation counter -- same hysteresis pattern as HIGH_RISK.
+        // Previously: chop = instant block on any single CHOP tick.
+        // Problem: a 150pt trend leg dips into low-vol-expansion territory for
+        // 1-2 ticks, trap_risk > 0.4 tips to CHOP_REVERSAL, locked forever.
+        // Fix: require CHOP_REVOKE_TICKS consecutive CHOP ticks before blocking.
+        // If candidate is not yet stable, CHOP blocks immediately (strict, same as HR).
+        // If candidate IS stable, absorb up to CHOP_REVOKE_TICKS-1 CHOP ticks as noise.
+        if (regime == Regime::CHOP_REVERSAL && candidate_stable) {
+            ++m_chop_ticks;
+        } else {
+            m_chop_ticks = 0;
+        }
+
+        const bool chop      = candidate_stable
+            ? (m_chop_ticks >= CHOP_REVOKE_TICKS)
+            : (regime == Regime::CHOP_REVERSAL);
         // HIGH_RISK blocks if:
         //   a) candidate not yet stable (single tick is enough), OR
         //   b) candidate stable but HIGH_RISK has persisted for REVOKE_TICKS
@@ -496,6 +511,12 @@ private:
     double  m_last_stable_breakout = 0.0;
     // Consecutive HIGH_RISK ticks while candidate_stable=true -- used for revocation
     int     m_high_risk_ticks      = 0;
+    // Consecutive CHOP ticks -- CHOP now uses same hysteresis as HIGH_RISK.
+    // Root cause: a 150pt sustained downtrend tips into QUIET_COMPRESSION vol territory,
+    // trap_risk > 0.4 flips one tick to CHOP_REVERSAL, instant block, locked forever.
+    // Fix: CHOP_REVOKE_TICKS consecutive CHOP ticks required before blocking.
+    // Single CHOP ticks during a trend leg are noise -- absorbed, not acted on.
+    int     m_chop_ticks           = 0;
     // Fix 2: reduced from 4 -- supervisor was too slow to stabilise
     static constexpr int REGIME_HOLD_TICKS     = 1;  // was 2 -- single non-blocking tick enough to stabilize
     // Fix 2: minimum ms a regime must hold before switching (prevents tick-by-tick flipping)
@@ -504,6 +525,10 @@ private:
     // 5 ticks at ~1-3 ticks/sec = 2-5 seconds of sustained HIGH_RISK before revoke.
     // Single noisy ticks (1-2) are absorbed. Genuine sustained HIGH_RISK (5+) revokes.
     static constexpr int HIGH_RISK_REVOKE_TICKS = 5;
+    // CHOP must sustain for this many ticks before blocking.
+    // 8 ticks ~ 3-8 seconds. Genuine chop sustains; a trend leg dipping into
+    // low-vol classification for 1-2 ticks does not.
+    static constexpr int CHOP_REVOKE_TICKS = 8;
 };
 
 } // namespace omega
