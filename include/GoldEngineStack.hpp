@@ -682,6 +682,115 @@ public:
 };
 
 // ?????????????????????????????????????????????????????????????????????????????
+
+// =============================================================================
+// MomentumContinuationEngine
+// =============================================================================
+// Catches mid-session trend legs WITHOUT requiring a pullback.
+//
+// Problem this solves:
+//   SessionMomentum only fires at open windows (07:15-10:30, 13:15-15:30).
+//   ImpulseContinuation requires a retrace -- during strong sustained moves
+//   (e.g. 130pt crash sessions) price never pulls back so no engine fires.
+//   This engine catches those mid-trend continuation entries directly.
+//
+// Signal logic:
+//   1. Net move over NET_WINDOW (50) ticks >= NET_MIN ($8) -- genuine trend
+//   2. Price in top/bottom 30% of that range -- committed, not reversing
+//   3. Last 10 ticks net move >= RECENT_MIN ($1.50) -- still accelerating
+//   4. VWAP displacement >= VWAP_MIN ($3.00) in signal direction
+//   5. Spread <= MAX_SPREAD ($2.50)
+//   6. Cooldown 90s between entries
+//   7. Max 3 entries per trend direction
+//
+// RR: $15 TP / $6 SL = 2.5:1 -- trend legs run further than session opens.
+// =============================================================================
+class MomentumContinuationEngine : public EngineBase {
+    static constexpr int    NET_WINDOW   = 50;
+    static constexpr double NET_MIN      = 8.00;
+    static constexpr double RECENT_MIN   = 1.50;
+    static constexpr double VWAP_MIN     = 3.00;
+    static constexpr double RANGE_COMMIT = 0.30;
+    static constexpr double MAX_SPREAD   = 2.50;
+    static constexpr int    TP_TICKS     = 150;
+    static constexpr int    SL_TICKS     = 60;
+    static constexpr int    COOLDOWN_SEC = 90;
+    static constexpr int    MAX_SAME_DIR = 3;
+
+    MinMaxCircularBuffer<double, 128> history_;
+    int64_t last_signal_ts_ = 0;
+    int     same_dir_count_ = 0;
+    int     last_dir_       = 0;
+
+public:
+    MomentumContinuationEngine() : EngineBase("MomentumContinuation", 1.15) {}
+
+    void reset() override {
+        history_.clear();
+        last_signal_ts_ = 0;
+        same_dir_count_ = 0;
+        last_dir_       = 0;
+    }
+
+    Signal process(const GoldSnapshot& s) override {
+        if (!enabled_ || !s.is_valid()) return noSignal();
+        if (s.spread > MAX_SPREAD)      return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();
+
+        history_.push_back(s.mid);
+        if ((int)history_.size() < NET_WINDOW + 10) return noSignal();
+
+        const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
+        if (now_s - last_signal_ts_ < COOLDOWN_SEC) return noSignal();
+
+        // Net directional move over NET_WINDOW ticks
+        const double net = s.mid - history_[history_.size() - NET_WINDOW];
+        if (std::fabs(net) < NET_MIN) return noSignal();
+        const int dir = (net > 0) ? 1 : -1;
+
+        // Last 10 ticks must still be moving in the same direction
+        const double recent10 = s.mid - history_[history_.size() - 10];
+        if (dir == 1  && recent10 < RECENT_MIN)  return noSignal();
+        if (dir == -1 && recent10 > -RECENT_MIN) return noSignal();
+
+        // Price in top/bottom RANGE_COMMIT% of the NET_WINDOW range
+        const double hi  = history_.max();
+        const double lo  = history_.min();
+        const double rng = hi - lo;
+        if (rng <= 0.0) return noSignal();
+        const double pos = (s.mid - lo) / rng;
+        if (dir == 1  && pos < (1.0 - RANGE_COMMIT)) return noSignal();
+        if (dir == -1 && pos > RANGE_COMMIT)          return noSignal();
+
+        // VWAP displacement in trend direction
+        if (s.vwap > 0.0) {
+            const double vd = s.mid - s.vwap;
+            if (dir == 1  && vd < VWAP_MIN)  return noSignal();
+            if (dir == -1 && vd > -VWAP_MIN) return noSignal();
+        }
+
+        // Max entries per trend direction
+        if (dir != last_dir_) { same_dir_count_ = 0; last_dir_ = dir; }
+        if (same_dir_count_ >= MAX_SAME_DIR) return noSignal();
+
+        last_signal_ts_ = now_s;
+        same_dir_count_++;
+        signal_count_++;
+
+        Signal sig;
+        sig.valid      = true;
+        sig.side       = (dir == 1) ? TradeSide::LONG : TradeSide::SHORT;
+        sig.confidence = std::min(1.5, std::fabs(net) / (NET_MIN * 1.5));
+        sig.size       = 0.01;
+        sig.entry      = (dir == 1) ? s.ask : s.bid;
+        sig.tp         = TP_TICKS;
+        sig.sl         = SL_TICKS;
+        strncpy(sig.reason, dir == 1 ? "MOM_CONT_LONG" : "MOM_CONT_SHORT", 31);
+        strncpy(sig.engine, "MomentumContinuation", 31);
+        return sig;
+    }
+};
+
 // 4. IntradaySeasonalityEngine
 // -----------------------------------------------------------------------
 // UPGRADED: hourly -> half-hourly (48 buckets, |t|>5 threshold)
@@ -4039,6 +4148,11 @@ public:
         // SessionMomentum captures same directional signal at 53.3% WR +$723.
         // engines_.push_back(std::make_unique<ImpulseContinuationEngine>());
         engines_.push_back(std::make_unique<SessionMomentumEngine>());
+        // MomentumContinuation: catches mid-session trend legs WITHOUT pullback.
+        // Fills the gap between SessionMomentum (session opens only) and
+        // ImpulseContinuation (requires retrace). Active all session.
+        // Shadow for 50 trades before enabling live -- start in SHADOW mode.
+        engines_.push_back(std::make_unique<MomentumContinuationEngine>());
         // SIM: IntradaySeasonality -- 6,788T | WR=49.2% | $2,065/2yr | Sharpe=1.08
         // Fires once/hour at first tick. COMPRESSION + MEAN_REVERSION regimes.
         engines_.push_back(std::make_unique<IntradaySeasonalityEngine>());
