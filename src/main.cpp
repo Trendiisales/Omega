@@ -157,6 +157,14 @@ struct OmegaConfig {
     double min_lot_oil     = 0.01;
     double min_lot_silver  = 0.01;
     double min_lot_fx      = 0.01;
+
+    // GoldFlow compression vol floor -- hot-reloadable via omega_config.ini
+    // vol_range must exceed this (pts) for GoldFlow to enter in COMPRESSION regime.
+    // 0.8 = 1.2pt coil is valid; raise to 2.0 to require stronger compression signal.
+    // Asia-specific: gf_compression_vol_floor_asia applies 22:00-07:00 UTC only.
+    double gf_compression_vol_floor      = 0.8;
+    double gf_compression_vol_floor_asia = 0.5;  // lower floor for Asia -- thinner tape, smaller coils
+
     int    ext_ger30_id               = 0;
     int    ext_uk100_id               = 0;
     int    ext_estx50_id              = 0;
@@ -2881,6 +2889,8 @@ static void load_config(const std::string& path) {
             if (k=="min_lot_oil")          g_cfg.min_lot_oil        = safe_stod(v, k);
             if (k=="min_lot_silver")       g_cfg.min_lot_silver     = safe_stod(v, k);
             if (k=="min_lot_fx")           g_cfg.min_lot_fx         = safe_stod(v, k);
+            if (k=="gf_compression_vol_floor")      g_cfg.gf_compression_vol_floor      = safe_stod(v, k);
+            if (k=="gf_compression_vol_floor_asia") g_cfg.gf_compression_vol_floor_asia = safe_stod(v, k);
             if (k=="min_lot_gbpusd")       g_cfg.min_lot_gbpusd     = safe_stod(v, k);
             if (k=="min_lot_audusd")       g_cfg.min_lot_audusd     = safe_stod(v, k);
             if (k=="min_lot_nzdusd")       g_cfg.min_lot_nzdusd     = safe_stod(v, k);
@@ -7148,8 +7158,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool stack_enter_effective = ((stack_can_enter && gold_can_enter && !gs_trail_dir_match && !in_ny_close_noise)
                 || (gold_can_enter_trend_reentry && vol_expanding && !gs_trail_dir_match && !in_ny_close_noise)
                 || (drift_reversed && gold_can_enter && !in_ny_close_noise));  // reversals also blocked at NY close
-            const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close,
-                                                    stack_enter_effective);
+            // Pass DX.F mid for DXYDivergenceEngine -- g_macroDetector.updateDXY()
+        // is called every DX.F tick so this is fresh or 0.0 if feed not yet seen.
+        const double dx_mid_now = g_macroDetector.dxyMid();
+        const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close,
+                                                stack_enter_effective, dx_mid_now);
             if (gsig.valid) {
                 // ?? Bar indicator confirmation for GoldStack ??????????????????
                 bool gs_bar_blocked = false;
@@ -7207,8 +7220,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // ?? Confidence-scaled sizing ??????????????????????????????
                     // Scale by supervisor confidence: conf=0.45?0.65?, conf=0.80?1.08?
                     // Formula: clamp(0.40 + conf*0.85, 0.65, 1.25)
-                    const double conf_mult = std::max(0.65, std::min(1.25,
+                    double conf_mult = std::max(0.65, std::min(1.25,
                                                 0.40 + gold_sdec.confidence * 0.85));
+                    // ?? IntradaySeasonality t-stat lot scaling ???????????????
+                    // gsig.confidence encodes t-stat/10 for seasonality signals.
+                    // t=24.2 (bucket 43) -> confidence=2.42 -> mult=1.50x (cap)
+                    // t=5.1  (bucket  9) -> confidence=0.51 -> mult=1.00x (floor)
+                    // Other engines: confidence is in 0..1.5 range, formula unchanged.
+                    if (std::strcmp(gsig.engine, "IntradaySeasonality") == 0
+                        && gsig.confidence > 1.5) {
+                        // t-stat encoded as confidence/10 -- scale 0.51..2.42 -> 1.0..1.5x
+                        const double tstat = gsig.confidence;  // already t/10
+                        const double seas_mult = std::max(1.0, std::min(1.5,
+                            1.0 + (tstat - 0.51) / (2.42 - 0.51) * 0.5));
+                        conf_mult = std::max(conf_mult, seas_mult);
+                        printf("[SEAS-SIZE] bucket t=%.1f -> lot_mult=%.2fx\n",
+                               tstat * 10.0, seas_mult);
+                        fflush(stdout);
+                    }
                     const double base_lot  = compute_size("XAUUSD", gold_sl_abs, ask - bid,
                                                           gsig.size > 0.0 ? gsig.size : 0.02);
                     // ?? Regime weight: boost gold in RISK_OFF, reduce in RISK_ON ??
@@ -7398,9 +7427,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool asia_crash_bypass = (rsi_for_gate > 0.0 && rsi_for_gate < 35.0
                                             && drift_for_gate < -4.0)
                                         || (rsi_for_gate > 65.0 && drift_for_gate > 4.0);
+            // Schmitt trigger on asia_trend_ok -- hysteresis prevents flapping when
+            // drift oscillates near the threshold. Without this a drift of 2.4-2.6
+            // flips the gate on/off every few ticks, blocking entries mid-move then
+            // unblocking 2s later (too late to catch the entry).
+            // ON  threshold: drift >= 2.5 (arms the gate)
+            // OFF threshold: drift <  1.5 (must drop meaningfully before blocking again)
+            // Between 1.5-2.5: hold previous state -- no flip.
+            static thread_local bool s_asia_trend_armed = false;
+            if      (gold_ewm_drift_abs >= 2.5) s_asia_trend_armed = true;
+            else if (gold_ewm_drift_abs <  1.5) s_asia_trend_armed = false;
             const bool asia_trend_ok = !in_asia_slot
-                || asia_crash_bypass               // strong crash/rally ignores Asia drift gate
-                || (gold_ewm_drift_abs >= 2.5);   // raised 1.5->2.5: stable directional threshold
+                || asia_crash_bypass
+                || s_asia_trend_armed;
 
             // London open noise guard: 07:00-07:15 UTC -- first 15min of London open
             // has violent liquidity sweeps as Asian orders get repriced. The gold stack
@@ -8134,11 +8173,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (gf_tick_ok) {
                 const bool in_compression = (std::strcmp(gold_stack_regime, "COMPRESSION") == 0
                                           || std::strcmp(gold_stack_regime, "QUIET_COMPRESSION") == 0);
-                #ifndef GF_COMPRESSION_VOL_FLOOR_OVERRIDE
-                static constexpr double GF_COMPRESSION_VOL_FLOOR = 0.8; // pts -- lowered 2.0->0.8: with ATR=10, a 1.2pt coil is a valid breakout setup not noise
-                #else
-                static constexpr double GF_COMPRESSION_VOL_FLOOR = GF_COMPRESSION_VOL_FLOOR_OVERRIDE;
-                #endif
+                // Hot-reloadable via omega_config.ini [gold_flow] section.
+                // Asia session uses tighter floor -- thinner tape, smaller valid coils.
+                const double GF_COMPRESSION_VOL_FLOOR = in_asia_slot
+                    ? g_cfg.gf_compression_vol_floor_asia
+                    : g_cfg.gf_compression_vol_floor;
                 const double vol_range_now = g_gold_stack.vol_range();
                 // vol_range=0.00 exactly means bars not yet seeded (cold start / M15 unseeded).
                 // Do NOT block on unseeded vol -- we have no data, not zero volatility.
