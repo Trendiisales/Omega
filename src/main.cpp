@@ -3253,6 +3253,60 @@ static void maybe_reset_daily_ledger() {
     if (ti.tm_yday == g_last_ledger_utc_day) return;
     g_last_ledger_utc_day = ti.tm_yday;
 
+    // ?? MIDNIGHT FORCE-CLOSE: close all open gold positions before ledger reset ??
+    // ROOT CAUSE of recurring $844 bug: TrendPullback/GoldFlow/GoldStack positions
+    // opened in the prior session survive the midnight rollover in engine memory.
+    // When they close hours into the new day, handle_closed_trade posts their PnL
+    // into the fresh ledger -- appearing as a phantom trade with no entry log.
+    // Fix: force-close all gold positions at midnight using last known prices.
+    // This is SHADOW mode -- no broker orders needed, just clear engine state.
+    {
+        double xau_b = 0.0, xau_a = 0.0;
+        { std::lock_guard<std::mutex> lk(g_book_mtx);
+          const auto bi = g_bids.find("XAUUSD"); if (bi != g_bids.end()) xau_b = bi->second;
+          const auto ai = g_asks.find("XAUUSD"); if (ai != g_asks.end()) xau_a = ai->second; }
+        if (xau_b > 0.0 && xau_a > 0.0) {
+            auto midnight_cb = [](const omega::TradeRecord& tr) {
+                // Book into OLD day ledger (before resetDaily below) so PnL lands correctly
+                handle_closed_trade(tr);
+            };
+            const int64_t fc_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (g_trend_pb_gold.has_open_position()) {
+                g_trend_pb_gold.force_close(xau_b, xau_a, midnight_cb);
+                std::cout << "[MIDNIGHT-ROLLOVER] Force-closed TrendPullback gold position\n";
+            }
+            if (g_gold_flow.has_open_position()) {
+                g_gold_flow.force_close(xau_b, xau_a, fc_now_ms, midnight_cb);
+                std::cout << "[MIDNIGHT-ROLLOVER] Force-closed GoldFlow position\n";
+            }
+            if (g_gold_flow_reload.has_open_position()) {
+                g_gold_flow_reload.force_close(xau_b, xau_a, fc_now_ms, midnight_cb);
+                std::cout << "[MIDNIGHT-ROLLOVER] Force-closed GoldFlow reload position\n";
+            }
+            if (g_gold_stack.has_open_position()) {
+                g_gold_stack.force_close(xau_b, xau_a, g_rtt_last, midnight_cb);
+                std::cout << "[MIDNIGHT-ROLLOVER] Force-closed GoldStack position\n";
+            }
+            if (g_le_stack.has_open_position()) {
+                double xag_b = 0.0, xag_a = 0.0;
+                { std::lock_guard<std::mutex> lk(g_book_mtx);
+                  const auto bi2 = g_bids.find("XAGUSD"); if (bi2 != g_bids.end()) xag_b = bi2->second;
+                  const auto ai2 = g_asks.find("XAGUSD"); if (ai2 != g_asks.end()) xag_a = ai2->second; }
+                g_le_stack.force_close_all(xau_b, xau_a,
+                    xag_b > 0.0 ? xag_b : xau_b * 0.0185,
+                    xag_a > 0.0 ? xag_a : xau_a * 0.0185,
+                    midnight_cb);
+                std::cout << "[MIDNIGHT-ROLLOVER] Force-closed LatencyEdge positions\n";
+            }
+            std::cout.flush();
+        } else {
+            std::cout << "[MIDNIGHT-ROLLOVER] WARNING: no XAUUSD price for force-close"
+                      << " -- positions may carry into new day\n";
+            std::cout.flush();
+        }
+    }
+
     // ?? Snapshot session PnL BEFORE reset -- multiday throttle needs this ??
     // resetDaily() zeroes the ledger. We must capture the final value first.
     const double session_final_pnl = g_omegaLedger.dailyPnl();
