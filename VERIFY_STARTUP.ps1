@@ -134,7 +134,9 @@ function Find-Last {
 
 function Find-All {
     param([string]$Pattern)
-    return @($capturedLines | Where-Object { $_ -match $Pattern })
+    $r = $capturedLines | Where-Object { $_ -match $Pattern }
+    if ($null -eq $r) { return @() }
+    return @($r)
 }
 
 function Find-First {
@@ -395,7 +397,7 @@ $infoCount = ($results | Where-Object { $_.Status -eq "INFO" }).Count
 
 $reportLines = [System.Collections.Generic.List[string]]::new()
 $reportLines.Add("OMEGA STARTUP REPORT")
-$reportLines.Add("Generated : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC' -AsUTC)")
+$reportLines.Add("Generated : $([System.DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')) UTC")
 $reportLines.Add("Log file  : $LogPath")
 $reportLines.Add("Collected : $($capturedLines.Count) lines over ${WaitSec}s")
 $reportLines.Add("Result    : PASS=$passCount  FAIL=$failCount  WARN=$warnCount  INFO=$infoCount")
