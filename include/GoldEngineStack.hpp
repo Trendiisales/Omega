@@ -1606,6 +1606,17 @@ public:
 
         if (!pending_) return noSignal();
 
+        // Macro displacement gate: don't fade a spike that's going WITH a macro trend.
+        // If price is >$15 from VWAP in a direction, fading a spike in that direction
+        // is wrong -- the spike IS the trend. Only fade spikes that go AGAINST the trend.
+        if (s.vwap > 0.0) {
+            const double vwap_dist = s.mid - s.vwap;
+            // Price far below VWAP (downtrend) -- don't fade downside spikes (pending_dir_==+1 = LONG)
+            if (vwap_dist < -15.0 && pending_dir_ == +1) { pending_ = false; return noSignal(); }
+            // Price far above VWAP (uptrend) -- don't fade upside spikes (pending_dir_==-1 = SHORT)
+            if (vwap_dist >  15.0 && pending_dir_ == -1) { pending_ = false; return noSignal(); }
+        }
+
         const auto now = std::chrono::steady_clock::now();
 
         Signal sig;
@@ -2490,13 +2501,22 @@ public:
             }
         }
 
-        // Trend gate: block mean-reversion entries when EWM drift signals strong trend.
-        // Threshold |4.0| calibrated from walk-forward: MR WR 55% when trending,
-        // 63%+ when ranging. Fading a $4+ drift/tick momentum move is structurally wrong.
-        // Note: also block when drift opposes the potential signal direction:
-        //   drift > +2.0 ? don't go SHORT (momentum against)
-        //   drift < -2.0 ? don't go LONG  (momentum against)
-        if (std::fabs(ewm_drift_) > 4.0) return noSignal();  // strong trend -- no MR
+        // Trend gate: block mean-reversion entries when EWM drift signals trend.
+        // Lowered 4.0->2.0: during a 132pt macro drop EWM drift only reached -1.7
+        // (smoothed), so the old 4.0 threshold never fired and MR kept firing LONG
+        // into a raging downtrend. 2.0 is still above normal chop (0.3-0.8).
+        if (std::fabs(ewm_drift_) > 2.0) return noSignal();  // trend -- no MR
+
+        // Macro displacement gate: if price is >$15 from VWAP, this is a sustained
+        // directional move, not mean-reversion territory. Block ALL MR entries.
+        // A 132pt drop moves price $50-100 from VWAP -- MR LONG is suicide.
+        if (s.vwap > 0.0) {
+            const double vwap_dist = s.mid - s.vwap;
+            // Price far below VWAP -- block LONG MR (it's a downtrend, not oversold)
+            if (vwap_dist < -15.0) return noSignal();
+            // Price far above VWAP -- block SHORT MR (it's an uptrend)
+            if (vwap_dist >  15.0) return noSignal();
+        }
 
         history_.push_back(s.mid);
 
@@ -2514,10 +2534,10 @@ public:
         if (std::fabs(z) < Z_ENTRY) return noSignal();
 
         // Per-side drift check: don't fade momentum in the wrong direction.
-        // Going LONG when drift < -2.0 = buying into a falling trend.
-        // Going SHORT when drift > +2.0 = selling into a rising trend.
-        if (z < -Z_ENTRY && ewm_drift_ < -2.0) return noSignal();  // LONG vs bearish drift
-        if (z >  Z_ENTRY && ewm_drift_ >  2.0) return noSignal();  // SHORT vs bullish drift
+        // Lowered 2.0->1.2: at -1.7 drift the old gate didn't fire, allowing
+        // LONG MR entries into a 132pt downtrend.
+        if (z < -Z_ENTRY && ewm_drift_ < -1.2) return noSignal();  // LONG vs bearish drift
+        if (z >  Z_ENTRY && ewm_drift_ >  1.2) return noSignal();  // SHORT vs bullish drift
 
         Signal sig;
         sig.size   = 0.01;
