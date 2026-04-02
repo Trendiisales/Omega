@@ -145,6 +145,12 @@ $track = @(
     "logs/day_results.csv"
 )
 
+# Also track the date-named log directly -- latest.log is a copy but the
+# date log is the live file. This ensures Claude always reads current data.
+$dateLog = "logs/omega_$today.log"
+$dateLogFull = "$RepoRoot\logs\omega_$today.log"
+if (Test-Path $dateLogFull) { $track += $dateLog }
+
 foreach ($f in $track) {
     $fp = "$RepoRoot\$($f -replace '/', '\')"
     if (Test-Path $fp) { git add -f $f 2>&1 | Out-Null }
