@@ -3858,7 +3858,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double atr_s = g_adaptive_risk.vol_scaler.atr_slow(sym);
             if (atr_s > 0.0) {
                 const double move      = std::fabs(mid - prev);
-                const double threshold = 5.0 * atr_s;
+                // Per-symbol minimum threshold floor -- prevents near-zero atr_slow
+                // (during warmup or quiet tape) from rejecting valid ticks.
+                // Root cause: atr_slow for XAUUSD was 0.11pts -> threshold=0.54pts
+                // -> every normal gold tick-to-tick move rejected -> bars/RSI starved.
+                // Gold moves 0.5-2pts per tick normally. Floor = 5pts (50x normal tick).
+                // A real bad-tick on gold (e.g. 46420 instead of 4642) moves 800pts.
+                // FX floor = 0.002 (20 pips). Index floor = 5pts. Oil floor = 0.5pts.
+                const double min_threshold =
+                    (sym == "XAUUSD" || sym == "XAGUSD") ? 5.0   :  // gold/silver: 5pt floor
+                    (sym == "US500.F" || sym == "USTEC.F" || sym == "DJ30.F" ||
+                     sym == "NAS100"  || sym == "GER40"   || sym == "UK100"  ||
+                     sym == "ESTX50")                     ? 5.0   :  // indices: 5pt floor
+                    (sym == "USOIL.F" || sym == "BRENT")  ? 0.5   :  // oil: 0.5pt floor
+                                                            0.002;   // FX: 20 pip floor
+                const double threshold = std::max(5.0 * atr_s, min_threshold);
                 if (move > threshold) {
                     printf("[TICK-SPIKE] %s REJECTED mid=%.5f prev=%.5f move=%.5f threshold=%.5f (5xATR_SLOW)\n",
                            sym.c_str(), mid, prev, move, threshold);

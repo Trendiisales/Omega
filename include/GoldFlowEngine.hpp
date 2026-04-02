@@ -824,9 +824,11 @@ struct GoldFlowEngine {
     void save_atr_state(const std::string& path) const noexcept {
         if (m_atr_warmup_ticks < GFE_ATR_PERIOD) return;
         // Do not save a near-zero or unrealistically small ATR -- it would corrupt
-        // the next startup. Gold ATR below 3pts is dead-tape noise, not a usable seed.
-        if (m_atr < 3.0) {
-            printf("[GFE] ATR save skipped (atr=%.4f < 3.0 -- too small to be useful)\n", m_atr);
+        // the next startup. Lowered 3.0->1.5: ATR of 2.5pts during London compression
+        // is real and useful. 3.0 floor was discarding valid ATR every save cycle,
+        // meaning next startup always fell back to VIX seed instead of real recent value.
+        if (m_atr < 1.5) {
+            printf("[GFE] ATR save skipped (atr=%.4f < 1.5 -- too small to be useful)\n", m_atr);
             return;
         }
         FILE* f = fopen(path.c_str(), "w");
