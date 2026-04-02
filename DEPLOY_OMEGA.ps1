@@ -95,39 +95,10 @@ Write-Host ""
 # ------------------------------------------------------------------------------
 Write-Host "[3/9] Computing source hash..." -ForegroundColor Yellow
 
-# Walk recent commits, skip any that only touch logs/
-# This is more reliable than path-based git log which has PowerShell
-# backtick line-continuation issues on some Windows PowerShell versions.
-$sourceHash = ""
-$sourceHashShort = ""
-$recentCommits = (git log --oneline -20 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
-foreach ($commitLine in $recentCommits) {
-    if ($commitLine -notmatch '^([a-f0-9]+)\s+') { continue }
-    $shortHash = $Matches[1]
-    $fullHash  = (git rev-parse $shortHash 2>$null).Trim()
-    # Get all files this commit touches
-    $filesChanged = (git show --name-only --format="" $fullHash 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
-    $nonLogFiles  = $filesChanged | Where-Object { -not $_.StartsWith("logs/") }
-    if ($nonLogFiles) {
-        # Found a commit that touches real files -- this is our source hash
-        $sourceHash      = $fullHash
-        $sourceHashShort = $shortHash
-        break
-    }
-}
-if (-not $sourceHash) {
-    # Fallback: HEAD if nothing found in last 20 commits
-    $sourceHash = $gitHeadFull
-    $sourceHashShort = $gitHeadFull.Substring(0, 7)
-    Write-Host "      [WARN] Could not find source commit in last 20 -- using HEAD" -ForegroundColor Yellow
-}
-
-if ($sourceHash -ne $gitHeadFull) {
-    Write-Host "      [OK] SOURCE_HASH = $sourceHashShort ($sourceHash)" -ForegroundColor Green
-    Write-Host "      [NOTE] HEAD is a log-push commit -- source hash differs (expected)" -ForegroundColor Cyan
-    Write-Host "      [NOTE] Stamp will record SOURCE_HASH, not HEAD" -ForegroundColor Cyan
-} else {
-    Write-Host "      [OK] SOURCE_HASH = $sourceHashShort (HEAD = source, no log-push)" -ForegroundColor Green
+# Use HEAD directly -- one hash, always matches what was pulled and built.
+$sourceHash      = $gitHeadFull
+$sourceHashShort = $gitHeadFull.Substring(0, 7)
+Write-Host "      [OK] SOURCE_HASH = $sourceHashShort" -ForegroundColor Green
 }
 Write-Host ""
 
