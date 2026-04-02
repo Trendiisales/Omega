@@ -533,6 +533,14 @@ static std::atomic<int64_t>  g_gold_post_impulse_until{0};  // block new entries
 static std::atomic<int>      g_gold_impulse_ticks{0};          // consecutive IMPULSE ticks -- must be >=3 before GoldFlow enters on IMPULSE
 static std::atomic<int64_t>  g_gold_trail_block_until{0};    // same-dir re-entry blocked 30s after trail/BE (GoldStack)
 static std::atomic<int>       g_gold_trail_block_dir{0};      // direction that was blocked (+1=long, -1=short)
+// crash_impulse_bypass consecutive-SL cooldown
+// After GF_CRASH_BYPASS_CONSEC_SL_MAX consecutive SL_HITs while crash bypass is active,
+// bypass is blocked for GF_CRASH_BYPASS_COOLDOWN_SEC (15 min) to prevent runaway losses
+// during fake/exhausted crash impulses.
+static constexpr int     GF_CRASH_BYPASS_CONSEC_SL_MAX  = 3;
+static constexpr int64_t GF_CRASH_BYPASS_COOLDOWN_SEC   = 900;  // 15 min
+static std::atomic<int>      g_gf_crash_consec_sl{0};           // consecutive SL_HIT counter while bypass active
+static std::atomic<int64_t>  g_gf_crash_bypass_block_until{0};  // epoch sec: bypass blocked until this time
 static omega::SilverBracketEngine g_bracket_xag;
 // US equity index bracket engines -- arms both sides on compression,
 // captures the move regardless of direction. Eliminates wrong-direction losses.
@@ -8626,7 +8634,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // Also bypass during confirmed crash (RSI<35, drift<-4): the crash IS the
                 // volatility signal. Blocking GoldFlow because vol_range is stale is wrong.
                 const bool vol_unseeded  = (vol_range_now == 0.0);
-                const bool gf_crash_bypass = crash_impulse_bypass;  // RSI crash/rally bypass
+                // Gate crash bypass: blocked for 15 min after 3 consecutive SL_HITs
+                // while bypass was active (g_gf_crash_bypass_block_until set in flow_on_close).
+                const bool gf_crash_bypass = crash_impulse_bypass
+                    && (static_cast<int64_t>(std::time(nullptr)) > g_gf_crash_bypass_block_until.load());
                 // Also bypass vol floor when vwap displacement > $15 -- macro move,
                 // bars not being seeded should not block an obvious directional trade.
                 // Note: vwap_disp is defined in the bracket scope above -- recompute locally.
@@ -9026,6 +9037,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s -- reversal window open 60s\n",
                            tr.side.c_str());
                     fflush(stdout);
+                    // crash_impulse_bypass consecutive-SL cooldown:
+                    // Count every SL_HIT. If GF_CRASH_BYPASS_CONSEC_SL_MAX in a row,
+                    // block crash bypass gate for GF_CRASH_BYPASS_COOLDOWN_SEC (15 min).
+                    const int new_consec = g_gf_crash_consec_sl.fetch_add(1) + 1;
+                    if (new_consec >= GF_CRASH_BYPASS_CONSEC_SL_MAX) {
+                        const int64_t block_until = now_s + GF_CRASH_BYPASS_COOLDOWN_SEC;
+                        g_gf_crash_bypass_block_until.store(block_until);
+                        g_gf_crash_consec_sl.store(0);
+                        printf("[GF-CRASH-BYPASS-COOLDOWN] %d consecutive SL_HITs -- "
+                               "crash_impulse_bypass BLOCKED for %llds (until epoch %lld)\n",
+                               GF_CRASH_BYPASS_CONSEC_SL_MAX,
+                               static_cast<long long>(GF_CRASH_BYPASS_COOLDOWN_SEC),
+                               static_cast<long long>(block_until));
+                        fflush(stdout);
+                    }
+                } else {
+                    // Non-SL exit: reset consecutive counter -- streak broken.
+                    g_gf_crash_consec_sl.store(0);
                 }
                 // Trail/BE exit: block same-direction re-entry for 30s -- prevents
                 // immediate chasing but allows re-entry if trend continues (was 60s).
