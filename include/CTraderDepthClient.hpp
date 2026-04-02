@@ -354,11 +354,31 @@ public:
 
     // Persist bar_failed_reqs across process restarts so M1/M5 that caused
     // INVALID_REQUEST on one run don't reconnect-loop on the next run.
+    // Save bar_failed_reqs to disk.
+    // INVARIANT: only period 0 and period 1 entries are ever written.
+    // Periods 5 (M5) and 7 (M15) must NEVER be persisted -- they block the
+    // M15 tick fallback request on the next restart, causing bars to never seed.
+    // This function is the single write point for the file; enforcing the filter
+    // here means no other code path can corrupt the file regardless of what's
+    // in bar_failed_reqs in memory.
     void save_bar_failed(const std::string& path) const {
         FILE* f = fopen(path.c_str(), "w");
         if (!f) return;
-        for (const auto& k : bar_failed_reqs) fprintf(f, "%s\n", k.c_str());
+        int written = 0;
+        for (const auto& k : bar_failed_reqs) {
+            const auto colon = k.rfind(':');
+            if (colon != std::string::npos) {
+                try {
+                    const int period = std::stoi(k.substr(colon + 1));
+                    if (period != 0 && period != 1) continue;  // NEVER persist M5/M15
+                } catch (...) { continue; }
+            }
+            fprintf(f, "%s\n", k.c_str());
+            ++written;
+        }
         fclose(f);
+        printf("[CTRADER-BARS] Saved %d failed req entries (periods 5/7 excluded)\n", written);
+        fflush(stdout);
     }
     void load_bar_failed(const std::string& path) {
         FILE* f = fopen(path.c_str(), "r");
@@ -394,8 +414,10 @@ public:
             std::cout << "[CTRADER-BARS] Loaded failed req from disk: " << key << "\n";
         }
         fclose(f);
+        // Always rewrite the file on load -- guarantees it's clean even if
+        // no stale entries were found. Prevents accumulation of corrupted state.
+        save_bar_failed(path);
         if (rewrite) {
-            save_bar_failed(path);  // rewrite file without stale entries
             std::cout << "[CTRADER-BARS] Rewrote " << path << " -- removed stale period entries\n";
         }
     }
@@ -847,6 +869,8 @@ private:
                 // do NOT propagate the error upward without logging it clearly.
                 if (bar_send_idx > 0 && bar_send_idx <= bar_send_queue.size()) {
                     const auto& last_sent = bar_send_queue[bar_send_idx - 1];
+                    // Only blacklist period 0/1 on TCP drop -- never M5/M15
+                    if (last_sent.period == 0 || last_sent.period == 1) {
                     const std::string key = last_sent.name + ":" + std::to_string(last_sent.period);
                     if (!bar_failed_reqs.count(key)) {
                         bar_failed_reqs.insert(key);
@@ -854,6 +878,7 @@ private:
                         std::cerr << "[CTRADER] TCP drop after bar req " << last_sent.name
                                   << " period=" << last_sent.period << " -- marked failed, skipping on reconnect\n";
                     }
+                    } // end period 0/1 only guard
                 }
                 std::cerr << "[CTRADER] Connection error -- reconnecting\n";
                 return;
@@ -896,9 +921,12 @@ private:
                     const auto& failed = bar_send_queue[bar_send_idx - 1];
                     // Only add to failed set for INVALID_REQUEST (malformed req) -- not UNSUPPORTED
                     if (ec == "INVALID_REQUEST") {
-                        bar_failed_reqs.insert(failed.name + ":" + std::to_string(failed.period));
-                        // Only persist M1 to disk -- M5/M7 only fail on repoll (now disabled)
-                        if (failed.period == 1) {
+                        // Only insert period 0 and period 1 into bar_failed_reqs.
+                        // Periods 5 (M5) and 7 (M15) must NEVER be marked as failed --
+                        // they are valid tick data periods. If GetTrendbarsReq fails for
+                        // them, we fall back to GetTickDataReq (below), not blacklist them.
+                        if (failed.period == 0 || failed.period == 1) {
+                            bar_failed_reqs.insert(failed.name + ":" + std::to_string(failed.period));
                             save_bar_failed(bar_failed_path_);
                         }
                         // TICK FALLBACK: if GetTrendbarsReq was rejected for M5 or M15,
