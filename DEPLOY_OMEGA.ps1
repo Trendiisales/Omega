@@ -467,35 +467,16 @@ $ErrorActionPreference = $savedPrefKill
 Write-Host "  [OK] Omega not running." -ForegroundColor Green
 
 # Kill watchdog if running
-Write-Host "  Killing watchdog if running..." -ForegroundColor Yellow
 Get-Process -Name "powershell" -ErrorAction SilentlyContinue | ForEach-Object {
     $cmdline = (Get-WmiObject Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue).CommandLine
     if ($cmdline -match "OmegaWatchdog") { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
 }
-# Remove deploy sentinel
 if (Test-Path $sentinelFile) { Remove-Item $sentinelFile -Force }
 
-# Launch VERIFY_STARTUP in background first so it can tail logs during startup
-Write-Host "  Starting startup verifier in background (45s)..." -ForegroundColor Cyan
-$verifyJob = Start-Job -ScriptBlock {
-    param($dir)
-    & "$dir\VERIFY_STARTUP.ps1" -WaitSec 45 -OmegaDir $dir
-} -ArgumentList $OmegaDir
+# VERIFY_STARTUP runs in a separate window alongside Omega
+Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$OmegaDir\VERIFY_STARTUP.ps1`" -WaitSec 45 -OmegaDir `"$OmegaDir`"" -WindowStyle Normal
+Start-Sleep -Seconds 2
 
-# Small pause so verifier is ready before Omega starts writing
-Start-Sleep -Seconds 1
-
-# Launch Omega in FOREGROUND -- Ctrl+C kills it directly, no restart loop
-Write-Host "  Launching Omega.exe in foreground -- Ctrl+C to stop..." -ForegroundColor Cyan
+# Omega runs in THIS terminal -- Ctrl+C kills it directly
+Write-Host "  Launching Omega.exe -- Ctrl+C to stop..." -ForegroundColor Cyan
 & ".\Omega.exe" "omega_config.ini"
-
-# Omega exited (Ctrl+C or crash) -- collect verifier output
-Write-Host "" 
-Write-Host "  Omega stopped." -ForegroundColor Yellow
-Receive-Job $verifyJob -Wait -AutoRemoveJob | Out-Null
-
-Write-Host ""
-Write-Host "  Omega is running in background (PID $($omegaProc.Id))." -ForegroundColor Green
-Write-Host "  To stop:   taskkill /F /IM Omega.exe" -ForegroundColor DarkGray
-Write-Host "  To restart: .\QUICK_RESTART.ps1" -ForegroundColor DarkGray
-Write-Host "  To re-check: .\VERIFY_STARTUP.ps1" -ForegroundColor DarkGray
