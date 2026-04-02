@@ -826,6 +826,7 @@ struct GoldFlowEngine {
     }
     void load_atr_state(const std::string& path) noexcept {
         if (m_atr_warmup_ticks >= GFE_ATR_PERIOD) return;
+        m_atr_loaded_ = false;  // reset before attempt
         FILE* f = fopen(path.c_str(), "r");
         if (!f) return;
         double atr = 0.0, atr_ewm = 0.0, last_mid = 0.0;
@@ -854,9 +855,11 @@ struct GoldFlowEngine {
             return;
         }
 
-        // Reject if saved more than 4 hours ago -- overnight/weekend stale
-        if (age_s > 4 * 3600) {
-            printf("[GFE] ATR state rejected (age=%lldmin > 240min -- too stale, deleting)\n",
+        // Reject if saved more than 12 hours ago -- weekend stale only.
+        // 4h was rejecting overnight saves (NY close 22:00 -> London open 07:00 = 9h).
+        // 12h allows a full overnight gap while still rejecting weekend-stale files.
+        if (age_s > 12 * 3600) {
+            printf("[GFE] ATR state rejected (age=%lldmin > 720min -- too stale, deleting)\n",
                    (long long)(age_s / 60));
             remove(path.c_str());
             return;
@@ -874,6 +877,7 @@ struct GoldFlowEngine {
         m_atr_ewm          = atr_ewm > 0.0 ? atr_ewm : m_atr;
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
         m_last_mid_atr     = last_mid;
+        m_atr_loaded_      = true;  // seed() will not overwrite this
         printf("[GFE] ATR state loaded: atr=%.4f age=%lldmin\n",
                m_atr, (long long)(age_s / 60));
     }
@@ -898,6 +902,13 @@ struct GoldFlowEngine {
         // Evidence: today VIX=27, gold moved $140, 3pt seed produced a 2pt SL
         // that got stopped on the first micro-fluctuation after entry.
         // If vix_level not provided (0.0), use conservative 10pts.
+        // If ATR was successfully loaded from disk, don't overwrite it with a generic
+        // VIX-based seed. The loaded value is actual recent market ATR -- far more accurate.
+        if (m_atr_loaded_) {
+            printf("[GFE-SEED] Skipping -- ATR already loaded from disk (atr=%.4f)\n", m_atr);
+            fflush(stdout);
+            return;
+        }
         double seed_range;
         if      (vix_level <= 0.0)  seed_range = 10.0;  // unknown -- use safe default
         else if (vix_level <  15.0) seed_range =  5.0;  // quiet
@@ -976,6 +987,7 @@ private:
     double              m_last_mid_atr  = 0.0;   // previous mid for tick-range computation
     int                 m_atr_warmup_ticks = 0;  // counts ticks until GFE_ATR_PERIOD reached
     int                 m_atr_seed_lock    = 0;  // ticks remaining where EWM cannot overwrite seeded ATR
+    bool                m_atr_loaded_      = false; // true = loaded from disk, seed() must not overwrite
     int                 m_ticks_received   = 0;  // raw tick count since construction -- NEVER reset by seed/load
                                                   // used as the cold-start entry gate (see GFE_MIN_ENTRY_TICKS)
     std::deque<double>  m_atr_window;             // spread data (retained for compat)
