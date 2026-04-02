@@ -429,6 +429,11 @@ Write-Host ""
 
 Set-Location $OmegaDir
 
+# Write deploy sentinel so watchdog knows this is a deploy stop (not trade limit).
+# Watchdog checks for this file and stays in re-attach mode instead of idle.
+$sentinelFile = "C:\Omega\deploy_in_progress.flag"
+Set-Content -Path $sentinelFile -Value (Get-Date).ToString("o") -Encoding UTF8
+
 # Kill any existing Omega process -- use taskkill /T to kill entire process tree
 Write-Host "  Killing any existing Omega processes..." -ForegroundColor Yellow
 $savedPrefKill = $ErrorActionPreference
@@ -448,6 +453,9 @@ Write-Host "  [OK] Omega not running." -ForegroundColor Green
 
 # Run Omega in the FOREGROUND -- Ctrl+C kills it cleanly, no restart loop.
 Write-Host "  Launching Omega.exe in foreground (Ctrl+C to stop)..." -ForegroundColor Cyan
+# Remove deploy sentinel before starting -- watchdog will re-attach normally
+if (Test-Path $sentinelFile) { Remove-Item $sentinelFile -Force }
+
 & ".\Omega.exe" "omega_config.ini"
 Write-Host ""
 Write-Host "  Omega exited." -ForegroundColor Yellow

@@ -242,20 +242,42 @@ while ($true) {
     # -------------------------------------------------------------------------
     Write-WatchdogLog "Omega.exe exited (exit_code=$exitCode)" "WARN"
 
-    # Exit code 0 = clean shutdown / auto_disable_after_trades limit hit.
-    # Do NOT auto-restart a clean exit -- requires manual intervention.
-    if ($exitCode -eq 0) {
+    # Exit code 0 = clean shutdown. Check if this was a deploy stop (sentinel file)
+    # or a real clean exit (auto_disable_after_trades limit hit).
+    $sentinelFile = "C:\Omega\deploy_in_progress.flag"
+    $isDeployStop = (Test-Path $sentinelFile)
+
+    if ($exitCode -eq 0 -and -not $isDeployStop) {
         Write-WatchdogLog "Clean exit (code=0) -- NOT auto-restarting. This may be auto_disable_after_trades limit." "WARN"
         Write-WatchdogLog "Check logs and restart manually with START_OMEGA.ps1 when ready." "WARN"
         Send-Notification "Omega Stopped (Clean Exit)" "Exit code 0 -- possible trade limit. Manual restart required."
-        # Keep watchdog alive but idle -- it will restart if Omega is started externally
+        # Keep watchdog alive but idle -- re-attach if Omega started externally
         $omegaProc = $null
         Start-Sleep -Seconds 60
-        # Re-attach if Omega was started externally while we slept
         $reattach = Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($reattach) {
             Write-WatchdogLog "Re-attaching to externally started Omega PID $($reattach.Id)"
             $omegaProc = $reattach
+        }
+        continue
+    }
+
+    if ($isDeployStop) {
+        Write-WatchdogLog "Deploy sentinel detected -- DEPLOY_OMEGA.ps1 stopped Omega. Waiting for new process..." "INFO"
+        # Wait up to 5 minutes for deploy to finish and Omega to restart
+        $deadline = (Get-Date).AddMinutes(5)
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 5
+            $reattach = Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($reattach) {
+                Write-WatchdogLog "Deploy complete -- re-attaching to Omega PID $($reattach.Id)" "INFO"
+                $omegaProc = $reattach
+                break
+            }
+        }
+        if ($null -eq $omegaProc -or -not (Get-Process -Name "Omega" -ErrorAction SilentlyContinue)) {
+            Write-WatchdogLog "Deploy did not restart Omega within 5min -- build may have failed. Check DEPLOY_OMEGA.ps1 output." "ERROR"
+            Send-Notification "Omega Deploy Failed" "Omega did not restart after deploy. Check build output."
         }
         continue
     }
