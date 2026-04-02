@@ -1944,12 +1944,13 @@ public:
     // to bypass re-entry delay when gold is in a strong directional move.
     void force_cooldown_expire() noexcept { cooldown_until_ = 0; }
     // Live position accessors for GUI telemetry
-    bool   open_is_long() const { return pos_.is_long; }
-    double open_entry()   const { return pos_.entry;   }
-    double open_sl()      const { return pos_.sl;      }
-    double open_tp()      const { return pos_.tp;      }
-    double open_size()    const { return pos_.size;    }
-    double current_atr()  const { return atr_;         }
+    bool    open_is_long()   const { return pos_.is_long;   }
+    double  open_entry()     const { return pos_.entry;     }
+    double  open_sl()        const { return pos_.sl;        }
+    double  open_tp()        const { return pos_.tp;        }
+    double  open_size()      const { return pos_.size;      }
+    int64_t open_entry_ts()  const { return pos_.entry_ts;  }  // UTC seconds -- used for stale-position detection
+    double  current_atr()    const { return atr_;           }
 
     // ?? Bar EMA injection -- replaces tick EMAs with real M1 bar closes ???????
     // Called each tick from main.cpp when g_bars_sp/nq/ger are ready.
