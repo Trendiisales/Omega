@@ -95,9 +95,27 @@ Write-Host ""
 # ------------------------------------------------------------------------------
 Write-Host "[3/9] Computing source hash..." -ForegroundColor Yellow
 
-# Use HEAD directly -- one hash, always matches what was pulled and built.
-$sourceHash      = $gitHeadFull
-$sourceHashShort = $gitHeadFull.Substring(0, 7)
+# Walk recent commits, skip any that only touch logs/
+# Log-push commits only touch logs/ -- skip them to find real source commit.
+$sourceHash = ""
+$sourceHashShort = ""
+$recentCommits = (git log --oneline -20 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
+foreach ($commitLine in $recentCommits) {
+    if ($commitLine -notmatch "^([a-f0-9]+)\s+") { continue }
+    $shortHash = $Matches[1]
+    $fullHash  = (git rev-parse $shortHash 2>$null).Trim()
+    $filesChanged = (git show --name-only --format="" $fullHash 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
+    $nonLogFiles  = $filesChanged | Where-Object { -not $_.StartsWith("logs/") }
+    if ($nonLogFiles) {
+        $sourceHash      = $fullHash
+        $sourceHashShort = $shortHash
+        break
+    }
+}
+if (-not $sourceHash) {
+    $sourceHash      = $gitHeadFull
+    $sourceHashShort = $gitHeadFull.Substring(0, 7)
+}
 Write-Host "      [OK] SOURCE_HASH = $sourceHashShort" -ForegroundColor Green
 Write-Host ""
 
