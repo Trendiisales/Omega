@@ -1,5 +1,5 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-02 09:41:17 UTC
+Generated : 2026-04-02 09:41:26 UTC
 ============================================================
 [ATR-DAT] atr=4.075394 atr_ewm=4.075394 warmed=1 last_mid=4639.26000 saved_ts=1775117629
 [ATR-WARN] atr=4.075394 <= 5.0 -- may still be floor-pinned
