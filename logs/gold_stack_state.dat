@@ -1,7 +1,7 @@
-ewm_vol_baseline=0.135092
-baseline_vol_pct=0.135092
+ewm_vol_baseline=0.126745
+baseline_vol_pct=0.126745
 ewm_vol_init=1
-gov_ewm_fast=4667.313148
-gov_ewm_slow=4665.820519
+gov_ewm_fast=4656.522648
+gov_ewm_slow=4657.600082
 gov_ewm_init=1
-saved_ts=1775145745
+saved_ts=1775146107
