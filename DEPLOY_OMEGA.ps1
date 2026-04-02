@@ -406,6 +406,18 @@ New-Item -ItemType Directory -Path "$OmegaDir\logs"        -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\shadow" -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\trades" -Force | Out-Null
 
+# DELETE poisoned bar_failed file on every deploy.
+# This file can accumulate XAUUSD:5 and XAUUSD:7 entries which permanently
+# block M15 tick data requests, causing bars to never seed (atr=5.00 floor,
+# oversized positions, bad entries). The C++ sanitiser cleans it on startup
+# but deleting it here guarantees a clean slate before Omega even launches.
+# The file is recreated correctly on first startup with only period 0/1 entries.
+$barFailedFile = "$OmegaDir\logs\ctrader_bar_failed.txt"
+if (Test-Path $barFailedFile) {
+    Remove-Item $barFailedFile -Force
+    Write-Host "      [OK] Deleted ctrader_bar_failed.txt (will be recreated clean)" -ForegroundColor Green
+}
+
 # Push log to git AFTER stamp is validated -- correct order ensures HEAD moves
 # AFTER the source hash is captured, so the next deploy sees the right commit.
 # The log push commit (logs/latest.log only) will be HEAD, but our source hash
