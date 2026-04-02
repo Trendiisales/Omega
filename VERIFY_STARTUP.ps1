@@ -158,7 +158,7 @@ function Add-Result {
 # --- CHECK 1: ATR Seed -------------------------------------------------------
 $seedLine = Find-Last "GFE-SEED"
 if ($seedLine) {
-    if ($seedLine -match "seed_atr=([\d.]+)") {
+    if ($seedLine -match "seed_atr=([0-9.]+)") {
         $seedAtr = [double]$Matches[1]
         if ($seedAtr -le 5.0 -and $seedLine -notmatch "VIX-UNKNOWN") {
             Add-Result "ATR Seed" "WARN" "seed_atr=$seedAtr" "Low seed -- VIX may not have arrived yet. Check VIX line below."
@@ -178,7 +178,7 @@ $atrRejected= Find-All  "GFE\] ATR state rejected"
 $atrStartup = Find-Last "GFE\] Startup ATR"
 
 if ($atrLoaded) {
-    if ($atrLoaded -match "atr=([\d.]+)") {
+    if ($atrLoaded -match "atr=([0-9.]+)") {
         $loadedAtr = [double]$Matches[1]
         if ($loadedAtr -le 2.0) {
             Add-Result "ATR State" "WARN" "Loaded atr=$loadedAtr (very low)" $atrLoaded.Trim()
@@ -198,7 +198,7 @@ if ($atrLoaded) {
 $gfGateLines = Find-All "GF-GATE-BLOCK"
 $atrValues   = @()
 foreach ($l in $gfGateLines) {
-    if ($l -match "atr=([\d.]+)") { $atrValues += [double]$Matches[1] }
+    if ($l -match "atr=([0-9.]+)") { $atrValues += [double]$Matches[1] }
 }
 if ($atrValues.Count -gt 0) {
     $distinctAtrs = $atrValues | Sort-Object -Unique
@@ -208,7 +208,7 @@ if ($atrValues.Count -gt 0) {
     } elseif ($distinctAtrs[0] -le 5.0 -and $distinctAtrs.Count -eq 1) {
         Add-Result "ATR Running Value" "WARN" "atr=$($distinctAtrs[0]) (single value seen)" "Only one gate block sampled -- check again after more ticks."
     } else {
-        $atrRange = "$($distinctAtrs[0])–$($distinctAtrs[-1])"
+        $atrRange = "$($distinctAtrs[0])-$($distinctAtrs[-1])"
         Add-Result "ATR Running Value" "PASS" "atr varying $atrRange across gate checks" "NOT stuck at 5.00."
     }
 } else {
@@ -218,7 +218,7 @@ if ($atrValues.Count -gt 0) {
 # --- CHECK 4: vol_range NOT 0.00 (962ad27 seed fix) -------------------------
 $volLine = Find-Last "GOLD-DIAG.*vol_range"
 if ($volLine) {
-    if ($volLine -match "vol_range=([\d.]+)") {
+    if ($volLine -match "vol_range=([0-9.]+)") {
         $vr = [double]$Matches[1]
         if ($vr -eq 0.0) {
             Add-Result "vol_range" "FAIL" "vol_range=0.00" "Seed fix NOT working -- VolatilityFilter still using mid=3000 fallback."
@@ -248,7 +248,7 @@ if ($brkLines.Count -gt 0) {
 # --- CHECK 6: VIX level -------------------------------------------------------
 $vixTick = Find-Last "TICK.*VIX\.F"
 $omegaDiag = Find-Last "OMEGA-DIAG.*RTTp95"
-if ($vixTick -and $vixTick -match "VIX\.F ([\d.]+)/") {
+if ($vixTick -and $vixTick -match "VIX\.F ([0-9.]+)/") {
     $vix = [double]$Matches[1]
     if ($vix -le 0) {
         Add-Result "VIX Level" "WARN" "VIX.F tick seen but value=0" $vixTick.Trim()
@@ -263,10 +263,10 @@ if ($vixTick -and $vixTick -match "VIX\.F ([\d.]+)/") {
 # --- CHECK 7: Session slot & can_enter ---------------------------------------
 $lastBrk = Find-Last "GOLD-BRK-DIAG"
 if ($lastBrk) {
-    $slot      = if ($lastBrk -match "session_slot=(\d+)")  { $Matches[1] } else { "?" }
-    $canEnter  = if ($lastBrk -match "can_enter=(\d+)")     { $Matches[1] } else { "?" }
-    $canArm    = if ($lastBrk -match "can_arm=(\d+)")       { $Matches[1] } else { "?" }
-    $impBlock  = if ($lastBrk -match "impulse_block=(\d+)") { $Matches[1] } else { "?" }
+    $slot      = if ($lastBrk -match "session_slot=([0-9]+)")  { $Matches[1] } else { "?" }
+    $canEnter  = if ($lastBrk -match "can_enter=([0-9]+)")     { $Matches[1] } else { "?" }
+    $canArm    = if ($lastBrk -match "can_arm=([0-9]+)")       { $Matches[1] } else { "?" }
+    $impBlock  = if ($lastBrk -match "impulse_block=([0-9]+)") { $Matches[1] } else { "?" }
     $slotName  = switch ($slot) {
         "1" { "London open (07-09 UTC)" }
         "2" { "London core (09-12 UTC)" }
@@ -292,7 +292,7 @@ if ($lastBrk) {
 $l2Line = Find-Last "L2-STATUS"
 if ($l2Line) {
     if ($l2Line -match "ctrader_live=1") {
-        $evts = if ($l2Line -match "events=(\d+)") { $Matches[1] } else { "?" }
+        $evts = if ($l2Line -match "events=([0-9]+)") { $Matches[1] } else { "?" }
         Add-Result "L2 / cTrader Feed" "PASS" "ctrader_live=1 events=$evts" $l2Line.Trim()
     } else {
         Add-Result "L2 / cTrader Feed" "FAIL" "ctrader_live=0" "Book feed not connected -- check cTrader API credentials/connection."
@@ -304,7 +304,7 @@ if ($l2Line) {
 # --- CHECK 9: Latency ---------------------------------------------------------
 $latLine = Find-Last "OMEGA-DIAG.*RTTp95"
 if ($latLine) {
-    $rtt    = if ($latLine -match "RTTp95=([\d.]+)ms") { [double]$Matches[1] } else { -1 }
+    $rtt    = if ($latLine -match "RTTp95=([0-9.]+)ms") { [double]$Matches[1] } else { -1 }
     $latOk  = if ($latLine -match "lat_ok=(\d)")       { $Matches[1] }         else { "?" }
     if ($latOk -eq "1" -and $rtt -ge 0 -and $rtt -lt 50) {
         Add-Result "Latency" "PASS" "RTTp95=${rtt}ms lat_ok=1" $latLine.Trim()
@@ -361,7 +361,7 @@ if ($firstSignal) {
 $ghostLines = Find-All "GF-IMPULSE-GHOST.*Blocked"
 if ($ghostLines.Count -gt 0) {
     $lastGhost = $ghostLines[-1]
-    if ($lastGhost -match "only (\d+) ticks, need (\d+)") {
+    if ($lastGhost -match "only ([0-9]+) ticks, need ([0-9]+)") {
         $got = [int]$Matches[1]
         $need = [int]$Matches[2]
         if ($got -ge 1 -and $need -eq 3) {
