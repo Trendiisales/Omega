@@ -137,7 +137,7 @@ Set-Location "$OmegaDir\build"
 $savedPrefCmake = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 if ($needsReconfigure) {
-    cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1 | Out-Null
+    cmake .. -DCMAKE_BUILD_TYPE=Release "-DOMEGA_FORCE_GIT_HASH=$sourceHashShort" 2>&1 | Out-Null
 } else {
     Write-Host "      [INFO] Using existing CMake cache -- incremental build" -ForegroundColor Cyan
 }
