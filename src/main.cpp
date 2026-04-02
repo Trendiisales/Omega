@@ -9537,16 +9537,18 @@ static void quote_loop() {
                     s_last_depth_events  = depth_now;
                     s_last_depth_check_s = now_s;
 
-                    // --- Alert 2: Gold M15 bars should be bootstrapped instantly ---
-                    // bootstrap() fires on first tick so m1_ready should be true within 1s.
-                    // If not ready after 5s something is wrong with the tick feed itself.
+                    // --- Alert 2: Gold M15 bars seed from pt=2145 tick data (30-90s) ---
+                    // Only alert after 150s -- GoldFlow already bypasses bar gates at 120s.
+                    // This checks M15 bar seeding, NOT gold tick flow. Ticks always show
+                    // in [TICK] stream even when m1_ready=false (bars build separately).
                     static int64_t s_startup_s = 0;
                     if (s_startup_s == 0) s_startup_s = now_s;
                     const int64_t uptime = now_s - s_startup_s;
-                    if (!gold_seeded && uptime > 5) {
-                        std::cout << "[SYSTEM-ALERT] GOLD_BARS_UNSEEDED no gold tick received after "
-                                  << uptime << "s -- check FIX feed connection\n";
-                        g_telemetry.SetHealthAlert("GOLD FEED DEAD");
+                    if (!gold_seeded && uptime > 150) {
+                        std::cout << "[SYSTEM-ALERT] GOLD_M15_BARS_NOT_SEEDED after "
+                                  << uptime << "s -- pt=2145 response may have failed."
+                                  << " GoldFlow running without bar ATR/EMA gates.\n";
+                        g_telemetry.SetHealthAlert("GOLD BARS " + std::to_string(uptime) + "s");
                     }
 
                     // --- Alert 3: No trades during active session for 45+ minutes ---

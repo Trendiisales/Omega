@@ -753,10 +753,13 @@ private:
                     // GetTickDataReq (pt=2145) serves the same raw price history without
                     // crashing. We build OHLC bars from ticks in on_tick_data_res().
                     // period sentinels: 105=M5, 107=M15, 1=M1 (all use tick fallback now)
-                    // Window: 50 hours covers 200 M15 bars or 3000 M1 bars.
+                    // Window: 6 hours = 24 M15 bars (enough for EMA warmup).
+                    // Reduced from 50hr: 50hr of XAUUSD ticks = ~600k ticks = large payload
+                    // that delays seeding and may trigger broker size limits.
+                    // 6hr = ~72k ticks, processes in <1s, seeds 24 M15 bars instantly.
                     const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count();
-                    const int64_t from_ms = now_ms - 50LL * 3600LL * 1000LL;
+                    const int64_t from_ms = now_ms - 6LL * 3600LL * 1000LL;
                     last_bar_req_name_ = req.name;
                     const int display_period = (req.period > 100) ? (req.period - 100) : req.period;
                     send_msg(ssl, PB::get_tick_data_req(ctid_account_id, req.sid, from_ms, now_ms, 1));
