@@ -152,7 +152,7 @@ struct OmegaConfig {
     double max_lot_gold    = 0.50;   // XAUUSD max lots per trade
     double max_lot_indices = 0.20;   // SP/NQ/DJ30/NAS100/EU indices max lots
     double max_lot_oil     = 0.50;   // USOIL.F / UKBRENT max lots
-    // [SILVER-REMOVED] double max_lot_silver  = 0.20;   // XAGUSD max lots
+    double max_lot_silver  = 0.20;   // XAGUSD max lots
     double max_lot_fx      = 5.00;   // EURUSD max lots
 
     // Per-symbol minimum lot size floor.
@@ -164,7 +164,7 @@ struct OmegaConfig {
     double min_lot_gold    = 0.01;
     double min_lot_indices = 0.01;
     double min_lot_oil     = 0.01;
-    // [SILVER-REMOVED] double min_lot_silver  = 0.01;
+    double min_lot_silver  = 0.01;
     double min_lot_fx      = 0.01;
 
     // GoldFlow compression vol floor -- hot-reloadable via omega_config.ini
@@ -245,14 +245,14 @@ struct OmegaConfig {
     double oil_vix_panic              = 50.0;
 
     // Silver (XAGUSD)
-    // [SILVER-REMOVED] double silver_tp_pct               = 0.800;
-    // [SILVER-REMOVED] double silver_sl_pct               = 0.400;
-    // [SILVER-REMOVED] double silver_vol_thresh_pct       = 0.060;
-    // [SILVER-REMOVED] int    silver_min_gap_sec          = 180;
-    // [SILVER-REMOVED] double silver_momentum_thresh_pct  = 0.020;
-    // [SILVER-REMOVED] double silver_min_breakout_pct     = 0.050;
-    // [SILVER-REMOVED] double silver_max_spread_pct       = 0.120;  // 0.120% of ~$68 = ~$0.082 max. OLD: 0.080% = $0.054 -- too tight for volatile silver ($0.05-$0.13)
-    // [SILVER-REMOVED] double silver_compression_threshold = 0.85;
+    double silver_tp_pct               = 0.800;
+    double silver_sl_pct               = 0.400;
+    double silver_vol_thresh_pct       = 0.060;
+    int    silver_min_gap_sec          = 180;
+    double silver_momentum_thresh_pct  = 0.020;
+    double silver_min_breakout_pct     = 0.050;
+    double silver_max_spread_pct       = 0.120;  // 0.120% of ~$68 = ~$0.082 max. OLD: 0.080% = $0.054 -- too tight for volatile silver ($0.05-$0.13)
+    double silver_compression_threshold = 0.85;
 
     // Brent (UKBRENT)
     double brent_tp_pct                = 1.500;
@@ -423,7 +423,7 @@ static omega::Nas100Engine g_eng_nas100("NAS100");
 static omega::EuIndexEngine  g_eng_ger30("GER40");
 static omega::EuIndexEngine  g_eng_uk100("UK100");
 static omega::EuIndexEngine  g_eng_estx50("ESTX50");
-// [SILVER-REMOVED] static omega::BreakoutEngine g_eng_xag("XAGUSD");
+static omega::BreakoutEngine g_eng_xag("XAGUSD");
 static omega::BreakoutEngine g_eng_eurusd("EURUSD");
 static omega::BreakoutEngine g_eng_gbpusd("GBPUSD");
 static omega::BrentEngine    g_eng_brent("BRENT");
@@ -446,7 +446,7 @@ static omega::cross::FxCascadeEngine       g_ca_fx_cascade;
 static omega::cross::CarryUnwindEngine     g_ca_carry_unwind;
 static omega::cross::OpeningRangeEngine    g_orb_us;     // US equity 13:30 UTC
 static omega::cross::OpeningRangeEngine    g_orb_ger30;  // Xetra 08:00 UTC
-// [SILVER-REMOVED] static omega::cross::OpeningRangeEngine    g_orb_silver; // COMEX 13:30 UTC
+static omega::cross::OpeningRangeEngine    g_orb_silver; // COMEX 13:30 UTC
 static omega::cross::OpeningRangeEngine    g_orb_uk100;  // LSE 08:00 UTC, 15-min window
 static omega::cross::OpeningRangeEngine    g_orb_estx50; // Euronext 09:00 UTC, 15-min window
 
@@ -478,7 +478,7 @@ static omega::cross::NoiseBandMomentumEngine g_nbm_oil_london;   // USOIL.F -- L
 //   Sharpe=-16.23, MaxDD=$18,381, WR=31.8%, 0/24 positive months.
 // Root cause: 65% timeout rate, TP=$0.30 = 49x the actual avg 45-min move.
 // Instance retained for force_close safety only. No new entries ever.
-// [SILVER-REMOVED] static omega::cross::SilverTurtleTickEngine g_silver_turtle;  // DISABLED
+static omega::cross::SilverTurtleTickEngine g_silver_turtle;  // DISABLED
 
 // Engine 8: Trend Pullback -- EMA9/21/50 trend + pullback to EMA50 + bounce confirmation
 // Wired to: XAUUSD (gated -- no other gold position), GER40, USTEC.F, US500.F
@@ -528,7 +528,7 @@ static std::atomic<int64_t>  g_gold_post_impulse_until{0};  // block new entries
 static std::atomic<int>      g_gold_impulse_ticks{0};          // consecutive IMPULSE ticks -- must be >=3 before GoldFlow enters on IMPULSE
 static std::atomic<int64_t>  g_gold_trail_block_until{0};    // same-dir re-entry blocked 30s after trail/BE (GoldStack)
 static std::atomic<int>       g_gold_trail_block_dir{0};      // direction that was blocked (+1=long, -1=short)
-// [SILVER-REMOVED] static omega::SilverBracketEngine g_bracket_xag;
+static omega::SilverBracketEngine g_bracket_xag;
 // US equity index bracket engines -- arms both sides on compression,
 // captures the move regardless of direction. Eliminates wrong-direction losses.
 static omega::BracketEngine g_bracket_sp;
@@ -552,9 +552,9 @@ static omega::BracketEngine g_bracket_usdjpy;
 
 // Bracket trade frequency tracking
 static int      g_bracket_gold_trades_this_minute = 0;
-// [SILVER-REMOVED] static int      g_bracket_xag_trades_this_minute  = 0;
+static int      g_bracket_xag_trades_this_minute  = 0;
 static int64_t  g_bracket_gold_minute_start       = 0;
-// [SILVER-REMOVED] static int64_t  g_bracket_xag_minute_start        = 0;
+static int64_t  g_bracket_xag_minute_start        = 0;
 // Rate-limit vars for new bracket engines (shared int/int64 pairs)
 static int      g_bracket_idx_trades_this_minute  = 0;
 static int64_t  g_bracket_idx_minute_start        = 0;
@@ -730,7 +730,7 @@ static std::unordered_set<std::string> g_pyramid_clordids;
 static omega::SymbolSupervisor g_sup_sp,      g_sup_nq,     g_sup_cl;
 static omega::SymbolSupervisor g_sup_us30,    g_sup_nas100;
 static omega::SymbolSupervisor g_sup_ger30,   g_sup_uk100,  g_sup_estx50;
-// [SILVER-REMOVED] static omega::SymbolSupervisor g_sup_xag,     g_sup_eurusd, g_sup_gbpusd;
+static omega::SymbolSupervisor g_sup_xag,     g_sup_eurusd, g_sup_gbpusd;
 static omega::SymbolSupervisor g_sup_audusd,  g_sup_nzdusd, g_sup_usdjpy;
 static omega::SymbolSupervisor g_sup_brent,   g_sup_gold;
 // false-break counters per symbol (reset on cooldown / regime change)
@@ -817,7 +817,7 @@ static AtomicL2 g_l2_gold;    // XAUUSD
 static AtomicL2 g_l2_sp;      // US500.F
 static AtomicL2 g_l2_nq;      // USTEC.F
 static AtomicL2 g_l2_cl;      // USOIL.F
-// [SILVER-REMOVED] static AtomicL2 g_l2_xag;     // XAGUSD
+static AtomicL2 g_l2_xag;     // XAGUSD
 static AtomicL2 g_l2_eur;     // EURUSD
 static AtomicL2 g_l2_gbp;     // GBPUSD
 static AtomicL2 g_l2_aud;     // AUDUSD
@@ -836,7 +836,7 @@ static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
     if (sym=="US500.F")  return &g_l2_sp;
     if (sym=="USTEC.F")  return &g_l2_nq;
     if (sym=="USOIL.F")  return &g_l2_cl;
-    // [SILVER-REMOVED] if (sym=="XAGUSD")   return &g_l2_xag;
+    if (sym=="XAGUSD")   return &g_l2_xag;
     if (sym=="EURUSD")   return &g_l2_eur;
     if (sym=="GBPUSD")   return &g_l2_gbp;
     if (sym=="AUDUSD")   return &g_l2_aud;
@@ -857,7 +857,7 @@ static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
 // FIX W/X suppresses on_tick when cTrader depth is fresh (<500ms) --
 // prevents the 1pt lag from FIX gateway batching in fast markets.
 static std::atomic<int64_t> g_ct_ms_xauusd{0}, g_ct_ms_sp{0},  g_ct_ms_nq{0},
-                             // [SILVER-REMOVED] g_ct_ms_cl{0},    g_ct_ms_xag{0},  g_ct_ms_eur{0},
+                             g_ct_ms_cl{0},    g_ct_ms_xag{0},  g_ct_ms_eur{0},
                              g_ct_ms_gbp{0},   g_ct_ms_aud{0},  g_ct_ms_nzd{0},
                              g_ct_ms_jpy{0},   g_ct_ms_ger40{0},g_ct_ms_uk100{0},
                              g_ct_ms_brent{0}, g_ct_ms_nas{0},  g_ct_ms_us30{0};
@@ -867,7 +867,7 @@ static std::atomic<int64_t>* get_ctrader_tick_ms_ptr(const std::string& sym) noe
     if (sym=="US500.F") return &g_ct_ms_sp;
     if (sym=="USTEC.F") return &g_ct_ms_nq;
     if (sym=="USOIL.F") return &g_ct_ms_cl;
-    // [SILVER-REMOVED] if (sym=="XAGUSD")  return &g_ct_ms_xag;
+    if (sym=="XAGUSD")  return &g_ct_ms_xag;
     if (sym=="EURUSD")  return &g_ct_ms_eur;
     if (sym=="GBPUSD")  return &g_ct_ms_gbp;
     if (sym=="AUDUSD")  return &g_ct_ms_aud;
@@ -922,10 +922,8 @@ struct SymbolRiskState {
 struct ShadowQualityState {
     int     fast_loss_streak  = 0;
     int64_t pause_until       = 0;
-    // Per-engine consecutive SL tracking -- keyed by "symbol:engine"
-    // 4 consecutive SL_HIT -> engine culled until session restart
-    int     engine_consec_sl  = 0;
-    bool    engine_culled     = false;
+    int     engine_consec_sl  = 0;   // consecutive SL_HIT per engine key
+    bool    engine_culled     = false; // culled until session restart
 };
 static std::mutex g_sym_risk_mtx;
 static std::unordered_map<std::string, SymbolRiskState> g_sym_risk;
@@ -1664,7 +1662,7 @@ static double compute_size(const std::string& symbol,
     else if (symbol == "AUDUSD")                               { cap = g_cfg.max_lot_audusd;  flr = g_cfg.min_lot_audusd; }
     else if (symbol == "NZDUSD")                               { cap = g_cfg.max_lot_nzdusd;  flr = g_cfg.min_lot_nzdusd; }
     else if (symbol == "USDJPY")                               { cap = g_cfg.max_lot_usdjpy;  flr = g_cfg.min_lot_usdjpy; }
-    // [SILVER-REMOVED] else if (symbol == "XAGUSD")                               { cap = g_cfg.max_lot_silver;  flr = g_cfg.min_lot_silver; }
+    else if (symbol == "XAGUSD")                               { cap = g_cfg.max_lot_silver;  flr = g_cfg.min_lot_silver; }
     else if (symbol == "USOIL.F" || symbol == "BRENT")        { cap = g_cfg.max_lot_oil;     flr = g_cfg.min_lot_oil; }
     if (symbol == "NAS100") flr = std::max(flr, 0.10);
 
@@ -2066,7 +2064,7 @@ static void handle_execution_report(const std::string& msg) {
                 // CRITICAL FIX: notify bracket engines of rejection so they
                 // don't stay stuck in PENDING with no open broker position.
                 if (it->second.symbol == "XAUUSD")   g_bracket_gold.on_reject();
-                // [SILVER-REMOVED] if (it->second.symbol == "XAGUSD")   g_bracket_xag.on_reject();
+                if (it->second.symbol == "XAGUSD")   g_bracket_xag.on_reject();
                 if (it->second.symbol == "US500.F")  g_bracket_sp.on_reject();
                 if (it->second.symbol == "USTEC.F")  g_bracket_nq.on_reject();
                 if (it->second.symbol == "DJ30.F")   g_bracket_us30.on_reject();
@@ -2096,11 +2094,11 @@ static void handle_execution_report(const std::string& msg) {
                                     : g_bracket_gold.pending_long_clOrdId;
                                 if (!cancel_id.empty()) send_cancel_order(cancel_id);
                             }
-                            // [SILVER-REMOVED] if (it->second.symbol == "XAGUSD") {
-                                // [SILVER-REMOVED] g_bracket_xag.confirm_fill(is_long_fill, fill_px, fill_qty);
+                            if (it->second.symbol == "XAGUSD") {
+                                g_bracket_xag.confirm_fill(is_long_fill, fill_px, fill_qty);
                                 const std::string& cancel_id = is_long_fill
-                                    // [SILVER-REMOVED] ? g_bracket_xag.pending_short_clOrdId
-                                    // [SILVER-REMOVED] : g_bracket_xag.pending_long_clOrdId;
+                                    ? g_bracket_xag.pending_short_clOrdId
+                                    : g_bracket_xag.pending_long_clOrdId;
                                 if (!cancel_id.empty()) send_cancel_order(cancel_id);
                             }
                             auto fill_bracket = [&](auto& beng) {
@@ -2726,15 +2724,15 @@ static void apply_generic_gbpusd_config(omega::BreakoutEngine& eng) noexcept {
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
 }
 
-// [SILVER-REMOVED] static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
-    // [SILVER-REMOVED] eng.VOL_THRESH_PCT        = g_cfg.silver_vol_thresh_pct;
-    // [SILVER-REMOVED] eng.TP_PCT                = g_cfg.silver_tp_pct;
-    // [SILVER-REMOVED] eng.SL_PCT                = g_cfg.silver_sl_pct;
-    // [SILVER-REMOVED] eng.MIN_GAP_SEC           = g_cfg.silver_min_gap_sec;
-    // [SILVER-REMOVED] eng.MAX_SPREAD_PCT        = g_cfg.silver_max_spread_pct;
-    // [SILVER-REMOVED] eng.COMPRESSION_THRESHOLD = g_cfg.silver_compression_threshold;
-    // [SILVER-REMOVED] eng.MOMENTUM_THRESH_PCT   = g_cfg.silver_momentum_thresh_pct;
-    // [SILVER-REMOVED] eng.MIN_BREAKOUT_PCT      = g_cfg.silver_min_breakout_pct;
+static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
+    eng.VOL_THRESH_PCT        = g_cfg.silver_vol_thresh_pct;
+    eng.TP_PCT                = g_cfg.silver_tp_pct;
+    eng.SL_PCT                = g_cfg.silver_sl_pct;
+    eng.MIN_GAP_SEC           = g_cfg.silver_min_gap_sec;
+    eng.MAX_SPREAD_PCT        = g_cfg.silver_max_spread_pct;
+    eng.COMPRESSION_THRESHOLD = g_cfg.silver_compression_threshold;
+    eng.MOMENTUM_THRESH_PCT   = g_cfg.silver_momentum_thresh_pct;
+    eng.MIN_BREAKOUT_PCT      = g_cfg.silver_min_breakout_pct;
     eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
     eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
     eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
@@ -2895,7 +2893,7 @@ static void load_config(const std::string& path) {
             if (k=="max_lot_gold")         g_cfg.max_lot_gold       = safe_stod(v, k);
             if (k=="max_lot_indices")      g_cfg.max_lot_indices    = safe_stod(v, k);
             if (k=="max_lot_oil")          g_cfg.max_lot_oil        = safe_stod(v, k);
-            // [SILVER-REMOVED] if (k=="max_lot_silver")       g_cfg.max_lot_silver     = safe_stod(v, k);
+            if (k=="max_lot_silver")       g_cfg.max_lot_silver     = safe_stod(v, k);
             if (k=="max_lot_fx")           g_cfg.max_lot_fx         = safe_stod(v, k);
             if (k=="max_lot_gbpusd")       g_cfg.max_lot_gbpusd     = safe_stod(v, k);
             if (k=="max_lot_audusd")       g_cfg.max_lot_audusd     = safe_stod(v, k);
@@ -2904,7 +2902,7 @@ static void load_config(const std::string& path) {
             if (k=="min_lot_gold")         g_cfg.min_lot_gold       = safe_stod(v, k);
             if (k=="min_lot_indices")      g_cfg.min_lot_indices    = safe_stod(v, k);
             if (k=="min_lot_oil")          g_cfg.min_lot_oil        = safe_stod(v, k);
-            // [SILVER-REMOVED] if (k=="min_lot_silver")       g_cfg.min_lot_silver     = safe_stod(v, k);
+            if (k=="min_lot_silver")       g_cfg.min_lot_silver     = safe_stod(v, k);
             if (k=="min_lot_fx")           g_cfg.min_lot_fx         = safe_stod(v, k);
             if (k=="gf_compression_vol_floor")      g_cfg.gf_compression_vol_floor      = safe_stod(v, k);
             if (k=="gf_compression_vol_floor_asia") g_cfg.gf_compression_vol_floor_asia = safe_stod(v, k);
@@ -3000,16 +2998,16 @@ static void load_config(const std::string& path) {
             if (k=="compression_threshold") g_cfg.oil_compression_threshold = safe_stod(v, k);
             if (k=="vix_panic")             g_cfg.oil_vix_panic             = safe_stod(v, k);
         }
-        // [SILVER-REMOVED] if (section == "silver") {
-            // [SILVER-REMOVED] if (k=="tp_pct")                g_cfg.silver_tp_pct                = safe_stod(v, k);
-            // [SILVER-REMOVED] if (k=="sl_pct")                g_cfg.silver_sl_pct                = safe_stod(v, k);
-            // [SILVER-REMOVED] if (k=="vol_thresh_pct")        g_cfg.silver_vol_thresh_pct        = safe_stod(v, k);
-            // [SILVER-REMOVED] if (k=="min_gap_sec")           g_cfg.silver_min_gap_sec           = safe_stoi(v, k);
-            // [SILVER-REMOVED] if (k=="momentum_thresh_pct")   g_cfg.silver_momentum_thresh_pct   = safe_stod(v, k);
-            // [SILVER-REMOVED] if (k=="min_breakout_pct")      g_cfg.silver_min_breakout_pct      = safe_stod(v, k);
-            // [SILVER-REMOVED] if (k=="max_spread_pct")        g_cfg.silver_max_spread_pct        = safe_stod(v, k);
-            // [SILVER-REMOVED] if (k=="compression_threshold") g_cfg.silver_compression_threshold = safe_stod(v, k);
-        // [SILVER-REMOVED] }
+        if (section == "silver") {
+            if (k=="tp_pct")                g_cfg.silver_tp_pct                = safe_stod(v, k);
+            if (k=="sl_pct")                g_cfg.silver_sl_pct                = safe_stod(v, k);
+            if (k=="vol_thresh_pct")        g_cfg.silver_vol_thresh_pct        = safe_stod(v, k);
+            if (k=="min_gap_sec")           g_cfg.silver_min_gap_sec           = safe_stoi(v, k);
+            if (k=="momentum_thresh_pct")   g_cfg.silver_momentum_thresh_pct   = safe_stod(v, k);
+            if (k=="min_breakout_pct")      g_cfg.silver_min_breakout_pct      = safe_stod(v, k);
+            if (k=="max_spread_pct")        g_cfg.silver_max_spread_pct        = safe_stod(v, k);
+            if (k=="compression_threshold") g_cfg.silver_compression_threshold = safe_stod(v, k);
+        }
         if (section == "brent") {
             if (k=="tp_pct")                g_cfg.brent_tp_pct                = safe_stod(v, k);
             if (k=="sl_pct")                g_cfg.brent_sl_pct                = safe_stod(v, k);
@@ -3181,7 +3179,7 @@ static void sanitize_config() noexcept {
     g_cfg.max_lot_gold       = clampd(g_cfg.max_lot_gold,    0.01, 10.0, 0.50);
     g_cfg.max_lot_indices    = clampd(g_cfg.max_lot_indices, 0.01, 10.0, 0.20);
     g_cfg.max_lot_oil        = clampd(g_cfg.max_lot_oil,     0.01, 10.0, 0.50);
-    // [SILVER-REMOVED] g_cfg.max_lot_silver     = clampd(g_cfg.max_lot_silver,  0.01, 10.0, 0.20);
+    g_cfg.max_lot_silver     = clampd(g_cfg.max_lot_silver,  0.01, 10.0, 0.20);
     g_cfg.max_lot_fx         = clampd(g_cfg.max_lot_fx,      0.01, 50.0, 5.00);
     g_cfg.max_lot_gbpusd     = clampd(g_cfg.max_lot_gbpusd,  0.01, 50.0, 5.00);
     g_cfg.max_lot_audusd     = clampd(g_cfg.max_lot_audusd,  0.01, 50.0, 5.00);
@@ -3191,7 +3189,7 @@ static void sanitize_config() noexcept {
     g_cfg.min_lot_gold       = clampd(g_cfg.min_lot_gold,    0.0, g_cfg.max_lot_gold,    0.01);
     g_cfg.min_lot_indices    = clampd(g_cfg.min_lot_indices, 0.0, g_cfg.max_lot_indices, 0.01);
     g_cfg.min_lot_oil        = clampd(g_cfg.min_lot_oil,     0.0, g_cfg.max_lot_oil,     0.01);
-    // [SILVER-REMOVED] g_cfg.min_lot_silver     = clampd(g_cfg.min_lot_silver,  0.0, g_cfg.max_lot_silver,  0.01);
+    g_cfg.min_lot_silver     = clampd(g_cfg.min_lot_silver,  0.0, g_cfg.max_lot_silver,  0.01);
     g_cfg.min_lot_fx         = clampd(g_cfg.min_lot_fx,      0.0, g_cfg.max_lot_fx,      0.01);
     g_cfg.min_lot_gbpusd     = clampd(g_cfg.min_lot_gbpusd,  0.0, g_cfg.max_lot_gbpusd,  0.01);
     g_cfg.min_lot_audusd     = clampd(g_cfg.min_lot_audusd,  0.0, g_cfg.max_lot_audusd,  0.01);
@@ -3234,7 +3232,7 @@ static void sanitize_config() noexcept {
         // Print example sizes at current risk level so it's easy to verify on boot
         const double r = g_cfg.risk_per_trade_usd;
         const double oil_size  = std::floor(std::min(r / (0.478 * 1000.0),  g_cfg.max_lot_oil)     * 100 + 0.5) / 100;
-        // [SILVER-REMOVED] const double xag_size  = std::floor(std::min(r / (0.324 * 5000.0),  g_cfg.max_lot_silver)  * 100 + 0.5) / 100;
+        const double xag_size  = std::floor(std::min(r / (0.324 * 5000.0),  g_cfg.max_lot_silver)  * 100 + 0.5) / 100;
         const double gold_size = std::floor(std::min(r / (10.4  * 100.0),   g_cfg.max_lot_gold)    * 100 + 0.5) / 100;
         const double sp_size   = std::floor(std::min(r / (22.3  * 50.0),    g_cfg.max_lot_indices) * 100 + 0.5) / 100;
         const double nq_size   = std::floor(std::min(r / (78.0  * 20.0),    g_cfg.max_lot_indices) * 100 + 0.5) / 100;
@@ -3242,7 +3240,7 @@ static void sanitize_config() noexcept {
         std::cout << "[CONFIG] RISK-SIZING ENABLED  risk_per_trade=$" << r << "\n"
                   << "[CONFIG]   example sizes at current risk ($" << r << " max loss per trade):\n"
                   << "[CONFIG]     USOIL.F  ~" << oil_size  << " lots  (SL?$0.48, max_loss?$"  << std::round(oil_size  * 0.478 * 1000) << ")\n"
-                  // [SILVER-REMOVED] << "[CONFIG]     XAGUSD   ~" << xag_size  << " lots  (SL?$0.32, max_loss?$"  << std::round(xag_size  * 0.324 * 5000) << ")\n"
+                  << "[CONFIG]     XAGUSD   ~" << xag_size  << " lots  (SL?$0.32, max_loss?$"  << std::round(xag_size  * 0.324 * 5000) << ")\n"
                   << "[CONFIG]     XAUUSD   ~" << gold_size << " lots  (SL?$10.4, max_loss?$"  << std::round(gold_size * 10.4  * 100)  << ")\n"
                   << "[CONFIG]     US500.F  ~" << sp_size   << " lots  (SL?22.3pts@$50/pt, max_loss?$"  << std::round(sp_size   * 22.3  * 50)   << ")\n"
                   << "[CONFIG]     USTEC.F  ~" << nq_size   << " lots  (SL?78.0pts@$20/pt, max_loss?$"  << std::round(nq_size   * 78.0  * 20)   << ")\n"
@@ -3250,12 +3248,12 @@ static void sanitize_config() noexcept {
                   << "[CONFIG]   caps(max): gold=" << g_cfg.max_lot_gold
                   << " idx=" << g_cfg.max_lot_indices
                   << " oil=" << g_cfg.max_lot_oil
-                  // [SILVER-REMOVED] << " silver=" << g_cfg.max_lot_silver
+                  << " silver=" << g_cfg.max_lot_silver
                   << " fx=" << g_cfg.max_lot_fx << "\n"
                   << "[CONFIG]   floors(min): gold=" << g_cfg.min_lot_gold
                   << " idx=" << g_cfg.min_lot_indices
                   << " oil=" << g_cfg.min_lot_oil
-                  // [SILVER-REMOVED] << " silver=" << g_cfg.min_lot_silver
+                  << " silver=" << g_cfg.min_lot_silver
                   << " fx=" << g_cfg.min_lot_fx << "\n";
     } else {
         std::cout << "[CONFIG] RISK-SIZING DISABLED (risk_per_trade_usd=0) -- using fixed fallback size 0.01 lots\n";
@@ -3315,7 +3313,7 @@ static void maybe_reset_daily_ledger() {
             t.pnl *= mult; t.mfe *= mult; t.mae *= mult;
             double cps = 0.0;
             { const std::string& s = t.symbol;
-              // [SILVER-REMOVED] if (s=="XAUUSD"||s=="XAGUSD"||s=="EURUSD"||s=="GBPUSD"||
+              if (s=="XAUUSD"||s=="XAGUSD"||s=="EURUSD"||s=="GBPUSD"||
                   s=="AUDUSD"||s=="NZDUSD"||s=="USDJPY") cps = 3.0; }
             omega::apply_realistic_costs(t, cps, mult);
             g_omegaLedger.record(t);
@@ -3346,7 +3344,7 @@ static void maybe_reset_daily_ledger() {
                 std::cout << "[MIDNIGHT-ROLLOVER] Force-closed GoldStack\n";
             }
             if (g_le_stack.has_open_position()) {
-                // [SILVER-REMOVED] double xag_b=0, xag_a=0; mpx("XAGUSD", xag_b, xag_a);
+                double xag_b=0, xag_a=0; mpx("XAGUSD", xag_b, xag_a);
                 g_le_stack.force_close_all(xau_b, xau_a,
                     xag_b > 0.0 ? xag_b : xau_b * 0.0185,
                     xag_a > 0.0 ? xag_a : xau_a * 0.0185,
@@ -3369,7 +3367,7 @@ static void maybe_reset_daily_ledger() {
         mid_beng(g_eng_us30,   "DJ30.F");  mid_beng(g_eng_nas100, "NAS100");
         mid_beng(g_eng_ger30,  "GER40");   mid_beng(g_eng_uk100,  "UK100");
         mid_beng(g_eng_estx50, "ESTX50");  mid_beng(g_eng_cl,     "USOIL.F");
-        // [SILVER-REMOVED] mid_beng(g_eng_brent,  "BRENT");   mid_beng(g_eng_xag,    "XAGUSD");
+        mid_beng(g_eng_brent,  "BRENT");   mid_beng(g_eng_xag,    "XAGUSD");
         mid_beng(g_eng_eurusd, "EURUSD");  mid_beng(g_eng_gbpusd, "GBPUSD");
         mid_beng(g_eng_audusd, "AUDUSD");  mid_beng(g_eng_nzdusd, "NZDUSD");
         mid_beng(g_eng_usdjpy, "USDJPY");
@@ -3382,7 +3380,7 @@ static void maybe_reset_daily_ledger() {
             eng.forceClose(b, a, "MIDNIGHT_ROLLOVER", g_rtt_last, "", midnight_cb);
             printf("[MIDNIGHT-ROLLOVER] Force-closed Bracket %s\n", sym); fflush(stdout);
         };
-        // [SILVER-REMOVED] mid_bracket(g_bracket_gold,   "XAUUSD"); mid_bracket(g_bracket_xag,    "XAGUSD");
+        mid_bracket(g_bracket_gold,   "XAUUSD"); mid_bracket(g_bracket_xag,    "XAGUSD");
         mid_bracket(g_bracket_sp,     "US500.F"); mid_bracket(g_bracket_nq,     "USTEC.F");
         mid_bracket(g_bracket_us30,   "DJ30.F");  mid_bracket(g_bracket_nas100, "NAS100");
         mid_bracket(g_bracket_ger30,  "GER40");   mid_bracket(g_bracket_uk100,  "UK100");
@@ -3416,7 +3414,7 @@ static void maybe_reset_daily_ledger() {
         mid_ca(g_nbm_gold_london, "XAUUSD");  mid_ca(g_nbm_oil_london,  "USOIL.F");
         mid_ca(g_orb_us,          "US500.F"); mid_ca(g_orb_ger30,       "GER40");
         mid_ca(g_orb_uk100,       "UK100");   mid_ca(g_orb_estx50,      "ESTX50");
-        // [SILVER-REMOVED] mid_ca(g_orb_silver,      "XAGUSD");
+        mid_ca(g_orb_silver,      "XAGUSD");
         mid_ca(g_vwap_rev_sp,     "US500.F"); mid_ca(g_vwap_rev_nq,     "USTEC.F");
         mid_ca(g_vwap_rev_ger40,  "GER40");   mid_ca(g_vwap_rev_eurusd, "EURUSD");
         mid_ca(g_ca_esnq,         "US500.F"); mid_ca(g_ca_eia_fade,     "USOIL.F");
@@ -3515,7 +3513,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         const std::string& sym = tr.symbol;
         double max_gross_usd = 500.0;  // default
         if      (sym == "XAUUSD")  max_gross_usd = std::max(1500.0, sz * 150.0 * 100.0);
-        // [SILVER-REMOVED] else if (sym == "XAGUSD")  max_gross_usd = std::max( 600.0, sz * 500.0 *   5.0);
+        else if (sym == "XAGUSD")  max_gross_usd = std::max( 600.0, sz * 500.0 *   5.0);
         else if (sym == "US500.F") max_gross_usd = std::max( 300.0, sz * 200.0 *  50.0);
         else if (sym == "USTEC.F") max_gross_usd = std::max( 300.0, sz * 300.0 *  20.0);
         else if (sym == "DJ30.F")  max_gross_usd = std::max( 300.0, sz * 500.0 *   5.0);
@@ -3547,7 +3545,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         double cps = 0.0;
         { const std::string& s = tr.symbol;
           if (s=="EURUSD"||s=="GBPUSD"||s=="AUDUSD"||s=="NZDUSD"||
-              // [SILVER-REMOVED] s=="USDJPY"||s=="XAUUSD"||s=="XAGUSD") cps = 3.0; }
+              s=="USDJPY"||s=="XAUUSD"||s=="XAGUSD") cps = 3.0; }
         omega::apply_realistic_costs(tr, cps, mult);
         std::cout << "[PARTIAL-CLOSE] " << tr.symbol
                   << " gross=$" << std::fixed << std::setprecision(2) << tr.pnl
@@ -3582,7 +3580,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
             const std::string& s = tr.symbol;
             if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" ||
                 s == "NZDUSD" || s == "USDJPY" ||
-                // [SILVER-REMOVED] s == "XAUUSD" || s == "XAGUSD")
+                s == "XAUUSD" || s == "XAGUSD")
                 comm_per_side = 3.0;  // $3/side = $6 round-trip per lot
         }
         omega::apply_realistic_costs(tr, comm_per_side, mult);
@@ -3661,37 +3659,24 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                 --qs.fast_loss_streak;
             }
         }
-        // ?? Per-engine consecutive SL culling ???????????????????????????
-        // Tracks SL_HIT exits per engine (not FORCE_CLOSE -- those are artifacts).
-        // After ENGINE_CULL_SL_LIMIT consecutive SL hits the engine is culled:
-        //   - blocked from new entries for the rest of the session
-        //   - resets on session restart (g_shadow_quality.clear() in on_session_start)
-        // Resets to 0 on any profitable exit.
+        // Per-engine consecutive SL culling -- 4 SL_HIT in a row disables engine for session
         if (tr.exitReason == "SL_HIT") {
-            static constexpr int ENGINE_CULL_SL_LIMIT = 4;
             const std::string eng_key = tr.symbol + ":" + tr.engine;
             auto& eq = g_shadow_quality[eng_key];
             if (!eq.engine_culled) {
-                ++eq.engine_consec_sl;
-                if (eq.engine_consec_sl >= ENGINE_CULL_SL_LIMIT) {
+                if (++eq.engine_consec_sl >= 4) {
                     eq.engine_culled = true;
                     std::cout << "\033[1;31m[ENGINE-CULLED] " << eng_key
-                              << " -- " << ENGINE_CULL_SL_LIMIT
-                              << " consecutive SL hits. Disabled until session restart.\033[0m\n";
+                              << " -- 4 consecutive SL hits. Disabled until restart.\033[0m\n";
                     std::cout.flush();
                 } else {
-                    std::cout << "[ENGINE-SL-STREAK] " << eng_key
-                              << " consec_sl=" << eq.engine_consec_sl
-                              << "/" << ENGINE_CULL_SL_LIMIT << "\n";
+                    printf("[ENGINE-SL-STREAK] %s consec_sl=%d/4\n",
+                           eng_key.c_str(), eq.engine_consec_sl);
                 }
             }
         } else if (tr.net_pnl > 0.0 && tr.exitReason != "FORCE_CLOSE") {
-            // Profitable clean exit resets the streak for this engine
             const std::string eng_key = tr.symbol + ":" + tr.engine;
-            auto& eq = g_shadow_quality[eng_key];
-            if (eq.engine_consec_sl > 0 && !eq.engine_culled) {
-                eq.engine_consec_sl = 0;
-            }
+            g_shadow_quality[eng_key].engine_consec_sl = 0;
         }
     }
     {
@@ -3743,7 +3728,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         notify(g_sup_cl,     "USOIL.F"); notify(g_sup_us30,   "DJ30.F");
         notify(g_sup_nas100, "NAS100");  notify(g_sup_ger30,   "GER40");
         notify(g_sup_uk100,  "UK100");   notify(g_sup_estx50,  "ESTX50");
-        // [SILVER-REMOVED] notify(g_sup_xag,    "XAGUSD");  notify(g_sup_gold,    "XAUUSD");
+        notify(g_sup_xag,    "XAGUSD");  notify(g_sup_gold,    "XAUUSD");
         notify(g_sup_eurusd, "EURUSD");  notify(g_sup_gbpusd,  "GBPUSD");
         notify(g_sup_audusd, "AUDUSD");  notify(g_sup_nzdusd,  "NZDUSD");
         notify(g_sup_usdjpy, "USDJPY");  notify(g_sup_brent,   "BRENT");
@@ -3770,7 +3755,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_eng_ger30.ACCOUNT_EQUITY  = eq;
         g_eng_uk100.ACCOUNT_EQUITY  = eq;
         g_eng_estx50.ACCOUNT_EQUITY = eq;
-        // [SILVER-REMOVED] g_eng_xag.ACCOUNT_EQUITY    = eq;
+        g_eng_xag.ACCOUNT_EQUITY    = eq;
         g_eng_eurusd.ACCOUNT_EQUITY = eq;
         g_eng_gbpusd.ACCOUNT_EQUITY = eq;
         g_eng_audusd.ACCOUNT_EQUITY = eq;
@@ -3780,14 +3765,8 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     }
 
     // ?? Feed closed trade into adaptive risk tracker ??????????????????????????
-    // hold_sec: time position was open (entryTs/exitTs are unix seconds)
-    //
-    // FORCE_CLOSE EXCLUSION: Do NOT count FORCE_CLOSE exits in Kelly/Sharpe/expectancy.
-    // FORCE_CLOSE fires on disconnect, shutdown, or mid-session restart -- the P&L
-    // reflects where price happened to be at restart, not trade outcome. Including
-    // these in win-rate poisons Kelly sizing: a restart during a winning trade looks
-    // like a random loss; a restart during a losing trade looks like a random win.
-    // Only count: SL_HIT, TP_HIT, TRAIL_HIT, BE_HIT, TIMEOUT, SCRATCH -- clean exits.
+    // FORCE_CLOSE exits excluded from Kelly/Sharpe -- they reflect restart timing
+    // not trade outcome. Only SL_HIT, TP_HIT, TRAIL_HIT, BE_HIT, TIMEOUT, SCRATCH counted.
     {
         const double hold_sec = static_cast<double>(
             tr.exitTs > tr.entryTs ? tr.exitTs - tr.entryTs : 1);
@@ -3797,11 +3776,12 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         if (is_clean_exit) {
             g_adaptive_risk.record_trade(tr.symbol, tr.net_pnl, hold_sec);
         } else {
-            printf("[PERF-SKIP] %s %s exit=%s pnl=%.2f -- excluded from Kelly/Sharpe (not a clean exit)\n",
-                   tr.symbol.c_str(), tr.engine.c_str(), tr.exitReason.c_str(), tr.net_pnl);
+            printf("[PERF-SKIP] %s %s exit=%s pnl=%.2f -- excluded from Kelly/Sharpe\n",
+                   tr.symbol.c_str(), tr.engine.c_str(),
+                   tr.exitReason.c_str(), tr.net_pnl);
             fflush(stdout);
         }
-        // Drawdown velocity always tracked -- FORCE_CLOSE IS a real loss if it happens
+        // Drawdown velocity always tracked -- forced closes are real losses
         g_adaptive_risk.dd_velocity.record_trade(nowSec(), tr.net_pnl);
     }
 
@@ -3907,7 +3887,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if      (sym == "XAUUSD")  l2_imb = g_macro_ctx.gold_l2_imbalance;
             else if (sym == "US500.F") l2_imb = g_macro_ctx.sp_l2_imbalance;
             else if (sym == "USTEC.F") l2_imb = g_macro_ctx.nq_l2_imbalance;
-            // [SILVER-REMOVED] else if (sym == "XAGUSD")  l2_imb = g_macro_ctx.xag_l2_imbalance;
+            else if (sym == "XAGUSD")  l2_imb = g_macro_ctx.xag_l2_imbalance;
             else if (sym == "USOIL.F") l2_imb = g_macro_ctx.cl_l2_imbalance;
             else if (sym == "BRENT")   l2_imb = g_macro_ctx.brent_l2_imbalance;
             else if (sym == "EURUSD")  l2_imb = g_macro_ctx.eur_l2_imbalance;
@@ -3943,7 +3923,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "GER40")   g_eng_ger30.seed(mid);
         else if (sym == "UK100")   g_eng_uk100.seed(mid);
         else if (sym == "ESTX50")  g_eng_estx50.seed(mid);
-        // [SILVER-REMOVED] else if (sym == "XAGUSD")  g_eng_xag.seed(mid);
+        else if (sym == "XAGUSD")  g_eng_xag.seed(mid);
         else if (sym == "EURUSD")  g_eng_eurusd.seed(mid);
         else if (sym == "GBPUSD")  g_eng_gbpusd.seed(mid);
         else if (sym == "AUDUSD")  g_eng_audusd.seed(mid);
@@ -4049,9 +4029,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                          + static_cast<int>(g_bracket_gold.pos.active)
                          + static_cast<int>(g_gold_flow.has_open_position())
                          + static_cast<int>(g_gold_flow_reload.has_open_position())
-                         // [SILVER-REMOVED] + static_cast<int>(g_eng_xag.pos.active)
-                         // [SILVER-REMOVED] + static_cast<int>(g_bracket_xag.pos.active)
-                         // [SILVER-REMOVED] + static_cast<int>(g_orb_silver.has_open_position());
+                         + static_cast<int>(g_eng_xag.pos.active)
+                         + static_cast<int>(g_bracket_xag.pos.active)
+                         + static_cast<int>(g_orb_silver.has_open_position());
         const int jpy   = static_cast<int>(g_eng_usdjpy.pos.active)
                         + static_cast<int>(g_eng_audusd.pos.active)
                         + static_cast<int>(g_eng_nzdusd.pos.active)
@@ -4131,7 +4111,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.sp_l2_imbalance     = rd(g_l2_sp);
         g_macro_ctx.nq_l2_imbalance     = rd(g_l2_nq);
         g_macro_ctx.cl_l2_imbalance     = rd(g_l2_cl);
-        // [SILVER-REMOVED] g_macro_ctx.xag_l2_imbalance    = rd(g_l2_xag);
+        g_macro_ctx.xag_l2_imbalance    = rd(g_l2_xag);
         g_macro_ctx.eur_l2_imbalance    = rd(g_l2_eur);
         g_macro_ctx.gbp_l2_imbalance    = rd(g_l2_gbp);
         g_macro_ctx.aud_l2_imbalance    = rd(g_l2_aud);
@@ -4149,7 +4129,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Microprice bias -- still from cTrader atomics (FIX doesn't compute this)
     g_macro_ctx.gold_microprice_bias = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.sp_microprice_bias   = g_l2_sp.microprice_bias.load(std::memory_order_relaxed);
-    // [SILVER-REMOVED] g_macro_ctx.xag_microprice_bias  = g_l2_xag.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.xag_microprice_bias  = g_l2_xag.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.cl_microprice_bias   = g_l2_cl.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.eur_microprice_bias  = g_l2_eur.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.gbp_microprice_bias  = g_l2_gbp.microprice_bias.load(std::memory_order_relaxed);
@@ -4227,7 +4207,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     std::unordered_map<std::string, ColdSnap> cold_snap;
     {
         static constexpr const char* COLD_SYMS[] = {
-            // [SILVER-REMOVED] "XAUUSD","US500.F","XAGUSD","USOIL.F","EURUSD","GBPUSD",
+            "XAUUSD","US500.F","XAGUSD","USOIL.F","EURUSD","GBPUSD",
             "AUDUSD","NZDUSD","USDJPY","GER40","UK100","ESTX50","BRENT"
         };
         std::lock_guard<std::mutex> lk(g_l2_mtx);
@@ -4275,7 +4255,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.sp_wall_below        = b->wall_below(b->ask_count > 0 ? b->asks[0].price : 0.0);
             pushL2("US500.F", b);
         }
-        // [SILVER-REMOVED] if (const L2Book* b = getBook("XAGUSD"))  { pushL2("XAGUSD", b); }
+        if (const L2Book* b = getBook("XAGUSD"))  { pushL2("XAGUSD", b); }
         if (const L2Book* b = getBook("USOIL.F")) {
             g_macro_ctx.cl_vacuum_ask        = b->liquidity_vacuum_ask();
             g_macro_ctx.cl_vacuum_bid        = b->liquidity_vacuum_bid();
@@ -4342,7 +4322,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         upd_cvd(g_macro_ctx.nq_cvd_dir,     dummy_b,  dummy_b2,  "USTEC.F");
         upd_cvd(g_macro_ctx.eurusd_cvd_dir, dummy_b,  dummy_b2,  "EURUSD");
         upd_cvd(g_macro_ctx.usdjpy_cvd_dir, dummy_b,  dummy_b2,  "USDJPY");
-        // [SILVER-REMOVED] upd_cvd(g_macro_ctx.xagusd_cvd_dir, dummy_b,  dummy_b2,  "XAGUSD");
+        upd_cvd(g_macro_ctx.xagusd_cvd_dir, dummy_b,  dummy_b2,  "XAGUSD");
     }
 
     // Push L2 imbalance snapshot to telemetry
@@ -4350,7 +4330,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.sp_l2_imbalance,  g_macro_ctx.nq_l2_imbalance,
         g_macro_ctx.us30_l2_imbalance,g_macro_ctx.nas_l2_imbalance,
         g_macro_ctx.cl_l2_imbalance,  g_macro_ctx.brent_l2_imbalance,
-        // [SILVER-REMOVED] g_macro_ctx.gold_l2_imbalance,g_macro_ctx.xag_l2_imbalance,
+        g_macro_ctx.gold_l2_imbalance,g_macro_ctx.xag_l2_imbalance,
         g_macro_ctx.ger40_l2_imbalance,g_macro_ctx.uk100_l2_imbalance,
         g_macro_ctx.estx50_l2_imbalance,
         g_macro_ctx.eur_l2_imbalance, g_macro_ctx.gbp_l2_imbalance,
@@ -4429,7 +4409,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         total += be_pnl(g_eng_ger30.pos,  "GER40");
         total += be_pnl(g_eng_uk100.pos,  "UK100");
         total += be_pnl(g_eng_estx50.pos, "ESTX50");
-        // [SILVER-REMOVED] total += be_pnl(g_eng_xag.pos,    "XAGUSD");
+        total += be_pnl(g_eng_xag.pos,    "XAGUSD");
         total += be_pnl(g_eng_eurusd.pos, "EURUSD");
         total += be_pnl(g_eng_gbpusd.pos, "GBPUSD");
         total += be_pnl(g_eng_audusd.pos, "AUDUSD");
@@ -4445,7 +4425,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         total += be_pnl(g_bracket_ger30.pos,  "GER40");
         total += be_pnl(g_bracket_uk100.pos,  "UK100");
         total += be_pnl(g_bracket_estx50.pos, "ESTX50");
-        // [SILVER-REMOVED] total += be_pnl(g_bracket_xag.pos,    "XAGUSD");
+        total += be_pnl(g_bracket_xag.pos,    "XAGUSD");
         total += be_pnl(g_bracket_gold.pos,   "XAUUSD");
         total += be_pnl(g_bracket_brent.pos,  "BRENT");
         total += be_pnl(g_bracket_eurusd.pos, "EURUSD");
@@ -4645,10 +4625,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 push_live_trade("BRENT","Bracket", g_bracket_brent.pos.is_long,
                     g_bracket_brent.pos.entry, g_bracket_brent.pos.tp, g_bracket_brent.pos.sl,
                     g_bracket_brent.pos.size, g_bracket_brent.pos.entry_ts);
-            // [SILVER-REMOVED] if (g_eng_xag.pos.active)
-                // [SILVER-REMOVED] push_live_trade("XAGUSD","BE", g_eng_xag.pos.is_long,
-                    // [SILVER-REMOVED] g_eng_xag.pos.entry, g_eng_xag.pos.tp, g_eng_xag.pos.sl,
-                    // [SILVER-REMOVED] g_eng_xag.pos.size, g_eng_xag.pos.entry_ts);
+            if (g_eng_xag.pos.active)
+                push_live_trade("XAGUSD","BE", g_eng_xag.pos.is_long,
+                    g_eng_xag.pos.entry, g_eng_xag.pos.tp, g_eng_xag.pos.sl,
+                    g_eng_xag.pos.size, g_eng_xag.pos.entry_ts);
             if (g_nbm_oil_london.has_open_position())
                 push_live_trade("USOIL.F","NBM-London", g_nbm_oil_london.open_is_long(),
                     g_nbm_oil_london.open_entry(), 0.0, 0.0, g_nbm_oil_london.open_size(), (int64_t)std::time(nullptr));
@@ -4798,25 +4778,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
                 return false;
             }
-            // ?? Per-engine cull gate ???????????????????????????????????????????
-            // engine_name is passed by can_enter() callers; empty string = no gate.
-            // After ENGINE_CULL_SL_LIMIT consecutive SL_HIT the engine is blocked
-            // for the rest of the session. Logged once per 60s to avoid log spam.
-            if (!engine_name.empty()) {
-                const std::string eng_key = symbol + ":" + engine_name;
-                auto eit = g_shadow_quality.find(eng_key);
-                if (eit != g_shadow_quality.end() && eit->second.engine_culled) {
-                    static std::unordered_map<std::string,int64_t> s_cull_log;
-                    const int64_t now_cull = nowSec();
-                    if (now_cull - s_cull_log[eng_key] >= 60) {
-                        s_cull_log[eng_key] = now_cull;
-                        printf("[ENGINE-CULLED-BLOCK] %s culled -- blocked until session restart\n",
-                               eng_key.c_str());
-                        fflush(stdout);
-                    }
-                    return false;
-                }
-            }
         }
         if (symbol_has_open_position) {
             // Do NOT increment g_gov_pos here -- this fires every tick while any
@@ -4836,8 +4797,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_eng_ger30.pos.active) +
                 static_cast<int>(g_eng_uk100.pos.active) +
                 static_cast<int>(g_eng_estx50.pos.active) +
-                // [SILVER-REMOVED] static_cast<int>(g_eng_xag.pos.active) +
-                // [SILVER-REMOVED] static_cast<int>(g_bracket_xag.pos.active) +
+                static_cast<int>(g_eng_xag.pos.active) +
+                static_cast<int>(g_bracket_xag.pos.active) +
                 static_cast<int>(g_bracket_gold.pos.active) +
                 static_cast<int>(g_bracket_sp.pos.active) +
                 static_cast<int>(g_bracket_nq.pos.active) +
@@ -4859,7 +4820,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static_cast<int>(g_ca_carry_unwind.has_open_position()) +
                 static_cast<int>(g_orb_us.has_open_position()) +
                 static_cast<int>(g_orb_ger30.has_open_position()) +
-                // [SILVER-REMOVED] static_cast<int>(g_orb_silver.has_open_position()) +
+                static_cast<int>(g_orb_silver.has_open_position()) +
                 static_cast<int>(g_orb_uk100.has_open_position()) +
                 static_cast<int>(g_orb_estx50.has_open_position()) +
                 static_cast<int>(g_vwap_rev_sp.has_open_position()) +
@@ -5088,8 +5049,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_eng_ger30.pos.active) +
             static_cast<int>(g_eng_uk100.pos.active) +
             static_cast<int>(g_eng_estx50.pos.active) +
-            // [SILVER-REMOVED] static_cast<int>(g_eng_xag.pos.active) +
-            // [SILVER-REMOVED] static_cast<int>(g_bracket_xag.pos.active) +
+            static_cast<int>(g_eng_xag.pos.active) +
+            static_cast<int>(g_bracket_xag.pos.active) +
             static_cast<int>(g_bracket_gold.pos.active) +
             static_cast<int>(g_bracket_sp.pos.active) +
             static_cast<int>(g_bracket_nq.pos.active) +
@@ -5111,7 +5072,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static_cast<int>(g_ca_carry_unwind.has_open_position()) +
             static_cast<int>(g_orb_us.has_open_position()) +
             static_cast<int>(g_orb_ger30.has_open_position()) +
-            // [SILVER-REMOVED] static_cast<int>(g_orb_silver.has_open_position()) +
+            static_cast<int>(g_orb_silver.has_open_position()) +
             static_cast<int>(g_orb_uk100.has_open_position()) +
             static_cast<int>(g_orb_estx50.has_open_position()) +
             static_cast<int>(g_vwap_rev_sp.has_open_position()) +
@@ -5807,7 +5768,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     bkt_microprice  = g_macro_ctx.cl_microprice_bias;
                     bkt_vac_ask     = g_macro_ctx.cl_vacuum_ask;
                     bkt_vac_bid     = g_macro_ctx.cl_vacuum_bid;
-                // [SILVER-REMOVED] } else if (sv_bkt == "XAGUSD") {
+                } else if (sv_bkt == "XAGUSD") {
                     bkt_microprice  = g_macro_ctx.xag_microprice_bias;
                     bkt_vac_ask     = bkt_l2_imb < 0.30;
                     bkt_vac_bid     = bkt_l2_imb > 0.70;
@@ -6031,7 +5992,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             ec = EC::US_EQUITY_BREAKOUT;
         else if (sv == "GER40" || sv == "UK100" || sv == "ESTX50")
             ec = EC::EU_EQUITY_BREAKOUT;
-        // [SILVER-REMOVED] else if (sv == "XAGUSD")
+        else if (sv == "XAGUSD")
             ec = EC::SILVER_BREAKOUT;
         else if (sv == "USOIL.F" || sv == "BRENT")
             ec = EC::OIL_BREAKOUT;
@@ -6076,7 +6037,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             else if (sv == "GER40")    vwap = g_eng_ger30.vwap();
             else if (sv == "UK100")    vwap = g_eng_uk100.vwap();
             else if (sv == "ESTX50")   vwap = g_eng_estx50.vwap();
-            // [SILVER-REMOVED] else if (sv == "XAGUSD")   vwap = g_eng_xag.vwap();
+            else if (sv == "XAGUSD")   vwap = g_eng_xag.vwap();
             else if (sv == "EURUSD")   vwap = g_eng_eurusd.vwap();
             else if (sv == "GBPUSD")   vwap = g_eng_gbpusd.vwap();
             else if (sv == "AUDUSD")   vwap = g_eng_audusd.vwap();
@@ -6121,9 +6082,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 l2_imbalance    = (sv == "US500.F") ? g_macro_ctx.sp_l2_imbalance : g_macro_ctx.nq_l2_imbalance;
                 vacuum_in_dir   = is_long ? g_macro_ctx.sp_vacuum_ask : g_macro_ctx.sp_vacuum_bid;
                 wall_to_tp      = is_long ? g_macro_ctx.sp_wall_above : g_macro_ctx.sp_wall_below;
-            // [SILVER-REMOVED] } else if (sv == "XAGUSD") {
-                // [SILVER-REMOVED] microprice_bias = g_macro_ctx.xag_microprice_bias;
-                // [SILVER-REMOVED] l2_imbalance    = g_macro_ctx.xag_l2_imbalance;
+            } else if (sv == "XAGUSD") {
+                microprice_bias = g_macro_ctx.xag_microprice_bias;
+                l2_imbalance    = g_macro_ctx.xag_l2_imbalance;
                 // Silver: no vacuum/wall in MacroContext yet -- use L2 imbalance as proxy
                 vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
             } else if (sv == "USOIL.F" || sv == "BRENT") {
@@ -9354,7 +9315,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         chk(g_eng_ger30,  "GER40");
         chk(g_eng_uk100,  "UK100");
         chk(g_eng_estx50, "ESTX50");
-        // [SILVER-REMOVED] chk(g_eng_xag,    "XAGUSD");
+        chk(g_eng_xag,    "XAGUSD");
         chk(g_eng_eurusd, "EURUSD");
         chk(g_eng_gbpusd, "GBPUSD");
         chk(g_eng_audusd, "AUDUSD");
@@ -9391,7 +9352,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double orb_ger_mid   = (g_orb_ger30.range_high() + g_orb_ger30.range_low())  > 0.0 ? (g_orb_ger30.range_high() + g_orb_ger30.range_low())  * 0.5 : 0.0;
         const double orb_uk_mid    = (g_orb_uk100.range_high()  + g_orb_uk100.range_low())  > 0.0 ? (g_orb_uk100.range_high()  + g_orb_uk100.range_low())  * 0.5 : 0.0;
         const double orb_estx_mid  = (g_orb_estx50.range_high() + g_orb_estx50.range_low()) > 0.0 ? (g_orb_estx50.range_high() + g_orb_estx50.range_low()) * 0.5 : 0.0;
-        // [SILVER-REMOVED] const double orb_xag_mid   = (g_orb_silver.range_high() + g_orb_silver.range_low()) > 0.0 ? (g_orb_silver.range_high() + g_orb_silver.range_low()) * 0.5 : 0.0;
+        const double orb_xag_mid   = (g_orb_silver.range_high() + g_orb_silver.range_low()) > 0.0 ? (g_orb_silver.range_high() + g_orb_silver.range_low()) * 0.5 : 0.0;
 
         auto ca = [&](const char* nm, const char* sym, bool act, bool lng,
                       double ent, double tp, double sl, double ref, int sigs) {
@@ -9403,7 +9364,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         ca("ORB_GER40", "GER40",   g_orb_ger30.has_open_position(),  false, 0,0,0, orb_ger_mid,  0);
         ca("ORB_UK100", "UK100",   g_orb_uk100.has_open_position(),  false, 0,0,0, orb_uk_mid,   0);
         ca("ORB_ESTX50","ESTX50",  g_orb_estx50.has_open_position(), false, 0,0,0, orb_estx_mid, 0);
-        // [SILVER-REMOVED] ca("ORB_XAG",   "XAGUSD",  g_orb_silver.has_open_position(), false, 0,0,0, orb_xag_mid,  0);
+        ca("ORB_XAG",   "XAGUSD",  g_orb_silver.has_open_position(), false, 0,0,0, orb_xag_mid,  0);
 
         // VWAP Reversion -- capture VWAP proxy per instrument
         // SP/NQ share the US ORB range mid; GER40 uses Xetra ORB; EUR uses daily open static
@@ -9486,7 +9447,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             add_bkt(sn->cl_phase,     "USOIL.F");
             add_bkt(sn->xau_phase,    "XAUUSD");
             add_bkt(sn->brent_phase,  "BRENT");
-            // [SILVER-REMOVED] add_bkt(sn->xag_phase,    "XAGUSD");
+            add_bkt(sn->xag_phase,    "XAGUSD");
             add_bkt(sn->eurusd_phase, "EURUSD");
             add_bkt(sn->gbpusd_phase, "GBPUSD");
             add_bkt(sn->audusd_phase, "AUDUSD");
@@ -9499,7 +9460,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             add_bkt(sn->bkt_ger.phase,   "GER40");
             add_bkt(sn->bkt_uk.phase,    "UK100");
             add_bkt(sn->bkt_estx.phase,  "ESTX50");
-            // [SILVER-REMOVED] add_bkt(sn->bkt_xag.phase,   "XAGUSD");
+            add_bkt(sn->bkt_xag.phase,   "XAGUSD");
             add_bkt(sn->bkt_gold.phase,  "XAUUSD");
             add_bkt(sn->bkt_eur.phase,   "EURUSD");
             add_bkt(sn->bkt_gbp.phase,   "GBPUSD");
@@ -9557,7 +9518,7 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         // would fire immediately on the first qualifying tick post-reconnect.
         g_orb_us.reset_range();    g_orb_ger30.reset_range();
         g_orb_uk100.reset_range(); g_orb_estx50.reset_range();
-        // [SILVER-REMOVED] g_orb_silver.reset_range();
+        g_orb_silver.reset_range();
         g_md_subscribed.store(false);  // clear -- fresh session, not yet subscribed
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
         const std::string md = fix_build_md_subscribe_all(g_quote_seq++);
@@ -10486,7 +10447,7 @@ static void quote_loop() {
             stale_beng(g_eng_estx50, "ESTX50");
             stale_beng(g_eng_cl,     "USOIL.F");
             stale_beng(g_eng_brent,  "BRENT");
-            // [SILVER-REMOVED] stale_beng(g_eng_xag,    "XAGUSD");
+            stale_beng(g_eng_xag,    "XAGUSD");
             stale_beng(g_eng_eurusd, "EURUSD");
             stale_beng(g_eng_gbpusd, "GBPUSD");
             stale_beng(g_eng_audusd, "AUDUSD");
@@ -10494,7 +10455,7 @@ static void quote_loop() {
             stale_beng(g_eng_usdjpy, "USDJPY");
             // -- Bracket engines --
             stale_bracket(g_bracket_gold,   "XAUUSD");
-            // [SILVER-REMOVED] stale_bracket(g_bracket_xag,    "XAGUSD");
+            stale_bracket(g_bracket_xag,    "XAGUSD");
             stale_bracket(g_bracket_sp,     "US500.F");
             stale_bracket(g_bracket_nq,     "USTEC.F");
             stale_bracket(g_bracket_us30,   "DJ30.F");
@@ -10519,7 +10480,7 @@ static void quote_loop() {
             stale_ca(g_orb_ger30,       "GER40");
             stale_ca(g_orb_uk100,       "UK100");
             stale_ca(g_orb_estx50,      "ESTX50");
-            // [SILVER-REMOVED] stale_ca(g_orb_silver,      "XAGUSD");
+            stale_ca(g_orb_silver,      "XAGUSD");
             stale_ca(g_vwap_rev_sp,     "US500.F");
             stale_ca(g_vwap_rev_nq,     "USTEC.F");
             stale_ca(g_vwap_rev_ger40,  "GER40");
@@ -10594,7 +10555,7 @@ static void quote_loop() {
         fc_snap(g_eng_cl,     "USOIL.F"); fc_snap(g_eng_us30,  "DJ30.F");
         fc_snap(g_eng_nas100, "NAS100");  fc_snap(g_eng_ger30, "GER40");
         fc_snap(g_eng_uk100,  "UK100");   fc_snap(g_eng_estx50,"ESTX50");
-        // [SILVER-REMOVED] fc_snap(g_eng_xag,    "XAGUSD"); fc_snap(g_eng_eurusd, "EURUSD");
+        fc_snap(g_eng_xag,    "XAGUSD"); fc_snap(g_eng_eurusd, "EURUSD");
         fc_snap(g_eng_gbpusd, "GBPUSD"); fc_snap(g_eng_audusd, "AUDUSD");
         fc_snap(g_eng_nzdusd, "NZDUSD"); fc_snap(g_eng_usdjpy, "USDJPY");
         fc_snap(g_eng_brent,  "BRENT");
@@ -10603,9 +10564,9 @@ static void quote_loop() {
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
           g_bracket_gold.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",shutdown_cb); }
-        // [SILVER-REMOVED] { double b=0,a=0; snap_px("XAGUSD",b,a);
-          // [SILVER-REMOVED] if(b<=0){b=1;a=1;}
-          // [SILVER-REMOVED] g_bracket_xag.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",shutdown_cb); }
+        { double b=0,a=0; snap_px("XAGUSD",b,a);
+          if(b<=0){b=1;a=1;}
+          g_bracket_xag.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",shutdown_cb); }
 
         // Index/FX/Oil bracket engines
         fc_bracket_snap(g_bracket_sp,     "US500.F");
@@ -10632,9 +10593,9 @@ static void quote_loop() {
           g_gold_flow_reload.force_close(b,a,now_ms_sd,shutdown_cb); }
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
-          // [SILVER-REMOVED] double s_bid=0,s_ask=0; snap_px("XAGUSD",s_bid,s_ask);
-          // [SILVER-REMOVED] if(s_bid<=0){s_bid=b*0.0185;s_ask=a*0.0185;}
-          // [SILVER-REMOVED] g_le_stack.force_close_all(b,a,s_bid,s_ask,g_rtt_last,
+          double s_bid=0,s_ask=0; snap_px("XAGUSD",s_bid,s_ask);
+          if(s_bid<=0){s_bid=b*0.0185;s_ask=a*0.0185;}
+          g_le_stack.force_close_all(b,a,s_bid,s_ask,g_rtt_last,
               [&](const omega::TradeRecord& tr){shutdown_cb(tr);}); }
 
         // Cross-asset engines (VWAP, TrendPB, ORB, Carry, etc.)
@@ -10647,7 +10608,7 @@ static void quote_loop() {
           snap_px("GER40",b,a);   if(b>0&&a>0){g_orb_ger30.force_close(b,a,shutdown_cb);g_vwap_rev_ger40.force_close(b,a,shutdown_cb);g_trend_pb_ger40.force_close(b,a,shutdown_cb);}
           snap_px("XAUUSD",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb);g_nbm_gold_london.force_close(b,a,shutdown_cb);}
           snap_px("USOIL.F",b,a); if(b>0&&a>0){g_nbm_oil_london.force_close(b,a,shutdown_cb);}  // London NBM oil
-          // [SILVER-REMOVED] snap_px("XAGUSD",b,a);  if(b>0&&a>0){g_orb_silver.force_close(b,a,shutdown_cb);}
+          snap_px("XAGUSD",b,a);  if(b>0&&a>0){g_orb_silver.force_close(b,a,shutdown_cb);}
           snap_px("UK100",b,a);   if(b>0&&a>0){g_orb_uk100.force_close(b,a,shutdown_cb);}
           snap_px("ESTX50",b,a);  if(b>0&&a>0){g_orb_estx50.force_close(b,a,shutdown_cb);}
           snap_px("USOIL.F",b,a); if(b>0&&a>0){g_ca_eia_fade.force_close(b,a,shutdown_cb);g_ca_brent_wti.force_close(b,a,shutdown_cb);}
@@ -10700,7 +10661,7 @@ static void quote_loop() {
             sfc(g_eng_sp,"US500.F"); sfc(g_eng_nq,"USTEC.F"); sfc(g_eng_cl,"USOIL.F");
             sfc(g_eng_us30,"DJ30.F"); sfc(g_eng_nas100,"NAS100");
             sfc(g_eng_ger30,"GER40"); sfc(g_eng_uk100,"UK100"); sfc(g_eng_estx50,"ESTX50");
-            // [SILVER-REMOVED] sfc(g_eng_xag,"XAGUSD"); sfc(g_eng_eurusd,"EURUSD"); sfc(g_eng_gbpusd,"GBPUSD");
+            sfc(g_eng_xag,"XAGUSD"); sfc(g_eng_eurusd,"EURUSD"); sfc(g_eng_gbpusd,"GBPUSD");
             sfc(g_eng_audusd,"AUDUSD"); sfc(g_eng_nzdusd,"NZDUSD"); sfc(g_eng_usdjpy,"USDJPY");
             sfc(g_eng_brent,"BRENT");
 
@@ -10712,7 +10673,7 @@ static void quote_loop() {
                 printf("[OMEGA-SHUTDOWN] Closed bracket %s\n",s);
             };
             { double b,a; get_px("XAUUSD",b,a); g_bracket_gold.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb); }
-            // [SILVER-REMOVED] { double b,a; get_px("XAGUSD",b,a); g_bracket_xag.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb); }
+            { double b,a; get_px("XAGUSD",b,a); g_bracket_xag.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb); }
             sbk(g_bracket_sp,"US500.F"); sbk(g_bracket_nq,"USTEC.F");
             sbk(g_bracket_us30,"DJ30.F"); sbk(g_bracket_nas100,"NAS100");
             sbk(g_bracket_ger30,"GER40"); sbk(g_bracket_uk100,"UK100");
@@ -10728,10 +10689,10 @@ static void quote_loop() {
               g_gold_stack.force_close(b,a,g_rtt_last,scb);
               g_gold_flow.force_close(b,a,now_ms_scb,scb);
               g_gold_flow_reload.force_close(b,a,now_ms_scb,scb); }
-            // [SILVER-REMOVED] { double b,a,sb,sa; get_px("XAUUSD",b,a); get_px("XAGUSD",sb,sa);
-              // [SILVER-REMOVED] g_le_stack.force_close_all(b,a,sb,sa,g_rtt_last,[&](const omega::TradeRecord& tr){scb(tr);}); }
+            { double b,a,sb,sa; get_px("XAUUSD",b,a); get_px("XAGUSD",sb,sa);
+              g_le_stack.force_close_all(b,a,sb,sa,g_rtt_last,[&](const omega::TradeRecord& tr){scb(tr);}); }
 
-// [SILVER-REMOVED]             // Cross-asset: VWAP, TrendPB, ORB, Carry, FxCascade
+            // Cross-asset: VWAP, TrendPB, ORB, Carry, FxCascade
             { double b,a;
               get_px("US500.F",b,a);  g_ca_esnq.force_close(b,a,scb); g_orb_us.force_close(b,a,scb); g_vwap_rev_sp.force_close(b,a,scb); g_nbm_sp.force_close(b,a,scb);
               get_px("USTEC.F",b,a);  g_vwap_rev_nq.force_close(b,a,scb); g_nbm_nq.force_close(b,a,scb);
@@ -10741,7 +10702,7 @@ static void quote_loop() {
               get_px("GER40",b,a);    g_orb_ger30.force_close(b,a,scb); g_vwap_rev_ger40.force_close(b,a,scb); g_trend_pb_ger40.force_close(b,a,scb);
               get_px("XAUUSD",b,a);   g_trend_pb_gold.force_close(b,a,scb); g_nbm_gold_london.force_close(b,a,scb);
               get_px("USOIL.F",b,a);  g_nbm_oil_london.force_close(b,a,scb);  // London NBM oil
-              // [SILVER-REMOVED] get_px("XAGUSD",b,a);   g_orb_silver.force_close(b,a,scb);
+              get_px("XAGUSD",b,a);   g_orb_silver.force_close(b,a,scb);
               get_px("UK100",b,a);    g_orb_uk100.force_close(b,a,scb);
               get_px("ESTX50",b,a);   g_orb_estx50.force_close(b,a,scb);
               get_px("USOIL.F",b,a);  g_ca_eia_fade.force_close(b,a,scb); g_ca_brent_wti.force_close(b,a,scb);
@@ -10797,11 +10758,11 @@ static void quote_loop() {
         {
             double bxag_bid = 0.0, bxag_ask = 0.0;
             { std::lock_guard<std::mutex> lk(g_book_mtx);
-              // [SILVER-REMOVED] const auto bi = g_bids.find("XAGUSD"); if (bi != g_bids.end()) bxag_bid = bi->second;
-              // [SILVER-REMOVED] const auto ai = g_asks.find("XAGUSD"); if (ai != g_asks.end()) bxag_ask = ai->second; }
-            // [SILVER-REMOVED] if (bxag_bid > 0.0 && bxag_ask > 0.0)
-                // [SILVER-REMOVED] g_bracket_xag.forceClose(bxag_bid, bxag_ask, "FORCE_CLOSE", g_rtt_last, "",
-                    // [SILVER-REMOVED] [](const omega::TradeRecord& tr) {
+              const auto bi = g_bids.find("XAGUSD"); if (bi != g_bids.end()) bxag_bid = bi->second;
+              const auto ai = g_asks.find("XAGUSD"); if (ai != g_asks.end()) bxag_ask = ai->second; }
+            if (bxag_bid > 0.0 && bxag_ask > 0.0)
+                g_bracket_xag.forceClose(bxag_bid, bxag_ask, "FORCE_CLOSE", g_rtt_last, "",
+                    [](const omega::TradeRecord& tr) {
                         handle_closed_trade(tr);
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     });
@@ -10882,8 +10843,8 @@ static void quote_loop() {
                 g_vwap_rev_ger40.force_close(ca_b, ca_a, ca_cb);
                 g_trend_pb_ger40.force_close(ca_b, ca_a, ca_cb);
             }
-            // [SILVER-REMOVED] ca_get_px("XAGUSD", ca_b, ca_a);
-            // [SILVER-REMOVED] if (ca_b > 0.0 && ca_a > 0.0) { g_orb_silver.force_close(ca_b, ca_a, ca_cb); }
+            ca_get_px("XAGUSD", ca_b, ca_a);
+            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_silver.force_close(ca_b, ca_a, ca_cb); }
             ca_get_px("UK100", ca_b, ca_a);
             if (ca_b > 0.0 && ca_a > 0.0) { g_orb_uk100.force_close(ca_b, ca_a, ca_cb); }
             ca_get_px("ESTX50", ca_b, ca_a);
@@ -10908,9 +10869,9 @@ static void quote_loop() {
             { std::lock_guard<std::mutex> lk(g_book_mtx);
               const auto bi = g_bids.find("XAUUSD"); if (bi != g_bids.end()) g_bid = bi->second;
               const auto ai = g_asks.find("XAUUSD"); if (ai != g_asks.end()) g_ask = ai->second;
-              // [SILVER-REMOVED] const auto sbi = g_bids.find("XAGUSD"); if (sbi != g_bids.end()) s_bid = sbi->second;
-              // [SILVER-REMOVED] const auto sai = g_asks.find("XAGUSD"); if (sai != g_asks.end()) s_ask = sai->second; }
-            // [SILVER-REMOVED] if (g_bid > 0.0 && g_ask > 0.0) {
+              const auto sbi = g_bids.find("XAGUSD"); if (sbi != g_bids.end()) s_bid = sbi->second;
+              const auto sai = g_asks.find("XAGUSD"); if (sai != g_asks.end()) s_ask = sai->second; }
+            if (g_bid > 0.0 && g_ask > 0.0) {
                 omega::gold::GoldEngineStack::CloseCallback gold_fc_cb =
                     [](const omega::TradeRecord& tr) {
                         handle_closed_trade(tr);
@@ -11021,7 +10982,7 @@ int main(int argc, char* argv[])
     apply_generic_index_config(g_eng_ger30);
     apply_generic_index_config(g_eng_uk100);
     apply_generic_index_config(g_eng_estx50);
-    // [SILVER-REMOVED] apply_generic_silver_config(g_eng_xag);
+    apply_generic_silver_config(g_eng_xag);
     // Bracket engines -- configure() with tuned production params.
     // buffer, lookback, RR, cooldown_ms, MIN_RANGE, CONFIRM_MOVE, confirm_timeout_ms, min_hold_ms
     g_bracket_gold.configure(
@@ -11048,35 +11009,35 @@ int main(int argc, char* argv[])
     // XAGUSD (~$65): daily range $3.5, typical compression $0.30, spread $0.08
     // Silver amplifies gold -- same cascade logic, same cooldown, trail rides $3-5 weekly moves.
     // Trail at 3R: comp=$0.30, trail_dist=$0.075 -- very tight, holds through volatile moves.
-    // [SILVER-REMOVED] g_bracket_xag.configure(
-        // [SILVER-REMOVED] 0.04,   // buffer: spread*0.5 = $0.04 outside range
-        // [SILVER-REMOVED] 30,     // lookback: 30-tick structural window
-        // [SILVER-REMOVED] 3.0,    // RR: 3.0 matches gold. On $0.30 compression: trail arms at $0.90 in.
+    g_bracket_xag.configure(
+        0.04,   // buffer: spread*0.5 = $0.04 outside range
+        30,     // lookback: 30-tick structural window
+        3.0,    // RR: 3.0 matches gold. On $0.30 compression: trail arms at $0.90 in.
                 //   On a $3.50 weekly move: 10R+ captured via trail.
-        // [SILVER-REMOVED] 30000,  // cooldown_ms: 30s -- silver cascades same as gold, re-arm fast.
-        // [SILVER-REMOVED] 0.40,   // MIN_RANGE: $0.40 minimum raw structural range.
+        30000,  // cooldown_ms: 30s -- silver cascades same as gold, re-arm fast.
+        0.40,   // MIN_RANGE: $0.40 minimum raw structural range.
                 //   At $64, $0.40 = 0.63% -- real compression, not tick noise.
                 //   Old value was $0.15 which fired on $0.18 structures that
                 //   were swept in seconds. Raw range check in arm_both_sides
                 //   now enforces this against the spread-padded dist.
-        // [SILVER-REMOVED] 0.06,   // CONFIRM_MOVE
-        // [SILVER-REMOVED] 4000,   // confirm_timeout_ms
-        // [SILVER-REMOVED] 8000,   // min_hold_ms
-        // [SILVER-REMOVED] 0.0,    // VWAP_MIN_DIST: removed -- silver near VWAP pre-breakout by definition.
-        // [SILVER-REMOVED] 20000,  // MIN_STRUCTURE_MS: 20s
-        // [SILVER-REMOVED] 12000,  // FAILURE_WINDOW_MS: 12s -- silver sweeps slightly faster than gold.
-        // [SILVER-REMOVED] 20,     // ATR_PERIOD
-        // [SILVER-REMOVED] 0.17,   // ATR_CONFIRM_K
-        // [SILVER-REMOVED] 1.4,    // ATR_RANGE_K
-        // [SILVER-REMOVED] 0.08,   // SLIPPAGE_BUFFER: $0.08 matches typical silver spread
-        // [SILVER-REMOVED] 1.5     // EDGE_MULTIPLIER
-    // [SILVER-REMOVED] );
+        0.06,   // CONFIRM_MOVE
+        4000,   // confirm_timeout_ms
+        8000,   // min_hold_ms
+        0.0,    // VWAP_MIN_DIST: removed -- silver near VWAP pre-breakout by definition.
+        20000,  // MIN_STRUCTURE_MS: 20s
+        12000,  // FAILURE_WINDOW_MS: 12s -- silver sweeps slightly faster than gold.
+        20,     // ATR_PERIOD
+        0.17,   // ATR_CONFIRM_K
+        1.4,    // ATR_RANGE_K
+        0.08,   // SLIPPAGE_BUFFER: $0.08 matches typical silver spread
+        1.5     // EDGE_MULTIPLIER
+    );
     // Wire shadow fill simulation -- price-triggered in PENDING, not immediate at arm
     g_bracket_gold.shadow_mode = (g_cfg.mode != "LIVE");
-    // [SILVER-REMOVED] g_bracket_xag.shadow_mode  = (g_cfg.mode != "LIVE");
+    g_bracket_xag.shadow_mode  = (g_cfg.mode != "LIVE");
     // PENDING_TIMEOUT_SEC: gold/silver compress for minutes before breaking -- 60s was expiring before the move
     g_bracket_gold.PENDING_TIMEOUT_SEC = 600;  // 10 min: gold compression can last well beyond 5 min
-    // [SILVER-REMOVED] g_bracket_xag.PENDING_TIMEOUT_SEC  = 300;  // 5 min: silver moves faster than gold
+    g_bracket_xag.PENDING_TIMEOUT_SEC  = 300;  // 5 min: silver moves faster than gold
     // MIN_BREAK_TICKS: sweep guard -- price must stay inside the bracket for N consecutive
     // ticks before orders are sent. Catches London open liquidity sweeps (07:00:34 SHORT
     // -$7.97): bracket range $7.80 was exactly one sweep wide, SHORT filled in 1 tick
@@ -11084,7 +11045,7 @@ int main(int argc, char* argv[])
     // distinguish a single-tick spike from genuine compression holding at the boundary.
     // Silver also benefits: London open sweep pattern identical, slightly faster ticks.
     g_bracket_gold.MIN_BREAK_TICKS = 3;
-    // [SILVER-REMOVED] g_bracket_xag.MIN_BREAK_TICKS  = 3;
+    g_bracket_xag.MIN_BREAK_TICKS  = 3;
     // ATR-based dynamic minimum range: eff_min_range = max(recent_noise * ATR_RANGE_K, MIN_RANGE)
     // Prevents brackets arming when the market noise floor exceeds the bracket width --
     // the SL then sits inside normal noise and gets swept without a real move.
@@ -11102,7 +11063,7 @@ int main(int argc, char* argv[])
     // The bracket window itself defines the range -- 1pt minimum just filters single-tick noise.
     g_bracket_gold.ATR_PERIOD  = 20;  g_bracket_gold.ATR_RANGE_K  = 0.0;
     g_bracket_gold.MIN_RANGE   = 1.0;
-    // [SILVER-REMOVED] g_bracket_xag.ATR_PERIOD   = 20;  g_bracket_xag.ATR_RANGE_K   = 1.5;
+    g_bracket_xag.ATR_PERIOD   = 20;  g_bracket_xag.ATR_RANGE_K   = 1.5;
     g_bracket_eurusd.ATR_PERIOD = 20; g_bracket_eurusd.ATR_RANGE_K = 1.8;
     g_bracket_gbpusd.ATR_PERIOD = 20; g_bracket_gbpusd.ATR_RANGE_K = 1.8;
     g_bracket_audusd.ATR_PERIOD = 20; g_bracket_audusd.ATR_RANGE_K = 1.8;
@@ -11113,11 +11074,11 @@ int main(int argc, char* argv[])
     // Gold at $4400: 0.4% = $17.6 max range. Tight compression is $8-16. Day range is $40-120.
     g_bracket_gold.MAX_RANGE   = 12.0;   // DATA-CALIBRATED: $12 max. Ranges >$12 are trending, not bracketing.
     // Silver at $68: 0.4% = $0.27 max range. Compression = $0.15-0.25. Day range = $1-3.
-    // [SILVER-REMOVED] g_bracket_xag.MAX_RANGE    = 0.30;   // ~0.44% of silver ~$68
+    g_bracket_xag.MAX_RANGE    = 0.30;   // ~0.44% of silver ~$68
     // Configure opening range engines
     g_orb_us.OPEN_HOUR    = 13; g_orb_us.OPEN_MIN    = 30;  // NY open 13:30 UTC
     g_orb_ger30.OPEN_HOUR = 8;  g_orb_ger30.OPEN_MIN = 0;   // Xetra open 08:00 UTC
-    // [SILVER-REMOVED] g_orb_silver.OPEN_HOUR= 13; g_orb_silver.OPEN_MIN= 30;  // COMEX open 13:30 UTC
+    g_orb_silver.OPEN_HOUR= 13; g_orb_silver.OPEN_MIN= 30;  // COMEX open 13:30 UTC
     // New ORB instruments: LSE and Euronext with tighter 15-min range windows
     g_orb_uk100.OPEN_HOUR  = 8;  g_orb_uk100.OPEN_MIN  = 0;   // LSE open 08:00 UTC
     g_orb_uk100.RANGE_WINDOW_MIN = 15;  // 15-min range (LSE moves fast at open)
@@ -11258,7 +11219,7 @@ int main(int argc, char* argv[])
 
     // TrendPullback gold: M15 bar EMAs seeded live from g_bars_gold.m15 each tick.
     g_bracket_gold.cancel_order_fn = [](const std::string& id) { send_cancel_order(id); };
-    // [SILVER-REMOVED] g_bracket_xag.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
+    g_bracket_xag.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
 
     // ?? Configure new bracket engines ????????????????????????????????????????
     // US equity indices: arms both sides, captures whichever direction breaks out
@@ -11451,7 +11412,7 @@ int main(int argc, char* argv[])
             apply_be(g_eng_ger30,  g_sym_cfg.get("GER40"),   22000.0);
             apply_be(g_eng_uk100,  g_sym_cfg.get("UK100"),   8500.0);
             apply_be(g_eng_estx50, g_sym_cfg.get("ESTX50"),  5300.0);
-            // [SILVER-REMOVED] apply_be(g_eng_xag,    g_sym_cfg.get("XAGUSD"),  30.0);
+            apply_be(g_eng_xag,    g_sym_cfg.get("XAGUSD"),  30.0);
             apply_be(g_eng_eurusd, g_sym_cfg.get("EURUSD"),  1.10);
             apply_be(g_eng_gbpusd, g_sym_cfg.get("GBPUSD"),  1.27);
             apply_be(g_eng_audusd, g_sym_cfg.get("AUDUSD"),  0.65);
@@ -11463,7 +11424,7 @@ int main(int argc, char* argv[])
             g_eng_ger30.WATCH_TIMEOUT_SEC  = 240;
             g_eng_uk100.WATCH_TIMEOUT_SEC  = 240;
             g_eng_estx50.WATCH_TIMEOUT_SEC = 240;
-            // [SILVER-REMOVED] g_eng_xag.WATCH_TIMEOUT_SEC    = 240;
+            g_eng_xag.WATCH_TIMEOUT_SEC    = 240;
             g_eng_eurusd.WATCH_TIMEOUT_SEC = 240;
             g_eng_gbpusd.WATCH_TIMEOUT_SEC = 240;
             g_eng_audusd.WATCH_TIMEOUT_SEC = 240;
@@ -11490,7 +11451,7 @@ int main(int argc, char* argv[])
                 // SLIPPAGE_BUFFER intentionally NOT set here -- configure() has correct values
             };
             apply_bracket(g_bracket_gold,   g_sym_cfg.get("XAUUSD"));
-            // [SILVER-REMOVED] apply_bracket(g_bracket_xag,    g_sym_cfg.get("XAGUSD"));
+            apply_bracket(g_bracket_xag,    g_sym_cfg.get("XAGUSD"));
             apply_bracket(g_bracket_sp,     g_sym_cfg.get("US500.F"));
             apply_bracket(g_bracket_nq,     g_sym_cfg.get("USTEC.F"));
             apply_bracket(g_bracket_us30,   g_sym_cfg.get("DJ30.F"));
@@ -11538,7 +11499,7 @@ int main(int argc, char* argv[])
             apply_supervisor(g_sup_ger30,  "GER40",   g_sym_cfg.get("GER40"),   g_cfg.eu_index_max_spread_pct);
             apply_supervisor(g_sup_uk100,  "UK100",   g_sym_cfg.get("UK100"),   g_cfg.eu_index_max_spread_pct);
             apply_supervisor(g_sup_estx50, "ESTX50",  g_sym_cfg.get("ESTX50"),  g_cfg.eu_index_max_spread_pct);
-            // [SILVER-REMOVED] apply_supervisor(g_sup_xag,    "XAGUSD",  g_sym_cfg.get("XAGUSD"),  g_cfg.silver_max_spread_pct);
+            apply_supervisor(g_sup_xag,    "XAGUSD",  g_sym_cfg.get("XAGUSD"),  g_cfg.silver_max_spread_pct);
             apply_supervisor(g_sup_eurusd, "EURUSD",  g_sym_cfg.get("EURUSD"),  g_cfg.fx_max_spread_pct);
             apply_supervisor(g_sup_gbpusd, "GBPUSD",  g_sym_cfg.get("GBPUSD"),  g_cfg.gbpusd_max_spread_pct);
             // AUDUSD/NZDUSD: use their dedicated max_spread_pct (0.030/0.035), NOT
@@ -11574,7 +11535,7 @@ int main(int argc, char* argv[])
             g_sup_cl.symbol     = "USOIL.F"; g_sup_us30.symbol   = "DJ30.F";
             g_sup_nas100.symbol = "NAS100";  g_sup_ger30.symbol  = "GER40";
             g_sup_uk100.symbol  = "UK100";   g_sup_estx50.symbol = "ESTX50";
-            // [SILVER-REMOVED] g_sup_xag.symbol    = "XAGUSD";  g_sup_gold.symbol   = "XAUUSD";
+            g_sup_xag.symbol    = "XAGUSD";  g_sup_gold.symbol   = "XAUUSD";
             g_sup_eurusd.symbol = "EURUSD";  g_sup_gbpusd.symbol = "GBPUSD";
             g_sup_audusd.symbol = "AUDUSD";  g_sup_nzdusd.symbol = "NZDUSD";
             g_sup_usdjpy.symbol = "USDJPY";  g_sup_brent.symbol  = "BRENT";
@@ -11586,7 +11547,7 @@ int main(int argc, char* argv[])
                 sup->cfg.allow_bracket = false;
             // Raise cooldown threshold from default 3 to 20
             for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_cl, &g_sup_us30, &g_sup_nas100,
-                              // [SILVER-REMOVED] &g_sup_ger30, &g_sup_uk100, &g_sup_estx50, &g_sup_xag,
+                              &g_sup_ger30, &g_sup_uk100, &g_sup_estx50, &g_sup_xag,
                               &g_sup_gold, &g_sup_eurusd, &g_sup_gbpusd, &g_sup_audusd,
                               &g_sup_nzdusd, &g_sup_usdjpy, &g_sup_brent})
                 sup->cfg.cooldown_fail_threshold = 20;
@@ -11609,7 +11570,7 @@ int main(int argc, char* argv[])
         apply_generic_index_config(g_eng_ger30);
         apply_generic_index_config(g_eng_uk100);
         apply_generic_index_config(g_eng_estx50);
-        // [SILVER-REMOVED] apply_generic_silver_config(g_eng_xag);
+        apply_generic_silver_config(g_eng_xag);
         apply_generic_fx_config(g_eng_eurusd);
         apply_generic_gbpusd_config(g_eng_gbpusd);
         apply_generic_audusd_config(g_eng_audusd);
@@ -11635,7 +11596,7 @@ int main(int argc, char* argv[])
         g_eng_ger30.ENTRY_SIZE    = 0.01;
         g_eng_uk100.ENTRY_SIZE    = 0.01;
         g_eng_estx50.ENTRY_SIZE   = 0.01;
-        // [SILVER-REMOVED] g_eng_xag.ENTRY_SIZE      = 0.01;
+        g_eng_xag.ENTRY_SIZE      = 0.01;
         g_eng_eurusd.ENTRY_SIZE   = 0.01;
         g_eng_gbpusd.ENTRY_SIZE   = 0.01;
         g_eng_brent.ENTRY_SIZE    = 0.01;
@@ -11667,7 +11628,7 @@ int main(int argc, char* argv[])
         g_eng_ger30.ENTRY_SIZE    = 0.01;
         g_eng_uk100.ENTRY_SIZE    = 0.10;  // indices: $10 / ~8pt SL * $1/pt = 1.25 ? capped at max
         g_eng_estx50.ENTRY_SIZE   = 0.10;
-        // [SILVER-REMOVED] g_eng_xag.ENTRY_SIZE      = 0.01;
+        g_eng_xag.ENTRY_SIZE      = 0.01;
         g_eng_eurusd.ENTRY_SIZE   = 0.01;
         g_eng_gbpusd.ENTRY_SIZE   = 0.01;
         g_eng_brent.ENTRY_SIZE    = 0.01;
@@ -11703,7 +11664,7 @@ int main(int argc, char* argv[])
         g_eng_ger30.ACCOUNT_EQUITY  = acct_eq;
         g_eng_uk100.ACCOUNT_EQUITY  = acct_eq;
         g_eng_estx50.ACCOUNT_EQUITY = acct_eq;
-        // [SILVER-REMOVED] g_eng_xag.ACCOUNT_EQUITY    = acct_eq;
+        g_eng_xag.ACCOUNT_EQUITY    = acct_eq;
         g_eng_eurusd.ACCOUNT_EQUITY = acct_eq;
         g_eng_gbpusd.ACCOUNT_EQUITY = acct_eq;
         g_eng_brent.ACCOUNT_EQUITY  = acct_eq;
@@ -11740,7 +11701,7 @@ int main(int argc, char* argv[])
     g_orb_ger30.enabled  = false;
     g_orb_uk100.enabled  = false;
     g_orb_estx50.enabled = false;
-    // [SILVER-REMOVED] g_orb_silver.enabled = false;
+    g_orb_silver.enabled = false;
     //
     // Cross-asset: EIA fade, BrentWTI spread, FX cascade, carry unwind.
     // All have insufficient live data. Shelved pending shadow validation.
@@ -11973,10 +11934,10 @@ int main(int argc, char* argv[])
               << "% vol=" << g_eng_nas100.VOL_THRESH_PCT << "% mom=" << g_eng_nas100.MOMENTUM_THRESH_PCT
               << "% brk=" << g_eng_nas100.MIN_BREAKOUT_PCT << "% gap=" << g_eng_nas100.MIN_GAP_SEC
               << "s hold=" << g_eng_nas100.MAX_HOLD_SEC << "s spread=" << g_eng_nas100.MAX_SPREAD_PCT << "%\n"
-              // [SILVER-REMOVED] << "[OMEGA-PARAMS] XAGUSD   TP=" << g_eng_xag.TP_PCT  << "% SL=" << g_eng_xag.SL_PCT
-              // [SILVER-REMOVED] << "% vol=" << g_eng_xag.VOL_THRESH_PCT << "% mom=" << g_eng_xag.MOMENTUM_THRESH_PCT
-              // [SILVER-REMOVED] << "% brk=" << g_eng_xag.MIN_BREAKOUT_PCT << "% gap=" << g_eng_xag.MIN_GAP_SEC
-              // [SILVER-REMOVED] << "s hold=" << g_eng_xag.MAX_HOLD_SEC << "s spread=" << g_eng_xag.MAX_SPREAD_PCT << "%\n"
+              << "[OMEGA-PARAMS] XAGUSD   TP=" << g_eng_xag.TP_PCT  << "% SL=" << g_eng_xag.SL_PCT
+              << "% vol=" << g_eng_xag.VOL_THRESH_PCT << "% mom=" << g_eng_xag.MOMENTUM_THRESH_PCT
+              << "% brk=" << g_eng_xag.MIN_BREAKOUT_PCT << "% gap=" << g_eng_xag.MIN_GAP_SEC
+              << "s hold=" << g_eng_xag.MAX_HOLD_SEC << "s spread=" << g_eng_xag.MAX_SPREAD_PCT << "%\n"
               << "[OMEGA-PARAMS] AUDUSD   TP=" << g_eng_audusd.TP_PCT << "% SL=" << g_eng_audusd.SL_PCT
               << "% vol=" << g_eng_audusd.VOL_THRESH_PCT << "% mom=" << g_eng_audusd.MOMENTUM_THRESH_PCT
               << "% gap=" << g_eng_audusd.MIN_GAP_SEC << "s spread=" << g_eng_audusd.MAX_SPREAD_PCT << "% [ASIA]\n"
@@ -12304,7 +12265,7 @@ int main(int argc, char* argv[])
         // Alternate broker names for gold/silver -- broker may not use .F suffix
         g_ctrader_depth.symbol_whitelist.insert("XAUUSD");
         g_ctrader_depth.symbol_whitelist.insert("SILVER");
-        // [SILVER-REMOVED] g_ctrader_depth.symbol_whitelist.insert("XAGUSD");
+        g_ctrader_depth.symbol_whitelist.insert("XAGUSD");
         g_ctrader_depth.symbol_whitelist.insert("NGAS");
         g_ctrader_depth.symbol_whitelist.insert("VIX");
         g_ctrader_depth.dump_all_symbols = false;  // audit complete -- USOIL.F id=2632 confirmed
@@ -12331,8 +12292,8 @@ int main(int argc, char* argv[])
         g_ctrader_depth.name_alias["DOW30"]    = "DJ30.F";
         g_ctrader_depth.name_alias["DOWJONES"] = "DJ30.F";
         // Metals
-        // [SILVER-REMOVED] g_ctrader_depth.name_alias["SILVER"]   = "XAGUSD";
-        // [SILVER-REMOVED] g_ctrader_depth.name_alias["XAGUSD"]   = "XAGUSD";
+        g_ctrader_depth.name_alias["SILVER"]   = "XAGUSD";
+        g_ctrader_depth.name_alias["XAGUSD"]   = "XAGUSD";
         // Oil -- USOIL.F id=2632 shows ~$102; may be Brent priced instrument
         // Aliases cover all known BlackBull oil names until dump_all_symbols confirms
         g_ctrader_depth.name_alias["USOIL"]    = "USOIL.F";
