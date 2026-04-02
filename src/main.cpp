@@ -179,7 +179,7 @@ struct OmegaConfig {
     // just under the 0.80 threshold and blocking all entries. 0.60 still filters
     // genuinely dead tape (vol_range < 0.3) while allowing real low-vol setups.
     // Asia-specific: gf_compression_vol_floor_asia applies 22:00-07:00 UTC only.
-    double gf_compression_vol_floor      = 0.60;
+    double gf_compression_vol_floor      = 3.0;   // raised 0.60->3.0: bad trades at vol_range=0.83/2.00 SL'd <60s MFE=0. Good trades vol_range>=4.35
     double gf_compression_vol_floor_asia = 0.40;  // lowered 0.50->0.40: Asia tape is thinner, valid coils are smaller
 
     int    ext_ger30_id               = 0;
@@ -6527,11 +6527,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         {
             const bool sp_in_offhours = (g_macro_ctx.session_slot == 6 || g_macro_ctx.session_slot == 0 || g_macro_ctx.session_slot == 5); // slot5=NY late thin tape
             const bool sp_bars_ready  = g_bars_sp.m1.ind.m1_ready.load(std::memory_order_relaxed);
-            const double sp_tpb_ema9  = g_bars_sp.m1.ind.ema9 .load(std::memory_order_relaxed);
-            const double sp_tpb_ema50 = g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed);
+            const bool sp_ema_live    = g_bars_sp.m1.ind.m1_ema_live.load(std::memory_order_relaxed);
+            const double sp_tpb_ema9  = sp_ema_live ? g_bars_sp.m1.ind.ema9 .load(std::memory_order_relaxed) : 0.0;
+            const double sp_tpb_ema50 = sp_ema_live ? g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed) : 0.0;
             const int  sp_m5_trend    = (sp_tpb_ema9 > 0.0 && sp_tpb_ema50 > 0.0)
                 ? (sp_tpb_ema9 < sp_tpb_ema50 ? -1 : +1) : 0;  // M1 EMA crossover
-            const bool sp_trendpb_ok  = !sp_in_offhours || (sp_bars_ready && sp_m5_trend != 0);
+            // m1_ema_live required always: prevents stale disk EMA firing on restart
+            const bool sp_trendpb_ok  = sp_ema_live
+                && (!sp_in_offhours || (sp_bars_ready && sp_m5_trend != 0));
             if (!g_trend_pb_sp.has_open_position() && !g_vwap_rev_sp.has_open_position()
                 && !g_nbm_sp.has_open_position() && base_can_sp && sp_trendpb_ok) {
                 const auto tp_sig = g_trend_pb_sp.on_tick(sym, bid, ask, ca_on_close);
@@ -6665,12 +6668,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // slot 5 = NY late (17:00-22:00 UTC): US indices thin after NY close.
             // Same gate as Asia -- only trade if M1 bars seeded AND M5 trend confirmed.
             const bool nq_bars_ready  = g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed);
-            const double nq_tpb_ema9  = g_bars_nq.m1.ind.ema9 .load(std::memory_order_relaxed);
-            const double nq_tpb_ema50 = g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed);
+            const bool nq_ema_live    = g_bars_nq.m1.ind.m1_ema_live.load(std::memory_order_relaxed);
+            const double nq_tpb_ema9  = nq_ema_live ? g_bars_nq.m1.ind.ema9 .load(std::memory_order_relaxed) : 0.0;
+            const double nq_tpb_ema50 = nq_ema_live ? g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed) : 0.0;
             const int  nq_m5_trend    = (nq_tpb_ema9 > 0.0 && nq_tpb_ema50 > 0.0)
                 ? (nq_tpb_ema9 < nq_tpb_ema50 ? -1 : +1) : 0;  // M1 EMA crossover
-            // During off-hours: only trade if M1 bars seeded AND EMA trend confirmed
-            const bool nq_trendpb_ok  = !nq_in_offhours || (nq_bars_ready && nq_m5_trend != 0);
+            // m1_ema_live required always: prevents stale disk EMA firing on restart
+            const bool nq_trendpb_ok  = nq_ema_live
+                && (!nq_in_offhours || (nq_bars_ready && nq_m5_trend != 0));
 
             if (!g_trend_pb_nq.has_open_position() && !g_vwap_rev_nq.has_open_position()
                 && !g_nbm_nq.has_open_position() && base_can_nq && nq_trendpb_ok) {
