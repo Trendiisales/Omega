@@ -3693,6 +3693,25 @@ public:
         return history_.range()>=VOL_THRESHOLD;
     }
     double current_range() const { return history_.empty()?0:history_.range(); }
+
+    // seed(): pre-fill history so allow() is not blind for the first 50 ticks
+    // after a restart. Called from load_atr_state() using the saved EWM baseline
+    // as the synthetic mid. The buffer fills flat (range=0) so the threshold gate
+    // still requires a real live move to open -- we just skip the 40-400s warmup
+    // delay that was blocking gold entries entirely on restart during volatile sessions.
+    // FIX: vol_range=0.00 on every restart causing gold engines to miss first
+    //      10-40 minutes of live action (50 ticks @ dead-zone rate = ~4 min;
+    //      50 ticks @ London open rate = still ~40s of blind time on a $20+ move).
+    void seed(double mid) {
+        if (mid <= 0.0) return;
+        if (history_.size() >= WINDOW) return;  // already warm -- don't overwrite live data
+        const size_t needed = WINDOW - history_.size();
+        for (size_t i = 0; i < needed; ++i)
+            history_.push_back(mid);
+        printf("[VOL-FILTER] Seeded with mid=%.2f (%zu ticks) -- skipping cold-start warmup\n",
+               mid, needed);
+        fflush(stdout);
+    }
 };
 
 // ?????????????????????????????????????????????????????????????????????????????
@@ -4656,6 +4675,21 @@ public:
                " gov_ewm_slow=%.2f age=%llds\n",
                ewm_vol_baseline_, governor_.ewm_fast_, governor_.ewm_slow_, (long long)age);
         fflush(stdout);
+        // Seed VolatilityFilter history so allow() is not blind for first 50 ticks.
+        // Uses saved EWM baseline as synthetic mid -- buffer fills flat (range=0),
+        // threshold still requires a real live move to open. Just skips the
+        // cold-start delay that was blocking all gold entries 40s-4min on every restart.
+        // FIX: vol_range=0.00 on startup was causing engines to miss entire volatile moves.
+        if (ewm_vol_baseline_ > 0.0) {
+            // Derive approximate mid from saved vol pct.
+            // ewm_vol_baseline_ = vol as fraction of mid. baseline_vol_pct_ = vol/mid*100.
+            // mid = ewm_vol_baseline_ / (baseline_vol_pct_ / 100)
+            double seed_mid = 3000.0;  // safe XAUUSD fallback
+            if (baseline_vol_pct_ > 0.0)
+                seed_mid = ewm_vol_baseline_ / (baseline_vol_pct_ / 100.0);
+            if (seed_mid < 1000.0 || seed_mid > 10000.0) seed_mid = 3000.0;
+            vol_filter_.seed(seed_mid);
+        }
     }
 
 private:

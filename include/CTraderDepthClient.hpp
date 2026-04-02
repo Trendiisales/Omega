@@ -739,14 +739,16 @@ private:
         struct LiveSub { std::string name; int64_t sid; uint32_t period; };
         std::vector<LiveSub> pending_live_subs;
         // Live trendbar subscriptions (pt=2220) cause UNSUPPORTED_MESSAGE on some brokers.
-        // Skip live subs for any symbol/period that already failed a history request.
-        // For symbols that work, add live sub after history req.
+        // Skip live subs for any symbol/period that already failed a history request,
+        // OR that previously caused a TCP RST (blacklisted with ":live:" sentinel key).
         for (const auto& bkv : bar_subscriptions) {
             const int64_t sid = bkv.second.sym_id;
             if (sid <= 0) continue;
             const bool is_gold = (bkv.first == "XAUUSD");
+            // Check both history-failed key (sym:period) and live-crashed key (sym:live:period)
             auto skip = [&](uint32_t p) {
-                return bar_failed_reqs.count(bkv.first + ":" + std::to_string(p)) > 0;
+                return bar_failed_reqs.count(bkv.first + ":" + std::to_string(p)) > 0
+                    || bar_failed_reqs.count(bkv.first + ":live:" + std::to_string(p)) > 0;
             };
             if (!skip(1)) pending_live_subs.push_back({bkv.first, sid, 1});
             if (!skip(5)) pending_live_subs.push_back({bkv.first, sid, 5});
@@ -861,24 +863,52 @@ private:
             const int rc = read_one(ssl, pt, payload, 100);
             if (rc < 0) {
                 // TCP connection dropped.
-                // CRITICAL: if this happened during the bar request startup sequence,
-                // BlackBull sent a TCP RST in response to a GetTrendbarsReq (pt=2137).
-                // Since we now route ALL bar requests through GetTickDataReq (pt=2145),
-                // this should no longer happen. But if it does for any reason,
-                // mark the last bar request as permanently failed and reconnect --
-                // do NOT propagate the error upward without logging it clearly.
+                // Two known causes:
+                //   1. GetTrendbarsReq (pt=2137) -- BlackBull sends TCP RST. Now routed
+                //      through GetTickDataReq (pt=2145) so this should no longer fire.
+                //   2. subscribe_live_trendbar_req (pt=2135) -- confirmed cause of the
+                //      15s crash loop in logs. BlackBull rejects the live sub with a TCP RST
+                //      instead of an application-layer INVALID_REQUEST error response.
+                //      The old guard only blacklisted period=0/1, so period=5 live subs
+                //      were never blacklisted and re-sent on every reconnect -- crash loop.
+                // FIX: blacklist ANY live sub that triggers a TCP drop, not just period 0/1.
+                //      History requests (not is_live) keep their period=0/1 guard to avoid
+                //      blacklisting M5/M15 tick data requests which are valid and must fire.
                 if (bar_send_idx > 0 && bar_send_idx <= bar_send_queue.size()) {
                     const auto& last_sent = bar_send_queue[bar_send_idx - 1];
-                    // Only blacklist period 0/1 on TCP drop -- never M5/M15
-                    if (last_sent.period == 0 || last_sent.period == 1) {
-                    const std::string key = last_sent.name + ":" + std::to_string(last_sent.period);
-                    if (!bar_failed_reqs.count(key)) {
-                        bar_failed_reqs.insert(key);
-                        save_bar_failed(bar_failed_path_);
-                        std::cerr << "[CTRADER] TCP drop after bar req " << last_sent.name
-                                  << " period=" << last_sent.period << " -- marked failed, skipping on reconnect\n";
+                    if (last_sent.is_live) {
+                        // Live trendbar sub caused TCP RST -- blacklist this symbol:period
+                        // for the session so it is never re-sent on reconnect.
+                        // Use period=9999 as a sentinel so save_bar_failed() (which only
+                        // persists period=0/1) never writes it to disk -- it is session-only.
+                        const std::string key = last_sent.name + ":live:" + std::to_string(last_sent.period);
+                        if (!bar_failed_reqs.count(key)) {
+                            bar_failed_reqs.insert(key);
+                            std::cerr << "[CTRADER] TCP drop after LIVE trendbar sub "
+                                      << last_sent.name << " period=" << last_sent.period
+                                      << " -- live sub blacklisted for session (not persisted)\n";
+                        }
+                        // Also drain all remaining live subs from the send queue -- if one
+                        // live sub crashes, the broker is not accepting any of them.
+                        for (size_t qi = bar_send_idx; qi < bar_send_queue.size(); ++qi) {
+                            if (bar_send_queue[qi].is_live) {
+                                const std::string qk = bar_send_queue[qi].name + ":live:"
+                                                      + std::to_string(bar_send_queue[qi].period);
+                                bar_failed_reqs.insert(qk);
+                            }
+                        }
+                        std::cerr << "[CTRADER] All live trendbar subs disabled for session"
+                                     " -- depth feed continues, bar history only\n";
+                    } else if (last_sent.period == 0 || last_sent.period == 1) {
+                        // History request (not live) with period=0/1 -- original guard
+                        const std::string key = last_sent.name + ":" + std::to_string(last_sent.period);
+                        if (!bar_failed_reqs.count(key)) {
+                            bar_failed_reqs.insert(key);
+                            save_bar_failed(bar_failed_path_);
+                            std::cerr << "[CTRADER] TCP drop after bar req " << last_sent.name
+                                      << " period=" << last_sent.period << " -- marked failed, skipping on reconnect\n";
+                        }
                     }
-                    } // end period 0/1 only guard
                 }
                 std::cerr << "[CTRADER] Connection error -- reconnecting\n";
                 return;

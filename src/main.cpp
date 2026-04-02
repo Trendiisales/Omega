@@ -7872,7 +7872,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                               << " pyramid_ok="    << gold_pyramid_ok
                               << " impulse_block=" << gold_impulse_regime
                               << " cd_bypass="     << trend_dir_bypasses_cooldown
-                              << " pyr_sl_age_s="  << ((now_ms_g - gold_trend.last_pyramid_sl_ms) / 1000)
+                              << " pyr_sl_age_s="  << (gold_trend.last_pyramid_sl_ms == 0
+                                                        ? std::string("never")
+                                                        : std::to_string((now_ms_g - gold_trend.last_pyramid_sl_ms) / 1000) + "s")
                               << " brk_hi="        << std::setprecision(2) << g_bracket_gold.bracket_high
                               << " brk_lo="        << g_bracket_gold.bracket_low
                               << " range="         << (g_bracket_gold.bracket_high - g_bracket_gold.bracket_low)
