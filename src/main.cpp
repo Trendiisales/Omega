@@ -7402,8 +7402,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                           (std::strcmp(gsig.engine, "VWAPStretchReversion") == 0) ||
                                           (std::strcmp(gsig.engine, "SessionMomentum")      == 0);
                     if (gs_is_mr) {
-                        if (gsig.is_long  && (bar_rsi_gs > 60.0 || bar_trend_gs == -1)) gs_bar_blocked = true;
-                        if (!gsig.is_long && (bar_rsi_gs < 40.0 || bar_trend_gs == +1)) gs_bar_blocked = true;
+                        // FIX 2026-04-02: old logic blocked SHORT when RSI<40 -- exactly wrong.
+                        // During a crash RSI IS <40 (30-38). That's the signal, not a block reason.
+                        // Block LONG when RSI>60 (overbought) or M5 downtrend confirmed.
+                        // Block SHORT when RSI>60 (price still elevated, not yet crashed) AND M5 uptrend.
+                        // Never block SHORT on RSI<40 -- low RSI on a short IS the momentum signal.
+                        if (gsig.is_long  && (bar_rsi_gs > 65.0 || bar_trend_gs == -1)) gs_bar_blocked = true;
+                        if (!gsig.is_long && (bar_rsi_gs > 60.0 && bar_trend_gs == +1)) gs_bar_blocked = true;
                     } else {
                         if (gsig.is_long  && bar_rsi_gs > 78.0) gs_bar_blocked = true;
                         if (!gsig.is_long && bar_rsi_gs < 22.0) gs_bar_blocked = true;
@@ -8605,8 +8610,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const bool counter_trend = (gf_long && bar_trend == -1) ||
                                                (!gf_long && bar_trend == +1);
                     if (counter_trend) {
-                        // Counter-trend entry: require extreme RSI (deeply OS/OB)
-                        const bool rsi_extreme = gf_long ? (bar_rsi < 35.0) : (bar_rsi > 65.0);
+                        // FIX 2026-04-02: inverted logic. counter_trend for SHORT means
+                        // bar_trend==+1 (uptrend) -- we're shorting INTO an uptrend.
+                        // Require RSI < 35 (deeply oversold) to allow that counter-trend short.
+                        // OLD (wrong): rsi_extreme = gf_long ? (bar_rsi < 35) : (bar_rsi > 65)
+                        //   For SHORT: required RSI>65 to be "extreme" -- that's overbought,
+                        //   exactly when you'd WANT to short. Blocked all good short setups.
+                        // NEW: for SHORT counter-trend, require RSI < 35 (genuine OS in uptrend).
+                        //      for LONG counter-trend, require RSI > 65 (genuine OB in downtrend).
+                        const bool rsi_extreme = gf_long ? (bar_rsi > 65.0) : (bar_rsi < 35.0);
                         if (!rsi_extreme) {
                             printf("[GF-BAR-BLOCK] XAUUSD %s blocked -- counter-trend (M5=%+d)"
                                    " RSI=%.1f not extreme enough\n",
