@@ -1,15 +1,15 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-02 17:10:35 UTC
+Generated : 2026-04-02 17:15:37 UTC
 ============================================================
-[ATR-DAT] atr=4.009726 atr_ewm=4.009726 warmed=1 last_mid=4663.37000 saved_ts=1775149835
-[ATR-WARN] atr=4.009726 <= 5.0 -- may still be floor-pinned
+[ATR-DAT] atr=3.635037 atr_ewm=3.635037 warmed=1 last_mid=4663.37000 saved_ts=1775150136
+[ATR-WARN] atr=3.635037 <= 5.0 -- may still be floor-pinned
 
-[DIAG]        17:10:35 [OMEGA-DIAG] PnL=-238.95 T=59 WR=38.98% RTTp95=5.59ms cap=120.00ms lat_ok=1 session=ACTIVE
-[GOLD-DIAG]   17:10:35 [GOLD-DIAG] regime=COMPRESSION vwap=4642.67 vol_range=1.19
-[BRK-DIAG]    17:10:33 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.57 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=5
-[SUPERVISOR]  17:10:30 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=1.00 bracket=0.68 breakout=0.40 top_score=0.68 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=chop_detected
-[VIX]         17:10:05 [TICK] VIX.F 25.09/25.45
-[GOLD-PRICE]  17:10:24 [TICK] XAUUSD 4662.95/4663.16
+[DIAG]        17:15:36 [OMEGA-DIAG] PnL=-266.289 T=60 WR=38.3333% RTTp95=4.563ms cap=120ms lat_ok=1 session=ACTIVE
+[GOLD-DIAG]   17:15:36 [GOLD-DIAG] regime=COMPRESSION vwap=4642.95 vol_range=1.03
+[BRK-DIAG]    17:15:27 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.08 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=5
+[SUPERVISOR]  17:15:30 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=1.00 bracket=0.68 breakout=0.40 top_score=0.68 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=chop_detected
+[VIX]         17:15:24 [TICK] VIX.F 24.94/25.30
+[GOLD-PRICE]  17:15:25 [TICK] XAUUSD 4663.03/4663.25
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
