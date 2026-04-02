@@ -522,6 +522,7 @@ static std::atomic<int64_t>  g_gold_flow_exit_price_x100{0};
 // by bypassing the 120s SL cooldown. Window = 60s from flow exit.
 static std::atomic<int64_t>  g_gold_reversal_window_until{0};
 static std::atomic<int64_t>  g_gold_post_impulse_until{0};  // block new entries 3min after IMPULSE ends
+static std::atomic<int>      g_gold_impulse_ticks{0};          // consecutive IMPULSE ticks -- must be >=3 before GoldFlow enters on IMPULSE
 static std::atomic<int64_t>  g_gold_trail_block_until{0};    // same-dir re-entry blocked 30s after trail/BE (GoldStack)
 static std::atomic<int>       g_gold_trail_block_dir{0};      // direction that was blocked (+1=long, -1=short)
 static omega::SilverBracketEngine g_bracket_xag;
@@ -6965,15 +6966,32 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // ?? Gold regime helpers ??????????????????????????????????????????????
         const char* gold_stack_regime   = g_gold_stack.regime_name();
         {
-            static bool s_was_impulse = false;
+            static bool    s_was_impulse     = false;
+            static int64_t s_impulse_since   = 0;   // when IMPULSE started
+            static int     s_impulse_ticks   = 0;   // consecutive IMPULSE ticks
             const bool is_impulse_now = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
+            const int64_t now_pi = static_cast<int64_t>(std::time(nullptr));
+            if (is_impulse_now) {
+                if (!s_was_impulse) { s_impulse_since = now_pi; s_impulse_ticks = 0; }
+                ++s_impulse_ticks;
+            } else {
+                s_impulse_ticks = 0;
+            }
             if (s_was_impulse && !is_impulse_now) {
-                const int64_t now_pi = static_cast<int64_t>(std::time(nullptr));
-                g_gold_post_impulse_until.store(now_pi + 45);  // 45s cooldown after IMPULSE ends -- lowered 180->45: 3min was blocking entire London morning on micro-spikes
-                printf("[POST-IMPULSE] Regime left IMPULSE -- blocking new entries 3min\n");
+                g_gold_post_impulse_until.store(now_pi + 45);
+                printf("[POST-IMPULSE] Regime left IMPULSE after %d ticks -- blocking 45s\n",
+                       s_impulse_ticks);
                 fflush(stdout);
             }
             s_was_impulse = is_impulse_now;
+            // Expose impulse stability for GoldFlow gate below
+            // IMPULSE is only "confirmed" after 3+ consecutive ticks (~3s).
+            // One-tick IMPULSE ghosts (regime flips back next tick) caused false
+            // entries -- e.g. LONG into a downtrend when a micro-uptick triggered
+            // IMPULSE for a single tick before supervisor corrected to COMPRESSION.
+            (void)s_impulse_since;
+            // Store tick count in a global so GoldFlow gate can check it
+            g_gold_impulse_ticks.store(s_impulse_ticks);
         }
         const bool gold_post_impulse_block = (g_gold_post_impulse_until.load() >
             static_cast<int64_t>(std::time(nullptr)));
@@ -8079,8 +8097,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
             && !g_gold_flow.has_open_position()
-            && !g_le_stack.has_open_position()       // ADDED: prevent stack with LE
-            && !g_trend_pb_gold.has_open_position()) { // ADDED: prevent stack with TrendPB
+            && !g_le_stack.has_open_position()
+            && !g_trend_pb_gold.has_open_position()) {
+            // IMPULSE stability gate: GoldFlow must not enter on a single-tick IMPULSE.
+            // Root cause: supervisor calls regime every tick. A micro-uptick triggers
+            // IMPULSE for 1-2 ticks before correcting back -- GoldFlow enters before
+            // correction, producing a LONG in a downtrend with atr=5.00 floor.
+            // Fix: require IMPULSE to have held for >= 3 consecutive ticks before
+            // GoldFlow is allowed to enter on an IMPULSE-regime signal.
+            // Non-IMPULSE regimes (COMPRESSION, TREND etc) are unaffected.
+            // Impulse stability: require >=3 consecutive IMPULSE ticks before GoldFlow enters.
+            const bool gf_impulse_stable = (std::strcmp(gold_stack_regime, "IMPULSE") != 0)
+                                        || (g_gold_impulse_ticks.load() >= 3);
+            if (!gf_impulse_stable) {
+                static int64_t s_imp_log = 0;
+                const int64_t now_ig = static_cast<int64_t>(std::time(nullptr));
+                if (now_ig - s_imp_log >= 10) {
+                    s_imp_log = now_ig;
+                    printf("[GF-IMPULSE-GHOST] Blocked -- IMPULSE only %d ticks, need 3\n",
+                           g_gold_impulse_ticks.load());
+                    fflush(stdout);
+                }
+            } else {
             g_gold_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
                                        ? g_cfg.risk_per_trade_usd : GFE_RISK_DOLLARS;
 
@@ -8812,6 +8850,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // to prevent duplicate broker orders. GoldStack arms g_partial_exit
                 // directly at signal time for its own positions.
             }
+            }  // end gf_impulse_stable else
         }
 
         // LatencyEdge: not supervisor-gated (intermarket/latency signal)
