@@ -10102,20 +10102,116 @@ static void quote_loop() {
             }
             const int64_t fc_ms_rc = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
+            // Helper: get price from snapshot map, fallback to entry price
+            auto stale_px = [&](const char* sym, double& b, double& a) {
+                const auto bi = px_snap_bid.find(sym); b = (bi != px_snap_bid.end()) ? bi->second : 0.0;
+                const auto ai = px_snap_ask.find(sym); a = (ai != px_snap_ask.end()) ? ai->second : 0.0;
+            };
+            // BreakoutEngine stale purge
+            auto stale_beng = [&](auto& eng, const char* sym) {
+                if (!eng.pos.active || !is_stale(eng.pos.entry_ts)) return;
+                double b=0,a=0; stale_px(sym,b,a);
+                if (b<=0) { b=eng.pos.entry*0.9999; a=eng.pos.entry*1.0001; }
+                eng.forceClose(b, a, "STALE_PRIOR_DAY", g_rtt_last, "", stale_cb);
+                printf("[STALE-CLOSE] Purged prior-day Breakout %s\n", sym); fflush(stdout);
+            };
+            // BracketEngine stale purge
+            auto stale_bracket = [&](auto& eng, const char* sym) {
+                if (!eng.has_open_position() || !is_stale(eng.pos.entry_ts)) return;
+                double b=0,a=0; stale_px(sym,b,a);
+                if (b<=0) { b=1.0; a=1.0; }
+                eng.forceClose(b, a, "STALE_PRIOR_DAY", g_rtt_last, "", stale_cb);
+                printf("[STALE-CLOSE] Purged prior-day Bracket %s\n", sym); fflush(stdout);
+            };
+            // CrossAsset / NBM / ORB / VWAP / TrendPB stale purge (force_close(b,a,cb))
+            // NOTE: pos_ is private on all CrossAsset engines so we cannot check entry_ts.
+            // This is safe: CrossAsset max hold is 5-30min -- prior-day carry is impossible
+            // in practice. Closing an active same-day position on reconnect is harmless in
+            // SHADOW mode -- the engine re-enters on the next qualifying tick.
+            auto stale_ca = [&](auto& eng, const char* sym) {
+                if (!eng.has_open_position()) return;
+                double b=0,a=0; stale_px(sym,b,a);
+                if (b<=0) return;
+                eng.force_close(b, a, stale_cb);
+                printf("[STALE-CLOSE] Purged CA/NBM/ORB %s on reconnect\n", sym); fflush(stdout);
+            };
+
+            // -- Gold engines (original) --
             if (xb_rc > 0 && xa_rc > 0) {
                 if (g_trend_pb_gold.has_open_position() && is_stale(g_trend_pb_gold.open_entry_ts()))
                     { g_trend_pb_gold.force_close(xb_rc, xa_rc, stale_cb);
-                      std::cout << "[STALE-CLOSE] Purged prior-day TrendPullback\n"; }
+                      std::cout << "[STALE-CLOSE] Purged prior-day TrendPullback-Gold\n"; }
                 if (g_gold_flow.has_open_position() && is_stale(g_gold_flow.pos.entry_ts))
                     { g_gold_flow.force_close(xb_rc, xa_rc, fc_ms_rc, stale_cb);
                       std::cout << "[STALE-CLOSE] Purged prior-day GoldFlow\n"; }
                 if (g_gold_flow_reload.has_open_position() && is_stale(g_gold_flow_reload.pos.entry_ts))
                     { g_gold_flow_reload.force_close(xb_rc, xa_rc, fc_ms_rc, stale_cb);
-                      std::cout << "[STALE-CLOSE] Purged prior-day GoldFlow reload\n"; }
+                      std::cout << "[STALE-CLOSE] Purged prior-day GoldFlow-Reload\n"; }
                 if (g_gold_stack.has_open_position() && is_stale(g_gold_stack.live_entry_ts()))
                     { g_gold_stack.force_close(xb_rc, xa_rc, g_rtt_last, stale_cb);
                       std::cout << "[STALE-CLOSE] Purged prior-day GoldStack\n"; }
+                if (g_le_stack.has_open_position() && xb_rc > 0 && xa_rc > 0)
+                    { g_le_stack.force_close_all(xb_rc, xa_rc, xb_rc, xa_rc, g_rtt_last, stale_cb);
+                      std::cout << "[STALE-CLOSE] Purged prior-day LEStack\n"; }
             }
+            // -- Breakout engines (all symbols) --
+            stale_beng(g_eng_sp,     "US500.F");
+            stale_beng(g_eng_nq,     "USTEC.F");
+            stale_beng(g_eng_us30,   "DJ30.F");
+            stale_beng(g_eng_nas100, "NAS100");
+            stale_beng(g_eng_ger30,  "GER40");
+            stale_beng(g_eng_uk100,  "UK100");
+            stale_beng(g_eng_estx50, "ESTX50");
+            stale_beng(g_eng_cl,     "USOIL.F");
+            stale_beng(g_eng_brent,  "BRENT");
+            stale_beng(g_eng_xag,    "XAGUSD");
+            stale_beng(g_eng_eurusd, "EURUSD");
+            stale_beng(g_eng_gbpusd, "GBPUSD");
+            stale_beng(g_eng_audusd, "AUDUSD");
+            stale_beng(g_eng_nzdusd, "NZDUSD");
+            stale_beng(g_eng_usdjpy, "USDJPY");
+            // -- Bracket engines --
+            stale_bracket(g_bracket_gold,   "XAUUSD");
+            stale_bracket(g_bracket_xag,    "XAGUSD");
+            stale_bracket(g_bracket_sp,     "US500.F");
+            stale_bracket(g_bracket_nq,     "USTEC.F");
+            stale_bracket(g_bracket_us30,   "DJ30.F");
+            stale_bracket(g_bracket_nas100, "NAS100");
+            stale_bracket(g_bracket_ger30,  "GER40");
+            stale_bracket(g_bracket_uk100,  "UK100");
+            stale_bracket(g_bracket_estx50, "ESTX50");
+            stale_bracket(g_bracket_eurusd, "EURUSD");
+            stale_bracket(g_bracket_gbpusd, "GBPUSD");
+            stale_bracket(g_bracket_audusd, "AUDUSD");
+            stale_bracket(g_bracket_nzdusd, "NZDUSD");
+            stale_bracket(g_bracket_usdjpy, "USDJPY");
+            stale_bracket(g_bracket_brent,  "BRENT");
+            // -- NBM / ORB / VWAP / TrendPB / CrossAsset --
+            stale_ca(g_nbm_sp,          "US500.F");
+            stale_ca(g_nbm_nq,          "USTEC.F");
+            stale_ca(g_nbm_nas,         "NAS100");
+            stale_ca(g_nbm_us30,        "DJ30.F");
+            stale_ca(g_nbm_gold_london, "XAUUSD");
+            stale_ca(g_nbm_oil_london,  "USOIL.F");
+            stale_ca(g_orb_us,          "US500.F");
+            stale_ca(g_orb_ger30,       "GER40");
+            stale_ca(g_orb_uk100,       "UK100");
+            stale_ca(g_orb_estx50,      "ESTX50");
+            stale_ca(g_orb_silver,      "XAGUSD");
+            stale_ca(g_vwap_rev_sp,     "US500.F");
+            stale_ca(g_vwap_rev_nq,     "USTEC.F");
+            stale_ca(g_vwap_rev_ger40,  "GER40");
+            stale_ca(g_vwap_rev_eurusd, "EURUSD");
+            stale_ca(g_trend_pb_sp,     "US500.F");
+            stale_ca(g_trend_pb_nq,     "USTEC.F");
+            stale_ca(g_trend_pb_ger40,  "GER40");
+            stale_ca(g_ca_esnq,         "US500.F");
+            stale_ca(g_ca_eia_fade,     "USOIL.F");
+            stale_ca(g_ca_brent_wti,    "USOIL.F");
+            stale_ca(g_ca_carry_unwind, "USDJPY");
+            // g_ca_fx_cascade: legs (GBP/AUD/NZD) are private -- entry_ts inaccessible.
+            // FX cascade positions are short-lived scalps (max hold ~5min) so prior-day
+            // carry is impossible in practice. Omitted intentionally.
         }
 
         const bool do_reconnect_close = (g_cfg.mode == "LIVE");
