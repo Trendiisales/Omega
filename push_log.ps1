@@ -163,6 +163,8 @@ $ts      = Get-Date -Format "yyyy-MM-dd HH:mm"
 $message = "state: log+snapshot+atr $hash $ts"
 
 git commit -m $message 2>&1 | Out-Null
+# Pull before push -- VPS may be behind if Claude pushed a fix between log pushes
+git pull --rebase origin main 2>&1 | Out-Null
 git push origin main    2>&1
 
 Write-Host "[push_log] Pushed: log + snapshot + ATR state" -ForegroundColor Green
