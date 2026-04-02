@@ -1,14 +1,18 @@
 ﻿OMEGA STARTUP REPORT
-Generated : 2026-04-02 11:02:58 UTC
+Generated : 2026-04-02 11:22:12 UTC
 Log file  : C:\Omega\logs\latest.log
-Collected : 38 lines over 45s
+Collected : 34 lines over 45s
+Result    : PASS=0  FAIL=0  WARN=3  INFO=9
 ========================================================================
 [INFO]  ATR Seed               No GFE-SEED line seen
                                      Engine may have loaded ATR from disk (normal) -- see ATR State check.
+[WARN]  ATR State              No ATR state line seen
+                                     Could not confirm ATR initialisation.
 [INFO]  ATR Running Value      No GF-GATE-BLOCK lines (no gate blocks fired)
                                      Good -- or no entry attempts yet.
 [INFO]  vol_range              No GOLD-DIAG line yet
                                      Engine may not have emitted diagnostics -- wait for first GOLD-DIAG log.
+[INFO]  Dead Zone              No GOLD-BRK-DIAG lines yet
 [WARN]  VIX Level              No VIX.F tick seen in first 45s
                                      ATR seed used default 8.0. Will update when VIX.F arrives.
 [INFO]  Session/Entry State    No BRK-DIAG lines yet
@@ -17,5 +21,7 @@ Collected : 38 lines over 45s
 [INFO]  Latency                No OMEGA-DIAG yet
 [INFO]  First Signal           No signal in first 45s
                                      Normal if market quiet or in compression.
-[INFO]  Build Stamp            commit=7b730e6  built=2026-04-02 11:02:03 UTC
+[INFO]  Impulse Ghost          No impulse ghost blocks seen
+[INFO]  Build Stamp            commit=ddacad1  built=2026-04-02 11:21:18 UTC
 ========================================================================
+RESULT: PASS=0  FAIL=0  WARN=3  INFO=9
