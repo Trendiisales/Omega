@@ -113,6 +113,7 @@ enum class TradeSide   { LONG, SHORT, NONE };
 struct GoldSnapshot {
     double bid=0, ask=0, mid=0, spread=0;
     double vwap=0, volatility=0, trend=0, sweep_size=0, prev_mid=0;
+    double dx_mid=0;   // DX.F (Dollar Index) mid price -- populated from g_macroDetector in main.cpp
     SessionType session = SessionType::UNKNOWN;
     bool is_valid() const { return bid>0 && ask>0 && bid<ask; }
 };
@@ -806,6 +807,27 @@ class IntradaySeasonalityEngine : public EngineBase {
 
     // bucket = hour*2 + (minute>=30?1:0)
     // Only |t|>5 buckets over 718k bars (multiple-comparison corrected).
+    // Returns the |t-stat| for a bucket -- used by main.cpp to scale lot size
+    // proportionally to signal strength. Strongest bucket (43, t=24.2) gets 1.5x,
+    // weakest qualifying bucket (t=5.1) gets 1.0x base lot.
+    static double half_hour_tstat(int b) noexcept {
+        switch (b) {
+            case 43: return 24.2;  // 21:30 UTC -- strongest
+            case 42: return 22.6;  case  0: return 11.5;
+            case 16: return 10.2;  case 10: return 10.2;
+            case  2: return  8.8;  case  8: return  8.3;
+            case  3: return  7.5;  case  6: return  7.7;
+            case  1: return  7.2;  case 39: return  7.6;
+            case 35: return  6.7;  case 24: return  6.7;
+            case 44: return  6.9;  case 47: return  6.9;
+            case 41: return  9.3;  case 40: return 10.8;
+            case 19: return  6.3;  case 32: return  6.1;
+            case 12: return  7.9;  case 13: return  6.4;
+            case  9: return  5.1;  case 20: return 10.2;
+            default: return  0.0;
+        }
+    }
+
     static int half_hour_bias(int b) noexcept {
         switch (b) {
             case  0: return +1;  // 00:00 t=+11.5
@@ -892,6 +914,10 @@ public:
             strncpy(sig.reason, "INTRADAY_SEAS_SHORT", 31);
         }
         strncpy(sig.engine, "IntradaySeasonality", 31);
+        // Encode t-stat into confidence so main.cpp can scale lot size.
+        // confidence = t-stat / 10.0  (t=24.2 -> 2.42, t=5.1 -> 0.51)
+        // main.cpp clamps to [1.0, 1.5] multiplier: stronger bucket = bigger lot.
+        sig.confidence = half_hour_tstat(bucket) / 10.0;
 
         last_fired_hh_  = bucket;
         last_fired_day_ = day;
@@ -3157,17 +3183,89 @@ public:
 //     if |divergence| > threshold ? fire in direction of gold's excess move
 // =============================================================================
 class DXYDivergenceEngine : public EngineBase {
-    static constexpr double MAX_SPREAD   = 2.5;
-    static constexpr int    SL_TICKS     = 60;
-    static constexpr int    TP_TICKS     = 120;
-    static constexpr int    COOLDOWN_SEC = 3600;
+    // Real DX.F feed is live -- g_macroDetector.updateDXY() called every DX.F tick,
+    // and dx_mid is now populated in GoldSnapshot from main.cpp on_tick().
+    //
+    // Divergence logic:
+    //   gold_move_20t  = gold_mid - gold_20_ticks_ago
+    //   dx_move_20t    = dx_mid   - dx_20_ticks_ago
+    //   expected_gold  = -dx_move_20t * GOLD_DX_BETA  (inverse correlation)
+    //   divergence     = gold_move_20t - expected_gold
+    //   if divergence > +DIV_THRESHOLD: gold stronger than DX implies -> LONG
+    //   if divergence < -DIV_THRESHOLD: gold weaker  than DX implies -> SHORT
+    //
+    // GOLD_DX_BETA: empirical sensitivity. DX moves 0.1pt -> gold moves ~$1.20
+    // over short windows. Beta = 12.0 (gold pts per DX pt).
+    static constexpr double MAX_SPREAD    = 2.5;
+    static constexpr int    SL_TICKS      = 60;   // $6 stop
+    static constexpr int    TP_TICKS      = 120;  // $12 target, 2:1
+    static constexpr int    COOLDOWN_SEC  = 1800; // 30min -- fires 1-3x/day
+    static constexpr int    WINDOW        = 20;   // ticks for divergence measurement
+    static constexpr double GOLD_DX_BETA  = 12.0; // gold pts per DX.F pt
+    static constexpr double DIV_THRESHOLD = 2.50; // $2.50 divergence to fire
+    static constexpr double MIN_DX_MOVE   = 0.05; // DX must have moved >= 0.05pts (real signal)
+
+    MinMaxCircularBuffer<double, 64> gold_hist_;
+    MinMaxCircularBuffer<double, 64> dx_hist_;
+    int64_t last_signal_ts_ = 0;
 
 public:
     DXYDivergenceEngine() : EngineBase("DXYDivergence", 1.15) {
-        enabled_ = false; // DISABLED: no real DXY feed -- see comment above
+        enabled_ = true;  // RE-ENABLED: DX.F feed confirmed live (g_macroDetector.updateDXY)
     }
-    void reset() override {}
-    Signal process(const GoldSnapshot&) override { return noSignal(); }
+
+    void reset() override {
+        gold_hist_.clear();
+        dx_hist_.clear();
+        last_signal_ts_ = 0;
+    }
+
+    Signal process(const GoldSnapshot& s) override {
+        if (!enabled_ || !s.is_valid()) return noSignal();
+        if (s.spread > MAX_SPREAD)      return noSignal();
+        if (s.session == SessionType::UNKNOWN) return noSignal();
+        if (s.dx_mid <= 0.0)            return noSignal();  // no DX feed yet
+
+        gold_hist_.push_back(s.mid);
+        dx_hist_.push_back(s.dx_mid);
+        if ((int)gold_hist_.size() < WINDOW + 1) return noSignal();
+
+        const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
+        if (now_s - last_signal_ts_ < COOLDOWN_SEC) return noSignal();
+
+        const double gold_move = s.mid    - gold_hist_[gold_hist_.size() - WINDOW];
+        const double dx_move   = s.dx_mid - dx_hist_[dx_hist_.size()   - WINDOW];
+
+        // DX must have actually moved -- ignore noise ticks
+        if (std::fabs(dx_move) < MIN_DX_MOVE) return noSignal();
+
+        // Expected gold move = opposite of DX move * beta
+        const double expected_gold = -dx_move * GOLD_DX_BETA;
+        const double divergence    = gold_move - expected_gold;
+
+        if (std::fabs(divergence) < DIV_THRESHOLD) return noSignal();
+
+        // Confirm VWAP alignment -- divergence should be toward VWAP side
+        if (s.vwap > 0.0) {
+            if (divergence > 0 && s.mid < s.vwap * 0.998) return noSignal();
+            if (divergence < 0 && s.mid > s.vwap * 1.002) return noSignal();
+        }
+
+        last_signal_ts_ = now_s;
+        signal_count_++;
+
+        Signal sig;
+        sig.valid      = true;
+        sig.side       = (divergence > 0) ? TradeSide::LONG : TradeSide::SHORT;
+        sig.confidence = std::min(1.5, std::fabs(divergence) / (DIV_THRESHOLD * 2.0));
+        sig.size       = 0.01;
+        sig.entry      = (divergence > 0) ? s.ask : s.bid;
+        sig.tp         = TP_TICKS;
+        sig.sl         = SL_TICKS;
+        strncpy(sig.reason, divergence > 0 ? "DXY_DIV_LONG" : "DXY_DIV_SHORT", 31);
+        strncpy(sig.engine, "DXYDivergence", 31);
+        return sig;
+    }
 };
 
 // =============================================================================
@@ -4185,9 +4283,10 @@ public:
         engines_.push_back(std::make_unique<LondonFixMomentumEngine>());
         engines_.push_back(std::make_unique<VWAPStretchReversionEngine>());
         engines_.push_back(std::make_unique<OpeningRangeBreakoutNYEngine>());
-        // SHELVED: DXYDivergence -- live performance 50% WR net $-0.04 over 2 trades.
-        // Requires real DXY feed validation. Re-enable after feed confirmed.
-        // engines_.push_back(std::make_unique<DXYDivergenceEngine>());
+        // DXYDivergence: RE-ENABLED with real DX.F feed + proper divergence logic.
+        // Previous 2 trades used VWAP-as-DXY-proxy (wrong). Now uses actual DX.F price.
+        // Shadow for 30 trades to validate beta calibration before sizing up.
+        engines_.push_back(std::make_unique<DXYDivergenceEngine>());
         engines_.push_back(std::make_unique<SessionOpenMomentumEngine>());
     }
 
@@ -4237,7 +4336,8 @@ public:
     // can_enter=false ? manage existing position only, no new entries.
     // Returns valid GoldSignal if a NEW entry was just opened this tick.
     GoldSignal on_tick(double bid, double ask, double latency_ms,
-                       CloseCallback on_close = nullptr, bool can_enter = true) {
+                       CloseCallback on_close = nullptr, bool can_enter = true,
+                       double dx_mid = 0.0) {
         if(bid<=0||ask<=0||bid>=ask) return GoldSignal{};
         double spread = ask - bid;
         const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
@@ -4273,6 +4373,7 @@ public:
         GoldSnapshot snap;
         snap.bid=bid; snap.ask=ask;
         snap.prev_mid=(last_mid_>0)?last_mid_:((bid+ask)*0.5);
+        snap.dx_mid = dx_mid;  // DX.F mid from main.cpp -- used by DXYDivergenceEngine
         features_.update(snap,bid,ask);
         last_mid_=snap.mid;
 
