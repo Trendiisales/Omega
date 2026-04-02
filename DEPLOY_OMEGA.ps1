@@ -162,7 +162,7 @@ if ($needsReconfigure) {
     Write-Host "      [INFO] Using existing CMake cache -- incremental build" -ForegroundColor Cyan
 }
 $ErrorActionPreference = $savedPrefCmake
-cmake --build . --config Release 2>&1
+cmake --build . --config Release --parallel 2>&1
 $buildExitCode = $LASTEXITCODE
 
 if ($buildExitCode -ne 0) {
