@@ -6895,8 +6895,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             return (mins_utc >= 1320 && mins_utc < 1330)  // 22:00-22:10 UTC NY close
                 || (mins_utc >= 0    && mins_utc < 15);   // 00:00-00:15 UTC Sydney open
         }();
+        // Crash override: if RSI<35 and drift<-5 (confirmed strong crash), allow entry
+        // even during the post-impulse cooldown. The IMPULSE regime ending is not a reason
+        // to block entries when the crash is clearly continuing.
+        const double rsi_for_gate = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+        const double drift_for_gate = g_gold_stack.ewm_drift();
+        const bool crash_impulse_bypass = (rsi_for_gate > 0.0)
+            && ((rsi_for_gate < 35.0 && drift_for_gate < -4.0)   // strong crash = ignore post-impulse
+             || (rsi_for_gate > 65.0 && drift_for_gate >  4.0)); // strong rally = ignore post-impulse
         const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open)
-                                 && !gold_post_impulse_block;  // 3min cooldown after IMPULSE ends
+                                 && (!gold_post_impulse_block || crash_impulse_bypass);
         // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
         const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
             && gold_session_ok && symbol_gate("XAUUSD", false);
