@@ -1,15 +1,15 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-02 16:28:30 UTC
+Generated : 2026-04-02 16:34:31 UTC
 ============================================================
-[ATR-DAT] atr=3.435400 atr_ewm=3.435400 warmed=1 last_mid=4655.31000 saved_ts=1775147309
-[ATR-WARN] atr=3.4354 <= 5.0 -- may still be floor-pinned
+[ATR-DAT] atr=6.300201 atr_ewm=6.300201 warmed=1 last_mid=4662.30000 saved_ts=1775147670
+[ATR-OK]   atr=6.300201 healthy
 
-[DIAG]        16:28:29 [OMEGA-DIAG] PnL=-105.518 T=56 WR=41.0714% RTTp95=5.692ms cap=120ms lat_ok=1 session=ACTIVE
-[GOLD-DIAG]   16:28:29 [GOLD-DIAG] regime=COMPRESSION vwap=4639.98 vol_range=1.13
-[BRK-DIAG]    16:28:26 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.75 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
-[SUPERVISOR]  16:28:17 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=1.00 bracket=0.68 breakout=0.40 top_score=0.68 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=chop_detected
-[VIX]         16:28:12 [TICK] VIX.F 25.34/25.70
-[GOLD-PRICE]  16:28:14 [TICK] XAUUSD 4655.52/4655.74
+[DIAG]        16:34:30 [OMEGA-DIAG] PnL=-192.46 T=58 WR=39.66% RTTp95=7.40ms cap=120.00ms lat_ok=1 session=ACTIVE
+[GOLD-DIAG]   16:34:30 [GOLD-DIAG] regime=IMPULSE vwap=4640.30 vol_range=8.36
+[BRK-DIAG]    16:34:29 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=3.66 l2_imb=0.501 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+[SUPERVISOR]  16:33:40 [SUPERVISOR-XAUUSD] IN_COOLDOWN until +119s
+[VIX]         16:34:19 [TICK] VIX.F 25.19/25.55
+[GOLD-PRICE]  16:34:16 [TICK] XAUUSD 4655.72/4655.94
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
