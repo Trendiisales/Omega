@@ -1470,7 +1470,7 @@ private:
         // After banking 33%, SL locks to entry+buffer (BE) -- remainder runs free.
         // This is exactly what was requested: "bank the $50 we have, let it run."
 #ifndef GFE_STEP1_OVERRIDE
-        static constexpr double STEP1_DOLLAR_TRIGGER = 20.0;
+        static constexpr double STEP1_DOLLAR_TRIGGER = 35.0;  // raised 20->35: at $20 Asia wins averaged $25, losses $123. Negative expectancy. $35 banks more per step without being unreachable.
 #else
         static constexpr double STEP1_DOLLAR_TRIGGER = GFE_STEP1_OVERRIDE;
 #endif
