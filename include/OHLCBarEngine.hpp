@@ -227,8 +227,11 @@ public:
         if (n >= RSI_DIV_LOOKBACK+RSI_P) _update_rsi_divergence();
         if (n >= 3)          _update_vwap_slope();
 
-        // Ready as soon as we have EMA and ATR -- bar 1
-        if (!ind.m1_ready.load() && n >= 1) ind.m1_ready.store(true);
+        // Ready once RSI has real values -- needs RSI_P+1 bars (15 min from ticks).
+        // Previously fired at n>=1 (EMA/ATR ready) but RSI stayed at 50.0 default
+        // until bar 15, causing every SHORT to be blocked as "counter-trend, RSI=50.0
+        // not extreme enough" all session when trendbar API is unavailable (BlackBull).
+        if (!ind.m1_ready.load() && n >= RSI_P + 1) ind.m1_ready.store(true);
     }
 
     // ?????????????????????????????????????????????????????????????????????????
