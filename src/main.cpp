@@ -169,10 +169,13 @@ struct OmegaConfig {
 
     // GoldFlow compression vol floor -- hot-reloadable via omega_config.ini
     // vol_range must exceed this (pts) for GoldFlow to enter in COMPRESSION regime.
-    // 0.8 = 1.2pt coil is valid; raise to 2.0 to require stronger compression signal.
+    // 0.6 = valid coil; raise to 2.0 to require stronger compression signal.
+    // Lowered 0.80->0.60: vol_range was reading 0.66-0.79 during London open, sitting
+    // just under the 0.80 threshold and blocking all entries. 0.60 still filters
+    // genuinely dead tape (vol_range < 0.3) while allowing real low-vol setups.
     // Asia-specific: gf_compression_vol_floor_asia applies 22:00-07:00 UTC only.
-    double gf_compression_vol_floor      = 0.8;
-    double gf_compression_vol_floor_asia = 0.5;  // lower floor for Asia -- thinner tape, smaller coils
+    double gf_compression_vol_floor      = 0.60;
+    double gf_compression_vol_floor_asia = 0.40;  // lowered 0.50->0.40: Asia tape is thinner, valid coils are smaller
 
     int    ext_ger30_id               = 0;
     int    ext_uk100_id               = 0;
@@ -8418,7 +8421,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const bool vwap_headwind = (gf_long_rt  && gf_mid_rt > gf_vwap_rt)
                                             || (!gf_long_rt && gf_mid_rt < gf_vwap_rt);
                     #ifndef GF_MIN_VWAP_ROOM_R_OVERRIDE
-                    static constexpr double GF_MIN_VWAP_ROOM_R = 0.75; // lowered 1.5->0.75: 1.5xATR=15pts was blocking entries 9pts from VWAP -- that IS the setup
+                    static constexpr double GF_MIN_VWAP_ROOM_R = 0.55; // lowered 0.75->0.55: with ATR now
+                                                                         // correctly reflecting real vol (8-18pts
+                                                                         // VIX25+ days), 0.75xATR = 6-13.5pts needed
+                                                                         // from VWAP -- was blocking entries 9pts away.
+                                                                         // 0.55xATR = 4.4-9.9pts needed. Still ensures
+                                                                         // meaningful room to VWAP before entry, without
+                                                                         // requiring 3/4 of a full ATR swing just to qualify.
                     #else
                     static constexpr double GF_MIN_VWAP_ROOM_R = GF_MIN_VWAP_ROOM_R_OVERRIDE;
                     #endif

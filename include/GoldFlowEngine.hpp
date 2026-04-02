@@ -93,10 +93,15 @@ static constexpr int    GFE_ATR_RANGE_WINDOW  = 100;   // raised 20?100: 20 tick
                                                         // producing SL of $0.3-5 depending on micro-volatility.
                                                         // 100 ticks = ~10-30s, EWM-smoothed, stable across sessions.
 static constexpr double GFE_ATR_EWM_ALPHA     = 0.05;  // EWM smoothing alpha for ATR (20-tick equivalent half-life)
-static constexpr double GFE_ATR_MIN           = 5.0;   // raised 2.0?5.0: XAUUSD@$4554, 2pt ATR = 0.044%
-                                                        // = noise level, hit by spread fluctuation alone.
-                                                        // 5pt minimum = 0.11% = survives a real tick move.
-                                                        // VIX27 day real ATR is 8-18pts, this is a safe floor.
+static constexpr double GFE_ATR_MIN           = 2.0;   // lowered 5.0->2.0: 5.0 floor was pinning ATR at exactly
+                                                        // 5.0 during Asia compression -- EWM reads 1.5-3pts on
+                                                        // thin tape, std::max(5.0, ewm) = 5.0 every tick.
+                                                        // Result: NO_ROOM_TO_TARGET need=3.75pts (0.75*5.0)
+                                                        // blocking entries 3.5pts from VWAP all session.
+                                                        // 2.0 floor = still prevents noise SLs, allows EWM
+                                                        // to reflect real Asia vol (1.5-3.5pts) and London
+                                                        // vol (5-15pts) accurately. Real bar ATR from Gate 3
+                                                        // (seed_bar_atr) overrides this once bars warm up.
 #ifndef GFE_ATR_SL_MULT_OVERRIDE
 static constexpr double GFE_ATR_SL_MULT       = 1.0;  // SL = 1x ATR -- reduced from 1.5: losers were -10pts, winners only +3.4pts avg. Tighter SL fires sooner, same $ loss with max_loss cap.
 #else
@@ -865,10 +870,11 @@ struct GoldFlowEngine {
             return;
         }
         // Reject if ATR is below minimum viable -- saved during dead tape or format mismatch.
-        // Raised 1.5?5.0: a $2 ATR on XAUUSD@$4554 produces a 0.044% SL = noise level.
-        // Any valid London/NY session ATR is >= 5pts. Dead tape / corrupt values are < 3pts.
-        if (atr < 5.0) {
-            printf("[GFE] ATR state rejected (atr=%.4f < 5.0 -- dead session or stale value)\n", atr);
+        // Lowered 5.0->2.0 to match GFE_ATR_MIN. A 3-4pt ATR saved during Asia session is
+        // valid -- the old 5.0 threshold rejected these and forced a cold seed (which then
+        // used vix=0 -> 10pt fallback, or worse got pinned at 5.0 by GFE_ATR_MIN floor).
+        if (atr < 2.0) {
+            printf("[GFE] ATR state rejected (atr=%.4f < 2.0 -- dead session or stale value)\n", atr);
             return;
         }
         // Valid -- restore
@@ -895,13 +901,16 @@ struct GoldFlowEngine {
         if (mid <= 0.0 || m_atr_warmup_ticks >= GFE_ATR_PERIOD) return;
 
         // VIX-scaled ATR seed -- matches real observed XAUUSD ATR ranges:
-        //   VIX < 15  (quiet)    ? ATR ~5pts   Asia dead tape
-        //   VIX 15-20 (normal)   ? ATR ~8pts   normal London/NY
-        //   VIX 20-25 (elevated) ? ATR ~12pts  active trending day
-        //   VIX 25+   (high vol) ? ATR ~18pts  macro event / panic
+        //   VIX < 15  (quiet)    -> ATR ~5pts   Asia dead tape
+        //   VIX 15-20 (normal)   -> ATR ~8pts   normal London/NY
+        //   VIX 20-25 (elevated) -> ATR ~12pts  active trending day
+        //   VIX 25+   (high vol) -> ATR ~18pts  macro event / panic
         // Evidence: today VIX=27, gold moved $140, 3pt seed produced a 2pt SL
         // that got stopped on the first micro-fluctuation after entry.
-        // If vix_level not provided (0.0), use conservative 10pts.
+        // If vix_level not provided (0.0), use 8.0 -- VIX.F tick not yet arrived,
+        // but 8.0 is a reasonable mid-range default for active tape. Do NOT use
+        // 10.0 (old value) which combined with GFE_ATR_MIN clamp produced confusing
+        // "ATR stuck at 5.0" when EWM decayed below 5.0 on Asia compression.
         // If ATR was successfully loaded from disk, don't overwrite it with a generic
         // VIX-based seed. The loaded value is actual recent market ATR -- far more accurate.
         if (m_atr_loaded_) {
@@ -910,13 +919,14 @@ struct GoldFlowEngine {
             return;
         }
         double seed_range;
-        if      (vix_level <= 0.0)  seed_range = 10.0;  // unknown -- use safe default
+        if      (vix_level <= 0.0)  seed_range =  8.0;  // VIX unknown (feed not yet live) -- use mid-range default
         else if (vix_level <  15.0) seed_range =  5.0;  // quiet
         else if (vix_level <  20.0) seed_range =  8.0;  // normal
         else if (vix_level <  25.0) seed_range = 12.0;  // elevated
         else                        seed_range = 18.0;  // high vol -- VIX 25+
-        printf("[GFE-SEED] mid=%.2f vix=%.1f seed_atr=%.1f (SL will be ~%.1fpts)\n",
-               mid, vix_level, seed_range, seed_range);
+        printf("[GFE-SEED] mid=%.2f vix=%.1f seed_atr=%.1f (SL will be ~%.1fpts)%s\n",
+               mid, vix_level, seed_range, seed_range,
+               vix_level <= 0.0 ? " [VIX-UNKNOWN: using default]" : "");
         fflush(stdout);
         m_atr_ewm          = seed_range;
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
