@@ -4891,8 +4891,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const double vwap_asia = g_gold_stack.vwap();
                     const double mid_asia  = (bid + ask) * 0.5;
                     const double vdisp_asia = (vwap_asia > 0.0) ? std::fabs(mid_asia - vwap_asia) : 0.0;
-                    const bool asia_macro_bypass = (rsi_asia > 0.0 && rsi_asia < 32.0)
-                                                || (rsi_asia > 68.0)
+                    // FIX 2026-04-02: raised RSI thresholds to match rest of chain (32->38, 68->62).
+                    const bool asia_macro_bypass = (rsi_asia > 0.0 && rsi_asia < 38.0)
+                                                || (rsi_asia > 62.0)
                                                 || (vdisp_asia > 10.0);
                     if (asia_ratio < 2.0 && !asia_fast_breakout && !asia_macro_bypass) {
                         static int64_t s_asia_block_log = 0;
@@ -7253,11 +7254,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double drift_for_gate = g_gold_stack.ewm_drift();
         // Lowered drift threshold -4.0 -> -1.5: EWM drift only reaches -1.7 during
         // a 125pt crash because the EWM smooths it. RSI<32 alone is sufficient.
+        // FIX 2026-04-02: raised RSI crash thresholds 32->38 (standalone) and 35->38 (with drift).
+        // At 10:21 UTC RSI was ~36 during a clear $15 London drop. Old threshold of 32 never fired.
+        // RSI=38 still excludes normal 40-50 RSI chop. Drift threshold unchanged at -1.5.
         const bool crash_impulse_bypass = (rsi_for_gate > 0.0)
-            && ((rsi_for_gate < 32.0)                              // RSI crash -- drift not needed
-             || (rsi_for_gate > 68.0)                             // RSI rally -- drift not needed
-             || (rsi_for_gate < 35.0 && drift_for_gate < -1.5)   // drift+RSI confirmation
-             || (rsi_for_gate > 65.0 && drift_for_gate >  1.5)); // drift+RSI confirmation
+            && ((rsi_for_gate < 38.0)                              // RSI crash -- drift not needed (was 32)
+             || (rsi_for_gate > 62.0)                             // RSI rally -- drift not needed (was 68)
+             || (rsi_for_gate < 38.0 && drift_for_gate < -1.5)   // drift+RSI confirmation (was 35)
+             || (rsi_for_gate > 62.0 && drift_for_gate >  1.5)); // drift+RSI confirmation (was 65)
         const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open)
                                  && (!gold_post_impulse_block || crash_impulse_bypass);
         // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
@@ -8610,15 +8614,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const bool counter_trend = (gf_long && bar_trend == -1) ||
                                                (!gf_long && bar_trend == +1);
                     if (counter_trend) {
-                        // FIX 2026-04-02: inverted logic. counter_trend for SHORT means
-                        // bar_trend==+1 (uptrend) -- we're shorting INTO an uptrend.
-                        // Require RSI < 35 (deeply oversold) to allow that counter-trend short.
-                        // OLD (wrong): rsi_extreme = gf_long ? (bar_rsi < 35) : (bar_rsi > 65)
-                        //   For SHORT: required RSI>65 to be "extreme" -- that's overbought,
-                        //   exactly when you'd WANT to short. Blocked all good short setups.
-                        // NEW: for SHORT counter-trend, require RSI < 35 (genuine OS in uptrend).
-                        //      for LONG counter-trend, require RSI > 65 (genuine OB in downtrend).
-                        const bool rsi_extreme = gf_long ? (bar_rsi > 65.0) : (bar_rsi < 35.0);
+                        // FIX 2026-04-02: raised RSI threshold 35->38 to match crash_impulse_bypass.
+                        // RSI=36 at 10:21 UTC failed the old <35 test by 1 point during a real crash.
+                        const bool rsi_extreme = gf_long ? (bar_rsi > 62.0) : (bar_rsi < 38.0);
                         if (!rsi_extreme) {
                             printf("[GF-BAR-BLOCK] XAUUSD %s blocked -- counter-trend (M5=%+d)"
                                    " RSI=%.1f not extreme enough\n",
@@ -9180,8 +9178,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const double rsi_now  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
             // Use gold stack EWM drift as crash proxy: drift < -5 = strong downtrend
             const double drift_now = g_gold_stack.ewm_drift();
-            const bool crash_mode = (drift_now < -5.0 && rsi_now < 35.0 && rsi_now > 0.0)
-                                 || (drift_now >  5.0 && rsi_now > 65.0);
+            // FIX 2026-04-02: raised RSI thresholds 35->38, 65->62 -- consistent with full chain.
+            const bool crash_mode = (drift_now < -5.0 && rsi_now < 38.0 && rsi_now > 0.0)
+                                 || (drift_now >  5.0 && rsi_now > 62.0);
             if (crash_mode
                 && tpb_gold_can_enter
                 && !g_trend_pb_gold.has_open_position()
