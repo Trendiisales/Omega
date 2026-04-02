@@ -4,6 +4,7 @@
 #include <mutex>
 #include <chrono>
 #include <cmath>
+#include <unordered_set>
 
 namespace omega {
 
@@ -119,6 +120,35 @@ public:
     void record(const TradeRecord& tr)
     {
         std::lock_guard<std::mutex> lk(m_mtx);
+
+        // ?? DEDUP GUARD ???????????????????????????????????????????????????????????
+        // Prevents replayed close events from being double-booked into the ledger.
+        // Root cause: GoldStack/GoldFlow positions opened in a prior session persist
+        // in engine memory across reconnects. On SL/trail hit after reconnect,
+        // on_close fires -> handle_closed_trade -> ledger.record() for a trade that
+        // may already have been recorded (or belongs to yesterday's session).
+        //
+        // Dedup key: symbol + entryTs + engine. entryTs is unix seconds at entry --
+        // unique per trade per engine. exitReason excluded so partials (same entryTs,
+        // different exitReason) are each counted, but the same full-close can't fire twice.
+        //
+        // PARTIAL exception: PARTIAL_1R/PARTIAL_2R share entryTs with the final close.
+        // We dedup on symbol+entryTs+engine+exitReason for partials only, so they don't
+        // block the final close from being recorded.
+        {
+            const std::string key = tr.symbol + "|" + std::to_string(tr.entryTs)
+                                  + "|" + tr.engine + "|" + tr.exitReason;
+            if (m_seen_keys.count(key)) {
+                // Already recorded -- this is a replay. Log and discard.
+                printf("[LEDGER-DEDUP] BLOCKED replay of %s %s entryTs=%lld reason=%s pnl=%.2f\n",
+                       tr.symbol.c_str(), tr.engine.c_str(),
+                       (long long)tr.entryTs, tr.exitReason.c_str(), tr.net_pnl);
+                fflush(stdout);
+                return;
+            }
+            m_seen_keys.insert(key);
+        }
+
         m_trades.push_back(tr);
         // net_pnl is used for all stats (after slippage + commission)
         const double pnl_for_stats = (tr.net_pnl != 0.0 || tr.slippage_entry != 0.0)
@@ -193,6 +223,8 @@ public:
         return m_losses > 0 ? (m_sum_loss / m_losses) : 0.0;
     }
 
+    // Clear dedup set -- called on daily reset so new-day trades aren't blocked
+    // by prior-day keys. cumulative_pnl intentionally NOT reset (true equity).
     void resetDaily()
     {
         std::lock_guard<std::mutex> lk(m_mtx);
@@ -200,11 +232,13 @@ public:
         m_daily_pnl = 0; m_gross_daily_pnl = 0; m_peak_pnl = 0; m_max_dd = 0;
         m_wins = 0; m_losses = 0;
         m_sum_win = 0; m_sum_loss = 0;
+        m_seen_keys.clear();  // allow same-entryTs trades to re-record on new day
     }
 
 private:
     mutable std::mutex        m_mtx;
     std::vector<TradeRecord>  m_trades;
+    std::unordered_set<std::string> m_seen_keys;  // dedup: symbol|entryTs|engine|exitReason
     double m_daily_pnl       = 0;
     double m_gross_daily_pnl = 0;
     double m_cumulative_pnl  = 0;  // never reset -- survives daily rollover

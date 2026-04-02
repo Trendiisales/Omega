@@ -3319,6 +3319,48 @@ static void maybe_reset_daily_ledger() {
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
 
+    // ?? PNL SANITY CAP ???????????????????????????????????????????????????????????
+    // Catches inflated PnL from stale carry-over positions opened in a prior session
+    // that close during the current session after repeated reconnects.
+    //
+    // The cap is based on max realistic single-trade PnL for each instrument:
+    //   XAUUSD: max lot=0.30, max move=150pts (3x ATR on a crash day) -> $4500 raw
+    //           but 0.10 lot * 150pts * 100 = $1500. Cap at $1500 for safety.
+    //   XAGUSD: max lot=0.10, max move=500pts -> $500. Cap at $600.
+    //   US500.F/USTEC.F: max lot=0.10, max move=200pts -> $200. Cap at $300.
+    //   Others: cap at $500 gross.
+    //
+    // If gross |pnl| exceeds cap BEFORE tick_val multiply (raw price pts * size),
+    // this fires before scaling. We check the post-scale value after mult is applied.
+    // We do NOT block -- we log loudly and let it through so CSV audit is preserved.
+    // The LEDGER dedup guard (OmegaTradeLedger::record) is the hard block.
+    //
+    // Threshold is deliberately generous (3x normal max) to only catch true anomalies.
+    {
+        // Compute expected max gross USD for this symbol+size combination
+        const double sz = tr.size;
+        const std::string& sym = tr.symbol;
+        double max_gross_usd = 500.0;  // default
+        if      (sym == "XAUUSD")  max_gross_usd = std::max(1500.0, sz * 150.0 * 100.0);
+        else if (sym == "XAGUSD")  max_gross_usd = std::max( 600.0, sz * 500.0 *   5.0);
+        else if (sym == "US500.F") max_gross_usd = std::max( 300.0, sz * 200.0 *  50.0);
+        else if (sym == "USTEC.F") max_gross_usd = std::max( 300.0, sz * 300.0 *  20.0);
+        else if (sym == "DJ30.F")  max_gross_usd = std::max( 300.0, sz * 500.0 *   5.0);
+        // raw pnl (pre-tick-mult) sanity: pnl = move_pts * size
+        // For XAUUSD: move_pts * 0.10 lots, so if move > 150pts raw pnl > 15 (pre-mult)
+        const double raw_pnl_abs = std::fabs(tr.pnl);
+        const double mult_preview = tick_value_multiplier(sym);
+        const double gross_usd_preview = raw_pnl_abs * mult_preview;
+        if (gross_usd_preview > max_gross_usd) {
+            printf("[PNL-SANITY] WARN %s %s gross_usd=%.2f exceeds cap=%.2f "
+                   "raw_pnl=%.4f size=%.4f entryTs=%lld reason=%s -- "
+                   "possible stale session carry-over. Ledger dedup will block if replay.\n",
+                   sym.c_str(), tr.engine.c_str(), gross_usd_preview, max_gross_usd,
+                   tr.pnl, sz, (long long)tr.entryTs, tr.exitReason.c_str());
+            fflush(stdout);
+        }
+    }
+
     // ?? PARTIAL_1R fast path ??????????????????????????????????????????????????
     // A PARTIAL_1R record means 50% of the position was closed at 1R profit.
     // The trade is NOT fully closed -- the remaining half is still live.
