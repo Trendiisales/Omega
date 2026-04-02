@@ -44469,3 +44469,12 @@
 09:51:25 [TICK] USOIL.F 107.47/107.54
 09:51:26 [TICK] XAUUSD 4624.05/4624.27
 09:51:26 [TICK] XAGUSD 71.18/71.21
+09:51:26 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.85 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+09:51:26 [TICK] AUDUSD 0.69/0.69
+09:51:26 [TICK] GER40 22898.75/22899.75
+09:51:26 [TICK] EURUSD 1.15/1.15
+09:51:26 [TICK] UK100 10352.30/10353.30
+09:51:26 [TICK] US500.F 6540.59/6541.40
+09:51:26 [TICK] VIX.F 25.68/26.06
+09:51:27 [TICK] ESTX50 5631.10/5632.60
+09:51:27 [TICK] GBPUSD 1.32/1.32
