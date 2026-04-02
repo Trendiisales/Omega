@@ -3693,6 +3693,23 @@ public:
         return history_.range()>=VOL_THRESHOLD;
     }
     double current_range() const { return history_.empty()?0:history_.range(); }
+    // seed(): pre-fill the history buffer so vol_range is non-zero immediately
+    // on restart. Called from load_atr_state() using the saved ewm_vol_baseline
+    // as the seed mid. Without this, the engine is blind for the first 50 live
+    // ticks (~40s London, ~4min dead zone) -- missing every move at session open.
+    // A flat fill at seed_mid is the correct seed: range starts at 0 but the
+    // buffer is full, so the FIRST live tick that moves produces a real range
+    // and allow() can return true immediately rather than after 50 more ticks.
+    void seed(double seed_mid) {
+        if (seed_mid <= 0.0) return;
+        history_ = MinMaxCircularBuffer<double,64>{};  // reset
+        for (size_t i = 0; i < WINDOW; ++i)
+            history_.push_back(seed_mid);
+        // history_ is now full -- next live tick with any price movement
+        // produces a real range and allow() will evaluate correctly.
+        printf("[VOL-FILTER] Seeded with mid=%.2f -- warmup bypassed\n", seed_mid);
+        fflush(stdout);
+    }
 
     // seed(): pre-fill history so allow() is not blind for the first 50 ticks
     // after a restart. Called from load_atr_state() using the saved EWM baseline
