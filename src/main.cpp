@@ -7315,8 +7315,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             //   is underway regardless of book balance. L2 still gates inside GoldFlow
             //   (SIGNAL_STALE check) but the outer bracket/flow gate uses drift.
             const double gold_ewm_drift_abs = std::fabs(g_gold_stack.ewm_drift());
+            // Asia trend gate: require sustained directional drift to enter in Asia session.
+            // Threshold raised 1.5->2.5: drift oscillates around 1.5 on quiet Asia ticks,
+            // causing constant flapping that prevents the bracket from ever arming.
+            // At 2.5 the gate is stable -- only real directional pressure clears it.
+            //
+            // CRASH BYPASS: if RSI<35 and drift<-4 (strong crash confirmed), bypass Asia
+            // drift gate entirely. A 130pt selloff IS the signal -- drift gating it out
+            // is exactly wrong. Same logic as crash_impulse_bypass above.
+            const bool asia_crash_bypass = (rsi_for_gate > 0.0 && rsi_for_gate < 35.0
+                                            && drift_for_gate < -4.0)
+                                        || (rsi_for_gate > 65.0 && drift_for_gate > 4.0);
             const bool asia_trend_ok = !in_asia_slot
-                || (gold_ewm_drift_abs >= 1.5);  // $1.50+ drift = real directional move
+                || asia_crash_bypass               // strong crash/rally ignores Asia drift gate
+                || (gold_ewm_drift_abs >= 2.5);   // raised 1.5->2.5: stable directional threshold
 
             // London open noise guard: 07:00-07:15 UTC -- first 15min of London open
             // has violent liquidity sweeps as Asian orders get repriced. The gold stack
@@ -7378,7 +7390,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool gold_pyramid_ok    = gold_trend.pyramid_allowed(g_macro_ctx.gold_l2_imbalance, now_ms_g);
             // Block pyramid in IMPULSE regime: price is thrusting hard -- adding on
             // during a thrust means chasing the move at peak momentum with tight SLs.
-            const bool gold_impulse_regime = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
+            // ?? Impulse regime gate ???????????????????????????????????????????????
+            // CompressionBreakout is blocked in IMPULSE because compression geometry
+            // breaks down in a thrust -- the bracket range is meaningless mid-thrust.
+            // EXCEPTION: during a confirmed crash (RSI<35, drift<-4) or rally (RSI>65,
+            // drift>4), the IMPULSE regime IS the trade. Block the bracket only if
+            // we are NOT in a crash/rally. TrendBracket (one-sided) fires instead in
+            // IMPULSE -- but that requires trend_bias != 0. During Asia cold-start,
+            // trend_bias may not be set, so TrendBracket also misses. This crash bypass
+            // ensures at least one path fires on confirmed directional IMPULSE moves.
+            const bool gold_impulse_regime = (std::strcmp(gold_stack_regime, "IMPULSE") == 0)
+                                           && !asia_crash_bypass; // allow bracket in crash IMPULSE
 
             // ?? Exhaustion check: don't pyramid at local extremes ?????????????
             // If price has already moved >4pts from the bracket entry in the pyramid
@@ -8046,7 +8068,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static constexpr double GF_COMPRESSION_VOL_FLOOR = GF_COMPRESSION_VOL_FLOOR_OVERRIDE;
                 #endif
                 const double vol_range_now = g_gold_stack.vol_range();
-                if (in_compression && vol_range_now >= 0.0 && vol_range_now < GF_COMPRESSION_VOL_FLOOR) {
+                // vol_range=0.00 exactly means bars not yet seeded (cold start / M15 unseeded).
+                // Do NOT block on unseeded vol -- we have no data, not zero volatility.
+                // Also bypass during confirmed crash (RSI<35, drift<-4): the crash IS the
+                // volatility signal. Blocking GoldFlow because vol_range is stale is wrong.
+                const bool vol_unseeded  = (vol_range_now == 0.0);
+                const bool gf_crash_bypass = asia_crash_bypass;  // reuse crash flag from bracket gate
+                if (in_compression && !vol_unseeded && !gf_crash_bypass
+                    && vol_range_now >= 0.0 && vol_range_now < GF_COMPRESSION_VOL_FLOOR) {
                     static int64_t s_comp_log = 0;
                     if (static_cast<int64_t>(std::time(nullptr)) - s_comp_log >= 30) {
                         s_comp_log = static_cast<int64_t>(std::time(nullptr));
