@@ -47072,3 +47072,10 @@
 11:36:29 [CTRADER-BARS] Spots sub ACK
 11:36:31 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.68 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
 11:36:32 [TICK] NGAS.F 2.83/2.85
+11:36:41 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.05 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+11:36:49 [OMEGA-DIAG] PnL=15.09 T=25 WR=48.00% RTTp95=7.07ms cap=120.00ms lat_ok=1 session=ACTIVE
+11:36:49 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+11:36:49 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+11:36:49 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+11:36:49 [GOLD-DIAG] regime=COMPRESSION vwap=4615.79 vol_range=2.34
+11:36:49 [TICK] XAUUSD 4614.86/4615.08
