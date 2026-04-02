@@ -10330,16 +10330,30 @@ int main(int argc, char* argv[])
         const bool m15_ok = g_bars_gold.m15.load_indicators(base + "/bars_gold_m15.dat");
         const bool h4_ok  = g_bars_gold.h4 .load_indicators(base + "/bars_gold_h4.dat");
         if (m15_ok) {
-            // Immediately seed TrendPullback with the restored bar EMAs
+            // Immediately seed TrendPullback EMAs + ATR from M15 bar state
             g_trend_pb_gold.seed_bar_emas(
                 g_bars_gold.m15.ind.ema9 .load(std::memory_order_relaxed),
                 g_bars_gold.m15.ind.ema21.load(std::memory_order_relaxed),
                 g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
                 g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
-            printf("[STARTUP] Bar state loaded: M5=%s M15=%s H4=%s -- m1_ready=true, no tick request needed\n",
-                   m5_ok?"ok":"cold", m15_ok?"ok":"cold", h4_ok?"ok":"cold");
+            // Immediately seed M5 trend direction gate
+            if (m5_ok) {
+                g_trend_pb_gold.seed_m5_trend(
+                    g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed));
+            }
+            // Immediately seed H4 HTF trend gate -- no need to wait for first tick
+            if (h4_ok) {
+                g_trend_pb_gold.seed_h4_trend(
+                    g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
+            }
+            printf("[STARTUP] Bar state loaded: M5=%s M15=%s H4=%s"
+                   " EMA50=%.2f ATR=%.2f H4_trend=%d -- m1_ready=true instant\n",
+                   m5_ok?"ok":"cold", m15_ok?"ok":"cold", h4_ok?"ok":"cold",
+                   g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
+                   g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed),
+                   g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
         } else {
-            printf("[STARTUP] No bar state on disk -- will seed from pt=2145 tick data (takes ~30s)\n");
+            printf("[STARTUP] No bar state on disk (cold start) -- requesting M15 tick data\n");
         }
         fflush(stdout);
     }
