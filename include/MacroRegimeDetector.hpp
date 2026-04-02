@@ -98,6 +98,12 @@ public:
     }
 
     double vixLevel() const { return m_vix; }
+    // Returns the latest DX.F mid price (0.0 if no feed yet).
+    // Used by DXYDivergenceEngine to populate GoldSnapshot.dx_mid.
+    double dxyMid() const {
+        return m_dxy_prices.empty() ? 0.0 : m_dxy_prices.back();
+    }
+
     // Returns fractional return (e.g. 0.0015 = +0.15%).
     // Compare against DXY_RISK_OFF_PCT / 100.0 to stay in consistent units.
     double dxyReturn() const {
