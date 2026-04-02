@@ -1,0 +1,25 @@
+﻿OMEGA STARTUP REPORT
+Generated : 
+Log file  : C:\Omega\logs\latest.log
+Collected : 0 lines over 45s
+Result    : PASS=  FAIL=  WARN=2  INFO=8
+========================================================================
+[INFO]  ATR Seed               No GFE-SEED line seen
+                                     Engine may have loaded ATR from disk (normal) -- see ATR State check.
+[INFO]  ATR Running Value      No GF-GATE-BLOCK lines (no gate blocks fired)
+                                     Good -- or no entry attempts yet.
+[INFO]  vol_range              No GOLD-DIAG line yet
+                                     Engine may not have emitted diagnostics -- wait for first GOLD-DIAG log.
+[WARN]  VIX Level              No VIX.F tick seen in first 45s
+                                     ATR seed used default 8.0. Will update when VIX.F arrives.
+[INFO]  Session/Entry State    No BRK-DIAG lines yet
+[WARN]  L2 / cTrader Feed      No L2-STATUS line in first 45s
+                                     Feed may be slow to connect.
+[INFO]  Latency                No OMEGA-DIAG yet
+[INFO]  Gate Blocks            
+                                     Mixed blocks -- normal filtering behaviour.
+[INFO]  First Signal           No signal in first 45s
+                                     Normal if market quiet or in compression.
+[INFO]  Build Stamp            commit=a077480  built=2026-04-02 08:34:48 UTC
+========================================================================
+RESULT: PASS=  FAIL=  WARN=2  INFO=8

@@ -1,18 +1,43 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-02 08:34:49 UTC
+Generated : 2026-04-02 08:35:45 UTC
 ============================================================
 [ATR-DAT] atr=4.075394 atr_ewm=4.075394 warmed=1 last_mid=4639.26000 saved_ts=1775117629
 [ATR-WARN] atr=4.075394 <= 5.0 -- may still be floor-pinned
 
 [DIAG]        08:29:52 [OMEGA-DIAG] PnL=39.6858 T=19 WR=52.6316% RTTp95=6.588ms cap=120ms lat_ok=1 session=ACTIVE
 [GOLD-DIAG]   08:29:52 [GOLD-DIAG] regime=COMPRESSION vwap=4636.79 vol_range=1.60
-[BRK-DIAG]    08:29:55 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.82 l2_imb=0.525 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
-[SUPERVISOR]  08:29:53 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.47 bracket=0.59 breakout=0.40 top_score=0.59 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
-[VIX]         08:30:01 [TICK] VIX.F 25.63/26.01
-[GOLD-PRICE]  08:29:56 [TICK] XAUUSD 4634.23/4634.45
+[BRK-DIAG]    08:35:37 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-2.34 l2_imb=0.652 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+[SUPERVISOR]  08:34:56 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.92 bracket=0.98 breakout=0.00 top_score=0.98 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+[VIX]         08:35:27 [TICK] VIX.F 25.63/26.01
+[GOLD-PRICE]  08:35:26 [TICK] XAUUSD 4637.13/4637.35
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
 [STARTUP-REPORT-BEGIN]
+  OMEGA STARTUP REPORT
+  Generated : 
+  Log file  : C:\Omega\logs\latest.log
+  Collected : 0 lines over 45s
+  Result    : PASS=  FAIL=  WARN=2  INFO=8
+  ========================================================================
+  [INFO]  ATR Seed               No GFE-SEED line seen
+                                       Engine may have loaded ATR from disk (normal) -- see ATR State check.
+  [INFO]  ATR Running Value      No GF-GATE-BLOCK lines (no gate blocks fired)
+                                       Good -- or no entry attempts yet.
+  [INFO]  vol_range              No GOLD-DIAG line yet
+                                       Engine may not have emitted diagnostics -- wait for first GOLD-DIAG log.
+  [WARN]  VIX Level              No VIX.F tick seen in first 45s
+                                       ATR seed used default 8.0. Will update when VIX.F arrives.
+  [INFO]  Session/Entry State    No BRK-DIAG lines yet
+  [WARN]  L2 / cTrader Feed      No L2-STATUS line in first 45s
+                                       Feed may be slow to connect.
+  [INFO]  Latency                No OMEGA-DIAG yet
+  [INFO]  Gate Blocks            
+                                       Mixed blocks -- normal filtering behaviour.
+  [INFO]  First Signal           No signal in first 45s
+                                       Normal if market quiet or in compression.
+  [INFO]  Build Stamp            commit=a077480  built=2026-04-02 08:34:48 UTC
+  ========================================================================
+  RESULT: PASS=  FAIL=  WARN=2  INFO=8
 [STARTUP-REPORT-END]
 END-OF-SNAPSHOT
