@@ -7371,11 +7371,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool conf_ok = (gold_sdec.confidence >= 0.45);
 
             // ?? Bar indicator context for GoldStack ???????????????????????????
-            // Read M1 RSI and M5 trend from cTrader trendbar feed (zero-lock atomics).
-            // Used to confirm/block GoldStack entries below.
-            const bool bar_ready     = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
-            const double bar_rsi_gs  = bar_ready ? g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed) : 50.0;
-            const int    bar_trend_gs = bar_ready ? g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed) : 0;
+            // FIX 2026-04-02: replaced M5 swing trend_state with M1 EMA9/EMA50 crossover.
+            // M5 swing trend_state requires SWING_P=3 bars each side to confirm a pivot --
+            // minimum 15+ min lag. During a live crash trend_state stays +1 from the prior
+            // rally and blocks all shorts via the counter-trend gate.
+            // EMA9/EMA50 on M1 reflects momentum within 1-3 bars. When EMA9 < EMA50 on
+            // M1, the chart shows a clear downtrend -- visible to any human, invisible to
+            // the engine until now. This is what was blocking every entry in today's crash.
+            const bool bar_ready      = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
+            const double bar_rsi_gs   = bar_ready ? g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed) : 50.0;
+            const double bar_ema9_gs  = bar_ready ? g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed) : 0.0;
+            const double bar_ema50_gs = bar_ready ? g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed) : 0.0;
+            // EMA9 < EMA50 = momentum downtrend (-1). EMA9 > EMA50 = uptrend (+1). 0 = no signal.
+            const int    bar_trend_gs = (bar_ema9_gs > 0.0 && bar_ema50_gs > 0.0)
+                ? (bar_ema9_gs < bar_ema50_gs ? -1 : +1)
+                : 0;
 
             const bool stack_can_enter = gold_sdec.allow_breakout
                                          && !g_bracket_gold.has_open_position()
@@ -8580,8 +8590,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (gf_tick_ok && g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
                 const double bar_rsi    = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
                 const double bar_atr    = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
-                const int    bar_trend  = g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed);
                 const double bar_bb_pct = g_bars_gold.m1.ind.bb_pct.load(std::memory_order_relaxed);
+                // FIX 2026-04-02: replaced M5 swing trend_state with M1 EMA9/EMA50 crossover.
+                // M5 swing lag = 15+ min. EMA9/EMA50 on M1 = 1-3 bar lag.
+                // This is the crossover visible on the chart that we were never reading.
+                const double bar_ema9_gf  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
+                const double bar_ema50_gf = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
+                const int    bar_trend  = (bar_ema9_gf > 0.0 && bar_ema50_gf > 0.0)
+                    ? (bar_ema9_gf < bar_ema50_gf ? -1 : +1)
+                    : 0;
                 const bool   gf_long   = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
 
                 // RSI overbought/oversold gate
@@ -8766,8 +8783,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // When bands are coiling, price is about to break one way hard --
                     // counter-trend entries into a squeeze almost always lose.
                     if (gf_tick_ok && bb_sq && sq_bars >= 3) {
-                        const int    bar_trend_sq  = g_bars_gold.m5.ind.trend_state
-                                                         .load(std::memory_order_relaxed);
+                        // FIX 2026-04-02: use M1 EMA crossover not M5 swing for BBW squeeze counter check
+                        const double bsq_ema9  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
+                        const double bsq_ema50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
+                        const int    bar_trend_sq = (bsq_ema9 > 0.0 && bsq_ema50 > 0.0)
+                            ? (bsq_ema9 < bsq_ema50 ? -1 : +1) : 0;
                         const bool   counter_sq    = (gf_long_g4  && bar_trend_sq == -1)
                                                   || (!gf_long_g4 && bar_trend_sq == +1);
                         if (counter_sq) {
