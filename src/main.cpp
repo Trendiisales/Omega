@@ -6301,8 +6301,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // ?? Entry log -- every trade every engine every symbol ??????????????
         // Previously only GoldFlow/GoldStack printed entry lines.
         // VWAPRev TrendPB NBM ORB were silent -- impossible to audit live.
-        printf("[ENTRY] %s %s @ %.5f sl=%.5f tp=%.5f lot=%.4f sl_pts=%.5f
-",
+        printf("[ENTRY] %s %s @ %.5f sl=%.5f tp=%.5f lot=%.4f sl_pts=%.5f\n",
                esym, is_long ? "LONG" : "SHORT",
                entry, sl,
                tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
