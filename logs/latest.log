@@ -44295,3 +44295,5 @@
 09:47:27 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
 09:47:27 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
 09:47:27 [GOLD-DIAG] regime=COMPRESSION vwap=4621.34 vol_range=1.19
+09:47:27 [TICK] DX.F 99.90/100.00
+09:47:28 [TICK] XAUUSD 4621.59/4621.81
