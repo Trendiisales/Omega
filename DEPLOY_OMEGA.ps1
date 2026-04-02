@@ -126,19 +126,11 @@ Write-Host "[4/9] Building from $sourceHashShort ..." -ForegroundColor Yellow
 # INCREMENTAL BUILD: only wipe and reconfigure if CMakeCache.txt is missing
 # or if CMakeLists.txt changed since last build. A full wipe adds 3-5 minutes
 # every deploy -- incremental builds take ~30s when only a few files changed.
-$needsReconfigure = $false
-if (-not (Test-Path "$OmegaDir\build\CMakeCache.txt")) {
-    $needsReconfigure = $true
-    Write-Host "      [INFO] No CMake cache -- full configure required" -ForegroundColor Cyan
-} else {
-    # Check if CMakeLists.txt is newer than cache
-    $cacheTime = (Get-Item "$OmegaDir\build\CMakeCache.txt").LastWriteTimeUtc
-    $cmakeTime = (Get-Item "$OmegaDir\CMakeLists.txt").LastWriteTimeUtc
-    if ($cmakeTime -gt $cacheTime) {
-        $needsReconfigure = $true
-        Write-Host "      [INFO] CMakeLists.txt changed -- reconfiguring" -ForegroundColor Cyan
-    }
-}
+# Always reconfigure so cmake regenerates the git hash define.
+# Without this, incremental builds use the cached hash from the previous configure
+# and the GUI shows a stale hash from a previous deploy.
+$needsReconfigure = $true
+Write-Host "      [INFO] Always reconfigure -- ensures git hash is fresh" -ForegroundColor Cyan
 
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 Set-Location "$OmegaDir\build"
