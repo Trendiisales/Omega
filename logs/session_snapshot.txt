@@ -1,15 +1,15 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-02 16:54:33 UTC
+Generated : 2026-04-02 17:00:35 UTC
 ============================================================
-[ATR-DAT] atr=4.354882 atr_ewm=4.354882 warmed=1 last_mid=4666.51000 saved_ts=1775148873
-[ATR-WARN] atr=4.354882 <= 5.0 -- may still be floor-pinned
+[ATR-DAT] atr=4.095753 atr_ewm=4.095753 warmed=1 last_mid=4664.18000 saved_ts=1775149234
+[ATR-WARN] atr=4.095753 <= 5.0 -- may still be floor-pinned
 
-[DIAG]        16:54:33 [OMEGA-DIAG] PnL=-192.46 T=58 WR=39.6552% RTTp95=4.675ms cap=120ms lat_ok=1 session=ACTIVE
-[GOLD-DIAG]   16:54:33 [GOLD-DIAG] regime=COMPRESSION vwap=4641.72 vol_range=2.87
-[BRK-DIAG]    16:54:33 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=3.94 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
-[SUPERVISOR]  16:53:29 [SUPERVISOR-XAUUSD] IN_COOLDOWN until +119s
-[VIX]         16:54:16 [TICK] VIX.F 25.04/25.40
-[GOLD-PRICE]  16:54:20 [TICK] XAUUSD 4667.89/4668.11
+[DIAG]        17:00:34 [OMEGA-DIAG] PnL=-192.46 T=58 WR=39.6552% RTTp95=4.555ms cap=120ms lat_ok=1 session=ACTIVE
+[GOLD-DIAG]   17:00:34 [GOLD-DIAG] regime=COMPRESSION vwap=4642.09 vol_range=2.58
+[BRK-DIAG]    17:00:27 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-1.18 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=5
+[SUPERVISOR]  17:00:35 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=1.00 bracket=0.68 breakout=0.40 top_score=0.68 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=chop_detected
+[VIX]         17:00:25 [TICK] VIX.F 25.26/25.63
+[GOLD-PRICE]  17:00:22 [TICK] XAUUSD 4660.38/4660.60
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
