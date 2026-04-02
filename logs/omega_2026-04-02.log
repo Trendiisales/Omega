@@ -60492,3 +60492,373 @@
 14:50:16 [TICK] USTEC.F 24095.07/24097.78
 14:50:17 [TICK] BRENT 104.69/104.81
 14:50:19 [TICK] NGAS.F 2.79/2.81
+14:50:22 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-5.24 l2_imb=0.510 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:50:22 [TICK] NZDUSD 0.57/0.57
+14:50:24 [TICK] ESTX50 5675.90/5677.50
+14:50:25 [CTRADER-STATUS] events_total=584248 this_min=4370 symbols=19
+14:50:25 [CTRADER-EVTS] XAUUSD=335
+14:50:25 [CTRADER-EVTS] DX.F=56
+14:50:25 [CTRADER-EVTS] USDJPY=239
+14:50:25 [CTRADER-EVTS] EURUSD=275
+14:50:25 [CTRADER-EVTS] GBPUSD=305
+14:50:25 [CTRADER-EVTS] DJ30.F=249
+14:50:25 [CTRADER-EVTS] GER40=223
+14:50:25 [CTRADER-EVTS] USTEC.F=293
+14:50:25 [CTRADER-EVTS] ESTX50=254
+14:50:25 [CTRADER-EVTS] US500.F=222
+14:50:25 [CTRADER-EVTS] NAS100=330
+14:50:25 [CTRADER-EVTS] UK100=234
+14:50:25 [CTRADER-EVTS] USOIL.F=212
+14:50:25 [CTRADER-EVTS] XAGUSD=334
+14:50:25 [CTRADER-EVTS] AUDUSD=277
+14:50:25 [CTRADER-EVTS] NZDUSD=250
+14:50:25 [CTRADER-EVTS] VIX.F=58
+14:50:25 [CTRADER-EVTS] BRENT=174
+14:50:25 [CTRADER-EVTS] NGAS.F=50
+14:50:25 [TICK] USDJPY 159.30/159.31
+14:50:26 [TICK] XAUUSD 4672.52/4672.74
+14:50:27 [TICK] US500.F 6598.34/6599.15
+14:50:27 [TICK] DX.F 99.74/99.84
+14:50:31 [TICK] USOIL.F 109.50/109.57
+14:50:32 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-4.58 l2_imb=0.510 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:50:35 [SUPERVISOR-XAUUSD] IN_COOLDOWN until +119s
+14:50:37 [TICK] AUDUSD 0.69/0.69
+14:50:39 [TICK] VIX.F 24.81/25.18
+14:50:39 [TICK] NAS100 23928.30/23929.30
+14:50:40 [TICK] GBPUSD 1.32/1.32
+14:50:40 [TICK] XAGUSD 72.47/72.51
+14:50:41 [TICK] DJ30.F 46694.60/46700.40
+14:50:42 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-2.36 l2_imb=0.506 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:50:45 [TICK] GER40 23093.85/23094.85
+14:50:45 [TICK] UK100 10443.50/10445.30
+14:50:46 [TICK] EURUSD 1.15/1.15
+14:50:46 [TICK] USTEC.F 24114.32/24117.03
+14:50:47 [TICK] BRENT 104.47/104.58
+14:50:50 [TICK] NGAS.F 2.78/2.81
+14:50:52 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.51 l2_imb=0.505 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=1 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:50:52 [TICK] NZDUSD 0.57/0.57
+14:50:54 [TICK] ESTX50 5681.90/5683.30
+14:50:56 [TICK] USDJPY 159.28/159.29
+14:50:56 [TICK] XAUUSD 4675.56/4675.78
+14:50:58 [TICK] US500.F 6602.22/6603.03
+14:50:58 [TICK] DX.F 99.73/99.83
+14:51:01 [TICK] USOIL.F 109.48/109.55
+14:51:02 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-1.44 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:51:07 [TICK] AUDUSD 0.69/0.69
+14:51:09 [TICK] NAS100 23923.80/23925.10
+14:51:10 [TICK] GBPUSD 1.32/1.32
+14:51:10 [TICK] VIX.F 24.84/25.20
+14:51:10 [TICK] XAGUSD 72.51/72.54
+14:51:12 [TICK] DJ30.F 46668.60/46674.40
+14:51:12 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-1.09 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:51:15 [TICK] GER40 23086.30/23087.70
+14:51:15 [TICK] UK100 10443.10/10444.90
+14:51:16 [OMEGA-DIAG] PnL=-140.006 T=43 WR=37.2093% RTTp95=18.008ms cap=120ms lat_ok=1 session=ACTIVE
+14:51:16 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+14:51:16 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+14:51:16 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+14:51:16 [GOLD-DIAG] regime=COMPRESSION vwap=4625.50 vol_range=3.85
+14:51:16 [OMEGA-PERF] XAUUSD_BRACKET liveT=1 livePnL=-5.80 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:51:16 [OMEGA-PERF] GOLD_STACK liveT=7 livePnL=-54.13 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:51:16 [OMEGA-PERF] USTEC.F liveT=6 livePnL=-52.83 WR=50.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:51:16 [OMEGA-PERF] US500.F liveT=3 livePnL=-40.81 WR=33.3% shadowT=0 shadowPnL=0.00 disabled=0
+14:51:16 [TICK] EURUSD 1.15/1.15
+14:51:16 [TICK] USTEC.F 24105.44/24108.15
+14:51:18 [TICK] BRENT 104.61/104.72
+14:51:20 [TICK] NGAS.F 2.79/2.81
+14:51:22 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.94 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:51:23 [TICK] NZDUSD 0.57/0.57
+14:51:24 [TICK] ESTX50 5679.20/5680.70
+14:51:25 [CTRADER-STATUS] events_total=588495 this_min=4247 symbols=19
+14:51:25 [CTRADER-EVTS] XAUUSD=335
+14:51:25 [CTRADER-EVTS] USDJPY=235
+14:51:25 [CTRADER-EVTS] ESTX50=255
+14:51:25 [CTRADER-EVTS] US500.F=199
+14:51:25 [CTRADER-EVTS] GBPUSD=266
+14:51:25 [CTRADER-EVTS] DJ30.F=244
+14:51:25 [CTRADER-EVTS] NAS100=335
+14:51:25 [CTRADER-EVTS] EURUSD=258
+14:51:25 [CTRADER-EVTS] AUDUSD=254
+14:51:25 [CTRADER-EVTS] XAGUSD=331
+14:51:25 [CTRADER-EVTS] VIX.F=60
+14:51:25 [CTRADER-EVTS] BRENT=181
+14:51:25 [CTRADER-EVTS] USOIL.F=232
+14:51:25 [CTRADER-EVTS] USTEC.F=275
+14:51:25 [CTRADER-EVTS] GER40=231
+14:51:25 [CTRADER-EVTS] NGAS.F=62
+14:51:25 [CTRADER-EVTS] NZDUSD=209
+14:51:25 [CTRADER-EVTS] UK100=235
+14:51:25 [CTRADER-EVTS] DX.F=50
+14:51:26 [TICK] USDJPY 159.30/159.31
+14:51:26 [TICK] XAUUSD 4676.41/4676.62
+14:51:28 [TICK] US500.F 6600.34/6601.15
+14:51:29 [TICK] DX.F 99.74/99.84
+14:51:31 [TICK] USOIL.F 109.27/109.33
+14:51:32 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.59 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:51:37 [TICK] AUDUSD 0.69/0.69
+14:51:39 [TICK] NAS100 23908.85/23909.85
+14:51:40 [TICK] GBPUSD 1.32/1.32
+14:51:40 [TICK] XAGUSD 72.50/72.54
+14:51:41 [TICK] VIX.F 24.84/25.20
+14:51:42 [TICK] DJ30.F 46645.60/46651.40
+14:51:42 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.34 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:51:45 [TICK] GER40 23085.05/23086.05
+14:51:45 [TICK] UK100 10444.40/10446.20
+14:51:46 [TICK] USTEC.F 24095.94/24098.65
+14:51:47 [TICK] EURUSD 1.15/1.15
+14:51:48 [TICK] BRENT 104.61/104.72
+14:51:50 [TICK] NGAS.F 2.78/2.81
+14:51:52 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.08 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:51:53 [TICK] NZDUSD 0.57/0.57
+14:51:54 [TICK] ESTX50 5678.20/5679.70
+14:51:56 [TICK] USDJPY 159.32/159.34
+14:51:56 [TICK] XAUUSD 4676.69/4676.91
+14:51:58 [TICK] US500.F 6599.72/6600.53
+14:52:00 [TICK] DX.F 99.75/99.85
+14:52:02 [TICK] USOIL.F 109.14/109.22
+14:52:03 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.31 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:52:08 [TICK] AUDUSD 0.69/0.69
+14:52:10 [TICK] NAS100 23909.80/23911.00
+14:52:10 [TICK] GBPUSD 1.32/1.32
+14:52:10 [TICK] XAGUSD 72.44/72.47
+14:52:12 [TICK] DJ30.F 46656.10/46661.90
+14:52:13 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.36 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:52:13 [SUPERVISOR-USTEC.F] regime=QUIET_COMPRESSION conf=1.00 bracket=0.76 breakout=0.00 top_score=0.76 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=chop_detected
+14:52:15 [TICK] GER40 23081.75/23082.75
+14:52:16 [TICK] UK100 10445.90/10447.70
+14:52:16 [OMEGA-DIAG] PnL=-140.006 T=43 WR=37.2093% RTTp95=18.008ms cap=120ms lat_ok=1 session=ACTIVE
+14:52:16 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+14:52:16 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+14:52:16 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+14:52:16 [GOLD-DIAG] regime=COMPRESSION vwap=4625.80 vol_range=2.40
+14:52:16 [OMEGA-PERF] XAUUSD_BRACKET liveT=1 livePnL=-5.80 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:52:16 [OMEGA-PERF] GOLD_STACK liveT=7 livePnL=-54.13 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:52:16 [OMEGA-PERF] USTEC.F liveT=6 livePnL=-52.83 WR=50.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:52:16 [OMEGA-PERF] US500.F liveT=3 livePnL=-40.81 WR=33.3% shadowT=0 shadowPnL=0.00 disabled=0
+14:52:17 [TICK] USTEC.F 24087.94/24092.90
+14:52:17 [TICK] VIX.F 24.89/25.25
+14:52:18 [TICK] EURUSD 1.15/1.15
+14:52:20 [TICK] BRENT 104.67/104.78
+14:52:20 [TICK] NGAS.F 2.79/2.81
+14:52:23 [TICK] NZDUSD 0.57/0.57
+14:52:23 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.22 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:52:25 [TICK] ESTX50 5679.10/5680.50
+14:52:25 [CTRADER-STATUS] events_total=592452 this_min=3957 symbols=19
+14:52:25 [CTRADER-EVTS] XAUUSD=337
+14:52:25 [CTRADER-EVTS] BRENT=151
+14:52:25 [CTRADER-EVTS] ESTX50=228
+14:52:25 [CTRADER-EVTS] US500.F=197
+14:52:25 [CTRADER-EVTS] DJ30.F=237
+14:52:25 [CTRADER-EVTS] GBPUSD=262
+14:52:25 [CTRADER-EVTS] NAS100=329
+14:52:25 [CTRADER-EVTS] USTEC.F=291
+14:52:25 [CTRADER-EVTS] USOIL.F=180
+14:52:25 [CTRADER-EVTS] USDJPY=182
+14:52:25 [CTRADER-EVTS] XAGUSD=314
+14:52:25 [CTRADER-EVTS] AUDUSD=247
+14:52:25 [CTRADER-EVTS] EURUSD=244
+14:52:25 [CTRADER-EVTS] UK100=210
+14:52:25 [CTRADER-EVTS] GER40=209
+14:52:25 [CTRADER-EVTS] DX.F=51
+14:52:25 [CTRADER-EVTS] NZDUSD=197
+14:52:25 [CTRADER-EVTS] VIX.F=38
+14:52:25 [CTRADER-EVTS] NGAS.F=53
+14:52:26 [TICK] XAUUSD 4679.02/4679.24
+14:52:27 [TICK] USDJPY 159.31/159.32
+14:52:29 [TICK] US500.F 6600.72/6601.53
+14:52:30 [TICK] DX.F 99.75/99.86
+14:52:32 [TICK] USOIL.F 109.23/109.29
+14:52:33 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.88 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:52:35 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=1.00 bracket=0.68 breakout=0.40 top_score=0.68 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=chop_detected
+14:52:38 [TICK] AUDUSD 0.69/0.69
+14:52:40 [TICK] NAS100 23923.00/23925.50
+14:52:40 [TICK] XAGUSD 72.44/72.47
+14:52:41 [TICK] GBPUSD 1.32/1.32
+14:52:42 [TICK] DJ30.F 46674.10/46679.90
+14:52:43 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.62 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:52:44 [SUPERVISOR-USTEC.F] IN_COOLDOWN until +119s
+14:52:45 [TICK] GER40 23104.55/23105.55
+14:52:46 [TICK] UK100 10452.20/10454.00
+14:52:47 [TICK] USTEC.F 24122.32/24125.03
+14:52:48 [TICK] EURUSD 1.15/1.15
+14:52:49 [TICK] VIX.F 24.69/25.05
+14:52:50 [TICK] BRENT 104.39/104.52
+14:52:53 [TICK] NZDUSD 0.57/0.57
+14:52:53 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=3.46 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:52:55 [TICK] ESTX50 5684.60/5686.10
+14:52:57 [TICK] XAUUSD 4682.88/4683.10
+14:52:57 [TICK] USDJPY 159.30/159.31
+14:52:59 [TICK] US500.F 6608.84/6609.65
+14:52:59 [TICK] NGAS.F 2.78/2.81
+14:53:01 [TICK] DX.F 99.73/99.83
+14:53:01 [SUPERVISOR-XAUUSD] IN_COOLDOWN until +119s
+14:53:02 [TICK] USOIL.F 108.88/108.95
+14:53:03 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=2.93 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:53:08 [TICK] AUDUSD 0.69/0.69
+14:53:10 [TICK] NAS100 23961.20/23962.20
+14:53:10 [TICK] XAGUSD 72.61/72.64
+14:53:11 [TICK] GBPUSD 1.32/1.32
+14:53:12 [TICK] DJ30.F 46724.60/46730.40
+14:53:13 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=2.79 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:53:15 [TICK] GER40 23107.10/23108.50
+14:53:16 [OMEGA-DIAG] PnL=-140.006 T=43 WR=37.2093% RTTp95=17.169ms cap=120ms lat_ok=1 session=ACTIVE
+14:53:16 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+14:53:16 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+14:53:16 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+14:53:16 [TICK] UK100 10452.80/10454.60
+14:53:16 [GOLD-DIAG] regime=COMPRESSION vwap=4626.11 vol_range=3.37
+14:53:16 [OMEGA-PERF] XAUUSD_BRACKET liveT=1 livePnL=-5.80 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:53:16 [OMEGA-PERF] GOLD_STACK liveT=7 livePnL=-54.13 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:53:16 [OMEGA-PERF] USTEC.F liveT=6 livePnL=-52.83 WR=50.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:53:16 [OMEGA-PERF] US500.F liveT=3 livePnL=-40.81 WR=33.3% shadowT=0 shadowPnL=0.00 disabled=0
+14:53:17 [TICK] USTEC.F 24133.94/24136.65
+14:53:18 [TICK] EURUSD 1.15/1.15
+14:53:19 [TICK] VIX.F 24.74/25.10
+14:53:20 [TICK] BRENT 104.42/104.53
+14:53:23 [TICK] NZDUSD 0.57/0.57
+14:53:23 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.07 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=1 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:53:25 [TICK] ESTX50 5683.40/5684.90
+14:53:25 [CTRADER-STATUS] events_total=596528 this_min=4076 symbols=19
+14:53:25 [CTRADER-EVTS] XAUUSD=341
+14:53:25 [CTRADER-EVTS] US500.F=193
+14:53:25 [CTRADER-EVTS] ESTX50=229
+14:53:25 [CTRADER-EVTS] GBPUSD=254
+14:53:25 [CTRADER-EVTS] DJ30.F=243
+14:53:25 [CTRADER-EVTS] NZDUSD=229
+14:53:25 [CTRADER-EVTS] XAGUSD=319
+14:53:25 [CTRADER-EVTS] USTEC.F=282
+14:53:25 [CTRADER-EVTS] UK100=246
+14:53:25 [CTRADER-EVTS] GER40=211
+14:53:25 [CTRADER-EVTS] NAS100=335
+14:53:25 [CTRADER-EVTS] AUDUSD=246
+14:53:25 [CTRADER-EVTS] DX.F=49
+14:53:25 [CTRADER-EVTS] EURUSD=246
+14:53:25 [CTRADER-EVTS] VIX.F=67
+14:53:25 [CTRADER-EVTS] USDJPY=189
+14:53:25 [CTRADER-EVTS] USOIL.F=193
+14:53:25 [CTRADER-EVTS] BRENT=160
+14:53:25 [CTRADER-EVTS] NGAS.F=44
+14:53:27 [TICK] USDJPY 159.30/159.31
+14:53:27 [TICK] XAUUSD 4681.98/4682.20
+14:53:29 [TICK] US500.F 6607.22/6608.03
+14:53:32 [TICK] USOIL.F 109.14/109.20
+14:53:32 [TICK] DX.F 99.75/99.85
+14:53:33 [TICK] NGAS.F 2.78/2.81
+14:53:34 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.33 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:53:38 [TICK] AUDUSD 0.69/0.69
+14:53:40 [TICK] NAS100 23933.50/23935.20
+14:53:41 [TICK] XAGUSD 72.52/72.55
+14:53:41 [TICK] GBPUSD 1.32/1.32
+14:53:42 [TICK] DJ30.F 46683.60/46689.40
+14:53:44 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.72 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:53:46 [TICK] GER40 23094.75/23095.75
+14:53:46 [TICK] UK100 10451.90/10453.70
+14:53:47 [TICK] USTEC.F 24118.07/24120.78
+14:53:48 [TICK] EURUSD 1.15/1.15
+14:53:50 [TICK] BRENT 104.45/104.58
+14:53:53 [TICK] NZDUSD 0.57/0.57
+14:53:54 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-1.03 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:53:54 [TICK] VIX.F 24.74/25.10
+14:53:55 [TICK] ESTX50 5680.50/5681.90
+14:53:57 [TICK] XAUUSD 4678.78/4679.00
+14:53:57 [TICK] USDJPY 159.30/159.31
+14:53:59 [TICK] US500.F 6605.47/6606.28
+14:54:02 [TICK] USOIL.F 109.22/109.29
+14:54:02 [TICK] DX.F 99.75/99.85
+14:54:03 [TICK] NGAS.F 2.78/2.81
+14:54:04 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.49 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:54:08 [TICK] AUDUSD 0.69/0.69
+14:54:10 [TICK] NAS100 23948.30/23949.50
+14:54:11 [TICK] XAGUSD 72.63/72.67
+14:54:11 [TICK] GBPUSD 1.32/1.32
+14:54:12 [TICK] DJ30.F 46713.30/46721.60
+14:54:14 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.10 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:54:16 [OMEGA-DIAG] PnL=-140.01 T=43 WR=37.21% RTTp95=15.48ms cap=120.00ms lat_ok=1 session=ACTIVE
+14:54:16 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+14:54:16 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+14:54:16 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+14:54:16 [GOLD-DIAG] regime=COMPRESSION vwap=4626.42 vol_range=2.35
+14:54:16 [OMEGA-PERF] XAUUSD_BRACKET liveT=1 livePnL=-5.80 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:54:16 [OMEGA-PERF] GOLD_STACK liveT=7 livePnL=-54.13 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:54:16 [OMEGA-PERF] USTEC.F liveT=6 livePnL=-52.83 WR=50.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:54:16 [OMEGA-PERF] US500.F liveT=3 livePnL=-40.81 WR=33.3% shadowT=0 shadowPnL=0.00 disabled=0
+14:54:16 [TICK] GER40 23104.20/23105.20
+14:54:16 [TICK] UK100 10453.90/10455.70
+14:54:17 [TICK] USTEC.F 24136.32/24139.03
+14:54:18 [TICK] EURUSD 1.15/1.15
+14:54:20 [TICK] BRENT 104.30/104.42
+14:54:23 [TICK] NZDUSD 0.57/0.57
+14:54:24 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.03 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:54:25 [CTRADER-STATUS] events_total=600535 this_min=4007 symbols=19
+14:54:25 [CTRADER-EVTS] XAUUSD=337
+14:54:25 [CTRADER-EVTS] EURUSD=254
+14:54:25 [CTRADER-EVTS] BRENT=142
+14:54:25 [CTRADER-EVTS] GER40=213
+14:54:25 [CTRADER-EVTS] NAS100=333
+14:54:25 [CTRADER-EVTS] US500.F=198
+14:54:25 [CTRADER-EVTS] ESTX50=235
+14:54:25 [CTRADER-EVTS] USDJPY=203
+14:54:25 [CTRADER-EVTS] NZDUSD=218
+14:54:25 [CTRADER-EVTS] AUDUSD=237
+14:54:25 [CTRADER-EVTS] XAGUSD=320
+14:54:25 [CTRADER-EVTS] DJ30.F=237
+14:54:25 [CTRADER-EVTS] GBPUSD=273
+14:54:25 [CTRADER-EVTS] NGAS.F=38
+14:54:25 [CTRADER-EVTS] UK100=231
+14:54:25 [CTRADER-EVTS] USOIL.F=169
+14:54:25 [CTRADER-EVTS] USTEC.F=282
+14:54:25 [CTRADER-EVTS] DX.F=47
+14:54:25 [CTRADER-EVTS] VIX.F=40
+14:54:25 [TICK] ESTX50 5684.20/5685.60
+14:54:27 [TICK] XAUUSD 4682.02/4682.24
+14:54:27 [TICK] USDJPY 159.29/159.30
+14:54:29 [TICK] VIX.F 24.64/25.00
+14:54:29 [TICK] US500.F 6609.22/6610.03
+14:54:32 [TICK] USOIL.F 108.89/108.96
+14:54:33 [TICK] DX.F 99.73/99.83
+14:54:34 [TICK] NGAS.F 2.78/2.81
+14:54:34 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.63 l2_imb=0.525 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:54:39 [TICK] AUDUSD 0.69/0.69
+14:54:40 [TICK] NAS100 23963.15/23964.15
+14:54:41 [TICK] XAGUSD 72.71/72.75
+14:54:41 [TICK] GBPUSD 1.32/1.32
+14:54:42 [TICK] DJ30.F 46741.60/46747.40
+14:54:44 [SUPERVISOR-USTEC.F] regime=QUIET_COMPRESSION conf=1.00 bracket=0.76 breakout=0.00 top_score=0.76 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=chop_detected
+14:54:44 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.97 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:54:46 [TICK] GER40 23113.10/23114.70
+14:54:46 [TICK] UK100 10455.30/10457.10
+14:54:48 [TICK] USTEC.F 24136.94/24139.65
+14:54:48 [TICK] EURUSD 1.15/1.15
+14:54:51 [TICK] BRENT 104.34/104.47
+14:54:53 [TICK] NZDUSD 0.57/0.57
+14:54:54 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.97 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:54:55 [TICK] ESTX50 5686.10/5687.60
+14:54:57 [TICK] XAUUSD 4683.97/4684.19
+14:54:57 [TICK] USDJPY 159.29/159.30
+14:54:59 [TICK] VIX.F 24.64/25.00
+14:55:00 [TICK] US500.F 6610.97/6611.78
+14:55:01 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=1.00 bracket=0.68 breakout=0.40 top_score=0.68 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=chop_detected
+14:55:02 [TICK] USOIL.F 108.96/109.03
+14:55:03 [TICK] DX.F 99.73/99.83
+14:55:04 [TICK] NGAS.F 2.78/2.81
+14:55:04 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.84 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:55:09 [TICK] AUDUSD 0.69/0.69
+14:55:10 [TICK] NAS100 23963.00/23964.00
+14:55:11 [TICK] XAGUSD 72.71/72.74
+14:55:11 [TICK] GBPUSD 1.32/1.32
+14:55:12 [TICK] DJ30.F 46734.10/46739.90
+14:55:14 [SUPERVISOR-USTEC.F] IN_COOLDOWN until +119s
+14:55:15 [GOLD-BRK-DIAG] phase=ARMED can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.49 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=4698.67 brk_lo=4688.13 range=10.54 session_slot=4
+14:55:16 [OMEGA-DIAG] PnL=-140.01 T=43 WR=37.21% RTTp95=12.78ms cap=120.00ms lat_ok=1 session=ACTIVE
+14:55:16 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+14:55:16 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+14:55:16 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+14:55:16 [GOLD-DIAG] regime=COMPRESSION vwap=4626.74 vol_range=2.20
+14:55:16 [OMEGA-PERF] XAUUSD_BRACKET liveT=1 livePnL=-5.80 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:55:16 [OMEGA-PERF] GOLD_STACK liveT=7 livePnL=-54.13 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:55:16 [OMEGA-PERF] USTEC.F liveT=6 livePnL=-52.83 WR=50.0% shadowT=0 shadowPnL=0.00 disabled=0
+14:55:16 [OMEGA-PERF] US500.F liveT=3 livePnL=-40.81 WR=33.3% shadowT=0 shadowPnL=0.00 disabled=0
+14:55:16 [TICK] GER40 23119.55/23120.55
+14:55:17 [TICK] UK100 10459.40/10461.20
+14:55:18 [TICK] USTEC.F 24145.19/24147.90
+14:55:18 [TICK] EURUSD 1.15/1.15
