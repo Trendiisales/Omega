@@ -197,7 +197,7 @@ if ($atrLoaded) {
 }
 
 # --- CHECK 3: ATR running value (not 5.00 flat) ------------------------------
-$gfGateLines = Find-All "GF-GATE-BLOCK"
+$gfGateLines = @(Find-All "GF-GATE-BLOCK")
 $atrValues   = @()
 foreach ($l in $gfGateLines) {
     if ($l -match "atr=([0-9.]+)") { $atrValues += [double]$Matches[1] }
@@ -320,11 +320,12 @@ if ($latLine) {
 }
 
 # --- CHECK 10: Gate blocks summary -------------------------------------------
-$noRoom      = (Find-All "GF-GATE-BLOCK.*NO_ROOM_TO_TARGET").Count
-$compNoVol   = (Find-All "GF-GATE-BLOCK.*COMPRESSION_NO_VOL").Count
-$costGate    = (Find-All "GF-GATE-BLOCK.*COST_GATE").Count
-$barBlocks   = (Find-All "GF-BAR-BLOCK").Count
-$spreadBlock = (Find-All "SPREAD-Z.*anomalous").Count
+# PS 5.1: @() forces array even when Find-All returns a single string -- .Count is safe on arrays
+$noRoom      = @(Find-All "GF-GATE-BLOCK.*NO_ROOM_TO_TARGET").Count
+$compNoVol   = @(Find-All "GF-GATE-BLOCK.*COMPRESSION_NO_VOL").Count
+$costGate    = @(Find-All "GF-GATE-BLOCK.*COST_GATE").Count
+$barBlocks   = @(Find-All "GF-BAR-BLOCK").Count
+$spreadBlock = @(Find-All "SPREAD-Z.*anomalous").Count
 
 $gateTotal = $noRoom + $compNoVol + $costGate + $barBlocks + $spreadBlock
 if ($gateTotal -eq 0) {
