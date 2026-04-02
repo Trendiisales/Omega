@@ -2034,9 +2034,16 @@ function pollTrades(){
         .then(r=>r.json())
         .then(s=>{
           const el=document.getElementById('tradeCount');
-          if(el&&s&&s.total_trades>0){
+          if(el&&s){
             const pnl=s.net_pnl||0;
-            el.textContent=s.total_trades+' closed | '+s.wins+'W/'+(s.total_trades-s.wins)+'L | '+(pnl>=0?'+':'-')+'$'+Math.abs(pnl).toFixed(2)+(s.source==='csv'?' (from disk)':'');
+            const n=s.total_trades||0;
+            // Always show today's summary -- even when 0 trades (clean slate after UTC midnight)
+            // Never show "(from disk)" -- that label was confusing and implied stale data
+            if(n>0){
+              el.textContent=n+' CLOSED | '+s.wins+'W/'+(n-s.wins)+'L | '+(pnl>=0?'+':'')+pnl.toFixed(2);
+            } else {
+              el.textContent='0 CLOSED | $0.00 today';
+            }
           }
         })
         .catch(()=>{});

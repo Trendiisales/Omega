@@ -704,36 +704,16 @@ static std::string buildDailySummaryJson()
         if (f) break;
     }
 
-    // Fallback: full cumulative CSV
+    // No file for today = no trades yet today. Return zero summary.
+    // Do NOT fall back to cumulative CSV -- that shows all historical trades
+    // in the header as "(FROM DISK)" after UTC midnight rollover.
     if (!f) {
-        static const char* FULL_PATHS[] = {
-            "logs/trades/omega_trade_closes.csv",
-            "C:\\Omega\\logs\\trades\\omega_trade_closes.csv",
-            "C:\\Omega\\build\\Release\\logs\\trades\\omega_trade_closes.csv",
-            "../logs/trades/omega_trade_closes.csv",
-        };
-        for (auto p : FULL_PATHS) { f = fopen(p, "r"); if (f) break; }
-    }
-
-    // If still no file, use in-memory ledger summary
-    if (!f) {
-        const auto trades = g_omegaLedger.snapshot();
-        int n=0, wins=0; double total=0, gross=0;
-        struct EngStat { int n=0; int w=0; double pnl=0; };
-        std::unordered_map<std::string,EngStat> by_eng;
-        for (auto& t : trades) {
-            ++n; total += t.net_pnl; gross += t.pnl;
-            if (t.net_pnl > 0) ++wins;
-            auto& e = by_eng[t.engine]; ++e.n; e.pnl += t.net_pnl;
-            if (t.net_pnl > 0) ++e.w;
-        }
-        char out[2048];
+        char out[256];
         snprintf(out, sizeof(out),
-            "{\"date\":\"%s\",\"source\":\"memory\","
-            "\"total_trades\":%d,\"wins\":%d,\"losses\":%d,"
-            "\"win_rate\":%.1f,\"net_pnl\":%.2f,\"gross_pnl\":%.2f}",
-            today, n, wins, n-wins,
-            n>0 ? wins*100.0/n : 0.0, total, gross);
+            "{\"date\":\"%s\",\"source\":\"empty\","
+            "\"total_trades\":0,\"wins\":0,\"losses\":0,"
+            "\"win_rate\":0.0,\"net_pnl\":0.00,\"gross_pnl\":0.00}",
+            today);
         return out;
     }
 
