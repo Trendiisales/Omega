@@ -46184,3 +46184,20 @@
 11:22:08 [CTRADER-BARS] Spots sub ACK
 11:22:09 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.78 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
 11:22:12 [TICK] USDJPY 159.72/159.73
+11:22:14 [TICK] NGAS.F 2.83/2.85
+11:22:19 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.79 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+11:22:22 [TICK] VIX.F 26.11/26.48
+11:22:28 [OMEGA-DIAG] PnL=16.6678 T=23 WR=52.1739% RTTp95=3.287ms cap=120ms lat_ok=1 session=ACTIVE
+11:22:28 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+11:22:28 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+11:22:28 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+11:22:28 [GOLD-DIAG] regime=COMPRESSION vwap=4627.53 vol_range=1.36
+11:22:29 [TICK] DJ30.F 46222.60/46228.40
+11:22:29 [TICK] ESTX50 5608.10/5609.60
+11:22:29 [TICK] US500.F 6522.22/6523.03
+11:22:29 [TICK] NAS100 23559.70/23560.90
+11:22:29 [TICK] XAUUSD 4626.36/4626.58
+11:22:29 [TICK] USOIL.F 108.72/108.78
+11:22:29 [TICK] USTEC.F 23741.07/23743.78
+11:22:29 [TICK] UK100 10335.60/10336.60
+11:22:29 [TICK] GER40 22763.90/22765.00
