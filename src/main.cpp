@@ -7128,13 +7128,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 s_impulse_ticks = 0;
             }
             if (s_was_impulse && !is_impulse_now) {
-                // Only block if IMPULSE lasted >= 3 ticks -- a real move, not a flicker.
-                // 0-1 tick IMPULSE = regime noise (supervisor oscillating), not a real
-                // impulse ending. Blocking 45s on noise was killing entries during the
-                // actual downtrend we needed to trade.
-                if (s_impulse_ticks >= 3) {
-                    g_gold_post_impulse_until.store(now_pi + 45);
-                    printf("[POST-IMPULSE] Regime left IMPULSE after %d ticks -- blocking 45s\n",
+                // Only block if IMPULSE lasted >= 8 ticks -- raised from 3.
+                // At ~1 tick/sec, 3 ticks = 3s which fires on every micro-impulse flicker.
+                // 8 ticks = ~8s = a genuine sustained impulse move.
+                // Log showed 422 impulse_block=1 events today blocking all bracket entries.
+                // Cooldown reduced 45s -> 20s: shorter re-arm window after real impulses.
+                if (s_impulse_ticks >= 8) {
+                    g_gold_post_impulse_until.store(now_pi + 20);
+                    printf("[POST-IMPULSE] Regime left IMPULSE after %d ticks -- blocking 20s\n",
                            s_impulse_ticks);
                     fflush(stdout);
                 } else {
