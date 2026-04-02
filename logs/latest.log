@@ -46030,3 +46030,4 @@
 11:08:14 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
 11:08:14 [GOLD-DIAG] regime=COMPRESSION vwap=4624.50 vol_range=1.89
 11:08:14 [OMEGA-PERF] GOLD_STACK liveT=1 livePnL=-3.61 WR=0.0% shadowT=0 shadowPnL=0.00 disabled=0
+11:08:16 [TICK] XAUUSD 4626.68/4626.90
