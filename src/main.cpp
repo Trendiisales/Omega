@@ -4782,7 +4782,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             {
                 int session_cap = g_cfg.max_open_positions;
                 const int slot = g_macro_ctx.session_slot;
-                if      (slot == 0) session_cap = std::min(session_cap, 1); // dead zone 05-07 UTC
+                if      (slot == 0) session_cap = std::min(session_cap, 2); // dead zone 05-07 UTC: cap 2 (macro bypass can open, chop filtered by gold_session_ok gate)
                 else if (slot == 6) session_cap = std::min(session_cap, 2); // Asia 22-05 UTC
                 // ?? Asia breakout quality gate ????????????????????????????????
                 // Allow Asia trading but only when volatility is genuinely expanding
@@ -7111,9 +7111,36 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             && (flow_exit_reason == 2)            // trail/BE exit, not SL
             && (now_s_gate - flow_exit_ts <= 90); // within 90s of flow closing
 
-        // Session-aware gold cap: dead zone 05-07 UTC ? no new entries
+        // Session-aware gold cap: dead zone 05-07 UTC -- no new entries for chop.
+        // MACRO BYPASS: RSI<32/RSI>68 or drift>=3.0 or VWAP dislocation>=15pts
+        // overrides the dead zone. A $100+ crash must never be blocked by a
+        // gate designed to filter $2 noise. Gold trades 24h -- the dead zone
+        // exists for thin chop only, not for macro events.
         const int gold_session_slot = g_macro_ctx.session_slot;
-        const bool gold_session_ok = (gold_session_slot != 0);
+        const bool in_dead_zone_slot = (gold_session_slot == 0);
+        const bool dead_zone_macro_bypass = in_dead_zone_slot && [&]() -> bool {
+            const double rsi_dz   = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+            const double drift_dz = g_gold_stack.ewm_drift();
+            const double vwap_dz  = g_gold_stack.vwap();
+            const double mid_dz   = (bid + ask) * 0.5;
+            const double vdisp_dz = (vwap_dz > 0.0) ? std::fabs(mid_dz - vwap_dz) : 0.0;
+            const bool rsi_extreme  = (rsi_dz > 0.0) && (rsi_dz < 32.0 || rsi_dz > 68.0);
+            const bool drift_strong = std::fabs(drift_dz) >= 3.0;
+            const bool vwap_far     = vdisp_dz >= 15.0;
+            if (rsi_extreme || drift_strong || vwap_far) {
+                static int64_t s_dz_log = 0;
+                const int64_t now_dz = static_cast<int64_t>(std::time(nullptr));
+                if (now_dz - s_dz_log >= 60) {
+                    s_dz_log = now_dz;
+                    printf("[DEAD-ZONE-BYPASS] Macro move detected -- rsi=%.1f drift=%.2f vdisp=%.1f -- allowing gold entry\n",
+                           rsi_dz, drift_dz, vdisp_dz);
+                    fflush(stdout);
+                }
+                return true;
+            }
+            return false;
+        }();
+        const bool gold_session_ok = !in_dead_zone_slot || dead_zone_macro_bypass;
         // On trend day re-entry: allow GoldStack even with gold_stack open position
         // (CompBreakout won't fire if stack is already open -- handled in stack gate below)
         // Same-direction trail block: 30s after a trail/BE exit, block re-entry in same dir.
