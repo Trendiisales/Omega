@@ -5768,7 +5768,34 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                       && (!bracket_open || is_pyramiding)
                                       && !trend_blocked
                                       && !bracket_spread_blocked
-                                      && !bracket_london_noise);
+                                      && !bracket_london_noise)
+                                   // ?? Supervisor chop_detected price-break override ???????
+                                   // Same logic as gold: if ARMED and price breaks the bracket
+                                   // level by >= 2pt, bypass supervisor allow_bracket=0.
+                                   // Hard gates (base_can_enter, freq_ok, no open pos) still apply.
+                                   || ([&]() -> bool {
+                                       if (!bracket_armed) return false;
+                                       if (!base_can_enter || !freq_ok) return false;
+                                       if (bracket_open && !is_pyramiding) return false;
+                                       if (trend_blocked || bracket_spread_blocked || bracket_london_noise) return false;
+                                       const double bhi = bracket_eng.bracket_high;
+                                       const double blo = bracket_eng.bracket_low;
+                                       const bool brk_hi_hit = (bhi > 0.0) && (ask >= bhi + 2.0);
+                                       const bool brk_lo_hit = (blo > 0.0) && (bid <= blo - 2.0);
+                                       if (!brk_hi_hit && !brk_lo_hit) return false;
+                                       static thread_local int64_t s_disp_ovr_log = 0;
+                                       const int64_t now_do = static_cast<int64_t>(std::time(nullptr));
+                                       if (now_do - s_disp_ovr_log >= 5) {
+                                           s_disp_ovr_log = now_do;
+                                           printf("[BRK-CHOP-OVERRIDE] %s supervisor chop bypassed -- "
+                                                  "price broke %s by %.1fpt\n",
+                                                  sym.c_str(),
+                                                  brk_hi_hit ? "brk_hi" : "brk_lo",
+                                                  brk_hi_hit ? (ask - bhi) : (blo - bid));
+                                           fflush(stdout);
+                                       }
+                                       return true;
+                                   }());
 
         // Gate logic by phase:
         //   IDLE    ? can_arm: supervisor + session + freq + trend bias all required
@@ -7995,7 +8022,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // NOT produce sustained drift >= 3.0 -- it was a spike, not a trend.
             const bool london_drift_override = in_london_open_noise
                 && (std::fabs(g_gold_stack.ewm_drift()) >= 3.0);
-            const bool can_arm_bracket = gold_can_enter && gold_freq_ok
+            const bool can_arm_bracket_base = gold_can_enter && gold_freq_ok
                                       && (!bracket_open || gold_is_pyramiding)
                                       && (!in_cooldown_phase || trend_dir_bypasses_cooldown)
                                       && (!g_gold_stack.has_open_position() || flow_pyramid_bypass)  // allow alongside winning GoldStack
@@ -8008,6 +8035,55 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // It blocks the counter-trend ARM direction via arm_allowed(), not can_arm_bracket itself.
             // Having it here blocked ALL bracket arming when FLOW-BIAS-INJECT set bias,
             // which is exactly when we WANT pyramiding to be possible.
+
+            // ?? Supervisor chop_detected price-break override ????????????????
+            // Problem: Supervisor fires chop_detected BEFORE the breakout candle,
+            // setting allow_bracket=0. By the time price confirms direction by
+            // breaking brk_hi or brk_lo, can_arm_bracket is already 0 and stays 0.
+            // Fix: if bracket is ARMED with a valid range AND price has traded
+            // THROUGH the bracket level by >= BRK_OVERRIDE_DIST points, override
+            // the supervisor verdict. The price break IS the confirmation signal.
+            // Gates still required: gold_can_enter (risk/session), freq_ok, no open pos.
+            // Does NOT override: spread block, london noise, impulse regime block.
+            // Applies to both LONG (ask > brk_hi) and SHORT (bid < brk_lo) breaks.
+            static constexpr double BRK_OVERRIDE_DIST = 2.0;  // pts through level to confirm
+            const bool gold_bracket_already_armed = (g_bracket_gold.phase == omega::BracketPhase::ARMED);
+            const double brk_hi_now = g_bracket_gold.bracket_high;
+            const double brk_lo_now = g_bracket_gold.bracket_low;
+            const bool price_breaks_hi = gold_bracket_already_armed
+                                      && (brk_hi_now > 0.0)
+                                      && (ask >= brk_hi_now + BRK_OVERRIDE_DIST);
+            const bool price_breaks_lo = gold_bracket_already_armed
+                                      && (brk_lo_now > 0.0)
+                                      && (bid <= brk_lo_now - BRK_OVERRIDE_DIST);
+            // Override requires all hard gates but bypasses supervisor allow_bracket.
+            // Re-uses can_arm_bracket_base which already checks gold_can_enter,
+            // freq_ok, no open positions, and session gates.
+            const bool chop_price_break_override = (price_breaks_hi || price_breaks_lo)
+                                      && gold_freq_ok
+                                      && !bracket_open
+                                      && !gold_is_pyramiding
+                                      && !in_cooldown_phase
+                                      && !g_gold_stack.has_open_position()
+                                      && !g_gold_flow.has_open_position()
+                                      && !g_trend_pb_gold.has_open_position()
+                                      && !g_le_stack.has_open_position()
+                                      && (!in_london_open_noise || london_drift_override)
+                                      && !gold_impulse_regime;
+            if (chop_price_break_override) {
+                static int64_t s_chop_ovr_log = 0;
+                const int64_t now_ovr = static_cast<int64_t>(std::time(nullptr));
+                if (now_ovr - s_chop_ovr_log >= 5) {
+                    s_chop_ovr_log = now_ovr;
+                    printf("[BRK-CHOP-OVERRIDE] XAUUSD supervisor chop_detected bypassed -- "
+                           "price broke %s by %.1fpt (brk_hi=%.2f brk_lo=%.2f bid=%.2f ask=%.2f)\n",
+                           price_breaks_hi ? "brk_hi" : "brk_lo",
+                           price_breaks_hi ? (ask - brk_hi_now) : (brk_lo_now - bid),
+                           brk_hi_now, brk_lo_now, bid, ask);
+                    fflush(stdout);
+                }
+            }
+            const bool can_arm_bracket = can_arm_bracket_base || chop_price_break_override;
 
             // ?? Trend-direction bracket (IMPULSE regime) ??????????????????????????
             // When gold_impulse_regime=true the symmetric bracket is blocked because
