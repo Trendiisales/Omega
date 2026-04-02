@@ -3685,7 +3685,7 @@ public:
 class VolatilityFilter {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=50;
-    static constexpr double VOL_THRESHOLD=1.50;  // reduced 2.50?1.50: $2.50 was blocking normal mid-session activity; $1.50 still filters dead flat tape while allowing real setups
+    static constexpr double VOL_THRESHOLD=0.80;  // lowered 1.50->0.80: post-crash compression has genuine vol but tight range; $1.50 was blocking all entries in legitimate low-vol recovery periods
 public:
     bool allow(double mid){
         history_.push_back(mid);
