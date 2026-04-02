@@ -162,9 +162,10 @@ if ($needsReconfigure) {
     Write-Host "      [INFO] Using existing CMake cache -- incremental build" -ForegroundColor Cyan
 }
 $ErrorActionPreference = $savedPrefCmake
-$cpuCount = (Get-CimInstance Win32_Processor).NumberOfLogicalProcessors
+$cpuCount = $env:NUMBER_OF_PROCESSORS
+if (-not $cpuCount) { $cpuCount = 4 }
 Write-Host "      [INFO] Building with $cpuCount parallel jobs" -ForegroundColor Cyan
-cmake --build . --config Release --parallel $cpuCount 2>&1
+cmake --build . --config Release -- /maxcpucount:$cpuCount 2>&1
 $buildExitCode = $LASTEXITCODE
 
 if ($buildExitCode -ne 0) {
