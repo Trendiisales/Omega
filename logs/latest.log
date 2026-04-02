@@ -44982,3 +44982,11 @@
 10:14:23 [TICK] VIX.F 25.83/26.21
 10:14:25 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.68 l2_imb=0.809 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
 10:14:27 [TICK] NGAS.F 2.85/2.88
+10:14:35 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.59 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+10:14:43 [OMEGA-DIAG] PnL=-20.76 T=21 WR=52.38% RTTp95=2.40ms cap=120.00ms lat_ok=1 session=ACTIVE
+10:14:43 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+10:14:43 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+10:14:43 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+10:14:43 [GOLD-DIAG] regime=COMPRESSION vwap=4627.38 vol_range=1.12
+10:14:44 [TICK] GBPUSD 1.32/1.32
+10:14:44 [TICK] USOIL.F 107.96/108.02
