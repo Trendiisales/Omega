@@ -750,9 +750,15 @@ private:
                 return bar_failed_reqs.count(bkv.first + ":" + std::to_string(p)) > 0
                     || bar_failed_reqs.count(bkv.first + ":live:" + std::to_string(p)) > 0;
             };
-            if (!skip(1)) pending_live_subs.push_back({bkv.first, sid, 1});
-            if (!skip(5)) pending_live_subs.push_back({bkv.first, sid, 5});
-            if (is_gold && !skip(7)) pending_live_subs.push_back({bkv.first, sid, 7});
+            // LIVE TRENDBAR SUBS PERMANENTLY DISABLED for BlackBull.
+            // BlackBull accepts the sub initially then sends INVALID_REQUEST after
+            // ~8min, crashing the cTrader connection and triggering a full FIX
+            // reconnect (115s gap). Confirmed across entire session (33 drops).
+            // Bars are seeded from disk on warm restart -- live subs add nothing.
+            // if (!skip(1)) pending_live_subs.push_back({bkv.first, sid, 1});
+            // if (!skip(5)) pending_live_subs.push_back({bkv.first, sid, 5});
+            // if (is_gold && !skip(7)) pending_live_subs.push_back({bkv.first, sid, 7});
+            (void)is_gold; // suppress unused warning
         }
         // Merge: send all history reqs first, then live subs only for non-failed symbols
         // Spots subscription required before live trendbar subscription.

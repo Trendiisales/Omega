@@ -8034,6 +8034,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                         : g_macro_ctx.gold_wall_below;
             g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence,
                                        sup_trend_mgmt, gf_wall_mgmt, gold_vwap_pts);
+            // Inject bar context (RSI/trend/BB) for SL hold decisions.
+            // When RSI confirms trade direction and price isn't at the extreme band,
+            // manage_position() suppresses the SL for up to 30s to avoid noise exits.
+            if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+                g_gold_flow.set_bar_context(
+                    g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
+                    g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed),
+                    g_bars_gold.m1.ind.bb_pct.load(std::memory_order_relaxed));
+                g_gold_flow_reload.set_bar_context(
+                    g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
+                    g_bars_gold.m5.ind.trend_state.load(std::memory_order_relaxed),
+                    g_bars_gold.m1.ind.bb_pct.load(std::memory_order_relaxed));
+            }
             auto flow_mgmt_cb = [&](const omega::TradeRecord& tr) {
                 // PARTIAL_1R: position still open -- send partial broker close,
                 // log via handle_closed_trade (which now returns early for PARTIAL_1R
@@ -9890,12 +9903,31 @@ static void quote_loop() {
         auto last_diag      = std::chrono::steady_clock::now();
         auto logon_sent_at  = std::chrono::steady_clock::now();
 
+        // Track whether this is a proactive self-initiated refresh vs forced drop.
+        // Used to reset backoff_ms=1000 on clean reconnects instead of doubling.
+        bool s_proactive_reconnect = false;
+
         while (g_running.load()) {
             const auto now = std::chrono::steady_clock::now();
 
             if (!g_quote_ready.load() &&
                 std::chrono::duration_cast<std::chrono::seconds>(now - logon_sent_at).count() >= 10) {
                 std::cerr << "[OMEGA] Logon timeout (10s) -- reconnecting\n";
+                break;
+            }
+
+            // ?? Proactive session refresh at 13min ???????????????????????????????????
+            // BlackBull terminates TCP at ~15min (confirmed: 32 drops in one session,
+            // all at ~15min intervals, each costing 115s reconnect because backoff_ms
+            // doubles on the forced drop). Fix: break the inner loop ourselves at 13min,
+            // send a clean Logout, reconnect. Gap = 1-2s not 115s. backoff_ms stays 1000.
+            // 780s = 13 minutes. BlackBull hard-kills at ~900s (15min).
+            if (g_quote_ready.load() &&
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    now - logon_sent_at).count() >= 780) {
+                std::cout << "[OMEGA] Proactive session refresh at 13min -- reconnecting before broker timeout\n";
+                fflush(stdout);
+                s_proactive_reconnect = true;
                 break;
             }
 
@@ -10158,7 +10190,17 @@ static void quote_loop() {
                 if (err == SSL_ERROR_SYSCALL && WSAGetLastError() == WSAETIMEDOUT) {
                     continue;
                 }
-                std::cerr << "[OMEGA] SSL error " << err << " -- reconnecting\n";
+                // SSL_ERROR_ZERO_RETURN = clean TCP close by peer (BlackBull sent FIN).
+                // This is the ~15min forced session termination. Log distinctly so it's
+                // visible in startup_report analysis. proactive reconnect at 13min should
+                // prevent this from ever appearing -- if it does, broker killed us early.
+                if (err == SSL_ERROR_ZERO_RETURN) {
+                    std::cout << "[OMEGA] Clean TCP close from broker (SSL_ZERO_RETURN)"
+                              << " -- broker session limit hit, reconnecting\n";
+                    fflush(stdout);
+                } else {
+                    std::cerr << "[OMEGA] SSL error " << err << " -- reconnecting\n";
+                }
                 break;
             }
             for (const auto& m : extract_messages(buf, n)) dispatch_fix(m, ssl);
@@ -10764,15 +10806,25 @@ static void quote_loop() {
         closesocket(static_cast<SOCKET>(sock));
         SSL_free(ssl);
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
-        // Interruptible reconnect wait -- exits within 10ms on shutdown
-        for (int i = 0; i < backoff_ms / 10 && g_running.load(); ++i) Sleep(10);
-        // Extra 2s delay when server sent Logout (ghost/forced disconnect)
-        // Gives the server time to fully clear the old session before we reconnect.
-        if (g_quote_logout_received.exchange(false) && g_running.load()) {
-            std::cout << "[OMEGA] Ghost session -- waiting 2s for server to clear old session\n";
-            for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
+
+        if (s_proactive_reconnect) {
+            // Clean self-initiated 13min refresh -- reconnect immediately, no backoff doubling.
+            // backoff_ms stays at 1000 (or whatever it currently is from prior failures).
+            // The whole point is to avoid the 115s gap from forced BlackBull TCP drops.
+            std::cout << "[OMEGA] Proactive reconnect -- 1s gap (not doubling backoff)\n";
+            fflush(stdout);
+            for (int i = 0; i < 100 && g_running.load(); ++i) Sleep(10); // 1s
+            backoff_ms = 1000;  // reset, not double
+        } else {
+            // Forced/unexpected drop -- use backoff to avoid hammering broker on repeated failures.
+            // Extra 2s delay when server sent Logout (ghost/forced disconnect).
+            if (g_quote_logout_received.exchange(false) && g_running.load()) {
+                std::cout << "[OMEGA] Ghost session -- waiting 2s for server to clear old session\n";
+                for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
+            }
+            for (int i = 0; i < backoff_ms / 10 && g_running.load(); ++i) Sleep(10);
+            backoff_ms = std::min(backoff_ms * 2, max_backoff);
         }
-        backoff_ms = std::min(backoff_ms * 2, max_backoff);
     }
 }
 

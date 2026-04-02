@@ -3219,7 +3219,7 @@ class DXYDivergenceEngine : public EngineBase {
     static constexpr double MAX_SPREAD    = 2.5;
     static constexpr int    SL_TICKS      = 60;   // $6 stop
     static constexpr int    TP_TICKS      = 120;  // $12 target, 2:1
-    static constexpr int    COOLDOWN_SEC  = 1800; // 30min -- fires 1-3x/day
+    static constexpr int    COOLDOWN_SEC  = 3600; // raised 1800->3600: was firing 3-4x into trend days
     static constexpr int    WINDOW        = 20;   // ticks for divergence measurement
     static constexpr double GOLD_DX_BETA  = 12.0; // gold pts per DX.F pt
     static constexpr double DIV_THRESHOLD = 2.50; // $2.50 divergence to fire
@@ -3245,6 +3245,12 @@ public:
         if (s.spread > MAX_SPREAD)      return noSignal();
         if (s.session == SessionType::UNKNOWN) return noSignal();
         if (s.dx_mid <= 0.0)            return noSignal();  // no DX feed yet
+        // DXY divergence is only valid in compression/mean-reversion.
+        // In EXPANSION_BREAKOUT or TREND_CONTINUATION the divergence reading is
+        // noise -- gold is trending hard, DXY divergence entries go counter-trend.
+        // Evidence: 07:34 LONG on $180 down-day, 3 SL hits on 27-Mar EXPANSION day.
+        if (s.regime == RegimeType::EXPANSION_BREAKOUT ||
+            s.regime == RegimeType::TREND_CONTINUATION) return noSignal();
 
         gold_hist_.push_back(s.mid);
         dx_hist_.push_back(s.dx_mid);

@@ -804,6 +804,16 @@ struct GoldFlowEngine {
         m_sup_is_trend     = sup_is_trend;
         m_wall_ahead       = wall_ahead;
     }
+    // set_bar_context: inject M1 bar indicators into engine for SL hold decisions.
+    // Called from main.cpp before on_tick() when m1_ready=true.
+    // RSI and trend_state allow manage_position() to suppress SL when the trade
+    // is clearly going in the right direction on the bar timeframe.
+    void set_bar_context(double rsi14, int trend_state, double bb_pct) noexcept {
+        m_bar_rsi14     = rsi14;
+        m_bar_trend     = trend_state;
+        m_bar_bb_pct    = bb_pct;
+    }
+
     // save_atr_state: write current ATR to disk at rollover/shutdown
     // Saves the RANGE-based ATR (m_atr) + timestamp so load can validate freshness.
     // load_atr_state: restore on startup -- bypasses 100-tick warmup blind zone.
@@ -1077,6 +1087,10 @@ private:
     bool    m_continuation_mode = false;
     int64_t m_continuation_expires_ms = 0; // ms timestamp when mode expires
     int     m_last_session_slot = -1;
+    double  m_bar_rsi14     = 50.0; // M1 RSI(14) -- updated by set_bar_context()
+    int     m_bar_trend     = 0;    // M5 trend state: +1=uptrend, -1=downtrend, 0=neutral
+    double  m_bar_bb_pct    = 0.5;  // M1 Bollinger %B -- 0=lower band, 1=upper band
+    int64_t m_sl_suppress_start_ms = 0; // when SL suppression started (0=not suppressing)
 
     // ?? Reload state ??????????????????????????????????????????????????????????
     // Armed when PARTIAL_1R fires (step 1 of staircase banks first 33%).
@@ -1641,6 +1655,58 @@ private:
         // ---- SL check ---------------------------------------------------
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
         if (!sl_hit) return;
+
+        // ---- SL Hold: suppress SL when bar context confirms trade direction ??
+        // Problem: SL fires at 1pt adverse after 54s when RSI clearly shows
+        // momentum recovery (visible on chart). The SL is too tight for a trade
+        // that has valid bar-timeframe confirmation still in place.
+        //
+        // Rules (only applies before BE is locked -- once BE locks, SL is free):
+        //   LONG: suppress SL if RSI > 52 (not oversold) AND M5 trend != -1
+        //         AND bb_pct > 0.35 (not at lower band = no panic selling)
+        //   SHORT: suppress SL if RSI < 48 (not overbought) AND M5 trend != +1
+        //          AND bb_pct < 0.65 (not at upper band)
+        //   Max suppression: 30s -- prevents infinite hold on genuinely dead setups
+        //   Only active in first 90s of trade (early SL is most likely noise)
+        //
+        // This directly addresses: 07:34 LONG, RSI recovering above 50, M5 flat,
+        // SL fires at 4628.53 -- gold then rallies to 4640. Trade should have held.
+        if (!pos.be_locked) {
+            const int64_t held_s = (now_ms / 1000) - pos.entry_ts;
+            const bool in_early_window = (held_s <= 90);
+
+            if (in_early_window) {
+                const bool rsi_ok = pos.is_long
+                    ? (m_bar_rsi14 > 52.0 && m_bar_trend != -1)   // LONG: RSI rising, not in downtrend
+                    : (m_bar_rsi14 < 48.0 && m_bar_trend != +1);  // SHORT: RSI falling, not in uptrend
+                const bool bb_ok = pos.is_long
+                    ? (m_bar_bb_pct > 0.35)   // LONG: not at lower band (not being sold hard)
+                    : (m_bar_bb_pct < 0.65);  // SHORT: not at upper band
+
+                if (rsi_ok && bb_ok) {
+                    // Check we haven't been suppressing too long (30s max)
+                    if (m_sl_suppress_start_ms == 0) {
+                        m_sl_suppress_start_ms = now_ms;
+                    }
+                    const int64_t suppress_held = (now_ms - m_sl_suppress_start_ms) / 1000;
+                    if (suppress_held < 30) {
+                        printf("[GOLD-FLOW] SL-HOLD %s rsi=%.1f trend=%+d bb=%.2f"
+                               " held=%llds suppress=%llds -- bar context says hold
+",
+                               pos.is_long ? "LONG" : "SHORT",
+                               m_bar_rsi14, m_bar_trend, m_bar_bb_pct,
+                               (long long)held_s, (long long)suppress_held);
+                        fflush(stdout);
+                        return;  // suppress SL this tick
+                    }
+                    // Suppression expired -- fall through to SL exit
+                    printf("[GOLD-FLOW] SL-HOLD expired after 30s -- exiting
+");
+                    fflush(stdout);
+                }
+            }
+        }
+        m_sl_suppress_start_ms = 0;  // reset on any non-suppressed path
 
         // ---- Exit -------------------------------------------------------
         const double exit_px = pos.is_long ? bid : ask;
