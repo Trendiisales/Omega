@@ -91,7 +91,12 @@ struct BarIndicators {
     std::atomic<double> swing_high{0.0};// last confirmed swing high
     std::atomic<double> swing_low {0.0};// last confirmed swing low
     // Bar availability flags
-    std::atomic<bool>   m1_ready{false}; // true once >=50 M1 bars loaded
+    std::atomic<bool>   m1_ready{false};     // true once RSI_P+1 bars loaded -- RSI is real
+    std::atomic<bool>   m1_ema_live{false};  // true once RSI_P+1 LIVE bars closed since startup
+                                             // EMA crossover direction only valid when this is true.
+                                             // m1_ready can be set by load_indicators (disk state) --
+                                             // EMA loaded from disk reflects prior session direction,
+                                             // not current. m1_ema_live requires actual live bar closes.
     std::atomic<bool>   m5_ready{false}; // true once >=20 M5 bars loaded
 
     // ?? NEW: BBW squeeze detector ?????????????????????????????????????????????
@@ -228,10 +233,11 @@ public:
         if (n >= 3)          _update_vwap_slope();
 
         // Ready once RSI has real values -- needs RSI_P+1 bars (15 min from ticks).
-        // Previously fired at n>=1 (EMA/ATR ready) but RSI stayed at 50.0 default
-        // until bar 15, causing every SHORT to be blocked as "counter-trend, RSI=50.0
-        // not extreme enough" all session when trendbar API is unavailable (BlackBull).
         if (!ind.m1_ready.load() && n >= RSI_P + 1) ind.m1_ready.store(true);
+        // EMA live: requires RSI_P+1 LIVE bar closes (never set by load_indicators).
+        // EMA direction loaded from disk reflects prior session -- not current market.
+        // Only trust EMA crossover for trend gating once live bars have updated it.
+        if (!ind.m1_ema_live.load() && n >= RSI_P + 1) ind.m1_ema_live.store(true);
     }
 
     // ?????????????????????????????????????????????????????????????????????????

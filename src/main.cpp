@@ -122,6 +122,11 @@ struct OmegaConfig {
                                         // Recommended: set to 1.5? daily_loss_limit once live.
     double max_loss_per_trade_usd = 0.0; // 0=disabled. Hard dollar cap per trade regardless of sizing.
                                           // Enforced in enter_directional and gold stack path.
+    double max_portfolio_sl_risk_usd = 0.0; // 0=disabled. Max total simultaneous open SL risk.
+                                             // Blocks new entries when sum of (SL_pts * lot * tick_val)
+                                             // across all open positions exceeds this threshold.
+                                             // Prevents correlated crash (gold+silver+oil all SHORT).
+                                             // Recommended: 2-3x daily_loss_limit (e.g. 500 if limit=200).
     double session_watermark_pct = 0.0;  // 0=disabled. Stop if drawdown from intra-day peak
                                           // exceeds this % of daily_profit_target (or daily_loss_limit).
                                           // e.g. 0.50 = stop if 50% of peak is given back.
@@ -1038,6 +1043,25 @@ static std::atomic<bool>  g_md_subscribed{false};   // true once OMEGA-MD-ALL is
 // Stored as int64 (cents) to allow lock-free atomic read/write.
 // GUI daily_pnl = closed_pnl + g_open_unrealised_pnl_cents / 100.0
 static std::atomic<int64_t> g_open_unrealised_cents{0};
+
+// Portfolio open SL risk tracker -- sum of max_dollar_loss across all open positions.
+// Incremented on entry (sl_pts * lot * tick_value), decremented on close.
+// Stored in cents (int64) for lock-free atomic access on hot path.
+// Checked in symbol_gate when max_portfolio_sl_risk_usd > 0.
+static std::atomic<int64_t> g_open_sl_risk_cents{0};
+
+inline void portfolio_sl_risk_add(double sl_pts, double lot, double tick_value) {
+    if (sl_pts <= 0.0 || lot <= 0.0 || tick_value <= 0.0) return;
+    const int64_t cents = static_cast<int64_t>((sl_pts * lot * tick_value) * 100.0);
+    g_open_sl_risk_cents.fetch_add(cents, std::memory_order_relaxed);
+}
+inline void portfolio_sl_risk_sub(double sl_pts, double lot, double tick_value) {
+    if (sl_pts <= 0.0 || lot <= 0.0 || tick_value <= 0.0) return;
+    const int64_t cents = static_cast<int64_t>((sl_pts * lot * tick_value) * 100.0);
+    // Never go below zero -- defensive against double-decrements
+    const int64_t prev = g_open_sl_risk_cents.fetch_sub(cents, std::memory_order_relaxed);
+    if (prev < cents) g_open_sl_risk_cents.store(0, std::memory_order_relaxed);
+}
 
 // Shadow CSV
 static std::ofstream g_shadow_csv;
@@ -2870,6 +2894,7 @@ static void load_config(const std::string& path) {
             if (k=="daily_loss_limit")     g_cfg.daily_loss_limit  = safe_stod(v, k);
             if (k=="daily_profit_target")  g_cfg.daily_profit_target = safe_stod(v, k);
             if (k=="max_loss_per_trade_usd") g_cfg.max_loss_per_trade_usd = safe_stod(v, k);
+            if (k=="max_portfolio_sl_risk_usd") g_cfg.max_portfolio_sl_risk_usd = safe_stod(v, k);
             if (k=="session_watermark_pct")  g_cfg.session_watermark_pct  = safe_stod(v, k);
             if (k=="hourly_loss_limit")    g_cfg.hourly_loss_limit   = safe_stod(v, k);
             if (k=="max_consec_losses")    g_cfg.max_consec_losses = safe_stoi(v, k);
@@ -3166,7 +3191,8 @@ static void sanitize_config() noexcept {
     g_cfg.max_latency_ms     = clampd(g_cfg.max_latency_ms, 0.0, 5000.0, 60.0);
     g_cfg.daily_loss_limit       = clampd(g_cfg.daily_loss_limit,       1.0, 1000000.0, 200.0);
     g_cfg.daily_profit_target    = clampd(g_cfg.daily_profit_target,    0.0, 1000000.0, 0.0);
-    g_cfg.max_loss_per_trade_usd = clampd(g_cfg.max_loss_per_trade_usd, 0.0, 100000.0,  0.0);
+    g_cfg.max_loss_per_trade_usd     = clampd(g_cfg.max_loss_per_trade_usd,     0.0, 100000.0, 0.0);
+    g_cfg.max_portfolio_sl_risk_usd  = clampd(g_cfg.max_portfolio_sl_risk_usd,  0.0, 100000.0, 0.0);
     g_cfg.session_watermark_pct  = clampd(g_cfg.session_watermark_pct,  0.0, 1.0,        0.0);
     g_cfg.hourly_loss_limit      = clampd(g_cfg.hourly_loss_limit,      0.0, 1000000.0, 0.0);
     g_cfg.momentum_thresh_pct = clampd(g_cfg.momentum_thresh_pct, 0.0, 10.0, 0.05);
@@ -3595,6 +3621,18 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
               << " net=$" << tr.net_pnl
               << " exit=" << tr.exitReason << "\n";
     std::cout.flush();
+    // ?? Decrement portfolio open SL risk on close ????????????????????????????????????
+    // sl_abs is not directly in TradeRecord -- approximate from entryPrice and SL price.
+    // tr.sl is the SL price stored at entry; not always populated in all engines.
+    // Use a conservative fixed fallback per symbol if sl is zero.
+    {
+        const double sl_pts = (tr.sl > 0.0 && tr.entryPrice > 0.0)
+            ? std::fabs(tr.entryPrice - tr.sl)
+            : 0.0;
+        const double tick_val = tick_value_multiplier(tr.symbol);
+        portfolio_sl_risk_sub(sl_pts, tr.size, tick_val);
+    }
+
     g_omegaLedger.record(tr);
     // Accumulate per-engine session P&L for GUI live attribution panel
     g_telemetry.AccumEnginePnl(tr.engine.c_str(), tr.net_pnl);
@@ -4953,6 +4991,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     return false;
                 }
             }
+            // ?? Portfolio open SL risk cap ????????????????????????????????????????
+            // Block new entries when total simultaneous SL exposure exceeds threshold.
+            // Prevents correlated crashes: gold+silver+oil all SHORT at once means
+            // a single RISK_ON reversal hits all of them simultaneously.
+            // Cap = max_portfolio_sl_risk_usd (default 0 = disabled).
+            // Each engine adds its SL risk on entry via portfolio_sl_risk_add().
+            if (g_cfg.max_portfolio_sl_risk_usd > 0.0) {
+                const double open_sl_risk = g_open_sl_risk_cents.load(std::memory_order_relaxed) / 100.0;
+                if (open_sl_risk >= g_cfg.max_portfolio_sl_risk_usd) {
+                    static int64_t s_ptf_log = 0;
+                    if (nowSec() - s_ptf_log > 30) {
+                        s_ptf_log = nowSec();
+                        printf("[PORTFOLIO-CAP] %s blocked: open_sl_risk=$%.2f >= cap=$%.0f\n",
+                               symbol.c_str(), open_sl_risk, g_cfg.max_portfolio_sl_risk_usd);
+                        fflush(stdout);
+                    }
+                    return false;
+                }
+            }
+
             // ?? Session watermark drawdown ????????????????????????????????????
             // Stop if drawdown from intra-day peak exceeds threshold AND daily P&L
             // is still negative (i.e. we are actually losing money today).
@@ -6233,6 +6291,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_partial_exit.arm(esym, is_long, entry, tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
                                sl, final_lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
         }
+        // ?? Increment portfolio open SL risk ????????????????????????????????????
+        // Tracks total simultaneous max-loss across all open positions.
+        // Decremented in handle_closed_trade when position closes.
+        {
+            const double tick_val = tick_value_multiplier(esym);
+            portfolio_sl_risk_add(sl_abs, final_lot, tick_val);
+        }
         send_live_order(esym, is_long, final_lot, entry);
         g_telemetry.UpdateLastEntryTs();  // watchdog: stamp last successful entry
         return final_lot;
@@ -7422,10 +7487,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // M1, the chart shows a clear downtrend -- visible to any human, invisible to
             // the engine until now. This is what was blocking every entry in today's crash.
             const bool bar_ready      = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
-            const double bar_rsi_gs   = bar_ready ? g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed) : 50.0;
-            const double bar_ema9_gs  = bar_ready ? g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed) : 0.0;
-            const double bar_ema50_gs = bar_ready ? g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed) : 0.0;
+            const bool bar_ema_live   = g_bars_gold.m1.ind.m1_ema_live.load(std::memory_order_relaxed);
+            const double bar_rsi_gs   = bar_ready     ? g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed) : 50.0;
+            const double bar_ema9_gs  = bar_ema_live  ? g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed) : 0.0;
+            const double bar_ema50_gs = bar_ema_live  ? g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed) : 0.0;
             // EMA9 < EMA50 = momentum downtrend (-1). EMA9 > EMA50 = uptrend (+1). 0 = no signal.
+            // Only read when m1_ema_live -- stale disk EMA can show wrong direction from prior session.
             const int    bar_trend_gs = (bar_ema9_gs > 0.0 && bar_ema50_gs > 0.0)
                 ? (bar_ema9_gs < bar_ema50_gs ? -1 : +1)
                 : 0;
@@ -7633,6 +7700,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                gsig.entry - (gsig.is_long ? 1.0 : -1.0) * gold_sl_abs,
                                                gold_lot,
                                                g_adaptive_risk.vol_scaler.atr_fast("XAUUSD"));
+                            portfolio_sl_risk_add(gold_sl_abs, gold_lot, 100.0);  // gold: 100 USD/pt/lot
                             send_live_order("XAUUSD", gsig.is_long, gold_lot, gsig.entry);
                             g_telemetry.UpdateLastEntryTs();  // watchdog: GoldStack entry counts as activity
                         }
@@ -8642,8 +8710,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // FIX 2026-04-02: replaced M5 swing trend_state with M1 EMA9/EMA50 crossover.
                 // M5 swing lag = 15+ min. EMA9/EMA50 on M1 = 1-3 bar lag.
                 // This is the crossover visible on the chart that we were never reading.
-                const double bar_ema9_gf  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
-                const double bar_ema50_gf = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
+                // Only use EMA crossover when live bars have updated it (not stale disk state).
+                const bool   gf_ema_live  = g_bars_gold.m1.ind.m1_ema_live.load(std::memory_order_relaxed);
+                const double bar_ema9_gf  = gf_ema_live ? g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed) : 0.0;
+                const double bar_ema50_gf = gf_ema_live ? g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed) : 0.0;
                 const int    bar_trend  = (bar_ema9_gf > 0.0 && bar_ema50_gf > 0.0)
                     ? (bar_ema9_gf < bar_ema50_gf ? -1 : +1)
                     : 0;
@@ -8832,8 +8902,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // counter-trend entries into a squeeze almost always lose.
                     if (gf_tick_ok && bb_sq && sq_bars >= 3) {
                         // FIX 2026-04-02: use M1 EMA crossover not M5 swing for BBW squeeze counter check
-                        const double bsq_ema9  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
-                        const double bsq_ema50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
+                        const bool   bsq_ema_live = g_bars_gold.m1.ind.m1_ema_live.load(std::memory_order_relaxed);
+                        const double bsq_ema9  = bsq_ema_live ? g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed) : 0.0;
+                        const double bsq_ema50 = bsq_ema_live ? g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed) : 0.0;
                         const int    bar_trend_sq = (bsq_ema9 > 0.0 && bsq_ema50 > 0.0)
                             ? (bsq_ema9 < bsq_ema50 ? -1 : +1) : 0;
                         const bool   counter_sq    = (gf_long_g4  && bar_trend_sq == -1)
@@ -9123,7 +9194,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                 }
 
-                // Flow engine entered -- telemetry
+                // Flow engine entered -- portfolio risk tracking + telemetry
+                {
+                    const double gf_sl_abs = std::fabs(g_gold_flow.pos.entry - g_gold_flow.pos.sl);
+                    portfolio_sl_risk_add(gf_sl_abs, g_gold_flow.pos.size, 100.0);
+                }
                 g_telemetry.UpdateLastSignal("XAUUSD",
                     g_gold_flow.pos.is_long ? "LONG" : "SHORT",
                     g_gold_flow.pos.entry, "L2_FLOW",
