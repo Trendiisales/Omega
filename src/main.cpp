@@ -8217,7 +8217,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // GoldFlow falls back to atr=5.00 floor which produces 0.16 lots
                     // at $80 risk. A $5 SL on 0.16 lots = -$80 + costs = -$43 loss.
                     // With capped lot (0.01), the same SL costs -$5. Much safer.
-                    g_gold_flow.ENTRY_SIZE = 0.01;  // degrade gracefully -- no ATR, no big sizing
+                    g_gold_flow.risk_dollars = 0.80;  // degrade gracefully -- no ATR, cap risk to $0.80 so atr=5.00 floor gives ~0.01 lots
                     if (now_wup - s_warmup_log >= 300) {
                         s_warmup_log = now_wup;
                         printf("[GF-GATE-0D] BARS_UNAVAILABLE >2min -- running without bar gates "
@@ -8261,7 +8261,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool gf_crash_bypass = crash_impulse_bypass;  // RSI crash/rally bypass
                 // Also bypass vol floor when vwap displacement > $15 -- macro move,
                 // bars not being seeded should not block an obvious directional trade.
-                const bool macro_displacement_bypass = (vwap_disp > 15.0);
+                // Note: vwap_disp is defined in the bracket scope above -- recompute locally.
+                const double gf_vwap_local = g_gold_stack.vwap();
+                const double gf_mid_local  = (bid + ask) * 0.5;
+                const double gf_vwap_disp  = (gf_vwap_local > 0.0)
+                    ? std::fabs(gf_mid_local - gf_vwap_local) : 0.0;
+                const bool macro_displacement_bypass = (gf_vwap_disp > 15.0);
                 if (in_compression && !vol_unseeded && !gf_crash_bypass && !macro_displacement_bypass
                     && vol_range_now >= 0.0 && vol_range_now < GF_COMPRESSION_VOL_FLOOR) {
                     static int64_t s_comp_log = 0;
