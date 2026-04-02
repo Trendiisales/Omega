@@ -1990,11 +1990,9 @@ public:
         if (!pos_.active || fraction <= 0.0 || fraction >= 1.0) return 0.0;
         const double close_size = pos_.size * fraction;
         const double rem_size   = pos_.size - close_size;
-        const double tick_val =
-            (sym.find("XAU") != std::string::npos) ? 100.0 :
-            (sym == "US500.F") ? 50.0 : (sym == "USTEC.F") ? 20.0 : 1.0;
+        // No tick_val here -- handle_closed_trade applies tick_value_multiplier() once.
         const double pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px))
-                           * close_size * tick_val;
+                           * close_size;
         printf("[TREND-PB] %s PARTIAL EXIT %.0f%% @%.3f reason=%s pnl=%.2f remaining=%.4f\n",
                sym.c_str(), fraction*100, exit_px, reason, pnl, rem_size);
         fflush(stdout);
