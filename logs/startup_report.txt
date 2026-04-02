@@ -1,7 +1,7 @@
 ﻿OMEGA STARTUP REPORT
-Generated : 2026-04-02 11:22:12 UTC
+Generated : 2026-04-02 11:36:33 UTC
 Log file  : C:\Omega\logs\latest.log
-Collected : 34 lines over 45s
+Collected : 36 lines over 45s
 Result    : PASS=0  FAIL=0  WARN=3  INFO=9
 ========================================================================
 [INFO]  ATR Seed               No GFE-SEED line seen
@@ -22,6 +22,6 @@ Result    : PASS=0  FAIL=0  WARN=3  INFO=9
 [INFO]  First Signal           No signal in first 45s
                                      Normal if market quiet or in compression.
 [INFO]  Impulse Ghost          No impulse ghost blocks seen
-[INFO]  Build Stamp            commit=ddacad1  built=2026-04-02 11:21:18 UTC
+[INFO]  Build Stamp            commit=fa7fc0c  built=2026-04-02 11:35:39 UTC
 ========================================================================
 RESULT: PASS=0  FAIL=0  WARN=3  INFO=9

@@ -1,23 +1,23 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-02 11:35:49 UTC
+Generated : 2026-04-02 11:36:33 UTC
 ============================================================
 [ATR-DAT] atr=2.063302 atr_ewm=2.063302 warmed=1 last_mid=4610.08000 saved_ts=1775129549
 [ATR-WARN] atr=2.063302 <= 5.0 -- may still be floor-pinned
 
 [DIAG]        11:32:29 [OMEGA-DIAG] PnL=15.0878 T=25 WR=48% RTTp95=4.243ms cap=120ms lat_ok=1 session=ACTIVE
 [GOLD-DIAG]   11:32:29 [GOLD-DIAG] regime=COMPRESSION vwap=4620.86 vol_range=1.46
-[BRK-DIAG]    11:32:27 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-2.21 l2_imb=0.511 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
-[SUPERVISOR]  11:30:30 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.61 bracket=0.72 breakout=0.40 top_score=0.72 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
-[VIX]         11:32:02 [TICK] VIX.F 26.19/26.55
-[GOLD-PRICE]  11:32:01 [TICK] XAUUSD 4610.58/4610.80
+[BRK-DIAG]    11:36:31 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.68 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+[SUPERVISOR]  11:35:49 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.92 bracket=0.98 breakout=0.00 top_score=0.98 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+[VIX]         11:36:22 [TICK] VIX.F 26.29/26.65
+[GOLD-PRICE]  11:36:19 [TICK] XAUUSD 4615.73/4615.95
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
 [STARTUP-REPORT-BEGIN]
   OMEGA STARTUP REPORT
-  Generated : 2026-04-02 11:22:12 UTC
+  Generated : 2026-04-02 11:36:33 UTC
   Log file  : C:\Omega\logs\latest.log
-  Collected : 34 lines over 45s
+  Collected : 36 lines over 45s
   Result    : PASS=0  FAIL=0  WARN=3  INFO=9
   ========================================================================
   [INFO]  ATR Seed               No GFE-SEED line seen
@@ -38,7 +38,7 @@ Generated : 2026-04-02 11:35:49 UTC
   [INFO]  First Signal           No signal in first 45s
                                        Normal if market quiet or in compression.
   [INFO]  Impulse Ghost          No impulse ghost blocks seen
-  [INFO]  Build Stamp            commit=ddacad1  built=2026-04-02 11:21:18 UTC
+  [INFO]  Build Stamp            commit=fa7fc0c  built=2026-04-02 11:35:39 UTC
   ========================================================================
   RESULT: PASS=0  FAIL=0  WARN=3  INFO=9
 [STARTUP-REPORT-END]
