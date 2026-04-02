@@ -12178,10 +12178,13 @@ int main(int argc, char* argv[])
         //   period=105 -> GetTickDataReq for M5
         //   period=107 -> GetTickDataReq for M15
         // With period=1 now also using tick fallback, pt=2137 is NEVER sent.
-        g_ctrader_depth.bar_failed_reqs.insert("XAUUSD:1");    // block pt=2137 for XAUUSD M1
+        g_ctrader_depth.bar_failed_reqs.insert("XAUUSD:1");        // block pt=2137 for XAUUSD M1
+        // Pre-block live trendbar subs -- BlackBull sends TCP RST on pt=2135
+        g_ctrader_depth.bar_failed_reqs.insert("XAUUSD:live:1");
+        g_ctrader_depth.bar_failed_reqs.insert("XAUUSD:live:5");
+        g_ctrader_depth.bar_failed_reqs.insert("XAUUSD:live:7");
         g_ctrader_depth.save_bar_failed(g_ctrader_depth.bar_failed_path_);
-        std::cout << "[CTRADER] Pre-blocked GetTrendbarsReq (pt=2137) for all symbols"
-                  << " -- all bar history via GetTickDataReq (pt=2145)\n";
+        std::cout << "[CTRADER] Pre-blocked trendbar reqs + live subs -- no crash loop\n";
 
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
