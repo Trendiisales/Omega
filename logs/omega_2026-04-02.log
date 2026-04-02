@@ -47237,3 +47237,27 @@
 11:47:30 [CTRADER-BARS] XAUUSD spots sub sent
 11:47:30 [CTRADER-BARS] Spots sub ACK
 11:47:31 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-7.79 l2_imb=0.790 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+11:47:36 [TICK] NZDUSD 0.57/0.57
+11:47:36 [TICK] DX.F 100.00/100.11
+11:47:42 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-6.34 l2_imb=0.790 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+11:47:42 [TICK] VIX.F 26.49/26.85
+11:47:50 [OMEGA-DIAG] PnL=13.5678 T=26 WR=46.1538% RTTp95=3.257ms cap=120ms lat_ok=1 session=ACTIVE
+11:47:50 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+11:47:50 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+11:47:50 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+11:47:50 [GOLD-DIAG] regime=COMPRESSION vwap=4598.84 vol_range=2.13
+11:47:51 [TICK] AUDUSD 0.69/0.69
+11:47:51 [TICK] UK100 10308.70/10309.70
+11:47:51 [TICK] GER40 22734.40/22735.60
+11:47:51 [TICK] GBPUSD 1.32/1.32
+11:47:51 [TICK] NAS100 23523.05/23524.25
+11:47:51 [TICK] XAGUSD 70.34/70.37
+11:47:51 [TICK] BRENT 107.03/107.16
+11:47:51 [TICK] XAUUSD 4598.94/4599.16
+11:47:51 [TICK] EURUSD 1.15/1.15
+11:47:51 [TICK] USTEC.F 23704.19/23706.90
+11:47:51 [TICK] USOIL.F 109.44/109.50
+11:47:52 [TICK] ESTX50 5598.30/5599.70
+11:47:52 [TICK] DJ30.F 46142.10/46147.90
+11:47:52 [TICK] US500.F 6512.34/6513.15
+11:47:52 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-4.70 l2_imb=0.790 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
