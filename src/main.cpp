@@ -5173,7 +5173,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             eng.pos.pyramid_pending = false;
             const double pyr_sl_abs_raw = std::fabs(eng.pos.pyramid_entry - eng.pos.pyramid_sl);
             const double pyr_sl_abs = std::min(pyr_sl_abs_raw, 3.0);  // cap pyramid SL at $3
-            const double pyr_lot    = std::min(compute_size(sym, pyr_sl_abs, ask - bid, eng.ENTRY_SIZE) * 0.5, 0.20);  // cap lot at 0.20
+            // Fix: use half of the actual patched base lot (eng.pos.size) not a fresh
+            // compute_size() which recalculates from eng.ENTRY_SIZE and can mismatch
+            // the lot that was actually sent to the broker for the base trade.
+            const double pyr_lot    = std::min(std::max(0.01, eng.pos.size * 0.5), 0.20);
             std::cout << "\033[1;36m[PYRAMID] " << sym
                       << " " << (eng.pos.is_long ? "LONG" : "SHORT")
                       << " add-on entry=" << eng.pos.pyramid_entry
@@ -8908,8 +8911,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double pyr_sl      = pyr_long ? (pyr_mid - pyr_sl_dist) : (pyr_mid + pyr_sl_dist);
                 const double pyr_tp_dist = std::max(pyr_atr * 2.5, pyr_sl_dist * 2.0);
                 const double pyr_tp      = pyr_long ? (pyr_mid + pyr_tp_dist) : (pyr_mid - pyr_tp_dist);
+                // Fix: use open_size() (the actual patched lot sent to broker) as the base
+                // for pyramid sizing. Hardcoded 0.01 caused add-ons to be sized independently
+                // of the base trade -- if base was 0.08 lots, pyramid was calculated as if
+                // base was 0.01, producing an inflated or mismatched add-on lot.
+                const double base_open_lot = std::max(0.01, g_trend_pb_gold.open_size());
                 const double add_lot     = std::max(0.005,
-                    compute_size("XAUUSD", pyr_sl_dist, ask - bid, 0.01)  // 0.01 = base pyramid lot
+                    compute_size("XAUUSD", pyr_sl_dist, ask - bid, base_open_lot)
                     * g_trend_pb_gold.PYRAMID_SIZE_MULT);
                 if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true)) {
                     ++g_trend_pb_gold.pyramid_adds_;
