@@ -45508,3 +45508,4 @@
 10:45:18 [TICK] DJ30.F 46302.10/46307.90
 10:45:18 [TICK] USTEC.F 23806.07/23808.78
 10:45:18 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=2.64 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+10:45:18 [TICK] US500.F 6534.97/6535.78
