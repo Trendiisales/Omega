@@ -45574,3 +45574,97 @@
 11:02:14 [TICK] ESTX50 5618.40/5619.90
 11:02:14 [TICK] UK100 10343.40/10344.50
 11:02:14 [TICK] VIX.F 25.94/26.30
+11:02:18 [CTRADER-AUDIT] Symbol subscription check:
+11:02:18 [CTRADER-AUDIT]   US500.F -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   USTEC.F -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   USOIL.F -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   VIX.F -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   DX.F -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   DJ30.F -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   NAS100 -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   XAUUSD -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   NGAS.F -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   GER40 -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   UK100 -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   ESTX50 -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   XAGUSD -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   EURUSD -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   BRENT -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   GBPUSD -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   AUDUSD -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   NZDUSD -> *** FIX FALLBACK ONLY ***
+11:02:18 [CTRADER-AUDIT]   USDJPY -> *** FIX FALLBACK ONLY ***
+11:02:24 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-1.30 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+11:02:35 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=-0.67 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+11:02:35 [SUPERVISOR-XAUUSD] regime=EXPANSION_BREAKOUT conf=0.39 bracket=0.35 breakout=0.50 top_score=0.50 threshold=0.25 winner=BREAKOUT allow=1 cooldown=0 reason=valid_signal
+11:02:43 [CTRADER] Connecting live.ctraderapi.com:5035
+11:02:43 [CTRADER] ApplicationAuthReq sent
+11:02:43 [CTRADER] Application authorized
+11:02:43 [CTRADER] AccountAuthReq sent
+11:02:43 [CTRADER] Account 44937427 authorized
+11:02:44 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+11:02:44 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+11:02:44 [CTRADER] Subscribe depth: EURUSD id=1
+11:02:44 [CTRADER] Subscribe depth: NAS100 id=110
+11:02:44 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+11:02:44 [CTRADER] Subscribe depth: NGAS.F id=2631
+11:02:44 [CTRADER] Subscribe depth: GBPUSD id=2
+11:02:44 [CTRADER] Subscribe depth: XAGUSD id=42
+11:02:44 [CTRADER] Subscribe depth: USOIL.F id=2632
+11:02:44 [CTRADER] Subscribe depth: ESTX50 id=1898
+11:02:44 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+11:02:44 [CTRADER] Subscribe depth: USDJPY id=4
+11:02:44 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+11:02:44 [CTRADER] Subscribe depth: BRENT id=109
+11:02:44 [CTRADER] Subscribe depth: GER40 id=1899
+11:02:44 [CTRADER] Subscribe depth: DJ30.F id=2637
+11:02:44 [CTRADER] Subscribe depth: AUDUSD id=5
+11:02:44 [CTRADER] Subscribe depth: DX.F id=2638
+11:02:44 [CTRADER] Subscribe depth: UK100 id=1901
+11:02:44 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+11:02:44 [CTRADER] Subscribe depth: US500.F id=2642
+11:02:44 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+11:02:44 [CTRADER] Subscribe depth: USTEC.F id=2643
+11:02:44 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+11:02:44 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+11:02:44 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+11:02:44 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+11:02:44 [CTRADER] Subscribe depth: NZDUSD id=12
+11:02:44 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+11:02:44 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+11:02:44 [CTRADER] Subscribe depth: VIX.F id=4462
+11:02:44 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+11:02:44 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+11:02:44 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+11:02:44 [CTRADER] Subscribed to 19 symbols
+11:02:44 [CTRADER] Depth feed ACTIVE -- 19 symbols
+11:02:44 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+11:02:44 [STARTUP-CHECK] cTrader depth connected (30s)
+11:02:44 [TICK] AUDUSD 0.69/0.69
+11:02:44 [TICK] USDJPY 159.69/159.70
+11:02:44 [TICK] GER40 22821.15/22822.15
+11:02:44 [TICK] GBPUSD 1.32/1.32
+11:02:44 [TICK] EURUSD 1.15/1.15
+11:02:44 [TICK] ESTX50 5620.00/5621.50
+11:02:44 [TICK] UK100 10348.00/10349.00
+11:02:44 [TICK] XAGUSD 70.98/71.02
+11:02:44 [TICK] NAS100 23631.55/23632.75
+11:02:44 [TICK] XAUUSD 4622.99/4623.21
+11:02:44 [TICK] BRENT 106.81/106.92
+11:02:44 [TICK] US500.F 6536.34/6537.15
+11:02:44 [TICK] USTEC.F 23812.94/23815.65
+11:02:45 [TICK] NZDUSD 0.57/0.57
+11:02:45 [TICK] DX.F 100.02/100.12
+11:02:45 [STARTUP-CHECK] Gold L2 live (31s)
+11:02:45 [STARTUP-CHECK] OK: cTrader live, L2 live (imb=0.500)
+11:02:45 [TICK] USOIL.F 108.40/108.46
+11:02:45 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.80 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=1 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2
+11:02:45 [TICK] VIX.F 25.91/26.28
+11:02:46 [TICK] DJ30.F 46308.10/46313.90
+11:02:50 [TICK] NGAS.F 2.84/2.86
+11:02:50 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.56 bracket=0.67 breakout=0.40 top_score=0.67 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+11:02:54 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.56 bracket=0.60 breakout=0.40 top_score=0.60 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=high_risk_no_trade
+11:02:54 [CTRADER-BARS] XAUUSD spots sub sent
+11:02:54 [CTRADER-BARS] Spots sub ACK
+11:02:54 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.49 bracket=0.61 breakout=0.40 top_score=0.61 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+11:02:55 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=1.43 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=2

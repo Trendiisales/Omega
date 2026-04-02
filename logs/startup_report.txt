@@ -1,7 +1,7 @@
 ﻿OMEGA STARTUP REPORT
-Generated : 
+Generated : 2026-04-02 11:02:58 UTC
 Log file  : C:\Omega\logs\latest.log
-Collected : 44 lines over 45s
+Collected : 38 lines over 45s
 ========================================================================
 [INFO]  ATR Seed               No GFE-SEED line seen
                                      Engine may have loaded ATR from disk (normal) -- see ATR State check.
@@ -17,5 +17,5 @@ Collected : 44 lines over 45s
 [INFO]  Latency                No OMEGA-DIAG yet
 [INFO]  First Signal           No signal in first 45s
                                      Normal if market quiet or in compression.
-[INFO]  Build Stamp            commit=2e04adb  built=2026-04-02 10:44:07 UTC
+[INFO]  Build Stamp            commit=7b730e6  built=2026-04-02 11:02:03 UTC
 ========================================================================
