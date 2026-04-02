@@ -16159,3 +16159,1866 @@
 04:26:09 [OMEGA] Shutdown
 04:26:09 [CTRADER] Connection error -- reconnecting
 04:26:09 [CTRADER] Stopped
+04:29:00 [OMEGA] Log: C:\Omega\logs/omega_2026-04-02.log
+04:29:00 [OMEGA] Full Trade CSV: logs/trades/omega_trade_closes.csv
+04:29:00 [OMEGA] Trade Opens CSV: logs/trades/omega_trade_opens.csv
+04:29:00 [OMEGA] Daily Trade Logs: logs/trades/omega_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)
+04:29:00 [OMEGA] Daily Gold Logs: logs/gold/omega_gold_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)
+04:29:00 [OMEGA] Daily Shadow Trade Logs: logs/shadow/trades/omega_shadow_trades_YYYY-MM-DD.csv (UTC, 5-file retention)
+04:29:00 [OMEGA] Shadow CSV: logs/shadow/omega_shadow.csv
+04:29:00 [OMEGA] Startup reload: 24 trades from logs/trades/omega_trade_closes_2026-04-02.csv ? daily_pnl=$945.47
+04:29:00 [OmegaHTTP] Direct snapshot pointer OK
+04:29:00 [OmegaWS] WebSocket port 7780
+04:29:00 [OmegaHTTP] port 7779
+04:29:00 [OMEGA] GUI http://localhost:7779  WS:7780
+04:29:00 [CTRADER] Pre-blocked GetTrendbarsReq (pt=2137) for all symbols -- all bar history via GetTickDataReq (pt=2145)
+04:29:00 [CTRADER] Depth client started (ctid=44937427)
+04:29:00 [CTRADER] Depth feed starting (ctid=44937427)
+04:29:00 [OMEGA] FIX loop starting -- SHADOW mode
+04:29:00 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+04:29:00 [OMEGA-TRADE] Logon sent
+04:29:00 [OMEGA-TRADE] LOGON ACCEPTED
+04:29:00 [OMEGA-TRADE] SecurityListRequest sent req_id=omega-sec-1775104140
+04:29:00 [OMEGA-SECURITY] learned ext id EURUSD -> 1
+04:29:00 [OMEGA-SECURITY] learned ext id GBPUSD -> 2
+04:29:00 [OMEGA-SECURITY] learned ext id USDJPY -> 4
+04:29:00 [OMEGA-SECURITY] learned ext id AUDUSD -> 5
+04:29:00 [OMEGA-SECURITY] learned ext id NZDUSD -> 12
+04:29:00 [OMEGA-SECURITY] learned ext id XAGUSD -> 42
+04:29:00 [OMEGA-SECURITY] learned ext id BRENT -> 109
+04:29:00 [OMEGA-SECURITY] UNMATCHED: 'UK100.F' id=4461
+04:29:00 [OMEGA-SECURITY] learned ext id ESTX50 -> 1898
+04:29:00 [OMEGA-SECURITY] learned ext id GER40 -> 1899
+04:29:00 [OMEGA-SECURITY] learned ext id UK100 -> 1901
+04:29:00 [OMEGA-SECURITY] UNMATCHED: 'UKBRENT.F' id=2634
+04:29:00 [OMEGA-SECURITY] UNMATCHED: 'ESTC' id=3229
+04:29:00 [OMEGA-TRADE] SecurityList received req_id=omega-sec-1775104140 entries=1551 (ext IDs updated -- will re-subscribe)
+04:29:01 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+04:29:01 [OMEGA] Logon sent
+04:29:01 [OMEGA] LOGON ACCEPTED
+04:29:01 [OMEGA] Subscribed ALL symbols (OMEGA-MD-ALL)
+04:29:01 [OMEGA] Re-subscribed ALL symbols with learned ext IDs (GER40/UK100/ESTX50/XAGUSD/EURUSD/BRENT/GBPUSD/AUDUSD/NZDUSD/USDJPY now included)
+04:29:01 [TICK] EURUSD 1.15/1.15
+04:29:01 [TICK] USDJPY 159.37/159.38
+04:29:01 [TICK] AUDUSD 0.69/0.69
+04:29:01 [TICK] XAUUSD 4665.46/4665.68
+04:29:01 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.92 bracket=0.98 breakout=0.00 top_score=0.98 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:29:01 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.31 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104141 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:29:01 [TICK] XAGUSD 71.73/71.76
+04:29:01 [TICK] NZDUSD 0.57/0.57
+04:29:01 [TICK] BRENT 105.75/105.86
+04:29:01 [TICK] GBPUSD 1.32/1.32
+04:29:01 [TICK] NGAS.F 2.86/2.88
+04:29:01 [TICK] USOIL.F 105.39/105.46
+04:29:01 [TICK] ESTX50 5612.50/5614.00
+04:29:01 [TICK] GER40 22853.70/22855.40
+04:29:01 [TICK] DJ30.F 46312.60/46318.40
+04:29:01 [SUPERVISOR-DJ30.F] regime=QUIET_COMPRESSION conf=0.56 bracket=0.75 breakout=0.00 top_score=0.75 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:29:01 [TICK] UK100 10271.20/10273.00
+04:29:01 [TICK] VIX.F 25.63/26.01
+04:29:01 [TICK] DX.F 99.80/99.91
+04:29:01 [TICK] NAS100 23633.05/23634.25
+04:29:01 [SUPERVISOR-NAS100] regime=QUIET_COMPRESSION conf=0.69 bracket=0.78 breakout=0.00 top_score=0.78 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:29:01 [TICK] US500.F 6534.72/6535.53
+04:29:01 [SUPERVISOR-US500.F] regime=QUIET_COMPRESSION conf=0.52 bracket=0.74 breakout=0.00 top_score=0.74 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:29:01 [TICK] USTEC.F 23814.19/23816.90
+04:29:01 [SUPERVISOR-USTEC.F] regime=QUIET_COMPRESSION conf=0.58 bracket=0.75 breakout=0.00 top_score=0.75 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:29:05 [CTRADER-AUDIT] Symbol subscription check:
+04:29:05 [CTRADER-AUDIT]   US500.F -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   USTEC.F -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   USOIL.F -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   VIX.F -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   DX.F -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   DJ30.F -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   NAS100 -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   XAUUSD -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   NGAS.F -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   GER40 -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   UK100 -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   ESTX50 -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   XAGUSD -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   EURUSD -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   BRENT -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   GBPUSD -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   AUDUSD -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   NZDUSD -> *** FIX FALLBACK ONLY ***
+04:29:05 [CTRADER-AUDIT]   USDJPY -> *** FIX FALLBACK ONLY ***
+04:29:11 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-1.11 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104151 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:29:21 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-1.02 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104161 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:29:30 [CTRADER] Connecting live.ctraderapi.com:5035
+04:29:30 [CTRADER] ApplicationAuthReq sent
+04:29:30 [CTRADER] Application authorized
+04:29:30 [CTRADER] AccountAuthReq sent
+04:29:31 [CTRADER] Account 44937427 authorized
+04:29:31 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:29:31 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:29:31 [CTRADER] Subscribe depth: EURUSD id=1
+04:29:31 [CTRADER] Subscribe depth: NAS100 id=110
+04:29:31 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:29:31 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:29:31 [CTRADER] Subscribe depth: GBPUSD id=2
+04:29:31 [CTRADER] Subscribe depth: XAGUSD id=42
+04:29:31 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:29:31 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:29:31 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:29:31 [CTRADER] Subscribe depth: USDJPY id=4
+04:29:31 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:29:31 [CTRADER] Subscribe depth: BRENT id=109
+04:29:31 [CTRADER] Subscribe depth: GER40 id=1899
+04:29:31 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:29:31 [CTRADER] Subscribe depth: AUDUSD id=5
+04:29:31 [CTRADER] Subscribe depth: DX.F id=2638
+04:29:31 [CTRADER] Subscribe depth: UK100 id=1901
+04:29:31 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:29:31 [CTRADER] Subscribe depth: US500.F id=2642
+04:29:31 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:29:31 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:29:31 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:29:31 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:29:31 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:29:31 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:29:31 [CTRADER] Subscribe depth: NZDUSD id=12
+04:29:31 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:29:31 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:29:31 [CTRADER] Subscribe depth: VIX.F id=4462
+04:29:31 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:29:31 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:29:31 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:29:31 [CTRADER] Subscribed to 19 symbols
+04:29:31 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:29:31 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:29:31 [TICK] XAUUSD 4664.84/4665.06
+04:29:31 [TICK] NAS100 23632.75/23633.95
+04:29:31 [TICK] USTEC.F 23813.94/23816.65
+04:29:31 [TICK] AUDUSD 0.69/0.69
+04:29:31 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-1.12 l2_imb=0.508 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104171 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:29:32 [TICK] USOIL.F 105.47/105.53
+04:29:32 [TICK] DJ30.F 46311.60/46317.40
+04:29:32 [TICK] XAGUSD 71.69/71.72
+04:29:32 [TICK] BRENT 105.89/106.00
+04:29:32 [TICK] GBPUSD 1.32/1.32
+04:29:32 [TICK] US500.F 6534.72/6535.53
+04:29:32 [TICK] USDJPY 159.38/159.39
+04:29:32 [TICK] VIX.F 25.63/26.01
+04:29:32 [TICK] ESTX50 5612.30/5613.60
+04:29:32 [TICK] UK100 10270.20/10272.00
+04:29:32 [STARTUP-CHECK] cTrader depth connected (32s)
+04:29:32 [STARTUP-CHECK] Gold L2 live (32s)
+04:29:32 [STARTUP-CHECK] OK: cTrader live, L2 live (imb=0.507)
+04:29:33 [TICK] NZDUSD 0.57/0.57
+04:29:33 [TICK] GER40 22849.75/22851.45
+04:29:33 [TICK] EURUSD 1.15/1.15
+04:29:35 [TICK] DX.F 99.80/99.91
+04:29:41 [CTRADER-BARS] XAUUSD spots sub sent
+04:29:41 [CTRADER-BARS] Spots sub ACK
+04:29:41 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:29:41 [CTRADER] Error:  -- INVALID_REQUEST
+04:29:41 [CTRADER] Connection error -- reconnecting
+04:29:41 [CTRADER] Disconnected -- retry 5000ms
+04:29:42 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.93 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104182 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:29:45 [TICK] NGAS.F 2.86/2.88
+04:29:46 [CTRADER] Connecting live.ctraderapi.com:5035
+04:29:46 [CTRADER] ApplicationAuthReq sent
+04:29:46 [CTRADER] Application authorized
+04:29:46 [CTRADER] AccountAuthReq sent
+04:29:46 [CTRADER] Account 44937427 authorized
+04:29:46 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:29:46 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:29:46 [CTRADER] Subscribe depth: EURUSD id=1
+04:29:46 [CTRADER] Subscribe depth: NAS100 id=110
+04:29:46 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:29:46 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:29:46 [CTRADER] Subscribe depth: GBPUSD id=2
+04:29:46 [CTRADER] Subscribe depth: XAGUSD id=42
+04:29:46 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:29:46 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:29:46 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:29:46 [CTRADER] Subscribe depth: USDJPY id=4
+04:29:46 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:29:46 [CTRADER] Subscribe depth: BRENT id=109
+04:29:46 [CTRADER] Subscribe depth: GER40 id=1899
+04:29:46 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:29:46 [CTRADER] Subscribe depth: AUDUSD id=5
+04:29:46 [CTRADER] Subscribe depth: DX.F id=2638
+04:29:46 [CTRADER] Subscribe depth: UK100 id=1901
+04:29:46 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:29:46 [CTRADER] Subscribe depth: US500.F id=2642
+04:29:46 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:29:46 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:29:46 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:29:46 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:29:46 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:29:46 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:29:46 [CTRADER] Subscribe depth: NZDUSD id=12
+04:29:46 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:29:46 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:29:46 [CTRADER] Subscribe depth: VIX.F id=4462
+04:29:46 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:29:46 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:29:46 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:29:46 [CTRADER] Subscribed to 19 symbols
+04:29:46 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:29:46 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:29:52 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.57 l2_imb=0.498 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104192 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:29:56 [CTRADER-BARS] XAUUSD spots sub sent
+04:29:56 [CTRADER-BARS] Spots sub ACK
+04:29:57 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:29:57 [CTRADER] Error:  -- INVALID_REQUEST
+04:29:57 [CTRADER] Connection error -- reconnecting
+04:29:57 [CTRADER] Disconnected -- retry 5000ms
+04:30:01 [OMEGA-DIAG] PnL=945.47 T=16 WR=56.25% RTTp95=4.05ms cap=120.00ms lat_ok=1 session=ACTIVE
+04:30:01 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+04:30:01 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+04:30:01 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+04:30:01 [GOLD-DIAG] regime=COMPRESSION vwap=4665.18 vol_range=0.00
+04:30:01 [TICK] XAUUSD 4665.75/4665.97
+04:30:01 [TICK] NAS100 23638.25/23639.45
+04:30:01 [TICK] AUDUSD 0.69/0.69
+04:30:01 [TICK] USTEC.F 23819.69/23822.40
+04:30:02 [TICK] USOIL.F 105.37/105.45
+04:30:02 [CTRADER] Connecting live.ctraderapi.com:5035
+04:30:02 [TICK] DJ30.F [CTRADER] ApplicationAuthReq sent
+04:30:02 46312.60/46318.40
+04:30:02 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.44 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104202 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:30:02 [TICK] BRENT 105.86/105.97
+04:30:02 [TICK] XAGUSD 71.74/71.77
+04:30:02 [CTRADER] Application authorized
+04:30:02 [CTRADER] AccountAuthReq sent
+04:30:02 [CTRADER] Account 44937427 authorized
+04:30:02 [TICK] US500.F 6534.84/6535.65
+04:30:02 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:30:02 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:30:02 [CTRADER] Subscribe depth: EURUSD id=1
+04:30:02 [CTRADER] Subscribe depth: NAS100 id=110
+04:30:02 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:30:02 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:30:02 [CTRADER] Subscribe depth: GBPUSD id=2
+04:30:02 [CTRADER] Subscribe depth: XAGUSD id=42
+04:30:02 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:30:02 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:30:02 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:30:02 [CTRADER] Subscribe depth: USDJPY id=4
+04:30:02 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:30:02 [CTRADER] Subscribe depth: BRENT id=109
+04:30:02 [CTRADER] Subscribe depth: GER40 id=1899
+04:30:02 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:30:02 [CTRADER] Subscribe depth: AUDUSD id=5
+04:30:02 [CTRADER] Subscribe depth: DX.F id=2638
+04:30:02 [CTRADER] Subscribe depth: UK100 id=1901
+04:30:02 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:30:02 [CTRADER] Subscribe depth: US500.F id=2642
+04:30:02 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:30:02 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:30:02 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:30:02 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:30:02 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:30:02 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:30:02 [CTRADER] Subscribe depth: NZDUSD id=12
+04:30:02 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:30:02 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:30:02 [CTRADER] Subscribe depth: VIX.F id=4462
+04:30:02 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:30:02 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:30:02 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:30:02 [CTRADER] Subscribed to 19 symbols
+04:30:02 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:30:02 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:30:02 [TICK] USDJPY 159.38/159.39
+04:30:02 [TICK] ESTX50 5612.30/5613.70
+04:30:03 [TICK] UK100 10269.30/10271.10
+04:30:03 [TICK] VIX.F 25.61/26.02
+04:30:03 [TICK] GBPUSD 1.32/1.32
+04:30:04 [TICK] EURUSD 1.15/1.15
+04:30:04 [TICK] NZDUSD 0.57/0.57
+04:30:04 [TICK] GER40 22843.20/22844.90
+04:30:06 [TICK] DX.F 99.81/99.91
+04:30:07 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.61 bracket=0.60 breakout=0.35 top_score=0.60 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=high_risk_no_trade
+04:30:07 [SUPERVISOR-XAUUSD] regime=EXPANSION_BREAKOUT conf=0.60 bracket=0.33 breakout=0.64 top_score=0.64 threshold=0.25 winner=BREAKOUT allow=1 cooldown=0 reason=valid_signal
+04:30:12 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.96 l2_imb=0.245 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104212 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:30:12 [CTRADER-BARS] XAUUSD spots sub sent
+04:30:12 [CTRADER-BARS] Spots sub ACK
+04:30:12 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:30:12 [CTRADER] Error:  -- INVALID_REQUEST
+04:30:12 [CTRADER] Connection error -- reconnecting
+04:30:12 [CTRADER] Disconnected -- retry 5000ms
+04:30:16 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.43 bracket=0.56 breakout=0.33 top_score=0.56 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:30:17 [CTRADER] Connecting live.ctraderapi.com:5035
+04:30:17 [CTRADER] ApplicationAuthReq sent
+04:30:17 [CTRADER] Application authorized
+04:30:17 [CTRADER] AccountAuthReq sent
+04:30:18 [CTRADER] Account 44937427 authorized
+04:30:18 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:30:18 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:30:18 [CTRADER] Subscribe depth: EURUSD id=1
+04:30:18 [CTRADER] Subscribe depth: NAS100 id=110
+04:30:18 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:30:18 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:30:18 [CTRADER] Subscribe depth: GBPUSD id=2
+04:30:18 [CTRADER] Subscribe depth: XAGUSD id=42
+04:30:18 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:30:18 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:30:18 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:30:18 [CTRADER] Subscribe depth: USDJPY id=4
+04:30:18 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:30:18 [CTRADER] Subscribe depth: BRENT id=109
+04:30:18 [CTRADER] Subscribe depth: GER40 id=1899
+04:30:18 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:30:18 [CTRADER] Subscribe depth: AUDUSD id=5
+04:30:18 [CTRADER] Subscribe depth: DX.F id=2638
+04:30:18 [CTRADER] Subscribe depth: UK100 id=1901
+04:30:18 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:30:18 [CTRADER] Subscribe depth: US500.F id=2642
+04:30:18 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:30:18 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:30:18 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:30:18 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:30:18 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:30:18 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:30:18 [CTRADER] Subscribe depth: NZDUSD id=12
+04:30:18 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:30:18 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:30:18 [CTRADER] Subscribe depth: VIX.F id=4462
+04:30:18 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:30:18 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:30:18 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:30:18 [CTRADER] Subscribed to 19 symbols
+04:30:18 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:30:18 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:30:19 [TICK] NGAS.F 2.86/2.89
+04:30:22 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.54 l2_imb=0.763 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104222 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:30:22 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.39 bracket=0.56 breakout=0.40 top_score=0.56 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=high_risk_no_trade
+04:30:24 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.43 bracket=0.56 breakout=0.41 top_score=0.56 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:30:28 [CTRADER-BARS] XAUUSD spots sub sent
+04:30:28 [CTRADER-BARS] Spots sub ACK
+04:30:28 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:30:28 [CTRADER] Error:  -- INVALID_REQUEST
+04:30:28 [CTRADER] Connection error -- reconnecting
+04:30:28 [CTRADER] Disconnected -- retry 5000ms
+04:30:29 [SUPERVISOR-XAUUSD] regime=EXPANSION_BREAKOUT conf=0.43 bracket=0.33 breakout=0.56 top_score=0.56 threshold=0.25 winner=BREAKOUT allow=1 cooldown=0 reason=valid_signal
+04:30:30 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.53 bracket=0.64 breakout=0.23 top_score=0.64 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:30:31 [TICK] XAUUSD 4666.03/4666.25
+04:30:31 [TICK] USTEC.F 23819.44/23822.15
+04:30:31 [TICK] NAS100 23638.25/23639.45
+04:30:31 [TICK] AUDUSD 0.69/0.69
+04:30:32 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.22 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104232 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:30:32 [TICK] USDJPY 159.37/159.38
+04:30:32 [TICK] USOIL.F 105.35/105.43
+04:30:32 [TICK] BRENT 105.80/105.92
+04:30:32 [TICK] ESTX50 5610.30/5611.80
+04:30:33 [CTRADER] Connecting live.ctraderapi.com:5035
+04:30:33 [CTRADER] ApplicationAuthReq sent
+04:30:33 [CTRADER] Application authorized
+04:30:33 [CTRADER] AccountAuthReq sent
+04:30:33 [CTRADER] Account 44937427 authorized
+04:30:33 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:30:33 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:30:33 [CTRADER] Subscribe depth: EURUSD id=1
+04:30:33 [CTRADER] Subscribe depth: NAS100 id=110
+04:30:33 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:30:33 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:30:33 [CTRADER] Subscribe depth: GBPUSD id=2
+04:30:33 [CTRADER] Subscribe depth: XAGUSD id=42
+04:30:33 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:30:33 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:30:33 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:30:33 [CTRADER] Subscribe depth: USDJPY id=4
+04:30:33 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:30:33 [CTRADER] Subscribe depth: BRENT id=109
+04:30:33 [CTRADER] Subscribe depth: GER40 id=1899
+04:30:33 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:30:33 [CTRADER] Subscribe depth: AUDUSD id=5
+04:30:33 [CTRADER] Subscribe depth: DX.F id=2638
+04:30:33 [CTRADER] Subscribe depth: UK100 id=1901
+04:30:33 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:30:33 [CTRADER] Subscribe depth: US500.F id=2642
+04:30:33 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:30:33 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:30:33 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:30:33 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:30:33 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:30:33 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:30:33 [CTRADER] Subscribe depth: NZDUSD id=12
+04:30:33 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:30:33 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:30:33 [CTRADER] Subscribe depth: VIX.F id=4462
+04:30:33 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:30:33 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:30:33 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:30:33 [CTRADER] Subscribed to 19 symbols
+04:30:33 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:30:33 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:30:33 [TICK] XAGUSD 71.71/71.98
+04:30:34 [TICK] NZDUSD 0.57/0.57
+04:30:34 [TICK] EURUSD 1.15/1.15
+04:30:34 [TICK] UK100 10268.60/10270.40
+04:30:34 [TICK] DJ30.F 46313.10/46318.90
+04:30:34 [TICK] US500.F 6535.34/6536.15
+04:30:34 [TICK] GBPUSD 1.32/1.32
+04:30:34 [TICK] GER40 22838.90/22840.60
+04:30:34 [TICK] VIX.F 25.58/25.96
+04:30:38 [TICK] DX.F 99.80/99.90
+04:30:42 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.45 l2_imb=0.677 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104242 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:30:43 [CTRADER-BARS] XAUUSD spots sub sent
+04:30:43 [CTRADER-BARS] Spots sub ACK
+04:30:43 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:30:43 [CTRADER] Error:  -- INVALID_REQUEST
+04:30:43 [CTRADER] Connection error -- reconnecting
+04:30:43 [CTRADER] Disconnected -- retry 5000ms
+04:30:48 [CTRADER] Connecting live.ctraderapi.com:5035
+04:30:48 [CTRADER] ApplicationAuthReq sent
+04:30:49 [CTRADER] Application authorized
+04:30:49 [CTRADER] AccountAuthReq sent
+04:30:49 [CTRADER] Account 44937427 authorized
+04:30:49 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:30:49 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:30:49 [CTRADER] Subscribe depth: EURUSD id=1
+04:30:49 [CTRADER] Subscribe depth: NAS100 id=110
+04:30:49 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:30:49 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:30:49 [CTRADER] Subscribe depth: GBPUSD id=2
+04:30:49 [CTRADER] Subscribe depth: XAGUSD id=42
+04:30:49 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:30:49 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:30:49 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:30:49 [CTRADER] Subscribe depth: USDJPY id=4
+04:30:49 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:30:49 [CTRADER] Subscribe depth: BRENT id=109
+04:30:49 [CTRADER] Subscribe depth: GER40 id=1899
+04:30:49 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:30:49 [CTRADER] Subscribe depth: AUDUSD id=5
+04:30:49 [CTRADER] Subscribe depth: DX.F id=2638
+04:30:49 [CTRADER] Subscribe depth: UK100 id=1901
+04:30:49 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:30:49 [CTRADER] Subscribe depth: US500.F id=2642
+04:30:49 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:30:49 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:30:49 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:30:49 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:30:49 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:30:49 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:30:49 [CTRADER] Subscribe depth: NZDUSD id=12
+04:30:49 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:30:49 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:30:49 [CTRADER] Subscribe depth: VIX.F id=4462
+04:30:49 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:30:49 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:30:49 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:30:49 [CTRADER] Subscribed to 19 symbols
+04:30:49 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:30:49 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:30:52 [TICK] NGAS.F 2.86/2.88
+04:30:52 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.15 l2_imb=0.625 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104252 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:30:59 [CTRADER-BARS] XAUUSD spots sub sent
+04:30:59 [CTRADER-BARS] Spots sub ACK
+04:30:59 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:30:59 [CTRADER] Error:  -- INVALID_REQUEST
+04:30:59 [CTRADER] Connection error -- reconnecting
+04:30:59 [CTRADER] Disconnected -- retry 5000ms
+04:31:01 [OMEGA-DIAG] PnL=945.47 T=16 WR=56.25% RTTp95=4.05ms cap=120.00ms lat_ok=1 session=ACTIVE
+04:31:01 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+04:31:01 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+04:31:01 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+04:31:01 [GOLD-DIAG] regime=COMPRESSION vwap=4665.25 vol_range=0.00
+04:31:01 [TICK] XAUUSD 4665.27/4665.49
+04:31:02 [TICK] USTEC.F 23818.82/23821.53
+04:31:02 [TICK] NAS100 23637.55/23638.75
+04:31:02 [TICK] AUDUSD 0.69/0.69
+04:31:02 [TICK] USDJPY 159.38/159.39
+04:31:02 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.07 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104262 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:31:02 [TICK] USOIL.F 105.32/105.39
+04:31:03 [TICK] ESTX50 5609.40/5610.90
+04:31:03 [TICK] BRENT 105.72/105.83
+04:31:03 [TICK] XAGUSD 71.70/71.73
+04:31:04 [TICK] GBPUSD 1.32/1.32
+04:31:04 [TICK] GER40 22842.50/22844.20
+04:31:04 [CTRADER] Connecting live.ctraderapi.com:5035
+04:31:04 [CTRADER] ApplicationAuthReq sent
+04:31:04 [CTRADER] Application authorized
+04:31:04 [CTRADER] AccountAuthReq sent
+04:31:04 [CTRADER] Account 44937427 authorized
+04:31:04 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:31:04 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:31:04 [CTRADER] Subscribe depth: EURUSD id=1
+04:31:04 [CTRADER] Subscribe depth: NAS100 id=110
+04:31:04 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:31:04 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:31:04 [CTRADER] Subscribe depth: GBPUSD id=2
+04:31:04 [CTRADER] Subscribe depth: XAGUSD id=42
+04:31:04 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:31:04 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:31:04 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:31:04 [CTRADER] Subscribe depth: USDJPY id=4
+04:31:04 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:31:04 [CTRADER] Subscribe depth: BRENT id=109
+04:31:04 [CTRADER] Subscribe depth: GER40 id=1899
+04:31:04 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:31:04 [CTRADER] Subscribe depth: AUDUSD id=5
+04:31:04 [CTRADER] Subscribe depth: DX.F id=2638
+04:31:04 [CTRADER] Subscribe depth: UK100 id=1901
+04:31:04 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:31:04 [CTRADER] Subscribe depth: US500.F id=2642
+04:31:04 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:31:04 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:31:04 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:31:04 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:31:04 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:31:04 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:31:04 [CTRADER] Subscribe depth: NZDUSD id=12
+04:31:04 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:31:04 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:31:04 [CTRADER] Subscribe depth: VIX.F id=4462
+04:31:04 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:31:04 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:31:04 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:31:04 [CTRADER] Subscribed to 19 symbols
+04:31:04 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:31:04 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:31:05 [TICK] UK100 10268.40/10270.20
+04:31:05 [TICK] US500.F 6535.47/6536.28
+04:31:05 [TICK] NZDUSD 0.57/0.57
+04:31:05 [TICK] DJ30.F 46312.10/46317.90
+04:31:06 [TICK] EURUSD 1.15/1.15
+04:31:08 [TICK] DX.F 99.81/99.91
+04:31:09 [TICK] VIX.F 25.63/26.02
+04:31:12 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.12 l2_imb=0.540 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104272 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:31:14 [CTRADER-BARS] XAUUSD spots sub sent
+04:31:14 [CTRADER-BARS] Spots sub ACK
+04:31:15 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:31:15 [CTRADER] Error:  -- INVALID_REQUEST
+04:31:15 [CTRADER] Connection error -- reconnecting
+04:31:15 [CTRADER] Disconnected -- retry 5000ms
+04:31:20 [CTRADER] Connecting live.ctraderapi.com:5035
+04:31:20 [CTRADER] ApplicationAuthReq sent
+04:31:20 [CTRADER] Application authorized
+04:31:20 [CTRADER] AccountAuthReq sent
+04:31:20 [CTRADER] Account 44937427 authorized
+04:31:20 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:31:20 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:31:20 [CTRADER] Subscribe depth: EURUSD id=1
+04:31:20 [CTRADER] Subscribe depth: NAS100 id=110
+04:31:20 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:31:20 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:31:20 [CTRADER] Subscribe depth: GBPUSD id=2
+04:31:20 [CTRADER] Subscribe depth: XAGUSD id=42
+04:31:20 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:31:20 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:31:20 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:31:20 [CTRADER] Subscribe depth: USDJPY id=4
+04:31:20 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:31:20 [CTRADER] Subscribe depth: BRENT id=109
+04:31:20 [CTRADER] Subscribe depth: GER40 id=1899
+04:31:20 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:31:20 [CTRADER] Subscribe depth: AUDUSD id=5
+04:31:20 [CTRADER] Subscribe depth: DX.F id=2638
+04:31:20 [CTRADER] Subscribe depth: UK100 id=1901
+04:31:20 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:31:20 [CTRADER] Subscribe depth: US500.F id=2642
+04:31:20 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:31:20 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:31:20 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:31:20 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:31:20 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:31:20 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:31:20 [CTRADER] Subscribe depth: NZDUSD id=12
+04:31:20 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:31:20 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:31:20 [CTRADER] Subscribe depth: VIX.F id=4462
+04:31:20 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:31:20 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:31:20 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:31:20 [CTRADER] Subscribed to 19 symbols
+04:31:20 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:31:20 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:31:23 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.50 l2_imb=0.506 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104283 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:31:26 [SUPERVISOR-XAUUSD] regime=EXPANSION_BREAKOUT conf=0.95 bracket=0.31 breakout=1.01 top_score=1.01 threshold=0.25 winner=BREAKOUT allow=1 cooldown=0 reason=valid_signal
+04:31:28 [TICK] NGAS.F 2.86/2.88
+04:31:30 [CTRADER-BARS] XAUUSD spots sub sent
+04:31:30 [CTRADER-BARS] Spots sub ACK
+04:31:30 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:31:30 [CTRADER] Error:  -- INVALID_REQUEST
+04:31:30 [CTRADER] Connection error -- reconnecting
+04:31:30 [CTRADER] Disconnected -- retry 5000ms
+04:31:32 [TICK] XAUUSD 4668.23/4668.45
+04:31:32 [TICK] NAS100 23641.15/23642.35
+04:31:32 [TICK] AUDUSD 0.69/0.69
+04:31:32 [TICK] USTEC.F 23821.94/23824.65
+04:31:32 [TICK] USDJPY 159.39/159.40
+04:31:33 [TICK] USOIL.F 105.18/105.24
+04:31:33 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=1.81 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104293 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:31:33 [TICK] BRENT 105.53/105.64
+04:31:34 [TICK] XAGUSD 71.84/71.87
+04:31:34 [TICK] ESTX50 5610.60/5612.10
+04:31:35 [TICK] US500.F 6535.97/6536.78
+04:31:35 [TICK] DJ30.F 46313.10/46318.90
+04:31:35 [CTRADER] Connecting live.ctraderapi.com:5035
+04:31:35 [CTRADER] ApplicationAuthReq sent
+04:31:35 [TICK] GER40 [CTRADER] Application authorized
+04:31:35 22846.70/22848.40
+04:31:35 [CTRADER] AccountAuthReq sent
+04:31:35 [CTRADER] Account 44937427 authorized
+04:31:35 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:31:35 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:31:35 [CTRADER] Subscribe depth: EURUSD id=1
+04:31:35 [CTRADER] Subscribe depth: NAS100 id=110
+04:31:35 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:31:35 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:31:35 [CTRADER] Subscribe depth: GBPUSD id=2
+04:31:35 [CTRADER] Subscribe depth: XAGUSD id=42
+04:31:35 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:31:35 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:31:35 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:31:35 [CTRADER] Subscribe depth: USDJPY id=4
+04:31:35 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:31:35 [CTRADER] Subscribe depth: BRENT id=109
+04:31:35 [CTRADER] Subscribe depth: GER40 id=1899
+04:31:35 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:31:35 [CTRADER] Subscribe depth: AUDUSD id=5
+04:31:35 [CTRADER] Subscribe depth: DX.F id=2638
+04:31:35 [CTRADER] Subscribe depth: UK100 id=1901
+04:31:35 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:31:35 [CTRADER] Subscribe depth: US500.F id=2642
+04:31:35 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:31:35 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:31:35 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:31:35 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:31:35 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:31:35 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:31:35 [CTRADER] Subscribe depth: NZDUSD id=12
+04:31:35 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:31:35 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:31:35 [CTRADER] Subscribe depth: VIX.F id=4462
+04:31:35 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:31:35 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:31:35 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:31:35 [CTRADER] Subscribed to 19 symbols
+04:31:35 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:31:35 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:31:35 [TICK] UK100 10268.80/10270.60
+04:31:37 [TICK] NZDUSD 0.57/0.57
+04:31:38 [TICK] EURUSD 1.15/1.15
+04:31:38 [TICK] GBPUSD 1.32/1.32
+04:31:40 [TICK] VIX.F 25.63/26.01
+04:31:43 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=2.36 l2_imb=0.509 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104303 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:31:45 [CTRADER-BARS] XAUUSD spots sub sent
+04:31:45 [CTRADER-BARS] Spots sub ACK
+04:31:46 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:31:46 [CTRADER] Error:  -- INVALID_REQUEST
+04:31:46 [CTRADER] Connection error -- reconnecting
+04:31:46 [CTRADER] Disconnected -- retry 5000ms
+04:31:48 [TICK] DX.F 99.80/99.91
+04:31:51 [CTRADER] Connecting live.ctraderapi.com:5035
+04:31:51 [CTRADER] ApplicationAuthReq sent
+04:31:51 [CTRADER] Application authorized
+04:31:51 [CTRADER] AccountAuthReq sent
+04:31:51 [CTRADER] Account 44937427 authorized
+04:31:51 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:31:51 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:31:51 [CTRADER] Subscribe depth: EURUSD id=1
+04:31:51 [CTRADER] Subscribe depth: NAS100 id=110
+04:31:51 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:31:51 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:31:51 [CTRADER] Subscribe depth: GBPUSD id=2
+04:31:51 [CTRADER] Subscribe depth: XAGUSD id=42
+04:31:51 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:31:51 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:31:51 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:31:51 [CTRADER] Subscribe depth: USDJPY id=4
+04:31:51 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:31:51 [CTRADER] Subscribe depth: BRENT id=109
+04:31:51 [CTRADER] Subscribe depth: GER40 id=1899
+04:31:51 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:31:51 [CTRADER] Subscribe depth: AUDUSD id=5
+04:31:51 [CTRADER] Subscribe depth: DX.F id=2638
+04:31:51 [CTRADER] Subscribe depth: UK100 id=1901
+04:31:51 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:31:51 [CTRADER] Subscribe depth: US500.F id=2642
+04:31:51 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:31:51 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:31:51 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:31:51 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:31:51 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:31:51 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:31:51 [CTRADER] Subscribe depth: NZDUSD id=12
+04:31:51 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:31:51 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:31:51 [CTRADER] Subscribe depth: VIX.F id=4462
+04:31:51 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:31:51 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:31:51 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:31:51 [CTRADER] Subscribed to 19 symbols
+04:31:51 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:31:51 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:31:53 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=2.07 l2_imb=0.504 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104313 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:31:55 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.58 bracket=0.68 breakout=0.40 top_score=0.68 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:32:01 [CTRADER-BARS] XAUUSD spots sub sent
+04:32:01 [CTRADER-BARS] Spots sub ACK
+04:32:01 [OMEGA-DIAG] PnL=945.47 T=16 WR=56.25% RTTp95=4.08ms cap=120.00ms lat_ok=1 session=ACTIVE
+04:32:01 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+04:32:01 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+04:32:01 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+04:32:01 [GOLD-DIAG] regime=COMPRESSION vwap=4666.12 vol_range=1.50
+04:32:01 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:32:01 [CTRADER] Error:  -- INVALID_REQUEST
+04:32:01 [CTRADER] Connection error -- reconnecting
+04:32:01 [CTRADER] Disconnected -- retry 5000ms
+04:32:02 [TICK] XAUUSD 4669.00/4669.22
+04:32:02 [TICK] NAS100 23638.75/23639.95
+04:32:02 [TICK] AUDUSD 0.69/0.69
+04:32:02 [TICK] USDJPY 159.40/159.41
+04:32:03 [TICK] USTEC.F 23820.19/23822.90
+04:32:03 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=1.74 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104323 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:32:03 [TICK] USOIL.F 105.26/105.33
+04:32:04 [TICK] XAGUSD 71.83/71.87
+04:32:05 [TICK] US500.F 6535.47/6536.28
+04:32:05 [TICK] ESTX50 5609.50/5610.90
+04:32:06 [TICK] GER40 22838.20/22839.90
+04:32:06 [TICK] DJ30.F 46310.10/46315.90
+04:32:06 [CTRADER] Connecting live.ctraderapi.com:5035
+04:32:06 [CTRADER] ApplicationAuthReq sent
+04:32:07 [TICK] NZDUSD 0.57/0.57
+04:32:07 [CTRADER] Application authorized
+04:32:07 [CTRADER] AccountAuthReq sent
+04:32:07 [CTRADER] Account 44937427 authorized
+04:32:07 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:32:07 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:32:07 [CTRADER] Subscribe depth: EURUSD id=1
+04:32:07 [CTRADER] Subscribe depth: NAS100 id=110
+04:32:07 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:32:07 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:32:07 [CTRADER] Subscribe depth: GBPUSD id=2
+04:32:07 [CTRADER] Subscribe depth: XAGUSD id=42
+04:32:07 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:32:07 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:32:07 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:32:07 [CTRADER] Subscribe depth: USDJPY id=4
+04:32:07 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:32:07 [CTRADER] Subscribe depth: BRENT id=109
+04:32:07 [CTRADER] Subscribe depth: GER40 id=1899
+04:32:07 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:32:07 [CTRADER] Subscribe depth: AUDUSD id=5
+04:32:07 [CTRADER] Subscribe depth: DX.F id=2638
+04:32:07 [CTRADER] Subscribe depth: UK100 id=1901
+04:32:07 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:32:07 [CTRADER] Subscribe depth: US500.F id=2642
+04:32:07 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:32:07 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:32:07 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:32:07 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:32:07 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:32:07 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:32:07 [CTRADER] Subscribe depth: NZDUSD id=12
+04:32:07 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:32:07 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:32:07 [CTRADER] Subscribe depth: VIX.F id=4462
+04:32:07 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:32:07 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:32:07 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:32:07 [CTRADER] Subscribed to 19 symbols
+04:32:07 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:32:07 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:32:08 [TICK] BRENT 105.64/105.75
+04:32:08 [TICK] EURUSD 1.15/1.15
+04:32:09 [TICK] GBPUSD 1.32/1.32
+04:32:11 [TICK] VIX.F 25.63/26.01
+04:32:13 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=1.06 l2_imb=0.498 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104333 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:32:13 [TICK] UK100 10267.70/10269.50
+04:32:17 [CTRADER-BARS] XAUUSD spots sub sent
+04:32:17 [CTRADER-BARS] Spots sub ACK
+04:32:17 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:32:17 [CTRADER] Error:  -- INVALID_REQUEST
+04:32:17 [CTRADER] Connection error -- reconnecting
+04:32:17 [CTRADER] Disconnected -- retry 5000ms
+04:32:22 [CTRADER] Connecting live.ctraderapi.com:5035
+04:32:22 [CTRADER] ApplicationAuthReq sent
+04:32:22 [CTRADER] Application authorized
+04:32:22 [CTRADER] AccountAuthReq sent
+04:32:22 [CTRADER] Account 44937427 authorized
+04:32:23 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:32:23 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:32:23 [CTRADER] Subscribe depth: EURUSD id=1
+04:32:23 [CTRADER] Subscribe depth: NAS100 id=110
+04:32:23 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:32:23 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:32:23 [CTRADER] Subscribe depth: GBPUSD id=2
+04:32:23 [CTRADER] Subscribe depth: XAGUSD id=42
+04:32:23 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:32:23 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:32:23 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:32:23 [CTRADER] Subscribe depth: USDJPY id=4
+04:32:23 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:32:23 [CTRADER] Subscribe depth: BRENT id=109
+04:32:23 [CTRADER] Subscribe depth: GER40 id=1899
+04:32:23 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:32:23 [CTRADER] Subscribe depth: AUDUSD id=5
+04:32:23 [CTRADER] Subscribe depth: DX.F id=2638
+04:32:23 [CTRADER] Subscribe depth: UK100 id=1901
+04:32:23 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:32:23 [CTRADER] Subscribe depth: US500.F id=2642
+04:32:23 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:32:23 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:32:23 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:32:23 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:32:23 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:32:23 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:32:23 [CTRADER] Subscribe depth: NZDUSD id=12
+04:32:23 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:32:23 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:32:23 [CTRADER] Subscribe depth: VIX.F id=4462
+04:32:23 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:32:23 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:32:23 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:32:23 [CTRADER] Subscribed to 19 symbols
+04:32:23 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:32:23 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:32:23 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.91 l2_imb=0.514 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104343 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:32:29 [TICK] DX.F 99.81/99.91
+04:32:32 [TICK] XAUUSD 4668.75/4668.97
+04:32:32 [TICK] AUDUSD 0.69/0.69
+04:32:33 [TICK] NAS100 23638.25/23639.45
+04:32:33 [CTRADER-BARS] XAUUSD spots sub sent
+04:32:33 [CTRADER-BARS] Spots sub ACK
+04:32:33 [TICK] USTEC.F 23820.94/23823.65
+04:32:33 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:32:33 [CTRADER] Error:  -- INVALID_REQUEST
+04:32:33 [CTRADER] Connection error -- reconnecting
+04:32:33 [CTRADER] Disconnected -- retry 5000ms
+04:32:34 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.80 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104354 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:32:34 [TICK] XAGUSD 71.80/71.83
+04:32:35 [TICK] USOIL.F 105.32/105.39
+04:32:36 [TICK] ESTX50 5609.20/5610.60
+04:32:36 [TICK] US500.F 6535.59/6536.40
+04:32:37 [TICK] NZDUSD 0.57/0.57
+04:32:38 [CTRADER] Connecting live.ctraderapi.com:5035
+04:32:38 [CTRADER] ApplicationAuthReq sent
+04:32:38 [CTRADER] Application authorized
+04:32:38 [CTRADER] AccountAuthReq sent
+04:32:38 [CTRADER] Account 44937427 authorized
+04:32:38 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:32:38 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:32:38 [CTRADER] Subscribe depth: EURUSD id=1
+04:32:38 [CTRADER] Subscribe depth: NAS100 id=110
+04:32:38 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:32:38 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:32:38 [CTRADER] Subscribe depth: GBPUSD id=2
+04:32:38 [CTRADER] Subscribe depth: XAGUSD id=42
+04:32:38 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:32:38 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:32:38 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:32:38 [CTRADER] Subscribe depth: USDJPY id=4
+04:32:38 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:32:38 [CTRADER] Subscribe depth: BRENT id=109
+04:32:38 [CTRADER] Subscribe depth: GER40 id=1899
+04:32:38 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:32:38 [CTRADER] Subscribe depth: AUDUSD id=5
+04:32:38 [CTRADER] Subscribe depth: DX.F id=2638
+04:32:38 [CTRADER] Subscribe depth: UK100 id=1901
+04:32:38 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:32:38 [CTRADER] Subscribe depth: US500.F id=2642
+04:32:38 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:32:38 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:32:38 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:32:38 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:32:38 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:32:38 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:32:38 [CTRADER] Subscribe depth: NZDUSD id=12
+04:32:38 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:32:38 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:32:38 [CTRADER] Subscribe depth: VIX.F id=4462
+04:32:38 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:32:38 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:32:38 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:32:38 [CTRADER] Subscribed to 19 symbols
+04:32:38 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:32:38 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:32:39 [TICK] DJ30.F 46312.60/46318.40
+04:32:39 [TICK] EURUSD 1.15/1.15
+04:32:39 [TICK] USDJPY 159.39/159.40
+04:32:40 [TICK] GBPUSD 1.32/1.32
+04:32:41 [TICK] BRENT 105.64/105.75
+04:32:41 [TICK] VIX.F 25.60/25.99
+04:32:42 [TICK] GER40 22839.70/22841.40
+04:32:44 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.75 l2_imb=0.503 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104364 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:32:45 [TICK] UK100 10267.40/10269.20
+04:32:48 [CTRADER-BARS] XAUUSD spots sub sent
+04:32:48 [CTRADER-BARS] Spots sub ACK
+04:32:49 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:32:49 [CTRADER] Error:  -- INVALID_REQUEST
+04:32:49 [CTRADER] Connection error -- reconnecting
+04:32:49 [CTRADER] Disconnected -- retry 5000ms
+04:32:54 [CTRADER] Connecting live.ctraderapi.com:5035
+04:32:54 [CTRADER] ApplicationAuthReq sent
+04:32:54 [CTRADER] Application authorized
+04:32:54 [CTRADER] AccountAuthReq sent
+04:32:54 [CTRADER] Account 44937427 authorized
+04:32:54 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:32:54 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:32:54 [CTRADER] Subscribe depth: EURUSD id=1
+04:32:54 [CTRADER] Subscribe depth: NAS100 id=110
+04:32:54 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:32:54 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:32:54 [CTRADER] Subscribe depth: GBPUSD id=2
+04:32:54 [CTRADER] Subscribe depth: XAGUSD id=42
+04:32:54 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:32:54 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:32:54 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:32:54 [CTRADER] Subscribe depth: USDJPY id=4
+04:32:54 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:32:54 [CTRADER] Subscribe depth: BRENT id=109
+04:32:54 [CTRADER] Subscribe depth: GER40 id=1899
+04:32:54 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:32:54 [CTRADER] Subscribe depth: AUDUSD id=5
+04:32:54 [CTRADER] Subscribe depth: DX.F id=2638
+04:32:54 [CTRADER] Subscribe depth: UK100 id=1901
+04:32:54 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:32:54 [CTRADER] Subscribe depth: US500.F id=2642
+04:32:54 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:32:54 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:32:54 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:32:54 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:32:54 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:32:54 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:32:54 [CTRADER] Subscribe depth: NZDUSD id=12
+04:32:54 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:32:54 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:32:54 [CTRADER] Subscribe depth: VIX.F id=4462
+04:32:54 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:32:54 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:32:54 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:32:54 [CTRADER] Subscribed to 19 symbols
+04:32:54 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:32:54 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:32:54 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.83 l2_imb=0.682 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104374 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:32:59 [TICK] NGAS.F 2.86/2.88
+04:32:59 [TICK] DX.F 99.81/99.91
+04:33:01 [OMEGA-DIAG] PnL=945.473 T=16 WR=56.25% RTTp95=4.923ms cap=120ms lat_ok=1 session=ACTIVE
+04:33:01 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+04:33:01 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+04:33:01 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+04:33:01 [GOLD-DIAG] regime=COMPRESSION vwap=4666.83 vol_range=1.50
+04:33:02 [TICK] XAUUSD 4669.39/4669.61
+04:33:03 [TICK] NAS100 23641.25/23642.45
+04:33:03 [TICK] AUDUSD 0.69/0.69
+04:33:04 [TICK] USTEC.F 23822.44/23825.15
+04:33:04 [CTRADER-BARS] XAUUSD spots sub sent
+04:33:04 [CTRADER-BARS] Spots sub ACK
+04:33:04 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:33:04 [CTRADER] Error:  -- INVALID_REQUEST
+04:33:04 [CTRADER] Connection error -- reconnecting
+04:33:04 [CTRADER] Disconnected -- retry 5000ms
+04:33:05 [TICK] XAGUSD 71.83/71.86
+04:33:05 [TICK] USOIL.F 105.24/105.30
+04:33:05 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.67 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104385 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:33:06 [TICK] ESTX50 5609.40/5610.90
+04:33:06 [TICK] US500.F 6536.47/6537.28
+04:33:08 [TICK] NZDUSD 0.57/0.57
+04:33:09 [CTRADER] Connecting live.ctraderapi.com:5035
+04:33:09 [CTRADER] ApplicationAuthReq sent
+04:33:09 [CTRADER] Application authorized
+04:33:09 [CTRADER] AccountAuthReq sent
+04:33:09 [CTRADER] Account 44937427 authorized
+04:33:09 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:33:09 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:33:09 [CTRADER] Subscribe depth: EURUSD id=1
+04:33:09 [CTRADER] Subscribe depth: NAS100 id=110
+04:33:09 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:33:09 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:33:09 [CTRADER] Subscribe depth: GBPUSD id=2
+04:33:09 [CTRADER] Subscribe depth: XAGUSD id=42
+04:33:09 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:33:09 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:33:09 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:33:09 [CTRADER] Subscribe depth: USDJPY id=4
+04:33:09 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:33:09 [CTRADER] Subscribe depth: BRENT id=109
+04:33:09 [CTRADER] Subscribe depth: GER40 id=1899
+04:33:09 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:33:09 [CTRADER] Subscribe depth: AUDUSD id=5
+04:33:09 [CTRADER] Subscribe depth: DX.F id=2638
+04:33:09 [CTRADER] Subscribe depth: UK100 id=1901
+04:33:09 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:33:09 [CTRADER] Subscribe depth: US500.F id=2642
+04:33:09 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:33:09 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:33:09 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:33:09 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:33:09 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:33:09 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:33:09 [CTRADER] Subscribe depth: NZDUSD id=12
+04:33:09 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:33:09 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:33:09 [CTRADER] Subscribe depth: VIX.F id=4462
+04:33:09 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:33:09 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:33:09 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:33:09 [CTRADER] Subscribed to 19 symbols
+04:33:09 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:33:09 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:33:10 [TICK] GBPUSD 1.32/1.32
+04:33:10 [TICK] EURUSD 1.15/1.15
+04:33:10 [TICK] DJ30.F 46318.60/46324.40
+04:33:10 [TICK] USDJPY 159.39/159.40
+04:33:12 [TICK] GER40 22839.80/22841.50
+04:33:14 [TICK] BRENT 105.53/105.66
+04:33:15 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.67 l2_imb=0.502 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104395 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:33:17 [TICK] UK100 10267.90/10269.70
+04:33:17 [TICK] VIX.F 25.57/25.96
+04:33:19 [CTRADER-BARS] XAUUSD spots sub sent
+04:33:19 [CTRADER-BARS] Spots sub ACK
+04:33:20 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:33:20 [CTRADER] Error:  -- INVALID_REQUEST
+04:33:20 [CTRADER] Connection error -- reconnecting
+04:33:20 [CTRADER] Disconnected -- retry 5000ms
+04:33:25 [CTRADER] Connecting live.ctraderapi.com:5035
+04:33:25 [CTRADER] ApplicationAuthReq sent
+04:33:25 [CTRADER] Application authorized
+04:33:25 [CTRADER] AccountAuthReq sent
+04:33:25 [CTRADER] Account 44937427 authorized
+04:33:25 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:33:25 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:33:25 [CTRADER] Subscribe depth: EURUSD id=1
+04:33:25 [CTRADER] Subscribe depth: NAS100 id=110
+04:33:25 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:33:25 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:33:25 [CTRADER] Subscribe depth: GBPUSD id=2
+04:33:25 [CTRADER] Subscribe depth: XAGUSD id=42
+04:33:25 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:33:25 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:33:25 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:33:25 [CTRADER] Subscribe depth: USDJPY id=4
+04:33:25 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:33:25 [CTRADER] Subscribe depth: BRENT id=109
+04:33:25 [CTRADER] Subscribe depth: GER40 id=1899
+04:33:25 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:33:25 [CTRADER] Subscribe depth: AUDUSD id=5
+04:33:25 [CTRADER] Subscribe depth: DX.F id=2638
+04:33:25 [CTRADER] Subscribe depth: UK100 id=1901
+04:33:25 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:33:25 [CTRADER] Subscribe depth: US500.F id=2642
+04:33:25 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:33:25 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:33:25 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:33:25 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:33:25 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:33:25 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:33:25 [CTRADER] Subscribe depth: NZDUSD id=12
+04:33:25 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:33:25 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:33:25 [CTRADER] Subscribe depth: VIX.F id=4462
+04:33:25 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:33:25 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:33:25 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:33:25 [CTRADER] Subscribed to 19 symbols
+04:33:25 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:33:25 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:33:25 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.64 l2_imb=0.897 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104405 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:33:32 [TICK] XAUUSD 4669.59/4669.81
+04:33:33 [TICK] NAS100 23642.75/23643.95
+04:33:34 [TICK] AUDUSD 0.69/0.69
+04:33:34 [TICK] USTEC.F 23823.44/23826.15
+04:33:34 [TICK] NGAS.F 2.86/2.89
+04:33:35 [TICK] XAGUSD 71.82/71.85
+04:33:35 [CTRADER-BARS] XAUUSD spots sub sent
+04:33:35 [CTRADER-BARS] Spots sub ACK
+04:33:35 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:33:35 [CTRADER] Error:  -- INVALID_REQUEST
+04:33:35 [CTRADER] Connection error -- reconnecting
+04:33:35 [CTRADER] Disconnected -- retry 5000ms
+04:33:36 [TICK] US500.F 6536.09/6536.90
+04:33:36 [TICK] USOIL.F 105.31/105.37
+04:33:37 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.57 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104417 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:33:40 [TICK] DJ30.F 46313.10/46318.90
+04:33:40 [CTRADER] Connecting live.ctraderapi.com:5035
+04:33:40 [CTRADER] ApplicationAuthReq sent
+04:33:40 [CTRADER] Application authorized
+04:33:40 [CTRADER] AccountAuthReq sent
+04:33:40 [CTRADER] Account 44937427 authorized
+04:33:40 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:33:40 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:33:40 [CTRADER] Subscribe depth: EURUSD id=1
+04:33:40 [CTRADER] Subscribe depth: NAS100 id=110
+04:33:40 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:33:40 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:33:40 [CTRADER] Subscribe depth: GBPUSD id=2
+04:33:40 [CTRADER] Subscribe depth: XAGUSD id=42
+04:33:40 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:33:40 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:33:40 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:33:40 [CTRADER] Subscribe depth: USDJPY id=4
+04:33:40 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:33:40 [CTRADER] Subscribe depth: BRENT id=109
+04:33:40 [CTRADER] Subscribe depth: GER40 id=1899
+04:33:40 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:33:40 [CTRADER] Subscribe depth: AUDUSD id=5
+04:33:40 [CTRADER] Subscribe depth: DX.F id=2638
+04:33:40 [CTRADER] Subscribe depth: UK100 id=1901
+04:33:40 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:33:40 [CTRADER] Subscribe depth: US500.F id=2642
+04:33:40 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:33:40 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:33:40 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:33:40 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:33:40 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:33:40 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:33:40 [CTRADER] Subscribe depth: NZDUSD id=12
+04:33:40 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:33:40 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:33:40 [CTRADER] Subscribe depth: VIX.F id=4462
+04:33:40 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:33:40 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:33:40 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:33:40 [TICK] GBPUSD 1.32/1.32
+04:33:40 [TICK] USDJPY 159.40/159.41
+04:33:40 [TICK] EURUSD 1.15/1.15
+04:33:41 [CTRADER] Subscribed to 19 symbols
+04:33:41 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:33:41 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:33:41 [TICK] NZDUSD 0.57/0.57
+04:33:41 [TICK] ESTX50 5608.40/5610.70
+04:33:46 [TICK] BRENT 105.58/105.69
+04:33:47 [TICK] UK100 10267.30/10269.10
+04:33:47 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.55 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104427 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:33:48 [TICK] VIX.F 25.58/25.96
+04:33:48 [TICK] GER40 22838.10/22840.80
+04:33:51 [CTRADER-BARS] XAUUSD spots sub sent
+04:33:51 [CTRADER-BARS] Spots sub ACK
+04:33:51 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:33:51 [CTRADER] Error:  -- INVALID_REQUEST
+04:33:51 [CTRADER] Connection error -- reconnecting
+04:33:51 [CTRADER] Disconnected -- retry 5000ms
+04:33:56 [CTRADER] Connecting live.ctraderapi.com:5035
+04:33:56 [CTRADER] ApplicationAuthReq sent
+04:33:56 [CTRADER] Application authorized
+04:33:56 [CTRADER] AccountAuthReq sent
+04:33:56 [CTRADER] Account 44937427 authorized
+04:33:56 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:33:56 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:33:56 [CTRADER] Subscribe depth: EURUSD id=1
+04:33:56 [CTRADER] Subscribe depth: NAS100 id=110
+04:33:56 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:33:56 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:33:56 [CTRADER] Subscribe depth: GBPUSD id=2
+04:33:56 [CTRADER] Subscribe depth: XAGUSD id=42
+04:33:56 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:33:56 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:33:56 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:33:56 [CTRADER] Subscribe depth: USDJPY id=4
+04:33:56 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:33:56 [CTRADER] Subscribe depth: BRENT id=109
+04:33:56 [CTRADER] Subscribe depth: GER40 id=1899
+04:33:56 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:33:56 [CTRADER] Subscribe depth: AUDUSD id=5
+04:33:56 [CTRADER] Subscribe depth: DX.F id=2638
+04:33:56 [CTRADER] Subscribe depth: UK100 id=1901
+04:33:56 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:33:56 [CTRADER] Subscribe depth: US500.F id=2642
+04:33:56 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:33:56 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:33:56 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:33:56 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:33:56 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:33:56 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:33:56 [CTRADER] Subscribe depth: NZDUSD id=12
+04:33:56 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:33:56 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:33:56 [CTRADER] Subscribe depth: VIX.F id=4462
+04:33:56 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:33:56 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:33:56 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:33:56 [CTRADER] Subscribed to 19 symbols
+04:33:56 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:33:56 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:33:58 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.56 l2_imb=0.630 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104438 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:34:01 [OMEGA-DIAG] PnL=945.47 T=16 WR=56.25% RTTp95=4.92ms cap=120.00ms lat_ok=1 session=ACTIVE
+04:34:01 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+04:34:01 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+04:34:01 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+04:34:01 [GOLD-DIAG] regime=COMPRESSION vwap=4667.21 vol_range=1.50
+04:34:02 [TICK] XAUUSD 4667.12/4667.34
+04:34:04 [TICK] NAS100 23636.55/23637.75
+04:34:04 [TICK] AUDUSD 0.69/0.69
+04:34:04 [TICK] USTEC.F 23817.44/23820.15
+04:34:05 [TICK] DX.F 99.81/99.92
+04:34:05 [TICK] XAGUSD 71.76/71.79
+04:34:06 [TICK] US500.F 6535.22/6536.03
+04:34:06 [CTRADER-BARS] XAUUSD spots sub sent
+04:34:06 [CTRADER-BARS] Spots sub ACK
+04:34:06 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:34:06 [CTRADER] Error:  -- INVALID_REQUEST
+04:34:06 [CTRADER] Connection error -- reconnecting
+04:34:06 [CTRADER] Disconnected -- retry 5000ms
+04:34:07 [TICK] USOIL.F 105.34/105.41
+04:34:07 [TICK] NGAS.F 2.86/2.89
+04:34:08 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.80 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104448 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:34:10 [TICK] DJ30.F 46309.10/46314.90
+04:34:11 [TICK] NZDUSD 0.57/0.57
+04:34:11 [CTRADER] Connecting live.ctraderapi.com:5035
+04:34:11 [TICK] ESTX50 5609.50/5611.00
+04:34:11 [CTRADER] ApplicationAuthReq sent
+04:34:11 [TICK] EURUSD 1.15/1.15
+04:34:12 [CTRADER] Application authorized
+04:34:12 [CTRADER] AccountAuthReq sent
+04:34:12 [CTRADER] Account 44937427 authorized
+04:34:12 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:34:12 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:34:12 [CTRADER] Subscribe depth: EURUSD id=1
+04:34:12 [CTRADER] Subscribe depth: NAS100 id=110
+04:34:12 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:34:12 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:34:12 [CTRADER] Subscribe depth: GBPUSD id=2
+04:34:12 [CTRADER] Subscribe depth: XAGUSD id=42
+04:34:12 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:34:12 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:34:12 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:34:12 [CTRADER] Subscribe depth: USDJPY id=4
+04:34:12 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:34:12 [CTRADER] Subscribe depth: BRENT id=109
+04:34:12 [CTRADER] Subscribe depth: GER40 id=1899
+04:34:12 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:34:12 [CTRADER] Subscribe depth: AUDUSD id=5
+04:34:12 [CTRADER] Subscribe depth: DX.F id=2638
+04:34:12 [CTRADER] Subscribe depth: UK100 id=1901
+04:34:12 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:34:12 [CTRADER] Subscribe depth: US500.F id=2642
+04:34:12 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:34:12 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:34:12 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:34:12 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:34:12 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:34:12 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:34:12 [CTRADER] Subscribe depth: NZDUSD id=12
+04:34:12 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:34:12 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:34:12 [CTRADER] Subscribe depth: VIX.F id=4462
+04:34:12 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:34:12 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:34:12 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:34:12 [CTRADER] Subscribed to 19 symbols
+04:34:12 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:34:12 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:34:12 [TICK] GBPUSD 1.32/1.32
+04:34:13 [TICK] USDJPY 159.41/159.42
+04:34:16 [TICK] BRENT 105.67/105.78
+04:34:18 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.61 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104458 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:34:20 [TICK] UK100 10268.20/10270.00
+04:34:20 [TICK] GER40 22839.20/22841.00
+04:34:22 [CTRADER-BARS] XAUUSD spots sub sent
+04:34:22 [CTRADER-BARS] Spots sub ACK
+04:34:23 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:34:23 [CTRADER] Error:  -- INVALID_REQUEST
+04:34:23 [CTRADER] Connection error -- reconnecting
+04:34:23 [CTRADER] Disconnected -- retry 5000ms
+04:34:28 [CTRADER] Connecting live.ctraderapi.com:5035
+04:34:28 [CTRADER] ApplicationAuthReq sent
+04:34:28 [CTRADER] Application authorized
+04:34:28 [CTRADER] AccountAuthReq sent
+04:34:28 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.54 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104468 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:34:28 [CTRADER] Account 44937427 authorized
+04:34:28 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:34:28 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:34:28 [CTRADER] Subscribe depth: EURUSD id=1
+04:34:28 [CTRADER] Subscribe depth: NAS100 id=110
+04:34:28 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:34:28 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:34:28 [CTRADER] Subscribe depth: GBPUSD id=2
+04:34:28 [CTRADER] Subscribe depth: XAGUSD id=42
+04:34:28 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:34:28 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:34:28 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:34:28 [CTRADER] Subscribe depth: USDJPY id=4
+04:34:28 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:34:28 [CTRADER] Subscribe depth: BRENT id=109
+04:34:28 [CTRADER] Subscribe depth: GER40 id=1899
+04:34:28 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:34:28 [CTRADER] Subscribe depth: AUDUSD id=5
+04:34:28 [CTRADER] Subscribe depth: DX.F id=2638
+04:34:28 [CTRADER] Subscribe depth: UK100 id=1901
+04:34:28 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:34:28 [CTRADER] Subscribe depth: US500.F id=2642
+04:34:28 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:34:28 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:34:28 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:34:28 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:34:28 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:34:28 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:34:28 [CTRADER] Subscribe depth: NZDUSD id=12
+04:34:28 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:34:28 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:34:28 [CTRADER] Subscribe depth: VIX.F id=4462
+04:34:28 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:34:28 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:34:28 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:34:28 [CTRADER] Subscribed to 19 symbols
+04:34:28 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:34:28 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:34:33 [TICK] XAUUSD 4667.23/4667.45
+04:34:34 [TICK] NAS100 23633.75/23634.95
+04:34:35 [TICK] USTEC.F 23814.94/23817.65
+04:34:36 [TICK] XAGUSD 71.79/71.82
+04:34:36 [TICK] DX.F 99.82/99.92
+04:34:37 [TICK] US500.F 6534.72/6535.53
+04:34:38 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.95 l2_imb=0.355 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104478 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:34:38 [CTRADER-BARS] XAUUSD spots sub sent
+04:34:38 [CTRADER-BARS] Spots sub ACK
+04:34:38 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:34:38 [CTRADER] Error:  -- INVALID_REQUEST
+04:34:38 [CTRADER] Connection error -- reconnecting
+04:34:38 [CTRADER] Disconnected -- retry 5000ms
+04:34:40 [TICK] USOIL.F 105.32/105.39
+04:34:40 [TICK] DJ30.F 46308.60/46314.40
+04:34:41 [TICK] NZDUSD 0.57/0.57
+04:34:42 [TICK] EURUSD 1.15/1.15
+04:34:42 [TICK] AUDUSD 0.69/0.69
+04:34:42 [TICK] ESTX50 5608.50/5609.90
+04:34:42 [TICK] GBPUSD 1.32/1.32
+04:34:43 [TICK] USDJPY 159.40/159.41
+04:34:43 [CTRADER] Connecting live.ctraderapi.com:5035
+04:34:43 [CTRADER] ApplicationAuthReq sent
+04:34:44 [CTRADER] Application authorized
+04:34:44 [CTRADER] AccountAuthReq sent
+04:34:44 [CTRADER] Account 44937427 authorized
+04:34:44 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:34:44 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:34:44 [CTRADER] Subscribe depth: EURUSD id=1
+04:34:44 [CTRADER] Subscribe depth: NAS100 id=110
+04:34:44 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:34:44 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:34:44 [CTRADER] Subscribe depth: GBPUSD id=2
+04:34:44 [CTRADER] Subscribe depth: XAGUSD id=42
+04:34:44 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:34:44 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:34:44 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:34:44 [CTRADER] Subscribe depth: USDJPY id=4
+04:34:44 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:34:44 [CTRADER] Subscribe depth: BRENT id=109
+04:34:44 [CTRADER] Subscribe depth: GER40 id=1899
+04:34:44 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:34:44 [CTRADER] Subscribe depth: AUDUSD id=5
+04:34:44 [CTRADER] Subscribe depth: DX.F id=2638
+04:34:44 [CTRADER] Subscribe depth: UK100 id=1901
+04:34:44 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:34:44 [CTRADER] Subscribe depth: US500.F id=2642
+04:34:44 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:34:44 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:34:44 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:34:44 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:34:44 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:34:44 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:34:44 [CTRADER] Subscribe depth: NZDUSD id=12
+04:34:44 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:34:44 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:34:44 [CTRADER] Subscribe depth: VIX.F id=4462
+04:34:44 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:34:44 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:34:44 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:34:44 [CTRADER] Subscribed to 19 symbols
+04:34:44 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:34:44 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:34:48 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-1.02 l2_imb=0.496 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104488 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:34:49 [TICK] BRENT 105.67/105.80
+04:34:53 [TICK] VIX.F 25.63/26.02
+04:34:54 [CTRADER-BARS] XAUUSD spots sub sent
+04:34:54 [TICK] NGAS.F 2.86/2.89
+04:34:54 [CTRADER-BARS] Spots sub ACK
+04:34:54 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:34:54 [CTRADER] Error:  -- INVALID_REQUEST
+04:34:54 [CTRADER] Connection error -- reconnecting
+04:34:54 [CTRADER] Disconnected -- retry 5000ms
+04:34:55 [TICK] UK100 10268.00/10269.80
+04:34:55 [TICK] GER40 22839.05/22840.75
+04:34:58 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.96 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104498 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:34:59 [CTRADER] Connecting live.ctraderapi.com:5035
+04:34:59 [CTRADER] ApplicationAuthReq sent
+04:34:59 [CTRADER] Application authorized
+04:34:59 [CTRADER] AccountAuthReq sent
+04:34:59 [CTRADER] Account 44937427 authorized
+04:34:59 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:34:59 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:34:59 [CTRADER] Subscribe depth: EURUSD id=1
+04:34:59 [CTRADER] Subscribe depth: NAS100 id=110
+04:34:59 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:34:59 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:34:59 [CTRADER] Subscribe depth: GBPUSD id=2
+04:34:59 [CTRADER] Subscribe depth: XAGUSD id=42
+04:34:59 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:34:59 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:34:59 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:34:59 [CTRADER] Subscribe depth: USDJPY id=4
+04:34:59 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:34:59 [CTRADER] Subscribe depth: BRENT id=109
+04:34:59 [CTRADER] Subscribe depth: GER40 id=1899
+04:34:59 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:34:59 [CTRADER] Subscribe depth: AUDUSD id=5
+04:34:59 [CTRADER] Subscribe depth: DX.F id=2638
+04:34:59 [CTRADER] Subscribe depth: UK100 id=1901
+04:34:59 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:34:59 [CTRADER] Subscribe depth: US500.F id=2642
+04:34:59 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:34:59 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:34:59 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:34:59 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:34:59 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:34:59 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:34:59 [CTRADER] Subscribe depth: NZDUSD id=12
+04:34:59 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:34:59 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:34:59 [CTRADER] Subscribe depth: VIX.F id=4462
+04:34:59 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:34:59 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:34:59 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:34:59 [CTRADER] Subscribed to 19 symbols
+04:34:59 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:34:59 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:35:01 [OMEGA-DIAG] PnL=945.47 T=16 WR=56.25% RTTp95=4.42ms cap=120.00ms lat_ok=1 session=ACTIVE
+04:35:01 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+04:35:01 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+04:35:01 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+04:35:01 [GOLD-DIAG] regime=COMPRESSION vwap=4667.23 vol_range=1.50
+04:35:03 [TICK] XAUUSD 4666.61/4666.82
+04:35:04 [TICK] NAS100 23634.25/23635.45
+04:35:05 [TICK] USTEC.F 23815.82/23818.53
+04:35:06 [TICK] XAGUSD 71.80/71.83
+04:35:07 [TICK] DX.F 99.81/99.92
+04:35:08 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.34 l2_imb=0.363 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104508 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:35:08 [TICK] US500.F 6535.34/6536.15
+04:35:09 [CTRADER-BARS] XAUUSD spots sub sent
+04:35:09 [CTRADER-BARS] Spots sub ACK
+04:35:10 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:35:10 [CTRADER] Error:  -- INVALID_REQUEST
+04:35:10 [CTRADER] Connection error -- reconnecting
+04:35:10 [CTRADER] Disconnected -- retry 5000ms
+04:35:12 [TICK] ESTX50 5609.20/5610.70
+04:35:13 [TICK] EURUSD 1.15/1.15
+04:35:13 [TICK] USOIL.F 105.25/105.31
+04:35:14 [TICK] DJ30.F 46312.10/46317.90
+04:35:14 [TICK] GBPUSD 1.32/1.32
+04:35:14 [TICK] NZDUSD 0.57/0.57
+04:35:14 [TICK] USDJPY 159.40/159.41
+04:35:15 [CTRADER] Connecting live.ctraderapi.com:5035
+04:35:15 [CTRADER] ApplicationAuthReq sent
+04:35:15 [CTRADER] Application authorized
+04:35:15 [CTRADER] AccountAuthReq sent
+04:35:15 [CTRADER] Account 44937427 authorized
+04:35:15 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:35:15 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:35:15 [CTRADER] Subscribe depth: EURUSD id=1
+04:35:15 [CTRADER] Subscribe depth: NAS100 id=110
+04:35:15 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:35:15 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:35:15 [CTRADER] Subscribe depth: GBPUSD id=2
+04:35:15 [CTRADER] Subscribe depth: XAGUSD id=42
+04:35:15 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:35:15 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:35:15 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:35:15 [CTRADER] Subscribe depth: USDJPY id=4
+04:35:15 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:35:15 [CTRADER] Subscribe depth: BRENT id=109
+04:35:15 [CTRADER] Subscribe depth: GER40 id=1899
+04:35:15 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:35:15 [CTRADER] Subscribe depth: AUDUSD id=5
+04:35:15 [CTRADER] Subscribe depth: DX.F id=2638
+04:35:15 [CTRADER] Subscribe depth: UK100 id=1901
+04:35:15 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:35:15 [CTRADER] Subscribe depth: US500.F id=2642
+04:35:15 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:35:15 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:35:15 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:35:15 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:35:15 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:35:15 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:35:15 [CTRADER] Subscribe depth: NZDUSD id=12
+04:35:15 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:35:15 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:35:15 [CTRADER] Subscribe depth: VIX.F id=4462
+04:35:15 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:35:15 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:35:15 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:35:15 [CTRADER] Subscribed to 19 symbols
+04:35:15 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:35:15 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:35:16 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.16 bracket=0.48 breakout=0.40 top_score=0.48 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=regime_not_tradeable
+04:35:16 [SUPERVISOR-XAUUSD] regime=EXPANSION_BREAKOUT conf=0.66 bracket=0.33 breakout=0.70 top_score=0.70 threshold=0.25 winner=BREAKOUT allow=1 cooldown=0 reason=valid_signal
+04:35:17 [TICK] AUDUSD 0.69/0.69
+04:35:18 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.85 l2_imb=0.497 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104518 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:35:19 [TICK] BRENT 105.53/105.66
+04:35:25 [CTRADER-BARS] XAUUSD spots sub sent
+04:35:25 [CTRADER-BARS] Spots sub ACK
+04:35:25 [TICK] UK100 10268.10/10269.90
+04:35:25 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:35:25 [CTRADER] Error:  -- INVALID_REQUEST
+04:35:25 [CTRADER] Connection error -- reconnecting
+04:35:25 [CTRADER] Disconnected -- retry 5000ms
+04:35:25 [TICK] GER40 22839.70/22841.40
+04:35:28 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.47 bracket=0.59 breakout=0.36 top_score=0.59 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:35:28 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.56 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104528 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:35:30 [CTRADER] Connecting live.ctraderapi.com:5035
+04:35:30 [CTRADER] ApplicationAuthReq sent
+04:35:30 [CTRADER] Application authorized
+04:35:30 [CTRADER] AccountAuthReq sent
+04:35:30 [CTRADER] Account 44937427 authorized
+04:35:30 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:35:30 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:35:30 [CTRADER] Subscribe depth: EURUSD id=1
+04:35:30 [CTRADER] Subscribe depth: NAS100 id=110
+04:35:30 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:35:30 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:35:30 [CTRADER] Subscribe depth: GBPUSD id=2
+04:35:30 [CTRADER] Subscribe depth: XAGUSD id=42
+04:35:30 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:35:30 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:35:30 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:35:30 [CTRADER] Subscribe depth: USDJPY id=4
+04:35:30 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:35:30 [CTRADER] Subscribe depth: BRENT id=109
+04:35:30 [CTRADER] Subscribe depth: GER40 id=1899
+04:35:30 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:35:30 [CTRADER] Subscribe depth: AUDUSD id=5
+04:35:30 [CTRADER] Subscribe depth: DX.F id=2638
+04:35:30 [CTRADER] Subscribe depth: UK100 id=1901
+04:35:30 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:35:30 [CTRADER] Subscribe depth: US500.F id=2642
+04:35:30 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:35:30 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:35:30 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:35:30 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:35:30 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:35:30 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:35:30 [CTRADER] Subscribe depth: NZDUSD id=12
+04:35:30 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:35:30 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:35:30 [CTRADER] Subscribe depth: VIX.F id=4462
+04:35:30 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:35:30 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:35:30 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:35:30 [CTRADER] Subscribed to 19 symbols
+04:35:30 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:35:30 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:35:33 [TICK] XAUUSD 4667.59/4667.75
+04:35:34 [TICK] NAS100 23634.55/23635.75
+04:35:36 [TICK] USTEC.F 23816.07/23818.78
+04:35:36 [TICK] XAGUSD 71.78/71.82
+04:35:38 [TICK] DX.F 99.81/99.92
+04:35:38 [SUPERVISOR-XAUUSD] regime=EXPANSION_BREAKOUT conf=0.52 bracket=0.32 breakout=0.62 top_score=0.62 threshold=0.25 winner=BREAKOUT allow=1 cooldown=0 reason=valid_signal
+04:35:39 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.31 l2_imb=0.495 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104539 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:35:39 [TICK] NGAS.F 2.86/2.88
+04:35:40 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.40 bracket=0.53 breakout=0.56 top_score=0.56 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=regime_not_tradeable
+04:35:40 [TICK] US500.F 6535.34/6536.15
+04:35:40 [CTRADER-BARS] XAUUSD spots sub sent
+04:35:40 [CTRADER-BARS] Spots sub ACK
+04:35:41 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:35:41 [CTRADER] Error:  -- INVALID_REQUEST
+04:35:41 [CTRADER] Connection error -- reconnecting
+04:35:41 [CTRADER] Disconnected -- retry 5000ms
+04:35:43 [TICK] USOIL.F 105.23/105.29
+04:35:44 [TICK] DJ30.F 46312.10/46317.90
+04:35:44 [TICK] GBPUSD 1.32/1.32
+04:35:44 [TICK] ESTX50 5609.50/5610.90
+04:35:44 [TICK] NZDUSD 0.57/0.57
+04:35:44 [TICK] EURUSD 1.15/1.15
+04:35:45 [TICK] USDJPY 159.39/159.41
+04:35:45 [SUPERVISOR-XAUUSD] regime=EXPANSION_BREAKOUT conf=0.57 bracket=0.32 breakout=0.73 top_score=0.73 threshold=0.25 winner=BREAKOUT allow=1 cooldown=0 reason=valid_signal
+04:35:46 [CTRADER] Connecting live.ctraderapi.com:5035
+04:35:46 [CTRADER] ApplicationAuthReq sent
+04:35:46 [CTRADER] Application authorized
+04:35:46 [CTRADER] AccountAuthReq sent
+04:35:46 [CTRADER] Account 44937427 authorized
+04:35:46 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:35:46 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:35:46 [CTRADER] Subscribe depth: EURUSD id=1
+04:35:46 [CTRADER] Subscribe depth: NAS100 id=110
+04:35:46 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:35:46 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:35:46 [CTRADER] Subscribe depth: GBPUSD id=2
+04:35:46 [CTRADER] Subscribe depth: XAGUSD id=42
+04:35:46 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:35:46 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:35:46 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:35:46 [CTRADER] Subscribe depth: USDJPY id=4
+04:35:46 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:35:46 [CTRADER] Subscribe depth: BRENT id=109
+04:35:46 [CTRADER] Subscribe depth: GER40 id=1899
+04:35:46 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:35:46 [CTRADER] Subscribe depth: AUDUSD id=5
+04:35:46 [CTRADER] Subscribe depth: DX.F id=2638
+04:35:46 [CTRADER] Subscribe depth: UK100 id=1901
+04:35:46 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:35:46 [CTRADER] Subscribe depth: US500.F id=2642
+04:35:46 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:35:46 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:35:46 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:35:46 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:35:46 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:35:46 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:35:46 [CTRADER] Subscribe depth: NZDUSD id=12
+04:35:46 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:35:46 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:35:46 [CTRADER] Subscribe depth: VIX.F id=4462
+04:35:46 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:35:46 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:35:46 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:35:46 [CTRADER] Subscribed to 19 symbols
+04:35:46 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:35:46 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:35:46 [SUPERVISOR-XAUUSD] regime=EXPANSION_BREAKOUT conf=0.37 bracket=0.32 breakout=0.73 top_score=0.73 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=high_risk_no_trade
+04:35:48 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.45 bracket=0.58 breakout=0.26 top_score=0.58 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+04:35:49 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.22 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104549 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:35:50 [TICK] BRENT 105.55/105.66
+04:35:50 [TICK] AUDUSD 0.69/0.69
+04:35:51 [TICK] VIX.F 25.62/26.01
+04:35:56 [CTRADER-BARS] XAUUSD spots sub sent
+04:35:56 [CTRADER-BARS] Spots sub ACK
+04:35:56 [TICK] UK100 10267.80/10269.60
+04:35:56 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:35:56 [CTRADER] Error:  -- INVALID_REQUEST
+04:35:56 [CTRADER] Connection error -- reconnecting
+04:35:56 [CTRADER] Disconnected -- retry 5000ms
+04:35:59 [TICK] GER40 22840.70/22842.40
+04:35:59 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.89 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104559 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:36:01 [CTRADER] Connecting live.ctraderapi.com:5035
+04:36:01 [CTRADER] ApplicationAuthReq sent
+04:36:01 [CTRADER] Application authorized
+04:36:01 [CTRADER] AccountAuthReq sent
+04:36:01 [CTRADER] Account 44937427 authorized
+04:36:01 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:36:01 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:36:01 [CTRADER] Subscribe depth: EURUSD id=1
+04:36:01 [CTRADER] Subscribe depth: NAS100 id=110
+04:36:01 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:36:01 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:36:01 [CTRADER] Subscribe depth: GBPUSD id=2
+04:36:01 [CTRADER] Subscribe depth: XAGUSD id=42
+04:36:01 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:36:01 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:36:01 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:36:01 [CTRADER] Subscribe depth: USDJPY id=4
+04:36:01 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:36:01 [CTRADER] Subscribe depth: BRENT id=109
+04:36:01 [CTRADER] Subscribe depth: GER40 id=1899
+04:36:01 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:36:01 [CTRADER] Subscribe depth: AUDUSD id=5
+04:36:01 [CTRADER] Subscribe depth: DX.F id=2638
+04:36:01 [CTRADER] Subscribe depth: UK100 id=1901
+04:36:01 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:36:01 [CTRADER] Subscribe depth: US500.F id=2642
+04:36:01 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:36:01 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:36:01 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:36:01 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:36:01 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:36:01 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:36:01 [CTRADER] Subscribe depth: NZDUSD id=12
+04:36:01 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:36:01 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:36:01 [CTRADER] Subscribe depth: VIX.F id=4462
+04:36:01 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:36:01 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:36:01 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:36:01 [CTRADER] Subscribed to 19 symbols
+04:36:01 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:36:01 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:36:02 [OMEGA-DIAG] PnL=945.47 T=16 WR=56.25% RTTp95=4.22ms cap=120.00ms lat_ok=1 session=ACTIVE
+04:36:02 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+04:36:02 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+04:36:02 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+04:36:02 [GOLD-DIAG] regime=COMPRESSION vwap=4667.29 vol_range=1.50
+04:36:03 [TICK] XAUUSD 4665.76/4665.98
+04:36:06 [TICK] NAS100 23631.30/23632.50
+04:36:06 [TICK] USTEC.F 23812.82/23815.53
+04:36:06 [TICK] XAGUSD 71.76/71.80
+04:36:09 [TICK] DX.F 99.82/99.92
+04:36:09 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-1.26 l2_imb=0.786 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104569 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:36:10 [TICK] US500.F 6533.72/6534.53
+04:36:11 [CTRADER-BARS] XAUUSD spots sub sent
+04:36:11 [CTRADER-BARS] Spots sub ACK
+04:36:12 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:36:12 [CTRADER] Error:  -- INVALID_REQUEST
+04:36:12 [CTRADER] Connection error -- reconnecting
+04:36:12 [CTRADER] Disconnected -- retry 5000ms
+04:36:13 [TICK] USOIL.F 105.30/105.36
+04:36:14 [TICK] DJ30.F 46302.10/46307.90
+04:36:15 [TICK] GBPUSD 1.32/1.32
+04:36:17 [TICK] ESTX50 5608.90/5610.30
+04:36:17 [CTRADER] Connecting live.ctraderapi.com:5035
+04:36:17 [CTRADER] ApplicationAuthReq sent
+04:36:17 [CTRADER] Application authorized
+04:36:17 [CTRADER] AccountAuthReq sent
+04:36:17 [TICK] USDJPY 159.40/159.42
+04:36:17 [CTRADER] Account 44937427 authorized
+04:36:17 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:36:17 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:36:17 [CTRADER] Subscribe depth: EURUSD id=1
+04:36:17 [CTRADER] Subscribe depth: NAS100 id=110
+04:36:17 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:36:17 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:36:17 [CTRADER] Subscribe depth: GBPUSD id=2
+04:36:17 [CTRADER] Subscribe depth: XAGUSD id=42
+04:36:17 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:36:17 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:36:17 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:36:17 [CTRADER] Subscribe depth: USDJPY id=4
+04:36:17 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:36:17 [CTRADER] Subscribe depth: BRENT id=109
+04:36:17 [CTRADER] Subscribe depth: GER40 id=1899
+04:36:17 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:36:17 [CTRADER] Subscribe depth: AUDUSD id=5
+04:36:17 [CTRADER] Subscribe depth: DX.F id=2638
+04:36:17 [CTRADER] Subscribe depth: UK100 id=1901
+04:36:17 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:36:17 [CTRADER] Subscribe depth: US500.F id=2642
+04:36:17 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:36:17 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:36:17 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:36:17 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:36:17 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:36:17 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:36:17 [CTRADER] Subscribe depth: NZDUSD id=12
+04:36:17 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:36:17 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:36:17 [CTRADER] Subscribe depth: VIX.F id=4462
+04:36:17 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:36:17 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:36:17 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:36:17 [CTRADER] Subscribed to 19 symbols
+04:36:17 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:36:17 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:36:19 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-1.03 l2_imb=0.670 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104579 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:36:20 [TICK] EURUSD 1.15/1.15
+04:36:20 [TICK] NZDUSD 0.57/0.57
+04:36:20 [TICK] BRENT 105.64/105.75
+04:36:21 [TICK] AUDUSD 0.69/0.69
+04:36:21 [TICK] VIX.F 25.62/26.01
+04:36:22 [TICK] NGAS.F 2.86/2.89
+04:36:27 [TICK] UK100 10266.30/10268.10
+04:36:27 [CTRADER-BARS] XAUUSD spots sub sent
+04:36:27 [CTRADER-BARS] Spots sub ACK
+04:36:27 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:36:27 [CTRADER] Error:  -- INVALID_REQUEST
+04:36:27 [CTRADER] Connection error -- reconnecting
+04:36:27 [CTRADER] Disconnected -- retry 5000ms
+04:36:30 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.47 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104590 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:36:32 [CTRADER] Connecting live.ctraderapi.com:5035
+04:36:32 [CTRADER] ApplicationAuthReq sent
+04:36:32 [CTRADER] Application authorized
+04:36:32 [CTRADER] AccountAuthReq sent
+04:36:32 [CTRADER] Account 44937427 authorized
+04:36:32 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:36:32 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:36:32 [CTRADER] Subscribe depth: EURUSD id=1
+04:36:32 [CTRADER] Subscribe depth: NAS100 id=110
+04:36:32 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:36:32 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:36:32 [CTRADER] Subscribe depth: GBPUSD id=2
+04:36:32 [CTRADER] Subscribe depth: XAGUSD id=42
+04:36:32 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:36:32 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:36:32 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:36:32 [CTRADER] Subscribe depth: USDJPY id=4
+04:36:32 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:36:32 [CTRADER] Subscribe depth: BRENT id=109
+04:36:32 [CTRADER] Subscribe depth: GER40 id=1899
+04:36:32 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:36:32 [CTRADER] Subscribe depth: AUDUSD id=5
+04:36:32 [CTRADER] Subscribe depth: DX.F id=2638
+04:36:32 [CTRADER] Subscribe depth: UK100 id=1901
+04:36:32 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:36:32 [CTRADER] Subscribe depth: US500.F id=2642
+04:36:32 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:36:32 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:36:32 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:36:32 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:36:32 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:36:32 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:36:32 [CTRADER] Subscribe depth: NZDUSD id=12
+04:36:32 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:36:32 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:36:32 [CTRADER] Subscribe depth: VIX.F id=4462
+04:36:32 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:36:32 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:36:32 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:36:32 [CTRADER] Subscribed to 19 symbols
+04:36:32 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:36:32 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:36:33 [TICK] XAUUSD 4666.16/4666.38
+04:36:36 [TICK] USTEC.F 23807.82/23810.53
+04:36:36 [TICK] NAS100 23626.55/23627.75
+04:36:37 [TICK] XAGUSD 71.71/71.74
+04:36:37 [TICK] GER40 22836.45/22838.15
+04:36:40 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-1.18 l2_imb=0.522 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104600 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:36:41 [TICK] US500.F 6533.59/6534.40
+04:36:41 [TICK] DX.F 99.82/99.92
+04:36:42 [CTRADER-BARS] XAUUSD spots sub sent
+04:36:42 [CTRADER-BARS] Spots sub ACK
+04:36:43 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:36:43 [CTRADER] Error:  -- INVALID_REQUEST
+04:36:43 [CTRADER] Connection error -- reconnecting
+04:36:43 [CTRADER] Disconnected -- retry 5000ms
+04:36:43 [TICK] USOIL.F 105.39/105.46
+04:36:45 [TICK] GBPUSD 1.32/1.32
+04:36:45 [TICK] DJ30.F 46301.60/46307.40
+04:36:47 [TICK] USDJPY 159.42/159.43
+04:36:48 [TICK] ESTX50 5608.80/5610.20
+04:36:48 [CTRADER] Connecting live.ctraderapi.com:5035
+04:36:48 [CTRADER] ApplicationAuthReq sent
+04:36:48 [CTRADER] Application authorized
+04:36:48 [CTRADER] AccountAuthReq sent
+04:36:48 [CTRADER] Account 44937427 authorized
+04:36:48 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+04:36:48 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+04:36:48 [CTRADER] Subscribe depth: EURUSD id=1
+04:36:48 [CTRADER] Subscribe depth: NAS100 id=110
+04:36:48 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+04:36:48 [CTRADER] Subscribe depth: NGAS.F id=2631
+04:36:48 [CTRADER] Subscribe depth: GBPUSD id=2
+04:36:48 [CTRADER] Subscribe depth: XAGUSD id=42
+04:36:48 [CTRADER] Subscribe depth: USOIL.F id=2632
+04:36:48 [CTRADER] Subscribe depth: ESTX50 id=1898
+04:36:48 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+04:36:48 [CTRADER] Subscribe depth: USDJPY id=4
+04:36:48 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+04:36:48 [CTRADER] Subscribe depth: BRENT id=109
+04:36:48 [CTRADER] Subscribe depth: GER40 id=1899
+04:36:48 [CTRADER] Subscribe depth: DJ30.F id=2637
+04:36:48 [CTRADER] Subscribe depth: AUDUSD id=5
+04:36:48 [CTRADER] Subscribe depth: DX.F id=2638
+04:36:48 [CTRADER] Subscribe depth: UK100 id=1901
+04:36:48 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+04:36:48 [CTRADER] Subscribe depth: US500.F id=2642
+04:36:48 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+04:36:48 [CTRADER] Subscribe depth: USTEC.F id=2643
+04:36:48 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+04:36:48 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+04:36:48 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+04:36:48 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+04:36:48 [CTRADER] Subscribe depth: NZDUSD id=12
+04:36:48 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+04:36:48 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+04:36:48 [CTRADER] Subscribe depth: VIX.F id=4462
+04:36:48 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+04:36:48 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+04:36:48 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+04:36:48 [CTRADER] Subscribed to 19 symbols
+04:36:48 [CTRADER] Depth feed ACTIVE -- 19 symbols
+04:36:48 [CTRADER-BARS] XAUUSD bars already seeded from disk -- skipping tick data request
+04:36:50 [TICK] EURUSD 1.15/1.15
+04:36:50 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-1.20 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104610 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:36:51 [TICK] NZDUSD 0.57/0.57
+04:36:52 [TICK] BRENT 105.67/105.78
+04:36:54 [TICK] AUDUSD 0.69/0.69
+04:36:54 [TICK] NGAS.F 2.86/2.88
+04:36:57 [TICK] VIX.F 25.62/26.02
+04:36:57 [TICK] UK100 10266.00/10267.80
+04:36:58 [CTRADER-BARS] XAUUSD spots sub sent
+04:36:58 [CTRADER-BARS] Spots sub ACK
+04:36:58 [CTRADER-BARS] XAUUSD live trendbar sub period=5
+04:36:58 [CTRADER] Error:  -- INVALID_REQUEST
+04:36:58 [CTRADER] Connection error -- reconnecting
+04:36:58 [CTRADER] Disconnected -- retry 5000ms
+04:37:00 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-1.38 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=1775104620 brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:37:00 [OMEGA] Price snapshot taken: 19 symbols
+04:37:00 [OMEGA] SHADOW mode -- preserving positions across reconnect
+04:37:00 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+04:37:00 [OMEGA] Unsubscribed market data before disconnect
+04:37:00 [OMEGA] Logout sent
+04:37:00 [OMEGA-TRADE] Logout sent
+04:37:00 [OMEGA] Shutdown
+04:37:00 [CTRADER] Stopped
+04:37:00 [OMEGA-TRADE] Disconnected -- reconnecting
