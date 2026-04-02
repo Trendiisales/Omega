@@ -10126,7 +10126,7 @@ static void quote_loop() {
                         s_last_push = now;
                         const std::string push_cmd =
                             "cmd /c start /min powershell -WindowStyle Hidden -ExecutionPolicy Bypass "
-                            "-File "C:\\Omega\\push_log.ps1" -RepoRoot "C:\\Omega"";
+                            "-File C:\\Omega\\push_log.ps1 -RepoRoot C:\\Omega";
                         std::system(push_cmd.c_str());
                     }
                 }
