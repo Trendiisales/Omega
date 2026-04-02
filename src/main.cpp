@@ -9668,6 +9668,17 @@ static void quote_loop() {
                 g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
                 g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
                 g_trend_pb_sp.save_state(log_root_dir()    + "/trend_pb_sp.dat");
+                // Save bar indicator state every 60s -- ensures warm restart on crash/kill.
+                // Previously saved only at daily rollover and clean shutdown.
+                // If process is killed (OOM, watchdog, manual stop), .dat files were stale
+                // or missing -> cold start -> M15 tick request times out -> never seeded.
+                // With 60s saves and 12h age limit, bars are always valid on restart.
+                if (g_bars_gold.m5 .ind.m1_ready.load(std::memory_order_relaxed))
+                    g_bars_gold.m5 .save_indicators(log_root_dir() + "/bars_gold_m5.dat");
+                if (g_bars_gold.m15.ind.m1_ready.load(std::memory_order_relaxed))
+                    g_bars_gold.m15.save_indicators(log_root_dir() + "/bars_gold_m15.dat");
+                if (g_bars_gold.h4 .ind.m1_ready.load(std::memory_order_relaxed))
+                    g_bars_gold.h4 .save_indicators(log_root_dir() + "/bars_gold_h4.dat");
                 std::cout << "[OMEGA-DIAG] PnL=" << g_omegaLedger.dailyPnl()
                           << " T=" << g_omegaLedger.total()
                           << " WR=" << g_omegaLedger.winRate() << "%"

@@ -852,8 +852,12 @@ public:
         fclose(f);
         const long long now_ts = (long long)std::time(nullptr);
         const long long age    = now_ts - saved_ts;
-        // Reject if: invalid timestamp, future timestamp, or older than 4 hours
-        if (saved_ts <= 0 || saved_ts > now_ts || age > 4 * 3600 || e9 <= 0 || e50 <= 0) {
+        // Reject if: invalid timestamp, future timestamp, or older than 12 hours
+        // WHY 12h not 4h: bars saved at end of NY session (22:00 UTC) must still
+        // be valid at London open (07:00 UTC next day = 9 hours later). With 4h
+        // limit the file was rejected every morning, forcing a cold tick-data
+        // request that times out -> m1_ready=false all session -> bars never seed.
+        if (saved_ts <= 0 || saved_ts > now_ts || age > 12 * 3600 || e9 <= 0 || e50 <= 0) {
             remove(path.c_str());
             printf("[OHLC] Bar state rejected (age=%llds e9=%.2f e50=%.2f) -- cold start\n",
                    age, e9, e50);
