@@ -10162,9 +10162,12 @@ static void quote_loop() {
                   if (s=="XAUUSD"||s=="XAGUSD"||s=="EURUSD"||s=="GBPUSD"||
                       s=="AUDUSD"||s=="NZDUSD"||s=="USDJPY") cps = 3.0; }
                 omega::apply_realistic_costs(t, cps, mult);
-                g_omegaLedger.record(t);
-                g_telemetry.AccumEnginePnl(t.engine.c_str(), t.net_pnl);
-                printf("[STALE-CLOSE] %s %s entry=%lld pnl=$%.2f -- prior-day position purged\n",
+                // Prior-day positions must NOT enter today's ledger or P&L total.
+                // They opened and closed in a prior session -- their PnL already
+                // exists in yesterday's CSV. Recording them here double-counts into
+                // today's daily_pnl (the $844 bug). Write CSV audit only.
+                write_trade_close_logs(t);
+                printf("[STALE-CLOSE] %s %s entry=%lld pnl=$%.2f -- prior-day position purged (audit only, not counted in today P&L)\n",
                        t.symbol.c_str(), t.engine.c_str(), (long long)t.entryTs, t.net_pnl);
                 fflush(stdout);
             };
