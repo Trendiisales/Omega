@@ -12425,6 +12425,12 @@ int main(int argc, char* argv[])
 
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
 
+    // Push log to git on every startup so remote reads are never stale after restart.
+    // Fire-and-forget -- does not block startup.
+    std::system("cmd /c start /min powershell -WindowStyle Hidden"
+                " -ExecutionPolicy Bypass"
+                " -File C:\\Omega\\push_log.ps1 -RepoRoot C:\\Omega");
+
     // =========================================================================
     // STARTUP VERIFICATION THREAD
     // Checks all critical systems within 120s of launch.
