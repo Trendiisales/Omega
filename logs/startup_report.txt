@@ -2,7 +2,6 @@
 Generated : 
 Log file  : C:\Omega\logs\latest.log
 Collected : 0 lines over 45s
-Result    : PASS=  FAIL=  WARN=2  INFO=8
 ========================================================================
 [INFO]  ATR Seed               No GFE-SEED line seen
                                      Engine may have loaded ATR from disk (normal) -- see ATR State check.
@@ -16,10 +15,7 @@ Result    : PASS=  FAIL=  WARN=2  INFO=8
 [WARN]  L2 / cTrader Feed      No L2-STATUS line in first 45s
                                      Feed may be slow to connect.
 [INFO]  Latency                No OMEGA-DIAG yet
-[INFO]  Gate Blocks            
-                                     Mixed blocks -- normal filtering behaviour.
 [INFO]  First Signal           No signal in first 45s
                                      Normal if market quiet or in compression.
-[INFO]  Build Stamp            commit=ab99d2a  built=2026-04-02 09:23:25 UTC
+[INFO]  Build Stamp            commit=2f715ef  built=2026-04-02 09:32:25 UTC
 ========================================================================
-RESULT: PASS=  FAIL=  WARN=2  INFO=8
