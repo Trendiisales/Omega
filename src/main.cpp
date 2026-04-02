@@ -8683,8 +8683,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         //            and we are not in the 10-min direction block.
         // Implementation: temporarily reset cooldown if conditions met.
         {
-            const double rsi_now = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-            const double gold_mid_now = (bid + ask) * 0.5;
+            const double rsi_now  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
             // Use gold stack EWM drift as crash proxy: drift < -5 = strong downtrend
             const double drift_now = g_gold_stack.ewm_drift();
             const bool crash_mode = (drift_now < -5.0 && rsi_now < 35.0 && rsi_now > 0.0)
