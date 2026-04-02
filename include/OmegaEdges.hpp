@@ -838,7 +838,7 @@ public:
             auto it = queues_.find(sym);
             return (it != queues_.end()) ? it->second : empty;
         }();
-        if ((int)q.size() < 10) return false;  // need enough data
+        if ((int)q.size() < 3) return false;   // need enough data (lowered 10→3 for low-frequency gold sessions)
         return avg_slippage_bps(sym) > adverse_threshold_bps;
     }
 
@@ -846,7 +846,7 @@ public:
         std::lock_guard<std::mutex> lk(mtx);
         printf("[FILL-QUALITY] Fill quality summary (%d-trade window):\n", window_trades);
         for (const auto& kv : queues_) {
-            if (kv.second.size() < 5) continue;
+            if (kv.second.size() < 3) continue;  // match adverse_selection min (lowered 5→3)
             double total = 0;
             for (const auto& r : kv.second) total += r.slippage_bps();
             const double avg = total / kv.second.size();
@@ -1279,3 +1279,4 @@ struct EdgeContext {
 };
 
 }} // namespace omega::edges
+
