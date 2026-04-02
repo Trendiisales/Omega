@@ -8175,7 +8175,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                           || std::strcmp(gold_stack_regime, "QUIET_COMPRESSION") == 0);
                 // Hot-reloadable via omega_config.ini [gold_flow] section.
                 // Asia session uses tighter floor -- thinner tape, smaller valid coils.
-                const double GF_COMPRESSION_VOL_FLOOR = in_asia_slot
+                const bool   gf_in_asia_slot = (g_macro_ctx.session_slot == 6);
+                const double GF_COMPRESSION_VOL_FLOOR = gf_in_asia_slot
                     ? g_cfg.gf_compression_vol_floor_asia
                     : g_cfg.gf_compression_vol_floor;
                 const double vol_range_now = g_gold_stack.vol_range();
