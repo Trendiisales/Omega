@@ -4733,13 +4733,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // pressure; random chop produces |drift| < 0.5 consistently.
                     const double asia_ewm_drift = std::fabs(g_gold_stack.ewm_drift());
                     const bool asia_fast_breakout = (asia_ewm_drift >= 1.5);
-                    if (asia_ratio < 2.0 && !asia_fast_breakout) {
+                    // PATH C: macro crash/rally bypass.
+                    // Root cause of missing 125pt crash: drift only hit -1.7 (EWM smoothed),
+                    // vol_ratio elevated from prior session. RSI hit 28 -- that IS the signal.
+                    const double rsi_asia  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+                    const double vwap_asia = g_gold_stack.vwap();
+                    const double mid_asia  = (bid + ask) * 0.5;
+                    const double vdisp_asia = (vwap_asia > 0.0) ? std::fabs(mid_asia - vwap_asia) : 0.0;
+                    const bool asia_macro_bypass = (rsi_asia > 0.0 && rsi_asia < 32.0)
+                                                || (rsi_asia > 68.0)
+                                                || (vdisp_asia > 10.0);
+                    if (asia_ratio < 2.0 && !asia_fast_breakout && !asia_macro_bypass) {
                         static int64_t s_asia_block_log = 0;
                         const int64_t now_ab = static_cast<int64_t>(std::time(nullptr));
-                        if (now_ab - s_asia_block_log >= 60) { // log every 60s (was 5min -- too infrequent to diagnose)
+                        if (now_ab - s_asia_block_log >= 60) {
                             s_asia_block_log = now_ab;
-                            printf("[ASIA-GATE] BLOCKED -- vol_ratio=%.2f drift=%.3f (need ratio>=2.0 OR |drift|>=1.5)\n",
-                                   asia_ratio, g_gold_stack.ewm_drift());
+                            printf("[ASIA-GATE] BLOCKED -- vol_ratio=%.2f drift=%.3f rsi=%.1f vdisp=%.1f\n",
+                                   asia_ratio, g_gold_stack.ewm_drift(), rsi_asia, vdisp_asia);
                             fflush(stdout);
                         }
                         return false;
@@ -4748,9 +4758,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const int64_t now_ao = static_cast<int64_t>(std::time(nullptr));
                     if (now_ao - s_asia_open_log >= 60) {
                         s_asia_open_log = now_ao;
-                        const char* path = (asia_fast_breakout && asia_ratio < 2.0) ? "PATH-B(drift)" : "PATH-A(ratio)";
-                        printf("[ASIA-GATE] OPEN via %s -- vol_ratio=%.2f drift=%.3f\n",
-                               path, asia_ratio, g_gold_stack.ewm_drift());
+                        const char* path = asia_macro_bypass ? "PATH-C(macro)"
+                                         : (asia_fast_breakout && asia_ratio < 2.0) ? "PATH-B(drift)"
+                                         : "PATH-A(ratio)";
+                        printf("[ASIA-GATE] OPEN via %s -- vol_ratio=%.2f drift=%.3f rsi=%.1f vdisp=%.1f\n",
+                               path, asia_ratio, g_gold_stack.ewm_drift(), rsi_asia, vdisp_asia);
                         fflush(stdout);
                     }
                 }
@@ -10004,6 +10016,64 @@ static void quote_loop() {
         //   Engine state (trail_stage, mfe, sl) is preserved across reconnects.
         // LIVE mode: must close -- broker holds real positions and we may have
         //   lost order state on the server side. Close and let engines re-enter.
+        // Force-close positions from a prior UTC day before proceeding.
+        // Root cause of $844 recurring bug: TrendPullback opens in session N,
+        // Omega redeploys at ~01:02 UTC (new day), SHADOW mode preserves the
+        // position, it closes at 01:03 writing $844 into the new day's CSV.
+        // Fix: on any reconnect, detect and close positions whose entry_ts is
+        // from a previous UTC day -- they are stale and must not bleed into today.
+        {
+            const int64_t now_s_rc = static_cast<int64_t>(std::time(nullptr));
+            struct tm ti_rc{}; gmtime_s(&ti_rc, &now_s_rc);
+            const int today_yday_rc = ti_rc.tm_yday;
+            const int today_year_rc = ti_rc.tm_year;
+            auto is_stale = [&](int64_t entry_ts) -> bool {
+                if (entry_ts <= 0) return false;
+                struct tm te{}; gmtime_s(&te, &entry_ts);
+                return (te.tm_yday != today_yday_rc || te.tm_year != today_year_rc);
+            };
+            auto stale_cb = [](const omega::TradeRecord& tr) {
+                omega::TradeRecord t = tr;
+                const double mult = tick_value_multiplier(t.symbol);
+                t.pnl *= mult; t.mfe *= mult; t.mae *= mult;
+                double cps = 0.0;
+                { const std::string& s = t.symbol;
+                  if (s=="XAUUSD"||s=="XAGUSD"||s=="EURUSD"||s=="GBPUSD"||
+                      s=="AUDUSD"||s=="NZDUSD"||s=="USDJPY") cps = 3.0; }
+                omega::apply_realistic_costs(t, cps, mult);
+                g_omegaLedger.record(t);
+                g_telemetry.AccumEnginePnl(t.engine.c_str(), t.net_pnl);
+                printf("[STALE-CLOSE] %s %s entry=%lld pnl=$%.2f -- prior-day position purged\n",
+                       t.symbol.c_str(), t.engine.c_str(), (long long)t.entryTs, t.net_pnl);
+                fflush(stdout);
+            };
+            // Get snapshot price for XAUUSD
+            double xb_rc=0, xa_rc=0;
+            { auto bi=px_snap_bid.find("XAUUSD"); if(bi!=px_snap_bid.end()) xb_rc=bi->second;
+              auto ai=px_snap_ask.find("XAUUSD"); if(ai!=px_snap_ask.end()) xa_rc=ai->second; }
+            if (xb_rc <= 0 || xa_rc <= 0) {
+                std::lock_guard<std::mutex> lk(g_book_mtx);
+                auto bi=g_bids.find("XAUUSD"); if(bi!=g_bids.end()) xb_rc=bi->second;
+                auto ai=g_asks.find("XAUUSD"); if(ai!=g_asks.end()) xa_rc=ai->second;
+            }
+            const int64_t fc_ms_rc = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (xb_rc > 0 && xa_rc > 0) {
+                if (g_trend_pb_gold.has_open_position() && is_stale(g_trend_pb_gold.open_entry_ts()))
+                    { g_trend_pb_gold.force_close(xb_rc, xa_rc, stale_cb);
+                      std::cout << "[STALE-CLOSE] Purged prior-day TrendPullback\n"; }
+                if (g_gold_flow.has_open_position() && is_stale(g_gold_flow.pos.entry_ts))
+                    { g_gold_flow.force_close(xb_rc, xa_rc, fc_ms_rc, stale_cb);
+                      std::cout << "[STALE-CLOSE] Purged prior-day GoldFlow\n"; }
+                if (g_gold_flow_reload.has_open_position() && is_stale(g_gold_flow_reload.pos.entry_ts))
+                    { g_gold_flow_reload.force_close(xb_rc, xa_rc, fc_ms_rc, stale_cb);
+                      std::cout << "[STALE-CLOSE] Purged prior-day GoldFlow reload\n"; }
+                if (g_gold_stack.has_open_position() && is_stale(g_gold_stack.live_entry_ts()))
+                    { g_gold_stack.force_close(xb_rc, xa_rc, g_rtt_last, stale_cb);
+                      std::cout << "[STALE-CLOSE] Purged prior-day GoldStack\n"; }
+            }
+        }
+
         const bool do_reconnect_close = (g_cfg.mode == "LIVE");
         if (do_reconnect_close) {
             std::cout << "[OMEGA] LIVE mode -- closing all positions before reconnect\n";
