@@ -10117,6 +10117,20 @@ static void quote_loop() {
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_diag).count() >= 60) {
                 last_diag = now;
                 if (g_tee_buf) g_tee_buf->force_rotate_check();  // ensure daily log rolls at UTC midnight even if stdout is quiet
+
+                // Push log + state to git every 5 minutes so remote reads are never stale.
+                // Fire-and-forget via cmd /c start -- does not block the quote loop.
+                {
+                    static auto s_last_push = std::chrono::steady_clock::now() - std::chrono::minutes(10);
+                    if (std::chrono::duration_cast<std::chrono::minutes>(now - s_last_push).count() >= 5) {
+                        s_last_push = now;
+                        const std::string push_cmd =
+                            "cmd /c start /min powershell -WindowStyle Hidden -ExecutionPolicy Bypass "
+                            "-File "C:\\Omega\\push_log.ps1" -RepoRoot "C:\\Omega"";
+                        std::system(push_cmd.c_str());
+                    }
+                }
+
                 // Save ATR state every 60s so restarts always have a fresh, valid value
                 g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
                 g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
