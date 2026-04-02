@@ -103,14 +103,17 @@ foreach ($line in $allLines) {
 }
 
 # --- Apply -Last limit --------------------------------------------------------
-$toShow = if ($Last -gt 0 -and $matches_.Count -gt $Last) {
-    $matches_ | Select-Object -Last $Last
+$matchCount = $matches_.Count
+$toShow = [System.Collections.Generic.List[object]]::new()
+if ($Last -gt 0 -and $matchCount -gt $Last) {
+    foreach ($m in ($matches_ | Select-Object -Last $Last)) { $toShow.Add($m) }
 } else {
-    $matches_
+    foreach ($m in $matches_) { $toShow.Add($m) }
 }
+$showCount = $toShow.Count
 
 # --- Print --------------------------------------------------------------------
-if ($toShow.Count -eq 0) {
+if ($showCount -eq 0) {
     Write-Host "  (no matches)" -ForegroundColor DarkGray
 } else {
     foreach ($m in $toShow) {
@@ -124,4 +127,4 @@ if ($toShow.Count -eq 0) {
 }
 
 Write-Host ""
-Write-Host "  $($matches_.Count) match(es)  ($($toShow.Count) shown)" -ForegroundColor DarkGray
+Write-Host "  $matchCount match(es)  ($showCount shown)" -ForegroundColor DarkGray
