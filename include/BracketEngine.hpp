@@ -364,6 +364,16 @@ public:
             return;
         }
 
+        // ?? Structure window -- always fed, regardless of can_enter ???????????
+        // FIX 2026-04-03: previously window only received ticks when can_enter=1.
+        // asia_ok flickers every 10-30s, dropping can_enter to 0 repeatedly and
+        // starving the window. STRUCTURE_LOOKBACK=20 was never reached consecutively
+        // so bracket NEVER armed during entire Asia sessions (confirmed Apr 1+2 logs).
+        // Fix: feed window on EVERY tick. can_enter still gates IDLE->ARMED and
+        // ARMED hold. Window is price data -- no entry permission semantics.
+        m_window.push_back(mid);
+        ++m_ticks_received;
+
         // ?? Entry gate ????????????????????????????????????????????????????????
         // While ARMED: preserve the timer -- do NOT reset m_armed_ts.
         // A can_enter=false blip means we can't arm new structure, but
@@ -371,17 +381,11 @@ public:
         if (!can_enter) {
             if (phase == BracketPhase::ARMED) {
                 // Timer preserved -- do not touch m_armed_ts
-                std::cout << "[BRACKET-" << symbol << "] ARMED HOLD -- can_enter=false blip, timer preserved\n";
-                std::cout.flush();
                 return;
             }
-            phase = BracketPhase::IDLE; bracket_high = 0.0; bracket_low = 0.0;
+            // IDLE: window fed above, but transition to ARMED blocked.
             return;
         }
-
-        // ?? Maintain structure window ?????????????????????????????????????????
-        m_window.push_back(mid);
-        ++m_ticks_received;  // always -- cold-start gate
 
         if (static_cast<int>(m_window.size()) > STRUCTURE_LOOKBACK * 2)
             m_window.pop_front();
