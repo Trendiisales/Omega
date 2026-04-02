@@ -6471,7 +6471,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_vwap_rev_sp.reset_ewm_vwap(s_sp_ny_open);  // re-anchor EWM
                 }
             }
-            if (s_sp_ny_armed && s_sp_ny_open > 0.0) {
+            // ?? NY open settle gate -- block VWAPRev for 30min after NY open ??
+            // NY open (13:30 UTC) creates momentum window where mean reversion fails.
+            // Evidence 2026-04-03 (UTC): VWAPRev entered at 13:31 into a 200pt NQ
+            // momentum move and FORCE_CLOSEd at -$55, -$38, -$44, -$49.
+            // Block entries until 14:00 UTC (first 30min = pure momentum, not reversion).
+            static int64_t s_sp_ny_armed_ts = 0;
+            if (s_sp_ny_armed && s_sp_ny_open > 0.0 && s_sp_ny_armed_ts == 0)
+                s_sp_ny_armed_ts = static_cast<int64_t>(std::time(nullptr));
+            const bool sp_ny_settled = (s_sp_ny_armed_ts > 0)
+                && (static_cast<int64_t>(std::time(nullptr)) - s_sp_ny_armed_ts >= 30 * 60);
+            if (s_sp_ny_armed && s_sp_ny_open > 0.0 && sp_ny_settled) {
                 // ?? Spread anomaly gate for VWAPReversion ????????????????????
                 // VWAPReversion is a mean-reversion strategy -- it needs settled price.
                 // Wide spread = news/thin liquidity = reversion target unreliable.
@@ -6637,7 +6647,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_vwap_rev_nq.reset_ewm_vwap(s_nq_ny_open);
                 }
             }
-            if (s_nq_ny_armed && s_nq_ny_open > 0.0) {
+            // ?? NY open settle gate (NQ) -- same logic as SP ??????????????????
+            static int64_t s_nq_ny_armed_ts = 0;
+            if (s_nq_ny_armed && s_nq_ny_open > 0.0 && s_nq_ny_armed_ts == 0)
+                s_nq_ny_armed_ts = static_cast<int64_t>(std::time(nullptr));
+            const bool nq_ny_settled = (s_nq_ny_armed_ts > 0)
+                && (static_cast<int64_t>(std::time(nullptr)) - s_nq_ny_armed_ts >= 30 * 60);
+            if (s_nq_ny_armed && s_nq_ny_open > 0.0 && nq_ny_settled) {
                 // ?? Spread anomaly gate for VWAPReversion ????????????????????
                 static std::deque<double> s_vwap_nq_spread_hist;
                 {

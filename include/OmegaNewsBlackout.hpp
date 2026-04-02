@@ -64,7 +64,7 @@ public:
     // "pre" = minutes before scheduled time to block entries
     // "post" = minutes after to allow market to settle
     int pre_minutes_nfp   = 5;
-    int post_minutes_nfp  = 15;
+    int post_minutes_nfp  = 90;  // raised 15->90: NFP drives 60-90min moves. Evidence 2026-04-03: VWAPRev lost -$177 after 13:45 when old blackout ended.
     int pre_minutes_fomc  = 10;
     int post_minutes_fomc = 30;
     int pre_minutes_cpi   = 5;
