@@ -99,7 +99,6 @@ Write-Host "[3/9] Computing source hash..." -ForegroundColor Yellow
 $sourceHash      = $gitHeadFull
 $sourceHashShort = $gitHeadFull.Substring(0, 7)
 Write-Host "      [OK] SOURCE_HASH = $sourceHashShort" -ForegroundColor Green
-}
 Write-Host ""
 
 # ------------------------------------------------------------------------------
