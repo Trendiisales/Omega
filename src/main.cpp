@@ -82,6 +82,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "OmegaMonteCarlo.hpp"        // Bootstrap P&L resample + BH/FDR correction (offline tool)
 #include "OmegaVolTargeter.hpp"       // EWMA vol targeting + ADX momentum regime classifier
 #include "OmegaSignalScorer.hpp"      // Composite signal scoring (replaces soft gate chain)
+#include "OmegaCrowdingGuard.hpp"     // Directional crowding tracker + score penalty (RenTec #4)
 
 // ?????????????????????????????????????????????????????????????????????????????
 // Singleton
@@ -400,7 +401,8 @@ static SymBarState         g_bars_sp;     // US500.F M1/M5 bars + indicators
 static SymBarState         g_bars_nq;     // USTEC.F M1/M5 bars + indicators
 static SymBarState         g_bars_ger;    // GER40   M1/M5 bars + indicators
 static OmegaVolTargeter    g_vol_targeter;   // EWMA vol targeting + momentum regime
-static OmegaSignalScorer   g_signal_scorer;  // Composite signal scoring (13-point system)
+static OmegaSignalScorer   g_signal_scorer;   // Composite signal scoring (13-point system)
+static OmegaCrowdingGuard  g_crowding_guard;  // Directional crowding tracker (RenTec #4)
 static std::atomic<bool>   g_quote_logout_received(false);  // server sent Logout to quote session
 static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup -- unblocks ctrl handler
 static std::atomic<bool>   g_trade_thread_done(false);  // set by trade_loop() just before it returns
@@ -3907,6 +3909,11 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     // Shadow CSV only written in SHADOW mode -- prevents LIVE trades contaminating shadow analysis
     if (g_cfg.mode == "SHADOW") write_shadow_csv(tr);
     write_trade_close_logs(tr);
+
+    // ?? Crowding guard -- update directional window on every close (RenTec #4) ????????
+    // Tracks last 10 trades per symbol to detect directional crowding.
+    // Penalty is applied at entry scoring time, not here.
+    g_crowding_guard.update(tr.symbol, tr.side == "LONG");
 
     // ?? Hourly P&L ring buffer ?????????????????????????????????????????????
     {
@@ -9332,17 +9339,35 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
                 g_signal_scorer.log_score(sr, gf_long_sc);
 
-                if (!sr.passes()) {
+                // Crowding penalty (RenTec #4) -- subtract after scoring
+                // Reads last 10 closed trades for XAUUSD; if 80%+ same direction,
+                // deduct 2pts. Strong setups (>=7) survive. Borderline setups blocked.
+                const int crowding_penalty = g_crowding_guard.score_penalty("XAUUSD", gf_long_sc);
+                const int adjusted_score   = sr.total - crowding_penalty;
+                if (crowding_penalty > 0) {
+                    static int64_t s_crowd_log_ts = 0;
+                    if (nowSec() - s_crowd_log_ts >= 30) {
+                        s_crowd_log_ts = nowSec();
+                        printf("[CROWDING] XAUUSD %s penalty=%d score %d->%d\n",
+                               gf_long_sc ? "LONG" : "SHORT",
+                               crowding_penalty, sr.total, adjusted_score);
+                        fflush(stdout);
+                    }
+                }
+
+                if (adjusted_score < OmegaSignalScorer::SCORE_MIN_ENTRY) {
                     static int64_t s_score_log_ts = 0;
                     if (nowSec() - s_score_log_ts >= 15) {
                         s_score_log_ts = nowSec();
-                        printf("[GF-SCORE-BLOCK] XAUUSD %s blocked score=%d/%d < %d\n",
+                        printf("[GF-SCORE-BLOCK] XAUUSD %s blocked score=%d crowd_adj=%d/%d < %d%s\n",
                                gf_long_sc ? "LONG" : "SHORT",
-                               sr.total, sr.max_points, OmegaSignalScorer::SCORE_MIN_ENTRY);
+                               sr.total, adjusted_score, sr.max_points,
+                               OmegaSignalScorer::SCORE_MIN_ENTRY,
+                               crowding_penalty > 0 ? " (crowding)" : "");
                         fflush(stdout);
                     }
                     gf_tick_ok = false;
-                    gf_block_reason = "SCORE_BELOW_MIN";
+                    gf_block_reason = crowding_penalty > 0 ? "SCORE_CROWDING" : "SCORE_BELOW_MIN";
                 }
             }
 
