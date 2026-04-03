@@ -1,5 +1,5 @@
 ﻿OMEGA STARTUP REPORT
-Generated : 2026-04-03 02:10:24 UTC
+Generated : 2026-04-03 02:17:01 UTC
 Log file  : C:\Omega\logs\latest.log
 Collected : 34 lines over 45s
 Result    : PASS=0  FAIL=0  WARN=3  INFO=14
@@ -24,7 +24,7 @@ Result    : PASS=0  FAIL=0  WARN=3  INFO=14
 [INFO]  First Signal           No signal in first 45s
                                      Normal if market quiet or in compression.
 [INFO]  Impulse Ghost          No impulse ghost blocks seen
-[INFO]  Build Stamp            commit=d7a0a16  built=2026-04-03 02:09:31 UTC
+[INFO]  Build Stamp            commit=b837c9d  built=2026-04-03 02:16:09 UTC
 [INFO]  Bar State              No bars_gold_m1.dat -- cold start
                                      Will request M15 tick data from broker on startup. GoldFlow delayed ~2min.
 [INFO]  Ratchet Fix            No ratchet activity yet

@@ -1,21 +1,21 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-03 02:16:18 UTC
+Generated : 2026-04-03 02:17:01 UTC
 ============================================================
 [ATR-DAT] atr=4.746403 atr_ewm=3.857459 warmed=1 last_mid=4677.14000 saved_ts=1775182242
 [ATR-WARN] atr=4.746403 <= 5.0 -- may still be floor-pinned
 
 [DIAG]        02:10:42 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=3.929ms cap=120ms lat_ok=1 session=ACTIVE
 [GOLD-DIAG]   02:10:42 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
-[BRK-DIAG]    02:10:42 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.16 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
-[SUPERVISOR]  02:09:42 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.92 bracket=0.98 breakout=0.00 top_score=0.98 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
-[VIX]         02:10:30 [TICK] VIX.F 24.38/24.76
-[GOLD-PRICE]  02:10:42 [TICK] XAUUSD 4677.03/4677.25
+[BRK-DIAG]    02:16:18 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.16 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+[SUPERVISOR]  02:16:18 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.92 bracket=0.98 breakout=0.00 top_score=0.98 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+[VIX]         02:16:49 [TICK] VIX.F 24.38/24.76
+[GOLD-PRICE]  02:16:18 [TICK] XAUUSD 4677.03/4677.25
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
 [STARTUP-REPORT-BEGIN]
   OMEGA STARTUP REPORT
-  Generated : 2026-04-03 02:10:24 UTC
+  Generated : 2026-04-03 02:17:01 UTC
   Log file  : C:\Omega\logs\latest.log
   Collected : 34 lines over 45s
   Result    : PASS=0  FAIL=0  WARN=3  INFO=14
@@ -40,7 +40,7 @@ Generated : 2026-04-03 02:16:18 UTC
   [INFO]  First Signal           No signal in first 45s
                                        Normal if market quiet or in compression.
   [INFO]  Impulse Ghost          No impulse ghost blocks seen
-  [INFO]  Build Stamp            commit=d7a0a16  built=2026-04-03 02:09:31 UTC
+  [INFO]  Build Stamp            commit=b837c9d  built=2026-04-03 02:16:09 UTC
   [INFO]  Bar State              No bars_gold_m1.dat -- cold start
                                        Will request M15 tick data from broker on startup. GoldFlow delayed ~2min.
   [INFO]  Ratchet Fix            No ratchet activity yet
