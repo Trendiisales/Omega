@@ -9306,19 +9306,31 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
 
-            // ?? Composite Signal Scorer -- replaces soft Gate 4 chain ???????????
-            // Scores 10 conditions (13 points max). Entry allowed if score >= 5.
+            // ?? Composite Signal Scorer (RenTec #2 + #3) ??????????????????
+            // Scores 13 conditions (16 points max). Entry allowed if score >= 5.
+            // Includes cross-asset: macro regime, DXY momentum, SPX direction.
             // Hard gates (spread, bars not ready, cost, high impact) remain below.
-            // Soft gates (tick storm, ATR/VWAP coherence, BBW squeeze counter)
-            // are now scored conditions -- partial confluence still allows entry.
-            // This directly fixes over-filtering that killed trade frequency.
             if (gf_tick_ok && g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
                 const bool gf_long_sc = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
-                const ScoreResult sr  = g_signal_scorer.score_and_store(
+
+                // SPX rolling return: g_bars_sp.m1 EMA9 vs EMA50 direction as proxy
+                // when insufficient bars, fall back to 0 (neutral -- no penalty)
+                const double spx_return = [&]() -> double {
+                    if (!g_bars_sp.m1.ind.m1_ready.load(std::memory_order_relaxed)) return 0.0;
+                    const double sp_e9  = g_bars_sp.m1.ind.ema9 .load(std::memory_order_relaxed);
+                    const double sp_e50 = g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed);
+                    if (sp_e50 <= 0.0) return 0.0;
+                    return (sp_e9 - sp_e50) / sp_e50;  // fractional: >0 = SPX rising, <0 = falling
+                }();
+
+                const ScoreResult sr = g_signal_scorer.score_and_store(
                     g_bars_gold.m1.ind,
                     gf_long_sc,
                     g_macro_ctx.gold_l2_imbalance,
-                    g_macro_ctx.gold_microprice_bias);
+                    g_macro_ctx.gold_microprice_bias,
+                    g_macro_ctx.regime,
+                    g_macroDetector.dxyReturn(),
+                    spx_return);
 
                 g_signal_scorer.log_score(sr, gf_long_sc);
 
