@@ -4487,7 +4487,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     {
         static int64_t s_last_bar_save = 0;
         const int64_t now_bs = nowSec();
-        if (now_bs - s_last_bar_save >= 600) {  // every 10 minutes
+        if (now_bs - s_last_bar_save >= 60) {  // every 60s -- ensures warm restart even after short session
             s_last_bar_save = now_bs;
             if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
                 const std::string base = log_root_dir();

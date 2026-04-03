@@ -825,13 +825,17 @@ private:
                     // GetTickDataReq (pt=2145) serves the same raw price history without
                     // crashing. We build OHLC bars from ticks in on_tick_data_res().
                     // period sentinels: 105=M5, 107=M15, 1=M1 (all use tick fallback now)
-                    // Window: 6 hours = 24 M15 bars (enough for EMA warmup).
-                    // Reduced from 50hr: 50hr of XAUUSD ticks = ~600k ticks = large payload
-                    // that delays seeding and may trigger broker size limits.
-                    // 6hr = ~72k ticks, processes in <1s, seeds 24 M15 bars instantly.
+                    // Window: 90 minutes = 6 M15 bars.
+                    // Previous 6hr window (~72k ticks) was causing BlackBull to drop
+                    // the TCP connection before responding -- confirmed by the
+                    // restart-every-10-15min pattern in April 2 logs.
+                    // 90min = ~54k ticks -- still may be borderline.
+                    // The live FIX tick stream builds bars independently; after 15 M15
+                    // bar closes (3h45m) m1_ready=true regardless of this request.
+                    // This request just accelerates warmup on cold start.
                     const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count();
-                    const int64_t from_ms = now_ms - 6LL * 3600LL * 1000LL;
+                    const int64_t from_ms = now_ms - 90LL * 60LL * 1000LL;  // 90 min
                     last_bar_req_name_ = req.name;
                     const int display_period = (req.period > 100) ? (req.period - 100) : req.period;
                     send_msg(ssl, PB::get_tick_data_req(ctid_account_id, req.sid, from_ms, now_ms, 1));
@@ -913,6 +917,18 @@ private:
                             save_bar_failed(bar_failed_path_);
                             std::cerr << "[CTRADER] TCP drop after bar req " << last_sent.name
                                       << " period=" << last_sent.period << " -- marked failed, skipping on reconnect\n";
+                        }
+                    } else if (last_sent.period == 105 || last_sent.period == 107) {
+                        // Tick data request (M5/M15) dropped the connection.
+                        // Mark as attempted so we don't retry and cause another drop.
+                        // Live FIX tick stream builds bars independently over ~4hr.
+                        // NOT persisted to disk -- only session-level suppression.
+                        const std::string key = last_sent.name + ":" + std::to_string(last_sent.period);
+                        if (!bar_failed_reqs.count(key)) {
+                            bar_failed_reqs.insert(key);
+                            std::cerr << "[CTRADER] TCP drop after tick data req " << last_sent.name
+                                      << " period=" << last_sent.period
+                                      << " -- suppressing retry this session. Live FIX ticks will warm bars in ~4hr.\n";
                         }
                     }
                 }
