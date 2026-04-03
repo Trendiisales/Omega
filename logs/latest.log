@@ -3841,3 +3841,20 @@ OK: cTrader live, L2 events flowing (book still filling)
 02:10:15 [TICK] DJ30.F 46711.10/46716.90
 02:10:21 [CTRADER-BARS] XAUUSD spots sub sent
 02:10:21 [CTRADER-BARS] Spots sub ACK
+02:10:30 [TICK] VIX.F 24.38/24.76
+02:10:33 [TICK] GBPUSD 1.32/1.32
+02:10:42 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=3.929ms cap=120ms lat_ok=1 session=ACTIVE
+02:10:42 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+02:10:42 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+02:10:42 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+02:10:42 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+02:10:42 [TICK] USOIL.F 111.90/112.01
+02:10:42 [TICK] XAUUSD 4677.03/4677.25
+02:10:42 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.16 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:10:42 [TICK] XAGUSD 73.02/73.05
+02:10:42 [TICK] DX.F 99.79/99.89
+02:10:42 [TICK] NGAS.F 2.79/2.82
+02:10:42 [TICK] ESTX50 5699.40/5700.80
+02:10:42 [TICK] GER40 23202.60/23204.30
+02:10:42 [TICK] UK100 10455.10/10456.90
+02:10:42 [TICK] BRENT 106.44/107.11
