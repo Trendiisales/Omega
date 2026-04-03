@@ -10948,14 +10948,24 @@ static void quote_loop() {
                                 fflush(stdout);
                                 g_telemetry.SetHealthAlert("RECONNECT LOOP -- L2 DISABLED");
                             } else {
-                                printf("[SYSTEM-ALERT] L2_DEAD >60s -- forcing cTrader reconnect #%d\n",
-                                       s_l2_reconnect_idx);
-                                fflush(stdout);
-                                g_ctrader_depth.stop();
-                                std::this_thread::sleep_for(std::chrono::seconds(2));
-                                g_ctrader_depth.start();
-                                s_depth_dead_since = 0;  // reset so we don't immediately re-trigger
-                                alert_msg = "L2 RECONNECTING #" + std::to_string(s_l2_reconnect_idx);
+                                // L2 dead >60s -- LOG ONLY, do NOT restart cTrader.
+                                // Auto-restart was introduced in d7a0a16 but is the ROOT CAUSE
+                                // of the constant cTrader reconnect loop:
+                                //   L2 quiet (normal in Asia) -> restart -> tick data req sent
+                                //   -> BlackBull drops TCP -> L2 dead again -> restart -> loop
+                                // Before d7a0a16 cTrader never restarted mid-session and
+                                // overnight sessions worked fine. Reverting to that behaviour.
+                                // The circuit breaker above still catches genuine stuck feeds.
+                                if (now_s - s_depth_dead_since >= 60) {
+                                    static int64_t s_l2_log = 0;
+                                    if (now_s - s_l2_log >= 60) {
+                                        s_l2_log = now_s;
+                                        printf("[SYSTEM-ALERT] L2_DEAD >%llds -- running on FIX prices (no auto-restart)\n",
+                                               (long long)(now_s - s_depth_dead_since));
+                                        fflush(stdout);
+                                    }
+                                }
+                                alert_msg = "L2 DEAD -- FIX PRICES ONLY";
                             }
                         }
                     } else {
