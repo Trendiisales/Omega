@@ -1021,6 +1021,28 @@ public:
             }
         }
 
+        // 11. Walk-forward OOS validation scale (RenTec #6).
+        // Periodic 5-fold WFO run against closed trade history.
+        // If OOS Sharpe < 0.8 or OOS/IS ratio < 0.4 in majority of folds,
+        // reduce size to 0.75x (degraded) or 0.50x (failing).
+        // Scale = 1.0 during warmup (< 40 trades). No scale-up from WFO.
+        if (wfo_scale_fn) {
+            const double wfo_s = wfo_scale_fn(symbol);
+            if (wfo_s < 1.0) {
+                static thread_local int64_t s_wfo_log = 0;
+                const int64_t now_s = static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+                if (now_s - s_wfo_log > 300) {
+                    s_wfo_log = now_s;
+                    std::printf("[ADAPTIVE-RISK] %s wfo_scale=%.2f (OOS validation %s)\n",
+                                symbol.c_str(), wfo_s,
+                                wfo_s >= 0.75 ? "DEGRADED" : "FAILING");
+                }
+                lot *= wfo_s;
+            }
+        }
+
         // Floor to 0.01 lots, round to 2dp
         lot = std::max(0.01, std::floor(lot * 100.0 + 0.5) / 100.0);
         return lot;
@@ -1037,6 +1059,10 @@ public:
     // Callback registered by main.cpp: returns VPIN size scale for a symbol.
     // Returns 0.5 when VPIN >= high_threshold, 1.0 when below.
     std::function<double(const std::string&)> vpin_scale_fn;
+
+    // Callback registered by main.cpp: returns walk-forward OOS validation scale.
+    // Returns 1.0 (pass), 0.75 (degraded), or 0.50 (failing). (RenTec #6)
+    std::function<double(const std::string&)> wfo_scale_fn;
 
     // ?? Correlation heat check ?????????????????????????????????????????????????
     // Returns false if opening a new position in this symbol would exceed

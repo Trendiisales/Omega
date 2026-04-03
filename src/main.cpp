@@ -83,6 +83,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "OmegaVolTargeter.hpp"       // EWMA vol targeting + ADX momentum regime classifier
 #include "OmegaSignalScorer.hpp"      // Composite signal scoring (replaces soft gate chain)
 #include "OmegaCrowdingGuard.hpp"     // Directional crowding tracker + score penalty (RenTec #4)
+#include "OmegaWalkForward.hpp"       // Rolling live walk-forward OOS validation (RenTec #6)
 
 // ?????????????????????????????????????????????????????????????????????????????
 // Singleton
@@ -403,6 +404,7 @@ static SymBarState         g_bars_ger;    // GER40   M1/M5 bars + indicators
 static OmegaVolTargeter    g_vol_targeter;   // EWMA vol targeting + momentum regime
 static OmegaSignalScorer   g_signal_scorer;   // Composite signal scoring (13-point system)
 static OmegaCrowdingGuard  g_crowding_guard;  // Directional crowding tracker (RenTec #4)
+static OmegaWalkForward    g_walk_forward;    // Rolling walk-forward OOS validation (RenTec #6)
 static std::atomic<bool>   g_quote_logout_received(false);  // server sent Logout to quote session
 static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup -- unblocks ctrl handler
 static std::atomic<bool>   g_trade_thread_done(false);  // set by trade_loop() just before it returns
@@ -3747,6 +3749,7 @@ static void maybe_reset_daily_ledger() {
     g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
     g_edges.fill_quality.save_csv(log_root_dir() + "/fill_quality.csv");
     g_edges.fill_quality.print_summary();
+    g_walk_forward.log_all();   // RenTec #6 -- WFO final state summary
     g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
     g_corr_matrix.save_state(log_root_dir() + "/corr_matrix.dat");  // persist EWM running stats
     g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
@@ -3914,6 +3917,21 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     // Tracks last 10 trades per symbol to detect directional crowding.
     // Penalty is applied at entry scoring time, not here.
     g_crowding_guard.update(tr.symbol, tr.side == "LONG");
+
+    // ?? Walk-forward OOS validation -- update per-symbol pnl history (RenTec #6) ?????
+    // Rebuilds pnl vector from ledger snapshot and re-runs 5-fold WFO every 20 trades.
+    // Scale result is read by AdaptiveRiskManager::adjusted_lot() step 11.
+    {
+        const auto trades = g_omegaLedger.snapshot();
+        std::vector<double> sym_pnl;
+        sym_pnl.reserve(trades.size());
+        for (const auto& t : trades) {
+            if (t.symbol == tr.symbol &&
+                t.exitReason != "PARTIAL_1R" && t.exitReason != "PARTIAL_2R")
+                sym_pnl.push_back(t.net_pnl != 0.0 ? t.net_pnl : t.pnl);
+        }
+        g_walk_forward.update(tr.symbol, sym_pnl);
+    }
 
     // ?? Hourly P&L ring buffer ?????????????????????????????????????????????
     {
@@ -12875,6 +12893,14 @@ int main(int argc, char* argv[])
         g_edges.vpin.block_threshold = 0.80;
         g_adaptive_risk.vpin_scale_fn = [](const std::string& sym) -> double {
             return g_edges.vpin.size_scale(sym);
+        };
+
+        // Walk-forward OOS validation scale (RenTec #6).
+        // Updated every 20 trades via handle_closed_trade -> g_walk_forward.update().
+        // Returns 1.0 (pass), 0.75 (degraded), 0.50 (failing).
+        // No penalty during warmup (< 40 trades).
+        g_adaptive_risk.wfo_scale_fn = [](const std::string& sym) -> double {
+            return g_walk_forward.scale(sym);
         };
 
         // Regime adaptor is enabled; in SHADOW mode it is informational only
