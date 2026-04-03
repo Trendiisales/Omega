@@ -9255,9 +9255,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // is continuation not reversal -- price is in a strong downtrend.
                     // Allow the entry; log but do not block.
                     const bool momentum_regime = g_vol_targeter.is_momentum_regime(
-                        g_bars_gold.m1.ind.adx14.load(std::memory_order_relaxed),
-                        g_bars_gold.m1.ind.adx_trending.load(std::memory_order_relaxed),
-                        g_bars_gold.m1.ind.atr_expanding.load(std::memory_order_relaxed));
+                        g_bars_gold.m1.ind);
                     if (momentum_regime) {
                         printf("[GF-BAR-ALLOW] XAUUSD SHORT allowed RSI=%.1f < %.0f"
                                " -- momentum regime (ADX=%.1f ATR expanding)"
