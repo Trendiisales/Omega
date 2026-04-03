@@ -1611,8 +1611,26 @@ private:
                     : (ratchet_sl < pos.sl);
 
                 if (sl_improves) {
-                    pos.sl               = ratchet_sl;
-                    pos.dollar_lock_sl   = ratchet_sl;
+                    // CRITICAL: ratchet SL must never be ABOVE current price for longs
+                    // or BELOW current price for shorts. If locked_pts places SL beyond
+                    // current price, the trade exits on the very next tick.
+                    // Evidence: new_sl=4714.20 when price=4713.43 → immediate exit at 9s.
+                    // Fix: cap ratchet_sl to current price minus a minimum buffer (0.5pt).
+                    // This preserves the locked profit intent while preventing instant exit.
+                    static constexpr double RATCHET_PRICE_BUFFER = 0.5; // pts below/above mid
+                    double capped_sl = ratchet_sl;
+                    if (pos.is_long && capped_sl > mid - RATCHET_PRICE_BUFFER)
+                        capped_sl = mid - RATCHET_PRICE_BUFFER;
+                    if (!pos.is_long && capped_sl < mid + RATCHET_PRICE_BUFFER)
+                        capped_sl = mid + RATCHET_PRICE_BUFFER;
+                    // Only apply if the capped value still improves on current SL
+                    const bool capped_improves = pos.is_long
+                        ? (capped_sl > pos.sl)
+                        : (capped_sl < pos.sl);
+                    if (!capped_improves) goto skip_ratchet;
+
+                    pos.sl               = capped_sl;
+                    pos.dollar_lock_sl   = capped_sl;
                     pos.dollar_lock_tier = tier_now;
 
                     std::cout << "[GOLD-FLOW] DOLLAR-RATCHET tier=" << tier_now
@@ -1621,11 +1639,13 @@ private:
                               << " locked=$" << locked_usd
                               << " locked_pts=" << std::setprecision(2) << eff_locked_pts
                               << (eff_locked_pts > locked_pts ? "(atr_floor)" : "")
-                              << " new_sl=" << ratchet_sl
+                              << " new_sl=" << capped_sl
+                              << (capped_sl < ratchet_sl ? "(price_capped)" : "")
                               << " be_locked=" << pos.be_locked
                               << (pos.is_long ? " LONG" : " SHORT") << "\n";
                     std::cout.flush();
                 }
+                skip_ratchet:;
             }
         }
 
