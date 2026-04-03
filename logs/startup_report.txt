@@ -1,8 +1,8 @@
 ﻿OMEGA STARTUP REPORT
-Generated : 2026-04-03 00:39:23 UTC
+Generated : 2026-04-03 00:54:34 UTC
 Log file  : C:\Omega\logs\latest.log
 Collected : 34 lines over 45s
-Result    : PASS=0  FAIL=0  WARN=3  INFO=10
+Result    : PASS=0  FAIL=0  WARN=3  INFO=14
 ========================================================================
 [INFO]  ATR Seed               No GFE-SEED line seen
                                      Engine may have loaded ATR from disk (normal) -- see ATR State check.
@@ -24,6 +24,12 @@ Result    : PASS=0  FAIL=0  WARN=3  INFO=10
 [INFO]  First Signal           No signal in first 45s
                                      Normal if market quiet or in compression.
 [INFO]  Impulse Ghost          No impulse ghost blocks seen
-[INFO]  Build Stamp            commit=26fe0a9  built=2026-04-03 00:38:30 UTC
+[INFO]  Build Stamp            commit=57e8d1e  built=2026-04-03 00:53:43 UTC
+[INFO]  Bar State              No bars_gold_m1.dat -- cold start
+                                     Will request M15 tick data from broker on startup. GoldFlow delayed ~2min.
+[INFO]  Ratchet Fix            No ratchet activity yet
+[INFO]  Bracket Window Fix     No bracket arm yet (normal if market quiet)
+[INFO]  Bar Auto-Save          No BAR-SAVE yet (fires every 10min)
+                                     Normal if startup < 10min ago.
 ========================================================================
-RESULT: PASS=0  FAIL=0  WARN=3  INFO=10
+RESULT: PASS=0  FAIL=0  WARN=3  INFO=14
