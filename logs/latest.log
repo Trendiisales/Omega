@@ -10090,3 +10090,19 @@ OK: cTrader live, L2 events flowing (book still filling)
 05:17:59 [TICK] DJ30.F 46667.10/46672.90
 05:17:59 [TICK] US500.F 6611.22/6612.03
 05:17:59 [TICK] VIX.F 24.43/24.81
+05:18:01 [TICK] NZDUSD 0.57/0.57
+05:18:16 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=4.891ms cap=120ms lat_ok=1 session=ACTIVE
+05:18:16 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+05:18:16 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+05:18:16 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+05:18:16 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+05:18:16 [TICK] XAUUSD 4677.03/4677.25
+05:18:16 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.09 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+05:18:16 [TICK] XAGUSD 73.02/73.05
+05:18:16 [TICK] BRENT 106.44/107.11
+05:18:16 [TICK] NGAS.F 2.79/2.82
+05:18:16 [TICK] USOIL.F 111.90/112.01
+05:18:16 [TICK] ESTX50 5699.40/5700.80
+05:18:16 [TICK] GER40 23202.60/23204.30
+05:18:16 [TICK] UK100 10455.10/10456.90
+05:18:16 [TICK] DX.F 99.79/99.89
