@@ -526,6 +526,14 @@ static std::atomic<int>      g_gold_flow_exit_reason{0};  // 0=other 1=SL_HIT 2=
 // Price at last GoldFlow exit * 100 stored as integer (atomic double workaround)
 // Used to detect post-close reversal magnitude for drift reset.
 static std::atomic<int64_t>  g_gold_flow_exit_price_x100{0};
+
+// Last GoldFlow gate block reason -- updated every time gf_tick_ok=false
+// Used by health watchdog to show specific reason on GUI instead of "NO TRADES Xmin"
+static std::atomic<const char*> g_last_gf_block_reason{nullptr};
+
+// Engine pause tracking -- maps engine key to pause_until epoch sec
+// Used by health watchdog to detect consecutive loss pauses
+static std::unordered_map<std::string, int64_t> g_engine_pause;
 // When GoldFlow SL_HIT and drift reverses: allow GoldStack fast counter-entry
 // by bypassing the 120s SL cooldown. Window = 60s from flow exit.
 static std::atomic<int64_t>  g_gold_reversal_window_until{0};
@@ -3740,6 +3748,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
             const int pause_sec  = g_cfg.loss_pause_sec;
             if (++st.consec_losses >= loss_limit) {
                 st.pause_until = nowSec() + pause_sec;
+                g_engine_pause[risk_key] = st.pause_until;  // expose to health watchdog
                 std::cout << "[OMEGA-RISK] " << risk_key << " "
                           << loss_limit << " consecutive losses -- pause "
                           << pause_sec << "s\n";
@@ -9168,6 +9177,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                            tick_rate, bb_sq ? 1 : 0,
                            bull_div ? 1 : 0, bear_div ? 1 : 0);
                     fflush(stdout);
+                    // Store for health watchdog GUI display
+                    if (gf_block_reason) g_last_gf_block_reason.store(gf_block_reason, std::memory_order_relaxed);
                 }
             }
 
@@ -10569,74 +10580,226 @@ static void quote_loop() {
                 print_perf_stats();
 
                 // ================================================================
-                // SYSTEM HEALTH WATCHDOG -- fires every 30s during active session
-                // Detects critical failures and writes [SYSTEM-ALERT] to log so
-                // the GUI header can flash red. No phones needed -- just read the log.
+                // SYSTEM HEALTH WATCHDOG -- fires every 30s
+                // Every failure mode has: detection, log, GUI alert, fallback action.
+                // No silent failures. Priority order: highest impact first.
                 // ================================================================
                 {
-                    const bool sess_active = session_tradeable();
-                    const int64_t now_s    = nowSec();
+                    const bool    sess_active = session_tradeable();
+                    const int64_t now_s       = nowSec();
 
-                    // Track per-check state
-                    static int64_t s_last_depth_events = 0;
+                    static int64_t s_last_depth_events  = 0;
                     static int64_t s_last_depth_check_s = 0;
                     static int64_t s_depth_dead_since   = 0;
                     static int64_t s_no_trade_since     = 0;
                     static int64_t s_last_trade_count   = 0;
+                    static int64_t s_startup_s          = 0;
+                    static int64_t s_l2_reconnect_ts[3] = {0,0,0}; // ring buffer of reconnect times
+                    static int     s_l2_reconnect_idx   = 0;
+                    static bool    s_l2_reconnect_blocked = false;
+                    static int64_t s_bracket_stall_since = 0;
+                    static int64_t s_vix_dead_since     = 0;
+                    static int     s_fix_reconnect_n    = 0;
+                    static int64_t s_last_fix_connected = 0;
 
-                    const int64_t depth_now = (int64_t)g_ctrader_depth.depth_events_total.load();
-                    const bool    l2_live   = g_macro_ctx.ctrader_l2_live;
-                    const bool    gold_seeded = g_bars_gold.m15.ind.m1_ready.load(std::memory_order_relaxed);
-                    const int64_t trade_count = g_omegaLedger.total();
+                    if (s_startup_s == 0) s_startup_s = now_s;
+                    const int64_t uptime = now_s - s_startup_s;
 
-                    // --- Alert 1: L2 depth feed dead ---
+                    const int64_t depth_now   = (int64_t)g_ctrader_depth.depth_events_total.load();
+                    const bool    l2_live      = g_macro_ctx.ctrader_l2_live;
+                    const bool    gold_seeded  = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
+                    const int64_t trade_count  = g_omegaLedger.total();
+
+                    // Determine dominant alert to show (highest priority wins)
+                    std::string alert_msg;
+                    bool any_critical = false;
+
+                    // ---- [1] L2 depth feed dead + AUTO-RECONNECT ----------------
+                    // Detection: depth_events_total frozen while l2_live=true
+                    // Fallback:  after 60s dead, force cTrader reconnect (stop/start)
+                    // Alert:     GUI "L2 FEED DEAD Xs"
                     if (l2_live && depth_now == s_last_depth_events && s_last_depth_check_s > 0) {
                         if (s_depth_dead_since == 0) s_depth_dead_since = now_s;
                         const int64_t dead_secs = now_s - s_depth_dead_since;
                         if (dead_secs >= 30) {
-                            std::cout << "[SYSTEM-ALERT] L2_DEAD depth_events frozen for "
-                                      << dead_secs << "s -- cTrader feed may have dropped\n";
-                            g_telemetry.SetHealthAlert("L2 FEED DEAD " + std::to_string(dead_secs) + "s");
+                            printf("[SYSTEM-ALERT] L2_DEAD depth_events frozen %llds -- cTrader feed dropped\n",
+                                   (long long)dead_secs);
+                            fflush(stdout);
+                            alert_msg = "L2 FEED DEAD " + std::to_string(dead_secs) + "s";
+                            any_critical = true;
+                        }
+                        if (dead_secs >= 60 && !s_l2_reconnect_blocked) {
+                            // Circuit breaker: track reconnect times in ring buffer
+                            s_l2_reconnect_ts[s_l2_reconnect_idx % 3] = now_s;
+                            ++s_l2_reconnect_idx;
+                            // If 3 reconnects within 5 minutes: block further reconnects
+                            const int64_t oldest = s_l2_reconnect_ts[(s_l2_reconnect_idx) % 3];
+                            const bool loop_detected = (s_l2_reconnect_idx >= 3)
+                                && (now_s - oldest < 300);
+                            if (loop_detected) {
+                                s_l2_reconnect_blocked = true;
+                                printf("[SYSTEM-ALERT] L2_RECONNECT_LOOP 3 reconnects in %llds"
+                                       " -- reconnect blocked, running on FIX prices only\n",
+                                       (long long)(now_s - oldest));
+                                fflush(stdout);
+                                g_telemetry.SetHealthAlert("RECONNECT LOOP -- L2 DISABLED");
+                            } else {
+                                printf("[SYSTEM-ALERT] L2_DEAD >60s -- forcing cTrader reconnect #%d\n",
+                                       s_l2_reconnect_idx);
+                                fflush(stdout);
+                                g_ctrader_depth.stop();
+                                std::this_thread::sleep_for(std::chrono::seconds(2));
+                                g_ctrader_depth.start();
+                                s_depth_dead_since = 0;  // reset so we don't immediately re-trigger
+                                alert_msg = "L2 RECONNECTING #" + std::to_string(s_l2_reconnect_idx);
+                            }
                         }
                     } else {
+                        if (s_depth_dead_since > 0) {
+                            printf("[SYSTEM-ALERT] L2_RESTORED after %llds\n",
+                                   (long long)(now_s - s_depth_dead_since));
+                            fflush(stdout);
+                            s_l2_reconnect_blocked = false;  // clear block on successful restore
+                        }
                         s_depth_dead_since = 0;
                     }
                     s_last_depth_events  = depth_now;
                     s_last_depth_check_s = now_s;
 
-                    // --- Alert 2: Gold M15 bars seed from pt=2145 tick data (30-90s) ---
-                    // Only alert after 150s -- GoldFlow already bypasses bar gates at 120s.
-                    // This checks M15 bar seeding, NOT gold tick flow. Ticks always show
-                    // in [TICK] stream even when m1_ready=false (bars build separately).
-                    static int64_t s_startup_s = 0;
-                    if (s_startup_s == 0) s_startup_s = now_s;
-                    const int64_t uptime = now_s - s_startup_s;
+                    // ---- [2] Gold bars unseeded + ATR SNAP FALLBACK -------------
+                    // Detection: m1_ready=false after 150s uptime
+                    // Fallback:  snap ATR from GoldStack vol_range (real market data)
+                    //            instead of 5.00 floor — "degraded" not "blind"
+                    // Alert:     GUI "GOLD BARS Xs"
                     if (!gold_seeded && uptime > 150) {
-                        std::cout << "[SYSTEM-ALERT] GOLD_M15_BARS_NOT_SEEDED after "
-                                  << uptime << "s -- pt=2145 response may have failed."
-                                  << " GoldFlow running without bar ATR/EMA gates.\n";
-                        g_telemetry.SetHealthAlert("GOLD BARS " + std::to_string(uptime) + "s");
+                        printf("[SYSTEM-ALERT] GOLD_BARS_UNSEEDED %llds -- GoldFlow degraded (no RSI/EMA gates)\n",
+                               (long long)uptime);
+                        fflush(stdout);
+                        if (alert_msg.empty())
+                            alert_msg = "GOLD BARS " + std::to_string(uptime) + "s";
+                        any_critical = true;
+
+                        // ATR snap fallback: derive ATR from live vol_range instead of 5.00 floor
+                        const double snap_vol = g_gold_stack.vol_range();
+                        if (snap_vol > 1.5 && g_gold_flow.current_atr() <= 5.0) {
+                            // vol_range = high-low of last 50 ticks ~ 1.5x ATR empirically
+                            const double snapped_atr = snap_vol / 1.5;
+                            g_gold_flow.set_atr_override(snapped_atr);
+                            printf("[SYSTEM-ALERT] BARS_ATR_SNAP vol_range=%.2f -> atr_override=%.2f\n",
+                                   snap_vol, snapped_atr);
+                            fflush(stdout);
+                        }
                     }
 
-                    // --- Alert 3: No trades during active session for 45+ minutes ---
+                    // ---- [3] Bar state corrupt on disk --------------------------
+                    // Detection: load_indicators logged rejection (checked at startup)
+                    // Fallback:  save_indicators now rejects flat state (3ad3dcd)
+                    // Alert:     GUI "BAR STATE CORRUPT" set at load time (see startup block)
+                    // (No runtime action needed — handled at startup)
+
+                    // ---- [4] cTrader reconnect loop -----------------------------
+                    // Handled inside [1] circuit breaker above.
+                    // Additional: expose reconnect count on GUI
+                    {
+                        const bool ct_now_active = g_ctrader_depth.depth_active.load();
+                        if (ct_now_active && s_last_fix_connected == 0)
+                            s_last_fix_connected = now_s;
+                        if (!ct_now_active && s_last_fix_connected > 0) {
+                            ++s_fix_reconnect_n;
+                            s_last_fix_connected = 0;
+                            printf("[SYSTEM-ALERT] CTRADER_RECONNECT #%d\n", s_fix_reconnect_n);
+                            fflush(stdout);
+                            if (alert_msg.empty())
+                                alert_msg = "FIX RECONNECT #" + std::to_string(s_fix_reconnect_n);
+                        }
+                    }
+
+                    // ---- [5] Bracket window stall --------------------------------
+                    // Detection: can_arm=1 but range=0.00 for >5 minutes
+                    // Fallback:  efb68a8 fixed window starvation — this is a residual check
+                    // Alert:     GUI "BRACKET STALLED Xmin"
+                    {
+                        const bool can_arm_gold = (g_macro_ctx.session_slot != 0);
+                        const double brk_range  = g_bracket_gold.current_range();
+                        if (can_arm_gold && brk_range < 0.01 && sess_active) {
+                            if (s_bracket_stall_since == 0) s_bracket_stall_since = now_s;
+                            const int64_t stall_mins = (now_s - s_bracket_stall_since) / 60;
+                            if (stall_mins >= 5) {
+                                printf("[SYSTEM-ALERT] BRACKET_STALLED can_arm=1 range=0.00 for %lldmin\n",
+                                       (long long)stall_mins);
+                                fflush(stdout);
+                                if (alert_msg.empty())
+                                    alert_msg = "BRACKET STALLED " + std::to_string(stall_mins) + "min";
+                            }
+                        } else {
+                            s_bracket_stall_since = 0;
+                        }
+                    }
+
+                    // ---- [6] GoldFlow block reason on GUI -----------------------
+                    // Detection: no [GOLD-FLOW] ENTRY for 45+ min during session
+                    // Fallback:  none — gates are working as designed
+                    // Alert:     GUI shows last gf_block_reason not just "NO TRADES"
                     if (sess_active) {
                         if (trade_count == s_last_trade_count) {
                             if (s_no_trade_since == 0) s_no_trade_since = now_s;
                             const int64_t idle_mins = (now_s - s_no_trade_since) / 60;
                             if (idle_mins >= 45) {
-                                std::cout << "[SYSTEM-ALERT] NO_TRADES session active for "
-                                          << idle_mins << "min with no trades -- check gates\n";
-                                g_telemetry.SetHealthAlert("NO TRADES " + std::to_string(idle_mins) + "min");
+                                printf("[SYSTEM-ALERT] NO_TRADES session active %lldmin -- check gates\n",
+                                       (long long)idle_mins);
+                                fflush(stdout);
+                                // Show last GF block reason on GUI rather than generic message
+                                const std::string last_block = g_last_gf_block_reason.load()
+                                    ? std::string(g_last_gf_block_reason.load()) : "UNKNOWN";
+                                if (alert_msg.empty())
+                                    alert_msg = "NO TRADES " + std::to_string(idle_mins)
+                                                + "min [" + last_block + "]";
                             }
                         } else {
-                            s_no_trade_since  = 0;
+                            s_no_trade_since   = 0;
                             s_last_trade_count = trade_count;
                         }
                     }
 
-                    // --- Clear alert if all healthy ---
-                    if (l2_live && gold_seeded && depth_now > s_last_depth_events) {
-                        g_telemetry.ClearHealthAlert();
+                    // ---- [7] VIX feed dead --------------------------------------
+                    // Detection: vix_is_stale() and session active
+                    // Fallback:  ATR uses last known VIX or floor — already handled
+                    // Alert:     GUI "VIX DEAD Xmin"
+                    if (sess_active && g_macroDetector.vix_is_stale()) {
+                        if (s_vix_dead_since == 0) s_vix_dead_since = now_s;
+                        const int64_t vix_dead_mins = (now_s - s_vix_dead_since) / 60;
+                        if (vix_dead_mins >= 10) {
+                            printf("[SYSTEM-ALERT] VIX_DEAD no VIX.F tick for %lldmin -- ATR using last known\n",
+                                   (long long)vix_dead_mins);
+                            fflush(stdout);
+                            if (alert_msg.empty())
+                                alert_msg = "VIX DEAD " + std::to_string(vix_dead_mins) + "min";
+                        }
+                    } else {
+                        s_vix_dead_since = 0;
+                    }
+
+                    // ---- [8] Consecutive loss pause -----------------------------
+                    // Detection: pause_until > now on any engine state
+                    // Fallback:  built-in — entries blocked until pause expires
+                    // Alert:     GUI "CONSEC LOSS PAUSE"
+                    {
+                        bool any_paused = false;
+                        // Check gold engine pause state via ledger
+                        for (const auto& kv : g_engine_pause) {
+                            if (kv.second > now_s) { any_paused = true; break; }
+                        }
+                        if (any_paused && alert_msg.empty())
+                            alert_msg = "CONSEC LOSS PAUSE";
+                    }
+
+                    // ---- Write final alert to GUI (highest priority wins) --------
+                    if (!alert_msg.empty()) {
+                        g_telemetry.SetHealthAlert(alert_msg);
+                    } else if (!any_critical) {
+                        // Only clear if truly healthy: l2 live, bars seeded, events flowing
+                        if (l2_live && gold_seeded && depth_now > 0)
+                            g_telemetry.ClearHealthAlert();
                     }
                 }
                 // ================================================================

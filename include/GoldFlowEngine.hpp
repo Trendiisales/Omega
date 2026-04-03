@@ -757,6 +757,17 @@ struct GoldFlowEngine {
 
     double current_atr() const noexcept { return m_atr; }
 
+    // set_atr_override(): called by health watchdog when bars are unseeded
+    // and a better ATR estimate is available from GoldStack vol_range.
+    // Only applies when ATR is still at the cold-start floor (<=5.0).
+    // Does not override live bar-derived ATR.
+    void set_atr_override(double atr) noexcept {
+        if (atr <= 0.0) return;
+        if (m_atr > 5.0) return;  // live ATR already better than floor — don't overwrite
+        m_atr     = std::max(GFE_ATR_MIN, atr);
+        m_atr_ewm = m_atr;
+    }
+
     // Feed bar ATR from cTrader M1 trendbar API into the engine.
     // Real OHLC true-range ATR is more accurate than tick-based estimation.
     // Called from main.cpp Gate 3 each tick when bars are seeded.

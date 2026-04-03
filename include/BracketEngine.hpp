@@ -180,6 +180,13 @@ public:
         return phase == BracketPhase::PENDING || phase == BracketPhase::LIVE;
     }
 
+    // current_range(): locked structure range for health watchdog
+    // Returns 0.0 when not yet armed (IDLE phase or window still filling)
+    double current_range() const noexcept {
+        if (m_locked_hi <= 0.0 || m_locked_lo <= 0.0) return 0.0;
+        return m_locked_hi - m_locked_lo;
+    }
+
     BracketBothSignals get_signals() noexcept {
         BracketBothSignals out = pending_both;
         pending_both = BracketBothSignals{};
