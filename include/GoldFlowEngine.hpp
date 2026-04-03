@@ -323,7 +323,12 @@ struct GoldFlowEngine {
                 fflush(stdout);
             }
         }
-        if (!l2_data_live && m_l2_was_live && !is_low_quality_session) return; // L2 dropped mid-session -- block
+        // NOTE: BlackBull does not send tag-271 (order book size).
+        // l2_data_live is always false on this broker -- drift fallback is permanent.
+        // Mid-session drop block intentionally disabled: m_l2_was_live could be set
+        // by a brief cTrader reconnect event then lost, permanently blocking entries.
+        // Drift fallback path below is the correct operating mode for BlackBull.
+        // if (!l2_data_live && m_l2_was_live && !is_low_quality_session) return;
 
         // Session-aware persistence thresholds: Asia requires 90% dominance, normal 75%
         // Continuation mode: lower persistence threshold for first re-entry after
