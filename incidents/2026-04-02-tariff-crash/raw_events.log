@@ -1,0 +1,142 @@
+01:03:30 [TRADE-COST] XAUUSD gross=$844.31 slip_in=$0.11 slip_out=$0.11 net=$844.03 exit=SL_HIT
+01:23:36 [TRADE-COST] XAUUSD gross=$0.00 slip_in=$0.11 slip_out=$0.11 net=$-0.28 exit=IMM_REVERSAL
+01:36:26 [GOLD-FLOW] ENTRY LONG @ 4687.53 sl=4677.48 sl_pts=10.05 (atr=10.05 spread_floor=1.10) size=0.08 spread=0.22 session=6
+01:36:35 [GOLD-FLOW] STAIR-PARTIAL_1R LONG @ 4692.88 qty=0.02 remaining=0.03 pnl_pts=5.35 pnl_usd=9 new_sl=4690.37
+01:36:35 [PARTIAL-CLOSE] XAUUSD gross=$8.56 net=$8.11 size=0.02 @ 4692.88
+01:36:36 [GOLD-FLOW] ENTRY LONG @ 4693.52 sl=4682.65 sl_pts=10.87 (atr=10.87 spread_floor=1.10) size=0.07 spread=0.22 session=-1
+01:36:37 [GOLD-FLOW] DOLLAR-RATCHET tier=1 open_pnl_full=$51 locked=$40 locked_pts=11.76 new_sl=4699.29 be_locked=1 LONG
+01:36:37 [GOLD-FLOW] EXIT LONG @ 4693.82 reason=TRAIL_HIT pnl_raw=0.21 pnl_usd=21.39 mfe=6.40 stage=1 held=11.00s
+01:36:37 [TRADE-COST] XAUUSD gross=$21.39 slip_in=$0.37 slip_out=$0.37 net=$20.43 exit=TRAIL_HIT
+01:40:27 [GOLD-FLOW] STAIR-PARTIAL_1R LONG @ 4698.84 qty=0.02 remaining=0.05 pnl_pts=5.32 pnl_usd=13 new_sl=4696.12
+01:40:27 [PARTIAL-CLOSE] XAUUSD gross=$12.77 net=$12.10 size=0.02 @ 4698.84
+01:40:29 [GOLD-FLOW] EXIT LONG @ 4696.06 reason=TRAIL_HIT pnl_raw=0.12 pnl_usd=12.45 mfe=5.43 stage=1 held=233.00s
+01:40:29 [TRADE-COST] XAUUSD gross=$12.45 slip_in=$0.54 slip_out=$0.54 net=$11.07 exit=TRAIL_HIT
+01:44:26 [GOLD-FLOW] ENTRY SHORT @ 4694.34 sl=4705.91 sl_pts=11.57 (atr=11.57 spread_floor=1.10) size=0.07 spread=0.22 session=6
+01:47:14 [GOLD-FLOW] DOLLAR-RATCHET tier=1 open_pnl_full=$53 locked=$40 locked_pts=13.33 new_sl=4681.01 be_locked=0 SHORT
+01:47:14 [GOLD-FLOW] EXIT SHORT @ 4686.82 reason=SL_HIT pnl_raw=0.23 pnl_usd=22.56 mfe=7.63 stage=0 held=168.00s
+01:47:14 [TRADE-COST] XAUUSD gross=$22.56 slip_in=$0.33 slip_out=$0.33 net=$21.72 exit=SL_HIT
+02:27:03 [GOLD-FLOW] ENTRY SHORT @ 4691.23 sl=4695.23 sl_pts=4.00 (atr=2.40 spread_floor=1.10) size=0.20 spread=0.22 session=6
+02:27:42 [GOLD-FLOW] STAIR-PARTIAL_1R SHORT @ 4689.41 qty=0.04 remaining=0.09 pnl_pts=1.82 pnl_usd=8 new_sl=4690.01
+02:27:42 [PARTIAL-CLOSE] XAUUSD gross=$7.64 net=$6.47 size=0.04 @ 4689.41
+02:27:42 [GOLD-FLOW] DOLLAR-RATCHET tier=1 open_pnl_full=$50 locked=$40 locked_pts=4.55 new_sl=4686.68 be_locked=1 SHORT
+02:27:42 [GOLD-FLOW] EXIT SHORT @ 4688.83 reason=TRAIL_HIT pnl_raw=0.21 pnl_usd=21.12 mfe=2.51 stage=1 held=39.00s
+02:27:42 [TRADE-COST] XAUUSD gross=$21.12 slip_in=$0.97 slip_out=$0.97 net=$18.66 exit=TRAIL_HIT
+02:50:34 [TRADE-COST] XAUUSD gross=$-2.76 slip_in=$0.11 slip_out=$0.11 net=$-3.04 exit=SL_HIT
+02:57:15 [GOLD-FLOW] ENTRY LONG @ 4686.09 sl=4682.09 sl_pts=4.00 (atr=3.38 spread_floor=1.10) size=0.20 spread=0.22 session=6
+02:57:47 [GOLD-FLOW] STAIR-PARTIAL_1R LONG @ 4688.07 qty=0.03 remaining=0.07 pnl_pts=1.98 pnl_usd=7 new_sl=4687.22
+02:57:47 [PARTIAL-CLOSE] XAUUSD gross=$6.73 net=$5.78 size=0.03 @ 4688.07
+02:57:48 [GOLD-FLOW] ENTRY LONG @ 4688.49 sl=4683.49 sl_pts=5.00 (atr=5.00 spread_floor=1.05) size=0.16 spread=0.21 session=-1
+02:57:59 [GOLD-FLOW] EXIT LONG @ 4687.19 reason=TRAIL_HIT pnl_raw=0.08 pnl_usd=7.81 mfe=2.40 stage=1 held=44.00s
+02:57:59 [TRADE-COST] XAUUSD gross=$7.81 slip_in=$0.78 slip_out=$0.78 net=$5.82 exit=TRAIL_HIT
+02:58:34 [GOLD-FLOW] EXIT LONG @ 4686.81 reason=TIME_STOP pnl_raw=-0.27 pnl_usd=-26.88 mfe=0.00 stage=0 held=46.00s
+02:58:34 [TRADE-COST] XAUUSD gross=$-26.88 slip_in=$1.68 slip_out=$1.68 net=$-31.20 exit=TIME_STOP
+03:08:00 [GOLD-FLOW] ENTRY SHORT @ 4678.64 sl=4683.64 sl_pts=5.00 (atr=5.00 spread_floor=1.10) size=0.16 spread=0.22 session=6
+03:10:13 [GOLD-FLOW] EXIT SHORT @ 4683.66 reason=SL_HIT pnl_raw=-0.41 pnl_usd=-41.41 mfe=0.98 stage=0 held=133.00s
+03:10:13 [TRADE-COST] XAUUSD gross=$-41.41 slip_in=$0.91 slip_out=$0.91 net=$-43.72 exit=SL_HIT
+04:03:46 [GOLD-FLOW] ENTRY SHORT @ 4675.95 sl=4679.95 sl_pts=4.00 (atr=1.98 spread_floor=1.10) size=0.20 spread=0.22 session=6
+04:04:48 [GOLD-FLOW] EXIT SHORT @ 4677.07 reason=TIME_STOP pnl_raw=-0.16 pnl_usd=-15.68 mfe=0.21 stage=0 held=62.00s
+04:04:48 [TRADE-COST] XAUUSD gross=$-15.68 slip_in=$1.54 slip_out=$1.54 net=$-19.60 exit=TIME_STOP
+04:05:59 [GOLD-FLOW] ENTRY SHORT @ 4672.89 sl=4677.89 sl_pts=5.00 (atr=5.00 spread_floor=1.10) size=0.16 spread=0.22 session=6
+04:06:08 [GOLD-FLOW] STAIR-PARTIAL_1R SHORT @ 4670.27 qty=0.04 remaining=0.08 pnl_pts=2.62 pnl_usd=10 new_sl=4671.52
+04:06:08 [PARTIAL-CLOSE] XAUUSD gross=$10.22 net=$9.13 size=0.04 @ 4670.27
+04:06:10 [GOLD-FLOW] ENTRY SHORT @ 4669.69 sl=4674.69 sl_pts=5.00 (atr=5.00 spread_floor=1.10) size=0.16 spread=0.22 session=-1
+04:06:19 [GOLD-FLOW] DOLLAR-RATCHET tier=1 open_pnl_full=$54 locked=$40 locked_pts=4.94 new_sl=4667.95 be_locked=1 SHORT
+04:06:19 [GOLD-FLOW] EXIT SHORT @ 4669.64 reason=TRAIL_HIT pnl_raw=0.26 pnl_usd=26.32 mfe=3.36 stage=1 held=20.00s
+04:06:19 [TRADE-COST] XAUUSD gross=$26.32 slip_in=$0.89 slip_out=$0.89 net=$24.06 exit=TRAIL_HIT
+04:06:31 [GOLD-FLOW] STAIR-PARTIAL_1R SHORT @ 4667.41 qty=0.05 remaining=0.11 pnl_pts=2.28 pnl_usd=12 new_sl=4668.66
+04:06:31 [PARTIAL-CLOSE] XAUUSD gross=$11.86 net=$10.40 size=0.05 @ 4667.41
+04:06:37 [GOLD-FLOW] DOLLAR-RATCHET tier=1 open_pnl_full=$52 locked=$40 locked_pts=3.70 new_sl=4665.99 be_locked=1 SHORT
+04:06:37 [GOLD-FLOW] EXIT SHORT @ 4666.57 reason=TRAIL_HIT pnl_raw=0.34 pnl_usd=33.70 mfe=3.23 stage=1 held=27.00s
+04:06:37 [TRADE-COST] XAUUSD gross=$33.70 slip_in=$1.19 slip_out=$1.19 net=$30.67 exit=TRAIL_HIT
+04:13:28 [GOLD-FLOW] ENTRY LONG @ 4671.82 sl=4666.82 sl_pts=5.00 (atr=5.00 spread_floor=1.10) size=0.16 spread=0.22 session=6
+04:14:14 [GOLD-FLOW] EXIT LONG @ 4670.12 reason=TIME_STOP pnl_raw=-0.15 pnl_usd=-15.30 mfe=0.38 stage=0 held=46.00s
+04:14:14 [TRADE-COST] XAUUSD gross=$-15.30 slip_in=$0.99 slip_out=$0.99 net=$-17.82 exit=TIME_STOP
+04:19:40 [GOLD-FLOW] ENTRY SHORT @ 4667.95 sl=4672.95 sl_pts=5.00 (atr=5.00 spread_floor=1.05) size=0.16 spread=0.21 session=6
+04:20:35 [GOLD-FLOW] STAIR-PARTIAL_1R SHORT @ 4665.26 qty=0.03 remaining=0.06 pnl_pts=2.69 pnl_usd=8 new_sl=4666.51
+04:20:35 [PARTIAL-CLOSE] XAUUSD gross=$7.80 net=$7.02 size=0.03 @ 4665.26
+04:20:37 [GOLD-FLOW] ENTRY SHORT @ 4664.85 sl=4669.85 sl_pts=5.00 (atr=5.00 spread_floor=1.10) size=0.16 spread=0.22 session=6
+04:20:39 [GOLD-FLOW] DOLLAR-RATCHET tier=1 open_pnl_full=$51 locked=$40 locked_pts=6.56 new_sl=4661.39 be_locked=1 SHORT
+04:20:39 [GOLD-FLOW] EXIT SHORT @ 4664.89 reason=TRAIL_HIT pnl_raw=0.19 pnl_usd=18.67 mfe=3.17 stage=1 held=59.00s
+04:20:39 [TRADE-COST] XAUUSD gross=$18.67 slip_in=$0.64 slip_out=$0.64 net=$17.02 exit=TRAIL_HIT
+04:24:02 [GOLD-FLOW] STAIR-PARTIAL_1R SHORT @ 4662.72 qty=0.05 remaining=0.11 pnl_pts=2.13 pnl_usd=11 new_sl=4663.97
+04:24:02 [PARTIAL-CLOSE] XAUUSD gross=$11.08 net=$9.62 size=0.05 @ 4662.72
+04:24:16 [GOLD-FLOW] EXIT SHORT @ 4664.66 reason=TRAIL_HIT pnl_raw=0.02 pnl_usd=2.05 mfe=2.60 stage=1 held=219.00s
+04:24:16 [TRADE-COST] XAUUSD gross=$2.05 slip_in=$1.19 slip_out=$1.19 net=$-0.97 exit=TRAIL_HIT
+06:13:12 [GOLD-FLOW] ENTRY LONG @ 4575.74 sl=4572.48 sl_pts=3.26 (atr=3.26 spread_floor=1.10) size=0.24 spread=0.22 session=1
+06:13:34 [GOLD-FLOW] STAIR-PARTIAL_1R LONG @ 4577.10 qty=0.06 remaining=0.12 pnl_pts=1.36 pnl_usd=8 new_sl=4576.28
+06:13:34 [PARTIAL-CLOSE] XAUUSD gross=$8.02 net=$6.37 size=0.06 @ 4577.10
+06:13:35 [GOLD-FLOW] EXIT LONG @ 4575.96 reason=TRAIL_HIT pnl_raw=0.03 pnl_usd=2.66 mfe=1.47 stage=1 held=23.00s
+06:13:35 [TRADE-COST] XAUUSD gross=$2.66 slip_in=$1.33 slip_out=$1.33 net=$-0.73 exit=TRAIL_HIT
+07:34:32 [1;32m[GOLD-STACK-ENTRY] LONG entry=4633.53 tp=120ticks sl=60ticks / 6.00pts size=0.13 conf=1.50 conf_mult=1.25 regime_wt=1.00 vol_ratio=1.03 eng=DXYDivergence sup_regime=EXPANSION_BREAKOUT winner=BREAKOUT[0m
+07:35:26 [TRADE-COST] XAUUSD gross=$-65.00 slip_in=$1.43 slip_out=$1.43 net=$-68.64 exit=SL_HIT
+07:49:50 [TRADE-COST] XAUUSD gross=$0.80 slip_in=$0.11 slip_out=$0.11 net=$0.52 exit=SL_HIT
+07:50:42 [TRADE-COST] XAUUSD gross=$1.00 slip_in=$0.11 slip_out=$0.11 net=$0.72 exit=SL_HIT
+09:02:36 [GOLD-FLOW] ENTRY SHORT @ 4619.33 sl=4621.48 sl_pts=2.15 (atr=2.15 spread_floor=1.10) size=0.37 spread=0.22 session=2
+09:03:09 [GOLD-FLOW] STAIR-PARTIAL_1R SHORT @ 4618.30 qty=0.11 remaining=0.22 pnl_pts=1.03 pnl_usd=11 new_sl=4618.84
+09:03:09 [PARTIAL-CLOSE] XAUUSD gross=$10.92 net=$7.95 size=0.11 @ 4618.30
+09:03:14 [GOLD-FLOW] DOLLAR-RATCHET tier=1 open_pnl_full=$53 locked=$40 locked_pts=1.85 new_sl=4617.48 be_locked=1 SHORT
+09:03:14 [GOLD-FLOW] EXIT SHORT @ 4618.02 reason=TRAIL_HIT pnl_raw=0.28 pnl_usd=28.36 mfe=1.42 stage=1 held=38.00s
+09:03:14 [TRADE-COST] XAUUSD gross=$28.36 slip_in=$2.38 slip_out=$2.38 net=$22.30 exit=TRAIL_HIT
+11:04:52 [GOLD-FLOW] ENTRY LONG @ 4626.97 sl=4623.78 sl_pts=3.19 (atr=3.19 spread_floor=1.10) size=0.01 spread=0.22 session=2
+11:05:23 [GOLD-FLOW] EXIT LONG @ 4623.64 reason=SL_HIT pnl_raw=-0.03 pnl_usd=-3.33 mfe=0.00 stage=0 held=31.00s
+11:05:23 [TRADE-COST] XAUUSD gross=$-3.33 slip_in=$0.11 slip_out=$0.11 net=$-3.61 exit=SL_HIT
+11:23:18 [TRADE-COST] USTEC.F gross=$0.54 slip_in=$0.27 slip_out=$0.27 net=$-0.00 exit=SL_HIT
+11:24:26 [GOLD-FLOW] ENTRY SHORT @ 4624.35 sl=4628.38 sl_pts=4.03 (atr=4.03 spread_floor=1.10) size=0.01 spread=0.22 session=2
+11:25:12 [GOLD-FLOW] EXIT SHORT @ 4625.65 reason=TIME_STOP pnl_raw=-0.01 pnl_usd=-1.30 mfe=0.00 stage=0 held=46.00s
+11:25:12 [TRADE-COST] XAUUSD gross=$-1.30 slip_in=$0.11 slip_out=$0.11 net=$-1.58 exit=TIME_STOP
+11:49:34 [GOLD-FLOW] ENTRY LONG @ 4604.06 sl=4602.00 sl_pts=2.06 (atr=2.06 spread_floor=1.10) size=0.01 spread=0.22 session=2
+11:52:31 [GOLD-FLOW] EXIT LONG @ 4601.96 reason=SL_HIT pnl_raw=-0.02 pnl_usd=-2.10 mfe=8.26 stage=3 held=177.00s
+11:52:31 [TRADE-COST] XAUUSD gross=$-2.10 slip_in=$0.11 slip_out=$0.11 net=$-2.38 exit=SL_HIT
+11:54:16 [GOLD-FLOW] ENTRY LONG @ 4603.66 sl=4600.56 sl_pts=3.10 (atr=3.10 spread_floor=1.10) size=0.01 spread=0.22 session=2
+11:54:34 [GOLD-FLOW] EXIT LONG @ 4600.55 reason=SL_HIT pnl_raw=-0.03 pnl_usd=-3.11 mfe=0.11 stage=0 held=18.00s
+11:54:34 [TRADE-COST] XAUUSD gross=$-3.11 slip_in=$0.11 slip_out=$0.11 net=$-3.39 exit=SL_HIT
+11:55:38 [GOLD-FLOW] ENTRY LONG @ 4602.74 sl=4600.74 sl_pts=2.00 (atr=2.00 spread_floor=1.10) size=0.01 spread=0.22 session=2
+11:57:10 [GOLD-FLOW] EXIT LONG @ 4600.59 reason=SL_HIT pnl_raw=-0.02 pnl_usd=-2.15 mfe=0.99 stage=0 held=92.00s
+11:57:10 [TRADE-COST] XAUUSD gross=$-2.15 slip_in=$0.11 slip_out=$0.11 net=$-2.43 exit=SL_HIT
+11:58:49 [GOLD-FLOW] ENTRY LONG @ 4601.63 sl=4599.63 sl_pts=2.00 (atr=2.00 spread_floor=1.10) size=0.01 spread=0.22 session=2
+11:59:17 [GOLD-FLOW] EXIT LONG @ 4599.54 reason=SL_HIT pnl_raw=-0.02 pnl_usd=-2.09 mfe=0.61 stage=0 held=28.00s
+11:59:17 [TRADE-COST] XAUUSD gross=$-2.09 slip_in=$0.11 slip_out=$0.11 net=$-2.37 exit=SL_HIT
+12:00:54 [GOLD-FLOW] ENTRY LONG @ 4599.64 sl=4597.31 sl_pts=2.33 (atr=2.33 spread_floor=1.10) size=0.01 spread=0.22 session=3
+12:01:59 [GOLD-FLOW] EXIT LONG @ 4597.29 reason=SL_HIT pnl_raw=-0.02 pnl_usd=-2.35 mfe=1.90 stage=0 held=65.00s
+12:01:59 [TRADE-COST] XAUUSD gross=$-2.35 slip_in=$0.11 slip_out=$0.11 net=$-2.63 exit=SL_HIT
+12:35:37 [TRADE-COST] XAUUSD gross=$0.00 slip_in=$0.11 slip_out=$0.11 net=$-0.28 exit=TIME_STOP
+13:00:46 [TRADE-COST] XAUUSD gross=$-40.37 slip_in=$0.11 slip_out=$0.11 net=$-40.65 exit=SL_HIT
+13:32:50 [TRADE-COST] USTEC.F gross=$66.73 slip_in=$2.71 slip_out=$2.71 net=$61.31 exit=SL_HIT
+13:35:03 [TRADE-COST] USTEC.F gross=$0.54 slip_in=$0.27 slip_out=$0.27 net=$0.00 exit=SL_HIT
+13:40:05 [TRADE-COST] USTEC.F gross=$-50.63 slip_in=$2.44 slip_out=$2.44 net=$-55.51 exit=FORCE_CLOSE
+13:42:08 [TRADE-COST] US500.F gross=$41.91 slip_in=$1.62 slip_out=$1.62 net=$38.67 exit=SL_HIT
+13:53:25 [TRADE-COST] US500.F gross=$-27.00 slip_in=$1.62 slip_out=$1.62 net=$-30.24 exit=FORCE_CLOSE
+13:53:31 [TRADE-COST] USTEC.F gross=$-35.00 slip_in=$1.90 slip_out=$1.90 net=$-38.79 exit=FORCE_CLOSE
+14:00:51 [TRADE-COST] XAUUSD gross=$-5.52 slip_in=$0.11 slip_out=$0.11 net=$-5.80 exit=BREAKOUT_FAIL
+14:06:35 [TRADE-COST] USTEC.F gross=$-41.90 slip_in=$1.08 slip_out=$1.08 net=$-44.06 exit=FORCE_CLOSE
+14:06:55 [TRADE-COST] US500.F gross=$-46.00 slip_in=$1.62 slip_out=$1.62 net=$-49.24 exit=FORCE_CLOSE
+14:36:54 [TRADE-COST] USTEC.F gross=$24.50 slip_in=$0.14 slip_out=$0.14 net=$24.23 exit=SL_HIT
+15:05:18 [TRADE-COST] US500.F gross=$-18.00 slip_in=$0.61 slip_out=$0.61 net=$-19.21 exit=TIMEOUT
+15:14:02 [TRADE-COST] USTEC.F gross=$14.69 slip_in=$0.27 slip_out=$0.27 net=$14.15 exit=SL_HIT
+15:22:12 [TRADE-COST] US500.F gross=$-3.18 slip_in=$0.61 slip_out=$0.61 net=$-4.39 exit=TIMEOUT
+15:36:33 [TRADE-COST] USTEC.F gross=$-38.93 slip_in=$0.81 slip_out=$0.81 net=$-40.55 exit=TIMEOUT
+15:37:12 [TRADE-COST] US500.F gross=$-11.50 slip_in=$0.40 slip_out=$0.40 net=$-12.31 exit=TIMEOUT
+15:40:15 [TRADE-COST] USTEC.F gross=$0.00 slip_in=$0.27 slip_out=$0.27 net=$-0.54 exit=IMM_REVERSAL
+15:55:07 [TRADE-COST] US500.F gross=$9.38 slip_in=$0.40 slip_out=$0.40 net=$8.57 exit=TIMEOUT
+15:56:53 [TRADE-COST] USTEC.F gross=$6.10 slip_in=$0.54 slip_out=$0.54 net=$5.02 exit=TIMEOUT
+16:10:10 [TRADE-COST] US500.F gross=$18.13 slip_in=$1.01 slip_out=$1.01 net=$16.10 exit=TIMEOUT
+16:11:53 [TRADE-COST] USTEC.F gross=$19.28 slip_in=$0.81 slip_out=$0.81 net=$17.65 exit=TIMEOUT
+16:20:45 [TRADE-COST] US500.F gross=$34.82 slip_in=$1.42 slip_out=$1.42 net=$31.99 exit=SL_HIT
+16:26:35 [TRADE-COST] US500.F gross=$3.64 slip_in=$1.82 slip_out=$1.82 net=$-0.00 exit=SL_HIT
+16:26:53 [TRADE-COST] USTEC.F gross=$20.20 slip_in=$1.08 slip_out=$1.08 net=$18.03 exit=TIMEOUT
+16:32:21 [TRADE-COST] USTEC.F gross=$-47.42 slip_in=$1.90 slip_out=$1.90 net=$-51.21 exit=FORCE_CLOSE
+16:32:21 [TRADE-COST] US500.F gross=$-32.09 slip_in=$1.82 slip_out=$1.82 net=$-35.73 exit=FORCE_CLOSE
+17:03:53 [TRADE-COST] USTEC.F gross=$-42.70 slip_in=$1.90 slip_out=$1.90 net=$-46.49 exit=FORCE_CLOSE
+17:13:54 [TRADE-COST] US500.F gross=$-24.50 slip_in=$1.42 slip_out=$1.42 net=$-27.33 exit=FORCE_CLOSE
+17:49:26 [TRADE-COST] US500.F gross=$40.01 slip_in=$1.21 slip_out=$0.00 net=$38.80 exit=TP_HIT
+17:50:23 [TRADE-COST] USTEC.F gross=$35.88 slip_in=$0.81 slip_out=$0.81 net=$34.25 exit=SL_HIT
+17:59:13 [TRADE-COST] USTEC.F gross=$0.54 slip_in=$0.27 slip_out=$0.27 net=$-0.00 exit=SL_HIT
+18:16:59 [TRADE-COST] US500.F gross=$4.45 slip_in=$2.23 slip_out=$2.23 net=$0.00 exit=SL_HIT
+18:20:16 [TRADE-COST] USTEC.F gross=$4.40 slip_in=$2.98 slip_out=$2.98 net=$-1.56 exit=TIMEOUT
+18:56:14 [TRADE-COST] USTEC.F gross=$-16.19 slip_in=$2.17 slip_out=$2.17 net=$-20.53 exit=TIMEOUT
+18:56:24 [TRADE-COST] US500.F gross=$-12.00 slip_in=$2.43 slip_out=$2.43 net=$-16.86 exit=TIMEOUT
+19:11:13 [TRADE-COST] USTEC.F gross=$-39.38 slip_in=$1.90 slip_out=$1.90 net=$-43.18 exit=FORCE_CLOSE
+19:11:17 [TRADE-COST] US500.F gross=$-27.00 slip_in=$1.62 slip_out=$1.62 net=$-30.24 exit=FORCE_CLOSE
+19:47:42 [TRADE-COST] USTEC.F gross=$9.85 slip_in=$1.08 slip_out=$1.08 net=$7.68 exit=SL_HIT
+19:50:28 [TRADE-COST] USTEC.F gross=$-51.08 slip_in=$2.44 slip_out=$2.44 net=$-55.95 exit=FORCE_CLOSE
+19:55:30 [TRADE-COST] US500.F gross=$-29.52 slip_in=$1.62 slip_out=$1.62 net=$-32.76 exit=FORCE_CLOSE

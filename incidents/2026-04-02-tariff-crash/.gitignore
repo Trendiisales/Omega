@@ -1,0 +1,6 @@
+# Don't track compiled binaries
+simulation/hard_stop_profit_analysis
+simulation/hard_stop_sim_v2
+
+# Full log too large for git -- use raw_events.log instead
+omega_full.log
