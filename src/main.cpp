@@ -10522,10 +10522,6 @@ static void trade_loop() {
         auto last_ping      = std::chrono::steady_clock::now();
         auto logon_sent_at  = std::chrono::steady_clock::now();
 
-        // Track whether this is a proactive self-initiated refresh vs forced drop.
-        // Same fix applied to quote_loop: BlackBull hard-kills TCP at ~15min.
-        // Breaking ourselves at 13min gives a 1-2s gap instead of 115s.
-        bool s_proactive_reconnect_trade = false;
 
         while (g_running.load()) {
             const auto now = std::chrono::steady_clock::now();
@@ -10537,19 +10533,10 @@ static void trade_loop() {
                 break;
             }
 
-            // ?? Proactive session refresh at 13min ???????????????????????????????
-            // BlackBull terminates TCP at ~15min on the TRADE session too (same broker,
-            // same TCP keepalive policy). Fix mirrors quote_loop: break cleanly at 780s
-            // before broker kills us. backoff_ms stays 1000 (not doubled) on clean cycle.
-            // 780s = 13 minutes. BlackBull hard-kills at ~900s (15min).
-            if (g_trade_ready.load() &&
-                std::chrono::duration_cast<std::chrono::seconds>(
-                    now - logon_sent_at).count() >= 780) {
-                std::cout << "[OMEGA-TRADE] Proactive session refresh at 13min -- reconnecting before broker timeout\n";
-                fflush(stdout);
-                s_proactive_reconnect_trade = true;
-                break;
-            }
+            // Proactive 13min reconnect REMOVED.
+            // Was added to handle "32 drops at 15min intervals" -- those drops
+            // were caused by d7a0a16's L2 auto-restart, not a broker timeout.
+            // With L2 restart removed, FIX session stays up indefinitely.
 
             // Heartbeat every 30s
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_ping).count() >= g_cfg.heartbeat) {
@@ -10654,18 +10641,9 @@ static void trade_loop() {
         if (sock >= 0) closesocket(static_cast<SOCKET>(sock));
         SSL_free(ssl);
 
-        if (s_proactive_reconnect_trade) {
-            // Clean proactive cycle -- broker did NOT kill us. Reset backoff to 1000
-            // (not doubled) and use a short 200ms pause before reconnecting.
-            backoff_ms = 1000;
-            s_proactive_reconnect_trade = false;
-            std::cout << "[OMEGA-TRADE] Clean proactive cycle -- reconnecting in 200ms\n";
-            for (int i = 0; i < 20 && g_running.load(); ++i) Sleep(10);
-        } else {
-            std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
-            // Interruptible reconnect wait -- exits within 10ms on shutdown
-            for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
-        }
+        // Reconnect after any disconnect
+        std::cerr << "[OMEGA-TRADE] Disconnected -- reconnecting\n";
+        for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
     }
     g_trade_thread_done.store(true);  // signal main() that trade_loop has fully exited
 }
@@ -10704,9 +10682,6 @@ static void quote_loop() {
         auto last_diag      = std::chrono::steady_clock::now();
         auto logon_sent_at  = std::chrono::steady_clock::now();
 
-        // Track whether this is a proactive self-initiated refresh vs forced drop.
-        // Used to reset backoff_ms=1000 on clean reconnects instead of doubling.
-        bool s_proactive_reconnect = false;
 
         while (g_running.load()) {
             const auto now = std::chrono::steady_clock::now();
@@ -10717,20 +10692,10 @@ static void quote_loop() {
                 break;
             }
 
-            // ?? Proactive session refresh at 13min ???????????????????????????????????
-            // BlackBull terminates TCP at ~15min (confirmed: 32 drops in one session,
-            // all at ~15min intervals, each costing 115s reconnect because backoff_ms
-            // doubles on the forced drop). Fix: break the inner loop ourselves at 13min,
-            // send a clean Logout, reconnect. Gap = 1-2s not 115s. backoff_ms stays 1000.
-            // 780s = 13 minutes. BlackBull hard-kills at ~900s (15min).
-            if (g_quote_ready.load() &&
-                std::chrono::duration_cast<std::chrono::seconds>(
-                    now - logon_sent_at).count() >= 780) {
-                std::cout << "[OMEGA] Proactive session refresh at 13min -- reconnecting before broker timeout\n";
-                fflush(stdout);
-                s_proactive_reconnect = true;
-                break;
-            }
+            // Proactive 13min reconnect REMOVED.
+            // Was added to handle "32 drops at 15min intervals" -- those drops
+            // were caused by d7a0a16's L2 auto-restart, not a broker timeout.
+            // With L2 restart removed, FIX session stays up indefinitely.
 
             // ?? FIX Heartbeat (35=0) every 30s ???????????????????????????????
             // CRITICAL: broker requires a proper Heartbeat MsgType=0 from us
@@ -11785,24 +11750,14 @@ static void quote_loop() {
         SSL_free(ssl);
         g_telemetry.UpdateFixStatus("DISCONNECTED", "DISCONNECTED", 0, 0);
 
-        if (s_proactive_reconnect) {
-            // Clean self-initiated 13min refresh -- reconnect immediately, no backoff doubling.
-            // backoff_ms stays at 1000 (or whatever it currently is from prior failures).
-            // The whole point is to avoid the 115s gap from forced BlackBull TCP drops.
-            std::cout << "[OMEGA] Proactive reconnect -- 1s gap (not doubling backoff)\n";
-            fflush(stdout);
-            for (int i = 0; i < 100 && g_running.load(); ++i) Sleep(10); // 1s
-            backoff_ms = 1000;  // reset, not double
-        } else {
-            // Forced/unexpected drop -- use backoff to avoid hammering broker on repeated failures.
-            // Extra 2s delay when server sent Logout (ghost/forced disconnect).
-            if (g_quote_logout_received.exchange(false) && g_running.load()) {
-                std::cout << "[OMEGA] Ghost session -- waiting 2s for server to clear old session\n";
-                for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
-            }
-            for (int i = 0; i < backoff_ms / 10 && g_running.load(); ++i) Sleep(10);
-            backoff_ms = std::min(backoff_ms * 2, max_backoff);
+        // Reconnect after any disconnect.
+        // Extra 2s when server sent Logout (ghost session).
+        if (g_quote_logout_received.exchange(false) && g_running.load()) {
+            std::cout << "[OMEGA] Ghost session -- waiting 2s for server to clear old session\n";
+            for (int i = 0; i < 200 && g_running.load(); ++i) Sleep(10);
         }
+        for (int i = 0; i < backoff_ms / 10 && g_running.load(); ++i) Sleep(10);
+        backoff_ms = std::min(backoff_ms * 2, max_backoff);
     }
 }
 
