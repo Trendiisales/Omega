@@ -165,6 +165,27 @@ struct BarIndicators {
     std::atomic<double> vol_delta      {0.0};  // current tick signed delta
     std::atomic<double> vol_delta_ratio{0.0};  // 100-tick rolling average
 
+    // ?? NEW: ADX(14) -- Wilder-smoothed directional movement index ???????????
+    // adx14: 0-100 trend strength. >25 = trending, >40 = strong trend.
+    // adx_rising: ADX increasing (trend strengthening)
+    // adx_trending: ADX >= ADX_TREND_THRESHOLD (25)
+    // adx_strong:   ADX >= ADX_STRONG_THRESHOLD (40) -- conviction boost
+    std::atomic<double> adx14         {0.0};   // current ADX value
+    std::atomic<bool>   adx_rising    {false}; // ADX increasing bar-over-bar
+    std::atomic<bool>   adx_trending  {false}; // ADX >= 25
+    std::atomic<bool>   adx_strong    {false}; // ADX >= 40
+
+    // ?? NEW: EWMA realised volatility (RiskMetrics) ??????????????????????????????????
+    // ewma_vol_20:  short-lambda (0.94) annualised vol -- reactive to recent moves
+    // ewma_vol_100: long-lambda  (0.97) annualised vol -- stable baseline
+    // vol_ratio_ewma: short / long -- >1.2 = vol expanding, <0.8 = vol compressing
+    // vol_target_mult: VOL_TARGET(20%) / ewma_vol_20, clamped [0.25, 1.50]
+    //   Use as position size multiplier: high vol = reduce size, low vol = increase
+    std::atomic<double> ewma_vol_20   {0.0};   // short EWMA annualised vol
+    std::atomic<double> ewma_vol_100  {0.0};   // long  EWMA annualised vol
+    std::atomic<double> vol_ratio_ewma{1.0};   // short/long vol ratio
+    std::atomic<double> vol_target_mult{1.0};  // sizing multiplier clamped [0.25,1.50]
+
     BarIndicators() = default;
     BarIndicators(const BarIndicators&) = delete;
     BarIndicators& operator=(const BarIndicators&) = delete;
@@ -206,6 +227,21 @@ public:
     // RSI divergence: compare last N swing pivots
     static constexpr int    RSI_DIV_LOOKBACK     = 5;
 
+    // ?? ADX constants ????????????????????????????????????????????????????????
+    static constexpr int    ADX_P                = 14;   // Wilder period
+    static constexpr double ADX_TREND_THRESHOLD  = 25.0; // trending regime
+    static constexpr double ADX_STRONG_THRESHOLD = 40.0; // strong trend / conviction boost
+
+    // ?? EWMA vol constants ???????????????????????????????????????????????????
+    static constexpr double EWMA_LAMBDA_SHORT    = 0.94; // RiskMetrics short (reactive)
+    static constexpr double EWMA_LAMBDA_LONG     = 0.97; // RiskMetrics long  (stable)
+    static constexpr double VOL_TARGET_ANNUAL    = 0.20; // 20% annualised vol target
+    static constexpr double VOL_MULT_MIN         = 0.25; // floor on vol_target_mult
+    static constexpr double VOL_MULT_MAX         = 1.50; // ceiling on vol_target_mult
+    // XAUUSD M1: 252 trading days * 24h * 60min = 362880 bars/year (24h market)
+    // Use 365*24*60 = 525600 for continuous futures approximation
+    static constexpr double BARS_PER_YEAR        = 525600.0;
+
     // Indicators exposed to other threads
     BarIndicators ind;
 
@@ -231,6 +267,8 @@ public:
         if (n >= ATR_SLOPE_BARS+1)    _update_atr_slope();
         if (n >= RSI_DIV_LOOKBACK+RSI_P) _update_rsi_divergence();
         if (n >= 3)          _update_vwap_slope();
+        if (n >= ADX_P + 1)  _update_adx();
+        if (n >= 2)          _update_ewma_vol();
 
         // Ready once RSI has real values -- needs RSI_P+1 bars (15 min from ticks).
         if (!ind.m1_ready.load() && n >= RSI_P + 1) ind.m1_ready.store(true);
@@ -261,6 +299,8 @@ public:
         if (n >= ATR_SLOPE_BARS+1)    _update_atr_slope();
         if (n >= RSI_DIV_LOOKBACK+RSI_P) _update_rsi_divergence();
         if (n >= 3)          _update_vwap_slope();
+        if (n >= ADX_P + 1)  _update_adx();
+        if (n >= 2)          _update_ewma_vol();
         _seed_atr_history();
         if (n >= 1) ind.m1_ready.store(true);
     }
@@ -374,6 +414,20 @@ private:
     std::deque<double>  spread_window_;
     std::deque<int64_t> tick_timestamps_;
     std::deque<double>  vol_delta_window_;
+
+    // ?? ADX private state ????????????????????????????????????????????????????
+    // Wilder-smoothed +DM, -DM, TR accumulators (period = ADX_P)
+    double adx_plus_dm_smooth_  = 0.0;
+    double adx_minus_dm_smooth_ = 0.0;
+    double adx_tr_smooth_       = 0.0;
+    double adx_dx_smooth_       = 0.0;  // smoothed DX -> ADX
+    double adx_prev_            = 0.0;  // previous bar ADX for rising detection
+    bool   adx_init_            = false;
+
+    // ?? EWMA vol private state ???????????????????????????????????????????????
+    double ewma_short_ = 0.0;  // lambda=0.94 variance accumulator
+    double ewma_long_  = 0.0;  // lambda=0.97 variance accumulator
+    bool   ewma_init_  = false;
 
     // ?????????????????????????????????????????????????????????????????????????
     // _update_ema() -- works from bar 1 using all available history
@@ -801,6 +855,153 @@ private:
         if      (slope >  VWAP_SLOPE_FLAT_THR) direction = +1;
         else if (slope < -VWAP_SLOPE_FLAT_THR) direction = -1;
         ind.vwap_direction.store(direction, std::memory_order_relaxed);
+    }
+
+    // ?????????????????????????????????????????????????????????????????????????
+    // NEW: _update_adx()
+    // Full Wilder-smoothed ADX(14).
+    //
+    // Algorithm:
+    //   1. Compute raw +DM, -DM, TR for current bar vs previous bar
+    //   2. Wilder-smooth each over ADX_P bars:
+    //        smooth[t] = smooth[t-1] - smooth[t-1]/ADX_P + raw[t]
+    //      (equivalent to EMA with alpha=1/ADX_P -- Wilder's convention)
+    //   3. +DI14 = 100 * +DM_smooth / TR_smooth
+    //      -DI14 = 100 * -DM_smooth / TR_smooth
+    //   4. DX    = 100 * |+DI14 - -DI14| / (+DI14 + -DI14)
+    //   5. ADX   = Wilder-smooth of DX over ADX_P bars
+    //
+    // Initialisation: first ADX_P bars accumulate raw sums, then switch to
+    // Wilder recursion from bar ADX_P+1 onward (standard Wilder bootstrap).
+    //
+    // Exposes: adx14, adx_rising, adx_trending (>=25), adx_strong (>=40)
+    // ?????????????????????????????????????????????????????????????????????????
+    void _update_adx() {
+        const int n = static_cast<int>(bars_.size());
+        if (n < 2) return;
+
+        const OHLCBar& cur  = bars_[n - 1];
+        const OHLCBar& prev = bars_[n - 2];
+
+        // Raw directional movement
+        const double up   = cur.high - prev.high;
+        const double down = prev.low  - cur.low;
+        const double plus_dm  = (up > down && up > 0.0) ? up   : 0.0;
+        const double minus_dm = (down > up && down > 0.0) ? down : 0.0;
+
+        // True range
+        const double tr = std::max({
+            cur.high - cur.low,
+            std::fabs(cur.high - prev.close),
+            std::fabs(cur.low  - prev.close)
+        });
+
+        if (!adx_init_) {
+            // Accumulate raw sums for first ADX_P bars
+            adx_plus_dm_smooth_  += plus_dm;
+            adx_minus_dm_smooth_ += minus_dm;
+            adx_tr_smooth_       += tr;
+
+            // Bootstrap complete once we have ADX_P bars of raw data
+            // bars_ has n entries; we need n-1 diffs. At n == ADX_P+1 we have ADX_P diffs.
+            if (n < ADX_P + 1) return;
+
+            // Compute initial DX from bootstrapped sums
+            const double pdi = (adx_tr_smooth_ > 1e-10) ? 100.0 * adx_plus_dm_smooth_  / adx_tr_smooth_ : 0.0;
+            const double mdi = (adx_tr_smooth_ > 1e-10) ? 100.0 * adx_minus_dm_smooth_ / adx_tr_smooth_ : 0.0;
+            const double denom = pdi + mdi;
+            const double dx  = (denom > 1e-10) ? 100.0 * std::fabs(pdi - mdi) / denom : 0.0;
+            adx_dx_smooth_ = dx;  // seed ADX = first DX (will smooth going forward)
+            adx_prev_      = dx;
+            adx_init_      = true;
+            ind.adx14.store(dx, std::memory_order_relaxed);
+            return;
+        }
+
+        // Wilder smoothing: smooth[t] = smooth[t-1] - smooth[t-1]/P + raw[t]
+        adx_plus_dm_smooth_  = adx_plus_dm_smooth_  - adx_plus_dm_smooth_  / ADX_P + plus_dm;
+        adx_minus_dm_smooth_ = adx_minus_dm_smooth_ - adx_minus_dm_smooth_ / ADX_P + minus_dm;
+        adx_tr_smooth_       = adx_tr_smooth_       - adx_tr_smooth_       / ADX_P + tr;
+
+        const double pdi = (adx_tr_smooth_ > 1e-10) ? 100.0 * adx_plus_dm_smooth_  / adx_tr_smooth_ : 0.0;
+        const double mdi = (adx_tr_smooth_ > 1e-10) ? 100.0 * adx_minus_dm_smooth_ / adx_tr_smooth_ : 0.0;
+        const double denom = pdi + mdi;
+        const double dx  = (denom > 1e-10) ? 100.0 * std::fabs(pdi - mdi) / denom : 0.0;
+
+        // Wilder-smooth DX -> ADX
+        adx_dx_smooth_ = adx_dx_smooth_ - adx_dx_smooth_ / ADX_P + dx / ADX_P;
+        // Note: Wilder ADX recursion is: ADX[t] = (ADX[t-1]*(P-1) + DX[t]) / P
+        //       which is identical to: ADX[t] = ADX[t-1] - ADX[t-1]/P + DX[t]/P
+        // We store the result directly:
+        const double adx_val = adx_dx_smooth_;
+
+        const bool rising   = (adx_val > adx_prev_);
+        const bool trending = (adx_val >= ADX_TREND_THRESHOLD);
+        const bool strong   = (adx_val >= ADX_STRONG_THRESHOLD);
+
+        ind.adx14       .store(adx_val, std::memory_order_relaxed);
+        ind.adx_rising  .store(rising,  std::memory_order_relaxed);
+        ind.adx_trending.store(trending,std::memory_order_relaxed);
+        ind.adx_strong  .store(strong,  std::memory_order_relaxed);
+
+        adx_prev_ = adx_val;
+    }
+
+    // ?????????????????????????????????????????????????????????????????????????
+    // NEW: _update_ewma_vol()
+    // RiskMetrics EWMA realised volatility -- two lambdas (short=0.94, long=0.97).
+    //
+    // Algorithm:
+    //   log_return[t] = ln(close[t] / close[t-1])
+    //   var_short[t]  = lambda_short * var_short[t-1] + (1 - lambda_short) * r^2
+    //   var_long[t]   = lambda_long  * var_long[t-1]  + (1 - lambda_long)  * r^2
+    //   vol_annual    = sqrt(var * BARS_PER_YEAR)   -- annualise from per-bar variance
+    //
+    // vol_ratio_ewma = ewma_vol_20 / ewma_vol_100
+    //   > 1.2: vol expanding (recent moves > baseline) -- reduce size
+    //   < 0.8: vol compressing (quiet tape) -- normal or larger size
+    //
+    // vol_target_mult = VOL_TARGET_ANNUAL / ewma_vol_20
+    //   Clamped [VOL_MULT_MIN, VOL_MULT_MAX] = [0.25, 1.50]
+    //   At vol=20%: mult=1.00 (no adjustment)
+    //   At vol=40%: mult=0.50 (half size -- extremely volatile)
+    //   At vol=10%: mult=1.50 (cap -- don't over-size quiet sessions)
+    // ?????????????????????????????????????????????????????????????????????????
+    void _update_ewma_vol() {
+        const int n = static_cast<int>(bars_.size());
+        if (n < 2) return;
+
+        const double c_prev = bars_[n - 2].close;
+        const double c_cur  = bars_[n - 1].close;
+        if (c_prev <= 0.0 || c_cur <= 0.0) return;
+
+        const double log_ret = std::log(c_cur / c_prev);
+        const double r2      = log_ret * log_ret;
+
+        if (!ewma_init_) {
+            // Seed both variances at the squared return of the first available pair
+            ewma_short_ = r2;
+            ewma_long_  = r2;
+            ewma_init_  = true;
+        } else {
+            ewma_short_ = EWMA_LAMBDA_SHORT * ewma_short_ + (1.0 - EWMA_LAMBDA_SHORT) * r2;
+            ewma_long_  = EWMA_LAMBDA_LONG  * ewma_long_  + (1.0 - EWMA_LAMBDA_LONG)  * r2;
+        }
+
+        // Annualise: vol = sqrt(var_per_bar * bars_per_year)
+        const double vol_s = std::sqrt(ewma_short_ * BARS_PER_YEAR);
+        const double vol_l = std::sqrt(ewma_long_  * BARS_PER_YEAR);
+
+        const double ratio = (vol_l > 1e-10) ? vol_s / vol_l : 1.0;
+
+        // vol_target_mult: target_vol / current_vol, clamped
+        const double raw_mult = (vol_s > 1e-10) ? VOL_TARGET_ANNUAL / vol_s : 1.0;
+        const double mult = std::max(VOL_MULT_MIN, std::min(VOL_MULT_MAX, raw_mult));
+
+        ind.ewma_vol_20   .store(vol_s, std::memory_order_relaxed);
+        ind.ewma_vol_100  .store(vol_l, std::memory_order_relaxed);
+        ind.vol_ratio_ewma.store(ratio, std::memory_order_relaxed);
+        ind.vol_target_mult.store(mult, std::memory_order_relaxed);
     }
 
     // =========================================================================

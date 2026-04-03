@@ -80,6 +80,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "OmegaCorrelationMatrix.hpp" // EWM rolling corr matrix + vol-parity sizing
 #include "OmegaVPIN.hpp"              // Tick-classified VPIN toxicity gate (GoldFlow pre-entry)
 #include "OmegaMonteCarlo.hpp"        // Bootstrap P&L resample + BH/FDR correction (offline tool)
+#include "OmegaVolTargeter.hpp"       // EWMA vol targeting + ADX momentum regime classifier
 
 // ?????????????????????????????????????????????????????????????????????????????
 // Singleton
@@ -397,6 +398,7 @@ static SymBarState         g_bars_gold;   // XAUUSD M1/M5 bars + indicators
 static SymBarState         g_bars_sp;     // US500.F M1/M5 bars + indicators
 static SymBarState         g_bars_nq;     // USTEC.F M1/M5 bars + indicators
 static SymBarState         g_bars_ger;    // GER40   M1/M5 bars + indicators
+static OmegaVolTargeter    g_vol_targeter; // EWMA vol targeting + momentum regime
 static std::atomic<bool>   g_quote_logout_received(false);  // server sent Logout to quote session
 static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup -- unblocks ctrl handler
 static std::atomic<bool>   g_trade_thread_done(false);  // set by trade_loop() just before it returns
@@ -8028,18 +8030,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // ?? Vol-regime multiplier: scale lot by inverse volatility ??
                     // gold_vol_ratio_now = recent_vol / base_vol (30-bar / 300-bar).
                     // High vol = overheated tape = reduce size to protect capital.
-                    // Low vol  = calm ranging tape = increase size (better fill quality).
-                    // Calibration from 718k bars: vol_ratio buckets predict 2.7x move range.
-                    // Clamp [0.5, 1.3] so we never halve or over-size more than 30%.
-                    // MeanReversion and IntradaySeasonality benefit most from this gate.
-                    const double vol_regime_mult = std::max(0.5, std::min(1.3,
-                        gold_vol_ratio_now > 0.0
-                            ? (gold_vol_ratio_now < 0.7  ? 1.25 :   // very calm  ? 1.25x
-                               gold_vol_ratio_now < 1.0  ? 1.10 :   // calm       ? 1.10x
-                               gold_vol_ratio_now < 1.5  ? 1.00 :   // normal     ? 1.00x
-                               gold_vol_ratio_now < 2.0  ? 0.80 :   // elevated   ? 0.80x
-                                                            0.60)    // extreme    ? 0.60x
-                            : 1.0));
+                    // RiskMetrics EWMA vol targeting: VOL_TARGET(20%) / ewma_vol_20
+                    // Replaces coarse bucket ladder -- continuous, mathematically principled.
+                    // Pre-computed and clamped [0.25, 1.50] by OHLCBarEngine._update_ewma_vol().
+                    // Falls back to 1.0 when EWMA not yet initialised (ewma_vol_20 == 0).
+                    const double vol_regime_mult = g_bars_gold.m1.ind.vol_target_mult.load(
+                        std::memory_order_relaxed);
                     // ?? Adaptive risk: DD throttle + Kelly on gold ?????????????
                     double gold_daily_loss = 0.0; int gold_consec = 0;
                     {
@@ -9245,12 +9241,29 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     gf_tick_ok = false;
                     gf_block_reason = "RSI_OVERBOUGHT";
                 } else if (!gf_long && bar_rsi < RSI_OS) {
-                    printf("[GF-BAR-BLOCK] XAUUSD SHORT blocked RSI=%.1f < %.0f (oversold)"
-                           " bb_pct=%.2f trend=%d\n",
-                           bar_rsi, RSI_OS, bar_bb_pct, bar_trend);
-                    fflush(stdout);
-                    gf_tick_ok = false;
-                    gf_block_reason = "RSI_OVERSOLD";
+                    // In a momentum regime (ADX>=25 + ATR expanding), RSI<20 on a SHORT
+                    // is continuation not reversal -- price is in a strong downtrend.
+                    // Allow the entry; log but do not block.
+                    const bool momentum_regime = g_vol_targeter.is_momentum_regime(
+                        g_bars_gold.m1.ind.adx14.load(std::memory_order_relaxed),
+                        g_bars_gold.m1.ind.adx_trending.load(std::memory_order_relaxed),
+                        g_bars_gold.m1.ind.atr_expanding.load(std::memory_order_relaxed));
+                    if (momentum_regime) {
+                        printf("[GF-BAR-ALLOW] XAUUSD SHORT allowed RSI=%.1f < %.0f"
+                               " -- momentum regime (ADX=%.1f ATR expanding)"
+                               " bb_pct=%.2f trend=%d\n",
+                               bar_rsi, RSI_OS,
+                               g_bars_gold.m1.ind.adx14.load(std::memory_order_relaxed),
+                               bar_bb_pct, bar_trend);
+                        fflush(stdout);
+                    } else {
+                        printf("[GF-BAR-BLOCK] XAUUSD SHORT blocked RSI=%.1f < %.0f (oversold)"
+                               " bb_pct=%.2f trend=%d\n",
+                               bar_rsi, RSI_OS, bar_bb_pct, bar_trend);
+                        fflush(stdout);
+                        gf_tick_ok = false;
+                        gf_block_reason = "RSI_OVERSOLD";
+                    }
                 }
 
                 // Trend alignment gate (M5 swing structure)
