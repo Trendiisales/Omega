@@ -984,7 +984,8 @@ struct GoldFlowEngine {
     // Seeds ATR from provided value and fires enter() immediately.
     // Returns true if entry succeeded (phase == LIVE after call).
     bool force_entry(bool is_long, double bid, double ask,
-                     double atr_seed, int64_t now_ms) noexcept {
+                     double atr_seed, int64_t now_ms,
+                     int session_slot = 6) noexcept {
         if (has_open_position()) return false;
         // Seed ATR so SL sizing is correct immediately
         if (atr_seed > 0.0) {
@@ -994,6 +995,7 @@ struct GoldFlowEngine {
             m_ticks_received   = GFE_MIN_ENTRY_TICKS; // skip cold-start gate
             m_atr_seed_lock    = 50; // hold for 50 ticks before EWM takes over
         }
+        m_last_session_slot = session_slot;  // fix session=-1 on reload entries
         const double mid = (bid + ask) * 0.5;
         enter(is_long, mid, bid, ask, ask - bid, now_ms);
         return has_open_position();

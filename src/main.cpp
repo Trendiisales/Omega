@@ -8585,7 +8585,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
 
                 const bool entered = g_gold_flow_reload.force_entry(
-                    reload_long, bid, ask, atr_for_reload, now_ms_g);
+                    reload_long, bid, ask, atr_for_reload, now_ms_g,
+                    g_macro_ctx.session_slot);
 
                 if (entered) {
                     if (g_cfg.mode == "LIVE") {
