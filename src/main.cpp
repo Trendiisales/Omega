@@ -8132,10 +8132,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_bars_gold.m1.update_volume_delta(g_macro_ctx.gold_l2_imbalance);
 
         // ?? FIX-tick bar builder -- accumulates ticks into M1/M5/M15/H4 OHLC bars ??
+        // xau_mid hoisted out of block so VPIN + corr-matrix can reference it below
+        const double xau_mid = (bid + ask) * 0.5;
         {
             static OHLCBar s_cur1{}, s_cur5{}, s_cur15{}, s_cur_h4{};
             static int64_t s_bar1_ms = 0, s_bar5_ms = 0, s_bar15_ms = 0, s_bar_h4_ms = 0;
-            const double xau_mid     = (bid + ask) * 0.5;
             const int64_t b1  = (now_ms_g /   60000LL) *   60000LL;
             const int64_t b5  = (now_ms_g /  300000LL) *  300000LL;
             const int64_t b15 = (now_ms_g /  900000LL) *  900000LL;
