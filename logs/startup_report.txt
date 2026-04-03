@@ -1,7 +1,7 @@
 ﻿OMEGA STARTUP REPORT
-Generated : 2026-04-03 01:02:28 UTC
+Generated : 2026-04-03 01:04:13 UTC
 Log file  : C:\Omega\logs\latest.log
-Collected : 34 lines over 45s
+Collected : 0 lines over 45s
 Result    : PASS=0  FAIL=0  WARN=3  INFO=14
 ========================================================================
 [INFO]  ATR Seed               No GFE-SEED line seen
