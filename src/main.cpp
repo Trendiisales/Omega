@@ -554,6 +554,17 @@ static constexpr int     GF_CRASH_BYPASS_CONSEC_SL_MAX  = 3;
 static constexpr int64_t GF_CRASH_BYPASS_COOLDOWN_SEC   = 900;  // 15 min
 static std::atomic<int>      g_gf_crash_consec_sl{0};           // consecutive SL_HIT counter while bypass active
 static std::atomic<int64_t>  g_gf_crash_bypass_block_until{0};  // epoch sec: bypass blocked until this time
+// Directional SL cooldown: after 2 SL_HITs in same direction within 5 min, block that direction 3 min.
+// Prevents 5 consecutive longs into a crash (April 2 2026 pattern).
+static constexpr int     GF_DIR_SL_MAX          = 2;    // SL_HITs before direction blocked
+static constexpr int64_t GF_DIR_SL_WINDOW_SEC   = 300;  // 5 min window
+static constexpr int64_t GF_DIR_SL_COOLDOWN_SEC = 180;  // 3 min block
+static std::atomic<int>      g_gf_dir_sl_long_count{0};   // consecutive long SL_HITs
+static std::atomic<int>      g_gf_dir_sl_short_count{0};  // consecutive short SL_HITs
+static std::atomic<int64_t>  g_gf_dir_sl_long_first{0};   // timestamp of first long SL in window
+static std::atomic<int64_t>  g_gf_dir_sl_short_first{0};  // timestamp of first short SL in window
+static std::atomic<int64_t>  g_gf_long_blocked_until{0};  // block long entries until this time
+static std::atomic<int64_t>  g_gf_short_blocked_until{0}; // block short entries until this time
 static omega::SilverBracketEngine g_bracket_xag;
 // US equity index bracket engines -- arms both sides on compression,
 // captures the move regardless of direction. Eliminates wrong-direction losses.
@@ -8212,7 +8223,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // a 125pt crash. Old 2.5 threshold never fired. 1.2 fires on real moves.
             // OFF threshold kept at 0.6 (was 1.5) -- tighter so it doesn't linger.
             static thread_local bool s_asia_trend_armed = false;
-            if      (gold_ewm_drift_abs >= 1.2) s_asia_trend_armed = true;
+            // Lowered arm threshold 1.2->0.8: real directional moves show drift 0.8-1.1
+            // during the first 10 minutes. Old 1.2 threshold missed the early phase.
+            // OFF threshold kept at 0.6 -- tight enough to prevent noise re-arming.
+            if      (gold_ewm_drift_abs >= 0.8) s_asia_trend_armed = true;
             else if (gold_ewm_drift_abs <  0.6) s_asia_trend_armed = false;
             const bool asia_trend_ok = !in_asia_slot
                 || asia_crash_bypass
@@ -9009,19 +9023,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const int64_t bars_missing_secs = now_wup - s_bars_first_miss;
                 const bool bars_permanently_unavailable = (bars_missing_secs > 120); // 2 min -- reduced from 5min: BlackBull confirmed no trendbar, no point waiting longer
                 if (bars_permanently_unavailable) {
-                    // Broker confirmed no trendbar support -- allow entries without bar gates.
-                    // CRITICAL: cap lot size when bars unavailable. Without real ATR,
-                    // GoldFlow falls back to atr=5.00 floor which produces 0.16 lots
-                    // at $80 risk. A $5 SL on 0.16 lots = -$80 + costs = -$43 loss.
-                    // With capped lot (0.01), the same SL costs -$5. Much safer.
-                    g_gold_flow.risk_dollars = 0.80;  // degrade gracefully -- no ATR, cap risk to $0.80 so atr=5.00 floor gives ~0.01 lots
-                    if (now_wup - s_warmup_log >= 300) {
+                    // Broker bars permanently unavailable (INVALID_REQUEST loop).
+                    // BLOCK ALL ENTRIES. A blind engine with no ATR/RSI/trend filter
+                    // must not trade. Evidence: April 2 2026 -- bars failed all day,
+                    // engine entered 5 consecutive longs into a $100 crash.
+                    // Previous behaviour (allow with capped lot) was wrong -- lot cap
+                    // was not effective and entries fired at full size anyway.
+                    gf_tick_ok = false;
+                    gf_block_reason = "BARS_PERMANENTLY_UNAVAILABLE";
+                    if (now_wup - s_warmup_log >= 60) {
                         s_warmup_log = now_wup;
-                        printf("[GF-GATE-0D] BARS_UNAVAILABLE >2min -- running without bar gates "
-                               "(broker trendbar unsupported). Gates 3+4 inactive. LOT CAPPED 0.01\n");
+                        printf("[GF-GATE-0D] BARS_PERMANENTLY_UNAVAILABLE -- "
+                               "GoldFlow BLOCKED. No ATR/RSI/trend without seeded bars. "
+                               "bars_missing=%llds. Fix: restart Omega to retry bar seeding.\n",
+                               (long long)bars_missing_secs);
                         fflush(stdout);
                     }
-                    // gf_tick_ok stays true -- entry allowed without bar confirmation
+                    // gf_tick_ok = false -- no entry allowed without seeded bars
                 } else {
                     if (now_wup - s_warmup_log >= 30) {
                         s_warmup_log = now_wup;
@@ -9066,7 +9084,30 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double gf_mid_local  = (bid + ask) * 0.5;
                 const double gf_vwap_disp  = (gf_vwap_local > 0.0)
                     ? std::fabs(gf_mid_local - gf_vwap_local) : 0.0;
-                const bool macro_displacement_bypass = (gf_vwap_disp > 15.0);
+                // Track session-open price for displacement when VWAP is frozen (cold start).
+                // VWAP is unreliable when vol_unseeded -- it reflects stale bar data.
+                // Use price change from session open as a reliable displacement proxy.
+                // Lowered VWAP threshold 15->8: $8 from VWAP is already a macro move on gold.
+                static double s_gf_session_open_price = 0.0;
+                if (s_gf_session_open_price <= 0.0) s_gf_session_open_price = gf_mid_local;
+                const double gf_open_disp = std::fabs(gf_mid_local - s_gf_session_open_price);
+                // Reset session open at midnight UTC
+                {
+                    static int64_t s_gf_open_day = 0;
+                    const int64_t today = static_cast<int64_t>(std::time(nullptr)) / 86400;
+                    if (today != s_gf_open_day) {
+                        s_gf_session_open_price = gf_mid_local;
+                        s_gf_open_day = today;
+                    }
+                }
+                // Bypass vol floor when:
+                //   a) VWAP displacement > $8 (was $15 -- too conservative for $100+ moves)
+                //   b) Session-open displacement > $10 (catches frozen-VWAP cold-start scenarios)
+                //   c) vol_unseeded AND open displacement > $6 (bars not seeded, use open as anchor)
+                const bool macro_displacement_bypass =
+                    (gf_vwap_disp > 8.0)
+                    || (gf_open_disp > 10.0)
+                    || (vol_unseeded && gf_open_disp > 6.0);
                 if (in_compression && !vol_unseeded && !gf_crash_bypass && !macro_displacement_bypass
                     && vol_range_now >= 0.0 && vol_range_now < GF_COMPRESSION_VOL_FLOOR) {
                     static int64_t s_comp_log = 0;
@@ -13091,10 +13132,14 @@ int main(int argc, char* argv[])
         g_ctrader_depth.ctid_account_id     = g_cfg.ctrader_ctid_account_id;
         g_ctrader_depth.l2_mtx              = &g_l2_mtx;
         g_ctrader_depth.l2_books            = &g_l2_books;
-        // Load bar requests that previously caused INVALID_REQUEST -- skip them on startup
-        // This prevents the M1/M5 bar request reconnect loop on every process restart.
+        // Do NOT load bar_failed from disk on startup.
+        // The pre-seeded set below (XAUUSD:1 + live subs) is the correct blocked list.
+        // Loading from disk adds stale entries (XAUUSD:0, XAUUSD:5, XAUUSD:7) that
+        // permanently block the GetTickDataReq fallback -- causing vol_range=0.00 all day.
+        // Evidence: April 2 2026 -- every restart loaded stale failures, bars never seeded,
+        // GoldFlow ran blind all session.
         g_ctrader_depth.bar_failed_path_    = log_root_dir() + "/ctrader_bar_failed.txt";
-        g_ctrader_depth.load_bar_failed(g_ctrader_depth.bar_failed_path_);
+        // load_bar_failed intentionally NOT called -- always start clean.
         // ?? PRIMARY PRICE SOURCE: cTrader depth ? on_tick ????????????????????
         // cTrader Open API streams every tick from the matching engine directly.
         // FIX quote feed can lag 0.5-2pts in fast markets due to gateway batching.
