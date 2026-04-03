@@ -77,6 +77,9 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "OmegaEdges.hpp"          // 7 institutional edges: CVD, TOD, spread-Z, round#, PDH/PDL, FX-fix, fill quality
 #include "OmegaRegimeAdaptor.hpp"  // Regime-adaptive engine weights + vol regime
 #include "OmegaHotReload.hpp"      // Live config reload -- no reboot needed for param changes
+#include "OmegaCorrelationMatrix.hpp" // EWM rolling corr matrix + vol-parity sizing
+#include "OmegaVPIN.hpp"              // Tick-classified VPIN toxicity gate (GoldFlow pre-entry)
+#include "OmegaMonteCarlo.hpp"        // Bootstrap P&L resample + BH/FDR correction (offline tool)
 
 // ?????????????????????????????????????????????????????????????????????????????
 // Singleton
@@ -415,6 +418,8 @@ static omega::news::LiveCalendarFetcher   g_live_calendar;   // Forex Factory li
 static omega::edges::EdgeContext          g_edges;           // 7 institutional edges
 static omega::partial::PartialExitManager g_partial_exit;    // split TP: 50% at 1R, trail remainder
 static omega::regime::RegimeAdaptor       g_regime_adaptor;  // regime-adaptive engine weights + vol
+static omega::corr::CorrelationMatrix     g_corr_matrix;     // EWM rolling corr + vol-parity sizing
+static omega::vpin::VPINTracker           g_vpin;            // tick-classified VPIN toxicity gate
 
 // CRTP breakout engines -- typed per symbol (instrument-specific params + regime gating)
 // ?? Per-symbol config manager -- loaded from symbols.ini at startup ????????????
@@ -2023,6 +2028,162 @@ static std::string build_new_order_single(int seq, const std::string& clOrdId,
     return wrap_fix(b.str());
 }
 
+// Build a FIX NewOrderSingle as a LIMIT order (OrdType=2, TimeInForce=1=GTC).
+// limit_px = mid price at signal time. Passive fill saves ~$0.30/trade vs market.
+// FIX additions vs market order: 40=2 (Limit), 44=price, 59=1 (GTC).
+static std::string build_limit_order_single(int seq, const std::string& clOrdId,
+                                            int sym_id, bool is_long,
+                                            double qty, double limit_px) {
+    std::ostringstream b;
+    b << "35=D\x01"
+      << "49=" << g_cfg.sender << "\x01"
+      << "56=" << g_cfg.target << "\x01"
+      << "50=TRADE\x01" << "57=TRADE\x01"
+      << "34=" << seq << "\x01"
+      << "52=" << timestamp() << "\x01"
+      << "11=" << clOrdId << "\x01"           // ClOrdID
+      << "55=" << sym_id  << "\x01"           // Symbol (numeric ID)
+      << "54=" << (is_long ? "1" : "2") << "\x01"  // Side: 1=Buy 2=Sell
+      << "38=" << std::fixed << std::setprecision(2) << qty << "\x01"  // OrderQty
+      << "40=2\x01"                           // OrdType=Limit
+      << "44=" << std::fixed << std::setprecision(5) << limit_px << "\x01"  // Price
+      << "59=1\x01"                           // TimeInForce=GTC
+      << "60=" << timestamp() << "\x01";      // TransactTime
+    return wrap_fix(b.str());
+}
+
+// ---------------------------------------------------------------------------
+//  Pending limit order tracker.
+//  send_limit_order() inserts here; check_pending_limits() cancels expired ones.
+// ---------------------------------------------------------------------------
+struct PendingLimitOrder {
+    std::string symbol;
+    bool        is_long   = false;
+    double      qty       = 0.0;
+    double      limit_px  = 0.0;
+    int64_t     sent_ms   = 0;    // wall-clock ms at send time
+    int64_t     expire_ms = 0;    // cancel fallback deadline (sent_ms + 500)
+    bool        filled    = false;
+    bool        cancelled = false;
+};
+static std::mutex g_pending_limits_mtx;
+static std::unordered_map<std::string, PendingLimitOrder> g_pending_limits;
+static constexpr int64_t LIMIT_ORDER_TIMEOUT_MS = 500;  // cancel after 500ms if unfilled
+
+// Send a live LIMIT order at limit_px. Falls back to market if timeout fires.
+// Does nothing in SHADOW mode. Returns clOrdId on success, empty on failure/shadow.
+static std::string send_limit_order(const std::string& symbol, bool is_long,
+                                    double qty, double limit_px) {
+    if (g_cfg.mode != "LIVE") return {};
+    if (!g_trade_ready.load()) {
+        std::cerr << "[LIMIT-ORDER] BLOCKED -- trade session not ready\n";
+        return {};
+    }
+    const int sym_id = symbol_name_to_id(symbol);
+    if (sym_id <= 0) {
+        std::cerr << "[LIMIT-ORDER] BLOCKED -- no numeric ID for " << symbol << "\n";
+        return {};
+    }
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const std::string clOrdId = "OML-" + std::to_string(nowSec())
+                               + "-" + std::to_string(g_order_id_counter++);
+    std::string msg;
+    {
+        std::lock_guard<std::mutex> lk(g_trade_mtx);
+        if (!g_trade_ssl) {
+            std::cerr << "[LIMIT-ORDER] BLOCKED -- trade SSL null\n";
+            return {};
+        }
+        msg = build_limit_order_single(g_trade_seq++, clOrdId, sym_id, is_long, qty, limit_px);
+        const int w = SSL_write(g_trade_ssl, msg.c_str(), static_cast<int>(msg.size()));
+        if (w <= 0) {
+            std::cerr << "[LIMIT-ORDER] SSL_write failed for " << symbol << "\n";
+            return {};
+        }
+    }
+    // Track for cancel fallback
+    {
+        std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
+        PendingLimitOrder plo;
+        plo.symbol    = symbol;
+        plo.is_long   = is_long;
+        plo.qty       = qty;
+        plo.limit_px  = limit_px;
+        plo.sent_ms   = now_ms;
+        plo.expire_ms = now_ms + LIMIT_ORDER_TIMEOUT_MS;
+        g_pending_limits[clOrdId] = plo;
+    }
+    // Also register in g_live_orders for ACK tracking
+    {
+        std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+        LiveOrderRecord rec;
+        rec.clOrdId = clOrdId;
+        rec.symbol  = symbol;
+        rec.side    = is_long ? "LONG" : "SHORT";
+        rec.qty     = qty;
+        rec.price   = limit_px;
+        rec.ts      = nowSec();
+        g_live_orders[clOrdId] = rec;
+    }
+    std::printf("[LIMIT-SENT] %s %s qty=%.2f limit=%.5f clOrdId=%s\n",
+                symbol.c_str(), is_long ? "BUY" : "SELL",
+                qty, limit_px, clOrdId.c_str());
+    std::fflush(stdout);
+    return clOrdId;
+}
+
+// Check pending limit orders and cancel any that have exceeded LIMIT_ORDER_TIMEOUT_MS.
+// Call this every tick from the main tick handler.
+static void check_pending_limits() {
+    if (g_cfg.mode != "LIVE") return;
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::vector<std::string> to_cancel;
+    {
+        std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
+        for (auto& kv : g_pending_limits) {
+            if (kv.second.filled || kv.second.cancelled) continue;
+            if (now_ms >= kv.second.expire_ms) {
+                to_cancel.push_back(kv.first);
+            }
+        }
+    }
+    for (const auto& clOrdId : to_cancel) {
+        std::printf("[LIMIT-CANCEL] %s timeout=%lldms -- sending cancel\n",
+                    clOrdId.c_str(), (long long)LIMIT_ORDER_TIMEOUT_MS);
+        std::fflush(stdout);
+        send_cancel_order(clOrdId);
+        {
+            std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
+            auto it = g_pending_limits.find(clOrdId);
+            if (it != g_pending_limits.end()) it->second.cancelled = true;
+        }
+    }
+    // Prune old filled/cancelled entries older than 60s
+    {
+        std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
+        for (auto it = g_pending_limits.begin(); it != g_pending_limits.end(); ) {
+            if ((it->second.filled || it->second.cancelled)
+                && now_ms - it->second.sent_ms > 60000)
+                it = g_pending_limits.erase(it);
+            else
+                ++it;
+        }
+    }
+}
+
+// Mark a pending limit order as filled (call from handle_execution_report).
+static void pending_limit_filled(const std::string& clOrdId) {
+    std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
+    auto it = g_pending_limits.find(clOrdId);
+    if (it != g_pending_limits.end()) {
+        it->second.filled = true;
+        std::printf("[LIMIT-FILLED] %s\n", clOrdId.c_str());
+        std::fflush(stdout);
+    }
+}
+
 // Send a live market order. Does nothing in SHADOW mode.
 // Returns clOrdId on success, empty string on failure/shadow.
 static std::string send_live_order(const std::string& symbol, bool is_long,
@@ -2188,6 +2349,8 @@ static void handle_execution_report(const std::string& msg) {
                 if (it->second.symbol == "USDJPY")   g_bracket_usdjpy.on_reject();
             } else if (ordStatus == "0" || ordStatus == "1" || ordStatus == "2") {
                 it->second.acked = true;
+                // Mark limit order as filled so cancel fallback does not fire
+                if (ordStatus == "2" || ordStatus == "1") pending_limit_filled(clOrdId);
                 if (!lastPx.empty() && !lastQty.empty()) {
                     try {
                         const double fill_px  = std::stod(lastPx);
@@ -3563,6 +3726,7 @@ static void maybe_reset_daily_ledger() {
     g_edges.fill_quality.save_csv(log_root_dir() + "/fill_quality.csv");
     g_edges.fill_quality.print_summary();
     g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
+    g_corr_matrix.save_state(log_root_dir() + "/corr_matrix.dat");  // persist EWM running stats
     g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
     g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
     g_trend_pb_gold.save_state(log_root_dir()  + "/trend_pb_gold.dat");
@@ -4127,6 +4291,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_regime_adaptor.update_vol(sym, (bid + ask) * 0.5, nowSec());
     g_adaptive_risk.update_vol(sym, (ask - bid) * 0.5);
 
+    // Pending limit order cancel fallback -- runs every tick
+    check_pending_limits();
+
     // Correlation cluster counts -- updated every tick for heat guard
     // Count open positions per cluster for CorrelationHeatGuard
     {
@@ -4200,6 +4367,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_portfolio_var.update("EUR_GBP",   eur_gbp  * rpt);
         }
     }
+
+    // ?? Correlation matrix -- feed current symbol mid price each tick ????????
+    // Each symbol passes through the macro-tick dispatch once per tick.
+    // XAUUSD is also fed in the gold tick handler (higher frequency is fine --
+    // duplicate feeds are idempotent: EWM converges regardless of update rate).
+    if (bid > 0.0 && ask > 0.0)
+        g_corr_matrix.on_price(sym, (bid + ask) * 0.5);
 
     // Session slot -- updated every tick
     {
@@ -6230,6 +6404,50 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // ?? Cross-engine deduplication ????????????????????????????????????
         if (!cross_engine_dedup_ok(std::string(esym))) return 0.0;
 
+        // ?? EWM Correlation Matrix gate ????????????????????????????????????????
+        // Block entry if any currently-open symbol is correlated > 0.85 with esym.
+        // Uses realised EWM correlation (last ~120 ticks) not static cluster counts.
+        // Runs AFTER the static corr_heat count guard as a second, precise layer.
+        {  // EWM correlation gate -- returns true immediately if insufficient data
+            // Collect currently-open symbol names
+            std::vector<std::string> open_syms;
+            open_syms.reserve(16);
+            auto add_if = [&](const char* s, bool active) { if (active) open_syms.emplace_back(s); };
+            add_if("US500.F",  g_eng_sp.pos.active);
+            add_if("USTEC.F",  g_eng_nq.pos.active);
+            add_if("DJ30.F",   g_eng_us30.pos.active);
+            add_if("NAS100",   g_eng_nas100.pos.active);
+            add_if("USOIL.F",  g_eng_cl.pos.active);
+            add_if("BRENT",    g_eng_brent.pos.active);
+            add_if("XAGUSD",   g_eng_xag.pos.active);
+            add_if("EURUSD",   g_eng_eurusd.pos.active);
+            add_if("GBPUSD",   g_eng_gbpusd.pos.active);
+            add_if("USDJPY",   g_eng_usdjpy.pos.active);
+            add_if("AUDUSD",   g_eng_audusd.pos.active);
+            add_if("NZDUSD",   g_eng_nzdusd.pos.active);
+            add_if("GER40",    g_eng_ger30.pos.active);
+            add_if("UK100",    g_eng_uk100.pos.active);
+            add_if("XAUUSD",   g_gold_flow.has_open_position()
+                             || g_gold_stack.has_open_position()
+                             || g_trend_pb_gold.has_open_position());
+            if (!g_corr_matrix.entry_allowed(std::string(esym), open_syms))
+                return 0.0;
+        }  // end corr-matrix gate
+
+        // ?? VPIN toxicity gate (XAUUSD only) ?????????????????????????????????????????
+        // Block GoldFlow/GoldStack entries when order flow is toxic (VPIN >= 0.70).
+        // Non-gold symbols: VPIN not yet computed for them (only gold tick feeds g_vpin).
+        if (sv == "XAUUSD" && g_vpin.warmed() && g_vpin.toxic()) {
+            static thread_local int64_t s_vpin_log = 0;
+            if (nowSec() - s_vpin_log > 15) {
+                s_vpin_log = nowSec();
+                std::printf("[VPIN-GATE] XAUUSD entry blocked: vpin=%.3f >= %.2f (toxic flow)\n",
+                            g_vpin.vpin(), g_vpin.toxic_threshold);
+                std::fflush(stdout);
+            }
+            return 0.0;
+        }
+
         // ?? VWAP chop gate ????????????????????????????????????????????????????
         // Entries within 0.05% of daily VWAP have no directional edge.
         // VWAP is the mean-reversion anchor -- breakouts from inside the VWAP zone
@@ -6387,6 +6605,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                        esym, lot, final_lot, sl_abs * tick_mult * lot, g_cfg.max_loss_per_trade_usd);
             }
         }
+        // ?? Vol-parity sizing multiplier (OmegaCorrelationMatrix) ??????????
+        // Scale lot by vol_target/ewm_vol(sym) so high-vol assets get smaller
+        // positions and low-vol assets get proportionally larger ones.
+        // Clamped to [0.50, 1.50]. Returns 1.0 when matrix not yet warmed.
+        {
+            const double vp_scale = g_corr_matrix.vol_parity_scale(std::string(esym));
+            if (vp_scale < 0.99 || vp_scale > 1.01) {  // only log non-trivial changes
+                static thread_local int64_t s_vp_log = 0;
+                if (nowSec() - s_vp_log > 30) {
+                    s_vp_log = nowSec();
+                    std::printf("[VOL-PARITY] %s lot %.4f -> %.4f (scale=%.3f)\n",
+                                esym, final_lot, final_lot * vp_scale, vp_scale);
+                    std::fflush(stdout);
+                }
+            }
+            final_lot = std::max(0.01, std::floor(final_lot * vp_scale * 100.0 + 0.5) / 100.0);
+        }
+
         // ?? Hard R:R floor -- checked at dispatch, not signal generation ????
         // Signal generation uses comp_range ? 1.6 / comp_range ? 0.4 = 4:1.
         // But L2 wall penalties, SL adjustments, and ATR sizing can push this
@@ -7923,6 +8159,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             else { if(xau_mid>s_cur_h4.high)s_cur_h4.high=xau_mid; if(xau_mid<s_cur_h4.low)s_cur_h4.low=xau_mid; s_cur_h4.close=xau_mid; }
         }
 
+        // ?? VPIN toxicity tracker -- updated every XAUUSD tick ????????????????
+        // Feeds g_vpin for GoldFlow pre-entry gate. Unit-volume Lee-Ready classification.
+        g_vpin.on_tick(xau_mid, now_ms_g);
+        // ?? Correlation matrix feed -- XAUUSD ??????????????????????????????????
+        g_corr_matrix.on_price("XAUUSD", xau_mid);
+
         if (gold_spread_ok) {
             if (now_ms_g - g_bracket_gold_minute_start >= 60000) {
                 g_bracket_gold_minute_start       = now_ms_g;
@@ -9320,6 +9562,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const bool gf_wall_ahead = g_gold_flow.has_open_position()
                     && (g_gold_flow.pos.is_long  ? g_macro_ctx.gold_wall_above
                                                  : g_macro_ctx.gold_wall_below);
+                // ?? VPIN pre-entry gate -- do NOT call on_tick when flow is toxic ????
+                // When VPIN >= 0.70, informed traders dominate; entering here risks
+                // adverse selection. on_tick is skipped entirely so no new position
+                // is opened. Management (trail/exit) of existing positions is handled
+                // in the has_open_position() block below -- always runs regardless.
+                bool gf_vpin_ok = true;
+                if (!g_gold_flow.has_open_position() && g_vpin.warmed() && g_vpin.toxic()) {
+                    static int64_t s_gf_vpin_log = 0;
+                    if (nowSec() - s_gf_vpin_log > 15) {
+                        s_gf_vpin_log = nowSec();
+                        std::printf("[VPIN-GF] GoldFlow entry blocked: vpin=%.3f toxic\n",
+                                    g_vpin.vpin());
+                        std::fflush(stdout);
+                    }
+                    gf_vpin_ok = false;
+                }
+                if (gf_vpin_ok) {
                 g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence,
                                            sup_trend, gf_wall_ahead, gold_vwap_pts);
                 g_gold_flow.on_tick(bid, ask,
@@ -9327,6 +9586,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_gold_stack.ewm_drift(),
                     now_ms_g, flow_on_close,
                     g_macro_ctx.session_slot);
+                }  // gf_vpin_ok
             }
             if (g_gold_flow.has_open_position()) {
                 // ?? Post-entry: apply regime weight + adaptive risk sizing ?????
@@ -12489,6 +12749,11 @@ int main(int argc, char* argv[])
         // correlated exposure implies >$300 of potential simultaneous loss.
         g_portfolio_var.init_betas();
         g_portfolio_var.var_limit_usd = g_cfg.daily_loss_limit * 1.5;
+        // Correlation matrix -- load warm state from previous session
+        g_corr_matrix.load_state(log_root_dir() + "/corr_matrix.dat");
+        // VPIN -- reset at session start (stale tick-classification carries no meaning)
+        g_vpin.reset();
+        g_vpin.toxic_threshold = 0.70;  // block entries above 70% toxic flow
         std::printf("[PORTFOLIO-VAR] limit=$%.0f (1.5? daily_loss_limit)\n",
                     g_portfolio_var.var_limit_usd);
 
