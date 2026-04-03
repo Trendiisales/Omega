@@ -8761,8 +8761,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool gf_wall_mgmt   = g_gold_flow.pos.is_long
                                         ? g_macro_ctx.gold_wall_above
                                         : g_macro_ctx.gold_wall_below;
+            // expansion_mode: true when supervisor confirms EXPANSION_BREAKOUT or TREND_CONTINUATION.
+            // Activates velocity trail (wide trail, delayed arm) so crash/surge moves are ridden.
+            const bool gf_expansion_mgmt = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
+                                         || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
+            const double gf_vol_ratio_mgmt = g_gold_stack.recent_vol_pct() > 0.0 && g_gold_stack.base_vol_pct() > 0.0
+                ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 1.0;
             g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence,
-                                       sup_trend_mgmt, gf_wall_mgmt, gold_vwap_pts);
+                                       sup_trend_mgmt, gf_wall_mgmt, gold_vwap_pts,
+                                       gf_expansion_mgmt, gf_vol_ratio_mgmt);
             // Inject bar context (RSI/trend/BB) for SL hold decisions.
             // When RSI confirms trade direction and price isn't at the extreme band,
             // manage_position() suppresses the SL for up to 30s to avoid noise exits.
@@ -8837,7 +8844,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_gold_flow_reload.pos.is_long
                     ? g_macro_ctx.gold_wall_above
                     : g_macro_ctx.gold_wall_below,
-                gold_vwap_pts);
+                gold_vwap_pts,
+                (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
+                 || gold_sdec.regime == omega::Regime::TREND_CONTINUATION),
+                (g_gold_stack.recent_vol_pct() > 0.0 && g_gold_stack.base_vol_pct() > 0.0)
+                    ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 1.0);
             auto reload_mgmt_cb = [&](const omega::TradeRecord& tr) {
                 if (tr.exitReason == std::string("PARTIAL_1R")) {
                     if (g_cfg.mode == "LIVE") {
@@ -9775,8 +9786,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     gf_vpin_ok = false;
                 }
                 if (gf_vpin_ok) {
+                const bool gf_expansion_entry = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
+                                              || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
+                const double gf_vol_ratio_entry = (g_gold_stack.recent_vol_pct() > 0.0
+                                                && g_gold_stack.base_vol_pct() > 0.0)
+                    ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 1.0;
                 g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence,
-                                           sup_trend, gf_wall_ahead, gold_vwap_pts);
+                                           sup_trend, gf_wall_ahead, gold_vwap_pts,
+                                           gf_expansion_entry, gf_vol_ratio_entry);
                 g_gold_flow.on_tick(bid, ask,
                     g_macro_ctx.gold_l2_imbalance,
                     g_gold_stack.ewm_drift(),

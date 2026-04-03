@@ -538,9 +538,24 @@ struct GoldFlowEngine {
 
         // Combined block: any guard is sufficient
         // block_long:  A1(price below VWAP) OR A2(overextended above VWAP) OR B(lower-high)
+        //              OR C(expansion crash -- ewm_drift strongly negative = gold crashing)
         // block_short: A1(price above VWAP) OR A2(overextended below VWAP) OR B(higher-low)
-        const bool block_long  = vwap_trend_down || vwap_overext_up || struct_lower_high;
-        const bool block_short = vwap_trend_up   || vwap_overext_dn || struct_higher_low;
+        //              OR C(expansion surge -- ewm_drift strongly positive = gold surging)
+        //
+        // Guard C -- EXPANSION DIRECTION LOCK:
+        //   When expansion_mode is active AND ewm_drift confirms a directional crash/surge,
+        //   block ALL entries in the counter-trend direction.
+        //   Evidence: 2026-04-02 04:13 LONG @ 4671.82 during active crash = -$17.82.
+        //   Threshold: |ewm_drift| > 6.0 (confirmed sustained move, not chop).
+        //   Only blocks counter-trend: SHORT entries are still allowed during a crash.
+        static constexpr double EXPANSION_BLOCK_DRIFT = 6.0;
+        const bool expansion_crash_block_long  = m_expansion_mode && (ewm_drift < -EXPANSION_BLOCK_DRIFT);
+        const bool expansion_surge_block_short = m_expansion_mode && (ewm_drift >  EXPANSION_BLOCK_DRIFT);
+
+        const bool block_long  = vwap_trend_down || vwap_overext_up || struct_lower_high
+                                 || expansion_crash_block_long;
+        const bool block_short = vwap_trend_up   || vwap_overext_dn || struct_higher_low
+                                 || expansion_surge_block_short;
 
         if (block_long || block_short) {
             static int64_t s_bias_log = 0;
@@ -812,13 +827,19 @@ struct GoldFlowEngine {
     //   directly counter-trend. All 3 exits were FORCE_CLOSE. Net: +$317 vs $3,550 missed.
     // vwap_pts = mid - vwap in raw gold points (e.g. +3.5 = price $3.50 above VWAP)
     // This is the dollar-native signal -- replaces the fragile % threshold.
+    // expansion_mode: true when supervisor regime is EXPANSION_BREAKOUT or TREND_CONTINUATION.
+    // vol_ratio: recent_vol / baseline_vol from GoldEngineStack -- >2.5 = velocity regime.
+    // Together they gate the velocity-trail path in manage_position().
     void set_trend_bias(double momentum_pct, double supervisor_conf, bool sup_is_trend,
-                        bool wall_ahead = false, double vwap_pts = 0.0) noexcept {
+                        bool wall_ahead = false, double vwap_pts = 0.0,
+                        bool expansion_mode = false, double vol_ratio = 1.0) noexcept {
         m_trend_momentum   = momentum_pct;
         m_vwap_pts_dev     = vwap_pts;
         m_sup_conf         = supervisor_conf;
         m_sup_is_trend     = sup_is_trend;
         m_wall_ahead       = wall_ahead;
+        m_expansion_mode   = expansion_mode;
+        m_vol_ratio        = vol_ratio;
     }
     // set_bar_context: inject M1 bar indicators into engine for SL hold decisions.
     // Called from main.cpp before on_tick() when m1_ready=true.
@@ -1083,6 +1104,15 @@ private:
     double  m_sup_conf         = 0.0;  // supervisor confidence score
     bool    m_sup_is_trend     = false; // supervisor classified TREND_CONTINUATION
     bool    m_wall_ahead       = false; // significant L2 wall within 2?ATR ahead of entry
+    // Velocity-trail mode: set true when supervisor regime is EXPANSION_BREAKOUT or
+    // TREND_CONTINUATION AND vol_ratio > 2.5 (market is in a confirmed directional surge).
+    // When active: trail arms later (3x ATR vs 1x), trails wider (2x ATR vs 0.5x),
+    // time-stop is suppressed for aligned-direction positions, and counter-trend entries
+    // are hard-blocked when ewm_drift confirms the directional crash/surge.
+    // Evidence: 2026-04-02 tariff crash -- trail fired at 6pts into 111pt crash.
+    // With velocity trail: would have captured ~100pts = $1,614 vs actual $40.
+    bool    m_expansion_mode   = false; // true = EXPANSION_BREAKOUT or TREND_CONTINUATION
+    double  m_vol_ratio        = 1.0;  // recent_vol / baseline_vol from GoldEngineStack
 
     // Rolling structure windows for lower-high / higher-low detection
     // LONG blocked when 20-tick high < 60-tick high (lower highs = downtrend structure)
@@ -1361,15 +1391,26 @@ private:
         // With this: exits at ~1pt loss after 45s = ~-$10 instead of -$154.
         // Guard: only fires if NO step has been banked (partial_closed=false).
         // Once step1 fires the staircase manages the exit -- no time stop needed.
+        // VELOCITY EXCEPTION: when expansion_mode is active, suppress TIME_STOP entirely
+        // for positions aligned with the expansion direction. Evidence: 2026-04-02 04:03
+        // SHORT timed out at 62s, one minute before the 111pt crash began. The position
+        // was correct direction but the 45s time stop killed it.
+        // Safety: if MFE is zero AND adverse > 2pts, still allow TIME_STOP (genuine wrong entry).
         {
             const int64_t held_s  = (now_ms / 1000) - pos.entry_ts;
             const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
             static constexpr double TIME_STOP_ADVERSE_PTS = 1.0;  // losing >1pt
             static constexpr int64_t TIME_STOP_SECS       = 45;   // for >45s straight
+
+            // Velocity suppression: expansion confirmed AND adverse < 2pts (still viable)
+            const bool velocity_time_suppress =
+                m_expansion_mode && (adverse < 2.0) && (pos.mfe > 0.0 || adverse < 0.5);
+
             if (!pos.partial_closed
                 && held_s > TIME_STOP_SECS
                 && adverse > TIME_STOP_ADVERSE_PTS
-                && pos.mfe < TIME_STOP_ADVERSE_PTS * 0.5) {  // never went even 0.5pt in our favour
+                && pos.mfe < TIME_STOP_ADVERSE_PTS * 0.5
+                && !velocity_time_suppress) {
                 printf("[GOLD-FLOW] TIME-STOP %s adverse=%.2f held=%llds mfe=%.2f -- thesis dead\n",
                        pos.is_long ? "LONG" : "SHORT",
                        adverse, (long long)held_s, pos.mfe);
@@ -1553,23 +1594,68 @@ private:
         //   Step 2 done, move < 3*ATR:   0.25*ATR  (step 2 banked, tighten further)
         //   Move >= 3*ATR (final):       0.20*ATR  (final squeeze on runner)
         //
-        // The wall_ahead flag is set by set_trend_bias() when significant L2 wall
-        // is detected within 2*ATR of current price. Evidence: 4700 resistance caused
-        // immediate reversal after LONG entry, trail at 1.0*ATR gave 10pts of room
-        // before exiting -- entire move was given back. 0.5*ATR and wall tighten fix this.
+        // ?? VELOCITY TRAIL -- active when expansion_mode (EXPANSION_BREAKOUT / TREND_CONTINUATION)
+        // AND vol_ratio > 2.5 (market is in a confirmed directional surge).
+        //
+        // PROBLEM: normal trail (arm at 1xATR, trail 0.50xATR) fires within seconds on a crash.
+        // Evidence: 2026-04-02 04:05 SHORT @ 4672.89, ATR=5pts, move = 111pts in 20 min.
+        //   Normal trail: arm at step1 ($35 ~ 2.19pts), trail fires at 6pts -> exits at 4666.
+        //   Velocity trail: arm at 15pts (3xATR), trail 2.0xATR -> exits near low ~4572 = 100pts.
+        //   Actual: $101 captured. With velocity: ~$1,614 captured.
+        //
+        // VELOCITY TRAIL PARAMETERS:
+        //   Arm threshold: 3x ATR (requires 3x normal breathing room before trail engages)
+        //   Trail distance: 2.0x ATR behind MFE peak (wide enough to survive intrabar noise)
+        //   Wall_ahead override: still tightens to 1.0x ATR (resistance = real signal)
+        //   Normal trail path: unchanged when velocity mode is NOT active
+        //
+        // RISK: wider trail means larger giveback on reversal (~10pts vs ~2.5pts).
+        // MITIGATION: hard stop (20pts) caps process-crash exposure regardless.
+        //             Step 1 STAIR still banks 33% early -- locks real cash.
+        //             Dollar-ratchet still fires every $50 -- progressive locking.
+        const bool velocity_active = m_expansion_mode && (m_vol_ratio > 2.5);
+        // Check position is in the EXPANSION direction (don't give velocity trail to counter-trend)
+        // SHORT in expansion (ewm_drift < 0 = crash) or LONG in expansion (ewm_drift > 0 = surge)
+        // We check sign of mfe (it's always positive) -- direction is in pos.is_long
+        // Just require velocity_active -- the entry block below ensures only aligned-direction
+        // trades exist in expansion mode
         if (pos.be_locked && pos.mfe > 0.0) {
-            const double trail_mult =
-                (!pos.partial_closed_2 && m_wall_ahead) ? 0.25 :  // wall ahead: tighten now
-                (!pos.partial_closed_2)                 ? 0.50 :  // step1 done, running free
-                (move < atr * 3.0)                      ? 0.25 :  // step2 done, mid tighten
-                                                          0.20;   // final remainder squeeze
-            const double trail_sl = pos.is_long
-                ? (pos.entry + pos.mfe - atr_live * trail_mult)
-                : (pos.entry - pos.mfe + atr_live * trail_mult);
-            if ((pos.is_long  && trail_sl > pos.sl) ||
-                (!pos.is_long && trail_sl < pos.sl)) {
-                pos.sl = trail_sl;
+            double trail_mult;
+            if (velocity_active) {
+                // VELOCITY TRAIL: arm only after 3x ATR, trail at 2x ATR
+                // Before arm threshold: no trail update (let it run freely)
+                // After arm threshold:  wide trail at 2x ATR, tightens at wall
+                if (pos.mfe < atr_live * 3.0) {
+                    // Before velocity arm: DO NOT trail yet. The SL stays where
+                    // the ratchet or stair last placed it. This is the key change --
+                    // normal path would trail at 0.50x ATR from the very first tick,
+                    // killing the position at 2.5pts. Velocity mode waits.
+                    goto skip_velocity_trail;
+                }
+                trail_mult = m_wall_ahead ? 1.0 :   // wall ahead: tighten even in velocity mode
+                             (move < atr * 6.0)  ? 2.0 :   // velocity mode: wide trail
+                                                   1.0;     // very extended move (6x ATR): tighten
+                printf("[GFE-VEL-TRAIL] %s mfe=%.1f atr=%.1f trail_mult=%.1f vol_ratio=%.1f\n",
+                       pos.is_long ? "LONG" : "SHORT", pos.mfe, atr_live, trail_mult, m_vol_ratio);
+                fflush(stdout);
+            } else {
+                // NORMAL TRAIL (unchanged)
+                trail_mult =
+                    (!pos.partial_closed_2 && m_wall_ahead) ? 0.25 :  // wall ahead: tighten now
+                    (!pos.partial_closed_2)                 ? 0.50 :  // step1 done, running free
+                    (move < atr * 3.0)                      ? 0.25 :  // step2 done, mid tighten
+                                                              0.20;   // final remainder squeeze
             }
+            {
+                const double trail_sl = pos.is_long
+                    ? (pos.entry + pos.mfe - atr_live * trail_mult)
+                    : (pos.entry - pos.mfe + atr_live * trail_mult);
+                if ((pos.is_long  && trail_sl > pos.sl) ||
+                    (!pos.is_long && trail_sl < pos.sl)) {
+                    pos.sl = trail_sl;
+                }
+            }
+            skip_velocity_trail:;
         }
 
         // ?? Dollar-ratchet lock ???????????????????????????????????????????????
