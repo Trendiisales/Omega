@@ -38,7 +38,15 @@
 # ==============================================================================
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
+
+# Singleton guard -- prevent two deploy scripts running at once
+$deployMutex = New-Object System.Threading.Mutex($false, "Global\OmegaDeployMutex")
+$gotMutex = $deployMutex.WaitOne(0)
+if (-not $gotMutex) {
+    Write-Host "[DEPLOY] Another deploy is already running. Exiting." -ForegroundColor Red
+    exit 1
+}
 
 $OmegaDir  = "C:\Omega"
 $OmegaExe  = "C:\Omega\Omega.exe"
