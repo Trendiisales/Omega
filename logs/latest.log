@@ -525,3 +525,37 @@ OK: cTrader live, L2 events flowing (book still filling)
 00:58:54 [TICK] BRENT 106.44/107.11
 00:58:54 [TICK] VIX.F 24.48/24.86
 00:58:54 [TICK] DX.F 99.79/99.89
+01:01:45 [OMEGA] Log: C:\Omega\logs/omega_2026-04-03.log
+01:01:45 [OMEGA] Full Trade CSV: logs/trades/omega_trade_closes.csv
+01:01:45 [OMEGA] Trade Opens CSV: logs/trades/omega_trade_opens.csv
+01:01:45 [OMEGA] Daily Trade Logs: logs/trades/omega_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)
+01:01:45 [OMEGA] Daily Gold Logs: logs/gold/omega_gold_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)
+01:01:45 [OMEGA] Daily Shadow Trade Logs: logs/shadow/trades/omega_shadow_trades_YYYY-MM-DD.csv (UTC, 5-file retention)
+01:01:45 [OMEGA] Shadow CSV: logs/shadow/omega_shadow.csv
+01:01:45 [OMEGA] Startup reload: no today CSV yet (logs/trades/omega_trade_closes_2026-04-03.csv) -- clean start
+01:01:45 [OmegaHTTP] Direct snapshot pointer OK
+01:01:45 [OmegaHTTP] port 7779
+01:01:45 [OmegaWS] WebSocket port 7780
+01:01:45 [OMEGA] GUI http://localhost:7779  WS:7780
+01:01:45 [CTRADER] Pre-blocked trendbar reqs + live subs -- no crash loop
+01:01:45 [CTRADER] Depth client started (ctid=44937427)
+01:01:45 [CTRADER] Depth feed starting (ctid=44937427)
+01:01:45 [OMEGA] FIX loop starting -- SHADOW mode
+01:01:45 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+01:01:45 [OMEGA-TRADE] Logon sent
+01:01:45 [OMEGA-TRADE] LOGON ACCEPTED
+01:01:45 [OMEGA-TRADE] SecurityListRequest sent req_id=omega-sec-1775178105
+01:01:45 [OMEGA-SECURITY] learned ext id EURUSD -> 1
+01:01:45 [OMEGA-SECURITY] learned ext id GBPUSD -> 2
+01:01:45 [OMEGA-SECURITY] learned ext id USDJPY -> 4
+01:01:45 [OMEGA-SECURITY] learned ext id AUDUSD -> 5
+01:01:45 [OMEGA-SECURITY] learned ext id NZDUSD -> 12
+01:01:45 [OMEGA-SECURITY] learned ext id XAGUSD -> 42
+01:01:45 [OMEGA-SECURITY] learned ext id BRENT -> 109
+01:01:45 [OMEGA-SECURITY] UNMATCHED: 'UK100.F' id=4461
+01:01:45 [OMEGA-SECURITY] learned ext id ESTX50 -> 1898
+01:01:45 [OMEGA-SECURITY] learned ext id GER40 -> 1899
+01:01:45 [OMEGA-SECURITY] learned ext id UK100 -> 1901
+01:01:45 [OMEGA-SECURITY] UNMATCHED: 'UKBRENT.F' id=2634
+01:01:45 [OMEGA-SECURITY] UNMATCHED: 'ESTC' id=3229
+01:01:45 [OMEGA-TRADE] SecurityList received req_id=omega-sec-1775178105 entries=1551 (ext IDs updated -- will re-subscribe)
