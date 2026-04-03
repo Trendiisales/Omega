@@ -866,7 +866,7 @@ public:
         // be valid at London open (07:00 UTC next day = 9 hours later). With 4h
         // limit the file was rejected every morning, forcing a cold tick-data
         // request that times out -> m1_ready=false all session -> bars never seed.
-        if (saved_ts <= 0 || saved_ts > now_ts || age > 12 * 3600 || e9 <= 0 || e50 <= 0) {
+        if (saved_ts <= 0 || saved_ts > now_ts || age > 24 * 3600 || e9 <= 0 || e50 <= 0) {
             remove(path.c_str());
             printf("[OHLC] Bar state rejected (age=%llds e9=%.2f e50=%.2f) -- cold start\n",
                    age, e9, e50);

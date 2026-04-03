@@ -4215,6 +4215,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
 
+    // ?? Periodic bar indicator auto-save every 10 minutes ????????????????
+    // Prevents cold-start on crash/kill: indicators saved to .dat every 10min
+    // so a restart within 12h loads them instantly (m1_ready=true immediately).
+    // Previously only saved at midnight + shutdown -- a crash between saves
+    // meant cold start, m1_ready=false, GoldFlow blocked for 15min+ every restart.
+    {
+        static int64_t s_last_bar_save = 0;
+        const int64_t now_bs = nowSec();
+        if (now_bs - s_last_bar_save >= 600) {  // every 10 minutes
+            s_last_bar_save = now_bs;
+            if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+                const std::string base = log_root_dir();
+                g_bars_gold.m1 .save_indicators(base + "/bars_gold_m1.dat");
+                g_bars_gold.m5 .save_indicators(base + "/bars_gold_m5.dat");
+                g_bars_gold.m15.save_indicators(base + "/bars_gold_m15.dat");
+                g_bars_gold.h4 .save_indicators(base + "/bars_gold_h4.dat");
+                printf("[BAR-SAVE] Periodic save -- bars_gold_m1/m5/m15/h4.dat updated\n");
+                fflush(stdout);
+            }
+        }
+    }
+
     // ?? L2 size-dead watchdog -- warn at 5s, force-restart at 10s ??????????????
     // cTrader sends depth events (prices arrive) but size=0 on all levels.
     // has_data()=false ? GoldFlow blind, no L2 signal. Unacceptable.
@@ -11495,8 +11517,25 @@ int main(int argc, char* argv[])
     g_trend_pb_nq.load_state(log_root_dir()    + "/trend_pb_nq.dat");
     g_trend_pb_sp.load_state(log_root_dir()    + "/trend_pb_sp.dat");
 
+    // ?? Nuke stale ctrader_bar_failed.txt on every startup ??????????????????
+    // Old binaries wrote M5/M15 periods (5/7) and BOM-prefixed keys into this
+    // file, permanently blacklisting the tick-data fallback requests that seed
+    // M15 bars on cold start. Effect: bars NEVER seed, GoldFlow blocked all day.
+    // Fix: delete the file and rewrite it clean from the pre-seeded in-memory set.
+    // The in-memory set is pre-seeded in ctrader setup (XAUUSD:1 and live subs).
+    // Any valid entries that were on disk will be re-discovered naturally --
+    // GetTrendbarsReq is already blocked in-memory. The only thing we lose is
+    // session-specific crash history, which resets anyway on every restart.
+    {
+        const std::string failed_path = log_root_dir() + "/ctrader_bar_failed.txt";
+        if (std::remove(failed_path.c_str()) == 0) {
+            printf("[STARTUP] Deleted stale ctrader_bar_failed.txt -- clean slate for bar requests\n");
+        }
+        fflush(stdout);
+    }
+
     // Load OHLCBarEngine indicator state -- instant warm restart, no tick data request needed.
-    // If .dat files exist and are <4hr old: m1_ready=true immediately on first tick.
+    // If .dat files exist and are <24hr old: m1_ready=true immediately on first tick.
     // Bars update live from on_spot_event (M15 bar closes pushed by broker every 15min).
     // This eliminates the 2-minute GoldFlow bar gate delay on every restart.
     {
