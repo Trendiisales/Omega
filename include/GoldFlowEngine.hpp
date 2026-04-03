@@ -975,14 +975,7 @@ struct GoldFlowEngine {
         m_range_window.clear();
         for (int i = 0; i < GFE_RANGE_WINDOW; ++i) m_range_window.push_back(mid);
         m_range_hi = mid; m_range_lo = mid;
-
-        // Range expansion tracking -- update hi/lo window
-        m_range_window.push_back(mid);
-        if ((int)m_range_window.size() > GFE_RANGE_WINDOW) m_range_window.pop_front();
-        if ((int)m_range_window.size() >= 5) {
-            m_range_hi = *std::max_element(m_range_window.begin(), m_range_window.end());
-            m_range_lo = *std::min_element(m_range_window.begin(), m_range_window.end());
-        }
+        // NOTE: window is already full from the loop above -- no extra push needed.
 
         // Seed direction windows neutral
         m_fast_window.clear();

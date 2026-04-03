@@ -1189,9 +1189,9 @@ public:
             pos.mae             = 0.0;
             pos.entry_ts        = now;
             pos.spread_at_entry = spread;
-            strncpy_s(pos.regime, macro_regime ? macro_regime : "", 31);
+            strncpy(pos.regime,       macro_regime ? macro_regime : "", 31); pos.regime[31]       = '\0';
             // Store supervisor regime at entry for regime-flip exit detection
-            strncpy_s(pos.entry_regime, macro_regime ? macro_regime : "", 31);
+            strncpy(pos.entry_regime, macro_regime ? macro_regime : "", 31); pos.entry_regime[31] = '\0';
 
             m_last_signal_ts = now;
             ++m_trade_id;

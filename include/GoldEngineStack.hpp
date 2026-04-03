@@ -1071,16 +1071,6 @@ public:
                 if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
             }
         }
-        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
-        // Tighten spread cap to 0.80pt in Asia -- real directional moves have tight spreads.
-        // Also block when ATR proxy (volatility*2.5) < 3x spread -- SL within spread noise.
-        if (s.session == SessionType::ASIAN) {
-            if (s.spread > 0.80) return noSignal();
-            if (s.volatility > 0.0 && s.spread > 0.0) {
-                const double atr_proxy = s.volatility * 2.5;
-                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
-            }
-        }
 
         const int mod = utc_minute_of_day();
         const int slot = bar_slot(mod);
@@ -4472,8 +4462,14 @@ public:
                     // Cast to SessionMomentumEngine and clear its history
                     static_cast<SessionMomentumEngine*>(e.get())->reset_history();
                 }
+                if (e->getName() == "MomentumContinuation") {
+                    // MomentumContinuation has a history_ buffer that retains cross-session
+                    // prices -- reset on session change so it cannot fire on stale Asia data
+                    // when London opens.
+                    e->reset();
+                }
             }
-            printf("[GOLD-SESSION-CHANGE] %s ? %s: SessionMomentum history cleared\n",
+            printf("[GOLD-SESSION-CHANGE] %s ? %s: SessionMomentum + MomentumContinuation history cleared\n",
                    session_name(last_session_), session_name(snap.session));
             fflush(stdout);
         }
