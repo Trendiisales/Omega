@@ -506,3 +506,22 @@ OK: cTrader live, L2 events flowing (book still filling)
 00:58:33 [CTRADER-BARS] XAUUSD M5 (ticks): seeded 15 bars, trend=0
 00:58:33 [CTRADER-BARS] XAUUSD M15 (ticks): seeded 5 bars, EMA9=7.20 EMA50=7.20 ATR=117013.50
 00:58:34 [TICK] US500.F 6624.09/6624.90
+00:58:50 [TICK] DJ30.F 46730.60/46736.40
+00:58:54 [TICK] EURUSD 1.15/1.1[OMEGA-DIAG] PnL=05
+00:58:54 .00 T=0 WR=0% RTTp95=5.617ms cap=120ms lat_ok=1 session=ACTIVE
+00:58:54 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+00:58:54 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+00:58:54 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+00:58:54 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+00:58:54 [TICK] XAUUSD 4677.03/4677.25
+00:58:54 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.22 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+00:58:54 [TICK] XAGUSD 73.02/73.05
+00:58:54 [TICK] NAS100 24047.25/24048.45
+00:58:54 [TICK] NGAS.F 2.79/2.82
+00:58:54 [TICK] USOIL.F 111.90/112.01
+00:58:54 [TICK] ESTX50 5699.40/5700.80
+00:58:54 [TICK] GER40 23202.60/23204.30
+00:58:54 [TICK] UK100 10455.10/10456.90
+00:58:54 [TICK] BRENT 106.44/107.11
+00:58:54 [TICK] VIX.F 24.48/24.86
+00:58:54 [TICK] DX.F 99.79/99.89
