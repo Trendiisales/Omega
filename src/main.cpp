@@ -8022,6 +8022,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                tstat * 10.0, seas_mult);
                         fflush(stdout);
                     }
+                    // ?? RSI conviction mult: SHORT in momentum regime with RSI<20 ??
+                    // is_momentum_regime() = ADX>=25 AND ATR expanding.
+                    // In that regime RSI<20 = continuation short not reversal.
+                    // Scale conviction [1.00..1.20] by ADX strength (25->40 linear).
+                    // Only applies to SHORT entries; returns 1.0 for LONG or non-momentum.
+                    conf_mult *= g_vol_targeter.rsi_conviction_mult(
+                        g_bars_gold.m1.ind, !gsig.is_long);
+
                     const double base_lot  = compute_size("XAUUSD", gold_sl_abs, ask - bid,
                                                           gsig.size > 0.0 ? gsig.size : 0.02);
                     // ?? Regime weight: boost gold in RISK_OFF, reduce in RISK_ON ??
@@ -9444,6 +9452,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         }
                     }
                 }
+            }
+
+            // ?? VolTargeter: high-impact macro event window gate ??????????????
+            // Blocks new GoldFlow entries within +-30min of any loaded HIGH-impact event.
+            // Spread blows out around NFP/FOMC/CPI -- fills are unreliable.
+            // Complements OmegaNewsBlackout (hardcoded windows) with precise event times.
+            if (gf_tick_ok && g_vol_targeter.high_impact_window()) {
+                printf("[GF-BAR-BLOCK] XAUUSD entry blocked -- high-impact macro event window\n");
+                fflush(stdout);
+                gf_tick_ok = false;
+                gf_block_reason = "HIGH_IMPACT_WINDOW";
+            }
+
+            // ?? VolTargeter: full diagnostic log on every valid entry attempt ??
+            // Prints ADX, EWMA vol, vol_target_mult, momentum regime, high-impact flag.
+            if (gf_tick_ok) {
+                g_vol_targeter.log_state(g_bars_gold.m1.ind);
             }
 
             // ?? Diagnostic: which gate is holding, throttled 30s ??????????????
@@ -12109,6 +12134,19 @@ int main(int argc, char* argv[])
             printf("[STARTUP] No bar state on disk (cold start) -- 15min M1 warmup required\n");
         }
         fflush(stdout);
+    }
+
+    // Load macro event calendar for OmegaVolTargeter high_impact_window() gate.
+    // File: config\macro_events_today.txt (same dir as omega_config.ini)
+    // Format: "HH:MM CURRENCY HIGH LABEL"  e.g. "13:30 USD HIGH NFP"
+    // Must be updated daily (manually or via a pre-open script).
+    // Graceful: if file absent, high_impact_window() returns false (no blocking).
+    {
+        // Mirror config resolution: try cwd first, then config\ subdir
+        const std::string ev_cwd = "macro_events_today.txt";
+        const std::string ev_cfg = "config\\macro_events_today.txt";
+        std::ifstream test(ev_cwd);
+        g_vol_targeter.load_events(test.is_open() ? ev_cwd : ev_cfg);
     }
 
     // TrendPullback gold: M15 bar EMAs seeded live from g_bars_gold.m15 each tick.
