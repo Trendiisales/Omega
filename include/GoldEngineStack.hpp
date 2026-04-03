@@ -49,6 +49,7 @@
 #include <algorithm>
 #include <functional>
 #include <deque>
+#include <iostream>
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -908,7 +909,7 @@ public:
         sig.valid = true; sig.size = 0.01;
         sig.tp = static_cast<int>(TP_TICKS_D);
         sig.sl = static_cast<int>(SL_TICKS_D);
-        sig.confidence = 0.75;
+        // confidence set below from half_hour_tstat(bucket) -- 0.75 placeholder removed
 
         if (bias == +1) {
             sig.side = TradeSide::LONG; sig.entry = s.ask;
@@ -3518,10 +3519,10 @@ public:
                     // DXYDivergence: active in all regimes (intermarket signal independent of regime).
                     // LondonFixMomentum: active (fix happens regardless of regime).
                     // SessionOpenMomentum: BLOCKED in COMPRESSION (momentum needs expansion to run).
-                    en=(n=="CompressionBreakout"||n=="IntradaySeasonality"
-                       ||n=="WickRejection"||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
+                    en=(n=="IntradaySeasonality"
+                       ||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
                        ||n=="AsianRange"||n=="DynamicRange"
-                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"
+                       ||n=="TurtleTick"||n=="NR3Tick"
                        ||n=="TwoBarReversal"
                        ||n=="VWAPStretchReversion"||n=="DXYDivergence"||n=="LondonFixMomentum"); break;
                 case MarketRegime::TREND:
@@ -3535,9 +3536,8 @@ public:
                     // CB fires on those compression breaks -- it IS a trend-following tool
                     // when the move is already $15+ confirmed. The internal $6 compression
                     // range requirement and EWM drift gate prevent it firing into trend noise.
-                    en=(n=="CompressionBreakout"||n=="ImpulseContinuation"
-                       ||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
-                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"
+                    en=(n=="DonchianBreakout"||n=="SpikeFade"
+                       ||n=="TurtleTick"||n=="NR3Tick"
                        ||n=="TwoBarReversal"
                        ||n=="ORBNewYork"||n=="DXYDivergence"||n=="LondonFixMomentum"
                        ||n=="SessionOpenMomentum"); break;
@@ -3550,9 +3550,9 @@ public:
                     // LondonFixMomentum: active.
                     en=(n=="VWAP_SNAPBACK"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
                        ||n=="MeanReversion"||n=="IntradaySeasonality"
-                       ||n=="WickRejection"||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
+                       ||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
                        ||n=="AsianRange"||n=="DynamicRange"
-                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"
+                       ||n=="TurtleTick"||n=="NR3Tick"
                        ||n=="TwoBarReversal"
                        ||n=="VWAPStretchReversion"||n=="ORBNewYork"||n=="DXYDivergence"
                        ||n=="LondonFixMomentum"); break;
@@ -3564,10 +3564,9 @@ public:
                     // VWAPStretchReversion: BLOCKED in IMPULSE (fade impossible in impulse).
                     // CompressionBreakout added to IMPULSE: impulse moves are preceded
                     // by micro-compressions (the coil before the break). CB catches these.
-                    en=(n=="CompressionBreakout"||n=="ImpulseContinuation"
-                       ||n=="SessionMomentum"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
-                       ||n=="WickRejection"||n=="DonchianBreakout"||n=="SpikeFade"
-                       ||n=="WickRejTick"||n=="TurtleTick"||n=="NR3Tick"
+                    en=(n=="SessionMomentum"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
+                       ||n=="DonchianBreakout"||n=="SpikeFade"
+                       ||n=="TurtleTick"||n=="NR3Tick"
                        ||n=="TwoBarReversal"
                        ||n=="ORBNewYork"||n=="DXYDivergence"||n=="LondonFixMomentum"
                        ||n=="SessionOpenMomentum"); break;
@@ -4491,26 +4490,8 @@ public:
         // VWAP chop zone gate
         if(snap.vwap>0&&std::fabs(snap.mid-snap.vwap)<MIN_VWAP_DISLOCATION) return GoldSignal{};
 
-        // Fast path: ImpulseContinuation first
-        for(auto& e:engines_){
-            if(e->getName()=="ImpulseContinuation"&&e->isEnabled()){
-                Signal s=e->process(snap);
-                if(s.valid){
-                    const double score = s.confidence * 1.1; // engine weight for ImpulseContinuation
-                    if (!entry_quality_ok(s, score, snap, now_s)) return GoldSignal{};
-                    GoldSignal gs=to_gold_signal(s);
-                    apply_vol_scaled_sl(gs);
-                    pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
-                    has_open_pos_=true;
-                    last_entry_ts_=now_s;
-                    return gs;
-                }
-                break;
-            }
-        }
-
         // Inject EWM drift and vol_ratio into engines that need them.
-        // CompressionBreakout + MeanReversion: drift gate for momentum blocking.
+        // MeanReversion: drift gate for momentum blocking.
         // NR3Breakout: vol_ratio gate for coiling-tape detection.
         const double cur_vol_ratio = (baseline_vol_pct_ > 0.0)
             ? governor_.window_range() / (last_mid_ > 0 ? last_mid_ : 1.0)
@@ -4518,9 +4499,7 @@ public:
             : 1.0;
         for (auto& e : engines_) {
             const auto& nm = e->getName();
-            if (nm == "CompressionBreakout") {
-                static_cast<CompressionBreakoutEngine*>(e.get())->set_ewm_drift(governor_.ewm_drift());
-            } else if (nm == "MeanReversion") {
+            if (nm == "MeanReversion") {
                 static_cast<MeanReversionEngine*>(e.get())->set_ewm_drift(governor_.ewm_drift());
             } else if (nm == "NR3Breakout") {
                 static_cast<NR3BreakoutEngine*>(e.get())->set_vol_ratio(cur_vol_ratio);
@@ -4534,7 +4513,7 @@ public:
         Signal best; double best_score=0;
         int long_count=0, short_count=0;
         for(auto& e:engines_){
-            if(e->getName()=="ImpulseContinuation"||!e->isEnabled()) continue;
+            if(!e->isEnabled()) continue;
             Signal s=e->process(snap);
             if(!s.valid) continue;
             double score=s.confidence*e->weight_;
@@ -4807,17 +4786,9 @@ private:
             }
         }
 
-        if (s.engine[0] != '\0' && std::strcmp(s.engine, "ImpulseContinuation") == 0) {
-            if (s.confidence < IMPULSE_MIN_CONFIDENCE || score < IMPULSE_MIN_SCORE) return false;
-        } else if (s.engine[0] != '\0' && std::strcmp(s.engine, "CompressionBreakout") == 0) {
-            // CB confidence = min(1.5, breakout_distance / BREAKOUT_TRIGGER).
-            // With TRIGGER=$2.50: confidence=1.0 means price moved exactly $2.50 past the box.
-            // Require >= 1.0 -- the minimal qualifying break. Anything below means CB fired
-            // at the very edge of the trigger (noise). No score bypass -- CB must pass this.
-            if (s.confidence < 1.0) return false;
-        } else {
-            if (score < GENERAL_MIN_SCORE) return false;
-        }
+        // All active engines use the general score gate.
+        // (ImpulseContinuation and CompressionBreakout are shelved -- removed from engines_.)
+        if (score < GENERAL_MIN_SCORE) return false;
         if (side_paused(s.side, now_s)) return false;
         if (same_level_reentry_blocked(s.side, s.entry, now_s)) return false;
         return true;
@@ -4912,13 +4883,6 @@ private:
         for (auto& e : engines_) {
             const auto& n = e->getName();
 
-            // CompressionBreakout: always enabled (safe in all Asian regimes --
-            // requires its own compression range < $6, so it self-gates in trends)
-            if (n == "CompressionBreakout") {
-                e->setEnabled(true);
-                continue;
-            }
-
             // Trend-following engines: only when regime confirms a genuine move.
             // Each has its own internal HTF direction filter (EMA50/250 or equiv)
             // so they cannot fire counter-trend even if enabled here.
@@ -5004,9 +4968,11 @@ private:
     // Risk-based sizing in main.cpp compensates: wider SL = smaller size = same $ risk.
     // Applies ONLY to CompressionBreakout and ImpulseContinuation -- engines that fire
     // at the START of a move where vol_range reflects real current volatility.
+    // apply_vol_scaled_sl: vol-scale SL/TP on any engine signal where vol_range is available.
+    // Previously gated to CompressionBreakout/ImpulseContinuation only (both shelved).
+    // Now applies to all engines -- ensures SL sizing reflects real current volatility.
+    // Only widens never tightens: engines keep their own floor if ATR is low.
     void apply_vol_scaled_sl(GoldSignal& gs) const noexcept {
-        const std::string eng(gs.engine);
-        if (eng != "CompressionBreakout" && eng != "ImpulseContinuation") return;
         const double vr = vol_filter_.current_range();
         if (vr <= 0.0) return;
         // Scale: 0.40 ? vol_range, clamped [$5, $15] = [50 ticks, 150 ticks]

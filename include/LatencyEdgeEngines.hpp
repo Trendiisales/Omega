@@ -98,26 +98,30 @@ public:
         if (move > pos.mfe) pos.mfe = move;
         if (-move > pos.mae) pos.mae = -move;
 
-        // Trailing stop -- same 3-stage logic as BreakoutEngine
-        const double move_pct = pos.entry > 0.0 ? move / pos.entry * 100.0 : 0.0;
-        if (move_pct >= 1.60) {
-            const double trail = pos.is_long
-                ? mid * (1.0 - 0.25 / 100.0)
-                : mid * (1.0 + 0.25 / 100.0);
-            if ( pos.is_long && trail > pos.sl) pos.sl = trail;
-            if (!pos.is_long && trail < pos.sl) pos.sl = trail;
-        } else if (move_pct >= 1.00) {
-            const double trail = pos.is_long
-                ? mid * (1.0 - 0.40 / 100.0)
-                : mid * (1.0 + 0.40 / 100.0);
-            if ( pos.is_long && trail > pos.sl) pos.sl = trail;
-            if (!pos.is_long && trail < pos.sl) pos.sl = trail;
-        } else if (move_pct >= 0.60) {
-            const double be = pos.is_long
-                ? pos.entry * (1.0 + 0.10 / 100.0)
-                : pos.entry * (1.0 - 0.10 / 100.0);
-            if ( pos.is_long && be > pos.sl) pos.sl = be;
-            if (!pos.is_long && be < pos.sl) pos.sl = be;
+        // Dollar-absolute trailing stop -- calibrated to TP/SL scale of LE engines.
+        // Previous % trail required a 0.60% move (~$30 on gold) before arming --
+        // SpreadDislocation TP=$0.30 would never reach the arm threshold.
+        // New: trail arms at 50% of the distance from entry to initial SL (1R).
+        const double sl_dist = std::fabs(pos.entry - pos.sl);  // initial risk in pts
+        if (sl_dist > 0.0) {
+            // Lock BE: armed at 0.5R profit (50% of SL distance)
+            if (move >= sl_dist * 0.50) {
+                const double be = pos.is_long ? pos.entry : pos.entry;
+                if ( pos.is_long && be > pos.sl) pos.sl = be;
+                if (!pos.is_long && be < pos.sl) pos.sl = be;
+            }
+            // Stage 1 trail: armed at 1.0R profit, trails 0.5R behind mid
+            if (move >= sl_dist * 1.00) {
+                const double trail = pos.is_long ? (mid - sl_dist * 0.50) : (mid + sl_dist * 0.50);
+                if ( pos.is_long && trail > pos.sl) pos.sl = trail;
+                if (!pos.is_long && trail < pos.sl) pos.sl = trail;
+            }
+            // Stage 2 tight trail: armed at 1.5R profit, trails 0.25R behind mid
+            if (move >= sl_dist * 1.50) {
+                const double trail = pos.is_long ? (mid - sl_dist * 0.25) : (mid + sl_dist * 0.25);
+                if ( pos.is_long && trail > pos.sl) pos.sl = trail;
+                if (!pos.is_long && trail < pos.sl) pos.sl = trail;
+            }
         }
 
         const bool tp_hit = pos.is_long ? (ask >= pos.tp) : (bid <= pos.tp);
@@ -474,12 +478,13 @@ class GoldEventCompression {
         // Tuesday  12:30 UTC -- US CPI/PPI (approximate -- treat as weekly)
         // Friday   12:30 UTC -- NFP (approximate -- treat as weekly)
         // Wednesday 18:00 UTC -- FOMC approximate
+        // Only Thursday Jobless Claims fires every single week reliably.
+        // CPI (Tuesday), NFP (Friday), FOMC (Wednesday) are month/quarter events --
+        // treating them as weekly caused false arms on non-event days.
+        // Removed: Tuesday 12:30, Friday 12:30, Wednesday 18:00.
         struct EventDef { int wday; int event_sec; };
         static const EventDef EVENTS[] = {
-            {2, 12*3600+30*60},  // Tuesday  12:30
-            {4, 12*3600+30*60},  // Thursday 12:30 (Jobless Claims -- every week)
-            {5, 12*3600+30*60},  // Friday   12:30 (NFP week)
-            {3, 18*3600+0*60},   // Wednesday 18:00 (FOMC)
+            {4, 12*3600+30*60},  // Thursday 12:30 UTC -- US Jobless Claims (every week)
         };
 
         for (const auto& ev : EVENTS) {
@@ -663,25 +668,22 @@ public:
         fflush(stdout);
     }
 
-    // SpreadDislocation + EventCompression manage-only (no new entries -- latency
-    // edge requires <1ms RTT, VPS RTT is ~68ms). Drain existing positions only.
-    LeSignal on_tick_gold(double bid, double ask, double latency_ms,
-                          CloseCb on_close, bool /*can_enter*/ = true) noexcept {
-        spread_disloc_.on_tick(bid, ask, latency_ms, on_close, false);
-        event_comp_.on_tick(bid, ask, latency_ms, on_close, false);
+    // LatencyEdgeStack disabled: VPS RTT ~68ms, latency edge requires <1ms.
+    // No positions can be opened or exist. All calls are no-ops.
+    // To re-enable: remove this body and restore per-engine on_tick calls.
+    LeSignal on_tick_gold(double /*bid*/, double /*ask*/, double /*latency_ms*/,
+                          CloseCb /*on_close*/, bool /*can_enter*/ = true) noexcept {
         return {};
     }
 
     bool has_open_position() const noexcept {
-        return spread_disloc_.has_open_position() ||
-               event_comp_.has_open_position();
+        return false;  // no entries possible at current RTT (~68ms)
     }
 
-    void force_close_all(double gold_bid, double gold_ask,
+    void force_close_all(double /*gold_bid*/, double /*gold_ask*/,
                          double /*silver_bid*/, double /*silver_ask*/,
-                         double latency_ms, CloseCb on_close) noexcept {
-        spread_disloc_.force_close(gold_bid, gold_ask, latency_ms, on_close);
-        event_comp_.force_close(gold_bid, gold_ask, latency_ms, on_close);
+                         double /*latency_ms*/, CloseCb /*on_close*/) noexcept {
+        // no-op: latency edge engines disabled (RTT ~68ms)
     }
 
     void print_stats() const noexcept {
