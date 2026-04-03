@@ -1141,7 +1141,7 @@ static void print_perf_stats() {
 // ?????????????????????????????????????????????????????????????????????????????
 class RollingTeeBuffer : public std::streambuf {
 public:
-    static constexpr int LOG_KEEP_DAYS = 5;
+    static constexpr int LOG_KEEP_DAYS = 10;
 
     explicit RollingTeeBuffer(std::streambuf* orig, const std::string& log_dir)
         : orig_(orig), log_dir_(log_dir)
@@ -1289,7 +1289,22 @@ private:
     std::string current_date_str_; // set in open_today via utc_date_str()
 
     void purge_old_logs() {
-        // Enumerate logs/omega_*.log and delete files older than LOG_KEEP_DAYS
+        // Enumerate logs/omega_*.log:
+        //   - Files older than LOG_ARCHIVE_AFTER_DAYS: compress to logs/archive/omega_YYYY-MM-DD.zip
+        //     and delete the original. Keeps full history without eating disk.
+        //   - Files older than LOG_KEEP_DAYS total: delete even the zip (hard cap).
+        // This means: 2 days of uncompressed logs (fast grep), 8 more days as zips.
+        // Archive dir is created automatically.
+        static constexpr int LOG_ARCHIVE_AFTER_DAYS = 2;
+
+        // Ensure archive directory exists
+        const std::string archive_dir = log_dir_ + "/archive";
+        {
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            fs::create_directories(fs::path(archive_dir), ec);
+        }
+
         WIN32_FIND_DATAA fd{};
         std::string pattern = log_dir_ + "/omega_*.log";
         HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
@@ -1298,17 +1313,70 @@ private:
         // Collect all matching filenames
         std::vector<std::string> files;
         do {
-            files.push_back(log_dir_ + "/" + fd.cFileName);
+            // Skip today's file — never archive the live log
+            const std::string fname = log_dir_ + "/" + fd.cFileName;
+            if (fname != current_path_)
+                files.push_back(fname);
         } while (FindNextFileA(h, &fd));
         FindClose(h);
 
         // Sort ascending -- oldest first
         std::sort(files.begin(), files.end());
 
-        // Delete everything beyond the keep window
-        while (static_cast<int>(files.size()) > LOG_KEEP_DAYS) {
-            DeleteFileA(files.front().c_str());
-            files.erase(files.begin());
+        // Archive files older than LOG_ARCHIVE_AFTER_DAYS using PowerShell Compress-Archive
+        // Files beyond LOG_KEEP_DAYS total are hard-deleted (including their zips).
+        const int total = static_cast<int>(files.size());
+        for (int i = 0; i < total; ++i) {
+            const std::string& fpath = files[i];
+            // Extract date from filename: omega_YYYY-MM-DD.log
+            const std::string fname  = fpath.substr(fpath.find_last_of("/\\") + 1);
+            const std::string zip_path = archive_dir + "/" + fname.substr(0, fname.size() - 4) + ".zip";
+
+            const bool should_archive = (total - i) > LOG_ARCHIVE_AFTER_DAYS;
+            const bool should_delete  = (total - i) > LOG_KEEP_DAYS;
+
+            if (should_delete) {
+                // Hard cap exceeded — delete log and zip
+                DeleteFileA(fpath.c_str());
+                DeleteFileA(zip_path.c_str());
+                continue;
+            }
+
+            if (should_archive) {
+                // Check if zip already exists — don't re-compress
+                WIN32_FIND_DATAA zfd{};
+                const HANDLE zh = FindFirstFileA(zip_path.c_str(), &zfd);
+                const bool zip_exists = (zh != INVALID_HANDLE_VALUE);
+                if (zh != INVALID_HANDLE_VALUE) FindClose(zh);
+
+                if (!zip_exists) {
+                    // Use PowerShell Compress-Archive (available Windows 5+)
+                    // Run hidden, fire-and-forget — don't block the tick loop
+                    const std::string cmd = "powershell -WindowStyle Hidden -Command "
+                        "\"Compress-Archive -Path '" + fpath + "' "
+                        "-DestinationPath '" + zip_path + "' -Force\" & exit";
+                    std::thread([cmd, fpath]() {
+                        // Small delay so Omega doesn't hammer disk on startup
+                        std::this_thread::sleep_for(std::chrono::seconds(5));
+                        std::system(cmd.c_str());
+                        // Delete original after successful zip
+                        WIN32_FIND_DATAA cfd{};
+                        const HANDLE ch = FindFirstFileA(
+                            fpath.substr(0, fpath.rfind('.')) + ".zip" == fpath
+                                ? fpath.c_str()
+                                : (fpath.substr(0, fpath.rfind('/') + 1) + "archive/" +
+                                   fpath.substr(fpath.rfind('/') + 1, fpath.rfind('.') - fpath.rfind('/') - 1) + ".zip").c_str(),
+                            &cfd);
+                        if (ch != INVALID_HANDLE_VALUE) {
+                            FindClose(ch);
+                            DeleteFileA(fpath.c_str());
+                        }
+                    }).detach();
+                } else {
+                    // Zip already exists — safe to delete original
+                    DeleteFileA(fpath.c_str());
+                }
+            }
         }
     }
 };
@@ -1317,7 +1385,7 @@ static std::string utc_date_for_ts(int64_t ts);
 
 class RollingCsvLogger {
 public:
-    static constexpr int LOG_KEEP_DAYS = 5;
+    static constexpr int LOG_KEEP_DAYS = 10;
 
     RollingCsvLogger(std::string dir, std::string stem, std::string header)
         : dir_(std::move(dir)), stem_(std::move(stem)), header_(std::move(header)) {}
