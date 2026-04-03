@@ -388,6 +388,84 @@ if (Test-Path $stampFile) {
     Add-Result "Build Stamp" "WARN" "No stamp file at $stampFile" ""
 }
 
+# --- CHECK 14: Bar state validity (not flat/holiday) -------------------------
+$barFile = "$OmegaDir\logs\bars_gold_m1.dat"
+if (Test-Path $barFile) {
+    $barLines = Get-Content $barFile
+    $e9  = ($barLines | Where-Object { $_ -match '^ema9='  } | Select-Object -First 1) -replace '^ema9=',  ''
+    $e50 = ($barLines | Where-Object { $_ -match '^ema50=' } | Select-Object -First 1) -replace '^ema50=', ''
+    $rsi = ($barLines | Where-Object { $_ -match '^rsi14=' } | Select-Object -First 1) -replace '^rsi14=', ''
+    $atr = ($barLines | Where-Object { $_ -match '^atr14=' } | Select-Object -First 1) -replace '^atr14=', ''
+    $ts  = ($barLines | Where-Object { $_ -match '^saved_ts=' } | Select-Object -First 1) -replace '^saved_ts=', ''
+
+    try {
+        $e9d  = [double]$e9
+        $e50d = [double]$e50
+        $rsid = [double]$rsi
+        $atrd = [double]$atr
+        $tsd  = [long]$ts
+        $ageMin = [int](([System.DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $tsd) / 60)
+
+        $flatEma  = ([Math]::Abs($e9d - $e50d) -lt 0.01 -and $e9d -gt 0)
+        $badRsi   = ($rsid -lt 5 -or $rsid -gt 95)
+        $badAtr   = ($atrd -lt 1.0 -and $atrd -gt 0)
+
+        if ($flatEma -or $badRsi -or $badAtr) {
+            Add-Result "Bar State" "FAIL" "CORRUPT: e9=$e9d e50=$e50d rsi=$rsid atr=$atrd age=${ageMin}min" `
+                "Flat/holiday state on disk -- DELETE bars_gold_m1/m5/m15/h4.dat and redeploy."
+        } elseif ($ageMin -gt 1440) {
+            Add-Result "Bar State" "WARN" "e9=$e9d atr=$atrd rsi=$rsid age=${ageMin}min (>24h)" `
+                "Bar state older than 24h -- will be rejected on load. Will rebuild from tick data."
+        } else {
+            Add-Result "Bar State" "PASS" "e9=$e9d atr=$atrd rsi=$rsid age=${ageMin}min" `
+                "Valid bar state on disk -- m1_ready=true immediately on startup."
+        }
+    } catch {
+        Add-Result "Bar State" "WARN" "Could not parse bars_gold_m1.dat" ""
+    }
+} else {
+    Add-Result "Bar State" "INFO" "No bars_gold_m1.dat -- cold start" `
+        "Will request M15 tick data from broker on startup. GoldFlow delayed ~2min."
+}
+
+# --- CHECK 15: Ratchet fix active (no immediate TRAIL exits) -----------------
+$ratchetExits = @(Find-All "GOLD-FLOW.*TRAIL_HIT.*held=[0-9]+\.[0-9]+s" | Where-Object {
+    if ($_ -match "held=([0-9.]+)s") { [double]$Matches[1] -lt 30 } else { $false }
+})
+$ratchetCapped = @(Find-All "DOLLAR-RATCHET.*price_capped")
+if ($ratchetCapped.Count -gt 0) {
+    Add-Result "Ratchet Fix" "PASS" "price_capped fired $($ratchetCapped.Count) time(s)" `
+        "SL cap working -- ratchet not setting SL above current price."
+} elseif ($ratchetExits.Count -gt 0) {
+    Add-Result "Ratchet Fix" "WARN" "$($ratchetExits.Count) TRAIL_HIT exit(s) under 30s" `
+        "Possible ratchet overshoot -- check DOLLAR-RATCHET lines for price_capped."
+} else {
+    Add-Result "Ratchet Fix" "INFO" "No ratchet activity yet" ""
+}
+
+# --- CHECK 16: Bracket armed (window fix active) -----------------------------
+$bracketArmed = @(Find-All "BRACKET-XAUUSD.*ARMED")
+$bracketNever = @(Find-All "GOLD-BRK-DIAG.*can_arm=1.*range=0\.00")
+if ($bracketArmed.Count -gt 0) {
+    Add-Result "Bracket Window Fix" "PASS" "ARMED $($bracketArmed.Count) time(s)" `
+        "Bracket engine arming correctly -- window fix (efb68a8) confirmed active."
+} elseif ($bracketNever.Count -gt 3) {
+    Add-Result "Bracket Window Fix" "FAIL" "can_arm=1 but range=0.00 on $($bracketNever.Count) ticks" `
+        "Window starvation bug still present -- check efb68a8 is deployed."
+} else {
+    Add-Result "Bracket Window Fix" "INFO" "No bracket arm yet (normal if market quiet)" ""
+}
+
+# --- CHECK 17: Bar periodic save firing --------------------------------------
+$barSave = @(Find-All "BAR-SAVE.*Periodic save")
+if ($barSave.Count -gt 0) {
+    Add-Result "Bar Auto-Save" "PASS" "Periodic save fired $($barSave.Count) time(s)" `
+        "Bar state saved every 10min -- warm restart guaranteed."
+} else {
+    Add-Result "Bar Auto-Save" "INFO" "No BAR-SAVE yet (fires every 10min)" `
+        "Normal if startup < 10min ago."
+}
+
 # ------------------------------------------------------------------------------
 # Render results to console + report file
 # ------------------------------------------------------------------------------
