@@ -81,6 +81,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "OmegaVPIN.hpp"              // Tick-classified VPIN toxicity gate (GoldFlow pre-entry)
 #include "OmegaMonteCarlo.hpp"        // Bootstrap P&L resample + BH/FDR correction (offline tool)
 #include "OmegaVolTargeter.hpp"       // EWMA vol targeting + ADX momentum regime classifier
+#include "OmegaSignalScorer.hpp"      // Composite signal scoring (replaces soft gate chain)
 
 // ?????????????????????????????????????????????????????????????????????????????
 // Singleton
@@ -398,7 +399,8 @@ static SymBarState         g_bars_gold;   // XAUUSD M1/M5 bars + indicators
 static SymBarState         g_bars_sp;     // US500.F M1/M5 bars + indicators
 static SymBarState         g_bars_nq;     // USTEC.F M1/M5 bars + indicators
 static SymBarState         g_bars_ger;    // GER40   M1/M5 bars + indicators
-static OmegaVolTargeter    g_vol_targeter; // EWMA vol targeting + momentum regime
+static OmegaVolTargeter    g_vol_targeter;   // EWMA vol targeting + momentum regime
+static OmegaSignalScorer   g_signal_scorer;  // Composite signal scoring (13-point system)
 static std::atomic<bool>   g_quote_logout_received(false);  // server sent Logout to quote session
 static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup -- unblocks ctrl handler
 static std::atomic<bool>   g_trade_thread_done(false);  // set by trade_loop() just before it returns
@@ -9304,15 +9306,45 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
 
-            // ?? Gate 4: New bar-derived signal quality gates ??????????????????
-            // Active when m1_ready=true (same condition as Gate 3).
-            // All gates below are additive -- any can independently block entry.
+            // ?? Composite Signal Scorer -- replaces soft Gate 4 chain ???????????
+            // Scores 10 conditions (13 points max). Entry allowed if score >= 5.
+            // Hard gates (spread, bars not ready, cost, high impact) remain below.
+            // Soft gates (tick storm, ATR/VWAP coherence, BBW squeeze counter)
+            // are now scored conditions -- partial confluence still allows entry.
+            // This directly fixes over-filtering that killed trade frequency.
+            if (gf_tick_ok && g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+                const bool gf_long_sc = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
+                const ScoreResult sr  = g_signal_scorer.score_and_store(
+                    g_bars_gold.m1.ind,
+                    gf_long_sc,
+                    g_macro_ctx.gold_l2_imbalance,
+                    g_macro_ctx.gold_microprice_bias);
+
+                g_signal_scorer.log_score(sr, gf_long_sc);
+
+                if (!sr.passes()) {
+                    static int64_t s_score_log_ts = 0;
+                    if (nowSec() - s_score_log_ts >= 15) {
+                        s_score_log_ts = nowSec();
+                        printf("[GF-SCORE-BLOCK] XAUUSD %s blocked score=%d/%d < %d\n",
+                               gf_long_sc ? "LONG" : "SHORT",
+                               sr.total, sr.max_points, OmegaSignalScorer::SCORE_MIN_ENTRY);
+                        fflush(stdout);
+                    }
+                    gf_tick_ok = false;
+                    gf_block_reason = "SCORE_BELOW_MIN";
+                }
+            }
+
+            // ?? Gate 4: Hard signal quality gates (spread anomaly -- remains hard)?
+            // Tick storm, ATR/VWAP coherence, BBW squeeze counter now scored above.
+            // Spread anomaly stays hard: cost literally doubles at 1.5x baseline.
             if (gf_tick_ok && g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
                 const bool   gf_long_g4  = (g_macro_ctx.gold_l2_imbalance > GFE_LONG_THRESHOLD);
 
                 // ?? Gate 4a: Spread anomaly ???????????????????????????????????
                 // Rolling 200-tick average spread acts as session baseline.
-                // If current spread > 1.5? baseline: news hit / thin liquidity.
+                // If current spread > 1.5x baseline: news hit / thin liquidity.
                 // Cost doubles at this point -- no edge to justify entry.
                 // Evidence: spread spikes to 5-8pts before FOMC announcements
                 // while ATR is valid; old GFE_MAX_SPREAD was a flat cap, not adaptive.
