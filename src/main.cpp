@@ -2133,57 +2133,6 @@ static std::string send_limit_order(const std::string& symbol, bool is_long,
     return clOrdId;
 }
 
-// Check pending limit orders and cancel any that have exceeded LIMIT_ORDER_TIMEOUT_MS.
-// Call this every tick from the main tick handler.
-static void check_pending_limits() {
-    if (g_cfg.mode != "LIVE") return;
-    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    std::vector<std::string> to_cancel;
-    {
-        std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
-        for (auto& kv : g_pending_limits) {
-            if (kv.second.filled || kv.second.cancelled) continue;
-            if (now_ms >= kv.second.expire_ms) {
-                to_cancel.push_back(kv.first);
-            }
-        }
-    }
-    for (const auto& clOrdId : to_cancel) {
-        std::printf("[LIMIT-CANCEL] %s timeout=%lldms -- sending cancel\n",
-                    clOrdId.c_str(), (long long)LIMIT_ORDER_TIMEOUT_MS);
-        std::fflush(stdout);
-        send_cancel_order(clOrdId);
-        {
-            std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
-            auto it = g_pending_limits.find(clOrdId);
-            if (it != g_pending_limits.end()) it->second.cancelled = true;
-        }
-    }
-    // Prune old filled/cancelled entries older than 60s
-    {
-        std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
-        for (auto it = g_pending_limits.begin(); it != g_pending_limits.end(); ) {
-            if ((it->second.filled || it->second.cancelled)
-                && now_ms - it->second.sent_ms > 60000)
-                it = g_pending_limits.erase(it);
-            else
-                ++it;
-        }
-    }
-}
-
-// Mark a pending limit order as filled (call from handle_execution_report).
-static void pending_limit_filled(const std::string& clOrdId) {
-    std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
-    auto it = g_pending_limits.find(clOrdId);
-    if (it != g_pending_limits.end()) {
-        it->second.filled = true;
-        std::printf("[LIMIT-FILLED] %s\n", clOrdId.c_str());
-        std::fflush(stdout);
-    }
-}
-
 // Send a live market order. Does nothing in SHADOW mode.
 // Returns clOrdId on success, empty string on failure/shadow.
 static std::string send_live_order(const std::string& symbol, bool is_long,
@@ -2300,6 +2249,59 @@ static void send_cancel_order(const std::string& clOrdId) {
               << " side=" << cancelSide << "\n";
     std::cout.flush();
 }
+
+// Check pending limit orders and cancel any that have exceeded LIMIT_ORDER_TIMEOUT_MS.
+// Call this every tick from the main tick handler.
+static void check_pending_limits() {
+    if (g_cfg.mode != "LIVE") return;
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::vector<std::string> to_cancel;
+    {
+        std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
+        for (auto& kv : g_pending_limits) {
+            if (kv.second.filled || kv.second.cancelled) continue;
+            if (now_ms >= kv.second.expire_ms) {
+                to_cancel.push_back(kv.first);
+            }
+        }
+    }
+    for (const auto& clOrdId : to_cancel) {
+        std::printf("[LIMIT-CANCEL] %s timeout=%lldms -- sending cancel\n",
+                    clOrdId.c_str(), (long long)LIMIT_ORDER_TIMEOUT_MS);
+        std::fflush(stdout);
+        send_cancel_order(clOrdId);
+        {
+            std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
+            auto it = g_pending_limits.find(clOrdId);
+            if (it != g_pending_limits.end()) it->second.cancelled = true;
+        }
+    }
+    // Prune old filled/cancelled entries older than 60s
+    {
+        std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
+        for (auto it = g_pending_limits.begin(); it != g_pending_limits.end(); ) {
+            if ((it->second.filled || it->second.cancelled)
+                && now_ms - it->second.sent_ms > 60000)
+                it = g_pending_limits.erase(it);
+            else
+                ++it;
+        }
+    }
+}
+
+// Mark a pending limit order as filled (call from handle_execution_report).
+static void pending_limit_filled(const std::string& clOrdId) {
+    std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
+    auto it = g_pending_limits.find(clOrdId);
+    if (it != g_pending_limits.end()) {
+        it->second.filled = true;
+        std::printf("[LIMIT-FILLED] %s\n", clOrdId.c_str());
+        std::fflush(stdout);
+    }
+}
+
+
 static void handle_execution_report(const std::string& msg) {
     const std::string clOrdId  = extract_tag(msg, "11");
     const std::string ordStatus= extract_tag(msg, "39"); // 0=New,1=PartFill,2=Fill,8=Rejected
