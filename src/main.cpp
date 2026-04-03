@@ -84,6 +84,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "OmegaSignalScorer.hpp"      // Composite signal scoring (replaces soft gate chain)
 #include "OmegaCrowdingGuard.hpp"     // Directional crowding tracker + score penalty (RenTec #4)
 #include "OmegaWalkForward.hpp"       // Rolling live walk-forward OOS validation (RenTec #6)
+#include "OmegaParamGate.hpp"         // Adaptive parameter gate: dynamic score threshold (RenTec #7)
 
 // ?????????????????????????????????????????????????????????????????????????????
 // Singleton
@@ -405,6 +406,7 @@ static OmegaVolTargeter    g_vol_targeter;   // EWMA vol targeting + momentum re
 static OmegaSignalScorer   g_signal_scorer;   // Composite signal scoring (13-point system)
 static OmegaCrowdingGuard  g_crowding_guard;  // Directional crowding tracker (RenTec #4)
 static OmegaWalkForward    g_walk_forward;    // Rolling walk-forward OOS validation (RenTec #6)
+static OmegaParamGate      g_param_gate;      // Adaptive entry score threshold (RenTec #7)
 static std::atomic<bool>   g_quote_logout_received(false);  // server sent Logout to quote session
 static std::atomic<bool>   g_shutdown_done(false);  // set by main() after all cleanup -- unblocks ctrl handler
 static std::atomic<bool>   g_trade_thread_done(false);  // set by trade_loop() just before it returns
@@ -3750,6 +3752,7 @@ static void maybe_reset_daily_ledger() {
     g_edges.fill_quality.save_csv(log_root_dir() + "/fill_quality.csv");
     g_edges.fill_quality.print_summary();
     g_walk_forward.log_all();   // RenTec #6 -- WFO final state summary
+    g_param_gate.log_all();     // RenTec #7 -- adaptive param gate final state
     g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
     g_corr_matrix.save_state(log_root_dir() + "/corr_matrix.dat");  // persist EWM running stats
     g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
@@ -3933,7 +3936,19 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_walk_forward.update(tr.symbol, sym_pnl);
     }
 
-    // ?? Hourly P&L ring buffer ?????????????????????????????????????????????
+    // ?? Adaptive parameter gate -- update score threshold from rolling edge (RenTec #7) ??
+    // Reads win_rate and expectancy from g_adaptive_risk.perf for this symbol.
+    // Re-evaluates every 10 trades; applies hysteresis so threshold moves ±1 per step.
+    {
+        auto it = g_adaptive_risk.perf.find(tr.symbol);
+        if (it != g_adaptive_risk.perf.end()) {
+            const auto& perf = it->second;
+            g_param_gate.update(tr.symbol,
+                                perf.win_rate(20),
+                                perf.expectancy(20),
+                                perf.trade_count());
+        }
+    }
     {
         std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
         g_hourly_pnl_records.push_back({nowSec(), tr.net_pnl});
@@ -9373,14 +9388,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                 }
 
-                if (adjusted_score < OmegaSignalScorer::SCORE_MIN_ENTRY) {
+                // Adaptive parameter gate (RenTec #7): dynamic threshold based on
+                // rolling win-rate + expectancy. STRONG edge -> 4, NORMAL -> 5,
+                // SOFT_WARN -> 6, FAILING -> 7. Hysteresis: ±1 per 10 trades.
+                const int min_score = g_param_gate.effective_min_score("XAUUSD");
+
+                if (adjusted_score < min_score) {
                     static int64_t s_score_log_ts = 0;
                     if (nowSec() - s_score_log_ts >= 15) {
                         s_score_log_ts = nowSec();
                         printf("[GF-SCORE-BLOCK] XAUUSD %s blocked score=%d crowd_adj=%d/%d < %d%s\n",
                                gf_long_sc ? "LONG" : "SHORT",
                                sr.total, adjusted_score, sr.max_points,
-                               OmegaSignalScorer::SCORE_MIN_ENTRY,
+                               min_score,
                                crowding_penalty > 0 ? " (crowding)" : "");
                         fflush(stdout);
                     }
