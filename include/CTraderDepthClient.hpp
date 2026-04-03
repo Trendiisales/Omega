@@ -674,6 +674,17 @@ private:
             return false;
         }
 
+        // Send SubscribeSpotsReq (pt=2129) for XAUUSD BEFORE the depth subscription.
+        // BlackBull requires spots subscription before it streams depth events for gold.
+        // Other symbols receive depth events without a spots sub -- XAUUSD is special.
+        // Without this: XAUUSD depth subscription ACKs but zero events ever arrive.
+        // The spots sub in the bar queue fires 10s later -- too late for depth events.
+        if (xauusd_spot_id >= 0) {
+            send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, xauusd_spot_id));
+            std::cout << "[CTRADER] XAUUSD spots sub sent (pre-depth, enables depth events)\n";
+            // Brief wait -- spots sub ACK (pt=2130) arrives quickly
+            // Don't block on it -- depth sub follows immediately
+        }
         if (!send_msg(ssl, PB::subscribe_depth_req(ctid_account_id, sub_ids))) return false;
         if (!wait_for(ssl, 2157, 10000, pt, payload)) { std::cerr << "[CTRADER] SubscribeDepthRes timeout\n"; return false; }
         std::cout << "[CTRADER] Subscribed to " << sub_ids.size() << " symbols\n";
