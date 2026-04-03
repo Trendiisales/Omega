@@ -1379,18 +1379,21 @@ private:
                     const std::string cmd = "powershell -WindowStyle Hidden -Command "
                         "\"Compress-Archive -Path '" + fpath + "' "
                         "-DestinationPath '" + zip_path + "' -Force\" & exit";
-                    std::thread([cmd, fpath]() {
+                    // Build the zip check path as a named std::string BEFORE the lambda.
+                    // The old code built a temporary string expression inside the lambda
+                    // and immediately called .c_str() on it -- the temporary was destroyed
+                    // before FindFirstFileA read the pointer (dangling pointer UB).
+                    // Capturing the fully-formed std::string by value guarantees lifetime.
+                    const std::string zip_check_path =
+                        (fpath.substr(0, fpath.rfind('/') + 1) + "archive/" +
+                         fpath.substr(fpath.rfind('/') + 1, fpath.rfind('.') - fpath.rfind('/') - 1) + ".zip");
+                    std::thread([cmd, fpath, zip_check_path]() {
                         // Small delay so Omega doesn't hammer disk on startup
                         std::this_thread::sleep_for(std::chrono::seconds(5));
                         std::system(cmd.c_str());
                         // Delete original after successful zip
                         WIN32_FIND_DATAA cfd{};
-                        const HANDLE ch = FindFirstFileA(
-                            fpath.substr(0, fpath.rfind('.')) + ".zip" == fpath
-                                ? fpath.c_str()
-                                : (fpath.substr(0, fpath.rfind('/') + 1) + "archive/" +
-                                   fpath.substr(fpath.rfind('/') + 1, fpath.rfind('.') - fpath.rfind('/') - 1) + ".zip").c_str(),
-                            &cfd);
+                        const HANDLE ch = FindFirstFileA(zip_check_path.c_str(), &cfd);
                         if (ch != INVALID_HANDLE_VALUE) {
                             FindClose(ch);
                             DeleteFileA(fpath.c_str());
@@ -4043,7 +4046,8 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         const double updated_equity = g_cfg.account_equity + g_omegaLedger.cumulativePnl();
         const double eq = std::max(updated_equity, 100.0);
         g_live_equity.store(eq, std::memory_order_relaxed);
-        g_gold_flow.risk_dollars = eq * (g_cfg.risk_per_trade_usd / std::max(g_cfg.account_equity, 100.0));
+        g_gold_flow.risk_dollars        = eq * (g_cfg.risk_per_trade_usd / std::max(g_cfg.account_equity, 100.0));
+        g_gold_flow_reload.risk_dollars = g_gold_flow.risk_dollars;  // keep reload instance in sync -- was missing, causing undersized reload trades
     }
     if (g_cfg.mode == "LIVE") {
         const double updated_equity = g_cfg.account_equity + g_omegaLedger.cumulativePnl();
@@ -4325,9 +4329,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         + static_cast<int>(g_nbm_sp.has_open_position())
                         + static_cast<int>(g_nbm_nq.has_open_position())
                         + static_cast<int>(g_nbm_nas.has_open_position())
-                        + static_cast<int>(g_nbm_us30.has_open_position())
-                        + static_cast<int>(g_nbm_gold_london.has_open_position())
-                        + static_cast<int>(g_nbm_oil_london.has_open_position());
+                        + static_cast<int>(g_nbm_us30.has_open_position());
+                        // NOTE: g_nbm_gold_london and g_nbm_oil_london are NOT US equity --
+                        // they were incorrectly counted here, inflating us_eq heat and
+                        // blocking legitimate US equity entries when gold/oil NBM was open.
+                        // g_nbm_gold_london is counted in `metals` below.
+                        // g_nbm_oil_london  is counted in `oil`    below.
         const int eu_eq = static_cast<int>(g_eng_ger30.pos.active)
                         + static_cast<int>(g_eng_uk100.pos.active)
                         + static_cast<int>(g_eng_estx50.pos.active)
@@ -4342,14 +4349,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         + static_cast<int>(g_eng_brent.pos.active)
                         + static_cast<int>(g_bracket_brent.pos.active)
                         + static_cast<int>(g_ca_eia_fade.has_open_position())
-                        + static_cast<int>(g_ca_brent_wti.has_open_position());
+                        + static_cast<int>(g_ca_brent_wti.has_open_position())
+                        + static_cast<int>(g_nbm_oil_london.has_open_position()); // was incorrectly in us_eq
         const int metals = static_cast<int>(g_gold_stack.has_open_position())
                          + static_cast<int>(g_bracket_gold.pos.active)
                          + static_cast<int>(g_gold_flow.has_open_position())
                          + static_cast<int>(g_gold_flow_reload.has_open_position())
                          + static_cast<int>(g_eng_xag.pos.active)
                          + static_cast<int>(g_bracket_xag.pos.active)
-                         + static_cast<int>(g_orb_silver.has_open_position());
+                         + static_cast<int>(g_orb_silver.has_open_position())
+                         + static_cast<int>(g_nbm_gold_london.has_open_position()); // was incorrectly in us_eq
         const int jpy   = static_cast<int>(g_eng_usdjpy.pos.active)
                         + static_cast<int>(g_eng_audusd.pos.active)
                         + static_cast<int>(g_eng_nzdusd.pos.active)
