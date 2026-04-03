@@ -812,17 +812,43 @@ public:
     // =========================================================================
     void save_indicators(const std::string& path) const noexcept {
         if (!ind.m1_ready.load()) return;  // don't save cold state
+
+        // Sanity check: reject flat/holiday state before writing to disk.
+        // Flat state happens when bars are built from a holiday session with no
+        // price movement — all EMAs identical, RSI=100, BB bands collapsed.
+        // Loading this on next restart gives garbage indicators worse than cold start.
+        const double e9  = ind.ema9 .load();
+        const double e50 = ind.ema50.load();
+        const double atr = ind.atr14.load();
+        const double rsi = ind.rsi14.load();
+        const double bbu = ind.bb_upper.load();
+        const double bbl = ind.bb_lower.load();
+        // Reject if: EMAs identical (flat), RSI pegged at 0/100, ATR too small,
+        // or Bollinger bands collapsed to a single line
+        const bool flat_emas   = (std::fabs(e9 - e50) < 0.01 && e9 > 0.0);
+        const bool pegged_rsi  = (rsi < 5.0 || rsi > 95.0);
+        const bool tiny_atr    = (atr < 1.0 && atr > 0.0);
+        const bool flat_bb     = (std::fabs(bbu - bbl) < 0.01 && bbu > 0.0);
+        if (flat_emas || pegged_rsi || tiny_atr || flat_bb) {
+            printf("[OHLC] save_indicators SKIPPED -- flat/holiday state detected "
+                   "(e9=%.2f e50=%.2f atr=%.3f rsi=%.1f bb_range=%.3f). "
+                   "Will retry when real market data arrives.\n",
+                   e9, e50, atr, rsi, bbu - bbl);
+            fflush(stdout);
+            return;
+        }
+
         FILE* f = fopen(path.c_str(), "w");
         if (!f) return;
         fprintf(f, "saved_ts=%lld\n",  (long long)std::time(nullptr));
-        fprintf(f, "ema9=%.6f\n",      ind.ema9.load());
+        fprintf(f, "ema9=%.6f\n",      e9);
         fprintf(f, "ema21=%.6f\n",     ind.ema21.load());
-        fprintf(f, "ema50=%.6f\n",     ind.ema50.load());
-        fprintf(f, "atr14=%.6f\n",     ind.atr14.load());
-        fprintf(f, "rsi14=%.4f\n",     ind.rsi14.load());
-        fprintf(f, "bb_upper=%.4f\n",  ind.bb_upper.load());
+        fprintf(f, "ema50=%.6f\n",     e50);
+        fprintf(f, "atr14=%.6f\n",     atr);
+        fprintf(f, "rsi14=%.4f\n",     rsi);
+        fprintf(f, "bb_upper=%.4f\n",  bbu);
         fprintf(f, "bb_mid=%.4f\n",    ind.bb_mid.load());
-        fprintf(f, "bb_lower=%.4f\n",  ind.bb_lower.load());
+        fprintf(f, "bb_lower=%.4f\n",  bbl);
         fprintf(f, "bb_pct=%.4f\n",    ind.bb_pct.load());
         fprintf(f, "trend_state=%d\n", ind.trend_state.load());
         fprintf(f, "swing_high=%.4f\n",ind.swing_high.load());
