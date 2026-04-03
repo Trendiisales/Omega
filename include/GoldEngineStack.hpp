@@ -3689,13 +3689,16 @@ class VolatilityFilter {
     static constexpr size_t WINDOW=50;
     static constexpr double VOL_THRESHOLD=0.80;  // lowered 1.50->0.80: post-crash compression has genuine vol but tight range; $1.50 was blocking all entries in legitimate low-vol recovery periods
 public:
-    bool allow(double mid){
-        history_.push_back(mid);
+    // allow(): pure read gate -- does NOT push_back.
+    // update() is called unconditionally every tick from on_tick() so history_
+    // is always current. Calling push_back here too was a double-push bug:
+    // every tick pushed twice, filling WINDOW=50 in only 25 real ticks, halving
+    // the effective lookback and producing inflated range readings.
+    bool allow(double /*mid*/) const {
         if(history_.size()<WINDOW)return false;
         return history_.range()>=VOL_THRESHOLD;
     }
-    // update(): push mid into history without gating -- keeps vol_range current
-    // even when allow() isn't being called (e.g. position open, entry blocked).
+    // update(): push mid into history every tick -- the only write path.
     void update(double mid) { history_.push_back(mid); }
     double current_range() const { return history_.empty()?0:history_.range(); }
     // seed(): pre-fill history so allow() is not blind for the first 50 ticks

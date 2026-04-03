@@ -602,8 +602,14 @@ private:
             bool is_sh = true, is_sl = true;
             for (int j = i - SWING_P; j <= i + SWING_P; ++j) {
                 if (j == i) continue;
-                if (bars_[j].high >= bars_[i].high) { is_sh = false; }
-                if (bars_[j].low  <= bars_[i].low ) { is_sl = false; }
+                // FIX: use strict > / < (not >= / <=).
+                // Old >= caused equal-high neighbours to disqualify valid swing pivots --
+                // e.g. a double-top at $4500 produced bars_[j].high == bars_[i].high,
+                // setting is_sh=false even though bar i IS the pivot.
+                // Strict > means: bar i qualifies as swing high if NO neighbour is
+                // strictly higher -- ties are fine, the first bar in the tie wins.
+                if (bars_[j].high > bars_[i].high) { is_sh = false; }
+                if (bars_[j].low  < bars_[i].low ) { is_sl = false; }
             }
             if (is_sh) sh.push_back(bars_[i].high);
             if (is_sl) sl.push_back(bars_[i].low);
@@ -612,15 +618,44 @@ private:
         if (sh.size() >= 2) ind.swing_high.store(sh.back(), std::memory_order_relaxed);
         if (sl.size() >= 2) ind.swing_low .store(sl.back(), std::memory_order_relaxed);
 
-        if (sh.size() >= 2 && sl.size() >= 2) {
-            const bool hh = sh.back() > sh[sh.size()-2];
-            const bool hl = sl.back() > sl[sl.size()-2];
-            const bool lh = sh.back() < sh[sh.size()-2];
-            const bool ll = sl.back() < sl[sl.size()-2];
+        // FIX: allow partial trend detection when only one side has 2+ confirmed swings.
+        // Old code required BOTH sh.size()>=2 AND sl.size()>=2 before updating trend_state.
+        // In a strong trend one side often dominates: a sharp uptrend makes rapid HHs
+        // but the HL side takes many more bars to confirm (price barely pulls back).
+        // Requiring both sides caused trend_state=0 (FLAT) throughout a clear uptrend,
+        // blocking all OHLC-gated entries that check trend_state == +1.
+        //
+        // New logic: if only one side has 2+ swings, infer trend from that side alone:
+        //   sh>=2, sl<2: HH -> probable uptrend, LH -> probable downtrend
+        //   sl>=2, sh<2: HL -> probable uptrend, LL -> probable downtrend
+        // Both sides confirmed: full HH+HL=UP, LH+LL=DOWN (unchanged, higher confidence).
+        {
             int state = 0;
-            if (hh && hl)      state = +1;
-            else if (lh && ll) state = -1;
-            ind.trend_state.store(state, std::memory_order_relaxed);
+            if (sh.size() >= 2 && sl.size() >= 2) {
+                // Full confirmation: both sides have 2+ swings
+                const bool hh = sh.back() > sh[sh.size()-2];
+                const bool hl = sl.back() > sl[sl.size()-2];
+                const bool lh = sh.back() < sh[sh.size()-2];
+                const bool ll = sl.back() < sl[sl.size()-2];
+                if      (hh && hl) state = +1;
+                else if (lh && ll) state = -1;
+                // hh+ll or lh+hl = conflicting structure = FLAT (0)
+            } else if (sh.size() >= 2) {
+                // Only swing highs confirmed -- use them alone
+                const bool hh = sh.back() > sh[sh.size()-2];
+                const bool lh = sh.back() < sh[sh.size()-2];
+                if      (hh) state = +1;  // higher highs = uptrend
+                else if (lh) state = -1;  // lower highs  = downtrend
+            } else if (sl.size() >= 2) {
+                // Only swing lows confirmed -- use them alone
+                const bool hl = sl.back() > sl[sl.size()-2];
+                const bool ll = sl.back() < sl[sl.size()-2];
+                if      (hl) state = +1;  // higher lows = uptrend
+                else if (ll) state = -1;  // lower lows  = downtrend
+            }
+            // Only update when state changes -- avoids redundant atomic stores
+            if (state != ind.trend_state.load(std::memory_order_relaxed))
+                ind.trend_state.store(state, std::memory_order_relaxed);
         }
     }
 

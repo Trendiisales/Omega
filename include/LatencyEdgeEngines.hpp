@@ -403,13 +403,16 @@ public:
 //     vs normal $0.35) because co-location means we don't need confirmation
 //   - After the release, monitors the first directional tick and enters
 //
-// SCHEDULED EVENTS (UTC):
-//   Monday    N/A (market still settling)
-//   Tuesday   12:30 -- US CPI (second Tuesday of month -- approximated as weekly)
-//   Wednesday 14:30 -- EIA Oil (handled by OilEngine separately)
-//   Wednesday 18:00 -- FOMC (8x/year -- approximated as weekly check)
-//   Thursday  12:30 -- US Initial Jobless Claims (every Thursday)
-//   Friday    12:30 -- US NFP (first Friday of month -- approximated as weekly)
+// SCHEDULED EVENTS (UTC) -- WEEKLY ONLY:
+//   Thursday  12:30 -- US Initial Jobless Claims (every Thursday, 100% reliable)
+//   Wednesday 15:00 -- EIA Crude Oil Inventories (every Wednesday, 100% reliable)
+//                      Moves gold via USD/risk channel. Same tight pre-release
+//                      compression pattern as NFP/Claims.
+//
+// REMOVED (monthly/quarterly -- false arms 3-11 weeks per event):
+//   Tuesday   12:30 -- US CPI (2nd Tuesday of month only)
+//   Wednesday 18:00 -- FOMC (8x/year)
+//   Friday    12:30 -- US NFP (first Friday of month only)
 //
 // PARAMETERS:
 //   PRE_EVENT_WINDOW_SEC = 90   -- start watching 90s before event
@@ -474,17 +477,26 @@ class GoldEventCompression {
         const int secs = mins * 60 + ti.tm_sec;
 
         // Event times in seconds from midnight UTC
-        // Thursday 12:30 UTC -- US Jobless Claims (every week, reliable)
-        // Tuesday  12:30 UTC -- US CPI/PPI (approximate -- treat as weekly)
-        // Friday   12:30 UTC -- NFP (approximate -- treat as weekly)
-        // Wednesday 18:00 UTC -- FOMC approximate
-        // Only Thursday Jobless Claims fires every single week reliably.
-        // CPI (Tuesday), NFP (Friday), FOMC (Wednesday) are month/quarter events --
-        // treating them as weekly caused false arms on non-event days.
-        // Removed: Tuesday 12:30, Friday 12:30, Wednesday 18:00.
+        // WEEKLY events only -- fires every week without exception:
+        //   Thursday 12:30 UTC -- US Initial Jobless Claims (every Thursday, 100% reliable)
+        //   Wednesday 15:00 UTC -- EIA Crude Oil Inventories (every Wednesday)
+        //     EIA moves gold via USD/risk channel. When oil inventory surprises:
+        //     big miss -> risk-off -> gold bid (positive correlation).
+        //     Compression pattern is identical to NFP -- 60-90s pre-release tight range,
+        //     then directional explosion. Confirmed weekly, same time every week.
+        //
+        // REMOVED (not weekly -- fires monthly/quarterly):
+        //   Tuesday 12:30 UTC -- CPI/PPI: monthly (2nd Tuesday). False arms 3 of 4 weeks.
+        //   Friday  12:30 UTC -- NFP: first Friday only. False arms 3 of 4 weeks.
+        //   Wednesday 18:00 UTC -- FOMC: 8x/year. Treating as weekly = 44 false arms/year.
+        //
+        // Re-adding these as weekly was the original bug. The compression mechanism is
+        // real; the false-arm problem was treating monthly events as weekly schedules.
+        // EIA is genuinely weekly -- same behavior, no false arms.
         struct EventDef { int wday; int event_sec; };
         static const EventDef EVENTS[] = {
             {4, 12*3600+30*60},  // Thursday 12:30 UTC -- US Jobless Claims (every week)
+            {3, 15*3600+  0*60}, // Wednesday 15:00 UTC -- EIA Crude Oil Inventories (every week)
         };
 
         for (const auto& ev : EVENTS) {
