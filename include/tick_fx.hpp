@@ -3,7 +3,8 @@
 // Do NOT #include from anywhere else.
 
 // ── XAGUSD ─────────────────────────────────────────────────
-static void on_tick_silver(const std::string& sym, double bid, double ask) {
+static void on_tick_silver(const std::string& sym, double bid, double ask,
+    bool tradeable, bool lat_ok, const std::string& regime) {
     // XAGUSD FULLY DISABLED -- real-tick backtest on 42M ticks (Jan 2023-Jan 2025) FAILED.
     //
     // SilverTurtleTickEngine result (N=20, TBS=300, SL=$0.10, TP=$0.30):
@@ -30,7 +31,8 @@ static void on_tick_silver(const std::string& sym, double bid, double ask) {
 }
 
 // ── EURUSD ─────────────────────────────────────────────────
-static void on_tick_eurusd(const std::string& sym, double bid, double ask) {
+static void on_tick_eurusd(const std::string& sym, double bid, double ask,
+    bool tradeable, bool lat_ok, const std::string& regime) {
     g_macro_ctx.eur_mid_price = (bid + ask) * 0.5;  // for wall_above/below context
     const bool base_can_fx = symbol_gate("EURUSD",
         g_eng_eurusd.pos.active                ||
@@ -104,7 +106,8 @@ static void on_tick_eurusd(const std::string& sym, double bid, double ask) {
 }
 
 // ── GBPUSD ─────────────────────────────────────────────────
-static void on_tick_gbpusd(const std::string& sym, double bid, double ask) {
+static void on_tick_gbpusd(const std::string& sym, double bid, double ask,
+    bool tradeable, bool lat_ok, const std::string& regime) {
     g_macro_ctx.gbp_mid_price = (bid + ask) * 0.5;  // for wall_above/below context
     // ?? FX group bracket guard -- only one bracket across GBPUSD/AUDUSD/NZDUSD/USDJPY ??
     // These four pairs share high USD-correlation: simultaneous brackets create
@@ -139,7 +142,8 @@ static void on_tick_gbpusd(const std::string& sym, double bid, double ask) {
 }
 
 // ── AUDUSD/NZDUSD/USDJPY ───────────────────────────────────
-static void on_tick_audusd(const std::string& sym, double bid, double ask) {
+static void on_tick_audusd(const std::string& sym, double bid, double ask,
+    bool tradeable, bool lat_ok, const std::string& regime) {
     // Update live USDJPY rate for dynamic tick_value_multiplier()
     if (sym == "USDJPY") g_usdjpy_mid.store((bid + ask) * 0.5, std::memory_order_relaxed);
     // ?? FX group bracket guard -- shared across GBPUSD/AUDUSD/NZDUSD/USDJPY ??
