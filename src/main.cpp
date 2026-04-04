@@ -5466,6 +5466,28 @@ static double enter_directional(
     return final_lot;
 }
 
+// ── cross_engine_dedup_ok ───────────────────────────────────────────────────
+static bool cross_engine_dedup_ok(const std::string& sym) {
+    std::lock_guard<std::mutex> lk(g_dedup_mtx);
+    auto it = g_last_cross_entry.find(sym);
+    if (it != g_last_cross_entry.end() &&
+        (nowSec() - it->second) < CROSS_ENG_DEDUP_SEC) {
+        printf("[CROSS-DEDUP] %s blocked -- another engine entered %.0fs ago\n",
+               sym.c_str(), static_cast<double>(nowSec() - it->second));
+        return false;
+    }
+    // NOTE: timestamp is NOT stamped here -- only stamped on successful execution
+    // (at send_live_order call). Stamping here would block the next 30s even when
+    // the trade is subsequently rejected by vwap_gate, L2 score, cost guard, etc.
+    return true;
+}
+
+// ── cross_engine_dedup_stamp ────────────────────────────────────────────────
+static void cross_engine_dedup_stamp(const std::string& sym) {
+    std::lock_guard<std::mutex> lk(g_dedup_mtx);
+    g_last_cross_entry[sym] = nowSec();
+}
+
 static void on_tick(const std::string& sym, double bid, double ask) {
     // ?? Tick spike filter ???????????????????????????????????????????????
     // Reject ticks where mid moves > 5x slow ATR in a single step.
@@ -6963,27 +6985,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // with RR=1.5 as the TP estimate (conservative: actual RR is often 2.0+).
     // ?? Cross-engine deduplication ????????????????????????????????????????????
     // Per-symbol 30s lockout across all engine types -- statics live at file scope.
-    auto cross_engine_dedup_ok = [](const std::string& sym) -> bool {
-        std::lock_guard<std::mutex> lk(g_dedup_mtx);
-        auto it = g_last_cross_entry.find(sym);
-        if (it != g_last_cross_entry.end() &&
-            (nowSec() - it->second) < CROSS_ENG_DEDUP_SEC) {
-            printf("[CROSS-DEDUP] %s blocked -- another engine entered %.0fs ago\n",
-                   sym.c_str(), static_cast<double>(nowSec() - it->second));
-            return false;
-        }
-        // NOTE: timestamp is NOT stamped here -- only stamped on successful execution
-        // (at send_live_order call). Stamping here would block the next 30s even when
-        // the trade is subsequently rejected by vwap_gate, L2 score, cost guard, etc.
-        return true;
-    };
-
+    // cross_engine_dedup_ok -- converted to static function above on_tick
     // Stamp dedup timestamp -- called only after all gates pass and trade executes
-    auto cross_engine_dedup_stamp = [](const std::string& sym) {
-        std::lock_guard<std::mutex> lk(g_dedup_mtx);
-        g_last_cross_entry[sym] = nowSec();
-    };
-
+    // cross_engine_dedup_stamp -- converted to static function above on_tick
     // ?? enter_directional: unified entry helper for all cross-asset engines ???
     // Replaces the repeated pattern: compute_size ? cost_ok ? send_live_order
     // Also applies adaptive risk (adjusted_lot) and arms partial exit.
