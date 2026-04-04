@@ -140,6 +140,13 @@ Write-Host "[4/9] Building from $sourceHashShort ..." -ForegroundColor Yellow
 $needsReconfigure = $true
 Write-Host "      [INFO] Always reconfigure -- ensures git hash is fresh" -ForegroundColor Cyan
 
+# Clean wipe build directory on every deploy -- guarantees no stale .obj files,
+# stale version_generated.hpp baked into PCH, or wrong code running from cache.
+# Trade-off: ~2-3min extra build time vs risk of running the wrong binary.
+Write-Host "      [INFO] Wiping build directory for clean rebuild..." -ForegroundColor Cyan
+if (Test-Path "$OmegaDir\build") {
+    Remove-Item -Recurse -Force "$OmegaDir\build\*" -ErrorAction SilentlyContinue
+}
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 Set-Location "$OmegaDir\build"
 $savedPrefCmake = $ErrorActionPreference
