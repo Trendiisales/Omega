@@ -4987,6 +4987,493 @@ static bool symbol_gate(
     return true;
 }
 
+// ── ca_on_close ──────────────────────────────────────────────────────────────
+static void ca_on_close(const omega::TradeRecord& tr) {
+    handle_closed_trade(tr);
+    send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
+}
+
+// ── bracket_on_close ─────────────────────────────────────────────────────────
+static void bracket_on_close(const omega::TradeRecord& tr) {
+    handle_closed_trade(tr);
+
+    // ?? Per-symbol bracket trend bias update ?????????????????????????????
+    // Applies to ALL bracket symbols. Tracks consecutive profitable exits
+    // to detect a dominant trend, then suppresses counter-trend re-arms.
+    // L2 imbalance extends/shortens the block dynamically (see BracketTrendState).
+    {
+        const int64_t now_ms_bc = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const bool profitable = (tr.exitReason == std::string("TRAIL_HIT") ||
+                                 tr.exitReason == std::string("TP_HIT")    ||
+                                 tr.exitReason == std::string("BE_HIT"));
+        g_bracket_trend[tr.symbol].on_exit(tr.side == "LONG", profitable, now_ms_bc);
+
+        // ?? Pyramid SL cooldown ???????????????????????????????????????????
+        // If this closing trade was a pyramid entry that hit SL, record the
+        // timestamp. pyramid_allowed() will block new pyramids for 2 minutes.
+        if (!profitable && tr.exitReason == std::string("SL_HIT")) {
+            if (g_pyramid_clordids.count(tr.symbol)) {
+                g_bracket_trend[tr.symbol].last_pyramid_sl_ms = now_ms_bc;
+                printf("[PYRAMID-SL-COOLDOWN] %s pyramid SL hit -- blocking new pyramids for 120s\n",
+                       tr.symbol.c_str());
+            }
+        }
+        // Clear pyramid flag on any close (win, loss, or BE)
+        g_pyramid_clordids.erase(tr.symbol);
+    }
+
+    // Only send a market close order for reasons where the BROKER has no
+    // pending order to handle the close automatically:
+    //   BREAKOUT_FAIL -- engine detected failure before TP/SL; broker still
+    //                   has the OCO live and must be cancelled + closed.
+    //   FORCE_CLOSE   -- disconnect or manual close; broker may have live orders.
+    // Do NOT send for TP_HIT / SL_HIT / BE_HIT -- in LIVE mode the broker's
+    // OCO order fills the close. Sending another market order doubles the position.
+    const bool needs_market_close =
+        (tr.exitReason == "BREAKOUT_FAIL" ||
+         tr.exitReason == "FORCE_CLOSE");
+    if (!needs_market_close) return;
+    const bool close_is_long = (tr.side == "SHORT");
+    std::cout << "\033[1;35m[BRACKET-CLOSE] " << tr.symbol
+              << " " << (close_is_long ? "BUY" : "SELL") << " (close)"
+              << " qty=" << tr.size
+              << " exit=" << std::fixed << std::setprecision(4) << tr.exitPrice
+              << " reason=" << tr.exitReason
+              << "\033[0m\n";
+    std::cout.flush();
+    send_live_order(tr.symbol, close_is_long, tr.size, tr.exitPrice);
+}
+
+// ── sup_decision ─────────────────────────────────────────────────────────────
+template<typename EngT>
+static omega::SupervisorDecision sup_decision(
+    omega::SymbolSupervisor& sup, EngT& eng, bool base_can_enter,
+    const std::string& sym, double bid, double ask)
+{
+                         auto& eng,
+                         bool base_can_enter) -> omega::SupervisorDecision {
+    int fb = 0;
+    { std::lock_guard<std::mutex> lk(g_false_break_mtx);
+      auto it = g_false_break_counts.find(sym); if (it != g_false_break_counts.end()) fb = it->second; }
+    // Momentum: vol expansion relative to baseline -- how much vol has grown.
+    // Was: (mid - comp_low)/mid which is a price distance, not directional momentum.
+    // Correct: (recent_vol - base_vol) / base_vol -- captures vol expansion direction.
+    const double momentum_proxy = (eng.base_vol_pct > 0.0)
+        ? ((eng.recent_vol_pct - eng.base_vol_pct) / eng.base_vol_pct * 100.0)
+        : 0.0;
+    // in_compression: use the engine's own compression state (phase==COMPRESSION)
+    // but also pass true during BREAKOUT_WATCH -- supervisor should know the engine
+    // just exited compression and is watching for a break, not re-classify as no-setup.
+    const bool in_comp_or_watch = (eng.phase == omega::Phase::COMPRESSION
+                                || eng.phase == omega::Phase::BREAKOUT_WATCH);
+    const auto sdec_result = sup.update(
+        bid, ask,
+        eng.recent_vol_pct, eng.base_vol_pct,
+        momentum_proxy,
+        eng.comp_high, eng.comp_low,
+        in_comp_or_watch,
+        fb);
+    // Count actual spread blocks -- only when a signal was being evaluated
+    if (sdec_result.regime == omega::Regime::HIGH_RISK_NO_TRADE
+        && sdec_result.reason != nullptr
+        && std::string(sdec_result.reason) == "spread_too_wide"
+        && base_can_enter)
+        ++g_gov_spread;
+    return sdec_result;
+}
+
+// ── enter_directional ────────────────────────────────────────────────────────
+static double enter_directional(
+    const char* esym, bool is_long, double entry, double sl, double tp,
+    double fallback_lot, bool skip_vwap_gate,
+    double bid, double ask, const std::string& sym, const std::string& regime)
+{
+                             bool         is_long,
+                             double       entry,
+                             double       sl,
+                             double       tp,          // 0 = use sl_abs*2 as TP estimate
+                             double       fallback_lot = 0.01,
+                             bool         skip_vwap_gate = false) -> double {
+    // Returns computed lot size on success, 0.0 on failure/blocked.
+    // Callers use the return value directly -- eliminates g_last_directional_lot
+    // dependency which caused cross-symbol lot corruption (the $1407 bug).
+    const double sl_abs_raw = std::fabs(entry - sl);
+    // ATR-normalised SL floor -- same logic as breakout dispatch
+    const double sl_abs  = g_adaptive_risk.vol_scaler.atr_sl_floor(
+        std::string(esym), sl_abs_raw);
+
+    // ?? ATR SL expansion ? proportional TP adjustment ????????????????????
+    // FIX: when atr_sl_floor expands the SL (sl_abs > sl_abs_raw),
+    // the TP must scale by the same ratio to preserve original R:R.
+    // Without this: USOIL sl_raw=0.5 ? sl_floor=2.0, tp=1.5 unchanged
+    //   ? R:R = 0.75 ? RR-FLOOR blocks every trade when ATR is elevated.
+    // With this:    sl expands 4?, tp expands 4? ? R:R preserved ? OK.
+    double tp_rr_adjusted = tp;
+    if (tp > 0.0 && sl_abs > sl_abs_raw * 1.01 && sl_abs_raw > 1e-9) {
+        const double expand_ratio = sl_abs / sl_abs_raw;
+        const double tp_dist_raw  = std::fabs(entry - tp);
+        const double tp_dist_adj  = tp_dist_raw * expand_ratio;
+        tp_rr_adjusted = is_long ? entry + tp_dist_adj : entry - tp_dist_adj;
+        std::printf("[ATR-SL-EXPAND] %s sl_raw=%.5f->sl_floor=%.5f (x%.2f) tp=%.5f->%.5f\n",
+                    esym, sl_abs_raw, sl_abs, expand_ratio, tp, tp_rr_adjusted);
+    }
+
+    // ?? ATR-based TP scaling ??????????????????????????????????????????????
+    // On high-volatility days (e.g. gold ATR $25 vs normal $10), a fixed
+    // percentage TP exits 3? too early. Scale TP proportionally with the
+    // ratio of current ATR to the rolling slow-ATR baseline.
+    // Bounds: 0.70? (protect low-vol entries) to 2.50? (cap on extreme days).
+    // Only applies when the caller provided a real TP (tp > 0); the 2R default
+    // fallback is already sized relative to sl_abs and does not need scaling.
+    double tp_scaled = tp_rr_adjusted;
+    if (tp > 0) {
+        const double atr_fast_v = g_adaptive_risk.vol_scaler.atr_fast(std::string(esym));
+        const double atr_slow_v = g_adaptive_risk.vol_scaler.atr_slow(std::string(esym));
+        if (atr_fast_v > 0.0 && atr_slow_v > 0.0) {
+            const double atr_ratio = std::min(2.50, atr_fast_v / atr_slow_v);
+            const double atr_tp_mult = std::max(0.70, std::min(2.50, atr_ratio));
+            if (atr_tp_mult > 1.05 || atr_tp_mult < 0.95) {  // only log meaningful changes
+                static thread_local int64_t s_atr_tp_log = 0;
+                if (nowSec() - s_atr_tp_log > 30) {
+                    s_atr_tp_log = nowSec();
+                    std::printf("[ATR-TP-SCALE] %s %s tp=%.5f->%.5f (atr_fast=%.4f atr_slow=%.4f ratio=%.2f mult=%.2f)\n",
+                                esym, is_long ? "LONG" : "SHORT",
+                                tp, is_long ? entry + (tp - entry) * atr_tp_mult
+                                            : entry - (entry - tp) * atr_tp_mult,
+                                atr_fast_v, atr_slow_v, atr_ratio, atr_tp_mult);
+                }
+            }
+            tp_scaled = is_long
+                ? entry + (tp - entry) * atr_tp_mult
+                : entry - (entry - tp) * atr_tp_mult;
+        }
+    }
+    const double tp_dist = (tp_scaled > 0) ? std::fabs(entry - tp_scaled) : sl_abs * 2.0;
+    const double base_lot_raw = compute_size(esym, sl_abs, ask - bid, fallback_lot);
+    // Vol-regime size scale -- CRUSH=1.10x, HIGH=0.75x, NORMAL=1.0x
+    const double base_lot = base_lot_raw * static_cast<double>(
+        g_regime_adaptor.vol_size_scale(std::string(esym)));
+
+    // ?? Regime weight ?????????????????????????????????????????????????????
+    // Map symbol ? EngineClass and apply macro regime weight.
+    // FX_CASCADE and FX_CARRY return 0.0 in RISK_OFF ? hard block.
+    using EC = omega::regime::EngineClass;
+    EC ec = EC::CROSS_ASSET; // safe default for ORB/VWAP/TrendPB
+    const std::string_view sv(esym);
+    if      (sv == "US500.F" || sv == "USTEC.F" || sv == "DJ30.F" || sv == "NAS100")
+        ec = EC::US_EQUITY_BREAKOUT;
+    else if (sv == "GER40" || sv == "UK100" || sv == "ESTX50")
+        ec = EC::EU_EQUITY_BREAKOUT;
+    else if (sv == "XAGUSD")
+        ec = EC::SILVER_BREAKOUT;
+    else if (sv == "USOIL.F" || sv == "BRENT")
+        ec = EC::OIL_BREAKOUT;
+    else if (sv == "EURUSD")
+        ec = EC::FX_BREAKOUT;
+    else if (sv == "GBPUSD" || sv == "AUDUSD" || sv == "NZDUSD")
+        ec = EC::FX_CASCADE;
+    else if (sv == "USDJPY")
+        ec = EC::FX_CARRY;
+    else if (sv == "XAUUSD")
+        ec = EC::GOLD_STACK; // shouldn't reach here -- gold has bespoke path
+
+    const float regime_wt = g_regime_adaptor.weight(ec);
+    if (regime_wt <= 0.0f) {
+        // Hard block: engine class disabled under current macro regime
+        // (FX_CASCADE=0.0 and FX_CARRY=0.0 in RISK_OFF per weight table)
+        static thread_local int64_t s_regime_log = 0;
+        if (nowSec() - s_regime_log > 60) {
+            s_regime_log = nowSec();
+            std::printf("[REGIME-BLOCK] %s %s blocked -- engine class weight=0 in regime=%s\n",
+                        esym, is_long ? "LONG" : "SHORT",
+                        g_regime_adaptor.last_regime.c_str());
+        }
+        return 0.0;
+    }
+
+    // ?? Cross-engine deduplication ????????????????????????????????????
+    if (!cross_engine_dedup_ok(std::string(esym))) return 0.0;
+
+    // ?? EWM Correlation Matrix gate ????????????????????????????????????????
+    // Block entry if any currently-open symbol is correlated > 0.85 with esym.
+    // Uses realised EWM correlation (last ~120 ticks) not static cluster counts.
+    // Runs AFTER the static corr_heat count guard as a second, precise layer.
+    {  // EWM correlation gate -- returns true immediately if insufficient data
+        // Collect currently-open symbol names
+        std::vector<std::string> open_syms;
+        open_syms.reserve(16);
+        auto add_if = [&](const char* s, bool active) { if (active) open_syms.emplace_back(s); };
+        add_if("US500.F",  g_eng_sp.pos.active);
+        add_if("USTEC.F",  g_eng_nq.pos.active);
+        add_if("DJ30.F",   g_eng_us30.pos.active);
+        add_if("NAS100",   g_eng_nas100.pos.active);
+        add_if("USOIL.F",  g_eng_cl.pos.active);
+        add_if("BRENT",    g_eng_brent.pos.active);
+        add_if("XAGUSD",   g_eng_xag.pos.active);
+        add_if("EURUSD",   g_eng_eurusd.pos.active);
+        add_if("GBPUSD",   g_eng_gbpusd.pos.active);
+        add_if("USDJPY",   g_eng_usdjpy.pos.active);
+        add_if("AUDUSD",   g_eng_audusd.pos.active);
+        add_if("NZDUSD",   g_eng_nzdusd.pos.active);
+        add_if("GER40",    g_eng_ger30.pos.active);
+        add_if("UK100",    g_eng_uk100.pos.active);
+        add_if("XAUUSD",   g_gold_flow.has_open_position()
+                         || g_gold_stack.has_open_position()
+                         || g_trend_pb_gold.has_open_position());
+        if (!g_corr_matrix.entry_allowed(std::string(esym), open_syms))
+            return 0.0;
+    }  // end corr-matrix gate
+
+    // ?? VPIN toxicity gate (XAUUSD only) ?????????????????????????????????????????
+    // Block GoldFlow/GoldStack entries when order flow is toxic (VPIN >= 0.70).
+    // Non-gold symbols: VPIN not yet computed for them (only gold tick feeds g_vpin).
+    if (sv == "XAUUSD" && g_vpin.warmed() && g_vpin.toxic()) {
+        static thread_local int64_t s_vpin_log = 0;
+        if (nowSec() - s_vpin_log > 15) {
+            s_vpin_log = nowSec();
+            std::printf("[VPIN-GATE] XAUUSD entry blocked: vpin=%.3f >= %.2f (toxic flow)\n",
+                        g_vpin.vpin(), g_vpin.toxic_threshold);
+            std::fflush(stdout);
+        }
+        return 0.0;
+    }
+
+    // ?? VWAP chop gate ????????????????????????????????????????????????????
+    // Entries within 0.05% of daily VWAP have no directional edge.
+    // VWAP is the mean-reversion anchor -- breakouts from inside the VWAP zone
+    // chop back constantly. Get VWAP from the matching BreakoutEngine.
+    // EXEMPT: mean-reversion engines (VWAP_REV, FX_FIX, carry unwind, TrendPB)
+    // that specifically target the VWAP zone -- they pass skip_vwap_gate=true.
+    if (!skip_vwap_gate) {
+        double vwap = 0.0;
+        if      (sv == "US500.F")  vwap = g_eng_sp.vwap();
+        else if (sv == "USTEC.F")  vwap = g_eng_nq.vwap();
+        else if (sv == "DJ30.F")   vwap = g_eng_us30.vwap();
+        else if (sv == "NAS100")   vwap = g_eng_nas100.vwap();
+        else if (sv == "GER40")    vwap = g_eng_ger30.vwap();
+        else if (sv == "UK100")    vwap = g_eng_uk100.vwap();
+        else if (sv == "ESTX50")   vwap = g_eng_estx50.vwap();
+        else if (sv == "XAGUSD")   vwap = g_eng_xag.vwap();
+        else if (sv == "EURUSD")   vwap = g_eng_eurusd.vwap();
+        else if (sv == "GBPUSD")   vwap = g_eng_gbpusd.vwap();
+        else if (sv == "AUDUSD")   vwap = g_eng_audusd.vwap();
+        else if (sv == "NZDUSD")   vwap = g_eng_nzdusd.vwap();
+        else if (sv == "USDJPY")   vwap = g_eng_usdjpy.vwap();
+        else if (sv == "USOIL.F") vwap = g_eng_cl.vwap();
+        else if (sv == "BRENT")   vwap = g_eng_brent.vwap();
+        else if (sv == "XAUUSD")  vwap = g_gold_stack.vwap();
+        if (!g_edges.vwap_gate(entry, vwap)) {
+            printf("[VWAP-CHOP] %s %s entry=%.4f vwap=%.4f dist=%.3f%% -- in chop zone, skipping\n",
+                   esym, is_long?"LONG":"SHORT", entry, vwap,
+                   vwap > 0 ? std::fabs(entry - vwap) / vwap * 100.0 : 0.0);
+            return 0.0;
+        }
+    }
+
+    // sized_lot declared here at outer scope -- computed inside L2 block below
+    double sized_lot = base_lot * static_cast<double>(regime_wt); // default (no L2 data)
+
+    // ?? L2 microstructure edge score ? lot multiplier ?????????????????????
+    // Combines: CVD, PDH/PDL, round numbers (original 4 signals) PLUS:
+    //   - Microprice bias confirmation/contradiction
+    //   - Liquidity vacuum in direction (+2 fast move)
+    //   - Wall between entry and TP (-3 hard block)
+    //   - Order flow absorption (-2 institutional fading)
+    //   - Volume profile node/thin area (+/-1)
+    // Score range -7..+7. Block at <= -3. Boost at >= +3.
+    {
+        // Pull L2 microstructure from MacroContext for this symbol
+        double microprice_bias = 0.0;
+        double l2_imbalance    = 0.5;
+        bool   vacuum_in_dir   = false;
+        bool   wall_to_tp      = false;
+
+        if      (sv == "XAUUSD") {
+            microprice_bias = g_macro_ctx.gold_microprice_bias;
+            l2_imbalance    = g_macro_ctx.gold_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid;
+            wall_to_tp      = is_long ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below;
+        } else if (sv == "US500.F" || sv == "USTEC.F" || sv == "NAS100" || sv == "DJ30.F") {
+            microprice_bias = g_macro_ctx.sp_microprice_bias;
+            l2_imbalance    = (sv == "US500.F") ? g_macro_ctx.sp_l2_imbalance : g_macro_ctx.nq_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.sp_vacuum_ask : g_macro_ctx.sp_vacuum_bid;
+            wall_to_tp      = is_long ? g_macro_ctx.sp_wall_above : g_macro_ctx.sp_wall_below;
+        } else if (sv == "XAGUSD") {
+            microprice_bias = g_macro_ctx.xag_microprice_bias;
+            l2_imbalance    = g_macro_ctx.xag_l2_imbalance;
+            // Silver: no vacuum/wall in MacroContext yet -- use L2 imbalance as proxy
+            vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
+        } else if (sv == "USOIL.F" || sv == "BRENT") {
+            microprice_bias = g_macro_ctx.cl_microprice_bias;
+            l2_imbalance    = g_macro_ctx.cl_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.cl_vacuum_ask : g_macro_ctx.cl_vacuum_bid;
+        } else if (sv == "EURUSD") {
+            microprice_bias = g_macro_ctx.eur_microprice_bias;
+            l2_imbalance    = g_macro_ctx.eur_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.eur_vacuum_ask : g_macro_ctx.eur_vacuum_bid;
+            wall_to_tp      = is_long ? g_macro_ctx.eur_wall_above  : g_macro_ctx.eur_wall_below;
+        } else if (sv == "GBPUSD") {
+            microprice_bias = g_macro_ctx.gbp_microprice_bias;
+            l2_imbalance    = g_macro_ctx.gbp_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.gbp_vacuum_ask : g_macro_ctx.gbp_vacuum_bid;
+            wall_to_tp      = is_long ? g_macro_ctx.gbp_wall_above  : g_macro_ctx.gbp_wall_below;
+        } else if (sv == "AUDUSD") {
+            microprice_bias = g_macro_ctx.aud_microprice_bias;
+            l2_imbalance    = g_macro_ctx.aud_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.aud_vacuum_ask : g_macro_ctx.aud_vacuum_bid;
+        } else if (sv == "NZDUSD") {
+            microprice_bias = g_macro_ctx.nzd_microprice_bias;
+            l2_imbalance    = g_macro_ctx.nzd_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.nzd_vacuum_ask : g_macro_ctx.nzd_vacuum_bid;
+        } else if (sv == "USDJPY") {
+            microprice_bias = g_macro_ctx.jpy_microprice_bias;
+            l2_imbalance    = g_macro_ctx.jpy_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.jpy_vacuum_ask : g_macro_ctx.jpy_vacuum_bid;
+        } else if (sv == "GER40") {
+            microprice_bias = g_macro_ctx.ger40_microprice_bias;
+            l2_imbalance    = g_macro_ctx.ger40_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.ger40_vacuum_ask : g_macro_ctx.ger40_vacuum_bid;
+            wall_to_tp      = is_long ? g_macro_ctx.ger40_wall_above  : g_macro_ctx.ger40_wall_below;
+        } else if (sv == "UK100") {
+            l2_imbalance    = g_macro_ctx.uk100_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.uk100_vacuum_ask : g_macro_ctx.uk100_vacuum_bid;
+        } else if (sv == "ESTX50") {
+            l2_imbalance    = g_macro_ctx.estx50_l2_imbalance;
+            vacuum_in_dir   = is_long ? g_macro_ctx.estx50_vacuum_ask : g_macro_ctx.estx50_vacuum_bid;
+        }
+
+        const double tp_for_score = tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*sl_abs*2.0;
+        const int edge_score = g_edges.entry_score_l2(
+            esym, entry, is_long, tp_for_score, nowSec(),
+            microprice_bias, l2_imbalance, vacuum_in_dir, wall_to_tp);
+
+        if (edge_score <= -3) {
+            printf("[EDGE-BLOCK-L2] %s %s score=%d (micro=%.4f l2=%.2f vac=%d wall=%d absorb=%d vp=%d)\n",
+                   esym, is_long?"LONG":"SHORT", edge_score,
+                   microprice_bias, l2_imbalance,
+                   vacuum_in_dir ? 1 : 0, wall_to_tp ? 1 : 0,
+                   g_edges.absorption.is_absorbing(esym, is_long) ? 1 : 0,
+                   g_edges.vol_profile.score(esym, entry));
+            return 0.0;
+        }
+        const double edge_mult = 1.0 + std::max(-0.25, std::min(0.35, edge_score * 0.07));
+        sized_lot = base_lot * static_cast<double>(regime_wt) * edge_mult;
+    }
+
+    // Adaptive risk: DD throttle + Kelly + vol regime
+    double sym_loss = 0.0; int sym_consec = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+        auto it = g_sym_risk.find(esym);
+        if (it != g_sym_risk.end()) {
+            sym_loss   = std::max(0.0, -it->second.daily_pnl);
+            sym_consec = it->second.consec_losses;
+        }
+    }
+    double lot = g_adaptive_risk.adjusted_lot(
+        esym, sized_lot, sym_loss, g_cfg.daily_loss_limit, sym_consec);
+    // ?? TOD-weighted lot scaling ??????????????????????????????????????
+    {
+        const double tod_mult = g_edges.tod.size_scale(
+            std::string(esym), "ALL", nowSec());
+        if (tod_mult < 1.0) {
+            printf("[TOD-SCALE] %s lot %.4f ? %.4f (tod_mult=%.2f)\n",
+                   esym, lot, lot * tod_mult, tod_mult);
+            lot = std::max(0.01, std::floor(lot * tod_mult * 100.0 + 0.5) / 100.0);
+        }
+    }
+    // ?? Max loss per trade cap ????????????????????????????????????????????
+    // Hard dollar backstop: if sl_abs * lot * tick_mult > max_loss_per_trade_usd,
+    // scale lot down. Fires last -- after Kelly, regime weight, DD throttle.
+    double final_lot = lot;
+    if (g_cfg.max_loss_per_trade_usd > 0.0 && sl_abs > 0.0) {
+        const double tick_mult = tick_value_multiplier(esym);
+        const double max_loss_lot = g_cfg.max_loss_per_trade_usd / (sl_abs * tick_mult);
+        if (final_lot > max_loss_lot) {
+            final_lot = std::max(0.01, std::floor(max_loss_lot * 100.0 + 0.5) / 100.0);
+            printf("[MAX-LOSS-CAP] %s lot capped %.4f?%.4f (sl=$%.2f max=$%.0f)\n",
+                   esym, lot, final_lot, sl_abs * tick_mult * lot, g_cfg.max_loss_per_trade_usd);
+        }
+    }
+    // ?? Vol-parity sizing multiplier (OmegaCorrelationMatrix) ??????????
+    // Scale lot by vol_target/ewm_vol(sym) so high-vol assets get smaller
+    // positions and low-vol assets get proportionally larger ones.
+    // Clamped to [0.50, 1.50]. Returns 1.0 when matrix not yet warmed.
+    {
+        const double vp_scale = g_corr_matrix.vol_parity_scale(std::string(esym));
+        if (vp_scale < 0.99 || vp_scale > 1.01) {  // only log non-trivial changes
+            static thread_local int64_t s_vp_log = 0;
+            if (nowSec() - s_vp_log > 30) {
+                s_vp_log = nowSec();
+                std::printf("[VOL-PARITY] %s lot %.4f -> %.4f (scale=%.3f)\n",
+                            esym, final_lot, final_lot * vp_scale, vp_scale);
+                std::fflush(stdout);
+            }
+        }
+        final_lot = std::max(0.01, std::floor(final_lot * vp_scale * 100.0 + 0.5) / 100.0);
+    }
+
+    // ?? Hard R:R floor -- checked at dispatch, not signal generation ????
+    // Signal generation uses comp_range ? 1.6 / comp_range ? 0.4 = 4:1.
+    // But L2 wall penalties, SL adjustments, and ATR sizing can push this
+    // below 1.5:1 before the order fires. Block any trade with R:R < 1.5.
+    if (sl_abs > 1e-9 && tp_dist > 1e-9) {
+        const double rr = tp_dist / sl_abs;
+        if (rr < 1.5) {
+            printf("[RR-FLOOR] %s %s blocked: R:R=%.2f (tp=%.4f sl=%.4f) < 1.5 floor\n",
+                   esym, is_long?"LONG":"SHORT", rr, tp_dist, sl_abs);
+            return 0.0;
+        }
+    }
+    // Cost guard
+    if (!ExecutionCostGuard::is_viable(esym, ask - bid, tp_dist, final_lot)) {
+        g_telemetry.IncrCostBlocked();
+        return 0.0;
+    }
+    // All gates passed -- stamp cross-engine dedup NOW (not at check time)
+    cross_engine_dedup_stamp(std::string(esym));
+    g_last_directional_lot = final_lot;  // expose for caller pos_.size patch
+    // Log entry to trade opens CSV before firing
+    write_trade_open_log(esym,
+        "directional",                       // refined by caller via UpdateLastSignal
+        is_long ? "LONG" : "SHORT",
+        entry,
+        tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
+        sl, final_lot, ask - bid,
+        regime.empty() ? "?" : regime,
+        "ENTRY");
+    // Arm partial exit and fire
+    // XAUUSD is excluded: GoldFlow arms g_partial_exit explicitly after entry
+    // with the correct ATR and 2R TP2 (line ~7222), and GoldStack arms at signal
+    // time (line ~6573). Arming here would double-arm with wrong TP2 = enter_directional's
+    // tp_scaled (often 0), causing a phantom second partial order on the same position.
+    if (std::string(esym) != "XAUUSD") {
+        g_partial_exit.arm(esym, is_long, entry, tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
+                           sl, final_lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
+    }
+    // ?? Increment portfolio open SL risk ????????????????????????????????????
+    // Tracks total simultaneous max-loss across all open positions.
+    // Decremented in handle_closed_trade when position closes.
+    {
+        const double tick_val = tick_value_multiplier(esym);
+        portfolio_sl_risk_add(sl_abs, final_lot, tick_val);
+    }
+    // ?? Entry log -- every trade every engine every symbol ??????????????
+    // Previously only GoldFlow/GoldStack printed entry lines.
+    // VWAPRev TrendPB NBM ORB were silent -- impossible to audit live.
+    printf("[ENTRY] %s %s @ %.5f sl=%.5f tp=%.5f lot=%.4f sl_pts=%.5f\n",
+           esym, is_long ? "LONG" : "SHORT",
+           entry, sl,
+           tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
+           final_lot, sl_abs);
+    fflush(stdout);
+    send_live_order(esym, is_long, final_lot, entry);
+    g_telemetry.UpdateLastEntryTs();  // watchdog: stamp last successful entry
+    return final_lot;
+}
+
 static void on_tick(const std::string& sym, double bid, double ask) {
     // ?? Tick spike filter ???????????????????????????????????????????????
     // Reject ticks where mid moves > 5x slow ATR in a single step.
@@ -5809,11 +6296,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // ca_on_close -- for cross-asset and ORB engines. These manage TP/SL in software
     // with no broker-side orders, so closing requires an explicit market order.
-    auto ca_on_close = [&](const omega::TradeRecord& tr) {
-        handle_closed_trade(tr);
-        send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
-    };
-
+    // ca_on_close -- converted to static function above on_tick
     // bracket_on_close -- used exclusively by g_bracket_gold and g_bracket_xag.
     // When the engine closes a position (TP/SL/timeout/force), it calls this with
     // the filled TradeRecord. We:
@@ -5826,58 +6309,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     //
     // tr.side is the ENTRY side ("LONG"/"SHORT"); to close we flip it.
     // tr.size is the lot size originally submitted at entry.
-    auto bracket_on_close = [&](const omega::TradeRecord& tr) {
-        handle_closed_trade(tr);
-
-        // ?? Per-symbol bracket trend bias update ?????????????????????????????
-        // Applies to ALL bracket symbols. Tracks consecutive profitable exits
-        // to detect a dominant trend, then suppresses counter-trend re-arms.
-        // L2 imbalance extends/shortens the block dynamically (see BracketTrendState).
-        {
-            const int64_t now_ms_bc = static_cast<int64_t>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count());
-            const bool profitable = (tr.exitReason == std::string("TRAIL_HIT") ||
-                                     tr.exitReason == std::string("TP_HIT")    ||
-                                     tr.exitReason == std::string("BE_HIT"));
-            g_bracket_trend[tr.symbol].on_exit(tr.side == "LONG", profitable, now_ms_bc);
-
-            // ?? Pyramid SL cooldown ???????????????????????????????????????????
-            // If this closing trade was a pyramid entry that hit SL, record the
-            // timestamp. pyramid_allowed() will block new pyramids for 2 minutes.
-            if (!profitable && tr.exitReason == std::string("SL_HIT")) {
-                if (g_pyramid_clordids.count(tr.symbol)) {
-                    g_bracket_trend[tr.symbol].last_pyramid_sl_ms = now_ms_bc;
-                    printf("[PYRAMID-SL-COOLDOWN] %s pyramid SL hit -- blocking new pyramids for 120s\n",
-                           tr.symbol.c_str());
-                }
-            }
-            // Clear pyramid flag on any close (win, loss, or BE)
-            g_pyramid_clordids.erase(tr.symbol);
-        }
-
-        // Only send a market close order for reasons where the BROKER has no
-        // pending order to handle the close automatically:
-        //   BREAKOUT_FAIL -- engine detected failure before TP/SL; broker still
-        //                   has the OCO live and must be cancelled + closed.
-        //   FORCE_CLOSE   -- disconnect or manual close; broker may have live orders.
-        // Do NOT send for TP_HIT / SL_HIT / BE_HIT -- in LIVE mode the broker's
-        // OCO order fills the close. Sending another market order doubles the position.
-        const bool needs_market_close =
-            (tr.exitReason == "BREAKOUT_FAIL" ||
-             tr.exitReason == "FORCE_CLOSE");
-        if (!needs_market_close) return;
-        const bool close_is_long = (tr.side == "SHORT");
-        std::cout << "\033[1;35m[BRACKET-CLOSE] " << tr.symbol
-                  << " " << (close_is_long ? "BUY" : "SELL") << " (close)"
-                  << " qty=" << tr.size
-                  << " exit=" << std::fixed << std::setprecision(4) << tr.exitPrice
-                  << " reason=" << tr.exitReason
-                  << "\033[0m\n";
-        std::cout.flush();
-        send_live_order(tr.symbol, close_is_long, tr.size, tr.exitPrice);
-    };
-
+    // bracket_on_close -- converted to static function above on_tick
     // ?? Global ranking: collect candidates across all symbols ????????????????
     // on_tick fires once per symbol per tick -- not all symbols in one call.
     // We use a static buffer with a time window: collect all candidates that
@@ -5893,39 +6325,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // ?? Supervisor helper -- run supervisor for a given symbol/engine/supervisor ?
     // Returns the decision. Also always ticks the engine for position management
     // regardless of whether new entries are allowed.
-    auto sup_decision = [&](omega::SymbolSupervisor& sup,
-                             auto& eng,
-                             bool base_can_enter) -> omega::SupervisorDecision {
-        int fb = 0;
-        { std::lock_guard<std::mutex> lk(g_false_break_mtx);
-          auto it = g_false_break_counts.find(sym); if (it != g_false_break_counts.end()) fb = it->second; }
-        // Momentum: vol expansion relative to baseline -- how much vol has grown.
-        // Was: (mid - comp_low)/mid which is a price distance, not directional momentum.
-        // Correct: (recent_vol - base_vol) / base_vol -- captures vol expansion direction.
-        const double momentum_proxy = (eng.base_vol_pct > 0.0)
-            ? ((eng.recent_vol_pct - eng.base_vol_pct) / eng.base_vol_pct * 100.0)
-            : 0.0;
-        // in_compression: use the engine's own compression state (phase==COMPRESSION)
-        // but also pass true during BREAKOUT_WATCH -- supervisor should know the engine
-        // just exited compression and is watching for a break, not re-classify as no-setup.
-        const bool in_comp_or_watch = (eng.phase == omega::Phase::COMPRESSION
-                                    || eng.phase == omega::Phase::BREAKOUT_WATCH);
-        const auto sdec_result = sup.update(
-            bid, ask,
-            eng.recent_vol_pct, eng.base_vol_pct,
-            momentum_proxy,
-            eng.comp_high, eng.comp_low,
-            in_comp_or_watch,
-            fb);
-        // Count actual spread blocks -- only when a signal was being evaluated
-        if (sdec_result.regime == omega::Regime::HIGH_RISK_NO_TRADE
-            && sdec_result.reason != nullptr
-            && std::string(sdec_result.reason) == "spread_too_wide"
-            && base_can_enter)
-            ++g_gov_spread;
-        return sdec_result;
-    };
-
+    // sup_decision -- converted to static function above on_tick
     // ?? cost_ok() -- mandatory gate for all direct send_live_order calls ?????????
     // Defined BEFORE dispatch/dispatch_bracket (generic lambdas) so MSVC can
     // resolve it at template definition time, not just instantiation time.
@@ -5953,7 +6353,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Supervisor always runs every tick -- for regime classification and telemetry.
         // If a pre-computed decision is provided, reuse it -- don't call update() again.
         const auto sdec = precomputed_sdec ? *precomputed_sdec
-                                           : sup_decision(sup, eng, base_can_enter);
+                                           : sup_decision(sup, eng, base_can_enter, sym, bid, ask);
 
         // ?? can_enter construction ????????????????????????????????????????????
         // FLAT:            supervisor must allow + base gates must pass
@@ -6598,391 +6998,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // sig: must have .valid, .is_long, .entry, .sl, .tp (or computed tp_dist)
     // fallback_lot: default size when risk sizing disabled (0.01 for most CA engines)
     // sym_override: use this symbol for sizing/corr if different from outer sym
-    auto enter_directional = [&](const char*  esym,
-                                 bool         is_long,
-                                 double       entry,
-                                 double       sl,
-                                 double       tp,          // 0 = use sl_abs*2 as TP estimate
-                                 double       fallback_lot = 0.01,
-                                 bool         skip_vwap_gate = false) -> double {
-        // Returns computed lot size on success, 0.0 on failure/blocked.
-        // Callers use the return value directly -- eliminates g_last_directional_lot
-        // dependency which caused cross-symbol lot corruption (the $1407 bug).
-        const double sl_abs_raw = std::fabs(entry - sl);
-        // ATR-normalised SL floor -- same logic as breakout dispatch
-        const double sl_abs  = g_adaptive_risk.vol_scaler.atr_sl_floor(
-            std::string(esym), sl_abs_raw);
-
-        // ?? ATR SL expansion ? proportional TP adjustment ????????????????????
-        // FIX: when atr_sl_floor expands the SL (sl_abs > sl_abs_raw),
-        // the TP must scale by the same ratio to preserve original R:R.
-        // Without this: USOIL sl_raw=0.5 ? sl_floor=2.0, tp=1.5 unchanged
-        //   ? R:R = 0.75 ? RR-FLOOR blocks every trade when ATR is elevated.
-        // With this:    sl expands 4?, tp expands 4? ? R:R preserved ? OK.
-        double tp_rr_adjusted = tp;
-        if (tp > 0.0 && sl_abs > sl_abs_raw * 1.01 && sl_abs_raw > 1e-9) {
-            const double expand_ratio = sl_abs / sl_abs_raw;
-            const double tp_dist_raw  = std::fabs(entry - tp);
-            const double tp_dist_adj  = tp_dist_raw * expand_ratio;
-            tp_rr_adjusted = is_long ? entry + tp_dist_adj : entry - tp_dist_adj;
-            std::printf("[ATR-SL-EXPAND] %s sl_raw=%.5f->sl_floor=%.5f (x%.2f) tp=%.5f->%.5f\n",
-                        esym, sl_abs_raw, sl_abs, expand_ratio, tp, tp_rr_adjusted);
-        }
-
-        // ?? ATR-based TP scaling ??????????????????????????????????????????????
-        // On high-volatility days (e.g. gold ATR $25 vs normal $10), a fixed
-        // percentage TP exits 3? too early. Scale TP proportionally with the
-        // ratio of current ATR to the rolling slow-ATR baseline.
-        // Bounds: 0.70? (protect low-vol entries) to 2.50? (cap on extreme days).
-        // Only applies when the caller provided a real TP (tp > 0); the 2R default
-        // fallback is already sized relative to sl_abs and does not need scaling.
-        double tp_scaled = tp_rr_adjusted;
-        if (tp > 0) {
-            const double atr_fast_v = g_adaptive_risk.vol_scaler.atr_fast(std::string(esym));
-            const double atr_slow_v = g_adaptive_risk.vol_scaler.atr_slow(std::string(esym));
-            if (atr_fast_v > 0.0 && atr_slow_v > 0.0) {
-                const double atr_ratio = std::min(2.50, atr_fast_v / atr_slow_v);
-                const double atr_tp_mult = std::max(0.70, std::min(2.50, atr_ratio));
-                if (atr_tp_mult > 1.05 || atr_tp_mult < 0.95) {  // only log meaningful changes
-                    static thread_local int64_t s_atr_tp_log = 0;
-                    if (nowSec() - s_atr_tp_log > 30) {
-                        s_atr_tp_log = nowSec();
-                        std::printf("[ATR-TP-SCALE] %s %s tp=%.5f->%.5f (atr_fast=%.4f atr_slow=%.4f ratio=%.2f mult=%.2f)\n",
-                                    esym, is_long ? "LONG" : "SHORT",
-                                    tp, is_long ? entry + (tp - entry) * atr_tp_mult
-                                                : entry - (entry - tp) * atr_tp_mult,
-                                    atr_fast_v, atr_slow_v, atr_ratio, atr_tp_mult);
-                    }
-                }
-                tp_scaled = is_long
-                    ? entry + (tp - entry) * atr_tp_mult
-                    : entry - (entry - tp) * atr_tp_mult;
-            }
-        }
-        const double tp_dist = (tp_scaled > 0) ? std::fabs(entry - tp_scaled) : sl_abs * 2.0;
-        const double base_lot_raw = compute_size(esym, sl_abs, ask - bid, fallback_lot);
-        // Vol-regime size scale -- CRUSH=1.10x, HIGH=0.75x, NORMAL=1.0x
-        const double base_lot = base_lot_raw * static_cast<double>(
-            g_regime_adaptor.vol_size_scale(std::string(esym)));
-
-        // ?? Regime weight ?????????????????????????????????????????????????????
-        // Map symbol ? EngineClass and apply macro regime weight.
-        // FX_CASCADE and FX_CARRY return 0.0 in RISK_OFF ? hard block.
-        using EC = omega::regime::EngineClass;
-        EC ec = EC::CROSS_ASSET; // safe default for ORB/VWAP/TrendPB
-        const std::string_view sv(esym);
-        if      (sv == "US500.F" || sv == "USTEC.F" || sv == "DJ30.F" || sv == "NAS100")
-            ec = EC::US_EQUITY_BREAKOUT;
-        else if (sv == "GER40" || sv == "UK100" || sv == "ESTX50")
-            ec = EC::EU_EQUITY_BREAKOUT;
-        else if (sv == "XAGUSD")
-            ec = EC::SILVER_BREAKOUT;
-        else if (sv == "USOIL.F" || sv == "BRENT")
-            ec = EC::OIL_BREAKOUT;
-        else if (sv == "EURUSD")
-            ec = EC::FX_BREAKOUT;
-        else if (sv == "GBPUSD" || sv == "AUDUSD" || sv == "NZDUSD")
-            ec = EC::FX_CASCADE;
-        else if (sv == "USDJPY")
-            ec = EC::FX_CARRY;
-        else if (sv == "XAUUSD")
-            ec = EC::GOLD_STACK; // shouldn't reach here -- gold has bespoke path
-
-        const float regime_wt = g_regime_adaptor.weight(ec);
-        if (regime_wt <= 0.0f) {
-            // Hard block: engine class disabled under current macro regime
-            // (FX_CASCADE=0.0 and FX_CARRY=0.0 in RISK_OFF per weight table)
-            static thread_local int64_t s_regime_log = 0;
-            if (nowSec() - s_regime_log > 60) {
-                s_regime_log = nowSec();
-                std::printf("[REGIME-BLOCK] %s %s blocked -- engine class weight=0 in regime=%s\n",
-                            esym, is_long ? "LONG" : "SHORT",
-                            g_regime_adaptor.last_regime.c_str());
-            }
-            return 0.0;
-        }
-
-        // ?? Cross-engine deduplication ????????????????????????????????????
-        if (!cross_engine_dedup_ok(std::string(esym))) return 0.0;
-
-        // ?? EWM Correlation Matrix gate ????????????????????????????????????????
-        // Block entry if any currently-open symbol is correlated > 0.85 with esym.
-        // Uses realised EWM correlation (last ~120 ticks) not static cluster counts.
-        // Runs AFTER the static corr_heat count guard as a second, precise layer.
-        {  // EWM correlation gate -- returns true immediately if insufficient data
-            // Collect currently-open symbol names
-            std::vector<std::string> open_syms;
-            open_syms.reserve(16);
-            auto add_if = [&](const char* s, bool active) { if (active) open_syms.emplace_back(s); };
-            add_if("US500.F",  g_eng_sp.pos.active);
-            add_if("USTEC.F",  g_eng_nq.pos.active);
-            add_if("DJ30.F",   g_eng_us30.pos.active);
-            add_if("NAS100",   g_eng_nas100.pos.active);
-            add_if("USOIL.F",  g_eng_cl.pos.active);
-            add_if("BRENT",    g_eng_brent.pos.active);
-            add_if("XAGUSD",   g_eng_xag.pos.active);
-            add_if("EURUSD",   g_eng_eurusd.pos.active);
-            add_if("GBPUSD",   g_eng_gbpusd.pos.active);
-            add_if("USDJPY",   g_eng_usdjpy.pos.active);
-            add_if("AUDUSD",   g_eng_audusd.pos.active);
-            add_if("NZDUSD",   g_eng_nzdusd.pos.active);
-            add_if("GER40",    g_eng_ger30.pos.active);
-            add_if("UK100",    g_eng_uk100.pos.active);
-            add_if("XAUUSD",   g_gold_flow.has_open_position()
-                             || g_gold_stack.has_open_position()
-                             || g_trend_pb_gold.has_open_position());
-            if (!g_corr_matrix.entry_allowed(std::string(esym), open_syms))
-                return 0.0;
-        }  // end corr-matrix gate
-
-        // ?? VPIN toxicity gate (XAUUSD only) ?????????????????????????????????????????
-        // Block GoldFlow/GoldStack entries when order flow is toxic (VPIN >= 0.70).
-        // Non-gold symbols: VPIN not yet computed for them (only gold tick feeds g_vpin).
-        if (sv == "XAUUSD" && g_vpin.warmed() && g_vpin.toxic()) {
-            static thread_local int64_t s_vpin_log = 0;
-            if (nowSec() - s_vpin_log > 15) {
-                s_vpin_log = nowSec();
-                std::printf("[VPIN-GATE] XAUUSD entry blocked: vpin=%.3f >= %.2f (toxic flow)\n",
-                            g_vpin.vpin(), g_vpin.toxic_threshold);
-                std::fflush(stdout);
-            }
-            return 0.0;
-        }
-
-        // ?? VWAP chop gate ????????????????????????????????????????????????????
-        // Entries within 0.05% of daily VWAP have no directional edge.
-        // VWAP is the mean-reversion anchor -- breakouts from inside the VWAP zone
-        // chop back constantly. Get VWAP from the matching BreakoutEngine.
-        // EXEMPT: mean-reversion engines (VWAP_REV, FX_FIX, carry unwind, TrendPB)
-        // that specifically target the VWAP zone -- they pass skip_vwap_gate=true.
-        if (!skip_vwap_gate) {
-            double vwap = 0.0;
-            if      (sv == "US500.F")  vwap = g_eng_sp.vwap();
-            else if (sv == "USTEC.F")  vwap = g_eng_nq.vwap();
-            else if (sv == "DJ30.F")   vwap = g_eng_us30.vwap();
-            else if (sv == "NAS100")   vwap = g_eng_nas100.vwap();
-            else if (sv == "GER40")    vwap = g_eng_ger30.vwap();
-            else if (sv == "UK100")    vwap = g_eng_uk100.vwap();
-            else if (sv == "ESTX50")   vwap = g_eng_estx50.vwap();
-            else if (sv == "XAGUSD")   vwap = g_eng_xag.vwap();
-            else if (sv == "EURUSD")   vwap = g_eng_eurusd.vwap();
-            else if (sv == "GBPUSD")   vwap = g_eng_gbpusd.vwap();
-            else if (sv == "AUDUSD")   vwap = g_eng_audusd.vwap();
-            else if (sv == "NZDUSD")   vwap = g_eng_nzdusd.vwap();
-            else if (sv == "USDJPY")   vwap = g_eng_usdjpy.vwap();
-            else if (sv == "USOIL.F") vwap = g_eng_cl.vwap();
-            else if (sv == "BRENT")   vwap = g_eng_brent.vwap();
-            else if (sv == "XAUUSD")  vwap = g_gold_stack.vwap();
-            if (!g_edges.vwap_gate(entry, vwap)) {
-                printf("[VWAP-CHOP] %s %s entry=%.4f vwap=%.4f dist=%.3f%% -- in chop zone, skipping\n",
-                       esym, is_long?"LONG":"SHORT", entry, vwap,
-                       vwap > 0 ? std::fabs(entry - vwap) / vwap * 100.0 : 0.0);
-                return 0.0;
-            }
-        }
-
-        // sized_lot declared here at outer scope -- computed inside L2 block below
-        double sized_lot = base_lot * static_cast<double>(regime_wt); // default (no L2 data)
-
-        // ?? L2 microstructure edge score ? lot multiplier ?????????????????????
-        // Combines: CVD, PDH/PDL, round numbers (original 4 signals) PLUS:
-        //   - Microprice bias confirmation/contradiction
-        //   - Liquidity vacuum in direction (+2 fast move)
-        //   - Wall between entry and TP (-3 hard block)
-        //   - Order flow absorption (-2 institutional fading)
-        //   - Volume profile node/thin area (+/-1)
-        // Score range -7..+7. Block at <= -3. Boost at >= +3.
-        {
-            // Pull L2 microstructure from MacroContext for this symbol
-            double microprice_bias = 0.0;
-            double l2_imbalance    = 0.5;
-            bool   vacuum_in_dir   = false;
-            bool   wall_to_tp      = false;
-
-            if      (sv == "XAUUSD") {
-                microprice_bias = g_macro_ctx.gold_microprice_bias;
-                l2_imbalance    = g_macro_ctx.gold_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid;
-                wall_to_tp      = is_long ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below;
-            } else if (sv == "US500.F" || sv == "USTEC.F" || sv == "NAS100" || sv == "DJ30.F") {
-                microprice_bias = g_macro_ctx.sp_microprice_bias;
-                l2_imbalance    = (sv == "US500.F") ? g_macro_ctx.sp_l2_imbalance : g_macro_ctx.nq_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.sp_vacuum_ask : g_macro_ctx.sp_vacuum_bid;
-                wall_to_tp      = is_long ? g_macro_ctx.sp_wall_above : g_macro_ctx.sp_wall_below;
-            } else if (sv == "XAGUSD") {
-                microprice_bias = g_macro_ctx.xag_microprice_bias;
-                l2_imbalance    = g_macro_ctx.xag_l2_imbalance;
-                // Silver: no vacuum/wall in MacroContext yet -- use L2 imbalance as proxy
-                vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
-            } else if (sv == "USOIL.F" || sv == "BRENT") {
-                microprice_bias = g_macro_ctx.cl_microprice_bias;
-                l2_imbalance    = g_macro_ctx.cl_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.cl_vacuum_ask : g_macro_ctx.cl_vacuum_bid;
-            } else if (sv == "EURUSD") {
-                microprice_bias = g_macro_ctx.eur_microprice_bias;
-                l2_imbalance    = g_macro_ctx.eur_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.eur_vacuum_ask : g_macro_ctx.eur_vacuum_bid;
-                wall_to_tp      = is_long ? g_macro_ctx.eur_wall_above  : g_macro_ctx.eur_wall_below;
-            } else if (sv == "GBPUSD") {
-                microprice_bias = g_macro_ctx.gbp_microprice_bias;
-                l2_imbalance    = g_macro_ctx.gbp_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.gbp_vacuum_ask : g_macro_ctx.gbp_vacuum_bid;
-                wall_to_tp      = is_long ? g_macro_ctx.gbp_wall_above  : g_macro_ctx.gbp_wall_below;
-            } else if (sv == "AUDUSD") {
-                microprice_bias = g_macro_ctx.aud_microprice_bias;
-                l2_imbalance    = g_macro_ctx.aud_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.aud_vacuum_ask : g_macro_ctx.aud_vacuum_bid;
-            } else if (sv == "NZDUSD") {
-                microprice_bias = g_macro_ctx.nzd_microprice_bias;
-                l2_imbalance    = g_macro_ctx.nzd_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.nzd_vacuum_ask : g_macro_ctx.nzd_vacuum_bid;
-            } else if (sv == "USDJPY") {
-                microprice_bias = g_macro_ctx.jpy_microprice_bias;
-                l2_imbalance    = g_macro_ctx.jpy_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.jpy_vacuum_ask : g_macro_ctx.jpy_vacuum_bid;
-            } else if (sv == "GER40") {
-                microprice_bias = g_macro_ctx.ger40_microprice_bias;
-                l2_imbalance    = g_macro_ctx.ger40_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.ger40_vacuum_ask : g_macro_ctx.ger40_vacuum_bid;
-                wall_to_tp      = is_long ? g_macro_ctx.ger40_wall_above  : g_macro_ctx.ger40_wall_below;
-            } else if (sv == "UK100") {
-                l2_imbalance    = g_macro_ctx.uk100_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.uk100_vacuum_ask : g_macro_ctx.uk100_vacuum_bid;
-            } else if (sv == "ESTX50") {
-                l2_imbalance    = g_macro_ctx.estx50_l2_imbalance;
-                vacuum_in_dir   = is_long ? g_macro_ctx.estx50_vacuum_ask : g_macro_ctx.estx50_vacuum_bid;
-            }
-
-            const double tp_for_score = tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*sl_abs*2.0;
-            const int edge_score = g_edges.entry_score_l2(
-                esym, entry, is_long, tp_for_score, nowSec(),
-                microprice_bias, l2_imbalance, vacuum_in_dir, wall_to_tp);
-
-            if (edge_score <= -3) {
-                printf("[EDGE-BLOCK-L2] %s %s score=%d (micro=%.4f l2=%.2f vac=%d wall=%d absorb=%d vp=%d)\n",
-                       esym, is_long?"LONG":"SHORT", edge_score,
-                       microprice_bias, l2_imbalance,
-                       vacuum_in_dir ? 1 : 0, wall_to_tp ? 1 : 0,
-                       g_edges.absorption.is_absorbing(esym, is_long) ? 1 : 0,
-                       g_edges.vol_profile.score(esym, entry));
-                return 0.0;
-            }
-            const double edge_mult = 1.0 + std::max(-0.25, std::min(0.35, edge_score * 0.07));
-            sized_lot = base_lot * static_cast<double>(regime_wt) * edge_mult;
-        }
-
-        // Adaptive risk: DD throttle + Kelly + vol regime
-        double sym_loss = 0.0; int sym_consec = 0;
-        {
-            std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
-            auto it = g_sym_risk.find(esym);
-            if (it != g_sym_risk.end()) {
-                sym_loss   = std::max(0.0, -it->second.daily_pnl);
-                sym_consec = it->second.consec_losses;
-            }
-        }
-        double lot = g_adaptive_risk.adjusted_lot(
-            esym, sized_lot, sym_loss, g_cfg.daily_loss_limit, sym_consec);
-        // ?? TOD-weighted lot scaling ??????????????????????????????????????
-        {
-            const double tod_mult = g_edges.tod.size_scale(
-                std::string(esym), "ALL", nowSec());
-            if (tod_mult < 1.0) {
-                printf("[TOD-SCALE] %s lot %.4f ? %.4f (tod_mult=%.2f)\n",
-                       esym, lot, lot * tod_mult, tod_mult);
-                lot = std::max(0.01, std::floor(lot * tod_mult * 100.0 + 0.5) / 100.0);
-            }
-        }
-        // ?? Max loss per trade cap ????????????????????????????????????????????
-        // Hard dollar backstop: if sl_abs * lot * tick_mult > max_loss_per_trade_usd,
-        // scale lot down. Fires last -- after Kelly, regime weight, DD throttle.
-        double final_lot = lot;
-        if (g_cfg.max_loss_per_trade_usd > 0.0 && sl_abs > 0.0) {
-            const double tick_mult = tick_value_multiplier(esym);
-            const double max_loss_lot = g_cfg.max_loss_per_trade_usd / (sl_abs * tick_mult);
-            if (final_lot > max_loss_lot) {
-                final_lot = std::max(0.01, std::floor(max_loss_lot * 100.0 + 0.5) / 100.0);
-                printf("[MAX-LOSS-CAP] %s lot capped %.4f?%.4f (sl=$%.2f max=$%.0f)\n",
-                       esym, lot, final_lot, sl_abs * tick_mult * lot, g_cfg.max_loss_per_trade_usd);
-            }
-        }
-        // ?? Vol-parity sizing multiplier (OmegaCorrelationMatrix) ??????????
-        // Scale lot by vol_target/ewm_vol(sym) so high-vol assets get smaller
-        // positions and low-vol assets get proportionally larger ones.
-        // Clamped to [0.50, 1.50]. Returns 1.0 when matrix not yet warmed.
-        {
-            const double vp_scale = g_corr_matrix.vol_parity_scale(std::string(esym));
-            if (vp_scale < 0.99 || vp_scale > 1.01) {  // only log non-trivial changes
-                static thread_local int64_t s_vp_log = 0;
-                if (nowSec() - s_vp_log > 30) {
-                    s_vp_log = nowSec();
-                    std::printf("[VOL-PARITY] %s lot %.4f -> %.4f (scale=%.3f)\n",
-                                esym, final_lot, final_lot * vp_scale, vp_scale);
-                    std::fflush(stdout);
-                }
-            }
-            final_lot = std::max(0.01, std::floor(final_lot * vp_scale * 100.0 + 0.5) / 100.0);
-        }
-
-        // ?? Hard R:R floor -- checked at dispatch, not signal generation ????
-        // Signal generation uses comp_range ? 1.6 / comp_range ? 0.4 = 4:1.
-        // But L2 wall penalties, SL adjustments, and ATR sizing can push this
-        // below 1.5:1 before the order fires. Block any trade with R:R < 1.5.
-        if (sl_abs > 1e-9 && tp_dist > 1e-9) {
-            const double rr = tp_dist / sl_abs;
-            if (rr < 1.5) {
-                printf("[RR-FLOOR] %s %s blocked: R:R=%.2f (tp=%.4f sl=%.4f) < 1.5 floor\n",
-                       esym, is_long?"LONG":"SHORT", rr, tp_dist, sl_abs);
-                return 0.0;
-            }
-        }
-        // Cost guard
-        if (!ExecutionCostGuard::is_viable(esym, ask - bid, tp_dist, final_lot)) {
-            g_telemetry.IncrCostBlocked();
-            return 0.0;
-        }
-        // All gates passed -- stamp cross-engine dedup NOW (not at check time)
-        cross_engine_dedup_stamp(std::string(esym));
-        g_last_directional_lot = final_lot;  // expose for caller pos_.size patch
-        // Log entry to trade opens CSV before firing
-        write_trade_open_log(esym,
-            "directional",                       // refined by caller via UpdateLastSignal
-            is_long ? "LONG" : "SHORT",
-            entry,
-            tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
-            sl, final_lot, ask - bid,
-            regime.empty() ? "?" : regime,
-            "ENTRY");
-        // Arm partial exit and fire
-        // XAUUSD is excluded: GoldFlow arms g_partial_exit explicitly after entry
-        // with the correct ATR and 2R TP2 (line ~7222), and GoldStack arms at signal
-        // time (line ~6573). Arming here would double-arm with wrong TP2 = enter_directional's
-        // tp_scaled (often 0), causing a phantom second partial order on the same position.
-        if (std::string(esym) != "XAUUSD") {
-            g_partial_exit.arm(esym, is_long, entry, tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
-                               sl, final_lot, g_adaptive_risk.vol_scaler.atr_fast(esym));
-        }
-        // ?? Increment portfolio open SL risk ????????????????????????????????????
-        // Tracks total simultaneous max-loss across all open positions.
-        // Decremented in handle_closed_trade when position closes.
-        {
-            const double tick_val = tick_value_multiplier(esym);
-            portfolio_sl_risk_add(sl_abs, final_lot, tick_val);
-        }
-        // ?? Entry log -- every trade every engine every symbol ??????????????
-        // Previously only GoldFlow/GoldStack printed entry lines.
-        // VWAPRev TrendPB NBM ORB were silent -- impossible to audit live.
-        printf("[ENTRY] %s %s @ %.5f sl=%.5f tp=%.5f lot=%.4f sl_pts=%.5f\n",
-               esym, is_long ? "LONG" : "SHORT",
-               entry, sl,
-               tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
-               final_lot, sl_abs);
-        fflush(stdout);
-        send_live_order(esym, is_long, final_lot, entry);
-        g_telemetry.UpdateLastEntryTs();  // watchdog: stamp last successful entry
-        return final_lot;
-    };
-
+    // enter_directional -- converted to static function above on_tick
     // ?? Partial exit tick check ???????????????????????????????????????????????
     // Runs every tick for every symbol. No-op when no partial state is active.
     // When TP1 is hit: sends a market close for the first half and moves SL to BE.
@@ -7072,7 +7088,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 fflush(stdout);
             }
         }
-        const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
+        const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp, sym, bid, ask);
         // SIM: SP breakout WR 31.6% -$105. No edge on US500 compression breakout. Disabled.
         // if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
         //     dispatch(g_eng_sp, g_sup_sp, base_can_sp, &sdec_sp);
@@ -7089,7 +7105,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_telemetry.UpdateLastSignal(sym.c_str(), esnq.is_long?"LONG":"SHORT",
                     esnq.entry, esnq.reason, "ESNQ_DIV", regime.c_str(), "ESNQ_DIV",
                     esnq.tp, esnq.sl);
-                if (!enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp))
+                if (!enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp, 0.01, false, bid, ask, sym, regime))
                     g_ca_esnq.cancel();
                     else g_ca_esnq.patch_size(g_last_directional_lot);
             }
@@ -7125,7 +7141,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 g_telemetry.UpdateLastSignal("US500.F", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-                if (!enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp))
+                if (!enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime))
                     g_orb_us.cancel();
                     else g_orb_us.patch_size(g_last_directional_lot);
             }
@@ -7189,7 +7205,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
                                             (vr.confluence_score == 3) ? 2.0 :
                                             (vr.confluence_score == 2) ? 1.5 : 1.0;
-                    if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
+                    if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime))
                         g_vwap_rev_sp.cancel();
                     else g_vwap_rev_sp.patch_size(g_last_directional_lot);
                 }
@@ -7218,7 +7234,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (nbm.valid) {
                     g_telemetry.UpdateLastSignal("US500.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
                         nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                    if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                    if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
                         g_nbm_sp.cancel();
                     else g_nbm_sp.patch_size(g_last_directional_lot);
                 }
@@ -7247,7 +7263,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
                         tp_sig.tp, tp_sig.sl);
                     if (!enter_directional("US500.F", tp_sig.is_long, tp_sig.entry,
-                                           tp_sig.sl, tp_sig.tp, 0.01, true))
+                                           tp_sig.sl, tp_sig.tp, 0.01, true, bid, ask, sym, regime))
                         g_trend_pb_sp.cancel();
                     // patch_size removed -- enter_directional already sized correctly
                     // patch_size(g_last_directional_lot) would corrupt size with last ANY-symbol lot
@@ -7292,7 +7308,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 fflush(stdout);
             }
         }
-        const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
+        const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq, sym, bid, ask);
         // SIM: NQ breakout WR 26.1% -$1167. Worst index performer. Disabled.
         // if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
         //     dispatch(g_eng_nq, g_sup_nq, base_can_nq, &sdec_nq);
@@ -7370,7 +7386,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
                                             (vr.confluence_score == 3) ? 2.0 :
                                             (vr.confluence_score == 2) ? 1.5 : 1.0;
-                    if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
+                    if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime))
                         g_vwap_rev_nq.cancel();
                     else g_vwap_rev_nq.patch_size(g_last_directional_lot);
                 }
@@ -7408,7 +7424,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
                         tp_sig.tp, tp_sig.sl);
                     if (!enter_directional("USTEC.F", tp_sig.is_long, tp_sig.entry,
-                                           tp_sig.sl, tp_sig.tp, 0.01, true))
+                                           tp_sig.sl, tp_sig.tp, 0.01, true, bid, ask, sym, regime))
                         g_trend_pb_nq.cancel();
                     // patch_size removed -- enter_directional already sized correctly
                 }
@@ -7432,7 +7448,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (nbm.valid) {
                     g_telemetry.UpdateLastSignal("USTEC.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
                         nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                    if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                    if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
                         g_nbm_nq.cancel();
                     else g_nbm_nq.patch_size(g_last_directional_lot);
                 }
@@ -7453,7 +7469,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // on_reject, and pending order IDs are wired to XAUUSD fills only.
             // An oil bracket position would corrupt XAUUSD bracket state.
             // Oil needs its own dedicated BracketEngine before bracket can be enabled.
-            const auto sdec = sup_decision(g_sup_cl, g_eng_cl, base_can);
+            const auto sdec = sup_decision(g_sup_cl, g_eng_cl, base_can, sym, bid, ask);
             if (sdec.allow_breakout)
                 dispatch(g_eng_cl, g_sup_cl, base_can);
             // ?? USOIL.F manage blocks -- ALWAYS run when position open (SL/trail fix) ??
@@ -7471,7 +7487,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // EIA fade engine -- only when BrentWTI not already open
             if (!g_ca_eia_fade.has_open_position() && !g_ca_brent_wti.has_open_position() && base_can) {  // ADDED !brent check
                 const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close);
-                if (ef.valid) { if (!enter_directional(sym.c_str(), ef.is_long, ef.entry, ef.sl, ef.tp)) g_ca_eia_fade.cancel();
+                if (ef.valid) { if (!enter_directional(sym.c_str(), ef.is_long, ef.entry, ef.sl, ef.tp, 0.01, false, bid, ask, sym, regime)) g_ca_eia_fade.cancel();
                     else g_ca_eia_fade.patch_size(g_last_directional_lot); }
             }
             // Brent/WTI spread engine -- only when EIA not already open
@@ -7483,7 +7499,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double brent_mid = (brent_b > 0 && brent_a > 0) ? (brent_b+brent_a)*0.5 : 0.0;
                 if (brent_mid > 0) {
                     const auto bw = g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid, ca_on_close);
-                    if (bw.valid) { if (!enter_directional(sym.c_str(), bw.is_long, bw.entry, bw.sl, bw.tp)) g_ca_brent_wti.cancel();
+                    if (bw.valid) { if (!enter_directional(sym.c_str(), bw.is_long, bw.entry, bw.sl, bw.tp, 0.01, false, bid, ask, sym, regime)) g_ca_brent_wti.cancel();
                     else g_ca_brent_wti.patch_size(g_last_directional_lot); }
                 }
             }
@@ -7499,7 +7515,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         nbm_oil.reason, "NBM_LONDON", regime.c_str(), "NBM_LONDON",
                         nbm_oil.tp, nbm_oil.sl);
                     if (!enter_directional("USOIL.F", nbm_oil.is_long, nbm_oil.entry,
-                                           nbm_oil.sl, nbm_oil.tp))
+                                           nbm_oil.sl, nbm_oil.tp, 0.01, false, bid, ask, sym, regime))
                         g_nbm_oil_london.cancel();
                     else g_nbm_oil_london.patch_size(g_last_directional_lot);
                 }
@@ -7524,7 +7540,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 fflush(stdout);
             }
         }
-        const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30);
+        const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30, sym, bid, ask);
         // SIM: DJ30 breakout WR 23.5% -$736, bracket also negative. Both disabled.
         // if (sdec_us30.allow_breakout && !g_bracket_us30.pos.active)
         //     dispatch(g_eng_us30, g_sup_us30, base_can_us30, &sdec_us30);
@@ -7545,7 +7561,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (nbm.valid) {
                     g_telemetry.UpdateLastSignal("DJ30.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
                         nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                    if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                    if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
                         g_nbm_us30.cancel();
                     else g_nbm_us30.patch_size(g_last_directional_lot);
                 }
@@ -7559,7 +7575,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_orb_ger30.has_open_position()     ||  // ADDED
             g_vwap_rev_ger40.has_open_position() || // ADDED
             g_trend_pb_ger40.has_open_position(), "", tradeable, lat_ok, regime, bid, ask);  // ADDED
-        const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger);
+        const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger, sym, bid, ask);
         // ?? GER40 manage blocks -- ALWAYS run when position open (SL/trail fix) ??
         if (g_orb_ger30.has_open_position())      { g_orb_ger30.on_tick(sym, bid, ask, ca_on_close); }
         if (g_vwap_rev_ger40.has_open_position()) {
@@ -7578,7 +7594,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
     else if (sym == "UK100") {
         const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active, "", tradeable, lat_ok, regime, bid, ask);
-        const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk);
+        const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk, sym, bid, ask);
         // SIM: EU index breakout -- no edge. Disabled.
         // if (sdec_uk.allow_breakout && !g_bracket_uk100.pos.active)
         //     dispatch(g_eng_uk100, g_sup_uk100, base_can_uk, &sdec_uk);
@@ -7593,7 +7609,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 g_telemetry.UpdateLastSignal("UK100", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-                if (!enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp))
+                if (!enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime))
                     g_orb_uk100.cancel();
                     else g_orb_uk100.patch_size(g_last_directional_lot);
             }
@@ -7601,7 +7617,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
     else if (sym == "ESTX50") {
         const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active, "", tradeable, lat_ok, regime, bid, ask);
-        const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx);
+        const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx, sym, bid, ask);
         // SIM: EU index breakout -- no edge. Disabled.
         // if (sdec_estx.allow_breakout && !g_bracket_estx50.pos.active)
         //     dispatch(g_eng_estx50, g_sup_estx50, base_can_estx, &sdec_estx);
@@ -7616,7 +7632,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
             if (orb.valid) {
                 g_telemetry.UpdateLastSignal("ESTX50", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-                if (!enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp))
+                if (!enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime))
                     g_orb_estx50.cancel();
                     else g_orb_estx50.patch_size(g_last_directional_lot);
             }
@@ -7652,7 +7668,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_eng_eurusd.pos.active                ||
             g_bracket_eurusd.pos.active            ||
             g_vwap_rev_eurusd.has_open_position(), "", tradeable, lat_ok, regime, bid, ask); // ADDED
-        const auto sdec_fx = sup_decision(g_sup_eurusd, g_eng_eurusd, base_can_fx);
+        const auto sdec_fx = sup_decision(g_sup_eurusd, g_eng_eurusd, base_can_fx, sym, bid, ask);
         // Notify FX cascade engine if EURUSD just fired a signal this tick
         {
             static bool s_eur_was_armed = false;
@@ -7701,7 +7717,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
                                             (vr.confluence_score == 3) ? 2.0 :
                                             (vr.confluence_score == 2) ? 1.5 : 1.0;
-                    if (!enter_directional("EURUSD", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
+                    if (!enter_directional("EURUSD", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime))
                         g_vwap_rev_eurusd.cancel();
                     else g_vwap_rev_eurusd.patch_size(g_last_directional_lot);
                 }
@@ -7713,7 +7729,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto fix_sig = g_edges.fx_fix.on_tick_london("EURUSD", bid, ask, eur_cvd.normalised(), nowSec());
             if (fix_sig.valid) {
                 g_telemetry.UpdateLastSignal("EURUSD", fix_sig.is_long?"LONG":"SHORT", fix_sig.entry, fix_sig.reason, "FX_FIX", regime.c_str(), "LONDON_FIX", fix_sig.tp, fix_sig.sl);
-                enter_directional("EURUSD", fix_sig.is_long, fix_sig.entry, fix_sig.sl, fix_sig.tp, 0.01, true);
+                enter_directional("EURUSD", fix_sig.is_long, fix_sig.entry, fix_sig.sl, fix_sig.tp, 0.01, true, bid, ask, sym, regime);
             }
         }
     }
@@ -7728,7 +7744,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_eng_gbpusd.pos.active                    ||
             g_bracket_gbpusd.pos.active                ||
             g_ca_fx_cascade.has_open_gbpusd(), "", tradeable, lat_ok, regime, bid, ask);         // ADDED
-        const auto sdec_fx2 = sup_decision(g_sup_gbpusd, g_eng_gbpusd, base_can_fx2);
+        const auto sdec_fx2 = sup_decision(g_sup_gbpusd, g_eng_gbpusd, base_can_fx2, sym, bid, ask);
         if (sdec_fx2.allow_breakout && !g_bracket_gbpusd.pos.active)
             dispatch(g_eng_gbpusd, g_sup_gbpusd, base_can_fx2, &sdec_fx2);
         // SIM: BracketEngine on FX -- no edge. 26 trades WR 15% -$1272. Disabled.
@@ -7743,7 +7759,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const auto cas = g_ca_fx_cascade.on_tick_gbpusd(bid, ask, ca_on_close);
             if (cas.valid) {
                 g_telemetry.UpdateLastSignal("GBPUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE", cas.tp, cas.sl);
-                if (!enter_directional("GBPUSD", cas.is_long, cas.entry, cas.sl, cas.tp))
+                if (!enter_directional("GBPUSD", cas.is_long, cas.entry, cas.sl, cas.tp, 0.01, false, bid, ask, sym, regime))
                         g_ca_fx_cascade.cancel_gbpusd();
                     else g_ca_fx_cascade.patch_size_gbp(g_last_directional_lot);
             }
@@ -7765,7 +7781,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (asia_ok) {
             if (sym == "AUDUSD") {
                 const bool bc_aud = symbol_gate("AUDUSD", g_eng_audusd.pos.active || g_bracket_audusd.pos.active, "", tradeable, lat_ok, regime, bid, ask);
-                const auto sd_aud = sup_decision(g_sup_audusd, g_eng_audusd, bc_aud);
+                const auto sd_aud = sup_decision(g_sup_audusd, g_eng_audusd, bc_aud, sym, bid, ask);
                 if (sd_aud.allow_breakout && !g_bracket_audusd.pos.active) dispatch(g_eng_audusd, g_sup_audusd, bc_aud, &sd_aud);
                 if (sd_aud.allow_bracket && !g_eng_audusd.pos.active && !any_fx_bracket_active)
                     // SIM: BracketEngine on FX -- no edge. Disabled.
@@ -7779,7 +7795,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const auto cas = g_ca_fx_cascade.on_tick_audusd(bid, ask, ca_on_close);
                     if (cas.valid) {
                         g_telemetry.UpdateLastSignal("AUDUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE", cas.tp, cas.sl);
-                        if (!enter_directional("AUDUSD", cas.is_long, cas.entry, cas.sl, cas.tp))
+                        if (!enter_directional("AUDUSD", cas.is_long, cas.entry, cas.sl, cas.tp, 0.01, false, bid, ask, sym, regime))
                             g_ca_fx_cascade.cancel_audusd();
                             else g_ca_fx_cascade.patch_size_aud(g_last_directional_lot);
                     }
@@ -7787,7 +7803,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             if (sym == "NZDUSD") {
                 const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.pos.active, "", tradeable, lat_ok, regime, bid, ask);
-                const auto sd_nzd = sup_decision(g_sup_nzdusd, g_eng_nzdusd, bc_nzd);
+                const auto sd_nzd = sup_decision(g_sup_nzdusd, g_eng_nzdusd, bc_nzd, sym, bid, ask);
                 if (sd_nzd.allow_breakout && !g_bracket_nzdusd.pos.active) dispatch(g_eng_nzdusd, g_sup_nzdusd, bc_nzd, &sd_nzd);
                 // SIM: BracketEngine on FX -- no edge. Disabled.
                 // if (sd_nzd.allow_bracket && !g_eng_nzdusd.pos.active && !any_fx_bracket_active)
@@ -7801,7 +7817,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const auto cas = g_ca_fx_cascade.on_tick_nzdusd(bid, ask, ca_on_close);
                     if (cas.valid) {
                         g_telemetry.UpdateLastSignal("NZDUSD", cas.is_long?"LONG":"SHORT", cas.entry, cas.reason, "FX_CASCADE", regime.c_str(), "FX_CASCADE", cas.tp, cas.sl);
-                        if (!enter_directional("NZDUSD", cas.is_long, cas.entry, cas.sl, cas.tp))
+                        if (!enter_directional("NZDUSD", cas.is_long, cas.entry, cas.sl, cas.tp, 0.01, false, bid, ask, sym, regime))
                             g_ca_fx_cascade.cancel_nzdusd();
                             else g_ca_fx_cascade.patch_size_nzd(g_last_directional_lot);
                     }
@@ -7809,7 +7825,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
             if (sym == "USDJPY") {
                 const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.pos.active, "", tradeable, lat_ok, regime, bid, ask);
-                const auto sd_jpy = sup_decision(g_sup_usdjpy, g_eng_usdjpy, bc_jpy);
+                const auto sd_jpy = sup_decision(g_sup_usdjpy, g_eng_usdjpy, bc_jpy, sym, bid, ask);
                 if (sd_jpy.allow_breakout && !g_bracket_usdjpy.pos.active) dispatch(g_eng_usdjpy, g_sup_usdjpy, bc_jpy, &sd_jpy);
                 // SIM: BracketEngine on FX -- no edge. Disabled.
                 // if (sd_jpy.allow_bracket && !g_eng_usdjpy.pos.active && !any_fx_bracket_active)
@@ -7822,7 +7838,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const auto cu = g_ca_carry_unwind.on_tick(bid, ask, g_macro_ctx.vix, ca_on_close);
                     if (cu.valid) {
                         g_telemetry.UpdateLastSignal("USDJPY", cu.is_long?"LONG":"SHORT", cu.entry, cu.reason, "CARRY_UNWIND", regime.c_str(), "CARRY_UNWIND", cu.tp, cu.sl);
-                        if (!enter_directional("USDJPY", cu.is_long, cu.entry, cu.sl, cu.tp, 0.01, true))
+                        if (!enter_directional("USDJPY", cu.is_long, cu.entry, cu.sl, cu.tp, 0.01, true, bid, ask, sym, regime))
                             g_ca_carry_unwind.cancel();
                     else g_ca_carry_unwind.patch_size(g_last_directional_lot);
                     }
@@ -7833,7 +7849,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const auto fix_sig = g_edges.fx_fix.on_tick_tokyo(bid, ask, jpy_cvd.normalised(), nowSec());
                     if (fix_sig.valid) {
                         g_telemetry.UpdateLastSignal("USDJPY", fix_sig.is_long?"LONG":"SHORT", fix_sig.entry, fix_sig.reason, "FX_FIX", regime.c_str(), "TOKYO_FIX", fix_sig.tp, fix_sig.sl);
-                        enter_directional("USDJPY", fix_sig.is_long, fix_sig.entry, fix_sig.sl, fix_sig.tp, 0.01, true);
+                        enter_directional("USDJPY", fix_sig.is_long, fix_sig.entry, fix_sig.sl, fix_sig.tp, 0.01, true, bid, ask, sym, regime);
                     }
                 }
             }
@@ -7844,7 +7860,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         struct tm ti_br; gmtime_s(&ti_br, &t_br);
         if (ti_br.tm_hour >= 7) {
             const bool base_can_brent = symbol_gate("BRENT", g_eng_brent.pos.active || g_bracket_brent.pos.active, "", tradeable, lat_ok, regime, bid, ask);
-            const auto sdec_brent = sup_decision(g_sup_brent, g_eng_brent, base_can_brent);
+            const auto sdec_brent = sup_decision(g_sup_brent, g_eng_brent, base_can_brent, sym, bid, ask);
             if (sdec_brent.allow_breakout && !g_bracket_brent.pos.active)
                 dispatch(g_eng_brent, g_sup_brent, base_can_brent, &sdec_brent);
             // SIM: BracketEngine on commodities -- no edge. Disabled.
@@ -7870,7 +7886,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 fflush(stdout);
             }
         }
-        const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas);
+        const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas, sym, bid, ask);
         // SIM: NAS100 breakout -- no edge (correlated with NQ which is also disabled). Disabled.
         // if (sdec_nas.allow_breakout && !g_bracket_nas100.pos.active)
         //     dispatch(g_eng_nas100, g_sup_nas100, base_can_nas, &sdec_nas);
@@ -7901,7 +7917,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (nbm.valid) {
                     g_telemetry.UpdateLastSignal("NAS100", nbm.is_long?"LONG":"SHORT", nbm.entry,
                         nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                    if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                    if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
                         g_nbm_nas.cancel();
                     else g_nbm_nas.patch_size(g_last_directional_lot);
                 }
@@ -10488,7 +10504,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     le_sig.tp, le_sig.sl);
                 printf("[LE-SIZE] XAUUSD eng=%s sl_abs=%.2f spread=%.2f (enter_directional)\n",
                        le_sig.engine, std::fabs(le_sig.entry - le_sig.sl), ask - bid);
-                enter_directional("XAUUSD", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size);
+                enter_directional("XAUUSD", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size, false, bid, ask, sym, regime);
             }
         }
         // ?? TrendPullbackEngine position management -- ALWAYS runs when position open ??
@@ -10616,7 +10632,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     fflush(stdout);
                     g_trend_pb_gold.cancel();
                 } else {
-                    const double tpb_lot = enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true);
+                    const double tpb_lot = enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true, bid, ask, sym, regime);
                     if (!tpb_lot) {
                         g_trend_pb_gold.cancel();
                     } else {
@@ -10664,7 +10680,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double add_lot     = std::max(0.005,
                     compute_size("XAUUSD", pyr_sl_dist, ask - bid, base_open_lot)
                     * g_trend_pb_gold.PYRAMID_SIZE_MULT);
-                if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true)) {
+                if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true, bid, ask, sym, regime)) {
                     ++g_trend_pb_gold.pyramid_adds_;
                     printf("[TRENDPB-GOLD] PYRAMID ADD #%d lot=%.4f sl=%.3f tp=%.3f\n",
                            g_trend_pb_gold.pyramid_adds_, add_lot, pyr_sl, pyr_tp);
@@ -10699,7 +10715,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     nbm_lon.reason, "NBM_LONDON", regime.c_str(), "NBM_LONDON",
                     nbm_lon.tp, nbm_lon.sl);
                 if (!enter_directional("XAUUSD", nbm_lon.is_long, nbm_lon.entry,
-                                       nbm_lon.sl, nbm_lon.tp))
+                                       nbm_lon.sl, nbm_lon.tp, 0.01, false, bid, ask, sym, regime))
                     g_nbm_gold_london.cancel();
                 else g_nbm_gold_london.patch_size(g_last_directional_lot);
             }
