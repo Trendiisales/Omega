@@ -1,10 +1,11 @@
 // tick_indices.hpp — per-symbol tick handlers
 // Extracted from on_tick(). Same translation unit — all static functions visible.
-// Do NOT #include from anywhere else.
 
 // ── US500.F ────────────────────────────────────────────────
-static void on_tick_us500(const std::string& sym, double bid, double ask,
-    bool tradeable, bool lat_ok, const std::string& regime) {
+static void on_tick_us500(
+    const std::string& sym, double bid, double ask,
+        bool tradeable, bool lat_ok, const std::string& regime)
+{
     // FIX-tick bar builder for US500.F M1/M5
     {
         static OHLCBar s_sp1{}, s_sp5{};
@@ -226,11 +227,12 @@ static void on_tick_us500(const std::string& sym, double bid, double ask,
         }
     }
 }
-}
 
 // ── USTEC.F ────────────────────────────────────────────────
-static void on_tick_ustec(const std::string& sym, double bid, double ask,
-    bool tradeable, bool lat_ok, const std::string& regime) {
+static void on_tick_ustec(
+    const std::string& sym, double bid, double ask,
+        bool tradeable, bool lat_ok, const std::string& regime)
+{
     // FIX-tick bar builder for USTEC.F M1/M5
     {
         static OHLCBar s_nq1{}, s_nq5{};
@@ -414,11 +416,12 @@ static void on_tick_ustec(const std::string& sym, double bid, double ask,
         }
     }
 }
-}
 
 // ── DJ30.F ─────────────────────────────────────────────────
-static void on_tick_dj30(const std::string& sym, double bid, double ask,
-    bool tradeable, bool lat_ok, const std::string& regime) {
+static void on_tick_dj30(
+    const std::string& sym, double bid, double ask,
+        bool tradeable, bool lat_ok, const std::string& regime)
+{
     const bool base_can_us30 = symbol_gate("DJ30.F",
         g_eng_us30.pos.active      ||
         g_bracket_us30.pos.active  ||
@@ -464,11 +467,12 @@ static void on_tick_dj30(const std::string& sym, double bid, double ask,
         }
     }
 }
-}
 
 // ── GER40 ──────────────────────────────────────────────────
-static void on_tick_ger40(const std::string& sym, double bid, double ask,
-    bool tradeable, bool lat_ok, const std::string& regime) {
+static void on_tick_ger40(
+    const std::string& sym, double bid, double ask,
+        bool tradeable, bool lat_ok, const std::string& regime)
+{
     const bool base_can_ger = symbol_gate("GER40",
         g_eng_ger30.pos.active              ||
         g_bracket_ger30.pos.active          ||
@@ -492,11 +496,12 @@ static void on_tick_ger40(const std::string& sym, double bid, double ask,
     // GER40 NEW ENTRIES DISABLED -- taken out of play
     (void)sdec_ger;
 }
-}
 
 // ── UK100 ──────────────────────────────────────────────────
-static void on_tick_uk100(const std::string& sym, double bid, double ask,
-    bool tradeable, bool lat_ok, const std::string& regime) {
+static void on_tick_uk100(
+    const std::string& sym, double bid, double ask,
+        bool tradeable, bool lat_ok, const std::string& regime)
+{
     const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active, "", tradeable, lat_ok, regime, bid, ask);
     const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk, sym, bid, ask);
     // SIM: EU index breakout -- no edge. Disabled.
@@ -519,11 +524,12 @@ static void on_tick_uk100(const std::string& sym, double bid, double ask,
         }
     }
 }
-}
 
 // ── ESTX50 ─────────────────────────────────────────────────
-static void on_tick_estx50(const std::string& sym, double bid, double ask,
-    bool tradeable, bool lat_ok, const std::string& regime) {
+static void on_tick_estx50(
+    const std::string& sym, double bid, double ask,
+        bool tradeable, bool lat_ok, const std::string& regime)
+{
     const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active, "", tradeable, lat_ok, regime, bid, ask);
     const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx, sym, bid, ask);
     // SIM: EU index breakout -- no edge. Disabled.
@@ -546,11 +552,12 @@ static void on_tick_estx50(const std::string& sym, double bid, double ask,
         }
     }
 }
-}
 
 // ── NAS100 ─────────────────────────────────────────────────
-static void on_tick_nas100(const std::string& sym, double bid, double ask,
-    bool tradeable, bool lat_ok, const std::string& regime) {
+static void on_tick_nas100(
+    const std::string& sym, double bid, double ask,
+        bool tradeable, bool lat_ok, const std::string& regime)
+{
     const bool base_can_nas = symbol_gate("NAS100",
         g_eng_nas100.pos.active      ||
         g_bracket_nas100.pos.active  ||
@@ -605,6 +612,5 @@ static void on_tick_nas100(const std::string& sym, double bid, double ask,
             }
         }
     }
-}
 }
 
