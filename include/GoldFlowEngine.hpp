@@ -1728,51 +1728,6 @@ private:
 #endif
         // Step 1 trigger applied below, after velocity_active is computed.
 
-        // Step 2: +2?ATR -- bank another 33% of remaining, SL ? step1 exit
-        if (pos.partial_closed && !pos.partial_closed_2 && move >= atr * 1.5) {  // was 2.0 -- lowered to 1.5 (7.5pts at ATR=5, reachable)
-            fire_stair(2, "PARTIAL_2R");
-        }
-
-        // ?? Tiered trail -- widens while momentum runs, tightens as each step banks ??
-        //
-        // Fixed 0.25?ATR was firing on the same candle that triggered step 1,
-        // exiting mid-move before the full extension was reached.
-        //
-        // Trail distance shrinks as each partial locks more profit:
-        //   Before step 2 fires (step 1 done, move still running): 1.0?ATR
-        //     ? full ATR of breathing room while momentum is live
-        //   After step 2, move < 3?ATR (move maturing):           0.5?ATR
-        //     ? step 2 banked another 33%, tighten slightly
-        //   After step 3 fires / move >= 3?ATR (final remainder):  0.25?ATR
-        //     ? final squeeze -- protect every tick of remaining profit
-        //
-        // One-way ratchet -- SL never moves backward.
-        // Uses atr_live (70% entry + 30% current ATR).
-        // Trail distances after each step:
-        //   Step 1 done, no wall ahead:  0.50*ATR  (was 1.00 -- too wide, missed 4700 reversal)
-        //   Step 1 done, wall ahead:     0.25*ATR  (price hit resistance, tighten immediately)
-        //   Step 2 done, move < 3*ATR:   0.25*ATR  (step 2 banked, tighten further)
-        //   Move >= 3*ATR (final):       0.20*ATR  (final squeeze on runner)
-        //
-        // ?? VELOCITY TRAIL -- active when expansion_mode (EXPANSION_BREAKOUT / TREND_CONTINUATION)
-        // AND vol_ratio > 2.5 (market is in a confirmed directional surge).
-        //
-        // PROBLEM: normal trail (arm at 1xATR, trail 0.50xATR) fires within seconds on a crash.
-        // Evidence: 2026-04-02 04:05 SHORT @ 4672.89, ATR=5pts, move = 111pts in 20 min.
-        //   Normal trail: arm at step1 ($35 ~ 2.19pts), trail fires at 6pts -> exits at 4666.
-        //   Velocity trail: arm at 15pts (3xATR), trail 2.0xATR -> exits near low ~4572 = 100pts.
-        //   Actual: $101 captured. With velocity: ~$1,614 captured.
-        //
-        // VELOCITY TRAIL PARAMETERS:
-        //   Arm threshold: 3x ATR (requires 3x normal breathing room before trail engages)
-        //   Trail distance: 2.0x ATR behind MFE peak (wide enough to survive intrabar noise)
-        //   Wall_ahead override: still tightens to 1.0x ATR (resistance = real signal)
-        //   Normal trail path: unchanged when velocity mode is NOT active
-        //
-        // RISK: wider trail means larger giveback on reversal (~10pts vs ~2.5pts).
-        // MITIGATION: hard stop (20pts) caps process-crash exposure regardless.
-        //             Step 1 STAIR still banks 33% early -- locks real cash.
-        //             Dollar-ratchet still fires every $50 -- progressive locking.
         const bool velocity_active = m_expansion_mode && (m_vol_ratio > 2.5);
 
         // ?? Step 1: DOLLAR trigger -- velocity-aware ????????????????????
@@ -1793,6 +1748,26 @@ private:
                            m_vol_ratio, pos.mfe, pos.atr_at_entry * 3.0);
                     fflush(stdout);
                 }
+            }
+        }
+        // ?? Step 2: +1.5xATR distance OR $70 open PnL -- whichever first ????
+        // Problem: Step 1 fires at $35 (~2.3pts at 0.15 lots). Step 2 at 1.5xATR
+        // requires 7.5pts at ATR=5 -- unreachable on small 3-5pt Asia moves.
+        // Fix: add a dollar trigger at $70 (2x Step 1) so medium moves that stall
+        // before 1.5xATR still bank Step 2 rather than trailing to BE and exiting flat.
+        // Velocity mode: raise to $250 (proportional to the $150 Step 1 velocity trigger).
+#ifndef GFE_STEP2_OVERRIDE
+        static constexpr double STEP2_DOLLAR_TRIGGER          =  70.0; // normal: 2x Step 1
+        static constexpr double STEP2_DOLLAR_TRIGGER_VELOCITY = 250.0; // velocity: proportional
+#else
+        static constexpr double STEP2_DOLLAR_TRIGGER          = GFE_STEP2_OVERRIDE;
+        static constexpr double STEP2_DOLLAR_TRIGGER_VELOCITY = GFE_STEP2_OVERRIDE * 3.5;
+#endif
+        if (pos.partial_closed && !pos.partial_closed_2) {
+            const double eff_step2_trigger = velocity_active
+                ? STEP2_DOLLAR_TRIGGER_VELOCITY : STEP2_DOLLAR_TRIGGER;
+            if (move >= atr * 1.5 || open_pnl_usd_full >= eff_step2_trigger) {
+                fire_stair(2, "PARTIAL_2R");
             }
         }
         // Check position is in the EXPANSION direction (don't give velocity trail to counter-trend)

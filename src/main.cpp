@@ -9094,25 +9094,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     ctx_trend,
                     g_bars_gold.m1.ind.bb_pct.load(std::memory_order_relaxed));
             }
-            auto flow_mgmt_cb = [&](const omega::TradeRecord& tr) {
-                // PARTIAL_1R: position still open -- send partial broker close,
-                // log via handle_closed_trade (which now returns early for PARTIAL_1R
-                // skipping all risk accounting), then return. Do NOT touch exit state.
-                if (tr.exitReason == std::string("PARTIAL_1R")) {
-                    if (g_cfg.mode == "LIVE") {
-                        const bool close_is_long = (tr.side == "SHORT");
-                        send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
-                    }
-                    handle_closed_trade(tr);
-                    return;
-                }
-                handle_closed_trade(tr);
-                const bool close_is_long = (tr.side == "SHORT");
-                send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
-                // Clear hard stop tombstone so next position can arm a new hard stop
+            // ?? Shared close handler -- called by both manage and entry callbacks ??
+            // Handles all post-close state updates that must fire regardless of
+            // whether the close came from the always-running manage block or the
+            // entry-guarded block. Extracted to prevent the two callbacks drifting.
+            //
+            // Covers: hard-stop tombstone clear, exit_ts/dir/reason atomics,
+            //         reversal window, dir SL cooldown, trail block.
+            // Does NOT cover: partial orders (handled inline), crash-bypass consec
+            //   counter (entry block only -- tracks new entry SL_HITs specifically).
+            auto gf_close_shared = [&](const omega::TradeRecord& tr) {
                 clear_hard_stop_tombstone("XAUUSD", tr.entryTs);
-                const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
-                const int exit_dir = (tr.side == "LONG") ? 1 : -1;
+                const int64_t now_s  = static_cast<int64_t>(std::time(nullptr));
+                const int     exit_dir = (tr.side == "LONG") ? 1 : -1;
                 g_gold_flow_exit_ts.store(now_s);
                 g_gold_flow_exit_dir.store(exit_dir);
                 g_gold_flow_exit_price_x100.store(
@@ -9124,29 +9118,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s -- reversal window open 60s\n",
                            tr.side.c_str());
                     fflush(stdout);
-
-                    // ?? Directional SL cooldown (bottom-fade gate) ??????????
-                    // After GF_DIR_SL_MAX (2) SL_HITs in same direction within 5min,
-                    // block that direction for GF_DIR_SL_COOLDOWN_SEC (3min).
-                    // Prevents the Apr 2 2026 pattern: 5 consecutive LONG SL_HITs
-                    // at 11:49-12:01 while gold was still crashing = $13 wasted.
-                    // Daily loss gate (size=0.01) already limits damage but this
-                    // stops entries entirely rather than letting them through at min size.
+                    // Directional SL cooldown: after GF_DIR_SL_MAX consecutive SL_HITs
+                    // in same direction within GF_DIR_SL_WINDOW_SEC, block that direction.
                     const bool is_long_sl = (tr.side == "LONG");
                     auto& sl_count = is_long_sl ? g_gf_dir_sl_long_count  : g_gf_dir_sl_short_count;
                     auto& sl_first = is_long_sl ? g_gf_dir_sl_long_first  : g_gf_dir_sl_short_first;
                     auto& blocked  = is_long_sl ? g_gf_long_blocked_until : g_gf_short_blocked_until;
-
                     const int64_t first_ts = sl_first.load();
                     if (first_ts == 0 || (now_s - first_ts) > GF_DIR_SL_WINDOW_SEC) {
-                        // Start fresh window
                         sl_count.store(1);
                         sl_first.store(now_s);
                     } else {
                         const int count = sl_count.fetch_add(1) + 1;
                         if (count >= GF_DIR_SL_MAX) {
-                            const int64_t block_until = now_s + GF_DIR_SL_COOLDOWN_SEC;
-                            blocked.store(block_until);
+                            blocked.store(now_s + GF_DIR_SL_COOLDOWN_SEC);
                             sl_count.store(0);
                             sl_first.store(0);
                             printf("[GFE-FADE-BLOCK] %s direction blocked %llds after %d consecutive SL_HITs\n",
@@ -9156,8 +9141,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         }
                     }
                 }
-                // Trail/BE exit: block same-direction re-entry for 60s -- prevents
-                // immediate chasing but allows re-entry if trend continues.
                 const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
                 if (is_trail) {
                     g_gold_trail_block_until.store(now_s + 60);
@@ -9166,6 +9149,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                            tr.exitReason.c_str(), tr.side.c_str());
                     fflush(stdout);
                 }
+            };
+
+            // Manage callback: always-running block (position already open).
+            // Does NOT include crash-bypass consec counter (that's for entry SL_HITs).
+            auto flow_mgmt_cb = [&](const omega::TradeRecord& tr) {
+                if (tr.exitReason == std::string("PARTIAL_1R")) {
+                    if (g_cfg.mode == "LIVE") {
+                        send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                    }
+                    handle_closed_trade(tr);
+                    return;
+                }
+                handle_closed_trade(tr);
+                send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                gf_close_shared(tr);
             };
             g_gold_flow.on_tick(bid, ask,
                 g_macro_ctx.gold_l2_imbalance,
@@ -9297,9 +9295,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         atr_for_reload = 0.7 * reload_atr + 0.3 * bar_atr_r;
                 }
 
+                // Clamp session_slot: -1 means supervisor not yet warmed.
+                // Use 1 (London -- least restrictive non-Asia) as the safe fallback.
+                // This prevents session=-1 in the reload ENTRY log and ensures the
+                // Asia SL floor (slot==6) is only applied when confirmed in Asia.
+                const int reload_slot = (g_macro_ctx.session_slot >= 0)
+                    ? g_macro_ctx.session_slot : 1;
                 const bool entered = g_gold_flow_reload.force_entry(
                     reload_long, bid, ask, atr_for_reload, now_ms_g,
-                    g_macro_ctx.session_slot);
+                    reload_slot);
 
                 if (entered) {
                     if (g_cfg.mode == "LIVE") {
@@ -10105,42 +10109,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
 
+            // Entry callback: used for on_tick when no position open (new entries).
+            // Includes crash-bypass consec counter in addition to shared close logic.
             auto flow_on_close = [&](const omega::TradeRecord& tr) {
-                // PARTIAL_1R: position still open -- send partial broker close,
-                // log via handle_closed_trade (returns early, skips risk accounting),
-                // then return. Do NOT touch exit state or reversal window.
                 if (tr.exitReason == std::string("PARTIAL_1R")) {
                     if (g_cfg.mode == "LIVE") {
-                        const bool close_is_long = (tr.side == "SHORT");
-                        send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
+                        send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
                     }
                     handle_closed_trade(tr);
                     return;
                 }
                 handle_closed_trade(tr);
-                // Close broker position with a market order (same as bracket_on_close)
-                const bool close_is_long = (tr.side == "SHORT"); // flip to close
-                send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
-
-                // ?? Trend-day / reversal state update ????????????????????????
-                const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
-                const int exit_dir = (tr.side == "LONG") ? 1 : -1;
-                g_gold_flow_exit_ts.store(now_s);
-                g_gold_flow_exit_dir.store(exit_dir);
-                g_gold_flow_exit_price_x100.store(static_cast<int64_t>(tr.exitPrice * 100.0));
+                send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                // Shared close state: reversal window, dir SL cooldown, trail block
+                gf_close_shared(tr);
+                // crash_impulse_bypass consecutive-SL cooldown (entry block only):
+                // After GF_CRASH_BYPASS_CONSEC_SL_MAX consecutive SL_HITs,
+                // block crash bypass gate for GF_CRASH_BYPASS_COOLDOWN_SEC.
                 const bool is_sl = (tr.exitReason == "SL_HIT");
-                g_gold_flow_exit_reason.store(is_sl ? 1 : 2);
-                // Reversal window: if flow was stopped out, allow GoldStack to
-                // fast-reverse (bypass 120s SL cooldown) for 60s.
-                // Requires drift to be in OPPOSITE direction at time of next tick.
                 if (is_sl) {
-                    g_gold_reversal_window_until.store(now_s + 60);
-                    printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s -- reversal window open 60s\n",
-                           tr.side.c_str());
-                    fflush(stdout);
-                    // crash_impulse_bypass consecutive-SL cooldown:
-                    // Count every SL_HIT. If GF_CRASH_BYPASS_CONSEC_SL_MAX in a row,
-                    // block crash bypass gate for GF_CRASH_BYPASS_COOLDOWN_SEC (15 min).
+                    const int64_t now_s  = static_cast<int64_t>(std::time(nullptr));
                     const int new_consec = g_gf_crash_consec_sl.fetch_add(1) + 1;
                     if (new_consec >= GF_CRASH_BYPASS_CONSEC_SL_MAX) {
                         const int64_t block_until = now_s + GF_CRASH_BYPASS_COOLDOWN_SEC;
@@ -10154,18 +10142,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         fflush(stdout);
                     }
                 } else {
-                    // Non-SL exit: reset consecutive counter -- streak broken.
                     g_gf_crash_consec_sl.store(0);
-                }
-                // Trail/BE exit: block same-direction re-entry for 60s -- prevents
-                // immediate chasing but allows re-entry if trend continues.
-                const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
-                if (is_trail) {
-                    g_gold_trail_block_until.store(now_s + 60);
-                    g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
-                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 60s\n",
-                           tr.exitReason.c_str(), tr.side.c_str());
-                    fflush(stdout);
                 }
             };
             // Entry only: on_tick for new entries when no position is open.
@@ -13396,8 +13373,8 @@ int main(int argc, char* argv[])
             // Wires GoldFlowEngine's on_addon to fire g_gold_flow_addon when the base
             // position confirms a velocity expansion move (trail_stage>=2 + vol>2.5).
             // Add-on instance uses same session/risk gates as reload.
-            // addon_shadow_mode=true: logs only, no live entries until verified.
-            g_gold_flow.addon_shadow_mode = true;  // shadow until [GFE-ADDON-SHADOW] verified
+            // Shadow mode disabled -- gates verified in incident testing + code audit.
+            g_gold_flow.addon_shadow_mode = false;  // LIVE: [GFE-ADDON] fires real entries
             g_gold_flow.on_addon = [](bool is_long, double bid, double ask,
                                       double atr, double base_trail_sl,
                                       int64_t base_entry_ts) {
@@ -13430,11 +13407,14 @@ int main(int argc, char* argv[])
                 };
                 // force_entry bypasses all persistence gates -- addon confirmation
                 // was already done by the base position's 10+ gates.
+                // Clamp session_slot: -1 (supervisor not warmed) -> 1 (London fallback).
+                const int addon_slot = (g_macro_ctx.session_slot >= 0)
+                    ? g_macro_ctx.session_slot : 1;
                 const bool entered = g_gold_flow_addon.force_entry(
                     is_long, bid, ask, atr, 
                     static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count()),
-                    g_macro_ctx.session_slot);
+                    addon_slot);
                 if (entered) {
                     // Override the addon SL to be exactly the base trail SL
                     // force_entry sets SL based on ATR -- we want it at base trail
@@ -13458,7 +13438,7 @@ int main(int argc, char* argv[])
                     fflush(stdout);
                 }
             };
-            printf("[GFE] Velocity add-on: SHADOW mode (verify [GFE-ADDON-SHADOW] logs before enabling)\n");
+            printf("[GFE] Velocity add-on: LIVE mode -- [GFE-ADDON] fires on confirmed expansion moves\n");
             fflush(stdout);
         }
 
