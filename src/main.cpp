@@ -7070,7 +7070,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                         on_tick_audusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "BRENT")                            on_tick_brent(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "NAS100")                           on_tick_nas100(sym, bid, ask, tradeable, lat_ok, regime);
-    else if (sym == "XAUUSD")                           on_tick_gold(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "XAUUSD")                           on_tick_gold(sym, bid, ask, tradeable, lat_ok, regime, rtt_check);
     else {
         // Confirmation-only symbol (VIX, ES, NAS100, DX etc) -- no engine dispatch
         g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, g_gov_pos, g_gov_consec);

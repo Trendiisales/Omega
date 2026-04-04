@@ -4,7 +4,8 @@
 // ── XAUUSD ─────────────────────────────────────────────────
 static void on_tick_gold(
     const std::string& sym, double bid, double ask,
-        bool tradeable, bool lat_ok, const std::string& regime)
+        bool tradeable, bool lat_ok, const std::string& regime,
+        double rtt_check)
 {
     // ?? Gold master exclusion gate ????????????????????????????????????????
     // Default: ANY open gold position blocks new entries (1-at-a-time invariant).
@@ -414,7 +415,7 @@ static void on_tick_gold(
         // Pass DX.F mid for DXYDivergenceEngine -- g_macroDetector.updateDXY()
     // is called every DX.F tick so this is fresh or 0.0 if feed not yet seen.
     const double dx_mid_now = g_macroDetector.dxyMid();
-    const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, on_close,
+    const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, handle_closed_trade,
                                             stack_enter_effective, dx_mid_now);
         if (gsig.valid) {
             // ?? Bar indicator confirmation for GoldStack ??????????????????
