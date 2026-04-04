@@ -518,3 +518,67 @@
 01:53:13 [CTRADER-BARS] Spots sub ACK
 01:53:14 [CTRADER-BARS] XAUUSD tick data req (period=7 via pt=2145, avoids pt=2137 crash)
 01:53:14 [CTRADER-TICKS] XAUUSD: empty response
+01:54:28 [OMEGA] Log: C:\Omega\logs/omega_2026-04-04.log
+01:54:28 [OMEGA] Full Trade CSV: logs/trades/omega_trade_closes.csv
+01:54:28 [OMEGA] Trade Opens CSV: logs/trades/omega_trade_opens.csv
+01:54:28 [OMEGA] Daily Trade Logs: logs/trades/omega_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)
+01:54:28 [OMEGA] Daily Gold Logs: logs/gold/omega_gold_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)
+01:54:28 [OMEGA] Daily Shadow Trade Logs: logs/shadow/trades/omega_shadow_trades_YYYY-MM-DD.csv (UTC, 5-file retention)
+01:54:28 [OMEGA] Shadow CSV: logs/shadow/omega_shadow.csv
+01:54:28 [OMEGA] Startup reload: no today CSV yet (logs/trades/omega_trade_closes_2026-04-04.csv) -- clean start
+01:54:28 [OmegaHTTP] Direct snapshot pointer OK
+01:54:28 [OmegaHTTP] port 7779[OmegaWS] WebSocket port 7780
+01:54:28 
+01:54:29 [OMEGA] GUI http://localhost:7779  WS:7780
+01:54:29 [CTRADER] Pre-blocked trendbar reqs + live subs -- no crash loop
+01:54:29 [CTRADER] Depth client started (ctid=44937427)
+01:54:29 [CTRADER] Depth feed starting (ctid=44937427)
+01:54:29 [OMEGA] FIX loop starting -- SHADOW mode
+01:54:29 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+01:54:29 [OMEGA-TRADE] Logon sent
+01:54:29 [OMEGA-TRADE] LOGON ACCEPTED
+01:54:29 [OMEGA-TRADE] SecurityListRequest sent req_id=omega-sec-1775267669
+01:54:29 [OMEGA-SECURITY] learned ext id EURUSD -> 1
+01:54:29 [OMEGA-SECURITY] learned ext id GBPUSD -> 2
+01:54:29 [OMEGA-SECURITY] learned ext id USDJPY -> 4
+01:54:29 [OMEGA-SECURITY] learned ext id AUDUSD -> 5
+01:54:29 [OMEGA-SECURITY] learned ext id NZDUSD -> 12
+01:54:29 [OMEGA-SECURITY] learned ext id XAGUSD -> 42
+01:54:29 [OMEGA-SECURITY] learned ext id BRENT -> 109
+01:54:29 [OMEGA-SECURITY] UNMATCHED: 'UK100.F' id=4461
+01:54:29 [OMEGA-SECURITY] learned ext id ESTX50 -> 1898
+01:54:29 [OMEGA-SECURITY] learned ext id GER40 -> 1899
+01:54:29 [OMEGA-SECURITY] learned ext id UK100 -> 1901
+01:54:29 [OMEGA-SECURITY] UNMATCHED: 'UKBRENT.F' id=2634
+01:54:29 [OMEGA-SECURITY] UNMATCHED: 'ESTC' id=3229
+01:54:29 [OMEGA-TRADE] SecurityList received req_id=omega-sec-1775267669 entries=1551 (ext IDs updated -- will re-subscribe)
+01:54:29 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+01:54:29 [OMEGA] Logon sent
+01:54:29 [OMEGA] LOGON ACCEPTED
+01:54:29 [OMEGA] Subscribed ALL symbols (OMEGA-MD-ALL)
+01:54:29 [OMEGA] Re-subscribed ALL symbols with learned ext IDs (GER40/UK100/ESTX50/XAGUSD/EURUSD/BRENT/GBPUSD/AUDUSD/NZDUSD/USDJPY now included)
+01:54:29 [TICK] EURUSD 1.15/1.15
+01:54:29 [TICK] GBPUSD 1.32/1.32
+01:54:29 [TICK] USDJPY 159.59/159.75
+01:54:29 [TICK] AUDUSD 0.69/0.69
+01:54:29 [TICK] XAUUSD 4677.03/4677.25
+01:54:29 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.69 bracket=0.78 breakout=0.00 top_score=0.78 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+01:54:29 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.00 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+01:54:29 [TICK] XAGUSD 73.02/73.05
+01:54:29 [TICK] NZDUSD 0.57/0.57
+01:54:29 [TICK] NAS100 23952.15/23953.35
+01:54:29 [SUPERVISOR-NAS100] regime=QUIET_COMPRESSION conf=0.69 bracket=0.78 breakout=0.00 top_score=0.78 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+01:54:29 [TICK] NGAS.F 2.79/2.82
+01:54:29 [TICK] USOIL.F 111.90/112.01
+01:54:29 [TICK] ESTX50 5699.40/5700.80
+01:54:29 [TICK] GER40 23202.60/23204.30
+01:54:29 [TICK] DJ30.F 46620.30/46642.60
+01:54:29 [SUPERVISOR-DJ30.F] regime=HIGH_RISK_NO_TRADE conf=0.96 bracket=0.00 breakout=0.00 top_score=0.00 threshold=0.25 winner=NONE allow=0 cooldown=0 reason=high_risk_no_trade
+01:54:29 [TICK] UK100 10455.10/10456.90
+01:54:29 [TICK] BRENT 106.44/107.11
+01:54:29 [TICK] VIX.F 24.74/25.10
+01:54:29 [TICK] DX.F 99.93/100.03
+01:54:29 [TICK] US500.F 6603.22/6604.03
+01:54:29 [SUPERVISOR-US500.F] regime=QUIET_COMPRESSION conf=0.52 bracket=0.74 breakout=0.00 top_score=0.74 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+01:54:29 [TICK] USTEC.F 24128.44/24132.90
+01:54:29 [SUPERVISOR-USTEC.F] regime=QUIET_COMPRESSION conf=0.47 bracket=0.73 breakout=0.00 top_score=0.73 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
