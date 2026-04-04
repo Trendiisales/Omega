@@ -86,6 +86,7 @@ execute_process(
             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
             -DOUTPUT_FILE=${VERSION_CMAKE_FILE}
             -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+            -DOMEGA_FORCE_GIT_HASH=${OMEGA_FORCE_GIT_HASH}
             -P ${CMAKE_SOURCE_DIR}/cmake/UpdateGitHash.cmake
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )

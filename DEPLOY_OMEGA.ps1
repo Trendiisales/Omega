@@ -251,18 +251,24 @@ if (-not (Test-Path $StampFile)) {
     if (-not $vBuildTime) { $errors += "BUILD_TIME field missing from stamp" }
     if (-not $vExePath)   { $errors += "EXE_PATH field missing from stamp" }
 
-    # Check 5: GUI version_generated.hpp contains a real source hash
+    # Check 5: GUI version_generated.hpp MUST match stamp source hash -- hard fail if not.
+    # UpdateGitHash.cmake now regenerates this file on every configure, so a mismatch
+    # means cmake did not run or the file was not written. Block deploy entirely.
     $versionFile = "$OmegaDir\include\version_generated.hpp"
     if (Test-Path $versionFile) {
         $versionContent = Get-Content $versionFile -Raw
         if ($versionContent -match 'OMEGA_GIT_HASH\s+"([a-f0-9]+)"') {
             $guiHash = $Matches[1]
-            # GUI hash should match source hash short form (7 chars)
-            if ($guiHash -ne $vGitShort -and $guiHash.Length -le 8) {
-                Write-Host "      [WARN] GUI hash ($guiHash) differs from stamp source ($vGitShort)" -ForegroundColor Yellow
-                Write-Host "             This may be stale if cmake cached the old version header." -ForegroundColor Yellow
+            if ($guiHash -ne $vGitShort) {
+                $errors += "GUI hash MISMATCH: version_generated.hpp=$guiHash  stamp_source=$vGitShort -- cmake did not regenerate the header. Run cmake configure again."
+            } else {
+                Write-Host "      [OK] GUI hash matches source hash: $guiHash" -ForegroundColor Green
             }
+        } else {
+            $errors += "version_generated.hpp exists but OMEGA_GIT_HASH not found -- file corrupt"
         }
+    } else {
+        $errors += "version_generated.hpp not found -- cmake configure did not run or failed"
     }
 
     if ($errors.Count -eq 0) {
