@@ -1,11 +1,8 @@
 // tick_indices.hpp — per-symbol tick handlers
-// Extracted from main.cpp on_tick(). Same translation unit -- all globals visible.
-// #included into main.cpp before on_tick(). Do NOT include elsewhere.
-// IMMUTABLE: never modify core logic here without explicit instruction.
+// Extracted from on_tick(). Same translation unit — all static functions visible.
+// Do NOT #include from anywhere else.
 
-// ──────────────────────────────────────────────────────────────────────
-// US500.F tick handler
-// ──────────────────────────────────────────────────────────────────────
+// ── US500.F ────────────────────────────────────────────────
 static void on_tick_us500(const std::string& sym, double bid, double ask) {
     // FIX-tick bar builder for US500.F M1/M5
     {
@@ -30,7 +27,7 @@ static void on_tick_us500(const std::string& sym, double bid, double ask) {
         g_orb_us.has_open_position() ||
         g_vwap_rev_sp.has_open_position()  ||
         g_trend_pb_sp.has_open_position()  ||  // TrendPullback SP
-        g_nbm_sp.has_open_position())
+        g_nbm_sp.has_open_position(), "", tradeable, lat_ok, regime, bid, ask)
         // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
         && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
     // Log when circuit breaker is blocking -- once every 60s so it's visible but not spammy
@@ -45,7 +42,7 @@ static void on_tick_us500(const std::string& sym, double bid, double ask) {
             fflush(stdout);
         }
     }
-    const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
+    const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp, sym, bid, ask);
     // SIM: SP breakout WR 31.6% -$105. No edge on US500 compression breakout. Disabled.
     // if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
     //     dispatch(g_eng_sp, g_sup_sp, base_can_sp, &sdec_sp);
@@ -62,7 +59,7 @@ static void on_tick_us500(const std::string& sym, double bid, double ask) {
             g_telemetry.UpdateLastSignal(sym.c_str(), esnq.is_long?"LONG":"SHORT",
                 esnq.entry, esnq.reason, "ESNQ_DIV", regime.c_str(), "ESNQ_DIV",
                 esnq.tp, esnq.sl);
-            if (!enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp))
+            if (!enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp, 0.01, false, bid, ask, sym, regime))
                 g_ca_esnq.cancel();
                 else g_ca_esnq.patch_size(g_last_directional_lot);
         }
@@ -98,7 +95,7 @@ static void on_tick_us500(const std::string& sym, double bid, double ask) {
         const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
         if (orb.valid) {
             g_telemetry.UpdateLastSignal("US500.F", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-            if (!enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp))
+            if (!enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime))
                 g_orb_us.cancel();
                 else g_orb_us.patch_size(g_last_directional_lot);
         }
@@ -162,7 +159,7 @@ static void on_tick_us500(const std::string& sym, double bid, double ask) {
                 const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
                                         (vr.confluence_score == 3) ? 2.0 :
                                         (vr.confluence_score == 2) ? 1.5 : 1.0;
-                if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
+                if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime))
                     g_vwap_rev_sp.cancel();
                 else g_vwap_rev_sp.patch_size(g_last_directional_lot);
             }
@@ -191,7 +188,7 @@ static void on_tick_us500(const std::string& sym, double bid, double ask) {
             if (nbm.valid) {
                 g_telemetry.UpdateLastSignal("US500.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
                     nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
                     g_nbm_sp.cancel();
                 else g_nbm_sp.patch_size(g_last_directional_lot);
             }
@@ -220,7 +217,7 @@ static void on_tick_us500(const std::string& sym, double bid, double ask) {
                     tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
                     tp_sig.tp, tp_sig.sl);
                 if (!enter_directional("US500.F", tp_sig.is_long, tp_sig.entry,
-                                       tp_sig.sl, tp_sig.tp, 0.01, true))
+                                       tp_sig.sl, tp_sig.tp, 0.01, true, bid, ask, sym, regime))
                     g_trend_pb_sp.cancel();
                 // patch_size removed -- enter_directional already sized correctly
                 // patch_size(g_last_directional_lot) would corrupt size with last ANY-symbol lot
@@ -228,10 +225,9 @@ static void on_tick_us500(const std::string& sym, double bid, double ask) {
         }
     }
 }
+}
 
-// ──────────────────────────────────────────────────────────────────────
-// USTEC.F tick handler
-// ──────────────────────────────────────────────────────────────────────
+// ── USTEC.F ────────────────────────────────────────────────
 static void on_tick_ustec(const std::string& sym, double bid, double ask) {
     // FIX-tick bar builder for USTEC.F M1/M5
     {
@@ -255,7 +251,7 @@ static void on_tick_ustec(const std::string& sym, double bid, double ask) {
         g_bracket_nq.pos.active              ||
         g_vwap_rev_nq.has_open_position()    ||
         g_trend_pb_nq.has_open_position()    ||  // TrendPullback NQ
-        g_nbm_nq.has_open_position())             // NBM
+        g_nbm_nq.has_open_position(), "", tradeable, lat_ok, regime, bid, ask)             // NBM
         // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
         && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
     {
@@ -269,7 +265,7 @@ static void on_tick_ustec(const std::string& sym, double bid, double ask) {
             fflush(stdout);
         }
     }
-    const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
+    const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq, sym, bid, ask);
     // SIM: NQ breakout WR 26.1% -$1167. Worst index performer. Disabled.
     // if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
     //     dispatch(g_eng_nq, g_sup_nq, base_can_nq, &sdec_nq);
@@ -347,7 +343,7 @@ static void on_tick_ustec(const std::string& sym, double bid, double ask) {
                 const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
                                         (vr.confluence_score == 3) ? 2.0 :
                                         (vr.confluence_score == 2) ? 1.5 : 1.0;
-                if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true))
+                if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime))
                     g_vwap_rev_nq.cancel();
                 else g_vwap_rev_nq.patch_size(g_last_directional_lot);
             }
@@ -385,7 +381,7 @@ static void on_tick_ustec(const std::string& sym, double bid, double ask) {
                     tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
                     tp_sig.tp, tp_sig.sl);
                 if (!enter_directional("USTEC.F", tp_sig.is_long, tp_sig.entry,
-                                       tp_sig.sl, tp_sig.tp, 0.01, true))
+                                       tp_sig.sl, tp_sig.tp, 0.01, true, bid, ask, sym, regime))
                     g_trend_pb_nq.cancel();
                 // patch_size removed -- enter_directional already sized correctly
             }
@@ -409,22 +405,21 @@ static void on_tick_ustec(const std::string& sym, double bid, double ask) {
             if (nbm.valid) {
                 g_telemetry.UpdateLastSignal("USTEC.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
                     nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
                     g_nbm_nq.cancel();
                 else g_nbm_nq.patch_size(g_last_directional_lot);
             }
         }
     }
 }
+}
 
-// ──────────────────────────────────────────────────────────────────────
-// DJ30.F tick handler
-// ──────────────────────────────────────────────────────────────────────
+// ── DJ30.F ─────────────────────────────────────────────────
 static void on_tick_dj30(const std::string& sym, double bid, double ask) {
     const bool base_can_us30 = symbol_gate("DJ30.F",
         g_eng_us30.pos.active      ||
         g_bracket_us30.pos.active  ||
-        g_nbm_us30.has_open_position()) // NBM
+        g_nbm_us30.has_open_position(), "", tradeable, lat_ok, regime, bid, ask) // NBM
         // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
         && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
     {
@@ -438,7 +433,7 @@ static void on_tick_dj30(const std::string& sym, double bid, double ask) {
             fflush(stdout);
         }
     }
-    const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30);
+    const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30, sym, bid, ask);
     // SIM: DJ30 breakout WR 23.5% -$736, bracket also negative. Both disabled.
     // if (sdec_us30.allow_breakout && !g_bracket_us30.pos.active)
     //     dispatch(g_eng_us30, g_sup_us30, base_can_us30, &sdec_us30);
@@ -459,25 +454,24 @@ static void on_tick_dj30(const std::string& sym, double bid, double ask) {
             if (nbm.valid) {
                 g_telemetry.UpdateLastSignal("DJ30.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
                     nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
                     g_nbm_us30.cancel();
                 else g_nbm_us30.patch_size(g_last_directional_lot);
             }
         }
     }
 }
+}
 
-// ──────────────────────────────────────────────────────────────────────
-// GER40 tick handler
-// ──────────────────────────────────────────────────────────────────────
+// ── GER40 ──────────────────────────────────────────────────
 static void on_tick_ger40(const std::string& sym, double bid, double ask) {
     const bool base_can_ger = symbol_gate("GER40",
         g_eng_ger30.pos.active              ||
         g_bracket_ger30.pos.active          ||
         g_orb_ger30.has_open_position()     ||  // ADDED
         g_vwap_rev_ger40.has_open_position() || // ADDED
-        g_trend_pb_ger40.has_open_position());  // ADDED
-    const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger);
+        g_trend_pb_ger40.has_open_position(), "", tradeable, lat_ok, regime, bid, ask);  // ADDED
+    const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger, sym, bid, ask);
     // ?? GER40 manage blocks -- ALWAYS run when position open (SL/trail fix) ??
     if (g_orb_ger30.has_open_position())      { g_orb_ger30.on_tick(sym, bid, ask, ca_on_close); }
     if (g_vwap_rev_ger40.has_open_position()) {
@@ -494,13 +488,12 @@ static void on_tick_ger40(const std::string& sym, double bid, double ask) {
     // GER40 NEW ENTRIES DISABLED -- taken out of play
     (void)sdec_ger;
 }
+}
 
-// ──────────────────────────────────────────────────────────────────────
-// UK100 tick handler
-// ──────────────────────────────────────────────────────────────────────
+// ── UK100 ──────────────────────────────────────────────────
 static void on_tick_uk100(const std::string& sym, double bid, double ask) {
-    const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active);
-    const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk);
+    const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active, "", tradeable, lat_ok, regime, bid, ask);
+    const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk, sym, bid, ask);
     // SIM: EU index breakout -- no edge. Disabled.
     // if (sdec_uk.allow_breakout && !g_bracket_uk100.pos.active)
     //     dispatch(g_eng_uk100, g_sup_uk100, base_can_uk, &sdec_uk);
@@ -515,19 +508,18 @@ static void on_tick_uk100(const std::string& sym, double bid, double ask) {
         const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
         if (orb.valid) {
             g_telemetry.UpdateLastSignal("UK100", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-            if (!enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp))
+            if (!enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime))
                 g_orb_uk100.cancel();
                 else g_orb_uk100.patch_size(g_last_directional_lot);
         }
     }
 }
+}
 
-// ──────────────────────────────────────────────────────────────────────
-// ESTX50 tick handler
-// ──────────────────────────────────────────────────────────────────────
+// ── ESTX50 ─────────────────────────────────────────────────
 static void on_tick_estx50(const std::string& sym, double bid, double ask) {
-    const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active);
-    const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx);
+    const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active, "", tradeable, lat_ok, regime, bid, ask);
+    const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx, sym, bid, ask);
     // SIM: EU index breakout -- no edge. Disabled.
     // if (sdec_estx.allow_breakout && !g_bracket_estx50.pos.active)
     //     dispatch(g_eng_estx50, g_sup_estx50, base_can_estx, &sdec_estx);
@@ -542,21 +534,20 @@ static void on_tick_estx50(const std::string& sym, double bid, double ask) {
         const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
         if (orb.valid) {
             g_telemetry.UpdateLastSignal("ESTX50", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-            if (!enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp))
+            if (!enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime))
                 g_orb_estx50.cancel();
                 else g_orb_estx50.patch_size(g_last_directional_lot);
         }
     }
 }
+}
 
-// ──────────────────────────────────────────────────────────────────────
-// NAS100 tick handler
-// ──────────────────────────────────────────────────────────────────────
+// ── NAS100 ─────────────────────────────────────────────────
 static void on_tick_nas100(const std::string& sym, double bid, double ask) {
     const bool base_can_nas = symbol_gate("NAS100",
         g_eng_nas100.pos.active      ||
         g_bracket_nas100.pos.active  ||
-        g_nbm_nas.has_open_position()) // NBM
+        g_nbm_nas.has_open_position(), "", tradeable, lat_ok, regime, bid, ask) // NBM
         // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
         && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
     {
@@ -570,7 +561,7 @@ static void on_tick_nas100(const std::string& sym, double bid, double ask) {
             fflush(stdout);
         }
     }
-    const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas);
+    const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas, sym, bid, ask);
     // SIM: NAS100 breakout -- no edge (correlated with NQ which is also disabled). Disabled.
     // if (sdec_nas.allow_breakout && !g_bracket_nas100.pos.active)
     //     dispatch(g_eng_nas100, g_sup_nas100, base_can_nas, &sdec_nas);
@@ -601,11 +592,12 @@ static void on_tick_nas100(const std::string& sym, double bid, double ask) {
             if (nbm.valid) {
                 g_telemetry.UpdateLastSignal("NAS100", nbm.is_long?"LONG":"SHORT", nbm.entry,
                     nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp))
+                if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
                     g_nbm_nas.cancel();
                 else g_nbm_nas.patch_size(g_last_directional_lot);
             }
         }
     }
+}
 }
 
