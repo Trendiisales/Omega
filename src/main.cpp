@@ -4396,6 +4396,111 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
 // Tick handler -- called for every bid/ask update
 // ?????????????????????????????????????????????????????????????????????????????
 // ── symbol_risk_blocked ──────────────────────────────────────────────
+// ── symbol_gate ──────────────────────────────────────────────────────
+// tradeable/lat_ok/regime/bid/ask passed explicitly from on_tick.
+// ── open_unrealised_pnl ──────────────────────────────────────────────────────
+static double open_unrealised_pnl() {
+    double total = 0.0;
+
+    // Snapshot all mid prices in ONE lock acquisition to avoid 30+ per-engine
+    // g_book_mtx acquisitions at high tick rates (was lock contention risk).
+    std::unordered_map<std::string, double> mids;
+    {
+        std::lock_guard<std::mutex> lk(g_book_mtx);
+        for (const auto& kv : g_bids) {
+            auto ai = g_asks.find(kv.first);
+            if (ai != g_asks.end() && kv.second > 0 && ai->second > 0)
+                mids[kv.first] = (kv.second + ai->second) * 0.5;
+        }
+    }
+
+    // Helper: unrealised PnL -- generic lambda accepts any OpenPos-like type
+    auto be_pnl = [&](const auto& p, const std::string& sym) -> double {
+        if (!p.active) return 0.0;
+        auto it = mids.find(sym);
+        if (it == mids.end() || it->second <= 0.0) return 0.0;
+        const double move = p.is_long ? (it->second - p.entry) : (p.entry - it->second);
+        return move * p.size * tick_value_multiplier(sym);
+    };
+
+    // Helper: unrealised PnL for a CrossPosition (uses same snapshot)
+    auto cp_pnl = [&](bool active, bool is_long, double entry, double size,
+                      const std::string& sym) -> double {
+        if (!active || entry <= 0.0) return 0.0;
+        auto it = mids.find(sym);
+        if (it == mids.end() || it->second <= 0.0) return 0.0;
+        const double move = is_long ? (it->second - entry) : (entry - it->second);
+        return move * size * tick_value_multiplier(sym);
+    };
+
+    // Breakout engines
+    total += be_pnl(g_eng_sp.pos,     "US500.F");
+    total += be_pnl(g_eng_nq.pos,     "USTEC.F");
+    total += be_pnl(g_eng_cl.pos,     "USOIL.F");
+    total += be_pnl(g_eng_us30.pos,   "DJ30.F");
+    total += be_pnl(g_eng_nas100.pos, "NAS100");
+    total += be_pnl(g_eng_ger30.pos,  "GER40");
+    total += be_pnl(g_eng_uk100.pos,  "UK100");
+    total += be_pnl(g_eng_estx50.pos, "ESTX50");
+    total += be_pnl(g_eng_xag.pos,    "XAGUSD");
+    total += be_pnl(g_eng_eurusd.pos, "EURUSD");
+    total += be_pnl(g_eng_gbpusd.pos, "GBPUSD");
+    total += be_pnl(g_eng_audusd.pos, "AUDUSD");
+    total += be_pnl(g_eng_nzdusd.pos, "NZDUSD");
+    total += be_pnl(g_eng_usdjpy.pos, "USDJPY");
+    total += be_pnl(g_eng_brent.pos,  "BRENT");
+
+    // Bracket engines -- pos.entry/size/is_long same struct
+    total += be_pnl(g_bracket_sp.pos,     "US500.F");
+    total += be_pnl(g_bracket_nq.pos,     "USTEC.F");
+    total += be_pnl(g_bracket_us30.pos,   "DJ30.F");
+    total += be_pnl(g_bracket_nas100.pos, "NAS100");
+    total += be_pnl(g_bracket_ger30.pos,  "GER40");
+    total += be_pnl(g_bracket_uk100.pos,  "UK100");
+    total += be_pnl(g_bracket_estx50.pos, "ESTX50");
+    total += be_pnl(g_bracket_xag.pos,    "XAGUSD");
+    total += be_pnl(g_bracket_gold.pos,   "XAUUSD");
+    total += be_pnl(g_bracket_brent.pos,  "BRENT");
+    total += be_pnl(g_bracket_eurusd.pos, "EURUSD");
+    total += be_pnl(g_bracket_gbpusd.pos, "GBPUSD");
+    total += be_pnl(g_bracket_audusd.pos, "AUDUSD");
+    total += be_pnl(g_bracket_nzdusd.pos, "NZDUSD");
+    total += be_pnl(g_bracket_usdjpy.pos, "USDJPY");
+
+    // Cross-asset engines -- use public accessors (pos_ is private)
+    // open_unrealised() calls the engine's open_pos_pnl(bid, ask) method.
+    // If an engine has a position, mid-price PnL is estimated from the book.
+    auto ca_pnl = [&](bool has_pos, double open_entry, bool open_long,
+                      double open_size, const std::string& sym) -> double {
+        if (!has_pos || open_entry <= 0.0) return 0.0;
+        return cp_pnl(true, open_long, open_entry, open_size, sym);
+    };
+    total += ca_pnl(g_ca_esnq.has_open_position(),
+                    g_ca_esnq.open_entry(), g_ca_esnq.open_is_long(), g_ca_esnq.open_size(), "US500.F");
+    total += ca_pnl(g_ca_eia_fade.has_open_position(),
+                    g_ca_eia_fade.open_entry(), g_ca_eia_fade.open_is_long(), g_ca_eia_fade.open_size(), "USOIL.F");
+    total += ca_pnl(g_ca_brent_wti.has_open_position(),
+                    g_ca_brent_wti.open_entry(), g_ca_brent_wti.open_is_long(), g_ca_brent_wti.open_size(), "BRENT");
+    total += ca_pnl(g_ca_fx_cascade.has_open_position(),
+                    g_ca_fx_cascade.open_entry(), g_ca_fx_cascade.open_is_long(), g_ca_fx_cascade.open_size(), "GBPUSD");
+    total += ca_pnl(g_ca_carry_unwind.has_open_position(),
+                    g_ca_carry_unwind.open_entry(), g_ca_carry_unwind.open_is_long(), g_ca_carry_unwind.open_size(), "USDJPY");
+
+    // Gold flow
+    if (g_gold_flow.pos.active) {
+        std::lock_guard<std::mutex> lk(g_book_mtx);
+        auto bi = g_bids.find("XAUUSD"); auto ai = g_asks.find("XAUUSD");
+        if (bi != g_bids.end() && ai != g_asks.end()) {
+            const double mid = (bi->second + ai->second) * 0.5;
+            const double move = g_gold_flow.pos.is_long
+                ? (mid - g_gold_flow.pos.entry)
+                : (g_gold_flow.pos.entry - mid);
+            total += move * g_gold_flow.pos.size * 100.0;  // XAUUSD tick mult
+        }
+    }
+    return total;
+}
+
 static bool symbol_risk_blocked(const std::string& symbol) {
     // SHADOW MODE: bypass ALL daily loss limits and consecutive loss pauses.
     // Testing must never be blocked by risk caps -- no real money at risk.
@@ -4438,8 +4543,6 @@ static bool symbol_risk_blocked(const std::string& symbol) {
     return false;
 }
 
-// ── symbol_gate ──────────────────────────────────────────────────────
-// tradeable/lat_ok/regime/bid/ask passed explicitly from on_tick.
 static bool symbol_gate(
     const std::string& symbol,
     bool symbol_has_open_position,
@@ -4882,109 +4985,6 @@ static bool symbol_gate(
     if (g_regime_adaptor.equity_blocked(symbol)) return false;
     // REMOVED: corr_heat -- with 1-2 open positions max never adds value, only blocks
     return true;
-}
-
-// ── open_unrealised_pnl ──────────────────────────────────────────────────────
-static double open_unrealised_pnl() {
-    double total = 0.0;
-
-    // Snapshot all mid prices in ONE lock acquisition to avoid 30+ per-engine
-    // g_book_mtx acquisitions at high tick rates (was lock contention risk).
-    std::unordered_map<std::string, double> mids;
-    {
-        std::lock_guard<std::mutex> lk(g_book_mtx);
-        for (const auto& kv : g_bids) {
-            auto ai = g_asks.find(kv.first);
-            if (ai != g_asks.end() && kv.second > 0 && ai->second > 0)
-                mids[kv.first] = (kv.second + ai->second) * 0.5;
-        }
-    }
-
-    // Helper: unrealised PnL -- generic lambda accepts any OpenPos-like type
-    auto be_pnl = [&](const auto& p, const std::string& sym) -> double {
-        if (!p.active) return 0.0;
-        auto it = mids.find(sym);
-        if (it == mids.end() || it->second <= 0.0) return 0.0;
-        const double move = p.is_long ? (it->second - p.entry) : (p.entry - it->second);
-        return move * p.size * tick_value_multiplier(sym);
-    };
-
-    // Helper: unrealised PnL for a CrossPosition (uses same snapshot)
-    auto cp_pnl = [&](bool active, bool is_long, double entry, double size,
-                      const std::string& sym) -> double {
-        if (!active || entry <= 0.0) return 0.0;
-        auto it = mids.find(sym);
-        if (it == mids.end() || it->second <= 0.0) return 0.0;
-        const double move = is_long ? (it->second - entry) : (entry - it->second);
-        return move * size * tick_value_multiplier(sym);
-    };
-
-    // Breakout engines
-    total += be_pnl(g_eng_sp.pos,     "US500.F");
-    total += be_pnl(g_eng_nq.pos,     "USTEC.F");
-    total += be_pnl(g_eng_cl.pos,     "USOIL.F");
-    total += be_pnl(g_eng_us30.pos,   "DJ30.F");
-    total += be_pnl(g_eng_nas100.pos, "NAS100");
-    total += be_pnl(g_eng_ger30.pos,  "GER40");
-    total += be_pnl(g_eng_uk100.pos,  "UK100");
-    total += be_pnl(g_eng_estx50.pos, "ESTX50");
-    total += be_pnl(g_eng_xag.pos,    "XAGUSD");
-    total += be_pnl(g_eng_eurusd.pos, "EURUSD");
-    total += be_pnl(g_eng_gbpusd.pos, "GBPUSD");
-    total += be_pnl(g_eng_audusd.pos, "AUDUSD");
-    total += be_pnl(g_eng_nzdusd.pos, "NZDUSD");
-    total += be_pnl(g_eng_usdjpy.pos, "USDJPY");
-    total += be_pnl(g_eng_brent.pos,  "BRENT");
-
-    // Bracket engines -- pos.entry/size/is_long same struct
-    total += be_pnl(g_bracket_sp.pos,     "US500.F");
-    total += be_pnl(g_bracket_nq.pos,     "USTEC.F");
-    total += be_pnl(g_bracket_us30.pos,   "DJ30.F");
-    total += be_pnl(g_bracket_nas100.pos, "NAS100");
-    total += be_pnl(g_bracket_ger30.pos,  "GER40");
-    total += be_pnl(g_bracket_uk100.pos,  "UK100");
-    total += be_pnl(g_bracket_estx50.pos, "ESTX50");
-    total += be_pnl(g_bracket_xag.pos,    "XAGUSD");
-    total += be_pnl(g_bracket_gold.pos,   "XAUUSD");
-    total += be_pnl(g_bracket_brent.pos,  "BRENT");
-    total += be_pnl(g_bracket_eurusd.pos, "EURUSD");
-    total += be_pnl(g_bracket_gbpusd.pos, "GBPUSD");
-    total += be_pnl(g_bracket_audusd.pos, "AUDUSD");
-    total += be_pnl(g_bracket_nzdusd.pos, "NZDUSD");
-    total += be_pnl(g_bracket_usdjpy.pos, "USDJPY");
-
-    // Cross-asset engines -- use public accessors (pos_ is private)
-    // open_unrealised() calls the engine's open_pos_pnl(bid, ask) method.
-    // If an engine has a position, mid-price PnL is estimated from the book.
-    auto ca_pnl = [&](bool has_pos, double open_entry, bool open_long,
-                      double open_size, const std::string& sym) -> double {
-        if (!has_pos || open_entry <= 0.0) return 0.0;
-        return cp_pnl(true, open_long, open_entry, open_size, sym);
-    };
-    total += ca_pnl(g_ca_esnq.has_open_position(),
-                    g_ca_esnq.open_entry(), g_ca_esnq.open_is_long(), g_ca_esnq.open_size(), "US500.F");
-    total += ca_pnl(g_ca_eia_fade.has_open_position(),
-                    g_ca_eia_fade.open_entry(), g_ca_eia_fade.open_is_long(), g_ca_eia_fade.open_size(), "USOIL.F");
-    total += ca_pnl(g_ca_brent_wti.has_open_position(),
-                    g_ca_brent_wti.open_entry(), g_ca_brent_wti.open_is_long(), g_ca_brent_wti.open_size(), "BRENT");
-    total += ca_pnl(g_ca_fx_cascade.has_open_position(),
-                    g_ca_fx_cascade.open_entry(), g_ca_fx_cascade.open_is_long(), g_ca_fx_cascade.open_size(), "GBPUSD");
-    total += ca_pnl(g_ca_carry_unwind.has_open_position(),
-                    g_ca_carry_unwind.open_entry(), g_ca_carry_unwind.open_is_long(), g_ca_carry_unwind.open_size(), "USDJPY");
-
-    // Gold flow
-    if (g_gold_flow.pos.active) {
-        std::lock_guard<std::mutex> lk(g_book_mtx);
-        auto bi = g_bids.find("XAUUSD"); auto ai = g_asks.find("XAUUSD");
-        if (bi != g_bids.end() && ai != g_asks.end()) {
-            const double mid = (bi->second + ai->second) * 0.5;
-            const double move = g_gold_flow.pos.is_long
-                ? (mid - g_gold_flow.pos.entry)
-                : (g_gold_flow.pos.entry - mid);
-            total += move * g_gold_flow.pos.size * 100.0;  // XAUUSD tick mult
-        }
-    }
-    return total;
 }
 
 static void on_tick(const std::string& sym, double bid, double ask) {
