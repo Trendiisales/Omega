@@ -32595,3 +32595,386 @@
 12:38:54 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
 12:38:54 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
 12:38:54 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+12:38:56 [TICK] EURUSD 1.15/1.15
+12:38:56 [TICK] GBPUSD 1.32/1.32
+12:38:56 [TICK] USDJPY 159.59/159.75
+12:38:56 [TICK] AUDUSD 0.69/0.69
+12:38:56 [TICK] XAUUSD 4677.03/4677.25
+12:38:56 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=3
+12:38:56 [TICK] XAGUSD 73.02/73.05
+12:38:56 [TICK] GER40 23202.60/23204.30
+12:38:56 [TICK] NZDUSD 0.57/0.57
+12:38:56 [TICK] DJ30.F 46620.30/46642.60
+12:38:56 [TICK] BRENT 106.44/107.11
+12:38:56 [TICK] VIX.F 24.74/25.10
+12:38:56 [TICK] DX.F 99.93/100.03
+12:38:56 [TICK] NAS100 23952.15/23953.35
+12:38:56 [TICK] NGAS.F 2.79/2.82
+12:38:56 [TICK] USOIL.F 111.90/112.01
+12:38:56 [TICK] ESTX50 5699.40/5700.80
+12:38:56 [TICK] UK100 10455.10/10456.90
+12:38:56 [TICK] US500.F 6603.22/6604.03
+12:38:56 [TICK] USTEC.F 24128.44/24132.90
+12:38:58 [CTRADER] Connecting live.ctraderapi.com:5035
+12:38:58 [CTRADER] ApplicationAuthReq sent
+12:38:58 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:38:58 [CTRADER] ApplicationAuthRes failed (pt=3464193200)
+12:39:03 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:03 [CTRADER] ApplicationAuthReq sent
+12:39:03 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:03 [CTRADER] ApplicationAuthRes failed (pt=3464188448)
+12:39:08 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:08 [CTRADER] ApplicationAuthReq sent
+12:39:08 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:08 [CTRADER] ApplicationAuthRes failed (pt=3464187440)
+12:39:13 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:13 [CTRADER] ApplicationAuthReq sent
+12:39:13 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:13 [CTRADER] ApplicationAuthRes failed (pt=3464187440)
+12:39:18 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:18 [CTRADER] ApplicationAuthReq sent
+12:39:18 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:18 [CTRADER] ApplicationAuthRes failed (pt=3464187584)
+12:39:23 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:23 [CTRADER] ApplicationAuthReq sent
+12:39:23 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:23 [CTRADER] ApplicationAuthRes failed (pt=3464184416)
+12:39:28 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:28 [CTRADER] ApplicationAuthReq sent
+12:39:28 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:28 [CTRADER] ApplicationAuthRes failed (pt=3464188016)
+12:39:33 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:33 [CTRADER] ApplicationAuthReq sent
+12:39:33 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:33 [CTRADER] ApplicationAuthRes failed (pt=3464190896)
+12:39:38 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:38 [CTRADER] ApplicationAuthReq sent
+12:39:38 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:38 [CTRADER] ApplicationAuthRes failed (pt=3464188448)
+12:39:44 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:44 [CTRADER] ApplicationAuthReq sent
+12:39:44 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:44 [CTRADER] ApplicationAuthRes failed (pt=3464185280)
+12:39:49 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:49 [CTRADER] ApplicationAuthReq sent
+12:39:49 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:49 [CTRADER] ApplicationAuthRes failed (pt=3464184416)
+12:39:51 [OMEGA-TRADE] SSL error 6 -- reconnecting
+12:39:51 [OMEGA-TRADE] Logout sent
+12:39:51 [OMEGA-TRADE] Disconnected -- reconnecting
+12:39:54 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:54 [CTRADER] ApplicationAuthReq sent
+12:39:54 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:54 [CTRADER] ApplicationAuthRes failed (pt=3464190320)
+12:39:54 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+12:39:54 [OMEGA-TRADE] Logon sent
+12:39:54 [OMEGA-TRADE] LOGON ACCEPTED
+12:39:54 [OMEGA-TRADE] SecurityListRequest sent req_id=omega-sec-1775306394
+12:39:54 [OMEGA-SECURITY] UNMATCHED: 'UK100.F' id=4461
+12:39:54 [OMEGA-SECURITY] UNMATCHED: 'UKBRENT.F' id=2634
+12:39:54 [OMEGA-SECURITY] UNMATCHED: 'ESTC' id=3229
+12:39:54 [OMEGA-TRADE] SecurityList received req_id=omega-sec-1775306394 entries=1551
+12:39:54 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=6.105ms cap=120ms lat_ok=1 session=ACTIVE
+12:39:54 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+12:39:54 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+12:39:54 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+12:39:54 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+12:39:56 [TICK] EURUSD 1.15/1.15
+12:39:56 [TICK] GBPUSD 1.32/1.32
+12:39:56 [TICK] USDJPY 159.59/159.75
+12:39:56 [TICK] AUDUSD 0.69/0.69
+12:39:56 [TICK] XAUUSD 4677.03/4677.25
+12:39:56 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=3
+12:39:56 [TICK] XAGUSD 73.02/73.05
+12:39:56 [TICK] GER40 23202.60/23204.30
+12:39:56 [TICK] NZDUSD 0.57/0.57
+12:39:56 [TICK] DJ30.F 46620.30/46642.60
+12:39:56 [TICK] BRENT 106.44/107.11
+12:39:56 [TICK] VIX.F 24.74/25.10
+12:39:56 [TICK] DX.F 99.93/100.03
+12:39:56 [TICK] NAS100 23952.15/23953.35
+12:39:56 [TICK] NGAS.F 2.79/2.82
+12:39:56 [TICK] USOIL.F 111.90/112.01
+12:39:56 [TICK] ESTX50 5699.40/5700.80
+12:39:56 [TICK] UK100 10455.10/10456.90
+12:39:56 [TICK] US500.F 6603.22/6604.03
+12:39:56 [TICK] USTEC.F 24128.44/24132.90
+12:39:59 [CTRADER] Connecting live.ctraderapi.com:5035
+12:39:59 [CTRADER] ApplicationAuthReq sent
+12:39:59 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:39:59 [CTRADER] ApplicationAuthRes failed (pt=3464188448)
+12:40:04 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:04 [CTRADER] ApplicationAuthReq sent
+12:40:04 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:04 [CTRADER] ApplicationAuthRes failed (pt=3464188448)
+12:40:09 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:09 [CTRADER] ApplicationAuthReq sent
+12:40:09 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:09 [CTRADER] ApplicationAuthRes failed (pt=3464184992)
+12:40:14 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:14 [CTRADER] ApplicationAuthReq sent
+12:40:14 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:14 [CTRADER] ApplicationAuthRes failed (pt=3464188448)
+12:40:19 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:19 [CTRADER] ApplicationAuthReq sent
+12:40:19 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:19 [CTRADER] ApplicationAuthRes failed (pt=3464186720)
+12:40:24 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:24 [CTRADER] ApplicationAuthReq sent
+12:40:24 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:24 [CTRADER] ApplicationAuthRes failed (pt=3464187584)
+12:40:29 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:29 [CTRADER] ApplicationAuthReq sent
+12:40:29 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:29 [CTRADER] ApplicationAuthRes failed (pt=3464193200)
+12:40:34 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:34 [CTRADER] ApplicationAuthReq sent
+12:40:34 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:34 [CTRADER] ApplicationAuthRes failed (pt=3464186720)
+12:40:40 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:40 [CTRADER] ApplicationAuthReq sent
+12:40:40 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:40 [CTRADER] ApplicationAuthRes failed (pt=3464185280)
+12:40:45 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:45 [CTRADER] ApplicationAuthReq sent
+12:40:45 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:45 [CTRADER] ApplicationAuthRes failed (pt=3464186720)
+12:40:50 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:50 [CTRADER] ApplicationAuthReq sent
+12:40:50 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:50 [CTRADER] ApplicationAuthRes failed (pt=3464185280)
+12:40:54 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=5.979ms cap=120ms lat_ok=1 session=ACTIVE
+12:40:54 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+12:40:54 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+12:40:54 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+12:40:54 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+12:40:55 [CTRADER] Connecting live.ctraderapi.com:5035
+12:40:55 [CTRADER] ApplicationAuthReq sent
+12:40:55 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:40:55 [CTRADER] ApplicationAuthRes failed (pt=3464184992)
+12:40:56 [TICK] EURUSD 1.15/1.15
+12:40:56 [TICK] GBPUSD 1.32/1.32
+12:40:56 [TICK] USDJPY 159.59/159.75
+12:40:56 [TICK] AUDUSD 0.69/0.69
+12:40:56 [TICK] XAUUSD 4677.03/4677.25
+12:40:56 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=3
+12:40:56 [TICK] XAGUSD 73.02/73.05
+12:40:56 [TICK] GER40 23202.60/23204.30
+12:40:56 [TICK] NZDUSD 0.57/0.57
+12:40:56 [TICK] DJ30.F 46620.30/46642.60
+12:40:56 [TICK] UK100 10455.10/10456.90
+12:40:56 [TICK] BRENT 106.44/107.11
+12:40:56 [TICK] VIX.F 24.74/25.10
+12:40:56 [TICK] DX.F 99.93/100.03
+12:40:56 [TICK] NAS100 23952.15/23953.35
+12:40:56 [TICK] NGAS.F 2.79/2.82
+12:40:56 [TICK] USOIL.F 111.90/112.01
+12:40:56 [TICK] ESTX50 5699.40/5700.80
+12:40:56 [TICK] US500.F 6603.22/6604.03
+12:40:56 [TICK] USTEC.F 24128.44/24132.90
+12:41:00 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:00 [CTRADER] ApplicationAuthReq sent
+12:41:00 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:00 [CTRADER] ApplicationAuthRes failed (pt=3464184992)
+12:41:05 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:05 [CTRADER] ApplicationAuthReq sent
+12:41:05 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:05 [CTRADER] ApplicationAuthRes failed (pt=3464187296)
+12:41:10 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:10 [CTRADER] ApplicationAuthReq sent
+12:41:10 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:10 [CTRADER] ApplicationAuthRes failed (pt=3464185280)
+12:41:15 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:15 [CTRADER] ApplicationAuthReq sent
+12:41:15 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:15 [CTRADER] ApplicationAuthRes failed (pt=3464184992)
+12:41:20 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:20 [CTRADER] ApplicationAuthReq sent
+12:41:20 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:20 [CTRADER] ApplicationAuthRes failed (pt=3464186720)
+12:41:25 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:25 [CTRADER] ApplicationAuthReq sent
+12:41:26 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:26 [CTRADER] ApplicationAuthRes failed (pt=3464193200)
+12:41:31 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:31 [CTRADER] ApplicationAuthReq sent
+12:41:31 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:31 [CTRADER] ApplicationAuthRes failed (pt=3464184992)
+12:41:36 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:36 [CTRADER] ApplicationAuthReq sent
+12:41:36 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:36 [CTRADER] ApplicationAuthRes failed (pt=3464187296)
+12:41:41 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:41 [CTRADER] ApplicationAuthReq sent
+12:41:41 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:41 [CTRADER] ApplicationAuthRes failed (pt=3464193200)
+12:41:46 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:46 [CTRADER] ApplicationAuthReq sent
+12:41:46 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:46 [CTRADER] ApplicationAuthRes failed (pt=3464184992)
+12:41:51 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:51 [CTRADER] ApplicationAuthReq sent
+12:41:51 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:51 [CTRADER] ApplicationAuthRes failed (pt=3464185280)
+12:41:55 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=5.979ms cap=120ms lat_ok=1 session=ACTIVE
+12:41:55 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+12:41:55 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+12:41:55 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+12:41:55 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+12:41:56 [CTRADER] Connecting live.ctraderapi.com:5035
+12:41:56 [CTRADER] ApplicationAuthReq sent
+12:41:56 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:41:56 [CTRADER] ApplicationAuthRes failed (pt=3464185280)
+12:41:57 [TICK] EURUSD 1.15/1.15
+12:41:57 [TICK] GBPUSD 1.32/1.32
+12:41:57 [TICK] USDJPY 159.59/159.75
+12:41:57 [TICK] AUDUSD 0.69/0.69
+12:41:57 [TICK] XAUUSD 4677.03/4677.25
+12:41:57 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=3
+12:41:57 [TICK] XAGUSD 73.02/73.05
+12:41:57 [TICK] GER40 23202.60/23204.30
+12:41:57 [TICK] NZDUSD 0.57/0.57
+12:41:57 [TICK] DJ30.F 46620.30/46642.60
+12:41:57 [TICK] BRENT 106.44/107.11
+12:41:57 [TICK] VIX.F 24.74/25.10
+12:41:57 [TICK] DX.F 99.93/100.03
+12:41:57 [TICK] NAS100 23952.15/23953.35
+12:41:57 [TICK] NGAS.F 2.79/2.82
+12:41:57 [TICK] USOIL.F 111.90/112.01
+12:41:57 [TICK] ESTX50 5699.40/5700.80
+12:41:57 [TICK] UK100 10455.10/10456.90
+12:41:57 [TICK] US500.F 6603.22/6604.03
+12:41:57 [TICK] USTEC.F 24128.44/24132.90
+12:42:01 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:01 [CTRADER] ApplicationAuthReq sent
+12:42:01 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:01 [CTRADER] ApplicationAuthRes failed (pt=3464193200)
+12:42:06 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:06 [CTRADER] ApplicationAuthReq sent
+12:42:06 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:06 [CTRADER] ApplicationAuthRes failed (pt=3464185424)
+12:42:11 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:11 [CTRADER] ApplicationAuthReq sent
+12:42:11 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:11 [CTRADER] ApplicationAuthRes failed (pt=3464185280)
+12:42:16 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:16 [CTRADER] ApplicationAuthReq sent
+12:42:16 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:16 [CTRADER] ApplicationAuthRes failed (pt=3464188016)
+12:42:21 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:21 [CTRADER] ApplicationAuthReq sent
+12:42:22 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:22 [CTRADER] ApplicationAuthRes failed (pt=3464184992)
+12:42:27 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:27 [CTRADER] ApplicationAuthReq sent
+12:42:27 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:27 [CTRADER] ApplicationAuthRes failed (pt=3464187440)
+12:42:32 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:32 [CTRADER] ApplicationAuthReq sent
+12:42:32 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:32 [CTRADER] ApplicationAuthRes failed (pt=3464193200)
+12:42:37 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:37 [CTRADER] ApplicationAuthReq sent
+12:42:37 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:37 [CTRADER] ApplicationAuthRes failed (pt=3464193200)
+12:42:42 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:42 [CTRADER] ApplicationAuthReq sent
+12:42:42 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:42 [CTRADER] ApplicationAuthRes failed (pt=3464185280)
+12:42:47 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:47 [CTRADER] ApplicationAuthReq sent
+12:42:47 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:47 [CTRADER] ApplicationAuthRes failed (pt=3464187296)
+12:42:52 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:52 [CTRADER] ApplicationAuthReq sent
+12:42:52 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:52 [CTRADER] ApplicationAuthRes failed (pt=3464187296)
+12:42:54 [OMEGA-TRADE] SSL error 6 -- reconnecting
+12:42:54 [OMEGA-TRADE] Logout sent
+12:42:54 [OMEGA-TRADE] Disconnected -- reconnecting
+12:42:55 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=5.979ms cap=120ms lat_ok=1 session=ACTIVE
+12:42:55 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+12:42:55 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+12:42:55 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+12:42:55 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+12:42:57 [TICK] EURUSD 1.15/1.15
+12:42:57 [TICK] GBPUSD 1.32/1.32
+12:42:57 [TICK] USDJPY 159.59/159.75
+12:42:57 [TICK] AUDUSD 0.69/0.69
+12:42:57 [TICK] XAUUSD 4677.03/4677.25
+12:42:57 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=3
+12:42:57 [TICK] XAGUSD 73.02/73.05
+12:42:57 [TICK] GER40 23202.60/23204.30
+12:42:57 [TICK] NZDUSD 0.57/0.57
+12:42:57 [TICK] DJ30.F 46620.30/46642.60
+12:42:57 [TICK] BRENT 106.44/107.11
+12:42:57 [TICK] VIX.F 24.74/25.10
+12:42:57 [TICK] DX.F 99.93/100.03
+12:42:57 [TICK] NAS100 23952.15/23953.35
+12:42:57 [TICK] NGAS.F 2.79/2.82
+12:42:57 [TICK] USOIL.F 111.90/112.01
+12:42:57 [TICK] ESTX50 5699.40/5700.80
+12:42:57 [TICK] UK100 10455.10/10456.90
+12:42:57 [TICK] US500.F 6603.22/6604.03
+12:42:57 [TICK] USTEC.F 24128.44/24132.90
+12:42:57 [CTRADER] Connecting live.ctraderapi.com:5035
+12:42:57 [CTRADER] ApplicationAuthReq sent
+12:42:57 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:42:57 [CTRADER] ApplicationAuthRes failed (pt=3464184992)
+12:42:58 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+12:42:58 [OMEGA-TRADE] Logon sent
+12:42:58 [OMEGA-TRADE] LOGON ACCEPTED
+12:42:58 [OMEGA-TRADE] SecurityListRequest sent req_id=omega-sec-1775306578
+12:42:58 [OMEGA-SECURITY] UNMATCHED: 'UK100.F' id=4461
+12:42:58 [OMEGA-SECURITY] UNMATCHED: 'UKBRENT.F' id=2634
+12:42:58 [OMEGA-SECURITY] UNMATCHED: 'ESTC' id=3229
+12:42:58 [OMEGA-TRADE] SecurityList received req_id=omega-sec-1775306578 entries=1551
+12:43:02 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:02 [CTRADER] ApplicationAuthReq sent
+12:43:02 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:02 [CTRADER] ApplicationAuthRes failed (pt=3464184416)
+12:43:07 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:07 [CTRADER] ApplicationAuthReq sent
+12:43:07 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:07 [CTRADER] ApplicationAuthRes failed (pt=3464184416)
+12:43:12 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:12 [CTRADER] ApplicationAuthReq sent
+12:43:13 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:13 [CTRADER] ApplicationAuthRes failed (pt=3464190896)
+12:43:18 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:18 [CTRADER] ApplicationAuthReq sent
+12:43:18 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:18 [CTRADER] ApplicationAuthRes failed (pt=3464186720)
+12:43:23 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:23 [CTRADER] ApplicationAuthReq sent
+12:43:23 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:23 [CTRADER] ApplicationAuthRes failed (pt=3464184416)
+12:43:28 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:28 [CTRADER] ApplicationAuthReq sent
+12:43:28 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:28 [CTRADER] ApplicationAuthRes failed (pt=3464190896)
+12:43:33 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:33 [CTRADER] ApplicationAuthReq sent
+12:43:33 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:33 [CTRADER] ApplicationAuthRes failed (pt=3464184416)
+12:43:38 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:38 [CTRADER] ApplicationAuthReq sent
+12:43:38 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:38 [CTRADER] ApplicationAuthRes failed (pt=3464185568)
+12:43:43 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:43 [CTRADER] ApplicationAuthReq sent
+12:43:43 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:43 [CTRADER] ApplicationAuthRes failed (pt=3464187296)
+12:43:48 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:48 [CTRADER] ApplicationAuthReq sent
+12:43:48 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:48 [CTRADER] ApplicationAuthRes failed (pt=3464185568)
+12:43:53 [CTRADER] Connecting live.ctraderapi.com:5035
+12:43:53 [CTRADER] ApplicationAuthReq sent
+12:43:53 [CTRADER] Error:  -- CANT_ROUTE_REQUEST
+12:43:53 [CTRADER] ApplicationAuthRes failed (pt=3464188448)
+12:43:55 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=5.979ms cap=120ms lat_ok=1 session=ACTIVE
+12:43:55 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+12:43:55 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+12:43:55 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+12:43:55 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
