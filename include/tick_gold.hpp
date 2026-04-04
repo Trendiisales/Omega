@@ -1,11 +1,8 @@
 // tick_gold.hpp — per-symbol tick handlers
-// Extracted from main.cpp on_tick(). Same translation unit -- all globals visible.
-// #included into main.cpp before on_tick(). Do NOT include elsewhere.
-// IMMUTABLE: never modify core logic here without explicit instruction.
+// Extracted from on_tick(). Same translation unit — all static functions visible.
+// Do NOT #include from anywhere else.
 
-// ──────────────────────────────────────────────────────────────────────
-// XAUUSD tick handler
-// ──────────────────────────────────────────────────────────────────────
+// ── XAUUSD ─────────────────────────────────────────────────
 static void on_tick_gold(const std::string& sym, double bid, double ask) {
     // ?? Gold master exclusion gate ????????????????????????????????????????
     // Default: ANY open gold position blocks new entries (1-at-a-time invariant).
@@ -222,11 +219,11 @@ static void on_tick_gold(const std::string& sym, double bid, double ask) {
          || (rsi_for_gate > 62.0)                             // RSI rally -- drift not needed (was 68)
          || (rsi_for_gate < 38.0 && drift_for_gate < -1.5)   // drift+RSI confirmation (was 35)
          || (rsi_for_gate > 62.0 && drift_for_gate >  1.5)); // drift+RSI confirmation (was 65)
-    const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open)
+    const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
                              && (!gold_post_impulse_block || crash_impulse_bypass);
     // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
     const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
-        && gold_session_ok && symbol_gate("XAUUSD", false);
+        && gold_session_ok && symbol_gate("XAUUSD", false, "", tradeable, lat_ok, regime, bid, ask);
 
     // Run supervisor -- uses g_eng_xag as vol/phase proxy since gold has
     // its own GoldStack (not a BreakoutEngine). We use a dedicated gold
@@ -2586,7 +2583,7 @@ static void on_tick_gold(const std::string& sym, double bid, double ask) {
                 le_sig.tp, le_sig.sl);
             printf("[LE-SIZE] XAUUSD eng=%s sl_abs=%.2f spread=%.2f (enter_directional)\n",
                    le_sig.engine, std::fabs(le_sig.entry - le_sig.sl), ask - bid);
-            enter_directional("XAUUSD", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size);
+            enter_directional("XAUUSD", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size, false, bid, ask, sym, regime);
         }
     }
     // ?? TrendPullbackEngine position management -- ALWAYS runs when position open ??
@@ -2653,7 +2650,7 @@ static void on_tick_gold(const std::string& sym, double bid, double ask) {
     // and widened pullback band (0.15% not 0.05%).
     // Does NOT require bar data -- runs on tick EMAs with proper time-equivalent alphas.
     // TrendPullback gold: 24h entry gate -- trend is a trend regardless of session.
-    // Uses symbol_gate (risk/max_positions) but NOT session slot gate.
+    // Uses symbol_gate (risk/max_positions, tradeable, lat_ok, regime, bid, ask) but NOT session slot gate.
     // Only hard blocks: dead-zone spread spike window (05:00-06:30 UTC) and NY close noise.
     const bool tpb_gold_session_ok = !in_ny_close_noise && (gold_session_slot != 0 || [&](){
         // Allow slot 0 (05:00-07:00) ONLY after 06:30 when spreads have normalised
@@ -2662,7 +2659,7 @@ static void on_tick_gold(const std::string& sym, double bid, double ask) {
         return (ti_s.tm_hour * 60 + ti_s.tm_min) >= 390; // 06:30 UTC
     }());
     const bool tpb_gold_can_enter = tpb_gold_session_ok
-                                 && symbol_gate("XAUUSD", gold_any_open)
+                                 && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
                                  && !gold_post_impulse_block;
 
     // ?? CRASH CONTINUATION OVERRIDE ????????????????????????????????????????
@@ -2714,7 +2711,7 @@ static void on_tick_gold(const std::string& sym, double bid, double ask) {
                 fflush(stdout);
                 g_trend_pb_gold.cancel();
             } else {
-                const double tpb_lot = enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true);
+                const double tpb_lot = enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true, bid, ask, sym, regime);
                 if (!tpb_lot) {
                     g_trend_pb_gold.cancel();
                 } else {
@@ -2762,7 +2759,7 @@ static void on_tick_gold(const std::string& sym, double bid, double ask) {
             const double add_lot     = std::max(0.005,
                 compute_size("XAUUSD", pyr_sl_dist, ask - bid, base_open_lot)
                 * g_trend_pb_gold.PYRAMID_SIZE_MULT);
-            if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true)) {
+            if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true, bid, ask, sym, regime)) {
                 ++g_trend_pb_gold.pyramid_adds_;
                 printf("[TRENDPB-GOLD] PYRAMID ADD #%d lot=%.4f sl=%.3f tp=%.3f\n",
                        g_trend_pb_gold.pyramid_adds_, add_lot, pyr_sl, pyr_tp);
@@ -2797,10 +2794,11 @@ static void on_tick_gold(const std::string& sym, double bid, double ask) {
                 nbm_lon.reason, "NBM_LONDON", regime.c_str(), "NBM_LONDON",
                 nbm_lon.tp, nbm_lon.sl);
             if (!enter_directional("XAUUSD", nbm_lon.is_long, nbm_lon.entry,
-                                   nbm_lon.sl, nbm_lon.tp))
+                                   nbm_lon.sl, nbm_lon.tp, 0.01, false, bid, ask, sym, regime))
                 g_nbm_gold_london.cancel();
             else g_nbm_gold_london.patch_size(g_last_directional_lot);
         }
     }
+}
 }
 
