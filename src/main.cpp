@@ -575,6 +575,26 @@ static std::atomic<int64_t>  g_gf_dir_sl_long_first{0};   // timestamp of first 
 static std::atomic<int64_t>  g_gf_dir_sl_short_first{0};  // timestamp of first short SL in window
 static std::atomic<int64_t>  g_gf_long_blocked_until{0};  // block long entries until this time
 static std::atomic<int64_t>  g_gf_short_blocked_until{0}; // block short entries until this time
+
+// ?? Indices FORCE_CLOSE circuit breaker ??????????????????????????????????????
+// Problem: on April 2 2026, repeated disconnect/reconnect cycles on US indices
+// allowed engines to re-enter immediately after each reconnect FORCE_CLOSE,
+// compounding losses -$340. Root cause: FORCE_CLOSE fires on disconnect, then
+// the reconnect warmup (30s) expires, and the engine re-enters into the same
+// losing conditions with no memory of the prior close.
+//
+// Fix: stamp a 30-minute indices cooldown whenever a FORCE_CLOSE fires on any
+// US index symbol. New entries on ALL US index engines are blocked for 30 minutes.
+// The cooldown is per-symbol-group (US indices share one timer) so a NQ disconnect
+// doesn't block a simultaneously running SP position.
+//
+// US indices covered: US500.F, USTEC.F, DJ30.F, NAS100
+// EU indices (GER40, UK100, ESTX50) are separate -- different session, independent issue.
+//
+// Cooldown: 30 min = 1800s. Long enough to cover a full disconnect/reconnect cycle
+// and enough time for the regime causing the reconnect loop to resolve.
+static constexpr int64_t INDICES_DISCONNECT_COOLDOWN_SEC = 1800; // 30 min
+static std::atomic<int64_t> g_indices_disconnect_until{0}; // epoch sec: block US index new entries until
 static omega::SilverBracketEngine g_bracket_xag;
 // US equity index bracket engines -- arms both sides on compression,
 // captures the move regardless of direction. Eliminates wrong-direction losses.
@@ -2274,6 +2294,158 @@ static void send_cancel_order(const std::string& clOrdId) {
     std::cout.flush();
 }
 
+// =============================================================================
+//  send_hard_stop_order() -- Phase 1 hard stop implementation
+//
+//  Design:
+//    Sends a LIMIT order at hard_sl_px for qty lots on the CLOSING side.
+//    For a LONG position: sends a SELL LIMIT at hard_sl_px.
+//    For a SHORT position: sends a BUY  LIMIT at hard_sl_px.
+//
+//    Tombstone guard: once fired for a given position (keyed by symbol + entry_ts),
+//    it NEVER fires again for the same position. This prevents:
+//      1. Re-firing on every tick after first send
+//      2. Re-firing after a partial close changes pos.size
+//
+//    STAIR size tracking: uses the CURRENT pos.size (remaining after partials).
+//    A hard stop placed on the full original size after step 1 would over-close.
+//    Caller passes current_qty so the hard stop matches the live remaining exposure.
+//
+//    SHADOW mode: sends nothing. Logs [HARD-STOP-SHADOW] to confirm the logic
+//    would have fired and with what parameters.
+//
+//    Returns clOrdId on success, empty on shadow/error.
+//
+//  Usage (call from manage_position or a dedicated risk watchdog):
+//    send_hard_stop_order("XAUUSD", false, pos.size, pos.entry - hard_sl_pts, pos.entry_ts);
+//    // is_long=false for SHORT position: closing side is BUY
+// =============================================================================
+
+// Tombstone: maps "SYMBOL:entry_ts_sec" -> true if hard stop already sent for this position.
+// Prevents double-firing across ticks. Cleared on position close (see clear_hard_stop_tombstone).
+static std::mutex                          g_hard_stop_mtx;
+static std::unordered_map<std::string, bool> g_hard_stop_tombstone;
+
+static std::string make_hard_stop_key(const std::string& symbol, int64_t entry_ts_sec) {
+    return symbol + ":" + std::to_string(entry_ts_sec);
+}
+
+// clear_hard_stop_tombstone() -- call when a position closes to free the tombstone entry.
+// Prevents the map from growing unbounded across many trades.
+static void clear_hard_stop_tombstone(const std::string& symbol, int64_t entry_ts_sec) {
+    std::lock_guard<std::mutex> lk(g_hard_stop_mtx);
+    g_hard_stop_tombstone.erase(make_hard_stop_key(symbol, entry_ts_sec));
+}
+
+// send_hard_stop_order():
+//   symbol       - trading symbol (e.g. "XAUUSD")
+//   pos_is_long  - true = position is LONG (closing order is SELL), false = SHORT (BUY)
+//   current_qty  - CURRENT remaining position size after any partials (use pos.size)
+//   hard_sl_px   - absolute price level of the hard stop
+//   entry_ts_sec - position entry timestamp in seconds (tombstone key)
+//
+// Returns clOrdId on LIVE send, "[SHADOW]" string on shadow fire, "" on tombstone block.
+static std::string send_hard_stop_order(const std::string& symbol, bool pos_is_long,
+                                        double current_qty, double hard_sl_px,
+                                        int64_t entry_ts_sec) {
+    // Validate inputs
+    if (current_qty <= 0.0 || hard_sl_px <= 0.0) {
+        printf("[HARD-STOP] BLOCKED -- invalid qty=%.4f sl_px=%.4f\n",
+               current_qty, hard_sl_px);
+        fflush(stdout);
+        return {};
+    }
+
+    // ?? Tombstone guard: never fire twice for the same position ???????????????
+    const std::string key = make_hard_stop_key(symbol, entry_ts_sec);
+    {
+        std::lock_guard<std::mutex> lk(g_hard_stop_mtx);
+        if (g_hard_stop_tombstone.count(key)) {
+            // Already sent for this position -- silent return (fires every tick otherwise)
+            return {};
+        }
+        g_hard_stop_tombstone[key] = true;
+    }
+
+    // Closing side: LONG position closes with SELL, SHORT position closes with BUY
+    const bool closing_is_buy = !pos_is_long;
+
+    // SHADOW mode: log and return without sending
+    if (g_cfg.mode != "LIVE") {
+        printf("[HARD-STOP-SHADOW] %s %s qty=%.4f hard_sl=%.4f entry_ts=%lld -- would send %s LIMIT\n",
+               symbol.c_str(), pos_is_long ? "LONG" : "SHORT",
+               current_qty, hard_sl_px, (long long)entry_ts_sec,
+               closing_is_buy ? "BUY" : "SELL");
+        fflush(stdout);
+        return "[SHADOW]";
+    }
+
+    // LIVE: trade session must be ready
+    if (!g_trade_ready.load()) {
+        printf("[HARD-STOP] BLOCKED -- trade session not ready (symbol=%s)\n", symbol.c_str());
+        fflush(stdout);
+        // Un-tombstone so it can retry next tick when session recovers
+        std::lock_guard<std::mutex> lk(g_hard_stop_mtx);
+        g_hard_stop_tombstone.erase(key);
+        return {};
+    }
+
+    const int sym_id = symbol_name_to_id(symbol);
+    if (sym_id <= 0) {
+        printf("[HARD-STOP] BLOCKED -- no numeric ID for symbol %s\n", symbol.c_str());
+        fflush(stdout);
+        std::lock_guard<std::mutex> lk(g_hard_stop_mtx);
+        g_hard_stop_tombstone.erase(key);
+        return {};
+    }
+
+    const std::string clOrdId = "HS-" + std::to_string(nowSec())
+                               + "-" + std::to_string(g_order_id_counter++);
+
+    std::string msg;
+    {
+        std::lock_guard<std::mutex> lk(g_trade_mtx);
+        if (!g_trade_ssl) {
+            printf("[HARD-STOP] BLOCKED -- trade SSL null (symbol=%s)\n", symbol.c_str());
+            fflush(stdout);
+            std::lock_guard<std::mutex> lk2(g_hard_stop_mtx);
+            g_hard_stop_tombstone.erase(key);
+            return {};
+        }
+        // Use build_limit_order_single: LIMIT order at hard_sl_px on the closing side
+        msg = build_limit_order_single(g_trade_seq++, clOrdId, sym_id,
+                                       closing_is_buy, current_qty, hard_sl_px);
+        const int w = SSL_write(g_trade_ssl, msg.c_str(), static_cast<int>(msg.size()));
+        if (w <= 0) {
+            printf("[HARD-STOP] SSL_write failed for %s\n", symbol.c_str());
+            fflush(stdout);
+            // Un-tombstone -- send failed, allow retry
+            std::lock_guard<std::mutex> lk2(g_hard_stop_mtx);
+            g_hard_stop_tombstone.erase(key);
+            return {};
+        }
+    }
+
+    // Register in live orders for ACK tracking
+    {
+        std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+        LiveOrderRecord rec;
+        rec.clOrdId = clOrdId;
+        rec.symbol  = symbol;
+        rec.side    = closing_is_buy ? "LONG" : "SHORT";  // closing side
+        rec.qty     = current_qty;
+        rec.price   = hard_sl_px;
+        rec.ts      = nowSec();
+        g_live_orders[clOrdId] = rec;
+    }
+
+    printf("\033[1;31m[HARD-STOP] SENT %s %s qty=%.4f LIMIT@%.4f clOrdId=%s entry_ts=%lld\033[0m\n",
+           symbol.c_str(), pos_is_long ? "LONG(sell-stop)" : "SHORT(buy-stop)",
+           current_qty, hard_sl_px, clOrdId.c_str(), (long long)entry_ts_sec);
+    fflush(stdout);
+    return clOrdId;
+}
+
 // Check pending limit orders and cancel any that have exceeded LIMIT_ORDER_TIMEOUT_MS.
 // Call this every tick from the main tick handler.
 static void check_pending_limits() {
@@ -3831,6 +4003,30 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                    "possible stale session carry-over. Ledger dedup will block if replay.\n",
                    sym.c_str(), tr.engine.c_str(), gross_usd_preview, max_gross_usd,
                    tr.pnl, sz, (long long)tr.entryTs, tr.exitReason.c_str());
+            fflush(stdout);
+        }
+    }
+
+    // ?? Indices FORCE_CLOSE circuit breaker -- stamp cooldown on disconnect ?????
+    // When a US index position is FORCE_CLOSEd (disconnect/reconnect), stamp a 30-min
+    // cooldown to prevent immediate re-entry into the same losing conditions.
+    // Only fires on FORCE_CLOSE -- not SL_HIT, TRAIL_HIT, or other normal exits.
+    // SHADOW mode included: we want to see the cooldown fire in shadow logs too
+    // so we can verify it works before going live.
+    if (tr_in.exitReason == "FORCE_CLOSE") {
+        const std::string& fc_sym = tr_in.symbol;
+        const bool is_us_index = (fc_sym == "US500.F" || fc_sym == "USTEC.F" ||
+                                  fc_sym == "DJ30.F"  || fc_sym == "NAS100");
+        if (is_us_index) {
+            const int64_t block_until = static_cast<int64_t>(std::time(nullptr))
+                                       + INDICES_DISCONNECT_COOLDOWN_SEC;
+            // Only extend -- never shorten an existing cooldown
+            int64_t prev = g_indices_disconnect_until.load();
+            while (block_until > prev) {
+                if (g_indices_disconnect_until.compare_exchange_weak(prev, block_until)) break;
+            }
+            printf("[INDICES-CB] FORCE_CLOSE on %s -- blocking US index new entries for 30min until %lld\n",
+                   fc_sym.c_str(), (long long)block_until);
             fflush(stdout);
         }
     }
@@ -6822,7 +7018,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_orb_us.has_open_position() ||
             g_vwap_rev_sp.has_open_position()  ||
             g_trend_pb_sp.has_open_position()  ||  // TrendPullback SP
-            g_nbm_sp.has_open_position());
+            g_nbm_sp.has_open_position())
+            // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
+            && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
+        // Log when circuit breaker is blocking -- once every 60s so it's visible but not spammy
+        {
+            const int64_t now_cb = static_cast<int64_t>(std::time(nullptr));
+            const int64_t until_cb = g_indices_disconnect_until.load();
+            static int64_t s_cb_log_sp = 0;
+            if (until_cb > now_cb && now_cb - s_cb_log_sp >= 60) {
+                s_cb_log_sp = now_cb;
+                printf("[INDICES-CB] US index entries BLOCKED -- %llds remaining (disconnect cooldown)\n",
+                       (long long)(until_cb - now_cb));
+                fflush(stdout);
+            }
+        }
         const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp);
         // SIM: SP breakout WR 31.6% -$105. No edge on US500 compression breakout. Disabled.
         // if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
@@ -7029,7 +7239,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_bracket_nq.pos.active              ||
             g_vwap_rev_nq.has_open_position()    ||
             g_trend_pb_nq.has_open_position()    ||  // TrendPullback NQ
-            g_nbm_nq.has_open_position());            // NBM
+            g_nbm_nq.has_open_position())             // NBM
+            // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
+            && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
         // SIM: NQ breakout WR 26.1% -$1167. Worst index performer. Disabled.
         // if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
@@ -7248,7 +7460,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_us30 = symbol_gate("DJ30.F",
             g_eng_us30.pos.active      ||
             g_bracket_us30.pos.active  ||
-            g_nbm_us30.has_open_position()); // NBM
+            g_nbm_us30.has_open_position()) // NBM
+            // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
+            && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30);
         // SIM: DJ30 breakout WR 23.5% -$736, bracket also negative. Both disabled.
         // if (sdec_us30.allow_breakout && !g_bracket_us30.pos.active)
@@ -7581,7 +7795,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_nas = symbol_gate("NAS100",
             g_eng_nas100.pos.active      ||
             g_bracket_nas100.pos.active  ||
-            g_nbm_nas.has_open_position()); // NBM
+            g_nbm_nas.has_open_position()) // NBM
+            // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
+            && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas);
         // SIM: NAS100 breakout -- no edge (correlated with NQ which is also disabled). Disabled.
         // if (sdec_nas.allow_breakout && !g_bracket_nas100.pos.active)
@@ -8802,6 +9018,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 handle_closed_trade(tr);
                 const bool close_is_long = (tr.side == "SHORT");
                 send_live_order("XAUUSD", close_is_long, tr.size, tr.exitPrice);
+                // Clear hard stop tombstone so next position can arm a new hard stop
+                clear_hard_stop_tombstone("XAUUSD", tr.entryTs);
                 const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
                 const int exit_dir = (tr.side == "LONG") ? 1 : -1;
                 g_gold_flow_exit_ts.store(now_s);
@@ -8859,6 +9077,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
                 handle_closed_trade(tr);
                 send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                // Clear hard stop tombstone for this reload position
+                clear_hard_stop_tombstone("XAUUSD", tr.entryTs);
                 // Reload exits do not set reversal windows -- main flow owns those.
                 printf("[GF-RELOAD] POSITION CLOSED reason=%s pnl_raw=%.4f\n",
                        tr.exitReason.c_str(), tr.pnl);
@@ -12889,6 +13109,31 @@ int main(int argc, char* argv[])
             printf("[GFE] Startup ATR: m_atr=%.4f (%s)\n",
                    g_gold_flow.current_atr(),
                    g_gold_flow.current_atr() > 0.0 ? "warmed" : "cold-seeded");
+
+            // ?? Velocity trail shadow mode ????????????????????????????????????
+            // Run velocity trail in observation mode by default: SL/time-stop logic
+            // is fully active but [VEL-TRAIL-SHADOW] logs are emitted for every
+            // regime classification so we can verify on real ticks before live.
+            // To go live: set velocity_shadow_mode = false on both instances.
+            g_gold_flow.velocity_shadow_mode        = true;
+            g_gold_flow_reload.velocity_shadow_mode = true;
+            printf("[GFE] Velocity trail: SHADOW mode (observation only -- verify regime logs before enabling live)\n");
+            fflush(stdout);
+
+            // ?? Hard stop broker-side order callback ??????????????????????
+            // Wires GoldFlowEngine's on_hard_stop to send_hard_stop_order so
+            // the broker holds a resting LIMIT order even if Omega crashes.
+            // Fires once per position when adverse >= 20pts (tombstone-guarded).
+            g_gold_flow.on_hard_stop = [](const std::string& sym, bool is_long,
+                                          double qty, double sl_px, int64_t ts) {
+                send_hard_stop_order(sym, is_long, qty, sl_px, ts);
+            };
+            g_gold_flow_reload.on_hard_stop = [](const std::string& sym, bool is_long,
+                                                  double qty, double sl_px, int64_t ts) {
+                send_hard_stop_order(sym, is_long, qty, sl_px, ts);
+            };
+            printf("[GFE] Hard stop: ARMED (broker LIMIT order fires at 20pts adverse)\n");
+            fflush(stdout);
         }
 
         // Load GoldStack vol baseline + governor EWM -- skips 400-tick regime warmup

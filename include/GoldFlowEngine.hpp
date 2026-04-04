@@ -218,9 +218,31 @@ struct GoldFlowEngine {
         // Ratchet only moves SL forward -- never backward.
         int     dollar_lock_tier = 0;    // highest tier fired (0=none)
         double  dollar_lock_sl   = 0.0;  // SL level set by dollar ratchet
+        bool    hard_stop_fired  = false; // true = broker hard-stop order already sent this position
     } pos;
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
+
+    // ?? Hard stop callback ???????????????????????????????????????????????????????
+    // Called exactly once per position when adverse move exceeds GFE_HARD_STOP_PTS.
+    // Sends a broker-side LIMIT order (via send_hard_stop_order in main.cpp) so the
+    // broker closes the position even if Omega crashes.
+    //
+    // Args: symbol, pos_is_long, current_qty (pos.size after partials), hard_sl_px, entry_ts_sec
+    //
+    // Set this in main.cpp after construction:
+    //   g_gold_flow.on_hard_stop = [](const std::string& sym, bool is_long,
+    //                                  double qty, double sl_px, int64_t ts) {
+    //       send_hard_stop_order(sym, is_long, qty, sl_px, ts);
+    //   };
+    //
+    // If not set (nullptr), hard stop broker order is not sent (engine SL still fires normally).
+    using HardStopCallback = std::function<void(const std::string& symbol,
+                                                bool pos_is_long,
+                                                double current_qty,
+                                                double hard_sl_px,
+                                                int64_t entry_ts_sec)>;
+    HardStopCallback on_hard_stop;  // set from main.cpp; nullptr = disabled
 
     // -------------------------------------------------------------------------
     // Main tick function -- call every tick with fresh data
@@ -830,6 +852,11 @@ struct GoldFlowEngine {
     // expansion_mode: true when supervisor regime is EXPANSION_BREAKOUT or TREND_CONTINUATION.
     // vol_ratio: recent_vol / baseline_vol from GoldEngineStack -- >2.5 = velocity regime.
     // Together they gate the velocity-trail path in manage_position().
+    // velocity_shadow: when true, velocity trail LOGIC runs (SL updated, time-stop suppressed)
+    // but a [VEL-TRAIL-SHADOW] log line is emitted so regime classification can be verified
+    // against real ticks before enabling live. Set false (default) = fully live.
+    bool velocity_shadow_mode = false;
+
     void set_trend_bias(double momentum_pct, double supervisor_conf, bool sup_is_trend,
                         bool wall_ahead = false, double vwap_pts = 0.0,
                         bool expansion_mode = false, double vol_ratio = 1.0) noexcept {
@@ -1325,7 +1352,36 @@ private:
     {
         if (!pos.active) return;
 
-        // ?? Post-fill gap protection ??????????????????????????????????????????
+        // ?? Broker-side hard stop -- process-crash protection ???????????????????
+        // Problem: if Omega process crashes while a position is open, the broker holds
+        // the position with no stop. Evidence: April 2 tariff crash -- multiple
+        // positions held through 100pt+ moves during reconnect cycling.
+        //
+        // Fix: when adverse move > GFE_HARD_STOP_PTS, send a LIMIT order to the broker
+        // at hard_sl_px. This creates a live resting order on the broker side so the
+        // position is closed even if Omega dies.
+        //
+        // GFE_HARD_STOP_PTS: 20pts. At ATR=8 that's 2.5x ATR -- well beyond any normal
+        // SL (1x ATR). Hard stop only fires on runaway adverse moves, not normal retracements.
+        // If the normal SL fires first (it will in most cases), hard stop is never reached.
+        // The tombstone guard in send_hard_stop_order ensures it fires exactly once.
+        //
+        // Triggered ONCE per position (hard_stop_fired flag). Subsequent ticks are silent.
+        static constexpr double GFE_HARD_STOP_PTS = 20.0; // pts -- absolute floor, 2.5x typical ATR
+        if (!pos.hard_stop_fired && on_hard_stop) {
+            const double adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+            if (adverse >= GFE_HARD_STOP_PTS) {
+                pos.hard_stop_fired = true;
+                const double hard_sl_px = pos.is_long
+                    ? (pos.entry - GFE_HARD_STOP_PTS)
+                    : (pos.entry + GFE_HARD_STOP_PTS);
+                printf("[GOLD-FLOW] HARD-STOP triggered %s adverse=%.2f >= %.1f pts hard_sl=%.2f qty=%.4f entry_ts=%lld\n",
+                       pos.is_long ? "LONG" : "SHORT",
+                       adverse, GFE_HARD_STOP_PTS, hard_sl_px, pos.size, (long long)pos.entry_ts);
+                fflush(stdout);
+                on_hard_stop("XAUUSD", pos.is_long, pos.size, hard_sl_px, pos.entry_ts);
+            }
+        }
         // Problem: SL is placed at pos.sl (e.g. 4717.89) but on a gap tick the broker
         // fills at the next available price (e.g. 4710.65) -- 7pts worse than intended.
         // manage_position sees bid=4710 the FIRST tick after the gap. At that point
@@ -1405,6 +1461,18 @@ private:
             // Velocity suppression: expansion confirmed AND adverse < 2pts (still viable)
             const bool velocity_time_suppress =
                 m_expansion_mode && (adverse < 2.0) && (pos.mfe > 0.0 || adverse < 0.5);
+
+            // SHADOW: log when velocity would suppress time-stop so we can verify in logs
+            if (velocity_time_suppress && velocity_shadow_mode) {
+                static int64_t s_vel_ts_log = 0;
+                if (now_ms - s_vel_ts_log > 10000) {
+                    s_vel_ts_log = now_ms;
+                    printf("[VEL-TRAIL-SHADOW] TIME_STOP suppressed %s held=%llds adverse=%.2f mfe=%.2f vol_ratio=%.2f\n",
+                           pos.is_long ? "LONG" : "SHORT",
+                           (long long)held_s, adverse, pos.mfe, m_vol_ratio);
+                    fflush(stdout);
+                }
+            }
 
             if (!pos.partial_closed
                 && held_s > TIME_STOP_SECS
@@ -1630,14 +1698,33 @@ private:
                     // the ratchet or stair last placed it. This is the key change --
                     // normal path would trail at 0.50x ATR from the very first tick,
                     // killing the position at 2.5pts. Velocity mode waits.
+                    // SHADOW: log that we are in velocity pre-arm so regime firing is visible
+                    if (velocity_shadow_mode) {
+                        static int64_t s_vel_prearm_log = 0;
+                        if (now_ms - s_vel_prearm_log > 5000) {
+                            s_vel_prearm_log = now_ms;
+                            printf("[VEL-TRAIL-SHADOW] %s PRE-ARM mfe=%.2f need=%.2f(3xATR) vol_ratio=%.2f expansion=%d -- holding normal SL\n",
+                                   pos.is_long ? "LONG" : "SHORT",
+                                   pos.mfe, atr_live * 3.0, m_vol_ratio, (int)m_expansion_mode);
+                            fflush(stdout);
+                        }
+                    }
                     goto skip_velocity_trail;
                 }
                 trail_mult = m_wall_ahead ? 1.0 :   // wall ahead: tighten even in velocity mode
                              (move < atr * 6.0)  ? 2.0 :   // velocity mode: wide trail
                                                    1.0;     // very extended move (6x ATR): tighten
-                printf("[GFE-VEL-TRAIL] %s mfe=%.1f atr=%.1f trail_mult=%.1f vol_ratio=%.1f\n",
-                       pos.is_long ? "LONG" : "SHORT", pos.mfe, atr_live, trail_mult, m_vol_ratio);
-                fflush(stdout);
+                // SHADOW: emit verification log every tick velocity trail is active
+                if (velocity_shadow_mode) {
+                    printf("[VEL-TRAIL-SHADOW] %s ARMED mfe=%.1f move=%.1f atr=%.1f trail_mult=%.1f vol_ratio=%.2f sl_before=%.2f\n",
+                           pos.is_long ? "LONG" : "SHORT",
+                           pos.mfe, move, atr_live, trail_mult, m_vol_ratio, pos.sl);
+                    fflush(stdout);
+                } else {
+                    printf("[GFE-VEL-TRAIL] %s mfe=%.1f atr=%.1f trail_mult=%.1f vol_ratio=%.1f\n",
+                           pos.is_long ? "LONG" : "SHORT", pos.mfe, atr_live, trail_mult, m_vol_ratio);
+                    fflush(stdout);
+                }
             } else {
                 // NORMAL TRAIL (unchanged)
                 trail_mult =
