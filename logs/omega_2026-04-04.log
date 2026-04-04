@@ -15017,3 +15017,2536 @@
 07:24:40 [TICK] NAS100 23952.15/23953.35
 07:24:40 [TICK] US500.F 6603.22/6604.03
 07:24:40 [TICK] USTEC.F 24128.44/24132.90
+07:24:47 [CTRADER-STATUS] events_total=0 this_min=0 symbols=19
+07:24:47 [CTRADER-EVTS] XAUUSD=0 <-- NO EVENTS -- L2 unavailable
+07:24:47 [CTRADER-EVTS] XAUUSD=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] EURUSD=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] NAS100=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] NGAS.F=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] DJ30.F=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] GBPUSD=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] XAGUSD=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] USOIL.F=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] US500.F=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] ESTX50=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] USDJPY=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] BRENT=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] GER40=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] AUDUSD=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] DX.F=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] UK100=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] USTEC.F=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] NZDUSD=0 (no events this minute)
+07:24:47 [CTRADER-EVTS] VIX.F=0 (no events this minute)
+07:25:41 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.247ms cap=120ms lat_ok=1 session=ACTIVE
+07:25:41 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+07:25:41 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+07:25:41 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+07:25:41 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+07:25:41 [TICK] EURUSD 1.15/1.15
+07:25:41 [TICK] GBPUSD 1.32/1.32
+07:25:41 [TICK] XAUUSD 4677.03/4677.25
+07:25:41 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+07:25:41 [TICK] USDJPY 159.59/159.75
+07:25:41 [TICK] AUDUSD 0.69/0.69
+07:25:41 [TICK] NGAS.F 2.79/2.82
+07:25:41 [TICK] USOIL.F 111.90/112.01
+07:25:41 [TICK] ESTX50 5699.40/5700.80
+07:25:41 [TICK] XAGUSD 73.02/73.05
+07:25:41 [TICK] GER40 23202.60/23204.30
+07:25:41 [TICK] NZDUSD 0.57/0.57
+07:25:41 [TICK] DJ30.F 46620.30/46642.60
+07:25:41 [TICK] UK100 10455.10/10456.90
+07:25:41 [TICK] BRENT 106.44/107.11
+07:25:41 [TICK] VIX.F 24.74/25.10
+07:25:41 [TICK] DX.F 99.93/100.03
+07:25:41 [TICK] NAS100 23952.15/23953.35
+07:25:41 [TICK] US500.F 6603.22/6604.03
+07:25:41 [TICK] USTEC.F 24128.44/24132.90
+07:25:46 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:25:46 [OMEGA-TRADE] Logout sent
+07:25:46 [CTRADER] Disconnect pt=2164
+07:25:46 [CTRADER] Disconnected -- retry 5000ms
+07:25:46 [OMEGA] Clean TCP close from broker (SSL_ZERO_RETURN) -- broker session limit hit, reconnecting
+07:25:46 [OMEGA] Price snapshot taken: 19 symbols
+07:25:46 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:25:46 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:25:46 [OMEGA] Unsubscribed market data before disconnect
+07:25:46 [OMEGA] Logout sent
+07:25:47 [OMEGA-TRADE] Disconnected -- reconnecting
+07:25:48 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:25:48 [OMEGA] Logon sent
+07:25:48 [OMEGA] Logout received from server (ghost session or forced)
+07:25:48 [OMEGA] Breaking read loop -- server logout received
+07:25:48 [OMEGA] Price snapshot taken: 19 symbols
+07:25:48 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:25:48 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:25:48 [OMEGA] Logout sent
+07:25:50 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:25:50 [OMEGA-TRADE] Logon sent
+07:25:50 [OMEGA-TRADE] Logout received
+07:25:50 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:25:50 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211[OMEGA-TRADE] Disconnected -- reconnecting
+07:25:50 
+07:25:50 [OMEGA] Logon sent
+07:25:50 [OMEGA] Logout received from server (ghost session or forced)
+07:25:50 [OMEGA] Breaking read loop -- server logout received
+07:25:50 [OMEGA] Price snapshot taken: 19 symbols
+07:25:50 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:25:50 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:25:50 [OMEGA] Logout sent
+07:25:51 [CTRADER] Connecting live.ctraderapi.com:5035
+07:25:51 [CTRADER] ApplicationAuthReq sent
+07:25:51 [CTRADER] Application authorized
+07:25:51 [CTRADER] AccountAuthReq sent
+07:25:51 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:25:51 [CTRADER] AccountAuthRes failed
+07:25:52 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:25:52 [OMEGA] Logon sent
+07:25:52 [OMEGA] Logout received from server (ghost session or forced)
+07:25:52 [OMEGA] Breaking read loop -- server logout received
+07:25:52 [OMEGA] Price snapshot taken: 19 symbols
+07:25:52 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:25:52 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:25:52 [OMEGA] Logout sent
+07:25:53 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:25:53 [OMEGA-TRADE] Logon sent
+07:25:53 [OMEGA-TRADE] Logout received
+07:25:53 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:25:53 [OMEGA-TRADE] Disconnected -- reconnecting
+07:25:53 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:25:53 [OMEGA] Logon sent
+07:25:53 [OMEGA] Logout received from server (ghost session or forced)
+07:25:53 [OMEGA] Breaking read loop -- server logout received
+07:25:53 [OMEGA] Price snapshot taken: 19 symbols
+07:25:53 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:25:53 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:25:53 [OMEGA] Logout sent
+07:25:55 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:25:55 [OMEGA] Logon sent
+07:25:55 [OMEGA] Logout received from server (ghost session or forced)
+07:25:55 [OMEGA] Breaking read loop -- server logout received
+07:25:55 [OMEGA] Price snapshot taken: 19 symbols
+07:25:55 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:25:55 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:25:55 [OMEGA] Logout sent
+07:25:56 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:25:56 [OMEGA-TRADE] Logon sent
+07:25:56 [OMEGA-TRADE] Logout received
+07:25:56 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:25:57 [CTRADER] Connecting live.ctraderapi.com:5035
+07:25:57 [CTRADER] ApplicationAuthReq sent
+07:25:57 [CTRADER] Application authorized
+07:25:57 [CTRADER] AccountAuthReq sent
+07:25:57 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:25:57 [CTRADER] AccountAuthRes failed
+07:25:57 [OMEGA-TRADE] Disconnected -- reconnecting
+07:25:57 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:25:57 [OMEGA] Logon sent
+07:25:57 [OMEGA] Logout received from server (ghost session or forced)
+07:25:57 [OMEGA] Breaking read loop -- server logout received
+07:25:57 [OMEGA] Price snapshot taken: 19 symbols
+07:25:57 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:25:57 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:25:57 [OMEGA] Logout sent
+07:25:59 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:25:59 [OMEGA] Logon sent
+07:25:59 [OMEGA] Logout received from server (ghost session or forced)
+07:25:59 [OMEGA] Breaking read loop -- server logout received
+07:25:59 [OMEGA] Price snapshot taken: 19 symbols
+07:25:59 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:25:59 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:25:59 [OMEGA] Logout sent
+07:26:00 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:00 [OMEGA-TRADE] Logon sent
+07:26:00 [OMEGA-TRADE] Logout received
+07:26:00 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:00 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:01 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:01 [OMEGA] Logon sent
+07:26:01 [OMEGA] Logout received from server (ghost session or forced)
+07:26:01 [OMEGA] Breaking read loop -- server logout received
+07:26:01 [OMEGA] Price snapshot taken: 19 symbols
+07:26:01 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:01 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:01 [OMEGA] Logout sent
+07:26:02 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:02 [CTRADER] ApplicationAuthReq sent
+07:26:02 [CTRADER] Application authorized
+07:26:02 [CTRADER] AccountAuthReq sent
+07:26:02 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:02 [CTRADER] AccountAuthRes failed
+07:26:02 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:02 [OMEGA] Logon sent
+07:26:02 [OMEGA] Logout received from server (ghost session or forced)
+07:26:02 [OMEGA] Breaking read loop -- server logout received
+07:26:02 [OMEGA] Price snapshot taken: 19 symbols
+07:26:02 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:02 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:02 [OMEGA] Logout sent
+07:26:03 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:03 [OMEGA-TRADE] Logon sent
+07:26:03 [OMEGA-TRADE] Logout received
+07:26:03 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:03 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:04 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:04 [OMEGA] Logon sent
+07:26:04 [OMEGA] Logout received from server (ghost session or forced)
+07:26:04 [OMEGA] Breaking read loop -- server logout received
+07:26:04 [OMEGA] Price snapshot taken: 19 symbols
+07:26:04 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:04 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:04 [OMEGA] Logout sent
+07:26:06 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:06 [OMEGA] Logon sent
+07:26:06 [OMEGA] Logout received from server (ghost session or forced)
+07:26:06 [OMEGA] Breaking read loop -- server logout received
+07:26:06 [OMEGA] Price snapshot taken: 19 symbols
+07:26:06 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:06 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:06 [OMEGA] Logout sent
+07:26:06 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:06 [OMEGA-TRADE] Logon sent
+07:26:06 [OMEGA-TRADE] Logout received
+07:26:06 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:07 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:07 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:07 [CTRADER] ApplicationAuthReq sent
+07:26:07 [CTRADER] Application authorized
+07:26:07 [CTRADER] AccountAuthReq sent
+07:26:07 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:07 [CTRADER] AccountAuthRes failed
+07:26:08 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:08 [OMEGA] Logon sent
+07:26:08 [OMEGA] Logout received from server (ghost session or forced)
+07:26:08 [OMEGA] Breaking read loop -- server logout received
+07:26:08 [OMEGA] Price snapshot taken: 19 symbols
+07:26:08 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:08 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:08 [OMEGA] Logout sent
+07:26:09 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:09 [OMEGA] Logon sent
+07:26:09 [OMEGA] Logout received from server (ghost session or forced)
+07:26:09 [OMEGA] Breaking read loop -- server logout received
+07:26:09 [OMEGA] Price snapshot taken: 19 symbols
+07:26:09 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:09 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:09 [OMEGA] Logout sent
+07:26:10 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:10 [OMEGA-TRADE] Logon sent
+07:26:10 [OMEGA-TRADE] Logout received
+07:26:10 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:10 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:11 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:11 [OMEGA] Logon sent
+07:26:11 [OMEGA] Logout received from server (ghost session or forced)
+07:26:11 [OMEGA] Breaking read loop -- server logout received
+07:26:11 [OMEGA] Price snapshot taken: 19 symbols
+07:26:11 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:11 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:11 [OMEGA] Logout sent
+07:26:12 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:12 [CTRADER] ApplicationAuthReq sent
+07:26:12 [CTRADER] Application authorized
+07:26:12 [CTRADER] AccountAuthReq sent
+07:26:12 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:12 [CTRADER] AccountAuthRes failed
+07:26:13 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:13 [OMEGA] Logon sent
+07:26:13 [OMEGA] Logout received from server (ghost session or forced)
+07:26:13 [OMEGA] Breaking read loop -- server logout received
+07:26:13 [OMEGA] Price snapshot taken: 19 symbols
+07:26:13 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:13 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:13 [OMEGA] Logout sent
+07:26:13 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:13 [OMEGA-TRADE] Logon sent
+07:26:13 [OMEGA-TRADE] Logout received
+07:26:13 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:13 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:15 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:15 [OMEGA] Logon sent
+07:26:15 [OMEGA] Logout received from server (ghost session or forced)
+07:26:15 [OMEGA] Breaking read loop -- server logout received
+07:26:15 [OMEGA] Price snapshot taken: 19 symbols
+07:26:15 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:15 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:15 [OMEGA] Logout sent
+07:26:16 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:16 [OMEGA] Logon sent
+07:26:16 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:16 [OMEGA] Logout received from server (ghost session or forced)
+07:26:16 [OMEGA] Breaking read loop -- server logout received
+07:26:16 [OMEGA] Price snapshot taken: 19 symbols
+07:26:16 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:16 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:16 [OMEGA] Logout sent
+07:26:16 [OMEGA-TRADE] Logon sent
+07:26:16 [OMEGA-TRADE] Logout received
+07:26:16 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:17 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:17 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:17 [CTRADER] ApplicationAuthReq sent
+07:26:17 [CTRADER] Application authorized
+07:26:17 [CTRADER] AccountAuthReq sent
+07:26:17 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:17 [CTRADER] AccountAuthRes failed
+07:26:18 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:18 [OMEGA] Logon sent
+07:26:18 [OMEGA] Logout received from server (ghost session or forced)
+07:26:18 [OMEGA] Breaking read loop -- server logout received
+07:26:18 [OMEGA] Price snapshot taken: 19 symbols
+07:26:18 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:18 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:18 [OMEGA] Logout sent
+07:26:20 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:20 [OMEGA-TRADE] Logon sent
+07:26:20 [OMEGA-TRADE] Logout received
+07:26:20 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:20 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:20 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:20 [OMEGA] Logon sent
+07:26:20 [OMEGA] Logout received from server (ghost session or forced)
+07:26:20 [OMEGA] Breaking read loop -- server logout received
+07:26:20 [OMEGA] Price snapshot taken: 19 symbols
+07:26:20 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:20 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:20 [OMEGA] Logout sent
+07:26:22 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:22 [OMEGA] Logon sent
+07:26:22 [OMEGA] Logout received from server (ghost session or forced)
+07:26:22 [OMEGA] Breaking read loop -- server logout received
+07:26:22 [OMEGA] Price snapshot taken: 19 symbols
+07:26:22 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:22 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:22 [OMEGA] Logout sent
+07:26:22 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:22 [CTRADER] ApplicationAuthReq sent
+07:26:22 [CTRADER] Application authorized
+07:26:22 [CTRADER] AccountAuthReq sent
+07:26:22 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:22 [CTRADER] AccountAuthRes failed
+07:26:23 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:23 [OMEGA-TRADE] Logon sent
+07:26:23 [OMEGA-TRADE] Logout received
+07:26:23 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:23 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:23 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:23 [OMEGA] Logon sent
+07:26:23 [OMEGA] Logout received from server (ghost session or forced)
+07:26:23 [OMEGA] Breaking read loop -- server logout received
+07:26:23 [OMEGA] Price snapshot taken: 19 symbols
+07:26:23 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:23 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:23 [OMEGA] Logout sent
+07:26:25 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:25 [OMEGA] Logon sent
+07:26:25 [OMEGA] Logout received from server (ghost session or forced)
+07:26:25 [OMEGA] Breaking read loop -- server logout received
+07:26:25 [OMEGA] Price snapshot taken: 19 symbols
+07:26:25 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:25 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:25 [OMEGA] Logout sent
+07:26:26 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:26 [OMEGA-TRADE] Logon sent
+07:26:26 [OMEGA-TRADE] Logout received
+07:26:26 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:27 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:27 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:27 [OMEGA] Logon sent
+07:26:27 [OMEGA] Logout received from server (ghost session or forced)
+07:26:27 [OMEGA] Breaking read loop -- server logout received
+07:26:27 [OMEGA] Price snapshot taken: 19 symbols
+07:26:27 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:27 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:27 [OMEGA] Logout sent
+07:26:27 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:27 [CTRADER] ApplicationAuthReq sent
+07:26:27 [CTRADER] Application authorized
+07:26:27 [CTRADER] AccountAuthReq sent
+07:26:27 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:27 [CTRADER] AccountAuthRes failed
+07:26:29 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:29 [OMEGA] Logon sent
+07:26:29 [OMEGA] Logout received from server (ghost session or forced)
+07:26:29 [OMEGA] Breaking read loop -- server logout received
+07:26:29 [OMEGA] Price snapshot taken: 19 symbols
+07:26:29 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:29 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:29 [OMEGA] Logout sent
+07:26:30 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:30 [OMEGA-TRADE] Logon sent
+07:26:30 [OMEGA-TRADE] Logout received
+07:26:30 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:30 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:31 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:31 [OMEGA] Logon sent
+07:26:31 [OMEGA] Logout received from server (ghost session or forced)
+07:26:31 [OMEGA] Breaking read loop -- server logout received
+07:26:31 [OMEGA] Price snapshot taken: 19 symbols
+07:26:31 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:31 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:31 [OMEGA] Logout sent
+07:26:32 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:32 [OMEGA] Logon sent
+07:26:32 [OMEGA] Logout received from server (ghost session or forced)
+07:26:32 [OMEGA] Breaking read loop -- server logout received
+07:26:32 [OMEGA] Price snapshot taken: 19 symbols
+07:26:32 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:32 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:32 [OMEGA] Logout sent
+07:26:32 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:32 [CTRADER] ApplicationAuthReq sent
+07:26:32 [CTRADER] Application authorized
+07:26:32 [CTRADER] AccountAuthReq sent
+07:26:32 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:32 [CTRADER] AccountAuthRes failed
+07:26:33 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:33 [OMEGA-TRADE] Logon sent
+07:26:33 [OMEGA-TRADE] Logout received
+07:26:33 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:33 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:34 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:34 [OMEGA] Logon sent
+07:26:34 [OMEGA] Logout received from server (ghost session or forced)
+07:26:34 [OMEGA] Breaking read loop -- server logout received
+07:26:34 [OMEGA] Price snapshot taken: 19 symbols
+07:26:34 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:34 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:34 [OMEGA] Logout sent
+07:26:36 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:36 [OMEGA] Logon sent
+07:26:36 [OMEGA] Logout received from server (ghost session or forced)
+07:26:36 [OMEGA] Breaking read loop -- server logout received
+07:26:36 [OMEGA] Price snapshot taken: 19 symbols
+07:26:36 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:36 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:36 [OMEGA] Logout sent
+07:26:36 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:36 [OMEGA-TRADE] Logon sent
+07:26:36 [OMEGA-TRADE] Logout received
+07:26:36 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:37 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:37 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:37 [CTRADER] ApplicationAuthReq sent
+07:26:38 [CTRADER] Application authorized
+07:26:38 [CTRADER] AccountAuthReq sent
+07:26:38 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:38 [CTRADER] AccountAuthRes failed
+07:26:38 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:38 [OMEGA] Logon sent
+07:26:38 [OMEGA] Logout received from server (ghost session or forced)
+07:26:38 [OMEGA] Breaking read loop -- server logout received
+07:26:38 [OMEGA] Price snapshot taken: 19 symbols
+07:26:38 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:38 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:38 [OMEGA] Logout sent
+07:26:39 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:39 [OMEGA] Logon sent
+07:26:39 [OMEGA] Logout received from server (ghost session or forced)
+07:26:39 [OMEGA] Breaking read loop -- server logout received
+07:26:39 [OMEGA] Price snapshot taken: 19 symbols
+07:26:39 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:39 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:39 [OMEGA] Logout sent
+07:26:40 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:40 [OMEGA-TRADE] Logon sent
+07:26:40 [OMEGA-TRADE] Logout received
+07:26:40 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:40 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:41 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:41 [OMEGA] Logon sent
+07:26:41 [OMEGA] Logout received from server (ghost session or forced)
+07:26:41 [OMEGA] Breaking read loop -- server logout received
+07:26:41 [OMEGA] Price snapshot taken: 19 symbols
+07:26:41 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:41 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:41 [OMEGA] Logout sent
+07:26:43 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:43 [CTRADER] ApplicationAuthReq sent
+07:26:43 [CTRADER] Application authorized
+07:26:43 [CTRADER] AccountAuthReq sent
+07:26:43 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:43 [CTRADER] AccountAuthRes failed
+07:26:43 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:43 [OMEGA] Logon sent
+07:26:43 [OMEGA] Logout received from server (ghost session or forced)
+07:26:43 [OMEGA] Breaking read loop -- server logout received
+07:26:43 [OMEGA] Price snapshot taken: 19 symbols
+07:26:43 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:43 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:43 [OMEGA] Logout sent
+07:26:43 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:43 [OMEGA-TRADE] Logon sent
+07:26:43 [OMEGA-TRADE] Logout received
+07:26:43 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:43 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:45 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:45 [OMEGA] Logon sent
+07:26:45 [OMEGA] Logout received from server (ghost session or forced)
+07:26:45 [OMEGA] Breaking read loop -- server logout received
+07:26:45 [OMEGA] Price snapshot taken: 19 symbols
+07:26:45 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:45 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:45 [OMEGA] Logout sent
+07:26:46 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com[OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:46 :5211
+07:26:46 [OMEGA-TRADE] Logon sent
+07:26:46 [OMEGA-TRADE] Logout received
+07:26:46 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:46 [OMEGA] Logon sent
+07:26:47 [OMEGA] Logout received from server (ghost session or forced)
+07:26:47 [OMEGA] Breaking read loop -- server logout received
+07:26:47 [OMEGA] Price snapshot taken: 19 symbols
+07:26:47 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:47 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:47 [OMEGA] Logout sent
+07:26:47 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:48 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:48 [CTRADER] ApplicationAuthReq sent
+07:26:48 [CTRADER] Application authorized
+07:26:48 [CTRADER] AccountAuthReq sent
+07:26:48 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:48 [CTRADER] AccountAuthRes failed
+07:26:48 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:48 [OMEGA] Logon sent
+07:26:48 [OMEGA] Logout received from server (ghost session or forced)
+07:26:48 [OMEGA] Breaking read loop -- server logout received
+07:26:48 [OMEGA] Price snapshot taken: 19 symbols
+07:26:48 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:48 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:48 [OMEGA] Logout sent
+07:26:50 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:50 [OMEGA-TRADE] Logon sent
+07:26:50 [OMEGA-TRADE] Logout received
+07:26:50 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:50 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:50 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:50 [OMEGA] Logon sent
+07:26:50 [OMEGA] Logout received from server (ghost session or forced)
+07:26:50 [OMEGA] Breaking read loop -- server logout received
+07:26:50 [OMEGA] Price snapshot taken: 19 symbols
+07:26:50 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:50 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:50 [OMEGA] Logout sent
+07:26:52 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:52 [OMEGA] Logon sent
+07:26:52 [OMEGA] Logout received from server (ghost session or forced)
+07:26:52 [OMEGA] Breaking read loop -- server logout received
+07:26:52 [OMEGA] Price snapshot taken: 19 symbols
+07:26:52 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:52 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:52 [OMEGA] Logout sent
+07:26:53 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:53 [CTRADER] ApplicationAuthReq sent
+07:26:53 [CTRADER] Application authorized
+07:26:53 [CTRADER] AccountAuthReq sent
+07:26:53 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:53 [CTRADER] AccountAuthRes failed
+07:26:53 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:53 [OMEGA-TRADE] Logon sent
+07:26:53 [OMEGA-TRADE] Logout received
+07:26:53 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:53 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:54 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:54 [OMEGA] Logon sent
+07:26:54 [OMEGA] Logout received from server (ghost session or forced)
+07:26:54 [OMEGA] Breaking read loop -- server logout received
+07:26:54 [OMEGA] Price snapshot taken: 19 symbols
+07:26:54 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:54 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:54 [OMEGA] Logout sent
+07:26:55 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:55 [OMEGA] Logon sent
+07:26:55 [OMEGA] Logout received from server (ghost session or forced)
+07:26:55 [OMEGA] Breaking read loop -- server logout received
+07:26:55 [OMEGA] Price snapshot taken: 19 symbols
+07:26:55 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:55 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:55 [OMEGA] Logout sent
+07:26:56 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:26:57 [OMEGA-TRADE] Logon sent
+07:26:57 [OMEGA-TRADE] Logout received
+07:26:57 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:26:57 [OMEGA-TRADE] Disconnected -- reconnecting
+07:26:57 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:57 [OMEGA] Logon sent
+07:26:57 [OMEGA] Logout received from server (ghost session or forced)
+07:26:57 [OMEGA] Breaking read loop -- server logout received
+07:26:57 [OMEGA] Price snapshot taken: 19 symbols
+07:26:57 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:57 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:57 [OMEGA] Logout sent
+07:26:58 [CTRADER] Connecting live.ctraderapi.com:5035
+07:26:58 [CTRADER] ApplicationAuthReq sent
+07:26:58 [CTRADER] Application authorized
+07:26:58 [CTRADER] AccountAuthReq sent
+07:26:58 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:26:58 [CTRADER] AccountAuthRes failed
+07:26:59 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:26:59 [OMEGA] Logon sent
+07:26:59 [OMEGA] Logout received from server (ghost session or forced)
+07:26:59 [OMEGA] Breaking read loop -- server logout received
+07:26:59 [OMEGA] Price snapshot taken: 19 symbols
+07:26:59 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:26:59 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:26:59 [OMEGA] Logout sent
+07:27:00 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:00 [OMEGA-TRADE] Logon sent
+07:27:00 [OMEGA-TRADE] Logout received
+07:27:00 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:00 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:01 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:01 [OMEGA] Logon sent
+07:27:01 [OMEGA] Logout received from server (ghost session or forced)
+07:27:01 [OMEGA] Breaking read loop -- server logout received
+07:27:01 [OMEGA] Price snapshot taken: 19 symbols
+07:27:01 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:01 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:01 [OMEGA] Logout sent
+07:27:02 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:02 [OMEGA] Logon sent
+07:27:02 [OMEGA] Logout received from server (ghost session or forced)
+07:27:02 [OMEGA] Breaking read loop -- server logout received
+07:27:02 [OMEGA] Price snapshot taken: 19 symbols
+07:27:02 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:02 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:02 [OMEGA] Logout sent
+07:27:03 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:03 [OMEGA-TRADE] Logon sent
+07:27:03 [OMEGA-TRADE] Logout received
+07:27:03 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:03 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:03 [CTRADER] ApplicationAuthReq sent
+07:27:03 [CTRADER] Application authorized
+07:27:03 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:03 [CTRADER] AccountAuthReq sent
+07:27:03 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:03 [CTRADER] AccountAuthRes failed
+07:27:04 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:04 [OMEGA] Logon sent
+07:27:04 [OMEGA] Logout received from server (ghost session or forced)
+07:27:04 [OMEGA] Breaking read loop -- server logout received
+07:27:04 [OMEGA] Price snapshot taken: 19 symbols
+07:27:04 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:04 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:04 [OMEGA] Logout sent
+07:27:06 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:06 [OMEGA] Logon sent
+07:27:06 [OMEGA] Logout received from server (ghost session or forced)
+07:27:06 [OMEGA] Breaking read loop -- server logout received
+07:27:06 [OMEGA] Price snapshot taken: 19 symbols
+07:27:06 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:06 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:06 [OMEGA] Logout sent
+07:27:07 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:07 [OMEGA-TRADE] Logon sent
+07:27:07 [OMEGA-TRADE] Logout received
+07:27:07 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:07 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:08 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:08 [OMEGA] Logon sent
+07:27:08 [OMEGA] Logout received from server (ghost session or forced)
+07:27:08 [OMEGA] Breaking read loop -- server logout received
+07:27:08 [OMEGA] Price snapshot taken: 19 symbols
+07:27:08 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:08 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:08 [OMEGA] Logout sent
+07:27:08 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:08 [CTRADER] ApplicationAuthReq sent
+07:27:09 [CTRADER] Application authorized
+07:27:09 [CTRADER] AccountAuthReq sent
+07:27:09 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:09 [CTRADER] AccountAuthRes failed
+07:27:10 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:10 [OMEGA] Logon sent
+07:27:10 [OMEGA] Logout received from server (ghost session or forced)
+07:27:10 [OMEGA] Breaking read loop -- server logout received
+07:27:10 [OMEGA] Price snapshot taken: 19 symbols
+07:27:10 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:10 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:10 [OMEGA] Logout sent
+07:27:10 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:10 [OMEGA-TRADE] Logon sent
+07:27:10 [OMEGA-TRADE] Logout received
+07:27:10 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:10 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:11 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:11 [OMEGA] Logon sent
+07:27:11 [OMEGA] Logout received from server (ghost session or forced)
+07:27:11 [OMEGA] Breaking read loop -- server logout received
+07:27:11 [OMEGA] Price snapshot taken: 19 symbols
+07:27:11 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:11 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:11 [OMEGA] Logout sent
+07:27:13 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:13 [OMEGA] Logon sent
+07:27:13 [OMEGA] Logout received from server (ghost session or forced)
+07:27:13 [OMEGA] Breaking read loop -- server logout received
+07:27:13 [OMEGA] Price snapshot taken: 19 symbols
+07:27:13 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:13 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:13 [OMEGA] Logout sent
+07:27:13 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:13 [OMEGA-TRADE] Logon sent
+07:27:13 [OMEGA-TRADE] Logout received
+07:27:13 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:13 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:14 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:14 [CTRADER] ApplicationAuthReq sent
+07:27:14 [CTRADER] Application authorized
+07:27:14 [CTRADER] AccountAuthReq sent
+07:27:14 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:14 [CTRADER] AccountAuthRes failed
+07:27:15 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:15 [OMEGA] Logon sent
+07:27:15 [OMEGA] Logout received from server (ghost session or forced)
+07:27:15 [OMEGA] Breaking read loop -- server logout received
+07:27:15 [OMEGA] Price snapshot taken: 19 symbols
+07:27:15 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:15 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:15 [OMEGA] Logout sent
+07:27:16 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:17 [OMEGA-TRADE] Logon sent
+07:27:17 [OMEGA-TRADE] Logout received
+07:27:17 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:17 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:17 [OMEGA] Logon sent
+07:27:17 [OMEGA] Logout received from server (ghost session or forced)
+07:27:17 [OMEGA] Breaking read loop -- server logout received
+07:27:17 [OMEGA] Price snapshot taken: 19 symbols
+07:27:17 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:17 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:17 [OMEGA] Logout sent
+07:27:17 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:18 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:18 [OMEGA] Logon sent
+07:27:18 [OMEGA] Logout received from server (ghost session or forced)
+07:27:18 [OMEGA] Breaking read loop -- server logout received
+07:27:18 [OMEGA] Price snapshot taken: 19 symbols
+07:27:18 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:18 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:18 [OMEGA] Logout sent
+07:27:19 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:19 [CTRADER] ApplicationAuthReq sent
+07:27:19 [CTRADER] Application authorized
+07:27:19 [CTRADER] AccountAuthReq sent
+07:27:19 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:19 [CTRADER] AccountAuthRes failed
+07:27:20 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:20 [OMEGA-TRADE] Logon sent
+07:27:20 [OMEGA-TRADE] Logout received
+07:27:20 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:20 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:20 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:20 [OMEGA] Logon sent
+07:27:20 [OMEGA] Logout received from server (ghost session or forced)
+07:27:20 [OMEGA] Breaking read loop -- server logout received
+07:27:20 [OMEGA] Price snapshot taken: 19 symbols
+07:27:20 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:20 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:20 [OMEGA] Logout sent
+07:27:22 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:22 [OMEGA] Logon sent
+07:27:22 [OMEGA] Logout received from server (ghost session or forced)
+07:27:22 [OMEGA] Breaking read loop -- server logout received
+07:27:22 [OMEGA] Price snapshot taken: 19 symbols
+07:27:22 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:22 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:22 [OMEGA] Logout sent
+07:27:23 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:23 [OMEGA-TRADE] Logon sent
+07:27:23 [OMEGA-TRADE] Logout received
+07:27:23 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:23 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:24 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:24 [OMEGA] Logon sent
+07:27:24 [OMEGA] Logout received from server (ghost session or forced)
+07:27:24 [OMEGA] Breaking read loop -- server logout received
+07:27:24 [OMEGA] Price snapshot taken: 19 symbols
+07:27:24 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:24 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:24 [OMEGA] Logout sent
+07:27:24 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:24 [CTRADER] ApplicationAuthReq sent
+07:27:24 [CTRADER] Application authorized
+07:27:24 [CTRADER] AccountAuthReq sent
+07:27:24 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:24 [CTRADER] AccountAuthRes failed
+07:27:25 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:25 [OMEGA] Logon sent
+07:27:25 [OMEGA] Logout received from server (ghost session or forced)
+07:27:25 [OMEGA] Breaking read loop -- server logout received
+07:27:25 [OMEGA] Price snapshot taken: 19 symbols
+07:27:25 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:25 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:25 [OMEGA] Logout sent
+07:27:27 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:27 [OMEGA-TRADE] Logon sent
+07:27:27 [OMEGA-TRADE] Logout received
+07:27:27 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:27 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:27 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:27 [OMEGA] Logon sent
+07:27:27 [OMEGA] Logout received from server (ghost session or forced)
+07:27:27 [OMEGA] Breaking read loop -- server logout received
+07:27:27 [OMEGA] Price snapshot taken: 19 symbols
+07:27:27 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:27 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:27 [OMEGA] Logout sent
+07:27:29 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:29 [OMEGA] Logon sent
+07:27:29 [OMEGA] Logout received from server (ghost session or forced)
+07:27:29 [OMEGA] Breaking read loop -- server logout received
+07:27:29 [OMEGA] Price snapshot taken: 19 symbols
+07:27:29 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:29 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:29 [OMEGA] Logout sent
+07:27:29 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:29 [CTRADER] ApplicationAuthReq sent
+07:27:29 [CTRADER] Application authorized
+07:27:29 [CTRADER] AccountAuthReq sent
+07:27:29 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:29 [CTRADER] AccountAuthRes failed
+07:27:30 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:30 [OMEGA-TRADE] Logon sent
+07:27:30 [OMEGA-TRADE] Logout received
+07:27:30 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:30 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:31 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:31 [OMEGA] Logon sent
+07:27:31 [OMEGA] Logout received from server (ghost session or forced)
+07:27:31 [OMEGA] Breaking read loop -- server logout received
+07:27:31 [OMEGA] Price snapshot taken: 19 symbols
+07:27:31 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:31 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:31 [OMEGA] Logout sent
+07:27:32 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:32 [OMEGA] Logon sent
+07:27:32 [OMEGA] Logout received from server (ghost session or forced)
+07:27:32 [OMEGA] Breaking read loop -- server logout received
+07:27:32 [OMEGA] Price snapshot taken: 19 symbols
+07:27:32 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:32 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:32 [OMEGA] Logout sent
+07:27:33 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:33 [OMEGA-TRADE] Logon sent
+07:27:33 [OMEGA-TRADE] Logout received
+07:27:33 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:33 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:34 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:34 [OMEGA] Logon sent
+07:27:34 [OMEGA] Logout received from server (ghost session or forced)
+07:27:34 [OMEGA] Breaking read loop -- server logout received
+07:27:34 [OMEGA] Price snapshot taken: 19 symbols
+07:27:34 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:34 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:34 [OMEGA] Logout sent
+07:27:34 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:34 [CTRADER] ApplicationAuthReq sent
+07:27:34 [CTRADER] Application authorized
+07:27:34 [CTRADER] AccountAuthReq sent
+07:27:34 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:34 [CTRADER] AccountAuthRes failed
+07:27:36 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:36 [OMEGA] Logon sent
+07:27:36 [OMEGA] Logout received from server (ghost session or forced)
+07:27:36 [OMEGA] Breaking read loop -- server logout received
+07:27:36 [OMEGA] Price snapshot taken: 19 symbols
+07:27:36 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:36 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:36 [OMEGA] Logout sent
+07:27:36 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:37 [OMEGA-TRADE] Logon sent
+07:27:37 [OMEGA-TRADE] Logout received
+07:27:37 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:37 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:38 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:38 [OMEGA] Logon sent
+07:27:38 [OMEGA] Logout received from server (ghost session or forced)
+07:27:38 [OMEGA] Breaking read loop -- server logout received
+07:27:38 [OMEGA] Price snapshot taken: 19 symbols
+07:27:38 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:38 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:38 [OMEGA] Logout sent
+07:27:39 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:39 [CTRADER] ApplicationAuthReq sent
+07:27:39 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:39 [OMEGA] Logon sent
+07:27:39 [OMEGA] Logout received from server (ghost session or forced)
+07:27:39 [OMEGA] Breaking read loop -- server logout received
+07:27:39 [OMEGA] Price snapshot taken: 19 symbols
+07:27:39 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:39 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:39 [OMEGA] Logout sent
+07:27:39 [CTRADER] Application authorized
+07:27:39 [CTRADER] AccountAuthReq sent
+07:27:40 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:40 [CTRADER] AccountAuthRes failed
+07:27:40 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:40 [OMEGA-TRADE] Logon sent
+07:27:40 [OMEGA-TRADE] Logout received
+07:27:40 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:40 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:41 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:41 [OMEGA] Logon sent
+07:27:41 [OMEGA] Logout received from server (ghost session or forced)
+07:27:41 [OMEGA] Breaking read loop -- server logout received
+07:27:41 [OMEGA] Price snapshot taken: 19 symbols
+07:27:41 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:41 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:41 [OMEGA] Logout sent
+07:27:43 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:43 [OMEGA] Logon sent
+07:27:43 [OMEGA] Logout received from server (ghost session or forced)
+07:27:43 [OMEGA] Breaking read loop -- server logout received
+07:27:43 [OMEGA] Price snapshot taken: 19 symbols
+07:27:43 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:43 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:43 [OMEGA] Logout sent
+07:27:43 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:43 [OMEGA-TRADE] Logon sent
+07:27:43 [OMEGA-TRADE] Logout received
+07:27:43 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:43 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:45 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:45 [CTRADER] ApplicationAuthReq sent
+07:27:45 [CTRADER] Application authorized
+07:27:45 [CTRADER] AccountAuthReq sent
+07:27:45 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:45 [CTRADER] AccountAuthRes failed
+07:27:45 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:45 [OMEGA] Logon sent
+07:27:45 [OMEGA] Logout received from server (ghost session or forced)
+07:27:45 [OMEGA] Breaking read loop -- server logout received
+07:27:45 [OMEGA] Price snapshot taken: 19 symbols
+07:27:45 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:45 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:45 [OMEGA] Logout sent
+07:27:47 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:47 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:47 [OMEGA] Logon sent
+07:27:47 [OMEGA] Logout received from server (ghost session or forced)
+07:27:47 [OMEGA] Breaking read loop -- server logout received
+07:27:47 [OMEGA] Price snapshot taken: 19 symbols
+07:27:47 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:47 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:47 [OMEGA] Logout sent
+07:27:47 [OMEGA-TRADE] Logon sent
+07:27:47 [OMEGA-TRADE] Logout received
+07:27:47 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:47 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:48 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:48 [OMEGA] Logon sent
+07:27:48 [OMEGA] Logout received from server (ghost session or forced)
+07:27:48 [OMEGA] Breaking read loop -- server logout received
+07:27:48 [OMEGA] Price snapshot taken: 19 symbols
+07:27:48 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:48 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:48 [OMEGA] Logout sent
+07:27:50 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:50 [CTRADER] ApplicationAuthReq sent
+07:27:50 [CTRADER] Application authorized
+07:27:50 [CTRADER] AccountAuthReq sent
+07:27:50 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:50 [CTRADER] AccountAuthRes failed
+07:27:50 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:50 [OMEGA-TRADE] Logon sent
+07:27:50 [OMEGA-TRADE] Logout received
+07:27:50 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:50 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:50 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:50 [OMEGA] Logon sent
+07:27:50 [OMEGA] Logout received from server (ghost session or forced)
+07:27:50 [OMEGA] Breaking read loop -- server logout received
+07:27:50 [OMEGA] Price snapshot taken: 19 symbols
+07:27:50 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:50 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:50 [OMEGA] Logout sent
+07:27:52 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:52 [OMEGA] Logon sent
+07:27:52 [OMEGA] Logout received from server (ghost session or forced)
+07:27:52 [OMEGA] Breaking read loop -- server logout received
+07:27:52 [OMEGA] Price snapshot taken: 19 symbols
+07:27:52 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:52 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:52 [OMEGA] Logout sent
+07:27:53 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:53 [OMEGA-TRADE] Logon sent
+07:27:53 [OMEGA-TRADE] Logout received
+07:27:53 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:53 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:54 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:54 [OMEGA] Logon sent
+07:27:54 [OMEGA] Logout received from server (ghost session or forced)
+07:27:54 [OMEGA] Breaking read loop -- server logout received
+07:27:54 [OMEGA] Price snapshot taken: 19 symbols
+07:27:54 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:54 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:54 [OMEGA] Logout sent
+07:27:55 [CTRADER] Connecting live.ctraderapi.com:5035
+07:27:55 [CTRADER] ApplicationAuthReq sent
+07:27:55 [CTRADER] Application authorized
+07:27:55 [CTRADER] AccountAuthReq sent
+07:27:55 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:27:55 [CTRADER] AccountAuthRes failed
+07:27:55 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:55 [OMEGA] Logon sent
+07:27:55 [OMEGA] Logout received from server (ghost session or forced)
+07:27:55 [OMEGA] Breaking read loop -- server logout received
+07:27:55 [OMEGA] Price snapshot taken: 19 symbols
+07:27:55 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:55 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:55 [OMEGA] Logout sent
+07:27:56 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:27:57 [OMEGA-TRADE] Logon sent
+07:27:57 [OMEGA-TRADE] Logout received
+07:27:57 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:27:57 [OMEGA-TRADE] Disconnected -- reconnecting
+07:27:57 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:57 [OMEGA] Logon sent
+07:27:57 [OMEGA] Logout received from server (ghost session or forced)
+07:27:57 [OMEGA] Breaking read loop -- server logout received
+07:27:57 [OMEGA] Price snapshot taken: 19 symbols
+07:27:57 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:57 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:57 [OMEGA] Logout sent
+07:27:59 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:27:59 [OMEGA] Logon sent
+07:27:59 [OMEGA] Logout received from server (ghost session or forced)
+07:27:59 [OMEGA] Breaking read loop -- server logout received
+07:27:59 [OMEGA] Price snapshot taken: 19 symbols
+07:27:59 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:27:59 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:27:59 [OMEGA] Logout sent
+07:28:00 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:00 [OMEGA-TRADE] Logon sent
+07:28:00 [OMEGA-TRADE] Logout received
+07:28:00 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:00 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:00 [CTRADER] ApplicationAuthReq sent
+07:28:00 [CTRADER] Application authorized
+07:28:00 [CTRADER] AccountAuthReq sent
+07:28:00 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:00 [CTRADER] AccountAuthRes failed
+07:28:00 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:01 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:01 [OMEGA] Logon sent
+07:28:01 [OMEGA] Logout received from server (ghost session or forced)
+07:28:01 [OMEGA] Breaking read loop -- server logout received
+07:28:01 [OMEGA] Price snapshot taken: 19 symbols
+07:28:01 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:01 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:01 [OMEGA] Logout sent
+07:28:02 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:02 [OMEGA] Logon sent
+07:28:02 [OMEGA] Logout received from server (ghost session or forced)
+07:28:02 [OMEGA] Breaking read loop -- server logout received
+07:28:02 [OMEGA] Price snapshot taken: 19 symbols
+07:28:02 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:02 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:02 [OMEGA] Logout sent
+07:28:03 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:03 [OMEGA-TRADE] Logon sent
+07:28:03 [OMEGA-TRADE] Logout received
+07:28:03 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:03 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:04 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:04 [OMEGA] Logon sent
+07:28:04 [OMEGA] Logout received from server (ghost session or forced)
+07:28:04 [OMEGA] Breaking read loop -- server logout received
+07:28:04 [OMEGA] Price snapshot taken: 19 symbols
+07:28:04 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:04 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:04 [OMEGA] Logout sent
+07:28:05 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:05 [CTRADER] ApplicationAuthReq sent
+07:28:05 [CTRADER] Application authorized
+07:28:05 [CTRADER] AccountAuthReq sent
+07:28:05 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:05 [CTRADER] AccountAuthRes failed
+07:28:06 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:06 [OMEGA] Logon sent
+07:28:06 [OMEGA] Logout received from server (ghost session or forced)
+07:28:06 [OMEGA] Breaking read loop -- server logout received
+07:28:06 [OMEGA] Price snapshot taken: 19 symbols
+07:28:06 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:06 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:06 [OMEGA] Logout sent
+07:28:06 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:07 [OMEGA-TRADE] Logon sent
+07:28:07 [OMEGA-TRADE] Logout received
+07:28:07 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:07 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:08 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:08 [OMEGA] Logon sent
+07:28:08 [OMEGA] Logout received from server (ghost session or forced)
+07:28:08 [OMEGA] Breaking read loop -- server logout received
+07:28:08 [OMEGA] Price snapshot taken: 19 symbols
+07:28:08 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:08 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:08 [OMEGA] Logout sent
+07:28:09 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:09 [OMEGA] Logon sent
+07:28:09 [OMEGA] Logout received from server (ghost session or forced)
+07:28:09 [OMEGA] Breaking read loop -- server logout received
+07:28:09 [OMEGA] Price snapshot taken: 19 symbols
+07:28:09 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:09 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:09 [OMEGA] Logout sent
+07:28:10 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:10 [OMEGA-TRADE] Logon sent
+07:28:10 [OMEGA-TRADE] Logout received
+07:28:10 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:10 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:10 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:10 [CTRADER] ApplicationAuthReq sent
+07:28:10 [CTRADER] Application authorized
+07:28:10 [CTRADER] AccountAuthReq sent
+07:28:10 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:10 [CTRADER] AccountAuthRes failed
+07:28:11 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:11 [OMEGA] Logon sent
+07:28:11 [OMEGA] Logout received from server (ghost session or forced)
+07:28:11 [OMEGA] Breaking read loop -- server logout received
+07:28:11 [OMEGA] Price snapshot taken: 19 symbols
+07:28:11 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:11 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:11 [OMEGA] Logout sent
+07:28:13 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:13 [OMEGA] Logon sent
+07:28:13 [OMEGA] Logout received from server (ghost session or forced)
+07:28:13 [OMEGA] Breaking read loop -- server logout received
+07:28:13 [OMEGA] Price snapshot taken: 19 symbols
+07:28:13 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:13 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:13 [OMEGA] Logout sent
+07:28:13 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:13 [OMEGA-TRADE] Logon sent
+07:28:13 [OMEGA-TRADE] Logout received
+07:28:13 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:13 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:15 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:15 [OMEGA] Logon sent
+07:28:15 [OMEGA] Logout received from server (ghost session or forced)
+07:28:15 [OMEGA] Breaking read loop -- server logout received
+07:28:15 [OMEGA] Price snapshot taken: 19 symbols
+07:28:15 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:15 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:15 [OMEGA] Logout sent
+07:28:15 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:15 [CTRADER] ApplicationAuthReq sent
+07:28:15 [CTRADER] Application authorized
+07:28:15 [CTRADER] AccountAuthReq sent
+07:28:15 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:15 [CTRADER] AccountAuthRes failed
+07:28:16 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:16 [OMEGA] Logon sent
+07:28:16 [OMEGA] Logout received from server (ghost session or forced)
+07:28:16 [OMEGA] Breaking read loop -- server logout received
+07:28:16 [OMEGA] Price snapshot taken: 19 symbols
+07:28:16 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:16 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:16 [OMEGA] Logout sent
+07:28:16 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:16 [OMEGA-TRADE] Logon sent
+07:28:16 [OMEGA-TRADE] Logout received
+07:28:16 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:17 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:18 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:18 [OMEGA] Logon sent
+07:28:18 [OMEGA] Logout received from server (ghost session or forced)
+07:28:18 [OMEGA] Breaking read loop -- server logout received
+07:28:18 [OMEGA] Price snapshot taken: 19 symbols
+07:28:18 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:18 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:18 [OMEGA] Logout sent
+07:28:20 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:20 [OMEGA-TRADE] Logon sent
+07:28:20 [OMEGA-TRADE] Logout received
+07:28:20 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:20 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:20 [OMEGA] Logon sent
+07:28:20 [OMEGA] Logout received from server (ghost session or forced)
+07:28:20 [OMEGA] Breaking read loop -- server logout received
+07:28:20 [OMEGA] Price snapshot taken: 19 symbols
+07:28:20 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:20 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:20 [OMEGA] Logout sent
+07:28:20 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:20 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:20 [CTRADER] ApplicationAuthReq sent
+07:28:20 [CTRADER] Application authorized
+07:28:20 [CTRADER] AccountAuthReq sent
+07:28:20 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:20 [CTRADER] AccountAuthRes failed
+07:28:22 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:22 [OMEGA] Logon sent
+07:28:22 [OMEGA] Logout received from server (ghost session or forced)
+07:28:22 [OMEGA] Breaking read loop -- server logout received
+07:28:22 [OMEGA] Price snapshot taken: 19 symbols
+07:28:22 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:22 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:22 [OMEGA] Logout sent
+07:28:23 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:23 [OMEGA-TRADE] Logon sent
+07:28:23 [OMEGA-TRADE] Logout received
+07:28:23 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:23 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:23 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:23 [OMEGA] Logon sent
+07:28:23 [OMEGA] Logout received from server (ghost session or forced)
+07:28:23 [OMEGA] Breaking read loop -- server logout received
+07:28:23 [OMEGA] Price snapshot taken: 19 symbols
+07:28:23 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:23 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:23 [OMEGA] Logout sent
+07:28:25 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:25 [OMEGA] Logon sent
+07:28:25 [OMEGA] Logout received from server (ghost session or forced)
+07:28:25 [OMEGA] Breaking read loop -- server logout received
+07:28:25 [OMEGA] Price snapshot taken: 19 symbols
+07:28:25 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:25 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:25 [OMEGA] Logout sent
+07:28:26 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:26 [CTRADER] ApplicationAuthReq sent
+07:28:26 [CTRADER] Application authorized
+07:28:26 [CTRADER] AccountAuthReq sent
+07:28:26 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:26 [CTRADER] AccountAuthRes failed
+07:28:26 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:26 [OMEGA-TRADE] Logon sent
+07:28:26 [OMEGA-TRADE] Logout received
+07:28:26 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:27 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:27 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:27 [OMEGA] Logon sent
+07:28:27 [OMEGA] Logout received from server (ghost session or forced)
+07:28:27 [OMEGA] Breaking read loop -- server logout received
+07:28:27 [OMEGA] Price snapshot taken: 19 symbols
+07:28:27 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:27 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:27 [OMEGA] Logout sent
+07:28:29 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:29 [OMEGA] Logon sent
+07:28:29 [OMEGA] Logout received from server (ghost session or forced)
+07:28:29 [OMEGA] Breaking read loop -- server logout received
+07:28:29 [OMEGA] Price snapshot taken: 19 symbols
+07:28:29 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:29 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:29 [OMEGA] Logout sent
+07:28:30 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:30 [OMEGA-TRADE] Logon sent
+07:28:30 [OMEGA-TRADE] Logout received
+07:28:30 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:30 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:30 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:30 [OMEGA] Logon sent
+07:28:30 [OMEGA] Logout received from server (ghost session or forced)
+07:28:30 [OMEGA] Breaking read loop -- server logout received
+07:28:30 [OMEGA] Price snapshot taken: 19 symbols
+07:28:30 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:30 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:30 [OMEGA] Logout sent
+07:28:31 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:31 [CTRADER] ApplicationAuthReq sent
+07:28:31 [CTRADER] Application authorized
+07:28:31 [CTRADER] AccountAuthReq sent
+07:28:31 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:31 [CTRADER] AccountAuthRes failed
+07:28:32 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:32 [OMEGA] Logon sent
+07:28:32 [OMEGA] Logout received from server (ghost session or forced)
+07:28:32 [OMEGA] Breaking read loop -- server logout received
+07:28:32 [OMEGA] Price snapshot taken: 19 symbols
+07:28:32 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:32 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:32 [OMEGA] Logout sent
+07:28:33 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:33 [OMEGA-TRADE] Logon sent
+07:28:33 [OMEGA-TRADE] Logout received
+07:28:33 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:33 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:34 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:34 [OMEGA] Logon sent
+07:28:34 [OMEGA] Logout received from server (ghost session or forced)
+07:28:34 [OMEGA] Breaking read loop -- server logout received
+07:28:34 [OMEGA] Price snapshot taken: 19 symbols
+07:28:34 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:34 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:34 [OMEGA] Logout sent
+07:28:36 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:36 [OMEGA] Logon sent
+07:28:36 [OMEGA] Logout received from server (ghost session or forced)
+07:28:36 [OMEGA] Breaking read loop -- server logout received
+07:28:36 [OMEGA] Price snapshot taken: 19 symbols
+07:28:36 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:36 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:36 [OMEGA] Logout sent
+07:28:36 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:36 [CTRADER] ApplicationAuthReq sent
+07:28:36 [CTRADER] Application authorized
+07:28:36 [CTRADER] AccountAuthReq sent
+07:28:36 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:36 [CTRADER] AccountAuthRes failed
+07:28:36 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:36 [OMEGA-TRADE] Logon sent
+07:28:36 [OMEGA-TRADE] Logout received
+07:28:36 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:37 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:37 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:37 [OMEGA] Logon sent
+07:28:37 [OMEGA] Logout received from server (ghost session or forced)
+07:28:37 [OMEGA] Breaking read loop -- server logout received
+07:28:37 [OMEGA] Price snapshot taken: 19 symbols
+07:28:37 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:37 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:37 [OMEGA] Logout sent
+07:28:39 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:39 [OMEGA] Logon sent
+07:28:39 [OMEGA] Logout received from server (ghost session or forced)
+07:28:39 [OMEGA] Breaking read loop -- server logout received
+07:28:39 [OMEGA] Price snapshot taken: 19 symbols
+07:28:39 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:39 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:39 [OMEGA] Logout sent
+07:28:40 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:40 [OMEGA-TRADE] Logon sent
+07:28:40 [OMEGA-TRADE] Logout received
+07:28:40 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:40 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:41 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:41 [CTRADER] ApplicationAuthReq sent
+07:28:41 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:41 [CTRADER] Application authorized
+07:28:41 [CTRADER] AccountAuthReq sent
+07:28:41 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:41 [CTRADER] AccountAuthRes failed
+07:28:41 [OMEGA] Logon sent
+07:28:41 [OMEGA] Logout received from server (ghost session or forced)
+07:28:41 [OMEGA] Breaking read loop -- server logout received
+07:28:41 [OMEGA] Price snapshot taken: 19 symbols
+07:28:41 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:41 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:41 [OMEGA] Logout sent
+07:28:43 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:43 [OMEGA] Logon sent
+07:28:43 [OMEGA] Logout received from server (ghost session or forced)
+07:28:43 [OMEGA] Breaking read loop -- server logout received
+07:28:43 [OMEGA] Price snapshot taken: 19 symbols
+07:28:43 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:43 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:43 [OMEGA] Logout sent
+07:28:43 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:43 [OMEGA-TRADE] Logon sent
+07:28:43 [OMEGA-TRADE] Logout received
+07:28:43 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:43 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:44 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:44 [OMEGA] Logon sent
+07:28:44 [OMEGA] Logout received from server (ghost session or forced)
+07:28:44 [OMEGA] Breaking read loop -- server logout received
+07:28:44 [OMEGA] Price snapshot taken: 19 symbols
+07:28:44 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:44 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:44 [OMEGA] Logout sent
+07:28:46 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:46 [CTRADER] ApplicationAuthReq sent
+07:28:46 [CTRADER] Application authorized
+07:28:46 [CTRADER] AccountAuthReq sent
+07:28:46 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:46 [CTRADER] AccountAuthRes failed
+07:28:46 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:46 [OMEGA] Logon sent
+07:28:46 [OMEGA] Logout received from server (ghost session or forced)
+07:28:46 [OMEGA] Breaking read loop -- server logout received
+07:28:46 [OMEGA] Price snapshot taken: 19 symbols
+07:28:46 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:46 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:46 [OMEGA] Logout sent
+07:28:46 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:46 [OMEGA-TRADE] Logon sent
+07:28:46 [OMEGA-TRADE] Logout received
+07:28:46 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:47 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:48 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:48 [OMEGA] Logon sent
+07:28:48 [OMEGA] Logout received from server (ghost session or forced)
+07:28:48 [OMEGA] Breaking read loop -- server logout received
+07:28:48 [OMEGA] Price snapshot taken: 19 symbols
+07:28:48 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:48 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:48 [OMEGA] Logout sent
+07:28:50 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:50 [OMEGA-TRADE] Logon sent
+07:28:50 [OMEGA-TRADE] Logout received
+07:28:50 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:50 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:50 [OMEGA] Logon sent
+07:28:50 [OMEGA] Logout received from server (ghost session or forced)
+07:28:50 [OMEGA] Breaking read loop -- server logout received
+07:28:50 [OMEGA] Price snapshot taken: 19 symbols
+07:28:50 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:50 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:50 [OMEGA] Logout sent
+07:28:50 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:51 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:51 [CTRADER] ApplicationAuthReq sent
+07:28:51 [CTRADER] Application authorized
+07:28:51 [CTRADER] AccountAuthReq sent
+07:28:51 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:51 [CTRADER] AccountAuthRes failed
+07:28:51 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:51 [OMEGA] Logon sent
+07:28:51 [OMEGA] Logout received from server (ghost session or forced)
+07:28:51 [OMEGA] Breaking read loop -- server logout received
+07:28:51 [OMEGA] Price snapshot taken: 19 symbols
+07:28:51 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:51 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:51 [OMEGA] Logout sent
+07:28:53 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:53 [OMEGA-TRADE] Logon sent
+07:28:53 [OMEGA-TRADE] Logout received
+07:28:53 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:53 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:53 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:53 [OMEGA] Logon sent
+07:28:53 [OMEGA] Logout received from server (ghost session or forced)
+07:28:53 [OMEGA] Breaking read loop -- server logout received
+07:28:53 [OMEGA] Price snapshot taken: 19 symbols
+07:28:53 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:53 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:53 [OMEGA] Logout sent
+07:28:55 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:55 [OMEGA] Logon sent
+07:28:55 [OMEGA] Logout received from server (ghost session or forced)
+07:28:55 [OMEGA] Breaking read loop -- server logout received
+07:28:55 [OMEGA] Price snapshot taken: 19 symbols
+07:28:55 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:55 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:55 [OMEGA] Logout sent
+07:28:56 [CTRADER] Connecting live.ctraderapi.com:5035
+07:28:56 [CTRADER] ApplicationAuthReq sent
+07:28:56 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:28:56 [OMEGA-TRADE] Logon sent
+07:28:56 [CTRADER] Application authorized
+07:28:56 [CTRADER] AccountAuthReq sent
+07:28:56 [OMEGA-TRADE] Logout received
+07:28:56 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:28:56 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:28:56 [CTRADER] AccountAuthRes failed
+07:28:56 [OMEGA-TRADE] Disconnected -- reconnecting
+07:28:57 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:57 [OMEGA] Logon sent
+07:28:57 [OMEGA] Logout received from server (ghost session or forced)
+07:28:57 [OMEGA] Breaking read loop -- server logout received
+07:28:57 [OMEGA] Price snapshot taken: 19 symbols
+07:28:57 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:57 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:57 [OMEGA] Logout sent
+07:28:58 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:28:59 [OMEGA] Logon sent
+07:28:59 [OMEGA] Logout received from server (ghost session or forced)
+07:28:59 [OMEGA] Breaking read loop -- server logout received
+07:28:59 [OMEGA] Price snapshot taken: 19 symbols
+07:28:59 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:28:59 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:28:59 [OMEGA] Logout sent
+07:29:00 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:00 [OMEGA-TRADE] Logon sent
+07:29:00 [OMEGA-TRADE] Logout received
+07:29:00 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:00 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:00 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:00 [OMEGA] Logon sent
+07:29:00 [OMEGA] Logout received from server (ghost session or forced)
+07:29:00 [OMEGA] Breaking read loop -- server logout received
+07:29:00 [OMEGA] Price snapshot taken: 19 symbols
+07:29:00 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:00 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:00 [OMEGA] Logout sent
+07:29:01 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:01 [CTRADER] ApplicationAuthReq sent
+07:29:01 [CTRADER] Application authorized
+07:29:01 [CTRADER] AccountAuthReq sent
+07:29:01 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:01 [CTRADER] AccountAuthRes failed
+07:29:02 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:02 [OMEGA] Logon sent
+07:29:02 [OMEGA] Logout received from server (ghost session or forced)
+07:29:02 [OMEGA] Breaking read loop -- server logout received
+07:29:02 [OMEGA] Price snapshot taken: 19 symbols
+07:29:02 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:02 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:02 [OMEGA] Logout sent
+07:29:03 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:03 [OMEGA-TRADE] Logon sent
+07:29:03 [OMEGA-TRADE] Logout received
+07:29:03 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:03 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:04 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:04 [OMEGA] Logon sent
+07:29:04 [OMEGA] Logout received from server (ghost session or forced)
+07:29:04 [OMEGA] Breaking read loop -- server logout received
+07:29:04 [OMEGA] Price snapshot taken: 19 symbols
+07:29:04 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:04 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:04 [OMEGA] Logout sent
+07:29:06 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:06 [OMEGA] Logon sent
+07:29:06 [OMEGA] Logout received from server (ghost session or forced)
+07:29:06 [OMEGA] Breaking read loop -- server logout received
+07:29:06 [OMEGA] Price snapshot taken: 19 symbols
+07:29:06 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:06 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:06 [OMEGA] Logout sent
+07:29:06 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:06 [OMEGA-TRADE] Logon sent
+07:29:06 [OMEGA-TRADE] Logout received
+07:29:06 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:06 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:06 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:06 [CTRADER] ApplicationAuthReq sent
+07:29:07 [CTRADER] Application authorized
+07:29:07 [CTRADER] AccountAuthReq sent
+07:29:07 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:07 [CTRADER] AccountAuthRes failed
+07:29:07 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:07 [OMEGA] Logon sent
+07:29:07 [OMEGA] Logout received from server (ghost session or forced)
+07:29:07 [OMEGA] Breaking read loop -- server logout received
+07:29:07 [OMEGA] Price snapshot taken: 19 symbols
+07:29:07 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:07 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:07 [OMEGA] Logout sent
+07:29:09 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:09 [OMEGA] Logon sent
+07:29:09 [OMEGA] Logout received from server (ghost session or forced)
+07:29:09 [OMEGA] Breaking read loop -- server logout received
+07:29:09 [OMEGA] Price snapshot taken: 19 symbols
+07:29:09 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:09 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:09 [OMEGA] Logout sent
+07:29:10 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:10 [OMEGA-TRADE] Logon sent
+07:29:10 [OMEGA-TRADE] Logout received
+07:29:10 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:10 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:11 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:11 [OMEGA] Logon sent
+07:29:11 [OMEGA] Logout received from server (ghost session or forced)
+07:29:11 [OMEGA] Breaking read loop -- server logout received
+07:29:11 [OMEGA] Price snapshot taken: 19 symbols
+07:29:11 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:11 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:11 [OMEGA] Logout sent
+07:29:12 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:12 [CTRADER] ApplicationAuthReq sent
+07:29:12 [CTRADER] Application authorized
+07:29:12 [CTRADER] AccountAuthReq sent
+07:29:12 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:12 [CTRADER] AccountAuthRes failed
+07:29:13 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:13 [OMEGA] Logon sent
+07:29:13 [OMEGA] Logout received from server (ghost session or forced)
+07:29:13 [OMEGA] Breaking read loop -- server logout received
+07:29:13 [OMEGA] Price snapshot taken: 19 symbols
+07:29:13 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:13 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:13 [OMEGA] Logout sent
+07:29:13 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:13 [OMEGA-TRADE] Logon sent
+07:29:13 [OMEGA-TRADE] Logout received
+07:29:13 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:13 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:14 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:14 [OMEGA] Logon sent
+07:29:14 [OMEGA] Logout received from server (ghost session or forced)
+07:29:14 [OMEGA] Breaking read loop -- server logout received
+07:29:14 [OMEGA] Price snapshot taken: 19 symbols
+07:29:14 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:14 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:14 [OMEGA] Logout sent
+07:29:16 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:16 [OMEGA] Logon sent
+07:29:16 [OMEGA] Logout received from server (ghost session or forced)
+07:29:16 [OMEGA] Breaking read loop -- server logout received
+07:29:16 [OMEGA] Price snapshot taken: 19 symbols
+07:29:16 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:16 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:16 [OMEGA] Logout sent
+07:29:16 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:16 [OMEGA-TRADE] Logon sent
+07:29:16 [OMEGA-TRADE] Logout received
+07:29:16 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:16 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:17 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:17 [CTRADER] ApplicationAuthReq sent
+07:29:17 [CTRADER] Application authorized
+07:29:17 [CTRADER] AccountAuthReq sent
+07:29:17 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:17 [CTRADER] AccountAuthRes failed
+07:29:18 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:18 [OMEGA] Logon sent
+07:29:18 [OMEGA] Logout received from server (ghost session or forced)
+07:29:18 [OMEGA] Breaking read loop -- server logout received
+07:29:18 [OMEGA] Price snapshot taken: 19 symbols
+07:29:18 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:18 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:18 [OMEGA] Logout sent
+07:29:20 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:20 [OMEGA-TRADE] Logon sent
+07:29:20 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:20 [OMEGA-TRADE] Logout received
+07:29:20 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:20 [OMEGA] Logon sent
+07:29:20 [OMEGA] Logout received from server (ghost session or forced)
+07:29:20 [OMEGA] Breaking read loop -- server logout received
+07:29:20 [OMEGA] Price snapshot taken: 19 symbols
+07:29:20 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:20 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:20 [OMEGA] Logout sent
+07:29:20 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:21 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:21 [OMEGA] Logon sent
+07:29:21 [OMEGA] Logout received from server (ghost session or forced)
+07:29:21 [OMEGA] Breaking read loop -- server logout received
+07:29:21 [OMEGA] Price snapshot taken: 19 symbols
+07:29:21 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:21 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:21 [OMEGA] Logout sent
+07:29:22 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:22 [CTRADER] ApplicationAuthReq sent
+07:29:22 [CTRADER] Application authorized
+07:29:22 [CTRADER] AccountAuthReq sent
+07:29:22 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:22 [CTRADER] AccountAuthRes failed
+07:29:23 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:23 [OMEGA-TRADE] Logon sent
+07:29:23 [OMEGA-TRADE] Logout received
+07:29:23 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:23 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:23 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:23 [OMEGA] Logon sent
+07:29:23 [OMEGA] Logout received from server (ghost session or forced)
+07:29:23 [OMEGA] Breaking read loop -- server logout received
+07:29:23 [OMEGA] Price snapshot taken: 19 symbols
+07:29:23 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:23 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:23 [OMEGA] Logout sent
+07:29:25 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:25 [OMEGA] Logon sent
+07:29:25 [OMEGA] Logout received from server (ghost session or forced)
+07:29:25 [OMEGA] Breaking read loop -- server logout received
+07:29:25 [OMEGA] Price snapshot taken: 19 symbols
+07:29:25 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:25 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:25 [OMEGA] Logout sent
+07:29:26 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:26 [OMEGA-TRADE] Logon sent
+07:29:26 [OMEGA-TRADE] Logout received
+07:29:26 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:26 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:27 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:27 [OMEGA] Logon sent
+07:29:27 [OMEGA] Logout received from server (ghost session or forced)
+07:29:27 [OMEGA] Breaking read loop -- server logout received
+07:29:27 [OMEGA] Price snapshot taken: 19 symbols
+07:29:27 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:27 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:27 [OMEGA] Logout sent
+07:29:27 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:27 [CTRADER] ApplicationAuthReq sent
+07:29:27 [CTRADER] Application authorized
+07:29:27 [CTRADER] AccountAuthReq sent
+07:29:27 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:27 [CTRADER] AccountAuthRes failed
+07:29:28 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:28 [OMEGA] Logon sent
+07:29:28 [OMEGA] Logout received from server (ghost session or forced)
+07:29:28 [OMEGA] Breaking read loop -- server logout received
+07:29:28 [OMEGA] Price snapshot taken: 19 symbols
+07:29:28 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:28 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:28 [OMEGA] Logout sent
+07:29:30 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:30 [OMEGA-TRADE] Logon sent
+07:29:30 [OMEGA-TRADE] Logout received
+07:29:30 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:30 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:30 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:30 [OMEGA] Logon sent
+07:29:30 [OMEGA] Logout received from server (ghost session or forced)
+07:29:30 [OMEGA] Breaking read loop -- server logout received
+07:29:30 [OMEGA] Price snapshot taken: 19 symbols
+07:29:30 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:30 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:30 [OMEGA] Logout sent
+07:29:32 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:32 [OMEGA] Logon sent
+07:29:32 [OMEGA] Logout received from server (ghost session or forced)
+07:29:32 [OMEGA] Breaking read loop -- server logout received
+07:29:32 [OMEGA] Price snapshot taken: 19 symbols
+07:29:32 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:32 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:32 [OMEGA] Logout sent
+07:29:32 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:32 [CTRADER] ApplicationAuthReq sent
+07:29:32 [CTRADER] Application authorized
+07:29:32 [CTRADER] AccountAuthReq sent
+07:29:32 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:32 [CTRADER] AccountAuthRes failed
+07:29:33 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:33 [OMEGA-TRADE] Logon sent
+07:29:33 [OMEGA-TRADE] Logout received
+07:29:33 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:33 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:34 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:34 [OMEGA] Logon sent
+07:29:34 [OMEGA] Logout received from server (ghost session or forced)
+07:29:34 [OMEGA] Breaking read loop -- server logout received
+07:29:34 [OMEGA] Price snapshot taken: 19 symbols
+07:29:34 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:34 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:34 [OMEGA] Logout sent
+07:29:35 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:35 [OMEGA] Logon sent
+07:29:35 [OMEGA] Logout received from server (ghost session or forced)
+07:29:35 [OMEGA] Breaking read loop -- server logout received
+07:29:35 [OMEGA] Price snapshot taken: 19 symbols
+07:29:35 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:35 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:35 [OMEGA] Logout sent
+07:29:36 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:36 [OMEGA-TRADE] Logon sent
+07:29:36 [OMEGA-TRADE] Logout received
+07:29:36 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:36 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:37 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:37 [OMEGA] Logon sent
+07:29:37 [OMEGA] Logout received from server (ghost session or forced)
+07:29:37 [OMEGA] Breaking read loop -- server logout received
+07:29:37 [OMEGA] Price snapshot taken: 19 symbols
+07:29:37 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:37 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:37 [OMEGA] Logout sent
+07:29:37 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:37 [CTRADER] ApplicationAuthReq sent
+07:29:37 [CTRADER] Application authorized
+07:29:37 [CTRADER] AccountAuthReq sent
+07:29:37 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:37 [CTRADER] AccountAuthRes failed
+07:29:39 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:39 [OMEGA] Logon sent
+07:29:39 [OMEGA] Logout received from server (ghost session or forced)
+07:29:39 [OMEGA] Breaking read loop -- server logout received
+07:29:39 [OMEGA] Price snapshot taken: 19 symbols
+07:29:39 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:39 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:39 [OMEGA] Logout sent
+07:29:40 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:40 [OMEGA-TRADE] Logon sent
+07:29:40 [OMEGA-TRADE] Logout received
+07:29:40 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:40 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:41 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:41 [OMEGA] Logon sent
+07:29:41 [OMEGA] Logout received from server (ghost session or forced)
+07:29:41 [OMEGA] Breaking read loop -- server logout received
+07:29:41 [OMEGA] Price snapshot taken: 19 symbols
+07:29:41 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:41 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:41 [OMEGA] Logout sent
+07:29:42 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:42 [CTRADER] ApplicationAuthReq sent
+07:29:42 [CTRADER] Application authorized
+07:29:42 [CTRADER] AccountAuthReq sent
+07:29:42 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:42 [CTRADER] AccountAuthRes failed
+07:29:42 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:42 [OMEGA] Logon sent
+07:29:42 [OMEGA] Logout received from server (ghost session or forced)
+07:29:42 [OMEGA] Breaking read loop -- server logout received
+07:29:42 [OMEGA] Price snapshot taken: 19 symbols
+07:29:42 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:42 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:42 [OMEGA] Logout sent
+07:29:43 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:43 [OMEGA-TRADE] Logon sent
+07:29:43 [OMEGA-TRADE] Logout received
+07:29:43 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:43 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:44 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:44 [OMEGA] Logon sent
+07:29:44 [OMEGA] Logout received from server (ghost session or forced)
+07:29:44 [OMEGA] Breaking read loop -- server logout received
+07:29:44 [OMEGA] Price snapshot taken: 19 symbols
+07:29:44 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:44 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:44 [OMEGA] Logout sent
+07:29:46 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:46 [OMEGA] Logon sent
+07:29:46 [OMEGA] Logout received from server (ghost session or forced)
+07:29:46 [OMEGA] Breaking read loop -- server logout received
+07:29:46 [OMEGA] Price snapshot taken: 19 symbols
+07:29:46 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:46 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:46 [OMEGA] Logout sent
+07:29:46 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:46 [OMEGA-TRADE] Logon sent
+07:29:46 [OMEGA-TRADE] Logout received
+07:29:46 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:46 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:47 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:47 [CTRADER] ApplicationAuthReq sent
+07:29:48 [CTRADER] Application authorized
+07:29:48 [CTRADER] AccountAuthReq sent
+07:29:48 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:48 [CTRADER] AccountAuthRes failed
+07:29:48 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:48 [OMEGA] Logon sent
+07:29:48 [OMEGA] Logout received from server (ghost session or forced)
+07:29:48 [OMEGA] Breaking read loop -- server logout received
+07:29:48 [OMEGA] Price snapshot taken: 19 symbols
+07:29:48 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:48 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:48 [OMEGA] Logout sent
+07:29:49 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:49 [OMEGA] Logon sent
+07:29:49 [OMEGA] Logout received from server (ghost session or forced)
+07:29:49 [OMEGA] Breaking read loop -- server logout received
+07:29:49 [OMEGA] Price snapshot taken: 19 symbols
+07:29:49 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:50 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:50 [OMEGA] Logout sent
+07:29:50 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:50 [OMEGA-TRADE] Logon sent
+07:29:50 [OMEGA-TRADE] Logout received
+07:29:50 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:50 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:51 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:51 [OMEGA] Logon sent
+07:29:51 [OMEGA] Logout received from server (ghost session or forced)
+07:29:51 [OMEGA] Breaking read loop -- server logout received
+07:29:51 [OMEGA] Price snapshot taken: 19 symbols
+07:29:51 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:51 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:51 [OMEGA] Logout sent
+07:29:53 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:53 [CTRADER] ApplicationAuthReq sent
+07:29:53 [CTRADER] Application authorized
+07:29:53 [CTRADER] AccountAuthReq sent
+07:29:53 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:53 [CTRADER] AccountAuthRes failed
+07:29:53 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:53 [OMEGA-TRADE] Logon sent
+07:29:53 [OMEGA-TRADE] Logout received
+07:29:53 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:53 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:53 [OMEGA] Logon sent
+07:29:53 [OMEGA] Logout received from server (ghost session or forced)
+07:29:53 [OMEGA] Breaking read loop -- server logout received
+07:29:53 [OMEGA] Price snapshot taken: 19 symbols
+07:29:53 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:53 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:53 [OMEGA] Logout sent
+07:29:53 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:55 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:55 [OMEGA] Logon sent
+07:29:55 [OMEGA] Logout received from server (ghost session or forced)
+07:29:55 [OMEGA] Breaking read loop -- server logout received
+07:29:55 [OMEGA] Price snapshot taken: 19 symbols
+07:29:55 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:55 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:55 [OMEGA] Logout sent
+07:29:56 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:56 [OMEGA-TRADE] Logon sent
+07:29:56 [OMEGA-TRADE] Logout received
+07:29:56 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:29:56 [OMEGA-TRADE] Disconnected -- reconnecting
+07:29:56 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:57 [OMEGA] Logon sent
+07:29:57 [OMEGA] Logout received from server (ghost session or forced)
+07:29:57 [OMEGA] Breaking read loop -- server logout received
+07:29:57 [OMEGA] Price snapshot taken: 19 symbols
+07:29:57 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:57 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:57 [OMEGA] Logout sent
+07:29:58 [CTRADER] Connecting live.ctraderapi.com:5035
+07:29:58 [CTRADER] ApplicationAuthReq sent
+07:29:58 [CTRADER] Application authorized
+07:29:58 [CTRADER] AccountAuthReq sent
+07:29:58 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:29:58 [CTRADER] AccountAuthRes failed
+07:29:58 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:29:58 [OMEGA] Logon sent
+07:29:58 [OMEGA] Logout received from server (ghost session or forced)
+07:29:58 [OMEGA] Breaking read loop -- server logout received
+07:29:58 [OMEGA] Price snapshot taken: 19 symbols
+07:29:58 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:29:58 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:29:58 [OMEGA] Logout sent
+07:29:59 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:29:59 [OMEGA-TRADE] Logon sent
+07:29:59 [OMEGA-TRADE] Logout received
+07:30:00 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:00 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:00 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:00 [OMEGA] Logon sent
+07:30:00 [OMEGA] Logout received from server (ghost session or forced)
+07:30:00 [OMEGA] Breaking read loop -- server logout received
+07:30:00 [OMEGA] Price snapshot taken: 19 symbols
+07:30:00 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:00 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:00 [OMEGA] Logout sent
+07:30:02 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:02 [OMEGA] Logon sent
+07:30:02 [OMEGA] Logout received from server (ghost session or forced)
+07:30:02 [OMEGA] Breaking read loop -- server logout received
+07:30:02 [OMEGA] Price snapshot taken: 19 symbols
+07:30:02 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:02 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:02 [OMEGA] Logout sent
+07:30:03 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:03 [OMEGA-TRADE] Logon sent
+07:30:03 [OMEGA-TRADE] Logout received
+07:30:03 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:03 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:03 [CTRADER] ApplicationAuthReq sent
+07:30:03 [CTRADER] Application authorized
+07:30:03 [CTRADER] AccountAuthReq sent
+07:30:03 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:03 [CTRADER] AccountAuthRes failed
+07:30:03 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:04 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:04 [OMEGA] Logon sent
+07:30:04 [OMEGA] Logout received from server (ghost session or forced)
+07:30:04 [OMEGA] Breaking read loop -- server logout received
+07:30:04 [OMEGA] Price snapshot taken: 19 symbols
+07:30:04 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:04 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:04 [OMEGA] Logout sent
+07:30:05 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:05 [OMEGA] Logon sent
+07:30:05 [OMEGA] Logout received from server (ghost session or forced)
+07:30:05 [OMEGA] Breaking read loop -- server logout received
+07:30:05 [OMEGA] Price snapshot taken: 19 symbols
+07:30:05 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:05 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:05 [OMEGA] Logout sent
+07:30:06 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:06 [OMEGA-TRADE] Logon sent
+07:30:06 [OMEGA-TRADE] Logout received
+07:30:06 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:06 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:07 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:07 [OMEGA] Logon sent
+07:30:07 [OMEGA] Logout received from server (ghost session or forced)
+07:30:07 [OMEGA] Breaking read loop -- server logout received
+07:30:07 [OMEGA] Price snapshot taken: 19 symbols
+07:30:07 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:07 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:07 [OMEGA] Logout sent
+07:30:08 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:08 [CTRADER] ApplicationAuthReq sent
+07:30:08 [CTRADER] Application authorized
+07:30:08 [CTRADER] AccountAuthReq sent
+07:30:08 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:08 [CTRADER] AccountAuthRes failed
+07:30:09 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:09 [OMEGA] Logon sent
+07:30:09 [OMEGA] Logout received from server (ghost session or forced)
+07:30:09 [OMEGA] Breaking read loop -- server logout received
+07:30:09 [OMEGA] Price snapshot taken: 19 symbols
+07:30:09 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:09 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:09 [OMEGA] Logout sent
+07:30:09 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:09 [OMEGA-TRADE] Logon sent
+07:30:09 [OMEGA-TRADE] Logout received
+07:30:09 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:10 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:11 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:11 [OMEGA] Logon sent
+07:30:11 [OMEGA] Logout received from server (ghost session or forced)
+07:30:11 [OMEGA] Breaking read loop -- server logout received
+07:30:11 [OMEGA] Price snapshot taken: 19 symbols
+07:30:11 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:11 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:11 [OMEGA] Logout sent
+07:30:12 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:12 [OMEGA] Logon sent
+07:30:12 [OMEGA] Logout received from server (ghost session or forced)
+07:30:12 [OMEGA] Breaking read loop -- server logout received
+07:30:12 [OMEGA] Price snapshot taken: 19 symbols
+07:30:12 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:12 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:12 [OMEGA] Logout sent
+07:30:13 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:13 [OMEGA-TRADE] Logon sent
+07:30:13 [OMEGA-TRADE] Logout received
+07:30:13 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:13 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:13 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:13 [CTRADER] ApplicationAuthReq sent
+07:30:13 [CTRADER] Application authorized
+07:30:13 [CTRADER] AccountAuthReq sent
+07:30:13 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:13 [CTRADER] AccountAuthRes failed
+07:30:14 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:14 [OMEGA] Logon sent
+07:30:14 [OMEGA] Logout received from server (ghost session or forced)
+07:30:14 [OMEGA] Breaking read loop -- server logout received
+07:30:14 [OMEGA] Price snapshot taken: 19 symbols
+07:30:14 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:14 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:14 [OMEGA] Logout sent
+07:30:16 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:16 [OMEGA] Logon sent
+07:30:16 [OMEGA] Logout received from server (ghost session or forced)
+07:30:16 [OMEGA] Breaking read loop -- server logout received
+07:30:16 [OMEGA] Price snapshot taken: 19 symbols
+07:30:16 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:16 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:16 [OMEGA] Logout sent
+07:30:16 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:16 [OMEGA-TRADE] Logon sent
+07:30:16 [OMEGA-TRADE] Logout received
+07:30:16 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:16 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:18 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:18 [OMEGA] Logon sent
+07:30:18 [OMEGA] Logout received from server (ghost session or forced)
+07:30:18 [OMEGA] Breaking read loop -- server logout received
+07:30:18 [OMEGA] Price snapshot taken: 19 symbols
+07:30:18 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:18 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:18 [OMEGA] Logout sent
+07:30:18 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:18 [CTRADER] ApplicationAuthReq sent
+07:30:18 [CTRADER] Application authorized
+07:30:18 [CTRADER] AccountAuthReq sent
+07:30:18 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:18 [CTRADER] AccountAuthRes failed
+07:30:19 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:19 [OMEGA] Logon sent
+07:30:19 [OMEGA] Logout received from server (ghost session or forced)
+07:30:19 [OMEGA] Breaking read loop -- server logout received
+07:30:19 [OMEGA] Price snapshot taken: 19 symbols
+07:30:19 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:19 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:19 [OMEGA] Logout sent
+07:30:19 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:20 [OMEGA-TRADE] Logon sent
+07:30:20 [OMEGA-TRADE] Logout received
+07:30:20 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:20 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:21 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:21 [OMEGA] Logon sent
+07:30:21 [OMEGA] Logout received from server (ghost session or forced)
+07:30:21 [OMEGA] Breaking read loop -- server logout received
+07:30:21 [OMEGA] Price snapshot taken: 19 symbols
+07:30:21 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:21 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:21 [OMEGA] Logout sent
+07:30:23 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:23 [OMEGA-TRADE] Logon sent
+07:30:23 [OMEGA-TRADE] Logout received
+07:30:23 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:23 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:23 [OMEGA] Logon sent
+07:30:23 [OMEGA] Logout received from server (ghost session or forced)
+07:30:23 [OMEGA] Breaking read loop -- server logout received
+07:30:23 [OMEGA] Price snapshot taken: 19 symbols
+07:30:23 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:23 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:23 [OMEGA] Logout sent
+07:30:23 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:23 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:23 [CTRADER] ApplicationAuthReq sent
+07:30:23 [CTRADER] Application authorized
+07:30:23 [CTRADER] AccountAuthReq sent
+07:30:23 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:23 [CTRADER] AccountAuthRes failed
+07:30:25 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:25 [OMEGA] Logon sent
+07:30:25 [OMEGA] Logout received from server (ghost session or forced)
+07:30:25 [OMEGA] Breaking read loop -- server logout received
+07:30:25 [OMEGA] Price snapshot taken: 19 symbols
+07:30:25 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:25 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:25 [OMEGA] Logout sent
+07:30:26 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:26 [OMEGA-TRADE] Logon sent
+07:30:26 [OMEGA-TRADE] Logout received
+07:30:26 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:26 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:26 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:26 [OMEGA] Logon sent
+07:30:26 [OMEGA] Logout received from server (ghost session or forced)
+07:30:26 [OMEGA] Breaking read loop -- server logout received
+07:30:26 [OMEGA] Price snapshot taken: 19 symbols
+07:30:26 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:26 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:26 [OMEGA] Logout sent
+07:30:28 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:28 [OMEGA] Logon sent
+07:30:28 [OMEGA] Logout received from server (ghost session or forced)
+07:30:28 [OMEGA] Breaking read loop -- server logout received
+07:30:28 [OMEGA] Price snapshot taken: 19 symbols
+07:30:28 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:28 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:28 [OMEGA] Logout sent
+07:30:28 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:28 [CTRADER] ApplicationAuthReq sent
+07:30:29 [CTRADER] Application authorized
+07:30:29 [CTRADER] AccountAuthReq sent
+07:30:29 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:29 [CTRADER] AccountAuthRes failed
+07:30:29 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:29 [OMEGA-TRADE] Logon sent
+07:30:29 [OMEGA-TRADE] Logout received
+07:30:29 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:30 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:30 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:30 [OMEGA] Logon sent
+07:30:30 [OMEGA] Logout received from server (ghost session or forced)
+07:30:30 [OMEGA] Breaking read loop -- server logout received
+07:30:30 [OMEGA] Price snapshot taken: 19 symbols
+07:30:30 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:30 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:30 [OMEGA] Logout sent
+07:30:32 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:32 [OMEGA] Logon sent
+07:30:32 [OMEGA] Logout received from server (ghost session or forced)
+07:30:32 [OMEGA] Breaking read loop -- server logout received
+07:30:32 [OMEGA] Price snapshot taken: 19 symbols
+07:30:32 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:32 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:32 [OMEGA] Logout sent
+07:30:33 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:33 [OMEGA-TRADE] Logon sent
+07:30:33 [OMEGA-TRADE] Logout received
+07:30:33 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:33 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:33 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:33 [OMEGA] Logon sent
+07:30:33 [OMEGA] Logout received from server (ghost session or forced)
+07:30:33 [OMEGA] Breaking read loop -- server logout received
+07:30:33 [OMEGA] Price snapshot taken: 19 symbols
+07:30:33 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:33 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:33 [OMEGA] Logout sent
+07:30:34 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:34 [CTRADER] ApplicationAuthReq sent
+07:30:34 [CTRADER] Application authorized
+07:30:34 [CTRADER] AccountAuthReq sent
+07:30:34 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:34 [CTRADER] AccountAuthRes failed
+07:30:35 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:35 [OMEGA] Logon sent
+07:30:35 [OMEGA] Logout received from server (ghost session or forced)
+07:30:35 [OMEGA] Breaking read loop -- server logout received
+07:30:35 [OMEGA] Price snapshot taken: 19 symbols
+07:30:35 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:35 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:35 [OMEGA] Logout sent
+07:30:36 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:36 [OMEGA-TRADE] Logon sent
+07:30:36 [OMEGA-TRADE] Logout received
+07:30:36 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:36 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:37 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:37 [OMEGA] Logon sent
+07:30:37 [OMEGA] Logout received from server (ghost session or forced)
+07:30:37 [OMEGA] Breaking read loop -- server logout received
+07:30:37 [OMEGA] Price snapshot taken: 19 symbols
+07:30:37 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:37 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:37 [OMEGA] Logout sent
+07:30:39 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:39 [CTRADER] ApplicationAuthReq sent
+07:30:39 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:39 [CTRADER] Application authorized
+07:30:39 [OMEGA] Logon sent
+07:30:39 [CTRADER] AccountAuthReq sent
+07:30:39 [OMEGA] Logout received from server (ghost session or forced)
+07:30:39 [OMEGA] Breaking read loop -- server logout received
+07:30:39 [OMEGA] Price snapshot taken: 19 symbols
+07:30:39 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:39 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:39 [OMEGA] Logout sent
+07:30:39 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:39 [CTRADER] AccountAuthRes failed
+07:30:39 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:39 [OMEGA-TRADE] Logon sent
+07:30:39 [OMEGA-TRADE] Logout received
+07:30:39 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:40 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:40 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:41 [OMEGA] Logon sent
+07:30:41 [OMEGA] Logout received from server (ghost session or forced)
+07:30:41 [OMEGA] Breaking read loop -- server logout received
+07:30:41 [OMEGA] Price snapshot taken: 19 symbols
+07:30:41 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:41 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:41 [OMEGA] Logout sent
+07:30:42 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:42 [OMEGA] Logon sent
+07:30:42 [OMEGA] Logout received from server (ghost session or forced)
+07:30:42 [OMEGA] Breaking read loop -- server logout received
+07:30:42 [OMEGA] Price snapshot taken: 19 symbols
+07:30:42 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:42 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:42 [OMEGA] Logout sent
+07:30:43 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:43 [OMEGA-TRADE] Logon sent
+07:30:43 [OMEGA-TRADE] Logout received
+07:30:43 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:43 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:44 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:44 [CTRADER] ApplicationAuthReq sent
+07:30:44 [CTRADER] Application authorized
+07:30:44 [CTRADER] AccountAuthReq sent
+07:30:44 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:44 [CTRADER] AccountAuthRes failed
+07:30:44 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:44 [OMEGA] Logon sent
+07:30:44 [OMEGA] Logout received from server (ghost session or forced)
+07:30:44 [OMEGA] Breaking read loop -- server logout received
+07:30:44 [OMEGA] Price snapshot taken: 19 symbols
+07:30:44 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:44 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:44 [OMEGA] Logout sent
+07:30:46 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:46 [OMEGA] Logon sent
+07:30:46 [OMEGA] Logout received from server (ghost session or forced)
+07:30:46 [OMEGA] Breaking read loop -- server logout received
+07:30:46 [OMEGA] Price snapshot taken: 19 symbols
+07:30:46 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:46 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:46 [OMEGA] Logout sent
+07:30:46 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:46 [OMEGA-TRADE] Logon sent
+07:30:46 [OMEGA-TRADE] Logout received
+07:30:46 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:46 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:47 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:48 [OMEGA] Logon sent
+07:30:48 [OMEGA] Logout received from server (ghost session or forced)
+07:30:48 [OMEGA] Breaking read loop -- server logout received
+07:30:48 [OMEGA] Price snapshot taken: 19 symbols
+07:30:48 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:48 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:48 [OMEGA] Logout sent
+07:30:49 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:49 [CTRADER] ApplicationAuthReq sent
+07:30:49 [CTRADER] Application authorized
+07:30:49 [CTRADER] AccountAuthReq sent
+07:30:49 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:49 [CTRADER] AccountAuthRes failed
+07:30:49 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:49 [OMEGA] Logon sent
+07:30:49 [OMEGA] Logout received from server (ghost session or forced)
+07:30:49 [OMEGA] Breaking read loop -- server logout received
+07:30:49 [OMEGA] Price snapshot taken: 19 symbols
+07:30:49 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:49 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:49 [OMEGA] Logout sent
+07:30:49 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:49 [OMEGA-TRADE] Logon sent
+07:30:49 [OMEGA-TRADE] Logout received
+07:30:49 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:50 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:51 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:51 [OMEGA] Logon sent
+07:30:51 [OMEGA] Logout received from server (ghost session or forced)
+07:30:51 [OMEGA] Breaking read loop -- server logout received
+07:30:51 [OMEGA] Price snapshot taken: 19 symbols
+07:30:51 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:51 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:51 [OMEGA] Logout sent
+07:30:53 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:53 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:53 [OMEGA-TRADE] Logon sent
+07:30:53 [OMEGA-TRADE] Logout received
+07:30:53 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:53 [OMEGA] Logon sent
+07:30:53 [OMEGA] Logout received from server (ghost session or forced)
+07:30:53 [OMEGA] Breaking read loop -- server logout received
+07:30:53 [OMEGA] Price snapshot taken: 19 symbols
+07:30:53 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:53 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:53 [OMEGA] Logout sent
+07:30:53 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:54 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:54 [CTRADER] ApplicationAuthReq sent
+07:30:54 [CTRADER] Application authorized
+07:30:54 [CTRADER] AccountAuthReq sent
+07:30:54 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:54 [CTRADER] AccountAuthRes failed
+07:30:55 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:55 [OMEGA] Logon sent
+07:30:55 [OMEGA] Logout received from server (ghost session or forced)
+07:30:55 [OMEGA] Breaking read loop -- server logout received
+07:30:55 [OMEGA] Price snapshot taken: 19 symbols
+07:30:55 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:55 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:55 [OMEGA] Logout sent
+07:30:56 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:56 [OMEGA-TRADE] Logon sent
+07:30:56 [OMEGA-TRADE] Logout received
+07:30:56 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:30:56 [OMEGA-TRADE] Disconnected -- reconnecting
+07:30:56 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:56 [OMEGA] Logon sent
+07:30:56 [OMEGA] Logout received from server (ghost session or forced)
+07:30:56 [OMEGA] Breaking read loop -- server logout received
+07:30:56 [OMEGA] Price snapshot taken: 19 symbols
+07:30:56 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:56 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:56 [OMEGA] Logout sent
+07:30:58 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:30:58 [OMEGA] Logon sent
+07:30:58 [OMEGA] Logout received from server (ghost session or forced)
+07:30:58 [OMEGA] Breaking read loop -- server logout received
+07:30:58 [OMEGA] Price snapshot taken: 19 symbols
+07:30:58 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:30:58 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:30:58 [OMEGA] Logout sent
+07:30:59 [CTRADER] Connecting live.ctraderapi.com:5035
+07:30:59 [CTRADER] ApplicationAuthReq sent
+07:30:59 [CTRADER] Application authorized
+07:30:59 [CTRADER] AccountAuthReq sent
+07:30:59 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:30:59 [CTRADER] AccountAuthRes failed
+07:30:59 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:30:59 [OMEGA-TRADE] Logon sent
+07:30:59 [OMEGA-TRADE] Logout received
+07:30:59 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:31:00 [OMEGA-TRADE] Disconnected -- reconnecting
+07:31:00 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:00 [OMEGA] Logon sent
+07:31:00 [OMEGA] Logout received from server (ghost session or forced)
+07:31:00 [OMEGA] Breaking read loop -- server logout received
+07:31:00 [OMEGA] Price snapshot taken: 19 symbols
+07:31:00 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:31:00 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:31:00 [OMEGA] Logout sent
+07:31:02 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:02 [OMEGA] Logon sent
+07:31:02 [OMEGA] Logout received from server (ghost session or forced)
+07:31:02 [OMEGA] Breaking read loop -- server logout received
+07:31:02 [OMEGA] Price snapshot taken: 19 symbols
+07:31:02 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:31:02 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:31:02 [OMEGA] Logout sent
+07:31:03 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:31:03 [OMEGA-TRADE] Logon sent
+07:31:03 [OMEGA-TRADE] Logout received
+07:31:03 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:31:03 [OMEGA-TRADE] Disconnected -- reconnecting
+07:31:03 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:03 [OMEGA] Logon sent
+07:31:03 [OMEGA] Logout received from server (ghost session or forced)
+07:31:03 [OMEGA] Breaking read loop -- server logout received
+07:31:03 [OMEGA] Price snapshot taken: 19 symbols
+07:31:03 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:31:03 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:31:03 [OMEGA] Logout sent
+07:31:04 [CTRADER] Connecting live.ctraderapi.com:5035
+07:31:04 [CTRADER] ApplicationAuthReq sent
+07:31:04 [CTRADER] Application authorized
+07:31:04 [CTRADER] AccountAuthReq sent
+07:31:04 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:31:04 [CTRADER] AccountAuthRes failed
+07:31:05 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:05 [OMEGA] Logon sent
+07:31:05 [OMEGA] Logout received from server (ghost session or forced)
+07:31:05 [OMEGA] Breaking read loop -- server logout received
+07:31:05 [OMEGA] Price snapshot taken: 19 symbols
+07:31:05 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:31:05 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:31:05 [OMEGA] Logout sent
+07:31:06 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:31:06 [OMEGA-TRADE] Logon sent
+07:31:06 [OMEGA-TRADE] Logout received
+07:31:06 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:31:06 [OMEGA-TRADE] Disconnected -- reconnecting
+07:31:07 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:07 [OMEGA] Logon sent
+07:31:07 [OMEGA] Logout received from server (ghost session or forced)
+07:31:07 [OMEGA] Breaking read loop -- server logout received
+07:31:07 [OMEGA] Price snapshot taken: 19 symbols
+07:31:07 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:31:07 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:31:07 [OMEGA] Logout sent
+07:31:09 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:09 [OMEGA] Logon sent
+07:31:09 [OMEGA] Logout received from server (ghost session or forced)
+07:31:09 [OMEGA] Breaking read loop -- server logout received
+07:31:09 [OMEGA] Price snapshot taken: 19 symbols
+07:31:09 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:31:09 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:31:09 [OMEGA] Logout sent
+07:31:09 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:31:09 [OMEGA-TRADE] Logon sent
+07:31:09 [OMEGA-TRADE] Logout received
+07:31:09 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:31:09 [CTRADER] Connecting live.ctraderapi.com:5035
+07:31:09 [CTRADER] ApplicationAuthReq sent
+07:31:09 [CTRADER] Application authorized
+07:31:09 [CTRADER] AccountAuthReq sent
+07:31:10 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:31:10 [CTRADER] AccountAuthRes failed
+07:31:10 [OMEGA-TRADE] Disconnected -- reconnecting
+07:31:10 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:10 [OMEGA] Logon sent
+07:31:10 [OMEGA] Logout received from server (ghost session or forced)
+07:31:10 [OMEGA] Breaking read loop -- server logout received
+07:31:10 [OMEGA] Price snapshot taken: 19 symbols
+07:31:10 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:31:10 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:31:10 [OMEGA] Logout sent
+07:31:12 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:12 [OMEGA] Logon sent
+07:31:12 [OMEGA] Logout received from server (ghost session or forced)
+07:31:12 [OMEGA] Breaking read loop -- server logout received
+07:31:12 [OMEGA] Price snapshot taken: 19 symbols
+07:31:12 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:31:12 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:31:12 [OMEGA] Logout sent
+07:31:13 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:31:13 [OMEGA-TRADE] Logon sent
+07:31:13 [OMEGA-TRADE] Logout received
+07:31:13 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:31:13 [OMEGA-TRADE] Disconnected -- reconnecting
+07:31:14 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:14 [OMEGA] Logon sent
+07:31:14 [OMEGA] Logout received from server (ghost session or forced)
+07:31:14 [OMEGA] Breaking read loop -- server logout received
+07:31:14 [OMEGA] Price snapshot taken: 19 symbols
+07:31:14 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:31:14 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:31:14 [OMEGA] Logout sent
+07:31:15 [CTRADER] Connecting live.ctraderapi.com:5035
+07:31:15 [CTRADER] ApplicationAuthReq sent
+07:31:15 [CTRADER] Application authorized
+07:31:15 [CTRADER] AccountAuthReq sent
+07:31:15 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+07:31:15 [CTRADER] AccountAuthRes failed
+07:31:16 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:16 [OMEGA] Logon sent
+07:31:16 [OMEGA] Logout received from server (ghost session or forced)
+07:31:16 [OMEGA] Breaking read loop -- server logout received
+07:31:16 [OMEGA] Price snapshot taken: 19 symbols
+07:31:16 [OMEGA] SHADOW mode -- preserving positions across reconnect
+07:31:16 [OMEGA-SHADOW] Positions preserved across reconnect -- skipping force-close
+07:31:16 [OMEGA] Logout sent
+07:31:16 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:31:16 [OMEGA-TRADE] Logon sent
+07:31:16 [OMEGA-TRADE] Logout received
+07:31:16 [OMEGA-TRADE] SSL error 6 -- reconnecting
+07:31:16 [OMEGA-TRADE] Disconnected -- reconnecting
+07:31:17 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+07:31:17 [OMEGA] Logon sent
+07:31:17 [OMEGA] LOGON ACCEPTED
+07:31:17 [OMEGA] Subscribed ALL symbols (OMEGA-MD-ALL)
+07:31:18 [TICK] EURUSD 1.15/1.15
+07:31:18 [TICK] GBPUSD 1.32/1.32
+07:31:18 [TICK] USDJPY 159.59/159.75
+07:31:18 [TICK] AUDUSD 0.69/0.69
+07:31:18 [TICK] NGAS.F 2.79/2.82
+07:31:18 [TICK] USOIL.F 111.90/112.01
+07:31:18 [TICK] XAUUSD 4677.03/4677.25
+07:31:18 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+07:31:18 [TICK] ESTX50 5699.40/5700.80
+07:31:18 [TICK] XAGUSD 73.02/73.05
+07:31:18 [TICK] GER40 23202.60/23204.30
+07:31:18 [TICK] NZDUSD 0.57/0.57
+07:31:18 [TICK] DJ30.F 46620.30/46642.60
+07:31:18 [TICK] UK100 10455.10/10456.90
+07:31:18 [TICK] BRENT 106.44/107.11
+07:31:18 [TICK] VIX.F 24.74/25.10
+07:31:18 [TICK] DX.F 99.93/100.03
+07:31:18 [TICK] NAS100 23952.15/23953.35
+07:31:18 [TICK] US500.F 6603.22/6604.03
+07:31:18 [TICK] USTEC.F 24128.44/24132.90
+07:31:19 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+07:31:19 [OMEGA-TRADE] Logon sent
+07:31:20 [CTRADER] Connecting live.ctraderapi.com:5035
+07:31:20 [CTRADER] ApplicationAuthReq sent
+07:31:20 [CTRADER] Application authorized
+07:31:20 [CTRADER] AccountAuthReq sent
+07:31:20 [CTRADER] Account 44937427 authorized
+07:31:20 [CTRADER] XAUUSD-PIN: id=41 name=XAUUSD (matched FIX id=41)
+07:31:20 [CTRADER] PINNED: XAUUSD spot id=41 (XAUUSD) -- all other XAU/gold blocked
+07:31:20 [CTRADER] Subscribe depth: EURUSD id=1
+07:31:20 [CTRADER] Subscribe depth: NAS100 id=110
+07:31:20 [CTRADER] BLOCKED: XAUUSD.P id=2597 (gold non-spot)
+07:31:20 [CTRADER] Subscribe depth: NGAS.F id=2631
+07:31:20 [CTRADER] Subscribe depth: GBPUSD id=2
+07:31:20 [CTRADER] Subscribe depth: XAGUSD id=42
+07:31:20 [CTRADER] Subscribe depth: USOIL.F id=2632
+07:31:20 [CTRADER] Subscribe depth: ESTX50 id=1898
+07:31:20 [CTRADER] BLOCKED: XAUEUR.P id=2629 (gold non-spot)
+07:31:20 [CTRADER] Subscribe depth: USDJPY id=4
+07:31:20 [CTRADER] BLOCKED: XAUEUR id=93 (gold non-spot)
+07:31:20 [CTRADER] Subscribe depth: BRENT id=109
+07:31:20 [CTRADER] Subscribe depth: GER40 id=1899
+07:31:20 [CTRADER] Subscribe depth: DJ30.F id=2637
+07:31:20 [CTRADER] Subscribe depth: AUDUSD id=5
+07:31:20 [CTRADER] Subscribe depth: DX.F id=2638
+07:31:20 [CTRADER] Subscribe depth: UK100 id=1901
+07:31:20 [CTRADER] BLOCKED: XAUJPY id=4766 (gold non-spot)
+07:31:20 [CTRADER] Subscribe depth: US500.F id=2642
+07:31:20 [CTRADER] BLOCKED: XAUJPY.P id=4767 (gold non-spot)
+07:31:20 [CTRADER] Subscribe depth: USTEC.F id=2643
+07:31:20 [CTRADER] BLOCKED: XAUGBP id=4768 (gold non-spot)
+07:31:20 [CTRADER] BLOCKED: XAUGBP.P id=4769 (gold non-spot)
+07:31:20 [CTRADER] BLOCKED: XAUCNH id=4770 (gold non-spot)
+07:31:20 [CTRADER] BLOCKED: GOLD.F id=2660 (gold non-spot)
+07:31:20 [CTRADER] Subscribe depth: NZDUSD id=12
+07:31:20 [CTRADER] BLOCKED: XAUCNH.P id=4771 (gold non-spot)
+07:31:20 [CTRADER] BLOCKED: XAUAUD id=4772 (gold non-spot)
+07:31:20 [CTRADER] Subscribe depth: VIX.F id=4462
+07:31:20 [CTRADER] BLOCKED: XAUAUD.P id=4773 (gold non-spot)
+07:31:20 [CTRADER] SKIP-DUP: VIX id=4818 -> VIX.F (already subscribed)
+07:31:20 [CTRADER] Symbol list: 1551 total, 19 to subscribe
+07:31:20 [CTRADER] XAUUSD spots sub sent (pre-depth, enables depth events)
+07:31:20 [CTRADER] Subscribed to 19 symbols
+07:31:20 [CTRADER] Depth feed ACTIVE -- 19 symbols
+07:31:20 [OMEGA-TRADE] LOGON ACCEPTED
+07:31:20 [OMEGA-TRADE] SecurityListRequest sent req_id=omega-sec-1775287880
+07:31:20 [OMEGA-SECURITY] UNMATCHED: 'UK100.F' id=4461
+07:31:20 [OMEGA-SECURITY] UNMATCHED: 'UKBRENT.F' id=2634
+07:31:20 [OMEGA-SECURITY] UNMATCHED: 'ESTC' id=3229
+07:31:20 [OMEGA-TRADE] SecurityList received req_id=omega-sec-1775287880 entries=1551
+07:31:30 [CTRADER-BARS] XAUUSD spots sub sent
+07:31:30 [CTRADER-BARS] Spots sub ACK
+07:32:18 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.31ms cap=120ms lat_ok=1 session=ACTIVE
+07:32:18 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+07:32:18 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+07:32:18 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+07:32:18 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+07:32:18 [TICK] EURUSD 1.15/1.15
+07:32:18 [TICK] GBPUSD 1.32/1.32
+07:32:18 [TICK] USDJPY 159.59/159.75
+07:32:18 [TICK] AUDUSD 0.69/0.69
+07:32:18 [TICK] XAUUSD 4677.03/4677.25
+07:32:18 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+07:32:18 [TICK] ESTX50 5699.40/5700.80
+07:32:18 [TICK] XAGUSD 73.02/73.05
+07:32:18 [TICK] GER40 23202.60/23204.30
+07:32:18 [TICK] NZDUSD 0.57/0.57
+07:32:18 [TICK] BRENT 106.44/107.11
+07:32:18 [TICK] NAS100 23952.15/23953.35
+07:32:18 [TICK] NGAS.F 2.79/2.82
+07:32:18 [TICK] USOIL.F 111.90/112.01
+07:32:18 [TICK] DJ30.F 46620.30/46642.60
+07:32:18 [TICK] UK100 10455.10/10456.90
+07:32:18 [TICK] VIX.F 24.74/25.10
+07:32:18 [TICK] DX.F 99.93/100.03
+07:32:18 [TICK] US500.F 6603.22/6604.03
+07:32:18 [TICK] USTEC.F 24128.44/24132.90
