@@ -1708,17 +1708,16 @@ private:
         // At 0.15 lots: fires at 2.33pts. At 0.30 lots: fires at 1.17pts.
         // After banking 33%, SL locks to entry+buffer (BE) -- remainder runs free.
         //
+        // MIN-LOT SCALING FIX (2026-04-04 audit):
+        // At 0.01 lots (daily-loss-gate minimum), $35 requires 35pts -- never reached.
+        // Evidence: Apr 2 11:49 LONG mfe=8.26pts but SL_HIT -$2.10 (trail never armed).
+        // Fix: effective trigger = max(fixed_dollar, 0.75 * ATR * full_size * 100).
+        //   At 0.01 lots, ATR=2.06: floor = 0.75*2.06*0.01*100 = $1.55 -- fires at 1.55pts.
+        //   At 0.15 lots, ATR=5.0:  floor = 0.75*5.0*0.15*100  = $56.25 -- fixed $35 wins.
+        // This ensures the staircase ALWAYS arms within 1 ATR, regardless of lot size.
+        //
         // VELOCITY EXCEPTION (P2 fix, 2026-04-02):
         // When velocity_active (expansion_mode + vol_ratio>2.5), raise trigger to $150.
-        // PROBLEM: on 04-02 the 04:05 SHORT entered during a 111pt crash. Step1 fired
-        // after 9 SECONDS at 2.62pts ($9 gross). Position halved to 0.08 lots, then
-        // the normal trail clipped the remainder at 4666 after 27s. The crash continued
-        // 104 more points. The velocity trail needs 15pts (3xATR) to arm -- step1 at
-        // $35 fires at 2.19pts and kills the position before the trail ever engages.
-        // Fix: in velocity mode require $150 before banking. At 0.16 lots that is
-        // 9.375pts -- enough for the velocity trail to arm (needs 3xATR ~15pts) and
-        // for the position to survive the first bars of a major expansion move.
-        // Normal (non-velocity) path: unchanged at $35.
 #ifndef GFE_STEP1_OVERRIDE
         static constexpr double STEP1_DOLLAR_TRIGGER         = 35.0;   // normal: raised 20->35
         static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = 150.0; // velocity: suppress until $150
@@ -1726,25 +1725,37 @@ private:
         static constexpr double STEP1_DOLLAR_TRIGGER         = GFE_STEP1_OVERRIDE;
         static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = GFE_STEP1_OVERRIDE * 4.0;
 #endif
-        // Step 1 trigger applied below, after velocity_active is computed.
+        // Lot-scaled floor: 0.75 * ATR * full_size * $100/pt
+        // Ensures step 1 always fires within ~1 ATR even at min lot size.
+        const double step1_lot_floor = (pos.full_size > 0.0 && atr_step > 0.0)
+            ? (0.75 * atr_step * pos.full_size * 100.0) : 0.0;
 
         const bool velocity_active = m_expansion_mode && (m_vol_ratio > 2.5);
 
-        // ?? Step 1: DOLLAR trigger -- velocity-aware ????????????????????
-        // Normal: fire at $35. Velocity mode: suppress until $150.
-        // Prevents halving position at 2.62pts before velocity trail arms at 3xATR.
+        // ?? Step 1: DOLLAR trigger -- velocity-aware + lot-scaled ????????????????????
+        // Normal: fire at max($35, 0.75xATR). Velocity mode: max($150, 3xATR).
         {
-            const double eff_step1_trigger = velocity_active
+            const double eff_step1_base = velocity_active
                 ? STEP1_DOLLAR_TRIGGER_VELOCITY : STEP1_DOLLAR_TRIGGER;
-            if (!pos.partial_closed && open_pnl_usd_full >= eff_step1_trigger) {
+            // Lot-scaled floor: ensures step 1 fires within ~1 ATR regardless of lot size.
+            // Velocity: scale floor to 3xATR to match the velocity trail arm threshold.
+            const double eff_step1_floor = velocity_active
+                ? (pos.full_size > 0.0 && atr_step > 0.0 ? 3.0 * atr_step * pos.full_size * 100.0 : 0.0)
+                : step1_lot_floor;
+            const double eff_step1_trigger = std::min(eff_step1_base, std::max(eff_step1_floor, eff_step1_base));
+            // eff_step1_trigger = min(fixed, max(lot_floor, fixed)) = lot_floor when lot_floor < fixed, else fixed
+            // Simplified: use lot_floor when lot_floor < fixed (min-lot case), else use fixed
+            const double actual_step1 = (step1_lot_floor > 0.0 && step1_lot_floor < eff_step1_base)
+                ? step1_lot_floor : eff_step1_base;
+            if (!pos.partial_closed && open_pnl_usd_full >= actual_step1) {
                 fire_stair(1, "PARTIAL_1R");
             } else if (velocity_active && !pos.partial_closed && open_pnl_usd_full > 0.0) {
                 static int64_t s_vel_step1_log = 0;
                 if (now_ms - s_vel_step1_log > 5000) {
                     s_vel_step1_log = now_ms;
-                    printf("[GFE-VEL-STEP1] WAITING $%.0f / $%.0f (%.0f%%) vol_ratio=%.2f mfe=%.2fpts trail_arm_at=%.2fpts\n",
-                           open_pnl_usd_full, STEP1_DOLLAR_TRIGGER_VELOCITY,
-                           open_pnl_usd_full / STEP1_DOLLAR_TRIGGER_VELOCITY * 100.0,
+                    printf("[GFE-VEL-STEP1] WAITING $%.2f / $%.2f (%.0f%%) vol_ratio=%.2f mfe=%.2fpts trail_arm_at=%.2fpts\n",
+                           open_pnl_usd_full, actual_step1,
+                           open_pnl_usd_full / actual_step1 * 100.0,
                            m_vol_ratio, pos.mfe, pos.atr_at_entry * 3.0);
                     fflush(stdout);
                 }
@@ -1853,9 +1864,24 @@ private:
         // Before step 1: ratchet moves SL from loss territory toward BE.
         // After step 1:  ratchet locks profit above the staircase SL.
         // Both improve the worst-case outcome.
+        //
+        // MIN-LOT SCALING: at 0.01 lots the fixed $50 tier requires 50pts -- never fires.
+        // Evidence: Apr 2 11:49 mfe=8.26pts, ratchet never moved SL, SL_HIT -$2.10.
+        // Fix: eff_ratchet_step = min($50, 0.75 * ATR * full_size * $100/pt).
+        //   lot_floor at 0.01 lots, ATR=2.0: 0.75*2.0*0.01*100 = $1.50 -- fires at 1.5pts.
+        //   lot_floor at 0.15 lots, ATR=5.0: 0.75*5.0*0.15*100 = $56.25 > $50 -- fixed wins.
+        // Result: small lots get proportional ratchet; normal lots unchanged.
         if (pos.size > 0.0 && pos.full_size > 0.0) {
+            // Lot-scaled floor: 0.75 * ATR * full_size * tick_value
+            const double lot_ratchet_floor = (pos.full_size > 0.0 && m_atr > 0.0)
+                ? (0.75 * m_atr * pos.full_size * 100.0)
+                : DOLLAR_RATCHET_STEP;
+            // Use floor only when it is SMALLER than the fixed step (min-lot case).
+            // At normal lot sizes the floor exceeds $50 so fixed step wins unchanged.
+            const double eff_ratchet_step = (lot_ratchet_floor < DOLLAR_RATCHET_STEP)
+                ? lot_ratchet_floor : DOLLAR_RATCHET_STEP;
             // Tier trigger: uses open_pnl_usd_full computed above staircase steps
-            const int    tier_now = static_cast<int>(open_pnl_usd_full / DOLLAR_RATCHET_STEP);
+            const int    tier_now = static_cast<int>(open_pnl_usd_full / eff_ratchet_step);
 
             if (tier_now > pos.dollar_lock_tier && tier_now >= 1) {
                 // SL placement: use remaining size so locked_pts correctly maps

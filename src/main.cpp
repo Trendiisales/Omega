@@ -585,6 +585,11 @@ static std::atomic<int64_t>  g_gf_dir_sl_long_first{0};   // timestamp of first 
 static std::atomic<int64_t>  g_gf_dir_sl_short_first{0};  // timestamp of first short SL in window
 static std::atomic<int64_t>  g_gf_long_blocked_until{0};  // block long entries until this time
 static std::atomic<int64_t>  g_gf_short_blocked_until{0}; // block short entries until this time
+// ENGINE-CULLED atomic: set when GoldFlow hits 4 consecutive SL_HITs.
+// Mirrors engine_culled in g_shadow_quality but readable cross-thread (quote thread checks it).
+// g_shadow_quality is only safe to read in the trade thread -- this atomic is the bridge.
+// Reset: g_shadow_quality.clear() at midnight resets the shadow map; this atomic mirrors it.
+static std::atomic<bool>     g_gf_engine_culled{false};   // true = GoldFlow disabled until midnight
 
 // ?? Indices FORCE_CLOSE circuit breaker ??????????????????????????????????????
 // Problem: on April 2 2026, repeated disconnect/reconnect cycles on US indices
@@ -3917,6 +3922,7 @@ static void maybe_reset_daily_ledger() {
         g_sym_risk.clear();
         g_shadow_quality.clear();
     }
+    g_gf_engine_culled.store(false, std::memory_order_relaxed);  // reset cull at midnight -- new session
     {
         std::lock_guard<std::mutex> lk(g_perf_mtx);
         g_perf.clear();
@@ -4221,8 +4227,11 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
             if (!eq.engine_culled) {
                 if (++eq.engine_consec_sl >= 4) {
                     eq.engine_culled = true;
+                    // Mirror to cross-thread atomic so quote thread gate can read it safely
+                    if (eng_key == "XAUUSD:GoldFlowEngine")
+                        g_gf_engine_culled.store(true, std::memory_order_relaxed);
                     std::cout << "\033[1;31m[ENGINE-CULLED] " << eng_key
-                              << " -- 4 consecutive SL hits. Disabled until restart.\033[0m\n";
+                              << " -- 4 consecutive SL hits. Disabled until midnight.\033[0m\n";
                     std::cout.flush();
                 } else {
                     printf("[ENGINE-SL-STREAK] %s consec_sl=%d/4\n",
@@ -9488,6 +9497,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                         : in_london_open_noise_gf  ? "LONDON_OPEN_NOISE"
                                         : gf_trail_same_dir        ? "TRAIL_BLOCK_SAME_DIR"
                                         : nullptr;
+
+            // ?? Gate 0: ENGINE-CULLED check ??????????????????????????????????????????
+            // engine_culled is set in handle_closed_trade after 4 consecutive SL_HITs.
+            // Previously the flag was SET but never CHECKED -- entries continued after
+            // the [ENGINE-CULLED] log message. Evidence: Apr 2 12:00 LONG fired after
+            // cull at 11:59, taking a 5th consecutive SL loss.
+            // Fix: g_gf_engine_culled atomic is set alongside engine_culled in
+            // handle_closed_trade and checked here before any entry is allowed.
+            // Resets to false on session rollover (midnight UTC reset in diag thread).
+            if (gf_tick_ok && g_gf_engine_culled.load(std::memory_order_relaxed)) {
+                static int64_t s_cull_log = 0;
+                if (nowSec() - s_cull_log >= 60) {
+                    s_cull_log = nowSec();
+                    printf("[GF-GATE-BLOCK] reason=ENGINE_CULLED -- GoldFlow disabled after 4 consecutive SL_HITs\n");
+                    fflush(stdout);
+                }
+                gf_tick_ok = false;
+                gf_block_reason = "ENGINE_CULLED";
+            }
 
             // ?? Gate 0d: Bar warmup guard ????????????????????????????????????????
             // Gates 3 and 4 (RSI, M5 trend, ATR slope, VWAP coherence, spread anomaly,
