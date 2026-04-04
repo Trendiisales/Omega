@@ -4894,3 +4894,28 @@
 04:03:56 [CTRADER-BARS] Spots sub ACK
 04:03:56 [CTRADER-BARS] XAUUSD tick data req (period=7 via pt=2145, avoids pt=2137 crash)
 04:03:56 [CTRADER-TICKS] XAUUSD: empty response
+04:04:16 [OMEGA-DIAG] PnL=0.00 T=0 WR=0.00% RTTp95=2.13ms cap=120.00ms lat_ok=1 session=ACTIVE
+04:04:16 [OMEGA-DIAG] SP phase=0 recent=0.00% base=0.00% ratio=0.00
+04:04:16 [OMEGA-DIAG] NQ phase=0 recent=0.00% base=0.00% ratio=0.00
+04:04:16 [OMEGA-DIAG] CL phase=0 recent=0.00% base=0.00% ratio=0.00
+04:04:16 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+04:04:16 [TICK] EURUSD 1.15/1.15
+04:04:16 [TICK] GBPUSD 1.32/1.32
+04:04:16 [TICK] USDJPY 159.59/159.75
+04:04:16 [TICK] AUDUSD 0.69/0.69
+04:04:16 [TICK] XAUUSD 4677.03/4677.25
+04:04:16 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+04:04:16 [TICK] XAGUSD 73.02/73.05
+04:04:16 [TICK] NZDUSD 0.57/0.57
+04:04:16 [TICK] NGAS.F 2.79/2.82
+04:04:16 [TICK] USOIL.F 111.90/112.01
+04:04:16 [TICK] ESTX50 5699.40/5700.80
+04:04:16 [TICK] GER40 23202.60/23204.30
+04:04:16 [TICK] DJ30.F 46620.30/46642.60
+04:04:16 [TICK] UK100 10455.10/10456.90
+04:04:16 [TICK] BRENT 106.44/107.11
+04:04:16 [TICK] VIX.F 24.74/25.10
+04:04:16 [TICK] DX.F 99.93/100.03
+04:04:16 [TICK] NAS100 23952.15/23953.35
+04:04:16 [TICK] US500.F 6603.22/6604.03
+04:04:16 [TICK] USTEC.F 24128.44/24132.90
