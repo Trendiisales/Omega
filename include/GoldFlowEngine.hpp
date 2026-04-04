@@ -414,16 +414,25 @@ struct GoldFlowEngine {
             if ((int)m_drift_val_window.size() > GFE_DRIFT_PERSIST_TICKS)
                 m_drift_val_window.pop_front();
 
-            // ?? Chop guard: if drift range (max-min) > 4.0 over window, market
-            // is oscillating -- do not enter regardless of persistence count.
-            // Evidence: 2026-03-30 drift swung +2.2/-1.8 every 10s; persistence
-            // window filled with 14/20 directional ticks from noise alone.
+            // ?? Chop guard: if drift range (max-min) > 4.0 over window AND the
+            // window contains BOTH positive and negative values, market is oscillating.
+            // CRITICAL FIX (2026-04-02): original guard fired on directional crash bands.
+            // At 01:25 UTC drift min=-9.41 max=-4.86: range=4.56 > 4.0 but BOTH values
+            // are negative -- that is a one-directional bear drift band, not chop.
+            // The guard was calling a sustained crash "chop" and blocking 8 entries from
+            // 01:05-01:34 UTC while the supervisor showed TREND_CONTINUATION conf=3.85.
+            // Fix: only declare chop when drift window contains BOTH positive AND negative
+            // values. If all values share a sign it is a directional grind -- allow entry.
+            // Evidence: 2026-03-30 real chop swung +2.2/-1.8 (mixed signs) -- still caught.
+            //           2026-04-02 crash drift -9.41/-4.86 (all negative) -- now allowed.
             double drift_min = ewm_drift, drift_max = ewm_drift;
             for (double v : m_drift_val_window) {
                 if (v < drift_min) drift_min = v;
                 if (v > drift_max) drift_max = v;
             }
-            const bool drift_choppy = (drift_max - drift_min) > 4.0;
+            const double drift_range   = drift_max - drift_min;
+            const bool   drift_mixed   = (drift_min < 0.0) && (drift_max > 0.0); // window has both signs
+            const bool   drift_choppy  = (drift_range > 4.0) && drift_mixed;     // chop = wide AND mixed
 
             int drift_long_count = 0, drift_short_count = 0;
             for (int d : m_drift_persist_window) {
@@ -438,10 +447,20 @@ struct GoldFlowEngine {
                 static int64_t s_chop_log = 0;
                 if (now_ms - s_chop_log > 10000) {
                     s_chop_log = now_ms;
-                    std::cout << "[GFE-CHOP] drift range=" << (drift_max - drift_min)
-                              << " (min=" << drift_min << " max=" << drift_max
-                              << ") -- chop guard active, no entry\n";
-                    std::cout.flush();
+                    printf("[GFE-CHOP] drift range=%.2f (min=%.2f max=%.2f) mixed=%d"
+                           " -- chop guard active, no entry\n",
+                           drift_range, drift_min, drift_max, (int)drift_mixed);
+                    fflush(stdout);
+                }
+            } else if (drift_range > 4.0 && !drift_mixed) {
+                // Directional grind: wide range but all one sign -- NOT chop. Log once.
+                static int64_t s_dir_grind_log = 0;
+                if (now_ms - s_dir_grind_log > 30000) {
+                    s_dir_grind_log = now_ms;
+                    printf("[GFE-CHOP] drift range=%.2f (min=%.2f max=%.2f) mixed=0"
+                           " -- DIRECTIONAL GRIND, chop guard bypassed\n",
+                           drift_range, drift_min, drift_max);
+                    fflush(stdout);
                 }
             }
             // For slow confirmation, require the same drift ratio over the full window
@@ -1646,21 +1665,48 @@ private:
         const double open_pnl_usd_full = (pos.full_size > 0.0)
             ? (move * pos.full_size * 100.0) : 0.0;
 
-        // Step 1: DOLLAR trigger -- bank first 33% the moment trade is up $50.
+        // Step 1: DOLLAR trigger -- bank first 33% the moment trade is up $35.
         // Previously triggered at +1*ATR price distance (e.g. 10pts at ATR=10).
         // Problem: ATR=10 requires a $10 move = $150 gross at 0.15 lots.
         // Most Asia trades only move 3-4pts and reverse before ever reaching step 1.
-        // Fix: fire as soon as open PnL on full position >= $50.
-        // At 0.15 lots: fires at 3.33pts. At 0.30 lots: fires at 1.67pts.
+        // Fix: fire as soon as open PnL on full position >= $35.
+        // At 0.15 lots: fires at 2.33pts. At 0.30 lots: fires at 1.17pts.
         // After banking 33%, SL locks to entry+buffer (BE) -- remainder runs free.
-        // This is exactly what was requested: "bank the $50 we have, let it run."
+        //
+        // VELOCITY EXCEPTION (P2 fix, 2026-04-02):
+        // When velocity_active (expansion_mode + vol_ratio>2.5), raise trigger to $150.
+        // PROBLEM: on 04-02 the 04:05 SHORT entered during a 111pt crash. Step1 fired
+        // after 9 SECONDS at 2.62pts ($9 gross). Position halved to 0.08 lots, then
+        // the normal trail clipped the remainder at 4666 after 27s. The crash continued
+        // 104 more points. The velocity trail needs 15pts (3xATR) to arm -- step1 at
+        // $35 fires at 2.19pts and kills the position before the trail ever engages.
+        // Fix: in velocity mode require $150 before banking. At 0.16 lots that is
+        // 9.375pts -- enough for the velocity trail to arm (needs 3xATR ~15pts) and
+        // for the position to survive the first bars of a major expansion move.
+        // Normal (non-velocity) path: unchanged at $35.
 #ifndef GFE_STEP1_OVERRIDE
-        static constexpr double STEP1_DOLLAR_TRIGGER = 35.0;  // raised 20->35: at $20 Asia wins averaged $25, losses $123. Negative expectancy. $35 banks more per step without being unreachable.
+        static constexpr double STEP1_DOLLAR_TRIGGER         = 35.0;   // normal: raised 20->35
+        static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = 150.0; // velocity: suppress until $150
 #else
-        static constexpr double STEP1_DOLLAR_TRIGGER = GFE_STEP1_OVERRIDE;
+        static constexpr double STEP1_DOLLAR_TRIGGER         = GFE_STEP1_OVERRIDE;
+        static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = GFE_STEP1_OVERRIDE * 4.0;
 #endif
-        if (!pos.partial_closed && open_pnl_usd_full >= STEP1_DOLLAR_TRIGGER) {
+        // velocity_active already computed above (expansion_mode && vol_ratio > 2.5)
+        const double eff_step1_trigger = velocity_active
+            ? STEP1_DOLLAR_TRIGGER_VELOCITY : STEP1_DOLLAR_TRIGGER;
+        if (!pos.partial_closed && open_pnl_usd_full >= eff_step1_trigger) {
             fire_stair(1, "PARTIAL_1R");
+        } else if (velocity_active && !pos.partial_closed && open_pnl_usd_full > 0.0) {
+            // Progress log: show step1 suppression status in velocity mode every 5s
+            static int64_t s_vel_step1_log = 0;
+            if (now_ms - s_vel_step1_log > 5000) {
+                s_vel_step1_log = now_ms;
+                printf("[GFE-VEL-STEP1] WAITING $%.0f / $%.0f (%.0f%%) vol_ratio=%.2f mfe=%.2fpts trail_arm_at=%.2fpts\n",
+                       open_pnl_usd_full, STEP1_DOLLAR_TRIGGER_VELOCITY,
+                       open_pnl_usd_full / STEP1_DOLLAR_TRIGGER_VELOCITY * 100.0,
+                       m_vol_ratio, pos.mfe, pos.atr_at_entry * 3.0);
+                fflush(stdout);
+            }
         }
 
         // Step 2: +2?ATR -- bank another 33% of remaining, SL ? step1 exit

@@ -558,6 +558,10 @@ static std::unordered_map<std::string, int64_t> g_engine_pause;
 // When GoldFlow SL_HIT and drift reverses: allow GoldStack fast counter-entry
 // by bypassing the 120s SL cooldown. Window = 60s from flow exit.
 static std::atomic<int64_t>  g_gold_reversal_window_until{0};
+// P4 velocity re-entry bypass: set to 1 when velocity_active + no open > 5min + conf>1.0.
+// Allows GoldFlow to bypass the exclusivity gate on confirmed velocity expansion days.
+// Only read inside the GoldFlow on_tick block -- not used by other engines.
+static std::atomic<int>       g_gf_vel_reentry_bypass{0};
 static std::atomic<int64_t>  g_gold_post_impulse_until{0};  // block new entries 3min after IMPULSE ends
 static std::atomic<int>      g_gold_impulse_ticks{0};          // consecutive IMPULSE ticks -- must be >=3 before GoldFlow enters on IMPULSE
 static std::atomic<int64_t>  g_gold_trail_block_until{0};    // same-dir re-entry blocked 30s after trail/BE (GoldStack)
@@ -8065,6 +8069,75 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
             && gold_session_ok && symbol_gate("XAUUSD", false);
 
+        // ?? P4: Velocity re-entry exclusivity exception ??????????????????????
+        // PROBLEM (2026-04-02): after 04:24 all positions closed. gold_can_enter=false
+        // via gold_any_open exclusivity gate for 109 MINUTES while price fell 87 more pts.
+        // The supervisor showed TREND_CONTINUATION conf=1.54 at 05:09. Signal was there.
+        // Nothing could enter because a prior closed position was still counted.
+        //
+        // ROOT CAUSE: gold_any_open is true when a PREVIOUS gold engine has recently
+        // closed and the exclusivity gate hasn't cleared. In velocity regime, a confirmed
+        // directional expansion with no open position for >5 minutes should be re-enterable.
+        //
+        // FIX: when ALL of the following:
+        //   1. velocity_active_gate: supervisor is EXPANSION_BREAKOUT or TREND_CONTINUATION
+        //      AND vol_ratio > 2.5 (confirmed velocity regime -- not normal tape)
+        //   2. No gold position is ACTUALLY open right now (all engines flat)
+        //   3. >5 minutes since last GoldFlow close (not a quick cooldown flip)
+        //   4. Supervisor confidence > 1.0 (strong signal -- not marginal)
+        // Then bypass the exclusivity gate for GoldFlow specifically.
+        // All other gates (session, latency, trail_block, post_impulse, RSI, bar gates) still apply.
+        // This ONLY bypasses the "another engine recently closed" part of gold_any_open.
+        {
+            const double gf_vel_ratio_p4   = (g_gold_stack.recent_vol_pct() > 0.0
+                                           && g_gold_stack.base_vol_pct() > 0.0)
+                ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
+            const bool gf_expansion_p4     = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
+                                           || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
+            const bool velocity_active_gate = gf_expansion_p4 && (gf_vel_ratio_p4 > 2.5);
+
+            // Check no position is ACTUALLY open (not just exclusivity counting closed ones)
+            const bool actually_no_open    = !g_gold_flow.has_open_position()
+                                          && !g_gold_flow_reload.has_open_position()
+                                          && !g_gold_stack.has_open_position()
+                                          && !g_bracket_gold.has_open_position()
+                                          && !g_le_stack.has_open_position()
+                                          && !g_trend_pb_gold.has_open_position();
+
+            const int64_t last_gf_close    = g_gold_flow_exit_ts.load();
+            const int64_t now_p4           = static_cast<int64_t>(std::time(nullptr));
+            const bool    no_pos_5min      = actually_no_open
+                                          && (last_gf_close > 0)
+                                          && ((now_p4 - last_gf_close) > 300); // >5min since last close
+
+            const bool vel_reentry_bypass  = velocity_active_gate
+                                          && no_pos_5min
+                                          && (gold_sdec.confidence > 1.0)
+                                          && gold_session_ok
+                                          && (!gold_post_impulse_block || crash_impulse_bypass);
+
+            if (vel_reentry_bypass && !gold_can_enter) {
+                // gold_can_enter was false only due to exclusivity (gold_any_open).
+                // All real risk/session gates passed. Override for GoldFlow specifically.
+                // NOTE: this does NOT modify gold_can_enter (which gates other engines).
+                // The actual entry is gated by gf_vel_reentry_ok below, used only inside
+                // the GoldFlow on_tick block.
+                static int64_t s_vel_reentry_log = 0;
+                if (now_p4 - s_vel_reentry_log >= 30) {
+                    s_vel_reentry_log = now_p4;
+                    printf("[GF-VEL-REENTRY] Exclusivity bypass: velocity_active vol_ratio=%.2f "
+                           "conf=%.2f no_pos_for=%lldsec regime=%s -- GoldFlow re-entry ALLOWED\n",
+                           gf_vel_ratio_p4, gold_sdec.confidence,
+                           (long long)(now_p4 - last_gf_close),
+                           omega::regime_name(gold_sdec.regime));
+                    fflush(stdout);
+                }
+            }
+            // Export bypass decision for use in GoldFlow on_tick block below.
+            // Named distinctly to avoid confusion with gold_can_enter.
+            g_gf_vel_reentry_bypass.store(vel_reentry_bypass ? 1 : 0);
+        }
+
         // Run supervisor -- uses g_eng_xag as vol/phase proxy since gold has
         // its own GoldStack (not a BreakoutEngine). We use a dedicated gold
         // BreakoutEngine-based vol state if available, otherwise use silver as proxy.
@@ -9234,7 +9307,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 fflush(stdout);
             }
         }
-        if (gold_can_enter
+        if ((gold_can_enter || g_gf_vel_reentry_bypass.load())
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
             && !g_gold_flow.has_open_position()
@@ -9262,6 +9335,55 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             } else {
             g_gold_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
                                        ? g_cfg.risk_per_trade_usd : GFE_RISK_DOLLARS;
+
+            // ?? P3: Velocity size scaling -- risk_dollars *= min(vol_ratio, 3.0) ???
+            // SHADOW MODE (2026-04-02 fix): log what the scaled size WOULD be,
+            // but do NOT apply it yet. Verify 2-3 sessions before enabling live.
+            // PROBLEM: on Apr 2 vol_ratio=4.2 but risk stayed at $30 (0.16 lots).
+            // A crash of 111pts at 0.16 lots = $1,776 max capture.
+            // At 0.45 lots (3x scale) = $4,995 max capture on same SL risk.
+            // The daily loss limit ($200-300) still caps downside -- the only change
+            // is how much upside is captured when a 4x vol expansion event fires.
+            // ACTIVATION: set GFE_VEL_SIZE_SCALE_LIVE=1 in CMakeLists or config
+            // once shadow logs confirm correct gates (velocity + crash day only).
+            {
+                const double gf_vol_ratio_scale = (g_gold_stack.recent_vol_pct() > 0.0
+                                                && g_gold_stack.base_vol_pct() > 0.0)
+                    ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 1.0;
+                const bool   gf_expansion_scale  = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
+                                                 || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
+                const bool   gf_vel_scale_active  = gf_expansion_scale && (gf_vol_ratio_scale > 2.5);
+                if (gf_vel_scale_active) {
+                    const double scale_mult       = std::min(gf_vol_ratio_scale, 3.0);
+                    const double scaled_risk       = g_gold_flow.risk_dollars * scale_mult;
+                    const double gf_atr_s          = g_gold_flow.current_atr();
+                    const double gf_sl_s           = (gf_atr_s > 0.0) ? gf_atr_s * GFE_ATR_SL_MULT : 10.0;
+                    const double unscaled_lot       = g_gold_flow.risk_dollars / (gf_sl_s * 100.0);
+                    const double scaled_lot         = std::max(GFE_MIN_LOT,
+                                                        std::min(0.50, scaled_risk / (gf_sl_s * 100.0)));
+#ifndef GFE_VEL_SIZE_SCALE_LIVE
+                    // SHADOW: log what would happen, do not apply
+                    printf("[GFE-SIZE-SCALE] SHADOW vol_ratio=%.2f scale=%.1fx "
+                           "risk_base=$%.0f risk_scaled=$%.0f "
+                           "lot_base=%.3f lot_scaled=%.3f sl_pts=%.2f "
+                           "regime=%s -- NOT APPLIED (shadow mode)\n",
+                           gf_vol_ratio_scale, scale_mult,
+                           g_gold_flow.risk_dollars, scaled_risk,
+                           unscaled_lot, scaled_lot, gf_sl_s,
+                           omega::regime_name(gold_sdec.regime));
+                    fflush(stdout);
+#else
+                    // LIVE: apply scaled risk -- activate after shadow verification
+                    g_gold_flow.risk_dollars = scaled_risk;
+                    printf("[GFE-SIZE-SCALE] LIVE vol_ratio=%.2f scale=%.1fx "
+                           "risk=$%.0f lot_est=%.3f sl_pts=%.2f\n",
+                           gf_vol_ratio_scale, scale_mult, scaled_risk, scaled_lot, gf_sl_s);
+                    fflush(stdout);
+                    (void)unscaled_lot;
+#endif
+                    (void)scaled_lot; (void)unscaled_lot;
+                }
+            }
 
             // ?? Pre-tick gate block -- FOUR checks before on_tick is called ???
             // GoldFlowEngine enters internally (pos.active=true inside enter()),
