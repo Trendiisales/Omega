@@ -113,6 +113,9 @@ foreach ($commitLine in $recentCommits) {
     $shortHash = $Matches[1]
     $fullHash  = (git rev-parse $shortHash 2>$null).Trim()
     $filesChanged = (git show --name-only --format="" $fullHash 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
+    # Any file NOT under logs/ counts as a real source commit.
+    # Old logic (only src/|include/|CMakeLists) missed cmake/, incidents/, scripts/, *.ps1
+    # causing the GUI to show a stale hash from the last src/-touching commit.
     $nonLogFiles  = $filesChanged | Where-Object { -not $_.StartsWith("logs/") }
     if ($nonLogFiles) {
         $sourceHash      = $fullHash
