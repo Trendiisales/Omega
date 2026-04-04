@@ -1733,20 +1733,19 @@ private:
         const bool velocity_active = m_expansion_mode && (m_vol_ratio > 2.5);
 
         // ?? Step 1: DOLLAR trigger -- velocity-aware + lot-scaled ????????????????????
-        // Normal: fire at max($35, 0.75xATR). Velocity mode: max($150, 3xATR).
+        // Normal: fire at $35 or lot_floor whichever is smaller.
+        // Velocity: fire at $150 or 3xATR lot_floor whichever is smaller.
+        // Lot-scaled floor ensures step 1 fires within ~1 ATR at any lot size.
         {
             const double eff_step1_base = velocity_active
                 ? STEP1_DOLLAR_TRIGGER_VELOCITY : STEP1_DOLLAR_TRIGGER;
-            // Lot-scaled floor: ensures step 1 fires within ~1 ATR regardless of lot size.
-            // Velocity: scale floor to 3xATR to match the velocity trail arm threshold.
+            // Velocity lot floor: 3xATR so step 1 doesn't fire before velocity trail arms
             const double eff_step1_floor = velocity_active
                 ? (pos.full_size > 0.0 && atr_step > 0.0 ? 3.0 * atr_step * pos.full_size * 100.0 : 0.0)
                 : step1_lot_floor;
-            const double eff_step1_trigger = std::min(eff_step1_base, std::max(eff_step1_floor, eff_step1_base));
-            // eff_step1_trigger = min(fixed, max(lot_floor, fixed)) = lot_floor when lot_floor < fixed, else fixed
-            // Simplified: use lot_floor when lot_floor < fixed (min-lot case), else use fixed
-            const double actual_step1 = (step1_lot_floor > 0.0 && step1_lot_floor < eff_step1_base)
-                ? step1_lot_floor : eff_step1_base;
+            // Use lot_floor when it is smaller than the fixed trigger (min-lot case)
+            const double actual_step1 = (eff_step1_floor > 0.0 && eff_step1_floor < eff_step1_base)
+                ? eff_step1_floor : eff_step1_base;
             if (!pos.partial_closed && open_pnl_usd_full >= actual_step1) {
                 fire_stair(1, "PARTIAL_1R");
             } else if (velocity_active && !pos.partial_closed && open_pnl_usd_full > 0.0) {
