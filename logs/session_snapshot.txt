@@ -1,15 +1,15 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-04 01:55:13 UTC
+Generated : 2026-04-04 01:55:30 UTC
 ============================================================
-[ATR-DAT] atr=8.000000 atr_ewm=8.000000 warmed=1 last_mid=4677.14000 saved_ts=1775267297
+[ATR-DAT] atr=8.000000 atr_ewm=8.000000 warmed=1 last_mid=4677.14000 saved_ts=1775267729
 [ATR-OK]   atr=8 healthy
 
-[DIAG]        01:48:17 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.904ms cap=120ms lat_ok=1 session=ACTIVE
-[GOLD-DIAG]   01:48:17 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
-[BRK-DIAG]    01:54:29 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.00 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+[DIAG]        01:55:29 [OMEGA-DIAG] PnL=0.00 T=0 WR=0.00% RTTp95=2.64ms cap=120.00ms lat_ok=1 session=ACTIVE
+[GOLD-DIAG]   01:55:29 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+[BRK-DIAG]    01:55:29 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
 [SUPERVISOR]  01:54:29 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.69 bracket=0.78 breakout=0.00 top_score=0.78 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
-[VIX]         01:54:29 [TICK] VIX.F 24.74/25.10
-[GOLD-PRICE]  01:55:09 [CTRADER-TICKS] XAUUSD: empty response
+[VIX]         01:55:29 [TICK] VIX.F 24.74/25.10
+[GOLD-PRICE]  01:55:29 [TICK] XAUUSD 4677.03/4677.25
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
