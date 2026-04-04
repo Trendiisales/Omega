@@ -4884,6 +4884,109 @@ static bool symbol_gate(
     return true;
 }
 
+// ── open_unrealised_pnl ──────────────────────────────────────────────────────
+static double open_unrealised_pnl() {
+    double total = 0.0;
+
+    // Snapshot all mid prices in ONE lock acquisition to avoid 30+ per-engine
+    // g_book_mtx acquisitions at high tick rates (was lock contention risk).
+    std::unordered_map<std::string, double> mids;
+    {
+        std::lock_guard<std::mutex> lk(g_book_mtx);
+        for (const auto& kv : g_bids) {
+            auto ai = g_asks.find(kv.first);
+            if (ai != g_asks.end() && kv.second > 0 && ai->second > 0)
+                mids[kv.first] = (kv.second + ai->second) * 0.5;
+        }
+    }
+
+    // Helper: unrealised PnL -- generic lambda accepts any OpenPos-like type
+    auto be_pnl = [&](const auto& p, const std::string& sym) -> double {
+        if (!p.active) return 0.0;
+        auto it = mids.find(sym);
+        if (it == mids.end() || it->second <= 0.0) return 0.0;
+        const double move = p.is_long ? (it->second - p.entry) : (p.entry - it->second);
+        return move * p.size * tick_value_multiplier(sym);
+    };
+
+    // Helper: unrealised PnL for a CrossPosition (uses same snapshot)
+    auto cp_pnl = [&](bool active, bool is_long, double entry, double size,
+                      const std::string& sym) -> double {
+        if (!active || entry <= 0.0) return 0.0;
+        auto it = mids.find(sym);
+        if (it == mids.end() || it->second <= 0.0) return 0.0;
+        const double move = is_long ? (it->second - entry) : (entry - it->second);
+        return move * size * tick_value_multiplier(sym);
+    };
+
+    // Breakout engines
+    total += be_pnl(g_eng_sp.pos,     "US500.F");
+    total += be_pnl(g_eng_nq.pos,     "USTEC.F");
+    total += be_pnl(g_eng_cl.pos,     "USOIL.F");
+    total += be_pnl(g_eng_us30.pos,   "DJ30.F");
+    total += be_pnl(g_eng_nas100.pos, "NAS100");
+    total += be_pnl(g_eng_ger30.pos,  "GER40");
+    total += be_pnl(g_eng_uk100.pos,  "UK100");
+    total += be_pnl(g_eng_estx50.pos, "ESTX50");
+    total += be_pnl(g_eng_xag.pos,    "XAGUSD");
+    total += be_pnl(g_eng_eurusd.pos, "EURUSD");
+    total += be_pnl(g_eng_gbpusd.pos, "GBPUSD");
+    total += be_pnl(g_eng_audusd.pos, "AUDUSD");
+    total += be_pnl(g_eng_nzdusd.pos, "NZDUSD");
+    total += be_pnl(g_eng_usdjpy.pos, "USDJPY");
+    total += be_pnl(g_eng_brent.pos,  "BRENT");
+
+    // Bracket engines -- pos.entry/size/is_long same struct
+    total += be_pnl(g_bracket_sp.pos,     "US500.F");
+    total += be_pnl(g_bracket_nq.pos,     "USTEC.F");
+    total += be_pnl(g_bracket_us30.pos,   "DJ30.F");
+    total += be_pnl(g_bracket_nas100.pos, "NAS100");
+    total += be_pnl(g_bracket_ger30.pos,  "GER40");
+    total += be_pnl(g_bracket_uk100.pos,  "UK100");
+    total += be_pnl(g_bracket_estx50.pos, "ESTX50");
+    total += be_pnl(g_bracket_xag.pos,    "XAGUSD");
+    total += be_pnl(g_bracket_gold.pos,   "XAUUSD");
+    total += be_pnl(g_bracket_brent.pos,  "BRENT");
+    total += be_pnl(g_bracket_eurusd.pos, "EURUSD");
+    total += be_pnl(g_bracket_gbpusd.pos, "GBPUSD");
+    total += be_pnl(g_bracket_audusd.pos, "AUDUSD");
+    total += be_pnl(g_bracket_nzdusd.pos, "NZDUSD");
+    total += be_pnl(g_bracket_usdjpy.pos, "USDJPY");
+
+    // Cross-asset engines -- use public accessors (pos_ is private)
+    // open_unrealised() calls the engine's open_pos_pnl(bid, ask) method.
+    // If an engine has a position, mid-price PnL is estimated from the book.
+    auto ca_pnl = [&](bool has_pos, double open_entry, bool open_long,
+                      double open_size, const std::string& sym) -> double {
+        if (!has_pos || open_entry <= 0.0) return 0.0;
+        return cp_pnl(true, open_long, open_entry, open_size, sym);
+    };
+    total += ca_pnl(g_ca_esnq.has_open_position(),
+                    g_ca_esnq.open_entry(), g_ca_esnq.open_is_long(), g_ca_esnq.open_size(), "US500.F");
+    total += ca_pnl(g_ca_eia_fade.has_open_position(),
+                    g_ca_eia_fade.open_entry(), g_ca_eia_fade.open_is_long(), g_ca_eia_fade.open_size(), "USOIL.F");
+    total += ca_pnl(g_ca_brent_wti.has_open_position(),
+                    g_ca_brent_wti.open_entry(), g_ca_brent_wti.open_is_long(), g_ca_brent_wti.open_size(), "BRENT");
+    total += ca_pnl(g_ca_fx_cascade.has_open_position(),
+                    g_ca_fx_cascade.open_entry(), g_ca_fx_cascade.open_is_long(), g_ca_fx_cascade.open_size(), "GBPUSD");
+    total += ca_pnl(g_ca_carry_unwind.has_open_position(),
+                    g_ca_carry_unwind.open_entry(), g_ca_carry_unwind.open_is_long(), g_ca_carry_unwind.open_size(), "USDJPY");
+
+    // Gold flow
+    if (g_gold_flow.pos.active) {
+        std::lock_guard<std::mutex> lk(g_book_mtx);
+        auto bi = g_bids.find("XAUUSD"); auto ai = g_asks.find("XAUUSD");
+        if (bi != g_bids.end() && ai != g_asks.end()) {
+            const double mid = (bi->second + ai->second) * 0.5;
+            const double move = g_gold_flow.pos.is_long
+                ? (mid - g_gold_flow.pos.entry)
+                : (g_gold_flow.pos.entry - mid);
+            total += move * g_gold_flow.pos.size * 100.0;  // XAUUSD tick mult
+        }
+    }
+    return total;
+}
+
 static void on_tick(const std::string& sym, double bid, double ask) {
     // ?? Tick spike filter ???????????????????????????????????????????????
     // Reject ticks where mid moves > 5x slow ATR in a single step.
@@ -5471,107 +5574,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Sums floating P&L across ALL open positions each tick.
     // Used by symbol_gate to enforce daily_loss_limit on combined
     // closed + unrealised loss -- prevents limit breach before any close fires.
-    auto open_unrealised_pnl = [&]() -> double {
-        double total = 0.0;
-
-        // Snapshot all mid prices in ONE lock acquisition to avoid 30+ per-engine
-        // g_book_mtx acquisitions at high tick rates (was lock contention risk).
-        std::unordered_map<std::string, double> mids;
-        {
-            std::lock_guard<std::mutex> lk(g_book_mtx);
-            for (const auto& kv : g_bids) {
-                auto ai = g_asks.find(kv.first);
-                if (ai != g_asks.end() && kv.second > 0 && ai->second > 0)
-                    mids[kv.first] = (kv.second + ai->second) * 0.5;
-            }
-        }
-
-        // Helper: unrealised PnL -- generic lambda accepts any OpenPos-like type
-        auto be_pnl = [&](const auto& p, const std::string& sym) -> double {
-            if (!p.active) return 0.0;
-            auto it = mids.find(sym);
-            if (it == mids.end() || it->second <= 0.0) return 0.0;
-            const double move = p.is_long ? (it->second - p.entry) : (p.entry - it->second);
-            return move * p.size * tick_value_multiplier(sym);
-        };
-
-        // Helper: unrealised PnL for a CrossPosition (uses same snapshot)
-        auto cp_pnl = [&](bool active, bool is_long, double entry, double size,
-                          const std::string& sym) -> double {
-            if (!active || entry <= 0.0) return 0.0;
-            auto it = mids.find(sym);
-            if (it == mids.end() || it->second <= 0.0) return 0.0;
-            const double move = is_long ? (it->second - entry) : (entry - it->second);
-            return move * size * tick_value_multiplier(sym);
-        };
-
-        // Breakout engines
-        total += be_pnl(g_eng_sp.pos,     "US500.F");
-        total += be_pnl(g_eng_nq.pos,     "USTEC.F");
-        total += be_pnl(g_eng_cl.pos,     "USOIL.F");
-        total += be_pnl(g_eng_us30.pos,   "DJ30.F");
-        total += be_pnl(g_eng_nas100.pos, "NAS100");
-        total += be_pnl(g_eng_ger30.pos,  "GER40");
-        total += be_pnl(g_eng_uk100.pos,  "UK100");
-        total += be_pnl(g_eng_estx50.pos, "ESTX50");
-        total += be_pnl(g_eng_xag.pos,    "XAGUSD");
-        total += be_pnl(g_eng_eurusd.pos, "EURUSD");
-        total += be_pnl(g_eng_gbpusd.pos, "GBPUSD");
-        total += be_pnl(g_eng_audusd.pos, "AUDUSD");
-        total += be_pnl(g_eng_nzdusd.pos, "NZDUSD");
-        total += be_pnl(g_eng_usdjpy.pos, "USDJPY");
-        total += be_pnl(g_eng_brent.pos,  "BRENT");
-
-        // Bracket engines -- pos.entry/size/is_long same struct
-        total += be_pnl(g_bracket_sp.pos,     "US500.F");
-        total += be_pnl(g_bracket_nq.pos,     "USTEC.F");
-        total += be_pnl(g_bracket_us30.pos,   "DJ30.F");
-        total += be_pnl(g_bracket_nas100.pos, "NAS100");
-        total += be_pnl(g_bracket_ger30.pos,  "GER40");
-        total += be_pnl(g_bracket_uk100.pos,  "UK100");
-        total += be_pnl(g_bracket_estx50.pos, "ESTX50");
-        total += be_pnl(g_bracket_xag.pos,    "XAGUSD");
-        total += be_pnl(g_bracket_gold.pos,   "XAUUSD");
-        total += be_pnl(g_bracket_brent.pos,  "BRENT");
-        total += be_pnl(g_bracket_eurusd.pos, "EURUSD");
-        total += be_pnl(g_bracket_gbpusd.pos, "GBPUSD");
-        total += be_pnl(g_bracket_audusd.pos, "AUDUSD");
-        total += be_pnl(g_bracket_nzdusd.pos, "NZDUSD");
-        total += be_pnl(g_bracket_usdjpy.pos, "USDJPY");
-
-        // Cross-asset engines -- use public accessors (pos_ is private)
-        // open_unrealised() calls the engine's open_pos_pnl(bid, ask) method.
-        // If an engine has a position, mid-price PnL is estimated from the book.
-        auto ca_pnl = [&](bool has_pos, double open_entry, bool open_long,
-                          double open_size, const std::string& sym) -> double {
-            if (!has_pos || open_entry <= 0.0) return 0.0;
-            return cp_pnl(true, open_long, open_entry, open_size, sym);
-        };
-        total += ca_pnl(g_ca_esnq.has_open_position(),
-                        g_ca_esnq.open_entry(), g_ca_esnq.open_is_long(), g_ca_esnq.open_size(), "US500.F");
-        total += ca_pnl(g_ca_eia_fade.has_open_position(),
-                        g_ca_eia_fade.open_entry(), g_ca_eia_fade.open_is_long(), g_ca_eia_fade.open_size(), "USOIL.F");
-        total += ca_pnl(g_ca_brent_wti.has_open_position(),
-                        g_ca_brent_wti.open_entry(), g_ca_brent_wti.open_is_long(), g_ca_brent_wti.open_size(), "BRENT");
-        total += ca_pnl(g_ca_fx_cascade.has_open_position(),
-                        g_ca_fx_cascade.open_entry(), g_ca_fx_cascade.open_is_long(), g_ca_fx_cascade.open_size(), "GBPUSD");
-        total += ca_pnl(g_ca_carry_unwind.has_open_position(),
-                        g_ca_carry_unwind.open_entry(), g_ca_carry_unwind.open_is_long(), g_ca_carry_unwind.open_size(), "USDJPY");
-
-        // Gold flow
-        if (g_gold_flow.pos.active) {
-            std::lock_guard<std::mutex> lk(g_book_mtx);
-            auto bi = g_bids.find("XAUUSD"); auto ai = g_asks.find("XAUUSD");
-            if (bi != g_bids.end() && ai != g_asks.end()) {
-                const double mid = (bi->second + ai->second) * 0.5;
-                const double move = g_gold_flow.pos.is_long
-                    ? (mid - g_gold_flow.pos.entry)
-                    : (g_gold_flow.pos.entry - mid);
-                total += move * g_gold_flow.pos.size * 100.0;  // XAUUSD tick mult
-            }
-        }
-        return total;
-    };
+    // open_unrealised_pnl -- converted to static function above on_tick
 
     // ?? Push unrealised P&L to global atomic every 250ms ????????????????????
     // This feeds the GUI daily_pnl display (closed + floating) and persists
@@ -7054,7 +7057,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_orb_us.has_open_position() ||
             g_vwap_rev_sp.has_open_position()  ||
             g_trend_pb_sp.has_open_position()  ||  // TrendPullback SP
-            g_nbm_sp.has_open_position(), tradeable, lat_ok, regime, bid, ask)
+            g_nbm_sp.has_open_position(), "", tradeable, lat_ok, regime, bid, ask)
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         // Log when circuit breaker is blocking -- once every 60s so it's visible but not spammy
@@ -7275,7 +7278,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_bracket_nq.pos.active              ||
             g_vwap_rev_nq.has_open_position()    ||
             g_trend_pb_nq.has_open_position()    ||  // TrendPullback NQ
-            g_nbm_nq.has_open_position(), tradeable, lat_ok, regime, bid, ask)             // NBM
+            g_nbm_nq.has_open_position(), "", tradeable, lat_ok, regime, bid, ask)             // NBM
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         {
@@ -7444,7 +7447,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool base_can = symbol_gate("USOIL.F",
                 g_eng_cl.pos.active                 ||
                 g_ca_eia_fade.has_open_position()   ||  // ADDED
-                g_ca_brent_wti.has_open_position(), tradeable, lat_ok, regime, bid, ask);    // ADDED
+                g_ca_brent_wti.has_open_position(), "", tradeable, lat_ok, regime, bid, ask);    // ADDED
             // NOTE: USOIL.F bracket is disabled -- it was incorrectly sharing
             // g_bracket_gold (XAUUSD's GoldBracketEngine). That engine's confirm_fill,
             // on_reject, and pending order IDs are wired to XAUUSD fills only.
@@ -7507,7 +7510,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_us30 = symbol_gate("DJ30.F",
             g_eng_us30.pos.active      ||
             g_bracket_us30.pos.active  ||
-            g_nbm_us30.has_open_position(), tradeable, lat_ok, regime, bid, ask) // NBM
+            g_nbm_us30.has_open_position(), "", tradeable, lat_ok, regime, bid, ask) // NBM
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         {
@@ -7555,7 +7558,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_bracket_ger30.pos.active          ||
             g_orb_ger30.has_open_position()     ||  // ADDED
             g_vwap_rev_ger40.has_open_position() || // ADDED
-            g_trend_pb_ger40.has_open_position(), tradeable, lat_ok, regime, bid, ask);  // ADDED
+            g_trend_pb_ger40.has_open_position(), "", tradeable, lat_ok, regime, bid, ask);  // ADDED
         const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger);
         // ?? GER40 manage blocks -- ALWAYS run when position open (SL/trail fix) ??
         if (g_orb_ger30.has_open_position())      { g_orb_ger30.on_tick(sym, bid, ask, ca_on_close); }
@@ -7574,7 +7577,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         (void)sdec_ger;
     }
     else if (sym == "UK100") {
-        const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active, tradeable, lat_ok, regime, bid, ask);
+        const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active, "", tradeable, lat_ok, regime, bid, ask);
         const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk);
         // SIM: EU index breakout -- no edge. Disabled.
         // if (sdec_uk.allow_breakout && !g_bracket_uk100.pos.active)
@@ -7597,7 +7600,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "ESTX50") {
-        const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active, tradeable, lat_ok, regime, bid, ask);
+        const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active, "", tradeable, lat_ok, regime, bid, ask);
         const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx);
         // SIM: EU index breakout -- no edge. Disabled.
         // if (sdec_estx.allow_breakout && !g_bracket_estx50.pos.active)
@@ -7648,7 +7651,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_fx = symbol_gate("EURUSD",
             g_eng_eurusd.pos.active                ||
             g_bracket_eurusd.pos.active            ||
-            g_vwap_rev_eurusd.has_open_position(), tradeable, lat_ok, regime, bid, ask); // ADDED
+            g_vwap_rev_eurusd.has_open_position(), "", tradeable, lat_ok, regime, bid, ask); // ADDED
         const auto sdec_fx = sup_decision(g_sup_eurusd, g_eng_eurusd, base_can_fx);
         // Notify FX cascade engine if EURUSD just fired a signal this tick
         {
@@ -7724,7 +7727,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_fx2 = symbol_gate("GBPUSD",
             g_eng_gbpusd.pos.active                    ||
             g_bracket_gbpusd.pos.active                ||
-            g_ca_fx_cascade.has_open_gbpusd(), tradeable, lat_ok, regime, bid, ask);         // ADDED
+            g_ca_fx_cascade.has_open_gbpusd(), "", tradeable, lat_ok, regime, bid, ask);         // ADDED
         const auto sdec_fx2 = sup_decision(g_sup_gbpusd, g_eng_gbpusd, base_can_fx2);
         if (sdec_fx2.allow_breakout && !g_bracket_gbpusd.pos.active)
             dispatch(g_eng_gbpusd, g_sup_gbpusd, base_can_fx2, &sdec_fx2);
@@ -7761,7 +7764,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool asia_ok = !g_cfg.asia_fx_asia_only || (h2 >= 22 || h2 < 7);
         if (asia_ok) {
             if (sym == "AUDUSD") {
-                const bool bc_aud = symbol_gate("AUDUSD", g_eng_audusd.pos.active || g_bracket_audusd.pos.active, tradeable, lat_ok, regime, bid, ask);
+                const bool bc_aud = symbol_gate("AUDUSD", g_eng_audusd.pos.active || g_bracket_audusd.pos.active, "", tradeable, lat_ok, regime, bid, ask);
                 const auto sd_aud = sup_decision(g_sup_audusd, g_eng_audusd, bc_aud);
                 if (sd_aud.allow_breakout && !g_bracket_audusd.pos.active) dispatch(g_eng_audusd, g_sup_audusd, bc_aud, &sd_aud);
                 if (sd_aud.allow_bracket && !g_eng_audusd.pos.active && !any_fx_bracket_active)
@@ -7783,7 +7786,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
             if (sym == "NZDUSD") {
-                const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.pos.active, tradeable, lat_ok, regime, bid, ask);
+                const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.pos.active, "", tradeable, lat_ok, regime, bid, ask);
                 const auto sd_nzd = sup_decision(g_sup_nzdusd, g_eng_nzdusd, bc_nzd);
                 if (sd_nzd.allow_breakout && !g_bracket_nzdusd.pos.active) dispatch(g_eng_nzdusd, g_sup_nzdusd, bc_nzd, &sd_nzd);
                 // SIM: BracketEngine on FX -- no edge. Disabled.
@@ -7805,7 +7808,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
             if (sym == "USDJPY") {
-                const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.pos.active, tradeable, lat_ok, regime, bid, ask);
+                const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.pos.active, "", tradeable, lat_ok, regime, bid, ask);
                 const auto sd_jpy = sup_decision(g_sup_usdjpy, g_eng_usdjpy, bc_jpy);
                 if (sd_jpy.allow_breakout && !g_bracket_usdjpy.pos.active) dispatch(g_eng_usdjpy, g_sup_usdjpy, bc_jpy, &sd_jpy);
                 // SIM: BracketEngine on FX -- no edge. Disabled.
@@ -7840,7 +7843,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto t_br = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti_br; gmtime_s(&ti_br, &t_br);
         if (ti_br.tm_hour >= 7) {
-            const bool base_can_brent = symbol_gate("BRENT", g_eng_brent.pos.active || g_bracket_brent.pos.active, tradeable, lat_ok, regime, bid, ask);
+            const bool base_can_brent = symbol_gate("BRENT", g_eng_brent.pos.active || g_bracket_brent.pos.active, "", tradeable, lat_ok, regime, bid, ask);
             const auto sdec_brent = sup_decision(g_sup_brent, g_eng_brent, base_can_brent);
             if (sdec_brent.allow_breakout && !g_bracket_brent.pos.active)
                 dispatch(g_eng_brent, g_sup_brent, base_can_brent, &sdec_brent);
@@ -7853,7 +7856,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_nas = symbol_gate("NAS100",
             g_eng_nas100.pos.active      ||
             g_bracket_nas100.pos.active  ||
-            g_nbm_nas.has_open_position(), tradeable, lat_ok, regime, bid, ask) // NBM
+            g_nbm_nas.has_open_position(), "", tradeable, lat_ok, regime, bid, ask) // NBM
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         {
@@ -8121,11 +8124,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
              || (rsi_for_gate > 62.0)                             // RSI rally -- drift not needed (was 68)
              || (rsi_for_gate < 38.0 && drift_for_gate < -1.5)   // drift+RSI confirmation (was 35)
              || (rsi_for_gate > 62.0 && drift_for_gate >  1.5)); // drift+RSI confirmation (was 65)
-        const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open, tradeable, lat_ok, regime, bid, ask)
+        const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
                                  && (!gold_post_impulse_block || crash_impulse_bypass);
         // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
         const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
-            && gold_session_ok && symbol_gate("XAUUSD", false, tradeable, lat_ok, regime, bid, ask);
+            && gold_session_ok && symbol_gate("XAUUSD", false, "", tradeable, lat_ok, regime, bid, ask);
 
         // Run supervisor -- uses g_eng_xag as vol/phase proxy since gold has
         // its own GoldStack (not a BreakoutEngine). We use a dedicated gold
@@ -10561,7 +10564,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             return (ti_s.tm_hour * 60 + ti_s.tm_min) >= 390; // 06:30 UTC
         }());
         const bool tpb_gold_can_enter = tpb_gold_session_ok
-                                     && symbol_gate("XAUUSD", gold_any_open, tradeable, lat_ok, regime, bid, ask)
+                                     && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
                                      && !gold_post_impulse_block;
 
         // ?? CRASH CONTINUATION OVERRIDE ????????????????????????????????????????
