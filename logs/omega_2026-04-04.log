@@ -32,3 +32,7 @@
 01:42:15 [OMEGA-SECURITY] UNMATCHED: 'UKBRENT.F' id=2634
 01:42:15 [OMEGA-SECURITY] UNMATCHED: 'ESTC' id=3229
 01:42:15 [OMEGA-TRADE] SecurityList received req_id=omega-sec-1775266935 entries=1551 (ext IDs updated -- will re-subscribe)
+01:42:16 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+01:42:16 [OMEGA] Logon sent
+01:42:16 [OMEGA] LOGON ACCEPTED
+01:42:16 [OMEGA] Subscribed ALL symbols (OMEGA-MD-ALL)
