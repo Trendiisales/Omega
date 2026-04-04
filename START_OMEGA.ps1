@@ -98,4 +98,5 @@ if ($mode -eq "LIVE" -and $testingActive) {
 Write-Host "Starting Omega.exe  [source=$displayHash  mode=$mode]..." -ForegroundColor Cyan
 Write-Host ""
 Set-Location $OmegaDir
-.\Omega.exe omega_config.ini
+Start-Process powershell -ArgumentList "-NoExit -Command & 'C:\Omega\Omega.exe' 'omega_config.ini'" -WorkingDirectory $OmegaDir -WindowStyle Normal
+Write-Host "  [OK] Omega started in separate window." -ForegroundColor Green

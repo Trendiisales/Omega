@@ -144,10 +144,8 @@ if (-not $SkipVerify) {
     & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec $WaitSec -OmegaDir $OmegaDir
 
 } else {
-    Write-Host "  Launching Omega in foreground (Ctrl+C to stop)..." -ForegroundColor Cyan
-    Write-Host "  Run .\VERIFY_STARTUP.ps1 in a separate terminal to check startup state." -ForegroundColor DarkGray
+    Write-Host "  Launching Omega in new window..." -ForegroundColor Cyan
     Write-Host ""
-    & ".\Omega.exe" "omega_config.ini"
-    Write-Host ""
-    Write-Host "  Omega exited." -ForegroundColor Yellow
+    Start-Process powershell -ArgumentList "-NoExit -Command & '$OmegaExe' 'omega_config.ini'" -WorkingDirectory $OmegaDir -WindowStyle Normal
+    Write-Host "  Omega started in separate window." -ForegroundColor Green
 }
