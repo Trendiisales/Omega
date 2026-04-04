@@ -3,7 +3,8 @@
 // Do NOT #include from anywhere else.
 
 // ── XAUUSD ─────────────────────────────────────────────────
-static void on_tick_gold(const std::string& sym, double bid, double ask) {
+static void on_tick_gold(const std::string& sym, double bid, double ask,
+    bool tradeable, bool lat_ok, const std::string& regime) {
     // ?? Gold master exclusion gate ????????????????????????????????????????
     // Default: ANY open gold position blocks new entries (1-at-a-time invariant).
     // TREND DAY exception: when |ewm_drift| > 5.0 AND vol_ratio > 1.5,
