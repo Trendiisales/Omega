@@ -5083,6 +5083,26 @@ static omega::SupervisorDecision sup_decision(
 }
 
 // ── enter_directional ────────────────────────────────────────────────────────
+static bool cross_engine_dedup_ok(const std::string& sym) {
+    std::lock_guard<std::mutex> lk(g_dedup_mtx);
+    auto it = g_last_cross_entry.find(sym);
+    if (it != g_last_cross_entry.end() &&
+        (nowSec() - it->second) < CROSS_ENG_DEDUP_SEC) {
+        printf("[CROSS-DEDUP] %s blocked -- another engine entered %.0fs ago\n",
+               sym.c_str(), static_cast<double>(nowSec() - it->second));
+        return false;
+    }
+    // NOTE: timestamp is NOT stamped here -- only stamped on successful execution
+    // (at send_live_order call). Stamping here would block the next 30s even when
+    // the trade is subsequently rejected by vwap_gate, L2 score, cost guard, etc.
+    return true;
+}
+
+static void cross_engine_dedup_stamp(const std::string& sym) {
+    std::lock_guard<std::mutex> lk(g_dedup_mtx);
+    g_last_cross_entry[sym] = nowSec();
+}
+
 static double enter_directional(
     const char* esym, bool is_long, double entry, double sl, double tp,
     double fallback_lot, bool skip_vwap_gate,
@@ -5467,27 +5487,7 @@ static double enter_directional(
 }
 
 // ── cross_engine_dedup_ok ───────────────────────────────────────────────────
-static bool cross_engine_dedup_ok(const std::string& sym) {
-    std::lock_guard<std::mutex> lk(g_dedup_mtx);
-    auto it = g_last_cross_entry.find(sym);
-    if (it != g_last_cross_entry.end() &&
-        (nowSec() - it->second) < CROSS_ENG_DEDUP_SEC) {
-        printf("[CROSS-DEDUP] %s blocked -- another engine entered %.0fs ago\n",
-               sym.c_str(), static_cast<double>(nowSec() - it->second));
-        return false;
-    }
-    // NOTE: timestamp is NOT stamped here -- only stamped on successful execution
-    // (at send_live_order call). Stamping here would block the next 30s even when
-    // the trade is subsequently rejected by vwap_gate, L2 score, cost guard, etc.
-    return true;
-}
-
 // ── cross_engine_dedup_stamp ────────────────────────────────────────────────
-static void cross_engine_dedup_stamp(const std::string& sym) {
-    std::lock_guard<std::mutex> lk(g_dedup_mtx);
-    g_last_cross_entry[sym] = nowSec();
-}
-
 static void on_tick(const std::string& sym, double bid, double ask) {
     // ?? Tick spike filter ???????????????????????????????????????????????
     // Reject ticks where mid moves > 5x slow ATR in a single step.
