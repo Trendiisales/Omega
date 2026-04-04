@@ -1,10 +1,14 @@
 // tick_oil.hpp — per-symbol tick handlers
 // Extracted from on_tick(). Same translation unit — all static functions visible.
+// dispatch/dispatch_bracket are generic lambdas defined inside on_tick(); they are
+// passed as template parameters so these file-scope functions can call them.
 
 // ── USOIL.F ────────────────────────────────────────────────
+template<typename Dispatch>
 static void on_tick_oil(
     const std::string& sym, double bid, double ask,
-        bool tradeable, bool lat_ok, const std::string& regime)
+        bool tradeable, bool lat_ok, const std::string& regime,
+        Dispatch& dispatch)
 {
     // Session gate: London/NY only (07:00-22:00 UTC)
     const auto t_cl = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -74,9 +78,11 @@ static void on_tick_oil(
 }
 
 // ── BRENT ──────────────────────────────────────────────────
+template<typename Dispatch>
 static void on_tick_brent(
     const std::string& sym, double bid, double ask,
-        bool tradeable, bool lat_ok, const std::string& regime)
+        bool tradeable, bool lat_ok, const std::string& regime,
+        Dispatch& dispatch)
 {
     const auto t_br = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti_br; gmtime_s(&ti_br, &t_br);
@@ -90,4 +96,3 @@ static void on_tick_brent(
         //     dispatch_bracket(g_bracket_brent, ...);
     }
 }
-

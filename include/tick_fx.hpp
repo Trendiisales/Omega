@@ -1,5 +1,7 @@
 // tick_fx.hpp — per-symbol tick handlers
 // Extracted from on_tick(). Same translation unit — all static functions visible.
+// dispatch/dispatch_bracket are generic lambdas defined inside on_tick(); they are
+// passed as template parameters so these file-scope functions can call them.
 
 // ── XAGUSD ─────────────────────────────────────────────────
 static void on_tick_silver(
@@ -31,13 +33,15 @@ static void on_tick_silver(
 }
 
 // ── EURUSD ─────────────────────────────────────────────────
+template<typename Dispatch>
 static void on_tick_eurusd(
     const std::string& sym, double bid, double ask,
-        bool tradeable, bool lat_ok, const std::string& regime)
+        bool tradeable, bool lat_ok, const std::string& regime,
+        Dispatch& dispatch)
 {
     g_macro_ctx.eur_mid_price = (bid + ask) * 0.5;  // for wall_above/below context
     const bool base_can_fx = symbol_gate("EURUSD",
-        g_eng_eurusd.pos.active                ||
+        g_eng_eurusd.pos.active                ||\
         g_bracket_eurusd.pos.active            ||
         g_vwap_rev_eurusd.has_open_position(), "", tradeable, lat_ok, regime, bid, ask); // ADDED
     const auto sdec_fx = sup_decision(g_sup_eurusd, g_eng_eurusd, base_can_fx, sym, bid, ask);
@@ -107,9 +111,11 @@ static void on_tick_eurusd(
 }
 
 // ── GBPUSD ─────────────────────────────────────────────────
+template<typename Dispatch>
 static void on_tick_gbpusd(
     const std::string& sym, double bid, double ask,
-        bool tradeable, bool lat_ok, const std::string& regime)
+        bool tradeable, bool lat_ok, const std::string& regime,
+        Dispatch& dispatch)
 {
     g_macro_ctx.gbp_mid_price = (bid + ask) * 0.5;  // for wall_above/below context
     // ?? FX group bracket guard -- only one bracket across GBPUSD/AUDUSD/NZDUSD/USDJPY ??
@@ -144,9 +150,11 @@ static void on_tick_gbpusd(
 }
 
 // ── AUDUSD/NZDUSD/USDJPY ───────────────────────────────────
+template<typename Dispatch>
 static void on_tick_audusd(
     const std::string& sym, double bid, double ask,
-        bool tradeable, bool lat_ok, const std::string& regime)
+        bool tradeable, bool lat_ok, const std::string& regime,
+        Dispatch& dispatch)
 {
     // Update live USDJPY rate for dynamic tick_value_multiplier()
     if (sym == "USDJPY") g_usdjpy_mid.store((bid + ask) * 0.5, std::memory_order_relaxed);
@@ -237,4 +245,3 @@ static void on_tick_audusd(
         }
     }
 }
-

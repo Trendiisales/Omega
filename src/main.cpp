@@ -5489,14 +5489,12 @@ static double enter_directional(
 // ── cross_engine_dedup_ok ───────────────────────────────────────────────────
 // ── cross_engine_dedup_stamp ────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-// Per-symbol tick handlers — included here (inside on_tick scope is NOT needed
-// since all lambdas are now static functions). Included before on_tick so the
-// handler functions are defined before on_tick calls them via dispatch.
+// Per-symbol tick handlers — included INSIDE on_tick(), after dispatch and
+// dispatch_bracket lambdas are defined. The handler files are template
+// functions that receive dispatch/dispatch_bracket as template parameters,
+// so the includes must appear after those lambdas are in scope.
+// See the include block near the bottom of on_tick() (after dispatch_bracket).
 // ─────────────────────────────────────────────────────────────────────────────
-#include "tick_indices.hpp"
-#include "tick_oil.hpp"
-#include "tick_fx.hpp"
-#include "tick_gold.hpp"
 
 static void on_tick(const std::string& sym, double bid, double ask) {
     // ?? Tick spike filter ???????????????????????????????????????????????
@@ -6986,6 +6984,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     };
 
+    // ── Per-symbol tick handler includes ──────────────────────────────────────
+    // Included HERE, after dispatch and dispatch_bracket are defined, because the
+    // handler files are template functions that take dispatch as a template param.
+    // MSVC requires the lambda to be visible at the point of template instantiation.
+    // tick_indices.hpp and tick_gold.hpp do not call dispatch -- included here for
+    // consistency so all handlers are defined in the same scope.
+#include "tick_indices.hpp"
+#include "tick_oil.hpp"
+#include "tick_fx.hpp"
+#include "tick_gold.hpp"
+    // ─────────────────────────────────────────────────────────────────────────
+
     // ?? cost_ok() -- mandatory gate for ALL direct send_live_order calls ???????
     // Every engine signal that bypasses dispatch()/dispatch_bracket() must call
     // this before executing. Blocks the trade and increments the cost counter
@@ -7058,17 +7068,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // ── Symbol dispatch ────────────────────────────────────────────────────────
     if      (sym == "US500.F")                          on_tick_us500(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "USTEC.F")                          on_tick_ustec(sym, bid, ask, tradeable, lat_ok, regime);
-    else if (sym == "USOIL.F")                          on_tick_oil(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "USOIL.F")                          on_tick_oil(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "DJ30.F")                           on_tick_dj30(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "GER40")                            on_tick_ger40(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "UK100")                            on_tick_uk100(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "ESTX50")                           on_tick_estx50(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "XAGUSD")                           on_tick_silver(sym, bid, ask, tradeable, lat_ok, regime);
-    else if (sym == "EURUSD")                           on_tick_eurusd(sym, bid, ask, tradeable, lat_ok, regime);
-    else if (sym == "GBPUSD")                           on_tick_gbpusd(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "EURUSD")                           on_tick_eurusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
+    else if (sym == "GBPUSD")                           on_tick_gbpusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "AUDUSD" || sym == "NZDUSD" || sym == "USDJPY")
-                                                        on_tick_audusd(sym, bid, ask, tradeable, lat_ok, regime);
-    else if (sym == "BRENT")                            on_tick_brent(sym, bid, ask, tradeable, lat_ok, regime);
+                                                        on_tick_audusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
+    else if (sym == "BRENT")                            on_tick_brent(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "NAS100")                           on_tick_nas100(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "XAUUSD")                           on_tick_gold(sym, bid, ask, tradeable, lat_ok, regime);
     else {
