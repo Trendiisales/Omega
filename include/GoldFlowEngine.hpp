@@ -1884,8 +1884,12 @@ private:
 
             if (tier_now > pos.dollar_lock_tier && tier_now >= 1) {
                 // SL placement: use remaining size so locked_pts correctly maps
-                // to price distance needed to guarantee locked_usd on remainder
-                const double locked_usd  = tier_now * DOLLAR_RATCHET_STEP * DOLLAR_RATCHET_KEEP;
+                // to price distance needed to guarantee locked_usd on remainder.
+                // CRITICAL: use eff_ratchet_step (not hardcoded DOLLAR_RATCHET_STEP)
+                // so that min-lot trades lock sensible amounts. At 0.01 lots with
+                // eff_ratchet_step=$1.54: locked=$1.54*0.80=$1.23. At normal 0.15 lots
+                // with eff_ratchet_step=$50 (fixed wins): locked=$50*0.80=$40 unchanged.
+                const double locked_usd  = tier_now * eff_ratchet_step * DOLLAR_RATCHET_KEEP;
                 const double locked_pts  = locked_usd / (pos.size * 100.0);
 
                 // BREATHING ROOM GUARD: ratchet SL must be at least 0.5*ATR from entry.
