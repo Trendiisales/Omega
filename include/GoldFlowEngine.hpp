@@ -614,11 +614,26 @@ struct GoldFlowEngine {
         //   When expansion_mode is active AND ewm_drift confirms a directional crash/surge,
         //   block ALL entries in the counter-trend direction.
         //   Evidence: 2026-04-02 04:13 LONG @ 4671.82 during active crash = -$17.82.
-        //   Threshold: |ewm_drift| > 6.0 (confirmed sustained move, not chop).
-        //   Only blocks counter-trend: SHORT entries are still allowed during a crash.
-        static constexpr double EXPANSION_BLOCK_DRIFT = 6.0;
+        //   Threshold: |ewm_drift| > 4.0 (lowered from 6.0, 2026-04-04).
+        //   At 4.0 a $10-15 sustained directional move has developed -- clearly not chop.
+        //   Chop guard (mixed signs) handles oscillation independently. No conflict.
+        //   Only blocks counter-trend: SHORT entries still allowed during a crash.
+        static constexpr double EXPANSION_BLOCK_DRIFT = 4.0;
         const bool expansion_crash_block_long  = m_expansion_mode && (ewm_drift < -EXPANSION_BLOCK_DRIFT);
         const bool expansion_surge_block_short = m_expansion_mode && (ewm_drift >  EXPANSION_BLOCK_DRIFT);
+
+        // Dedicated log when Guard C fires -- visible before TREND-BLOCK, shows exact reason
+        if (expansion_crash_block_long || expansion_surge_block_short) {
+            static int64_t s_exp_block_log = 0;
+            if (now_ms - s_exp_block_log >= 3000) {
+                s_exp_block_log = now_ms;
+                printf("[GFE-CHOP] DIRECTIONAL GRIND blocked_%s ewm_drift=%.2f threshold=%.1f vol_ratio=%.2f expansion=%d\n",
+                       expansion_crash_block_long ? "LONG" : "SHORT",
+                       ewm_drift, EXPANSION_BLOCK_DRIFT,
+                       m_vol_ratio, (int)m_expansion_mode);
+                fflush(stdout);
+            }
+        }
 
         const bool block_long  = vwap_trend_down || vwap_overext_up || struct_lower_high
                                  || expansion_crash_block_long;
@@ -629,10 +644,12 @@ struct GoldFlowEngine {
             static int64_t s_bias_log = 0;
             if (now_ms - s_bias_log >= 5000) {
                 s_bias_log = now_ms;
-                printf("[GOLD-FLOW] TREND-BLOCK block_long=%d block_short=%d vwap_pts=%.2f(trend=%.1f overext=%.1f) lower_hi=%d higher_lo=%d atr=%.2f\n",
-                       (int)block_long, (int)block_short,
-                       m_vwap_pts_dev, GFE_VWAP_BLOCK_PTS, GFE_VWAP_OVEREXT_PTS,
-                       (int)struct_lower_high, (int)struct_higher_low, atr_struct);
+                printf("[GOLD-FLOW] TREND-BLOCK block_long=%d(vwap_dn=%d overext=%d lower_hi=%d exp_crash=%d) block_short=%d(vwap_up=%d overext=%d higher_lo=%d exp_surge=%d) drift=%.2f vwap_pts=%.2f atr=%.2f\n",
+                       (int)block_long,
+                       (int)vwap_trend_down, (int)vwap_overext_up, (int)struct_lower_high, (int)expansion_crash_block_long,
+                       (int)block_short,
+                       (int)vwap_trend_up, (int)vwap_overext_dn, (int)struct_higher_low, (int)expansion_surge_block_short,
+                       ewm_drift, m_vwap_pts_dev, atr_struct);
                 fflush(stdout);
             }
         }
@@ -1504,18 +1521,28 @@ private:
             static constexpr double TIME_STOP_ADVERSE_PTS = 1.0;  // losing >1pt
             static constexpr int64_t TIME_STOP_SECS       = 45;   // for >45s straight
 
-            // Velocity suppression: expansion confirmed AND adverse < 2pts (still viable)
+            // Velocity suppression: expansion confirmed AND vol_ratio > 2.5 (genuine velocity
+            // regime, not just any EXPANSION tick) AND adverse < 2pts (trade still viable).
+            // vol_ratio > 2.5 added 2026-04-04: without this suppression fired on any
+            // expansion_mode=true tick regardless of actual volatility. On a normal low-vol
+            // expansion (vol_ratio=1.1) the time-stop is correct. Only suppress when confirmed
+            // velocity event (>2.5x baseline) -- evidence: 2026-04-02 04:03 vol_ratio=2.8.
+            static constexpr double VEL_TS_SUPPRESS_VOL_RATIO = 2.5;
             const bool velocity_time_suppress =
-                m_expansion_mode && (adverse < 2.0) && (pos.mfe > 0.0 || adverse < 0.5);
+                m_expansion_mode
+                && (m_vol_ratio > VEL_TS_SUPPRESS_VOL_RATIO)
+                && (adverse < 2.0)
+                && (pos.mfe > 0.0 || adverse < 0.5);
 
-            // SHADOW: log when velocity would suppress time-stop so we can verify in logs
+            // SHADOW: log when velocity would suppress time-stop
             if (velocity_time_suppress && velocity_shadow_mode) {
                 static int64_t s_vel_ts_log = 0;
                 if (now_ms - s_vel_ts_log > 10000) {
                     s_vel_ts_log = now_ms;
-                    printf("[VEL-TRAIL-SHADOW] TIME_STOP suppressed %s held=%llds adverse=%.2f mfe=%.2f vol_ratio=%.2f\n",
+                    printf("[GFE-VEL-STEP1] TIME_STOP suppressed %s held=%llds adverse=%.2f mfe=%.2f vol_ratio=%.2f (threshold=%.1f)\n",
                            pos.is_long ? "LONG" : "SHORT",
-                           (long long)held_s, adverse, pos.mfe, m_vol_ratio);
+                           (long long)held_s, adverse, pos.mfe, m_vol_ratio,
+                           VEL_TS_SUPPRESS_VOL_RATIO);
                     fflush(stdout);
                 }
             }

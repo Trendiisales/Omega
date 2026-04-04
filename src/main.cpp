@@ -7253,6 +7253,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_nbm_nq.has_open_position())             // NBM
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
+        {
+            const int64_t now_cb   = static_cast<int64_t>(std::time(nullptr));
+            const int64_t until_cb = g_indices_disconnect_until.load();
+            static int64_t s_cb_log_nq = 0;
+            if (until_cb > now_cb && now_cb - s_cb_log_nq >= 60) {
+                s_cb_log_nq = now_cb;
+                printf("[INDICES-CB] USTEC.F entries BLOCKED -- %llds remaining (disconnect cooldown)\n",
+                       (long long)(until_cb - now_cb));
+                fflush(stdout);
+            }
+        }
         const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq);
         // SIM: NQ breakout WR 26.1% -$1167. Worst index performer. Disabled.
         // if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
@@ -7474,6 +7485,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_nbm_us30.has_open_position()) // NBM
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
+        {
+            const int64_t now_cb   = static_cast<int64_t>(std::time(nullptr));
+            const int64_t until_cb = g_indices_disconnect_until.load();
+            static int64_t s_cb_log_us30 = 0;
+            if (until_cb > now_cb && now_cb - s_cb_log_us30 >= 60) {
+                s_cb_log_us30 = now_cb;
+                printf("[INDICES-CB] DJ30.F entries BLOCKED -- %llds remaining (disconnect cooldown)\n",
+                       (long long)(until_cb - now_cb));
+                fflush(stdout);
+            }
+        }
         const auto sdec_us30 = sup_decision(g_sup_us30, g_eng_us30, base_can_us30);
         // SIM: DJ30 breakout WR 23.5% -$736, bracket also negative. Both disabled.
         // if (sdec_us30.allow_breakout && !g_bracket_us30.pos.active)
@@ -7809,6 +7831,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_nbm_nas.has_open_position()) // NBM
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
+        {
+            const int64_t now_cb   = static_cast<int64_t>(std::time(nullptr));
+            const int64_t until_cb = g_indices_disconnect_until.load();
+            static int64_t s_cb_log_nas = 0;
+            if (until_cb > now_cb && now_cb - s_cb_log_nas >= 60) {
+                s_cb_log_nas = now_cb;
+                printf("[INDICES-CB] NAS100 entries BLOCKED -- %llds remaining (disconnect cooldown)\n",
+                       (long long)(until_cb - now_cb));
+                fflush(stdout);
+            }
+        }
         const auto sdec_nas = sup_decision(g_sup_nas100, g_eng_nas100, base_can_nas);
         // SIM: NAS100 breakout -- no edge (correlated with NQ which is also disabled). Disabled.
         // if (sdec_nas.allow_breakout && !g_bracket_nas100.pos.active)
@@ -9091,6 +9124,37 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s -- reversal window open 60s\n",
                            tr.side.c_str());
                     fflush(stdout);
+
+                    // ?? Directional SL cooldown (bottom-fade gate) ??????????
+                    // After GF_DIR_SL_MAX (2) SL_HITs in same direction within 5min,
+                    // block that direction for GF_DIR_SL_COOLDOWN_SEC (3min).
+                    // Prevents the Apr 2 2026 pattern: 5 consecutive LONG SL_HITs
+                    // at 11:49-12:01 while gold was still crashing = $13 wasted.
+                    // Daily loss gate (size=0.01) already limits damage but this
+                    // stops entries entirely rather than letting them through at min size.
+                    const bool is_long_sl = (tr.side == "LONG");
+                    auto& sl_count = is_long_sl ? g_gf_dir_sl_long_count  : g_gf_dir_sl_short_count;
+                    auto& sl_first = is_long_sl ? g_gf_dir_sl_long_first  : g_gf_dir_sl_short_first;
+                    auto& blocked  = is_long_sl ? g_gf_long_blocked_until : g_gf_short_blocked_until;
+
+                    const int64_t first_ts = sl_first.load();
+                    if (first_ts == 0 || (now_s - first_ts) > GF_DIR_SL_WINDOW_SEC) {
+                        // Start fresh window
+                        sl_count.store(1);
+                        sl_first.store(now_s);
+                    } else {
+                        const int count = sl_count.fetch_add(1) + 1;
+                        if (count >= GF_DIR_SL_MAX) {
+                            const int64_t block_until = now_s + GF_DIR_SL_COOLDOWN_SEC;
+                            blocked.store(block_until);
+                            sl_count.store(0);
+                            sl_first.store(0);
+                            printf("[GFE-FADE-BLOCK] %s direction blocked %llds after %d consecutive SL_HITs\n",
+                                   is_long_sl ? "LONG" : "SHORT",
+                                   (long long)GF_DIR_SL_COOLDOWN_SEC, count);
+                            fflush(stdout);
+                        }
+                    }
                 }
                 // Trail/BE exit: block same-direction re-entry for 30s -- prevents
                 // immediate chasing but allows re-entry if trend continues (was 60s).
@@ -9943,6 +10007,42 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 fflush(stdout);
                 gf_tick_ok = false;
                 gf_block_reason = "HIGH_IMPACT_WINDOW";
+            }
+
+            // ?? Gate: Directional SL cooldown (bottom-fade gate) ??????????????
+            // After GF_DIR_SL_MAX consecutive SL_HITs in same direction within
+            // GF_DIR_SL_WINDOW_SEC, block that direction for GF_DIR_SL_COOLDOWN_SEC.
+            // Evidence: 2026-04-02 11:49-12:01 -- 5 consecutive LONG SL_HITs while
+            // gold was still crashing. Daily loss gate limited size to 0.01 but
+            // this gate stops entries entirely rather than letting them through small.
+            // Direction is inferred the same way as trail block above: L2 + drift.
+            if (gf_tick_ok) {
+                const int64_t now_fade = static_cast<int64_t>(std::time(nullptr));
+                const int64_t long_blocked  = g_gf_long_blocked_until.load();
+                const int64_t short_blocked = g_gf_short_blocked_until.load();
+                const bool any_fade_block = (now_fade < long_blocked) || (now_fade < short_blocked);
+                if (any_fade_block) {
+                    const double gf_drift_fb = g_gold_stack.ewm_drift();
+                    const double gf_l2_fb    = g_macro_ctx.gold_l2_imbalance;
+                    const bool likely_long_fb = (gf_l2_fb > GFE_LONG_THRESHOLD)
+                                             || (gf_l2_fb >= 0.40 && gf_l2_fb <= 0.60 && gf_drift_fb > 1.0);
+                    const bool fade_blocked = (now_fade < long_blocked  &&  likely_long_fb)
+                                           || (now_fade < short_blocked && !likely_long_fb);
+                    if (fade_blocked) {
+                        const int64_t remaining = likely_long_fb
+                            ? (long_blocked  - now_fade)
+                            : (short_blocked - now_fade);
+                        static int64_t s_fade_log = 0;
+                        if (now_fade - s_fade_log >= 15) {
+                            s_fade_log = now_fade;
+                            printf("[GFE-FADE-BLOCK] %s entry blocked -- %llds remaining after consecutive SL_HITs\n",
+                                   likely_long_fb ? "LONG" : "SHORT", (long long)remaining);
+                            fflush(stdout);
+                        }
+                        gf_tick_ok = false;
+                        gf_block_reason = "DIR_SL_COOLDOWN";
+                    }
+                }
             }
 
             // ?? VolTargeter: full diagnostic log on every valid entry attempt ??
