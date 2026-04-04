@@ -7056,21 +7056,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
     // ?? Routing -- every symbol goes through supervisor ????????????????????????
     // ── Symbol dispatch ────────────────────────────────────────────────────────
-    if      (sym == "US500.F")                          on_tick_us500(sym, bid, ask);
-    else if (sym == "USTEC.F")                          on_tick_ustec(sym, bid, ask);
-    else if (sym == "USOIL.F")                          on_tick_oil(sym, bid, ask);
-    else if (sym == "DJ30.F")                           on_tick_dj30(sym, bid, ask);
-    else if (sym == "GER40")                            on_tick_ger40(sym, bid, ask);
-    else if (sym == "UK100")                            on_tick_uk100(sym, bid, ask);
-    else if (sym == "ESTX50")                           on_tick_estx50(sym, bid, ask);
-    else if (sym == "XAGUSD")                           on_tick_silver(sym, bid, ask);
-    else if (sym == "EURUSD")                           on_tick_eurusd(sym, bid, ask);
-    else if (sym == "GBPUSD")                           on_tick_gbpusd(sym, bid, ask);
+    if      (sym == "US500.F")                          on_tick_us500(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "USTEC.F")                          on_tick_ustec(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "USOIL.F")                          on_tick_oil(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "DJ30.F")                           on_tick_dj30(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "GER40")                            on_tick_ger40(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "UK100")                            on_tick_uk100(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "ESTX50")                           on_tick_estx50(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "XAGUSD")                           on_tick_silver(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "EURUSD")                           on_tick_eurusd(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "GBPUSD")                           on_tick_gbpusd(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "AUDUSD" || sym == "NZDUSD" || sym == "USDJPY")
-                                                        on_tick_audusd(sym, bid, ask);
-    else if (sym == "BRENT")                            on_tick_brent(sym, bid, ask);
-    else if (sym == "NAS100")                           on_tick_nas100(sym, bid, ask);
-    else if (sym == "XAUUSD")                           on_tick_gold(sym, bid, ask);
+                                                        on_tick_audusd(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "BRENT")                            on_tick_brent(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "NAS100")                           on_tick_nas100(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "XAUUSD")                           on_tick_gold(sym, bid, ask, tradeable, lat_ok, regime);
     else {
         // Confirmation-only symbol (VIX, ES, NAS100, DX etc) -- no engine dispatch
         g_telemetry.UpdateGovernor(g_gov_spread, g_gov_lat, g_gov_pnl, g_gov_pos, g_gov_consec);
