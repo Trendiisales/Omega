@@ -145,7 +145,8 @@ Set-Location "$OmegaDir\build"
 $savedPrefCmake = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 if ($needsReconfigure) {
-    cmake .. -DCMAKE_BUILD_TYPE=Release "-DOMEGA_FORCE_GIT_HASH=$sourceHashShort" 2>&1 | Out-Null
+    $cmakeExe = 'C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe'
+    & $cmakeExe .. -DCMAKE_BUILD_TYPE=Release "-DOMEGA_FORCE_GIT_HASH=$sourceHashShort" 2>&1 | Out-Null
 } else {
     Write-Host "      [INFO] Using existing CMake cache -- incremental build" -ForegroundColor Cyan
 }
@@ -153,7 +154,7 @@ $ErrorActionPreference = $savedPrefCmake
 $cpuCount = $env:NUMBER_OF_PROCESSORS
 if (-not $cpuCount) { $cpuCount = 4 }
 Write-Host "      [INFO] Building with $cpuCount parallel jobs" -ForegroundColor Cyan
-cmake --build . --config Release -- /maxcpucount:$cpuCount 2>&1
+& $cmakeExe --build . --config Release -- /maxcpucount:$cpuCount 2>&1
 $buildExitCode = $LASTEXITCODE
 
 if ($buildExitCode -ne 0) {
