@@ -5489,12 +5489,14 @@ static double enter_directional(
 // ── cross_engine_dedup_ok ───────────────────────────────────────────────────
 // ── cross_engine_dedup_stamp ────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-// Per-symbol tick handlers — included INSIDE on_tick(), after dispatch and
-// dispatch_bracket lambdas are defined. The handler files are template
-// functions that receive dispatch/dispatch_bracket as template parameters,
-// so the includes must appear after those lambdas are in scope.
-// See the include block near the bottom of on_tick() (after dispatch_bracket).
+// Per-symbol tick handlers — included here (inside on_tick scope is NOT needed
+// since all lambdas are now static functions). Included before on_tick so the
+// handler functions are defined before on_tick calls them via dispatch.
 // ─────────────────────────────────────────────────────────────────────────────
+#include "tick_indices.hpp"
+#include "tick_oil.hpp"
+#include "tick_fx.hpp"
+#include "tick_gold.hpp"
 
 static void on_tick(const std::string& sym, double bid, double ask) {
     // ?? Tick spike filter ???????????????????????????????????????????????
@@ -6983,18 +6985,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             ++trades_this_min;
         }
     };
-
-    // ── Per-symbol tick handler includes ──────────────────────────────────────
-    // Included HERE, after dispatch and dispatch_bracket are defined, because the
-    // handler files are template functions that take dispatch as a template param.
-    // MSVC requires the lambda to be visible at the point of template instantiation.
-    // tick_indices.hpp and tick_gold.hpp do not call dispatch -- included here for
-    // consistency so all handlers are defined in the same scope.
-#include "tick_indices.hpp"
-#include "tick_oil.hpp"
-#include "tick_fx.hpp"
-#include "tick_gold.hpp"
-    // ─────────────────────────────────────────────────────────────────────────
 
     // ?? cost_ok() -- mandatory gate for ALL direct send_live_order calls ???????
     // Every engine signal that bypasses dispatch()/dispatch_bracket() must call

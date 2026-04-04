@@ -1,14 +1,13 @@
 // tick_oil.hpp — per-symbol tick handlers
-// Extracted from on_tick(). Same translation unit — all static functions visible.
-// dispatch/dispatch_bracket are generic lambdas defined inside on_tick(); they are
-// passed as template parameters so these file-scope functions can call them.
+// File-scope template functions. dispatch is passed as a template parameter
+// from on_tick() so the local lambda type is deduced at the call site.
 
 // ── USOIL.F ────────────────────────────────────────────────
 template<typename Dispatch>
 static void on_tick_oil(
     const std::string& sym, double bid, double ask,
-        bool tradeable, bool lat_ok, const std::string& regime,
-        Dispatch& dispatch)
+    bool tradeable, bool lat_ok, const std::string& regime,
+    Dispatch& dispatch)
 {
     // Session gate: London/NY only (07:00-22:00 UTC)
     const auto t_cl = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -16,17 +15,11 @@ static void on_tick_oil(
     if (ti_cl.tm_hour >= 7 && ti_cl.tm_hour < 22) {
         const bool base_can = symbol_gate("USOIL.F",
             g_eng_cl.pos.active                 ||
-            g_ca_eia_fade.has_open_position()   ||  // ADDED
-            g_ca_brent_wti.has_open_position(), "", tradeable, lat_ok, regime, bid, ask);    // ADDED
-        // NOTE: USOIL.F bracket is disabled -- it was incorrectly sharing
-        // g_bracket_gold (XAUUSD's GoldBracketEngine). That engine's confirm_fill,
-        // on_reject, and pending order IDs are wired to XAUUSD fills only.
-        // An oil bracket position would corrupt XAUUSD bracket state.
-        // Oil needs its own dedicated BracketEngine before bracket can be enabled.
+            g_ca_eia_fade.has_open_position()   ||
+            g_ca_brent_wti.has_open_position(), "", tradeable, lat_ok, regime, bid, ask);
         const auto sdec = sup_decision(g_sup_cl, g_eng_cl, base_can, sym, bid, ask);
         if (sdec.allow_breakout)
             dispatch(g_eng_cl, g_sup_cl, base_can);
-        // ?? USOIL.F manage blocks -- ALWAYS run when position open (SL/trail fix) ??
         if (g_ca_eia_fade.has_open_position())   { g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close); }
         if (g_ca_brent_wti.has_open_position())  {
             double brent_b2 = 0.0, brent_a2 = 0.0;
@@ -37,15 +30,12 @@ static void on_tick_oil(
             if (brent_mid2 > 0) g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid2, ca_on_close);
         }
         if (g_nbm_oil_london.has_open_position()) { g_nbm_oil_london.on_tick(sym, bid, ask, ca_on_close); }
-
-        // EIA fade engine -- only when BrentWTI not already open
-        if (!g_ca_eia_fade.has_open_position() && !g_ca_brent_wti.has_open_position() && base_can) {  // ADDED !brent check
+        if (!g_ca_eia_fade.has_open_position() && !g_ca_brent_wti.has_open_position() && base_can) {
             const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close);
             if (ef.valid) { if (!enter_directional(sym.c_str(), ef.is_long, ef.entry, ef.sl, ef.tp, 0.01, false, bid, ask, sym, regime)) g_ca_eia_fade.cancel();
                 else g_ca_eia_fade.patch_size(g_last_directional_lot); }
         }
-        // Brent/WTI spread engine -- only when EIA not already open
-        if (!g_ca_brent_wti.has_open_position() && !g_ca_eia_fade.has_open_position() && base_can) {  // ADDED !eia check
+        if (!g_ca_brent_wti.has_open_position() && !g_ca_eia_fade.has_open_position() && base_can) {
             double brent_b = 0.0, brent_a = 0.0;
             { std::lock_guard<std::mutex> lk(g_book_mtx);
               const auto bi = g_bids.find("BRENT"); if (bi != g_bids.end()) brent_b = bi->second;
@@ -57,7 +47,6 @@ static void on_tick_oil(
                 else g_ca_brent_wti.patch_size(g_last_directional_lot); }
             }
         }
-        // NBM London session (07:00-13:30 UTC) on USOIL.F
         if (!g_nbm_oil_london.has_open_position()
             && !g_ca_eia_fade.has_open_position()
             && !g_ca_brent_wti.has_open_position()
@@ -81,8 +70,8 @@ static void on_tick_oil(
 template<typename Dispatch>
 static void on_tick_brent(
     const std::string& sym, double bid, double ask,
-        bool tradeable, bool lat_ok, const std::string& regime,
-        Dispatch& dispatch)
+    bool tradeable, bool lat_ok, const std::string& regime,
+    Dispatch& dispatch)
 {
     const auto t_br = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti_br; gmtime_s(&ti_br, &t_br);
