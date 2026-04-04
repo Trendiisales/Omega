@@ -10458,3 +10458,364 @@
 06:04:32 [TICK] NAS100 23952.15/23953.35
 06:04:32 [TICK] US500.F 6603.22/6604.03
 06:04:32 [TICK] USTEC.F 24128.44/24132.90
+06:04:33 [CTRADER] Connecting live.ctraderapi.com:5035
+06:04:33 [CTRADER] ApplicationAuthReq sent
+06:04:33 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:04:33 [CTRADER] ApplicationAuthRes failed (pt=3464187440)
+06:04:38 [CTRADER] Connecting live.ctraderapi.com:5035
+06:04:38 [CTRADER] ApplicationAuthReq sent
+06:04:38 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:04:38 [CTRADER] ApplicationAuthRes failed (pt=3464185712)
+06:04:43 [CTRADER] Connecting live.ctraderapi.com:5035
+06:04:43 [CTRADER] ApplicationAuthReq sent
+06:04:43 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:04:43 [CTRADER] ApplicationAuthRes failed (pt=3464192192)
+06:04:48 [CTRADER] Connecting live.ctraderapi.com:5035
+06:04:48 [CTRADER] ApplicationAuthReq sent
+06:04:49 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:04:49 [CTRADER] ApplicationAuthRes failed (pt=3464190464)
+06:04:54 [CTRADER] Connecting live.ctraderapi.com:5035
+06:04:54 [CTRADER] ApplicationAuthReq sent
+06:04:54 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:04:54 [CTRADER] ApplicationAuthRes failed (pt=3464191472)
+06:04:59 [CTRADER] Connecting live.ctraderapi.com:5035
+06:04:59 [CTRADER] ApplicationAuthReq sent
+06:04:59 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:04:59 [CTRADER] ApplicationAuthRes failed (pt=3464188592)
+06:05:04 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:04 [CTRADER] ApplicationAuthReq sent
+06:05:04 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:04 [CTRADER] ApplicationAuthRes failed (pt=3464185856)
+06:05:09 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:09 [CTRADER] ApplicationAuthReq sent
+06:05:09 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:09 [CTRADER] ApplicationAuthRes failed (pt=3464192624)
+06:05:14 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:14 [CTRADER] ApplicationAuthReq sent
+06:05:14 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:14 [CTRADER] ApplicationAuthRes failed (pt=3464187008)
+06:05:19 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:19 [CTRADER] ApplicationAuthReq sent
+06:05:19 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:19 [CTRADER] ApplicationAuthRes failed (pt=3464189888)
+06:05:24 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:24 [CTRADER] ApplicationAuthReq sent
+06:05:24 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:24 [CTRADER] ApplicationAuthRes failed (pt=3464189600)
+06:05:29 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:29 [CTRADER] ApplicationAuthReq sent
+06:05:29 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:29 [CTRADER] ApplicationAuthRes failed (pt=3464186000)
+06:05:32 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.713ms cap=120ms lat_ok=1 session=ACTIVE
+06:05:32 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+06:05:32 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+06:05:32 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+06:05:32 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+06:05:32 [TICK] EURUSD 1.15/1.15
+06:05:32 [TICK] GBPUSD 1.32/1.32
+06:05:32 [TICK] XAUUSD 4677.03/4677.25
+06:05:32 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+06:05:32 [TICK] XAGUSD 73.02/73.05
+06:05:32 [TICK] BRENT 106.44/107.11
+06:05:32 [TICK] NAS100 23952.15/23953.35
+06:05:32 [TICK] USDJPY 159.59/159.75
+06:05:32 [TICK] AUDUSD 0.69/0.69
+06:05:32 [TICK] NGAS.F 2.79/2.82
+06:05:32 [TICK] USOIL.F 111.90/112.01
+06:05:32 [TICK] ESTX50 5699.40/5700.80
+06:05:32 [TICK] GER40 23202.60/23204.30
+06:05:32 [TICK] NZDUSD 0.57/0.57
+06:05:32 [TICK] DJ30.F 46620.30/46642.60
+06:05:32 [TICK] UK100 10455.10/10456.90
+06:05:32 [TICK] VIX.F 24.74/25.10
+06:05:32 [TICK] DX.F 99.93/100.03
+06:05:32 [TICK] US500.F 6603.22/6604.03
+06:05:32 [TICK] USTEC.F 24128.44/24132.90
+06:05:34 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:34 [CTRADER] ApplicationAuthReq sent
+06:05:34 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:34 [CTRADER] ApplicationAuthRes failed (pt=3464191472)
+06:05:39 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:39 [CTRADER] ApplicationAuthReq sent
+06:05:39 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:39 [CTRADER] ApplicationAuthRes failed (pt=3464188448)
+06:05:44 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:44 [CTRADER] ApplicationAuthReq sent
+06:05:45 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:45 [CTRADER] ApplicationAuthRes failed (pt=3464187584)
+06:05:50 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:50 [CTRADER] ApplicationAuthReq sent
+06:05:50 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:50 [CTRADER] ApplicationAuthRes failed (pt=3464186864)
+06:05:55 [CTRADER] Connecting live.ctraderapi.com:5035
+06:05:55 [CTRADER] ApplicationAuthReq sent
+06:05:55 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:05:55 [CTRADER] ApplicationAuthRes failed (pt=3464188160)
+06:06:00 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:00 [CTRADER] ApplicationAuthReq sent
+06:06:00 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:00 [CTRADER] ApplicationAuthRes failed (pt=3464189600)
+06:06:05 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:05 [CTRADER] ApplicationAuthReq sent
+06:06:05 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:05 [CTRADER] ApplicationAuthRes failed (pt=3464186144)
+06:06:10 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:10 [CTRADER] ApplicationAuthReq sent
+06:06:10 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:10 [CTRADER] ApplicationAuthRes failed (pt=3464191472)
+06:06:15 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:15 [CTRADER] ApplicationAuthReq sent
+06:06:15 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:15 [CTRADER] ApplicationAuthRes failed (pt=3464185856)
+06:06:20 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:20 [CTRADER] ApplicationAuthReq sent
+06:06:20 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:20 [CTRADER] ApplicationAuthRes failed (pt=3464192624)
+06:06:25 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:25 [CTRADER] ApplicationAuthReq sent
+06:06:25 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:25 [CTRADER] ApplicationAuthRes failed (pt=3464187008)
+06:06:30 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:30 [CTRADER] ApplicationAuthReq sent
+06:06:30 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:30 [CTRADER] ApplicationAuthRes failed (pt=3464188160)
+06:06:32 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.713ms cap=120ms lat_ok=1 session=ACTIVE
+06:06:32 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+06:06:32 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+06:06:32 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+06:06:32 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+06:06:32 [TICK] EURUSD 1.15/1.15
+06:06:32 [TICK] GBPUSD 1.32/1.32
+06:06:32 [TICK] XAUUSD 4677.03/4677.25
+06:06:32 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+06:06:32 [TICK] XAGUSD 73.02/73.05
+06:06:32 [TICK] BRENT 106.44/107.11
+06:06:32 [TICK] NAS100 23952.15/23953.35
+06:06:32 [TICK] USDJPY 159.59/159.75
+06:06:32 [TICK] AUDUSD 0.69/0.69
+06:06:32 [TICK] NGAS.F 2.79/2.82
+06:06:32 [TICK] USOIL.F 111.90/112.01
+06:06:32 [TICK] ESTX50 5699.40/5700.80
+06:06:32 [TICK] GER40 23202.60/23204.30
+06:06:32 [TICK] NZDUSD 0.57/0.57
+06:06:32 [TICK] DJ30.F 46620.30/46642.60
+06:06:32 [TICK] UK100 10455.10/10456.90
+06:06:32 [TICK] VIX.F 24.74/25.10
+06:06:32 [TICK] DX.F 99.93/100.03
+06:06:32 [TICK] US500.F 6603.22/6604.03
+06:06:32 [TICK] USTEC.F 24128.44/24132.90
+06:06:35 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:35 [CTRADER] ApplicationAuthReq sent
+06:06:35 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:35 [CTRADER] ApplicationAuthRes failed (pt=3464191184)
+06:06:41 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:41 [CTRADER] ApplicationAuthReq sent
+06:06:41 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:41 [CTRADER] ApplicationAuthRes failed (pt=3464188736)
+06:06:46 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:46 [CTRADER] ApplicationAuthReq sent
+06:06:46 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:46 [CTRADER] ApplicationAuthRes failed (pt=3464185712)
+06:06:51 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:51 [CTRADER] ApplicationAuthReq sent
+06:06:51 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:51 [CTRADER] ApplicationAuthRes failed (pt=3464189600)
+06:06:56 [CTRADER] Connecting live.ctraderapi.com:5035
+06:06:56 [CTRADER] ApplicationAuthReq sent
+06:06:56 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:06:56 [CTRADER] ApplicationAuthRes failed (pt=3464186720)
+06:07:01 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:01 [CTRADER] ApplicationAuthReq sent
+06:07:01 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:01 [CTRADER] ApplicationAuthRes failed (pt=3464189600)
+06:07:06 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:06 [CTRADER] ApplicationAuthReq sent
+06:07:06 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:06 [CTRADER] ApplicationAuthRes failed (pt=3464186000)
+06:07:11 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:11 [CTRADER] ApplicationAuthReq sent
+06:07:11 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:11 [CTRADER] ApplicationAuthRes failed (pt=3464188016)
+06:07:16 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:16 [CTRADER] ApplicationAuthReq sent
+06:07:16 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:16 [CTRADER] ApplicationAuthRes failed (pt=3464185856)
+06:07:21 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:21 [CTRADER] ApplicationAuthReq sent
+06:07:21 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:21 [CTRADER] ApplicationAuthRes failed (pt=3464191472)
+06:07:26 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:26 [CTRADER] ApplicationAuthReq sent
+06:07:27 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:27 [CTRADER] ApplicationAuthRes failed (pt=3464189600)
+06:07:32 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:32 [CTRADER] ApplicationAuthReq sent
+06:07:32 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:32 [CTRADER] ApplicationAuthRes failed (pt=3464188016)
+06:07:32 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.84ms cap=120ms lat_ok=1 session=ACTIVE
+06:07:32 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+06:07:32 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+06:07:32 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+06:07:32 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+06:07:32 [TICK] EURUSD 1.15/1.15
+06:07:32 [TICK] GBPUSD 1.32/1.32
+06:07:32 [TICK] XAUUSD 4677.03/4677.25
+06:07:32 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+06:07:32 [TICK] XAGUSD 73.02/73.05
+06:07:32 [TICK] BRENT 106.44/107.11
+06:07:32 [TICK] NAS100 23952.15/23953.35
+06:07:32 [TICK] USDJPY 159.59/159.75
+06:07:32 [TICK] AUDUSD 0.69/0.69
+06:07:32 [TICK] NGAS.F 2.79/2.82
+06:07:32 [TICK] USOIL.F 111.90/112.01
+06:07:32 [TICK] ESTX50 5699.40/5700.80
+06:07:32 [TICK] GER40 23202.60/23204.30
+06:07:32 [TICK] NZDUSD 0.57/0.57
+06:07:32 [TICK] DJ30.F 46620.30/46642.60
+06:07:32 [TICK] UK100 10455.10/10456.90
+06:07:32 [TICK] VIX.F 24.74/25.10
+06:07:32 [TICK] DX.F 99.93/100.03
+06:07:32 [TICK] US500.F 6603.22/6604.03
+06:07:32 [TICK] USTEC.F 24128.44/24132.90
+06:07:37 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:37 [CTRADER] ApplicationAuthReq sent
+06:07:37 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:37 [CTRADER] ApplicationAuthRes failed (pt=3464191472)
+06:07:42 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:42 [CTRADER] ApplicationAuthReq sent
+06:07:42 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:42 [CTRADER] ApplicationAuthRes failed (pt=3464190464)
+06:07:47 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:47 [CTRADER] ApplicationAuthReq sent
+06:07:47 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:47 [CTRADER] ApplicationAuthRes failed (pt=3464184416)
+06:07:52 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:52 [CTRADER] ApplicationAuthReq sent
+06:07:52 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:52 [CTRADER] ApplicationAuthRes failed (pt=3464188304)
+06:07:57 [CTRADER] Connecting live.ctraderapi.com:5035
+06:07:57 [CTRADER] ApplicationAuthReq sent
+06:07:57 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:07:57 [CTRADER] ApplicationAuthRes failed (pt=3464184416)
+06:08:02 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:02 [CTRADER] ApplicationAuthReq sent
+06:08:02 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:02 [CTRADER] ApplicationAuthRes failed (pt=3464185424)
+06:08:07 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:07 [CTRADER] ApplicationAuthReq sent
+06:08:07 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:07 [CTRADER] ApplicationAuthRes failed (pt=3464185712)
+06:08:12 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:12 [CTRADER] ApplicationAuthReq sent
+06:08:12 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:12 [CTRADER] ApplicationAuthRes failed (pt=3464186720)
+06:08:17 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:17 [CTRADER] ApplicationAuthReq sent
+06:08:17 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:17 [CTRADER] ApplicationAuthRes failed (pt=3464186000)
+06:08:22 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:23 [CTRADER] ApplicationAuthReq sent
+06:08:23 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:23 [CTRADER] ApplicationAuthRes failed (pt=3464184560)
+06:08:28 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:28 [CTRADER] ApplicationAuthReq sent
+06:08:28 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:28 [CTRADER] ApplicationAuthRes failed (pt=3464193200)
+06:08:32 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.84ms cap=120ms lat_ok=1 session=ACTIVE
+06:08:32 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+06:08:32 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+06:08:32 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+06:08:32 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+06:08:32 [TICK] EURUSD 1.15/1.15
+06:08:32 [TICK] GBPUSD 1.32/1.32
+06:08:32 [TICK] XAUUSD 4677.03/4677.25
+06:08:32 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+06:08:32 [TICK] USDJPY 159.59/159.75
+06:08:32 [TICK] AUDUSD 0.69/0.69
+06:08:32 [TICK] NGAS.F 2.79/2.82
+06:08:32 [TICK] USOIL.F 111.90/112.01
+06:08:32 [TICK] ESTX50 5699.40/5700.80
+06:08:32 [TICK] XAGUSD 73.02/73.05
+06:08:32 [TICK] GER40 23202.60/23204.30
+06:08:32 [TICK] NZDUSD 0.57/0.57
+06:08:32 [TICK] DJ30.F 46620.30/46642.60
+06:08:32 [TICK] UK100 10455.10/10456.90
+06:08:32 [TICK] BRENT 106.44/107.11
+06:08:32 [TICK] VIX.F 24.74/25.10
+06:08:32 [TICK] DX.F 99.93/100.03
+06:08:32 [TICK] NAS100 23952.15/23953.35
+06:08:32 [TICK] US500.F 6603.22/6604.03
+06:08:32 [TICK] USTEC.F 24128.44/24132.90
+06:08:33 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:33 [CTRADER] ApplicationAuthReq sent
+06:08:33 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:33 [CTRADER] ApplicationAuthRes failed (pt=3464190032)
+06:08:38 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:38 [CTRADER] ApplicationAuthReq sent
+06:08:38 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:38 [CTRADER] ApplicationAuthRes failed (pt=3464191472)
+06:08:43 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:43 [CTRADER] ApplicationAuthReq sent
+06:08:43 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:43 [CTRADER] ApplicationAuthRes failed (pt=3464189600)
+06:08:48 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:48 [CTRADER] ApplicationAuthReq sent
+06:08:48 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:48 [CTRADER] ApplicationAuthRes failed (pt=3464188736)
+06:08:53 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:53 [CTRADER] ApplicationAuthReq sent
+06:08:53 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:53 [CTRADER] ApplicationAuthRes failed (pt=3464191904)
+06:08:58 [CTRADER] Connecting live.ctraderapi.com:5035
+06:08:58 [CTRADER] ApplicationAuthReq sent
+06:08:58 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:08:58 [CTRADER] ApplicationAuthRes failed (pt=3464185136)
+06:09:03 [CTRADER] Connecting live.ctraderapi.com:5035
+06:09:03 [CTRADER] ApplicationAuthReq sent
+06:09:03 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:09:03 [CTRADER] ApplicationAuthRes failed (pt=3464187152)
+06:09:08 [CTRADER] Connecting live.ctraderapi.com:5035
+06:09:08 [CTRADER] ApplicationAuthReq sent
+06:09:08 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:09:08 [CTRADER] ApplicationAuthRes failed (pt=3464189600)
+06:09:13 [CTRADER] Connecting live.ctraderapi.com:5035
+06:09:14 [CTRADER] ApplicationAuthReq sent
+06:09:14 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:09:14 [CTRADER] ApplicationAuthRes failed (pt=3464188304)
+06:09:19 [CTRADER] Connecting live.ctraderapi.com:5035
+06:09:19 [CTRADER] ApplicationAuthReq sent
+06:09:19 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:09:19 [CTRADER] ApplicationAuthRes failed (pt=3464192768)
+06:09:24 [CTRADER] Connecting live.ctraderapi.com:5035
+06:09:24 [CTRADER] ApplicationAuthReq sent
+06:09:24 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:09:24 [CTRADER] ApplicationAuthRes failed (pt=3464193056)
+06:09:29 [CTRADER] Connecting live.ctraderapi.com:5035
+06:09:29 [CTRADER] ApplicationAuthReq sent
+06:09:29 [CTRADER] Error:  -- SERVER_IS_UNDER_MAINTENANCE
+06:09:29 [CTRADER] ApplicationAuthRes failed (pt=3464188304)
+06:09:32 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.84ms cap=120ms lat_ok=1 session=ACTIVE
+06:09:32 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+06:09:32 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+06:09:32 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+06:09:32 [GOLD-DIAG] regime=COMPRESSION vwap=4677.14 vol_range=0.00
+06:09:32 [TICK] EURUSD 1.15/1.15
+06:09:32 [TICK] GBPUSD 1.32/1.32
+06:09:32 [TICK] XAUUSD 4677.03/4677.25
+06:09:32 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+06:09:32 [TICK] USDJPY 159.59/159.75
+06:09:32 [TICK] AUDUSD 0.69/0.69
+06:09:32 [TICK] NGAS.F 2.79/2.82
+06:09:32 [TICK] USOIL.F 111.90/112.01
+06:09:32 [TICK] ESTX50 5699.40/5700.80
+06:09:32 [TICK] XAGUSD 73.02/73.05
+06:09:32 [TICK] GER40 23202.60/23204.30
+06:09:32 [TICK] NZDUSD 0.57/0.57
+06:09:32 [TICK] DJ30.F 46620.30/46642.60
+06:09:32 [TICK] UK100 10455.10/10456.90
+06:09:32 [TICK] BRENT 106.44/107.11
+06:09:32 [TICK] VIX.F 24.74/25.10
+06:09:32 [TICK] DX.F 99.93/100.03
+06:09:32 [TICK] NAS100 23952.15/23953.35
+06:09:32 [TICK] US500.F 6603.22/6604.03
+06:09:32 [TICK] USTEC.F 24128.44/24132.90
