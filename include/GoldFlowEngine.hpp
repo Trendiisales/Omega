@@ -1691,23 +1691,7 @@ private:
         static constexpr double STEP1_DOLLAR_TRIGGER         = GFE_STEP1_OVERRIDE;
         static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = GFE_STEP1_OVERRIDE * 4.0;
 #endif
-        // velocity_active already computed above (expansion_mode && vol_ratio > 2.5)
-        const double eff_step1_trigger = velocity_active
-            ? STEP1_DOLLAR_TRIGGER_VELOCITY : STEP1_DOLLAR_TRIGGER;
-        if (!pos.partial_closed && open_pnl_usd_full >= eff_step1_trigger) {
-            fire_stair(1, "PARTIAL_1R");
-        } else if (velocity_active && !pos.partial_closed && open_pnl_usd_full > 0.0) {
-            // Progress log: show step1 suppression status in velocity mode every 5s
-            static int64_t s_vel_step1_log = 0;
-            if (now_ms - s_vel_step1_log > 5000) {
-                s_vel_step1_log = now_ms;
-                printf("[GFE-VEL-STEP1] WAITING $%.0f / $%.0f (%.0f%%) vol_ratio=%.2f mfe=%.2fpts trail_arm_at=%.2fpts\n",
-                       open_pnl_usd_full, STEP1_DOLLAR_TRIGGER_VELOCITY,
-                       open_pnl_usd_full / STEP1_DOLLAR_TRIGGER_VELOCITY * 100.0,
-                       m_vol_ratio, pos.mfe, pos.atr_at_entry * 3.0);
-                fflush(stdout);
-            }
-        }
+        // Step 1 trigger applied below, after velocity_active is computed.
 
         // Step 2: +2?ATR -- bank another 33% of remaining, SL ? step1 exit
         if (pos.partial_closed && !pos.partial_closed_2 && move >= atr * 1.5) {  // was 2.0 -- lowered to 1.5 (7.5pts at ATR=5, reachable)
@@ -1755,6 +1739,27 @@ private:
         //             Step 1 STAIR still banks 33% early -- locks real cash.
         //             Dollar-ratchet still fires every $50 -- progressive locking.
         const bool velocity_active = m_expansion_mode && (m_vol_ratio > 2.5);
+
+        // ?? Step 1: DOLLAR trigger -- velocity-aware ????????????????????
+        // Normal: fire at $35. Velocity mode: suppress until $150.
+        // Prevents halving position at 2.62pts before velocity trail arms at 3xATR.
+        {
+            const double eff_step1_trigger = velocity_active
+                ? STEP1_DOLLAR_TRIGGER_VELOCITY : STEP1_DOLLAR_TRIGGER;
+            if (!pos.partial_closed && open_pnl_usd_full >= eff_step1_trigger) {
+                fire_stair(1, "PARTIAL_1R");
+            } else if (velocity_active && !pos.partial_closed && open_pnl_usd_full > 0.0) {
+                static int64_t s_vel_step1_log = 0;
+                if (now_ms - s_vel_step1_log > 5000) {
+                    s_vel_step1_log = now_ms;
+                    printf("[GFE-VEL-STEP1] WAITING $%.0f / $%.0f (%.0f%%) vol_ratio=%.2f mfe=%.2fpts trail_arm_at=%.2fpts\n",
+                           open_pnl_usd_full, STEP1_DOLLAR_TRIGGER_VELOCITY,
+                           open_pnl_usd_full / STEP1_DOLLAR_TRIGGER_VELOCITY * 100.0,
+                           m_vol_ratio, pos.mfe, pos.atr_at_entry * 3.0);
+                    fflush(stdout);
+                }
+            }
+        }
         // Check position is in the EXPANSION direction (don't give velocity trail to counter-trend)
         // SHORT in expansion (ewm_drift < 0 = crash) or LONG in expansion (ewm_drift > 0 = surge)
         // We check sign of mfe (it's always positive) -- direction is in pos.is_long

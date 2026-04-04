@@ -8069,75 +8069,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
             && gold_session_ok && symbol_gate("XAUUSD", false);
 
-        // ?? P4: Velocity re-entry exclusivity exception ??????????????????????
-        // PROBLEM (2026-04-02): after 04:24 all positions closed. gold_can_enter=false
-        // via gold_any_open exclusivity gate for 109 MINUTES while price fell 87 more pts.
-        // The supervisor showed TREND_CONTINUATION conf=1.54 at 05:09. Signal was there.
-        // Nothing could enter because a prior closed position was still counted.
-        //
-        // ROOT CAUSE: gold_any_open is true when a PREVIOUS gold engine has recently
-        // closed and the exclusivity gate hasn't cleared. In velocity regime, a confirmed
-        // directional expansion with no open position for >5 minutes should be re-enterable.
-        //
-        // FIX: when ALL of the following:
-        //   1. velocity_active_gate: supervisor is EXPANSION_BREAKOUT or TREND_CONTINUATION
-        //      AND vol_ratio > 2.5 (confirmed velocity regime -- not normal tape)
-        //   2. No gold position is ACTUALLY open right now (all engines flat)
-        //   3. >5 minutes since last GoldFlow close (not a quick cooldown flip)
-        //   4. Supervisor confidence > 1.0 (strong signal -- not marginal)
-        // Then bypass the exclusivity gate for GoldFlow specifically.
-        // All other gates (session, latency, trail_block, post_impulse, RSI, bar gates) still apply.
-        // This ONLY bypasses the "another engine recently closed" part of gold_any_open.
-        {
-            const double gf_vel_ratio_p4   = (g_gold_stack.recent_vol_pct() > 0.0
-                                           && g_gold_stack.base_vol_pct() > 0.0)
-                ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
-            const bool gf_expansion_p4     = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
-                                           || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
-            const bool velocity_active_gate = gf_expansion_p4 && (gf_vel_ratio_p4 > 2.5);
-
-            // Check no position is ACTUALLY open (not just exclusivity counting closed ones)
-            const bool actually_no_open    = !g_gold_flow.has_open_position()
-                                          && !g_gold_flow_reload.has_open_position()
-                                          && !g_gold_stack.has_open_position()
-                                          && !g_bracket_gold.has_open_position()
-                                          && !g_le_stack.has_open_position()
-                                          && !g_trend_pb_gold.has_open_position();
-
-            const int64_t last_gf_close    = g_gold_flow_exit_ts.load();
-            const int64_t now_p4           = static_cast<int64_t>(std::time(nullptr));
-            const bool    no_pos_5min      = actually_no_open
-                                          && (last_gf_close > 0)
-                                          && ((now_p4 - last_gf_close) > 300); // >5min since last close
-
-            const bool vel_reentry_bypass  = velocity_active_gate
-                                          && no_pos_5min
-                                          && (gold_sdec.confidence > 1.0)
-                                          && gold_session_ok
-                                          && (!gold_post_impulse_block || crash_impulse_bypass);
-
-            if (vel_reentry_bypass && !gold_can_enter) {
-                // gold_can_enter was false only due to exclusivity (gold_any_open).
-                // All real risk/session gates passed. Override for GoldFlow specifically.
-                // NOTE: this does NOT modify gold_can_enter (which gates other engines).
-                // The actual entry is gated by gf_vel_reentry_ok below, used only inside
-                // the GoldFlow on_tick block.
-                static int64_t s_vel_reentry_log = 0;
-                if (now_p4 - s_vel_reentry_log >= 30) {
-                    s_vel_reentry_log = now_p4;
-                    printf("[GF-VEL-REENTRY] Exclusivity bypass: velocity_active vol_ratio=%.2f "
-                           "conf=%.2f no_pos_for=%lldsec regime=%s -- GoldFlow re-entry ALLOWED\n",
-                           gf_vel_ratio_p4, gold_sdec.confidence,
-                           (long long)(now_p4 - last_gf_close),
-                           omega::regime_name(gold_sdec.regime));
-                    fflush(stdout);
-                }
-            }
-            // Export bypass decision for use in GoldFlow on_tick block below.
-            // Named distinctly to avoid confusion with gold_can_enter.
-            g_gf_vel_reentry_bypass.store(vel_reentry_bypass ? 1 : 0);
-        }
-
         // Run supervisor -- uses g_eng_xag as vol/phase proxy since gold has
         // its own GoldStack (not a BreakoutEngine). We use a dedicated gold
         // BreakoutEngine-based vol state if available, otherwise use silver as proxy.
@@ -8199,6 +8130,53 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             gold_gov_hi, gold_gov_lo,
             gold_is_compressing,
             fb_gold);
+
+        // ?? P4: Velocity re-entry exclusivity exception ??????????????????????
+        // gold_sdec now available. Must be after supervisor update.
+        // PROBLEM (2026-04-02): after 04:24 all positions closed. gold_can_enter=false
+        // via gold_any_open exclusivity for 109 MINUTES while price fell 87 more pts.
+        // FIX: when velocity_active + no actual open >5min + conf>1.0, bypass exclusivity.
+        {
+            const double gf_vel_ratio_p4   = (g_gold_stack.recent_vol_pct() > 0.0
+                                           && g_gold_stack.base_vol_pct() > 0.0)
+                ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
+            const bool gf_expansion_p4     = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
+                                           || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
+            const bool velocity_active_gate = gf_expansion_p4 && (gf_vel_ratio_p4 > 2.5);
+
+            const bool actually_no_open    = !g_gold_flow.has_open_position()
+                                          && !g_gold_flow_reload.has_open_position()
+                                          && !g_gold_stack.has_open_position()
+                                          && !g_bracket_gold.has_open_position()
+                                          && !g_le_stack.has_open_position()
+                                          && !g_trend_pb_gold.has_open_position();
+
+            const int64_t last_gf_close    = g_gold_flow_exit_ts.load();
+            const int64_t now_p4           = static_cast<int64_t>(std::time(nullptr));
+            const bool    no_pos_5min      = actually_no_open
+                                          && (last_gf_close > 0)
+                                          && ((now_p4 - last_gf_close) > 300);
+
+            const bool vel_reentry_bypass  = velocity_active_gate
+                                          && no_pos_5min
+                                          && (gold_sdec.confidence > 1.0)
+                                          && gold_session_ok
+                                          && (!gold_post_impulse_block || crash_impulse_bypass);
+
+            if (vel_reentry_bypass && !gold_can_enter) {
+                static int64_t s_vel_reentry_log = 0;
+                if (now_p4 - s_vel_reentry_log >= 30) {
+                    s_vel_reentry_log = now_p4;
+                    printf("[GF-VEL-REENTRY] Exclusivity bypass vol_ratio=%.2f conf=%.2f "
+                           "no_pos_for=%lldsec regime=%s -- GoldFlow re-entry ALLOWED\n",
+                           gf_vel_ratio_p4, gold_sdec.confidence,
+                           (long long)(now_p4 - last_gf_close),
+                           omega::regime_name(gold_sdec.regime));
+                    fflush(stdout);
+                }
+            }
+            g_gf_vel_reentry_bypass.store(vel_reentry_bypass ? 1 : 0);
+        }
 
         // Diagnostic: log vol_ratio every 30s so we can verify real data is flowing
         {
