@@ -10300,8 +10300,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                             std::lock_guard<std::mutex> lk(g_l2_mtx);
                             auto it = g_l2_books.find("GOLD.F");
                             if (it != g_l2_books.end()) {
-                                for (auto& kv : it->second.bids) l2_bvol += kv.second.size_raw;
-                                for (auto& kv : it->second.asks) l2_avol += kv.second.size_raw;
+                                for (int _i = 0; _i < it->second.bid_count; ++_i) l2_bvol += it->second.bids[_i].size;
+                                for (int _i = 0; _i < it->second.ask_count; ++_i) l2_avol += it->second.asks[_i].size;
                             }
                         }
                         fprintf(s_l2f,
