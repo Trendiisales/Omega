@@ -42,7 +42,7 @@ $ErrorActionPreference = "Continue"
 
 # Singleton guard -- prevent two deploy scripts running at once
 $deployMutex = New-Object System.Threading.Mutex($false, "Global\OmegaDeployMutex")
-$gotMutex = $deployMutex.WaitOne(0)
+try { $gotMutex = $deployMutex.WaitOne(0) } catch { $gotMutex = $true }  # abandoned mutex = take it
 if (-not $gotMutex) {
     Write-Host "[DEPLOY] Another deploy is already running. Exiting." -ForegroundColor Red
     exit 1
