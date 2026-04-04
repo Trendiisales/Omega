@@ -531,6 +531,12 @@ static GoldFlowEngine             g_gold_flow;
 // Managed exactly like g_gold_flow but never arms its own reload (avoids cascade).
 // Shares all session/risk gates. Counted toward gold open position cap.
 static GoldFlowEngine             g_gold_flow_reload;
+// Add-on instance: independent GoldFlowEngine for velocity add-on entries.
+// Fires once per base position when base hits trail_stage>=2 + expansion + vol_ratio>2.5.
+// Entry at current price, SL = base trail SL (already in profit territory).
+// Sized at 50% of base full_size. Has its own staircase, trail, ratchet.
+// Never arms its own addon or reload (prevents cascade).
+static GoldFlowEngine             g_gold_flow_addon;
 
 // ?? Trend-day multi-engine state ?????????????????????????????????????????????
 // Tracks GoldFlow exit details so CompBreakout/Bracket can re-enter on trend days
@@ -3808,6 +3814,7 @@ static void maybe_reset_daily_ledger() {
             }
             if (g_gold_flow_reload.has_open_position()) {
                 g_gold_flow_reload.force_close(xau_b, xau_a, fc_now_ms, midnight_cb);
+                g_gold_flow_addon.force_close(xau_b, xau_a, fc_now_ms, midnight_cb);
                 std::cout << "[MIDNIGHT-ROLLOVER] Force-closed GoldFlow reload\n";
             }
             if (g_gold_stack.has_open_position()) {
@@ -9091,6 +9098,43 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_macro_ctx.session_slot);
         }
 
+        // ?? GoldFlow add-on manage -- ALWAYS runs when addon position open ??????
+        // Mirrors the reload manage block. The addon instance is independent --
+        // its own SL, trail, ratchet. When base closes, addon keeps running
+        // until its own trail/SL fires (already deep in profit by definition).
+        // Does NOT arm its own addon or reload.
+        if (g_gold_flow_addon.has_open_position()) {
+            g_gold_flow_addon.set_trend_bias(gold_momentum, gold_sdec.confidence,
+                (gold_sdec.regime == omega::Regime::TREND_CONTINUATION),
+                g_gold_flow_addon.pos.is_long
+                    ? g_macro_ctx.gold_wall_above
+                    : g_macro_ctx.gold_wall_below,
+                gold_vwap_pts,
+                (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
+                 || gold_sdec.regime == omega::Regime::TREND_CONTINUATION),
+                (g_gold_stack.recent_vol_pct() > 0.0 && g_gold_stack.base_vol_pct() > 0.0)
+                    ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 1.0);
+            auto addon_mgmt_cb = [&](const omega::TradeRecord& tr) {
+                if (tr.exitReason == std::string("PARTIAL_1R")) {
+                    if (g_cfg.mode == "LIVE")
+                        send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                    handle_closed_trade(tr);
+                    return;
+                }
+                handle_closed_trade(tr);
+                send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                clear_hard_stop_tombstone("XAUUSD", tr.entryTs);
+                printf("[GF-ADDON] POSITION CLOSED reason=%s pnl_raw=%.4f\n",
+                       tr.exitReason.c_str(), tr.pnl);
+                fflush(stdout);
+            };
+            g_gold_flow_addon.on_tick(bid, ask,
+                g_macro_ctx.gold_l2_imbalance,
+                g_gold_stack.ewm_drift(),
+                now_ms_g, addon_mgmt_cb,
+                g_macro_ctx.session_slot);
+        }
+
         // ?? GoldFlow reload -- continuation entry after PARTIAL_1R ?????????????
         // When stair step 1 banks the first 33% and arms a reload, try_reload()
         // is called every tick until it fires, cancels, or times out (5s).
@@ -11656,6 +11700,7 @@ static void quote_loop() {
                       std::cout << "[STALE-CLOSE] Purged prior-day GoldFlow\n"; }
                 if (g_gold_flow_reload.has_open_position() && is_stale(g_gold_flow_reload.pos.entry_ts))
                     { g_gold_flow_reload.force_close(xb_rc, xa_rc, fc_ms_rc, stale_cb);
+                    g_gold_flow_addon.force_close(xb_rc, xa_rc, fc_ms_rc, stale_cb);
                       std::cout << "[STALE-CLOSE] Purged prior-day GoldFlow-Reload\n"; }
                 if (g_gold_stack.has_open_position() && is_stale(g_gold_stack.live_entry_ts()))
                     { g_gold_stack.force_close(xb_rc, xa_rc, g_rtt_last, stale_cb);
@@ -11823,7 +11868,8 @@ static void quote_loop() {
               std::chrono::system_clock::now().time_since_epoch()).count();
           g_gold_stack.force_close(b,a,g_rtt_last,shutdown_cb);
           g_gold_flow.force_close(b,a,now_ms_sd,shutdown_cb);
-          g_gold_flow_reload.force_close(b,a,now_ms_sd,shutdown_cb); }
+          g_gold_flow_reload.force_close(b,a,now_ms_sd,shutdown_cb);
+          g_gold_flow_addon.force_close(b,a,now_ms_sd,shutdown_cb); }
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
           double s_bid=0,s_ask=0; snap_px("XAGUSD",s_bid,s_ask);
@@ -11921,7 +11967,8 @@ static void quote_loop() {
                   std::chrono::system_clock::now().time_since_epoch()).count();
               g_gold_stack.force_close(b,a,g_rtt_last,scb);
               g_gold_flow.force_close(b,a,now_ms_scb,scb);
-              g_gold_flow_reload.force_close(b,a,now_ms_scb,scb); }
+              g_gold_flow_reload.force_close(b,a,now_ms_scb,scb);
+              g_gold_flow_addon.force_close(b,a,now_ms_scb,scb); }
             { double b,a,sb,sa; get_px("XAUUSD",b,a); get_px("XAGUSD",sb,sa);
               g_le_stack.force_close_all(b,a,sb,sa,g_rtt_last,[&](const omega::TradeRecord& tr){scb(tr);}); }
 
@@ -13133,6 +13180,75 @@ int main(int argc, char* argv[])
                 send_hard_stop_order(sym, is_long, qty, sl_px, ts);
             };
             printf("[GFE] Hard stop: ARMED (broker LIMIT order fires at 20pts adverse)\n");
+            fflush(stdout);
+
+            // ?? Velocity add-on callback ??????????????????????????????????????????
+            // Wires GoldFlowEngine's on_addon to fire g_gold_flow_addon when the base
+            // position confirms a velocity expansion move (trail_stage>=2 + vol>2.5).
+            // Add-on instance uses same session/risk gates as reload.
+            // addon_shadow_mode=true: logs only, no live entries until verified.
+            g_gold_flow.addon_shadow_mode = true;  // shadow until [GFE-ADDON-SHADOW] verified
+            g_gold_flow.on_addon = [](bool is_long, double bid, double ask,
+                                      double atr, double base_trail_sl,
+                                      int64_t base_entry_ts) {
+                // Gate: addon instance must be flat (no double-stacking)
+                if (g_gold_flow_addon.has_open_position()) {
+                    printf("[GFE-ADDON] BLOCKED -- addon instance already has open position\n");
+                    fflush(stdout);
+                    return;
+                }
+                // Gate: daily loss proximity -- if within 20% of daily limit, skip
+                {
+                    const double daily_pnl = g_omegaLedger.dailyPnl();
+                    if (daily_pnl < -g_cfg.daily_loss_limit * 0.80) {
+                        printf("[GFE-ADDON] BLOCKED -- daily_pnl=$%.2f within 20%% of limit=$%.2f\n",
+                               daily_pnl, g_cfg.daily_loss_limit);
+                        fflush(stdout);
+                        return;
+                    }
+                }
+                // Seed addon instance ATR and force-entry
+                const double addon_size = std::max(GFE_MIN_LOT,
+                    std::min(g_gold_flow.pos.full_size * 0.5, GFE_MAX_LOT));
+                g_gold_flow_addon.risk_dollars        = addon_size * std::fabs(
+                    (is_long ? ask : bid) - base_trail_sl) * 100.0;
+                g_gold_flow_addon.addon_shadow_mode   = false; // addon instance never recurses
+                g_gold_flow_addon.velocity_shadow_mode = g_gold_flow.velocity_shadow_mode;
+                g_gold_flow_addon.on_hard_stop = [](const std::string& sym, bool il,
+                                                     double qty, double sl_px, int64_t ts) {
+                    send_hard_stop_order(sym, il, qty, sl_px, ts);
+                };
+                // force_entry bypasses all persistence gates -- addon confirmation
+                // was already done by the base position's 10+ gates.
+                const bool entered = g_gold_flow_addon.force_entry(
+                    is_long, bid, ask, atr, 
+                    static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count()),
+                    g_macro_ctx.session_slot);
+                if (entered) {
+                    // Override the addon SL to be exactly the base trail SL
+                    // force_entry sets SL based on ATR -- we want it at base trail
+                    if (is_long  && base_trail_sl < g_gold_flow_addon.pos.entry)
+                        g_gold_flow_addon.pos.sl = base_trail_sl;
+                    if (!is_long && base_trail_sl > g_gold_flow_addon.pos.entry)
+                        g_gold_flow_addon.pos.sl = base_trail_sl;
+                    printf("[GFE-ADDON] ENTERED %s @ %.2f sl=%.2f(base_trail) size=%.4f "
+                           "base_entry_ts=%lld\n",
+                           is_long ? "LONG" : "SHORT",
+                           is_long ? ask : bid,
+                           g_gold_flow_addon.pos.sl,
+                           g_gold_flow_addon.pos.size,
+                           (long long)base_entry_ts);
+                    fflush(stdout);
+                    // Send live order
+                    send_live_order("XAUUSD", is_long, g_gold_flow_addon.pos.size,
+                                    is_long ? ask : bid);
+                } else {
+                    printf("[GFE-ADDON] force_entry failed (already has position?)\n");
+                    fflush(stdout);
+                }
+            };
+            printf("[GFE] Velocity add-on: SHADOW mode (verify [GFE-ADDON-SHADOW] logs before enabling)\n");
             fflush(stdout);
         }
 

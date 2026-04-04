@@ -219,6 +219,7 @@ struct GoldFlowEngine {
         int     dollar_lock_tier = 0;    // highest tier fired (0=none)
         double  dollar_lock_sl   = 0.0;  // SL level set by dollar ratchet
         bool    hard_stop_fired  = false; // true = broker hard-stop order already sent this position
+        bool    addon_fired      = false; // true = velocity add-on already armed this position (max 1)
     } pos;
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
@@ -243,6 +244,32 @@ struct GoldFlowEngine {
                                                 double hard_sl_px,
                                                 int64_t entry_ts_sec)>;
     HardStopCallback on_hard_stop;  // set from main.cpp; nullptr = disabled
+
+    // ?? Velocity add-on callback ?????????????????????????????????????????????????
+    // Called exactly once per base position when the base has confirmed a velocity
+    // expansion move and all safety gates pass. main.cpp fires a second independent
+    // GoldFlowEngine entry (g_gold_flow_addon) at the current price.
+    //
+    // GATES (ALL must pass -- checked inside manage_position before callback fires):
+    //   1. trail_stage >= 2  -- step 2 banked, real money locked, not a paper winner
+    //   2. expansion_mode    -- supervisor confirmed EXPANSION_BREAKOUT/TREND_CONTINUATION
+    //   3. vol_ratio > 2.5   -- confirmed velocity regime (not normal vol)
+    //   4. |ewm_drift| > 4.0 -- drift strongly aligned with position direction
+    //   5. spread <= spread_at_entry * 1.5 -- market not in panic spread anomaly
+    //   6. addon_fired == false -- only one add-on per base position
+    //   7. move >= atr * 4.0 -- add-on only after move is confirmed (not at first step)
+    //
+    // Args: is_long, bid, ask, atr (for SL sizing), base_trail_sl (add-on SL = base trail)
+    //
+    // addon_shadow_mode=true: logs [GFE-ADDON-SHADOW] without calling the callback.
+    // Set false once shadow logs confirm gates fire correctly on real expansion moves.
+    using AddOnCallback = std::function<void(bool is_long,
+                                             double bid, double ask,
+                                             double atr,
+                                             double base_trail_sl,
+                                             int64_t base_entry_ts)>;
+    AddOnCallback on_addon;         // set from main.cpp; nullptr = disabled
+    bool addon_shadow_mode = true;  // default true = shadow only, no live orders
 
     // -------------------------------------------------------------------------
     // Main tick function -- call every tick with fresh data
@@ -283,7 +310,7 @@ struct GoldFlowEngine {
 
         // Manage open position
         if (phase == Phase::LIVE) {
-            manage_position(bid, ask, mid, spread, l2_imb, now_ms, on_close);
+            manage_position(bid, ask, mid, spread, l2_imb, ewm_drift, now_ms, on_close);
             return;
         }
 
@@ -1348,7 +1375,7 @@ private:
     }
 
     void manage_position(double bid, double ask, double mid, double spread,
-                         double l2_imb, int64_t now_ms, CloseCallback on_close) noexcept
+                         double l2_imb, double ewm_drift, int64_t now_ms, CloseCallback on_close) noexcept
     {
         if (!pos.active) return;
 
@@ -1838,6 +1865,98 @@ private:
         if (pos.trail_stage < 2 && pos.partial_closed_2)   pos.trail_stage = 2;
         if (pos.trail_stage < 3 && move >= atr * 3.0)      pos.trail_stage = 3;
         if (pos.trail_stage < 4 && move >= atr * 6.0)      pos.trail_stage = 4;
+
+        // ?? Velocity add-on -- add size into a confirmed running crash/surge ????
+        //
+        // PROBLEM: on a 111pt crash (Apr 2) GoldFlow entered 0.16 lots and the reload
+        // added another 0.16 lots. Total exposure = 0.32 lots riding a crash that moved
+        // $11,100 per lot. We captured $101 actual vs $3,500+ possible. The system was
+        // correct on direction but criminally underweight for the size of the move.
+        //
+        // SOLUTION: when the base position has confirmed it is in a genuine velocity
+        // expansion move, fire one additional entry at current price sized to 50% of
+        // the original position. SL = current base trail SL (already in profit).
+        // This means the worst case on the add-on is breakeven or a small loss --
+        // the base position has already locked profit via staircase/ratchet.
+        //
+        // GATES (ALL must pass -- designed to fire ONLY on genuine expansion moves):
+        //   1. trail_stage >= 2   -- PARTIAL_2R banked, hard money locked (not paper)
+        //   2. expansion_mode     -- supervisor confirmed EXPANSION_BREAKOUT/TREND_CONTINUATION
+        //   3. vol_ratio > 2.5    -- velocity confirmed (normal vol never passes)
+        //   4. |ewm_drift| > 4.0  -- drift strongly aligned, not flipping chop
+        //   5. move >= atr * 4.0  -- move is 4x ATR (Apr 2: 4x5=20pts already in, 91 more to go)
+        //   6. spread <= spread_at_entry * 2.0 -- spread not blown out (panic/anomaly)
+        //   7. addon_fired == false -- exactly one add-on per base position, ever
+        //   8. on_addon != nullptr -- callback wired from main.cpp
+        //
+        // WHAT THE ADD-ON GETS:
+        //   - Entry: current market price
+        //   - SL: base position's current trail SL (already deep in profit)
+        //   - Size: full_size * 0.5 (half original, sized by main.cpp)
+        //   - Its own independent trail/staircase via g_gold_flow_addon instance
+        //   - Hard stop at entry - 20pts (same tombstone system as base)
+        //
+        // SHADOW MODE: addon_shadow_mode=true logs [GFE-ADDON-SHADOW] without firing.
+        // Verify logs show correct gate states on real expansion moves, then set false.
+        //
+        // Evidence: Apr 2 04:05 SHORT -- add-on would have fired at trail_stage=2
+        // (~4650, move=22pts = 4.4x ATR=5). Add-on entry 4650, SL=base_trail (~4657).
+        // Add-on rides from 4650 to ~4572 = 78pts. At 0.08 lots = $624 additional.
+        // Plus base velocity trail: $1,220. Combined: $1,844 vs actual $101.
+        if (!pos.addon_fired && (on_addon || addon_shadow_mode)) {
+            const bool gate_stage    = (pos.trail_stage >= 2);
+            const bool gate_expand   = m_expansion_mode;
+            const bool gate_vol      = (m_vol_ratio > 2.5);
+            const bool gate_drift    = pos.is_long
+                ? (ewm_drift >  4.0)
+                : (ewm_drift < -4.0);
+            const bool gate_move     = (move >= atr * 4.0);
+            const bool gate_spread   = (spread <= m_spread_at_entry * 2.0);
+
+            const bool all_gates = gate_stage && gate_expand && gate_vol
+                                && gate_drift && gate_move && gate_spread;
+
+            if (all_gates) {
+                pos.addon_fired = true;  // tombstone -- fires exactly once
+
+                if (addon_shadow_mode) {
+                    printf("[GFE-ADDON-SHADOW] %s GATES PASSED trail_stage=%d expansion=%d "
+                           "vol_ratio=%.2f drift=%.2f move=%.1f(%.1fxATR) spread=%.2f "
+                           "base_sl=%.2f -- would fire add-on entry @ %.2f size=%.4f*0.5\n",
+                           pos.is_long ? "LONG" : "SHORT",
+                           pos.trail_stage, (int)m_expansion_mode,
+                           m_vol_ratio, ewm_drift, move, (atr > 0 ? move / atr : 0),
+                           spread, pos.sl,
+                           pos.is_long ? ask : bid,
+                           pos.full_size);
+                    fflush(stdout);
+                } else if (on_addon) {
+                    printf("[GFE-ADDON] %s FIRING add-on trail_stage=%d vol_ratio=%.2f "
+                           "drift=%.2f move=%.1f base_sl=%.2f entry=%.2f size=%.4f*0.5\n",
+                           pos.is_long ? "LONG" : "SHORT",
+                           pos.trail_stage, m_vol_ratio, ewm_drift, move,
+                           pos.sl,
+                           pos.is_long ? ask : bid,
+                           pos.full_size);
+                    fflush(stdout);
+                    on_addon(pos.is_long, bid, ask, atr_live, pos.sl, pos.entry_ts);
+                }
+            } else {
+                // Log why gates failed every 30s so it's diagnosable -- not every tick
+                static int64_t s_addon_fail_log = 0;
+                if (now_ms - s_addon_fail_log >= 30000 && m_expansion_mode) {
+                    s_addon_fail_log = now_ms;
+                    printf("[GFE-ADDON-BLOCK] %s stage=%d(need>=2) expand=%d vol=%.2f(need>2.5) "
+                           "drift=%.2f(need>4) move=%.1f(need>=%.1f) spread=%.2f(lim=%.2f)\n",
+                           pos.is_long ? "LONG" : "SHORT",
+                           pos.trail_stage, (int)m_expansion_mode,
+                           m_vol_ratio, ewm_drift,
+                           move, atr * 4.0,
+                           spread, m_spread_at_entry * 2.0);
+                    fflush(stdout);
+                }
+            }
+        }
 
         // ---- Max hold timeout -------------------------------------------
         // Only exit at timeout if step 1 hasn't fired yet (no profit banked).
