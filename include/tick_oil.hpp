@@ -3,7 +3,8 @@
 // Do NOT #include from anywhere else.
 
 // ── USOIL.F ────────────────────────────────────────────────
-static void on_tick_oil(const std::string& sym, double bid, double ask) {
+static void on_tick_oil(const std::string& sym, double bid, double ask,
+    bool tradeable, bool lat_ok, const std::string& regime) {
     // Session gate: London/NY only (07:00-22:00 UTC)
     const auto t_cl = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti_cl; gmtime_s(&ti_cl, &t_cl);
@@ -73,7 +74,8 @@ static void on_tick_oil(const std::string& sym, double bid, double ask) {
 }
 
 // ── BRENT ──────────────────────────────────────────────────
-static void on_tick_brent(const std::string& sym, double bid, double ask) {
+static void on_tick_brent(const std::string& sym, double bid, double ask,
+    bool tradeable, bool lat_ok, const std::string& regime) {
     const auto t_br = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti_br; gmtime_s(&ti_br, &t_br);
     if (ti_br.tm_hour >= 7) {
