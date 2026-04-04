@@ -5052,8 +5052,6 @@ static omega::SupervisorDecision sup_decision(
     omega::SymbolSupervisor& sup, EngT& eng, bool base_can_enter,
     const std::string& sym, double bid, double ask)
 {
-                         auto& eng,
-                         bool base_can_enter) -> omega::SupervisorDecision {
     int fb = 0;
     { std::lock_guard<std::mutex> lk(g_false_break_mtx);
       auto it = g_false_break_counts.find(sym); if (it != g_false_break_counts.end()) fb = it->second; }
@@ -5090,12 +5088,6 @@ static double enter_directional(
     double fallback_lot, bool skip_vwap_gate,
     double bid, double ask, const std::string& sym, const std::string& regime)
 {
-                             bool         is_long,
-                             double       entry,
-                             double       sl,
-                             double       tp,          // 0 = use sl_abs*2 as TP estimate
-                             double       fallback_lot = 0.01,
-                             bool         skip_vwap_gate = false) -> double {
     // Returns computed lot size on success, 0.0 on failure/blocked.
     // Callers use the return value directly -- eliminates g_last_directional_lot
     // dependency which caused cross-symbol lot corruption (the $1407 bug).
