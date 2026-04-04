@@ -404,8 +404,24 @@ struct GoldFlowEngine {
         } else {
             // Fallback path: L2 unavailable -- use drift persistence counter
             // Update drift persistence window (stores raw drift values for chop detection)
-            const int drift_dir = (ewm_drift > GFE_DRIFT_FALLBACK_THRESHOLD)  ?  1
-                                 : (ewm_drift < -GFE_DRIFT_FALLBACK_THRESHOLD) ? -1
+            //
+            // ATR-PROPORTIONAL DRIFT THRESHOLD (2026-04-04 backtest calibration):
+            // Fixed 0.5pt was calibrated at $1800 gold (2023). At $3000-4000 gold
+            // the same 0.5pt threshold is only 0.013% of price -- pure tick noise.
+            // Data: 2yr backtest shows drift threshold fires on signal indistinguishable
+            // from spread noise at high gold prices, generating TIME_STOP-dominated entries.
+            // Fix: threshold = max(GFE_DRIFT_FALLBACK_THRESHOLD, 0.3 * m_atr)
+            //   At ATR=2.0pt: max(0.5, 0.6) = 0.6pt  (marginal tightening)
+            //   At ATR=5.0pt: max(0.5, 1.5) = 1.5pt  (meaningful signal required)
+            //   At ATR=15pt:  max(0.5, 4.5) = 4.5pt  (strong directional move required)
+            // This scales the required signal proportionally to actual market volatility.
+            // No change to live Asia sessions (GFE_ASIA_DRIFT_MIN=1.5 is separate path).
+            const double eff_drift_threshold = (m_atr > 0.0)
+                ? std::max(GFE_DRIFT_FALLBACK_THRESHOLD, 0.3 * m_atr)
+                : GFE_DRIFT_FALLBACK_THRESHOLD;
+
+            const int drift_dir = (ewm_drift > eff_drift_threshold)  ?  1
+                                 : (ewm_drift < -eff_drift_threshold) ? -1
                                  : 0;
             m_drift_persist_window.push_back(drift_dir);
             m_drift_val_window.push_back(ewm_drift);  // raw values for range check
@@ -1490,19 +1506,28 @@ private:
         }
 
         // ?? Immediate reversal guard ??????????????????????????????????????????
-        // If within first 15s price is already >2pts adverse AND zero MFE:
+        // If within first 15s price is already >threshold adverse AND zero MFE:
         // the thesis was wrong from tick 1 -- close immediately.
         // Catches entries like 22:38 LONG@4693.62 -> 4688.28 in 27s (-$168).
         // Without this guard: SL sits at 4683, trade bleeds full -$168.
         // With this guard: closes at ~4691 after 15s = ~-$30 instead.
+        //
+        // ATR-PROPORTIONAL FLOOR (2026-04-04 backtest calibration):
+        // Old: max(2.0, 0.30*ATR). At $3000 gold ATR=15pt, threshold=4.5pt (good).
+        // But floor of 2.0pt at $1800-2000 gold (ATR=2-5pt) fired on spread noise.
+        // Fix: floor raised to 3.0pt AND proportion raised to 0.30*ATR.
+        //   ATR=2pt: max(3.0, 0.6) = 3.0pt (requires genuine gap against thesis)
+        //   ATR=5pt: max(3.0, 1.5) = 3.0pt (still floor-limited)
+        //   ATR=15pt: max(3.0, 4.5) = 4.5pt (ATR-based fires)
+        // MFE threshold also raised: 0.10 -> 0.30pt (noise-level MFE ignored)
         {
             const int64_t held_s  = (now_ms / 1000) - pos.entry_ts;
             const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
-            const double  imm_rev_thresh = std::max(2.0, m_atr * 0.30); // 2pt floor or 0.3xATR
-            if (held_s <= 15 && adverse > imm_rev_thresh && pos.mfe < 0.10) {
-                printf("[GOLD-FLOW] IMM-REVERSAL %s adverse=%.2f > %.2f in %llds, mfe=%.2f -- wrong thesis, bail\n",
+            const double  imm_rev_thresh = std::max(3.0, m_atr * 0.30);
+            if (held_s <= 15 && adverse > imm_rev_thresh && pos.mfe < 0.30) {
+                printf("[GOLD-FLOW] IMM-REVERSAL %s adverse=%.2f > %.2f in %llds, mfe=%.2f atr=%.2f -- wrong thesis, bail\n",
                        pos.is_long ? "LONG" : "SHORT",
-                       adverse, imm_rev_thresh, (long long)held_s, pos.mfe);
+                       adverse, imm_rev_thresh, (long long)held_s, pos.mfe, m_atr);
                 fflush(stdout);
                 const double exit_px = pos.is_long ? bid : ask;
                 close_position(exit_px, "IMM_REVERSAL", now_ms, on_close);
@@ -1512,7 +1537,7 @@ private:
 
         // ?? Time-stop-in-loss ???????????????????????????????????????????????????
         // If position has been losing for >45s straight with no meaningful MFE
-        // AND adverse move > 1.0pt: the setup never worked. Close and move on.
+        // AND adverse move > threshold: the setup never worked. Close and move on.
         // Catches: 20:00 LONG held 21min losing the entire time (-$154).
         // Without this: bleeds to full SL over minutes.
         // With this: exits at ~1pt loss after 45s = ~-$10 instead of -$154.
@@ -1523,11 +1548,23 @@ private:
         // SHORT timed out at 62s, one minute before the 111pt crash began. The position
         // was correct direction but the 45s time stop killed it.
         // Safety: if MFE is zero AND adverse > 2pts, still allow TIME_STOP (genuine wrong entry).
+        //
+        // ATR-PROPORTIONAL ADVERSE THRESHOLD (2026-04-04 backtest calibration):
+        // Fixed 1.0pt was correct at $1800 gold (ATR=2-5pts, 1pt = 20-50% of ATR noise).
+        // At $3000-4000 gold (ATR=15-30pts), 1pt = 3-7% of ATR -- pure spread noise.
+        // 2yr backtest: 85% of 2025 TIME_STOPs fired with <$50 loss (<5pt adverse),
+        // many while the signal was correct (next trade in same direction = TRAIL_HIT).
+        // Fix: TIME_STOP_ADVERSE = max(1.0, 0.25 * atr_at_entry)
+        //   ATR=2pt:   max(1.0, 0.5) = 1.0pt  (unchanged for low-vol/Asia)
+        //   ATR=10pt:  max(1.0, 2.5) = 2.5pt  (must be genuinely adverse)
+        //   ATR=20pt:  max(1.0, 5.0) = 5.0pt  (noise tolerance scales with vol)
+        // MFE threshold: also scale to 0.25 * adverse_threshold (was 0.5 * fixed)
         {
             const int64_t held_s  = (now_ms / 1000) - pos.entry_ts;
             const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
-            static constexpr double TIME_STOP_ADVERSE_PTS = 1.0;  // losing >1pt
-            static constexpr int64_t TIME_STOP_SECS       = 45;   // for >45s straight
+            // ATR-proportional threshold: scale with actual entry volatility
+            const double  time_stop_adverse = std::max(1.0, 0.25 * pos.atr_at_entry);
+            static constexpr int64_t TIME_STOP_SECS = 45;
 
             // Velocity suppression: expansion confirmed AND vol_ratio > 2.5 (genuine velocity
             // regime, not just any EXPANSION tick) AND adverse < 2pts (trade still viable).
@@ -1557,12 +1594,12 @@ private:
 
             if (!pos.partial_closed
                 && held_s > TIME_STOP_SECS
-                && adverse > TIME_STOP_ADVERSE_PTS
-                && pos.mfe < TIME_STOP_ADVERSE_PTS * 0.5
+                && adverse > time_stop_adverse
+                && pos.mfe < time_stop_adverse * 0.5
                 && !velocity_time_suppress) {
-                printf("[GOLD-FLOW] TIME-STOP %s adverse=%.2f held=%llds mfe=%.2f -- thesis dead\n",
+                printf("[GOLD-FLOW] TIME-STOP %s adverse=%.2f>%.2f held=%llds mfe=%.2f atr=%.2f -- thesis dead\n",
                        pos.is_long ? "LONG" : "SHORT",
-                       adverse, (long long)held_s, pos.mfe);
+                       adverse, time_stop_adverse, (long long)held_s, pos.mfe, pos.atr_at_entry);
                 fflush(stdout);
                 const double exit_px = pos.is_long ? bid : ask;
                 close_position(exit_px, "TIME_STOP", now_ms, on_close);
@@ -1884,8 +1921,12 @@ private:
 
             if (tier_now > pos.dollar_lock_tier && tier_now >= 1) {
                 // SL placement: use remaining size so locked_pts correctly maps
-                // to price distance needed to guarantee locked_usd on remainder
-                const double locked_usd  = tier_now * DOLLAR_RATCHET_STEP * DOLLAR_RATCHET_KEEP;
+                // to price distance needed to guarantee locked_usd on remainder.
+                // CRITICAL: use eff_ratchet_step (not hardcoded DOLLAR_RATCHET_STEP)
+                // so that min-lot trades lock sensible amounts. At 0.01 lots with
+                // eff_ratchet_step=$1.54: locked=$1.54*0.80=$1.23. At normal 0.15 lots
+                // with eff_ratchet_step=$50 (fixed wins): locked=$50*0.80=$40 unchanged.
+                const double locked_usd  = tier_now * eff_ratchet_step * DOLLAR_RATCHET_KEEP;
                 const double locked_pts  = locked_usd / (pos.size * 100.0);
 
                 // BREATHING ROOM GUARD: ratchet SL must be at least 0.5*ATR from entry.
