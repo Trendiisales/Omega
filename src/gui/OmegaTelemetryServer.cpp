@@ -954,6 +954,12 @@ void OmegaTelemetryServer::run(int port)
     server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
     int opt = 1;
     setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
+    // Timeout on accept() so the run loop can check running_ and exit cleanly on shutdown.
+    // Without this, closesocket(server_fd_) in stop() may not wake a blocked accept() on
+    // all Windows versions -- the thread hangs in join() forever and Ctrl+C appears to freeze.
+    DWORD accept_timeout_ms = 200;
+    setsockopt(server_fd_, SOL_SOCKET, SO_RCVTIMEO,
+               reinterpret_cast<const char*>(&accept_timeout_ms), sizeof(accept_timeout_ms));
 
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;

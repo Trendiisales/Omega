@@ -14162,6 +14162,23 @@ int main(int argc, char* argv[])
             Sleep(10);
         }
     }
+    // If trade thread did not finish in 3s (stuck in SSL/reconnect), detach it
+    // and force-exit the process. Calling join() on a stuck SSL thread hangs
+    // indefinitely -- the process never exits and Ctrl+C appears to do nothing.
+    // Evidence: [OMEGA] Shutdown printed but process hangs after [ADAPTIVE-RISK] lines.
+    if (!g_trade_thread_done.load()) {
+        std::cout << "[OMEGA] Trade thread still running after 3s -- detaching and forcing exit\n";
+        std::cout.flush();
+        if (trade_thread.joinable()) trade_thread.detach();
+        // Flush/close logs before hard exit
+        if (g_tee_buf) { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); delete g_tee_buf; g_tee_buf = nullptr; }
+        WSACleanup();
+        ReleaseMutex(g_singleton_mutex);
+        CloseHandle(g_singleton_mutex);
+        g_shutdown_done.store(true);
+        TerminateProcess(GetCurrentProcess(), 0);
+        return 0;
+    }
     if (trade_thread.joinable()) trade_thread.join();
     gui_server.stop();
     if (g_daily_trade_close_log) g_daily_trade_close_log->close();
