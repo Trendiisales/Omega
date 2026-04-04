@@ -9156,13 +9156,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         }
                     }
                 }
-                // Trail/BE exit: block same-direction re-entry for 30s -- prevents
-                // immediate chasing but allows re-entry if trend continues (was 60s).
+                // Trail/BE exit: block same-direction re-entry for 60s -- prevents
+                // immediate chasing but allows re-entry if trend continues.
                 const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
                 if (is_trail) {
                     g_gold_trail_block_until.store(now_s + 60);
                     g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
-                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 30s\n",
+                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 60s\n",
                            tr.exitReason.c_str(), tr.side.c_str());
                     fflush(stdout);
                 }
@@ -10024,8 +10024,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 if (any_fade_block) {
                     const double gf_drift_fb = g_gold_stack.ewm_drift();
                     const double gf_l2_fb    = g_macro_ctx.gold_l2_imbalance;
+                    // FIX 2026-04-04: drift threshold lowered from 1.0 to 0.0.
+                    // Root cause: on a crashing day (Apr 2) EWM drift is negative.
+                    // With BlackBull synthetic L2 (~0.5 neutral), the old probe
+                    // required drift > 1.0 to classify as LONG. Negative drift
+                    // made likely_long=false even though the engine was about to
+                    // enter LONG, so (long_blocked AND false) = NOT blocked.
+                    // Result: 5 consecutive LONG SL_HITs while gold was crashing.
+                    // Fix: use drift > 0.0 -- any positive drift (or L2 > 0.75)
+                    // classifies as likely LONG. Negative drift = likely SHORT.
+                    // This correctly identifies re-entry direction regardless of magnitude.
                     const bool likely_long_fb = (gf_l2_fb > GFE_LONG_THRESHOLD)
-                                             || (gf_l2_fb >= 0.40 && gf_l2_fb <= 0.60 && gf_drift_fb > 1.0);
+                                             || (gf_l2_fb >= 0.40 && gf_l2_fb <= 0.60 && gf_drift_fb > 0.0);
                     const bool fade_blocked = (now_fade < long_blocked  &&  likely_long_fb)
                                            || (now_fade < short_blocked && !likely_long_fb);
                     if (fade_blocked) {
@@ -10147,13 +10157,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     // Non-SL exit: reset consecutive counter -- streak broken.
                     g_gf_crash_consec_sl.store(0);
                 }
-                // Trail/BE exit: block same-direction re-entry for 30s -- prevents
-                // immediate chasing but allows re-entry if trend continues (was 60s).
+                // Trail/BE exit: block same-direction re-entry for 60s -- prevents
+                // immediate chasing but allows re-entry if trend continues.
                 const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
                 if (is_trail) {
                     g_gold_trail_block_until.store(now_s + 60);
                     g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
-                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 30s\n",
+                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 60s\n",
                            tr.exitReason.c_str(), tr.side.c_str());
                     fflush(stdout);
                 }

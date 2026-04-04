@@ -1335,7 +1335,15 @@ private:
         //          spread=$0.55 ? min SL=$1.65, ATR=$2 ? SL=$2 (ATR wins).
         //          spread=$0.60 ? min SL=$1.80, ATR=$2 ? SL=$2 (ATR wins).
         // The spread gate (GFE_MAX_SPREAD=$0.60) already caps spread at entry.
-        const double atr_sl  = m_atr * GFE_ATR_SL_MULT;
+        // Enforce ATR floor directly on atr_sl regardless of seed-lock state.
+        // m_atr can be below GFE_ATR_MIN during the seed-lock window if a corrupt or
+        // stale ATR file was loaded (e.g. 0.50 from dead-session disk state).
+        // update_atr() only applies std::max(GFE_ATR_MIN, ...) when seed_lock==0,
+        // so the floor can be bypassed during the 200-tick lock period.
+        // Applying it here at entry time guarantees the SL is always >= GFE_ATR_MIN pts
+        // regardless of how ATR was seeded. No change to normal path (atr >= 2.0).
+        const double atr_floored = std::max(GFE_ATR_MIN, m_atr);
+        const double atr_sl  = atr_floored * GFE_ATR_SL_MULT;
         const double min_sl  = spread * 5.0;  // raised 3x->5x: 3x was 0.66pts on 0.22 spread, too tight for London gold vol
         // ?? Asia gap-risk SL floor ???????????????????????????????????????
         // Asia (22:00-05:00 UTC, session_slot=6) has thin liquidity -- price can gap
@@ -1377,7 +1385,7 @@ private:
         m_spread_at_entry = spread;
         pos.size         = size;
         pos.mfe          = 0.0;
-        pos.atr_at_entry = m_atr;
+        pos.atr_at_entry = atr_floored;
         pos.be_locked        = false;
         pos.trail_stage      = 0;
         pos.stage2_tight     = false;
@@ -1403,7 +1411,7 @@ private:
                   << " @ " << std::fixed << std::setprecision(2) << entry_px
                   << " sl=" << sl_px
                   << " sl_pts=" << sl_pts
-                  << " (atr=" << m_atr << " spread_floor=" << min_sl << ")"
+                  << " (atr=" << atr_floored << " spread_floor=" << min_sl << ")"
                   << " size=" << size
                   << " spread=" << spread
                   << " session=" << m_last_session_slot << "\n";
