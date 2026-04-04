@@ -9057,6 +9057,59 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
 
         // ?? GoldFlowEngine position management -- ALWAYS runs when position open ??
+        // ?? Shared GoldFlow close handler -- must be declared before both callbacks ??
+        // Called by flow_mgmt_cb (manage block) and flow_on_close (entry block).
+        // Handles all post-close state updates common to both paths:
+        //   hard-stop tombstone clear, exit_ts/dir/reason atomics,
+        //   reversal window, dir SL cooldown, trail block.
+        // Does NOT cover: partial orders (handled inline per-callback),
+        //   crash-bypass consec counter (entry block only).
+        auto gf_close_shared = [&](const omega::TradeRecord& tr) {
+            clear_hard_stop_tombstone("XAUUSD", tr.entryTs);
+            const int64_t now_s    = static_cast<int64_t>(std::time(nullptr));
+            const int     exit_dir = (tr.side == "LONG") ? 1 : -1;
+            g_gold_flow_exit_ts.store(now_s);
+            g_gold_flow_exit_dir.store(exit_dir);
+            g_gold_flow_exit_price_x100.store(
+                static_cast<int64_t>(tr.exitPrice * 100.0));
+            const bool is_sl = (tr.exitReason == "SL_HIT");
+            g_gold_flow_exit_reason.store(is_sl ? 1 : 2);
+            if (is_sl) {
+                g_gold_reversal_window_until.store(now_s + 60);
+                printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s -- reversal window open 60s\n",
+                       tr.side.c_str());
+                fflush(stdout);
+                const bool is_long_sl = (tr.side == "LONG");
+                auto& sl_count = is_long_sl ? g_gf_dir_sl_long_count  : g_gf_dir_sl_short_count;
+                auto& sl_first = is_long_sl ? g_gf_dir_sl_long_first  : g_gf_dir_sl_short_first;
+                auto& blocked  = is_long_sl ? g_gf_long_blocked_until : g_gf_short_blocked_until;
+                const int64_t first_ts = sl_first.load();
+                if (first_ts == 0 || (now_s - first_ts) > GF_DIR_SL_WINDOW_SEC) {
+                    sl_count.store(1);
+                    sl_first.store(now_s);
+                } else {
+                    const int count = sl_count.fetch_add(1) + 1;
+                    if (count >= GF_DIR_SL_MAX) {
+                        blocked.store(now_s + GF_DIR_SL_COOLDOWN_SEC);
+                        sl_count.store(0);
+                        sl_first.store(0);
+                        printf("[GFE-FADE-BLOCK] %s direction blocked %llds after %d consecutive SL_HITs\n",
+                               is_long_sl ? "LONG" : "SHORT",
+                               (long long)GF_DIR_SL_COOLDOWN_SEC, count);
+                        fflush(stdout);
+                    }
+                }
+            }
+            const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
+            if (is_trail) {
+                g_gold_trail_block_until.store(now_s + 60);
+                g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
+                printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 60s\n",
+                       tr.exitReason.c_str(), tr.side.c_str());
+                fflush(stdout);
+            }
+        };
+
         // CRITICAL: manage_position() must run on every XAUUSD tick to check SL/trail.
         // Previously this was inside the entry guard (!has_open_position()) which meant
         // once a position was open, manage_position was NEVER called ? SL never checked
@@ -9094,63 +9147,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     ctx_trend,
                     g_bars_gold.m1.ind.bb_pct.load(std::memory_order_relaxed));
             }
-            // ?? Shared close handler -- called by both manage and entry callbacks ??
-            // Handles all post-close state updates that must fire regardless of
-            // whether the close came from the always-running manage block or the
-            // entry-guarded block. Extracted to prevent the two callbacks drifting.
-            //
-            // Covers: hard-stop tombstone clear, exit_ts/dir/reason atomics,
-            //         reversal window, dir SL cooldown, trail block.
-            // Does NOT cover: partial orders (handled inline), crash-bypass consec
-            //   counter (entry block only -- tracks new entry SL_HITs specifically).
-            auto gf_close_shared = [&](const omega::TradeRecord& tr) {
-                clear_hard_stop_tombstone("XAUUSD", tr.entryTs);
-                const int64_t now_s  = static_cast<int64_t>(std::time(nullptr));
-                const int     exit_dir = (tr.side == "LONG") ? 1 : -1;
-                g_gold_flow_exit_ts.store(now_s);
-                g_gold_flow_exit_dir.store(exit_dir);
-                g_gold_flow_exit_price_x100.store(
-                    static_cast<int64_t>(tr.exitPrice * 100.0));
-                const bool is_sl = (tr.exitReason == "SL_HIT");
-                g_gold_flow_exit_reason.store(is_sl ? 1 : 2);
-                if (is_sl) {
-                    g_gold_reversal_window_until.store(now_s + 60);
-                    printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s -- reversal window open 60s\n",
-                           tr.side.c_str());
-                    fflush(stdout);
-                    // Directional SL cooldown: after GF_DIR_SL_MAX consecutive SL_HITs
-                    // in same direction within GF_DIR_SL_WINDOW_SEC, block that direction.
-                    const bool is_long_sl = (tr.side == "LONG");
-                    auto& sl_count = is_long_sl ? g_gf_dir_sl_long_count  : g_gf_dir_sl_short_count;
-                    auto& sl_first = is_long_sl ? g_gf_dir_sl_long_first  : g_gf_dir_sl_short_first;
-                    auto& blocked  = is_long_sl ? g_gf_long_blocked_until : g_gf_short_blocked_until;
-                    const int64_t first_ts = sl_first.load();
-                    if (first_ts == 0 || (now_s - first_ts) > GF_DIR_SL_WINDOW_SEC) {
-                        sl_count.store(1);
-                        sl_first.store(now_s);
-                    } else {
-                        const int count = sl_count.fetch_add(1) + 1;
-                        if (count >= GF_DIR_SL_MAX) {
-                            blocked.store(now_s + GF_DIR_SL_COOLDOWN_SEC);
-                            sl_count.store(0);
-                            sl_first.store(0);
-                            printf("[GFE-FADE-BLOCK] %s direction blocked %llds after %d consecutive SL_HITs\n",
-                                   is_long_sl ? "LONG" : "SHORT",
-                                   (long long)GF_DIR_SL_COOLDOWN_SEC, count);
-                            fflush(stdout);
-                        }
-                    }
-                }
-                const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
-                if (is_trail) {
-                    g_gold_trail_block_until.store(now_s + 60);
-                    g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
-                    printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 60s\n",
-                           tr.exitReason.c_str(), tr.side.c_str());
-                    fflush(stdout);
-                }
-            };
-
             // Manage callback: always-running block (position already open).
             // Does NOT include crash-bypass consec counter (that's for entry SL_HITs).
             auto flow_mgmt_cb = [&](const omega::TradeRecord& tr) {
