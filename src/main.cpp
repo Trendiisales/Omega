@@ -4395,6 +4395,495 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
 // ?????????????????????????????????????????????????????????????????????????????
 // Tick handler -- called for every bid/ask update
 // ?????????????????????????????????????????????????????????????????????????????
+// ── symbol_risk_blocked ──────────────────────────────────────────────
+static bool symbol_risk_blocked(const std::string& symbol) {
+    // SHADOW MODE: bypass ALL daily loss limits and consecutive loss pauses.
+    // Testing must never be blocked by risk caps -- no real money at risk.
+    // The only gates that apply in shadow are session/spread/latency (structural).
+    if (g_cfg.mode == "SHADOW") return false;
+
+    // LIVE MODE only: enforce all risk gates below.
+    std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+    auto& st = g_sym_risk[symbol];
+    if (st.daily_pnl < -g_cfg.daily_loss_limit) {
+        ++g_gov_pnl;
+        return true;
+    }
+    // Also block when closed P&L + floating unrealised already breaches limit.
+    // Prevents opening new positions into a limit breach before any close fires.
+    {
+        const double closed_pnl = g_omegaLedger.dailyPnl();
+        const double unrealised  = open_unrealised_pnl();
+        if (closed_pnl + unrealised < -g_cfg.daily_loss_limit) {
+            static thread_local int64_t s_unr_log = 0;
+            if (nowSec() - s_unr_log > 30) {
+                s_unr_log = nowSec();
+                printf("[OMEGA-RISK] Unrealised loss gate: closed=$%.2f unreal=$%.2f total=$%.2f limit=$%.0f\n",
+                       closed_pnl, unrealised, closed_pnl + unrealised, g_cfg.daily_loss_limit);
+            }
+            ++g_gov_pnl;
+            return true;
+        }
+    }
+    const int64_t now = nowSec();
+    if (st.pause_until > now) {
+        ++g_gov_consec;
+        return true;
+    }
+    if (st.pause_until != 0 && st.pause_until <= now) {
+        st.pause_until = 0;
+        st.consec_losses = 0;
+        std::cout << "[OMEGA-RISK] " << symbol << " loss pause cleared\n";
+    }
+    return false;
+}
+
+// ── symbol_gate ──────────────────────────────────────────────────────
+// tradeable/lat_ok/regime/bid/ask passed explicitly from on_tick.
+static bool symbol_gate(
+    const std::string& symbol,
+    bool symbol_has_open_position,
+    const std::string& engine_name,
+    bool tradeable,
+    bool lat_ok,
+    const std::string& regime,
+    double bid,
+    double ask)
+{
+    const bool shadow_mode = (g_cfg.mode == "SHADOW");
+    if (symbol == "XAUUSD" && g_disable_gold_stack) return false;
+    // Connection stability gate: block new entries for N seconds after reconnect.
+    // Prevents opening positions on the first tick after logon when the FIX session
+    // may be unstable -- avoids the open?immediate-FORCE_CLOSE pattern seen in logs.
+    {
+        const int64_t cs = g_connected_since.load();
+        if (cs > 0 && (nowSec() - cs) < g_cfg.connection_warmup_sec) {
+            return false;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_perf_mtx);
+        auto it = g_perf.find(symbol);
+        if (it != g_perf.end() && it->second.disabled) return false;
+    }
+    if (!tradeable) return false;  // session gate applies in all modes -- shadow is a simulation
+    if (!shadow_mode && !lat_ok) return false;  // latency gate: LIVE only (VPS can't simulate RTT)
+    if (shadow_mode) {
+        // Optional shadow pilot mode: keep GOLD stack live and run USTEC pilot only.
+        if (g_cfg.shadow_ustec_pilot_only &&
+            symbol != "XAUUSD" && symbol != "USTEC.F") {
+            return false;
+        }
+        if (g_cfg.shadow_ustec_pilot_only && symbol == "USTEC.F") {
+            if (g_cfg.ustec_pilot_require_session && !tradeable) return false;
+            if (g_cfg.ustec_pilot_require_latency && !lat_ok) return false;
+            if (g_cfg.ustec_pilot_block_risk_off && regime == "RISK_OFF") return false;
+        }
+        // SHADOW pilot mode filters
+    }
+    // ?? Fast-loss streak gate -- ALL modes (LIVE + SHADOW) ????????????????
+    // BUG FIX: was inside if(shadow_mode) block -- never fired in LIVE mode.
+    // Comment said "applies in all modes" but code contradicted it.
+    // Evidence: 01:57 SHORT SL_HIT + 01:58 SHORT SL_HIT both allowed through
+    // in LIVE -- fast_loss_streak never reached 3 because gate never checked.
+    // Fix: moved outside shadow_mode block. Now fires in both modes.
+    // 3 consecutive fast bad losses (SL/scratch/timeout <=120s) triggers
+    // loss_pause_sec cooldown on that symbol.
+    {
+        std::lock_guard<std::mutex> lk2(g_sym_risk_mtx);
+        auto it = g_shadow_quality.find(symbol);
+        if (it != g_shadow_quality.end() && it->second.pause_until > nowSec()) {
+            static std::unordered_map<std::string,int64_t> s_fls_log;
+            const int64_t now_fls = nowSec();
+            if (now_fls - s_fls_log[symbol] >= 30) {
+                s_fls_log[symbol] = now_fls;
+                printf("[FAST-LOSS-BLOCK] %s fast-loss pause active -- blocking entry\n",
+                       symbol.c_str());
+                fflush(stdout);
+            }
+            return false;
+        }
+    }
+    if (symbol_has_open_position) {
+        // Do NOT increment g_gov_pos here -- this fires every tick while any
+        // position is open and would make the counter meaningless (21k+/day).
+        // g_gov_pos is reserved for position CAP blocks -- meaningful signal.
+        return false;
+    }
+    if (g_cfg.independent_symbols) {
+        // Per-symbol risk is independent, but enforce a global open-position cap.
+        // Without this, all 12 symbols could open simultaneously ignoring max_positions.
+        const int open_positions =
+            static_cast<int>(g_eng_sp.pos.active) +
+            static_cast<int>(g_eng_nq.pos.active) +
+            static_cast<int>(g_eng_cl.pos.active) +
+            static_cast<int>(g_eng_us30.pos.active) +
+            static_cast<int>(g_eng_nas100.pos.active) +
+            static_cast<int>(g_eng_ger30.pos.active) +
+            static_cast<int>(g_eng_uk100.pos.active) +
+            static_cast<int>(g_eng_estx50.pos.active) +
+            static_cast<int>(g_eng_xag.pos.active) +
+            static_cast<int>(g_bracket_xag.pos.active) +
+            static_cast<int>(g_bracket_gold.pos.active) +
+            static_cast<int>(g_bracket_sp.pos.active) +
+            static_cast<int>(g_bracket_nq.pos.active) +
+            static_cast<int>(g_bracket_us30.pos.active) +
+            static_cast<int>(g_bracket_nas100.pos.active) +
+            static_cast<int>(g_bracket_ger30.pos.active) +
+            static_cast<int>(g_bracket_uk100.pos.active) +
+            static_cast<int>(g_bracket_estx50.pos.active) +
+            static_cast<int>(g_bracket_brent.pos.active) +
+            static_cast<int>(g_bracket_eurusd.pos.active) +
+            static_cast<int>(g_bracket_gbpusd.pos.active) +
+            static_cast<int>(g_bracket_audusd.pos.active) +
+            static_cast<int>(g_bracket_nzdusd.pos.active) +
+            static_cast<int>(g_bracket_usdjpy.pos.active) +
+            static_cast<int>(g_ca_esnq.has_open_position()) +
+            static_cast<int>(g_ca_eia_fade.has_open_position()) +
+            static_cast<int>(g_ca_brent_wti.has_open_position()) +
+            static_cast<int>(g_ca_fx_cascade.has_open_position()) +
+            static_cast<int>(g_ca_carry_unwind.has_open_position()) +
+            static_cast<int>(g_orb_us.has_open_position()) +
+            static_cast<int>(g_orb_ger30.has_open_position()) +
+            static_cast<int>(g_orb_silver.has_open_position()) +
+            static_cast<int>(g_orb_uk100.has_open_position()) +
+            static_cast<int>(g_orb_estx50.has_open_position()) +
+            static_cast<int>(g_vwap_rev_sp.has_open_position()) +
+            static_cast<int>(g_vwap_rev_nq.has_open_position()) +
+            static_cast<int>(g_vwap_rev_ger40.has_open_position()) +
+            static_cast<int>(g_vwap_rev_eurusd.has_open_position()) +
+            static_cast<int>(g_trend_pb_gold.has_open_position()) +
+            static_cast<int>(g_trend_pb_ger40.has_open_position()) +
+            static_cast<int>(g_trend_pb_nq.has_open_position()) +    // TrendPB USTEC
+            static_cast<int>(g_trend_pb_sp.has_open_position()) +    // TrendPB US500
+            static_cast<int>(g_eng_eurusd.pos.active) +
+            static_cast<int>(g_eng_gbpusd.pos.active) +
+            static_cast<int>(g_eng_audusd.pos.active) +
+            static_cast<int>(g_eng_nzdusd.pos.active) +
+            static_cast<int>(g_eng_usdjpy.pos.active) +
+            static_cast<int>(g_eng_brent.pos.active) +
+            static_cast<int>(g_gold_stack.has_open_position()) +
+            static_cast<int>(g_le_stack.has_open_position()) +
+            static_cast<int>(g_gold_flow.has_open_position()) +        // gold flow
+            static_cast<int>(g_gold_flow_reload.has_open_position()) + // reload instance
+            static_cast<int>(g_nbm_sp.has_open_position()) +
+            static_cast<int>(g_nbm_nq.has_open_position()) +
+            static_cast<int>(g_nbm_nas.has_open_position()) +
+            static_cast<int>(g_nbm_us30.has_open_position()) +
+            static_cast<int>(g_nbm_gold_london.has_open_position()) +
+            static_cast<int>(g_nbm_oil_london.has_open_position());
+        // ?? Session-aware position cap ????????????????????????????????
+        // Asia = max 2 (low liquidity, wide spreads, few signals worth taking)
+        // Dead zone (05-07 UTC) = max 1 (preparation period, no fresh data)
+        // London-NY overlap = full config cap (peak liquidity, all engines active)
+        // All other sessions = config cap
+        {
+            int session_cap = g_cfg.max_open_positions;
+            const int slot = g_macro_ctx.session_slot;
+            if      (slot == 0) session_cap = std::min(session_cap, 2); // dead zone 05-07 UTC: cap 2 (macro bypass can open, chop filtered by gold_session_ok gate)
+            else if (slot == 6) session_cap = std::min(session_cap, 2); // Asia 22-05 UTC
+            // ?? Asia breakout quality gate ????????????????????????????????
+            // Allow Asia trading but only when volatility is genuinely expanding
+            // (real breakout move, not Asia chop). Two-path gate:
+            //   PATH A (sustained): vol_ratio >= 2.0 -- recent 80-tick range is 2?
+            //     the slow EWM baseline. Proves the move has been running long
+            //     enough to fill the governor window. Works well once a move
+            //     is underway but lags ~28 ticks (4-5 min) on move onset.
+            //   PATH B (fast-onset): |ewm_drift| >= 1.5pts -- GoldEngineStack
+            //     fast EWM (?=0.05) has separated from slow (?=0.005) by $1.50+.
+            //     Fires ~7 ticks (70s) into a 1pt/tick surge, catching the move
+            //     while the ratio gate is still blocked by an elevated baseline
+            //     carried over from a big prior session (e.g. Friday's 211pt day
+            //     inflates base_vol via ?=0.002, blocking all of Monday morning).
+            //   Root cause of Monday 30 Mar 2026 zero trades: Asia session,
+            //   Friday base_vol elevated at ~0.35%, Monday pre-surge vol ~0.04%.
+            //   Ratio = 0.13 ? entire strong downtrend+surge blocked all session.
+            //   EWM drift would have opened the gate 70s into each move.
+            //   Fail-open if base_vol=0 (warmup): ratio = 3.0 ? PATH A passes.
+            if (slot == 6) {
+                const double asia_base   = g_gold_stack.base_vol_pct();
+                const double asia_recent = g_gold_stack.recent_vol_pct();
+                const double asia_ratio  = (asia_base > 0.0) ? (asia_recent / asia_base) : 3.0;
+                // PATH B: fast-onset EWM drift bypass -- catches first ~70s of a surge
+                // before the 80-tick window fills. $1.50 threshold = real directional
+                // pressure; random chop produces |drift| < 0.5 consistently.
+                const double asia_ewm_drift = std::fabs(g_gold_stack.ewm_drift());
+                const bool asia_fast_breakout = (asia_ewm_drift >= 1.5);
+                // PATH C: macro crash/rally bypass.
+                // Root cause of missing 125pt crash: drift only hit -1.7 (EWM smoothed),
+                // vol_ratio elevated from prior session. RSI hit 28 -- that IS the signal.
+                const double rsi_asia  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+                const double vwap_asia = g_gold_stack.vwap();
+                const double mid_asia  = (bid + ask) * 0.5;
+                const double vdisp_asia = (vwap_asia > 0.0) ? std::fabs(mid_asia - vwap_asia) : 0.0;
+                // FIX 2026-04-02: raised RSI thresholds to match rest of chain (32->38, 68->62).
+                const bool asia_macro_bypass = (rsi_asia > 0.0 && rsi_asia < 38.0)
+                                            || (rsi_asia > 62.0)
+                                            || (vdisp_asia > 10.0);
+                if (asia_ratio < 2.0 && !asia_fast_breakout && !asia_macro_bypass) {
+                    static int64_t s_asia_block_log = 0;
+                    const int64_t now_ab = static_cast<int64_t>(std::time(nullptr));
+                    if (now_ab - s_asia_block_log >= 60) {
+                        s_asia_block_log = now_ab;
+                        printf("[ASIA-GATE] BLOCKED -- vol_ratio=%.2f drift=%.3f rsi=%.1f vdisp=%.1f\n",
+                               asia_ratio, g_gold_stack.ewm_drift(), rsi_asia, vdisp_asia);
+                        fflush(stdout);
+                    }
+                    return false;
+                }
+                static int64_t s_asia_open_log = 0;
+                const int64_t now_ao = static_cast<int64_t>(std::time(nullptr));
+                if (now_ao - s_asia_open_log >= 60) {
+                    s_asia_open_log = now_ao;
+                    const char* path = asia_macro_bypass ? "PATH-C(macro)"
+                                     : (asia_fast_breakout && asia_ratio < 2.0) ? "PATH-B(drift)"
+                                     : "PATH-A(ratio)";
+                    printf("[ASIA-GATE] OPEN via %s -- vol_ratio=%.2f drift=%.3f rsi=%.1f vdisp=%.1f\n",
+                           path, asia_ratio, g_gold_stack.ewm_drift(), rsi_asia, vdisp_asia);
+                    fflush(stdout);
+                }
+            }
+            // overlap (slot 3) and London/NY get full cap
+            if (open_positions >= session_cap) {
+                ++g_gov_pos;
+                return false;
+            }
+        }
+        // ?? Daily profit target ???????????????????????????????????????????
+        // Stop new entries once daily P&L hits the target -- lock in the day.
+        if (g_cfg.daily_profit_target > 0.0) {
+            const double daily_pnl = g_omegaLedger.dailyPnl();
+            if (daily_pnl >= g_cfg.daily_profit_target) {
+                static int64_t s_last_profit_log = 0;
+                if (nowSec() - s_last_profit_log > 60) {
+                    s_last_profit_log = nowSec();
+                    printf("[OMEGA-RISK] Daily profit target $%.0f reached (P&L=$%.2f) -- no new entries\n",
+                           g_cfg.daily_profit_target, daily_pnl);
+                }
+                return false;
+            }
+        }
+        // ?? Portfolio open SL risk cap ????????????????????????????????????????
+        // Block new entries when total simultaneous SL exposure exceeds threshold.
+        // Prevents correlated crashes: gold+silver+oil all SHORT at once means
+        // a single RISK_ON reversal hits all of them simultaneously.
+        // Cap = max_portfolio_sl_risk_usd (default 0 = disabled).
+        // Each engine adds its SL risk on entry via portfolio_sl_risk_add().
+        if (g_cfg.max_portfolio_sl_risk_usd > 0.0) {
+            const double open_sl_risk = g_open_sl_risk_cents.load(std::memory_order_relaxed) / 100.0;
+            if (open_sl_risk >= g_cfg.max_portfolio_sl_risk_usd) {
+                static int64_t s_ptf_log = 0;
+                if (nowSec() - s_ptf_log > 30) {
+                    s_ptf_log = nowSec();
+                    printf("[PORTFOLIO-CAP] %s blocked: open_sl_risk=$%.2f >= cap=$%.0f\n",
+                           symbol.c_str(), open_sl_risk, g_cfg.max_portfolio_sl_risk_usd);
+                    fflush(stdout);
+                }
+                return false;
+            }
+        }
+
+        // ?? Session watermark drawdown ????????????????????????????????????
+        // Stop if drawdown from intra-day peak exceeds threshold AND daily P&L
+        // is still negative (i.e. we are actually losing money today).
+        //
+        // Critical rule: if daily_pnl > 0 the day is profitable -- NEVER stop
+        // trading because of a drawdown from peak. A $800 day that pulls back
+        // $121 is still +$679. Stopping there is wrong. Only protect against
+        // real capital loss: drawdown threshold fires only when daily_pnl <= 0.
+        //
+        // Threshold = watermark_pct * daily_loss_limit (always fixed reference).
+        // e.g. 0.27 * $450 = $121. If daily_pnl goes negative by $121 ? stop.
+        if (g_cfg.session_watermark_pct > 0.0) {
+            const double peak_pnl   = g_omegaLedger.peakDailyPnl();
+            const double daily_pnl  = g_omegaLedger.dailyPnl();
+            const double drawdown   = peak_pnl - daily_pnl;
+            const double reference  = g_cfg.daily_loss_limit;
+            const double threshold  = reference * g_cfg.session_watermark_pct;
+            // Only block if: (a) we've given back threshold from peak AND
+            //                (b) the day is net negative -- still profitable = ride on
+            const bool drawdown_hit = (peak_pnl > 0.0 && drawdown >= threshold);
+            const bool day_negative = (daily_pnl <= 0.0);
+            if (drawdown_hit && day_negative) {
+                static int64_t s_last_wm_log = 0;
+                if (nowSec() - s_last_wm_log > 60) {
+                    s_last_wm_log = nowSec();
+                    printf("[OMEGA-RISK] Watermark: peak=$%.2f current=$%.2f drawdown=$%.2f >= $%.2f AND day negative -- no new entries\n",
+                           peak_pnl, daily_pnl, drawdown, threshold);
+                }
+                return false;
+            }
+        }
+        // ?? Hourly loss throttle ??????????????????????????????????????????
+        // Block new entries if rolling 2h net P&L loss exceeds hourly_loss_limit.
+        if (g_cfg.hourly_loss_limit > 0.0) {
+            double rolling_pnl = 0.0;
+            {
+                std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
+                const int64_t cutoff = nowSec() - HOURLY_WINDOW_SEC;
+                for (const auto& r : g_hourly_pnl_records)
+                    if (r.ts_sec >= cutoff) rolling_pnl += r.net_pnl;
+            }
+            if (rolling_pnl < -g_cfg.hourly_loss_limit) {
+                static int64_t s_last_hourly_log = 0;
+                if (nowSec() - s_last_hourly_log > 60) {
+                    s_last_hourly_log = nowSec();
+                    printf("[OMEGA-RISK] 2h rolling loss $%.2f exceeds limit $%.0f -- throttling entries\n",
+                           rolling_pnl, g_cfg.hourly_loss_limit);
+                }
+                return false;
+            }
+        }
+        // ?? Stale quote watchdog ??????????????????????????????????????????
+        // Block entries if no tick received in last STALE_QUOTE_SEC seconds.
+        // A frozen feed with open positions is the most dangerous possible state --
+        // we have no pricing, but the broker is still live and SLs can gap.
+        if (!stale_watchdog_ok(symbol)) {
+            static thread_local int64_t s_stale_log = 0;
+            if (nowSec() - s_stale_log > 10) {
+                s_stale_log = nowSec();
+                std::printf("[STALE-FEED] %s no tick in >%llds -- blocking entry\n",
+                            symbol.c_str(), (long long)STALE_QUOTE_SEC);
+            }
+            return false;
+        }
+        // ?? Drawdown velocity circuit breaker ????????????????????????????
+        // Fires when loss rate in rolling 30-min window exceeds threshold.
+        // Threshold is configured as dd_velocity.threshold_usd (set in init
+        // to 0.5 * daily_loss_limit). When active, halts new entries 15 min.
+        if (!shadow_mode && !g_adaptive_risk.dd_velocity.new_entries_allowed(nowSec())) return false;  // shadow: no rate-of-loss block
+        // ?? Portfolio VaR gate ????????????????????????????????????????????
+        // REMOVED: portfolio_VaR -- redundant with per-trade max_loss, false blocks on correlated positions
+        // REMOVED: VPIN -- BlackBull L2 volume unreliable, causes false blocks
+        // REMOVED: TOD gate -- needs 30 trades/bucket to activate, currently zero data = pure false blocks
+        // REMOVED: corr_heat -- with 1-2 open positions max never adds value, only blocks
+        // ?? News blackout gate ????????????????????????????????????????????
+        if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
+        // ?? Relative spread Z-score gate ??????????????????????????????????
+        // Block if current spread is anomalous vs rolling 200-tick median.
+        // Applies in all modes -- shadow is a simulation.
+        {
+            std::lock_guard<std::mutex> lk2(g_book_mtx);
+            const auto bid_it = g_bids.find(symbol);
+            const auto ask_it = g_asks.find(symbol);
+            if (bid_it != g_bids.end() && ask_it != g_asks.end()) {
+                const double spread = ask_it->second - bid_it->second;
+                if (!g_edges.spread_gate.ok(symbol, spread)) {
+                    static thread_local int64_t s_sz_log = 0;
+                    if (nowSec() - s_sz_log > 30) {
+                        s_sz_log = nowSec();
+                        printf("[SPREAD-Z] %s spread=%.5f z=%.2f -- anomalous, blocking entry\n",
+                               symbol.c_str(), spread,
+                               g_edges.spread_gate.z_score(symbol, spread));
+                    }
+                    return false;
+                }
+            }
+        }
+        // ?? Regime block gate -- applied in all modes ??????????????????????
+        if (g_regime_adaptor.equity_blocked(symbol)) return false;
+        return !symbol_risk_blocked(symbol);
+    }
+    // Legacy global portfolio mode.
+    if (symbol_risk_blocked("GLOBAL")) return false;
+    const int open_positions =
+        static_cast<int>(g_eng_sp.pos.active) +
+        static_cast<int>(g_eng_nq.pos.active) +
+        static_cast<int>(g_eng_cl.pos.active) +
+        static_cast<int>(g_eng_us30.pos.active) +
+        static_cast<int>(g_eng_nas100.pos.active) +
+        static_cast<int>(g_eng_ger30.pos.active) +
+        static_cast<int>(g_eng_uk100.pos.active) +
+        static_cast<int>(g_eng_estx50.pos.active) +
+        static_cast<int>(g_eng_xag.pos.active) +
+        static_cast<int>(g_bracket_xag.pos.active) +
+        static_cast<int>(g_bracket_gold.pos.active) +
+        static_cast<int>(g_bracket_sp.pos.active) +
+        static_cast<int>(g_bracket_nq.pos.active) +
+        static_cast<int>(g_bracket_us30.pos.active) +
+        static_cast<int>(g_bracket_nas100.pos.active) +
+        static_cast<int>(g_bracket_ger30.pos.active) +
+        static_cast<int>(g_bracket_uk100.pos.active) +
+        static_cast<int>(g_bracket_estx50.pos.active) +
+        static_cast<int>(g_bracket_brent.pos.active) +
+        static_cast<int>(g_bracket_eurusd.pos.active) +
+        static_cast<int>(g_bracket_gbpusd.pos.active) +
+        static_cast<int>(g_bracket_audusd.pos.active) +
+        static_cast<int>(g_bracket_nzdusd.pos.active) +
+        static_cast<int>(g_bracket_usdjpy.pos.active) +
+        static_cast<int>(g_ca_esnq.has_open_position()) +
+        static_cast<int>(g_ca_eia_fade.has_open_position()) +
+        static_cast<int>(g_ca_brent_wti.has_open_position()) +
+        static_cast<int>(g_ca_fx_cascade.has_open_position()) +
+        static_cast<int>(g_ca_carry_unwind.has_open_position()) +
+        static_cast<int>(g_orb_us.has_open_position()) +
+        static_cast<int>(g_orb_ger30.has_open_position()) +
+        static_cast<int>(g_orb_silver.has_open_position()) +
+        static_cast<int>(g_orb_uk100.has_open_position()) +
+        static_cast<int>(g_orb_estx50.has_open_position()) +
+        static_cast<int>(g_vwap_rev_sp.has_open_position()) +
+        static_cast<int>(g_vwap_rev_nq.has_open_position()) +
+        static_cast<int>(g_vwap_rev_ger40.has_open_position()) +
+        static_cast<int>(g_vwap_rev_eurusd.has_open_position()) +
+        static_cast<int>(g_trend_pb_gold.has_open_position()) +
+        static_cast<int>(g_trend_pb_ger40.has_open_position()) +
+        static_cast<int>(g_trend_pb_nq.has_open_position()) +    // TrendPB USTEC
+        static_cast<int>(g_trend_pb_sp.has_open_position()) +    // TrendPB US500
+        static_cast<int>(g_eng_eurusd.pos.active) +
+        static_cast<int>(g_eng_gbpusd.pos.active) +
+        static_cast<int>(g_eng_audusd.pos.active) +
+        static_cast<int>(g_eng_nzdusd.pos.active) +
+        static_cast<int>(g_eng_usdjpy.pos.active) +
+        static_cast<int>(g_eng_brent.pos.active) +
+        static_cast<int>(g_gold_stack.has_open_position()) +
+        static_cast<int>(g_le_stack.has_open_position()) +
+        static_cast<int>(g_gold_flow.has_open_position()) +        // gold flow
+        static_cast<int>(g_gold_flow_reload.has_open_position()) + // reload instance
+        static_cast<int>(g_nbm_sp.has_open_position()) +
+        static_cast<int>(g_nbm_nq.has_open_position()) +
+        static_cast<int>(g_nbm_nas.has_open_position()) +
+        static_cast<int>(g_nbm_us30.has_open_position()) +
+        static_cast<int>(g_nbm_gold_london.has_open_position()) +
+        static_cast<int>(g_nbm_oil_london.has_open_position());
+    // Session-aware cap (mirrors independent_symbols path)
+    int session_cap2 = g_cfg.max_open_positions;
+    const int slot2 = g_macro_ctx.session_slot;
+    if      (slot2 == 0) session_cap2 = std::min(session_cap2, 1);
+    else if (slot2 == 6) session_cap2 = std::min(session_cap2, 2);
+    const bool pos_budget_ok = open_positions < session_cap2;
+    if (!pos_budget_ok) ++g_gov_pos;
+    if (!pos_budget_ok) return false;
+    // ?? Daily profit target / session watermark / hourly throttle ?????????
+    // SHADOW MODE: skip all PnL-based gates. Testing must never be blocked.
+    // LIVE MODE: enforce all limits below.
+    if (!shadow_mode) {
+    if (g_cfg.daily_profit_target > 0.0 &&
+        g_omegaLedger.dailyPnl() >= g_cfg.daily_profit_target) return false;
+    if (g_cfg.session_watermark_pct > 0.0) {
+        const double peak      = g_omegaLedger.peakDailyPnl();
+        const double daily_pnl = g_omegaLedger.dailyPnl();
+        const double drawdown  = peak - daily_pnl;
+        const double threshold = g_cfg.daily_loss_limit * g_cfg.session_watermark_pct;
+        // Only block when day is actually net negative -- never kill a profitable day
+        if (peak > 0.0 && drawdown >= threshold && daily_pnl <= 0.0)
+            return false;
+    }
+    if (g_cfg.hourly_loss_limit > 0.0) {
+        double rolling = 0.0;
+        { std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
+          for (const auto& r : g_hourly_pnl_records)
+              if (r.ts_sec >= nowSec() - HOURLY_WINDOW_SEC) rolling += r.net_pnl; }
+        if (rolling < -g_cfg.hourly_loss_limit) return false;
+    }
+    } // end !shadow_mode PnL gates
+    // ?? News blackout gate ????????????????????????????????????????????????
+    if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
+    // ?? Regime block gate -- applied in all modes ??????????????????????????
+    if (g_regime_adaptor.equity_blocked(symbol)) return false;
+    // REMOVED: corr_heat -- with 1-2 open positions max never adds value, only blocks
+    return true;
+}
+
 static void on_tick(const std::string& sym, double bid, double ask) {
     // ?? Tick spike filter ???????????????????????????????????????????????
     // Reject ticks where mid moves > 5x slow ATR in a single step.
@@ -5298,482 +5787,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
 
-    auto symbol_risk_blocked = [&](const std::string& symbol) -> bool {
-        // SHADOW MODE: bypass ALL daily loss limits and consecutive loss pauses.
-        // Testing must never be blocked by risk caps -- no real money at risk.
-        // The only gates that apply in shadow are session/spread/latency (structural).
-        if (g_cfg.mode == "SHADOW") return false;
+    // symbol_risk_blocked -- converted to static function (see above on_tick)
 
-        // LIVE MODE only: enforce all risk gates below.
-        std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
-        auto& st = g_sym_risk[symbol];
-        if (st.daily_pnl < -g_cfg.daily_loss_limit) {
-            ++g_gov_pnl;
-            return true;
-        }
-        // Also block when closed P&L + floating unrealised already breaches limit.
-        // Prevents opening new positions into a limit breach before any close fires.
-        {
-            const double closed_pnl = g_omegaLedger.dailyPnl();
-            const double unrealised  = open_unrealised_pnl();
-            if (closed_pnl + unrealised < -g_cfg.daily_loss_limit) {
-                static thread_local int64_t s_unr_log = 0;
-                if (nowSec() - s_unr_log > 30) {
-                    s_unr_log = nowSec();
-                    printf("[OMEGA-RISK] Unrealised loss gate: closed=$%.2f unreal=$%.2f total=$%.2f limit=$%.0f\n",
-                           closed_pnl, unrealised, closed_pnl + unrealised, g_cfg.daily_loss_limit);
-                }
-                ++g_gov_pnl;
-                return true;
-            }
-        }
-        const int64_t now = nowSec();
-        if (st.pause_until > now) {
-            ++g_gov_consec;
-            return true;
-        }
-        if (st.pause_until != 0 && st.pause_until <= now) {
-            st.pause_until = 0;
-            st.consec_losses = 0;
-            std::cout << "[OMEGA-RISK] " << symbol << " loss pause cleared\n";
-        }
-        return false;
-    };
-
-    auto symbol_gate = [&](const std::string& symbol, bool symbol_has_open_position, const std::string& engine_name = "") -> bool {
-        const bool shadow_mode = (g_cfg.mode == "SHADOW");
-        if (symbol == "XAUUSD" && g_disable_gold_stack) return false;
-        // Connection stability gate: block new entries for N seconds after reconnect.
-        // Prevents opening positions on the first tick after logon when the FIX session
-        // may be unstable -- avoids the open?immediate-FORCE_CLOSE pattern seen in logs.
-        {
-            const int64_t cs = g_connected_since.load();
-            if (cs > 0 && (nowSec() - cs) < g_cfg.connection_warmup_sec) {
-                return false;
-            }
-        }
-        {
-            std::lock_guard<std::mutex> lk(g_perf_mtx);
-            auto it = g_perf.find(symbol);
-            if (it != g_perf.end() && it->second.disabled) return false;
-        }
-        if (!tradeable) return false;  // session gate applies in all modes -- shadow is a simulation
-        if (!shadow_mode && !lat_ok) return false;  // latency gate: LIVE only (VPS can't simulate RTT)
-        if (shadow_mode) {
-            // Optional shadow pilot mode: keep GOLD stack live and run USTEC pilot only.
-            if (g_cfg.shadow_ustec_pilot_only &&
-                symbol != "XAUUSD" && symbol != "USTEC.F") {
-                return false;
-            }
-            if (g_cfg.shadow_ustec_pilot_only && symbol == "USTEC.F") {
-                if (g_cfg.ustec_pilot_require_session && !tradeable) return false;
-                if (g_cfg.ustec_pilot_require_latency && !lat_ok) return false;
-                if (g_cfg.ustec_pilot_block_risk_off && regime == "RISK_OFF") return false;
-            }
-            // SHADOW pilot mode filters
-        }
-        // ?? Fast-loss streak gate -- ALL modes (LIVE + SHADOW) ????????????????
-        // BUG FIX: was inside if(shadow_mode) block -- never fired in LIVE mode.
-        // Comment said "applies in all modes" but code contradicted it.
-        // Evidence: 01:57 SHORT SL_HIT + 01:58 SHORT SL_HIT both allowed through
-        // in LIVE -- fast_loss_streak never reached 3 because gate never checked.
-        // Fix: moved outside shadow_mode block. Now fires in both modes.
-        // 3 consecutive fast bad losses (SL/scratch/timeout <=120s) triggers
-        // loss_pause_sec cooldown on that symbol.
-        {
-            std::lock_guard<std::mutex> lk2(g_sym_risk_mtx);
-            auto it = g_shadow_quality.find(symbol);
-            if (it != g_shadow_quality.end() && it->second.pause_until > nowSec()) {
-                static std::unordered_map<std::string,int64_t> s_fls_log;
-                const int64_t now_fls = nowSec();
-                if (now_fls - s_fls_log[symbol] >= 30) {
-                    s_fls_log[symbol] = now_fls;
-                    printf("[FAST-LOSS-BLOCK] %s fast-loss pause active -- blocking entry\n",
-                           symbol.c_str());
-                    fflush(stdout);
-                }
-                return false;
-            }
-        }
-        if (symbol_has_open_position) {
-            // Do NOT increment g_gov_pos here -- this fires every tick while any
-            // position is open and would make the counter meaningless (21k+/day).
-            // g_gov_pos is reserved for position CAP blocks -- meaningful signal.
-            return false;
-        }
-        if (g_cfg.independent_symbols) {
-            // Per-symbol risk is independent, but enforce a global open-position cap.
-            // Without this, all 12 symbols could open simultaneously ignoring max_positions.
-            const int open_positions =
-                static_cast<int>(g_eng_sp.pos.active) +
-                static_cast<int>(g_eng_nq.pos.active) +
-                static_cast<int>(g_eng_cl.pos.active) +
-                static_cast<int>(g_eng_us30.pos.active) +
-                static_cast<int>(g_eng_nas100.pos.active) +
-                static_cast<int>(g_eng_ger30.pos.active) +
-                static_cast<int>(g_eng_uk100.pos.active) +
-                static_cast<int>(g_eng_estx50.pos.active) +
-                static_cast<int>(g_eng_xag.pos.active) +
-                static_cast<int>(g_bracket_xag.pos.active) +
-                static_cast<int>(g_bracket_gold.pos.active) +
-                static_cast<int>(g_bracket_sp.pos.active) +
-                static_cast<int>(g_bracket_nq.pos.active) +
-                static_cast<int>(g_bracket_us30.pos.active) +
-                static_cast<int>(g_bracket_nas100.pos.active) +
-                static_cast<int>(g_bracket_ger30.pos.active) +
-                static_cast<int>(g_bracket_uk100.pos.active) +
-                static_cast<int>(g_bracket_estx50.pos.active) +
-                static_cast<int>(g_bracket_brent.pos.active) +
-                static_cast<int>(g_bracket_eurusd.pos.active) +
-                static_cast<int>(g_bracket_gbpusd.pos.active) +
-                static_cast<int>(g_bracket_audusd.pos.active) +
-                static_cast<int>(g_bracket_nzdusd.pos.active) +
-                static_cast<int>(g_bracket_usdjpy.pos.active) +
-                static_cast<int>(g_ca_esnq.has_open_position()) +
-                static_cast<int>(g_ca_eia_fade.has_open_position()) +
-                static_cast<int>(g_ca_brent_wti.has_open_position()) +
-                static_cast<int>(g_ca_fx_cascade.has_open_position()) +
-                static_cast<int>(g_ca_carry_unwind.has_open_position()) +
-                static_cast<int>(g_orb_us.has_open_position()) +
-                static_cast<int>(g_orb_ger30.has_open_position()) +
-                static_cast<int>(g_orb_silver.has_open_position()) +
-                static_cast<int>(g_orb_uk100.has_open_position()) +
-                static_cast<int>(g_orb_estx50.has_open_position()) +
-                static_cast<int>(g_vwap_rev_sp.has_open_position()) +
-                static_cast<int>(g_vwap_rev_nq.has_open_position()) +
-                static_cast<int>(g_vwap_rev_ger40.has_open_position()) +
-                static_cast<int>(g_vwap_rev_eurusd.has_open_position()) +
-                static_cast<int>(g_trend_pb_gold.has_open_position()) +
-                static_cast<int>(g_trend_pb_ger40.has_open_position()) +
-                static_cast<int>(g_trend_pb_nq.has_open_position()) +    // TrendPB USTEC
-                static_cast<int>(g_trend_pb_sp.has_open_position()) +    // TrendPB US500
-                static_cast<int>(g_eng_eurusd.pos.active) +
-                static_cast<int>(g_eng_gbpusd.pos.active) +
-                static_cast<int>(g_eng_audusd.pos.active) +
-                static_cast<int>(g_eng_nzdusd.pos.active) +
-                static_cast<int>(g_eng_usdjpy.pos.active) +
-                static_cast<int>(g_eng_brent.pos.active) +
-                static_cast<int>(g_gold_stack.has_open_position()) +
-                static_cast<int>(g_le_stack.has_open_position()) +
-                static_cast<int>(g_gold_flow.has_open_position()) +        // gold flow
-                static_cast<int>(g_gold_flow_reload.has_open_position()) + // reload instance
-                static_cast<int>(g_nbm_sp.has_open_position()) +
-                static_cast<int>(g_nbm_nq.has_open_position()) +
-                static_cast<int>(g_nbm_nas.has_open_position()) +
-                static_cast<int>(g_nbm_us30.has_open_position()) +
-                static_cast<int>(g_nbm_gold_london.has_open_position()) +
-                static_cast<int>(g_nbm_oil_london.has_open_position());
-            // ?? Session-aware position cap ????????????????????????????????
-            // Asia = max 2 (low liquidity, wide spreads, few signals worth taking)
-            // Dead zone (05-07 UTC) = max 1 (preparation period, no fresh data)
-            // London-NY overlap = full config cap (peak liquidity, all engines active)
-            // All other sessions = config cap
-            {
-                int session_cap = g_cfg.max_open_positions;
-                const int slot = g_macro_ctx.session_slot;
-                if      (slot == 0) session_cap = std::min(session_cap, 2); // dead zone 05-07 UTC: cap 2 (macro bypass can open, chop filtered by gold_session_ok gate)
-                else if (slot == 6) session_cap = std::min(session_cap, 2); // Asia 22-05 UTC
-                // ?? Asia breakout quality gate ????????????????????????????????
-                // Allow Asia trading but only when volatility is genuinely expanding
-                // (real breakout move, not Asia chop). Two-path gate:
-                //   PATH A (sustained): vol_ratio >= 2.0 -- recent 80-tick range is 2?
-                //     the slow EWM baseline. Proves the move has been running long
-                //     enough to fill the governor window. Works well once a move
-                //     is underway but lags ~28 ticks (4-5 min) on move onset.
-                //   PATH B (fast-onset): |ewm_drift| >= 1.5pts -- GoldEngineStack
-                //     fast EWM (?=0.05) has separated from slow (?=0.005) by $1.50+.
-                //     Fires ~7 ticks (70s) into a 1pt/tick surge, catching the move
-                //     while the ratio gate is still blocked by an elevated baseline
-                //     carried over from a big prior session (e.g. Friday's 211pt day
-                //     inflates base_vol via ?=0.002, blocking all of Monday morning).
-                //   Root cause of Monday 30 Mar 2026 zero trades: Asia session,
-                //   Friday base_vol elevated at ~0.35%, Monday pre-surge vol ~0.04%.
-                //   Ratio = 0.13 ? entire strong downtrend+surge blocked all session.
-                //   EWM drift would have opened the gate 70s into each move.
-                //   Fail-open if base_vol=0 (warmup): ratio = 3.0 ? PATH A passes.
-                if (slot == 6) {
-                    const double asia_base   = g_gold_stack.base_vol_pct();
-                    const double asia_recent = g_gold_stack.recent_vol_pct();
-                    const double asia_ratio  = (asia_base > 0.0) ? (asia_recent / asia_base) : 3.0;
-                    // PATH B: fast-onset EWM drift bypass -- catches first ~70s of a surge
-                    // before the 80-tick window fills. $1.50 threshold = real directional
-                    // pressure; random chop produces |drift| < 0.5 consistently.
-                    const double asia_ewm_drift = std::fabs(g_gold_stack.ewm_drift());
-                    const bool asia_fast_breakout = (asia_ewm_drift >= 1.5);
-                    // PATH C: macro crash/rally bypass.
-                    // Root cause of missing 125pt crash: drift only hit -1.7 (EWM smoothed),
-                    // vol_ratio elevated from prior session. RSI hit 28 -- that IS the signal.
-                    const double rsi_asia  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-                    const double vwap_asia = g_gold_stack.vwap();
-                    const double mid_asia  = (bid + ask) * 0.5;
-                    const double vdisp_asia = (vwap_asia > 0.0) ? std::fabs(mid_asia - vwap_asia) : 0.0;
-                    // FIX 2026-04-02: raised RSI thresholds to match rest of chain (32->38, 68->62).
-                    const bool asia_macro_bypass = (rsi_asia > 0.0 && rsi_asia < 38.0)
-                                                || (rsi_asia > 62.0)
-                                                || (vdisp_asia > 10.0);
-                    if (asia_ratio < 2.0 && !asia_fast_breakout && !asia_macro_bypass) {
-                        static int64_t s_asia_block_log = 0;
-                        const int64_t now_ab = static_cast<int64_t>(std::time(nullptr));
-                        if (now_ab - s_asia_block_log >= 60) {
-                            s_asia_block_log = now_ab;
-                            printf("[ASIA-GATE] BLOCKED -- vol_ratio=%.2f drift=%.3f rsi=%.1f vdisp=%.1f\n",
-                                   asia_ratio, g_gold_stack.ewm_drift(), rsi_asia, vdisp_asia);
-                            fflush(stdout);
-                        }
-                        return false;
-                    }
-                    static int64_t s_asia_open_log = 0;
-                    const int64_t now_ao = static_cast<int64_t>(std::time(nullptr));
-                    if (now_ao - s_asia_open_log >= 60) {
-                        s_asia_open_log = now_ao;
-                        const char* path = asia_macro_bypass ? "PATH-C(macro)"
-                                         : (asia_fast_breakout && asia_ratio < 2.0) ? "PATH-B(drift)"
-                                         : "PATH-A(ratio)";
-                        printf("[ASIA-GATE] OPEN via %s -- vol_ratio=%.2f drift=%.3f rsi=%.1f vdisp=%.1f\n",
-                               path, asia_ratio, g_gold_stack.ewm_drift(), rsi_asia, vdisp_asia);
-                        fflush(stdout);
-                    }
-                }
-                // overlap (slot 3) and London/NY get full cap
-                if (open_positions >= session_cap) {
-                    ++g_gov_pos;
-                    return false;
-                }
-            }
-            // ?? Daily profit target ???????????????????????????????????????????
-            // Stop new entries once daily P&L hits the target -- lock in the day.
-            if (g_cfg.daily_profit_target > 0.0) {
-                const double daily_pnl = g_omegaLedger.dailyPnl();
-                if (daily_pnl >= g_cfg.daily_profit_target) {
-                    static int64_t s_last_profit_log = 0;
-                    if (nowSec() - s_last_profit_log > 60) {
-                        s_last_profit_log = nowSec();
-                        printf("[OMEGA-RISK] Daily profit target $%.0f reached (P&L=$%.2f) -- no new entries\n",
-                               g_cfg.daily_profit_target, daily_pnl);
-                    }
-                    return false;
-                }
-            }
-            // ?? Portfolio open SL risk cap ????????????????????????????????????????
-            // Block new entries when total simultaneous SL exposure exceeds threshold.
-            // Prevents correlated crashes: gold+silver+oil all SHORT at once means
-            // a single RISK_ON reversal hits all of them simultaneously.
-            // Cap = max_portfolio_sl_risk_usd (default 0 = disabled).
-            // Each engine adds its SL risk on entry via portfolio_sl_risk_add().
-            if (g_cfg.max_portfolio_sl_risk_usd > 0.0) {
-                const double open_sl_risk = g_open_sl_risk_cents.load(std::memory_order_relaxed) / 100.0;
-                if (open_sl_risk >= g_cfg.max_portfolio_sl_risk_usd) {
-                    static int64_t s_ptf_log = 0;
-                    if (nowSec() - s_ptf_log > 30) {
-                        s_ptf_log = nowSec();
-                        printf("[PORTFOLIO-CAP] %s blocked: open_sl_risk=$%.2f >= cap=$%.0f\n",
-                               symbol.c_str(), open_sl_risk, g_cfg.max_portfolio_sl_risk_usd);
-                        fflush(stdout);
-                    }
-                    return false;
-                }
-            }
-
-            // ?? Session watermark drawdown ????????????????????????????????????
-            // Stop if drawdown from intra-day peak exceeds threshold AND daily P&L
-            // is still negative (i.e. we are actually losing money today).
-            //
-            // Critical rule: if daily_pnl > 0 the day is profitable -- NEVER stop
-            // trading because of a drawdown from peak. A $800 day that pulls back
-            // $121 is still +$679. Stopping there is wrong. Only protect against
-            // real capital loss: drawdown threshold fires only when daily_pnl <= 0.
-            //
-            // Threshold = watermark_pct * daily_loss_limit (always fixed reference).
-            // e.g. 0.27 * $450 = $121. If daily_pnl goes negative by $121 ? stop.
-            if (g_cfg.session_watermark_pct > 0.0) {
-                const double peak_pnl   = g_omegaLedger.peakDailyPnl();
-                const double daily_pnl  = g_omegaLedger.dailyPnl();
-                const double drawdown   = peak_pnl - daily_pnl;
-                const double reference  = g_cfg.daily_loss_limit;
-                const double threshold  = reference * g_cfg.session_watermark_pct;
-                // Only block if: (a) we've given back threshold from peak AND
-                //                (b) the day is net negative -- still profitable = ride on
-                const bool drawdown_hit = (peak_pnl > 0.0 && drawdown >= threshold);
-                const bool day_negative = (daily_pnl <= 0.0);
-                if (drawdown_hit && day_negative) {
-                    static int64_t s_last_wm_log = 0;
-                    if (nowSec() - s_last_wm_log > 60) {
-                        s_last_wm_log = nowSec();
-                        printf("[OMEGA-RISK] Watermark: peak=$%.2f current=$%.2f drawdown=$%.2f >= $%.2f AND day negative -- no new entries\n",
-                               peak_pnl, daily_pnl, drawdown, threshold);
-                    }
-                    return false;
-                }
-            }
-            // ?? Hourly loss throttle ??????????????????????????????????????????
-            // Block new entries if rolling 2h net P&L loss exceeds hourly_loss_limit.
-            if (g_cfg.hourly_loss_limit > 0.0) {
-                double rolling_pnl = 0.0;
-                {
-                    std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
-                    const int64_t cutoff = nowSec() - HOURLY_WINDOW_SEC;
-                    for (const auto& r : g_hourly_pnl_records)
-                        if (r.ts_sec >= cutoff) rolling_pnl += r.net_pnl;
-                }
-                if (rolling_pnl < -g_cfg.hourly_loss_limit) {
-                    static int64_t s_last_hourly_log = 0;
-                    if (nowSec() - s_last_hourly_log > 60) {
-                        s_last_hourly_log = nowSec();
-                        printf("[OMEGA-RISK] 2h rolling loss $%.2f exceeds limit $%.0f -- throttling entries\n",
-                               rolling_pnl, g_cfg.hourly_loss_limit);
-                    }
-                    return false;
-                }
-            }
-            // ?? Stale quote watchdog ??????????????????????????????????????????
-            // Block entries if no tick received in last STALE_QUOTE_SEC seconds.
-            // A frozen feed with open positions is the most dangerous possible state --
-            // we have no pricing, but the broker is still live and SLs can gap.
-            if (!stale_watchdog_ok(symbol)) {
-                static thread_local int64_t s_stale_log = 0;
-                if (nowSec() - s_stale_log > 10) {
-                    s_stale_log = nowSec();
-                    std::printf("[STALE-FEED] %s no tick in >%llds -- blocking entry\n",
-                                symbol.c_str(), (long long)STALE_QUOTE_SEC);
-                }
-                return false;
-            }
-            // ?? Drawdown velocity circuit breaker ????????????????????????????
-            // Fires when loss rate in rolling 30-min window exceeds threshold.
-            // Threshold is configured as dd_velocity.threshold_usd (set in init
-            // to 0.5 * daily_loss_limit). When active, halts new entries 15 min.
-            if (!shadow_mode && !g_adaptive_risk.dd_velocity.new_entries_allowed(nowSec())) return false;  // shadow: no rate-of-loss block
-            // ?? Portfolio VaR gate ????????????????????????????????????????????
-            // REMOVED: portfolio_VaR -- redundant with per-trade max_loss, false blocks on correlated positions
-            // REMOVED: VPIN -- BlackBull L2 volume unreliable, causes false blocks
-            // REMOVED: TOD gate -- needs 30 trades/bucket to activate, currently zero data = pure false blocks
-            // REMOVED: corr_heat -- with 1-2 open positions max never adds value, only blocks
-            // ?? News blackout gate ????????????????????????????????????????????
-            if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
-            // ?? Relative spread Z-score gate ??????????????????????????????????
-            // Block if current spread is anomalous vs rolling 200-tick median.
-            // Applies in all modes -- shadow is a simulation.
-            {
-                std::lock_guard<std::mutex> lk2(g_book_mtx);
-                const auto bid_it = g_bids.find(symbol);
-                const auto ask_it = g_asks.find(symbol);
-                if (bid_it != g_bids.end() && ask_it != g_asks.end()) {
-                    const double spread = ask_it->second - bid_it->second;
-                    if (!g_edges.spread_gate.ok(symbol, spread)) {
-                        static thread_local int64_t s_sz_log = 0;
-                        if (nowSec() - s_sz_log > 30) {
-                            s_sz_log = nowSec();
-                            printf("[SPREAD-Z] %s spread=%.5f z=%.2f -- anomalous, blocking entry\n",
-                                   symbol.c_str(), spread,
-                                   g_edges.spread_gate.z_score(symbol, spread));
-                        }
-                        return false;
-                    }
-                }
-            }
-            // ?? Regime block gate -- applied in all modes ??????????????????????
-            if (g_regime_adaptor.equity_blocked(symbol)) return false;
-            return !symbol_risk_blocked(symbol);
-        }
-        // Legacy global portfolio mode.
-        if (symbol_risk_blocked("GLOBAL")) return false;
-        const int open_positions =
-            static_cast<int>(g_eng_sp.pos.active) +
-            static_cast<int>(g_eng_nq.pos.active) +
-            static_cast<int>(g_eng_cl.pos.active) +
-            static_cast<int>(g_eng_us30.pos.active) +
-            static_cast<int>(g_eng_nas100.pos.active) +
-            static_cast<int>(g_eng_ger30.pos.active) +
-            static_cast<int>(g_eng_uk100.pos.active) +
-            static_cast<int>(g_eng_estx50.pos.active) +
-            static_cast<int>(g_eng_xag.pos.active) +
-            static_cast<int>(g_bracket_xag.pos.active) +
-            static_cast<int>(g_bracket_gold.pos.active) +
-            static_cast<int>(g_bracket_sp.pos.active) +
-            static_cast<int>(g_bracket_nq.pos.active) +
-            static_cast<int>(g_bracket_us30.pos.active) +
-            static_cast<int>(g_bracket_nas100.pos.active) +
-            static_cast<int>(g_bracket_ger30.pos.active) +
-            static_cast<int>(g_bracket_uk100.pos.active) +
-            static_cast<int>(g_bracket_estx50.pos.active) +
-            static_cast<int>(g_bracket_brent.pos.active) +
-            static_cast<int>(g_bracket_eurusd.pos.active) +
-            static_cast<int>(g_bracket_gbpusd.pos.active) +
-            static_cast<int>(g_bracket_audusd.pos.active) +
-            static_cast<int>(g_bracket_nzdusd.pos.active) +
-            static_cast<int>(g_bracket_usdjpy.pos.active) +
-            static_cast<int>(g_ca_esnq.has_open_position()) +
-            static_cast<int>(g_ca_eia_fade.has_open_position()) +
-            static_cast<int>(g_ca_brent_wti.has_open_position()) +
-            static_cast<int>(g_ca_fx_cascade.has_open_position()) +
-            static_cast<int>(g_ca_carry_unwind.has_open_position()) +
-            static_cast<int>(g_orb_us.has_open_position()) +
-            static_cast<int>(g_orb_ger30.has_open_position()) +
-            static_cast<int>(g_orb_silver.has_open_position()) +
-            static_cast<int>(g_orb_uk100.has_open_position()) +
-            static_cast<int>(g_orb_estx50.has_open_position()) +
-            static_cast<int>(g_vwap_rev_sp.has_open_position()) +
-            static_cast<int>(g_vwap_rev_nq.has_open_position()) +
-            static_cast<int>(g_vwap_rev_ger40.has_open_position()) +
-            static_cast<int>(g_vwap_rev_eurusd.has_open_position()) +
-            static_cast<int>(g_trend_pb_gold.has_open_position()) +
-            static_cast<int>(g_trend_pb_ger40.has_open_position()) +
-            static_cast<int>(g_trend_pb_nq.has_open_position()) +    // TrendPB USTEC
-            static_cast<int>(g_trend_pb_sp.has_open_position()) +    // TrendPB US500
-            static_cast<int>(g_eng_eurusd.pos.active) +
-            static_cast<int>(g_eng_gbpusd.pos.active) +
-            static_cast<int>(g_eng_audusd.pos.active) +
-            static_cast<int>(g_eng_nzdusd.pos.active) +
-            static_cast<int>(g_eng_usdjpy.pos.active) +
-            static_cast<int>(g_eng_brent.pos.active) +
-            static_cast<int>(g_gold_stack.has_open_position()) +
-            static_cast<int>(g_le_stack.has_open_position()) +
-            static_cast<int>(g_gold_flow.has_open_position()) +        // gold flow
-            static_cast<int>(g_gold_flow_reload.has_open_position()) + // reload instance
-            static_cast<int>(g_nbm_sp.has_open_position()) +
-            static_cast<int>(g_nbm_nq.has_open_position()) +
-            static_cast<int>(g_nbm_nas.has_open_position()) +
-            static_cast<int>(g_nbm_us30.has_open_position()) +
-            static_cast<int>(g_nbm_gold_london.has_open_position()) +
-            static_cast<int>(g_nbm_oil_london.has_open_position());
-        // Session-aware cap (mirrors independent_symbols path)
-        int session_cap2 = g_cfg.max_open_positions;
-        const int slot2 = g_macro_ctx.session_slot;
-        if      (slot2 == 0) session_cap2 = std::min(session_cap2, 1);
-        else if (slot2 == 6) session_cap2 = std::min(session_cap2, 2);
-        const bool pos_budget_ok = open_positions < session_cap2;
-        if (!pos_budget_ok) ++g_gov_pos;
-        if (!pos_budget_ok) return false;
-        // ?? Daily profit target / session watermark / hourly throttle ?????????
-        // SHADOW MODE: skip all PnL-based gates. Testing must never be blocked.
-        // LIVE MODE: enforce all limits below.
-        if (!shadow_mode) {
-        if (g_cfg.daily_profit_target > 0.0 &&
-            g_omegaLedger.dailyPnl() >= g_cfg.daily_profit_target) return false;
-        if (g_cfg.session_watermark_pct > 0.0) {
-            const double peak      = g_omegaLedger.peakDailyPnl();
-            const double daily_pnl = g_omegaLedger.dailyPnl();
-            const double drawdown  = peak - daily_pnl;
-            const double threshold = g_cfg.daily_loss_limit * g_cfg.session_watermark_pct;
-            // Only block when day is actually net negative -- never kill a profitable day
-            if (peak > 0.0 && drawdown >= threshold && daily_pnl <= 0.0)
-                return false;
-        }
-        if (g_cfg.hourly_loss_limit > 0.0) {
-            double rolling = 0.0;
-            { std::lock_guard<std::mutex> lk(g_hourly_pnl_mtx);
-              for (const auto& r : g_hourly_pnl_records)
-                  if (r.ts_sec >= nowSec() - HOURLY_WINDOW_SEC) rolling += r.net_pnl; }
-            if (rolling < -g_cfg.hourly_loss_limit) return false;
-        }
-        } // end !shadow_mode PnL gates
-        // ?? News blackout gate ????????????????????????????????????????????????
-        if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
-        // ?? Regime block gate -- applied in all modes ??????????????????????????
-        if (g_regime_adaptor.equity_blocked(symbol)) return false;
-        // REMOVED: corr_heat -- with 1-2 open positions max never adds value, only blocks
-        return true;
-    };
+    // symbol_gate -- converted to static function (see above on_tick)
 
     // on_close -- called by BreakoutEngine (CRTP) when a position closes.
     // BreakoutEngine positions are closed by the BROKER via SL/TP orders submitted
@@ -7038,7 +7054,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_orb_us.has_open_position() ||
             g_vwap_rev_sp.has_open_position()  ||
             g_trend_pb_sp.has_open_position()  ||  // TrendPullback SP
-            g_nbm_sp.has_open_position())
+            g_nbm_sp.has_open_position(), tradeable, lat_ok, regime, bid, ask)
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         // Log when circuit breaker is blocking -- once every 60s so it's visible but not spammy
@@ -7259,7 +7275,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_bracket_nq.pos.active              ||
             g_vwap_rev_nq.has_open_position()    ||
             g_trend_pb_nq.has_open_position()    ||  // TrendPullback NQ
-            g_nbm_nq.has_open_position())             // NBM
+            g_nbm_nq.has_open_position(), tradeable, lat_ok, regime, bid, ask)             // NBM
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         {
@@ -7428,7 +7444,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool base_can = symbol_gate("USOIL.F",
                 g_eng_cl.pos.active                 ||
                 g_ca_eia_fade.has_open_position()   ||  // ADDED
-                g_ca_brent_wti.has_open_position());    // ADDED
+                g_ca_brent_wti.has_open_position(), tradeable, lat_ok, regime, bid, ask);    // ADDED
             // NOTE: USOIL.F bracket is disabled -- it was incorrectly sharing
             // g_bracket_gold (XAUUSD's GoldBracketEngine). That engine's confirm_fill,
             // on_reject, and pending order IDs are wired to XAUUSD fills only.
@@ -7491,7 +7507,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_us30 = symbol_gate("DJ30.F",
             g_eng_us30.pos.active      ||
             g_bracket_us30.pos.active  ||
-            g_nbm_us30.has_open_position()) // NBM
+            g_nbm_us30.has_open_position(), tradeable, lat_ok, regime, bid, ask) // NBM
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         {
@@ -7539,7 +7555,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_bracket_ger30.pos.active          ||
             g_orb_ger30.has_open_position()     ||  // ADDED
             g_vwap_rev_ger40.has_open_position() || // ADDED
-            g_trend_pb_ger40.has_open_position());  // ADDED
+            g_trend_pb_ger40.has_open_position(), tradeable, lat_ok, regime, bid, ask);  // ADDED
         const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger);
         // ?? GER40 manage blocks -- ALWAYS run when position open (SL/trail fix) ??
         if (g_orb_ger30.has_open_position())      { g_orb_ger30.on_tick(sym, bid, ask, ca_on_close); }
@@ -7558,7 +7574,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         (void)sdec_ger;
     }
     else if (sym == "UK100") {
-        const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active);
+        const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active, tradeable, lat_ok, regime, bid, ask);
         const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk);
         // SIM: EU index breakout -- no edge. Disabled.
         // if (sdec_uk.allow_breakout && !g_bracket_uk100.pos.active)
@@ -7581,7 +7597,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
     else if (sym == "ESTX50") {
-        const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active);
+        const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active, tradeable, lat_ok, regime, bid, ask);
         const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx);
         // SIM: EU index breakout -- no edge. Disabled.
         // if (sdec_estx.allow_breakout && !g_bracket_estx50.pos.active)
@@ -7632,7 +7648,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_fx = symbol_gate("EURUSD",
             g_eng_eurusd.pos.active                ||
             g_bracket_eurusd.pos.active            ||
-            g_vwap_rev_eurusd.has_open_position()); // ADDED
+            g_vwap_rev_eurusd.has_open_position(), tradeable, lat_ok, regime, bid, ask); // ADDED
         const auto sdec_fx = sup_decision(g_sup_eurusd, g_eng_eurusd, base_can_fx);
         // Notify FX cascade engine if EURUSD just fired a signal this tick
         {
@@ -7708,7 +7724,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_fx2 = symbol_gate("GBPUSD",
             g_eng_gbpusd.pos.active                    ||
             g_bracket_gbpusd.pos.active                ||
-            g_ca_fx_cascade.has_open_gbpusd());         // ADDED
+            g_ca_fx_cascade.has_open_gbpusd(), tradeable, lat_ok, regime, bid, ask);         // ADDED
         const auto sdec_fx2 = sup_decision(g_sup_gbpusd, g_eng_gbpusd, base_can_fx2);
         if (sdec_fx2.allow_breakout && !g_bracket_gbpusd.pos.active)
             dispatch(g_eng_gbpusd, g_sup_gbpusd, base_can_fx2, &sdec_fx2);
@@ -7745,7 +7761,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool asia_ok = !g_cfg.asia_fx_asia_only || (h2 >= 22 || h2 < 7);
         if (asia_ok) {
             if (sym == "AUDUSD") {
-                const bool bc_aud = symbol_gate("AUDUSD", g_eng_audusd.pos.active || g_bracket_audusd.pos.active);
+                const bool bc_aud = symbol_gate("AUDUSD", g_eng_audusd.pos.active || g_bracket_audusd.pos.active, tradeable, lat_ok, regime, bid, ask);
                 const auto sd_aud = sup_decision(g_sup_audusd, g_eng_audusd, bc_aud);
                 if (sd_aud.allow_breakout && !g_bracket_audusd.pos.active) dispatch(g_eng_audusd, g_sup_audusd, bc_aud, &sd_aud);
                 if (sd_aud.allow_bracket && !g_eng_audusd.pos.active && !any_fx_bracket_active)
@@ -7767,7 +7783,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
             if (sym == "NZDUSD") {
-                const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.pos.active);
+                const bool bc_nzd = symbol_gate("NZDUSD", g_eng_nzdusd.pos.active || g_bracket_nzdusd.pos.active, tradeable, lat_ok, regime, bid, ask);
                 const auto sd_nzd = sup_decision(g_sup_nzdusd, g_eng_nzdusd, bc_nzd);
                 if (sd_nzd.allow_breakout && !g_bracket_nzdusd.pos.active) dispatch(g_eng_nzdusd, g_sup_nzdusd, bc_nzd, &sd_nzd);
                 // SIM: BracketEngine on FX -- no edge. Disabled.
@@ -7789,7 +7805,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }
             if (sym == "USDJPY") {
-                const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.pos.active);
+                const bool bc_jpy = symbol_gate("USDJPY", g_eng_usdjpy.pos.active || g_bracket_usdjpy.pos.active, tradeable, lat_ok, regime, bid, ask);
                 const auto sd_jpy = sup_decision(g_sup_usdjpy, g_eng_usdjpy, bc_jpy);
                 if (sd_jpy.allow_breakout && !g_bracket_usdjpy.pos.active) dispatch(g_eng_usdjpy, g_sup_usdjpy, bc_jpy, &sd_jpy);
                 // SIM: BracketEngine on FX -- no edge. Disabled.
@@ -7824,7 +7840,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const auto t_br = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm ti_br; gmtime_s(&ti_br, &t_br);
         if (ti_br.tm_hour >= 7) {
-            const bool base_can_brent = symbol_gate("BRENT", g_eng_brent.pos.active || g_bracket_brent.pos.active);
+            const bool base_can_brent = symbol_gate("BRENT", g_eng_brent.pos.active || g_bracket_brent.pos.active, tradeable, lat_ok, regime, bid, ask);
             const auto sdec_brent = sup_decision(g_sup_brent, g_eng_brent, base_can_brent);
             if (sdec_brent.allow_breakout && !g_bracket_brent.pos.active)
                 dispatch(g_eng_brent, g_sup_brent, base_can_brent, &sdec_brent);
@@ -7837,7 +7853,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool base_can_nas = symbol_gate("NAS100",
             g_eng_nas100.pos.active      ||
             g_bracket_nas100.pos.active  ||
-            g_nbm_nas.has_open_position()) // NBM
+            g_nbm_nas.has_open_position(), tradeable, lat_ok, regime, bid, ask) // NBM
             // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
             && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
         {
@@ -8105,11 +8121,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
              || (rsi_for_gate > 62.0)                             // RSI rally -- drift not needed (was 68)
              || (rsi_for_gate < 38.0 && drift_for_gate < -1.5)   // drift+RSI confirmation (was 35)
              || (rsi_for_gate > 62.0 && drift_for_gate >  1.5)); // drift+RSI confirmation (was 65)
-        const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open)
+        const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open, tradeable, lat_ok, regime, bid, ask)
                                  && (!gold_post_impulse_block || crash_impulse_bypass);
         // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
         const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
-            && gold_session_ok && symbol_gate("XAUUSD", false);
+            && gold_session_ok && symbol_gate("XAUUSD", false, tradeable, lat_ok, regime, bid, ask);
 
         // Run supervisor -- uses g_eng_xag as vol/phase proxy since gold has
         // its own GoldStack (not a BreakoutEngine). We use a dedicated gold
@@ -10536,7 +10552,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // and widened pullback band (0.15% not 0.05%).
         // Does NOT require bar data -- runs on tick EMAs with proper time-equivalent alphas.
         // TrendPullback gold: 24h entry gate -- trend is a trend regardless of session.
-        // Uses symbol_gate (risk/max_positions) but NOT session slot gate.
+        // Uses symbol_gate (risk/max_positions, tradeable, lat_ok, regime, bid, ask) but NOT session slot gate.
         // Only hard blocks: dead-zone spread spike window (05:00-06:30 UTC) and NY close noise.
         const bool tpb_gold_session_ok = !in_ny_close_noise && (gold_session_slot != 0 || [&](){
             // Allow slot 0 (05:00-07:00) ONLY after 06:30 when spreads have normalised
@@ -10545,7 +10561,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             return (ti_s.tm_hour * 60 + ti_s.tm_min) >= 390; // 06:30 UTC
         }());
         const bool tpb_gold_can_enter = tpb_gold_session_ok
-                                     && symbol_gate("XAUUSD", gold_any_open)
+                                     && symbol_gate("XAUUSD", gold_any_open, tradeable, lat_ok, regime, bid, ask)
                                      && !gold_post_impulse_block;
 
         // ?? CRASH CONTINUATION OVERRIDE ????????????????????????????????????????
