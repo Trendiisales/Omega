@@ -718,59 +718,59 @@ struct GoldFlowEngine {
         }
 
         // ?? EXHAUSTION FILTER -- blocks entries at move exhaustion ??????????????
-        // Zero-MFE analysis (2026-04-05): 26% of entries had zero MFE -- price
-        // never moved our way at all. These happen when the drift signal fires
-        // at the END of a move rather than the start.
+        // Zero-MFE analysis: 26% of entries had zero MFE -- price never moved
+        // our way. These happen when the signal fires at the END of a move.
         //
-        // EXHAUSTION is detected when the drift is OVEREXTENDED relative to ATR:
-        //   |ewm_drift| > ATR * 1.5 means price has already moved > 1.5x ATR
-        //   in the drift direction. That move is largely spent -- the drift
-        //   persistence is confirming a move that already happened, not predicting
-        //   one that is about to happen.
+        // EWM drift peaks at roughly 0.8*ATR on a typical move.
+        // When drift is near its peak AND has plateaued (not accelerating),
+        // the move is done -- entering continuation here loses immediately.
         //
-        // Additional exhaustion signal: drift window shows ACCELERATION then PLATEAU
-        //   If the last 5 drift values are all within 0.2pt of each other (plateau)
-        //   AND the drift is > 1.0*ATR, momentum has stalled = exhaustion.
+        // THRESHOLD CALIBRATION:
+        //   drift_overextended: drift_abs > 0.8*ATR
+        //     ATR=5pt: fires when drift > 4.0pt (typical peak for a 5pt move)
+        //     ATR=10pt: fires when drift > 8.0pt (typical peak for a 10pt move)
+        //   drift_plateau: last 5 drift values within 0.30*ATR of each other
+        //     Drift is high but stalling = momentum exhausted
         //
-        // NOT applied in EXPANSION regime (crashes/surges are different --
-        //   drift can stay overextended for 100+ pts on genuine macro moves).
-        // NOT applied when vol_ratio > 2.0 (genuine velocity -- let it run).
+        // Block on EITHER condition (not both required):
+        //   Overextended alone = price has already moved its typical range
+        //   Plateau alone (when drift > 0.5*ATR) = momentum stalled at elevated drift
+        //
+        // NOT applied in EXPANSION regime + vol_ratio > 2.0 (real crashes run further).
         {
             const bool in_expansion = m_expansion_mode && (m_vol_ratio > 2.0);
-            if (!in_expansion && m_atr > 0.0 && !m_drift_val_window.empty()) {
+            if (!in_expansion && m_atr > 0.0) {
                 const double drift_abs = std::fabs(ewm_drift);
 
-                // Condition 1: drift magnitude > 1.5*ATR = overextended
-                const bool drift_overextended = (drift_abs > m_atr * 1.5);
+                // Condition 1: drift near or past its typical peak for this ATR
+                const bool drift_overextended = (drift_abs > m_atr * 0.80);
 
-                // Condition 2: drift plateau -- last 5 values stagnant
-                // If drift is high but not accelerating, momentum has stalled
+                // Condition 2: drift plateau -- stalled at elevated level
                 bool drift_plateau = false;
                 if ((int)m_drift_val_window.size() >= 5) {
-                    double plateau_min = m_drift_val_window.back();
-                    double plateau_max = m_drift_val_window.back();
-                    int plateau_check = std::min(5, (int)m_drift_val_window.size());
-                    for (int pi = (int)m_drift_val_window.size() - plateau_check;
+                    double pmin = m_drift_val_window.back();
+                    double pmax = m_drift_val_window.back();
+                    const int check = std::min(5, (int)m_drift_val_window.size());
+                    for (int pi = (int)m_drift_val_window.size() - check;
                          pi < (int)m_drift_val_window.size(); ++pi) {
-                        if (m_drift_val_window[pi] < plateau_min) plateau_min = m_drift_val_window[pi];
-                        if (m_drift_val_window[pi] > plateau_max) plateau_max = m_drift_val_window[pi];
+                        if (m_drift_val_window[pi] < pmin) pmin = m_drift_val_window[pi];
+                        if (m_drift_val_window[pi] > pmax) pmax = m_drift_val_window[pi];
                     }
-                    const double plateau_range = plateau_max - plateau_min;
-                    // Plateau: drift barely moving in last 5 ticks despite being high
-                    drift_plateau = (drift_abs > m_atr * 1.0) && (plateau_range < m_atr * 0.20);
+                    const double prange = pmax - pmin;
+                    // Plateau at elevated drift: drift > 0.5*ATR but not accelerating
+                    drift_plateau = (drift_abs > m_atr * 0.50) && (prange < m_atr * 0.30);
                 }
 
-                // Block if BOTH conditions met: overextended AND plateaued
-                // Either alone is not enough -- overextended can be a real crash
-                // Plateau alone can be Asia compression (low drift, low ATR)
-                // Both together = move is done, reversal likely
-                if (drift_overextended && drift_plateau) {
+                // Block on either: overextended OR plateaued-at-elevation
+                // Log which fired so we can diagnose in shadow
+                if (drift_overextended || drift_plateau) {
                     static int64_t s_exhaust_log = 0;
                     if (now_ms - s_exhaust_log > 5000) {
                         s_exhaust_log = now_ms;
-                        printf("[GFE-EXHAUST-BLOCK] %s drift=%.2f atr=%.2f ratio=%.2f\n",
+                        printf("[GFE-EXHAUST-BLOCK] %s drift=%.2f atr=%.2f ratio=%.2f ext=%d plateau=%d\n",
                                long_signal ? "LONG" : "SHORT",
-                               ewm_drift, m_atr, drift_abs / m_atr);
+                               ewm_drift, m_atr, drift_abs / m_atr,
+                               (int)drift_overextended, (int)drift_plateau);
                         fflush(stdout);
                     }
                     return;
