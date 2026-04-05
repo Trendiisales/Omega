@@ -31,7 +31,8 @@
 #include <functional>
 #include <string>
 #include <algorithm>
-#include "omega_types.hpp"
+#include <cstring>
+#include "OmegaTradeLedger.hpp"
 
 namespace omega {
 
@@ -237,7 +238,7 @@ private:
         // Emit trade record
         if (on_close) {
             TradeRecord tr;
-            tr.id         = std::to_string(m_trade_id);
+            tr.id         = m_trade_id;
             tr.symbol     = "XAUUSD";
             tr.side       = pos.is_long ? "LONG" : "SHORT";
             tr.engine     = engine_name;

@@ -698,7 +698,7 @@ int main(int argc, char** argv){
         }
     }
 
-    const double rs = std::chrono::duration<double>(
+    const double run_sec = std::chrono::duration<double>(
         std::chrono::steady_clock_real::now()-t0r).count();
 
     // ?? Restore stdout before printing summary ???????????????????????????????????????
@@ -728,7 +728,7 @@ int main(int argc, char** argv){
            cfg.gold?"GoldStack ":"", cfg.flow?"GoldFlow ":"",
            cfg.latency?"LatencyEdge ":"", cfg.cross?"CrossAsset ":"",
            cfg.breakout?"Breakout/Bracket":"");
-    printf("  Run     : %.1fs = %.0f K t/s\n", rs, N/rs/1000.0);
+    printf("  Run     : %.1fs = %.0f K t/s\n", run_sec, N/run_sec/1000.0);
     printf("================================================================\n");
     printf("  PER-ENGINE RESULTS (warmup %lld ticks excluded)\n",(long long)cfg.warm);
     printf("================================================================\n");
