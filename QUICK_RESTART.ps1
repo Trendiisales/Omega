@@ -16,6 +16,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Ensure git always rebases on pull -- prevents merge commits that create phantom hashes
+$ErrorActionPreference = "Continue"
+git -C $OmegaDir config pull.rebase true 2>$null | Out-Null
+$ErrorActionPreference = "Stop"
+
 $BuildExe  = "$OmegaDir\build\Release\Omega.exe"
 $OmegaExe  = "$OmegaDir\Omega.exe"
 $ConfigSrc = "$OmegaDir\omega_config.ini"
