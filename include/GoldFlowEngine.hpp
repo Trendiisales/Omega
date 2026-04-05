@@ -1863,17 +1863,35 @@ private:
                     fflush(stdout);
                 }
             } else {
-                // NORMAL TRAIL (unchanged)
-                trail_mult =
-                    (!pos.partial_closed_2 && m_wall_ahead) ? 0.25 :  // wall ahead: tighten now
-                    (!pos.partial_closed_2)                 ? 0.50 :  // step1 done, running free
-                    (move < atr * 3.0)                      ? 0.25 :  // step2 done, mid tighten
-                                                              0.20;   // final remainder squeeze
+                // NORMAL TRAIL: MFE-proportional trail distance
+                // Problem: fixed 0.5*ATR trail = 2.5pt on ATR=5 tape.
+                // Most moves are only 2-4pt so trail gives back the entire move.
+                // Fix: trail_dist = min(0.5*ATR, 0.3*MFE)
+                //   3pt move: min(2.5, 0.9) = 0.9pt trail -> captures 2.1pt
+                //   5pt move: min(2.5, 1.5) = 1.5pt trail -> captures 3.5pt
+                //   10pt move: min(2.5, 3.0) = 2.5pt trail -> captures 7.5pt
+                //   20pt move: min(2.5, 6.0) = 2.5pt trail -> captures 17.5pt
+                // Tightens on small moves (captures more of each winner)
+                // Stays wide on large moves (lets crashes run)
+                // Wall ahead: tighten immediately regardless
+                const double mfe_trail_dist = (pos.mfe > 0.0)
+                    ? std::min(atr_live * 0.50, pos.mfe * 0.30)
+                    : atr_live * 0.50;
+                const double eff_trail_dist =
+                    (m_wall_ahead)           ? atr_live * 0.25  // wall: tighten hard
+                    : (!pos.partial_closed_2) ? mfe_trail_dist   // running free: MFE-proportional
+                    : (move < atr * 3.0)      ? mfe_trail_dist * 0.8  // step2 done: tighter
+                    :                           mfe_trail_dist * 0.6;  // extended: squeeze
+                // trail_mult is only used for the trail_sl calculation below
+                // set it to the effective distance / atr_live for compatibility
+                trail_mult = (atr_live > 0.0) ? eff_trail_dist / atr_live : 0.50;
             }
             {
+                // Use direct distance rather than mult*atr to avoid precision loss
+                const double trail_dist = trail_mult * atr_live;
                 const double trail_sl = pos.is_long
-                    ? (pos.entry + pos.mfe - atr_live * trail_mult)
-                    : (pos.entry - pos.mfe + atr_live * trail_mult);
+                    ? (pos.entry + pos.mfe - trail_dist)
+                    : (pos.entry - pos.mfe + trail_dist);
                 if ((pos.is_long  && trail_sl > pos.sl) ||
                     (!pos.is_long && trail_sl < pos.sl)) {
                     pos.sl = trail_sl;
