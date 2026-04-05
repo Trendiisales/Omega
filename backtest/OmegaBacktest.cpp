@@ -56,6 +56,7 @@
 #include "../include/GoldEngineStack.hpp"
 #include "../include/StopRunReversalEngine.hpp"
 #include "../include/OverlapFadeEngine.hpp"
+#include "../include/StructuralEdgeEngines.hpp"
 #include "../include/GoldFlowEngine.hpp"
 #include "../include/LatencyEdgeEngines.hpp"
 #include "../include/CrossAssetEngines.hpp"
@@ -576,6 +577,43 @@ struct OverlapFadeRunner {
     }
 };
 
+
+struct OverlapMomRunner {
+    omega::OverlapMomentumEngine eng;
+    void tick(const TickRow& r) {
+        int h=(int)((r.ts_ms/1000/3600)%24);
+        int slot=0;
+        if(h>=7&&h<9)slot=1; else if(h>=9&&h<12)slot=2;
+        else if(h>=12&&h<14)slot=3; else if(h>=14&&h<17)slot=4;
+        else if(h>=17&&h<22)slot=5; else if(h>=22||h<5)slot=6;
+        if(!eng.on_close) eng.on_close=[](const omega::TradeRecord&t){store::add(t);};
+        eng.on_tick(r.bid,r.ask,r.ts_ms,slot);
+    }
+};
+struct AsiaMomRunner {
+    omega::AsiaMomentumEngine eng;
+    void tick(const TickRow& r) {
+        int h=(int)((r.ts_ms/1000/3600)%24);
+        int slot=0;
+        if(h>=7&&h<9)slot=1; else if(h>=9&&h<12)slot=2;
+        else if(h>=12&&h<14)slot=3; else if(h>=14&&h<17)slot=4;
+        else if(h>=17&&h<22)slot=5; else if(h>=22||h<5)slot=6;
+        if(!eng.on_close) eng.on_close=[](const omega::TradeRecord&t){store::add(t);};
+        eng.on_tick(r.bid,r.ask,r.ts_ms,slot);
+    }
+};
+struct LonFadeRunner {
+    omega::LondonCoreFadeEngine eng;
+    void tick(const TickRow& r) {
+        int h=(int)((r.ts_ms/1000/3600)%24);
+        int slot=0;
+        if(h>=7&&h<9)slot=1; else if(h>=9&&h<12)slot=2;
+        else if(h>=12&&h<14)slot=3; else if(h>=14&&h<17)slot=4;
+        else if(h>=17&&h<22)slot=5; else if(h>=22||h<5)slot=6;
+        if(!eng.on_close) eng.on_close=[](const omega::TradeRecord&t){store::add(t);};
+        eng.on_tick(r.bid,r.ask,r.ts_ms,slot);
+    }
+};
 // =============================================================================
 // Config
 // =============================================================================
@@ -586,6 +624,7 @@ struct Cfg {
     const char* trd   = "bt_trades.csv";
     int64_t     warm  = 5000;
     bool gold=true, flow=true, latency=true, cross=true, breakout=true, stoprun=false, ofade=false;
+    bool omom=false, amom=false, lfade=false, allnew=false;
     bool quiet=false;
 };
 static Cfg parse(int argc, char** argv){
@@ -613,6 +652,8 @@ static Cfg parse(int argc, char** argv){
             c.gold=!!strstr(e,"gold"); c.flow=!!strstr(e,"flow");
             c.latency=!!strstr(e,"latency"); c.cross=!!strstr(e,"cross");
             c.breakout=!!strstr(e,"breakout"); c.stoprun=!!strstr(e,"stoprun"); c.ofade=!!strstr(e,"ofade");
+            c.omom=!!strstr(e,"omom"); c.amom=!!strstr(e,"amom"); c.lfade=!!strstr(e,"lfade");
+            c.allnew=(!!strstr(e,"allnew")||!!strstr(e,"all"));
         }
     }
     return c;
@@ -703,7 +744,10 @@ int main(int argc, char** argv){
     std::unique_ptr<CrossRunner>   rc;
     std::unique_ptr<BreakRunner>    rb;
     std::unique_ptr<StopRunRunner>     rs;
-    std::unique_ptr<OverlapFadeRunner>  ro;
+    std::unique_ptr<OverlapFadeRunner>   ro;
+    std::unique_ptr<OverlapMomRunner>    rom;
+    std::unique_ptr<AsiaMomRunner>       ram;
+    std::unique_ptr<LonFadeRunner>       rlf;
 
     if(cfg.gold)    rg = std::make_unique<GoldRunner>(cfg.lat);
     if(cfg.flow)    rf = std::make_unique<FlowRunner>();
@@ -711,7 +755,10 @@ int main(int argc, char** argv){
     if(cfg.cross)   rc = std::make_unique<CrossRunner>();
     if(cfg.breakout)rb = std::make_unique<BreakRunner>(cfg.lat);
     if(cfg.stoprun) rs = std::make_unique<StopRunRunner>();
-    if(cfg.ofade)   ro = std::make_unique<OverlapFadeRunner>();
+    if(cfg.ofade||cfg.allnew)   ro  = std::make_unique<OverlapFadeRunner>();
+    if(cfg.omom||cfg.allnew)    rom = std::make_unique<OverlapMomRunner>();
+    if(cfg.amom||cfg.allnew)    ram = std::make_unique<AsiaMomRunner>();
+    if(cfg.lfade||cfg.allnew)   rlf = std::make_unique<LonFadeRunner>();
 
     // ?? Tick loop ?????????????????????????????????????????????????????????????
     const auto t0r  = std::chrono::steady_clock_real::now();
@@ -728,7 +775,10 @@ int main(int argc, char** argv){
         if(rc) rc->tick(r);
         if(rb) rb->tick(r);
         if(rs) rs->tick(r);
-        if(ro) ro->tick(r);
+        if(ro)  ro->tick(r);
+        if(rom) rom->tick(r);
+        if(ram) ram->tick(r);
+        if(rlf) rlf->tick(r);
 
         if(i-last_p >= 500'000){
             last_p=i;
