@@ -768,8 +768,7 @@ struct GoldFlowEngine {
                     static int64_t s_exhaust_log = 0;
                     if (now_ms - s_exhaust_log > 5000) {
                         s_exhaust_log = now_ms;
-                        printf("[GFE-EXHAUST-BLOCK] %s blocked drift=%.2f atr=%.2f ratio=%.2f -- exhaustion
-",
+                        printf("[GFE-EXHAUST-BLOCK] %s drift=%.2f atr=%.2f ratio=%.2f\n",
                                long_signal ? "LONG" : "SHORT",
                                ewm_drift, m_atr, drift_abs / m_atr);
                         fflush(stdout);
