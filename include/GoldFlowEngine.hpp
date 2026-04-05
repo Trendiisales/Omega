@@ -1455,7 +1455,19 @@ private:
         // so the floor can be bypassed during the 200-tick lock period.
         // Applying it here at entry time guarantees the SL is always >= GFE_ATR_MIN pts
         // regardless of how ATR was seeded. No change to normal path (atr >= 2.0).
-        const double atr_floored = std::max(GFE_ATR_MIN, m_atr);
+        //
+        // SL_SIZING FLOOR: separate from GFE_ATR_MIN (which controls entry blocking).
+        // GFE_ATR_MIN=2.0 allows low-ATR entries (correct -- Asia has real 2pt ATR).
+        // But SL for SIZING must use minimum 5pt regardless of measured ATR.
+        // Evidence: backtest avg SL loss=$82 vs intended $30. Root cause: engine enters
+        // at ATR=2pt (SL=2pt, 0.15 lots = $30 risk) but real session ATR is 5pt+.
+        // Price gaps 5-8pt through the 2pt SL -> $75-120 actual loss on $30 intended risk.
+        // Fix: enforce 5pt minimum on the ATR used for SL sizing ONLY.
+        // Entry blocking (VWAP, structure, drift) still uses real measured ATR.
+        // This reduces lot size at low ATR: ATR=2 -> 5pt SL -> 0.06 lots ($30 risk).
+        // Same dollar risk, 5x fewer lots, 5x more gap protection.
+        static constexpr double GFE_ATR_SL_FLOOR = 5.0;  // minimum ATR for SL sizing
+        const double atr_floored = std::max(GFE_ATR_SL_FLOOR, m_atr);
         const double atr_sl  = atr_floored * GFE_ATR_SL_MULT;
         const double min_sl  = spread * 5.0;  // raised 3x->5x: 3x was 0.66pts on 0.22 spread, too tight for London gold vol
         // ?? Asia gap-risk SL floor ???????????????????????????????????????
