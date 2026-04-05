@@ -149,28 +149,35 @@ Write-Host "  Mode: $mode  |  Commit: $gitShort" -ForegroundColor Green
 Write-Host "=======================================================" -ForegroundColor Green
 Write-Host ""
 
-if (-not $SkipVerify) {
-    Write-Host "  Starting Omega in background and running VERIFY_STARTUP..." -ForegroundColor Cyan
-    Write-Host "  startup_report.txt will be written to C:\Omega\logs\" -ForegroundColor DarkGray
-    Write-Host ""
+# Use Windows Service if installed (survives RDP disconnects)
+# Fall back to direct launch if service not installed
+$svc = Get-Service -Name "OmegaHFT" -ErrorAction SilentlyContinue
 
-    # Start Omega in background so VERIFY_STARTUP can tail the log
+if ($svc) {
+    Write-Host "  [SERVICE] Starting OmegaHFT Windows service..." -ForegroundColor Cyan
+    Start-Service "OmegaHFT"
+    Start-Sleep -Seconds 3
+    $svc = Get-Service -Name "OmegaHFT"
+    Write-Host "  [SERVICE] Status: $($svc.Status)" -ForegroundColor $(if ($svc.Status -eq "Running") { "Green" } else { "Red" })
+    Write-Host "  [SERVICE] Survives RDP disconnects. Auto-restarts on crash." -ForegroundColor Green
+    Write-Host ""
+} else {
+    Write-Host "  [DIRECT] OmegaHFT service not installed -- launching directly." -ForegroundColor Yellow
+    Write-Host "  [DIRECT] WARNING: process will die on RDP disconnect." -ForegroundColor Yellow
+    Write-Host "  [DIRECT] Run INSTALL_SERVICE.ps1 once to fix this permanently." -ForegroundColor Yellow
+    Write-Host ""
     $proc = Start-Process -FilePath $OmegaExe -ArgumentList "omega_config.ini" `
                           -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
     Write-Host "  Omega PID: $($proc.Id)" -ForegroundColor DarkGray
     Write-Host ""
+}
 
-    # Small pause to let Omega write first lines
-    Start-Sleep -Seconds 3
-
-    # Run verifier
-    & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec $WaitSec -OmegaDir $OmegaDir
-
-} else {
-    Write-Host "  Launching Omega in new window..." -ForegroundColor Cyan
+if (-not $SkipVerify) {
+    Write-Host "  Running VERIFY_STARTUP..." -ForegroundColor Cyan
+    Write-Host "  startup_report.txt will be written to C:\Omega\logs\" -ForegroundColor DarkGray
     Write-Host ""
-    Start-Process powershell -ArgumentList "-NoExit -Command & '$OmegaExe' 'omega_config.ini'" -WorkingDirectory $OmegaDir -WindowStyle Normal
-    Write-Host "  Omega started in separate window." -ForegroundColor Green
+    Start-Sleep -Seconds 3
+    & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec $WaitSec -OmegaDir $OmegaDir
 }
 
 #
@@ -298,26 +305,33 @@ Write-Host "  Mode: $mode  |  Commit: $gitShort" -ForegroundColor Green
 Write-Host "=======================================================" -ForegroundColor Green
 Write-Host ""
 
-if (-not $SkipVerify) {
-    Write-Host "  Starting Omega in background and running VERIFY_STARTUP..." -ForegroundColor Cyan
-    Write-Host "  startup_report.txt will be written to C:\Omega\logs\" -ForegroundColor DarkGray
-    Write-Host ""
+# Use Windows Service if installed (survives RDP disconnects)
+# Fall back to direct launch if service not installed
+$svc = Get-Service -Name "OmegaHFT" -ErrorAction SilentlyContinue
 
-    # Start Omega in background so VERIFY_STARTUP can tail the log
+if ($svc) {
+    Write-Host "  [SERVICE] Starting OmegaHFT Windows service..." -ForegroundColor Cyan
+    Start-Service "OmegaHFT"
+    Start-Sleep -Seconds 3
+    $svc = Get-Service -Name "OmegaHFT"
+    Write-Host "  [SERVICE] Status: $($svc.Status)" -ForegroundColor $(if ($svc.Status -eq "Running") { "Green" } else { "Red" })
+    Write-Host "  [SERVICE] Survives RDP disconnects. Auto-restarts on crash." -ForegroundColor Green
+    Write-Host ""
+} else {
+    Write-Host "  [DIRECT] OmegaHFT service not installed -- launching directly." -ForegroundColor Yellow
+    Write-Host "  [DIRECT] WARNING: process will die on RDP disconnect." -ForegroundColor Yellow
+    Write-Host "  [DIRECT] Run INSTALL_SERVICE.ps1 once to fix this permanently." -ForegroundColor Yellow
+    Write-Host ""
     $proc = Start-Process -FilePath $OmegaExe -ArgumentList "omega_config.ini" `
                           -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
     Write-Host "  Omega PID: $($proc.Id)" -ForegroundColor DarkGray
     Write-Host ""
+}
 
-    # Small pause to let Omega write first lines
-    Start-Sleep -Seconds 3
-
-    # Run verifier
-    & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec $WaitSec -OmegaDir $OmegaDir
-
-} else {
-    Write-Host "  Launching Omega in new window..." -ForegroundColor Cyan
+if (-not $SkipVerify) {
+    Write-Host "  Running VERIFY_STARTUP..." -ForegroundColor Cyan
+    Write-Host "  startup_report.txt will be written to C:\Omega\logs\" -ForegroundColor DarkGray
     Write-Host ""
-    Start-Process powershell -ArgumentList "-NoExit -Command & '$OmegaExe' 'omega_config.ini'" -WorkingDirectory $OmegaDir -WindowStyle Normal
-    Write-Host "  Omega started in separate window." -ForegroundColor Green
+    Start-Sleep -Seconds 3
+    & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec $WaitSec -OmegaDir $OmegaDir
 }
