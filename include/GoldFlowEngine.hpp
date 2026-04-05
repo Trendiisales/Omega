@@ -1717,13 +1717,22 @@ private:
             if (!velocity_active_bg && pos.partial_closed && !pos.partial_closed_2) {
                 const int64_t held_s_bg = (now_ms / 1000) - pos.entry_ts;
                 static constexpr int64_t BLEED_SECS = 300; // 5 min after entry
-                // progress: how far price has moved FROM entry IN our direction
-                // pos.is_long: progress = mid - entry (positive = winning)
-                // pos.is_short: progress = entry - mid (positive = winning)
                 const double progress_bg = pos.is_long
                     ? (mid - pos.entry)
                     : (pos.entry - mid);
-                const double min_progress = pos.atr_at_entry * 0.30; // need 30% of ATR
+                const double min_progress = pos.atr_at_entry * 0.30;
+
+                // DIAGNOSTIC: log every 50,000 evaluations to understand values
+                static int64_t s_bleed_eval_count = 0;
+                if ((++s_bleed_eval_count % 50000) == 0) {
+                    printf("[GFE-BLEED-DIAG] evals=%lld held=%llds(need>300) "
+                           "progress=%.2f(need<%.2f) partial1=%d partial2=%d\n",
+                           (long long)s_bleed_eval_count,
+                           (long long)held_s_bg, progress_bg, min_progress,
+                           (int)pos.partial_closed, (int)pos.partial_closed_2);
+                    fflush(stdout);
+                }
+
                 if (held_s_bg > BLEED_SECS && progress_bg < min_progress) {
                     const double flip_atr = pos.atr_at_entry;
                     const double orig_entry = pos.entry;
