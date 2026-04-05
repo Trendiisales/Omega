@@ -528,12 +528,8 @@ $reportLines | Out-File -FilePath $ReportFile -Encoding utf8 -Force
 Write-Host "  [OK] startup_report.txt written to $ReportFile" -ForegroundColor Green
 Write-Host ""
 
-# Push startup_report + session_snapshot + ATR dat to git so Claude can parse them
-Write-Host "  Pushing state files to git..." -ForegroundColor DarkGray
-$savedPrefPush = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-powershell -NonInteractive -NoProfile -ExecutionPolicy Bypass `
-    -File "$OmegaDir\push_log.ps1" -RepoRoot "$OmegaDir" 2>&1 | Out-Null
-$ErrorActionPreference = $savedPrefPush
-Write-Host "  [OK] startup_report + session_snapshot + ATR dat pushed to git" -ForegroundColor Green
+# State push DISABLED -- log/state files removed from git tracking.
+# State commits were creating new hashes on every restart (phantom hash problem).
+# Logs stay on disk at C:\Omega\logs\ -- read via RDP or MONITOR.ps1.
+Write-Host "  [OK] State files saved locally (not pushed to git)" -ForegroundColor DarkGray
 Write-Host ""
