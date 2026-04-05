@@ -1460,18 +1460,22 @@ private:
         // Applying it here at entry time guarantees the SL is always >= GFE_ATR_MIN pts
         // regardless of how ATR was seeded. No change to normal path (atr >= 2.0).
         //
-        // SL_SIZING FLOOR: separate from GFE_ATR_MIN (which controls entry blocking).
-        // GFE_ATR_MIN=2.0 allows low-ATR entries (correct -- Asia has real 2pt ATR).
-        // But SL for SIZING must use minimum 5pt regardless of measured ATR.
-        // Evidence: backtest avg SL loss=$82 vs intended $30. Root cause: engine enters
-        // at ATR=2pt (SL=2pt, 0.15 lots = $30 risk) but real session ATR is 5pt+.
-        // Price gaps 5-8pt through the 2pt SL -> $75-120 actual loss on $30 intended risk.
-        // Fix: enforce 5pt minimum on the ATR used for SL sizing ONLY.
-        // Entry blocking (VWAP, structure, drift) still uses real measured ATR.
-        // This reduces lot size at low ATR: ATR=2 -> 5pt SL -> 0.06 lots ($30 risk).
-        // Same dollar risk, 5x fewer lots, 5x more gap protection.
-        static constexpr double GFE_ATR_SL_FLOOR = 5.0;  // minimum ATR for SL sizing
-        const double atr_floored = std::max(GFE_ATR_SL_FLOOR, m_atr);
+        // SL SIZING: L2-aware ATR floor
+        // When L2 is LIVE (ctid=43014358 delivering depth events):
+        //   Use real measured ATR for SL sizing. L2 confirms entry quality so
+        //   a 2pt SL on a 2pt ATR day is valid -- the imbalance signal is real.
+        //   Mar 27: ATR=2pt, 0.25 lots, SL=2pt -> $3,173 winner on 127pt surge.
+        //   Reducing to 0.06 lots would have made that $762 instead.
+        //
+        // When L2 is DEAD (no depth events, drift-only mode):
+        //   Use 5pt floor. Drift signal fires on noise -> entries at ATR=2pt
+        //   get gapped through by real 5-8pt moves -> $82 avg loss (backtest).
+        //   Floor: 5pt SL -> 0.06 lots -> same $30 risk, gap-proof.
+        //
+        // l2_data_live is set earlier in on_tick() from m_l2_was_live.
+        static constexpr double GFE_ATR_SL_FLOOR_NO_L2 = 5.0;  // floor when L2 dead
+        const double atr_floor = l2_data_live ? GFE_ATR_MIN : GFE_ATR_SL_FLOOR_NO_L2;
+        const double atr_floored = std::max(atr_floor, m_atr);
         const double atr_sl  = atr_floored * GFE_ATR_SL_MULT;
         const double min_sl  = spread * 5.0;  // raised 3x->5x: 3x was 0.66pts on 0.22 spread, too tight for London gold vol
         // ?? Asia gap-risk SL floor ???????????????????????????????????????
