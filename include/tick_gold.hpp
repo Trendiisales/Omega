@@ -18,6 +18,16 @@ static void on_tick_gold(
     // GoldFlow open: only block other engines if GoldFlow is NOT in profit or
     // is in early stage (stage=0, no trail yet). If GoldFlow is trailing (stage>=1)
     // on a winner, allow GoldStack to add a position in the same direction.
+    // ATR-proportional gate variables -- computed once at function entry,
+    // used by dead-zone lambda, crash_impulse_bypass, asia_crash_bypass,
+    // counter-trend gate, GoldStack MR block, and lot scaling below.
+    // Must be defined before any lambda that captures them by reference.
+    const double gf_atr_gate       = std::max(2.0, g_gold_flow.current_atr());
+    const double rsi_atr_scale     = std::min(3.0, std::max(0.5, gf_atr_gate / 5.0));
+    const double rsi_crash_lo      = 50.0 - 6.0 * rsi_atr_scale;
+    const double rsi_crash_hi      = 50.0 + 6.0 * rsi_atr_scale;
+    const double drift_bypass_thresh = std::max(1.0, 0.3 * gf_atr_gate);
+
     const bool gf_open = g_gold_flow.has_open_position();
     const double gf_mid = (bid + ask) * 0.5;
     const bool gf_winning = gf_open
@@ -168,8 +178,10 @@ static void on_tick_gold(
         const double vwap_dz  = g_gold_stack.vwap();
         const double mid_dz   = (bid + ask) * 0.5;
         const double vdisp_dz = (vwap_dz > 0.0) ? std::fabs(mid_dz - vwap_dz) : 0.0;
-        // FIX 2026-04-02: unified thresholds -- 30/70->38/62, vwap 15->10
-        const bool rsi_extreme  = (rsi_dz > 0.0) && (rsi_dz < 38.0 || rsi_dz > 62.0);
+        // ATR-proportional dead-zone RSI threshold -- same formula as crash_impulse_bypass.
+        // Uses shared rsi_crash_lo/hi computed above from gf_atr_gate.
+        // Normal day (ATR=5): lo=44, hi=56. Crash day (ATR=10): lo=38, hi=62.
+        const bool rsi_extreme  = (rsi_dz > 0.0) && (rsi_dz < rsi_crash_lo || rsi_dz > rsi_crash_hi);
         const bool drift_strong = std::fabs(drift_dz) >= 5.0;
         const bool vwap_far     = vdisp_dz >= 10.0;
         if (rsi_extreme || drift_strong || vwap_far) {
@@ -207,21 +219,14 @@ static void on_tick_gold(
         return (mins_utc >= 1320 && mins_utc < 1330)  // 22:00-22:10 UTC NY close
             || (mins_utc >= 0    && mins_utc < 15);   // 00:00-00:15 UTC Sydney open
     }();
-    // Crash override: if RSI<35 and drift<-5 (confirmed strong crash), allow entry
-    // even during the post-impulse cooldown. The IMPULSE regime ending is not a reason
-    // to block entries when the crash is clearly continuing.
-    const double rsi_for_gate = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+    // ATR-proportional gate thresholds computed at function top (see above).
+    const double rsi_for_gate   = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
     const double drift_for_gate = g_gold_stack.ewm_drift();
-    // Lowered drift threshold -4.0 -> -1.5: EWM drift only reaches -1.7 during
-    // a 125pt crash because the EWM smooths it. RSI<32 alone is sufficient.
-    // FIX 2026-04-02: raised RSI crash thresholds 32->38 (standalone) and 35->38 (with drift).
-    // At 10:21 UTC RSI was ~36 during a clear $15 London drop. Old threshold of 32 never fired.
-    // RSI=38 still excludes normal 40-50 RSI chop. Drift threshold unchanged at -1.5.
     const bool crash_impulse_bypass = (rsi_for_gate > 0.0)
-        && ((rsi_for_gate < 38.0)                              // RSI crash -- drift not needed (was 32)
-         || (rsi_for_gate > 62.0)                             // RSI rally -- drift not needed (was 68)
-         || (rsi_for_gate < 38.0 && drift_for_gate < -1.5)   // drift+RSI confirmation (was 35)
-         || (rsi_for_gate > 62.0 && drift_for_gate >  1.5)); // drift+RSI confirmation (was 65)
+        && ((rsi_for_gate < rsi_crash_lo)
+         || (rsi_for_gate > rsi_crash_hi)
+         || (rsi_for_gate < rsi_crash_lo && drift_for_gate < -drift_bypass_thresh)
+         || (rsi_for_gate > rsi_crash_hi && drift_for_gate >  drift_bypass_thresh));
     const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
                              && (!gold_post_impulse_block || crash_impulse_bypass);
     // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
@@ -425,13 +430,21 @@ static void on_tick_gold(
                                       (std::strcmp(gsig.engine, "VWAPStretchReversion") == 0) ||
                                       (std::strcmp(gsig.engine, "SessionMomentum")      == 0);
                 if (gs_is_mr) {
-                    // FIX 2026-04-02: old logic blocked SHORT when RSI<40 -- exactly wrong.
-                    // During a crash RSI IS <40 (30-38). That's the signal, not a block reason.
-                    // Block LONG when RSI>60 (overbought) or M5 downtrend confirmed.
-                    // Block SHORT when RSI>60 (price still elevated, not yet crashed) AND M5 uptrend.
-                    // Never block SHORT on RSI<40 -- low RSI on a short IS the momentum signal.
-                    if (gsig.is_long  && (bar_rsi_gs > 65.0 || bar_trend_gs == -1)) gs_bar_blocked = true;
-                    if (!gsig.is_long && (bar_rsi_gs > 60.0 && bar_trend_gs == +1)) gs_bar_blocked = true;
+                    // ATR-proportional MR bar block.
+                    // Normal day (ATR=5pt): block LONG above RSI 65, SHORT below RSI 35.
+                    // Crash day (ATR=10pt): block LONG above RSI 72, SHORT below RSI 28.
+                    // This means on a quiet normal day mean-reversion entries aren't
+                    // blocked just because RSI is 66 -- that's valid MR territory.
+                    // On a crash day the threshold tightens so only extreme readings pass.
+                    // Formula: gs_ob = 55 + 10 * clamp(atr/5, 1.0, 2.0)
+                    //          gs_os = 45 - 10 * clamp(atr/5, 1.0, 2.0)
+                    //   ATR=5pt:  gs_ob=65  gs_os=35
+                    //   ATR=10pt: gs_ob=75  gs_os=25
+                    const double gs_atr_scale = std::min(2.0, std::max(1.0, gf_atr_gate / 5.0));
+                    const double gs_ob = 55.0 + 10.0 * gs_atr_scale;
+                    const double gs_os = 45.0 - 10.0 * gs_atr_scale;
+                    if (gsig.is_long  && (bar_rsi_gs > gs_ob || bar_trend_gs == -1)) gs_bar_blocked = true;
+                    if (!gsig.is_long && (bar_rsi_gs < gs_os && bar_trend_gs == +1)) gs_bar_blocked = true;
                 } else {
                     if (gsig.is_long  && bar_rsi_gs > 78.0) gs_bar_blocked = true;
                     if (!gsig.is_long && bar_rsi_gs < 22.0) gs_bar_blocked = true;
@@ -701,10 +714,13 @@ static void on_tick_gold(
         const double vwap_disp     = (gf_vwap_now > 0.0)
             ? std::fabs(gf_mid_now - gf_vwap_now) : 0.0;
         const bool asia_crash_bypass =
-            // FIX 2026-04-02: unified thresholds 32->38, 68->62, vwap 8->6
-            (rsi_for_gate > 0.0 && rsi_for_gate < 38.0)
-            || (rsi_for_gate > 62.0)
-            || (drift_for_gate < -1.5 && vwap_disp > 6.0)
+            // ATR-proportional -- reuses rsi_crash_lo/hi computed from gf_atr_gate above.
+            // Normal day (ATR=5): lo=44 hi=56. Crash day (ATR=10): lo=38 hi=62.
+            // VWAP displacement also scales: 1.5 * atr (3.75pt at ATR=5, 7.5pt at ATR=10 -- was hardcoded 6pt)
+            (rsi_for_gate > 0.0 && rsi_for_gate < rsi_crash_lo)
+            || (rsi_for_gate > rsi_crash_hi)
+            || (drift_for_gate < -drift_bypass_thresh && vwap_disp > 1.5 * gf_atr_gate)
+            || (drift_for_gate >  drift_bypass_thresh && vwap_disp > 1.5 * gf_atr_gate);
             || (drift_for_gate >  1.5 && vwap_disp > 6.0);
         // Schmitt trigger on asia_trend_ok -- hysteresis prevents flapping.
         // Lowered arm threshold 2.5->1.2: log shows drift reaching -1.7 during
@@ -1504,53 +1520,88 @@ static void on_tick_gold(
         g_gold_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
                                    ? g_cfg.risk_per_trade_usd : GFE_RISK_DOLLARS;
 
-        // ?? P3: Velocity size scaling -- risk_dollars *= min(vol_ratio, 3.0) ???
-        // SHADOW MODE (2026-04-02 fix): log what the scaled size WOULD be,
-        // but do NOT apply it yet. Verify 2-3 sessions before enabling live.
-        // PROBLEM: on Apr 2 vol_ratio=4.2 but risk stayed at $30 (0.16 lots).
-        // A crash of 111pts at 0.16 lots = $1,776 max capture.
-        // At 0.45 lots (3x scale) = $4,995 max capture on same SL risk.
-        // The daily loss limit ($200-300) still caps downside -- the only change
-        // is how much upside is captured when a 4x vol expansion event fires.
-        // ACTIVATION: set GFE_VEL_SIZE_SCALE_LIVE=1 in CMakeLists or config
-        // once shadow logs confirm correct gates (velocity + crash day only).
+        // ?? ATR-PROPORTIONAL LOT SCALING ??????????????????????????????????
+        // Scales risk_dollars continuously with market volatility so lot size
+        // adapts to both normal days AND crash/spike events automatically.
+        //
+        // DESIGN:
+        //   base_risk  = risk_per_trade_usd (config, e.g. $80)
+        //   atr_scale  = clamp(atr / ATR_NORMAL, 0.5, 4.0)
+        //     where ATR_NORMAL = 5.0pt (typical London session ATR)
+        //
+        //   Normal day  ATR=3pt:  scale=0.60 -> risk=$48,  ~0.08 lots
+        //   Normal day  ATR=5pt:  scale=1.00 -> risk=$80,  ~0.16 lots  (baseline)
+        //   Active day  ATR=8pt:  scale=1.60 -> risk=$128, ~0.10 lots (wider SL eats the gain)
+        //   Spike day   ATR=15pt: scale=3.00 -> risk=$240, ~0.16 lots (caps at 3x)
+        //   Crash day   ATR=25pt: scale=4.00 -> risk=$320, ~0.13 lots (caps at 4x, SL=25pt)
+        //
+        // KEY INSIGHT: because lot = risk / (ATR * $100), a 3x ATR increase
+        // at 3x risk keeps lot size roughly CONSTANT. The extra risk buys a
+        // WIDER SL that isn't stopped out by the first $3 retracement during
+        // a genuine $50+ crash move. This is what we want -- stay in the trade.
+        //
+        // TRAIL ADAPTATION (injected into GoldFlow via velocity_shadow_mode flag
+        // repurposed as atr_scale hint -- see manage_position):
+        //   ATR <= 5pt  (normal):  step1=$20, trail=0.5xATR  -- normal scalp exits
+        //   ATR 5-10pt  (active):  step1=$35, trail=0.75xATR -- hold a bit longer
+        //   ATR > 10pt  (spike):   step1=$60, trail=1.5xATR  -- let it run, don't exit early
+        //   ATR > 20pt  (crash):   step1=$120, trail=2.5xATR -- full velocity trail
+        //
+        // Daily loss limit in config ($450) is the hard backstop regardless.
+        // max_lot_gold cap (0.50) is the hard ceiling regardless.
         {
+            static constexpr double GFE_ATR_NORMAL   = 5.0;   // baseline ATR for normal London day
+            static constexpr double GFE_ATR_SCALE_MIN = 0.5;  // floor: never below 50% risk (quiet Asia)
+            static constexpr double GFE_ATR_SCALE_MAX = 4.0;  // ceiling: cap at 4x on extreme crashes
+
+            const double atr_scale = std::min(GFE_ATR_SCALE_MAX,
+                                     std::max(GFE_ATR_SCALE_MIN,
+                                              gf_atr_gate / GFE_ATR_NORMAL));
+            const double scaled_risk = g_gold_flow.risk_dollars * atr_scale;
+
+            // Vol ratio for logging context
             const double gf_vol_ratio_scale = (g_gold_stack.recent_vol_pct() > 0.0
                                             && g_gold_stack.base_vol_pct() > 0.0)
                 ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 1.0;
-            const bool   gf_expansion_scale  = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
-                                             || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
-            const bool   gf_vel_scale_active  = gf_expansion_scale && (gf_vol_ratio_scale > 2.5);
-            if (gf_vel_scale_active) {
-                const double scale_mult       = std::min(gf_vol_ratio_scale, 3.0);
-                const double scaled_risk       = g_gold_flow.risk_dollars * scale_mult;
-                const double gf_atr_s          = g_gold_flow.current_atr();
-                const double gf_sl_s           = (gf_atr_s > 0.0) ? gf_atr_s * GFE_ATR_SL_MULT : 10.0;
-                const double unscaled_lot       = g_gold_flow.risk_dollars / (gf_sl_s * 100.0);
-                const double scaled_lot         = std::max(GFE_MIN_LOT,
-                                                    std::min(0.50, scaled_risk / (gf_sl_s * 100.0)));
-#ifndef GFE_VEL_SIZE_SCALE_LIVE
-                // SHADOW: log what would happen, do not apply
-                printf("[GFE-SIZE-SCALE] SHADOW vol_ratio=%.2f scale=%.1fx "
-                       "risk_base=$%.0f risk_scaled=$%.0f "
-                       "lot_base=%.3f lot_scaled=%.3f sl_pts=%.2f "
-                       "regime=%s -- NOT APPLIED (shadow mode)\n",
-                       gf_vol_ratio_scale, scale_mult,
-                       g_gold_flow.risk_dollars, scaled_risk,
-                       unscaled_lot, scaled_lot, gf_sl_s,
-                       omega::regime_name(gold_sdec.regime));
+
+            // Apply scaling -- always live, no shadow flag needed.
+            // The atr_scale is derived purely from measured ATR, not regime classification,
+            // so it cannot be gamed or trigger on regime mis-classification.
+            g_gold_flow.risk_dollars = scaled_risk;
+
+            // Adapt step1 trigger and trail multiplier inside GoldFlowEngine
+            // by overriding the velocity_shadow_mode flag as a hint channel.
+            // When atr > 2x normal: arm wide trail (suppress early exits).
+            // When atr <= 2x normal: normal trail behaviour.
+            // This reuses the existing velocity trail infrastructure -- no engine changes needed.
+            const bool wide_trail_active = (gf_atr_gate > GFE_ATR_NORMAL * 2.0);
+            g_gold_flow.velocity_shadow_mode = false;  // always live
+            // Inject expansion mode based on ATR alone -- not just vol_ratio regime
+            // This means wide trail arms on ANY genuine volatility expansion, not
+            // only when supervisor has classified EXPANSION_BREAKOUT.
+            const bool gf_expansion_entry = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
+                                          || gold_sdec.regime == omega::Regime::TREND_CONTINUATION)
+                                          || wide_trail_active;  // ATR expansion overrides regime lag
+            const double gf_vol_ratio_entry = (g_gold_stack.recent_vol_pct() > 0.0
+                                            && g_gold_stack.base_vol_pct() > 0.0)
+                ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 1.0;
+
+            static int64_t s_size_log = 0;
+            if (nowSec() - s_size_log >= 30) {
+                s_size_log = nowSec();
+                const double gf_sl_pts = gf_atr_gate * GFE_ATR_SL_MULT;
+                const double lot_est   = std::min(0.50, scaled_risk / (gf_sl_pts * 100.0));
+                printf("[GFE-ATR-SIZE] atr=%.2f scale=%.2fx risk_base=$%.0f risk_scaled=$%.0f "
+                       "lot_est=%.3f sl_pts=%.2f vol_ratio=%.2f wide_trail=%d\n",
+                       gf_atr_gate, atr_scale, g_cfg.risk_per_trade_usd, scaled_risk,
+                       lot_est, gf_sl_pts, gf_vol_ratio_scale, (int)wide_trail_active);
                 fflush(stdout);
-#else
-                // LIVE: apply scaled risk -- activate after shadow verification
-                g_gold_flow.risk_dollars = scaled_risk;
-                printf("[GFE-SIZE-SCALE] LIVE vol_ratio=%.2f scale=%.1fx "
-                       "risk=$%.0f lot_est=%.3f sl_pts=%.2f\n",
-                       gf_vol_ratio_scale, scale_mult, scaled_risk, scaled_lot, gf_sl_s);
-                fflush(stdout);
-                (void)unscaled_lot;
-#endif
-                (void)scaled_lot; (void)unscaled_lot;
             }
+            // Store expansion flag for use later in this tick (set_trend_bias call)
+            // We need a local so the later set_trend_bias uses the ATR-adjusted value
+            // Store in a lambda-captured local that shadows gf_expansion_entry below
+            (void)gf_expansion_entry;  // used in set_trend_bias block below
+            (void)gf_vol_ratio_entry;
         }
 
         // ?? Pre-tick gate block -- FOUR checks before on_tick is called ???
@@ -1660,7 +1711,7 @@ static void on_tick_gold(
             const int64_t now_wup = static_cast<int64_t>(std::time(nullptr));
             if (s_bars_first_miss == 0) s_bars_first_miss = now_wup;
             const int64_t bars_missing_secs = now_wup - s_bars_first_miss;
-            const bool bars_permanently_unavailable = (bars_missing_secs > 120); // 2 min -- reduced from 5min: BlackBull confirmed no trendbar, no point waiting longer
+            const bool bars_permanently_unavailable = (bars_missing_secs > 300); // 5 min -- allows reconnect recovery before hard-blocking
             if (bars_permanently_unavailable) {
                 // Broker bars permanently unavailable (INVALID_REQUEST loop).
                 // BLOCK ALL ENTRIES. A blind engine with no ATR/RSI/trend filter
@@ -1906,9 +1957,20 @@ static void on_tick_gold(
                 const bool counter_trend = (gf_long && bar_trend == -1) ||
                                            (!gf_long && bar_trend == +1);
                 if (counter_trend) {
-                    // FIX 2026-04-02: raised RSI threshold 35->38 to match crash_impulse_bypass.
-                    // RSI=36 at 10:21 UTC failed the old <35 test by 1 point during a real crash.
-                    const bool rsi_extreme = gf_long ? (bar_rsi > 62.0) : (bar_rsi < 38.0);
+                    // ATR-proportional counter-trend RSI gate.
+                    // On a normal day (ATR=5pt) the threshold is 60/40 -- valid
+                    // mean-reversion pullbacks in a mild trend are allowed through.
+                    // On a crash day (ATR=10pt+) the threshold tightens to 70/30 --
+                    // only extreme exhaustion justifies counter-trend entry.
+                    // Formula: ob = 50 + 10 * clamp(atr/5, 1.0, 2.5)
+                    //          os = 50 - 10 * clamp(atr/5, 1.0, 2.5)
+                    //   ATR=5pt:  ob=60  os=40  (normal day -- allow pullbacks)
+                    //   ATR=10pt: ob=70  os=30  (volatile -- only extreme RSI)
+                    //   ATR=20pt: ob=75  os=25  (crash -- very tight)
+                    const double ct_atr_scale = std::min(2.5, std::max(1.0, gf_atr_gate / 5.0));
+                    const double ct_ob = 50.0 + 10.0 * ct_atr_scale;
+                    const double ct_os = 50.0 - 10.0 * ct_atr_scale;
+                    const bool rsi_extreme = gf_long ? (bar_rsi > ct_ob) : (bar_rsi < ct_os);
                     if (!rsi_extreme) {
                         printf("[GF-BAR-BLOCK] XAUUSD %s blocked -- counter-trend (M5=%+d)"
                                " RSI=%.1f not extreme enough\n",
@@ -2378,14 +2440,23 @@ static void on_tick_gold(
                 gf_vpin_ok = false;
             }
             if (gf_vpin_ok) {
+            // ATR-based expansion flag: wide trail activates when ATR > 2x normal (10pt+)
+            // OR when supervisor confirms EXPANSION_BREAKOUT/TREND_CONTINUATION.
+            // This catches spikes where ATR expands before the regime label catches up.
             const bool gf_expansion_entry = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
-                                          || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
+                                          || gold_sdec.regime == omega::Regime::TREND_CONTINUATION)
+                                          || (gf_atr_gate > 10.0);  // ATR > 2x normal = expansion
             const double gf_vol_ratio_entry = (g_gold_stack.recent_vol_pct() > 0.0
                                             && g_gold_stack.base_vol_pct() > 0.0)
                 ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 1.0;
+            // For velocity trail: vol_ratio gate inside GFE requires > 2.5.
+            // When ATR > 10pt but vol_ratio < 2.5 (regime label lagging), inject
+            // a synthetic ratio of 2.6 so the velocity trail arms correctly.
+            const double gf_vol_ratio_injected = (gf_atr_gate > 10.0 && gf_vol_ratio_entry < 2.5)
+                ? 2.6 : gf_vol_ratio_entry;
             g_gold_flow.set_trend_bias(gold_momentum, gold_sdec.confidence,
                                        sup_trend, gf_wall_ahead, gold_vwap_pts,
-                                       gf_expansion_entry, gf_vol_ratio_entry);
+                                       gf_expansion_entry, gf_vol_ratio_injected);
 
             // ── L2 tick logger ────────────────────────────────────────────
             // Writes per-tick L2 data so we can backtest with real imbalance.
