@@ -1,24 +1,24 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-05 06:31:56 UTC
+Generated : 2026-04-05 06:46:24 UTC
 ============================================================
-[ATR-DAT] atr=6.183608 atr_ewm=6.183608 warmed=1 last_mid=4677.14000 saved_ts=1775370716
+[ATR-DAT] atr=6.183608 atr_ewm=6.183608 warmed=1 last_mid=4677.14000 saved_ts=1775371573
 [ATR-OK]   atr=6.183608 healthy
 
-[DIAG]        06:31:56 [OMEGA-DIAG] PnL=0.00 T=0 WR=0.00% RTTp95=4.46ms cap=120.00ms lat_ok=1 session=ACTIVE
-[GOLD-DIAG]   06:31:56 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
-[BRK-DIAG]    06:31:56 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
-[SUPERVISOR]  06:30:51 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.69 bracket=0.78 breakout=0.00 top_score=0.78 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
-[VIX]         06:31:56 [TICK] VIX.F 24.74/25.10
-[GOLD-PRICE]  06:31:56 [TICK] XAUUSD 4677.03/4677.25
+[DIAG]        06:46:13 [OMEGA-DIAG] PnL=0.00 T=0 WR=0.00% RTTp95=2.78ms cap=120.00ms lat_ok=1 session=ACTIVE
+[GOLD-DIAG]   06:46:13 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+[BRK-DIAG]    06:46:13 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=0 asia_ok=1 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=1
+[SUPERVISOR]  06:45:13 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.69 bracket=0.78 breakout=0.00 top_score=0.78 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+[VIX]         06:46:13 [TICK] VIX.F 24.74/25.10
+[GOLD-PRICE]  06:46:13 [TICK] XAUUSD 4677.03/4677.25
 
 [GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
 
 [STARTUP-REPORT-BEGIN]
   OMEGA STARTUP REPORT
-  Generated : 2026-04-05 06:31:38 UTC
+  Generated : 2026-04-05 06:46:24 UTC
   Log file  : C:\Omega\logs\latest.log
-  Collected : 0 lines over 45s
-  Result    : PASS=0  FAIL=0  WARN=3  INFO=14
+  Collected : 123 lines over 45s
+  Result    : PASS=4  FAIL=1  WARN=2  INFO=10
   ========================================================================
   [INFO]  ATR Seed               No GFE-SEED line seen
                                        Engine may have loaded ATR from disk (normal) -- see ATR State check.
@@ -26,15 +26,16 @@ Generated : 2026-04-05 06:31:56 UTC
                                        Could not confirm ATR initialisation.
   [INFO]  ATR Running Value      No GF-GATE-BLOCK lines (no gate blocks fired)
                                        Good -- or no entry attempts yet.
-  [INFO]  vol_range              No GOLD-DIAG line yet
-                                       Engine may not have emitted diagnostics -- wait for first GOLD-DIAG log.
-  [INFO]  Dead Zone              No GOLD-BRK-DIAG lines yet
-  [WARN]  VIX Level              No VIX.F tick seen in first 45s
-                                       ATR seed used default 8.0. Will update when VIX.F arrives.
-  [INFO]  Session/Entry State    No BRK-DIAG lines yet
+  [FAIL]  vol_range              vol_range=0.00
+                                       Seed fix NOT working -- VolatilityFilter still using mid=3000 fallback.
+  [PASS]  Dead Zone              in_dead_zone=0 on all 2 BRK-DIAG lines
+  [PASS]  VIX Level              VIX=24.74 (expected seed_atr ~12.0)
+                                       06:46:13 [TICK] VIX.F 24.74/25.10
+  [PASS]  Session/Entry State    slot=1 (London open (07-09 UTC)) can_enter=1 can_arm=1 impulse_block=0
   [WARN]  L2 / cTrader Feed      No L2-STATUS line in first 45s
                                        Feed may be slow to connect.
-  [INFO]  Latency                No OMEGA-DIAG yet
+  [PASS]  Latency                RTTp95=2.78ms lat_ok=1
+                                       06:46:13 [OMEGA-DIAG] PnL=0.00 T=0 WR=0.00% RTTp95=2.78ms cap=120.00ms lat_ok=1 session=ACTIVE
   [INFO]  Gate Blocks            No gate blocks in first 45s
                                        No entry attempts or no blocks (good).
   [INFO]  First Signal           No signal in first 45s
@@ -48,6 +49,6 @@ Generated : 2026-04-05 06:31:56 UTC
   [INFO]  Bar Auto-Save          No BAR-SAVE yet (fires every 10min)
                                        Normal if startup < 10min ago.
   ========================================================================
-  RESULT: PASS=0  FAIL=0  WARN=3  INFO=14
+  RESULT: PASS=4  FAIL=1  WARN=2  INFO=10
 [STARTUP-REPORT-END]
 END-OF-SNAPSHOT

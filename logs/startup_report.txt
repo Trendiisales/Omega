@@ -1,8 +1,8 @@
 ﻿OMEGA STARTUP REPORT
-Generated : 2026-04-05 06:31:38 UTC
+Generated : 2026-04-05 06:46:24 UTC
 Log file  : C:\Omega\logs\latest.log
-Collected : 0 lines over 45s
-Result    : PASS=0  FAIL=0  WARN=3  INFO=14
+Collected : 123 lines over 45s
+Result    : PASS=4  FAIL=1  WARN=2  INFO=10
 ========================================================================
 [INFO]  ATR Seed               No GFE-SEED line seen
                                      Engine may have loaded ATR from disk (normal) -- see ATR State check.
@@ -10,15 +10,16 @@ Result    : PASS=0  FAIL=0  WARN=3  INFO=14
                                      Could not confirm ATR initialisation.
 [INFO]  ATR Running Value      No GF-GATE-BLOCK lines (no gate blocks fired)
                                      Good -- or no entry attempts yet.
-[INFO]  vol_range              No GOLD-DIAG line yet
-                                     Engine may not have emitted diagnostics -- wait for first GOLD-DIAG log.
-[INFO]  Dead Zone              No GOLD-BRK-DIAG lines yet
-[WARN]  VIX Level              No VIX.F tick seen in first 45s
-                                     ATR seed used default 8.0. Will update when VIX.F arrives.
-[INFO]  Session/Entry State    No BRK-DIAG lines yet
+[FAIL]  vol_range              vol_range=0.00
+                                     Seed fix NOT working -- VolatilityFilter still using mid=3000 fallback.
+[PASS]  Dead Zone              in_dead_zone=0 on all 2 BRK-DIAG lines
+[PASS]  VIX Level              VIX=24.74 (expected seed_atr ~12.0)
+                                     06:46:13 [TICK] VIX.F 24.74/25.10
+[PASS]  Session/Entry State    slot=1 (London open (07-09 UTC)) can_enter=1 can_arm=1 impulse_block=0
 [WARN]  L2 / cTrader Feed      No L2-STATUS line in first 45s
                                      Feed may be slow to connect.
-[INFO]  Latency                No OMEGA-DIAG yet
+[PASS]  Latency                RTTp95=2.78ms lat_ok=1
+                                     06:46:13 [OMEGA-DIAG] PnL=0.00 T=0 WR=0.00% RTTp95=2.78ms cap=120.00ms lat_ok=1 session=ACTIVE
 [INFO]  Gate Blocks            No gate blocks in first 45s
                                      No entry attempts or no blocks (good).
 [INFO]  First Signal           No signal in first 45s
@@ -32,4 +33,4 @@ Result    : PASS=0  FAIL=0  WARN=3  INFO=14
 [INFO]  Bar Auto-Save          No BAR-SAVE yet (fires every 10min)
                                      Normal if startup < 10min ago.
 ========================================================================
-RESULT: PASS=0  FAIL=0  WARN=3  INFO=14
+RESULT: PASS=4  FAIL=1  WARN=2  INFO=10
