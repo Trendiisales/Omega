@@ -79,9 +79,19 @@ if (Test-Path $BuildExe) {
     }
 }
 
-# --- THE ONE TRUE HASH -- read directly from git, always current -------------
+# --- THE ONE TRUE HASH -- last CODE commit (skip state/log commits) ----------
 $ErrorActionPreference = "Continue"
-$gitHash = (git -C $OmegaDir rev-parse --short HEAD 2>$null)
+# State commits are auto-pushed with message "state: log+snapshot+atr HASH DATE"
+# Walk back through history to find the last real code commit
+$gitHash = $null
+$logLines = (git -C $OmegaDir log --oneline -20 2>$null)
+foreach ($line in $logLines) {
+    if ($line -notmatch "^[0-9a-f]+ state:") {
+        $gitHash = ($line -split " ")[0]
+        break
+    }
+}
+if (-not $gitHash) { $gitHash = (git -C $OmegaDir rev-parse --short HEAD 2>$null) }
 if (-not $gitHash) { $gitHash = "unknown" }
 
 # Update stamp file to match reality
