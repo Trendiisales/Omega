@@ -55,28 +55,13 @@ Write-Host "=======================================================" -Foreground
 Write-Host ""
 
 # --- Sync build output to launch location ------------------------------------
-# cmake always builds to build\Release\Omega.exe
-# We always launch from C:\Omega\Omega.exe
-# Sync on every restart so they are ALWAYS the same binary
-if (Test-Path $BuildExe) {
-    $buildInfo = (Get-Item $BuildExe).LastWriteTime
-    $launchInfo = if (Test-Path $OmegaExe) { (Get-Item $OmegaExe).LastWriteTime } else { [DateTime]::MinValue }
-    if ($buildInfo -gt $launchInfo) {
-        Copy-Item $BuildExe $OmegaExe -Force
-        Write-Host "  [SYNC] Updated Omega.exe from build\Release\Omega.exe" -ForegroundColor Green
-    } else {
-        Write-Host "  [SYNC] Omega.exe is current (build output not newer)" -ForegroundColor DarkGray
-    }
-} elseif (-not (Test-Path $OmegaExe)) {
-    Write-Host "  [ERROR] No binary found at $BuildExe or $OmegaExe" -ForegroundColor Red
-    Write-Host "          Run: cmake --build build --config Release" -ForegroundColor Yellow
-    exit 1
-}
+# Done AFTER stopping Omega so the file is not locked.
+# See sync block below (after [1] Stop).
 
 # --- Verify exe exists -------------------------------------------------------
-if (-not (Test-Path $OmegaExe)) {
-    Write-Host "  [ERROR] Omega.exe not found at $OmegaExe" -ForegroundColor Red
-    Write-Host "          Run DEPLOY_OMEGA.ps1 first to build the binary." -ForegroundColor Yellow
+if (-not (Test-Path $OmegaExe) -and -not (Test-Path $BuildExe)) {
+    Write-Host "  [ERROR] No binary found at $BuildExe or $OmegaExe" -ForegroundColor Red
+    Write-Host "          Run: cmake --build build --config Release" -ForegroundColor Yellow
     exit 1
 }
 
@@ -101,9 +86,14 @@ Write-Host "  Mode    : $mode" -ForegroundColor $modeColor
 Write-Host ""
 $ErrorActionPreference = "Stop"
 
-# --- [1] Kill existing Omega -------------------------------------------------
+# --- [1] Stop Omega (service or process) -------------------------------------
 Write-Host "[1/4] Stopping Omega..." -ForegroundColor Yellow
 $ErrorActionPreference = "Continue"
+$svcCheck = Get-Service -Name "OmegaHFT" -ErrorAction SilentlyContinue
+if ($svcCheck -and $svcCheck.Status -eq "Running") {
+    Stop-Service "OmegaHFT" -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3
+}
 taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
 Start-Sleep -Seconds 1
 Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -117,6 +107,18 @@ if ($still) {
 $ErrorActionPreference = "Stop"
 Write-Host "      [OK] Stopped" -ForegroundColor Green
 Write-Host ""
+
+# --- Sync build output NOW (file is no longer locked) ------------------------
+if (Test-Path $BuildExe) {
+    $buildInfo  = (Get-Item $BuildExe).LastWriteTime
+    $launchInfo = if (Test-Path $OmegaExe) { (Get-Item $OmegaExe).LastWriteTime } else { [DateTime]::MinValue }
+    if ($buildInfo -gt $launchInfo) {
+        Copy-Item $BuildExe $OmegaExe -Force
+        Write-Host "  [SYNC] Updated Omega.exe from build\Release\Omega.exe" -ForegroundColor Green
+    } else {
+        Write-Host "  [SYNC] Omega.exe is current (build output not newer)" -ForegroundColor DarkGray
+    }
+}
 
 # --- [2] Delete poisoned bar_failed file (safe to always do) -----------------
 Write-Host "[2/4] Cleaning state files..." -ForegroundColor Yellow
