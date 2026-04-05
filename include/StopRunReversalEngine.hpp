@@ -39,12 +39,12 @@ namespace omega {
 class StopRunReversalEngine {
 public:
     // ── Parameters (calibrated from MFE/MAE scan) ────────────────────────
-    double TP_PTS          = 1.20;   // MFEp50=1.45 * 0.83 -- conservative capture
-    double SL_PTS          = 0.60;   // MAEp50=1.41 * 0.43 -- tight stop
-    double SWEEP_BUFFER    = 0.30;   // pts above/below session high/low to confirm sweep
-    double REJECT_DIST     = 0.50;   // pts of rejection needed to confirm reversal
-    int    REJECT_TICKS    = 20;     // ticks within which rejection must occur
-    int    SESSION_LOOKBACK= 500;    // ticks to define "session" high/low
+    double TP_PTS          = 1.20;   // MFEp50=1.45 * 0.83
+    double SL_PTS          = 0.80;   // MAEp50=1.41 -- need room, was 0.60
+    double SWEEP_BUFFER    = 0.20;   // pts above/below prior session hi/lo
+    double REJECT_DIST     = 0.30;   // pts of rejection to confirm reversal
+    int    REJECT_TICKS    = 30;     // ticks to confirm rejection
+    int    SESSION_LOOKBACK= 500;    // ticks for session range
     int64_t TIMEOUT_MS     = 120000; // 2 min max hold
     int64_t COOLDOWN_MS    = 45000;  // 45s between trades
     int    WARMUP_TICKS    = 200;    // minimum ticks before arming
@@ -123,9 +123,17 @@ public:
         if (spread > 1.0) return;
 
         // Compute session high/low over last SESSION_LOOKBACK ticks
+        // CRITICAL: use ticks BEFORE current (k starts at 1, not 0)
+        // so current price can legitimately exceed the prior session range.
+        // Also: session hi/lo tracks the ESTABLISHED range from earlier ticks.
+        // If we included current tick, mid could never exceed session_hi.
         const int lookback = std::min(m_tick_count - 1, SESSION_LOOKBACK);
-        double hi = mid, lo = mid;
-        for (int k = 1; k <= lookback; k++) {
+        if (lookback < 50) return; // need enough history for meaningful range
+
+        // Start from tick before current (index 1) to exclude current price
+        double hi = m_prices[(m_buf_idx - 2 + BUF*10) % BUF];
+        double lo = hi;
+        for (int k = 2; k <= lookback; k++) {
             double p = m_prices[(m_buf_idx - 1 - k + BUF*10) % BUF];
             if (p > hi) hi = p;
             if (p < lo) lo = p;
