@@ -39,17 +39,21 @@ namespace omega {
 class StopRunReversalEngine {
 public:
     // ── Parameters (calibrated from MFE/MAE scan) ────────────────────────
-    double TP_PTS          = 1.20;   // MFEp50=1.45 * 0.83
-    double SL_PTS          = 0.80;   // MAEp50=1.41 -- need room, was 0.60
-    double SWEEP_BUFFER    = 0.20;   // pts above/below prior session hi/lo
-    double REJECT_DIST     = 0.30;   // pts of rejection to confirm reversal
+    double TP_PTS          = 1.20;   // MFEp50=1.45pt from scan
+    double SL_PTS          = 0.80;   // MAEp50=1.41pt -- needs room
+    // Sweep/reject buffers are ATR-proportional (computed in on_tick)
+    double SWEEP_ATR_MULT  = 0.15;   // sweep = max(0.40, ATR*0.15)
+    double REJECT_ATR_MULT = 0.08;   // reject = max(0.25, ATR*0.08)
     int    REJECT_TICKS    = 30;     // ticks to confirm rejection
-    int    SESSION_LOOKBACK= 500;    // ticks for session range
+    int    SESSION_LOOKBACK= 5000;   // 5000t@10t/s = ~8min real range
     int64_t TIMEOUT_MS     = 120000; // 2 min max hold
-    int64_t COOLDOWN_MS    = 45000;  // 45s between trades
-    int    WARMUP_TICKS    = 200;    // minimum ticks before arming
-    double LOT_SIZE        = 0.10;   // fixed lot -- will be risk-scaled by caller
+    int64_t COOLDOWN_MS    = 45000;  // 45s cooldown
+    int    WARMUP_TICKS    = 1000;   // need real session range first
+    double LOT_SIZE        = 0.16;   // ATR-normal sizing
     bool   enabled         = true;
+    // Internal computed per tick (not user-settable)
+    double SWEEP_BUFFER    = 0.40;   // updated each tick
+    double REJECT_DIST     = 0.25;   // updated each tick
 
     // ── Callbacks ────────────────────────────────────────────────────────
     using TradeCallback = std::function<void(const TradeRecord&)>;
@@ -114,13 +118,25 @@ public:
 
         // Session gate: only OVERLAP (3) and NY_OPEN (4)
         if (session_slot != 3 && session_slot != 4) {
-            // Reset sweep state outside session
             m_sweep = SweepState::NONE;
             return;
         }
 
-        // Spread gate: skip if spread > 1.0pt (volatile/illiquid)
-        if (spread > 1.0) return;
+        // Spread gate
+        if (spread > 1.5) return;
+
+        // ATR: mean abs 1-tick move over last 100 ticks (proportional thresholds)
+        {
+            const int atr_look = std::min(m_tick_count - 1, 100);
+            double atr = 0.0;
+            for (int k = 1; k <= atr_look; k++)
+                atr += std::fabs(m_prices[(m_buf_idx - k + BUF*10) % BUF]
+                               - m_prices[(m_buf_idx - k - 1 + BUF*10) % BUF]);
+            atr = (atr_look > 0) ? atr / atr_look : 0.01;
+            // Update ATR-proportional thresholds
+            SWEEP_BUFFER = std::max(0.40, atr * SWEEP_ATR_MULT);
+            REJECT_DIST  = std::max(0.25, atr * REJECT_ATR_MULT);
+        }
 
         // Compute session high/low over last SESSION_LOOKBACK ticks
         // CRITICAL: use ticks BEFORE current (k starts at 1, not 0)
