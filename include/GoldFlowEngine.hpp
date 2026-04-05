@@ -355,7 +355,23 @@ struct GoldFlowEngine {
         // Spread gate -- session-aware: tighter during Asia/dead zone
         if (spread > eff_max_spread) return;
 
-        // ?? Asia/dead-zone ATR quality gate ??????????????????????????????????
+        // ?? SESSION GATE -- only enter in OVERLAP and NY_OPEN ???????????????????
+        // MFE/MAE scan of 134M ticks (2023-2025) showed:
+        //   OVERLAP (slot 3+4, 12:00-17:00 UTC): positive expectancy +0.057 to +0.081
+        //   LON_OPEN (slot 1):   PERSIST_BULL -0.044, PERSIST_BEAR -0.085 (LOSING)
+        //   LON_CORE (slot 2):   PERSIST_BULL -0.007 (barely break-even)
+        //   NY_LATE (slot 5):    -0.086 to -0.143 (worst session)
+        //   ASIA (slot 6):       +0.034 (marginal, high spread cost)
+        //
+        // Action: only allow new entries in slots 3 (Overlap 12-14 UTC) and
+        //         4 (NY open 14-17 UTC). Block all others.
+        // Manage open positions in any session (no gate on LIVE phase -- see above).
+        // Asia kept for now via is_low_quality_session path but new entries blocked.
+        {
+            const bool overlap_or_ny = (m_last_session_slot == 3 ||
+                                        m_last_session_slot == 4);
+            if (!overlap_or_ny) return;
+        }
         // On low-quality tape, reject if ATR is too low (noise-dominated) or
         // ATR-to-spread ratio is too small (SL within spread fluctuation range).
         if (is_low_quality_session) {
