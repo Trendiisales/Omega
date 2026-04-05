@@ -1252,11 +1252,11 @@ static void on_tick_gold(
     };
 
     // CRITICAL: manage_position() must run on every XAUUSD tick to check SL/trail.
-    // Previously this was inside the entry guard (!has_open_position()) which meant
-    // once a position was open, manage_position was NEVER called ? SL never checked
-    // ? position ran unmanaged indefinitely. Fix: run on_tick unconditionally when
-    // position is open, before the entry guard blocks further processing.
-    if (g_gold_flow.has_open_position()) {
+    // GoldFlow DISABLED 2026-04-05: backtest proved no structural edge.
+    // Avg winner $15 vs avg loser $74, payoff 0.20:1. 2yr MFE scan showed
+    // microstructure signal only -- not the 1-3pt structural moves needed to
+    // beat 0.35pt cost. Replace: OverlapMomentumEngine + OverlapFadeEngine.
+    if (g_cfg.goldflow_enabled && g_gold_flow.has_open_position()) {
         // Inject trend bias (wall detection for trail tightening)
         const bool sup_trend_mgmt = (gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
         const bool gf_wall_mgmt   = g_gold_flow.pos.is_long
@@ -2353,7 +2353,9 @@ static void on_tick_gold(
         // Entry only: on_tick for new entries when no position is open.
         // Position management (SL/trail) is handled in the unconditional
         // manage block above this entry guard.
-        if (gf_tick_ok) {
+        // DISABLED 2026-04-05: goldflow_enabled=false in config.
+        // 2yr backtest + MFE scan proved no structural edge.
+        if (g_cfg.goldflow_enabled && gf_tick_ok) {
             // ?? Post-close reversal drift reset ???????????????????????????
             // Problem: ewm_slow (?=0.005) has a 200-tick half-life. After a
             // 60pt DROP it reaches drift?-40. When price then SURGES 80pts,
