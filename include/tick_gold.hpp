@@ -721,7 +721,6 @@ static void on_tick_gold(
             || (rsi_for_gate > rsi_crash_hi)
             || (drift_for_gate < -drift_bypass_thresh && vwap_disp > 1.5 * gf_atr_gate)
             || (drift_for_gate >  drift_bypass_thresh && vwap_disp > 1.5 * gf_atr_gate);
-            || (drift_for_gate >  1.5 && vwap_disp > 6.0);
         // Schmitt trigger on asia_trend_ok -- hysteresis prevents flapping.
         // Lowered arm threshold 2.5->1.2: log shows drift reaching -1.7 during
         // a 125pt crash. Old 2.5 threshold never fired. 1.2 fires on real moves.
