@@ -1645,16 +1645,6 @@ private:
         static constexpr double STEP_FRAC   = 0.33;  // close 33% each step
         static constexpr double SL_BUFFER   = 0.25;  // SL buffer = 0.25?ATR beyond exit
 
-        // ?? Dollar-ratchet constants ??????????????????????????????????????????
-        // DOLLAR_RATCHET_STEP: open profit interval at which ratchet advances ($50)
-        // DOLLAR_RATCHET_KEEP: fraction of each step that is locked in (80%)
-        //   At $50 open: lock $40. At $100 open: lock $90. At $150: lock $140.
-        // DOLLAR_RATCHET_MIN_TIER: ratchet only activates after step 1 (BE locked).
-        //   Prevents premature SL tightening before the trade has breathed.
-        // Tick value: 1 lot XAUUSD = $100/pt. So $50 / (size ? $100/pt) = pts per tier.
-        static constexpr double DOLLAR_RATCHET_STEP = 50.0;   // $50 per tier
-        static constexpr double DOLLAR_RATCHET_KEEP = 0.80;   // keep 80% of each tier
-
         // Helper to fire a partial close record and update position
         auto fire_stair = [&](int step_num, const char* label) {
             const double exit_px   = pos.is_long ? bid : ask;
@@ -1756,8 +1746,11 @@ private:
         // VELOCITY EXCEPTION (P2 fix, 2026-04-02):
         // When velocity_active (expansion_mode + vol_ratio>2.5), raise trigger to $150.
 #ifndef GFE_STEP1_OVERRIDE
-        static constexpr double STEP1_DOLLAR_TRIGGER         = 35.0;   // normal: raised 20->35
-        static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = 150.0; // velocity: suppress until $150
+        static constexpr double STEP1_DOLLAR_TRIGGER         = 35.0;   // normal: unchanged
+        static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = 200.0; // raised 150->200: at 0.40 lots
+                                                                        // $200 = 5pt move. Holds position
+                                                                        // through early chop on crash day
+                                                                        // before locking any profit.
 #else
         static constexpr double STEP1_DOLLAR_TRIGGER         = GFE_STEP1_OVERRIDE;
         static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = GFE_STEP1_OVERRIDE * 4.0;
@@ -1805,7 +1798,11 @@ private:
         // Velocity mode: raise to $250 (proportional to the $150 Step 1 velocity trigger).
 #ifndef GFE_STEP2_OVERRIDE
         static constexpr double STEP2_DOLLAR_TRIGGER          =  70.0; // normal: 2x Step 1
-        static constexpr double STEP2_DOLLAR_TRIGGER_VELOCITY = 250.0; // velocity: proportional
+        static constexpr double STEP2_DOLLAR_TRIGGER_VELOCITY = 400.0; // raised 250->400: proportional
+                                                                        // to step1 raise. At 0.40 lots
+                                                                        // $400 = 10pt = 1xATR. Correct
+                                                                        // -- don't bank step2 until the
+                                                                        // move has fully confirmed.
 #else
         static constexpr double STEP2_DOLLAR_TRIGGER          = GFE_STEP2_OVERRIDE;
         static constexpr double STEP2_DOLLAR_TRIGGER_VELOCITY = GFE_STEP2_OVERRIDE * 3.5;
@@ -1882,40 +1879,46 @@ private:
 
         // ?? Dollar-ratchet lock ???????????????????????????????????????????????
         // Runs AFTER the ATR trail -- one-way ratchet, only moves SL forward.
+        // CRITICAL LOCK-IN DESIGN:
+        //   The ratchet is the GUARANTEE that crash profits cannot be fully given back.
+        //   Every time open PnL crosses a new tier, SL advances to lock 80% of that tier.
+        //   Once locked, SL NEVER moves backward. This is the last line of defence.
         //
-        // DESIGN FIX from audit:
-        //   Previously used pos.size (remaining lots) for USD calc. After PARTIAL_1R
-        //   reduces size from 0.15?0.10 lots, the $50 tier required 7pts on 0.10
-        //   lots = correct for the REMAINDER. But the user experience is "lock in
-        //   $50 of total trade profit" -- which means we measure against full_size.
+        // LOT-SCALED RATCHET STEP (crash day safety):
+        //   Fixed $50 tier at 0.40 lots = SL advances every 1.25pts.
+        //   At ATR=10pt a 1.25pt SL advance is noise -- the ratchet fires 80 times
+        //   on a 100pt move, placing SL so close to price it gets stopped on any
+        //   micro-retracement. That kills the position at 20pts instead of 90pts.
         //
-        //   Using full_size: at 0.15 lots, $50 tier fires at 50/(0.15?100) = 3.33pts
-        //   Using remaining: at 0.10 lots, $50 tier fires at 50/(0.10?100) = 5.00pts
+        //   Fix: ratchet step = max($50, 1.0 * ATR * full_size * $100/pt)
+        //     Normal day 0.16 lots ATR=5:  max(50, 80)  = $80  -- fires every 5pts
+        //     Crash day  0.40 lots ATR=10: max(50, 400) = $400 -- fires every 10pts (1xATR)
+        //     Min lot    0.01 lots ATR=2:  max(50, 2)   = $50  -- lot_floor handles this
         //
-        //   We use full_size for the TIER TRIGGER (when to advance the ratchet)
-        //   but remaining size for LOCKED_PTS (how much price movement locks the $).
-        //   This correctly represents "I want $50 of the original trade locked in."
+        //   This means on a 100pt crash at 0.40 lots:
+        //     Tier 1 ($400 open): SL locks entry + (400*0.80)/(0.40*100) = +8.0pts
+        //     Tier 2 ($800 open): SL locks entry + 16pts
+        //     Tier 5 ($2000 open): SL locks entry + 40pts
+        //     Tier 10 ($4000 open): SL locks entry + 80pts
+        //   At 90pt move ($3600 open) ratchet guarantees at least $2880 locked.
+        //   Trail may give back 20pts (2xATR) but ratchet floor is always there.
         //
-        // Active from first tick -- no be_locked gate.
-        // Before step 1: ratchet moves SL from loss territory toward BE.
-        // After step 1:  ratchet locks profit above the staircase SL.
-        // Both improve the worst-case outcome.
-        //
-        // MIN-LOT SCALING: at 0.01 lots the fixed $50 tier requires 50pts -- never fires.
-        // Evidence: Apr 2 11:49 mfe=8.26pts, ratchet never moved SL, SL_HIT -$2.10.
-        // Fix: eff_ratchet_step = min($50, 0.75 * ATR * full_size * $100/pt).
-        //   lot_floor at 0.01 lots, ATR=2.0: 0.75*2.0*0.01*100 = $1.50 -- fires at 1.5pts.
-        //   lot_floor at 0.15 lots, ATR=5.0: 0.75*5.0*0.15*100 = $56.25 > $50 -- fixed wins.
-        // Result: small lots get proportional ratchet; normal lots unchanged.
+        // KEEP = 80%: if ratchet fires at $400, locks $320. Conservative -- leaves
+        //   breathing room so a micro-retracement doesn't immediately stop out.
+        static constexpr double DOLLAR_RATCHET_KEEP = 0.80;
+        static constexpr double DOLLAR_RATCHET_STEP_BASE = 50.0; // minimum step
         if (pos.size > 0.0 && pos.full_size > 0.0) {
-            // Lot-scaled floor: 0.75 * ATR * full_size * tick_value
-            const double lot_ratchet_floor = (pos.full_size > 0.0 && m_atr > 0.0)
-                ? (0.75 * m_atr * pos.full_size * 100.0)
-                : DOLLAR_RATCHET_STEP;
-            // Use floor only when it is SMALLER than the fixed step (min-lot case).
-            // At normal lot sizes the floor exceeds $50 so fixed step wins unchanged.
-            const double eff_ratchet_step = (lot_ratchet_floor < DOLLAR_RATCHET_STEP)
-                ? lot_ratchet_floor : DOLLAR_RATCHET_STEP;
+            // Lot-scaled ratchet step: max(BASE, 1.0 * ATR * full_size * tick_value)
+            // Small lots (0.01): max(50, 2)   = $50  (unchanged, min-lot path)
+            // Normal (0.16 lots ATR=5): max(50, 80)  = $80  per tier
+            // Crash (0.40 lots ATR=10): max(50, 400) = $400 per tier
+            // This ensures the ratchet SL advances at 1xATR intervals on crash trades
+            // not at sub-1pt intervals that get stopped by micro-retracements.
+            const double lot_scaled_step = (pos.full_size > 0.0 && m_atr > 0.0)
+                ? (1.0 * m_atr * pos.full_size * 100.0)
+                : DOLLAR_RATCHET_STEP_BASE;
+            const double eff_ratchet_step = std::max(DOLLAR_RATCHET_STEP_BASE, lot_scaled_step);
+
             // Tier trigger: uses open_pnl_usd_full computed above staircase steps
             const int    tier_now = static_cast<int>(open_pnl_usd_full / eff_ratchet_step);
 

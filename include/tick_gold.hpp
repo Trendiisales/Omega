@@ -1551,7 +1551,10 @@ static void on_tick_gold(
         {
             static constexpr double GFE_ATR_NORMAL   = 5.0;   // baseline ATR for normal London day
             static constexpr double GFE_ATR_SCALE_MIN = 0.5;  // floor: never below 50% risk (quiet Asia)
-            static constexpr double GFE_ATR_SCALE_MAX = 4.0;  // ceiling: cap at 4x on extreme crashes
+            static constexpr double GFE_ATR_SCALE_MAX = 6.0;  // raised 4x->6x: at ATR=10pt crash
+                                                               // risk=$80*6=480, lot=480/(10*100)=0.48
+                                                               // matches $11k simulation target.
+                                                               // max_lot_gold=0.50 is the hard ceiling.
 
             const double atr_scale = std::min(GFE_ATR_SCALE_MAX,
                                      std::max(GFE_ATR_SCALE_MIN,
