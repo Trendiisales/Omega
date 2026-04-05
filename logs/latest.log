@@ -2557,3 +2557,255 @@
 00:58:06 [TICK] DX.F 99.93/100.03
 00:58:06 [TICK] US500.F 6603.22/6604.03
 00:58:06 [TICK] USTEC.F 24128.44/24132.90
+00:58:07 [OMEGA-TRADE] SSL error 6 -- reconnecting
+00:58:07 [OMEGA-TRADE] Logout sent
+00:58:08 [OMEGA-TRADE] Disconnected -- reconnecting
+00:58:11 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+00:58:11 [OMEGA-TRADE] Logon sent
+00:58:11 [OMEGA-TRADE] LOGON ACCEPTED
+00:58:11 [OMEGA-TRADE] SecurityListRequest sent req_id=omega-sec-1775350691
+00:58:11 [OMEGA-SECURITY] UNMATCHED: 'UK100.F' id=4461
+00:58:11 [OMEGA-SECURITY] UNMATCHED: 'UKBRENT.F' id=2634
+00:58:11 [OMEGA-SECURITY] UNMATCHED: 'ESTC' id=3229
+00:58:11 [OMEGA-TRADE] SecurityList received req_id=omega-sec-1775350691 entries=1551
+00:58:34 [CTRADER-STATUS] events_total=0 this_min=0 symbols=19
+00:58:34 [CTRADER-EVTS] XAUUSD=0 <-- NO EVENTS -- L2 unavailable
+00:58:34 [CTRADER-EVTS] USOIL.F=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] XAUUSD=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] XAGUSD=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] EURUSD=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] US500.F=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] ESTX50=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] NAS100=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] NGAS.F=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] DJ30.F=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] GBPUSD=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] USDJPY=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] BRENT=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] GER40=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] AUDUSD=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] DX.F=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] UK100=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] USTEC.F=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] NZDUSD=0 (no events this minute)
+00:58:34 [CTRADER-EVTS] VIX.F=0 (no events this minute)
+00:59:06 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.582ms cap=120ms lat_ok=1 session=ACTIVE
+00:59:06 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+00:59:06 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+00:59:06 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+00:59:06 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+00:59:06 [TICK] EURUSD 1.15/1.15
+00:59:06 [TICK] GBPUSD 1.32/1.32
+00:59:06 [TICK] USDJPY 159.59/159.75
+00:59:06 [TICK] AUDUSD 0.69/0.69
+00:59:06 [TICK] NGAS.F 2.79/2.82
+00:59:06 [TICK] USOIL.F 111.90/112.01
+00:59:06 [TICK] XAUUSD 4677.03/4677.25
+00:59:06 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+00:59:06 [TICK] GER40 23202.60/23204.30
+00:59:06 [TICK] NZDUSD 0.57/0.57
+00:59:06 [TICK] BRENT 106.44/107.11
+00:59:06 [TICK] NAS100 23952.15/23953.35
+00:59:06 [TICK] ESTX50 5699.40/5700.80
+00:59:06 [TICK] XAGUSD 73.02/73.05
+00:59:06 [TICK] DJ30.F 46620.30/46642.60
+00:59:06 [TICK] UK100 10455.10/10456.90
+00:59:06 [TICK] VIX.F 24.74/25.10
+00:59:06 [TICK] DX.F 99.93/100.03
+00:59:06 [TICK] US500.F 6603.22/6604.03
+00:59:06 [TICK] USTEC.F 24128.44/24132.90
+00:59:35 [CTRADER-STATUS] events_total=0 this_min=0 symbols=19
+00:59:35 [CTRADER-EVTS] XAUUSD=0 <-- NO EVENTS -- L2 unavailable
+00:59:35 [CTRADER-EVTS] USOIL.F=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] XAUUSD=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] XAGUSD=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] EURUSD=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] US500.F=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] ESTX50=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] NAS100=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] NGAS.F=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] DJ30.F=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] GBPUSD=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] USDJPY=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] BRENT=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] GER40=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] AUDUSD=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] DX.F=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] UK100=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] USTEC.F=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] NZDUSD=0 (no events this minute)
+00:59:35 [CTRADER-EVTS] VIX.F=0 (no events this minute)
+01:00:06 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.706ms cap=120ms lat_ok=1 session=ACTIVE
+01:00:06 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+01:00:06 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+01:00:06 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+01:00:06 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+01:00:06 [TICK] EURUSD 1.15/1.15
+01:00:06 [TICK] GBPUSD 1.32/1.32
+01:00:06 [TICK] USDJPY 159.59/159.75
+01:00:06 [TICK] AUDUSD 0.69/0.69
+01:00:06 [TICK] NGAS.F 2.79/2.82
+01:00:06 [TICK] USOIL.F 111.90/112.01
+01:00:06 [TICK] XAUUSD 4677.03/4677.25
+01:00:06 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+01:00:06 [TICK] GER40 23202.60/23204.30
+01:00:06 [TICK] NZDUSD 0.57/0.57
+01:00:06 [TICK] BRENT 106.44/107.11
+01:00:06 [TICK] NAS100 23952.15/23953.35
+01:00:06 [TICK] ESTX50 5699.40/5700.80
+01:00:06 [TICK] XAGUSD 73.02/73.05
+01:00:06 [TICK] DJ30.F 46620.30/46642.60
+01:00:06 [TICK] UK100 10455.10/10456.90
+01:00:06 [TICK] VIX.F 24.74/25.10
+01:00:06 [TICK] DX.F 99.93/100.03
+01:00:06 [TICK] US500.F 6603.22/6604.03
+01:00:06 [TICK] USTEC.F 24128.44/24132.90
+01:00:35 [CTRADER-STATUS] events_total=0 this_min=0 symbols=19
+01:00:35 [CTRADER-EVTS] XAUUSD=0 <-- NO EVENTS -- L2 unavailable
+01:00:35 [CTRADER-EVTS] USOIL.F=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] XAUUSD=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] XAGUSD=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] EURUSD=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] US500.F=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] ESTX50=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] NAS100=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] NGAS.F=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] DJ30.F=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] GBPUSD=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] USDJPY=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] BRENT=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] GER40=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] AUDUSD=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] DX.F=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] UK100=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] USTEC.F=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] NZDUSD=0 (no events this minute)
+01:00:35 [CTRADER-EVTS] VIX.F=0 (no events this minute)
+01:01:06 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.582ms cap=120ms lat_ok=1 session=ACTIVE
+01:01:06 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+01:01:06 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+01:01:06 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+01:01:06 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+01:01:06 [TICK] EURUSD 1.15/1.15
+01:01:06 [TICK] GBPUSD 1.32/1.32
+01:01:06 [TICK] USDJPY 159.59/159.75
+01:01:06 [TICK] AUDUSD 0.69/0.69
+01:01:06 [TICK] NGAS.F 2.79/2.82
+01:01:06 [TICK] USOIL.F 111.90/112.01
+01:01:06 [TICK] XAUUSD 4677.03/4677.25
+01:01:06 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+01:01:06 [TICK] GER40 23202.60/23204.30
+01:01:06 [TICK] NZDUSD 0.57/0.57
+01:01:06 [TICK] BRENT 106.44/107.11
+01:01:06 [TICK] NAS100 23952.15/23953.35
+01:01:06 [TICK] ESTX50 5699.40/5700.80
+01:01:06 [TICK] XAGUSD 73.02/73.05
+01:01:06 [TICK] DJ30.F 46620.30/46642.60
+01:01:06 [TICK] UK100 10455.10/10456.90
+01:01:06 [TICK] VIX.F 24.74/25.10
+01:01:06 [TICK] DX.F 99.93/100.03
+01:01:06 [TICK] US500.F 6603.22/6604.03
+01:01:06 [TICK] USTEC.F 24128.44/24132.90
+01:01:11 [OMEGA-TRADE] SSL error 6 -- reconnecting
+01:01:11 [OMEGA-TRADE] Logout sent
+01:01:11 [OMEGA-TRADE] Disconnected -- reconnecting
+01:01:14 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+01:01:14 [OMEGA-TRADE] Logon sent
+01:01:14 [OMEGA-TRADE] LOGON ACCEPTED
+01:01:14 [OMEGA-TRADE] SecurityListRequest sent req_id=omega-sec-1775350874
+01:01:14 [OMEGA-SECURITY] UNMATCHED: 'UK100.F' id=4461
+01:01:14 [OMEGA-SECURITY] UNMATCHED: 'UKBRENT.F' id=2634
+01:01:14 [OMEGA-SECURITY] UNMATCHED: 'ESTC' id=3229
+01:01:14 [OMEGA-TRADE] SecurityList received req_id=omega-sec-1775350874 entries=1551
+01:01:35 [CTRADER-STATUS] events_total=0 this_min=0 symbols=19
+01:01:35 [CTRADER-EVTS] XAUUSD=0 <-- NO EVENTS -- L2 unavailable
+01:01:35 [CTRADER-EVTS] USOIL.F=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] XAUUSD=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] XAGUSD=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] EURUSD=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] US500.F=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] ESTX50=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] NAS100=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] NGAS.F=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] DJ30.F=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] GBPUSD=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] USDJPY=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] BRENT=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] GER40=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] AUDUSD=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] DX.F=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] UK100=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] USTEC.F=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] NZDUSD=0 (no events this minute)
+01:01:35 [CTRADER-EVTS] VIX.F=0 (no events this minute)
+01:02:06 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.582ms cap=120ms lat_ok=1 session=ACTIVE
+01:02:06 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+01:02:06 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+01:02:06 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+01:02:06 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+01:02:06 [TICK] EURUSD 1.15/1.15
+01:02:06 [TICK] GBPUSD 1.32/1.32
+01:02:06 [TICK] USDJPY 159.59/159.75
+01:02:06 [TICK] AUDUSD 0.69/0.69
+01:02:06 [TICK] NGAS.F 2.79/2.82
+01:02:06 [TICK] USOIL.F 111.90/112.01
+01:02:06 [TICK] XAUUSD 4677.03/4677.25
+01:02:06 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+01:02:06 [TICK] GER40 23202.60/23204.30
+01:02:06 [TICK] NZDUSD 0.57/0.57
+01:02:06 [TICK] BRENT 106.44/107.11
+01:02:06 [TICK] NAS100 23952.15/23953.35
+01:02:06 [TICK] ESTX50 5699.40/5700.80
+01:02:06 [TICK] XAGUSD 73.02/73.05
+01:02:06 [TICK] DJ30.F 46620.30/46642.60
+01:02:06 [TICK] UK100 10455.10/10456.90
+01:02:06 [TICK] VIX.F 24.74/25.10
+01:02:06 [TICK] DX.F 99.93/100.03
+01:02:06 [TICK] US500.F 6603.22/6604.03
+01:02:06 [TICK] USTEC.F 24128.44/24132.90
+01:02:35 [CTRADER-STATUS] events_total=0 this_min=0 symbols=19
+01:02:35 [CTRADER-EVTS] XAUUSD=0 <-- NO EVENTS -- L2 unavailable
+01:02:35 [CTRADER-EVTS] USOIL.F=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] XAUUSD=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] XAGUSD=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] EURUSD=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] US500.F=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] ESTX50=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] NAS100=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] NGAS.F=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] DJ30.F=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] GBPUSD=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] USDJPY=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] BRENT=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] GER40=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] AUDUSD=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] DX.F=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] UK100=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] USTEC.F=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] NZDUSD=0 (no events this minute)
+01:02:35 [CTRADER-EVTS] VIX.F=0 (no events this minute)
+01:03:06 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=2.537ms cap=120ms lat_ok=1 session=ACTIVE
+01:03:06 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+01:03:06 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+01:03:06 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+01:03:06 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4677.14 vol_range=0.00
+01:03:06 [TICK] EURUSD 1.15/1.15
+01:03:06 [TICK] GBPUSD 1.32/1.32
+01:03:06 [TICK] USDJPY 159.59/159.75
+01:03:06 [TICK] AUDUSD 0.69/0.69
+01:03:06 [TICK] NGAS.F 2.79/2.82
+01:03:06 [TICK] USOIL.F 111.90/112.01
+01:03:06 [TICK] XAUUSD 4677.03/4677.25
+01:03:06 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=0.00 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+01:03:06 [TICK] GER40 23202.60/23204.30
+01:03:06 [TICK] NZDUSD 0.57/0.57
+01:03:06 [TICK] BRENT 106.44/107.11
+01:03:06 [TICK] NAS100 23952.15/23953.35
+01:03:06 [TICK] ESTX50 5699.40/5700.80
+01:03:06 [TICK] XAGUSD 73.02/73.05
+01:03:06 [TICK] DJ30.F 46620.30/46642.60
+01:03:06 [TICK] UK100 10455.10/10456.90
+01:03:06 [TICK] VIX.F 24.74/25.10
+01:03:06 [TICK] DX.F 99.93/100.03
+01:03:06 [TICK] US500.F 6603.22/6604.03
+01:03:06 [TICK] USTEC.F 24128.44/24132.90
