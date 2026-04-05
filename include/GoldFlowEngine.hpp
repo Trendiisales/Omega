@@ -1512,19 +1512,26 @@ private:
         // Without this guard: SL sits at 4683, trade bleeds full -$168.
         // With this guard: closes at ~4691 after 15s = ~-$30 instead.
         //
-        // ATR-PROPORTIONAL FLOOR (2026-04-04 backtest calibration):
-        // Old: max(2.0, 0.30*ATR). At $3000 gold ATR=15pt, threshold=4.5pt (good).
-        // But floor of 2.0pt at $1800-2000 gold (ATR=2-5pt) fired on spread noise.
-        // Fix: floor raised to 3.0pt AND proportion raised to 0.30*ATR.
-        //   ATR=2pt: max(3.0, 0.6) = 3.0pt (requires genuine gap against thesis)
-        //   ATR=5pt: max(3.0, 1.5) = 3.0pt (still floor-limited)
-        //   ATR=15pt: max(3.0, 4.5) = 4.5pt (ATR-based fires)
-        // MFE threshold also raised: 0.10 -> 0.30pt (noise-level MFE ignored)
+        // FIXED 2026-04-05 (backtest analysis):
+        // Previous floor of 3.0pt was too wide -- only caught 73 trades in 2yr backtest.
+        // Data shows 10,231 zero-MFE losses where price NEVER moved our way.
+        // These cost avg $82 (full SL). Catching them at 1.5pt adverse saves $58 each.
+        //
+        // New thresholds: max(1.5, 0.20*ATR)
+        //   ATR=2pt:  max(1.5, 0.4) = 1.5pt -- fires within 7x spread (real reversal)
+        //   ATR=5pt:  max(1.5, 1.0) = 1.5pt -- 3x spread (genuine adverse move)
+        //   ATR=10pt: max(1.5, 2.0) = 2.0pt -- real adverse, not noise
+        //   ATR=15pt: max(1.5, 3.0) = 3.0pt -- crash day (unchanged from old)
+        //
+        // Window extended 15s->30s: catches slightly slower reversals.
+        // MFE gate kept at 0.30pt: only fires when price never proved us right.
+        // Safety: at 1.5pt adverse with 0.30pt MFE gate, spread noise cannot trigger
+        // this (spread=0.22pt so adverse > 1.5pt requires a real directional move against us).
         {
             const int64_t held_s  = (now_ms / 1000) - pos.entry_ts;
             const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
-            const double  imm_rev_thresh = std::max(3.0, m_atr * 0.30);
-            if (held_s <= 15 && adverse > imm_rev_thresh && pos.mfe < 0.30) {
+            const double  imm_rev_thresh = std::max(1.5, m_atr * 0.20);
+            if (held_s <= 30 && adverse > imm_rev_thresh && pos.mfe < 0.30) {
                 printf("[GOLD-FLOW] IMM-REVERSAL %s adverse=%.2f > %.2f in %llds, mfe=%.2f atr=%.2f -- wrong thesis, bail\n",
                        pos.is_long ? "LONG" : "SHORT",
                        adverse, imm_rev_thresh, (long long)held_s, pos.mfe, m_atr);
