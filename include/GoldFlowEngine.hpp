@@ -271,6 +271,26 @@ struct GoldFlowEngine {
     AddOnCallback on_addon;         // set from main.cpp; nullptr = disabled
     bool addon_shadow_mode = true;  // default true = shadow only, no live orders
 
+    // ?? Bleed-flip callback ??????????????????????????????????????????????????????
+    // Called when the bleed guard fires -- original trade stalled at BE for 5min.
+    // The stall means the opposing force is winning. Flip direction.
+    //
+    // Args: flip_is_long (OPPOSITE of original), bid, ask, atr, original_entry
+    //   flip_is_long:    direction of the new REVERSE trade
+    //   atr:             ATR at the time of flip (for SL sizing)
+    //   original_entry:  price of the stalled trade (natural TP target for flip)
+    //
+    // main.cpp fires force_entry() on g_gold_flow_reload in the flip direction.
+    // SL = flip_entry + 0.5*ATR (tight -- if price reverts to original direction fast)
+    // TP = original_entry - 1.5*ATR in flip direction (mean reversion target)
+    //
+    // Set nullptr to disable flip (bleed guard just exits flat).
+    using BleedFlipCallback = std::function<void(bool flip_is_long,
+                                                  double bid, double ask,
+                                                  double atr,
+                                                  double original_entry)>;
+    BleedFlipCallback on_bleed_flip;  // set from main.cpp; nullptr = exit flat only
+
     // -------------------------------------------------------------------------
     // Main tick function -- call every tick with fresh data
     // bid, ask       : current quotes
@@ -1700,12 +1720,20 @@ private:
                 const double progress = std::max(0.0, move); // pts gained from entry
                 const double min_progress = pos.atr_at_entry * 0.30; // need 30% of ATR
                 if (held_s_bg > BLEED_SECS && progress < min_progress) {
-                    printf("[GOLD-FLOW] BLEED-EXIT %s held=%llds progress=%.2f<%.2f -- stalled post-step1\n",
+                    const double flip_atr = pos.atr_at_entry;
+                    const double orig_entry = pos.entry;
+                    const bool   orig_long  = pos.is_long;
+                    printf("[GOLD-FLOW] BLEED-EXIT %s held=%llds progress=%.2f<%.2f -- stalled, %s\n",
                            pos.is_long ? "LONG" : "SHORT",
-                           (long long)held_s_bg, progress, min_progress);
+                           (long long)held_s_bg, progress, min_progress,
+                           on_bleed_flip ? "flipping direction" : "exiting flat");
                     fflush(stdout);
                     const double exit_px = pos.is_long ? bid : ask;
                     close_position(exit_px, "BLEED_EXIT", now_ms, on_close);
+                    // Fire flip AFTER close (position is now flat)
+                    if (on_bleed_flip) {
+                        on_bleed_flip(!orig_long, bid, ask, flip_atr, orig_entry);
+                    }
                     return;
                 }
             }
