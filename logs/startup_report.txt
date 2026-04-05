@@ -1,7 +1,7 @@
 ﻿OMEGA STARTUP REPORT
-Generated : 2026-04-05 06:46:24 UTC
+Generated : 2026-04-05 07:34:26 UTC
 Log file  : C:\Omega\logs\latest.log
-Collected : 123 lines over 45s
+Collected : 124 lines over 45s
 Result    : PASS=4  FAIL=1  WARN=2  INFO=10
 ========================================================================
 [INFO]  ATR Seed               No GFE-SEED line seen
@@ -14,12 +14,12 @@ Result    : PASS=4  FAIL=1  WARN=2  INFO=10
                                      Seed fix NOT working -- VolatilityFilter still using mid=3000 fallback.
 [PASS]  Dead Zone              in_dead_zone=0 on all 2 BRK-DIAG lines
 [PASS]  VIX Level              VIX=24.74 (expected seed_atr ~12.0)
-                                     06:46:13 [TICK] VIX.F 24.74/25.10
+                                     07:34:15 [TICK] VIX.F 24.74/25.10
 [PASS]  Session/Entry State    slot=1 (London open (07-09 UTC)) can_enter=1 can_arm=1 impulse_block=0
 [WARN]  L2 / cTrader Feed      No L2-STATUS line in first 45s
                                      Feed may be slow to connect.
-[PASS]  Latency                RTTp95=2.78ms lat_ok=1
-                                     06:46:13 [OMEGA-DIAG] PnL=0.00 T=0 WR=0.00% RTTp95=2.78ms cap=120.00ms lat_ok=1 session=ACTIVE
+[PASS]  Latency                RTTp95=3.61ms lat_ok=1
+                                     07:34:15 [OMEGA-DIAG] PnL=0.00 T=0 WR=0.00% RTTp95=3.61ms cap=120.00ms lat_ok=1 session=ACTIVE
 [INFO]  Gate Blocks            No gate blocks in first 45s
                                      No entry attempts or no blocks (good).
 [INFO]  First Signal           No signal in first 45s
