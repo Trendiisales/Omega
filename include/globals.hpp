@@ -94,8 +94,10 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 // Bracket engines
 #include "BracketEngine.hpp"
 #include "GoldFlowEngine.hpp"
+#include "MacroCrashEngine.hpp"
 static omega::GoldBracketEngine   g_bracket_gold;
 static GoldFlowEngine             g_gold_flow;
+static omega::MacroCrashEngine    g_macro_crash;  // always-on macro event engine
 // Reload instance: independent GoldFlowEngine for continuation entries.
 // Fires after g_gold_flow banks PARTIAL_1R and confirms price still moving.
 // Managed exactly like g_gold_flow but never arms its own reload (avoids cascade).

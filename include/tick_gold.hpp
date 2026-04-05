@@ -1385,7 +1385,26 @@ static void on_tick_gold(
             g_macro_ctx.session_slot);
     }
 
-    // ?? GoldFlow reload -- continuation entry after PARTIAL_1R ?????????????
+    // ?? MacroCrashEngine -- always-on macro event capture ????????????????
+    // Fires ONLY when: ATR > 8pt + vol_ratio > 2.5 + expansion regime + |drift| > 6
+    // This is the replacement for GoldFlow's velocity trail logic.
+    // Captures: Apr2-style tariff crashes, Fed spikes, macro surges (50-150pt moves)
+    // Independent of GoldFlow -- runs 24/7, no session restriction.
+    {
+        const bool expansion_regime = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
+                                    || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
+        const double mce_atr       = g_gold_flow.current_atr() > 0.0
+                                     ? g_gold_flow.current_atr() : 5.0;
+        const double mce_vol_ratio = (g_gold_stack.recent_vol_pct() > 0.0
+                                   && g_gold_stack.base_vol_pct() > 0.0)
+                                     ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct()
+                                     : 1.0;
+        g_macro_crash.on_tick(bid, ask,
+            mce_atr, mce_vol_ratio,
+            g_gold_stack.ewm_drift(),
+            expansion_regime,
+            now_ms_g);
+    }
     // When stair step 1 banks the first 33% and arms a reload, try_reload()
     // is called every tick until it fires, cancels, or times out (5s).
     //
