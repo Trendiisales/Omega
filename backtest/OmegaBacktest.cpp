@@ -54,6 +54,7 @@
 
 #include "../include/OmegaTradeLedger.hpp"
 #include "../include/GoldEngineStack.hpp"
+#include "../include/StopRunReversalEngine.hpp"
 #include "../include/GoldFlowEngine.hpp"
 #include "../include/LatencyEdgeEngines.hpp"
 #include "../include/CrossAssetEngines.hpp"
@@ -506,6 +507,34 @@ struct BreakRunner {
     }
 };
 
+struct StopRunRunner {
+    omega::StopRunReversalEngine eng;
+    int64_t warmup_ticks;
+    int64_t tick_count = 0;
+    int last_day = -1;
+    StopRunRunner() { warmup_ticks = 200; }
+    void tick(const TickRow& r) {
+        tick_count++;
+        // Session slot from timestamp
+        int h = (int)((r.ts_ms/1000/3600) % 24);
+        int slot = 0;
+        if      (h >= 7  && h < 9)  slot = 1;
+        else if (h >= 9  && h < 12) slot = 2;
+        else if (h >= 12 && h < 14) slot = 3;
+        else if (h >= 14 && h < 17) slot = 4;
+        else if (h >= 17 && h < 22) slot = 5;
+        else if (h >= 22 || h < 5)  slot = 6;
+        // Daily reset
+        int day = (int)(r.ts_ms / 1000 / 86400);
+        if (day != last_day) { eng.reset_session(); last_day = day; }
+        // Wire callback once
+        if (!eng.on_close) {
+            eng.on_close = [](const omega::TradeRecord& t){ store::add(t); };
+        }
+        eng.on_tick(r.bid, r.ask, r.ts_ms, slot);
+    }
+};
+
 // =============================================================================
 // Config
 // =============================================================================
@@ -515,7 +544,7 @@ struct Cfg {
     const char* rep   = "bt_report.csv";
     const char* trd   = "bt_trades.csv";
     int64_t     warm  = 5000;
-    bool gold=true, flow=true, latency=true, cross=true, breakout=true;
+    bool gold=true, flow=true, latency=true, cross=true, breakout=true, stoprun=false;
     bool quiet=false;
 };
 static Cfg parse(int argc, char** argv){
@@ -542,7 +571,7 @@ static Cfg parse(int argc, char** argv){
             const char* e=argv[++i];
             c.gold=!!strstr(e,"gold"); c.flow=!!strstr(e,"flow");
             c.latency=!!strstr(e,"latency"); c.cross=!!strstr(e,"cross");
-            c.breakout=!!strstr(e,"breakout");
+            c.breakout=!!strstr(e,"breakout"); c.stoprun=!!strstr(e,"stoprun");
         }
     }
     return c;
@@ -631,13 +660,15 @@ int main(int argc, char** argv){
     std::unique_ptr<FlowRunner>    rf;
     std::unique_ptr<LatencyRunner> rl;
     std::unique_ptr<CrossRunner>   rc;
-    std::unique_ptr<BreakRunner>   rb;
+    std::unique_ptr<BreakRunner>    rb;
+    std::unique_ptr<StopRunRunner>  rs;
 
     if(cfg.gold)    rg = std::make_unique<GoldRunner>(cfg.lat);
     if(cfg.flow)    rf = std::make_unique<FlowRunner>();
     if(cfg.latency) rl = std::make_unique<LatencyRunner>(cfg.lat);
     if(cfg.cross)   rc = std::make_unique<CrossRunner>();
     if(cfg.breakout)rb = std::make_unique<BreakRunner>(cfg.lat);
+    if(cfg.stoprun) rs = std::make_unique<StopRunRunner>();
 
     // ?? Tick loop ?????????????????????????????????????????????????????????????
     const auto t0r  = std::chrono::steady_clock_real::now();
@@ -653,6 +684,7 @@ int main(int argc, char** argv){
         if(rl) rl->tick(r);
         if(rc) rc->tick(r);
         if(rb) rb->tick(r);
+        if(rs) rs->tick(r);
 
         if(i-last_p >= 500'000){
             last_p=i;
