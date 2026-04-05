@@ -1679,6 +1679,37 @@ private:
                 return;
             }
         }
+
+        // ?? BLEED GUARD -- exits stalled trades after step1 fires ???????????????
+        // Backtest diagnosis: once partial_closed=true, TIME_STOP is disabled.
+        // 6,097 trades: fire step1, SL->BE, drift back, sit at BE for 446s avg,
+        // eventually SL_HIT at -$81. TIME_STOP never fires because partial_closed=true.
+        // 2,617 more: TIME_STOP avg hold 1,099s -- also stalled post-step1.
+        //
+        // Fix: if held > 300s AND move has not progressed past 30% of ATR since
+        // step1 fired, the trade is going nowhere. Exit at market.
+        // Normal winners reach step2 (4.4pt) within 60-120s of step1.
+        // Stalled trades sit at 0-1pt progress for 5+ minutes.
+        //
+        // Only fires when: step1 done, step2 NOT done, not velocity mode.
+        {
+            const bool velocity_active_bg = m_expansion_mode && (m_vol_ratio > 2.5);
+            if (!velocity_active_bg && pos.partial_closed && !pos.partial_closed_2) {
+                const int64_t held_s_bg = (now_ms / 1000) - pos.entry_ts;
+                static constexpr int64_t BLEED_SECS = 300; // 5 min after entry
+                const double progress = std::max(0.0, move); // pts gained from entry
+                const double min_progress = pos.atr_at_entry * 0.30; // need 30% of ATR
+                if (held_s_bg > BLEED_SECS && progress < min_progress) {
+                    printf("[GOLD-FLOW] BLEED-EXIT %s held=%llds progress=%.2f<%.2f -- stalled post-step1\n",
+                           pos.is_long ? "LONG" : "SHORT",
+                           (long long)held_s_bg, progress, min_progress);
+                    fflush(stdout);
+                    const double exit_px = pos.is_long ? bid : ask;
+                    close_position(exit_px, "BLEED_EXIT", now_ms, on_close);
+                    return;
+                }
+            }
+        }
         // Keeps step distances consistent even as gold vol changes mid-trade.
         const double atr_step = pos.atr_at_entry;
         // atr_live: current market ATR -- used for trail and ratchet SL placement.
