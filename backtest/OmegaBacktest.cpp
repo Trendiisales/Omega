@@ -560,13 +560,16 @@ struct OverlapFadeRunner {
         else if (h>=17 && h<22) slot=5;
         else if (h>=22 || h<5)  slot=6;
 
-        // Update ATR every 200 ticks (cheap, not per-tick)
-        if ((++atr_tick % 200) == 0 && pidx > 100) {
-            double atr = 0;
+        // ATR = high-low range over 100 ticks (proper proxy)
+        // Mean 1-tick move ~0.10pt != real ATR. Range = 1-5pt. Correct.
+        if ((++atr_tick % 100) == 0 && pidx > 100) {
             int look = std::min(pidx-1, 100);
-            for (int k=1; k<=look; k++)
-                atr += std::fabs(prices[(pidx-k+BUF*4)%BUF] - prices[(pidx-k-1+BUF*4)%BUF]);
-            eng.seed_atr(atr / look);
+            double hi = prices[(pidx-1+BUF*4)%BUF], lo = hi;
+            for (int k=1; k<look; k++) {
+                double p = prices[(pidx-k+BUF*4)%BUF];
+                if (p>hi) hi=p; if (p<lo) lo=p;
+            }
+            eng.seed_atr(hi - lo);
         }
 
         // Wire callback once

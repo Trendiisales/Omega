@@ -63,15 +63,17 @@ protected:
         m_count++;
     }
 
-    // Call every 200 ticks -- cheap ATR update
+    // Call every 100 ticks -- use range not mean-tick-move
     void _update_atr() {
         int look = std::min(m_count - 1, 100);
         if (look < 10) return;
-        double a = 0;
-        for (int k = 1; k <= look; k++)
-            a += std::fabs(m_prices[(m_pidx-k+PBUF*4)%PBUF]
-                         - m_prices[(m_pidx-k-1+PBUF*4)%PBUF]);
-        m_atr = a / look;
+        double hi = m_prices[(m_pidx-1+PBUF*4)%PBUF];
+        double lo = hi;
+        for (int k = 1; k < look; k++) {
+            double p = m_prices[(m_pidx-k+PBUF*4)%PBUF];
+            if (p > hi) hi = p; if (p < lo) lo = p;
+        }
+        m_atr = hi - lo;  // range over 100 ticks = proper ATR proxy
     }
 
     void _enter(bool is_long, double bid, double ask, int64_t now_ms) {
@@ -145,7 +147,7 @@ public:
         if (!enabled) return;
         const double mid = (bid+ask)*0.5;
         _feed(mid);
-        if ((m_count % 200) == 0) _update_atr();
+        if ((m_count % 100) == 0) _update_atr();
         if (m_count < WARMUP_TICKS) return;
         if (pos.active) { _manage(bid, ask, mid, now_ms); return; }
         if (now_ms < m_cooldown) return;
@@ -194,7 +196,7 @@ public:
         if (!enabled) return;
         const double mid = (bid+ask)*0.5;
         _feed(mid);
-        if ((m_count % 200) == 0) _update_atr();
+        if ((m_count % 100) == 0) _update_atr();
         if (m_count < WARMUP_TICKS) return;
         if (pos.active) { _manage(bid, ask, mid, now_ms); return; }
         if (now_ms < m_cooldown) return;
@@ -238,7 +240,7 @@ public:
         if (!enabled) return;
         const double mid = (bid+ask)*0.5;
         _feed(mid);
-        if ((m_count % 200) == 0) _update_atr();
+        if ((m_count % 100) == 0) _update_atr();
         if (m_count < WARMUP_TICKS) return;
         if (pos.active) { _manage(bid, ask, mid, now_ms); return; }
         if (now_ms < m_cooldown) return;
