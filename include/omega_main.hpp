@@ -1805,6 +1805,104 @@ int main(int argc, char* argv[])
         const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
         write_status("OK: cTrader live, L2 live (imb=" + std::to_string(imb).substr(0,5) + ")");
     }).detach();
+
+    // =========================================================================
+    // L2 WATCHDOG THREAD
+    // =========================================================================
+    // cTrader L2 feed (ctid=43014358) is the BASIS of all GoldFlow engine
+    // functionality. Without L2 imbalance the engine degrades to drift-only
+    // mode which has no proven edge (backtest: 63% WR, negative P&L).
+    //
+    // This watchdog:
+    //   1. Monitors L2 liveness every 30s (imbalance != 0.500 within 5s)
+    //   2. Sets g_l2_watchdog_dead atomic if L2 has been dead > 120s
+    //   3. Writes C:\Omega\logs\L2_ALERT.txt immediately on failure
+    //   4. Logs [L2-WATCHDOG] DEAD/ALIVE to main log every 30s
+    //   5. On recovery: logs restoration and clears alert file
+    //
+    // GoldFlowEngine checks g_l2_watchdog_dead via goldflow_enabled gate
+    // in tick_gold.hpp -- entries blocked when L2 is confirmed dead.
+    // Position management (trail/SL) continues regardless.
+    //
+    // IMMUTABLE: ctid=43014358 is the ONLY account that delivers L2 depth.
+    // DO NOT change ctid_trader_account_id in omega_config.ini.
+    // =========================================================================
+    std::thread([](){
+        const std::string alert_path = log_root_dir() + "/L2_ALERT.txt";
+        int64_t dead_since_ms    = 0;
+        bool    alert_written    = false;
+        bool    was_alive        = false;
+        static constexpr int64_t DEAD_GRACE_MS   = 120000; // 2 min before declaring dead
+        static constexpr int64_t CHECK_INTERVAL  = 30000;  // check every 30s
+
+        // Wait for startup to complete before monitoring
+        std::this_thread::sleep_for(std::chrono::seconds(90));
+
+        while (g_running.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(CHECK_INTERVAL));
+            if (!g_running.load()) break;
+
+            const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+
+            // L2 is alive if: imbalance != 0.500 within last 5s
+            const bool l2_alive = g_l2_gold.fresh(now_ms, 5000)
+                && (std::fabs(g_l2_gold.imbalance.load(std::memory_order_relaxed) - 0.5) > 0.001);
+
+            if (l2_alive) {
+                // L2 is flowing
+                if (!was_alive) {
+                    // Just recovered
+                    const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+                    printf("[L2-WATCHDOG] ALIVE -- L2 depth flowing from ctid=43014358 imb=%.3f\n", imb);
+                    fflush(stdout);
+                    // Clear alert file
+                    { std::ofstream f(alert_path); f << "OK\n"; }
+                    alert_written = false;
+                }
+                was_alive    = true;
+                dead_since_ms = 0;
+                g_l2_watchdog_dead.store(false, std::memory_order_relaxed);
+
+            } else {
+                // L2 not flowing
+                if (dead_since_ms == 0) dead_since_ms = now_ms;
+                const int64_t dead_ms = now_ms - dead_since_ms;
+
+                if (dead_ms >= DEAD_GRACE_MS) {
+                    // Confirmed dead -- gate engines
+                    g_l2_watchdog_dead.store(true, std::memory_order_relaxed);
+
+                    printf("[L2-WATCHDOG] *** DEAD *** L2 depth from ctid=43014358 not flowing for %llds\n"
+                           "[L2-WATCHDOG] GoldFlow engine GATED -- drift-only mode has no proven edge\n"
+                           "[L2-WATCHDOG] ACTION REQUIRED: check cTrader connection / ctid=43014358\n",
+                           (long long)(dead_ms / 1000));
+                    fflush(stdout);
+
+                    if (!alert_written) {
+                        // Write alert file -- readable by monitoring script / deploy tools
+                        std::ofstream f(alert_path);
+                        f << "L2_DEAD\n"
+                          << "ctid=43014358 not delivering depth events\n"
+                          << "dead_seconds=" << (dead_ms / 1000) << "\n"
+                          << "action=check cTrader Open API connection and account depth permissions\n"
+                          << "immutable=ctid_trader_account_id=43014358 is the ONLY account with L2\n";
+                        alert_written = true;
+
+                        printf("[L2-WATCHDOG] Alert written: %s\n", alert_path.c_str());
+                        fflush(stdout);
+                    }
+                    was_alive = false;
+
+                } else {
+                    // Within grace period -- just log
+                    printf("[L2-WATCHDOG] L2 not flowing for %llds (grace=%llds) -- watching\n",
+                           (long long)(dead_ms / 1000), (long long)(DEAD_GRACE_MS / 1000));
+                    fflush(stdout);
+                }
+            }
+        }
+    }).detach();
     // =========================================================================
     std::thread trade_thread(trade_loop);
     Sleep(500);  // Give trade connection 500ms head start before quote loop

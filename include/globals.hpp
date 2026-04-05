@@ -162,6 +162,11 @@ static std::atomic<int64_t>  g_gf_short_blocked_until{0}; // block short entries
 // g_shadow_quality is only safe to read in the trade thread -- this atomic is the bridge.
 // Reset: g_shadow_quality.clear() at midnight resets the shadow map; this atomic mirrors it.
 static std::atomic<bool>     g_gf_engine_culled{false};   // true = GoldFlow disabled until midnight
+// L2 watchdog: set true when cTrader depth (ctid=43014358) not flowing > 120s.
+// GoldFlow entry gated on this -- drift-only mode has no proven edge.
+// Cleared automatically when L2 recovers. Written by L2 watchdog thread in omega_main.hpp.
+// IMMUTABLE: ctid=43014358 is the only account delivering L2 depth.
+static std::atomic<bool>     g_l2_watchdog_dead{false};   // true = L2 dead, GoldFlow entries blocked
 
 // ?? Indices FORCE_CLOSE circuit breaker ??????????????????????????????????????
 // Problem: on April 2 2026, repeated disconnect/reconnect cycles on US indices

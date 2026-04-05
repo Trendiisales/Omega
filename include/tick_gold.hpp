@@ -2372,8 +2372,22 @@ static void on_tick_gold(
         // Entry only: on_tick for new entries when no position is open.
         // Position management (SL/trail) is handled in the unconditional
         // manage block above this entry guard.
-        // DISABLED 2026-04-05: goldflow_enabled=false in config.
-        // 2yr backtest + MFE scan proved no structural edge.
+        // L2 LIVENESS GATE -- cTrader ctid=43014358 is the basis of all GoldFlow edge.
+        // When L2 watchdog confirms feed dead > 120s, block new entries entirely.
+        // Drift-only mode has no proven edge (backtest: 63% WR, negative P&L).
+        // Position management (trail/SL) runs unconditionally regardless of this gate.
+        // Gate clears automatically when L2 recovers (watchdog resets the atomic).
+        if (g_l2_watchdog_dead.load(std::memory_order_relaxed)) {
+            static int64_t s_l2_dead_log = 0;
+            if (now_ms_g - s_l2_dead_log > 60000) {
+                s_l2_dead_log = now_ms_g;
+                printf("[GFE-GATE] L2 DEAD -- GoldFlow entries BLOCKED (ctid=43014358 not flowing)\n"
+                       "[GFE-GATE] Check C:\\Omega\\logs\\L2_ALERT.txt for details\n");
+                fflush(stdout);
+            }
+            // Skip entry block entirely -- fall through to manage open positions only
+            goto gfe_entry_skip;
+        }
         if (g_cfg.goldflow_enabled && gf_tick_ok) {
             // ?? Post-close reversal drift reset ???????????????????????????
             // Problem: ewm_slow (?=0.005) has a 200-tick half-life. After a
@@ -2509,7 +2523,11 @@ static void on_tick_gold(
                     double l2_bvol = 0.0, l2_avol = 0.0;
                     {
                         std::lock_guard<std::mutex> lk(g_l2_mtx);
-                        auto it = g_l2_books.find("GOLD.F");
+                        // Depth client writes book under "XAUUSD" key (internal_name)
+                        // NOT "GOLD.F" -- that was causing bid/ask vol to always be 0
+                        auto it = g_l2_books.find("XAUUSD");
+                        if (it == g_l2_books.end())
+                            it = g_l2_books.find("GOLD.F");  // fallback for old alias
                         if (it != g_l2_books.end()) {
                             for (int _i = 0; _i < it->second.bid_count; ++_i) l2_bvol += it->second.bids[_i].size;
                             for (int _i = 0; _i < it->second.ask_count; ++_i) l2_avol += it->second.asks[_i].size;
@@ -2536,6 +2554,7 @@ static void on_tick_gold(
                 g_macro_ctx.session_slot);
             }  // gf_vpin_ok
         }
+        gfe_entry_skip:;  // L2 watchdog gate jumps here when L2 is dead
         if (g_gold_flow.has_open_position()) {
             // ?? Post-entry: apply regime weight + adaptive risk sizing ?????
             // GoldFlowEngine computes lot = risk_dollars / (sl_pts ? 100) internally.
