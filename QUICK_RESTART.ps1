@@ -79,24 +79,20 @@ if (Test-Path $BuildExe) {
     }
 }
 
-# --- THE ONE TRUE HASH -- last CODE commit (skip state/log commits) ----------
+# --- BINARY IDENTITY -- hash baked into binary at build time -----------------
+# Source: include/version_generated.hpp written by cmake/UpdateGitHash.cmake
+# This is the ONLY correct hash -- it is the git hash at the moment cmake ran.
+# Git HEAD on the VPS is irrelevant (state commits advance it independently).
 $ErrorActionPreference = "Continue"
-# State commits are auto-pushed with message "state: log+snapshot+atr HASH DATE"
-# Walk back through history to find the last real code commit
-$gitHash = $null
-$logLines = (git -C $OmegaDir log --oneline -20 2>$null)
-foreach ($line in $logLines) {
-    if ($line -notmatch "^[0-9a-f]+ state:") {
-        $gitHash = ($line -split " ")[0]
-        break
+$buildTimeStr = (Get-Item $OmegaExe).LastWriteTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") + " UTC"
+$gitHash = "unknown"
+$verFile = "$OmegaDir\include\version_generated.hpp"
+if (Test-Path $verFile) {
+    $verLine = Select-String -Path $verFile -Pattern "OMEGA_GIT_HASH" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($verLine) {
+        if ($verLine.Line -match '"([a-f0-9]+)"') { $gitHash = $Matches[1] }
     }
 }
-if (-not $gitHash) { $gitHash = (git -C $OmegaDir rev-parse --short HEAD 2>$null) }
-if (-not $gitHash) { $gitHash = "unknown" }
-
-# Update stamp file to match reality
-$buildTimeStr = (Get-Item $OmegaExe).LastWriteTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") + " UTC"
-"GIT_HASH_SHORT=$gitHash`nBUILD_TIME=$buildTimeStr" | Set-Content "$OmegaDir\omega_build.stamp"
 $ErrorActionPreference = "Stop"
 
 # --- [2] Clean state files ---------------------------------------------------
