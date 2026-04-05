@@ -1,3 +1,5 @@
+// EdgeDiscovery v3 -- MFE/MAE structural edge scanner
+// Measures maximum favourable/adverse excursion after structural events.
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -5,229 +7,218 @@
 #include <map>
 #include <string>
 #include <algorithm>
-#include <numeric>
+#include <cstdio>
+#include <cstring>
 
-struct Tick { long long ts; double bid, ask, mid; };
+struct Tick { long long ts; double mid; };
 
-struct Stats {
-    int n=0; double sum=0, sum_sq=0, wins=0;
-    void add(double r) {
-        n++; sum+=r; sum_sq+=r*r;
-        if(r>0) wins++;
+struct MFEStats {
+    std::vector<float> mfe, mae;
+    void add(float mf, float ma) { mfe.push_back(mf); mae.push_back(ma); }
+    int n() const { return (int)mfe.size(); }
+    double pct(const std::vector<float>& v, double p) const {
+        if (v.empty()) return 0;
+        std::vector<float> s = v;
+        std::sort(s.begin(), s.end());
+        int idx = (int)(p * (s.size()-1));
+        return s[idx];
     }
-    double mean()   const { return n?sum/n:0; }
-    double wr()     const { return n?wins/n*100:0; }
-    double stddev() const {
-        if(n<2) return 0;
-        double m=mean(); return std::sqrt(std::max(0.0,sum_sq/n-m*m));
+    double mfe_p50() const { return pct(mfe,0.50); }
+    double mfe_p75() const { return pct(mfe,0.75); }
+    double mfe_p90() const { return pct(mfe,0.90); }
+    double mae_p50() const { return pct(mae,0.50); }
+    // Expectancy: TP=target, SL=stop, cost applied
+    double expect(double tgt, double stp, double cost) const {
+        int w=0, l=0;
+        for (int i=0; i<n(); i++) {
+            if (mfe[i] >= (float)tgt) w++;
+            else l++;
+        }
+        if (!n()) return 0;
+        double wr=(double)w/n();
+        return wr*(tgt-cost) - (1-wr)*(stp+cost);
     }
-    double sharpe() const { double s=stddev(); return s>0?mean()/s:0; }
 };
 
 static bool parse(const std::string& ln, Tick& t) {
-    const char* p=ln.c_str(); char* nx;
-    if(p[0]<'0'||p[0]>'9') return false;
-    t.ts=std::strtoll(p,&nx,10); if(*nx!=',') return false; p=nx+1;
-    double a=std::strtod(p,&nx); if(*nx!=',') return false; p=nx+1;
+    const char* p=ln.c_str();
+    if (p[0]<'0'||p[0]>'9') return false;
+    char* nx;
+    t.ts=std::strtoll(p,&nx,10);
+    if (*nx!=',') return false; p=nx+1;
+    double a=std::strtod(p,&nx);
+    if (*nx!=',') return false; p=nx+1;
     double b=std::strtod(p,&nx);
-    if(a<=0||b<=0) return false;
-    if(a>b){t.ask=a;t.bid=b;}else{t.ask=b;t.bid=a;}
-    t.mid=(t.bid+t.ask)*0.5;
-    return t.bid>0&&t.ask>t.bid;
+    if (a<=0||b<=0) return false;
+    double bid=std::min(a,b), ask=std::max(a,b);
+    if (ask<=bid) return false;
+    t.mid=(bid+ask)*0.5;
+    return true;
 }
 
-static int sess(long long ms){
+static const char* sname(long long ms) {
     int h=(int)((ms/1000/3600)%24);
-    if(h>=21||h<1) return 0;
-    if(h<7)  return 6;
-    if(h<9)  return 1;
-    if(h<13) return 2;
-    if(h<17) return 3;
-    if(h<19) return 4;
-    return 5;
-}
-static const char* sname(int s){
-    switch(s){
-    case 0:return"DEAD"; case 1:return"LON_OPEN"; case 2:return"LON_CORE";
-    case 3:return"OVERLAP"; case 4:return"NY"; case 5:return"NY_LATE"; case 6:return"ASIA";
-    }return"?";
+    if (h>=21||h<1) return "DEAD";
+    if (h<7)  return "ASIA";
+    if (h<9)  return "LON_OPEN";
+    if (h<13) return "LON_CORE";
+    if (h<17) return "OVERLAP";
+    if (h<19) return "NY";
+    return "NY_LATE";
 }
 
-int main(int argc, char** argv){
-    if(argc<2){puts("usage: EdgeDiscovery ticks.csv");return 0;}
+int main(int argc, char** argv) {
+    if (argc<2) { puts("usage: EdgeDiscovery ticks.csv"); return 0; }
     std::ifstream f(argv[1]);
-    if(!f){puts("cannot open");return 1;}
-
+    if (!f) { puts("cannot open"); return 1; }
     std::vector<Tick> ticks;
     ticks.reserve(140000000);
-    std::string line;
-    Tick t;
-    while(std::getline(f,line))
-        if(parse(line,t)) ticks.push_back(t);
-
+    std::string line; Tick t;
+    while (std::getline(f,line))
+        if (parse(line,t)) ticks.push_back(t);
     const int N=(int)ticks.size();
-    printf("Loaded %d ticks\n",N);
+    printf("Loaded %d ticks\n\n",N);
 
-    // Forward windows to test (in ticks)
-    // At ~5-15 ticks/sec on gold:
-    // 100t ~ 10s, 500t ~ 50s, 2000t ~ 3min, 5000t ~ 8min, 10000t ~ 17min
-    const int FWD[] = {100, 500, 2000, 5000, 10000};
-    const int NFWD  = 5;
-    const int LOOK  = 200;
-    const int MAXFWD= 10000;
+    const int LOOK=100, WINDOW=2000, STEP=5;
+    std::map<std::string,MFEStats> stats;
 
-    // Stats[signal][fwd_idx]
-    std::map<std::string, Stats[5]> stats;
+    for (int i=LOOK; i<N-WINDOW; i+=STEP) {
+        double p=ticks[i].mid;
+        const char* ss=sname(ticks[i].ts);
+        if (strcmp(ss,"DEAD")==0) continue;
 
-    for(int i=LOOK; i<N-MAXFWD; i++){
-        auto& tk = ticks[i];
-        double p = tk.mid;
-        int ss   = sess(tk.ts);
-
-        // ATR: mean abs 1-tick move over last 200 ticks
+        // ATR
         double atr=0;
-        for(int k=i-LOOK;k<i;k++) atr+=std::fabs(ticks[k+1].mid-ticks[k].mid);
+        for (int k=i-LOOK;k<i;k++) atr+=std::fabs(ticks[k+1].mid-ticks[k].mid);
         atr/=LOOK;
-        if(atr<0.0005) continue;
+        if (atr<0.0005) continue;
 
-        // Drift persistence: fraction of last 50 ticks in one direction
+        // Range
+        double lo=p,hi=p;
+        for (int k=i-LOOK;k<i;k++){
+            if(ticks[k].mid<lo)lo=ticks[k].mid;
+            if(ticks[k].mid>hi)hi=ticks[k].mid;
+        }
+        bool compressed=(hi-lo)<atr*1.5;
+
+        // Drift persistence
         int up=0,dn=0;
-        for(int k=i-50;k<i;k++){
-            if(ticks[k+1].mid>ticks[k].mid) up++;
-            else if(ticks[k+1].mid<ticks[k].mid) dn++;
+        for (int k=i-50;k<i;k++){
+            if(ticks[k+1].mid>ticks[k].mid)up++;
+            else if(ticks[k+1].mid<ticks[k].mid)dn++;
         }
         double pers=(double)std::max(up,dn)/50.0;
-        bool bull_pers = pers>=0.70 && up>dn;
-        bool bear_pers = pers>=0.70 && dn>up;
+        bool bull_pers=pers>=0.70&&up>dn;
+        bool bear_pers=pers>=0.70&&dn>up;
 
-        // Volatility ratio
-        double vol10=std::fabs(ticks[i].mid-ticks[i-10].mid);
-        double vol50=0;
-        for(int k=i-50;k<i;k++) vol50+=std::fabs(ticks[k+1].mid-ticks[k].mid);
-        vol50/=50;
-        double vratio=(vol50>0.0001)?vol10/vol50:1.0;
+        // Volatility expansion
+        double vr10=std::fabs(ticks[i].mid-ticks[i-10].mid)/(atr*10+0.0001);
+        bool expanding=vr10>1.5;
 
-        // Range compression
-        double lo=p,hi=p;
-        for(int k=i-50;k<i;k++){
-            if(ticks[k].mid<lo) lo=ticks[k].mid;
-            if(ticks[k].mid>hi) hi=ticks[k].mid;
+        // Overextension
+        double m100=ticks[i].mid-ticks[i-LOOK].mid;
+        bool ovx_up=m100>atr*3.0, ovx_dn=m100<-atr*3.0;
+
+        // Compute MFE/MAE
+        auto mfemae=[&](bool is_long)->std::pair<float,float>{
+            float mf=0,ma=0;
+            for(int k=i+1;k<=i+WINDOW;k++){
+                float mv=is_long?(float)(ticks[k].mid-p):(float)(p-ticks[k].mid);
+                if(mv>mf)mf=mv;
+                if(-mv>ma)ma=-mv;
+            }
+            return{mf,ma};
+        };
+        auto abs_mfe=[&]()->float{
+            float mx=0;
+            for(int k=i+1;k<=i+WINDOW;k++){
+                float mv=(float)std::fabs(ticks[k].mid-p);
+                if(mv>mx)mx=mv;
+            }
+            return mx;
+        };
+
+        char key[80];
+
+        // Compression breakout
+        if (compressed&&expanding) {
+            stats["COMP_BREAK_ABS"].add(abs_mfe(),0);
+            snprintf(key,80,"COMP_BREAK_%s",ss);
+            stats[key].add(abs_mfe(),0);
         }
-        bool compressed=(hi-lo)<atr*2.0;
+        if (compressed&&expanding&&bull_pers){
+            auto[mf,ma]=mfemae(true);
+            stats["COMP_BREAK_BULL"].add(mf,ma);
+            snprintf(key,80,"COMP_BREAK_BULL_%s",ss); stats[key].add(mf,ma);
+        }
+        if (compressed&&expanding&&bear_pers){
+            auto[mf,ma]=mfemae(false);
+            stats["COMP_BREAK_BEAR"].add(mf,ma);
+            snprintf(key,80,"COMP_BREAK_BEAR_%s",ss); stats[key].add(mf,ma);
+        }
 
-        // Overextension (50-tick move vs ATR)
-        double move50=ticks[i].mid-ticks[i-50].mid;
-        bool overext_up = move50 >  atr*3.0;
-        bool overext_dn = move50 < -atr*3.0;
+        // Persistence (GoldFlow archetype)
+        if (bull_pers){
+            auto[mf,ma]=mfemae(true);
+            stats["PERSIST_BULL"].add(mf,ma);
+            snprintf(key,80,"PERSIST_BULL_%s",ss); stats[key].add(mf,ma);
+        }
+        if (bear_pers){
+            auto[mf,ma]=mfemae(false);
+            stats["PERSIST_BEAR"].add(mf,ma);
+            snprintf(key,80,"PERSIST_BEAR_%s",ss); stats[key].add(mf,ma);
+        }
 
-        // Momentum (last 10 ticks)
-        double mom10=ticks[i].mid-ticks[i-10].mid;
-        bool bull_mom = mom10 >  atr*0.5;
-        bool bear_mom = mom10 < -atr*0.5;
+        // Fade overextension (bleed-flip candidate)
+        if (ovx_up){
+            auto[mf,ma]=mfemae(false);
+            stats["FADE_SHORT"].add(mf,ma);
+            snprintf(key,80,"FADE_SHORT_%s",ss); stats[key].add(mf,ma);
+        }
+        if (ovx_dn){
+            auto[mf,ma]=mfemae(true);
+            stats["FADE_LONG"].add(mf,ma);
+            snprintf(key,80,"FADE_LONG_%s",ss); stats[key].add(mf,ma);
+        }
 
-        std::string ss_str = sname(ss);
-
-        // Compute forward returns at each horizon
-        for(int fi=0;fi<NFWD;fi++){
-            int fwd=FWD[fi];
-            double ret=ticks[i+fwd].mid - p;
-            char key[64];
-
-            // GoldFlow archetype: persistence in each session
-            if(bull_pers){
-                snprintf(key,64,"PERSIST_BULL_%s_fwd%d",ss_str,fwd);
-                stats[key][fi].add(ret);
-                snprintf(key,64,"PERSIST_BULL_ALL_fwd%d",fwd);
-                stats[key][fi].add(ret);
-            }
-            if(bear_pers){
-                snprintf(key,64,"PERSIST_BEAR_%s_fwd%d",ss_str,fwd);
-                stats[key][fi].add(-ret); // flip: bear is right when ret<0
-                snprintf(key,64,"PERSIST_BEAR_ALL_fwd%d",fwd);
-                stats[key][fi].add(-ret);
-            }
-
-            // Compression+expansion breakout
-            if(compressed && vratio>1.5){
-                if(bull_mom){
-                    snprintf(key,64,"COMP_BREAK_BULL_%s_fwd%d",ss_str,fwd);
-                    stats[key][fi].add(ret);
-                }
-                if(bear_mom){
-                    snprintf(key,64,"COMP_BREAK_BEAR_%s_fwd%d",ss_str,fwd);
-                    stats[key][fi].add(-ret);
-                }
-            }
-
-            // Fade overextension
-            if(overext_up){
-                snprintf(key,64,"FADE_SHORT_%s_fwd%d",ss_str,fwd);
-                stats[key][fi].add(-ret); // fade up = short = win when ret<0
-            }
-            if(overext_dn){
-                snprintf(key,64,"FADE_LONG_%s_fwd%d",ss_str,fwd);
-                stats[key][fi].add(ret);
-            }
-
-            // Combined: persist + compressed + expanding (GoldFlow's full signal)
-            if((bull_pers||bear_pers) && compressed && vratio>1.5){
-                double dir_ret = bull_pers ? ret : -ret;
-                snprintf(key,64,"GF_FULL_%s_fwd%d",ss_str,fwd);
-                stats[key][fi].add(dir_ret);
-                snprintf(key,64,"GF_FULL_ALL_fwd%d",fwd);
-                stats[key][fi].add(dir_ret);
-            }
+        // GoldFlow full archetype
+        if (bull_pers&&compressed&&expanding){
+            auto[mf,ma]=mfemae(true);
+            stats["GF_ARCH_BULL"].add(mf,ma);
+            snprintf(key,80,"GF_ARCH_BULL_%s",ss); stats[key].add(mf,ma);
+        }
+        if (bear_pers&&compressed&&expanding){
+            auto[mf,ma]=mfemae(false);
+            stats["GF_ARCH_BEAR"].add(mf,ma);
+            snprintf(key,80,"GF_ARCH_BEAR_%s",ss); stats[key].add(mf,ma);
         }
     }
 
-    // Print results -- for each unique signal base, show all forward windows
-    // Group by stripping the _fwdN suffix
-    std::map<std::string,std::map<int,Stats>> grouped;
-    for(auto& kv:stats){
-        const std::string& nm=kv.first;
-        // find last _fwd
-        size_t pos=nm.rfind("_fwd");
-        if(pos==std::string::npos) continue;
-        std::string base=nm.substr(0,pos);
-        int fwd=std::stoi(nm.substr(pos+4));
-        grouped[base][fwd]=kv.second[0]; // [0] is placeholder, use map directly
-    }
-    // Actually simpler: just print flat, sorted by signal then fwd
-    printf("\n=== EDGE RESULTS BY FORWARD WINDOW ===\n");
-    printf("Cost = 0.35pt (spread+slip). * = mean > cost.\n\n");
-    printf("  %-42s  %5s  %7s  %6s  %6s\n","Signal","Count","Mean","WinRate","Sharpe");
-    printf("  %s\n",std::string(75,'-').c_str());
+    const double TGT=1.2, STP=0.6, COST=0.35;
+    printf("=== MFE/MAE STRUCTURAL EDGE SCAN ===\n");
+    printf("Window=%d ticks (~%.0fs)  Target=%.1fpt Stop=%.1fpt Cost=%.2fpt\n\n",
+           WINDOW,WINDOW/10.0,TGT,STP,COST);
+    printf("  %-32s  %6s  %6s  %6s  %6s  %7s\n",
+           "Signal","Count","MFEp50","MFEp75","MAEp50","Expect");
+    printf("  %s\n",std::string(72,'-').c_str());
 
-    // Collect and sort
-    std::vector<std::pair<std::string,Stats>> flat;
-    for(auto& kv:stats) flat.push_back({kv.first,kv.second[0]});
-    std::sort(flat.begin(),flat.end(),[](auto&a,auto&b){
-        return a.second.mean()>b.second.mean();
+    std::vector<std::pair<std::string,MFEStats*>> sv;
+    for (auto& kv:stats) sv.push_back({kv.first,&kv.second});
+    std::sort(sv.begin(),sv.end(),[&](auto& a,auto& b){
+        return a.second->expect(TGT,STP,COST)>b.second->expect(TGT,STP,COST);
     });
 
-    int shown=0;
-    for(auto& kv:flat){
-        auto& s=kv.second;
-        if(s.n<10000) continue;
-        if(shown>80) break;
-        char flag = s.mean()>0.35?'*':' ';
-        printf("  %-42s  %5d  %+7.3f  %5.1f%%  %6.2f %c\n",
-               kv.first.c_str(),s.n,s.mean(),s.wr(),s.sharpe(),flag);
-        shown++;
+    int profitable=0;
+    for (auto& [k,s]:sv){
+        if (s->n()<200) continue;
+        double ex=s->expect(TGT,STP,COST);
+        char flag=ex>0?'*':' ';
+        if(ex>0) profitable++;
+        printf("  %-32s  %6d  %6.2f  %6.2f  %6.2f  %+7.3f %c\n",
+               k.c_str(),s->n(),
+               s->mfe_p50(),s->mfe_p75(),s->mae_p50(),ex,flag);
     }
-
-    // Summary: what's the best signal at each FWD horizon?
-    printf("\n=== BEST SIGNAL PER FORWARD WINDOW ===\n\n");
-    for(int fwd : {100,500,2000,5000,10000}){
-        std::string best_k; double best_m=-99;
-        for(auto& kv:flat){
-            if(kv.first.find("fwd"+std::to_string(fwd))==std::string::npos) continue;
-            if(kv.second.n<10000) continue;
-            if(kv.second.mean()>best_m){best_m=kv.second.mean();best_k=kv.first;}
-        }
-        if(!best_k.empty())
-            printf("  fwd=%-6d  best=%-40s  mean=%+.3f  %s\n",
-                   fwd,best_k.c_str(),best_m,best_m>0.35?"*** PROFITABLE ***":"below cost");
-    }
+    printf("\n  * = positive expectancy. Profitable: %d/%d\n",
+           profitable,(int)sv.size());
     return 0;
 }
