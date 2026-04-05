@@ -1,9 +1,10 @@
 # WriteStamp.cmake
-# Called as POST_BUILD step to write omega_build.stamp
-# Avoids MSBuild/cmake quoting issues with inline PowerShell backticks
+# Called as POST_BUILD step -- writes omega_build.stamp AND build_ok.sentinel.
+# QUICK_RESTART checks build_ok.sentinel before syncing the binary.
+# If this script fails, sentinel is not written, QUICK_RESTART refuses to sync.
 # Called with: cmake -DSOURCE_DIR=... -DGIT_HASH=... -P WriteStamp.cmake
 
-# Try to get git hash via cmake
+# Get git hash
 find_program(GIT_EXE git)
 if(GIT_EXE)
     execute_process(
@@ -14,16 +15,21 @@ if(GIT_EXE)
     )
 endif()
 
-# Fall back to compile-time hash if git not available
 if(NOT GIT_SHORT OR GIT_SHORT STREQUAL "")
     set(GIT_SHORT "${GIT_HASH}")
 endif()
 
-# Get current UTC time
+# Get UTC timestamp
 string(TIMESTAMP BUILD_TIME UTC)
 
-# Write stamp file
-set(STAMP_CONTENT "GIT_HASH_SHORT=${GIT_SHORT}\nBUILD_TIME=${BUILD_TIME}")
-file(WRITE "${SOURCE_DIR}/omega_build.stamp" "GIT_HASH_SHORT=${GIT_SHORT}\nBUILD_TIME=${BUILD_TIME}\n")
+# Write stamp
+file(WRITE "${SOURCE_DIR}/omega_build.stamp"
+    "GIT_HASH_SHORT=${GIT_SHORT}\nBUILD_TIME=${BUILD_TIME}\n")
 
-message(STATUS "[Omega] Stamp written: ${GIT_SHORT} @ ${BUILD_TIME}")
+# Write sentinel -- QUICK_RESTART checks this before syncing binary.
+# Sentinel contains the exe path so QUICK_RESTART can verify the right binary.
+file(WRITE "${SOURCE_DIR}/build_ok.sentinel"
+    "BUILD_OK=1\nGIT_HASH=${GIT_SHORT}\nBUILD_TIME=${BUILD_TIME}\nEXE=${SOURCE_DIR}/build/Release/Omega.exe\n")
+
+message(STATUS "[Omega] Build stamp written: ${GIT_SHORT} @ ${BUILD_TIME}")
+message(STATUS "[Omega] Sentinel written: build_ok.sentinel")

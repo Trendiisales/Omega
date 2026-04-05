@@ -109,12 +109,35 @@ Write-Host "      [OK] Stopped" -ForegroundColor Green
 Write-Host ""
 
 # --- Sync build output NOW (file is no longer locked) ------------------------
+# SENTINEL CHECK: only sync if build_ok.sentinel exists and matches build\Release\Omega.exe.
+# If the build failed (POST_BUILD error), sentinel is absent -- we REFUSE to sync
+# and keep running the last known-good binary instead of a partial build.
+$SentinelFile = "$OmegaDir\build_ok.sentinel"
+
 if (Test-Path $BuildExe) {
     $buildInfo  = (Get-Item $BuildExe).LastWriteTime
     $launchInfo = if (Test-Path $OmegaExe) { (Get-Item $OmegaExe).LastWriteTime } else { [DateTime]::MinValue }
+
     if ($buildInfo -gt $launchInfo) {
-        Copy-Item $BuildExe $OmegaExe -Force
-        Write-Host "  [SYNC] Updated Omega.exe from build\Release\Omega.exe" -ForegroundColor Green
+        # New build exists -- check sentinel before syncing
+        if (Test-Path $SentinelFile) {
+            $sentinelAge = (Get-Item $SentinelFile).LastWriteTime
+            if ($sentinelAge -ge $buildInfo.AddSeconds(-30)) {
+                # Sentinel is fresh (written within 30s of the binary) -- safe to sync
+                Copy-Item $BuildExe $OmegaExe -Force
+                Write-Host "  [SYNC] Updated Omega.exe from build\Release\Omega.exe" -ForegroundColor Green
+            } else {
+                Write-Host "  [WARN] build\Release\Omega.exe is newer than build_ok.sentinel" -ForegroundColor Red
+                Write-Host "         Build POST_BUILD step may have failed. NOT syncing." -ForegroundColor Red
+                Write-Host "         Running last known-good binary: $OmegaExe" -ForegroundColor Yellow
+                Write-Host "         Fix the build error, rebuild, then restart." -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "  [WARN] build_ok.sentinel missing -- POST_BUILD step failed." -ForegroundColor Red
+            Write-Host "         New binary exists but build was NOT clean. NOT syncing." -ForegroundColor Red
+            Write-Host "         Running last known-good binary: $OmegaExe" -ForegroundColor Yellow
+            Write-Host "         Fix the build error, rebuild, then restart." -ForegroundColor Yellow
+        }
     } else {
         Write-Host "  [SYNC] Omega.exe is current (build output not newer)" -ForegroundColor DarkGray
     }
