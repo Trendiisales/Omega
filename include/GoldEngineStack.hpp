@@ -4673,23 +4673,22 @@ public:
                " gov_ewm_slow=%.2f age=%llds\n",
                ewm_vol_baseline_, governor_.ewm_fast_, governor_.ewm_slow_, (long long)age);
         fflush(stdout);
-        // Seed VolatilityFilter history so allow() is not blind for first 50 ticks.
-        // Uses saved EWM baseline as synthetic mid -- buffer fills flat (range=0),
-        // threshold still requires a real live move to open. Just skips the
-        // cold-start delay that was blocking all gold entries 40s-4min on every restart.
-        // FIX: vol_range=0.00 on startup was causing engines to miss entire volatile moves.
-        if (ewm_vol_baseline_ > 0.0) {
-            // Use gov_ewm_fast as seed mid -- it's the actual gold price EWM,
-            // saved and loaded reliably. The baseline_vol_pct_ calculation was
-            // producing 3000 (fallback) because baseline_vol_pct_ wasn't being
-            // persisted correctly. gov_ewm_fast IS the price -- use it directly.
+        // Seed VolatilityFilter from saved gold price (gov_ewm_fast).
+        // FIX: do NOT gate on ewm_vol_baseline_ > 0.0.
+        // ewm_vol_baseline is frequently 0.0 in saved state -- gating on it
+        // blocks seeding on almost every restart -> vol_range=0.00 for 50+ ticks.
+        // gov_ewm_fast IS the gold price EWM (saved as ~4677). Use it directly.
+        {
             double seed_mid = governor_.ewm_fast_;
             if (seed_mid < 1000.0 || seed_mid > 15000.0)
-                seed_mid = governor_.ewm_slow_;  // fallback to slow EWM
+                seed_mid = governor_.ewm_slow_;
             if (seed_mid < 1000.0 || seed_mid > 15000.0)
-                seed_mid = 0.0;  // give up, cold start
-            if (seed_mid > 0.0)
+                seed_mid = 0.0;
+            if (seed_mid > 0.0) {
                 vol_filter_.seed(seed_mid);
+                printf("[GOLDSTACK] VolatilityFilter seeded mid=%.2f\n", seed_mid);
+                fflush(stdout);
+            }
         }
     }
 
