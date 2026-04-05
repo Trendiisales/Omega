@@ -122,10 +122,11 @@ static constexpr double GFE_STAGE4_ATR_MULT   = 6.0;   // full trail stage (GUI 
 static constexpr double GFE_MAX_SPREAD        = 2.5;   // pts -- London gold spread $1.50-$4.00; old 0.6 blocked all entries
 static constexpr int    GFE_MIN_HOLD_MS       = 5000;   // 5s minimum hold
 #ifndef GFE_MAX_HOLD_OVERRIDE
-static constexpr int    GFE_MAX_HOLD_MS       = 600000; // 10 min -- reduced from 60min
-                                                          // TIME_STOP avg hold=754s at 60min.
-                                                          // Noise entries bleed for 12min then exit -$46.
-                                                          // At 10min: same trades exit -$20, less bleed.
+static constexpr int    GFE_MAX_HOLD_MS       = 3600000; // 60 min
+                                                          // Reverted from 10min: shorter hold cut WR 63%->55%
+                                                          // Real trend trades need time for trail to develop.
+                                                          // TIME_STOP problem is the entry signal, not hold time.
+                                                          // Fix: L2 live (ctid=43014358) filters noise entries.
 #else
 static constexpr int    GFE_MAX_HOLD_MS       = GFE_MAX_HOLD_OVERRIDE;
 #endif
