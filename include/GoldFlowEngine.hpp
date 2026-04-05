@@ -1563,8 +1563,13 @@ private:
             const int64_t held_s  = (now_ms / 1000) - pos.entry_ts;
             const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
             // ATR-proportional threshold: scale with actual entry volatility
-            const double  time_stop_adverse = std::max(1.0, 0.25 * pos.atr_at_entry);
-            static constexpr int64_t TIME_STOP_SECS = 45;
+            // FIXED 2026-04-05: floor 1.0->2.0, mult 0.25->0.50
+            // Backtest showed 10,354 TIME_STOPs at avg -$45 firing on spread noise
+            // ATR=2pt: was 1.0pt, now 2.0pt.  ATR=5pt: was 1.25pt, now 2.5pt
+            const double  time_stop_adverse = std::max(2.0, 0.50 * pos.atr_at_entry);
+            // FIXED 2026-04-05: raised 45s->180s
+            // Gold needs 2-5 min to develop direction after entry
+            static constexpr int64_t TIME_STOP_SECS = 180;
 
             // Velocity suppression: expansion confirmed AND vol_ratio > 2.5 (genuine velocity
             // regime, not just any EXPANSION tick) AND adverse < 2pts (trade still viable).
@@ -1595,7 +1600,7 @@ private:
             if (!pos.partial_closed
                 && held_s > TIME_STOP_SECS
                 && adverse > time_stop_adverse
-                && pos.mfe < time_stop_adverse * 0.5
+                && pos.mfe < time_stop_adverse  // FIXED 2026-04-05: was *0.5 -- fired even when MFE proved direction correct
                 && !velocity_time_suppress) {
                 printf("[GOLD-FLOW] TIME-STOP %s adverse=%.2f>%.2f held=%llds mfe=%.2f atr=%.2f -- thesis dead\n",
                        pos.is_long ? "LONG" : "SHORT",
