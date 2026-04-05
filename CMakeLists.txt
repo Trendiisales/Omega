@@ -133,14 +133,7 @@ add_custom_command(TARGET Omega POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/omega_config.ini"
         "$<TARGET_FILE_DIR:Omega>/omega_config.ini"
-    # Write omega_build.stamp so QUICK_RESTART shows correct commit hash.
-    # Use a separate cmake -P script to avoid MSBuild quoting issues with
-    # backticks and nested quotes in inline PowerShell commands.
-    COMMAND ${CMAKE_COMMAND}
-        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
-        -DGIT_HASH=${OMEGA_GIT_HASH}
-        -P ${CMAKE_SOURCE_DIR}/cmake/WriteStamp.cmake
-    COMMENT "Copying config files and writing build stamp"
+    COMMENT "Copying config files to build output directory"
 )
 
 # ?? Push current log to git after every successful build ?????????????????????

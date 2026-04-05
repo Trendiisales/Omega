@@ -1,36 +1,10 @@
 #Requires -Version 5.1
 # ==============================================================================
-#  OMEGA - QUICK RESTART  (no build, no git pull)
-#
+#  OMEGA - QUICK RESTART
 #  BINARY LOCATION RULE (IMMUTABLE):
-#    cmake builds to: C:\Omega\build\Release\Omega.exe  (build output)
-#    This script runs: C:\Omega\Omega.exe               (launch location)
-#    On every restart, build output is synced to launch location.
-#    This ensures QUICK_RESTART always runs the latest compiled binary.
-#    DO NOT change OmegaExe or BuildExe paths.
-#
-#  PURPOSE:
-#    Restart Omega in ~10 seconds without recompiling.
-#    Use when:
-#      - You changed omega_config.ini (hot-reload handles most, but some
-#        settings only take effect on restart e.g. session times, log paths)
-#      - You need a clean restart after a crash or hang
-#      - You want to pick up a new ATR seed after a long pause
-#      - You're between sessions and want clean state
-#
-#  DOES NOT:
-#    - Pull from GitHub
-#    - Rebuild the binary
-#    - Change any code
-#
-#  USAGE:
-#    .\QUICK_RESTART.ps1              # restart with current config
-#    .\QUICK_RESTART.ps1 -SkipVerify  # don't run VERIFY_STARTUP after launch
-#    .\QUICK_RESTART.ps1 -WaitSec 60  # verify for 60s instead of 45s
-#
-#  AFTER RESTART:
-#    VERIFY_STARTUP.ps1 runs automatically (unless -SkipVerify).
-#    startup_report.txt is written to C:\Omega\logs\
+#    cmake builds to: C:\Omega\build\Release\Omega.exe
+#    This script launches: C:\Omega\Omega.exe
+#    Sync happens AFTER stop, BEFORE launch -- always runs latest build.
 # ==============================================================================
 
 param(
@@ -42,39 +16,20 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# IMMUTABLE binary paths -- DO NOT change
-$BuildExe   = "$OmegaDir\build\Release\Omega.exe"   # cmake output
-$OmegaExe   = "$OmegaDir\Omega.exe"                 # launch location
-$ConfigSrc  = "$OmegaDir\omega_config.ini"
-$StampFile  = "$OmegaDir\omega_build.stamp"
+$BuildExe  = "$OmegaDir\build\Release\Omega.exe"
+$OmegaExe  = "$OmegaDir\Omega.exe"
+$ConfigSrc = "$OmegaDir\omega_config.ini"
 
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "   OMEGA  |  QUICK RESTART  (no rebuild)" -ForegroundColor Cyan
+Write-Host "   OMEGA  |  QUICK RESTART" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# --- Sync build output to launch location ------------------------------------
-# Done AFTER stopping Omega so the file is not locked.
-# See sync block below (after [1] Stop).
-
-# --- Verify exe exists -------------------------------------------------------
+# --- Verify at least one binary exists ---------------------------------------
 if (-not (Test-Path $OmegaExe) -and -not (Test-Path $BuildExe)) {
-    Write-Host "  [ERROR] No binary found at $BuildExe or $OmegaExe" -ForegroundColor Red
-    Write-Host "          Run: cmake --build build --config Release" -ForegroundColor Yellow
+    Write-Host "  [ERROR] No binary found. Run cmake --build build --config Release" -ForegroundColor Red
     exit 1
-}
-
-# --- Show what binary we're restarting with ----------------------------------
-if (Test-Path $StampFile) {
-    $stamp     = Get-Content $StampFile
-    $gitShort  = (($stamp | Where-Object { $_ -match '^GIT_HASH_SHORT=' }) -replace '^GIT_HASH_SHORT=', '').Trim()
-    $buildTime = (($stamp | Where-Object { $_ -match '^BUILD_TIME=' })     -replace '^BUILD_TIME=',     '').Trim()
-    Write-Host "  Binary  : $OmegaExe" -ForegroundColor DarkGray
-    Write-Host "  Commit  : $gitShort" -ForegroundColor DarkGray
-    Write-Host "  Built   : $buildTime" -ForegroundColor DarkGray
-} else {
-    Write-Host "  Binary  : $OmegaExe  (no stamp file -- unknown build)" -ForegroundColor Yellow
 }
 
 # --- Show config mode --------------------------------------------------------
@@ -86,7 +41,7 @@ Write-Host "  Mode    : $mode" -ForegroundColor $modeColor
 Write-Host ""
 $ErrorActionPreference = "Stop"
 
-# --- [1] Stop Omega (service or process) -------------------------------------
+# --- [1] Stop Omega ----------------------------------------------------------
 Write-Host "[1/4] Stopping Omega..." -ForegroundColor Yellow
 $ErrorActionPreference = "Continue"
 $svcCheck = Get-Service -Name "OmegaHFT" -ErrorAction SilentlyContinue
@@ -100,7 +55,6 @@ Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -E
 Start-Sleep -Seconds 2
 $still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
 if ($still) {
-    Write-Host "       WARNING: Omega still running -- forcing..." -ForegroundColor Red
     $still | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
@@ -108,53 +62,42 @@ $ErrorActionPreference = "Stop"
 Write-Host "      [OK] Stopped" -ForegroundColor Green
 Write-Host ""
 
-# --- Sync build output NOW (file is no longer locked) ------------------------
-# SENTINEL CHECK: only sync if build_ok.sentinel exists and matches build\Release\Omega.exe.
-# If the build failed (POST_BUILD error), sentinel is absent -- we REFUSE to sync
-# and keep running the last known-good binary instead of a partial build.
-$SentinelFile = "$OmegaDir\build_ok.sentinel"
-
+# --- Sync build output (file unlocked now) -----------------------------------
 if (Test-Path $BuildExe) {
-    $buildInfo  = (Get-Item $BuildExe).LastWriteTime
-    $launchInfo = if (Test-Path $OmegaExe) { (Get-Item $OmegaExe).LastWriteTime } else { [DateTime]::MinValue }
-
-    if ($buildInfo -gt $launchInfo) {
-        # New build exists -- check sentinel before syncing
-        if (Test-Path $SentinelFile) {
-            $sentinelAge = (Get-Item $SentinelFile).LastWriteTime
-            if ($sentinelAge -ge $buildInfo.AddSeconds(-30)) {
-                # Sentinel is fresh (written within 30s of the binary) -- safe to sync
-                Copy-Item $BuildExe $OmegaExe -Force
-                Write-Host "  [SYNC] Updated Omega.exe from build\Release\Omega.exe" -ForegroundColor Green
-            } else {
-                Write-Host "  [WARN] build\Release\Omega.exe is newer than build_ok.sentinel" -ForegroundColor Red
-                Write-Host "         Build POST_BUILD step may have failed. NOT syncing." -ForegroundColor Red
-                Write-Host "         Running last known-good binary: $OmegaExe" -ForegroundColor Yellow
-                Write-Host "         Fix the build error, rebuild, then restart." -ForegroundColor Yellow
-            }
-        } else {
-            Write-Host "  [WARN] build_ok.sentinel missing -- POST_BUILD step failed." -ForegroundColor Red
-            Write-Host "         New binary exists but build was NOT clean. NOT syncing." -ForegroundColor Red
-            Write-Host "         Running last known-good binary: $OmegaExe" -ForegroundColor Yellow
-            Write-Host "         Fix the build error, rebuild, then restart." -ForegroundColor Yellow
-        }
+    $buildTime  = (Get-Item $BuildExe).LastWriteTime
+    $launchTime = if (Test-Path $OmegaExe) { (Get-Item $OmegaExe).LastWriteTime } else { [DateTime]::MinValue }
+    if ($buildTime -gt $launchTime) {
+        Copy-Item $BuildExe $OmegaExe -Force
+        Write-Host "  [SYNC] Updated Omega.exe from build\Release\Omega.exe" -ForegroundColor Green
     } else {
-        Write-Host "  [SYNC] Omega.exe is current (build output not newer)" -ForegroundColor DarkGray
+        Write-Host "  [SYNC] Omega.exe already current" -ForegroundColor DarkGray
     }
 }
 
-# --- [2] Delete poisoned bar_failed file (safe to always do) -----------------
+# --- THE ONE TRUE HASH -- read directly from git, always current -------------
+$ErrorActionPreference = "Continue"
+$gitHash = (git -C $OmegaDir rev-parse --short HEAD 2>$null)
+if (-not $gitHash) { $gitHash = "unknown" }
+
+# Update stamp file to match reality
+$buildTimeStr = (Get-Item $OmegaExe).LastWriteTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") + " UTC"
+"GIT_HASH_SHORT=$gitHash`nBUILD_TIME=$buildTimeStr" | Set-Content "$OmegaDir\omega_build.stamp"
+$ErrorActionPreference = "Stop"
+
+# --- [2] Clean state files ---------------------------------------------------
 Write-Host "[2/4] Cleaning state files..." -ForegroundColor Yellow
-$barFailedFile = "$OmegaDir\logs\ctrader_bar_failed.txt"
-if (Test-Path $barFailedFile) {
-    Remove-Item $barFailedFile -Force
-    Write-Host "      [OK] Deleted ctrader_bar_failed.txt (prevents bar subscription poison)" -ForegroundColor Green
+$ErrorActionPreference = "Continue"
+$barFailed = "$OmegaDir\logs\ctrader_bar_failed.txt"
+if (Test-Path $barFailed) {
+    Remove-Item $barFailed -Force
+    Write-Host "      [OK] Deleted ctrader_bar_failed.txt" -ForegroundColor Green
 } else {
-    Write-Host "      [OK] ctrader_bar_failed.txt not present (clean)" -ForegroundColor DarkGray
+    Write-Host "      [OK] ctrader_bar_failed.txt not present" -ForegroundColor DarkGray
 }
+$ErrorActionPreference = "Stop"
 Write-Host ""
 
-# --- [3] Ensure logs dirs exist ----------------------------------------------
+# --- [3] Ensure log dirs -----------------------------------------------------
 Write-Host "[3/4] Verifying log directories..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Path "$OmegaDir\logs"        -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\shadow" -Force | Out-Null
@@ -166,30 +109,32 @@ Write-Host ""
 Write-Host "[4/4] Launching Omega.exe..." -ForegroundColor Yellow
 Set-Location $OmegaDir
 
+# =====================================================================
+#  THE ONE TRUE HASH -- always matches what is running
+# =====================================================================
 Write-Host ""
-Write-Host "=======================================================" -ForegroundColor Green
-Write-Host "  QUICK RESTART COMPLETE" -ForegroundColor Green
-Write-Host "  GUI -> http://185.167.119.59:7779" -ForegroundColor Green
-Write-Host "  Mode: $mode  |  Commit: $gitShort" -ForegroundColor Green
-Write-Host "=======================================================" -ForegroundColor Green
+Write-Host "########################################################" -ForegroundColor Yellow
+Write-Host "  RUNNING COMMIT : $gitHash" -ForegroundColor Yellow
+Write-Host "  BINARY TIME    : $buildTimeStr" -ForegroundColor Yellow
+Write-Host "  MODE           : $mode" -ForegroundColor $modeColor
+Write-Host "  GUI            : http://185.167.119.59:7779" -ForegroundColor Yellow
+Write-Host "########################################################" -ForegroundColor Yellow
 Write-Host ""
 
-# Use Windows Service if installed (survives RDP disconnects)
-# Fall back to direct launch if service not installed
+# --- Launch service or direct ------------------------------------------------
 $svc = Get-Service -Name "OmegaHFT" -ErrorAction SilentlyContinue
 
 if ($svc) {
-    Write-Host "  [SERVICE] Starting OmegaHFT Windows service..." -ForegroundColor Cyan
+    Write-Host "  [SERVICE] Starting OmegaHFT..." -ForegroundColor Cyan
     Start-Service "OmegaHFT"
     Start-Sleep -Seconds 3
     $svc = Get-Service -Name "OmegaHFT"
-    Write-Host "  [SERVICE] Status: $($svc.Status)" -ForegroundColor $(if ($svc.Status -eq "Running") { "Green" } else { "Red" })
-    Write-Host "  [SERVICE] Survives RDP disconnects. Auto-restarts on crash." -ForegroundColor Green
+    $svcColor = if ($svc.Status -eq "Running") { "Green" } else { "Red" }
+    Write-Host "  [SERVICE] Status: $($svc.Status)" -ForegroundColor $svcColor
     Write-Host ""
 } else {
-    Write-Host "  [DIRECT] OmegaHFT service not installed -- launching directly." -ForegroundColor Yellow
-    Write-Host "  [DIRECT] WARNING: process will die on RDP disconnect." -ForegroundColor Yellow
-    Write-Host "  [DIRECT] Run INSTALL_SERVICE.ps1 once to fix this permanently." -ForegroundColor Yellow
+    Write-Host "  [DIRECT] WARNING: Service not installed -- process dies on disconnect." -ForegroundColor Yellow
+    Write-Host "           Run INSTALL_SERVICE.ps1 once to fix permanently." -ForegroundColor Yellow
     Write-Host ""
     $proc = Start-Process -FilePath $OmegaExe -ArgumentList "omega_config.ini" `
                           -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
@@ -199,9 +144,7 @@ if ($svc) {
 
 if (-not $SkipVerify) {
     Write-Host "  Running VERIFY_STARTUP..." -ForegroundColor Cyan
-    Write-Host "  startup_report.txt will be written to C:\Omega\logs\" -ForegroundColor DarkGray
     Write-Host ""
     Start-Sleep -Seconds 3
     & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec $WaitSec -OmegaDir $OmegaDir
 }
-
