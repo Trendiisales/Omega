@@ -1472,9 +1472,11 @@ private:
         //   get gapped through by real 5-8pt moves -> $82 avg loss (backtest).
         //   Floor: 5pt SL -> 0.06 lots -> same $30 risk, gap-proof.
         //
-        // l2_data_live is set earlier in on_tick() from m_l2_was_live.
+        // m_l2_was_live: true if L2 imbalance has been non-0.500 at any point this session.
+        // When L2 live: use real ATR (imbalance confirms entry quality -- tight SL valid).
+        // When L2 dead: use 5pt floor (drift-only entries gap through 2pt SL -> $82 avg loss).
         static constexpr double GFE_ATR_SL_FLOOR_NO_L2 = 5.0;  // floor when L2 dead
-        const double atr_floor = l2_data_live ? GFE_ATR_MIN : GFE_ATR_SL_FLOOR_NO_L2;
+        const double atr_floor = m_l2_was_live ? GFE_ATR_MIN : GFE_ATR_SL_FLOOR_NO_L2;
         const double atr_floored = std::max(atr_floor, m_atr);
         const double atr_sl  = atr_floored * GFE_ATR_SL_MULT;
         const double min_sl  = spread * 5.0;  // raised 3x->5x: 3x was 0.66pts on 0.22 spread, too tight for London gold vol
