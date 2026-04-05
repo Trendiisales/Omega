@@ -68,6 +68,10 @@ struct OmegaConfig {
     bool   ustec_pilot_require_latency = true;  // enforce latency gate in shadow for USTEC pilot
     bool   ustec_pilot_block_risk_off  = true;  // skip USTEC pilot in RISK_OFF regime
     bool   enable_extended_symbols    = true;   // subscribe + trade additional opportunity symbols
+    bool   goldflow_enabled           = false;  // DISABLED 2026-04-05: backtest proved no edge
+                                                // Avg winner $15 vs avg loser $74 = 0.20:1 payoff
+                                                // 2yr MFE scan: microstructure signal, not structural
+                                                // Replace with OverlapMomentumEngine + OverlapFadeEngine
 
     // ?? Risk-based position sizing ??????????????????????????????????????????
     // risk_per_trade_usd: the maximum dollar loss per trade (SL + spread cost).

@@ -330,6 +330,7 @@ static void load_config(const std::string& path) {
             if (k=="ustec_pilot_require_latency") g_cfg.ustec_pilot_require_latency = (v == "true" || v == "1");
             if (k=="ustec_pilot_block_risk_off")  g_cfg.ustec_pilot_block_risk_off = (v == "true" || v == "1");
             if (k=="enable_extended_symbols")    g_cfg.enable_extended_symbols = (v == "true" || v == "1");
+            if (k=="goldflow_enabled")           g_cfg.goldflow_enabled        = (v == "true" || v == "1");
             if (k=="min_entry_gap_sec")    g_cfg.min_entry_gap_sec = safe_stoi(v, k);
             if (k=="max_spread_entry_pct") g_cfg.max_spread_pct    = safe_stod(v, k);
             if (k=="max_latency_ms")       g_cfg.max_latency_ms    = safe_stod(v, k);

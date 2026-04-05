@@ -1,21 +1,15 @@
 #!/bin/bash
 # ============================================================
 #  Build OmegaBacktest natively on Mac
-#  Uses the REAL GoldFlowEngine.hpp / GoldEngineStack.hpp
-#  (same code as the live system -- not the standalone reimpl)
-#
-#  Usage:
-#    cd /path/to/Omega
-#    bash backtest/build_mac.sh
-#
-#  Output: backtest/OmegaBacktest_mac
 # ============================================================
-set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$REPO/backtest/OmegaBacktest_mac"
 
 echo "Building OmegaBacktest for Mac..."
 echo "Repo: $REPO"
+
+# Always remove old binary so stale binary never masks a failed build
+rm -f "$OUT"
 
 clang++ -O3 -std=c++20 \
     -o "$OUT" \
@@ -33,8 +27,8 @@ clang++ -O3 -std=c++20 \
     -Wno-reorder \
     -Wno-unknown-pragmas \
     -Wno-deprecated-declarations \
-    -pthread \
-    2>&1
+    -Wno-non-pod-varargs \
+    -pthread
 
 if [ ! -f "$OUT" ]; then
     echo ""
@@ -48,4 +42,4 @@ echo "Usage:"
 echo "  $OUT <ticks.csv> --engine flow --warmup 10000 --report results/flow.csv --quiet"
 echo "  $OUT <ticks.csv> --engine flow,breakout --warmup 10000"
 echo ""
-echo "Engines: gold  flow  latency  cross  breakout"
+echo "Engines: gold  flow  latency  cross  breakout  stoprun"

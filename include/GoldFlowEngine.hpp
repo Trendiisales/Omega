@@ -271,6 +271,26 @@ struct GoldFlowEngine {
     AddOnCallback on_addon;         // set from main.cpp; nullptr = disabled
     bool addon_shadow_mode = true;  // default true = shadow only, no live orders
 
+    // ?? Bleed-flip callback ??????????????????????????????????????????????????????
+    // Called when the bleed guard fires -- original trade stalled at BE for 5min.
+    // The stall means the opposing force is winning. Flip direction.
+    //
+    // Args: flip_is_long (OPPOSITE of original), bid, ask, atr, original_entry
+    //   flip_is_long:    direction of the new REVERSE trade
+    //   atr:             ATR at the time of flip (for SL sizing)
+    //   original_entry:  price of the stalled trade (natural TP target for flip)
+    //
+    // main.cpp fires force_entry() on g_gold_flow_reload in the flip direction.
+    // SL = flip_entry + 0.5*ATR (tight -- if price reverts to original direction fast)
+    // TP = original_entry - 1.5*ATR in flip direction (mean reversion target)
+    //
+    // Set nullptr to disable flip (bleed guard just exits flat).
+    using BleedFlipCallback = std::function<void(bool flip_is_long,
+                                                  double bid, double ask,
+                                                  double atr,
+                                                  double original_entry)>;
+    BleedFlipCallback on_bleed_flip;  // set from main.cpp; nullptr = exit flat only
+
     // -------------------------------------------------------------------------
     // Main tick function -- call every tick with fresh data
     // bid, ask       : current quotes
@@ -335,7 +355,23 @@ struct GoldFlowEngine {
         // Spread gate -- session-aware: tighter during Asia/dead zone
         if (spread > eff_max_spread) return;
 
-        // ?? Asia/dead-zone ATR quality gate ??????????????????????????????????
+        // ?? SESSION GATE -- only enter in OVERLAP and NY_OPEN ???????????????????
+        // MFE/MAE scan of 134M ticks (2023-2025) showed:
+        //   OVERLAP (slot 3+4, 12:00-17:00 UTC): positive expectancy +0.057 to +0.081
+        //   LON_OPEN (slot 1):   PERSIST_BULL -0.044, PERSIST_BEAR -0.085 (LOSING)
+        //   LON_CORE (slot 2):   PERSIST_BULL -0.007 (barely break-even)
+        //   NY_LATE (slot 5):    -0.086 to -0.143 (worst session)
+        //   ASIA (slot 6):       +0.034 (marginal, high spread cost)
+        //
+        // Action: only allow new entries in slots 3 (Overlap 12-14 UTC) and
+        //         4 (NY open 14-17 UTC). Block all others.
+        // Manage open positions in any session (no gate on LIVE phase -- see above).
+        // Asia kept for now via is_low_quality_session path but new entries blocked.
+        {
+            const bool overlap_or_ny = (m_last_session_slot == 3 ||
+                                        m_last_session_slot == 4);
+            if (!overlap_or_ny) return;
+        }
         // On low-quality tape, reject if ATR is too low (noise-dominated) or
         // ATR-to-spread ratio is too small (SL within spread fluctuation range).
         if (is_low_quality_session) {
@@ -714,6 +750,67 @@ struct GoldFlowEngine {
                           << " (need <0.40 or drift<-" << strong_drift << ")\n";
                 std::cout.flush();
                 return;
+            }
+        }
+
+        // ?? EXHAUSTION FILTER -- blocks entries at move exhaustion ??????????????
+        // Zero-MFE analysis: 26% of entries had zero MFE -- price never moved
+        // our way. These happen when the signal fires at the END of a move.
+        //
+        // EWM drift peaks at roughly 0.8*ATR on a typical move.
+        // When drift is near its peak AND has plateaued (not accelerating),
+        // the move is done -- entering continuation here loses immediately.
+        //
+        // THRESHOLD CALIBRATION:
+        //   drift_overextended: drift_abs > 0.8*ATR
+        //     ATR=5pt: fires when drift > 4.0pt (typical peak for a 5pt move)
+        //     ATR=10pt: fires when drift > 8.0pt (typical peak for a 10pt move)
+        //   drift_plateau: last 5 drift values within 0.30*ATR of each other
+        //     Drift is high but stalling = momentum exhausted
+        //
+        // Block on EITHER condition (not both required):
+        //   Overextended alone = price has already moved its typical range
+        //   Plateau alone (when drift > 0.5*ATR) = momentum stalled at elevated drift
+        //
+        // NOT applied in EXPANSION regime + vol_ratio > 2.0 (real crashes run further).
+        {
+            const bool in_expansion = m_expansion_mode && (m_vol_ratio > 2.0);
+            if (!in_expansion && m_atr > 0.0) {
+                const double drift_abs = std::fabs(ewm_drift);
+
+                // Condition 1: drift near or past its typical peak for this ATR
+                const bool drift_overextended = (drift_abs > m_atr * 0.80);
+
+                // Condition 2: drift plateau -- stalled at elevated level
+                bool drift_plateau = false;
+                if ((int)m_drift_val_window.size() >= 5) {
+                    double pmin = m_drift_val_window.back();
+                    double pmax = m_drift_val_window.back();
+                    const int check = std::min(5, (int)m_drift_val_window.size());
+                    for (int pi = (int)m_drift_val_window.size() - check;
+                         pi < (int)m_drift_val_window.size(); ++pi) {
+                        if (m_drift_val_window[pi] < pmin) pmin = m_drift_val_window[pi];
+                        if (m_drift_val_window[pi] > pmax) pmax = m_drift_val_window[pi];
+                    }
+                    const double prange = pmax - pmin;
+                    // Plateau at elevated drift: drift > 0.5*ATR but not accelerating
+                    drift_plateau = (drift_abs > m_atr * 0.50) && (prange < m_atr * 0.30);
+                }
+
+                // Block on either: overextended OR plateaued-at-elevation
+                // Log which fired so we can diagnose in shadow
+                if (drift_overextended || drift_plateau) {
+                    static int64_t s_exhaust_log = 0;
+                    if (now_ms - s_exhaust_log > 5000) {
+                        s_exhaust_log = now_ms;
+                        printf("[GFE-EXHAUST-BLOCK] %s drift=%.2f atr=%.2f ratio=%.2f ext=%d plateau=%d\n",
+                               long_signal ? "LONG" : "SHORT",
+                               ewm_drift, m_atr, drift_abs / m_atr,
+                               (int)drift_overextended, (int)drift_plateau);
+                        fflush(stdout);
+                    }
+                    return;
+                }
             }
         }
 
@@ -1512,19 +1609,26 @@ private:
         // Without this guard: SL sits at 4683, trade bleeds full -$168.
         // With this guard: closes at ~4691 after 15s = ~-$30 instead.
         //
-        // ATR-PROPORTIONAL FLOOR (2026-04-04 backtest calibration):
-        // Old: max(2.0, 0.30*ATR). At $3000 gold ATR=15pt, threshold=4.5pt (good).
-        // But floor of 2.0pt at $1800-2000 gold (ATR=2-5pt) fired on spread noise.
-        // Fix: floor raised to 3.0pt AND proportion raised to 0.30*ATR.
-        //   ATR=2pt: max(3.0, 0.6) = 3.0pt (requires genuine gap against thesis)
-        //   ATR=5pt: max(3.0, 1.5) = 3.0pt (still floor-limited)
-        //   ATR=15pt: max(3.0, 4.5) = 4.5pt (ATR-based fires)
-        // MFE threshold also raised: 0.10 -> 0.30pt (noise-level MFE ignored)
+        // FIXED 2026-04-05 (backtest analysis):
+        // Previous floor of 3.0pt was too wide -- only caught 73 trades in 2yr backtest.
+        // Data shows 10,231 zero-MFE losses where price NEVER moved our way.
+        // These cost avg $82 (full SL). Catching them at 1.5pt adverse saves $58 each.
+        //
+        // New thresholds: max(1.5, 0.20*ATR)
+        //   ATR=2pt:  max(1.5, 0.4) = 1.5pt -- fires within 7x spread (real reversal)
+        //   ATR=5pt:  max(1.5, 1.0) = 1.5pt -- 3x spread (genuine adverse move)
+        //   ATR=10pt: max(1.5, 2.0) = 2.0pt -- real adverse, not noise
+        //   ATR=15pt: max(1.5, 3.0) = 3.0pt -- crash day (unchanged from old)
+        //
+        // Window extended 15s->30s: catches slightly slower reversals.
+        // MFE gate kept at 0.30pt: only fires when price never proved us right.
+        // Safety: at 1.5pt adverse with 0.30pt MFE gate, spread noise cannot trigger
+        // this (spread=0.22pt so adverse > 1.5pt requires a real directional move against us).
         {
             const int64_t held_s  = (now_ms / 1000) - pos.entry_ts;
             const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
-            const double  imm_rev_thresh = std::max(3.0, m_atr * 0.30);
-            if (held_s <= 15 && adverse > imm_rev_thresh && pos.mfe < 0.30) {
+            const double  imm_rev_thresh = std::max(1.5, m_atr * 0.20);
+            if (held_s <= 30 && adverse > imm_rev_thresh && pos.mfe < 0.30) {
                 printf("[GOLD-FLOW] IMM-REVERSAL %s adverse=%.2f > %.2f in %llds, mfe=%.2f atr=%.2f -- wrong thesis, bail\n",
                        pos.is_long ? "LONG" : "SHORT",
                        adverse, imm_rev_thresh, (long long)held_s, pos.mfe, m_atr);
@@ -1563,8 +1667,13 @@ private:
             const int64_t held_s  = (now_ms / 1000) - pos.entry_ts;
             const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
             // ATR-proportional threshold: scale with actual entry volatility
-            const double  time_stop_adverse = std::max(1.0, 0.25 * pos.atr_at_entry);
-            static constexpr int64_t TIME_STOP_SECS = 45;
+            // FIXED 2026-04-05: floor 1.0->2.0, mult 0.25->0.50
+            // Backtest showed 10,354 TIME_STOPs at avg -$45 firing on spread noise
+            // ATR=2pt: was 1.0pt, now 2.0pt.  ATR=5pt: was 1.25pt, now 2.5pt
+            const double  time_stop_adverse = std::max(2.0, 0.50 * pos.atr_at_entry);
+            // FIXED 2026-04-05: raised 45s->180s
+            // Gold needs 2-5 min to develop direction after entry
+            static constexpr int64_t TIME_STOP_SECS = 180;
 
             // Velocity suppression: expansion confirmed AND vol_ratio > 2.5 (genuine velocity
             // regime, not just any EXPANSION tick) AND adverse < 2pts (trade still viable).
@@ -1595,7 +1704,7 @@ private:
             if (!pos.partial_closed
                 && held_s > TIME_STOP_SECS
                 && adverse > time_stop_adverse
-                && pos.mfe < time_stop_adverse * 0.5
+                && pos.mfe < time_stop_adverse  // FIXED 2026-04-05: was *0.5 -- fired even when MFE proved direction correct
                 && !velocity_time_suppress) {
                 printf("[GOLD-FLOW] TIME-STOP %s adverse=%.2f>%.2f held=%llds mfe=%.2f atr=%.2f -- thesis dead\n",
                        pos.is_long ? "LONG" : "SHORT",
@@ -1604,6 +1713,59 @@ private:
                 const double exit_px = pos.is_long ? bid : ask;
                 close_position(exit_px, "TIME_STOP", now_ms, on_close);
                 return;
+            }
+        }
+
+        // ?? BLEED GUARD -- exits stalled trades after step1 fires ???????????????
+        // Backtest diagnosis: once partial_closed=true, TIME_STOP is disabled.
+        // 6,097 trades: fire step1, SL->BE, drift back, sit at BE for 446s avg,
+        // eventually SL_HIT at -$81. TIME_STOP never fires because partial_closed=true.
+        // 2,617 more: TIME_STOP avg hold 1,099s -- also stalled post-step1.
+        //
+        // Fix: if held > 300s AND move has not progressed past 30% of ATR since
+        // step1 fired, the trade is going nowhere. Exit at market.
+        // Normal winners reach step2 (4.4pt) within 60-120s of step1.
+        // Stalled trades sit at 0-1pt progress for 5+ minutes.
+        //
+        // Only fires when: step1 done, step2 NOT done, not velocity mode.
+        {
+            const bool velocity_active_bg = m_expansion_mode && (m_vol_ratio > 2.5);
+            if (!velocity_active_bg && pos.partial_closed && !pos.partial_closed_2) {
+                const int64_t held_s_bg = (now_ms / 1000) - pos.entry_ts;
+                static constexpr int64_t BLEED_SECS = 300; // 5 min after entry
+                const double progress_bg = pos.is_long
+                    ? (mid - pos.entry)
+                    : (pos.entry - mid);
+                const double min_progress = pos.atr_at_entry * 0.30;
+
+                // DIAGNOSTIC: log every 50,000 evaluations to understand values
+                static int64_t s_bleed_eval_count = 0;
+                if ((++s_bleed_eval_count % 50000) == 0) {
+                    printf("[GFE-BLEED-DIAG] evals=%lld held=%llds(need>300) "
+                           "progress=%.2f(need<%.2f) partial1=%d partial2=%d\n",
+                           (long long)s_bleed_eval_count,
+                           (long long)held_s_bg, progress_bg, min_progress,
+                           (int)pos.partial_closed, (int)pos.partial_closed_2);
+                    fflush(stdout);
+                }
+
+                if (held_s_bg > BLEED_SECS && progress_bg < min_progress) {
+                    const double flip_atr = pos.atr_at_entry;
+                    const double orig_entry = pos.entry;
+                    const bool   orig_long  = pos.is_long;
+                    printf("[GOLD-FLOW] BLEED-EXIT %s held=%llds progress=%.2f<%.2f -- stalled, %s\n",
+                           pos.is_long ? "LONG" : "SHORT",
+                           (long long)held_s_bg, progress_bg, min_progress,
+                           on_bleed_flip ? "flipping direction" : "exiting flat");
+                    fflush(stdout);
+                    const double exit_px = pos.is_long ? bid : ask;
+                    close_position(exit_px, "BLEED_EXIT", now_ms, on_close);
+                    // Fire flip AFTER close (position is now flat)
+                    if (on_bleed_flip) {
+                        on_bleed_flip(!orig_long, bid, ask, flip_atr, orig_entry);
+                    }
+                    return;
+                }
             }
         }
         // Keeps step distances consistent even as gold vol changes mid-trade.
@@ -1644,16 +1806,6 @@ private:
         // ??????????????????????????????????????????????????????????????????????
         static constexpr double STEP_FRAC   = 0.33;  // close 33% each step
         static constexpr double SL_BUFFER   = 0.25;  // SL buffer = 0.25?ATR beyond exit
-
-        // ?? Dollar-ratchet constants ??????????????????????????????????????????
-        // DOLLAR_RATCHET_STEP: open profit interval at which ratchet advances ($50)
-        // DOLLAR_RATCHET_KEEP: fraction of each step that is locked in (80%)
-        //   At $50 open: lock $40. At $100 open: lock $90. At $150: lock $140.
-        // DOLLAR_RATCHET_MIN_TIER: ratchet only activates after step 1 (BE locked).
-        //   Prevents premature SL tightening before the trade has breathed.
-        // Tick value: 1 lot XAUUSD = $100/pt. So $50 / (size ? $100/pt) = pts per tier.
-        static constexpr double DOLLAR_RATCHET_STEP = 50.0;   // $50 per tier
-        static constexpr double DOLLAR_RATCHET_KEEP = 0.80;   // keep 80% of each tier
 
         // Helper to fire a partial close record and update position
         auto fire_stair = [&](int step_num, const char* label) {
@@ -1756,8 +1908,11 @@ private:
         // VELOCITY EXCEPTION (P2 fix, 2026-04-02):
         // When velocity_active (expansion_mode + vol_ratio>2.5), raise trigger to $150.
 #ifndef GFE_STEP1_OVERRIDE
-        static constexpr double STEP1_DOLLAR_TRIGGER         = 35.0;   // normal: raised 20->35
-        static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = 150.0; // velocity: suppress until $150
+        static constexpr double STEP1_DOLLAR_TRIGGER         = 35.0;   // normal: unchanged
+        static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = 200.0; // raised 150->200: at 0.40 lots
+                                                                        // $200 = 5pt move. Holds position
+                                                                        // through early chop on crash day
+                                                                        // before locking any profit.
 #else
         static constexpr double STEP1_DOLLAR_TRIGGER         = GFE_STEP1_OVERRIDE;
         static constexpr double STEP1_DOLLAR_TRIGGER_VELOCITY = GFE_STEP1_OVERRIDE * 4.0;
@@ -1805,7 +1960,11 @@ private:
         // Velocity mode: raise to $250 (proportional to the $150 Step 1 velocity trigger).
 #ifndef GFE_STEP2_OVERRIDE
         static constexpr double STEP2_DOLLAR_TRIGGER          =  70.0; // normal: 2x Step 1
-        static constexpr double STEP2_DOLLAR_TRIGGER_VELOCITY = 250.0; // velocity: proportional
+        static constexpr double STEP2_DOLLAR_TRIGGER_VELOCITY = 400.0; // raised 250->400: proportional
+                                                                        // to step1 raise. At 0.40 lots
+                                                                        // $400 = 10pt = 1xATR. Correct
+                                                                        // -- don't bank step2 until the
+                                                                        // move has fully confirmed.
 #else
         static constexpr double STEP2_DOLLAR_TRIGGER          = GFE_STEP2_OVERRIDE;
         static constexpr double STEP2_DOLLAR_TRIGGER_VELOCITY = GFE_STEP2_OVERRIDE * 3.5;
@@ -1861,17 +2020,35 @@ private:
                     fflush(stdout);
                 }
             } else {
-                // NORMAL TRAIL (unchanged)
-                trail_mult =
-                    (!pos.partial_closed_2 && m_wall_ahead) ? 0.25 :  // wall ahead: tighten now
-                    (!pos.partial_closed_2)                 ? 0.50 :  // step1 done, running free
-                    (move < atr * 3.0)                      ? 0.25 :  // step2 done, mid tighten
-                                                              0.20;   // final remainder squeeze
+                // NORMAL TRAIL: MFE-proportional trail distance
+                // Problem: fixed 0.5*ATR trail = 2.5pt on ATR=5 tape.
+                // Most moves are only 2-4pt so trail gives back the entire move.
+                // Fix: trail_dist = min(0.5*ATR, 0.3*MFE)
+                //   3pt move: min(2.5, 0.9) = 0.9pt trail -> captures 2.1pt
+                //   5pt move: min(2.5, 1.5) = 1.5pt trail -> captures 3.5pt
+                //   10pt move: min(2.5, 3.0) = 2.5pt trail -> captures 7.5pt
+                //   20pt move: min(2.5, 6.0) = 2.5pt trail -> captures 17.5pt
+                // Tightens on small moves (captures more of each winner)
+                // Stays wide on large moves (lets crashes run)
+                // Wall ahead: tighten immediately regardless
+                const double mfe_trail_dist = (pos.mfe > 0.0)
+                    ? std::min(atr_live * 0.50, pos.mfe * 0.30)
+                    : atr_live * 0.50;
+                const double eff_trail_dist =
+                    (m_wall_ahead)           ? atr_live * 0.25  // wall: tighten hard
+                    : (!pos.partial_closed_2) ? mfe_trail_dist   // running free: MFE-proportional
+                    : (move < atr * 3.0)      ? mfe_trail_dist * 0.8  // step2 done: tighter
+                    :                           mfe_trail_dist * 0.6;  // extended: squeeze
+                // trail_mult is only used for the trail_sl calculation below
+                // set it to the effective distance / atr_live for compatibility
+                trail_mult = (atr_live > 0.0) ? eff_trail_dist / atr_live : 0.50;
             }
             {
+                // Use direct distance rather than mult*atr to avoid precision loss
+                const double trail_dist = trail_mult * atr_live;
                 const double trail_sl = pos.is_long
-                    ? (pos.entry + pos.mfe - atr_live * trail_mult)
-                    : (pos.entry - pos.mfe + atr_live * trail_mult);
+                    ? (pos.entry + pos.mfe - trail_dist)
+                    : (pos.entry - pos.mfe + trail_dist);
                 if ((pos.is_long  && trail_sl > pos.sl) ||
                     (!pos.is_long && trail_sl < pos.sl)) {
                     pos.sl = trail_sl;
@@ -1882,40 +2059,46 @@ private:
 
         // ?? Dollar-ratchet lock ???????????????????????????????????????????????
         // Runs AFTER the ATR trail -- one-way ratchet, only moves SL forward.
+        // CRITICAL LOCK-IN DESIGN:
+        //   The ratchet is the GUARANTEE that crash profits cannot be fully given back.
+        //   Every time open PnL crosses a new tier, SL advances to lock 80% of that tier.
+        //   Once locked, SL NEVER moves backward. This is the last line of defence.
         //
-        // DESIGN FIX from audit:
-        //   Previously used pos.size (remaining lots) for USD calc. After PARTIAL_1R
-        //   reduces size from 0.15?0.10 lots, the $50 tier required 7pts on 0.10
-        //   lots = correct for the REMAINDER. But the user experience is "lock in
-        //   $50 of total trade profit" -- which means we measure against full_size.
+        // LOT-SCALED RATCHET STEP (crash day safety):
+        //   Fixed $50 tier at 0.40 lots = SL advances every 1.25pts.
+        //   At ATR=10pt a 1.25pt SL advance is noise -- the ratchet fires 80 times
+        //   on a 100pt move, placing SL so close to price it gets stopped on any
+        //   micro-retracement. That kills the position at 20pts instead of 90pts.
         //
-        //   Using full_size: at 0.15 lots, $50 tier fires at 50/(0.15?100) = 3.33pts
-        //   Using remaining: at 0.10 lots, $50 tier fires at 50/(0.10?100) = 5.00pts
+        //   Fix: ratchet step = max($50, 1.0 * ATR * full_size * $100/pt)
+        //     Normal day 0.16 lots ATR=5:  max(50, 80)  = $80  -- fires every 5pts
+        //     Crash day  0.40 lots ATR=10: max(50, 400) = $400 -- fires every 10pts (1xATR)
+        //     Min lot    0.01 lots ATR=2:  max(50, 2)   = $50  -- lot_floor handles this
         //
-        //   We use full_size for the TIER TRIGGER (when to advance the ratchet)
-        //   but remaining size for LOCKED_PTS (how much price movement locks the $).
-        //   This correctly represents "I want $50 of the original trade locked in."
+        //   This means on a 100pt crash at 0.40 lots:
+        //     Tier 1 ($400 open): SL locks entry + (400*0.80)/(0.40*100) = +8.0pts
+        //     Tier 2 ($800 open): SL locks entry + 16pts
+        //     Tier 5 ($2000 open): SL locks entry + 40pts
+        //     Tier 10 ($4000 open): SL locks entry + 80pts
+        //   At 90pt move ($3600 open) ratchet guarantees at least $2880 locked.
+        //   Trail may give back 20pts (2xATR) but ratchet floor is always there.
         //
-        // Active from first tick -- no be_locked gate.
-        // Before step 1: ratchet moves SL from loss territory toward BE.
-        // After step 1:  ratchet locks profit above the staircase SL.
-        // Both improve the worst-case outcome.
-        //
-        // MIN-LOT SCALING: at 0.01 lots the fixed $50 tier requires 50pts -- never fires.
-        // Evidence: Apr 2 11:49 mfe=8.26pts, ratchet never moved SL, SL_HIT -$2.10.
-        // Fix: eff_ratchet_step = min($50, 0.75 * ATR * full_size * $100/pt).
-        //   lot_floor at 0.01 lots, ATR=2.0: 0.75*2.0*0.01*100 = $1.50 -- fires at 1.5pts.
-        //   lot_floor at 0.15 lots, ATR=5.0: 0.75*5.0*0.15*100 = $56.25 > $50 -- fixed wins.
-        // Result: small lots get proportional ratchet; normal lots unchanged.
+        // KEEP = 80%: if ratchet fires at $400, locks $320. Conservative -- leaves
+        //   breathing room so a micro-retracement doesn't immediately stop out.
+        static constexpr double DOLLAR_RATCHET_KEEP = 0.80;
+        static constexpr double DOLLAR_RATCHET_STEP_BASE = 50.0; // minimum step
         if (pos.size > 0.0 && pos.full_size > 0.0) {
-            // Lot-scaled floor: 0.75 * ATR * full_size * tick_value
-            const double lot_ratchet_floor = (pos.full_size > 0.0 && m_atr > 0.0)
-                ? (0.75 * m_atr * pos.full_size * 100.0)
-                : DOLLAR_RATCHET_STEP;
-            // Use floor only when it is SMALLER than the fixed step (min-lot case).
-            // At normal lot sizes the floor exceeds $50 so fixed step wins unchanged.
-            const double eff_ratchet_step = (lot_ratchet_floor < DOLLAR_RATCHET_STEP)
-                ? lot_ratchet_floor : DOLLAR_RATCHET_STEP;
+            // Lot-scaled ratchet step: max(BASE, 1.0 * ATR * full_size * tick_value)
+            // Small lots (0.01): max(50, 2)   = $50  (unchanged, min-lot path)
+            // Normal (0.16 lots ATR=5): max(50, 80)  = $80  per tier
+            // Crash (0.40 lots ATR=10): max(50, 400) = $400 per tier
+            // This ensures the ratchet SL advances at 1xATR intervals on crash trades
+            // not at sub-1pt intervals that get stopped by micro-retracements.
+            const double lot_scaled_step = (pos.full_size > 0.0 && m_atr > 0.0)
+                ? (1.0 * m_atr * pos.full_size * 100.0)
+                : DOLLAR_RATCHET_STEP_BASE;
+            const double eff_ratchet_step = std::max(DOLLAR_RATCHET_STEP_BASE, lot_scaled_step);
+
             // Tier trigger: uses open_pnl_usd_full computed above staircase steps
             const int    tier_now = static_cast<int>(open_pnl_usd_full / eff_ratchet_step);
 

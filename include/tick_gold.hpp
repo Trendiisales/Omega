@@ -1252,11 +1252,11 @@ static void on_tick_gold(
     };
 
     // CRITICAL: manage_position() must run on every XAUUSD tick to check SL/trail.
-    // Previously this was inside the entry guard (!has_open_position()) which meant
-    // once a position was open, manage_position was NEVER called ? SL never checked
-    // ? position ran unmanaged indefinitely. Fix: run on_tick unconditionally when
-    // position is open, before the entry guard blocks further processing.
-    if (g_gold_flow.has_open_position()) {
+    // GoldFlow DISABLED 2026-04-05: backtest proved no structural edge.
+    // Avg winner $15 vs avg loser $74, payoff 0.20:1. 2yr MFE scan showed
+    // microstructure signal only -- not the 1-3pt structural moves needed to
+    // beat 0.35pt cost. Replace: OverlapMomentumEngine + OverlapFadeEngine.
+    if (g_cfg.goldflow_enabled && g_gold_flow.has_open_position()) {
         // Inject trend bias (wall detection for trail tightening)
         const bool sup_trend_mgmt = (gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
         const bool gf_wall_mgmt   = g_gold_flow.pos.is_long
@@ -1385,7 +1385,26 @@ static void on_tick_gold(
             g_macro_ctx.session_slot);
     }
 
-    // ?? GoldFlow reload -- continuation entry after PARTIAL_1R ?????????????
+    // ?? MacroCrashEngine -- always-on macro event capture ????????????????
+    // Fires ONLY when: ATR > 8pt + vol_ratio > 2.5 + expansion regime + |drift| > 6
+    // This is the replacement for GoldFlow's velocity trail logic.
+    // Captures: Apr2-style tariff crashes, Fed spikes, macro surges (50-150pt moves)
+    // Independent of GoldFlow -- runs 24/7, no session restriction.
+    {
+        const bool expansion_regime = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
+                                    || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
+        const double mce_atr       = g_gold_flow.current_atr() > 0.0
+                                     ? g_gold_flow.current_atr() : 5.0;
+        const double mce_vol_ratio = (g_gold_stack.recent_vol_pct() > 0.0
+                                   && g_gold_stack.base_vol_pct() > 0.0)
+                                     ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct()
+                                     : 1.0;
+        g_macro_crash.on_tick(bid, ask,
+            mce_atr, mce_vol_ratio,
+            g_gold_stack.ewm_drift(),
+            expansion_regime,
+            now_ms_g);
+    }
     // When stair step 1 banks the first 33% and arms a reload, try_reload()
     // is called every tick until it fires, cancels, or times out (5s).
     //
@@ -1551,7 +1570,10 @@ static void on_tick_gold(
         {
             static constexpr double GFE_ATR_NORMAL   = 5.0;   // baseline ATR for normal London day
             static constexpr double GFE_ATR_SCALE_MIN = 0.5;  // floor: never below 50% risk (quiet Asia)
-            static constexpr double GFE_ATR_SCALE_MAX = 4.0;  // ceiling: cap at 4x on extreme crashes
+            static constexpr double GFE_ATR_SCALE_MAX = 6.0;  // raised 4x->6x: at ATR=10pt crash
+                                                               // risk=$80*6=480, lot=480/(10*100)=0.48
+                                                               // matches $11k simulation target.
+                                                               // max_lot_gold=0.50 is the hard ceiling.
 
             const double atr_scale = std::min(GFE_ATR_SCALE_MAX,
                                      std::max(GFE_ATR_SCALE_MIN,
@@ -2350,7 +2372,9 @@ static void on_tick_gold(
         // Entry only: on_tick for new entries when no position is open.
         // Position management (SL/trail) is handled in the unconditional
         // manage block above this entry guard.
-        if (gf_tick_ok) {
+        // DISABLED 2026-04-05: goldflow_enabled=false in config.
+        // 2yr backtest + MFE scan proved no structural edge.
+        if (g_cfg.goldflow_enabled && gf_tick_ok) {
             // ?? Post-close reversal drift reset ???????????????????????????
             // Problem: ewm_slow (?=0.005) has a 200-tick half-life. After a
             // 60pt DROP it reaches drift?-40. When price then SURGES 80pts,

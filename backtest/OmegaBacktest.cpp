@@ -54,6 +54,9 @@
 
 #include "../include/OmegaTradeLedger.hpp"
 #include "../include/GoldEngineStack.hpp"
+#include "../include/StopRunReversalEngine.hpp"
+#include "../include/OverlapFadeEngine.hpp"
+#include "../include/StructuralEdgeEngines.hpp"
 #include "../include/GoldFlowEngine.hpp"
 #include "../include/LatencyEdgeEngines.hpp"
 #include "../include/CrossAssetEngines.hpp"
@@ -506,6 +509,114 @@ struct BreakRunner {
     }
 };
 
+struct StopRunRunner {
+    omega::StopRunReversalEngine eng;
+    int64_t warmup_ticks;
+    int64_t tick_count = 0;
+    int last_day = -1;
+    StopRunRunner() { warmup_ticks = 200; }
+    void tick(const TickRow& r) {
+        tick_count++;
+        // Session slot from timestamp
+        int h = (int)((r.ts_ms/1000/3600) % 24);
+        int slot = 0;
+        if      (h >= 7  && h < 9)  slot = 1;
+        else if (h >= 9  && h < 12) slot = 2;
+        else if (h >= 12 && h < 14) slot = 3;
+        else if (h >= 14 && h < 17) slot = 4;
+        else if (h >= 17 && h < 22) slot = 5;
+        else if (h >= 22 || h < 5)  slot = 6;
+        // Daily reset
+        int day = (int)(r.ts_ms / 1000 / 86400);
+        if (day != last_day) { eng.reset_session(); last_day = day; }
+        // Wire callback once
+        if (!eng.on_close) {
+            eng.on_close = [](const omega::TradeRecord& t){ store::add(t); };
+        }
+        eng.on_tick(r.bid, r.ask, r.ts_ms, slot);
+    }
+};
+
+struct OverlapFadeRunner {
+    omega::OverlapFadeEngine eng;
+    int atr_tick = 0;
+    int last_day = -1;
+    static constexpr int BUF = 512;
+    double prices[BUF] = {};
+    int pidx = 0;
+
+    void tick(const TickRow& r) {
+        const double mid = (r.bid + r.ask) * 0.5;
+        prices[pidx % BUF] = mid;
+        pidx++;
+
+        // Session slot
+        int h = (int)((r.ts_ms/1000/3600) % 24);
+        int slot = 0;
+        if      (h>=7  && h<9)  slot=1;
+        else if (h>=9  && h<12) slot=2;
+        else if (h>=12 && h<14) slot=3;
+        else if (h>=14 && h<17) slot=4;
+        else if (h>=17 && h<22) slot=5;
+        else if (h>=22 || h<5)  slot=6;
+
+        // ATR = high-low range over 100 ticks (proper proxy)
+        // Mean 1-tick move ~0.10pt != real ATR. Range = 1-5pt. Correct.
+        if ((++atr_tick % 100) == 0 && pidx > 100) {
+            int look = std::min(pidx-1, 100);
+            double hi = prices[(pidx-1+BUF*4)%BUF], lo = hi;
+            for (int k=1; k<look; k++) {
+                double p = prices[(pidx-k+BUF*4)%BUF];
+                if (p>hi) hi=p; if (p<lo) lo=p;
+            }
+            eng.seed_atr(hi - lo);
+        }
+
+        // Wire callback once
+        if (!eng.on_close)
+            eng.on_close = [](const omega::TradeRecord& t){ store::add(t); };
+
+        eng.on_tick(r.bid, r.ask, r.ts_ms, slot);
+    }
+};
+
+
+struct OverlapMomRunner {
+    omega::OverlapMomentumEngine eng;
+    void tick(const TickRow& r) {
+        int h=(int)((r.ts_ms/1000/3600)%24);
+        int slot=0;
+        if(h>=7&&h<9)slot=1; else if(h>=9&&h<12)slot=2;
+        else if(h>=12&&h<14)slot=3; else if(h>=14&&h<17)slot=4;
+        else if(h>=17&&h<22)slot=5; else if(h>=22||h<5)slot=6;
+        if(!eng.on_close) eng.on_close=[](const omega::TradeRecord&t){store::add(t);};
+        eng.on_tick(r.bid,r.ask,r.ts_ms,slot);
+    }
+};
+struct AsiaMomRunner {
+    omega::AsiaMomentumEngine eng;
+    void tick(const TickRow& r) {
+        int h=(int)((r.ts_ms/1000/3600)%24);
+        int slot=0;
+        if(h>=7&&h<9)slot=1; else if(h>=9&&h<12)slot=2;
+        else if(h>=12&&h<14)slot=3; else if(h>=14&&h<17)slot=4;
+        else if(h>=17&&h<22)slot=5; else if(h>=22||h<5)slot=6;
+        if(!eng.on_close) eng.on_close=[](const omega::TradeRecord&t){store::add(t);};
+        eng.on_tick(r.bid,r.ask,r.ts_ms,slot);
+    }
+};
+struct LonFadeRunner {
+    omega::LondonCoreFadeEngine eng;
+    void tick(const TickRow& r) {
+        int h=(int)((r.ts_ms/1000/3600)%24);
+        int slot=0;
+        if(h>=7&&h<9)slot=1; else if(h>=9&&h<12)slot=2;
+        else if(h>=12&&h<14)slot=3; else if(h>=14&&h<17)slot=4;
+        else if(h>=17&&h<22)slot=5; else if(h>=22||h<5)slot=6;
+        if(!eng.on_close) eng.on_close=[](const omega::TradeRecord&t){store::add(t);};
+        eng.on_tick(r.bid,r.ask,r.ts_ms,slot);
+    }
+};
 // =============================================================================
 // Config
 // =============================================================================
@@ -515,7 +626,8 @@ struct Cfg {
     const char* rep   = "bt_report.csv";
     const char* trd   = "bt_trades.csv";
     int64_t     warm  = 5000;
-    bool gold=true, flow=true, latency=true, cross=true, breakout=true;
+    bool gold=true, flow=true, latency=true, cross=true, breakout=true, stoprun=false, ofade=false;
+    bool omom=false, amom=false, lfade=false, allnew=false;
     bool quiet=false;
 };
 static Cfg parse(int argc, char** argv){
@@ -542,7 +654,9 @@ static Cfg parse(int argc, char** argv){
             const char* e=argv[++i];
             c.gold=!!strstr(e,"gold"); c.flow=!!strstr(e,"flow");
             c.latency=!!strstr(e,"latency"); c.cross=!!strstr(e,"cross");
-            c.breakout=!!strstr(e,"breakout");
+            c.breakout=!!strstr(e,"breakout"); c.stoprun=!!strstr(e,"stoprun"); c.ofade=!!strstr(e,"ofade");
+            c.omom=!!strstr(e,"omom"); c.amom=!!strstr(e,"amom"); c.lfade=!!strstr(e,"lfade");
+            c.allnew=(!!strstr(e,"allnew")||!!strstr(e,"all"));
         }
     }
     return c;
@@ -631,13 +745,23 @@ int main(int argc, char** argv){
     std::unique_ptr<FlowRunner>    rf;
     std::unique_ptr<LatencyRunner> rl;
     std::unique_ptr<CrossRunner>   rc;
-    std::unique_ptr<BreakRunner>   rb;
+    std::unique_ptr<BreakRunner>    rb;
+    std::unique_ptr<StopRunRunner>     rs;
+    std::unique_ptr<OverlapFadeRunner>   ro;
+    std::unique_ptr<OverlapMomRunner>    rom;
+    std::unique_ptr<AsiaMomRunner>       ram;
+    std::unique_ptr<LonFadeRunner>       rlf;
 
     if(cfg.gold)    rg = std::make_unique<GoldRunner>(cfg.lat);
     if(cfg.flow)    rf = std::make_unique<FlowRunner>();
     if(cfg.latency) rl = std::make_unique<LatencyRunner>(cfg.lat);
     if(cfg.cross)   rc = std::make_unique<CrossRunner>();
     if(cfg.breakout)rb = std::make_unique<BreakRunner>(cfg.lat);
+    if(cfg.stoprun) rs = std::make_unique<StopRunRunner>();
+    if(cfg.ofade||cfg.allnew)   ro  = std::make_unique<OverlapFadeRunner>();
+    if(cfg.omom||cfg.allnew)    rom = std::make_unique<OverlapMomRunner>();
+    if(cfg.amom||cfg.allnew)    ram = std::make_unique<AsiaMomRunner>();
+    if(cfg.lfade||cfg.allnew)   rlf = std::make_unique<LonFadeRunner>();
 
     // ?? Tick loop ?????????????????????????????????????????????????????????????
     const auto t0r  = std::chrono::steady_clock_real::now();
@@ -653,6 +777,11 @@ int main(int argc, char** argv){
         if(rl) rl->tick(r);
         if(rc) rc->tick(r);
         if(rb) rb->tick(r);
+        if(rs) rs->tick(r);
+        if(ro)  ro->tick(r);
+        if(rom) rom->tick(r);
+        if(ram) ram->tick(r);
+        if(rlf) rlf->tick(r);
 
         if(i-last_p >= 500'000){
             last_p=i;
@@ -666,7 +795,7 @@ int main(int argc, char** argv){
         }
     }
 
-    const double rs = std::chrono::duration<double>(
+    const double run_sec = std::chrono::duration<double>(
         std::chrono::steady_clock_real::now()-t0r).count();
 
     // ?? Restore stdout before printing summary ???????????????????????????????????????
@@ -696,7 +825,7 @@ int main(int argc, char** argv){
            cfg.gold?"GoldStack ":"", cfg.flow?"GoldFlow ":"",
            cfg.latency?"LatencyEdge ":"", cfg.cross?"CrossAsset ":"",
            cfg.breakout?"Breakout/Bracket":"");
-    printf("  Run     : %.1fs = %.0f K t/s\n", rs, N/rs/1000.0);
+    printf("  Run     : %.1fs = %.0f K t/s\n", run_sec, N/run_sec/1000.0);
     printf("================================================================\n");
     printf("  PER-ENGINE RESULTS (warmup %lld ticks excluded)\n",(long long)cfg.warm);
     printf("================================================================\n");

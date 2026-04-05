@@ -106,6 +106,29 @@ int main(int argc, char* argv[])
     // Wire shadow fill simulation -- price-triggered in PENDING, not immediate at arm
     g_bracket_gold.shadow_mode = (g_cfg.mode != "LIVE");
     g_bracket_xag.shadow_mode  = (g_cfg.mode != "LIVE");
+
+    // ?? MacroCrashEngine config ??????????????????????????????????????????????????
+    // Always-on macro event engine. Shadow mode = log only, no live orders.
+    // Enable live once shadow logs confirm it fires correctly on real expansion events.
+    g_macro_crash.shadow_mode     = true;  // SHADOW: enable live after validation
+    g_macro_crash.enabled         = true;
+    g_macro_crash.ATR_THRESHOLD   = 8.0;   // ATR > 8pt = genuine macro expansion
+    g_macro_crash.VOL_RATIO_MIN   = 2.5;   // vol > 2.5x baseline
+    g_macro_crash.DRIFT_MIN       = 6.0;   // |ewm_drift| > 6pt
+    g_macro_crash.BASE_RISK_USD   = 80.0;  // scales with ATR (6x max = 0.48 lots at ATR=10)
+    g_macro_crash.STEP1_TRIGGER_USD = 200.0; // hold until $200 open (crash needs room)
+    g_macro_crash.STEP2_TRIGGER_USD = 400.0;
+    g_macro_crash.on_close = [](double exit_px, bool is_long, double size, const std::string& reason) {
+        if (g_macro_crash.shadow_mode) return;  // shadow: no live order
+        send_live_order("XAUUSD", is_long, size, exit_px);
+        printf("[MCE] Live close sent %s %.3f @ %.2f reason=%s\n",
+               is_long ? "LONG" : "SHORT", size, exit_px, reason.c_str());
+        fflush(stdout);
+    };
+    printf("[MCE] MacroCrashEngine ARMED (shadow_mode=%s) ATR>%.0f vol>%.1fx drift>%.0f\n",
+           g_macro_crash.shadow_mode ? "true" : "false",
+           g_macro_crash.ATR_THRESHOLD, g_macro_crash.VOL_RATIO_MIN, g_macro_crash.DRIFT_MIN);
+    fflush(stdout);
     // PENDING_TIMEOUT_SEC: gold/silver compress for minutes before breaking -- 60s was expiring before the move
     g_bracket_gold.PENDING_TIMEOUT_SEC = 600;  // 10 min: gold compression can last well beyond 5 min
     g_bracket_xag.PENDING_TIMEOUT_SEC  = 300;  // 5 min: silver moves faster than gold
@@ -1055,6 +1078,69 @@ int main(int argc, char* argv[])
             printf("[GFE] Velocity add-on: LIVE mode -- [GFE-ADDON] fires on confirmed expansion moves\n");
             fflush(stdout);
         }
+
+        // ?? Bleed-flip callback ??????????????????????????????????????????????????
+        // When bleed guard fires (stalled at BE for 5min), flip direction on reload.
+        // Original trade momentum is dead -- the opposing force is winning. Trade it.
+        g_gold_flow.on_bleed_flip = [](bool flip_is_long, double bid, double ask,
+                                        double atr, double original_entry) {
+            // Gate 1: reload must be flat
+            if (g_gold_flow_reload.has_open_position()) {
+                printf("[GFE-BLEED-FLIP] BLOCKED -- reload already has position\n");
+                fflush(stdout);
+                return;
+            }
+            // Gate 2: daily loss proximity
+            if (g_omegaLedger.dailyPnl() < -g_cfg.daily_loss_limit * 0.80) {
+                printf("[GFE-BLEED-FLIP] BLOCKED -- near daily loss limit\n");
+                fflush(stdout);
+                return;
+            }
+            // Gate 3: spread must be normal (don't flip into wide spread)
+            // Uses ask-bid directly -- if > 1.0pt skip
+            if ((ask - bid) > 1.0) {
+                printf("[GFE-BLEED-FLIP] BLOCKED -- spread=%.2f too wide\n", ask - bid);
+                fflush(stdout);
+                return;
+            }
+            // Size: half the normal risk -- flip is a mean-reversion scalp, not a trend ride
+            g_gold_flow_reload.risk_dollars = g_cfg.risk_per_trade_usd * 0.5;
+            g_gold_flow_reload.addon_shadow_mode   = false;
+            g_gold_flow_reload.velocity_shadow_mode = false;
+            g_gold_flow_reload.on_hard_stop = [](const std::string& sym, bool il,
+                                                  double qty, double sl_px, int64_t ts) {
+                send_hard_stop_order(sym, il, qty, sl_px, ts);
+            };
+            const int flip_slot = (g_macro_ctx.session_slot >= 0)
+                ? g_macro_ctx.session_slot : 1;
+            const bool entered = g_gold_flow_reload.force_entry(
+                flip_is_long, bid, ask, atr,
+                static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count()),
+                flip_slot);
+            if (entered) {
+                // Override SL: tight at 0.5*ATR -- flip must work fast or not at all
+                const double flip_sl = flip_is_long
+                    ? (g_gold_flow_reload.pos.entry - atr * 0.50)
+                    : (g_gold_flow_reload.pos.entry + atr * 0.50);
+                g_gold_flow_reload.pos.sl = flip_sl;
+                // Override TP via tight trail: set MFE target at 1.5*ATR
+                // (mean reversion -- price should return to original_entry area)
+                printf("[GFE-BLEED-FLIP] ENTERED %s @ %.2f sl=%.2f "
+                       "target=%.2f(orig_entry) atr=%.2f size=%.4f\n",
+                       flip_is_long ? "LONG" : "SHORT",
+                       flip_is_long ? ask : bid,
+                       flip_sl, original_entry, atr,
+                       g_gold_flow_reload.pos.size);
+                fflush(stdout);
+                send_live_order("XAUUSD", flip_is_long,
+                                g_gold_flow_reload.pos.size,
+                                flip_is_long ? ask : bid);
+            } else {
+                printf("[GFE-BLEED-FLIP] force_entry failed\n");
+                fflush(stdout);
+            }
+        };
 
         // Load GoldStack vol baseline + governor EWM -- skips 400-tick regime warmup
         {
