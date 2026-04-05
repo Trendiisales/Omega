@@ -55,6 +55,7 @@
 #include "../include/OmegaTradeLedger.hpp"
 #include "../include/GoldEngineStack.hpp"
 #include "../include/StopRunReversalEngine.hpp"
+#include "../include/OverlapFadeEngine.hpp"
 #include "../include/GoldFlowEngine.hpp"
 #include "../include/LatencyEdgeEngines.hpp"
 #include "../include/CrossAssetEngines.hpp"
@@ -535,6 +536,46 @@ struct StopRunRunner {
     }
 };
 
+struct OverlapFadeRunner {
+    omega::OverlapFadeEngine eng;
+    int atr_tick = 0;
+    int last_day = -1;
+    static constexpr int BUF = 512;
+    double prices[BUF] = {};
+    int pidx = 0;
+
+    void tick(const TickRow& r) {
+        const double mid = (r.bid + r.ask) * 0.5;
+        prices[pidx % BUF] = mid;
+        pidx++;
+
+        // Session slot
+        int h = (int)((r.ts_ms/1000/3600) % 24);
+        int slot = 0;
+        if      (h>=7  && h<9)  slot=1;
+        else if (h>=9  && h<12) slot=2;
+        else if (h>=12 && h<14) slot=3;
+        else if (h>=14 && h<17) slot=4;
+        else if (h>=17 && h<22) slot=5;
+        else if (h>=22 || h<5)  slot=6;
+
+        // Update ATR every 200 ticks (cheap, not per-tick)
+        if ((++atr_tick % 200) == 0 && pidx > 100) {
+            double atr = 0;
+            int look = std::min(pidx-1, 100);
+            for (int k=1; k<=look; k++)
+                atr += std::fabs(prices[(pidx-k+BUF*4)%BUF] - prices[(pidx-k-1+BUF*4)%BUF]);
+            eng.seed_atr(atr / look);
+        }
+
+        // Wire callback once
+        if (!eng.on_close)
+            eng.on_close = [](const omega::TradeRecord& t){ store::add(t); };
+
+        eng.on_tick(r.bid, r.ask, r.ts_ms, slot);
+    }
+};
+
 // =============================================================================
 // Config
 // =============================================================================
@@ -544,7 +585,7 @@ struct Cfg {
     const char* rep   = "bt_report.csv";
     const char* trd   = "bt_trades.csv";
     int64_t     warm  = 5000;
-    bool gold=true, flow=true, latency=true, cross=true, breakout=true, stoprun=false;
+    bool gold=true, flow=true, latency=true, cross=true, breakout=true, stoprun=false, ofade=false;
     bool quiet=false;
 };
 static Cfg parse(int argc, char** argv){
@@ -571,7 +612,7 @@ static Cfg parse(int argc, char** argv){
             const char* e=argv[++i];
             c.gold=!!strstr(e,"gold"); c.flow=!!strstr(e,"flow");
             c.latency=!!strstr(e,"latency"); c.cross=!!strstr(e,"cross");
-            c.breakout=!!strstr(e,"breakout"); c.stoprun=!!strstr(e,"stoprun");
+            c.breakout=!!strstr(e,"breakout"); c.stoprun=!!strstr(e,"stoprun"); c.ofade=!!strstr(e,"ofade");
         }
     }
     return c;
@@ -661,7 +702,8 @@ int main(int argc, char** argv){
     std::unique_ptr<LatencyRunner> rl;
     std::unique_ptr<CrossRunner>   rc;
     std::unique_ptr<BreakRunner>    rb;
-    std::unique_ptr<StopRunRunner>  rs;
+    std::unique_ptr<StopRunRunner>     rs;
+    std::unique_ptr<OverlapFadeRunner>  ro;
 
     if(cfg.gold)    rg = std::make_unique<GoldRunner>(cfg.lat);
     if(cfg.flow)    rf = std::make_unique<FlowRunner>();
@@ -669,6 +711,7 @@ int main(int argc, char** argv){
     if(cfg.cross)   rc = std::make_unique<CrossRunner>();
     if(cfg.breakout)rb = std::make_unique<BreakRunner>(cfg.lat);
     if(cfg.stoprun) rs = std::make_unique<StopRunRunner>();
+    if(cfg.ofade)   ro = std::make_unique<OverlapFadeRunner>();
 
     // ?? Tick loop ?????????????????????????????????????????????????????????????
     const auto t0r  = std::chrono::steady_clock_real::now();
@@ -685,6 +728,7 @@ int main(int argc, char** argv){
         if(rc) rc->tick(r);
         if(rb) rb->tick(r);
         if(rs) rs->tick(r);
+        if(ro) ro->tick(r);
 
         if(i-last_p >= 500'000){
             last_p=i;
