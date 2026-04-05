@@ -68,6 +68,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "GoldEngineStack.hpp"    // Multi-engine gold stack (ported from ChimeraMetals)
 #include "LatencyEdgeEngines.hpp"
 #include "CrossAssetEngines.hpp" // Co-location speed advantage engines (LeadLag, SpreadDisloc, EventComp)
+#include "IndexFlowEngine.hpp"   // L2 flow + EWM drift engines for equity indices (IndexFlowEngine, IndexMacroCrashEngine)
 #include "CTraderDepthClient.hpp" // cTrader Open API v2 -- full order book depth feed
 
 // ?? Adaptive intelligence layer (gap-close vs best systems) ??????????????????

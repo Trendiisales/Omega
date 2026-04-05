@@ -79,6 +79,33 @@ static omega::cross::TrendPullbackEngine   g_trend_pb_ger40;  // GER40
 static omega::cross::TrendPullbackEngine   g_trend_pb_nq;     // USTEC.F
 static omega::cross::TrendPullbackEngine   g_trend_pb_sp;     // US500.F
 
+// =============================================================================
+// IndexFlowEngine -- L2 flow + EWM drift engines for US equity indices.
+// Architecture mirrors GoldFlowEngine: L2 persistence + EWM drift + ATR-prop SL
+// + staircase trail. Per-symbol calibrated (see IndexFlowEngine.hpp).
+//
+// SHADOW mode: IndexMacroCrashEngine instances are shadow-only by default.
+// NEVER set shadow_mode=false without explicit authorization.
+//
+// L2 data: fed from existing AtomicL2 instances (g_l2_sp, g_l2_nq, g_l2_nas,
+// g_l2_us30) already updated by cTrader depth thread in omega_main.hpp.
+// Pass l2_imb via: g_l2_sp.imbalance.load(std::memory_order_relaxed)
+// =============================================================================
+static omega::idx::IndexFlowEngine       g_iflow_sp("US500.F");
+static omega::idx::IndexFlowEngine       g_iflow_nq("USTEC.F");
+static omega::idx::IndexFlowEngine       g_iflow_nas("NAS100");
+static omega::idx::IndexFlowEngine       g_iflow_us30("DJ30.F");
+static omega::idx::IndexMacroCrashEngine g_imacro_sp("US500.F"); // shadow_mode=true always
+static omega::idx::IndexMacroCrashEngine g_imacro_nq("USTEC.F"); // shadow_mode=true always
+
+// VWAPAtrTrail -- ATR-proportional BE lock + trail upgrade for existing
+// VWAPReversionEngine instances. Holds upgrade state only (no new entries).
+// Applied each tick after g_vwap_rev_sp/nq.on_tick() in tick_indices.hpp.
+static omega::idx::VWAPAtrTrail g_vwap_atr_trail_sp;   // US500.F
+static omega::idx::VWAPAtrTrail g_vwap_atr_trail_nq;   // USTEC.F
+static omega::idx::VWAPAtrTrail g_vwap_atr_trail_nas;  // NAS100 (no VWAPRev, unused)
+static omega::idx::VWAPAtrTrail g_vwap_atr_trail_us30; // DJ30.F (no VWAPRev, unused)
+
 // Co-location latency edge stack -- GoldSpreadDislocation + GoldEventCompression.
 // GoldSilverLeadLag DELETED 2026-03-31. Both remaining engines run MANAGE-ONLY
 // (new entries disabled -- RTT ~68ms, edge requires <1ms).
