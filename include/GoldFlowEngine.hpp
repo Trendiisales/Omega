@@ -1717,15 +1717,20 @@ private:
             if (!velocity_active_bg && pos.partial_closed && !pos.partial_closed_2) {
                 const int64_t held_s_bg = (now_ms / 1000) - pos.entry_ts;
                 static constexpr int64_t BLEED_SECS = 300; // 5 min after entry
-                const double progress = std::max(0.0, move); // pts gained from entry
+                // progress: how far price has moved FROM entry IN our direction
+                // pos.is_long: progress = mid - entry (positive = winning)
+                // pos.is_short: progress = entry - mid (positive = winning)
+                const double progress_bg = pos.is_long
+                    ? (mid - pos.entry)
+                    : (pos.entry - mid);
                 const double min_progress = pos.atr_at_entry * 0.30; // need 30% of ATR
-                if (held_s_bg > BLEED_SECS && progress < min_progress) {
+                if (held_s_bg > BLEED_SECS && progress_bg < min_progress) {
                     const double flip_atr = pos.atr_at_entry;
                     const double orig_entry = pos.entry;
                     const bool   orig_long  = pos.is_long;
                     printf("[GOLD-FLOW] BLEED-EXIT %s held=%llds progress=%.2f<%.2f -- stalled, %s\n",
                            pos.is_long ? "LONG" : "SHORT",
-                           (long long)held_s_bg, progress, min_progress,
+                           (long long)held_s_bg, progress_bg, min_progress,
                            on_bleed_flip ? "flipping direction" : "exiting flat");
                     fflush(stdout);
                     const double exit_px = pos.is_long ? bid : ask;
