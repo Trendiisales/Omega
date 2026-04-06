@@ -21,7 +21,7 @@ if(GIT_FOUND AND EXISTS "${SOURCE_DIR}/.git")
     set(GIT_DATE "unknown")
     foreach(COMMIT_HASH ${RECENT_COMMITS})
         execute_process(
-            COMMAND ${GIT_EXECUTABLE} show --name-only --format= ${COMMIT_HASH}
+            COMMAND ${GIT_EXECUTABLE} show --name-status --format= ${COMMIT_HASH}
             WORKING_DIRECTORY "${SOURCE_DIR}"
             OUTPUT_VARIABLE CHANGED_FILES_RAW
             OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -29,12 +29,18 @@ if(GIT_FOUND AND EXISTS "${SOURCE_DIR}/.git")
         )
         string(REPLACE "\n" ";" CHANGED_FILES "${CHANGED_FILES_RAW}")
         set(HAS_SOURCE_FILE FALSE)
-        foreach(F ${CHANGED_FILES})
-            # Only count files that are actual compiled source or build config.
-            # .gitignore, *.md, *.csv, *.log, *.ps1, *.py, *.ini, incidents/ are
-            # NOT source -- picking them as the "latest commit" shows wrong hash.
-            # Rule: must match include/, src/, cmake/, CMakeLists.txt, backtest/.
-            if("${F}" MATCHES "^(include/|src/|cmake/|CMakeLists[.]txt|backtest/)")
+        foreach(LINE ${CHANGED_FILES})
+            # Lines are "STATUS<tab>FILEPATH" e.g. "M	include/foo.hpp"
+            # Skip deletions (D) -- a file being deleted is not a source change.
+            # Skip version_generated.hpp -- auto-generated, not real source.
+            if("${LINE}" MATCHES "^D")
+                continue()
+            endif()
+            # Extract just the filepath (after the status+tab)
+            string(REGEX REPLACE "^[A-Z][0-9]*	" "" F "${LINE}")
+            # Only count real compiled source files
+            if("${F}" MATCHES "^(include/|src/|cmake/|CMakeLists[.]txt|backtest/)"
+               AND NOT "${F}" MATCHES "version_generated")
                 set(HAS_SOURCE_FILE TRUE)
                 break()
             endif()
