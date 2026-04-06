@@ -30,10 +30,11 @@ if(GIT_FOUND AND EXISTS "${SOURCE_DIR}/.git")
         string(REPLACE "\n" ";" CHANGED_FILES "${CHANGED_FILES_RAW}")
         set(HAS_SOURCE_FILE FALSE)
         foreach(F ${CHANGED_FILES})
-            # Any file that is NOT under logs/ counts as a real source change.
-            # Previous pattern (src/|include/|CMakeLists) missed cmake/, incidents/,
-            # scripts/, *.ps1 etc -- causing the hash to show a stale commit.
-            if(NOT F MATCHES "^logs/")
+            # Only count files that are actual compiled source or build config.
+            # .gitignore, *.md, *.csv, *.log, *.ps1, *.py, *.ini, incidents/ are
+            # NOT source -- picking them as the "latest commit" shows wrong hash.
+            # Rule: must match include/, src/, cmake/, CMakeLists.txt, backtest/.
+            if(F MATCHES "^(include/|src/|cmake/|CMakeLists\.txt|backtest/)")
                 set(HAS_SOURCE_FILE TRUE)
                 break()
             endif()
