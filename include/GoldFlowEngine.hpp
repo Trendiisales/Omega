@@ -356,8 +356,23 @@ struct GoldFlowEngine {
         // ?? FIX (claim 4): Update persistence BEFORE spread gate ??????????????
         update_persistence(l2_imb, now_ms);
 
-        // Spread gate -- session-aware: tighter during Asia/dead zone
+        // Spread gate -- proportional to ATR, session-aware
+        // Standard absolute gate (eff_max_spread) catches catastrophically wide spreads.
+        // Additional proportional gate: spread must be < ATR * 0.14 at entry.
+        // Rationale: if spread is a large fraction of ATR, cost-to-signal ratio is bad.
+        // Backtest: IMM_REVERSAL median spread 0.64pt vs TRAIL_HIT 0.50pt.
+        //   86% of IMM_REVERSAL entered with spread > 0.40pt.
+        //   At ATR=5pt: gate = max(0.35, 5*0.14) = max(0.35, 0.70) = 0.70pt
+        //   At ATR=10pt: gate = max(0.35, 10*0.14) = 1.40pt (volatile session)
+        //   At ATR=2pt:  gate = max(0.35, 2*0.14) = 0.35pt (dead tape floor)
+        // Asia session: use 0.18 multiplier (slightly relaxed -- slower, wider spreads ok)
+        // Both gates must pass: absolute (eff_max_spread) AND proportional.
         if (spread > eff_max_spread) return;
+        {
+            const double spread_mult = is_low_quality_session ? 0.18 : 0.14;
+            const double prop_spread_limit = std::max(0.35, m_atr * spread_mult);
+            if (spread > prop_spread_limit) return;
+        }
 
         // ?? SESSION GATE ??????????????????????????????????????????????????????????
         // Re-enabled for full London+NY+Asia coverage (2026-04-06):
@@ -1732,6 +1747,39 @@ private:
         // ?? Time-stop-in-loss ???????????????????????????????????????????????????
         // If position has been losing for >45s straight with no meaningful MFE
         // AND adverse move > threshold: the setup never worked. Close and move on.
+        // ?? ADVERSE EARLY EXIT ????????????????????????????????????????????????
+        // Cuts IMM_REVERSAL trades: entered during spread spike, spread normalizes,
+        // position is immediately underwater within 30s.
+        // Backtest: IMM_REVERSAL avg hold 12s, avg loss -0.30pts (-$48 at 0.16 lots).
+        // These can't be caught at entry (signal was valid) but can be cut fast.
+        //
+        // Gate: held < 45s AND adverse > 1.5 * spread_at_entry AND mfe == 0.0
+        //   1.5x spread: if we're down more than 1.5x the entry spread within 45s,
+        //   this is a spread normalization, not a real move against us.
+        //   mfe == 0.0: price never went our way at all -- genuine wrong entry.
+        //   No step banked: if step1 fired, the position is managed by staircase.
+        // NOT applied in expansion mode (crash trades need room in first 45s).
+        {
+            const int64_t held_s   = (now_ms / 1000) - pos.entry_ts;
+            const double  adverse  = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+            const double  adv_gate = std::max(0.30, 1.5 * m_spread_at_entry);
+            const bool    adv_early =
+                !pos.partial_closed
+                && (held_s < 45)
+                && (adverse > adv_gate)
+                && (pos.mfe < 0.01)          // never moved our way
+                && !m_expansion_mode;        // expansion crashes need room
+            if (adv_early) {
+                printf("[GOLD-FLOW] ADVERSE-EARLY %s adverse=%.3f>%.3f held=%llds spread_entry=%.3f\n",
+                       pos.is_long ? "LONG" : "SHORT",
+                       adverse, adv_gate, (long long)held_s, m_spread_at_entry);
+                fflush(stdout);
+                const double exit_px = pos.is_long ? bid : ask;
+                close_position(exit_px, "ADVERSE_EARLY", now_ms, on_close);
+                return;
+            }
+        }
+
         // Catches: 20:00 LONG held 21min losing the entire time (-$154).
         // Without this: bleeds to full SL over minutes.
         // With this: exits at ~1pt loss after 45s = ~-$10 instead of -$154.
