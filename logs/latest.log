@@ -1,0 +1,60 @@
+00:21:45 [OMEGA] Log: C:\Omega\logs/omega_2026-04-06.log
+00:21:45 [OMEGA] Full Trade CSV: logs/trades/omega_trade_closes.csv
+00:21:45 [OMEGA] Trade Opens CSV: logs/trades/omega_trade_opens.csv
+00:21:45 [OMEGA] Daily Trade Logs: logs/trades/omega_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)
+00:21:45 [OMEGA] Daily Gold Logs: logs/gold/omega_gold_trade_closes_YYYY-MM-DD.csv (UTC, 5-file retention)
+00:21:45 [OMEGA] Daily Shadow Trade Logs: logs/shadow/trades/omega_shadow_trades_YYYY-MM-DD.csv (UTC, 5-file retention)
+00:21:45 [OMEGA] Shadow CSV: logs/shadow/omega_shadow.csv
+00:21:45 [OMEGA] Startup reload: no today CSV yet (logs/trades/omega_trade_closes_2026-04-06.csv) -- clean start
+00:21:45 [OmegaHTTP] Direct snapshot pointer OK
+00:21:45 [OmegaHTTP] port [OmegaWS] WebSocket port 77777890
+00:21:45 
+00:21:46 [OMEGA] GUI http://localhost:7779  WS:7780
+00:21:46 [CTRADER] Pre-blocked trendbar reqs + live subs -- no crash loop
+00:21:46 [CTRADER] Depth client started (ctid=44937427)
+00:21:46 [CTRADER] Depth feed starting (ctid=44937427)
+00:21:46 [OMEGA] FIX loop starting -- SHADOW mode
+00:21:46 [OMEGA-TRADE] Connecting live-uk-eqx-02.p.c-trader.com:5212
+00:21:46 [OMEGA-TRADE] Logon sent
+00:21:46 [OMEGA-TRADE] LOGON ACCEPTED
+00:21:46 [OMEGA-TRADE] SecurityListRequest sent req_id=omega-sec-1775434906
+00:21:46 [OMEGA-SECURITY] learned ext id EURUSD -> 1
+00:21:46 [OMEGA-SECURITY] learned ext id GBPUSD -> 2
+00:21:46 [OMEGA-SECURITY] learned ext id USDJPY -> 4
+00:21:46 [OMEGA-SECURITY] learned ext id AUDUSD -> 5
+00:21:46 [OMEGA-SECURITY] learned ext id NZDUSD -> 12
+00:21:46 [OMEGA-SECURITY] learned ext id XAGUSD -> 42
+00:21:46 [OMEGA-SECURITY] learned ext id BRENT -> 109
+00:21:46 [OMEGA-SECURITY] UNMATCHED: 'UK100.F' id=4461
+00:21:46 [OMEGA-SECURITY] learned ext id ESTX50 -> 1898
+00:21:46 [OMEGA-SECURITY] learned ext id GER40 -> 1899
+00:21:46 [OMEGA-SECURITY] learned ext id UK100 -> 1901
+00:21:46 [OMEGA-SECURITY] UNMATCHED: 'UKBRENT.F' id=2634
+00:21:46 [OMEGA-SECURITY] UNMATCHED: 'ESTC' id=3229
+00:21:46 [OMEGA-TRADE] SecurityList received req_id=omega-sec-1775434906 entries=1551 (ext IDs updated -- will re-subscribe)
+00:21:46 [OMEGA] Connecting live-uk-eqx-02.p.c-trader.com:5211
+00:21:46 [OMEGA] Logon sent
+00:21:46 [OMEGA] LOGON ACCEPTED
+00:21:46 [OMEGA] Subscribed ALL symbols (OMEGA-MD-ALL)
+00:21:46 [OMEGA] Re-subscribed ALL symbols with learned ext IDs (GER40/UK100/ESTX50/XAGUSD/EURUSD/BRENT/GBPUSD/AUDUSD/NZDUSD/USDJPY now included)
+00:21:46 [TICK] EURUSD 1.15/1.15
+00:21:46 [TICK] GBPUSD 1.32/1.32
+00:21:46 [TICK] USDJPY 159.75/159.76
+00:21:46 [TICK] AUDUSD 0.69/0.69
+00:21:46 [TICK] XAUUSD 4616.92/4617.14
+00:21:46 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.69 bracket=0.78 breakout=0.00 top_score=0.78 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+00:21:46 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=0 drift=-0.00 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+00:21:46 [TICK] XAGUSD 72.05/72.08
+00:21:46 [TICK] NZDUSD 0.57/0.57
+00:21:46 [TICK] NGAS.F 2.83/2.85
+00:21:46 [TICK] USOIL.F 112.79/112.87
+00:21:46 [TICK] ESTX50 5699.40/5700.80
+00:21:46 [TICK] GER40 23202.60/23204.30
+00:21:46 [TICK] DJ30.F 46526.10/46531.90
+00:21:46 [TICK] UK100 10455.10/10456.90
+00:21:46 [TICK] BRENT 107.80/108.39
+00:21:46 [TICK] VIX.F 24.63/25.01
+00:21:46 [TICK] DX.F 99.98/100.08
+00:21:46 [TICK] NAS100 23983.15/23984.35
+00:21:46 [TICK] US500.F 6599.97/6600.78
+00:21:46 [TICK] USTEC.F 24160.69/24163.40
