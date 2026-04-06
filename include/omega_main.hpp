@@ -1918,6 +1918,41 @@ int main(int argc, char* argv[])
         }
     }).detach();
     // =========================================================================
+    // Gate FIX thread launch on cTrader being live.
+    // cTrader L2 data is essential for supervisor regime classification and
+    // vol baseline warmup. Starting FIX before L2 flows means the supervisor
+    // operates with l2_imb=0.500 (stale default) and tips to HIGH_RISK_NO_TRADE,
+    // permanently blocking entries until the cooldown chain clears.
+    // Wait up to 45s for cTrader to connect and L2 to start flowing.
+    // If cTrader fails to connect in 45s, start FIX anyway (degraded mode).
+    {
+        const auto ct_wait_start = std::chrono::steady_clock::now();
+        bool ct_ready = false;
+        printf("[STARTUP] Waiting for cTrader L2 before starting FIX...\n");
+        fflush(stdout);
+        while (std::chrono::duration_cast<std::chrono::seconds>(
+                   std::chrono::steady_clock::now() - ct_wait_start).count() < 45) {
+            // L2 is live when: depth_active=true AND imbalance != 0.500
+            const bool depth_up  = g_ctrader_depth.depth_active.load();
+            const double imb     = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+            const bool l2_flowing = depth_up && (std::fabs(imb - 0.5) > 0.001
+                                    || g_ctrader_depth.depth_events_total.load() > 10);
+            if (l2_flowing) {
+                const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - ct_wait_start).count();
+                printf("[STARTUP] cTrader L2 live after %llds (imb=%.3f) -- starting FIX\n",
+                       (long long)elapsed, imb);
+                fflush(stdout);
+                ct_ready = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+        if (!ct_ready) {
+            printf("[STARTUP] cTrader L2 not live after 45s -- starting FIX in degraded mode\n");
+            fflush(stdout);
+        }
+    }
     std::thread trade_thread(trade_loop);
     Sleep(500);  // Give trade connection 500ms head start before quote loop
     quote_loop();  // blocks until g_running=false
