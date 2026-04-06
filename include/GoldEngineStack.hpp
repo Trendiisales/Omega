@@ -3912,7 +3912,7 @@ class GoldPositionManager {
         return leg.sl <= leg.entry - MIN_LOCKED_PROFIT;
     }
 
-    bool can_add_pyramid(double mid, const char* regime) const {
+    bool can_add_pyramid(double mid, const char* regime, double ewm_drift = 0.0) const {
         if (legs_.empty() || static_cast<int>(legs_.size()) >= MAX_PYRAMID_LEGS) return false;
         if (!regime_allows_pyramid(regime)) return false;
         const int64_t now = nowSec();
@@ -3920,6 +3920,20 @@ class GoldPositionManager {
 
         const GoldPos& leader = legs_.front();
         const double leader_move = leader.is_long ? (mid - leader.entry) : (leader.entry - mid);
+
+        // EWM drift gate: require drift to be aligned with pyramid direction.
+        // Root cause of 09:54 -$92.96: SHORT pyramid added at 4691 while price
+        // had already reversed up to 4697. ewm_drift was positive (bullish) but
+        // we added SHORT anyway. 0.16 lot * 5.60pt adverse = -$89.60 gross.
+        // Fix: block pyramid if drift opposes trade direction.
+        //   SHORT pyramid: require drift <= -0.5 (price still falling)
+        //   LONG  pyramid: require drift >=  0.5 (price still rising)
+        // Threshold 0.5pt: above normal noise (0.0-0.3) but fires on real moves.
+        // Does not apply when ewm_drift=0.0 (not yet available -- allow pyramid).
+        if (ewm_drift != 0.0) {
+            if (leader.is_long  && ewm_drift < -0.5) return false;  // drift bearish, don't add LONG
+            if (!leader.is_long && ewm_drift >  0.5) return false;  // drift bullish, don't add SHORT
+        }
 
         // Dynamic cover move: pyramid fires at 35% of the base TP distance.
         // Fixed $5 was wrong -- on a $30 TP trade, $5 = only 17% of the way.
@@ -4094,7 +4108,7 @@ public:
     // Returns true if position was closed this tick.
     bool manage(double bid, double ask, double latency_ms, const char* regime,
                 std::function<void(const omega::TradeRecord&)>& on_close,
-                double cur_atr = 0.0) {
+                double cur_atr = 0.0, double ewm_drift = 0.0) {
         if (legs_.empty()) return false;
         double mid = (bid + ask) * 0.5;
         bool closed_any = false;
@@ -4232,7 +4246,7 @@ public:
         // because can_add_pyramid() sees legs_.front() still valid before erase.
         // Result: orphaned pyramid with no parent -- rides alone to SL.
         // Fix: gate on !closed_any -- if anything closed this tick, skip pyramid.
-        if (!legs_.empty() && !closed_any && can_add_pyramid(mid, regime)) {
+        if (!legs_.empty() && !closed_any && can_add_pyramid(mid, regime, ewm_drift)) {
             add_pyramid_leg(mid, ask - bid, latency_ms, regime);
         }
         return closed_any;
@@ -4409,7 +4423,8 @@ public:
         }
         bool just_closed = pos_mgr_.manage(bid, ask, latency_ms,
                                            current_regime_name(), wrapped_close,
-                                           governor_.window_range());
+                                           governor_.window_range(),
+                                           governor_.ewm_drift());
 
         // If a position closed this tick, stamp last_entry_ts_ to now so the
         // MIN_ENTRY_GAP_SEC check below cannot be bypassed by same-tick re-entry.

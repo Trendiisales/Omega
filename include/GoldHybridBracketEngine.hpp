@@ -66,8 +66,12 @@ public:
     static constexpr double USD_PER_PT           = 100.0;  // $100/pt XAUUSD BlackBull
     static constexpr double RISK_DOLLARS         = 30.0;   // $ risk standalone
     static constexpr double RISK_DOLLARS_PYRAMID = 10.0;   // $ risk alongside GoldFlow (30% addon)
-    static constexpr int    STRUCTURE_LOOKBACK   = 30;     // ticks to establish range
-    static constexpr double MIN_RANGE            = 4.0;    // raised 1.5->4.0: 1.5pt is sub-spread noise. At ATR~5pt, 4pt = real structure.
+    static constexpr int    STRUCTURE_LOOKBACK   = 120;    // raised 30->120: 30 ticks=3s at London speed=pure noise.
+                                                            // 120 ticks=12s: requires sustained compression, not a 3s spread oscillation.
+                                                            // Root cause of -$162 SL losses: 30-tick ranges of 4pt were normal spread
+                                                            // noise arming the bracket, then 2.5pt SL hit by next oscillation.
+    static constexpr double MIN_RANGE            = 6.0;    // raised 4.0->6.0: 4pt in 3s = noise at $4700 gold (0.085%).
+                                                            // 6pt = 0.13% = real compression with directional intent.
     static constexpr double MAX_RANGE            = 25.0;   // pts max (raised from 12 -- pre-crash ranges are 15-20pt)
     static constexpr double MAX_SPREAD           = 2.5;    // pts spread gate
     static constexpr double SL_FRAC              = 0.5;    // SL = range * SL_FRAC + SL_BUFFER beyond entry
