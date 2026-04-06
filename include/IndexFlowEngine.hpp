@@ -544,14 +544,24 @@ public:
 
         // Always manage open position
         if (pos_.active) {
-            auto cb = on_close;
+            bool was_sl = false;
+            CloseCb cb_wrap = [&](const omega::TradeRecord& tr) {
+                if (tr.exitReason == "SL_HIT") was_sl = true;
+                if (on_close) on_close(tr);
+            };
             const bool closed = pos_.manage(bid, ask, atr_tracker_.atr(),
                                             cfg_.max_hold_sec,
-                                            "IFLOW", cb);
+                                            "IFLOW", cb_wrap);
             if (closed) {
                 phase = Phase::COOLDOWN;
                 cooldown_until_ms_ = idx_now_ms() + cfg_.cooldown_ms;
-                last_exit_side_ = pos_.is_long ? 0 : 1; // 0=was long, 1=was short
+                last_exit_side_ = pos_.is_long ? 0 : 1;
+                // 90s SL cooldown: blocks chop re-entries after stop hits
+                if (was_sl) {
+                    const int64_t sl_block = idx_now_ms() + 90000LL;
+                    if (sl_block > m_sl_cooldown_until_ms_)
+                        m_sl_cooldown_until_ms_ = sl_block;
+                }
             }
             return {};
         }
@@ -582,10 +592,23 @@ public:
             struct tm ti{}; idx_utc(ti);
             const int mins = ti.tm_hour * 60 + ti.tm_min;
             // Block 22:00-08:00 UTC for US indices (Asia + dead zone)
-            // Exception: DJ30.F and US500.F can sometimes trade during European hours
             const bool dead = (mins >= 22 * 60) || (mins < 8 * 60);
             if (dead) return {};
+
+            // NY open noise gate: 13:15-13:45 UTC
+            // Root cause of 13-trade 26%WR cluster: NY opens at 13:30 UTC with
+            // violent bid/ask oscillation. 13 IndexFlow trades in 30 min including
+            // direction flips within seconds, 5 zero-gross SL trades.
+            // Total damage: -$56.28 in 30 minutes.
+            // Block 15 min before and 15 min after NY open (13:15-13:45 UTC).
+            const bool ny_open_noise = (mins >= 13 * 60 + 15) && (mins < 13 * 60 + 45);
+            if (ny_open_noise) return {};
         }
+
+        // SL cooldown gate: 90s after any SL_HIT before re-entering
+        // Prevents immediate re-entry after a stop -- the chop pattern
+        // that produced rapid direction flips at NY open.
+        if (idx_now_ms() < m_sl_cooldown_until_ms_) return {};
 
         // ── Signal detection ──────────────────────────────────────────────────
         // Primary: L2 imbalance persistence (30-tick fast + 60-tick slow windows)
@@ -689,8 +712,9 @@ private:
     IndexSymbolCfg cfg_;
     char   symbol_[16] = {};
     int    tick_count_  = 0;
-    int64_t cooldown_until_ms_ = 0;
-    int     last_exit_side_    = -1;
+    int64_t cooldown_until_ms_      = 0;
+    int     last_exit_side_         = -1;
+    int64_t m_sl_cooldown_until_ms_ = 0;  // 90s block after SL_HIT
 
     IdxRegimeGovernor regime_;
     IdxATRTracker     atr_tracker_;

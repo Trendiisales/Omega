@@ -63,7 +63,9 @@ struct IndexHybridConfig {
     int    dir_sl_cooldown_s  = 60;
     int    pending_timeout_s  = 300;
     int    min_hold_s         = 15;
-    int    structure_lookback = 30;
+    int    structure_lookback = 180;   // raised 30->180: 30 ticks=3s at index speed=pure noise.
+                                       // 180 ticks=18s of real structure. NAS100 14:35 loss:
+                                       // 30-tick 'compression' captured 63pt adverse NY open move.
     int    min_break_ticks    = 3;
     int    min_entry_ticks    = 150;
 };
@@ -223,6 +225,26 @@ public:
             return;
         }
         if (spread > cfg_.max_spread) return;
+
+        // NY open noise gate: 13:15-13:45 UTC
+        // Root cause of 0% WR on NAS100: 30-tick bracket at NY open captured
+        // the full volatile opening range as 'compression'.
+        // 14:35 NAS100 LONG: 63pt adverse move = -$19.04 net.
+        // 13:37 NAS100 SHORT: 43pt adverse move = -$21.68 net.
+        // Fix: hard block arming during NY open noise window.
+        // ARMED/PENDING/LIVE phases pass through -- only new arming blocked.
+        {
+            const int64_t t_s = now_ms / 1000;
+            struct tm ti{}; const time_t ts = static_cast<time_t>(t_s);
+#ifdef _WIN32
+            gmtime_s(&ti, &ts);
+#else
+            gmtime_r(&ts, &ti);
+#endif
+            const int mins = ti.tm_hour * 60 + ti.tm_min;
+            const bool ny_open_noise = (mins >= 13 * 60 + 15) && (mins < 13 * 60 + 45);
+            if (ny_open_noise && phase == Phase::IDLE) return;
+        }
 
         const bool flow_pyramid_ok = flow_live && flow_be_locked && flow_trail_stage >= 1;
         if (flow_live && !flow_pyramid_ok && phase == Phase::IDLE) return;
