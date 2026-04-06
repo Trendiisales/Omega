@@ -212,7 +212,7 @@ static std::atomic<bool>     g_l2_watchdog_dead{false};   // true = L2 dead, Gol
 //
 // Written by CTraderDepthClient recv_loop (per-symbol starvation watchdog).
 // Read by tick_gold.hpp entry gates.
-static std::atomic<bool>     g_feed_stale_xauusd{false};  // true = cTrader depth subscribed but no XAUUSD events
+std::atomic<bool>            g_feed_stale_xauusd{false};  // true = cTrader depth subscribed but no XAUUSD events
 
 // ?? Indices FORCE_CLOSE circuit breaker ??????????????????????????????????????
 // Problem: on April 2 2026, repeated disconnect/reconnect cycles on US indices

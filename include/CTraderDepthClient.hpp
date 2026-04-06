@@ -343,6 +343,13 @@ struct CTDepthBook {
 // =============================================================================
 // CTraderDepthClient
 // =============================================================================
+// Forward declaration -- defined in globals.hpp.
+// CTraderDepthClient.hpp may be included before globals.hpp in the PCH,
+// so we forward-declare the atomic here to avoid C2065 undeclared identifier.
+// The actual definition in globals.hpp is the single authoritative instance.
+#include <atomic>
+extern std::atomic<bool> g_feed_stale_xauusd;
+
 class CTraderDepthClient {
 public:
     std::string client_id, client_secret, access_token, refresh_token;
