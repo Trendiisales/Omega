@@ -183,6 +183,10 @@ static void quote_loop() {
                  g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
                  g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
                  g_edges.fill_quality.save_csv(log_root_dir() + "/fill_quality.csv");
+                 // Save correlation matrix every 60s -- previously shutdown-only.
+                 // Accumulates rolling price correlations across all symbols.
+                 // Hard kill without this loses the session's correlation history.
+                 g_corr_matrix.save_state(log_root_dir() + "/corr_matrix.dat");
                 std::cout << "[OMEGA-DIAG] PnL=" << g_omegaLedger.dailyPnl()
                           << " T=" << g_omegaLedger.total()
                           << " WR=" << g_omegaLedger.winRate() << "%"
