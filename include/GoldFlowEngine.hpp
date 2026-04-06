@@ -163,7 +163,10 @@ static constexpr double GFE_ASIA_MAX_SPREAD        = 2.5;    // raised $1.50?$2.
                                                               // On thin chop ATR=$2, spread $2.50 ? ratio=0.8 << 4.0 ? BLOCK.
                                                               // The spread cap alone was a blunt instrument; ratio does it better.
 #ifndef GFE_ASIA_DRIFT_MIN_OVERRIDE
-static constexpr double GFE_ASIA_DRIFT_MIN         = 1.50;
+// Lowered 1.50->0.80: 1.5pt drift never fires on quiet Asia tape (drift 0.2-0.5).
+// 0.8pt aligns with GFE_DRIFT_FALLBACK_THRESHOLD and asia_trend_ok arm threshold.
+// Still filters true noise (drift < 0.5 = dead tape).
+static constexpr double GFE_ASIA_DRIFT_MIN         = 0.80;
 #else
 static constexpr double GFE_ASIA_DRIFT_MIN         = GFE_ASIA_DRIFT_MIN_OVERRIDE;
 #endif   // ALIGNED with outer asia_trend_ok gate (main.cpp: |drift|>=1.5).
