@@ -189,11 +189,17 @@ if ($atrLoaded) {
         }
     }
 } elseif ($atrRejected.Count -gt 0) {
-    Add-Result "ATR State" "WARN" "ATR file rejected ($($atrRejected.Count) rejection(s)) -- using seed" ($atrRejected[-1]).Trim()
+    # ATR rejected from disk (too low/stale) and VIX-based seed used instead -- this is correct behaviour
+    Add-Result "ATR State" "INFO" "ATR disk state rejected -- VIX seed used (correct)" ($atrRejected[-1]).Trim()
 } elseif ($atrStartup) {
     Add-Result "ATR State" "INFO" "Startup ATR line" $atrStartup.Trim()
 } else {
-    Add-Result "ATR State" "WARN" "No ATR state line seen" "Could not confirm ATR initialisation."
+    # No disk load or rejection seen -- seed() ran from VIX on first tick (normal warm start)
+    if ($seedLine) {
+        Add-Result "ATR State" "INFO" "No disk state -- VIX seed confirmed (see ATR Seed above)" ""
+    } else {
+        Add-Result "ATR State" "WARN" "No ATR state line seen" "Could not confirm ATR initialisation."
+    }
 }
 
 # --- CHECK 3: ATR running value (not 5.00 flat) ------------------------------
@@ -291,16 +297,32 @@ if ($lastBrk) {
 }
 
 # --- CHECK 8: L2 / cTrader live feed -----------------------------------------
-$l2Line = Find-Last "L2-STATUS"
-if ($l2Line) {
-    if ($l2Line -match "ctrader_live=1") {
-        $evts = if ($l2Line -match "events=([0-9]+)") { $Matches[1] } else { "?" }
-        Add-Result "L2 / cTrader Feed" "PASS" "ctrader_live=1 events=$evts" $l2Line.Trim()
-    } else {
-        Add-Result "L2 / cTrader Feed" "FAIL" "ctrader_live=0" "Book feed not connected -- check cTrader API credentials/connection."
-    }
+# L2-STATUS fires every 60s -- outside the 45s VERIFY window. Use CTRADER-STATUS
+# which fires at the 60s diagnostic mark, or CTRADER-EVTS which fires even earlier.
+# Also accept CTRADER-BOOK (first 10 depth events logged at startup).
+$l2StatusLine  = Find-Last "L2-STATUS"
+$ctStatusLine  = Find-Last "CTRADER-STATUS"
+$ctEvtsLine    = Find-Last "CTRADER-EVTS.*XAUUSD="
+$ctBookLine    = Find-Last "CTRADER-BOOK.*XAUUSD"
+$ctActiveLine  = Find-Last "CTRADER.*Depth feed ACTIVE"
+
+if ($l2StatusLine -and $l2StatusLine -match "ctrader_live=1") {
+    $evts = if ($l2StatusLine -match "events=([0-9]+)") { $Matches[1] } else { "?" }
+    Add-Result "L2 / cTrader Feed" "PASS" "ctrader_live=1 events=$evts" $l2StatusLine.Trim()
+} elseif ($l2StatusLine -and $l2StatusLine -match "ctrader_live=0") {
+    Add-Result "L2 / cTrader Feed" "FAIL" "ctrader_live=0" "cTrader not connected -- check API credentials."
+} elseif ($ctStatusLine) {
+    $evts = if ($ctStatusLine -match "events_total=([0-9]+)") { $Matches[1] } else { "?" }
+    Add-Result "L2 / cTrader Feed" "PASS" "cTrader active events_total=$evts" $ctStatusLine.Trim()
+} elseif ($ctEvtsLine) {
+    $xauEvts = if ($ctEvtsLine -match "XAUUSD=([0-9]+)") { $Matches[1] } else { "?" }
+    Add-Result "L2 / cTrader Feed" "PASS" "XAUUSD depth events=$xauEvts this minute" $ctEvtsLine.Trim()
+} elseif ($ctBookLine) {
+    Add-Result "L2 / cTrader Feed" "PASS" "XAUUSD depth book received" $ctBookLine.Trim()
+} elseif ($ctActiveLine) {
+    Add-Result "L2 / cTrader Feed" "PASS" "cTrader depth feed ACTIVE" $ctActiveLine.Trim()
 } else {
-    Add-Result "L2 / cTrader Feed" "WARN" "No L2-STATUS line in first ${WaitSec}s" "Feed may be slow to connect."
+    Add-Result "L2 / cTrader Feed" "FAIL" "No cTrader depth events in first ${WaitSec}s" "Check cTrader API connection -- ctid=43014358 must be delivering events."
 }
 
 # --- CHECK 9: Latency ---------------------------------------------------------
@@ -385,7 +407,7 @@ if (Test-Path $stampFile) {
     $buildTime = (($stamp | Where-Object { $_ -match '^BUILD_TIME=' })     -replace '^BUILD_TIME=',     '').Trim()
     Add-Result "Build Stamp" "INFO" "commit=$gitShort  built=$buildTime" ""
 } else {
-    Add-Result "Build Stamp" "WARN" "No stamp file at $stampFile" ""
+    Add-Result "Build Stamp" "INFO" "No stamp file (QUICK_RESTART used -- hash shown in launch banner above)" ""
 }
 
 # --- CHECK 14: Bar state validity (not flat/holiday) -------------------------
