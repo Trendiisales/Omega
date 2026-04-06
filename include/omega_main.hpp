@@ -86,7 +86,7 @@ int main(int argc, char* argv[])
     // Trail at 3R: comp=$0.30, trail_dist=$0.075 -- very tight, holds through volatile moves.
     g_bracket_xag.configure(
         0.04,   // buffer: spread*0.5 = $0.04 outside range
-        30,     // lookback: 30-tick structural window
+        150,    // FEED-CALIBRATED: 150 ticks = 60s at XAGUSD=150/min. Old 30=12s.
         3.0,    // RR: 3.0 matches gold. On $0.30 compression: trail arms at $0.90 in.
                 //   On a $3.50 weekly move: 10R+ captured via trail.
         30000,  // cooldown_ms: 30s -- silver cascades same as gold, re-arm fast.
@@ -426,19 +426,19 @@ int main(int argc, char* argv[])
     //           atr_confirm_k, atr_range_k, slippage_buffer, edge_multiplier)
     //
     // US500.F (~6000): 0.20% = $12.0 min range
-    g_bracket_sp.configure(    0.25, 30, 2.5, 180000, 12.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.30, 1.5);
+    g_bracket_sp.configure(    0.25, 120, 2.5, 180000, 12.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.30, 1.5);
     // USTEC.F (~21000): 0.20% = $42.0 min range
-    g_bracket_nq.configure(    0.75, 30, 2.5, 180000, 42.0, 0.05, 4000, 10000, 0.0, 45000, 10000, 20, 0.15, 2.0, 2.50, 1.5);
+    g_bracket_nq.configure(    0.75, 150, 2.5, 180000, 42.0, 0.05, 4000, 10000, 0.0, 45000, 10000, 20, 0.15, 2.0, 2.50, 1.5);
     // DJ30.F (~43000): 0.20% = $86.0 min range
-    g_bracket_us30.configure(  2.50, 30, 2.5, 180000, 86.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 3.00, 1.5);
+    g_bracket_us30.configure(  2.50, 120, 2.5, 180000, 86.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 3.00, 1.5);
     // NAS100 (~21000): same as USTEC
-    g_bracket_nas100.configure(0.75, 30, 2.5, 180000, 42.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
+    g_bracket_nas100.configure(0.75, 120, 2.5, 180000, 42.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
     // GER40 (~22000): 0.20% = $44.0 min range
-    g_bracket_ger30.configure( 1.00, 30, 2.5, 180000, 44.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
+    g_bracket_ger30.configure( 1.00, 120, 2.5, 180000, 44.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 1.00, 1.5);
     // UK100 (~9720): 0.20% = $19.5 min range
-    g_bracket_uk100.configure( 0.50, 30, 2.5, 180000, 20.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
+    g_bracket_uk100.configure( 0.50, 120, 2.5, 180000, 20.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
     // ESTX50 (~5387): 0.20% = $10.8 min range
-    g_bracket_estx50.configure(0.50, 30, 2.5, 180000, 11.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
+    g_bracket_estx50.configure(0.50, 120, 2.5, 180000, 11.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
     g_bracket_brent.configure(
         0.10,   // buffer
         30,     // lookback
