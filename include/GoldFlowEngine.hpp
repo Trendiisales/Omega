@@ -81,7 +81,7 @@ static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 0.5;  // was 1.5 -- too s
 // 20 ticks (~2s London) -- sufficient for real directional moves.
 // The chop guard (drift range > 4.0) blocks oscillating markets regardless.
 // 40 was too long for slow grinding trends where drift is consistent but small.
-static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 20;   // was 40 -- too long for no-L2 broker
+static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 12;   // lowered 20→12: normal $20-40 moves complete in 3-6min; 20-tick requirement fires mid-move. 12 ticks (70%=8 aligned) still real confirmation without missing entry.
 static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- raised 20?100:
 static constexpr int    GFE_ATR_RANGE_WINDOW  = 100;   // raised 20?100: 20 ticks = 2s window at London
                                                         // = pure spread noise ($0.2-0.5pts), not real ATR.
@@ -118,15 +118,15 @@ static constexpr double GFE_PARTIAL_EXIT_R    = 1.0;   // stair step 1 trigger (
 static constexpr double GFE_PARTIAL_EXIT_FRAC = 0.50;  // fraction to close at partial exit trigger
 static constexpr double GFE_STAGE2_ATR_MULT   = 1.0;   // stair step 1 (same as BE)
 static constexpr double GFE_STAGE3_ATR_MULT   = 2.0;   // stair step 2
-static constexpr double GFE_STAGE4_ATR_MULT   = 6.0;   // full trail stage (GUI badge)
+static constexpr double GFE_STAGE4_ATR_MULT   = 3.0;   // lowered 6.0→3.0: tight trail arms at 3xATR on normal moves. Velocity path uses 6xATR inline in manage_position (unchanged).
 static constexpr double GFE_MAX_SPREAD        = 2.5;   // pts -- London gold spread $1.50-$4.00; old 0.6 blocked all entries
 static constexpr int    GFE_MIN_HOLD_MS       = 5000;   // 5s minimum hold
 #ifndef GFE_MAX_HOLD_OVERRIDE
-static constexpr int    GFE_MAX_HOLD_MS       = 3600000; // 60 min
-                                                          // Reverted from 10min: shorter hold cut WR 63%->55%
-                                                          // Real trend trades need time for trail to develop.
-                                                          // TIME_STOP problem is the entry signal, not hold time.
-                                                          // Fix: L2 live (ctid=43014358) filters noise entries.
+static constexpr int    GFE_MAX_HOLD_MS       = 600000;  // 10 min -- targeting $20-40 normal moves.
+                                                          // A $20-40 trade at ATR=5pt completes in 3-8min.
+                                                          // Losers that haven't reached step 1 in 10min = dead thesis.
+                                                          // velocity_active path suppresses this limit on expansion moves.
+                                                          // Asia doubles this to 20min (is_low_qual path in manage_position).
 #else
 static constexpr int    GFE_MAX_HOLD_MS       = GFE_MAX_HOLD_OVERRIDE;
 #endif
@@ -359,22 +359,21 @@ struct GoldFlowEngine {
         // Spread gate -- session-aware: tighter during Asia/dead zone
         if (spread > eff_max_spread) return;
 
-        // ?? SESSION GATE -- only enter in OVERLAP and NY_OPEN ???????????????????
-        // MFE/MAE scan of 134M ticks (2023-2025) showed:
-        //   OVERLAP (slot 3+4, 12:00-17:00 UTC): positive expectancy +0.057 to +0.081
-        //   LON_OPEN (slot 1):   PERSIST_BULL -0.044, PERSIST_BEAR -0.085 (LOSING)
-        //   LON_CORE (slot 2):   PERSIST_BULL -0.007 (barely break-even)
-        //   NY_LATE (slot 5):    -0.086 to -0.143 (worst session)
-        //   ASIA (slot 6):       +0.034 (marginal, high spread cost)
-        //
-        // Action: only allow new entries in slots 3 (Overlap 12-14 UTC) and
-        //         4 (NY open 14-17 UTC). Block all others.
-        // Manage open positions in any session (no gate on LIVE phase -- see above).
-        // Asia kept for now via is_low_quality_session path but new entries blocked.
+        // ?? SESSION GATE ??????????????????????????????????????????????????????????
+        // Re-enabled for full London+NY+Asia coverage (2026-04-06):
+        //   Slot 1 (London open 06:00-08:00 UTC)  -- re-enabled: chop guard + L2 watchdog now gate noise
+        //   Slot 2 (London core 08:00-10:00 UTC)  -- re-enabled: consistent directional session
+        //   Slot 3 (Overlap    12:00-16:30 UTC)   -- always enabled
+        //   Slot 4 (NY open    16:30-19:00 UTC)   -- always enabled
+        //   Slot 6 (Asia       01:00-06:00 UTC)   -- enabled via is_low_quality_session path below
+        //   Slot 5 (NY_late    19:00-21:00 UTC)   -- still blocked: thin, whippy, poor expectancy
+        //   Slot 0 (dead zone  21:00-01:00 UTC)   -- hard-blocked above (slot==0 && !LIVE)
+        // Target: cover $0.40 spread cost on every trade, chase $20-40 normal moves.
         {
-            const bool overlap_or_ny = (m_last_session_slot == 3 ||
-                                        m_last_session_slot == 4);
-            if (!overlap_or_ny) return;
+            const bool tradeable_session = (m_last_session_slot >= 1 &&
+                                            m_last_session_slot <= 4)
+                                        || (m_last_session_slot == 6);
+            if (!tradeable_session) return;
         }
         // On low-quality tape, reject if ATR is too low (noise-dominated) or
         // ATR-to-spread ratio is too small (SL within spread fluctuation range).
@@ -450,14 +449,18 @@ struct GoldFlowEngine {
             // the same 0.5pt threshold is only 0.013% of price -- pure tick noise.
             // Data: 2yr backtest shows drift threshold fires on signal indistinguishable
             // from spread noise at high gold prices, generating TIME_STOP-dominated entries.
-            // Fix: threshold = max(GFE_DRIFT_FALLBACK_THRESHOLD, 0.3 * m_atr)
-            //   At ATR=2.0pt: max(0.5, 0.6) = 0.6pt  (marginal tightening)
-            //   At ATR=5.0pt: max(0.5, 1.5) = 1.5pt  (meaningful signal required)
-            //   At ATR=15pt:  max(0.5, 4.5) = 4.5pt  (strong directional move required)
-            // This scales the required signal proportionally to actual market volatility.
-            // No change to live Asia sessions (GFE_ASIA_DRIFT_MIN=1.5 is separate path).
+            // Fix: threshold = max(GFE_DRIFT_FALLBACK_THRESHOLD, 0.18 * m_atr)
+            // Lowered coefficient 0.3→0.18 (2026-04-06): targeting normal $20-40 London moves.
+            // A $25-30 trending move sustains drift of 0.8-1.2pt; at 0.3*ATR(5pt)=1.5pt
+            // those were being blocked entirely. 0.18*ATR(5pt)=0.9pt -- catches real moves.
+            // Chop guard (mixed-sign drift window) still blocks oscillating markets.
+            // Asia path uses GFE_ASIA_DRIFT_MIN=1.50 separately -- not affected here.
+            //   At ATR=2.0pt: max(0.5, 0.36) = 0.50pt  (floor holds on dead tape)
+            //   At ATR=5.0pt: max(0.5, 0.90) = 0.90pt  (catches normal London moves)
+            //   At ATR=10pt:  max(0.5, 1.80) = 1.80pt  (volatile session, stronger signal needed)
+            //   At ATR=15pt:  max(0.5, 2.70) = 2.70pt  (crash mode, significant drift required)
             const double eff_drift_threshold = (m_atr > 0.0)
-                ? std::max(GFE_DRIFT_FALLBACK_THRESHOLD, 0.3 * m_atr)
+                ? std::max(GFE_DRIFT_FALLBACK_THRESHOLD, 0.18 * m_atr)
                 : GFE_DRIFT_FALLBACK_THRESHOLD;
 
             const int drift_dir = (ewm_drift > eff_drift_threshold)  ?  1
@@ -2196,7 +2199,7 @@ private:
         if (pos.trail_stage < 1 && pos.be_locked)          pos.trail_stage = 1;
         if (pos.trail_stage < 2 && pos.partial_closed_2)   pos.trail_stage = 2;
         if (pos.trail_stage < 3 && move >= atr * 3.0)      pos.trail_stage = 3;
-        if (pos.trail_stage < 4 && move >= atr * 6.0)      pos.trail_stage = 4;
+        if (pos.trail_stage < 4 && move >= atr * GFE_STAGE4_ATR_MULT) pos.trail_stage = 4;
 
         // ?? Velocity add-on -- add size into a confirmed running crash/surge ????
         //
@@ -2458,4 +2461,5 @@ private:
         if (on_close) on_close(tr);
     }
 };
+
 
