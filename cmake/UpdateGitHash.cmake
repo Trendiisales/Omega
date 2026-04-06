@@ -34,7 +34,7 @@ if(GIT_FOUND AND EXISTS "${SOURCE_DIR}/.git")
             # .gitignore, *.md, *.csv, *.log, *.ps1, *.py, *.ini, incidents/ are
             # NOT source -- picking them as the "latest commit" shows wrong hash.
             # Rule: must match include/, src/, cmake/, CMakeLists.txt, backtest/.
-            if(F MATCHES "^(include/|src/|cmake/|CMakeLists\.txt|backtest/)")
+            if("${F}" MATCHES "^(include/|src/|cmake/|CMakeLists[.]txt|backtest/)")
                 set(HAS_SOURCE_FILE TRUE)
                 break()
             endif()
