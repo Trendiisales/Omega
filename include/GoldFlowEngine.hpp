@@ -356,23 +356,12 @@ struct GoldFlowEngine {
         // ?? FIX (claim 4): Update persistence BEFORE spread gate ??????????????
         update_persistence(l2_imb, now_ms);
 
-        // Spread gate -- proportional to ATR, session-aware
-        // Standard absolute gate (eff_max_spread) catches catastrophically wide spreads.
-        // Additional proportional gate: spread must be < ATR * 0.14 at entry.
-        // Rationale: if spread is a large fraction of ATR, cost-to-signal ratio is bad.
-        // Backtest: IMM_REVERSAL median spread 0.64pt vs TRAIL_HIT 0.50pt.
-        //   86% of IMM_REVERSAL entered with spread > 0.40pt.
-        //   At ATR=5pt: gate = max(0.35, 5*0.14) = max(0.35, 0.70) = 0.70pt
-        //   At ATR=10pt: gate = max(0.35, 10*0.14) = 1.40pt (volatile session)
-        //   At ATR=2pt:  gate = max(0.35, 2*0.14) = 0.35pt (dead tape floor)
-        // Asia session: use 0.18 multiplier (slightly relaxed -- slower, wider spreads ok)
-        // Both gates must pass: absolute (eff_max_spread) AND proportional.
+        // Spread gate -- session-aware absolute gate.
+        // Proportional gate (0.14*ATR) was too aggressive: cut TRAIL_HIT 81%
+        // while IMM_REVERSAL is now handled by ADVERSE_EARLY exit instead.
+        // ADVERSE_EARLY converts IMM losses from -0.30pts to -0.12pts per trade
+        // without any entry-side filtering tradeoffs. Keep absolute gate only.
         if (spread > eff_max_spread) return;
-        {
-            const double spread_mult = is_low_quality_session ? 0.18 : 0.14;
-            const double prop_spread_limit = std::max(0.35, m_atr * spread_mult);
-            if (spread > prop_spread_limit) return;
-        }
 
         // ?? SESSION GATE ??????????????????????????????????????????????????????????
         // Re-enabled for full London+NY+Asia coverage (2026-04-06):
