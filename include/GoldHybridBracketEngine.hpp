@@ -67,7 +67,7 @@ public:
     static constexpr double RISK_DOLLARS         = 30.0;   // $ risk standalone
     static constexpr double RISK_DOLLARS_PYRAMID = 10.0;   // $ risk alongside GoldFlow (30% addon)
     static constexpr int    STRUCTURE_LOOKBACK   = 30;     // ticks to establish range
-    static constexpr double MIN_RANGE            = 1.5;    // pts minimum compression
+    static constexpr double MIN_RANGE            = 4.0;    // raised 1.5->4.0: 1.5pt is sub-spread noise. At ATR~5pt, 4pt = real structure.
     static constexpr double MAX_RANGE            = 25.0;   // pts max (raised from 12 -- pre-crash ranges are 15-20pt)
     static constexpr double MAX_SPREAD           = 2.5;    // pts spread gate
     static constexpr double SL_FRAC              = 0.5;    // SL = range * SL_FRAC + SL_BUFFER beyond entry
@@ -78,7 +78,7 @@ public:
     static constexpr int    DIR_SL_COOLDOWN_S    = 60;     // seconds directional block after SL_HIT
     static constexpr int    PENDING_TIMEOUT_S    = 300;    // seconds waiting for fill
     static constexpr int    MIN_HOLD_S           = 15;     // seconds minimum hold
-    static constexpr int    MIN_BREAK_TICKS      = 3;      // consecutive inside ticks before arm
+    static constexpr int    MIN_BREAK_TICKS      = 5;      // raised 3->5: more conviction before arm, reduces false breakouts
     static constexpr int    MIN_ENTRY_TICKS      = 150;    // warmup guard (same as BracketEngine)
 
     bool shadow_mode = true;   // set false only for live orders
