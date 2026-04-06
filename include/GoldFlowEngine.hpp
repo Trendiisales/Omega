@@ -821,6 +821,51 @@ struct GoldFlowEngine {
             }
         }
 
+        // ?? PRICE DISTANCE GATE ??????????????????????????????????????????
+        // Root cause of 40.7% MAX_HOLD_TIMEOUT + 15.4% TIME_STOP:
+        // EWM drift can persist 8/12 directional ticks while price oscillates
+        // near a fixed level -- EWM smoothing creates phantom drift on noise.
+        // These entries show up as flatliners: hold 709s, exit near entry, pay
+        // double spread for nothing. Pre-cost edge is +11k pts over 24m but
+        // spread cost is 12.9k pts -- drift-only entries destroy the edge.
+        //
+        // Fix: require that mid has ACTUALLY MOVED >= GFE_PRICE_DIST_GATE * ATR
+        // net over the last GFE_DRIFT_PERSIST_TICKS ticks (same window as drift).
+        // mid_momentum() already computes this: mid_now - mid_12ticks_ago.
+        // Genuine directional moves always pass (a 20pt move shows 1-3pt net).
+        // Noise oscillations fail (mid returns to origin despite directional ticks).
+        //
+        // Gate is directional: long signal requires positive net move, short negative.
+        // Threshold: 0.30 * ATR
+        //   ATR=2pt: need 0.60pt net move over 12 ticks (prevents dead-tape entries)
+        //   ATR=5pt: need 1.50pt net move (a real London intraday impulse)
+        //   ATR=10pt: need 3.00pt net (expansion session, needs conviction)
+        // NOT applied in expansion regime (vol_ratio > 2.0) -- crashes run fast,
+        // may not show 12-tick net distance at the moment of entry.
+        // Asia session uses 0.25*ATR (slightly relaxed -- slower moves).
+        {
+            const bool in_expansion = m_expansion_mode && (m_vol_ratio > 2.0);
+            if (!in_expansion) {
+                const double dist_mult  = is_low_quality_session ? 0.25 : 0.30;
+                const double dist_gate  = dist_mult * m_atr;
+                const double net_move   = mid_momentum();  // mid_now - mid_12ticks_ago
+                const bool   dist_ok    = long_signal  ? (net_move  >  dist_gate)
+                                        : short_signal ? (net_move  < -dist_gate)
+                                        : false;
+                if (!dist_ok) {
+                    static int64_t s_dist_log = 0;
+                    if (now_ms - s_dist_log > 8000) {
+                        s_dist_log = now_ms;
+                        printf("[GFE-DIST-BLOCK] %s net_move=%.3f need=%.3f (%.2f*ATR=%.2f) -- no price distance\n",
+                               long_signal ? "LONG" : "SHORT",
+                               net_move, dist_gate, dist_mult, m_atr);
+                        fflush(stdout);
+                    }
+                    return;
+                }
+            }
+        }
+
         // Fire entry
         enter(long_signal, mid, bid, ask, spread, now_ms);
     }
