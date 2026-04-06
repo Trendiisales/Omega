@@ -308,7 +308,55 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         auto rd = [&](const AtomicL2& al) -> double {
             return al.fresh(l2_now_ms) ? al.imbalance.load(std::memory_order_relaxed) : 0.5;
         };
-        g_macro_ctx.gold_l2_imbalance   = rd(g_l2_gold);
+
+        // ?? Gold L2 imbalance -- drift-based synthetic when broker sends no real sizes ??
+        // BlackBull cTrader sends XAUUSD depth price levels but zero size data.
+        // CTDepthBook::to_l2book() substitutes 1 lot per level (see size_raw=0 guard).
+        // Equal sizes on all levels -> imbalance() = 0.500 always -- perpetually neutral.
+        // This breaks every gate that uses l2_imb to determine direction:
+        //   - GoldFlowEngine L2 persistence windows never build directional count
+        //   - asia_trend_ok never arms (drift gate falls back to noise)
+        //   - Signal scorer L2 component always scores 0
+        //   - GFE_LONG_THRESHOLD (0.75) never reached -> all gold entries blocked
+        //
+        // Fix: when gold L2 is not carrying real size data (imbalance stuck at 0.500),
+        // derive a synthetic imbalance from EWM drift. This is the same approach used
+        // inside GoldFlowEngine's drift fallback path (permanent operating mode for
+        // this broker). Applying it here at the MacroContext level means ALL consumers
+        // (GoldFlow, GoldStack, signal scorer, supervisor, bracket trend) automatically
+        // see a meaningful directional signal instead of perpetual neutral.
+        //
+        // Formula: imb = clamp(0.5 + drift/DRIFT_SCALE, 0.0, 1.0)
+        //   DRIFT_SCALE=4.0: drift=+4 -> imb=1.0 (strong long), drift=-4 -> imb=0.0 (strong short)
+        //   drift=+1 -> imb=0.75 (crosses GFE_LONG_THRESHOLD -- valid long signal)
+        //   drift=-1 -> imb=0.25 (crosses GFE_SHORT_THRESHOLD -- valid short signal)
+        //   drift=0  -> imb=0.50 (neutral -- no false signal injection)
+        //
+        // gold_l2_real=false means cTrader has no real size data -- this is the trigger.
+        // When gold_l2_real=true (real sizes arrived), use the actual imbalance directly.
+        {
+            const double raw_gold_imb = rd(g_l2_gold);
+            const bool   gold_real    = g_l2_gold.has_data.load(std::memory_order_relaxed)
+                                        && g_l2_gold.fresh(l2_now_ms)
+                                        && (std::fabs(raw_gold_imb - 0.5) > 0.001);
+            g_macro_ctx.gold_l2_real = gold_real;
+            if (gold_real) {
+                // Real size data -- use actual imbalance
+                g_macro_ctx.gold_l2_imbalance = raw_gold_imb;
+            } else {
+                // No real size data (BlackBull sends price-only depth for XAUUSD).
+                // Derive directional signal from EWM drift instead.
+                // GoldEngineStack::ewm_drift() uses previous tick value here (read before
+                // on_tick runs) -- stable enough for direction inference, not entry timing.
+                // DRIFT_SCALE=2.0: drift=+0.5 -> imb=0.75 (matches GFE_LONG_THRESHOLD=0.75)
+                // Aligns with GFE_DRIFT_FALLBACK_THRESHOLD=0.5 so both paths fire at same drift level.
+                static constexpr double DRIFT_SCALE = 2.0;
+                const double drift = g_gold_stack.ewm_drift();
+                const double drift_imb = 0.5 + drift / DRIFT_SCALE;
+                g_macro_ctx.gold_l2_imbalance = std::max(0.0, std::min(1.0, drift_imb));
+            }
+        }
+
         g_macro_ctx.sp_l2_imbalance     = rd(g_l2_sp);
         g_macro_ctx.nq_l2_imbalance     = rd(g_l2_nq);
         g_macro_ctx.cl_l2_imbalance     = rd(g_l2_cl);
@@ -324,8 +372,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.brent_l2_imbalance  = rd(g_l2_brent);
         g_macro_ctx.nas_l2_imbalance    = rd(g_l2_nas);
         g_macro_ctx.us30_l2_imbalance   = rd(g_l2_us30);
-        g_macro_ctx.gold_l2_real        = g_l2_gold.has_data.load(std::memory_order_relaxed)
-                                          && g_l2_gold.fresh(l2_now_ms);
     }
     // Microprice bias -- still from cTrader atomics (FIX doesn't compute this)
     g_macro_ctx.gold_microprice_bias = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
