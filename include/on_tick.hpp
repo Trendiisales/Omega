@@ -428,8 +428,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // has_data()=false ? GoldFlow blind, no L2 signal. Unacceptable.
     // 5s dead = warn every tick. 10s dead = force stop/start depth feed.
     {
-        // XAUUSD gets zero cTrader depth events on this account -- broker doesn't send them.
-        // L2 imbalance comes from the FIX feed instead (g_l2_books via atomic writes).
+        // XAUUSD depth comes from cTrader Open API (ctid=43014358) -- real DOM with sizes.
+        // FIX feed is order execution only -- not used for L2 imbalance (FIX now blocked
+        // from overwriting cTrader data when cTrader is fresh, see fix_dispatch.hpp).
         // No restart logic needed -- just log once if truly dead after 60s.
         const bool gold_size_dead = g_macro_ctx.ctrader_l2_live
                                     && !g_macro_ctx.gold_l2_real;
