@@ -157,14 +157,26 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                     imb = stored.imbalance();
                     hd  = stored.has_data();
                 }
-                // Write to per-symbol atomic -- hot path reads this with zero lock
+                // Write to per-symbol atomic -- ONLY when cTrader is not already
+                // delivering fresh depth for this symbol.
+                // cTrader Open API (ctid=43014358) is the authoritative DOM source.
+                // FIX W/X snapshots carry single-level quotes with unreliable sizes
+                // (tag 271 MDEntrySize is optional -- BlackBull often sends 0).
+                // If FIX overwrites a valid cTrader imbalance with 0.500 (size=0),
+                // every gate that uses l2_imb gets poisoned with neutral data.
+                // Rule: FIX writes only when cTrader data is stale (>2s old).
                 AtomicL2* al = get_atomic_l2(sym);
                 if (al) {
                     const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count();
-                    al->imbalance.store(imb, std::memory_order_relaxed);
-                    al->has_data.store(hd,  std::memory_order_relaxed);
-                    al->last_update_ms.store(now_ms, std::memory_order_release);  // release: visible after imbalance/has_data
+                    // Only write if cTrader data is stale (last update > 2000ms ago)
+                    const int64_t last_ct = al->last_update_ms.load(std::memory_order_relaxed);
+                    const bool ct_fresh = (last_ct > 0) && ((now_ms - last_ct) < 2000);
+                    if (!ct_fresh) {
+                        al->imbalance.store(imb, std::memory_order_relaxed);
+                        al->has_data.store(hd,  std::memory_order_relaxed);
+                        al->last_update_ms.store(now_ms, std::memory_order_release);
+                    }
                 }
             }
         }
