@@ -532,7 +532,26 @@ struct GoldFlowEngine {
         }
 
         if (fast_long || fast_short) phase = Phase::FLOW_BUILDING;
-        else { phase = Phase::IDLE; return; }
+        else {
+            // No directional signal -- log state every 30s for diagnostics
+            static int64_t s_nosig_log = 0;
+            if (now_ms - s_nosig_log > 30000) {
+                s_nosig_log = now_ms;
+                const double eff_dt = (m_atr > 0.0)
+                    ? std::max(GFE_DRIFT_FALLBACK_THRESHOLD, 0.18 * m_atr)
+                    : GFE_DRIFT_FALLBACK_THRESHOLD;
+                printf("[GFE-NOSIG] drift=%.2f atr=%.2f eff_thresh=%.2f "
+                       "fast_long=%d fast_short=%d need=%d "
+                       "window=%d slot=%d\n",
+                       ewm_drift, m_atr, eff_dt,
+                       (int)fast_long, (int)fast_short,
+                       (GFE_DRIFT_PERSIST_TICKS * 7) / 10,
+                       (int)m_drift_persist_window.size(),
+                       session_slot);
+                fflush(stdout);
+            }
+            phase = Phase::IDLE; return;
+        }
 
         // ?? FIX (claim 5): Directional dominance -- reject mixed windows ????????
         // OLD: fast_long checked m_fast_long_count >= threshold independently.
