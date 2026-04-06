@@ -123,6 +123,18 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 #include "GoldFlowEngine.hpp"
 #include "MacroCrashEngine.hpp"
 static omega::GoldBracketEngine   g_bracket_gold;
+
+// ?? Hybrid bracket engines -- fire both sides simultaneously, cancel loser ??
+// GoldHybridBracketEngine: compression range -> long stop + short stop -> cancel loser on fill
+// IndexHybridBracketEngine: same for SP/NQ/DJ30/NAS100 with per-symbol calibration
+// These are in SHADOW mode by default -- validated against live data before enabling.
+#include "GoldHybridBracketEngine.hpp"
+#include "IndexHybridBracketEngine.hpp"
+static omega::GoldHybridBracketEngine         g_hybrid_gold;
+static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_config());
+static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
+static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());
+static omega::idx::IndexHybridBracketEngine   g_hybrid_nas100(omega::idx::make_nas100_config());
 static GoldFlowEngine             g_gold_flow;
 static omega::MacroCrashEngine    g_macro_crash;  // always-on macro event engine
 // Reload instance: independent GoldFlowEngine for continuation entries.

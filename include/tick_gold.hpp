@@ -2906,6 +2906,65 @@ static void on_tick_gold(
         }
     }
 
+    // ?? GoldHybridBracketEngine -- compression range -> both sides -> cancel loser ??
+    // SHADOW mode by default. Fires when:
+    //   1. Compression range detected (MIN_RANGE=1.5pt, MAX_RANGE=12pt over 30 ticks)
+    //   2. GoldFlow NOT in unprotected live position
+    //   3. Flow pyramid bypass: fires alongside GoldFlow when be_locked + trail_stage >= 1
+    // Both a long stop above hi AND a short stop below lo are sent simultaneously.
+    // First fill becomes the position; the other order is cancelled via cancel_fn.
+    {
+        // Position management -- unconditional when live
+        if (g_hybrid_gold.has_open_position()) {
+            const bool flow_live    = g_gold_flow.has_open_position();
+            const bool flow_be     = g_gold_flow.pos.be_locked;
+            const int  flow_stage  = g_gold_flow.pos.trail_stage;
+            g_hybrid_gold.on_tick(bid, ask, now_ms_g,
+                                  gold_can_enter, flow_live, flow_be, flow_stage,
+                                  bracket_on_close);
+        }
+        // New entry -- only when no other gold position open
+        const bool hybrid_can_enter =
+            gold_can_enter
+            && !g_bracket_gold.has_open_position()
+            && !g_le_stack.has_open_position()
+            && !g_trend_pb_gold.has_open_position()
+            && !g_nbm_gold_london.has_open_position();
+
+        if (hybrid_can_enter && !g_hybrid_gold.has_open_position()) {
+            const bool flow_live   = g_gold_flow.has_open_position();
+            const bool flow_be     = g_gold_flow.pos.be_locked;
+            const int  flow_stage  = g_gold_flow.pos.trail_stage;
+            g_hybrid_gold.on_tick(bid, ask, now_ms_g,
+                                  hybrid_can_enter, flow_live, flow_be, flow_stage,
+                                  bracket_on_close);
+        }
+
+        // When hybrid transitions to PENDING, send both stop orders.
+        // Use pending_lot computed by the engine (correct SL-based sizing).
+        // Do NOT recompute lot here -- engine already applied risk/sl_dist formula.
+        if (g_hybrid_gold.phase == omega::GoldHybridBracketEngine::Phase::PENDING
+            && g_hybrid_gold.pending_long_clOrdId.empty()
+            && g_hybrid_gold.pending_short_clOrdId.empty()) {
+            const double h_hi  = g_hybrid_gold.bracket_high;
+            const double h_lo  = g_hybrid_gold.bracket_low;
+            const double h_lot = g_hybrid_gold.pending_lot;
+            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01) {
+                // Wire cancel_fn once (idempotent -- already set on re-entry but safe to set again)
+                g_hybrid_gold.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
+                const std::string h_long_id  = send_live_order("XAUUSD", true,  h_lot, h_hi);
+                const std::string h_short_id = send_live_order("XAUUSD", false, h_lot, h_lo);
+                g_hybrid_gold.pending_long_clOrdId  = h_long_id;
+                g_hybrid_gold.pending_short_clOrdId = h_short_id;
+                printf("[HYBRID-GOLD] ORDERS SENT long_id=%s short_id=%s "
+                       "hi=%.2f lo=%.2f range=%.2f lot=%.3f\n",
+                       h_long_id.c_str(), h_short_id.c_str(),
+                       h_hi, h_lo, g_hybrid_gold.range, h_lot);
+                fflush(stdout);
+            }
+        }
+    }
+
     // ?? NBM London position management -- ALWAYS runs when position open ??
     // CRITICAL: same bug as TrendPB and GFE -- on_tick() was only called inside the
     // entry guard, so _manage_position() (SL/VWAP trail) was never reached once a
