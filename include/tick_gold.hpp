@@ -2927,9 +2927,17 @@ static void on_tick_gold(
                                   gold_can_enter, flow_live, flow_be, flow_stage,
                                   bracket_on_close);
         }
-        // New entry -- only when no other gold position open
+        // New entry -- only when no other gold position open AND market is genuinely compressing.
+        // vol_range gate: hybrid bracket needs real compression, not noise oscillation.
+        // 1.5pt MIN_RANGE was too low -- 3.7pt brackets were forming during sideways chop
+        // and getting SL-hit immediately as price oscillated within the range.
+        // Require vol_range >= 2.0pt: confirms the market HAS been compressing recently.
+        // vol_range=0 means bars not seeded yet (cold start) -- always block in that case.
+        const double hybrid_vol_range = g_gold_stack.vol_range();
+        const bool   hybrid_vol_ok    = (hybrid_vol_range >= 2.0);
         const bool hybrid_can_enter =
             gold_can_enter
+            && hybrid_vol_ok
             && !g_bracket_gold.has_open_position()
             && !g_le_stack.has_open_position()
             && !g_trend_pb_gold.has_open_position()
