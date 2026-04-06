@@ -1,3 +1,4 @@
+#pragma once
 // omega_main.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 

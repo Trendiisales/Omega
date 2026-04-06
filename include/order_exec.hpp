@@ -1,3 +1,4 @@
+#pragma once
 // order_exec.hpp -- extracted from main.cpp
 // Section: order_exec (original lines 2134-2855)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp

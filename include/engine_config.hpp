@@ -1,3 +1,4 @@
+#pragma once
 // engine_config.hpp -- extracted from main.cpp
 // Section: engine_config (original lines 3044-3634)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp

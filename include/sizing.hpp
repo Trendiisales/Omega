@@ -1,3 +1,4 @@
+#pragma once
 // sizing.hpp -- extracted from main.cpp
 // Section: sizing (original lines 1655-1871)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp

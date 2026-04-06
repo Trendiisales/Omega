@@ -1,3 +1,4 @@
+#pragma once
 // fix_dispatch.hpp -- extracted from main.cpp
 // Section: fix_dispatch (original lines 7285-7565)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp

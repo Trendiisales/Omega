@@ -1,3 +1,4 @@
+#pragma once
 // logging.hpp -- extracted from main.cpp
 // Section: logging (original lines 2857-3042)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp

@@ -1,3 +1,4 @@
+#pragma once
 // fix_builders.hpp -- extracted from main.cpp
 // Section: fix_builders (original lines 1872-2132)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp

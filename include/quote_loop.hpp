@@ -1,3 +1,4 @@
+#pragma once
 // quote_loop.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 

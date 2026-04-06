@@ -1,3 +1,4 @@
+#pragma once
 // config.hpp -- extracted from main.cpp
 // Section: config (original lines 3635-3981)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
