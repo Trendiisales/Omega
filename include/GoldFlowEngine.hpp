@@ -821,31 +821,28 @@ struct GoldFlowEngine {
             }
         }
 
-        // ?? PRICE DISTANCE GATE ??????????????????????????????????????????
-        // Root cause of 40.7% MAX_HOLD_TIMEOUT + 15.4% TIME_STOP:
-        // EWM drift can persist 8/12 directional ticks while price oscillates
-        // near a fixed level -- EWM smoothing creates phantom drift on noise.
-        // These entries show up as flatliners: hold 709s, exit near entry, pay
-        // double spread for nothing. Pre-cost edge is +11k pts over 24m but
-        // spread cost is 12.9k pts -- drift-only entries destroy the edge.
+        // ?? PRICE DISTANCE + RECENCY GATES ????????????????????????????????????
+        // Two complementary entry filters addressing different failure modes:
         //
-        // Fix: require that mid has ACTUALLY MOVED >= GFE_PRICE_DIST_GATE * ATR
-        // net over the last GFE_DRIFT_PERSIST_TICKS ticks (same window as drift).
-        // mid_momentum() already computes this: mid_now - mid_12ticks_ago.
-        // Genuine directional moves always pass (a 20pt move shows 1-3pt net).
-        // Noise oscillations fail (mid returns to origin despite directional ticks).
+        // GATE A -- 12-tick price distance (cuts MAX_HOLD_TIMEOUT flatliners):
+        //   Require mid has moved >= 0.30*ATR net over last 12 ticks.
+        //   EWM drift persists on noise oscillations without price moving.
+        //   Backtest: cut 91% of MAX_HOLD_TIMEOUT, 74% of TIME_STOP (first pass).
+        //   Threshold: 0.30*ATR normal, 0.25*ATR Asia (slower moves ok).
         //
-        // Gate is directional: long signal requires positive net move, short negative.
-        // Threshold: 0.30 * ATR
-        //   ATR=2pt: need 0.60pt net move over 12 ticks (prevents dead-tape entries)
-        //   ATR=5pt: need 1.50pt net move (a real London intraday impulse)
-        //   ATR=10pt: need 3.00pt net (expansion session, needs conviction)
-        // NOT applied in expansion regime (vol_ratio > 2.0) -- crashes run fast,
-        // may not show 12-tick net distance at the moment of entry.
-        // Asia session uses 0.25*ATR (slightly relaxed -- slower moves).
+        // GATE B -- 3-tick recency check (cuts IMM_REVERSAL + late TIME_STOP):
+        //   After dist gate, IMM_REVERSAL rose to 11.3% of trades (was 4.5%).
+        //   These passed the 12-tick distance check but price was ALREADY reversing
+        //   at the moment of entry -- the move peaked 5-10 ticks before entry.
+        //   Require: mid_now - mid_3ticks_ago >= 0.15*ATR in signal direction.
+        //   This confirms the move is still LIVE at entry, not already done.
+        //   TIME_STOP trades also entered at end-of-move -- same fix applies.
+        //   Threshold: 0.15*ATR normal, 0.10*ATR Asia.
+        //   NOT applied in expansion regime (crashes accelerate through entry).
         {
             const bool in_expansion = m_expansion_mode && (m_vol_ratio > 2.0);
             if (!in_expansion) {
+                // Gate A: 12-tick net distance
                 const double dist_mult  = is_low_quality_session ? 0.25 : 0.30;
                 const double dist_gate  = dist_mult * m_atr;
                 const double net_move   = mid_momentum();  // mid_now - mid_12ticks_ago
@@ -859,6 +856,29 @@ struct GoldFlowEngine {
                         printf("[GFE-DIST-BLOCK] %s net_move=%.3f need=%.3f (%.2f*ATR=%.2f) -- no price distance\n",
                                long_signal ? "LONG" : "SHORT",
                                net_move, dist_gate, dist_mult, m_atr);
+                        fflush(stdout);
+                    }
+                    return;
+                }
+
+                // Gate B: 3-tick recency -- move must still be live at entry
+                const double recency_mult = is_low_quality_session ? 0.10 : 0.15;
+                const double recency_gate = recency_mult * m_atr;
+                double recent_move = 0.0;
+                if ((int)m_momentum_window.size() >= 4) {
+                    recent_move = m_momentum_window.back()
+                                - m_momentum_window[m_momentum_window.size() - 4];
+                }
+                const bool recency_ok = long_signal  ? (recent_move  >  recency_gate)
+                                      : short_signal ? (recent_move  < -recency_gate)
+                                      : false;
+                if (!recency_ok) {
+                    static int64_t s_rec_log = 0;
+                    if (now_ms - s_rec_log > 8000) {
+                        s_rec_log = now_ms;
+                        printf("[GFE-RECENCY-BLOCK] %s recent_move=%.3f need=%.3f (%.2f*ATR=%.2f) -- move fading\n",
+                               long_signal ? "LONG" : "SHORT",
+                               recent_move, recency_gate, recency_mult, m_atr);
                         fflush(stdout);
                     }
                     return;
