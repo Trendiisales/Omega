@@ -59,11 +59,11 @@ int main(int argc, char* argv[])
     // buffer, lookback, RR, cooldown_ms, MIN_RANGE, CONFIRM_MOVE, confirm_timeout_ms, min_hold_ms
     g_bracket_gold.configure(
         0.8,    // buffer: place orders 0.8pts outside the range
-        300,    // FEED-CALIBRATED lookback: 300 ticks. cTrader depth = 172 ticks/min for XAUUSD.
-                //   300 ticks = ~105 seconds = ~1.75 minutes of real price structure.
-                //   Old value 20 ticks = 7 seconds -- window too short to show compression range.
-                //   7-second hi-lo on gold in compression = 0.05-0.20pt < MIN_RANGE=1.0pt always.
-                //   Fixed: 300-tick window captures the actual 1-3pt compression ranges.
+        600,    // FEED-CALIBRATED lookback: 600 ticks = 185s = 3min at 195/min XAUUSD.
+                //   300 ticks (90s) was borderline: gold moves 0.5-1.0pt in 90s of compression.
+                //   MIN_RANGE=1.0pt -> bracket_high reset to 0 every tick (oscillates around threshold).
+                //   600 ticks (3min) shows 1-4pt range in compression -> arms reliably.
+                //   MAX_RANGE=12pt still prevents bracketing full trending session moves.
         4.0,    // DATA-CALIBRATED RR: 4.0x SL. Best on 2yr tick data ($38k profit).
                 //   TP = 4x the structure range. Median range $2.67 ? TP ~$10.68
         90000,  // cooldown_ms: 90s
