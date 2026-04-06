@@ -702,6 +702,16 @@ int main(int argc, char* argv[])
                 sup->cfg.cooldown_fail_threshold = 20;
         }
     }
+    // Reset all supervisor hysteresis counters on startup.
+    // Prevents stale HIGH_RISK/CHOP counts from a prior session blocking
+    // trading before baseline vol warms (typically first 60-120 ticks).
+    for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_cl, &g_sup_us30, &g_sup_nas100,
+                      &g_sup_ger30, &g_sup_uk100, &g_sup_estx50, &g_sup_xag,
+                      &g_sup_gold, &g_sup_eurusd, &g_sup_gbpusd, &g_sup_audusd,
+                      &g_sup_nzdusd, &g_sup_usdjpy, &g_sup_brent})
+        sup->reset();
+    printf("[SUPERVISOR] All hysteresis counters reset on startup\n");
+    fflush(stdout);
     // ?? Hot-reload config watcher ??????????????????????????????????????????????
     // Watches omega_config.ini every 2s. On change: re-runs load_config() +
     // sanitize_config() + all apply_engine_config() calls -- zero downtime,
