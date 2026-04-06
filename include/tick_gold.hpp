@@ -757,11 +757,12 @@ static void on_tick_gold(
         // a 125pt crash. Old 2.5 threshold never fired. 1.2 fires on real moves.
         // OFF threshold kept at 0.6 (was 1.5) -- tighter so it doesn't linger.
         static thread_local bool s_asia_trend_armed = false;
-        // Lowered arm threshold 1.2->0.8: real directional moves show drift 0.8-1.1
-        // during the first 10 minutes. Old 1.2 threshold missed the early phase.
-        // OFF threshold kept at 0.6 -- tight enough to prevent noise re-arming.
-        if      (gold_ewm_drift_abs >= 0.8) s_asia_trend_armed = true;
-        else if (gold_ewm_drift_abs <  0.6) s_asia_trend_armed = false;
+        // Lowered arm threshold 0.8->0.5: drift 0.5+ is a real move on Asia tape.
+        // Old 0.8 never fired on quiet Asia (drift 0.2-0.5). 0.5 aligns with
+        // GFE_DRIFT_FALLBACK_THRESHOLD so both gates arm at the same drift level.
+        // OFF threshold lowered 0.6->0.4 -- prevents hair-trigger disarm on small retracements.
+        if      (gold_ewm_drift_abs >= 0.5) s_asia_trend_armed = true;
+        else if (gold_ewm_drift_abs <  0.4) s_asia_trend_armed = false;
         const bool asia_trend_ok = !in_asia_slot
             || asia_crash_bypass
             || s_asia_trend_armed;
