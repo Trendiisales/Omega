@@ -890,6 +890,53 @@ struct GoldFlowEngine {
             }
         }
 
+        // ?? RSI CONFIRMATION GATE ???????????????????????????????????????????
+        // Wrong-direction entries (TIME_STOP + IMM_REVERSAL + SL_HIT) are 18.7%
+        // of trades and cost -391pts. These entered with valid price momentum but
+        // against the short-term RSI trend -- classic chasing into overextension.
+        //
+        // Gate: block LONG when RSI > 65 (overbought -- don't chase pumps)
+        //       block SHORT when RSI < 35 (oversold -- don't chase dumps)
+        // These thresholds are directional: 65/35 are standard overbought/oversold
+        // levels for 1s pseudo-bar RSI(14). They fire ONLY when momentum is already
+        // overextended in the entry direction -- not during neutral 40-60 range.
+        //
+        // Exceptions:
+        //   Expansion mode (vol_ratio > 2.0): crashes run RSI to extremes legitimately.
+        //     A real Apr-2 style crash will have RSI < 20 for the entire move --
+        //     blocking SHORT at RSI < 35 would kill every crash entry.
+        //   Trend confirmation: if m_bar_trend confirms direction (+1 for long, -1 for short),
+        //     RSI overextension is less dangerous -- the trend is backing the move.
+        //
+        // Combined with trend: block only when RSI overextended AND trend is NEUTRAL or
+        // AGAINST. If trend confirms, allow entry even at extreme RSI.
+        //
+        // Calibration (backtest data):
+        //   TRAIL_HIT avg RSI at entry: expected ~45-55 (neutral momentum)
+        //   TIME_STOP avg RSI at entry: expected ~60-70 long / ~30-40 short (overextended)
+        //   IMM_REVERSAL: high RSI long / low RSI short (entered at peak/trough)
+        {
+            const bool in_expansion = m_expansion_mode && (m_vol_ratio > 2.0);
+            if (!in_expansion) {
+                // RSI overbought: block LONG unless trend confirms (+1)
+                const bool rsi_overbought = (m_bar_rsi14 > 65.0) && (m_bar_trend != 1);
+                // RSI oversold: block SHORT unless trend confirms (-1)
+                const bool rsi_oversold   = (m_bar_rsi14 < 35.0) && (m_bar_trend != -1);
+
+                if ((long_signal && rsi_overbought) || (short_signal && rsi_oversold)) {
+                    static int64_t s_rsi_log = 0;
+                    if (now_ms - s_rsi_log > 8000) {
+                        s_rsi_log = now_ms;
+                        printf("[GFE-RSI-BLOCK] %s rsi=%.1f trend=%+d -- overextended, no entry\n",
+                               long_signal ? "LONG" : "SHORT",
+                               m_bar_rsi14, m_bar_trend);
+                        fflush(stdout);
+                    }
+                    return;
+                }
+            }
+        }
+
         // Fire entry
         enter(long_signal, mid, bid, ask, spread, now_ms);
     }
