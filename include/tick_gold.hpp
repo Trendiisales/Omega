@@ -1109,17 +1109,14 @@ static void on_tick_gold(
         const bool gold_bracket_pending = (g_bracket_gold.phase == omega::BracketPhase::PENDING);
         const bool can_manage      = (gold_bracket_armed || gold_bracket_pending) ? true : gold_can_enter;
 
-        // Wire flow state into bracket engine so pyramid bypass logic works correctly.
-        // BUG FIX 2026-04-06: previous call passed regime.c_str() as flow_live (bool),
-        // causing flow_live=true every tick => regime gate always blocked arming.
-        // brk_hi/brk_lo were 0.00 every session -- bracket never armed.
-        const bool  gf_flow_live      = g_gold_flow.pos.active;
-        const bool  gf_flow_be_locked = g_gold_flow.pos.active && g_gold_flow.pos.be_locked;
-        const int   gf_flow_trail     = g_gold_flow.pos.active ? g_gold_flow.pos.trail_stage : 0;
+        // g_bracket_gold is GoldBracketEngine (BracketEngineBase subclass).
+        // Signature: on_tick(bid, ask, now_ms, can_enter, regime, on_close, vwap, l2_imb)
+        // NOTE: g_hybrid_gold (GoldHybridBracketEngine) is separate and already wired
+        // correctly at lines ~2929/2945 with the bool flow_live signature.
         g_bracket_gold.on_tick(bid, ask, now_ms_g,
             (bracket_open || gold_bracket_armed) ? can_manage : can_arm_bracket,
-            gf_flow_live, gf_flow_be_locked, gf_flow_trail,
-            bracket_on_close);
+            regime.c_str(), bracket_on_close, gold_vwap_now,
+            g_macro_ctx.gold_l2_imbalance);
         g_telemetry.UpdateBracketState("XAUUSD",
             static_cast<int>(g_bracket_gold.phase),
             g_bracket_gold.bracket_high,
