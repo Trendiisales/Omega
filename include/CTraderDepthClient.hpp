@@ -497,7 +497,10 @@ private:
     std::vector<uint8_t> recv_buf_;
 
     void loop() {
-        sleep_ms(30000);  // wait for FIX quote+trade sessions to fully connect first
+        // cTrader connects FIRST -- L2 data must be flowing before FIX starts trading.
+        // Old 30s delay was backwards: FIX was making decisions with l2_imb=0.500
+        // for 30+ seconds every restart. Brief 2s delay only to let thread init settle.
+        sleep_ms(2000);
         int backoff = 5000;
         while (running.load()) {
             depth_active.store(false);
