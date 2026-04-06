@@ -396,7 +396,14 @@ public:
         // each valid tick reset it to 0. The supervisor blocked every other tick all session.
         // Fix: only reset after HIGH_RISK_CLEAR_TICKS consecutive non-HR ticks.
         // This lets HR count accumulate through noisy valid ticks to reach revoke threshold.
-        if (regime == Regime::HIGH_RISK_NO_TRADE && candidate_stable) {
+        // Cold start: baseline vol not yet computed -- HR classification is
+        // unreliable (spread_pct and vol_ratio both use stale/zero data).
+        // Never let HR accumulate during cold start or it permanently blocks
+        // trading once baseline warms. Reset both counters every cold tick.
+        if (cold_start) {
+            m_high_risk_ticks = 0;
+            m_clear_ticks     = 0;
+        } else if (regime == Regime::HIGH_RISK_NO_TRADE && candidate_stable) {
             ++m_high_risk_ticks;
             m_clear_ticks = 0;  // reset clear counter -- we are still in HR
         } else if (candidate_stable) {
@@ -511,6 +518,22 @@ public:
     // Call after a winning trade -- decay failure counter
     void on_trade_success() noexcept {
         m_consecutive_blocks = std::max(0, m_consecutive_blocks - 1);
+    }
+
+    // reset(): clear all hysteresis counters on startup.
+    // Prevents stale HR/CHOP counts from a prior session permanently blocking
+    // trading on the next restart before baseline vol has warmed.
+    void reset() noexcept {
+        m_high_risk_ticks      = 0;
+        m_clear_ticks          = 0;
+        m_chop_ticks           = 0;
+        m_candidate_count      = 0;
+        m_candidate_regime     = Regime::UNKNOWN;
+        m_candidate_start_ms   = 0;
+        m_last_stable_bracket  = 0.0;
+        m_last_stable_breakout = 0.0;
+        m_consecutive_blocks   = 0;
+        m_cooldown_until_ms    = 0;
     }
 
 private:
