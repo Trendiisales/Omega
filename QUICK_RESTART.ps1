@@ -74,10 +74,21 @@ Write-Host ""
 # the GUI is always the hash from the previous configure run -- stale.
 $cmakeExe = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
 $buildDir  = "$OmegaDir\build"
+# --- [0] Git pull BEFORE cmake so hash reflects the pulled commit ------------
+Write-Host "  [GIT] Pulling latest..." -ForegroundColor Cyan
+$ErrorActionPreference = "Continue"
+$pullResult = & git -C $OmegaDir pull origin main 2>&1
+$pullResult | ForEach-Object { Write-Host "    $_" }
+$ErrorActionPreference = "Stop"
+
 if (Test-Path $cmakeExe) {
-    Write-Host "  [CMAKE] Configuring (regenerates git hash)..." -ForegroundColor Cyan
+    # FIX: must pass SOURCE dir (-S $OmegaDir) not build dir.
+    # cmake $buildDir pointed at the build folder -- CMakeLists.txt not there,
+    # so UpdateGitHash.cmake NEVER ran, version_generated.hpp was NEVER updated,
+    # and the hash in the binary/GUI was always from the last full deploy.
+    Write-Host "  [CMAKE] Configuring from source (regenerates git hash)..." -ForegroundColor Cyan
     $ErrorActionPreference = "Continue"
-    & $cmakeExe $buildDir -DCMAKE_BUILD_TYPE=Release 2>&1 | Where-Object { $_ -match "\[Omega\]|error|warning" } | ForEach-Object { Write-Host "    $_" }
+    & $cmakeExe -S $OmegaDir -B $buildDir -DCMAKE_BUILD_TYPE=Release 2>&1 | Where-Object { $_ -match "\[Omega\]|error|warning" } | ForEach-Object { Write-Host "    $_" }
     $ErrorActionPreference = "Stop"
     Write-Host "  [CMAKE] Building..." -ForegroundColor Cyan
     $ErrorActionPreference = "Continue"
