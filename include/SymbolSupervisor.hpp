@@ -24,16 +24,23 @@ inline const char* regime_name(Regime r)
 
 struct SupervisorDecision
 {
-    bool allow_trade;
-    Regime regime;
+    bool allow_trade = true;
+    bool allow_breakout = true;
+    Regime regime = Regime::UNKNOWN;
+};
 
-    SupervisorDecision()
-        : allow_trade(true), regime(Regime::UNKNOWN) {}
+struct SupervisorConfig
+{
+    double max_spread = 0.0;
+    double max_volatility = 0.0;
 };
 
 class SymbolSupervisor
 {
 public:
+
+    std::string symbol;
+    SupervisorConfig cfg;
 
     SymbolSupervisor() {}
 
@@ -41,28 +48,34 @@ public:
     SupervisorDecision update(
         Engine&,
         bool signal,
-        const std::string&,
-        double,
-        double)
+        const std::string& sym,
+        double price,
+        double spread,
+        double vol,
+        double atr,
+        double momentum,
+        double velocity)
     {
         SupervisorDecision d;
+
+        symbol = sym;
 
         if (!signal)
         {
             d.allow_trade = false;
+            d.allow_breakout = false;
             d.regime = Regime::HIGH_RISK_NO_TRADE;
             return d;
         }
 
         d.allow_trade = true;
+        d.allow_breakout = true;
         d.regime = Regime::TREND_CONTINUATION;
 
         return d;
     }
 
-    void on_trade_success()
-    {
-    }
+    void on_trade_success() {}
 };
 
 }
