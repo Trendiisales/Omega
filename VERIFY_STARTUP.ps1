@@ -194,8 +194,18 @@ if ($atrLoaded) {
 } elseif ($atrStartup) {
     Add-Result "ATR State" "INFO" "Startup ATR line" $atrStartup.Trim()
 } else {
-    # No disk load or rejection seen -- seed() ran from VIX on first tick (normal warm start)
-    if ($seedLine) {
+    # No explicit GFE log line -- seed()/load() output goes to NSSM stdout not latest.log.
+    # Confirm ATR via bar state (atr14 from OHLCBarEngine) and VIX level instead.
+    $barFileDat = "$OmegaDir\logs\bars_gold_m1.dat"
+    $atrFromBar = 0.0
+    if (Test-Path $barFileDat) {
+        $bl = Get-Content $barFileDat
+        $aLine = $bl | Where-Object { $_ -match "^atr14=" } | Select-Object -First 1
+        if ($aLine -match "atr14=([0-9.]+)") { $atrFromBar = [double]$Matches[1] }
+    }
+    if ($atrFromBar -gt 0.5) {
+        Add-Result "ATR State" "INFO" "ATR from bar state atr14=$atrFromBar -- engine will VIX-seed on first tick" ""
+    } elseif ($seedLine) {
         Add-Result "ATR State" "INFO" "No disk state -- VIX seed confirmed (see ATR Seed above)" ""
     } else {
         Add-Result "ATR State" "WARN" "No ATR state line seen" "Could not confirm ATR initialisation."
@@ -287,8 +297,11 @@ if ($lastBrk) {
     $summary = "slot=$slot ($slotName) can_enter=$canEnter can_arm=$canArm impulse_block=$impBlock"
     if ($canEnter -eq "1" -and $canArm -eq "1" -and $impBlock -eq "0") {
         Add-Result "Session/Entry State" "PASS" $summary ""
+    } elseif ($canEnter -eq "0" -and $slot -eq "6") {
+        # Asia session (slot=6): can_enter=0 is normal during dead tape / low vol compression
+        Add-Result "Session/Entry State" "INFO" $summary "Asia session -- can_enter=0 normal during low vol compression"
     } elseif ($canEnter -eq "0") {
-        Add-Result "Session/Entry State" "WARN" $summary "can_enter=0 -- check session/regime conditions."
+        Add-Result "Session/Entry State" "WARN" $summary "can_enter=0 during active session -- check regime/vol conditions."
     } else {
         Add-Result "Session/Entry State" "INFO" $summary ""
     }
