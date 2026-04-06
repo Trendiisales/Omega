@@ -175,6 +175,14 @@ static void quote_loop() {
                     g_bars_gold.m15.save_indicators(log_root_dir() + "/bars_gold_m15.dat");
                 if (g_bars_gold.h4 .ind.m1_ready.load(std::memory_order_relaxed))
                     g_bars_gold.h4 .save_indicators(log_root_dir() + "/bars_gold_h4.dat");
+                 // Save Kelly perf, TOD buckets and fill quality every 60s.
+                 // Previously only saved on clean shutdown -- a hard kill (OOM, NSSM
+                 // watchdog, power loss) discarded all intra-session trades and forced
+                 // a cold fixed-size restart next session.  With 60s saves any restart
+                 // picks up trades from at most 60s ago and sizes correctly immediately.
+                 g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
+                 g_edges.tod.save_csv(log_root_dir() + "/omega_tod_buckets.csv");
+                 g_edges.fill_quality.save_csv(log_root_dir() + "/fill_quality.csv");
                 std::cout << "[OMEGA-DIAG] PnL=" << g_omegaLedger.dailyPnl()
                           << " T=" << g_omegaLedger.total()
                           << " WR=" << g_omegaLedger.winRate() << "%"
