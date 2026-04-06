@@ -1936,7 +1936,7 @@ int main(int argc, char* argv[])
             const bool depth_up  = g_ctrader_depth.depth_active.load();
             const double imb     = g_l2_gold.imbalance.load(std::memory_order_relaxed);
             const bool l2_flowing = depth_up && (std::fabs(imb - 0.5) > 0.001
-                                    || g_ctrader_depth.depth_events_total.load() > 10);
+                                    || g_ctrader_depth.depth_events_total.load() > 2);
             if (l2_flowing) {
                 const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::steady_clock::now() - ct_wait_start).count();
