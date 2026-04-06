@@ -4227,7 +4227,12 @@ public:
         }
 
         // Add-on pyramid legs only after existing edge has covered costs.
-        if (!legs_.empty() && can_add_pyramid(mid, regime)) {
+        // CRITICAL: never add a pyramid leg in the same tick that any leg closed.
+        // Bug: leader closes via trail/TP at tick T, then pyramid fires at tick T
+        // because can_add_pyramid() sees legs_.front() still valid before erase.
+        // Result: orphaned pyramid with no parent -- rides alone to SL.
+        // Fix: gate on !closed_any -- if anything closed this tick, skip pyramid.
+        if (!legs_.empty() && !closed_any && can_add_pyramid(mid, regime)) {
             add_pyramid_leg(mid, ask - bid, latency_ms, regime);
         }
         return closed_any;
