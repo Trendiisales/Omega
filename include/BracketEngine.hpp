@@ -381,6 +381,19 @@ public:
         m_window.push_back(mid);
         ++m_ticks_received;
 
+        // Update recent tight-window range (last 60 ticks) for MAX_RANGE check.
+        // Separate from the full STRUCTURE_LOOKBACK window -- see m_recent_range comment.
+        {
+            static constexpr int RECENT_WINDOW = 60;
+            if ((int)m_window.size() >= RECENT_WINDOW) {
+                const auto rb = m_window.end() - RECENT_WINDOW;
+                const auto re = m_window.end();
+                m_recent_range = *std::max_element(rb, re) - *std::min_element(rb, re);
+            } else {
+                m_recent_range = 0.0;
+            }
+        }
+
         // ?? Entry gate ????????????????????????????????????????????????????????
         // While ARMED: preserve the timer -- do NOT reset m_armed_ts.
         // A can_enter=false blip means we can't arm new structure, but
@@ -590,6 +603,13 @@ protected:
     int     m_ticks_received  = 0;  // raw tick count since construction -- cold-start gate
     double  m_l2_imbalance    = 0.5;
     int     m_inside_ticks    = 0;  // consecutive ticks mid was inside bracket -- for MIN_BREAK_TICKS gate
+    // Recent tight-window range (last 60 ticks) -- used for MAX_RANGE check only.
+    // The structural range (STRUCTURE_LOOKBACK=600) correctly identifies bracket levels
+    // but must not be used for MAX_RANGE: after a 33pt completed swing, 600-tick range=33pt
+    // exceeds MAX_RANGE=12pt and blocks arming during the subsequent consolidation.
+    // Using the recent 60-tick range for MAX_RANGE asks "is the market currently trending?"
+    // not "did the market ever move this much in the last 10 minutes?"
+    double  m_recent_range    = 0.0;
 
     // Locked at the moment both orders are sent -- never change after PENDING
     double m_locked_hi        = 0.0;
@@ -637,16 +657,23 @@ protected:
             return;
         }
 
-        // ?? Hard range ceiling -- prevents bracketing trending day-moves ???????
-        // Without this, a 30-tick window during a London open trend captures
-        // the entire session range (e.g. ESTX50 79.8pts = 1.4% of price).
-        // That's not compression -- it's the full daily move. Bracketing it
-        // means SL = 79.8pts, BREAKOUT_FAIL midpoint = 40pts from entry,
-        // and the trade fails in seconds because there's no real compression.
-        // MAX_RANGE=0 disables the cap. Set per-symbol to ~0.4% of price.
-        if (MAX_RANGE > 0.0 && raw_range > MAX_RANGE) {
-            std::cout << "[BRACKET-" << symbol << "] BLOCKED: raw_range_too_large"
-                      << " raw_range=" << raw_range << " max=" << MAX_RANGE << "\n";
+        // ?? Hard range ceiling -- prevents bracketing ONGOING trending moves ????
+        // Uses m_recent_range (last 60 ticks), NOT the full structural range (raw_range).
+        //
+        // Root cause fixed (2026-04-07):
+        //   After a 33pt completed swing, 600-tick structural range = 33pt.
+        //   raw_range=33 > MAX_RANGE=12 -> BLOCKED the entire consolidation phase.
+        //   Bracket never armed despite clear tight compression at the swing low.
+        //
+        // Fix: check m_recent_range (last 60 ticks = ~12s of actual compression).
+        //   Recent=1.5pt < MAX_RANGE=12 -> PASS (market compressing NOW).
+        //   Recent=25pt  > MAX_RANGE=12 -> BLOCK (market still trending NOW).
+        //   MAX_RANGE=0 disables the cap entirely.
+        if (MAX_RANGE > 0.0 && m_recent_range > MAX_RANGE) {
+            std::cout << "[BRACKET-" << symbol << "] BLOCKED: recent_range_too_large"
+                      << " recent_range=" << m_recent_range
+                      << " raw_range=" << raw_range
+                      << " max=" << MAX_RANGE << "\n";
             std::cout.flush();
             phase = BracketPhase::IDLE;
             bracket_high = 0.0; bracket_low = 0.0;
