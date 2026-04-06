@@ -13,7 +13,7 @@ enum class Regime
 
 inline const char* regime_name(Regime r)
 {
-    switch (r)
+    switch(r)
     {
         case Regime::EXPANSION_BREAKOUT: return "EXPANSION_BREAKOUT";
         case Regime::TREND_CONTINUATION: return "TREND_CONTINUATION";
@@ -60,7 +60,15 @@ public:
 
         symbol = sym;
 
-        if (!signal)
+        if(!signal)
+        {
+            d.allow_trade = false;
+            d.allow_breakout = false;
+            d.regime = Regime::HIGH_RISK_NO_TRADE;
+            return d;
+        }
+
+        if(spread > cfg.max_spread && cfg.max_spread > 0)
         {
             d.allow_trade = false;
             d.allow_breakout = false;
@@ -70,7 +78,11 @@ public:
 
         d.allow_trade = true;
         d.allow_breakout = true;
-        d.regime = Regime::TREND_CONTINUATION;
+
+        if(momentum > 0.0)
+            d.regime = Regime::TREND_CONTINUATION;
+        else
+            d.regime = Regime::EXPANSION_BREAKOUT;
 
         return d;
     }
