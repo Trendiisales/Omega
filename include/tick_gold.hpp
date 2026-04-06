@@ -407,6 +407,36 @@ static void on_tick_gold(
                                      && !g_trend_pb_gold.has_open_position()
                                      && vol_expanding
                                      && conf_ok;
+
+        // ?? MR/Range engine path -- bypasses allow_breakout requirement ????????
+        // Problem: supervisor requires EXPANSION_BREAKOUT or TREND_CONTINUATION for
+        // allow_breakout=true. In QUIET_COMPRESSION and CHOP_REVERSAL (consolidation),
+        // allow_breakout=false -> stack_can_enter=false -> GoldStack receives
+        // can_enter=false -> ZERO signals regardless of what engines see internally.
+        // This silences MeanReversion, DynamicRange, IntradaySeasonality, VWAPSnapback,
+        // NR3Breakout, AsianRange, TwoBarReversal -- all engines DESIGNED for compression.
+        // These engines are not breakout engines and do not need EXPANSION_BREAKOUT.
+        //
+        // Fix: allow GoldStack entry when:
+        //   a) Supervisor regime is QUIET_COMPRESSION or CHOP_REVERSAL (range-bound tape)
+        //   b) No open position in any gold engine (same exclusivity as breakout path)
+        //   c) Session is tradeable (same session gate as breakout path)
+        //   d) Supervisor confidence >= 0.30 (lower bar -- ranging tape has lower conf naturally)
+        //   e) NOT in NY close noise window (same as other paths)
+        //
+        // The GoldStack's own RegimeGovernor + per-engine session gates + VolatilityFilter
+        // + entry_quality_ok() score gate still apply internally -- this only lifts the
+        // outer supervisor breakout requirement that was silencing all MR engines.
+        const bool in_ranging_regime =
+            (gold_sdec.regime == omega::Regime::QUIET_COMPRESSION) ||
+            (gold_sdec.regime == omega::Regime::CHOP_REVERSAL);
+        const bool stack_can_enter_mr =
+            in_ranging_regime
+            && !g_bracket_gold.has_open_position()
+            && !g_gold_flow.has_open_position()
+            && !g_trend_pb_gold.has_open_position()
+            && (gold_sdec.confidence >= 0.30);
+
         // Trend-day re-entry: allow CompBreakout specifically when GoldFlow
         // closed via trail/BE on a strong trend. Stack handles the EWM drift
         // direction gate internally so only trend-aligned signals fire.
@@ -416,7 +446,8 @@ static void on_tick_gold(
         const bool gs_trail_dir_match = gs_trail_blocked; // directional check done in GFE
         const bool stack_enter_effective = ((stack_can_enter && gold_can_enter && !gs_trail_dir_match && !in_ny_close_noise)
             || (gold_can_enter_trend_reentry && vol_expanding && !gs_trail_dir_match && !in_ny_close_noise)
-            || (drift_reversed && gold_can_enter && !in_ny_close_noise));  // reversals also blocked at NY close
+            || (drift_reversed && gold_can_enter && !in_ny_close_noise)          // reversals also blocked at NY close
+            || (stack_can_enter_mr && gold_can_enter && !in_ny_close_noise));    // MR/range engines in compression
         // Pass DX.F mid for DXYDivergenceEngine -- g_macroDetector.updateDXY()
     // is called every DX.F tick so this is fresh or 0.0 if feed not yet seen.
     const double dx_mid_now = g_macroDetector.dxyMid();
