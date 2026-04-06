@@ -74,11 +74,11 @@ Write-Host ""
 # the GUI is always the hash from the previous configure run -- stale.
 $cmakeExe = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
 $buildDir  = "$OmegaDir\build"
-# --- [0] Git pull BEFORE cmake so hash reflects the pulled commit ------------
-Write-Host "  [GIT] Pulling latest..." -ForegroundColor Cyan
+# --- [0] Hard reset to origin/main -- ALWAYS works regardless of local state ---
+Write-Host "  [GIT] Syncing to origin/main..." -ForegroundColor Cyan
 $ErrorActionPreference = "Continue"
-$pullResult = & git -C $OmegaDir pull origin main 2>&1
-$pullResult | ForEach-Object { Write-Host "    $_" }
+& git -C $OmegaDir fetch origin 2>&1 | Out-Null
+& git -C $OmegaDir reset --hard origin/main 2>&1 | ForEach-Object { Write-Host "    $_" }
 $ErrorActionPreference = "Stop"
 
 if (Test-Path $cmakeExe) {
