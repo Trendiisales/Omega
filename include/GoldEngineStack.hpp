@@ -4681,34 +4681,46 @@ public:
             else if (k == "saved_ts")         saved_ts = static_cast<int64_t>(val);
         }
         fclose(fp);
-        // Discard state older than 4 hours (overnight gap / weekend)
+        // Capture saved gold price BEFORE any stale zero-out.
+        // vol_filter_.seed() needs only a valid gold price (1000-15000) -- it
+        // flat-fills the buffer so allow() stops being blind for the first 50
+        // ticks after restart. The price is valid whether state is fresh or stale
+        // (gold price doesn't expire overnight). Capture it unconditionally here
+        // so the seed block below always fires regardless of age check outcome.
+        double vol_seed_mid = governor_.ewm_fast_;
+        if (vol_seed_mid < 1000.0 || vol_seed_mid > 15000.0)
+            vol_seed_mid = governor_.ewm_slow_;
+        if (vol_seed_mid < 1000.0 || vol_seed_mid > 15000.0)
+            vol_seed_mid = 0.0;
+
+        // Discard EWM volatility/regime state older than 4 hours (overnight gap / weekend).
+        // The gold PRICE (vol_seed_mid) is retained above and seeded regardless.
         const int64_t age = static_cast<int64_t>(std::time(nullptr)) - saved_ts;
         if (age > 4 * 3600 || age < 0) {
             ewm_vol_baseline_ = 0.0; baseline_vol_pct_ = 0.0; ewm_vol_init_ = false;
             governor_.ewm_fast_ = 0.0; governor_.ewm_slow_ = 0.0; governor_.ewm_init_ = false;
-            printf("[GOLDSTACK] State stale (age=%llds) -- cold start\n", (long long)age);
-            return;
+            printf("[GOLDSTACK] State stale (age=%llds) -- regime cold start\n", (long long)age);
+            // Fall through to seed vol_filter_ with the captured price -- do NOT return.
+        } else {
+            printf("[GOLDSTACK] Warm restart: ewm_vol_baseline=%.4f gov_ewm_fast=%.2f"
+                   " gov_ewm_slow=%.2f age=%llds\n",
+                   ewm_vol_baseline_, governor_.ewm_fast_, governor_.ewm_slow_, (long long)age);
+            fflush(stdout);
         }
-        printf("[GOLDSTACK] Warm restart: ewm_vol_baseline=%.4f gov_ewm_fast=%.2f"
-               " gov_ewm_slow=%.2f age=%llds\n",
-               ewm_vol_baseline_, governor_.ewm_fast_, governor_.ewm_slow_, (long long)age);
-        fflush(stdout);
-        // Seed VolatilityFilter from saved gold price (gov_ewm_fast).
-        // FIX: do NOT gate on ewm_vol_baseline_ > 0.0.
-        // ewm_vol_baseline is frequently 0.0 in saved state -- gating on it
-        // blocks seeding on almost every restart -> vol_range=0.00 for 50+ ticks.
-        // gov_ewm_fast IS the gold price EWM (saved as ~4677). Use it directly.
-        {
-            double seed_mid = governor_.ewm_fast_;
-            if (seed_mid < 1000.0 || seed_mid > 15000.0)
-                seed_mid = governor_.ewm_slow_;
-            if (seed_mid < 1000.0 || seed_mid > 15000.0)
-                seed_mid = 0.0;
-            if (seed_mid > 0.0) {
-                vol_filter_.seed(seed_mid);
-                printf("[GOLDSTACK] VolatilityFilter seeded mid=%.2f\n", seed_mid);
-                fflush(stdout);
-            }
+        // Seed VolatilityFilter from saved gold price.
+        // Runs on EVERY restart (fresh or stale) as long as a valid price was saved.
+        // Flat-seeds the 50-tick buffer so vol_range > 0 immediately -- engines are
+        // not blind for 40-400s waiting for the buffer to fill from live ticks.
+        // The flat seed produces range=0 until live ticks spread it, so VOL_THRESHOLD
+        // still acts as a real gate -- we just skip the cold-buffer warmup delay.
+        if (vol_seed_mid > 0.0) {
+            vol_filter_.seed(vol_seed_mid);
+            printf("[GOLDSTACK] VolatilityFilter seeded mid=%.2f (age=%llds)\n",
+                   vol_seed_mid, (long long)age);
+            fflush(stdout);
+        } else {
+            printf("[GOLDSTACK] VolatilityFilter NOT seeded -- no valid price in state file\n");
+            fflush(stdout);
         }
     }
 
