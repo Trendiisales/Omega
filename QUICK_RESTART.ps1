@@ -67,6 +67,26 @@ $ErrorActionPreference = "Stop"
 Write-Host "      [OK] Stopped" -ForegroundColor Green
 Write-Host ""
 
+# --- Re-run cmake configure to regenerate version_generated.hpp --------------
+# CRITICAL: cmake --build alone does NOT re-run UpdateGitHash.cmake.
+# Only cmake configure (cmake ..) regenerates version_generated.hpp with the
+# current git hash. Without this the hash baked into the binary and shown in
+# the GUI is always the hash from the previous configure run -- stale.
+$cmakeExe = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
+$buildDir  = "$OmegaDir\build"
+if (Test-Path $cmakeExe) {
+    Write-Host "  [CMAKE] Configuring (regenerates git hash)..." -ForegroundColor Cyan
+    $ErrorActionPreference = "Continue"
+    & $cmakeExe $buildDir -DCMAKE_BUILD_TYPE=Release 2>&1 | Where-Object { $_ -match "\[Omega\]|error|warning" } | ForEach-Object { Write-Host "    $_" }
+    $ErrorActionPreference = "Stop"
+    Write-Host "  [CMAKE] Building..." -ForegroundColor Cyan
+    $ErrorActionPreference = "Continue"
+    & $cmakeExe --build $buildDir --config Release 2>&1 | Where-Object { $_ -match "Omega.vcxproj|error C|warning C" } | ForEach-Object { Write-Host "    $_" }
+    $ErrorActionPreference = "Stop"
+} else {
+    Write-Host "  [SKIP] cmake not found -- using existing binary" -ForegroundColor DarkGray
+}
+
 # --- Sync build output (file unlocked now) -----------------------------------
 if (Test-Path $BuildExe) {
     $buildTime  = (Get-Item $BuildExe).LastWriteTime
@@ -79,10 +99,9 @@ if (Test-Path $BuildExe) {
     }
 }
 
-# --- BINARY IDENTITY -- hash baked into binary at build time -----------------
-# Source: include/version_generated.hpp written by cmake/UpdateGitHash.cmake
-# This is the ONLY correct hash -- it is the git hash at the moment cmake ran.
-# Git HEAD on the VPS is irrelevant (state commits advance it independently).
+# --- BINARY IDENTITY -- read from version_generated.hpp (just regenerated) ---
+# version_generated.hpp was just written by cmake configure above.
+# It always matches the hash baked into the binary we just built.
 $ErrorActionPreference = "Continue"
 $buildTimeStr = (Get-Item $OmegaExe).LastWriteTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") + " UTC"
 $gitHash = "unknown"
