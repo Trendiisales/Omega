@@ -195,6 +195,25 @@ static std::atomic<bool>     g_gf_engine_culled{false};   // true = GoldFlow dis
 // IMMUTABLE: ctid=43014358 is the only account delivering L2 depth.
 static std::atomic<bool>     g_l2_watchdog_dead{false};   // true = L2 dead, GoldFlow entries blocked
 
+// ?? FEED-STALE gate ??????????????????????????????????????????????????????????
+// Set true when cTrader depth has subscribed for XAUUSD but delivered ZERO depth
+// events for >= FEED_STALE_THRESHOLD_S seconds after subscription.
+// Root cause of April 5/6 frozen-session: broker ACKs the depth sub but sends no
+// events, leaving FIX fallback active with a stale cached price from the prior
+// session. This produces 452 identical ticks (4677.03/4677.25) with vol_range=0.00
+// for the entire session while the real market moves $40.
+//
+// BEHAVIOUR WHEN SET:
+//   - All XAUUSD new entries blocked (GoldFlow + GoldStack + BracketEngine)
+//   - Position management (SL/trail) continues unaffected
+//   - [FEED-STALE] logged once per 60s so the frozen state is unmissable
+//   - CTraderDepthClient escalates: re-subscribe -> full reconnect
+//   - Cleared when XAUUSD depth events resume flowing
+//
+// Written by CTraderDepthClient recv_loop (per-symbol starvation watchdog).
+// Read by tick_gold.hpp entry gates.
+static std::atomic<bool>     g_feed_stale_xauusd{false};  // true = cTrader depth subscribed but no XAUUSD events
+
 // ?? Indices FORCE_CLOSE circuit breaker ??????????????????????????????????????
 // Problem: on April 2 2026, repeated disconnect/reconnect cycles on US indices
 // allowed engines to re-enter immediately after each reconnect FORCE_CLOSE,

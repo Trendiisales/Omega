@@ -878,6 +878,137 @@ private:
                 for (const auto& bk : depth_books_)
                     if (ev_per_sym.find(bk.first) == ev_per_sym.end())
                         std::cout<<"[CTRADER-EVTS] "<<bk.first<<"=0 (no events this minute)\n";
+
+                // ?? PER-SYMBOL STARVATION WATCHDOG ?????????????????????????????????????
+                // Root cause of April 5/6 frozen session: cTrader TCP connected and
+                // SubscribeDepthRes ACK received, but XAUUSD depth events never flowed.
+                // FIX fallback activated with stale cached price from prior session.
+                // 452 identical ticks at 4677.03/4677.25 all session, vol_range=0.
+                //
+                // Detection: XAUUSD events == 0 this minute AND depth has been active
+                // for >= XAUUSD_STARVE_GRACE_S seconds (allow time for book fill at startup).
+                //
+                // Escalation ladder (resets each time events resume):
+                //   Level 1 (first zero-minute after grace): re-subscribe XAUUSD depth only.
+                //     Sends SubscribeDepthReq for XAUUSD id alone.
+                //     Sets g_feed_stale_xauusd=true to block all XAUUSD entries.
+                //     If events resume next minute: clear stale, log restored, done.
+                //
+                //   Level 2 (second consecutive zero-minute): full TCP reconnect.
+                //     broker ACK'd the re-subscribe but still sends nothing.
+                //     Drop the connection -- loop() will reconnect and re-auth.
+                //     This is the nuclear option and is rate-limited by the existing
+                //     backoff in loop() (5s -> 10s -> 20s -> ... -> 300s max).
+                //
+                // Circuit breaker: track XAUUSD reconnect times. If level-2 fires 3x
+                // within 5 minutes, disable escalation to prevent reconnect loops.
+                // Log clearly -- operator must intervene if broker is structurally broken.
+                static constexpr int64_t XAUUSD_STARVE_GRACE_S = 90; // allow 90s after connect for book fill
+                static int64_t xauusd_starve_since_s   = 0; // epoch sec when starvation first detected
+                static int     xauusd_resub_count       = 0; // consecutive failed re-subscribe attempts
+                static int64_t xauusd_reconnect_ts[3]  = {0,0,0}; // ring buffer of level-2 reconnect times
+                static int     xauusd_reconnect_idx     = 0;
+                static bool    xauusd_escalation_blocked = false;
+                static int64_t connect_epoch_s          = 0; // when this TCP session was established
+
+                if (connect_epoch_s == 0) {
+                    connect_epoch_s = std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                }
+                const int64_t now_epoch_s = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                const int64_t session_age_s = now_epoch_s - connect_epoch_s;
+
+                const auto xauusd_it = depth_books_.find("XAUUSD");
+                const bool xauusd_subscribed = (xauusd_it != depth_books_.end());
+                const uint64_t xauusd_ev_this_min = [&]{
+                    const auto xit = ev_per_sym.find("XAUUSD");
+                    return (xit != ev_per_sym.end()) ? xit->second : 0ULL;
+                }();
+
+                if (xauusd_subscribed && session_age_s >= XAUUSD_STARVE_GRACE_S) {
+                    if (xauusd_ev_this_min == 0) {
+                        // Zero XAUUSD events this minute -- starvation detected or ongoing
+                        if (xauusd_starve_since_s == 0) {
+                            xauusd_starve_since_s = now_epoch_s;
+                        }
+                        const int64_t starve_secs = now_epoch_s - xauusd_starve_since_s;
+
+                        // Always set feed stale immediately on first zero-event minute
+                        // (after grace period). This blocks entries and forces [FEED-STALE]
+                        // log so the condition is unmissable in monitoring.
+                        if (!g_feed_stale_xauusd.load(std::memory_order_relaxed)) {
+                            g_feed_stale_xauusd.store(true, std::memory_order_relaxed);
+                            printf("[FEED-STALE] XAUUSD depth events=0 this minute after %llds uptime "                                   "-- entries BLOCKED, escalating\n",
+                                   (long long)session_age_s);
+                            fflush(stdout);
+                        }
+
+                        if (!xauusd_escalation_blocked) {
+                            if (xauusd_resub_count == 0) {
+                                // LEVEL 1: re-subscribe XAUUSD depth only
+                                // Find XAUUSD symbol id from depth_books_ key via id_to_internal_ reverse lookup
+                                int64_t xauusd_id = -1;
+                                for (const auto& idm : id_to_internal_) {
+                                    if (idm.second == "XAUUSD") { xauusd_id = (int64_t)idm.first; break; }
+                                }
+                                if (xauusd_id > 0) {
+                                    printf("[FEED-STALE] LEVEL-1: re-subscribing XAUUSD depth (id=%lld) starve=%llds\n",
+                                           (long long)xauusd_id, (long long)starve_secs);
+                                    fflush(stdout);
+                                    send_msg(ssl, PB::subscribe_depth_req(ctid_account_id, {xauusd_id}));
+                                    ++xauusd_resub_count;
+                                } else {
+                                    printf("[FEED-STALE] LEVEL-1 FAIL: XAUUSD id not found in symbol map -- escalating to level 2\n");
+                                    fflush(stdout);
+                                    ++xauusd_resub_count; // skip to level 2 next minute
+                                }
+                            } else {
+                                // LEVEL 2: re-subscribe did not recover events -- full TCP reconnect
+                                // Circuit breaker: max 3 reconnects within 5 minutes
+                                xauusd_reconnect_ts[xauusd_reconnect_idx % 3] = now_epoch_s;
+                                ++xauusd_reconnect_idx;
+                                const int64_t oldest_reconnect = xauusd_reconnect_ts[(xauusd_reconnect_idx) % 3];
+                                const bool loop_detected = (xauusd_reconnect_idx >= 3)
+                                    && (now_epoch_s - oldest_reconnect < 300);
+                                if (loop_detected) {
+                                    xauusd_escalation_blocked = true;
+                                    printf("[FEED-STALE] ESCALATION BLOCKED: 3 reconnects within 5min "                                           "-- broker feed structurally broken. "                                           "Manual intervention required. Entries remain BLOCKED.\n");
+                                    fflush(stdout);
+                                } else {
+                                    printf("[FEED-STALE] LEVEL-2: full TCP reconnect -- XAUUSD depth "                                           "subscribed but no events after %llds resub attempt. "                                           "Dropping connection.\n",
+                                           (long long)starve_secs);
+                                    fflush(stdout);
+                                    // Returning from recv_loop drops this TCP connection.
+                                    // loop() will reconnect with backoff, re-auth, re-subscribe.
+                                    // Reset local starvation state -- new session restarts from scratch.
+                                    xauusd_resub_count    = 0;
+                                    xauusd_starve_since_s = 0;
+                                    connect_epoch_s       = 0;
+                                    // DO NOT clear g_feed_stale_xauusd here --
+                                    // it must remain set until events actually resume.
+                                    ev_min=0; ev_per_sym.clear(); last_diag=now;
+                                    return; // drops TCP, triggers reconnect in loop()
+                                }
+                            }
+                        }
+                    } else {
+                        // XAUUSD events flowing normally this minute
+                        if (xauusd_starve_since_s > 0) {
+                            // Was starved, now recovered
+                            const int64_t starve_secs = now_epoch_s - xauusd_starve_since_s;
+                            printf("[FEED-STALE] XAUUSD depth RESTORED after %llds starvation "                                   "-- events=%llu this minute. Clearing feed stale gate.\n",
+                                   (long long)starve_secs, (unsigned long long)xauusd_ev_this_min);
+                            fflush(stdout);
+                        }
+                        // Clear all starvation state on recovery
+                        g_feed_stale_xauusd.store(false, std::memory_order_relaxed);
+                        xauusd_starve_since_s    = 0;
+                        xauusd_resub_count       = 0;
+                        xauusd_escalation_blocked = false;
+                    }
+                }
+
                 ev_min=0; ev_per_sym.clear(); last_diag=now;
             }
             uint32_t pt; std::vector<uint8_t> payload;

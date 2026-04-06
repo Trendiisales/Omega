@@ -2388,6 +2388,28 @@ static void on_tick_gold(
             // Skip entry block entirely -- fall through to manage open positions only
             goto gfe_entry_skip;
         }
+
+        // ?? FEED-STALE gate ??????????????????????????????????????????????????????????
+        // Blocks ALL new XAUUSD entries when cTrader depth is subscribed but delivering
+        // zero events -- the exact failure mode that produced 452 frozen ticks (4677.03/
+        // 4677.25) for an entire session while the real market moved $40.
+        //
+        // g_feed_stale_xauusd is set by CTraderDepthClient per-symbol starvation watchdog
+        // (fires every 60s, detects zero XAUUSD events after 90s grace period).
+        // It is cleared only when cTrader depth events resume flowing for XAUUSD.
+        //
+        // Position management (trail/SL) is unaffected -- this gate is entry-only.
+        // The starvation watchdog also escalates: level-1 re-subscribe, level-2 reconnect.
+        // This gate is the trading-layer safety net in case escalation takes time.
+        if (g_feed_stale_xauusd.load(std::memory_order_relaxed)) {
+            static int64_t s_feed_stale_log = 0;
+            if (now_ms_g - s_feed_stale_log > 60000) {
+                s_feed_stale_log = now_ms_g;
+                printf("[FEED-STALE] XAUUSD depth starved -- all new entries BLOCKED. "                       "CTraderDepthClient is escalating (resub -> reconnect).\n");
+                fflush(stdout);
+            }
+            goto gfe_entry_skip;
+        }
         if (g_cfg.goldflow_enabled && gf_tick_ok) {
             // ?? Post-close reversal drift reset ???????????????????????????
             // Problem: ewm_slow (?=0.005) has a 200-tick half-life. After a
