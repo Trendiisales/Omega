@@ -22,7 +22,8 @@ function INFO($label, $val) { Write-Host ("  {0,-30} {1}" -f $label, $val) -Fore
 
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "  OMEGA STATUS  --  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC' -AsUTC)" -ForegroundColor Cyan
+$utcNow = [System.TimeZoneInfo]::ConvertTimeToUtc((Get-Date))
+Write-Host "  OMEGA STATUS  --  $($utcNow.ToString('yyyy-MM-dd HH:mm:ss')) UTC" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 
 # ── SECTION 1: Binary verification ──────────────────────────────────────────
@@ -50,6 +51,16 @@ if (Test-Path $LogFile) {
     $hashLine = Get-Content $LogFile | Select-String "RUNNING COMMIT" | Select-Object -Last 1
     if ($hashLine) {
         if ($hashLine -match "RUNNING COMMIT:\s+([a-f0-9]+)") { $runningHash = $Matches[1] }
+    }
+    # Fallback: check service stdout log (NSSM captures this separately)
+    if ($runningHash -eq "NOT IN LOG") {
+        $stdoutLog = "C:\Omega\logs\omega_service_stdout.log"
+        if (Test-Path $stdoutLog) {
+            $hashLine2 = Get-Content $stdoutLog -Tail 200 | Select-String "RUNNING COMMIT" | Select-Object -Last 1
+            if ($hashLine2 -and ($hashLine2 -match "RUNNING COMMIT:\s+([a-f0-9]+)")) {
+                $runningHash = $Matches[1] + " (from service stdout)"
+            }
+        }
     }
 }
 
@@ -261,7 +272,7 @@ if (Test-Path $LogFile) {
 
 # ── SECTION 10: What to watch ────────────────────────────────────────────────
 Hdr "10. WHAT TO WATCH"
-$utcHour = [int](Get-Date -AsUTC -Format "HH")
+$utcHour = [int]([System.TimeZoneInfo]::ConvertTimeToUtc((Get-Date))).Hour
 if ($utcHour -ge 5 -and $utcHour -lt 7) {
     WARN "Session" "Pre-London (05-07 UTC) -- RSIReversal + MicroMomentum active, MacroCrash needs ATR>6"
 } elseif ($utcHour -ge 7 -and $utcHour -lt 9) {

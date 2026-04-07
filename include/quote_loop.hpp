@@ -364,7 +364,7 @@ static void quote_loop() {
                     // Fallback:  efb68a8 fixed window starvation — this is a residual check
                     // Alert:     GUI "BRACKET STALLED Xmin"
                     {
-                        const bool can_arm_gold = (g_macro_ctx.session_slot != 0);
+                        const bool can_arm_gold = true;  // 24h -- no slot block
                         const double brk_range  = g_bracket_gold.current_range();
                         if (can_arm_gold && brk_range < 0.01 && sess_active) {
                             if (s_bracket_stall_since == 0) s_bracket_stall_since = now_s;

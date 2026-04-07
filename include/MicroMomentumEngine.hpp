@@ -262,14 +262,7 @@ private:
     }
 
     static bool _in_dead_zone() noexcept {
-        const auto t = std::time(nullptr);
-        struct tm ti{};
-#ifdef _WIN32
-        gmtime_s(&ti, &t);
-#else
-        gmtime_r(&t, &ti);
-#endif
-        return (ti.tm_hour >= 5 && ti.tm_hour < 7);
+        return false;  // dead zone removed -- gold trades 24h
     }
 
     void _manage(double bid, double ask, double mid,

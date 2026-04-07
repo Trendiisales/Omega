@@ -1829,7 +1829,7 @@ R"OMEGA23B(
     if(m>=420&&m<630){sess='LONDON';col='var(--green)';}
     else if(m>=630&&m<780){sess='OVERLAP';col='var(--amber)';}
     else if(m>=780&&m<1080){sess='NEW YORK';col='var(--green)';}
-    else if(m>=300&&m<420){sess='DEAD ZONE';col='var(--red)';}
+    else if(m>=300&&m<420){sess='PRE-LONDON';col='var(--amber)';}
     else{sess='ASIAN';col='var(--cyan)';}
     sb.textContent=sess;sb.style.color=col;}
 

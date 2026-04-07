@@ -707,7 +707,7 @@ static bool symbol_gate(
         {
             int session_cap = g_cfg.max_open_positions;
             const int slot = g_macro_ctx.session_slot;
-            if      (slot == 0) session_cap = std::min(session_cap, 2); // dead zone 05-07 UTC: cap 2 (macro bypass can open, chop filtered by gold_session_ok gate)
+            // slot 0 never assigned (24h mode) -- no dead zone cap
             else if (slot == 6) session_cap = std::min(session_cap, 2); // Asia 22-05 UTC
             // ?? Asia breakout quality gate ????????????????????????????????
             // Allow Asia trading but only when volatility is genuinely expanding

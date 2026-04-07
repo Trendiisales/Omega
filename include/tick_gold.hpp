@@ -165,39 +165,10 @@ static void on_tick_gold(
         && (flow_exit_reason == 2)            // trail/BE exit, not SL
         && (now_s_gate - flow_exit_ts <= 90); // within 90s of flow closing
 
-    // Session-aware gold cap: dead zone 05-07 UTC -- no new entries for chop.
-    // MACRO BYPASS: RSI<32/RSI>68 or drift>=3.0 or VWAP dislocation>=15pts
-    // overrides the dead zone. A $100+ crash must never be blocked by a
-    // gate designed to filter $2 noise. Gold trades 24h -- the dead zone
-    // exists for thin chop only, not for macro events.
+    // Gold trades 24h. session_start_utc=0 session_end_utc=0 = 24h mode.
+    // No dead zone. No session block. Spread + ATR quality gates handle thin tape.
     const int gold_session_slot = g_macro_ctx.session_slot;
-    const bool in_dead_zone_slot = (gold_session_slot == 0);
-    const bool dead_zone_macro_bypass = in_dead_zone_slot && [&]() -> bool {
-        const double rsi_dz   = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-        const double drift_dz = g_gold_stack.ewm_drift();
-        const double vwap_dz  = g_gold_stack.vwap();
-        const double mid_dz   = (bid + ask) * 0.5;
-        const double vdisp_dz = (vwap_dz > 0.0) ? std::fabs(mid_dz - vwap_dz) : 0.0;
-        // ATR-proportional dead-zone RSI threshold -- same formula as crash_impulse_bypass.
-        // Uses shared rsi_crash_lo/hi computed above from gf_atr_gate.
-        // Normal day (ATR=5): lo=44, hi=56. Crash day (ATR=10): lo=38, hi=62.
-        const bool rsi_extreme  = (rsi_dz > 0.0) && (rsi_dz < rsi_crash_lo || rsi_dz > rsi_crash_hi);
-        const bool drift_strong = std::fabs(drift_dz) >= 5.0;
-        const bool vwap_far     = vdisp_dz >= 10.0;
-        if (rsi_extreme || drift_strong || vwap_far) {
-            static int64_t s_dz_log = 0;
-            const int64_t now_dz = static_cast<int64_t>(std::time(nullptr));
-            if (now_dz - s_dz_log >= 60) {
-                s_dz_log = now_dz;
-                printf("[DEAD-ZONE-BYPASS] Macro move detected -- rsi=%.1f drift=%.2f vdisp=%.1f -- allowing gold entry\n",
-                       rsi_dz, drift_dz, vdisp_dz);
-                fflush(stdout);
-            }
-            return true;
-        }
-        return false;
-    }();
-    const bool gold_session_ok = !in_dead_zone_slot || dead_zone_macro_bypass;
+    const bool gold_session_ok  = true;  // 24h -- no time-based blocks
     // On trend day re-entry: allow GoldStack even with gold_stack open position
     // (CompBreakout won't fire if stack is already open -- handled in stack gate below)
     // Same-direction trail block: 30s after a trail/BE exit, block re-entry in same dir.
@@ -719,7 +690,7 @@ static void on_tick_gold(
         const bool gold_freq_ok    = (g_bracket_gold_trades_this_minute < 3);
         const bool bracket_open    = g_bracket_gold.has_open_position();
 
-        const bool in_dead_zone  = (g_macro_ctx.session_slot == 0);
+        const bool in_dead_zone  = false;  // dead zone removed -- gold trades 24h
         const bool in_asia_slot  = (g_macro_ctx.session_slot == 6);
         // Asia trend gate: require meaningful price drift in Asia slot.
         // OLD: used is_drift_trending(l2_imbalance) -- passed L2 imbalance into
@@ -1669,7 +1640,7 @@ static void on_tick_gold(
     // If max_positions is the only thing blocking, the reload should still fire.
     if (g_gold_flow.reload_pending()
         && !g_gold_flow_reload.has_open_position()
-        && g_macro_ctx.session_slot != 0   // not dead zone
+        && true   // 24h -- no session slot block
         && !in_ny_close_noise) {
 
         const double gf_mid_r = (bid + ask) * 0.5;
