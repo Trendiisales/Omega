@@ -67,6 +67,17 @@ public:
     double BORDERLINE_DELTA  = 20.0;  // raised 14->20: rsi_delta 8-14 is normal, not borderline
     double BOOK_SLOPE_MIN    = 0.1;   // min book_slope for borderline entries
     double MAX_SPREAD_PTS    = 2.5;
+    // ── Chop filters ──────────────────────────────────────────────────────────
+    // RSI_LEVEL_LONG/SHORT: RSI must be above/below mid (50) to confirm direction.
+    // Prevents entries when RSI oscillates around 50 (chop). On the chart RSI
+    // swings 48->68->50->62 -- without this gate every swing fires an entry.
+    // SHORT requires RSI < 48 (falling away from mid), LONG requires RSI > 52.
+    double RSI_LEVEL_LONG    = 52.0;  // RSI must be above this to go LONG
+    double RSI_LEVEL_SHORT   = 48.0;  // RSI must be below this to go SHORT
+    // PRICE_MOVE_MIN: price must have moved at least N pts in signal direction
+    // over the RSI_DELTA_WINDOW. Eliminates entries where RSI moves but price
+    // doesn't follow (pure chop oscillation, common in ranging markets).
+    double PRICE_MOVE_MIN    = 1.5;   // min pts price must move to confirm RSI signal
     int    COOLDOWN_S        = 20;
     int    MAX_HOLD_S        = 240;
     int    MIN_HOLD_S        = 3;
@@ -90,18 +101,6 @@ public:
     } pos;
 
     bool has_open_position() const noexcept { return pos.active; }
-
-    // Seed tick ATR from bar ATR so SL is correctly sized from first entry.
-    // Without this, m_tick_atr starts at spread (~2.2pt) and SL_ATR_MULT=1.5
-    // gives only 3.3pt SL -- correct. With cold tick ATR it was 0.5*0.5=0.25pt.
-    // Call this every tick from tick_gold when bar ATR is available.
-    void seed_bar_atr(double bar_atr) noexcept {
-        if (bar_atr > 0.5 && bar_atr < 100.0) {
-            m_tick_atr  = bar_atr;
-            m_atr_init  = true;
-        }
-    }
-    double current_atr() const noexcept { return m_tick_atr; }
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
@@ -178,6 +177,39 @@ public:
             _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
                        l2_imbalance, "RSI_DELTA", 0.0, false, false);
             return;
+        }
+
+        // ── RSI level gate (chop filter) ──────────────────────────────────────
+        // RSI must be on the correct side of mid to confirm directional momentum.
+        // In chop, RSI oscillates around 50 -- both LONG and SHORT signals fire
+        // every few ticks producing a stream of losses. RSI > 52 = genuine upside
+        // momentum. RSI < 48 = genuine downside momentum. 50+/-2 dead zone = skip.
+        if (rsi_long  && rsi_now < RSI_LEVEL_LONG) {
+            _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
+                       l2_imbalance, "RSI_LEVEL_TOO_LOW", 0.0, false, false);
+            return;
+        }
+        if (rsi_short && rsi_now > RSI_LEVEL_SHORT) {
+            _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
+                       l2_imbalance, "RSI_LEVEL_TOO_HIGH", 0.0, false, false);
+            return;
+        }
+
+        // ── Price move confirmation (chop filter) ─────────────────────────────
+        // Require price to have actually moved PRICE_MOVE_MIN pts in the signal
+        // direction over the RSI window. RSI can swing without price following
+        // (Wilder smoothing amplifies small moves). If price hasn't moved, it's
+        // noise -- skip the entry.
+        if ((int)m_price_window.size() >= RSI_DELTA_WINDOW) {
+            const double price_now  = mid;
+            const double price_then = m_price_window.front();
+            const double price_move = rsi_long ? (price_now - price_then)
+                                               : (price_then - price_now);
+            if (price_move < PRICE_MOVE_MIN) {
+                _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
+                           l2_imbalance, "PRICE_MOVE_INSUFFICIENT", 0.0, false, false);
+                return;
+            }
         }
 
         // ── DOM filter ────────────────────────────────────────────────────────
@@ -281,6 +313,7 @@ private:
     static constexpr int RSI_PERIOD = 14;
 
     std::deque<double> m_rsi_window;
+    std::deque<double> m_price_window;  // mid prices over RSI_DELTA_WINDOW for price move confirmation
 
     // ── Price anchor (EWM α=0.15) ─────────────────────────────────────────────
     double  m_anchor      = 0.0;
@@ -348,6 +381,11 @@ private:
         m_rsi_window.push_back(m_tick_rsi);
         if ((int)m_rsi_window.size() > RSI_DELTA_WINDOW)
             m_rsi_window.pop_front();
+
+        // Track price window in sync with RSI window for PRICE_MOVE_MIN gate
+        m_price_window.push_back(mid);
+        if ((int)m_price_window.size() > RSI_DELTA_WINDOW)
+            m_price_window.pop_front();
     }
 
     // ── Block diagnostic ──────────────────────────────────────────────────────
