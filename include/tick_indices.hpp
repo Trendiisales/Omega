@@ -32,6 +32,8 @@ static void on_tick_us500(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    // INDICES DISABLED: skip entirely when indices_enabled=false
+    if (!g_cfg.indices_enabled) return;
     // FIX-tick bar builder for US500.F M1/M5
     {
         static OHLCBar s_sp1{}, s_sp5{};
@@ -321,6 +323,7 @@ static void on_tick_ustec(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    if (!g_cfg.indices_enabled) return;
     // FIX-tick bar builder for USTEC.F M1/M5
     {
         static OHLCBar s_nq1{}, s_nq5{};
@@ -764,6 +767,7 @@ static void on_tick_nas100(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    if (!g_cfg.indices_enabled) return;
     const bool base_can_nas = symbol_gate("NAS100",
         g_eng_nas100.pos.active      ||
         g_bracket_nas100.pos.active  ||
