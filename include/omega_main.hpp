@@ -163,7 +163,7 @@ int main(int argc, char* argv[])
     //   Cooldown 15s = high frequency, gold RSI cycles every 30-60s at extremes.
     //   MAX_HOLD 90s = scalp timeframe, don't overstay.
     // Win rate target: 55-70%, profit factor >1.4 (per backtested research).
-    g_rsi_reversal.enabled        = true;
+    g_rsi_reversal.enabled        = false;  // DISABLED -- no edge confirmed in backtest
     g_rsi_reversal.shadow_mode    = true;
     g_rsi_reversal.RSI_OVERSOLD   = 30.0;  // genuine exhaustion -- not noise (was 42)
     g_rsi_reversal.RSI_OVERBOUGHT = 70.0;  // genuine exhaustion -- not noise (was 58)
@@ -204,7 +204,7 @@ int main(int argc, char* argv[])
     //   TRAIL_DIST=0.5   -> tight trail to lock small wins
     //   COOLDOWN=15s     -> fast scalp engine, more opportunities
     //   MAX_HOLD=45s     -> force exit if move stalls, don't overstay
-    g_micro_momentum.enabled           = true;   // RE-ENABLED in shadow mode for backtest observation
+    g_micro_momentum.enabled           = false;  // DISABLED -- no edge confirmed in backtest
     g_micro_momentum.shadow_mode       = true;
     g_micro_momentum.ENTRY_DISP_PTS    = 0.0;
     g_micro_momentum.RSI_DELTA_MIN     = 6.0;
