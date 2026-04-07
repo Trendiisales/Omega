@@ -5,6 +5,9 @@
 //
 // Reports every combination: n_trades, WR, PnL_USD, and breakdown by exit reason
 // Sort the output CSV by PnL_USD descending to find the best parameter set
+//
+// VWAP: daily-reset cumulative (matches live engine — resets at UTC midnight each day)
+// Duplicate entry fix: cooldown set immediately on entry
 
 #include <iostream>
 #include <fstream>
@@ -51,6 +54,8 @@ bool parse_tick(const std::string& line, Tick& t)
 }
 
 inline int utc_hour(uint64_t ts_ms) { return (int)((ts_ms / 1000 / 3600) % 24); }
+inline uint64_t utc_day(uint64_t ts_ms) { return ts_ms / 1000 / 86400; }
+
 inline bool session_ok(uint64_t ts_ms)
 {
     int h = utc_hour(ts_ms);
@@ -118,11 +123,13 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
     price_buf.reserve(WINDOW + 10);
     vwap_buf.reserve(VWAP_TREND_LOOK + 10);
 
-    double vwap = 0;
+    // Daily-reset cumulative VWAP state
+    double   vwap       = 0;
+    double   vwap_pv    = 0;
+    uint64_t vwap_count = 0;
+    uint64_t vwap_day   = 0;
+
     double hi = 0, lo = 0;
-    std::vector<double> vwap_raw_buf;
-    vwap_raw_buf.reserve(320);
-    static const int VWAP_WINDOW = 300;
 
     bool     in_pos     = false;
     bool     is_long    = false;
@@ -141,14 +148,17 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
         double spread = t.ask - t.bid;
         double mid    = (t.ask + t.bid) * 0.5;
 
-        // Rolling VWAP update (always) -- 300-tick window, NOT cumulative
-        vwap_raw_buf.push_back(mid);
-        if ((int)vwap_raw_buf.size() > VWAP_WINDOW)
-            vwap_raw_buf.erase(vwap_raw_buf.begin());
+        // Daily-reset cumulative VWAP (always updated — matches live engine)
         {
-            double sum = 0.0;
-            for (double p : vwap_raw_buf) sum += p;
-            vwap = sum / (double)vwap_raw_buf.size();
+            uint64_t day = utc_day(t.ts);
+            if (day != vwap_day) {
+                vwap_pv    = 0.0;
+                vwap_count = 0;
+                vwap_day   = day;
+            }
+            vwap_pv    += mid;
+            vwap_count += 1;
+            vwap        = vwap_pv / (double)vwap_count;
         }
 
         vwap_buf.push_back(vwap);
@@ -221,8 +231,8 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
                     default: break;
                 }
 
-                in_pos   = false;
-                cooldown = COOLDOWN_TICKS;
+                in_pos = false;
+                // NOTE: cooldown already set at entry — do not reset here.
             }
         }
 
@@ -278,6 +288,9 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
                         pos_ticks   = 0;
                         mfe         = 0;
                         mae         = 0;
+
+                        // FIX: set cooldown immediately on entry to prevent duplicate entries
+                        cooldown = COOLDOWN_TICKS;
                     }
                 }
             }
@@ -405,11 +418,10 @@ int main(int argc, char** argv)
     std::cout << "\n\n";
 
     // ── Print top-10 results ──────────────────────
-    // (Rerun to collect all results in memory for sorting top 10)
-    // For memory efficiency, just print the best found
     std::cout << "══════════════════════════════════════════════════════════════\n";
     std::cout << "  GoldFlow Sweep — " << total_combos << " combinations in "
               << std::fixed << std::setprecision(1) << sweep_sec << "s\n";
+    std::cout << "  VWAP: daily-reset cumulative (live-engine-match)\n";
     std::cout << "══════════════════════════════════════════════════════════════\n\n";
 
     std::cout << "  BEST RESULT:\n";
