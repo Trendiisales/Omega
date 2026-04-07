@@ -62,16 +62,19 @@ public:
     double RSI_OVERBOUGHT     = 62.0;  // SHORT entry threshold (catches more turns)
     double RSI_EXIT_LONG      = 55.0;  // exit LONG when RSI recovers to here (take profit)
     double RSI_EXIT_SHORT     = 45.0;  // exit SHORT when RSI recovers to here (take profit)
-    double SL_ATR_MULT        = 1.0;   // SL distance = ATR * this
-    double TRAIL_ATR_MULT     = 0.75;  // trail distance = ATR * this behind MFE
-    double BE_ATR_MULT        = 1.0;   // BE locks at move >= ATR * this
-    double VWAP_HEADWIND_PTS  = 8.0;   // block if price already >8pt from VWAP in entry direction
+    double SL_ATR_MULT        = 0.6;   // SL = 0.6x ATR -- tight enough for small oscillations
+                                       // Asia ATR=3pt: SL=$1.80. Commission=$0.60. Need $2.40 to profit.
+                                       // RSI 38->55 typically moves $2-4pt -- covers this.
+    double TRAIL_ATR_MULT     = 0.40;  // trail = 0.4x ATR -- tight trail, don't give back the move
+    double BE_ATR_MULT        = 0.40;  // BE locks at 0.4x ATR -- locks very early (at spread+commission cost)
+                                       // Asia ATR=3pt: BE at $1.20 move = cost covered, zero risk
+    double VWAP_HEADWIND_PTS  = 12.0;  // raised 8->12: don't block valid swings near VWAP
     double MAX_SPREAD_PTS     = 2.5;   // max spread at entry
-    double MIN_ATR_PTS        = 2.0;   // minimum ATR to trade (dead tape filter)
-    int    COOLDOWN_S         = 120;   // seconds cooldown after close
-    int    MAX_HOLD_S         = 1200;  // 20 minute hard stop
-    int    MIN_HOLD_S         = 15;    // minimum hold before SL can fire
-    int    RSI_CONFIRM_TICKS  = 2;     // RSI must turn this many ticks before entry
+    double MIN_ATR_PTS        = 1.5;   // minimum ATR (lowered 2.0->1.5: trade quiet Asia tape too)
+    int    COOLDOWN_S         = 60;    // 60s cooldown (lowered 120->60: RSI can cycle again quickly)
+    int    MAX_HOLD_S         = 600;   // 10 min hard exit (lowered 20->10: RSI swings resolve faster)
+    int    MIN_HOLD_S         = 8;     // 8s minimum (lowered 15->8: tight SL means quick resolution)
+    int    RSI_CONFIRM_TICKS  = 1;     // 1 tick turn confirmation (lowered 2->1: enter faster on turn)
     bool   enabled            = true;
     bool   shadow_mode        = true;  // default shadow until validated
 
@@ -232,23 +235,32 @@ private:
         if ((now_s - pos.entry_ts) < MIN_HOLD_S) return;
 
         // ?? RSI exit -- "take profit every time RSI turns back" ??????????????
-        // When RSI was oversold and we entered LONG:
-        //   exit when RSI recovers to RSI_EXIT_LONG (default 55) = mean reversion complete
-        // When RSI was overbought and we entered SHORT:
-        //   exit when RSI falls back to RSI_EXIT_SHORT (default 45) = mean reversion complete
-        // This ensures we bank profit on the RSI reversal, not wait for a fixed TP tick.
-        // Only fires after BE is locked (we have real profit to protect).
-        if (pos.be_locked && rsi14 > 0.0) {
+        // Exit when RSI returns to neutral zone -- the mean reversion is complete.
+        // Does NOT require BE to be locked first:
+        //   - If RSI returns to 55/45 with us in profit: great, take it.
+        //   - If RSI returns to 55/45 with us at break-even: still exit, thesis played out.
+        //   - If RSI returns to 55/45 while we're losing: SL will have fired already
+        //     (SL is tighter than the RSI swing so it protects against bad entries).
+        // Min hold prevents exiting on the first tick after entry.
+        if (rsi14 > 0.0) {
             const bool rsi_exit_long  = pos.is_long  && (rsi14 >= RSI_EXIT_LONG);
             const bool rsi_exit_short = !pos.is_long && (rsi14 <= RSI_EXIT_SHORT);
             if (rsi_exit_long || rsi_exit_short) {
-                const double exit_px = pos.is_long ? bid : ask;
-                printf("[RSI-REV] RSI_EXIT %s rsi=%.1f threshold=%.0f -- taking profit\n",
-                       pos.is_long ? "LONG" : "SHORT",
-                       rsi14, pos.is_long ? RSI_EXIT_LONG : RSI_EXIT_SHORT);
-                fflush(stdout);
-                _close(exit_px, "RSI_TP", now_s, on_close);
-                return;
+                const double exit_px   = pos.is_long ? bid : ask;
+                const double exit_move = pos.is_long
+                    ? (exit_px - pos.entry) : (pos.entry - exit_px);
+                // Only exit if we have at least break-even (spread covered)
+                // Prevents RSI_EXIT firing immediately after entry on a whipsaw
+                const double min_profit_pts = (ask - bid) * 0.5;  // half spread = break-even
+                if (exit_move >= -min_profit_pts) {  // at or above break-even
+                    printf("[RSI-REV] RSI_EXIT %s rsi=%.1f threshold=%.0f move=%.2f -- taking profit\n",
+                           pos.is_long ? "LONG" : "SHORT",
+                           rsi14, pos.is_long ? RSI_EXIT_LONG : RSI_EXIT_SHORT,
+                           exit_move);
+                    fflush(stdout);
+                    _close(exit_px, "RSI_TP", now_s, on_close);
+                    return;
+                }
             }
         }
 

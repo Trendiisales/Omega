@@ -155,11 +155,11 @@ int main(int argc, char* argv[])
     g_rsi_reversal.RSI_OVERBOUGHT= 62.0;   // SHORT above this (catches more turns)
     g_rsi_reversal.RSI_EXIT_LONG = 55.0;   // exit LONG when RSI returns here (take profit)
     g_rsi_reversal.RSI_EXIT_SHORT= 45.0;   // exit SHORT when RSI returns here (take profit)
-    g_rsi_reversal.SL_ATR_MULT   = 1.0;    // SL = 1x ATR from entry
-    g_rsi_reversal.TRAIL_ATR_MULT= 0.75;   // trail = 0.75x ATR behind MFE
-    g_rsi_reversal.BE_ATR_MULT   = 1.0;    // BE lock at 1x ATR profit
-    g_rsi_reversal.COOLDOWN_S    = 120;    // 2 min cooldown after close
-    g_rsi_reversal.MAX_HOLD_S    = 1200;   // 20 min hard exit
+    g_rsi_reversal.SL_ATR_MULT   = 0.6;    // SL = 0.6x ATR (Asia ATR=3pt -> $1.80 SL)
+    g_rsi_reversal.TRAIL_ATR_MULT= 0.40;   // trail = 0.4x ATR -- tight, don't give back move
+    g_rsi_reversal.BE_ATR_MULT   = 0.40;   // BE at 0.4x ATR -- locks when cost covered
+    g_rsi_reversal.COOLDOWN_S    = 60;     // 60s cooldown -- RSI can cycle again quickly
+    g_rsi_reversal.MAX_HOLD_S    = 600;    // 10 min hard exit
     printf("[RSI-REV] RSIReversalEngine configured (shadow_mode=%s "
            "oversold=%.0f overbought=%.0f sl_mult=%.1fx)\n",
            g_rsi_reversal.shadow_mode ? "true" : "false",
