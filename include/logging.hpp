@@ -139,7 +139,10 @@ static std::string build_trade_close_csv_row(const omega::TradeRecord& tr) {
       << ',' << tr.spreadAtEntry
       << ',' << tr.latencyMs
       << ',' << csv_quote(tr.regime)
-      << ',' << csv_quote(tr.exitReason);
+      << ',' << csv_quote(tr.exitReason)
+      << std::setprecision(4)
+      << ',' << tr.l2_imbalance
+      << ',' << (tr.l2_live ? 1 : 0);
     return o.str();
 }
 
