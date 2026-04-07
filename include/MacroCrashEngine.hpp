@@ -83,7 +83,7 @@ public:
     bool    pyramid_shadow     = true;  // ALWAYS shadow until explicitly false
 
     // ── Timing ────────────────────────────────────────────────────────────
-    int64_t COOLDOWN_MS     = 300000;
+    int64_t COOLDOWN_MS     = 60000;  // reduced 300s->60s: 5min cooldown blocked re-entry on continuation moves
     int64_t MAX_HOLD_MS     = 7200000;
 
     bool    enabled         = true;
