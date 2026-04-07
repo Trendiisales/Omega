@@ -153,8 +153,9 @@ struct Engine
     std::vector<double> price_buf;
     std::vector<double> vwap_buf;
 
-    double pv = 0, vol = 0, vwap = 0;
+    double vwap = 0;
     double hi = 0, lo = 0;
+    std::vector<double> vwap_raw_buf;  // raw prices for rolling VWAP
 
     // position state
     bool     in_pos     = false;
@@ -174,11 +175,21 @@ struct Engine
     int cooldown  = 0;
     int pos_ticks = 0;  // ticks held in current position (for ADVERSE_EARLY detection)
 
+    // Rolling VWAP over VWAP_WINDOW ticks -- NOT cumulative.
+    // Cumulative VWAP over 334M ticks produces delta~0.0001/tick -- trend gate never fires.
+    // Rolling window matches live engine behaviour: VWAP reacts to recent price action.
+    static const int VWAP_WINDOW = 300;  // ~5min of ticks at typical XAUUSD tick rate
+
     void update_vwap(double price)
     {
-        pv  += price;
-        vol += 1.0;
-        vwap = pv / vol;
+        vwap_raw_buf.push_back(price);
+        if ((int)vwap_raw_buf.size() > VWAP_WINDOW)
+            vwap_raw_buf.erase(vwap_raw_buf.begin());
+
+        // Rolling mean of last VWAP_WINDOW prices
+        double sum = 0.0;
+        for (double p : vwap_raw_buf) sum += p;
+        vwap = sum / (double)vwap_raw_buf.size();
 
         vwap_buf.push_back(vwap);
         if ((int)vwap_buf.size() > std::max(WINDOW, VWAP_TREND_LOOK) + 10)

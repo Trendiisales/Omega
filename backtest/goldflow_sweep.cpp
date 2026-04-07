@@ -118,8 +118,11 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
     price_buf.reserve(WINDOW + 10);
     vwap_buf.reserve(VWAP_TREND_LOOK + 10);
 
-    double pv = 0, vol = 0, vwap = 0;
+    double vwap = 0;
     double hi = 0, lo = 0;
+    std::vector<double> vwap_raw_buf;
+    vwap_raw_buf.reserve(320);
+    static const int VWAP_WINDOW = 300;
 
     bool     in_pos     = false;
     bool     is_long    = false;
@@ -138,10 +141,15 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
         double spread = t.ask - t.bid;
         double mid    = (t.ask + t.bid) * 0.5;
 
-        // VWAP update (always)
-        pv  += mid;
-        vol += 1.0;
-        vwap = pv / vol;
+        // Rolling VWAP update (always) -- 300-tick window, NOT cumulative
+        vwap_raw_buf.push_back(mid);
+        if ((int)vwap_raw_buf.size() > VWAP_WINDOW)
+            vwap_raw_buf.erase(vwap_raw_buf.begin());
+        {
+            double sum = 0.0;
+            for (double p : vwap_raw_buf) sum += p;
+            vwap = sum / (double)vwap_raw_buf.size();
+        }
 
         vwap_buf.push_back(vwap);
         if ((int)vwap_buf.size() > VWAP_TREND_LOOK + 5)
