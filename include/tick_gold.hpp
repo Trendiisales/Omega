@@ -3218,7 +3218,7 @@ static void on_tick_gold(
                                        || (std::fabs(g_gold_stack.ewm_drift()) >= 2.0)
                                        || crash_impulse_bypass;
         // vol_ok: normal path OR unseeded-but-macro-move
-        const bool hybrid_vol_ok = (hybrid_vol_range >= 2.0)
+        const bool hybrid_vol_ok = (hybrid_vol_range >= 0.5)
                                 || (hybrid_vol_unseeded && hybrid_macro_bypass)
                                 || (!hybrid_vol_unseeded && hybrid_macro_bypass);
         const bool hybrid_can_enter =
