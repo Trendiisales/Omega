@@ -89,6 +89,16 @@ public:
     bool    enabled         = true;
     bool    shadow_mode     = true;   // DEFAULT -- change requires explicit auth
 
+    // ── SL multiplier (session-aware) ─────────────────────────────────────
+    // SL = atr * SL_ATR_MULT.  Asia oscillations are 10-15pt even on real moves.
+    // A 1.0x multiplier (sl=4-6pt) sits inside the noise and gets stopped before
+    // the move develops.  1.5x pushes the stop outside the 10pt Asia swing range.
+    // Lot sizing auto-adjusts (lot = risk / sl_pts) so dollar risk is unchanged.
+    // Evidence 2026-04-08: 5 consecutive Asia SL_HIT all stopped within 6pt then
+    // moved 15-20pt in the original direction -- classic too-tight SL whipsaw.
+    double SL_ATR_MULT         = 1.0;   // London/NY: 1x ATR (tight, fast moves)
+    double SL_ATR_MULT_ASIA    = 1.5;   // Asia: 1.5x ATR (wider -- outlast 10pt oscillation)
+
     // ── Asia session thresholds (slot=6, 22:00-05:00 UTC) ─────────────────
     // Asia moves are $10-25pt vs $50-150pt London/NY. Tuned to last 2 weeks.
     double ATR_THRESHOLD_ASIA  = 4.0;   // ATR > 4pt  (was 8pt -- missed every Asia spike)
@@ -287,10 +297,14 @@ public:
                (int)(dom_long_confirm || dom_short_confirm));
         fflush(stdout);
 
-        // Sizing
+        // Sizing -- session-aware SL multiplier
+        // Asia (slot=6): 1.5x ATR stop to outlast 10-15pt oscillations before move develops.
+        // London/NY: 1.0x ATR stop (fast directional moves, tight stop appropriate).
+        // Dollar risk is unchanged: lot = risk / (sl_pts * 100), so wider SL = smaller lot.
+        const double eff_sl_mult = (session_slot == 6) ? SL_ATR_MULT_ASIA : SL_ATR_MULT;
         const double scale    = std::min(ATR_SCALE_MAX, std::max(0.5, atr / ATR_NORMAL));
         const double risk     = BASE_RISK_USD * scale;
-        const double sl_pts   = atr * 1.0;
+        const double sl_pts   = atr * eff_sl_mult;
         const double lot      = _rl(std::min(MAX_LOT, std::max(MIN_LOT, risk / (sl_pts * 100.0))));
         const double entry_px = is_long ? ask : bid;
         const double sl_px    = is_long ? (entry_px - sl_pts) : (entry_px + sl_pts);
