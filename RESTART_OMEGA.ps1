@@ -100,25 +100,20 @@ if ($finalCheck) {
 $ErrorActionPreference = "Stop"
 OK "Stopped and confirmed dead"
 
-# ── POST-KILL: clean runtime-written files so git reset never blocks ─────────
-# 1. git checkout -- <file> restores each to committed state (cleans dirty index)
-# 2. git update-index --skip-worktree prevents engine writes from dirtying it again
-# Both steps required -- skip-worktree alone does not fix an already-dirty file.
+# ── POST-KILL: remove runtime files from git index so reset never blocks ────
+# These files (logs, .dat, .csv, .txt) are written by the engine at runtime.
+# They must not be tracked. We force-remove them from the index every restart.
+# git rm --cached removes from index without deleting from disk.
+# After this git reset --hard has nothing to conflict with.
 $ErrorActionPreference = "Continue"
-$runtimePatterns = @("logs/", "*.dat", "*.csv", "*.txt")
-$runtimeFiles = @()
-foreach ($pat in $runtimePatterns) {
-    $found = git ls-files $pat 2>$null
-    if ($found) { $runtimeFiles += $found }
-}
-foreach ($rf in $runtimeFiles) {
-    $rf = $rf.Trim()
-    if ($rf -eq "") { continue }
-    git checkout -- $rf 2>$null | Out-Null
-    git update-index --skip-worktree $rf 2>$null | Out-Null
+$stagedFiles = git ls-files --cached -- "logs/" "*.dat" "*.csv" "*.txt" 2>$null
+foreach ($sf in $stagedFiles) {
+    $sf = $sf.Trim()
+    if ($sf -eq "") { continue }
+    git rm --cached --force $sf 2>$null | Out-Null
 }
 $ErrorActionPreference = "Stop"
-OK "All runtime files restored and excluded from git reset"
+OK "Runtime files removed from git index"
 
 
 # ── [2/13] Pull ──────────────────────────────────────────────────────────────
