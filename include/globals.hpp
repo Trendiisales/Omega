@@ -136,7 +136,13 @@ static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_co
 static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nas100(omega::idx::make_nas100_config());
 static GoldFlowEngine             g_gold_flow;
-static omega::MacroCrashEngine    g_macro_crash;  // always-on macro event engine
+static omega::MacroCrashEngine    g_macro_crash;
+
+// RSI Reversal Engine -- direct RSI extreme entries, bypasses regime system
+// LONG when RSI < 35, SHORT when RSI > 65, ATR-based SL + trail
+// shadow_mode=true until 30 live shadow trades validate Asia WR
+#include "RSIReversalEngine.hpp"
+static omega::RSIReversalEngine   g_rsi_reversal;  // always-on macro event engine
 // Reload instance: independent GoldFlowEngine for continuation entries.
 // Fires after g_gold_flow banks PARTIAL_1R and confirms price still moving.
 // Managed exactly like g_gold_flow but never arms its own reload (avoids cascade).

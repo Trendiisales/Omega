@@ -1498,6 +1498,68 @@ static void on_tick_gold(
             mce_rsi,
             g_macro_ctx.session_slot);
     }
+    // ?? RSIReversalEngine -- direct RSI extreme entries (LONG<35, SHORT>65) ????
+    // Bypasses regime system entirely -- RSI is the signal, not z-score proxy.
+    // Reads real M1 RSI from g_bars_gold. Shadow mode by default.
+    // Both Asia and London/NY sessions covered (dead zone 05-07 UTC blocked internally).
+    {
+        const double rsi_rev_rsi  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+        const double rsi_rev_atr  = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
+        const bool   rsi_rev_rdy  = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
+        const double rsi_rev_vwap = g_gold_stack.vwap();
+
+        // Position management -- always runs when open
+        if (g_rsi_reversal.has_open_position()) {
+            g_rsi_reversal.on_tick(bid, ask,
+                rsi_rev_rsi, rsi_rev_atr, rsi_rev_rdy,
+                rsi_rev_vwap, g_macro_ctx.session_slot,
+                now_ms_g, bracket_on_close);
+        }
+
+        // Entry -- only when no other gold position open
+        if (!g_rsi_reversal.has_open_position()
+            && gold_can_enter
+            && !g_bracket_gold.has_open_position()
+            && !g_gold_stack.has_open_position()
+            && !g_gold_flow.has_open_position()
+            && !g_trend_pb_gold.has_open_position()
+            && !g_hybrid_gold.has_open_position()
+            && !g_nbm_gold_london.has_open_position()) {
+
+            g_rsi_reversal.on_tick(bid, ask,
+                rsi_rev_rsi, rsi_rev_atr, rsi_rev_rdy,
+                rsi_rev_vwap, g_macro_ctx.session_slot,
+                now_ms_g, bracket_on_close);
+
+            if (g_rsi_reversal.has_open_position()) {
+                // Size using standard risk engine -- same as GoldFlow sizing
+                const double rsi_sl_dist = std::fabs(g_rsi_reversal.pos.entry - g_rsi_reversal.pos.sl);
+                const double rsi_lot     = (rsi_sl_dist > 0.0)
+                    ? std::max(0.01, std::min(g_cfg.max_lot_gold,
+                        g_cfg.risk_per_trade_usd / (rsi_sl_dist * 100.0)))
+                    : 0.01;
+                g_rsi_reversal.patch_size(rsi_lot);
+
+                if (!g_rsi_reversal.shadow_mode) {
+                    send_live_order("XAUUSD",
+                        g_rsi_reversal.pos.is_long,
+                        g_rsi_reversal.pos.size,
+                        g_rsi_reversal.pos.entry);
+                    g_telemetry.UpdateLastEntryTs();
+                }
+                write_trade_open_log("XAUUSD", "RSIReversal",
+                    g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
+                    g_rsi_reversal.pos.entry, 0.0, g_rsi_reversal.pos.sl,
+                    g_rsi_reversal.pos.size, ask - bid, "RSI_REVERSAL", "RSI_EXTREME");
+                g_telemetry.UpdateLastSignal("XAUUSD",
+                    g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
+                    g_rsi_reversal.pos.entry, "RSI_EXTREME",
+                    "RSI_REVERSAL", regime.c_str(), "RSI_REVERSAL",
+                    0.0, g_rsi_reversal.pos.sl);
+            }
+        }
+    }
+
     // When stair step 1 banks the first 33% and arms a reload, try_reload()
     // is called every tick until it fires, cancels, or times out (5s).
     //

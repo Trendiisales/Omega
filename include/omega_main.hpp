@@ -148,6 +148,24 @@ int main(int argc, char* argv[])
     printf("[MCE] MacroCrashEngine ARMED (shadow_mode=%s) ATR>%.0f vol>%.1fx drift>%.0f\n",
            g_macro_crash.shadow_mode ? "true" : "false",
            g_macro_crash.ATR_THRESHOLD, g_macro_crash.VOL_RATIO_MIN, g_macro_crash.DRIFT_MIN);
+    // RSI Reversal Engine startup config
+    g_rsi_reversal.enabled       = true;
+    g_rsi_reversal.shadow_mode   = true;   // SHADOW until 30 trades validate WR
+    g_rsi_reversal.RSI_OVERSOLD  = 35.0;   // LONG below this
+    g_rsi_reversal.RSI_OVERBOUGHT= 65.0;   // SHORT above this
+    g_rsi_reversal.SL_ATR_MULT   = 1.0;    // SL = 1x ATR from entry
+    g_rsi_reversal.TRAIL_ATR_MULT= 0.75;   // trail = 0.75x ATR behind MFE
+    g_rsi_reversal.BE_ATR_MULT   = 1.0;    // BE lock at 1x ATR profit
+    g_rsi_reversal.COOLDOWN_S    = 120;    // 2 min cooldown after close
+    g_rsi_reversal.MAX_HOLD_S    = 1200;   // 20 min hard exit
+    printf("[RSI-REV] RSIReversalEngine configured (shadow_mode=%s "
+           "oversold=%.0f overbought=%.0f sl_mult=%.1fx)\n",
+           g_rsi_reversal.shadow_mode ? "true" : "false",
+           g_rsi_reversal.RSI_OVERSOLD,
+           g_rsi_reversal.RSI_OVERBOUGHT,
+           g_rsi_reversal.SL_ATR_MULT);
+    fflush(stdout);
+
     // [BUG-5 NOTE] MCE is shadow_mode=true by design -- it logs [MCE-SHADOW] but sends
     // no FIX orders. Entry/exit logic is fully functional via on_close callback wired above.
     // To enable live MCE trades: set g_macro_crash.shadow_mode = false (requires authorisation).
