@@ -269,8 +269,10 @@ public:
                 at_line_start_ = false;
             }
             file_buf_->sputc(static_cast<char>(c));
+            if (latest_buf_) latest_buf_->sputc(static_cast<char>(c));
             if (c == '\n') {
                 file_.flush();
+                if (latest_buf_) latest_.flush();
                 at_line_start_ = true;
             }
         }
@@ -293,14 +295,17 @@ public:
                     std::memchr(p, '\n', static_cast<size_t>(end - p)));
                 if (nl) {
                     file_buf_->sputn(p, (nl - p) + 1);
+                    if (latest_buf_) latest_buf_->sputn(p, (nl - p) + 1);
                     at_line_start_ = true;
                     p = nl + 1;
                 } else {
                     file_buf_->sputn(p, end - p);
+                    if (latest_buf_) latest_buf_->sputn(p, end - p);
                     break;
                 }
             }
             file_.flush();
+            if (latest_buf_) latest_.flush();
         }
         return n;
     }
@@ -324,6 +329,8 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
         if (file_.is_open()) { file_.flush(); file_.close(); }
         file_buf_ = nullptr;
+        if (latest_.is_open()) { latest_.flush(); latest_.close(); }
+        latest_buf_ = nullptr;
     }
 
 private:
@@ -332,6 +339,8 @@ private:
     std::string     log_dir_;
     std::ofstream   file_;
     std::streambuf* file_buf_ = nullptr;
+    std::ofstream   latest_;        // always points to logs/latest.log (truncated on each open_today)
+    std::streambuf* latest_buf_ = nullptr;
     std::string     current_path_;
     int             current_day_ = -1;
     bool            at_line_start_ = true;  // true when next char starts a new line
@@ -348,6 +357,7 @@ private:
         std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d ",
                       ti.tm_hour, ti.tm_min, ti.tm_sec);
         file_buf_->sputn(buf, 9);
+        if (latest_buf_) latest_buf_->sputn(buf, 9);
     }
 
     static std::string utc_date_str() {
@@ -385,32 +395,12 @@ private:
             const std::string msg = "[OMEGA-LOG-FAIL] Cannot open log: " + current_path_ + "\n";
             if (orig_) orig_->sputn(msg.c_str(), (std::streamsize)msg.size());
         }
-        // Always update latest.log to point at the current dated log.
-        // All monitoring scripts (VERIFY_STARTUP, RESTART_OMEGA, MONITOR) read
-        // latest.log -- without this they read a stale file from a previous run.
-        // On Windows we use a hard copy updated at open time. Not a symlink
-        // (requires elevated privileges on Windows by default).
-        // We use a redirect file containing the current log path so scripts
-        // can resolve it, AND we create a hard link / copy-on-rotate.
-        // Simplest reliable approach: write current_path_ to latest.log as a
-        // real file that gets appended to alongside the dated log.
-        // Actually: open latest.log in TRUNCATE mode and redirect writes there too.
+        // latest.log: always truncated and rewritten on each startup/rotation.
+        // All monitoring scripts read latest.log -- this keeps it live.
+        if (latest_.is_open()) { latest_.flush(); latest_.close(); latest_buf_ = nullptr; }
         const std::string latest_path = log_dir_ + "/latest.log";
-        {
-            // Delete and recreate as a copy/hard link to the dated file.
-            // On Windows, create_hard_link requires same volume (always true here).
-            // If hard link fails (e.g. file already open), fall back to a symlink stub.
-            std::error_code ec2;
-            fs::remove(fs::path(latest_path), ec2);
-            fs::create_hard_link(fs::path(current_path_), fs::path(latest_path), ec2);
-            if (ec2) {
-                // Hard link failed -- write a redirect stub so scripts know where to look
-                std::ofstream stub(latest_path, std::ios::trunc);
-                if (stub.is_open()) {
-                    stub << "[OMEGA-LOG-REDIRECT] " << current_path_ << "\n";
-                }
-            }
-        }
+        latest_.open(latest_path, std::ios::trunc);
+        latest_buf_ = latest_.is_open() ? latest_.rdbuf() : nullptr;
         purge_old_logs();
     }
 
