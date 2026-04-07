@@ -174,33 +174,33 @@ int main(int argc, char* argv[])
     fflush(stdout);
 
     // MicroMomentumEngine startup config
-    // FIX 2026-04-07: engine was never firing due to three compounding gates:
-    //   1. ENTRY_DISP_PTS=1.0: EWM anchor α=0.15 tracks price too fast -- disp
-    //      stays near 0 perpetually on a steady trend. Removed (set to 0.0) --
-    //      RSI delta is sufficient directional confirmation.
-    //   2. RSI_DELTA_MIN=8.0: Wilder RSI(14) over 10 ticks only moves 3-5 units
-    //      on a steady trend. Lowered to 3.0 -- catches all clear directional moves.
-    //   3. BORDERLINE_DELTA=14.0: with RSI_DELTA_MIN=8, ALL entries fell in the
-    //      8-14 borderline zone requiring book_slope confirmation. BlackBull synthetic
-    //      L2 book_slope hovers near 0, blocking every entry. Set BORDERLINE_DELTA=3.0
-    //      (equals RSI_DELTA_MIN) so the borderline zone is empty -- no entries require
-    //      slope confirmation. DOM wall/imbalance gates still apply.
-    //   4. L2 tolerance widened (0.40/0.60) for synthetic BlackBull feed.
+    // FIX 2026-04-07 v3: chop filters added -- RSI level gate + price move confirmation.
+    // Root cause of losses: RSI_DELTA_MIN=3 fired on every RSI wiggle in ranging markets.
+    // Chart showed RSI 48->68->50->62 producing entries every 20s all hitting SL.
+    // Two new gates in engine prevent this:
+    //   RSI_LEVEL_LONG/SHORT: RSI must be above 52 / below 48 -- dead zone around 50 = chop.
+    //   PRICE_MOVE_MIN: price must have moved 1.5pt in signal direction over the window.
+    //                   RSI moving without price following = Wilder smoothing noise = skip.
+    // RSI_DELTA_MIN raised 3->6. COOLDOWN raised 20->45s.
+    // SL_ATR_MULT raised 0.5->1.5, TP raised 4->6pt (prior 3s SL hit).
     g_micro_momentum.enabled           = true;
-    g_micro_momentum.shadow_mode       = true;   // SHADOW -- watch [MICROMOM-SHADOW] logs
-    g_micro_momentum.ENTRY_DISP_PTS    = 0.0;   // DISABLED: anchor α=0.15 too fast, kills disp signal
-    g_micro_momentum.RSI_DELTA_MIN     = 3.0;   // lowered 8.0->3.0: Wilder RSI only moves 3-5 units/10ticks on trend
-    g_micro_momentum.RSI_DELTA_WINDOW  = 10;    // ticks for RSI delta measurement
-    g_micro_momentum.BORDERLINE_DELTA  = 3.0;   // = RSI_DELTA_MIN: no entries in borderline zone (slope gate disabled)
-    g_micro_momentum.L2_LONG_MIN       = 0.40;  // widened 0.45->0.40: BlackBull synthetic L2 ~0.50 neutral
-    g_micro_momentum.L2_SHORT_MAX      = 0.60;  // widened 0.55->0.60: matches L2_LONG_MIN symmetry
-    g_micro_momentum.TP_PTS            = 6.0;   // raised 4->6pt: wider SL needs wider TP to keep R:R >= 4:1
-    g_micro_momentum.SL_ATR_MULT       = 1.5;   // raised 0.5->1.5: 0.5*spread(2.2)=1.1pt was hit in 3s on volatile tape
-    g_micro_momentum.BE_TRIGGER_PTS    = 1.0;   // breakeven at 1.0pt profit
-    g_micro_momentum.LOCK_TRIGGER_PTS  = 2.0;   // lock +1pt at 2.0pt profit
-    g_micro_momentum.TRAIL_DIST_PTS    = 1.0;   // trail 1.0pt behind once locked
-    g_micro_momentum.COOLDOWN_S        = 20;    // 20s between trades
-    g_micro_momentum.MAX_HOLD_S        = 240;   // 4 min hard exit
+    g_micro_momentum.shadow_mode       = true;
+    g_micro_momentum.ENTRY_DISP_PTS    = 0.0;   // disabled -- anchor too fast
+    g_micro_momentum.RSI_DELTA_MIN     = 6.0;   // raised 3->6: 3 fired on every micro-wiggle
+    g_micro_momentum.RSI_DELTA_WINDOW  = 10;
+    g_micro_momentum.BORDERLINE_DELTA  = 3.0;   // = RSI_DELTA_MIN: borderline zone empty
+    g_micro_momentum.RSI_LEVEL_LONG    = 52.0;  // LONG only when RSI > 52
+    g_micro_momentum.RSI_LEVEL_SHORT   = 48.0;  // SHORT only when RSI < 48
+    g_micro_momentum.PRICE_MOVE_MIN    = 1.5;   // price must move 1.5pt in signal dir over window
+    g_micro_momentum.L2_LONG_MIN       = 0.40;
+    g_micro_momentum.L2_SHORT_MAX      = 0.60;
+    g_micro_momentum.TP_PTS            = 6.0;
+    g_micro_momentum.SL_ATR_MULT       = 1.5;
+    g_micro_momentum.BE_TRIGGER_PTS    = 1.0;
+    g_micro_momentum.LOCK_TRIGGER_PTS  = 2.0;
+    g_micro_momentum.TRAIL_DIST_PTS    = 1.0;
+    g_micro_momentum.COOLDOWN_S        = 45;    // raised 20->45s: stop churning in chop
+    g_micro_momentum.MAX_HOLD_S        = 240;
     printf("[MICROMOM] MicroMomentumEngine configured "
            "(shadow_mode=%s disp=%.1fpt rsi_delta_min=%.1f tp=%.1fpt cooldown=%ds)\n",
            g_micro_momentum.shadow_mode ? "true" : "false",
