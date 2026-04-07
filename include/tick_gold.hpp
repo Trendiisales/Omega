@@ -765,8 +765,7 @@ static void on_tick_gold(
         //   a) VWAP displacement >= 6pt -- price has left fair value, trend is real
         //   b) EWM drift magnitude >= 2.0 -- strong sustained directional pressure
         // These fire even when bars are stale/frozen and rsi_crash_lo/hi is at default.
-        const double asia_trend_vwap_disp = (gf_vwap_now > 0.0)
-            ? std::fabs(gf_mid_now - gf_vwap_now) : 0.0;
+        // vwap_disp already computed above from gf_vwap_now/gf_mid_now -- reuse directly.
         const bool asia_tick_bypass = (vwap_disp >= 6.0)
                                    || (gold_ewm_drift_abs >= 2.0);
 
