@@ -11,17 +11,23 @@
 //   vacuum    = gold_vacuum_ask/bid        (thin side = clear path)
 //   wall      = gold_wall_above/below      (large block = blocked path)
 //
-//   LONG:  rsi_delta > RSI_DELTA_MIN  AND  disp > ENTRY_DISP_PTS
+//   LONG:  rsi_delta > RSI_DELTA_MIN
 //          AND l2_imb > 0.45 (not ask-heavy)
 //          AND NOT wall_above (no ceiling blocking TP)
 //
-//   SHORT: rsi_delta < -RSI_DELTA_MIN  AND  disp < -ENTRY_DISP_PTS
+//   SHORT: rsi_delta < -RSI_DELTA_MIN
 //          AND l2_imb < 0.55 (not bid-heavy)
 //          AND NOT wall_below (no floor blocking TP)
 //
+//   NOTE: ENTRY_DISP_PTS is retained as a parameter but NOT used as a hard gate.
+//         The EWM anchor (alpha=0.15) chases price so fast that disp is near zero
+//         exactly when RSI delta is large -- the two gates are anti-correlated and
+//         combining them silenced the engine. RSI delta alone is the signal.
+//
 //   VACUUM BONUS: vacuum on trade side → lot size scaled up (clear path confirmed)
 //
-//   BORDERLINE RSI (delta 8-14): also require book_slope to agree with direction
+//   BORDERLINE RSI (delta 8-20): also require book_slope to agree with direction.
+//   Raised from 14 to 20: rsi_delta 8-14 is the normal swing range, not borderline.
 //
 // PROTECTION LADDER:
 //   Step 0: initial SL = max(ATR*0.5, spread*2)
@@ -46,7 +52,7 @@ namespace omega {
 class MicroMomentumEngine {
 public:
     // ── Parameters ────────────────────────────────────────────────────────────
-    double ENTRY_DISP_PTS    = 1.0;   // price displacement from anchor
+    double ENTRY_DISP_PTS    = 1.0;   // retained for config compat -- NOT used as hard gate
     double RSI_DELTA_MIN     = 8.0;   // RSI units moved over window
     int    RSI_DELTA_WINDOW  = 10;    // ticks for RSI delta
     double TP_PTS            = 4.0;   // fixed TP
@@ -58,7 +64,7 @@ public:
     double L2_LONG_MIN       = 0.45;  // min imbalance to go long (not ask-heavy)
     double L2_SHORT_MAX      = 0.55;  // max imbalance to go short (not bid-heavy)
     double L2_VACUUM_LOT_MULT= 1.5;   // lot scale when vacuum confirms direction
-    double BORDERLINE_DELTA  = 14.0;  // below this, also require book_slope confirm
+    double BORDERLINE_DELTA  = 20.0;  // raised 14->20: rsi_delta 8-14 is normal, not borderline
     double BOOK_SLOPE_MIN    = 0.1;   // min book_slope for borderline entries
     double MAX_SPREAD_PTS    = 2.5;
     int    COOLDOWN_S        = 20;
@@ -114,6 +120,30 @@ public:
             return;
         }
 
+        // ── Periodic diagnostic log (every 30s) -- shows warmup/signal state ──
+        {
+            if (now_s - m_last_diag_log >= 30) {
+                m_last_diag_log = now_s;
+                const double rsi_delta_now = ((int)m_rsi_window.size() >= RSI_DELTA_WINDOW)
+                    ? (m_tick_rsi - m_rsi_window.front()) : 0.0;
+                const double disp_now = mid - m_anchor;
+                printf("[MICROMOM-DIAG] ticks=%d seeded=%d window=%d/%d "
+                       "rsi=%.1f delta=%.2f(need %.1f) disp=%.2f "
+                       "spread=%.2f(max %.1f) l2=%.2f slope=%.2f "
+                       "vac_ask=%d vac_bid=%d wall_a=%d wall_b=%d l2_real=%d "
+                       "cooldown=%llds\n",
+                       m_tick_count, (int)m_rsi_seeded,
+                       (int)m_rsi_window.size(), RSI_DELTA_WINDOW,
+                       m_tick_rsi, rsi_delta_now, RSI_DELTA_MIN, disp_now,
+                       spread, MAX_SPREAD_PTS,
+                       l2_imbalance, book_slope,
+                       (int)vacuum_ask, (int)vacuum_bid,
+                       (int)wall_above, (int)wall_below, (int)l2_real,
+                       (long long)std::max((int64_t)0, m_cooldown_until - now_s));
+                fflush(stdout);
+            }
+        }
+
         // ── Entry gates ───────────────────────────────────────────────────────
         if (now_s < m_cooldown_until)                     return;
         if (m_tick_count < WARMUP_TICKS)                  return;
@@ -123,15 +153,18 @@ public:
 
         const double rsi_now   = m_tick_rsi;
         const double rsi_delta = rsi_now - m_rsi_window.front();
-        const double disp      = mid - m_anchor;
 
-        // ── RSI + price displacement signal ───────────────────────────────────
-        const bool rsi_long  = (rsi_delta >  RSI_DELTA_MIN) && (disp >  ENTRY_DISP_PTS);
-        const bool rsi_short = (rsi_delta < -RSI_DELTA_MIN) && (disp < -ENTRY_DISP_PTS);
+        // ── RSI delta signal (primary gate) ───────────────────────────────────
+        // ENTRY_DISP_PTS intentionally NOT used here as a hard gate.
+        // The EWM anchor (alpha=0.15) chases price at ~7-tick half-life, meaning
+        // disp is near zero precisely when rsi_delta is large -- they are
+        // anti-correlated. RSI delta alone is the momentum signal.
+        const bool rsi_long  = (rsi_delta >  RSI_DELTA_MIN);
+        const bool rsi_short = (rsi_delta < -RSI_DELTA_MIN);
 
         if (!rsi_long && !rsi_short) {
-            _log_block(now_s, rsi_now, rsi_delta, disp, spread, l2_imbalance,
-                       "RSI_DISP", 0.0, false, false);
+            _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
+                       l2_imbalance, "RSI_DELTA", 0.0, false, false);
             return;
         }
 
@@ -141,36 +174,36 @@ public:
             if (rsi_long) {
                 // Don't fight ask-heavy book
                 if (l2_imbalance < L2_LONG_MIN) {
-                    _log_block(now_s, rsi_now, rsi_delta, disp, spread,
+                    _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
                                l2_imbalance, "L2_ASK_HEAVY", 0.0, false, false);
                     return;
                 }
                 // Don't enter directly into a wall (TP blocked)
                 if (wall_above) {
-                    _log_block(now_s, rsi_now, rsi_delta, disp, spread,
+                    _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
                                l2_imbalance, "WALL_ABOVE", 0.0, false, false);
                     return;
                 }
-                // Borderline RSI delta: also require book_slope confirms
+                // Borderline RSI delta (8-20): also require book_slope confirms
                 if (std::fabs(rsi_delta) < BORDERLINE_DELTA && book_slope < BOOK_SLOPE_MIN) {
-                    _log_block(now_s, rsi_now, rsi_delta, disp, spread,
+                    _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
                                l2_imbalance, "BORDERLINE_NO_SLOPE", book_slope, false, false);
                     return;
                 }
             }
             if (rsi_short) {
                 if (l2_imbalance > L2_SHORT_MAX) {
-                    _log_block(now_s, rsi_now, rsi_delta, disp, spread,
+                    _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
                                l2_imbalance, "L2_BID_HEAVY", 0.0, false, false);
                     return;
                 }
                 if (wall_below) {
-                    _log_block(now_s, rsi_now, rsi_delta, disp, spread,
+                    _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
                                l2_imbalance, "WALL_BELOW", 0.0, false, false);
                     return;
                 }
                 if (std::fabs(rsi_delta) < BORDERLINE_DELTA && book_slope > -BOOK_SLOPE_MIN) {
-                    _log_block(now_s, rsi_now, rsi_delta, disp, spread,
+                    _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
                                l2_imbalance, "BORDERLINE_NO_SLOPE", book_slope, false, false);
                     return;
                 }
@@ -198,13 +231,14 @@ public:
         pos.step      = 0;
         pos.lot_mult  = lot_mult;
 
+        const double disp_at_entry = mid - m_anchor;
         const char* pfx = shadow_mode ? "[MICROMOM-SHADOW]" : "[MICROMOM]";
         printf("%s %s entry=%.2f tp=%.2f sl=%.2f(%.2fpt) "
                "rsi=%.1f delta=%.2f disp=%.2f "
                "l2=%.2f slope=%.2f vac=%d wall_a=%d wall_b=%d lot_mult=%.1f slot=%d\n",
                pfx, is_long ? "LONG" : "SHORT",
                entry, pos.tp, pos.sl, sl_pts,
-               rsi_now, rsi_delta, disp,
+               rsi_now, rsi_delta, disp_at_entry,
                l2_imbalance, book_slope,
                (int)vacuum_confirm, (int)wall_above, (int)wall_below,
                lot_mult, session_slot);
@@ -250,6 +284,7 @@ private:
     int     m_tick_count     = 0;
     int64_t m_cooldown_until = 0;
     int64_t m_last_block_log = 0;
+    int64_t m_last_diag_log  = 0;
     int     m_trade_id       = 0;
 
     // ── Indicator update ──────────────────────────────────────────────────────
