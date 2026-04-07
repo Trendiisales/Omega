@@ -2079,6 +2079,19 @@ int main(int argc, char* argv[])
     g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
     g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
     g_trend_pb_gold.save_state(log_root_dir()  + "/trend_pb_gold.dat");
+
+    // Save bar indicator state -- instant warm restart, no 15-min cold start
+    // load_indicators() at startup reads these files and sets m1_ready=true immediately
+    // save_indicators() skips flat/holiday state automatically (built-in sanity check)
+    const std::string base_save = log_root_dir();
+    g_bars_gold.m1 .save_indicators(base_save + "/bars_gold_m1.dat");
+    g_bars_gold.m5 .save_indicators(base_save + "/bars_gold_m5.dat");
+    g_bars_gold.m15.save_indicators(base_save + "/bars_gold_m15.dat");
+    g_bars_gold.h4 .save_indicators(base_save + "/bars_gold_h4.dat");
+    g_bars_sp.m1   .save_indicators(base_save + "/bars_sp_m1.dat");
+    g_bars_nq.m1   .save_indicators(base_save + "/bars_nq_m1.dat");
+    printf("[SHUTDOWN] Bar indicator state saved -- next restart will be instant warm\n");
+    fflush(stdout);
     g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
     g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
     g_trend_pb_sp.save_state(log_root_dir()    + "/trend_pb_sp.dat");
