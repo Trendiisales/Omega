@@ -102,6 +102,17 @@ public:
 
     bool has_open_position() const noexcept { return pos.active; }
 
+    // Seed tick ATR from bar ATR so SL is correctly sized from real volatility.
+    // Called every tick from tick_gold when M1 bar ATR is available.
+    // Without this m_tick_atr cold-starts at spread (~2.2pt) -- SL too tight.
+    void seed_bar_atr(double bar_atr) noexcept {
+        if (bar_atr > 0.5 && bar_atr < 100.0) {
+            m_tick_atr = bar_atr;
+            m_atr_init = true;
+        }
+    }
+    double current_atr() const noexcept { return m_tick_atr; }
+
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
     // ── Main tick ──────────────────────────────────────────────────────────────
