@@ -3006,7 +3006,16 @@ static void on_tick_gold(
             && !g_trend_pb_gold.has_open_position()
             && !g_nbm_gold_london.has_open_position();
 
-        if (hybrid_can_enter && !g_hybrid_gold.has_open_position()) {
+        // FIX 2026-04-07: always call on_tick to feed the structure window unconditionally.
+        // Previously on_tick was only called when hybrid_can_enter=true -- so when
+        // ASIA-GATE blocked entries for the first 35min, m_window never received ticks,
+        // m_ticks_received never reached MIN_ENTRY_TICKS=150, and range stayed 0.00
+        // permanently. The engine was never able to arm even when gates opened.
+        // Fix: call on_tick every tick. When can_enter=false the engine feeds the window
+        // but does not transition IDLE->ARMED. When can_enter becomes true the window
+        // is already full and range computes immediately on the next tick.
+        // Position management path (has_open_position) handled unconditionally above.
+        if (!g_hybrid_gold.has_open_position()) {
             const bool flow_live   = g_gold_flow.has_open_position();
             const bool flow_be     = g_gold_flow.pos.be_locked;
             const int  flow_stage  = g_gold_flow.pos.trail_stage;
