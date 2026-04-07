@@ -571,8 +571,9 @@ private:
             tr.exitPrice   = exit_px;
             tr.sl          = pos.sl;
             tr.size        = pos.full_size;  // original full size
-            tr.pnl         = ppts * pos.full_size;  // raw price points * full_size
-            tr.mfe         = pos.mfe * pos.full_size;
+            tr.pnl         = ppts * pos.full_size * 100.0;  // USD: pts * lots * $100/pt
+            tr.net_pnl     = tr.pnl;
+            tr.mfe         = pos.mfe * pos.full_size * 100.0;
             tr.mae         = 0.0;
             tr.entryTs     = static_cast<int64_t>(pos.entry_ms / 1000);
             tr.exitTs      = static_cast<int64_t>(now_ms / 1000);
