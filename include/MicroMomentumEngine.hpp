@@ -1,51 +1,37 @@
 #pragma once
 // =============================================================================
-// MicroMomentumEngine.hpp  --  Fast 4-8pt momentum capture on XAUUSD
+// MicroMomentumEngine.hpp  --  RSI-extreme momentum capture on XAUUSD
 // =============================================================================
 //
-// DESIGN RATIONALE:
-//   XAUUSD makes constant 4-8pt moves visible on any chart. These are missed
-//   because existing engines require too many confirmations:
-//     - GoldFlow: 70% of 30 ticks directional + momentum + exhaustion + L2
-//     - RSIReversal: RSI must reach extreme (42/58) -- neutral moves missed
-//     - Bracket: needs compression first
+// DESIGN:
+//   Catches the 20-40pt moves visible on the cTrader tick chart.
+//   These moves have a clear RSI signature: RSI spikes to extreme (>72 or <28),
+//   then TURNS while price has already displaced from a recent anchor.
+//   Entry is on the TURN not the extreme -- confirmed by RSI slope reversing.
 //
-//   This engine catches a move WHILE IT IS HAPPENING using two signals:
+// SIGNAL (both conditions must hold):
+//   SHORT: RSI > RSI_HIGH_THRESH (e.g. 70) AND rsi_slope < -RSI_SLOPE_MIN
+//          AND price has displaced UP from anchor (confirming the prior spike)
+//   LONG:  RSI < RSI_LOW_THRESH  (e.g. 30) AND rsi_slope >  RSI_SLOPE_MIN
+//          AND price has displaced DOWN from anchor
 //
-//   1. RSI SLOPE -- the rate of RSI change, not the level
-//      RSI rising at 0.5+ units/tick = bullish momentum building NOW
-//      RSI falling at 0.5+ units/tick = bearish momentum building NOW
-//      Works from RSI=50, not waiting for extreme
+//   This catches the chart pattern you showed: RSI peaked ~82, started falling,
+//   price was above anchor → SHORT. The old engine blocked this (RSI > 58 gate).
 //
-//   2. PRICE DISPLACEMENT -- price has moved N pts from recent anchor
-//      Anchor = EWM of price over last 8 ticks (very fast, α=0.3)
-//      If current price > anchor + ENTRY_DISP_PTS → confirmed move up
-//      If current price < anchor - ENTRY_DISP_PTS → confirmed move down
+// ALSO CATCHES continuation momentum (RSI 45-70 rising / 55-30 falling):
+//   When RSI slope is strong AND price is displacing in slope direction,
+//   enter in the direction of slope (momentum continuation mode).
+//   Threshold: RSI_SLOPE_MIN * 2.0 required (stronger signal needed for continuation).
 //
-//   BOTH must agree before entry. This prevents entries on:
-//     - RSI noise without price moving (false slope)
-//     - Price moving without RSI confirming (spread/manipulation spike)
+// EXIT:
+//   TP: fixed TP_PTS (default 4.0pt)
+//   SLOPE_EXIT: RSI slope reverses while in profit >= 0.8pt
+//   SL: max(ATR * SL_ATR_MULT, spread * 2.0) -- tight but not sub-spread
+//   MAX_HOLD: 4 minutes
 //
-//   EXIT:
-//     - Fixed TP: ENTRY_DISP_PTS * TP_MULT (default 1.5x = 3pt on 2pt signal)
-//     - RSI slope reversal: momentum dies, take what we have
-//     - SL: 0.5x ATR (tight -- if wrong, out fast)
-//     - Max hold: 5 minutes
-//
-//   COST COVERAGE:
-//     At 0.10 lots, 3pt TP = $30 gross. Commission $0.60, spread ~$0.22 = $0.82.
-//     Net ~$29. Even at 0.01 lots: $3 gross, $0.15 cost, $2.85 net.
-//     Min profitable move: 0.82pt at 0.10 lots. ENTRY_DISP_PTS=2.0 comfortably covers.
-//
-// PARAMETERS (tuned for Asia 50 ticks/min, London 200 ticks/min):
-//   ENTRY_DISP_PTS   = 1.5   -- price must move 1.5pt from anchor
-//   RSI_SLOPE_MIN    = 0.4   -- RSI must change 0.4 units/tick (EWM smoothed)
-//   RSI_SLOPE_WINDOW = 5     -- slope over last 5 RSI values
-//   TP_PTS           = 3.0   -- fixed take profit 3pt
-//   SL_ATR_MULT      = 0.4   -- SL = 0.4x tick ATR
-//   MAX_SPREAD       = 2.0   -- don't enter wide spread
-//   COOLDOWN_S       = 45    -- 45s between trades
-//   MAX_HOLD_S       = 300   -- 5 min hard exit
+// COST COVERAGE:
+//   At 0.10 lots, 4pt TP = $40 gross. Spread + commission ~$0.82. Net ~$39.
+//   SL at ~1.5pt = $15 loss. RR ~2.5:1 minimum.
 // =============================================================================
 
 #include <cstdint>
@@ -62,16 +48,18 @@ namespace omega {
 class MicroMomentumEngine {
 public:
     // ── Parameters ────────────────────────────────────────────────────────────
-    double ENTRY_DISP_PTS    = 1.5;  // price displacement from anchor to trigger
-    double RSI_SLOPE_MIN     = 0.4;  // min RSI change/tick (EWM slope)
-    int    RSI_SLOPE_WINDOW  = 5;    // ticks for RSI slope measurement
-    double TP_PTS            = 3.0;  // fixed take profit in price points
-    double SL_ATR_MULT       = 0.4;  // SL = 0.4x tick ATR
-    double MAX_SPREAD_PTS    = 2.5;  // raised 2.0->2.5: pre-London spread ~2.2pt is valid
-    int    COOLDOWN_S        = 45;
-    int    MAX_HOLD_S        = 300;
-    int    MIN_HOLD_S        = 5;
-    int    WARMUP_TICKS      = 20;   // ticks needed before signals valid
+    double ENTRY_DISP_PTS    = 1.2;   // price must be displaced this far from anchor
+    double RSI_SLOPE_MIN     = 0.25;  // min EWM RSI slope for entry
+    double RSI_HIGH_THRESH   = 70.0;  // RSI above this = overbought reversal zone
+    double RSI_LOW_THRESH    = 30.0;  // RSI below this = oversold reversal zone
+    double RSI_CONT_MULT     = 2.0;   // continuation mode needs slope * this
+    double TP_PTS            = 4.0;   // fixed TP in price points
+    double SL_ATR_MULT       = 0.5;   // SL = max(ATR*mult, spread*2)
+    double MAX_SPREAD_PTS    = 2.5;   // don't enter if spread wider than this
+    int    COOLDOWN_S        = 20;    // reduced: 20s between trades
+    int    MAX_HOLD_S        = 240;   // 4 min hard exit
+    int    MIN_HOLD_S        = 3;     // minimum hold before exits checked
+    int    WARMUP_TICKS      = 20;    // ticks before signals valid
     bool   enabled           = true;
     bool   shadow_mode       = true;
 
@@ -85,13 +73,14 @@ public:
         double  size      = 0.01;
         double  mfe       = 0.0;
         int64_t entry_ts  = 0;
+        char    mode[16]  = {};  // "REVERSAL" or "CONTINUATION"
     } pos;
 
     bool has_open_position() const noexcept { return pos.active; }
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
-    // ── Main tick ─────────────────────────────────────────────────────────────
+    // ── Main tick ──────────────────────────────────────────────────────────────
     void on_tick(double bid, double ask,
                  int session_slot, int64_t now_ms,
                  CloseCallback on_close) noexcept
@@ -103,57 +92,68 @@ public:
         const double spread = ask - bid;
         const int64_t now_s = now_ms / 1000;
 
-        // Update indicators every tick
         _update(mid, spread);
 
-        // Always manage open position
         if (pos.active) {
             _manage(bid, ask, mid, now_s, on_close);
             return;
         }
 
-        // ── Gates ─────────────────────────────────────────────────────────────
-        if (now_s < m_cooldown_until)          return;
-        if (m_tick_count < WARMUP_TICKS)       return;
-        if (spread > MAX_SPREAD_PTS)           return;
-        // No session slot block -- spread gate protects against thin liquidity.
+        // ── Entry gates ───────────────────────────────────────────────────────
+        if (now_s < m_cooldown_until)    return;
+        if (m_tick_count < WARMUP_TICKS) return;
+        if (spread > MAX_SPREAD_PTS)     return;
+        if (!m_rsi_seeded)               return;
 
-        // ── Signal: RSI slope + price displacement must agree ─────────────────
-        const double rsi_slope = m_rsi_slope;       // EWM of RSI change/tick
-        const double disp      = mid - m_anchor;    // displacement from slower anchor
+        const double rsi   = m_tick_rsi;
+        const double slope = m_rsi_slope;
+        const double disp  = mid - m_anchor;
 
-        // RSI must not already be overextended -- entering at exhaustion = chasing.
-        // Symmetric zones: LONG valid when RSI 42-72 (rising, not yet overbought)
-        //                  SHORT valid when RSI 28-58 (falling, not yet oversold)
-        // Previous zones (45-68 / 32-55) were too tight and asymmetric --
-        // shorted at 56+ was blocked but longs at 44- were also blocked, missing
-        // valid neutral-RSI momentum moves in both directions.
-        const bool rsi_not_exhausted_long  = (m_tick_rsi > 42.0 && m_tick_rsi < 72.0);
-        const bool rsi_not_exhausted_short = (m_tick_rsi > 28.0 && m_tick_rsi < 58.0);
+        // ── Mode 1: REVERSAL -- RSI at extreme, slope turning ─────────────────
+        // Chart pattern: RSI peaked 80+, now falling → SHORT into the reversal
+        // Chart pattern: RSI troughed 20-, now rising → LONG into the reversal
+        const bool reversal_short = (rsi  > RSI_HIGH_THRESH)           // RSI was high
+                                 && (slope < -RSI_SLOPE_MIN)            // slope now falling
+                                 && (disp  >  ENTRY_DISP_PTS);          // price above anchor (confirms prior spike up)
 
-        // Slope must not be RAPIDLY DECELERATING -- don't enter at end of move.
-        // Use fabs so the check works correctly for both positive and negative slopes.
-        // Wrong before: for negatives, prev*0.8 is LESS negative so the test
-        // rejected valid short entries where slope was still strongly negative.
-        // Fix: compare magnitudes -- slope must retain >= 80% of previous magnitude.
-        const bool slope_accel_long  = (rsi_slope > RSI_SLOPE_MIN)
-                                    && (std::fabs(rsi_slope) >= std::fabs(m_rsi_slope_prev) * 0.8);
-        const bool slope_accel_short = (rsi_slope < -RSI_SLOPE_MIN)
-                                    && (std::fabs(rsi_slope) >= std::fabs(m_rsi_slope_prev) * 0.8);
+        const bool reversal_long  = (rsi  < RSI_LOW_THRESH)            // RSI was low
+                                 && (slope >  RSI_SLOPE_MIN)            // slope now rising
+                                 && (disp  < -ENTRY_DISP_PTS);          // price below anchor (confirms prior dip)
 
-        const bool long_signal  = slope_accel_long
-                                && (disp > ENTRY_DISP_PTS)
-                                && rsi_not_exhausted_long;
-        const bool short_signal = slope_accel_short
-                                && (disp < -ENTRY_DISP_PTS)
-                                && rsi_not_exhausted_short;
+        // ── Mode 2: CONTINUATION -- RSI mid-range, strong slope, price moving ─
+        // Catches: RSI 50→70 rising fast with price up, RSI 50→30 falling fast with price down
+        const double cont_thresh = RSI_SLOPE_MIN * RSI_CONT_MULT;
+        const bool cont_long  = (rsi  > 40.0 && rsi  < 65.0)          // RSI mid-range rising
+                             && (slope >  cont_thresh)                  // strong positive slope
+                             && (disp  >  ENTRY_DISP_PTS);              // price above anchor
 
-        if (!long_signal && !short_signal) return;
+        const bool cont_short = (rsi  > 35.0 && rsi  < 60.0)          // RSI mid-range falling
+                             && (slope < -cont_thresh)                  // strong negative slope
+                             && (disp  < -ENTRY_DISP_PTS);              // price below anchor
 
-        // ── Entry ─────────────────────────────────────────────────────────────
-        const bool is_long  = long_signal;
+        const bool go_long  = reversal_long  || cont_long;
+        const bool go_short = reversal_short || cont_short;
+
+        if (!go_long && !go_short) {
+            // Diagnostic: log why blocked every 30s so we can tune
+            if (now_s - m_last_block_log >= 30) {
+                m_last_block_log = now_s;
+                printf("[MICROMOM-BLOCK] rsi=%.1f slope=%.3f disp=%.2f spread=%.2f "
+                       "cooldown=%llds warmup=%d/%d\n",
+                       rsi, slope, disp, spread,
+                       (long long)(m_cooldown_until - now_s),
+                       m_tick_count, WARMUP_TICKS);
+                fflush(stdout);
+            }
+            return;
+        }
+
+        // If both fire (edge case), prefer reversal signal; if both same mode, prefer short
+        const bool is_long = go_long && !go_short;
+        const char* mode_str = ((is_long ? reversal_long : reversal_short)) ? "REVERSAL" : "CONTINUATION";
+
         const double entry  = is_long ? ask : bid;
-        const double sl_pts = std::max(m_tick_atr * SL_ATR_MULT, spread * 1.5);
+        const double sl_pts = std::max(m_tick_atr * SL_ATR_MULT, spread * 2.0);
 
         pos.active   = true;
         pos.is_long  = is_long;
@@ -163,23 +163,25 @@ public:
         pos.size     = 0.01;
         pos.mfe      = 0.0;
         pos.entry_ts = now_s;
+        std::snprintf(pos.mode, sizeof(pos.mode), "%s", mode_str);
 
         const char* pfx = shadow_mode ? "[MICROMOM-SHADOW]" : "[MICROMOM]";
-        printf("%s %s entry=%.2f tp=%.2f sl=%.2f "
-               "rsi_slope=%.3f disp=%.2f atr=%.2f spread=%.2f slot=%d\n",
-               pfx, is_long ? "LONG" : "SHORT",
-               entry, pos.tp, pos.sl,
-               rsi_slope, disp, m_tick_atr, spread, session_slot);
+        printf("%s %s mode=%s entry=%.2f tp=%.2f sl=%.2f(dist=%.2f) "
+               "rsi=%.1f slope=%.3f disp=%.2f atr=%.2f spread=%.2f slot=%d\n",
+               pfx, is_long ? "LONG" : "SHORT", mode_str,
+               entry, pos.tp, pos.sl, sl_pts,
+               rsi, slope, disp, m_tick_atr, spread, session_slot);
         fflush(stdout);
     }
 
     void patch_size(double lot) noexcept { if (pos.active) pos.size = lot; }
 
-    double rsi_slope()  const noexcept { return m_rsi_slope; }
+    double rsi_val()   const noexcept { return m_tick_rsi; }
+    double rsi_slope_val() const noexcept { return m_rsi_slope; }
     double anchor_disp(double mid) const noexcept { return mid - m_anchor; }
 
 private:
-    // ── Tick indicators ───────────────────────────────────────────────────────
+    // ── Indicators ────────────────────────────────────────────────────────────
     double  m_tick_rsi      = 50.0;
     double  m_rsi_prev      = 50.0;
     double  m_rsi_avg_gain  = 0.0;
@@ -190,32 +192,31 @@ private:
     double  m_rsi_last_mid  = 0.0;
     static constexpr int RSI_PERIOD = 14;
 
-    // RSI slope: EWM of per-tick RSI change (α=0.4 = reacts in ~2 ticks)
+    // RSI slope: EWM of per-tick RSI change
     double  m_rsi_slope      = 0.0;
-    double  m_rsi_slope_prev = 0.0;  // previous slope for acceleration check
-    static constexpr double SLOPE_ALPHA = 0.4;
+    static constexpr double SLOPE_ALPHA = 0.35;  // slightly slower than before -- less noise
 
-    // Price anchor: medium EWM of mid (α=0.08 = ~11-tick memory)
-    // Slower anchor means displacement only registers after price has moved
-    // consistently for ~10+ ticks -- prevents firing at exhaustion of a 2-tick spike
+    // Price anchor: EWM of mid -- α=0.12 = ~7-tick memory (faster than before)
+    // Faster anchor means displacement registers sooner after a move starts
     double  m_anchor        = 0.0;
     bool    m_anchor_init   = false;
-    static constexpr double ANCHOR_ALPHA = 0.08;
+    static constexpr double ANCHOR_ALPHA = 0.12;
 
-    // Tick ATR: EWM of |price change|
-    double  m_tick_atr      = 0.0;
+    // Tick ATR
+    double  m_tick_atr      = 1.0;
     double  m_atr_last_mid  = 0.0;
     bool    m_atr_init      = false;
     static constexpr double ATR_ALPHA = 2.0 / 15.0;
 
-    int     m_tick_count    = 0;
+    int     m_tick_count     = 0;
     int64_t m_cooldown_until = 0;
+    int64_t m_last_block_log = 0;
     int     m_trade_id       = 0;
 
     void _update(double mid, double spread) noexcept {
         ++m_tick_count;
 
-        // Price anchor (fast EWM)
+        // Anchor
         if (!m_anchor_init) { m_anchor = mid; m_anchor_init = true; }
         else m_anchor = ANCHOR_ALPHA * mid + (1.0 - ANCHOR_ALPHA) * m_anchor;
 
@@ -229,11 +230,11 @@ private:
         }
         m_atr_last_mid = mid;
 
-        // Tick RSI (Wilder, period 14)
+        // RSI (Wilder 14)
         if (m_rsi_last_mid <= 0.0) { m_rsi_last_mid = mid; return; }
         const double chg  = mid - m_rsi_last_mid;
         m_rsi_last_mid = mid;
-        const double gain = chg > 0.0 ? chg : 0.0;
+        const double gain = chg > 0.0 ?  chg : 0.0;
         const double loss = chg < 0.0 ? -chg : 0.0;
 
         if (!m_rsi_seeded) {
@@ -252,21 +253,15 @@ private:
             m_rsi_avg_gain = (m_rsi_avg_gain * (RSI_PERIOD - 1) + gain) / RSI_PERIOD;
             m_rsi_avg_loss = (m_rsi_avg_loss * (RSI_PERIOD - 1) + loss) / RSI_PERIOD;
         }
-
         if (!m_rsi_seeded) return;
 
         m_rsi_prev = m_tick_rsi;
         m_tick_rsi = (m_rsi_avg_loss < 1e-10) ? 100.0
                    : 100.0 - 100.0 / (1.0 + m_rsi_avg_gain / m_rsi_avg_loss);
 
-        // RSI slope: EWM of per-tick change
+        // RSI slope: EWM of per-tick change (no acceleration check -- just direction + magnitude)
         const double raw_slope = m_tick_rsi - m_rsi_prev;
-        m_rsi_slope_prev = m_rsi_slope;  // save before updating
         m_rsi_slope = SLOPE_ALPHA * raw_slope + (1.0 - SLOPE_ALPHA) * m_rsi_slope;
-    }
-
-    static bool _in_dead_zone() noexcept {
-        return false;  // dead zone removed -- gold trades 24h
     }
 
     void _manage(double bid, double ask, double mid,
@@ -284,18 +279,18 @@ private:
             return;
         }
 
-        // TP hit
+        // TP
         const bool tp_hit = pos.is_long ? (ask >= pos.tp) : (bid <= pos.tp);
         if (tp_hit) {
             _close(pos.is_long ? pos.tp : pos.tp, "TP_HIT", now_s, on_close);
             return;
         }
 
-        // RSI slope reversal -- momentum died, exit with what we have
-        // Only exit if in profit (move > 0.5pt) to avoid exiting on noise
-        if (move > 0.5) {
-            const bool slope_died = pos.is_long  ? (m_rsi_slope < 0.0)
-                                                 : (m_rsi_slope > 0.0);
+        // Slope reversal exit -- momentum exhausted, take profit while we have it
+        // Require 0.8pt in profit before slope exit to avoid noise exits
+        if (move > 0.8) {
+            const bool slope_died = pos.is_long ? (m_rsi_slope < -RSI_SLOPE_MIN * 0.5)
+                                                : (m_rsi_slope >  RSI_SLOPE_MIN * 0.5);
             if (slope_died) {
                 _close(pos.is_long ? bid : ask, "SLOPE_EXIT", now_s, on_close);
                 return;
@@ -314,30 +309,30 @@ private:
     {
         const double pnl_pts = pos.is_long
             ? (exit_px - pos.entry) : (pos.entry - exit_px);
-        const double pnl = pnl_pts * pos.size;
 
-        printf("[MICROMOM] EXIT %s @ %.2f reason=%s pnl_pts=%.2f pnl_raw=%.4f mfe=%.2f\n",
-               pos.is_long ? "LONG" : "SHORT",
-               exit_px, reason, pnl_pts, pnl, pos.mfe);
+        printf("[MICROMOM] EXIT %s mode=%s @ %.2f reason=%s pnl_pts=%.2f mfe=%.2f\n",
+               pos.is_long ? "LONG" : "SHORT", pos.mode,
+               exit_px, reason, pnl_pts, pos.mfe);
         fflush(stdout);
 
         omega::TradeRecord tr;
-        tr.id          = ++m_trade_id;
-        tr.symbol      = "XAUUSD";
-        tr.side        = pos.is_long ? "LONG" : "SHORT";
-        tr.engine      = "MicroMomentum";
-        tr.regime      = "MOMENTUM";
-        tr.entryPrice  = pos.entry;
-        tr.exitPrice   = exit_px;
-        tr.sl          = pos.sl;
-        tr.size        = pos.size;
-        tr.pnl         = pnl_pts * pos.size;          // raw pts*lots -- handle_closed_trade applies tick_mult
-        tr.net_pnl     = tr.pnl;                       // no commission modelled -- set equal
-        tr.mfe         = pos.mfe * pos.size;
-        tr.mae         = 0.0;
-        tr.entryTs     = pos.entry_ts;
-        tr.exitTs      = now_s;
-        tr.exitReason  = reason;
+        tr.id            = ++m_trade_id;
+        tr.symbol        = "XAUUSD";
+        tr.side          = pos.is_long ? "LONG" : "SHORT";
+        tr.engine        = "MicroMomentum";
+        tr.regime        = pos.mode;
+        tr.entryPrice    = pos.entry;
+        tr.exitPrice     = exit_px;
+        tr.tp            = pos.tp;
+        tr.sl            = pos.sl;
+        tr.size          = pos.size;
+        tr.pnl           = pnl_pts * pos.size;  // raw pts*lots -- handle_closed_trade applies tick_mult
+        tr.net_pnl       = tr.pnl;
+        tr.mfe           = pos.mfe * pos.size;
+        tr.mae           = 0.0;
+        tr.entryTs       = pos.entry_ts;
+        tr.exitTs        = now_s;
+        tr.exitReason    = reason;
         tr.spreadAtEntry = 0.0;
 
         pos = Position{};
