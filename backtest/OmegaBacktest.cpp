@@ -624,12 +624,18 @@ struct LonFadeRunner {
 // RSIReversal runner
 // =============================================================================
 struct RSIRevRunner {
+    // FLIPPED LOGIC: RSI extremes on tick data = CONTINUATION not reversal
+    // RSI < 30 (oversold on ticks) = strong downtrend = SHORT
+    // RSI > 70 (overbought on ticks) = strong uptrend = LONG
+    // Achieved by swapping oversold/overbought thresholds:
+    // Engine enters LONG on oversold and SHORT on overbought --
+    // so setting OVERSOLD=70 and OVERBOUGHT=30 flips the direction.
     omega::RSIReversalEngine eng;
     RSIRevRunner() {
         eng.enabled        = true;
         eng.shadow_mode    = true;
-        eng.RSI_OVERSOLD   = 30.0;
-        eng.RSI_OVERBOUGHT = 70.0;
+        eng.RSI_OVERSOLD   = 70.0;  // FLIPPED: RSI>70 triggers LONG (continuation up)
+        eng.RSI_OVERBOUGHT = 30.0;  // FLIPPED: RSI<30 triggers SHORT (continuation down)
         eng.RSI_EXIT_LONG  = 50.0;
         eng.RSI_EXIT_SHORT = 50.0;
         eng.SL_ATR_MULT    = 0.5;
