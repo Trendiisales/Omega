@@ -88,6 +88,22 @@ public:
     bool    enabled         = true;
     bool    shadow_mode     = true;   // DEFAULT -- change requires explicit auth
 
+    // ── Asia session thresholds (slot=6, 22:00-05:00 UTC) ─────────────────
+    // Asia moves are $10-25pt vs $50-150pt London/NY. Tuned to last 2 weeks.
+    double ATR_THRESHOLD_ASIA  = 4.0;   // ATR > 4pt  (was 8pt -- missed every Asia spike)
+    double VOL_RATIO_MIN_ASIA  = 2.0;   // vol > 2x baseline (was 2.5 -- Asia baseline lower)
+    double DRIFT_MIN_ASIA      = 3.0;   // |drift| > 3pt (was 6pt -- Asia $12 move = drift~4)
+
+    // ── DOM primer thresholds ───────────────────────────────────────────────
+    // book_slope > DOM_SLOPE_STRONG = meaningful directional DOM pressure.
+    // 0.15 = 15% net weighted bias (microstructure literature standard for meaningful).
+    // At BlackBull, book sizes are synthetic (size_raw=0 -> substituted as 1.0 lot each).
+    // This means slope is computed from price levels only, not real size imbalance.
+    // Set threshold conservatively (0.20) to avoid noise from synthetic sizes.
+    double DOM_SLOPE_STRONG    = 0.20;  // |book_slope| threshold for DOM confirmation
+    double DOM_MICRO_THRESH    = 0.02;  // microprice_bias threshold (pts) for confirmation
+    double DOM_DRIFT_RELAX_FRAC = 0.40; // when DOM confirms: relax drift_min by 40%
+
     // ── Callbacks ─────────────────────────────────────────────────────────
     using CloseCallback = std::function<void(double exit_px, bool is_long,
                                              double size, const std::string& reason)>;
@@ -132,9 +148,22 @@ public:
     bool has_open_position() const { return pos.active; }
 
     // ── Main tick ─────────────────────────────────────────────────────────
+    // DOM parameters added 2026-04-07:
+    //   book_slope:      weighted bid-ask pressure ratio, -1..+1. >+0.15=buy pressure, <-0.15=sell.
+    //   vacuum_ask:      true when ask side is thin -- upward impulse probable.
+    //   vacuum_bid:      true when bid side is thin -- downward impulse probable.
+    //   microprice_bias: microprice - mid. Positive = price being pushed up.
+    //   rsi14:           M1 RSI(14). Used for reversal detection.
+    //   session_slot:    0-6. Slot 6 = Asia. Used for session-aware thresholds.
     void on_tick(double bid, double ask,
                  double atr, double vol_ratio, double ewm_drift,
-                 bool expansion_regime, int64_t now_ms) {
+                 bool expansion_regime, int64_t now_ms,
+                 double book_slope    = 0.0,
+                 bool   vacuum_ask    = false,
+                 bool   vacuum_bid    = false,
+                 double microprice_bias = 0.0,
+                 double rsi14         = 50.0,
+                 int    session_slot  = 1) {
 
         if (!enabled) return;
         const double mid = (bid + ask) * 0.5;
@@ -147,15 +176,93 @@ public:
 
         if (now_ms < m_cooldown_until) return;
 
-        // Entry gates
-        if (atr < ATR_THRESHOLD)       return;
-        if (vol_ratio < VOL_RATIO_MIN)  return;
-        if (!expansion_regime)          return;
-        if (std::fabs(ewm_drift) < DRIFT_MIN) return;
+        // ── Session-aware threshold selection ────────────────────────────
+        // Asia (slot=6): smaller moves, lower ATR, lower drift.
+        // Tuned to last 2 weeks of Asia activity: $10-25pt spikes, ATR=4-6pt, drift=3-5pt.
+        // London/NY (slot 1-5): original thresholds unchanged -- these sessions
+        // produce larger moves that clear the original bars comfortably.
+        const bool is_asia = (session_slot == 6);
+        const double eff_atr_threshold = is_asia ? ATR_THRESHOLD_ASIA : ATR_THRESHOLD;
+        const double eff_vol_ratio_min = is_asia ? VOL_RATIO_MIN_ASIA : VOL_RATIO_MIN;
+        const double eff_drift_min     = is_asia ? DRIFT_MIN_ASIA     : DRIFT_MIN;
 
+        // ── DOM primer: book_slope / vacuum override ──────────────────────
+        // The DOM gives us a lead indicator that the EWM drift cannot:
+        //   book_slope > DOM_SLOPE_STRONG: buy pressure building, upspike probable
+        //   book_slope < -DOM_SLOPE_STRONG: sell pressure building, downspike probable
+        //   vacuum_ask: thin ask side, price can gap up fast
+        //   vacuum_bid: thin bid side, price can gap down fast
+        //   microprice_bias > DOM_MICRO_THRESH: price being pulled up within spread
+        //
+        // When DOM confirms direction AND drift/ATR are at Asia-level thresholds,
+        // allow entry even if EWM drift hasn't reached the normal minimum yet.
+        // This is the "DOM gives us the primer" -- we see the book clearing before
+        // drift catches up.
+        //
+        // DOM override threshold: relax drift requirement by 40% when DOM confirms.
+        // ATR still required (prevents false entries on dead tape).
+        // vol_ratio still required (prevents entries when baseline is low).
+        const bool dom_long_confirm  = (book_slope > DOM_SLOPE_STRONG)
+                                    || (vacuum_ask && microprice_bias > DOM_MICRO_THRESH);
+        const bool dom_short_confirm = (book_slope < -DOM_SLOPE_STRONG)
+                                    || (vacuum_bid && microprice_bias < -DOM_MICRO_THRESH);
+        // When DOM confirms, relax the drift minimum by DOM_DRIFT_RELAX_FRAC
+        const double dom_drift_relax = (dom_long_confirm || dom_short_confirm)
+            ? (1.0 - DOM_DRIFT_RELAX_FRAC) : 1.0;
+        const double final_drift_min  = eff_drift_min * dom_drift_relax;
+        const double final_atr_min    = eff_atr_threshold;  // ATR gate never relaxed
+        const double final_vol_min    = eff_vol_ratio_min;
+
+        // ── RSI spike confirmation: both directions ───────────────────────
+        // RSI < 35 and FALLING = downspike continuation (SHORT entry)
+        // RSI > 65 and RISING  = upspike continuation (LONG entry)
+        // RSI < 35 and RISING  = reversal bounce (LONG entry, covered in tick_gold.hpp)
+        // RSI > 65 and FALLING = reversal fade (SHORT entry, covered in tick_gold.hpp)
+        // Here we use RSI to CONFIRM the direction of a spike already in progress.
+        // Require RSI extreme ALIGNS with ewm_drift direction.
+        const bool rsi_spike_long  = (rsi14 > 0.0 && rsi14 > 62.0)  // overbought = sustained rally
+                                  && (ewm_drift > 0.0);              // drift confirms up
+        const bool rsi_spike_short = (rsi14 > 0.0 && rsi14 < 38.0)  // oversold = sustained sell
+                                  && (ewm_drift < 0.0);              // drift confirms down
+        // RSI spike confirmation can substitute for expansion_regime in Asia
+        // (supervisor regime classification lags by CONFIRM_TICKS; RSI is live)
+        const bool rsi_confirms_expansion = rsi_spike_long || rsi_spike_short;
+        const bool eff_expansion = expansion_regime || (is_asia && rsi_confirms_expansion);
+
+        // ── Entry gates ──────────────────────────────────────────────────
+        if (atr < final_atr_min)                   return;
+        if (vol_ratio < final_vol_min)             return;
+        if (!eff_expansion)                        return;
+        if (std::fabs(ewm_drift) < final_drift_min) return;
+
+        // Direction: ewm_drift direction (same as before, fully bidirectional)
         const bool is_long = (ewm_drift > 0.0);
+
+        // DOM direction consistency: if DOM gives a strong opposing signal, skip.
+        // Strong book_slope opposing drift = book is absorbing the move, not extending it.
+        if (is_long  && book_slope < -DOM_SLOPE_STRONG * 1.5) return;  // strong sell pressure vs long
+        if (!is_long && book_slope >  DOM_SLOPE_STRONG * 1.5) return;  // strong buy pressure vs short
+
         if ( is_long && now_ms < m_long_block_until)  return;
         if (!is_long && now_ms < m_short_block_until) return;
+
+        // Log what triggered entry for diagnostics
+        if (is_asia || dom_long_confirm || dom_short_confirm || rsi_confirms_expansion) {
+            printf("[MCE%s] TRIGGER %s atr=%.1f(thr=%.1f) drift=%.1f(thr=%.1f) "
+                   "vol=%.1f(thr=%.1f) slot=%d dom_slope=%.2f vac_ask=%d vac_bid=%d "
+                   "rsi=%.1f rsi_exp=%d expansion=%d dom_confirm=%d\n",
+                   shadow_mode ? "-SHADOW" : "",
+                   is_long ? "LONG" : "SHORT",
+                   atr, final_atr_min,
+                   std::fabs(ewm_drift), final_drift_min,
+                   vol_ratio, final_vol_min,
+                   session_slot, book_slope,
+                   (int)vacuum_ask, (int)vacuum_bid,
+                   rsi14, (int)rsi_confirms_expansion,
+                   (int)expansion_regime,
+                   (int)(dom_long_confirm || dom_short_confirm));
+            fflush(stdout);
+        }
 
         // Sizing
         const double scale    = std::min(ATR_SCALE_MAX, std::max(0.5, atr / ATR_NORMAL));

@@ -806,6 +806,20 @@ struct GoldFlowEngine {
         //   Plateau alone (when drift > 0.5*ATR) = momentum stalled at elevated drift
         //
         // NOT applied in EXPANSION regime + vol_ratio > 2.0 (real crashes run further).
+        //
+        // ASIA RSI REVERSAL BYPASS (2026-04-07):
+        //   The exhaust block fires during Asia reversals even when the trade direction
+        //   OPPOSES the prior move drift. Example: after a $13 drop, drift=-8. A LONG
+        //   entry (reversal) has drift_abs=8 which trips drift_overextended. But this
+        //   LONG is a reversal, not a continuation -- we are entering AGAINST the high drift.
+        //
+        //   Fix: bypass exhaust block when signal direction OPPOSES drift direction AND
+        //   RSI confirms reversal from extreme (RSI rising from <38 for LONG, or falling
+        //   from >62 for SHORT). This is the one candle a human operator would see on the
+        //   chart and say "RSI bouncing off 32 = reversal entry."
+        //
+        //   Safety: requires BOTH conditions (opposing drift AND RSI extreme) to prevent
+        //   premature continuation entries on sideways tape with neutral RSI.
         {
             const bool in_expansion = m_expansion_mode && (m_vol_ratio > 2.0);
             if (!in_expansion && m_atr > 0.0) {
@@ -830,9 +844,34 @@ struct GoldFlowEngine {
                     drift_plateau = (drift_abs > m_atr * 0.50) && (prange < m_atr * 0.30);
                 }
 
+                // ASIA RSI REVERSAL BYPASS: signal opposes prior-move drift AND RSI confirms.
+                // drift direction: positive = bullish drift (bearish drift = negative).
+                // long_signal going LONG while drift<0 = reversal entry, not continuation.
+                // RSI gate: 38/62 = ATR-adaptive reversal zone (same formula as rsi_crash_lo/hi
+                // in tick_gold.hpp: 50 ± 6*clamp(ATR/5, 0.5, 3.0)).
+                // At ATR=5: lo=44 hi=56. Relaxed here to 38/62 to catch mid-range reversals
+                // that rsi_crash_lo/hi misses (those thresholds use ATR-scale, this is fixed).
+                // Only bypass EXHAUST BLOCK -- all other gates (VWAP, trend, score) still apply.
+                const bool signal_opposes_drift = (long_signal  && ewm_drift < 0.0)
+                                               || (!long_signal && ewm_drift > 0.0);
+                const bool rsi_reversal_confirm = (long_signal  && m_bar_rsi14 > 0.0 && m_bar_rsi14 < 38.0)
+                                               || (!long_signal && m_bar_rsi14 > 0.0 && m_bar_rsi14 > 62.0);
+                const bool asia_reversal_bypass = signal_opposes_drift && rsi_reversal_confirm;
+
+                if (asia_reversal_bypass) {
+                    // Exhaust block bypassed: reversal entry against stale drift confirmed by RSI
+                    static int64_t s_rev_bypass_log = 0;
+                    if (now_ms - s_rev_bypass_log > 5000) {
+                        s_rev_bypass_log = now_ms;
+                        printf("[GFE-REVERSAL-BYPASS] %s drift=%.2f(stale) rsi=%.1f -- "
+                               "exhaust block bypassed (reversal entry, not continuation)\n",
+                               long_signal ? "LONG" : "SHORT", ewm_drift, m_bar_rsi14);
+                        fflush(stdout);
+                    }
+                }
                 // Block on either: overextended OR plateaued-at-elevation
-                // Log which fired so we can diagnose in shadow
-                if (drift_overextended || drift_plateau) {
+                // Skip block when asia_reversal_bypass confirms this is a counter-drift entry
+                else if (drift_overextended || drift_plateau) {
                     static int64_t s_exhaust_log = 0;
                     if (now_ms - s_exhaust_log > 5000) {
                         s_exhaust_log = now_ms;

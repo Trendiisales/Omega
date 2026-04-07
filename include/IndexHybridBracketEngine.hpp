@@ -201,7 +201,19 @@ public:
         }
 
         if (phase == Phase::PENDING) {
-            if (!can_enter) { cancel_both(); reset_to_idle(); return; }
+            if (!can_enter) {
+                // [BUG-5 FIX] Grace period before cancelling PENDING orders.
+                // Brief spread spikes or momentary gate flips must not cancel valid
+                // resting stop orders at the broker (same fix as GoldHybridBracketEngine).
+                if (m_pending_blocked_since == 0) m_pending_blocked_since = now_s;
+                if ((now_s - m_pending_blocked_since) >= 15) {
+                    printf("[HYBRID-%s] PENDING CANCEL blocked=%llds -- cancelling orders\n",
+                           cfg_.symbol, (long long)(now_s - m_pending_blocked_since));
+                    fflush(stdout);
+                    cancel_both(); reset_to_idle();
+                }
+                return;
+            } else { m_pending_blocked_since = 0; }
             if ((now_s - m_armed_ts) > cfg_.pending_timeout_s) {
                 printf("[HYBRID-%s] PENDING TIMEOUT\n", cfg_.symbol);
                 fflush(stdout);

@@ -744,6 +744,38 @@ static void on_tick_gold(
         const double gf_mid_now    = (bid + ask) * 0.5;
         const double vwap_disp     = (gf_vwap_now > 0.0)
             ? std::fabs(gf_mid_now - gf_vwap_now) : 0.0;
+        // ?? RSI reversal momentum tracking for asia_crash_bypass ??????????????
+        // Track whether RSI has been recovering (rising from below 35 toward above 40,
+        // or falling from above 65 toward below 60). This is the reversal candle visible
+        // on the chart that previously had no code path to enter.
+        //
+        // Simple implementation: store last RSI value, detect direction.
+        // Rise from <35: RSI was oversold and is now recovering = LONG reversal setup.
+        // Fall from >65: RSI was overbought and is now recovering = SHORT reversal setup.
+        // Gate: prior RSI must have been in extreme zone (< 38 or > 62) at some point
+        // within last 60s to prevent false triggers on mid-range RSI oscillations.
+        static double  s_rsi_prev          = 50.0;   // RSI on prior tick
+        static double  s_rsi_extreme_seen  = 50.0;   // most extreme RSI seen in last 60s
+        static int64_t s_rsi_extreme_ts    = 0;       // when extreme was last seen
+        {
+            const int64_t now_rsi_t = static_cast<int64_t>(std::time(nullptr));
+            // Update extreme tracker (60s window)
+            if ((rsi_for_gate > 0.0 && rsi_for_gate < 38.0) || rsi_for_gate > 62.0) {
+                s_rsi_extreme_seen = rsi_for_gate;
+                s_rsi_extreme_ts   = now_rsi_t;
+            } else if (now_rsi_t - s_rsi_extreme_ts > 60) {
+                s_rsi_extreme_seen = 50.0;  // expired
+            }
+        }
+        // RSI reversal: was extreme recently AND now recovering in opposite direction
+        const bool rsi_reversal_long_bypass  = (s_rsi_extreme_seen < 38.0)  // was oversold
+                                            && (rsi_for_gate > s_rsi_prev)  // rising
+                                            && (rsi_for_gate > 30.0);        // not still at rock bottom
+        const bool rsi_reversal_short_bypass = (s_rsi_extreme_seen > 62.0)  // was overbought
+                                            && (rsi_for_gate < s_rsi_prev)  // falling
+                                            && (rsi_for_gate < 70.0);        // not still at peak
+        s_rsi_prev = rsi_for_gate;
+
         const bool asia_crash_bypass =
             // ATR-proportional -- reuses rsi_crash_lo/hi computed from gf_atr_gate above.
             // Normal day (ATR=5): lo=44 hi=56. Crash day (ATR=10): lo=38 hi=62.
@@ -751,7 +783,10 @@ static void on_tick_gold(
             (rsi_for_gate > 0.0 && rsi_for_gate < rsi_crash_lo)
             || (rsi_for_gate > rsi_crash_hi)
             || (drift_for_gate < -drift_bypass_thresh && vwap_disp > 1.5 * gf_atr_gate)
-            || (drift_for_gate >  drift_bypass_thresh && vwap_disp > 1.5 * gf_atr_gate);
+            || (drift_for_gate >  drift_bypass_thresh && vwap_disp > 1.5 * gf_atr_gate)
+            // [2026-04-07] RSI REVERSAL: was extreme, now recovering -- the bounce candle
+            || rsi_reversal_long_bypass
+            || rsi_reversal_short_bypass;
         // Schmitt trigger on asia_trend_ok -- hysteresis prevents flapping.
         // ARM  threshold: 0.5pt drift -- real directional pressure (chop < 0.4 consistently)
         // DISARM threshold: 0.4pt -- tight enough to not linger on retracement
@@ -1429,9 +1464,12 @@ static void on_tick_gold(
     }
 
     // ?? MacroCrashEngine -- always-on macro event capture ????????????????
-    // Fires ONLY when: ATR > 8pt + vol_ratio > 2.5 + expansion regime + |drift| > 6
-    // This is the replacement for GoldFlow's velocity trail logic.
-    // Captures: Apr2-style tariff crashes, Fed spikes, macro surges (50-150pt moves)
+    // Fires on: ATR + vol_ratio + drift thresholds (session-aware: lower in Asia).
+    // DOM primer: book_slope / vacuum / microprice_bias lower drift threshold 40%
+    //   when the DOM is confirming direction before EWM drift catches up.
+    // RSI confirmation: RSI extreme aligning with drift substitutes for expansion_regime
+    //   in Asia (supervisor lags by CONFIRM_TICKS; RSI is live price-based).
+    // Both directions: is_long = (ewm_drift > 0) -- LONG on spikes up, SHORT on crashes.
     // Independent of GoldFlow -- runs 24/7, no session restriction.
     {
         const bool expansion_regime = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
@@ -1442,11 +1480,23 @@ static void on_tick_gold(
                                    && g_gold_stack.base_vol_pct() > 0.0)
                                      ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct()
                                      : 1.0;
+        // DOM signals -- live from g_macro_ctx (updated every cold-path tick from L2 book)
+        const double mce_book_slope     = g_macro_ctx.gold_slope;  // weighted bid-ask pressure
+        const bool   mce_vacuum_ask     = g_macro_ctx.gold_vacuum_ask;  // thin ask = up impulse
+        const bool   mce_vacuum_bid     = g_macro_ctx.gold_vacuum_bid;  // thin bid = down impulse
+        const double mce_microprice     = g_macro_ctx.gold_microprice_bias;
+        const double mce_rsi            = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
         g_macro_crash.on_tick(bid, ask,
             mce_atr, mce_vol_ratio,
             g_gold_stack.ewm_drift(),
             expansion_regime,
-            now_ms_g);
+            now_ms_g,
+            mce_book_slope,
+            mce_vacuum_ask,
+            mce_vacuum_bid,
+            mce_microprice,
+            mce_rsi,
+            g_macro_ctx.session_slot);
     }
     // When stair step 1 banks the first 33% and arms a reload, try_reload()
     // is called every tick until it fires, cancels, or times out (5s).
@@ -2463,6 +2513,58 @@ static void on_tick_gold(
             goto gfe_entry_skip;
         }
         if (g_cfg.goldflow_enabled && gf_tick_ok) {
+            // ?? ASIA REVERSAL DRIFT SNAP -- no prior position required ???????????
+            // Root cause (2026-04-07): the post-close drift reset below only fires when
+            // GFE was previously open (gf_close_ts > 0). When the initial drop happened
+            // without GFE being in the trade, gf_close_ts=0 forever. The drift from the
+            // move it missed stays negative for 150+ ticks -- GFE cannot enter the reversal.
+            //
+            // Fix: when RSI reverses sharply from extreme (<35 rising, or >65 falling),
+            // snap drift and clear persistence immediately regardless of prior position state.
+            //
+            // Gate design (conservative to avoid false snaps on sideways tape):
+            //   1. RSI must cross the reversal zone (< 35 or > 65 on this tick)
+            //   2. RSI must be MOVING in the reversal direction (not just at extreme)
+            //      -- achieved by requiring drift OPPOSES the RSI extreme signal
+            //   3. Asia slot (slot=6) or strong VWAP displacement (>= 8pt)
+            //      -- outside Asia use the existing post-close snap only
+            //   4. GFE has no open position (not managing an existing trade)
+            //   5. One-shot per RSI event (40s cooldown -- RSI can stay extreme many ticks)
+            //   6. Not in GFE cooldown (would fire then immediately block entry)
+            {
+                static int64_t s_asia_rsi_snap_ts = 0;
+                const int64_t now_snap = static_cast<int64_t>(std::time(nullptr));
+                const double snap_rsi    = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+                const double snap_drift  = g_gold_stack.ewm_drift();
+                const bool   in_asia_snap = (g_macro_ctx.session_slot == 6);
+                const double snap_vwap    = g_gold_stack.vwap();
+                const double snap_mid     = (bid + ask) * 0.5;
+                const double snap_vdisp   = (snap_vwap > 0.0) ? std::fabs(snap_mid - snap_vwap) : 0.0;
+                // RSI reversal conditions: RSI extreme + drift opposing (stale from prior move)
+                const bool rsi_reversal_long  = (snap_rsi > 0.0 && snap_rsi < 35.0)
+                                             && (snap_drift < -1.0);  // stale bearish drift blocking LONG
+                const bool rsi_reversal_short = (snap_rsi > 0.0 && snap_rsi > 65.0)
+                                             && (snap_drift >  1.0);  // stale bullish drift blocking SHORT
+                const bool session_ok_snap    = in_asia_snap || (snap_vdisp >= 8.0);
+                const bool gfe_flat           = !g_gold_flow.has_open_position();
+                const bool snap_cooldown_ok   = (now_snap - s_asia_rsi_snap_ts) >= 40;
+                if ((rsi_reversal_long || rsi_reversal_short)
+                    && session_ok_snap
+                    && gfe_flat
+                    && snap_cooldown_ok
+                    && !g_gold_flow.is_in_cooldown()) {
+                    s_asia_rsi_snap_ts = now_snap;
+                    const double snap_reversal_est = std::fabs(snap_drift) * 2.0;  // use drift magnitude as reversal proxy
+                    g_gold_stack.reset_drift_on_reversal(snap_reversal_est);
+                    g_gold_flow.reset_drift_persistence();
+                    printf("[ASIA-RSI-SNAP] RSI=%.1f drift=%.2f -> snap fired (no prior GFE position needed) "
+                           "reversal_est=%.1f slot=%d vdisp=%.1f\n",
+                           snap_rsi, snap_drift, snap_reversal_est,
+                           g_macro_ctx.session_slot, snap_vdisp);
+                    fflush(stdout);
+                }
+            }
+
             // ?? Post-close reversal drift reset ???????????????????????????
             // Problem: ewm_slow (?=0.005) has a 200-tick half-life. After a
             // 60pt DROP it reaches drift?-40. When price then SURGES 80pts,

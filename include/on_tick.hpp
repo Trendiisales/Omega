@@ -280,7 +280,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (h >= 14 && h < 17) g_macro_ctx.session_slot = 4; // NY open
         else if (h >= 17 && h < 22) g_macro_ctx.session_slot = 5; // NY late
         else if (h >= 22 || h < 5)  g_macro_ctx.session_slot = 6; // Asia
-        else                         g_macro_ctx.session_slot = 1; // 05-07 UTC: was dead zone, now London pre-open
+        else                         g_macro_ctx.session_slot = 1; // 05-07 UTC: pre-London (was dead zone/slot=0, now slot=1)
+        // [BUG-1 NOTE] session_slot=0 is INTENTIONALLY NEVER ASSIGNED. The old dead zone (05-07 UTC)
+        // is now treated as London pre-open (slot=1). Any code checking slot==0 (in_dead_zone_slot)
+        // will NEVER fire because slot=0 cannot occur. This is correct and intentional --
+        // the dead zone gate was removed. Internal GoldEngineStack engines that check slot==0
+        // ("UNKNOWN") will also never fire their dead zone blocks, which is correct behaviour.
+        // DO NOT restore slot=0 without auditing all dead-zone gates in GoldEngineStack.hpp.
     }
 
     // Cross-symbol compression state -- engine is in COMPRESSION or BREAKOUT_WATCH
@@ -512,6 +518,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (const L2Book* b = getBook("XAUUSD")) {
             g_macro_ctx.gold_book_slope      = b->book_slope();
             g_macro_ctx.gold_vacuum_ask      = b->liquidity_vacuum_ask();
+            g_macro_ctx.gold_slope           = b->book_slope();  // weighted bid-ask pressure primer for MCE
             g_macro_ctx.gold_vacuum_bid      = b->liquidity_vacuum_bid();
             g_macro_ctx.gold_wall_above      = b->wall_above(g_macro_ctx.gold_mid_price);
             g_macro_ctx.gold_wall_below      = b->wall_below(g_macro_ctx.gold_mid_price);

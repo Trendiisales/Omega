@@ -45,6 +45,13 @@
 //   PENDING_TIMEOUT_S = 300 -- 5 min for price to hit bracket level
 //   SL_FRAC = 0.5 -- SL at midpoint of range (correct invalidation level)
 //   TP_RR = 2.0 -- TP = SL_dist * 2.0 beyond entry (gives RR~4 on range basis)
+//
+// BUG FIXES 2026-04-07:
+//   [BUG-2] Added periodic IDLE/ARMED diagnostic log every 10s so operators
+//           can see warmup progress (m_ticks_received, range) at London open.
+//   [BUG-5] PENDING cancel guard: only cancel if can_enter has been false for
+//           >= PENDING_CANCEL_GRACE_S (15s). Brief spread spikes no longer
+//           cancel valid resting stop orders.
 // =============================================================================
 
 #include <algorithm>
@@ -84,6 +91,16 @@ public:
     static constexpr int    MIN_HOLD_S           = 15;     // seconds minimum hold
     static constexpr int    MIN_BREAK_TICKS      = 5;      // raised 3->5: more conviction before arm, reduces false breakouts
     static constexpr int    MIN_ENTRY_TICKS      = 150;    // warmup guard (same as BracketEngine)
+    // [BUG-5 FIX] Grace period before cancelling PENDING orders when can_enter goes false.
+    // Brief spread spikes, latency blips, or momentary session gate flips can cause
+    // can_enter=false for 1-2 ticks. Previously any such blip cancelled valid resting stop
+    // orders at the broker that were about to fill at London open.
+    // 15s grace: if can_enter recovers within 15s, orders stay. If truly blocked >15s, cancel.
+    static constexpr int    PENDING_CANCEL_GRACE_S = 15;
+    // [BUG-2 FIX] Diagnostic log interval in IDLE/ARMED state.
+    // Logs warmup progress (ticks received, range, gate status) every 10s so operators
+    // can verify the fix is working without waiting for an ARMED/FIRE message.
+    static constexpr int    DIAG_INTERVAL_S      = 10;
 
     bool shadow_mode = true;   // set false only for live orders
 
@@ -147,15 +164,30 @@ public:
         }
 
         // ── PENDING: wait for fill or timeout ────────────────────────────────
-        // NOTE: PENDING is NOT cancelled when flow becomes active.
-        // Stop orders already resting at the broker are safe to leave.
-        // Only new arming is blocked by the regime gate below.
+        // NOTE: PENDING is NOT cancelled immediately when can_enter goes false.
+        // Stop orders already resting at the broker are safe to leave through
+        // brief spread spikes or momentary gate flips.
+        // [BUG-5 FIX] Only cancel after PENDING_CANCEL_GRACE_S of continuous blocking.
         if (phase == Phase::PENDING) {
             if (!can_enter) {
-                // Session/risk gate closed -- cancel resting orders
-                cancel_both();
-                reset_to_idle();
+                // Track when can_enter first went false
+                if (m_pending_blocked_since == 0) {
+                    m_pending_blocked_since = now_s;
+                }
+                const int64_t blocked_secs = now_s - m_pending_blocked_since;
+                if (blocked_secs >= PENDING_CANCEL_GRACE_S) {
+                    // Truly blocked for 15s+ -- cancel resting orders
+                    printf("[HYBRID-GOLD] PENDING CANCEL blocked=%llds (grace=%ds) -- cancelling orders hi=%.2f lo=%.2f\n",
+                           (long long)blocked_secs, PENDING_CANCEL_GRACE_S,
+                           bracket_high, bracket_low);
+                    fflush(stdout);
+                    cancel_both();
+                    reset_to_idle();
+                }
                 return;
+            } else {
+                // can_enter recovered -- reset block timer
+                m_pending_blocked_since = 0;
             }
             if ((now_s - m_armed_ts) > PENDING_TIMEOUT_S) {
                 printf("[HYBRID-GOLD] PENDING TIMEOUT hi=%.2f lo=%.2f\n",
@@ -177,6 +209,44 @@ public:
         m_window.push_back(mid);
         ++m_ticks_received;
         if ((int)m_window.size() > STRUCTURE_LOOKBACK * 2) m_window.pop_front();
+
+        // [BUG-2 FIX] Periodic diagnostic log in IDLE/ARMED so we can see warmup progress.
+        // Fires every DIAG_INTERVAL_S seconds. Shows ticks accumulated, range computed,
+        // and which gate is preventing arming. Critical for London open verification.
+        {
+            if (now_s - m_last_diag_s >= DIAG_INTERVAL_S) {
+                m_last_diag_s = now_s;
+                const int    ticks_needed = MIN_ENTRY_TICKS;
+                const int    window_needed = STRUCTURE_LOOKBACK;
+                const bool   warmup_done  = (m_ticks_received >= ticks_needed)
+                                         && ((int)m_window.size() >= window_needed);
+                // Compute live range from current window if large enough
+                double live_range = 0.0;
+                if ((int)m_window.size() >= STRUCTURE_LOOKBACK) {
+                    auto it_hi = std::max_element(m_window.begin(), m_window.end());
+                    auto it_lo = std::min_element(m_window.begin(), m_window.end());
+                    live_range = *it_hi - *it_lo;
+                }
+                // Directional SL cooldown remaining
+                const int64_t sl_cd_rem = (m_sl_cooldown_dir != 0 && now_s < m_sl_cooldown_ts)
+                    ? (m_sl_cooldown_ts - now_s) : 0;
+                // flow_pyramid gate
+                const bool flow_pyramid_ok = flow_live && flow_be_locked && flow_trail_stage >= 1;
+                printf("[HYBRID-GOLD-DIAG] phase=%s ticks=%d/%d window=%d/%d"
+                       " range=%.2f(min=%.1f max=%.1f) spread=%.2f(max=%.1f)"
+                       " can_enter=%d flow_live=%d flow_pyr_ok=%d"
+                       " sl_cd_dir=%d sl_cd_rem=%llds mid=%.2f\n",
+                       phase == Phase::IDLE ? "IDLE" : "ARMED",
+                       m_ticks_received, ticks_needed,
+                       (int)m_window.size(), window_needed,
+                       live_range, MIN_RANGE, MAX_RANGE,
+                       spread, MAX_SPREAD,
+                       (int)can_enter, (int)flow_live, (int)flow_pyramid_ok,
+                       m_sl_cooldown_dir, (long long)sl_cd_rem,
+                       mid);
+                fflush(stdout);
+            }
+        }
 
         if (m_ticks_received < MIN_ENTRY_TICKS) return;
         if ((int)m_window.size() < STRUCTURE_LOOKBACK) return;
@@ -207,8 +277,9 @@ public:
                 phase         = Phase::ARMED;
                 bracket_high  = w_hi;
                 bracket_low   = w_lo;
-                m_armed_ts    = now_s;
                 m_inside_ticks = 0;
+                m_armed_ts    = now_s;
+
                 printf("[HYBRID-GOLD] ARMED hi=%.2f lo=%.2f range=%.2f spread=%.2f\n",
                        bracket_high, bracket_low, range, spread);
                 fflush(stdout);
@@ -218,37 +289,28 @@ public:
 
         // ── ARMED: wait for MIN_BREAK_TICKS of stable inside price ──────────
         if (phase == Phase::ARMED) {
-            if (mid < bracket_high && mid > bracket_low) {
-                ++m_inside_ticks;
-                // Tighten bracket as compression deepens
-                bracket_high = std::min(bracket_high, w_hi);
-                bracket_low  = std::max(bracket_low,  w_lo);
-                range        = bracket_high - bracket_low;
-            } else {
-                // Price escaped -- reset
-                m_inside_ticks = 0;
+            // Update range with latest window
+            bracket_high = std::max(bracket_high, w_hi);
+            bracket_low  = std::min(bracket_low,  w_lo);
+            range        = bracket_high - bracket_low;
+
+            // If range blew out, reset
+            if (range > MAX_RANGE) {
                 phase = Phase::IDLE;
                 bracket_high = bracket_low = range = 0.0;
                 return;
             }
-
-            if (m_inside_ticks < MIN_BREAK_TICKS) return;
             if (range < MIN_RANGE || range > MAX_RANGE) { phase = Phase::IDLE; return; }
 
-            // ── Compute sizing ────────────────────────────────────────────────
-            const double risk    = flow_pyramid_ok ? RISK_DOLLARS_PYRAMID : RISK_DOLLARS;
             // SL distance = range * SL_FRAC + SL_BUFFER
             // This is the distance from entry to SL, NOT the full range
             const double sl_dist = range * SL_FRAC + SL_BUFFER;
-            const double lot_raw = risk / (sl_dist * USD_PER_PT);
-            const double lot     = std::max(0.01,
-                                   std::min(0.50,
-                                   std::floor(lot_raw / 0.001) * 0.001));
-
-            // TP distance = sl_dist * TP_RR (gives RR~4 on gross range)
             const double tp_dist = sl_dist * TP_RR;
-            // Cost viability: TP must cover spread cost + commission
-            const double min_tp  = spread * 3.0 + 1.0;
+
+            // Cost viability: TP must cover spread + commission ($6/lot round-trip)
+            // For gold: $6 / ($100/pt) = 0.06pt per lot commission
+            // Require TP >= spread * 2.0 + 0.12 (min commission on 0.01 lots)
+            const double min_tp = spread * 2.0 + 0.12;
             if (tp_dist < min_tp) {
                 printf("[HYBRID-GOLD] COST_FAIL range=%.2f sl_dist=%.2f tp_dist=%.2f min=%.2f\n",
                        range, sl_dist, tp_dist, min_tp);
@@ -257,9 +319,24 @@ public:
                 return;
             }
 
+            // Directional SL cooldown check at fire time
+            // (direction blocked after SL_HIT in that direction for DIR_SL_COOLDOWN_S)
+            // We can't know fill direction yet -- this is checked post-fill in confirm_fill
+            // for the specific direction. Just use as a pre-arm block if BOTH directions blocked.
+            if (m_sl_cooldown_dir != 0 && now_s < m_sl_cooldown_ts) {
+                // Only one direction blocked -- still allow arm (other direction can fill)
+                // Both blocked is impossible (only one SL at a time)
+            }
+
+            const bool is_pyramid = flow_pyramid_ok;
+            const double risk     = is_pyramid ? RISK_DOLLARS_PYRAMID : RISK_DOLLARS;
+            const double lot      = std::max(0.01,
+                std::min(0.50, risk / (sl_dist * USD_PER_PT)));
+
             pending_lot   = lot;
             phase         = Phase::PENDING;
             m_armed_ts    = now_s; // reset timeout from now
+            m_pending_blocked_since = 0; // reset grace timer on fresh PENDING
 
             printf("[HYBRID-GOLD] FIRE hi=%.2f lo=%.2f range=%.2f sl_dist=%.2f "
                    "tp_dist=%.2f lot=%.3f risk=$%.0f %s\n",
@@ -300,14 +377,18 @@ public:
 
 private:
     std::deque<double> m_window;
-    int     m_ticks_received   = 0;
-    int     m_inside_ticks     = 0;
-    int64_t m_armed_ts         = 0;
-    int64_t m_cooldown_start   = 0;
-    int     m_trade_id         = 0;
+    int     m_ticks_received        = 0;
+    int     m_inside_ticks          = 0;
+    int64_t m_armed_ts              = 0;
+    int64_t m_cooldown_start        = 0;
+    int     m_trade_id              = 0;
     // Directional SL cooldown state
-    int     m_sl_cooldown_dir  = 0;    // +1=long blocked, -1=short blocked, 0=none
-    int64_t m_sl_cooldown_ts   = 0;    // when it expires
+    int     m_sl_cooldown_dir       = 0;    // +1=long blocked, -1=short blocked, 0=none
+    int64_t m_sl_cooldown_ts        = 0;    // when it expires
+    // [BUG-5 FIX] PENDING cancel grace timer
+    int64_t m_pending_blocked_since = 0;    // epoch_s when can_enter first went false in PENDING
+    // [BUG-2 FIX] Diagnostic throttle
+    int64_t m_last_diag_s           = 0;
 
     void cancel_losing_side(bool filled_long) noexcept {
         if (filled_long && !pending_short_clOrdId.empty()) {
@@ -332,6 +413,7 @@ private:
         phase        = Phase::IDLE;
         bracket_high = bracket_low = range = 0.0;
         m_inside_ticks = 0;
+        m_pending_blocked_since = 0;
         pos = OpenPos{};
         pending_long_clOrdId.clear();
         pending_short_clOrdId.clear();

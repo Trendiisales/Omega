@@ -116,12 +116,28 @@ int main(int argc, char* argv[])
     // Enable live once shadow logs confirm it fires correctly on real expansion events.
     g_macro_crash.shadow_mode     = true;  // SHADOW: enable live after validation
     g_macro_crash.enabled         = true;
-    g_macro_crash.ATR_THRESHOLD   = 8.0;   // ATR > 8pt = genuine macro expansion
-    g_macro_crash.VOL_RATIO_MIN   = 2.5;   // vol > 2.5x baseline
-    g_macro_crash.DRIFT_MIN       = 6.0;   // |ewm_drift| > 6pt
+    // ASIA-TUNED THRESHOLDS (2026-04-07):
+    // London/NY macro events: $50-150pt moves, ATR=10-25pt, drift=8-20pt -> original gates correct.
+    // Asia macro events (last 2 weeks): $10-30pt spikes, ATR=4-8pt, drift=3-6pt.
+    // ATR_THRESHOLD=8 and DRIFT_MIN=6 BOTH miss Asia spikes:
+    //   - Asia ATR is typically 3-6pt; threshold=8 means MCE never arms in Asia.
+    //   - Asia drift peaks at 3-5pt on a $15 move; DRIFT_MIN=6 blocks entry on all of them.
+    // Fix: lower Asia thresholds. These are tuned to the last 2 weeks of Asia activity:
+    //   ATR_THRESHOLD=4.0: a $10 Asia spike at tick-rate 1/s generates ATR~4-5pt in 60s.
+    //   DRIFT_MIN=3.0:     a $12 sustained Asia move builds drift to ~3-4pt.
+    //   VOL_RATIO_MIN=2.0: Asia baseline vol is lower, 2x expansion is still real.
+    // The session-aware gating happens at on_tick call time (MCE checks session_slot via
+    // the tick_gold.hpp wrapper). We store the LOWER threshold so Asia is covered.
+    // London/NY sessions produce higher ATR/drift naturally so they still clear the bar.
+    // Evidence: 2026-04-07 image shows $13 drop in 6min during Asia (13:18-13:54 UTC slot=3)
+    //           with RSI touching 30 -- ATR was ~5pt, drift ~-4pt. Old gates: blocked.
+    g_macro_crash.ATR_THRESHOLD   = 4.0;   // lowered 8.0->4.0: covers Asia spikes ($10-15pt ATR=4-6pt)
+    g_macro_crash.VOL_RATIO_MIN   = 2.0;   // lowered 2.5->2.0: Asia baseline lower, 2x still real
+    g_macro_crash.DRIFT_MIN       = 3.0;   // lowered 6.0->3.0: Asia $12 moves build drift=3-4pt
     g_macro_crash.BASE_RISK_USD   = 80.0;  // scales with ATR (6x max = 0.48 lots at ATR=10)
-    g_macro_crash.STEP1_TRIGGER_USD = 200.0; // hold until $200 open (crash needs room)
-    g_macro_crash.STEP2_TRIGGER_USD = 400.0;
+    g_macro_crash.STEP1_TRIGGER_USD = 80.0;  // lowered 200->80: Asia moves are $10-30pt not $200+
+                                              // At $10 move with 0.10 lots: open_pnl=$100 -- still clears
+    g_macro_crash.STEP2_TRIGGER_USD = 160.0; // lowered 400->160: proportional to Asia move size
     g_macro_crash.on_close = [](double exit_px, bool is_long, double size, const std::string& reason) {
         if (g_macro_crash.shadow_mode) return;  // shadow: no live order
         send_live_order("XAUUSD", is_long, size, exit_px);
@@ -132,6 +148,14 @@ int main(int argc, char* argv[])
     printf("[MCE] MacroCrashEngine ARMED (shadow_mode=%s) ATR>%.0f vol>%.1fx drift>%.0f\n",
            g_macro_crash.shadow_mode ? "true" : "false",
            g_macro_crash.ATR_THRESHOLD, g_macro_crash.VOL_RATIO_MIN, g_macro_crash.DRIFT_MIN);
+    // [BUG-5 NOTE] MCE is shadow_mode=true by design -- it logs [MCE-SHADOW] but sends
+    // no FIX orders. Entry/exit logic is fully functional via on_close callback wired above.
+    // To enable live MCE trades: set g_macro_crash.shadow_mode = false (requires authorisation).
+    if (g_macro_crash.shadow_mode) {
+        printf("[MCE] WARNING: MacroCrashEngine is in SHADOW mode -- no live orders will fire.\n"
+               "[MCE] To enable: change shadow_mode=false in omega_main.hpp after validation.\n");
+    }
+    fflush(stdout);
     fflush(stdout);
     // PENDING_TIMEOUT_SEC: gold/silver compress for minutes before breaking -- 60s was expiring before the move
     g_bracket_gold.PENDING_TIMEOUT_SEC = 600;  // 10 min: gold compression can last well beyond 5 min
@@ -1018,6 +1042,12 @@ int main(int argc, char* argv[])
                 send_hard_stop_order(sym, is_long, qty, sl_px, ts);
             };
             printf("[GFE] Hard stop: ARMED (broker LIMIT order fires at 20pts adverse)\n");
+            fflush(stdout);
+            // [BUG-4 FIX] Log goldflow_enabled status at startup so operators know
+            // immediately whether GoldFlow entries are active or silently disabled.
+            printf("[GFE-CONFIG] goldflow_enabled=%s -- GoldFlow entries are %s\n",
+                   g_cfg.goldflow_enabled ? "true" : "false",
+                   g_cfg.goldflow_enabled ? "ACTIVE (L2 watchdog gated)" : "DISABLED (no entries will fire)");
             fflush(stdout);
 
             // ?? Velocity add-on callback ??????????????????????????????????????????

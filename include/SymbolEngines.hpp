@@ -96,6 +96,7 @@ struct MacroContext {
     double      gold_mid_price  = 0.0;   // needed for wall_above/below context
     bool        gold_wall_above = false;
     bool        gold_wall_below = false;
+    double      gold_slope      = 0.0;   // L2Book::book_slope() weighted bid-ask pressure -1..+1
     bool        sp_wall_above   = false;
     bool        sp_wall_below   = false;
 
