@@ -193,7 +193,7 @@ int main(int argc, char* argv[])
     //   TRAIL_DIST=0.5   -> tight trail to lock small wins
     //   COOLDOWN=15s     -> fast scalp engine, more opportunities
     //   MAX_HOLD=45s     -> force exit if move stalls, don't overstay
-    g_micro_momentum.enabled           = true;
+    g_micro_momentum.enabled           = false;  // DISABLED pending backtest
     g_micro_momentum.shadow_mode       = true;
     g_micro_momentum.ENTRY_DISP_PTS    = 0.0;
     g_micro_momentum.RSI_DELTA_MIN     = 6.0;
