@@ -90,6 +90,7 @@ public:
     static constexpr int    PENDING_TIMEOUT_S    = 300;    // seconds waiting for fill
     static constexpr int    MIN_HOLD_S           = 15;     // seconds minimum hold
     static constexpr int    MIN_BREAK_TICKS      = 5;      // raised 3->5: more conviction before arm, reduces false breakouts
+    static constexpr int    SHADOW_BREAK_TICKS   = 3;      // consecutive ticks past level before shadow fill (prevents whipsaw)
     static constexpr int    MIN_ENTRY_TICKS      = 150;    // warmup guard (same as BracketEngine)
     // [BUG-5 FIX] Grace period before cancelling PENDING orders when can_enter goes false.
     // Brief spread spikes, latency blips, or momentary session gate flips can cause
@@ -198,9 +199,26 @@ public:
                 return;
             }
             // Shadow fill simulation
+            // Require SHADOW_BREAK_TICKS consecutive ticks outside level before fill.
+            // Prevents whipsaw: London sweep touches bracket_high for 1 tick then reverses.
+            // Real stop orders don't fill on a 1-tick spike -- this matches real behaviour.
             if (shadow_mode) {
-                if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot); return; }
-                if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot); return; }
+                if (ask >= bracket_high) {
+                    ++m_shadow_break_ticks_hi;
+                    m_shadow_break_ticks_lo = 0;
+                    if (m_shadow_break_ticks_hi >= SHADOW_BREAK_TICKS) {
+                        confirm_fill(true, bracket_high, pending_lot); return;
+                    }
+                } else if (bid <= bracket_low) {
+                    ++m_shadow_break_ticks_lo;
+                    m_shadow_break_ticks_hi = 0;
+                    if (m_shadow_break_ticks_lo >= SHADOW_BREAK_TICKS) {
+                        confirm_fill(false, bracket_low, pending_lot); return;
+                    }
+                } else {
+                    m_shadow_break_ticks_hi = 0;
+                    m_shadow_break_ticks_lo = 0;
+                }
             }
             return;
         }
@@ -383,6 +401,9 @@ private:
     int64_t m_armed_ts              = 0;
     int64_t m_cooldown_start        = 0;
     int     m_trade_id              = 0;
+    // Shadow fill break confirmation counters (prevents whipsaw fills on 1-tick spikes)
+    int     m_shadow_break_ticks_hi = 0;    // consecutive ticks with ask >= bracket_high
+    int     m_shadow_break_ticks_lo = 0;    // consecutive ticks with bid <= bracket_low
     // Directional SL cooldown state
     int     m_sl_cooldown_dir       = 0;    // +1=long blocked, -1=short blocked, 0=none
     int64_t m_sl_cooldown_ts        = 0;    // when it expires
@@ -414,6 +435,8 @@ private:
         phase        = Phase::IDLE;
         bracket_high = bracket_low = range = 0.0;
         m_inside_ticks = 0;
+        m_shadow_break_ticks_hi = 0;
+        m_shadow_break_ticks_lo = 0;
         m_pending_blocked_since = 0;
         pos = OpenPos{};
         pending_long_clOrdId.clear();
