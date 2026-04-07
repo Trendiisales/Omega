@@ -783,8 +783,9 @@ protected:
         tr.sl            = pos.sl;
         tr.size          = pos.size;
         tr.pnl           = (pos.is_long ? (exit_px - pos.entry)
-                                        : (pos.entry - exit_px)) * pos.size;
-        tr.mfe           = pos.mfe;
+                                        : (pos.entry - exit_px)) * pos.size * 100.0;  // USD
+        tr.net_pnl       = tr.pnl;
+        tr.mfe           = pos.mfe * pos.size * 100.0;
         tr.mae           = pos.mae;
         tr.entryTs       = pos.entry_ts;
         tr.exitTs        = nowSec();
