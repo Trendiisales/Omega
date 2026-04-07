@@ -6,9 +6,20 @@
 #  Usage: .\OMEGA_STATUS.ps1
 # ==============================================================================
 
-$LogFile  = "C:\Omega\logs\latest.log"
-$VerFile  = "C:\Omega\include\version_generated.hpp"
 $OmegaDir = "C:\Omega"
+$VerFile  = "C:\Omega\include\version_generated.hpp"
+
+# Resolve live log: prefer latest.log if fresh (<60s), else dated log
+$LogFile  = "$OmegaDir\logs\latest.log"
+$DatedLog = "$OmegaDir\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
+if (Test-Path $LogFile) {
+    $age = (Get-Date) - (Get-Item $LogFile).LastWriteTime
+    if ($age.TotalSeconds -gt 60 -and (Test-Path $DatedLog)) {
+        $LogFile = $DatedLog
+    }
+} elseif (Test-Path $DatedLog) {
+    $LogFile = $DatedLog
+}
 
 function Hdr($text) {
     Write-Host ""

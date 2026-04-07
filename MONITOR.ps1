@@ -17,9 +17,20 @@ param(
     [string] $Filter   = ""
 )
 
-$LogFile = "$OmegaDir\logs\latest.log"
+# Resolve live log: prefer latest.log if fresh (<60s), else fall back to today's dated log
+$LogFile   = "$OmegaDir\logs\latest.log"
+$DatedLog  = "$OmegaDir\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
 
-if (-not (Test-Path $LogFile)) {
+if (Test-Path $LogFile) {
+    $age = (Get-Date) - (Get-Item $LogFile).LastWriteTime
+    if ($age.TotalSeconds -gt 60 -and (Test-Path $DatedLog)) {
+        Write-Host "  [WARN] latest.log stale ($([int]$age.TotalSeconds)s) -- using dated log instead" -ForegroundColor Yellow
+        $LogFile = $DatedLog
+    }
+} elseif (Test-Path $DatedLog) {
+    Write-Host "  [WARN] latest.log not found -- using dated log" -ForegroundColor Yellow
+    $LogFile = $DatedLog
+} else {
     Write-Host "Log not found: $LogFile" -ForegroundColor Red
     exit 1
 }

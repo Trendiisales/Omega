@@ -244,33 +244,55 @@ if ($svc) {
 }
 
 # ── POST-LAUNCH VERIFICATION ─────────────────────────────────────────────────
-# Wait for engine to write its startup log lines, then run OMEGA_STATUS.ps1
-# to verify the correct binary is running and all systems are connected.
-# This is MANDATORY -- do not skip. If hash mismatches, the wrong binary is running.
 Write-Host ""
-Write-Host "  Waiting 20s for engine startup..." -ForegroundColor DarkGray
-$waited = 0
-while ($waited -lt 20) {
+Write-Host "  Waiting for engine startup and live log..." -ForegroundColor DarkGray
+
+$logPath    = "$OmegaDir\logs\latest.log"
+$stdoutPath = "$OmegaDir\logs\omega_service_stdout.log"
+$waited     = 0
+$logLive    = $false
+
+while ($waited -lt 30) {
     Start-Sleep -Seconds 1
     $waited++
-    # Check if RUNNING COMMIT line has appeared in log
-    $logPath = "$OmegaDir\logs\latest.log"
+
+    # Check latest.log exists and has RUNNING COMMIT
     if (Test-Path $logPath) {
-        $commitLine = Get-Content $logPath | Select-String "RUNNING COMMIT" | Select-Object -Last 1
-        if ($commitLine) {
-            Write-Host "  Engine log confirmed after ${waited}s" -ForegroundColor Green
-            break
+        $lines = Get-Content $logPath -ErrorAction SilentlyContinue
+        if ($lines | Select-String "RUNNING COMMIT") {
+            # Now verify it is ACTIVELY being written -- check file age
+            $age = (Get-Date) - (Get-Item $logPath).LastWriteTime
+            if ($age.TotalSeconds -lt 15) {
+                Write-Host "  [OK] latest.log is live (age=$([int]$age.TotalSeconds)s, confirmed after ${waited}s)" -ForegroundColor Green
+                $logLive = $true
+                break
+            }
         }
     }
     if ($waited % 5 -eq 0) { Write-Host "  Still waiting... (${waited}s)" -ForegroundColor DarkGray }
 }
 
-# Extract running hash -- check latest.log first, then service stdout log
+if (-not $logLive) {
+    # latest.log not live -- check if dated log is being written instead
+    $datedLog = "$OmegaDir\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
+    if (Test-Path $datedLog) {
+        $datedAge = (Get-Date) - (Get-Item $datedLog).LastWriteTime
+        if ($datedAge.TotalSeconds -lt 15) {
+            Write-Host "  [WARN] latest.log stale but dated log is live ($datedLog)" -ForegroundColor Yellow
+            Write-Host "         latest.log fix not yet deployed -- restart again after this build" -ForegroundColor Yellow
+            $logPath = $datedLog  # use dated log for hash check below
+        } else {
+            Write-Host "  [!!] BOTH latest.log AND dated log are stale -- engine may have crashed" -ForegroundColor Red
+            Write-Host "       Check: Get-Service OmegaHFT" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "  [!!] latest.log never created -- tee buffer failed to open" -ForegroundColor Red
+        Write-Host "       Check NSSM stdout: $stdoutPath" -ForegroundColor Red
+    }
+}
+
+# Extract running hash
 $runningHash = "NOT_FOUND"
-$logPath     = "$OmegaDir\logs\latest.log"
-$stdoutPath  = "$OmegaDir\logs\omega_service_stdout.log"
-# latest.log: RUNNING COMMIT prints via printf before file logger opens
-# so check the first 30 lines (startup block) AND full file
 foreach ($checkPath in @($logPath, $stdoutPath)) {
     if (Test-Path $checkPath) {
         $lines = Get-Content $checkPath -ErrorAction SilentlyContinue
