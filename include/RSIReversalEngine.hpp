@@ -334,8 +334,9 @@ private:
         tr.exitPrice   = exit_px;
         tr.sl          = pos.sl;
         tr.size        = pos.size;
-        tr.pnl         = pnl / 100.0;
-        tr.mfe         = pos.mfe * pos.size;
+        tr.pnl         = pnl;               // already USD: pts*size*100
+        tr.net_pnl     = tr.pnl;
+        tr.mfe         = pos.mfe * pos.size * 100.0;
         tr.mae         = 0.0;
         tr.entryTs     = pos.entry_ts;
         tr.exitTs      = now_s;
