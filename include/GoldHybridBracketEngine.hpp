@@ -300,10 +300,18 @@ public:
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
 
-        // Trail once in profit
-        const double trail_dist = range * TRAIL_FRAC;
+        // Trail: MFE-proportional -- tightens as move grows, locks in more profit
+        // trail_dist = min(range * TRAIL_FRAC, mfe * 0.20)
+        //   Small move (2pt): min(1.5, 0.4) = 0.4pt trail -- locks 80% of move
+        //   Medium move (6pt): min(1.5, 1.2) = 1.2pt trail -- locks 80% of move
+        //   Large move (15pt): min(1.5, 3.0) = 1.5pt trail -- range caps it
+        // This ensures we capture ~80% of MFE rather than giving back the entire move
         if (move > 0) {
-            const double trail_sl = pos.is_long ? (mid - trail_dist) : (mid + trail_dist);
+            const double mfe_trail = pos.mfe * 0.20;
+            const double range_trail = range * TRAIL_FRAC;
+            const double trail_dist = (mfe_trail > 0.0) ? std::min(range_trail, mfe_trail) : range_trail;
+            const double trail_sl = pos.is_long ? (pos.entry + pos.mfe - trail_dist)
+                                                : (pos.entry - pos.mfe + trail_dist);
             if (pos.is_long  && trail_sl > pos.sl) pos.sl = trail_sl;
             if (!pos.is_long && trail_sl < pos.sl) pos.sl = trail_sl;
         }
