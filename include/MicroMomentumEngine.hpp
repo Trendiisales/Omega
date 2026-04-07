@@ -91,6 +91,18 @@ public:
 
     bool has_open_position() const noexcept { return pos.active; }
 
+    // Seed tick ATR from bar ATR so SL is correctly sized from first entry.
+    // Without this, m_tick_atr starts at spread (~2.2pt) and SL_ATR_MULT=1.5
+    // gives only 3.3pt SL -- correct. With cold tick ATR it was 0.5*0.5=0.25pt.
+    // Call this every tick from tick_gold when bar ATR is available.
+    void seed_bar_atr(double bar_atr) noexcept {
+        if (bar_atr > 0.5 && bar_atr < 100.0) {
+            m_tick_atr  = bar_atr;
+            m_atr_init  = true;
+        }
+    }
+    double current_atr() const noexcept { return m_tick_atr; }
+
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
     // ── Main tick ──────────────────────────────────────────────────────────────
