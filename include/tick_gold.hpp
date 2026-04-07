@@ -1516,7 +1516,6 @@ static void on_tick_gold(
         const bool rsi_rev_can_enter =
             !g_rsi_reversal.has_open_position()
             && tradeable
-            && (g_macro_ctx.session_slot != 0)
             && !in_ny_close_noise
             && !g_bracket_gold.has_open_position()
             && !(g_gold_stack.has_open_position() && !gs_winning)
@@ -1576,7 +1575,6 @@ static void on_tick_gold(
         const bool mm_can_enter =
             !g_micro_momentum.has_open_position()
             && tradeable
-            && (g_macro_ctx.session_slot != 0)
             && !in_ny_close_noise
             && !g_bracket_gold.has_open_position()
             && !(g_gold_stack.has_open_position() && !gs_winning)
