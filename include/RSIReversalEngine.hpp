@@ -161,7 +161,8 @@ private:
     bool    m_rsi_init      = false;
     int     m_rsi_count     = 0;
     double  m_rsi_last_mid  = 0.0;
-    std::deque<double> m_rsi_gains;  // seed window
+    std::deque<double> m_rsi_gains;  // seed gains
+    std::deque<double> m_rsi_losses; // seed losses
 
     // ── Tick ATR state ────────────────────────────────────────────────────────
     double  m_tick_atr      = 0.0;
@@ -185,23 +186,21 @@ private:
         const double loss = change < 0.0 ? -change : 0.0;
 
         if (!m_rsi_init) {
-            // Collect RSI_PERIOD samples to seed
+            // Collect RSI_PERIOD samples of both gains and losses for proper seed
             m_rsi_gains.push_back(gain);
-            if ((int)m_rsi_gains.size() < RSI_PERIOD) {
-                // Also need losses -- use deque for gains, recompute losses inline
-                return;
+            m_rsi_losses.push_back(loss);
+            if ((int)m_rsi_gains.size() < RSI_PERIOD) return;
+            // Seed avg gain and avg loss from first RSI_PERIOD ticks (Wilder standard)
+            double sum_g = 0.0, sum_l = 0.0;
+            for (int i = 0; i < RSI_PERIOD; ++i) {
+                sum_g += m_rsi_gains[i];
+                sum_l += m_rsi_losses[i];
             }
-            // Seed: avg of first RSI_PERIOD changes
-            // Recompute from stored gains (we stored gain only -- approximate seed)
-            // Better: keep separate deque for losses
-            // Actually keep last RSI_PERIOD mid prices and recompute
-            m_rsi_avg_gain = gain;  // approximation -- first real value
-            m_rsi_avg_loss = loss;
-            for (int i = 0; i < (int)m_rsi_gains.size() - 1; ++i) {
-                m_rsi_avg_gain = (m_rsi_avg_gain * (RSI_PERIOD - 1) + m_rsi_gains[i]) / RSI_PERIOD;
-            }
+            m_rsi_avg_gain = sum_g / RSI_PERIOD;
+            m_rsi_avg_loss = sum_l / RSI_PERIOD;
             m_rsi_init = true;
             m_rsi_gains.clear();
+            m_rsi_losses.clear();
         } else {
             m_rsi_avg_gain = (m_rsi_avg_gain * (RSI_PERIOD - 1) + gain) / RSI_PERIOD;
             m_rsi_avg_loss = (m_rsi_avg_loss * (RSI_PERIOD - 1) + loss) / RSI_PERIOD;
