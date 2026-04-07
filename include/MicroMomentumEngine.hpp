@@ -121,12 +121,29 @@ public:
 
         // ── Signal: RSI slope + price displacement must agree ─────────────────
         const double rsi_slope = m_rsi_slope;       // EWM of RSI change/tick
-        const double disp      = mid - m_anchor;    // displacement from fast anchor
+        const double disp      = mid - m_anchor;    // displacement from slower anchor
 
-        const bool long_signal  = (rsi_slope >  RSI_SLOPE_MIN)
-                                && (disp      >  ENTRY_DISP_PTS);
-        const bool short_signal = (rsi_slope < -RSI_SLOPE_MIN)
-                                && (disp      < -ENTRY_DISP_PTS);
+        // RSI must not already be overextended -- if RSI>70 for a LONG signal,
+        // the move has already happened and we are entering at exhaustion.
+        // Valid entry zone: LONG when RSI 45-68 (rising from neutral, not extreme)
+        //                   SHORT when RSI 32-55 (falling from neutral, not extreme)
+        const bool rsi_not_exhausted_long  = (m_tick_rsi > 45.0 && m_tick_rsi < 68.0);
+        const bool rsi_not_exhausted_short = (m_tick_rsi > 32.0 && m_tick_rsi < 55.0);
+
+        // Slope must be ACCELERATING (slope increasing) not just positive.
+        // m_rsi_slope_prev tracks previous slope value.
+        // Entering when slope is decelerating = catching the end of the move.
+        const bool slope_accel_long  = (rsi_slope > RSI_SLOPE_MIN)
+                                    && (rsi_slope >= m_rsi_slope_prev * 0.8); // not rapidly decelerating
+        const bool slope_accel_short = (rsi_slope < -RSI_SLOPE_MIN)
+                                    && (rsi_slope <= m_rsi_slope_prev * 0.8);
+
+        const bool long_signal  = slope_accel_long
+                                && (disp > ENTRY_DISP_PTS)
+                                && rsi_not_exhausted_long;
+        const bool short_signal = slope_accel_short
+                                && (disp < -ENTRY_DISP_PTS)
+                                && rsi_not_exhausted_short;
 
         if (!long_signal && !short_signal) return;
 
@@ -171,13 +188,16 @@ private:
     static constexpr int RSI_PERIOD = 14;
 
     // RSI slope: EWM of per-tick RSI change (α=0.4 = reacts in ~2 ticks)
-    double  m_rsi_slope     = 0.0;
+    double  m_rsi_slope      = 0.0;
+    double  m_rsi_slope_prev = 0.0;  // previous slope for acceleration check
     static constexpr double SLOPE_ALPHA = 0.4;
 
-    // Price anchor: fast EWM of mid (α=0.25 = ~3-tick memory)
+    // Price anchor: medium EWM of mid (α=0.08 = ~11-tick memory)
+    // Slower anchor means displacement only registers after price has moved
+    // consistently for ~10+ ticks -- prevents firing at exhaustion of a 2-tick spike
     double  m_anchor        = 0.0;
     bool    m_anchor_init   = false;
-    static constexpr double ANCHOR_ALPHA = 0.25;
+    static constexpr double ANCHOR_ALPHA = 0.08;
 
     // Tick ATR: EWM of |price change|
     double  m_tick_atr      = 0.0;
@@ -238,6 +258,7 @@ private:
 
         // RSI slope: EWM of per-tick change
         const double raw_slope = m_tick_rsi - m_rsi_prev;
+        m_rsi_slope_prev = m_rsi_slope;  // save before updating
         m_rsi_slope = SLOPE_ALPHA * raw_slope + (1.0 - SLOPE_ALPHA) * m_rsi_slope;
     }
 
