@@ -1498,35 +1498,23 @@ static void on_tick_gold(
             mce_rsi,
             g_macro_ctx.session_slot);
     }
-    // ?? RSIReversalEngine -- direct RSI extreme entries (LONG<35, SHORT>65) ????
-    // Bypasses regime system entirely -- RSI is the signal, not z-score proxy.
-    // Reads real M1 RSI from g_bars_gold. Shadow mode by default.
-    // Both Asia and London/NY sessions covered (dead zone 05-07 UTC blocked internally).
+    // ?? RSIReversalEngine -- tick-level RSI entries, no bar dependency ????????
+    // Computes its own RSI(14) from mid price on every tick.
+    // No bars_ready gate, no bar RSI, fires as soon as tick RSI reaches extreme.
+    // Entry: RSI<42=LONG, RSI>58=SHORT (catches 5pt moves, not just 20pt+ crashes)
     {
-        const double rsi_rev_rsi  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-        const double rsi_rev_atr  = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
-        const bool   rsi_rev_rdy  = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
-        const double rsi_rev_vwap = g_gold_stack.vwap();
-
-        // Position management -- always runs when open
+        // Position management -- always runs when open (no gate)
         if (g_rsi_reversal.has_open_position()) {
             g_rsi_reversal.on_tick(bid, ask,
-                rsi_rev_rsi, rsi_rev_atr, rsi_rev_rdy,
-                rsi_rev_vwap, g_macro_ctx.session_slot,
-                now_ms_g, bracket_on_close);
+                g_macro_ctx.session_slot, now_ms_g, bracket_on_close);
         }
 
-        // Entry -- own lightweight gate, NOT gated by gold_can_enter.
-        // RSIReversalEngine bypasses the regime system by design.
-        // gold_can_enter includes gold_post_impulse_block (fires 20s after moves)
-        // and symbol_gate risk checks that are not relevant for a tight RSI engine.
-        // Own gate: no other XAUUSD position open + tradeable + not dead zone + not NY close noise.
+        // Entry gate: no other XAUUSD position open + tradeable + not dead zone
         const bool rsi_rev_can_enter =
             !g_rsi_reversal.has_open_position()
             && tradeable
-            && lat_ok
-            && (g_macro_ctx.session_slot != 0)   // not dead zone
-            && !in_ny_close_noise                 // not NY close
+            && (g_macro_ctx.session_slot != 0)
+            && !in_ny_close_noise
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
             && !g_gold_flow.has_open_position()
@@ -1537,9 +1525,7 @@ static void on_tick_gold(
         if (rsi_rev_can_enter) {
 
             g_rsi_reversal.on_tick(bid, ask,
-                rsi_rev_rsi, rsi_rev_atr, rsi_rev_rdy,
-                rsi_rev_vwap, g_macro_ctx.session_slot,
-                now_ms_g, bracket_on_close);
+                g_macro_ctx.session_slot, now_ms_g, bracket_on_close);
 
             if (g_rsi_reversal.has_open_position()) {
                 // Size using standard risk engine -- same as GoldFlow sizing
