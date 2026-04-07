@@ -53,19 +53,52 @@ Banner "OMEGA  |  RESTART + REBUILD"
 # ── [1/13] Stop ──────────────────────────────────────────────────────────────
 Step 1 13 "Stopping Omega..."
 $ErrorActionPreference = "Continue"
+
+# Step 1a: Stop service gracefully first
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -eq "Running") {
+    Write-Host "      Stopping $ServiceName service..." -ForegroundColor DarkGray
     Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 3
+    # Wait up to 15s for service to reach Stopped state
+    $svcWait = 0
+    while ($svcWait -lt 15) {
+        Start-Sleep -Seconds 1; $svcWait++
+        $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        if ($svc.Status -eq "Stopped") { break }
+    }
+    Write-Host "      Service state: $($svc.Status) (after ${svcWait}s)" -ForegroundColor DarkGray
 }
+
+# Step 1b: Force-kill the process regardless
 taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 1
+
+# Step 1c: Kill any survivors
 Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
-$still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
-if ($still) { $still | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 3 }
+Start-Sleep -Seconds 1
+
+# Step 1d: CONFIRM dead -- hard loop, fail if process survives 20s
+# This is the critical check that was missing. The singleton mutex in Omega
+# can persist several seconds after NSSM sends the stop signal. If we
+# start the service while the old process still holds the mutex, the new
+# exe hits ERROR_ALREADY_EXISTS and exits immediately -- service fails to start.
+Write-Host "      Confirming Omega.exe is gone..." -ForegroundColor DarkGray
+$killWait = 0
+while ($killWait -lt 20) {
+    $proc = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+    if (-not $proc) { break }
+    Write-Host "      Still running (PID $($proc.Id)) -- waiting..." -ForegroundColor Yellow
+    $proc | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+    $killWait++
+}
+$finalCheck = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if ($finalCheck) {
+    FAIL "Omega.exe still running after 20s kill attempts (PID $($finalCheck.Id)) -- cannot proceed"
+}
+
 $ErrorActionPreference = "Stop"
-OK "Stopped"
+OK "Stopped and confirmed dead"
 
 # ── [2/13] Pull ──────────────────────────────────────────────────────────────
 Step 2 13 "Pulling origin/main..."
@@ -189,11 +222,19 @@ $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc) {
     Write-Host "  Starting $ServiceName service..." -ForegroundColor Cyan
     Start-Service $ServiceName
-    Start-Sleep -Seconds 3
-    $svc = Get-Service -Name $ServiceName
+
+    # Wait up to 30s for service to reach Running state
+    # Do not rely on a fixed sleep -- service startup time varies 3-15s
+    $startWait = 0
+    while ($startWait -lt 30) {
+        Start-Sleep -Seconds 1; $startWait++
+        $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        if ($svc.Status -eq "Running") { break }
+        Write-Host "      Waiting for service... ($startWait s) state=$($svc.Status)" -ForegroundColor DarkGray
+    }
     $col = if ($svc.Status -eq "Running") { "Green" } else { "Red" }
-    Write-Host "  Service status: $($svc.Status)" -ForegroundColor $col
-    if ($svc.Status -ne "Running") { FAIL "$ServiceName service failed to start" }
+    Write-Host "  Service status: $($svc.Status) (after ${startWait}s)" -ForegroundColor $col
+    if ($svc.Status -ne "Running") { FAIL "$ServiceName failed to reach Running state after 30s" }
     OK "Omega running as service"
 } else {
     Write-Host "  Launching directly (Ctrl+C to stop)..." -ForegroundColor Cyan
