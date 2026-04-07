@@ -174,11 +174,26 @@ int main(int argc, char* argv[])
     fflush(stdout);
 
     // MicroMomentumEngine startup config
+    // FIX 2026-04-07: engine was never firing due to three compounding gates:
+    //   1. ENTRY_DISP_PTS=1.0: EWM anchor α=0.15 tracks price too fast -- disp
+    //      stays near 0 perpetually on a steady trend. Removed (set to 0.0) --
+    //      RSI delta is sufficient directional confirmation.
+    //   2. RSI_DELTA_MIN=8.0: Wilder RSI(14) over 10 ticks only moves 3-5 units
+    //      on a steady trend. Lowered to 3.0 -- catches all clear directional moves.
+    //   3. BORDERLINE_DELTA=14.0: with RSI_DELTA_MIN=8, ALL entries fell in the
+    //      8-14 borderline zone requiring book_slope confirmation. BlackBull synthetic
+    //      L2 book_slope hovers near 0, blocking every entry. Set BORDERLINE_DELTA=3.0
+    //      (equals RSI_DELTA_MIN) so the borderline zone is empty -- no entries require
+    //      slope confirmation. DOM wall/imbalance gates still apply.
+    //   4. L2 tolerance widened (0.40/0.60) for synthetic BlackBull feed.
     g_micro_momentum.enabled           = true;
     g_micro_momentum.shadow_mode       = true;   // SHADOW -- watch [MICROMOM-SHADOW] logs
-    g_micro_momentum.ENTRY_DISP_PTS    = 1.0;   // 1.0pt displacement from anchor to trigger
-    g_micro_momentum.RSI_DELTA_MIN     = 8.0;   // RSI must move 8 units over window
+    g_micro_momentum.ENTRY_DISP_PTS    = 0.0;   // DISABLED: anchor α=0.15 too fast, kills disp signal
+    g_micro_momentum.RSI_DELTA_MIN     = 3.0;   // lowered 8.0->3.0: Wilder RSI only moves 3-5 units/10ticks on trend
     g_micro_momentum.RSI_DELTA_WINDOW  = 10;    // ticks for RSI delta measurement
+    g_micro_momentum.BORDERLINE_DELTA  = 3.0;   // = RSI_DELTA_MIN: no entries in borderline zone (slope gate disabled)
+    g_micro_momentum.L2_LONG_MIN       = 0.40;  // widened 0.45->0.40: BlackBull synthetic L2 ~0.50 neutral
+    g_micro_momentum.L2_SHORT_MAX      = 0.60;  // widened 0.55->0.60: matches L2_LONG_MIN symmetry
     g_micro_momentum.TP_PTS            = 4.0;   // 4pt TP = $40 at 0.10 lots
     g_micro_momentum.SL_ATR_MULT       = 0.5;   // SL = 0.5x tick ATR
     g_micro_momentum.BE_TRIGGER_PTS    = 1.0;   // breakeven at 1.0pt profit
