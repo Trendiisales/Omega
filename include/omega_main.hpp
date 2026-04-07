@@ -27,12 +27,8 @@ int main(int argc, char* argv[])
               << "  Commit:  " << OMEGA_COMMIT  << "\n"
               << "=======================================================\n"
               << "\033[0m";
-    // Print to stderr AND stdout -- stdout goes to latest.log, stderr to service log
+    // Print to stderr for service log
     std::fprintf(stderr, "[OMEGA] version=%s built=%s\n", OMEGA_VERSION, OMEGA_BUILT);
-    // CRITICAL: print hash to stdout so it appears in latest.log on every restart.
-    // This is the single source of truth for what binary is running.
-    std::printf("[OMEGA] RUNNING COMMIT: %s built=%s\n", OMEGA_VERSION, OMEGA_BUILT);
-    std::fflush(stdout);
 
     std::signal(SIGINT,  sig_handler);
     std::signal(SIGTERM, sig_handler);
@@ -1423,6 +1419,11 @@ int main(int argc, char* argv[])
             std::cout.rdbuf(g_tee_buf);
             std::cerr.rdbuf(g_tee_buf);
             std::cout << "[OMEGA] Log: " << g_tee_buf->current_path() << "\n";
+            // RUNNING COMMIT here so it goes into latest.log via the tee buffer.
+            // Previously this was printed via std::printf before tee opened -- went to
+            // NSSM stdout only, never to latest.log. Now it goes to both.
+            std::cout << "[OMEGA] RUNNING COMMIT: " << OMEGA_VERSION << " built=" << OMEGA_BUILT << "\n";
+            std::cout.flush();
         }
     }
 
