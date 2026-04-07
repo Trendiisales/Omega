@@ -194,8 +194,8 @@ int main(int argc, char* argv[])
     g_micro_momentum.BORDERLINE_DELTA  = 3.0;   // = RSI_DELTA_MIN: no entries in borderline zone (slope gate disabled)
     g_micro_momentum.L2_LONG_MIN       = 0.40;  // widened 0.45->0.40: BlackBull synthetic L2 ~0.50 neutral
     g_micro_momentum.L2_SHORT_MAX      = 0.60;  // widened 0.55->0.60: matches L2_LONG_MIN symmetry
-    g_micro_momentum.TP_PTS            = 4.0;   // 4pt TP = $40 at 0.10 lots
-    g_micro_momentum.SL_ATR_MULT       = 0.5;   // SL = 0.5x tick ATR
+    g_micro_momentum.TP_PTS            = 6.0;   // raised 4->6pt: wider SL needs wider TP to keep R:R >= 4:1
+    g_micro_momentum.SL_ATR_MULT       = 1.5;   // raised 0.5->1.5: 0.5*spread(2.2)=1.1pt was hit in 3s on volatile tape
     g_micro_momentum.BE_TRIGGER_PTS    = 1.0;   // breakeven at 1.0pt profit
     g_micro_momentum.LOCK_TRIGGER_PTS  = 2.0;   // lock +1pt at 2.0pt profit
     g_micro_momentum.TRAIL_DIST_PTS    = 1.0;   // trail 1.0pt behind once locked
