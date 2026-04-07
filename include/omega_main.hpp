@@ -31,7 +31,7 @@ int main(int argc, char* argv[])
     std::fprintf(stderr, "[OMEGA] version=%s built=%s\n", OMEGA_VERSION, OMEGA_BUILT);
     // CRITICAL: print hash to stdout so it appears in latest.log on every restart.
     // This is the single source of truth for what binary is running.
-    std::printf("[OMEGA] RUNNING COMMIT: %s built=%s\n", OMEGA_COMMIT, OMEGA_BUILT);
+    std::printf("[OMEGA] RUNNING COMMIT: %s built=%s\n", OMEGA_VERSION, OMEGA_BUILT);
     std::fflush(stdout);
 
     std::signal(SIGINT,  sig_handler);
