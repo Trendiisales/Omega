@@ -217,7 +217,7 @@ static void on_tick_gold(
         gmtime_s(&ti_ny, &t_ny);
         const int mins_utc = ti_ny.tm_hour * 60 + ti_ny.tm_min;
         return (mins_utc >= 1320 && mins_utc < 1330)  // 22:00-22:10 UTC NY close
-            || (mins_utc >= 0    && mins_utc < 15);   // 00:00-00:15 UTC Sydney open
+            || (mins_utc >= 0    && mins_utc < 5);    // 00:00-00:05 UTC Sydney open (was 15min -- too long)
     }();
     // ATR-proportional gate thresholds computed at function top (see above).
     const double rsi_for_gate   = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
@@ -2191,10 +2191,19 @@ static void on_tick_gold(
                 // Hard block: contracting vol + VWAP opposing signal direction
                 const bool vwap_opposing  = (gf_long_g4  && vwap_dir == -1)
                                          || (!gf_long_g4 && vwap_dir == +1);
-                if (gf_tick_ok && atr_contract && vwap_opposing) {
+                // RSI extreme bypass: when RSI is at an extreme (oversold LONG or
+                // overbought SHORT), the ATR contraction is the consolidation AFTER
+                // the move, not during it. Gate4D should not block recovery entries
+                // at RSI bottoms/tops -- these are exactly the MR/GoldFlow setups
+                // that need to fire. Use same rsi_crash_lo/hi thresholds.
+                const double gate4d_rsi = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+                const bool gate4d_rsi_extreme = (gate4d_rsi > 0.0)
+                    && ((gf_long_g4  && gate4d_rsi < rsi_crash_lo)   // oversold LONG
+                     || (!gf_long_g4 && gate4d_rsi > rsi_crash_hi)); // overbought SHORT
+                if (gf_tick_ok && atr_contract && vwap_opposing && !gate4d_rsi_extreme) {
                     printf("[GF-BAR-BLOCK] XAUUSD %s blocked GATE4D_ATR_CONTRACT_VWAP_OPPOSE"
-                           " atr_slope=%.3f atr_con=1 vwap_dir=%+d\n",
-                           gf_long_g4 ? "LONG" : "SHORT", atr_slope, vwap_dir);
+                           " atr_slope=%.3f atr_con=1 vwap_dir=%+d rsi=%.1f\n",
+                           gf_long_g4 ? "LONG" : "SHORT", atr_slope, vwap_dir, gate4d_rsi);
                     fflush(stdout);
                     gf_tick_ok = false;
                     gf_block_reason = "GATE4D_ATR_CONTRACT_VWAP_OPPOSE";
