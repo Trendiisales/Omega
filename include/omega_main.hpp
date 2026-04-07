@@ -293,10 +293,19 @@ int main(int argc, char* argv[])
     g_orb_estx50.RANGE_WINDOW_MIN = 15; // 15-min range
     g_orb_estx50.TP_PCT = 0.10;  g_orb_estx50.SL_PCT = 0.06;  // ESTX50 TP/SL similar to GER40
     // VWAPReversionEngine params -- per-instrument tuning
-    // Indices: 0.20% extension threshold, 180s cooldown (fast mean-reversion)
-    g_vwap_rev_sp.EXTENSION_THRESH_PCT    = 0.20; g_vwap_rev_sp.COOLDOWN_SEC    = 180;
-    g_vwap_rev_nq.EXTENSION_THRESH_PCT    = 0.20; g_vwap_rev_nq.COOLDOWN_SEC    = 180;
-    g_vwap_rev_ger40.EXTENSION_THRESH_PCT = 0.20; g_vwap_rev_ger40.COOLDOWN_SEC = 180;
+    // Indices: raised 0.20->0.40% -- USTEC at $24000: 0.20%=$48 fires on noise.
+    // 0.40%=$96 requires a genuine VWAP dislocation not a 2-tick wiggle.
+    // MAX_EXTENSION raised 0.80->1.20%: prevents blocking real dislocations.
+    // MAX_HOLD raised 900->600s: exit stalled trades faster (was holding 15min losers).
+    g_vwap_rev_sp.EXTENSION_THRESH_PCT    = 0.35; g_vwap_rev_sp.COOLDOWN_SEC    = 300;
+    g_vwap_rev_sp.MAX_EXTENSION_PCT       = 1.20;
+    g_vwap_rev_sp.MAX_HOLD_SEC            = 600;
+    g_vwap_rev_nq.EXTENSION_THRESH_PCT    = 0.40; g_vwap_rev_nq.COOLDOWN_SEC    = 300;
+    g_vwap_rev_nq.MAX_EXTENSION_PCT       = 1.20;
+    g_vwap_rev_nq.MAX_HOLD_SEC            = 600;
+    g_vwap_rev_ger40.EXTENSION_THRESH_PCT = 0.30; g_vwap_rev_ger40.COOLDOWN_SEC = 300;
+    g_vwap_rev_ger40.MAX_EXTENSION_PCT    = 1.00;
+    g_vwap_rev_ger40.MAX_HOLD_SEC         = 600;
     // EURUSD: 0.12% extension threshold (FX moves more precisely, smaller range)
     g_vwap_rev_eurusd.EXTENSION_THRESH_PCT = 0.12; g_vwap_rev_eurusd.COOLDOWN_SEC = 120;
     // ?? NBM London session engines (07:00-13:30 UTC) ????????????????????????????
