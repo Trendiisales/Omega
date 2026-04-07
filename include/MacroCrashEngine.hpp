@@ -47,6 +47,7 @@
 #include <functional>
 #include <string>
 #include <algorithm>
+#include "OmegaTradeLedger.hpp"
 #include <array>
 
 namespace omega {
@@ -108,6 +109,11 @@ public:
     using CloseCallback = std::function<void(double exit_px, bool is_long,
                                              double size, const std::string& reason)>;
     CloseCallback on_close;
+
+    // Fires on every close (shadow AND live) -- builds TradeRecord and calls handle_closed_trade.
+    // Wire in omega_main.hpp: g_macro_crash.on_trade_record = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+    using TradeRecordCallback = std::function<void(const omega::TradeRecord&)>;
+    TradeRecordCallback on_trade_record;
 
     // ── Base position ──────────────────────────────────────────────────────
     struct Position {
@@ -321,6 +327,7 @@ private:
     int64_t m_short_block_until = 0;
     double  m_last_px           = 0.0;
     double  m_last_atr          = 0.0;
+    int     m_trade_id          = 0;
 
     static double _rl(double x) { return std::round(x / 0.001) * 0.001; }
 
@@ -348,7 +355,8 @@ private:
                        shadow_mode ? "SHADOW" : "LIVE",
                        pos.bracket_tp, bpnl, pos.size);
                 fflush(stdout);
-                if (on_close && !shadow_mode)
+                // Shadow: always call on_close to simulate the partial close in GUI
+                if (on_close)
                     on_close(pos.bracket_tp, pos.is_long, pos.bracket_size, "BRACKET_TP");
             }
         }
@@ -381,7 +389,7 @@ private:
                 if (!pos.be_locked) { pos.sl = pos.entry; pos.be_locked = true; }
                 printf("[MCE] STEP1 banked %.3f @ %.2f pnl=$%.0f sl->BE\n", qty, ex, p);
                 fflush(stdout);
-                if (on_close && !shadow_mode) on_close(ex, pos.is_long, qty, "PARTIAL_1");
+                if (on_close) on_close(ex, pos.is_long, qty, "PARTIAL_1");  // shadow: simulate
             }
         }
 
@@ -396,7 +404,7 @@ private:
                 pos.partial2_done = true;
                 printf("[MCE] STEP2 banked %.3f @ %.2f pnl=$%.0f\n", qty, ex, p);
                 fflush(stdout);
-                if (on_close && !shadow_mode) on_close(ex, pos.is_long, qty, "PARTIAL_2");
+                if (on_close) on_close(ex, pos.is_long, qty, "PARTIAL_2");  // shadow: simulate
             }
         }
 
@@ -527,8 +535,33 @@ private:
             if (pos.is_long)  m_long_block_until  = now_ms + 60000;
             else              m_short_block_until = now_ms + 60000;
         }
-        if (on_close && !shadow_mode)
+        // Shadow: always call on_close so trade appears in GUI with correct costs
+        if (on_close)
             on_close(exit_px, pos.is_long, pos.size, reason);
+
+        // Build TradeRecord and call on_trade_record -- logs to ledger/GUI/CSV
+        // This fires in BOTH shadow and live mode so shadow trades appear in
+        // the GUI Recent Trades panel with correct costs, exactly like live trades.
+        if (on_trade_record) {
+            omega::TradeRecord tr;
+            tr.symbol      = "XAUUSD";
+            tr.side        = pos.is_long ? "LONG" : "SHORT";
+            tr.engine      = "MacroCrash";
+            tr.regime      = "EXPANSION";
+            tr.entryPrice  = pos.entry;
+            tr.exitPrice   = exit_px;
+            tr.sl          = pos.sl;
+            tr.size        = pos.full_size;  // original full size
+            tr.pnl         = ppts * pos.full_size;  // raw price points * full_size
+            tr.mfe         = pos.mfe * pos.full_size;
+            tr.mae         = 0.0;
+            tr.entryTs     = static_cast<int64_t>(pos.entry_ms / 1000);
+            tr.exitTs      = static_cast<int64_t>(now_ms / 1000);
+            tr.exitReason  = reason;
+            tr.spreadAtEntry = 0.0;
+            tr.id          = ++m_trade_id;
+            on_trade_record(tr);
+        }
 
         pos.active        = false;
         pyramid_add_count = 0;

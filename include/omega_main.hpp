@@ -145,6 +145,11 @@ int main(int argc, char* argv[])
                is_long ? "LONG" : "SHORT", size, exit_px, reason.c_str());
         fflush(stdout);
     };
+    // Wire trade record callback -- fires in BOTH shadow and live.
+    // This is what makes MCE trades appear in GUI, ledger, and CSV with correct costs.
+    g_macro_crash.on_trade_record = [](const omega::TradeRecord& tr) {
+        handle_closed_trade(tr);
+    };
     printf("[MCE] MacroCrashEngine ARMED (shadow_mode=%s) ATR>%.0f vol>%.1fx drift>%.0f\n",
            g_macro_crash.shadow_mode ? "true" : "false",
            g_macro_crash.ATR_THRESHOLD, g_macro_crash.VOL_RATIO_MIN, g_macro_crash.DRIFT_MIN);
