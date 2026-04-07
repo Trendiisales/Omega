@@ -142,6 +142,16 @@ Step 6 7 "Copying exe + cleaning state files..."
 Copy-Item $BuildExe $OmegaExe -Force
 OK "Omega.exe copied from build\Release\"
 
+# Copy config to root so binary finds it at launch (binary runs from C:\Omega,
+# looks for "omega_config.ini" in cwd -- must be in root, not config\ subdir)
+Copy-Item $ConfigIni "$OmegaDir\omega_config.ini" -Force
+OK "omega_config.ini copied to C:\Omega\ (binary working directory)"
+
+# Copy symbols.ini to root
+$ErrorActionPreference = "Continue"
+Copy-Item "$OmegaDir\symbols.ini" "$OmegaDir\symbols.ini" -ErrorAction SilentlyContinue
+$ErrorActionPreference = "Stop"
+
 # Delete poisoned bar_failed file -- causes bars to never seed on restart
 $barFailed = "$OmegaDir\logs\ctrader_bar_failed.txt"
 if (Test-Path $barFailed) {
