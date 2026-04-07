@@ -1559,20 +1559,15 @@ static void on_tick_gold(
                 g_macro_ctx.session_slot, now_ms_g, bracket_on_close);
         }
 
-        // Entry gate: no other gold position + tradeable + not dead zone
-        // MicroMomentum: same rule -- NOT blocked by winning GoldFlow/GoldStack.
-        // Small scalp alongside profitable trend = fine. Blocked when flat/losing.
+        // Entry gate: STANDALONE -- only blocked by its own open position,
+        // tradeable flag, and NY close noise. No other engine can block this.
+        // MicroMomentum is a fast 3pt scalp with its own spread/RSI/cooldown
+        // gates inside the engine. It runs independently alongside any other
+        // open position. Blocking it on other engines was wrong and is removed.
         const bool mm_can_enter =
             !g_micro_momentum.has_open_position()
             && tradeable
-            && !in_ny_close_noise
-            && !g_bracket_gold.has_open_position()
-            && !(g_gold_stack.has_open_position() && !gs_winning)
-            && !(gf_open && !gf_winning)
-            && !g_trend_pb_gold.has_open_position()
-            && !g_hybrid_gold.has_open_position()
-            && !g_rsi_reversal.has_open_position()
-            && !g_nbm_gold_london.has_open_position();
+            && !in_ny_close_noise;
 
         if (mm_can_enter) {
             g_micro_momentum.on_tick(bid, ask,
