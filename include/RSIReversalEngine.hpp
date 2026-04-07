@@ -317,9 +317,9 @@ private:
     {
         const double pnl = (pos.is_long
             ? (exit_px - pos.entry)
-            : (pos.entry - exit_px)) * pos.size * 100.0;
+            : (pos.entry - exit_px)) * pos.size;
 
-        printf("[RSI-REV] EXIT %s @ %.2f reason=%s pnl=%.2f mfe=%.2f\n",
+        printf("[RSI-REV] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f\n",
                pos.is_long ? "LONG" : "SHORT",
                exit_px, reason, pnl, pos.mfe);
         fflush(stdout);
@@ -334,9 +334,9 @@ private:
         tr.exitPrice   = exit_px;
         tr.sl          = pos.sl;
         tr.size        = pos.size;
-        tr.pnl         = pnl;               // already USD: pts*size*100
+        tr.pnl         = pnl;               // raw pts*lots -- handle_closed_trade applies tick_mult
         tr.net_pnl     = tr.pnl;
-        tr.mfe         = pos.mfe * pos.size * 100.0;
+        tr.mfe         = pos.mfe * pos.size;
         tr.mae         = 0.0;
         tr.entryTs     = pos.entry_ts;
         tr.exitTs      = now_s;
