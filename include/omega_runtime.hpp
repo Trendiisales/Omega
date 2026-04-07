@@ -385,6 +385,32 @@ private:
             const std::string msg = "[OMEGA-LOG-FAIL] Cannot open log: " + current_path_ + "\n";
             if (orig_) orig_->sputn(msg.c_str(), (std::streamsize)msg.size());
         }
+        // Always update latest.log to point at the current dated log.
+        // All monitoring scripts (VERIFY_STARTUP, RESTART_OMEGA, MONITOR) read
+        // latest.log -- without this they read a stale file from a previous run.
+        // On Windows we use a hard copy updated at open time. Not a symlink
+        // (requires elevated privileges on Windows by default).
+        // We use a redirect file containing the current log path so scripts
+        // can resolve it, AND we create a hard link / copy-on-rotate.
+        // Simplest reliable approach: write current_path_ to latest.log as a
+        // real file that gets appended to alongside the dated log.
+        // Actually: open latest.log in TRUNCATE mode and redirect writes there too.
+        const std::string latest_path = log_dir_ + "/latest.log";
+        {
+            // Delete and recreate as a copy/hard link to the dated file.
+            // On Windows, create_hard_link requires same volume (always true here).
+            // If hard link fails (e.g. file already open), fall back to a symlink stub.
+            std::error_code ec2;
+            fs::remove(fs::path(latest_path), ec2);
+            fs::create_hard_link(fs::path(current_path_), fs::path(latest_path), ec2);
+            if (ec2) {
+                // Hard link failed -- write a redirect stub so scripts know where to look
+                std::ofstream stub(latest_path, std::ios::trunc);
+                if (stub.is_open()) {
+                    stub << "[OMEGA-LOG-REDIRECT] " << current_path_ << "\n";
+                }
+            }
+        }
         purge_old_logs();
     }
 
