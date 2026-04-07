@@ -100,31 +100,26 @@ if ($finalCheck) {
 $ErrorActionPreference = "Stop"
 OK "Stopped and confirmed dead"
 
-# ── POST-KILL: exclude ALL runtime-written files from git reset ──────────────
-# Any file the engine writes at runtime must be skip-worktree so git reset
-# never tries to touch it. We enumerate ALL tracked files under logs/ plus
-# known state files and mark every single one. This runs every restart so
-# new files added by the engine are always covered.
+# ── POST-KILL: clean runtime-written files so git reset never blocks ─────────
+# 1. git checkout -- <file> restores each to committed state (cleans dirty index)
+# 2. git update-index --skip-worktree prevents engine writes from dirtying it again
+# Both steps required -- skip-worktree alone does not fix an already-dirty file.
 $ErrorActionPreference = "Continue"
-$trackedFiles = git ls-files logs/ 2>&1
-if ($trackedFiles) {
-    $trackedFiles | ForEach-Object {
-        if ($_.Trim() -ne "") {
-            git update-index --skip-worktree $_.Trim() 2>&1 | Out-Null
-        }
-    }
+$runtimePatterns = @("logs/", "*.dat", "*.csv", "*.txt")
+$runtimeFiles = @()
+foreach ($pat in $runtimePatterns) {
+    $found = git ls-files $pat 2>$null
+    if ($found) { $runtimeFiles += $found }
 }
-# Also cover root-level state/dat files the engine writes
-$stateFiles = git ls-files "*.dat" "*.csv" "*.txt" 2>&1
-if ($stateFiles) {
-    $stateFiles | ForEach-Object {
-        if ($_.Trim() -ne "") {
-            git update-index --skip-worktree $_.Trim() 2>&1 | Out-Null
-        }
-    }
+foreach ($rf in $runtimeFiles) {
+    $rf = $rf.Trim()
+    if ($rf -eq "") { continue }
+    git checkout -- $rf 2>$null | Out-Null
+    git update-index --skip-worktree $rf 2>$null | Out-Null
 }
 $ErrorActionPreference = "Stop"
-OK "All runtime files excluded from git reset (skip-worktree)"
+OK "All runtime files restored and excluded from git reset"
+
 
 # ── [2/13] Pull ──────────────────────────────────────────────────────────────
 # GUARANTEED FRESH PULL:
