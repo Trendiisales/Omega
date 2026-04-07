@@ -753,18 +753,26 @@ static void on_tick_gold(
             || (drift_for_gate < -drift_bypass_thresh && vwap_disp > 1.5 * gf_atr_gate)
             || (drift_for_gate >  drift_bypass_thresh && vwap_disp > 1.5 * gf_atr_gate);
         // Schmitt trigger on asia_trend_ok -- hysteresis prevents flapping.
-        // Lowered arm threshold 2.5->1.2: log shows drift reaching -1.7 during
-        // a 125pt crash. Old 2.5 threshold never fired. 1.2 fires on real moves.
-        // OFF threshold kept at 0.6 (was 1.5) -- tighter so it doesn't linger.
+        // ARM  threshold: 0.5pt drift -- real directional pressure (chop < 0.4 consistently)
+        // DISARM threshold: 0.4pt -- tight enough to not linger on retracement
         static thread_local bool s_asia_trend_armed = false;
-        // Lowered arm threshold 0.8->0.5: drift 0.5+ is a real move on Asia tape.
-        // Old 0.8 never fired on quiet Asia (drift 0.2-0.5). 0.5 aligns with
-        // GFE_DRIFT_FALLBACK_THRESHOLD so both gates arm at the same drift level.
-        // OFF threshold lowered 0.6->0.4 -- prevents hair-trigger disarm on small retracements.
         if      (gold_ewm_drift_abs >= 0.5) s_asia_trend_armed = true;
         else if (gold_ewm_drift_abs <  0.4) s_asia_trend_armed = false;
+
+        // FIX 2026-04-07: add tick-based emergency bypasses for asia_trend_ok.
+        // asia_crash_bypass uses rsi_crash_lo/hi (ATR-proportional) which requires
+        // warmed ATR. Add two independent bypasses that work from live tick data:
+        //   a) VWAP displacement >= 6pt -- price has left fair value, trend is real
+        //   b) EWM drift magnitude >= 2.0 -- strong sustained directional pressure
+        // These fire even when bars are stale/frozen and rsi_crash_lo/hi is at default.
+        const double asia_trend_vwap_disp = (gf_vwap_now > 0.0)
+            ? std::fabs(gf_mid_now - gf_vwap_now) : 0.0;
+        const bool asia_tick_bypass = (vwap_disp >= 6.0)
+                                   || (gold_ewm_drift_abs >= 2.0);
+
         const bool asia_trend_ok = !in_asia_slot
             || asia_crash_bypass
+            || asia_tick_bypass
             || s_asia_trend_armed;
 
         // London open noise guard: 07:00-07:15 UTC -- first 15min of London open
@@ -2970,12 +2978,27 @@ static void on_tick_gold(
         }
         // New entry -- only when no other gold position open AND market is genuinely compressing.
         // vol_range gate: hybrid bracket needs real compression, not noise oscillation.
-        // 1.5pt MIN_RANGE was too low -- 3.7pt brackets were forming during sideways chop
-        // and getting SL-hit immediately as price oscillated within the range.
         // Require vol_range >= 2.0pt: confirms the market HAS been compressing recently.
-        // vol_range=0 means bars not seeded yet (cold start) -- always block in that case.
-        const double hybrid_vol_range = g_gold_stack.vol_range();
-        const bool   hybrid_vol_ok    = (hybrid_vol_range >= 2.0);
+        // FIX 2026-04-07: add bypass when vol_range is stale (bars frozen/cold-start).
+        // vol_range=0 previously blocked ALL hybrid entries on startup -- even during
+        // genuine 30pt moves. Now: bypass when macro displacement > $6 from VWAP OR
+        // drift > 2.0 (unambiguous directional move regardless of bar state).
+        // This is the "allow trades to happen" fallback -- if price is clearly moving
+        // and compression range forms, let the hybrid bracket arm.
+        const double hybrid_vol_range  = g_gold_stack.vol_range();
+        const bool   hybrid_vol_unseeded = (hybrid_vol_range == 0.0);
+        const double hybrid_vwap        = g_gold_stack.vwap();
+        const double hybrid_mid         = (bid + ask) * 0.5;
+        const double hybrid_vwap_disp   = (hybrid_vwap > 0.0)
+            ? std::fabs(hybrid_mid - hybrid_vwap) : 0.0;
+        // Macro bypass: strong move visible even without bar history
+        const bool hybrid_macro_bypass  = (hybrid_vwap_disp >= 6.0)
+                                       || (std::fabs(g_gold_stack.ewm_drift()) >= 2.0)
+                                       || crash_impulse_bypass;
+        // vol_ok: normal path OR unseeded-but-macro-move
+        const bool hybrid_vol_ok = (hybrid_vol_range >= 2.0)
+                                || (hybrid_vol_unseeded && hybrid_macro_bypass)
+                                || (!hybrid_vol_unseeded && hybrid_macro_bypass);
         const bool hybrid_can_enter =
             gold_can_enter
             && hybrid_vol_ok
