@@ -245,8 +245,14 @@ static void on_tick_us500(
         }
 
         // New entry gate: no other US500.F position open
+        // US indices only trade London + NY sessions (slots 1-5, 07:00-22:00 UTC).
+        // Asia (slot 6, 22:00-05:00 UTC) has no US index price discovery.
+        // Evidence: NAS100 LONG 00:16 UTC SL -$24.78 (Asia drift noise armed bracket).
+        const bool idx_session_ok = (g_macro_ctx.session_slot >= 1 &&
+                                     g_macro_ctx.session_slot <= 5);
         const bool hybrid_sp_can_enter =
             base_can_sp
+            && idx_session_ok
             && !g_eng_sp.pos.active
             && !g_bracket_sp.pos.active
             && !g_orb_us.has_open_position()
@@ -492,6 +498,7 @@ static void on_tick_ustec(
 
         const bool hybrid_nq_can_enter =
             base_can_nq
+            && idx_session_ok
             && !g_eng_nq.pos.active
             && !g_bracket_nq.pos.active
             && !g_vwap_rev_nq.has_open_position()
@@ -611,6 +618,7 @@ static void on_tick_dj30(
 
         const bool hybrid_us30_can_enter =
             base_can_us30
+            && idx_session_ok
             && !g_eng_us30.pos.active
             && !g_bracket_us30.pos.active
             && !g_nbm_us30.has_open_position()
@@ -812,6 +820,7 @@ static void on_tick_nas100(
 
         const bool hybrid_nas_can_enter =
             base_can_nas
+            && idx_session_ok
             && !g_eng_nas100.pos.active
             && !g_bracket_nas100.pos.active
             && !g_nbm_nas.has_open_position()
