@@ -1510,14 +1510,17 @@ static void on_tick_gold(
         }
 
         // Entry gate: no other XAUUSD position open + tradeable + not dead zone
+        // RSIReversal: NOT blocked when GoldFlow/GoldStack are in a winning trail.
+        // A profitable GoldFlow trend trade + a small RSI scalp are uncorrelated.
+        // Blocked only when those engines are losing/flat (risk management).
         const bool rsi_rev_can_enter =
             !g_rsi_reversal.has_open_position()
             && tradeable
             && (g_macro_ctx.session_slot != 0)
             && !in_ny_close_noise
             && !g_bracket_gold.has_open_position()
-            && !g_gold_stack.has_open_position()
-            && !g_gold_flow.has_open_position()
+            && !(g_gold_stack.has_open_position() && !gs_winning)
+            && !(gf_open && !gf_winning)
             && !g_trend_pb_gold.has_open_position()
             && !g_hybrid_gold.has_open_position()
             && !g_nbm_gold_london.has_open_position();
@@ -1568,14 +1571,16 @@ static void on_tick_gold(
         }
 
         // Entry gate: no other gold position + tradeable + not dead zone
+        // MicroMomentum: same rule -- NOT blocked by winning GoldFlow/GoldStack.
+        // Small scalp alongside profitable trend = fine. Blocked when flat/losing.
         const bool mm_can_enter =
             !g_micro_momentum.has_open_position()
             && tradeable
             && (g_macro_ctx.session_slot != 0)
             && !in_ny_close_noise
             && !g_bracket_gold.has_open_position()
-            && !g_gold_stack.has_open_position()
-            && !g_gold_flow.has_open_position()
+            && !(g_gold_stack.has_open_position() && !gs_winning)
+            && !(gf_open && !gf_winning)
             && !g_trend_pb_gold.has_open_position()
             && !g_hybrid_gold.has_open_position()
             && !g_rsi_reversal.has_open_position()
