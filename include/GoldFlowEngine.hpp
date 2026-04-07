@@ -403,6 +403,8 @@ struct GoldFlowEngine {
         // a structurally unavailable feed (different broker). Drift fallback caused
         // massive overtrading when depth feed dropped today (10+ losses vs 3 on Friday).
         const bool l2_data_live = (std::fabs(l2_imb - 0.5) > 0.001);
+    m_last_l2_imb  = l2_data_live ? l2_imb : 0.5;
+    m_last_l2_live = l2_data_live;
         // Track whether L2 was ever live this session -- if it was and now isn't, block
         if (l2_data_live) {
             m_l2_was_live = true;
@@ -1517,6 +1519,8 @@ private:
     bool    m_continuation_mode = false;
     int64_t m_continuation_expires_ms = 0; // ms timestamp when mode expires
     int     m_last_session_slot = -1;
+    double  m_last_l2_imb      = 0.5;
+    bool    m_last_l2_live     = false;
     double  m_bar_rsi14     = 50.0; // M1 RSI(14) -- updated by set_bar_context()
     int     m_bar_trend     = 0;    // M5 trend state: +1=uptrend, -1=downtrend, 0=neutral
     double  m_bar_bb_pct    = 0.5;  // M1 Bollinger %B -- 0=lower band, 1=upper band
@@ -1700,7 +1704,9 @@ private:
         m_spread_at_entry = spread;
         pos.size         = size;
         pos.mfe          = 0.0;
-        pos.atr_at_entry = atr_floored;
+        pos.atr_at_entry     = atr_floored;
+        pos.l2_imb_at_entry  = m_last_l2_imb;
+        pos.l2_live_at_entry = m_last_l2_live;
         pos.be_locked        = false;
         pos.trail_stage      = 0;
         pos.stage2_tight     = false;
@@ -2606,7 +2612,9 @@ private:
         tr.exitReason   = reason;
         tr.engine       = "GoldFlowEngine";
         tr.regime       = "FLOW";
-        tr.spreadAtEntry = m_spread_at_entry;
+        tr.spreadAtEntry   = m_spread_at_entry;
+        tr.l2_imbalance    = pos.l2_imb_at_entry;
+        tr.l2_live         = pos.l2_live_at_entry;
 
         const double held_s = (double)(now_ms / 1000 - pos.entry_ts);
 
