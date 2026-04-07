@@ -142,7 +142,13 @@ static omega::MacroCrashEngine    g_macro_crash;
 // LONG when RSI < 35, SHORT when RSI > 65, ATR-based SL + trail
 // shadow_mode=true until 30 live shadow trades validate Asia WR
 #include "RSIReversalEngine.hpp"
-static omega::RSIReversalEngine   g_rsi_reversal;  // always-on macro event engine
+static omega::RSIReversalEngine   g_rsi_reversal;
+
+// MicroMomentumEngine -- fast 4-8pt momentum capture
+// RSI slope + price displacement, both directions, all sessions
+// shadow_mode=true until validated
+#include "MicroMomentumEngine.hpp"
+static omega::MicroMomentumEngine g_micro_momentum;  // always-on macro event engine
 // Reload instance: independent GoldFlowEngine for continuation entries.
 // Fires after g_gold_flow banks PARTIAL_1R and confirms price still moving.
 // Managed exactly like g_gold_flow but never arms its own reload (avoids cascade).

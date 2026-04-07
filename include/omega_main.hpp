@@ -173,6 +173,23 @@ int main(int argc, char* argv[])
            g_rsi_reversal.SL_ATR_MULT);
     fflush(stdout);
 
+    // MicroMomentumEngine startup config
+    g_micro_momentum.enabled        = true;
+    g_micro_momentum.shadow_mode    = true;    // SHADOW -- watch [MICROMOM-SHADOW] logs
+    g_micro_momentum.ENTRY_DISP_PTS = 1.5;    // 1.5pt displacement from anchor to trigger
+    g_micro_momentum.RSI_SLOPE_MIN  = 0.4;    // RSI must change 0.4 units/tick (EWM)
+    g_micro_momentum.TP_PTS         = 3.0;    // 3pt TP = $30 at 0.10 lots
+    g_micro_momentum.SL_ATR_MULT    = 0.4;    // SL = 0.4x tick ATR
+    g_micro_momentum.COOLDOWN_S     = 45;     // 45s between trades
+    g_micro_momentum.MAX_HOLD_S     = 300;    // 5 min hard exit
+    printf("[MICROMOM] MicroMomentumEngine configured "
+           "(shadow_mode=%s disp=%.1fpt rsi_slope=%.1f tp=%.1fpt)\n",
+           g_micro_momentum.shadow_mode ? "true" : "false",
+           g_micro_momentum.ENTRY_DISP_PTS,
+           g_micro_momentum.RSI_SLOPE_MIN,
+           g_micro_momentum.TP_PTS);
+    fflush(stdout);
+
     // [BUG-5 NOTE] MCE is shadow_mode=true by design -- it logs [MCE-SHADOW] but sends
     // no FIX orders. Entry/exit logic is fully functional via on_close callback wired above.
     // To enable live MCE trades: set g_macro_crash.shadow_mode = false (requires authorisation).

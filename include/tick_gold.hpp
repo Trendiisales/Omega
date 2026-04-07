@@ -1557,6 +1557,69 @@ static void on_tick_gold(
         }
     }
 
+    // ?? MicroMomentumEngine -- fast 4-8pt momentum capture ???????????????????
+    // RSI slope + price displacement, both directions, all sessions.
+    // No bar dependency, no regime gate. Catches moves AS THEY HAPPEN.
+    {
+        // Position management always runs
+        if (g_micro_momentum.has_open_position()) {
+            g_micro_momentum.on_tick(bid, ask,
+                g_macro_ctx.session_slot, now_ms_g, bracket_on_close);
+        }
+
+        // Entry gate: no other gold position + tradeable + not dead zone
+        const bool mm_can_enter =
+            !g_micro_momentum.has_open_position()
+            && tradeable
+            && (g_macro_ctx.session_slot != 0)
+            && !in_ny_close_noise
+            && !g_bracket_gold.has_open_position()
+            && !g_gold_stack.has_open_position()
+            && !g_gold_flow.has_open_position()
+            && !g_trend_pb_gold.has_open_position()
+            && !g_hybrid_gold.has_open_position()
+            && !g_rsi_reversal.has_open_position()
+            && !g_nbm_gold_london.has_open_position();
+
+        if (mm_can_enter) {
+            g_micro_momentum.on_tick(bid, ask,
+                g_macro_ctx.session_slot, now_ms_g, bracket_on_close);
+
+            if (g_micro_momentum.has_open_position()) {
+                // Size: risk_per_trade_usd / (sl_dist * 100)
+                const double mm_sl_dist = std::fabs(
+                    g_micro_momentum.pos.entry - g_micro_momentum.pos.sl);
+                const double mm_lot = (mm_sl_dist > 0.0)
+                    ? std::max(0.01, std::min(g_cfg.max_lot_gold,
+                        g_cfg.risk_per_trade_usd / (mm_sl_dist * 100.0)))
+                    : 0.01;
+                g_micro_momentum.patch_size(mm_lot);
+
+                write_trade_open_log("XAUUSD", "MicroMomentum",
+                    g_micro_momentum.pos.is_long ? "LONG" : "SHORT",
+                    g_micro_momentum.pos.entry,
+                    g_micro_momentum.pos.tp,
+                    g_micro_momentum.pos.sl,
+                    g_micro_momentum.pos.size, ask - bid,
+                    "MOMENTUM", "MICRO_MOM");
+
+                g_telemetry.UpdateLastSignal("XAUUSD",
+                    g_micro_momentum.pos.is_long ? "LONG" : "SHORT",
+                    g_micro_momentum.pos.entry, "MICRO_MOM",
+                    "MicroMomentum", regime.c_str(), "MicroMomentum",
+                    g_micro_momentum.pos.tp, g_micro_momentum.pos.sl);
+
+                if (!g_micro_momentum.shadow_mode) {
+                    send_live_order("XAUUSD",
+                        g_micro_momentum.pos.is_long,
+                        g_micro_momentum.pos.size,
+                        g_micro_momentum.pos.entry);
+                    g_telemetry.UpdateLastEntryTs();
+                }
+            }
+        }
+    }
+
     // When stair step 1 banks the first 33% and arms a reload, try_reload()
     // is called every tick until it fires, cancels, or times out (5s).
     //
