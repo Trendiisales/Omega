@@ -786,13 +786,7 @@ static void on_tick_gold(
         // The bracket must also block new arming: evidence = SHORT 07:00:34 SL_HIT $7.97,
         // entire $7.80 bracket range was one London open sweep.
         // Existing ARMED/PENDING/LIVE positions are NOT cancelled -- only new arming blocked.
-        const bool in_london_open_noise = [&]() -> bool {
-            const auto t_lo = std::chrono::system_clock::to_time_t(
-                std::chrono::system_clock::now());
-            struct tm ti_lo{}; gmtime_s(&ti_lo, &t_lo);
-            const int mins_utc = ti_lo.tm_hour * 60 + ti_lo.tm_min;
-            return (mins_utc >= 420 && mins_utc < 435);  // 07:00-07:15 UTC
-        }();
+        const bool in_london_open_noise = false;  // REMOVED: spread/regime/SL gates are sufficient protection
 
         // ?? Trend bias: handled generically via g_bracket_trend["XAUUSD"] ?
         // Counter-trend suppression, L2 extension/shortening, and pyramiding
@@ -1849,19 +1843,7 @@ static void on_tick_gold(
         //   GoldEngineStack already blocks its own engines in this window (line ~549).
         //   GoldFlow did NOT have this guard. This adds parity.
         //   Exception: if |ewm_drift| >= 3.0 a genuine gap-open is underway -- allow it.
-        const bool in_london_open_noise_gf = [&]() -> bool {
-            if (!g_gold_flow.has_open_position()) {  // only block NEW entries
-                const auto t_gf = std::chrono::system_clock::to_time_t(
-                    std::chrono::system_clock::now());
-                struct tm ti_gf{}; gmtime_s(&ti_gf, &t_gf);
-                const int mins_gf = ti_gf.tm_hour * 60 + ti_gf.tm_min;
-                if (mins_gf >= 420 && mins_gf < 435) {  // 07:00-07:15 UTC
-                    const double drift_abs = std::fabs(g_gold_stack.ewm_drift());
-                    return drift_abs < 3.0;  // allow gap-open moves, block sweep noise
-                }
-            }
-            return false;
-        }();
+        const bool in_london_open_noise_gf = false;  // REMOVED: spread/regime/SL gates are sufficient protection
         // Gate 0c: same-direction trail block (60s after trail/BE exit).
         // gold_trail_blocked is computed in the outer gate (gold_can_enter) but
         // gold_can_enter does NOT re-check direction -- it only sets can_enter=true
