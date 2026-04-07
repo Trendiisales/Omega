@@ -255,7 +255,9 @@ static void on_tick_us500(
             && !g_nbm_sp.has_open_position()
             && !g_iflow_sp.has_open_position();
 
-        if (hybrid_sp_can_enter && !g_hybrid_sp.has_open_position()) {
+        // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
+        // Window was starved when hybrid_sp_can_enter=false -- range stayed 0.00 permanently.
+        if (!g_hybrid_sp.has_open_position()) {
             g_hybrid_sp.on_tick(bid, ask, now_ms_h, hybrid_sp_can_enter,
                                 false, false, 0, ca_on_close);
         }
@@ -497,7 +499,9 @@ static void on_tick_ustec(
             && !g_nbm_nq.has_open_position()
             && !g_iflow_nq.has_open_position();
 
-        if (hybrid_nq_can_enter && !g_hybrid_nq.has_open_position()) {
+        // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
+        // Window was starved when hybrid_nq_can_enter=false -- range stayed 0.00 permanently.
+        if (!g_hybrid_nq.has_open_position()) {
             g_hybrid_nq.on_tick(bid, ask, now_ms_h, hybrid_nq_can_enter,
                                 false, false, 0, ca_on_close);
         }
@@ -612,7 +616,9 @@ static void on_tick_dj30(
             && !g_nbm_us30.has_open_position()
             && !g_iflow_us30.has_open_position();
 
-        if (hybrid_us30_can_enter && !g_hybrid_us30.has_open_position()) {
+        // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
+        // Window was starved when hybrid_us30_can_enter=false -- range stayed 0.00 permanently.
+        if (!g_hybrid_us30.has_open_position()) {
             g_hybrid_us30.on_tick(bid, ask, now_ms_h, hybrid_us30_can_enter,
                                   false, false, 0, ca_on_close);
         }
@@ -811,7 +817,9 @@ static void on_tick_nas100(
             && !g_nbm_nas.has_open_position()
             && !g_iflow_nas.has_open_position();
 
-        if (hybrid_nas_can_enter && !g_hybrid_nas100.has_open_position()) {
+        // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
+        // Window was starved when hybrid_nas_can_enter=false -- range stayed 0.00 permanently.
+        if (!g_hybrid_nas100.has_open_position()) {
             g_hybrid_nas100.on_tick(bid, ask, now_ms_h, hybrid_nas_can_enter,
                                     false, false, 0, ca_on_close);
         }
