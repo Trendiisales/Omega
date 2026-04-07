@@ -1563,10 +1563,20 @@ static void on_tick_gold(
         }
     }
 
-    // ?? MicroMomentumEngine -- fast 4-8pt momentum capture ???????????????????
+    // ?? MicroMomentumEngine -- fast momentum capture ???????????????????
     // RSI slope + price displacement, both directions, all sessions.
     // No bar dependency, no regime gate. Catches moves AS THEY HAPPEN.
     {
+        // Seed bar ATR every tick so SL is correctly sized from real volatility.
+        // Without this m_tick_atr cold-starts at spread (~2.2pt) and SL_ATR_MULT=1.5
+        // gives only 3.3pt -- gets hit in 3s on volatile tape.
+        // Bar ATR (true range) correctly reflects current session volatility.
+        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+            const double mm_bar_atr = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
+            if (mm_bar_atr > 0.5 && mm_bar_atr < 100.0)
+                g_micro_momentum.seed_bar_atr(mm_bar_atr);
+        }
+
         // Position management always runs
         if (g_micro_momentum.has_open_position()) {
             g_micro_momentum.on_tick(bid, ask,
