@@ -10,9 +10,8 @@
 //   TIME_STOP    — held past TIME_LIMIT_MS with no resolution
 //   TRAIL_HIT    — trailing stop triggered (if trail enabled)
 //
-// Key insight from prior run: ADVERSE_EARLY=2942 trades -$537, TIME_STOP=1405 trades -$668
-// This build logs MFE, MAE, hold time, spread at entry, impulse strength for every trade
-// Use the CSV to find what separates ADVERSE_EARLY losers from TP_HIT winners
+// VWAP: daily-reset cumulative (matches live engine — resets at UTC midnight each day)
+// Duplicate entry fix: cooldown set immediately on entry, not only on close
 
 #include <iostream>
 #include <fstream>
@@ -66,6 +65,12 @@ inline int utc_hour(uint64_t ts_ms)
     return (int)((ts_ms / 1000 / 3600) % 24);
 }
 
+// UTC day number (days since epoch)
+inline uint64_t utc_day(uint64_t ts_ms)
+{
+    return ts_ms / 1000 / 86400;
+}
+
 inline bool session_ok(uint64_t ts_ms)
 {
     int h = utc_hour(ts_ms);
@@ -91,7 +96,7 @@ static const double PULLBACK_FRAC   = 0.55;  // pullback zone: hi - frac*range o
 static const double VWAP_TREND_PTS  = 0.5;   // VWAP delta over 30 ticks to confirm trend
 static const int    VWAP_TREND_LOOK = 30;    // lookback for VWAP trend
 static const double MAX_SPREAD      = 0.40;  // skip ticks with spread above this
-static const int    COOLDOWN_TICKS  = 300;   // ticks to wait after close before new entry
+static const int    COOLDOWN_TICKS  = 300;   // ticks to wait after entry before new entry
 static const uint64_t TIME_LIMIT_MS = 1800000; // 30 min position time limit (ms)
 static const int    ADVERSE_WINDOW  = 30;    // ticks: if price moves adversely within this, tag ADVERSE_EARLY
 static const double ADVERSE_MIN_PTS = 2.0;   // pts of adverse move to trigger ADVERSE_EARLY tag
@@ -149,13 +154,19 @@ struct TradeRecord
 // ─────────────────────────────────────────────
 struct Engine
 {
-    // price + vwap history
+    // price history
     std::vector<double> price_buf;
+    // VWAP trend history (stores computed daily-cumulative vwap per tick)
     std::vector<double> vwap_buf;
 
-    double vwap = 0;
+    // Daily-reset cumulative VWAP state
+    // (matches live engine: resets at UTC midnight each day)
+    double   vwap       = 0;
+    double   vwap_pv    = 0;   // sum of price for current day
+    uint64_t vwap_count = 0;   // tick count for current day
+    uint64_t vwap_day   = 0;   // current UTC day number (days since epoch)
+
     double hi = 0, lo = 0;
-    std::vector<double> vwap_raw_buf;  // raw prices for rolling VWAP
 
     // position state
     bool     in_pos     = false;
@@ -175,21 +186,22 @@ struct Engine
     int cooldown  = 0;
     int pos_ticks = 0;  // ticks held in current position (for ADVERSE_EARLY detection)
 
-    // Rolling VWAP over VWAP_WINDOW ticks -- NOT cumulative.
-    // Cumulative VWAP over 334M ticks produces delta~0.0001/tick -- trend gate never fires.
-    // Rolling window matches live engine behaviour: VWAP reacts to recent price action.
-    static const int VWAP_WINDOW = 300;  // ~5min of ticks at typical XAUUSD tick rate
-
-    void update_vwap(double price)
+    // Daily-reset cumulative VWAP (matches live engine).
+    // Resets pv/count at UTC midnight boundary each day.
+    void update_vwap(double price, uint64_t ts_ms)
     {
-        vwap_raw_buf.push_back(price);
-        if ((int)vwap_raw_buf.size() > VWAP_WINDOW)
-            vwap_raw_buf.erase(vwap_raw_buf.begin());
+        uint64_t day = utc_day(ts_ms);
 
-        // Rolling mean of last VWAP_WINDOW prices
-        double sum = 0.0;
-        for (double p : vwap_raw_buf) sum += p;
-        vwap = sum / (double)vwap_raw_buf.size();
+        // Midnight boundary — reset accumulator
+        if (day != vwap_day) {
+            vwap_pv    = 0.0;
+            vwap_count = 0;
+            vwap_day   = day;
+        }
+
+        vwap_pv    += price;
+        vwap_count += 1;
+        vwap        = vwap_pv / (double)vwap_count;
 
         vwap_buf.push_back(vwap);
         if ((int)vwap_buf.size() > std::max(WINDOW, VWAP_TREND_LOOK) + 10)
@@ -327,8 +339,9 @@ int main(int argc, char** argv)
         double spread = t.ask - t.bid;
         double mid    = (t.ask + t.bid) * 0.5;
 
-        // always update VWAP (even off-session, so it's warm)
-        e.update_vwap(mid);
+        // Always update VWAP (even off-session, so it's warm when session opens).
+        // Daily-reset cumulative — passes timestamp for midnight-boundary detection.
+        e.update_vwap(mid, t.ts);
         e.update_price(mid);
 
         // spread filter
@@ -456,7 +469,11 @@ int main(int argc, char** argv)
 
                 e.in_pos      = false;
                 e.trail_active= false;
-                e.cooldown    = COOLDOWN_TICKS;
+                // NOTE: cooldown was already set at entry — do NOT reset it here.
+                // We leave the existing cooldown running (which started from entry),
+                // so close-to-re-entry spacing equals cooldown remaining, not full reset.
+                // If you want full cooldown from close instead, change to:
+                //   e.cooldown = COOLDOWN_TICKS;
             }
         }
 
@@ -488,8 +505,12 @@ int main(int argc, char** argv)
                     e.trail_sl = e.entry + SL_PTS;
                 }
 
-                e.entry_ts = t.ts;
+                e.entry_ts     = t.ts;
                 e.trail_active = false;
+
+                // FIX: set cooldown immediately on entry to prevent duplicate entries
+                // on subsequent ticks within the same impulse window
+                e.cooldown = COOLDOWN_TICKS;
 
                 cur = TradeRecord{};
                 cur.id           = ++trade_id;
@@ -501,7 +522,7 @@ int main(int argc, char** argv)
                 cur.impulse_sz   = impulse;
                 cur.entry_ts     = t.ts;
                 cur.session      = session_name(t.ts);
-                e.pos_ticks     = 0;
+                e.pos_ticks      = 0;
                 cur.mfe          = 0;
                 cur.mae          = 0;
             }
@@ -553,6 +574,7 @@ int main(int argc, char** argv)
               << " TIME_LIMIT=" << TIME_LIMIT_MS/1000 << "s\n";
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
               << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts\n";
+    std::cout << "    VWAP=daily-reset-cumulative (live-engine-match)\n";
     std::cout << "    TRAIL=" << (TRAIL_ENABLED ? "ON" : "OFF");
     if (TRAIL_ENABLED) std::cout << " trigger=" << TRAIL_TRIGGER << " lock=" << TRAIL_LOCK*100 << "%";
     std::cout << "\n";
@@ -600,15 +622,6 @@ int main(int argc, char** argv)
         std::cout << "\n";
 
         std::cout << "── ADVERSE_EARLY: Hold-time distribution ─────────────────────\n";
-        // how long were these held?
-        double avg_hold = 0;
-        int n = 0;
-        for (const auto& tr : trades) {
-            if (tr.exit_why != ExitReason::ADVERSE_EARLY) {
-                avg_hold += tr.hold_ms;
-                n++;
-            }
-        }
         // buckets by ticks
         std::vector<std::pair<std::string,std::pair<int,int>>> tbuckets = {
             {"1-5 ticks",  {1,  5}},
