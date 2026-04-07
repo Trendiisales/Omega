@@ -62,6 +62,9 @@
 #include "../include/CrossAssetEngines.hpp"
 #include "../include/BreakoutEngine.hpp"
 #include "../include/BracketEngine.hpp"
+#include "../include/RSIReversalEngine.hpp"
+#include "../include/MicroMomentumEngine.hpp"
+#include "../include/GoldHybridBracketEngine.hpp"
 
 // =============================================================================
 // Memory-mapped file
@@ -618,6 +621,80 @@ struct LonFadeRunner {
     }
 };
 // =============================================================================
+// RSIReversal runner
+// =============================================================================
+struct RSIRevRunner {
+    omega::RSIReversalEngine eng;
+    RSIRevRunner() {
+        eng.enabled        = true;
+        eng.shadow_mode    = true;
+        eng.RSI_OVERSOLD   = 30.0;
+        eng.RSI_OVERBOUGHT = 70.0;
+        eng.RSI_EXIT_LONG  = 50.0;
+        eng.RSI_EXIT_SHORT = 50.0;
+        eng.SL_ATR_MULT    = 0.5;
+        eng.TRAIL_ATR_MULT = 0.30;
+        eng.BE_ATR_MULT    = 0.25;
+        eng.COOLDOWN_S     = 15;
+        eng.COOLDOWN_S_VACUUM = 10;
+        eng.MAX_HOLD_S     = 90;
+        eng.MIN_HOLD_S     = 3;
+    }
+    void tick(const TickRow& r) {
+        eng.update_indicators(r.bid, r.ask);
+        if (!eng.has_open_position()) {
+            int h = (int)((r.ts_ms/1000/3600)%24);
+            int slot = 0;
+            if(h>=7&&h<9)slot=1; else if(h>=9&&h<12)slot=2;
+            else if(h>=12&&h<14)slot=3; else if(h>=14&&h<17)slot=4;
+            else if(h>=17&&h<22)slot=5; else if(h>=22||h<5)slot=6;
+            eng.on_tick(r.bid, r.ask, slot, r.ts_ms,
+                        0.5, false, false, false, false, false,
+                        [](const omega::TradeRecord& t){ store::add(t); });
+        } else {
+            eng.on_tick(r.bid, r.ask, 0, r.ts_ms,
+                        0.5, false, false, false, false, false,
+                        [](const omega::TradeRecord& t){ store::add(t); });
+        }
+    }
+};
+
+// =============================================================================
+// MicroMomentum runner
+// =============================================================================
+struct MicroMomRunner {
+    omega::MicroMomentumEngine eng;
+    MicroMomRunner() {
+        eng.enabled           = true;
+        eng.shadow_mode       = true;
+        eng.RSI_DELTA_MIN     = 6.0;
+        eng.RSI_DELTA_WINDOW  = 10;
+        eng.RSI_LEVEL_LONG    = 52.0;
+        eng.RSI_LEVEL_SHORT   = 48.0;
+        eng.PRICE_MOVE_MIN    = 1.5;
+        eng.TP_PTS            = 3.0;
+        eng.SL_ATR_MULT       = 0.3;
+        eng.BE_TRIGGER_PTS    = 0.5;
+        eng.LOCK_TRIGGER_PTS  = 1.5;
+        eng.LOCK_SL_PTS       = 0.5;
+        eng.TRAIL_DIST_PTS    = 0.5;
+        eng.COOLDOWN_S        = 15;
+        eng.MAX_HOLD_S        = 45;
+    }
+    void tick(const TickRow& r) {
+        int h = (int)((r.ts_ms/1000/3600)%24);
+        int slot = 0;
+        if(h>=7&&h<9)slot=1; else if(h>=9&&h<12)slot=2;
+        else if(h>=12&&h<14)slot=3; else if(h>=14&&h<17)slot=4;
+        else if(h>=17&&h<22)slot=5; else if(h>=22||h<5)slot=6;
+        // Seed bar ATR from 100-tick range
+        eng.on_tick(r.bid, r.ask, slot, r.ts_ms,
+                    0.5, 0.0, false, false, false, false, false,
+                    [](const omega::TradeRecord& t){ store::add(t); });
+    }
+};
+
+// =============================================================================
 // Config
 // =============================================================================
 struct Cfg {
@@ -628,6 +705,7 @@ struct Cfg {
     int64_t     warm  = 5000;
     bool gold=true, flow=true, latency=true, cross=true, breakout=true, stoprun=false, ofade=false;
     bool omom=false, amom=false, lfade=false, allnew=false;
+    bool rsirev=false, micromom=false;
     bool quiet=false;
 };
 static Cfg parse(int argc, char** argv){
@@ -656,6 +734,7 @@ static Cfg parse(int argc, char** argv){
             c.latency=!!strstr(e,"latency"); c.cross=!!strstr(e,"cross");
             c.breakout=!!strstr(e,"breakout"); c.stoprun=!!strstr(e,"stoprun"); c.ofade=!!strstr(e,"ofade");
             c.omom=!!strstr(e,"omom"); c.amom=!!strstr(e,"amom"); c.lfade=!!strstr(e,"lfade");
+            c.rsirev=!!strstr(e,"rsirev"); c.micromom=!!strstr(e,"micromom");
             c.allnew=(!!strstr(e,"allnew")||!!strstr(e,"all"));
         }
     }
@@ -751,6 +830,8 @@ int main(int argc, char** argv){
     std::unique_ptr<OverlapMomRunner>    rom;
     std::unique_ptr<AsiaMomRunner>       ram;
     std::unique_ptr<LonFadeRunner>       rlf;
+    std::unique_ptr<RSIRevRunner>        rrsi;
+    std::unique_ptr<MicroMomRunner>      rmm;
 
     if(cfg.gold)    rg = std::make_unique<GoldRunner>(cfg.lat);
     if(cfg.flow)    rf = std::make_unique<FlowRunner>();
@@ -762,6 +843,8 @@ int main(int argc, char** argv){
     if(cfg.omom||cfg.allnew)    rom = std::make_unique<OverlapMomRunner>();
     if(cfg.amom||cfg.allnew)    ram = std::make_unique<AsiaMomRunner>();
     if(cfg.lfade||cfg.allnew)   rlf = std::make_unique<LonFadeRunner>();
+    if(cfg.rsirev||cfg.allnew)  rrsi = std::make_unique<RSIRevRunner>();
+    if(cfg.micromom||cfg.allnew) rmm = std::make_unique<MicroMomRunner>();
 
     // ?? Tick loop ?????????????????????????????????????????????????????????????
     const auto t0r  = std::chrono::steady_clock_real::now();
@@ -781,7 +864,9 @@ int main(int argc, char** argv){
         if(ro)  ro->tick(r);
         if(rom) rom->tick(r);
         if(ram) ram->tick(r);
-        if(rlf) rlf->tick(r);
+        if(rlf)  rlf->tick(r);
+        if(rrsi) rrsi->tick(r);
+        if(rmm)  rmm->tick(r);
 
         if(i-last_p >= 500'000){
             last_p=i;
