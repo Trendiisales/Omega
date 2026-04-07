@@ -169,19 +169,33 @@ OK "symbols.ini present at $SymbolSrc"
 # ── [9/13] Clean state files ─────────────────────────────────────────────────
 Step 9 13 "Cleaning state files..."
 
-# CRITICAL: Delete latest.log BEFORE launching the new binary.
-# The C++ tee buffer opens latest.log with std::ios::trunc -- but that only
-# happens once the new process starts. If we don't delete it here, the post-
-# launch verification window can read the OLD file that still exists on disk
-# from the prior run and mistake it for live output from the new binary.
-# Deleting it now means the file CANNOT EXIST until the new process creates it.
-# There is no way to read a stale log if the file doesn't exist.
-$latestLog = "$OmegaDir\logs\latest.log"
+# CRITICAL: Archive then delete latest.log BEFORE launching the new binary.
+#
+# WHY ARCHIVE FIRST:
+#   latest.log is the only place tee output is collected during a session.
+#   Deleting it without saving means the entire prior session log is gone.
+#   We rename it to a timestamped archive file so it is always recoverable.
+#
+# WHY DELETE (not just rename):
+#   The C++ tee buffer opens latest.log with std::ios::trunc on startup.
+#   But between Stop-Service and the new binary opening the file there is a
+#   window where the old file still exists. Post-launch verification reading
+#   the file during that window gets the old content and the old hash.
+#   After rename/delete the file cannot exist until the new process creates it.
+#
+$latestLog     = "$OmegaDir\logs\latest.log"
+$archiveDir    = "$OmegaDir\logs\archive"
+New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null
+
 if (Test-Path $latestLog) {
-    Remove-Item $latestLog -Force
-    OK "Deleted latest.log (will be recreated fresh by new binary)"
+    # Use the file's own LastWriteTime for the archive timestamp so the name
+    # reflects when that session was running, not when we restarted.
+    $sessionTs  = (Get-Item $latestLog).LastWriteTime.ToString("yyyy-MM-dd_HH-mm-ss")
+    $archiveDst = "$archiveDir\latest_$sessionTs.log"
+    Move-Item $latestLog $archiveDst -Force
+    OK "Archived latest.log -> $archiveDst"
 } else {
-    OK "latest.log already absent -- clean"
+    OK "latest.log absent -- nothing to archive"
 }
 
 $barFailed = "$OmegaDir\logs\ctrader_bar_failed.txt"
