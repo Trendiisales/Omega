@@ -355,7 +355,8 @@ private:
     int     m_ticks_received = 0;
     int     m_inside_ticks   = 0;
     int64_t m_armed_ts       = 0;
-    int64_t m_cooldown_start = 0;
+    int64_t m_cooldown_start        = 0;
+    int64_t m_pending_blocked_since = 0;  // [BUG-5 FIX] grace timer for PENDING cancel
     int     m_trade_id       = 0;
     int     m_sl_cooldown_dir = 0;
     int64_t m_sl_cooldown_ts  = 0;

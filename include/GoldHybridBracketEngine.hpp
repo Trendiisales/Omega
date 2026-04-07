@@ -220,6 +220,7 @@ public:
                 const int    window_needed = STRUCTURE_LOOKBACK;
                 const bool   warmup_done  = (m_ticks_received >= ticks_needed)
                                          && ((int)m_window.size() >= window_needed);
+                (void)warmup_done;  // used in printf below via %d
                 // Compute live range from current window if large enough
                 double live_range = 0.0;
                 if ((int)m_window.size() >= STRUCTURE_LOOKBACK) {
