@@ -1507,8 +1507,8 @@ static void on_tick_gold(
         // during a genuine crash. When |drift| >= 8pt the move is unambiguously real --
         // pass 99.0 to clear the vol_ratio gate unconditionally.
         const double mce_ewm_drift     = g_gold_stack.ewm_drift();
-        const double mce_vol_ratio_eff = (std::fabs(mce_ewm_drift) >= 8.0)
-                                         ? 99.0
+        const double mce_vol_ratio_eff = (std::fabs(mce_ewm_drift) >= 6.0)
+                                         ? 99.0   // drift >= 6pt bypasses vol gate
                                          : mce_vol_ratio;
 
         g_macro_crash.on_tick(bid, ask,

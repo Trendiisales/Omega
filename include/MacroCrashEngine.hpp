@@ -55,10 +55,10 @@ namespace omega {
 class MacroCrashEngine {
 public:
     // ── Entry triggers ────────────────────────────────────────────────────
-    double ATR_THRESHOLD    = 8.0;
+    double ATR_THRESHOLD    = 6.0;   // lowered 8->6: 8pt missed moderate macro moves
     double ATR_NORMAL       = 5.0;
     double VOL_RATIO_MIN    = 2.5;
-    double DRIFT_MIN        = 6.0;
+    double DRIFT_MIN        = 5.0;   // lowered 6->5: 6pt was too high for early move entries
     double ATR_SCALE_MAX    = 6.0;
     double BASE_RISK_USD    = 80.0;
     double MAX_LOT          = 0.50;
@@ -69,8 +69,8 @@ public:
     double BRACKET_ATR_MULT = 2.0;    // bracket TP at 2xATR from entry
 
     // ── Velocity trail ────────────────────────────────────────────────────
-    double STEP1_TRIGGER_USD  = 200.0;
-    double STEP2_TRIGGER_USD  = 400.0;
+    double STEP1_TRIGGER_USD  = 50.0;   // lowered 200->50: $200 never hit at small lots; $50 arms trail faster
+    double STEP2_TRIGGER_USD  = 150.0;  // lowered 400->150
     double VEL_TRAIL_ARM_ATR  = 3.0;
     double VEL_TRAIL_DIST_ATR = 2.0;
     double RATCHET_KEEP       = 0.80;
@@ -268,16 +268,8 @@ public:
         if (!eff_expansion)                        return;
         if (std::fabs(ewm_drift) < final_drift_min) return;
 
-        // Direction: ewm_drift direction (same as before, fully bidirectional)
+        // Direction: ewm_drift direction
         const bool is_long = (ewm_drift > 0.0);
-
-        // DOM direction consistency: if DOM gives a strong opposing signal, skip.
-        // Strong book_slope opposing drift = book is absorbing the move, not extending it.
-        if (is_long  && book_slope < -DOM_SLOPE_STRONG * 1.5) return;  // strong sell pressure vs long
-        if (!is_long && book_slope >  DOM_SLOPE_STRONG * 1.5) return;  // strong buy pressure vs short
-
-        if ( is_long && now_ms < m_long_block_until)  return;
-        if (!is_long && now_ms < m_short_block_until) return;
 
         // Log entry -- always, not conditional on session/DOM/RSI
         printf("[MCE%s] TRIGGER %s atr=%.1f(thr=%.1f) drift=%.1f(thr=%.1f) "
@@ -557,8 +549,10 @@ private:
         fflush(stdout);
 
         if (std::string(reason) == "SL_HIT") {
-            if (pos.is_long)  m_long_block_until  = now_ms + 60000;
-            else              m_short_block_until = now_ms + 60000;
+            // Cooldown (COOLDOWN_MS) is sufficient protection after SL.
+            // Directional block (m_long/short_block_until) added 60s ON TOP of
+            // cooldown, silently blocking re-entry on continuation crashes.
+            // Removed: cooldown alone gates re-entry correctly.
         }
         // Shadow: always call on_close so trade appears in GUI with correct costs
         if (on_close)
