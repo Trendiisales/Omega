@@ -2435,7 +2435,9 @@ class MeanReversionEngine : public EngineBase {
 
     // Block the same dead zone used by CompressionBreakout:
     //   05:00-07:00 UTC -- late Asia/London pre-open: thin liquidity, erratic fills.
-        // Fade engine dead zone: block Sydney chop (21-23 UTC) and London pre-open (05-07 UTC).
+        // Fade engine dead zone: block NY close chop (21-22 UTC) and London pre-open (05-07 UTC).
+        // Was 21-23 UTC -- but 22:00+ UTC is the Asia session open (Sydney/Tokyo).
+        // Blocking until 23:00 UTC killed the first hour of Asia. Tightened to 21-22 UTC.
     static bool in_dead_zone() noexcept {
         const auto t = std::time(nullptr);
         struct tm ti{};
@@ -2445,7 +2447,11 @@ class MeanReversionEngine : public EngineBase {
         gmtime_r(&t, &ti);
 #endif
         const int h = ti.tm_hour;
-        return (h >= 21 && h < 23) || (h >= 5 && h < 7);
+        const int m = ti.tm_min;
+        // 21:00-22:00 UTC: NY close noise -- thin, erratic
+        // 22:00-05:00 UTC: Asia session -- MR valid
+        // 05:00-07:00 UTC: London pre-open -- thin, erratic
+        return (h == 21) || (h >= 5 && h < 7) || (h == 0 && m < 10);  // also block first 10min of Sydney
     }
 
     // Compute rolling mean and std over the last LOOKBACK ticks in history_.
