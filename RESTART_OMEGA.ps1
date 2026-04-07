@@ -240,4 +240,60 @@ if ($svc) {
     Write-Host "  Launching directly (Ctrl+C to stop)..." -ForegroundColor Cyan
     Write-Host ""
     & ".\Omega.exe" "omega_config.ini"
+    exit
+}
+
+# ── POST-LAUNCH VERIFICATION ─────────────────────────────────────────────────
+# Wait for engine to write its startup log lines, then run OMEGA_STATUS.ps1
+# to verify the correct binary is running and all systems are connected.
+# This is MANDATORY -- do not skip. If hash mismatches, the wrong binary is running.
+Write-Host ""
+Write-Host "  Waiting 20s for engine startup..." -ForegroundColor DarkGray
+$waited = 0
+while ($waited -lt 20) {
+    Start-Sleep -Seconds 1
+    $waited++
+    # Check if RUNNING COMMIT line has appeared in log
+    $logPath = "$OmegaDir\logs\latest.log"
+    if (Test-Path $logPath) {
+        $commitLine = Get-Content $logPath | Select-String "RUNNING COMMIT" | Select-Object -Last 1
+        if ($commitLine) {
+            Write-Host "  Engine log confirmed after ${waited}s" -ForegroundColor Green
+            break
+        }
+    }
+    if ($waited % 5 -eq 0) { Write-Host "  Still waiting... (${waited}s)" -ForegroundColor DarkGray }
+}
+
+# Extract running hash from log and compare to git HEAD
+$runningHash = "NOT_FOUND"
+$logPath = "$OmegaDir\logs\latest.log"
+if (Test-Path $logPath) {
+    $commitLine = Get-Content $logPath | Select-String "RUNNING COMMIT" | Select-Object -Last 1
+    if ($commitLine -and ($commitLine -match "RUNNING COMMIT:\s+([a-f0-9]+)")) {
+        $runningHash = $Matches[1]
+    }
+}
+
+Write-Host ""
+Write-Host "=======================================================" -ForegroundColor Cyan
+Write-Host "  POST-LAUNCH HASH VERIFICATION" -ForegroundColor Cyan
+Write-Host "=======================================================" -ForegroundColor Cyan
+if ($runningHash -eq $gitHash) {
+    Write-Host "  [OK] HASH VERIFIED: running=$runningHash == HEAD=$gitHash" -ForegroundColor Green
+} else {
+    Write-Host "  [!!] HASH MISMATCH: running=$runningHash != HEAD=$gitHash" -ForegroundColor Red
+    Write-Host "  STOP. Do not trade. The wrong binary is running." -ForegroundColor Red
+    Write-Host "  Run .\RESTART_OMEGA.ps1 again." -ForegroundColor Red
+    exit 1
+}
+
+# Run full status check
+Write-Host ""
+Write-Host "  Running full status check..." -ForegroundColor Cyan
+Write-Host ""
+if (Test-Path "$OmegaDir\OMEGA_STATUS.ps1") {
+    & "$OmegaDir\OMEGA_STATUS.ps1"
+} else {
+    Write-Host "  OMEGA_STATUS.ps1 not found -- run it manually to verify system state" -ForegroundColor Yellow
 }

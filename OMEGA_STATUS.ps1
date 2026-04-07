@@ -239,15 +239,23 @@ if (Test-Path $tradeFile) {
     }
 }
 
-# ── SECTION 9: Asia gate (if in Asia) ────────────────────────────────────────
-Hdr "9. ASIA / SESSION GATE"
+# ── SECTION 9: Session gate ──────────────────────────────────────────────────
+Hdr "9. SESSION GATE"
+# session_tradeable() is 24h (session_start_utc=0, session_end_utc=0).
+# ASIA-GATE in trade_lifecycle.hpp is a VOL QUALITY gate only -- not a session block.
+# Fires only on genuinely dead tape: vol_ratio<2.0 AND drift<0.5 AND RSI not extreme.
+# If you see BLOCKED here it means flat tape, not a session restriction.
 if (Test-Path $LogFile) {
     $asiaGate = Get-Content $LogFile | Select-String "ASIA-GATE" | Select-Object -Last 1
     if ($asiaGate) {
-        if ($asiaGate -match "BLOCKED") { FAIL "Asia gate" "$asiaGate" }
-        else                            { OK   "Asia gate" "$asiaGate" }
+        if ($asiaGate -match "BLOCKED") {
+            WARN "Asia vol gate" "BLOCKED (dead tape -- vol/drift too low, NOT a session block)"
+            INFO "  Detail" "$asiaGate"
+        } else {
+            OK "Asia vol gate" "OPEN  $asiaGate"
+        }
     } else {
-        INFO "Asia gate" "No recent log (not in Asia session or gate open)"
+        OK "Session gate" "24h mode active -- no session blocks"
     }
 }
 
