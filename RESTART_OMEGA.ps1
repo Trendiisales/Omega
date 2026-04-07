@@ -1,21 +1,22 @@
 #Requires -Version 5.1
 # ==============================================================================
 #  RESTART_OMEGA.ps1  --  THE ONE SCRIPT TO RUN OMEGA
+#  Run this. Only this. Every time.
 #
-#  Does everything in the correct order, every time:
-#    1. Stop Omega (service + process, both methods)
-#    2. Pull latest from GitHub (hard reset to origin/main)
-#    3. Clean wipe build directory
-#    4. cmake configure  (regenerates version_generated.hpp with correct hash)
-#    5. cmake build      (compile)
-#    6. Fail hard if build failed -- never launch broken binary
-#    7. Copy exe to C:\Omega\Omega.exe
-#    8. Delete ctrader_bar_failed.txt (prevents poisoned bar requests)
-#    9. Show commit hash, mode, GUI URL
-#   10. Start OmegaHFT service if installed, else direct launch
-#
-#  REPLACES: QUICK_RESTART.ps1, DEPLOY_OMEGA.ps1, REBUILD_AND_START.ps1
-#  Run this. Only this. Nothing else.
+#  Steps (in order, every run):
+#    1.  Stop Omega (service + process kill, both)
+#    2.  Pull latest from GitHub (hard reset origin/main)
+#    3.  Wipe build directory (no stale objects)
+#    4.  cmake configure (regenerates version_generated.hpp)
+#    5.  cmake build (compile, fail hard on error)
+#    6.  Copy Omega.exe to C:\Omega\Omega.exe
+#    7.  Copy config\omega_config.ini to C:\Omega\omega_config.ini (binary cwd)
+#    8.  Copy symbols.ini to C:\Omega\symbols.ini (binary cwd)
+#    9.  Delete logs\ctrader_bar_failed.txt
+#   10.  Ensure log directories exist
+#   11.  Update service exe + AppDirectory if service installed
+#   12.  Show commit, mode, GUI URL
+#   13.  Start service or direct launch
 # ==============================================================================
 
 Set-StrictMode -Version Latest
@@ -23,21 +24,23 @@ Set-StrictMode -Version Latest
 $OmegaDir  = "C:\Omega"
 $BuildExe  = "$OmegaDir\build\Release\Omega.exe"
 $OmegaExe  = "$OmegaDir\Omega.exe"
-$ConfigIni = "$OmegaDir\config\omega_config.ini"
+$ConfigSrc = "$OmegaDir\config\omega_config.ini"  # canonical source
+$ConfigDst = "$OmegaDir\omega_config.ini"          # binary working directory copy
+$SymbolSrc = "$OmegaDir\symbols.ini"               # already in root (git tracked)
 $CmakeExe  = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
+$NssmExe   = "C:\nssm\nssm-2.24\win64\nssm.exe"
+$ServiceName = "OmegaHFT"
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-function Banner($text, $color = "Cyan") {
+function Banner($text, $color="Cyan") {
     Write-Host ""
     Write-Host "=======================================================" -ForegroundColor $color
     Write-Host "  $text" -ForegroundColor $color
     Write-Host "=======================================================" -ForegroundColor $color
     Write-Host ""
 }
-function Step($n, $total, $text) {
-    Write-Host "[$n/$total] $text" -ForegroundColor Yellow
-}
+function Step($n,$total,$text) { Write-Host "[$n/$total] $text" -ForegroundColor Yellow }
 function OK($text)   { Write-Host "      [OK] $text"    -ForegroundColor Green }
+function WARN($text) { Write-Host "      [!!] $text"    -ForegroundColor Yellow }
 function FAIL($text) {
     Write-Host ""
     Write-Host "  *** FAILED: $text ***" -ForegroundColor Red
@@ -47,156 +50,153 @@ function FAIL($text) {
 
 Banner "OMEGA  |  RESTART + REBUILD"
 
-# ── [1/7] Stop ────────────────────────────────────────────────────────────────
-Step 1 7 "Stopping Omega..."
-
+# ── [1/13] Stop ──────────────────────────────────────────────────────────────
+Step 1 13 "Stopping Omega..."
 $ErrorActionPreference = "Continue"
-
-# Stop service if installed
-$svc = Get-Service -Name "OmegaHFT" -ErrorAction SilentlyContinue
+$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -eq "Running") {
-    Stop-Service "OmegaHFT" -Force -ErrorAction SilentlyContinue
+    Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
-
-# Kill process tree
 taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
 Start-Sleep -Seconds 2
 Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
-
-# Confirm dead
 $still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
-if ($still) {
-    $still | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 3
-}
-
+if ($still) { $still | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 3 }
 $ErrorActionPreference = "Stop"
 OK "Stopped"
 
-# ── [2/7] Pull ────────────────────────────────────────────────────────────────
-Step 2 7 "Pulling origin/main..."
-
+# ── [2/13] Pull ──────────────────────────────────────────────────────────────
+Step 2 13 "Pulling origin/main..."
 Set-Location $OmegaDir
 $ErrorActionPreference = "Continue"
 git fetch origin 2>&1 | Out-Null
 git reset --hard origin/main 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 $ErrorActionPreference = "Stop"
-
-$gitHash  = (git log --format="%h" -1).Trim()
-$gitMsg   = (git log --format="%s" -1).Trim()
+$gitHash = (git log --format="%h" -1).Trim()
+$gitMsg  = (git log --format="%s" -1).Trim()
 OK "HEAD: $gitHash  -- $gitMsg"
 
-# ── [3/7] Clean build dir ────────────────────────────────────────────────────
-Step 3 7 "Wiping build directory..."
-
+# ── [3/13] Wipe build ────────────────────────────────────────────────────────
+Step 3 13 "Wiping build directory..."
 if (Test-Path "$OmegaDir\build") {
     Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
 }
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 OK "Build directory clean"
 
-# ── [4/7] cmake configure ────────────────────────────────────────────────────
-Step 4 7 "cmake configure  (regenerates version_generated.hpp)..."
-
-if (-not (Test-Path $CmakeExe)) {
-    FAIL "cmake not found at $CmakeExe"
-}
-
+# ── [4/13] cmake configure ───────────────────────────────────────────────────
+Step 4 13 "cmake configure..."
+if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
 $ErrorActionPreference = "Continue"
 & $CmakeExe -S $OmegaDir -B "$OmegaDir\build" -DCMAKE_BUILD_TYPE=Release 2>&1 |
     Where-Object { $_ -match "\[Omega\]|error|Error" } |
     ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 $ErrorActionPreference = "Stop"
 
-# Verify version_generated.hpp was written with the correct hash
 $verFile = "$OmegaDir\include\version_generated.hpp"
-if (-not (Test-Path $verFile)) {
-    FAIL "version_generated.hpp not created by cmake configure"
-}
+if (-not (Test-Path $verFile)) { FAIL "version_generated.hpp not created" }
 $verContent = Get-Content $verFile -Raw
 $guiHash = "unknown"
 if ($verContent -match 'OMEGA_GIT_HASH\s+"([a-f0-9]+)"') { $guiHash = $Matches[1] }
-if ($guiHash -ne $gitHash) {
-    FAIL "version_generated.hpp hash=$guiHash does not match HEAD=$gitHash"
-}
-OK "configure done  (version_generated.hpp hash=$guiHash confirmed)"
+if ($guiHash -ne $gitHash) { FAIL "version hash mismatch: hpp=$guiHash HEAD=$gitHash" }
+OK "Configure done (hash $guiHash confirmed)"
 
-# ── [5/7] cmake build ────────────────────────────────────────────────────────
-Step 5 7 "cmake build..."
-
+# ── [5/13] cmake build ───────────────────────────────────────────────────────
+Step 5 13 "cmake build..."
 $ErrorActionPreference = "Continue"
 & $CmakeExe --build "$OmegaDir\build" --config Release 2>&1 |
     ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 $buildExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
-
-if ($buildExit -ne 0) { FAIL "Build failed (exit $buildExit) -- fix compile errors above" }
-if (-not (Test-Path $BuildExe)) { FAIL "$BuildExe not found after build" }
+if ($buildExit -ne 0)              { FAIL "Build failed (exit $buildExit)" }
+if (-not (Test-Path $BuildExe))    { FAIL "$BuildExe not found after build" }
 OK "Build succeeded"
 
-# ── [6/7] Copy + clean state ─────────────────────────────────────────────────
-Step 6 7 "Copying exe + cleaning state files..."
-
+# ── [6/13] Copy exe ──────────────────────────────────────────────────────────
+Step 6 13 "Copying exe..."
 Copy-Item $BuildExe $OmegaExe -Force
-OK "Omega.exe copied from build\Release\"
+OK "Omega.exe  ->  $OmegaExe"
 
-# Copy config to root so binary finds it at launch (binary runs from C:\Omega,
-# looks for "omega_config.ini" in cwd -- must be in root, not config\ subdir)
-Copy-Item $ConfigIni "$OmegaDir\omega_config.ini" -Force
-OK "omega_config.ini copied to C:\Omega\ (binary working directory)"
+# ── [7/13] Copy config to binary working directory ───────────────────────────
+Step 7 13 "Copying config to binary working directory..."
+# MANDATORY: binary runs from C:\Omega and looks for omega_config.ini in cwd.
+# Canonical config is in config\omega_config.ini. Must copy to root every deploy.
+if (-not (Test-Path $ConfigSrc)) { FAIL "Config not found: $ConfigSrc" }
+Copy-Item $ConfigSrc $ConfigDst -Force
+OK "omega_config.ini  ->  $ConfigDst"
 
-# Copy symbols.ini to root
-$ErrorActionPreference = "Continue"
-Copy-Item "$OmegaDir\symbols.ini" "$OmegaDir\symbols.ini" -ErrorAction SilentlyContinue
-$ErrorActionPreference = "Stop"
+# ── [8/13] Copy symbols.ini to binary working directory ──────────────────────
+Step 8 13 "Verifying symbols.ini in root..."
+# symbols.ini is git-tracked in root already, but ensure it's current after pull
+if (-not (Test-Path $SymbolSrc)) { FAIL "symbols.ini not found: $SymbolSrc" }
+OK "symbols.ini present at $SymbolSrc"
 
-# Delete poisoned bar_failed file -- causes bars to never seed on restart
+# ── [9/13] Clean state files ─────────────────────────────────────────────────
+Step 9 13 "Cleaning state files..."
 $barFailed = "$OmegaDir\logs\ctrader_bar_failed.txt"
 if (Test-Path $barFailed) {
     Remove-Item $barFailed -Force
     OK "Deleted ctrader_bar_failed.txt"
 }
 
-# Ensure log directories exist
-New-Item -ItemType Directory -Path "$OmegaDir\logs"          -Force | Out-Null
-New-Item -ItemType Directory -Path "$OmegaDir\logs\shadow"   -Force | Out-Null
-New-Item -ItemType Directory -Path "$OmegaDir\logs\trades"   -Force | Out-Null
-New-Item -ItemType Directory -Path "$OmegaDir\logs\kelly"    -Force | Out-Null
+# ── [10/13] Ensure log directories ───────────────────────────────────────────
+Step 10 13 "Ensuring log directories..."
+@("$OmegaDir\logs", "$OmegaDir\logs\shadow", "$OmegaDir\logs\trades", "$OmegaDir\logs\kelly") |
+    ForEach-Object { New-Item -ItemType Directory -Path $_ -Force | Out-Null }
 OK "Log directories ready"
 
-# ── [7/7] Launch ─────────────────────────────────────────────────────────────
-Step 7 7 "Launching..."
+# ── [11/13] Update service exe path if installed ─────────────────────────────
+Step 11 13 "Checking service configuration..."
+$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($svc) {
+    if (Test-Path $NssmExe) {
+        # Update service exe, AppDirectory, and args so it always uses current binary
+        $ErrorActionPreference = "Continue"
+        & $NssmExe set $ServiceName Application $OmegaExe 2>&1 | Out-Null
+        & $NssmExe set $ServiceName AppDirectory $OmegaDir 2>&1 | Out-Null
+        & $NssmExe set $ServiceName AppParameters "omega_config.ini" 2>&1 | Out-Null
+        $ErrorActionPreference = "Stop"
+        OK "Service exe + AppDirectory updated via NSSM"
+    } else {
+        WARN "NSSM not found -- service exe path not updated. Service may run old binary."
+    }
+} else {
+    WARN "OmegaHFT service not installed -- will launch directly. Run INSTALL_SERVICE.ps1 once."
+}
 
-# Read mode from config
+# ── [12/13] Show launch summary ──────────────────────────────────────────────
+Step 12 13 "Reading config..."
 $ErrorActionPreference = "Continue"
-$modeMatch = Select-String -Path $ConfigIni -Pattern "^mode\s*=\s*(\S+)" -ErrorAction SilentlyContinue
+$modeMatch = Select-String -Path $ConfigDst -Pattern "^mode\s*=\s*(\S+)" -ErrorAction SilentlyContinue
 $mode      = if ($modeMatch) { $modeMatch.Matches[0].Groups[1].Value } else { "UNKNOWN" }
 $modeColor = switch ($mode) { "LIVE" { "Red" } "SHADOW" { "Yellow" } default { "Cyan" } }
 $ErrorActionPreference = "Stop"
 
 Banner "READY TO LAUNCH" "Green"
-Write-Host "  Commit  : $gitHash  -- $gitMsg"   -ForegroundColor Cyan
-Write-Host "  Mode    : $mode"                   -ForegroundColor $modeColor
+Write-Host "  Commit  : $gitHash  -- $gitMsg" -ForegroundColor Cyan
+Write-Host "  Mode    : $mode"                -ForegroundColor $modeColor
+Write-Host "  Config  : $ConfigDst"           -ForegroundColor DarkGray
 Write-Host "  GUI     : http://185.167.119.59:7779" -ForegroundColor Green
 Write-Host ""
 
+# ── [13/13] Launch ───────────────────────────────────────────────────────────
+Step 13 13 "Launching..."
 Set-Location $OmegaDir
 
-$svc = Get-Service -Name "OmegaHFT" -ErrorAction SilentlyContinue
+$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc) {
-    Write-Host "  Starting OmegaHFT service..." -ForegroundColor Cyan
-    Start-Service "OmegaHFT"
+    Write-Host "  Starting $ServiceName service..." -ForegroundColor Cyan
+    Start-Service $ServiceName
     Start-Sleep -Seconds 3
-    $svc = Get-Service -Name "OmegaHFT"
+    $svc = Get-Service -Name $ServiceName
     $col = if ($svc.Status -eq "Running") { "Green" } else { "Red" }
     Write-Host "  Service status: $($svc.Status)" -ForegroundColor $col
-    if ($svc.Status -ne "Running") { FAIL "OmegaHFT service failed to start" }
+    if ($svc.Status -ne "Running") { FAIL "$ServiceName service failed to start" }
+    OK "Omega running as service"
 } else {
-    Write-Host "  WARNING: OmegaHFT service not installed." -ForegroundColor Yellow
-    Write-Host "  Run INSTALL_SERVICE.ps1 once to fix this permanently." -ForegroundColor Yellow
-    Write-Host ""
     Write-Host "  Launching directly (Ctrl+C to stop)..." -ForegroundColor Cyan
+    Write-Host ""
     & ".\Omega.exe" "omega_config.ini"
 }
