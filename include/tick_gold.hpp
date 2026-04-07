@@ -1496,7 +1496,14 @@ static void on_tick_gold(
         // Position management -- always runs when open (no gate)
         if (g_rsi_reversal.has_open_position()) {
             g_rsi_reversal.on_tick(bid, ask,
-                g_macro_ctx.session_slot, now_ms_g, bracket_on_close);
+                g_macro_ctx.session_slot, now_ms_g,
+                g_macro_ctx.gold_l2_imbalance,
+                g_macro_ctx.gold_wall_above,
+                g_macro_ctx.gold_wall_below,
+                g_macro_ctx.gold_vacuum_ask,
+                g_macro_ctx.gold_vacuum_bid,
+                g_macro_ctx.gold_l2_real,
+                bracket_on_close);
         }
 
         // Entry gate: no other XAUUSD position open + tradeable + not dead zone
@@ -1517,7 +1524,14 @@ static void on_tick_gold(
         if (rsi_rev_can_enter) {
 
             g_rsi_reversal.on_tick(bid, ask,
-                g_macro_ctx.session_slot, now_ms_g, bracket_on_close);
+                g_macro_ctx.session_slot, now_ms_g,
+                g_macro_ctx.gold_l2_imbalance,
+                g_macro_ctx.gold_wall_above,
+                g_macro_ctx.gold_wall_below,
+                g_macro_ctx.gold_vacuum_ask,
+                g_macro_ctx.gold_vacuum_bid,
+                g_macro_ctx.gold_l2_real,
+                bracket_on_close);
 
             if (g_rsi_reversal.has_open_position()) {
                 // Size using standard risk engine -- same as GoldFlow sizing
@@ -1556,7 +1570,15 @@ static void on_tick_gold(
         // Position management always runs
         if (g_micro_momentum.has_open_position()) {
             g_micro_momentum.on_tick(bid, ask,
-                g_macro_ctx.session_slot, now_ms_g, bracket_on_close);
+                g_macro_ctx.session_slot, now_ms_g,
+                g_macro_ctx.gold_l2_imbalance,
+                g_macro_ctx.gold_slope,
+                g_macro_ctx.gold_vacuum_ask,
+                g_macro_ctx.gold_vacuum_bid,
+                g_macro_ctx.gold_wall_above,
+                g_macro_ctx.gold_wall_below,
+                g_macro_ctx.gold_l2_real,
+                bracket_on_close);
         }
 
         // Entry gate: STANDALONE -- only blocked by its own open position,
@@ -1571,7 +1593,15 @@ static void on_tick_gold(
 
         if (mm_can_enter) {
             g_micro_momentum.on_tick(bid, ask,
-                g_macro_ctx.session_slot, now_ms_g, bracket_on_close);
+                g_macro_ctx.session_slot, now_ms_g,
+                g_macro_ctx.gold_l2_imbalance,
+                g_macro_ctx.gold_slope,
+                g_macro_ctx.gold_vacuum_ask,
+                g_macro_ctx.gold_vacuum_bid,
+                g_macro_ctx.gold_wall_above,
+                g_macro_ctx.gold_wall_below,
+                g_macro_ctx.gold_l2_real,
+                bracket_on_close);
 
             if (g_micro_momentum.has_open_position()) {
                 // Size: risk_per_trade_usd / (sl_dist * 100)
@@ -3173,7 +3203,13 @@ static void on_tick_gold(
             const int  flow_stage  = g_gold_flow.pos.trail_stage;
             g_hybrid_gold.on_tick(bid, ask, now_ms_g,
                                   gold_can_enter, flow_live, flow_be, flow_stage,
-                                  bracket_on_close);
+                                  bracket_on_close,
+                                  g_macro_ctx.gold_slope,
+                                  g_macro_ctx.gold_vacuum_ask,
+                                  g_macro_ctx.gold_vacuum_bid,
+                                  g_macro_ctx.gold_wall_above,
+                                  g_macro_ctx.gold_wall_below,
+                                  g_macro_ctx.gold_l2_real);
         }
         // New entry -- only when no other gold position open AND market is genuinely compressing.
         // vol_range gate: hybrid bracket needs real compression, not noise oscillation.
@@ -3221,7 +3257,13 @@ static void on_tick_gold(
             const int  flow_stage  = g_gold_flow.pos.trail_stage;
             g_hybrid_gold.on_tick(bid, ask, now_ms_g,
                                   hybrid_can_enter, flow_live, flow_be, flow_stage,
-                                  bracket_on_close);
+                                  bracket_on_close,
+                                  g_macro_ctx.gold_slope,
+                                  g_macro_ctx.gold_vacuum_ask,
+                                  g_macro_ctx.gold_vacuum_bid,
+                                  g_macro_ctx.gold_wall_above,
+                                  g_macro_ctx.gold_wall_below,
+                                  g_macro_ctx.gold_l2_real);
         }
 
         // When hybrid transitions to PENDING, send both stop orders.
