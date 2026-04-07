@@ -265,13 +265,20 @@ while ($waited -lt 20) {
     if ($waited % 5 -eq 0) { Write-Host "  Still waiting... (${waited}s)" -ForegroundColor DarkGray }
 }
 
-# Extract running hash from log and compare to git HEAD
+# Extract running hash -- check latest.log first, then service stdout log
 $runningHash = "NOT_FOUND"
-$logPath = "$OmegaDir\logs\latest.log"
-if (Test-Path $logPath) {
-    $commitLine = Get-Content $logPath | Select-String "RUNNING COMMIT" | Select-Object -Last 1
-    if ($commitLine -and ($commitLine -match "RUNNING COMMIT:\s+([a-f0-9]+)")) {
-        $runningHash = $Matches[1]
+$logPath     = "$OmegaDir\logs\latest.log"
+$stdoutPath  = "$OmegaDir\logs\omega_service_stdout.log"
+# latest.log: RUNNING COMMIT prints via printf before file logger opens
+# so check the first 30 lines (startup block) AND full file
+foreach ($checkPath in @($logPath, $stdoutPath)) {
+    if (Test-Path $checkPath) {
+        $lines = Get-Content $checkPath -ErrorAction SilentlyContinue
+        $hit = $lines | Select-String "RUNNING COMMIT" | Select-Object -Last 1
+        if ($hit -and ($hit -match "RUNNING COMMIT:\s+([a-f0-9]+)")) {
+            $runningHash = $Matches[1]
+            break
+        }
     }
 }
 
