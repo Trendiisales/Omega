@@ -69,6 +69,7 @@ struct OmegaConfig {
     bool   ustec_pilot_block_risk_off  = true;  // skip USTEC pilot in RISK_OFF regime
     bool   enable_extended_symbols    = true;   // subscribe + trade additional opportunity symbols
     bool   goldflow_enabled           = false;  // DISABLED 2026-04-05: backtest proved no edge
+    bool   indices_enabled            = true;   // false = disable all index engine on_tick calls
                                                 // Avg winner $15 vs avg loser $74 = 0.20:1 payoff
                                                 // 2yr MFE scan: microstructure signal, not structural
                                                 // Replace with OverlapMomentumEngine + OverlapFadeEngine
