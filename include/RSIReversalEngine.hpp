@@ -58,8 +58,10 @@ namespace omega {
 class RSIReversalEngine {
 public:
     // ── Tunable parameters ───────────────────────────────────────────────────
-    double RSI_OVERSOLD       = 35.0;  // LONG entry threshold
-    double RSI_OVERBOUGHT     = 65.0;  // SHORT entry threshold
+    double RSI_OVERSOLD       = 38.0;  // LONG entry threshold (catches more turns)
+    double RSI_OVERBOUGHT     = 62.0;  // SHORT entry threshold (catches more turns)
+    double RSI_EXIT_LONG      = 55.0;  // exit LONG when RSI recovers to here (take profit)
+    double RSI_EXIT_SHORT     = 45.0;  // exit SHORT when RSI recovers to here (take profit)
     double SL_ATR_MULT        = 1.0;   // SL distance = ATR * this
     double TRAIL_ATR_MULT     = 0.75;  // trail distance = ATR * this behind MFE
     double BE_ATR_MULT        = 1.0;   // BE locks at move >= ATR * this
@@ -111,7 +113,7 @@ public:
 
         // ── Manage open position ─────────────────────────────────────────────
         if (pos.active) {
-            _manage(bid, ask, mid, atr14, now_s, on_close);
+            _manage(bid, ask, mid, atr14, rsi14, now_s, on_close);
             return;
         }
 
@@ -214,7 +216,7 @@ private:
     }
 
     void _manage(double bid, double ask, double mid,
-                 double atr14, int64_t now_s,
+                 double atr14, double rsi14, int64_t now_s,
                  CloseCallback on_close) noexcept
     {
         if (!pos.active) return;
@@ -228,6 +230,27 @@ private:
 
         // Minimum hold -- avoid immediate SL on spread noise
         if ((now_s - pos.entry_ts) < MIN_HOLD_S) return;
+
+        // ?? RSI exit -- "take profit every time RSI turns back" ??????????????
+        // When RSI was oversold and we entered LONG:
+        //   exit when RSI recovers to RSI_EXIT_LONG (default 55) = mean reversion complete
+        // When RSI was overbought and we entered SHORT:
+        //   exit when RSI falls back to RSI_EXIT_SHORT (default 45) = mean reversion complete
+        // This ensures we bank profit on the RSI reversal, not wait for a fixed TP tick.
+        // Only fires after BE is locked (we have real profit to protect).
+        if (pos.be_locked && rsi14 > 0.0) {
+            const bool rsi_exit_long  = pos.is_long  && (rsi14 >= RSI_EXIT_LONG);
+            const bool rsi_exit_short = !pos.is_long && (rsi14 <= RSI_EXIT_SHORT);
+            if (rsi_exit_long || rsi_exit_short) {
+                const double exit_px = pos.is_long ? bid : ask;
+                printf("[RSI-REV] RSI_EXIT %s rsi=%.1f threshold=%.0f -- taking profit\n",
+                       pos.is_long ? "LONG" : "SHORT",
+                       rsi14, pos.is_long ? RSI_EXIT_LONG : RSI_EXIT_SHORT);
+                fflush(stdout);
+                _close(exit_px, "RSI_TP", now_s, on_close);
+                return;
+            }
+        }
 
         // Hard max hold
         if ((now_s - pos.entry_ts) > MAX_HOLD_S) {
