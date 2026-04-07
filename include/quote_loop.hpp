@@ -208,13 +208,70 @@ static void quote_loop() {
                 std::cout << "[GOLD-DIAG] regime=" << g_gold_stack.regime_name()
                           << " vwap=" << std::fixed << std::setprecision(2) << g_gold_stack.vwap()
                           << " vol_range=" << std::fixed << std::setprecision(2) << g_gold_stack.vol_range() << "\n";
-                // GoldFlow open position state -- every 5s so trail/SL always visible in log
-                if (g_gold_flow.has_open_position()) {
-                    const auto& fp = g_gold_flow.pos;
-                    printf("[GOLD-FLOW-POS] %s entry=%.2f sl=%.2f mfe=%.2f atr=%.2f be=%d stage=%d\n",
-                           fp.is_long ? "LONG" : "SHORT",
-                           fp.entry, fp.sl, fp.mfe,
-                           fp.atr_at_entry, (int)fp.be_locked, (int)fp.trail_stage);
+                // ── OPEN POSITION STATE -- every 5s, ALL engines ─────────────────
+                // Logs entry, SL, MFE, trail stage for every engine with an open position.
+                // Critical for monitoring trail movement and diagnosing missed exits.
+                {
+                    bool any_open = false;
+                    // GoldFlow base
+                    if (g_gold_flow.has_open_position()) {
+                        const auto& p = g_gold_flow.pos;
+                        printf("[OPEN-POS] GoldFlow %s entry=%.2f sl=%.2f mfe=%.2f atr=%.2f be=%d stage=%d\n",
+                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe,
+                               p.atr_at_entry, (int)p.be_locked, (int)p.trail_stage);
+                        any_open = true;
+                    }
+                    // GoldFlow reload
+                    if (g_gold_flow_reload.has_open_position()) {
+                        const auto& p = g_gold_flow_reload.pos;
+                        printf("[OPEN-POS] GoldFlow-Reload %s entry=%.2f sl=%.2f mfe=%.2f stage=%d\n",
+                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe, (int)p.trail_stage);
+                        any_open = true;
+                    }
+                    // GoldFlow addon
+                    if (g_gold_flow_addon.has_open_position()) {
+                        const auto& p = g_gold_flow_addon.pos;
+                        printf("[OPEN-POS] GoldFlow-Addon %s entry=%.2f sl=%.2f mfe=%.2f stage=%d\n",
+                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe, (int)p.trail_stage);
+                        any_open = true;
+                    }
+                    // HybridBracketGold
+                    if (g_hybrid_gold.has_open_position()) {
+                        const auto& p = g_hybrid_gold.pos;
+                        printf("[OPEN-POS] HybridBracketGold %s entry=%.2f sl=%.2f mfe=%.2f\n",
+                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe);
+                        any_open = true;
+                    }
+                    // RSIReversal
+                    if (g_rsi_reversal.has_open_position()) {
+                        const auto& p = g_rsi_reversal.pos;
+                        printf("[OPEN-POS] RSIReversal %s entry=%.2f sl=%.2f mfe=%.2f be=%d\n",
+                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe, (int)p.be_locked);
+                        any_open = true;
+                    }
+                    // MicroMomentum
+                    if (g_micro_momentum.has_open_position()) {
+                        const auto& p = g_micro_momentum.pos;
+                        printf("[OPEN-POS] MicroMomentum %s entry=%.2f sl=%.2f tp=%.2f mfe=%.2f step=%d\n",
+                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.tp, p.mfe, p.step);
+                        any_open = true;
+                    }
+                    // MacroCrash
+                    if (g_macro_crash.has_open_position()) {
+                        const auto& p = g_macro_crash.pos;
+                        printf("[OPEN-POS] MacroCrash %s entry=%.2f sl=%.2f mfe=%.2f be=%d banked=%.2f\n",
+                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe,
+                               (int)p.be_locked, p.banked_usd);
+                        any_open = true;
+                    }
+                    // GoldStack
+                    if (g_gold_stack.has_open_position()) {
+                        printf("[OPEN-POS] GoldStack ACTIVE (see GOLD-BRK-DIAG for details)\n");
+                        any_open = true;
+                    }
+                    if (!any_open) {
+                        printf("[OPEN-POS] no open positions\n");
+                    }
                     fflush(stdout);
                 }
                 std::cout.unsetf(std::ios::fixed);
