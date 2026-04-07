@@ -174,20 +174,25 @@ int main(int argc, char* argv[])
     fflush(stdout);
 
     // MicroMomentumEngine startup config
-    g_micro_momentum.enabled        = true;
-    g_micro_momentum.shadow_mode    = true;    // SHADOW -- watch [MICROMOM-SHADOW] logs
-    g_micro_momentum.ENTRY_DISP_PTS = 1.5;    // 1.5pt displacement from anchor to trigger
-    g_micro_momentum.RSI_SLOPE_MIN  = 0.4;    // RSI must change 0.4 units/tick (EWM)
-    g_micro_momentum.TP_PTS         = 3.0;    // 3pt TP = $30 at 0.10 lots
-    g_micro_momentum.SL_ATR_MULT    = 0.4;    // SL = 0.4x tick ATR
-    g_micro_momentum.COOLDOWN_S     = 45;     // 45s between trades
-    g_micro_momentum.MAX_HOLD_S     = 300;    // 5 min hard exit
+    g_micro_momentum.enabled           = true;
+    g_micro_momentum.shadow_mode       = true;   // SHADOW -- watch [MICROMOM-SHADOW] logs
+    g_micro_momentum.ENTRY_DISP_PTS    = 1.0;   // 1.0pt displacement from anchor to trigger
+    g_micro_momentum.RSI_DELTA_MIN     = 8.0;   // RSI must move 8 units over window
+    g_micro_momentum.RSI_DELTA_WINDOW  = 10;    // ticks for RSI delta measurement
+    g_micro_momentum.TP_PTS            = 4.0;   // 4pt TP = $40 at 0.10 lots
+    g_micro_momentum.SL_ATR_MULT       = 0.5;   // SL = 0.5x tick ATR
+    g_micro_momentum.BE_TRIGGER_PTS    = 1.0;   // breakeven at 1.0pt profit
+    g_micro_momentum.LOCK_TRIGGER_PTS  = 2.0;   // lock +1pt at 2.0pt profit
+    g_micro_momentum.TRAIL_DIST_PTS    = 1.0;   // trail 1.0pt behind once locked
+    g_micro_momentum.COOLDOWN_S        = 20;    // 20s between trades
+    g_micro_momentum.MAX_HOLD_S        = 240;   // 4 min hard exit
     printf("[MICROMOM] MicroMomentumEngine configured "
-           "(shadow_mode=%s disp=%.1fpt rsi_slope=%.1f tp=%.1fpt)\n",
+           "(shadow_mode=%s disp=%.1fpt rsi_delta_min=%.1f tp=%.1fpt cooldown=%ds)\n",
            g_micro_momentum.shadow_mode ? "true" : "false",
            g_micro_momentum.ENTRY_DISP_PTS,
-           g_micro_momentum.RSI_SLOPE_MIN,
-           g_micro_momentum.TP_PTS);
+           g_micro_momentum.RSI_DELTA_MIN,
+           g_micro_momentum.TP_PTS,
+           g_micro_momentum.COOLDOWN_S);
     fflush(stdout);
 
     // [BUG-5 NOTE] MCE is shadow_mode=true by design -- it logs [MCE-SHADOW] but sends
