@@ -204,7 +204,7 @@ int main(int argc, char* argv[])
     //   TRAIL_DIST=0.5   -> tight trail to lock small wins
     //   COOLDOWN=15s     -> fast scalp engine, more opportunities
     //   MAX_HOLD=45s     -> force exit if move stalls, don't overstay
-    g_micro_momentum.enabled           = false;  // DISABLED pending backtest
+    g_micro_momentum.enabled           = true;   // RE-ENABLED in shadow mode for backtest observation
     g_micro_momentum.shadow_mode       = true;
     g_micro_momentum.ENTRY_DISP_PTS    = 0.0;
     g_micro_momentum.RSI_DELTA_MIN     = 6.0;
@@ -250,7 +250,7 @@ int main(int argc, char* argv[])
     // then price snapped back $7.80 to SL in 16s. 3 ticks ~= 0.3-0.6s -- long enough to
     // distinguish a single-tick spike from genuine compression holding at the boundary.
     // Silver also benefits: London open sweep pattern identical, slightly faster ticks.
-    g_bracket_gold.MIN_BREAK_TICKS = 3;
+    g_bracket_gold.MIN_BREAK_TICKS = 5;  // raised 3->5: extra sweep protection
     g_bracket_xag.MIN_BREAK_TICKS  = 3;
     // ATR-based dynamic minimum range: eff_min_range = max(recent_noise * ATR_RANGE_K, MIN_RANGE)
     // Prevents brackets arming when the market noise floor exceeds the bracket width --
@@ -268,7 +268,7 @@ int main(int argc, char* argv[])
     // With VIX at 24 gold compresses to 1-3pt ranges which ATR_RANGE_K=1.5 rejects (needs 15pt).
     // The bracket window itself defines the range -- 1pt minimum just filters single-tick noise.
     g_bracket_gold.ATR_PERIOD  = 20;  g_bracket_gold.ATR_RANGE_K  = 0.0;
-    g_bracket_gold.MIN_RANGE   = 1.0;
+    g_bracket_gold.MIN_RANGE   = 2.5;  // raised 1.0->2.5: filter small noisy compressions
     g_bracket_xag.ATR_PERIOD   = 20;  g_bracket_xag.ATR_RANGE_K   = 1.5;
     g_bracket_eurusd.ATR_PERIOD = 20; g_bracket_eurusd.ATR_RANGE_K = 1.8;
     g_bracket_gbpusd.ATR_PERIOD = 20; g_bracket_gbpusd.ATR_RANGE_K = 1.8;
