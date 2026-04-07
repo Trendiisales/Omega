@@ -496,6 +496,8 @@ static void on_tick_ustec(
                                 false, false, 0, ca_on_close);
         }
 
+        const bool idx_session_ok = (g_macro_ctx.session_slot >= 1 &&
+                                     g_macro_ctx.session_slot <= 5);
         const bool hybrid_nq_can_enter =
             base_can_nq
             && idx_session_ok
@@ -616,6 +618,8 @@ static void on_tick_dj30(
                                   false, false, 0, ca_on_close);
         }
 
+        const bool idx_session_ok = (g_macro_ctx.session_slot >= 1 &&
+                                     g_macro_ctx.session_slot <= 5);
         const bool hybrid_us30_can_enter =
             base_can_us30
             && idx_session_ok
@@ -818,6 +822,8 @@ static void on_tick_nas100(
                                     false, false, 0, ca_on_close);
         }
 
+        const bool idx_session_ok = (g_macro_ctx.session_slot >= 1 &&
+                                     g_macro_ctx.session_slot <= 5);
         const bool hybrid_nas_can_enter =
             base_can_nas
             && idx_session_ok
