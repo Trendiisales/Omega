@@ -47,14 +47,63 @@ $ReportFile = "$OmegaDir\logs\startup_report.txt"
 # Locate the log file
 # ------------------------------------------------------------------------------
 if ($LogPath -eq "") {
-    # Try latest.log first (symlink/copy), then today's dated log
-    $candidates = @(
-        "$OmegaDir\logs\latest.log",
-        "$OmegaDir\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log",
-        "$OmegaDir\omega.log"
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path $c) { $LogPath = $c; break }
+    # ── Locate the live log ──────────────────────────────────────────────────
+    # STALENESS CONTRACT:
+    #   1. Prefer latest.log IF it exists AND LastWriteTime < 120s ago.
+    #      latest.log is truncated on every restart -- if fresh it is guaranteed
+    #      to be from THIS run. The engine emits [LOG-HEALTH] every 60s so any
+    #      live file will always be < 120s old.
+    #   2. If latest.log is stale or missing, fall back to today's dated log
+    #      with the same 120s freshness check.
+    #   3. If BOTH are stale or missing: hard FAIL with diagnostics.
+    #      Never silently analyse a frozen file.
+    # ────────────────────────────────────────────────────────────────────────
+    $latestLog     = "$OmegaDir\logs\latest.log"
+    $datedLog      = "$OmegaDir\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
+    $MAX_STALE_SEC = 120
+
+    $latestOk = $false
+
+    if (Test-Path $latestLog) {
+        $latestAge = [int]((Get-Date) - (Get-Item $latestLog).LastWriteTime).TotalSeconds
+        if ($latestAge -le $MAX_STALE_SEC) {
+            $latestOk = $true
+            $LogPath  = $latestLog
+            Write-Host "  [LOG] latest.log LIVE (age=${latestAge}s)" -ForegroundColor Green
+        } else {
+            Write-Host "  [WARN] latest.log STALE (age=${latestAge}s > ${MAX_STALE_SEC}s) -- checking dated log" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  [WARN] latest.log NOT FOUND -- checking dated log" -ForegroundColor Yellow
+    }
+
+    if (-not $latestOk) {
+        if (Test-Path $datedLog) {
+            $datedAge = [int]((Get-Date) - (Get-Item $datedLog).LastWriteTime).TotalSeconds
+            if ($datedAge -le $MAX_STALE_SEC) {
+                $LogPath = $datedLog
+                Write-Host "  [LOG] Using dated log LIVE (age=${datedAge}s): $datedLog" -ForegroundColor Cyan
+            } else {
+                Write-Host ""
+                Write-Host "  *** LOG HEALTH FAILURE ***" -ForegroundColor Red
+                Write-Host "  latest.log : $(if (Test-Path $latestLog) { 'STALE (' + [int]((Get-Date)-(Get-Item $latestLog).LastWriteTime).TotalSeconds + 's)' } else { 'NOT FOUND' })" -ForegroundColor Red
+                Write-Host "  dated log  : STALE (age=${datedAge}s) -- $datedLog" -ForegroundColor Red
+                Write-Host "  Both logs frozen. Omega is dead or log dir is wrong." -ForegroundColor Red
+                Write-Host "  Run: Get-Service OmegaHFT" -ForegroundColor Yellow
+                Write-Host "  Run: Get-Process Omega" -ForegroundColor Yellow
+                Write-Host ""
+                exit 1
+            }
+        } else {
+            Write-Host ""
+            Write-Host "  *** LOG HEALTH FAILURE ***" -ForegroundColor Red
+            Write-Host "  latest.log : $(if (Test-Path $latestLog) { 'STALE' } else { 'NOT FOUND' })" -ForegroundColor Red
+            Write-Host "  dated log  : NOT FOUND ($datedLog)" -ForegroundColor Red
+            Write-Host "  No live log found. Omega has not started or crashed before opening logs." -ForegroundColor Red
+            Write-Host "  Run: .\\RESTART_OMEGA.ps1" -ForegroundColor Yellow
+            Write-Host ""
+            exit 1
+        }
     }
 }
 
@@ -155,6 +204,34 @@ function Add-Result {
         Value  = $Value
         Detail = $Detail
     })
+}
+
+# --- CHECK 0: Log health -- confirm [LOG-HEALTH] heartbeat present and recent -
+# The engine emits [LOG-HEALTH] dated=ok latest=<ok|FAIL> ts=HH:MM:SS every 60s.
+# If we see latest=FAIL in any heartbeat, latest.log failed to open -- dated log only.
+# If no heartbeat at all in captured lines, log system did not initialise.
+$logHealthLines = @(Find-All "\[LOG-HEALTH\]")
+if ($logHealthLines.Count -gt 0) {
+    $lastHealth = $logHealthLines[-1]
+    if ($lastHealth -match "latest=FAIL") {
+        Add-Result "Log Health" "FAIL" "latest.log FAILED TO OPEN" `
+            "Engine is writing to dated log only. All scripts auto-fallback. Check disk permissions on C:\Omega\logs\"
+    } elseif ($lastHealth -match "latest=ok") {
+        Add-Result "Log Health" "PASS" "dated=ok latest=ok ($($logHealthLines.Count) heartbeat(s) seen)" `
+            "Both log files confirmed open and receiving writes."
+    } else {
+        Add-Result "Log Health" "WARN" "Heartbeat found but status unclear: $lastHealth" ""
+    }
+} else {
+    # No heartbeat seen -- could be within first 60s of startup (normal) or log init failed
+    $logFailLine = Find-Last "OMEGA-LOG-LATEST-FAIL"
+    if ($logFailLine) {
+        Add-Result "Log Health" "FAIL" "OMEGA-LOG-LATEST-FAIL seen -- latest.log never opened" `
+            "Engine running but latest.log is not being written. Check C:\Omega\logs\ permissions."
+    } else {
+        Add-Result "Log Health" "INFO" "No [LOG-HEALTH] heartbeat yet (fires every 60s)" `
+            "Normal if startup < 60s ago. If this remains INFO after 2min, log system may have failed."
+    }
 }
 
 # --- CHECK 1: ATR Seed -------------------------------------------------------
