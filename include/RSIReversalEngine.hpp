@@ -102,8 +102,8 @@ public:
         if (spread > MAX_SPREAD_PTS)        return;
         if (m_tick_atr < MIN_ATR_PTS)       return;
         if (m_rsi_count < RSI_PERIOD + 2)   return;  // RSI not warmed yet
-        if (session_slot == 0)              return;  // dead zone
-        if (_in_dead_zone())                return;  // 05-07 UTC
+        if (session_slot == 0)              return;  // slot 0 only (dead zone)
+        // 05-07 UTC pre-London NOT blocked -- spread gate protects against thin liquidity
 
         const double rsi = m_tick_rsi;
 

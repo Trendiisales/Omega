@@ -67,7 +67,7 @@ public:
     int    RSI_SLOPE_WINDOW  = 5;    // ticks for RSI slope measurement
     double TP_PTS            = 3.0;  // fixed take profit in price points
     double SL_ATR_MULT       = 0.4;  // SL = 0.4x tick ATR
-    double MAX_SPREAD_PTS    = 2.0;
+    double MAX_SPREAD_PTS    = 2.5;  // raised 2.0->2.5: pre-London spread ~2.2pt is valid
     int    COOLDOWN_S        = 45;
     int    MAX_HOLD_S        = 300;
     int    MIN_HOLD_S        = 5;
@@ -116,8 +116,8 @@ public:
         if (now_s < m_cooldown_until)          return;
         if (m_tick_count < WARMUP_TICKS)       return;
         if (spread > MAX_SPREAD_PTS)           return;
-        if (session_slot == 0)                 return;  // dead zone
-        if (_in_dead_zone())                   return;  // 05-07 UTC
+        if (session_slot == 0)                 return;  // dead zone (slot 0 only)
+        // 05-07 UTC pre-London NOT blocked -- spread gate is sufficient protection
 
         // ── Signal: RSI slope + price displacement must agree ─────────────────
         const double rsi_slope = m_rsi_slope;       // EWM of RSI change/tick
