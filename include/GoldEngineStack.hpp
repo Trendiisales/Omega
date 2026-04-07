@@ -2485,32 +2485,50 @@ public:
         if (s.spread > MAX_SPREAD)       return noSignal();
         if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone
         if (in_dead_zone())              return noSignal();
-        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
-        // Tighten spread cap to 0.80pt in Asia -- real directional moves have tight spreads.
-        // Also block when ATR proxy (volatility*2.5) < 3x spread -- SL within spread noise.
+        // Asia quality gate: spread cap raised 0.80->2.50 to match general MAX_SPREAD.
+        // Old 0.80 cap blocked ALL Asia MR entries since Asia spread is typically 1.5-2.5pt.
+        // The ATR/spread ratio gate below still filters noise -- spread cap alone was too blunt.
         if (s.session == SessionType::ASIAN) {
-            if (s.spread > 0.80) return noSignal();
+            if (s.spread > MAX_SPREAD) return noSignal();  // use general cap, not 0.80
             if (s.volatility > 0.0 && s.spread > 0.0) {
                 const double atr_proxy = s.volatility * 2.5;
                 if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
             }
         }
 
-        // Trend gate: block mean-reversion entries when EWM drift signals trend.
-        // Lowered 4.0->2.0: during a 132pt macro drop EWM drift only reached -1.7
-        // (smoothed), so the old 4.0 threshold never fired and MR kept firing LONG
-        // into a raging downtrend. 2.0 is still above normal chop (0.3-0.8).
-        if (std::fabs(ewm_drift_) > 2.0) return noSignal();  // trend -- no MR
+        // Trend gate: block MR entries when EWM drift signals a sustained trend.
+        // EXCEPTION: RSI extreme reversal -- when RSI < 28 (oversold) or RSI > 72
+        // (overbought) AND drift is opposing the RSI signal, this is the EXACT
+        // setup MR is designed for. The drop/surge IS why drift is elevated.
+        // Blocking MR here misses the highest-probability RSI reversal entries.
+        // Allow MR when: RSI extreme confirms reversal direction vs drift direction.
+        //   z < -Z_ENTRY (oversold LONG) AND drift < -2.0 (bearish) = RSI vs drift
+        //     -> drift high because of the very drop MR wants to fade. ALLOW.
+        //   z > Z_ENTRY (overbought SHORT) AND drift > 2.0 (bullish) = same pattern.
+        //     -> ALLOW.
+        //   All other high-drift cases: still block (not an RSI extreme reversal).
+        const double rsi_now = s.vwap > 0.0 ? 0.0 : 0.0;  // not in snapshot -- use z as proxy
+        (void)rsi_now;
+        // Compute z early to use in drift gate decision
+        double mean_early = 0.0, std_early = 0.0;
+        const bool has_stats_early = rolling_stats(mean_early, std_early);
+        const double z_early = has_stats_early ? (s.mid - mean_early) / std_early : 0.0;
+        // RSI extreme bypass: when price is statistically extreme (|z|>Z_ENTRY)
+        // AND drift opposes the mean-reversion direction, allow entry.
+        // This is the RSI-bottom-reversal pattern: price oversold, drift still negative.
+        const bool rsi_extreme_bypass = (z_early < -Z_ENTRY && ewm_drift_ < -2.0)
+                                     || (z_early >  Z_ENTRY && ewm_drift_ >  2.0);
+        if (std::fabs(ewm_drift_) > 2.0 && !rsi_extreme_bypass) return noSignal();
 
         // Macro displacement gate: if price is >$15 from VWAP, this is a sustained
         // directional move, not mean-reversion territory. Block ALL MR entries.
-        // A 132pt drop moves price $50-100 from VWAP -- MR LONG is suicide.
+        // Exception: RSI extreme bypass already validated above -- still check VWAP
+        // but use a wider threshold for confirmed extremes (20pt not 15pt).
         if (s.vwap > 0.0) {
             const double vwap_dist = s.mid - s.vwap;
-            // Price far below VWAP -- block LONG MR (it's a downtrend, not oversold)
-            if (vwap_dist < -15.0) return noSignal();
-            // Price far above VWAP -- block SHORT MR (it's an uptrend)
-            if (vwap_dist >  15.0) return noSignal();
+            const double vwap_limit = rsi_extreme_bypass ? 20.0 : 15.0;
+            if (vwap_dist < -vwap_limit) return noSignal();
+            if (vwap_dist >  vwap_limit) return noSignal();
         }
 
         history_.push_back(s.mid);
@@ -2529,10 +2547,13 @@ public:
         if (std::fabs(z) < Z_ENTRY) return noSignal();
 
         // Per-side drift check: don't fade momentum in the wrong direction.
-        // Lowered 2.0->1.2: at -1.7 drift the old gate didn't fire, allowing
-        // LONG MR entries into a 132pt downtrend.
-        if (z < -Z_ENTRY && ewm_drift_ < -1.2) return noSignal();  // LONG vs bearish drift
-        if (z >  Z_ENTRY && ewm_drift_ >  1.2) return noSignal();  // SHORT vs bullish drift
+        // EXCEPTION: rsi_extreme_bypass already validated above -- at RSI extremes
+        // the drift IS the signal source (price dropped hard -> drift negative ->
+        // this is exactly when MR LONG should fire). Skip per-side check in that case.
+        if (!rsi_extreme_bypass) {
+            if (z < -Z_ENTRY && ewm_drift_ < -1.2) return noSignal();  // LONG vs bearish drift
+            if (z >  Z_ENTRY && ewm_drift_ >  1.2) return noSignal();  // SHORT vs bullish drift
+        }
 
         Signal sig;
         sig.size   = 0.01;
