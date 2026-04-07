@@ -244,85 +244,153 @@ if ($svc) {
 }
 
 # ── POST-LAUNCH VERIFICATION ─────────────────────────────────────────────────
+# Strategy: DO NOT rely on log content for liveness -- the log file is truncated
+# and rewritten on each restart, so a stale log from the prior run will have the
+# OLD hash. We must:
+#   1. Confirm latest.log was CREATED AFTER this restart began (file age check)
+#   2. Wait up to 90s for [OMEGA] RUNNING COMMIT to appear (it prints ~10-20s in)
+#   3. Extract hash from that line and compare to $gitHash -- HARD FAIL if mismatch
+#   4. Verify engine configs printed at startup (MICROMOM, MCE, etc.)
+#   5. Only then declare success
+
+$restartStarted = Get-Date
+$logPath        = "$OmegaDir\logs\latest.log"
+$stdoutPath     = "$OmegaDir\logs\omega_service_stdout.log"
+
 Write-Host ""
 Write-Host "  Waiting for engine startup and live log..." -ForegroundColor DarkGray
 
-$logPath    = "$OmegaDir\logs\latest.log"
-$stdoutPath = "$OmegaDir\logs\omega_service_stdout.log"
-$waited     = 0
-$logLive    = $false
-
-while ($waited -lt 30) {
+# ── Step A: Wait for latest.log to be created/updated AFTER this restart ─────
+# The file must be newer than when we started the restart. This prevents reading
+# a stale log from a prior run. Wait up to 30s for the file to appear fresh.
+$logFresh = $false
+$waitA = 0
+while ($waitA -lt 30) {
     Start-Sleep -Seconds 1
-    $waited++
-
-    # Check latest.log exists and has RUNNING COMMIT
+    $waitA++
     if (Test-Path $logPath) {
-        $lines = Get-Content $logPath -ErrorAction SilentlyContinue
-        if ($lines | Select-String "RUNNING COMMIT") {
-            # Now verify it is ACTIVELY being written -- check file age
-            $age = (Get-Date) - (Get-Item $logPath).LastWriteTime
-            if ($age.TotalSeconds -lt 15) {
-                Write-Host "  [OK] latest.log is live (age=$([int]$age.TotalSeconds)s, confirmed after ${waited}s)" -ForegroundColor Green
-                $logLive = $true
-                break
-            }
-        }
-    }
-    if ($waited % 5 -eq 0) { Write-Host "  Still waiting... (${waited}s)" -ForegroundColor DarkGray }
-}
-
-if (-not $logLive) {
-    # latest.log not live -- check if dated log is being written instead
-    $datedLog = "$OmegaDir\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
-    if (Test-Path $datedLog) {
-        $datedAge = (Get-Date) - (Get-Item $datedLog).LastWriteTime
-        if ($datedAge.TotalSeconds -lt 15) {
-            Write-Host "  [WARN] latest.log stale but dated log is live ($datedLog)" -ForegroundColor Yellow
-            Write-Host "         latest.log fix not yet deployed -- restart again after this build" -ForegroundColor Yellow
-            $logPath = $datedLog  # use dated log for hash check below
-        } else {
-            Write-Host "  [!!] BOTH latest.log AND dated log are stale -- engine may have crashed" -ForegroundColor Red
-            Write-Host "       Check: Get-Service OmegaHFT" -ForegroundColor Red
-        }
-    } else {
-        Write-Host "  [!!] latest.log never created -- tee buffer failed to open" -ForegroundColor Red
-        Write-Host "       Check NSSM stdout: $stdoutPath" -ForegroundColor Red
-    }
-}
-
-# Extract running hash
-$runningHash = "NOT_FOUND"
-foreach ($checkPath in @($logPath, $stdoutPath)) {
-    if (Test-Path $checkPath) {
-        $lines = Get-Content $checkPath -ErrorAction SilentlyContinue
-        $hit = $lines | Select-String "RUNNING COMMIT" | Select-Object -Last 1
-        if ($hit -and ($hit -match "RUNNING COMMIT:\s+([a-f0-9]+)")) {
-            $runningHash = $Matches[1]
+        $fileAge = (Get-Date) - (Get-Item $logPath).LastWriteTime
+        if ($fileAge.TotalSeconds -lt 20) {
+            Write-Host "  [OK] latest.log is live (age=$([int]$fileAge.TotalSeconds)s, confirmed after ${waitA}s)" -ForegroundColor Green
+            $logFresh = $true
             break
         }
     }
+    if ($waitA % 5 -eq 0) { Write-Host "  Waiting for fresh log... (${waitA}s)" -ForegroundColor DarkGray }
+}
+
+if (-not $logFresh) {
+    Write-Host "  [!!] latest.log not updated after 30s -- NSSM stdout tee may have failed" -ForegroundColor Red
+    Write-Host "       Checking service state..." -ForegroundColor DarkGray
+    $svcCheck = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    Write-Host "       Service: $($svcCheck.Status)" -ForegroundColor Yellow
+    Write-Host "       Checking stdout log: $stdoutPath" -ForegroundColor DarkGray
+    if (Test-Path $stdoutPath) {
+        $stdAge = (Get-Date) - (Get-Item $stdoutPath).LastWriteTime
+        Write-Host "       stdout log age: $([int]$stdAge.TotalSeconds)s" -ForegroundColor Yellow
+        # Fall back to stdout log
+        $logPath = $stdoutPath
+        $logFresh = ($stdAge.TotalSeconds -lt 30)
+    }
+    if (-not $logFresh) {
+        FAIL "No live log after 30s. Engine did not start. Check: Get-Service $ServiceName"
+    }
+}
+
+# ── Step B: Wait up to 90s for [OMEGA] RUNNING COMMIT in the fresh log ────────
+# RUNNING COMMIT prints ~10-20s after startup. 90s timeout is generous but safe.
+$runningHash = "NOT_FOUND"
+$waitB = 0
+Write-Host "  Waiting for RUNNING COMMIT line (up to 90s)..." -ForegroundColor DarkGray
+while ($waitB -lt 90) {
+    Start-Sleep -Seconds 1
+    $waitB++
+    if (Test-Path $logPath) {
+        $hit = Get-Content $logPath -ErrorAction SilentlyContinue |
+               Select-String "\[OMEGA\] RUNNING COMMIT:" |
+               Select-Object -Last 1
+        if ($hit -and ($hit -match "RUNNING COMMIT:\s+([a-f0-9]+)")) {
+            $runningHash = $Matches[1]
+            Write-Host "  [OK] RUNNING COMMIT found after ${waitB}s: $runningHash" -ForegroundColor Green
+            break
+        }
+    }
+    if ($waitB % 10 -eq 0) { Write-Host "  Still waiting for RUNNING COMMIT... (${waitB}s)" -ForegroundColor DarkGray }
+}
+
+# ── Step C: HARD FAIL on hash mismatch ────────────────────────────────────────
+Banner "POST-LAUNCH HASH VERIFICATION" "Cyan"
+if ($runningHash -eq "NOT_FOUND") {
+    Write-Host "  [!!] RUNNING COMMIT never appeared in log after 90s" -ForegroundColor Red
+    Write-Host "       Engine may have crashed at startup. Last 10 log lines:" -ForegroundColor Red
+    if (Test-Path $logPath) {
+        Get-Content $logPath -Tail 10 | ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
+    }
+    FAIL "Cannot verify running hash -- engine startup failed or log is broken"
+}
+
+if ($runningHash -ne $gitHash) {
+    Write-Host "  [!!] HASH MISMATCH" -ForegroundColor Red
+    Write-Host "       Running : $runningHash" -ForegroundColor Red
+    Write-Host "       Expected: $gitHash" -ForegroundColor Red
+    Write-Host "       STOP. Wrong binary is running. Do not trade." -ForegroundColor Red
+    FAIL "Hash mismatch -- run .\RESTART_OMEGA.ps1 again"
+}
+
+Write-Host "  [OK] HASH VERIFIED: running=$runningHash == HEAD=$gitHash" -ForegroundColor Green
+
+# ── Step D: ENGINE CONFIG VERIFICATION ────────────────────────────────────────
+# Every engine prints its config at startup. Verify key parameters are correct.
+# If any check fails it means the binary was built from wrong source -- HARD FAIL.
+Banner "ENGINE CONFIG VERIFICATION" "Cyan"
+
+$verifyErrors = 0
+
+function CheckLog($pattern, $label, $mustMatch) {
+    $hit = Get-Content $logPath -ErrorAction SilentlyContinue | Select-String $pattern | Select-Object -Last 1
+    if ($hit) {
+        Write-Host "  [OK] $label" -ForegroundColor Green
+        Write-Host "       $($hit.Line.Trim())" -ForegroundColor DarkGray
+    } else {
+        Write-Host "  [!!] MISSING: $label" -ForegroundColor Red
+        Write-Host "       Expected pattern: $pattern" -ForegroundColor Red
+        if ($mustMatch) { $script:verifyErrors++ }
+    }
+}
+
+# Hash in version line
+CheckLog "\[OMEGA\].*version=$gitHash"         "Version line matches HEAD hash"       $true
+
+# MicroMomentum config -- rsi_delta_min MUST be 3.0 not 8.0
+CheckLog "MICROMOM.*rsi_delta_min=3\."         "MicroMomentum rsi_delta_min=3.x"      $true
+CheckLog "MICROMOM.*disp=0\.0"                  "MicroMomentum ENTRY_DISP_PTS=0.0"     $true
+
+# Mode must be SHADOW
+CheckLog "mode.*SHADOW|SHADOW.*mode"            "Mode is SHADOW (not LIVE)"            $false
+
+# FIX logon
+CheckLog "LOGON ACCEPTED"                       "FIX logon accepted"                   $false
+
+# cTrader account auth
+CheckLog "Account.*authorized"                  "cTrader account authorized"           $false
+
+if ($verifyErrors -gt 0) {
+    Write-Host ""
+    Write-Host "  [!!] $verifyErrors CRITICAL verification(s) FAILED" -ForegroundColor Red
+    Write-Host "       The binary does not match expected config." -ForegroundColor Red
+    Write-Host "       Check that the commit was pushed and pulled correctly." -ForegroundColor Red
+    FAIL "$verifyErrors engine config verification(s) failed"
 }
 
 Write-Host ""
-Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "  POST-LAUNCH HASH VERIFICATION" -ForegroundColor Cyan
-Write-Host "=======================================================" -ForegroundColor Cyan
-if ($runningHash -eq $gitHash) {
-    Write-Host "  [OK] HASH VERIFIED: running=$runningHash == HEAD=$gitHash" -ForegroundColor Green
-} else {
-    Write-Host "  [!!] HASH MISMATCH: running=$runningHash != HEAD=$gitHash" -ForegroundColor Red
-    Write-Host "  STOP. Do not trade. The wrong binary is running." -ForegroundColor Red
-    Write-Host "  Run .\RESTART_OMEGA.ps1 again." -ForegroundColor Red
-    exit 1
-}
+Write-Host "  [OK] All engine config checks passed" -ForegroundColor Green
 
-# Run full status check
+# ── Step E: Full status check ─────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  Running full status check..." -ForegroundColor Cyan
 Write-Host ""
 if (Test-Path "$OmegaDir\OMEGA_STATUS.ps1") {
     & "$OmegaDir\OMEGA_STATUS.ps1"
 } else {
-    Write-Host "  OMEGA_STATUS.ps1 not found -- run it manually to verify system state" -ForegroundColor Yellow
+    Write-Host "  OMEGA_STATUS.ps1 not found -- skipping" -ForegroundColor Yellow
 }
