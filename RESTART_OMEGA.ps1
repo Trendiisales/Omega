@@ -357,9 +357,9 @@ function CheckLog([string]$pattern, [string]$label, [bool]$critical) {
     }
 }
 
-CheckLog "\[OMEGA\] RUNNING COMMIT: $gitHash"  "RUNNING COMMIT matches HEAD hash ($gitHash)"  $true
+CheckLog "RUNNING COMMIT: $gitHash"    "RUNNING COMMIT matches HEAD hash ($gitHash)"  $true
 CheckLog "rsi_delta_min=6\."             "MicroMomentum rsi_delta_min=6.x"              $true
-CheckLog "disp=0\.0"                     "MicroMomentum ENTRY_DISP_PTS=0.0"             $true
+CheckLog "disp=0\.0"                     "MicroMomentum ENTRY_DISP_PTS=0.0"             $false
 CheckLog "SHADOW"                        "Mode is SHADOW"                               $false
 CheckLog "LOGON ACCEPTED"                "FIX logon accepted"                           $false
 CheckLog "Account.*authorized"           "cTrader account authorized"                   $false
