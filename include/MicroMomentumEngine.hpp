@@ -314,9 +314,9 @@ private:
     {
         const double pnl_pts = pos.is_long
             ? (exit_px - pos.entry) : (pos.entry - exit_px);
-        const double pnl = pnl_pts * pos.size * 100.0;
+        const double pnl = pnl_pts * pos.size;
 
-        printf("[MICROMOM] EXIT %s @ %.2f reason=%s pnl_pts=%.2f pnl=$%.2f mfe=%.2f\n",
+        printf("[MICROMOM] EXIT %s @ %.2f reason=%s pnl_pts=%.2f pnl_raw=%.4f mfe=%.2f\n",
                pos.is_long ? "LONG" : "SHORT",
                exit_px, reason, pnl_pts, pnl, pos.mfe);
         fflush(stdout);
@@ -331,9 +331,9 @@ private:
         tr.exitPrice   = exit_px;
         tr.sl          = pos.sl;
         tr.size        = pos.size;
-        tr.pnl         = pnl_pts * pos.size * 100.0;  // USD: pts * lots * $100/pt
+        tr.pnl         = pnl_pts * pos.size;          // raw pts*lots -- handle_closed_trade applies tick_mult
         tr.net_pnl     = tr.pnl;                       // no commission modelled -- set equal
-        tr.mfe         = pos.mfe * pos.size * 100.0;
+        tr.mfe         = pos.mfe * pos.size;
         tr.mae         = 0.0;
         tr.entryTs     = pos.entry_ts;
         tr.exitTs      = now_s;
