@@ -101,14 +101,39 @@ $ErrorActionPreference = "Stop"
 OK "Stopped and confirmed dead"
 
 # ── [2/13] Pull ──────────────────────────────────────────────────────────────
+# GUARANTEED FRESH PULL:
+# 1. fetch brings remote refs up to date
+# 2. reset --hard forces local tree to match origin/main exactly
+# 3. We read the remote hash directly from git and compare to local HEAD
+#    If they don't match the reset failed (e.g. locked files) -- HARD FAIL
+#    Never build from a stale tree. Ever.
 Step 2 13 "Pulling origin/main..."
 Set-Location $OmegaDir
 $ErrorActionPreference = "Continue"
-git fetch origin 2>&1 | Out-Null
+
+# Fetch
+git fetch origin 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+
+# Hard reset
 git reset --hard origin/main 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+
 $ErrorActionPreference = "Stop"
+
+# Get local HEAD hash after reset
 $gitHash = (git log --format="%h" -1).Trim()
 $gitMsg  = (git log --format="%s" -1).Trim()
+
+# Get remote HEAD hash directly -- this is what we MUST be building
+$remoteHash = (git rev-parse --short origin/main).Trim()
+
+# HARD FAIL if local does not match remote -- reset did not take
+if ($gitHash -ne $remoteHash) {
+    Write-Host "  [!!] PULL FAILED: local=$gitHash remote=$remoteHash" -ForegroundColor Red
+    Write-Host "       Files were likely locked by the running service." -ForegroundColor Red
+    Write-Host "       Ensure Stop-Service ran before RESTART_OMEGA.ps1" -ForegroundColor Red
+    FAIL "Local tree does not match origin/main after reset -- cannot build stale code"
+}
+
 OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
