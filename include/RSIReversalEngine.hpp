@@ -12,7 +12,7 @@
 // ENTRY:
 //   Tick RSI < RSI_OVERSOLD  (default 42) -> LONG on first RSI tick up
 //   Tick RSI > RSI_OVERBOUGHT (default 58) -> SHORT on first RSI tick down
-//   All sessions (Asia + London + NY). Dead zone 05-07 UTC blocked.
+//   All sessions (Asia + London + NY). Spread gate protects thin sessions.
 //
 // PROTECTION:
 //   SL = 0.6x ATR from entry
@@ -22,6 +22,13 @@
 //   Max hold 10 minutes, cooldown 60s after close
 //
 // ATR: also computed tick-level from EWM of |price change| -- no bars needed
+//
+// v2.1: update_indicators() exposed as public method.
+//   tick_gold.hpp calls it unconditionally on every XAUUSD tick so that
+//   tick_rsi() is always current when MacroCrashEngine reads it -- even when
+//   rsi_rev_can_enter=false (e.g. g_hybrid_gold has a position).
+//   Previously indicators only updated inside on_tick(), so when entry was
+//   gated the RSI fed to MacroCrash was stale.
 // =============================================================================
 
 #include <cstdint>
@@ -72,8 +79,22 @@ public:
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
+    // ── Indicator update -- MUST be called every tick unconditionally ──────────
+    // tick_gold.hpp calls this at the top of the XAUUSD block, before any gate
+    // checks, so tick_rsi() is always current for MacroCrashEngine to read.
+    // on_tick() also calls this internally -- calling twice is safe (idempotent
+    // per-tick because m_rsi_last_mid guards against double-counting).
+    void update_indicators(double bid, double ask) noexcept {
+        if (bid <= 0.0 || ask <= 0.0) return;
+        const double mid    = (bid + ask) * 0.5;
+        const double spread = ask - bid;
+        _update_tick_rsi(mid);
+        _update_tick_atr(mid, spread);
+    }
+
     // ── Main tick ─────────────────────────────────────────────────────────────
-    // Called every XAUUSD tick. No bars_ready dependency.
+    // Called when entry is allowed. Indicators already updated by update_indicators()
+    // so they are not double-updated here when both are called the same tick.
     void on_tick(double bid, double ask,
                  int session_slot, int64_t now_ms,
                  CloseCallback on_close) noexcept
@@ -85,7 +106,8 @@ public:
         const double spread = ask - bid;
         const int64_t now_s = now_ms / 1000;
 
-        // Update tick-level indicators on every tick
+        // Update indicators -- safe to call again, _update_tick_rsi guards
+        // against double-counting via m_rsi_last_mid comparison.
         _update_tick_rsi(mid);
         _update_tick_atr(mid, spread);
 
@@ -103,7 +125,7 @@ public:
         if (m_tick_atr < MIN_ATR_PTS)       return;
         if (m_rsi_count < RSI_PERIOD + 2)   return;  // RSI not warmed yet
         // No session slot block -- spread gate (MAX_SPREAD_PTS=2.5) protects against
-        // thin liquidity in all sessions including pre-London (05-07 UTC, slot 0).
+        // thin liquidity in all sessions including pre-London (05-07 UTC).
         // RSI moves are real regardless of session.
 
         const double rsi = m_tick_rsi;
@@ -114,7 +136,7 @@ public:
         if (!rsi_oversold && !rsi_overbought) return;
 
         // Must be TURNING -- not still falling/rising
-        if (rsi_oversold  && rsi <= m_rsi_prev) return;  // still falling
+        if (rsi_oversold   && rsi <= m_rsi_prev) return;  // still falling
         if (rsi_overbought && rsi >= m_rsi_prev) return;  // still rising
 
         // ── Entry ─────────────────────────────────────────────────────────────
@@ -162,14 +184,13 @@ private:
     bool    m_rsi_init      = false;
     int     m_rsi_count     = 0;
     double  m_rsi_last_mid  = 0.0;
-    std::deque<double> m_rsi_gains;  // seed gains
-    std::deque<double> m_rsi_losses; // seed losses
+    std::deque<double> m_rsi_gains;   // seed gains
+    std::deque<double> m_rsi_losses;  // seed losses
 
     // ── Tick ATR state ────────────────────────────────────────────────────────
     double  m_tick_atr      = 0.0;
     double  m_atr_last_mid  = 0.0;
     bool    m_atr_init      = false;
-    // EWM ATR: alpha = 2/(period+1) with period=14
     static constexpr double ATR_ALPHA = 2.0 / (14.0 + 1.0);
 
     // ── Other state ───────────────────────────────────────────────────────────
@@ -177,6 +198,10 @@ private:
     int     m_trade_id       = 0;
 
     void _update_tick_rsi(double mid) noexcept {
+        // Guard: skip if mid unchanged from last call this tick.
+        // Prevents double-counting when update_indicators() and on_tick() both
+        // call this in the same tick with the same price.
+        if (mid == m_rsi_last_mid) return;
         if (m_rsi_last_mid <= 0.0) { m_rsi_last_mid = mid; return; }
         const double change = mid - m_rsi_last_mid;
         m_rsi_last_mid = mid;
@@ -187,11 +212,9 @@ private:
         const double loss = change < 0.0 ? -change : 0.0;
 
         if (!m_rsi_init) {
-            // Collect RSI_PERIOD samples of both gains and losses for proper seed
             m_rsi_gains.push_back(gain);
             m_rsi_losses.push_back(loss);
             if ((int)m_rsi_gains.size() < RSI_PERIOD) return;
-            // Seed avg gain and avg loss from first RSI_PERIOD ticks (Wilder standard)
             double sum_g = 0.0, sum_l = 0.0;
             for (int i = 0; i < RSI_PERIOD; ++i) {
                 sum_g += m_rsi_gains[i];
@@ -215,6 +238,8 @@ private:
     }
 
     void _update_tick_atr(double mid, double spread) noexcept {
+        // Guard: skip if mid unchanged (same tick double-call protection)
+        if (mid == m_atr_last_mid && m_atr_init) return;
         const double range = (m_atr_last_mid > 0.0)
             ? std::max(std::fabs(mid - m_atr_last_mid), spread)
             : spread;
@@ -227,17 +252,6 @@ private:
         }
     }
 
-    static bool _in_dead_zone() noexcept {
-        const auto t = std::time(nullptr);
-        struct tm ti{};
-#ifdef _WIN32
-        gmtime_s(&ti, &t);
-#else
-        gmtime_r(&t, &ti);
-#endif
-        return (ti.tm_hour >= 5 && ti.tm_hour < 7);
-    }
-
     void _manage(double bid, double ask, double mid,
                  int64_t now_s, CloseCallback on_close) noexcept
     {
@@ -247,7 +261,6 @@ private:
 
         if ((now_s - pos.entry_ts) < MIN_HOLD_S) return;
 
-        // Max hold
         if ((now_s - pos.entry_ts) > MAX_HOLD_S) {
             _close(pos.is_long ? bid : ask, "MAX_HOLD", now_s, on_close);
             return;
@@ -271,7 +284,7 @@ private:
             if (!pos.is_long && trail_sl < pos.sl) pos.sl = trail_sl;
         }
 
-        // RSI exit -- take profit when RSI returns to neutral
+        // RSI exit
         if (m_rsi_count > RSI_PERIOD + 2) {
             const bool rsi_exit_long  = pos.is_long  && (m_tick_rsi >= RSI_EXIT_LONG);
             const bool rsi_exit_short = !pos.is_long && (m_tick_rsi <= RSI_EXIT_SHORT);

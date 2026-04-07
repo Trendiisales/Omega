@@ -1463,6 +1463,13 @@ static void on_tick_gold(
             g_macro_ctx.session_slot);
     }
 
+    // ?? RSIReversal indicator warmup -- UNCONDITIONAL, every tick ????????????
+    // Must run before MacroCrashEngine so tick_rsi() is current when MCE reads it.
+    // RSIReversalEngine.on_tick() is gated (rsi_rev_can_enter), so when the gate
+    // is closed (e.g. hybrid_gold has position) indicators go stale and MacroCrash
+    // reads a stale RSI value. update_indicators() is ungated -- always live.
+    g_rsi_reversal.update_indicators(bid, ask);
+
     // ?? MacroCrashEngine -- always-on macro event capture ????????????????
     // Fires on: ATR + vol_ratio + drift thresholds (session-aware: lower in Asia).
     // DOM primer: book_slope / vacuum / microprice_bias lower drift threshold 40%
@@ -1481,14 +1488,32 @@ static void on_tick_gold(
                                      ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct()
                                      : 1.0;
         // DOM signals -- live from g_macro_ctx (updated every cold-path tick from L2 book)
-        const double mce_book_slope     = g_macro_ctx.gold_slope;  // weighted bid-ask pressure
-        const bool   mce_vacuum_ask     = g_macro_ctx.gold_vacuum_ask;  // thin ask = up impulse
-        const bool   mce_vacuum_bid     = g_macro_ctx.gold_vacuum_bid;  // thin bid = down impulse
+        const double mce_book_slope     = g_macro_ctx.gold_slope;
+        const bool   mce_vacuum_ask     = g_macro_ctx.gold_vacuum_ask;
+        const bool   mce_vacuum_bid     = g_macro_ctx.gold_vacuum_bid;
         const double mce_microprice     = g_macro_ctx.gold_microprice_bias;
-        const double mce_rsi            = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+
+        // RSI: tick RSI primary (always live, updated every tick, never 0 after warmup).
+        // Bar RSI (g_bars_gold.m1.ind.rsi14) initialises to 0.0 and only updates every 60s.
+        // When bar RSI = 0.0, the rsi14 > 0.0 guard in MacroCrashEngine kills the RSI bypass
+        // so eff_expansion stays false during the entire crash. Use tick RSI from
+        // RSIReversalEngine which computes from the same mid price every tick.
+        const double mce_bar_rsi  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+        const double mce_tick_rsi = g_rsi_reversal.tick_rsi();
+        const double mce_rsi      = (mce_tick_rsi > 0.0) ? mce_tick_rsi : mce_bar_rsi;
+
+        // VOL_RATIO macro bypass: EWM baseline stays elevated after prior large sessions.
+        // After a big prior day base_vol_pct is high, keeping mce_vol_ratio < 2.5 even
+        // during a genuine crash. When |drift| >= 8pt the move is unambiguously real --
+        // pass 99.0 to clear the vol_ratio gate unconditionally.
+        const double mce_ewm_drift     = g_gold_stack.ewm_drift();
+        const double mce_vol_ratio_eff = (std::fabs(mce_ewm_drift) >= 8.0)
+                                         ? 99.0
+                                         : mce_vol_ratio;
+
         g_macro_crash.on_tick(bid, ask,
-            mce_atr, mce_vol_ratio,
-            g_gold_stack.ewm_drift(),
+            mce_atr, mce_vol_ratio_eff,
+            mce_ewm_drift,
             expansion_regime,
             now_ms_g,
             mce_book_slope,
