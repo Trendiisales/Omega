@@ -35,7 +35,7 @@
 //   Step 2: lock +1.0pt at +2.0pt profit
 //   Step 3: 1.0pt trail above step 2
 //   TP: 4.0pt fixed
-//   SLOPE_EXIT: RSI delta reverses while profit > 0.8pt
+//   SLOPE_EXIT: RSI delta reverses while profit > 0.3pt (lowered from 0.8 -- exit faster)
 // =============================================================================
 
 #include <cstdint>
@@ -457,7 +457,7 @@ private:
             return;
         }
 
-        if (move > 0.8 && (int)m_rsi_window.size() >= RSI_DELTA_WINDOW) {
+        if (move > 0.3 && (int)m_rsi_window.size() >= RSI_DELTA_WINDOW) {  // lowered 0.8->0.3: exit faster on reversal
             const double cur_delta = m_tick_rsi - m_rsi_window.front();
             const bool reversed    = pos.is_long ? (cur_delta < -(RSI_DELTA_MIN * 0.4))
                                                  : (cur_delta >  (RSI_DELTA_MIN * 0.4));
