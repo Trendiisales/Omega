@@ -1476,17 +1476,48 @@ static void on_tick_gold(
                                          ? 99.0   // drift >= 6pt bypasses vol gate
                                          : mce_vol_ratio;
 
-        g_macro_crash.on_tick(bid, ask,
-            mce_atr, mce_vol_ratio_eff,
-            mce_ewm_drift,
-            expansion_regime,
-            now_ms_g,
-            mce_book_slope,
-            mce_vacuum_ask,
-            mce_vacuum_bid,
-            mce_microprice,
-            mce_rsi,
-            g_macro_ctx.session_slot);
+        // Block MacroCrash entry when HybridBracketGold has an opposing position.
+        // MacroCrash SHORT into a bracket LONG = engines fighting each other.
+        // If bracket is active and MacroCrash has no position, check direction conflict.
+        const bool mce_bracket_conflict =
+            !g_macro_crash.has_open_position() &&
+            g_hybrid_gold.has_open_position() &&
+            (g_hybrid_gold.pos.is_long ? (mce_ewm_drift < 0) : (mce_ewm_drift > 0));
+        if (!mce_bracket_conflict) {
+            g_macro_crash.on_tick(bid, ask,
+                mce_atr, mce_vol_ratio_eff,
+                mce_ewm_drift,
+                expansion_regime,
+                now_ms_g,
+                mce_book_slope,
+                mce_vacuum_ask,
+                mce_vacuum_bid,
+                mce_microprice,
+                mce_rsi,
+                g_macro_ctx.session_slot);
+        } else {
+            static int64_t s_mce_conflict_log = 0;
+            if (now_ms_g - s_mce_conflict_log > 10000) {
+                s_mce_conflict_log = now_ms_g;
+                printf("[MCE-BLOCK] MacroCrash entry blocked -- opposing HybridBracket %s active\n",
+                       g_hybrid_gold.pos.is_long ? "LONG" : "SHORT");
+                fflush(stdout);
+            }
+            // Still call on_tick to manage any existing MacroCrash position
+            if (g_macro_crash.has_open_position()) {
+                g_macro_crash.on_tick(bid, ask,
+                    mce_atr, mce_vol_ratio_eff,
+                    mce_ewm_drift,
+                    expansion_regime,
+                    now_ms_g,
+                    mce_book_slope,
+                    mce_vacuum_ask,
+                    mce_vacuum_bid,
+                    mce_microprice,
+                    mce_rsi,
+                    g_macro_ctx.session_slot);
+            }
+        }
     }
     // ?? RSIReversalEngine -- tick-level RSI entries, no bar dependency ????????
     // Computes its own RSI(14) from mid price on every tick.
