@@ -169,39 +169,12 @@ OK "symbols.ini present at $SymbolSrc"
 # ── [9/13] Clean state files ─────────────────────────────────────────────────
 Step 9 13 "Cleaning state files..."
 
-# CRITICAL: Archive then delete latest.log BEFORE launching the new binary.
-#
-# WHY ARCHIVE FIRST:
-#   latest.log is the only place tee output is collected during a session.
-#   Deleting it without saving means the entire prior session log is gone.
-#   We rename it to a timestamped archive file so it is always recoverable.
-#
-# WHY DELETE (not just rename):
-#   The C++ tee buffer opens latest.log with std::ios::trunc on startup.
-#   But between Stop-Service and the new binary opening the file there is a
-#   window where the old file still exists. Post-launch verification reading
-#   the file during that window gets the old content and the old hash.
-#   After rename/delete the file cannot exist until the new process creates it.
-#
-$latestLog     = "$OmegaDir\logs\latest.log"
-$archiveDir    = "$OmegaDir\logs\archive"
-New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null
-
-if (Test-Path $latestLog) {
-    # Use the file's own LastWriteTime for the archive timestamp so the name
-    # reflects when that session was running, not when we restarted.
-    $sessionTs  = (Get-Item $latestLog).LastWriteTime.ToString("yyyy-MM-dd_HH-mm-ss")
-    $archiveDst = "$archiveDir\latest_$sessionTs.log"
-    Move-Item $latestLog $archiveDst -Force
-    OK "Archived latest.log -> $archiveDst"
-} else {
-    OK "latest.log absent -- nothing to archive"
-}
-
 $barFailed = "$OmegaDir\logs\ctrader_bar_failed.txt"
 if (Test-Path $barFailed) {
     Remove-Item $barFailed -Force
     OK "Deleted ctrader_bar_failed.txt"
+} else {
+    OK "ctrader_bar_failed.txt already absent"
 }
 
 # ── [10/13] Ensure log directories ───────────────────────────────────────────
@@ -248,6 +221,8 @@ Write-Host ""
 Step 13 13 "Launching..."
 Set-Location $OmegaDir
 
+$launchTime = Get-Date   # recorded BEFORE Start-Service so we know when this run began
+
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc) {
     Write-Host "  Starting $ServiceName service..." -ForegroundColor Cyan
@@ -275,72 +250,60 @@ if ($svc) {
 
 # ── POST-LAUNCH VERIFICATION ─────────────────────────────────────────────────
 #
-# STALE LOG GUARANTEE (three layers):
+# HOW STALE LOGS ARE PREVENTED WITHOUT DELETING DATA:
 #
-#   Layer 1 -- PHYSICAL DELETE (step 9 above):
-#     latest.log was deleted before the binary launched. The file cannot exist
-#     on disk until the new process creates it. Reading a stale log is impossible
-#     if the file doesn't exist.
+#   The C++ tee buffer opens latest.log with std::ios::trunc on every startup,
+#   which resets the file to zero bytes and rewrites from the beginning.
+#   We recorded $launchTime BEFORE Start-Service was called.
+#   We wait for latest.log LastWriteTime to be NEWER than $launchTime.
+#   A file that hasn't been touched since before this restart cannot satisfy
+#   that condition. No data is deleted. No fallback to stale content is possible.
 #
-#   Layer 2 -- FILE CREATION TIME CHECK (below):
-#     We record $launchTime just before Start-Service. The liveness check only
-#     accepts latest.log if its CreationTime is AFTER $launchTime. A file that
-#     somehow survived the delete (e.g. permission error) will fail this check.
-#
-#   Layer 3 -- RUNNING COMMIT CONTENT CHECK (below):
-#     We wait for [OMEGA] RUNNING COMMIT: <hash> and verify it equals $gitHash.
-#     Even if both layer 1 and 2 somehow failed, the wrong hash would be caught
-#     here and the script would hard-fail with exit 1.
-#
-# There is no code path that can silently pass with a stale log.
+#   Additionally we wait for [OMEGA] RUNNING COMMIT: <hash> inside that file
+#   and hard-fail if the hash doesn't match HEAD. A stale file from a prior
+#   run will never contain the hash of the commit we just built.
 
-$logPath    = "$OmegaDir\logs\latest.log"
-$launchTime = Get-Date   # recorded immediately after Start-Service returns
+$logPath = "$OmegaDir\logs\latest.log"
 
 Write-Host ""
 Write-Host "  Waiting for engine startup and live log..." -ForegroundColor DarkGray
 
-# ── LAYER 1 CONFIRMATION: latest.log must NOT exist yet ──────────────────────
-# If it already exists here the step-9 delete failed (permissions?). Hard fail
-# immediately rather than risk reading the old file.
-if (Test-Path $logPath) {
-    FAIL "latest.log still exists after step-9 delete -- cannot guarantee freshness. Check permissions on $logPath"
-}
-
-# ── LAYER 2: Wait for latest.log to be CREATED by the new binary ─────────────
-# We wait for the file to APPEAR (not just be modified). Because we deleted it
-# in step 9, any file that appears here was created by the new process.
-# Additionally we check CreationTime > $launchTime as a belt-and-suspenders guard.
+# ── Wait for latest.log to be written by the NEW binary ──────────────────────
+# Condition: file exists AND LastWriteTime > $launchTime
+# The C++ tee truncates and rewrites on open, so LastWriteTime will flip to
+# the moment the new process first writes. That cannot happen before $launchTime.
 $waited = 0
+$logFresh = $false
 while ($waited -lt 30) {
     Start-Sleep -Seconds 1
     $waited++
     if (Test-Path $logPath) {
-        $info = Get-Item $logPath
-        if ($info.CreationTime -ge $launchTime.AddSeconds(-2)) {
-            Write-Host "  [OK] latest.log created by new binary (after ${waited}s, created=$($info.CreationTime.ToString('HH:mm:ss')))" -ForegroundColor Green
+        $lwt = (Get-Item $logPath).LastWriteTime
+        if ($lwt -gt $launchTime) {
+            Write-Host "  [OK] latest.log written by new binary (after ${waited}s, written=$($lwt.ToString('HH:mm:ss')), launch=$($launchTime.ToString('HH:mm:ss')))" -ForegroundColor Green
+            $logFresh = $true
             break
-        } else {
-            # File exists but CreationTime predates our launch -- should be impossible
-            # after step-9 delete, but handle it anyway.
-            FAIL "latest.log CreationTime ($($info.CreationTime)) predates launch ($($launchTime)) -- step-9 delete did not take effect. Cannot proceed."
         }
     }
-    if ($waited % 5 -eq 0) { Write-Host "  Waiting for latest.log to appear... (${waited}s)" -ForegroundColor DarkGray }
+    if ($waited % 5 -eq 0) { Write-Host "  Waiting for fresh latest.log... (${waited}s)" -ForegroundColor DarkGray }
 }
 
-if (-not (Test-Path $logPath)) {
-    FAIL "latest.log never appeared after 30s. Binary did not start or tee buffer failed. Check: Get-Service $ServiceName"
+if (-not $logFresh) {
+    Write-Host "  [!!] latest.log was not updated after launch within 30s" -ForegroundColor Red
+    Write-Host "       Service state: $((Get-Service $ServiceName -EA SilentlyContinue).Status)" -ForegroundColor Red
+    if (Test-Path $logPath) {
+        $lwt = (Get-Item $logPath).LastWriteTime
+        Write-Host "       latest.log LastWriteTime: $lwt (launch was: $launchTime)" -ForegroundColor Red
+        Write-Host "       This file is from a prior run -- refusing to read it" -ForegroundColor Red
+    }
+    FAIL "latest.log not updated by new binary within 30s -- engine did not start"
 }
 
-# ── LAYER 3: Wait up to 90s for [OMEGA] RUNNING COMMIT: <hash> ───────────────
-# This line is printed ~10-20s into startup. 90s is a safe upper bound.
-# We read ONLY from latest.log -- the file we just confirmed was freshly created.
-# There is no fallback to any other file. If RUNNING COMMIT doesn't appear in
-# this file, the binary is broken and we hard-fail.
+# ── Wait up to 90s for [OMEGA] RUNNING COMMIT: <hash> ────────────────────────
+# Prints ~10-20s into startup. We read ONLY from the file confirmed fresh above.
 $runningHash = "NOT_FOUND"
 $waitB = 0
-Write-Host "  Waiting for RUNNING COMMIT line in latest.log (up to 90s)..." -ForegroundColor DarkGray
+Write-Host "  Waiting for RUNNING COMMIT in latest.log (up to 90s)..." -ForegroundColor DarkGray
 while ($waitB -lt 90) {
     Start-Sleep -Seconds 1
     $waitB++
@@ -357,10 +320,10 @@ while ($waitB -lt 90) {
 
 if ($runningHash -eq "NOT_FOUND") {
     Write-Host ""
-    Write-Host "  [!!] RUNNING COMMIT never appeared in latest.log after 90s" -ForegroundColor Red
+    Write-Host "  [!!] RUNNING COMMIT never appeared after 90s" -ForegroundColor Red
     Write-Host "  Last 15 lines of latest.log:" -ForegroundColor Red
     Get-Content $logPath -Tail 15 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-    FAIL "Engine startup failed -- RUNNING COMMIT line not found"
+    FAIL "Engine startup failed -- RUNNING COMMIT not found in latest.log"
 }
 
 # ── HASH VERIFICATION ─────────────────────────────────────────────────────────
@@ -375,8 +338,7 @@ if ($runningHash -ne $gitHash) {
 Write-Host "  [OK] HASH VERIFIED: running=$runningHash == HEAD=$gitHash" -ForegroundColor Green
 
 # ── ENGINE CONFIG VERIFICATION ────────────────────────────────────────────────
-# Every engine prints its config at startup. Verify key parameters here.
-# If any CRITICAL check fails the binary was built from wrong source -- hard fail.
+# Key parameters printed at startup. CRITICAL checks hard-fail if missing.
 Banner "ENGINE CONFIG VERIFICATION" "Cyan"
 
 $verifyErrors = 0
@@ -386,41 +348,27 @@ function CheckLog([string]$pattern, [string]$label, [bool]$critical) {
     if ($hit) {
         Write-Host "  [OK] $label" -ForegroundColor Green
         Write-Host "       $($hit.Line.Trim())" -ForegroundColor DarkGray
+    } elseif ($critical) {
+        Write-Host "  [!!] CRITICAL MISSING: $label" -ForegroundColor Red
+        Write-Host "       Expected pattern: $pattern" -ForegroundColor Red
+        $script:verifyErrors++
     } else {
-        if ($critical) {
-            Write-Host "  [!!] CRITICAL MISSING: $label" -ForegroundColor Red
-            Write-Host "       Expected pattern: $pattern" -ForegroundColor Red
-            $script:verifyErrors++
-        } else {
-            Write-Host "  [--] Not yet in log (engine still warming): $label" -ForegroundColor Yellow
-        }
+        Write-Host "  [--] Not yet in log (still warming up): $label" -ForegroundColor Yellow
     }
 }
 
-# Version line with correct hash
-CheckLog "\[OMEGA\].*version=$gitHash"          "Version line matches HEAD hash ($gitHash)"    $true
-
-# MicroMomentum -- rsi_delta_min MUST be 3.0 and disp MUST be 0.0
-# These two checks are the exact parameters that were wrong before.
-# If either is missing the old binary is running.
-CheckLog "rsi_delta_min=3\."                    "MicroMomentum rsi_delta_min=3.x (not 8.0)"   $true
-CheckLog "disp=0\.0"                            "MicroMomentum ENTRY_DISP_PTS=0.0 (disabled)" $true
-
-# Mode safety check
-CheckLog "SHADOW"                               "Mode is SHADOW"                               $false
-
-# FIX / cTrader connectivity (may not appear within 90s -- non-critical)
-CheckLog "LOGON ACCEPTED"                       "FIX logon accepted"                           $false
-CheckLog "Account.*authorized"                  "cTrader account authorized"                   $false
+CheckLog "\[OMEGA\].*version=$gitHash"   "Version line matches HEAD hash ($gitHash)"    $true
+CheckLog "rsi_delta_min=3\."             "MicroMomentum rsi_delta_min=3.x (not 8.0)"   $true
+CheckLog "disp=0\.0"                     "MicroMomentum ENTRY_DISP_PTS=0.0"             $true
+CheckLog "SHADOW"                        "Mode is SHADOW"                               $false
+CheckLog "LOGON ACCEPTED"                "FIX logon accepted"                           $false
+CheckLog "Account.*authorized"           "cTrader account authorized"                   $false
 
 if ($verifyErrors -gt 0) {
     Write-Host ""
-    Write-Host "  [!!] $verifyErrors CRITICAL check(s) FAILED" -ForegroundColor Red
-    Write-Host "       The binary does not match expected parameters." -ForegroundColor Red
-    Write-Host "       This means the wrong binary is running despite hash match." -ForegroundColor Red
-    FAIL "$verifyErrors engine config verification(s) failed -- do not trade"
+    Write-Host "  [!!] $verifyErrors CRITICAL check(s) FAILED -- wrong binary is running" -ForegroundColor Red
+    FAIL "$verifyErrors engine config check(s) failed -- do not trade"
 }
-
 Write-Host ""
 Write-Host "  [OK] All critical engine config checks passed" -ForegroundColor Green
 
