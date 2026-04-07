@@ -3714,7 +3714,10 @@ public:
 class VolatilityFilter {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=50;
-    static constexpr double VOL_THRESHOLD=0.80;  // lowered 1.50->0.80: post-crash compression has genuine vol but tight range; $1.50 was blocking all entries in legitimate low-vol recovery periods
+    static constexpr double VOL_THRESHOLD=0.50;  // lowered 0.80->0.50: chart evidence shows 5pt Asia
+                                                  // moves produce vol_range=0.67 which was blocked at 0.80.
+                                                  // Asia chop (no move) produces vol_range<0.30 consistently.
+                                                  // 0.50 has clear gap above chop and captures real moves.
 public:
     // allow(): pure read gate -- does NOT push_back.
     // update() is called unconditionally every tick from on_tick() so history_

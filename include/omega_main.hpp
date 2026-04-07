@@ -156,10 +156,10 @@ int main(int argc, char* argv[])
     // RSI Reversal Engine startup config
     g_rsi_reversal.enabled       = true;
     g_rsi_reversal.shadow_mode   = true;   // SHADOW until 30 trades validate WR
-    g_rsi_reversal.RSI_OVERSOLD  = 38.0;   // LONG below this (catches more turns)
-    g_rsi_reversal.RSI_OVERBOUGHT= 62.0;   // SHORT above this (catches more turns)
-    g_rsi_reversal.RSI_EXIT_LONG = 55.0;   // exit LONG when RSI returns here (take profit)
-    g_rsi_reversal.RSI_EXIT_SHORT= 45.0;   // exit SHORT when RSI returns here (take profit)
+    g_rsi_reversal.RSI_OVERSOLD  = 42.0;   // LONG below this -- catches 5pt moves (RSI 60->40)
+    g_rsi_reversal.RSI_OVERBOUGHT= 58.0;   // SHORT above this -- catches 5pt rises
+    g_rsi_reversal.RSI_EXIT_LONG = 52.0;   // exit LONG when RSI recovers here
+    g_rsi_reversal.RSI_EXIT_SHORT= 48.0;   // exit SHORT when RSI recovers here
     g_rsi_reversal.SL_ATR_MULT   = 0.6;    // SL = 0.6x ATR (Asia ATR=3pt -> $1.80 SL)
     g_rsi_reversal.TRAIL_ATR_MULT= 0.40;   // trail = 0.4x ATR -- tight, don't give back move
     g_rsi_reversal.BE_ATR_MULT   = 0.40;   // BE at 0.4x ATR -- locks when cost covered

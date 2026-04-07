@@ -733,12 +733,11 @@ static bool symbol_gate(
                 const double asia_ratio  = (asia_base > 0.0) ? (asia_recent / asia_base) : 3.0;
 
                 // PATH B: fast-onset EWM drift bypass.
-                // FIX 2026-04-07: lowered 1.5->0.8. Logs show Asia drift reaching only
-                // -0.82 to -1.04 during real 30pt moves -- old 1.5 threshold never fired.
-                // 0.8 aligns with GFE_ASIA_DRIFT_MIN (also 0.8) so both gates arm together.
-                // Random Asia chop produces |drift| < 0.4 consistently -- 0.8 has clear gap.
+                // Evidence 2026-04-07: 5pt drop produces drift=-0.62, old 0.8 threshold missed it.
+                // Random Asia chop produces |drift| < 0.35 consistently -- 0.5 has clear gap.
+                // Lowered 0.8->0.5 to catch the 5pt moderate moves visible on chart.
                 const double asia_ewm_drift = std::fabs(g_gold_stack.ewm_drift());
-                const bool asia_fast_breakout = (asia_ewm_drift >= 0.8);
+                const bool asia_fast_breakout = (asia_ewm_drift >= 0.5);
 
                 // PATH C: macro crash/rally bypass.
                 // FIX 2026-04-07: use BOTH bar RSI AND tick-level EWM drift RSI proxy.

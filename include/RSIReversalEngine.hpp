@@ -58,10 +58,11 @@ namespace omega {
 class RSIReversalEngine {
 public:
     // ── Tunable parameters ───────────────────────────────────────────────────
-    double RSI_OVERSOLD       = 38.0;  // LONG entry threshold (catches more turns)
-    double RSI_OVERBOUGHT     = 62.0;  // SHORT entry threshold (catches more turns)
-    double RSI_EXIT_LONG      = 55.0;  // exit LONG when RSI recovers to here (take profit)
-    double RSI_EXIT_SHORT     = 45.0;  // exit SHORT when RSI recovers to here (take profit)
+    double RSI_OVERSOLD       = 42.0;  // LONG entry threshold -- RSI<42 catches 5pt moves
+                                       // Chart evidence: 5pt drop pushes RSI 60->40, not below 38
+    double RSI_OVERBOUGHT     = 58.0;  // SHORT entry threshold -- RSI>58 catches 5pt rises
+    double RSI_EXIT_LONG      = 52.0;  // exit LONG when RSI recovers here
+    double RSI_EXIT_SHORT     = 48.0;  // exit SHORT when RSI recovers here
     double SL_ATR_MULT        = 0.6;   // SL = 0.6x ATR -- tight enough for small oscillations
                                        // Asia ATR=3pt: SL=$1.80. Commission=$0.60. Need $2.40 to profit.
                                        // RSI 38->55 typically moves $2-4pt -- covers this.
