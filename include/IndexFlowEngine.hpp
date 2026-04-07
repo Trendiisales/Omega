@@ -850,14 +850,11 @@ public:
                atr, vol_ratio, drift, is_long ? ask : bid);
         fflush(stdout);
 
-        if (shadow_mode) {
-            // In shadow mode: record the signal but don't open real position
-            // (same as MacroCrashEngine's shadow handling)
-            cooldown_until_ = idx_now_sec() + 300; // 5min shadow cooldown
-            return;
-        }
+        // Shadow mode: open the position for simulation -- same as live
+        // but no FIX order sent. This is the correct shadow pattern.
+        // Do NOT return here -- position must be tracked to generate a TradeRecord on close.
 
-        // Live entry
+        // Live entry (runs in both shadow and live)
         base_active_ = true;
         base_is_long_ = is_long;
         base_entry_  = is_long ? ask : bid;
