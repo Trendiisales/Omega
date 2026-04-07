@@ -1516,15 +1516,25 @@ static void on_tick_gold(
                 now_ms_g, bracket_on_close);
         }
 
-        // Entry -- only when no other gold position open
-        if (!g_rsi_reversal.has_open_position()
-            && gold_can_enter
+        // Entry -- own lightweight gate, NOT gated by gold_can_enter.
+        // RSIReversalEngine bypasses the regime system by design.
+        // gold_can_enter includes gold_post_impulse_block (fires 20s after moves)
+        // and symbol_gate risk checks that are not relevant for a tight RSI engine.
+        // Own gate: no other XAUUSD position open + tradeable + not dead zone + not NY close noise.
+        const bool rsi_rev_can_enter =
+            !g_rsi_reversal.has_open_position()
+            && tradeable
+            && lat_ok
+            && (g_macro_ctx.session_slot != 0)   // not dead zone
+            && !in_ny_close_noise                 // not NY close
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
             && !g_gold_flow.has_open_position()
             && !g_trend_pb_gold.has_open_position()
             && !g_hybrid_gold.has_open_position()
-            && !g_nbm_gold_london.has_open_position()) {
+            && !g_nbm_gold_london.has_open_position();
+
+        if (rsi_rev_can_enter) {
 
             g_rsi_reversal.on_tick(bid, ask,
                 rsi_rev_rsi, rsi_rev_atr, rsi_rev_rdy,
@@ -1540,13 +1550,7 @@ static void on_tick_gold(
                     : 0.01;
                 g_rsi_reversal.patch_size(rsi_lot);
 
-                if (!g_rsi_reversal.shadow_mode) {
-                    send_live_order("XAUUSD",
-                        g_rsi_reversal.pos.is_long,
-                        g_rsi_reversal.pos.size,
-                        g_rsi_reversal.pos.entry);
-                    g_telemetry.UpdateLastEntryTs();
-                }
+                // Log and telemetry always fire (shadow or live) -- GUI shows signal
                 write_trade_open_log("XAUUSD", "RSIReversal",
                     g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
                     g_rsi_reversal.pos.entry, 0.0, g_rsi_reversal.pos.sl,
@@ -1556,6 +1560,13 @@ static void on_tick_gold(
                     g_rsi_reversal.pos.entry, "RSI_EXTREME",
                     "RSI_REVERSAL", regime.c_str(), "RSI_REVERSAL",
                     0.0, g_rsi_reversal.pos.sl);
+                if (!g_rsi_reversal.shadow_mode) {
+                    send_live_order("XAUUSD",
+                        g_rsi_reversal.pos.is_long,
+                        g_rsi_reversal.pos.size,
+                        g_rsi_reversal.pos.entry);
+                    g_telemetry.UpdateLastEntryTs();
+                }
             }
         }
     }
