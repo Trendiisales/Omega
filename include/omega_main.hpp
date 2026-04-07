@@ -1489,7 +1489,7 @@ int main(int argc, char* argv[])
             "slippage_entry,slippage_exit,commission,"
             "slip_entry_pct,slip_exit_pct,comm_per_side,"
             "mfe,mae,hold_sec,spread_at_entry,"
-            "latency_ms,regime,exit_reason";
+            "latency_ms,regime,exit_reason,l2_imbalance,l2_live";
 
         const std::string trade_csv_path = trade_dir + "/omega_trade_closes.csv";
         ensure_parent_dir(trade_csv_path);
@@ -1621,6 +1621,8 @@ int main(int argc, char* argv[])
                 tr.spreadAtEntry  = tok.size() > 27 ? std::stod(tok[27].empty() ? "0" : tok[27]) : 0.0;
                 tr.regime         = tok.size() > 29 ? tok[29] : "";
                 tr.exitReason     = tok.size() > 30 ? tok[30] : "";
+                tr.l2_imbalance   = tok.size() > 31 ? std::stod(tok[31].empty() ? "0.5" : tok[31]) : 0.5;
+                tr.l2_live        = tok.size() > 32 ? (tok[32] == "1") : false;
 
                 if (tr.symbol.empty() || tr.entryTs == 0) continue;
 
