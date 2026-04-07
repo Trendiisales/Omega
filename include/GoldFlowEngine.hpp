@@ -1908,7 +1908,7 @@ private:
             const double  time_stop_adverse = std::max(2.0, 0.50 * pos.atr_at_entry);
             // FIXED 2026-04-05: raised 45s->180s
             // Gold needs 2-5 min to develop direction after entry
-            static constexpr int64_t TIME_STOP_SECS = 45;  // BACKTEST TEST: lowered 180->45s to cut stalled trades earlier
+            static constexpr int64_t TIME_STOP_SECS = 180;
 
             // Velocity suppression: expansion confirmed AND vol_ratio > 2.5 (genuine velocity
             // regime, not just any EXPANSION tick) AND adverse < 2pts (trade still viable).
