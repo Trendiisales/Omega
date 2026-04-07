@@ -206,6 +206,8 @@ struct GoldFlowEngine {
         double  size             = 0.01;
         double  mfe              = 0.0;  // max favourable excursion (pts)
         double  atr_at_entry     = 0.0;  // ATR when trade was entered
+        double  l2_imb_at_entry  = 0.5;  // L2 imbalance at entry for DOM calibration
+        bool    l2_live_at_entry = false;
         bool    be_locked        = false;
         int     trail_stage      = 0;    // 0=initial, 1=step1, 2=step2, 3=full trail, 4=extended
         bool    stage2_tight     = false; // unused by staircase -- kept for ABI compat
