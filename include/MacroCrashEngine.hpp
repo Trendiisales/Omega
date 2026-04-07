@@ -230,10 +230,40 @@ public:
                                   && (ewm_drift > 0.0);              // drift confirms up
         const bool rsi_spike_short = (rsi14 > 0.0 && rsi14 < 38.0)  // oversold = sustained sell
                                   && (ewm_drift < 0.0);              // drift confirms down
-        // RSI spike confirmation can substitute for expansion_regime in Asia
-        // (supervisor regime classification lags by CONFIRM_TICKS; RSI is live)
+        // RSI spike confirmation substitutes for expansion_regime in ALL sessions.
+        // v2.1 fix: was (is_asia && rsi_confirms_expansion) -- Asia-only bypass.
+        // Root cause of missing 70pt London/NY crashes: regime classifier needs
+        // CONFIRM_TICKS=5 before locking EXPANSION_BREAKOUT. A macro event moves
+        // faster than 5 ticks. RSI < 38 + drift < 0 IS the expansion signal.
+        // Waiting for regime confirmation on a real macro event is wrong by design.
         const bool rsi_confirms_expansion = rsi_spike_long || rsi_spike_short;
-        const bool eff_expansion = expansion_regime || (is_asia && rsi_confirms_expansion);
+        const bool eff_expansion = expansion_regime || rsi_confirms_expansion;
+
+        // ── NOSIG diagnostic -- log every 10s when any gate is blocking ──────
+        // Visible in log so we NEVER fly blind on a macro event again.
+        {
+            static int64_t s_nosig_ts = 0;
+            const bool atr_ok   = (atr >= final_atr_min);
+            const bool vol_ok   = (vol_ratio >= final_vol_min);
+            const bool exp_ok   = eff_expansion;
+            const bool drift_ok = (std::fabs(ewm_drift) >= final_drift_min);
+            if ((!atr_ok || !vol_ok || !exp_ok || !drift_ok) && now_ms >= s_nosig_ts) {
+                s_nosig_ts = now_ms + 10000;
+                printf("[MCE-NOSIG] slot=%d atr=%.1f(need %.1f %s) "
+                       "vol=%.2f(need %.2f %s) "
+                       "exp=%d(regime=%d rsi=%d) "
+                       "drift=%.1f(need %.1f %s) "
+                       "rsi=%.1f cooldown=%s\n",
+                       session_slot,
+                       atr,  final_atr_min,  atr_ok  ? "OK" : "BLOCK",
+                       vol_ratio, final_vol_min, vol_ok  ? "OK" : "BLOCK",
+                       (int)exp_ok, (int)expansion_regime, (int)rsi_confirms_expansion,
+                       std::fabs(ewm_drift), final_drift_min, drift_ok ? "OK" : "BLOCK",
+                       rsi14,
+                       (now_ms < m_cooldown_until) ? "YES" : "no");
+                fflush(stdout);
+            }
+        }
 
         // ── Entry gates ──────────────────────────────────────────────────
         if (atr < final_atr_min)                   return;
@@ -252,23 +282,21 @@ public:
         if ( is_long && now_ms < m_long_block_until)  return;
         if (!is_long && now_ms < m_short_block_until) return;
 
-        // Log what triggered entry for diagnostics
-        if (is_asia || dom_long_confirm || dom_short_confirm || rsi_confirms_expansion) {
-            printf("[MCE%s] TRIGGER %s atr=%.1f(thr=%.1f) drift=%.1f(thr=%.1f) "
-                   "vol=%.1f(thr=%.1f) slot=%d dom_slope=%.2f vac_ask=%d vac_bid=%d "
-                   "rsi=%.1f rsi_exp=%d expansion=%d dom_confirm=%d\n",
-                   shadow_mode ? "-SHADOW" : "",
-                   is_long ? "LONG" : "SHORT",
-                   atr, final_atr_min,
-                   std::fabs(ewm_drift), final_drift_min,
-                   vol_ratio, final_vol_min,
-                   session_slot, book_slope,
-                   (int)vacuum_ask, (int)vacuum_bid,
-                   rsi14, (int)rsi_confirms_expansion,
-                   (int)expansion_regime,
-                   (int)(dom_long_confirm || dom_short_confirm));
-            fflush(stdout);
-        }
+        // Log entry -- always, not conditional on session/DOM/RSI
+        printf("[MCE%s] TRIGGER %s atr=%.1f(thr=%.1f) drift=%.1f(thr=%.1f) "
+               "vol=%.1f(thr=%.1f) slot=%d dom_slope=%.2f vac_ask=%d vac_bid=%d "
+               "rsi=%.1f rsi_exp=%d expansion=%d dom_confirm=%d\n",
+               shadow_mode ? "-SHADOW" : "",
+               is_long ? "LONG" : "SHORT",
+               atr, final_atr_min,
+               std::fabs(ewm_drift), final_drift_min,
+               vol_ratio, final_vol_min,
+               session_slot, book_slope,
+               (int)vacuum_ask, (int)vacuum_bid,
+               rsi14, (int)rsi_confirms_expansion,
+               (int)expansion_regime,
+               (int)(dom_long_confirm || dom_short_confirm));
+        fflush(stdout);
 
         // Sizing
         const double scale    = std::min(ATR_SCALE_MAX, std::max(0.5, atr / ATR_NORMAL));
