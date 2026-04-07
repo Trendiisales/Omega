@@ -180,13 +180,7 @@ public:
             return;
         }
 
-        if (now_ms < m_cooldown_until) return;
-
         // ── Session-aware threshold selection ────────────────────────────
-        // Asia (slot=6): smaller moves, lower ATR, lower drift.
-        // Tuned to last 2 weeks of Asia activity: $10-25pt spikes, ATR=4-6pt, drift=3-5pt.
-        // London/NY (slot 1-5): original thresholds unchanged -- these sessions
-        // produce larger moves that clear the original bars comfortably.
         const bool is_asia = (session_slot == 6);
         const double eff_atr_threshold = is_asia ? ATR_THRESHOLD_ASIA : ATR_THRESHOLD;
         const double eff_vol_ratio_min = is_asia ? VOL_RATIO_MIN_ASIA : VOL_RATIO_MIN;
@@ -239,33 +233,36 @@ public:
         const bool rsi_confirms_expansion = rsi_spike_long || rsi_spike_short;
         const bool eff_expansion = expansion_regime || rsi_confirms_expansion;
 
-        // ── NOSIG diagnostic -- log every 10s when any gate is blocking ──────
-        // Visible in log so we NEVER fly blind on a macro event again.
+        // ── NOSIG diagnostic -- log every 10s when ANY gate is blocking ──────
+        // Runs BEFORE cooldown/entry gates so it always fires -- even in cooldown.
         {
             static int64_t s_nosig_ts = 0;
-            const bool atr_ok   = (atr >= final_atr_min);
-            const bool vol_ok   = (vol_ratio >= final_vol_min);
-            const bool exp_ok   = eff_expansion;
-            const bool drift_ok = (std::fabs(ewm_drift) >= final_drift_min);
-            if ((!atr_ok || !vol_ok || !exp_ok || !drift_ok) && now_ms >= s_nosig_ts) {
+            const bool cooldown_ok = (now_ms >= m_cooldown_until);
+            const bool atr_ok      = (atr >= final_atr_min);
+            const bool vol_ok      = (vol_ratio >= final_vol_min);
+            const bool exp_ok      = eff_expansion;
+            const bool drift_ok    = (std::fabs(ewm_drift) >= final_drift_min);
+            if ((!cooldown_ok || !atr_ok || !vol_ok || !exp_ok || !drift_ok)
+                    && now_ms >= s_nosig_ts) {
                 s_nosig_ts = now_ms + 10000;
-                printf("[MCE-NOSIG] slot=%d atr=%.1f(need %.1f %s) "
+                printf("[MCE-NOSIG] slot=%d cooldown=%s atr=%.1f(need %.1f %s) "
                        "vol=%.2f(need %.2f %s) "
                        "exp=%d(regime=%d rsi=%d) "
                        "drift=%.1f(need %.1f %s) "
-                       "rsi=%.1f cooldown=%s\n",
+                       "rsi=%.1f\n",
                        session_slot,
+                       cooldown_ok ? "no" : "BLOCK",
                        atr,  final_atr_min,  atr_ok  ? "OK" : "BLOCK",
                        vol_ratio, final_vol_min, vol_ok  ? "OK" : "BLOCK",
                        (int)exp_ok, (int)expansion_regime, (int)rsi_confirms_expansion,
                        std::fabs(ewm_drift), final_drift_min, drift_ok ? "OK" : "BLOCK",
-                       rsi14,
-                       (now_ms < m_cooldown_until) ? "YES" : "no");
+                       rsi14);
                 fflush(stdout);
             }
         }
 
         // ── Entry gates ──────────────────────────────────────────────────
+        if (now_ms < m_cooldown_until)             return;  // cooldown after prior trade
         if (atr < final_atr_min)                   return;
         if (vol_ratio < final_vol_min)             return;
         if (!eff_expansion)                        return;
