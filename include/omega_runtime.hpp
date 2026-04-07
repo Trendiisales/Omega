@@ -240,6 +240,7 @@ static void print_perf_stats() {
 }
 
 // ?????????????????????????????????????????????????????????????????????????????
+// ?????????????????????????????????????????????????????????????????????????????
 // RollingTeeBuffer -- mirrors stdout to a daily rolling log file
 // Rotates at UTC midnight. Keeps LOG_KEEP_DAYS files, deletes older ones.
 // File naming: logs/omega_YYYY-MM-DD.log
@@ -247,10 +248,25 @@ static void print_perf_stats() {
 // Without this mutex the FIX thread and cTrader depth thread both write to
 // std::cout concurrently, corrupting at_line_start_ and the ofstream state
 // -> undefined behaviour -> crash ~30s into startup during the book burst.
+//
+// LOG HEALTH GUARANTEES (never-stale contract):
+//   1. latest.log TRUNCATED on every open_today() call -- can NEVER contain
+//      content from a prior process run. std::ios::trunc overwrites from byte 0.
+//   2. latest.log open FAILURE is immediately printed to console (NSSM stdout)
+//      AND written into the dated log. [OMEGA-LOG-LATEST-FAIL] is always visible.
+//   3. [LOG-HEALTH] heartbeat emitted every LOG_HEALTH_INTERVAL_SEC seconds.
+//      Monitoring scripts grep this line and check its embedded timestamp.
+//      Format: [LOG-HEALTH] dated=ok latest=<ok|FAIL> ts=HH:MM:SS
+//      The first heartbeat fires at the moment of open_today() so the very
+//      first line in both files confirms their status.
+//   4. is_latest_open() / is_dated_open() public accessors for omega_main.hpp
+//      health checks and GUI telemetry.
+//   5. latest_path() public accessor so scripts know which file is live.
 // ?????????????????????????????????????????????????????????????????????????????
 class RollingTeeBuffer : public std::streambuf {
 public:
-    static constexpr int LOG_KEEP_DAYS = 10;
+    static constexpr int LOG_KEEP_DAYS           = 10;
+    static constexpr int LOG_HEALTH_INTERVAL_SEC = 60;  // heartbeat cadence
 
     explicit RollingTeeBuffer(std::streambuf* orig, const std::string& log_dir)
         : orig_(orig), log_dir_(log_dir)
@@ -262,6 +278,7 @@ public:
         if (c == EOF) return !EOF;
         std::lock_guard<std::mutex> lk(mtx_);
         check_rotate();
+        maybe_emit_health_heartbeat();
         orig_->sputc(static_cast<char>(c));
         if (file_buf_) {
             if (at_line_start_ && c != '\n') {
@@ -282,6 +299,7 @@ public:
     std::streamsize xsputn(const char* s, std::streamsize n) override {
         std::lock_guard<std::mutex> lk(mtx_);
         check_rotate();
+        maybe_emit_health_heartbeat();
         orig_->sputn(s, n);
         if (file_buf_) {
             const char* p   = s;
@@ -311,13 +329,15 @@ public:
     }
 
     std::string current_path() const { std::lock_guard<std::mutex> lk(mtx_); return current_path_; }
-    bool is_open() const { std::lock_guard<std::mutex> lk(mtx_); return file_.is_open(); }
+    std::string latest_path()  const { std::lock_guard<std::mutex> lk(mtx_); return latest_path_; }
+    bool is_open()             const { std::lock_guard<std::mutex> lk(mtx_); return file_.is_open(); }
+    bool is_dated_open()       const { std::lock_guard<std::mutex> lk(mtx_); return file_.is_open(); }
+    bool is_latest_open()      const { std::lock_guard<std::mutex> lk(mtx_); return latest_.is_open(); }
 
     void force_rotate_check() {
         std::lock_guard<std::mutex> lk(mtx_);
         const std::string before = current_path_;
         check_rotate();
-        // If file rotated, write a header so we know log is alive
         if (current_path_ != before && file_buf_) {
             const std::string hdr = "[OMEGA-LOG] Daily rotation -- new log: " + current_path_ + "\n";
             file_buf_->sputn(hdr.c_str(), (std::streamsize)hdr.size());
@@ -338,19 +358,67 @@ private:
     std::streambuf* orig_;
     std::string     log_dir_;
     std::ofstream   file_;
-    std::streambuf* file_buf_ = nullptr;
+    std::streambuf* file_buf_  = nullptr;
     std::ofstream   latest_;        // always points to logs/latest.log (truncated on each open_today)
     std::streambuf* latest_buf_ = nullptr;
     std::string     current_path_;
-    int             current_day_ = -1;
+    std::string     latest_path_;   // stored for is_latest_open() / latest_path() accessors
+    int             current_day_  = -1;
     bool            at_line_start_ = true;  // true when next char starts a new line
+    int64_t         last_health_ts_ = 0;    // unix seconds of last [LOG-HEALTH] emission
+
+    // -------------------------------------------------------------------------
+    // maybe_emit_health_heartbeat
+    // Called under mtx_ from overflow() and xsputn().
+    // Emits a [LOG-HEALTH] line to both dated and latest files at most once per
+    // LOG_HEALTH_INTERVAL_SEC seconds.  The first call (last_health_ts_==0) fires
+    // immediately so the opening lines of both files confirm their own status.
+    //
+    // Format:  [LOG-HEALTH] dated=ok latest=<ok|FAIL> ts=HH:MM:SS
+    //
+    // Monitoring scripts:
+    //   - Grep for "[LOG-HEALTH]" and check embedded ts= against wall clock.
+    //   - If latest=FAIL all scripts MUST fall back to dated log.
+    //   - Gap between consecutive [LOG-HEALTH] ts= values > 120s means
+    //     the process is frozen or dead.
+    // -------------------------------------------------------------------------
+    void maybe_emit_health_heartbeat() {
+        auto now_tp  = std::chrono::system_clock::now();
+        auto now_t   = std::chrono::system_clock::to_time_t(now_tp);
+        const int64_t now_sec = static_cast<int64_t>(now_t);
+        if (now_sec - last_health_ts_ < LOG_HEALTH_INTERVAL_SEC) return;
+        last_health_ts_ = now_sec;
+
+        struct tm ti{};
+        gmtime_s(&ti, &now_t);
+        char ts_buf[16];
+        std::snprintf(ts_buf, sizeof(ts_buf), "%02d:%02d:%02d",
+                      ti.tm_hour, ti.tm_min, ti.tm_sec);
+
+        const char* latest_status = latest_.is_open() ? "ok" : "FAIL";
+        // Build line without injecting via the normal path (avoids re-entrancy on at_line_start_)
+        char hb[128];
+        std::snprintf(hb, sizeof(hb),
+                      "%02d:%02d:%02d [LOG-HEALTH] dated=ok latest=%s ts=%s\n",
+                      ti.tm_hour, ti.tm_min, ti.tm_sec,
+                      latest_status, ts_buf);
+        const std::streamsize hb_len = static_cast<std::streamsize>(std::strlen(hb));
+
+        if (file_buf_)   { file_buf_->sputn(hb, hb_len);   file_.flush(); }
+        if (latest_buf_) { latest_buf_->sputn(hb, hb_len); latest_.flush(); }
+        // Console (NSSM stdout) -- strip the timestamp prefix for readability
+        if (orig_) {
+            const char* msg_start = std::strchr(hb, '[');
+            if (msg_start) orig_->sputn(msg_start, (std::streamsize)std::strlen(msg_start));
+        }
+        // at_line_start_ remains true: heartbeat always ends with \n
+        at_line_start_ = true;
+    }
 
     void write_ts_prefix() {
         // UTC HH:MM:SS prefix injected into file only (not console)
         auto now = std::chrono::system_clock::now();
         auto t   = std::chrono::system_clock::to_time_t(now);
-        auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       now.time_since_epoch()) % 1000;
         struct tm ti{};
         gmtime_s(&ti, &t);
         char buf[16];
@@ -387,20 +455,46 @@ private:
         fs::create_directories(fs::path(log_dir_), ec);
         current_path_ = log_dir_ + "/omega_" + utc_date_str() + ".log";
         file_.open(current_path_, std::ios::app);
-        file_buf_    = file_.is_open() ? file_.rdbuf() : nullptr;
+        file_buf_         = file_.is_open() ? file_.rdbuf() : nullptr;
         current_day_      = utc_day_of_year();
         current_date_str_ = utc_date_str();
         if (!file_.is_open()) {
             // Print direct to orig_ (console) -- tee not usable if file failed
-            const std::string msg = "[OMEGA-LOG-FAIL] Cannot open log: " + current_path_ + "\n";
+            const std::string msg = "[OMEGA-LOG-FAIL] Cannot open dated log: " + current_path_ + "\n";
             if (orig_) orig_->sputn(msg.c_str(), (std::streamsize)msg.size());
         }
-        // latest.log: always truncated and rewritten on each startup/rotation.
-        // All monitoring scripts read latest.log -- this keeps it live.
+
+        // ── latest.log ──────────────────────────────────────────────────────
+        // GUARANTEE: std::ios::trunc overwrites from byte 0 on every open_today()
+        // call. latest.log can NEVER contain output from a prior process run.
+        // If open fails we emit [OMEGA-LOG-LATEST-FAIL] to console AND to the
+        // dated log so the failure is always visible in at least one place.
         if (latest_.is_open()) { latest_.flush(); latest_.close(); latest_buf_ = nullptr; }
-        const std::string latest_path = log_dir_ + "/latest.log";
-        latest_.open(latest_path, std::ios::trunc);
-        latest_buf_ = latest_.is_open() ? latest_.rdbuf() : nullptr;
+        latest_path_ = log_dir_ + "/latest.log";
+        latest_.open(latest_path_, std::ios::trunc);
+        if (latest_.is_open()) {
+            latest_buf_ = latest_.rdbuf();
+        } else {
+            latest_buf_ = nullptr;
+            // ── EXPLICIT FAILURE NOTIFICATION ─────────────────────────────
+            // 1. Console (captured by NSSM stdout log)
+            const std::string fail_msg =
+                "[OMEGA-LOG-LATEST-FAIL] Cannot open latest.log: " + latest_path_
+                + " -- monitoring scripts MUST use dated log: " + current_path_ + "\n";
+            if (orig_) orig_->sputn(fail_msg.c_str(), (std::streamsize)fail_msg.size());
+            // 2. Dated log (permanent record)
+            if (file_buf_) {
+                file_buf_->sputn(fail_msg.c_str(), (std::streamsize)fail_msg.size());
+                file_.flush();
+            }
+        }
+
+        // Emit the very first [LOG-HEALTH] heartbeat immediately.
+        // This is the first line written into both new files and confirms their
+        // open status before any other engine output arrives.
+        last_health_ts_ = 0;
+        maybe_emit_health_heartbeat();
+
         purge_old_logs();
     }
 
@@ -412,7 +506,6 @@ private:
     }
 
     std::string current_date_str_; // set in open_today via utc_date_str()
-
     void purge_old_logs() {
         // Enumerate logs/omega_*.log:
         //   - Files older than LOG_ARCHIVE_AFTER_DAYS: compress to logs/archive/omega_YYYY-MM-DD.zip
