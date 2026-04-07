@@ -1845,48 +1845,34 @@ private:
         // If position has been losing for >45s straight with no meaningful MFE
         // AND adverse move > threshold: the setup never worked. Close and move on.
         // ?? ADVERSE EARLY EXIT ????????????????????????????????????????????????
-        // Two-stage early exit to cut bad entries fast:
+        // Cuts IMM_REVERSAL trades: entered during spread spike, spread normalizes,
+        // position is immediately underwater within 30s.
+        // Backtest: IMM_REVERSAL avg hold 12s, avg loss -0.30pts (-$48 at 0.16 lots).
+        // These can't be caught at entry (signal was valid) but can be cut fast.
         //
-        // STAGE 1 -- Confirmation hold (0-8s):
-        //   If price has NOT moved 0.20pt in our direction within 8s of entry,
-        //   exit immediately. Signal was valid but timing was wrong.
-        //   This cuts ADVERSE_EARLY before the loss compounds.
-        //   adv_gate tightened: max(0.20, 1.0*spread) -- was max(0.30, 1.5*spread)
-        //   NOT applied in expansion mode (crash moves need room to develop).
-        //
-        // STAGE 2 -- Adverse reversal (0-45s):
-        //   Original gate: adverse > 1.5x spread AND mfe==0 within 45s.
-        //   Kept as fallback for trades that creep adverse slowly.
+        // Gate: held < 45s AND adverse > 1.5 * spread_at_entry AND mfe == 0.0
+        //   1.5x spread: if we're down more than 1.5x the entry spread within 45s,
+        //   this is a spread normalization, not a real move against us.
+        //   mfe == 0.0: price never went our way at all -- genuine wrong entry.
+        //   No step banked: if step1 fired, the position is managed by staircase.
+        // NOT applied in expansion mode (crash trades need room in first 45s).
         {
-            const int64_t held_s  = (now_ms / 1000) - pos.entry_ts;
-            const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
-            const double  favourable = pos.mfe;  // max price movement in our direction
-
-            // Stage 1: no confirmation within 8s -- exit flat
-            const bool no_confirm =
-                !pos.partial_closed
-                && (held_s >= 5 && held_s <= 8)   // check window: 5-8s after entry
-                && (favourable < 0.20)              // price never moved 0.20pt for us
-                && (adverse > 0.0)                  // and is actually going against us
-                && !m_expansion_mode;
-
-            // Stage 2: original adverse gate, tightened thresholds
-            const double adv_gate = std::max(0.20, 1.0 * m_spread_at_entry);
-            const bool adv_early =
+            const int64_t held_s   = (now_ms / 1000) - pos.entry_ts;
+            const double  adverse  = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+            const double  adv_gate = std::max(0.30, 1.5 * m_spread_at_entry);
+            const bool    adv_early =
                 !pos.partial_closed
                 && (held_s < 45)
                 && (adverse > adv_gate)
-                && (favourable < 0.01)
-                && !m_expansion_mode;
-
-            if (no_confirm || adv_early) {
-                const char* reason = no_confirm ? "NO_CONFIRM" : "ADVERSE_EARLY";
-                printf("[GOLD-FLOW] %s %s adverse=%.3f mfe=%.3f held=%llds\n",
-                       reason, pos.is_long ? "LONG" : "SHORT",
-                       adverse, favourable, (long long)held_s);
+                && (pos.mfe < 0.01)          // never moved our way
+                && !m_expansion_mode;        // expansion crashes need room
+            if (adv_early) {
+                printf("[GOLD-FLOW] ADVERSE-EARLY %s adverse=%.3f>%.3f held=%llds spread_entry=%.3f\n",
+                       pos.is_long ? "LONG" : "SHORT",
+                       adverse, adv_gate, (long long)held_s, m_spread_at_entry);
                 fflush(stdout);
                 const double exit_px = pos.is_long ? bid : ask;
-                close_position(exit_px, reason, now_ms, on_close);
+                close_position(exit_px, "ADVERSE_EARLY", now_ms, on_close);
                 return;
             }
         }
