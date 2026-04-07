@@ -183,7 +183,7 @@ int main(int argc, char* argv[])
     //                   RSI moving without price following = Wilder smoothing noise = skip.
     // RSI_DELTA_MIN raised 3->6. COOLDOWN raised 20->45s.
     // SL_ATR_MULT raised 0.5->1.5, TP raised 4->6pt (prior 3s SL hit).
-    g_micro_momentum.enabled           = true;
+    g_micro_momentum.enabled           = false;  // DISABLED: no proven edge, churning in chop -- re-enable after backtest
     g_micro_momentum.shadow_mode       = true;
     g_micro_momentum.ENTRY_DISP_PTS    = 0.0;   // disabled -- anchor too fast
     g_micro_momentum.RSI_DELTA_MIN     = 6.0;   // raised 3->6: 3 fired on every micro-wiggle
