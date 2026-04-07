@@ -100,6 +100,25 @@ if ($finalCheck) {
 $ErrorActionPreference = "Stop"
 OK "Stopped and confirmed dead"
 
+# ── POST-KILL: exclude log files from git tracking so reset never touches them ──
+# Log files are written by the engine and must never be deleted or reset.
+# We tell git to skip them entirely so git reset --hard never tries to unlink them.
+# This runs every restart so it is always in effect even on a fresh clone.
+$ErrorActionPreference = "Continue"
+git update-index --skip-worktree logs/latest.log 2>&1 | Out-Null
+git update-index --skip-worktree logs/omega_2026-04-07.log 2>&1 | Out-Null
+git update-index --skip-worktree logs/shadow/omega_shadow.csv 2>&1 | Out-Null
+git update-index --skip-worktree logs/trades/omega_trade_opens.csv 2>&1 | Out-Null
+# Mark ALL files in logs/ as skip-worktree so any future log files are also excluded
+$logFiles = git ls-files logs/ 2>&1
+if ($logFiles) {
+    $logFiles | ForEach-Object {
+        git update-index --skip-worktree $_ 2>&1 | Out-Null
+    }
+}
+$ErrorActionPreference = "Stop"
+OK "Log files excluded from git reset (skip-worktree)"
+
 # ── [2/13] Pull ──────────────────────────────────────────────────────────────
 # GUARANTEED FRESH PULL:
 # 1. fetch brings remote refs up to date
