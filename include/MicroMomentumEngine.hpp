@@ -116,8 +116,7 @@ public:
         if (now_s < m_cooldown_until)          return;
         if (m_tick_count < WARMUP_TICKS)       return;
         if (spread > MAX_SPREAD_PTS)           return;
-        if (session_slot == 0)                 return;  // dead zone (slot 0 only)
-        // 05-07 UTC pre-London NOT blocked -- spread gate is sufficient protection
+        // No session slot block -- spread gate protects against thin liquidity.
 
         // ── Signal: RSI slope + price displacement must agree ─────────────────
         const double rsi_slope = m_rsi_slope;       // EWM of RSI change/tick
