@@ -783,9 +783,9 @@ protected:
         tr.sl            = pos.sl;
         tr.size          = pos.size;
         tr.pnl           = (pos.is_long ? (exit_px - pos.entry)
-                                        : (pos.entry - exit_px)) * pos.size * 100.0;  // USD
+                                        : (pos.entry - exit_px)) * pos.size;  // raw pts*lots -- handle_closed_trade applies tick_mult
         tr.net_pnl       = tr.pnl;
-        tr.mfe           = pos.mfe * pos.size * 100.0;
+        tr.mfe           = pos.mfe * pos.size;
         tr.mae           = pos.mae;
         tr.entryTs       = pos.entry_ts;
         tr.exitTs        = nowSec();
