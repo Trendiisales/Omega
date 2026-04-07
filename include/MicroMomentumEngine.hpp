@@ -122,20 +122,24 @@ public:
         const double rsi_slope = m_rsi_slope;       // EWM of RSI change/tick
         const double disp      = mid - m_anchor;    // displacement from slower anchor
 
-        // RSI must not already be overextended -- if RSI>70 for a LONG signal,
-        // the move has already happened and we are entering at exhaustion.
-        // Valid entry zone: LONG when RSI 45-68 (rising from neutral, not extreme)
-        //                   SHORT when RSI 32-55 (falling from neutral, not extreme)
-        const bool rsi_not_exhausted_long  = (m_tick_rsi > 45.0 && m_tick_rsi < 68.0);
-        const bool rsi_not_exhausted_short = (m_tick_rsi > 32.0 && m_tick_rsi < 55.0);
+        // RSI must not already be overextended -- entering at exhaustion = chasing.
+        // Symmetric zones: LONG valid when RSI 42-72 (rising, not yet overbought)
+        //                  SHORT valid when RSI 28-58 (falling, not yet oversold)
+        // Previous zones (45-68 / 32-55) were too tight and asymmetric --
+        // shorted at 56+ was blocked but longs at 44- were also blocked, missing
+        // valid neutral-RSI momentum moves in both directions.
+        const bool rsi_not_exhausted_long  = (m_tick_rsi > 42.0 && m_tick_rsi < 72.0);
+        const bool rsi_not_exhausted_short = (m_tick_rsi > 28.0 && m_tick_rsi < 58.0);
 
-        // Slope must be ACCELERATING (slope increasing) not just positive.
-        // m_rsi_slope_prev tracks previous slope value.
-        // Entering when slope is decelerating = catching the end of the move.
+        // Slope must not be RAPIDLY DECELERATING -- don't enter at end of move.
+        // Use fabs so the check works correctly for both positive and negative slopes.
+        // Wrong before: for negatives, prev*0.8 is LESS negative so the test
+        // rejected valid short entries where slope was still strongly negative.
+        // Fix: compare magnitudes -- slope must retain >= 80% of previous magnitude.
         const bool slope_accel_long  = (rsi_slope > RSI_SLOPE_MIN)
-                                    && (rsi_slope >= m_rsi_slope_prev * 0.8); // not rapidly decelerating
+                                    && (std::fabs(rsi_slope) >= std::fabs(m_rsi_slope_prev) * 0.8);
         const bool slope_accel_short = (rsi_slope < -RSI_SLOPE_MIN)
-                                    && (rsi_slope <= m_rsi_slope_prev * 0.8);
+                                    && (std::fabs(rsi_slope) >= std::fabs(m_rsi_slope_prev) * 0.8);
 
         const bool long_signal  = slope_accel_long
                                 && (disp > ENTRY_DISP_PTS)
@@ -327,8 +331,9 @@ private:
         tr.exitPrice   = exit_px;
         tr.sl          = pos.sl;
         tr.size        = pos.size;
-        tr.pnl         = pnl_pts * pos.size;
-        tr.mfe         = pos.mfe * pos.size;
+        tr.pnl         = pnl_pts * pos.size * 100.0;  // USD: pts * lots * $100/pt
+        tr.net_pnl     = tr.pnl;                       // no commission modelled -- set equal
+        tr.mfe         = pos.mfe * pos.size * 100.0;
         tr.mae         = 0.0;
         tr.entryTs     = pos.entry_ts;
         tr.exitTs      = now_s;
