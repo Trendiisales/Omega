@@ -14,21 +14,24 @@
 //   Tick RSI > RSI_OVERBOUGHT (default 58) -> SHORT on first RSI tick down
 //   All sessions (Asia + London + NY). Spread gate protects thin sessions.
 //
+// DOM FILTER (wired 2026-04-07):
+//   LONG:  block if wall_below (support just got eaten = reversal may fail)
+//          block if l2_imbalance < L2_LONG_MIN (ask-heavy book opposes bounce)
+//          vacuum_bid confirms = reduce cooldown 60->30s on next re-entry
+//   SHORT: block if wall_above (resistance block = short may stall)
+//          block if l2_imbalance > L2_SHORT_MAX (bid-heavy book opposes fade)
+//          vacuum_ask confirms = reduce cooldown 60->30s on next re-entry
+//   When l2_real=false: DOM filter bypassed entirely (safe fallback)
+//
 // PROTECTION:
 //   SL = 0.6x ATR from entry
 //   BE lock at 0.4x ATR profit
 //   Trail = 0.4x ATR behind MFE
 //   RSI exit: LONG exits when tick RSI recovers to 52, SHORT exits at 48
-//   Max hold 10 minutes, cooldown 60s after close
-//
-// ATR: also computed tick-level from EWM of |price change| -- no bars needed
+//   Max hold 10 minutes, cooldown 60s (30s with vacuum confirm)
 //
 // v2.1: update_indicators() exposed as public method.
-//   tick_gold.hpp calls it unconditionally on every XAUUSD tick so that
-//   tick_rsi() is always current when MacroCrashEngine reads it -- even when
-//   rsi_rev_can_enter=false (e.g. g_hybrid_gold has a position).
-//   Previously indicators only updated inside on_tick(), so when entry was
-//   gated the RSI fed to MacroCrash was stale.
+//   tick_gold.hpp calls it unconditionally so tick_rsi() is always current.
 // =============================================================================
 
 #include <cstdint>
@@ -46,19 +49,22 @@ namespace omega {
 class RSIReversalEngine {
 public:
     // ── Parameters ────────────────────────────────────────────────────────────
-    double RSI_OVERSOLD       = 42.0;  // LONG when tick RSI < this
-    double RSI_OVERBOUGHT     = 58.0;  // SHORT when tick RSI > this
-    double RSI_EXIT_LONG      = 52.0;  // exit LONG when RSI recovers here
-    double RSI_EXIT_SHORT     = 48.0;  // exit SHORT when RSI recovers here
-    int    RSI_PERIOD         = 14;    // tick RSI period
+    double RSI_OVERSOLD       = 42.0;
+    double RSI_OVERBOUGHT     = 58.0;
+    double RSI_EXIT_LONG      = 52.0;
+    double RSI_EXIT_SHORT     = 48.0;
+    int    RSI_PERIOD         = 14;
     double SL_ATR_MULT        = 0.6;
     double TRAIL_ATR_MULT     = 0.40;
     double BE_ATR_MULT        = 0.40;
     double MAX_SPREAD_PTS     = 2.5;
-    double MIN_ATR_PTS        = 1.0;   // minimum tick ATR (dead tape filter)
+    double MIN_ATR_PTS        = 1.0;
     int    COOLDOWN_S         = 60;
+    int    COOLDOWN_S_VACUUM  = 30;   // reduced cooldown when vacuum confirms direction
     int    MAX_HOLD_S         = 600;
     int    MIN_HOLD_S         = 8;
+    double L2_LONG_MIN        = 0.40; // min imbalance for LONG (not ask-heavy)
+    double L2_SHORT_MAX       = 0.60; // max imbalance for SHORT (not bid-heavy)
     bool   enabled            = true;
     bool   shadow_mode        = true;
 
@@ -80,10 +86,6 @@ public:
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
     // ── Indicator update -- MUST be called every tick unconditionally ──────────
-    // tick_gold.hpp calls this at the top of the XAUUSD block, before any gate
-    // checks, so tick_rsi() is always current for MacroCrashEngine to read.
-    // on_tick() also calls this internally -- calling twice is safe (idempotent
-    // per-tick because m_rsi_last_mid guards against double-counting).
     void update_indicators(double bid, double ask) noexcept {
         if (bid <= 0.0 || ask <= 0.0) return;
         const double mid    = (bid + ask) * 0.5;
@@ -93,11 +95,16 @@ public:
     }
 
     // ── Main tick ─────────────────────────────────────────────────────────────
-    // Called when entry is allowed. Indicators already updated by update_indicators()
-    // so they are not double-updated here when both are called the same tick.
     void on_tick(double bid, double ask,
                  int session_slot, int64_t now_ms,
-                 CloseCallback on_close) noexcept
+                 // DOM data
+                 double l2_imbalance  = 0.5,
+                 bool   wall_above    = false,
+                 bool   wall_below    = false,
+                 bool   vacuum_ask    = false,
+                 bool   vacuum_bid    = false,
+                 bool   l2_real       = false,
+                 CloseCallback on_close = nullptr) noexcept
     {
         if (!enabled) return;
         if (bid <= 0.0 || ask <= 0.0) return;
@@ -106,41 +113,65 @@ public:
         const double spread = ask - bid;
         const int64_t now_s = now_ms / 1000;
 
-        // Update indicators -- safe to call again, _update_tick_rsi guards
-        // against double-counting via m_rsi_last_mid comparison.
         _update_tick_rsi(mid);
         _update_tick_atr(mid, spread);
 
-        // ── Manage open position ─────────────────────────────────────────────
         if (pos.active) {
             _manage(bid, ask, mid, now_s, on_close);
             return;
         }
 
-        // ── Cooldown ─────────────────────────────────────────────────────────
         if (now_s < m_cooldown_until) return;
 
-        // ── Entry gates ───────────────────────────────────────────────────────
         if (spread > MAX_SPREAD_PTS)        return;
         if (m_tick_atr < MIN_ATR_PTS)       return;
-        if (m_rsi_count < RSI_PERIOD + 2)   return;  // RSI not warmed yet
-        // No session slot block -- spread gate (MAX_SPREAD_PTS=2.5) protects against
-        // thin liquidity in all sessions including pre-London (05-07 UTC).
-        // RSI moves are real regardless of session.
+        if (m_rsi_count < RSI_PERIOD + 2)   return;
 
         const double rsi = m_tick_rsi;
-
-        // ── RSI extreme + turning ─────────────────────────────────────────────
         const bool rsi_oversold   = (rsi < RSI_OVERSOLD);
         const bool rsi_overbought = (rsi > RSI_OVERBOUGHT);
         if (!rsi_oversold && !rsi_overbought) return;
 
-        // Must be TURNING -- not still falling/rising
         if (rsi_oversold   && rsi <= m_rsi_prev) return;  // still falling
         if (rsi_overbought && rsi >= m_rsi_prev) return;  // still rising
 
+        const bool is_long = rsi_oversold;
+
+        // ── DOM filter ────────────────────────────────────────────────────────
+        bool vacuum_confirm = false;
+        if (l2_real) {
+            if (is_long) {
+                // Don't bounce into ask-heavy book -- sellers still dominating
+                if (l2_imbalance < L2_LONG_MIN) {
+                    printf("[RSI-REV-BLOCK] LONG blocked: l2_imbalance=%.2f < %.2f (ask-heavy)\n",
+                           l2_imbalance, L2_LONG_MIN);
+                    fflush(stdout);
+                    return;
+                }
+                // Wall below just got hit -- may not hold
+                if (wall_below) {
+                    printf("[RSI-REV-BLOCK] LONG blocked: wall_below (support may break)\n");
+                    fflush(stdout);
+                    return;
+                }
+                vacuum_confirm = vacuum_bid; // thin bid = reversal has room up
+            } else {
+                if (l2_imbalance > L2_SHORT_MAX) {
+                    printf("[RSI-REV-BLOCK] SHORT blocked: l2_imbalance=%.2f > %.2f (bid-heavy)\n",
+                           l2_imbalance, L2_SHORT_MAX);
+                    fflush(stdout);
+                    return;
+                }
+                if (wall_above) {
+                    printf("[RSI-REV-BLOCK] SHORT blocked: wall_above (resistance may hold)\n");
+                    fflush(stdout);
+                    return;
+                }
+                vacuum_confirm = vacuum_ask; // thin ask = reversal has room down
+            }
+        }
+
         // ── Entry ─────────────────────────────────────────────────────────────
-        const bool is_long   = rsi_oversold;
         const double entry   = is_long ? ask : bid;
         const double sl_dist = std::max(m_tick_atr * SL_ATR_MULT, spread * 2.0);
 
@@ -153,30 +184,30 @@ public:
         pos.mfe       = 0.0;
         pos.be_locked = false;
         pos.entry_ts  = now_s;
+        m_vacuum_confirm = vacuum_confirm;
 
         const char* pfx = shadow_mode ? "[RSI-REV-SHADOW]" : "[RSI-REV]";
-        printf("%s %s entry=%.2f sl=%.2f rsi=%.1f atr=%.2f spread=%.2f slot=%d\n",
+        printf("%s %s entry=%.2f sl=%.2f rsi=%.1f atr=%.2f "
+               "l2=%.2f wall_a=%d wall_b=%d vac=%d slot=%d\n",
                pfx, is_long ? "LONG" : "SHORT",
-               entry, pos.sl, rsi, m_tick_atr, spread, session_slot);
+               entry, pos.sl, rsi, m_tick_atr,
+               l2_imbalance, (int)wall_above, (int)wall_below,
+               (int)vacuum_confirm, session_slot);
         fflush(stdout);
     }
 
-    void patch_size(double lot) noexcept {
-        if (pos.active) pos.size = lot;
-    }
+    void patch_size(double lot) noexcept { if (pos.active) pos.size = lot; }
 
     void force_close(double bid, double ask, int64_t now_ms,
                      CloseCallback on_close) noexcept {
         if (!pos.active) return;
-        const double exit_px = pos.is_long ? bid : ask;
-        _close(exit_px, "FORCE_CLOSE", now_ms / 1000, on_close);
+        _close(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms / 1000, on_close);
     }
 
     double tick_rsi() const noexcept { return m_tick_rsi; }
     double tick_atr() const noexcept { return m_tick_atr; }
 
 private:
-    // ── Tick RSI state ────────────────────────────────────────────────────────
     double  m_tick_rsi      = 50.0;
     double  m_rsi_prev      = 50.0;
     double  m_rsi_avg_gain  = 0.0;
@@ -184,72 +215,52 @@ private:
     bool    m_rsi_init      = false;
     int     m_rsi_count     = 0;
     double  m_rsi_last_mid  = 0.0;
-    std::deque<double> m_rsi_gains;   // seed gains
-    std::deque<double> m_rsi_losses;  // seed losses
+    std::deque<double> m_rsi_gains;
+    std::deque<double> m_rsi_losses;
 
-    // ── Tick ATR state ────────────────────────────────────────────────────────
     double  m_tick_atr      = 0.0;
     double  m_atr_last_mid  = 0.0;
     bool    m_atr_init      = false;
     static constexpr double ATR_ALPHA = 2.0 / (14.0 + 1.0);
 
-    // ── Other state ───────────────────────────────────────────────────────────
-    int64_t m_cooldown_until = 0;
-    int     m_trade_id       = 0;
+    int64_t m_cooldown_until  = 0;
+    int     m_trade_id        = 0;
+    bool    m_vacuum_confirm  = false;
 
     void _update_tick_rsi(double mid) noexcept {
-        // Guard: skip if mid unchanged from last call this tick.
-        // Prevents double-counting when update_indicators() and on_tick() both
-        // call this in the same tick with the same price.
         if (mid == m_rsi_last_mid) return;
         if (m_rsi_last_mid <= 0.0) { m_rsi_last_mid = mid; return; }
         const double change = mid - m_rsi_last_mid;
         m_rsi_last_mid = mid;
         m_rsi_prev = m_tick_rsi;
         ++m_rsi_count;
-
         const double gain = change > 0.0 ? change : 0.0;
         const double loss = change < 0.0 ? -change : 0.0;
-
         if (!m_rsi_init) {
             m_rsi_gains.push_back(gain);
             m_rsi_losses.push_back(loss);
             if ((int)m_rsi_gains.size() < RSI_PERIOD) return;
             double sum_g = 0.0, sum_l = 0.0;
-            for (int i = 0; i < RSI_PERIOD; ++i) {
-                sum_g += m_rsi_gains[i];
-                sum_l += m_rsi_losses[i];
-            }
+            for (int i = 0; i < RSI_PERIOD; ++i) { sum_g += m_rsi_gains[i]; sum_l += m_rsi_losses[i]; }
             m_rsi_avg_gain = sum_g / RSI_PERIOD;
             m_rsi_avg_loss = sum_l / RSI_PERIOD;
             m_rsi_init = true;
-            m_rsi_gains.clear();
-            m_rsi_losses.clear();
+            m_rsi_gains.clear(); m_rsi_losses.clear();
         } else {
             m_rsi_avg_gain = (m_rsi_avg_gain * (RSI_PERIOD - 1) + gain) / RSI_PERIOD;
             m_rsi_avg_loss = (m_rsi_avg_loss * (RSI_PERIOD - 1) + loss) / RSI_PERIOD;
         }
-
-        if (m_rsi_avg_loss < 1e-10) {
-            m_tick_rsi = 100.0;
-        } else {
-            m_tick_rsi = 100.0 - 100.0 / (1.0 + m_rsi_avg_gain / m_rsi_avg_loss);
-        }
+        m_tick_rsi = (m_rsi_avg_loss < 1e-10) ? 100.0
+                   : 100.0 - 100.0 / (1.0 + m_rsi_avg_gain / m_rsi_avg_loss);
     }
 
     void _update_tick_atr(double mid, double spread) noexcept {
-        // Guard: skip if mid unchanged (same tick double-call protection)
         if (mid == m_atr_last_mid && m_atr_init) return;
         const double range = (m_atr_last_mid > 0.0)
-            ? std::max(std::fabs(mid - m_atr_last_mid), spread)
-            : spread;
+            ? std::max(std::fabs(mid - m_atr_last_mid), spread) : spread;
         m_atr_last_mid = mid;
-        if (!m_atr_init) {
-            m_tick_atr = range;
-            m_atr_init = true;
-        } else {
-            m_tick_atr = ATR_ALPHA * range + (1.0 - ATR_ALPHA) * m_tick_atr;
-        }
+        if (!m_atr_init) { m_tick_atr = range; m_atr_init = true; }
+        else m_tick_atr = ATR_ALPHA * range + (1.0 - ATR_ALPHA) * m_tick_atr;
     }
 
     void _manage(double bid, double ask, double mid,
@@ -258,24 +269,15 @@ private:
         if (!pos.active) return;
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
-
         if ((now_s - pos.entry_ts) < MIN_HOLD_S) return;
-
         if ((now_s - pos.entry_ts) > MAX_HOLD_S) {
-            _close(pos.is_long ? bid : ask, "MAX_HOLD", now_s, on_close);
-            return;
+            _close(pos.is_long ? bid : ask, "MAX_HOLD", now_s, on_close); return;
         }
-
-        // BE lock
         if (!pos.be_locked && move >= pos.atr * BE_ATR_MULT) {
-            pos.sl       = pos.entry;
-            pos.be_locked = true;
-            printf("[RSI-REV] BE_LOCK %s move=%.2f\n",
-                   pos.is_long ? "LONG" : "SHORT", move);
+            pos.sl = pos.entry; pos.be_locked = true;
+            printf("[RSI-REV] BE_LOCK %s move=%.2f\n", pos.is_long ? "LONG" : "SHORT", move);
             fflush(stdout);
         }
-
-        // Trail once BE locked
         if (pos.be_locked) {
             const double trail_sl = pos.is_long
                 ? (pos.entry + pos.mfe - m_tick_atr * TRAIL_ATR_MULT)
@@ -283,27 +285,16 @@ private:
             if (pos.is_long  && trail_sl > pos.sl) pos.sl = trail_sl;
             if (!pos.is_long && trail_sl < pos.sl) pos.sl = trail_sl;
         }
-
-        // RSI exit
         if (m_rsi_count > RSI_PERIOD + 2) {
-            const bool rsi_exit_long  = pos.is_long  && (m_tick_rsi >= RSI_EXIT_LONG);
-            const bool rsi_exit_short = !pos.is_long && (m_tick_rsi <= RSI_EXIT_SHORT);
-            if (rsi_exit_long || rsi_exit_short) {
-                const double exit_px   = pos.is_long ? bid : ask;
-                const double exit_move = pos.is_long
-                    ? (exit_px - pos.entry) : (pos.entry - exit_px);
-                const double min_profit = -(ask - bid) * 0.5;
-                if (exit_move >= min_profit) {
-                    printf("[RSI-REV] RSI_EXIT %s rsi=%.1f move=%.2f\n",
-                           pos.is_long ? "LONG" : "SHORT", m_tick_rsi, exit_move);
-                    fflush(stdout);
-                    _close(exit_px, "RSI_TP", now_s, on_close);
-                    return;
+            const bool rsi_exit = pos.is_long ? (m_tick_rsi >= RSI_EXIT_LONG)
+                                              : (m_tick_rsi <= RSI_EXIT_SHORT);
+            if (rsi_exit) {
+                const double exit_px = pos.is_long ? bid : ask;
+                if ((pos.is_long ? (exit_px - pos.entry) : (pos.entry - exit_px)) >= -(ask - bid) * 0.5) {
+                    _close(exit_px, "RSI_TP", now_s, on_close); return;
                 }
             }
         }
-
-        // SL
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
         if (sl_hit) {
             _close(pos.is_long ? bid : ask,
@@ -315,37 +306,27 @@ private:
     void _close(double exit_px, const char* reason,
                 int64_t now_s, CloseCallback on_close) noexcept
     {
-        const double pnl = (pos.is_long
-            ? (exit_px - pos.entry)
-            : (pos.entry - exit_px)) * pos.size;
-
+        const double pnl = (pos.is_long ? (exit_px - pos.entry)
+                                        : (pos.entry - exit_px)) * pos.size;
         printf("[RSI-REV] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f\n",
-               pos.is_long ? "LONG" : "SHORT",
-               exit_px, reason, pnl, pos.mfe);
+               pos.is_long ? "LONG" : "SHORT", exit_px, reason, pnl, pos.mfe);
         fflush(stdout);
-
         omega::TradeRecord tr;
-        tr.id          = ++m_trade_id;
-        tr.symbol      = "XAUUSD";
-        tr.side        = pos.is_long ? "LONG" : "SHORT";
-        tr.engine      = "RSIReversal";
-        tr.regime      = "RSI_REVERSAL";
-        tr.entryPrice  = pos.entry;
-        tr.exitPrice   = exit_px;
-        tr.sl          = pos.sl;
-        tr.size        = pos.size;
-        tr.pnl         = pnl;               // raw pts*lots -- handle_closed_trade applies tick_mult
-        tr.net_pnl     = tr.pnl;
-        tr.mfe         = pos.mfe * pos.size;
-        tr.mae         = 0.0;
-        tr.entryTs     = pos.entry_ts;
-        tr.exitTs      = now_s;
-        tr.exitReason  = reason;
-        tr.spreadAtEntry = 0.0;
-
+        tr.id = ++m_trade_id; tr.symbol = "XAUUSD";
+        tr.side = pos.is_long ? "LONG" : "SHORT";
+        tr.engine = "RSIReversal"; tr.regime = "RSI_REVERSAL";
+        tr.entryPrice = pos.entry; tr.exitPrice = exit_px;
+        tr.tp = 0.0; tr.sl = pos.sl;
+        tr.size = pos.size;
+        tr.pnl = pnl;        // raw pts*lots -- handle_closed_trade applies tick_mult
+        tr.net_pnl = tr.pnl;
+        tr.mfe = pos.mfe * pos.size; tr.mae = 0.0;
+        tr.entryTs = pos.entry_ts; tr.exitTs = now_s;
+        tr.exitReason = reason; tr.spreadAtEntry = 0.0;
         pos = Position{};
-        m_cooldown_until = now_s + COOLDOWN_S;
-
+        // Vacuum confirm = shorter cooldown: re-enter faster on confirmed direction
+        m_cooldown_until = now_s + (m_vacuum_confirm ? COOLDOWN_S_VACUUM : COOLDOWN_S);
+        m_vacuum_confirm = false;
         if (on_close) on_close(tr);
     }
 };
