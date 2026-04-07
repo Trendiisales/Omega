@@ -208,6 +208,28 @@ static void quote_loop() {
                 std::cout << "[GOLD-DIAG] regime=" << g_gold_stack.regime_name()
                           << " vwap=" << std::fixed << std::setprecision(2) << g_gold_stack.vwap()
                           << " vol_range=" << std::fixed << std::setprecision(2) << g_gold_stack.vol_range() << "\n";
+                // GoldFlow open position state -- every 5s so trail/SL is always visible
+                if (g_gold_flow.has_open_position()) {
+                    const auto& fp = g_gold_flow.pos;
+                    const double mid_now = (g_last_gold_bid + g_last_gold_ask) * 0.5;
+                    const double open_pnl = fp.is_long ? (mid_now - fp.entry) : (fp.entry - mid_now);
+                    printf("[GOLD-FLOW-POS] %s entry=%.2f sl=%.2f mfe=%.2f open_pnl=%.2f atr=%.2f be=%d stage=%d\n",
+                           fp.is_long ? "LONG" : "SHORT",
+                           fp.entry, fp.sl, fp.mfe, open_pnl * fp.size * 100.0,
+                           fp.atr_at_entry,
+                           (int)fp.be_locked, (int)fp.trail_stage);
+                    fflush(stdout);
+                }
+                // GoldStack open position state
+                if (g_gold_stack.has_open_position()) {
+                    const auto& sp = g_gold_stack.get_position();
+                    const double mid_now = (g_last_gold_bid + g_last_gold_ask) * 0.5;
+                    const double open_pnl = sp.is_long ? (mid_now - sp.entry) : (sp.entry - mid_now);
+                    printf("[GOLD-STACK-POS] %s entry=%.2f sl=%.2f mfe=%.2f open_pnl=%.2f\n",
+                           sp.is_long ? "LONG" : "SHORT",
+                           sp.entry, sp.sl, sp.mfe, open_pnl * sp.size * 100.0);
+                    fflush(stdout);
+                }
                 std::cout.unsetf(std::ios::fixed);
                 std::cout << std::setprecision(6);
                 // Latency edge engines stats
