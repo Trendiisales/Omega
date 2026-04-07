@@ -908,7 +908,7 @@ struct GoldFlowEngine {
             const bool in_expansion = m_expansion_mode && (m_vol_ratio > 2.0);
             if (!in_expansion) {
                 // Gate A: 12-tick net distance
-                const double dist_mult  = is_low_quality_session ? 0.25 : 0.30;
+                const double dist_mult  = is_low_quality_session ? 0.35 : 0.45;  // raised 0.30->0.45: cut ADVERSE_EARLY
                 const double dist_gate  = dist_mult * m_atr;
                 const double net_move   = mid_momentum();  // mid_now - mid_12ticks_ago
                 const bool   dist_ok    = long_signal  ? (net_move  >  dist_gate)
@@ -927,7 +927,7 @@ struct GoldFlowEngine {
                 }
 
                 // Gate B: 3-tick recency -- move must still be live at entry
-                const double recency_mult = is_low_quality_session ? 0.10 : 0.15;
+                const double recency_mult = is_low_quality_session ? 0.15 : 0.25;  // raised 0.15->0.25: require stronger confirmation
                 const double recency_gate = recency_mult * m_atr;
                 double recent_move = 0.0;
                 if ((int)m_momentum_window.size() >= 4) {
