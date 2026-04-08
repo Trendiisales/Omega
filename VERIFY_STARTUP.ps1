@@ -450,21 +450,35 @@ if (-not (Test-Path $l2CsvFile)) {
     }
 }
 
-# --- CHECK 8c: FEED-STALE gate --------------------------------------------------
-# CRITICAL: g_feed_stale_xauusd blocks ALL GoldFlow entries when XAUUSD had
-# zero depth events for 1+ minutes. Must be clear for GoldFlow to trade.
-# If FEED-STALE is set it will auto-clear within 60s when events resume.
-# This check catches it immediately so operator knows why GoldFlow is silent.
-$feedStaleLine = Find-Last "FEED-STALE"
-$feedRestoredLine = Find-Last "FEED-STALE.*RESTORED|FEED-STALE.*UNBLOCKED"
-if ($feedRestoredLine) {
-    Add-Result "FEED-STALE Gate" "PASS" "XAUUSD depth restored" $feedRestoredLine.Trim()
-} elseif ($feedStaleLine -and $feedStaleLine -match "entries BLOCKED") {
-    Add-Result "FEED-STALE Gate" "FAIL" "XAUUSD depth starved -- GoldFlow BLOCKED" "GoldFlow entries blocked by FEED-STALE. Will auto-clear within 60s when XAUUSD events resume. Check CTRADER-EVTS XAUUSD count."
-} elseif ($feedStaleLine) {
-    Add-Result "FEED-STALE Gate" "INFO" "FEED-STALE activity seen" $feedStaleLine.Trim()
+# --- CHECK 8d: GoldFlow blocking gates ----------------------------------------
+# Check every gate that can silently block GoldFlow entries mid-session.
+# Each must be visible at startup and in MONITOR.
+
+# ENGINE_CULLED: fires after 4 consecutive SL_HITs, blocks all day until midnight
+$engineCulledLine = Find-Last "GF-GATE-BLOCK.*ENGINE_CULLED"
+if ($engineCulledLine) {
+    Add-Result "GF Engine Culled" "FAIL" "GoldFlow CULLED after 4 SL_HITs" "GoldFlow disabled for session. Resets at midnight UTC. Check recent trades."
 } else {
-    Add-Result "FEED-STALE Gate" "PASS" "No FEED-STALE activity" "XAUUSD depth flowing cleanly since startup."
+    Add-Result "GF Engine Culled" "PASS" "Not culled" "GoldFlow not culled this session."
+}
+
+# BARS_PERMANENTLY_UNAVAILABLE: bars failed to seed, GoldFlow blind
+$barsPermanentLine = Find-Last "BARS_PERMANENTLY_UNAVAILABLE"
+$barsNotReadyLine  = Find-Last "BARS_NOT_READY"
+if ($barsPermanentLine) {
+    Add-Result "GF Bar State" "FAIL" "BARS_PERMANENTLY_UNAVAILABLE" "M1 bars never seeded -- restart Omega to retry. GoldFlow running without RSI/ATR/trend context."
+} elseif ($barsNotReadyLine) {
+    Add-Result "GF Bar State" "INFO" "Bars warming up" "M1 bars seeding -- GoldFlow blocked until ready. Normal in first 2min."
+} else {
+    Add-Result "GF Bar State" "PASS" "Bars ready" "M1 bars seeded, GoldFlow has full context."
+}
+
+# DIR_SL_COOLDOWN: directional block after consecutive SL hits same direction
+$dirSLLine = Find-Last "GFE-FADE-BLOCK"
+if ($dirSLLine) {
+    Add-Result "GF Dir SL Cooldown" "WARN" "Direction blocked after consecutive SL_HITs" $dirSLLine.Trim()
+} else {
+    Add-Result "GF Dir SL Cooldown" "PASS" "No directional cooldown active" "No consecutive same-direction SL_HITs."
 }
 
 # --- CHECK 9: Latency ---------------------------------------------------------
