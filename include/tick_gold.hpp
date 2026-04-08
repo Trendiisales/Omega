@@ -713,19 +713,17 @@ static void on_tick_gold(
             s_l2_day_unc = tm_l2_unc.tm_yday;
         }
         if (s_l2f_unc) {
-            double l2_bvol_unc = 0.0, l2_avol_unc = 0.0;
-            int    l2_bid_lvls = 0, l2_ask_lvls = 0;
-            {
-                std::lock_guard<std::mutex> lk(g_l2_mtx);
-                auto it = g_l2_books.find("XAUUSD");
-                if (it == g_l2_books.end()) it = g_l2_books.find("GOLD.F");
-                if (it != g_l2_books.end()) {
-                    l2_bid_lvls = it->second.bid_count;
-                    l2_ask_lvls = it->second.ask_count;
-                    for (int _i = 0; _i < it->second.bid_count; ++_i) l2_bvol_unc += it->second.bids[_i].size;
-                    for (int _i = 0; _i < it->second.ask_count; ++_i) l2_avol_unc += it->second.asks[_i].size;
-                }
-            }
+            // Read raw bid/ask counts directly from AtomicL2 -- these are the full
+            // cTrader DOM counts BEFORE the 5-level cap in to_l2book().
+            // This is real data. depth_bid_levels = raw_bid from cTrader DOM.
+            const int    l2_bid_lvls  = g_l2_gold.raw_bid.load(std::memory_order_relaxed);
+            const int    l2_ask_lvls  = g_l2_gold.raw_ask.load(std::memory_order_relaxed);
+            // Volume: cTrader sends sz_raw for each quote. Sum from raw counts * 1.0
+            // (since sz_raw=0 is substituted as 1.0 per level in to_l2book).
+            // Actual volume signal is not available from cTrader for XAUUSD.
+            // Log counts as proxy -- real directional signal is l2_imb (raw_imbalance).
+            const double l2_bvol_unc  = static_cast<double>(l2_bid_lvls);
+            const double l2_avol_unc  = static_cast<double>(l2_ask_lvls);
             const double vol_ratio_log = (g_gold_stack.base_vol_pct() > 0.0)
                 ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
             fprintf(s_l2f_unc,
