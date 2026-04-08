@@ -2097,8 +2097,7 @@ int main(int argc, char* argv[])
                 const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::steady_clock::now() - ct_wait_start).count();
                 printf("[STARTUP] cTrader L2 live after %llds (events=%llu) -- starting FIX
-",
-                       (long long)elapsed, (unsigned long long)events);
+", (long long)elapsed, (unsigned long long)events);
                 fflush(stdout);
                 ct_ready = true;
                 break;
