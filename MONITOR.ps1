@@ -41,6 +41,49 @@ Write-Host "   OMEGA MONITOR  |  Ctrl+C to stop" -ForegroundColor Cyan
 Write-Host "   Log: $LogFile" -ForegroundColor DarkGray
 if ($Filter) { Write-Host "   Filter: $Filter" -ForegroundColor Yellow }
 Write-Host "=======================================================" -ForegroundColor Cyan
+
+# ── L2 STATUS CHECK -- NON-NEGOTIABLE ────────────────────────────────────────
+# L2/DOM data from cTrader Open API (ctid=43014358) is the basis of GoldFlow.
+# If L2_ALERT.txt contains L2_DEAD, ALL GoldFlow entries are blocked.
+# This banner must be visible every time MONITOR starts.
+$L2AlertFile = "$OmegaDir\logs\L2_ALERT.txt"
+$L2TickFile  = "$OmegaDir\logs\l2_ticks_$(Get-Date -Format 'yyyy-MM-dd').csv"
+
+Write-Host ""
+if (Test-Path $L2AlertFile) {
+    $alertContent = Get-Content $L2AlertFile -Raw
+    if ($alertContent -match "L2_DEAD") {
+        Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+        Write-Host "  *** L2 DEAD *** cTrader DOM DATA NOT FLOWING ***" -ForegroundColor Red
+        Write-Host "  GoldFlow entries are BLOCKED -- NO TRADES FIRING" -ForegroundColor Red
+        Write-Host "  ctid=43014358 must deliver depth events" -ForegroundColor Red
+        Write-Host "  Fix: restart Omega or check cTrader Open API" -ForegroundColor Red
+        # Show diagnosis if available
+        if ($alertContent -match "diagnosis=(.+)") { Write-Host "  Diagnosis: $($matches[1])" -ForegroundColor Yellow }
+        Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+    } else {
+        Write-Host "  [L2] OK -- cTrader depth flowing" -ForegroundColor Green
+    }
+} else {
+    Write-Host "  [L2] No alert file -- status unknown (Omega may not have started yet)" -ForegroundColor Yellow
+}
+
+# Check if today's L2 tick file exists and has data
+if (Test-Path $L2TickFile) {
+    $l2Lines = (Get-Content $L2TickFile | Measure-Object -Line).Lines
+    $l2Age   = [int]((Get-Date) - (Get-Item $L2TickFile).LastWriteTime).TotalSeconds
+    if ($l2Lines -gt 1 -and $l2Age -lt 120) {
+        Write-Host "  [L2 LOG] $L2TickFile -- $l2Lines rows, last write ${l2Age}s ago" -ForegroundColor Green
+    } elseif ($l2Lines -le 1) {
+        Write-Host "  [L2 LOG] WARNING: $L2TickFile exists but has no data rows" -ForegroundColor Yellow
+    } else {
+        Write-Host "  [L2 LOG] WARNING: $L2TickFile stale -- last write ${l2Age}s ago" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  [L2 LOG] NO L2 TICK FILE TODAY: $L2TickFile" -ForegroundColor Red
+    Write-Host "  [L2 LOG] L2 data is not being saved -- check Omega is running" -ForegroundColor Red
+}
+Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Color rules -- checked in order, first match wins
