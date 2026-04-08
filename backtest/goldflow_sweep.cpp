@@ -371,14 +371,14 @@ int main(int argc, char** argv)
               << "  session ticks: " << sess_ticks.size() << " (was " << (sess_ticks.size()*134636174/sess_count) << " full)\n\n";
 
     // ── Focused combo grid ────────────────────────
-    // Tight ranges around known-good params (tp=10,sl=5,imp=6,time=1200,pb=0.5,vt=0.004)
-    // ~3000 combos => ~3min on M4 Pro with 10 threads
-    std::vector<float>    tp_vals     = {8.0f, 10.0f, 12.0f, 14.0f};
-    std::vector<float>    sl_vals     = {4.0f,  5.0f,  6.0f,  7.0f};
-    std::vector<float>    imp_vals    = {5.0f,  6.0f,  7.0f,  8.0f};
-    std::vector<uint32_t> time_vals   = {600,   900,  1200, 1800};
-    std::vector<float>    pb_vals     = {0.45f, 0.50f, 0.55f, 0.60f};
-    std::vector<float>    vwap_t_vals = {0.002f,0.003f,0.004f,0.005f};
+    // Sweep-best hit grid boundaries: VT=0, PB=0.45 min, IMP=5 min, TIME=1800 max
+    // Extended to confirm true optimum is inside the grid
+    std::vector<float>    tp_vals     = {10.0f, 12.0f, 14.0f, 16.0f, 18.0f};
+    std::vector<float>    sl_vals     = {5.0f,  6.0f,  7.0f,  8.0f};
+    std::vector<float>    imp_vals    = {4.0f,  5.0f,  6.0f,  7.0f};
+    std::vector<uint32_t> time_vals   = {1200,  1800,  2700,  3600};
+    std::vector<float>    pb_vals     = {0.35f, 0.40f, 0.45f, 0.50f, 0.55f};
+    std::vector<float>    vwap_t_vals = {0.0f,  0.001f,0.002f,0.003f};
     std::vector<int>      win_vals    = {300, 600};
 
     std::vector<SweepParams> combos;
