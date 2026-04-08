@@ -359,6 +359,11 @@ private:
     double  m_last_px           = 0.0;
     double  m_last_atr          = 0.0;
     int     m_trade_id          = 0;
+    // Consecutive directional SL tracking -- blocks same direction after 2 SL_HITs in 2hr
+    int     m_sl_long_count     = 0;
+    int     m_sl_short_count    = 0;
+    int64_t m_sl_long_first_ms  = 0;
+    int64_t m_sl_short_first_ms = 0;
 
     static double _rl(double x) { return std::round(x / 0.001) * 0.001; }
 
@@ -562,11 +567,44 @@ private:
                pos.mfe, pyramid_add_count);
         fflush(stdout);
 
+        if (std::string(reason) == "TP_HIT" || std::string(reason) == "TRAIL_STOP") {
+            // Reset directional SL counter on TP -- thesis was correct, streak is broken
+            if (pos.is_long) { m_sl_long_count  = 0; m_sl_long_first_ms  = 0; }
+            else             { m_sl_short_count = 0; m_sl_short_first_ms = 0; }
+        }
         if (std::string(reason) == "SL_HIT") {
-            // Cooldown (COOLDOWN_MS) is sufficient protection after SL.
-            // Directional block (m_long/short_block_until) added 60s ON TOP of
-            // cooldown, silently blocking re-entry on continuation crashes.
-            // Removed: cooldown alone gates re-entry correctly.
+            // Track consecutive directional SL hits.
+            // After 2 SL_HITs in the same direction within 2 hours,
+            // block that direction for the rest of the session (8hr).
+            // Resets when a TP is hit in that direction.
+            const int64_t TWO_HR_MS    = 7200000LL;
+            const int64_t SESSION_BLOCK = 28800000LL; // 8hr session block
+            if (pos.is_long) {
+                // reset if first SL was >2hr ago
+                if (m_sl_long_first_ms > 0 && (now_ms - m_sl_long_first_ms) > TWO_HR_MS) {
+                    m_sl_long_count = 0; m_sl_long_first_ms = 0;
+                }
+                if (m_sl_long_count == 0) m_sl_long_first_ms = now_ms;
+                ++m_sl_long_count;
+                if (m_sl_long_count >= 2) {
+                    m_long_block_until = now_ms + SESSION_BLOCK;
+                    printf("[MCE] LONG direction blocked for 8hr after %d consecutive LONG SL_HITs\n",
+                           m_sl_long_count);
+                    fflush(stdout);
+                }
+            } else {
+                if (m_sl_short_first_ms > 0 && (now_ms - m_sl_short_first_ms) > TWO_HR_MS) {
+                    m_sl_short_count = 0; m_sl_short_first_ms = 0;
+                }
+                if (m_sl_short_count == 0) m_sl_short_first_ms = now_ms;
+                ++m_sl_short_count;
+                if (m_sl_short_count >= 2) {
+                    m_short_block_until = now_ms + SESSION_BLOCK;
+                    printf("[MCE] SHORT direction blocked for 8hr after %d consecutive SHORT SL_HITs\n",
+                           m_sl_short_count);
+                    fflush(stdout);
+                }
+            }
         }
         // Shadow: always call on_close so trade appears in GUI with correct costs
         if (on_close)
