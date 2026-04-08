@@ -16,11 +16,19 @@
 //   - VWAP: daily-reset cumulative (matches live engine)
 //   - Cooldown set on entry (duplicate entry fix)
 //
-// v3: trail ON, NY-only, VWAP_TREND print fix
-// v4: momentum confirmation gate at entry
-//   ADVERSE_EARLY avg MAE=21.4pts — entering against dominant move.
-//   Fix: at entry, require price has moved MOMENTUM_MIN_PTS in trade direction
-//   over the last MOMENTUM_LOOK ticks. Filters "pullback that's actually a reversal".
+// v3:  trail ON, NY-only, VWAP_TREND print fix
+// v4:  momentum confirmation gate at entry
+// v19: London+NY, best result +$13,761 100 trades 59% WR
+// v22: IMPULSE_MIN=8 + force-close session end — over-filtered, 41 trades +$1,458
+// v23: THREE TARGETED FIXES over v22:
+//      1. Revert IMPULSE_MIN=6.0 (v22 killed valid TRAIL_HIT by over-filtering)
+//      2. MIN_PB_DEPTH=1.5pts (require real pullback — kills chase entries, not volume)
+//         Logic: after impulse detected, price must pull back >= MIN_PB_DEPTH from
+//         the swing extreme before entry is allowed. Catches the MFE<1 "chase" trades
+//         that passed impulse filter but entered at the top of the move.
+//      3. Per-session VWAP_TREND: NY=0.006 vs London=0.004
+//         NY is noisier — tighter trend confirmation reduces false entries in chop
+//      All v22 fixes retained: force-close at session end, NY 12:00-15:59
 
 #include <iostream>
 #include <fstream>
@@ -69,10 +77,9 @@ bool parse_tick(const std::string& line, Tick& t)
 // ─────────────────────────────────────────────
 // Session filter (UTC)
 // ─────────────────────────────────────────────
-// Asia:   00:00-06:00 UTC (Tokyo/Sydney — biggest gold moves happen here)
+// Asia:   00:00-06:00 UTC — disabled (MacroCrash handles Asia breakouts)
 // London: 07:00-10:00 UTC
-// NY:     12:00-16:00 UTC
-// All three sessions active.
+// NY:     12:00-15:59 UTC — hard stop, no overnight holds
 inline int utc_hour(uint64_t ts_ms)
 {
     return (int)((ts_ms / 1000 / 3600) % 24);
@@ -118,32 +125,33 @@ inline std::string session_name(uint64_t ts_ms)
 // ─────────────────────────────────────────────
 // Parameters
 // ─────────────────────────────────────────────
-// v22: v19 base + IMPULSE_MIN=8 (all SL_HIT fast-reversal group had imp<8)
-//      + force-close at session end (kills 16:48/16:53 overnight monsters -$14k)
-//      NY session 12:00-15:59 (no 16:xx entries)
-static const int    WINDOW          = 600;
-static const double IMPULSE_MIN     = 8.0;    // all fast-reversal SL_HIT had imp=6.0-7.1
-static const double IMPULSE_MAX     = 15.0;
-static const double TP_PTS          = 14.0;
-static const double SL_PTS          = 7.0;
-static const double PULLBACK_FRAC   = 0.50;
-static const double VWAP_TREND_PTS  = 0.004;
-static const int    VWAP_TREND_LOOK = 30;
-static const double MAX_SPREAD      = 0.40;
-static const int    COOLDOWN_TICKS  = 300;
-static const uint64_t TIME_LIMIT_MS = 7200000;
-static const uint64_t NO_TRAIL_MS   = 3600000;
-static const int    ADVERSE_WINDOW  = 10;
-static const double ADVERSE_MIN_PTS = 4.0;
-static const double MIN_PB_DEPTH    = 0.0;
+// v23 changes from v22:
+//   IMPULSE_MIN = 6.0  (reverted — v22's 8.0 killed valid trades)
+//   MIN_PB_DEPTH = 1.5 (new pullback quality gate)
+//   VWAP_TREND_NY = 0.006 (tighter for NY noise vs London's 0.004)
+static const int    WINDOW              = 600;
+static const double IMPULSE_MIN         = 6.0;    // reverted from 8.0
+static const double IMPULSE_MAX         = 15.0;
+static const double TP_PTS              = 14.0;
+static const double SL_PTS              = 7.0;
+static const double PULLBACK_FRAC       = 0.50;
+static const double VWAP_TREND_LONDON   = 0.004;  // London trend threshold
+static const double VWAP_TREND_NY       = 0.006;  // NY tighter — noisier session
+static const int    VWAP_TREND_LOOK     = 30;
+static const double MAX_SPREAD          = 0.40;
+static const int    COOLDOWN_TICKS      = 300;
+static const uint64_t TIME_LIMIT_MS     = 7200000;
+static const uint64_t NO_TRAIL_MS       = 3600000;
+static const int    ADVERSE_WINDOW      = 10;
+static const double ADVERSE_MIN_PTS     = 4.0;
+static const double MIN_PB_DEPTH        = 1.5;    // NEW: min pullback from swing extreme before entry
 
 // Trail
-static const bool   TRAIL_ENABLED   = true;
-static const double TRAIL_TRIGGER   = 6.0;
-static const double TRAIL_LOCK      = 0.75;
+static const bool   TRAIL_ENABLED       = true;
+static const double TRAIL_TRIGGER       = 6.0;
+static const double TRAIL_LOCK          = 0.75;
 
-// Session — all three active
-static const double COMMISSION_PTS  = 0.0;
+static const double COMMISSION_PTS      = 0.0;
 
 // ─────────────────────────────────────────────
 // Trade record
@@ -172,6 +180,7 @@ struct TradeRecord
     double   sl          = 0;
     double   spread_open = 0;
     double   impulse_sz  = 0;
+    double   pb_depth    = 0;  // actual pullback depth at entry (for diagnostics)
     double   mfe         = 0;
     double   mae         = 0;
     double   gross_pnl   = 0;
@@ -250,18 +259,21 @@ struct Engine
         return (hi - lo) >= IMPULSE_MIN;
     }
 
-    bool vwap_trend_up()
+    // Per-session VWAP trend threshold
+    bool vwap_trend_up(bool is_ny_session)
     {
         if ((int)vwap_buf.size() < VWAP_TREND_LOOK) return false;
         int n = (int)vwap_buf.size();
-        return (vwap_buf[n-1] - vwap_buf[n - VWAP_TREND_LOOK]) > VWAP_TREND_PTS;
+        double threshold = is_ny_session ? VWAP_TREND_NY : VWAP_TREND_LONDON;
+        return (vwap_buf[n-1] - vwap_buf[n - VWAP_TREND_LOOK]) > threshold;
     }
 
-    bool vwap_trend_down()
+    bool vwap_trend_down(bool is_ny_session)
     {
         if ((int)vwap_buf.size() < VWAP_TREND_LOOK) return false;
         int n = (int)vwap_buf.size();
-        return (vwap_buf[n-1] - vwap_buf[n - VWAP_TREND_LOOK]) < -VWAP_TREND_PTS;
+        double threshold = is_ny_session ? VWAP_TREND_NY : VWAP_TREND_LONDON;
+        return (vwap_buf[n-1] - vwap_buf[n - VWAP_TREND_LOOK]) < -threshold;
     }
 
 };
@@ -271,12 +283,14 @@ struct Engine
 // ─────────────────────────────────────────────
 struct Stats
 {
-    int    count      = 0;
-    int    wins       = 0;
-    double total_pnl  = 0;
-    double total_mfe  = 0;
-    double total_mae  = 0;
+    int    count         = 0;
+    int    wins          = 0;
+    double total_pnl     = 0;
+    double total_mfe     = 0;
+    double total_mae     = 0;
     double total_hold_ms = 0;
+    double total_imp     = 0;
+    double total_pb      = 0;
 
     void add(const TradeRecord& tr)
     {
@@ -285,6 +299,8 @@ struct Stats
         total_mfe    += tr.mfe;
         total_mae    += tr.mae;
         total_hold_ms+= (double)tr.hold_ms;
+        total_imp    += tr.impulse_sz;
+        total_pb     += tr.pb_depth;
         if (tr.net_pnl > 0) wins++;
     }
 
@@ -307,6 +323,30 @@ struct Stats
             << " hold=" << std::setprecision(0) << avg_hold_s << "s"
             << "\n";
     }
+
+    void print_with_pb(const char* label) const
+    {
+        if (count == 0) { std::cout << "  " << label << ": 0 trades\n"; return; }
+        double wr         = 100.0 * wins / count;
+        double avg        = total_pnl / count;
+        double avg_mfe    = total_mfe / count;
+        double avg_mae    = total_mae / count;
+        double avg_hold_s = total_hold_ms / count / 1000.0;
+        double avg_imp    = total_imp / count;
+        double avg_pb     = total_pb / count;
+        std::cout
+            << "  " << std::left << std::setw(16) << label
+            << " n=" << std::setw(5) << count
+            << " WR=" << std::fixed << std::setprecision(1) << std::setw(5) << wr << "%"
+            << " PnL=" << std::setw(9) << std::setprecision(1) << total_pnl*100 << " USD"
+            << " avg=" << std::setw(7) << std::setprecision(2) << avg << " pts"
+            << " MFE=" << std::setw(5) << std::setprecision(1) << avg_mfe
+            << " MAE=" << std::setw(5) << std::setprecision(1) << avg_mae
+            << " imp=" << std::setw(5) << std::setprecision(1) << avg_imp
+            << " pb=" << std::setw(5) << std::setprecision(2) << avg_pb
+            << " hold=" << std::setprecision(0) << avg_hold_s << "s"
+            << "\n";
+    }
 };
 
 // ─────────────────────────────────────────────
@@ -314,7 +354,7 @@ struct Stats
 // ─────────────────────────────────────────────
 inline bool trade_session_ok(uint64_t ts_ms)
 {
-    return session_london(ts_ms) || session_ny(ts_ms);  // Asia disabled: 13 ADVERSE vs 16 TRAIL
+    return session_london(ts_ms) || session_ny(ts_ms);  // Asia disabled
 }
 
 // ─────────────────────────────────────────────
@@ -338,7 +378,7 @@ int main(int argc, char** argv)
     if (write_csv) {
         csv_out.open(argv[2]);
         csv_out << "id,is_long,session,entry_ts,entry,exit,tp,sl,"
-                << "spread_open,impulse_sz,mfe,mae,gross_pnl,net_pnl,"
+                << "spread_open,impulse_sz,pb_depth,mfe,mae,gross_pnl,net_pnl,"
                 << "hold_ticks,hold_ms,exit_why\n";
     }
 
@@ -369,7 +409,6 @@ int main(int argc, char** argv)
         if (spread > MAX_SPREAD) continue;
 
         // Force close any open position when session ends — prevents overnight holds
-        // If we have an open position and current tick is outside session, close at market
         if (e.in_pos && !trade_session_ok(t.ts))
         {
             cur.exit_price = e.is_long ? t.bid : t.ask;
@@ -387,6 +426,8 @@ int main(int argc, char** argv)
         ticks_used++;
 
         if (e.cooldown > 0) { e.cooldown--; }
+
+        bool is_ny = session_ny(t.ts);
 
         // ── manage open position ──────────────────────────
         if (e.in_pos)
@@ -424,7 +465,7 @@ int main(int argc, char** argv)
                     why = ExitReason::ADVERSE_EARLY; exit_px = px;
                 }
                 else if (no_trail_timeout) {
-                    why = ExitReason::TIME_STOP; exit_px = px;  // cut before SL — saves ~$5/trade
+                    why = ExitReason::TIME_STOP; exit_px = px;
                 }
                 else if (px <= e.sl) {
                     why = ExitReason::SL_HIT; exit_px = e.sl;
@@ -477,6 +518,7 @@ int main(int argc, char** argv)
                         << cur.entry << "," << cur.exit_price << ","
                         << cur.tp << "," << cur.sl << ","
                         << cur.spread_open << "," << cur.impulse_sz << ","
+                        << cur.pb_depth << ","
                         << cur.mfe << "," << cur.mae << ","
                         << cur.gross_pnl << "," << cur.net_pnl << ","
                         << cur.hold_ticks << "," << cur.hold_ms << ","
@@ -494,11 +536,23 @@ int main(int argc, char** argv)
         {
             double impulse  = e.hi - e.lo;
             if (impulse > IMPULSE_MAX) continue;  // exhaustion move — skip
+
             double pb_long  = e.hi - PULLBACK_FRAC * impulse;
             double pb_short = e.lo + PULLBACK_FRAC * impulse;
 
-            bool can_long  = (mid <= pb_long  && mid > e.vwap && e.vwap_trend_up());
-            bool can_short = (mid >= pb_short && mid < e.vwap && e.vwap_trend_down());
+            // v23: MIN_PB_DEPTH gate — price must have pulled back >= MIN_PB_DEPTH
+            // from the swing extreme before we enter. Kills "chase" entries where
+            // price is still at the top of the move (MFE<1 group from v19 audit).
+            // For longs: pullback = hi - current_mid (how far off the top)
+            // For shorts: pullback = current_mid - lo (how far off the bottom)
+            double pb_depth_long  = e.hi - mid;
+            double pb_depth_short = mid - e.lo;
+
+            bool pb_ok_long  = (pb_depth_long  >= MIN_PB_DEPTH);
+            bool pb_ok_short = (pb_depth_short >= MIN_PB_DEPTH);
+
+            bool can_long  = (mid <= pb_long  && mid > e.vwap && e.vwap_trend_up(is_ny)  && pb_ok_long);
+            bool can_short = (mid >= pb_short && mid < e.vwap && e.vwap_trend_down(is_ny) && pb_ok_short);
 
             if (can_long || can_short)
             {
@@ -529,6 +583,7 @@ int main(int argc, char** argv)
                 cur.sl           = e.sl;
                 cur.spread_open  = spread;
                 cur.impulse_sz   = impulse;
+                cur.pb_depth     = e.is_long ? pb_depth_long : pb_depth_short;
                 cur.entry_ts     = t.ts;
                 cur.session      = session_name(t.ts);
                 e.pos_ticks      = 0;
@@ -546,16 +601,29 @@ int main(int argc, char** argv)
     // ─────────────────────────────────────────────
     Stats s_total, s_tp, s_sl, s_adverse, s_time, s_trail;
     Stats s_asia, s_london, s_ny;
+    // London vs NY per exit type
+    Stats s_sl_london, s_sl_ny;
+    Stats s_trail_london, s_trail_ny;
+    Stats s_adverse_london, s_adverse_ny;
 
     for (const auto& tr : trades)
     {
         s_total.add(tr);
         switch (tr.exit_why) {
             case ExitReason::TP_HIT:        s_tp.add(tr);      break;
-            case ExitReason::SL_HIT:        s_sl.add(tr);      break;
-            case ExitReason::ADVERSE_EARLY: s_adverse.add(tr); break;
+            case ExitReason::SL_HIT:        s_sl.add(tr);
+                if (tr.session == "LONDON") s_sl_london.add(tr);
+                if (tr.session == "NY")     s_sl_ny.add(tr);
+                break;
+            case ExitReason::ADVERSE_EARLY: s_adverse.add(tr);
+                if (tr.session == "LONDON") s_adverse_london.add(tr);
+                if (tr.session == "NY")     s_adverse_ny.add(tr);
+                break;
             case ExitReason::TIME_STOP:     s_time.add(tr);    break;
-            case ExitReason::TRAIL_HIT:     s_trail.add(tr);   break;
+            case ExitReason::TRAIL_HIT:     s_trail.add(tr);
+                if (tr.session == "LONDON") s_trail_london.add(tr);
+                if (tr.session == "NY")     s_trail_ny.add(tr);
+                break;
             default: break;
         }
         if      (tr.session == "ASIA")   s_asia.add(tr);
@@ -568,7 +636,7 @@ int main(int argc, char** argv)
     // ─────────────────────────────────────────────
     std::cout << "\n";
     std::cout << "══════════════════════════════════════════════════════════════\n";
-    std::cout << "  GoldFlow Diagnostic Backtest\n";
+    std::cout << "  GoldFlow Diagnostic Backtest  v23\n";
     std::cout << "══════════════════════════════════════════════════════════════\n";
     std::cout << "  Ticks total   : " << ticks_total << "\n";
     std::cout << "  Ticks in-sess : " << ticks_used << "\n";
@@ -578,11 +646,11 @@ int main(int argc, char** argv)
     std::cout << "    WINDOW=" << WINDOW << " IMPULSE=" << IMPULSE_MIN << "-" << IMPULSE_MAX
               << " TP=" << TP_PTS << " SL=" << SL_PTS << "\n";
     std::cout << "    PULLBACK_FRAC=" << PULLBACK_FRAC
-              << " VWAP_TREND=" << std::setprecision(4) << VWAP_TREND_PTS
-              << " TIME_LIMIT=" << TIME_LIMIT_MS/1000 << "s\n";
+              << " MIN_PB_DEPTH=" << MIN_PB_DEPTH << "pts\n";
+    std::cout << "    VWAP_TREND London=" << std::setprecision(4) << VWAP_TREND_LONDON
+              << " NY=" << VWAP_TREND_NY << " TIME_LIMIT=" << TIME_LIMIT_MS/1000 << "s\n";
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
-              << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts"
-              << " MIN_PB_DEPTH=" << MIN_PB_DEPTH << " pts\n";
+              << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts\n";
     std::cout << "    VWAP=daily-reset-cumulative  SESSION=LONDON(07-10)+NY(12-15) force-close-at-end\n";
     std::cout << "    TRAIL=" << (TRAIL_ENABLED ? "ON" : "OFF");
     if (TRAIL_ENABLED)
@@ -599,8 +667,18 @@ int main(int argc, char** argv)
     std::cout << "\n";
     std::cout << "── By Session ────────────────────────────────────────────────\n";
     s_asia.print("ASIA   (00-06 UTC)");
-    s_london.print("LONDON (07-10 UTC)");
-    s_ny.print("NY     (12-16 UTC)");
+    s_london.print_with_pb("LONDON (07-10 UTC)");
+    s_ny.print_with_pb("NY     (12-16 UTC)");
+    std::cout << "\n";
+
+    // Session breakdown by exit type — key for diagnosing NY vs London
+    std::cout << "── Session × Exit Type ───────────────────────────────────────\n";
+    s_sl_london.print_with_pb("SL London");
+    s_sl_ny.print_with_pb("SL NY");
+    s_adverse_london.print_with_pb("ADV London");
+    s_adverse_ny.print_with_pb("ADV NY");
+    s_trail_london.print_with_pb("TRAIL London");
+    s_trail_ny.print_with_pb("TRAIL NY");
     std::cout << "\n";
 
     // ADVERSE_EARLY deep-dive
@@ -608,11 +686,11 @@ int main(int argc, char** argv)
     {
         std::cout << "── ADVERSE_EARLY: Impulse Size Buckets ──────────────────────\n";
         std::vector<std::pair<std::string, std::pair<double,double>>> buckets = {
-            {"<8pts",   {0,   8}},
-            {"8-10pts", {8,  10}},
-            {"10-12pts",{10, 12}},
-            {"12-15pts",{12, 15}},
-            {">15pts",  {15, 999}},
+            {"<8pts",    {0,   8}},
+            {"8-10pts",  {8,  10}},
+            {"10-12pts", {10, 12}},
+            {"12-15pts", {12, 15}},
+            {">15pts",   {15, 999}},
         };
         for (auto& [label, range] : buckets) {
             int n = 0; double pnl = 0;
@@ -624,6 +702,34 @@ int main(int argc, char** argv)
                 std::cout << "  " << std::left << std::setw(12) << label
                           << " n=" << std::setw(5) << n
                           << " PnL=" << std::setprecision(1) << pnl*100 << " USD\n";
+        }
+        std::cout << "\n";
+    }
+
+    // SL_HIT deep-dive — track MFE groups same as v19 audit
+    if (s_sl.count > 0)
+    {
+        std::cout << "── SL_HIT: MFE Groups ────────────────────────────────────────\n";
+        std::vector<std::pair<std::string, std::pair<double,double>>> mfe_groups = {
+            {"MFE<1pts",  {0,   1}},
+            {"MFE 1-3pts",{1,   3}},
+            {"MFE 3-6pts",{3,   6}},
+            {"MFE>6pts",  {6, 999}},
+        };
+        for (auto& [label, range] : mfe_groups) {
+            int n = 0; double pnl = 0; double imp_sum = 0; double pb_sum = 0;
+            for (const auto& tr : trades) {
+                if (tr.exit_why != ExitReason::SL_HIT) continue;
+                if (tr.mfe >= range.first && tr.mfe < range.second) {
+                    n++; pnl += tr.net_pnl; imp_sum += tr.impulse_sz; pb_sum += tr.pb_depth;
+                }
+            }
+            if (n > 0)
+                std::cout << "  " << std::left << std::setw(14) << label
+                          << " n=" << std::setw(5) << n
+                          << " PnL=" << std::setprecision(1) << pnl*100 << " USD"
+                          << " avg_imp=" << std::setprecision(1) << imp_sum/n
+                          << " avg_pb=" << std::setprecision(2) << pb_sum/n << "\n";
         }
         std::cout << "\n";
     }
@@ -675,6 +781,32 @@ int main(int argc, char** argv)
         }
         std::cout << "\n";
     }
+
+    // Pullback depth distribution — helps tune MIN_PB_DEPTH going forward
+    std::cout << "── Pullback Depth at Entry (all trades) ─────────────────────\n";
+    std::vector<std::pair<std::string,std::pair<double,double>>> pb_buckets = {
+        {"pb<1pt",   {0,   1}},
+        {"pb 1-2pt", {1,   2}},
+        {"pb 2-3pt", {2,   3}},
+        {"pb 3-5pt", {3,   5}},
+        {"pb>5pt",   {5, 999}},
+    };
+    for (auto& [label, range] : pb_buckets) {
+        int n = 0; double pnl = 0; int wins = 0;
+        for (const auto& tr : trades) {
+            if (tr.pb_depth >= range.first && tr.pb_depth < range.second) {
+                n++; pnl += tr.net_pnl;
+                if (tr.net_pnl > 0) wins++;
+            }
+        }
+        if (n > 0)
+            std::cout << "  " << std::left << std::setw(12) << label
+                      << " n=" << std::setw(5) << n
+                      << " WR=" << std::fixed << std::setprecision(1)
+                      << 100.0*wins/n << "%"
+                      << " PnL=" << std::setprecision(1) << pnl*100 << " USD\n";
+    }
+    std::cout << "\n";
 
     double total_usd  = 0;
     int    total_wins = 0;
