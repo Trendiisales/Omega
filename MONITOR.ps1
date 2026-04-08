@@ -35,10 +35,31 @@ if (Test-Path $LogFile) {
     exit 1
 }
 
+# ── RUNNING HASH -- always shown, never ask for it again ────────────────────
+$VerFile  = "$OmegaDir\include\version_generated.hpp"
+$RunHash  = "unknown"
+$RunMode  = "unknown"
+$RunTime  = "unknown"
+if (Test-Path $VerFile) {
+    $verContent = Get-Content $VerFile -Raw
+    if ($verContent -match '"([a-f0-9]{7,})"') { $RunHash = $matches[1] }
+}
+$CfgFile = "$OmegaDir\omega_config.ini"
+if (Test-Path $CfgFile) {
+    $modeMatch = Select-String -Path $CfgFile -Pattern "^mode\s*=\s*(\S+)" -ErrorAction SilentlyContinue
+    if ($modeMatch) { $RunMode = $modeMatch.Matches[0].Groups[1].Value }
+}
+if (Test-Path "$OmegaDir\Omega.exe") {
+    $RunTime = (Get-Item "$OmegaDir\Omega.exe").LastWriteTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm UTC")
+}
+$modeColor = if ($RunMode -eq "LIVE") { "Red" } elseif ($RunMode -eq "SHADOW") { "Yellow" } else { "Cyan" }
+
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host "   OMEGA MONITOR  |  Ctrl+C to stop" -ForegroundColor Cyan
 Write-Host "   Log: $LogFile" -ForegroundColor DarkGray
+Write-Host "   HASH: $RunHash  |  BUILT: $RunTime" -ForegroundColor White
+Write-Host "   MODE: $RunMode  |  GUI: http://185.167.119.59:7779" -ForegroundColor $modeColor
 if ($Filter) { Write-Host "   Filter: $Filter" -ForegroundColor Yellow }
 Write-Host "=======================================================" -ForegroundColor Cyan
 
