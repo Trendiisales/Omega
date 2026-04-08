@@ -604,15 +604,26 @@ if ($ghostLines.Count -gt 0) {
     Add-Result "Impulse Ghost" "INFO" "No impulse ghost blocks seen" ""
 }
 
-# --- CHECK 13: Build stamp (what binary is running) --------------------------
-$stampFile = "C:\Omega\omega_build.stamp"
-if (Test-Path $stampFile) {
-    $stamp     = Get-Content $stampFile
-    $gitShort  = (($stamp | Where-Object { $_ -match '^GIT_HASH_SHORT=' }) -replace '^GIT_HASH_SHORT=', '').Trim()
-    $buildTime = (($stamp | Where-Object { $_ -match '^BUILD_TIME=' })     -replace '^BUILD_TIME=',     '').Trim()
-    Add-Result "Build Stamp" "INFO" "commit=$gitShort  built=$buildTime" ""
+# --- CHECK 13: Running hash vs GitHub HEAD -----------------------------------
+# Confirms binary was built from latest origin/main commit.
+# Catches the failure mode where cmake skipped recompilation silently.
+$verFile2 = "$OmegaDir\include\version_generated.hpp"
+$runningHash = "unknown"
+if (Test-Path $verFile2) {
+    $vl = Select-String -Path $verFile2 -Pattern 'OMEGA_GIT_HASH' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($vl -and $vl.Line -match '"([a-f0-9]{7,})"') { $runningHash = $Matches[1] }
+}
+$ErrorActionPreference = "Continue"
+$gitHeadFull = & git -C $OmegaDir rev-parse HEAD 2>$null
+$ErrorActionPreference = "Continue"
+$gitHead7 = if ($gitHeadFull -and $gitHeadFull.Length -ge 7) { $gitHeadFull.Substring(0,7) } else { "unknown" }
+
+if ($runningHash -eq "unknown" -or $gitHead7 -eq "unknown") {
+    Add-Result "Hash vs HEAD" "WARN" "running=$runningHash git_head=$gitHead7" "Could not verify -- check version_generated.hpp exists and git log is accessible."
+} elseif ($runningHash -eq $gitHead7) {
+    Add-Result "Hash vs HEAD" "PASS" "running=$runningHash == HEAD=$gitHead7" "Binary matches latest commit. Source and binary are in sync."
 } else {
-    Add-Result "Build Stamp" "INFO" "No stamp file (QUICK_RESTART used -- hash shown in launch banner above)" ""
+    Add-Result "Hash vs HEAD" "FAIL" "running=$runningHash != HEAD=$gitHead7" "BINARY IS STALE. Binary does not match origin/main HEAD. Run QUICK_RESTART.ps1 immediately."
 }
 
 # --- CHECK 14: Bar state validity (not flat/holiday) -------------------------
