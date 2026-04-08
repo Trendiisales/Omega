@@ -964,16 +964,17 @@ private:
 
                         if (!xauusd_escalation_blocked) {
                             if (xauusd_resub_count == 0) {
-                                // LEVEL 1: re-subscribe XAUUSD depth only
-                                // Find XAUUSD symbol id from depth_books_ key via id_to_internal_ reverse lookup
+                                // LEVEL 1: re-subscribe XAUUSD spots then depth
+                                // MUST send spots sub first -- same as startup sequence.
                                 int64_t xauusd_id = -1;
                                 for (const auto& idm : id_to_internal_) {
                                     if (idm.second == "XAUUSD") { xauusd_id = (int64_t)idm.first; break; }
                                 }
                                 if (xauusd_id > 0) {
-                                    printf("[FEED-STALE] LEVEL-1: re-subscribing XAUUSD depth (id=%lld) starve=%llds\n",
+                                    printf("[FEED-STALE] LEVEL-1: re-subscribing XAUUSD spots+depth (id=%lld) starve=%llds\n",
                                            (long long)xauusd_id, (long long)starve_secs);
                                     fflush(stdout);
+                                    send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, xauusd_id));
                                     send_msg(ssl, PB::subscribe_depth_req(ctid_account_id, {xauusd_id}));
                                     ++xauusd_resub_count;
                                 } else {
