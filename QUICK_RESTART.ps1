@@ -92,7 +92,17 @@ if (Test-Path $cmakeExe) {
     $ErrorActionPreference = "Stop"
     Write-Host "  [CMAKE] Building..." -ForegroundColor Cyan
     $ErrorActionPreference = "Continue"
-    & $cmakeExe --build $buildDir --config Release 2>&1 | Where-Object { $_ -match "Omega.vcxproj|error C|warning C" } | ForEach-Object { Write-Host "    $_" }
+    $buildOutput = & $cmakeExe --build $buildDir --config Release 2>&1
+    $buildOutput | Where-Object { $_ -match "Omega.vcxproj|error C|warning C" } | ForEach-Object { Write-Host "    $_" }
+    $buildFailed = $buildOutput | Where-Object { $_ -match "error C[0-9]+" }
+    if ($buildFailed) {
+        Write-Host "" 
+        Write-Host "  [BUILD FAILED] Compile errors detected -- aborting restart" -ForegroundColor Red
+        Write-Host "  Running binary is UNCHANGED (still previous version)" -ForegroundColor Yellow
+        Write-Host "  Fix the errors above and run QUICK_RESTART.ps1 again" -ForegroundColor Yellow
+        Write-Host ""
+        exit 1
+    }
     $ErrorActionPreference = "Stop"
 } else {
     Write-Host "  [SKIP] cmake not found -- using existing binary" -ForegroundColor DarkGray
