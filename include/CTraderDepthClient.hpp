@@ -315,6 +315,32 @@ struct CTDepthBook {
     void apply_new(uint64_t id, uint64_t p, uint64_t s, bool bid) { quotes[id]={p,s,bid}; }
     void apply_del(uint64_t id) { quotes.erase(id); }
 
+    // raw_imbalance(): bid_count / (bid_count + ask_count) across ALL quotes in the book.
+    // Uses the full incremental DOM state, NOT capped at 5 levels per side.
+    // This is the correct signal when cTrader sends ≥5 levels per side (which it always does
+    // for XAUUSD), because to_l2book() caps at 5, making bid_count==ask_count==5 always.
+    // Raw quote counts reflect true DOM pressure: more active bid IDs = buy side has depth.
+    double raw_imbalance() const noexcept {
+        int raw_bid = 0, raw_ask = 0;
+        for (const auto& kv : quotes) {
+            if (!kv.second.price_raw) continue;
+            if (kv.second.is_bid) ++raw_bid; else ++raw_ask;
+        }
+        const int tot = raw_bid + raw_ask;
+        if (tot == 0) return 0.5;
+        return static_cast<double>(raw_bid) / static_cast<double>(tot);
+    }
+    int raw_bid_count() const noexcept {
+        int n = 0;
+        for (const auto& kv : quotes) if (kv.second.price_raw && kv.second.is_bid) ++n;
+        return n;
+    }
+    int raw_ask_count() const noexcept {
+        int n = 0;
+        for (const auto& kv : quotes) if (kv.second.price_raw && !kv.second.is_bid) ++n;
+        return n;
+    }
+
     L2Book to_l2book() const {
         L2Book book;
         struct Lv { double price, size; };
@@ -1508,13 +1534,13 @@ private:
             static std::unordered_map<std::string,int> s_imb_log_count;
             if (s_imb_log_count[name] < 20) {
                 ++s_imb_log_count[name];
-                printf("[CTRADER-L2-CHECK] %s event=%d bid_lvls=%d ask_lvls=%d "
-                       "imb_level=%.3f imb_vol=%.3f sz_sample=%llu\n",
+                printf("[CTRADER-L2-CHECK] %s event=%d cap_bid=%d cap_ask=%d raw_bid=%d raw_ask=%d raw_imb=%.3f cap_imb=%.3f imb_vol=%.3f\n",
                        name.c_str(), s_imb_log_count[name],
                        rebuilt.bid_count, rebuilt.ask_count,
+                       book.raw_bid_count(), book.raw_ask_count(),
+                       book.raw_imbalance(),
                        rebuilt.imbalance_level(),
-                       rebuilt.imbalance(),
-                       (unsigned long long)(depth_events_total.load()));
+                       rebuilt.imbalance());
                 fflush(stdout);
             }
         }
@@ -1537,9 +1563,13 @@ private:
         //
         // imbalance() (volume-based) is preserved for brokers that send real sizes.
         // imbalance_level() is used here because it works correctly for ALL brokers.
+        // Use book.raw_imbalance() -- counts ALL bid/ask quotes in the incremental DOM.
+        // rebuilt.imbalance_level() uses to_l2book() which caps at 5 levels per side.
+        // cTrader XAUUSD DOM has ≥5 levels per side always → bid_count==ask_count==5
+        // → imbalance_level() = 5/10 = 0.500 permanently. Raw counts bypass the cap.
         if (atomic_l2_write_fn) {
             atomic_l2_write_fn(name,
-                rebuilt.imbalance_level(),
+                book.raw_imbalance(),
                 rebuilt.microprice_bias(),
                 rebuilt.has_data());
         }
