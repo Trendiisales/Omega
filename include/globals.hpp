@@ -529,10 +529,12 @@ std::unordered_map<std::string, L2Book>   g_l2_books;
 // lock-free on x86-64 -- MSVC falls back to a hidden internal mutex, which is
 // strictly worse. atomic<double>=8 bytes, aligned = genuine lock-free MOV.
 struct AtomicL2 {
-    std::atomic<double>   imbalance{0.5};       // bid_vol/(bid_vol+ask_vol), 0..1
+    std::atomic<double>   imbalance{0.5};       // raw_bid/(raw_bid+raw_ask) from CTDepthBook
     std::atomic<double>   microprice_bias{0.0}; // microprice - mid, signed
     std::atomic<bool>     has_data{false};      // true when book has non-zero sizes
-    std::atomic<int64_t>  last_update_ms{0};    // epoch-ms of last FIX book write
+    std::atomic<int64_t>  last_update_ms{0};    // epoch-ms of last cTrader depth event
+    std::atomic<int>      raw_bid{0};           // raw bid quote count from CTDepthBook (all levels)
+    std::atomic<int>      raw_ask{0};           // raw ask quote count from CTDepthBook (all levels)
 
     // fresh(): true only when a real book update arrived within max_age_ms.
     // Prevents engines acting on stale/default-initialised imbalance (0.5).
