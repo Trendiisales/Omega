@@ -90,6 +90,18 @@ Write-Host ""
 Write-Host "[2/5] GATE 1 -- Pre-build checks..." -ForegroundColor Yellow
 Write-Host ""
 
+# Force-update PRE_DELIVERY_CHECK.ps1 from origin BEFORE running it.
+# git reset --hard only updates files already in the local index.
+# If PRE_DELIVERY_CHECK.ps1 was added to the repo after the VPS last cloned,
+# git reset will not overwrite the stale version on disk.
+# git checkout origin/main -- <file> always pulls the current version.
+$ErrorActionPreference = "Continue"
+& git -C $OmegaDir fetch origin 2>&1 | Out-Null
+& git -C $OmegaDir reset --hard origin/main 2>&1 | Out-Null
+& git -C $OmegaDir checkout origin/main -- PRE_DELIVERY_CHECK.ps1 2>&1 | Out-Null
+Write-Host "  [GIT] Synced to origin/main (PRE_DELIVERY_CHECK.ps1 force-updated)" -ForegroundColor Cyan
+$ErrorActionPreference = "Continue"
+
 # FULL BUILD DIRECTORY WIPE -- the only guaranteed clean rebuild.
 # Deleting .obj/.pch alone is not enough -- MSVC can still skip recompilation
 # if it decides the PCH is valid. Wiping the entire output forces cmake to
