@@ -17,15 +17,15 @@
 #    Then use:              .\QUICK_RESTART.ps1  (manages the service)
 #
 #  SERVICE COMMANDS (manual):
-#    Start:   Start-Service OmegaHFT
-#    Stop:    Stop-Service OmegaHFT
-#    Status:  Get-Service OmegaHFT
+#    Start:   Start-Service Omega
+#    Stop:    Stop-Service Omega
+#    Status:  Get-Service Omega
 #    Logs:    C:\Omega\logs\omega_service_stdout.log
 # ==============================================================================
 
 param([string] $OmegaDir = "C:\Omega")
 
-$ServiceName = "OmegaHFT"
+$ServiceName = "Omega"
 $NssmExe     = "C:\nssm\nssm-2.24\win64\nssm.exe"
 $OmegaExe    = "$OmegaDir\Omega.exe"
 
