@@ -355,11 +355,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_macro_ctx.gold_l2_imbalance = std::max(0.0, std::min(1.0, gold_imb));
 
                 static int64_t s_l2_log_ms = 0;
-                if (l2_now_ms - s_l2_log_ms > 30000) {
+                if (l2_now_ms - s_l2_log_ms > 10000) {
                     s_l2_log_ms = l2_now_ms;
-                    printf("[GOLD-L2-LIVE] ev_total=%llu bid_lvls=%d ask_lvls=%d slope=%.3f imb=%.3f\n",
+                    // Count keys in g_l2_books for diagnostic
+                    int book_keys = 0;
+                    bool xau_found = false;
+                    {
+                        std::lock_guard<std::mutex> lk2(g_l2_mtx);
+                        book_keys = (int)g_l2_books.size();
+                        xau_found = (g_l2_books.find("XAUUSD") != g_l2_books.end());
+                    }
+                    printf("[GOLD-L2-LIVE] ev_total=%llu bid_lvls=%d ask_lvls=%d slope=%.3f imb=%.3f books=%d xau_in_map=%d\n",
                            (unsigned long long)ev_total,
-                           bid_lvls, ask_lvls, slope, g_macro_ctx.gold_l2_imbalance);
+                           bid_lvls, ask_lvls, slope, g_macro_ctx.gold_l2_imbalance,
+                           book_keys, (int)xau_found);
                     fflush(stdout);
                 }
             } else {
