@@ -141,12 +141,29 @@ if (Test-Path $TodayLog) {
     Write-Host "  [FIX] No log for today -- Omega may not be running" -ForegroundColor Yellow
 }
 Write-Host "=======================================================" -ForegroundColor Cyan
+
+# ── FEED-STALE CHECK ─────────────────────────────────────────────────────────
+if (Test-Path $TodayLog) {
+    $lastStale    = @(Select-String -Path $TodayLog -Pattern "FEED-STALE.*entries BLOCKED" -ErrorAction SilentlyContinue)
+    $lastRestored = @(Select-String -Path $TodayLog -Pattern "RESTORED|UNBLOCKED" -ErrorAction SilentlyContinue)
+    if ($lastStale.Count -gt $lastRestored.Count) {
+        Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+        Write-Host "  *** FEED-STALE *** GOLDFLOW ENTRIES BLOCKED ***" -ForegroundColor Red
+        Write-Host "  XAUUSD depth starved -- will auto-clear in <60s" -ForegroundColor Yellow
+        Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+    } elseif ($lastStale.Count -gt 0) {
+        Write-Host "  [FEED-STALE] $($lastStale.Count) starvation event(s) today -- all recovered" -ForegroundColor Green
+    } else {
+        Write-Host "  [FEED-STALE] Clean -- no starvation today" -ForegroundColor Green
+    }
+}
+Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Color rules -- checked in order, first match wins
 $rules = @(
     # CRITICAL -- red
-    @{ pattern = "ERROR|FAIL|CRASH|DEAD|ALERT|BLOCKED|REJECTED|SL_HIT|FORCE_CLOSE|HARD_STOP|L2_DEAD|L2-WATCHDOG.*DEAD|GF-GATE-BLOCK|GF-OUTER-BLOCK|GFE-SPREAD-BLOCK|GFE-ASIA-ATR-BLOCK|GFE-ASIA-RATIO-BLOCK|GFE-EXHAUST-BLOCK|GFE-DIST-BLOCK|GFE-RECENCY-BLOCK|GFE-RSI-BLOCK|TREND-BLOCK|GFE-FADE-BLOCK|GFE-DOMINANCE-BLOCK"; color = "Red" },
+    @{ pattern = "ERROR|FAIL|CRASH|DEAD|ALERT|BLOCKED|REJECTED|SL_HIT|FORCE_CLOSE|HARD_STOP|L2_DEAD|L2-WATCHDOG.*DEAD|GF-GATE-BLOCK|GF-OUTER-BLOCK|GFE-SPREAD-BLOCK|GFE-ASIA-ATR-BLOCK|GFE-ASIA-RATIO-BLOCK|GFE-EXHAUST-BLOCK|GFE-DIST-BLOCK|GFE-RECENCY-BLOCK|GFE-RSI-BLOCK|TREND-BLOCK|GFE-FADE-BLOCK|GFE-DOMINANCE-BLOCK|FEED-STALE.*BLOCKED"; color = "Red" },
     # TRADE EVENTS -- bright
     @{ pattern = "\[GFE\] ENTRY|\[GFE\] EXIT|PARTIAL_1R|PARTIAL_2R|TRAIL_HIT|TP_HIT|TRADE_OPEN|TRADE_CLOSE|LIVE.*ENTRY|LIVE.*EXIT|GOLD-FLOW.*ENTRY|GF-RELOAD.*ENTRY|GF-ADDON.*ENTRY"; color = "Yellow" },
     # L2 / CTRADER -- cyan
@@ -154,7 +171,7 @@ $rules = @(
     # WARNINGS -- orange-ish
     @{ pattern = "WARN|warn|shadow|SHADOW|TIMEOUT|IMM_REVERSAL|STALE|RESUB|reconnect"; color = "DarkYellow" },
     # SESSION / REGIME -- green
-    @{ pattern = "LOGON ACCEPTED|session=ACTIVE|EXPANSION_BREAKOUT|TREND_CONTINUATION|BREAKOUT|regime=|DRIFT-RESET|ASIA-RSI-SNAP|GFE-PERSIST-RESET|GFE-REVERSAL-BYPASS|GFE-COMP-BYPASS|GF-COMP-BYPASS|GF-VEL-REENTRY"; color = "Green" },
+    @{ pattern = "LOGON ACCEPTED|session=ACTIVE|EXPANSION_BREAKOUT|TREND_CONTINUATION|BREAKOUT|regime=|DRIFT-RESET|ASIA-RSI-SNAP|GFE-PERSIST-RESET|GFE-REVERSAL-BYPASS|GFE-COMP-BYPASS|GF-COMP-BYPASS|GF-VEL-REENTRY|FEED-STALE.*RESTORED|FEED-STALE.*UNBLOCKED"; color = "Green" },
     # STARTUP -- magenta
     @{ pattern = "\[OMEGA\] version=|\[CTRADER\] Depth client started|\[CTRADER\] Account|\[STARTUP\]|\[CONFIG\]"; color = "Magenta" },
     # DEFAULT
