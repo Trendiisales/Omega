@@ -235,6 +235,104 @@ public:
     }
 
     // -----------------------------------------------------------------------
+    //  covariance -- returns raw EWM covariance between two symbols.
+    //  Positive = move together, negative = move opposite, 0 = unrelated.
+    //  Returns 0.0 if either symbol unknown or insufficient data.
+    // -----------------------------------------------------------------------
+    double covariance(const std::string& a, const std::string& b) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        auto it_a = sym_index_.find(a);
+        auto it_b = sym_index_.find(b);
+        if (it_a == sym_index_.end() || it_b == sym_index_.end()) return 0.0;
+        return cov_matrix_[it_a->second][it_b->second].cov;
+    }
+
+    // -----------------------------------------------------------------------
+    //  covariance_sizing_mult -- lot-size multiplier based on portfolio covariance.
+    //  When entering sym, sums |cov(sym, open_sym)| * |open_direction_sign| across
+    //  all open positions. High net covariance exposure = reduce size.
+    //
+    //  open_positions: vector of {symbol, direction_sign (+1=long, -1=short)}
+    //  Returns multiplier in [COV_SIZE_MIN, 1.0]:
+    //    - 1.0 when no open positions or covariance below threshold
+    //    - Scales down proportionally as covariance exposure increases
+    //    - Floor of COV_SIZE_MIN (0.50) prevents sizing to zero
+    //
+    //  Example: long XAUUSD + long XAGUSD simultaneously -- their high positive
+    //  covariance means we are doubling metals exposure. The multiplier shrinks
+    //  the new entry size proportionally to the net covariance load.
+    // -----------------------------------------------------------------------
+    static constexpr double COV_SIZE_THRESHOLD = 1e-6; // below this: no adjustment
+    static constexpr double COV_SIZE_SCALE      = 2e5;  // maps cov to [0,1] range
+    static constexpr double COV_SIZE_MIN        = 0.50; // floor: never cut below 50%
+
+    double covariance_sizing_mult(
+        const std::string& sym,
+        const std::vector<std::pair<std::string,int>>& open_positions) const
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (open_positions.empty()) return 1.0;
+
+        auto it_sym = sym_index_.find(sym);
+        if (it_sym == sym_index_.end()) return 1.0;
+        const int idx_sym = it_sym->second;
+
+        double net_cov_exposure = 0.0;
+        for (const auto& op : open_positions) {
+            if (op.first == sym) continue;
+            auto it_o = sym_index_.find(op.first);
+            if (it_o == sym_index_.end()) continue;
+            const double cov = cov_matrix_[idx_sym][it_o->second].cov;
+            net_cov_exposure += std::fabs(cov * static_cast<double>(op.second));
+        }
+
+        if (net_cov_exposure < COV_SIZE_THRESHOLD) return 1.0;
+
+        const double raw_scale = 1.0 - (net_cov_exposure * COV_SIZE_SCALE);
+        const double mult = std::max(COV_SIZE_MIN, std::min(1.0, raw_scale));
+
+        static thread_local int64_t s_cov_log = 0;
+        const int64_t now_s = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        if (now_s - s_cov_log > 30) {
+            s_cov_log = now_s;
+            std::printf("[COV-SIZE] %s net_cov=%.2e -> mult=%.3f\n",
+                        sym.c_str(), net_cov_exposure, mult);
+            std::fflush(stdout);
+        }
+        return mult;
+    }
+
+    // -----------------------------------------------------------------------
+    //  trend_day_corr -- returns true when gold/silver correlation confirms
+    //  a macro trend day (not a mean-reversion day).
+    //
+    //  When |corr(XAUUSD, XAGUSD)| > 0.70, both metals are moving together --
+    //  characteristic of risk-off/risk-on macro flow, NOT chop.
+    //  Use this to gate mean-reversion engines (VWAPStretch, MeanReversion)
+    //  so they do not fade a sustained directional move.
+    //
+    //  Silver is not traded but receives ticks via g_corr_matrix.on_price()
+    //  at line 265 in on_tick.hpp -- before the is_active_sym gate blocks
+    //  silver execution. Silver price feed is guaranteed to reach the matrix.
+    //
+    //  For indices: checks sym vs US500.F (both spike together on macro events).
+    // -----------------------------------------------------------------------
+    static constexpr double TREND_DAY_CORR_THRESHOLD = 0.70;
+
+    bool trend_day_corr(const std::string& sym) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        const std::string companion =
+            (sym == "XAUUSD" || sym == "XAGUSD") ? "XAGUSD"
+            : (sym == "USTEC.F" || sym == "NAS100" || sym == "DJ30.F") ? "US500.F"
+            : "";
+        if (companion.empty() || companion == sym) return false;
+        const double c = correlation_unlocked(sym, companion);
+        return std::fabs(c) >= TREND_DAY_CORR_THRESHOLD;
+    }
+
+    // -----------------------------------------------------------------------
     //  print_matrix — diagnostic dump of current correlation matrix.
     // -----------------------------------------------------------------------
     void print_matrix() const {
