@@ -2953,6 +2953,12 @@ public:
         pb_head_ = pb_count_ = 0;
     }
 
+    // EWM drift injected each tick by GoldEngineStack (same as MeanReversionEngine).
+    // |ewm_drift_| > 2.0 = meaningful trend -- block VWAP fade entries.
+    // Was never wired until 2026-04-09 fix: drift was permanently 0.0.
+    double ewm_drift_ = 0.0;
+    void set_ewm_drift(double d) { ewm_drift_ = d; }
+
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
         if (s.spread > MAX_SPREAD)       return noSignal();
@@ -2971,6 +2977,13 @@ public:
         // Session gate: overlap + NY only (13:00-17:00 UTC)
         const int mins = utc_mins();
         if (mins < 780 || mins > 1020) return noSignal();
+
+        // EWM drift gate: block fade entries on trend days.
+        // ewm_drift_ injected by GoldEngineStack each tick via set_ewm_drift().
+        // |drift| > 2.0 means a sustained directional move is underway --
+        // fading it produces the exact losing pattern seen on 2026-04-09
+        // where gold fell 87pt and VWAPStretch fired 3 LONGs into the drop.
+        if (std::fabs(ewm_drift_) > 2.0) return noSignal();
 
         // VWAP must be populated
         if (s.vwap < 1.0) return noSignal();
