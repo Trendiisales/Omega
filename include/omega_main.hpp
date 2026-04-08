@@ -1732,7 +1732,6 @@ int main(int argc, char* argv[])
         g_ctrader_depth.symbol_whitelist.insert("XAUUSD");
         g_ctrader_depth.symbol_whitelist.insert("SILVER");
         g_ctrader_depth.symbol_whitelist.insert("XAGUSD");
-        g_ctrader_depth.symbol_whitelist.insert("NGAS");
         g_ctrader_depth.symbol_whitelist.insert("VIX");
         g_ctrader_depth.dump_all_symbols = false;  // audit complete -- USOIL.F id=2632 confirmed
         // Alias map: broker name ? internal name used by getImb/getBook
@@ -1785,8 +1784,6 @@ int main(int argc, char* argv[])
         g_ctrader_depth.name_alias["NZD/USD"]  = "NZDUSD";
         g_ctrader_depth.name_alias["USD/JPY"]  = "USDJPY";
         // Other
-        g_ctrader_depth.name_alias["NGAS"]     = "NGAS.F";
-        g_ctrader_depth.name_alias["NATGAS"]   = "NGAS.F";
         g_ctrader_depth.name_alias["VIX"]      = "VIX.F";
         g_ctrader_depth.name_alias["VOLX"]     = "VIX.F";
 
