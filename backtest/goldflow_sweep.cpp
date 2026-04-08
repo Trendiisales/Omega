@@ -3,11 +3,12 @@
 // Build: g++ -O3 -std=c++17 -o goldflow_sweep goldflow_sweep.cpp
 // Run:   ./goldflow_sweep ticks.csv [results.csv]
 //
-// Reports every combination: n_trades, WR, PnL_USD, and breakdown by exit reason
-// Sort the output CSV by PnL_USD descending to find the best parameter set
-//
-// VWAP: daily-reset cumulative (matches live engine — resets at UTC midnight each day)
-// Duplicate entry fix: cooldown set immediately on entry
+// CALIBRATION (from gate diagnostics on 134M XAUUSD ticks):
+//   - VWAP delta p50=0.0017, p99=0.0056 => sweep 0.001–0.005
+//   - WINDOW widened to 600 ticks (~1 min) — 60-tick window is sub-second noise
+//   - IMPULSE_MIN 6-10 pts still valid for 1-min range
+//   - Daily-reset cumulative VWAP (live-engine-match)
+//   - Cooldown set on entry (duplicate entry fix)
 
 #include <iostream>
 #include <fstream>
@@ -21,7 +22,7 @@
 #include <iomanip>
 
 // ─────────────────────────────────────────────
-// Tick parse
+// Tick
 // ─────────────────────────────────────────────
 struct Tick
 {
@@ -53,14 +54,9 @@ bool parse_tick(const std::string& line, Tick& t)
     return (t.ask > 0 && t.bid > 0 && t.ask >= t.bid);
 }
 
-inline int utc_hour(uint64_t ts_ms) { return (int)((ts_ms / 1000 / 3600) % 24); }
-inline uint64_t utc_day(uint64_t ts_ms) { return ts_ms / 1000 / 86400; }
-
-inline bool session_ok(uint64_t ts_ms)
-{
-    int h = utc_hour(ts_ms);
-    return (h >= 7 && h <= 10) || (h >= 12 && h <= 16);
-}
+inline int      utc_hour(uint64_t ts) { return (int)((ts/1000/3600)%24); }
+inline uint64_t utc_day (uint64_t ts) { return ts/1000/86400; }
+inline bool session_ok  (uint64_t ts) { int h=utc_hour(ts); return (h>=7&&h<=10)||(h>=12&&h<=16); }
 
 // ─────────────────────────────────────────────
 // Exit reasons
@@ -68,32 +64,23 @@ inline bool session_ok(uint64_t ts_ms)
 enum class ExitReason { NONE, TP_HIT, SL_HIT, ADVERSE_EARLY, TIME_STOP };
 
 // ─────────────────────────────────────────────
-// Minimal trade for sweep (no CSV per-trade output — too much data)
-// ─────────────────────────────────────────────
-struct MiniTrade
-{
-    double     net_pnl  = 0;
-    ExitReason why      = ExitReason::NONE;
-};
-
-// ─────────────────────────────────────────────
 // Sweep parameters
 // ─────────────────────────────────────────────
 struct SweepParams
 {
-    double   tp;           // take profit pts
-    double   sl;           // stop loss pts
-    double   impulse_min;  // min range to trigger
-    uint32_t time_limit_s; // seconds before TIME_STOP
-    double   pullback;     // pullback fraction
+    double   tp;
+    double   sl;
+    double   impulse_min;
+    uint32_t time_limit_s;
+    double   pullback;
+    double   vwap_trend;   // swept — calibrated range 0.001–0.005
+    int      window;       // swept — 300 or 600 ticks
 };
 
 // ─────────────────────────────────────────────
-// Run one backtest pass (pre-loaded ticks)
+// Fixed constants
 // ─────────────────────────────────────────────
 static const double MAX_SPREAD     = 0.40;
-static const int    WINDOW         = 60;
-static const double VWAP_TREND_PTS = 0.5;
 static const int    VWAP_TREND_LOOK= 30;
 static const int    COOLDOWN_TICKS = 300;
 static const int    ADVERSE_WINDOW = 30;
@@ -120,10 +107,10 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
 
     std::vector<double> price_buf;
     std::vector<double> vwap_buf;
-    price_buf.reserve(WINDOW + 10);
+    price_buf.reserve(p.window + 10);
     vwap_buf.reserve(VWAP_TREND_LOOK + 10);
 
-    // Daily-reset cumulative VWAP state
+    // Daily-reset cumulative VWAP
     double   vwap       = 0;
     double   vwap_pv    = 0;
     uint64_t vwap_count = 0;
@@ -131,34 +118,29 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
 
     double hi = 0, lo = 0;
 
-    bool     in_pos     = false;
-    bool     is_long    = false;
-    double   entry      = 0;
-    double   tp_level   = 0;
-    double   sl_level   = 0;
+    bool     in_pos      = false;
+    bool     is_long     = false;
+    double   entry       = 0;
+    double   tp_level    = 0;
+    double   sl_level    = 0;
     double   spread_open = 0;
-    double   mfe        = 0;
-    double   mae        = 0;
-    int      pos_ticks  = 0;
-    uint64_t entry_ts   = 0;
-    int      cooldown   = 0;
+    double   mfe         = 0;
+    double   mae         = 0;
+    int      pos_ticks   = 0;
+    uint64_t entry_ts    = 0;
+    int      cooldown    = 0;
 
     for (const auto& t : ticks)
     {
         double spread = t.ask - t.bid;
         double mid    = (t.ask + t.bid) * 0.5;
 
-        // Daily-reset cumulative VWAP (always updated — matches live engine)
+        // Daily-reset cumulative VWAP
         {
             uint64_t day = utc_day(t.ts);
-            if (day != vwap_day) {
-                vwap_pv    = 0.0;
-                vwap_count = 0;
-                vwap_day   = day;
-            }
-            vwap_pv    += mid;
-            vwap_count += 1;
-            vwap        = vwap_pv / (double)vwap_count;
+            if (day != vwap_day) { vwap_pv=0; vwap_count=0; vwap_day=day; }
+            vwap_pv += mid; vwap_count++;
+            vwap = vwap_pv / (double)vwap_count;
         }
 
         vwap_buf.push_back(vwap);
@@ -166,7 +148,7 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
             vwap_buf.erase(vwap_buf.begin());
 
         price_buf.push_back(mid);
-        if ((int)price_buf.size() > WINDOW + 5)
+        if ((int)price_buf.size() > p.window + 5)
             price_buf.erase(price_buf.begin());
 
         if (spread > MAX_SPREAD) continue;
@@ -178,14 +160,13 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
         if (in_pos)
         {
             pos_ticks++;
-
             double exc = is_long ? mid - entry : entry - mid;
             if (exc > mfe) mfe = exc;
             if (exc < -mae) mae = -exc;
 
             bool adverse_early = (pos_ticks <= ADVERSE_WINDOW && mae >= ADVERSE_MIN);
 
-            ExitReason why = ExitReason::NONE;
+            ExitReason why   = ExitReason::NONE;
             double     exit_px = 0;
 
             if (is_long) {
@@ -220,78 +201,59 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
                 if (net > 0) res.wins++;
 
                 switch (why) {
-                    case ExitReason::TP_HIT:
-                        res.n_tp++;    res.pnl_tp   += net; break;
-                    case ExitReason::SL_HIT:
-                        res.n_sl++;    res.pnl_sl   += net; break;
-                    case ExitReason::ADVERSE_EARLY:
-                        res.n_adverse++; res.pnl_adv += net; break;
-                    case ExitReason::TIME_STOP:
-                        res.n_time++;  res.pnl_time += net; break;
+                    case ExitReason::TP_HIT:       res.n_tp++;      res.pnl_tp   += net; break;
+                    case ExitReason::SL_HIT:       res.n_sl++;      res.pnl_sl   += net; break;
+                    case ExitReason::ADVERSE_EARLY:res.n_adverse++; res.pnl_adv  += net; break;
+                    case ExitReason::TIME_STOP:    res.n_time++;    res.pnl_time += net; break;
                     default: break;
                 }
 
                 in_pos = false;
-                // NOTE: cooldown already set at entry — do not reset here.
+                // cooldown set at entry — leave running
             }
         }
 
         // ── entry ─────────────────────────────────────────
-        if (!in_pos && cooldown == 0)
+        if (!in_pos && cooldown == 0 && (int)price_buf.size() >= p.window)
         {
-            // detect impulse
-            if ((int)price_buf.size() >= WINDOW)
+            int start = (int)price_buf.size() - p.window;
+            hi = price_buf[start]; lo = price_buf[start];
+            for (int i = start; i < (int)price_buf.size(); i++) {
+                hi = std::max(hi, price_buf[i]);
+                lo = std::min(lo, price_buf[i]);
+            }
+
+            if (hi - lo >= p.impulse_min)
             {
-                int start = (int)price_buf.size() - WINDOW;
-                hi = price_buf[start];
-                lo = price_buf[start];
-                for (int i = start; i < (int)price_buf.size(); i++) {
-                    hi = std::max(hi, price_buf[i]);
-                    lo = std::min(lo, price_buf[i]);
+                double impulse  = hi - lo;
+                double pb_long  = hi - p.pullback * impulse;
+                double pb_short = lo + p.pullback * impulse;
+
+                bool trend_up = false, trend_down = false;
+                if ((int)vwap_buf.size() >= VWAP_TREND_LOOK) {
+                    int n = (int)vwap_buf.size();
+                    double delta = vwap_buf[n-1] - vwap_buf[n - VWAP_TREND_LOOK];
+                    trend_up   = delta >  p.vwap_trend;
+                    trend_down = delta < -p.vwap_trend;
                 }
 
-                if (hi - lo >= p.impulse_min)
+                bool can_long  = (mid <= pb_long  && mid > vwap && trend_up);
+                bool can_short = (mid >= pb_short && mid < vwap && trend_down);
+
+                if (can_long || can_short)
                 {
-                    double impulse = hi - lo;
-                    double pb_long  = hi - p.pullback * impulse;
-                    double pb_short = lo + p.pullback * impulse;
+                    in_pos  = true;
+                    is_long = can_long;
 
-                    // VWAP trend
-                    bool trend_up = false, trend_down = false;
-                    if ((int)vwap_buf.size() >= VWAP_TREND_LOOK) {
-                        int n = (int)vwap_buf.size();
-                        double delta = vwap_buf[n-1] - vwap_buf[n - VWAP_TREND_LOOK];
-                        trend_up   = delta >  VWAP_TREND_PTS;
-                        trend_down = delta < -VWAP_TREND_PTS;
-                    }
+                    if (is_long) { entry = t.ask; tp_level = entry + p.tp; sl_level = entry - p.sl; }
+                    else         { entry = t.bid; tp_level = entry - p.tp; sl_level = entry + p.sl; }
 
-                    bool can_long  = (mid <= pb_long  && mid > vwap && trend_up);
-                    bool can_short = (mid >= pb_short && mid < vwap && trend_down);
-
-                    if (can_long || can_short)
-                    {
-                        in_pos  = true;
-                        is_long = can_long;
-
-                        if (is_long) {
-                            entry    = t.ask;
-                            tp_level = entry + p.tp;
-                            sl_level = entry - p.sl;
-                        } else {
-                            entry    = t.bid;
-                            tp_level = entry - p.tp;
-                            sl_level = entry + p.sl;
-                        }
-
-                        spread_open = spread;
-                        entry_ts    = t.ts;
-                        pos_ticks   = 0;
-                        mfe         = 0;
-                        mae         = 0;
-
-                        // FIX: set cooldown immediately on entry to prevent duplicate entries
-                        cooldown = COOLDOWN_TICKS;
-                    }
+                    spread_open = spread;
+                    entry_ts    = t.ts;
+                    pos_ticks   = 0;
+                    mfe         = 0;
+                    mae         = 0;
+                    cooldown    = COOLDOWN_TICKS;  // set on entry
                 }
             }
         }
@@ -310,18 +272,14 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    // ── Load ticks ───────────────────────────────
     std::cout << "Loading ticks from " << argv[1] << " ...\n";
     auto load_start = std::chrono::high_resolution_clock::now();
 
     std::vector<Tick> ticks;
-    ticks.reserve(100000000);
+    ticks.reserve(140000000);
 
     std::ifstream file(argv[1]);
-    if (!file.is_open()) {
-        std::cout << "cannot open: " << argv[1] << "\n";
-        return 1;
-    }
+    if (!file.is_open()) { std::cout << "cannot open: " << argv[1] << "\n"; return 1; }
 
     std::string line;
     while (getline(file, line)) {
@@ -335,23 +293,26 @@ int main(int argc, char** argv)
     std::cout << "Loaded " << ticks.size() << " ticks in "
               << std::fixed << std::setprecision(1) << load_sec << "s\n\n";
 
-    // ── Define sweep grid ────────────────────────
-    std::vector<double>   tp_vals    = {10.0, 12.0, 14.0, 16.0, 18.0, 20.0};
-    std::vector<double>   sl_vals    = {5.0,  6.0,  7.0,  8.0,  10.0};
-    std::vector<double>   imp_vals   = {6.0,  7.0,  8.0,  9.0,  10.0};
-    std::vector<uint32_t> time_vals  = {600, 900, 1200, 1800}; // seconds
-    std::vector<double>   pb_vals    = {0.45, 0.50, 0.55, 0.60};
+    // ── Calibrated sweep grid ─────────────────────
+    // Ranges derived from gate diagnostics on 134M real ticks
+    std::vector<double>   tp_vals        = {10.0, 12.0, 14.0, 16.0, 18.0, 20.0};
+    std::vector<double>   sl_vals        = {5.0,  6.0,  7.0,  8.0,  10.0};
+    std::vector<double>   imp_vals       = {6.0,  7.0,  8.0,  9.0,  10.0};
+    std::vector<uint32_t> time_vals      = {600, 900, 1200, 1800};
+    std::vector<double>   pb_vals        = {0.45, 0.50, 0.55, 0.60};
+    std::vector<double>   vwap_t_vals    = {0.001, 0.002, 0.003, 0.004, 0.005};  // calibrated
+    std::vector<int>      window_vals    = {300, 600};  // ticks: ~30s and ~1min
 
     int total_combos = (int)(tp_vals.size() * sl_vals.size() * imp_vals.size()
-                             * time_vals.size() * pb_vals.size());
+                             * time_vals.size() * pb_vals.size()
+                             * vwap_t_vals.size() * window_vals.size());
     std::cout << "Running " << total_combos << " parameter combinations...\n\n";
 
-    // ── CSV output ────────────────────────────────
     bool write_csv = (argc >= 3);
     std::ofstream csv;
     if (write_csv) {
         csv.open(argv[2]);
-        csv << "tp,sl,impulse_min,time_limit_s,pullback,"
+        csv << "tp,sl,impulse_min,time_limit_s,pullback,vwap_trend,window,"
             << "n_total,wins,wr_pct,pnl_usd,"
             << "n_tp,pnl_tp_usd,"
             << "n_sl,pnl_sl_usd,"
@@ -359,9 +320,8 @@ int main(int argc, char** argv)
             << "n_time,pnl_time_usd\n";
     }
 
-    // ── Run sweep ─────────────────────────────────
     struct BestResult {
-        double    pnl = -1e12;
+        double      pnl = -1e12;
         SweepParams params{};
         RunResult   result{};
     } best;
@@ -369,31 +329,33 @@ int main(int argc, char** argv)
     int done = 0;
     auto sweep_start = std::chrono::high_resolution_clock::now();
 
-    for (double tp   : tp_vals)
-    for (double sl   : sl_vals)
-    for (double imp  : imp_vals)
-    for (uint32_t tl : time_vals)
-    for (double pb   : pb_vals)
+    for (double   tp  : tp_vals)
+    for (double   sl  : sl_vals)
+    for (double   imp : imp_vals)
+    for (uint32_t tl  : time_vals)
+    for (double   pb  : pb_vals)
+    for (double   vt  : vwap_t_vals)
+    for (int      win : window_vals)
     {
-        // Skip obviously bad R:R
         if (tp / sl < 1.2) { done++; continue; }
 
-        SweepParams p{ tp, sl, imp, tl, pb };
+        SweepParams p{ tp, sl, imp, tl, pb, vt, win };
         RunResult   r = run_backtest(ticks, p);
 
         double wr = r.n_total > 0 ? 100.0 * r.wins / r.n_total : 0;
 
         if (write_csv) {
-            csv << std::fixed << std::setprecision(2)
+            csv << std::fixed << std::setprecision(3)
                 << p.tp << "," << p.sl << "," << p.impulse_min << ","
                 << p.time_limit_s << "," << p.pullback << ","
+                << p.vwap_trend << "," << p.window << ","
                 << r.n_total << "," << r.wins << ","
                 << std::setprecision(1) << wr << ","
                 << std::setprecision(0) << r.pnl_total*100 << ","
-                << r.n_tp   << "," << std::setprecision(0) << r.pnl_tp*100 << ","
-                << r.n_sl   << "," << r.pnl_sl*100 << ","
+                << r.n_tp    << "," << r.pnl_tp*100 << ","
+                << r.n_sl    << "," << r.pnl_sl*100 << ","
                 << r.n_adverse << "," << r.pnl_adv*100 << ","
-                << r.n_time << "," << r.pnl_time*100 << "\n";
+                << r.n_time  << "," << r.pnl_time*100 << "\n";
         }
 
         if (r.pnl_total > best.pnl) {
@@ -403,7 +365,7 @@ int main(int argc, char** argv)
         }
 
         done++;
-        if (done % 100 == 0) {
+        if (done % 200 == 0) {
             double elapsed = std::chrono::duration<double>(
                 std::chrono::high_resolution_clock::now() - sweep_start).count();
             double eta = elapsed / done * (total_combos - done);
@@ -416,12 +378,10 @@ int main(int argc, char** argv)
         std::chrono::high_resolution_clock::now() - sweep_start).count();
 
     std::cout << "\n\n";
-
-    // ── Print top-10 results ──────────────────────
     std::cout << "══════════════════════════════════════════════════════════════\n";
     std::cout << "  GoldFlow Sweep — " << total_combos << " combinations in "
               << std::fixed << std::setprecision(1) << sweep_sec << "s\n";
-    std::cout << "  VWAP: daily-reset cumulative (live-engine-match)\n";
+    std::cout << "  VWAP: daily-reset cumulative | params calibrated from gate diag\n";
     std::cout << "══════════════════════════════════════════════════════════════\n\n";
 
     std::cout << "  BEST RESULT:\n";
@@ -429,7 +389,9 @@ int main(int argc, char** argv)
               << " SL=" << best.params.sl
               << " IMPULSE=" << best.params.impulse_min
               << " TIME=" << best.params.time_limit_s << "s"
-              << " PULLBACK=" << best.params.pullback << "\n";
+              << " PULLBACK=" << best.params.pullback
+              << " VWAP_T=" << best.params.vwap_trend
+              << " WINDOW=" << best.params.window << "\n";
 
     auto& r = best.result;
     double wr = r.n_total > 0 ? 100.0 * r.wins / r.n_total : 0;
@@ -437,8 +399,8 @@ int main(int argc, char** argv)
               << " WR=" << std::setprecision(1) << wr << "%"
               << " PnL=" << std::setprecision(0) << r.pnl_total*100 << " USD\n\n";
 
-    std::cout << "  Exit breakdown:\n";
     auto pct = [&](int n) { return r.n_total > 0 ? 100.0*n/r.n_total : 0; };
+    std::cout << "  Exit breakdown:\n";
     std::cout << "    TP_HIT        n=" << r.n_tp
               << " (" << std::setprecision(1) << pct(r.n_tp) << "%)"
               << " PnL=" << std::setprecision(0) << r.pnl_tp*100 << " USD\n";
