@@ -82,27 +82,52 @@ $ErrorActionPreference = "Continue"
 $ErrorActionPreference = "Stop"
 
 if (Test-Path $cmakeExe) {
-    # FIX: must pass SOURCE dir (-S $OmegaDir) not build dir.
-    # cmake $buildDir pointed at the build folder -- CMakeLists.txt not there,
-    # so UpdateGitHash.cmake NEVER ran, version_generated.hpp was NEVER updated,
-    # and the hash in the binary/GUI was always from the last full deploy.
+    # MANDATORY CLEAN REBUILD -- header-only changes (.hpp) are NOT detected
+    # by incremental cmake builds. If only headers changed, cmake --build
+    # skips recompilation entirely and the running binary is STALE.
+    # Fix: delete all .obj/.pch files before every build. Forces full recompile.
+    # Cost: ~2 extra minutes. Benefit: binary ALWAYS matches source on disk.
+    Write-Host "  [CLEAN] Removing stale object files (forces full recompile)..." -ForegroundColor Cyan
+    $ErrorActionPreference = "Continue"
+    $objFiles = Get-ChildItem -Path $buildDir -Recurse -Include "*.obj","*.pch","*.pdb" -ErrorAction SilentlyContinue
+    $objCount = ($objFiles | Measure-Object).Count
+    $objFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+    Write-Host "  [CLEAN] Removed $objCount stale files -- full recompile guaranteed" -ForegroundColor Green
+    $ErrorActionPreference = "Stop"
+
     Write-Host "  [CMAKE] Configuring from source (regenerates git hash)..." -ForegroundColor Cyan
     $ErrorActionPreference = "Continue"
     & $cmakeExe -S $OmegaDir -B $buildDir -DCMAKE_BUILD_TYPE=Release 2>&1 | Where-Object { $_ -match "\[Omega\]|error|warning" } | ForEach-Object { Write-Host "    $_" }
     $ErrorActionPreference = "Stop"
-    Write-Host "  [CMAKE] Building..." -ForegroundColor Cyan
+
+    # Record pre-build timestamp to verify binary actually changed after build
+    $preBuildTime = if (Test-Path $BuildExe) { (Get-Item $BuildExe).LastWriteTime } else { [DateTime]::MinValue }
+
+    Write-Host "  [CMAKE] Building (full recompile -- takes 2-3 min)..." -ForegroundColor Cyan
     $ErrorActionPreference = "Continue"
     $buildOutput = & $cmakeExe --build $buildDir --config Release 2>&1
     $buildOutput | Where-Object { $_ -match "Omega.vcxproj|error C|warning C" } | ForEach-Object { Write-Host "    $_" }
     $buildFailed = $buildOutput | Where-Object { $_ -match "error C[0-9]+" }
     if ($buildFailed) {
-        Write-Host "" 
-        Write-Host "  [BUILD FAILED] Compile errors detected -- aborting restart" -ForegroundColor Red
-        Write-Host "  Running binary is UNCHANGED (still previous version)" -ForegroundColor Yellow
-        Write-Host "  Fix the errors above and run QUICK_RESTART.ps1 again" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  [BUILD FAILED] Compile errors -- aborting restart" -ForegroundColor Red
+        Write-Host "  Fix errors above and run QUICK_RESTART.ps1 again" -ForegroundColor Yellow
         Write-Host ""
         exit 1
     }
+
+    # VERIFY binary actually changed -- catches silent build failures
+    $postBuildTime = if (Test-Path $BuildExe) { (Get-Item $BuildExe).LastWriteTime } else { [DateTime]::MinValue }
+    if ($postBuildTime -le $preBuildTime) {
+        Write-Host ""
+        Write-Host "  [BUILD WARNING] Binary timestamp unchanged after build" -ForegroundColor Red
+        Write-Host "  Expected: build\Release\Omega.exe newer than $preBuildTime" -ForegroundColor Red
+        Write-Host "  Got     : $postBuildTime" -ForegroundColor Red
+        Write-Host "  This means cmake did NOT recompile. Aborting -- stale binary." -ForegroundColor Red
+        Write-Host ""
+        exit 1
+    }
+    Write-Host "  [BUILD OK] Binary updated: $postBuildTime" -ForegroundColor Green
     $ErrorActionPreference = "Stop"
 } else {
     Write-Host "  [SKIP] cmake not found -- using existing binary" -ForegroundColor DarkGray
