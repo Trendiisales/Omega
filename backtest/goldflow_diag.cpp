@@ -121,7 +121,7 @@ inline std::string session_name(uint64_t ts_ms)
 //   tp=10, sl=5, impulse=6, time=1200s, pullback=0.5, vwap_trend=0.004, window=600
 //   => 98 trades, 46.9% WR, +$11,292 (vs +$3,682 with 14/8 defaults)
 static const int    WINDOW          = 600;    // ticks (~1 real minute at XAUUSD density)
-static const double IMPULSE_MIN     = 6.0;    // min range over WINDOW to qualify (pts)
+static const double IMPULSE_MIN     = 8.0;    // raised from 6.0 — <8pt impulses produced 20/31 ADVERSE_EARLY losses (-$10,634)
 static const double TP_PTS          = 10.0;   // take profit (pts)
 static const double SL_PTS          = 5.0;    // stop loss (pts)
 static const double PULLBACK_FRAC   = 0.50;   // pullback zone fraction
