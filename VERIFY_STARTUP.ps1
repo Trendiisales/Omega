@@ -415,6 +415,42 @@ if ($l2StatusLine -and $l2StatusLine -match "ctrader_live=1") {
     Add-Result "L2 / cTrader Feed" "FAIL" "No cTrader depth events in first ${WaitSec}s" "Check cTrader API connection -- ctid=43014358 must be delivering events."
 }
 
+# --- CHECK 8b: L2 tick CSV data being written --------------------------------
+# CRITICAL: Verify l2_ticks_YYYY-MM-DD.csv exists, has rows, is fresh (<120s),
+# and contains non-neutral imbalance values proving real cTrader L2 data is captured.
+{
+    $l2CsvFile = "C:\Omega\logs\l2_ticks_$(Get-Date -Format 'yyyy-MM-dd').csv"
+    if (-not (Test-Path $l2CsvFile)) {
+        Add-Result "L2 Tick CSV" "FAIL" "FILE MISSING: $l2CsvFile" "l2_ticks CSV not created -- L2 data NOT being saved. Session data lost."
+    } else {
+        $l2Age   = [int]((Get-Date) - (Get-Item $l2CsvFile).LastWriteTime).TotalSeconds
+        $l2Lines = (Get-Content $l2CsvFile | Measure-Object -Line).Lines
+        $l2Rows  = $l2Lines - 1
+        if ($l2Rows -le 0) {
+            Add-Result "L2 Tick CSV" "FAIL" "FILE EMPTY" "l2_ticks CSV has no data rows -- logger not writing."
+        } elseif ($l2Age -gt 120) {
+            Add-Result "L2 Tick CSV" "FAIL" "STALE ${l2Age}s ago rows=$l2Rows" "l2_ticks not updated in ${l2Age}s -- logger stopped."
+        } else {
+            $sample = Get-Content $l2CsvFile | Select-Object -Last 20 | Select-Object -Skip 1
+            $neutralCount = 0; $totalCount = 0
+            foreach ($row in $sample) {
+                $cols = $row -split ','
+                if ($cols.Count -ge 4) {
+                    $totalCount++
+                    $imb = [double]$cols[3]
+                    if ([Math]::Abs($imb - 0.5) -lt 0.001) { $neutralCount++ }
+                }
+            }
+            if ($totalCount -gt 0 -and $neutralCount -eq $totalCount) {
+                Add-Result "L2 Tick CSV" "FAIL" "ALL NEUTRAL rows=$l2Rows age=${l2Age}s" "l2_imb=0.500 on all rows -- L2 calculation broken, drift garbage being stored."
+            } else {
+                $nonNeutral = $totalCount - $neutralCount
+                Add-Result "L2 Tick CSV" "PASS" "rows=$l2Rows age=${l2Age}s real_imb=$nonNeutral/$totalCount" "L2 tick data captured with real directional imbalance."
+            }
+        }
+    }
+}
+
 # --- CHECK 9: Latency ---------------------------------------------------------
 $latLine = Find-Last "OMEGA-DIAG.*RTTp95"
 if ($latLine) {
