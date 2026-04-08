@@ -322,7 +322,15 @@ struct GoldFlowEngine {
         // Session classification: Asia (slot 6) and dead zone (slot 0) are low-quality tape
         const bool is_low_quality_session = (session_slot == 6 || session_slot == 0);
         // Dead zone (slot 0): 21:00-01:00 UTC -- block ALL new entries, only manage open positions
-        if (session_slot == 0 && phase != Phase::LIVE) return;
+        if (session_slot == 0 && phase != Phase::LIVE) {
+            static int64_t s_dz_log = 0;
+            if (now_ms - s_dz_log > 60000) {
+                s_dz_log = now_ms;
+                printf("[GFE-DEAD-ZONE] slot=0 phase!=LIVE -- no entry\n");
+                fflush(stdout);
+            }
+            return;
+        }
         const double eff_max_spread = is_low_quality_session ? GFE_ASIA_MAX_SPREAD : GFE_MAX_SPREAD;
 
         // Feed ATR and momentum history (always -- warmup must run every tick)
@@ -344,7 +352,16 @@ struct GoldFlowEngine {
         }
 
         // ?? FIX (claim 3): Block ALL signal accumulation until ATR is warmed up ??
-        if (m_atr_warmup_ticks < GFE_ATR_PERIOD) return;
+        if (m_atr_warmup_ticks < GFE_ATR_PERIOD) {
+            static int64_t s_atr_wu_log = 0;
+            if (now_ms - s_atr_wu_log > 30000) {
+                s_atr_wu_log = now_ms;
+                printf("[GFE-ATR-WARMUP] warmup=%d/%d -- waiting for ATR\n",
+                       m_atr_warmup_ticks, GFE_ATR_PERIOD);
+                fflush(stdout);
+            }
+            return;
+        }
 
         // ?? Cold-start entry gate -- cannot be bypassed by seed() or load_atr_state() ??
         // seed() sets m_atr_warmup_ticks = GFE_ATR_PERIOD immediately, bypassing the
@@ -356,7 +373,16 @@ struct GoldFlowEngine {
         // then this gate is what prevents entry. Block signal accumulation too so the
         // persistence windows do not pre-fill with cold-start ticks that will fire
         // immediately once the gate lifts.
-        if (m_ticks_received < GFE_MIN_ENTRY_TICKS) return;
+        if (m_ticks_received < GFE_MIN_ENTRY_TICKS) {
+            static int64_t s_tick_wu_log = 0;
+            if (now_ms - s_tick_wu_log > 15000) {
+                s_tick_wu_log = now_ms;
+                printf("[GFE-TICK-WARMUP] ticks=%d/%d -- waiting for persistence windows\n",
+                       m_ticks_received, GFE_MIN_ENTRY_TICKS);
+                fflush(stdout);
+            }
+            return;
+        }
 
         // ?? FIX (claim 4): Update persistence BEFORE spread gate ??????????????
         update_persistence(l2_imb, now_ms);
@@ -366,7 +392,16 @@ struct GoldFlowEngine {
         // while IMM_REVERSAL is now handled by ADVERSE_EARLY exit instead.
         // ADVERSE_EARLY converts IMM losses from -0.30pts to -0.12pts per trade
         // without any entry-side filtering tradeoffs. Keep absolute gate only.
-        if (spread > eff_max_spread) return;
+        if (spread > eff_max_spread) {
+            static int64_t s_spread_log = 0;
+            if (now_ms - s_spread_log > 10000) {
+                s_spread_log = now_ms;
+                printf("[GFE-SPREAD-BLOCK] spread=%.3f > max=%.3f (slot=%d)\n",
+                       spread, eff_max_spread, session_slot);
+                fflush(stdout);
+            }
+            return;
+        }
 
         // ?? SESSION GATE ??????????????????????????????????????????????????????????
         // Re-enabled for full London+NY+Asia coverage (2026-04-06):
@@ -382,13 +417,40 @@ struct GoldFlowEngine {
             const bool tradeable_session = (m_last_session_slot >= 1 &&
                                             m_last_session_slot <= 4)
                                         || (m_last_session_slot == 6);
-            if (!tradeable_session) return;
+            if (!tradeable_session) {
+                static int64_t s_sess_log = 0;
+                if (now_ms - s_sess_log > 30000) {
+                    s_sess_log = now_ms;
+                    printf("[GFE-SESSION-BLOCK] slot=%d not tradeable (need 1-4 or 6)\n",
+                           m_last_session_slot);
+                    fflush(stdout);
+                }
+                return;
+            }
         }
         // On low-quality tape, reject if ATR is too low (noise-dominated) or
         // ATR-to-spread ratio is too small (SL within spread fluctuation range).
         if (is_low_quality_session) {
-            if (m_atr < GFE_ASIA_ATR_MIN) return;  // tape too dead
-            if (spread > 0.0 && m_atr / spread < GFE_ASIA_ATR_SPREAD_RATIO) return;  // SL within noise
+            if (m_atr < GFE_ASIA_ATR_MIN) {
+                static int64_t s_asia_atr_log = 0;
+                if (now_ms - s_asia_atr_log > 20000) {
+                    s_asia_atr_log = now_ms;
+                    printf("[GFE-ASIA-ATR-BLOCK] atr=%.3f < min=%.3f -- tape too dead\n",
+                           m_atr, GFE_ASIA_ATR_MIN);
+                    fflush(stdout);
+                }
+                return;
+            }
+            if (spread > 0.0 && m_atr / spread < GFE_ASIA_ATR_SPREAD_RATIO) {
+                static int64_t s_asia_ratio_log = 0;
+                if (now_ms - s_asia_ratio_log > 20000) {
+                    s_asia_ratio_log = now_ms;
+                    printf("[GFE-ASIA-RATIO-BLOCK] atr/spread=%.2f < %.1f (atr=%.3f spread=%.3f)\n",
+                           m_atr / spread, GFE_ASIA_ATR_SPREAD_RATIO, m_atr, spread);
+                    fflush(stdout);
+                }
+                return;
+            }
         }
 
         // ?? L2 availability detection ?????????????????????????????????????????
@@ -531,21 +593,24 @@ struct GoldFlowEngine {
 
         if (fast_long || fast_short) phase = Phase::FLOW_BUILDING;
         else {
-            // No directional signal -- log state every 30s for diagnostics
+            // No directional signal -- log state every 10s for diagnostics
             static int64_t s_nosig_log = 0;
-            if (now_ms - s_nosig_log > 30000) {
+            if (now_ms - s_nosig_log > 10000) {
                 s_nosig_log = now_ms;
                 const double eff_dt = (m_atr > 0.0)
                     ? std::max(GFE_DRIFT_FALLBACK_THRESHOLD, 0.18 * m_atr)
                     : GFE_DRIFT_FALLBACK_THRESHOLD;
-                printf("[GFE-NOSIG] drift=%.2f atr=%.2f eff_thresh=%.2f "
+                printf("[GFE-NOSIG] drift=%.3f atr=%.3f eff_thresh=%.3f "
                        "fast_long=%d fast_short=%d need=%d "
-                       "window=%d slot=%d\n",
+                       "window=%d/%d slot=%d l2_live=%d l2_imb=%.3f\n",
                        ewm_drift, m_atr, eff_dt,
                        (int)fast_long, (int)fast_short,
                        (GFE_DRIFT_PERSIST_TICKS * 7) / 10,
                        (int)m_drift_persist_window.size(),
-                       session_slot);
+                       GFE_DRIFT_PERSIST_TICKS,
+                       session_slot,
+                       (int)(std::fabs(l2_imb - 0.5) > 0.001),
+                       l2_imb);
                 fflush(stdout);
             }
             phase = Phase::IDLE; return;
@@ -560,9 +625,23 @@ struct GoldFlowEngine {
         static constexpr int GFE_DOMINANCE_MAX_OPPOSING = GFE_FAST_TICKS / 4; // 7/30
         const int eff_dominance_max = is_low_quality_session ? GFE_ASIA_DOMINANCE_MAX_OPPOSING : GFE_DOMINANCE_MAX_OPPOSING;
         if (fast_long  && m_fast_short_count >= eff_dominance_max) {
-            phase = Phase::IDLE; return;  // too much opposing pressure -- not clean flow
+            static int64_t s_dom_log = 0;
+            if (now_ms - s_dom_log > 8000) {
+                s_dom_log = now_ms;
+                printf("[GFE-DOMINANCE-BLOCK] LONG blocked: short_count=%d >= max=%d (fast_window=%d)\n",
+                       m_fast_short_count, eff_dominance_max, (int)m_fast_window.size());
+                fflush(stdout);
+            }
+            phase = Phase::IDLE; return;
         }
         if (fast_short && m_fast_long_count  >= eff_dominance_max) {
+            static int64_t s_dom2_log = 0;
+            if (now_ms - s_dom2_log > 8000) {
+                s_dom2_log = now_ms;
+                printf("[GFE-DOMINANCE-BLOCK] SHORT blocked: long_count=%d >= max=%d (fast_window=%d)\n",
+                       m_fast_long_count, eff_dominance_max, (int)m_fast_window.size());
+                fflush(stdout);
+            }
             phase = Phase::IDLE; return;
         }
 
@@ -748,10 +827,34 @@ struct GoldFlowEngine {
                                   && price_expanding
                                   && !block_short;  // blocked by VWAP distance OR higher-low structure
 
-        if (!long_signal && !short_signal) return;
+        if (!long_signal && !short_signal) {
+            static int64_t s_sigfail_log = 0;
+            if (now_ms - s_sigfail_log > 8000) {
+                s_sigfail_log = now_ms;
+                printf("[GFE-SIGNAL-FAIL] no entry: fast_l=%d fast_s=%d slow_l=%d slow_s=%d"
+                       " drift=%.3f thresh=%.3f momentum=%.3f mom_floor=%.3f"
+                       " expanding=%d block_l=%d block_s=%d\n",
+                       (int)fast_long, (int)fast_short,
+                       (int)slow_long, (int)slow_short,
+                       ewm_drift, drift_threshold,
+                       mid_momentum(), momentum_floor,
+                       (int)price_expanding,
+                       (int)block_long, (int)block_short);
+                fflush(stdout);
+            }
+            return;
+        }
 
         // ATR check (redundant after warmup gate above, but kept as safety)
-        if (m_atr <= 0.0) return;
+        if (m_atr <= 0.0) {
+            static int64_t s_atr0_log = 0;
+            if (now_ms - s_atr0_log > 10000) {
+                s_atr0_log = now_ms;
+                printf("[GFE-ATR-ZERO] m_atr=0 -- skipping entry\n");
+                fflush(stdout);
+            }
+            return;
+        }
 
         // ?? Stale imbalance check at entry ????????????????????????????????????
         // Persistence windows confirm imbalance was sustained over last 30/100 ticks,
