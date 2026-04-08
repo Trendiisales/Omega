@@ -11,13 +11,15 @@
 //   TRAIL_HIT     — trailing stop triggered (if trail enabled)
 //
 // CALIBRATION (from gate diagnostics on 134M XAUUSD ticks):
-//   - Daily-reset cumulative VWAP delta over 30 ticks: p50=0.0017, p99=0.0056
-//     => VWAP_TREND_PTS dropped from 0.50 to 0.003 (p75 of real distribution)
-//   - 60-tick window at tick density ~600K ticks/session yields only 448 impulses/2yr
-//     => WINDOW widened from 60 to 600 ticks (~1 real-time minute of data)
-//     => IMPULSE_MIN kept at 7.0 pts (valid threshold for 1-min range on gold)
-//   - VWAP: daily-reset cumulative (matches live engine — resets at UTC midnight)
-//   - Duplicate entry fix: cooldown set immediately on entry
+//   - VWAP delta p50=0.0017, p99=0.0056 => VWAP_TREND_PTS=0.003 (~p80)
+//   - WINDOW=600 ticks (~1 real minute) — 60-tick window is sub-second noise
+//   - VWAP: daily-reset cumulative (matches live engine)
+//   - Cooldown set on entry (duplicate entry fix)
+//
+// v3 changes vs baseline run:
+//   - TRAIL_ENABLED=true (TIME_STOP MFE>8pts trades were winning but cut at 30min)
+//   - NY_ONLY=true — London was -$1,478, NY was +$6,202 on same params
+//   - VWAP_TREND print fix (was showing 0.00 due to setprecision(2))
 
 #include <iostream>
 #include <fstream>
@@ -82,6 +84,18 @@ inline bool session_ok(uint64_t ts_ms)
     return (h >= 7 && h <= 10) || (h >= 12 && h <= 16);
 }
 
+inline bool session_ny(uint64_t ts_ms)
+{
+    int h = utc_hour(ts_ms);
+    return (h >= 12 && h <= 16);
+}
+
+inline bool session_london(uint64_t ts_ms)
+{
+    int h = utc_hour(ts_ms);
+    return (h >= 7 && h <= 10);
+}
+
 inline std::string session_name(uint64_t ts_ms)
 {
     int h = utc_hour(ts_ms);
@@ -93,27 +107,31 @@ inline std::string session_name(uint64_t ts_ms)
 // ─────────────────────────────────────────────
 // Parameters
 // ─────────────────────────────────────────────
-// WINDOW: 600 ticks ~ 1 real-time minute at XAUUSD tick density.
-// At 60 ticks the window is <1 second — range is noise not impulse.
-static const int    WINDOW          = 600;   // ticks for impulse detection (~1 min)
-static const double IMPULSE_MIN     = 7.0;   // min range over WINDOW to qualify (pts)
-static const double TP_PTS          = 14.0;  // take profit distance (pts)
-static const double SL_PTS          = 8.0;   // stop loss distance (pts)
-static const double PULLBACK_FRAC   = 0.55;  // pullback zone fraction
-// VWAP_TREND_PTS: calibrated from gate diag — real p75 delta = 0.0022, p90 = 0.0027.
-// 0.003 passes ~p80 of real distribution — confirms directional drift without being noise.
-static const double VWAP_TREND_PTS  = 0.003; // VWAP delta over VWAP_TREND_LOOK ticks
-static const int    VWAP_TREND_LOOK = 30;    // lookback ticks for VWAP trend
-static const double MAX_SPREAD      = 0.40;  // skip ticks with spread above this
-static const int    COOLDOWN_TICKS  = 300;   // ticks to wait after entry before new entry
-static const uint64_t TIME_LIMIT_MS = 1800000; // 30 min position time limit (ms)
-static const int    ADVERSE_WINDOW  = 30;    // ticks: adverse move tag window
-static const double ADVERSE_MIN_PTS = 2.0;   // pts of adverse move to trigger ADVERSE_EARLY
+static const int    WINDOW          = 600;    // ticks (~1 real minute at XAUUSD density)
+static const double IMPULSE_MIN     = 7.0;    // min range over WINDOW to qualify (pts)
+static const double TP_PTS          = 14.0;   // take profit (pts)
+static const double SL_PTS          = 8.0;    // stop loss (pts)
+static const double PULLBACK_FRAC   = 0.55;   // pullback zone fraction
+static const double VWAP_TREND_PTS  = 0.003;  // VWAP delta threshold (calibrated)
+static const int    VWAP_TREND_LOOK = 30;     // lookback ticks for VWAP trend
+static const double MAX_SPREAD      = 0.40;   // spread filter
+static const int    COOLDOWN_TICKS  = 300;    // post-entry cooldown
+static const uint64_t TIME_LIMIT_MS = 1800000;// 30 min hard stop
+static const int    ADVERSE_WINDOW  = 30;     // ticks: adverse move tag window
+static const double ADVERSE_MIN_PTS = 2.0;    // pts of adverse move to tag ADVERSE_EARLY
 
-// Trail
-static const bool   TRAIL_ENABLED   = false;
-static const double TRAIL_TRIGGER   = 6.0;
-static const double TRAIL_LOCK      = 0.80;
+// Trail — enabled: TIME_STOP MFE>8pts were winning but cut at 30min
+static const bool   TRAIL_ENABLED   = true;
+static const double TRAIL_TRIGGER   = 6.0;    // MFE to activate trail (pts)
+static const double TRAIL_LOCK      = 0.75;   // fraction of MFE to lock in
+
+// Session filter:
+//   BOTH=false,NY_ONLY=false  => London only
+//   BOTH=true                 => London + NY
+//   BOTH=false,NY_ONLY=true   => NY only
+// London baseline: -$1,478 | NY baseline: +$6,202 => test NY-only
+static const bool   SESSION_BOTH    = false;
+static const bool   SESSION_NY_ONLY = true;
 
 static const double COMMISSION_PTS  = 0.0;
 
@@ -262,11 +280,11 @@ struct Stats
     void print(const char* label) const
     {
         if (count == 0) { std::cout << "  " << label << ": 0 trades\n"; return; }
-        double wr        = 100.0 * wins / count;
-        double avg       = total_pnl / count;
-        double avg_mfe   = total_mfe / count;
-        double avg_mae   = total_mae / count;
-        double avg_hold_s= total_hold_ms / count / 1000.0;
+        double wr         = 100.0 * wins / count;
+        double avg        = total_pnl / count;
+        double avg_mfe    = total_mfe / count;
+        double avg_mae    = total_mae / count;
+        double avg_hold_s = total_hold_ms / count / 1000.0;
         std::cout
             << "  " << std::left << std::setw(16) << label
             << " n=" << std::setw(5) << count
@@ -279,6 +297,16 @@ struct Stats
             << "\n";
     }
 };
+
+// ─────────────────────────────────────────────
+// Session gate helper
+// ─────────────────────────────────────────────
+inline bool trade_session_ok(uint64_t ts_ms)
+{
+    if (SESSION_BOTH)    return session_ok(ts_ms);
+    if (SESSION_NY_ONLY) return session_ny(ts_ms);
+    return session_london(ts_ms);
+}
 
 // ─────────────────────────────────────────────
 // Main
@@ -325,11 +353,12 @@ int main(int argc, char** argv)
         double spread = t.ask - t.bid;
         double mid    = (t.ask + t.bid) * 0.5;
 
+        // VWAP always updated (warm before session opens)
         e.update_vwap(mid, t.ts);
         e.update_price(mid);
 
         if (spread > MAX_SPREAD) continue;
-        if (!session_ok(t.ts)) continue;
+        if (!trade_session_ok(t.ts)) continue;
         ticks_used++;
 
         if (e.cooldown > 0) { e.cooldown--; }
@@ -344,9 +373,11 @@ int main(int argc, char** argv)
             if (excursion > cur.mfe) cur.mfe = excursion;
             if (excursion < -cur.mae) cur.mae = -excursion;
 
+            // Trail update
             if (TRAIL_ENABLED) {
-                if (!e.trail_active && cur.mfe >= TRAIL_TRIGGER)
+                if (!e.trail_active && cur.mfe >= TRAIL_TRIGGER) {
                     e.trail_active = true;
+                }
                 if (e.trail_active) {
                     double locked    = cur.mfe * TRAIL_LOCK;
                     double new_trail = e.is_long ? e.entry + locked : e.entry - locked;
@@ -420,7 +451,7 @@ int main(int argc, char** argv)
 
                 e.in_pos       = false;
                 e.trail_active = false;
-                // cooldown already set at entry — leave it running
+                // cooldown set at entry — leave running
             }
         }
 
@@ -453,7 +484,7 @@ int main(int argc, char** argv)
 
                 e.entry_ts     = t.ts;
                 e.trail_active = false;
-                e.cooldown     = COOLDOWN_TICKS;  // set on entry — prevents duplicates
+                e.cooldown     = COOLDOWN_TICKS;
 
                 cur              = TradeRecord{};
                 cur.id           = ++trade_id;
@@ -499,6 +530,8 @@ int main(int argc, char** argv)
     // ─────────────────────────────────────────────
     // Print report
     // ─────────────────────────────────────────────
+    std::string sess_label = SESSION_BOTH ? "LONDON+NY" : (SESSION_NY_ONLY ? "NY_ONLY" : "LONDON_ONLY");
+
     std::cout << "\n";
     std::cout << "══════════════════════════════════════════════════════════════\n";
     std::cout << "  GoldFlow Diagnostic Backtest\n";
@@ -511,14 +544,16 @@ int main(int argc, char** argv)
     std::cout << "    WINDOW=" << WINDOW << " IMPULSE_MIN=" << IMPULSE_MIN
               << " TP=" << TP_PTS << " SL=" << SL_PTS << "\n";
     std::cout << "    PULLBACK_FRAC=" << PULLBACK_FRAC
-              << " VWAP_TREND=" << VWAP_TREND_PTS
+              << " VWAP_TREND=" << std::setprecision(4) << VWAP_TREND_PTS   // fix: was 0.00
               << " TIME_LIMIT=" << TIME_LIMIT_MS/1000 << "s\n";
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
               << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts\n";
-    std::cout << "    VWAP=daily-reset-cumulative\n";
+    std::cout << "    VWAP=daily-reset-cumulative  SESSION=" << sess_label << "\n";
     std::cout << "    TRAIL=" << (TRAIL_ENABLED ? "ON" : "OFF");
-    if (TRAIL_ENABLED) std::cout << " trigger=" << TRAIL_TRIGGER << " lock=" << TRAIL_LOCK*100 << "%";
+    if (TRAIL_ENABLED)
+        std::cout << " trigger=" << TRAIL_TRIGGER << "pts lock=" << (int)(TRAIL_LOCK*100) << "%";
     std::cout << "\n\n";
+
     std::cout << "── By Exit Reason ────────────────────────────────────────────\n";
     s_total.print("TOTAL");
     s_tp.print("TP_HIT");
@@ -592,6 +627,30 @@ int main(int argc, char** argv)
             int cnt = 0; double pnl = 0;
             for (const auto& tr : trades) {
                 if (tr.exit_why != ExitReason::TIME_STOP) continue;
+                if (tr.mfe >= range.first && tr.mfe < range.second) { cnt++; pnl += tr.net_pnl; }
+            }
+            if (cnt > 0)
+                std::cout << "  " << std::left << std::setw(14) << label
+                          << " n=" << std::setw(5) << cnt
+                          << " PnL=" << std::setprecision(1) << pnl*100 << " USD\n";
+        }
+        std::cout << "\n";
+    }
+
+    // TRAIL deep-dive
+    if (TRAIL_ENABLED && s_trail.count > 0)
+    {
+        std::cout << "── TRAIL_HIT: MFE at trail exit ──────────────────────────────\n";
+        std::vector<std::pair<std::string,std::pair<double,double>>> tmfe = {
+            {"MFE 6-10pts", {6,  10}},
+            {"MFE 10-15pts",{10, 15}},
+            {"MFE 15-20pts",{15, 20}},
+            {"MFE>20pts",   {20, 999}},
+        };
+        for (auto& [label, range] : tmfe) {
+            int cnt = 0; double pnl = 0;
+            for (const auto& tr : trades) {
+                if (tr.exit_why != ExitReason::TRAIL_HIT) continue;
                 if (tr.mfe >= range.first && tr.mfe < range.second) { cnt++; pnl += tr.net_pnl; }
             }
             if (cnt > 0)
