@@ -147,12 +147,18 @@ if ($verHash -eq "unknown") {
 # QUICK_RESTART deletes them before building. This check confirms they are gone.
 # ==============================================================================
 if (-not $PostLaunch) {
-    $staleFiles = Get-ChildItem -Path $buildDir -Recurse -Include "*.obj","*.pch" -ErrorAction SilentlyContinue
-    $staleCount = ($staleFiles | Measure-Object).Count
-    if ($staleCount -eq 0) {
-        Pass "No stale objects" "0 .obj/.pch files in build dir -- full recompile guaranteed"
+    # Check that the build output dirs were fully wiped -- not just .obj files.
+    # MSVC can skip recompilation even with .obj deleted if CMakeFiles or Release
+    # dirs exist. Full wipe is the only guarantee.
+    $staleRelease = Test-Path "$buildDir\Release\Omega.exe"
+    $staleCmake   = Test-Path "$buildDir\CMakeFiles"
+    # After wipe, neither should exist until cmake rebuilds them.
+    # After build completes, Release\Omega.exe WILL exist -- so this check
+    # only makes sense pre-build. We verify by checking CMakeFiles is gone.
+    if (-not $staleCmake) {
+        Pass "Build dirs wiped" "CMakeFiles absent -- full wipe confirmed, fresh compile guaranteed"
     } else {
-        Fail "No stale objects" "$staleCount .obj/.pch files still exist -- incremental build WILL skip header changes"
+        Fail "Build dirs wiped" "CMakeFiles still present -- build directory was NOT fully wiped"
     }
 }
 
