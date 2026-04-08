@@ -59,7 +59,7 @@ public:
     double ATR_NORMAL       = 5.0;
     double VOL_RATIO_MIN    = 2.5;
     double DRIFT_MIN        = 5.0;   // lowered 6->5: 6pt was too high for early move entries
-    double ATR_SCALE_MAX    = 6.0;
+    double ATR_SCALE_MAX    = 1.0;   // capped 6->1: 6x scaling produced $480 risk per trade; system max is $80
     double BASE_RISK_USD    = 80.0;
     double MAX_LOT          = 0.50;
     double MIN_LOT          = 0.01;
@@ -83,7 +83,7 @@ public:
     bool    pyramid_shadow     = true;  // ALWAYS shadow until explicitly false
 
     // ── Timing ────────────────────────────────────────────────────────────
-    int64_t COOLDOWN_MS     = 60000;  // reduced 300s->60s: 5min cooldown blocked re-entry on continuation moves
+    int64_t COOLDOWN_MS     = 300000; // raised 60s->300s: fired 4x in one session; 5min cooldown prevents overtrading
     int64_t MAX_HOLD_MS     = 7200000;
 
     bool    enabled         = true;
