@@ -16,10 +16,11 @@
 //   - VWAP: daily-reset cumulative (matches live engine)
 //   - Cooldown set on entry (duplicate entry fix)
 //
-// v3 changes vs baseline run:
-//   - TRAIL_ENABLED=true (TIME_STOP MFE>8pts trades were winning but cut at 30min)
-//   - NY_ONLY=true — London was -$1,478, NY was +$6,202 on same params
-//   - VWAP_TREND print fix (was showing 0.00 due to setprecision(2))
+// v3: trail ON, NY-only, VWAP_TREND print fix
+// v4: momentum confirmation gate at entry
+//   ADVERSE_EARLY avg MAE=21.4pts — entering against dominant move.
+//   Fix: at entry, require price has moved MOMENTUM_MIN_PTS in trade direction
+//   over the last MOMENTUM_LOOK ticks. Filters "pullback that's actually a reversal".
 
 #include <iostream>
 #include <fstream>
@@ -120,16 +121,21 @@ static const uint64_t TIME_LIMIT_MS = 1800000;// 30 min hard stop
 static const int    ADVERSE_WINDOW  = 30;     // ticks: adverse move tag window
 static const double ADVERSE_MIN_PTS = 2.0;    // pts of adverse move to tag ADVERSE_EARLY
 
-// Trail — enabled: TIME_STOP MFE>8pts were winning but cut at 30min
+// Trail
 static const bool   TRAIL_ENABLED   = true;
 static const double TRAIL_TRIGGER   = 6.0;    // MFE to activate trail (pts)
 static const double TRAIL_LOCK      = 0.75;   // fraction of MFE to lock in
 
-// Session filter:
-//   BOTH=false,NY_ONLY=false  => London only
-//   BOTH=true                 => London + NY
-//   BOTH=false,NY_ONLY=true   => NY only
-// London baseline: -$1,478 | NY baseline: +$6,202 => test NY-only
+// Momentum gate (v4)
+// At entry, price must have moved MOMENTUM_MIN_PTS in trade direction
+// over the last MOMENTUM_LOOK ticks. Filters entering against dominant move.
+// MOMENTUM_LOOK=100 ticks is a short recent window within the 600-tick impulse.
+// MOMENTUM_MIN_PTS=1.5 — requires visible directional drift, not noise.
+static const bool   MOMENTUM_GATE   = true;
+static const int    MOMENTUM_LOOK   = 100;    // ticks to look back for momentum check
+static const double MOMENTUM_MIN_PTS= 1.5;    // min net move in trade direction (pts)
+
+// Session filter
 static const bool   SESSION_BOTH    = false;
 static const bool   SESSION_NY_ONLY = true;
 
@@ -253,6 +259,29 @@ struct Engine
         int n = (int)vwap_buf.size();
         return (vwap_buf[n-1] - vwap_buf[n - VWAP_TREND_LOOK]) < -VWAP_TREND_PTS;
     }
+
+    // Momentum gate: confirm price moved in trade direction over last MOMENTUM_LOOK ticks.
+    // For long: price[now] - price[now - MOMENTUM_LOOK] >= MOMENTUM_MIN_PTS
+    // For short: price[now - MOMENTUM_LOOK] - price[now] >= MOMENTUM_MIN_PTS
+    bool momentum_ok_long()
+    {
+        if (!MOMENTUM_GATE) return true;
+        int n = (int)price_buf.size();
+        if (n < MOMENTUM_LOOK + 1) return false;
+        double recent = price_buf[n - 1];
+        double old    = price_buf[n - 1 - MOMENTUM_LOOK];
+        return (recent - old) >= MOMENTUM_MIN_PTS;
+    }
+
+    bool momentum_ok_short()
+    {
+        if (!MOMENTUM_GATE) return true;
+        int n = (int)price_buf.size();
+        if (n < MOMENTUM_LOOK + 1) return false;
+        double recent = price_buf[n - 1];
+        double old    = price_buf[n - 1 - MOMENTUM_LOOK];
+        return (old - recent) >= MOMENTUM_MIN_PTS;
+    }
 };
 
 // ─────────────────────────────────────────────
@@ -375,9 +404,8 @@ int main(int argc, char** argv)
 
             // Trail update
             if (TRAIL_ENABLED) {
-                if (!e.trail_active && cur.mfe >= TRAIL_TRIGGER) {
+                if (!e.trail_active && cur.mfe >= TRAIL_TRIGGER)
                     e.trail_active = true;
-                }
                 if (e.trail_active) {
                     double locked    = cur.mfe * TRAIL_LOCK;
                     double new_trail = e.is_long ? e.entry + locked : e.entry - locked;
@@ -462,8 +490,12 @@ int main(int argc, char** argv)
             double pb_long  = e.hi - PULLBACK_FRAC * impulse;
             double pb_short = e.lo + PULLBACK_FRAC * impulse;
 
-            bool can_long  = (mid <= pb_long  && mid > e.vwap && e.vwap_trend_up());
-            bool can_short = (mid >= pb_short && mid < e.vwap && e.vwap_trend_down());
+            // Momentum gate: confirm trade direction has real recent price movement.
+            // Prevents entering a "pullback" that's actually a full reversal.
+            bool can_long  = (mid <= pb_long  && mid > e.vwap
+                              && e.vwap_trend_up() && e.momentum_ok_long());
+            bool can_short = (mid >= pb_short && mid < e.vwap
+                              && e.vwap_trend_down() && e.momentum_ok_short());
 
             if (can_long || can_short)
             {
@@ -544,7 +576,7 @@ int main(int argc, char** argv)
     std::cout << "    WINDOW=" << WINDOW << " IMPULSE_MIN=" << IMPULSE_MIN
               << " TP=" << TP_PTS << " SL=" << SL_PTS << "\n";
     std::cout << "    PULLBACK_FRAC=" << PULLBACK_FRAC
-              << " VWAP_TREND=" << std::setprecision(4) << VWAP_TREND_PTS   // fix: was 0.00
+              << " VWAP_TREND=" << std::setprecision(4) << VWAP_TREND_PTS
               << " TIME_LIMIT=" << TIME_LIMIT_MS/1000 << "s\n";
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
               << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts\n";
@@ -552,6 +584,10 @@ int main(int argc, char** argv)
     std::cout << "    TRAIL=" << (TRAIL_ENABLED ? "ON" : "OFF");
     if (TRAIL_ENABLED)
         std::cout << " trigger=" << TRAIL_TRIGGER << "pts lock=" << (int)(TRAIL_LOCK*100) << "%";
+    std::cout << "\n";
+    std::cout << "    MOMENTUM_GATE=" << (MOMENTUM_GATE ? "ON" : "OFF");
+    if (MOMENTUM_GATE)
+        std::cout << " look=" << MOMENTUM_LOOK << "ticks min=" << MOMENTUM_MIN_PTS << "pts";
     std::cout << "\n\n";
 
     std::cout << "── By Exit Reason ────────────────────────────────────────────\n";
@@ -587,27 +623,6 @@ int main(int argc, char** argv)
             if (n > 0)
                 std::cout << "  " << std::left << std::setw(12) << label
                           << " n=" << std::setw(5) << n
-                          << " PnL=" << std::setprecision(1) << pnl*100 << " USD\n";
-        }
-        std::cout << "\n";
-
-        std::cout << "── ADVERSE_EARLY: Hold-time distribution ─────────────────────\n";
-        std::vector<std::pair<std::string,std::pair<int,int>>> tbuckets = {
-            {"1-5 ticks",  {1,  5}},
-            {"6-15 ticks", {6, 15}},
-            {"16-30 ticks",{16,30}},
-            {"31-60 ticks",{31,60}},
-            {">60 ticks",  {61,99999}},
-        };
-        for (auto& [label, range] : tbuckets) {
-            int cnt = 0; double pnl = 0;
-            for (const auto& tr : trades) {
-                if (tr.exit_why != ExitReason::ADVERSE_EARLY) continue;
-                if (tr.hold_ticks >= range.first && tr.hold_ticks <= range.second) { cnt++; pnl += tr.net_pnl; }
-            }
-            if (cnt > 0)
-                std::cout << "  " << std::left << std::setw(14) << label
-                          << " n=" << std::setw(5) << cnt
                           << " PnL=" << std::setprecision(1) << pnl*100 << " USD\n";
         }
         std::cout << "\n";
