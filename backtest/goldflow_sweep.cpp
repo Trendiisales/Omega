@@ -351,7 +351,17 @@ int main(int argc, char** argv)
     double load_sec = std::chrono::duration<double>(
         std::chrono::high_resolution_clock::now() - load_start).count();
     std::cout << "Loaded " << ticks.size() << " ticks in "
-              << std::fixed << std::setprecision(1) << load_sec << "s\n\n";
+              << std::fixed << std::setprecision(1) << load_sec << "s\n";
+
+    // ── Pre-filter to session ticks only ─────────
+    // Each combo only needs to iterate session ticks — 56M vs 134M = 2.4x speedup.
+    // VWAP still needs all ticks for warmup, so we keep full array for VWAP updates
+    // but skip non-session ticks in the hot loop via a pre-built session index.
+    // Simpler: just filter ticks to session+spread-ok, pass smaller array to combos.
+    // NOTE: VWAP warmup requires off-session ticks — keep full array, just skip in loop.
+    // The session filter is inside run_backtest already. Pre-filtering session ticks
+    // would break VWAP warmup. Speedup comes purely from threading.
+    std::cout << "Session ticks (approx): " << (ticks.size() * 56183864 / 134636174) << "\n\n";
 
     // ── Build combo list ──────────────────────────
     std::vector<double>   tp_vals     = {8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0};
@@ -387,13 +397,15 @@ int main(int argc, char** argv)
         try { n_threads = std::stoi(argv[3]); } catch (...) {}
     }
     if (n_threads > total) n_threads = total;
-    std::cout << "Threads: " << n_threads << "\n\n";
+    std::cout << "Threads: " << n_threads << "\n";
+    std::cout << "Progress printed every 100 combos across all threads.\n\n";
 
     // ── Per-thread results ────────────────────────
     std::vector<std::vector<ComboResult>> thread_results(n_threads);
     for (auto& v : thread_results) v.reserve(total / n_threads + 1);
 
     std::atomic<int> progress{0};
+    std::mutex print_mutex;
     auto sweep_start = std::chrono::high_resolution_clock::now();
 
     // ── Launch threads ────────────────────────────
@@ -402,13 +414,17 @@ int main(int argc, char** argv)
             RunResult r = run_backtest(ticks, combos[i]);
             thread_results[tid].push_back({combos[i], r});
             int done = ++progress;
-            if (done % 500 == 0) {
+            if (done % 100 == 0) {
                 double elapsed = std::chrono::duration<double>(
                     std::chrono::high_resolution_clock::now() - sweep_start).count();
-                double eta = elapsed / done * (total - done);
-                std::cout << "\r  " << done << "/" << total
-                          << " (" << std::fixed << std::setprecision(0) << eta << "s remaining)   "
-                          << std::flush;
+                double rate = done / elapsed;
+                double eta  = (total - done) / rate;
+                std::lock_guard<std::mutex> lock(print_mutex);
+                std::cout << "  [" << std::setw(6) << done << "/" << total << "]"
+                          << "  rate=" << std::fixed << std::setprecision(1) << rate << "/s"
+                          << "  ETA=" << std::setprecision(0) << eta << "s"
+                          << "  elapsed=" << std::setprecision(0) << elapsed << "s"
+                          << "\n" << std::flush;
             }
         }
     };
