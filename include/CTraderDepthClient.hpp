@@ -1499,9 +1499,26 @@ private:
         const L2Book rebuilt = book.to_l2book();
 
         // Hot path: write atomic derived scalars -- zero lock, zero contention with FIX tick
+        //
+        // IMBALANCE SIGNAL SELECTION:
+        // BlackBull Markets sends size_raw=0 on all XAUUSD depth quotes. The parse
+        // path substitutes eff_sz=100 (1 lot) per level so the book is never empty,
+        // but this makes bid_vol == ask_vol == N×1.0 whenever bid_count == ask_count,
+        // producing imbalance()=0.500 permanently. GoldFlowEngine thresholds are
+        // 0.75 (long) and 0.25 (short) -- 0.500 never satisfies either, silencing
+        // the entire engine for the whole session.
+        //
+        // FIX: use imbalance_level() = bid_count/(bid_count+ask_count).
+        // This counts how many price levels are active on each side regardless of size.
+        // When the DOM has 4 bid levels and 1 ask level, the market is bid-heavy (0.80).
+        // When the DOM has 1 bid and 4 ask, it is ask-heavy (0.20).
+        // This is the only reliable directional DOM signal available from BlackBull.
+        //
+        // imbalance() (volume-based) is preserved for brokers that send real sizes.
+        // imbalance_level() is used here because it works correctly for ALL brokers.
         if (atomic_l2_write_fn) {
             atomic_l2_write_fn(name,
-                rebuilt.imbalance(),
+                rebuilt.imbalance_level(),
                 rebuilt.microprice_bias(),
                 rebuilt.has_data());
         }
