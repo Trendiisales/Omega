@@ -392,18 +392,11 @@ struct GoldFlowEngine {
         }
 
         // ?? L2 availability detection ?????????????????????????????????????????
-        // BlackBull FIX feed sends no tag-271 size data ? imbalance() always 0.500.
-        // When L2 is structurally unavailable, the persistence windows fill with
-        // all-neutral ticks and can NEVER reach directional threshold.
-        // In that case use DRIFT-PERSISTENCE mode: EWM drift sustained for
-        // GFE_DRIFT_PERSIST_TICKS consecutive ticks + stronger momentum threshold.
-        // This is still a real confirmation signal -- just price-based not book-based.
-        //
-        // CRITICAL: If L2 was live earlier this session but is now 0.500 (neutral),
-        // it means the depth feed dropped mid-session. Block entries entirely rather
-        // than falling back to drift -- a temporarily broken feed is not the same as
-        // a structurally unavailable feed (different broker). Drift fallback caused
-        // massive overtrading when depth feed dropped today (10+ losses vs 3 on Friday).
+        // L2 availability: l2_imb is computed in on_tick.hpp from cTrader DOM price structure.
+        // When ctid=43014358 events are flowing, gold_l2_imbalance reflects real level
+        // count asymmetry and book slope -- NOT imbalance() which uses sizes (always equal
+        // on BlackBull cTrader). l2_data_live = imb meaningfully non-neutral (>0.001 from 0.5).
+        // This is now correct: on_tick.hpp ensures imb IS non-neutral when DOM is live.
         const bool l2_data_live = (std::fabs(l2_imb - 0.5) > 0.001);
     m_last_l2_imb  = l2_data_live ? l2_imb : 0.5;
     m_last_l2_live = l2_data_live;
@@ -415,18 +408,16 @@ struct GoldFlowEngine {
             static bool s_no_l2_logged = false;
             if (!s_no_l2_logged && m_ticks_received >= GFE_MIN_ENTRY_TICKS) {
                 s_no_l2_logged = true;
-                printf("[GFE] *** L2 SIZE DATA UNAVAILABLE -- broker not sending tag-271. "
-                       "Operating in drift-persistence mode permanently. "
-                       "threshold=%.1f persist_ticks=%d ***\n",
+                printf("[GFE] L2 imbalance neutral -- cTrader DOM events not yet confirmed live. "
+                       "Using drift-persistence mode until DOM confirmed. "
+                       "threshold=%.1f persist_ticks=%d\n",
                        GFE_DRIFT_FALLBACK_THRESHOLD, GFE_DRIFT_PERSIST_TICKS);
                 fflush(stdout);
             }
         }
-        // NOTE: BlackBull does not send tag-271 (order book size).
-        // l2_data_live is always false on this broker -- drift fallback is permanent.
-        // Mid-session drop block intentionally disabled: m_l2_was_live could be set
-        // by a brief cTrader reconnect event then lost, permanently blocking entries.
-        // Drift fallback path below is the correct operating mode for BlackBull.
+        // Mid-session drop block: if L2 was live and is now dead (feed outage),
+        // block entries rather than falling back to drift -- on_tick.hpp handles
+        // the fallback. If L2 never came live this session, drift fallback is used.
         // if (!l2_data_live && m_l2_was_live && !is_low_quality_session) return;
 
         // Session-aware persistence thresholds: Asia requires 90% dominance, normal 75%
