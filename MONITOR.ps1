@@ -89,16 +89,38 @@ if (Test-Path $L2AlertFile) {
     Write-Host "  [L2] No alert file -- status unknown (Omega may not have started yet)" -ForegroundColor Yellow
 }
 
-# Check if today's L2 tick file exists and has data
+# Check L2 tick file and read live imbalance from it
 if (Test-Path $L2TickFile) {
     $l2Lines = (Get-Content $L2TickFile | Measure-Object -Line).Lines
     $l2Age   = [int]((Get-Date) - (Get-Item $L2TickFile).LastWriteTime).TotalSeconds
+    # Read last 5 data rows to get current imbalance value
+    $l2LastRows  = Get-Content $L2TickFile | Where-Object { $_ -match '^[0-9]' } | Select-Object -Last 5
+    $l2ImbValues = @()
+    foreach ($row in $l2LastRows) {
+        $cols = $row -split ','
+        if ($cols.Count -ge 4) {
+            try { $l2ImbValues += [double]$cols[3] } catch {}
+        }
+    }
+    $l2ImbDisplay = if ($l2ImbValues.Count -gt 0) {
+        $latest = $l2ImbValues[-1]
+        $signal = if ($latest -gt 0.75) { "BID-HEAVY (LONG)" } `
+                  elseif ($latest -lt 0.25) { "ASK-HEAVY (SHORT)" } `
+                  elseif ([Math]::Abs($latest - 0.5) -lt 0.02) { "NEUTRAL" } `
+                  else { "MILD" }
+        "imb=$([math]::Round($latest,3)) [$signal]"
+    } else { "no data" }
+
     if ($l2Lines -gt 1 -and $l2Age -lt 120) {
-        Write-Host "  [L2 LOG] $L2TickFile -- $l2Lines rows, last write ${l2Age}s ago" -ForegroundColor Green
+        $imbColor = if ($l2ImbValues.Count -gt 0 -and [Math]::Abs($l2ImbValues[-1] - 0.5) -lt 0.001) { "Yellow" } else { "Green" }
+        Write-Host "  [L2 LOG] $l2Lines rows age=${l2Age}s  $l2ImbDisplay" -ForegroundColor $imbColor
+        if ($l2ImbValues.Count -gt 0 -and [Math]::Abs($l2ImbValues[-1] - 0.5) -lt 0.001) {
+            Write-Host "  [L2 WARN] imbalance=0.500 -- check [CTRADER-L2-CHECK] in log for bid_lvls/ask_lvls" -ForegroundColor Yellow
+        }
     } elseif ($l2Lines -le 1) {
         Write-Host "  [L2 LOG] WARNING: $L2TickFile exists but has no data rows" -ForegroundColor Yellow
     } else {
-        Write-Host "  [L2 LOG] WARNING: $L2TickFile stale -- last write ${l2Age}s ago" -ForegroundColor Yellow
+        Write-Host "  [L2 LOG] STALE ${l2Age}s  $l2ImbDisplay" -ForegroundColor Red
     }
 } else {
     Write-Host "  [L2 LOG] NO L2 TICK FILE TODAY: $L2TickFile" -ForegroundColor Red
@@ -171,7 +193,9 @@ $rules = @(
     # TRADE EVENTS -- bright
     @{ pattern = "\[GFE\] ENTRY|\[GFE\] EXIT|PARTIAL_1R|PARTIAL_2R|TRAIL_HIT|TP_HIT|TRADE_OPEN|TRADE_CLOSE|LIVE.*ENTRY|LIVE.*EXIT|GOLD-FLOW.*ENTRY|GF-RELOAD.*ENTRY|GF-ADDON.*ENTRY"; color = "Yellow" },
     # L2 / CTRADER -- cyan
-    @{ pattern = "Account 43014358 authorized|L2-WATCHDOG.*ALIVE|l2_imb=[^0]|CTRADER.*authorized|Depth feed ACTIVE|L2.*live"; color = "Cyan" },
+    @{ pattern = "Account 43014358 authorized|L2-WATCHDOG.*ALIVE|CTRADER-L2-CHECK|CTRADER.*authorized|Depth feed ACTIVE|L2.*live|GOLD-L2-LIVE"; color = "Cyan" },
+    # L2 imbalance stuck neutral -- yellow warning
+    @{ pattern = "imb=0\.500|imb_level=0\.500|ALL NEUTRAL|NEUTRAL.*imb"; color = "Yellow" },
     # WARNINGS -- orange-ish
     @{ pattern = "WARN|warn|shadow|SHADOW|TIMEOUT|IMM_REVERSAL|STALE|RESUB|reconnect"; color = "DarkYellow" },
     # SESSION / REGIME -- green
