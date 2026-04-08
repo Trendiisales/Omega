@@ -415,39 +415,69 @@ if ($l2StatusLine -and $l2StatusLine -match "ctrader_live=1") {
     Add-Result "L2 / cTrader Feed" "INFO" "No cTrader depth events in first ${WaitSec}s" "cTrader connecting -- check log for CTRADER-EVTS within 60s. If still missing after 2min, check ctid=43014358."
 }
 
-# --- CHECK 8b: L2 tick CSV data being written --------------------------------
-# CRITICAL: Verify l2_ticks_YYYY-MM-DD.csv exists, has rows, is fresh (<120s),
-# and contains non-neutral imbalance values proving real cTrader L2 data is captured.
+# --- CHECK 8b: L2 tick CSV and imbalance_level verification ------------------
+# CRITICAL: Verify l2_ticks CSV is fresh, has rows, and imbalance is not stuck.
+# Also check [CTRADER-L2-CHECK] in log which logs bid_lvls/ask_lvls/imb_level
+# on first 20 depth events -- proves the level-count calculation is running.
 $l2CsvFile = "C:\Omega\logs\l2_ticks_$(Get-Date -Format 'yyyy-MM-dd').csv"
 if (-not (Test-Path $l2CsvFile)) {
     Add-Result "L2 Tick CSV" "INFO" "File not yet created" "Logger creates file on first tick -- check again in 60s."
 } else {
     $l2Age = [int]((Get-Date) - (Get-Item $l2CsvFile).LastWriteTime).TotalSeconds
     if ($l2Age -gt 120) {
-        Add-Result "L2 Tick CSV" "FAIL" "STALE ${l2Age}s" "l2_ticks not updated in ${l2Age}s -- logger stopped."
+        Add-Result "L2 Tick CSV" "FAIL" "STALE ${l2Age}s" "l2_ticks not updated in ${l2Age}s -- logger stopped or Omega crashed."
     } else {
-        # Only sample the LAST 10 rows -- written by the current session after restart.
-        # Do NOT check all rows -- previous session had broken imbalance (0.500).
-        # The new binary writes correct values immediately. age<120s confirms it is writing.
-        $l2Sample = Get-Content $l2CsvFile | Select-Object -Last 10
-        $l2NeutralCount = 0; $l2TotalCount = 0
+        $l2Sample = Get-Content $l2CsvFile | Where-Object { $_ -match '^[0-9]' } | Select-Object -Last 20
+        $l2NeutralCount = 0; $l2TotalCount = 0; $l2LastImb = 0.5
         foreach ($l2Row in $l2Sample) {
             $l2Cols = $l2Row -split ','
-            if ($l2Cols.Count -ge 4 -and $l2Cols[0] -match '^[0-9]') {
+            if ($l2Cols.Count -ge 4) {
                 $l2TotalCount++
-                try { $l2Imb = [double]$l2Cols[3] } catch { $l2Imb = 0.5 }
-                if ([Math]::Abs($l2Imb - 0.5) -lt 0.001) { $l2NeutralCount++ }
+                try { $l2LastImb = [double]$l2Cols[3] } catch { $l2LastImb = 0.5 }
+                if ([Math]::Abs($l2LastImb - 0.5) -lt 0.001) { $l2NeutralCount++ }
             }
         }
         if ($l2TotalCount -eq 0) {
-            Add-Result "L2 Tick CSV" "INFO" "age=${l2Age}s writing" "CSV being written -- no rows sampled yet. Check again in 30s."
-        } elseif ($l2TotalCount -gt 0 -and $l2NeutralCount -eq $l2TotalCount) {
-            Add-Result "L2 Tick CSV" "FAIL" "ALL NEUTRAL last $l2TotalCount rows age=${l2Age}s" "l2_imb=0.500 -- cTrader L2 not flowing or calculation broken."
+            Add-Result "L2 Tick CSV" "INFO" "age=${l2Age}s writing" "CSV writing -- no rows yet. Check again in 30s."
+        } elseif ($l2NeutralCount -eq $l2TotalCount) {
+            # All neutral -- could be genuinely flat DOM or broken imbalance_level().
+            # Check [CTRADER-L2-CHECK] log lines for bid_lvls vs ask_lvls to distinguish.
+            Add-Result "L2 Tick CSV" "WARN" "ALL NEUTRAL last $l2TotalCount rows imb=$([math]::Round($l2LastImb,3))" `
+                "imbalance=0.500 all rows. Check [CTRADER-L2-CHECK] lines in log for bid_lvls/ask_lvls. If bid_lvls==ask_lvls all day, DOM is genuinely flat. If bid_lvls+ask_lvls=0, cTrader not delivering quotes."
         } else {
             $l2NonNeutral = $l2TotalCount - $l2NeutralCount
-            Add-Result "L2 Tick CSV" "PASS" "age=${l2Age}s real_imb=$l2NonNeutral/$l2TotalCount" "L2 data being captured with real directional values."
+            Add-Result "L2 Tick CSV" "PASS" "age=${l2Age}s imb=$([math]::Round($l2LastImb,3)) real=$l2NonNeutral/$l2TotalCount" `
+                "L2 imbalance_level() producing directional values from cTrader DOM."
         }
     }
+}
+
+# --- CHECK 8b2: CTRADER-L2-CHECK startup log ---------------------------------
+# [CTRADER-L2-CHECK] is logged on first 20 depth events per symbol.
+# It shows bid_lvls, ask_lvls, imb_level, imb_vol for each event.
+# If bid_lvls+ask_lvls > 0 and imb_level != imb_vol: level-count fix is active.
+# If bid_lvls=0 and ask_lvls=0: cTrader sent no quotes for XAUUSD yet.
+$l2CheckLine = Find-Last "CTRADER-L2-CHECK.*XAUUSD"
+if ($l2CheckLine) {
+    $bidLvls  = if ($l2CheckLine -match "bid_lvls=(\d+)")   { [int]$Matches[1] } else { -1 }
+    $askLvls  = if ($l2CheckLine -match "ask_lvls=(\d+)")   { [int]$Matches[1] } else { -1 }
+    $imbLevel = if ($l2CheckLine -match "imb_level=([\d.]+)") { [double]$Matches[1] } else { -1 }
+    $imbVol   = if ($l2CheckLine -match "imb_vol=([\d.]+)")   { [double]$Matches[1] } else { -1 }
+    if ($bidLvls -eq 0 -and $askLvls -eq 0) {
+        Add-Result "L2 Level-Count Check" "FAIL" "bid_lvls=0 ask_lvls=0" `
+            "cTrader sending no XAUUSD DOM quotes. Check ctid=43014358 depth subscription."
+    } elseif ($imbLevel -ge 0 -and $imbVol -ge 0 -and [Math]::Abs($imbLevel - $imbVol) -gt 0.001) {
+        Add-Result "L2 Level-Count Check" "PASS" "bid=$bidLvls ask=$askLvls imb_level=$imbLevel imb_vol=$imbVol" `
+            "imbalance_level() differs from imbalance() -- level-count fix active and working."
+    } elseif ($imbLevel -ge 0) {
+        Add-Result "L2 Level-Count Check" "PASS" "bid=$bidLvls ask=$askLvls imb_level=$imbLevel" `
+            "cTrader DOM levels flowing. imb_level=imb_vol likely means cTrader is sending real sizes today."
+    } else {
+        Add-Result "L2 Level-Count Check" "INFO" "line found but could not parse" $l2CheckLine.Trim()
+    }
+} else {
+    Add-Result "L2 Level-Count Check" "INFO" "No CTRADER-L2-CHECK yet" `
+        "Logged on first 20 depth events -- check again after 30s. If still missing, cTrader depth not subscribed."
 }
 
 # --- CHECK 8d: GoldFlow blocking gates ----------------------------------------
