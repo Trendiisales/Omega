@@ -1479,6 +1479,10 @@ private:
                 for (uint8_t b : qbs[0]) printf(" %02x", b);
                 printf("\n");
             }
+            // Log the computed imbalance_level after this event -- proves the fix is working.
+            // After all quotes are applied below, rebuild and log. Use a separate block
+            // so we log the LIVE book state including this event, not just these 3 quotes.
+            // (Logged as [CTRADER-L2-CHECK] so VERIFY_STARTUP and MONITOR can find it)
             fflush(stdout);
         }
         auto& book = depth_books_[name];
@@ -1497,6 +1501,23 @@ private:
         for (uint64_t did : PB::get_packed_varints(fields, 5)) book.apply_del(did);
         // Build L2Book snapshot outside the lock -- to_l2book() is O(N log N) sort
         const L2Book rebuilt = book.to_l2book();
+
+        // Log imbalance_level on first 20 events per symbol -- confirms fix is working.
+        // [CTRADER-L2-CHECK] is grep-able from VERIFY_STARTUP and MONITOR.
+        {
+            static std::unordered_map<std::string,int> s_imb_log_count;
+            if (s_imb_log_count[name] < 20) {
+                ++s_imb_log_count[name];
+                printf("[CTRADER-L2-CHECK] %s event=%d bid_lvls=%d ask_lvls=%d "
+                       "imb_level=%.3f imb_vol=%.3f sz_sample=%llu\n",
+                       name.c_str(), s_imb_log_count[name],
+                       rebuilt.bid_count, rebuilt.ask_count,
+                       rebuilt.imbalance_level(),
+                       rebuilt.imbalance(),
+                       (unsigned long long)(depth_events_total.load()));
+                fflush(stdout);
+            }
+        }
 
         // Hot path: write atomic derived scalars -- zero lock, zero contention with FIX tick
         //
