@@ -120,15 +120,15 @@ inline std::string session_name(uint64_t ts_ms)
 // Sweep best: tp=14, sl=7, imp=5, time=1800, pb=0.45, vwap_trend=0 (gate off), win=600
 // VT=0 means VWAP trend gate disabled — price only needs to be on correct side of VWAP
 static const int    WINDOW          = 600;
-static const double IMPULSE_MIN     = 8.0;    // was 5 — 53/59 ADVERSE_EARLY were <8pts (-$38,841)
+static const double IMPULSE_MIN     = 10.0;   // cut 8-10pt ADVERSE_EARLY bucket (-$7,361)
 static const double TP_PTS          = 14.0;
 static const double SL_PTS          = 7.0;
 static const double PULLBACK_FRAC   = 0.45;
-static const double VWAP_TREND_PTS  = 0.003;  // restore trend gate — vt=0 letting ranging entries through
+static const double VWAP_TREND_PTS  = 0.002;  // loosen slightly to recover TRAIL_HIT trades
 static const int    VWAP_TREND_LOOK = 30;
 static const double MAX_SPREAD      = 0.40;
 static const int    COOLDOWN_TICKS  = 300;
-static const uint64_t TIME_LIMIT_MS = 900000; // 15min — 171 TIME_STOP MFE<5pts losing -$24k over 30min
+static const uint64_t TIME_LIMIT_MS = 1200000;// 20min — balance between 900 and 1800
 static const int    ADVERSE_WINDOW  = 30;
 static const double ADVERSE_MIN_PTS = 2.0;
 
