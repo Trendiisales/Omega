@@ -129,8 +129,8 @@ static const int    VWAP_TREND_LOOK = 30;
 static const double MAX_SPREAD      = 0.40;
 static const int    COOLDOWN_TICKS  = 300;
 static const uint64_t TIME_LIMIT_MS = 1200000;
-static const int    ADVERSE_WINDOW  = 30;
-static const double ADVERSE_MIN_PTS = 2.0;
+static const int    ADVERSE_WINDOW  = 10;     // tighter: 30 ticks catches normal noise
+static const double ADVERSE_MIN_PTS = 4.0;    // tighter: 2pts is routine volatility
 
 // Trail
 static const bool   TRAIL_ENABLED   = true;
