@@ -16,20 +16,20 @@
 //   - VWAP: daily-reset cumulative (matches live engine)
 //   - Cooldown set on entry (duplicate entry fix)
 //
-// v3:  trail ON, NY-only, VWAP_TREND print fix
-// v4:  momentum confirmation gate at entry
-// v19: London+NY, best result +$13,761 100 trades 59% WR
-// v22: IMPULSE_MIN=8 + force-close session end — over-filtered, 41 trades +$1,458
-// v23: IMPULSE_MIN=6 + MIN_PB_DEPTH=1.5 + per-session VWAP_TREND (NY=0.006)
-//      Result: 59 trades +$12,444 64.4% WR
-//      KEY FINDING: pb 3-5pt = WR 92.9% ($7,413), pb>5pt = WR 55.6% ($5,032)
-//      Deep pullbacks are either reversals or stale-impulse entries — skip them.
-// v24: ADD MAX_PB_DEPTH=5.0
-//      The 3-5pt pullback band is the demonstrated edge.
-//      pb>5pt group: WR only 55.6%, avg SL_HIT pb=5.93-6.38, avg ADV_NY pb=7.04
-//      These are price-too-far-from-extreme entries — impulse exhausted by the time
-//      we'd enter. Cap at 5.0pts to isolate the high-quality retracement zone.
-//      All v23 fixes retained: force-close, NY 12-15, MIN_PB=1.5, VWAP_TREND per-session
+// v19: London+NY baseline +$13,761 100 trades 59% WR
+// v22: IMPULSE_MIN=8 — over-filtered, 41 trades +$1,458
+// v23: IMPULSE_MIN=6 + MIN_PB_DEPTH=1.5 + per-session VWAP_TREND → 59 trades +$12,444 64% WR
+// v24: MAX_PB_DEPTH=5.0 — pb 3-5pt WR 92.9% in v23 was correlation not causation.
+//      Isolated = 36 trades -$2,232 50% WR. Reverted.
+// v25: BASE = v23. Two exit fixes:
+//      1. SL_PTS = 5.5 (from 7.0)
+//         v23 SL_HIT: avg MAE=8.1 — riding full stop. Tighter cut saves ~$1.8/trade.
+//         12 SL_HIT × $1.8 saved = ~$2,160 recovered. Some SL_HIT become ADVERSE_EARLY.
+//      2. ADVERSE_MIN_PTS = 3.0 (from 4.0)
+//         v23 ADVERSE_EARLY: avg MAE=5.8 — waiting too long to confirm wrong direction.
+//         Exit 1pt earlier on adverse moves → smaller loss per bad trade.
+//      NO MAX_PB_DEPTH — that filter had no causal value (v24 proven).
+//      All other v23 params unchanged.
 
 #include <iostream>
 #include <fstream>
@@ -126,17 +126,15 @@ inline std::string session_name(uint64_t ts_ms)
 // ─────────────────────────────────────────────
 // Parameters
 // ─────────────────────────────────────────────
-// v24 change from v23: MAX_PB_DEPTH = 5.0
-//   v23 pullback depth table showed:
-//     pb 3-5pt → WR 92.9%, +$7,413 (14 trades — the real edge)
-//     pb>5pt   → WR 55.6%, +$5,032 (45 trades — noise drowning signal)
-//   All SL_HIT avg_pb=5.93-6.38, all ADVERSE_EARLY NY avg_pb=7.04
-//   Capping at 5.0 targets the high-conviction retracement band only.
+// v25 changes from v23:
+//   SL_PTS       = 5.5  (was 7.0 — tighter stop, cut loss earlier on reversals)
+//   ADVERSE_MIN  = 3.0  (was 4.0 — exit faster on adverse early moves)
+//   MAX_PB_DEPTH removed (no causal value, proven by v24)
 static const int    WINDOW              = 600;
 static const double IMPULSE_MIN         = 6.0;
 static const double IMPULSE_MAX         = 15.0;
 static const double TP_PTS              = 14.0;
-static const double SL_PTS              = 7.0;
+static const double SL_PTS              = 5.5;    // tightened from 7.0
 static const double PULLBACK_FRAC       = 0.50;
 static const double VWAP_TREND_LONDON   = 0.004;
 static const double VWAP_TREND_NY       = 0.006;
@@ -146,9 +144,8 @@ static const int    COOLDOWN_TICKS      = 300;
 static const uint64_t TIME_LIMIT_MS     = 7200000;
 static const uint64_t NO_TRAIL_MS       = 3600000;
 static const int    ADVERSE_WINDOW      = 10;
-static const double ADVERSE_MIN_PTS     = 4.0;
-static const double MIN_PB_DEPTH        = 1.5;    // must pull back at least this far from extreme
-static const double MAX_PB_DEPTH        = 5.0;    // NEW v24: must not pull back MORE than this
+static const double ADVERSE_MIN_PTS     = 3.0;    // tightened from 4.0
+static const double MIN_PB_DEPTH        = 1.5;
 
 // Trail
 static const bool   TRAIL_ENABLED       = true;
@@ -540,14 +537,11 @@ int main(int argc, char** argv)
             double pb_long  = e.hi - PULLBACK_FRAC * impulse;
             double pb_short = e.lo + PULLBACK_FRAC * impulse;
 
-            // Pullback depth from swing extreme
-            // Long:  how far price has dropped from the high (want 1.5-5.0pts)
-            // Short: how far price has risen from the low  (want 1.5-5.0pts)
             double pb_depth_long  = e.hi - mid;
             double pb_depth_short = mid - e.lo;
 
-            bool pb_ok_long  = (pb_depth_long  >= MIN_PB_DEPTH && pb_depth_long  <= MAX_PB_DEPTH);
-            bool pb_ok_short = (pb_depth_short >= MIN_PB_DEPTH && pb_depth_short <= MAX_PB_DEPTH);
+            bool pb_ok_long  = (pb_depth_long  >= MIN_PB_DEPTH);
+            bool pb_ok_short = (pb_depth_short >= MIN_PB_DEPTH);
 
             bool can_long  = (mid <= pb_long  && mid > e.vwap && e.vwap_trend_up(is_ny)   && pb_ok_long);
             bool can_short = (mid >= pb_short && mid < e.vwap && e.vwap_trend_down(is_ny)  && pb_ok_short);
@@ -633,7 +627,7 @@ int main(int argc, char** argv)
     // ─────────────────────────────────────────────
     std::cout << "\n";
     std::cout << "══════════════════════════════════════════════════════════════\n";
-    std::cout << "  GoldFlow Diagnostic Backtest  v24\n";
+    std::cout << "  GoldFlow Diagnostic Backtest  v25\n";
     std::cout << "══════════════════════════════════════════════════════════════\n";
     std::cout << "  Ticks total   : " << ticks_total << "\n";
     std::cout << "  Ticks in-sess : " << ticks_used << "\n";
@@ -643,8 +637,7 @@ int main(int argc, char** argv)
     std::cout << "    WINDOW=" << WINDOW << " IMPULSE=" << IMPULSE_MIN << "-" << IMPULSE_MAX
               << " TP=" << TP_PTS << " SL=" << SL_PTS << "\n";
     std::cout << "    PULLBACK_FRAC=" << PULLBACK_FRAC
-              << " MIN_PB_DEPTH=" << MIN_PB_DEPTH << "pts"
-              << " MAX_PB_DEPTH=" << MAX_PB_DEPTH << "pts\n";
+              << " MIN_PB_DEPTH=" << MIN_PB_DEPTH << "pts\n";
     std::cout << "    VWAP_TREND London=" << std::setprecision(4) << VWAP_TREND_LONDON
               << " NY=" << VWAP_TREND_NY << " TIME_LIMIT=" << TIME_LIMIT_MS/1000 << "s\n";
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
@@ -779,16 +772,15 @@ int main(int argc, char** argv)
         std::cout << "\n";
     }
 
-    // Pullback depth distribution — key diagnostic
+    // Pullback depth distribution
     std::cout << "── Pullback Depth at Entry (all trades) ─────────────────────\n";
     std::vector<std::pair<std::string,std::pair<double,double>>> pb_buckets = {
         {"pb<1pt",   {0,   1}},
         {"pb 1-2pt", {1,   2}},
         {"pb 2-3pt", {2,   3}},
-        {"pb 3-4pt", {3,   4}},
-        {"pb 4-5pt", {4,   5}},
-        {"pb 5-6pt", {5,   6}},
-        {"pb>6pt",   {6, 999}},
+        {"pb 3-5pt", {3,   5}},
+        {"pb 5-7pt", {5,   7}},
+        {"pb>7pt",   {7, 999}},
     };
     for (auto& [label, range] : pb_buckets) {
         int n = 0; double pnl = 0; int wins_pb = 0;
