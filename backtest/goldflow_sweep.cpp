@@ -54,8 +54,10 @@ bool parse_tick(const std::string& line, Tick& t)
 
 inline int      utc_hour(uint64_t ts) { return (int)((ts/1000/3600)%24); }
 inline uint64_t utc_day (uint64_t ts) { return ts/1000/86400; }
-inline bool session_ok  (uint64_t ts) { int h=utc_hour(ts); return (h>=7&&h<=10)||(h>=12&&h<=16); }
-inline bool session_ny  (uint64_t ts) { int h=utc_hour(ts); return (h>=12&&h<=16); }
+inline bool session_asia  (uint64_t ts) { int h=utc_hour(ts); return (h>=0&&h<=6); }
+inline bool session_london(uint64_t ts) { int h=utc_hour(ts); return (h>=7&&h<=10); }
+inline bool session_ny    (uint64_t ts) { int h=utc_hour(ts); return (h>=12&&h<=16); }
+inline bool session_ok    (uint64_t ts) { return session_asia(ts)||session_london(ts)||session_ny(ts); }
 
 // ─────────────────────────────────────────────
 // Exit reasons
@@ -88,8 +90,8 @@ static const double ADVERSE_MIN     = 2.0;
 static const bool   TRAIL_ENABLED   = true;
 static const double TRAIL_TRIGGER   = 6.0;
 static const double TRAIL_LOCK      = 0.75;
-// NY only (matches diag v3+ finding)
-static const bool   NY_ONLY         = true;
+// All three sessions active — Asia has the biggest gold moves
+static const bool   NY_ONLY         = false;
 
 // ─────────────────────────────────────────────
 // Result
@@ -169,8 +171,7 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
             price_buf.erase(price_buf.begin());
 
         if (spread > MAX_SPREAD) continue;
-        if (NY_ONLY) { if (!session_ny(t.ts)) continue; }
-        else         { if (!session_ok(t.ts)) continue; }
+        if (!session_ok(t.ts)) continue;
 
         if (cooldown > 0) { cooldown--; }
 
@@ -474,7 +475,7 @@ int main(int argc, char** argv)
               << std::fixed << std::setprecision(1) << sweep_sec << "s"
               << " (" << n_threads << " threads)\n";
     std::cout << "  TRAIL=ON trigger=" << TRAIL_TRIGGER << "pts lock=" << (int)(TRAIL_LOCK*100) << "%"
-              << "  SESSION=" << (NY_ONLY ? "NY_ONLY" : "LONDON+NY") << "\n";
+              << "  SESSION=ASIA(00-06)+LONDON(07-10)+NY(12-16)\n";
     std::cout << "══════════════════════════════════════════════════════════════\n\n";
 
     int show = std::min(10, (int)all_results.size());
