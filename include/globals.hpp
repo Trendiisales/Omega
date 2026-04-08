@@ -517,8 +517,8 @@ static CrossPairL2 g_cross_l2;
 static std::unordered_map<std::string,double>  g_asks;
 
 // L2Level and L2Book are defined in OmegaFIX.hpp (moved 2026-03-24 for 264=5 upgrade)
-static std::mutex                                g_l2_mtx;
-static std::unordered_map<std::string, L2Book>   g_l2_books;
+std::mutex                                g_l2_mtx;
+std::unordered_map<std::string, L2Book>   g_l2_books;
 
 // ?? Per-symbol atomic L2 derived scalars ??????????????????????????????????
 // Written by cTrader depth thread after each depth event -- zero lock on hot path.
