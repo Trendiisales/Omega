@@ -45,21 +45,21 @@ $PassFile  = "$OmegaDir\logs\PRE_DELIVERY_PASS.txt"
 $FailFile  = "$OmegaDir\logs\PRE_DELIVERY_FAIL.txt"
 $LogFile   = "$OmegaDir\logs\latest.log"
 
-$failures  = @()
-$results   = @()
+$global:pdc_failures = @()
+$global:pdc_results  = @()
 
 function Pass($check, $detail) {
     Write-Host "  [PASS] $check -- $detail" -ForegroundColor Green
-    $script:results += "PASS|$check|$detail"
+    $global:pdc_results  += "PASS|$check|$detail"
 }
 function Fail($check, $detail) {
     Write-Host "  [FAIL] $check -- $detail" -ForegroundColor Red
-    $script:results  += "FAIL|$check|$detail"
-    $script:failures += "$check: $detail"
+    $global:pdc_results  += "FAIL|$check|$detail"
+    $global:pdc_failures += "${check}: $detail"
 }
 function Info($check, $detail) {
     Write-Host "  [INFO] $check -- $detail" -ForegroundColor Cyan
-    $script:results += "INFO|$check|$detail"
+    $global:pdc_results  += "INFO|$check|$detail"
 }
 
 Write-Host ""
@@ -229,23 +229,23 @@ Write-Host "=======================================================" -Foreground
 
 $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC")
 
-if ($failures.Count -eq 0) {
+if ($global:pdc_failures.Count -eq 0) {
     Write-Host "  ALL CHECKS PASSED -- Omega may proceed" -ForegroundColor Green
     Write-Host "  HEAD: $localHead7  TIME: $timestamp" -ForegroundColor Green
     Write-Host "=======================================================" -ForegroundColor Yellow
 
     # Write pass file -- QUICK_RESTART checks for this before launching
     $passContent = "PASS`ntimestamp=$timestamp`nhash=$localHead7`n"
-    $results | ForEach-Object { $passContent += "$_`n" }
+    $global:pdc_results | ForEach-Object { $passContent += "$_`n" }
     Set-Content -Path $PassFile -Value $passContent -Force
     if (Test-Path $FailFile) { Remove-Item $FailFile -Force -ErrorAction SilentlyContinue }
     Write-Host ""
     exit 0
 
 } else {
-    Write-Host "  !! $($failures.Count) CHECK(S) FAILED -- OMEGA WILL NOT START !!" -ForegroundColor Red
+    Write-Host "  !! $($global:pdc_failures.Count) CHECK(S) FAILED -- OMEGA WILL NOT START !!" -ForegroundColor Red
     Write-Host ""
-    foreach ($f in $failures) {
+    foreach ($f in $global:pdc_failures) {
         Write-Host "  FAILED: $f" -ForegroundColor Red
     }
     Write-Host ""
@@ -254,7 +254,7 @@ if ($failures.Count -eq 0) {
 
     # Write fail file
     $failContent = "FAIL`ntimestamp=$timestamp`nhash=$localHead7`n"
-    $failures | ForEach-Object { $failContent += "FAILED: $_`n" }
+    $global:pdc_failures | ForEach-Object { $failContent += "FAILED: $_`n" }
     Set-Content -Path $FailFile -Value $failContent -Force
     if (Test-Path $PassFile) { Remove-Item $PassFile -Force -ErrorAction SilentlyContinue }
     Write-Host ""
