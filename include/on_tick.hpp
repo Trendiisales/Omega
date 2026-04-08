@@ -365,11 +365,23 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             const bool   has_fresh    = g_l2_gold.has_data.load(std::memory_order_relaxed)
                                         && g_l2_gold.fresh(l2_now_ms);
 
-            // cTrader events flowing = real DOM data regardless of size values
-            const uint64_t ev_total   = g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed);
-            static uint64_t s_last_ev = 0;
-            const bool   events_live  = (ev_total > s_last_ev + 2);  // at least 2 new events this tick cycle
-            if (ev_total > s_last_ev) s_last_ev = ev_total;
+            // cTrader events flowing = real DOM data regardless of size values.
+            // FIX: was requiring ev_total > s_last_ev + 2 (2 new events per FIX tick).
+            // Between two FIX ticks only 0-1 cTrader depth events arrive -- this check
+            // was ALWAYS failing, permanently marking L2 as dead even when cTrader was
+            // delivering perfect DOM data visible in the GUI.
+            // Fix: use a 3-second rolling window. If ANY new event arrived in the last
+            // 3 seconds, L2 is live. This correctly handles the asymmetric rates:
+            // FIX ticks arrive at ~10/s, cTrader depth at ~1-3/s.
+            const uint64_t ev_total    = g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed);
+            static uint64_t s_last_ev  = 0;
+            static int64_t  s_last_ev_ms = 0;
+            if (ev_total > s_last_ev) {
+                s_last_ev    = ev_total;
+                s_last_ev_ms = l2_now_ms;
+            }
+            // Live if a new event arrived within last 3000ms
+            const bool events_live = (s_last_ev_ms > 0) && ((l2_now_ms - s_last_ev_ms) < 3000);
 
             // gold_real: cTrader DOM is live -- use price-structure imbalance
             const bool gold_real = has_fresh && events_live;
