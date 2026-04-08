@@ -89,7 +89,7 @@ if ($LogPath -eq "") {
                 Write-Host "  latest.log : $(if (Test-Path $latestLog) { 'STALE (' + [int]((Get-Date)-(Get-Item $latestLog).LastWriteTime).TotalSeconds + 's)' } else { 'NOT FOUND' })" -ForegroundColor Red
                 Write-Host "  dated log  : STALE (age=${datedAge}s) -- $datedLog" -ForegroundColor Red
                 Write-Host "  Both logs frozen. Omega is dead or log dir is wrong." -ForegroundColor Red
-                Write-Host "  Run: Get-Service OmegaHFT" -ForegroundColor Yellow
+                Write-Host "  Run: Get-Service Omega" -ForegroundColor Yellow
                 Write-Host "  Run: Get-Process Omega" -ForegroundColor Yellow
                 Write-Host ""
                 exit 1
