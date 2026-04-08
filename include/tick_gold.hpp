@@ -682,6 +682,71 @@ static void on_tick_gold(
     // ?? Correlation matrix feed -- XAUUSD ??????????????????????????????????
     g_corr_matrix.on_price("XAUUSD", xau_mid);
 
+    // ── L2 tick logger -- UNCONDITIONAL, every XAUUSD tick ───────────────
+    // CRITICAL: This MUST run outside the GoldFlow gate. Previously it was
+    // inside the GoldFlow entry block -- when L2 watchdog blocked GoldFlow,
+    // the logger also stopped, meaning we had ZERO L2 data saved on days
+    // when L2 was supposedly "dead". This is the fix.
+    //
+    // Logs ALL L2 data regardless of engine state: depth levels, bid/ask vol,
+    // event count from CTraderDepthClient, and watchdog dead flag.
+    // Daily rotating CSV: C:\Omega\logs\l2_ticks_YYYY-MM-DD.csv
+    {
+        static FILE*   s_l2f_unc = nullptr;
+        static int     s_l2_day_unc = -1;
+        const time_t   t_l2_unc  = (time_t)(now_ms_g / 1000);
+        struct tm      tm_l2_unc{};
+        gmtime_s(&tm_l2_unc, &t_l2_unc);
+        if (tm_l2_unc.tm_yday != s_l2_day_unc) {
+            if (s_l2f_unc) { fclose(s_l2f_unc); s_l2f_unc = nullptr; }
+            char l2path_unc[256];
+            snprintf(l2path_unc, sizeof(l2path_unc),
+                "C:\\Omega\\logs\\l2_ticks_%04d-%02d-%02d.csv",
+                tm_l2_unc.tm_year+1900, tm_l2_unc.tm_mon+1, tm_l2_unc.tm_mday);
+            bool is_new_unc = (GetFileAttributesA(l2path_unc) == INVALID_FILE_ATTRIBUTES);
+            s_l2f_unc = fopen(l2path_unc, "a");
+            if (s_l2f_unc && is_new_unc)
+                fprintf(s_l2f_unc,
+                    "ts_ms,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
+                    "depth_bid_levels,depth_ask_levels,depth_events_total,"
+                    "watchdog_dead,vol_ratio,regime,vpin,has_pos\n");
+            s_l2_day_unc = tm_l2_unc.tm_yday;
+        }
+        if (s_l2f_unc) {
+            double l2_bvol_unc = 0.0, l2_avol_unc = 0.0;
+            int    l2_bid_lvls = 0, l2_ask_lvls = 0;
+            {
+                std::lock_guard<std::mutex> lk(g_l2_mtx);
+                auto it = g_l2_books.find("XAUUSD");
+                if (it == g_l2_books.end()) it = g_l2_books.find("GOLD.F");
+                if (it != g_l2_books.end()) {
+                    l2_bid_lvls = it->second.bid_count;
+                    l2_ask_lvls = it->second.ask_count;
+                    for (int _i = 0; _i < it->second.bid_count; ++_i) l2_bvol_unc += it->second.bids[_i].size;
+                    for (int _i = 0; _i < it->second.ask_count; ++_i) l2_avol_unc += it->second.asks[_i].size;
+                }
+            }
+            const double vol_ratio_log = (g_gold_stack.base_vol_pct() > 0.0)
+                ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
+            fprintf(s_l2f_unc,
+                "%lld,%.3f,%.3f,%.4f,%.4f,%.4f,"
+                "%d,%d,%llu,"
+                "%d,%.3f,%d,%.3f,%d\n",
+                (long long)now_ms_g, bid, ask,
+                g_macro_ctx.gold_l2_imbalance,
+                l2_bvol_unc, l2_avol_unc,
+                l2_bid_lvls, l2_ask_lvls,
+                (unsigned long long)g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed),
+                (int)g_l2_watchdog_dead.load(std::memory_order_relaxed),
+                vol_ratio_log,
+                (int)gold_sdec.regime,
+                g_vpin.warmed() ? g_vpin.vpin() : 0.0,
+                (int)g_gold_flow.has_open_position());
+            fflush(s_l2f_unc);
+        }
+    }
+    // ── end L2 tick logger (unconditional) ───────────────────────────────
+
     if (gold_spread_ok) {
         if (now_ms_g - g_bracket_gold_minute_start >= 60000) {
             g_bracket_gold_minute_start       = now_ms_g;
@@ -2840,57 +2905,7 @@ static void on_tick_gold(
                                        sup_trend, gf_wall_ahead, gold_vwap_pts,
                                        gf_expansion_entry, gf_vol_ratio_injected);
 
-            // ── L2 tick logger ────────────────────────────────────────────
-            // Writes per-tick L2 data so we can backtest with real imbalance.
-            // Daily rotating CSV: C:\Omega\logs\l2_ticks_YYYY-MM-DD.csv
-            {
-                static FILE*   s_l2f     = nullptr;
-                static int     s_l2_day  = -1;
-                const time_t   t_l2      = (time_t)(now_ms_g / 1000);
-                struct tm      tm_l2{};
-                gmtime_s(&tm_l2, &t_l2);
-                if (tm_l2.tm_yday != s_l2_day) {
-                    if (s_l2f) { fclose(s_l2f); s_l2f = nullptr; }
-                    char l2path[256];
-                    snprintf(l2path, sizeof(l2path),
-                        "C:\\Omega\\logs\\l2_ticks_%04d-%02d-%02d.csv",
-                        tm_l2.tm_year+1900, tm_l2.tm_mon+1, tm_l2.tm_mday);
-                    bool is_new = (GetFileAttributesA(l2path) == INVALID_FILE_ATTRIBUTES);
-                    s_l2f = fopen(l2path, "a");
-                    if (s_l2f && is_new)
-                        fprintf(s_l2f,
-                            "ts_ms,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
-                            "vol_ratio,regime,vpin,has_pos\n");
-                    s_l2_day = tm_l2.tm_yday;
-                }
-                if (s_l2f) {
-                    // Get bid/ask volumes from L2 book
-                    double l2_bvol = 0.0, l2_avol = 0.0;
-                    {
-                        std::lock_guard<std::mutex> lk(g_l2_mtx);
-                        // Depth client writes book under "XAUUSD" key (internal_name)
-                        // NOT "GOLD.F" -- that was causing bid/ask vol to always be 0
-                        auto it = g_l2_books.find("XAUUSD");
-                        if (it == g_l2_books.end())
-                            it = g_l2_books.find("GOLD.F");  // fallback for old alias
-                        if (it != g_l2_books.end()) {
-                            for (int _i = 0; _i < it->second.bid_count; ++_i) l2_bvol += it->second.bids[_i].size;
-                            for (int _i = 0; _i < it->second.ask_count; ++_i) l2_avol += it->second.asks[_i].size;
-                        }
-                    }
-                    fprintf(s_l2f,
-                        "%lld,%.3f,%.3f,%.4f,%.0f,%.0f,%.3f,%d,%.3f,%d\n",
-                        (long long)now_ms_g, bid, ask,
-                        g_macro_ctx.gold_l2_imbalance,
-                        l2_bvol, l2_avol,
-                        gf_vol_ratio_entry,
-                        (int)gold_sdec.regime,
-                        g_vpin.warmed() ? g_vpin.vpin() : 0.0,
-                        (int)g_gold_flow.has_open_position());
-                    fflush(s_l2f);
-                }
-            }
-            // ── end L2 tick logger ────────────────────────────────────────
+            // L2 tick logger removed from here -- moved to unconditional section above
 
             g_gold_flow.on_tick(bid, ask,
                 g_macro_ctx.gold_l2_imbalance,
