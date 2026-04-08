@@ -921,7 +921,7 @@ private:
                 // Circuit breaker: track XAUUSD reconnect times. If level-2 fires 3x
                 // within 5 minutes, disable escalation to prevent reconnect loops.
                 // Log clearly -- operator must intervene if broker is structurally broken.
-                static constexpr int64_t XAUUSD_STARVE_GRACE_S = 90; // allow 90s after connect for book fill
+                static constexpr int64_t XAUUSD_STARVE_GRACE_S = 180; // raised 90->180s: bar queue spots skip needs time to take effect
                 static int64_t xauusd_starve_since_s   = 0; // epoch sec when starvation first detected
                 static int     xauusd_resub_count       = 0; // consecutive failed re-subscribe attempts
                 static int64_t xauusd_reconnect_ts[3]  = {0,0,0}; // ring buffer of level-2 reconnect times
@@ -1012,15 +1012,20 @@ private:
                             }
                         }
                     } else {
-                        // XAUUSD events flowing normally this minute
-                        if (xauusd_starve_since_s > 0) {
-                            // Was starved, now recovered
+                        // XAUUSD events flowing normally this minute -- always clear stale gate
+                        if (g_feed_stale_xauusd.load(std::memory_order_relaxed)) {
+                            // Was blocked -- now recovered
+                            const int64_t starve_secs = (xauusd_starve_since_s > 0) ? (now_epoch_s - xauusd_starve_since_s) : 0;
+                            printf("[FEED-STALE] XAUUSD depth RESTORED -- events=%llu this minute, starvation=%llds. GoldFlow entries UNBLOCKED.\n",
+                                   (unsigned long long)xauusd_ev_this_min, (long long)starve_secs);
+                            fflush(stdout);
+                        } else if (xauusd_starve_since_s > 0) {
                             const int64_t starve_secs = now_epoch_s - xauusd_starve_since_s;
-                            printf("[FEED-STALE] XAUUSD depth RESTORED after %llds starvation "                                   "-- events=%llu this minute. Clearing feed stale gate.\n",
+                            printf("[FEED-STALE] XAUUSD depth restored after %llds starvation -- events=%llu\n",
                                    (long long)starve_secs, (unsigned long long)xauusd_ev_this_min);
                             fflush(stdout);
                         }
-                        // Clear all starvation state on recovery
+                        // Clear all starvation state
                         g_feed_stale_xauusd.store(false, std::memory_order_relaxed);
                         xauusd_starve_since_s    = 0;
                         xauusd_resub_count       = 0;
