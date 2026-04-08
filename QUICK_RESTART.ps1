@@ -9,7 +9,7 @@
 
 param(
     [switch] $SkipVerify,
-    [int]    $WaitSec  = 45,
+    [int]    $WaitSec  = 15,
     [string] $OmegaDir = "C:\Omega"
 )
 
@@ -98,12 +98,16 @@ if (Test-Path $cmakeExe) {
     Write-Host "  [SKIP] cmake not found -- using existing binary" -ForegroundColor DarkGray
 }
 
-# --- Sync build output (ALWAYS force copy -- never risk stale binary) --------
+# --- Sync build output (file unlocked now) -----------------------------------
 if (Test-Path $BuildExe) {
-    Copy-Item $BuildExe $OmegaExe -Force
-    Write-Host "  [SYNC] Omega.exe force-copied from build\Release\Omega.exe" -ForegroundColor Green
-} else {
-    Write-Host "  [WARN] No build output found -- using existing Omega.exe" -ForegroundColor Yellow
+    $buildTime  = (Get-Item $BuildExe).LastWriteTime
+    $launchTime = if (Test-Path $OmegaExe) { (Get-Item $OmegaExe).LastWriteTime } else { [DateTime]::MinValue }
+    if ($buildTime -gt $launchTime) {
+        Copy-Item $BuildExe $OmegaExe -Force
+        Write-Host "  [SYNC] Updated Omega.exe from build\Release\Omega.exe" -ForegroundColor Green
+    } else {
+        Write-Host "  [SYNC] Omega.exe already current" -ForegroundColor DarkGray
+    }
 }
 
 # --- BINARY IDENTITY -- read from version_generated.hpp (just regenerated) ---
