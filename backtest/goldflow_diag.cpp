@@ -97,10 +97,9 @@ inline bool session_london(uint64_t ts_ms)
 
 inline bool session_ny(uint64_t ts_ms)
 {
-    // Skip first 30min of NY open — high volatility chop at open produces SL_HIT
+    // 12:00-15:59 UTC — hard stop before close, no overnight holds
     int h = utc_hour(ts_ms);
-    int m = (int)((ts_ms / 1000 / 60) % 60);
-    return (h == 12 && m >= 30) || (h >= 13 && h <= 16);
+    return (h >= 12 && h <= 15);
 }
 
 inline bool session_ok(uint64_t ts_ms)
@@ -122,7 +121,7 @@ inline std::string session_name(uint64_t ts_ms)
 // v15: disable Asia (13 ADVERSE vs 16 TRAIL — nearly break-even, destroying -$10k+)
 //      add IMPULSE_MAX=15 (large impulses are exhaustion not continuation)
 static const int    WINDOW          = 600;
-static const double IMPULSE_MIN     = 6.0;
+static const double IMPULSE_MIN     = 7.0;
 static const double IMPULSE_MAX     = 15.0;   // cap — large impulses are exhaustion moves
 static const double TP_PTS          = 14.0;
 static const double SL_PTS          = 7.0;
@@ -367,6 +366,22 @@ int main(int argc, char** argv)
         e.update_price(mid);
 
         if (spread > MAX_SPREAD) continue;
+
+        // Force close any open position when session ends — prevents overnight holds
+        // If we have an open position and current tick is outside session, close at market
+        if (e.in_pos && !trade_session_ok(t.ts))
+        {
+            cur.exit_price = e.is_long ? t.bid : t.ask;
+            cur.gross_pnl  = e.is_long ? cur.exit_price - e.entry : e.entry - cur.exit_price;
+            cur.net_pnl    = cur.gross_pnl - cur.spread_open - COMMISSION_PTS;
+            cur.hold_ms    = t.ts - e.entry_ts;
+            cur.exit_why   = ExitReason::TIME_STOP;
+            cur.mfe        = std::max(0.0, cur.mfe);
+            cur.mae        = std::max(0.0, cur.mae);
+            trades.push_back(cur);
+            e.in_pos = false; e.trail_active = false;
+        }
+
         if (!trade_session_ok(t.ts)) continue;
         ticks_used++;
 
@@ -567,7 +582,7 @@ int main(int argc, char** argv)
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
               << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts"
               << " MIN_PB_DEPTH=" << MIN_PB_DEPTH << " pts\n";
-    std::cout << "    VWAP=daily-reset-cumulative  SESSION=LONDON(07-10)+NY(12-16)\n";
+    std::cout << "    VWAP=daily-reset-cumulative  SESSION=LONDON(07-10)+NY(12-15) force-close-at-end\n";
     std::cout << "    TRAIL=" << (TRAIL_ENABLED ? "ON" : "OFF");
     if (TRAIL_ENABLED)
         std::cout << " trigger=" << TRAIL_TRIGGER << "pts lock=" << (int)(TRAIL_LOCK*100) << "%";
