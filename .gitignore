@@ -43,3 +43,6 @@ logs/**/*.txt
 *.dat
 omega_config.ini
 symbols.ini
+
+# GitHub API token -- VPS only, never commit
+.github_token
