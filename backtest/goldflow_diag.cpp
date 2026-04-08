@@ -4,20 +4,22 @@
 // Run:   ./goldflow_diag ticks.csv [trades_out.csv]
 //
 // VERSION HISTORY:
-//   v27: VWAP trend filter → 26 trades +$6,136 65% WR (thin)
-//   v31: No VWAP filter → 96 trades -$8,988 44% WR (no edge without filter)
-//   v32: IMPULSE_MIN=8 → 41 trades -$1,588 44% WR
-//        Impulse breakdown:
-//          8-9pt:   n=25 WR=28% -$3,831  ← noise
-//          9-10pt:  n=5  WR=40% -$2,038  ← noise
-//          10-11pt: n=4  WR=75% +$204
-//          11-12pt: n=1  WR=100% +$1,362
-//          12-15pt: n=6  WR=83% +$2,715
-//        CONCLUSION: edge only exists at 10pt+. Sub-10pt impulses = random entries.
-// v33: IMPULSE_MIN=10.0
-//      Also widen IMPULSE_MAX from 15 to 25 — the 12-15pt group was 83% WR,
-//      no reason to cap at 15. Large impulses (15-25pt) may have even better edge.
-//      All other params from v32 unchanged.
+//   v33: IMPULSE_MIN=10, no VWAP filter → 25 trades +$8,161 76% WR
+//        CSV analysis:
+//          LONG  n=11 WR=54.5% +$2,888  (5 SL_HIT, all LONG)
+//          SHORT n=7  WR=100%  +$5,273  (0 SL_HIT, 0 ADVERSE)
+//          All 5 SL_HIT are LONG, 4 of 5 within Oct 2025 — trending bear period.
+//          SL_HIT pb_depth avg=11.45 vs impulse avg=11.7 → pb/impulse ratio ~98%
+//          = price pulled back nearly 100% of impulse = full reversal, not retracement.
+// v34: TWO TARGETED FIXES:
+//   1. SHORT-ONLY — London opens reversing Asian overnight longs.
+//      LONG entries are entering pullbacks in downtrends (wrong direction).
+//      SHORT: 7 trades, 100% WR, +$5,273. No reason to take longs.
+//   2. PB_RATIO_MAX = 0.80 — pb_depth must be ≤ 80% of impulse_sz.
+//      Kills "pb = full reversal" entries where price gave back everything.
+//      A real retracement pullback = 40-75% of impulse. At 80%+ the move is over.
+//      Applied to shorts: (mid - lo) / (hi - lo) <= PB_RATIO_MAX
+//   All other v33 params unchanged.
 
 #include <iostream>
 #include <fstream>
@@ -52,11 +54,13 @@ inline bool     session_london(uint64_t ts) { int h=utc_hour(ts); return h>=7&&h
 
 // ── Parameters ────────────────────────────────────────────
 static const int    WINDOW           = 600;
-static const double IMPULSE_MIN      = 10.0;   // raised from 8.0 — sub-10pt = noise proven
-static const double IMPULSE_MAX      = 25.0;   // widened from 15.0 — large impulses showed 83% WR
+static const double IMPULSE_MIN      = 10.0;
+static const double IMPULSE_MAX      = 25.0;
 static const double TP_PTS           = 14.0;
 static const double SL_PTS           = 7.0;
-static const double PULLBACK_FRAC    = 0.50;
+static const double PULLBACK_FRAC    = 0.50;   // entry zone: within 50% of impulse from lo
+static const double PB_RATIO_MAX     = 0.80;   // NEW: pb_depth / impulse_sz <= 0.80
+                                                // kills full-reversal entries (pb~=impulse)
 static const double MAX_SPREAD       = 0.40;
 static const int    COOLDOWN_TICKS   = 300;
 static const uint64_t TIME_LIMIT_MS  = 7200000;
@@ -68,6 +72,7 @@ static const bool   TRAIL_ENABLED    = true;
 static const double TRAIL_TRIGGER    = 6.0;
 static const double TRAIL_LOCK       = 0.75;
 static const double COMMISSION_PTS   = 0.0;
+// SHORT-ONLY: no longs — London reverses Asian overnight longs, shorts have 100% WR in v33
 
 enum class ExitReason { NONE, TP_HIT, SL_HIT, ADVERSE_EARLY, TIME_STOP, TRAIL_HIT };
 static const char* exit_name(ExitReason r) {
@@ -84,7 +89,7 @@ static const char* exit_name(ExitReason r) {
 struct TradeRecord {
     int id=0; bool is_long=false;
     double entry=0, exit_price=0, tp=0, sl=0;
-    double spread_open=0, impulse_sz=0, pb_depth=0;
+    double spread_open=0, impulse_sz=0, pb_depth=0, pb_ratio=0;
     double mfe=0, mae=0, gross_pnl=0, net_pnl=0;
     int hold_ticks=0; uint64_t hold_ms=0, entry_ts=0;
     ExitReason exit_why=ExitReason::NONE;
@@ -148,7 +153,7 @@ int main(int argc, char** argv)
     bool write_csv=(argc>=3);
     if (write_csv){
         csv_out.open(argv[2]);
-        csv_out<<"id,is_long,entry_ts,entry,exit,tp,sl,spread_open,impulse_sz,pb_depth,"
+        csv_out<<"id,is_long,entry_ts,entry,exit,tp,sl,spread_open,impulse_sz,pb_depth,pb_ratio,"
                <<"mfe,mae,gross_pnl,net_pnl,hold_ticks,hold_ms,exit_why\n";
     }
 
@@ -159,7 +164,8 @@ int main(int argc, char** argv)
     int trade_id=0;
 
     uint64_t cnt_impulse=0,cnt_rej_inpos=0,cnt_rej_cooldown=0;
-    uint64_t cnt_rej_imax=0,cnt_rej_pbzone=0,cnt_rej_pbmin=0,cnt_entered=0;
+    uint64_t cnt_rej_imax=0,cnt_rej_pbzone=0,cnt_rej_pbmin=0;
+    uint64_t cnt_rej_pbratio=0,cnt_entered=0;
 
     std::string line;
     auto t_start=std::chrono::high_resolution_clock::now();
@@ -232,7 +238,7 @@ int main(int argc, char** argv)
                     csv_out<<cur.id<<","<<(cur.is_long?1:0)<<","<<cur.entry_ts<<","
                         <<std::fixed<<std::setprecision(2)
                         <<cur.entry<<","<<cur.exit_price<<","<<cur.tp<<","<<cur.sl<<","
-                        <<cur.spread_open<<","<<cur.impulse_sz<<","<<cur.pb_depth<<","
+                        <<cur.spread_open<<","<<cur.impulse_sz<<","<<cur.pb_depth<<","<<cur.pb_ratio<<","
                         <<cur.mfe<<","<<cur.mae<<","<<cur.gross_pnl<<","<<cur.net_pnl<<","
                         <<cur.hold_ticks<<","<<cur.hold_ms<<","<<exit_name(why)<<"\n";
                 }
@@ -247,31 +253,28 @@ int main(int argc, char** argv)
         if(e.cooldown>0) {cnt_rej_cooldown++;  continue;}
         if(impulse>IMPULSE_MAX){cnt_rej_imax++;continue;}
 
-        double pb_long  = e.hi - PULLBACK_FRAC*impulse;
-        double pb_short = e.lo + PULLBACK_FRAC*impulse;
-        double pb_depth_long  = e.hi - mid;
-        double pb_depth_short = mid  - e.lo;
+        double pb_short = e.lo + PULLBACK_FRAC*impulse;  // short entry zone upper bound
+        double pb_depth_short = mid - e.lo;               // how far price has bounced from lo
 
-        bool can_long  = (mid <= pb_long);
+        // SHORT-ONLY: price must be in upper portion of impulse range (pulled back from lo)
         bool can_short = (mid >= pb_short);
-        if(!can_long&&!can_short){cnt_rej_pbzone++;continue;}
-        if(can_long&&can_short) can_long=(pb_depth_long>=pb_depth_short);
+        if(!can_short){cnt_rej_pbzone++;continue;}
 
-        double pb_depth_candidate = can_long ? pb_depth_long : pb_depth_short;
-        if(pb_depth_candidate<MIN_PB_DEPTH){cnt_rej_pbmin++;continue;}
+        if(pb_depth_short < MIN_PB_DEPTH){cnt_rej_pbmin++;continue;}
+
+        // PB_RATIO gate: pb_depth / impulse must be <= PB_RATIO_MAX
+        // Prevents entering when price has reversed most/all of the impulse
+        double pb_ratio = pb_depth_short / impulse;
+        if(pb_ratio > PB_RATIO_MAX){cnt_rej_pbratio++;continue;}
 
         cnt_entered++;
-        e.in_pos=true; e.is_long=can_long;
-        if(e.is_long){
-            e.entry=t.ask; e.tp=e.entry+TP_PTS; e.sl=e.entry-SL_PTS; e.trail_sl=e.entry-SL_PTS;
-        } else {
-            e.entry=t.bid; e.tp=e.entry-TP_PTS; e.sl=e.entry+SL_PTS; e.trail_sl=e.entry+SL_PTS;
-        }
+        e.in_pos=true; e.is_long=false;  // SHORT ONLY
+        e.entry=t.bid; e.tp=e.entry-TP_PTS; e.sl=e.entry+SL_PTS; e.trail_sl=e.entry+SL_PTS;
         e.entry_ts=t.ts; e.trail_active=false; e.cooldown=COOLDOWN_TICKS;
-        cur=TradeRecord{}; cur.id=++trade_id; cur.is_long=e.is_long;
+        cur=TradeRecord{}; cur.id=++trade_id; cur.is_long=false;
         cur.entry=e.entry; cur.tp=e.tp; cur.sl=e.sl; cur.spread_open=spread;
-        cur.impulse_sz=impulse; cur.pb_depth=pb_depth_candidate; cur.entry_ts=t.ts;
-        e.pos_ticks=0; cur.mfe=0; cur.mae=0;
+        cur.impulse_sz=impulse; cur.pb_depth=pb_depth_short; cur.pb_ratio=pb_ratio;
+        cur.entry_ts=t.ts; e.pos_ticks=0; cur.mfe=0; cur.mae=0;
     }
 
     auto t_end=std::chrono::high_resolution_clock::now();
@@ -291,7 +294,7 @@ int main(int argc, char** argv)
     }
 
     std::cout<<"\n══════════════════════════════════════════════════════════════\n";
-    std::cout<<"  GoldFlow Diagnostic Backtest  v33  [LONDON ONLY]\n";
+    std::cout<<"  GoldFlow Diagnostic Backtest  v34  [LONDON SHORT-ONLY]\n";
     std::cout<<"══════════════════════════════════════════════════════════════\n";
     std::cout<<"  Ticks total   : "<<ticks_total<<"\n";
     std::cout<<"  Ticks session : "<<ticks_session<<"\n";
@@ -299,8 +302,9 @@ int main(int argc, char** argv)
     std::cout<<"  Parameters:\n";
     std::cout<<"    WINDOW="<<WINDOW<<" IMPULSE="<<IMPULSE_MIN<<"-"<<IMPULSE_MAX
              <<" TP="<<TP_PTS<<" SL="<<SL_PTS<<"\n";
-    std::cout<<"    PULLBACK_FRAC="<<PULLBACK_FRAC<<" MIN_PB_DEPTH="<<MIN_PB_DEPTH<<"pts\n";
-    std::cout<<"    NO VWAP FILTER — direction from impulse+pullback zone only\n";
+    std::cout<<"    PULLBACK_FRAC="<<PULLBACK_FRAC<<" MIN_PB_DEPTH="<<MIN_PB_DEPTH
+             <<"pts  PB_RATIO_MAX="<<PB_RATIO_MAX<<"\n";
+    std::cout<<"    SHORT-ONLY  NO VWAP FILTER\n";
     std::cout<<"    ADVERSE_WINDOW="<<ADVERSE_WINDOW<<" ADVERSE_MIN="<<ADVERSE_MIN_PTS<<" pts\n";
     std::cout<<"    SESSION=LONDON(07-10) ONLY  force-close-at-end\n";
     std::cout<<"    TRAIL="<<(TRAIL_ENABLED?"ON":"OFF");
@@ -314,6 +318,7 @@ int main(int argc, char** argv)
     std::cout<<"  Rej: impulse>max      : "<<cnt_rej_imax<<"\n";
     std::cout<<"  Rej: not in pb zone   : "<<cnt_rej_pbzone<<"\n";
     std::cout<<"  Rej: pb too shallow   : "<<cnt_rej_pbmin<<"\n";
+    std::cout<<"  Rej: pb ratio >0.80   : "<<cnt_rej_pbratio<<"\n";
     std::cout<<"  ENTERED               : "<<cnt_entered<<"\n\n";
 
     std::cout<<"── By Exit Reason ────────────────────────────────────────────\n";
@@ -329,12 +334,14 @@ int main(int argc, char** argv)
         std::cout<<"── SL_HIT: MFE Groups ────────────────────────────────────────\n";
         for(auto& [lbl,rng]:std::vector<std::pair<std::string,std::pair<double,double>>>{
             {"MFE<1pts",{0,1}},{"MFE 1-3pts",{1,3}},{"MFE 3-6pts",{3,6}},{"MFE>6pts",{6,999}}}){
-            int n=0; double pnl=0,imp=0,pb=0;
+            int n=0; double pnl=0,imp=0,pb=0,ratio=0;
             for(const auto& tr:trades) if(tr.exit_why==ExitReason::SL_HIT&&tr.mfe>=rng.first&&tr.mfe<rng.second)
-                {n++;pnl+=tr.net_pnl;imp+=tr.impulse_sz;pb+=tr.pb_depth;}
+                {n++;pnl+=tr.net_pnl;imp+=tr.impulse_sz;pb+=tr.pb_depth;ratio+=tr.pb_ratio;}
             if(n>0) std::cout<<"  "<<std::left<<std::setw(14)<<lbl
                 <<" n="<<n<<" PnL="<<std::setprecision(1)<<pnl*100
-                <<" avg_imp="<<std::setprecision(1)<<imp/n<<" avg_pb="<<std::setprecision(2)<<pb/n<<"\n";
+                <<" avg_imp="<<std::setprecision(1)<<imp/n
+                <<" avg_pb="<<std::setprecision(2)<<pb/n
+                <<" avg_ratio="<<std::setprecision(2)<<ratio/n<<"\n";
         }
         std::cout<<"\n";
     }
@@ -363,12 +370,12 @@ int main(int argc, char** argv)
         std::cout<<"\n";
     }
 
-    std::cout<<"── Pullback Depth at Entry ───────────────────────────────────\n";
+    std::cout<<"── pb_ratio at Entry (pb_depth / impulse_sz) ────────────────\n";
     for(auto& [lbl,rng]:std::vector<std::pair<std::string,std::pair<double,double>>>{
-        {"pb 1-3pt",{1,3}},{"pb 3-5pt",{3,5}},{"pb 5-7pt",{5,7}},
-        {"pb 7-10pt",{7,10}},{"pb 10-15pt",{10,15}},{"pb>15pt",{15,999}}}){
+        {"0.50-0.55",{0.50,0.55}},{"0.55-0.60",{0.55,0.60}},{"0.60-0.65",{0.60,0.65}},
+        {"0.65-0.70",{0.65,0.70}},{"0.70-0.75",{0.70,0.75}},{"0.75-0.80",{0.75,0.80}}}){
         int n=0,w=0; double pnl=0;
-        for(const auto& tr:trades) if(tr.pb_depth>=rng.first&&tr.pb_depth<rng.second)
+        for(const auto& tr:trades) if(tr.pb_ratio>=rng.first&&tr.pb_ratio<rng.second)
             {n++;pnl+=tr.net_pnl;if(tr.net_pnl>0)w++;}
         if(n>0) std::cout<<"  "<<std::left<<std::setw(12)<<lbl
             <<" n="<<std::setw(5)<<n<<" WR="<<std::fixed<<std::setprecision(1)<<100.0*w/n
@@ -388,19 +395,6 @@ int main(int argc, char** argv)
             <<"% PnL="<<std::setprecision(1)<<pnl*100<<" USD\n";
     }
     std::cout<<"\n";
-
-    // Long vs Short
-    {
-        int nl=0,wl=0,ns=0,ws=0; double pl=0,ps=0;
-        for(const auto& tr:trades){
-            if(tr.is_long){nl++;pl+=tr.net_pnl;if(tr.net_pnl>0)wl++;}
-            else           {ns++;ps+=tr.net_pnl;if(tr.net_pnl>0)ws++;}
-        }
-        std::cout<<"── Long vs Short ─────────────────────────────────────────────\n";
-        if(nl>0) std::cout<<"  LONG  n="<<nl<<" WR="<<std::fixed<<std::setprecision(1)<<100.0*wl/nl<<"% PnL="<<std::setprecision(1)<<pl*100<<" USD\n";
-        if(ns>0) std::cout<<"  SHORT n="<<ns<<" WR="<<std::fixed<<std::setprecision(1)<<100.0*ws/ns<<"% PnL="<<std::setprecision(1)<<ps*100<<" USD\n";
-        std::cout<<"\n";
-    }
 
     double total_usd=0; int total_wins=0;
     for(const auto& tr:trades){total_usd+=tr.net_pnl*100.0;if(tr.net_pnl>0)total_wins++;}
