@@ -23,11 +23,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# Read GitHub token from config if not passed as parameter
+# Read GitHub token from C:\Omega\.github_token if not passed as parameter.
+# This file is gitignored and lives only on the VPS.
 if ($GitHubToken -eq "") {
     $ErrorActionPreference = "Continue"
-    $tokenMatch = Select-String -Path $ConfigSrc -Pattern "^github_token\s*=\s*(\S+)" -ErrorAction SilentlyContinue
-    if ($tokenMatch) { $GitHubToken = $tokenMatch.Matches[0].Groups[1].Value }
+    $tokenFile = "$OmegaDir\.github_token"
+    if (Test-Path $tokenFile) { $GitHubToken = (Get-Content $tokenFile -Raw).Trim() }
     $ErrorActionPreference = "Stop"
 }
 
