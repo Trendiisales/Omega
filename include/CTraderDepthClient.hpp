@@ -685,15 +685,22 @@ private:
         }
 
         // Send SubscribeSpotsReq (pt=2129) for XAUUSD BEFORE the depth subscription.
-        // BlackBull requires spots subscription before it streams depth events for gold.
+        // BlackBull requires spots subscription ACK before it will stream depth events for gold.
         // Other symbols receive depth events without a spots sub -- XAUUSD is special.
-        // Without this: XAUUSD depth subscription ACKs but zero events ever arrive.
-        // The spots sub in the bar queue fires 10s later -- too late for depth events.
+        // ROOT CAUSE OF ZERO XAUUSD DEPTH EVENTS:
+        //   The spots sub was sent but depth sub was sent immediately without waiting for
+        //   the spots ACK (pt=2130). BlackBull ACKd the depth sub but sent zero XAUUSD
+        //   events because it hadn't processed the spots sub yet. Fix: wait for ACK first.
         if (xauusd_spot_id >= 0) {
             send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, xauusd_spot_id));
-            std::cout << "[CTRADER] XAUUSD spots sub sent (pre-depth, enables depth events)\n";
-            // Brief wait -- spots sub ACK (pt=2130) arrives quickly
-            // Don't block on it -- depth sub follows immediately
+            std::cout << "[CTRADER] XAUUSD spots sub sent -- waiting for ACK before depth sub\n";
+            // CRITICAL: must wait for spots ACK (pt=2130) before sending depth sub.
+            // BlackBull will not stream XAUUSD depth events until spots sub is confirmed.
+            if (!wait_for(ssl, 2130, 5000, pt, payload)) {
+                std::cerr << "[CTRADER] WARN: XAUUSD spots sub ACK timeout -- proceeding anyway\n";
+            } else {
+                std::cout << "[CTRADER] XAUUSD spots sub ACK received -- sending depth sub\n";
+            }
         }
         if (!send_msg(ssl, PB::subscribe_depth_req(ctid_account_id, sub_ids))) return false;
         if (!wait_for(ssl, 2157, 10000, pt, payload)) { std::cerr << "[CTRADER] SubscribeDepthRes timeout\n"; return false; }
@@ -956,16 +963,21 @@ private:
 
                         if (!xauusd_escalation_blocked) {
                             if (xauusd_resub_count == 0) {
-                                // LEVEL 1: re-subscribe XAUUSD depth only
-                                // Find XAUUSD symbol id from depth_books_ key via id_to_internal_ reverse lookup
+                                // LEVEL 1: re-subscribe XAUUSD spots + depth
+                                // CRITICAL: must re-send spots sub first -- same requirement as startup.
+                                // Without it depth sub ACKs but zero events arrive.
                                 int64_t xauusd_id = -1;
                                 for (const auto& idm : id_to_internal_) {
                                     if (idm.second == "XAUUSD") { xauusd_id = (int64_t)idm.first; break; }
                                 }
                                 if (xauusd_id > 0) {
-                                    printf("[FEED-STALE] LEVEL-1: re-subscribing XAUUSD depth (id=%lld) starve=%llds\n",
+                                    printf("[FEED-STALE] LEVEL-1: re-subscribing XAUUSD spots+depth (id=%lld) starve=%llds\n",
                                            (long long)xauusd_id, (long long)starve_secs);
                                     fflush(stdout);
+                                    // Send spots sub first -- BlackBull requires this before depth events flow
+                                    send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, xauusd_id));
+                                    // Brief delay to allow spots ACK before depth sub
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
                                     send_msg(ssl, PB::subscribe_depth_req(ctid_account_id, {xauusd_id}));
                                     ++xauusd_resub_count;
                                 } else {
