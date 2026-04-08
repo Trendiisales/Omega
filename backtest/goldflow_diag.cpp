@@ -121,8 +121,8 @@ inline std::string session_name(uint64_t ts_ms)
 // VT=0 means VWAP trend gate disabled — price only needs to be on correct side of VWAP
 static const int    WINDOW          = 600;
 static const double IMPULSE_MIN     = 6.0;
-static const double TP_PTS          = 14.0;
-static const double SL_PTS          = 7.0;
+static const double TP_PTS          = 16.0;   // was 14 — TRAIL avg MFE=8.5 suggests room to run
+static const double SL_PTS          = 8.0;    // was 7 — SL_HIT avg MAE=9.2 hitting just before recovery
 static const double PULLBACK_FRAC   = 0.50;
 static const double VWAP_TREND_PTS  = 0.004;
 static const int    VWAP_TREND_LOOK = 30;
