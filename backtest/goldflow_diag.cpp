@@ -19,17 +19,15 @@
 // v19: London+NY baseline +$13,761 100 trades 59% WR
 // v22: IMPULSE_MIN=8 — over-filtered, 41 trades +$1,458
 // v23: IMPULSE_MIN=6 + MIN_PB_DEPTH=1.5 + per-session VWAP_TREND → 59 trades +$12,444 64% WR
-// v24: MAX_PB_DEPTH=5.0 — pb 3-5pt WR 92.9% in v23 was correlation not causation.
-//      Isolated = 36 trades -$2,232 50% WR. Reverted.
-// v25: BASE = v23. Two exit fixes:
-//      1. SL_PTS = 5.5 (from 7.0)
-//         v23 SL_HIT: avg MAE=8.1 — riding full stop. Tighter cut saves ~$1.8/trade.
-//         12 SL_HIT × $1.8 saved = ~$2,160 recovered. Some SL_HIT become ADVERSE_EARLY.
-//      2. ADVERSE_MIN_PTS = 3.0 (from 4.0)
-//         v23 ADVERSE_EARLY: avg MAE=5.8 — waiting too long to confirm wrong direction.
-//         Exit 1pt earlier on adverse moves → smaller loss per bad trade.
-//      NO MAX_PB_DEPTH — that filter had no causal value (v24 proven).
-//      All other v23 params unchanged.
+// v24: MAX_PB_DEPTH=5.0 global — pb 3-5pt WR 92.9% was correlation not causation → 36 trades -$2,232
+// v25: v23 + SL=5.5 + ADVERSE_MIN=3.0 → 59 trades +$10,683 57.6% WR — exit tightening backfired
+// v26: CSV analysis of v25 pb groups revealed root cause:
+//      pb 3-5pt (GOOD): London=7 NY=6, MAE=1.99, SL_HIT=1
+//      pb 5-7pt (BAD):  London=10 NY=17, MAE=3.79, SL_HIT=10
+//      NY at pb>5pt = 17 trades, ~15 losers. London tolerates deep pullbacks (sustained moves).
+//      NY moves are sharp/fast — impulse is STALE by the time pb reaches 5-7pts.
+//      FIX: NY-only MAX_PB_DEPTH=5.0. London unrestricted.
+//      SL and ADVERSE_MIN restored to v23 values (v25 proved tightening them hurt).
 
 #include <iostream>
 #include <fstream>
@@ -126,15 +124,18 @@ inline std::string session_name(uint64_t ts_ms)
 // ─────────────────────────────────────────────
 // Parameters
 // ─────────────────────────────────────────────
-// v25 changes from v23:
-//   SL_PTS       = 5.5  (was 7.0 — tighter stop, cut loss earlier on reversals)
-//   ADVERSE_MIN  = 3.0  (was 4.0 — exit faster on adverse early moves)
-//   MAX_PB_DEPTH removed (no causal value, proven by v24)
+// v26 change from v23:
+//   NY_MAX_PB_DEPTH = 5.0 — NY only, London has no cap
+//   All other params identical to v23 (SL=7.0, ADVERSE_MIN=4.0 restored)
+//
+// Rationale: pb 5-7pt in NY = 17 trades, ~15 losers (SL+ADVERSE).
+//   London handles deep pullbacks fine (sustained moves).
+//   NY impulse is stale once price pulls back >5pts — enter only the tight retracement.
 static const int    WINDOW              = 600;
 static const double IMPULSE_MIN         = 6.0;
 static const double IMPULSE_MAX         = 15.0;
 static const double TP_PTS              = 14.0;
-static const double SL_PTS              = 5.5;    // tightened from 7.0
+static const double SL_PTS              = 7.0;     // restored from v23
 static const double PULLBACK_FRAC       = 0.50;
 static const double VWAP_TREND_LONDON   = 0.004;
 static const double VWAP_TREND_NY       = 0.006;
@@ -144,8 +145,9 @@ static const int    COOLDOWN_TICKS      = 300;
 static const uint64_t TIME_LIMIT_MS     = 7200000;
 static const uint64_t NO_TRAIL_MS       = 3600000;
 static const int    ADVERSE_WINDOW      = 10;
-static const double ADVERSE_MIN_PTS     = 3.0;    // tightened from 4.0
+static const double ADVERSE_MIN_PTS     = 4.0;     // restored from v23
 static const double MIN_PB_DEPTH        = 1.5;
+static const double NY_MAX_PB_DEPTH     = 5.0;     // NEW: NY-only pullback cap
 
 // Trail
 static const bool   TRAIL_ENABLED       = true;
@@ -540,11 +542,22 @@ int main(int argc, char** argv)
             double pb_depth_long  = e.hi - mid;
             double pb_depth_short = mid - e.lo;
 
-            bool pb_ok_long  = (pb_depth_long  >= MIN_PB_DEPTH);
-            bool pb_ok_short = (pb_depth_short >= MIN_PB_DEPTH);
+            // MIN_PB_DEPTH: both sessions — require real pullback from extreme
+            bool pb_min_ok_long  = (pb_depth_long  >= MIN_PB_DEPTH);
+            bool pb_min_ok_short = (pb_depth_short >= MIN_PB_DEPTH);
 
-            bool can_long  = (mid <= pb_long  && mid > e.vwap && e.vwap_trend_up(is_ny)   && pb_ok_long);
-            bool can_short = (mid >= pb_short && mid < e.vwap && e.vwap_trend_down(is_ny)  && pb_ok_short);
+            // NY_MAX_PB_DEPTH: NY only — cap pullback depth to exclude stale impulses
+            // London: no cap (sustained moves tolerate deep pullbacks)
+            // NY: impulse exhausts fast — pb>5pt means move is done, skip
+            bool pb_max_ok_long  = !is_ny || (pb_depth_long  <= NY_MAX_PB_DEPTH);
+            bool pb_max_ok_short = !is_ny || (pb_depth_short <= NY_MAX_PB_DEPTH);
+
+            bool can_long  = (mid <= pb_long  && mid > e.vwap
+                              && e.vwap_trend_up(is_ny)
+                              && pb_min_ok_long && pb_max_ok_long);
+            bool can_short = (mid >= pb_short && mid < e.vwap
+                              && e.vwap_trend_down(is_ny)
+                              && pb_min_ok_short && pb_max_ok_short);
 
             if (can_long || can_short)
             {
@@ -627,7 +640,7 @@ int main(int argc, char** argv)
     // ─────────────────────────────────────────────
     std::cout << "\n";
     std::cout << "══════════════════════════════════════════════════════════════\n";
-    std::cout << "  GoldFlow Diagnostic Backtest  v25\n";
+    std::cout << "  GoldFlow Diagnostic Backtest  v26\n";
     std::cout << "══════════════════════════════════════════════════════════════\n";
     std::cout << "  Ticks total   : " << ticks_total << "\n";
     std::cout << "  Ticks in-sess : " << ticks_used << "\n";
@@ -637,7 +650,8 @@ int main(int argc, char** argv)
     std::cout << "    WINDOW=" << WINDOW << " IMPULSE=" << IMPULSE_MIN << "-" << IMPULSE_MAX
               << " TP=" << TP_PTS << " SL=" << SL_PTS << "\n";
     std::cout << "    PULLBACK_FRAC=" << PULLBACK_FRAC
-              << " MIN_PB_DEPTH=" << MIN_PB_DEPTH << "pts\n";
+              << " MIN_PB_DEPTH=" << MIN_PB_DEPTH << "pts"
+              << " NY_MAX_PB_DEPTH=" << NY_MAX_PB_DEPTH << "pts (NY only)\n";
     std::cout << "    VWAP_TREND London=" << std::setprecision(4) << VWAP_TREND_LONDON
               << " NY=" << VWAP_TREND_NY << " TIME_LIMIT=" << TIME_LIMIT_MS/1000 << "s\n";
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
@@ -773,18 +787,37 @@ int main(int argc, char** argv)
     }
 
     // Pullback depth distribution
-    std::cout << "── Pullback Depth at Entry (all trades) ─────────────────────\n";
+    std::cout << "── Pullback Depth at Entry — London ──────────────────────────\n";
     std::vector<std::pair<std::string,std::pair<double,double>>> pb_buckets = {
-        {"pb<1pt",   {0,   1}},
-        {"pb 1-2pt", {1,   2}},
-        {"pb 2-3pt", {2,   3}},
-        {"pb 3-5pt", {3,   5}},
-        {"pb 5-7pt", {5,   7}},
-        {"pb>7pt",   {7, 999}},
+        {"pb 1-3pt",  {1,  3}},
+        {"pb 3-5pt",  {3,  5}},
+        {"pb 5-7pt",  {5,  7}},
+        {"pb 7-10pt", {7, 10}},
+        {"pb>10pt",   {10,999}},
     };
     for (auto& [label, range] : pb_buckets) {
         int n = 0; double pnl = 0; int wins_pb = 0;
         for (const auto& tr : trades) {
+            if (tr.session != "LONDON") continue;
+            if (tr.pb_depth >= range.first && tr.pb_depth < range.second) {
+                n++; pnl += tr.net_pnl;
+                if (tr.net_pnl > 0) wins_pb++;
+            }
+        }
+        if (n > 0)
+            std::cout << "  " << std::left << std::setw(12) << label
+                      << " n=" << std::setw(5) << n
+                      << " WR=" << std::fixed << std::setprecision(1)
+                      << 100.0*wins_pb/n << "%"
+                      << " PnL=" << std::setprecision(1) << pnl*100 << " USD\n";
+    }
+    std::cout << "\n";
+
+    std::cout << "── Pullback Depth at Entry — NY ──────────────────────────────\n";
+    for (auto& [label, range] : pb_buckets) {
+        int n = 0; double pnl = 0; int wins_pb = 0;
+        for (const auto& tr : trades) {
+            if (tr.session != "NY") continue;
             if (tr.pb_depth >= range.first && tr.pb_depth < range.second) {
                 n++; pnl += tr.net_pnl;
                 if (tr.net_pnl > 0) wins_pb++;
