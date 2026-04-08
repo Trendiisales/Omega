@@ -117,26 +117,25 @@ inline std::string session_name(uint64_t ts_ms)
 // ─────────────────────────────────────────────
 // Parameters
 // ─────────────────────────────────────────────
-// v5: sweep best from 133 combos of 24000
-//   tp=10, sl=5, impulse=6, time=1200s, pullback=0.5, vwap_trend=0.004, window=600
-//   => 98 trades, 46.9% WR, +$11,292 (vs +$3,682 with 14/8 defaults)
-static const int    WINDOW          = 600;    // ticks (~1 real minute at XAUUSD density)
-static const double IMPULSE_MIN     = 6.0;    // sweep will find optimal — manual 8.0 cut more winners than losers
-static const double TP_PTS          = 10.0;   // take profit (pts)
-static const double SL_PTS          = 5.0;    // stop loss (pts)
-static const double PULLBACK_FRAC   = 0.50;   // pullback zone fraction
-static const double VWAP_TREND_PTS  = 0.004;  // VWAP delta threshold
-static const int    VWAP_TREND_LOOK = 30;     // lookback ticks for VWAP trend
-static const double MAX_SPREAD      = 0.40;   // spread filter
-static const int    COOLDOWN_TICKS  = 300;    // post-entry cooldown
-static const uint64_t TIME_LIMIT_MS = 1200000;// 20 min hard stop (sweep best vs 30min)
-static const int    ADVERSE_WINDOW  = 30;     // ticks: adverse move tag window
-static const double ADVERSE_MIN_PTS = 2.0;    // pts of adverse move to tag ADVERSE_EARLY
+// Sweep best: tp=14, sl=7, imp=5, time=1800, pb=0.45, vwap_trend=0 (gate off), win=600
+// VT=0 means VWAP trend gate disabled — price only needs to be on correct side of VWAP
+static const int    WINDOW          = 600;
+static const double IMPULSE_MIN     = 5.0;
+static const double TP_PTS          = 14.0;
+static const double SL_PTS          = 7.0;
+static const double PULLBACK_FRAC   = 0.45;
+static const double VWAP_TREND_PTS  = 0.0;   // 0 = gate off, price side of VWAP is enough
+static const int    VWAP_TREND_LOOK = 30;
+static const double MAX_SPREAD      = 0.40;
+static const int    COOLDOWN_TICKS  = 300;
+static const uint64_t TIME_LIMIT_MS = 1800000;
+static const int    ADVERSE_WINDOW  = 30;
+static const double ADVERSE_MIN_PTS = 2.0;
 
 // Trail
 static const bool   TRAIL_ENABLED   = true;
-static const double TRAIL_TRIGGER   = 6.0;    // MFE to activate trail (pts)
-static const double TRAIL_LOCK      = 0.75;   // fraction of MFE to lock in
+static const double TRAIL_TRIGGER   = 6.0;
+static const double TRAIL_LOCK      = 0.75;
 
 // Session — all three active
 static const double COMMISSION_PTS  = 0.0;
