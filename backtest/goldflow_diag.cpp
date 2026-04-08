@@ -4,19 +4,22 @@
 // Run:   ./goldflow_diag ticks.csv [trades_out.csv]
 //
 // VERSION HISTORY:
-//   v27: London only → 26 trades +$6,136 65.4% WR
-//   v29: Gate counter: 4,581 rejected by VWAP side check (66% of impulse ticks)
-//   v30: Remove VWAP side check, session-anchor VWAP → still 26 trades
-//        VWAP trend filter (0.004/30ticks) now killing 5,208 ticks — same bottleneck
-//        75.1% of pb-zone candidates rejected by trend filter. 0.004 threshold is
-//        too tight for session-anchored VWAP which barely moves in early London.
-// v31: REMOVE VWAP TREND FILTER ENTIRELY
-//      Direction signal = impulse direction + pullback zone only.
-//      If price made an upward impulse and pulled back into the lower 50% of that
-//      range, that IS the entry signal. No secondary trend confirmation needed.
-//      This is the "ceiling" run — maximum trades, see raw edge quality.
-//      Gate counter retained. VWAP kept for session anchor only (not as filter).
-//      All other v27 params unchanged.
+//   v27: London only, VWAP trend filter → 26 trades +$6,136 65.4% WR
+//   v31: Remove VWAP trend filter → 96 trades -$8,988 43.8% WR (ceiling test)
+//        CSV analysis of v31 revealed root cause:
+//          imp 6-8pt:  n=69 WR=39% -$13,513  ← all the damage
+//          imp 8-10pt: n=6  WR=50% +$1,208
+//          imp 10-12pt:n=1  WR=100% +$1,362
+//          imp 12-15pt:n=4  WR=75%  +$1,495
+//        VWAP trend filter was accidentally selecting for larger impulses.
+//        6-8pt impulses = noise (small moves, pullback often IS the reversal).
+//        8pt+ impulses = genuine momentum with real pullback-retracement edge.
+// v32: IMPULSE_MIN = 8.0 (from 6.0)
+//      No VWAP trend filter (v31 base — direction from impulse+pullback only)
+//      All other params from v31/v27 unchanged.
+//      Expected: ~11 trades, WR ~65%, PnL ~+$4,000
+//      Then assess: if edge holds at 8pt, test whether adding 7pt back with
+//      a secondary filter recovers volume without readmitting the 6-8pt noise.
 
 #include <iostream>
 #include <fstream>
@@ -52,7 +55,7 @@ inline uint64_t london_session_id(uint64_t ts) { return utc_day(ts)*100+7; }
 
 // ── Parameters ────────────────────────────────────────────
 static const int    WINDOW           = 600;
-static const double IMPULSE_MIN      = 6.0;
+static const double IMPULSE_MIN      = 8.0;    // raised from 6.0 — kills the 39% WR noise group
 static const double IMPULSE_MAX      = 15.0;
 static const double TP_PTS           = 14.0;
 static const double SL_PTS           = 7.0;
@@ -68,7 +71,6 @@ static const bool   TRAIL_ENABLED    = true;
 static const double TRAIL_TRIGGER    = 6.0;
 static const double TRAIL_LOCK       = 0.75;
 static const double COMMISSION_PTS   = 0.0;
-// VWAP_TREND_PTS removed — no trend filter in v31
 
 enum class ExitReason { NONE, TP_HIT, SL_HIT, ADVERSE_EARLY, TIME_STOP, TRAIL_HIT };
 static const char* exit_name(ExitReason r) {
@@ -93,20 +95,12 @@ struct TradeRecord {
 
 struct Engine {
     std::vector<double> price_buf;
-    // Session-anchored VWAP (kept for future use, not used as filter in v31)
-    double vwap=0, vwap_pv=0; uint64_t vwap_count=0, vwap_session=0;
     double hi=0, lo=0;
     bool in_pos=false, is_long=false, trail_active=false;
     double entry=0, tp=0, sl=0, mfe=0, mae=0, trail_sl=0;
     uint64_t entry_ts=0;
     int cooldown=0, pos_ticks=0;
 
-    void update_vwap(double price, uint64_t ts) {
-        uint64_t sess=london_session_id(ts);
-        if (sess!=vwap_session){vwap_pv=0;vwap_count=0;vwap_session=sess;}
-        vwap_pv+=price; vwap_count++;
-        vwap=vwap_pv/(double)vwap_count;
-    }
     void update_price(double price) {
         price_buf.push_back(price);
         if ((int)price_buf.size()>WINDOW+5) price_buf.erase(price_buf.begin());
@@ -139,6 +133,8 @@ struct Stats {
             <<" avg="<<std::setw(6)<<std::setprecision(2)<<total_pnl/count<<" pts"
             <<" MFE="<<std::setw(5)<<std::setprecision(1)<<total_mfe/count
             <<" MAE="<<std::setw(5)<<std::setprecision(1)<<total_mae/count
+            <<" imp="<<std::setw(5)<<std::setprecision(1)<<total_imp/count
+            <<" pb="<<std::setw(5)<<std::setprecision(2)<<total_pb/count
             <<" hold="<<std::setprecision(0)<<total_hold_ms/count/1000<<"s\n";
     }
 };
@@ -168,7 +164,6 @@ int main(int argc, char** argv)
     // Gate counters
     uint64_t cnt_impulse=0,cnt_rej_inpos=0,cnt_rej_cooldown=0;
     uint64_t cnt_rej_imax=0,cnt_rej_pbzone=0,cnt_rej_pbmin=0,cnt_entered=0;
-    std::vector<double> pb_available,pb_entered;
 
     std::string line;
     auto t_start=std::chrono::high_resolution_clock::now();
@@ -181,7 +176,6 @@ int main(int argc, char** argv)
         double spread=t.ask-t.bid;
         double mid=(t.ask+t.bid)*0.5;
 
-        e.update_vwap(mid,t.ts);
         e.update_price(mid);
         if(spread>MAX_SPREAD) continue;
 
@@ -266,28 +260,17 @@ int main(int argc, char** argv)
         double pb_depth_long  = e.hi - mid;
         double pb_depth_short = mid  - e.lo;
 
-        // Direction purely from pullback zone:
-        // Long  = price in lower half of impulse range (pulled back from high)
-        // Short = price in upper half of impulse range (pulled back from low)
         bool can_long  = (mid <= pb_long);
         bool can_short = (mid >= pb_short);
-
-        if(!can_long && !can_short){cnt_rej_pbzone++;continue;}
-
-        // If price is in both zones (very small impulse near midpoint), pick
-        // the deeper pullback side
-        if(can_long && can_short)
-            can_long = (pb_depth_long >= pb_depth_short);
+        if(!can_long&&!can_short){cnt_rej_pbzone++;continue;}
+        if(can_long&&can_short) can_long=(pb_depth_long>=pb_depth_short);
 
         double pb_depth_candidate = can_long ? pb_depth_long : pb_depth_short;
-        pb_available.push_back(pb_depth_candidate);
-
-        if(pb_depth_candidate < MIN_PB_DEPTH){cnt_rej_pbmin++;continue;}
+        if(pb_depth_candidate<MIN_PB_DEPTH){cnt_rej_pbmin++;continue;}
 
         // ── ENTRY ──────────────────────────────────────────
         cnt_entered++;
-        e.in_pos  = true;
-        e.is_long = can_long;
+        e.in_pos=true; e.is_long=can_long;
         if(e.is_long){
             e.entry=t.ask; e.tp=e.entry+TP_PTS; e.sl=e.entry-SL_PTS; e.trail_sl=e.entry-SL_PTS;
         } else {
@@ -298,7 +281,6 @@ int main(int argc, char** argv)
         cur.entry=e.entry; cur.tp=e.tp; cur.sl=e.sl; cur.spread_open=spread;
         cur.impulse_sz=impulse; cur.pb_depth=pb_depth_candidate; cur.entry_ts=t.ts;
         e.pos_ticks=0; cur.mfe=0; cur.mae=0;
-        pb_entered.push_back(pb_depth_candidate);
     }
 
     auto t_end=std::chrono::high_resolution_clock::now();
@@ -318,24 +300,9 @@ int main(int argc, char** argv)
         }
     }
 
-    auto pb_hist=[](const std::vector<double>& v,const char* title){
-        if(v.empty()){std::cout<<"  "<<title<<": (none)\n";return;}
-        std::vector<std::pair<std::string,std::pair<double,double>>> bkts={
-            {"<1pt",{0,1}},{"1-2pt",{1,2}},{"2-3pt",{2,3}},{"3-4pt",{3,4}},
-            {"4-5pt",{4,5}},{"5-6pt",{5,6}},{"6-7pt",{6,7}},{"7-9pt",{7,9}},
-            {"9-12pt",{9,12}},{"12+pt",{12,999}},
-        };
-        std::cout<<"  "<<title<<" (n="<<v.size()<<"):\n";
-        for(auto& [lbl,rng]:bkts){
-            int n=0; for(double d:v) if(d>=rng.first&&d<rng.second) n++;
-            if(n>0) std::cout<<"    "<<std::left<<std::setw(8)<<lbl<<" n="<<std::setw(6)<<n
-                <<" ("<<std::fixed<<std::setprecision(1)<<100.0*n/v.size()<<"%)\n";
-        }
-    };
-
     // ── Report ─────────────────────────────────────────────
     std::cout<<"\n══════════════════════════════════════════════════════════════\n";
-    std::cout<<"  GoldFlow Diagnostic Backtest  v31  [LONDON ONLY]\n";
+    std::cout<<"  GoldFlow Diagnostic Backtest  v32  [LONDON ONLY]\n";
     std::cout<<"══════════════════════════════════════════════════════════════\n";
     std::cout<<"  Ticks total   : "<<ticks_total<<"\n";
     std::cout<<"  Ticks session : "<<ticks_session<<"\n";
@@ -344,7 +311,7 @@ int main(int argc, char** argv)
     std::cout<<"    WINDOW="<<WINDOW<<" IMPULSE="<<IMPULSE_MIN<<"-"<<IMPULSE_MAX
              <<" TP="<<TP_PTS<<" SL="<<SL_PTS<<"\n";
     std::cout<<"    PULLBACK_FRAC="<<PULLBACK_FRAC<<" MIN_PB_DEPTH="<<MIN_PB_DEPTH<<"pts\n";
-    std::cout<<"    NO VWAP TREND FILTER — direction from impulse+pullback zone only\n";
+    std::cout<<"    NO VWAP FILTER — direction from impulse+pullback zone only\n";
     std::cout<<"    ADVERSE_WINDOW="<<ADVERSE_WINDOW<<" ADVERSE_MIN="<<ADVERSE_MIN_PTS<<" pts\n";
     std::cout<<"    SESSION=LONDON(07-10) ONLY  force-close-at-end\n";
     std::cout<<"    TRAIL="<<(TRAIL_ENABLED?"ON":"OFF");
@@ -352,31 +319,13 @@ int main(int argc, char** argv)
     std::cout<<"\n\n";
 
     std::cout<<"── Entry Gate Funnel ─────────────────────────────────────────\n";
-    std::cout<<"  Impulse detected   : "<<cnt_impulse<<"\n";
-    std::cout<<"  Rej: in position   : "<<cnt_rej_inpos<<"\n";
-    std::cout<<"  Rej: cooldown      : "<<cnt_rej_cooldown<<"\n";
-    std::cout<<"  Rej: impulse>max   : "<<cnt_rej_imax<<"\n";
-    std::cout<<"  Rej: not in pb zone: "<<cnt_rej_pbzone<<"\n";
-    std::cout<<"  Rej: pb too shallow: "<<cnt_rej_pbmin<<"\n";
-    std::cout<<"  ENTERED            : "<<cnt_entered<<"\n\n";
-
-    if(cnt_impulse>0){
-        std::cout<<"── Funnel % of impulse-detected ──────────────────────────────\n";
-        std::cout<<"  Pass in-pos    : "<<std::fixed<<std::setprecision(1)
-            <<100.0*(cnt_impulse-cnt_rej_inpos)/cnt_impulse<<"%\n";
-        uint64_t a=cnt_impulse-cnt_rej_inpos-cnt_rej_cooldown;
-        std::cout<<"  Pass cooldown  : "<<100.0*a/cnt_impulse<<"%\n";
-        uint64_t b=a-cnt_rej_imax;
-        std::cout<<"  Pass imax      : "<<100.0*b/cnt_impulse<<"%\n";
-        uint64_t c=b-cnt_rej_pbzone;
-        std::cout<<"  Pass pb zone   : "<<100.0*c/cnt_impulse<<"% ← "<<c<<" ticks\n";
-        std::cout<<"  Pass pb min    : "<<100.0*cnt_entered/cnt_impulse<<"% ← "<<cnt_entered<<" entries\n\n";
-    }
-
-    pb_hist(pb_available,"pb_depth: passed all gates except pb_min");
-    std::cout<<"\n";
-    pb_hist(pb_entered,"pb_depth: actual entries");
-    std::cout<<"\n";
+    std::cout<<"  Impulse>=8pt detected: "<<cnt_impulse<<"\n";
+    std::cout<<"  Rej: in position     : "<<cnt_rej_inpos<<"\n";
+    std::cout<<"  Rej: cooldown        : "<<cnt_rej_cooldown<<"\n";
+    std::cout<<"  Rej: impulse>max     : "<<cnt_rej_imax<<"\n";
+    std::cout<<"  Rej: not in pb zone  : "<<cnt_rej_pbzone<<"\n";
+    std::cout<<"  Rej: pb too shallow  : "<<cnt_rej_pbmin<<"\n";
+    std::cout<<"  ENTERED              : "<<cnt_entered<<"\n\n";
 
     std::cout<<"── By Exit Reason ────────────────────────────────────────────\n";
     s_total.print("TOTAL");
@@ -397,18 +346,6 @@ int main(int argc, char** argv)
             if(n>0) std::cout<<"  "<<std::left<<std::setw(14)<<lbl
                 <<" n="<<n<<" PnL="<<std::setprecision(1)<<pnl*100
                 <<" avg_imp="<<std::setprecision(1)<<imp/n<<" avg_pb="<<std::setprecision(2)<<pb/n<<"\n";
-        }
-        std::cout<<"\n";
-    }
-
-    if(s_adverse.count>0){
-        std::cout<<"── ADVERSE_EARLY: Impulse Buckets ────────────────────────────\n";
-        for(auto& [lbl,rng]:std::vector<std::pair<std::string,std::pair<double,double>>>{
-            {"<8pts",{0,8}},{"8-10pts",{8,10}},{"10-12pts",{10,12}},{"12-15pts",{12,15}}}){
-            int n=0; double pnl=0;
-            for(const auto& tr:trades) if(tr.exit_why==ExitReason::ADVERSE_EARLY&&tr.impulse_sz>=rng.first&&tr.impulse_sz<rng.second)
-                {n++;pnl+=tr.net_pnl;}
-            if(n>0) std::cout<<"  "<<std::left<<std::setw(12)<<lbl<<" n="<<n<<" PnL="<<std::setprecision(1)<<pnl*100<<"\n";
         }
         std::cout<<"\n";
     }
@@ -450,7 +387,20 @@ int main(int argc, char** argv)
     }
     std::cout<<"\n";
 
-    // Long vs Short breakdown
+    std::cout<<"── Impulse Size at Entry ─────────────────────────────────────\n";
+    for(auto& [lbl,rng]:std::vector<std::pair<std::string,std::pair<double,double>>>{
+        {"8-9pt",{8,9}},{"9-10pt",{9,10}},{"10-11pt",{10,11}},
+        {"11-12pt",{11,12}},{"12-15pt",{12,15}}}){
+        int n=0,w=0; double pnl=0;
+        for(const auto& tr:trades) if(tr.impulse_sz>=rng.first&&tr.impulse_sz<rng.second)
+            {n++;pnl+=tr.net_pnl;if(tr.net_pnl>0)w++;}
+        if(n>0) std::cout<<"  "<<std::left<<std::setw(12)<<lbl
+            <<" n="<<std::setw(5)<<n<<" WR="<<std::fixed<<std::setprecision(1)<<100.0*w/n
+            <<"% PnL="<<std::setprecision(1)<<pnl*100<<" USD\n";
+    }
+    std::cout<<"\n";
+
+    // Long vs Short
     {
         int nl=0,wl=0,ns=0,ws=0; double pl=0,ps=0;
         for(const auto& tr:trades){
