@@ -481,6 +481,25 @@ if ($dirSLLine) {
     Add-Result "GF Dir SL Cooldown" "PASS" "No directional cooldown active" "No consecutive same-direction SL_HITs."
 }
 
+# --- CHECK 8e: GoldFlow phase state -------------------------------------------
+# GoldFlow must be in IDLE or FLOW_BUILDING to enter trades.
+# COOLDOWN = waiting after exit (10-45s). Silent COOLDOWN was blocking all entries.
+$gfePhaseLine  = Find-Last "GFE-PHASE"
+$gfeCooldown   = Find-Last "GFE-COOLDOWN.*remaining"
+if ($gfeCooldown) {
+    $remain = if ($gfeCooldown -match "remaining=([0-9]+)ms") { [int]($Matches[1]/1000) } else { "?" }
+    Add-Result "GF Phase" "WARN" "COOLDOWN ${remain}s remaining" "GoldFlow in cooldown -- will resume automatically. Normal after a trade exit."
+} elseif ($gfePhaseLine) {
+    $ph = if ($gfePhaseLine -match "phase=(\w+)") { $Matches[1] } else { "?" }
+    if ($ph -eq "IDLE" -or $ph -eq "FLOW_BUILDING") {
+        Add-Result "GF Phase" "PASS" "phase=$ph" $gfePhaseLine.Trim()
+    } else {
+        Add-Result "GF Phase" "WARN" "phase=$ph" $gfePhaseLine.Trim()
+    }
+} else {
+    Add-Result "GF Phase" "INFO" "No GFE-PHASE line yet" "GoldFlow phase not yet emitted -- fires every 30s. Check again."
+}
+
 # --- CHECK 9: Latency ---------------------------------------------------------
 $latLine = Find-Last "OMEGA-DIAG.*RTTp95"
 if ($latLine) {
