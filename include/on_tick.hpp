@@ -362,8 +362,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // gold_l2_imbalance was double-counting the same signal and causing false entries.
         {
             const double raw_gold_imb = rd(g_l2_gold);
-            const bool   has_fresh    = g_l2_gold.has_data.load(std::memory_order_relaxed)
-                                        && g_l2_gold.fresh(l2_now_ms);
+            // has_data requires BOTH bid AND ask sides -- BlackBull cTrader sends
+            // ask-only depth for XAUUSD so bid_count=0 always, has_data=false always.
+            // Fix: only require fresh timestamp (last_update_ms written within 5s).
+            // events_live (3s window) already confirms data is flowing.
+            const bool   has_fresh    = g_l2_gold.fresh(l2_now_ms);
 
             // cTrader events flowing = real DOM data regardless of size values.
             // FIX: was requiring ev_total > s_last_ev + 2 (2 new events per FIX tick).
