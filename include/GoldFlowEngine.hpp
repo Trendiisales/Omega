@@ -340,15 +340,39 @@ struct GoldFlowEngine {
         if (phase == Phase::COOLDOWN) {
             const int cd = (m_exit_cooldown_ms > 0) ? m_exit_cooldown_ms
                          : (is_low_quality_session  ? GFE_ASIA_COOLDOWN_MS : GFE_COOLDOWN_MS);
-            if (now_ms - m_cooldown_start >= cd)
+            const int64_t remaining_ms = cd - (now_ms - m_cooldown_start);
+            if (remaining_ms <= 0) {
                 phase = Phase::IDLE;
-            else return;
+            } else {
+                static int64_t s_cd_log = 0;
+                if (now_ms - s_cd_log > 10000) {
+                    s_cd_log = now_ms;
+                    printf("[GFE-COOLDOWN] remaining=%lldms cd=%dms -- waiting\n",
+                           (long long)remaining_ms, cd);
+                    fflush(stdout);
+                }
+                return;
+            }
         }
 
         // Manage open position
         if (phase == Phase::LIVE) {
             manage_position(bid, ask, mid, spread, l2_imb, ewm_drift, now_ms, on_close);
             return;
+        }
+
+        // Phase diagnostic -- log every 30s so we always know state
+        {
+            static int64_t s_phase_log = 0;
+            if (now_ms - s_phase_log > 30000) {
+                s_phase_log = now_ms;
+                const char* ph = (phase == Phase::IDLE)          ? "IDLE"
+                               : (phase == Phase::FLOW_BUILDING) ? "FLOW_BUILDING"
+                               : "UNKNOWN";
+                printf("[GFE-PHASE] phase=%s ticks=%d atr_warm=%d l2_imb=%.3f slot=%d\n",
+                       ph, m_ticks_received, m_atr_warmup_ticks, l2_imb, session_slot);
+                fflush(stdout);
+            }
         }
 
         // ?? FIX (claim 3): Block ALL signal accumulation until ATR is warmed up ??
