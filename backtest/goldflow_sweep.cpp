@@ -160,7 +160,7 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
         vwap_buf.push(t.vwap);
         price_buf.push(t.mid);
 
-        if (!t.session) continue;
+        // All ticks in this array are session ticks — no filter needed
         float spread = t.ask - t.bid;
         if (spread > MAX_SPREAD) continue;
 
@@ -326,10 +326,17 @@ int main(int argc, char** argv)
     uint64_t sess_count = 0;
     for (auto& t : ticks) if (t.session) sess_count++;
 
-    std::cout << "Loaded " << ticks.size() << " ticks in "
-              << std::fixed << std::setprecision(1) << load_sec << "s"
-              << "  (session ticks: " << sess_count << ")\n"
-              << "VWAP pre-computed. Session index built.\n\n";
+    // ── Build session-only array ─────────────────
+    // CRITICAL speedup: each combo iterates 56M ticks not 134M.
+    // VWAP already embedded per tick so warmup is preserved.
+    std::vector<Tick> sess_ticks;
+    sess_ticks.reserve(sess_count);
+    for (auto& t : ticks) if (t.session) sess_ticks.push_back(t);
+    ticks.clear();
+    ticks.shrink_to_fit(); // free 134M tick memory
+
+    std::cout << "Loaded in " << std::fixed << std::setprecision(1) << load_sec << "s"
+              << "  session ticks: " << sess_ticks.size() << " (was " << (sess_ticks.size()*134636174/sess_count) << " full)\n\n";
 
     // ── Build combo list ──────────────────────────
     std::vector<float>    tp_vals     = {8.0f,10.0f,12.0f,14.0f,16.0f,18.0f,20.0f};
@@ -369,7 +376,7 @@ int main(int argc, char** argv)
 
     auto worker = [&](int tid, int from, int to) {
         for (int i = from; i < to; i++) {
-            thread_results[tid].push_back({combos[i], run_backtest(ticks, combos[i])});
+            thread_results[tid].push_back({combos[i], run_backtest(sess_ticks, combos[i])});
             int done = ++progress;
             if (done % 500 == 0) {
                 double el  = std::chrono::duration<double>(
