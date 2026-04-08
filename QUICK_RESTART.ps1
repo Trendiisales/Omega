@@ -49,9 +49,9 @@ $ErrorActionPreference = "Stop"
 # --- [1] Stop Omega ----------------------------------------------------------
 Write-Host "[1/4] Stopping Omega..." -ForegroundColor Yellow
 $ErrorActionPreference = "Continue"
-$svcCheck = Get-Service -Name "OmegaHFT" -ErrorAction SilentlyContinue
+$svcCheck = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
 if ($svcCheck -and $svcCheck.Status -eq "Running") {
-    Stop-Service "OmegaHFT" -Force -ErrorAction SilentlyContinue
+    Stop-Service "Omega" -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
 taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
@@ -163,13 +163,13 @@ Write-Host "########################################################" -Foregroun
 Write-Host ""
 
 # --- Launch service or direct ------------------------------------------------
-$svc = Get-Service -Name "OmegaHFT" -ErrorAction SilentlyContinue
+$svc = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
 
 if ($svc) {
-    Write-Host "  [SERVICE] Starting OmegaHFT..." -ForegroundColor Cyan
-    Start-Service "OmegaHFT"
+    Write-Host "  [SERVICE] Starting Omega..." -ForegroundColor Cyan
+    Start-Service "Omega"
     Start-Sleep -Seconds 3
-    $svc = Get-Service -Name "OmegaHFT"
+    $svc = Get-Service -Name "Omega"
     $svcColor = if ($svc.Status -eq "Running") { "Green" } else { "Red" }
     Write-Host "  [SERVICE] Status: $($svc.Status)" -ForegroundColor $svcColor
     Write-Host ""
