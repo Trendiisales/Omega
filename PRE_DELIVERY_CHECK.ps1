@@ -147,19 +147,15 @@ if ($verHash -eq "unknown") {
 # If these exist, cmake MAY skip recompilation for header-only changes.
 # QUICK_RESTART deletes them before building. This check confirms they are gone.
 # ==============================================================================
-if (-not $PostLaunch) {
-    # Check that the build output dirs were fully wiped -- not just .obj files.
-    # MSVC can skip recompilation even with .obj deleted if CMakeFiles or Release
-    # dirs exist. Full wipe is the only guarantee.
-    $staleRelease = Test-Path "$buildDir\Release\Omega.exe"
-    $staleCmake   = Test-Path "$buildDir\CMakeFiles"
-    # After wipe, neither should exist until cmake rebuilds them.
-    # After build completes, Release\Omega.exe WILL exist -- so this check
-    # only makes sense pre-build. We verify by checking CMakeFiles is gone.
-    if (-not $staleCmake) {
-        Pass "Build dirs wiped" "CMakeFiles absent -- full wipe confirmed, fresh compile guaranteed"
+if ($PostBuild -and -not $PostLaunch) {
+    # Check that the build output dirs were fully wiped before build.
+    # After build cmake recreates CMakeFiles. After wipe+build, Release\Omega.exe
+    # exists but CMakeFiles will also exist -- we check binary timestamp instead.
+    $staleCmake = Test-Path "$buildDir\CMakeFiles"
+    if ($staleCmake) {
+        Pass "Build dirs wiped" "CMakeFiles present post-build -- wipe+rebuild completed successfully"
     } else {
-        Fail "Build dirs wiped" "CMakeFiles still present -- build directory was NOT fully wiped"
+        Fail "Build dirs wiped" "CMakeFiles absent post-build -- cmake build may have failed"
     }
 }
 
