@@ -130,30 +130,40 @@ struct RunResult
 };
 
 // ─────────────────────────────────────────────
-// Sliding window min/max — O(1) amortized per tick
-// std::deque based — no fixed-size array overflow risk
+// Ring-buffer monotonic deque — zero heap allocation
 // ─────────────────────────────────────────────
+template<int CAP>
+struct RingDeque {
+    struct E { float v; int i; };
+    E    buf[CAP];
+    int  head=0, tail=0;
+    bool empty()  const { return head==tail; }
+    void push_back(E e)  { buf[tail]=e; tail=(tail+1)%CAP; }
+    void pop_back()      { tail=(tail-1+CAP)%CAP; }
+    void pop_front()     { head=(head+1)%CAP; }
+    E&   front()         { return buf[head]; }
+    E&   back()          { return buf[(tail-1+CAP)%CAP]; }
+};
+
 struct SlidingMinMax
 {
-    std::deque<std::pair<float,int>> max_dq, min_dq;
+    RingDeque<640> mx, mn;
     int tick_idx = 0;
-
-    void reset() { max_dq.clear(); min_dq.clear(); tick_idx=0; }
 
     void push(float v, int window)
     {
         int oldest = tick_idx - window;
-        if (!max_dq.empty() && max_dq.front().second <= oldest) max_dq.pop_front();
-        if (!min_dq.empty() && min_dq.front().second <= oldest) min_dq.pop_front();
-        while (!max_dq.empty() && max_dq.back().first <= v) max_dq.pop_back();
-        while (!min_dq.empty() && min_dq.back().first >= v) min_dq.pop_back();
-        max_dq.push_back({v, tick_idx});
-        min_dq.push_back({v, tick_idx});
+        if (!mx.empty() && mx.front().i <= oldest) mx.pop_front();
+        if (!mn.empty() && mn.front().i <= oldest) mn.pop_front();
+        while (!mx.empty() && mx.back().v <= v) mx.pop_back();
+        while (!mn.empty() && mn.back().v >= v) mn.pop_back();
+        mx.push_back({v, tick_idx});
+        mn.push_back({v, tick_idx});
         tick_idx++;
     }
 
-    float max() const { return max_dq.empty() ? 0.f : max_dq.front().first; }
-    float min() const { return min_dq.empty() ? 0.f : min_dq.front().first; }
+    float max() const { return mx.buf[mx.head].v; }
+    float min() const { return mn.buf[mn.head].v; }
     bool  ready(int window) const { return tick_idx >= window; }
 };
 
@@ -361,11 +371,11 @@ int main(int argc, char** argv)
               << "  session ticks: " << sess_ticks.size() << " (was " << (sess_ticks.size()*134636174/sess_count) << " full)\n\n";
 
     // ── Focused combo grid ────────────────────────
-    // Based on diag results: best params cluster around tp=10,sl=5,imp=6,time=1200
-    // Sweep a tight grid around that — ~500 combos instead of 36480
-    std::vector<float>    tp_vals     = {8.0f, 10.0f, 12.0f, 14.0f, 16.0f};
+    // Tight ranges around known-good params (tp=10,sl=5,imp=6,time=1200,pb=0.5,vt=0.004)
+    // ~3000 combos => ~3min on M4 Pro with 10 threads
+    std::vector<float>    tp_vals     = {8.0f, 10.0f, 12.0f, 14.0f};
     std::vector<float>    sl_vals     = {4.0f,  5.0f,  6.0f,  7.0f};
-    std::vector<float>    imp_vals    = {5.0f,  6.0f,  7.0f,  8.0f,  9.0f};
+    std::vector<float>    imp_vals    = {5.0f,  6.0f,  7.0f,  8.0f};
     std::vector<uint32_t> time_vals   = {600,   900,  1200, 1800};
     std::vector<float>    pb_vals     = {0.45f, 0.50f, 0.55f, 0.60f};
     std::vector<float>    vwap_t_vals = {0.002f,0.003f,0.004f,0.005f};
