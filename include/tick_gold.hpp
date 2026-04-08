@@ -1351,9 +1351,12 @@ static void on_tick_gold(
         }
         const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
         if (is_trail) {
-            g_gold_trail_block_until.store(now_s + 60);
+            // Reduced 60s->10s: on a trending day the move continues right after exit.
+            // 60s was missing the entire continuation leg. 10s = enough to avoid
+            // re-entering on the same candle tick, while still catching the next move.
+            g_gold_trail_block_until.store(now_s + 10);
             g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
-            printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 60s\n",
+            printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 10s\n",
                    tr.exitReason.c_str(), tr.side.c_str());
             fflush(stdout);
         }
@@ -2062,22 +2065,30 @@ static void on_tick_gold(
             const bool bars_permanently_unavailable = (bars_missing_secs > 300); // 5 min -- allows reconnect recovery before hard-blocking
             if (bars_permanently_unavailable) {
                 // Broker bars permanently unavailable (INVALID_REQUEST loop).
-                // BLOCK ALL ENTRIES. A blind engine with no ATR/RSI/trend filter
-                // must not trade. Evidence: April 2 2026 -- bars failed all day,
-                // engine entered 5 consecutive longs into a $100 crash.
-                // Previous behaviour (allow with capped lot) was wrong -- lot cap
-                // was not effective and entries fired at full size anyway.
-                gf_tick_ok = false;
-                gf_block_reason = "BARS_PERMANENTLY_UNAVAILABLE";
+                // ALLOW entries IF GoldFlow's internal tick ATR is warm (> 2.0pt).
+                // The engine has its own tick-based ATR -- it does not need bar ATR
+                // to compute SL sizing. Bars add RSI/trend context but their absence
+                // should NOT kill all trading for an entire session.
+                // Evidence of the problem: BlackBull trendbar API returns
+                // UNSUPPORTED_MESSAGE intermittently at session start -- previously
+                // this caused a complete trading blackout for the entire day.
+                // Gates 3/4 (RSI, trend, score) are skipped when bars unavailable --
+                // that is acceptable. GoldFlow's own internal gates still apply.
+                const double tick_atr = g_gold_flow.current_atr();
+                if (tick_atr < 2.0) {
+                    gf_tick_ok = false;
+                    gf_block_reason = "BARS_UNAVAILABLE_ATR_COLD";
+                }
                 if (now_wup - s_warmup_log >= 60) {
                     s_warmup_log = now_wup;
                     printf("[GF-GATE-0D] BARS_PERMANENTLY_UNAVAILABLE -- "
-                           "GoldFlow BLOCKED. No ATR/RSI/trend without seeded bars. "
-                           "bars_missing=%llds. Fix: restart Omega to retry bar seeding.\n",
-                           (long long)bars_missing_secs);
+                           "bars_missing=%llds tick_atr=%.2f %s. "
+                           "Gates 3/4/Score skipped. Restart Omega to retry bar seeding.\n",
+                           (long long)bars_missing_secs, tick_atr,
+                           (tick_atr >= 2.0) ? "ALLOWING entries (tick ATR warm)"
+                                             : "BLOCKING entries (tick ATR cold)");
                     fflush(stdout);
                 }
-                // gf_tick_ok = false -- no entry allowed without seeded bars
             } else {
                 if (now_wup - s_warmup_log >= 30) {
                     s_warmup_log = now_wup;
@@ -2148,16 +2159,31 @@ static void on_tick_gold(
                 || (vol_unseeded && gf_open_disp > 6.0);
             if (in_compression && !vol_unseeded && !gf_crash_bypass && !macro_displacement_bypass
                 && vol_range_now >= 0.0 && vol_range_now < GF_COMPRESSION_VOL_FLOOR) {
+                // ADDITIONAL CHECK: if drift is already building (>= 0.4pt),
+                // the compression is breaking right now -- this is exactly when
+                // we want to enter, not block. Only block on dead flat tape.
+                const double comp_drift_abs = std::fabs(g_gold_stack.ewm_drift());
+                if (comp_drift_abs < 0.4) {
                 static int64_t s_comp_log = 0;
                 if (static_cast<int64_t>(std::time(nullptr)) - s_comp_log >= 30) {
                     s_comp_log = static_cast<int64_t>(std::time(nullptr));
                     printf("[GF-GATE-BLOCK] reason=COMPRESSION_NO_VOL regime=%s "
-                           "vol_range=%.2f < %.1fpts -- no directional follow-through\n",
-                           gold_stack_regime, vol_range_now, GF_COMPRESSION_VOL_FLOOR);
+                           "vol_range=%.2f < %.1fpts drift=%.2f -- dead flat tape\n",
+                           gold_stack_regime, vol_range_now, GF_COMPRESSION_VOL_FLOOR,
+                           g_gold_stack.ewm_drift());
                     fflush(stdout);
                 }
                 gf_tick_ok = false;
                 gf_block_reason = "COMPRESSION_NO_VOL";
+                } else {
+                    static int64_t s_comp_bypass_log = 0;
+                    if (static_cast<int64_t>(std::time(nullptr)) - s_comp_bypass_log >= 30) {
+                        s_comp_bypass_log = static_cast<int64_t>(std::time(nullptr));
+                        printf("[GF-COMP-BYPASS] regime=%s vol_range=%.2f but drift=%.2f -- compression breaking, allowing entry\n",
+                               gold_stack_regime, vol_range_now, g_gold_stack.ewm_drift());
+                        fflush(stdout);
+                    }
+                }
             }
         }
 
@@ -2181,13 +2207,14 @@ static void on_tick_gold(
                 const bool vwap_headwind = (gf_long_rt  && gf_mid_rt > gf_vwap_rt)
                                         || (!gf_long_rt && gf_mid_rt < gf_vwap_rt);
                 #ifndef GF_MIN_VWAP_ROOM_R_OVERRIDE
-                static constexpr double GF_MIN_VWAP_ROOM_R = 0.55; // lowered 0.75->0.55: with ATR now
-                                                                     // correctly reflecting real vol (8-18pts
-                                                                     // VIX25+ days), 0.75xATR = 6-13.5pts needed
-                                                                     // from VWAP -- was blocking entries 9pts away.
-                                                                     // 0.55xATR = 4.4-9.9pts needed. Still ensures
-                                                                     // meaningful room to VWAP before entry, without
-                                                                     // requiring 3/4 of a full ATR swing just to qualify.
+                static constexpr double GF_MIN_VWAP_ROOM_R = 0.25; // lowered 0.55->0.25:
+                                                                     // 0.55xATR at ATR=8 = need 4.4pt from VWAP
+                                                                     // was blocking most early-London entries
+                                                                     // where price consolidates within 2-4pt of VWAP.
+                                                                     // 0.25xATR = 2pt at ATR=8 -- only blocks
+                                                                     // entries literally at VWAP (no room at all).
+                                                                     // GoldFlow's internal VWAP trend block still
+                                                                     // handles counter-trend entries separately.
                 #else
                 static constexpr double GF_MIN_VWAP_ROOM_R = GF_MIN_VWAP_ROOM_R_OVERRIDE;
                 #endif
@@ -2305,28 +2332,43 @@ static void on_tick_gold(
                 const bool counter_trend = (gf_long && bar_trend == -1) ||
                                            (!gf_long && bar_trend == +1);
                 if (counter_trend) {
+                    // RELAXED: require trend to be established for >= 5 bars before blocking.
+                    // A single EMA9/EMA50 crossover can reverse on the very next bar --
+                    // using it to block GoldFlow causes missing the entire first leg of
+                    // a move (3-15 min lag). Require confirmed trend before blocking.
+                    static int s_counter_bars = 0;
+                    static int s_last_trend   = 0;
+                    if (bar_trend != s_last_trend) { s_counter_bars = 0; s_last_trend = bar_trend; }
+                    ++s_counter_bars;
+
+                    if (s_counter_bars >= 5) {
                     // ATR-proportional counter-trend RSI gate.
-                    // On a normal day (ATR=5pt) the threshold is 60/40 -- valid
-                    // mean-reversion pullbacks in a mild trend are allowed through.
-                    // On a crash day (ATR=10pt+) the threshold tightens to 70/30 --
-                    // only extreme exhaustion justifies counter-trend entry.
-                    // Formula: ob = 50 + 10 * clamp(atr/5, 1.0, 2.5)
-                    //          os = 50 - 10 * clamp(atr/5, 1.0, 2.5)
-                    //   ATR=5pt:  ob=60  os=40  (normal day -- allow pullbacks)
-                    //   ATR=10pt: ob=70  os=30  (volatile -- only extreme RSI)
-                    //   ATR=20pt: ob=75  os=25  (crash -- very tight)
                     const double ct_atr_scale = std::min(2.5, std::max(1.0, gf_atr_gate / 5.0));
                     const double ct_ob = 50.0 + 10.0 * ct_atr_scale;
                     const double ct_os = 50.0 - 10.0 * ct_atr_scale;
                     const bool rsi_extreme = gf_long ? (bar_rsi > ct_ob) : (bar_rsi < ct_os);
                     if (!rsi_extreme) {
-                        printf("[GF-BAR-BLOCK] XAUUSD %s blocked -- counter-trend (M5=%+d)"
-                               " RSI=%.1f not extreme enough\n",
-                               gf_long ? "LONG" : "SHORT", bar_trend, bar_rsi);
+                        printf("[GF-BAR-BLOCK] XAUUSD %s blocked -- counter-trend (M1=%+d for %d bars)"
+                               " RSI=%.1f not extreme enough (ob=%.0f os=%.0f)\n",
+                               gf_long ? "LONG" : "SHORT", bar_trend, s_counter_bars,
+                               bar_rsi, ct_ob, ct_os);
                         fflush(stdout);
                         gf_tick_ok = false;
                         gf_block_reason = "COUNTER_TREND";
                     }
+                    } else {
+                        static int64_t s_ct_log = 0;
+                        if (nowSec() - s_ct_log >= 20) {
+                            s_ct_log = nowSec();
+                            printf("[GF-BAR-INFO] XAUUSD %s counter-trend (M1=%+d) only %d/5 bars -- not blocking yet\n",
+                                   gf_long ? "LONG" : "SHORT", bar_trend, s_counter_bars);
+                            fflush(stdout);
+                        }
+                    }
+                } else {
+                    // Not counter-trend — reset counter
+                    static int s_last_t2 = 0;
+                    if (bar_trend != s_last_t2) s_last_t2 = bar_trend;
                 }
             }
 
@@ -2387,19 +2429,28 @@ static void on_tick_gold(
             // SOFT_WARN -> 6, FAILING -> 7. Hysteresis: ±1 per 10 trades.
             const int min_score = g_param_gate.effective_min_score("XAUUSD");
 
+            // SCORE GATE REMOVED FROM BLOCKING (2026-04-08):
+            // The composite scorer measures bar-level indicators (ADX, ATR slope,
+            // VWAP direction, BB width, DXY, SPX). These lag behind the actual move
+            // by 1-5 bars. Every $20-40 London grind starts in compression with
+            // neutral ADX and contracting ATR -- it scores low exactly when we
+            // most want to enter. GoldFlow's internal gates (drift persistence,
+            // L2 imbalance, momentum, VWAP distance, exhaust block) already do
+            // signal detection. Double-gating with a lagging scorer was the primary
+            // reason GoldFlow wasn't catching the target $20-40 moves.
+            // Score is logged for monitoring -- use it to tune, not to block.
             if (adjusted_score < min_score) {
                 static int64_t s_score_log_ts = 0;
                 if (nowSec() - s_score_log_ts >= 15) {
                     s_score_log_ts = nowSec();
-                    printf("[GF-SCORE-BLOCK] XAUUSD %s blocked score=%d crowd_adj=%d/%d < %d%s\n",
+                    printf("[GF-SCORE-INFO] XAUUSD %s score=%d crowd_adj=%d/%d < %d%s -- LOG ONLY, not blocking\n",
                            gf_long_sc ? "LONG" : "SHORT",
                            sr.total, adjusted_score, sr.max_points,
                            min_score,
                            crowding_penalty > 0 ? " (crowding)" : "");
                     fflush(stdout);
                 }
-                gf_tick_ok = false;
-                gf_block_reason = crowding_penalty > 0 ? "SCORE_CROWDING" : "SCORE_BELOW_MIN";
+                // NOT setting gf_tick_ok = false -- score is advisory only
             }
         }
 
@@ -2437,37 +2488,29 @@ static void on_tick_gold(
 
             // REMOVED: Gate 4b RSI divergence -- imprecise timing, more false blocks than real saves
 
-            // ?? Gate 4c: Tick storm -- suppress entries during momentum rush ?
-            // When tick_rate >= 8/s, price is moving fast and aggressively.
-            // Block UNLESS: continuation mode OR EWM drift >3.0 (strong breakout move).
-            // drift>3.0 = real directional momentum, not noise -- allow entry on breakouts.
+            // Gate 4c: Tick storm -- REMOVED from blocking (2026-04-08).
+            // Fast ticks = market moving = exactly when GoldFlow should enter.
+            // Kept as diagnostic log only.
             if (gf_tick_ok) {
                 const bool   tick_storm     = g_bars_gold.m1.ind.tick_storm
                                                   .load(std::memory_order_relaxed);
                 const double tick_rate      = g_bars_gold.m1.ind.tick_rate
                                                   .load(std::memory_order_relaxed);
-                const bool   cont_mode      = g_gold_flow.is_in_continuation_mode();
-                const double ewm_drift_abs  = std::fabs(g_gold_stack.ewm_drift());
-                const bool   strong_breakout = (ewm_drift_abs >= 3.0); // real move, not chasing
-                if (tick_storm && !cont_mode && !strong_breakout) {
+                if (tick_storm) {
                     static int64_t s_storm_log = 0;
-                    if (nowSec() - s_storm_log >= 15) {
+                    if (nowSec() - s_storm_log >= 30) {
                         s_storm_log = nowSec();
-                        printf("[GF-BAR-BLOCK] XAUUSD %s blocked TICK_STORM"
-                               " rate=%.1f/s drift=%.2f -- not continuation or breakout\n",
-                               gf_long_g4 ? "LONG" : "SHORT", tick_rate, ewm_drift_abs);
+                        printf("[GF-BAR-INFO] XAUUSD tick storm rate=%.1f/s -- LOG ONLY\n",
+                               tick_rate);
                         fflush(stdout);
                     }
-                    gf_tick_ok = false;
-                    gf_block_reason = "TICK_STORM";
                 }
             }
 
-            // ?? Gate 4d: ATR slope + VWAP direction coherence (HARD GATE) ??
-            // Promoted from log-only: atr_contracting + vwap opposing signal = block.
-            //   atr_expanding + vwap aligned  ? high confidence, pass
-            //   atr_contracting + vwap opposing ? structural headwind, BLOCK
-            //   all other combos               ? pass with log
+            // Gate 4d: ATR slope + VWAP coherence -- REMOVED from blocking (2026-04-08).
+            // ATR contracts DURING consolidation BEFORE the breakout move.
+            // This gate was firing precisely when a $20-40 setup was coiling to break.
+            // Kept as diagnostic log only.
             {
                 const bool   atr_exp      = g_bars_gold.m1.ind.atr_expanding
                                                 .load(std::memory_order_relaxed);
@@ -2479,37 +2522,18 @@ static void on_tick_gold(
                                                 .load(std::memory_order_relaxed);
                 const double vol_delta    = g_bars_gold.m1.ind.vol_delta_ratio
                                                 .load(std::memory_order_relaxed);
-                // Hard block: contracting vol + VWAP opposing signal direction
                 const bool vwap_opposing  = (gf_long_g4  && vwap_dir == -1)
                                          || (!gf_long_g4 && vwap_dir == +1);
-                // RSI extreme bypass: when RSI is at an extreme (oversold LONG or
-                // overbought SHORT), the ATR contraction is the consolidation AFTER
-                // the move, not during it. Gate4D should not block recovery entries
-                // at RSI bottoms/tops -- these are exactly the MR/GoldFlow setups
-                // that need to fire. Use same rsi_crash_lo/hi thresholds.
-                const double gate4d_rsi = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-                const bool gate4d_rsi_extreme = (gate4d_rsi > 0.0)
-                    && ((gf_long_g4  && gate4d_rsi < rsi_crash_lo)   // oversold LONG
-                     || (!gf_long_g4 && gate4d_rsi > rsi_crash_hi)); // overbought SHORT
-                if (gf_tick_ok && atr_contract && vwap_opposing && !gate4d_rsi_extreme) {
-                    printf("[GF-BAR-BLOCK] XAUUSD %s blocked GATE4D_ATR_CONTRACT_VWAP_OPPOSE"
-                           " atr_slope=%.3f atr_con=1 vwap_dir=%+d rsi=%.1f\n",
-                           gf_long_g4 ? "LONG" : "SHORT", atr_slope, vwap_dir, gate4d_rsi);
-                    fflush(stdout);
-                    gf_tick_ok = false;
-                    gf_block_reason = "GATE4D_ATR_CONTRACT_VWAP_OPPOSE";
-                }
-                // Diagnostic log throttled 60s -- shows regime even when not blocking
+                // Diagnostic log throttled 60s
                 static int64_t s_coherence_log = 0;
                 if (nowSec() - s_coherence_log >= 60) {
                     s_coherence_log = nowSec();
                     printf("[GF-BAR-INFO] XAUUSD %s atr_slope=%.3f atr_exp=%d atr_con=%d"
-                           " vwap_dir=%+d vol_delta=%.3f tick_rate=%.1f gate4d=%s\n",
+                           " vwap_dir=%+d vol_delta=%.3f gate4d=%s (LOG ONLY)\n",
                            gf_long_g4 ? "LONG" : "SHORT",
                            atr_slope, atr_exp ? 1 : 0, atr_contract ? 1 : 0,
                            vwap_dir, vol_delta,
-                           g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed),
-                           (atr_contract && vwap_opposing) ? "BLOCK" : "pass");
+                           (atr_contract && vwap_opposing) ? "would_block" : "pass");
                     fflush(stdout);
                 }
             }
