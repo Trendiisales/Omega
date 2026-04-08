@@ -317,70 +317,37 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         };
 
         {
-            // L2 liveness: cTrader depth events flowing in last 3 seconds.
-            // depth_events_total increments on every pt=2155 event from ctid=43014358.
-            // No other condition required -- events flowing = L2 live.
-            const uint64_t ev_total = g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed);
-            static uint64_t s_last_ev    = 0;
-            static int64_t  s_last_ev_ms = 0;
-            if (ev_total > s_last_ev) {
-                s_last_ev    = ev_total;
-                s_last_ev_ms = l2_now_ms;
-            }
-            const bool l2_live = (s_last_ev_ms > 0) && ((l2_now_ms - s_last_ev_ms) < 3000);
+            // GOLD L2 IMBALANCE -- cTrader Open API (ctid=43014358) ONLY
+            // Use g_l2_gold.last_update_ms to check if cTrader is delivering
+            // XAUUSD depth events specifically (not just any symbol).
+            // atomic_l2_write_fn sets last_update_ms on every XAUUSD depth event.
+            const bool l2_live = g_l2_gold.fresh(l2_now_ms, 3000);
             g_macro_ctx.gold_l2_real = l2_live;
 
             if (l2_live) {
-                // cTrader depth events flowing. Compute imbalance from price level structure.
-                // cTrader sends incremental depth events with price levels on bid or ask side.
-                // Level count asymmetry and book slope give real directional signal.
-                int    bid_lvls = 0;
-                int    ask_lvls = 0;
-                double slope    = 0.0;
-                {
-                    std::lock_guard<std::mutex> lk(g_l2_mtx);
-                    auto it = g_l2_books.find("XAUUSD");
-                    if (it != g_l2_books.end()) {
-                        bid_lvls = it->second.bid_count;
-                        ask_lvls = it->second.ask_count;
-                        slope    = it->second.book_slope();
-                    }
-                }
-                const int    total_lvls = bid_lvls + ask_lvls;
-                const double level_imb  = (total_lvls > 0)
-                    ? (static_cast<double>(bid_lvls) / total_lvls) : 0.5;
-                const double slope_imb  = std::max(0.0, std::min(1.0, 0.5 + slope * 0.5));
-                // Weight: level count 50%, slope 50%
-                const double gold_imb   = 0.50 * level_imb + 0.50 * slope_imb;
-                g_macro_ctx.gold_l2_imbalance = std::max(0.0, std::min(1.0, gold_imb));
+                // g_l2_gold.imbalance = rebuilt.imbalance() from CTDepthBook::to_l2book()
+                // = bid_vol / (bid_vol + ask_vol)
+                // When cTrader sends ask-only levels: bid_vol=0, imbalance=0.0 (strong ask pressure)
+                // When bid levels dominate: imbalance approaches 1.0
+                // This is a real directional signal from the actual DOM.
+                const double raw_imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+                g_macro_ctx.gold_l2_imbalance = raw_imb;
 
                 static int64_t s_l2_log_ms = 0;
                 if (l2_now_ms - s_l2_log_ms > 10000) {
                     s_l2_log_ms = l2_now_ms;
-                    // Count keys in g_l2_books for diagnostic
-                    int book_keys = 0;
-                    bool xau_found = false;
-                    {
-                        std::lock_guard<std::mutex> lk2(g_l2_mtx);
-                        book_keys = (int)g_l2_books.size();
-                        xau_found = (g_l2_books.find("XAUUSD") != g_l2_books.end());
-                    }
-                    printf("[GOLD-L2-LIVE] ev_total=%llu bid_lvls=%d ask_lvls=%d slope=%.3f imb=%.3f books=%d xau_in_map=%d\n",
-                           (unsigned long long)ev_total,
-                           bid_lvls, ask_lvls, slope, g_macro_ctx.gold_l2_imbalance,
-                           book_keys, (int)xau_found);
+                    printf("[GOLD-L2-LIVE] imb=%.3f age_ms=%lld\n",
+                           raw_imb,
+                           (long long)(l2_now_ms - g_l2_gold.last_update_ms.load(std::memory_order_relaxed)));
                     fflush(stdout);
                 }
             } else {
-                // cTrader not flowing (reconnect window, max 3-7s).
-                // Hold last known imbalance -- do not inject drift.
-                // GoldFlow has its own drift-persistence fallback internally.
+                // cTrader XAUUSD events stale. Hold last known imbalance.
                 static int64_t s_fallback_log_ms = 0;
                 if (l2_now_ms - s_fallback_log_ms > 10000) {
                     s_fallback_log_ms = l2_now_ms;
-                    printf("[GOLD-L2-WAIT] cTrader events stale -- holding last imb=%.3f ev_total=%llu\n",
-                           g_macro_ctx.gold_l2_imbalance,
-                           (unsigned long long)ev_total);
+                    printf("[GOLD-L2-WAIT] cTrader stale -- holding imb=%.3f\n",
+                           g_macro_ctx.gold_l2_imbalance);
                     fflush(stdout);
                 }
             }
