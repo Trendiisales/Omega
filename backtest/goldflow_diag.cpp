@@ -118,11 +118,12 @@ inline std::string session_name(uint64_t ts_ms)
 // ─────────────────────────────────────────────
 // Parameters
 // ─────────────────────────────────────────────
-// v15: disable Asia (13 ADVERSE vs 16 TRAIL — nearly break-even, destroying -$10k+)
-//      add IMPULSE_MAX=15 (large impulses are exhaustion not continuation)
+// v22: v19 base + IMPULSE_MIN=8 (all SL_HIT fast-reversal group had imp<8)
+//      + force-close at session end (kills 16:48/16:53 overnight monsters -$14k)
+//      NY session 12:00-15:59 (no 16:xx entries)
 static const int    WINDOW          = 600;
-static const double IMPULSE_MIN     = 7.0;
-static const double IMPULSE_MAX     = 15.0;   // cap — large impulses are exhaustion moves
+static const double IMPULSE_MIN     = 8.0;    // all fast-reversal SL_HIT had imp=6.0-7.1
+static const double IMPULSE_MAX     = 15.0;
 static const double TP_PTS          = 14.0;
 static const double SL_PTS          = 7.0;
 static const double PULLBACK_FRAC   = 0.50;
@@ -130,11 +131,11 @@ static const double VWAP_TREND_PTS  = 0.004;
 static const int    VWAP_TREND_LOOK = 30;
 static const double MAX_SPREAD      = 0.40;
 static const int    COOLDOWN_TICKS  = 300;
-static const uint64_t TIME_LIMIT_MS = 7200000; // 2hr hard stop
-static const uint64_t NO_TRAIL_MS   = 3600000; // 1hr — cut if trail not active after 1 hour
+static const uint64_t TIME_LIMIT_MS = 7200000;
+static const uint64_t NO_TRAIL_MS   = 3600000;
 static const int    ADVERSE_WINDOW  = 10;
 static const double ADVERSE_MIN_PTS = 4.0;
-static const double MIN_PB_DEPTH    = 0.0;    // off
+static const double MIN_PB_DEPTH    = 0.0;
 
 // Trail
 static const bool   TRAIL_ENABLED   = true;
