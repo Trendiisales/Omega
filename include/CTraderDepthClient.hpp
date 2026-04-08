@@ -488,7 +488,7 @@ public:
     // to per-symbol atomics -- called after every depth event, no lock required.
     // Registered by main.cpp at startup. Signature:
     //   (internal_name, imbalance, microprice_bias, has_data)
-    std::function<void(const std::string&, double, double, bool)> atomic_l2_write_fn;
+    std::function<void(const std::string&, double, double, bool, int, int)> atomic_l2_write_fn;
 
     // Check if a symbol has an active depth subscription (by internal name)
     bool has_depth_subscription(const std::string& internal_name) const noexcept {
@@ -1571,7 +1571,9 @@ private:
             atomic_l2_write_fn(name,
                 book.raw_imbalance(),
                 rebuilt.microprice_bias(),
-                rebuilt.has_data());
+                rebuilt.has_data(),
+                book.raw_bid_count(),
+                book.raw_ask_count());
         }
 
         // Cold path: write full book under mutex for GUI depth panel (walls, vacuums, slopes)
