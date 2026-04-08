@@ -90,12 +90,26 @@ Write-Host ""
 Write-Host "[2/5] GATE 1 -- Pre-build checks..." -ForegroundColor Yellow
 Write-Host ""
 
-# Delete stale objects BEFORE the check so CHECK 6 passes
+# FULL BUILD DIRECTORY WIPE -- the only guaranteed clean rebuild.
+# Deleting .obj/.pch alone is not enough -- MSVC can still skip recompilation
+# if it decides the PCH is valid. Wiping the entire output forces cmake to
+# recompile every translation unit from scratch. No stale code possible.
 $ErrorActionPreference = "Continue"
-$objFiles = Get-ChildItem -Path $buildDir -Recurse -Include "*.obj","*.pch","*.pdb" -ErrorAction SilentlyContinue
-$objCount = ($objFiles | Measure-Object).Count
-$objFiles | Remove-Item -Force -ErrorAction SilentlyContinue
-Write-Host "  [CLEAN] Removed $objCount stale object files" -ForegroundColor Cyan
+$dirsToWipe = @(
+    "$buildDir\CMakeFiles",
+    "$buildDir\Release",
+    "$buildDir\Omega.dir",
+    "$buildDir\x64"
+)
+foreach ($d in $dirsToWipe) {
+    if (Test-Path $d) {
+        Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue
+        Write-Host "  [CLEAN] Wiped $d" -ForegroundColor Cyan
+    }
+}
+# Also wipe any loose .obj/.pch/.pdb at build root
+Get-ChildItem -Path $buildDir -Include "*.obj","*.pch","*.pdb" -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Write-Host "  [CLEAN] Full wipe complete -- guaranteed fresh compile" -ForegroundColor Green
 $ErrorActionPreference = "Continue"
 
 & $CheckScript -OmegaDir $OmegaDir -GitHubToken $GitHubToken
