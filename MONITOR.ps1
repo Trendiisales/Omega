@@ -61,6 +61,20 @@ Write-Host "   Log: $LogFile" -ForegroundColor DarkGray
 Write-Host "   HASH: $RunHash  |  BUILT: $RunTime" -ForegroundColor White
 Write-Host "   MODE: $RunMode  |  GUI: http://185.167.119.59:7779" -ForegroundColor $modeColor
 if ($Filter) { Write-Host "   Filter: $Filter" -ForegroundColor Yellow }
+
+# ── HASH vs HEAD CHECK -- catches stale binary immediately ───────────────────
+$ErrorActionPreference = "Continue"
+$gitHeadFull = & git -C $OmegaDir rev-parse HEAD 2>$null
+$gitHead7 = if ($gitHeadFull -and $gitHeadFull.Length -ge 7) { $gitHeadFull.Substring(0,7) } else { "unknown" }
+$ErrorActionPreference = "Continue"
+if ($RunHash -eq "unknown" -or $gitHead7 -eq "unknown") {
+    Write-Host "   HASH CHECK: could not verify (git or version_generated.hpp missing)" -ForegroundColor Yellow
+} elseif ($RunHash -eq $gitHead7) {
+    Write-Host "   HASH CHECK: OK -- binary matches HEAD ($RunHash)" -ForegroundColor Green
+} else {
+    Write-Host "   !! HASH MISMATCH !! running=$RunHash HEAD=$gitHead7" -ForegroundColor Red
+    Write-Host "   !! BINARY IS STALE -- run QUICK_RESTART.ps1 NOW !!" -ForegroundColor Red
+}
 Write-Host "=======================================================" -ForegroundColor Cyan
 
 # ── L2 STATUS CHECK -- NON-NEGOTIABLE ────────────────────────────────────────
