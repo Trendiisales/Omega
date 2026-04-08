@@ -198,7 +198,7 @@ Write-Host ""
 Write-Host "[4/5] GATE 2 -- Post-build checks..." -ForegroundColor Yellow
 Write-Host ""
 
-& $CheckScript -OmegaDir $OmegaDir -GitHubToken $GitHubToken -ExpectedHash $headHash7
+& $CheckScript -OmegaDir $OmegaDir -GitHubToken $GitHubToken -ExpectedHash $headHash7 -PostBuild
 $gate2Exit = $LASTEXITCODE
 if ($gate2Exit -ne 0) {
     Write-Host ""
