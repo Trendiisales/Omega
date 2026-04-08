@@ -108,16 +108,19 @@ inline std::string session_name(uint64_t ts_ms)
 // ─────────────────────────────────────────────
 // Parameters
 // ─────────────────────────────────────────────
+// v5: sweep best from 133 combos of 24000
+//   tp=10, sl=5, impulse=6, time=1200s, pullback=0.5, vwap_trend=0.004, window=600
+//   => 98 trades, 46.9% WR, +$11,292 (vs +$3,682 with 14/8 defaults)
 static const int    WINDOW          = 600;    // ticks (~1 real minute at XAUUSD density)
-static const double IMPULSE_MIN     = 7.0;    // min range over WINDOW to qualify (pts)
-static const double TP_PTS          = 14.0;   // take profit (pts)
-static const double SL_PTS          = 8.0;    // stop loss (pts)
-static const double PULLBACK_FRAC   = 0.55;   // pullback zone fraction
-static const double VWAP_TREND_PTS  = 0.003;  // VWAP delta threshold (calibrated)
+static const double IMPULSE_MIN     = 6.0;    // min range over WINDOW to qualify (pts)
+static const double TP_PTS          = 10.0;   // take profit (pts)
+static const double SL_PTS          = 5.0;    // stop loss (pts)
+static const double PULLBACK_FRAC   = 0.50;   // pullback zone fraction
+static const double VWAP_TREND_PTS  = 0.004;  // VWAP delta threshold
 static const int    VWAP_TREND_LOOK = 30;     // lookback ticks for VWAP trend
 static const double MAX_SPREAD      = 0.40;   // spread filter
 static const int    COOLDOWN_TICKS  = 300;    // post-entry cooldown
-static const uint64_t TIME_LIMIT_MS = 1800000;// 30 min hard stop
+static const uint64_t TIME_LIMIT_MS = 1200000;// 20 min hard stop (sweep best vs 30min)
 static const int    ADVERSE_WINDOW  = 30;     // ticks: adverse move tag window
 static const double ADVERSE_MIN_PTS = 2.0;    // pts of adverse move to tag ADVERSE_EARLY
 
@@ -126,14 +129,10 @@ static const bool   TRAIL_ENABLED   = true;
 static const double TRAIL_TRIGGER   = 6.0;    // MFE to activate trail (pts)
 static const double TRAIL_LOCK      = 0.75;   // fraction of MFE to lock in
 
-// Momentum gate (v4)
-// At entry, price must have moved MOMENTUM_MIN_PTS in trade direction
-// over the last MOMENTUM_LOOK ticks. Filters entering against dominant move.
-// MOMENTUM_LOOK=100 ticks is a short recent window within the 600-tick impulse.
-// MOMENTUM_MIN_PTS=1.5 — requires visible directional drift, not noise.
-static const bool   MOMENTUM_GATE   = true;
-static const int    MOMENTUM_LOOK   = 100;    // ticks to look back for momentum check
-static const double MOMENTUM_MIN_PTS= 1.5;    // min net move in trade direction (pts)
+// Momentum gate — OFF: v4 showed it filtered more winners than losers
+static const bool   MOMENTUM_GATE   = false;
+static const int    MOMENTUM_LOOK   = 100;
+static const double MOMENTUM_MIN_PTS= 1.5;
 
 // Session filter
 static const bool   SESSION_BOTH    = false;
