@@ -120,11 +120,11 @@ inline std::string session_name(uint64_t ts_ms)
 // Sweep best: tp=14, sl=7, imp=5, time=1800, pb=0.45, vwap_trend=0 (gate off), win=600
 // VT=0 means VWAP trend gate disabled — price only needs to be on correct side of VWAP
 static const int    WINDOW          = 600;
-static const double IMPULSE_MIN     = 8.0;    // back to 8 — 10 cuts too many good trades
+static const double IMPULSE_MIN     = 6.0;
 static const double TP_PTS          = 14.0;
 static const double SL_PTS          = 7.0;
-static const double PULLBACK_FRAC   = 0.60;   // deeper pullback required — filters premature entries near extremes
-static const double VWAP_TREND_PTS  = 0.002;
+static const double PULLBACK_FRAC   = 0.50;
+static const double VWAP_TREND_PTS  = 0.004;
 static const int    VWAP_TREND_LOOK = 30;
 static const double MAX_SPREAD      = 0.40;
 static const int    COOLDOWN_TICKS  = 300;
@@ -397,10 +397,12 @@ int main(int argc, char** argv)
             if (e.is_long) {
                 double px = t.bid;
                 if      (px >= e.tp) { why = ExitReason::TP_HIT; exit_px = e.tp; }
+                else if (adverse_early) {
+                    // Early exit at market — don't wait for full SL
+                    why = ExitReason::ADVERSE_EARLY; exit_px = px;
+                }
                 else if (px <= e.sl) {
-                    why = (adverse_early && e.pos_ticks <= ADVERSE_WINDOW)
-                        ? ExitReason::ADVERSE_EARLY : ExitReason::SL_HIT;
-                    exit_px = e.sl;
+                    why = ExitReason::SL_HIT; exit_px = e.sl;
                 }
                 else if (TRAIL_ENABLED && e.trail_active && px <= e.trail_sl) {
                     why = ExitReason::TRAIL_HIT; exit_px = e.trail_sl;
@@ -411,10 +413,11 @@ int main(int argc, char** argv)
             } else {
                 double px = t.ask;
                 if      (px <= e.tp) { why = ExitReason::TP_HIT; exit_px = e.tp; }
+                else if (adverse_early) {
+                    why = ExitReason::ADVERSE_EARLY; exit_px = px;
+                }
                 else if (px >= e.sl) {
-                    why = (adverse_early && e.pos_ticks <= ADVERSE_WINDOW)
-                        ? ExitReason::ADVERSE_EARLY : ExitReason::SL_HIT;
-                    exit_px = e.sl;
+                    why = ExitReason::SL_HIT; exit_px = e.sl;
                 }
                 else if (TRAIL_ENABLED && e.trail_active && px >= e.trail_sl) {
                     why = ExitReason::TRAIL_HIT; exit_px = e.trail_sl;
