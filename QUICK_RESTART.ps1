@@ -9,7 +9,7 @@
 
 param(
     [switch] $SkipVerify,
-    [int]    $WaitSec  = 15,
+    [int]    $WaitSec  = 30,
     [string] $OmegaDir = "C:\Omega"
 )
 
