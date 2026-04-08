@@ -2089,16 +2089,16 @@ int main(int argc, char* argv[])
         fflush(stdout);
         while (std::chrono::duration_cast<std::chrono::seconds>(
                    std::chrono::steady_clock::now() - ct_wait_start).count() < 45) {
-            // L2 is live when: depth_active=true AND imbalance != 0.500
-            const bool depth_up  = g_ctrader_depth.depth_active.load();
-            const double imb     = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-            const bool l2_flowing = depth_up && (std::fabs(imb - 0.5) > 0.001
-                                    || g_ctrader_depth.depth_events_total.load() > 2);
-            if (l2_flowing) {
+            // cTrader is ONLY L2 source. Live = depth_active AND >10 events received.
+            // Do NOT check imbalance != 0.5 -- book fills incrementally from 0.5.
+            const bool depth_up2  = g_ctrader_depth.depth_active.load();
+            const uint64_t events = g_ctrader_depth.depth_events_total.load();
+            if (depth_up2 && events > 10) {
                 const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::steady_clock::now() - ct_wait_start).count();
-                printf("[STARTUP] cTrader L2 live after %llds (imb=%.3f) -- starting FIX\n",
-                       (long long)elapsed, imb);
+                printf("[STARTUP] cTrader L2 live after %llds (events=%llu) -- starting FIX
+",
+                       (long long)elapsed, (unsigned long long)events);
                 fflush(stdout);
                 ct_ready = true;
                 break;
@@ -2106,7 +2106,7 @@ int main(int argc, char* argv[])
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
         if (!ct_ready) {
-            printf("[STARTUP] cTrader L2 not live after 45s -- starting FIX in degraded mode\n");
+            printf("[STARTUP] cTrader L2 not live after 45s -- starting FIX anyway\n");
             fflush(stdout);
         }
     }
