@@ -4,14 +4,20 @@
 // Run:   ./goldflow_diag ticks.csv [trades_out.csv]
 //
 // Exit reasons:
-//   TP_HIT       — target reached
-//   SL_HIT       — stop hit
+//   TP_HIT        — target reached
+//   SL_HIT        — stop hit
 //   ADVERSE_EARLY — price moved adversely within first ADVERSE_WINDOW ticks after entry
-//   TIME_STOP    — held past TIME_LIMIT_MS with no resolution
-//   TRAIL_HIT    — trailing stop triggered (if trail enabled)
+//   TIME_STOP     — held past TIME_LIMIT_MS with no resolution
+//   TRAIL_HIT     — trailing stop triggered (if trail enabled)
 //
-// VWAP: daily-reset cumulative (matches live engine — resets at UTC midnight each day)
-// Duplicate entry fix: cooldown set immediately on entry, not only on close
+// CALIBRATION (from gate diagnostics on 134M XAUUSD ticks):
+//   - Daily-reset cumulative VWAP delta over 30 ticks: p50=0.0017, p99=0.0056
+//     => VWAP_TREND_PTS dropped from 0.50 to 0.003 (p75 of real distribution)
+//   - 60-tick window at tick density ~600K ticks/session yields only 448 impulses/2yr
+//     => WINDOW widened from 60 to 600 ticks (~1 real-time minute of data)
+//     => IMPULSE_MIN kept at 7.0 pts (valid threshold for 1-min range on gold)
+//   - VWAP: daily-reset cumulative (matches live engine — resets at UTC midnight)
+//   - Duplicate entry fix: cooldown set immediately on entry
 
 #include <iostream>
 #include <fstream>
@@ -65,7 +71,6 @@ inline int utc_hour(uint64_t ts_ms)
     return (int)((ts_ms / 1000 / 3600) % 24);
 }
 
-// UTC day number (days since epoch)
 inline uint64_t utc_day(uint64_t ts_ms)
 {
     return ts_ms / 1000 / 86400;
@@ -86,30 +91,31 @@ inline std::string session_name(uint64_t ts_ms)
 }
 
 // ─────────────────────────────────────────────
-// Parameters (edit these for experiments)
+// Parameters
 // ─────────────────────────────────────────────
-static const int    WINDOW          = 60;    // ticks for impulse detection
-static const double IMPULSE_MIN     = 7.0;   // min range to qualify as impulse (pts)
+// WINDOW: 600 ticks ~ 1 real-time minute at XAUUSD tick density.
+// At 60 ticks the window is <1 second — range is noise not impulse.
+static const int    WINDOW          = 600;   // ticks for impulse detection (~1 min)
+static const double IMPULSE_MIN     = 7.0;   // min range over WINDOW to qualify (pts)
 static const double TP_PTS          = 14.0;  // take profit distance (pts)
 static const double SL_PTS          = 8.0;   // stop loss distance (pts)
-static const double PULLBACK_FRAC   = 0.55;  // pullback zone: hi - frac*range or lo + frac*range
-static const double VWAP_TREND_PTS  = 0.5;   // VWAP delta over 30 ticks to confirm trend
-static const int    VWAP_TREND_LOOK = 30;    // lookback for VWAP trend
+static const double PULLBACK_FRAC   = 0.55;  // pullback zone fraction
+// VWAP_TREND_PTS: calibrated from gate diag — real p75 delta = 0.0022, p90 = 0.0027.
+// 0.003 passes ~p80 of real distribution — confirms directional drift without being noise.
+static const double VWAP_TREND_PTS  = 0.003; // VWAP delta over VWAP_TREND_LOOK ticks
+static const int    VWAP_TREND_LOOK = 30;    // lookback ticks for VWAP trend
 static const double MAX_SPREAD      = 0.40;  // skip ticks with spread above this
 static const int    COOLDOWN_TICKS  = 300;   // ticks to wait after entry before new entry
 static const uint64_t TIME_LIMIT_MS = 1800000; // 30 min position time limit (ms)
-static const int    ADVERSE_WINDOW  = 30;    // ticks: if price moves adversely within this, tag ADVERSE_EARLY
-static const double ADVERSE_MIN_PTS = 2.0;   // pts of adverse move to trigger ADVERSE_EARLY tag
+static const int    ADVERSE_WINDOW  = 30;    // ticks: adverse move tag window
+static const double ADVERSE_MIN_PTS = 2.0;   // pts of adverse move to trigger ADVERSE_EARLY
 
-// Trail (set TRAIL_ENABLED=false to disable)
+// Trail
 static const bool   TRAIL_ENABLED   = false;
-static const double TRAIL_TRIGGER   = 6.0;   // MFE needed to activate trail (pts)
-static const double TRAIL_LOCK      = 0.80;  // fraction of MFE to lock
+static const double TRAIL_TRIGGER   = 6.0;
+static const double TRAIL_LOCK      = 0.80;
 
-// Spread cost per trade (one-way, applied at open)
-// BlackBull XAUUSD typical: 0.25 pts = $25 per lot
-// We track actual entry spread separately
-static const double COMMISSION_PTS  = 0.0;   // additional commission in pts (set if known)
+static const double COMMISSION_PTS  = 0.0;
 
 // ─────────────────────────────────────────────
 // Trade record
@@ -136,12 +142,12 @@ struct TradeRecord
     double   exit_price  = 0;
     double   tp          = 0;
     double   sl          = 0;
-    double   spread_open = 0;   // bid-ask spread at entry (pts)
-    double   impulse_sz  = 0;   // hi - lo of trigger window (pts)
-    double   mfe         = 0;   // max favourable excursion (pts)
-    double   mae         = 0;   // max adverse excursion (pts)
-    double   gross_pnl   = 0;   // raw pts
-    double   net_pnl     = 0;   // after spread cost
+    double   spread_open = 0;
+    double   impulse_sz  = 0;
+    double   mfe         = 0;
+    double   mae         = 0;
+    double   gross_pnl   = 0;
+    double   net_pnl     = 0;
     int      hold_ticks  = 0;
     uint64_t hold_ms     = 0;
     uint64_t entry_ts    = 0;
@@ -154,51 +160,39 @@ struct TradeRecord
 // ─────────────────────────────────────────────
 struct Engine
 {
-    // price history
     std::vector<double> price_buf;
-    // VWAP trend history (stores computed daily-cumulative vwap per tick)
     std::vector<double> vwap_buf;
 
-    // Daily-reset cumulative VWAP state
-    // (matches live engine: resets at UTC midnight each day)
+    // Daily-reset cumulative VWAP
     double   vwap       = 0;
-    double   vwap_pv    = 0;   // sum of price for current day
-    uint64_t vwap_count = 0;   // tick count for current day
-    uint64_t vwap_day   = 0;   // current UTC day number (days since epoch)
+    double   vwap_pv    = 0;
+    uint64_t vwap_count = 0;
+    uint64_t vwap_day   = 0;
 
     double hi = 0, lo = 0;
 
-    // position state
-    bool     in_pos     = false;
-    bool     is_long    = false;
-    double   entry      = 0;
-    double   tp         = 0;
-    double   sl         = 0;
-    double   spread_at_entry = 0;
-    double   impulse_at_entry = 0;
-    double   mfe        = 0;
-    double   mae        = 0;
-    double   trail_sl   = 0;
+    bool     in_pos       = false;
+    bool     is_long      = false;
+    double   entry        = 0;
+    double   tp           = 0;
+    double   sl           = 0;
+    double   mfe          = 0;
+    double   mae          = 0;
+    double   trail_sl     = 0;
     bool     trail_active = false;
-    uint64_t entry_ts   = 0;
-    std::string entry_session;
+    uint64_t entry_ts     = 0;
 
     int cooldown  = 0;
-    int pos_ticks = 0;  // ticks held in current position (for ADVERSE_EARLY detection)
+    int pos_ticks = 0;
 
-    // Daily-reset cumulative VWAP (matches live engine).
-    // Resets pv/count at UTC midnight boundary each day.
     void update_vwap(double price, uint64_t ts_ms)
     {
         uint64_t day = utc_day(ts_ms);
-
-        // Midnight boundary — reset accumulator
         if (day != vwap_day) {
             vwap_pv    = 0.0;
             vwap_count = 0;
             vwap_day   = day;
         }
-
         vwap_pv    += price;
         vwap_count += 1;
         vwap        = vwap_pv / (double)vwap_count;
@@ -218,17 +212,13 @@ struct Engine
     bool detect_impulse()
     {
         if ((int)price_buf.size() < WINDOW) return false;
-
-        // look at last WINDOW ticks
         int start = (int)price_buf.size() - WINDOW;
         hi = price_buf[start];
         lo = price_buf[start];
-
         for (int i = start; i < (int)price_buf.size(); i++) {
             hi = std::max(hi, price_buf[i]);
             lo = std::min(lo, price_buf[i]);
         }
-
         return (hi - lo) >= IMPULSE_MIN;
     }
 
@@ -252,11 +242,11 @@ struct Engine
 // ─────────────────────────────────────────────
 struct Stats
 {
-    int    count     = 0;
-    int    wins      = 0;
-    double total_pnl = 0;
-    double total_mfe = 0;
-    double total_mae = 0;
+    int    count      = 0;
+    int    wins       = 0;
+    double total_pnl  = 0;
+    double total_mfe  = 0;
+    double total_mae  = 0;
     double total_hold_ms = 0;
 
     void add(const TradeRecord& tr)
@@ -272,11 +262,11 @@ struct Stats
     void print(const char* label) const
     {
         if (count == 0) { std::cout << "  " << label << ": 0 trades\n"; return; }
-        double wr  = 100.0 * wins / count;
-        double avg = total_pnl / count;
-        double avg_mfe = total_mfe / count;
-        double avg_mae = total_mae / count;
-        double avg_hold_s = total_hold_ms / count / 1000.0;
+        double wr        = 100.0 * wins / count;
+        double avg       = total_pnl / count;
+        double avg_mfe   = total_mfe / count;
+        double avg_mae   = total_mae / count;
+        double avg_hold_s= total_hold_ms / count / 1000.0;
         std::cout
             << "  " << std::left << std::setw(16) << label
             << " n=" << std::setw(5) << count
@@ -306,7 +296,6 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // optional CSV output
     std::ofstream csv_out;
     bool write_csv = (argc >= 3);
     if (write_csv) {
@@ -317,131 +306,99 @@ int main(int argc, char** argv)
     }
 
     Engine e;
-
     std::vector<TradeRecord> trades;
     TradeRecord cur;
 
     uint64_t ticks_total = 0;
-    uint64_t ticks_used  = 0;  // in-session
+    uint64_t ticks_used  = 0;
 
     std::string line;
     auto t_start = std::chrono::high_resolution_clock::now();
-
     int trade_id = 0;
 
     while (getline(file, line))
     {
         Tick t;
         if (!parse_tick(line, t)) continue;
-
         ticks_total++;
 
         double spread = t.ask - t.bid;
         double mid    = (t.ask + t.bid) * 0.5;
 
-        // Always update VWAP (even off-session, so it's warm when session opens).
-        // Daily-reset cumulative — passes timestamp for midnight-boundary detection.
         e.update_vwap(mid, t.ts);
         e.update_price(mid);
 
-        // spread filter
         if (spread > MAX_SPREAD) continue;
-
         if (!session_ok(t.ts)) continue;
         ticks_used++;
 
-        // ── cooldown ────────────────────────────────────
         if (e.cooldown > 0) { e.cooldown--; }
 
-        // ── manage open position ─────────────────────────
+        // ── manage open position ──────────────────────────
         if (e.in_pos)
         {
             e.pos_ticks++;
             cur.hold_ticks++;
 
-            // MFE / MAE
-            double excursion = e.is_long
-                ? mid - e.entry
-                : e.entry - mid;
-
+            double excursion = e.is_long ? mid - e.entry : e.entry - mid;
             if (excursion > cur.mfe) cur.mfe = excursion;
             if (excursion < -cur.mae) cur.mae = -excursion;
 
-            // Trail update
             if (TRAIL_ENABLED) {
-                if (!e.trail_active && cur.mfe >= TRAIL_TRIGGER) {
+                if (!e.trail_active && cur.mfe >= TRAIL_TRIGGER)
                     e.trail_active = true;
-                }
                 if (e.trail_active) {
-                    double locked = cur.mfe * TRAIL_LOCK;
-                    double new_trail = e.is_long
-                        ? e.entry + locked
-                        : e.entry - locked;
-                    if (e.is_long)
-                        e.trail_sl = std::max(e.trail_sl, new_trail);
-                    else
-                        e.trail_sl = std::min(e.trail_sl, new_trail);
+                    double locked    = cur.mfe * TRAIL_LOCK;
+                    double new_trail = e.is_long ? e.entry + locked : e.entry - locked;
+                    if (e.is_long) e.trail_sl = std::max(e.trail_sl, new_trail);
+                    else           e.trail_sl = std::min(e.trail_sl, new_trail);
                 }
             }
 
-            // ADVERSE_EARLY tag: within first ADVERSE_WINDOW ticks, adverse move >= ADVERSE_MIN
-            bool adverse_early = false;
-            if (e.pos_ticks <= ADVERSE_WINDOW && cur.mae >= ADVERSE_MIN_PTS) {
-                adverse_early = true;
-            }
+            bool adverse_early = (e.pos_ticks <= ADVERSE_WINDOW && cur.mae >= ADVERSE_MIN_PTS);
 
-            // Exit checks
-            ExitReason why = ExitReason::NONE;
-            double exit_px = 0;
+            ExitReason why   = ExitReason::NONE;
+            double     exit_px = 0;
 
             if (e.is_long) {
-                double px = t.bid; // we sell at bid
-                if (px >= e.tp) {
-                    why = ExitReason::TP_HIT;
-                    exit_px = e.tp;
-                } else if (px <= e.sl) {
+                double px = t.bid;
+                if      (px >= e.tp) { why = ExitReason::TP_HIT; exit_px = e.tp; }
+                else if (px <= e.sl) {
                     why = (adverse_early && e.pos_ticks <= ADVERSE_WINDOW)
-                        ? ExitReason::ADVERSE_EARLY
-                        : ExitReason::SL_HIT;
+                        ? ExitReason::ADVERSE_EARLY : ExitReason::SL_HIT;
                     exit_px = e.sl;
-                } else if (TRAIL_ENABLED && e.trail_active && px <= e.trail_sl) {
-                    why = ExitReason::TRAIL_HIT;
-                    exit_px = e.trail_sl;
-                } else if (t.ts - e.entry_ts >= TIME_LIMIT_MS) {
-                    why = ExitReason::TIME_STOP;
-                    exit_px = px;
+                }
+                else if (TRAIL_ENABLED && e.trail_active && px <= e.trail_sl) {
+                    why = ExitReason::TRAIL_HIT; exit_px = e.trail_sl;
+                }
+                else if (t.ts - e.entry_ts >= TIME_LIMIT_MS) {
+                    why = ExitReason::TIME_STOP; exit_px = px;
                 }
             } else {
-                double px = t.ask; // we buy back at ask
-                if (px <= e.tp) {
-                    why = ExitReason::TP_HIT;
-                    exit_px = e.tp;
-                } else if (px >= e.sl) {
+                double px = t.ask;
+                if      (px <= e.tp) { why = ExitReason::TP_HIT; exit_px = e.tp; }
+                else if (px >= e.sl) {
                     why = (adverse_early && e.pos_ticks <= ADVERSE_WINDOW)
-                        ? ExitReason::ADVERSE_EARLY
-                        : ExitReason::SL_HIT;
+                        ? ExitReason::ADVERSE_EARLY : ExitReason::SL_HIT;
                     exit_px = e.sl;
-                } else if (TRAIL_ENABLED && e.trail_active && px >= e.trail_sl) {
-                    why = ExitReason::TRAIL_HIT;
-                    exit_px = e.trail_sl;
-                } else if (t.ts - e.entry_ts >= TIME_LIMIT_MS) {
-                    why = ExitReason::TIME_STOP;
-                    exit_px = px;
+                }
+                else if (TRAIL_ENABLED && e.trail_active && px >= e.trail_sl) {
+                    why = ExitReason::TRAIL_HIT; exit_px = e.trail_sl;
+                }
+                else if (t.ts - e.entry_ts >= TIME_LIMIT_MS) {
+                    why = ExitReason::TIME_STOP; exit_px = px;
                 }
             }
 
             if (why != ExitReason::NONE)
             {
                 cur.exit_price = exit_px;
-                cur.gross_pnl  = e.is_long
-                    ? exit_px - e.entry
-                    : e.entry - exit_px;
+                cur.gross_pnl  = e.is_long ? exit_px - e.entry : e.entry - exit_px;
                 cur.net_pnl    = cur.gross_pnl - cur.spread_open - COMMISSION_PTS;
                 cur.hold_ms    = t.ts - e.entry_ts;
                 cur.exit_why   = why;
-                // clamp MFE/MAE to non-negative
-                cur.mfe = std::max(0.0, cur.mfe);
-                cur.mae = std::max(0.0, cur.mae);
+                cur.mfe        = std::max(0.0, cur.mfe);
+                cur.mae        = std::max(0.0, cur.mae);
 
                 trades.push_back(cur);
 
@@ -452,38 +409,27 @@ int main(int argc, char** argv)
                         << cur.session << ","
                         << cur.entry_ts << ","
                         << std::fixed << std::setprecision(2)
-                        << cur.entry << ","
-                        << cur.exit_price << ","
-                        << cur.tp << ","
-                        << cur.sl << ","
-                        << cur.spread_open << ","
-                        << cur.impulse_sz << ","
-                        << cur.mfe << ","
-                        << cur.mae << ","
-                        << cur.gross_pnl << ","
-                        << cur.net_pnl << ","
-                        << cur.hold_ticks << ","
-                        << cur.hold_ms << ","
+                        << cur.entry << "," << cur.exit_price << ","
+                        << cur.tp << "," << cur.sl << ","
+                        << cur.spread_open << "," << cur.impulse_sz << ","
+                        << cur.mfe << "," << cur.mae << ","
+                        << cur.gross_pnl << "," << cur.net_pnl << ","
+                        << cur.hold_ticks << "," << cur.hold_ms << ","
                         << exit_name(why) << "\n";
                 }
 
-                e.in_pos      = false;
-                e.trail_active= false;
-                // NOTE: cooldown was already set at entry — do NOT reset it here.
-                // We leave the existing cooldown running (which started from entry),
-                // so close-to-re-entry spacing equals cooldown remaining, not full reset.
-                // If you want full cooldown from close instead, change to:
-                //   e.cooldown = COOLDOWN_TICKS;
+                e.in_pos       = false;
+                e.trail_active = false;
+                // cooldown already set at entry — leave it running
             }
         }
 
         // ── entry logic ──────────────────────────────────
         if (!e.in_pos && e.cooldown == 0 && e.detect_impulse())
         {
-            double impulse = e.hi - e.lo;
-
-            double pb_long  = e.hi  - PULLBACK_FRAC * impulse;
-            double pb_short = e.lo  + PULLBACK_FRAC * impulse;
+            double impulse  = e.hi - e.lo;
+            double pb_long  = e.hi - PULLBACK_FRAC * impulse;
+            double pb_short = e.lo + PULLBACK_FRAC * impulse;
 
             bool can_long  = (mid <= pb_long  && mid > e.vwap && e.vwap_trend_up());
             bool can_short = (mid >= pb_short && mid < e.vwap && e.vwap_trend_down());
@@ -494,25 +440,22 @@ int main(int argc, char** argv)
                 e.is_long = can_long;
 
                 if (e.is_long) {
-                    e.entry = t.ask;
-                    e.tp    = e.entry + TP_PTS;
-                    e.sl    = e.entry - SL_PTS;
+                    e.entry    = t.ask;
+                    e.tp       = e.entry + TP_PTS;
+                    e.sl       = e.entry - SL_PTS;
                     e.trail_sl = e.entry - SL_PTS;
                 } else {
-                    e.entry = t.bid;
-                    e.tp    = e.entry - TP_PTS;
-                    e.sl    = e.entry + SL_PTS;
+                    e.entry    = t.bid;
+                    e.tp       = e.entry - TP_PTS;
+                    e.sl       = e.entry + SL_PTS;
                     e.trail_sl = e.entry + SL_PTS;
                 }
 
                 e.entry_ts     = t.ts;
                 e.trail_active = false;
+                e.cooldown     = COOLDOWN_TICKS;  // set on entry — prevents duplicates
 
-                // FIX: set cooldown immediately on entry to prevent duplicate entries
-                // on subsequent ticks within the same impulse window
-                e.cooldown = COOLDOWN_TICKS;
-
-                cur = TradeRecord{};
+                cur              = TradeRecord{};
                 cur.id           = ++trade_id;
                 cur.is_long      = e.is_long;
                 cur.entry        = e.entry;
@@ -529,11 +472,11 @@ int main(int argc, char** argv)
         }
     }
 
-    auto t_end = std::chrono::high_resolution_clock::now();
+    auto t_end   = std::chrono::high_resolution_clock::now();
     double runtime = std::chrono::duration<double>(t_end - t_start).count();
 
     // ─────────────────────────────────────────────
-    // Aggregate stats by exit reason
+    // Aggregate stats
     // ─────────────────────────────────────────────
     Stats s_total, s_tp, s_sl, s_adverse, s_time, s_trail;
     Stats s_london, s_ny;
@@ -541,7 +484,6 @@ int main(int argc, char** argv)
     for (const auto& tr : trades)
     {
         s_total.add(tr);
-
         switch (tr.exit_why) {
             case ExitReason::TP_HIT:        s_tp.add(tr);      break;
             case ExitReason::SL_HIT:        s_sl.add(tr);      break;
@@ -550,9 +492,8 @@ int main(int argc, char** argv)
             case ExitReason::TRAIL_HIT:     s_trail.add(tr);   break;
             default: break;
         }
-
-        if (tr.session == "LONDON") s_london.add(tr);
-        else if (tr.session == "NY") s_ny.add(tr);
+        if (tr.session == "LONDON")      s_london.add(tr);
+        else if (tr.session == "NY")     s_ny.add(tr);
     }
 
     // ─────────────────────────────────────────────
@@ -574,11 +515,10 @@ int main(int argc, char** argv)
               << " TIME_LIMIT=" << TIME_LIMIT_MS/1000 << "s\n";
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
               << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts\n";
-    std::cout << "    VWAP=daily-reset-cumulative (live-engine-match)\n";
+    std::cout << "    VWAP=daily-reset-cumulative\n";
     std::cout << "    TRAIL=" << (TRAIL_ENABLED ? "ON" : "OFF");
     if (TRAIL_ENABLED) std::cout << " trigger=" << TRAIL_TRIGGER << " lock=" << TRAIL_LOCK*100 << "%";
-    std::cout << "\n";
-    std::cout << "\n";
+    std::cout << "\n\n";
     std::cout << "── By Exit Reason ────────────────────────────────────────────\n";
     s_total.print("TOTAL");
     s_tp.print("TP_HIT");
@@ -592,11 +532,10 @@ int main(int argc, char** argv)
     s_ny.print("NY (12-16 UTC)");
     std::cout << "\n";
 
-    // ADVERSE_EARLY deep-dive: impulse size buckets
+    // ADVERSE_EARLY deep-dive
     if (s_adverse.count > 0)
     {
         std::cout << "── ADVERSE_EARLY: Impulse Size Buckets ──────────────────────\n";
-        // buckets: <8, 8-10, 10-12, 12-15, >15
         std::vector<std::pair<std::string, std::pair<double,double>>> buckets = {
             {"<8pts",   {0,   8}},
             {"8-10pts", {8,  10}},
@@ -604,15 +543,11 @@ int main(int argc, char** argv)
             {"12-15pts",{12, 15}},
             {">15pts",  {15, 999}},
         };
-
-        for (auto& [label, range] : buckets)
-        {
+        for (auto& [label, range] : buckets) {
             int n = 0; double pnl = 0;
             for (const auto& tr : trades) {
                 if (tr.exit_why != ExitReason::ADVERSE_EARLY) continue;
-                if (tr.impulse_sz >= range.first && tr.impulse_sz < range.second) {
-                    n++; pnl += tr.net_pnl;
-                }
+                if (tr.impulse_sz >= range.first && tr.impulse_sz < range.second) { n++; pnl += tr.net_pnl; }
             }
             if (n > 0)
                 std::cout << "  " << std::left << std::setw(12) << label
@@ -622,7 +557,6 @@ int main(int argc, char** argv)
         std::cout << "\n";
 
         std::cout << "── ADVERSE_EARLY: Hold-time distribution ─────────────────────\n";
-        // buckets by ticks
         std::vector<std::pair<std::string,std::pair<int,int>>> tbuckets = {
             {"1-5 ticks",  {1,  5}},
             {"6-15 ticks", {6, 15}},
@@ -630,14 +564,11 @@ int main(int argc, char** argv)
             {"31-60 ticks",{31,60}},
             {">60 ticks",  {61,99999}},
         };
-        for (auto& [label, range] : tbuckets)
-        {
+        for (auto& [label, range] : tbuckets) {
             int cnt = 0; double pnl = 0;
             for (const auto& tr : trades) {
                 if (tr.exit_why != ExitReason::ADVERSE_EARLY) continue;
-                if (tr.hold_ticks >= range.first && tr.hold_ticks <= range.second) {
-                    cnt++; pnl += tr.net_pnl;
-                }
+                if (tr.hold_ticks >= range.first && tr.hold_ticks <= range.second) { cnt++; pnl += tr.net_pnl; }
             }
             if (cnt > 0)
                 std::cout << "  " << std::left << std::setw(14) << label
@@ -647,7 +578,7 @@ int main(int argc, char** argv)
         std::cout << "\n";
     }
 
-    // TIME_STOP deep-dive: MFE at timeout
+    // TIME_STOP deep-dive
     if (s_time.count > 0)
     {
         std::cout << "── TIME_STOP: MFE at timeout ─────────────────────────────────\n";
@@ -661,9 +592,7 @@ int main(int argc, char** argv)
             int cnt = 0; double pnl = 0;
             for (const auto& tr : trades) {
                 if (tr.exit_why != ExitReason::TIME_STOP) continue;
-                if (tr.mfe >= range.first && tr.mfe < range.second) {
-                    cnt++; pnl += tr.net_pnl;
-                }
+                if (tr.mfe >= range.first && tr.mfe < range.second) { cnt++; pnl += tr.net_pnl; }
             }
             if (cnt > 0)
                 std::cout << "  " << std::left << std::setw(14) << label
@@ -673,15 +602,14 @@ int main(int argc, char** argv)
         std::cout << "\n";
     }
 
-    // Overall summary line
-    double total_usd = 0;
+    double total_usd  = 0;
     int    total_wins = 0;
     for (const auto& tr : trades) {
-        total_usd  += tr.net_pnl * 100.0;
+        total_usd += tr.net_pnl * 100.0;
         if (tr.net_pnl > 0) total_wins++;
     }
-    int total_n = (int)trades.size();
-    double wr = total_n > 0 ? 100.0 * total_wins / total_n : 0;
+    int    total_n = (int)trades.size();
+    double wr      = total_n > 0 ? 100.0 * total_wins / total_n : 0;
 
     std::cout << "══════════════════════════════════════════════════════════════\n";
     std::cout << "  RESULT: " << total_n << " trades | WR=" << std::fixed
