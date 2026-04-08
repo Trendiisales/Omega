@@ -1989,16 +1989,42 @@ int main(int argc, char* argv[])
             const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
 
-            // L2 is alive if: imbalance != 0.500 within last 5s
-            const bool l2_alive = g_l2_gold.fresh(now_ms, 5000)
-                && (std::fabs(g_l2_gold.imbalance.load(std::memory_order_relaxed) - 0.5) > 0.001);
+            // L2 is alive if: depth events are flowing (event count increases each interval).
+            // CRITICAL FIX: BlackBull sends size=0 on all depth quotes, which the book
+            // substitutes with 1 lot per level, making bid_total == ask_total == imbalance 0.500
+            // exactly. The old check (imbalance != 0.500) therefore ALWAYS declared L2 dead
+            // even when 100+ levels of real DOM data were flowing. This blocked GoldFlow all day.
+            //
+            // Correct liveness definition: depth events are being received from ctid=43014358.
+            // We track this via depth_events_total (monotonically increasing counter in
+            // CTraderDepthClient). If the count increased since last check, L2 is alive.
+            // Secondary check: g_l2_gold.fresh() confirms the atomic was written recently.
+            static uint64_t s_last_event_count = 0;
+            const uint64_t cur_event_count = g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed);
+            const bool events_flowing = (cur_event_count > s_last_event_count);
+            s_last_event_count = cur_event_count;
+
+            // Also accept: imbalance != 0.500 (non-zero sizes from broker = richer signal)
+            const double cur_imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+            const bool imb_live  = g_l2_gold.fresh(now_ms, 5000)
+                && (std::fabs(cur_imb - 0.5) > 0.001);
+
+            const bool l2_alive = events_flowing || imb_live;
+
+            // Diagnostic every 30s so log always shows L2 state
+            printf("[L2-WATCHDOG] events_total=%llu events_flowing=%d imb=%.4f imb_ok=%d alive=%d watchdog_dead=%d\n",
+                   (unsigned long long)cur_event_count,
+                   (int)events_flowing,
+                   cur_imb, (int)imb_live, (int)l2_alive,
+                   (int)g_l2_watchdog_dead.load(std::memory_order_relaxed));
+            fflush(stdout);
 
             if (l2_alive) {
                 // L2 is flowing
                 if (!was_alive) {
                     // Just recovered
-                    const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-                    printf("[L2-WATCHDOG] ALIVE -- L2 depth flowing from ctid=43014358 imb=%.3f\n", imb);
+                    printf("[L2-WATCHDOG] ALIVE -- L2 depth flowing from ctid=43014358 events=%llu imb=%.3f\n",
+                           (unsigned long long)cur_event_count, cur_imb);
                     fflush(stdout);
                     // Clear alert file
                     { std::ofstream f(alert_path); f << "OK\n"; }
@@ -2017,22 +2043,26 @@ int main(int argc, char* argv[])
                     // Confirmed dead -- gate engines
                     g_l2_watchdog_dead.store(true, std::memory_order_relaxed);
 
-                    printf("[L2-WATCHDOG] *** DEAD *** L2 depth from ctid=43014358 not flowing for %llds\n"
-                           "[L2-WATCHDOG] GoldFlow engine GATED -- drift-only mode has no proven edge\n"
-                           "[L2-WATCHDOG] ACTION REQUIRED: check cTrader connection / ctid=43014358\n",
-                           (long long)(dead_ms / 1000));
+                    printf("[L2-WATCHDOG] *** DEAD *** L2 depth from ctid=43014358 dead for %llds\n"
+                           "[L2-WATCHDOG] events_total=%llu imb=%.4f\n"
+                           "[L2-WATCHDOG] DIAGNOSIS: if events_total>0 and imb=0.500 => BlackBull size=0 bug\n"
+                           "[L2-WATCHDOG] DIAGNOSIS: if events_total=0 => cTrader depth TCP disconnected\n"
+                           "[L2-WATCHDOG] GoldFlow GATED. ACTION REQUIRED: check ctid=43014358\n",
+                           (long long)(dead_ms / 1000),
+                           (unsigned long long)cur_event_count,
+                           cur_imb);
                     fflush(stdout);
 
                     if (!alert_written) {
-                        // Write alert file -- readable by monitoring script / deploy tools
                         std::ofstream f(alert_path);
                         f << "L2_DEAD\n"
-                          << "ctid=43014358 not delivering depth events\n"
                           << "dead_seconds=" << (dead_ms / 1000) << "\n"
-                          << "action=check cTrader Open API connection and account depth permissions\n"
-                          << "immutable=ctid_trader_account_id=43014358 is the ONLY account with L2\n";
+                          << "events_total=" << cur_event_count << "\n"
+                          << "imbalance=" << cur_imb << "\n"
+                          << "diagnosis=" << (cur_event_count > 0 ? "events_flowing_but_sizes_zero(BlackBull_bug)" : "no_depth_events_TCP_dead") << "\n"
+                          << "ctid=43014358 is the ONLY account with L2\n"
+                          << "action=restart_Omega_or_check_cTrader_Open_API_connection\n";
                         alert_written = true;
-
                         printf("[L2-WATCHDOG] Alert written: %s\n", alert_path.c_str());
                         fflush(stdout);
                     }
