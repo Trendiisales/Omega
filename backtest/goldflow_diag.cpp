@@ -405,14 +405,14 @@ int main(int argc, char** argv)
                 else if (adverse_early) {
                     why = ExitReason::ADVERSE_EARLY; exit_px = px;
                 }
+                else if (no_trail_timeout) {
+                    why = ExitReason::TIME_STOP; exit_px = px;  // cut before SL — saves ~$5/trade
+                }
                 else if (px <= e.sl) {
                     why = ExitReason::SL_HIT; exit_px = e.sl;
                 }
                 else if (TRAIL_ENABLED && e.trail_active && px <= e.trail_sl) {
                     why = ExitReason::TRAIL_HIT; exit_px = e.trail_sl;
-                }
-                else if (no_trail_timeout) {
-                    why = ExitReason::TIME_STOP; exit_px = px;
                 }
                 else if (t.ts - e.entry_ts >= TIME_LIMIT_MS) {
                     why = ExitReason::TIME_STOP; exit_px = px;
@@ -423,14 +423,14 @@ int main(int argc, char** argv)
                 else if (adverse_early) {
                     why = ExitReason::ADVERSE_EARLY; exit_px = px;
                 }
+                else if (no_trail_timeout) {
+                    why = ExitReason::TIME_STOP; exit_px = px;
+                }
                 else if (px >= e.sl) {
                     why = ExitReason::SL_HIT; exit_px = e.sl;
                 }
                 else if (TRAIL_ENABLED && e.trail_active && px >= e.trail_sl) {
                     why = ExitReason::TRAIL_HIT; exit_px = e.trail_sl;
-                }
-                else if (no_trail_timeout) {
-                    why = ExitReason::TIME_STOP; exit_px = px;
                 }
                 else if (t.ts - e.entry_ts >= TIME_LIMIT_MS) {
                     why = ExitReason::TIME_STOP; exit_px = px;
