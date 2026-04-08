@@ -117,20 +117,19 @@ inline std::string session_name(uint64_t ts_ms)
 // ─────────────────────────────────────────────
 // Parameters
 // ─────────────────────────────────────────────
-// Sweep best: tp=14, sl=7, imp=5, time=1800, pb=0.45, vwap_trend=0 (gate off), win=600
-// VT=0 means VWAP trend gate disabled — price only needs to be on correct side of VWAP
+// v13: impulse=8 (cut <8pt ADVERSE_EARLY -$10,538), time=600 (cut SL_HIT lingerers hold=7622s)
 static const int    WINDOW          = 600;
-static const double IMPULSE_MIN     = 6.0;
-static const double TP_PTS          = 16.0;   // was 14 — TRAIL avg MFE=8.5 suggests room to run
-static const double SL_PTS          = 8.0;    // was 7 — SL_HIT avg MAE=9.2 hitting just before recovery
+static const double IMPULSE_MIN     = 8.0;
+static const double TP_PTS          = 14.0;
+static const double SL_PTS          = 7.0;
 static const double PULLBACK_FRAC   = 0.50;
 static const double VWAP_TREND_PTS  = 0.004;
 static const int    VWAP_TREND_LOOK = 30;
 static const double MAX_SPREAD      = 0.40;
 static const int    COOLDOWN_TICKS  = 300;
-static const uint64_t TIME_LIMIT_MS = 1200000;
-static const int    ADVERSE_WINDOW  = 10;     // tighter: 30 ticks catches normal noise
-static const double ADVERSE_MIN_PTS = 4.0;    // tighter: 2pts is routine volatility
+static const uint64_t TIME_LIMIT_MS = 600000; // 10min — SL_HIT lingering 7622s avg
+static const int    ADVERSE_WINDOW  = 10;
+static const double ADVERSE_MIN_PTS = 4.0;
 
 // Trail
 static const bool   TRAIL_ENABLED   = true;
