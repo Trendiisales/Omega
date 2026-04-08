@@ -304,10 +304,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.uk100_compressing = (g_eng_uk100.phase  == omega::Phase::COMPRESSION
                                   || g_eng_uk100.phase  == omega::Phase::BREAKOUT_WATCH);
 
-    // ?? L2 imbalance: lock-free atomic reads with freshness guard ????????????????
-    // fresh() returns 0.5 (neutral) if no book update arrived in last 5s.
-    // This prevents stale/default-initialised imbalance from influencing engine decisions.
-    // memory_order_acquire on last_update_ms ensures imbalance/has_data are visible.
+    // ── GOLD L2 IMBALANCE -- cTrader Open API ONLY (ctid=43014358) ────────────
+    // cTrader is the ONLY source of L2 data. FIX does not provide L2.
+    // No BlackBull assumptions. No has_data checks. No bid/ask side requirements.
+    // Rule: if cTrader depth events are flowing for XAUUSD, L2 is live.
+    // Imbalance is derived from price level structure (level count + book slope).
     {
         const int64_t l2_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -315,151 +316,61 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             return al.fresh(l2_now_ms) ? al.imbalance.load(std::memory_order_relaxed) : 0.5;
         };
 
-        // ?? Gold L2 imbalance -- drift-based synthetic when broker sends no real sizes ??
-        // BlackBull cTrader sends XAUUSD depth price levels but zero size data.
-        // CTDepthBook::to_l2book() substitutes 1 lot per level (see size_raw=0 guard).
-        // Equal sizes on all levels -> imbalance() = 0.500 always -- perpetually neutral.
-        // This breaks every gate that uses l2_imb to determine direction:
-        //   - GoldFlowEngine L2 persistence windows never build directional count
-        //   - asia_trend_ok never arms (drift gate falls back to noise)
-        //   - Signal scorer L2 component always scores 0
-        //   - GFE_LONG_THRESHOLD (0.75) never reached -> all gold entries blocked
-        //
-        // Fix: when gold L2 is not carrying real size data (imbalance stuck at 0.500),
-        // derive a synthetic imbalance from EWM drift. This is the same approach used
-        // inside GoldFlowEngine's drift fallback path (permanent operating mode for
-        // this broker). Applying it here at the MacroContext level means ALL consumers
-        // (GoldFlow, GoldStack, signal scorer, supervisor, bracket trend) automatically
-        // see a meaningful directional signal instead of perpetual neutral.
-        //
-        // Formula: imb = clamp(0.5 + drift/DRIFT_SCALE, 0.0, 1.0)
-        //   DRIFT_SCALE=4.0: drift=+4 -> imb=1.0 (strong long), drift=-4 -> imb=0.0 (strong short)
-        //   drift=+1 -> imb=0.75 (crosses GFE_LONG_THRESHOLD -- valid long signal)
-        //   drift=-1 -> imb=0.25 (crosses GFE_SHORT_THRESHOLD -- valid short signal)
-        //   drift=0  -> imb=0.50 (neutral -- no false signal injection)
-        //
-        // gold_l2_real=false means cTrader has no real size data -- this is the trigger.
-        // When gold_l2_real=true (real sizes arrived), use the actual imbalance directly.
-        // ── GOLD L2 IMBALANCE -- cTrader Open API (ctid=43014358) ──────────────
-        // ROOT CAUSE OF PREVIOUS FAILURE:
-        //   BlackBull's cTrader API sends price levels but size_raw=0 on all quotes.
-        //   CTraderDepthClient substitutes size=1.0 for all levels, making bid_total
-        //   == ask_total == imbalance exactly 0.500. The old gold_real check required
-        //   imbalance != 0.500, so gold_real was ALWAYS false despite 100+ levels flowing.
-        //   ALL engines fell back to drift-derived imbalance permanently.
-        //
-        // THE FIX:
-        //   gold_real = true when cTrader depth events are flowing (events_total increasing).
-        //   This is confirmed by the L2 watchdog which uses the same event-count logic.
-        //   When gold_real=true, derive imbalance from PRICE LEVEL STRUCTURE:
-        //     1. Level count ratio: more bid levels than ask levels = buying pressure
-        //     2. Spread compression: tight spread with more bids = bullish
-        //     3. Best-level distance: if best bid is closer to mid than best ask = bid pressure
-        //   This gives a real directional signal from the cTrader DOM even when sizes=0.
-        //
-        // NEVER fall back to drift-derived imbalance when cTrader events are flowing.
-        // Drift is already used by GoldEngineStack independently. Injecting it into
-        // gold_l2_imbalance was double-counting the same signal and causing false entries.
         {
-            const double raw_gold_imb = rd(g_l2_gold);
-            // has_data requires BOTH bid AND ask sides -- BlackBull cTrader sends
-            // ask-only depth for XAUUSD so bid_count=0 always, has_data=false always.
-            // Fix: only require fresh timestamp (last_update_ms written within 5s).
-            // events_live (3s window) already confirms data is flowing.
-            const bool   has_fresh    = g_l2_gold.fresh(l2_now_ms);
-
-            // cTrader events flowing = real DOM data regardless of size values.
-            // FIX: was requiring ev_total > s_last_ev + 2 (2 new events per FIX tick).
-            // Between two FIX ticks only 0-1 cTrader depth events arrive -- this check
-            // was ALWAYS failing, permanently marking L2 as dead even when cTrader was
-            // delivering perfect DOM data visible in the GUI.
-            // Fix: use a 3-second rolling window. If ANY new event arrived in the last
-            // 3 seconds, L2 is live. This correctly handles the asymmetric rates:
-            // FIX ticks arrive at ~10/s, cTrader depth at ~1-3/s.
-            const uint64_t ev_total    = g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed);
-            static uint64_t s_last_ev  = 0;
+            // L2 liveness: cTrader depth events flowing in last 3 seconds.
+            // depth_events_total increments on every pt=2155 event from ctid=43014358.
+            // No other condition required -- events flowing = L2 live.
+            const uint64_t ev_total = g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed);
+            static uint64_t s_last_ev    = 0;
             static int64_t  s_last_ev_ms = 0;
             if (ev_total > s_last_ev) {
                 s_last_ev    = ev_total;
                 s_last_ev_ms = l2_now_ms;
             }
-            // Live if a new event arrived within last 3000ms
-            const bool events_live = (s_last_ev_ms > 0) && ((l2_now_ms - s_last_ev_ms) < 3000);
+            const bool l2_live = (s_last_ev_ms > 0) && ((l2_now_ms - s_last_ev_ms) < 3000);
+            g_macro_ctx.gold_l2_real = l2_live;
 
-            // gold_real: cTrader DOM is live -- use price-structure imbalance
-            const bool gold_real = has_fresh && events_live;
-            g_macro_ctx.gold_l2_real = gold_real;
-
-            if (gold_real) {
-                // cTrader DOM is live. Compute imbalance from PRICE LEVEL STRUCTURE.
-                // BlackBull cTrader API sends equal sizes on all levels, but the
-                // LEVEL COUNTS and PRICE POSITIONS are real and directionally informative.
-                //
-                // Read the raw book (held under g_l2_mtx) for level counts and slope.
-                int    bid_lvls   = 0;
-                int    ask_lvls   = 0;
-                double slope      = 0.0;
+            if (l2_live) {
+                // cTrader depth events flowing. Compute imbalance from price level structure.
+                // cTrader sends incremental depth events with price levels on bid or ask side.
+                // Level count asymmetry and book slope give real directional signal.
+                int    bid_lvls = 0;
+                int    ask_lvls = 0;
+                double slope    = 0.0;
                 {
                     std::lock_guard<std::mutex> lk(g_l2_mtx);
                     auto it = g_l2_books.find("XAUUSD");
-                    if (it == g_l2_books.end()) it = g_l2_books.find("GOLD.F");
                     if (it != g_l2_books.end()) {
                         bid_lvls = it->second.bid_count;
                         ask_lvls = it->second.ask_count;
-                        slope    = it->second.book_slope();  // distance-weighted, -1..+1
+                        slope    = it->second.book_slope();
                     }
                 }
-
-                // Signal 1: level count asymmetry
-                //   More bid levels = institutional buying interest (bid side deeper)
-                //   More ask levels = institutional selling interest (ask side deeper)
                 const int    total_lvls = bid_lvls + ask_lvls;
                 const double level_imb  = (total_lvls > 0)
-                    ? (static_cast<double>(bid_lvls) / total_lvls)
-                    : 0.5;
-
-                // Signal 2: if raw imbalance has real size variation, use it directly
-                const bool has_real_sizes = (std::fabs(raw_gold_imb - 0.5) > 0.005);
-
-                // Signal 3: book slope normalised to 0..1
-                const double slope_imb = std::max(0.0, std::min(1.0, 0.5 + slope * 0.5));
-
-                // Combine signals:
-                //   If real sizes available: weight size-imb 60%, level 20%, slope 20%
-                //   If sizes equal (BlackBull): weight level 50%, slope 50%
-                double gold_imb;
-                if (has_real_sizes) {
-                    gold_imb = 0.60 * raw_gold_imb + 0.20 * level_imb + 0.20 * slope_imb;
-                } else {
-                    gold_imb = 0.50 * level_imb + 0.50 * slope_imb;
-                }
+                    ? (static_cast<double>(bid_lvls) / total_lvls) : 0.5;
+                const double slope_imb  = std::max(0.0, std::min(1.0, 0.5 + slope * 0.5));
+                // Weight: level count 50%, slope 50%
+                const double gold_imb   = 0.50 * level_imb + 0.50 * slope_imb;
                 g_macro_ctx.gold_l2_imbalance = std::max(0.0, std::min(1.0, gold_imb));
 
-                // Log every 30s to verify signal quality in live log
                 static int64_t s_l2_log_ms = 0;
                 if (l2_now_ms - s_l2_log_ms > 30000) {
                     s_l2_log_ms = l2_now_ms;
-                    printf("[GOLD-L2-REAL] bid_lvls=%d ask_lvls=%d slope=%.3f "
-                           "level_imb=%.3f slope_imb=%.3f raw=%.3f final=%.3f real_sz=%d\n",
-                           bid_lvls, ask_lvls, slope, level_imb, slope_imb,
-                           raw_gold_imb, g_macro_ctx.gold_l2_imbalance, (int)has_real_sizes);
+                    printf("[GOLD-L2-LIVE] ev_total=%llu bid_lvls=%d ask_lvls=%d slope=%.3f imb=%.3f\n",
+                           (unsigned long long)ev_total,
+                           bid_lvls, ask_lvls, slope, g_macro_ctx.gold_l2_imbalance);
                     fflush(stdout);
                 }
             } else {
-                // cTrader events not flowing -- genuine feed outage.
-                // Use drift as last resort so engines are not completely blind.
-                // This should only happen during reconnect (3-7 seconds max).
-                static constexpr double DRIFT_SCALE = 2.0;
-                const double drift = g_gold_stack.ewm_drift();
-                const double drift_imb = 0.5 + drift / DRIFT_SCALE;
-                g_macro_ctx.gold_l2_imbalance = std::max(0.0, std::min(1.0, drift_imb));
-
+                // cTrader not flowing (reconnect window, max 3-7s).
+                // Hold last known imbalance -- do not inject drift.
+                // GoldFlow has its own drift-persistence fallback internally.
                 static int64_t s_fallback_log_ms = 0;
                 if (l2_now_ms - s_fallback_log_ms > 10000) {
                     s_fallback_log_ms = l2_now_ms;
-                    printf("[GOLD-L2-FALLBACK] cTrader events not flowing -- "
-                           "drift fallback active drift=%.2f imb=%.3f ev_total=%llu\n",
-                           drift, g_macro_ctx.gold_l2_imbalance,
+                    printf("[GOLD-L2-WAIT] cTrader events stale -- holding last imb=%.3f ev_total=%llu\n",
+                           g_macro_ctx.gold_l2_imbalance,
                            (unsigned long long)ev_total);
                     fflush(stdout);
                 }
@@ -532,31 +443,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
 
-    // ?? L2 size-dead watchdog -- warn at 5s, force-restart at 10s ??????????????
-    // cTrader sends depth events (prices arrive) but size=0 on all levels.
-    // has_data()=false ? GoldFlow blind, no L2 signal. Unacceptable.
-    // 5s dead = warn every tick. 10s dead = force stop/start depth feed.
-    {
-        // XAUUSD depth comes from cTrader Open API (ctid=43014358) -- real DOM with sizes.
-        // FIX feed is order execution only -- not used for L2 imbalance (FIX now blocked
-        // from overwriting cTrader data when cTrader is fresh, see fix_dispatch.hpp).
-        // No restart logic needed -- just log once if truly dead after 60s.
-        const bool gold_size_dead = g_macro_ctx.ctrader_l2_live
-                                    && !g_macro_ctx.gold_l2_real;
-        if (gold_size_dead) {
-            static int64_t s_warn_once = 0;
-            const int64_t now_wd = nowSec();
-            if (s_warn_once == 0) s_warn_once = now_wd;
-            if (now_wd - s_warn_once >= 60) {
-                static bool s_warned = false;
-                if (!s_warned) {
-                    printf("[L2-INFO] XAUUSD cTrader depth events=0 -- using FIX L2 (normal for this account)\n");
-                    fflush(stdout);
-                    s_warned = true;
-                }
-            }
-        }
-    }
 
     // Log L2 status once per minute
     {
