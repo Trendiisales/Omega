@@ -4521,6 +4521,12 @@ public:
             const auto& nm = e->getName();
             if (nm == "MeanReversion") {
                 static_cast<MeanReversionEngine*>(e.get())->set_ewm_drift(governor_.ewm_drift());
+            } else if (nm == "VWAPStretchReversion") {
+                // FIX 2026-04-09: ewm_drift_ was never injected into VWAPStretchReversion.
+                // The engine has a |ewm_drift_| > 2.0 gate but it read 0.0 permanently.
+                // On today's -87pt trend day it fired 3 LONG fades against the trend.
+                // Now receives the same governor drift as MeanReversion.
+                static_cast<VWAPStretchReversionEngine*>(e.get())->set_ewm_drift(governor_.ewm_drift());
             } else if (nm == "NR3Breakout") {
                 static_cast<NR3BreakoutEngine*>(e.get())->set_vol_ratio(cur_vol_ratio);
             }
