@@ -367,8 +367,21 @@ struct BracketTrendState {
             if (it->is_long)  { if (loss_short > 0) break; ++loss_long;  }
             else              { if (loss_long  > 0) break; ++loss_short; }
         }
-        const int64_t REJECTION_BLOCK_MS = 300000; // 5 min -- longer than win bias (3min)
-        static constexpr int REJECTION_LOOKBACK = 2; // 2 consecutive same-dir losses
+        // ?? 30-min window loss counter -- independent of consecutive streak ????
+        // Counts losses per direction within 30 minutes regardless of opposite-dir
+        // trades in between. Fixes: 11:27 LONG -$10, 11:37 SHORT (resets consec),
+        // 11:49 LONG -$18 -- the two LONG losses 22min apart still trip the block.
+        const int64_t WINDOW_30MIN_MS = 1800000LL;
+        int window_loss_long = 0, window_loss_short = 0;
+        for (auto it = exits.rbegin(); it != exits.rend(); ++it) {
+            if ((now_ms - it->ts_ms) > WINDOW_30MIN_MS) break;
+            if (!it->was_profitable) {
+                if (it->is_long)  ++window_loss_long;
+                else              ++window_loss_short;
+            }
+        }
+        const int64_t REJECTION_BLOCK_MS = 1800000; // 30 min window block (was 5min -- too short)
+        static constexpr int REJECTION_LOOKBACK = 2; // 2 same-dir losses
 
         const int prev_bias = bias;
         if (consec_short >= BRACKET_TREND_LOOKBACK && bias != -1) {
@@ -379,13 +392,14 @@ struct BracketTrendState {
             bias           = 1;  // long trend ? block SHORT arm
             bias_set_ms    = now_ms;
             block_until_ms = now_ms + BRACKET_COUNTER_BLOCK_MS;
-        } else if (loss_long >= REJECTION_LOOKBACK && bias != -1) {
-            // Market rejected repeated LONG entries ? block LONGs for 5min
+        } else if ((loss_long >= REJECTION_LOOKBACK || window_loss_long >= REJECTION_LOOKBACK) && bias != -1) {
+            // Market rejected repeated LONG entries -- block LONGs for 30min
+            // Triggers on: 2 consecutive LONG losses OR 2 LONG losses within 30min window
             bias           = -1;
             bias_set_ms    = now_ms;
             block_until_ms = now_ms + REJECTION_BLOCK_MS;
-        } else if (loss_short >= REJECTION_LOOKBACK && bias != 1) {
-            // Market rejected repeated SHORT entries ? block SHORTs for 5min
+        } else if ((loss_short >= REJECTION_LOOKBACK || window_loss_short >= REJECTION_LOOKBACK) && bias != 1) {
+            // Market rejected repeated SHORT entries -- block SHORTs for 30min
             bias           = 1;
             bias_set_ms    = now_ms;
             block_until_ms = now_ms + REJECTION_BLOCK_MS;
