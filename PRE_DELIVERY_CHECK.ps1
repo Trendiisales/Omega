@@ -25,6 +25,16 @@ param(
     [switch] $PostLaunch          # set when checking log after launch
 )
 
+# Read GitHub token from C:\Omega\.github_token if not passed as parameter.
+# This file lives only on the VPS and is gitignored -- never committed.
+# It contains a single line: the GitHub personal access token.
+if ($GitHubToken -eq "") {
+    $tokenFile = "$OmegaDir\.github_token"
+    if (Test-Path $tokenFile) {
+        $GitHubToken = (Get-Content $tokenFile -Raw).Trim()
+    }
+}
+
 $ErrorActionPreference = "Continue"
 $cmakeExe  = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
 $buildDir  = "$OmegaDir\build"
