@@ -17,6 +17,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <deque>
 #include <string>
 #include <cmath>
 #include <chrono>
@@ -129,15 +130,42 @@ struct RunResult
 };
 
 // ─────────────────────────────────────────────
+// Sliding window min/max — O(1) amortized per tick
+// std::deque based — no fixed-size array overflow risk
+// ─────────────────────────────────────────────
+struct SlidingMinMax
+{
+    std::deque<std::pair<float,int>> max_dq, min_dq;
+    int tick_idx = 0;
+
+    void reset() { max_dq.clear(); min_dq.clear(); tick_idx=0; }
+
+    void push(float v, int window)
+    {
+        int oldest = tick_idx - window;
+        if (!max_dq.empty() && max_dq.front().second <= oldest) max_dq.pop_front();
+        if (!min_dq.empty() && min_dq.front().second <= oldest) min_dq.pop_front();
+        while (!max_dq.empty() && max_dq.back().first <= v) max_dq.pop_back();
+        while (!min_dq.empty() && min_dq.back().first >= v) min_dq.pop_back();
+        max_dq.push_back({v, tick_idx});
+        min_dq.push_back({v, tick_idx});
+        tick_idx++;
+    }
+
+    float max() const { return max_dq.empty() ? 0.f : max_dq.front().first; }
+    float min() const { return min_dq.empty() ? 0.f : min_dq.front().first; }
+    bool  ready(int window) const { return tick_idx >= window; }
+};
+
+// ─────────────────────────────────────────────
 // Single backtest — uses pre-computed tick array
 // ─────────────────────────────────────────────
 RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
 {
     RunResult res;
 
-    // Circular buffers — fixed at max window, use p.window as logical size
-    CircBuf<MAX_WINDOW+5> price_buf;
-    CircBuf<35>           vwap_buf;  // VWAP_TREND_LOOK + 5
+    SlidingMinMax smm;         // O(1) sliding hi/lo — replaces O(window) scan
+    CircBuf<35>   vwap_buf;    // VWAP trend lookback (30+5)
 
     float hi = 0, lo = 0;
     bool  in_pos      = false;
@@ -156,9 +184,9 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
 
     for (const auto& t : ticks)
     {
-        // VWAP already pre-computed — just push to trend buffer
+        // Update sliding hi/lo and VWAP trend buffer
+        smm.push(t.mid, p.window);
         vwap_buf.push(t.vwap);
-        price_buf.push(t.mid);
 
         // All ticks in this array are session ticks — no filter needed
         float spread = t.ask - t.bid;
@@ -221,16 +249,10 @@ RunResult run_backtest(const std::vector<Tick>& ticks, const SweepParams& p)
         }
 
         // ── entry ─────────────────────────────────────────
-        if (!in_pos && cooldown == 0 && price_buf.count >= p.window)
+        if (!in_pos && cooldown == 0 && smm.ready(p.window))
         {
-            // Impulse: hi/lo over last p.window ticks in circular buffer
-            hi = price_buf[price_buf.count - p.window];
-            lo = hi;
-            for (int i = price_buf.count - p.window; i < price_buf.count; i++) {
-                float v = price_buf[i];
-                if (v > hi) hi = v;
-                if (v < lo) lo = v;
-            }
+            hi = smm.max();
+            lo = smm.min();
 
             if (hi - lo >= p.impulse_min)
             {
@@ -338,13 +360,15 @@ int main(int argc, char** argv)
     std::cout << "Loaded in " << std::fixed << std::setprecision(1) << load_sec << "s"
               << "  session ticks: " << sess_ticks.size() << " (was " << (sess_ticks.size()*134636174/sess_count) << " full)\n\n";
 
-    // ── Build combo list ──────────────────────────
-    std::vector<float>    tp_vals     = {8.0f,10.0f,12.0f,14.0f,16.0f,18.0f,20.0f};
-    std::vector<float>    sl_vals     = {4.0f, 5.0f, 6.0f, 7.0f, 8.0f,10.0f};
-    std::vector<float>    imp_vals    = {6.0f, 7.0f, 8.0f, 9.0f,10.0f,12.0f};
-    std::vector<uint32_t> time_vals   = {600,  900, 1200, 1800};
-    std::vector<float>    pb_vals     = {0.45f,0.50f,0.55f,0.60f};
-    std::vector<float>    vwap_t_vals = {0.001f,0.002f,0.003f,0.004f,0.005f};
+    // ── Focused combo grid ────────────────────────
+    // Based on diag results: best params cluster around tp=10,sl=5,imp=6,time=1200
+    // Sweep a tight grid around that — ~500 combos instead of 36480
+    std::vector<float>    tp_vals     = {8.0f, 10.0f, 12.0f, 14.0f, 16.0f};
+    std::vector<float>    sl_vals     = {4.0f,  5.0f,  6.0f,  7.0f};
+    std::vector<float>    imp_vals    = {5.0f,  6.0f,  7.0f,  8.0f,  9.0f};
+    std::vector<uint32_t> time_vals   = {600,   900,  1200, 1800};
+    std::vector<float>    pb_vals     = {0.45f, 0.50f, 0.55f, 0.60f};
+    std::vector<float>    vwap_t_vals = {0.002f,0.003f,0.004f,0.005f};
     std::vector<int>      win_vals    = {300, 600};
 
     std::vector<SweepParams> combos;
