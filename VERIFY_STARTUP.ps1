@@ -33,7 +33,7 @@
 # ==============================================================================
 
 param(
-    [int]    $WaitSec = 45,
+    [int]    $WaitSec = 10,
     [string] $LogPath = "",
     [string] $OmegaDir = "C:\Omega"
 )
