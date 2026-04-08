@@ -117,12 +117,11 @@ inline std::string session_name(uint64_t ts_ms)
 // ─────────────────────────────────────────────
 // Parameters
 // ─────────────────────────────────────────────
-// v14: v11 best params + min pullback depth gate
-// v11 was best: +$14,143, 175 trades, 52% WR
-// New gate: entry only if mid is at least MIN_PULLBACK_DEPTH pts inside the pullback zone
-// Filters entries right at the zone boundary which tend to be ADVERSE_EARLY
+// v15: disable Asia (13 ADVERSE vs 16 TRAIL — nearly break-even, destroying -$10k+)
+//      add IMPULSE_MAX=15 (large impulses are exhaustion not continuation)
 static const int    WINDOW          = 600;
 static const double IMPULSE_MIN     = 6.0;
+static const double IMPULSE_MAX     = 15.0;   // cap — large impulses are exhaustion moves
 static const double TP_PTS          = 14.0;
 static const double SL_PTS          = 7.0;
 static const double PULLBACK_FRAC   = 0.50;
@@ -133,10 +132,7 @@ static const int    COOLDOWN_TICKS  = 300;
 static const uint64_t TIME_LIMIT_MS = 1200000;
 static const int    ADVERSE_WINDOW  = 10;
 static const double ADVERSE_MIN_PTS = 4.0;
-// Minimum depth inside pullback zone before entry allowed (pts)
-// pb_long = hi - 0.5*impulse. Entry only if mid <= pb_long - MIN_PB_DEPTH
-// Filters entries right at the zone edge — those go adverse immediately
-static const double MIN_PB_DEPTH    = 1.5;
+static const double MIN_PB_DEPTH    = 0.0;    // off
 
 // Trail
 static const bool   TRAIL_ENABLED   = true;
@@ -315,7 +311,7 @@ struct Stats
 // ─────────────────────────────────────────────
 inline bool trade_session_ok(uint64_t ts_ms)
 {
-    return session_ok(ts_ms);  // Asia + London + NY
+    return session_london(ts_ms) || session_ny(ts_ms);  // Asia disabled: 13 ADVERSE vs 16 TRAIL
 }
 
 // ─────────────────────────────────────────────
@@ -471,11 +467,12 @@ int main(int argc, char** argv)
         if (!e.in_pos && e.cooldown == 0 && e.detect_impulse())
         {
             double impulse  = e.hi - e.lo;
+            if (impulse > IMPULSE_MAX) continue;  // exhaustion move — skip
             double pb_long  = e.hi - PULLBACK_FRAC * impulse;
             double pb_short = e.lo + PULLBACK_FRAC * impulse;
 
-            bool can_long  = (mid <= pb_long - MIN_PB_DEPTH  && mid > e.vwap && e.vwap_trend_up());
-            bool can_short = (mid >= pb_short + MIN_PB_DEPTH && mid < e.vwap && e.vwap_trend_down());
+            bool can_long  = (mid <= pb_long  && mid > e.vwap && e.vwap_trend_up());
+            bool can_short = (mid >= pb_short && mid < e.vwap && e.vwap_trend_down());
 
             if (can_long || can_short)
             {
@@ -552,7 +549,7 @@ int main(int argc, char** argv)
     std::cout << "  Runtime       : " << std::fixed << std::setprecision(2) << runtime << " s\n";
     std::cout << "\n";
     std::cout << "  Parameters:\n";
-    std::cout << "    WINDOW=" << WINDOW << " IMPULSE_MIN=" << IMPULSE_MIN
+    std::cout << "    WINDOW=" << WINDOW << " IMPULSE=" << IMPULSE_MIN << "-" << IMPULSE_MAX
               << " TP=" << TP_PTS << " SL=" << SL_PTS << "\n";
     std::cout << "    PULLBACK_FRAC=" << PULLBACK_FRAC
               << " VWAP_TREND=" << std::setprecision(4) << VWAP_TREND_PTS
@@ -560,7 +557,7 @@ int main(int argc, char** argv)
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
               << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts"
               << " MIN_PB_DEPTH=" << MIN_PB_DEPTH << " pts\n";
-    std::cout << "    VWAP=daily-reset-cumulative  SESSION=ASIA(00-06)+LONDON(07-10)+NY(12-16)\n";
+    std::cout << "    VWAP=daily-reset-cumulative  SESSION=LONDON(07-10)+NY(12-16)\n";
     std::cout << "    TRAIL=" << (TRAIL_ENABLED ? "ON" : "OFF");
     if (TRAIL_ENABLED)
         std::cout << " trigger=" << TRAIL_TRIGGER << "pts lock=" << (int)(TRAIL_LOCK*100) << "%";
