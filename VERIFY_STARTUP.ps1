@@ -450,6 +450,23 @@ if (-not (Test-Path $l2CsvFile)) {
     }
 }
 
+# --- CHECK 8c: FEED-STALE gate --------------------------------------------------
+# CRITICAL: g_feed_stale_xauusd blocks ALL GoldFlow entries when XAUUSD had
+# zero depth events for 1+ minutes. Must be clear for GoldFlow to trade.
+# If FEED-STALE is set it will auto-clear within 60s when events resume.
+# This check catches it immediately so operator knows why GoldFlow is silent.
+$feedStaleLine = Find-Last "FEED-STALE"
+$feedRestoredLine = Find-Last "FEED-STALE.*RESTORED|FEED-STALE.*UNBLOCKED"
+if ($feedRestoredLine) {
+    Add-Result "FEED-STALE Gate" "PASS" "XAUUSD depth restored" $feedRestoredLine.Trim()
+} elseif ($feedStaleLine -and $feedStaleLine -match "entries BLOCKED") {
+    Add-Result "FEED-STALE Gate" "FAIL" "XAUUSD depth starved -- GoldFlow BLOCKED" "GoldFlow entries blocked by FEED-STALE. Will auto-clear within 60s when XAUUSD events resume. Check CTRADER-EVTS XAUUSD count."
+} elseif ($feedStaleLine) {
+    Add-Result "FEED-STALE Gate" "INFO" "FEED-STALE activity seen" $feedStaleLine.Trim()
+} else {
+    Add-Result "FEED-STALE Gate" "PASS" "No FEED-STALE activity" "XAUUSD depth flowing cleanly since startup."
+}
+
 # --- CHECK 9: Latency ---------------------------------------------------------
 $latLine = Find-Last "OMEGA-DIAG.*RTTp95"
 if ($latLine) {
