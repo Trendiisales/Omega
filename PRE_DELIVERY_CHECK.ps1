@@ -125,8 +125,8 @@ if ($apiHead -ne "unknown" -and $localHead7 -ne "unknown") {
 }
 
 # ==============================================================================
-# CHECK 5: version_generated.hpp hash matches local HEAD
-# This file is written by cmake configure. Must match what git says HEAD is.
+# CHECK 5: version_generated.hpp hash matches HEAD (POST-BUILD only)
+# Written by cmake configure -- only valid after build, not before.
 # ==============================================================================
 $verHash = "unknown"
 if (Test-Path $VerFile) {
@@ -134,12 +134,16 @@ if (Test-Path $VerFile) {
     if ($vl -and $vl.Line -match '"([a-f0-9]{7,})"') { $verHash = $Matches[1] }
 }
 
-if ($verHash -eq "unknown") {
-    Fail "version_generated.hpp" "File missing or OMEGA_GIT_HASH not found -- cmake configure did not run"
-} elseif ($localHead7 -ne "unknown" -and $verHash -ne $localHead7) {
-    Fail "version_generated.hpp" "verHash=$verHash != localHead=$localHead7 -- cmake configured from wrong commit"
+if ($PostBuild -or $PostLaunch) {
+    if ($verHash -eq "unknown") {
+        Fail "version_generated.hpp" "File missing -- cmake configure did not run"
+    } elseif ($localHead7 -ne "unknown" -and $verHash -ne $localHead7) {
+        Fail "version_generated.hpp" "verHash=$verHash != localHead=$localHead7 -- cmake used wrong commit"
+    } else {
+        Pass "version_generated.hpp" "hash=$verHash matches HEAD=$localHead7"
+    }
 } else {
-    Pass "version_generated.hpp" "hash=$verHash matches HEAD=$localHead7"
+    Info "version_generated.hpp" "pre-build: not checked (cmake has not run yet)"
 }
 
 # ==============================================================================
