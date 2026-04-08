@@ -325,11 +325,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.gold_l2_real = l2_live;
 
             if (l2_live) {
-                // g_l2_gold.imbalance = rebuilt.imbalance() from CTDepthBook::to_l2book()
-                // = bid_vol / (bid_vol + ask_vol)
-                // When cTrader sends ask-only levels: bid_vol=0, imbalance=0.0 (strong ask pressure)
-                // When bid levels dominate: imbalance approaches 1.0
-                // This is a real directional signal from the actual DOM.
+                // g_l2_gold.imbalance = rebuilt.imbalance_level() from CTDepthBook::to_l2book()
+                // = bid_count / (bid_count + ask_count) -- level-count from cTrader DOM.
+                // cTrader ProtoOADepthEvent sends size_raw=0 for XAUUSD; volume-based
+                // imbalance() produces 0.500 always. imbalance_level() uses DOM level
+                // counts which are real directional signal from the cTrader order book.
                 const double raw_imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
                 g_macro_ctx.gold_l2_imbalance = raw_imb;
 
