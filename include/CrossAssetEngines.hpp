@@ -1657,6 +1657,36 @@ public:
                 }
             }
 
+            // 15-minute hard stop: if still losing after 15 min regardless of MFE,
+            // the thesis is dead. The 5-min stop only fires when mfe<1pt.
+            // This catches trades that showed brief profit early then reversed.
+            // Only fires before BE is locked -- trail manages exit once BE locked.
+            {
+                const int64_t held_s2 = ca_now_sec() - pos_.entry_ts;
+                const double adverse2 = pos_.is_long ? (pos_.entry - mid)
+                                                     : (mid - pos_.entry);
+                if (!be_locked_
+                    && held_s2 > 900       // 15 minutes
+                    && adverse2 > 0.0) {   // any loss at all
+                    printf("[TREND-PB] %s HARD-TIME-STOP held=%llds adverse=%.2f mfe=%.2f -- 15min no BE\n",
+                           sym.c_str(), (long long)held_s2, adverse2, pos_.mfe);
+                    fflush(stdout);
+                    const double exit_px = pos_.is_long ? bid : ask;
+                    omega::TradeRecord tr;
+                    tr.symbol = sym; tr.side = pos_.is_long?"LONG":"SHORT";
+                    tr.entryPrice=pos_.entry; tr.exitPrice=exit_px;
+                    tr.tp=pos_.tp; tr.sl=pos_.sl; tr.size=pos_.size;
+                    tr.mfe=pos_.mfe; tr.mae=adverse2;
+                    tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
+                    tr.exitReason="TIME_STOP"; tr.engine="TrendPullback";
+                    tr.spreadAtEntry=pos_.spread_at_entry;
+                    pos_.reset(); be_locked_=false; prev_at_ema50_=false;
+                    cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
+                    if (on_close) on_close(tr);
+                    return {};
+                }
+            }
+
             // Check SL / timeout
             // Minimum hold: don't check SL for first 2s -- prevents entry-tick exits
             // caused by spread noise or stale EMA50 floor firing immediately
