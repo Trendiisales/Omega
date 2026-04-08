@@ -1830,24 +1830,36 @@ static void on_tick_gold(
     // Entry: L2 imbalance persistence + EWM drift + momentum all confirm.
     // SL: ATR(20) * 1.0 -- volatility-sized, not bracket-range-sized.
     // Trail: progressive ATR-based stages that tighten as profit grows.
-    // ?? Outer gate diagnostic -- fires when gold_can_enter or sibling gates block ?
+    // ?? Outer gate diagnostic -- fires every 30s showing EXACT block reason ??????
     {
         static int64_t s_outer_gate_log = 0;
-        const bool any_gold_open = g_bracket_gold.has_open_position()
-                                || g_gold_stack.has_open_position()
-                                || g_gold_flow.has_open_position()
-                                || g_gold_flow_reload.has_open_position()
-                                || g_le_stack.has_open_position()
-                                || g_trend_pb_gold.has_open_position();
-        if (!gold_can_enter && !any_gold_open && nowSec() - s_outer_gate_log >= 30) {
+        const bool bracket_open  = g_bracket_gold.has_open_position();
+        const bool stack_open    = g_gold_stack.has_open_position();
+        const bool flow_open     = g_gold_flow.has_open_position();
+        const bool reload_open   = g_gold_flow_reload.has_open_position();
+        const bool le_open       = g_le_stack.has_open_position();
+        const bool trend_open    = g_trend_pb_gold.has_open_position();
+        const bool any_gold_open = bracket_open || stack_open || flow_open
+                                || reload_open  || le_open   || trend_open;
+        const bool outer_blocked = !gold_can_enter || bracket_open || stack_open
+                                || flow_open || le_open || trend_open;
+        if (outer_blocked && nowSec() - s_outer_gate_log >= 30) {
             s_outer_gate_log = nowSec();
-            printf("[GF-OUTER-BLOCK] gold_can_enter=0 session_ok=%d trail_block=%d "
-                   "post_impulse=%d symbol_gate=%d any_open=%d\n",
-                   (g_macro_ctx.session_slot != 0) ? 1 : 0,
-                   gold_trail_blocked ? 1 : 0,
-                   gold_post_impulse_block ? 1 : 0,
-                   (!gold_trail_blocked && !gold_post_impulse_block) ? 1 : 0,
-                   any_gold_open ? 1 : 0);
+            printf("[GF-OUTER-BLOCK] can_enter=%d bracket=%d stack=%d flow=%d "
+                   "le=%d trend=%d reload=%d trail=%d post_impulse=%d slot=%d\n",
+                   gold_can_enter ? 1 : 0,
+                   bracket_open ? 1 : 0, stack_open ? 1 : 0, flow_open ? 1 : 0,
+                   le_open ? 1 : 0, trend_open ? 1 : 0, reload_open ? 1 : 0,
+                   gold_trail_blocked ? 1 : 0, gold_post_impulse_block ? 1 : 0,
+                   g_macro_ctx.session_slot);
+            fflush(stdout);
+        }
+        // Also log every 30s even when NOT blocked so we know the engine is alive
+        if (!outer_blocked && nowSec() - s_outer_gate_log >= 30) {
+            s_outer_gate_log = nowSec();
+            printf("[GF-OUTER-PASS] can_enter=1 all_flat slot=%d l2_imb=%.3f\n",
+                   g_macro_ctx.session_slot,
+                   g_macro_ctx.gold_l2_imbalance);
             fflush(stdout);
         }
     }
