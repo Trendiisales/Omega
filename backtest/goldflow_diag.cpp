@@ -69,6 +69,10 @@ bool parse_tick(const std::string& line, Tick& t)
 // ─────────────────────────────────────────────
 // Session filter (UTC)
 // ─────────────────────────────────────────────
+// Asia:   00:00-06:00 UTC (Tokyo/Sydney — biggest gold moves happen here)
+// London: 07:00-10:00 UTC
+// NY:     12:00-16:00 UTC
+// All three sessions active.
 inline int utc_hour(uint64_t ts_ms)
 {
     return (int)((ts_ms / 1000 / 3600) % 24);
@@ -79,16 +83,10 @@ inline uint64_t utc_day(uint64_t ts_ms)
     return ts_ms / 1000 / 86400;
 }
 
-inline bool session_ok(uint64_t ts_ms)
+inline bool session_asia(uint64_t ts_ms)
 {
     int h = utc_hour(ts_ms);
-    return (h >= 7 && h <= 10) || (h >= 12 && h <= 16);
-}
-
-inline bool session_ny(uint64_t ts_ms)
-{
-    int h = utc_hour(ts_ms);
-    return (h >= 12 && h <= 16);
+    return (h >= 0 && h <= 6);
 }
 
 inline bool session_london(uint64_t ts_ms)
@@ -97,11 +95,22 @@ inline bool session_london(uint64_t ts_ms)
     return (h >= 7 && h <= 10);
 }
 
-inline std::string session_name(uint64_t ts_ms)
+inline bool session_ny(uint64_t ts_ms)
 {
     int h = utc_hour(ts_ms);
-    if (h >= 7 && h <= 10)  return "LONDON";
-    if (h >= 12 && h <= 16) return "NY";
+    return (h >= 12 && h <= 16);
+}
+
+inline bool session_ok(uint64_t ts_ms)
+{
+    return session_asia(ts_ms) || session_london(ts_ms) || session_ny(ts_ms);
+}
+
+inline std::string session_name(uint64_t ts_ms)
+{
+    if (session_asia(ts_ms))   return "ASIA";
+    if (session_london(ts_ms)) return "LONDON";
+    if (session_ny(ts_ms))     return "NY";
     return "OFF";
 }
 
@@ -129,15 +138,7 @@ static const bool   TRAIL_ENABLED   = true;
 static const double TRAIL_TRIGGER   = 6.0;    // MFE to activate trail (pts)
 static const double TRAIL_LOCK      = 0.75;   // fraction of MFE to lock in
 
-// Momentum gate — OFF: v4 showed it filtered more winners than losers
-static const bool   MOMENTUM_GATE   = false;
-static const int    MOMENTUM_LOOK   = 100;
-static const double MOMENTUM_MIN_PTS= 1.5;
-
-// Session filter
-static const bool   SESSION_BOTH    = false;
-static const bool   SESSION_NY_ONLY = true;
-
+// Session — all three active
 static const double COMMISSION_PTS  = 0.0;
 
 // ─────────────────────────────────────────────
@@ -259,28 +260,6 @@ struct Engine
         return (vwap_buf[n-1] - vwap_buf[n - VWAP_TREND_LOOK]) < -VWAP_TREND_PTS;
     }
 
-    // Momentum gate: confirm price moved in trade direction over last MOMENTUM_LOOK ticks.
-    // For long: price[now] - price[now - MOMENTUM_LOOK] >= MOMENTUM_MIN_PTS
-    // For short: price[now - MOMENTUM_LOOK] - price[now] >= MOMENTUM_MIN_PTS
-    bool momentum_ok_long()
-    {
-        if (!MOMENTUM_GATE) return true;
-        int n = (int)price_buf.size();
-        if (n < MOMENTUM_LOOK + 1) return false;
-        double recent = price_buf[n - 1];
-        double old    = price_buf[n - 1 - MOMENTUM_LOOK];
-        return (recent - old) >= MOMENTUM_MIN_PTS;
-    }
-
-    bool momentum_ok_short()
-    {
-        if (!MOMENTUM_GATE) return true;
-        int n = (int)price_buf.size();
-        if (n < MOMENTUM_LOOK + 1) return false;
-        double recent = price_buf[n - 1];
-        double old    = price_buf[n - 1 - MOMENTUM_LOOK];
-        return (old - recent) >= MOMENTUM_MIN_PTS;
-    }
 };
 
 // ─────────────────────────────────────────────
@@ -331,9 +310,7 @@ struct Stats
 // ─────────────────────────────────────────────
 inline bool trade_session_ok(uint64_t ts_ms)
 {
-    if (SESSION_BOTH)    return session_ok(ts_ms);
-    if (SESSION_NY_ONLY) return session_ny(ts_ms);
-    return session_london(ts_ms);
+    return session_ok(ts_ms);  // Asia + London + NY
 }
 
 // ─────────────────────────────────────────────
@@ -489,12 +466,8 @@ int main(int argc, char** argv)
             double pb_long  = e.hi - PULLBACK_FRAC * impulse;
             double pb_short = e.lo + PULLBACK_FRAC * impulse;
 
-            // Momentum gate: confirm trade direction has real recent price movement.
-            // Prevents entering a "pullback" that's actually a full reversal.
-            bool can_long  = (mid <= pb_long  && mid > e.vwap
-                              && e.vwap_trend_up() && e.momentum_ok_long());
-            bool can_short = (mid >= pb_short && mid < e.vwap
-                              && e.vwap_trend_down() && e.momentum_ok_short());
+            bool can_long  = (mid <= pb_long  && mid > e.vwap && e.vwap_trend_up());
+            bool can_short = (mid >= pb_short && mid < e.vwap && e.vwap_trend_down());
 
             if (can_long || can_short)
             {
@@ -541,7 +514,7 @@ int main(int argc, char** argv)
     // Aggregate stats
     // ─────────────────────────────────────────────
     Stats s_total, s_tp, s_sl, s_adverse, s_time, s_trail;
-    Stats s_london, s_ny;
+    Stats s_asia, s_london, s_ny;
 
     for (const auto& tr : trades)
     {
@@ -554,15 +527,14 @@ int main(int argc, char** argv)
             case ExitReason::TRAIL_HIT:     s_trail.add(tr);   break;
             default: break;
         }
-        if (tr.session == "LONDON")      s_london.add(tr);
+        if      (tr.session == "ASIA")   s_asia.add(tr);
+        else if (tr.session == "LONDON") s_london.add(tr);
         else if (tr.session == "NY")     s_ny.add(tr);
     }
 
     // ─────────────────────────────────────────────
     // Print report
     // ─────────────────────────────────────────────
-    std::string sess_label = SESSION_BOTH ? "LONDON+NY" : (SESSION_NY_ONLY ? "NY_ONLY" : "LONDON_ONLY");
-
     std::cout << "\n";
     std::cout << "══════════════════════════════════════════════════════════════\n";
     std::cout << "  GoldFlow Diagnostic Backtest\n";
@@ -579,14 +551,10 @@ int main(int argc, char** argv)
               << " TIME_LIMIT=" << TIME_LIMIT_MS/1000 << "s\n";
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
               << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts\n";
-    std::cout << "    VWAP=daily-reset-cumulative  SESSION=" << sess_label << "\n";
+    std::cout << "    VWAP=daily-reset-cumulative  SESSION=ASIA(00-06)+LONDON(07-10)+NY(12-16)\n";
     std::cout << "    TRAIL=" << (TRAIL_ENABLED ? "ON" : "OFF");
     if (TRAIL_ENABLED)
         std::cout << " trigger=" << TRAIL_TRIGGER << "pts lock=" << (int)(TRAIL_LOCK*100) << "%";
-    std::cout << "\n";
-    std::cout << "    MOMENTUM_GATE=" << (MOMENTUM_GATE ? "ON" : "OFF");
-    if (MOMENTUM_GATE)
-        std::cout << " look=" << MOMENTUM_LOOK << "ticks min=" << MOMENTUM_MIN_PTS << "pts";
     std::cout << "\n\n";
 
     std::cout << "── By Exit Reason ────────────────────────────────────────────\n";
@@ -598,8 +566,9 @@ int main(int argc, char** argv)
     if (TRAIL_ENABLED) s_trail.print("TRAIL_HIT");
     std::cout << "\n";
     std::cout << "── By Session ────────────────────────────────────────────────\n";
+    s_asia.print("ASIA   (00-06 UTC)");
     s_london.print("LONDON (07-10 UTC)");
-    s_ny.print("NY (12-16 UTC)");
+    s_ny.print("NY     (12-16 UTC)");
     std::cout << "\n";
 
     // ADVERSE_EARLY deep-dive
