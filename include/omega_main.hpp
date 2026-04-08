@@ -1920,7 +1920,7 @@ int main(int argc, char* argv[])
         // Check that cTrader is actually sending depth events (any side, not necessarily both).
         // has_data() requires BOTH bid AND ask sides simultaneously -- too strict at startup
         // Check FIX book (g_l2_books) which has real bid+ask from the FIX W/X feed.
-        // cTrader atomic (g_l2_gold.imbalance) is ask-only from BlackBull depth.
+        // cTrader atomic (g_l2_gold.imbalance) = imbalance_level() from cTrader DOM.
         const auto t1 = std::chrono::steady_clock::now();
         bool l2_ok = false;
         while (std::chrono::duration_cast<std::chrono::seconds>(
@@ -1955,7 +1955,7 @@ int main(int argc, char* argv[])
     // mode which has no proven edge (backtest: 63% WR, negative P&L).
     //
     // This watchdog:
-    //   1. Monitors L2 liveness every 30s (imbalance != 0.500 within 5s)
+    //   1. Monitors L2 liveness every 30s (depth_events_total increasing)
     //   2. Sets g_l2_watchdog_dead atomic if L2 has been dead > 120s
     //   3. Writes C:\Omega\logs\L2_ALERT.txt immediately on failure
     //   4. Logs [L2-WATCHDOG] DEAD/ALIVE to main log every 30s
@@ -1986,33 +1986,29 @@ int main(int argc, char* argv[])
             const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
 
-            // L2 is alive if: depth events are flowing (event count increases each interval).
-            // CRITICAL FIX: BlackBull sends size=0 on all depth quotes, which the book
-            // substitutes with 1 lot per level, making bid_total == ask_total == imbalance 0.500
-            // exactly. The old check (imbalance != 0.500) therefore ALWAYS declared L2 dead
-            // even when 100+ levels of real DOM data were flowing. This blocked GoldFlow all day.
-            //
-            // Correct liveness definition: depth events are being received from ctid=43014358.
-            // We track this via depth_events_total (monotonically increasing counter in
-            // CTraderDepthClient). If the count increased since last check, L2 is alive.
-            // Secondary check: g_l2_gold.fresh() confirms the atomic was written recently.
+            // L2 liveness = depth_events_total increasing each 30s interval.
+            // cTrader ProtoOADepthEvent sends size_raw=0 for XAUUSD DOM quotes.
+            // imbalance_level() (level count) is used instead of imbalance() (volume),
+            // so 0.500 is valid neutral -- NOT an indicator of dead feed.
+            // The ONLY reliable liveness signal is events_total increasing.
             static uint64_t s_last_event_count = 0;
             const uint64_t cur_event_count = g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed);
             const bool events_flowing = (cur_event_count > s_last_event_count);
             s_last_event_count = cur_event_count;
 
-            // Also accept: imbalance != 0.500 (non-zero sizes from broker = richer signal)
+            // Liveness = events_flowing ONLY.
+            // imbalance_level() produces 0.500 for genuinely neutral DOM (equal bid/ask
+            // levels from cTrader). Do NOT treat 0.500 as "dead" -- it is valid neutral.
+            // The ONLY reliable signal that cTrader is connected is depth_events_total
+            // increasing each 30s interval.
             const double cur_imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-            const bool imb_live  = g_l2_gold.fresh(now_ms, 5000)
-                && (std::fabs(cur_imb - 0.5) > 0.001);
+            const bool l2_alive = events_flowing;
 
-            const bool l2_alive = events_flowing || imb_live;
-
-            // Diagnostic every 30s so log always shows L2 state
-            printf("[L2-WATCHDOG] events_total=%llu events_flowing=%d imb=%.4f imb_ok=%d alive=%d watchdog_dead=%d\n",
+            // Diagnostic every 30s -- always visible, confirms imbalance is moving
+            printf("[L2-WATCHDOG] events_total=%llu events_flowing=%d imb=%.4f alive=%d watchdog_dead=%d\n",
                    (unsigned long long)cur_event_count,
                    (int)events_flowing,
-                   cur_imb, (int)imb_live, (int)l2_alive,
+                   cur_imb, (int)l2_alive,
                    (int)g_l2_watchdog_dead.load(std::memory_order_relaxed));
             fflush(stdout);
 
@@ -2040,11 +2036,11 @@ int main(int argc, char* argv[])
                     // Confirmed dead -- gate engines
                     g_l2_watchdog_dead.store(true, std::memory_order_relaxed);
 
-                    printf("[L2-WATCHDOG] *** DEAD *** L2 depth from ctid=43014358 dead for %llds\n"
+                    printf("[L2-WATCHDOG] *** DEAD *** cTrader depth from ctid=43014358 dead for %llds\n"
                            "[L2-WATCHDOG] events_total=%llu imb=%.4f\n"
-                           "[L2-WATCHDOG] DIAGNOSIS: if events_total>0 and imb=0.500 => BlackBull size=0 bug\n"
-                           "[L2-WATCHDOG] DIAGNOSIS: if events_total=0 => cTrader depth TCP disconnected\n"
-                           "[L2-WATCHDOG] GoldFlow GATED. ACTION REQUIRED: check ctid=43014358\n",
+                           "[L2-WATCHDOG] DIAGNOSIS: events_total not increasing => cTrader TCP disconnected\n"
+                           "[L2-WATCHDOG] DIAGNOSIS: imb value irrelevant when events=0 (no data flowing)\n"
+                           "[L2-WATCHDOG] GoldFlow GATED. ACTION REQUIRED: restart Omega or check ctid=43014358\n",
                            (long long)(dead_ms / 1000),
                            (unsigned long long)cur_event_count,
                            cur_imb);
@@ -2056,7 +2052,7 @@ int main(int argc, char* argv[])
                           << "dead_seconds=" << (dead_ms / 1000) << "\n"
                           << "events_total=" << cur_event_count << "\n"
                           << "imbalance=" << cur_imb << "\n"
-                          << "diagnosis=" << (cur_event_count > 0 ? "events_flowing_but_sizes_zero(BlackBull_bug)" : "no_depth_events_TCP_dead") << "\n"
+                          << "diagnosis=no_depth_events_from_ctid_43014358_TCP_dead_or_auth_failed\n"
                           << "ctid=43014358 is the ONLY account with L2\n"
                           << "action=restart_Omega_or_check_cTrader_Open_API_connection\n";
                         alert_written = true;
