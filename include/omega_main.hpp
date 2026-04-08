@@ -2096,8 +2096,8 @@ int main(int argc, char* argv[])
             if (depth_up2 && events > 10) {
                 const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::steady_clock::now() - ct_wait_start).count();
-                printf("[STARTUP] cTrader L2 live after %llds (events=%llu) -- starting FIX
-", (long long)elapsed, (unsigned long long)events);
+                printf("[STARTUP] cTrader L2 live after %llds (events=%llu) -- starting FIX\n",
+                       (long long)elapsed, (unsigned long long)events);
                 fflush(stdout);
                 ct_ready = true;
                 break;
