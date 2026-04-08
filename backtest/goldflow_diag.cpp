@@ -4,22 +4,20 @@
 // Run:   ./goldflow_diag ticks.csv [trades_out.csv]
 //
 // VERSION HISTORY:
-//   v27: London only, VWAP trend filter → 26 trades +$6,136 65.4% WR
-//   v31: Remove VWAP trend filter → 96 trades -$8,988 43.8% WR (ceiling test)
-//        CSV analysis of v31 revealed root cause:
-//          imp 6-8pt:  n=69 WR=39% -$13,513  ← all the damage
-//          imp 8-10pt: n=6  WR=50% +$1,208
-//          imp 10-12pt:n=1  WR=100% +$1,362
-//          imp 12-15pt:n=4  WR=75%  +$1,495
-//        VWAP trend filter was accidentally selecting for larger impulses.
-//        6-8pt impulses = noise (small moves, pullback often IS the reversal).
-//        8pt+ impulses = genuine momentum with real pullback-retracement edge.
-// v32: IMPULSE_MIN = 8.0 (from 6.0)
-//      No VWAP trend filter (v31 base — direction from impulse+pullback only)
-//      All other params from v31/v27 unchanged.
-//      Expected: ~11 trades, WR ~65%, PnL ~+$4,000
-//      Then assess: if edge holds at 8pt, test whether adding 7pt back with
-//      a secondary filter recovers volume without readmitting the 6-8pt noise.
+//   v27: VWAP trend filter → 26 trades +$6,136 65% WR (thin)
+//   v31: No VWAP filter → 96 trades -$8,988 44% WR (no edge without filter)
+//   v32: IMPULSE_MIN=8 → 41 trades -$1,588 44% WR
+//        Impulse breakdown:
+//          8-9pt:   n=25 WR=28% -$3,831  ← noise
+//          9-10pt:  n=5  WR=40% -$2,038  ← noise
+//          10-11pt: n=4  WR=75% +$204
+//          11-12pt: n=1  WR=100% +$1,362
+//          12-15pt: n=6  WR=83% +$2,715
+//        CONCLUSION: edge only exists at 10pt+. Sub-10pt impulses = random entries.
+// v33: IMPULSE_MIN=10.0
+//      Also widen IMPULSE_MAX from 15 to 25 — the 12-15pt group was 83% WR,
+//      no reason to cap at 15. Large impulses (15-25pt) may have even better edge.
+//      All other params from v32 unchanged.
 
 #include <iostream>
 #include <fstream>
@@ -51,12 +49,11 @@ bool parse_tick(const std::string& line, Tick& t)
 inline int      utc_hour(uint64_t ts)  { return (int)((ts/1000/3600)%24); }
 inline uint64_t utc_day(uint64_t ts)   { return ts/1000/86400; }
 inline bool     session_london(uint64_t ts) { int h=utc_hour(ts); return h>=7&&h<=10; }
-inline uint64_t london_session_id(uint64_t ts) { return utc_day(ts)*100+7; }
 
 // ── Parameters ────────────────────────────────────────────
 static const int    WINDOW           = 600;
-static const double IMPULSE_MIN      = 8.0;    // raised from 6.0 — kills the 39% WR noise group
-static const double IMPULSE_MAX      = 15.0;
+static const double IMPULSE_MIN      = 10.0;   // raised from 8.0 — sub-10pt = noise proven
+static const double IMPULSE_MAX      = 25.0;   // widened from 15.0 — large impulses showed 83% WR
 static const double TP_PTS           = 14.0;
 static const double SL_PTS           = 7.0;
 static const double PULLBACK_FRAC    = 0.50;
@@ -161,7 +158,6 @@ int main(int argc, char** argv)
     uint64_t ticks_total=0,ticks_session=0;
     int trade_id=0;
 
-    // Gate counters
     uint64_t cnt_impulse=0,cnt_rej_inpos=0,cnt_rej_cooldown=0;
     uint64_t cnt_rej_imax=0,cnt_rej_pbzone=0,cnt_rej_pbmin=0,cnt_entered=0;
 
@@ -179,7 +175,6 @@ int main(int argc, char** argv)
         e.update_price(mid);
         if(spread>MAX_SPREAD) continue;
 
-        // Force-close at session end
         if(e.in_pos&&!trade_session_ok(t.ts)){
             cur.exit_price=e.is_long?t.bid:t.ask;
             cur.gross_pnl=e.is_long?cur.exit_price-e.entry:e.entry-cur.exit_price;
@@ -192,7 +187,6 @@ int main(int argc, char** argv)
         ticks_session++;
         if(e.cooldown>0) e.cooldown--;
 
-        // ── manage open position ──────────────────────────
         if(e.in_pos){
             e.pos_ticks++; cur.hold_ticks++;
             double exc=e.is_long?mid-e.entry:e.entry-mid;
@@ -246,10 +240,8 @@ int main(int argc, char** argv)
             }
         }
 
-        // ── entry gate funnel ─────────────────────────────
         if(!e.detect_impulse()) continue;
         cnt_impulse++;
-
         double impulse=e.hi-e.lo;
         if(e.in_pos)     {cnt_rej_inpos++;    continue;}
         if(e.cooldown>0) {cnt_rej_cooldown++;  continue;}
@@ -268,7 +260,6 @@ int main(int argc, char** argv)
         double pb_depth_candidate = can_long ? pb_depth_long : pb_depth_short;
         if(pb_depth_candidate<MIN_PB_DEPTH){cnt_rej_pbmin++;continue;}
 
-        // ── ENTRY ──────────────────────────────────────────
         cnt_entered++;
         e.in_pos=true; e.is_long=can_long;
         if(e.is_long){
@@ -286,7 +277,6 @@ int main(int argc, char** argv)
     auto t_end=std::chrono::high_resolution_clock::now();
     double runtime=std::chrono::duration<double>(t_end-t_start).count();
 
-    // ── Aggregate ─────────────────────────────────────────
     Stats s_total,s_tp,s_sl,s_adverse,s_time,s_trail;
     for(const auto& tr:trades){
         s_total.add(tr);
@@ -300,9 +290,8 @@ int main(int argc, char** argv)
         }
     }
 
-    // ── Report ─────────────────────────────────────────────
     std::cout<<"\n══════════════════════════════════════════════════════════════\n";
-    std::cout<<"  GoldFlow Diagnostic Backtest  v32  [LONDON ONLY]\n";
+    std::cout<<"  GoldFlow Diagnostic Backtest  v33  [LONDON ONLY]\n";
     std::cout<<"══════════════════════════════════════════════════════════════\n";
     std::cout<<"  Ticks total   : "<<ticks_total<<"\n";
     std::cout<<"  Ticks session : "<<ticks_session<<"\n";
@@ -319,13 +308,13 @@ int main(int argc, char** argv)
     std::cout<<"\n\n";
 
     std::cout<<"── Entry Gate Funnel ─────────────────────────────────────────\n";
-    std::cout<<"  Impulse>=8pt detected: "<<cnt_impulse<<"\n";
-    std::cout<<"  Rej: in position     : "<<cnt_rej_inpos<<"\n";
-    std::cout<<"  Rej: cooldown        : "<<cnt_rej_cooldown<<"\n";
-    std::cout<<"  Rej: impulse>max     : "<<cnt_rej_imax<<"\n";
-    std::cout<<"  Rej: not in pb zone  : "<<cnt_rej_pbzone<<"\n";
-    std::cout<<"  Rej: pb too shallow  : "<<cnt_rej_pbmin<<"\n";
-    std::cout<<"  ENTERED              : "<<cnt_entered<<"\n\n";
+    std::cout<<"  Impulse>=10pt detected: "<<cnt_impulse<<"\n";
+    std::cout<<"  Rej: in position      : "<<cnt_rej_inpos<<"\n";
+    std::cout<<"  Rej: cooldown         : "<<cnt_rej_cooldown<<"\n";
+    std::cout<<"  Rej: impulse>max      : "<<cnt_rej_imax<<"\n";
+    std::cout<<"  Rej: not in pb zone   : "<<cnt_rej_pbzone<<"\n";
+    std::cout<<"  Rej: pb too shallow   : "<<cnt_rej_pbmin<<"\n";
+    std::cout<<"  ENTERED               : "<<cnt_entered<<"\n\n";
 
     std::cout<<"── By Exit Reason ────────────────────────────────────────────\n";
     s_total.print("TOTAL");
@@ -377,7 +366,7 @@ int main(int argc, char** argv)
     std::cout<<"── Pullback Depth at Entry ───────────────────────────────────\n";
     for(auto& [lbl,rng]:std::vector<std::pair<std::string,std::pair<double,double>>>{
         {"pb 1-3pt",{1,3}},{"pb 3-5pt",{3,5}},{"pb 5-7pt",{5,7}},
-        {"pb 7-10pt",{7,10}},{"pb>10pt",{10,999}}}){
+        {"pb 7-10pt",{7,10}},{"pb 10-15pt",{10,15}},{"pb>15pt",{15,999}}}){
         int n=0,w=0; double pnl=0;
         for(const auto& tr:trades) if(tr.pb_depth>=rng.first&&tr.pb_depth<rng.second)
             {n++;pnl+=tr.net_pnl;if(tr.net_pnl>0)w++;}
@@ -389,8 +378,8 @@ int main(int argc, char** argv)
 
     std::cout<<"── Impulse Size at Entry ─────────────────────────────────────\n";
     for(auto& [lbl,rng]:std::vector<std::pair<std::string,std::pair<double,double>>>{
-        {"8-9pt",{8,9}},{"9-10pt",{9,10}},{"10-11pt",{10,11}},
-        {"11-12pt",{11,12}},{"12-15pt",{12,15}}}){
+        {"10-11pt",{10,11}},{"11-12pt",{11,12}},{"12-13pt",{12,13}},
+        {"13-15pt",{13,15}},{"15-20pt",{15,20}},{"20-25pt",{20,25}}}){
         int n=0,w=0; double pnl=0;
         for(const auto& tr:trades) if(tr.impulse_sz>=rng.first&&tr.impulse_sz<rng.second)
             {n++;pnl+=tr.net_pnl;if(tr.net_pnl>0)w++;}
