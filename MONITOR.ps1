@@ -84,6 +84,42 @@ if (Test-Path $L2TickFile) {
     Write-Host "  [L2 LOG] L2 data is not being saved -- check Omega is running" -ForegroundColor Red
 }
 Write-Host "=======================================================" -ForegroundColor Cyan
+
+# ── FIX CONNECTION HEALTH CHECK ──────────────────────────────────────────────
+# SSL error 6 drops happen every ~3 minutes from BlackBull broker keepalive.
+# Each drop + warmup = ~17 seconds of blocked entries.
+# Over a 12hr day = 68+ minutes of invisible blackout if not monitored.
+# This check reads today's log and reports drop count, last drop time,
+# and estimated total blackout time so it is NEVER invisible again.
+Write-Host ""
+$TodayLog = "$OmegaDir\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
+if (Test-Path $TodayLog) {
+    $sslDrops    = @(Select-String -Path $TodayLog -Pattern "SSL error|Disconnected.*reconnecting" -ErrorAction SilentlyContinue)
+    $dropCount   = $sslDrops.Count
+    $lastDrop    = ""
+    if ($dropCount -gt 0) {
+        $lastLine = $sslDrops[-1].Line
+        if ($lastLine -match "^(\d{2}:\d{2}:\d{2})") { $lastDrop = $matches[1] }
+    }
+    # Estimate blackout: each drop = reconnect(7s) + warmup(10s)
+    $blackoutMin = [Math]::Round($dropCount * 17 / 60, 1)
+
+    if ($dropCount -gt 5) {
+        Write-Host "  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+        Write-Host "  *** FIX DROPS: $dropCount today | ~${blackoutMin}min BLACKOUT ***" -ForegroundColor Red
+        Write-Host "  Last drop: $lastDrop | Entries BLOCKED during each drop" -ForegroundColor Red
+        Write-Host "  CAUSE: BlackBull SSL keepalive timeout every ~3 minutes" -ForegroundColor Yellow
+        Write-Host "  FIX NOW: Set connection_warmup_sec=0 in omega_config.ini" -ForegroundColor Yellow
+        Write-Host "  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+    } elseif ($dropCount -gt 0) {
+        Write-Host "  [FIX] $dropCount reconnect(s) today | ~${blackoutMin}min blackout | Last: $lastDrop" -ForegroundColor Yellow
+    } else {
+        Write-Host "  [FIX] Connection stable -- 0 SSL drops today" -ForegroundColor Green
+    }
+} else {
+    Write-Host "  [FIX] No log for today -- Omega may not be running" -ForegroundColor Yellow
+}
+Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Color rules -- checked in order, first match wins
