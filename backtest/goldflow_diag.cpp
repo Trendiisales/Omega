@@ -130,6 +130,7 @@ static const int    VWAP_TREND_LOOK = 30;
 static const double MAX_SPREAD      = 0.40;
 static const int    COOLDOWN_TICKS  = 300;
 static const uint64_t TIME_LIMIT_MS = 1200000;
+static const uint64_t NO_TRAIL_MS   = 1200000; // exit at market if trail hasn't activated in 20min
 static const int    ADVERSE_WINDOW  = 10;
 static const double ADVERSE_MIN_PTS = 4.0;
 static const double MIN_PB_DEPTH    = 0.0;    // off
@@ -392,6 +393,8 @@ int main(int argc, char** argv)
             }
 
             bool adverse_early = (e.pos_ticks <= ADVERSE_WINDOW && cur.mae >= ADVERSE_MIN_PTS);
+            // No-trail timeout: if trail hasn't activated after 20min, trade is going nowhere — exit
+            bool no_trail_timeout = (!e.trail_active && (t.ts - e.entry_ts) >= NO_TRAIL_MS);
 
             ExitReason why   = ExitReason::NONE;
             double     exit_px = 0;
@@ -400,7 +403,6 @@ int main(int argc, char** argv)
                 double px = t.bid;
                 if      (px >= e.tp) { why = ExitReason::TP_HIT; exit_px = e.tp; }
                 else if (adverse_early) {
-                    // Early exit at market — don't wait for full SL
                     why = ExitReason::ADVERSE_EARLY; exit_px = px;
                 }
                 else if (px <= e.sl) {
@@ -408,6 +410,9 @@ int main(int argc, char** argv)
                 }
                 else if (TRAIL_ENABLED && e.trail_active && px <= e.trail_sl) {
                     why = ExitReason::TRAIL_HIT; exit_px = e.trail_sl;
+                }
+                else if (no_trail_timeout) {
+                    why = ExitReason::TIME_STOP; exit_px = px;
                 }
                 else if (t.ts - e.entry_ts >= TIME_LIMIT_MS) {
                     why = ExitReason::TIME_STOP; exit_px = px;
@@ -423,6 +428,9 @@ int main(int argc, char** argv)
                 }
                 else if (TRAIL_ENABLED && e.trail_active && px >= e.trail_sl) {
                     why = ExitReason::TRAIL_HIT; exit_px = e.trail_sl;
+                }
+                else if (no_trail_timeout) {
+                    why = ExitReason::TIME_STOP; exit_px = px;
                 }
                 else if (t.ts - e.entry_ts >= TIME_LIMIT_MS) {
                     why = ExitReason::TIME_STOP; exit_px = px;
