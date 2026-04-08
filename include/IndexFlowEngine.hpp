@@ -595,13 +595,15 @@ public:
             const bool dead = (mins >= 22 * 60) || (mins < 8 * 60);
             if (dead) return {};
 
-            // NY open noise gate: 13:15-13:45 UTC
+            // NY open noise gate: 13:15-14:00 UTC (extended from 13:45)
             // Root cause of 13-trade 26%WR cluster: NY opens at 13:30 UTC with
             // violent bid/ask oscillation. 13 IndexFlow trades in 30 min including
             // direction flips within seconds, 5 zero-gross SL trades.
             // Total damage: -$56.28 in 30 minutes.
-            // Block 15 min before and 15 min after NY open (13:15-13:45 UTC).
-            const bool ny_open_noise = (mins >= 13 * 60 + 15) && (mins < 13 * 60 + 45);
+            // Extended 2026-04-09: trades at 13:45,13:46,13:47,13:49 all SL_HIT
+            // immediately after gate lifted -- NY volatility persists past 13:45.
+            // Block 13:15-14:00 UTC (45 min total covers full NY open noise window).
+            const bool ny_open_noise = (mins >= 13 * 60 + 15) && (mins < 14 * 60 + 0);
             if (ny_open_noise) return {};
         }
 
