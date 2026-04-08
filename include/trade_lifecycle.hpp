@@ -1478,6 +1478,45 @@ static double enter_directional(
         final_lot = std::max(0.01, std::floor(final_lot * vp_scale * 100.0 + 0.5) / 100.0);
     }
 
+    // ?? Covariance-based position sizing ??????????????????????????????????????????
+    // When entering a symbol that is highly covariant with an already-open position,
+    // reduce lot size proportionally. Prevents doubling metals exposure when both
+    // XAUUSD and XAGUSD are open, or stacking correlated index positions.
+    // Uses g_corr_matrix.covariance_sizing_mult() which:
+    //   - Returns 1.0 when no open positions or covariance below threshold
+    //   - Scales down to [0.50, 1.0) as net covariance exposure increases
+    //   - floor of 0.50 prevents sizing to zero on perfect correlation
+    {
+        // Build open position list with direction signs
+        std::vector<std::pair<std::string,int>> cov_open;
+        cov_open.reserve(16);
+        auto cov_add = [&](const char* s, bool active, bool is_long_pos) {
+            if (active) cov_open.emplace_back(s, is_long_pos ? 1 : -1);
+        };
+        cov_add("US500.F",  g_eng_sp.pos.active,     g_eng_sp.pos.is_long);
+        cov_add("USTEC.F",  g_eng_nq.pos.active,     g_eng_nq.pos.is_long);
+        cov_add("DJ30.F",   g_eng_us30.pos.active,   g_eng_us30.pos.is_long);
+        cov_add("NAS100",   g_eng_nas100.pos.active,  g_eng_nas100.pos.is_long);
+        cov_add("USOIL.F",  g_eng_cl.pos.active,     g_eng_cl.pos.is_long);
+        cov_add("BRENT",    g_eng_brent.pos.active,  g_eng_brent.pos.is_long);
+        cov_add("XAGUSD",   g_eng_xag.pos.active,    g_eng_xag.pos.is_long);
+        cov_add("EURUSD",   g_eng_eurusd.pos.active, g_eng_eurusd.pos.is_long);
+        cov_add("GBPUSD",   g_eng_gbpusd.pos.active, g_eng_gbpusd.pos.is_long);
+        cov_add("USDJPY",   g_eng_usdjpy.pos.active, g_eng_usdjpy.pos.is_long);
+        cov_add("AUDUSD",   g_eng_audusd.pos.active, g_eng_audusd.pos.is_long);
+        cov_add("NZDUSD",   g_eng_nzdusd.pos.active, g_eng_nzdusd.pos.is_long);
+        cov_add("GER40",    g_eng_ger30.pos.active,  g_eng_ger30.pos.is_long);
+        cov_add("UK100",    g_eng_uk100.pos.active,  g_eng_uk100.pos.is_long);
+        cov_add("XAUUSD",   g_gold_flow.has_open_position()
+                          || g_gold_stack.has_open_position()
+                          || g_trend_pb_gold.has_open_position(),
+                            is_long);  // direction of this entry
+        const double cov_mult = g_corr_matrix.covariance_sizing_mult(std::string(esym), cov_open);
+        if (cov_mult < 0.99) {
+            final_lot = std::max(0.01, std::floor(final_lot * cov_mult * 100.0 + 0.5) / 100.0);
+        }
+    }
+
     // ?? Hard R:R floor -- checked at dispatch, not signal generation ????
     // Signal generation uses comp_range ? 1.6 / comp_range ? 0.4 = 4:1.
     // But L2 wall penalties, SL adjustments, and ATR sizing can push this
