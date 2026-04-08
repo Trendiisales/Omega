@@ -1666,9 +1666,9 @@ public:
                 const double adverse2 = pos_.is_long ? (pos_.entry - mid)
                                                      : (mid - pos_.entry);
                 if (!be_locked_
-                    && held_s2 > 900       // 15 minutes
-                    && adverse2 > 0.0) {   // any loss at all
-                    printf("[TREND-PB] %s HARD-TIME-STOP held=%llds adverse=%.2f mfe=%.2f -- 15min no BE\n",
+                    && held_s2 > 600       // 10 minutes (was 15 -- too long to hold loser)
+                    && adverse2 > pos_.spread_at_entry * 2.0) {  // meaningful loss beyond spread noise
+                    printf("[TREND-PB] %s HARD-TIME-STOP held=%llds adverse=%.2f mfe=%.2f -- 10min no BE\n",
                            sym.c_str(), (long long)held_s2, adverse2, pos_.mfe);
                     fflush(stdout);
                     const double exit_px = pos_.is_long ? bid : ask;
