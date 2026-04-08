@@ -604,9 +604,8 @@ if ($ghostLines.Count -gt 0) {
     Add-Result "Impulse Ghost" "INFO" "No impulse ghost blocks seen" ""
 }
 
-# --- CHECK 13: Running hash vs GitHub HEAD -----------------------------------
-# Confirms binary was built from latest origin/main commit.
-# Catches the failure mode where cmake skipped recompilation silently.
+# --- CHECK 13: Running hash vs git HEAD --------------------------------------
+# Confirms binary was built from latest origin/main. Catches stale binary.
 $verFile2 = "$OmegaDir\include\version_generated.hpp"
 $runningHash = "unknown"
 if (Test-Path $verFile2) {
@@ -615,15 +614,14 @@ if (Test-Path $verFile2) {
 }
 $ErrorActionPreference = "Continue"
 $gitHeadFull = & git -C $OmegaDir rev-parse HEAD 2>$null
-$ErrorActionPreference = "Continue"
 $gitHead7 = if ($gitHeadFull -and $gitHeadFull.Length -ge 7) { $gitHeadFull.Substring(0,7) } else { "unknown" }
-
+$ErrorActionPreference = "Continue"
 if ($runningHash -eq "unknown" -or $gitHead7 -eq "unknown") {
-    Add-Result "Hash vs HEAD" "WARN" "running=$runningHash git_head=$gitHead7" "Could not verify -- check version_generated.hpp exists and git log is accessible."
+    Add-Result "Hash vs HEAD" "WARN" "running=$runningHash git_head=$gitHead7" "Could not verify -- check version_generated.hpp and git are accessible."
 } elseif ($runningHash -eq $gitHead7) {
     Add-Result "Hash vs HEAD" "PASS" "running=$runningHash == HEAD=$gitHead7" "Binary matches latest commit. Source and binary are in sync."
 } else {
-    Add-Result "Hash vs HEAD" "FAIL" "running=$runningHash != HEAD=$gitHead7" "BINARY IS STALE. Binary does not match origin/main HEAD. Run QUICK_RESTART.ps1 immediately."
+    Add-Result "Hash vs HEAD" "FAIL" "running=$runningHash != HEAD=$gitHead7" "BINARY IS STALE. Does not match origin/main HEAD. Run QUICK_RESTART.ps1 immediately."
 }
 
 # --- CHECK 14: Bar state validity (not flat/holiday) -------------------------
