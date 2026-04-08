@@ -97,8 +97,10 @@ inline bool session_london(uint64_t ts_ms)
 
 inline bool session_ny(uint64_t ts_ms)
 {
+    // Skip first 30min of NY open — high volatility chop at open produces SL_HIT
     int h = utc_hour(ts_ms);
-    return (h >= 12 && h <= 16);
+    int m = (int)((ts_ms / 1000 / 60) % 60);
+    return (h == 12 && m >= 30) || (h >= 13 && h <= 16);
 }
 
 inline bool session_ok(uint64_t ts_ms)
