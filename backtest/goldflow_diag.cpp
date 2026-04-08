@@ -117,9 +117,12 @@ inline std::string session_name(uint64_t ts_ms)
 // ─────────────────────────────────────────────
 // Parameters
 // ─────────────────────────────────────────────
-// v13: impulse=8 (cut <8pt ADVERSE_EARLY -$10,538), time=600 (cut SL_HIT lingerers hold=7622s)
+// v14: v11 best params + min pullback depth gate
+// v11 was best: +$14,143, 175 trades, 52% WR
+// New gate: entry only if mid is at least MIN_PULLBACK_DEPTH pts inside the pullback zone
+// Filters entries right at the zone boundary which tend to be ADVERSE_EARLY
 static const int    WINDOW          = 600;
-static const double IMPULSE_MIN     = 8.0;
+static const double IMPULSE_MIN     = 6.0;
 static const double TP_PTS          = 14.0;
 static const double SL_PTS          = 7.0;
 static const double PULLBACK_FRAC   = 0.50;
@@ -127,9 +130,13 @@ static const double VWAP_TREND_PTS  = 0.004;
 static const int    VWAP_TREND_LOOK = 30;
 static const double MAX_SPREAD      = 0.40;
 static const int    COOLDOWN_TICKS  = 300;
-static const uint64_t TIME_LIMIT_MS = 600000; // 10min — SL_HIT lingering 7622s avg
+static const uint64_t TIME_LIMIT_MS = 1200000;
 static const int    ADVERSE_WINDOW  = 10;
 static const double ADVERSE_MIN_PTS = 4.0;
+// Minimum depth inside pullback zone before entry allowed (pts)
+// pb_long = hi - 0.5*impulse. Entry only if mid <= pb_long - MIN_PB_DEPTH
+// Filters entries right at the zone edge — those go adverse immediately
+static const double MIN_PB_DEPTH    = 1.5;
 
 // Trail
 static const bool   TRAIL_ENABLED   = true;
@@ -467,8 +474,8 @@ int main(int argc, char** argv)
             double pb_long  = e.hi - PULLBACK_FRAC * impulse;
             double pb_short = e.lo + PULLBACK_FRAC * impulse;
 
-            bool can_long  = (mid <= pb_long  && mid > e.vwap && e.vwap_trend_up());
-            bool can_short = (mid >= pb_short && mid < e.vwap && e.vwap_trend_down());
+            bool can_long  = (mid <= pb_long - MIN_PB_DEPTH  && mid > e.vwap && e.vwap_trend_up());
+            bool can_short = (mid >= pb_short + MIN_PB_DEPTH && mid < e.vwap && e.vwap_trend_down());
 
             if (can_long || can_short)
             {
@@ -551,7 +558,8 @@ int main(int argc, char** argv)
               << " VWAP_TREND=" << std::setprecision(4) << VWAP_TREND_PTS
               << " TIME_LIMIT=" << TIME_LIMIT_MS/1000 << "s\n";
     std::cout << "    ADVERSE_WINDOW=" << ADVERSE_WINDOW
-              << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts\n";
+              << " ADVERSE_MIN=" << ADVERSE_MIN_PTS << " pts"
+              << " MIN_PB_DEPTH=" << MIN_PB_DEPTH << " pts\n";
     std::cout << "    VWAP=daily-reset-cumulative  SESSION=ASIA(00-06)+LONDON(07-10)+NY(12-16)\n";
     std::cout << "    TRAIL=" << (TRAIL_ENABLED ? "ON" : "OFF");
     if (TRAIL_ENABLED)
