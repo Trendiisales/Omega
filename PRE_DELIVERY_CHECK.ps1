@@ -22,7 +22,8 @@ param(
     [string] $OmegaDir    = "C:\Omega",
     [string] $GitHubToken = "",
     [string] $ExpectedHash = "",   # passed in by QUICK_RESTART after build
-    [switch] $PostLaunch          # set when checking log after launch
+    [switch] $PostBuild,          # set after build: checks wipe/binary/hash
+    [switch] $PostLaunch          # set after launch: checks log hash
 )
 
 # Read GitHub token from C:\Omega\.github_token if not passed as parameter.
@@ -142,7 +143,7 @@ if ($verHash -eq "unknown") {
 }
 
 # ==============================================================================
-# CHECK 6: No stale .obj or .pch files in build dir
+# CHECK 6: Build dirs wiped (POST-BUILD only)
 # If these exist, cmake MAY skip recompilation for header-only changes.
 # QUICK_RESTART deletes them before building. This check confirms they are gone.
 # ==============================================================================
@@ -163,9 +164,9 @@ if (-not $PostLaunch) {
 }
 
 # ==============================================================================
-# CHECK 7: Binary was built fresh -- Omega.exe timestamp must be recent (< 10 min)
+# CHECK 7: Binary was built fresh (POST-BUILD only)
 # ==============================================================================
-if (-not $PostLaunch) {
+if ($PostBuild -and -not $PostLaunch) {
     if (Test-Path $OmegaExe) {
         $binaryAge = [int]((Get-Date) - (Get-Item $OmegaExe).LastWriteTime).TotalMinutes
         $binaryTime = (Get-Item $OmegaExe).LastWriteTime.ToUniversalTime().ToString("HH:mm:ss UTC")
@@ -180,17 +181,15 @@ if (-not $PostLaunch) {
 }
 
 # ==============================================================================
-# CHECK 8: Binary hash matches HEAD
-# version_generated.hpp was written by cmake configure AFTER git reset.
-# The hash in it must equal the HEAD we just confirmed.
+# CHECK 8: Binary hash matches HEAD (POST-BUILD only)
 # ==============================================================================
-if ($ExpectedHash -ne "" -and $verHash -ne "unknown") {
+if ($PostBuild -and $ExpectedHash -ne "" -and $verHash -ne "unknown") {
     if ($verHash -eq $ExpectedHash) {
         Pass "Binary hash" "version_generated=$verHash == expected=$ExpectedHash"
     } else {
         Fail "Binary hash" "version_generated=$verHash != expected=$ExpectedHash -- wrong commit compiled"
     }
-} elseif ($verHash -ne "unknown" -and $localHead7 -ne "unknown") {
+} elseif ($PostBuild -and $verHash -ne "unknown" -and $localHead7 -ne "unknown") {
     if ($verHash -eq $localHead7) {
         Pass "Binary hash" "version_generated=$verHash == localHEAD=$localHead7"
     } else {
