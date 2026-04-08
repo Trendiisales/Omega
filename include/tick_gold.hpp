@@ -474,11 +474,20 @@ static void on_tick_gold(
                 || (gsig.is_long  && gold_mid_now <= gold_vwap_now * 1.001)
                 || (!gsig.is_long && gold_mid_now >= gold_vwap_now * 0.999);
 
-            if (!direction_ok) {
+            // ?? Covariance trend-day gate for mean-reversion engines ??????????
+            // If XAUUSD and XAGUSD are moving together (|corr| > 0.70), this is
+            // a macro trend day -- block fade engines to avoid selling into a move.
+            // trend_day_corr() uses the live EWM correlation matrix which is fed
+            // XAGUSD ticks every tick (on_tick.hpp line 265, before is_active_sym gate).
+            const bool trend_day_corr_block =
+                is_mean_rev_engine && g_corr_matrix.trend_day_corr("XAUUSD");
+
+            if (!direction_ok || trend_day_corr_block) {
                 printf("[GOLD-STACK-BLOCKED] %s counter-trend mid=%.2f vwap=%.2f"
-                       " vol_ratio=%.3f eng=%s\n",
+                       " vol_ratio=%.3f eng=%s trend_day_corr=%d\n",
                        gsig.is_long ? "LONG" : "SHORT",
-                       gold_mid_now, gold_vwap_now, gold_vol_ratio, gsig.engine);
+                       gold_mid_now, gold_vwap_now, gold_vol_ratio, gsig.engine,
+                       (int)trend_day_corr_block);
                 fflush(stdout);
             } else {
                 g_telemetry.UpdateLastSignal("XAUUSD",
