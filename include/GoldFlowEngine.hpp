@@ -478,33 +478,13 @@ struct GoldFlowEngine {
         }
 
         // ?? L2 availability detection ?????????????????????????????????????????
-        // L2 availability: l2_imb is computed in on_tick.hpp from cTrader DOM price structure.
-        // When ctid=43014358 events are flowing, gold_l2_imbalance reflects real level
-        // count asymmetry and book slope -- NOT imbalance() which uses sizes (always equal
-        // on BlackBull cTrader). l2_data_live = imb meaningfully non-neutral (>0.001 from 0.5).
-        // This is now correct: on_tick.hpp ensures imb IS non-neutral when DOM is live.
-        const bool l2_data_live = (std::fabs(l2_imb - 0.5) > 0.001);
-    m_last_l2_imb  = l2_data_live ? l2_imb : 0.5;
-    m_last_l2_live = l2_data_live;
-        // Track whether L2 was ever live this session -- if it was and now isn't, block
-        if (l2_data_live) {
-            m_l2_was_live = true;
-        } else if (!m_l2_was_live) {
-            // L2 never live this session -- log once so it's visible in startup output
-            static bool s_no_l2_logged = false;
-            if (!s_no_l2_logged && m_ticks_received >= GFE_MIN_ENTRY_TICKS) {
-                s_no_l2_logged = true;
-                printf("[GFE] L2 imbalance neutral -- cTrader DOM events not yet confirmed live. "
-                       "Using drift-persistence mode until DOM confirmed. "
-                       "threshold=%.1f persist_ticks=%d\n",
-                       GFE_DRIFT_FALLBACK_THRESHOLD, GFE_DRIFT_PERSIST_TICKS);
-                fflush(stdout);
-            }
-        }
-        // Mid-session drop block: if L2 was live and is now dead (feed outage),
-        // block entries rather than falling back to drift -- on_tick.hpp handles
-        // the fallback. If L2 never came live this session, drift fallback is used.
-        // if (!l2_data_live && m_l2_was_live && !is_low_quality_session) return;
+        // BlackBull sends size_raw=0 on all XAUUSD DOM quotes and always delivers
+        // 6 bid + 6 ask levels symmetrically. Imbalance is permanently 0.5000.
+        // l2_imb parameter retained for API compat but is not used for any decision.
+        // Drift-persistence is the permanent and only entry path for GoldFlow on BlackBull.
+        const bool l2_data_live = false;  // PERMANENT: BlackBull DOM unusable for gold
+        m_last_l2_imb  = 0.5;
+        m_last_l2_live = false;
 
         // Session-aware persistence thresholds: Asia requires 90% dominance, normal 75%
         // Continuation mode: lower persistence threshold for first re-entry after
@@ -522,14 +502,8 @@ struct GoldFlowEngine {
                                                : GFE_SLOW_DIR_THRESHOLD);   // 75% = 75/100
 
         bool fast_long, fast_short, slow_long, slow_short;
-        if (l2_data_live) {
-            // Normal path: rolling window imbalance persistence
-            fast_long  = (m_fast_long_count  >= eff_fast_thresh);
-            fast_short = (m_fast_short_count >= eff_fast_thresh);
-            slow_long  = (m_slow_long_count  >= eff_slow_thresh);
-            slow_short = (m_slow_short_count >= eff_slow_thresh);
-        } else {
-            // Fallback path: L2 unavailable -- use drift persistence counter
+        {
+            // Drift-persistence -- permanent path for BlackBull gold (DOM unusable)
             // Update drift persistence window (stores raw drift values for chop detection)
             //
             // ATR-PROPORTIONAL DRIFT THRESHOLD (2026-04-04 backtest calibration):
@@ -892,21 +866,7 @@ struct GoldFlowEngine {
         // often split orders across both sides (neutral book) while still moving
         // price strongly. The 22:00 UTC $20 drop had drift=7 but imb=0.502 -- the
         // stale check was blocking valid high-momentum entries.
-        if (l2_data_live) {
-            const double strong_drift = 3.0;  // $3+ drift overrides stale check
-            if (long_signal  && l2_imb < 0.60 && ewm_drift < strong_drift) {
-                std::cout << "[GOLD-FLOW] SIGNAL_STALE long -- imb=" << l2_imb
-                          << " (need >0.60 or drift>" << strong_drift << ")\n";
-                std::cout.flush();
-                return;
-            }
-            if (short_signal && l2_imb > 0.40 && ewm_drift > -strong_drift) {
-                std::cout << "[GOLD-FLOW] SIGNAL_STALE short -- imb=" << l2_imb
-                          << " (need <0.40 or drift<-" << strong_drift << ")\n";
-                std::cout.flush();
-                return;
-            }
-        }
+        // Imbalance stale check removed -- BlackBull DOM always 0.500, unusable.
 
         // ?? EXHAUSTION FILTER -- blocks entries at move exhaustion ??????????????
         // Zero-MFE analysis: 26% of entries had zero MFE -- price never moved
