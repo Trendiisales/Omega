@@ -321,7 +321,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // Use g_l2_gold.last_update_ms to check if cTrader is delivering
             // XAUUSD depth events specifically (not just any symbol).
             // atomic_l2_write_fn sets last_update_ms on every XAUUSD depth event.
-            const bool l2_live = g_l2_gold.fresh(l2_now_ms, 3000);
+            const bool l2_live = g_l2_gold.fresh(l2_now_ms, 10000);  // raised 3000->10000ms: Asia tape batches depth events, gaps up to 5s are normal at 250 events/min
             g_macro_ctx.gold_l2_real = l2_live;
 
             if (l2_live) {
