@@ -1537,9 +1537,15 @@ static void on_tick_gold(
     g_rsi_reversal.update_indicators(bid, ask);
     // Inject M1 bar RSI for entry signal -- bar RSI is smooth (60s) and matches chart
     if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+        const double rsi_bar_mid = (bid + ask) * 0.5;
         g_rsi_reversal.set_bar_rsi(
             g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
-            (bid + ask) * 0.5);  // pass current price for extreme tracking
+            rsi_bar_mid);
+        g_rsi_reversal.set_bar_context(
+            g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed),
+            g_bars_gold.m1.ind.atr_expanding.load(std::memory_order_relaxed),
+            g_bars_gold.m1.ind.bb_squeeze.load(std::memory_order_relaxed),
+            g_bars_gold.m1.ind.adx_trending.load(std::memory_order_relaxed));
     }
 
     // ?? MacroCrashEngine -- always-on macro event capture ????????????????
