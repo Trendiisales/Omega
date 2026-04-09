@@ -1737,10 +1737,10 @@ private:
         // ATR SL floor: when cTrader L2 is live (gold_l2_real=true, depth events flowing),
         // use real ATR floor -- cTrader connection confirms market structure is active.
         // When cTrader is not connected, use 5pt floor as gap protection.
-        // l2_ctrader_live passed from tick_gold as g_macro_ctx.gold_l2_real.
+        // m_last_l2_live set from l2_ctrader_live in on_tick() -- g_macro_ctx.gold_l2_real.
         // This is the correct liveness check -- depth events flowing confirms real DOM data.
         static constexpr double GFE_ATR_SL_FLOOR_NO_L2 = 5.0;  // floor when cTrader not connected
-        const double atr_floor = l2_ctrader_live ? GFE_ATR_MIN : GFE_ATR_SL_FLOOR_NO_L2;
+        const double atr_floor = m_last_l2_live ? GFE_ATR_MIN : GFE_ATR_SL_FLOOR_NO_L2;
         const double atr_floored = std::max(atr_floor, m_atr);
         const double atr_sl  = atr_floored * GFE_ATR_SL_MULT;
         const double min_sl  = spread * 5.0;  // raised 3x->5x: 3x was 0.66pts on 0.22 spread, too tight for London gold vol
