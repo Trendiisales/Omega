@@ -398,9 +398,7 @@ private:
         const int exit_score = dom_exit_score(pos.is_long, dom, m_dom_prev);
         if (exit_score >= CFE_DOM_EXIT_MIN) {
             const double px = pos.is_long ? bid : ask;
-            printf("[CFE] DOM-EXIT %s exit_score=%d >= %d @ %.2f mfe=%.3f\n",
-                   pos.is_long ? "LONG" : "SHORT",
-                   exit_score, CFE_DOM_EXIT_MIN, px, pos.mfe);
+                std::cout << "[CFE] DOM-EXIT " << (pos.is_long?"LONG":"SHORT") << " exit_score=" << exit_score << " >= " << CFE_DOM_EXIT_MIN << " @ " << std::fixed << std::setprecision(2) << px << " mfe=" << std::setprecision(3) << pos.mfe << "\n"; std::cout.flush();
             fflush(stdout);
             close_pos(px, "DOM_REVERSAL", now_ms, on_close);
             return;
@@ -413,9 +411,7 @@ private:
             const double min_move = pos.cost_pts * CFE_STAGNATION_MULT;
             if (pos.mfe < min_move) {
                 const double px = pos.is_long ? bid : ask;
-                printf("[CFE] STAGNATION-EXIT %s held=%lldms mfe=%.3f < need=%.3f\n",
-                       pos.is_long ? "LONG" : "SHORT",
-                       (long long)held_ms, pos.mfe, min_move);
+                std::cout << "[CFE] STAGNATION-EXIT " << (pos.is_long?"LONG":"SHORT") << " held=" << held_ms << "ms mfe=" << std::fixed << std::setprecision(3) << pos.mfe << " < need=" << min_move << "\n"; std::cout.flush();
                 fflush(stdout);
                 close_pos(px, "STAGNATION", now_ms, on_close);
                 return;
