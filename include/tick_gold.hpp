@@ -1372,12 +1372,18 @@ static void on_tick_gold(
         }
         const bool is_trail = (tr.exitReason == "TRAIL_HIT" || tr.exitReason == "BE_HIT");
         if (is_trail) {
-            // Reduced 60s->10s: on a trending day the move continues right after exit.
-            // 60s was missing the entire continuation leg. 10s = enough to avoid
-            // re-entering on the same candle tick, while still catching the next move.
+            // Same-direction block: 10s -- avoid re-entering on the same candle tick
             g_gold_trail_block_until.store(now_s + 10);
             g_gold_trail_block_dir.store((tr.side == "LONG") ? 1 : -1);
-            printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir re-entry blocked 10s\n",
+            // Opposite-direction block: 180s (3 min) -- a trailed SHORT means the down
+            // move is done; block LONG entries to prevent buying the dead-cat bounce.
+            // A genuine reversal needs more than 3 minutes of sustained opposite drift
+            // to re-establish itself. Evidence: 09:00 SHORT trailed, 09:03 LONG entered
+            // on a 3.8pt bounce -- immediately stopped out for -$35.
+            const bool was_short = (tr.side == "SHORT");
+            auto& opp_block = was_short ? g_gf_long_blocked_until : g_gf_short_blocked_until;
+            opp_block.store(now_s + 180);  // 3 min opposite-direction block after trail
+            printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir blocked 10s, opposite blocked 180s\n",
                    tr.exitReason.c_str(), tr.side.c_str());
             fflush(stdout);
         }
