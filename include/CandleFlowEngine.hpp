@@ -160,18 +160,26 @@ struct CandleFlowEngine {
         const bool bearish = candle_is_bearish(bar);
         if (!bullish && !bearish) return;
 
-        // 2. Cost coverage
+        // 2. Cost coverage -- checked FIRST before candle or DOM
+        // cost = spread (paid on entry) + slippage both sides + commission both sides
         const double cost_pts = spread + CFE_COST_SLIPPAGE * 2.0 + CFE_COMMISSION_PTS * 2.0;
-        // Expected move: use the actual bar range -- this is what just happened.
-        // ATR is a session average and passes even on dead tape (ATR=2pt, move=0.1pt).
-        // The bar range is the real move that triggered this candle signal.
-        const double bar_range   = bar.high - bar.low;
-        const double expected    = bar_range;  // actual candle range, not session ATR
-        if (expected < CFE_COST_MULT * cost_pts) {
+        // Expected move = actual bar range (what price just did this candle).
+        // Must be >= 2x cost. This is the primary quality gate:
+        //   - Dead tape: bar_range=0.1pt, cost=0.8pt -> 0.1 < 1.6 -> BLOCKED
+        //   - Valid move: bar_range=2.0pt, cost=0.8pt -> 2.0 > 1.6 -> allowed
+        //   - Wide spread: spread=1.5pt -> cost=1.9pt -> need 3.8pt range -> tighter
+        // PATH B safety: if bar was built from indicators (not real OHLC), bar_range
+        // is atr*0.2 which is tiny -- this gate will correctly block on dead tape.
+        const double bar_range = bar.high - bar.low;
+        const double min_move  = CFE_COST_MULT * cost_pts;
+        if (bar_range < min_move) {
             static int64_t s_cost_log = 0;
             if (now_ms - s_cost_log > 10000) {
                 s_cost_log = now_ms;
-                std::cout << "[CFE-COST-BLOCK] expected=" << expected << " < " << CFE_COST_MULT << "x cost=" << cost_pts << " -- skipping\n"; std::cout.flush();
+                std::cout << "[CFE-COST-BLOCK] bar_range=" << std::fixed << std::setprecision(3)
+                          << bar_range << " < min_move=" << min_move
+                          << " (spread=" << spread << " cost=" << cost_pts << ")\n";
+                std::cout.flush();
             }
             return;
         }
