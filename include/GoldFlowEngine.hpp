@@ -71,8 +71,8 @@ static constexpr int    GFE_SLOW_TICKS        = 60;    // slow confirmation wind
 static constexpr double GFE_LONG_THRESHOLD    = 0.75;  // bid-heavy: long signal
 static constexpr double GFE_SHORT_THRESHOLD   = 0.25;  // ask-heavy: short signal
 static constexpr double GFE_DRIFT_MIN         = 0.0;   // drift must be non-zero same dir
-// Drift-persistence fallback (used when L2 size data is unavailable -- imbalance always 0.5)
-// On BlackBull, L2 size data is NEVER sent (tag-271 always omitted) so this is the
+// Drift-persistence fallback (used when cTrader L2 depth events not flowing)
+// When cTrader depth events are not flowing, drift-persistence is the fallback path.
 // PERMANENT operating mode, not an exceptional fallback. Threshold lowered 1.5?0.5:
 // 1.5 was calibrated for mid-session L2 dropout protection but blocks real slow trends
 // where ewm_drift reaches $0.8-$1.2 but never $1.5. The chop guard (drift range>4.0)
@@ -479,13 +479,13 @@ struct GoldFlowEngine {
         }
 
         // ?? L2 availability detection ?????????????????????????????????????????
-        // BlackBull sends size_raw=0 on all XAUUSD DOM quotes and always delivers
-        // 6 bid + 6 ask levels symmetrically. Imbalance is permanently 0.5000.
-        // l2_imb parameter retained for API compat but is not used for any decision.
-        // Drift-persistence is the permanent and only entry path for GoldFlow on BlackBull.
-        const bool l2_data_live = false;  // PERMANENT: BlackBull DOM unusable for gold
-        m_last_l2_imb  = 0.5;
-        m_last_l2_live = false;
+        // cTrader DOM: raw_bid_count / (raw_bid_count + raw_ask_count) across all levels.
+        // When l2_ctrader_live=false, imbalance falls back to 0.5 (neutral).
+        // l2_imb: real cTrader DOM imbalance (raw_bid_count / total) from CTDepthBook.
+        // l2_ctrader_live = g_macro_ctx.gold_l2_real -- true when XAUUSD depth events flowing.
+        const bool l2_data_live = l2_ctrader_live;  // true when cTrader depth events live
+        m_last_l2_imb  = l2_data_live ? l2_imb : 0.5;
+        m_last_l2_live = l2_data_live;
 
         // Session-aware persistence thresholds: Asia requires 90% dominance, normal 75%
         // Continuation mode: lower persistence threshold for first re-entry after
@@ -496,12 +496,12 @@ struct GoldFlowEngine {
         }
         const bool cont_mode = m_continuation_mode && !is_low_quality_session;
         // eff_fast_thresh / eff_slow_thresh were only used by the L2 imbalance
-        // persistence path which is removed -- BlackBull DOM unusable for gold.
+        // persistence path is the fallback when cTrader depth events are not flowing.
         (void)cont_mode;  // suppress unused warning if cont_mode also becomes unused
 
         bool fast_long, fast_short, slow_long, slow_short;
         {
-            // Drift-persistence -- permanent path for BlackBull gold (DOM unusable)
+            // Drift-persistence -- fallback path when cTrader DOM not flowing
             // Update drift persistence window (stores raw drift values for chop detection)
             //
             // ATR-PROPORTIONAL DRIFT THRESHOLD (2026-04-04 backtest calibration):
@@ -663,7 +663,7 @@ struct GoldFlowEngine {
         //     window above -- those ARE the 70% directional check.
         //
         // Either path satisfies the Asia drift requirement. Normal session threshold unchanged.
-        double drift_threshold = GFE_DRIFT_FALLBACK_THRESHOLD;  // drift-only: BlackBull DOM imbalance unusable
+        double drift_threshold = GFE_DRIFT_FALLBACK_THRESHOLD;  // drift-only: fallback when cTrader DOM not flowing
         if (is_low_quality_session) {
             // Check persistence path: fast_long/short are already 70%-directional flags
             const bool drift_persistent_long  = fast_long;
@@ -864,7 +864,7 @@ struct GoldFlowEngine {
         // often split orders across both sides (neutral book) while still moving
         // price strongly. The 22:00 UTC $20 drop had drift=7 but imb=0.502 -- the
         // stale check was blocking valid high-momentum entries.
-        // Imbalance stale check removed -- BlackBull DOM always 0.500, unusable.
+        // Imbalance stale check removed -- strong drift (>$3) overrides stale book.
 
         // ?? EXHAUSTION FILTER -- blocks entries at move exhaustion ??????????????
         // Zero-MFE analysis: 26% of entries had zero MFE -- price never moved
@@ -1540,7 +1540,7 @@ private:
     std::deque<int> m_fast_window;   // last GFE_FAST_TICKS direction values
     std::deque<int> m_slow_window;   // last GFE_SLOW_TICKS direction values
 
-    // Drift persistence fallback (used when L2 size data is unavailable -- imbalance always 0.5)
+    // Drift persistence fallback (used when cTrader L2 depth events not flowing)
     // Tracks ewm_drift direction over GFE_DRIFT_PERSIST_TICKS=20 ticks.
     // Replaces L2 persistence windows when broker doesn't send tag-271 size data.
     std::deque<int>    m_drift_persist_window;  // direction counts for fallback persistence
@@ -1738,8 +1738,7 @@ private:
         // use real ATR floor -- cTrader connection confirms market structure is active.
         // When cTrader is not connected, use 5pt floor as gap protection.
         // l2_ctrader_live passed from tick_gold as g_macro_ctx.gold_l2_real.
-        // This is the correct liveness check -- NOT imbalance value which is always 0.500
-        // on BlackBull regardless of whether cTrader is connected.
+        // This is the correct liveness check -- depth events flowing confirms real DOM data.
         static constexpr double GFE_ATR_SL_FLOOR_NO_L2 = 5.0;  // floor when cTrader not connected
         const double atr_floor = l2_ctrader_live ? GFE_ATR_MIN : GFE_ATR_SL_FLOOR_NO_L2;
         const double atr_floored = std::max(atr_floor, m_atr);
