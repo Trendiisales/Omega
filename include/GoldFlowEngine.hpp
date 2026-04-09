@@ -2765,10 +2765,23 @@ private:
         // FORCE_CLOSE / MAX_HOLD_TIMEOUT: stale thesis
         //   30s: standard pause
         // default (other): 30s
+        // Same-direction cooldown by exit reason:
+        // TRAIL_HIT:    10s  -- profitable, trend confirmed, re-enter fast
+        // BE_HIT:       15s  -- breakeven, direction may continue
+        // SL_HIT:       45s  -- thesis failed
+        // IMM_REVERSAL: 90s  -- flow reversed hard mid-trade. Was 30s default.
+        //                       10:30:54 LONG re-entered 40s after IMM_REVERSAL loss
+        //                       and lost again -- 30s was not enough.
+        // TIME_STOP:    60s  -- price went nowhere, thesis was wrong.
+        //                       30s default allowed re-entry before setup resolved.
+        // FORCE_CLOSE:  30s  -- external close
+        // default:      30s
         int exit_cooldown_ms = GFE_COOLDOWN_MS;  // 30s default
         if      (std::strcmp(reason, "TRAIL_HIT")         == 0) exit_cooldown_ms = 10000;
         else if (std::strcmp(reason, "BE_HIT")            == 0) exit_cooldown_ms = 15000;
         else if (std::strcmp(reason, "SL_HIT")            == 0) exit_cooldown_ms = 45000;
+        else if (std::strcmp(reason, "IMM_REVERSAL")      == 0) exit_cooldown_ms = 90000;
+        else if (std::strcmp(reason, "TIME_STOP")         == 0) exit_cooldown_ms = 60000;
         else if (std::strcmp(reason, "FORCE_CLOSE")       == 0) exit_cooldown_ms = 30000;
         else if (std::strcmp(reason, "MAX_HOLD_TIMEOUT")  == 0) exit_cooldown_ms = 30000;
         m_exit_cooldown_ms = exit_cooldown_ms;
