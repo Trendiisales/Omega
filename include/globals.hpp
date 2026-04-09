@@ -549,6 +549,12 @@ struct AtomicL2 {
     std::atomic<int64_t>  last_update_ms{0};    // epoch-ms of last cTrader depth event
     std::atomic<int>      raw_bid{0};           // raw bid quote count from CTDepthBook (all levels)
     std::atomic<int>      raw_ask{0};           // raw ask quote count from CTDepthBook (all levels)
+    // Microstructure edge score: delta-based signal computed from consecutive L2Book
+    // snapshots by GoldMicrostructureAnalyzer in CTraderDepthClient on every DOM event.
+    // Range 0..1. >0.65 = bullish DOM pressure, <0.35 = bearish DOM pressure, ~0.5 = neutral.
+    // Replaces raw_imbalance() as input to GoldFlowEngine::update_persistence() so the
+    // L2 persistence path fires on real order-flow signals instead of perpetual 0.5.
+    std::atomic<double>   micro_edge{0.5};      // GoldMicrostructureAnalyzer output (DOM delta score)
 
     // fresh(): true only when a real book update arrived within max_age_ms.
     // Prevents engines acting on stale/default-initialised imbalance (0.5).
