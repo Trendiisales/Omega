@@ -97,6 +97,14 @@ if ($finalCheck) {
     FAIL "Omega.exe still running after 20s kill attempts (PID $($finalCheck.Id)) -- cannot proceed"
 }
 
+# Hard settle wait: process exit and kernel handle release are not synchronous.
+# GetProcess returning nothing means the process object is gone, NOT that the
+# kernel has closed all file handles (exe mapping, NSSM monitor handles, etc).
+# 3 seconds is enough for Windows to fully release all handles on the exe.
+# Without this, Copy-Item in step 6 races the kernel and loses intermittently.
+Write-Host "      Process gone -- waiting 3s for kernel handle release..." -ForegroundColor DarkGray
+Start-Sleep -Seconds 3
+
 $ErrorActionPreference = "Stop"
 OK "Stopped and confirmed dead"
 
@@ -190,43 +198,10 @@ OK "Build succeeded"
 
 # ── [6/13] Copy exe ──────────────────────────────────────────────────────────
 Step 6 13 "Copying exe..."
-# Windows holds a file handle on the destination exe (C:\Omega\Omega.exe)
-# even after the process is killed -- the kernel releases it asynchronously.
-# Simple Copy-Item -Force fails because you cannot overwrite a locked file.
-#
-# ATOMIC RENAME STRATEGY (bypasses the lock entirely):
-#   1. Copy build output to Omega.exe.new  (fresh file, never locked)
-#   2. Move old Omega.exe -> Omega.exe.old (rename works even on locked files
-#      because Windows only blocks writes/overwrites, not renames of the inode)
-#   3. Rename Omega.exe.new -> Omega.exe
-#   4. Delete Omega.exe.old (best-effort -- Windows may defer until handle drops)
-#
-# This is the same technique used by Chrome/Firefox updaters on Windows.
-
-$OmegaExeNew = "$OmegaDir\Omega.exe.new"
-$OmegaExeOld = "$OmegaDir\Omega.exe.old"
-
-# Step 6a: copy fresh build to .new (no lock contention -- new file)
-Copy-Item $BuildExe $OmegaExeNew -Force -ErrorAction Stop
-
-# Step 6b: move existing .old out of the way (clean up prior failed attempt)
-if (Test-Path $OmegaExeOld) {
-    Remove-Item $OmegaExeOld -Force -ErrorAction SilentlyContinue
-}
-
-# Step 6c: rename current Omega.exe -> Omega.exe.old
-# This succeeds even if the file handle is still open (rename != overwrite)
-if (Test-Path $OmegaExe) {
-    Move-Item $OmegaExe $OmegaExeOld -Force -ErrorAction Stop
-}
-
-# Step 6d: rename .new -> Omega.exe (destination slot is now empty)
-Move-Item $OmegaExeNew $OmegaExe -Force -ErrorAction Stop
-
-# Step 6e: clean up .old (best-effort -- kernel drops handle within seconds)
-Remove-Item $OmegaExeOld -Force -ErrorAction SilentlyContinue
-
-OK "Omega.exe  ->  $OmegaExe  (atomic rename)"
+# Process was confirmed dead in step 1 with a 3s kernel settle wait.
+# File handles are fully released by now -- simple copy works.
+Copy-Item $BuildExe $OmegaExe -Force -ErrorAction Stop
+OK "Omega.exe  ->  $OmegaExe"
 
 # ── [7/13] Copy config to binary working directory ───────────────────────────
 Step 7 13 "Copying config to binary working directory..."
