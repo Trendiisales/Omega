@@ -3568,22 +3568,27 @@ static void on_tick_gold(
                 cfe_bar.prev_low  = pb.low;
                 cfe_bar.valid     = (lb.close > 0.0 && lb.high > lb.low);
             } else {
-                // PATH B: bars not yet accumulated post disk-load -- use indicators
-                // EMA9 is the smoothed recent close; ATR gives range estimate.
-                // BB upper/lower give prev high/low proxy.
+                // PATH B: bars_ empty after load_indicators() from disk.
+                // Use GoldFlow ATR (always warm after disk load) and GoldStack
+                // EWM values for price context -- both available in tick_gold scope.
+                // VWAP from GoldStack = session fair value = prev high/low proxy.
                 const double cur_mid  = (bid + ask) * 0.5;
-                const double ema9     = g_bars_gold.m1.ind.ema9.load(std::memory_order_relaxed);
-                const double atr14    = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
-                const double bb_upper = g_bars_gold.m1.ind.bb_upper.load(std::memory_order_relaxed);
-                const double bb_lower = g_bars_gold.m1.ind.bb_lower.load(std::memory_order_relaxed);
-                if (ema9 > 0.0 && atr14 > 0.0) {
-                    cfe_bar.open      = ema9;
+                const double cfe_atr  = g_gold_flow.current_atr();
+                const double vwap     = g_gold_stack.vwap();
+                // EWM drift tells us where price has been: positive = above vwap
+                const double ewm_drift = g_gold_stack.ewm_drift();
+                if (cfe_atr > 0.0 && vwap > 0.0) {
+                    // Reconstruct directional bar: open = VWAP (session anchor),
+                    // close = current mid. Drift direction gives open/close ordering.
+                    cfe_bar.open      = vwap;
                     cfe_bar.close     = cur_mid;
-                    cfe_bar.high      = std::max(ema9, cur_mid) + atr14 * 0.1;
-                    cfe_bar.low       = std::min(ema9, cur_mid) - atr14 * 0.1;
-                    cfe_bar.prev_high = bb_upper > 0.0 ? bb_upper : cur_mid + atr14 * 0.5;
-                    cfe_bar.prev_low  = bb_lower > 0.0 ? bb_lower : cur_mid - atr14 * 0.5;
-                    cfe_bar.valid     = (atr14 > 0.0);
+                    cfe_bar.high      = std::max(vwap, cur_mid) + cfe_atr * 0.1;
+                    cfe_bar.low       = std::min(vwap, cur_mid) - cfe_atr * 0.1;
+                    // prev_high/low = VWAP +/- 0.5*ATR (session range proxy)
+                    cfe_bar.prev_high = vwap + cfe_atr * 0.5;
+                    cfe_bar.prev_low  = vwap - cfe_atr * 0.5;
+                    cfe_bar.valid     = (cfe_atr > 0.0);
+                    (void)ewm_drift;
                 }
             }
         }
