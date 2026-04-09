@@ -3189,12 +3189,11 @@ static void on_tick_gold(
     // TrendPullback gold: 24h entry gate -- trend is a trend regardless of session.
     // Uses symbol_gate (risk/max_positions, tradeable, lat_ok, regime, bid, ask) but NOT session slot gate.
     // Only hard blocks: dead-zone spread spike window (05:00-06:30 UTC) and NY close noise.
-    const bool tpb_gold_session_ok = !in_ny_close_noise && (gold_session_slot != 0 || [&](){
-        // Allow slot 0 (05:00-07:00) ONLY after 06:30 when spreads have normalised
-        struct tm ti_s{}; auto t_s = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        gmtime_s(&ti_s, &t_s);
-        return (ti_s.tm_hour * 60 + ti_s.tm_min) >= 390; // 06:30 UTC
-    }());
+    // TrendPullback session gate: London + NY only (slots 1,2,3,4,5).
+    // Asia (slot 6) and dead-zone (slot 0): spreads wide, price ranges, no trend.
+    // All trades in Asia were TIME_STOPs with gross=$0 -- no edge in that session.
+    const bool tpb_gold_session_ok = !in_ny_close_noise
+        && (gold_session_slot >= 1 && gold_session_slot <= 5);
     const bool tpb_gold_can_enter = tpb_gold_session_ok
                                  && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
                                  && !gold_post_impulse_block;
