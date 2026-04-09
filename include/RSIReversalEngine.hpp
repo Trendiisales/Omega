@@ -58,7 +58,7 @@ public:
     double L2_EXIT_THRESHOLD  = 0.50;  // L2 imbalance crosses 0.5 = DOM flipped
     double L2_EXIT_MIN_PROFIT = 0.50;  // min pts profit before L2 flip exit fires
     // Chop filters -- block entries when market is ranging with no direction
-    double MIN_BAR_ATR        = 2.5;   // M1 bar ATR must be >2.5pts (chop = <2pts)
+    double MIN_BAR_ATR        = 2.0;   // M1 bar ATR must be >2.0pts (chop = <1.5pts)
     double MIN_RSI_MOVE       = 5.0;   // RSI must have moved 5pts before reversal
     bool   REQUIRE_ATR_EXPAND = true;  // block if ATR contracting (range shrinking)
     bool   BLOCK_BB_SQUEEZE   = true;  // block entries during BB squeeze (coiling)
@@ -160,16 +160,9 @@ public:
             }
             return;
         }
-        // ATR contracting: move is losing momentum -- risky entry
-        if (REQUIRE_ATR_EXPAND && !m_atr_expanding && m_bar_atr > 0.0) {
-            static int64_t s_atr_log = 0;
-            if (now_ms/1000 - s_atr_log >= 10) {
-                s_atr_log = now_ms/1000;
-                printf("[RSI-REV-BLOCK] chop: ATR contracting\n");
-                fflush(stdout);
-            }
-            return;
-        }
+        // ATR expansion: removed as entry gate -- lags one bar after RSI turn
+        // causing missed entries. Bar ATR floor (MIN_BAR_ATR) already filters chop.
+        // (void)REQUIRE_ATR_EXPAND; -- kept as param but not used for entry gate
 
         // Entry: pure RSI direction change -- no fixed thresholds.
         // RSI was falling and now turns up -> LONG
