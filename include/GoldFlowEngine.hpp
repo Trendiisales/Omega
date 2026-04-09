@@ -77,7 +77,7 @@ static constexpr double GFE_DRIFT_MIN         = 0.0;   // drift must be non-zero
 // 1.5 was calibrated for mid-session L2 dropout protection but blocks real slow trends
 // where ewm_drift reaches $0.8-$1.2 but never $1.5. The chop guard (drift range>4.0)
 // handles chop protection -- that's the correct filter, not a high threshold.
-static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 0.5;  // was 1.5 -- too strict for no-L2 broker
+static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 1.5;  // raised back 0.5->1.5: BlackBull imbalance=0.5 always (size_raw=0), so drift is the ONLY signal. 0.5pt = spread noise on London tape. 1.5pt = real directional move. Cutting ~60% of marginal noise entries while preserving all genuine 2-4pt drift trades.
 // 20 ticks (~2s London) -- sufficient for real directional moves.
 // The chop guard (drift range > 4.0) blocks oscillating markets regardless.
 // 40 was too long for slow grinding trends where drift is consistent but small.

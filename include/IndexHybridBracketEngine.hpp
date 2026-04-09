@@ -266,6 +266,18 @@ public:
         range = w_hi - w_lo;
 
         if (phase == Phase::IDLE) {
+            // Same-level re-arm block: after SL hit, don't re-arm within
+            // 30pts of SL price for 30 minutes.
+            // Prevents hammering same rejected level (12:41/13:00/13:05 NAS100
+            // all at 24874 = 3 consecutive SL hits at identical bracket).
+            static constexpr double  SAME_LEVEL_BLOCK_PTS = 30.0;
+            static constexpr int64_t SAME_LEVEL_BLOCK_S   = 1800; // 30 min
+            if (m_sl_price > 0.0 && (now_s < m_sl_cooldown_ts + SAME_LEVEL_BLOCK_S)) {
+                if (std::fabs(w_hi - m_sl_price) < SAME_LEVEL_BLOCK_PTS ||
+                    std::fabs(w_lo - m_sl_price) < SAME_LEVEL_BLOCK_PTS) {
+                    return;
+                }
+            }
             if (range >= cfg_.min_range && range <= cfg_.max_range) {
                 phase        = Phase::ARMED;
                 bracket_high = w_hi;
@@ -435,6 +447,7 @@ private:
         if (std::strcmp(reason, "SL_HIT") == 0) {
             m_sl_cooldown_dir = pos.is_long ? 1 : -1;
             m_sl_cooldown_ts  = now_s + cfg_.dir_sl_cooldown_s;
+            m_sl_price        = pos.entry;  // block same-level re-arm after SL
         }
 
         omega::TradeRecord tr;

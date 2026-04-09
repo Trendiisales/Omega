@@ -2983,7 +2983,7 @@ public:
         // |drift| > 2.0 means a sustained directional move is underway --
         // fading it produces the exact losing pattern seen on 2026-04-09
         // where gold fell 87pt and VWAPStretch fired 3 LONGs into the drop.
-        if (std::fabs(ewm_drift_) > 2.0) return noSignal();
+        if (std::fabs(ewm_drift_) > 3.0) return noSignal();  // raised 2.0->3.0: 2.0 still fires on trending days. 3.0pt = confirmed sustained trend, fade is wrong.
 
         // VWAP must be populated
         if (s.vwap < 1.0) return noSignal();
