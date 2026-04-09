@@ -2814,7 +2814,7 @@ private:
         if (was_profitable && tr.pnl > 0.0) {
             m_last_profitable_exit_ms    = now_ms;
             m_last_profitable_exit_long  = pos.is_long;
-            m_last_profitable_exit_price = (pos.is_long ? tr.exit_px : tr.exit_px); // mid ~ exit_px
+            m_last_profitable_exit_price = tr.exitPrice;
         }
 
         pos             = OpenPos{};
