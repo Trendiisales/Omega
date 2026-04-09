@@ -313,19 +313,19 @@ static void maybe_reset_daily_ledger() {
     g_edges.fill_quality.print_summary();
     g_walk_forward.log_all();   // RenTec #6 -- WFO final state summary
     g_param_gate.log_all();     // RenTec #7 -- adaptive param gate final state
-    g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
-    g_corr_matrix.save_state(log_root_dir() + "/corr_matrix.dat");  // persist EWM running stats
-    g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
-    g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
-    g_trend_pb_gold.save_state(log_root_dir()  + "/trend_pb_gold.dat");
-    g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
-    g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
-    g_trend_pb_sp.save_state(log_root_dir()    + "/trend_pb_sp.dat");
+    g_adaptive_risk.save_perf(state_root_dir() + "/kelly");
+    g_corr_matrix.save_state(state_root_dir() + "/corr_matrix.dat");  // persist EWM running stats
+    g_gold_flow.save_atr_state(state_root_dir() + "/gold_flow_atr.dat");
+    g_gold_stack.save_atr_state(state_root_dir() + "/gold_stack_state.dat");
+    g_trend_pb_gold.save_state(state_root_dir()  + "/trend_pb_gold.dat");
+    g_trend_pb_ger40.save_state(state_root_dir() + "/trend_pb_ger40.dat");
+    g_trend_pb_nq.save_state(state_root_dir()    + "/trend_pb_nq.dat");
+    g_trend_pb_sp.save_state(state_root_dir()    + "/trend_pb_sp.dat");
     // Save OHLCBarEngine indicator state -- eliminates tick data request on restart
-    g_bars_gold.m1 .save_indicators(log_root_dir() + "/bars_gold_m1.dat");
-    g_bars_gold.m5 .save_indicators(log_root_dir() + "/bars_gold_m5.dat");
-    g_bars_gold.m15.save_indicators(log_root_dir() + "/bars_gold_m15.dat");
-    g_bars_gold.h4 .save_indicators(log_root_dir() + "/bars_gold_h4.dat");
+    g_bars_gold.m1 .save_indicators(state_root_dir() + "/bars_gold_m1.dat");
+    g_bars_gold.m5 .save_indicators(state_root_dir() + "/bars_gold_m5.dat");
+    g_bars_gold.m15.save_indicators(state_root_dir() + "/bars_gold_m15.dat");
+    g_bars_gold.h4 .save_indicators(state_root_dir() + "/bars_gold_h4.dat");
     g_edges.reset_daily();  // resets CVD session hi/lo; prev_day updates via on_tick
 
     // Multi-day throttle: record this session's final PnL before resetting the ledger.
