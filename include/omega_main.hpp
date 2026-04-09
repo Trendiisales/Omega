@@ -1991,7 +1991,7 @@ int main(int argc, char* argv[])
 
         // ── Check 6: XAUUSD depth events flowing ─────────────────────────
         // depth_events_total must be increasing -- the only reliable liveness signal.
-        // BlackBull imbalance is always 0.500 so we NEVER use imb != 0.5 as a check.
+        // L2 watchdog uses depth_events_total (not imbalance value) as liveness check.
         {
             const uint64_t ev0 = g_ctrader_depth.depth_events_total.load();
             std::this_thread::sleep_for(std::chrono::seconds(10));
