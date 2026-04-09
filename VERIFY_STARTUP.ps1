@@ -59,7 +59,7 @@ if ($LogPath -eq "") {
     #      Never silently analyse a frozen file.
     # ────────────────────────────────────────────────────────────────────────
     $latestLog     = "$OmegaDir\logs\latest.log"
-    $datedLog      = "$OmegaDir\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
+    $datedLog      = "$OmegaDir\logs\omega_$((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')).log"  # UTC -- binary uses gmtime_s
     $MAX_STALE_SEC = 120
 
     $latestOk = $false
@@ -419,7 +419,7 @@ if ($l2StatusLine -and $l2StatusLine -match "ctrader_live=1") {
 # CRITICAL: Verify l2_ticks CSV is fresh, has rows, and imbalance is not stuck.
 # Also check [CTRADER-L2-CHECK] in log which logs bid_lvls/ask_lvls/imb_level
 # on first 20 depth events -- proves the level-count calculation is running.
-$l2CsvFile = "C:\Omega\logs\l2_ticks_$(Get-Date -Format 'yyyy-MM-dd').csv"
+$l2CsvFile = "C:\Omega\logs\l2_ticks_$((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')).csv"  # UTC
 if (-not (Test-Path $l2CsvFile)) {
     Add-Result "L2 Tick CSV" "INFO" "File not yet created" "Logger creates file on first tick -- check again in 60s."
 } else {

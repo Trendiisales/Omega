@@ -400,7 +400,7 @@ Write-Host ""
 # These are hard FAILs -- if engines are silent Omega stops immediately.
 # ==============================================================================
 Write-Host "  [ENGINE CHECK] Verifying engines are active..." -ForegroundColor Cyan
-$logToday = "$OmegaDir\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
+$logToday = "$OmegaDir\logs\omega_$((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')).log"  # UTC -- binary uses gmtime_s
 $engineFail = $false
 
 # GoldFlow: must see GFE-CONFIG with goldflow_enabled=true
