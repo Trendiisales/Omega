@@ -91,4 +91,5 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "omega_runtime.hpp"
 #include "on_tick.hpp"
 #include "trade_loop.hpp"
+#include "engine_init.hpp"
 #include "omega_main.hpp"
