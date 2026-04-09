@@ -141,6 +141,9 @@ static omega::MacroCrashEngine    g_macro_crash;
 // RSI Reversal Engine -- direct RSI extreme entries, bypasses regime system
 // LONG when RSI < 35, SHORT when RSI > 65, ATR-based SL + trail
 // shadow_mode=true until 30 live shadow trades validate Asia WR
+#include "CandleFlowEngine.hpp"
+static omega::CandleFlowEngine    g_candle_flow;  // candle+DOM engine
+
 #include "RSIReversalEngine.hpp"
 static omega::RSIReversalEngine   g_rsi_reversal;
 
