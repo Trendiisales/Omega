@@ -101,19 +101,18 @@ Write-Host "[2/5] GATE 1 -- Pre-build checks..." -ForegroundColor Yellow
 Write-Host ""
 
 # Sync to origin/main:
-# 1. Mark all tracked log/csv files skip-worktree so reset never touches locked files
-# 2. fetch + reset --hard to get latest source
-# 3. Force-checkout PRE_DELIVERY_CHECK.ps1 in case it was added after last clone
+# 1. fetch latest
+# 2. git rm --cached logs/ -- clears ANY stale index entries for log/dat/csv files
+#    (files stay on disk, gitignored -- this only removes them from git index)
+# 3. reset --hard -- now has nothing to unlink under logs/
+# 4. Force-checkout PRE_DELIVERY_CHECK.ps1
 $ErrorActionPreference = "Continue"
 & git -C $OmegaDir fetch origin 2>&1 | Out-Null
-# skip-worktree on all tracked files under logs/ -- prevents "unable to unlink" errors
-$trackedLogs = & git -C $OmegaDir ls-files logs/ 2>$null
-foreach ($lf in $trackedLogs) {
-    & git -C $OmegaDir update-index --skip-worktree $lf 2>$null | Out-Null
-}
+# Remove ALL index entries under logs/ -- eliminates "unable to unlink" and "not uptodate" errors
+& git -C $OmegaDir rm -r --cached --force --ignore-unmatch logs/ 2>&1 | Out-Null
 & git -C $OmegaDir reset --hard origin/main 2>&1 | Out-Null
 & git -C $OmegaDir checkout origin/main -- PRE_DELIVERY_CHECK.ps1 2>&1 | Out-Null
-Write-Host "  [GIT] Synced to origin/main (log files skip-worktree, PRE_DELIVERY_CHECK.ps1 force-updated)" -ForegroundColor Cyan
+Write-Host "  [GIT] Synced to origin/main" -ForegroundColor Cyan
 $ErrorActionPreference = "Continue"
 
 # FULL BUILD DIRECTORY WIPE -- the only guaranteed clean rebuild.
