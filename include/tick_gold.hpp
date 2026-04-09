@@ -202,20 +202,16 @@ static void on_tick_gold(
     // gold_l2_real is set in on_tick.hpp when g_l2_gold.fresh(now, 3000) is true.
     // If L2 is dead: log once per 30s, block ALL gold entries until DOM recovers.
     // This prevents blind entries on 0.500 synthetic imbalance values.
-    const bool gold_l2_gate = g_macro_ctx.gold_l2_real;
-    if (!gold_l2_gate) {
-        static int64_t s_l2_gate_log = 0;
-        const int64_t now_gate = static_cast<int64_t>(std::time(nullptr));
-        if (now_gate - s_l2_gate_log > 30) {
-            s_l2_gate_log = now_gate;
-            printf("[L2-DEAD-BLOCK] XAUUSD gold_can_enter forced false -- gold_l2_real=0\n");
-            fflush(stdout);
-        }
-    }
-    const bool gold_can_enter = gold_l2_gate && gold_session_ok && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
+    // gold_l2_gate REMOVED from gold_can_enter:
+    // gold_l2_real (depth event freshness) was blocking ALL gold engines -- bracket,
+    // stack, MacroCrash, RSIReversal, MicroMomentum, HybridBracket, TrendPullback --
+    // whenever a depth event was >N ms old. Those engines do not need live DOM.
+    // GoldFlow has its own DOM gates: g_l2_watchdog_dead and g_feed_stale_xauusd.
+    // gold_l2_real is still used inside GoldFlow for imbalance direction (correct).
+    const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
                              && (!gold_post_impulse_block || crash_impulse_bypass);
     // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
-    const bool gold_can_enter_trend_reentry = gold_l2_gate && gold_trend_day && trend_reentry_ok
+    const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
         && gold_session_ok && symbol_gate("XAUUSD", false, "", tradeable, lat_ok, regime, bid, ask);
 
     // Run supervisor -- uses g_eng_xag as vol/phase proxy since gold has
