@@ -331,7 +331,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // making imbalance_level() = 5/10 = 0.500 permanently.
                 // raw_imbalance() counts all quotes before the 5-level cap -- real signal.
                 const double raw_imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-                g_macro_ctx.gold_l2_imbalance = raw_imb;
+                // Use GoldMicrostructureAnalyzer delta-based signal as the canonical
+                // gold L2 imbalance for ALL gold engines. This replaces the raw
+                // bid_count/(bid+ask) ratio which was perpetually ~0.5 (dead signal).
+                // micro_edge is computed in CTraderDepthClient on every DOM event
+                // from 5 delta features: imbalance + consumption + pull + absorption + queue.
+                // Range 0..1 -- same as raw_imb, compatible with all existing thresholds.
+                // raw_imb retained for logging/diagnostics only.
+                g_macro_ctx.gold_l2_imbalance = g_l2_gold.micro_edge.load(std::memory_order_relaxed);
 
                 static int64_t s_l2_log_ms = 0;
                 if (l2_now_ms - s_l2_log_ms > 10000) {
