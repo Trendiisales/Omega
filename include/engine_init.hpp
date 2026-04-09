@@ -1695,7 +1695,7 @@ static void init_engines(const std::string& cfg_path)
         // Register atomic write callback -- cTrader thread writes derived scalars
         // (imbalance, microprice_bias, has_data) lock-free after each depth event.
         // FIX tick reads these atomics directly with no mutex contention at all.
-        g_ctrader_depth.atomic_l2_write_fn = [](const std::string& sym, double imb, double mp, bool hd, int rbid, int rask) noexcept {
+        g_ctrader_depth.atomic_l2_write_fn = [](const std::string& sym, double imb, double mp, bool hd, int rbid, int rask, double me) noexcept {
             AtomicL2* al = get_atomic_l2(sym);
             if (!al) return;
             const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1705,6 +1705,7 @@ static void init_engines(const std::string& cfg_path)
             al->has_data.store(hd, std::memory_order_relaxed);
             al->raw_bid.store(rbid, std::memory_order_relaxed);
             al->raw_ask.store(rask, std::memory_order_relaxed);
+            al->micro_edge.store(me, std::memory_order_relaxed);
             al->last_update_ms.store(now_ms, std::memory_order_release);
         };
         // Subscribe depth only for actively traded symbols -- not passive cross-pairs.
