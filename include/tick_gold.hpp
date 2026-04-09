@@ -1346,7 +1346,12 @@ static void on_tick_gold(
         g_gold_flow_exit_reason.store(is_sl ? 1 : 2);
         if (is_sl) {
             g_gold_reversal_window_until.store(now_s + 60);
-            printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s -- reversal window open 60s\n",
+            // Block BOTH directions for 300s after SL -- price is whipsawing,
+            // entering either direction immediately after a loss compounds the damage.
+            // Evidence: 09:03 LONG SL_HIT -> 09:07 SHORT IMM_REVERSAL -$23 4min later.
+            g_gf_long_blocked_until.store(now_s + 300);
+            g_gf_short_blocked_until.store(now_s + 300);
+            printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s -- reversal window 60s, both dirs blocked 300s\n",
                    tr.side.c_str());
             fflush(stdout);
             const bool is_long_sl = (tr.side == "LONG");
@@ -1382,8 +1387,8 @@ static void on_tick_gold(
             // on a 3.8pt bounce -- immediately stopped out for -$35.
             const bool was_short = (tr.side == "SHORT");
             auto& opp_block = was_short ? g_gf_long_blocked_until : g_gf_short_blocked_until;
-            opp_block.store(now_s + 180);  // 3 min opposite-direction block after trail
-            printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir blocked 10s, opposite blocked 180s\n",
+            opp_block.store(now_s + 300);  // 5 min opposite-direction block after trail
+            printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir blocked 10s, opposite blocked 300s\n",
                    tr.exitReason.c_str(), tr.side.c_str());
             fflush(stdout);
         }
