@@ -764,7 +764,7 @@ static std::string log_root_dir() {
         const size_t slash = g_cfg.log_file.find_last_of("/\\");
         if (slash != std::string::npos) return g_cfg.log_file.substr(0, slash);
     }
-    // Always absolute path -- exe runs from C:\Omega\build\Release\
+    // Always absolute path -- exe runs from C:\Omega\build\Release
     // Relative "logs" fallback silently lost all logs to build dir. Removed.
     namespace fs = std::filesystem;
     std::error_code ec;
