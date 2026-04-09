@@ -111,6 +111,7 @@ public:
     {
         if (!enabled) return;
         if (bid <= 0.0 || ask <= 0.0) return;
+        if (l2_imbalance > 0.0) m_last_l2 = l2_imbalance;  // track L2 every tick
 
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
@@ -150,6 +151,23 @@ public:
         // SHORT: was rising, now falling, and RSI is in upper half (above 50)
         const bool rsi_turn_short = was_rising  && (rsi < m_bar_rsi_prev) && (rsi > 50.0);
         if (!rsi_turn_long && !rsi_turn_short) return;
+
+        // Price confirmation: price must have already moved > PRICE_CONFIRM_PTS
+        // since the RSI extreme. Ensures move is real and cost-covered before entry.
+        // At 0.05 lots: 1pt = $5 gross vs ~$3.50 cost -- already profitable.
+        const double price_move_since_extreme = rsi_turn_long
+            ? (mid - m_price_at_extreme)   // LONG: price risen since RSI bottom
+            : (m_price_at_extreme - mid);  // SHORT: price fallen since RSI top
+        if (m_price_at_extreme > 0.0 && price_move_since_extreme < PRICE_CONFIRM_PTS) {
+            static int64_t s_pc_log = 0;
+            if (now_ms/1000 - s_pc_log >= 5) {
+                s_pc_log = now_ms/1000;
+                printf("[RSI-REV-BLOCK] price_confirm=%.2f < %.2f pts -- waiting for move\n",
+                       price_move_since_extreme, PRICE_CONFIRM_PTS);
+                fflush(stdout);
+            }
+            return;
+        }
         m_rsi_peak = rsi;  // reset peak tracking on entry
 
         const bool is_long = rsi_turn_long;
@@ -197,7 +215,8 @@ public:
         pos.entry     = entry;
         pos.sl        = is_long ? (entry - sl_dist) : (entry + sl_dist);
         pos.atr       = m_tick_atr;
-        pos.size      = 0.05;  // fixed 0.05 lots: 3pt move = $15 gross, ~$3.50 cost = ~$11.50 net
+        pos.size      = 0.05;
+        m_l2_at_entry = l2_imbalance;  // record L2 at entry for flip detection  // fixed 0.05 lots: 3pt move = $15 gross, ~$3.50 cost = ~$11.50 net
         pos.mfe       = 0.0;
         pos.be_locked = false;
         pos.entry_ts  = now_s;
@@ -223,15 +242,24 @@ public:
 
     double tick_rsi() const noexcept { return m_tick_rsi; }
     // Called each tick from tick_gold.hpp to inject M1 bar RSI for entry signal
-    void set_bar_rsi(double bar_rsi) noexcept {
+    void set_bar_rsi(double bar_rsi, double current_price = 0.0) noexcept {
         if (bar_rsi > 0.0 && bar_rsi < 100.0) {
             m_bar_rsi_prev = (m_bar_rsi > 0.0) ? m_bar_rsi : bar_rsi;
             m_bar_rsi = bar_rsi;
-            // Track RSI peak/trough for MIN_RSI_MOVE filter
             if (!pos.active) {
-                if (bar_rsi > 50.0 && bar_rsi > m_rsi_peak) m_rsi_peak = bar_rsi;
-                if (bar_rsi < 50.0 && bar_rsi < m_rsi_peak) m_rsi_peak = bar_rsi;
-                if (m_rsi_peak == 50.0) m_rsi_peak = bar_rsi;
+                // Track RSI peak/trough and corresponding price
+                if (bar_rsi > 50.0 && bar_rsi > m_rsi_peak) {
+                    m_rsi_peak = bar_rsi;
+                    if (current_price > 0.0) m_price_at_extreme = current_price;
+                }
+                if (bar_rsi < 50.0 && bar_rsi < m_rsi_peak) {
+                    m_rsi_peak = bar_rsi;
+                    if (current_price > 0.0) m_price_at_extreme = current_price;
+                }
+                if (m_rsi_peak == 50.0) {
+                    m_rsi_peak = bar_rsi;
+                    if (current_price > 0.0) m_price_at_extreme = current_price;
+                }
             }
         }
     }
@@ -245,6 +273,9 @@ private:
     double  m_bar_rsi       = 0.0;   // current bar RSI
     double  m_bar_rsi_prev  = 50.0;  // previous bar RSI (for turn detection)
     double  m_rsi_peak      = 50.0;  // tracks RSI extreme before reversal (reset on entry)
+    double  m_price_at_extreme = 0.0; // price when RSI hit its extreme (for confirmation)
+    double  m_l2_at_entry   = 0.5;   // L2 imbalance at entry (for flip detection)
+    double  m_last_l2       = 0.5;   // most recent L2 imbalance (updated every tick)
     double  m_rsi_avg_gain  = 0.0;
     double  m_rsi_avg_loss  = 0.0;
     bool    m_rsi_init      = false;
@@ -338,6 +369,23 @@ private:
             const double open_pnl = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
             if (rsi_reversing && open_pnl > pos.atr * 0.3 && pos.be_locked) {
                 _close(pos.is_long ? bid : ask, "RSI_TURN", now_s, on_close); return;
+            }
+        }
+        // ?? L2 FLIP EXIT -- fires INSTANTLY when DOM flips against position ??????
+        // L2 imbalance crossing 0.5 against us = sellers taking over on a LONG
+        // or buyers taking over on a SHORT. This precedes price reversal by seconds.
+        // Only fires when: profit > L2_EXIT_MIN_PROFIT AND BE is locked.
+        if (pos.be_locked && m_last_l2 > 0.0) {
+            const bool l2_flipped_against = pos.is_long
+                ? (m_last_l2 < L2_EXIT_THRESHOLD && m_l2_at_entry >= L2_EXIT_THRESHOLD)
+                : (m_last_l2 > L2_EXIT_THRESHOLD && m_l2_at_entry <= L2_EXIT_THRESHOLD);
+            const double open_pnl = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
+            if (l2_flipped_against && open_pnl >= L2_EXIT_MIN_PROFIT) {
+                printf("[RSI-REV] L2_FLIP_EXIT %s l2=%.3f was=%.3f profit=%.2f\n",
+                       pos.is_long ? "LONG" : "SHORT",
+                       m_last_l2, m_l2_at_entry, open_pnl);
+                fflush(stdout);
+                _close(pos.is_long ? bid : ask, "L2_FLIP", now_s, on_close); return;
             }
         }
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
