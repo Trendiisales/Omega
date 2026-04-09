@@ -3549,21 +3549,43 @@ static void on_tick_gold(
         && !g_hybrid_gold.has_open_position()
         && !in_ny_close_noise) {
 
-        // Build BarSnap from last two completed M1 bars via last_bar()/prev_bar()
-        // These return the actual OHLC from OHLCBarEngine::bars_ deque --
-        // real open/high/low/close, not indicator proxies.
+        // Build BarSnap from last two completed M1 bars.
+        // PATH A: bars_ deque has >= 2 live bars (normal running state or after seed()).
+        // PATH B: bars_ empty after load_indicators() from disk (only indicators restored,
+        //         not bar history). Use current tick as close, BB bands as high/low proxy,
+        //         EMA9 as open proxy. Less precise but valid for candle direction check.
         omega::CandleFlowEngine::BarSnap cfe_bar;
-        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)
-            && g_bars_gold.m1.bar_count() >= 2) {
-            const OHLCBar lb = g_bars_gold.m1.last_bar();  // last completed M1 bar
-            const OHLCBar pb = g_bars_gold.m1.prev_bar();  // bar before that
-            cfe_bar.open      = lb.open;
-            cfe_bar.high      = lb.high;
-            cfe_bar.low       = lb.low;
-            cfe_bar.close     = lb.close;
-            cfe_bar.prev_high = pb.high;
-            cfe_bar.prev_low  = pb.low;
-            cfe_bar.valid     = (lb.close > 0.0 && lb.high > lb.low);
+        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+            if (g_bars_gold.m1.bar_count() >= 2) {
+                // PATH A: real OHLC bars available
+                const OHLCBar lb = g_bars_gold.m1.last_bar();
+                const OHLCBar pb = g_bars_gold.m1.prev_bar();
+                cfe_bar.open      = lb.open;
+                cfe_bar.high      = lb.high;
+                cfe_bar.low       = lb.low;
+                cfe_bar.close     = lb.close;
+                cfe_bar.prev_high = pb.high;
+                cfe_bar.prev_low  = pb.low;
+                cfe_bar.valid     = (lb.close > 0.0 && lb.high > lb.low);
+            } else {
+                // PATH B: bars not yet accumulated post disk-load -- use indicators
+                // EMA9 is the smoothed recent close; ATR gives range estimate.
+                // BB upper/lower give prev high/low proxy.
+                const double cur_mid  = (bid + ask) * 0.5;
+                const double ema9     = g_bars_gold.m1.ind.ema9.load(std::memory_order_relaxed);
+                const double atr14    = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
+                const double bb_upper = g_bars_gold.m1.ind.bb_upper.load(std::memory_order_relaxed);
+                const double bb_lower = g_bars_gold.m1.ind.bb_lower.load(std::memory_order_relaxed);
+                if (ema9 > 0.0 && atr14 > 0.0) {
+                    cfe_bar.open      = ema9;
+                    cfe_bar.close     = cur_mid;
+                    cfe_bar.high      = std::max(ema9, cur_mid) + atr14 * 0.1;
+                    cfe_bar.low       = std::min(ema9, cur_mid) - atr14 * 0.1;
+                    cfe_bar.prev_high = bb_upper > 0.0 ? bb_upper : cur_mid + atr14 * 0.5;
+                    cfe_bar.prev_low  = bb_lower > 0.0 ? bb_lower : cur_mid - atr14 * 0.5;
+                    cfe_bar.valid     = (atr14 > 0.0);
+                }
+            }
         }
 
         if (cfe_bar.valid) {
