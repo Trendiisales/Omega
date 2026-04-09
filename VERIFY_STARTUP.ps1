@@ -492,6 +492,34 @@ if ($engineCulledLine) {
     Add-Result "GF Engine Culled" "PASS" "Not culled" "GoldFlow not culled this session."
 }
 
+# ==============================================================================
+# CHECK: GoldFlow enabled -- GFE-CONFIG must show goldflow_enabled=true
+# ==============================================================================
+$gfeConfigLine = Find-Last "GFE-CONFIG"
+if (!$gfeConfigLine) {
+    Add-Result "GoldFlow Active" "FAIL" "No GFE-CONFIG line in log" `
+        "GoldFlow never logged its config -- binary may be stale or goldflow_enabled not parsed. Run QUICK_RESTART.ps1"
+} elseif ($gfeConfigLine -match "DISABLED") {
+    Add-Result "GoldFlow Active" "FAIL" "GoldFlow is DISABLED in config" `
+        "goldflow_enabled=false in omega_config.ini [risk] section -- set goldflow_enabled=true"
+} else {
+    Add-Result "GoldFlow Active" "PASS" "$($gfeConfigLine.Trim())" "GoldFlow entries active."
+}
+
+# ==============================================================================
+# CHECK: RSI Reversal Engine enabled
+# ==============================================================================
+$rsiConfigLine = Find-Last "RSI-REV.*configured"
+if (!$rsiConfigLine) {
+    Add-Result "RSI Reversal Active" "FAIL" "No RSI-REV configured line in log" `
+        "RSIReversalEngine never logged startup -- binary stale or engine disabled. Run QUICK_RESTART.ps1"
+} elseif ($rsiConfigLine -match "shadow_mode=true") {
+    Add-Result "RSI Reversal Active" "WARN" "RSI Reversal in SHADOW mode" `
+        "Engine active but shadow_mode=true -- trades logged only, no real orders fired."
+} else {
+    Add-Result "RSI Reversal Active" "PASS" "$($rsiConfigLine.Trim())" "RSI Reversal live."
+}
+
 # BARS_PERMANENTLY_UNAVAILABLE: bars failed to seed, GoldFlow blind
 $barsPermanentLine = Find-Last "BARS_PERMANENTLY_UNAVAILABLE"
 $barsNotReadyLine  = Find-Last "BARS_NOT_READY"
