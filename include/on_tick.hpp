@@ -687,6 +687,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 push_live_trade("XAUUSD","NBM-London",
                     g_nbm_gold_london.open_is_long(), g_nbm_gold_london.open_entry(),
                     0.0, 0.0, g_nbm_gold_london.open_size(), (int64_t)std::time(nullptr));
+            if (g_candle_flow.has_open_position())
+                push_live_trade("XAUUSD", "CandleFlow",
+                    g_candle_flow.pos.is_long, g_candle_flow.pos.entry,
+                    0.0, g_candle_flow.pos.sl,
+                    g_candle_flow.pos.size, g_candle_flow.pos.entry_ts_ms / 1000);
             // ?? US indices ??????????????????????????????????????????????????
             if (g_eng_sp.pos.active)
                 push_live_trade("US500.F","BE", g_eng_sp.pos.is_long,
