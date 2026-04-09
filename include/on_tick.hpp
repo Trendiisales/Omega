@@ -70,7 +70,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // Use the per-symbol L2 imbalance from MacroContext (updated just above this)
         {
             double l2_imb = 0.5;  // neutral fallback
-            if      (sym == "XAUUSD")  l2_imb = g_macro_ctx.gold_l2_imbalance;
+            if      (sym == "XAUUSD")  l2_imb = 0.5;  // BlackBull DOM unusable -- always 0.500
             else if (sym == "US500.F") l2_imb = g_macro_ctx.sp_l2_imbalance;
             else if (sym == "USTEC.F") l2_imb = g_macro_ctx.nq_l2_imbalance;
             else if (sym == "XAGUSD")  l2_imb = g_macro_ctx.xag_l2_imbalance;
