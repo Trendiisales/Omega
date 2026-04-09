@@ -1538,7 +1538,8 @@ static void on_tick_gold(
     // Inject M1 bar RSI for entry signal -- bar RSI is smooth (60s) and matches chart
     if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
         g_rsi_reversal.set_bar_rsi(
-            g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed));
+            g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
+            (bid + ask) * 0.5);  // pass current price for extreme tracking
     }
 
     // ?? MacroCrashEngine -- always-on macro event capture ????????????????
