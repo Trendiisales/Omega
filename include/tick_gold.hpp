@@ -2018,7 +2018,7 @@ static void on_tick_gold(
             //                         -1 = last close was SHORT (block new SHORTs)
             const int  block_dir   = g_gold_trail_block_dir.load();
             const double gf_drift  = g_gold_stack.ewm_drift();
-            const double gf_l2     = g_macro_ctx.gold_l2_imbalance;
+            // gf_l2 removed -- BlackBull DOM always 0.500, unusable
             // Direction probe: use L2 if live, drift otherwise.
             // BUG FIX: when L2 is neutral (0.40-0.60) AND drift is weak (<1.0),
             // the old probe returned likely_long=false, which meant block_dir=1
