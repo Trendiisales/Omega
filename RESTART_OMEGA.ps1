@@ -29,7 +29,7 @@ $ConfigDst = "$OmegaDir\omega_config.ini"          # binary working directory co
 $SymbolSrc = "$OmegaDir\symbols.ini"               # already in root (git tracked)
 $CmakeExe  = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
 $NssmExe   = "C:\nssm\nssm-2.24\win64\nssm.exe"
-$ServiceName = "OmegaHFT"
+$ServiceName = "Omega"
 
 function Banner($text, $color="Cyan") {
     Write-Host ""
@@ -240,7 +240,7 @@ if ($svc) {
         WARN "NSSM not found -- service exe path not updated. Service may run old binary."
     }
 } else {
-    WARN "OmegaHFT service not installed -- will launch directly. Run INSTALL_SERVICE.ps1 once."
+    WARN "Omega service not installed -- will launch directly. Run INSTALL_SERVICE.ps1 once."
 }
 
 # ── [12/13] Show launch summary ──────────────────────────────────────────────
