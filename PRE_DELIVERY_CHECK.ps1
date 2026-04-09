@@ -84,12 +84,7 @@ if ($LASTEXITCODE -eq 0) {
 # Log and trade CSV files are locked by Windows while Omega runs (or briefly after
 # stop). Mark them skip-worktree so git reset --hard never tries to overwrite them.
 # ==============================================================================
-$skipFiles = @(
-    "logs/latest.log",
-    "logs/omega_2026-04-09.log",
-    "logs/trades/omega_trade_opens.csv"
-)
-# Build skip-worktree list dynamically from all files under logs/
+# Mark all tracked log files skip-worktree so reset --hard ignores locked files
 $allLogFiles = & git -C $OmegaDir ls-files logs/ 2>$null
 foreach ($lf in $allLogFiles) {
     & git -C $OmegaDir update-index --skip-worktree $lf 2>$null | Out-Null
