@@ -2366,6 +2366,45 @@ static void on_tick_gold(
                 }
             }
 
+            // ?? RSI direction gate ?????????????????????????????????????????
+            // RSI slope confirms entry direction:
+            //   LONG:  RSI must be >= 50 OR rising (slope positive)
+            //   SHORT: RSI must be <= 50 OR falling (slope negative)
+            // Prevents entering LONG when RSI is falling through 50 (downward momentum)
+            // and SHORT when RSI is rising through 50 (upward momentum).
+            // Evidence: 09:03 LONG entered when RSI was falling after short trail --
+            // RSI direction gate would have blocked it.
+            if (gf_tick_ok) {
+                static double s_prev_rsi = 50.0;
+                const double rsi_slope = bar_rsi - s_prev_rsi;  // positive = rising, negative = falling
+                s_prev_rsi = bar_rsi;
+                // Block LONG if RSI is below 50 AND falling
+                const bool rsi_blocks_long  = gf_long  && (bar_rsi < 50.0) && (rsi_slope < -0.5);
+                // Block SHORT if RSI is above 50 AND rising
+                const bool rsi_blocks_short = !gf_long && (bar_rsi > 50.0) && (rsi_slope >  0.5);
+                if (rsi_blocks_long) {
+                    static int64_t s_rsi_dir_log = 0;
+                    if (nowSec() - s_rsi_dir_log >= 10) {
+                        s_rsi_dir_log = nowSec();
+                        printf("[GF-BAR-BLOCK] XAUUSD LONG blocked RSI=%.1f slope=%.2f (falling below 50)\n",
+                               bar_rsi, rsi_slope);
+                        fflush(stdout);
+                    }
+                    gf_tick_ok = false;
+                    gf_block_reason = "RSI_DIR_FALLING";
+                } else if (rsi_blocks_short) {
+                    static int64_t s_rsi_dir_log2 = 0;
+                    if (nowSec() - s_rsi_dir_log2 >= 10) {
+                        s_rsi_dir_log2 = nowSec();
+                        printf("[GF-BAR-BLOCK] XAUUSD SHORT blocked RSI=%.1f slope=%.2f (rising above 50)\n",
+                               bar_rsi, rsi_slope);
+                        fflush(stdout);
+                    }
+                    gf_tick_ok = false;
+                    gf_block_reason = "RSI_DIR_RISING";
+                }
+            }
+
             // Trend alignment gate (M5 swing structure)
             // If M5 shows clear downtrend and signal is LONG: need RSI < 40 to enter
             // (deeply oversold pullback in downtrend only). Same for SHORT in uptrend.
