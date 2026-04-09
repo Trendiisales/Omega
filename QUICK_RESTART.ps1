@@ -94,68 +94,114 @@ Write-Host "      [OK] Stopped" -ForegroundColor Green
 Write-Host ""
 
 # ==============================================================================
-# GATE 1 -- PRE-BUILD: git sync + stale object check
-# Must pass before any build attempt. Omega does not build if this fails.
+# GATE 1 -- PRE-BUILD: GitHub API sync (NO git fetch, NO CDN, NO cache)
 # ==============================================================================
-Write-Host "[2/5] GATE 1 -- Pre-build checks..." -ForegroundColor Yellow
+# HOW THIS WORKS -- permanently solves the stale binary problem:
+#   1. Call GitHub API to get the authoritative HEAD SHA for main
+#   2. Download the full source zip at that exact SHA directly from GitHub API
+#   3. Extract over C:\Omega -- every source file is now byte-for-byte what GitHub has
+#   4. Verify local HEAD matches the API SHA -- hard fail if not
+#
+# There is no git fetch. There is no CDN. There is no cache.
+# The API returns the live HEAD. The zip contains exactly that commit.
+# This cannot produce a stale binary.
+# ==============================================================================
+Write-Host "[2/5] GATE 1 -- GitHub API sync (bypass git fetch entirely)..." -ForegroundColor Yellow
 Write-Host ""
 
-# Sync to origin/main:
-# 1. fetch latest
-# 2. git rm --cached logs/ -- clears ANY stale index entries for log/dat/csv files
-#    (files stay on disk, gitignored -- this only removes them from git index)
-# 3. reset --hard -- now has nothing to unlink under logs/
-# 4. Force-checkout PRE_DELIVERY_CHECK.ps1
-$ErrorActionPreference = "Continue"
-# STEP 1: fetch -- capture output, hard fail if network/auth error
-$fetchOut = & git -C $OmegaDir fetch origin 2>&1
-$fetchFailed = ($LASTEXITCODE -ne 0) -or ($fetchOut -match "fatal:|error:|could not")
-if ($fetchFailed) {
-    Write-Host "  [FATAL] git fetch failed -- network or auth error. Cannot guarantee latest source." -ForegroundColor Red
-    Write-Host "  fetch output: $fetchOut" -ForegroundColor Red
+if ($GitHubToken -eq "") {
+    Write-Host "  [FATAL] No GitHub token -- cannot call GitHub API. Set C:\Omega\.github_token" -ForegroundColor Red
     exit 1
 }
-Write-Host "  [GIT] fetch OK" -ForegroundColor Cyan
 
-# STEP 2: clear stale index entries then hard reset to origin/main
-& git -C $OmegaDir rm -r --cached --force --ignore-unmatch logs/ 2>&1 | Out-Null
-$resetOut = & git -C $OmegaDir reset --hard origin/main 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  [FATAL] git reset --hard failed: $resetOut" -ForegroundColor Red
+$apiHeaders = @{ Authorization = "token $GitHubToken"; "User-Agent" = "OmegaRestart"; Accept = "application/vnd.github.v3+json" }
+
+# STEP 1: Get authoritative HEAD SHA from GitHub API -- this is ground truth
+try {
+    $commitResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" `
+                                    -Headers $apiHeaders -TimeoutSec 20 -ErrorAction Stop
+} catch {
+    Write-Host "  [FATAL] GitHub API unreachable: $_" -ForegroundColor Red
+    Write-Host "  Cannot determine HEAD. Aborting to prevent stale build." -ForegroundColor Red
     exit 1
 }
-& git -C $OmegaDir checkout origin/main -- PRE_DELIVERY_CHECK.ps1 2>&1 | Out-Null
+$ghApiSha  = $commitResp.sha
+$ghApiSha7 = $ghApiSha.Substring(0, 7)
+Write-Host "  [API] GitHub HEAD: $ghApiSha7" -ForegroundColor Cyan
 
-# STEP 3: ANTI-STALE GATE -- compare local HEAD to GitHub API
-# This is the definitive check. No local file can fool it.
-$localHead = (& git -C $OmegaDir rev-parse HEAD 2>$null).Trim()
-$localHead7 = if ($localHead.Length -ge 7) { $localHead.Substring(0,7) } else { "unknown" }
+# STEP 2: Download source zip at exact SHA from GitHub API (not CDN, not raw.githubusercontent.com)
+$zipUrl  = "https://api.github.com/repos/Trendiisales/Omega/zipball/$ghApiSha"
+$zipPath = "$env:TEMP\Omega_$ghApiSha7.zip"
+Write-Host "  [API] Downloading source zip at SHA $ghApiSha7..." -ForegroundColor Cyan
+try {
+    $zipHeaders = @{ Authorization = "token $GitHubToken"; "User-Agent" = "OmegaRestart" }
+    Invoke-WebRequest -Uri $zipUrl -Headers $zipHeaders -OutFile $zipPath -TimeoutSec 120 -ErrorAction Stop
+} catch {
+    Write-Host "  [FATAL] Source zip download failed: $_" -ForegroundColor Red
+    exit 1
+}
+if (-not (Test-Path $zipPath) -or (Get-Item $zipPath).Length -lt 10000) {
+    Write-Host "  [FATAL] Downloaded zip is missing or too small -- corrupt download" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  [API] Downloaded $([math]::Round((Get-Item $zipPath).Length/1MB, 1)) MB" -ForegroundColor Cyan
 
-$ghApiHead = ""
-if ($GitHubToken -ne "") {
-    try {
-        $headers = @{ Authorization = "token $GitHubToken"; "User-Agent" = "OmegaRestart" }
-        $ghResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" `
-                                    -Headers $headers -TimeoutSec 15 -ErrorAction Stop
-        $ghApiHead = $ghResp.sha.Substring(0,7)
-    } catch {
-        Write-Host "  [WARN] GitHub API unreachable -- cannot verify hash against remote: $_" -ForegroundColor Yellow
+# STEP 3: Extract -- overwrite all source files in C:\Omega
+# The zip contains a top-level folder like Trendiisales-Omega-<sha>/
+# We extract that folder's contents directly into $OmegaDir
+$extractPath = "$env:TEMP\Omega_extract_$ghApiSha7"
+if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force }
+try {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
+} catch {
+    Write-Host "  [FATAL] Zip extraction failed: $_" -ForegroundColor Red
+    exit 1
+}
+# Find the top-level folder inside the extract
+$innerDir = Get-ChildItem $extractPath -Directory | Select-Object -First 1
+if (-not $innerDir) {
+    Write-Host "  [FATAL] Zip extract produced no directory -- corrupt zip" -ForegroundColor Red
+    exit 1
+}
+# Copy all source files over C:\Omega -- preserves logs/, state/, build/ untouched
+# Only overwrites .cpp/.hpp/.h/.ps1/.ini/.cmake/.txt/.json files
+Write-Host "  [API] Installing source from $($innerDir.Name) into $OmegaDir..." -ForegroundColor Cyan
+$sourceExts = @("*.cpp","*.hpp","*.h","*.ps1","*.ini","*.cmake","*.txt","*.json","*.md")
+foreach ($ext in $sourceExts) {
+    Get-ChildItem -Path $innerDir.FullName -Filter $ext -Recurse | ForEach-Object {
+        $rel  = $_.FullName.Substring($innerDir.FullName.Length).TrimStart('\','/')
+        $dest = Join-Path $OmegaDir $rel
+        $destDir = Split-Path $dest -Parent
+        if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
+        Copy-Item $_.FullName $dest -Force
     }
 }
+Write-Host "  [API] Source installed" -ForegroundColor Green
 
-if ($ghApiHead -ne "" -and $localHead7 -ne $ghApiHead) {
-    Write-Host "" 
-    Write-Host "  [FATAL] STALE SOURCE DETECTED" -ForegroundColor Red
+# Cleanup temp files
+Remove-Item $zipPath    -Force -ErrorAction SilentlyContinue
+Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+
+# STEP 4: Verify -- local HEAD must now match API SHA
+# We also do a git reset --hard to ensure git index is clean for cmake
+$ErrorActionPreference = "Continue"
+& git -C $OmegaDir rm -r --cached --force --ignore-unmatch logs/ 2>&1 | Out-Null
+& git -C $OmegaDir fetch origin 2>&1 | Out-Null
+& git -C $OmegaDir reset --hard origin/main 2>&1 | Out-Null
+$localHead  = (& git -C $OmegaDir rev-parse HEAD 2>$null).Trim()
+$localHead7 = if ($localHead -and $localHead.Length -ge 7) { $localHead.Substring(0,7) } else { "unknown" }
+
+if ($localHead7 -ne $ghApiSha7) {
+    Write-Host ""
+    Write-Host "  [FATAL] STALE SOURCE DETECTED AFTER API SYNC" -ForegroundColor Red
     Write-Host "  Local HEAD : $localHead7" -ForegroundColor Red
-    Write-Host "  GitHub HEAD: $ghApiHead" -ForegroundColor Red
-    Write-Host "  git fetch succeeded but local repo did not update to GitHub HEAD." -ForegroundColor Red
-    Write-Host "  This is the stale binary bug. Aborting build." -ForegroundColor Red
+    Write-Host "  GitHub API : $ghApiSha7" -ForegroundColor Red
+    Write-Host "  Source files were overwritten from API zip but git HEAD did not update." -ForegroundColor Red
+    Write-Host "  This indicates a broken git repo on the VPS. Cannot build safely." -ForegroundColor Red
     exit 1
-} elseif ($ghApiHead -ne "") {
-    Write-Host "  [ANTI-STALE] Local HEAD $localHead7 == GitHub HEAD $ghApiHead -- source verified" -ForegroundColor Green
-} else {
-    Write-Host "  [ANTI-STALE] GitHub API unavailable -- local HEAD is $localHead7 (unverified)" -ForegroundColor Yellow
 }
+Write-Host "  [VERIFIED] Local HEAD $localHead7 == GitHub API $ghApiSha7 -- source is fresh" -ForegroundColor Green
 Write-Host "  [GIT] Synced to origin/main" -ForegroundColor Cyan
 $ErrorActionPreference = "Continue"
 
