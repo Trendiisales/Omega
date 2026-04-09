@@ -1474,6 +1474,17 @@ int main(int argc, char* argv[])
             // Previously this was printed via std::printf before tee opened -- went to
             // NSSM stdout only, never to latest.log. Now it goes to both.
             std::cout << "[OMEGA] RUNNING COMMIT: " << OMEGA_VERSION << " built=" << OMEGA_BUILT << "\n";
+            // ENGINE CONFIG SUMMARY -- must be emitted AFTER tee opens so it goes into the log file.
+            // RSI-REV and GFE-CONFIG are configured early (before tee) and printed to NSSM stdout only.
+            // Repeating them here guarantees VERIFY_STARTUP and QUICK_RESTART engine checks can find them.
+            std::cout << "[GFE-CONFIG] goldflow_enabled=" << (g_cfg.goldflow_enabled ? "true" : "false")
+                      << " -- GoldFlow entries are "
+                      << (g_cfg.goldflow_enabled ? "ACTIVE" : "DISABLED") << "\n";
+            std::cout << "[RSI-REV] RSIReversalEngine configured (shadow_mode="
+                      << (g_rsi_reversal.shadow_mode ? "true" : "false")
+                      << " oversold=" << (int)g_rsi_reversal.RSI_OVERSOLD
+                      << " overbought=" << (int)g_rsi_reversal.RSI_OVERBOUGHT
+                      << " sl_mult=" << g_rsi_reversal.SL_ATR_MULT << "x)\n";
             std::cout.flush();
         }
     }
