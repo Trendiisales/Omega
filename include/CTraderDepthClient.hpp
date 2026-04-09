@@ -310,6 +310,189 @@ inline OHLCBar parse_trendbar(const std::vector<uint8_t>& bytes,
 // =============================================================================
 struct CTDepthQuote { uint64_t price_raw=0, size_raw=0; bool is_bid=false; };
 
+
+// =============================================================================
+//  GoldMicrostructureAnalyzer
+//  Computes a delta-based microstructure edge score from consecutive L2Book
+//  snapshots on every DOM event for XAUUSD.
+//
+//  The documents define the correct model: the edge is CHANGES between snapshots,
+//  not static book balance. Five signals, each normalised to -1..+1:
+//
+//  1. imbalance_norm   (0.35): level-count imbalance -- bid_levels / total_levels
+//  2. consumption_norm (0.25): which side is being aggressively lifted/hit
+//  3. pull_norm        (0.20): which side is pulling liquidity without trades
+//  4. absorption_norm  (0.10): large level holding under repeated pressure
+//  5. queue_norm       (0.10): which side is stacking new orders
+//
+//  micro_edge = 0.35*imb + 0.25*cons + 0.20*pull + 0.10*abs + 0.10*queue
+//  Range: -1..+1. Output remapped to 0..1 (0.5 = neutral) for GFE compatibility.
+//
+//  Called once per DOM event from on_depth_event() with prev and rebuilt snapshots.
+//  Thread-safe: called only from the cTrader depth thread, no shared state.
+// =============================================================================
+struct GoldMicrostructureAnalyzer {
+
+    // Rolling absorption tracker: tracks how much volume has been executed at
+    // the top bid/ask level since last time the level changed.
+    struct AbsorptionState {
+        double top_bid_price = 0.0;
+        double top_ask_price = 0.0;
+        double bid_executed  = 0.0;  // cumulative volume hit at top bid since level change
+        double ask_executed  = 0.0;  // cumulative volume hit at top ask since level change
+    } abs_state;
+
+    // Smoothed output -- EWM alpha=0.3 prevents single-event spikes driving entries
+    double ewm_edge = 0.5;
+    static constexpr double EWM_ALPHA = 0.30;
+
+    // on_update: call after every rebuild with prev snapshot (before this event)
+    // and rebuilt snapshot (after this event).
+    // Returns micro_edge in 0..1 range.
+    double on_update(const L2Book& prev, const L2Book& rebuilt) noexcept {
+
+        // ── Feature 1: imbalance (level-count based, 0..1) ─────────────────
+        // bid_levels / (bid_levels + ask_levels). Neutral = 0.5.
+        const int bl = rebuilt.bid_count;
+        const int al = rebuilt.ask_count;
+        const double imb_raw = (bl + al > 0)
+            ? static_cast<double>(bl) / static_cast<double>(bl + al)
+            : 0.5;
+        // Normalise to -1..+1: 0.5 → 0, 1.0 → +1, 0.0 → -1
+        const double imb_norm = (imb_raw - 0.5) * 2.0;
+
+        // ── Feature 2: consumption (which side is being aggressively hit) ──
+        // Consumption = levels that decreased AND price moved through them.
+        // Proxy: compare top-of-book sizes prev vs rebuilt.
+        // Ask consumed (buyers lifting) → positive. Bid consumed → negative.
+        double ask_consumed = 0.0, bid_consumed = 0.0;
+        {
+            // Top ask: if rebuilt ask price >= prev ask price AND size decreased,
+            // buyers consumed that level.
+            if (prev.ask_count > 0 && rebuilt.ask_count > 0) {
+                if (rebuilt.asks[0].price >= prev.asks[0].price - 0.001) {
+                    const double delta = prev.asks[0].size - rebuilt.asks[0].size;
+                    if (delta > 0.0) ask_consumed = delta;
+                }
+            }
+            // Top bid: if rebuilt bid price <= prev bid price AND size decreased,
+            // sellers hit that level.
+            if (prev.bid_count > 0 && rebuilt.bid_count > 0) {
+                if (rebuilt.bids[0].price <= prev.bids[0].price + 0.001) {
+                    const double delta = prev.bids[0].size - rebuilt.bids[0].size;
+                    if (delta > 0.0) bid_consumed = delta;
+                }
+            }
+        }
+        const double cons_total = ask_consumed + bid_consumed;
+        const double cons_norm  = (cons_total > 0.0)
+            ? (ask_consumed - bid_consumed) / cons_total
+            : 0.0;
+
+        // ── Feature 3: liquidity pull (orders disappearing without trade) ──
+        // Pull = level present in prev, absent or much smaller in rebuilt,
+        // WITHOUT the price having moved through it (no consumption).
+        // Ask pulled (above price) → bullish (path cleared). Bid pulled → bearish.
+        double ask_pulled = 0.0, bid_pulled = 0.0;
+        {
+            // Compare each level in prev to rebuilt. If size dropped and no
+            // consumption signal (different scenario from consumption above),
+            // classify as a pull.
+            for (int i = 0; i < prev.ask_count && i < rebuilt.ask_count; ++i) {
+                if (std::fabs(prev.asks[i].price - rebuilt.asks[i].price) < 0.01) {
+                    // Same price level -- size drop with no consumption = pull
+                    const double delta = prev.asks[i].size - rebuilt.asks[i].size;
+                    if (delta > 0.0 && ask_consumed < 0.001) ask_pulled += delta;
+                }
+            }
+            for (int i = 0; i < prev.bid_count && i < rebuilt.bid_count; ++i) {
+                if (std::fabs(prev.bids[i].price - rebuilt.bids[i].price) < 0.01) {
+                    const double delta = prev.bids[i].size - rebuilt.bids[i].size;
+                    if (delta > 0.0 && bid_consumed < 0.001) bid_pulled += delta;
+                }
+            }
+        }
+        const double pull_total = ask_pulled + bid_pulled;
+        // Pulls: ask pulled above price = bullish, bid pulled below = bearish
+        const double pull_norm  = (pull_total > 0.0)
+            ? (ask_pulled - bid_pulled) / pull_total
+            : 0.0;
+
+        // ── Feature 4: absorption (large level holding under pressure) ──────
+        // Track top-level price. If price is the same as last event AND the level
+        // absorbed volume (size was consumed but level held), that is absorption.
+        double abs_norm = 0.0;
+        {
+            if (rebuilt.ask_count > 0) {
+                const double top_ask = rebuilt.asks[0].price;
+                if (std::fabs(top_ask - abs_state.top_ask_price) < 0.01) {
+                    // Same ask level -- add any consumption
+                    abs_state.ask_executed += ask_consumed;
+                } else {
+                    abs_state.ask_executed  = 0.0;
+                    abs_state.top_ask_price = top_ask;
+                }
+            }
+            if (rebuilt.bid_count > 0) {
+                const double top_bid = rebuilt.bids[0].price;
+                if (std::fabs(top_bid - abs_state.top_bid_price) < 0.01) {
+                    abs_state.bid_executed += bid_consumed;
+                } else {
+                    abs_state.bid_executed  = 0.0;
+                    abs_state.top_bid_price = top_bid;
+                }
+            }
+            // Absorption signal: bid absorbing sell pressure = bullish,
+            // ask absorbing buy pressure = bearish
+            const double abs_total = abs_state.bid_executed + abs_state.ask_executed;
+            if (abs_total > 0.0) {
+                abs_norm = (abs_state.bid_executed - abs_state.ask_executed) / abs_total;
+            }
+        }
+
+        // ── Feature 5: queue growth (new orders stacking) ──────────────────
+        // New bids appearing = bid support building = bullish.
+        // New asks appearing = ask resistance building = bearish.
+        double new_bids = 0.0, new_asks = 0.0;
+        {
+            for (int i = 0; i < rebuilt.bid_count && i < prev.bid_count; ++i) {
+                if (std::fabs(rebuilt.bids[i].price - prev.bids[i].price) < 0.01) {
+                    const double delta = rebuilt.bids[i].size - prev.bids[i].size;
+                    if (delta > 0.0) new_bids += delta;
+                }
+            }
+            for (int i = 0; i < rebuilt.ask_count && i < prev.ask_count; ++i) {
+                if (std::fabs(rebuilt.asks[i].price - prev.asks[i].price) < 0.01) {
+                    const double delta = rebuilt.asks[i].size - prev.asks[i].size;
+                    if (delta > 0.0) new_asks += delta;
+                }
+            }
+        }
+        const double queue_total = new_bids + new_asks;
+        const double queue_norm  = (queue_total > 0.0)
+            ? (new_bids - new_asks) / queue_total
+            : 0.0;
+
+        // ── Weighted composite (-1..+1) ─────────────────────────────────────
+        const double raw_edge =
+            0.35 * imb_norm
+          + 0.25 * cons_norm
+          + 0.20 * pull_norm
+          + 0.10 * abs_norm
+          + 0.10 * queue_norm;
+
+        // Clamp to [-1, +1]
+        const double clamped = raw_edge < -1.0 ? -1.0 : (raw_edge > 1.0 ? 1.0 : raw_edge);
+
+        // EWM smoothing -- prevents single-event spikes
+        ewm_edge = EWM_ALPHA * clamped + (1.0 - EWM_ALPHA) * (ewm_edge * 2.0 - 1.0);
+        ewm_edge = ewm_edge < -1.0 ? -1.0 : (ewm_edge > 1.0 ? 1.0 : ewm_edge);
+
+        // Remap -1..+1 → 0..1 for GFE compatibility (GFE_LONG_THRESHOLD=0.75, SHORT=0.25)
+        return 0.5 + ewm_edge * 0.5;
+    }
+};
+
 struct CTDepthBook {
     std::unordered_map<uint64_t,CTDepthQuote> quotes;
     void apply_new(uint64_t id, uint64_t p, uint64_t s, bool bid) { quotes[id]={p,s,bid}; }
@@ -488,7 +671,7 @@ public:
     // to per-symbol atomics -- called after every depth event, no lock required.
     // Registered by main.cpp at startup. Signature:
     //   (internal_name, imbalance, microprice_bias, has_data)
-    std::function<void(const std::string&, double, double, bool, int, int)> atomic_l2_write_fn;
+    std::function<void(const std::string&, double, double, bool, int, int, double)> atomic_l2_write_fn;
 
     // Check if a symbol has an active depth subscription (by internal name)
     bool has_depth_subscription(const std::string& internal_name) const noexcept {
@@ -518,6 +701,8 @@ public:
 private:
     std::thread thread_;
     std::unordered_map<std::string,CTDepthBook>  depth_books_;
+    std::unordered_map<std::string,L2Book>       prev_books_;   // previous snapshot per symbol for delta signals
+    std::unordered_map<std::string,GoldMicrostructureAnalyzer> micro_analyzers_; // per-symbol microstructure analyzer
     std::unordered_map<uint64_t,std::string>     id_to_name_;
     std::unordered_map<uint64_t,std::string>     id_to_internal_;  // id ? internal name (with alias)
     std::vector<uint8_t> recv_buf_;
@@ -1512,6 +1697,9 @@ private:
             fflush(stdout);
         }
         auto& book = depth_books_[name];
+        // Capture previous L2Book snapshot before this event's updates.
+        // Used by GoldMicrostructureAnalyzer to compute delta-based signals.
+        const L2Book prev_snap = prev_books_.count(name) ? prev_books_[name] : book.to_l2book();
         for (const auto& qb : PB::get_repeated_bytes(fields, 4)) {
             const auto qf = PB::parse(qb);
             const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,3);
@@ -1570,13 +1758,24 @@ private:
         // cTrader XAUUSD DOM delivers ≥5 levels per side; to_l2book() caps at 5,
         // so imbalance_level() = 5/10 = 0.500 permanently when both sides are full.
         // raw_imbalance() uses the uncapped incremental book -- real signal.
+        // Compute microstructure edge from prev→rebuilt delta.
+        // Only XAUUSD uses GoldMicrostructureAnalyzer (the only GFE symbol).
+        // Other symbols fall back to neutral 0.5.
+        double me = 0.5;
+        if (name == "XAUUSD") {
+            me = micro_analyzers_[name].on_update(prev_snap, rebuilt);
+        }
+        // Store rebuilt as prev for next event
+        prev_books_[name] = rebuilt;
+
         if (atomic_l2_write_fn) {
             atomic_l2_write_fn(name,
                 book.raw_imbalance(),
                 rebuilt.microprice_bias(),
                 rebuilt.has_data(),
                 book.raw_bid_count(),
-                book.raw_ask_count());
+                book.raw_ask_count(),
+                me);
         }
 
         // Cold path: write full book under mutex for GUI depth panel (walls, vacuums, slopes)
