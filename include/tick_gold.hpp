@@ -1446,7 +1446,7 @@ static void on_tick_gold(
             gf_close_shared(tr);
         };
         g_gold_flow.on_tick(bid, ask,
-            g_macro_ctx.gold_l2_imbalance,
+            g_l2_gold.micro_edge.load(std::memory_order_relaxed),
             g_gold_stack.ewm_drift(),
             now_ms_g, flow_mgmt_cb,
             g_macro_ctx.session_slot,
@@ -1486,7 +1486,7 @@ static void on_tick_gold(
             fflush(stdout);
         };
         g_gold_flow_reload.on_tick(bid, ask,
-            g_macro_ctx.gold_l2_imbalance,
+            g_l2_gold.micro_edge.load(std::memory_order_relaxed),
             g_gold_stack.ewm_drift(),
             now_ms_g, reload_mgmt_cb,
             g_macro_ctx.session_slot);
@@ -1523,7 +1523,7 @@ static void on_tick_gold(
             fflush(stdout);
         };
         g_gold_flow_addon.on_tick(bid, ask,
-            g_macro_ctx.gold_l2_imbalance,
+            g_l2_gold.micro_edge.load(std::memory_order_relaxed),
             g_gold_stack.ewm_drift(),
             now_ms_g, addon_mgmt_cb,
             g_macro_ctx.session_slot);
@@ -3030,7 +3030,7 @@ static void on_tick_gold(
             // L2 tick logger removed from here -- moved to unconditional section above
 
             g_gold_flow.on_tick(bid, ask,
-                g_macro_ctx.gold_l2_imbalance,
+                g_l2_gold.micro_edge.load(std::memory_order_relaxed),
                 g_gold_stack.ewm_drift(),
                 now_ms_g, flow_on_close,
                 g_macro_ctx.session_slot,
