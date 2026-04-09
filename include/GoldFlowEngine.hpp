@@ -494,12 +494,9 @@ struct GoldFlowEngine {
             m_continuation_mode = false;
         }
         const bool cont_mode = m_continuation_mode && !is_low_quality_session;
-        const int eff_fast_thresh = is_low_quality_session ? GFE_ASIA_FAST_DIR_THRESHOLD
-                                  : (cont_mode ? (GFE_FAST_TICKS * 3 / 5)  // 60% = 18/30
-                                               : GFE_FAST_DIR_THRESHOLD);   // 75% = 23/30
-        const int eff_slow_thresh = is_low_quality_session ? GFE_ASIA_SLOW_DIR_THRESHOLD
-                                  : (cont_mode ? (GFE_SLOW_TICKS * 3 / 5)  // 60% = 60/100
-                                               : GFE_SLOW_DIR_THRESHOLD);   // 75% = 75/100
+        // eff_fast_thresh / eff_slow_thresh were only used by the L2 imbalance
+        // persistence path which is removed -- BlackBull DOM unusable for gold.
+        (void)cont_mode;  // suppress unused warning if cont_mode also becomes unused
 
         bool fast_long, fast_short, slow_long, slow_short;
         {
