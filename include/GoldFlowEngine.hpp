@@ -313,7 +313,8 @@ struct GoldFlowEngine {
                  double l2_imb, double ewm_drift,
                  int64_t now_ms,
                  CloseCallback on_close,
-                 int session_slot = -1) noexcept
+                 int session_slot = -1,
+                 bool l2_ctrader_live = false) noexcept
     {
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
@@ -662,7 +663,7 @@ struct GoldFlowEngine {
         //     window above -- those ARE the 70% directional check.
         //
         // Either path satisfies the Asia drift requirement. Normal session threshold unchanged.
-        double drift_threshold = GFE_DRIFT_FALLBACK_THRESHOLD;  // drift-only: BlackBull DOM unusable
+        double drift_threshold = GFE_DRIFT_FALLBACK_THRESHOLD;  // drift-only: BlackBull DOM imbalance unusable
         if (is_low_quality_session) {
             // Check persistence path: fast_long/short are already 70%-directional flags
             const bool drift_persistent_long  = fast_long;
@@ -1733,14 +1734,14 @@ private:
         //   get gapped through by real 5-8pt moves -> $82 avg loss (backtest).
         //   Floor: 5pt SL -> 0.06 lots -> same $30 risk, gap-proof.
         //
-        // m_l2_was_live: true if L2 imbalance has been non-0.500 at any point this session.
-        // When L2 live: use real ATR (imbalance confirms entry quality -- tight SL valid).
-        // When L2 dead: use 5pt floor (drift-only entries gap through 2pt SL -> $82 avg loss).
-        // BlackBull DOM imbalance is unusable (always 0.500) but cTrader IS connected
-        // and delivering depth events -- use real ATR floor always, not the 5pt "L2 dead" floor.
-        // m_l2_was_live removed from ATR floor decision: use GFE_ATR_MIN unconditionally.
-        static constexpr double GFE_ATR_SL_FLOOR_NO_L2 = 5.0;  // kept for reference only
-        const double atr_floor = GFE_ATR_MIN;  // always use real ATR floor (cTrader connected)
+        // ATR SL floor: when cTrader L2 is live (gold_l2_real=true, depth events flowing),
+        // use real ATR floor -- cTrader connection confirms market structure is active.
+        // When cTrader is not connected, use 5pt floor as gap protection.
+        // l2_ctrader_live passed from tick_gold as g_macro_ctx.gold_l2_real.
+        // This is the correct liveness check -- NOT imbalance value which is always 0.500
+        // on BlackBull regardless of whether cTrader is connected.
+        static constexpr double GFE_ATR_SL_FLOOR_NO_L2 = 5.0;  // floor when cTrader not connected
+        const double atr_floor = l2_ctrader_live ? GFE_ATR_MIN : GFE_ATR_SL_FLOOR_NO_L2;
         const double atr_floored = std::max(atr_floor, m_atr);
         const double atr_sl  = atr_floored * GFE_ATR_SL_MULT;
         const double min_sl  = spread * 5.0;  // raised 3x->5x: 3x was 0.66pts on 0.22 spread, too tight for London gold vol
