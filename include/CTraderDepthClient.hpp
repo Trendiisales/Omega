@@ -343,7 +343,7 @@ struct GoldMicrostructureAnalyzer {
     } abs_state;
 
     // Smoothed output -- EWM alpha=0.3 prevents single-event spikes driving entries
-    double ewm_edge = 0.5;
+    double ewm_edge = 0.0;  // neutral in -1..+1 space; output remapped to 0..1 on return
     static constexpr double EWM_ALPHA = 0.30;
 
     // on_update: call after every rebuild with prev snapshot (before this event)
@@ -484,8 +484,9 @@ struct GoldMicrostructureAnalyzer {
         // Clamp to [-1, +1]
         const double clamped = raw_edge < -1.0 ? -1.0 : (raw_edge > 1.0 ? 1.0 : raw_edge);
 
-        // EWM smoothing -- prevents single-event spikes
-        ewm_edge = EWM_ALPHA * clamped + (1.0 - EWM_ALPHA) * (ewm_edge * 2.0 - 1.0);
+        // EWM smoothing -- prevents single-event spikes driving entries.
+        // ewm_edge lives in -1..+1 space. Standard EWM: alpha*new + (1-alpha)*prev.
+        ewm_edge = EWM_ALPHA * clamped + (1.0 - EWM_ALPHA) * ewm_edge;
         ewm_edge = ewm_edge < -1.0 ? -1.0 : (ewm_edge > 1.0 ? 1.0 : ewm_edge);
 
         // Remap -1..+1 → 0..1 for GFE compatibility (GFE_LONG_THRESHOLD=0.75, SHORT=0.25)
