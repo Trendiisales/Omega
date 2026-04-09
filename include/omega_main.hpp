@@ -163,19 +163,19 @@ int main(int argc, char* argv[])
     //   Cooldown 15s = high frequency, gold RSI cycles every 30-60s at extremes.
     //   MAX_HOLD 90s = scalp timeframe, don't overstay.
     // Win rate target: 55-70%, profit factor >1.4 (per backtested research).
-    g_rsi_reversal.enabled        = false;  // DISABLED -- no edge confirmed in backtest
-    g_rsi_reversal.shadow_mode    = true;
-    g_rsi_reversal.RSI_OVERSOLD   = 30.0;  // genuine exhaustion -- not noise (was 42)
-    g_rsi_reversal.RSI_OVERBOUGHT = 70.0;  // genuine exhaustion -- not noise (was 58)
-    g_rsi_reversal.RSI_EXIT_LONG  = 50.0;  // exit at full mean reversion (was 52)
-    g_rsi_reversal.RSI_EXIT_SHORT = 50.0;  // exit at full mean reversion (was 48)
-    g_rsi_reversal.SL_ATR_MULT    = 0.5;   // SL = 0.5x ATR (2:1 R:R with RSI_EXIT at 50)
-    g_rsi_reversal.TRAIL_ATR_MULT = 0.30;  // tight trail -- scalp, don't give back
-    g_rsi_reversal.BE_ATR_MULT    = 0.25;  // BE early -- protect at 0.25x ATR
-    g_rsi_reversal.COOLDOWN_S     = 15;    // 15s -- RSI reaches extremes frequently
-    g_rsi_reversal.COOLDOWN_S_VACUUM = 10; // 10s with vacuum confirm
-    g_rsi_reversal.MAX_HOLD_S     = 90;    // 90s max -- scalp, not a swing trade
-    g_rsi_reversal.MIN_HOLD_S     = 3;     // allow exit after 3s minimum
+    g_rsi_reversal.enabled        = true;   // ENABLED -- RSI turn strategy
+    g_rsi_reversal.shadow_mode    = true;   // SHADOW first -- verify signals before live
+    g_rsi_reversal.RSI_OVERSOLD   = 42.0;  // turn from any low -- not just extreme OS
+    g_rsi_reversal.RSI_OVERBOUGHT = 58.0;  // turn from any high -- not just extreme OB
+    g_rsi_reversal.RSI_EXIT_LONG  = 55.0;  // exit when RSI recovers to 55
+    g_rsi_reversal.RSI_EXIT_SHORT = 45.0;  // exit when RSI fades to 45
+    g_rsi_reversal.SL_ATR_MULT    = 0.6;   // SL = 0.6x ATR
+    g_rsi_reversal.TRAIL_ATR_MULT = 0.40;  // trail at 0.4x ATR behind MFE
+    g_rsi_reversal.BE_ATR_MULT    = 0.40;  // BE at 0.4x ATR profit
+    g_rsi_reversal.COOLDOWN_S     = 30;    // 30s between entries
+    g_rsi_reversal.COOLDOWN_S_VACUUM = 15; // 15s with vacuum confirm
+    g_rsi_reversal.MAX_HOLD_S     = 300;   // 5min max -- RSI turns can take time
+    g_rsi_reversal.MIN_HOLD_S     = 5;     // 5s minimum hold
     printf("[RSI-REV] RSIReversalEngine configured (shadow_mode=%s "
            "oversold=%.0f overbought=%.0f sl_mult=%.1fx)\n",
            g_rsi_reversal.shadow_mode ? "true" : "false",
