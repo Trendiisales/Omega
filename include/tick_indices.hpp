@@ -277,7 +277,7 @@ static void on_tick_us500(
             const double h_hi  = g_hybrid_sp.bracket_high;
             const double h_lo  = g_hybrid_sp.bracket_low;
             const double h_lot = g_hybrid_sp.pending_lot;
-            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01) {
+            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && !g_hybrid_sp.shadow_mode) {
                 g_hybrid_sp.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
                 const std::string h_long_id  = send_live_order("US500.F", true,  h_lot, h_hi);
                 const std::string h_short_id = send_live_order("US500.F", false, h_lot, h_lo);
@@ -524,7 +524,7 @@ static void on_tick_ustec(
             const double h_hi  = g_hybrid_nq.bracket_high;
             const double h_lo  = g_hybrid_nq.bracket_low;
             const double h_lot = g_hybrid_nq.pending_lot;
-            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01) {
+            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && !g_hybrid_nq.shadow_mode) {
                 g_hybrid_nq.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
                 const std::string h_long_id  = send_live_order("USTEC.F", true,  h_lot, h_hi);
                 const std::string h_short_id = send_live_order("USTEC.F", false, h_lot, h_lo);
@@ -644,7 +644,7 @@ static void on_tick_dj30(
             const double h_hi  = g_hybrid_us30.bracket_high;
             const double h_lo  = g_hybrid_us30.bracket_low;
             const double h_lot = g_hybrid_us30.pending_lot;
-            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01) {
+            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && !g_hybrid_us30.shadow_mode) {
                 g_hybrid_us30.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
                 const std::string h_long_id  = send_live_order("DJ30.F", true,  h_lot, h_hi);
                 const std::string h_short_id = send_live_order("DJ30.F", false, h_lot, h_lo);
@@ -849,7 +849,7 @@ static void on_tick_nas100(
             const double h_hi  = g_hybrid_nas100.bracket_high;
             const double h_lo  = g_hybrid_nas100.bracket_low;
             const double h_lot = g_hybrid_nas100.pending_lot;
-            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01) {
+            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && !g_hybrid_nas100.shadow_mode) {
                 g_hybrid_nas100.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
                 const std::string h_long_id  = send_live_order("NAS100", true,  h_lot, h_hi);
                 const std::string h_short_id = send_live_order("NAS100", false, h_lot, h_lo);
