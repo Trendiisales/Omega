@@ -3453,7 +3453,7 @@ static void on_tick_gold(
             const double h_hi  = g_hybrid_gold.bracket_high;
             const double h_lo  = g_hybrid_gold.bracket_low;
             const double h_lot = g_hybrid_gold.pending_lot;
-            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && !g_hybrid_gold.shadow_mode) {
+            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && g_cfg.mode == "LIVE") {
                 // Wire cancel_fn once (idempotent -- already set on re-entry but safe to set again)
                 g_hybrid_gold.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
                 const std::string h_long_id  = send_live_order("XAUUSD", true,  h_lot, h_hi);
