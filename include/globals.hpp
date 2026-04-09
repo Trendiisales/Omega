@@ -625,3 +625,17 @@ static std::atomic<int64_t>* get_ctrader_tick_ms_ptr(const std::string& sym) noe
     if (sym=="DJ30.F")  return &g_ct_ms_us30;
     return nullptr;
 }
+
+// ?? Persistent state directory -- separate from logs/ ??????????????????????
+// All .dat files (bars, ATR, kelly, trend state) live here.
+// Never touched by git reset or log operations.
+inline std::string state_root_dir() {
+#ifdef _WIN32
+    const char* path = "C:\\Omega\\state";
+    ::CreateDirectoryA(path, nullptr);
+    ::CreateDirectoryA("C:\\Omega\\state\\kelly", nullptr);
+    return path;
+#else
+    return "state";
+#endif
+}
