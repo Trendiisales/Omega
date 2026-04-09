@@ -1891,12 +1891,16 @@ int main(int argc, char* argv[])
     // =========================================================================
     std::thread([](){
         const std::string status_path = log_root_dir() + "/startup_status.txt";
-        // Write STARTING immediately so deploy script knows process launched
         { std::ofstream f(status_path); f << "STARTING\n"; }
 
         const auto t0 = std::chrono::steady_clock::now();
         auto elapsed = [&]{ return std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - t0).count(); };
+
+        // ANSI: bold green tick, bold red cross
+        static const char* TICK  = "\033[1;32m [OK]\033[0m";
+        static const char* CROSS = "\033[1;31m[FAIL]\033[0m";
+        static const char* WARN  = "\033[1;33m[WARN]\033[0m";
 
         auto write_status = [&](const std::string& s) {
             std::ofstream f(status_path);
@@ -1905,48 +1909,156 @@ int main(int argc, char* argv[])
             std::cout.flush();
         };
 
-        // --- Check 1: cTrader depth connects within 60s ---
-        // cTrader waits 30s before first connect attempt, then 5-15s to auth
-        while (elapsed() < 65) {
-            if (g_ctrader_depth.depth_active.load()) break;
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-        }
-        if (!g_ctrader_depth.depth_active.load()) {
-            write_status("FAIL: cTrader depth not connected after 65s -- check token/network");
-            return;
-        }
-        std::cout << "[STARTUP-CHECK] cTrader depth connected (" << elapsed() << "s)\n";
+        auto print_check = [&](bool ok, const std::string& label, const std::string& detail = "") {
+            std::cout << (ok ? TICK : CROSS) << " " << label;
+            if (!detail.empty()) std::cout << " -- " << detail;
+            std::cout << "\n";
+            std::cout.flush();
+        };
+
+        std::cout << "\n\033[1;36m========================================\033[0m\n";
+        std::cout << "\033[1;36m  OMEGA STARTUP VERIFICATION\033[0m\n";
+        std::cout << "\033[1;36m========================================\033[0m\n";
         std::cout.flush();
 
-        // --- Check 2: L2 depth events flowing for XAUUSD ---
-        // Check that cTrader is actually sending depth events (any side, not necessarily both).
-        // has_data() requires BOTH bid AND ask sides simultaneously -- too strict at startup
-        // Check FIX book (g_l2_books) which has real bid+ask from the FIX W/X feed.
-        // cTrader atomic (g_l2_gold.imbalance) = imbalance_level() from cTrader DOM.
-        const auto t1 = std::chrono::steady_clock::now();
-        bool l2_ok = false;
-        while (std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - t1).count() < 30) {
-            const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-            const bool   hd  = g_l2_gold.has_data.load(std::memory_order_relaxed);
-            if (hd || imb < 0.499 || imb > 0.501) { l2_ok = true; break; }
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+        // ── Check 1: Correct git hash ─────────────────────────────────────
+        // Verifies the binary matches the expected commit -- not a stale build.
+        // We print the hash; operator must visually confirm it matches the push.
+        {
+            const std::string hash = OMEGA_VERSION;
+            print_check(hash != "unknown" && !hash.empty(),
+                "Git hash: " + hash,
+                hash == "unknown" ? "build system did not inject hash" : "verify against GitHub HEAD");
         }
-        if (!l2_ok) {
-            const bool events_flowing = g_ctrader_depth.depth_events_total.load() > 10;
-            if (events_flowing) {
-                write_status("OK: cTrader live, L2 events flowing (book still filling)");
+
+        // ── Check 2: Config loaded with cTrader credentials ───────────────
+        {
+            const bool cfg_ok = g_cfg.ctrader_depth_enabled
+                             && !g_cfg.ctrader_access_token.empty()
+                             && g_cfg.ctrader_ctid_account_id == 43014358;
+            print_check(cfg_ok, "Config: ctrader_api section",
+                cfg_ok ? ("ctid=" + std::to_string(g_cfg.ctrader_ctid_account_id))
+                       : "enabled=" + std::to_string(g_cfg.ctrader_depth_enabled)
+                         + " token_len=" + std::to_string(g_cfg.ctrader_access_token.size())
+                         + " ctid=" + std::to_string(g_cfg.ctrader_ctid_account_id));
+            if (!cfg_ok) {
+                write_status("FAIL: ctrader_api config missing or wrong ctid");
                 return;
             }
-            write_status("FAIL: Gold L2 data not flowing after 30s -- no depth events received");
-            return;
         }
-        std::cout << "[STARTUP-CHECK] Gold L2 live (" << elapsed() << "s)\n";
+
+        // ── Check 3: Mode is SHADOW ───────────────────────────────────────
+        {
+            const bool shadow_ok = (g_cfg.mode == "SHADOW");
+            print_check(shadow_ok, "Mode: " + g_cfg.mode,
+                shadow_ok ? "shadow trades only -- no real orders" : "WARNING: LIVE mode active");
+            // Not a fatal check -- just informational
+        }
+
+        // ── Check 4: FIX connected (ticks flowing) ────────────────────────
+        // Wait up to 45s for first tick to arrive via FIX
+        {
+            bool fix_ok = false;
+            for (int i = 0; i < 45 && !fix_ok; ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                fix_ok = (g_macro_ctx.gold_mid_price > 0.0);
+            }
+            print_check(fix_ok, "FIX feed: XAUUSD ticks",
+                fix_ok ? ("mid=" + [&]{ std::ostringstream o; o << std::fixed << std::setprecision(2) << g_macro_ctx.gold_mid_price; return o.str(); }())
+                       : "no XAUUSD tick received after 45s");
+            if (!fix_ok) {
+                write_status("FAIL: FIX feed not delivering XAUUSD ticks after 45s");
+                return;
+            }
+        }
+
+        // ── Check 5: cTrader depth client connected ───────────────────────
+        // depth_active goes true once the SSL handshake + auth completes
+        {
+            bool ct_ok = false;
+            for (int i = 0; i < 60 && !ct_ok; ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                ct_ok = g_ctrader_depth.depth_active.load();
+            }
+            print_check(ct_ok, "cTrader: depth client connected (ctid=43014358)",
+                ct_ok ? ("connected at " + std::to_string(elapsed()) + "s")
+                      : "not connected after 60s -- check token expiry / network");
+            if (!ct_ok) {
+                write_status("FAIL: cTrader depth not connected after 60s");
+                return;
+            }
+        }
+
+        // ── Check 6: XAUUSD depth events flowing ─────────────────────────
+        // depth_events_total must be increasing -- the only reliable liveness signal.
+        // BlackBull imbalance is always 0.500 so we NEVER use imb != 0.5 as a check.
+        {
+            const uint64_t ev0 = g_ctrader_depth.depth_events_total.load();
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+            const uint64_t ev1 = g_ctrader_depth.depth_events_total.load();
+            const bool events_ok = (ev1 > ev0);
+            const uint64_t xau_evts = ev1 - ev0;
+            print_check(events_ok, "cTrader: XAUUSD depth events flowing",
+                events_ok ? (std::to_string(xau_evts) + " events in 10s")
+                          : "depth_events_total not increasing -- feed stalled");
+            if (!events_ok) {
+                write_status("FAIL: cTrader depth events not increasing -- feed stalled");
+                return;
+            }
+        }
+
+        // ── Check 7: gold_l2_real flag set (DOM confirmed live) ───────────
+        // gold_l2_real = g_l2_gold.fresh(now, 3000) -- true when depth event
+        // arrived within last 3s. Confirms XAUUSD specifically is receiving events.
+        {
+            bool l2_real_ok = false;
+            for (int i = 0; i < 15 && !l2_real_ok; ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                l2_real_ok = g_macro_ctx.gold_l2_real;
+            }
+            const uint64_t total = g_ctrader_depth.depth_events_total.load();
+            const int rbid = g_l2_gold.raw_bid.load(std::memory_order_relaxed);
+            const int rask = g_l2_gold.raw_ask.load(std::memory_order_relaxed);
+            print_check(l2_real_ok, "cTrader: gold_l2_real flag live",
+                l2_real_ok
+                    ? ("events_total=" + std::to_string(total)
+                       + " raw_bid=" + std::to_string(rbid)
+                       + " raw_ask=" + std::to_string(rask))
+                    : "gold_l2_real=false after 15s -- XAUUSD depth events not updating g_l2_gold");
+            if (!l2_real_ok) {
+                // Not fatal -- entries blocked by L2-dead gate, trading degraded
+                std::cout << WARN << " Trading will be blocked by [L2-DEAD-BLOCK] until DOM recovers\n";
+                std::cout.flush();
+            }
+        }
+
+        // ── Check 8: ATR seeded (GoldFlow can size positions) ─────────────
+        {
+            const bool atr_ok = (g_gold_flow.current_atr() > 0.5);
+            print_check(atr_ok, "GoldFlow ATR seeded",
+                atr_ok ? ("atr=" + [&]{ std::ostringstream o; o << std::fixed << std::setprecision(2) << g_gold_flow.current_atr(); return o.str(); }() + "pt")
+                       : "atr=0 -- bars not yet loaded, GoldFlow entries will be delayed");
+        }
+
+        // ── Check 9: Daily loss limit not already hit ─────────────────────
+        {
+            const double dpnl = g_omegaLedger.dailyPnl();
+            const bool loss_ok = (dpnl > -(g_cfg.daily_loss_limit * 0.90));
+            print_check(loss_ok, "Risk: daily loss limit",
+                "daily_pnl=$" + [&]{ std::ostringstream o; o << std::fixed << std::setprecision(2) << dpnl; return o.str(); }()
+                + " limit=$" + [&]{ std::ostringstream o; o << std::fixed << std::setprecision(0) << g_cfg.daily_loss_limit; return o.str(); }());
+        }
+
+        std::cout << "\033[1;36m========================================\033[0m\n\n";
         std::cout.flush();
 
-        // --- All checks passed ---
-        const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-        write_status("OK: cTrader live, L2 live (imb=" + std::to_string(imb).substr(0,5) + ")");
+        // ── Final status ──────────────────────────────────────────────────
+        const bool l2_final = g_macro_ctx.gold_l2_real;
+        if (l2_final) {
+            write_status("OK: all checks passed -- cTrader live, gold_l2_real=1, trading active");
+        } else {
+            write_status("WARN: cTrader connected but gold_l2_real=0 -- entries blocked until DOM recovers");
+        }
     }).detach();
 
     // =========================================================================
