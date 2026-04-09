@@ -1411,7 +1411,7 @@ static double enter_directional(
 
         if      (sv == "XAUUSD") {
             microprice_bias = g_macro_ctx.gold_microprice_bias;
-            l2_imbalance    = g_macro_ctx.gold_l2_imbalance;
+            l2_imbalance    = 0.5;  // BlackBull DOM unusable -- always 0.500
             vacuum_in_dir   = is_long ? g_macro_ctx.gold_vacuum_ask : g_macro_ctx.gold_vacuum_bid;
             wall_to_tp      = is_long ? g_macro_ctx.gold_wall_above : g_macro_ctx.gold_wall_below;
         } else if (sv == "US500.F" || sv == "USTEC.F" || sv == "NAS100" || sv == "DJ30.F") {
