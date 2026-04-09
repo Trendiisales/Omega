@@ -127,13 +127,17 @@ public:
         if (m_tick_atr < MIN_ATR_PTS)       return;
         if (m_rsi_count < RSI_PERIOD + 2)   return;
 
-        const double rsi = m_tick_rsi;
+        // Entry signal: use BAR RSI (M1 close) -- matches what trader sees on chart.
+        // Bar RSI is smooth (60s update), not noisy tick RSI.
+        // m_bar_rsi is injected each tick from g_bars_gold.m1.ind.rsi14.
+        const double rsi = (m_bar_rsi > 0.0) ? m_bar_rsi : m_tick_rsi;
         const bool rsi_oversold   = (rsi < RSI_OVERSOLD);
         const bool rsi_overbought = (rsi > RSI_OVERBOUGHT);
         if (!rsi_oversold && !rsi_overbought) return;
 
-        if (rsi_oversold   && rsi <= m_rsi_prev) return;  // still falling
-        if (rsi_overbought && rsi >= m_rsi_prev) return;  // still rising
+        // Turn confirmation: bar RSI must be turning (current > prev bar RSI for LONG)
+        if (rsi_oversold   && rsi <= m_bar_rsi_prev) return;  // still falling
+        if (rsi_overbought && rsi >= m_bar_rsi_prev) return;  // still rising
 
         const bool is_long = rsi_oversold;
 
@@ -180,7 +184,7 @@ public:
         pos.entry     = entry;
         pos.sl        = is_long ? (entry - sl_dist) : (entry + sl_dist);
         pos.atr       = m_tick_atr;
-        pos.size      = 0.01;
+        pos.size      = 0.05;  // fixed 0.05 lots: 3pt move = $15 gross, ~$3.50 cost = ~$11.50 net
         pos.mfe       = 0.0;
         pos.be_locked = false;
         pos.entry_ts  = now_s;
@@ -205,11 +209,22 @@ public:
     }
 
     double tick_rsi() const noexcept { return m_tick_rsi; }
+    // Called each tick from tick_gold.hpp to inject M1 bar RSI for entry signal
+    void set_bar_rsi(double bar_rsi) noexcept {
+        if (bar_rsi > 0.0 && bar_rsi < 100.0) {
+            m_bar_rsi_prev = (m_bar_rsi > 0.0) ? m_bar_rsi : bar_rsi;
+            m_bar_rsi = bar_rsi;
+        }
+    }
     double tick_atr() const noexcept { return m_tick_atr; }
 
 private:
     double  m_tick_rsi      = 50.0;
     double  m_rsi_prev      = 50.0;
+    // Bar RSI -- injected from g_bars_gold.m1.ind.rsi14 each tick
+    // Used for ENTRY signal (smooth, matches chart). Tick RSI used for EXIT.
+    double  m_bar_rsi       = 0.0;   // current bar RSI
+    double  m_bar_rsi_prev  = 50.0;  // previous bar RSI (for turn detection)
     double  m_rsi_avg_gain  = 0.0;
     double  m_rsi_avg_loss  = 0.0;
     bool    m_rsi_init      = false;
@@ -286,6 +301,7 @@ private:
             if (!pos.is_long && trail_sl < pos.sl) pos.sl = trail_sl;
         }
         if (m_rsi_count > RSI_PERIOD + 2) {
+            // Primary exit: tick RSI reaches exit threshold
             const bool rsi_exit = pos.is_long ? (m_tick_rsi >= RSI_EXIT_LONG)
                                               : (m_tick_rsi <= RSI_EXIT_SHORT);
             if (rsi_exit) {
@@ -293,6 +309,15 @@ private:
                 if ((pos.is_long ? (exit_px - pos.entry) : (pos.entry - exit_px)) >= -(ask - bid) * 0.5) {
                     _close(exit_px, "RSI_TP", now_s, on_close); return;
                 }
+            }
+            // Fast reversal exit: tick RSI turns against us AND we have some profit
+            // This fires within seconds of a reversal -- no waiting for RSI threshold.
+            const bool rsi_reversing = pos.is_long
+                ? (m_tick_rsi < m_rsi_prev && m_tick_rsi > RSI_EXIT_LONG - 8.0)  // LONG: RSI turning down from above exit
+                : (m_tick_rsi > m_rsi_prev && m_tick_rsi < RSI_EXIT_SHORT + 8.0); // SHORT: RSI turning up from below exit
+            const double open_pnl = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
+            if (rsi_reversing && open_pnl > pos.atr * 0.3 && pos.be_locked) {
+                _close(pos.is_long ? bid : ask, "RSI_TURN", now_s, on_close); return;
             }
         }
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
