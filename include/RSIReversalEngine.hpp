@@ -127,19 +127,29 @@ public:
         if (m_tick_atr < MIN_ATR_PTS)       return;
         if (m_rsi_count < RSI_PERIOD + 2)   return;
 
-        // Entry signal: use BAR RSI (M1 close) -- matches what trader sees on chart.
-        // Bar RSI is smooth (60s update), not noisy tick RSI.
-        // m_bar_rsi is injected each tick from g_bars_gold.m1.ind.rsi14.
+        // Entry: pure RSI direction change -- no fixed thresholds.
+        // RSI was falling and now turns up -> LONG
+        // RSI was rising  and now turns down -> SHORT
+        // Works at ANY RSI level: catches turns at 15, 25, 42, 58, 75, 85
         const double rsi = (m_bar_rsi > 0.0) ? m_bar_rsi : m_tick_rsi;
-        const bool rsi_oversold   = (rsi < RSI_OVERSOLD);
-        const bool rsi_overbought = (rsi > RSI_OVERBOUGHT);
-        if (!rsi_oversold && !rsi_overbought) return;
+        if (rsi <= 0.0 || m_bar_rsi_prev <= 0.0) return;
 
-        // Turn confirmation: bar RSI must be turning (current > prev bar RSI for LONG)
-        if (rsi_oversold   && rsi <= m_bar_rsi_prev) return;  // still falling
-        if (rsi_overbought && rsi >= m_bar_rsi_prev) return;  // still rising
+        // Require RSI to have moved MIN_RSI_MOVE pts before reversing
+        // prevents entering on 1-2pt noise oscillations
+        const double rsi_move = std::fabs(rsi - m_rsi_peak);
+        if (rsi_move < RSI_MIN_MOVE) return;
 
-        const bool is_long = rsi_oversold;
+        // Direction change detection
+        const bool was_falling = (m_bar_rsi_prev > rsi + 0.5);  // RSI was moving down
+        const bool was_rising  = (m_bar_rsi_prev < rsi - 0.5);  // RSI was moving up
+        // LONG: was falling, now rising, and RSI is in lower half (below 50)
+        const bool rsi_turn_long  = was_falling && (rsi > m_bar_rsi_prev) && (rsi < 50.0);
+        // SHORT: was rising, now falling, and RSI is in upper half (above 50)
+        const bool rsi_turn_short = was_rising  && (rsi < m_bar_rsi_prev) && (rsi > 50.0);
+        if (!rsi_turn_long && !rsi_turn_short) return;
+        m_rsi_peak = rsi;  // reset peak tracking on entry
+
+        const bool is_long = rsi_turn_long;
 
         // ── DOM filter ────────────────────────────────────────────────────────
         bool vacuum_confirm = false;
@@ -214,6 +224,12 @@ public:
         if (bar_rsi > 0.0 && bar_rsi < 100.0) {
             m_bar_rsi_prev = (m_bar_rsi > 0.0) ? m_bar_rsi : bar_rsi;
             m_bar_rsi = bar_rsi;
+            // Track RSI peak/trough for MIN_RSI_MOVE filter
+            if (!pos.active) {
+                if (bar_rsi > 50.0 && bar_rsi > m_rsi_peak) m_rsi_peak = bar_rsi;
+                if (bar_rsi < 50.0 && bar_rsi < m_rsi_peak) m_rsi_peak = bar_rsi;
+                if (m_rsi_peak == 50.0) m_rsi_peak = bar_rsi;
+            }
         }
     }
     double tick_atr() const noexcept { return m_tick_atr; }
@@ -225,6 +241,7 @@ private:
     // Used for ENTRY signal (smooth, matches chart). Tick RSI used for EXIT.
     double  m_bar_rsi       = 0.0;   // current bar RSI
     double  m_bar_rsi_prev  = 50.0;  // previous bar RSI (for turn detection)
+    double  m_rsi_peak      = 50.0;  // tracks RSI extreme before reversal (reset on entry)
     double  m_rsi_avg_gain  = 0.0;
     double  m_rsi_avg_loss  = 0.0;
     bool    m_rsi_init      = false;
