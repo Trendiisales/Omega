@@ -372,6 +372,7 @@ private:
     int     m_trade_id       = 0;
     int     m_sl_cooldown_dir = 0;
     int64_t m_sl_cooldown_ts  = 0;
+    double  m_sl_price        = 0.0;  // entry price at last SL hit -- same-level re-arm block
 
     void cancel_losing_side(bool filled_long) noexcept {
         if (filled_long && !pending_short_clOrdId.empty()) {
