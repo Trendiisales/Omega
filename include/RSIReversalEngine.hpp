@@ -54,6 +54,9 @@ public:
     double RSI_OVERSOLD       = 50.0;  // entry: RSI must be below 50 for LONG
     double RSI_OVERBOUGHT     = 50.0;  // entry: RSI must be above 50 for SHORT
     double RSI_MIN_MOVE       = 3.0;   // min RSI pts moved before reversal valid
+    double PRICE_CONFIRM_PTS  = 1.0;   // price must move >1pt since RSI extreme before entry
+    double L2_EXIT_THRESHOLD  = 0.50;  // L2 imbalance crosses 0.5 = DOM flipped
+    double L2_EXIT_MIN_PROFIT = 0.50;  // min pts profit before L2 flip exit fires
     double RSI_EXIT_LONG      = 55.0;  // exit LONG when tick RSI reaches 55
     double RSI_EXIT_SHORT     = 45.0;  // exit SHORT when tick RSI reaches 45
     int    RSI_PERIOD         = 14;
