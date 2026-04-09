@@ -1528,19 +1528,34 @@ private:
         // Build L2Book snapshot outside the lock -- to_l2book() is O(N log N) sort
         const L2Book rebuilt = book.to_l2book();
 
-        // Log imbalance_level on first 20 events per symbol -- confirms fix is working.
+        // Log L2 book state every 30s per symbol -- persistent diagnostic.
         // [CTRADER-L2-CHECK] is grep-able from VERIFY_STARTUP and MONITOR.
         {
-            static std::unordered_map<std::string,int> s_imb_log_count;
-            if (s_imb_log_count[name] < 20) {
-                ++s_imb_log_count[name];
-                printf("[CTRADER-L2-CHECK] %s event=%d cap_bid=%d cap_ask=%d raw_bid=%d raw_ask=%d raw_imb=%.3f cap_imb=%.3f imb_vol=%.3f\n",
-                       name.c_str(), s_imb_log_count[name],
+            static std::unordered_map<std::string,int64_t> s_imb_log_ms;
+            const int64_t now_log = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (now_log - s_imb_log_ms[name] > 30000) {
+                s_imb_log_ms[name] = now_log;
+                printf("[CTRADER-L2-CHECK] %s cap_bid=%d cap_ask=%d raw_bid=%d raw_ask=%d raw_imb=%.3f cap_imb=%.3f\n",
+                       name.c_str(),
                        rebuilt.bid_count, rebuilt.ask_count,
                        book.raw_bid_count(), book.raw_ask_count(),
                        book.raw_imbalance(),
-                       rebuilt.imbalance_level(),
-                       rebuilt.imbalance());
+                       rebuilt.imbalance_level());
+                // Dump first ask-side quote fields to diagnose raw_imb=1.000
+                int ask_samples = 0;
+                for (const auto& kv : book.quotes) {
+                    if (!kv.second.is_bid && ask_samples < 2) {
+                        printf("  [L2-ASK-SAMPLE] id=%llu price=%.2f size=%.2f\n",
+                               (unsigned long long)kv.first,
+                               kv.second.price_raw/100000.0,
+                               kv.second.size_raw/100.0);
+                        ++ask_samples;
+                    }
+                }
+                if (ask_samples == 0)
+                    printf("  [L2-ASK-SAMPLE] no ask quotes in book -- all %d quotes are bid-side\n",
+                           (int)book.quotes.size());
                 fflush(stdout);
             }
         }
