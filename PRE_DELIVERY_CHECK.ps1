@@ -96,10 +96,11 @@ if ($LASTEXITCODE -eq 0) {
 $apiHead = "unknown"
 if ($GitHubToken -ne "") {
     try {
-        $apiUrl     = "https://api.github.com/repos/Trendiisales/Omega/commits/main"
-        $apiHeaders = @{ Authorization = "token $GitHubToken"; "User-Agent" = "Omega-PreCheck" }
+        # Use /git/refs/heads/main -- returns live ref data, not subject to commit cache.
+        $apiUrl     = "https://api.github.com/repos/Trendiisales/Omega/git/refs/heads/main"
+        $apiHeaders = @{ Authorization = "token $GitHubToken"; "User-Agent" = "Omega-PreCheck"; "Cache-Control" = "no-cache" }
         $apiResp    = Invoke-RestMethod -Uri $apiUrl -Headers $apiHeaders -Method Get -ErrorAction Stop
-        $apiHead    = $apiResp.sha.Substring(0, 7)
+        $apiHead    = $apiResp.object.sha.Substring(0, 7)
         Pass "GitHub API HEAD" "HEAD=$apiHead (live from API, no CDN cache)"
     } catch {
         Fail "GitHub API HEAD" "API call failed: $_ -- cannot verify HEAD"
