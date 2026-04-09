@@ -1535,6 +1535,11 @@ static void on_tick_gold(
     // is closed (e.g. hybrid_gold has position) indicators go stale and MacroCrash
     // reads a stale RSI value. update_indicators() is ungated -- always live.
     g_rsi_reversal.update_indicators(bid, ask);
+    // Inject M1 bar RSI for entry signal -- bar RSI is smooth (60s) and matches chart
+    if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+        g_rsi_reversal.set_bar_rsi(
+            g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed));
+    }
 
     // ?? MacroCrashEngine -- always-on macro event capture ????????????????
     // Fires on: ATR + vol_ratio + drift thresholds (session-aware: lower in Asia).
@@ -1671,7 +1676,7 @@ static void on_tick_gold(
                 const double rsi_lot     = (rsi_sl_dist > 0.0)
                     ? std::max(0.01, std::min(g_cfg.max_lot_gold,
                         g_cfg.risk_per_trade_usd / (rsi_sl_dist * 100.0)))
-                    : 0.01;
+                    : 0.05;  // fixed fallback 0.05 lots
                 g_rsi_reversal.patch_size(rsi_lot);
 
                 // Log and telemetry always fire (shadow or live) -- GUI shows signal
