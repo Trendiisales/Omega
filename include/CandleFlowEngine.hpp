@@ -161,17 +161,16 @@ struct CandleFlowEngine {
 
         // 2. Cost coverage
         const double cost_pts = spread + CFE_COST_SLIPPAGE * 2.0 + CFE_COMMISSION_PTS * 2.0;
-        // Expected move: 1 ATR is a reasonable single-bar move estimate.
-        // If ATR not available, use bar range.
+        // Expected move: use the actual bar range -- this is what just happened.
+        // ATR is a session average and passes even on dead tape (ATR=2pt, move=0.1pt).
+        // The bar range is the real move that triggered this candle signal.
         const double bar_range   = bar.high - bar.low;
-        const double expected    = (atr_pts > 0.0) ? atr_pts : bar_range;
+        const double expected    = bar_range;  // actual candle range, not session ATR
         if (expected < CFE_COST_MULT * cost_pts) {
             static int64_t s_cost_log = 0;
             if (now_ms - s_cost_log > 10000) {
                 s_cost_log = now_ms;
-                printf("[CFE-COST-BLOCK] expected=%.3f < %.1fx cost=%.3f -- skipping\n",
-                       expected, CFE_COST_MULT, cost_pts);
-                fflush(stdout);
+                std::cout << "[CFE-COST-BLOCK] expected=" << expected << " < " << CFE_COST_MULT << "x cost=" << cost_pts << " -- skipping\n"; std::cout.flush();
             }
             return;
         }
@@ -182,9 +181,7 @@ struct CandleFlowEngine {
             static int64_t s_dom_log = 0;
             if (now_ms - s_dom_log > 8000) {
                 s_dom_log = now_ms;
-                printf("[CFE-DOM-BLOCK] %s dom_score=%d < %d -- no DOM confirmation\n",
-                       bullish ? "LONG" : "SHORT", dom_score, CFE_DOM_CONFIRM_MIN);
-                fflush(stdout);
+                std::cout << "[CFE-DOM-BLOCK] " << (bullish?"LONG":"SHORT") << " dom_score=" << dom_score << " < " << CFE_DOM_CONFIRM_MIN << " -- no DOM confirmation\n"; std::cout.flush();
             }
             return;
         }
@@ -373,11 +370,7 @@ private:
         ++m_trade_id;
         phase = Phase::LIVE;
 
-        printf("[CFE] ENTRY %s @ %.2f sl=%.2f sl_pts=%.2f size=%.3f cost=%.3f atr=%.2f spread=%.3f%s\n",
-               is_long ? "LONG" : "SHORT",
-               entry_px, sl_px, sl_pts, size, cost_pts, atr_pts, spread,
-               shadow_mode ? " [SHADOW]" : "");
-        fflush(stdout);
+        std::cout << "[CFE] ENTRY " << (is_long?"LONG":"SHORT") << " @ " << std::fixed << std::setprecision(2) << entry_px << " sl=" << sl_px << " sl_pts=" << sl_pts << " size=" << std::setprecision(3) << size << " cost=" << cost_pts << " atr=" << std::setprecision(2) << atr_pts << " spread=" << spread << (shadow_mode?" [SHADOW]":"") << "\n"; std::cout.flush();
     }
 
     // -------------------------------------------------------------------------
@@ -453,13 +446,7 @@ private:
         tr.regime      = "CANDLE_FLOW";
         tr.l2_live     = true;
 
-        printf("[CFE] EXIT %s @ %.2f reason=%s pnl_raw=%.4f pnl_usd=%.2f mfe=%.3f held=%.0fs%s\n",
-               pos.is_long ? "LONG" : "SHORT",
-               exit_px, reason,
-               tr.pnl, tr.pnl * 100.0, pos.mfe,
-               static_cast<double>(now_ms / 1000 - pos.entry_ts_ms / 1000),
-               shadow_mode ? " [SHADOW]" : "");
-        fflush(stdout);
+        std::cout << "[CFE] EXIT " << (pos.is_long?"LONG":"SHORT") << " @ " << std::fixed << std::setprecision(2) << exit_px << " reason=" << reason << " pnl_raw=" << std::setprecision(4) << tr.pnl << " pnl_usd=" << std::setprecision(2) << (tr.pnl*100.0) << " mfe=" << std::setprecision(3) << pos.mfe << " held=" << std::setprecision(0) << static_cast<double>(now_ms/1000-pos.entry_ts_ms/1000) << "s" << (shadow_mode?" [SHADOW]":"") << "\n"; std::cout.flush();
 
         pos             = OpenPos{};
         phase           = Phase::COOLDOWN;
