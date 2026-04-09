@@ -305,6 +305,49 @@ Write-Host "  GitHub API -> local git -> version_generated.hpp -> running binary
 Write-Host "  Hash: $verHash" -ForegroundColor Green
 Write-Host ""
 
+# ==============================================================================
+# ENGINE ACTIVE CHECK -- confirm GoldFlow and RSI are running in the log
+# These are hard FAILs -- if engines are silent Omega stops immediately.
+# ==============================================================================
+Write-Host "  [ENGINE CHECK] Verifying engines are active..." -ForegroundColor Cyan
+$logToday = "$OmegaDir\logs\omega_$(Get-Date -Format 'yyyy-MM-dd').log"
+$engineFail = $false
+
+# GoldFlow: must see GFE-CONFIG with goldflow_enabled=true
+$gfeLine = Get-Content $logToday -ErrorAction SilentlyContinue | Select-String "GFE-CONFIG" | Select-Object -Last 1
+if (!$gfeLine) {
+    Write-Host "  [FAIL] GoldFlow: no GFE-CONFIG in log -- binary stale or goldflow_enabled not parsed" -ForegroundColor Red
+    $engineFail = $true
+} elseif ($gfeLine -match "DISABLED") {
+    Write-Host "  [FAIL] GoldFlow: DISABLED in config -- set goldflow_enabled=true in [risk] section" -ForegroundColor Red
+    $engineFail = $true
+} else {
+    Write-Host "  [PASS] GoldFlow: ACTIVE" -ForegroundColor Green
+}
+
+# RSI Reversal: must see RSI-REV configured line
+$rsiLine = Get-Content $logToday -ErrorAction SilentlyContinue | Select-String "RSI-REV.*configured" | Select-Object -Last 1
+if (!$rsiLine) {
+    Write-Host "  [FAIL] RSI Reversal: no startup config in log -- binary stale or engine not reached" -ForegroundColor Red
+    $engineFail = $true
+} elseif ($rsiLine -match "shadow_mode=true") {
+    Write-Host "  [WARN] RSI Reversal: SHADOW mode -- signals logged, no real orders" -ForegroundColor Yellow
+} else {
+    Write-Host "  [PASS] RSI Reversal: LIVE" -ForegroundColor Green
+}
+
+if ($engineFail) {
+    Write-Host ""
+    Write-Host "  [FATAL] ENGINE CHECK FAILED -- critical engines not running." -ForegroundColor Red
+    Write-Host "  Omega stopped. Fix config and run QUICK_RESTART.ps1 again." -ForegroundColor Yellow
+    $ErrorActionPreference = "Continue"
+    $svcStop2 = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
+    if ($svcStop2) { Stop-Service "Omega" -Force -ErrorAction SilentlyContinue }
+    taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
+    exit 1
+}
+Write-Host ""
+
 if (-not $SkipVerify) {
     Write-Host "  Running VERIFY_STARTUP..." -ForegroundColor Cyan
     Write-Host ""
