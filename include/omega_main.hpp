@@ -394,10 +394,10 @@ int main(int argc, char* argv[])
     g_trend_pb_sp.DAILY_LOSS_CAP      = 80.0;   // same cap for SP
     g_trend_pb_ger40.DAILY_LOSS_CAP   = 80.0;   // GER40 too -- no cap was previously set
     // Load warm EMA state -- skips EMA_WARMUP_TICKS cold period on restart
-    g_trend_pb_gold.load_state(log_root_dir()  + "/trend_pb_gold.dat");
-    g_trend_pb_ger40.load_state(log_root_dir() + "/trend_pb_ger40.dat");
-    g_trend_pb_nq.load_state(log_root_dir()    + "/trend_pb_nq.dat");
-    g_trend_pb_sp.load_state(log_root_dir()    + "/trend_pb_sp.dat");
+    g_trend_pb_gold.load_state(state_root_dir()  + "/trend_pb_gold.dat");
+    g_trend_pb_ger40.load_state(state_root_dir() + "/trend_pb_ger40.dat");
+    g_trend_pb_nq.load_state(state_root_dir()    + "/trend_pb_nq.dat");
+    g_trend_pb_sp.load_state(state_root_dir()    + "/trend_pb_sp.dat");
 
     // ?? Nuke stale ctrader_bar_failed.txt on every startup ??????????????????
     // Old binaries wrote M5/M15 periods (5/7) and BOM-prefixed keys into this
@@ -1076,7 +1076,7 @@ int main(int argc, char* argv[])
 
         // Load Kelly performance history from previous sessions
         {
-            const std::string kelly_dir = log_root_dir() + "/kelly";
+            const std::string kelly_dir = state_root_dir() + "/kelly";
             // ensure_parent_dir creates the directory if needed
             namespace fs = std::filesystem;
             std::error_code ec;
@@ -1086,8 +1086,8 @@ int main(int argc, char* argv[])
 
         // Load GoldFlowEngine ATR state -- eliminates 100-tick blind zone on restart
         {
-            const std::string atr_path        = log_root_dir() + "/gold_flow_atr.dat";
-            const std::string atr_backup_path = log_root_dir() + "/gold_flow_atr_backup.dat";
+            const std::string atr_path        = state_root_dir() + "/gold_flow_atr.dat";
+            const std::string atr_backup_path = state_root_dir() + "/gold_flow_atr_backup.dat";
 
             g_gold_flow.load_atr_state(atr_path);  // try primary first
 
@@ -1281,7 +1281,7 @@ int main(int argc, char* argv[])
 
         // Load GoldStack vol baseline + governor EWM -- skips 400-tick regime warmup
         {
-            const std::string gs_path = log_root_dir() + "/gold_stack_state.dat";
+            const std::string gs_path = state_root_dir() + "/gold_stack_state.dat";
             g_gold_stack.load_atr_state(gs_path);
         }
 
@@ -1337,7 +1337,7 @@ int main(int argc, char* argv[])
         g_portfolio_var.init_betas();
         g_portfolio_var.var_limit_usd = g_cfg.daily_loss_limit * 1.5;
         // Correlation matrix -- load warm state from previous session
-        g_corr_matrix.load_state(log_root_dir() + "/corr_matrix.dat");
+        g_corr_matrix.load_state(state_root_dir() + "/corr_matrix.dat");
         // VPIN -- reset at session start (stale tick-classification carries no meaning)
         g_vpin.reset();
         g_vpin.toxic_threshold = 0.70;  // block entries above 70% toxic flow
@@ -2286,10 +2286,10 @@ int main(int argc, char* argv[])
     g_edges.fill_quality.print_summary();
     // Save Kelly performance on shutdown (not just rollover) so intra-session
     // trades survive process restart without re-warming for 15+ trades.
-    g_adaptive_risk.save_perf(log_root_dir() + "/kelly");
-    g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
-    g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
-    g_trend_pb_gold.save_state(log_root_dir()  + "/trend_pb_gold.dat");
+    g_adaptive_risk.save_perf(state_root_dir() + "/kelly");
+    g_gold_flow.save_atr_state(state_root_dir() + "/gold_flow_atr.dat");
+    g_gold_stack.save_atr_state(state_root_dir() + "/gold_stack_state.dat");
+    g_trend_pb_gold.save_state(state_root_dir()  + "/trend_pb_gold.dat");
 
     // Save bar indicator state -- instant warm restart, no 15-min cold start
     // load_indicators() at startup reads these files and sets m1_ready=true immediately
@@ -2303,9 +2303,9 @@ int main(int argc, char* argv[])
     g_bars_nq.m1   .save_indicators(base_save + "/bars_nq_m1.dat");
     printf("[SHUTDOWN] Bar indicator state saved -- next restart will be instant warm\n");
     fflush(stdout);
-    g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
-    g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
-    g_trend_pb_sp.save_state(log_root_dir()    + "/trend_pb_sp.dat");
+    g_trend_pb_ger40.save_state(state_root_dir() + "/trend_pb_ger40.dat");
+    g_trend_pb_nq.save_state(state_root_dir()    + "/trend_pb_nq.dat");
+    g_trend_pb_sp.save_state(state_root_dir()    + "/trend_pb_sp.dat");
     g_adaptive_risk.print_summary();
     if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); delete g_tee_buf; g_tee_buf = nullptr; }
     WSACleanup();
