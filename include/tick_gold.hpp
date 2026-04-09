@@ -425,28 +425,10 @@ static void on_tick_gold(
         // Trail block: 30s after same-direction close, check if this signal
         // would re-enter the same direction. Allow if direction differs (reversal).
         const bool gs_trail_dir_match = gs_trail_blocked; // directional check done in GFE
-        // Price-action bypass: supervisor regime lags real price moves by 5-15 bars.
-        // When bar ATR is expanding AND candle has directional body, the move is real
-        // regardless of what the supervisor classified last tick.
-        // atr_expanding = true when ATR has increased 3 consecutive bars (OHLCBarEngine).
-        // bar_rsi outside 40-60 = momentum present, not dead flat.
-        // This opens the stack when price IS moving even if supervisor says COMPRESSION.
-        const bool bar_ready_stk   = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
-        const double bar_rsi_stk   = bar_ready_stk ? g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed) : 50.0;
-        const bool atr_expanding_stk = bar_ready_stk && g_bars_gold.m1.ind.atr_expanding.load(std::memory_order_relaxed);
-        const bool rsi_has_momentum  = (bar_rsi_stk < 42.0 || bar_rsi_stk > 58.0);  // outside neutral band
-        const bool price_action_bypass = atr_expanding_stk && rsi_has_momentum
-                                      && gold_can_enter
-                                      && !g_bracket_gold.has_open_position()
-                                      && !g_gold_flow.has_open_position()
-                                      && !g_trend_pb_gold.has_open_position()
-                                      && !in_ny_close_noise;
-
         const bool stack_enter_effective = ((stack_can_enter && gold_can_enter && !gs_trail_dir_match && !in_ny_close_noise)
             || (gold_can_enter_trend_reentry && vol_expanding && !gs_trail_dir_match && !in_ny_close_noise)
             || (drift_reversed && gold_can_enter && !in_ny_close_noise)          // reversals also blocked at NY close
-            || (stack_can_enter_mr && gold_can_enter && !in_ny_close_noise)      // MR/range engines in compression
-            || (price_action_bypass && !gs_trail_dir_match));                    // ATR expanding + RSI momentum bypasses supervisor lag
+            || (stack_can_enter_mr && gold_can_enter && !in_ny_close_noise));    // MR/range engines in compression
         // Pass DX.F mid for DXYDivergenceEngine -- g_macroDetector.updateDXY()
     // is called every DX.F tick so this is fresh or 0.0 if feed not yet seen.
     const double dx_mid_now = g_macroDetector.dxyMid();
