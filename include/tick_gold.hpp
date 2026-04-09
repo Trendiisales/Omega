@@ -880,7 +880,7 @@ static void on_tick_gold(
         // Gold uses the same system as all other bracket symbols.
         // Dead zone (05:00-07:00 UTC): not hard-blocked -- spread/regime gates suffice.
         BracketTrendState& gold_trend = g_bracket_trend["XAUUSD"];
-        gold_trend.update_l2(0.5, now_ms_g);  // BlackBull DOM unusable -- neutral
+        gold_trend.update_l2(g_macro_ctx.gold_l2_imbalance, now_ms_g);  // real cTrader DOM imbalance
         const bool gold_trend_blocked = gold_trend.counter_trend_blocked(now_ms_g);
 
         // ?? GoldFlow bias injection ???????????????????????????????????????
@@ -917,7 +917,7 @@ static void on_tick_gold(
             }
         }
 
-        const bool gold_pyramid_ok    = gold_trend.pyramid_allowed(0.5, now_ms_g);  // BlackBull DOM unusable
+        const bool gold_pyramid_ok    = gold_trend.pyramid_allowed(g_macro_ctx.gold_l2_imbalance, now_ms_g);  // real cTrader DOM imbalance
         // Block pyramid in IMPULSE regime: price is thrusting hard -- adding on
         // during a thrust means chasing the move at peak momentum with tight SLs.
         // ?? Impulse regime gate ???????????????????????????????????????????????
@@ -2019,7 +2019,7 @@ static void on_tick_gold(
             //                         -1 = last close was SHORT (block new SHORTs)
             const int  block_dir   = g_gold_trail_block_dir.load();
             const double gf_drift  = g_gold_stack.ewm_drift();
-            // gf_l2 removed -- BlackBull DOM always 0.500, unusable
+            // Trail-block direction probe: uses cTrader DOM imbalance when live, drift otherwise
             // Direction probe: use L2 if live, drift otherwise.
             // BUG FIX: when L2 is neutral (0.40-0.60) AND drift is weak (<1.0),
             // the old probe returned likely_long=false, which meant block_dir=1
@@ -2028,8 +2028,9 @@ static void on_tick_gold(
             // Fix: neutral L2 + weak drift = direction unknown = block BOTH.
             // Only allow a reversal entry when direction is unambiguous:
             //   L2 strongly skewed (>0.75 or <0.25), OR drift >= 2.0.
-            const bool l2_strong_long  = false;  // BlackBull DOM unusable (always 0.500)
-            const bool l2_strong_short = false;  // BlackBull DOM unusable (always 0.500)
+            const double gf_imb_rb     = g_macro_ctx.gold_l2_imbalance;
+            const bool l2_strong_long  = g_macro_ctx.gold_l2_real && (gf_imb_rb > 0.75);  // bid-heavy: cTrader DOM
+            const bool l2_strong_short = g_macro_ctx.gold_l2_real && (gf_imb_rb < 0.25);  // ask-heavy: cTrader DOM
             const bool drift_clear     = std::fabs(gf_drift) >= 2.0;
             const bool neutral_book    = !l2_strong_long && !l2_strong_short && !drift_clear;
             // If book is neutral: block regardless of direction (can't confirm reversal)
@@ -2229,7 +2230,7 @@ static void on_tick_gold(
                 const double vwap_dist   = std::fabs(gf_mid_rt - gf_vwap_rt);
                 const double gf_l2_rt    = g_macro_ctx.gold_l2_imbalance;
                 const double gf_drft_rt  = g_gold_stack.ewm_drift();
-                const bool   gf_long_rt  = (g_gold_stack.ewm_drift() > 0.0)  // drift: BlackBull DOM unusable
+                const bool   gf_long_rt  = (g_gold_stack.ewm_drift() > 0.0)  // primary: drift direction
                                         || (gf_l2_rt >= 0.40 && gf_l2_rt <= 0.60 && gf_drft_rt > 1.0);
                 // VWAP headwind: entering away from VWAP = VWAP will fight us
                 const bool vwap_headwind = (gf_long_rt  && gf_mid_rt > gf_vwap_rt)
@@ -2282,9 +2283,8 @@ static void on_tick_gold(
             }
         }
 
-        // REMOVED: Gate 2 L2 microstructure edge score -- BlackBull L2 data is
-        // synthetic (cTrader depth feed unreliable at this broker), scoring consistently
-        // returns 0 or negative on valid setups causing false blocks.
+        // Gate 2 L2 microstructure edge score -- removed: signal too noisy at current
+        // gold volatility levels, causing false blocks on valid setups.
 
         // ?? Gate 3: Bar indicators -- RSI + trend state from cTrader bars ??
         // Uses real M1 OHLC bars from cTrader trendbar API (not tick approximation).
@@ -2313,7 +2313,10 @@ static void on_tick_gold(
             const int    bar_trend  = (bar_ema9_gf > 0.0 && bar_ema50_gf > 0.0)
                 ? (bar_ema9_gf < bar_ema50_gf ? -1 : +1)
                 : 0;
-            const bool   gf_long   = (g_gold_stack.ewm_drift() > 0.0);  // drift: BlackBull DOM unusable
+            const double gf_l2_dir = g_macro_ctx.gold_l2_imbalance;
+            const bool   gf_long   = g_macro_ctx.gold_l2_real
+                                   ? (gf_l2_dir > 0.50)   // cTrader DOM: bid-heavy = long
+                                   : (g_gold_stack.ewm_drift() > 0.0);  // fallback: drift when DOM not flowing
 
             // RSI overbought/oversold gate
             // RSI>80: extreme overbought -- LONG entries blocked
@@ -2413,7 +2416,10 @@ static void on_tick_gold(
         // Includes cross-asset: macro regime, DXY momentum, SPX direction.
         // Hard gates (spread, bars not ready, cost, high impact) remain below.
         if (gf_tick_ok && g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
-            const bool gf_long_sc = (g_gold_stack.ewm_drift() > 0.0);  // drift: BlackBull DOM unusable
+            const double gf_l2_sc = g_macro_ctx.gold_l2_imbalance;
+            const bool gf_long_sc = g_macro_ctx.gold_l2_real
+                                  ? (gf_l2_sc > 0.50)   // cTrader DOM: bid-heavy = long
+                                  : (g_gold_stack.ewm_drift() > 0.0);  // fallback: drift when DOM not flowing
 
             // SPX rolling return: g_bars_sp.m1 EMA9 vs EMA50 direction as proxy
             // when insufficient bars, fall back to 0 (neutral -- no penalty)
@@ -2486,7 +2492,10 @@ static void on_tick_gold(
         // Tick storm, ATR/VWAP coherence, BBW squeeze counter now scored above.
         // Spread anomaly stays hard: cost literally doubles at 1.5x baseline.
         if (gf_tick_ok && g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
-            const bool   gf_long_g4  = (g_gold_stack.ewm_drift() > 0.0);  // drift: BlackBull DOM unusable
+            const double gf_l2_g4  = g_macro_ctx.gold_l2_imbalance;
+            const bool   gf_long_g4  = g_macro_ctx.gold_l2_real
+                                     ? (gf_l2_g4 > 0.50)   // cTrader DOM: bid-heavy = long
+                                     : (g_gold_stack.ewm_drift() > 0.0);  // fallback: drift when DOM not flowing
 
             // ?? Gate 4a: Spread anomaly ???????????????????????????????????
             // Rolling 200-tick average spread acts as session baseline.
@@ -2642,15 +2651,14 @@ static void on_tick_gold(
                 const double gf_l2_fb    = g_macro_ctx.gold_l2_imbalance;
                 // FIX 2026-04-04: drift threshold lowered from 1.0 to 0.0.
                 // Root cause: on a crashing day (Apr 2) EWM drift is negative.
-                // With BlackBull synthetic L2 (~0.5 neutral), the old probe
-                // required drift > 1.0 to classify as LONG. Negative drift
-                // made likely_long=false even though the engine was about to
-                // enter LONG, so (long_blocked AND false) = NOT blocked.
+                // With neutral DOM (0.5), old probe required drift > 1.0 to classify
+                // as LONG. Negative drift made likely_long=false even though engine
+                // was about to enter LONG, so (long_blocked AND false) = NOT blocked.
                 // Result: 5 consecutive LONG SL_HITs while gold was crashing.
                 // Fix: use drift > 0.0 -- any positive drift (or L2 > 0.75)
                 // classifies as likely LONG. Negative drift = likely SHORT.
                 // This correctly identifies re-entry direction regardless of magnitude.
-                const bool likely_long_fb = (g_gold_stack.ewm_drift() > 0.0)  // drift: BlackBull DOM unusable
+                const bool likely_long_fb = (g_gold_stack.ewm_drift() > 0.0)  // primary: drift direction
                                          || (gf_l2_fb >= 0.40 && gf_l2_fb <= 0.60 && gf_drift_fb > 0.0);
                 const bool fade_blocked = (now_fade < long_blocked  &&  likely_long_fb)
                                        || (now_fade < short_blocked && !likely_long_fb);
@@ -2684,7 +2692,7 @@ static void on_tick_gold(
             static int64_t s_gf_gate_log_ts = 0;
             if (nowSec() - s_gf_gate_log_ts >= 30) {
                 s_gf_gate_log_ts = nowSec();
-                const bool gf_dir = (g_gold_stack.ewm_drift() > 0.0);  // drift: BlackBull DOM unusable
+                const bool gf_dir = (g_gold_stack.ewm_drift() > 0.0);  // drift direction for diagnostic log
                 const double spread_ratio = g_bars_gold.m1.ind.spread_ratio
                                                 .load(std::memory_order_relaxed);
                 const double tick_rate    = g_bars_gold.m1.ind.tick_rate
