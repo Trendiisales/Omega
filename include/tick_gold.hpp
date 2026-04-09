@@ -3578,7 +3578,7 @@ static void on_tick_gold(
                 cfe_book_e, cfe_prev_book_e, (bid + ask) * 0.5);
 
             g_candle_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
-                ? g_cfg.risk_per_trade_usd : CFE_RISK_DOLLARS;
+                ? g_cfg.risk_per_trade_usd : omega::CFE_RISK_DOLLARS;
             const double cfe_atr_e = g_gold_flow.current_atr() > 0.0
                 ? g_gold_flow.current_atr() : 5.0;
 
