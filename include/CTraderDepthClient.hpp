@@ -1489,9 +1489,9 @@ private:
                            (unsigned long long)fld.varint);
                 }
                 const uint64_t qid=PB::get_varint(qf,1);
-                const uint64_t sz =PB::get_varint(qf,2);
-                const uint64_t bid=PB::get_varint(qf,3);
-                const uint64_t ask=PB::get_varint(qf,4);
+                const uint64_t sz =PB::get_varint(qf,3);
+                const uint64_t bid=PB::get_varint(qf,4);
+                const uint64_t ask=PB::get_varint(qf,5);
                 printf("  -> id=%llu sz=%llu bid=%llu ask=%llu price=%.5f\n",
                        (unsigned long long)qid,
                        (unsigned long long)sz,
@@ -1514,8 +1514,8 @@ private:
         auto& book = depth_books_[name];
         for (const auto& qb : PB::get_repeated_bytes(fields, 4)) {
             const auto qf = PB::parse(qb);
-            const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,2);
-            const uint64_t bid=PB::get_varint(qf,3), ask=PB::get_varint(qf,4);
+            const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,3);
+            const uint64_t bid=PB::get_varint(qf,4), ask=PB::get_varint(qf,5);
             if (!id) continue;  // id=0 is invalid
             // cTrader sends real sizes for all symbols including XAUUSD.
             // sz is in cents (sz=200 = 2 lots). Default to 100 (1 lot) if
@@ -1563,7 +1563,8 @@ private:
         // Hot path: write atomic derived scalars -- zero lock, zero contention with FIX tick
         //
         // IMBALANCE SIGNAL SELECTION:
-        // ProtoOADepthQuote fields: id=1, size=2, bid=3, ask=4.
+        // ProtoOADepthQuote actual wire fields (confirmed from live data):
+        // field 1 = id, field 3 = size, field 4 = bid price, field 5 = ask price.
         // raw_imbalance() = raw_bid_count / (raw_bid_count + raw_ask_count) across all
         // quotes in the incremental DOM -- counts ALL active quote IDs on each side.
         // cTrader XAUUSD DOM delivers ≥5 levels per side; to_l2book() caps at 5,
