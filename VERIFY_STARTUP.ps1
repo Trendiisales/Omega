@@ -494,8 +494,11 @@ if ($engineCulledLine) {
 
 # ==============================================================================
 # CHECK: GoldFlow enabled -- GFE-CONFIG must show goldflow_enabled=true
+# GFE-CONFIG is a startup-once line written before VERIFY_STARTUP starts tailing.
+# Must search the FULL log from byte 0, not just capturedLines (new lines only).
 # ==============================================================================
-$gfeConfigLine = Find-Last "GFE-CONFIG"
+$gfeConfigLine = Get-Content $LogPath -ErrorAction SilentlyContinue |
+    Where-Object { $_ -match "GFE-CONFIG" } | Select-Object -Last 1
 if (!$gfeConfigLine) {
     Add-Result "GoldFlow Active" "FAIL" "No GFE-CONFIG line in log" `
         "GoldFlow never logged its config -- binary may be stale or goldflow_enabled not parsed. Run QUICK_RESTART.ps1"
@@ -508,8 +511,11 @@ if (!$gfeConfigLine) {
 
 # ==============================================================================
 # CHECK: RSI Reversal Engine enabled
+# RSI-REV configured is a startup-once line written before VERIFY_STARTUP starts tailing.
+# Must search the FULL log from byte 0, not just capturedLines (new lines only).
 # ==============================================================================
-$rsiConfigLine = Find-Last "RSI-REV.*configured"
+$rsiConfigLine = Get-Content $LogPath -ErrorAction SilentlyContinue |
+    Where-Object { $_ -match "RSI-REV.*configured" } | Select-Object -Last 1
 if (!$rsiConfigLine) {
     Add-Result "RSI Reversal Active" "FAIL" "No RSI-REV configured line in log" `
         "RSIReversalEngine never logged startup -- binary stale or engine disabled. Run QUICK_RESTART.ps1"
