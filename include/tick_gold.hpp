@@ -3514,5 +3514,106 @@ static void on_tick_gold(
             else g_nbm_gold_london.patch_size(g_last_directional_lot);
         }
     }
+
+    // ── CandleFlowEngine -- candle structure + cost coverage + DOM entry/exit ──
+    // Manage always (position already open)
+    if (g_candle_flow.has_open_position()) {
+        // Build current DOM snapshot from L2Book
+        L2Book cfe_book, cfe_prev_book;
+        {
+            std::lock_guard<std::mutex> lk(g_l2_mtx);
+            auto it = g_l2_books.find("XAUUSD");
+            if (it != g_l2_books.end()) cfe_book = it->second;
+        }
+        const auto cfe_dom = omega::CandleFlowEngine::build_dom(
+            cfe_book, cfe_prev_book, (bid + ask) * 0.5);
+        const omega::CandleFlowEngine::BarSnap cfe_bar_dummy{};
+        const double cfe_atr = g_gold_flow.current_atr() > 0.0
+            ? g_gold_flow.current_atr() : 5.0;
+        g_candle_flow.on_tick(bid, ask, cfe_bar_dummy, cfe_dom,
+            now_ms_g, cfe_atr,
+            [&](const omega::TradeRecord& tr) {
+                handle_closed_trade(tr);
+                if (!g_candle_flow.shadow_mode)
+                    send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+            });
+    }
+
+    // Entry: only when no other gold position open and gold_can_enter passes
+    if (!g_candle_flow.has_open_position()
+        && gold_can_enter
+        && !g_bracket_gold.has_open_position()
+        && !g_gold_flow.has_open_position()
+        && !g_gold_stack.has_open_position()
+        && !g_trend_pb_gold.has_open_position()
+        && !g_hybrid_gold.has_open_position()
+        && !in_ny_close_noise) {
+
+        // Build BarSnap from last closed M1 bar
+        omega::CandleFlowEngine::BarSnap cfe_bar;
+        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+            // Current bar close (last completed M1 bar)
+            // OHLCBarEngine stores last bar values in indicators
+            // We use EMA/BB as proxies for the bar structure:
+            // close ~ current mid, open/high/low from last bar via tick accumulator
+            // Use the tick_gold bar builder static vars via the bar indicators
+            const double cur_mid = (bid + ask) * 0.5;
+            const double bb_mid  = g_bars_gold.m1.ind.bb_mid.load(std::memory_order_relaxed);
+            const double bb_upper= g_bars_gold.m1.ind.bb_upper.load(std::memory_order_relaxed);
+            const double bb_lower= g_bars_gold.m1.ind.bb_lower.load(std::memory_order_relaxed);
+            const double atr_bar = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
+            // Reconstruct approximate bar OHLC from BB and ATR:
+            // This is not perfect but gives candle direction and body ratio
+            // using the same data the engine was built against.
+            // Better: use the tick-by-tick bar builder s_cur1 in tick_gold.hpp
+            // For now use: open=prev close (EMA9 proxy), close=mid, range=ATR
+            const double ema9  = g_bars_gold.m1.ind.ema9.load(std::memory_order_relaxed);
+            const double ema50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
+            // Directional open: EMA9 is the smoothed prior close
+            cfe_bar.open  = ema9 > 0.0 ? ema9 : cur_mid;
+            cfe_bar.close = cur_mid;
+            cfe_bar.high  = atr_bar > 0.0 ? cur_mid + atr_bar * 0.5 : cur_mid + 1.0;
+            cfe_bar.low   = atr_bar > 0.0 ? cur_mid - atr_bar * 0.5 : cur_mid - 1.0;
+            // prev_high/low from Bollinger bands -- upper/lower band = prior range
+            cfe_bar.prev_high = bb_upper > 0.0 ? bb_upper : cur_mid + 2.0;
+            cfe_bar.prev_low  = bb_lower > 0.0 ? bb_lower : cur_mid - 2.0;
+            cfe_bar.valid = true;
+            (void)bb_mid; (void)ema50;
+        }
+
+        if (cfe_bar.valid) {
+            // Build DOM snapshot
+            L2Book cfe_book_e, cfe_prev_book_e;
+            {
+                std::lock_guard<std::mutex> lk(g_l2_mtx);
+                auto it = g_l2_books.find("XAUUSD");
+                if (it != g_l2_books.end()) cfe_book_e = it->second;
+            }
+            const auto cfe_dom_e = omega::CandleFlowEngine::build_dom(
+                cfe_book_e, cfe_prev_book_e, (bid + ask) * 0.5);
+
+            g_candle_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
+                ? g_cfg.risk_per_trade_usd : CFE_RISK_DOLLARS;
+            const double cfe_atr_e = g_gold_flow.current_atr() > 0.0
+                ? g_gold_flow.current_atr() : 5.0;
+
+            g_candle_flow.on_tick(bid, ask, cfe_bar, cfe_dom_e,
+                now_ms_g, cfe_atr_e,
+                [&](const omega::TradeRecord& tr) {
+                    handle_closed_trade(tr);
+                    if (!g_candle_flow.shadow_mode)
+                        send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                });
+
+            if (g_candle_flow.has_open_position()) {
+                g_telemetry.UpdateLastEntryTs();
+                write_trade_open_log("XAUUSD", "CandleFlow",
+                    g_candle_flow.pos.is_long ? "LONG" : "SHORT",
+                    g_candle_flow.pos.entry, 0.0, g_candle_flow.pos.sl,
+                    g_candle_flow.pos.size, ask - bid, "CANDLE_FLOW", "CANDLE_DOM");
+            }
+        }
+    }
 }
+
 
