@@ -756,76 +756,12 @@ static bool symbol_gate(
             //   Ratio = 0.13 ? entire strong downtrend+surge blocked all session.
             //   EWM drift would have opened the gate 70s into each move.
             //   Fail-open if base_vol=0 (warmup): ratio = 3.0 ? PATH A passes.
-            if (slot == 6) {
-                const double asia_base   = g_gold_stack.base_vol_pct();
-                const double asia_recent = g_gold_stack.recent_vol_pct();
-                const double asia_ratio  = (asia_base > 0.0) ? (asia_recent / asia_base) : 3.0;
-
-                // PATH B: fast-onset EWM drift bypass.
-                // Evidence 2026-04-07: 5pt drop produces drift=-0.62, old 0.8 threshold missed it.
-                // Random Asia chop produces |drift| < 0.35 consistently -- 0.5 has clear gap.
-                // Lowered 0.8->0.5 to catch the 5pt moderate moves visible on chart.
-                const double asia_ewm_drift = std::fabs(g_gold_stack.ewm_drift());
-                const bool asia_fast_breakout = (asia_ewm_drift >= 0.5);
-
-                // PATH C: macro crash/rally bypass.
-                // FIX 2026-04-07: use BOTH bar RSI AND tick-level EWM drift RSI proxy.
-                // Bar RSI (g_bars_gold.m1.ind.rsi14) goes stale if log/bar engine freezes.
-                // Tick drift is always live. Use whichever is more extreme.
-                // rsi_crash_lo/hi are ATR-proportional thresholds computed in tick_gold.hpp
-                // but not available here -- use fixed conservative values (35/65).
-                const double rsi_asia_bar  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-                // Tick-based RSI proxy: derive from EWM drift magnitude as fallback.
-                // When drift >= 2.0 downside, RSI is empirically < 35. When drift <= -2.0,
-                // price has moved enough to push RSI extreme regardless of bar updates.
-                // This is a safety net -- bar RSI is primary when available.
-                const bool drift_rsi_oversold  = (g_gold_stack.ewm_drift() < -2.0);
-                const bool drift_rsi_overbought = (g_gold_stack.ewm_drift() >  2.0);
-                const bool bar_rsi_oversold    = (rsi_asia_bar > 0.0 && rsi_asia_bar < 38.0);
-                const bool bar_rsi_overbought  = (rsi_asia_bar > 62.0);
-
-                const double vwap_asia  = g_gold_stack.vwap();
-                const double mid_asia   = (bid + ask) * 0.5;
-                const double vdisp_asia = (vwap_asia > 0.0) ? std::fabs(mid_asia - vwap_asia) : 0.0;
-
-                // PATH D: large VWAP displacement -- price has moved far from fair value.
-                // FIX 2026-04-07: lowered threshold 10.0->6.0. Asia moves of 20-30pts
-                // produce vdisp of 6-15pts. Old 10pt threshold missed early move onset.
-                const bool asia_vwap_bypass = (vdisp_asia >= 6.0);
-
-                const bool asia_macro_bypass = bar_rsi_oversold
-                                            || bar_rsi_overbought
-                                            || drift_rsi_oversold
-                                            || drift_rsi_overbought
-                                            || asia_vwap_bypass;
-
-                if (asia_ratio < 2.0 && !asia_fast_breakout && !asia_macro_bypass) {
-                    // FIX 2026-04-07: log throttle reduced 60s->10s.
-                    // 60s throttle meant the block was invisible during normal monitoring.
-                    // 10s gives one line per MONITOR.ps1 refresh cycle without flooding.
-                    static int64_t s_asia_block_log = 0;
-                    const int64_t now_ab = static_cast<int64_t>(std::time(nullptr));
-                    if (now_ab - s_asia_block_log >= 10) {
-                        s_asia_block_log = now_ab;
-                        printf("[ASIA-GATE] BLOCKED -- vol_ratio=%.2f drift=%.3f rsi_bar=%.1f vdisp=%.1f\n",
-                               asia_ratio, g_gold_stack.ewm_drift(), rsi_asia_bar, vdisp_asia);
-                        fflush(stdout);
-                    }
-                    return false;
-                }
-                static int64_t s_asia_open_log = 0;
-                const int64_t now_ao = static_cast<int64_t>(std::time(nullptr));
-                if (now_ao - s_asia_open_log >= 10) {
-                    s_asia_open_log = now_ao;
-                    const char* path = asia_vwap_bypass       ? "PATH-D(vwap)"
-                                     : asia_macro_bypass      ? "PATH-C(rsi/drift)"
-                                     : asia_fast_breakout     ? "PATH-B(drift)"
-                                     :                          "PATH-A(ratio)";
-                    printf("[ASIA-GATE] OPEN via %s -- vol_ratio=%.2f drift=%.3f rsi_bar=%.1f vdisp=%.1f\n",
-                           path, asia_ratio, g_gold_stack.ewm_drift(), rsi_asia_bar, vdisp_asia);
-                    fflush(stdout);
-                }
-            }
+            // ASIA-GATE REMOVED: vol_ratio/drift/RSI thresholds were blocking entries
+            // even when candle structure and DOM clearly show a valid trade.
+            // The candle IS the volatility signal. The DOM IS the confirmation.
+            // Each engine has its own quality gates -- this outer vol gate was
+            // double-blocking with a lagging proxy and is gone.
+            // Asia session cap (max 2 positions) still applies above.
             // overlap (slot 3) and London/NY get full cap
             if (open_positions >= session_cap) {
                 ++g_gov_pos;
