@@ -3549,36 +3549,21 @@ static void on_tick_gold(
         && !g_hybrid_gold.has_open_position()
         && !in_ny_close_noise) {
 
-        // Build BarSnap from last closed M1 bar
+        // Build BarSnap from last two completed M1 bars via last_bar()/prev_bar()
+        // These return the actual OHLC from OHLCBarEngine::bars_ deque --
+        // real open/high/low/close, not indicator proxies.
         omega::CandleFlowEngine::BarSnap cfe_bar;
-        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
-            // Current bar close (last completed M1 bar)
-            // OHLCBarEngine stores last bar values in indicators
-            // We use EMA/BB as proxies for the bar structure:
-            // close ~ current mid, open/high/low from last bar via tick accumulator
-            // Use the tick_gold bar builder static vars via the bar indicators
-            const double cur_mid = (bid + ask) * 0.5;
-            const double bb_mid  = g_bars_gold.m1.ind.bb_mid.load(std::memory_order_relaxed);
-            const double bb_upper= g_bars_gold.m1.ind.bb_upper.load(std::memory_order_relaxed);
-            const double bb_lower= g_bars_gold.m1.ind.bb_lower.load(std::memory_order_relaxed);
-            const double atr_bar = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
-            // Reconstruct approximate bar OHLC from BB and ATR:
-            // This is not perfect but gives candle direction and body ratio
-            // using the same data the engine was built against.
-            // Better: use the tick-by-tick bar builder s_cur1 in tick_gold.hpp
-            // For now use: open=prev close (EMA9 proxy), close=mid, range=ATR
-            const double ema9  = g_bars_gold.m1.ind.ema9.load(std::memory_order_relaxed);
-            const double ema50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
-            // Directional open: EMA9 is the smoothed prior close
-            cfe_bar.open  = ema9 > 0.0 ? ema9 : cur_mid;
-            cfe_bar.close = cur_mid;
-            cfe_bar.high  = atr_bar > 0.0 ? cur_mid + atr_bar * 0.5 : cur_mid + 1.0;
-            cfe_bar.low   = atr_bar > 0.0 ? cur_mid - atr_bar * 0.5 : cur_mid - 1.0;
-            // prev_high/low from Bollinger bands -- upper/lower band = prior range
-            cfe_bar.prev_high = bb_upper > 0.0 ? bb_upper : cur_mid + 2.0;
-            cfe_bar.prev_low  = bb_lower > 0.0 ? bb_lower : cur_mid - 2.0;
-            cfe_bar.valid = true;
-            (void)bb_mid; (void)ema50;
+        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)
+            && g_bars_gold.m1.bar_count() >= 2) {
+            const OHLCBar lb = g_bars_gold.m1.last_bar();  // last completed M1 bar
+            const OHLCBar pb = g_bars_gold.m1.prev_bar();  // bar before that
+            cfe_bar.open      = lb.open;
+            cfe_bar.high      = lb.high;
+            cfe_bar.low       = lb.low;
+            cfe_bar.close     = lb.close;
+            cfe_bar.prev_high = pb.high;
+            cfe_bar.prev_low  = pb.low;
+            cfe_bar.valid     = (lb.close > 0.0 && lb.high > lb.low);
         }
 
         if (cfe_bar.valid) {
