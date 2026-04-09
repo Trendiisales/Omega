@@ -778,6 +778,18 @@ static std::string log_root_dir() {
     return abs;  // always absolute path -- no relative fallback
 }
 
+// state_root_dir(): persistent state files (bars, ATR, kelly, trend state).
+// SEPARATE from log_root_dir() -- state survives restarts and is NEVER
+// touched by git operations or log rotation. C:\Omega\state\
+static std::string state_root_dir() {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const std::string abs = "C:\\Omega\\state";
+    fs::create_directories(fs::path(abs), ec);
+    fs::create_directories(fs::path(abs + "\\kelly"), ec);
+    return abs;
+}
+
 static std::string resolve_audit_log_path(const std::string& configured_path,
                                           const std::string& default_relative_path) {
     namespace fs = std::filesystem;
