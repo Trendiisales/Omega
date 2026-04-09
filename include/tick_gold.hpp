@@ -1438,7 +1438,8 @@ static void on_tick_gold(
             g_macro_ctx.gold_l2_imbalance,
             g_gold_stack.ewm_drift(),
             now_ms_g, flow_mgmt_cb,
-            g_macro_ctx.session_slot);
+            g_macro_ctx.session_slot,
+            g_macro_ctx.gold_l2_real);
     }
 
     // ?? GoldFlow reload manage -- ALWAYS runs when reload position open ?????
@@ -2962,7 +2963,8 @@ static void on_tick_gold(
                 g_macro_ctx.gold_l2_imbalance,
                 g_gold_stack.ewm_drift(),
                 now_ms_g, flow_on_close,
-                g_macro_ctx.session_slot);
+                g_macro_ctx.session_slot,
+                g_macro_ctx.gold_l2_real);
             }  // gf_vpin_ok
         }
         gfe_entry_skip:;  // L2 watchdog gate jumps here when L2 is dead
