@@ -65,20 +65,30 @@ $ErrorActionPreference = "Stop"
 # --- [1] Stop Omega ----------------------------------------------------------
 Write-Host "[1/5] Stopping Omega..." -ForegroundColor Yellow
 $ErrorActionPreference = "Continue"
+# Stop service first (NSSM)
 $svcCheck = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
 if ($svcCheck -and $svcCheck.Status -eq "Running") {
     Stop-Service "Omega" -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
+# Kill any remaining process
 taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
-Start-Sleep -Seconds 1
-Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
-$still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+# Poll until process is fully gone -- Windows holds file handles until kernel releases them
+$waited = 0
+do {
+    Start-Sleep -Seconds 1
+    $waited++
+    $still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+} while ($still -and $waited -lt 15)
 if ($still) {
     $still | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
+# Extra wait for Windows to release file handles on log files
+# Without this, git reset --hard fails with "unable to unlink" on locked logs
+Start-Sleep -Seconds 3
 $ErrorActionPreference = "Stop"
 Write-Host "      [OK] Stopped" -ForegroundColor Green
 Write-Host ""
@@ -90,16 +100,20 @@ Write-Host ""
 Write-Host "[2/5] GATE 1 -- Pre-build checks..." -ForegroundColor Yellow
 Write-Host ""
 
-# Force-update PRE_DELIVERY_CHECK.ps1 from origin BEFORE running it.
-# git reset --hard only updates files already in the local index.
-# If PRE_DELIVERY_CHECK.ps1 was added to the repo after the VPS last cloned,
-# git reset will not overwrite the stale version on disk.
-# git checkout origin/main -- <file> always pulls the current version.
+# Sync to origin/main:
+# 1. Mark all tracked log/csv files skip-worktree so reset never touches locked files
+# 2. fetch + reset --hard to get latest source
+# 3. Force-checkout PRE_DELIVERY_CHECK.ps1 in case it was added after last clone
 $ErrorActionPreference = "Continue"
 & git -C $OmegaDir fetch origin 2>&1 | Out-Null
+# skip-worktree on all tracked files under logs/ -- prevents "unable to unlink" errors
+$trackedLogs = & git -C $OmegaDir ls-files logs/ 2>$null
+foreach ($lf in $trackedLogs) {
+    & git -C $OmegaDir update-index --skip-worktree $lf 2>$null | Out-Null
+}
 & git -C $OmegaDir reset --hard origin/main 2>&1 | Out-Null
 & git -C $OmegaDir checkout origin/main -- PRE_DELIVERY_CHECK.ps1 2>&1 | Out-Null
-Write-Host "  [GIT] Synced to origin/main (PRE_DELIVERY_CHECK.ps1 force-updated)" -ForegroundColor Cyan
+Write-Host "  [GIT] Synced to origin/main (log files skip-worktree, PRE_DELIVERY_CHECK.ps1 force-updated)" -ForegroundColor Cyan
 $ErrorActionPreference = "Continue"
 
 # FULL BUILD DIRECTORY WIPE -- the only guaranteed clean rebuild.
