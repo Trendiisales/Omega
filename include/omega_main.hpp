@@ -379,6 +379,13 @@ int main(int argc, char* argv[])
     g_trend_pb_gold.PYRAMID_MAX_ADDS    = 1;
     // Trail/BE params: class defaults are correct for M15 ATR scale (4-8pts)
     // TRAIL_ARM_ATR_MULT=2.0, TRAIL_DIST_ATR_MULT=1.0, BE_ATR_MULT=1.0 -- no change needed
+
+    // DISABLED: TrendPullback gold fires counter-trend repeatedly in Asia with no valid
+    // H4 gate (h4_trend_state_=0 until 14 H4 bars seen = 56hrs on fresh start).
+    // All session trades: TIME_STOP losses shorting an uptrend. No edge confirmed.
+    g_trend_pb_gold.enabled = false;
+
+    // DISABLED: Index TrendPullback never explicitly disabled -- no live validation.
     // GER40: tighter band (index moves more cleanly around EMAs)
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500
     g_trend_pb_ger40.COOLDOWN_SEC     = 120;
@@ -390,9 +397,12 @@ int main(int argc, char* argv[])
     // Daily loss cap stops the engine entirely after a bad sequence.
     g_trend_pb_nq.MIN_EMA_SEP         = 25.0;
     g_trend_pb_nq.DAILY_LOSS_CAP      = 80.0;   // $80 daily cap: ~6 SL hits at $12 each
+    g_trend_pb_nq.enabled             = false;   // DISABLED: not live-validated
     g_trend_pb_sp.MIN_EMA_SEP         = 15.0;
     g_trend_pb_sp.DAILY_LOSS_CAP      = 80.0;   // same cap for SP
+    g_trend_pb_sp.enabled             = false;   // DISABLED: not live-validated
     g_trend_pb_ger40.DAILY_LOSS_CAP   = 80.0;   // GER40 too -- no cap was previously set
+    g_trend_pb_ger40.enabled          = false;   // DISABLED: not live-validated
     // Load warm EMA state -- skips EMA_WARMUP_TICKS cold period on restart
     g_trend_pb_gold.load_state(state_root_dir()  + "/trend_pb_gold.dat");
     g_trend_pb_ger40.load_state(state_root_dir() + "/trend_pb_ger40.dat");
