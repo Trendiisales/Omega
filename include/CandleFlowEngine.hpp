@@ -32,7 +32,8 @@
 #include <deque>
 #include <algorithm>
 #include <cstring>
-#include <cstdio>
+#include <iostream>
+#include <iomanip>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaFIX.hpp"          // L2Book, L2Level
 
