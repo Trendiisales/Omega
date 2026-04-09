@@ -662,7 +662,7 @@ struct GoldFlowEngine {
         //     window above -- those ARE the 70% directional check.
         //
         // Either path satisfies the Asia drift requirement. Normal session threshold unchanged.
-        double drift_threshold = l2_data_live ? GFE_DRIFT_MIN : GFE_DRIFT_FALLBACK_THRESHOLD;
+        double drift_threshold = GFE_DRIFT_FALLBACK_THRESHOLD;  // drift-only: BlackBull DOM unusable
         if (is_low_quality_session) {
             // Check persistence path: fast_long/short are already 70%-directional flags
             const bool drift_persistent_long  = fast_long;
@@ -1736,8 +1736,11 @@ private:
         // m_l2_was_live: true if L2 imbalance has been non-0.500 at any point this session.
         // When L2 live: use real ATR (imbalance confirms entry quality -- tight SL valid).
         // When L2 dead: use 5pt floor (drift-only entries gap through 2pt SL -> $82 avg loss).
-        static constexpr double GFE_ATR_SL_FLOOR_NO_L2 = 5.0;  // floor when L2 dead
-        const double atr_floor = m_l2_was_live ? GFE_ATR_MIN : GFE_ATR_SL_FLOOR_NO_L2;
+        // BlackBull DOM imbalance is unusable (always 0.500) but cTrader IS connected
+        // and delivering depth events -- use real ATR floor always, not the 5pt "L2 dead" floor.
+        // m_l2_was_live removed from ATR floor decision: use GFE_ATR_MIN unconditionally.
+        static constexpr double GFE_ATR_SL_FLOOR_NO_L2 = 5.0;  // kept for reference only
+        const double atr_floor = GFE_ATR_MIN;  // always use real ATR floor (cTrader connected)
         const double atr_floored = std::max(atr_floor, m_atr);
         const double atr_sl  = atr_floored * GFE_ATR_SL_MULT;
         const double min_sl  = spread * 5.0;  // raised 3x->5x: 3x was 0.66pts on 0.22 spread, too tight for London gold vol
