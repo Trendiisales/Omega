@@ -107,11 +107,55 @@ Write-Host ""
 # 3. reset --hard -- now has nothing to unlink under logs/
 # 4. Force-checkout PRE_DELIVERY_CHECK.ps1
 $ErrorActionPreference = "Continue"
-& git -C $OmegaDir fetch origin 2>&1 | Out-Null
-# Remove ALL index entries under logs/ -- eliminates "unable to unlink" and "not uptodate" errors
+# STEP 1: fetch -- capture output, hard fail if network/auth error
+$fetchOut = & git -C $OmegaDir fetch origin 2>&1
+$fetchFailed = ($LASTEXITCODE -ne 0) -or ($fetchOut -match "fatal:|error:|could not")
+if ($fetchFailed) {
+    Write-Host "  [FATAL] git fetch failed -- network or auth error. Cannot guarantee latest source." -ForegroundColor Red
+    Write-Host "  fetch output: $fetchOut" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  [GIT] fetch OK" -ForegroundColor Cyan
+
+# STEP 2: clear stale index entries then hard reset to origin/main
 & git -C $OmegaDir rm -r --cached --force --ignore-unmatch logs/ 2>&1 | Out-Null
-& git -C $OmegaDir reset --hard origin/main 2>&1 | Out-Null
+$resetOut = & git -C $OmegaDir reset --hard origin/main 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  [FATAL] git reset --hard failed: $resetOut" -ForegroundColor Red
+    exit 1
+}
 & git -C $OmegaDir checkout origin/main -- PRE_DELIVERY_CHECK.ps1 2>&1 | Out-Null
+
+# STEP 3: ANTI-STALE GATE -- compare local HEAD to GitHub API
+# This is the definitive check. No local file can fool it.
+$localHead = (& git -C $OmegaDir rev-parse HEAD 2>$null).Trim()
+$localHead7 = if ($localHead.Length -ge 7) { $localHead.Substring(0,7) } else { "unknown" }
+
+$ghApiHead = ""
+if ($GitHubToken -ne "") {
+    try {
+        $headers = @{ Authorization = "token $GitHubToken"; "User-Agent" = "OmegaRestart" }
+        $ghResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" `
+                                    -Headers $headers -TimeoutSec 15 -ErrorAction Stop
+        $ghApiHead = $ghResp.sha.Substring(0,7)
+    } catch {
+        Write-Host "  [WARN] GitHub API unreachable -- cannot verify hash against remote: $_" -ForegroundColor Yellow
+    }
+}
+
+if ($ghApiHead -ne "" -and $localHead7 -ne $ghApiHead) {
+    Write-Host "" 
+    Write-Host "  [FATAL] STALE SOURCE DETECTED" -ForegroundColor Red
+    Write-Host "  Local HEAD : $localHead7" -ForegroundColor Red
+    Write-Host "  GitHub HEAD: $ghApiHead" -ForegroundColor Red
+    Write-Host "  git fetch succeeded but local repo did not update to GitHub HEAD." -ForegroundColor Red
+    Write-Host "  This is the stale binary bug. Aborting build." -ForegroundColor Red
+    exit 1
+} elseif ($ghApiHead -ne "") {
+    Write-Host "  [ANTI-STALE] Local HEAD $localHead7 == GitHub HEAD $ghApiHead -- source verified" -ForegroundColor Green
+} else {
+    Write-Host "  [ANTI-STALE] GitHub API unavailable -- local HEAD is $localHead7 (unverified)" -ForegroundColor Yellow
+}
 Write-Host "  [GIT] Synced to origin/main" -ForegroundColor Cyan
 $ErrorActionPreference = "Continue"
 
@@ -148,10 +192,10 @@ if ($gate1Exit -ne 0) {
 }
 Write-Host ""
 
-# Read HEAD after gate 1 (we know local == origin/main at this point)
+# HEAD hash already captured in anti-stale gate above ($localHead / $localHead7)
 $ErrorActionPreference = "Continue"
-$headHash = & git -C $OmegaDir rev-parse HEAD 2>$null
-$headHash7 = if ($headHash -and $headHash.Length -ge 7) { $headHash.Substring(0,7) } else { "unknown" }
+$headHash  = $localHead
+$headHash7 = $localHead7
 $ErrorActionPreference = "Continue"
 
 # ==============================================================================
