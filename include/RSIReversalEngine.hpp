@@ -49,10 +49,13 @@ namespace omega {
 class RSIReversalEngine {
 public:
     // ── Parameters ────────────────────────────────────────────────────────────
-    double RSI_OVERSOLD       = 42.0;
-    double RSI_OVERBOUGHT     = 58.0;
-    double RSI_EXIT_LONG      = 52.0;
-    double RSI_EXIT_SHORT     = 48.0;
+    // RSI_OVERSOLD/OVERBOUGHT no longer used for entry (pure direction change)
+    // Kept for legacy compat -- entry is now RSI turn + RSI side of 50
+    double RSI_OVERSOLD       = 50.0;  // entry: RSI must be below 50 for LONG
+    double RSI_OVERBOUGHT     = 50.0;  // entry: RSI must be above 50 for SHORT
+    double RSI_MIN_MOVE       = 3.0;   // min RSI pts moved before reversal valid
+    double RSI_EXIT_LONG      = 55.0;  // exit LONG when tick RSI reaches 55
+    double RSI_EXIT_SHORT     = 45.0;  // exit SHORT when tick RSI reaches 45
     int    RSI_PERIOD         = 14;
     double SL_ATR_MULT        = 0.6;
     double TRAIL_ATR_MULT     = 0.40;
