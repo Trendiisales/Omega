@@ -2430,7 +2430,7 @@ static void on_tick_gold(
                     if (bar_trend != s_last_trend) { s_counter_bars = 0; s_last_trend = bar_trend; }
                     ++s_counter_bars;
 
-                    if (s_counter_bars >= 5) {
+                    if (s_counter_bars >= 2) {  // 2 bars = crossover confirmed, not a single-bar fake
                     // ATR-proportional counter-trend RSI gate.
                     const double ct_atr_scale = std::min(2.5, std::max(1.0, gf_atr_gate / 5.0));
                     const double ct_ob = 50.0 + 10.0 * ct_atr_scale;
@@ -2449,7 +2449,7 @@ static void on_tick_gold(
                         static int64_t s_ct_log = 0;
                         if (nowSec() - s_ct_log >= 20) {
                             s_ct_log = nowSec();
-                            printf("[GF-BAR-INFO] XAUUSD %s counter-trend (M1=%+d) only %d/5 bars -- not blocking yet\n",
+                            printf("[GF-BAR-INFO] XAUUSD %s counter-trend (M1=%+d) only %d/2 bars -- not blocking yet\n",
                                    gf_long ? "LONG" : "SHORT", bar_trend, s_counter_bars);
                             fflush(stdout);
                         }
