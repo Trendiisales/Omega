@@ -6,6 +6,35 @@
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
 
+    // ?? L2 liveness stamp -- set on every close so CSV audit is accurate ??????
+    // tr.l2_live defaults false. Stamp from live MacroContext flags here so
+    // every CSV row reflects actual L2 state at time of close.
+    // XAUUSD/XAGUSD: use gold_l2_real (XAUUSD DOM specifically via ctid=43014358).
+    // All other symbols: use ctrader_l2_live (any cTrader depth event received).
+    {
+        const std::string& sym = tr.symbol;
+        if (sym == "XAUUSD" || sym == "XAGUSD") {
+            tr.l2_live       = g_macro_ctx.gold_l2_real;
+            tr.l2_imbalance  = g_macro_ctx.gold_l2_imbalance;
+        } else {
+            tr.l2_live = g_macro_ctx.ctrader_l2_live;
+            // l2_imbalance already on tr from enter_directional snapshot if set;
+            // only overwrite if still at default 0.5 (was never populated)
+            if (tr.l2_imbalance == 0.5) {
+                if      (sym == "US500.F")                                tr.l2_imbalance = g_macro_ctx.sp_l2_imbalance;
+                else if (sym == "USTEC.F" || sym == "NAS100")             tr.l2_imbalance = g_macro_ctx.nq_l2_imbalance;
+                else if (sym == "DJ30.F")                                 tr.l2_imbalance = g_macro_ctx.us30_l2_imbalance;
+                else if (sym == "USOIL.F" || sym == "BRENT")              tr.l2_imbalance = g_macro_ctx.cl_l2_imbalance;
+                else if (sym == "EURUSD")                                 tr.l2_imbalance = g_macro_ctx.eur_l2_imbalance;
+                else if (sym == "GBPUSD")                                 tr.l2_imbalance = g_macro_ctx.gbp_l2_imbalance;
+                else if (sym == "AUDUSD")                                 tr.l2_imbalance = g_macro_ctx.aud_l2_imbalance;
+                else if (sym == "NZDUSD")                                 tr.l2_imbalance = g_macro_ctx.nzd_l2_imbalance;
+                else if (sym == "USDJPY")                                 tr.l2_imbalance = g_macro_ctx.jpy_l2_imbalance;
+                else if (sym == "GER40")                                  tr.l2_imbalance = g_macro_ctx.ger40_l2_imbalance;
+            }
+        }
+    }
+
     // ?? PNL SANITY CAP ???????????????????????????????????????????????????????????
     // Catches inflated PnL from stale carry-over positions opened in a prior session
     // that close during the current session after repeated reconnects.
@@ -1252,6 +1281,33 @@ static double enter_directional(
             std::printf("[REGIME-BLOCK] %s %s blocked -- engine class weight=0 in regime=%s\n",
                         esym, is_long ? "LONG" : "SHORT",
                         g_regime_adaptor.last_regime.c_str());
+        }
+        return 0.0;
+    }
+
+    // ?? L2 liveness hard gate -- XAUUSD requires live DOM data ??????????
+    // L2 DOM is core signal infrastructure for XAUUSD entries:
+    //   - imbalance gates MacroCrash, GoldFlow, bracket arming
+    //   - microprice_bias feeds edge score
+    //   - wall/vacuum gates entry_score_l2
+    // If L2 is dead (gold_l2_real=false), ALL of these run on stale 0.500
+    // values. Every entry is effectively blind. Block until L2 recovers.
+    // Non-gold symbols: use ctrader_l2_live (any DOM event = ok).
+    if (sv == "XAUUSD" && !g_macro_ctx.gold_l2_real) {
+        static thread_local int64_t s_l2_block_log = 0;
+        if (nowSec() - s_l2_block_log > 30) {
+            s_l2_block_log = nowSec();
+            printf("[L2-DEAD-BLOCK] XAUUSD entry blocked -- gold_l2_real=0, waiting for DOM\n");
+            fflush(stdout);
+        }
+        return 0.0;
+    }
+    if (sv != "XAUUSD" && !g_macro_ctx.ctrader_l2_live) {
+        static thread_local int64_t s_l2_idx_log = 0;
+        if (nowSec() - s_l2_idx_log > 30) {
+            s_l2_idx_log = nowSec();
+            printf("[L2-DEAD-BLOCK] %s entry blocked -- ctrader_l2_live=0, waiting for DOM\n", esym);
+            fflush(stdout);
         }
         return 0.0;
     }
