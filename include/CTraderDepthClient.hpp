@@ -1489,9 +1489,9 @@ private:
                            (unsigned long long)fld.varint);
                 }
                 const uint64_t qid=PB::get_varint(qf,1);
-                const uint64_t sz =PB::get_varint(qf,3);
-                const uint64_t bid=PB::get_varint(qf,4);
-                const uint64_t ask=PB::get_varint(qf,5);
+                const uint64_t sz =PB::get_varint(qf,2);
+                const uint64_t bid=PB::get_varint(qf,3);
+                const uint64_t ask=PB::get_varint(qf,4);
                 printf("  -> id=%llu sz=%llu bid=%llu ask=%llu price=%.5f\n",
                        (unsigned long long)qid,
                        (unsigned long long)sz,
@@ -1514,8 +1514,8 @@ private:
         auto& book = depth_books_[name];
         for (const auto& qb : PB::get_repeated_bytes(fields, 4)) {
             const auto qf = PB::parse(qb);
-            const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,3);
-            const uint64_t bid=PB::get_varint(qf,4), ask=PB::get_varint(qf,5);
+            const uint64_t id=PB::get_varint(qf,1), sz=PB::get_varint(qf,2);
+            const uint64_t bid=PB::get_varint(qf,3), ask=PB::get_varint(qf,4);
             if (!id) continue;  // id=0 is invalid
             // cTrader sends real sizes for all symbols including XAUUSD.
             // sz is in cents (sz=200 = 2 lots). Default to 100 (1 lot) if
@@ -1548,25 +1548,12 @@ private:
         // Hot path: write atomic derived scalars -- zero lock, zero contention with FIX tick
         //
         // IMBALANCE SIGNAL SELECTION:
-        // BlackBull Markets sends size_raw=0 on all XAUUSD depth quotes. The parse
-        // path substitutes eff_sz=100 (1 lot) per level so the book is never empty,
-        // but this makes bid_vol == ask_vol == N×1.0 whenever bid_count == ask_count,
-        // producing imbalance()=0.500 permanently. GoldFlowEngine thresholds are
-        // 0.75 (long) and 0.25 (short) -- 0.500 never satisfies either, silencing
-        // the entire engine for the whole session.
-        //
-        // FIX: use imbalance_level() = bid_count/(bid_count+ask_count).
-        // This counts how many price levels are active on each side regardless of size.
-        // When the DOM has 4 bid levels and 1 ask level, the market is bid-heavy (0.80).
-        // When the DOM has 1 bid and 4 ask, it is ask-heavy (0.20).
-        // This is the only reliable directional DOM signal available from BlackBull.
-        //
-        // imbalance() (volume-based) is preserved for brokers that send real sizes.
-        // imbalance_level() is used here because it works correctly for ALL brokers.
-        // Use book.raw_imbalance() -- counts ALL bid/ask quotes in the incremental DOM.
-        // rebuilt.imbalance_level() uses to_l2book() which caps at 5 levels per side.
-        // cTrader XAUUSD DOM has ≥5 levels per side always → bid_count==ask_count==5
-        // → imbalance_level() = 5/10 = 0.500 permanently. Raw counts bypass the cap.
+        // ProtoOADepthQuote fields: id=1, size=2, bid=3, ask=4.
+        // raw_imbalance() = raw_bid_count / (raw_bid_count + raw_ask_count) across all
+        // quotes in the incremental DOM -- counts ALL active quote IDs on each side.
+        // cTrader XAUUSD DOM delivers ≥5 levels per side; to_l2book() caps at 5,
+        // so imbalance_level() = 5/10 = 0.500 permanently when both sides are full.
+        // raw_imbalance() uses the uncapped incremental book -- real signal.
         if (atomic_l2_write_fn) {
             atomic_l2_write_fn(name,
                 book.raw_imbalance(),
