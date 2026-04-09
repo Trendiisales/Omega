@@ -190,7 +190,26 @@ OK "Build succeeded"
 
 # ── [6/13] Copy exe ──────────────────────────────────────────────────────────
 Step 6 13 "Copying exe..."
-Copy-Item $BuildExe $OmegaExe -Force
+# Wait for Windows to release file handle on Omega.exe before copy.
+# The process was killed in step 1 but the kernel may hold the handle
+# for several seconds after the build completes.
+$copyWait = 0
+while ($copyWait -lt 30) {
+    try {
+        Copy-Item $BuildExe $OmegaExe -Force -ErrorAction Stop
+        break
+    } catch {
+        if ($copyWait -eq 0) {
+            Write-Host "      Waiting for file handle release..." -ForegroundColor DarkGray
+        }
+        Start-Sleep -Seconds 1
+        $copyWait++
+        # Re-kill any surviving process each iteration
+        taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
+        Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+}
+if ($copyWait -ge 30) { FAIL "Could not copy Omega.exe after 30s -- file handle not released" }
 OK "Omega.exe  ->  $OmegaExe"
 
 # ── [7/13] Copy config to binary working directory ───────────────────────────
