@@ -81,7 +81,19 @@ if ($LASTEXITCODE -eq 0) {
 
 # ==============================================================================
 # CHECK 2: Hard reset to origin/main -- eliminates ALL local drift
+# Log and trade CSV files are locked by Windows while Omega runs (or briefly after
+# stop). Mark them skip-worktree so git reset --hard never tries to overwrite them.
 # ==============================================================================
+$skipFiles = @(
+    "logs/latest.log",
+    "logs/omega_2026-04-09.log",
+    "logs/trades/omega_trade_opens.csv"
+)
+# Build skip-worktree list dynamically from all files under logs/
+$allLogFiles = & git -C $OmegaDir ls-files logs/ 2>$null
+foreach ($lf in $allLogFiles) {
+    & git -C $OmegaDir update-index --skip-worktree $lf 2>$null | Out-Null
+}
 $resetOut = & git -C $OmegaDir reset --hard origin/main 2>&1
 if ($LASTEXITCODE -eq 0) {
     Pass "Git reset" "reset --hard origin/main: $($resetOut | Select-Object -Last 1)"
