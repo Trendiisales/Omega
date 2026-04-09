@@ -2421,43 +2421,15 @@ static void on_tick_gold(
                 const bool counter_trend = (gf_long && bar_trend == -1) ||
                                            (!gf_long && bar_trend == +1);
                 if (counter_trend) {
-                    // RELAXED: require trend to be established for >= 5 bars before blocking.
-                    // A single EMA9/EMA50 crossover can reverse on the very next bar --
-                    // using it to block GoldFlow causes missing the entire first leg of
-                    // a move (3-15 min lag). Require confirmed trend before blocking.
-                    static int s_counter_bars = 0;
-                    static int s_last_trend   = 0;
-                    if (bar_trend != s_last_trend) { s_counter_bars = 0; s_last_trend = bar_trend; }
-                    ++s_counter_bars;
-
-                    if (s_counter_bars >= 2) {  // 2 bars = crossover confirmed, not a single-bar fake
-                    // ATR-proportional counter-trend RSI gate.
-                    const double ct_atr_scale = std::min(2.5, std::max(1.0, gf_atr_gate / 5.0));
-                    const double ct_ob = 50.0 + 10.0 * ct_atr_scale;
-                    const double ct_os = 50.0 - 10.0 * ct_atr_scale;
-                    const bool rsi_extreme = gf_long ? (bar_rsi > ct_ob) : (bar_rsi < ct_os);
-                    if (!rsi_extreme) {
-                        printf("[GF-BAR-BLOCK] XAUUSD %s blocked -- counter-trend (M1=%+d for %d bars)"
-                               " RSI=%.1f not extreme enough (ob=%.0f os=%.0f)\n",
-                               gf_long ? "LONG" : "SHORT", bar_trend, s_counter_bars,
-                               bar_rsi, ct_ob, ct_os);
-                        fflush(stdout);
-                        gf_tick_ok = false;
-                        gf_block_reason = "COUNTER_TREND";
-                    }
-                    } else {
-                        static int64_t s_ct_log = 0;
-                        if (nowSec() - s_ct_log >= 20) {
-                            s_ct_log = nowSec();
-                            printf("[GF-BAR-INFO] XAUUSD %s counter-trend (M1=%+d) only %d/2 bars -- not blocking yet\n",
-                                   gf_long ? "LONG" : "SHORT", bar_trend, s_counter_bars);
-                            fflush(stdout);
-                        }
-                    }
-                } else {
-                    // Not counter-trend — reset counter
-                    static int s_last_t2 = 0;
-                    if (bar_trend != s_last_t2) s_last_t2 = bar_trend;
+                    // EMA9/EMA50 crossover IS the signal. No bar-count delay.
+                    // EWM smoothing on the EMAs already prevents single-tick false crossovers.
+                    // If bar_trend == -1, EMA9 < EMA50: downtrend is confirmed. Block LONG immediately.
+                    // If bar_trend == +1, EMA9 > EMA50: uptrend is confirmed. Block SHORT immediately.
+                    printf("[GF-BAR-BLOCK] XAUUSD %s blocked -- counter-trend M1=%+d (EMA9 vs EMA50)\n",
+                           gf_long ? "LONG" : "SHORT", bar_trend);
+                    fflush(stdout);
+                    gf_tick_ok = false;
+                    gf_block_reason = "COUNTER_TREND";
                 }
             }
 
