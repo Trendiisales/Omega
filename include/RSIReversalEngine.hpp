@@ -57,6 +57,11 @@ public:
     double PRICE_CONFIRM_PTS  = 1.0;   // price must move >1pt since RSI extreme before entry
     double L2_EXIT_THRESHOLD  = 0.50;  // L2 imbalance crosses 0.5 = DOM flipped
     double L2_EXIT_MIN_PROFIT = 0.50;  // min pts profit before L2 flip exit fires
+    // Chop filters -- block entries when market is ranging with no direction
+    double MIN_BAR_ATR        = 2.5;   // M1 bar ATR must be >2.5pts (chop = <2pts)
+    double MIN_RSI_MOVE       = 5.0;   // RSI must have moved 5pts before reversal
+    bool   REQUIRE_ATR_EXPAND = true;  // block if ATR contracting (range shrinking)
+    bool   BLOCK_BB_SQUEEZE   = true;  // block entries during BB squeeze (coiling)
     double RSI_EXIT_LONG      = 55.0;  // exit LONG when tick RSI reaches 55
     double RSI_EXIT_SHORT     = 45.0;  // exit SHORT when tick RSI reaches 45
     int    RSI_PERIOD         = 14;
@@ -133,6 +138,38 @@ public:
         if (spread > MAX_SPREAD_PTS)        return;
         if (m_tick_atr < MIN_ATR_PTS)       return;
         if (m_rsi_count < RSI_PERIOD + 2)   return;
+
+        // ?? Chop filters -- prevent entries in ranging/coiling markets ??????????
+        // Bar ATR gate: M1 true range ATR must show real movement
+        if (m_bar_atr > 0.0 && m_bar_atr < MIN_BAR_ATR) {
+            static int64_t s_chop_log = 0;
+            if (now_ms/1000 - s_chop_log >= 10) {
+                s_chop_log = now_ms/1000;
+                printf("[RSI-REV-BLOCK] chop: bar_atr=%.2f < %.2f\n", m_bar_atr, MIN_BAR_ATR);
+                fflush(stdout);
+            }
+            return;
+        }
+        // BB squeeze: price coiling, no direction yet -- wait for breakout
+        if (BLOCK_BB_SQUEEZE && m_bb_squeeze) {
+            static int64_t s_sq_log = 0;
+            if (now_ms/1000 - s_sq_log >= 10) {
+                s_sq_log = now_ms/1000;
+                printf("[RSI-REV-BLOCK] chop: BB_SQUEEZE active\n");
+                fflush(stdout);
+            }
+            return;
+        }
+        // ATR contracting: move is losing momentum -- risky entry
+        if (REQUIRE_ATR_EXPAND && !m_atr_expanding && m_bar_atr > 0.0) {
+            static int64_t s_atr_log = 0;
+            if (now_ms/1000 - s_atr_log >= 10) {
+                s_atr_log = now_ms/1000;
+                printf("[RSI-REV-BLOCK] chop: ATR contracting\n");
+                fflush(stdout);
+            }
+            return;
+        }
 
         // Entry: pure RSI direction change -- no fixed thresholds.
         // RSI was falling and now turns up -> LONG
@@ -267,6 +304,14 @@ public:
         }
     }
     double tick_atr() const noexcept { return m_tick_atr; }
+    // Inject bar context for chop filtering -- called each tick from tick_gold
+    void set_bar_context(double bar_atr, bool atr_expanding,
+                         bool bb_squeeze, bool adx_trending) noexcept {
+        m_bar_atr       = bar_atr;
+        m_atr_expanding = atr_expanding;
+        m_bb_squeeze    = bb_squeeze;
+        m_adx_trending  = adx_trending;
+    }
 
 private:
     double  m_tick_rsi      = 50.0;
@@ -279,6 +324,11 @@ private:
     double  m_price_at_extreme = 0.0; // price when RSI hit its extreme (for confirmation)
     double  m_l2_at_entry   = 0.5;   // L2 imbalance at entry (for flip detection)
     double  m_last_l2       = 0.5;   // most recent L2 imbalance (updated every tick)
+    // Bar indicators injected from g_bars_gold.m1.ind -- used for chop filtering
+    double  m_bar_atr       = 0.0;   // M1 bar ATR14
+    bool    m_atr_expanding = false; // ATR expanding (directional move)
+    bool    m_bb_squeeze    = false; // BB squeeze (coiling, not trending)
+    bool    m_adx_trending  = false; // ADX >= 25 (real trend)
     double  m_rsi_avg_gain  = 0.0;
     double  m_rsi_avg_loss  = 0.0;
     bool    m_rsi_init      = false;
