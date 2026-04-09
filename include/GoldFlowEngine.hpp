@@ -1604,6 +1604,24 @@ private:
     double  m_bar_bb_pct    = 0.5;  // M1 Bollinger %B -- 0=lower band, 1=upper band
     int64_t m_sl_suppress_start_ms = 0; // when SL suppression started (0=not suppressing)
 
+    // ?? Post-exit opposite-direction bounce block ???????????????????????????????????
+    // After a profitable exit (TRAIL_HIT or P1-BANK), GFlow was immediately re-entering
+    // in the OPPOSITE direction on the dead-cat bounce back toward the exit price.
+    // Both bad longs (09:03, 09:51) fired within 3 minutes of profitable shorts,
+    // on bounces of 2-4pts -- not genuine reversals.
+    //
+    // Gate: block opposite direction for OPP_DIR_BLOCK_MS after any profitable exit
+    // UNLESS price has moved OPP_DIR_ESCAPE_PTS away from exit price -- confirming
+    // it's a genuine new move, not a bounce.
+    //
+    // This preserves fast re-entry on strong trending moves (price escapes quickly)
+    // while blocking dead-cat entries on ranging bounces.
+    static constexpr int64_t OPP_DIR_BLOCK_MS    = 120000; // 120s opposite-direction block after profitable exit
+    static constexpr double  OPP_DIR_ESCAPE_PTS  = 2.0;    // pts price must move from exit to lift block early
+    int64_t m_last_profitable_exit_ms    = 0;    // epoch ms of last profitable exit
+    bool    m_last_profitable_exit_long  = false; // direction of last profitable exit
+    double  m_last_profitable_exit_price = 0.0;  // exit price (mid) for distance check
+
     // ?? Reload state ??????????????????????????????????????????????????????????
     // Armed when PARTIAL_1R fires (step 1 of staircase banks first 33%).
     // main.cpp reads reload_pending() each tick and calls try_reload() when:
@@ -1760,6 +1778,36 @@ private:
         const double asia_sl_floor = is_asia_session ? GFE_ASIA_SL_MIN_PTS : 0.0;
         const double sl_pts  = std::max({atr_sl, min_sl, asia_sl_floor});
         if (sl_pts <= 0.0) return;
+
+        // ?? Opposite-direction bounce block ?????????????????????????????????????
+        // After a profitable exit, block the OPPOSITE direction unless:
+        //   (a) OPP_DIR_BLOCK_MS has elapsed, OR
+        //   (b) price has moved OPP_DIR_ESCAPE_PTS from exit price (genuine new move)
+        // Prevents dead-cat re-entries on the bounce back to the exit zone.
+        if (m_last_profitable_exit_ms > 0) {
+            const bool is_opposite = (is_long != m_last_profitable_exit_long);
+            if (is_opposite) {
+                const int64_t ms_since_exit = now_ms - m_last_profitable_exit_ms;
+                if (ms_since_exit < OPP_DIR_BLOCK_MS) {
+                    // Check if price has escaped far enough to lift block early
+                    const double dist_from_exit = std::fabs(mid - m_last_profitable_exit_price);
+                    if (dist_from_exit < OPP_DIR_ESCAPE_PTS) {
+                        printf("[GFE-OPP-BLOCK] Opposite-direction blocked: "
+                               "last_exit=%s@%.2f %.1fs ago price_dist=%.2fpts < %.1fpts escape\n",
+                               m_last_profitable_exit_long ? "LONG" : "SHORT",
+                               m_last_profitable_exit_price,
+                               ms_since_exit / 1000.0,
+                               dist_from_exit,
+                               OPP_DIR_ESCAPE_PTS);
+                        return;
+                    }
+                    // Price escaped -- log early lift and allow entry
+                    printf("[GFE-OPP-BLOCK] Block lifted early: dist=%.2fpts >= %.1fpts escape "
+                           "after %.1fs\n",
+                           dist_from_exit, OPP_DIR_ESCAPE_PTS, ms_since_exit / 1000.0);
+                }
+            }
+        }
 
         // Size: fixed dollar risk / SL_pts
         // 1 lot gold = $100/pt at BlackBull.
@@ -2747,6 +2795,13 @@ private:
             m_continuation_expires_ms = now_ms + GFE_COOLDOWN_MS * 3; // 90s
         } else {
             m_continuation_mode = false;
+        }
+
+        // Record profitable exit for opposite-direction bounce block
+        if (was_profitable && tr.pnl > 0.0) {
+            m_last_profitable_exit_ms    = now_ms;
+            m_last_profitable_exit_long  = pos.is_long;
+            m_last_profitable_exit_price = (pos.is_long ? tr.exit_px : tr.exit_px); // mid ~ exit_px
         }
 
         pos             = OpenPos{};
