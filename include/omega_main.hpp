@@ -446,7 +446,6 @@ int main(int argc, char* argv[])
         }
 
         g_ctrader_depth.start();
-        g_real_dom_receiver.start();  // connect to OmegaDomStreamer cBot on port 8765
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
 
         // ?? Symbol subscription cross-check ??????????????????????????????????
