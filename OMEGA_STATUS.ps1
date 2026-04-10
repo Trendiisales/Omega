@@ -95,12 +95,12 @@ if ($builtHash -eq $gitHash -and $gitHash -eq $runningHash) {
 
 # ── SECTION 2: Service state ────────────────────────────────────────────────
 Hdr "2. SERVICE STATE"
-$svc = Get-Service -Name "OmegaHFT" -ErrorAction SilentlyContinue
+$svc = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
 if ($svc) {
-    if ($svc.Status -eq "Running") { OK "OmegaHFT service" "Running" }
-    else { FAIL "OmegaHFT service" "$($svc.Status)  [NOT RUNNING -- run .\RESTART_OMEGA.ps1]" }
+    if ($svc.Status -eq "Running") { OK "Omega service" "Running" }
+    else { FAIL "Omega service" "$($svc.Status)  [NOT RUNNING -- run .\RESTART_OMEGA.ps1]" }
 } else {
-    FAIL "OmegaHFT service" "NOT INSTALLED"
+    FAIL "Omega service" "NOT INSTALLED"
 }
 $proc = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
 if ($proc) { OK "Omega.exe process" "PID $($proc.Id)  CPU=$([math]::Round($proc.CPU,1))s  Mem=$([math]::Round($proc.WorkingSet64/1MB,0))MB" }
