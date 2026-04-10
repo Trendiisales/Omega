@@ -167,9 +167,12 @@ if ($svc -and $svc.Status -eq "Running") {
 taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
 Start-Sleep -Seconds 1
 
-# Step 1c: Kill any survivors
+# Step 1c: Kill any survivors including MSBuild/compiler holding obj files
 Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 1
+Get-Process -Name "MSBuild" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "cl" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "link" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
 
 # Step 1d: CONFIRM dead -- hard loop, fail if process survives 20s
 # This is the critical check that was missing. The singleton mutex in Omega
@@ -309,6 +312,11 @@ OK "Version stamp written (hash $guiHash confirmed)"
 Step 5 13 "Building Omega only..."
 $ErrorActionPreference = "Continue"
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
+
+# Delete all .obj and .pch files -- prevents Permission denied on locked build artifacts
+Get-ChildItem "$OmegaDir\build" -Recurse -Include "*.obj","*.pch","*.pdb" -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+Write-Host "      Cleaned stale build artifacts" -ForegroundColor DarkGray
 
 # Run cmake --build in foreground (-Wait, no redirection) so progress is visible
 # --target Omega builds only Omega.vcxproj, skipping OmegaBacktest and CandleFlowL2Bt
