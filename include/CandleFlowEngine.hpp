@@ -13,7 +13,7 @@
 //
 //  Exit conditions:
 //    Primary: L2 imbalance flips against position for >= 2 consecutive ticks
-//             imbalance threshold = 0.05 (calibrated to BlackBull level-count data)
+//             imbalance threshold = 0.05 (calibrated to cTrader level-count data)
 //             OR imbalance against for >= 1 tick AND depth drop on support side
 //    Safety:  move < cost * 1.0 within 60s stagnation window
 //    Hard SL: 1x ATR behind entry
