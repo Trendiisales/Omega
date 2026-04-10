@@ -268,17 +268,14 @@ if ($gitHash -ne $remoteHash) {
 OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
-Step 3 13 "Wiping build directory..."
-if (Test-Path "$OmegaDir\build") {
-    Get-ChildItem "$OmegaDir\build" -Recurse -Include "*.obj","*.pch" -ErrorAction SilentlyContinue | ForEach-Object {
-        cmd /c "takeown /f `"$($_.FullName)`" >nul 2>&1"
-        cmd /c "icacls `"$($_.FullName)`" /grant administrators:F >nul 2>&1"
-        cmd /c "del /f /q `"$($_.FullName)`" >nul 2>&1"
-    }
-    Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
+Step 3 13 "Checking build directory..."
+# Never wipe the build directory -- cmake cache must be preserved.
+# cmake incremental build handles all source changes automatically.
+if (-not (Test-Path "$OmegaDir\build")) {
+    New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
+    Write-Host "      [NOTE] Fresh build directory created -- first build will be full rebuild" -ForegroundColor Yellow
 }
-New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
-OK "Build directory clean"
+OK "Build directory ready"
 
 # ── [4/13] cmake configure ───────────────────────────────────────────────────
 Step 4 13 "cmake configure..."
