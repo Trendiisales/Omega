@@ -1048,16 +1048,10 @@ private:
             if (bar_send_idx < bar_send_queue.size() && now >= bar_send_next) {
                 const auto& req = bar_send_queue[bar_send_idx];
                 if (req.is_spots) {
-                    // CRITICAL: skip spots sub for XAUUSD -- it was already sent before
-                    // the depth subscription. Sending it again here (10s later) cancels
-                    // the broker-side depth stream for XAUUSD, producing zero depth events.
-                    // All other symbols are safe to re-subscribe here.
-                    if (req.name == "XAUUSD") {
-                        std::cout << "[CTRADER-BARS] XAUUSD spots sub SKIPPED (already sent pre-depth)\n";
-                    } else {
-                    send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, req.sid));
-                    std::cout << "[CTRADER-BARS] " << req.name << " spots sub sent\n";
-                    }
+                    // ALL spots subs removed -- BlackBull drops TCP connection on spots sub
+                    // for XAUUSD and potentially other symbols too. Depth events (pt=2155)
+                    // flow without spots sub. Bars come from disk seed. No spots sub needed.
+                    std::cout << "[CTRADER-BARS] " << req.name << " spots sub SKIPPED (BlackBull TCP drop)\n";
                 } else if (req.is_live) {
                     send_msg(ssl, PB::subscribe_live_trendbar_req(ctid_account_id, req.sid, req.period));
                     std::cout << "[CTRADER-BARS] " << req.name << " live trendbar sub period=" << req.period << "\n";
