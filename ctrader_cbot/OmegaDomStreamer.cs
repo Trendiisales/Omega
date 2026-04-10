@@ -21,8 +21,7 @@ namespace cAlgo.Robots
         [Parameter("Port", DefaultValue = 8765)]
         public int Port { get; set; }
 
-        [Parameter("Symbol", DefaultValue = "XAUUSD")]
-        public string TargetSymbol { get; set; }
+        public string TargetSymbol { get { return "XAUUSD"; } }  // hardcoded -- never changes on reboot
 
         [Parameter("Max DOM Levels", DefaultValue = 20)]
         public int MaxLevels { get; set; }
