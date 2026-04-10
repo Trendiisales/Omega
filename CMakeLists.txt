@@ -44,7 +44,7 @@ add_executable(Omega ${SOURCES})
 # omega_pch.hpp contains all stable Windows/OpenSSL/STL includes.
 # Omega .hpp engine headers are NOT in the PCH -- they change often and would
 # invalidate it constantly. Only rebuild PCH when omega_pch.hpp itself changes.
-target_precompile_headers(Omega PRIVATE include/omega_pch.hpp)
+# target_precompile_headers(Omega PRIVATE include/omega_pch.hpp)  # disabled: LNK1181 cmake_pch.obj path mismatch on clean MSVC builds
 
 target_include_directories(Omega PRIVATE
     ${CMAKE_SOURCE_DIR}
