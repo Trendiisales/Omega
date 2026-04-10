@@ -6,9 +6,9 @@
 #  Steps (in order, every run):
 #    1.  Stop Omega (service + process kill, both)
 #    2.  Pull latest from GitHub (hard reset origin/main)
-#    3.  Wipe build directory (no stale objects)
+#    3.  Wipe build directory (ALWAYS -- prevents locked obj file cascade)
 #    4.  cmake configure (regenerates version_generated.hpp)
-#    5.  cmake build (compile, fail hard on error)
+#    5.  MSBuild direct (vswhere discovery, fallback cmake --build)
 #    6.  Copy Omega.exe to C:\Omega\Omega.exe
 #    7.  Copy config\omega_config.ini to C:\Omega\omega_config.ini (binary cwd)
 #    8.  Copy symbols.ini to C:\Omega\symbols.ini (binary cwd)
@@ -52,9 +52,6 @@ Banner "OMEGA  |  RESTART + REBUILD"
 
 # ==============================================================================
 # STEP 0: GitHub API verification -- RUNS BEFORE EVERYTHING ELSE
-# If the local tree does not match GitHub API HEAD, fail immediately.
-# No stop, no wipe, no build, no wasted time.
-# Uses the contents API directly -- never raw.githubusercontent.com (CDN-cached).
 # ==============================================================================
 Write-Host "[0/13] GitHub API pre-flight check..." -ForegroundColor Yellow
 Write-Host ""
@@ -103,10 +100,7 @@ if ($localSha7 -ne $ghSha7) {
     Write-Host "  [OK] Local HEAD matches GitHub API HEAD" -ForegroundColor Green
 }
 
-# Verify the critical files Claude pushes are byte-for-byte correct on GitHub
-# by fetching each via the contents API and checking size + blob SHA.
-# This catches the exact failure mode where raw.githubusercontent.com served
-# a cached stale file while the API had the correct version.
+# Verify key file integrity on GitHub via contents API
 Write-Host ""
 Write-Host "  [API] Verifying key file integrity on GitHub..." -ForegroundColor Cyan
 $filesToCheck = @(
@@ -150,7 +144,6 @@ $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -eq "Running") {
     Write-Host "      Stopping $ServiceName service..." -ForegroundColor DarkGray
     Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
-    # Wait up to 15s for service to reach Stopped state
     $svcWait = 0
     while ($svcWait -lt 15) {
         Start-Sleep -Seconds 1; $svcWait++
@@ -168,11 +161,7 @@ Start-Sleep -Seconds 1
 Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 
-# Step 1d: CONFIRM dead -- hard loop, fail if process survives 20s
-# This is the critical check that was missing. The singleton mutex in Omega
-# can persist several seconds after NSSM sends the stop signal. If we
-# start the service while the old process still holds the mutex, the new
-# exe hits ERROR_ALREADY_EXISTS and exits immediately -- service fails to start.
+# Step 1d: CONFIRM dead
 Write-Host "      Confirming Omega.exe is gone..." -ForegroundColor DarkGray
 $killWait = 0
 while ($killWait -lt 20) {
@@ -188,22 +177,21 @@ if ($finalCheck) {
     FAIL "Omega.exe still running after 20s kill attempts (PID $($finalCheck.Id)) -- cannot proceed"
 }
 
-# Hard settle wait: process exit and kernel handle release are not synchronous.
-# GetProcess returning nothing means the process object is gone, NOT that the
-# kernel has closed all file handles (exe mapping, NSSM monitor handles, etc).
-# 3 seconds is enough for Windows to fully release all handles on the exe.
-# Without this, Copy-Item in step 6 races the kernel and loses intermittently.
+# Also kill any lingering MSBuild/cl.exe processes that may be holding obj locks
+Write-Host "      Killing any lingering build tool processes..." -ForegroundColor DarkGray
+Get-Process -Name "MSBuild"  -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "cl"       -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "link"     -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "cmake"    -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+
 Write-Host "      Process gone -- waiting 3s for kernel handle release..." -ForegroundColor DarkGray
 Start-Sleep -Seconds 3
 
 $ErrorActionPreference = "Stop"
 OK "Stopped and confirmed dead"
 
-# ── POST-KILL: remove runtime files from git index so reset never blocks ────
-# These files (logs, .dat, .csv, .txt) are written by the engine at runtime.
-# They must not be tracked. We force-remove them from the index every restart.
-# git rm --cached removes from index without deleting from disk.
-# After this git reset --hard has nothing to conflict with.
+# ── POST-KILL: remove runtime files from git index ────────────────────────────
 $ErrorActionPreference = "Continue"
 $stagedFiles = git ls-files --cached -- "logs/" "*.dat" "*.csv" "*.txt" 2>$null
 foreach ($sf in $stagedFiles) {
@@ -216,20 +204,10 @@ OK "Runtime files removed from git index"
 
 
 # ── [2/13] Pull ──────────────────────────────────────────────────────────────
-# GUARANTEED FRESH PULL:
-# 1. fetch brings remote refs up to date
-# 2. reset --hard forces local tree to match origin/main exactly
-# 3. We read the remote hash directly from git and compare to local HEAD
-#    If they don't match the reset failed (e.g. locked files) -- HARD FAIL
-#    Never build from a stale tree. Ever.
 Step 2 13 "Pulling origin/main..."
 Set-Location $OmegaDir
 $ErrorActionPreference = "Continue"
 
-# Fetch via HTTPS with token -- works under SYSTEM account (no SSH key required)
-# SSH fetch fails when Omega runs as a Windows service because the SYSTEM/service
-# account has no ~/.ssh/id_rsa registered with GitHub. HTTPS+token is always available.
-# Token stored in C:\Omega\.github_token (git-ignored). Falls back to SSH if absent.
 $tokenFile = "C:\Omega\.github_token"
 if (Test-Path $tokenFile) {
     $token = (Get-Content $tokenFile -Raw).Trim()
@@ -241,58 +219,69 @@ if (Test-Path $tokenFile) {
 }
 
 git fetch origin 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-
-# Hard reset
 git reset --hard origin/main 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 
-# Restore SSH remote after fetch so local git commands stay clean
+# Restore SSH remote after fetch
 git remote set-url origin git@github.com:Trendiisales/Omega.git 2>&1 | Out-Null
 
 $ErrorActionPreference = "Stop"
 
-# Get local HEAD hash after reset
-$gitHash = (git log --format="%h" -1).Trim()
-$gitMsg  = (git log --format="%s" -1).Trim()
-
-# Get remote HEAD hash directly -- this is what we MUST be building
+$gitHash    = (git log --format="%h" -1).Trim()
+$gitMsg     = (git log --format="%s" -1).Trim()
 $remoteHash = (git rev-parse --short origin/main).Trim()
 
-# HARD FAIL if local does not match remote -- reset did not take
 if ($gitHash -ne $remoteHash) {
     Write-Host "  [!!] PULL FAILED: local=$gitHash remote=$remoteHash" -ForegroundColor Red
-    Write-Host "       Files were likely locked by the running service." -ForegroundColor Red
-    Write-Host "       Ensure Stop-Service ran before RESTART_OMEGA.ps1" -ForegroundColor Red
     FAIL "Local tree does not match origin/main after reset -- cannot build stale code"
 }
 
 OK "HEAD: $gitHash  -- $gitMsg"
 
-# ── [3/13] Wipe build ────────────────────────────────────────────────────────
-Step 3 13 "Checking build directory..."
-# Never wipe the build directory -- cmake cache must be preserved.
-# cmake incremental build handles all source changes automatically.
-if (-not (Test-Path "$OmegaDir\build")) {
-    New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
-    Write-Host "      [NOTE] Fresh build directory created -- first build will be full rebuild" -ForegroundColor Yellow
+# ── [3/13] Wipe build directory ──────────────────────────────────────────────
+# ALWAYS wipe. No exceptions. No "preserve cache" optimization.
+# Locked .obj/.pch files from crashed builds are fatal -- they silently produce
+# stale binaries or hang the compiler. The extra 30s cmake configure is always
+# worth paying versus the alternative of a 6-hour locked-obj debugging session.
+Step 3 13 "Wiping build directory (ALWAYS -- prevents locked obj cascade)..."
+$ErrorActionPreference = "Continue"
+if (Test-Path "$OmegaDir\build") {
+    # Remove-Item on locked files will fail. Use robocopy mirror-to-empty trick
+    # which handles locked handles more gracefully than rm -rf on Windows.
+    $emptyDir = "$env:TEMP\omega_empty_wipe"
+    New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+    # robocopy /MIR mirrors empty dir over build dir, deleting all contents
+    # Exit code 1 = files copied (expected on empty->populated), not an error
+    $roboExit = (Start-Process robocopy -ArgumentList "`"$emptyDir`" `"$OmegaDir\build`" /MIR /NFL /NDL /NJH /NJS" -Wait -PassThru -NoNewWindow).ExitCode
+    # robocopy exit codes: 0=no files, 1=files copied, 2=extra files, 3=both, 4+=errors
+    if ($roboExit -ge 8) {
+        Write-Host "      robocopy wipe failed (exit $roboExit) -- falling back to Remove-Item" -ForegroundColor Yellow
+        Remove-Item "$OmegaDir\build" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item "$OmegaDir\build" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-OK "Build directory ready"
+New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
+$ErrorActionPreference = "Stop"
+OK "Build directory wiped and recreated"
 
 # ── [4/13] cmake configure ───────────────────────────────────────────────────
+# Always runs -- build dir is always fresh after step 3
 Step 4 13 "cmake configure..."
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
 $ErrorActionPreference = "Continue"
-# Only run cmake configure if cache is missing
-if (-not (Test-Path "$OmegaDir\build\CMakeCache.txt")) {
-    Write-Host "      Fresh build dir -- running cmake configure..." -ForegroundColor DarkGray
-    $cmakeCfgLog = "$env:TEMP\omega_cmake_cfg.txt"
-    $cmakeCfgProc = Start-Process -FilePath $CmakeExe `
-        -ArgumentList "-S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release" `
-        -WorkingDirectory $OmegaDir `
-        -RedirectStandardOutput $cmakeCfgLog `
-        -RedirectStandardError "$env:TEMP\omega_cmake_cfg_err.txt" `
-        -Wait -PassThru -NoNewWindow
-    $cmakeCfgExit = $cmakeCfgProc.ExitCode
-    if ($cmakeCfgExit -ne 0) { FAIL "cmake configure failed (exit $cmakeCfgExit)" }
+$cmakeCfgLog = "$env:TEMP\omega_cmake_cfg.txt"
+$cmakeCfgProc = Start-Process -FilePath $CmakeExe `
+    -ArgumentList "-S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release" `
+    -WorkingDirectory $OmegaDir `
+    -RedirectStandardOutput $cmakeCfgLog `
+    -RedirectStandardError "$env:TEMP\omega_cmake_cfg_err.txt" `
+    -Wait -PassThru -NoNewWindow
+$cmakeCfgExit = $cmakeCfgProc.ExitCode
+if ($cmakeCfgExit -ne 0) {
+    if (Test-Path "$env:TEMP\omega_cmake_cfg_err.txt") {
+        Get-Content "$env:TEMP\omega_cmake_cfg_err.txt" | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+    }
+    FAIL "cmake configure failed (exit $cmakeCfgExit)"
 }
 $verFile = "$OmegaDir\include\version_generated.hpp"
 if (-not (Test-Path $verFile)) { FAIL "version_generated.hpp not created" }
@@ -303,55 +292,100 @@ if ($guiHash -ne $gitHash) { FAIL "version hash mismatch: hpp=$guiHash HEAD=$git
 OK "Configure done (hash $guiHash confirmed)"
 
 # ── [5/13] MSBuild direct ────────────────────────────────────────────────────
-Step 5 13 "cmake build..."
+# Discover MSBuild via vswhere -- the correct way, handles all VS install layouts
+# vswhere is shipped with VS 2017+ and Build Tools, always at this fixed path
+Step 5 13 "Building with MSBuild..."
 $ErrorActionPreference = "Continue"
-# Use MSBuild directly on the vcxproj -- faster than cmake --build, no hanging
-$msbuild = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
-if (-not (Test-Path $msbuild)) {
-    # Fall back to cmake --build if MSBuild not found
-    $msbuild = $null
+
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$msbuild  = $null
+
+if (Test-Path $vswhere) {
+    $vsInstallPath = & $vswhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" 2>$null | Select-Object -First 1
+    if ($vsInstallPath -and (Test-Path $vsInstallPath)) {
+        $msbuild = $vsInstallPath
+        Write-Host "      MSBuild found via vswhere: $msbuild" -ForegroundColor DarkGray
+    }
 }
+
+# Fallback: check common fixed paths if vswhere didn't find it
+if (-not $msbuild) {
+    $msbuildCandidates = @(
+        "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+        "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
+        "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+    )
+    foreach ($candidate in $msbuildCandidates) {
+        if (Test-Path $candidate) {
+            $msbuild = $candidate
+            Write-Host "      MSBuild found at fallback path: $msbuild" -ForegroundColor DarkGray
+            break
+        }
+    }
+}
+
+$bldLog    = "$env:TEMP\omega_bld.txt"
+$bldErrLog = "$env:TEMP\omega_bld_err.txt"
+
 if ($msbuild) {
-    $bldLog = "$env:TEMP\omega_bld.txt"
+    Write-Host "      Using MSBuild direct..." -ForegroundColor DarkGray
+    # /m = parallel build, /v:m = minimal verbosity (errors + warnings + -> lines only)
+    # /p:Configuration=Release /p:Platform=x64 = explicit Release x64
+    # Build the solution file if it exists, else the vcxproj
+    $buildTarget = if (Test-Path "$OmegaDir\build\Omega.sln") {
+        "`"$OmegaDir\build\Omega.sln`""
+    } else {
+        "`"$OmegaDir\build\Omega.vcxproj`""
+    }
+    Write-Host "      Build target: $buildTarget" -ForegroundColor DarkGray
     $bldProc = Start-Process -FilePath $msbuild `
-        -ArgumentList "`"$OmegaDir\build\Omega.vcxproj`" /p:Configuration=Release /p:Platform=x64 /m /nologo /v:m" `
+        -ArgumentList "$buildTarget /p:Configuration=Release /p:Platform=x64 /m /nologo /v:m" `
         -RedirectStandardOutput $bldLog `
-        -RedirectStandardError "$env:TEMP\omega_bld_err.txt" `
+        -RedirectStandardError  $bldErrLog `
         -Wait -PassThru -NoNewWindow
     $bldExit = $bldProc.ExitCode
-    if (Test-Path $bldLog) { Get-Content $bldLog | Where-Object { $_ -match "error|->|Error" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray } }
 } else {
-    $bldLog = "$env:TEMP\omega_bld.txt"
+    # Last resort: cmake --build (may hang if obj files are locked, but we wiped them so should be safe)
+    Write-Host "      MSBuild not found -- falling back to cmake --build" -ForegroundColor Yellow
+    Write-Host "      (Install VS Build Tools to get MSBuild for faster, more reliable builds)" -ForegroundColor Yellow
     $bldProc = Start-Process -FilePath $CmakeExe `
         -ArgumentList "--build `"$OmegaDir\build`" --config Release --target Omega" `
         -RedirectStandardOutput $bldLog `
-        -RedirectStandardError "$env:TEMP\omega_bld_err.txt" `
+        -RedirectStandardError  $bldErrLog `
         -Wait -PassThru -NoNewWindow
     $bldExit = $bldProc.ExitCode
-    if (Test-Path $bldLog) { Get-Content $bldLog | Where-Object { $_ -match "error|->|Error" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray } }
 }
-if ($bldExit -ne 0)           { FAIL "Build failed (exit $bldExit)" }
+
+# Always show relevant build output lines
+if (Test-Path $bldLog) {
+    Get-Content $bldLog | Where-Object { $_ -match "error C|warning C|Error|->|Building|Linking" } |
+        ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+}
+if ($bldExit -ne 0) {
+    Write-Host "" 
+    Write-Host "  [BUILD FAILED] Full error output:" -ForegroundColor Red
+    if (Test-Path $bldLog)    { Get-Content $bldLog    | ForEach-Object { Write-Host "    $_" -ForegroundColor Red } }
+    if (Test-Path $bldErrLog) { Get-Content $bldErrLog | ForEach-Object { Write-Host "    $_" -ForegroundColor Red } }
+    FAIL "Build failed (exit $bldExit)"
+}
 if (-not (Test-Path $BuildExe)) { FAIL "$BuildExe not found after build" }
 OK "Build succeeded"
 
 # ── [6/13] Copy exe ──────────────────────────────────────────────────────────
 Step 6 13 "Copying exe..."
-# Process was confirmed dead in step 1 with a 3s kernel settle wait.
-# File handles are fully released by now -- simple copy works.
 Copy-Item $BuildExe $OmegaExe -Force -ErrorAction Stop
 OK "Omega.exe  ->  $OmegaExe"
 
 # ── [7/13] Copy config to binary working directory ───────────────────────────
 Step 7 13 "Copying config to binary working directory..."
-# MANDATORY: binary runs from C:\Omega and looks for omega_config.ini in cwd.
-# Canonical config is in config\omega_config.ini. Must copy to root every deploy.
 if (-not (Test-Path $ConfigSrc)) { FAIL "Config not found: $ConfigSrc" }
 Copy-Item $ConfigSrc $ConfigDst -Force
 OK "omega_config.ini  ->  $ConfigDst"
 
 # ── [8/13] Copy symbols.ini to binary working directory ──────────────────────
 Step 8 13 "Verifying symbols.ini in root..."
-# symbols.ini is git-tracked in root already, but ensure it's current after pull
 if (-not (Test-Path $SymbolSrc)) { FAIL "symbols.ini not found: $SymbolSrc" }
 OK "symbols.ini present at $SymbolSrc"
 
@@ -377,7 +411,6 @@ Step 11 13 "Checking service configuration..."
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc) {
     if (Test-Path $NssmExe) {
-        # Update service exe, AppDirectory, and args so it always uses current binary
         $ErrorActionPreference = "Continue"
         & $NssmExe set $ServiceName Application $OmegaExe 2>&1 | Out-Null
         & $NssmExe set $ServiceName AppDirectory $OmegaDir 2>&1 | Out-Null
@@ -417,8 +450,6 @@ if ($svc) {
     Write-Host "  Starting $ServiceName service..." -ForegroundColor Cyan
     Start-Service $ServiceName
 
-    # Wait up to 30s for service to reach Running state
-    # Do not rely on a fixed sleep -- service startup time varies 3-15s
     $startWait = 0
     while ($startWait -lt 30) {
         Start-Sleep -Seconds 1; $startWait++
@@ -431,12 +462,6 @@ if ($svc) {
     if ($svc.Status -ne "Running") { FAIL "$ServiceName failed to reach Running state after 30s" }
     OK "Omega running as service"
 } else {
-    # ── DIRECT LAUNCH (no service installed) ─────────────────────────────────
-    # CRITICAL: Never use & ".\Omega.exe" here -- that runs in the foreground
-    # and blocks PowerShell entirely, making the terminal unusable and preventing
-    # all post-launch verification steps from executing.
-    # Start-Process with -WindowStyle Hidden launches Omega as a detached background
-    # process. PowerShell continues immediately. Post-launch checks run normally.
     Write-Host "  Launching directly (hidden window, detached)..." -ForegroundColor Cyan
     Write-Host "  To stop: Get-Process Omega | Stop-Process -Force" -ForegroundColor DarkGray
     Write-Host ""
@@ -452,29 +477,12 @@ if ($svc) {
 }
 
 # ── POST-LAUNCH VERIFICATION ─────────────────────────────────────────────────
-#
-# HOW STALE LOGS ARE PREVENTED WITHOUT DELETING DATA:
-#
-#   The C++ tee buffer opens latest.log with std::ios::trunc on every startup,
-#   which resets the file to zero bytes and rewrites from the beginning.
-#   We recorded $launchTime BEFORE Start-Service was called.
-#   We wait for latest.log LastWriteTime to be NEWER than $launchTime.
-#   A file that hasn't been touched since before this restart cannot satisfy
-#   that condition. No data is deleted. No fallback to stale content is possible.
-#
-#   Additionally we wait for [OMEGA] RUNNING COMMIT: <hash> inside that file
-#   and hard-fail if the hash doesn't match HEAD. A stale file from a prior
-#   run will never contain the hash of the commit we just built.
-
 $logPath = "$OmegaDir\logs\latest.log"
 
 Write-Host ""
 Write-Host "  Waiting for engine startup and live log..." -ForegroundColor DarkGray
 
-# ── Wait for latest.log to be written by the NEW binary ──────────────────────
-# Condition: file exists AND LastWriteTime > $launchTime
-# The C++ tee truncates and rewrites on open, so LastWriteTime will flip to
-# the moment the new process first writes. That cannot happen before $launchTime.
+# Wait for latest.log to be written by the NEW binary
 $waited = 0
 $logFresh = $false
 while ($waited -lt 30) {
@@ -502,8 +510,7 @@ if (-not $logFresh) {
     FAIL "latest.log not updated by new binary within 30s -- engine did not start"
 }
 
-# ── Wait up to 90s for [OMEGA] RUNNING COMMIT: <hash> ────────────────────────
-# Prints ~10-20s into startup. We read ONLY from the file confirmed fresh above.
+# Wait up to 90s for [OMEGA] RUNNING COMMIT: <hash>
 $runningHash = "NOT_FOUND"
 $waitB = 0
 Write-Host "  Waiting for RUNNING COMMIT in latest.log (up to 90s)..." -ForegroundColor DarkGray
@@ -541,7 +548,6 @@ if ($runningHash -ne $gitHash) {
 Write-Host "  [OK] HASH VERIFIED: running=$runningHash == HEAD=$gitHash" -ForegroundColor Green
 
 # ── ENGINE CONFIG VERIFICATION ────────────────────────────────────────────────
-# Key parameters printed at startup. CRITICAL checks hard-fail if missing.
 Banner "ENGINE CONFIG VERIFICATION" "Cyan"
 
 $verifyErrors = 0
