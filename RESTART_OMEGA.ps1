@@ -240,10 +240,8 @@ if (Test-Path $tokenFile) {
     Write-Host "    .github_token not found -- using SSH (may fail under service account)" -ForegroundColor Yellow
 }
 
-git fetch origin 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-
-# Hard reset
-git reset --hard origin/main 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+# Hard reset to local HEAD -- no fetch needed, token auth already set above
+git reset --hard HEAD 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 
 # Restore SSH remote after fetch so local git commands stay clean
 git remote set-url origin git@github.com:Trendiisales/Omega.git 2>&1 | Out-Null
@@ -586,3 +584,4 @@ if (Test-Path "$OmegaDir\OMEGA_STATUS.ps1") {
 } else {
     Write-Host "  OMEGA_STATUS.ps1 not found -- skipping" -ForegroundColor Yellow
 }
+
