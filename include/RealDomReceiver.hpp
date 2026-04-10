@@ -28,20 +28,11 @@
 #include <chrono>
 #include <sstream>
 
-#ifdef _WIN32
-  #include <winsock2.h>
-  #include <ws2tcpip.h>
-  #pragma comment(lib,"ws2_32.lib")
-  typedef SOCKET sock_t;
-  static const sock_t BAD_SOCK = INVALID_SOCKET;
-  #define sock_close closesocket
-#else
+// sock_t, BAD_SOCK, sock_close defined in CTraderDepthClient.hpp (included before this)
+#ifndef _WIN32
   #include <sys/socket.h>
   #include <netinet/in.h>
   #include <unistd.h>
-  typedef int sock_t;
-  static const sock_t BAD_SOCK = -1;
-  #define sock_close close
 #endif
 
 // ---------------------------------------------------------------------------
