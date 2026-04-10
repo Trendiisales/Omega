@@ -316,7 +316,7 @@ $bldLog    = "$env:TEMP\omega_bld.txt"
 $bldErrLog = "$env:TEMP\omega_bld_err.txt"
 
 $bldProc = Start-Process -FilePath $msbuild `
-    -ArgumentList "`"$OmegaDir\build\Omega.vcxproj`" /p:Configuration=Release /p:Platform=x64 /m:4 /nologo /v:m" `
+    -ArgumentList "`"$OmegaDir\build\Omega.vcxproj`" /p:Configuration=Release /p:Platform=x64 /m:4 /nologo /v:m /t:Omega" `
     -RedirectStandardOutput $bldLog `
     -RedirectStandardError $bldErrLog `
     -Wait -PassThru -NoNewWindow
