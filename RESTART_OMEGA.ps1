@@ -280,29 +280,19 @@ OK "Build directory clean"
 Step 4 13 "cmake configure..."
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
 $ErrorActionPreference = "Continue"
-$cfgOut = "$env:TEMP\omega_cfg_out.txt"
-$cfgErr = "$env:TEMP\omega_cfg_err.txt"
-$cfgProc = Start-Process -FilePath $CmakeExe `
-    -ArgumentList "-S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release" `
-    -RedirectStandardOutput $cfgOut -RedirectStandardError $cfgErr `
-    -Wait -PassThru -NoNewWindow
-$cfgExit = $cfgProc.ExitCode
-if (Test-Path $cfgOut) { Get-Content $cfgOut | Where-Object { $_ -match '\[Omega\]|OpenSSL|error' } | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray } }
-if (Test-Path $cfgErr) { Get-Content $cfgErr | Where-Object { $_ -match 'error|Error' } | ForEach-Object { Write-Host "    [STDERR] $_" -ForegroundColor Red } }
+$cfgLog = "$env:TEMP\omega_cfg.txt"
+& cmd /c "`"$CmakeExe`" -S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release > `"$cfgLog`" 2>&1"
+$cfgExit = $LASTEXITCODE
+if (Test-Path $cfgLog) { Get-Content $cfgLog | Where-Object { $_ -match "Omega|OpenSSL|error|Error" } | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray } }
 if ($cfgExit -ne 0) { FAIL "cmake configure failed (exit $cfgExit)" }
 OK "Configure done"
 
 Step 5 13 "cmake build..."
 $ErrorActionPreference = "Continue"
-$bldOut = "$env:TEMP\omega_bld_out.txt"
-$bldErr = "$env:TEMP\omega_bld_err.txt"
-$bldProc = Start-Process -FilePath $CmakeExe `
-    -ArgumentList "--build `"$OmegaDir\build`" --config Release" `
-    -RedirectStandardOutput $bldOut -RedirectStandardError $bldErr `
-    -Wait -PassThru -NoNewWindow
-$bldExit = $bldProc.ExitCode
-if (Test-Path $bldOut) { Get-Content $bldOut | Where-Object { $_ -match 'error C|error LNK|->|\.vcxproj' } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray } }
-if (Test-Path $bldErr) { Get-Content $bldErr | Where-Object { $_ -match 'error|Error' } | ForEach-Object { Write-Host "      [STDERR] $_" -ForegroundColor Red } }
+$bldLog = "$env:TEMP\omega_bld.txt"
+& cmd /c "`"$CmakeExe`" --build `"$OmegaDir\build`" --config Release > `"$bldLog`" 2>&1"
+$bldExit = $LASTEXITCODE
+if (Test-Path $bldLog) { Get-Content $bldLog | Where-Object { $_ -match "error C|error LNK|->|vcxproj" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray } }
 if ($bldExit -ne 0)           { FAIL "Build failed (exit $bldExit)" }
 if (-not (Test-Path $BuildExe)) { FAIL "$BuildExe not found after build" }
 OK "Build succeeded"
