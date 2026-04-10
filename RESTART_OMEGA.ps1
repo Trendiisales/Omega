@@ -269,17 +269,13 @@ OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
 Step 3 13 "Wiping build directory..."
-# Retry delete up to 5 times -- Windows holds obj files briefly after process exit
-$wipeOk = $false
-for ($wi = 1; $wi -le 5; $wi++) {
-    if (Test-Path "$OmegaDir\build") {
-        Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
-    }
-    if (-not (Test-Path "$OmegaDir\build")) { $wipeOk = $true; break }
-    Write-Host "      [WAIT] build dir still locked (attempt $wi/5) -- retrying in 2s..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 2
+# Use cmd rmdir -- more forceful than PowerShell Remove-Item on locked files
+if (Test-Path "$OmegaDir\build") {
+    & cmd /c "rmdir /s /q `"$OmegaDir\build`"" 2>$null
 }
-if (-not $wipeOk) { FAIL "Cannot wipe build directory after 5 attempts -- reboot VPS if this persists" }
+if (Test-Path "$OmegaDir\build") {
+    FAIL "Cannot wipe build directory -- a process is locking it. Check Task Manager."
+}
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 OK "Build directory clean"
 
