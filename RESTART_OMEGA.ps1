@@ -289,7 +289,7 @@ $ErrorActionPreference = "Continue"
 # bypasses PowerShell error handling for native executables.
 $cmakeCfgLog = "$env:TEMP\omega_cmake_cfg.txt"
 $cmakeCfgProc = Start-Process -FilePath $CmakeExe `
-    -ArgumentList "-S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release" `
+    -ArgumentList "-S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release -G `"Visual Studio 17 2022`" -A x64" `
     -WorkingDirectory $OmegaDir `
     -RedirectStandardOutput $cmakeCfgLog `
     -RedirectStandardError "$env:TEMP\omega_cmake_cfg_err.txt" `
