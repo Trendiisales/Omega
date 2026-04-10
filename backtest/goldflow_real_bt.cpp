@@ -1,6 +1,6 @@
 // goldflow_real_bt.cpp -- GoldFlow REAL ENGINE backtest
 // Runs the actual GoldFlowEngine.hpp against L2 tick data
-// All engine logic is identical to production -- same gates, same trails, same exits
+// All engine logic identical to production
 //
 // Build: g++ -O2 -std=c++17 -I../include -o goldflow_real_bt goldflow_real_bt.cpp
 // Run:   ./goldflow_real_bt l2_ticks_2026-04-09.csv l2_ticks_2026-04-10.csv
@@ -21,58 +21,25 @@
 #include <chrono>
 #include <atomic>
 
-// ── Stub: omega::TradeRecord (mirrors OmegaTradeLedger.hpp exactly) ──────────
-namespace omega {
-struct TradeRecord {
-    int         id          = 0;
-    std::string symbol;
-    std::string side;
-    double      entryPrice  = 0;
-    double      exitPrice   = 0;
-    double      tp          = 0;
-    double      sl          = 0;
-    double      size        = 1.0;
-    double      pnl         = 0;
-    double      mfe         = 0;
-    double      mae         = 0;
-    int64_t     entryTs     = 0;
-    int64_t     exitTs      = 0;
-    std::string exitReason;
-    double      spreadAtEntry   = 0;
-    double      latencyMs       = 0;
-    std::string engine          = "GoldFlowEngine";
-    std::string regime;
-    double      slippage_entry  = 0;
-    double      slippage_exit   = 0;
-    double      commission      = 0;
-    double      net_pnl         = 0;
-    double      slip_entry_pct  = 0;
-    double      slip_exit_pct   = 0;
-    double      comm_per_side   = 0;
-    double      bracket_hi      = 0;
-    double      bracket_lo      = 0;
-    double      l2_imbalance    = 0.5;
-    bool        l2_live         = false;
-};
-} // namespace omega
+// ── Include real TradeRecord first ───────────────────────────────────────────
+#include "../include/OmegaTradeLedger.hpp"
 
-// ── Stub: g_macro_ctx (only gold_l2_real is read by GoldFlowEngine) ──────────
+// ── Stub: g_macro_ctx ────────────────────────────────────────────────────────
 struct MacroCtx { bool gold_l2_real = true; };
 static MacroCtx g_macro_ctx;
 
 // ── Include the REAL engine ───────────────────────────────────────────────────
-#include "GoldFlowEngine.hpp"
+#include "../include/GoldFlowEngine.hpp"
 
-// ── EWM for drift computation (mirrors GoldEngineStack) ──────────────────────
+// ── EWM drift (mirrors GoldEngineStack alphas) ────────────────────────────────
 struct EWM {
     double fast=0, slow=0; bool seeded=false;
-    void update(double p, double af=0.05, double as_=0.005) {
+    void update(double p) {
         if (!seeded) { fast=slow=p; seeded=true; return; }
-        fast = af*p + (1.0-af)*fast;
-        slow = as_*p + (1.0-as_)*slow;
+        fast = 0.05*p + 0.95*fast;
+        slow = 0.005*p + 0.995*slow;
     }
     double drift() const { return fast - slow; }
-    bool ready() const { return seeded; }
 };
 
 // ── L2 Tick ───────────────────────────────────────────────────────────────────
@@ -104,23 +71,19 @@ bool parse_l2(const std::string& line, L2Tick& t) {
     return (t.bid>0 && t.ask>0 && t.ask>=t.bid);
 }
 
-// ── Session slot from UTC hour ────────────────────────────────────────────────
 int session_slot(int64_t ts_ms) {
-    int h = (int)((ts_ms/1000/3600) % 24);
-    if (h>=22||h<5)  return 6; // Asia
-    if (h>=7&&h<12)  return 2; // London
-    if (h>=12&&h<17) return 3; // NY overlap
-    if (h>=17&&h<22) return 4; // NY close
-    return 5; // dead zone
+    int h=(int)((ts_ms/1000/3600)%24);
+    if (h>=22||h<5)  return 6;
+    if (h>=7&&h<12)  return 2;
+    if (h>=12&&h<17) return 3;
+    if (h>=17&&h<22) return 4;
+    return 5;
 }
 
 int main(int argc, char* argv[]) {
     std::vector<std::string> files;
     for (int i=1;i<argc;i++) files.push_back(argv[i]);
-    if (files.empty()) {
-        std::cerr << "Usage: goldflow_real_bt l2_ticks_YYYY-MM-DD.csv ...\n";
-        return 1;
-    }
+    if (files.empty()) { std::cerr << "Usage: goldflow_real_bt files...\n"; return 1; }
 
     GoldFlowEngine engine;
     engine.risk_dollars = GFE_RISK_DOLLARS;
@@ -128,49 +91,42 @@ int main(int argc, char* argv[]) {
     EWM ewm;
     std::vector<omega::TradeRecord> trades;
     std::map<std::string,int> reasons;
-
-    int64_t tick_count = 0;
+    int64_t tick_count=0;
 
     for (auto& fname : files) {
         std::ifstream f(fname);
         if (!f) { std::cerr << "Cannot open: " << fname << "\n"; continue; }
         std::string line;
-        getline(f, line); // header
-        while (getline(f, line)) {
+        getline(f,line); // header
+        while (getline(f,line)) {
             L2Tick t;
-            if (!parse_l2(line, t)) continue;
+            if (!parse_l2(line,t)) continue;
             if (t.watchdog_dead) continue;
             tick_count++;
 
-            const double mid    = (t.ask + t.bid) * 0.5;
-            const double spread = t.ask - t.bid;
-            if (spread <= 0 || spread > GFE_MAX_SPREAD) continue;
+            const double spread = t.ask-t.bid;
+            if (spread<=0||spread>GFE_MAX_SPREAD) continue;
 
-            // Compute EWM drift -- same alphas as GoldEngineStack
+            const double mid = (t.ask+t.bid)*0.5;
             ewm.update(mid);
             const double drift = ewm.drift();
 
-            // Set trend bias (neutral -- no supervisor in backtest)
-            // Uses l2_imb from the actual L2 data as momentum proxy
-            const double momentum_pct = drift / mid * 100.0;
-            engine.set_trend_bias(momentum_pct, 0.5, false, false,
-                                  drift, false, t.vol_ratio);
+            // set_trend_bias: neutral supervisor -- no regime, no wall, no expansion
+            engine.set_trend_bias(drift/mid*100.0, 0.5, false, false, drift, false, t.vol_ratio);
 
-            // Set l2_real based on watchdog state
             g_macro_ctx.gold_l2_real = !t.watchdog_dead;
 
-            // Call the real engine on_tick with real L2 imbalance
             engine.on_tick(
                 t.bid, t.ask,
-                t.l2_imb,        // real DOM imbalance from L2 log
-                drift,           // computed EWM drift
+                t.l2_imb,
+                drift,
                 t.ts_ms,
                 [&](const omega::TradeRecord& tr) {
                     trades.push_back(tr);
                     reasons[tr.exitReason]++;
                 },
                 session_slot(t.ts_ms),
-                true             // l2_ctrader_live = true (real data)
+                true
             );
         }
     }
@@ -180,17 +136,15 @@ int main(int argc, char* argv[]) {
     double total=0,wpnl=0,lpnl=0,peak=0,eq=0,maxdd=0;
     int w=0,l=0;
     for (auto& tr : trades) {
-        const double pnl_usd = tr.pnl * 100.0; // pnl is in pts*size, *100 = USD
-        total+=pnl_usd; eq+=pnl_usd;
+        const double p = tr.pnl * 100.0;
+        total+=p; eq+=p;
         if (eq>peak) peak=eq;
         maxdd=std::max(maxdd,peak-eq);
-        if (pnl_usd>0){w++;wpnl+=pnl_usd;}
-        else{l++;lpnl+=pnl_usd;}
+        if (p>0){w++;wpnl+=p;} else{l++;lpnl+=p;}
     }
     int n=trades.size();
     double wr=100.0*w/n;
-    double aw=w?wpnl/w:0, al=l?lpnl/l:0;
-    double rr=al!=0?-aw/al:0;
+    double aw=w?wpnl/w:0, al=l?lpnl/l:0, rr=al?-aw/al:0;
 
     std::cout << "\n=== GoldFlow REAL ENGINE Backtest (L2 DOM) ===\n";
     std::cout << "Ticks        : " << tick_count << "\n";
