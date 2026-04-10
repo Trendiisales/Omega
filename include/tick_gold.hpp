@@ -3627,11 +3627,7 @@ static void on_tick_gold(
         && !g_gold_stack.has_open_position()
         && !g_trend_pb_gold.has_open_position()
         && !g_hybrid_gold.has_open_position()
-        && !in_ny_close_noise
-        // ── CFE SESSION GATE: London + NY only (slots 1-5) ──────────
-        // Asia (slot 6) and dead-zone (slot 0): thin tape, directional noise.
-        // All Asia CFE trades on 2026-04-11 were losses. Same evidence as TrendPB.
-        && (gold_session_slot >= 1 && gold_session_slot <= 5)) {
+        && !in_ny_close_noise) {
 
         // Build BarSnap from last two completed M1 bars.
         // PATH A: bars_ deque has >= 2 live bars (normal running state or after seed()).
