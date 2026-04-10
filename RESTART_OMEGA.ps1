@@ -394,10 +394,7 @@ Write-Host ""
 Step 13 13 "Launching..."
 Set-Location $OmegaDir
 
-# Wait for OmegaDomStreamer cBot to be listening on port 8765 (must start before Omega)
-# cBot binds 8765 as TCP server -- Omega connects as client. If Omega starts first it holds
-# the port and the cBot fails to bind. We wait up to 30s for the cBot to be ready.
-# cBot check removed -- DOM data comes from cTrader Open API directly, not cBot on 8765
+
 
 $launchTime = Get-Date   # recorded BEFORE Start-Service so we know when this run began
 
