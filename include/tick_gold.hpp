@@ -3627,7 +3627,11 @@ static void on_tick_gold(
         && !g_gold_stack.has_open_position()
         && !g_trend_pb_gold.has_open_position()
         && !g_hybrid_gold.has_open_position()
-        && !in_ny_close_noise) {
+        && !in_ny_close_noise
+        // ── CFE SESSION GATE: London + NY only (slots 1-5) ──────────
+        // Asia (slot 6) and dead-zone (slot 0): thin tape, directional noise.
+        // All Asia CFE trades on 2026-04-11 were losses. Same evidence as TrendPB.
+        && (gold_session_slot >= 1 && gold_session_slot <= 5)) {
 
         // Build BarSnap from last two completed M1 bars.
         // PATH A: bars_ deque has >= 2 live bars (normal running state or after seed()).
@@ -3693,6 +3697,57 @@ static void on_tick_gold(
             const double cfe_atr_e = g_gold_flow.current_atr() > 0.0
                 ? g_gold_flow.current_atr() : 5.0;
 
+            // ── CFE BAR RSI + TREND PRE-FILTER ───────────────────────
+            // Block counter-trend entries (EMA9 vs EMA50 on M1) and RSI extremes.
+            // Mirrors GoldFlow Gate 3. Root cause of -$401 SHORT (12:24-04-11):
+            // tick RSI slope said SHORT but M1 EMA9>EMA50 = bullish trend.
+            bool cfe_bar_gate_ok = true;
+            if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+                const bool   cfe_ema_live = g_bars_gold.m1.ind.m1_ema_live.load(std::memory_order_relaxed);
+                const double cfe_ema9    = cfe_ema_live ? g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed) : 0.0;
+                const double cfe_ema50   = cfe_ema_live ? g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed) : 0.0;
+                const int    cfe_m1_trend = (cfe_ema9 > 0.0 && cfe_ema50 > 0.0)
+                    ? (cfe_ema9 < cfe_ema50 ? -1 : +1) : 0;
+                const double cfe_bar_rsi  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
+                const bool cfe_is_long_intent = (cfe_bar.close > cfe_bar.open);
+                // Counter-trend block
+                if (cfe_m1_trend != 0) {
+                    const bool cfe_counter = (cfe_is_long_intent && cfe_m1_trend == -1)
+                                          || (!cfe_is_long_intent && cfe_m1_trend == +1);
+                    if (cfe_counter) {
+                        cfe_bar_gate_ok = false;
+                        static int64_t s_cfe_trend_log = 0;
+                        if (now_ms_g - s_cfe_trend_log > 10000) {
+                            s_cfe_trend_log = now_ms_g;
+                            printf("[CFE-BAR-BLOCK] %s blocked counter-trend M1=%+d EMA9=%.2f EMA50=%.2f\n",
+                                   cfe_is_long_intent ? "LONG" : "SHORT",
+                                   cfe_m1_trend, cfe_ema9, cfe_ema50);
+                            fflush(stdout);
+                        }
+                    }
+                }
+                // RSI extreme block: RSI>75 blocks LONG, RSI<25 blocks SHORT
+                if (cfe_bar_gate_ok && cfe_bar_rsi > 0.0) {
+                    if (cfe_is_long_intent && cfe_bar_rsi > 75.0) {
+                        cfe_bar_gate_ok = false;
+                        static int64_t s_cfe_ob_log = 0;
+                        if (now_ms_g - s_cfe_ob_log > 10000) {
+                            s_cfe_ob_log = now_ms_g;
+                            printf("[CFE-BAR-BLOCK] LONG blocked RSI=%.1f > 75 (overbought)\n", cfe_bar_rsi);
+                            fflush(stdout);
+                        }
+                    } else if (!cfe_is_long_intent && cfe_bar_rsi < 25.0) {
+                        cfe_bar_gate_ok = false;
+                        static int64_t s_cfe_os_log = 0;
+                        if (now_ms_g - s_cfe_os_log > 10000) {
+                            s_cfe_os_log = now_ms_g;
+                            printf("[CFE-BAR-BLOCK] SHORT blocked RSI=%.1f < 25 (oversold)\n", cfe_bar_rsi);
+                            fflush(stdout);
+                        }
+                    }
+                }
+            }
+            if (cfe_bar_gate_ok)
             g_candle_flow.on_tick(bid, ask, cfe_bar, cfe_dom_e,
                 now_ms_g, cfe_atr_e,
                 [&](const omega::TradeRecord& tr) {
