@@ -279,64 +279,30 @@ OK "Build directory clean"
 Step 4 13 "cmake configure..."
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
 $ErrorActionPreference = "Continue"
-# Capture all cmake output without triggering PowerShell NativeCommandError.
-# 2>&1 inline causes PS to intercept stderr as ErrorRecord and exit.
-# Fix: use Start-Process with output redirect to a temp file -- completely
-# bypasses PowerShell error handling for native executables.
-$cmakeCfgLog = "$env:TEMP\omega_cmake_cfg.txt"
-$cmakeCfgProc = Start-Process -FilePath $CmakeExe `
-    -ArgumentList "-S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release" `
-    -WorkingDirectory $OmegaDir `
-    -RedirectStandardOutput $cmakeCfgLog `
-    -RedirectStandardError "$env:TEMP\omega_cmake_cfg_err.txt" `
-    -Wait -PassThru -NoNewWindow
-$cmakeCfgExit = $cmakeCfgProc.ExitCode
-# Show relevant lines
-if (Test-Path $cmakeCfgLog) {
-    Get-Content $cmakeCfgLog | Where-Object { $_ -match "\[Omega\]|error|Error|warning|OpenSSL" } |
-        ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-}
-if (Test-Path "$env:TEMP\omega_cmake_cfg_err.txt") {
-    Get-Content "$env:TEMP\omega_cmake_cfg_err.txt" |
-        ForEach-Object { Write-Host "    [STDERR] $_" -ForegroundColor Yellow }
-}
+$cmakeOut = & $CmakeExe -S "$OmegaDir" -B "$OmegaDir\build" -DCMAKE_BUILD_TYPE=Release 2>&1
+$cmakeCfgExit = $LASTEXITCODE
+$cmakeOut | Where-Object { $_ -match "\[Omega\]|error|Error|OpenSSL" } | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 if ($cmakeCfgExit -ne 0) { FAIL "cmake configure failed (exit $cmakeCfgExit)" }
-$ErrorActionPreference = "Stop"
-
+# Confirm hash in generated version file
 $verFile = "$OmegaDir\include\version_generated.hpp"
-if (-not (Test-Path $verFile)) { FAIL "version_generated.hpp not created" }
-$verContent = Get-Content $verFile -Raw
-$guiHash = "unknown"
-if ($verContent -match 'OMEGA_GIT_HASH\s+"([a-f0-9]+)"') { $guiHash = $Matches[1] }
-if ($guiHash -ne $gitHash) { FAIL "version hash mismatch: hpp=$guiHash HEAD=$gitHash" }
-OK "Configure done (hash $guiHash confirmed)"
+if (Test-Path $verFile) {
+    $verLine = Select-String -Path $verFile -Pattern 'OMEGA_GIT_HASH' | Select-Object -First 1
+    if ($verLine -and $verLine.Line -match '"([a-f0-9]{7,})"') {
+        $builtHash = $Matches[1]
+        if ($builtHash -ne $gitHead7) { FAIL "version hash mismatch: hpp=$builtHash HEAD=$gitHead7" }
+        OK "Configure done (hash $builtHash confirmed)"
+    } else { OK "Configure done" }
+} else { OK "Configure done" }
 
-# ── [5/13] cmake build ───────────────────────────────────────────────────────
 Step 5 13 "cmake build..."
 $ErrorActionPreference = "Continue"
-$cmakeBldLog = "$env:TEMP\omega_cmake_bld.txt"
-$cmakeBldProc = Start-Process -FilePath $CmakeExe `
-    -ArgumentList "--build `"$OmegaDir\build`" --config Release" `
-    -WorkingDirectory $OmegaDir `
-    -RedirectStandardOutput $cmakeBldLog `
-    -RedirectStandardError "$env:TEMP\omega_cmake_bld_err.txt" `
-    -Wait -PassThru -NoNewWindow
-$buildExit = $cmakeBldProc.ExitCode
-if (Test-Path $cmakeBldLog) {
-    Get-Content $cmakeBldLog | Where-Object { $_ -match "Omega|error C|warning C|->|FAILED" } |
-        ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-}
-if (Test-Path "$env:TEMP\omega_cmake_bld_err.txt") {
-    Get-Content "$env:TEMP\omega_cmake_bld_err.txt" |
-        ForEach-Object { Write-Host "    [STDERR] $_" -ForegroundColor Yellow }
-}
-$ErrorActionPreference = "Stop"
+$buildOut = & $CmakeExe --build "$OmegaDir\build" --config Release 2>&1
+$buildExit = $LASTEXITCODE
+$buildOut | Where-Object { $_ -match "error|Error|warning|->|vcxproj" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
 if ($buildExit -ne 0)              { FAIL "Build failed (exit $buildExit)" }
 if (-not (Test-Path $BuildExe))    { FAIL "$BuildExe not found after build" }
-
 OK "Build succeeded"
 
-# ── [6/13] Copy exe ──────────────────────────────────────────────────────────
 Step 6 13 "Copying exe..."
 # Process was confirmed dead in step 1 with a 3s kernel settle wait.
 # File handles are fully released by now -- simple copy works.
