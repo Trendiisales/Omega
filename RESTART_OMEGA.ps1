@@ -492,7 +492,7 @@ while ($waited -lt 30) {
             break
         }
     }
-    if ($waited % 5 -eq 0) { Write-Host "  Waiting for fresh latest.log... (${waited}s)" -ForegroundColor DarkGray }
+    Write-Host "  Waiting for fresh latest.log... (${waited}s)" -ForegroundColor DarkGray
 }
 
 if (-not $logFresh) {
@@ -522,7 +522,7 @@ while ($waitB -lt 90) {
         Write-Host "  [OK] RUNNING COMMIT found after ${waitB}s: $runningHash" -ForegroundColor Green
         break
     }
-    if ($waitB % 10 -eq 0) { Write-Host "  Still waiting for RUNNING COMMIT... (${waitB}s)" -ForegroundColor DarkGray }
+    Write-Host "  Waiting for RUNNING COMMIT... (${waitB}s)" -ForegroundColor DarkGray
 }
 
 if ($runningHash -eq "NOT_FOUND") {
