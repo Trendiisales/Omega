@@ -94,23 +94,25 @@ int main(int argc, char* argv[]) {
     std::map<std::string,int> reasons;
     int64_t tick_count=0;
 
-    // Pre-seed EWM from first tick so drift is warm from tick 1.
-    // In production the EWM runs continuously across sessions.
-    // Without seeding, fast≈slow≈price for 200+ ticks giving drift≈0 -- no signal.
-    for (auto& fname : files) {
-        std::ifstream fs(fname); std::string ls;
-        getline(fs, ls); // skip header
-        if (getline(fs, ls)) {
-            std::stringstream ss(ls); std::string tok;
-            getline(ss,tok,','); // ts
-            getline(ss,tok,','); // bid
-            double bid0=0; try{bid0=std::stod(tok);}catch(...){}
-            getline(ss,tok,','); // ask
-            double ask0=0; try{ask0=std::stod(tok);}catch(...){}
-            if (bid0>0&&ask0>0) ewm.seed((bid0+ask0)*0.5);
+    // EWM warmup pass: run 2000 ticks through EWM before processing trades.
+    // In production EWM runs continuously -- fast/slow separate over many ticks.
+    // Cold start gives drift=0 for 200+ ticks since fast=slow=price.
+    // Fix: read first 2000 ticks to warm EWM, then reset engine state and process normally.
+    {
+        std::ifstream fw(files[0]); std::string lw;
+        getline(fw, lw); // skip header
+        int warmup_count = 0;
+        while (getline(fw, lw) && warmup_count < 2000) {
+            L2Tick tw;
+            if (!parse_l2(lw, tw)) continue;
+            if (tw.watchdog_dead) continue;
+            const double sp = tw.ask - tw.bid;
+            if (sp <= 0 || sp > GFE_MAX_SPREAD) continue;
+            ewm.update((tw.ask + tw.bid) * 0.5);
+            warmup_count++;
         }
-        break; // only need first file's first tick
     }
+
 
     for (auto& fname : files) {
         std::ifstream f(fname);
