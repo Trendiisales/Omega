@@ -296,9 +296,30 @@ if (Test-Path $verFile) {
 
 Step 5 13 "cmake build..."
 $ErrorActionPreference = "Continue"
-$buildOut = & $CmakeExe --build "$OmegaDir\build" --config Release 2>&1
-$buildExit = $LASTEXITCODE
-$buildOut | Where-Object { $_ -match "error|Error|warning|->|vcxproj" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+$buildLog = "$env:TEMP\omega_build.txt"
+$buildProc = Start-Process -FilePath $CmakeExe `
+    -ArgumentList "--build `"$OmegaDir\build`" --config Release" `
+    -WorkingDirectory "$OmegaDir\build" `
+    -RedirectStandardOutput $buildLog `
+    -NoNewWindow -PassThru
+# Stream output live while process runs
+$lastPos = 0
+while (-not $buildProc.HasExited) {
+    Start-Sleep -Milliseconds 500
+    if (Test-Path $buildLog) {
+        $content = Get-Content $buildLog -Raw -ErrorAction SilentlyContinue
+        if ($content -and $content.Length -gt $lastPos) {
+            $newText = $content.Substring($lastPos)
+            $lastPos = $content.Length
+            $newText -split "`n" | Where-Object { $_ -match "error|->|vcxproj|Building|Compiling" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+        }
+    }
+}
+$buildExit = $buildProc.ExitCode
+# Print remaining output
+if (Test-Path $buildLog) {
+    Get-Content $buildLog | Where-Object { $_ -match "error|->|vcxproj" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+}
 if ($buildExit -ne 0)              { FAIL "Build failed (exit $buildExit)" }
 if (-not (Test-Path $BuildExe))    { FAIL "$BuildExe not found after build" }
 OK "Build succeeded"
