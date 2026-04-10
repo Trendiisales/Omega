@@ -38,6 +38,85 @@ param(
     [string] $OmegaDir = "C:\Omega"
 )
 
+# ==============================================================================
+# STEP 0: GitHub API binary staleness check -- RUNS BEFORE EVERYTHING ELSE
+# Hits the GitHub contents API to get live HEAD SHA.
+# Reads the running binary hash from latest.log ([OMEGA] RUNNING COMMIT line).
+# If they don't match: RED BANNER, hard exit. Cannot verify a stale binary.
+# This is the check that prevents stale binaries from ever going unnoticed.
+# ==============================================================================
+Write-Host ""
+Write-Host "=======================================================" -ForegroundColor Cyan
+Write-Host "  STEP 0: GITHUB API BINARY STALENESS CHECK" -ForegroundColor Cyan
+Write-Host "=======================================================" -ForegroundColor Cyan
+
+$tokenFile = "C:\Omega\.github_token"
+if (-not (Test-Path $tokenFile)) {
+    Write-Host "  [SKIP] C:\Omega\.github_token not found -- cannot verify GitHub HEAD" -ForegroundColor Yellow
+    Write-Host "  Run: [System.IO.File]::WriteAllText('C:\Omega\.github_token', 'YOUR_TOKEN')" -ForegroundColor Yellow
+} else {
+    $ghToken = (Get-Content $tokenFile -Raw).Trim()
+    $apiHeaders = @{
+        Authorization   = "token $ghToken"
+        "User-Agent"    = "OmegaVerify"
+        "Cache-Control" = "no-cache"
+        Accept          = "application/vnd.github.v3+json"
+    }
+
+    # Get GitHub HEAD SHA via contents API (never CDN-cached)
+    $ghSha7 = "unknown"
+    try {
+        $ghHead = Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" `
+            -Headers $apiHeaders -TimeoutSec 15 -ErrorAction Stop
+        $ghSha7 = $ghHead.sha.Substring(0,7)
+        Write-Host "  [API] GitHub HEAD : $ghSha7  -- $($ghHead.commit.message)" -ForegroundColor Cyan
+    } catch {
+        Write-Host "  [WARN] GitHub API unreachable: $_ -- skipping staleness check" -ForegroundColor Yellow
+        $ghSha7 = "api_unreachable"
+    }
+
+    # Get running binary hash from latest.log RUNNING COMMIT line
+    $runningHash = "not_found"
+    $latestLog = "C:\Omega\logs\latest.log"
+    if (Test-Path $latestLog) {
+        $rcLine = Get-Content $latestLog -ErrorAction SilentlyContinue |
+                  Select-String "RUNNING COMMIT:" |
+                  Select-Object -Last 1
+        if ($rcLine -and ($rcLine -match "RUNNING COMMIT:\s+([a-f0-9]{7,12})")) {
+            $runningHash = $Matches[1]
+        }
+    }
+    Write-Host "  [LOG] Running hash : $runningHash" -ForegroundColor Cyan
+
+    if ($ghSha7 -eq "api_unreachable") {
+        Write-Host "  [WARN] Cannot verify -- GitHub API unreachable" -ForegroundColor Yellow
+    } elseif ($runningHash -eq "not_found") {
+        Write-Host ""
+        Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
+        Write-Host "  ║  BINARY HASH NOT FOUND IN LOG                   ║" -ForegroundColor Red
+        Write-Host "  ║  Omega has not started or log is stale.         ║" -ForegroundColor Red
+        Write-Host "  ║  Run: .\RESTART_OMEGA.ps1                       ║" -ForegroundColor Red
+        Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+        Write-Host ""
+        exit 1
+    } elseif ($runningHash -ne $ghSha7) {
+        Write-Host ""
+        Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
+        Write-Host "  ║  STALE BINARY DETECTED -- DO NOT TRADE          ║" -ForegroundColor Red
+        Write-Host "  ║  Running : $runningHash                          ║" -ForegroundColor Red
+        Write-Host "  ║  GitHub  : $ghSha7                               ║" -ForegroundColor Red
+        Write-Host "  ║  Fix: .\RESTART_OMEGA.ps1                       ║" -ForegroundColor Red
+        Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+        Write-Host ""
+        exit 1
+    } else {
+        Write-Host "  [OK] Binary hash MATCHES GitHub HEAD: $runningHash" -ForegroundColor Green
+    }
+}
+Write-Host ""
+
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Continue"
 
