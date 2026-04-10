@@ -333,6 +333,39 @@ if (Test-Path "$env:TEMP\omega_cmake_bld_err.txt") {
 $ErrorActionPreference = "Stop"
 if ($buildExit -ne 0)              { FAIL "Build failed (exit $buildExit)" }
 if (-not (Test-Path $BuildExe))    { FAIL "$BuildExe not found after build" }
+
+# ── POST-BUILD SOURCE VERIFICATION ───────────────────────────────────────────
+# Confirm the NEW code strings are baked into the freshly built binary.
+# If git pull silently failed and we built from stale source, these strings
+# will be missing and we hard-FAIL before ever copying the exe.
+# This makes it physically impossible to run a stale binary after a push.
+Write-Host "      Verifying new code baked into binary..." -ForegroundColor DarkGray
+$verifyStrings = @(
+    "IMB-EXIT",          # CandleFlowEngine new L2 imbalance exit log line
+    "rsi_trend=",        # CandleFlowEngine RSI entry log line
+    "cfe_prev_book_mgmt" # tick_gold.hpp static prev book fix
+)
+$binaryBytes = [System.IO.File]::ReadAllBytes($BuildExe)
+$binaryText  = [System.Text.Encoding]::ASCII.GetString($binaryBytes)
+$missingStrings = @()
+foreach ($vs in $verifyStrings) {
+    if ($binaryText -notlike "*$vs*") {
+        $missingStrings += $vs
+    }
+}
+if ($missingStrings.Count -gt 0) {
+    Write-Host ""
+    Write-Host "  [FATAL] POST-BUILD VERIFICATION FAILED" -ForegroundColor Red
+    Write-Host "  Missing strings in binary: $($missingStrings -join ', ')" -ForegroundColor Red
+    Write-Host "  This means git pull did NOT get the latest code." -ForegroundColor Red
+    Write-Host "  The build compiled STALE SOURCE. Binary will NOT be deployed." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Fix: check git remote, token, network, then run RESTART_OMEGA again." -ForegroundColor Yellow
+    Write-Host ""
+    FAIL "Binary does not contain new code strings -- stale source was compiled"
+}
+Write-Host "      [OK] All required strings confirmed in binary" -ForegroundColor Green
+
 OK "Build succeeded"
 
 # ── [6/13] Copy exe ──────────────────────────────────────────────────────────
