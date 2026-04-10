@@ -40,6 +40,34 @@ $buildDir   = "$OmegaDir\build"
 $CheckScript = "$OmegaDir\PRE_DELIVERY_CHECK.ps1"
 $PassFile   = "$OmegaDir\logs\PRE_DELIVERY_PASS.txt"
 
+# ==============================================================================
+# SELF-UPDATE: download latest QUICK_RESTART.ps1 from GitHub API before doing
+# anything else. This ensures the script that runs is always the latest version
+# regardless of what was on disk. If the downloaded version differs from the
+# running version, re-launch it and exit.
+# ==============================================================================
+$selfToken = $GitHubToken
+if ($selfToken -eq "") {
+    $tf = "$OmegaDir\.github_token"
+    if (Test-Path $tf) { $selfToken = (Get-Content $tf -Raw).Trim() }
+}
+if ($selfToken -ne "") {
+    try {
+        $selfHdr = @{ Authorization="token $selfToken"; "User-Agent"="OmegaQR"; Accept="application/vnd.github.v3+json" }
+        $selfResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/contents/QUICK_RESTART.ps1" -Headers $selfHdr -TimeoutSec 15 -ErrorAction Stop
+        $selfLatest = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($selfResp.content -replace "`n",""))
+        $selfCurrent = Get-Content "$OmegaDir\QUICK_RESTART.ps1" -Raw -ErrorAction SilentlyContinue
+        if ($selfLatest -and $selfLatest -ne $selfCurrent) {
+            Write-Host "  [SELF-UPDATE] Newer QUICK_RESTART.ps1 detected -- updating and re-launching..." -ForegroundColor Cyan
+            Set-Content -Path "$OmegaDir\QUICK_RESTART.ps1" -Value $selfLatest -Encoding UTF8 -Force
+            & "$OmegaDir\QUICK_RESTART.ps1" @PSBoundParameters
+            exit $LASTEXITCODE
+        }
+    } catch {
+        Write-Host "  [SELF-UPDATE] Skipped (API error: $_)" -ForegroundColor DarkGray
+    }
+}
+
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host "   OMEGA  |  QUICK RESTART" -ForegroundColor Cyan
@@ -509,6 +537,7 @@ Write-Host ("  Started : " + $restartStart.ToUniversalTime().ToString("HH:mm:ss 
 Write-Host ("  Finished: " + $restartEnd.ToUniversalTime().ToString("HH:mm:ss UTC")) -ForegroundColor DarkGray
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
+
 
 
 
