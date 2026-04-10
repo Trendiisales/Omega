@@ -74,10 +74,26 @@ Write-Host "   OMEGA  |  QUICK RESTART" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# --- Verify PRE_DELIVERY_CHECK.ps1 exists ------------------------------------
+# --- Always update PRE_DELIVERY_CHECK.ps1 from GitHub API before using it ---
+# This ensures the check script is always current regardless of what is on disk.
+$pdcToken = $GitHubToken
+if ($pdcToken -eq "") {
+    $tf2 = "$OmegaDir\.github_token"
+    if (Test-Path $tf2) { $pdcToken = (Get-Content $tf2 -Raw).Trim() }
+}
+if ($pdcToken -ne "") {
+    try {
+        $pdcHdr = @{ Authorization="token $pdcToken"; "User-Agent"="OmegaQR"; Accept="application/vnd.github.v3+json" }
+        $pdcResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/contents/PRE_DELIVERY_CHECK.ps1" -Headers $pdcHdr -TimeoutSec 15 -ErrorAction Stop
+        $pdcBytes = [System.Convert]::FromBase64String($pdcResp.content -replace "`n","")
+        [System.IO.File]::WriteAllBytes($CheckScript, $pdcBytes)
+        Write-Host "  [OK] PRE_DELIVERY_CHECK.ps1 updated from GitHub API" -ForegroundColor Green
+    } catch {
+        Write-Host "  [WARN] Could not update PRE_DELIVERY_CHECK.ps1: $_" -ForegroundColor Yellow
+    }
+}
 if (-not (Test-Path $CheckScript)) {
     Write-Host "  [FATAL] PRE_DELIVERY_CHECK.ps1 not found at $CheckScript" -ForegroundColor Red
-    Write-Host "  Cannot proceed without the pre-delivery check script." -ForegroundColor Red
     exit 1
 }
 
@@ -527,6 +543,7 @@ Write-Host ("  Started : " + $restartStart.ToUniversalTime().ToString("HH:mm:ss 
 Write-Host ("  Finished: " + $restartEnd.ToUniversalTime().ToString("HH:mm:ss UTC")) -ForegroundColor DarkGray
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
+
 
 
 
