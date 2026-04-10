@@ -380,9 +380,18 @@ if ($svc) {
     if (Test-Path $NssmExe) {
         # Update service exe, AppDirectory, and args so it always uses current binary
         $ErrorActionPreference = "Continue"
-        & $NssmExe set $ServiceName Application $OmegaExe 2>&1 | Out-Null
-        & $NssmExe set $ServiceName AppDirectory $OmegaDir 2>&1 | Out-Null
-        & $NssmExe set $ServiceName AppParameters "omega_config.ini" 2>&1 | Out-Null
+        $nssmJob = Start-Job -ScriptBlock {
+            param($nssm,$svc,$exe,$dir)
+            & $nssm set $svc Application $exe 2>&1 | Out-Null
+            & $nssm set $svc AppDirectory $dir 2>&1 | Out-Null
+            & $nssm set $svc AppParameters "omega_config.ini" 2>&1 | Out-Null
+        } -ArgumentList $NssmExe,$ServiceName,$OmegaExe,$OmegaDir
+        $nssmDone = Wait-Job $nssmJob -Timeout 10
+        if (-not $nssmDone) {
+            Write-Host "      [!!] NSSM config timed out -- continuing anyway" -ForegroundColor Yellow
+            Stop-Job $nssmJob -ErrorAction SilentlyContinue
+        }
+        Remove-Job $nssmJob -Force -ErrorAction SilentlyContinue
         $ErrorActionPreference = "Stop"
         OK "Service exe + AppDirectory updated via NSSM"
     } else {
@@ -589,7 +598,15 @@ Write-Host ""
 Write-Host "  Running full status check..." -ForegroundColor Cyan
 Write-Host ""
 if (Test-Path "$OmegaDir\OMEGA_STATUS.ps1") {
-    & "$OmegaDir\OMEGA_STATUS.ps1"
+    $statusJob = Start-Job -ScriptBlock { & "C:\Omega\OMEGA_STATUS.ps1" }
+    $statusDone = Wait-Job $statusJob -Timeout 15
+    if ($statusDone) {
+        Receive-Job $statusJob | ForEach-Object { Write-Host "  $_" }
+    } else {
+        Write-Host "  [!!] OMEGA_STATUS.ps1 timed out after 15s -- skipping" -ForegroundColor Yellow
+        Stop-Job $statusJob -ErrorAction SilentlyContinue
+    }
+    Remove-Job $statusJob -Force -ErrorAction SilentlyContinue
 } else {
     Write-Host "  OMEGA_STATUS.ps1 not found -- skipping" -ForegroundColor Yellow
 }
