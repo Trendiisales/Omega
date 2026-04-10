@@ -302,35 +302,62 @@ if ($verContent -match 'OMEGA_GIT_HASH\s+"([a-f0-9]+)"') { $guiHash = $Matches[1
 if ($guiHash -ne $gitHash) { FAIL "version hash mismatch: hpp=$guiHash HEAD=$gitHash" }
 OK "Configure done (hash $guiHash confirmed)"
 
-# ── [5/13] MSBuild direct ────────────────────────────────────────────────────
-Step 5 13 "cmake build..."
+# ── [5/13] Build ────────────────────────────────────────────────────────────────────────────
+Step 5 13 "Building..."
 $ErrorActionPreference = "Continue"
-# Use MSBuild directly on the vcxproj -- faster than cmake --build, no hanging
-$msbuild = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
-if (-not (Test-Path $msbuild)) {
-    # Fall back to cmake --build if MSBuild not found
-    $msbuild = $null
+
+# Find MSBuild via vswhere (ships with VS2017+ and BuildTools, fixed path)
+$vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+$msbuild = $null
+if (Test-Path $vswhere) {
+    $found = & $vswhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" 2>$null
+    if ($found -and (Test-Path $found)) { $msbuild = $found }
 }
+# Fallback: check known fixed paths
+if (-not $msbuild) {
+    $candidates = @(
+        "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+        "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
+    )
+    foreach ($c in $candidates) { if (Test-Path $c) { $msbuild = $c; break } }
+}
+
+$bldLog    = "$env:TEMP\omega_bld.txt"
+$bldErrLog = "$env:TEMP\omega_bld_err.txt"
+
 if ($msbuild) {
-    $bldLog = "$env:TEMP\omega_bld.txt"
+    Write-Host "      MSBuild: $msbuild" -ForegroundColor DarkGray
     $bldProc = Start-Process -FilePath $msbuild `
-        -ArgumentList "`"$OmegaDir\build\Omega.vcxproj`" /p:Configuration=Release /p:Platform=x64 /m /nologo /v:m" `
+        -ArgumentList "`"$OmegaDir\build\Omega.vcxproj`" /p:Configuration=Release /p:Platform=x64 /m:4 /nologo /v:m" `
         -RedirectStandardOutput $bldLog `
-        -RedirectStandardError "$env:TEMP\omega_bld_err.txt" `
+        -RedirectStandardError $bldErrLog `
         -Wait -PassThru -NoNewWindow
     $bldExit = $bldProc.ExitCode
-    if (Test-Path $bldLog) { Get-Content $bldLog | Where-Object { $_ -match "error|->|Error" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray } }
 } else {
-    $bldLog = "$env:TEMP\omega_bld.txt"
+    # Last resort: cmake --build with 5 minute timeout
+    Write-Host "      MSBuild not found -- using cmake --build (5min timeout)" -ForegroundColor Yellow
     $bldProc = Start-Process -FilePath $CmakeExe `
         -ArgumentList "--build `"$OmegaDir\build`" --config Release --target Omega" `
         -RedirectStandardOutput $bldLog `
-        -RedirectStandardError "$env:TEMP\omega_bld_err.txt" `
-        -Wait -PassThru -NoNewWindow
+        -RedirectStandardError $bldErrLog `
+        -PassThru -NoNewWindow
+    $bldProc | Wait-Process -Timeout 300 -ErrorAction SilentlyContinue
+    if (-not $bldProc.HasExited) {
+        $bldProc | Stop-Process -Force
+        FAIL "Build timed out after 5 minutes -- delete C:\Omega\build and rerun"
+    }
     $bldExit = $bldProc.ExitCode
-    if (Test-Path $bldLog) { Get-Content $bldLog | Where-Object { $_ -match "error|->|Error" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray } }
 }
-if ($bldExit -ne 0)           { FAIL "Build failed (exit $bldExit)" }
+
+if (Test-Path $bldLog) {
+    Get-Content $bldLog | Where-Object { $_ -match "error C|Error|->" } |
+        ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+}
+if ($bldExit -ne 0) {
+    if (Test-Path $bldErrLog) { Get-Content $bldErrLog | ForEach-Object { Write-Host "    $_" -ForegroundColor Red } }
+    FAIL "Build failed (exit $bldExit)"
+}
 if (-not (Test-Path $BuildExe)) { FAIL "$BuildExe not found after build" }
 OK "Build succeeded"
 
