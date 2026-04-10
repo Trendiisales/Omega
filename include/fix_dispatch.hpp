@@ -2,12 +2,6 @@
 // fix_dispatch.hpp -- extracted from main.cpp
 // Section: fix_dispatch (original lines 7285-7565)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
-//
-// FIX CONNECTION ROLE: ORDER EXECUTION ONLY.
-// Market data (W/X messages) from BlackBull are IGNORED entirely.
-// All price + L2 data comes exclusively from the cTrader Open API depth feed.
-// FIX is used only for: session management, order entry/exit, fill confirmation,
-// RTT measurement, and heartbeats.
 
 static void dispatch_fix(const std::string& msg, SSL* ssl) {
     const std::string type = extract_tag(msg, "35");
@@ -71,14 +65,123 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         std::cerr.flush();
     }
 
-    // ?? Market data W/X -- PRICE FALLBACK ONLY ???????????????????????????
-    // L2/DOM data comes exclusively from cTrader. FIX W/X is used ONLY as a
-    // price fallback when cTrader depth has gone silent (>500ms no event).
-    // No L2 parsing, no g_l2_books writes, no AtomicL2 writes from FIX.
-    // This ensures on_tick() keeps firing even in thin Asia tape when
-    // cTrader depth events are sparse, preventing engine freeze.
+    // ?? Market data ???????????????????????????????????????????????????????????
     if (type == "W" || type == "X") {
-        // Latency measurement from tag 52 -- always useful regardless of data source
+        const std::string sym_raw = extract_tag(msg, "55");
+        if (sym_raw.empty()) {
+            std::cerr << "[OMEGA-MD] W/X msg missing tag 55 -- raw: ";
+            std::string r = msg.substr(0, 200); for (char& c : r) if (c=='\x01') c='|';
+            std::cerr << r << "\n"; std::cerr.flush();
+            return;
+        }
+        std::string sym;
+        // Try numeric ID first (normal case), then string name fallback
+        try {
+            const int id = std::stoi(sym_raw);
+            std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+            const auto it = g_id_to_sym.find(id);
+            if (it == g_id_to_sym.end()) {
+                std::cerr << "[OMEGA-MD] Unknown numeric ID " << id << " in tag55\n";
+                std::cerr.flush();
+                return;
+            }
+            sym = it->second;
+        } catch (...) {
+            // Broker sent string name in 55= (e.g. "XAUUSD") -- look up directly
+            for (int i = 0; i < OMEGA_NSYMS; ++i) {
+                if (sym_raw == OMEGA_SYMS[i].name) { sym = OMEGA_SYMS[i].name; break; }
+            }
+            if (sym.empty() && g_cfg.enable_extended_symbols) {
+                std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+                for (const auto& e : g_ext_syms) {
+                    if (sym_raw == e.name) { sym = e.name; break; }
+                }
+            }
+            if (sym.empty()) {
+                std::cerr << "[OMEGA-MD] Unknown string symbol '" << sym_raw << "' in tag55\n";
+                std::cerr.flush();
+                return;
+            }
+        }
+        double bid = 0.0, ask = 0.0;
+        // ?? L2 depth parsing -- tag 269=side, 270=price, 271=size ?????????????
+        // Parse all depth levels into g_l2_books, extract best bid/ask for on_tick.
+        {
+            L2Book book;
+            size_t pos = 0u;
+            while ((pos = msg.find("269=", pos)) != std::string::npos) {
+                const char et = msg[pos + 4u];
+                const size_t soh = msg.find('\x01', pos);
+                if (soh == std::string::npos) break;
+                const size_t px_pos = msg.find("270=", pos);
+                if (px_pos == std::string::npos || px_pos > soh + 200) { pos = soh; continue; }
+                const size_t px_end = msg.find('\x01', px_pos + 4u);
+                if (px_end == std::string::npos) break;
+                const double price = std::stod(msg.substr(px_pos + 4u, px_end - (px_pos + 4u)));
+                // Tag 271 (MDEntrySize) -- may or may not be present
+                double size = 0.0;
+                const size_t sz_pos = msg.find("271=", px_pos);
+                if (sz_pos != std::string::npos && sz_pos < px_end + 30) {
+                    const size_t sz_end = msg.find('\x01', sz_pos + 4u);
+                    if (sz_end != std::string::npos)
+                        size = std::stod(msg.substr(sz_pos + 4u, sz_end - (sz_pos + 4u)));
+                }
+                if (et == '0') { // bid
+                    if (price > bid) bid = price;
+                    if (book.bid_count < 5) {
+                        book.bids[book.bid_count++] = {price, size};
+                    }
+                } else if (et == '1') { // ask
+                    if (ask <= 0.0 || price < ask) ask = price;
+                    if (book.ask_count < 5) {
+                        book.asks[book.ask_count++] = {price, size};
+                    }
+                }
+                pos = soh;
+            }
+            // Store L2 book
+            if (book.bid_count > 0 || book.ask_count > 0) {
+                double imb = 0.5;
+                bool   hd  = false;
+                {
+                    std::lock_guard<std::mutex> lk(g_l2_mtx);
+                    auto& stored = g_l2_books[sym];
+                    if (book.bid_count > 0) {
+                        stored.bid_count = book.bid_count;
+                        for (int i = 0; i < book.bid_count; ++i) stored.bids[i] = book.bids[i];
+                    }
+                    if (book.ask_count > 0) {
+                        stored.ask_count = book.ask_count;
+                        for (int i = 0; i < book.ask_count; ++i) stored.asks[i] = book.asks[i];
+                    }
+                    imb = stored.imbalance();
+                    hd  = stored.has_data();
+                }
+                // Write to per-symbol atomic -- ONLY when cTrader is not already
+                // delivering fresh depth for this symbol.
+                // cTrader Open API (ctid=43014358) is the authoritative DOM source.
+                // FIX W/X snapshots carry single-level quotes with unreliable sizes
+                // (tag 271 MDEntrySize is optional -- BlackBull often sends 0).
+                // If FIX overwrites a valid cTrader imbalance with 0.500 (size=0),
+                // every gate that uses l2_imb gets poisoned with neutral data.
+                // Rule: FIX writes only when cTrader data is stale (>2s old).
+                AtomicL2* al = get_atomic_l2(sym);
+                if (al) {
+                    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    // Only write if cTrader data is stale (last update > 2000ms ago)
+                    const int64_t last_ct = al->last_update_ms.load(std::memory_order_relaxed);
+                    const bool ct_fresh = (last_ct > 0) && ((now_ms - last_ct) < 2000);
+                    if (!ct_fresh) {
+                        al->imbalance.store(imb, std::memory_order_relaxed);
+                        al->has_data.store(hd,  std::memory_order_relaxed);
+                        al->last_update_ms.store(now_ms, std::memory_order_release);
+                    }
+                }
+            }
+        }
+        // Measure latency from broker tag 52 (SendingTime) on every quote
+        // Provides sub-second RTT samples vs 5s heartbeat ping
         const std::string send_ts = extract_tag(msg, "52");
         if (!send_ts.empty()) {
             const auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -87,6 +190,10 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             if (sent_us > 0 && now_us > sent_us) {
                 const double tick_lat_ms = static_cast<double>(now_us - sent_us) / 1000.0;
                 if (tick_lat_ms > 0.0 && tick_lat_ms < 5000.0) {
+                    // Do NOT feed tag52 delta into rtt_record -- broker clock vs our clock
+                    // may differ by 10-20ms even on co-located hardware (NTP drift).
+                    // rtt_record() feeds the lat_ok gate -- only use true TestRequest RTT.
+                    // tag52 delta is displayed separately as feed latency indicator only.
                     static int64_t s_last_lat_push_us = 0;
                     if (now_us - s_last_lat_push_us >= 200000LL) {
                         s_last_lat_push_us = now_us;
@@ -95,62 +202,43 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                 }
             }
         }
+        // Passive L2 routing disabled -- all symbols go through on_tick.
 
-        // Parse best bid/ask from FIX message -- prices only, no L2 book
-        const std::string sym_raw = extract_tag(msg, "55");
-        if (sym_raw.empty()) return;
-        std::string sym;
-        try {
-            const int id = std::stoi(sym_raw);
-            std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
-            const auto it = g_id_to_sym.find(id);
-            if (it == g_id_to_sym.end()) return;
-            sym = it->second;
-        } catch (...) {
-            for (int i = 0; i < OMEGA_NSYMS; ++i)
-                if (sym_raw == OMEGA_SYMS[i].name) { sym = OMEGA_SYMS[i].name; break; }
-            if (sym.empty() && g_cfg.enable_extended_symbols) {
-                std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
-                for (const auto& e : g_ext_syms)
-                    if (sym_raw == e.name) { sym = e.name; break; }
-            }
-            if (sym.empty()) return;
-        }
-
-        double bid = 0.0, ask = 0.0;
-        size_t pos = 0u;
-        while ((pos = msg.find("269=", pos)) != std::string::npos) {
-            const char et = msg[pos + 4u];
-            const size_t soh = msg.find('\x01', pos);
-            if (soh == std::string::npos) break;
-            const size_t px_pos = msg.find("270=", pos);
-            if (px_pos == std::string::npos || px_pos > soh + 200) { pos = soh; continue; }
-            const size_t px_end = msg.find('\x01', px_pos + 4u);
-            if (px_end == std::string::npos) break;
-            const double price = std::stod(msg.substr(px_pos + 4u, px_end - (px_pos + 4u)));
-            if (et == '0' && price > bid) bid = price;
-            else if (et == '1' && (ask <= 0.0 || price < ask)) ask = price;
-            pos = soh;
-        }
-
-        // Cache bid/ask for reconnect price snapshots
+        // Seed cache with whatever side(s) we just parsed -- must happen BEFORE
+        // the fallback read below, otherwise first-ever X (single-sided) drops silently.
         {
             std::lock_guard<std::mutex> lk(g_book_mtx);
             if (bid > 0.0) g_bids[sym] = bid;
             if (ask > 0.0) g_asks[sym] = ask;
         }
-        // Fill missing side from cache (type=X sends one side only)
+
+        // Merge incremental update with cached book.
+        // BlackBull type=X sends only ONE side (bid OR ask).
+        // Fill missing side from last known book so on_tick always gets valid bid+ask.
         if (bid <= 0.0 || ask <= 0.0) {
             std::lock_guard<std::mutex> lk(g_book_mtx);
             if (bid <= 0.0) { const auto it = g_bids.find(sym); if (it != g_bids.end()) bid = it->second; }
             if (ask <= 0.0) { const auto it = g_asks.find(sym); if (it != g_asks.end()) ask = it->second; }
         }
-
-        // Price fallback: only call on_tick() when cTrader depth is stale (>500ms)
-        // When cTrader is live it drives on_tick() directly -- FIX prices are
-        // batched/lagged and would only add noise. FIX is the keepalive for thin tape.
-        if (bid > 0.0 && ask > 0.0 && !ctrader_depth_is_live(sym)) {
-            on_tick(sym, bid, ask);
+        if (bid > 0.0 && ask > 0.0) {
+            // ?? FIX price fallback -- only use when cTrader depth is stale ????
+            // cTrader depth drives on_tick() as primary source (see on_tick_fn above).
+            // If cTrader depth is live (<500ms since last event) for this symbol,
+            // suppress FIX on_tick to avoid using batched/lagging FIX prices.
+            // FIX is still the primary ORDER EXECUTION channel -- this only affects
+            // price data used for trading signal decisions.
+            if (!ctrader_depth_is_live(sym)) {
+                // FIX fallback active -- log once per symbol so it's visible
+                static std::unordered_set<std::string> s_fix_fallback_logged;
+                if (!s_fix_fallback_logged.count(sym)) {
+                    s_fix_fallback_logged.insert(sym);
+                    printf("[FIX-FALLBACK] %s using FIX prices (cTrader depth not live)"
+                           " -- check [CTRADER-AUDIT] output for subscription status\n",
+                           sym.c_str());
+                    fflush(stdout);
+                }
+                on_tick(sym, bid, ask);
+            }
         }
         return;
     }
@@ -167,9 +255,6 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
     // ?? MarketDataRequestReject (35=Y) -- depth fallback ??????????????????????
     // If broker rejects our 264=5 subscription, fall back to 264=1 (top-of-book).
     // This fires at most once per session. g_md_depth_fallback prevents re-loop.
-    // NOTE: even with fallback active, FIX W/X prices are still ignored.
-    // The fallback only affects which FIX subscription format we send -- we still
-    // rely exclusively on cTrader for all price and L2 data.
     if (type == "Y") {
         const std::string rej_reason = extract_tag(msg, "281"); // MDReqRejReason
         const std::string req_id     = extract_tag(msg, "262"); // MDReqID
@@ -211,4 +296,3 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
 // Runs in its own thread. In SHADOW mode: connects, logs on, keeps alive.
 // In LIVE mode: NewOrderSingle messages are sent via g_trade_ssl.
 // ?????????????????????????????????????????????????????????????????????????????
-
