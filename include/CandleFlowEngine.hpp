@@ -13,15 +13,21 @@
 //
 //  Exit conditions:
 //    Primary: L2 imbalance flips against position for >= 2 consecutive ticks
-//             imbalance threshold = 0.05 (calibrated to cTrader level-count data)
-//             OR imbalance against for >= 1 tick AND depth drop on support side
+//             imbalance threshold = 0.08 (calibrated to cTrader level-count data)
+//             AND minimum hold time of 20s elapsed (prevents noise exits)
 //    Safety:  move < cost * 1.0 within 60s stagnation window
 //    Hard SL: 1x ATR behind entry
 //
 //  Sweep result (20,736 configs, real cTrader L2 data 2026-04-10):
-//    RSI_P=30  EMA=10  THRESH=6.0  IMB=0.05  IMB_TICKS=2
+//    RSI_P=30  EMA=10  THRESH=6.0  IMB=0.08  IMB_TICKS=2
 //    BODY=0.60  COST_MULT=2.5  STAG=60s
 //    -> 14 trades/day, 71.4% WR, R:R=1.90, exp=$8.13/trade, maxDD=$19.68
+//
+//  2026-04-11 fixes:
+//    - CFE_IMB_EXIT_TICKS restored to 2 (was changed to 1 -- too hair-trigger)
+//    - CFE_IMB_MIN_HOLD_MS = 20000: IMB_EXIT cannot fire before 20s in trade
+//      Root cause of 8s/37s exits: single-tick imbalance noise fired immediately
+//      after entry. 20s minimum hold eliminates sub-10s exits entirely.
 // =============================================================================
 
 #pragma once
@@ -60,7 +66,9 @@ static constexpr double  CFE_RSI_THRESH        = 6.0;   // min slope EMA to ente
 // imbalance = dom.l2_imb converted to -1..+1: (l2_imb - 0.5) * 2
 // Exit long when imb < -CFE_IMB_EXIT_THRESH for >= CFE_IMB_EXIT_TICKS ticks
 static constexpr double  CFE_IMB_EXIT_THRESH   = 0.08;  // calibrated to cTrader level-count data (0.4545/0.5455 = imb +/-0.091)
-static constexpr int     CFE_IMB_EXIT_TICKS    = 1;  // single tick sufficient -- level shifts are meaningful
+static constexpr int     CFE_IMB_EXIT_TICKS    = 2;     // restored to 2: single tick is noise, need 2 consecutive
+static constexpr int64_t CFE_IMB_MIN_HOLD_MS   = 20000; // IMB_EXIT blocked for first 20s after entry
+                                                          // prevents immediate noise exits (8s/37s trades confirmed as noise)
 
 // -----------------------------------------------------------------------------
 struct CandleFlowEngine {
@@ -307,10 +315,26 @@ private:
     // -------------------------------------------------------------------------
     // L2 imbalance exit
     // imb = l2_imb converted to -1..+1 centered: (l2_imb - 0.5) * 2
-    // Exit long when imb < -thresh for >= N ticks
-    // Exit short when imb > +thresh for >= N ticks
-    // Also exits on imb against for >= 1 tick AND depth drop on support side
-    bool check_imb_exit(bool is_long, const DOMSnap& dom) noexcept {
+    // Exit long when imb < -thresh for >= N ticks AND hold >= CFE_IMB_MIN_HOLD_MS
+    // Exit short when imb > +thresh for >= N ticks AND hold >= CFE_IMB_MIN_HOLD_MS
+    // Also exits on imb against for >= 1 tick AND depth drop AND hold >= min
+    bool check_imb_exit(bool is_long, const DOMSnap& dom, int64_t hold_ms) noexcept {
+        // Minimum hold guard: IMB_EXIT is blocked for the first CFE_IMB_MIN_HOLD_MS
+        // milliseconds after entry. This eliminates the sub-10s noise exits caused by
+        // a single imbalance blip immediately after entry (8s/37s losses on 2026-04-11).
+        if (hold_ms < CFE_IMB_MIN_HOLD_MS) {
+            // Still track counter ticks for continuity -- just don't act on them yet
+            const double imb_track = (dom.l2_imb - 0.5) * 2.0;
+            const bool against_track = is_long
+                ? (imb_track < -CFE_IMB_EXIT_THRESH)
+                : (imb_track >  CFE_IMB_EXIT_THRESH);
+            if (against_track) m_imb_against_ticks++;
+            else               m_imb_against_ticks = 0;
+            m_prev_depth_bid = dom.bid_count;
+            m_prev_depth_ask = dom.ask_count;
+            return false;
+        }
+
         // Use level-count imbalance from cTrader depth feed directly
         const double imb = (dom.l2_imb - 0.5) * 2.0;  // -1..+1
         const bool against = is_long
@@ -382,18 +406,21 @@ private:
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
 
+        const int64_t hold_ms = now_ms - pos.entry_ts_ms;
+
         // Hard SL
         if (pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl)) {
             close_pos(pos.is_long ? bid : ask, "SL_HIT", now_ms, on_close);
             return;
         }
 
-        // L2 imbalance exit
-        if (check_imb_exit(pos.is_long, dom)) {
+        // L2 imbalance exit -- requires CFE_IMB_MIN_HOLD_MS elapsed
+        if (check_imb_exit(pos.is_long, dom, hold_ms)) {
             const double px = pos.is_long ? bid : ask;
             std::cout << "[CFE] IMB-EXIT " << (pos.is_long?"LONG":"SHORT")
                       << " imb_ticks=" << m_imb_against_ticks
                       << " l2_imb=" << std::fixed << std::setprecision(4) << dom.l2_imb
+                      << " hold_ms=" << hold_ms
                       << " @ " << std::setprecision(2) << px
                       << " mfe=" << std::setprecision(3) << pos.mfe << "\n";
             std::cout.flush();
@@ -402,11 +429,11 @@ private:
         }
 
         // Stagnation safety exit
-        if (now_ms - pos.entry_ts_ms >= CFE_STAGNATION_MS) {
+        if (hold_ms >= CFE_STAGNATION_MS) {
             if (pos.mfe < pos.cost_pts * CFE_STAGNATION_MULT) {
                 const double px = pos.is_long ? bid : ask;
                 std::cout << "[CFE] STAGNATION-EXIT " << (pos.is_long?"LONG":"SHORT")
-                          << " held=" << (now_ms - pos.entry_ts_ms)
+                          << " held=" << hold_ms
                           << "ms mfe=" << std::fixed << std::setprecision(3) << pos.mfe
                           << " < need=" << pos.cost_pts * CFE_STAGNATION_MULT << "\n";
                 std::cout.flush();
