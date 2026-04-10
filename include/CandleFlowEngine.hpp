@@ -3,7 +3,7 @@
 //
 //  Strategy (updated — sweep-optimised against real L2 data 2026-04-10):
 //    ENTRY:  expansion candle (quality gate) + RSI trend direction
-//    EXIT:   real L2 imbalance reversal (sustained N ticks) OR stagnation
+//    EXIT:   L2 imbalance reversal (sustained N ticks) OR stagnation
 //
 //  Entry conditions (ALL required):
 //    1. Expansion candle: body >= 60% of range, close breaks prev high/low
@@ -56,8 +56,8 @@ static constexpr int     CFE_RSI_PERIOD        = 30;    // tick RSI lookback
 static constexpr int     CFE_RSI_EMA_N         = 10;    // slope EMA smoothing
 static constexpr double  CFE_RSI_THRESH        = 6.0;   // min slope EMA to enter
 
-// L2 imbalance exit (real DOM signal)
-// imbalance = (bid_count - ask_count) / (bid_count + ask_count), range -1..+1
+// L2 imbalance exit (cTrader depth level-count signal)
+// imbalance = dom.l2_imb converted to -1..+1: (l2_imb - 0.5) * 2
 // Exit long when imb < -CFE_IMB_EXIT_THRESH for >= CFE_IMB_EXIT_TICKS ticks
 static constexpr double  CFE_IMB_EXIT_THRESH   = 0.05;
 static constexpr int     CFE_IMB_EXIT_TICKS    = 2;
@@ -311,10 +311,8 @@ private:
     // Exit short when imb > +thresh for >= N ticks
     // Also exits on imb against for >= 1 tick AND depth drop on support side
     bool check_imb_exit(bool is_long, const DOMSnap& dom) noexcept {
-        // Use real DOM imbalance from cBot if available, else fall back to level counts
-        const double real_imb = real_dom_imbalance(5);
-        const double l2_imb = (real_imb != 0.5) ? real_imb : dom.l2_imb;
-        const double imb = (l2_imb - 0.5) * 2.0;  // -1..+1
+        // Use level-count imbalance from cTrader depth feed directly
+        const double imb = (dom.l2_imb - 0.5) * 2.0;  // -1..+1
         const bool against = is_long
             ? (imb < -CFE_IMB_EXIT_THRESH)
             : (imb >  CFE_IMB_EXIT_THRESH);
