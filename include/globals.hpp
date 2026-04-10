@@ -233,9 +233,9 @@ static std::atomic<bool>     g_l2_watchdog_dead{false};   // true = L2 dead, Gol
 // Set true when cTrader depth has subscribed for XAUUSD but delivered ZERO depth
 // events for >= FEED_STALE_THRESHOLD_S seconds after subscription.
 // Root cause of April 5/6 frozen-session: broker ACKs the depth sub but sends no
-// events. With no cTrader ticks flowing, on_tick() never fires and all engines
-// see stale price state from the prior session. This produces 452 identical ticks
-// (4677.03/4677.25) with vol_range=0.00 while the real market moves $40.
+// events, leaving FIX fallback active with a stale cached price from the prior
+// session. This produces 452 identical ticks (4677.03/4677.25) with vol_range=0.00
+// for the entire session while the real market moves $40.
 //
 // BEHAVIOUR WHEN SET:
 //   - All XAUUSD new entries blocked (GoldFlow + GoldStack + BracketEngine)
@@ -655,4 +655,3 @@ inline std::string state_root_dir() {
     return "state";
 #endif
 }
-
