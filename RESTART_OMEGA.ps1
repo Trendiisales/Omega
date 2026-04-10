@@ -307,33 +307,14 @@ Step 5 13 "Building Omega only..."
 $ErrorActionPreference = "Continue"
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
 
-$bldLog    = "$env:TEMP\omega_bld.txt"
-$bldErrLog = "$env:TEMP\omega_bld_err.txt"
-
-# cmake --target Omega builds ONLY Omega.vcxproj, skipping OmegaBacktest and CandleFlowL2Bt
-# This is the same command that works manually and completes in ~30 seconds
+# Run cmake --build in foreground (-Wait, no redirection) so progress is visible
+# --target Omega builds only Omega.vcxproj, skipping OmegaBacktest and CandleFlowL2Bt
 $bldProc = Start-Process -FilePath $CmakeExe `
     -ArgumentList "--build `"$OmegaDir\build`" --config Release --target Omega" `
-    -RedirectStandardOutput $bldLog `
-    -RedirectStandardError $bldErrLog `
-    -PassThru -NoNewWindow
-
-# 5 minute hard timeout -- kills the process if it hangs
-$bldProc | Wait-Process -Timeout 300 -ErrorAction SilentlyContinue
-if (-not $bldProc.HasExited) {
-    $bldProc | Stop-Process -Force
-    FAIL "Build timed out after 5 minutes -- kill all cmake/MSBuild processes and rerun"
-}
+    -Wait -PassThru -NoNewWindow
 $bldExit = $bldProc.ExitCode
 
-if (Test-Path $bldLog) {
-    Get-Content $bldLog | Where-Object { $_ -match "error C|Error|->|Omega.vcxproj" } |
-        ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
-}
-if ($bldExit -ne 0) {
-    if (Test-Path $bldErrLog) { Get-Content $bldErrLog | ForEach-Object { Write-Host "    $_" -ForegroundColor Red } }
-    FAIL "Build failed (exit $bldExit)"
-}
+if ($bldExit -ne 0) { FAIL "Build failed (exit $bldExit)" }
 if (-not (Test-Path $BuildExe)) { FAIL "$BuildExe not found after build" }
 OK "Build succeeded"
 
