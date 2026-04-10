@@ -3594,14 +3594,19 @@ static void on_tick_gold(
     // Manage always (position already open)
     if (g_candle_flow.has_open_position()) {
         // Build current DOM snapshot from L2Book
-        L2Book cfe_book, cfe_prev_book;
+        // cfe_prev_book_mgmt is static so it persists between ticks --
+        // required for imbalance_level() delta to work correctly in build_dom().
+        static L2Book cfe_prev_book_mgmt;
+        L2Book cfe_book;
         {
             std::lock_guard<std::mutex> lk(g_l2_mtx);
             auto it = g_l2_books.find("XAUUSD");
             if (it != g_l2_books.end()) cfe_book = it->second;
         }
+        L2Book& cfe_prev_book = cfe_prev_book_mgmt;
         const auto cfe_dom = omega::CandleFlowEngine::build_dom(
             cfe_book, cfe_prev_book, (bid + ask) * 0.5);
+        cfe_prev_book_mgmt = cfe_book;  // advance prev for next tick
         const omega::CandleFlowEngine::BarSnap cfe_bar_dummy{};
         const double cfe_atr = g_gold_flow.current_atr() > 0.0
             ? g_gold_flow.current_atr() : 5.0;
@@ -3670,14 +3675,18 @@ static void on_tick_gold(
 
         if (cfe_bar.valid) {
             // Build DOM snapshot
-            L2Book cfe_book_e, cfe_prev_book_e;
+            // cfe_prev_book_entry is static -- persists between ticks for imbalance delta.
+            static L2Book cfe_prev_book_entry;
+            L2Book cfe_book_e;
             {
                 std::lock_guard<std::mutex> lk(g_l2_mtx);
                 auto it = g_l2_books.find("XAUUSD");
                 if (it != g_l2_books.end()) cfe_book_e = it->second;
             }
+            const L2Book& cfe_prev_book_e = cfe_prev_book_entry;
             const auto cfe_dom_e = omega::CandleFlowEngine::build_dom(
                 cfe_book_e, cfe_prev_book_e, (bid + ask) * 0.5);
+            cfe_prev_book_entry = cfe_book_e;  // advance prev for next tick
 
             g_candle_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
                 ? g_cfg.risk_per_trade_usd : omega::CFE_RISK_DOLLARS;
