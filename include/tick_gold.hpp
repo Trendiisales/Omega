@@ -762,6 +762,28 @@ static void on_tick_gold(
                 g_l2_gold.micro_edge.load(std::memory_order_relaxed),
                 static_cast<double>(g_gold_stack.ewm_drift()));
             fflush(s_l2f_unc);
+
+            // L2 CSV health heartbeat every 60s -- confirms file is open and writing.
+            // If [L2-CSV-HEALTH] stops appearing in latest.log, the CSV has stopped.
+            static int64_t  s_l2_health_ts = 0;
+            static uint64_t s_l2_row_count = 0;
+            ++s_l2_row_count;
+            if (now_ms_g - s_l2_health_ts >= 60000) {
+                s_l2_health_ts = now_ms_g;
+                std::cout << "[L2-CSV-HEALTH] file=OPEN rows=" << s_l2_row_count
+                          << " date=" << (tm_l2_unc.tm_year+1900) << "-"
+                          << (tm_l2_unc.tm_mon+1) << "-" << tm_l2_unc.tm_mday << "\n";
+                std::cout.flush();
+            }
+        } else {
+            // File failed to open or was never created -- alert every 30s
+            static int64_t s_l2_fail_ts = 0;
+            if (now_ms_g - s_l2_fail_ts >= 30000) {
+                s_l2_fail_ts = now_ms_g;
+                std::cout << "[L2-CSV-FAIL] L2 tick file NOT open -- data LOST. "
+                          << "Check C:\\Omega\\logs\\ write permissions\n";
+                std::cout.flush();
+            }
         }
     }
     // ── end L2 tick logger (unconditional) ───────────────────────────────
