@@ -1053,7 +1053,7 @@ private:
                     // the broker-side depth stream for XAUUSD, producing zero depth events.
                     // All other symbols are safe to re-subscribe here.
                     if (req.name == "XAUUSD") {
-                        std::cout << "[CTRADER-BARS] XAUUSD spots sub SKIPPED (causes TCP drop on BlackBull)\n";
+                        std::cout << "[CTRADER-BARS] XAUUSD spots sub SKIPPED (already sent pre-depth)\n";
                     } else {
                     send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, req.sid));
                     std::cout << "[CTRADER-BARS] " << req.name << " spots sub sent\n";
@@ -1178,18 +1178,18 @@ private:
 
                         if (!xauusd_escalation_blocked) {
                             if (xauusd_resub_count == 0) {
-                                // LEVEL 1: re-subscribe XAUUSD depth only (no spots sub -- causes TCP drop)
-                                // spots sub removed from startup and starvation resub -- BlackBull drops
-                                // the TCP connection when spots sub is sent for XAUUSD. Depth sub alone
-                                // is sufficient to restore depth event flow.
+                                // LEVEL 1: re-subscribe XAUUSD spots then depth
+                                // MUST send spots sub first -- same as startup sequence.
                                 int64_t xauusd_id = -1;
                                 for (const auto& idm : id_to_internal_) {
                                     if (idm.second == "XAUUSD") { xauusd_id = (int64_t)idm.first; break; }
                                 }
                                 if (xauusd_id > 0) {
-                                    printf("[FEED-STALE] LEVEL-1: re-subscribing XAUUSD depth only (id=%lld) starve=%llds\n",
+                                    printf("[FEED-STALE] LEVEL-1: re-subscribing XAUUSD spots+depth (id=%lld) starve=%llds\n",
                                            (long long)xauusd_id, (long long)starve_secs);
                                     fflush(stdout);
+                                    // XAUUSD spots sub removed -- causes TCP drop on BlackBull
+                                    // Only re-subscribe depth, not spots
                                     send_msg(ssl, PB::subscribe_depth_req(ctid_account_id, {xauusd_id}));
                                     ++xauusd_resub_count;
                                 } else {
