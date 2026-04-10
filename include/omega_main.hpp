@@ -416,6 +416,35 @@ int main(int argc, char* argv[])
         g_ctrader_depth.save_bar_failed(g_ctrader_depth.bar_failed_path_);
         std::cout << "[CTRADER] Pre-blocked trendbar reqs + live subs -- no crash loop\n";
 
+        // ── BAR STATE LOAD -- MUST run before ctrader start() ────────────────
+        // Loads saved indicator state (EMA, ATR, RSI, BB) from prior session.
+        // Sets m1_ready=true immediately so GoldFlow/GoldStack/RSIReversal/
+        // CandleFlow/MicroMomentum/RSIExtremeTurn are all unblocked from tick 1.
+        // Without this every restart is a cold start -- bars never seed because
+        // BlackBull blocks all trendbar API requests (bar_failed_reqs above).
+        // save_indicators() is called on clean shutdown (signal handler below).
+        // Rejection criteria: age > 24h, e9<=0, e50<=0 -- any bad file is deleted.
+        {
+            const std::string bs = log_root_dir();
+            const bool m1_ok  = g_bars_gold.m1 .load_indicators(bs + "/bars_gold_m1.dat");
+            const bool m5_ok  = g_bars_gold.m5 .load_indicators(bs + "/bars_gold_m5.dat");
+            const bool m15_ok = g_bars_gold.m15.load_indicators(bs + "/bars_gold_m15.dat");
+            const bool h4_ok  = g_bars_gold.h4 .load_indicators(bs + "/bars_gold_h4.dat");
+            const bool sp_ok  = g_bars_sp.m1   .load_indicators(bs + "/bars_sp_m1.dat");
+            const bool nq_ok  = g_bars_nq.m1   .load_indicators(bs + "/bars_nq_m1.dat");
+            std::cout << "[BAR-LOAD] XAUUSD m1=" << m1_ok << " m5=" << m5_ok
+                      << " m15=" << m15_ok << " h4=" << h4_ok
+                      << " sp=" << sp_ok << " nq=" << nq_ok
+                      << " -- m1_ready=" << g_bars_gold.m1.ind.m1_ready.load()
+                      << "\n";
+            std::cout.flush();
+            if (!m1_ok) {
+                std::cout << "[BAR-LOAD] WARN: bars_gold_m1.dat missing or stale -- "
+                          << "GoldFlow blocked until M1 bars seed from tick data (~2min)\n";
+                std::cout.flush();
+            }
+        }
+
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
 
@@ -691,6 +720,26 @@ int main(int argc, char* argv[])
             // increasing each 30s interval.
             const double cur_imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
             const bool l2_alive = events_flowing;
+
+            // ── Periodic bar state save every 10 min ─────────────────────────
+            // Ensures restart is always warm even if clean shutdown signal is missed.
+            // save_indicators() skips flat/holiday/cold state automatically.
+            {
+                static int64_t s_last_bar_save_s = 0;
+                const int64_t now_s_save = static_cast<int64_t>(std::time(nullptr));
+                if (now_s_save - s_last_bar_save_s >= 600) {
+                    s_last_bar_save_s = now_s_save;
+                    const std::string bs = log_root_dir();
+                    g_bars_gold.m1 .save_indicators(bs + "/bars_gold_m1.dat");
+                    g_bars_gold.m5 .save_indicators(bs + "/bars_gold_m5.dat");
+                    g_bars_gold.m15.save_indicators(bs + "/bars_gold_m15.dat");
+                    g_bars_gold.h4 .save_indicators(bs + "/bars_gold_h4.dat");
+                    g_bars_sp.m1   .save_indicators(bs + "/bars_sp_m1.dat");
+                    g_bars_nq.m1   .save_indicators(bs + "/bars_nq_m1.dat");
+                    printf("[BAR-SAVE] Periodic save complete (every 10min)\n");
+                    fflush(stdout);
+                }
+            }
 
             // Diagnostic every 30s -- always visible, confirms imbalance is moving
             printf("[L2-WATCHDOG] events_total=%llu events_flowing=%d imb=%.4f alive=%d watchdog_dead=%d\n",
