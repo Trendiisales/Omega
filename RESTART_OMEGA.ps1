@@ -149,17 +149,14 @@ $ErrorActionPreference = "Continue"
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -eq "Running") {
     Write-Host "      Stopping $ServiceName service..." -ForegroundColor DarkGray
-    # Use Start-Job to avoid Stop-Service blocking indefinitely
-    $stopJob = Start-Job { param($sn) Stop-Service $sn -Force -ErrorAction SilentlyContinue } -ArgumentList $ServiceName
+    Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
+    # Wait up to 15s for service to reach Stopped state
     $svcWait = 0
     while ($svcWait -lt 15) {
         Start-Sleep -Seconds 1; $svcWait++
         $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
         if ($svc.Status -eq "Stopped") { break }
-        Write-Host "      Waiting for stop... ($svcWait s) state=$($svc.Status)" -ForegroundColor DarkGray
     }
-    Stop-Job $stopJob -ErrorAction SilentlyContinue
-    Remove-Job $stopJob -Force -ErrorAction SilentlyContinue
     Write-Host "      Service state: $($svc.Status) (after ${svcWait}s)" -ForegroundColor DarkGray
 }
 
@@ -167,12 +164,9 @@ if ($svc -and $svc.Status -eq "Running") {
 taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
 Start-Sleep -Seconds 1
 
-# Step 1c: Kill any survivors including MSBuild/compiler holding obj files
+# Step 1c: Kill any survivors
 Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Get-Process -Name "MSBuild" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Get-Process -Name "cl" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Get-Process -Name "link" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 1
 
 # Step 1d: CONFIRM dead -- hard loop, fail if process survives 20s
 # This is the critical check that was missing. The singleton mutex in Omega
@@ -279,10 +273,6 @@ if (-not (Test-Path "$OmegaDir\build")) {
     New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
     Write-Host "      [NOTE] Fresh build directory created" -ForegroundColor Yellow
 }
-# Delete obj/pch files only -- keeps CMakeCache.txt so configure is not needed
-# Do NOT wipe the entire build dir -- that destroys the cmake cache
-Get-ChildItem "$OmegaDir\build" -Recurse -Include "*.obj","*.pch" -ErrorAction SilentlyContinue |
-    Remove-Item -Force -ErrorAction SilentlyContinue
 OK "Build directory ready"
 
 # ── [4/13] Write version stamp (no cmake) ───────────────────────────────────────────────────
@@ -317,6 +307,8 @@ Step 5 13 "Building Omega only..."
 $ErrorActionPreference = "Continue"
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
 
+# Run cmake --build in foreground (-Wait, no redirection) so progress is visible
+# --target Omega builds only Omega.vcxproj, skipping OmegaBacktest and CandleFlowL2Bt
 $bldProc = Start-Process -FilePath $CmakeExe `
     -ArgumentList "--build `"$OmegaDir\build`" --config Release --target Omega" `
     -Wait -PassThru -NoNewWindow
@@ -371,18 +363,9 @@ if ($svc) {
     if (Test-Path $NssmExe) {
         # Update service exe, AppDirectory, and args so it always uses current binary
         $ErrorActionPreference = "Continue"
-        $nssmJob = Start-Job -ScriptBlock {
-            param($nssm,$svc,$exe,$dir)
-            & $nssm set $svc Application $exe 2>&1 | Out-Null
-            & $nssm set $svc AppDirectory $dir 2>&1 | Out-Null
-            & $nssm set $svc AppParameters "omega_config.ini" 2>&1 | Out-Null
-        } -ArgumentList $NssmExe,$ServiceName,$OmegaExe,$OmegaDir
-        $nssmDone = Wait-Job $nssmJob -Timeout 10
-        if (-not $nssmDone) {
-            Write-Host "      [!!] NSSM config timed out -- continuing anyway" -ForegroundColor Yellow
-            Stop-Job $nssmJob -ErrorAction SilentlyContinue
-        }
-        Remove-Job $nssmJob -Force -ErrorAction SilentlyContinue
+        & $NssmExe set $ServiceName Application $OmegaExe 2>&1 | Out-Null
+        & $NssmExe set $ServiceName AppDirectory $OmegaDir 2>&1 | Out-Null
+        & $NssmExe set $ServiceName AppParameters "omega_config.ini" 2>&1 | Out-Null
         $ErrorActionPreference = "Stop"
         OK "Service exe + AppDirectory updated via NSSM"
     } else {
@@ -411,15 +394,35 @@ Write-Host ""
 Step 13 13 "Launching..."
 Set-Location $OmegaDir
 
-
+# Wait for OmegaDomStreamer cBot to be listening on port 8765 (must start before Omega)
+# cBot binds 8765 as TCP server -- Omega connects as client. If Omega starts first it holds
+# the port and the cBot fails to bind. We wait up to 30s for the cBot to be ready.
+Write-Host "      Checking OmegaDomStreamer cBot on port 8765..." -ForegroundColor DarkGray
+$cbotWait = 0
+$cbotReady = $false
+while ($cbotWait -lt 30) {
+    $listening = netstat -an 2>$null | Select-String "0.0.0.0:8765.*LISTENING"
+    if ($listening) { $cbotReady = $true; break }
+    Start-Sleep -Seconds 1
+    $cbotWait++
+    if ($cbotWait % 5 -eq 0) { Write-Host "      Waiting for cBot on 8765... (${cbotWait}s)" -ForegroundColor Yellow }
+}
+if ($cbotReady) {
+    Write-Host "      [OK] cBot listening on 8765 (after ${cbotWait}s)" -ForegroundColor Green
+} else {
+    Write-Host "      [!!] cBot not detected on 8765 after 30s -- start OmegaDomStreamer in cTrader first" -ForegroundColor Yellow
+    Write-Host "      Proceeding anyway -- Omega will retry cBot connection every 3s" -ForegroundColor Yellow
+}
 
 $launchTime = Get-Date   # recorded BEFORE Start-Service so we know when this run began
 
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc) {
     Write-Host "  Starting $ServiceName service..." -ForegroundColor Cyan
-    # Use Start-Job to avoid Start-Service blocking indefinitely on slow NSSM starts
-    $startJob = Start-Job { param($sn) Start-Service $sn -ErrorAction SilentlyContinue } -ArgumentList $ServiceName
+    Start-Service $ServiceName
+
+    # Wait up to 30s for service to reach Running state
+    # Do not rely on a fixed sleep -- service startup time varies 3-15s
     $startWait = 0
     while ($startWait -lt 30) {
         Start-Sleep -Seconds 1; $startWait++
@@ -427,9 +430,6 @@ if ($svc) {
         if ($svc.Status -eq "Running") { break }
         Write-Host "      Waiting for service... ($startWait s) state=$($svc.Status)" -ForegroundColor DarkGray
     }
-    Stop-Job $startJob -ErrorAction SilentlyContinue
-    Remove-Job $startJob -Force -ErrorAction SilentlyContinue
-    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     $col = if ($svc.Status -eq "Running") { "Green" } else { "Red" }
     Write-Host "  Service status: $($svc.Status) (after ${startWait}s)" -ForegroundColor $col
     if ($svc.Status -ne "Running") { FAIL "$ServiceName failed to reach Running state after 30s" }
@@ -492,19 +492,18 @@ while ($waited -lt 30) {
             break
         }
     }
-    Write-Host "  Waiting for fresh latest.log... (${waited}s)" -ForegroundColor DarkGray
+    if ($waited % 5 -eq 0) { Write-Host "  Waiting for fresh latest.log... (${waited}s)" -ForegroundColor DarkGray }
 }
 
 if (-not $logFresh) {
-    # Check if Omega process is running despite log not updating
-    $omegaProc = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
-    if ($omegaProc) {
-        Write-Host "  [OK] Omega process is running (PID $($omegaProc.Id)) -- log update slow, continuing" -ForegroundColor Green
-        $logFresh = $true
-    } else {
-        Write-Host "  [!!] latest.log was not updated after launch within 30s" -ForegroundColor Red
-        FAIL "latest.log not updated by new binary within 30s -- engine did not start"
+    Write-Host "  [!!] latest.log was not updated after launch within 30s" -ForegroundColor Red
+    Write-Host "       Service state: $((Get-Service $ServiceName -EA SilentlyContinue).Status)" -ForegroundColor Red
+    if (Test-Path $logPath) {
+        $lwt = (Get-Item $logPath).LastWriteTime
+        Write-Host "       latest.log LastWriteTime: $lwt (launch was: $launchTime)" -ForegroundColor Red
+        Write-Host "       This file is from a prior run -- refusing to read it" -ForegroundColor Red
     }
+    FAIL "latest.log not updated by new binary within 30s -- engine did not start"
 }
 
 # ── Wait up to 90s for [OMEGA] RUNNING COMMIT: <hash> ────────────────────────
@@ -523,21 +522,15 @@ while ($waitB -lt 90) {
         Write-Host "  [OK] RUNNING COMMIT found after ${waitB}s: $runningHash" -ForegroundColor Green
         break
     }
-    Write-Host "  Waiting for RUNNING COMMIT... (${waitB}s)" -ForegroundColor DarkGray
+    if ($waitB % 10 -eq 0) { Write-Host "  Still waiting for RUNNING COMMIT... (${waitB}s)" -ForegroundColor DarkGray }
 }
 
 if ($runningHash -eq "NOT_FOUND") {
-    # Check if Omega is running even without the commit line
-    $omegaProc = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
-    if ($omegaProc) {
-        Write-Host "  [OK] Omega running (PID $($omegaProc.Id)) -- RUNNING COMMIT line not found but process is live" -ForegroundColor Yellow
-        $runningHash = $gitHash  # assume correct since we just built and launched it
-    } else {
-        Write-Host ""
-        Write-Host "  [!!] RUNNING COMMIT never appeared and Omega process not found" -ForegroundColor Red
-        Get-Content $logPath -Tail 15 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-        FAIL "Engine startup failed -- RUNNING COMMIT not found and process not running"
-    }
+    Write-Host ""
+    Write-Host "  [!!] RUNNING COMMIT never appeared after 90s" -ForegroundColor Red
+    Write-Host "  Last 15 lines of latest.log:" -ForegroundColor Red
+    Get-Content $logPath -Tail 15 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    FAIL "Engine startup failed -- RUNNING COMMIT not found in latest.log"
 }
 
 # ── HASH VERIFICATION ─────────────────────────────────────────────────────────
@@ -589,15 +582,7 @@ Write-Host ""
 Write-Host "  Running full status check..." -ForegroundColor Cyan
 Write-Host ""
 if (Test-Path "$OmegaDir\OMEGA_STATUS.ps1") {
-    $statusJob = Start-Job -ScriptBlock { & "C:\Omega\OMEGA_STATUS.ps1" }
-    $statusDone = Wait-Job $statusJob -Timeout 15
-    if ($statusDone) {
-        Receive-Job $statusJob | ForEach-Object { Write-Host "  $_" }
-    } else {
-        Write-Host "  [!!] OMEGA_STATUS.ps1 timed out after 15s -- skipping" -ForegroundColor Yellow
-        Stop-Job $statusJob -ErrorAction SilentlyContinue
-    }
-    Remove-Job $statusJob -Force -ErrorAction SilentlyContinue
+    & "$OmegaDir\OMEGA_STATUS.ps1"
 } else {
     Write-Host "  OMEGA_STATUS.ps1 not found -- skipping" -ForegroundColor Yellow
 }
