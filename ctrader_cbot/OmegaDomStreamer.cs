@@ -52,6 +52,7 @@ namespace cAlgo.Robots
             try
             {
                 _listener = new TcpListener(IPAddress.Loopback, Port);
+                _listener.Server.SetSocketOption(System.Net.Sockets.SocketOptionLevel.Socket, System.Net.Sockets.SocketOptionName.ReuseAddress, true);
                 _listener.Start();
                 Print("[OMEGA-DOM] Listening on 127.0.0.1:" + Port);
                 while (_running)
