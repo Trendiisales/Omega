@@ -269,13 +269,11 @@ OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
 Step 3 13 "Wiping build directory..."
-# Force-release any locked obj files before wipe using takeown+icacls
 if (Test-Path "$OmegaDir\build") {
     Get-ChildItem "$OmegaDir\build" -Recurse -Include "*.obj","*.pch" -ErrorAction SilentlyContinue | ForEach-Object {
-        $f = $_.FullName
-        cmd /c "takeown /f `"$f`" >nul 2>&1"
-        cmd /c "icacls `"$f`" /grant administrators:F >nul 2>&1"
-        cmd /c "del /f /q `"$f`" >nul 2>&1"
+        cmd /c "takeown /f `"$($_.FullName)`" >nul 2>&1"
+        cmd /c "icacls `"$($_.FullName)`" /grant administrators:F >nul 2>&1"
+        cmd /c "del /f /q `"$($_.FullName)`" >nul 2>&1"
     }
     Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
 }
