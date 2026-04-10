@@ -18,10 +18,10 @@
 //    Safety:  move < cost * 1.0 within 60s stagnation window
 //    Hard SL: 1x ATR behind entry
 //
-//  Sweep result (20,736 configs, real L2 data):
+//  Sweep result (20,736 configs, real cTrader L2 data 2026-04-10):
 //    RSI_P=30  EMA=10  THRESH=6.0  IMB=0.05  IMB_TICKS=2
 //    BODY=0.60  COST_MULT=2.5  STAG=60s
-//    -> 15 trades/day, 66.7% WR, R:R=1.49, exp=$6.44/trade, maxDD=$19.68
+//    -> 14 trades/day, 71.4% WR, R:R=1.90, exp=$8.13/trade, maxDD=$19.68
 // =============================================================================
 
 #pragma once
@@ -200,7 +200,8 @@ struct CandleFlowEngine {
 
     // -------------------------------------------------------------------------
     // Build DOMSnap from L2Book + previous book
-    // Uses imbalance_level() -- correct for BlackBull (size_raw=0 always)
+    // Uses imbalance_level() -- level-count based, correct for cTrader feed
+    // where size_raw=0 is sent on depth quotes (level count is the real signal)
     // -------------------------------------------------------------------------
     static DOMSnap build_dom(const L2Book& book,
                               const L2Book& prev_book,
@@ -217,7 +218,7 @@ struct CandleFlowEngine {
         d.prev_bid_vol   = static_cast<double>(prev_book.bid_count);
         d.prev_ask_vol   = static_cast<double>(prev_book.ask_count);
 
-        // Level-count imbalance: primary signal for BlackBull
+        // Level-count imbalance: primary signal for cTrader L2 feed
         d.l2_imb = book.imbalance_level();
 
         d.vacuum_ask = book.liquidity_vacuum_ask();
