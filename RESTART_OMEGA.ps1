@@ -178,13 +178,6 @@ OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
 Step 3 13 "Wiping build directory..."
-# Kill any lingering MSBuild/compiler processes before wiping
-$ErrorActionPreference = "Continue"
-taskkill /F /IM MSBuild.exe /T 2>&1 | Out-Null
-taskkill /F /IM cl.exe /T 2>&1 | Out-Null
-taskkill /F /IM link.exe /T 2>&1 | Out-Null
-$ErrorActionPreference = "Stop"
-Start-Sleep -Seconds 2
 if (Test-Path "$OmegaDir\build") {
     Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
 }
@@ -194,19 +187,6 @@ OK "Build directory clean"
 # ── [4/13] cmake configure ───────────────────────────────────────────────────
 Step 4 13 "cmake configure..."
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
-# Load VS developer environment so Windows SDK headers (winsock2.h etc) are on the include path.
-# Without this cmake configure and build run without SDK includes -- CL.exe crashes silently.
-$VsDevCmd = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat"
-if (Test-Path $VsDevCmd) {
-    $envVars = cmd /c "`"$VsDevCmd`" && set" 2>&1 | Where-Object { $_ -match "^[A-Za-z_]+=" }
-    foreach ($line in $envVars) {
-        $parts = $line.Split("=", 2)
-        if ($parts.Count -eq 2) { [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1]) }
-    }
-    Write-Host "      [OK] VS developer environment loaded" -ForegroundColor Green
-} else {
-    FAIL "VsDevCmd.bat not found at $VsDevCmd -- cannot set Windows SDK paths"
-}
 $ErrorActionPreference = "Continue"
 & $CmakeExe -S $OmegaDir -B "$OmegaDir\build" -DCMAKE_BUILD_TYPE=Release 2>&1 |
     Where-Object { $_ -match "\[Omega\]|error|Error" } |
