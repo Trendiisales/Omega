@@ -40,10 +40,11 @@ set(SOURCES
 
 add_executable(Omega ${SOURCES})
 
-# Precompiled Header disabled -- causes LNK1181/C1083 on clean builds on this
-# Windows setup due to cmake_pch.obj path mismatch between compiler and linker.
-# Build time increase is acceptable. Re-enable only after root cause is fixed.
-# target_precompile_headers(Omega PRIVATE include/omega_pch.hpp)
+# ?? Precompiled Header -- cuts recompile time 40-60% on MSVC /O2 ????????????
+# omega_pch.hpp contains all stable Windows/OpenSSL/STL includes.
+# Omega .hpp engine headers are NOT in the PCH -- they change often and would
+# invalidate it constantly. Only rebuild PCH when omega_pch.hpp itself changes.
+target_precompile_headers(Omega PRIVATE include/omega_pch.hpp)
 
 target_include_directories(Omega PRIVATE
     ${CMAKE_SOURCE_DIR}
