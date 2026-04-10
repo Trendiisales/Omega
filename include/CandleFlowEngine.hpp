@@ -45,11 +45,11 @@ namespace omega {
 static constexpr double CFE_BODY_RATIO_MIN    = 0.60;   // candle body >= 60% of range
 static constexpr double CFE_COST_SLIPPAGE     = 0.10;   // pts slippage per side (conservative)
 static constexpr double CFE_COMMISSION_PTS    = 0.10;   // pts commission per side
-static constexpr double CFE_COST_MULT         = 2.0;    // expected_move >= 2 * cost
+static constexpr double CFE_COST_MULT         = 2.5;    // expected_move >= 2.5 * cost (tuned: filters marginal candles, +R:R)
 static constexpr double CFE_WALL_THRESHOLD    = 40.0;   // level size >= this = wall (level-count units)
 static constexpr int    CFE_DOM_CONFIRM_MIN   = 2;      // need 2-of-4 DOM signals
 static constexpr int    CFE_DOM_EXIT_MIN      = 2;      // need 2-of-4 DOM reversal signals
-static constexpr int64_t CFE_STAGNATION_MS   = 8000;   // 8s stagnation window
+static constexpr int64_t CFE_STAGNATION_MS   = 60000;  // 60s stagnation window (tuned: was 8s, caused 91% stagnation exits)
 static constexpr double CFE_STAGNATION_MULT   = 1.5;    // exit if move < cost * 1.5 within window
 static constexpr double CFE_RISK_DOLLARS      = 30.0;   // default risk per trade
 static constexpr double CFE_MIN_LOT           = 0.01;
