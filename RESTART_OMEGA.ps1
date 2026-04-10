@@ -278,9 +278,28 @@ OK "Build directory clean"
 Step 4 13 "cmake configure..."
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
 $ErrorActionPreference = "Continue"
-& $CmakeExe -S $OmegaDir -B "$OmegaDir\build" -DCMAKE_BUILD_TYPE=Release 2>&1 |
-    Where-Object { $_ -match "\[Omega\]|error|Error" } |
-    ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+# Capture all cmake output without triggering PowerShell NativeCommandError.
+# 2>&1 inline causes PS to intercept stderr as ErrorRecord and exit.
+# Fix: use Start-Process with output redirect to a temp file -- completely
+# bypasses PowerShell error handling for native executables.
+$cmakeCfgLog = "$env:TEMP\omega_cmake_cfg.txt"
+$cmakeCfgProc = Start-Process -FilePath $CmakeExe `
+    -ArgumentList "-S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release" `
+    -WorkingDirectory $OmegaDir `
+    -RedirectStandardOutput $cmakeCfgLog `
+    -RedirectStandardError "$env:TEMP\omega_cmake_cfg_err.txt" `
+    -Wait -PassThru -NoNewWindow
+$cmakeCfgExit = $cmakeCfgProc.ExitCode
+# Show relevant lines
+if (Test-Path $cmakeCfgLog) {
+    Get-Content $cmakeCfgLog | Where-Object { $_ -match "\[Omega\]|error|Error|warning|OpenSSL" } |
+        ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+}
+if (Test-Path "$env:TEMP\omega_cmake_cfg_err.txt") {
+    Get-Content "$env:TEMP\omega_cmake_cfg_err.txt" |
+        ForEach-Object { Write-Host "    [STDERR] $_" -ForegroundColor Yellow }
+}
+if ($cmakeCfgExit -ne 0) { FAIL "cmake configure failed (exit $cmakeCfgExit)" }
 $ErrorActionPreference = "Stop"
 
 $verFile = "$OmegaDir\include\version_generated.hpp"
@@ -294,9 +313,22 @@ OK "Configure done (hash $guiHash confirmed)"
 # ── [5/13] cmake build ───────────────────────────────────────────────────────
 Step 5 13 "cmake build..."
 $ErrorActionPreference = "Continue"
-& $CmakeExe --build "$OmegaDir\build" --config Release 2>&1 |
-    ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-$buildExit = $LASTEXITCODE
+$cmakeBldLog = "$env:TEMP\omega_cmake_bld.txt"
+$cmakeBldProc = Start-Process -FilePath $CmakeExe `
+    -ArgumentList "--build `"$OmegaDir\build`" --config Release" `
+    -WorkingDirectory $OmegaDir `
+    -RedirectStandardOutput $cmakeBldLog `
+    -RedirectStandardError "$env:TEMP\omega_cmake_bld_err.txt" `
+    -Wait -PassThru -NoNewWindow
+$buildExit = $cmakeBldProc.ExitCode
+if (Test-Path $cmakeBldLog) {
+    Get-Content $cmakeBldLog | Where-Object { $_ -match "Omega|error C|warning C|->|FAILED" } |
+        ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+}
+if (Test-Path "$env:TEMP\omega_cmake_bld_err.txt") {
+    Get-Content "$env:TEMP\omega_cmake_bld_err.txt" |
+        ForEach-Object { Write-Host "    [STDERR] $_" -ForegroundColor Yellow }
+}
 $ErrorActionPreference = "Stop"
 if ($buildExit -ne 0)              { FAIL "Build failed (exit $buildExit)" }
 if (-not (Test-Path $BuildExe))    { FAIL "$BuildExe not found after build" }
