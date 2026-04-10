@@ -269,12 +269,17 @@ OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
 Step 3 13 "Wiping build directory..."
-# Kill any MSBuild/cl.exe processes that may be locking obj files
-Get-Process -Name "MSBuild","cl","link","mspdbsrv" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 500
-if (Test-Path "$OmegaDir\build") {
-    Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
+# Retry delete up to 5 times -- Windows holds obj files briefly after process exit
+$wipeOk = $false
+for ($wi = 1; $wi -le 5; $wi++) {
+    if (Test-Path "$OmegaDir\build") {
+        Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
+    }
+    if (-not (Test-Path "$OmegaDir\build")) { $wipeOk = $true; break }
+    Write-Host "      [WAIT] build dir still locked (attempt $wi/5) -- retrying in 2s..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 2
 }
+if (-not $wipeOk) { FAIL "Cannot wipe build directory after 5 attempts -- reboot VPS if this persists" }
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 OK "Build directory clean"
 
