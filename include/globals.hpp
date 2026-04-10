@@ -147,6 +147,13 @@ static omega::CandleFlowEngine    g_candle_flow;  // candle+DOM engine
 #include "RSIReversalEngine.hpp"
 static omega::RSIReversalEngine   g_rsi_reversal;
 
+// RSIExtremeTurnEngine -- backtest-validated RSI extreme + sustained turn
+// Entry: RSI <20 after 3 bars sustained fall (LONG), >70 after 3 bars rise (SHORT)
+// Exit:  RSI crosses back to 55 (LONG) or 45 (SHORT). SL=0.5xATR. No DOM.
+// shadow_mode=true until live validation
+#include "RSIExtremeTurnEngine.hpp"
+static omega::RSIExtremeTurnEngine g_rsi_extreme;  // RSI extreme + sustained turn engine
+
 // MicroMomentumEngine -- fast 4-8pt momentum capture
 // RSI slope + price displacement, both directions, all sessions
 // shadow_mode=true until validated
