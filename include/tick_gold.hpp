@@ -769,7 +769,7 @@ static void on_tick_gold(
                 vol_ratio_log,
                 (int)gold_sdec.regime,
                 g_vpin.warmed() ? g_vpin.vpin() : 0.0,
-                (int)g_gold_flow.has_open_position(,
+                (int)g_gold_flow.has_open_position(),
                 g_l2_gold.micro_edge.load(std::memory_order_relaxed),
                 static_cast<double>(g_gold_stack.ewm_drift()));
             fflush(s_l2f_unc);
