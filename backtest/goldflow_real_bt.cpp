@@ -114,11 +114,16 @@ int main(int argc, char* argv[]) {
             // set_trend_bias: neutral supervisor -- no regime, no wall, no expansion
             engine.set_trend_bias(drift/mid*100.0, 0.5, false, false, drift, false, t.vol_ratio);
 
-            g_macro_ctx.gold_l2_real = !t.watchdog_dead;
+            // BlackBull sends size_raw=0 so l2_imb=0.500 always -- the L2 imbalance
+            // signal path never fires. In production GoldFlow runs on drift-fallback
+            // (GFE_DRIFT_FALLBACK_THRESHOLD) not the L2 persistence path.
+            // Set l2_ctrader_live=false to force drift-only mode -- this matches
+            // what actually fires in production on BlackBull feeds.
+            g_macro_ctx.gold_l2_real = false;
 
             engine.on_tick(
                 t.bid, t.ask,
-                t.l2_imb,
+                0.5,    // l2_imb irrelevant -- drift path active
                 drift,
                 t.ts_ms,
                 [&](const omega::TradeRecord& tr) {
@@ -126,7 +131,7 @@ int main(int argc, char* argv[]) {
                     reasons[tr.exitReason]++;
                 },
                 session_slot(t.ts_ms),
-                true
+                false   // l2_ctrader_live=false -> drift fallback path (production behaviour)
             );
         }
     }
