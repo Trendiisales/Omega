@@ -293,7 +293,7 @@ int main(int argc, char* argv[]) {
         if (tr.pnl_usd>0){w++;wpnl+=tr.pnl_usd;}
         else{l++;lpnl+=tr.pnl_usd;}
     }
-    int n=trades.size();
+    int n=static_cast<int>(trades.size());
     double wr=100.0*w/n;
     double aw=w?wpnl/w:0, al=l?lpnl/l:0;
     double rr=al!=0?-aw/al:0;
