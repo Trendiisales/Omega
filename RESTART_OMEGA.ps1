@@ -178,6 +178,12 @@ OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
 Step 3 13 "Wiping build directory..."
+# Kill any lingering MSBuild/compiler processes before wiping
+# These hold file handles on obj/pch files and cause LNK1181 on the next build
+taskkill /F /IM MSBuild.exe /T 2>&1 | Out-Null
+taskkill /F /IM cl.exe /T 2>&1 | Out-Null
+taskkill /F /IM link.exe /T 2>&1 | Out-Null
+Start-Sleep -Seconds 2
 if (Test-Path "$OmegaDir\build") {
     Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
 }
