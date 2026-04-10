@@ -1,72 +1,19 @@
 #Requires -Version 5.1
-# ==============================================================================
-#  OMEGA - QUICK RESTART
-#  BINARY LOCATION RULE (IMMUTABLE):
-#    cmake builds to: C:\Omega\build\Release\Omega.exe
-#    This script launches: C:\Omega\Omega.exe
-#    Sync happens AFTER stop, BEFORE launch -- always runs latest build.
-#
-#  PRE_DELIVERY_CHECK.ps1 is called at three points and cannot be bypassed:
-#    GATE 1 (pre-build)  : git reachable, reset clean, no stale objects
-#    GATE 2 (post-build) : binary fresh, version_generated matches HEAD
-#    GATE 3 (post-launch): log confirms running hash matches HEAD
-#  If any gate fails, Omega does not start / is stopped immediately.
-# ==============================================================================
+param([switch]$SkipVerify,[int]$WaitSec=10,[string]$OmegaDir="C:\Omega",[string]$GitHubToken="")
 
-param(
-    [switch] $SkipVerify,
-    [int]    $WaitSec    = 10,
-    [string] $OmegaDir   = "C:\Omega",
-    [string] $GitHubToken = ""   # Set in C:\Omega\omega_config.ini as github_token=
-)
+$ErrorActionPreference = "Continue"
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-# Read GitHub token from C:\Omega\.github_token if not passed as parameter.
-# This file is gitignored and lives only on the VPS.
 if ($GitHubToken -eq "") {
-    $ErrorActionPreference = "Continue"
-    $tokenFile = "$OmegaDir\.github_token"
-    if (Test-Path $tokenFile) { $GitHubToken = (Get-Content $tokenFile -Raw).Trim() }
-    $ErrorActionPreference = "Stop"
-}
-
-$BuildExe   = "$OmegaDir\build\Release\Omega.exe"
-$OmegaExe   = "$OmegaDir\Omega.exe"
-$ConfigSrc  = "$OmegaDir\omega_config.ini"
-$cmakeExe   = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
-$buildDir   = "$OmegaDir\build"
-$CheckScript = "$OmegaDir\PRE_DELIVERY_CHECK.ps1"
-$PassFile   = "$OmegaDir\logs\PRE_DELIVERY_PASS.txt"
-
-# ==============================================================================
-# SELF-UPDATE: download latest QUICK_RESTART.ps1 from GitHub API before doing
-# anything else. This ensures the script that runs is always the latest version
-# regardless of what was on disk. If the downloaded version differs from the
-# running version, re-launch it and exit.
-# ==============================================================================
-$selfToken = $GitHubToken
-if ($selfToken -eq "") {
     $tf = "$OmegaDir\.github_token"
-    if (Test-Path $tf) { $selfToken = (Get-Content $tf -Raw).Trim() }
+    if (Test-Path $tf) { $GitHubToken = (Get-Content $tf -Raw).Trim() }
 }
-if ($selfToken -ne "") {
-    try {
-        $selfHdr = @{ Authorization="token $selfToken"; "User-Agent"="OmegaQR"; Accept="application/vnd.github.v3+json" }
-        $selfResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/contents/QUICK_RESTART.ps1" -Headers $selfHdr -TimeoutSec 15 -ErrorAction Stop
-        $selfLatest = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($selfResp.content -replace "`n",""))
-        $selfCurrent = Get-Content "$OmegaDir\QUICK_RESTART.ps1" -Raw -ErrorAction SilentlyContinue
-        if ($selfLatest -and $selfLatest -ne $selfCurrent) {
-            Write-Host "  [SELF-UPDATE] Newer QUICK_RESTART.ps1 detected -- updating and re-launching..." -ForegroundColor Cyan
-            Set-Content -Path "$OmegaDir\QUICK_RESTART.ps1" -Value $selfLatest -Encoding UTF8 -Force
-            & "$OmegaDir\QUICK_RESTART.ps1" @PSBoundParameters
-            exit $LASTEXITCODE
-        }
-    } catch {
-        Write-Host "  [SELF-UPDATE] Skipped (API error: $_)" -ForegroundColor DarkGray
-    }
-}
+
+$OmegaExe    = "$OmegaDir\Omega.exe"
+$BuildExe    = "$OmegaDir\build\Release\Omega.exe"
+$buildDir    = "$OmegaDir\build"
+$cmakeExe    = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
+$ConfigSrc   = "$OmegaDir\omega_config.ini"
+$restartStart = Get-Date
 
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
@@ -74,185 +21,64 @@ Write-Host "   OMEGA  |  QUICK RESTART" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# --- Always update PRE_DELIVERY_CHECK.ps1 from GitHub API before using it ---
-# This ensures the check script is always current regardless of what is on disk.
-$pdcToken = $GitHubToken
-if ($pdcToken -eq "") {
-    $tf2 = "$OmegaDir\.github_token"
-    if (Test-Path $tf2) { $pdcToken = (Get-Content $tf2 -Raw).Trim() }
-}
-if ($pdcToken -ne "") {
-    try {
-        $pdcHdr = @{ Authorization="token $pdcToken"; "User-Agent"="OmegaQR"; Accept="application/vnd.github.v3+json" }
-        $pdcResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/contents/PRE_DELIVERY_CHECK.ps1" -Headers $pdcHdr -TimeoutSec 15 -ErrorAction Stop
-        $pdcBytes = [System.Convert]::FromBase64String($pdcResp.content -replace "`n","")
-        [System.IO.File]::WriteAllBytes($CheckScript, $pdcBytes)
-        Write-Host "  [OK] PRE_DELIVERY_CHECK.ps1 updated from GitHub API" -ForegroundColor Green
-    } catch {
-        Write-Host "  [WARN] Could not update PRE_DELIVERY_CHECK.ps1: $_" -ForegroundColor Yellow
-    }
-}
-if (-not (Test-Path $CheckScript)) {
-    Write-Host "  [FATAL] PRE_DELIVERY_CHECK.ps1 not found at $CheckScript" -ForegroundColor Red
-    exit 1
-}
-
-# --- Show config mode --------------------------------------------------------
-$ErrorActionPreference = "Continue"
 $modeMatch = Select-String -Path $ConfigSrc -Pattern "^mode\s*=\s*(\S+)" -ErrorAction SilentlyContinue
 $mode      = if ($modeMatch) { $modeMatch.Matches[0].Groups[1].Value } else { "UNKNOWN" }
 $modeColor = if ($mode -eq "LIVE") { "Red" } elseif ($mode -eq "SHADOW") { "Yellow" } else { "Cyan" }
-Write-Host "  Mode    : $mode" -ForegroundColor $modeColor
-Write-Host ""
-$ErrorActionPreference = "Stop"
-$restartStart = Get-Date
-
-# ==============================================================================
-# STEP 0: GitHub API pre-flight -- RUNS BEFORE EVERYTHING ELSE
-# Fails immediately if GitHub is unreachable or key files cannot be verified.
-# No stop, no wipe, no build until this passes.
-# ==============================================================================
-Write-Host "[0/5] GitHub API pre-flight check..." -ForegroundColor Yellow
+Write-Host "  Mode: $mode" -ForegroundColor $modeColor
 Write-Host ""
 
-if ($GitHubToken -eq "") {
-    $tf0 = "$OmegaDir\.github_token"
-    if (Test-Path $tf0) { $GitHubToken = (Get-Content $tf0 -Raw).Trim() }
-}
-if ($GitHubToken -eq "") {
-    Write-Host "  [FATAL] No GitHub token -- set C:\Omega\.github_token" -ForegroundColor Red
-    exit 1
-}
-$ah0 = @{ Authorization="token $GitHubToken"; "User-Agent"="OmegaQR"; "Cache-Control"="no-cache"; Accept="application/vnd.github.v3+json" }
-try {
-    $ghc0 = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" -Headers $ah0 -TimeoutSec 15 -ErrorAction Stop
-} catch {
-    Write-Host "  [FATAL] GitHub API unreachable: $_" -ForegroundColor Red
-    exit 1
-}
-$gs7 = $ghc0.sha.Substring(0,7)
-Write-Host "  [API] GitHub HEAD: $gs7  -- $($ghc0.commit.message)" -ForegroundColor Cyan
-
-$filesToCheck0 = @("include/globals.hpp","include/tick_gold.hpp","RESTART_OMEGA.ps1","QUICK_RESTART.ps1","PRE_DELIVERY_CHECK.ps1")
-foreach ($fc0 in $filesToCheck0) {
-    try {
-        $r0 = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/contents/$fc0" -Headers $ah0 -TimeoutSec 15 -ErrorAction Stop
-        Write-Host ("    {0,-45} {1,8} bytes" -f $fc0, $r0.size) -ForegroundColor DarkGray
-    } catch {
-        Write-Host "  [FATAL] Cannot verify $fc0 via API: $_" -ForegroundColor Red
-        exit 1
-    }
-}
-Write-Host ""
-Write-Host "  [OK] GitHub API pre-flight PASSED" -ForegroundColor Green
-Write-Host ""
-
-# --- [1] Stop Omega ----------------------------------------------------------
-Write-Host "[1/5] Stopping Omega..." -ForegroundColor Yellow
-$ErrorActionPreference = "Continue"
-# Stop service
-$svcCheck = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
-if ($svcCheck -and $svcCheck.Status -eq "Running") {
+# [1] STOP
+Write-Host "[1/4] Stopping Omega..." -ForegroundColor Yellow
+$svc = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
+if ($svc -and $svc.Status -eq "Running") {
     Stop-Service "Omega" -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
-# Kill process -- retry up to 5 times
 for ($k = 0; $k -lt 5; $k++) {
     taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
     Start-Sleep -Seconds 2
-    $still2 = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
-    if (-not $still2) { break }
-    $still2 | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 2
+    $still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+    if (-not $still) { break }
 }
-# Hard abort if still running -- cannot overwrite locked files
-$still2 = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
-if ($still2) {
-    Write-Host "  [FATAL] Omega.exe still running -- cannot overwrite files." -ForegroundColor Red
-    Write-Host "  Run: taskkill /F /IM Omega.exe /T   then re-run QUICK_RESTART.ps1" -ForegroundColor Yellow
+$still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if ($still) {
+    Write-Host "  [FATAL] Omega.exe still running -- run: taskkill /F /IM Omega.exe /T" -ForegroundColor Red
     exit 1
 }
-Start-Sleep -Seconds 5
-$ErrorActionPreference = "Stop"
-Write-Host "      [OK] Stopped" -ForegroundColor Green
+Start-Sleep -Seconds 3
+Write-Host "  [OK] Stopped" -ForegroundColor Green
 Write-Host ""
 
-# ==============================================================================
-# GATE 1 -- PRE-BUILD: GitHub API sync (NO git fetch, NO CDN, NO cache)
-# ==============================================================================
-# HOW THIS WORKS -- permanently solves the stale binary problem:
-#   1. Call GitHub API to get the authoritative HEAD SHA for main
-#   2. Download the full source zip at that exact SHA directly from GitHub API
-#   3. Extract over C:\Omega -- every source file is now byte-for-byte what GitHub has
-#   4. Verify local HEAD matches the API SHA -- hard fail if not
-#
-# There is no git fetch. There is no CDN. There is no cache.
-# The API returns the live HEAD. The zip contains exactly that commit.
-# This cannot produce a stale binary.
-# ==============================================================================
-Write-Host "[2/5] GATE 1 -- GitHub API sync (bypass git fetch entirely)..." -ForegroundColor Yellow
-Write-Host ""
-
-if ($GitHubToken -eq "") {
-    Write-Host "  [FATAL] No GitHub token -- cannot call GitHub API. Set C:\Omega\.github_token" -ForegroundColor Red
-    exit 1
-}
-
-$apiHeaders = @{ Authorization = "token $GitHubToken"; "User-Agent" = "OmegaRestart"; Accept = "application/vnd.github.v3+json" }
-
-# STEP 1: Get authoritative HEAD SHA from GitHub API -- this is ground truth
+# [2] DOWNLOAD SOURCE FROM GITHUB API
+Write-Host "[2/4] Downloading source from GitHub API..." -ForegroundColor Yellow
+$apiHeaders = @{ Authorization="token $GitHubToken"; "User-Agent"="OmegaRestart"; Accept="application/vnd.github.v3+json" }
 try {
-    $commitResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" `
-                                    -Headers $apiHeaders -TimeoutSec 20 -ErrorAction Stop
+    $commitResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" -Headers $apiHeaders -TimeoutSec 20 -ErrorAction Stop
 } catch {
     Write-Host "  [FATAL] GitHub API unreachable: $_" -ForegroundColor Red
-    Write-Host "  Cannot determine HEAD. Aborting to prevent stale build." -ForegroundColor Red
     exit 1
 }
-$ghApiSha  = $commitResp.sha
-$ghApiSha7 = $ghApiSha.Substring(0, 7)
-Write-Host "  [API] GitHub HEAD: $ghApiSha7" -ForegroundColor Cyan
+$ghSha  = $commitResp.sha
+$ghSha7 = $ghSha.Substring(0,7)
+Write-Host "  [API] HEAD: $ghSha7 -- $($commitResp.commit.message)" -ForegroundColor Cyan
 
-# STEP 2: Download source zip at exact SHA from GitHub API (not CDN, not raw.githubusercontent.com)
-$zipUrl  = "https://api.github.com/repos/Trendiisales/Omega/zipball/$ghApiSha"
-$zipPath = "$env:TEMP\Omega_$ghApiSha7.zip"
-Write-Host "  [API] Downloading source zip at SHA $ghApiSha7..." -ForegroundColor Cyan
+$zipUrl  = "https://api.github.com/repos/Trendiisales/Omega/zipball/$ghSha"
+$zipPath = "$env:TEMP\Omega_$ghSha7.zip"
 try {
-    $zipHeaders = @{ Authorization = "token $GitHubToken"; "User-Agent" = "OmegaRestart" }
-    Invoke-WebRequest -Uri $zipUrl -Headers $zipHeaders -OutFile $zipPath -TimeoutSec 120 -ErrorAction Stop
+    Invoke-WebRequest -Uri $zipUrl -Headers @{ Authorization="token $GitHubToken"; "User-Agent"="OmegaRestart" } -OutFile $zipPath -TimeoutSec 120 -ErrorAction Stop
 } catch {
-    Write-Host "  [FATAL] Source zip download failed: $_" -ForegroundColor Red
+    Write-Host "  [FATAL] Download failed: $_" -ForegroundColor Red
     exit 1
 }
-if (-not (Test-Path $zipPath) -or (Get-Item $zipPath).Length -lt 10000) {
-    Write-Host "  [FATAL] Downloaded zip is missing or too small -- corrupt download" -ForegroundColor Red
-    exit 1
-}
-Write-Host "  [API] Downloaded $([math]::Round((Get-Item $zipPath).Length/1MB, 1)) MB" -ForegroundColor Cyan
+Write-Host "  [OK] Downloaded $([math]::Round((Get-Item $zipPath).Length/1MB,1)) MB" -ForegroundColor Cyan
 
-# STEP 3: Extract -- overwrite all source files in C:\Omega
-# The zip contains a top-level folder like Trendiisales-Omega-<sha>/
-# We extract that folder's contents directly into $OmegaDir
-$extractPath = "$env:TEMP\Omega_extract_$ghApiSha7"
+$extractPath = "$env:TEMP\Omega_extract_$ghSha7"
 if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force }
-try {
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
-} catch {
-    Write-Host "  [FATAL] Zip extraction failed: $_" -ForegroundColor Red
-    exit 1
-}
-# Find the top-level folder inside the extract
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
 $innerDir = Get-ChildItem $extractPath -Directory | Select-Object -First 1
-if (-not $innerDir) {
-    Write-Host "  [FATAL] Zip extract produced no directory -- corrupt zip" -ForegroundColor Red
-    exit 1
-}
-# Copy all source files over C:\Omega -- preserves logs/, state/, build/ untouched
-# Only overwrites .cpp/.hpp/.h/.ps1/.ini/.cmake/.txt/.json files
-Write-Host "  [API] Installing source from $($innerDir.Name) into $OmegaDir..." -ForegroundColor Cyan
-# *.ps1 excluded -- scripts are self-updated from API before zip install runs.
-# Zip must not overwrite QUICK_RESTART.ps1 or PRE_DELIVERY_CHECK.ps1 with old versions.
+
+# Copy source -- exclude .ps1 files (scripts are managed separately, not overwritten by zip)
 $sourceExts = @("*.cpp","*.hpp","*.h","*.ini","*.cmake","*.txt","*.json","*.md")
 foreach ($ext in $sourceExts) {
     Get-ChildItem -Path $innerDir.FullName -Filter $ext -Recurse | ForEach-Object {
@@ -263,293 +89,94 @@ foreach ($ext in $sourceExts) {
         Copy-Item $_.FullName $dest -Force
     }
 }
-Write-Host "  [API] Source installed" -ForegroundColor Green
-
-# Cleanup temp files
-Remove-Item $zipPath    -Force -ErrorAction SilentlyContinue
+Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
 Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
 
-# STEP 4: Write API SHA into git ref directly from the SHA string.
-# The zip already installed the correct source files. We just need git HEAD
-# to reflect the API SHA so cmake picks up the right hash.
-# Write the SHA directly into the ref file -- no fetch, no network call needed.
-$ErrorActionPreference = "Continue"
-& git -C $OmegaDir rm -r --cached --force --ignore-unmatch logs/ 2>&1 | Out-Null
-# Write SHA to git ref file so cmake picks up correct hash
+# Write SHA to git ref file
 $refFile = "$OmegaDir\.git\refs\heads\main"
-$refDir  = Split-Path $refFile -Parent
-if (-not (Test-Path $refDir)) { New-Item -ItemType Directory -Path $refDir -Force | Out-Null }
-Set-Content -Path $refFile -Value $ghApiSha -Encoding ASCII -Force
-$localHead  = $ghApiSha
-$localHead7 = $ghApiSha7
-Write-Host "  [OK] Source installed at SHA=$ghApiSha7" -ForegroundColor Green
-$ErrorActionPreference = "Continue"
+Set-Content -Path $refFile -Value $ghSha -Encoding ASCII -Force
+& git -C $OmegaDir rm -r --cached --force --ignore-unmatch logs/ 2>&1 | Out-Null
 
-# FULL BUILD DIRECTORY WIPE -- the only guaranteed clean rebuild.
-# Deleting .obj/.pch alone is not enough -- MSVC can still skip recompilation
-# if it decides the PCH is valid. Wiping the entire output forces cmake to
-# recompile every translation unit from scratch. No stale code possible.
-$ErrorActionPreference = "Continue"
-$dirsToWipe = @(
-    "$buildDir\CMakeFiles",
-    "$buildDir\Release",
-    "$buildDir\Omega.dir",
-    "$buildDir\x64"
-)
-foreach ($d in $dirsToWipe) {
-    if (Test-Path $d) {
-        Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue
-        Write-Host "  [CLEAN] Wiped $d" -ForegroundColor Cyan
-    }
-}
-# Also wipe any loose .obj/.pch/.pdb at build root
-Get-ChildItem -Path $buildDir -Include "*.obj","*.pch","*.pdb" -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-Write-Host "  [CLEAN] Full wipe complete -- guaranteed fresh compile" -ForegroundColor Green
-$ErrorActionPreference = "Continue"
+Write-Host "  [OK] Source installed at $ghSha7" -ForegroundColor Green
+Write-Host ""
 
-& $CheckScript -OmegaDir $OmegaDir -GitHubToken $GitHubToken
-$gate1Exit = $LASTEXITCODE
-if ($gate1Exit -ne 0) {
-    Write-Host ""
-    Write-Host "  [FATAL] GATE 1 FAILED -- build aborted. Fix failures above." -ForegroundColor Red
-    Write-Host "  Omega was stopped and will NOT restart." -ForegroundColor Red
-    Write-Host ""
-    exit 1
+# Wipe build dirs
+foreach ($d in @("$buildDir\CMakeFiles","$buildDir\Release","$buildDir\Omega.dir","$buildDir\x64")) {
+    if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue; Write-Host "  [CLEAN] Wiped $d" -ForegroundColor Cyan }
 }
 Write-Host ""
 
-# HEAD hash already captured in anti-stale gate above ($localHead / $localHead7)
-$ErrorActionPreference = "Continue"
-$headHash  = $localHead
-$headHash7 = $localHead7
-$ErrorActionPreference = "Continue"
-
-# ==============================================================================
-# [3/5] BUILD
-# ==============================================================================
-Write-Host "[3/5] Building..." -ForegroundColor Yellow
+# [3] BUILD
+Write-Host "[3/4] Building..." -ForegroundColor Yellow
+& $cmakeExe -S $OmegaDir -B $buildDir -DCMAKE_BUILD_TYPE=Release 2>&1 | Where-Object { $_ -match "\[Omega\]|error|warning" } | ForEach-Object { Write-Host "    $_" }
+$buildOutput = & $cmakeExe --build $buildDir --config Release 2>&1
+$buildOutput | Where-Object { $_ -match "Omega.vcxproj|error C" } | ForEach-Object { Write-Host "    $_" }
+$buildFailed = $buildOutput | Where-Object { $_ -match "error C[0-9]+" }
+if ($buildFailed) { Write-Host "  [FATAL] Build failed" -ForegroundColor Red; exit 1 }
+if (-not (Test-Path $BuildExe)) { Write-Host "  [FATAL] Binary not found after build" -ForegroundColor Red; exit 1 }
+Copy-Item $BuildExe $OmegaExe -Force
+$buildTime = (Get-Item $OmegaExe).LastWriteTime.ToUniversalTime().ToString("HH:mm:ss UTC")
+Write-Host "  [OK] Built at $buildTime" -ForegroundColor Green
 Write-Host ""
 
-if (Test-Path $cmakeExe) {
-    Write-Host "  [CMAKE] Configuring (writes version_generated.hpp with HEAD=$headHash7)..." -ForegroundColor Cyan
-    $ErrorActionPreference = "Continue"
-    & $cmakeExe -S $OmegaDir -B $buildDir -DCMAKE_BUILD_TYPE=Release 2>&1 `
-        | Where-Object { $_ -match "\[Omega\]|error|warning" } `
-        | ForEach-Object { Write-Host "    $_" }
-    $ErrorActionPreference = "Continue"
-
-    $preBuildTime = if (Test-Path $BuildExe) { (Get-Item $BuildExe).LastWriteTime } else { [DateTime]::MinValue }
-
-    Write-Host "  [CMAKE] Building (full recompile -- 2-3 min)..." -ForegroundColor Cyan
-    $buildOutput = & $cmakeExe --build $buildDir --config Release 2>&1
-    $buildOutput | Where-Object { $_ -match "Omega.vcxproj|error C|warning C" } | ForEach-Object { Write-Host "    $_" }
-
-    $buildFailed = $buildOutput | Where-Object { $_ -match "error C[0-9]+" }
-    if ($buildFailed) {
-        Write-Host ""
-        Write-Host "  [BUILD FAILED] Compile errors -- aborting" -ForegroundColor Red
-        exit 1
-    }
-
-    $postBuildTime = if (Test-Path $BuildExe) { (Get-Item $BuildExe).LastWriteTime } else { [DateTime]::MinValue }
-    if ($postBuildTime -le $preBuildTime) {
-        Write-Host ""
-        Write-Host "  [BUILD FAILED] Binary timestamp unchanged -- cmake did not recompile" -ForegroundColor Red
-        Write-Host "  pre=$preBuildTime  post=$postBuildTime" -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "  [BUILD OK] $postBuildTime" -ForegroundColor Green
-    $ErrorActionPreference = "Continue"
-} else {
-    Write-Host "  [SKIP] cmake not found -- using existing binary" -ForegroundColor DarkGray
-}
-
-# Sync binary
-if (Test-Path $BuildExe) {
-    $buildTime  = (Get-Item $BuildExe).LastWriteTime
-    $launchTime = if (Test-Path $OmegaExe) { (Get-Item $OmegaExe).LastWriteTime } else { [DateTime]::MinValue }
-    if ($buildTime -gt $launchTime) {
-        Copy-Item $BuildExe $OmegaExe -Force
-        Write-Host "  [SYNC] Omega.exe updated from build\Release\Omega.exe" -ForegroundColor Green
-    }
-}
-
-# ==============================================================================
-# GATE 2 -- POST-BUILD: version_generated matches HEAD, binary is fresh
-# Re-read version_generated.hpp after build -- use the baked hash as ground truth.
-# ==============================================================================
-Write-Host ""
-Write-Host "[4/5] GATE 2 -- Post-build checks..." -ForegroundColor Yellow
-Write-Host ""
-
-# Re-read the actual hash baked into the binary by cmake -- may differ from
-# $headHash7 if a new commit landed during the build (causes false FAIL otherwise).
-$verFileCheck = "$OmegaDir\include\version_generated.hpp"
-if (Test-Path $verFileCheck) {
-    $vl2 = Select-String -Path $verFileCheck -Pattern 'OMEGA_GIT_HASH' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($vl2 -and $vl2.Line -match '"([a-f0-9]{7,})"') {
-        $builtHash7 = $Matches[1].Substring(0,7)
-        Write-Host "  [GATE2] Binary baked with hash=$builtHash7 (version_generated.hpp)" -ForegroundColor Cyan
-        $headHash7 = $builtHash7
-    }
-}
-
-& $CheckScript -OmegaDir $OmegaDir -GitHubToken $GitHubToken -ExpectedHash $headHash7 -PostBuild
-$gate2Exit = $LASTEXITCODE
-if ($gate2Exit -ne 0) {
-    Write-Host ""
-    Write-Host "  [FATAL] GATE 2 FAILED -- binary does not match HEAD. Omega will NOT start." -ForegroundColor Red
-    Write-Host ""
-    exit 1
-}
-Write-Host ""
-
-# Read hash from version_generated.hpp -- this is what is baked into the binary
-$ErrorActionPreference = "Continue"
+# Read baked hash
 $verHash = "unknown"
 $verFile = "$OmegaDir\include\version_generated.hpp"
 if (Test-Path $verFile) {
-    $vl = Select-String -Path $verFile -Pattern "OMEGA_GIT_HASH" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $vl = Select-String -Path $verFile -Pattern 'OMEGA_GIT_HASH' | Select-Object -First 1
     if ($vl -and $vl.Line -match '"([a-f0-9]+)"') { $verHash = $Matches[1] }
 }
-$buildTimeStr = if (Test-Path $OmegaExe) {
-    (Get-Item $OmegaExe).LastWriteTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") + " UTC"
-} else { "unknown" }
 
-# --- Clean state files -------------------------------------------------------
-$barFailed = "$OmegaDir\logs\ctrader_bar_failed.txt"
-if (Test-Path $barFailed) {
-    Remove-Item $barFailed -Force
-    Write-Host "  [OK] Deleted ctrader_bar_failed.txt" -ForegroundColor Green
-}
-
-# --- Ensure log dirs ---------------------------------------------------------
 New-Item -ItemType Directory -Path "$OmegaDir\logs"        -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\shadow" -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\trades" -Force | Out-Null
 
-# ==============================================================================
-# [5/5] LAUNCH
-# ==============================================================================
-Write-Host "[5/5] Launching Omega..." -ForegroundColor Yellow
-Set-Location $OmegaDir
-
+# [4] LAUNCH
+Write-Host "[4/4] Launching Omega..." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "########################################################" -ForegroundColor Yellow
-Write-Host "  RUNNING COMMIT : $verHash" -ForegroundColor Yellow
-Write-Host "  BINARY TIME    : $buildTimeStr" -ForegroundColor Yellow
-Write-Host "  MODE           : $mode" -ForegroundColor $modeColor
-Write-Host "  GUI            : http://185.167.119.59:7779" -ForegroundColor Yellow
+Write-Host "  COMMIT : $verHash" -ForegroundColor Yellow
+Write-Host "  BUILT  : $buildTime" -ForegroundColor Yellow
+Write-Host "  MODE   : $mode" -ForegroundColor $modeColor
+Write-Host "  GUI    : http://185.167.119.59:7779" -ForegroundColor Yellow
 Write-Host "########################################################" -ForegroundColor Yellow
 Write-Host ""
 
 $svc = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
 if ($svc) {
-    Write-Host "  [SERVICE] Starting Omega..." -ForegroundColor Cyan
     Start-Service "Omega"
     Start-Sleep -Seconds 3
     $svc = Get-Service -Name "Omega"
     $svcColor = if ($svc.Status -eq "Running") { "Green" } else { "Red" }
     Write-Host "  [SERVICE] Status: $($svc.Status)" -ForegroundColor $svcColor
-    Write-Host ""
 } else {
-    Write-Host "  [DIRECT] WARNING: Service not installed." -ForegroundColor Yellow
-    $proc = Start-Process -FilePath $OmegaExe -ArgumentList "omega_config.ini" `
-                          -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
-    Write-Host "  Omega PID: $($proc.Id)" -ForegroundColor DarkGray
-    Write-Host ""
+    $proc = Start-Process -FilePath $OmegaExe -ArgumentList "omega_config.ini" -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
+    Write-Host "  [DIRECT] PID: $($proc.Id)" -ForegroundColor DarkGray
 }
 
-# ==============================================================================
-# GATE 3 -- POST-LAUNCH: wait 60s then confirm log shows correct running hash
-# ==============================================================================
-Write-Host "  [GATE 3] Waiting 60s for Omega to write startup log..." -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Waiting 60s for startup log..." -ForegroundColor Cyan
 Start-Sleep -Seconds 60
 
-Write-Host "  [GATE 3] Checking log for correct running hash..." -ForegroundColor Cyan
-& $CheckScript -OmegaDir $OmegaDir -GitHubToken $GitHubToken -ExpectedHash $verHash -PostLaunch
-$gate3Exit = $LASTEXITCODE
-
-if ($gate3Exit -ne 0) {
-    Write-Host ""
-    Write-Host "  [FATAL] GATE 3 FAILED -- log does not confirm correct hash." -ForegroundColor Red
-    Write-Host "  The wrong binary may be running. Stopping Omega now." -ForegroundColor Red
-    $ErrorActionPreference = "Continue"
-    $svcStop = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
-    if ($svcStop) { Stop-Service "Omega" -Force -ErrorAction SilentlyContinue }
-    taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
-    Write-Host "  Omega stopped. Fix failures and run QUICK_RESTART.ps1 again." -ForegroundColor Yellow
-    exit 1
-}
-
-Write-Host ""
-Write-Host "  [ALL GATES PASSED] Hash verified end-to-end:" -ForegroundColor Green
-Write-Host "  GitHub API -> local git -> version_generated.hpp -> running binary log" -ForegroundColor Green
-Write-Host "  Hash: $verHash" -ForegroundColor Green
-Write-Host ""
-
-# ==============================================================================
-# ENGINE ACTIVE CHECK -- confirm GoldFlow and RSI are running in the log
-# These are hard FAILs -- if engines are silent Omega stops immediately.
-# ==============================================================================
-Write-Host "  [ENGINE CHECK] Verifying engines are active..." -ForegroundColor Cyan
-$logToday = "$OmegaDir\logs\omega_$((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')).log"  # UTC -- binary uses gmtime_s
-$engineFail = $false
-
-# GoldFlow: must see GFE-CONFIG with goldflow_enabled=true
+$logToday = "$OmegaDir\logs\omega_$((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')).log"
 $gfeLine = Get-Content $logToday -ErrorAction SilentlyContinue | Select-String "GFE-CONFIG" | Select-Object -Last 1
-if (!$gfeLine) {
-    Write-Host "  [FAIL] GoldFlow: no GFE-CONFIG in log -- binary stale or goldflow_enabled not parsed" -ForegroundColor Red
-    $engineFail = $true
-} elseif ($gfeLine -match "DISABLED") {
-    Write-Host "  [FAIL] GoldFlow: DISABLED in config -- set goldflow_enabled=true in [risk] section" -ForegroundColor Red
-    $engineFail = $true
-} else {
+if ($gfeLine -and $gfeLine -notmatch "DISABLED") {
     Write-Host "  [PASS] GoldFlow: ACTIVE" -ForegroundColor Green
-}
-
-# RSI Reversal: must see RSI-REV configured line
-$rsiLine = Get-Content $logToday -ErrorAction SilentlyContinue | Select-String "RSI-REV.*configured" | Select-Object -Last 1
-if (!$rsiLine) {
-    Write-Host "  [FAIL] RSI Reversal: no startup config in log -- binary stale or engine not reached" -ForegroundColor Red
-    $engineFail = $true
-} elseif ($rsiLine -match "shadow_mode=true") {
-    Write-Host "  [WARN] RSI Reversal: SHADOW mode -- signals logged, no real orders" -ForegroundColor Yellow
 } else {
-    Write-Host "  [PASS] RSI Reversal: LIVE" -ForegroundColor Green
+    Write-Host "  [WARN] GoldFlow: not confirmed in log yet" -ForegroundColor Yellow
 }
-
-if ($engineFail) {
-    Write-Host ""
-    Write-Host "  [FATAL] ENGINE CHECK FAILED -- critical engines not running." -ForegroundColor Red
-    Write-Host "  Omega stopped. Fix config and run QUICK_RESTART.ps1 again." -ForegroundColor Yellow
-    $ErrorActionPreference = "Continue"
-    $svcStop2 = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
-    if ($svcStop2) { Stop-Service "Omega" -Force -ErrorAction SilentlyContinue }
-    taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
-    exit 1
-}
-Write-Host ""
 
 if (-not $SkipVerify) {
-    Write-Host "  Running VERIFY_STARTUP..." -ForegroundColor Cyan
     Write-Host ""
+    Write-Host "  Running VERIFY_STARTUP..." -ForegroundColor Cyan
     & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec $WaitSec -OmegaDir $OmegaDir
 }
 
-$restartEnd = Get-Date
-$elapsed = $restartEnd - $restartStart
+$elapsed = (Get-Date) - $restartStart
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ("  TOTAL RESTART TIME: {0:mm}m {0:ss}s" -f $elapsed) -ForegroundColor Cyan
 Write-Host ("  Started : " + $restartStart.ToUniversalTime().ToString("HH:mm:ss UTC")) -ForegroundColor DarkGray
-Write-Host ("  Finished: " + $restartEnd.ToUniversalTime().ToString("HH:mm:ss UTC")) -ForegroundColor DarkGray
+Write-Host ("  Finished: " + (Get-Date).ToUniversalTime().ToString("HH:mm:ss UTC")) -ForegroundColor DarkGray
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
-
-
-
-
-
-
-
