@@ -110,11 +110,12 @@ if ($localSha7 -ne $ghSha7) {
 Write-Host ""
 Write-Host "  [API] Verifying key file integrity on GitHub..." -ForegroundColor Cyan
 $filesToCheck = @(
-    "include/globals.hpp",
+    "include/CandleFlowEngine.hpp",
     "include/tick_gold.hpp",
+    "include/globals.hpp",
+    "include/omega_main.hpp",
     "RESTART_OMEGA.ps1",
-    "OMEGA_STATUS.ps1",
-    "PRE_DELIVERY_CHECK.ps1"
+    "VERIFY_STARTUP.ps1"
 )
 $fileCheckFail = $false
 foreach ($fc in $filesToCheck) {
