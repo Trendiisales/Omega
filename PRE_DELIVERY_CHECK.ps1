@@ -117,20 +117,15 @@ if ($GitHubToken -ne "") {
 }
 
 # ==============================================================================
-# CHECK 4: Local HEAD matches GitHub API HEAD
+# CHECK 4: Local HEAD (informational only -- not a failure gate)
+# QUICK_RESTART installs source from API zip and writes SHA to git ref.
+# A new commit landing during the build will cause local != api -- that is NOT
+# a problem because the binary was compiled from the correct source.
+# version_generated.hpp (CHECK 5/8) is the real proof of what was compiled.
 # ==============================================================================
 $localHead = & git -C $OmegaDir rev-parse HEAD 2>$null
 $localHead7 = if ($localHead -and $localHead.Length -ge 7) { $localHead.Substring(0,7) } else { "unknown" }
-
-if ($apiHead -ne "unknown" -and $localHead7 -ne "unknown") {
-    if ($localHead7 -eq $apiHead) {
-        Pass "Local == API HEAD" "local=$localHead7 == api=$apiHead"
-    } else {
-        Fail "Local == API HEAD" "local=$localHead7 != api=$apiHead -- local git is behind or ahead of origin/main"
-    }
-} else {
-    Info "Local == API HEAD" "local=$localHead7 api=$apiHead -- partial check only"
-}
+Info "Local HEAD" "local=$localHead7 api=$apiHead (informational -- version_generated is the build proof)"
 
 # ==============================================================================
 # CHECK 5: version_generated.hpp hash matches HEAD (POST-BUILD only)
@@ -267,4 +262,5 @@ if ($global:pdc_failures.Count -eq 0) {
     Write-Host ""
     exit 1
 }
+
 
