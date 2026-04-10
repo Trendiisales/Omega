@@ -901,11 +901,13 @@ private:
         // Other symbols receive depth events without a spots sub -- XAUUSD is special.
         // Without this: XAUUSD depth subscription ACKs but zero events ever arrive.
         // The spots sub in the bar queue fires 10s later -- too late for depth events.
+        // XAUUSD spots sub REMOVED -- sending it causes TCP drop on every reconnect
+        // which triggers a reconnect loop killing the depth feed for 5-30s each time.
+        // Depth events (pt=2155) flow WITHOUT spots sub -- confirmed 236 events/min.
+        // Live trendbar pushes (pt=2220) require spots sub but bars come from disk seed.
+        // Removing this eliminates the TCP drop loop entirely.
         if (xauusd_spot_id >= 0) {
-            send_msg(ssl, PB::subscribe_spots_req(ctid_account_id, xauusd_spot_id));
-            std::cout << "[CTRADER] XAUUSD spots sub sent (pre-depth, enables depth events)\n";
-            // Brief wait -- spots sub ACK (pt=2130) arrives quickly
-            // Don't block on it -- depth sub follows immediately
+            std::cout << "[CTRADER] XAUUSD spots sub SKIPPED (causes TCP drop on BlackBull)\n";
         }
         if (!send_msg(ssl, PB::subscribe_depth_req(ctid_account_id, sub_ids))) return false;
         if (!wait_for(ssl, 2157, 10000, pt, payload)) { std::cerr << "[CTRADER] SubscribeDepthRes timeout\n"; return false; }
