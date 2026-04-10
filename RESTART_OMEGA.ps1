@@ -275,6 +275,13 @@ if (Test-Path "$OmegaDir\build") {
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 OK "Build directory clean"
 
+# Force-remove any stale/locked .obj .pch files from previous failed builds
+# This permanently fixes "Permission denied on main.obj" on restart
+Get-ChildItem "$OmegaDir\build" -Recurse -Include "*.obj","*.pch","*.iobj","*.ipdb" -ErrorAction SilentlyContinue | ForEach-Object {
+    try { Remove-Item $_.FullName -Force -ErrorAction Stop } catch {}
+}
+Write-Host "      [OK] Stale obj/pch files cleared" -ForegroundColor Green
+
 # ── [4/13] cmake configure ───────────────────────────────────────────────────
 Step 4 13 "cmake configure..."
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
