@@ -269,18 +269,14 @@ OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
 Step 3 13 "Wiping build directory..."
+# Kill any MSBuild/cl.exe processes that may be locking obj files
+Get-Process -Name "MSBuild","cl","link","mspdbsrv" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
 if (Test-Path "$OmegaDir\build") {
     Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
 }
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 OK "Build directory clean"
-
-# Force-remove any stale/locked .obj .pch files from previous failed builds
-# This permanently fixes "Permission denied on main.obj" on restart
-Get-ChildItem "$OmegaDir\build" -Recurse -Include "*.obj","*.pch","*.iobj","*.ipdb" -ErrorAction SilentlyContinue | ForEach-Object {
-    try { Remove-Item $_.FullName -Force -ErrorAction Stop } catch {}
-}
-Write-Host "      [OK] Stale obj/pch files cleared" -ForegroundColor Green
 
 # ── [4/13] cmake configure ───────────────────────────────────────────────────
 Step 4 13 "cmake configure..."
