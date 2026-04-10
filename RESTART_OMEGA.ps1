@@ -6,7 +6,7 @@
 #  Steps (in order, every run):
 #    1.  Stop Omega (service + process kill, both)
 #    2.  Pull latest from GitHub (hard reset origin/main)
-#    3.  Wipe .obj/.pch files (clears locked compiler artifacts, forces recompile)
+#    3.  Wipe build directory (no stale objects)
 #    4.  cmake configure (regenerates version_generated.hpp)
 #    5.  cmake build (compile, fail hard on error)
 #    6.  Copy Omega.exe to C:\Omega\Omega.exe
@@ -267,47 +267,15 @@ if ($gitHash -ne $remoteHash) {
 
 OK "HEAD: $gitHash  -- $gitMsg"
 
-# ── [3/13] Wipe .obj/.pch files ──────────────────────────────────────────────
-Step 3 13 "Wiping .obj and .pch files from build directory..."
-# We never wipe the full build directory -- CMakeCache must be preserved to avoid
-# running cmake configure on every restart (slow, requires CMake config pass).
-#
-# We DO wipe all .obj and .pch files every restart. Reason:
-#   - If a previous build was interrupted (crash, kill, locked file), .obj files
-#     from that build remain on disk. MSVC locks .obj files while linking.
-#     A subsequent incremental build sees these stale .obj files and either:
-#       (a) skips recompilation (thinks source is unchanged) and links the broken obj
-#       (b) tries to overwrite a locked obj and hangs indefinitely
-#   - Wiping .obj forces a clean recompile of all translation units every run.
-#     With only 3 source files (main.cpp, SymbolConfig.cpp, OmegaTelemetryServer.cpp)
-#     this adds ~30-60s vs saving 6+ hours of locked-build debugging.
-#   - .pch files are wiped for the same reason (stale PCH = build failures).
-#   - CMakeCache.txt, .vcxproj, .sln, Makefile etc. are NOT touched.
-#
-# FULL WIPE PATH: If CMakeCache is missing (truly fresh), wipe everything.
-$ErrorActionPreference = "Continue"
-$buildDir = "$OmegaDir\build"
-if (-not (Test-Path $buildDir)) {
-    New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
-    Write-Host "      [NOTE] Fresh build directory created -- first build will be full cmake configure" -ForegroundColor Yellow
-} elseif (-not (Test-Path "$buildDir\CMakeCache.txt")) {
-    # CMakeCache gone but build dir exists -- full wipe and recreate
-    Write-Host "      CMakeCache.txt missing -- wiping build dir for clean configure" -ForegroundColor Yellow
-    Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
-    Write-Host "      Build directory wiped and recreated" -ForegroundColor DarkGray
-} else {
-    # CMakeCache exists -- targeted wipe of .obj and .pch only
-    $objFiles = Get-ChildItem -Path $buildDir -Recurse -Include "*.obj","*.pch" -ErrorAction SilentlyContinue
-    $objCount = 0
-    foreach ($f in $objFiles) {
-        Remove-Item -Path $f.FullName -Force -ErrorAction SilentlyContinue
-        $objCount++
-    }
-    Write-Host "      Wiped $objCount .obj/.pch files (forces clean recompile, preserves CMakeCache)" -ForegroundColor DarkGray
+# ── [3/13] Wipe build ────────────────────────────────────────────────────────
+Step 3 13 "Checking build directory..."
+# Never wipe the build directory -- cmake cache must be preserved.
+# cmake incremental build handles all source changes automatically.
+if (-not (Test-Path "$OmegaDir\build")) {
+    New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
+    Write-Host "      [NOTE] Fresh build directory created -- first build will be full rebuild" -ForegroundColor Yellow
 }
-$ErrorActionPreference = "Stop"
-OK "Build directory ready (obj/pch wiped)"
+OK "Build directory ready"
 
 # ── [4/13] cmake configure ───────────────────────────────────────────────────
 Step 4 13 "cmake configure..."
@@ -316,19 +284,6 @@ $ErrorActionPreference = "Continue"
 # Only run cmake configure if cache is missing
 if (-not (Test-Path "$OmegaDir\build\CMakeCache.txt")) {
     Write-Host "      Fresh build dir -- running cmake configure..." -ForegroundColor DarkGray
-    $cmakeCfgLog = "$env:TEMP\omega_cmake_cfg.txt"
-    $cmakeCfgProc = Start-Process -FilePath $CmakeExe `
-        -ArgumentList "-S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release" `
-        -WorkingDirectory $OmegaDir `
-        -RedirectStandardOutput $cmakeCfgLog `
-        -RedirectStandardError "$env:TEMP\omega_cmake_cfg_err.txt" `
-        -Wait -PassThru -NoNewWindow
-    $cmakeCfgExit = $cmakeCfgProc.ExitCode
-    if ($cmakeCfgExit -ne 0) { FAIL "cmake configure failed (exit $cmakeCfgExit)" }
-} else {
-    # CMakeCache exists -- re-run configure to regenerate version_generated.hpp with current HEAD hash
-    # This is fast (no dependency scan) and mandatory to stamp the correct git hash
-    Write-Host "      Re-running cmake configure to refresh git hash stamp..." -ForegroundColor DarkGray
     $cmakeCfgLog = "$env:TEMP\omega_cmake_cfg.txt"
     $cmakeCfgProc = Start-Process -FilePath $CmakeExe `
         -ArgumentList "-S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release" `
