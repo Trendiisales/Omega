@@ -146,6 +146,14 @@ int main(int argc, char* argv[]) {
 
             g_macro_ctx.gold_l2_real = !t.watchdog_dead;
 
+            // Diagnostic: print drift stats every 10000 ticks
+            if (tick_count % 10000 == 0) {
+                int h = (int)((t.ts_ms/1000/3600)%24);
+                fprintf(stderr, "[DIAG] tick=%lld ts=%lld h=%d drift=%.3f level_imb=%.3f spread=%.3f atr=%.3f phase=%d\n",
+                    (long long)tick_count, (long long)t.ts_ms, h, drift, level_imb,
+                    t.ask-t.bid, engine.current_atr(), (int)engine.phase);
+            }
+
             engine.on_tick(
                 t.bid, t.ask,
                 level_imb,  // real cTrader level-count imbalance
