@@ -269,13 +269,13 @@ OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
 Step 3 13 "Cleaning build artifacts..."
-# Do NOT wipe the entire build dir -- cmake cache must survive for compiler detection.
-# Use takeown + icacls + del to forcibly remove obj/pch even if kernel-locked.
-Get-ChildItem "$OmegaDir\build" -Recurse -Include "*.obj","*.pch" -ErrorAction SilentlyContinue | ForEach-Object {
-    $f = $_.FullName
-    & cmd /c "takeown /f `"$f`" >nul 2>&1"
-    & cmd /c "icacls `"$f`" /grant administrators:F >nul 2>&1"
-    & cmd /c "del /f /q `"$f`" >nul 2>&1"
+# Touch CMakeFiles timestamps to force full recompile without deleting obj files.
+# cmake will overwrite obj files in-place during build -- no delete needed.
+# This avoids the Windows kernel lock on obj files entirely.
+if (Test-Path "$OmegaDir\build\CMakeFiles") {
+    Get-ChildItem "$OmegaDir\build\CMakeFiles" -Recurse -Include "*.rule","depend.make","build.make" -ErrorAction SilentlyContinue | ForEach-Object {
+        $_.LastWriteTime = [DateTime]::UtcNow
+    }
 }
 OK "Build directory clean"
 
