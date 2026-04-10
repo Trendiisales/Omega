@@ -223,11 +223,15 @@ Write-Host "  [API] Source installed" -ForegroundColor Green
 Remove-Item $zipPath    -Force -ErrorAction SilentlyContinue
 Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
 
-# STEP 4: Verify -- local HEAD must now match API SHA
-# Clean index only -- source already installed from API zip above, no fetch needed.
+# STEP 4: Verify -- advance git HEAD to match API SHA
+# The zip install already put correct source files on disk.
+# Use git update-ref to point HEAD at the API SHA directly -- no fetch needed.
 $ErrorActionPreference = "Continue"
 & git -C $OmegaDir rm -r --cached --force --ignore-unmatch logs/ 2>&1 | Out-Null
-& git -C $OmegaDir reset --hard HEAD 2>&1 | Out-Null
+# Write the full API SHA into .git/refs/heads/main and update HEAD
+$fullSha = $ghApiSha
+& git -C $OmegaDir update-ref refs/heads/main $fullSha 2>&1 | Out-Null
+& git -C $OmegaDir reset --hard $fullSha 2>&1 | Out-Null
 $localHead  = (& git -C $OmegaDir rev-parse HEAD 2>$null).Trim()
 $localHead7 = if ($localHead -and $localHead.Length -ge 7) { $localHead.Substring(0,7) } else { "unknown" }
 
