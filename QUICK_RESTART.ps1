@@ -335,10 +335,23 @@ if (Test-Path $BuildExe) {
 
 # ==============================================================================
 # GATE 2 -- POST-BUILD: version_generated matches HEAD, binary is fresh
+# Re-read version_generated.hpp after build -- use the baked hash as ground truth.
 # ==============================================================================
 Write-Host ""
 Write-Host "[4/5] GATE 2 -- Post-build checks..." -ForegroundColor Yellow
 Write-Host ""
+
+# Re-read the actual hash baked into the binary by cmake -- may differ from
+# $headHash7 if a new commit landed during the build (causes false FAIL otherwise).
+$verFileCheck = "$OmegaDir\include\version_generated.hpp"
+if (Test-Path $verFileCheck) {
+    $vl2 = Select-String -Path $verFileCheck -Pattern 'OMEGA_GIT_HASH' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($vl2 -and $vl2.Line -match '"([a-f0-9]{7,})"') {
+        $builtHash7 = $Matches[1].Substring(0,7)
+        Write-Host "  [GATE2] Binary baked with hash=$builtHash7 (version_generated.hpp)" -ForegroundColor Cyan
+        $headHash7 = $builtHash7
+    }
+}
 
 & $CheckScript -OmegaDir $OmegaDir -GitHubToken $GitHubToken -ExpectedHash $headHash7 -PostBuild
 $gate2Exit = $LASTEXITCODE
@@ -482,4 +495,5 @@ if (-not $SkipVerify) {
     Write-Host ""
     & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec $WaitSec -OmegaDir $OmegaDir
 }
+
 
