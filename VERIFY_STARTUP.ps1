@@ -545,6 +545,36 @@ if ($dirSLLine) {
     Add-Result "GF Dir SL Cooldown" "PASS" "No directional cooldown active" "No consecutive same-direction SL_HITs."
 }
 
+# --- CHECK BAR-LOAD: bar state loaded from disk on startup (not cold) -----------
+# [BAR-LOAD] must appear in log with m1_ready=1.
+# If missing: bars not loading from disk -- cold start, GoldFlow blocked for ~2min.
+# If m1_ready=0: .dat file was stale/corrupt and rejected -- first restart of the day.
+# FAIL either way: next restart will be warm because periodic save runs every 10min.
+$barLoadLine = Get-Content $LogPath -ErrorAction SilentlyContinue |
+    Where-Object { $_ -match "BAR-LOAD" } | Select-Object -Last 1
+if (!$barLoadLine) {
+    Add-Result "Bar State Load" "FAIL" "No BAR-LOAD line in log" `
+        "load_indicators() never called OR binary is stale. Run RESTART_OMEGA.ps1 to rebuild."
+} elseif ($barLoadLine -match "m1_ready=1") {
+    $atrVal = if ($barLoadLine -match "ATR=([\d\.]+)") { $Matches[1] } else { "?" }
+    Add-Result "Bar State Load" "PASS" "Loaded from disk m1_ready=1 ATR=$atrVal -- warm start" $barLoadLine.Trim()
+} else {
+    Add-Result "Bar State Load" "WARN" "BAR-LOAD seen but m1_ready=0 -- .dat file rejected (stale/cold)" `
+        "$barLoadLine -- GoldFlow will warm in ~2min from tick data. Next restart will be instant."
+}
+
+# --- CHECK BAR-SAVE: periodic save fires every 10min -------------------------
+# [BAR-SAVE] Periodic save must appear within 15min of startup.
+# Confirms the 10-min save loop is running -- guarantees next restart is warm.
+$barSaveLine = Get-Content $LogPath -ErrorAction SilentlyContinue |
+    Where-Object { $_ -match "BAR-SAVE.*Periodic" } | Select-Object -Last 1
+if ($barSaveLine) {
+    Add-Result "Bar Periodic Save" "PASS" "Periodic save confirmed running" $barSaveLine.Trim()
+} else {
+    Add-Result "Bar Periodic Save" "INFO" "No BAR-SAVE yet (fires every 10min -- check again after 10min)" `
+        "Normal if uptime < 10min. If still missing after 15min, L2 watchdog thread may have crashed."
+}
+
 # --- CHECK 8e: GoldFlow phase state -------------------------------------------
 # GoldFlow must be in IDLE or FLOW_BUILDING to enter trades.
 # COOLDOWN = waiting after exit (10-45s). Silent COOLDOWN was blocking all entries.
