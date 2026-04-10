@@ -61,6 +61,7 @@ $modeColor = if ($mode -eq "LIVE") { "Red" } elseif ($mode -eq "SHADOW") { "Yell
 Write-Host "  Mode    : $mode" -ForegroundColor $modeColor
 Write-Host ""
 $ErrorActionPreference = "Stop"
+$restartStart = Get-Date
 
 # ==============================================================================
 # STEP 0: GitHub API pre-flight -- RUNS BEFORE EVERYTHING ELSE
@@ -498,5 +499,16 @@ if (-not $SkipVerify) {
     Write-Host ""
     & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec $WaitSec -OmegaDir $OmegaDir
 }
+
+$restartEnd = Get-Date
+$elapsed = $restartEnd - $restartStart
+Write-Host ""
+Write-Host "=======================================================" -ForegroundColor Cyan
+Write-Host ("  TOTAL RESTART TIME: {0:mm}m {0:ss}s" -f $elapsed) -ForegroundColor Cyan
+Write-Host ("  Started : " + $restartStart.ToUniversalTime().ToString("HH:mm:ss UTC")) -ForegroundColor DarkGray
+Write-Host ("  Finished: " + $restartEnd.ToUniversalTime().ToString("HH:mm:ss UTC")) -ForegroundColor DarkGray
+Write-Host "=======================================================" -ForegroundColor Cyan
+Write-Host ""
+
 
 
