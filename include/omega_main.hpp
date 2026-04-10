@@ -269,7 +269,7 @@ int main(int argc, char* argv[])
         // Solution: cTrader depth drives on_tick() as primary price source.
         // FIX W/X handler calls on_tick() ONLY when cTrader depth is stale (>500ms).
         g_ctrader_depth.on_tick_fn = [](const std::string& sym, double bid, double ask) noexcept {
-            // Stamp cTrader tick time per symbol for depth liveness checks
+            // Track last cTrader tick time per symbol for FIX fallback staleness check
             set_ctrader_tick_ms(sym, std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
             on_tick(sym, bid, ask);
@@ -448,52 +448,10 @@ int main(int argc, char* argv[])
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
 
-        // ?? cTrader heartbeat thread ??????????????????????????????????????????
-        // Problem: cTrader depth events can pause for 10-60s in thin Asian tape.
-        // With FIX removed as fallback, no depth event = no on_tick() = engines frozen.
-        // Fix: every 1s, if no depth event in last 2s AND we have a valid last price,
-        // synthesise an on_tick() call so engines/trails/SLs continue updating.
-        // This is NOT FIX data -- it uses the last cTrader price from g_l2_books.
-        // The L2 badge will still show stale (correct) but engines stay alive.
-        std::thread([&]() {
-            std::string last_sym = "XAUUSD";
-            while (g_running.load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                if (!g_running.load()) break;
-                const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count();
-                const int64_t last_ev = g_ctrader_depth.last_depth_event_ms.load();
-                // Only fire if depth has been quiet for 2-30s (not completely dead)
-                if (last_ev == 0) continue;
-                const int64_t age_ms = now_ms - last_ev;
-                if (age_ms < 2000 || age_ms > 30000) continue;
-                // Get last known prices from cTrader l2_books
-                // Iterate primary symbols -- fire heartbeat tick for any with valid price
-                static const char* hb_syms[] = {
-                    "XAUUSD","US500.F","USTEC.F","DJ30.F","NAS100","USOIL.F",
-                    "EURUSD","GBPUSD","AUDUSD","NZDUSD","USDJPY","XAGUSD","BRENT",nullptr
-                };
-                for (int si = 0; hb_syms[si]; ++si) {
-                    double hb_bid = 0.0, hb_ask = 0.0;
-                    {
-                        std::lock_guard<std::mutex> lk(g_l2_mtx);
-                        const auto it = g_l2_books.find(hb_syms[si]);
-                        if (it != g_l2_books.end()) {
-                            if (it->second.bid_count > 0) hb_bid = it->second.bids[0].price;
-                            if (it->second.ask_count > 0) hb_ask = it->second.asks[0].price;
-                        }
-                    }
-                    if (hb_bid > 0.0 && hb_ask > 0.0 && hb_ask > hb_bid) {
-                        on_tick(hb_syms[si], hb_bid, hb_ask);
-                    }
-                }
-            }
-        }).detach();
-
         // ?? Symbol subscription cross-check ??????????????????????????????????
         // Runs 5s after start() -- by then SymbolsListRes should have arrived
         // and all bar/depth subscriptions resolved.
-        // Logs WARNING for any symbol not covered by cTrader depth feed.
+        // Logs WARNING for any symbol that will fall back to FIX prices.
         std::thread([&]() {
             std::this_thread::sleep_for(std::chrono::seconds(5));
             std::cout << "[CTRADER-AUDIT] Symbol subscription check:\n";
@@ -502,14 +460,14 @@ int main(int argc, char* argv[])
                 const std::string& name = OMEGA_SYMS[i].name;
                 const bool has_ct = g_ctrader_depth.has_depth_subscription(name);
                 std::cout << "[CTRADER-AUDIT]   " << name
-                          << (has_ct ? " -> cTrader OK" : " -> *** NO cTrader DEPTH -- symbol blocked ***") << "\n";
+                          << (has_ct ? " -> cTrader OK" : " -> *** FIX FALLBACK ONLY ***") << "\n";
             }
             // Check ext symbols
             for (const auto& e : g_ext_syms) {
                 if (e.name[0] == 0) continue;
                 const bool has_ct = g_ctrader_depth.has_depth_subscription(e.name);
                 std::cout << "[CTRADER-AUDIT]   " << e.name
-                          << (has_ct ? " -> cTrader OK" : " -> *** NO cTrader DEPTH -- symbol blocked ***") << "\n";
+                          << (has_ct ? " -> cTrader OK" : " -> *** FIX FALLBACK ONLY ***") << "\n";
             }
             std::cout.flush();
         }).detach();
@@ -979,7 +937,5 @@ int main(int argc, char* argv[])
     g_shutdown_done.store(true);  // unblock console_ctrl_handler -- process may now exit
     return 0;
 }
-
-
 
 
