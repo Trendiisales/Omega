@@ -108,7 +108,7 @@ Write-Host ""
 
 # [3] BUILD
 Write-Host "[3/4] Building..." -ForegroundColor Yellow
-& $cmakeExe -S $OmegaDir -B $buildDir -DCMAKE_BUILD_TYPE=Release 2>&1 | Where-Object { $_ -match "\[Omega\]|error|warning" } | ForEach-Object { Write-Host "    $_" }
+& $cmakeExe -S $OmegaDir -B $buildDir -DCMAKE_BUILD_TYPE=Release "-DOMEGA_FORCE_GIT_HASH=$ghSha7" 2>&1 | Where-Object { $_ -match "\[Omega\]|error|warning" } | ForEach-Object { Write-Host "    $_" }
 $buildOutput = & $cmakeExe --build $buildDir --config Release 2>&1
 $buildOutput | Where-Object { $_ -match "Omega.vcxproj|error C" } | ForEach-Object { Write-Host "    $_" }
 $buildFailed = $buildOutput | Where-Object { $_ -match "error C[0-9]+" }
