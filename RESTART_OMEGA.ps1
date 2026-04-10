@@ -16,7 +16,7 @@
 #   10.  Ensure log directories exist
 #   11.  Update service exe + AppDirectory if service installed
 #   12.  Show commit, mode, GUI URL
-#   13.  Start service or direct launch
+#   13.  Start service or direct launch (hidden window -- never kills PowerShell)
 # ==============================================================================
 
 Set-StrictMode -Version Latest
@@ -431,10 +431,24 @@ if ($svc) {
     if ($svc.Status -ne "Running") { FAIL "$ServiceName failed to reach Running state after 30s" }
     OK "Omega running as service"
 } else {
-    Write-Host "  Launching directly (Ctrl+C to stop)..." -ForegroundColor Cyan
+    # ── DIRECT LAUNCH (no service installed) ─────────────────────────────────
+    # CRITICAL: Never use & ".\Omega.exe" here -- that runs in the foreground
+    # and blocks PowerShell entirely, making the terminal unusable and preventing
+    # all post-launch verification steps from executing.
+    # Start-Process with -WindowStyle Hidden launches Omega as a detached background
+    # process. PowerShell continues immediately. Post-launch checks run normally.
+    Write-Host "  Launching directly (hidden window, detached)..." -ForegroundColor Cyan
+    Write-Host "  To stop: Get-Process Omega | Stop-Process -Force" -ForegroundColor DarkGray
     Write-Host ""
-    & ".\Omega.exe" "omega_config.ini"
-    exit
+    $directProc = Start-Process `
+        -FilePath "$OmegaDir\Omega.exe" `
+        -ArgumentList "omega_config.ini" `
+        -WorkingDirectory $OmegaDir `
+        -WindowStyle Hidden `
+        -PassThru
+    if (-not $directProc) { FAIL "Start-Process returned null -- direct launch failed" }
+    Write-Host "  [OK] Omega launched (PID $($directProc.Id))" -ForegroundColor Green
+    Write-Host "       To stop: Stop-Process -Id $($directProc.Id) -Force" -ForegroundColor DarkGray
 }
 
 # ── POST-LAUNCH VERIFICATION ─────────────────────────────────────────────────
