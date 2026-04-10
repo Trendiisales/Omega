@@ -149,14 +149,17 @@ $ErrorActionPreference = "Continue"
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -eq "Running") {
     Write-Host "      Stopping $ServiceName service..." -ForegroundColor DarkGray
-    Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
-    # Wait up to 15s for service to reach Stopped state
+    # Use Start-Job to avoid Stop-Service blocking indefinitely
+    $stopJob = Start-Job { param($sn) Stop-Service $sn -Force -ErrorAction SilentlyContinue } -ArgumentList $ServiceName
     $svcWait = 0
     while ($svcWait -lt 15) {
         Start-Sleep -Seconds 1; $svcWait++
         $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
         if ($svc.Status -eq "Stopped") { break }
+        Write-Host "      Waiting for stop... ($svcWait s) state=$($svc.Status)" -ForegroundColor DarkGray
     }
+    Stop-Job $stopJob -ErrorAction SilentlyContinue
+    Remove-Job $stopJob -Force -ErrorAction SilentlyContinue
     Write-Host "      Service state: $($svc.Status) (after ${svcWait}s)" -ForegroundColor DarkGray
 }
 
