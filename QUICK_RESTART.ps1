@@ -251,7 +251,9 @@ if (-not $innerDir) {
 # Copy all source files over C:\Omega -- preserves logs/, state/, build/ untouched
 # Only overwrites .cpp/.hpp/.h/.ps1/.ini/.cmake/.txt/.json files
 Write-Host "  [API] Installing source from $($innerDir.Name) into $OmegaDir..." -ForegroundColor Cyan
-$sourceExts = @("*.cpp","*.hpp","*.h","*.ps1","*.ini","*.cmake","*.txt","*.json","*.md")
+# *.ps1 excluded -- scripts are self-updated from API before zip install runs.
+# Zip must not overwrite QUICK_RESTART.ps1 or PRE_DELIVERY_CHECK.ps1 with old versions.
+$sourceExts = @("*.cpp","*.hpp","*.h","*.ini","*.cmake","*.txt","*.json","*.md")
 foreach ($ext in $sourceExts) {
     Get-ChildItem -Path $innerDir.FullName -Filter $ext -Recurse | ForEach-Object {
         $rel  = $_.FullName.Substring($innerDir.FullName.Length).TrimStart('\','/')
@@ -544,6 +546,7 @@ Write-Host ("  Started : " + $restartStart.ToUniversalTime().ToString("HH:mm:ss 
 Write-Host ("  Finished: " + $restartEnd.ToUniversalTime().ToString("HH:mm:ss UTC")) -ForegroundColor DarkGray
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
+
 
 
 
