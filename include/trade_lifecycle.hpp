@@ -539,15 +539,13 @@ static double open_unrealised_pnl() {
     total += ca_pnl(g_ca_carry_unwind.has_open_position(),
                     g_ca_carry_unwind.open_entry(), g_ca_carry_unwind.open_is_long(), g_ca_carry_unwind.open_size(), "USDJPY");
 
-    // Gold flow
+    // Gold flow -- covered by mids map above (XAUUSD included in g_bids loop)
     if (g_gold_flow.pos.active) {
-        std::lock_guard<std::mutex> lk(g_book_mtx);
-        auto bi = g_bids.find("XAUUSD"); auto ai = g_asks.find("XAUUSD");
-        if (bi != g_bids.end() && ai != g_asks.end()) {
-            const double mid = (bi->second + ai->second) * 0.5;
+        auto it = mids.find("XAUUSD");
+        if (it != mids.end() && it->second > 0.0) {
             const double move = g_gold_flow.pos.is_long
-                ? (mid - g_gold_flow.pos.entry)
-                : (g_gold_flow.pos.entry - mid);
+                ? (it->second - g_gold_flow.pos.entry)
+                : (g_gold_flow.pos.entry - it->second);
             total += move * g_gold_flow.pos.size * 100.0;  // XAUUSD tick mult
         }
     }
@@ -881,22 +879,18 @@ static bool symbol_gate(
         // ?? Relative spread Z-score gate ??????????????????????????????????
         // Block if current spread is anomalous vs rolling 200-tick median.
         // Applies in all modes -- shadow is a simulation.
-        {
-            std::lock_guard<std::mutex> lk2(g_book_mtx);
-            const auto bid_it = g_bids.find(symbol);
-            const auto ask_it = g_asks.find(symbol);
-            if (bid_it != g_bids.end() && ask_it != g_asks.end()) {
-                const double spread = ask_it->second - bid_it->second;
-                if (!g_edges.spread_gate.ok(symbol, spread)) {
-                    static thread_local int64_t s_sz_log = 0;
-                    if (nowSec() - s_sz_log > 30) {
-                        s_sz_log = nowSec();
-                        printf("[SPREAD-Z] %s spread=%.5f z=%.2f -- anomalous, blocking entry\n",
-                               symbol.c_str(), spread,
-                               g_edges.spread_gate.z_score(symbol, spread));
-                    }
-                    return false;
+        // bid/ask passed directly from on_tick (cTrader source) -- no cache lookup needed.
+        if (bid > 0.0 && ask > 0.0) {
+            const double spread = ask - bid;
+            if (!g_edges.spread_gate.ok(symbol, spread)) {
+                static thread_local int64_t s_sz_log = 0;
+                if (nowSec() - s_sz_log > 30) {
+                    s_sz_log = nowSec();
+                    printf("[SPREAD-Z] %s spread=%.5f z=%.2f -- anomalous, blocking entry\n",
+                           symbol.c_str(), spread,
+                           g_edges.spread_gate.z_score(symbol, spread));
                 }
+                return false;
             }
         }
         // ?? Regime block gate -- applied in all modes ??????????????????????
@@ -1579,3 +1573,4 @@ static double enter_directional(
 #include "tick_oil.hpp"
 #include "tick_fx.hpp"
 #include "tick_gold.hpp"
+
