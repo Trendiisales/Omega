@@ -40,10 +40,13 @@ set(SOURCES
 
 add_executable(Omega ${SOURCES})
 
-# ?? Precompiled Header -- cuts recompile time 40-60% on MSVC /O2 ????????????
+# Precompiled Header -- cuts recompile time 40-60% on MSVC /O2
 # omega_pch.hpp contains all stable Windows/OpenSSL/STL includes.
-# Omega .hpp engine headers are NOT in the PCH -- they change often and would
-# invalidate it constantly. Only rebuild PCH when omega_pch.hpp itself changes.
+# PCH output dir must exist before MSBuild writes cmake_pch.pch on clean builds.
+# We create it explicitly here at configure time to prevent Invalid argument errors.
+if(MSVC)
+    file(MAKE_DIRECTORY "/CMakeFiles/Omega.dir/Release")
+endif()
 target_precompile_headers(Omega PRIVATE include/omega_pch.hpp)
 
 target_include_directories(Omega PRIVATE
