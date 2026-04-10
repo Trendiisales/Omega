@@ -9,7 +9,7 @@
 param([switch]$Uninstall)
 
 $WatchdogServiceName = "OmegaWatchdog"
-$NssmExe  = "C:\nssm\nssm.exe"
+$NssmExe  = "C:\nssm\nssm-2.24\win64\nssm.exe"
 $PsExe    = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 $Script   = "C:\Omega\OMEGA_WATCHDOG.ps1"
 $WdLog    = "C:\Omega\logs\watchdog.log"
