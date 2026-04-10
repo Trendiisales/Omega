@@ -401,10 +401,8 @@ $launchTime = Get-Date   # recorded BEFORE Start-Service so we know when this ru
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc) {
     Write-Host "  Starting $ServiceName service..." -ForegroundColor Cyan
-    Start-Service $ServiceName
-
-    # Wait up to 30s for service to reach Running state
-    # Do not rely on a fixed sleep -- service startup time varies 3-15s
+    # Use Start-Job to avoid Start-Service blocking indefinitely on slow NSSM starts
+    $startJob = Start-Job { param($sn) Start-Service $sn -ErrorAction SilentlyContinue } -ArgumentList $ServiceName
     $startWait = 0
     while ($startWait -lt 30) {
         Start-Sleep -Seconds 1; $startWait++
@@ -412,6 +410,9 @@ if ($svc) {
         if ($svc.Status -eq "Running") { break }
         Write-Host "      Waiting for service... ($startWait s) state=$($svc.Status)" -ForegroundColor DarkGray
     }
+    Stop-Job $startJob -ErrorAction SilentlyContinue
+    Remove-Job $startJob -Force -ErrorAction SilentlyContinue
+    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     $col = if ($svc.Status -eq "Running") { "Green" } else { "Red" }
     Write-Host "  Service status: $($svc.Status) (after ${startWait}s)" -ForegroundColor $col
     if ($svc.Status -ne "Running") { FAIL "$ServiceName failed to reach Running state after 30s" }
