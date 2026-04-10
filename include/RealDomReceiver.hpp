@@ -152,6 +152,62 @@ static bool parse_dom_json(const std::string& line, RealDomSnapshot& out) {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+//  DOM CSV logger -- writes real bid/ask volumes for backtesting
+//  File: C:\Omega\logs\dom_stream_YYYY-MM-DD.csv
+//  Columns: ts_ms, bid_imb5, top5_bid_vol, top5_ask_vol, best_bid_px, best_ask_px, bid_levels, ask_levels
+// ---------------------------------------------------------------------------
+static FILE*       g_dom_csv_file    = nullptr;
+static std::string g_dom_csv_date;
+
+inline std::string dom_csv_today() {
+    time_t t = time(nullptr);
+    struct tm* utc = gmtime(&t);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
+        utc->tm_year+1900, utc->tm_mon+1, utc->tm_mday);
+    return buf;
+}
+
+inline void write_dom_csv(const RealDomSnapshot& snap) {
+    // Rotate file on day change
+    auto today = dom_csv_today();
+    if (g_dom_csv_file == nullptr || today != g_dom_csv_date) {
+        if (g_dom_csv_file) { fclose(g_dom_csv_file); g_dom_csv_file = nullptr; }
+        g_dom_csv_date = today;
+        std::string path = "logs/dom_stream_" + today + ".csv";
+        bool exists = false;
+        { FILE* f = fopen(path.c_str(), "r"); if (f) { exists=true; fclose(f); } }
+        g_dom_csv_file = fopen(path.c_str(), "a");
+        if (g_dom_csv_file && !exists)
+            fprintf(g_dom_csv_file, "ts_ms,bid_imb5,top5_bid_vol,top5_ask_vol,best_bid_px,best_ask_px,bid_levels,ask_levels\n");
+        if (g_dom_csv_file)
+            printf("[REAL-DOM] CSV logging to %s\n", path.c_str());
+        else
+            printf("[REAL-DOM] WARNING: cannot open CSV %s\n", path.c_str());
+        fflush(stdout);
+    }
+    if (!g_dom_csv_file || !snap.valid) return;
+
+    // Compute top-5 imbalance
+    double bid5=0, ask5=0;
+    int nb = std::min(5, snap.bid_levels);
+    int na = std::min(5, snap.ask_levels);
+    for (int i=0;i<nb;i++) bid5 += snap.bids[i].volume;
+    for (int i=0;i<na;i++) ask5 += snap.asks[i].volume;
+    double total = bid5+ask5;
+    double imb5  = total>0 ? bid5/total : 0.5;
+
+    double best_bid = snap.bid_levels>0 ? snap.bids[0].price : 0.0;
+    double best_ask = snap.ask_levels>0 ? snap.asks[0].price : 0.0;
+
+    fprintf(g_dom_csv_file, "%lld,%.4f,%.0f,%.0f,%.5f,%.5f,%d,%d\n",
+        (long long)snap.ts_ms, imb5, bid5, ask5,
+        best_bid, best_ask, snap.bid_levels, snap.ask_levels);
+    fflush(g_dom_csv_file);
+}
+
 // ---------------------------------------------------------------------------
 //  RealDomReceiver -- background thread connecting to cBot
 // ---------------------------------------------------------------------------
@@ -242,6 +298,9 @@ private:
                     g_real_dom_last_ms.store(now_ms_realdom());
                     g_real_dom_seq.store(snap.seq);
                     updates++;
+
+                    // CSV logging -- write every update
+                    write_dom_csv(snap);
 
                     // Log every 10s
                     auto now = now_ms_realdom();
