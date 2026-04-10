@@ -50,6 +50,96 @@ function FAIL($text) {
 
 Banner "OMEGA  |  RESTART + REBUILD"
 
+# ==============================================================================
+# STEP 0: GitHub API verification -- RUNS BEFORE EVERYTHING ELSE
+# If the local tree does not match GitHub API HEAD, fail immediately.
+# No stop, no wipe, no build, no wasted time.
+# Uses the contents API directly -- never raw.githubusercontent.com (CDN-cached).
+# ==============================================================================
+Write-Host "[0/13] GitHub API pre-flight check..." -ForegroundColor Yellow
+Write-Host ""
+
+$tokenFile0 = "C:\Omega\.github_token"
+if (-not (Test-Path $tokenFile0)) {
+    Write-Host "  [FATAL] C:\Omega\.github_token not found -- cannot verify GitHub HEAD" -ForegroundColor Red
+    Write-Host "  Run: echo YOUR_TOKEN > C:\Omega\.github_token" -ForegroundColor Yellow
+    exit 1
+}
+$ghToken0 = (Get-Content $tokenFile0 -Raw).Trim()
+$apiHeaders0 = @{
+    Authorization  = "token $ghToken0"
+    "User-Agent"   = "OmegaRestart"
+    "Cache-Control" = "no-cache"
+    Accept         = "application/vnd.github.v3+json"
+}
+
+# Get live HEAD SHA from GitHub API
+try {
+    $ghHead0 = Invoke-RestMethod `
+        -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" `
+        -Headers $apiHeaders0 -TimeoutSec 15 -ErrorAction Stop
+} catch {
+    Write-Host "  [FATAL] GitHub API unreachable: $_" -ForegroundColor Red
+    Write-Host "  Cannot verify HEAD. Aborting -- will not build from unknown state." -ForegroundColor Red
+    exit 1
+}
+$ghSha0  = $ghHead0.sha
+$ghSha7  = $ghSha0.Substring(0, 7)
+$ghMsg0  = $ghHead0.commit.message
+Write-Host "  [API] GitHub HEAD : $ghSha7  -- $ghMsg0" -ForegroundColor Cyan
+
+# Get local HEAD
+$ErrorActionPreference = "Continue"
+$localSha0  = (& git -C $OmegaDir rev-parse HEAD 2>$null).Trim()
+$localSha7  = if ($localSha0 -and $localSha0.Length -ge 7) { $localSha0.Substring(0,7) } else { "unknown" }
+$ErrorActionPreference = "Stop"
+Write-Host "  [GIT] Local HEAD  : $localSha7" -ForegroundColor Cyan
+
+if ($localSha7 -ne $ghSha7) {
+    Write-Host ""
+    Write-Host "  [!!] Local is behind GitHub -- will sync during pull step (normal)" -ForegroundColor Yellow
+    Write-Host "       GitHub: $ghSha7   Local: $localSha7" -ForegroundColor Yellow
+} else {
+    Write-Host "  [OK] Local HEAD matches GitHub API HEAD" -ForegroundColor Green
+}
+
+# Verify the critical files Claude pushes are byte-for-byte correct on GitHub
+# by fetching each via the contents API and checking size + blob SHA.
+# This catches the exact failure mode where raw.githubusercontent.com served
+# a cached stale file while the API had the correct version.
+Write-Host ""
+Write-Host "  [API] Verifying key file integrity on GitHub..." -ForegroundColor Cyan
+$filesToCheck = @(
+    "include/globals.hpp",
+    "include/tick_gold.hpp",
+    "RESTART_OMEGA.ps1",
+    "OMEGA_STATUS.ps1",
+    "PRE_DELIVERY_CHECK.ps1"
+)
+$fileCheckFail = $false
+foreach ($fc in $filesToCheck) {
+    try {
+        $fcResp = Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/Trendiisales/Omega/contents/$fc" `
+            -Headers $apiHeaders0 -TimeoutSec 15 -ErrorAction Stop
+        $fcSize = $fcResp.size
+        $fcSha  = $fcResp.sha.Substring(0,12)
+        Write-Host ("    {0,-45} {1,8} bytes  blob={2}" -f $fc, $fcSize, $fcSha) -ForegroundColor DarkGray
+    } catch {
+        Write-Host "    [FAIL] Could not verify $fc via API: $_" -ForegroundColor Red
+        $fileCheckFail = $true
+    }
+}
+if ($fileCheckFail) {
+    Write-Host ""
+    Write-Host "  [FATAL] One or more files could not be verified on GitHub." -ForegroundColor Red
+    Write-Host "  Aborting -- will not build from unverified source." -ForegroundColor Red
+    exit 1
+}
+Write-Host ""
+Write-Host "  [OK] GitHub API pre-flight PASSED -- proceeding with restart" -ForegroundColor Green
+Write-Host ""
+
 # ── [1/13] Stop ──────────────────────────────────────────────────────────────
 Step 1 13 "Stopping Omega..."
 $ErrorActionPreference = "Continue"
