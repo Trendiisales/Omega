@@ -203,14 +203,6 @@ OK "Configure done (hash $guiHash confirmed)"
 
 # ── [5/13] cmake build ───────────────────────────────────────────────────────
 Step 5 13 "cmake build..."
-# Pre-create all PCH intermediate directories cmake needs before MSBuild runs.
-# cmake generates CMakeFiles/Omega.dir/Release/ but MSBuild races to write
-# cmake_pch.pch before the dir exists on a clean build -- Invalid argument.
-# We enumerate all cmake intermediate dirs and force-create them.
-Get-ChildItem -Path "$OmegaDir\build\CMakeFiles" -Recurse -Directory -ErrorAction SilentlyContinue |
-    ForEach-Object { New-Item -ItemType Directory -Force -Path $_.FullName | Out-Null }
-New-Item -ItemType Directory -Force -Path "$OmegaDir\build\CMakeFiles\Omega.dir" | Out-Null
-New-Item -ItemType Directory -Force -Path "$OmegaDir\build\CMakeFiles\Omega.dir\Release" | Out-Null
 $ErrorActionPreference = "Continue"
 & $CmakeExe --build "$OmegaDir\build" --config Release 2>&1 |
     ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
