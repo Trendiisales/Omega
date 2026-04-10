@@ -350,8 +350,8 @@ Write-Host "      Verifying new code baked into binary..." -ForegroundColor Dark
 $verifyStrings = @(
     "IMB-EXIT",          # CandleFlowEngine imbalance exit log line
     "rsi_trend=",        # CandleFlowEngine RSI entry log line
-    "REAL-DOM",          # RealDomReceiver live DOM from cBot
-    "OMEGA-DOM"          # OmegaDomStreamer cBot connection log
+    "REAL-DOM",          # RealDomReceiver.hpp log prefix
+    "real_dom_imbalance" # RealDomReceiver.hpp function name baked into binary
 )
 $binaryBytes = [System.IO.File]::ReadAllBytes($BuildExe)
 $binaryText  = [System.Text.Encoding]::ASCII.GetString($binaryBytes)
