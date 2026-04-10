@@ -114,16 +114,20 @@ int main(int argc, char* argv[]) {
             // set_trend_bias: neutral supervisor -- no regime, no wall, no expansion
             engine.set_trend_bias(drift/mid*100.0, 0.5, false, false, drift, false, t.vol_ratio);
 
-            // BlackBull sends size_raw=0 so l2_imb=0.500 always -- the L2 imbalance
-            // signal path never fires. In production GoldFlow runs on drift-fallback
-            // (GFE_DRIFT_FALLBACK_THRESHOLD) not the L2 persistence path.
-            // Set l2_ctrader_live=false to force drift-only mode -- this matches
-            // what actually fires in production on BlackBull feeds.
-            g_macro_ctx.gold_l2_real = false;
+            // cTrader API sends real depth level counts even though size_raw=0.
+            // Use level-count imbalance: bid_levels/(bid_levels+ask_levels)
+            // This IS the real DOM signal -- same as imbalance_level() in L2Book.
+            // Range: 0=all ask levels, 0.5=balanced, 1=all bid levels.
+            const int total_levels = t.depth_bid + t.depth_ask;
+            const double level_imb = (total_levels > 0)
+                ? static_cast<double>(t.depth_bid) / static_cast<double>(total_levels)
+                : 0.5;
+
+            g_macro_ctx.gold_l2_real = !t.watchdog_dead;
 
             engine.on_tick(
                 t.bid, t.ask,
-                0.5,    // l2_imb irrelevant -- drift path active
+                level_imb,  // real cTrader level-count imbalance
                 drift,
                 t.ts_ms,
                 [&](const omega::TradeRecord& tr) {
@@ -131,7 +135,7 @@ int main(int argc, char* argv[]) {
                     reasons[tr.exitReason]++;
                 },
                 session_slot(t.ts_ms),
-                false   // l2_ctrader_live=false -> drift fallback path (production behaviour)
+                !t.watchdog_dead  // l2_ctrader_live = true when feed is live
             );
         }
     }
