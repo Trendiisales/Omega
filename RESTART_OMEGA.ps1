@@ -394,6 +394,26 @@ Write-Host ""
 Step 13 13 "Launching..."
 Set-Location $OmegaDir
 
+# Wait for OmegaDomStreamer cBot to be listening on port 8765 (must start before Omega)
+# cBot binds 8765 as TCP server -- Omega connects as client. If Omega starts first it holds
+# the port and the cBot fails to bind. We wait up to 30s for the cBot to be ready.
+Write-Host "      Checking OmegaDomStreamer cBot on port 8765..." -ForegroundColor DarkGray
+$cbotWait = 0
+$cbotReady = $false
+while ($cbotWait -lt 30) {
+    $listening = netstat -an 2>$null | Select-String "0.0.0.0:8765.*LISTENING"
+    if ($listening) { $cbotReady = $true; break }
+    Start-Sleep -Seconds 1
+    $cbotWait++
+    if ($cbotWait % 5 -eq 0) { Write-Host "      Waiting for cBot on 8765... (${cbotWait}s)" -ForegroundColor Yellow }
+}
+if ($cbotReady) {
+    Write-Host "      [OK] cBot listening on 8765 (after ${cbotWait}s)" -ForegroundColor Green
+} else {
+    Write-Host "      [!!] cBot not detected on 8765 after 30s -- start OmegaDomStreamer in cTrader first" -ForegroundColor Yellow
+    Write-Host "      Proceeding anyway -- Omega will retry cBot connection every 3s" -ForegroundColor Yellow
+}
+
 $launchTime = Get-Date   # recorded BEFORE Start-Service so we know when this run began
 
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
