@@ -1566,12 +1566,18 @@ static void on_tick_gold(
     // is closed (e.g. hybrid_gold has position) indicators go stale and MacroCrash
     // reads a stale RSI value. update_indicators() is ungated -- always live.
     g_rsi_reversal.update_indicators(bid, ask);
+    // RSIExtremeTurnEngine indicator warmup -- UNCONDITIONAL, every tick
+    // Must run so tick_rsi / tick_atr are always current regardless of position state.
+    g_rsi_extreme.update_indicators(bid, ask);
     // Inject M1 bar RSI for entry signal -- bar RSI is smooth (60s) and matches chart
     if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
         const double rsi_bar_mid = (bid + ask) * 0.5;
         g_rsi_reversal.set_bar_rsi(
             g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
             rsi_bar_mid);
+        // RSIExtremeTurnEngine bar RSI injection -- tracks sustained extreme bars
+        g_rsi_extreme.set_bar_rsi(
+            g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed));
         g_rsi_reversal.set_bar_context(
             g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed),
             g_bars_gold.m1.ind.atr_expanding.load(std::memory_order_relaxed),
@@ -1732,6 +1738,86 @@ static void on_tick_gold(
                         g_rsi_reversal.pos.is_long,
                         g_rsi_reversal.pos.size,
                         g_rsi_reversal.pos.entry);
+                    g_telemetry.UpdateLastEntryTs();
+                }
+            }
+        }
+    }
+
+    // ?? RSIExtremeTurnEngine -- RSI extreme + sustained turn (no DOM) ???????????
+    // Entry: bar RSI fell below 20 for 3+ bars (LONG) or above 70 (SHORT), then turns.
+    // Exit:  bar RSI recovers to 55 (LONG) or 45 (SHORT). SL=0.5xATR. No DOM.
+    // Runs standalone: not blocked by other gold engines except its own open position.
+    // Exclusion: blocked when any gold position is open (one-at-a-time).
+    {
+        // Position management -- always runs when open (no gate)
+        if (g_rsi_extreme.has_open_position()) {
+            g_rsi_extreme.on_tick(bid, ask,
+                g_macro_ctx.session_slot, now_ms_g,
+                [&](const omega::TradeRecord& tr) {
+                    handle_closed_trade(tr);
+                    if (!g_rsi_extreme.shadow_mode) {
+                        send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                        g_telemetry.UpdateLastEntryTs();
+                    }
+                });
+        }
+
+        // Entry gate: no other gold position open + bars ready + tradeable + not NY close noise
+        // Bar RSI required (set_bar_rsi injected above when m1_ready=true).
+        // DOM deliberately NOT gated here -- backtest proved DOM adds noise not signal.
+        const bool rsi_ext_bars_ready = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
+        const bool rsi_ext_can_enter =
+            !g_rsi_extreme.has_open_position()
+            && rsi_ext_bars_ready
+            && tradeable
+            && !in_ny_close_noise
+            && !g_bracket_gold.has_open_position()
+            && !g_gold_stack.has_open_position()
+            && !gf_open
+            && !g_trend_pb_gold.has_open_position()
+            && !g_rsi_reversal.has_open_position()
+            && !g_hybrid_gold.has_open_position()
+            && !g_micro_momentum.has_open_position()
+            && !g_nbm_gold_london.has_open_position();
+
+        if (rsi_ext_can_enter) {
+            g_rsi_extreme.on_tick(bid, ask,
+                g_macro_ctx.session_slot, now_ms_g,
+                [&](const omega::TradeRecord& tr) {
+                    handle_closed_trade(tr);
+                    if (!g_rsi_extreme.shadow_mode) {
+                        send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                        g_telemetry.UpdateLastEntryTs();
+                    }
+                });
+
+            if (g_rsi_extreme.has_open_position()) {
+                // Size using standard risk engine
+                const double rsi_ext_sl_dist = std::fabs(
+                    g_rsi_extreme.pos.entry - g_rsi_extreme.pos.sl);
+                const double rsi_ext_lot = (rsi_ext_sl_dist > 0.0)
+                    ? std::max(0.01, std::min(g_cfg.max_lot_gold,
+                        g_cfg.risk_per_trade_usd / (rsi_ext_sl_dist * 100.0)))
+                    : 0.02;  // fixed fallback
+                g_rsi_extreme.patch_size(rsi_ext_lot);
+
+                // Log and telemetry
+                write_trade_open_log("XAUUSD", "RSIExtremeTurn",
+                    g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
+                    g_rsi_extreme.pos.entry, 0.0, g_rsi_extreme.pos.sl,
+                    g_rsi_extreme.pos.size, ask - bid,
+                    "RSI_EXTREME", "RSI_EXTREME_TURN");
+                g_telemetry.UpdateLastSignal("XAUUSD",
+                    g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
+                    g_rsi_extreme.pos.entry, "RSI_EXTREME_TURN",
+                    "RSI_EXTREME", regime.c_str(), "RSI_EXTREME",
+                    0.0, g_rsi_extreme.pos.sl);
+                if (!g_rsi_extreme.shadow_mode) {
+                    send_live_order("XAUUSD",
+                        g_rsi_extreme.pos.is_long,
+                        g_rsi_extreme.pos.size,
+                        g_rsi_extreme.pos.entry);
                     g_telemetry.UpdateLastEntryTs();
                 }
             }
