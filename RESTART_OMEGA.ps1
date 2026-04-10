@@ -347,10 +347,9 @@ if (-not (Test-Path $BuildExe))    { FAIL "$BuildExe not found after build" }
 # This makes it physically impossible to run a stale binary after a push.
 Write-Host "      Verifying new code baked into binary..." -ForegroundColor DarkGray
 $verifyStrings = @(
-    "IMB-EXIT",          # CandleFlowEngine imbalance exit log line
-    "rsi_trend=",        # CandleFlowEngine RSI entry log line
-    "REAL-DOM",          # RealDomReceiver.hpp log prefix
-    "real_dom_imbalance" # RealDomReceiver.hpp function name baked into binary
+    "IMB-EXIT",                    # CandleFlowEngine -- printf string literal
+    "rsi_trend=",                  # CandleFlowEngine -- printf string literal
+    "REAL-DOM] Connected to cBot"  # RealDomReceiver.hpp -- printf string literal
 )
 $binaryBytes = [System.IO.File]::ReadAllBytes($BuildExe)
 $binaryText  = [System.Text.Encoding]::ASCII.GetString($binaryBytes)
