@@ -60,30 +60,32 @@ namespace cAlgo.Robots
 
         private void OpenCsvForToday()
         {
-            try
+            _csvDate = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            var candidates = new[]
             {
-                _csvDate = DateTime.UtcNow.ToString("yyyy-MM-dd");
-                // Try C:\Omega\logs\ first, fall back to user temp
-                var primaryPath = @"C:\Omega\logs\dom_stream_" + _csvDate + ".csv";
-                var fallbackPath = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    "dom_stream_" + _csvDate + ".csv");
-                _csvPath = primaryPath;
-                try { var testFile = File.Create(primaryPath); testFile.Close(); File.Delete(primaryPath); }
-                catch { _csvPath = fallbackPath; Print("[OMEGA-DOM] Cannot write to logs dir, using: " + fallbackPath); }
-                bool exists = File.Exists(_csvPath);
-                _csvWriter = new StreamWriter(_csvPath, append: true, encoding: Encoding.UTF8);
-                _csvWriter.AutoFlush = true;
-                if (!exists)
-                    _csvWriter.WriteLine("ts_ms,bid_imb,top5_bid_vol,top5_ask_vol,best_bid_px,best_ask_px,bid_levels,ask_levels");
-                Print("[OMEGA-DOM] CSV logging to " + _csvPath);
-            }
-            catch (Exception ex)
+                @"C:\Omega\logs\dom_stream_" + _csvDate + ".csv",
+                Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + "\\dom_stream_" + _csvDate + ".csv",
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "\\dom_stream_" + _csvDate + ".csv",
+                System.IO.Path.GetTempPath() + "dom_stream_" + _csvDate + ".csv"
+            };
+            foreach (var path in candidates)
             {
-                Print("[OMEGA-DOM] CSV open failed: " + ex.Message);
-                _csvWriter = null;
+                try
+                {
+                    bool exists = File.Exists(path);
+                    _csvWriter = new StreamWriter(path, append: true, encoding: Encoding.UTF8);
+                    _csvWriter.AutoFlush = true;
+                    if (!exists)
+                        _csvWriter.WriteLine("ts_ms,bid_imb,top5_bid_vol,top5_ask_vol,best_bid_px,best_ask_px,bid_levels,ask_levels");
+                    _csvPath = path;
+                    Print("[OMEGA-DOM] CSV logging to " + path);
+                    return;
+                }
+                catch (Exception ex) { Print("[OMEGA-DOM] Cannot write to " + path + ": " + ex.Message); }
             }
+            Print("[OMEGA-DOM] ERROR: cannot write CSV to any location");
         }
+
 
         private void RotateCsvIfNeeded()
         {
