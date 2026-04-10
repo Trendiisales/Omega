@@ -724,11 +724,22 @@ static void on_tick_gold(
                 tm_l2_unc.tm_year+1900, tm_l2_unc.tm_mon+1, tm_l2_unc.tm_mday);
             bool is_new_unc = (GetFileAttributesA(l2path_unc) == INVALID_FILE_ATTRIBUTES);
             s_l2f_unc = fopen(l2path_unc, "a");
-            if (s_l2f_unc && is_new_unc)
-                fprintf(s_l2f_unc,
-                    "ts_ms,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
-                    "depth_bid_levels,depth_ask_levels,depth_events_total,"
-                    "watchdog_dead,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift\n");
+            if (s_l2f_unc) {
+                if (is_new_unc)
+                    fprintf(s_l2f_unc,
+                        "ts_ms,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
+                        "depth_bid_levels,depth_ask_levels,depth_events_total,"
+                        "watchdog_dead,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift\n");
+                // Confirm file opened successfully in latest.log
+                std::cout << "[L2-CSV-OPEN] " << l2path_unc
+                          << (is_new_unc ? " (new file, header written)" : " (appending)") << "\n";
+                std::cout.flush();
+            } else {
+                // File failed to open -- this is always visible in latest.log
+                std::cout << "[L2-CSV-OPEN-FAIL] Cannot open " << l2path_unc
+                          << " -- L2 tick data will NOT be saved this session!\n";
+                std::cout.flush();
+            }
             s_l2_day_unc = tm_l2_unc.tm_yday;
         }
         if (s_l2f_unc) {
