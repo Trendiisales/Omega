@@ -268,11 +268,12 @@ if ($gitHash -ne $remoteHash) {
 OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
-Step 3 13 "Wiping build directory..."
-if (Test-Path "$OmegaDir\build") {
-    Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
+Step 3 13 "Cleaning build artifacts..."
+# Do not wipe build dir -- cmake cache must be preserved for compiler detection.
+# Incremental build handles changed files automatically.
+if (-not (Test-Path "$OmegaDir\build")) {
+    New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 }
-New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 OK "Build directory clean"
 
 # ── [4/13] cmake configure ───────────────────────────────────────────────────
