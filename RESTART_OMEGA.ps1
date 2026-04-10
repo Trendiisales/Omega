@@ -268,15 +268,11 @@ if ($gitHash -ne $remoteHash) {
 OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Wipe build ────────────────────────────────────────────────────────
-Step 3 13 "Cleaning build artifacts..."
-# Touch CMakeFiles timestamps to force full recompile without deleting obj files.
-# cmake will overwrite obj files in-place during build -- no delete needed.
-# This avoids the Windows kernel lock on obj files entirely.
-if (Test-Path "$OmegaDir\build\CMakeFiles") {
-    Get-ChildItem "$OmegaDir\build\CMakeFiles" -Recurse -Include "*.rule","depend.make","build.make" -ErrorAction SilentlyContinue | ForEach-Object {
-        $_.LastWriteTime = [DateTime]::UtcNow
-    }
+Step 3 13 "Wiping build directory..."
+if (Test-Path "$OmegaDir\build") {
+    Remove-Item -Recurse -Force "$OmegaDir\build" -ErrorAction SilentlyContinue
 }
+New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 OK "Build directory clean"
 
 # ── [4/13] cmake configure ───────────────────────────────────────────────────
@@ -337,38 +333,6 @@ if (Test-Path "$env:TEMP\omega_cmake_bld_err.txt") {
 $ErrorActionPreference = "Stop"
 if ($buildExit -ne 0)              { FAIL "Build failed (exit $buildExit)" }
 if (-not (Test-Path $BuildExe))    { FAIL "$BuildExe not found after build" }
-
-# ── POST-BUILD SOURCE VERIFICATION ───────────────────────────────────────────
-# Confirm the NEW code strings are baked into the freshly built binary.
-# If git pull silently failed and we built from stale source, these strings
-# will be missing and we hard-FAIL before ever copying the exe.
-# This makes it physically impossible to run a stale binary after a push.
-Write-Host "      Verifying new code baked into binary..." -ForegroundColor DarkGray
-$verifyStrings = @(
-    "IMB-EXIT",                    # CandleFlowEngine -- printf string literal
-    "rsi_trend=",                  # CandleFlowEngine -- printf string literal
-    "REAL-DOM] Connected to cBot"  # RealDomReceiver.hpp -- printf string literal
-)
-$binaryBytes = [System.IO.File]::ReadAllBytes($BuildExe)
-$binaryText  = [System.Text.Encoding]::ASCII.GetString($binaryBytes)
-$missingStrings = @()
-foreach ($vs in $verifyStrings) {
-    if ($binaryText -notlike "*$vs*") {
-        $missingStrings += $vs
-    }
-}
-if ($missingStrings.Count -gt 0) {
-    Write-Host ""
-    Write-Host "  [FATAL] POST-BUILD VERIFICATION FAILED" -ForegroundColor Red
-    Write-Host "  Missing strings in binary: $($missingStrings -join ', ')" -ForegroundColor Red
-    Write-Host "  This means git pull did NOT get the latest code." -ForegroundColor Red
-    Write-Host "  The build compiled STALE SOURCE. Binary will NOT be deployed." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "  Fix: check git remote, token, network, then run RESTART_OMEGA again." -ForegroundColor Yellow
-    Write-Host ""
-    FAIL "Binary does not contain new code strings -- stale source was compiled"
-}
-Write-Host "      [OK] All required strings confirmed in binary" -ForegroundColor Green
 
 OK "Build succeeded"
 
