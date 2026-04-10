@@ -273,13 +273,14 @@ Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
 # Write the SHA directly into the ref file -- no fetch, no network call needed.
 $ErrorActionPreference = "Continue"
 & git -C $OmegaDir rm -r --cached --force --ignore-unmatch logs/ 2>&1 | Out-Null
+# Write SHA to git ref file so cmake picks up correct hash
 $refFile = "$OmegaDir\.git\refs\heads\main"
 $refDir  = Split-Path $refFile -Parent
 if (-not (Test-Path $refDir)) { New-Item -ItemType Directory -Path $refDir -Force | Out-Null }
 Set-Content -Path $refFile -Value $ghApiSha -Encoding ASCII -Force
-$localHead  = (& git -C $OmegaDir rev-parse HEAD 2>$null).Trim()
-$localHead7 = if ($localHead -and $localHead.Length -ge 7) { $localHead.Substring(0,7) } else { "unknown" }
-Write-Host "  [VERIFIED] Source installed from API zip SHA=$ghApiSha7, git HEAD=$localHead7" -ForegroundColor Green
+$localHead  = $ghApiSha
+$localHead7 = $ghApiSha7
+Write-Host "  [OK] Source installed at SHA=$ghApiSha7" -ForegroundColor Green
 $ErrorActionPreference = "Continue"
 
 # FULL BUILD DIRECTORY WIPE -- the only guaranteed clean rebuild.
