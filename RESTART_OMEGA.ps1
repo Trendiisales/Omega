@@ -203,6 +203,9 @@ OK "Configure done (hash $guiHash confirmed)"
 
 # ── [5/13] cmake build ───────────────────────────────────────────────────────
 Step 5 13 "cmake build..."
+# Pre-create PCH output directory -- MSVC cmake_pch.pch fails with Invalid argument
+# if Omega.dir/Release/ does not exist before MSBuild starts writing the PCH.
+New-Item -ItemType Directory -Force -Path "$OmegaDir\build\Omega.dir\Release" | Out-Null
 $ErrorActionPreference = "Continue"
 & $CmakeExe --build "$OmegaDir\build" --config Release 2>&1 |
     ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
