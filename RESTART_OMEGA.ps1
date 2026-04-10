@@ -274,12 +274,14 @@ if ($gitHash -ne $remoteHash) {
 OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Build directory ───────────────────────────────────────────────────────────────────
-Step 3 13 "Checking build directory..."
-if (-not (Test-Path "$OmegaDir\build")) {
-    New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
-    Write-Host "      [NOTE] Fresh build directory created" -ForegroundColor Yellow
+Step 3 13 "Wiping and recreating build directory..."
+# Always wipe build directory completely -- eliminates all locked/stale artifacts
+# This was the root cause of Permission denied errors after yesterday's bad push
+if (Test-Path "$OmegaDir\build") {
+    Remove-Item "$OmegaDir\build" -Recurse -Force -ErrorAction SilentlyContinue
 }
-OK "Build directory ready"
+New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
+OK "Build directory clean"
 
 # ── [4/13] Write version stamp (no cmake) ───────────────────────────────────────────────────
 # Write version_generated.hpp and omega_version.cmake directly in PowerShell.
@@ -312,11 +314,6 @@ OK "Version stamp written (hash $guiHash confirmed)"
 Step 5 13 "Building Omega only..."
 $ErrorActionPreference = "Continue"
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
-
-# Delete all .obj and .pch files -- prevents Permission denied on locked build artifacts
-Get-ChildItem "$OmegaDir\build" -Recurse -Include "*.obj","*.pch","*.pdb" -ErrorAction SilentlyContinue |
-    Remove-Item -Force -ErrorAction SilentlyContinue
-Write-Host "      Cleaned stale build artifacts" -ForegroundColor DarkGray
 
 # Run cmake --build in foreground (-Wait, no redirection) so progress is visible
 # --target Omega builds only Omega.vcxproj, skipping OmegaBacktest and CandleFlowL2Bt
