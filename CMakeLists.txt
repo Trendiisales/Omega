@@ -192,6 +192,22 @@ add_custom_command(TARGET OmegaBacktest POST_BUILD
     COMMENT "Copying config ? OmegaBacktest"
 )
 
+# =============================================================================
+# CandleFlowL2Bt -- standalone L2 backtest, no Omega deps
+# Build: cmake --build build --target CandleFlowL2Bt
+# Run:   .\Release\CandleFlowL2Bt.exe C:\Omega\logs\l2_ticks_2026-04-10.csv
+# =============================================================================
+add_executable(CandleFlowL2Bt
+    backtest/candle_flow_l2_bt.cpp
+)
+target_include_directories(CandleFlowL2Bt PRIVATE ${CMAKE_SOURCE_DIR}/backtest)
+if(MSVC)
+    target_compile_options(CandleFlowL2Bt PRIVATE /O2 /std:c++17 /W3 /wd4100 /wd4505)
+    target_compile_definitions(CandleFlowL2Bt PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(CandleFlowL2Bt PRIVATE -O2 -std=c++17 -Wall)
+endif()
+
 message(STATUS "========================================")
 message(STATUS "OMEGA -- Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
