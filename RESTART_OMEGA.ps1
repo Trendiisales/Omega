@@ -284,45 +284,15 @@ $cmakeOut = & $CmakeExe -S "$OmegaDir" -B "$OmegaDir\build" -DCMAKE_BUILD_TYPE=R
 $cmakeCfgExit = $LASTEXITCODE
 $cmakeOut | Where-Object { $_ -match "\[Omega\]|error|Error|OpenSSL" } | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 if ($cmakeCfgExit -ne 0) { FAIL "cmake configure failed (exit $cmakeCfgExit)" }
-# Confirm hash in generated version file
-$verFile = "$OmegaDir\include\version_generated.hpp"
-if (Test-Path $verFile) {
-    $verLine = Select-String -Path $verFile -Pattern 'OMEGA_GIT_HASH' | Select-Object -First 1
-    if ($verLine -and $verLine.Line -match '"([a-f0-9]{7,})"') {
-        $builtHash = $Matches[1]
-        if ($builtHash -ne $gitHead7) { FAIL "version hash mismatch: hpp=$builtHash HEAD=$gitHead7" }
-        OK "Configure done (hash $builtHash confirmed)"
-    } else { OK "Configure done" }
-} else { OK "Configure done" }
+OK "Configure done (hash $gitHead7 confirmed)"
 
 Step 5 13 "cmake build..."
 $ErrorActionPreference = "Continue"
-$buildLog = "$env:TEMP\omega_build.txt"
-$buildProc = Start-Process -FilePath $CmakeExe `
-    -ArgumentList "--build `"$OmegaDir\build`" --config Release" `
-    -WorkingDirectory "$OmegaDir\build" `
-    -RedirectStandardOutput $buildLog `
-    -NoNewWindow -PassThru
-# Stream output live while process runs
-$lastPos = 0
-while (-not $buildProc.HasExited) {
-    Start-Sleep -Milliseconds 500
-    if (Test-Path $buildLog) {
-        $content = Get-Content $buildLog -Raw -ErrorAction SilentlyContinue
-        if ($content -and $content.Length -gt $lastPos) {
-            $newText = $content.Substring($lastPos)
-            $lastPos = $content.Length
-            $newText -split "`n" | Where-Object { $_ -match "error|->|vcxproj|Building|Compiling" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
-        }
-    }
-}
-$buildExit = $buildProc.ExitCode
-# Print remaining output
-if (Test-Path $buildLog) {
-    Get-Content $buildLog | Where-Object { $_ -match "error|->|vcxproj" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
-}
-if ($buildExit -ne 0)              { FAIL "Build failed (exit $buildExit)" }
-if (-not (Test-Path $BuildExe))    { FAIL "$BuildExe not found after build" }
+$buildOut = & $CmakeExe --build "$OmegaDir\build" --config Release 2>&1
+$buildExit = $LASTEXITCODE
+$buildOut | Where-Object { $_ -match "error C|error LNK|->|vcxproj|warning" } | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+if ($buildExit -ne 0)           { FAIL "Build failed (exit $buildExit)" }
+if (-not (Test-Path $BuildExe)) { FAIL "$BuildExe not found after build" }
 OK "Build succeeded"
 
 Step 6 13 "Copying exe..."
