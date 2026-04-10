@@ -135,11 +135,27 @@ Step 2 13 "Pulling origin/main..."
 Set-Location $OmegaDir
 $ErrorActionPreference = "Continue"
 
-# Fetch
+# Fetch via HTTPS with token -- works under SYSTEM account (no SSH key required)
+# SSH fetch fails when Omega runs as a Windows service because the SYSTEM/service
+# account has no ~/.ssh/id_rsa registered with GitHub. HTTPS+token is always available.
+# Token stored in C:\Omega\.github_token (git-ignored). Falls back to SSH if absent.
+$tokenFile = "C:\Omega\.github_token"
+if (Test-Path $tokenFile) {
+    $token = (Get-Content $tokenFile -Raw).Trim()
+    $httpsUrl = "https://$token@github.com/Trendiisales/Omega.git"
+    git remote set-url origin $httpsUrl 2>&1 | Out-Null
+    Write-Host "    Using HTTPS+token for fetch" -ForegroundColor DarkGray
+} else {
+    Write-Host "    .github_token not found -- using SSH (may fail under service account)" -ForegroundColor Yellow
+}
+
 git fetch origin 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 
 # Hard reset
 git reset --hard origin/main 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+
+# Restore SSH remote after fetch so local git commands stay clean
+git remote set-url origin git@github.com:Trendiisales/Omega.git 2>&1 | Out-Null
 
 $ErrorActionPreference = "Stop"
 
