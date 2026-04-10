@@ -311,7 +311,10 @@ private:
     // Exit short when imb > +thresh for >= N ticks
     // Also exits on imb against for >= 1 tick AND depth drop on support side
     bool check_imb_exit(bool is_long, const DOMSnap& dom) noexcept {
-        const double imb = (dom.l2_imb - 0.5) * 2.0;  // -1..+1
+        // Use real DOM imbalance from cBot if available, else fall back to level counts
+        const double real_imb = real_dom_imbalance(5);
+        const double l2_imb = (real_imb != 0.5) ? real_imb : dom.l2_imb;
+        const double imb = (l2_imb - 0.5) * 2.0;  // -1..+1
         const bool against = is_long
             ? (imb < -CFE_IMB_EXIT_THRESH)
             : (imb >  CFE_IMB_EXIT_THRESH);
