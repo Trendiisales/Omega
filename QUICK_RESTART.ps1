@@ -62,6 +62,46 @@ Write-Host "  Mode    : $mode" -ForegroundColor $modeColor
 Write-Host ""
 $ErrorActionPreference = "Stop"
 
+# ==============================================================================
+# STEP 0: GitHub API pre-flight -- RUNS BEFORE EVERYTHING ELSE
+# Fails immediately if GitHub is unreachable or key files cannot be verified.
+# No stop, no wipe, no build until this passes.
+# ==============================================================================
+Write-Host "[0/5] GitHub API pre-flight check..." -ForegroundColor Yellow
+Write-Host ""
+
+if ($GitHubToken -eq "") {
+    $tf0 = "$OmegaDir\.github_token"
+    if (Test-Path $tf0) { $GitHubToken = (Get-Content $tf0 -Raw).Trim() }
+}
+if ($GitHubToken -eq "") {
+    Write-Host "  [FATAL] No GitHub token -- set C:\Omega\.github_token" -ForegroundColor Red
+    exit 1
+}
+$ah0 = @{ Authorization="token $GitHubToken"; "User-Agent"="OmegaQR"; "Cache-Control"="no-cache"; Accept="application/vnd.github.v3+json" }
+try {
+    $ghc0 = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" -Headers $ah0 -TimeoutSec 15 -ErrorAction Stop
+} catch {
+    Write-Host "  [FATAL] GitHub API unreachable: $_" -ForegroundColor Red
+    exit 1
+}
+$gs7 = $ghc0.sha.Substring(0,7)
+Write-Host "  [API] GitHub HEAD: $gs7  -- $($ghc0.commit.message)" -ForegroundColor Cyan
+
+$filesToCheck0 = @("include/globals.hpp","include/tick_gold.hpp","RESTART_OMEGA.ps1","QUICK_RESTART.ps1","PRE_DELIVERY_CHECK.ps1")
+foreach ($fc0 in $filesToCheck0) {
+    try {
+        $r0 = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/contents/$fc0" -Headers $ah0 -TimeoutSec 15 -ErrorAction Stop
+        Write-Host ("    {0,-45} {1,8} bytes" -f $fc0, $r0.size) -ForegroundColor DarkGray
+    } catch {
+        Write-Host "  [FATAL] Cannot verify $fc0 via API: $_" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host ""
+Write-Host "  [OK] GitHub API pre-flight PASSED" -ForegroundColor Green
+Write-Host ""
+
 # --- [1] Stop Omega ----------------------------------------------------------
 Write-Host "[1/5] Stopping Omega..." -ForegroundColor Yellow
 $ErrorActionPreference = "Continue"
