@@ -71,14 +71,14 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         std::cerr.flush();
     }
 
-    // ?? Market data W/X -- LATENCY MEASUREMENT ONLY ??????????????????????????????????
-    // ALL price and L2 data comes from cTrader Open API. FIX W/X is ignored for
-    // trading decisions. We only extract tag 52 (SendingTime) for RTT diagnostics.
-    // No L2 parsing, no g_l2_books writes, no AtomicL2 writes, no on_tick() calls.
+    // ?? Market data W/X -- PRICE FALLBACK ONLY ???????????????????????????
+    // L2/DOM data comes exclusively from cTrader. FIX W/X is used ONLY as a
+    // price fallback when cTrader depth has gone silent (>500ms no event).
+    // No L2 parsing, no g_l2_books writes, no AtomicL2 writes from FIX.
+    // This ensures on_tick() keeps firing even in thin Asia tape when
+    // cTrader depth events are sparse, preventing engine freeze.
     if (type == "W" || type == "X") {
-        // Measure latency from broker tag 52 (SendingTime) -- feed lag diagnostic only.
-        // NOT fed into rtt_record() -- broker clock vs our clock may differ 10-20ms.
-        // Displayed separately as feed latency indicator on GUI.
+        // Latency measurement from tag 52 -- always useful regardless of data source
         const std::string send_ts = extract_tag(msg, "52");
         if (!send_ts.empty()) {
             const auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -94,6 +94,63 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                     }
                 }
             }
+        }
+
+        // Parse best bid/ask from FIX message -- prices only, no L2 book
+        const std::string sym_raw = extract_tag(msg, "55");
+        if (sym_raw.empty()) return;
+        std::string sym;
+        try {
+            const int id = std::stoi(sym_raw);
+            std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+            const auto it = g_id_to_sym.find(id);
+            if (it == g_id_to_sym.end()) return;
+            sym = it->second;
+        } catch (...) {
+            for (int i = 0; i < OMEGA_NSYMS; ++i)
+                if (sym_raw == OMEGA_SYMS[i].name) { sym = OMEGA_SYMS[i].name; break; }
+            if (sym.empty() && g_cfg.enable_extended_symbols) {
+                std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
+                for (const auto& e : g_ext_syms)
+                    if (sym_raw == e.name) { sym = e.name; break; }
+            }
+            if (sym.empty()) return;
+        }
+
+        double bid = 0.0, ask = 0.0;
+        size_t pos = 0u;
+        while ((pos = msg.find("269=", pos)) != std::string::npos) {
+            const char et = msg[pos + 4u];
+            const size_t soh = msg.find('\x01', pos);
+            if (soh == std::string::npos) break;
+            const size_t px_pos = msg.find("270=", pos);
+            if (px_pos == std::string::npos || px_pos > soh + 200) { pos = soh; continue; }
+            const size_t px_end = msg.find('\x01', px_pos + 4u);
+            if (px_end == std::string::npos) break;
+            const double price = std::stod(msg.substr(px_pos + 4u, px_end - (px_pos + 4u)));
+            if (et == '0' && price > bid) bid = price;
+            else if (et == '1' && (ask <= 0.0 || price < ask)) ask = price;
+            pos = soh;
+        }
+
+        // Cache bid/ask for reconnect price snapshots
+        {
+            std::lock_guard<std::mutex> lk(g_book_mtx);
+            if (bid > 0.0) g_bids[sym] = bid;
+            if (ask > 0.0) g_asks[sym] = ask;
+        }
+        // Fill missing side from cache (type=X sends one side only)
+        if (bid <= 0.0 || ask <= 0.0) {
+            std::lock_guard<std::mutex> lk(g_book_mtx);
+            if (bid <= 0.0) { const auto it = g_bids.find(sym); if (it != g_bids.end()) bid = it->second; }
+            if (ask <= 0.0) { const auto it = g_asks.find(sym); if (it != g_asks.end()) ask = it->second; }
+        }
+
+        // Price fallback: only call on_tick() when cTrader depth is stale (>500ms)
+        // When cTrader is live it drives on_tick() directly -- FIX prices are
+        // batched/lagged and would only add noise. FIX is the keepalive for thin tape.
+        if (bid > 0.0 && ask > 0.0 && !ctrader_depth_is_live(sym)) {
+            on_tick(sym, bid, ask);
         }
         return;
     }
@@ -154,3 +211,4 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
 // Runs in its own thread. In SHADOW mode: connects, logs on, keeps alive.
 // In LIVE mode: NewOrderSingle messages are sent via g_trade_ssl.
 // ?????????????????????????????????????????????????????????????????????????????
+
