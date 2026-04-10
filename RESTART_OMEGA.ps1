@@ -314,7 +314,21 @@ if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
 # --target Omega builds only Omega.vcxproj, skipping OmegaBacktest and CandleFlowL2Bt
 $bldProc = Start-Process -FilePath $CmakeExe `
     -ArgumentList "--build `"$OmegaDir\build`" --config Release --target Omega" `
-    -Wait -PassThru -NoNewWindow
+    -PassThru -NoNewWindow
+# Wait up to 300s for build -- print progress every 10s so it never looks hung
+$bldWait = 0
+while ($bldWait -lt 300) {
+    if ($bldProc.HasExited) { break }
+    Start-Sleep -Seconds 10
+    $bldWait += 10
+    if (-not $bldProc.HasExited) {
+        Write-Host "      Building... (${bldWait}s elapsed)" -ForegroundColor DarkGray
+    }
+}
+if (-not $bldProc.HasExited) {
+    $bldProc.Kill()
+    FAIL "Build timed out after 300s"
+}
 $bldExit = $bldProc.ExitCode
 
 if ($bldExit -ne 0) { FAIL "Build failed (exit $bldExit)" }
