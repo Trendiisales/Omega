@@ -586,15 +586,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.aud_l2_imbalance, g_macro_ctx.nzd_l2_imbalance,
         g_macro_ctx.jpy_l2_imbalance,
         [&]() -> int {
-            // L2 active: TCP connected AND depth events have ever been received.
-            // Badge is green as long as cTrader is connected and has delivered at least
-            // one event this session. We do NOT use a staleness window -- BlackBull
-            // batches depth events in Asia and gaps of 60-120s between events are normal.
-            // Real dead-feed detection is handled by the system health watchdog
-            // (depth_events_total frozen for 30s) which shows L2_DEAD alert separately.
+            // L2 active: TCP connected AND depth events received within last 30s.
+            // Without the age check, a silent feed stall (connection alive, broker
+            // stopped sending quotes -- common in thin Asian session) shows the badge
+            // green while all imbalance values are frozen stale data.
             if (!g_ctrader_depth.depth_active.load()) return 0;
             const int64_t last_ev = g_ctrader_depth.last_depth_event_ms.load();
-            return (last_ev > 0) ? 1 : 0;  // green once any event received this session
+            if (last_ev == 0) return 0;  // connected but no events yet
+            const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            return ((now_ms - last_ev) < 30000) ? 1 : 0;  // stale after 30s
         }());
 
     const bool tradeable = session_tradeable();
@@ -1817,4 +1818,3 @@ static std::vector<std::string> extract_messages(const char* data, int n, bool r
 // FIX dispatch
 // ?????????????????????????????????????????????????????????????????????????????
 #include "fix_dispatch.hpp"
-
