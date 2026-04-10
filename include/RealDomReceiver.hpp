@@ -176,7 +176,7 @@ inline void write_dom_csv(const RealDomSnapshot& snap) {
     if (g_dom_csv_file == nullptr || today != g_dom_csv_date) {
         if (g_dom_csv_file) { fclose(g_dom_csv_file); g_dom_csv_file = nullptr; }
         g_dom_csv_date = today;
-        std::string path = "logs/dom_stream_" + today + ".csv";
+        std::string path = "C:\\Omega\\logs\\dom_stream_" + today + ".csv";
         bool exists = false;
         { FILE* f = fopen(path.c_str(), "r"); if (f) { exists=true; fclose(f); } }
         g_dom_csv_file = fopen(path.c_str(), "a");
