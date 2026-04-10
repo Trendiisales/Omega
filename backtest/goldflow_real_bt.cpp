@@ -34,6 +34,7 @@ static MacroCtx g_macro_ctx;
 // ── EWM drift (mirrors GoldEngineStack alphas) ────────────────────────────────
 struct EWM {
     double fast=0, slow=0; bool seeded=false;
+    void seed(double p) { fast=slow=p; seeded=true; }
     void update(double p) {
         if (!seeded) { fast=slow=p; seeded=true; return; }
         fast = 0.05*p + 0.95*fast;
@@ -92,6 +93,24 @@ int main(int argc, char* argv[]) {
     std::vector<omega::TradeRecord> trades;
     std::map<std::string,int> reasons;
     int64_t tick_count=0;
+
+    // Pre-seed EWM from first tick so drift is warm from tick 1.
+    // In production the EWM runs continuously across sessions.
+    // Without seeding, fast≈slow≈price for 200+ ticks giving drift≈0 -- no signal.
+    for (auto& fname : files) {
+        std::ifstream fs(fname); std::string ls;
+        getline(fs, ls); // skip header
+        if (getline(fs, ls)) {
+            std::stringstream ss(ls); std::string tok;
+            getline(ss,tok,','); // ts
+            getline(ss,tok,','); // bid
+            double bid0=0; try{bid0=std::stod(tok);}catch(...){}
+            getline(ss,tok,','); // ask
+            double ask0=0; try{ask0=std::stod(tok);}catch(...){}
+            if (bid0>0&&ask0>0) ewm.seed((bid0+ask0)*0.5);
+        }
+        break; // only need first file's first tick
+    }
 
     for (auto& fname : files) {
         std::ifstream f(fname);
