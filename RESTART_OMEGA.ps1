@@ -284,7 +284,7 @@ $cmakeOut = & $CmakeExe -S "$OmegaDir" -B "$OmegaDir\build" -DCMAKE_BUILD_TYPE=R
 $cmakeCfgExit = $LASTEXITCODE
 $cmakeOut | Where-Object { $_ -match "\[Omega\]|error|Error|OpenSSL" } | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 if ($cmakeCfgExit -ne 0) { FAIL "cmake configure failed (exit $cmakeCfgExit)" }
-OK "Configure done (hash $gitHead7 confirmed)"
+OK "Configure done"
 
 Step 5 13 "cmake build..."
 $ErrorActionPreference = "Continue"
