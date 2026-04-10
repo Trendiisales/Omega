@@ -63,7 +63,14 @@ namespace cAlgo.Robots
             try
             {
                 _csvDate = DateTime.UtcNow.ToString("yyyy-MM-dd");
-                _csvPath = @"C:\Omega\logs\dom_stream_" + _csvDate + ".csv";
+                // Try C:\Omega\logs\ first, fall back to user temp
+                var primaryPath = @"C:\Omega\logs\dom_stream_" + _csvDate + ".csv";
+                var fallbackPath = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "dom_stream_" + _csvDate + ".csv");
+                _csvPath = primaryPath;
+                try { var testFile = File.Create(primaryPath); testFile.Close(); File.Delete(primaryPath); }
+                catch { _csvPath = fallbackPath; Print("[OMEGA-DOM] Cannot write to logs dir, using: " + fallbackPath); }
                 bool exists = File.Exists(_csvPath);
                 _csvWriter = new StreamWriter(_csvPath, append: true, encoding: Encoding.UTF8);
                 _csvWriter.AutoFlush = true;
@@ -85,7 +92,14 @@ namespace cAlgo.Robots
             if (today == _csvDate) return;
             try { _csvWriter.Close(); } catch { }
             _csvDate = today;
-            _csvPath = @"C:\Omega\logs\dom_stream_" + _csvDate + ".csv";
+            // Try C:\Omega\logs\ first, fall back to user temp
+                var primaryPath = @"C:\Omega\logs\dom_stream_" + _csvDate + ".csv";
+                var fallbackPath = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "dom_stream_" + _csvDate + ".csv");
+                _csvPath = primaryPath;
+                try { var testFile = File.Create(primaryPath); testFile.Close(); File.Delete(primaryPath); }
+                catch { _csvPath = fallbackPath; Print("[OMEGA-DOM] Cannot write to logs dir, using: " + fallbackPath); }
             _csvWriter = new StreamWriter(_csvPath, append: false, encoding: Encoding.UTF8);
             _csvWriter.AutoFlush = true;
             _csvWriter.WriteLine("ts_ms,bid_imb,top5_bid_vol,top5_ask_vol,best_bid_px,best_ask_px,bid_levels,ask_levels");
