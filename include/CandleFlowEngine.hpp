@@ -59,8 +59,8 @@ static constexpr double  CFE_RSI_THRESH        = 6.0;   // min slope EMA to ente
 // L2 imbalance exit (cTrader depth level-count signal)
 // imbalance = dom.l2_imb converted to -1..+1: (l2_imb - 0.5) * 2
 // Exit long when imb < -CFE_IMB_EXIT_THRESH for >= CFE_IMB_EXIT_TICKS ticks
-static constexpr double  CFE_IMB_EXIT_THRESH   = 0.05;
-static constexpr int     CFE_IMB_EXIT_TICKS    = 2;
+static constexpr double  CFE_IMB_EXIT_THRESH   = 0.08;  // calibrated to cTrader level-count data (0.4545/0.5455 = imb +/-0.091)
+static constexpr int     CFE_IMB_EXIT_TICKS    = 1;  // single tick sufficient -- level shifts are meaningful
 
 // -----------------------------------------------------------------------------
 struct CandleFlowEngine {
