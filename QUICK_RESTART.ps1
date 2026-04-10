@@ -105,30 +105,29 @@ Write-Host ""
 # --- [1] Stop Omega ----------------------------------------------------------
 Write-Host "[1/5] Stopping Omega..." -ForegroundColor Yellow
 $ErrorActionPreference = "Continue"
-# Stop service first (NSSM)
+# Stop service
 $svcCheck = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
 if ($svcCheck -and $svcCheck.Status -eq "Running") {
     Stop-Service "Omega" -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
-# Kill any remaining process
-taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
-Start-Sleep -Seconds 2
-Get-Process -Name "Omega" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-# Poll until process is fully gone -- Windows holds file handles until kernel releases them
-$waited = 0
-do {
-    Start-Sleep -Seconds 1
-    $waited++
-    $still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
-} while ($still -and $waited -lt 15)
-if ($still) {
-    $still | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 3
+# Kill process -- retry up to 5 times
+for ($k = 0; $k -lt 5; $k++) {
+    taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
+    Start-Sleep -Seconds 2
+    $still2 = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+    if (-not $still2) { break }
+    $still2 | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
 }
-# Extra wait for Windows to release file handles on log files
-# Without this, git reset --hard fails with "unable to unlink" on locked logs
-Start-Sleep -Seconds 3
+# Hard abort if still running -- cannot overwrite locked files
+$still2 = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if ($still2) {
+    Write-Host "  [FATAL] Omega.exe still running -- cannot overwrite files." -ForegroundColor Red
+    Write-Host "  Run: taskkill /F /IM Omega.exe /T   then re-run QUICK_RESTART.ps1" -ForegroundColor Yellow
+    exit 1
+}
+Start-Sleep -Seconds 5
 $ErrorActionPreference = "Stop"
 Write-Host "      [OK] Stopped" -ForegroundColor Green
 Write-Host ""
