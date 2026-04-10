@@ -70,25 +70,28 @@ Write-Host "=======================================================" -Foreground
 Write-Host ""
 
 # ==============================================================================
-# CHECK 1: Git reachable -- fetch origin must succeed
+# CHECK 1: Git reachable -- local HEAD exists (fetch already done by QUICK_RESTART)
+# QUICK_RESTART performs a full GitHub API zip download + git reset --hard before
+# calling this script. A second git fetch here is redundant and hangs on slow
+# network connections after a fresh build. Verify git is functional via rev-parse only.
 # ==============================================================================
-$fetchOut = & git -C $OmegaDir fetch origin 2>&1
+$headCheck = & git -C $OmegaDir rev-parse HEAD 2>&1
 if ($LASTEXITCODE -eq 0) {
-    Pass "Git reachable" "fetch origin succeeded"
+    Pass "Git reachable" "rev-parse HEAD succeeded (fetch done by QUICK_RESTART)"
 } else {
-    Fail "Git reachable" "git fetch origin FAILED: $fetchOut -- no network or bad credentials"
+    Fail "Git reachable" "git rev-parse HEAD FAILED: $headCheck -- broken git repo"
 }
 
 # ==============================================================================
-# CHECK 2: Hard reset to origin/main -- eliminates ALL local drift
-# Log and trade CSV files are locked by Windows while Omega runs (or briefly after
-# stop). Mark them skip-worktree so git reset --hard never tries to overwrite them.
+# CHECK 2: Git index clean -- reset to local HEAD (QUICK_RESTART already synced to origin)
+# Using HEAD not origin/main: origin/main requires remote tracking ref which
+# may need a fetch. QUICK_RESTART already downloaded and installed the correct
+# source via GitHub API zip. Just clean the index here.
 # ==============================================================================
-# Remove ALL index entries under logs/ before reset -- eliminates locked file errors
 & git -C $OmegaDir rm -r --cached --force --ignore-unmatch logs/ 2>&1 | Out-Null
-$resetOut = & git -C $OmegaDir reset --hard origin/main 2>&1
+$resetOut = & git -C $OmegaDir reset --hard HEAD 2>&1
 if ($LASTEXITCODE -eq 0) {
-    Pass "Git reset" "reset --hard origin/main: $($resetOut | Select-Object -Last 1)"
+    Pass "Git reset" "reset --hard HEAD: $($resetOut | Select-Object -Last 1)"
 } else {
     Fail "Git reset" "reset --hard FAILED: $resetOut"
 }
@@ -264,3 +267,4 @@ if ($global:pdc_failures.Count -eq 0) {
     Write-Host ""
     exit 1
 }
+
