@@ -728,7 +728,7 @@ static void on_tick_gold(
                 fprintf(s_l2f_unc,
                     "ts_ms,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
                     "depth_bid_levels,depth_ask_levels,depth_events_total,"
-                    "watchdog_dead,vol_ratio,regime,vpin,has_pos\n");
+                    "watchdog_dead,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift\n");
             s_l2_day_unc = tm_l2_unc.tm_yday;
         }
         if (s_l2f_unc) {
@@ -748,7 +748,7 @@ static void on_tick_gold(
             fprintf(s_l2f_unc,
                 "%lld,%.3f,%.3f,%.4f,%.4f,%.4f,"
                 "%d,%d,%llu,"
-                "%d,%.3f,%d,%.3f,%d\n",
+                "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
                 (long long)now_ms_g, bid, ask,
                 g_macro_ctx.gold_l2_imbalance,
                 l2_bvol_unc, l2_avol_unc,
@@ -758,7 +758,9 @@ static void on_tick_gold(
                 vol_ratio_log,
                 (int)gold_sdec.regime,
                 g_vpin.warmed() ? g_vpin.vpin() : 0.0,
-                (int)g_gold_flow.has_open_position());
+                (int)g_gold_flow.has_open_position(,
+                g_l2_gold.micro_edge.load(std::memory_order_relaxed),
+                static_cast<double>(g_gold_stack.ewm_drift()));
             fflush(s_l2f_unc);
         }
     }
