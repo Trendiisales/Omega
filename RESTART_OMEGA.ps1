@@ -401,11 +401,16 @@ Write-Host "      Checking OmegaDomStreamer cBot on port 8765..." -ForegroundCol
 $cbotWait = 0
 $cbotReady = $false
 while ($cbotWait -lt 30) {
-    $listening = netstat -an 2>$null | Select-String "0.0.0.0:8765.*LISTENING"
-    if ($listening) { $cbotReady = $true; break }
+    # Use TCPClient test -- much faster than netstat -an which scans all connections
+    try {
+        $tcpTest = New-Object System.Net.Sockets.TcpClient
+        $tcpTest.Connect("127.0.0.1", 8765)
+        $tcpTest.Close()
+        $cbotReady = $true; break
+    } catch { }
     Start-Sleep -Seconds 1
     $cbotWait++
-    if ($cbotWait % 5 -eq 0) { Write-Host "      Waiting for cBot on 8765... (${cbotWait}s)" -ForegroundColor Yellow }
+    Write-Host "      Waiting for cBot on 8765... (${cbotWait}s)" -ForegroundColor DarkGray
 }
 if ($cbotReady) {
     Write-Host "      [OK] cBot listening on 8765 (after ${cbotWait}s)" -ForegroundColor Green
