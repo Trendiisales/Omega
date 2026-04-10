@@ -224,11 +224,10 @@ Remove-Item $zipPath    -Force -ErrorAction SilentlyContinue
 Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
 
 # STEP 4: Verify -- local HEAD must now match API SHA
-# We also do a git reset --hard to ensure git index is clean for cmake
+# Clean index only -- source already installed from API zip above, no fetch needed.
 $ErrorActionPreference = "Continue"
 & git -C $OmegaDir rm -r --cached --force --ignore-unmatch logs/ 2>&1 | Out-Null
-& git -C $OmegaDir fetch origin 2>&1 | Out-Null
-& git -C $OmegaDir reset --hard origin/main 2>&1 | Out-Null
+& git -C $OmegaDir reset --hard HEAD 2>&1 | Out-Null
 $localHead  = (& git -C $OmegaDir rev-parse HEAD 2>$null).Trim()
 $localHead7 = if ($localHead -and $localHead.Length -ge 7) { $localHead.Substring(0,7) } else { "unknown" }
 
@@ -483,3 +482,4 @@ if (-not $SkipVerify) {
     Write-Host ""
     & "$OmegaDir\VERIFY_STARTUP.ps1" -WaitSec $WaitSec -OmegaDir $OmegaDir
 }
+
