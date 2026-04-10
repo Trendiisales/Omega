@@ -306,49 +306,21 @@ OK "Configure done (hash $guiHash confirmed)"
 Step 5 13 "Building..."
 $ErrorActionPreference = "Continue"
 
-# Find MSBuild via vswhere (ships with VS2017+ and BuildTools, fixed path)
-$vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
-$msbuild = $null
-if (Test-Path $vswhere) {
-    $found = & $vswhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" 2>$null
-    if ($found -and (Test-Path $found)) { $msbuild = $found }
-}
-# Fallback: check known fixed paths
-if (-not $msbuild) {
-    $candidates = @(
-        "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
-        "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
-        "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
-    )
-    foreach ($c in $candidates) { if (Test-Path $c) { $msbuild = $c; break } }
+$msbuild = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
+if (-not (Test-Path $msbuild)) {
+    FAIL "MSBuild not found at $msbuild -- install VS2022 BuildTools with C++ workload"
 }
 
+Write-Host "      MSBuild: $msbuild" -ForegroundColor DarkGray
 $bldLog    = "$env:TEMP\omega_bld.txt"
 $bldErrLog = "$env:TEMP\omega_bld_err.txt"
 
-if ($msbuild) {
-    Write-Host "      MSBuild: $msbuild" -ForegroundColor DarkGray
-    $bldProc = Start-Process -FilePath $msbuild `
-        -ArgumentList "`"$OmegaDir\build\Omega.vcxproj`" /p:Configuration=Release /p:Platform=x64 /m:4 /nologo /v:m" `
-        -RedirectStandardOutput $bldLog `
-        -RedirectStandardError $bldErrLog `
-        -Wait -PassThru -NoNewWindow
-    $bldExit = $bldProc.ExitCode
-} else {
-    # Last resort: cmake --build with 5 minute timeout
-    Write-Host "      MSBuild not found -- using cmake --build (5min timeout)" -ForegroundColor Yellow
-    $bldProc = Start-Process -FilePath $CmakeExe `
-        -ArgumentList "--build `"$OmegaDir\build`" --config Release --target Omega" `
-        -RedirectStandardOutput $bldLog `
-        -RedirectStandardError $bldErrLog `
-        -PassThru -NoNewWindow
-    $bldProc | Wait-Process -Timeout 300 -ErrorAction SilentlyContinue
-    if (-not $bldProc.HasExited) {
-        $bldProc | Stop-Process -Force
-        FAIL "Build timed out after 5 minutes -- delete C:\Omega\build and rerun"
-    }
-    $bldExit = $bldProc.ExitCode
-}
+$bldProc = Start-Process -FilePath $msbuild `
+    -ArgumentList "`"$OmegaDir\build\Omega.vcxproj`" /p:Configuration=Release /p:Platform=x64 /m:4 /nologo /v:m" `
+    -RedirectStandardOutput $bldLog `
+    -RedirectStandardError $bldErrLog `
+    -Wait -PassThru -NoNewWindow
+$bldExit = $bldProc.ExitCode
 
 if (Test-Path $bldLog) {
     Get-Content $bldLog | Where-Object { $_ -match "error C|Error|->" } |
