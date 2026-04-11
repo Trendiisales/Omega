@@ -3590,6 +3590,68 @@ static void on_tick_gold(
         }
     }
 
+    // ── DomPersistEngine -- pure L2 imbalance persistence, shadow mode ──────────
+    // Seed bar ATR every tick
+    if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
+        const double dpe_bar_atr = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
+        if (dpe_bar_atr > 0.5 && dpe_bar_atr < 100.0)
+            g_dom_persist.seed_bar_atr(dpe_bar_atr);
+    }
+    // Position management: always runs when open
+    if (g_dom_persist.has_open_position()) {
+        g_dom_persist.on_tick(bid, ask,
+            g_macro_ctx.gold_l2_imbalance,
+            g_macro_ctx.gold_l2_real,
+            now_ms_g,
+            g_macro_ctx.session_slot,
+            [&](const omega::TradeRecord& tr) {
+                handle_closed_trade(tr);
+                if (!g_dom_persist.shadow_mode)
+                    send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+            });
+    }
+    // Entry: only when no other gold position open, L2 live, London+NY session
+    if (!g_dom_persist.has_open_position()
+        && gold_can_enter
+        && g_macro_ctx.gold_l2_real
+        && !g_bracket_gold.has_open_position()
+        && !g_gold_flow.has_open_position()
+        && !g_gold_stack.has_open_position()
+        && !g_trend_pb_gold.has_open_position()
+        && !g_nbm_gold_london.has_open_position()
+        && !in_ny_close_noise) {
+        g_dom_persist.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
+            ? g_cfg.risk_per_trade_usd : DPE_RISK_DOLLARS;
+        g_dom_persist.on_tick(bid, ask,
+            g_macro_ctx.gold_l2_imbalance,
+            g_macro_ctx.gold_l2_real,
+            now_ms_g,
+            g_macro_ctx.session_slot,
+            [&](const omega::TradeRecord& tr) {
+                handle_closed_trade(tr);
+                if (!g_dom_persist.shadow_mode)
+                    send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+            });
+        if (g_dom_persist.has_open_position()) {
+            g_telemetry.UpdateLastSignal("XAUUSD",
+                g_dom_persist.pos.is_long ? "LONG" : "SHORT",
+                g_dom_persist.pos.entry, "DOM_PERSIST",
+                "DOM", regime.c_str(), "DOM_PERSIST",
+                0.0, g_dom_persist.pos.sl);
+            if (!g_dom_persist.shadow_mode) {
+                send_live_order("XAUUSD",
+                    g_dom_persist.pos.is_long,
+                    g_dom_persist.pos.size,
+                    g_dom_persist.pos.entry);
+                g_telemetry.UpdateLastEntryTs();
+                write_trade_open_log("XAUUSD", "DomPersist",
+                    g_dom_persist.pos.is_long ? "LONG" : "SHORT",
+                    g_dom_persist.pos.entry, 0.0, g_dom_persist.pos.sl,
+                    g_dom_persist.pos.size, ask - bid, "DOM_PERSIST", "DOM_PERSIST");
+            }
+        }
+    }
+
     // ── CandleFlowEngine -- candle structure + cost coverage + DOM entry/exit ──
     // Manage always (position already open)
     if (g_candle_flow.has_open_position()) {
