@@ -121,6 +121,7 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 // Bracket engines
 #include "BracketEngine.hpp"
 #include "GoldFlowEngine.hpp"
+#include "DomPersistEngine.hpp"
 #include "MacroCrashEngine.hpp"
 static omega::GoldBracketEngine   g_bracket_gold;
 
@@ -170,6 +171,10 @@ static GoldFlowEngine             g_gold_flow_reload;
 // Sized at 50% of base full_size. Has its own staircase, trail, ratchet.
 // Never arms its own addon or reload (prevents cascade).
 static GoldFlowEngine             g_gold_flow_addon;
+
+// DOM persistence engine -- pure L2 imbalance persistence, no drift/momentum gates
+// Shadow mode ON by default. Set g_dom_persist.shadow_mode=false to go live.
+static DomPersistEngine           g_dom_persist;
 
 // ?? Trend-day multi-engine state ?????????????????????????????????????????????
 // Tracks GoldFlow exit details so CompBreakout/Bracket can re-enter on trend days
