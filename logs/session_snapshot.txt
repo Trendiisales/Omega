@@ -1,0 +1,75 @@
+﻿OMEGA SESSION SNAPSHOT
+Generated : 2026-04-11 00:29:26 UTC
+============================================================
+[ATR-DAT] atr=3.437412 atr_ewm=3.336883 warmed=1 last_mid=4747.74500 saved_ts=1775867366
+[ATR-WARN] atr=3.437412 <= 5.0 -- may still be floor-pinned
+
+[DIAG]        00:29:26 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=3.61ms cap=120ms lat_ok=1 session=ACTIVE
+[GOLD-DIAG]   00:29:26 [GOLD-DIAG] regime=MEAN_REVERSION vwap=4747.75 vol_range=0.01
+[BRK-DIAG]    00:29:26 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.90 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+[VIX]         00:29:26 [TICK] VIX.F 20.19/20.55
+[GOLD-PRICE]  00:29:26 [TICK] XAUUSD 4747.64/4747.85
+
+[GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
+
+[STARTUP-REPORT-BEGIN]
+  OMEGA STARTUP REPORT
+  Generated : 2026-04-11 00:08:52 UTC
+  Log file  : C:\Omega\logs\latest.log
+  Collected : 0 lines over 10s
+  Result    : PASS=6  FAIL=1  WARN=3  INFO=18
+  ========================================================================
+  [INFO]  Log Health             No [LOG-HEALTH] heartbeat yet (fires every 60s)
+                                       Normal if startup < 60s ago. If this remains INFO after 2min, log system may have failed.
+  [INFO]  ATR Seed               No GFE-SEED line seen
+                                       Engine may have loaded ATR from disk (normal) -- see ATR State check.
+  [INFO]  ATR State              ATR from bar state atr14=1.097702 -- engine will VIX-seed on first tick
+  [INFO]  ATR Running Value      No GF-GATE-BLOCK lines (no gate blocks fired)
+                                       Good -- or no entry attempts yet.
+  [INFO]  vol_range              No GOLD-DIAG line yet
+                                       Engine may not have emitted diagnostics -- wait for first GOLD-DIAG log.
+  [INFO]  Dead Zone              No GOLD-BRK-DIAG lines yet
+  [WARN]  VIX Level              No VIX.F tick seen in first 10s
+                                       ATR seed used default 8.0. Will update when VIX.F arrives.
+  [INFO]  Session/Entry State    No BRK-DIAG lines yet
+  [INFO]  L2 / cTrader Feed      No cTrader depth events in first 10s
+                                       cTrader connecting -- check log for CTRADER-EVTS within 60s. If still missing after 2min, check ctid=43014358.
+  [WARN]  L2 Tick CSV            ALL NEUTRAL last 9 rows imb=0.5
+                                       imbalance=0.500 all rows. Check [CTRADER-L2-CHECK] lines in log for bid_lvls/ask_lvls. If bid_lvls==ask_lvls all day, DOM is genuinely flat. If bid_lvls+ask_lvls=0, cTrader not delivering quotes.
+  [INFO]  L2 Level-Count Check   No CTRADER-L2-CHECK yet
+                                       Logged on first 20 depth events -- check again after 30s. If still missing, cTrader depth not subscribed.
+  [PASS]  GF Engine Culled       Not culled
+                                       GoldFlow not culled this session.
+  [PASS]  GoldFlow Active        00:07:37 [GFE-CONFIG] goldflow_enabled=true -- GoldFlow entries are ACTIVE
+                                       GoldFlow entries active.
+  [WARN]  RSI Reversal Active    RSI Reversal in SHADOW mode
+                                       Engine active but shadow_mode=true -- trades logged only, no real orders fired.
+  [PASS]  GF Bar State           Bars ready
+                                       M1 bars seeded, GoldFlow has full context.
+  [PASS]  GF Dir SL Cooldown     No directional cooldown active
+                                       No consecutive same-direction SL_HITs.
+  [PASS]  Bar State Load         Loaded from disk m1_ready=1 ATR=? -- warm start
+                                       00:07:38 [BAR-LOAD] XAUUSD m1=1 m5=1 m15=1 h4=0 sp=1 nq=1 -- m1_ready=1
+  [INFO]  Bar Periodic Save      No BAR-SAVE yet (fires every 10min -- check again after 10min)
+                                       Normal if uptime < 10min. If still missing after 15min, L2 watchdog thread may have crashed.
+  [INFO]  GF Phase               No GFE-PHASE line yet
+                                       GoldFlow phase not yet emitted -- fires every 30s. Check again.
+  [INFO]  Latency                No OMEGA-DIAG yet
+  [INFO]  Gate Blocks            No gate blocks in first 10s
+                                       No entry attempts or no blocks (good).
+  [INFO]  First Signal           No signal in first 10s
+                                       Normal if market quiet or in compression.
+  [INFO]  Impulse Ghost          No impulse ghost blocks seen
+  [FAIL]  Hash vs HEAD           running=b54d222 != HEAD=bfa7276
+                                       BINARY IS STALE. Does not match origin/main HEAD. Run QUICK_RESTART.ps1 immediately.
+  [PASS]  Bar State              e9=4748.074272 atr=1.097702 rsi=35.8591 age=0min
+                                       Valid bar state on disk -- m1_ready=true immediately on startup.
+  [INFO]  Ratchet Fix            No ratchet activity yet
+  [INFO]  Bracket Window Fix     range=0.00 in startup window -- normal (window fills in ~3min at 195/min)
+                                       STRUCTURE_LOOKBACK=600 ticks needs ~185s to fill. Check again after 3 minutes.
+  [INFO]  Bar Auto-Save          No BAR-SAVE yet (fires every 10min)
+                                       Normal if startup < 10min ago.
+  ========================================================================
+  RESULT: PASS=6  FAIL=1  WARN=3  INFO=18
+[STARTUP-REPORT-END]
+END-OF-SNAPSHOT
