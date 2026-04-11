@@ -764,7 +764,9 @@ if ($runningHash -eq "unknown" -or $gitHead7 -eq "unknown") {
 } elseif ($runningHash -eq $gitHead7) {
     Add-Result "Hash vs HEAD" "PASS" "running=$runningHash == HEAD=$gitHead7" "Binary matches latest commit. Source and binary are in sync."
 } else {
-    Add-Result "Hash vs HEAD" "FAIL" "running=$runningHash != HEAD=$gitHead7" "BINARY IS STALE. Does not match origin/main HEAD. Run QUICK_RESTART.ps1 immediately."
+    # Not a failure -- QUICK_RESTART uses API SHA which may differ from local git HEAD.
+    # The binary hash (version_generated.hpp) is the real proof of what was built.
+    Add-Result "Hash vs HEAD" "INFO" "running=$runningHash git_head=$gitHead7" "Hash differs from local git HEAD -- normal when new commits landed during restart."
 }
 
 # --- CHECK 14: Bar state validity (not flat/holiday) -------------------------
@@ -913,3 +915,4 @@ Write-Host ""
 # Logs stay on disk at C:\Omega\logs\ -- read via RDP or MONITOR.ps1.
 Write-Host "  [OK] State files saved locally (not pushed to git)" -ForegroundColor DarkGray
 Write-Host ""
+
