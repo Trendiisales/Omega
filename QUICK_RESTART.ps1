@@ -31,11 +31,7 @@ Write-Host ""
 # STEP 1: STOP
 # ==============================================================================
 Write-Host "[1/4] Stopping Omega..." -ForegroundColor Yellow
-$svc = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
-if ($svc -and $svc.Status -eq "Running") {
-    Stop-Service "Omega" -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 3
-}
+
 # Kill ALL Omega.exe processes -- loop until confirmed dead
 for ($i = 0; $i -lt 15; $i++) {
     taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
@@ -48,6 +44,7 @@ for ($i = 0; $i -lt 15; $i++) {
         exit 1
     }
 }
+
 # Hard confirmation: process must be gone
 $confirm = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
 if ($confirm) {
@@ -140,7 +137,7 @@ Write-Host "  [OK] Built $ghSha7 at $builtAt" -ForegroundColor Green
 Write-Host ""
 
 # ==============================================================================
-# STEP 4: LAUNCH
+# STEP 4: LAUNCH (direct process -- no service)
 # ==============================================================================
 Write-Host "[4/4] Launching..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Path "$OmegaDir\logs"        -Force | Out-Null
@@ -156,17 +153,8 @@ Write-Host "  GUI    : http://185.167.119.59:7779" -ForegroundColor Yellow
 Write-Host "########################################################" -ForegroundColor Yellow
 Write-Host ""
 
-$svc = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
-if ($svc) {
-    Start-Service "Omega" -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 3
-    $svc = Get-Service -Name "Omega" -ErrorAction SilentlyContinue
-    $col = if ($svc.Status -eq "Running") { "Green" } else { "Red" }
-    Write-Host "  [SERVICE] $($svc.Status)" -ForegroundColor $col
-} else {
-    $proc = Start-Process -FilePath $OmegaExe -ArgumentList "omega_config.ini" -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
-    Write-Host "  [DIRECT] PID $($proc.Id)" -ForegroundColor Green
-}
+$proc = Start-Process -FilePath $OmegaExe -ArgumentList "omega_config.ini" -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
+Write-Host "  [DIRECT] PID $($proc.Id)" -ForegroundColor Green
 
 # Hard verify: running Omega.exe must have same timestamp as newly built EXE
 Start-Sleep -Seconds 5
@@ -175,7 +163,6 @@ if (-not $runningProc) {
     Write-Host "  [FATAL] Omega.exe not running after launch!" -ForegroundColor Red
     exit 1
 }
-# Get the path of the running exe and check its timestamp
 try {
     $runningExePath = $runningProc | Select-Object -First 1 | ForEach-Object { $_.Path }
     $runningExeTime = (Get-Item $runningExePath -ErrorAction Stop).LastWriteTimeUtc
