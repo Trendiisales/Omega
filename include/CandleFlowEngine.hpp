@@ -82,14 +82,19 @@ struct CandleFlowEngine {
     enum class Phase { IDLE, LIVE, COOLDOWN } phase = Phase::IDLE;
 
     struct OpenPos {
-        bool    active       = false;
-        bool    is_long      = false;
-        double  entry        = 0.0;
-        double  sl           = 0.0;
-        double  size         = 0.01;
-        double  cost_pts     = 0.0;
-        int64_t entry_ts_ms  = 0;
-        double  mfe          = 0.0;
+        bool    active        = false;
+        bool    is_long       = false;
+        double  entry         = 0.0;
+        double  sl            = 0.0;
+        double  size          = 0.01;     // full size (set at entry, halved after partial)
+        double  full_size     = 0.01;     // original size before any partial exit
+        double  cost_pts      = 0.0;
+        int64_t entry_ts_ms   = 0;
+        double  mfe           = 0.0;
+        bool    trail_active  = false;    // true once MFE >= 1x cost -> trail engaged
+        double  trail_sl      = 0.0;     // current trailing SL price
+        bool    partial_done  = false;   // true after 50% partial exit at 2x cost
+        double  atr_pts       = 0.0;     // ATR at entry, used for trail distance
     } pos;
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
@@ -367,14 +372,19 @@ private:
         size = std::floor(size / 0.001) * 0.001;
         size = std::max(CFE_MIN_LOT, std::min(CFE_MAX_LOT, size));
 
-        pos.active      = true;
-        pos.is_long     = is_long;
-        pos.entry       = entry_px;
-        pos.sl          = sl_px;
-        pos.size        = size;
-        pos.cost_pts    = cost_pts;
-        pos.entry_ts_ms = now_ms;
-        pos.mfe         = 0.0;
+        pos.active        = true;
+        pos.is_long       = is_long;
+        pos.entry         = entry_px;
+        pos.sl            = sl_px;
+        pos.size          = size;
+        pos.full_size     = size;
+        pos.cost_pts      = cost_pts;
+        pos.entry_ts_ms   = now_ms;
+        pos.mfe           = 0.0;
+        pos.trail_active  = false;
+        pos.trail_sl      = sl_px;   // initialise trail SL to hard SL
+        pos.partial_done  = false;
+        pos.atr_pts       = atr_pts;
         ++m_trade_id;
         phase = Phase::LIVE;
 
@@ -408,9 +418,82 @@ private:
 
         const int64_t hold_ms = now_ms - pos.entry_ts_ms;
 
-        // Hard SL
-        if (pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl)) {
-            close_pos(pos.is_long ? bid : ask, "SL_HIT", now_ms, on_close);
+        // ── PARTIAL EXIT: 50% of position at MFE >= 2x cost ──────────────────
+        // Locks in guaranteed profit on half the position. Remaining half is
+        // trailed. Safe: only fires once, only when sufficiently in profit,
+        // residual position is still protected by hard SL / trail SL.
+        if (!pos.partial_done && pos.mfe >= pos.cost_pts * 2.0) {
+            const double partial_px   = pos.is_long ? bid : ask;
+            const double partial_size = pos.full_size * 0.5;
+            // Emit partial close record
+            omega::TradeRecord ptr;
+            ptr.id         = m_trade_id;
+            ptr.symbol     = "XAUUSD";
+            ptr.side       = pos.is_long ? "LONG" : "SHORT";
+            ptr.entryPrice = pos.entry;
+            ptr.exitPrice  = partial_px;
+            ptr.sl         = pos.sl;
+            ptr.size       = partial_size;
+            ptr.pnl        = (pos.is_long ? (partial_px - pos.entry) : (pos.entry - partial_px))
+                             * partial_size;
+            ptr.mfe        = pos.mfe * partial_size;
+            ptr.mae        = 0.0;
+            ptr.entryTs    = pos.entry_ts_ms / 1000;
+            ptr.exitTs     = now_ms / 1000;
+            ptr.exitReason = "PARTIAL_TP";
+            ptr.engine     = "CandleFlowEngine";
+            ptr.regime     = "CANDLE_FLOW";
+            ptr.l2_live    = true;
+            std::cout << "[CFE] PARTIAL-TP " << (pos.is_long?"LONG":"SHORT")
+                      << " @ " << std::fixed << std::setprecision(2) << partial_px
+                      << " size=" << std::setprecision(3) << partial_size
+                      << " pnl_usd=" << std::setprecision(2) << (ptr.pnl * 100.0)
+                      << " mfe=" << std::setprecision(3) << pos.mfe
+                      << (shadow_mode?" [SHADOW]":"") << "\n";
+            std::cout.flush();
+            pos.partial_done = true;
+            pos.size         = partial_size;   // remaining half
+            if (on_close) on_close(ptr);
+        }
+
+        // ── TRAILING SL: engage once MFE >= 1x cost ──────────────────────────
+        // Trail distance = 0.7 * ATR (tight enough to lock profit, wide enough
+        // to survive normal tick noise on gold). Once engaged, SL only moves
+        // in the profitable direction — never back toward entry.
+        if (pos.mfe >= pos.cost_pts * 1.0) {
+            const double trail_dist = pos.atr_pts * 0.7;
+            const double new_trail = pos.is_long
+                ? (mid - trail_dist)
+                : (mid + trail_dist);
+            if (!pos.trail_active) {
+                // First engagement — only activate if trail SL is better than hard SL
+                if (pos.is_long ? (new_trail > pos.sl) : (new_trail < pos.sl)) {
+                    pos.trail_sl     = new_trail;
+                    pos.trail_active = true;
+                    std::cout << "[CFE] TRAIL-ENGAGED " << (pos.is_long?"LONG":"SHORT")
+                              << " trail_sl=" << std::fixed << std::setprecision(2) << pos.trail_sl
+                              << " dist=" << std::setprecision(3) << trail_dist
+                              << " mfe=" << pos.mfe << "\n";
+                    std::cout.flush();
+                }
+            } else {
+                // Ratchet: only move trail SL in profitable direction
+                if (pos.is_long ? (new_trail > pos.trail_sl) : (new_trail < pos.trail_sl)) {
+                    pos.trail_sl = new_trail;
+                }
+            }
+        }
+
+        // ── HARD SL or TRAIL SL ───────────────────────────────────────────────
+        const double effective_sl = pos.trail_active ? pos.trail_sl : pos.sl;
+        if (pos.is_long ? (bid <= effective_sl) : (ask >= effective_sl)) {
+            const char* sl_reason = pos.trail_active ? "TRAIL_SL" : "SL_HIT";
+            std::cout << "[CFE] " << sl_reason << " " << (pos.is_long?"LONG":"SHORT")
+                      << " @ " << std::fixed << std::setprecision(2) << (pos.is_long?bid:ask)
+                      << " sl=" << std::setprecision(2) << effective_sl
+                      << " trail=" << (pos.trail_active?1:0) << "\n";
+            std::cout.flush();
+            close_pos(pos.is_long ? bid : ask, sl_reason, now_ms, on_close);
             return;
         }
 
