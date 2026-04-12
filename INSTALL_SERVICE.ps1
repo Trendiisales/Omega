@@ -1,59 +1,111 @@
 #Requires -RunAsAdministrator
 # ==============================================================================
-#  OMEGA -- INSTALL AS WINDOWS SERVICE
+#  OMEGA -- SERVICE MANAGEMENT UTILITY
 # ==============================================================================
-#  Installs Omega.exe as a Windows Service using NSSM so it:
-#    - Survives RDP disconnects
-#    - Auto-restarts on crash
-#    - Starts automatically on VPS reboot
-#    - Runs as SYSTEM (no user session needed)
+#  Omega.exe is a CONSOLE APPLICATION and runs as a DIRECT PROCESS.
+#  It does NOT run as a Windows Service under normal operation.
 #
-#  NSSM download (run once if not present):
-#    Invoke-WebRequest https://nssm.cc/release/nssm-2.24.zip -OutFile C:\nssm.zip
-#    Expand-Archive C:\nssm.zip -DestinationPath C:\nssm
+#  Normal start/stop:
+#    Start:  Start-Process -FilePath C:\Omega\Omega.exe -ArgumentList "omega_config.ini" -WorkingDirectory C:\Omega -NoNewWindow
+#    Stop:   taskkill /F /IM Omega.exe /T
+#    Restart: .\QUICK_RESTART.ps1
+#
+#  This script handles two tasks:
+#    1. CLEAN  -- removes any broken/stale "Omega" Windows service (DEFAULT)
+#    2. NSSM   -- optionally installs Omega as a proper service via NSSM
+#                 (only needed if you want auto-start on VPS reboot without
+#                  a scheduled task; QUICK_RESTART.ps1 does NOT use the service)
 #
 #  USAGE:
-#    Run once to install:   .\INSTALL_SERVICE.ps1
-#    Then use:              .\QUICK_RESTART.ps1  (manages the service)
-#
-#  SERVICE COMMANDS (manual):
-#    Start:   Start-Service Omega
-#    Stop:    Stop-Service Omega
-#    Status:  Get-Service Omega
-#    Logs:    C:\Omega\logs\omega_service_stdout.log
+#    Remove broken service:         .\INSTALL_SERVICE.ps1
+#    Install NSSM service wrapper:  .\INSTALL_SERVICE.ps1 -InstallNssm
 # ==============================================================================
 
-param([string] $OmegaDir = "C:\Omega")
+param(
+    [string]  $OmegaDir    = "C:\Omega",
+    [switch]  $InstallNssm
+)
 
 $ServiceName = "Omega"
-$NssmExe     = "C:\nssm\nssm-2.24\win64\nssm.exe"
 $OmegaExe    = "$OmegaDir\Omega.exe"
+$NssmExe     = "C:\nssm\nssm-2.24\win64\nssm.exe"
 
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "   OMEGA  |  INSTALL WINDOWS SERVICE" -ForegroundColor Cyan
+Write-Host "   OMEGA  |  SERVICE MANAGEMENT" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# --- Check NSSM installed ----------------------------------------------------
+# ==============================================================================
+# ALWAYS: Remove any existing broken service
+# ==============================================================================
+$existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($existing) {
+    Write-Host "  Found existing '$ServiceName' service -- removing..." -ForegroundColor Yellow
+    Write-Host "  Current status : $($existing.Status)" -ForegroundColor Yellow
+
+    # Check what binary the service points to
+    $svcPath = (Get-WmiObject Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue).PathName
+    Write-Host "  Service binary : $svcPath" -ForegroundColor Yellow
+
+    # Stop if running
+    if ($existing.Status -eq "Running") {
+        Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
+    }
+
+    # Remove via sc.exe (works without NSSM)
+    sc.exe delete $ServiceName
+    Start-Sleep -Seconds 2
+
+    # Confirm gone
+    $check = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($check) {
+        Write-Host "  [WARN] Service still present after delete -- may need reboot to fully clear" -ForegroundColor Yellow
+    } else {
+        Write-Host "  [OK] Broken service removed" -ForegroundColor Green
+    }
+} else {
+    Write-Host "  No existing '$ServiceName' service found -- nothing to remove" -ForegroundColor Green
+}
+
+Write-Host ""
+
+if (-not $InstallNssm) {
+    Write-Host "  Omega runs as a direct process. Use QUICK_RESTART.ps1 to manage it." -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  To install as an NSSM service (optional, for auto-start on reboot):" -ForegroundColor Gray
+    Write-Host "    .\INSTALL_SERVICE.ps1 -InstallNssm" -ForegroundColor Gray
+    Write-Host ""
+    exit 0
+}
+
+# ==============================================================================
+# OPTIONAL: Install NSSM service wrapper
+# ==============================================================================
+Write-Host "  Installing NSSM service wrapper..." -ForegroundColor Yellow
+Write-Host ""
+
+# Check Omega.exe exists
+if (-not (Test-Path $OmegaExe)) {
+    Write-Host "  [FATAL] $OmegaExe not found -- build Omega first via QUICK_RESTART.ps1" -ForegroundColor Red
+    exit 1
+}
+
+# Download NSSM if not present
 if (-not (Test-Path $NssmExe)) {
     Write-Host "  NSSM not found. Downloading..." -ForegroundColor Yellow
     Invoke-WebRequest "https://nssm.cc/release/nssm-2.24.zip" -OutFile "C:\nssm.zip"
     Expand-Archive "C:\nssm.zip" -DestinationPath "C:\nssm" -Force
+    if (-not (Test-Path $NssmExe)) {
+        Write-Host "  [FATAL] NSSM download/extract failed" -ForegroundColor Red
+        exit 1
+    }
     Write-Host "  [OK] NSSM installed at $NssmExe" -ForegroundColor Green
 }
 
-# --- Remove existing service if present --------------------------------------
-$existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-if ($existing) {
-    Write-Host "  Removing existing $ServiceName service..." -ForegroundColor Yellow
-    Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
-    & $NssmExe remove $ServiceName confirm
-    Start-Sleep -Seconds 2
-}
-
-# --- Install service ---------------------------------------------------------
-Write-Host "  Installing $ServiceName service..." -ForegroundColor Yellow
+# Install service
+Write-Host "  Installing $ServiceName service pointing to $OmegaExe..." -ForegroundColor Yellow
 
 & $NssmExe install $ServiceName $OmegaExe "omega_config.ini"
 & $NssmExe set $ServiceName AppDirectory $OmegaDir
@@ -64,20 +116,17 @@ Write-Host "  Installing $ServiceName service..." -ForegroundColor Yellow
 & $NssmExe set $ServiceName AppRotateBytes 10485760
 & $NssmExe set $ServiceName Start SERVICE_AUTO_START
 & $NssmExe set $ServiceName ObjectName LocalSystem
-& $NssmExe set $ServiceName AppRestartDelay 5000   # 5s restart on crash
-& $NssmExe set $ServiceName AppThrottle 30000       # 30s throttle after 3 fast crashes
+& $NssmExe set $ServiceName AppRestartDelay 5000
+& $NssmExe set $ServiceName AppThrottle 30000
 
-Write-Host "  [OK] Service installed" -ForegroundColor Green
-Write-Host ""
-Write-Host "  Starting service..." -ForegroundColor Yellow
-Start-Service $ServiceName
-Start-Sleep -Seconds 3
+# Verify it points to the right binary
+$svcPath = (Get-WmiObject Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue).PathName
+Write-Host "  Service binary : $svcPath" -ForegroundColor Cyan
 
-$svc = Get-Service -Name $ServiceName
-Write-Host "  Status: $($svc.Status)" -ForegroundColor $(if ($svc.Status -eq "Running") { "Green" } else { "Red" })
+Write-Host "  [OK] NSSM service installed" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Service survives RDP disconnects." -ForegroundColor Green
-Write-Host "  Auto-restarts on crash (5s delay)." -ForegroundColor Green
-Write-Host "  Starts on VPS reboot." -ForegroundColor Green
+Write-Host "  NOTE: QUICK_RESTART.ps1 uses direct Start-Process, NOT this service." -ForegroundColor Yellow
+Write-Host "  The NSSM service provides auto-start on VPS reboot ONLY." -ForegroundColor Yellow
+Write-Host "  To start manually: Start-Service Omega" -ForegroundColor Gray
+Write-Host "  To stop manually:  Stop-Service Omega  (or taskkill /F /IM Omega.exe /T)" -ForegroundColor Gray
 Write-Host ""
-Write-Host "  Use QUICK_RESTART.ps1 as normal -- it now controls the service." -ForegroundColor Cyan
