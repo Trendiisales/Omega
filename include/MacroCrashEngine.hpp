@@ -184,6 +184,53 @@ public:
         if (!enabled) return;
         const double mid = (bid + ask) * 0.5;
 
+        // ── Weekend gap protection ────────────────────────────────────────
+        // Gold gaps 1-2% on Sunday open due to weekend macro news.
+        // Force-close any open position Friday >= 20:30 UTC.
+        // Block new entries Friday >= 20:00 UTC through Sunday 22:30 UTC.
+        {
+            const int64_t now_sec = now_ms / 1000;
+            std::time_t t = (std::time_t)now_sec;
+            std::tm* ti = std::gmtime(&t);
+            const int wday = ti->tm_wday;   // 0=Sun 1=Mon ... 5=Fri 6=Sat
+            const int hour = ti->tm_hour;
+            const int min  = ti->tm_min;
+            const int hhmm = hour * 100 + min;
+
+            // Force-close open position before weekend
+            const bool force_close_window =
+                (wday == 5 && hhmm >= 2030) ||  // Friday >= 20:30 UTC
+                (wday == 6) ||                   // All Saturday
+                (wday == 0 && hhmm < 2230);      // Sunday before 22:30 UTC
+
+            if (force_close_window && pos.active) {
+                static int64_t s_gap_close_log = 0;
+                if (now_sec - s_gap_close_log > 3600) {
+                    s_gap_close_log = now_sec;
+                    printf("[MCE-WEEKEND] Force-closing position before weekend gap\n");
+                    fflush(stdout);
+                }
+                _close_all(pos.is_long ? bid : ask, "WEEKEND_CLOSE", now_ms);
+                return;
+            }
+
+            // Block new entries during gap window
+            const bool entry_blocked =
+                (wday == 5 && hhmm >= 2000) ||  // Friday >= 20:00 UTC
+                (wday == 6) ||                   // All Saturday
+                (wday == 0 && hhmm < 2230);      // Sunday before 22:30 UTC
+
+            if (entry_blocked) {
+                static int64_t s_gap_block_log = 0;
+                if (now_sec - s_gap_block_log > 3600) {
+                    s_gap_block_log = now_sec;
+                    printf("[MCE-WEEKEND] Entry blocked — weekend gap window\n");
+                    fflush(stdout);
+                }
+                return;
+            }
+        }
+
         if (pos.active) {
             _manage(bid, ask, mid, atr, vol_ratio, ewm_drift,
                     expansion_regime, now_ms);
