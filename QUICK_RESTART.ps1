@@ -36,13 +36,26 @@ if ($svc -and $svc.Status -eq "Running") {
     Stop-Service "Omega" -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
-for ($i = 0; $i -lt 10; $i++) {
+# Kill ALL Omega.exe processes -- loop until confirmed dead
+for ($i = 0; $i -lt 15; $i++) {
     taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
     Start-Sleep -Seconds 2
-    if (-not (Get-Process -Name "Omega" -ErrorAction SilentlyContinue)) { break }
+    $still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+    if (-not $still) { break }
+    if ($i -eq 14) {
+        Write-Host "  [FATAL] Cannot kill Omega.exe after 30s -- PIDs still running:" -ForegroundColor Red
+        $still | ForEach-Object { Write-Host "    PID $($_.Id)" -ForegroundColor Red }
+        exit 1
+    }
 }
-Start-Sleep -Seconds 3
-Write-Host "  [OK] Stopped" -ForegroundColor Green
+# Hard confirmation: process must be gone
+$confirm = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if ($confirm) {
+    Write-Host "  [FATAL] Omega.exe still running after kill attempts. Aborting." -ForegroundColor Red
+    exit 1
+}
+Start-Sleep -Seconds 2
+Write-Host "  [OK] Stopped -- confirmed no Omega.exe process" -ForegroundColor Green
 Write-Host ""
 
 # ==============================================================================
@@ -153,6 +166,36 @@ if ($svc) {
 } else {
     $proc = Start-Process -FilePath $OmegaExe -ArgumentList "omega_config.ini" -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
     Write-Host "  [DIRECT] PID $($proc.Id)" -ForegroundColor Green
+}
+
+# Hard verify: running Omega.exe must have same timestamp as newly built EXE
+Start-Sleep -Seconds 5
+$runningProc = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if (-not $runningProc) {
+    Write-Host "  [FATAL] Omega.exe not running after launch!" -ForegroundColor Red
+    exit 1
+}
+# Get the path of the running exe and check its timestamp
+try {
+    $runningExePath = $runningProc | Select-Object -First 1 | ForEach-Object { $_.Path }
+    $runningExeTime = (Get-Item $runningExePath -ErrorAction Stop).LastWriteTimeUtc
+    $builtExeTime   = (Get-Item $OmegaExe -ErrorAction Stop).LastWriteTimeUtc
+    $diffSec = [math]::Abs(($runningExeTime - $builtExeTime).TotalSeconds)
+    if ($diffSec -gt 10) {
+        Write-Host "" -ForegroundColor Red
+        Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
+        Write-Host "  ║  WRONG BINARY RUNNING -- ABORTING                ║" -ForegroundColor Red
+        Write-Host "  ║  Running EXE: $runningExePath" -ForegroundColor Red
+        Write-Host "  ║  Running built: $($runningExeTime.ToString('HH:mm:ss')) UTC" -ForegroundColor Red
+        Write-Host "  ║  Expected:      $($builtExeTime.ToString('HH:mm:ss')) UTC" -ForegroundColor Red
+        Write-Host "  ║  Diff: ${diffSec}s -- old binary still running!" -ForegroundColor Red
+        Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+        Write-Host "  Kill PID $($runningProc.Id) manually and re-run QUICK_RESTART.ps1" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  [OK] Running EXE timestamp matches built EXE (+${diffSec}s)" -ForegroundColor Green
+} catch {
+    Write-Host "  [WARN] Could not verify running EXE path: $_" -ForegroundColor Yellow
 }
 
 if (-not $SkipVerify) {
