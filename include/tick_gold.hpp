@@ -4006,6 +4006,31 @@ static void on_tick_gold(
                 }
             }
 
+            // CVD divergence gate for CFE (Fix 3, 2026-04-13):
+            // Same CVD gate as GoldFlow -- block counter-trend CFE entries.
+            // bearish_div: price new high, CVD falling -> distribution -> block LONG.
+            // bullish_div: price new low, CVD rising  -> absorption  -> block SHORT.
+            if (cfe_bar_gate_ok) {
+                const bool cfe_intends_long_cvd = (g_gold_stack.ewm_drift() > 0.0);
+                if (cfe_intends_long_cvd && g_macro_ctx.gold_cvd_bear_div) {
+                    cfe_bar_gate_ok = false;
+                    static int64_t s_cvd_long_log = 0;
+                    if (now_ms_g - s_cvd_long_log > 15000) {
+                        s_cvd_long_log = now_ms_g;
+                        printf("[CFE-CVD-BLOCK] LONG blocked: CVD bearish divergence (distribution)\n");
+                        fflush(stdout);
+                    }
+                } else if (!cfe_intends_long_cvd && g_macro_ctx.gold_cvd_bull_div) {
+                    cfe_bar_gate_ok = false;
+                    static int64_t s_cvd_short_log = 0;
+                    if (now_ms_g - s_cvd_short_log > 15000) {
+                        s_cvd_short_log = now_ms_g;
+                        printf("[CFE-CVD-BLOCK] SHORT blocked: CVD bullish divergence (absorption)\n");
+                        fflush(stdout);
+                    }
+                }
+            }
+
             // Spread sanity gate: block CFE entry when spread > 30% of ATR.
             // Normal gold spread $0.20, ATR=2pt: 0.20 < 0.60 = OK.
             // London spike spread $2.23, ATR=2pt: 2.23 > 0.60 = BLOCK.
@@ -4041,6 +4066,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
