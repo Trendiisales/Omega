@@ -1213,7 +1213,7 @@ function renderTrades(trades){
   const wins=fullClosed.filter(t=>safe(t.net_pnl)>0).length,losses=fullClosed.filter(t=>safe(t.net_pnl)<0).length,totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
   if(cE)cE.textContent=fullClosed.length+' closed → '+wins+'W/'+losses+'L → '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
   const now=Math.floor(Date.now()/1000);
-  el.innerHTML=trades.slice(0,60).map(t=>{
+  el.innerHTML=[...trades].reverse().slice(0,60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
     const win=net>0,loss=net<0,sc=t.side==='LONG'?'var(--green)':'var(--red)';
     const reason=t.exitReason||'',result=isOpen?'⬤':reason==='TP_HIT'?'✓TP':reason==='SL_HIT'?'✗SL':reason==='TRAIL_HIT'?'✓TR':reason==='BE_HIT'?'✓BE':reason==='TIMEOUT'?'✗TO':reason==='PARTIAL_1R'?'$P1':reason==='PARTIAL_2R'?'$P2':'✓FC';
