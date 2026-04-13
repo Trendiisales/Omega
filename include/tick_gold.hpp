@@ -3859,74 +3859,26 @@ static void on_tick_gold(
         // PATH B: bars_ empty after load_indicators() from disk (only indicators restored,
         //         not bar history). Use current tick as close, BB bands as high/low proxy,
         //         EMA9 as open proxy. Less precise but valid for candle direction check.
+        // PATH A ONLY: require real M1 bars (bar_count >= 2).
+        // PATH B (EMA proxy bar) and PATH C (synthetic drift bar) removed:
+        // candle_is_bullish/bearish and breakout checks are meaningless on synthetic
+        // bars and produced counter-trend entries. The 90s startup lockout already
+        // covers the cold-start window before real bars arrive.
         omega::CandleFlowEngine::BarSnap cfe_bar;
-        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
-            if (g_bars_gold.m1.bar_count() >= 2) {
-                // PATH A: real OHLC bars available
-                const OHLCBar lb = g_bars_gold.m1.last_bar();
-                const OHLCBar pb = g_bars_gold.m1.prev_bar();
-                cfe_bar.open      = lb.open;
-                cfe_bar.high      = lb.high;
-                cfe_bar.low       = lb.low;
-                cfe_bar.close     = lb.close;
-                cfe_bar.prev_high = pb.high;
-                cfe_bar.prev_low  = pb.low;
-                cfe_bar.valid     = (lb.close > 0.0 && lb.high > lb.low);
-            } else {
-                // PATH B: m1_ready=true but bar_count < 2 (load_indicators restored
-                // indicators only, no bar history). Build from loaded EMA indicators.
-                // Use EMA9 as open proxy, current mid as close.
-                // EMA9 loaded from disk is session-relevant (prior close direction).
-                const double cur_mid  = (bid + ask) * 0.5;
-                const double cfe_atr  = g_gold_flow.current_atr();
-                const double b_ema9   = g_bars_gold.m1.ind.ema9.load(std::memory_order_relaxed);
-                const double b_ema50  = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
-                if (cfe_atr > 0.0 && b_ema9 > 0.0) {
-                    cfe_bar.open      = b_ema9;    // EMA9 = recent price anchor
-                    cfe_bar.close     = cur_mid;
-                    cfe_bar.high      = std::max(b_ema9, cur_mid) + cfe_atr * 0.1;
-                    cfe_bar.low       = std::min(b_ema9, cur_mid) - cfe_atr * 0.1;
-                    // prev_high/low = EMA50 +/- 0.5*ATR (longer-term range proxy)
-                    const double anchor = (b_ema50 > 0.0) ? b_ema50 : b_ema9;
-                    cfe_bar.prev_high = anchor + cfe_atr * 0.5;
-                    cfe_bar.prev_low  = anchor - cfe_atr * 0.5;
-                    cfe_bar.valid     = true;
-                }
-            }
-        } else {
-            // PATH C: m1_ready=false AND bars permanently unavailable.
-            // VWAP is frozen (unreliable). Use tick RSI direction from
-            // CandleFlowEngine itself -- it computes tick RSI every tick
-            // unconditionally, regardless of bar state.
-            // Direction: tick RSI trend > CFE_RSI_THRESH = bullish, < -thresh = bearish.
-            // This allows CFE to fire on strong momentum moves even with no M1 bars.
-            // Safety: CFE's own RSI gate (rsi_direction()) still applies internally.
-            static bool s_bars_unavail_warned = false;
-            if (!s_bars_unavail_warned) {
-                s_bars_unavail_warned = true;
-                std::cout << "[CFE-PATH-C] M1 bars permanently unavailable -- "
-                          << "using tick RSI direction for bar snap\n";
-                std::cout.flush();
-            }
-            const double cur_mid = (bid + ask) * 0.5;
-            const double cfe_atr = g_gold_flow.current_atr();
-            // Reconstruct bar from tick price movement over last ATR window.
-            // Use EWM drift direction as open/close proxy -- drift is always live.
-            const double drift_now = g_gold_stack.ewm_drift();
-            if (cfe_atr > 0.0 && std::fabs(drift_now) > 0.1) {
-                // Synthetic bar: open = mid - drift, close = mid
-                // Body direction matches drift (drift>0 = bullish bar)
-                const double cfe_open_c = cur_mid - drift_now * 0.3;  // scaled: 30% of drift
-                cfe_bar.open      = cfe_open_c;
-                cfe_bar.close     = cur_mid;
-                cfe_bar.high      = std::max(cfe_open_c, cur_mid) + cfe_atr * 0.1;
-                cfe_bar.low       = std::min(cfe_open_c, cur_mid) - cfe_atr * 0.1;
-                // prev levels: ATR range back from current
-                cfe_bar.prev_high = cur_mid + cfe_atr * 0.3;
-                cfe_bar.prev_low  = cur_mid - cfe_atr * 0.3;
-                cfe_bar.valid     = true;
-            }
+        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)
+            && g_bars_gold.m1.bar_count() >= 2) {
+            const OHLCBar lb = g_bars_gold.m1.last_bar();
+            const OHLCBar pb = g_bars_gold.m1.prev_bar();
+            cfe_bar.open      = lb.open;
+            cfe_bar.high      = lb.high;
+            cfe_bar.low       = lb.low;
+            cfe_bar.close     = lb.close;
+            cfe_bar.prev_high = pb.high;
+            cfe_bar.prev_low  = pb.low;
+            cfe_bar.valid     = (lb.close > 0.0 && lb.high > lb.low);
         }
+        // bar_count < 2 or m1_ready=false: cfe_bar.valid=false, entry block skipped.
+        // CFE enters once the first real M1 bar completes (~60s after startup).
 
         if (cfe_bar.valid) {
             // Build DOM snapshot
@@ -4086,6 +4038,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
