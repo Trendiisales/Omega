@@ -45,6 +45,10 @@ struct OmegaConfig {
     double daily_profit_target = 0.0;   // 0=disabled. Stop new entries once daily P&L >= this.
                                         // Recommended: set to 1.5? daily_loss_limit once live.
     double max_loss_per_trade_usd = 0.0; // 0=disabled. Hard dollar cap per trade regardless of sizing.
+    double dollar_stop_usd = 50.0;       // 0=disabled. Emergency runtime cut: close any position
+                                         // immediately when unrealised loss exceeds this USD amount.
+                                         // Independent of SL -- fires on live floating P&L every 250ms.
+                                         // Default $50. Set 0 to disable.
                                           // Enforced in enter_directional and gold stack path.
     double max_portfolio_sl_risk_usd = 0.0; // 0=disabled. Max total simultaneous open SL risk.
                                              // Blocks new entries when sum of (SL_pts * lot * tick_val)
