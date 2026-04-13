@@ -398,6 +398,10 @@ static void init_engines(const std::string& cfg_path)
         const bool m5_ok  = g_bars_gold.m5 .load_indicators(base + "/bars_gold_m5.dat");
         const bool m15_ok = g_bars_gold.m15.load_indicators(base + "/bars_gold_m15.dat");
         const bool h4_ok  = g_bars_gold.h4 .load_indicators(base + "/bars_gold_h4.dat");
+        // H1 bars: gold + indices swing context (warm restart for IndexSwingEngine)
+        g_bars_gold.h1.load_indicators(base + "/bars_gold_h1.dat");
+        g_bars_sp.h1  .load_indicators(base + "/bars_sp_h1.dat");
+        g_bars_nq.h1  .load_indicators(base + "/bars_nq_h1.dat");
         if (m15_ok) {
             // Immediately seed TrendPullback EMAs + ATR from M15 bar state
             g_trend_pb_gold.seed_bar_emas(
@@ -473,6 +477,13 @@ static void init_engines(const std::string& cfg_path)
     g_bracket_gbpusd.symbol = "GBPUSD";  g_bracket_gbpusd.ENTRY_SIZE = 0.01;
     g_bracket_audusd.symbol = "AUDUSD";  g_bracket_audusd.ENTRY_SIZE = 0.01;
     g_bracket_nzdusd.symbol = "NZDUSD";  g_bracket_nzdusd.ENTRY_SIZE = 0.01;
+
+    // ?? IndexSwingEngine configure -- shadow mode confirmed ??????????????????
+    // sl_pts / min_ema_sep / pnl_scale set at construction in omega_types.hpp.
+    // shadow_mode=true: engine tracks paper P&L only, no FIX orders sent.
+    // NEVER set shadow_mode=false without explicit authorization + live validation.
+    g_iswing_sp.shadow_mode = true;
+    g_iswing_nq.shadow_mode = true;
 
     // ?? MAX_RANGE caps: ~0.4% of instrument price ?????????????????????????????
     // Prevents bracketing full day-range trending moves as if they were compression.
