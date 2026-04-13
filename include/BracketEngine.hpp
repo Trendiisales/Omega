@@ -475,7 +475,7 @@ public:
             if (now_corrupt - s_corrupt_log >= 10) {
                 s_corrupt_log = now_corrupt;
                 printf("[BRACKET-%s] CORRUPT window slo=%.2f shi=%.2f -- purging bad ticks\n",
-                       symbol.c_str(), slo, shi);
+                       symbol, slo, shi);
                 fflush(stdout);
             }
             return;
