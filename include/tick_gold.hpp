@@ -3669,7 +3669,13 @@ static void on_tick_gold(
         const auto cfe_dom = omega::CandleFlowEngine::build_dom(
             cfe_book, cfe_prev_book, (bid + ask) * 0.5);
         cfe_prev_book_mgmt = cfe_book;  // advance prev for next tick
-        const omega::CandleFlowEngine::BarSnap cfe_bar_dummy{};
+        // Management call: bar snap not needed (CFE only uses bar for new entries,
+        // manage() path ignores bar entirely). Dummy bar with valid=false is correct.
+        // ewm_drift MUST be live -- sustained-drift tracker and DFE persist state
+        // run unconditionally every tick including management ticks. Passing 0.0
+        // corrupted m_drift_sustained_dir and m_dfe_persist_ticks on every managed tick.
+        // Fixed: pass g_gold_stack.ewm_drift() to both management and entry calls.
+        const omega::CandleFlowEngine::BarSnap cfe_bar_dummy{};  // valid=false: correct for manage path
         const double cfe_atr = g_gold_flow.current_atr() > 0.0
             ? g_gold_flow.current_atr() : 5.0;
         g_candle_flow.on_tick(bid, ask, cfe_bar_dummy, cfe_dom,
@@ -3679,7 +3685,7 @@ static void on_tick_gold(
                 if (!g_candle_flow.shadow_mode)
                     send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
             },
-            0.0);
+            g_gold_stack.ewm_drift());  // FIX: was 0.0 -- corrupted sustained-drift tracker
     }
 
     // Entry: only when no other gold position open and gold_can_enter passes
@@ -3872,6 +3878,39 @@ static void on_tick_gold(
                     }
                 }
             }
+            // VPIN directional gate for CFE (wired 2026-04-13):
+            // VPIN is computed every tick via g_vpin.on_tick() and available here.
+            // Previously VPIN fed GoldFlow only -- CFE had zero awareness of informed flow.
+            // Gate: if VPIN is toxic AND bias OPPOSES intended entry direction, block.
+            //   e.g. VPIN=0.75, sell-heavy (short_bias) -> block CFE LONG entries.
+            //        VPIN=0.75, buy-heavy (long_bias)   -> block CFE SHORT entries.
+            // This prevents entering the wrong side when institutions are active.
+            // When VPIN not toxic or bias neutral: do not block (allow normal CFE logic).
+            if (cfe_bar_gate_ok && g_vpin.warmed() && g_vpin.toxic()) {
+                const bool cfe_intends_long = (cfe_bar.close > cfe_bar.open);
+                // vpin_short_bias: elevated VPIN with sell-heavy flow = informed selling
+                // vpin_long_bias:  elevated VPIN with buy-heavy flow  = informed buying
+                if (cfe_intends_long  && g_vpin.vpin_short_bias()) {
+                    cfe_bar_gate_ok = false;
+                    static int64_t s_vpin_long_log = 0;
+                    if (now_ms_g - s_vpin_long_log > 10000) {
+                        s_vpin_long_log = now_ms_g;
+                        printf("[CFE-VPIN-BLOCK] LONG blocked: VPIN=%.3f toxic + sell-heavy bias\n",
+                               g_vpin.vpin());
+                        fflush(stdout);
+                    }
+                } else if (!cfe_intends_long && g_vpin.vpin_long_bias()) {
+                    cfe_bar_gate_ok = false;
+                    static int64_t s_vpin_short_log = 0;
+                    if (now_ms_g - s_vpin_short_log > 10000) {
+                        s_vpin_short_log = now_ms_g;
+                        printf("[CFE-VPIN-BLOCK] SHORT blocked: VPIN=%.3f toxic + buy-heavy bias\n",
+                               g_vpin.vpin());
+                        fflush(stdout);
+                    }
+                }
+            }
+
             if (cfe_bar_gate_ok)
             g_candle_flow.on_tick(bid, ask, cfe_bar, cfe_dom_e,
                 now_ms_g, cfe_atr_e,
