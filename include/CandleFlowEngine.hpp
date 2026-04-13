@@ -143,6 +143,10 @@ static constexpr double  CFE_DFE_RSI_TREND_MAX   = 12.0;  // RSI trend EMA maxim
                                                             // Data: rsi_trend=20.62 on -$59 loss,
                                                             // rsi_trend=6-9 on all winners.
 static constexpr double  CFE_DFE_SL_MULT         = 0.7;   // SL = 0.7 * ATR (tighter)
+static constexpr double  CFE_MAX_ATR_ENTRY       = 6.0;   // block ALL entries when ATR > 6pt
+                                                            // At ATR=6pt: SL=4.2pt, 4 max loss at 0.20 lots
+                                                            // At ATR=12pt: SL=8.4pt, 68 loss -- not a scalp
+                                                            // High-ATR regimes belong to GoldFlow/MacroCrash
 static constexpr int64_t CFE_DFE_COOLDOWN_MS     = 120000; // 120s block after DFE loss
 static constexpr double  CFE_DFE_MIN_SPREAD_MULT = 1.5;   // max spread vs cost
 
@@ -422,6 +426,18 @@ struct CandleFlowEngine {
 
             if (drift_accel && rsi_ok && rsi_level_ok && persist_ok && price_confirms &&
                 (now_ms >= m_dfe_cooldown_until)) {
+                // ATR cap: block CFE entry when ATR > CFE_MAX_ATR_ENTRY.
+                // At ATR=12pt: SL=8.4pt = $168 loss at 0.20 lots -- not a scalp.
+                const double dfe_atr_check = (atr_pts > 0.0) ? atr_pts : 5.0;
+                if (dfe_atr_check > CFE_MAX_ATR_ENTRY) {
+                    static int64_t s_atr_cap_log = 0;
+                    if (now_ms - s_atr_cap_log > 30000) {
+                        s_atr_cap_log = now_ms;
+                        printf("[CFE-ATR-CAP] DFE blocked: atr=%.2f > max=%.1f\n",
+                               dfe_atr_check, CFE_MAX_ATR_ENTRY);
+                        fflush(stdout);
+                    }
+                } else {
                 const double dfe_cost = spread + CFE_COST_SLIPPAGE*2.0 + CFE_COMMISSION_PTS*2.0;
                 if (spread < dfe_cost * CFE_DFE_MIN_SPREAD_MULT) {
                     const double dfe_atr    = (atr_pts > 0.0) ? atr_pts : spread * 5.0;
@@ -452,6 +468,7 @@ struct CandleFlowEngine {
                               << (shadow_mode?" [SHADOW]":"") << "\n";
                     std::cout.flush(); return;
                 }
+                } // end ATR-cap else
             }
         } else { m_prev_ewm_drift=ewm_drift; m_dfe_warmed=true; }
 
@@ -519,6 +536,7 @@ struct CandleFlowEngine {
                           << " size=" << std::setprecision(3) << size
                           << (shadow_mode?" [SHADOW]":"") << "\n";
                 std::cout.flush(); return;
+                } // end ATR-cap check
             }
         }
 
@@ -584,6 +602,17 @@ struct CandleFlowEngine {
         }
 
         // All gates passed
+        // ATR cap: block bar entries in high-vol regime (same as DFE)
+        if (atr_pts > 0.0 && atr_pts > CFE_MAX_ATR_ENTRY) {
+            static int64_t s_bar_atr_log = 0;
+            if (now_ms - s_bar_atr_log > 30000) {
+                s_bar_atr_log = now_ms;
+                printf("[CFE-ATR-CAP] Bar entry blocked: atr=%.2f > max=%.1f\n",
+                       atr_pts, CFE_MAX_ATR_ENTRY);
+                fflush(stdout);
+            }
+            return;
+        }
         enter(rsi_dir == +1, bid, ask, spread, cost_pts, atr_pts, now_ms);
     }
 
@@ -1025,4 +1054,5 @@ private:
 };
 
 } // namespace omega
+
 
