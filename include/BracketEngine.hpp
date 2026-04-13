@@ -378,7 +378,12 @@ public:
         // so bracket NEVER armed during entire Asia sessions (confirmed Apr 1+2 logs).
         // Fix: feed window on EVERY tick. can_enter still gates IDLE->ARMED and
         // ARMED hold. Window is price data -- no entry permission semantics.
-        m_window.push_back(mid);
+        // Sanity check: never push invalid prices into window.
+        // A zero or negative mid causes slo=~0 which makes bracket_low=-0.11
+        // and range=~4722 producing TP targets of 7500+ points.
+        if (mid > 100.0) {  // gold is always > $100, anything below = bad tick
+            m_window.push_back(mid);
+        }
         ++m_ticks_received;
 
         // Update recent tight-window range (last 60 ticks) for MAX_RANGE check.
@@ -453,6 +458,28 @@ public:
         const double shi    = *std::max_element(wbegin, wend);
         const double slo    = *std::min_element(wbegin, wend);
         const double range  = shi - slo;
+
+        // Guard: if slo is invalid (zero, negative, or implausibly small),
+        // reset to IDLE. This catches any window corruption from bad ticks
+        // that slipped through before the push_back guard was added.
+        if (slo < 100.0 || shi < 100.0) {
+            if (phase != BracketPhase::ARMED) {
+                phase = BracketPhase::IDLE;
+                bracket_high = 0.0; bracket_low = 0.0;
+                // Purge bad values from window
+                while (!m_window.empty() && m_window.front() < 100.0)
+                    m_window.pop_front();
+            }
+            static int64_t s_corrupt_log = 0;
+            const int64_t now_corrupt = static_cast<int64_t>(std::time(nullptr));
+            if (now_corrupt - s_corrupt_log >= 10) {
+                s_corrupt_log = now_corrupt;
+                printf("[BRACKET-%s] CORRUPT window slo=%.2f shi=%.2f -- purging bad ticks\n",
+                       symbol.c_str(), slo, shi);
+                fflush(stdout);
+            }
+            return;
+        }
 
         if (range < eff_min_range) {
             // While ARMED: hold state -- don't reset timer on transient range collapse.
