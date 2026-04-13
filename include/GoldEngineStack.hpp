@@ -2480,8 +2480,7 @@ public:
         //   z > Z_ENTRY (overbought SHORT) AND drift > 2.0 (bullish) = same pattern.
         //     -> ALLOW.
         //   All other high-drift cases: still block (not an RSI extreme reversal).
-        const double rsi_now = s.vwap > 0.0 ? 0.0 : 0.0;  // not in snapshot -- use z as proxy
-        (void)rsi_now;
+        // rsi_now: not available in GoldSnapshot -- z-score (computed below) is used instead
         // Compute z early to use in drift gate decision
         double mean_early = 0.0, std_early = 0.0;
         const bool has_stats_early = rolling_stats(mean_early, std_early);
@@ -5098,3 +5097,4 @@ private:
 
 } // namespace gold
 } // namespace omega
+
