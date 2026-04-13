@@ -2956,7 +2956,11 @@ public:
     // |ewm_drift_| > 2.0 = meaningful trend -- block VWAP fade entries.
     // Was never wired until 2026-04-09 fix: drift was permanently 0.0.
     double ewm_drift_ = 0.0;
+    double ema9_      = 0.0;  // M1 EMA9 injected by GoldEngineStack
+    double ema50_     = 0.0;  // M1 EMA50 injected by GoldEngineStack
+    double z_         = 0.0;  // last computed z-score (for EMA trend check)
     void set_ewm_drift(double d) { ewm_drift_ = d; }
+    void set_ema_trend(double e9, double e50) { ema9_ = e9; ema50_ = e50; }
 
     Signal process(const GoldSnapshot& s) override {
         if (!enabled_ || !s.is_valid()) return noSignal();
@@ -2982,7 +2986,16 @@ public:
         // |drift| > 2.0 means a sustained directional move is underway --
         // fading it produces the exact losing pattern seen on 2026-04-09
         // where gold fell 87pt and VWAPStretch fired 3 LONGs into the drop.
-        if (std::fabs(ewm_drift_) > 3.0) return noSignal();  // raised 2.0->3.0: 2.0 still fires on trending days. 3.0pt = confirmed sustained trend, fade is wrong.
+        if (std::fabs(ewm_drift_) > 2.0) return noSignal();  // lowered 3.0->2.0: 3.0 still fired on 13:00-13:06 trend day (9pt up move)
+
+        // EMA trend filter: block counter-trend fades.
+        // VWAPStretch is a FADE engine -- must not fire when M1 trend is clear.
+        if (ema9_ > 0.0 && ema50_ > 0.0) {
+            const bool bullish_trend = (ema9_ > ema50_);
+            const bool wants_short   = (s.mid > s.vwap);  // price above VWAP = would fade SHORT
+            if (bullish_trend && wants_short)  return noSignal();  // no SHORT fade in uptrend
+            if (!bullish_trend && !wants_short) return noSignal(); // no LONG fade in downtrend
+        }
 
         // VWAP must be populated
         if (s.vwap < 1.0) return noSignal();
@@ -2996,6 +3009,7 @@ public:
         if (sigma < 0.5) return noSignal(); // not enough vol to compute z
 
         const double z = (s.mid - s.vwap) / sigma;
+        z_ = z;  // store for EMA trend filter
         if (std::fabs(z) < SIGMA_ENTRY) return noSignal();
 
         // Deceleration confirms absorption
@@ -4593,6 +4607,7 @@ public:
                 // On today's -87pt trend day it fired 3 LONG fades against the trend.
                 // Now receives the same governor drift as MeanReversion.
                 static_cast<VWAPStretchReversionEngine*>(e.get())->set_ewm_drift(governor_.ewm_drift());
+                static_cast<VWAPStretchReversionEngine*>(e.get())->set_ema_trend(ema9_live_, ema50_live_);
             } else if (nm == "NR3Breakout") {
                 static_cast<NR3BreakoutEngine*>(e.get())->set_vol_ratio(cur_vol_ratio);
             }
@@ -5097,4 +5112,5 @@ private:
 
 } // namespace gold
 } // namespace omega
+
 
