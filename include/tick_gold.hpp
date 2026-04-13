@@ -3788,8 +3788,20 @@ static void on_tick_gold(
 
             // ── CFE BAR RSI + TREND PRE-FILTER ───────────────────────
             // Block counter-trend entries (EMA9 vs EMA50 on M1) and RSI extremes.
-            // Mirrors GoldFlow Gate 3. Root cause of -$401 SHORT (12:24-04-11):
-            // tick RSI slope said SHORT but M1 EMA9>EMA50 = bullish trend.
+            // Mirrors GoldFlow Gate 3.
+            //
+            // BUG FIX 2026-04-13: cfe_is_long_intent was derived from candle body
+            // direction (cfe_bar.close > cfe_bar.open). For DFE entries this is wrong:
+            // DFE fires before bar close, so the last completed bar is the PRIOR bar
+            // whose direction may be opposite to the DFE signal. At 01:40 UTC the
+            // recovery candle hadn't closed yet, last bar was bearish, so
+            // cfe_is_long_intent=false, cfe_counter=false, gate PASSED for a LONG
+            // that was counter-trend vs M1 EMA structure.
+            //
+            // Fix: use ewm_drift direction as the authoritative intent signal.
+            // ewm_drift > 0 = DFE is going LONG regardless of last bar body.
+            // For standard bar-based entries, drift and bar body agree -- no change.
+            // For DFE entries, drift is the actual signal direction -- use it.
             bool cfe_bar_gate_ok = true;
             if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
                 const bool   cfe_ema_live = g_bars_gold.m1.ind.m1_ema_live.load(std::memory_order_relaxed);
@@ -3798,7 +3810,16 @@ static void on_tick_gold(
                 const int    cfe_m1_trend = (cfe_ema9 > 0.0 && cfe_ema50 > 0.0)
                     ? (cfe_ema9 < cfe_ema50 ? -1 : +1) : 0;
                 const double cfe_bar_rsi  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-                const bool cfe_is_long_intent = (cfe_bar.close > cfe_bar.open);
+                // Direction intent: use ewm_drift as primary source.
+                // This correctly captures DFE direction (fires before bar close)
+                // AND standard bar entry direction (drift and bar body agree).
+                // Fallback to bar body only when drift is near-zero (< 0.3pt) --
+                // flat drift means no DFE is possible (thresh=1.5), so bar body
+                // is the correct intent signal for standard entries.
+                const double cfe_drift_now = g_gold_stack.ewm_drift();
+                const bool cfe_is_long_intent = (std::fabs(cfe_drift_now) >= 0.3)
+                    ? (cfe_drift_now > 0.0)
+                    : (cfe_bar.close > cfe_bar.open);
                 // Counter-trend block
                 if (cfe_m1_trend != 0) {
                     const bool cfe_counter = (cfe_is_long_intent && cfe_m1_trend == -1)
@@ -3808,9 +3829,9 @@ static void on_tick_gold(
                         static int64_t s_cfe_trend_log = 0;
                         if (now_ms_g - s_cfe_trend_log > 10000) {
                             s_cfe_trend_log = now_ms_g;
-                            printf("[CFE-BAR-BLOCK] %s blocked counter-trend M1=%+d EMA9=%.2f EMA50=%.2f\n",
+                            printf("[CFE-BAR-BLOCK] %s blocked counter-trend M1=%+d EMA9=%.2f EMA50=%.2f drift=%.2f\n",
                                    cfe_is_long_intent ? "LONG" : "SHORT",
-                                   cfe_m1_trend, cfe_ema9, cfe_ema50);
+                                   cfe_m1_trend, cfe_ema9, cfe_ema50, cfe_drift_now);
                             fflush(stdout);
                         }
                     }
