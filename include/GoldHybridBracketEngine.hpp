@@ -225,7 +225,7 @@ public:
 
             const bool is_pyramid = flow_pyramid_ok;
             const double risk     = is_pyramid ? RISK_DOLLARS_PYRAMID : RISK_DOLLARS;
-            const double base_lot = std::max(0.01, std::min(0.20, risk / (sl_dist * USD_PER_PT)))  // capped 0.50->0.20;
+            const double base_lot = std::max(0.01, std::min(0.20, risk / (sl_dist * USD_PER_PT)));  // capped 0.50->0.20
 
             // ── DOM lot sizing ────────────────────────────────────────────────
             double lot_long  = base_lot;
@@ -387,3 +387,4 @@ private:
 };
 
 } // namespace omega
+
