@@ -2168,7 +2168,7 @@ static void on_tick_gold(
             if (nowSec() - s_size_log >= 30) {
                 s_size_log = nowSec();
                 const double gf_sl_pts = gf_atr_gate * GFE_ATR_SL_MULT;
-                const double lot_est   = std::min(0.50, scaled_risk / (gf_sl_pts * 100.0));
+                const double lot_est   = std::min(0.20, scaled_risk / (gf_sl_pts * 100.0));  // capped 0.50->0.20 (diagnostic log)
                 printf("[GFE-ATR-SIZE] atr=%.2f scale=%.2fx risk_base=$%.0f risk_scaled=$%.0f "
                        "lot_est=%.3f sl_pts=%.2f vol_ratio=%.2f wide_trail=%d\n",
                        gf_atr_gate, atr_scale, g_cfg.risk_per_trade_usd, scaled_risk,
@@ -4038,6 +4038,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
