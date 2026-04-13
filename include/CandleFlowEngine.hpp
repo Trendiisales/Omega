@@ -331,6 +331,27 @@ struct CandleFlowEngine {
         const int64_t drift_sustained_ms = (m_drift_sustained_dir != 0 && m_drift_sustained_start_ms > 0)
             ? (now_ms - m_drift_sustained_start_ms) : 0;
 
+    // Opposite-direction cooldown: after a SHORT closes, block new LONG for 60s
+        // (and vice versa). Prevents the rapid flip-flop pattern (09:45 / 10:16).
+        if (m_last_closed_ms > 0 && m_last_closed_dir != 0) {
+            const int64_t since_close = now_ms - m_last_closed_ms;
+            if (since_close < CFE_OPPOSITE_DIR_COOLDOWN_MS) {
+                const int intended_dir = (ewm_drift > 0) ? +1 : -1;
+                if (intended_dir != m_last_closed_dir) {
+                    static int64_t s_opp_log = 0;
+                    if (now_ms - s_opp_log > 20000) {
+                        s_opp_log = now_ms;
+                        printf("[CFE-OPP-DIR] %s blocked: last_dir=%+d %llds ago\n",
+                               (intended_dir>0?"LONG":"SHORT"), m_last_closed_dir,
+                               (long long)since_close/1000);
+                        fflush(stdout);
+                    }
+                    m_prev_ewm_drift = ewm_drift;
+                    return;
+                }
+            }
+        }
+
         if (m_rsi_warmed && std::fabs(ewm_drift) >= m_dfe_eff_thresh) {
             const double drift_delta = ewm_drift - m_prev_ewm_drift;
             const bool drift_accel = m_dfe_warmed &&
@@ -679,7 +700,11 @@ private:
 
     // Drift fast-entry state
     double  m_prev_ewm_drift     = 0.0;
-    int64_t m_dfe_cooldown_until = 0;
+    int64_t m_dfe_cooldown_until   = 0;
+    int     m_last_closed_dir      = 0;    // +1=was LONG, -1=was SHORT, 0=none
+    int64_t m_last_closed_ms       = 0;    // when last position closed
+    static constexpr int64_t CFE_OPPOSITE_DIR_COOLDOWN_MS = 60000; // 60s before opposite direction allowed
+    static constexpr int64_t CFE_WINNER_COOLDOWN_MS       = 30000; // 30s after winner
     bool    m_dfe_warmed         = false;
     double  m_dfe_eff_thresh     = CFE_DFE_DRIFT_THRESH;  // session-adjusted threshold
 
@@ -1039,14 +1064,27 @@ private:
                   << (shadow_mode?" [SHADOW]":"") << "\n";
         std::cout.flush();
 
+        // Track direction for opposite-direction cooldown
+        m_last_closed_dir = (tr.side == std::string("LONG")) ? +1 : -1;
+        m_last_closed_ms  = now_ms;
+
         pos = OpenPos{};
         phase = Phase::COOLDOWN;
         m_cooldown_start_ms = now_ms;
-        m_cooldown_ms = (strcmp(reason,"IMB_EXIT")   == 0) ? 5000
-                      : (strcmp(reason,"STAGNATION") == 0) ? 10000
+        const bool is_winner = (strcmp(reason,"PARTIAL_TP")==0||
+                                strcmp(reason,"TRAIL_SL")==0||
+                                strcmp(reason,"IMB_EXIT")==0);
+        // STAGNATION cooldown raised 10s->60s: entry quality failed, wait for real signal
+        // Winner cooldown 30s: prevent immediate re-entry on momentum exhaustion
+        m_cooldown_ms = (strcmp(reason,"STAGNATION") == 0) ? 60000
+                      : (strcmp(reason,"IMB_EXIT")   == 0) ? 5000
+                      : is_winner                           ? 30000
                       :                                       15000;
+        // DFE rearm: 120s after loss, 30s after winner
         if (strcmp(reason,"SL_HIT")==0||strcmp(reason,"TRAIL_SL")==0)
             m_dfe_cooldown_until = now_ms + CFE_DFE_COOLDOWN_MS;
+        else if (is_winner)
+            m_dfe_cooldown_until = now_ms + CFE_WINNER_COOLDOWN_MS;
         m_imb_against_ticks = 0;
 
         if (on_close) on_close(tr);
@@ -1054,5 +1092,6 @@ private:
 };
 
 } // namespace omega
+
 
 
