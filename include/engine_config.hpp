@@ -322,6 +322,7 @@ static void load_config(const std::string& path) {
             if (k=="daily_loss_limit")     g_cfg.daily_loss_limit  = safe_stod(v, k);
             if (k=="daily_profit_target")  g_cfg.daily_profit_target = safe_stod(v, k);
             if (k=="max_loss_per_trade_usd") g_cfg.max_loss_per_trade_usd = safe_stod(v, k);
+            if (k=="dollar_stop_usd")         g_cfg.dollar_stop_usd         = safe_stod(v, k);
             if (k=="max_portfolio_sl_risk_usd") g_cfg.max_portfolio_sl_risk_usd = safe_stod(v, k);
             if (k=="session_watermark_pct")  g_cfg.session_watermark_pct  = safe_stod(v, k);
             if (k=="hourly_loss_limit")    g_cfg.hourly_loss_limit   = safe_stod(v, k);
