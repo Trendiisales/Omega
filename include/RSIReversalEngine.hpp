@@ -115,7 +115,8 @@ public:
                  bool   vacuum_ask    = false,
                  bool   vacuum_bid    = false,
                  bool   l2_real       = false,
-                 CloseCallback on_close = nullptr) noexcept
+                 CloseCallback on_close = nullptr,
+                 double ewm_drift     = 0.0) noexcept
     {
         if (!enabled) return;
         if (bid <= 0.0 || ask <= 0.0) return;
@@ -257,6 +258,38 @@ public:
         m_rsi_peak = rsi;  // reset peak tracking on entry
 
         const bool is_long = rsi_turn_long;
+
+        // ── EWM drift counter-trend gate (2026-04-13) ────────────────────────
+        // Block RSI reversal entries that go against a confirmed sustained drift.
+        // RSI reversals are mean-reversion: valid when market is oscillating.
+        // When ewm_drift > 2.5 (sustained uptrend), a SHORT RSI reversal is fighting
+        // the trend -- the RSI dip is a pullback, not a reversal.
+        // When ewm_drift < -2.5 (sustained downtrend), a LONG RSI reversal is a
+        // bounce into a falling knife.
+        // Threshold 2.5pt: above normal noise (0-1.5pt) but below extreme trend (8pt+).
+        // Does NOT apply when drift=0.0 (not passed / not yet warmed).
+        if (ewm_drift != 0.0) {
+            if (is_long  && ewm_drift < -2.5) {
+                static int64_t s_rsi_drift_log = 0;
+                if (now_ms/1000 - s_rsi_drift_log >= 10) {
+                    s_rsi_drift_log = now_ms/1000;
+                    printf("[RSI-REV-BLOCK] LONG blocked: ewm_drift=%.2f < -2.5 (downtrend)\n",
+                           ewm_drift);
+                    fflush(stdout);
+                }
+                return;
+            }
+            if (!is_long && ewm_drift > 2.5) {
+                static int64_t s_rsi_drift_log2 = 0;
+                if (now_ms/1000 - s_rsi_drift_log2 >= 10) {
+                    s_rsi_drift_log2 = now_ms/1000;
+                    printf("[RSI-REV-BLOCK] SHORT blocked: ewm_drift=%.2f > 2.5 (uptrend)\n",
+                           ewm_drift);
+                    fflush(stdout);
+                }
+                return;
+            }
+        }
 
         // ── DOM filter ────────────────────────────────────────────────────────
         bool vacuum_confirm = false;
