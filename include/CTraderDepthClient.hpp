@@ -525,6 +525,61 @@ struct CTDepthBook {
         return n;
     }
 
+    // vol_weighted_imbalance(): volume-weighted imbalance using real size_raw values.
+    //
+    // DESIGN:
+    //   - Sort all quotes by price (bids descending, asks ascending)
+    //   - Strip the single outermost level on each side (the large synthetic wall
+    //     that BlackBull posts at the extreme: e.g. 60-lot at 4713.14 / 4717.66)
+    //   - Sum remaining volume on each side (levels 2..N)
+    //   - Return bid_vol / (bid_vol + ask_vol), range [0,1], 0.5 = neutral
+    //
+    // WALL STRIP RATIONALE:
+    //   The screenshot shows symmetric 60-lot walls at the outermost level on
+    //   both sides. These are synthetic MM positions, not real order flow.
+    //   Raw VWI with walls: 78 bid / 19 ask = 0.804 (false bullish signal).
+    //   After stripping outer level: 19 bid / 19 ask = 0.500 (neutral -- correct).
+    //   Mid-book (levels 2-5) carries the real directional pressure.
+    //
+    // Falls back to 0.5 (neutral) when:
+    //   - Fewer than 2 levels per side (no inner book after strip)
+    //   - All size_raw == 0 (broker omits sizes -- use raw_imbalance() instead)
+    //   - Total volume == 0
+    //
+    // Called only for XAUUSD where size_raw is confirmed non-zero (sz=200/1000/2000).
+    double vol_weighted_imbalance() const noexcept {
+        struct Lv { double price; double size; };
+        std::vector<Lv> bids, asks;
+        bids.reserve(8); asks.reserve(8);
+        bool any_real_size = false;
+        for (const auto& kv : quotes) {
+            if (!kv.second.price_raw) continue;
+            if (kv.second.size_raw > 0) any_real_size = true;
+            // Use real size if available; do NOT substitute fallback 100 here --
+            // the whole point is to use real volume. If size is 0, skip this quote.
+            if (kv.second.size_raw == 0) continue;
+            const double sz = kv.second.size_raw / 100.0;  // raw is in cents: 200 = 2 lots
+            const double px = kv.second.price_raw / 100000.0;
+            if (kv.second.is_bid) bids.push_back({px, sz});
+            else                  asks.push_back({px, sz});
+        }
+        // Fall back to neutral if no real sizes sent by broker
+        if (!any_real_size) return 0.5;
+        // Need at least 2 levels per side to strip outer wall and still have signal
+        if (bids.size() < 2 || asks.size() < 2) return 0.5;
+        // Sort: bids descending (best bid first), asks ascending (best ask first)
+        std::sort(bids.begin(), bids.end(), [](const Lv& a, const Lv& b){ return a.price > b.price; });
+        std::sort(asks.begin(), asks.end(), [](const Lv& a, const Lv& b){ return a.price < b.price; });
+        // Strip outermost level (index 0 = best price, last index = outermost wall)
+        // We strip the LAST element (outermost) not the first (best bid/ask).
+        double bid_vol = 0.0, ask_vol = 0.0;
+        for (size_t i = 0; i + 1 < bids.size(); ++i) bid_vol += bids[i].size;
+        for (size_t i = 0; i + 1 < asks.size(); ++i) ask_vol += asks[i].size;
+        const double total = bid_vol + ask_vol;
+        if (total <= 0.0) return 0.5;
+        return bid_vol / total;
+    }
+
     L2Book to_l2book() const {
         L2Book book;
         struct Lv { double price, size; };
@@ -1767,8 +1822,15 @@ private:
         prev_books_[name] = rebuilt;
 
         if (atomic_l2_write_fn) {
+            // XAUUSD: use volume-weighted imbalance (real sz from cTrader OpenAPI confirmed).
+            // Strips outer synthetic wall level each side before computing ratio.
+            // All other symbols: fall back to raw_imbalance() (ID count ratio) because
+            // size_raw reliability has not been verified for those symbols.
+            const double imb_signal = (name == "XAUUSD")
+                ? book.vol_weighted_imbalance()
+                : book.raw_imbalance();
             atomic_l2_write_fn(name,
-                book.raw_imbalance(),
+                imb_signal,
                 rebuilt.microprice_bias(),
                 rebuilt.has_data(),
                 book.raw_bid_count(),
