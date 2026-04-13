@@ -2461,7 +2461,7 @@ static void on_tick_gold(
                 const double gf_sl_pts  = gf_atr * GFE_ATR_SL_MULT;
                 const double gf_tp_dist = gf_sl_pts * 2.0;
                 const double gf_lot_est = std::max(GFE_MIN_LOT,
-                    std::min(0.20, g_gold_flow.risk_dollars / (gf_sl_pts * 100.0))))  // capped 0.50->0.20;
+                    std::min(0.20, g_gold_flow.risk_dollars / (gf_sl_pts * 100.0)));  // capped 0.50->0.20
                 if (!ExecutionCostGuard::is_viable("XAUUSD", ask - bid, gf_tp_dist, gf_lot_est)) {
                     g_telemetry.IncrCostBlocked();
                     gf_tick_ok = false;
@@ -4082,6 +4082,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
