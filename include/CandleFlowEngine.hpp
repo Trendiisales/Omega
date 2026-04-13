@@ -97,6 +97,24 @@ static constexpr double  CFE_DFE_RSI_LEVEL_SHORT_MAX = 65.0;  // DFE SHORT block
 // 2 ticks = ~0.2-0.5s at London open tick rate -- real drift sustains, spikes don't.
 static constexpr int     CFE_DFE_DRIFT_PERSIST_TICKS = 2;
 
+// DFE sustained-drift path (2026-04-13):
+// Secondary entry path for slow grinding trends that never spike above the main threshold.
+// Evidence: 08:01-08:08 UTC downtrend, drift stayed at -0.8 to -1.7 for 5+ minutes
+// but never hit -1.5 for 2 consecutive ticks -- main DFE never fired.
+// Logic: if drift has been consistently in [-0.8, -1.5) range for >= SUSTAINED_MS,
+// that IS a trend -- enter without requiring the spike gate.
+// Threshold lower (-0.8) to catch early sustained moves.
+// Hold duration >= 45s required to distinguish trend from noise oscillation.
+// Same RSI level + price confirmation gates still apply.
+static constexpr double  CFE_DFE_DRIFT_SUSTAINED_THRESH = 0.8;   // lower bar: drift > 0.8pt for entry
+static constexpr int64_t CFE_DFE_DRIFT_SUSTAINED_MS     = 45000; // drift must persist >= 45s
+// Bar-based entry trend context gate (2026-04-13):
+// Block bar LONG entries when drift has been sustainedly negative (>= 45s below -0.5).
+// Block bar SHORT entries when drift has been sustainedly positive (>= 45s above +0.5).
+// Prevents CFE firing a LONG bar entry into a 7-minute downtrend (08:08 incident).
+static constexpr double  CFE_BAR_TREND_BLOCK_DRIFT = 0.5;   // sustained drift threshold
+static constexpr int64_t CFE_BAR_TREND_BLOCK_MS    = 45000; // how long drift must persist to block
+
 // DFE price-action confirmation (2026-04-13):
 // Last N mid prices must be moving in the drift direction.
 // Prevents entries where EWM drift is bullish but price is actually falling.
@@ -272,6 +290,29 @@ struct CandleFlowEngine {
             m_dfe_persist_ticks = 0;
         }
 
+        // Sustained-drift tracking (2026-04-13):
+        // Update m_drift_sustained_start_ms / m_drift_sustained_dir every tick.
+        // Tracks how long drift has been continuously above CFE_DFE_DRIFT_SUSTAINED_THRESH
+        // in one direction. Used by sustained-drift DFE path and bar trend-block gate.
+        {
+            const int new_sus_dir = (ewm_drift >= CFE_DFE_DRIFT_SUSTAINED_THRESH)  ?  1
+                                  : (ewm_drift <= -CFE_DFE_DRIFT_SUSTAINED_THRESH) ? -1
+                                  : 0;
+            if (new_sus_dir != 0 && new_sus_dir == m_drift_sustained_dir) {
+                // Continuing same direction -- keep start time
+            } else if (new_sus_dir != 0) {
+                // New direction started
+                m_drift_sustained_dir      = new_sus_dir;
+                m_drift_sustained_start_ms = now_ms;
+            } else {
+                // Drift below threshold -- reset
+                m_drift_sustained_dir      = 0;
+                m_drift_sustained_start_ms = 0;
+            }
+        }
+        const int64_t drift_sustained_ms = (m_drift_sustained_dir != 0 && m_drift_sustained_start_ms > 0)
+            ? (now_ms - m_drift_sustained_start_ms) : 0;
+
         if (m_rsi_warmed && std::fabs(ewm_drift) >= m_dfe_eff_thresh) {
             const double drift_delta = ewm_drift - m_prev_ewm_drift;
             const bool drift_accel = m_dfe_warmed &&
@@ -400,9 +441,108 @@ struct CandleFlowEngine {
             }
         } else { m_prev_ewm_drift=ewm_drift; m_dfe_warmed=true; }
 
+        // ── SUSTAINED-DRIFT ENTRY (secondary DFE path) ────────────────────────────
+        // Fires when drift has been consistently in one direction for >= 45s but
+        // never spiked high enough for the main DFE gate.
+        // Evidence: 08:01-08:08 UTC SHORT missed because drift peaked at -1.72 once
+        // but persistence gate needed 2 consecutive ticks. 5 minutes of -0.8 to -1.7
+        // drift = a real trend, not noise.
+        // Gates: sustained >= 45s, RSI level ok, price confirming, not in cooldown.
+        // Does NOT require drift_accel -- sustained slow drift IS the signal.
+        if (m_rsi_warmed &&
+            m_drift_sustained_dir != 0 &&
+            drift_sustained_ms >= CFE_DFE_DRIFT_SUSTAINED_MS &&
+            now_ms >= m_dfe_cooldown_until)
+        {
+            const bool sus_long = (m_drift_sustained_dir == 1);
+            // RSI slope must agree with direction
+            const bool sus_rsi_ok = sus_long
+                ? (m_rsi_trend > CFE_DFE_RSI_THRESH && m_rsi_trend < CFE_DFE_RSI_TREND_MAX)
+                : (m_rsi_trend < -CFE_DFE_RSI_THRESH && m_rsi_trend > -CFE_DFE_RSI_TREND_MAX);
+            // RSI level gate: same as spike DFE
+            const bool sus_rsi_level_ok = sus_long
+                ? (m_rsi_cur >= CFE_DFE_RSI_LEVEL_LONG_MIN)
+                : (m_rsi_cur <= CFE_DFE_RSI_LEVEL_SHORT_MAX);
+            // Price-action confirmation: last 3 ticks moving in drift direction
+            bool sus_price_ok = false;
+            if ((int)m_recent_mid.size() >= CFE_DFE_PRICE_CONFIRM_TICKS) {
+                const double oldest = m_recent_mid[m_recent_mid.size() - CFE_DFE_PRICE_CONFIRM_TICKS];
+                const double net = mid - oldest;
+                sus_price_ok = sus_long ? (net >= CFE_DFE_PRICE_CONFIRM_MIN)
+                                        : (net <= -CFE_DFE_PRICE_CONFIRM_MIN);
+            } else {
+                sus_price_ok = true;
+            }
+            const double sus_spread = ask - bid;
+            const double sus_cost = sus_spread + CFE_COST_SLIPPAGE*2.0 + CFE_COMMISSION_PTS*2.0;
+            const bool sus_spread_ok = (sus_spread < sus_cost * CFE_DFE_MIN_SPREAD_MULT);
+
+            if (sus_rsi_ok && sus_rsi_level_ok && sus_price_ok && sus_spread_ok) {
+                const double sus_atr    = (atr_pts > 0.0) ? atr_pts : sus_spread * 5.0;
+                const double sus_sl_pts = sus_atr * CFE_DFE_SL_MULT;
+                const double entry_px   = sus_long ? ask : bid;
+                const double sl_px      = sus_long ? (entry_px - sus_sl_pts) : (entry_px + sus_sl_pts);
+                double size = risk_dollars / (sus_sl_pts * 100.0);
+                size = std::floor(size/0.001)*0.001;
+                size = std::max(CFE_MIN_LOT, std::min(CFE_MAX_LOT, size));
+                pos.active=true; pos.is_long=sus_long; pos.entry=entry_px;
+                pos.sl=sl_px; pos.size=size; pos.full_size=size;
+                pos.cost_pts=sus_cost; pos.entry_ts_ms=now_ms;
+                pos.mfe=0.0; pos.trail_active=false; pos.trail_sl=sl_px;
+                pos.partial_done=false; pos.atr_pts=sus_atr;
+                ++m_trade_id; phase=Phase::LIVE;
+                m_imb_against_ticks=0;
+                m_prev_depth_bid=m_dom_cur.bid_count;
+                m_prev_depth_ask=m_dom_cur.ask_count;
+                // Reset sustained tracker to avoid re-firing immediately
+                m_drift_sustained_start_ms = now_ms;
+                std::cout << "[CFE] SUSTAINED-DRIFT-ENTRY " << (sus_long?"LONG":"SHORT")
+                          << " @ " << std::fixed << std::setprecision(2) << entry_px
+                          << " sl=" << sl_px << " drift=" << ewm_drift
+                          << " sustained_ms=" << drift_sustained_ms
+                          << " rsi=" << m_rsi_trend
+                          << " rsi_cur=" << m_rsi_cur
+                          << " size=" << std::setprecision(3) << size
+                          << (shadow_mode?" [SHADOW]":"") << "\n";
+                std::cout.flush(); return;
+            }
+        }
+
         // ── Standard bar-based entry ───────────────────────────────────────────────
         if (!bar.valid) return;
         if (!m_rsi_warmed) return;
+
+        // Gate 0: Trend context gate (2026-04-13)
+        // Block bar LONG entries when drift has been sustainedly negative for >= 45s.
+        // Block bar SHORT entries when drift has been sustainedly positive for >= 45s.
+        // Prevents entering against a confirmed ongoing trend on a single-bar signal.
+        // Evidence: 08:08 UTC LONG bar entry fired into a 7-minute downtrend.
+        if (drift_sustained_ms >= CFE_BAR_TREND_BLOCK_MS) {
+            if (m_drift_sustained_dir == -1) {
+                // Sustained downtrend -- block bar LONGs, allow bar SHORTs
+                static int64_t s_bar_block_log = 0;
+                if (now_ms - s_bar_block_log > 15000) {
+                    s_bar_block_log = now_ms;
+                    std::cout << "[CFE-BAR-TREND-BLOCK] LONG bar blocked: sustained downtrend "
+                              << drift_sustained_ms/1000 << "s drift=" << ewm_drift << "\n";
+                    std::cout.flush();
+                }
+                // Only proceed if the bar itself is bearish (allow SHORT with-trend entry)
+                // If bar would produce LONG, skip. We'll check after rsi_dir.
+                // Store the context so rsi_dir check can use it.
+                // Simplest approach: pre-check candle direction here.
+                if (bar.valid) {
+                    const bool would_be_long = (bar.close > bar.open);
+                    if (would_be_long) return;  // block counter-trend LONG bar entry
+                }
+            } else if (m_drift_sustained_dir == 1) {
+                // Sustained uptrend -- block bar SHORTs
+                if (bar.valid) {
+                    const bool would_be_short = (bar.close < bar.open);
+                    if (would_be_short) return;  // block counter-trend SHORT bar entry
+                }
+            }
+        }
 
         // Gate 1: RSI trend direction
         const int rsi_dir = rsi_direction();
@@ -503,6 +643,12 @@ private:
     // DFE drift persistence state (2026-04-13)
     int     m_dfe_persist_ticks  = 0;   // consecutive ticks drift >= threshold
     int     m_dfe_persist_dir    = 0;   // direction of current persistence run (+1/-1/0)
+
+    // DFE sustained-drift state (2026-04-13)
+    // Tracks how long drift has been continuously above/below the lower sustained threshold.
+    // Used for both the sustained-drift entry path and the bar trend-block gate.
+    int64_t m_drift_sustained_start_ms = 0;  // when current sustained drift run began (0=none)
+    int     m_drift_sustained_dir      = 0;  // +1 or -1, direction of current run
 
     // DFE price-action confirmation state (2026-04-13)
     std::deque<double> m_recent_mid;    // ring buffer of recent mid prices
@@ -865,3 +1011,4 @@ private:
 };
 
 } // namespace omega
+
