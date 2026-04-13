@@ -326,7 +326,10 @@ static void on_tick_us500(
     // ?? IndexSwingEngine -- US500.F H1+H4 swing entries (shadow mode) ????????
     {
         auto swing_sp_cb = [&](const omega::TradeRecord& tr) {
-            ca_on_close(tr);
+            // Shadow mode: call handle_closed_trade directly -- NOT ca_on_close.
+            // ca_on_close sends a live market order to close; this engine never
+            // opened a broker position so sending a close order would be a rogue order.
+            handle_closed_trade(tr);
             printf("[ISWING-CB] US500.F %s pnl=%.2f why=%s\n",
                    tr.side.c_str(), tr.pnl, tr.exitReason.c_str());
             fflush(stdout);
@@ -912,7 +915,10 @@ static void on_tick_nas100(
     // ?? IndexSwingEngine -- USTEC.F H1+H4 swing entries (shadow mode) ?????????
     {
         auto swing_nq_cb = [&](const omega::TradeRecord& tr) {
-            ca_on_close(tr);
+            // Shadow mode: call handle_closed_trade directly -- NOT ca_on_close.
+            // ca_on_close sends a live market order to close; this engine never
+            // opened a broker position so sending a close order would be a rogue order.
+            handle_closed_trade(tr);
             printf("[ISWING-CB] USTEC.F %s pnl=%.2f why=%s\n",
                    tr.side.c_str(), tr.pnl, tr.exitReason.c_str());
             fflush(stdout);
