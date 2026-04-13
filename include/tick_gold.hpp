@@ -3803,8 +3803,14 @@ static void on_tick_gold(
         // zero. A value like 0.86pt passes the > 0.0 check and produces
         // sl=0.60pt, size=0.50 lots (MAX_LOT cap) -- catastrophic on wide spread.
         // Floor of 2.0pt: sl=1.40pt, max size=0.214 lots at $30 risk.
-        const double cfe_atr = std::max(2.0,
-            g_gold_flow.current_atr() > 0.0 ? g_gold_flow.current_atr() : 5.0);
+        // 3-way ATR: max(GoldFlow EWM ATR, M1 bar ATR, 2.0pt floor).
+        // GoldFlow EWM lags session transitions (Asia->London = 30-60min lag).
+        // M1 bar ATR14 responds to actual candle ranges within 1-2 bars.
+        // At London open: GoldFlow may read 1pt (overnight), M1 reads 4-6pt.
+        // 2.0pt absolute floor: sl=1.4pt, max size=0.214 lots at $30 risk.
+        const double cfe_m1_atr  = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
+        const double cfe_gf_atr  = g_gold_flow.current_atr() > 0.0 ? g_gold_flow.current_atr() : 5.0;
+        const double cfe_atr     = std::max({2.0, cfe_gf_atr, cfe_m1_atr});
         g_candle_flow.on_tick(bid, ask, cfe_bar_dummy, cfe_dom,
             now_ms_g, cfe_atr,
             [&](const omega::TradeRecord& tr) {
@@ -3953,8 +3959,10 @@ static void on_tick_gold(
                     : cfe_base_risk;
             }
             // ATR floor: same 2.0pt minimum -- see manage-path comment above.
-            const double cfe_atr_e = std::max(2.0,
-                g_gold_flow.current_atr() > 0.0 ? g_gold_flow.current_atr() : 5.0);
+            // 3-way ATR: same logic as manage path above.
+            const double cfe_m1_atr_e = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
+            const double cfe_gf_atr_e = g_gold_flow.current_atr() > 0.0 ? g_gold_flow.current_atr() : 5.0;
+            const double cfe_atr_e    = std::max({2.0, cfe_gf_atr_e, cfe_m1_atr_e});
 
             // ── CFE BAR RSI + TREND PRE-FILTER ───────────────────────
             // Block counter-trend entries (EMA9 vs EMA50 on M1) and RSI extremes.
