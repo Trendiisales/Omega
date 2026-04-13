@@ -425,7 +425,13 @@ static void on_tick_gold(
         // Trail block: 30s after same-direction close, check if this signal
         // would re-enter the same direction. Allow if direction differs (reversal).
         const bool gs_trail_dir_match = gs_trail_blocked; // directional check done in GFE
-        const bool stack_enter_effective = ((stack_can_enter && gold_can_enter && !gs_trail_dir_match && !in_ny_close_noise)
+        // ?? FEED-STALE gate for GoldStack (mirrors GoldFlow gate at line ~3001) ????????
+        // g_feed_stale_xauusd is set by CTraderDepthClient starvation watchdog.
+        // IntradaySeasonality fired twice into a dead feed (21:00-21:40 UTC 2026-04-13)
+        // because GoldStack had no feed-liveness check. Now all GoldStack entries
+        // are blocked when the XAUUSD depth feed is stale, same as GoldFlow.
+        const bool gs_feed_ok = !g_feed_stale_xauusd.load(std::memory_order_relaxed);
+        const bool stack_enter_effective = gs_feed_ok && ((stack_can_enter && gold_can_enter && !gs_trail_dir_match && !in_ny_close_noise)
             || (gold_can_enter_trend_reentry && vol_expanding && !gs_trail_dir_match && !in_ny_close_noise)
             || (drift_reversed && gold_can_enter && !in_ny_close_noise)          // reversals also blocked at NY close
             || (stack_can_enter_mr && gold_can_enter && !in_ny_close_noise));    // MR/range engines in compression
