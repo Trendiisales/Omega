@@ -3711,7 +3711,6 @@ static void on_tick_gold(
         && !cfe_startup_locked
         && !g_bracket_gold.has_open_position()
         && !g_gold_flow.has_open_position()
-        && !g_gold_stack.has_open_position()
         && !g_trend_pb_gold.has_open_position()
         && !g_hybrid_gold.has_open_position()
         && !in_ny_close_noise) {
