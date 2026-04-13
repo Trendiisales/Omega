@@ -1684,7 +1684,8 @@ static void on_tick_gold(
                 g_macro_ctx.gold_vacuum_ask,
                 g_macro_ctx.gold_vacuum_bid,
                 g_macro_ctx.gold_l2_real,
-                bracket_on_close);
+                bracket_on_close,
+                g_gold_stack.ewm_drift());  // drift: counter-trend block inside engine
         }
 
         // Entry gate: no other XAUUSD position open + tradeable + not dead zone
@@ -1712,7 +1713,8 @@ static void on_tick_gold(
                 g_macro_ctx.gold_vacuum_ask,
                 g_macro_ctx.gold_vacuum_bid,
                 g_macro_ctx.gold_l2_real,
-                bracket_on_close);
+                bracket_on_close,
+                g_gold_stack.ewm_drift());  // drift: counter-trend block inside engine
 
             if (g_rsi_reversal.has_open_position()) {
                 // Size using standard risk engine -- same as GoldFlow sizing
@@ -1849,7 +1851,8 @@ static void on_tick_gold(
                 g_macro_ctx.gold_wall_above,
                 g_macro_ctx.gold_wall_below,
                 g_macro_ctx.gold_l2_real,
-                bracket_on_close);
+                bracket_on_close,
+                g_gold_stack.ewm_drift());  // drift: counter-trend block inside engine
         }
 
         // Entry gate: STANDALONE -- only blocked by its own open position,
@@ -1872,7 +1875,8 @@ static void on_tick_gold(
                 g_macro_ctx.gold_wall_above,
                 g_macro_ctx.gold_wall_below,
                 g_macro_ctx.gold_l2_real,
-                bracket_on_close);
+                bracket_on_close,
+                g_gold_stack.ewm_drift());  // drift: counter-trend block inside engine
 
             if (g_micro_momentum.has_open_position()) {
                 // Size: risk_per_trade_usd / (sl_dist * 100)
