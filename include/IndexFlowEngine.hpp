@@ -1059,5 +1059,272 @@ struct IndexFlowCfg {
     // shadow_mode is hardcoded true -- cannot be set via ini
 };
 
+// =============================================================================
+// IndexSwingEngine
+// =============================================================================
+// H1 + H4 HTF swing-trend entry engine for US equity indices.
+//
+// CONCEPT:
+//   Uses H1 OHLCBarEngine bars (trend_state, EMA9/EMA50) as primary direction
+//   gate plus H4 OHLCBarEngine bars as higher-timeframe confirmation.
+//   Entry fires only when H1 and H4 trend_state agree on direction.
+//   Tick-level EWM drift (from IdxRegimeGovernor) confirms momentum at entry.
+//
+//   This is the "structural" layer above IndexFlowEngine:
+//     IndexFlowEngine  = tick L2/drift microstructure entries (minutes)
+//     IndexSwingEngine = H1/H4 EMA-crossover swing entries    (hours)
+//
+// ENTRY GATES (all must pass):
+//   1. H1 trend_state == +1 (LONG) or -1 (SHORT)  -- OHLCBarEngine swing pivot
+//   2. H4 trend_state == same direction            -- HTF confirmation
+//      (if H4 not ready: H1-only allowed)
+//   3. H1 EMA9 > EMA50 (LONG) or < EMA50 (SHORT)  -- EMA crossover confirmed
+//   4. MIN_EMA_SEP: |EMA9 - EMA50| >= min_ema_sep  -- crossover not marginal
+//   5. Tick drift does not strongly oppose H1 dir  -- no counter-drift entry
+//   6. ATR >= atr_min (from per-symbol config)     -- real vol, not dead tape
+//   7. NY+London session only (08:00-22:00 UTC)    -- no Asia entries
+//   8. NY open noise gate: block 13:15-14:00 UTC
+//   9. Cooldown: SWING_COOLDOWN_MS (30min) after any exit
+//  10. Direction-flip cooldown: 4h before entering opposite side
+//
+// EXIT:
+//   SL: entry +/- sl_pts (fixed points, per-symbol calibrated)
+//   Trail: arms at 1x sl_pts profit, trails 0.5x sl_pts behind MFE
+//   Timeout: 8 hours max hold
+//   shadow_mode=true: position tracked, NO FIX order sent
+//
+// PNL_SCALE:
+//   Applied to reported P&L in TradeRecord for dashboard visibility.
+//   Set to usd_per_pt * min_lot so shadow equity curve is readable.
+//   Does NOT affect entry/exit logic.
+//
+// USAGE (tick_indices.hpp, at end of on_tick_us500 / on_tick_ustec):
+//   g_iswing_sp.on_tick(bid, ask, g_bars_sp.h1, g_bars_sp.h4,
+//                       g_iflow_sp.drift(), ca_on_close);
+//   g_iswing_nq.on_tick(bid, ask, g_bars_nq.h1, g_bars_nq.h4,
+//                       g_iflow_nq.drift(), ca_on_close);
+//
+// GLOBALS (omega_types.hpp):
+//   static omega::idx::IndexSwingEngine g_iswing_sp("US500.F",  8.0, 0.5, 0.5);
+//   static omega::idx::IndexSwingEngine g_iswing_nq("USTEC.F", 25.0, 1.5, 0.2);
+//
+// CONFIGURE (engine_init.hpp):
+//   g_iswing_sp.shadow_mode = true;
+//   g_iswing_nq.shadow_mode = true;
+// =============================================================================
+class IndexSwingEngine {
+public:
+    bool shadow_mode = true;   // NEVER set false without explicit authorization
+
+    // Construct with per-symbol calibration.
+    // sl_pts      : fixed SL distance in price points
+    // min_ema_sep : minimum |EMA9 - EMA50| on H1 to confirm crossover is real
+    // pnl_scale   : dollar multiplier for TradeRecord P&L (shadow visibility)
+    explicit IndexSwingEngine(const char* symbol,
+                              double sl_pts      = 8.0,
+                              double min_ema_sep = 0.5,
+                              double pnl_scale   = 0.5) noexcept
+        : sl_pts_(sl_pts), min_ema_sep_(min_ema_sep), pnl_scale_(pnl_scale)
+    {
+        if      (strcmp(symbol, "US500.F") == 0) cfg_ = IDX_CFG_SP;
+        else if (strcmp(symbol, "USTEC.F") == 0) cfg_ = IDX_CFG_NQ;
+        else if (strcmp(symbol, "NAS100")  == 0) cfg_ = IDX_CFG_NAS100;
+        else if (strcmp(symbol, "DJ30.F")  == 0) cfg_ = IDX_CFG_US30;
+        else                                      cfg_ = IDX_CFG_SP;
+        strncpy(symbol_, symbol, 15); symbol_[15] = '\0';
+    }
+
+    using CloseCb = std::function<void(const omega::TradeRecord&)>;
+
+    bool has_open_position() const noexcept { return active_; }
+
+    // ── Main tick function ────────────────────────────────────────────────────
+    // h1bars: g_bars_sp.h1 or g_bars_nq.h1
+    // h4bars: g_bars_sp.h4 or g_bars_nq.h4
+    //         (pass h1bars for both if H4 not built for that symbol yet)
+    // drift:  from g_iflow_sp.drift() -- tick-level EWM directional bias
+    // on_close: callback for TradeRecord (shadow P&L logging)
+    void on_tick(double bid, double ask,
+                 const OHLCBarEngine& h1bars, const OHLCBarEngine& h4bars,
+                 double drift, CloseCb on_close) noexcept {
+        if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return;
+        const double mid = (bid + ask) * 0.5;
+
+        // Always manage open position first
+        if (active_) {
+            _manage(bid, ask, mid, on_close);
+            return;
+        }
+
+        // Cooldown gate
+        if (idx_now_ms() < cooldown_until_ms_) return;
+
+        // H1 readiness: m1_ready flag reused by OHLCBarEngine for all timeframes
+        if (!h1bars.ind.m1_ready.load(std::memory_order_relaxed)) return;
+
+        // H1 trend_state: +1=UP, -1=DOWN, 0=FLAT
+        const int h1_trend = h1bars.ind.trend_state.load(std::memory_order_relaxed);
+        if (h1_trend == 0) return;
+
+        // H4 confirmation: if H4 has data, trend must agree with H1
+        // If H4 not yet ready (cold start / indices don't build H4 yet), allow H1-only
+        const bool h4_ready = h4bars.ind.m1_ready.load(std::memory_order_relaxed);
+        if (h4_ready) {
+            const int h4_trend = h4bars.ind.trend_state.load(std::memory_order_relaxed);
+            if (h4_trend != 0 && h4_trend != h1_trend) return;  // H4 disagrees
+        }
+
+        // H1 EMA crossover confirmation
+        if (!h1bars.ind.m1_ema_live.load(std::memory_order_relaxed)) return;
+        const double h1_e9  = h1bars.ind.ema9 .load(std::memory_order_relaxed);
+        const double h1_e50 = h1bars.ind.ema50.load(std::memory_order_relaxed);
+        if (h1_e9 <= 0.0 || h1_e50 <= 0.0) return;
+
+        // EMA separation gate: crossover must not be marginal
+        const double ema_sep = std::fabs(h1_e9 - h1_e50);
+        if (ema_sep < min_ema_sep_) return;
+
+        // EMA direction must match H1 trend_state
+        const bool ema_long  = (h1_e9 > h1_e50);
+        const bool ema_short = (h1_e9 < h1_e50);
+        if (h1_trend == +1 && !ema_long)  return;
+        if (h1_trend == -1 && !ema_short) return;
+
+        const bool is_long = (h1_trend == +1);
+
+        // Tick drift alignment: block only strongly opposing drift
+        if (is_long  && drift < -cfg_.drift_threshold * 2.0) return;
+        if (!is_long && drift >  cfg_.drift_threshold * 2.0) return;
+
+        // ATR gate: H1 ATR from OHLCBarEngine indicators
+        const double h1_atr = h1bars.ind.atr14.load(std::memory_order_relaxed);
+        if (h1_atr > 0.0 && h1_atr < cfg_.atr_min) return;
+
+        // Session gate: London + NY only (08:00-22:00 UTC)
+        {
+            struct tm ti{}; idx_utc(ti);
+            const int mins = ti.tm_hour * 60 + ti.tm_min;
+            if (mins < 8 * 60 || mins >= 22 * 60) return;
+            // NY open noise: block 13:15-14:00 UTC
+            if (mins >= 13 * 60 + 15 && mins < 14 * 60) return;
+        }
+
+        // Direction-flip cooldown: 4h before entering opposite of last exit
+        if (last_exit_dir_ != 0 && last_exit_dir_ != (is_long ? 1 : -1)) {
+            if (idx_now_ms() - last_exit_ms_ < 14400000LL) return;
+        }
+
+        // ── Open position ─────────────────────────────────────────────────────
+        active_           = true;
+        is_long_          = is_long;
+        entry_            = is_long ? ask : bid;
+        sl_               = is_long ? (entry_ - sl_pts_) : (entry_ + sl_pts_);
+        trail_sl_         = sl_;
+        mfe_              = 0.0;
+        be_locked_        = false;
+        entry_ts_         = idx_now_sec();
+        entry_ms_         = idx_now_ms();
+        h1_e9_at_entry_   = h1_e9;
+        h1_e50_at_entry_  = h1_e50;
+
+        const char* pfx = shadow_mode ? "[ISWING-SHADOW]" : "[ISWING]";
+        printf("%s %s %s entry=%.2f sl=%.2f sl_pts=%.2f ema_sep=%.2f "
+               "h1_trend=%d h4_ready=%d drift=%.3f\n",
+               pfx, symbol_, is_long ? "LONG" : "SHORT",
+               entry_, sl_, sl_pts_, ema_sep,
+               h1_trend, h4_ready ? 1 : 0, drift);
+        fflush(stdout);
+    }
+
+private:
+    static constexpr int64_t SWING_COOLDOWN_MS  = 1800000LL;  // 30min between entries
+    static constexpr int64_t SWING_MAX_HOLD_SEC = 28800LL;    // 8h max hold
+
+    IndexSymbolCfg cfg_;
+    char   symbol_[16]        = {};
+    double sl_pts_             = 8.0;
+    double min_ema_sep_        = 0.5;
+    double pnl_scale_          = 0.5;
+
+    bool    active_            = false;
+    bool    is_long_           = false;
+    double  entry_             = 0.0;
+    double  sl_                = 0.0;
+    double  trail_sl_          = 0.0;
+    double  mfe_               = 0.0;
+    bool    be_locked_         = false;
+    int64_t entry_ts_          = 0;
+    int64_t entry_ms_          = 0;
+    int64_t cooldown_until_ms_ = 0;
+    int     last_exit_dir_     = 0;   // +1=was long, -1=was short
+    int64_t last_exit_ms_      = 0;
+    double  h1_e9_at_entry_    = 0.0;
+    double  h1_e50_at_entry_   = 0.0;
+
+    static int s_trade_id_;
+
+    void _manage(double bid, double ask, double mid, CloseCb& on_close) noexcept {
+        const double move = is_long_ ? (mid - entry_) : (entry_ - mid);
+        if (move > mfe_) mfe_ = move;
+
+        // BE lock at 1x sl_pts_ profit
+        if (!be_locked_ && move >= sl_pts_) {
+            be_locked_ = true;
+            trail_sl_  = entry_;
+            printf("[ISWING-%s] BE-LOCK %s move=%.2f sl->%.2f\n",
+                   symbol_, is_long_ ? "LONG" : "SHORT", move, trail_sl_);
+            fflush(stdout);
+        }
+
+        // Trail at 0.5x sl_pts_ behind MFE once BE locked
+        if (be_locked_) {
+            const double new_sl = is_long_ ? (entry_ + mfe_ - sl_pts_ * 0.5)
+                                           : (entry_ - mfe_ + sl_pts_ * 0.5);
+            if (is_long_  && new_sl > trail_sl_) trail_sl_ = new_sl;
+            if (!is_long_ && new_sl < trail_sl_) trail_sl_ = new_sl;
+        }
+
+        const bool sl_hit  = is_long_ ? (bid <= trail_sl_) : (ask >= trail_sl_);
+        const bool timeout = (idx_now_sec() - entry_ts_ >= SWING_MAX_HOLD_SEC);
+
+        if (!sl_hit && !timeout) return;
+
+        const double exit_px = sl_hit ? trail_sl_ : mid;
+        const char*  why     = sl_hit ? "SL_HIT"  : "TIMEOUT";
+        const double gross   = is_long_ ? (exit_px - entry_) : (entry_ - exit_px);
+
+        const char* pfx = shadow_mode ? "[ISWING-SHADOW]" : "[ISWING]";
+        printf("%s %s CLOSE %s entry=%.2f exit=%.2f pts=%.2f mfe=%.2f why=%s\n",
+               pfx, symbol_, is_long_ ? "LONG" : "SHORT",
+               entry_, exit_px, gross, mfe_, why);
+        fflush(stdout);
+
+        omega::TradeRecord tr;
+        tr.id         = ++s_trade_id_;
+        tr.symbol     = symbol_;
+        tr.side       = is_long_ ? "LONG" : "SHORT";
+        tr.engine     = "IndexSwing";
+        tr.entryPrice = entry_;
+        tr.exitPrice  = exit_px;
+        tr.sl         = trail_sl_;
+        tr.size       = 0.01;
+        tr.pnl        = gross * pnl_scale_;
+        tr.mfe        = mfe_;
+        tr.entryTs    = entry_ts_;
+        tr.exitTs     = idx_now_sec();
+        tr.exitReason = why;
+        tr.regime     = "SWING";
+
+        last_exit_dir_     = is_long_ ? 1 : -1;
+        last_exit_ms_      = idx_now_ms();
+        active_            = false;
+        cooldown_until_ms_ = idx_now_ms() + SWING_COOLDOWN_MS;
+
+        if (on_close) on_close(tr);
+    }
+};
+
+int IndexSwingEngine::s_trade_id_ = 9800;
+
 } // namespace idx
 } // namespace omega
