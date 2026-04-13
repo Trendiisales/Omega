@@ -28,6 +28,20 @@
 //    - CFE_IMB_MIN_HOLD_MS = 20000: IMB_EXIT cannot fire before 20s in trade
 //      Root cause of 8s/37s exits: single-tick imbalance noise fired immediately
 //      after entry. 20s minimum hold eliminates sub-10s exits entirely.
+//
+//  2026-04-13 fixes:
+//    - DFE RSI level gate: block LONG when rsi_cur < 35 (oversold bounce),
+//      block SHORT when rsi_cur > 65 (overbought bounce). Prevents DFE entering
+//      into spent mean-reversion moves that look like trends by slope EMA alone.
+//      Root cause: 08:01 UTC LONG entry at rsi_cur~28 (rsi_trend=9.05) on a
+//      dead-cat bounce at London open. rsi_trend looked bullish but raw RSI said
+//      oversold reversal -- position lost $88 in 16s.
+//    - DFE drift persistence gate: require drift >= threshold for >= 2 consecutive
+//      ticks before DFE arms. Eliminates single-tick London-open spike entries
+//      (drift shot from -0.14 -> +2.11 in one tick, delta=2.25 passed accel gate).
+//    - DFE price-action confirmation: require last 3 mid prices moving in drift
+//      direction. Prevents ghost drift entries where EWM reads bullish but price
+//      is actually dropping.
 // =============================================================================
 
 #pragma once
@@ -66,6 +80,28 @@ static constexpr double  CFE_MAX_LOT           = 0.50;
 static constexpr int     CFE_RSI_PERIOD        = 30;    // tick RSI lookback
 static constexpr int     CFE_RSI_EMA_N         = 10;    // slope EMA smoothing
 static constexpr double  CFE_RSI_THRESH        = 6.0;   // min slope EMA to enter
+
+// RSI LEVEL gates for DFE (2026-04-13):
+// Block DFE LONG when raw RSI < 35 -- oversold bounce territory.
+// Block DFE SHORT when raw RSI > 65 -- overbought bounce territory.
+// These are not for bar-based entries (those already require expansion candle
+// breaking prev high/low). DFE specifically fires on drift before candle close
+// -- without this gate it enters into moves that already spent most of their energy.
+// Evidence: 08:01 UTC LONG rsi_cur~28, rsi_trend=+9.05, lost $88 in 16s.
+static constexpr double  CFE_DFE_RSI_LEVEL_LONG_MIN  = 35.0;  // DFE LONG blocked below this RSI level
+static constexpr double  CFE_DFE_RSI_LEVEL_SHORT_MAX = 65.0;  // DFE SHORT blocked above this RSI level
+
+// DFE drift persistence (2026-04-13):
+// DFE requires drift >= threshold for this many consecutive ticks before arming.
+// Eliminates single-tick London-open spike entries.
+// 2 ticks = ~0.2-0.5s at London open tick rate -- real drift sustains, spikes don't.
+static constexpr int     CFE_DFE_DRIFT_PERSIST_TICKS = 2;
+
+// DFE price-action confirmation (2026-04-13):
+// Last N mid prices must be moving in the drift direction.
+// Prevents entries where EWM drift is bullish but price is actually falling.
+static constexpr int     CFE_DFE_PRICE_CONFIRM_TICKS = 3;    // how many recent ticks to check
+static constexpr double  CFE_DFE_PRICE_CONFIRM_MIN   = 0.05; // min net move in drift direction
 
 // L2 imbalance exit (cTrader depth level-count signal)
 // imbalance = dom.l2_imb converted to -1..+1: (l2_imb - 0.5) * 2
@@ -172,6 +208,12 @@ struct CandleFlowEngine {
         // ── RSI update (unconditional, every tick) ───────────────────────────
         rsi_update(mid);
 
+        // ── Price history update (unconditional, every tick) ─────────────────
+        // Used by DFE price-action confirmation gate.
+        m_recent_mid.push_back(mid);
+        if ((int)m_recent_mid.size() > CFE_DFE_PRICE_CONFIRM_TICKS + 2)
+            m_recent_mid.pop_front();
+
         // ── DOM history ──────────────────────────────────────────────────────
         m_dom_prev = m_dom_cur;
         m_dom_cur  = dom;
@@ -211,6 +253,25 @@ struct CandleFlowEngine {
             const bool     in_asia  = (utc_hour >= 22 || utc_hour < 7);
             m_dfe_eff_thresh = in_asia ? 4.0 : CFE_DFE_DRIFT_THRESH;
         }
+
+        // DFE drift persistence tracking (2026-04-13):
+        // Count consecutive ticks where |drift| >= threshold in same direction.
+        // Reset counter when drift drops below threshold or changes direction.
+        if (std::fabs(ewm_drift) >= m_dfe_eff_thresh) {
+            const int drift_dir = (ewm_drift > 0) ? 1 : -1;
+            if (drift_dir == m_dfe_persist_dir) {
+                m_dfe_persist_ticks++;
+            } else {
+                // Direction changed or first tick above threshold
+                m_dfe_persist_dir   = drift_dir;
+                m_dfe_persist_ticks = 1;
+            }
+        } else {
+            // Drift dropped below threshold -- reset persistence
+            m_dfe_persist_dir   = 0;
+            m_dfe_persist_ticks = 0;
+        }
+
         if (m_rsi_warmed && std::fabs(ewm_drift) >= m_dfe_eff_thresh) {
             const double drift_delta = ewm_drift - m_prev_ewm_drift;
             const bool drift_accel = m_dfe_warmed &&
@@ -218,6 +279,8 @@ struct CandleFlowEngine {
                  (ewm_drift < 0 && drift_delta <= -CFE_DFE_DRIFT_ACCEL));
             m_prev_ewm_drift = ewm_drift; m_dfe_warmed = true;
             const bool dfe_long = (ewm_drift > 0);
+
+            // RSI slope direction + exhaustion gate (unchanged)
             const bool rsi_ok = dfe_long
                 ? (m_rsi_trend > CFE_DFE_RSI_THRESH
                    && m_rsi_trend < CFE_DFE_RSI_TREND_MAX)   // not exhausted
@@ -235,7 +298,75 @@ struct CandleFlowEngine {
                     std::cout.flush();
                 }
             }
-            if (drift_accel && rsi_ok && (now_ms >= m_dfe_cooldown_until)) {
+
+            // RSI LEVEL gate (2026-04-13):
+            // Block DFE LONG when raw RSI is in oversold territory (< 35).
+            // An oversold RSI + positive slope EMA = dead-cat bounce entering late.
+            // Block DFE SHORT when raw RSI is in overbought territory (> 65).
+            // Evidence: 08:01 UTC LONG with rsi_cur~28, rsi_trend=9.05 -> -$88.
+            const bool rsi_level_ok = dfe_long
+                ? (m_rsi_cur >= CFE_DFE_RSI_LEVEL_LONG_MIN)   // LONG: RSI must be >= 35
+                : (m_rsi_cur <= CFE_DFE_RSI_LEVEL_SHORT_MAX);  // SHORT: RSI must be <= 65
+            if (!rsi_level_ok) {
+                static int64_t s_level_log = 0;
+                if (now_ms - s_level_log > 10000) {
+                    s_level_log = now_ms;
+                    std::cout << "[CFE-RSI-LEVEL] DFE blocked rsi_cur="
+                              << std::fixed << std::setprecision(2) << m_rsi_cur
+                              << (dfe_long ? " < min=" : " > max=")
+                              << (dfe_long ? CFE_DFE_RSI_LEVEL_LONG_MIN : CFE_DFE_RSI_LEVEL_SHORT_MAX)
+                              << " drift=" << ewm_drift
+                              << " -- oversold/overbought bounce blocked\n";
+                    std::cout.flush();
+                }
+            }
+
+            // Drift persistence gate (2026-04-13):
+            // Require drift >= threshold for >= 2 consecutive ticks.
+            // Eliminates single-tick London-open spike entries.
+            const bool persist_ok = (m_dfe_persist_ticks >= CFE_DFE_DRIFT_PERSIST_TICKS);
+            if (!persist_ok) {
+                static int64_t s_persist_log = 0;
+                if (now_ms - s_persist_log > 5000) {
+                    s_persist_log = now_ms;
+                    std::cout << "[CFE-DFE-PERSIST] drift=" << std::fixed << std::setprecision(2)
+                              << ewm_drift << " persist_ticks=" << m_dfe_persist_ticks
+                              << " < required=" << CFE_DFE_DRIFT_PERSIST_TICKS
+                              << " -- single-tick spike blocked\n";
+                    std::cout.flush();
+                }
+            }
+
+            // Price-action confirmation gate (2026-04-13):
+            // Last CFE_DFE_PRICE_CONFIRM_TICKS mid prices must be moving in drift direction.
+            // Prevents ghost drift entries where EWM reads bullish but price is falling.
+            bool price_confirms = false;
+            if ((int)m_recent_mid.size() >= CFE_DFE_PRICE_CONFIRM_TICKS) {
+                const double oldest = m_recent_mid[m_recent_mid.size() - CFE_DFE_PRICE_CONFIRM_TICKS];
+                const double net_move = mid - oldest;
+                price_confirms = dfe_long
+                    ? (net_move >= CFE_DFE_PRICE_CONFIRM_MIN)   // LONG: price rising
+                    : (net_move <= -CFE_DFE_PRICE_CONFIRM_MIN);  // SHORT: price falling
+            } else {
+                // Not enough history yet -- don't block (edge case on startup)
+                price_confirms = true;
+            }
+            if (!price_confirms) {
+                static int64_t s_price_log = 0;
+                if (now_ms - s_price_log > 5000) {
+                    s_price_log = now_ms;
+                    const double oldest = (int)m_recent_mid.size() >= CFE_DFE_PRICE_CONFIRM_TICKS
+                        ? m_recent_mid[m_recent_mid.size() - CFE_DFE_PRICE_CONFIRM_TICKS] : mid;
+                    std::cout << "[CFE-DFE-PRICE] drift=" << std::fixed << std::setprecision(2)
+                              << ewm_drift << " but price net=" << (mid - oldest)
+                              << " over " << CFE_DFE_PRICE_CONFIRM_TICKS
+                              << " ticks -- price moving against drift, blocked\n";
+                    std::cout.flush();
+                }
+            }
+
+            if (drift_accel && rsi_ok && rsi_level_ok && persist_ok && price_confirms &&
+                (now_ms >= m_dfe_cooldown_until)) {
                 const double dfe_cost = spread + CFE_COST_SLIPPAGE*2.0 + CFE_COMMISSION_PTS*2.0;
                 if (spread < dfe_cost * CFE_DFE_MIN_SPREAD_MULT) {
                     const double dfe_atr    = (atr_pts > 0.0) ? atr_pts : spread * 5.0;
@@ -259,7 +390,9 @@ struct CandleFlowEngine {
                               << " @ " << std::fixed << std::setprecision(2) << entry_px
                               << " sl=" << sl_px << " drift=" << ewm_drift
                               << " delta=" << drift_delta << " rsi=" << m_rsi_trend
+                              << " rsi_cur=" << m_rsi_cur
                               << " thresh=" << m_dfe_eff_thresh
+                              << " persist=" << m_dfe_persist_ticks
                               << " size=" << std::setprecision(3) << size
                               << (shadow_mode?" [SHADOW]":"") << "\n";
                     std::cout.flush(); return;
@@ -366,6 +499,13 @@ private:
     int64_t m_dfe_cooldown_until = 0;
     bool    m_dfe_warmed         = false;
     double  m_dfe_eff_thresh     = CFE_DFE_DRIFT_THRESH;  // session-adjusted threshold
+
+    // DFE drift persistence state (2026-04-13)
+    int     m_dfe_persist_ticks  = 0;   // consecutive ticks drift >= threshold
+    int     m_dfe_persist_dir    = 0;   // direction of current persistence run (+1/-1/0)
+
+    // DFE price-action confirmation state (2026-04-13)
+    std::deque<double> m_recent_mid;    // ring buffer of recent mid prices
 
     // -------------------------------------------------------------------------
     // RSI slope EMA -- updated every tick unconditionally
