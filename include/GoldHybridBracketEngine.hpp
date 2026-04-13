@@ -225,7 +225,7 @@ public:
 
             const bool is_pyramid = flow_pyramid_ok;
             const double risk     = is_pyramid ? RISK_DOLLARS_PYRAMID : RISK_DOLLARS;
-            const double base_lot = std::max(0.01, std::min(0.50, risk / (sl_dist * USD_PER_PT)));
+            const double base_lot = std::max(0.01, std::min(0.20, risk / (sl_dist * USD_PER_PT)))  // capped 0.50->0.20;
 
             // ── DOM lot sizing ────────────────────────────────────────────────
             double lot_long  = base_lot;
@@ -242,8 +242,8 @@ public:
                 // DOM bonus: clear path on one side gets larger lot
                 const bool slope_long  = (book_slope >  DOM_SLOPE_CONFIRM);
                 const bool slope_short = (book_slope < -DOM_SLOPE_CONFIRM);
-                if (slope_long  || vacuum_ask) lot_long  = std::min(0.50, lot_long  * DOM_LOT_BONUS);
-                if (slope_short || vacuum_bid) lot_short = std::min(0.50, lot_short * DOM_LOT_BONUS);
+                if (slope_long  || vacuum_ask) lot_long  = std::min(0.20, lot_long  * DOM_LOT_BONUS);  // capped 0.50->0.20
+                if (slope_short || vacuum_bid) lot_short = std::min(0.20, lot_short * DOM_LOT_BONUS);  // capped 0.50->0.20
                 // Wall penalty: ceiling blocks TP on that side
                 if (wall_above) lot_long  = std::max(0.01, lot_long  * DOM_WALL_PENALTY);
                 if (wall_below) lot_short = std::max(0.01, lot_short * DOM_WALL_PENALTY);
