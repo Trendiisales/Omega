@@ -323,10 +323,17 @@ static std::atomic<bool>   g_emergency_close(false);  // set by GUI button ? clo
 static CTraderDepthClient  g_ctrader_depth;
 // OHLC bar state -- populated by cTrader trendbar API (M1+M5 history + live bars)
 // Read lock-free by GoldFlow and GoldStack via atomic accessors.
-static SymBarState         g_bars_gold;   // XAUUSD M1/M5 bars + indicators
-static SymBarState         g_bars_sp;     // US500.F M1/M5 bars + indicators
-static SymBarState         g_bars_nq;     // USTEC.F M1/M5 bars + indicators
+static SymBarState         g_bars_gold;   // XAUUSD M1/M5/H1/H4 bars + indicators
+static SymBarState         g_bars_sp;     // US500.F M1/M5/H1 bars + indicators
+static SymBarState         g_bars_nq;     // USTEC.F M1/M5/H1 bars + indicators
 static SymBarState         g_bars_ger;    // GER40   M1/M5 bars + indicators
+// IndexSwingEngine -- H1+H4 swing entries for US500.F and USTEC.F
+// shadow_mode=true always; configured in engine_init.hpp
+// sl_pts / min_ema_sep / pnl_scale per-symbol calibration:
+//   SP: sl_pts=8pt,  min_ema_sep=0.5pt, pnl_scale=0.5 ($50/pt * 0.01lot = $0.50/pt)
+//   NQ: sl_pts=25pt, min_ema_sep=1.5pt, pnl_scale=0.2 ($20/pt * 0.01lot = $0.20/pt)
+static omega::idx::IndexSwingEngine g_iswing_sp("US500.F",  8.0, 0.5, 0.5);
+static omega::idx::IndexSwingEngine g_iswing_nq("USTEC.F", 25.0, 1.5, 0.2);
 static OmegaVolTargeter    g_vol_targeter;   // EWMA vol targeting + momentum regime
 static OmegaSignalScorer   g_signal_scorer;   // Composite signal scoring (13-point system)
 static OmegaCrowdingGuard  g_crowding_guard;  // Directional crowding tracker (RenTec #4)
