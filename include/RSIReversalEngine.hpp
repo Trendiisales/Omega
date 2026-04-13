@@ -133,17 +133,63 @@ public:
             return;
         }
 
-        if (now_s < m_cooldown_until) return;
+        if (now_s < m_cooldown_until) {
+            static int64_t s_cd_log = 0;
+            if (now_s - s_cd_log >= 30) {
+                s_cd_log = now_s;
+                printf("[RSI-REV-BLOCK] cooldown: %llds remaining\n",
+                       (long long)(m_cooldown_until - now_s));
+                fflush(stdout);
+            }
+            return;
+        }
 
-        if (spread > MAX_SPREAD_PTS)        return;
-        if (m_tick_atr < MIN_ATR_PTS)       return;
-        if (m_rsi_count < RSI_PERIOD + 2)   return;
+        // Diagnostic: log gate states every 30s so we can see what is blocking
+        {
+            static int64_t s_diag_log = 0;
+            if (now_s - s_diag_log >= 30) {
+                s_diag_log = now_s;
+                printf("[RSI-REV-DIAG] spread=%.2f(max=%.1f) tick_atr=%.2f(min=%.1f) "
+                       "rsi_count=%d(need=%d) bar_rsi=%.1f bar_rsi_prev=%.1f "
+                       "bar_atr=%.2f(min=%.1f) tick_rsi=%.1f bb_sq=%d\n",
+                       spread, MAX_SPREAD_PTS,
+                       m_tick_atr, MIN_ATR_PTS,
+                       m_rsi_count, RSI_PERIOD + 2,
+                       m_bar_rsi, m_bar_rsi_prev,
+                       m_bar_atr, MIN_BAR_ATR,
+                       m_tick_rsi, (int)m_bb_squeeze);
+                fflush(stdout);
+            }
+        }
+
+        if (spread > MAX_SPREAD_PTS) {
+            static int64_t s_sp_log = 0;
+            if (now_s - s_sp_log >= 30) { s_sp_log = now_s;
+                printf("[RSI-REV-BLOCK] spread=%.2f > max=%.1f\n", spread, MAX_SPREAD_PTS);
+                fflush(stdout); }
+            return;
+        }
+        if (m_tick_atr < MIN_ATR_PTS) {
+            static int64_t s_atr_log = 0;
+            if (now_s - s_atr_log >= 30) { s_atr_log = now_s;
+                printf("[RSI-REV-BLOCK] tick_atr=%.2f < min=%.1f\n", m_tick_atr, MIN_ATR_PTS);
+                fflush(stdout); }
+            return;
+        }
+        if (m_rsi_count < RSI_PERIOD + 2) {
+            static int64_t s_cnt_log = 0;
+            if (now_s - s_cnt_log >= 30) { s_cnt_log = now_s;
+                printf("[RSI-REV-BLOCK] rsi_count=%d < need=%d (warming up)\n",
+                       m_rsi_count, RSI_PERIOD + 2);
+                fflush(stdout); }
+            return;
+        }
 
         // ?? Chop filters -- prevent entries in ranging/coiling markets ??????????
         // Bar ATR gate: M1 true range ATR must show real movement
         if (m_bar_atr > 0.0 && m_bar_atr < MIN_BAR_ATR) {
             static int64_t s_chop_log = 0;
-            if (now_ms/1000 - s_chop_log >= 10) {
+            if (now_ms/1000 - s_chop_log >= 30) {
                 s_chop_log = now_ms/1000;
                 printf("[RSI-REV-BLOCK] chop: bar_atr=%.2f < %.2f\n", m_bar_atr, MIN_BAR_ATR);
                 fflush(stdout);
@@ -153,7 +199,7 @@ public:
         // BB squeeze: price coiling, no direction yet -- wait for breakout
         if (BLOCK_BB_SQUEEZE && m_bb_squeeze) {
             static int64_t s_sq_log = 0;
-            if (now_ms/1000 - s_sq_log >= 10) {
+            if (now_ms/1000 - s_sq_log >= 30) {
                 s_sq_log = now_ms/1000;
                 printf("[RSI-REV-BLOCK] chop: BB_SQUEEZE active\n");
                 fflush(stdout);
@@ -169,7 +215,14 @@ public:
         // RSI was rising  and now turns down -> SHORT
         // Works at ANY RSI level: catches turns at 15, 25, 42, 58, 75, 85
         const double rsi = (m_bar_rsi > 0.0) ? m_bar_rsi : m_tick_rsi;
-        if (rsi <= 0.0 || m_bar_rsi_prev <= 0.0) return;
+        if (rsi <= 0.0 || m_bar_rsi_prev <= 0.0) {
+            static int64_t s_rsi_log = 0;
+            if (now_s - s_rsi_log >= 30) { s_rsi_log = now_s;
+                printf("[RSI-REV-BLOCK] bar_rsi=%.1f bar_rsi_prev=%.1f -- need 2 bar closes\n",
+                       m_bar_rsi, m_bar_rsi_prev);
+                fflush(stdout); }
+            return;
+        }
 
         // Require RSI to have moved MIN_RSI_MOVE pts before reversing
         // prevents entering on 1-2pt noise oscillations
