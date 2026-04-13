@@ -419,8 +419,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_bars_gold.m1 .save_indicators(base + "/bars_gold_m1.dat");
                 g_bars_gold.m5 .save_indicators(base + "/bars_gold_m5.dat");
                 g_bars_gold.m15.save_indicators(base + "/bars_gold_m15.dat");
+                g_bars_gold.h1 .save_indicators(base + "/bars_gold_h1.dat");
                 g_bars_gold.h4 .save_indicators(base + "/bars_gold_h4.dat");
-                printf("[BAR-SAVE] Periodic save -- bars_gold_m1/m5/m15/h4.dat updated\n");
+                // H1 bars for SP/NQ swing engine warm restart
+                g_bars_sp.h1.save_indicators(base + "/bars_sp_h1.dat");
+                g_bars_nq.h1.save_indicators(base + "/bars_nq_h1.dat");
+                printf("[BAR-SAVE] Periodic save -- bars_gold_m1/m5/m15/h1/h4 + sp_h1/nq_h1.dat updated\n");
                 fflush(stdout);
             }
         }
