@@ -75,6 +75,14 @@ static constexpr int     CFE_IMB_EXIT_TICKS    = 2;     // restored to 2: single
 static constexpr int64_t CFE_IMB_MIN_HOLD_MS   = 20000; // IMB_EXIT blocked for first 20s after entry
                                                           // prevents immediate noise exits (8s/37s trades confirmed as noise)
 
+// Drift fast-entry (DFE) -- pre-empts bar-close requirement
+static constexpr double  CFE_DFE_DRIFT_THRESH   = 1.5;   // |ewm_drift| >= 1.5pts to arm
+static constexpr double  CFE_DFE_DRIFT_ACCEL     = 0.2;   // drift must be growing
+static constexpr double  CFE_DFE_RSI_THRESH      = 3.0;   // RSI trend EMA minimum
+static constexpr double  CFE_DFE_SL_MULT         = 0.7;   // SL = 0.7 * ATR (tighter)
+static constexpr int64_t CFE_DFE_COOLDOWN_MS     = 120000; // 120s block after DFE loss
+static constexpr double  CFE_DFE_MIN_SPREAD_MULT = 1.5;   // max spread vs cost
+
 // -----------------------------------------------------------------------------
 struct CandleFlowEngine {
 
@@ -150,7 +158,8 @@ struct CandleFlowEngine {
                  const DOMSnap& dom,
                  int64_t now_ms,
                  double  atr_pts,
-                 CloseCallback on_close) noexcept
+                 CloseCallback on_close,
+                 double ewm_drift = 0.0) noexcept
     {
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
@@ -177,6 +186,51 @@ struct CandleFlowEngine {
         }
 
         // ── IDLE: check for entry ────────────────────────────────────────────
+
+        // ── DRIFT FAST-ENTRY (DFE) ────────────────────────────────────────────────────
+        // Pre-empts bar-close when drift >= 1.5pts and RSI confirms.
+        if (m_rsi_warmed && std::fabs(ewm_drift) >= CFE_DFE_DRIFT_THRESH) {
+            const double drift_delta = ewm_drift - m_prev_ewm_drift;
+            const bool drift_accel = m_dfe_warmed &&
+                ((ewm_drift > 0 && drift_delta >= CFE_DFE_DRIFT_ACCEL) ||
+                 (ewm_drift < 0 && drift_delta <= -CFE_DFE_DRIFT_ACCEL));
+            m_prev_ewm_drift = ewm_drift; m_dfe_warmed = true;
+            const bool dfe_long = (ewm_drift > 0);
+            const bool rsi_ok = dfe_long
+                ? (m_rsi_trend > CFE_DFE_RSI_THRESH)
+                : (m_rsi_trend < -CFE_DFE_RSI_THRESH);
+            if (drift_accel && rsi_ok && (now_ms >= m_dfe_cooldown_until)) {
+                const double dfe_cost = spread + CFE_COST_SLIPPAGE*2.0 + CFE_COMMISSION_PTS*2.0;
+                if (spread < dfe_cost * CFE_DFE_MIN_SPREAD_MULT) {
+                    const double dfe_atr    = (atr_pts > 0.0) ? atr_pts : spread * 5.0;
+                    const double dfe_sl_pts = dfe_atr * CFE_DFE_SL_MULT;
+                    const double entry_px   = dfe_long ? ask : bid;
+                    const double sl_px      = dfe_long
+                        ? (entry_px - dfe_sl_pts) : (entry_px + dfe_sl_pts);
+                    double size = risk_dollars / (dfe_sl_pts * 100.0);
+                    size = std::floor(size/0.001)*0.001;
+                    size = std::max(CFE_MIN_LOT, std::min(CFE_MAX_LOT, size));
+                    pos.active=true; pos.is_long=dfe_long; pos.entry=entry_px;
+                    pos.sl=sl_px; pos.size=size; pos.full_size=size;
+                    pos.cost_pts=dfe_cost; pos.entry_ts_ms=now_ms;
+                    pos.mfe=0.0; pos.trail_active=false; pos.trail_sl=sl_px;
+                    pos.partial_done=false; pos.atr_pts=dfe_atr;
+                    ++m_trade_id; phase=Phase::LIVE;
+                    m_imb_against_ticks=0;
+                    m_prev_depth_bid=m_dom_cur.bid_count;
+                    m_prev_depth_ask=m_dom_cur.ask_count;
+                    std::cout << "[CFE] DRIFT-ENTRY " << (dfe_long?"LONG":"SHORT")
+                              << " @ " << std::fixed << std::setprecision(2) << entry_px
+                              << " sl=" << sl_px << " drift=" << ewm_drift
+                              << " delta=" << drift_delta << " rsi=" << m_rsi_trend
+                              << " size=" << std::setprecision(3) << size
+                              << (shadow_mode?" [SHADOW]":"") << "\n";
+                    std::cout.flush(); return;
+                }
+            }
+        } else { m_prev_ewm_drift=ewm_drift; m_dfe_warmed=true; }
+
+        // ── Standard bar-based entry ───────────────────────────────────────────────
         if (!bar.valid) return;
         if (!m_rsi_warmed) return;
 
@@ -269,6 +323,11 @@ private:
     int m_imb_against_ticks = 0;   // consecutive ticks imb is against position
     int m_prev_depth_bid    = 0;
     int m_prev_depth_ask    = 0;
+
+    // Drift fast-entry state
+    double  m_prev_ewm_drift     = 0.0;
+    int64_t m_dfe_cooldown_until = 0;
+    bool    m_dfe_warmed         = false;
 
     // -------------------------------------------------------------------------
     // RSI slope EMA -- updated every tick unconditionally
@@ -571,6 +630,8 @@ private:
         m_cooldown_ms = (strcmp(reason,"IMB_EXIT")   == 0) ? 5000
                       : (strcmp(reason,"STAGNATION") == 0) ? 10000
                       :                                       15000;
+        if (strcmp(reason,"SL_HIT")==0||strcmp(reason,"TRAIL_SL")==0)
+            m_dfe_cooldown_until = now_ms + CFE_DFE_COOLDOWN_MS;
         m_imb_against_ticks = 0;
 
         if (on_close) on_close(tr);
