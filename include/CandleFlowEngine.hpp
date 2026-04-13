@@ -74,7 +74,11 @@ static constexpr int64_t CFE_STAGNATION_MS     = 90000;  // Asia default -- Lond
 static constexpr double  CFE_STAGNATION_MULT   = 1.0;   // exit if mfe < cost*1.0
 static constexpr double  CFE_RISK_DOLLARS      = 30.0;
 static constexpr double  CFE_MIN_LOT           = 0.01;
-static constexpr double  CFE_MAX_LOT           = 0.50;
+// MAX_LOT reduced from 0.50 to 0.20: at $30 risk and 2pt floor ATR,
+// correct size = 30/(1.4*100) = 0.214 lots. 0.20 is a hard safety ceiling
+// so even if ATR computation goes wrong again, damage is capped.
+// 0.50 lots was 3x the correct size and caused $111 loss on a stale ATR tick.
+static constexpr double  CFE_MAX_LOT           = 0.20;
 
 // RSI trend (entry direction signal)
 static constexpr int     CFE_RSI_PERIOD        = 30;    // tick RSI lookback
