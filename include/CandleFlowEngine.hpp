@@ -975,6 +975,29 @@ private:
             return;
         }
 
+        // Early-adverse exit in Asia (22:00-07:00 UTC):
+        // If price moves > 0.5x ATR against us within first 60s AND MFE=0,
+        // the entry was wrong -- exit immediately rather than waiting 90s stagnation.
+        // Evidence: 04:26 -$27 and 04:47 -$0.60 both stagnated in Asia chop.
+        // Fast adverse exit cuts the loss before it compounds.
+        {
+            const int64_t utc_sec_ae   = now_ms / 1000LL;
+            const int     utc_hour_ae  = static_cast<int>((utc_sec_ae % 86400LL) / 3600LL);
+            const bool    in_asia_ae   = (utc_hour_ae >= 22 || utc_hour_ae < 7);
+            if (in_asia_ae && !pos.trail_active && pos.mfe <= 0.0) {
+                const double adverse    = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+                const double atr_thresh = pos.atr_pts * 0.5;
+                if (adverse > atr_thresh && hold_ms > 30000) {
+                    const double px = pos.is_long ? bid : ask;
+                    printf("[CFE-ASIA-ADVERSE] Early exit: adverse=%.2f > %.2f (0.5xATR) hold=%lldms\n",
+                           adverse, atr_thresh, (long long)hold_ms);
+                    fflush(stdout);
+                    close_pos(px, "STAGNATION", now_ms, on_close);
+                    return;
+                }
+            }
+        }
+
         // Stagnation safety exit
         // Stagnation exit -- cut losers, protect winners.
         //
@@ -1091,6 +1114,7 @@ private:
 };
 
 } // namespace omega
+
 
 
 
