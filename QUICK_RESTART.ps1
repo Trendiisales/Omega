@@ -22,6 +22,50 @@ Write-Host "   OMEGA  |  QUICK RESTART" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 
 $modeMatch = Select-String -Path $ConfigSrc -Pattern "^mode\s*=\s*(\S+)" -ErrorAction SilentlyContinue
+
+# ==============================================================================
+# PRE-CHECK: Warn if CandleFlow position is open
+# A restart force-closes any open CFE position at current market price.
+# Three FC losses today ($59 + $64 + $57 = $180) were all caused by restarting
+# while a CFE position was open. This check prevents that.
+# ==============================================================================
+$logFile = "$OmegaDir\logs\omega_service_stdout.log"
+if (Test-Path $logFile) {
+    $tail = Get-Content $logFile -Tail 1000
+    $lastEntry = ($tail | Select-String "\[CFE\] ENTRY") | Select-Object -Last 1
+    $lastExit  = ($tail | Select-String "\[CFE\] EXIT")  | Select-Object -Last 1
+    $cfeOpen = $false
+    if ($lastEntry) {
+        if (-not $lastExit) {
+            $cfeOpen = $true
+        } elseif ($lastEntry.LineNumber -gt $lastExit.LineNumber) {
+            $cfeOpen = $true
+        }
+    }
+    if ($cfeOpen) {
+        Write-Host ""
+        Write-Host "╔══════════════════════════════════════════════════════════╗" -ForegroundColor Red
+        Write-Host "║  WARNING: CandleFlow position is OPEN                    ║" -ForegroundColor Red
+        Write-Host "║  Restarting now will FORCE CLOSE at current market price ║" -ForegroundColor Red
+        Write-Host "╚══════════════════════════════════════════════════════════╝" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  Last entry:" -ForegroundColor Yellow
+        Write-Host "  $($lastEntry.Line)" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Type YES to force-restart anyway (will take the loss): " -ForegroundColor Red -NoNewline
+        $confirm = Read-Host
+        if ($confirm -ne "YES") {
+            Write-Host ""
+            Write-Host "  Restart cancelled. Wait for position to close then retry." -ForegroundColor Green
+            Write-Host ""
+            exit 0
+        }
+        Write-Host "  Proceeding with restart..." -ForegroundColor Red
+        Write-Host ""
+    } else {
+        Write-Host "  [OK] No open CandleFlow position detected" -ForegroundColor Green
+    }
+}
 $mode = if ($modeMatch) { $modeMatch.Matches[0].Groups[1].Value } else { "UNKNOWN" }
 $modeColor = if ($mode -eq "LIVE") { "Red" } elseif ($mode -eq "SHADOW") { "Yellow" } else { "Cyan" }
 Write-Host "  Mode: $mode" -ForegroundColor $modeColor
