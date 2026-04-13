@@ -3710,29 +3710,60 @@ static void on_tick_gold(
                 cfe_bar.prev_low  = pb.low;
                 cfe_bar.valid     = (lb.close > 0.0 && lb.high > lb.low);
             } else {
-                // PATH B: bars_ empty after load_indicators() from disk.
-                // Use GoldFlow ATR (always warm after disk load) and GoldStack
-                // EWM values for price context -- both available in tick_gold scope.
-                // VWAP from GoldStack = session fair value = prev high/low proxy.
+                // PATH B: m1_ready=true but bar_count < 2 (load_indicators restored
+                // indicators only, no bar history). Build from loaded EMA indicators.
+                // Use EMA9 as open proxy, current mid as close.
+                // EMA9 loaded from disk is session-relevant (prior close direction).
                 const double cur_mid  = (bid + ask) * 0.5;
                 const double cfe_atr  = g_gold_flow.current_atr();
-                const double vwap     = g_gold_stack.vwap();
-                // EWM drift tells us where price has been: positive = above vwap
-                const double ewm_drift = g_gold_stack.ewm_drift();
-                if (cfe_atr > 0.0 && vwap > 0.0) {
-                    // Reconstruct directional bar: open = VWAP (session anchor),
-                    // close = current mid. Drift direction gives open/close ordering.
-                    cfe_bar.open      = vwap;
+                const double b_ema9   = g_bars_gold.m1.ind.ema9.load(std::memory_order_relaxed);
+                const double b_ema50  = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
+                if (cfe_atr > 0.0 && b_ema9 > 0.0) {
+                    cfe_bar.open      = b_ema9;    // EMA9 = recent price anchor
                     cfe_bar.close     = cur_mid;
-                    cfe_bar.high      = std::max(vwap, cur_mid) + cfe_atr * 0.1;
-                    cfe_bar.low       = std::min(vwap, cur_mid) - cfe_atr * 0.1;
-                    // prev_high/low = VWAP +/- 0.5*ATR (session range proxy)
-                    cfe_bar.prev_high = vwap + cfe_atr * 0.5;
-                    cfe_bar.prev_low  = vwap - cfe_atr * 0.5;
-                    cfe_bar.valid     = (cfe_atr > 0.0);
-                    (void)ewm_drift;
+                    cfe_bar.high      = std::max(b_ema9, cur_mid) + cfe_atr * 0.1;
+                    cfe_bar.low       = std::min(b_ema9, cur_mid) - cfe_atr * 0.1;
+                    // prev_high/low = EMA50 +/- 0.5*ATR (longer-term range proxy)
+                    const double anchor = (b_ema50 > 0.0) ? b_ema50 : b_ema9;
+                    cfe_bar.prev_high = anchor + cfe_atr * 0.5;
+                    cfe_bar.prev_low  = anchor - cfe_atr * 0.5;
+                    cfe_bar.valid     = true;
                 }
             }
+        } else {
+            // PATH C: m1_ready=false AND bars permanently unavailable.
+            // VWAP is frozen (unreliable). Use tick RSI direction from
+            // CandleFlowEngine itself -- it computes tick RSI every tick
+            // unconditionally, regardless of bar state.
+            // Direction: tick RSI trend > CFE_RSI_THRESH = bullish, < -thresh = bearish.
+            // This allows CFE to fire on strong momentum moves even with no M1 bars.
+            // Safety: CFE's own RSI gate (rsi_direction()) still applies internally.
+            static bool s_bars_unavail_warned = false;
+            if (!s_bars_unavail_warned) {
+                s_bars_unavail_warned = true;
+                std::cout << "[CFE-PATH-C] M1 bars permanently unavailable -- "
+                          << "using tick RSI direction for bar snap\n";
+                std::cout.flush();
+            }
+            const double cur_mid = (bid + ask) * 0.5;
+            const double cfe_atr = g_gold_flow.current_atr();
+            // Reconstruct bar from tick price movement over last ATR window.
+            // Use EWM drift direction as open/close proxy -- drift is always live.
+            const double drift_now = g_gold_stack.ewm_drift();
+            if (cfe_atr > 0.0 && std::fabs(drift_now) > 0.1) {
+                // Synthetic bar: open = mid - drift, close = mid
+                // Body direction matches drift (drift>0 = bullish bar)
+                const double cfe_open_c = cur_mid - drift_now * 0.3;  // scaled: 30% of drift
+                cfe_bar.open      = cfe_open_c;
+                cfe_bar.close     = cur_mid;
+                cfe_bar.high      = std::max(cfe_open_c, cur_mid) + cfe_atr * 0.1;
+                cfe_bar.low       = std::min(cfe_open_c, cur_mid) - cfe_atr * 0.1;
+                // prev levels: ATR range back from current
+                cfe_bar.prev_high = cur_mid + cfe_atr * 0.3;
+                cfe_bar.prev_low  = cur_mid - cfe_atr * 0.3;
+                cfe_bar.valid     = true;
+            }
+        }
         }
 
         if (cfe_bar.valid) {
