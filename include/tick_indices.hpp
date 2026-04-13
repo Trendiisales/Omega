@@ -50,6 +50,13 @@ static void on_tick_us500(
         if (s_sp5_start == 0) { s_sp5 = {b5/60000LL,sp_mid,sp_mid,sp_mid,sp_mid}; s_sp5_start = b5; }
         else if (b5 != s_sp5_start) { g_bars_sp.m5.add_bar(s_sp5); s_sp5 = {b5/60000LL,sp_mid,sp_mid,sp_mid,sp_mid}; s_sp5_start = b5; }
         else { if(sp_mid>s_sp5.high)s_sp5.high=sp_mid; if(sp_mid<s_sp5.low)s_sp5.low=sp_mid; s_sp5.close=sp_mid; }
+        // H1 -- HTF swing context for IndexSwingEngine
+        static OHLCBar s_sph1{};
+        static int64_t s_sph1_start = 0;
+        const int64_t bh1_s = (now_ms_s / 3600000LL) * 3600000LL;
+        if (s_sph1_start == 0) { s_sph1 = {bh1_s/60000LL,sp_mid,sp_mid,sp_mid,sp_mid}; s_sph1_start = bh1_s; }
+        else if (bh1_s != s_sph1_start) { g_bars_sp.h1.add_bar(s_sph1); s_sph1 = {bh1_s/60000LL,sp_mid,sp_mid,sp_mid,sp_mid}; s_sph1_start = bh1_s; }
+        else { if(sp_mid>s_sph1.high)s_sph1.high=sp_mid; if(sp_mid<s_sph1.low)s_sph1.low=sp_mid; s_sph1.close=sp_mid; }
     }
     const bool base_can_sp = symbol_gate("US500.F",
         g_eng_sp.pos.active          ||
@@ -316,6 +323,17 @@ static void on_tick_us500(
             }
         }
     }
+    // ?? IndexSwingEngine -- US500.F H1+H4 swing entries (shadow mode) ????????
+    {
+        auto swing_sp_cb = [&](const omega::TradeRecord& tr) {
+            g_trade_ledger.record(tr);
+            printf("[ISWING-CB] US500.F %s pnl=%.2f why=%s\n",
+                   tr.side.c_str(), tr.pnl, tr.exitReason.c_str());
+            fflush(stdout);
+        };
+        g_iswing_sp.on_tick(bid, ask, g_bars_sp.h1, g_bars_sp.h4,
+                            g_iflow_sp.drift(), swing_sp_cb);
+    }
 }
 
 // ── USTEC.F ────────────────────────────────────────────────
@@ -340,6 +358,13 @@ static void on_tick_ustec(
         if (s_nq5_start == 0) { s_nq5 = {b5/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq5_start = b5; }
         else if (b5 != s_nq5_start) { g_bars_nq.m5.add_bar(s_nq5); s_nq5 = {b5/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq5_start = b5; }
         else { if(nq_mid>s_nq5.high)s_nq5.high=nq_mid; if(nq_mid<s_nq5.low)s_nq5.low=nq_mid; s_nq5.close=nq_mid; }
+        // H1 -- HTF swing context for IndexSwingEngine
+        static OHLCBar s_nqh1{};
+        static int64_t s_nqh1_start = 0;
+        const int64_t bh1_n = (now_ms_n / 3600000LL) * 3600000LL;
+        if (s_nqh1_start == 0) { s_nqh1 = {bh1_n/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nqh1_start = bh1_n; }
+        else if (bh1_n != s_nqh1_start) { g_bars_nq.h1.add_bar(s_nqh1); s_nqh1 = {bh1_n/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nqh1_start = bh1_n; }
+        else { if(nq_mid>s_nqh1.high)s_nqh1.high=nq_mid; if(nq_mid<s_nqh1.low)s_nqh1.low=nq_mid; s_nqh1.close=nq_mid; }
     }
     const bool base_can_nq = symbol_gate("USTEC.F",
         g_eng_nq.pos.active                  ||
@@ -883,5 +908,16 @@ static void on_tick_nas100(
                 else g_iflow_nas.patch_size(g_last_directional_lot);
             }
         }
+    }
+    // ?? IndexSwingEngine -- USTEC.F H1+H4 swing entries (shadow mode) ?????????
+    {
+        auto swing_nq_cb = [&](const omega::TradeRecord& tr) {
+            g_trade_ledger.record(tr);
+            printf("[ISWING-CB] USTEC.F %s pnl=%.2f why=%s\n",
+                   tr.side.c_str(), tr.pnl, tr.exitReason.c_str());
+            fflush(stdout);
+        };
+        g_iswing_nq.on_tick(bid, ask, g_bars_nq.h1, g_bars_nq.h4,
+                            g_iflow_nq.drift(), swing_nq_cb);
     }
 }
