@@ -255,21 +255,31 @@ struct CandleFlowEngine {
         // ── DRIFT FAST-ENTRY (DFE) ────────────────────────────────────────────────────
         // Pre-empts bar-close when drift >= threshold and RSI confirms.
         //
-        // SESSION-AWARE THRESHOLD (2026-04-13):
-        //   Asia (22:00-07:00 UTC): drift must be >= 4.0pt before DFE arms.
+        // SESSION-AWARE + ATR-NORMALISED THRESHOLD (2026-04-13, updated):
+        //   Asia (22:00-07:00 UTC): drift must be >= max(4.0, atr * 0.40).
         //     Rationale: Asia ewm_drift oscillates on thin liquidity. A 1.5pt
         //     reading at 02:00 UTC is noise -- the same reading at 09:00 UTC
         //     London is a real signal. Two consecutive bad DFE trades in Asia
         //     (01:40 LONG -$59, 01:59 SHORT -$29) both fired on sub-2pt drift.
         //     4.0pt requires a genuine sustained directional move, not a bounce.
-        //   London/NY (07:00-22:00 UTC): normal 1.5pt threshold applies.
+        //     ATR-normalised: max(4.0, atr*0.40) -- on a 12pt crash day Asia
+        //     threshold rises to 4.8pt, further protecting against noise entries.
+        //   London/NY (07:00-22:00 UTC): max(CFE_DFE_DRIFT_THRESH, atr * 0.30).
+        //     On a 5pt ATR day  : max(1.5, 1.5) = 1.5pt (unchanged).
+        //     On a 10pt ATR day : max(1.5, 3.0) = 3.0pt (volatile session).
+        //     On a 12pt ATR day : max(1.5, 3.6) = 3.6pt (crash/spike day).
+        //     Prevents DFE firing on normal drift during high-vol sessions.
+        //     atr_safe fallback = 5.0pt when ATR not yet warmed (first few ticks).
         //
         // UTC hour derived from now_ms -- no external dependency needed.
         {
             const int64_t utc_sec  = now_ms / 1000LL;
             const int      utc_hour = static_cast<int>((utc_sec % 86400LL) / 3600LL);
             const bool     in_asia  = (utc_hour >= 22 || utc_hour < 7);
-            m_dfe_eff_thresh = in_asia ? 4.0 : CFE_DFE_DRIFT_THRESH;
+            const double   atr_safe = (atr_pts > 0.0) ? atr_pts : 5.0;
+            m_dfe_eff_thresh = in_asia
+                ? std::max(4.0,                  atr_safe * 0.40)
+                : std::max(CFE_DFE_DRIFT_THRESH, atr_safe * 0.30);
         }
 
         // DFE drift persistence tracking (2026-04-13):
