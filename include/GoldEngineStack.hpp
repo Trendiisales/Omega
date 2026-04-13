@@ -4607,7 +4607,7 @@ public:
                 // On today's -87pt trend day it fired 3 LONG fades against the trend.
                 // Now receives the same governor drift as MeanReversion.
                 static_cast<VWAPStretchReversionEngine*>(e.get())->set_ewm_drift(governor_.ewm_drift());
-                static_cast<VWAPStretchReversionEngine*>(e.get())->set_ema_trend(ema9_live_, ema50_live_);
+                // set_ema_trend wired from tick_gold.hpp where M1 EMA indicators are live
             } else if (nm == "NR3Breakout") {
                 static_cast<NR3BreakoutEngine*>(e.get())->set_vol_ratio(cur_vol_ratio);
             }
@@ -4708,6 +4708,17 @@ public:
     // classified as MEAN_REVERSION due to lag in CONFIRM_TICKS.
     double ewm_drift()                              const { return governor_.ewm_drift(); }
     bool   is_drift_trending(double l2_imb = 0.5)  const { return governor_.is_drift_trending(l2_imb); }
+    // Inject M1 EMA9/EMA50 into VWAPStretchReversion engine.
+    // Called from tick_gold.hpp after g_bars_gold.m1 indicators are updated.
+    // GoldSnapshot has no EMA fields -- M1 EMAs only available in tick_gold context.
+    void set_vwap_stretch_ema(double ema9, double ema50) {
+        for (auto& e : engines_) {
+            if (e->getName() == "VWAPStretchReversion") {
+                static_cast<VWAPStretchReversionEngine*>(e.get())->set_ema_trend(ema9, ema50);
+                break;
+            }
+        }
+    }
     // Reset stale EWM drift after a confirmed price reversal.
     // Called from main.cpp when GoldFlow closes and price immediately moves
     // >= reversal_pts in the opposite direction. Snaps ewm_slow toward
@@ -5112,5 +5123,6 @@ private:
 
 } // namespace gold
 } // namespace omega
+
 
 
