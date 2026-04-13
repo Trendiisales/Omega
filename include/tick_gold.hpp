@@ -3764,7 +3764,6 @@ static void on_tick_gold(
                 cfe_bar.valid     = true;
             }
         }
-        }
 
         if (cfe_bar.valid) {
             // Build DOM snapshot
