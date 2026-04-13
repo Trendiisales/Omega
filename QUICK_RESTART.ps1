@@ -188,10 +188,18 @@ if (-not (Test-Path $BuildExe)) {
     exit 1
 }
 
-# Copy binary -- retry if locked
+# Copy binary -- retry if locked, FATAL if all retries fail
+$copyOk = $false
 for ($i = 0; $i -lt 5; $i++) {
-    try { Copy-Item $BuildExe $OmegaExe -Force -ErrorAction Stop; break }
-    catch { Start-Sleep -Seconds 2 }
+    try { Copy-Item $BuildExe $OmegaExe -Force -ErrorAction Stop; $copyOk = $true; break }
+    catch {
+        Write-Host "  [WARN] Copy attempt $($i+1) failed (locked?): $_" -ForegroundColor Yellow
+        Start-Sleep -Seconds 2
+    }
+}
+if (-not $copyOk) {
+    Write-Host "  [FATAL] Could not copy new Omega.exe after 5 attempts -- old binary still on disk. Aborting." -ForegroundColor Red
+    exit 1
 }
 
 $builtAt = (Get-Item $OmegaExe).LastWriteTime.ToUniversalTime().ToString("HH:mm:ss UTC")
@@ -218,34 +226,41 @@ Write-Host ""
 $proc = Start-Process -FilePath $OmegaExe -ArgumentList "omega_config.ini" -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
 Write-Host "  [DIRECT] PID $($proc.Id)" -ForegroundColor Green
 
-# Hard verify: running Omega.exe must have same timestamp as newly built EXE
+# Hard verify: use Get-CimInstance to get the real on-disk path of the running process.
+# Get-Process .Path is unreliable on Windows -- returns null for processes launched
+# without admin or under certain session contexts, causing the try/catch to swallow
+# the failure and print a green OK when the old binary is still running.
+# Get-CimInstance Win32_Process always returns ExecutablePath reliably.
 Start-Sleep -Seconds 5
 $runningProc = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
 if (-not $runningProc) {
     Write-Host "  [FATAL] Omega.exe not running after launch!" -ForegroundColor Red
     exit 1
 }
-try {
-    $runningExePath = $runningProc | Select-Object -First 1 | ForEach-Object { $_.Path }
-    $runningExeTime = (Get-Item $runningExePath -ErrorAction Stop).LastWriteTimeUtc
-    $builtExeTime   = (Get-Item $OmegaExe -ErrorAction Stop).LastWriteTimeUtc
-    $diffSec = [math]::Abs(($runningExeTime - $builtExeTime).TotalSeconds)
-    if ($diffSec -gt 10) {
-        Write-Host "" -ForegroundColor Red
-        Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
-        Write-Host "  ║  WRONG BINARY RUNNING -- ABORTING                ║" -ForegroundColor Red
-        Write-Host "  ║  Running EXE: $runningExePath" -ForegroundColor Red
-        Write-Host "  ║  Running built: $($runningExeTime.ToString('HH:mm:ss')) UTC" -ForegroundColor Red
-        Write-Host "  ║  Expected:      $($builtExeTime.ToString('HH:mm:ss')) UTC" -ForegroundColor Red
-        Write-Host "  ║  Diff: ${diffSec}s -- old binary still running!" -ForegroundColor Red
-        Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
-        Write-Host "  Kill PID $($runningProc.Id) manually and re-run QUICK_RESTART.ps1" -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "  [OK] Running EXE timestamp matches built EXE (+${diffSec}s)" -ForegroundColor Green
-} catch {
-    Write-Host "  [WARN] Could not verify running EXE path: $_" -ForegroundColor Yellow
+$runningPid  = ($runningProc | Select-Object -First 1).Id
+$cimProc     = Get-CimInstance Win32_Process -Filter "ProcessId = $runningPid" -ErrorAction SilentlyContinue
+if (-not $cimProc -or [string]::IsNullOrEmpty($cimProc.ExecutablePath)) {
+    Write-Host "  [FATAL] Cannot determine path of running Omega.exe (PID $runningPid) via CimInstance. Aborting." -ForegroundColor Red
+    Write-Host "  Kill PID $runningPid manually and re-run QUICK_RESTART.ps1" -ForegroundColor Red
+    exit 1
 }
+$runningExePath = $cimProc.ExecutablePath
+$runningExeTime = (Get-Item $runningExePath -ErrorAction Stop).LastWriteTimeUtc
+$builtExeTime   = (Get-Item $OmegaExe -ErrorAction Stop).LastWriteTimeUtc
+$diffSec = [math]::Abs(($runningExeTime - $builtExeTime).TotalSeconds)
+if ($diffSec -gt 10) {
+    Write-Host "" -ForegroundColor Red
+    Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
+    Write-Host "  ║  WRONG BINARY RUNNING -- ABORTING                ║" -ForegroundColor Red
+    Write-Host "  ║  Running EXE : $runningExePath" -ForegroundColor Red
+    Write-Host "  ║  Running built: $($runningExeTime.ToString('HH:mm:ss')) UTC" -ForegroundColor Red
+    Write-Host "  ║  Expected     : $($builtExeTime.ToString('HH:mm:ss')) UTC" -ForegroundColor Red
+    Write-Host "  ║  Diff: ${diffSec}s -- old binary still running!" -ForegroundColor Red
+    Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host "  Kill PID $runningPid manually and re-run QUICK_RESTART.ps1" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  [OK] Running EXE timestamp matches built EXE (+${diffSec}s) -- correct binary confirmed" -ForegroundColor Green
 
 if (-not $SkipVerify) {
     Write-Host ""
@@ -260,3 +275,4 @@ Write-Host "=======================================================" -Foreground
 Write-Host ("  DONE: {0:mm}m {0:ss}s" -f $elapsed) -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
+
