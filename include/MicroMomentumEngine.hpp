@@ -126,7 +126,8 @@ public:
                  bool   wall_above,
                  bool   wall_below,
                  bool   l2_real,
-                 CloseCallback on_close) noexcept
+                 CloseCallback on_close,
+                 double ewm_drift = 0.0) noexcept
     {
         if (!enabled) return;
         if (bid <= 0.0 || ask <= 0.0) return;
@@ -228,7 +229,36 @@ public:
         if (l2_real) {
             if (rsi_long) {
                 // Don't fight ask-heavy book
-                if (l2_imbalance < L2_LONG_MIN) {
+                // EWM drift counter-trend gate (2026-04-13):
+        // MicroMomentum is a fast momentum scalp -- it should ride momentum, not fight trends.
+        // Block LONG when drift strongly negative (>2.5pt below zero = confirmed downtrend).
+        // Block SHORT when drift strongly positive (>2.5pt above zero = confirmed uptrend).
+        // Same threshold as RSIReversal -- calibrated to filter trend days without blocking
+        // normal oscillation in ranging markets.
+        if (ewm_drift != 0.0) {
+            if (rsi_long  && ewm_drift < -2.5) {
+                static int64_t s_mm_drift_log = 0;
+                if (now_ms/1000 - s_mm_drift_log >= 10) {
+                    s_mm_drift_log = now_ms/1000;
+                    printf("[MM-BLOCK] LONG blocked: ewm_drift=%.2f < -2.5 (downtrend)\n",
+                           ewm_drift);
+                    fflush(stdout);
+                }
+                return;
+            }
+            if (rsi_short && ewm_drift > 2.5) {
+                static int64_t s_mm_drift_log2 = 0;
+                if (now_ms/1000 - s_mm_drift_log2 >= 10) {
+                    s_mm_drift_log2 = now_ms/1000;
+                    printf("[MM-BLOCK] SHORT blocked: ewm_drift=%.2f > 2.5 (uptrend)\n",
+                           ewm_drift);
+                    fflush(stdout);
+                }
+                return;
+            }
+        }
+
+        if (l2_imbalance < L2_LONG_MIN) {
                     _log_block(now_s, rsi_now, rsi_delta, mid - m_anchor, spread,
                                l2_imbalance, "L2_ASK_HEAVY", 0.0, false, false);
                     return;
