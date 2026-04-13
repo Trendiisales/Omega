@@ -1139,9 +1139,24 @@ public:
         // be valid at London open (07:00 UTC next day = 9 hours later). With 4h
         // limit the file was rejected every morning, forcing a cold tick-data
         // request that times out -> m1_ready=false all session -> bars never seed.
-        if (saved_ts <= 0 || saved_ts > now_ts || age > 24 * 3600 || e9 <= 0 || e50 <= 0) {
+        // Corruption check: zero/negative timestamp or future timestamp = file is corrupt.
+        // Delete corrupt files only -- never delete on age or missing EMAs.
+        // Root cause: deleting on e9<=0 meant any session where bars never fully seeded
+        // (EMAs cold) would destroy the file, forcing cold start every subsequent restart.
+        // Widened age limit 24h->36h: bars saved at NY close (22:00 UTC) must survive
+        // through London open (07:00 UTC) + a missed session = 33h max gap.
+        const bool corrupt = (saved_ts <= 0 || saved_ts > now_ts);
+        const bool too_old = (age > 36 * 3600);
+        const bool no_emas = (e9 <= 0 || e50 <= 0);
+        if (corrupt) {
             remove(path.c_str());
-            printf("[OHLC] Bar state rejected (age=%llds e9=%.2f e50=%.2f) -- cold start\n",
+            printf("[OHLC] Bar state CORRUPT (saved_ts=%lld) -- deleted, cold start\n", saved_ts);
+            return false;
+        }
+        if (too_old || no_emas) {
+            // Keep the file -- do not delete. On next restart it may be valid again,
+            // or it may be overwritten by a successful save. Deleting causes cold start.
+            printf("[OHLC] Bar state SKIPPED (age=%llds e9=%.2f e50=%.2f) -- cold start, file kept\n",
                    age, e9, e50);
             return false;
         }
