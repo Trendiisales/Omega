@@ -188,8 +188,25 @@ struct CandleFlowEngine {
         // ── IDLE: check for entry ────────────────────────────────────────────
 
         // ── DRIFT FAST-ENTRY (DFE) ────────────────────────────────────────────────────
-        // Pre-empts bar-close when drift >= 1.5pts and RSI confirms.
-        if (m_rsi_warmed && std::fabs(ewm_drift) >= CFE_DFE_DRIFT_THRESH) {
+        // Pre-empts bar-close when drift >= threshold and RSI confirms.
+        //
+        // SESSION-AWARE THRESHOLD (2026-04-13):
+        //   Asia (22:00-07:00 UTC): drift must be >= 4.0pt before DFE arms.
+        //     Rationale: Asia ewm_drift oscillates on thin liquidity. A 1.5pt
+        //     reading at 02:00 UTC is noise -- the same reading at 09:00 UTC
+        //     London is a real signal. Two consecutive bad DFE trades in Asia
+        //     (01:40 LONG -$59, 01:59 SHORT -$29) both fired on sub-2pt drift.
+        //     4.0pt requires a genuine sustained directional move, not a bounce.
+        //   London/NY (07:00-22:00 UTC): normal 1.5pt threshold applies.
+        //
+        // UTC hour derived from now_ms -- no external dependency needed.
+        {
+            const int64_t utc_sec  = now_ms / 1000LL;
+            const int      utc_hour = static_cast<int>((utc_sec % 86400LL) / 3600LL);
+            const bool     in_asia  = (utc_hour >= 22 || utc_hour < 7);
+            m_dfe_eff_thresh = in_asia ? 4.0 : CFE_DFE_DRIFT_THRESH;
+        }
+        if (m_rsi_warmed && std::fabs(ewm_drift) >= m_dfe_eff_thresh) {
             const double drift_delta = ewm_drift - m_prev_ewm_drift;
             const bool drift_accel = m_dfe_warmed &&
                 ((ewm_drift > 0 && drift_delta >= CFE_DFE_DRIFT_ACCEL) ||
@@ -223,6 +240,7 @@ struct CandleFlowEngine {
                               << " @ " << std::fixed << std::setprecision(2) << entry_px
                               << " sl=" << sl_px << " drift=" << ewm_drift
                               << " delta=" << drift_delta << " rsi=" << m_rsi_trend
+                              << " thresh=" << m_dfe_eff_thresh
                               << " size=" << std::setprecision(3) << size
                               << (shadow_mode?" [SHADOW]":"") << "\n";
                     std::cout.flush(); return;
@@ -328,6 +346,7 @@ private:
     double  m_prev_ewm_drift     = 0.0;
     int64_t m_dfe_cooldown_until = 0;
     bool    m_dfe_warmed         = false;
+    double  m_dfe_eff_thresh     = CFE_DFE_DRIFT_THRESH;  // session-adjusted threshold
 
     // -------------------------------------------------------------------------
     // RSI slope EMA -- updated every tick unconditionally
