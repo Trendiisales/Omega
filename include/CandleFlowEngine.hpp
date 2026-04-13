@@ -54,7 +54,7 @@ static constexpr double  CFE_COST_MULT         = 2.0;   // lowered 2.5->2.0: 2.5
                                                           // borderline setups (1.47pt range blocked
                                                           // when move went $8+). 2.0x still requires
                                                           // bar covers cost with margin.
-static constexpr int64_t CFE_STAGNATION_MS     = 90000;  // raised 60s->90s: Asia tape is slower,
+static constexpr int64_t CFE_STAGNATION_MS     = 90000;  // Asia default -- London/NY uses 180s (session-aware in on_tick)
                                                            // 60s was exiting before moves developed.
                                                            // 0.37pt MFE in 60s -> exited, move went $8.
 static constexpr double  CFE_STAGNATION_MULT   = 1.0;   // exit if mfe < cost*1.0
@@ -564,8 +564,15 @@ private:
         // Trail distance = 0.7 * ATR (tight enough to lock profit, wide enough
         // to survive normal tick noise on gold). Once engaged, SL only moves
         // in the profitable direction — never back toward entry.
-        if (pos.mfe >= pos.cost_pts * 1.0) {
-            const double trail_dist = pos.atr_pts * 0.7;
+        // Trail: arm only when MFE >= 2x ATR (real profit locked in).
+        // Old: armed at 1x cost ($0.62), dist=0.7xATR=1.40pts.
+        // At MFE=0.67 trail_SL = entry+0.67-1.40 = entry-0.73 (BELOW entry).
+        // Trail was wider than profit -- fired on noise for $1 instead of riding move.
+        // New: arm at MFE >= 2x ATR so trail only engages on real moves.
+        // At ATR=2pt: arms when MFE >= 4pts. dist=0.5xATR=1pt.
+        // Trail_SL = mid - 1pt = entry+4-1 = entry+3 -- locked $3 profit minimum.
+        if (pos.mfe >= pos.atr_pts * 2.0) {
+            const double trail_dist = pos.atr_pts * 0.5;
             const double new_trail = pos.is_long
                 ? (mid - trail_dist)
                 : (mid + trail_dist);
@@ -616,7 +623,15 @@ private:
         }
 
         // Stagnation safety exit
-        if (hold_ms >= CFE_STAGNATION_MS) {
+        // Session-aware stagnation timeout:
+        // Asia (22:00-07:00 UTC): 90s -- tape is slow, 90s is enough
+        // London/NY (07:00-22:00 UTC): 180s -- moves need 2-3min to develop
+        {
+            const int64_t utc_sec_stag  = now_ms / 1000LL;
+            const int      utc_hour_stag = static_cast<int>((utc_sec_stag % 86400LL) / 3600LL);
+            const bool     in_asia_stag  = (utc_hour_stag >= 22 || utc_hour_stag < 7);
+            const int64_t  eff_stag_ms   = in_asia_stag ? CFE_STAGNATION_MS : 180000LL;
+            if (hold_ms >= eff_stag_ms) {
             if (pos.mfe < pos.cost_pts * CFE_STAGNATION_MULT) {
                 const double px = pos.is_long ? bid : ask;
                 std::cout << "[CFE] STAGNATION-EXIT " << (pos.is_long?"LONG":"SHORT")
@@ -627,7 +642,8 @@ private:
                 close_pos(px, "STAGNATION", now_ms, on_close);
                 return;
             }
-        }
+            } // end eff_stag_ms check
+        } // end session-aware stagnation block
     }
 
     // -------------------------------------------------------------------------
