@@ -80,7 +80,11 @@ if (-not (Test-Path $tokenFile)) {
     $runningHash = "not_found"
     $latestLog = "C:\Omega\logs\latest.log"
     if (Test-Path $latestLog) {
-        $rcLine = Get-Content $latestLog -ErrorAction SilentlyContinue |
+        # Read ONLY last 200 lines -- prevents old session hash from matching
+        # The RUNNING COMMIT line is written within first 5s of startup.
+        # Reading entire log risks finding previous session's hash if log
+        # is not rotated, producing a false-positive "correct binary" result.
+        $rcLine = Get-Content $latestLog -Tail 200 -ErrorAction SilentlyContinue |
                   Select-String "RUNNING COMMIT:" |
                   Select-Object -Last 1
         if ($rcLine -and ($rcLine -match "RUNNING COMMIT:\s+([a-f0-9]{7,12})")) {
@@ -915,4 +919,5 @@ Write-Host ""
 # Logs stay on disk at C:\Omega\logs\ -- read via RDP or MONITOR.ps1.
 Write-Host "  [OK] State files saved locally (not pushed to git)" -ForegroundColor DarkGray
 Write-Host ""
+
 
