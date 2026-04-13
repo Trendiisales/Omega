@@ -326,7 +326,7 @@ static void on_tick_us500(
     // ?? IndexSwingEngine -- US500.F H1+H4 swing entries (shadow mode) ????????
     {
         auto swing_sp_cb = [&](const omega::TradeRecord& tr) {
-            g_trade_ledger.record(tr);
+            ca_on_close(tr);
             printf("[ISWING-CB] US500.F %s pnl=%.2f why=%s\n",
                    tr.side.c_str(), tr.pnl, tr.exitReason.c_str());
             fflush(stdout);
@@ -912,7 +912,7 @@ static void on_tick_nas100(
     // ?? IndexSwingEngine -- USTEC.F H1+H4 swing entries (shadow mode) ?????????
     {
         auto swing_nq_cb = [&](const omega::TradeRecord& tr) {
-            g_trade_ledger.record(tr);
+            ca_on_close(tr);
             printf("[ISWING-CB] USTEC.F %s pnl=%.2f why=%s\n",
                    tr.side.c_str(), tr.pnl, tr.exitReason.c_str());
             fflush(stdout);
