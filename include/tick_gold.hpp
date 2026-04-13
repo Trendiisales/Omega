@@ -432,6 +432,9 @@ static void on_tick_gold(
         // Pass DX.F mid for DXYDivergenceEngine -- g_macroDetector.updateDXY()
     // is called every DX.F tick so this is fresh or 0.0 if feed not yet seen.
     const double dx_mid_now = g_macroDetector.dxyMid();
+    // Inject M1 EMA9/EMA50 into VWAPStretchReversion before on_tick.
+    // GoldSnapshot has no EMA fields so this must be wired here where M1 indicators are live.
+    g_gold_stack.set_vwap_stretch_ema(bar_ema9_gs, bar_ema50_gs);
     const auto gsig = g_gold_stack.on_tick(bid, ask, rtt_check, handle_closed_trade,
                                             stack_enter_effective, dx_mid_now);
         if (gsig.valid) {
@@ -4038,6 +4041,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
