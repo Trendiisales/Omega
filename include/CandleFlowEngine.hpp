@@ -623,27 +623,57 @@ private:
         }
 
         // Stagnation safety exit
-        // Session-aware stagnation timeout:
-        // Asia (22:00-07:00 UTC): 90s -- tape is slow, 90s is enough
-        // London/NY (07:00-22:00 UTC): 180s -- moves need 2-3min to develop
+        // Stagnation exit -- cut losers, protect winners.
+        //
+        // DESIGN: time-based stagnation is wrong because it can't distinguish
+        // "consolidating before move" from "wrong call, not going anywhere".
+        // The key insight: if MFE ever exceeded 1x cost, the thesis WAS right --
+        // the move started. Let the trail handle exit, not the timer.
+        //
+        // Two-tier logic:
+        //
+        // TIER 1 -- Never showed profit (mfe < 0.5x cost):
+        //   Position never moved in our favour at all.
+        //   Thesis was wrong from the start. Exit at 90s (Asia) / 120s (London).
+        //   This is a genuine stagnation -- cut the loss quickly.
+        //
+        // TIER 2 -- Showed some profit (mfe >= 0.5x cost) but trail not engaged:
+        //   Move started but hasn't reached trail threshold yet (2x ATR).
+        //   Give it more time -- 180s (Asia) / 300s (London/NY).
+        //   This prevents killing the 04:47 SHORT that had mfe=0.52 at 90s.
+        //   If it still hasn't moved after 300s with mfe < cost, exit.
+        //
+        // TIER 3 -- Trail engaged (pos.trail_active = true):
+        //   Don't stagnation-exit at all. Trail manages the exit.
+        //   This is the "let winners run" path.
         {
-            const int64_t utc_sec_stag  = now_ms / 1000LL;
-            const int      utc_hour_stag = static_cast<int>((utc_sec_stag % 86400LL) / 3600LL);
-            const bool     in_asia_stag  = (utc_hour_stag >= 22 || utc_hour_stag < 7);
-            const int64_t  eff_stag_ms   = in_asia_stag ? CFE_STAGNATION_MS : 180000LL;
-            if (hold_ms >= eff_stag_ms) {
-            if (pos.mfe < pos.cost_pts * CFE_STAGNATION_MULT) {
-                const double px = pos.is_long ? bid : ask;
-                std::cout << "[CFE] STAGNATION-EXIT " << (pos.is_long?"LONG":"SHORT")
-                          << " held=" << hold_ms
-                          << "ms mfe=" << std::fixed << std::setprecision(3) << pos.mfe
-                          << " < need=" << pos.cost_pts * CFE_STAGNATION_MULT << "\n";
-                std::cout.flush();
-                close_pos(px, "STAGNATION", now_ms, on_close);
-                return;
+            if (!pos.trail_active) {  // trail handles exit once engaged
+                const int64_t utc_sec_stag   = now_ms / 1000LL;
+                const int     utc_hour_stag  = static_cast<int>((utc_sec_stag % 86400LL) / 3600LL);
+                const bool    in_asia_stag   = (utc_hour_stag >= 22 || utc_hour_stag < 7);
+                const double  half_cost      = pos.cost_pts * 0.5;
+                const bool    showed_profit  = (pos.mfe >= half_cost);
+                // Tier 1: never showed profit -- exit quickly
+                const int64_t t1_ms = in_asia_stag ?  90000LL : 120000LL;
+                // Tier 2: showed some profit but trail not yet armed -- give more time
+                const int64_t t2_ms = in_asia_stag ? 180000LL : 300000LL;
+                const int64_t eff_stag_ms = showed_profit ? t2_ms : t1_ms;
+                if (hold_ms >= eff_stag_ms) {
+                    if (pos.mfe < pos.cost_pts * CFE_STAGNATION_MULT) {
+                        const double px = pos.is_long ? bid : ask;
+                        std::cout << "[CFE] STAGNATION-EXIT " << (pos.is_long?"LONG":"SHORT")
+                                  << " held=" << hold_ms
+                                  << "ms mfe=" << std::fixed << std::setprecision(3) << pos.mfe
+                                  << " < need=" << pos.cost_pts * CFE_STAGNATION_MULT
+                                  << " tier=" << (showed_profit ? "2" : "1")
+                                  << " timeout=" << eff_stag_ms/1000 << "s\n";
+                        std::cout.flush();
+                        close_pos(px, "STAGNATION", now_ms, on_close);
+                        return;
+                    }
+                }
             }
-            } // end eff_stag_ms check
-        } // end session-aware stagnation block
+        }
     }
 
     // -------------------------------------------------------------------------
