@@ -557,7 +557,6 @@ struct CandleFlowEngine {
                           << " size=" << std::setprecision(3) << size
                           << (shadow_mode?" [SHADOW]":"") << "\n";
                 std::cout.flush(); return;
-                } // end ATR-cap check
             }
         }
 
@@ -1092,6 +1091,7 @@ private:
 };
 
 } // namespace omega
+
 
 
 
