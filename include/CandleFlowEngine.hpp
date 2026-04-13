@@ -50,8 +50,13 @@ namespace omega {
 static constexpr double  CFE_BODY_RATIO_MIN    = 0.60;
 static constexpr double  CFE_COST_SLIPPAGE     = 0.10;
 static constexpr double  CFE_COMMISSION_PTS    = 0.10;
-static constexpr double  CFE_COST_MULT         = 2.5;
-static constexpr int64_t CFE_STAGNATION_MS     = 60000;
+static constexpr double  CFE_COST_MULT         = 2.0;   // lowered 2.5->2.0: 2.5x was blocking
+                                                          // borderline setups (1.47pt range blocked
+                                                          // when move went $8+). 2.0x still requires
+                                                          // bar covers cost with margin.
+static constexpr int64_t CFE_STAGNATION_MS     = 90000;  // raised 60s->90s: Asia tape is slower,
+                                                           // 60s was exiting before moves developed.
+                                                           // 0.37pt MFE in 60s -> exited, move went $8.
 static constexpr double  CFE_STAGNATION_MULT   = 1.0;   // exit if mfe < cost*1.0
 static constexpr double  CFE_RISK_DOLLARS      = 30.0;
 static constexpr double  CFE_MIN_LOT           = 0.01;
