@@ -3683,8 +3683,32 @@ static void on_tick_gold(
     }
 
     // Entry: only when no other gold position open and gold_can_enter passes
+    // STARTUP LOCKOUT: block CFE entries for 90s after process start.
+    // Root cause of three consecutive FC losses (03:50, 02:58, 01:40):
+    // DFE fires within seconds of restart because:
+    //   1. ewm_drift cold-starts at 0, first ticks spike it to 1.5+ instantly
+    //   2. RSI warms in ~30 ticks but reflects only the startup price movement
+    // Both signals are artificial artifacts of cold-start, not real market state.
+    // 90s gives ewm_drift (alpha=0.05 fast EWM) ~18 ticks to settle and
+    // RSI 30+ ticks on real price action before any DFE entry is allowed.
+    // The 90s block also prevents entries during the VERIFY_STARTUP window.
+    static int64_t s_cfe_startup_ms = 0;
+    if (s_cfe_startup_ms == 0) s_cfe_startup_ms = now_ms_g;
+    const bool cfe_startup_locked = (now_ms_g - s_cfe_startup_ms) < 90000LL;
+    if (cfe_startup_locked) {
+        static int64_t s_cfe_lock_log = 0;
+        if (now_ms_g - s_cfe_lock_log > 15000) {
+            s_cfe_lock_log = now_ms_g;
+            const int secs_remaining = static_cast<int>(
+                (90000LL - (now_ms_g - s_cfe_startup_ms)) / 1000LL);
+            printf("[CFE-STARTUP-LOCK] entries blocked %ds remaining (cold-start warmup)\n",
+                   secs_remaining);
+            fflush(stdout);
+        }
+    }
     if (!g_candle_flow.has_open_position()
         && gold_can_enter
+        && !cfe_startup_locked
         && !g_bracket_gold.has_open_position()
         && !g_gold_flow.has_open_position()
         && !g_gold_stack.has_open_position()
