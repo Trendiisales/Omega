@@ -3797,8 +3797,14 @@ static void on_tick_gold(
         // corrupted m_drift_sustained_dir and m_dfe_persist_ticks on every managed tick.
         // Fixed: pass g_gold_stack.ewm_drift() to both management and entry calls.
         const omega::CandleFlowEngine::BarSnap cfe_bar_dummy{};  // valid=false: correct for manage path
-        const double cfe_atr = g_gold_flow.current_atr() > 0.0
-            ? g_gold_flow.current_atr() : 5.0;
+        // ATR floor: never let CFE use an ATR below 2.0pt from GoldFlow.
+        // If current_atr() returns a transient near-zero value (e.g. after
+        // GoldFlow force-close and re-warm), the fallback of 5.0 only catches
+        // zero. A value like 0.86pt passes the > 0.0 check and produces
+        // sl=0.60pt, size=0.50 lots (MAX_LOT cap) -- catastrophic on wide spread.
+        // Floor of 2.0pt: sl=1.40pt, max size=0.214 lots at $30 risk.
+        const double cfe_atr = std::max(2.0,
+            g_gold_flow.current_atr() > 0.0 ? g_gold_flow.current_atr() : 5.0);
         g_candle_flow.on_tick(bid, ask, cfe_bar_dummy, cfe_dom,
             now_ms_g, cfe_atr,
             [&](const omega::TradeRecord& tr) {
@@ -3946,8 +3952,9 @@ static void on_tick_gold(
                     ? cfe_base_risk * 0.50
                     : cfe_base_risk;
             }
-            const double cfe_atr_e = g_gold_flow.current_atr() > 0.0
-                ? g_gold_flow.current_atr() : 5.0;
+            // ATR floor: same 2.0pt minimum -- see manage-path comment above.
+            const double cfe_atr_e = std::max(2.0,
+                g_gold_flow.current_atr() > 0.0 ? g_gold_flow.current_atr() : 5.0);
 
             // ── CFE BAR RSI + TREND PRE-FILTER ───────────────────────
             // Block counter-trend entries (EMA9 vs EMA50 on M1) and RSI extremes.
@@ -4032,7 +4039,22 @@ static void on_tick_gold(
                 }
             }
 
-            if (cfe_bar_gate_ok)
+            // Spread sanity gate: block CFE entry when spread > 30% of ATR.
+            // Normal gold spread $0.20, ATR=2pt: 0.20 < 0.60 = OK.
+            // London spike spread $2.23, ATR=2pt: 2.23 > 0.60 = BLOCK.
+            // Prevents entering when immediate mark-to-market loss equals full SL.
+            const double cfe_spread_now = ask - bid;
+            const bool   cfe_spread_ok  = (cfe_spread_now < cfe_atr_e * 0.30);
+            if (!cfe_spread_ok) {
+                static int64_t s_cfe_spread_log = 0;
+                if (now_ms_g - s_cfe_spread_log > 10000) {
+                    s_cfe_spread_log = now_ms_g;
+                    printf("[CFE-SPREAD-BLOCK] entry blocked: spread=%.3f > atr*0.30=%.3f\n",
+                           cfe_spread_now, cfe_atr_e * 0.30);
+                    fflush(stdout);
+                }
+            }
+            if (cfe_bar_gate_ok && cfe_spread_ok)
             g_candle_flow.on_tick(bid, ask, cfe_bar, cfe_dom_e,
                 now_ms_g, cfe_atr_e,
                 [&](const omega::TradeRecord& tr) {
