@@ -3976,7 +3976,11 @@ static void on_tick_gold(
                 const int    cfe_m1_trend = (cfe_ema9 > 0.0 && cfe_ema50 > 0.0)
                     ? (cfe_ema9 < cfe_ema50 ? -1 : +1) : 0;
                 const double cfe_bar_rsi  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-                const bool cfe_is_long_intent = (cfe_bar.close > cfe_bar.open);
+                // Use actual drift direction -- synthetic bar close/open is unreliable
+                // as a direction proxy (built from EMA/drift values, not real price action).
+                // ewm_drift>0 = CFE will enter LONG, ewm_drift<0 = SHORT.
+                const double cfe_drift_now    = g_gold_stack.ewm_drift();
+                const bool cfe_is_long_intent = (cfe_drift_now > 0.0);
                 // Counter-trend block
                 if (cfe_m1_trend != 0) {
                     const bool cfe_counter = (cfe_is_long_intent && cfe_m1_trend == -1)
@@ -4023,7 +4027,7 @@ static void on_tick_gold(
             // This prevents entering the wrong side when institutions are active.
             // When VPIN not toxic or bias neutral: do not block (allow normal CFE logic).
             if (cfe_bar_gate_ok && g_vpin.warmed() && g_vpin.toxic()) {
-                const bool cfe_intends_long = (cfe_bar.close > cfe_bar.open);
+                const bool cfe_intends_long = (g_gold_stack.ewm_drift() > 0.0);  // use drift, not synthetic bar
                 // vpin_short_bias: elevated VPIN with sell-heavy flow = informed selling
                 // vpin_long_bias:  elevated VPIN with buy-heavy flow  = informed buying
                 if (cfe_intends_long  && g_vpin.vpin_short_bias()) {
@@ -4082,6 +4086,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
