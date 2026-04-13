@@ -61,7 +61,7 @@ public:
     double DRIFT_MIN        = 5.0;   // lowered 6->5: 6pt was too high for early move entries
     double ATR_SCALE_MAX    = 1.0;   // capped 6->1: 6x scaling produced $480 risk per trade; system max is $80
     double BASE_RISK_USD    = 80.0;
-    double MAX_LOT          = 0.50;
+    double MAX_LOT          = 0.20;  // capped 0.50->0.20: matches CFE/DomPersist hard ceiling
     double MIN_LOT          = 0.01;
 
     // ── Hybrid bracket floor ──────────────────────────────────────────────
@@ -697,3 +697,4 @@ private:
 };
 
 } // namespace omega
+
