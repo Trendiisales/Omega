@@ -85,6 +85,7 @@
 #include <cstdio>
 #include <chrono>
 #include "OmegaTradeLedger.hpp"
+#include "OHLCBarEngine.hpp"
 
 namespace omega {
 namespace idx {
