@@ -148,12 +148,30 @@ Set-Content -Path "$refDir\main" -Value $ghSha -Encoding ASCII -Force
 Write-Host "  [OK] Source at $ghSha7" -ForegroundColor Green
 Write-Host ""
 
-# Wipe build
-foreach ($d in @("$buildDir\CMakeFiles","$buildDir\Release","$buildDir\Omega.dir","$buildDir\x64")) {
-    if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+# FULL build wipe -- nuke entire build directory so cmake has NO cached state.
+# Partial wipe (removing only .obj/.pch) fails when zip-extracted .hpp files
+# have older modification timestamps than existing .obj files.
+# cmake dependency tracking then considers .obj files up-to-date and SKIPS
+# recompile -- old MAX_LOT=0.50 code runs even after a "successful" restart.
+# Solution: delete everything including CMakeCache.txt and .vcxproj files.
+# Force-recreate build dir and run cmake configure from scratch every time.
+if (Test-Path $buildDir) {
+    Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
+    if (Test-Path $buildDir) {
+        Write-Host "  [FATAL] Could not remove build directory -- locked files?" -ForegroundColor Red
+        Write-Host "  Try: Stop-Process -Name cmake,cl,link -Force" -ForegroundColor Yellow
+        exit 1
+    }
 }
-Get-ChildItem -Path $buildDir -Include "*.obj","*.pch","*.pdb" -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-Write-Host "  [OK] Build wiped" -ForegroundColor Green
+New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+
+# Force-touch all extracted source files to NOW so cmake sees them as newer
+# than any hypothetically surviving .obj (belt-and-suspenders after full wipe)
+$touchTime = Get-Date
+Get-ChildItem -Path $OmegaDir -Include "*.cpp","*.hpp","*.h" -Recurse -ErrorAction SilentlyContinue |
+    ForEach-Object { $_.LastWriteTime = $touchTime }
+
+Write-Host "  [OK] Build directory fully wiped + source timestamps updated" -ForegroundColor Green
 Write-Host ""
 
 # ==============================================================================
