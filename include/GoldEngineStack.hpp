@@ -3435,7 +3435,32 @@ class RegimeGovernor {
     int confirm_count_=0;
     std::chrono::steady_clock::time_point last_switch_=std::chrono::steady_clock::now();
     static constexpr int CONFIRM_TICKS=5,MIN_LOCK_MS=1000;
-    static constexpr size_t WINDOW=80;  // reduced 120?80: 120 ticks = 20-30s warmup before any regime; 80 ticks = ~12-18s, still meaningful structure
+    static constexpr size_t WINDOW=80;  // reduced 120->80: 120 ticks = 20-30s warmup before any regime; 80 ticks = ~12-18s, still meaningful structure
+
+    // Medium-term window (2026-04-13):
+    // 300-tick buffer = ~2-3 minutes at London open tick rate.
+    // Solves the governor blind spot where a 6pt move over 7 minutes produces
+    // vol_range=0.49-1.84 in the 80-tick window (too short to see the trend)
+    // while the 300-tick window accumulates the full range within 2 minutes.
+    //
+    // Logic:
+    //   med_range > MED_IMPULSE_THRESH (5.0pt) AND price at extreme of med window:
+    //     -> override COMPRESSION/MEAN_REVERSION to IMPULSE
+    //   med_range > MED_TREND_THRESH (10.0pt) AND price at extreme:
+    //     -> override to TREND
+    //
+    // Thresholds calibrated against today's data (08:01-08:08 UTC):
+    //   80-tick range: 0.49-1.84pt (never saw the move)
+    //   300-tick range after 2min: ~4-6pt (catches move within 2 minutes)
+    //   300-tick range after 5min: ~7-9pt (confirms trend)
+    //
+    // at_extreme definition: price within top/bottom 25% of medium window range.
+    // 25% = genuinely committed directional position, not mid-range oscillation.
+    MinMaxCircularBuffer<double,512> med_history_;  // 300-tick medium window (512 capacity)
+    static constexpr size_t MED_WINDOW          = 300;
+    static constexpr double MED_IMPULSE_THRESH  = 5.0;   // 300-tick range > $5 = IMPULSE
+    static constexpr double MED_TREND_THRESH    = 10.0;  // 300-tick range > $10 = TREND
+    static constexpr double MED_EXTREME_FRAC    = 0.25;  // price in top/bottom 25% of range
 
     // Thresholds recalibrated for $5000 gold (Mar 2026)
     static constexpr double CE=4.00;  // compression entry: raised 3.00?4.00: range was oscillating at 2.25-3.10 causing constant COMPRESSION?MEAN_REVERSION flips at the 3.00 boundary; 4.00 gives stable COMPRESSION classification at current gold vol
@@ -3476,6 +3501,7 @@ public:
     MarketRegime detect(double mid, bool has_open_pos) {
         if(has_open_pos) return current_;
         history_.push_back(mid);
+        med_history_.push_back(mid);
         drift_buf_.push_back(mid);
         // EWM drift detection -- fast vs slow exponential weighted mean
         if(!ewm_init_){ ewm_fast_=mid; ewm_slow_=mid; ewm_init_=true; }
@@ -3494,10 +3520,38 @@ public:
             const double centre=(drift_buf_.max()+drift_buf_.min())*0.5;
             long_drift_trend=(dr>20.0&&std::fabs(mid-centre)>dr*0.35);
         }
+        // Medium-term window override (2026-04-13):
+        // 300-tick buffer catches slow sustained trends invisible to the 80-tick window.
+        // At London open (~6 ticks/s): 300 ticks = ~50s. Fills within 1 minute.
+        // A 6pt drop over 7 minutes shows med_range > 5pt within 2 minutes of starting.
+        // This overrides COMPRESSION -> IMPULSE, unlocking DonchianBreakout,
+        // TurtleTick, MomentumContinuation, SessionOpenMomentum immediately.
+        bool med_impulse = false;
+        bool med_trend   = false;
+        if(med_history_.size() >= MED_WINDOW) {
+            const double med_hi     = med_history_.max();
+            const double med_lo     = med_history_.min();
+            const double med_range  = med_hi - med_lo;
+            const double med_centre = (med_hi + med_lo) * 0.5;
+            // Price must be at extreme of medium window (top/bottom 25%)
+            const bool med_at_extreme = std::fabs(mid - med_centre) >= med_range * (0.5 - MED_EXTREME_FRAC);
+            if(med_at_extreme) {
+                if(med_range >= MED_TREND_THRESH)   med_trend   = true;
+                else if(med_range >= MED_IMPULSE_THRESH) med_impulse = true;
+            }
+        }
         MarketRegime raw=classifyRaw(range_,mid,hi_,lo_);
         // Override to TREND if drift detected but range classifier missed it
         if(raw==MarketRegime::MEAN_REVERSION&&(drift_trend||long_drift_trend))
             raw=MarketRegime::TREND;
+        // Medium-window override: escalate COMPRESSION/MEAN_REVERSION when
+        // the 300-tick window shows a real sustained directional move.
+        // Only escalates -- never demotes. If the 80-tick window already says
+        // TREND or IMPULSE, leave it alone.
+        if(raw==MarketRegime::COMPRESSION || raw==MarketRegime::MEAN_REVERSION) {
+            if(med_trend)        { raw=MarketRegime::TREND;   }
+            else if(med_impulse) { raw=MarketRegime::IMPULSE; }
+        }
         auto now=std::chrono::steady_clock::now();
         auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(now-last_switch_).count();
         if(raw==candidate_){
