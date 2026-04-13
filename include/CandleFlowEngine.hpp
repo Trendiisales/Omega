@@ -79,6 +79,11 @@ static constexpr int64_t CFE_IMB_MIN_HOLD_MS   = 20000; // IMB_EXIT blocked for 
 static constexpr double  CFE_DFE_DRIFT_THRESH   = 1.5;   // |ewm_drift| >= 1.5pts to arm
 static constexpr double  CFE_DFE_DRIFT_ACCEL     = 0.2;   // drift must be growing
 static constexpr double  CFE_DFE_RSI_THRESH      = 3.0;   // RSI trend EMA minimum
+static constexpr double  CFE_DFE_RSI_TREND_MAX   = 12.0;  // RSI trend EMA maximum
+                                                            // Above 12 = momentum exhausted,
+                                                            // entering late into a spent move.
+                                                            // Data: rsi_trend=20.62 on -$59 loss,
+                                                            // rsi_trend=6-9 on all winners.
 static constexpr double  CFE_DFE_SL_MULT         = 0.7;   // SL = 0.7 * ATR (tighter)
 static constexpr int64_t CFE_DFE_COOLDOWN_MS     = 120000; // 120s block after DFE loss
 static constexpr double  CFE_DFE_MIN_SPREAD_MULT = 1.5;   // max spread vs cost
@@ -214,8 +219,22 @@ struct CandleFlowEngine {
             m_prev_ewm_drift = ewm_drift; m_dfe_warmed = true;
             const bool dfe_long = (ewm_drift > 0);
             const bool rsi_ok = dfe_long
-                ? (m_rsi_trend > CFE_DFE_RSI_THRESH)
-                : (m_rsi_trend < -CFE_DFE_RSI_THRESH);
+                ? (m_rsi_trend > CFE_DFE_RSI_THRESH
+                   && m_rsi_trend < CFE_DFE_RSI_TREND_MAX)   // not exhausted
+                : (m_rsi_trend < -CFE_DFE_RSI_THRESH
+                   && m_rsi_trend > -CFE_DFE_RSI_TREND_MAX); // not exhausted
+            if (!rsi_ok && std::fabs(m_rsi_trend) > CFE_DFE_RSI_TREND_MAX) {
+                // Log RSI exhaustion block so it's visible in logs
+                static int64_t s_exhaust_log = 0;
+                if (now_ms - s_exhaust_log > 10000) {
+                    s_exhaust_log = now_ms;
+                    std::cout << "[CFE-EXHAUSTED] DFE blocked rsi_trend="
+                              << std::fixed << std::setprecision(2) << m_rsi_trend
+                              << " > max=" << CFE_DFE_RSI_TREND_MAX
+                              << " drift=" << ewm_drift << " -- move already spent\n";
+                    std::cout.flush();
+                }
+            }
             if (drift_accel && rsi_ok && (now_ms >= m_dfe_cooldown_until)) {
                 const double dfe_cost = spread + CFE_COST_SLIPPAGE*2.0 + CFE_COMMISSION_PTS*2.0;
                 if (spread < dfe_cost * CFE_DFE_MIN_SPREAD_MULT) {
@@ -375,8 +394,10 @@ private:
     // Returns +1 (up trend), -1 (down trend), 0 (no signal)
     int rsi_direction() const noexcept {
         if (!m_rsi_warmed) return 0;
-        if (m_rsi_trend >  CFE_RSI_THRESH) return +1;
-        if (m_rsi_trend < -CFE_RSI_THRESH) return -1;
+        // Both floor (signal exists) and ceiling (not exhausted) required.
+        // rsi_trend > 12 = RSI has been rising steeply for many ticks = late entry.
+        if (m_rsi_trend >  CFE_RSI_THRESH && m_rsi_trend <  CFE_DFE_RSI_TREND_MAX) return +1;
+        if (m_rsi_trend < -CFE_RSI_THRESH && m_rsi_trend > -CFE_DFE_RSI_TREND_MAX) return -1;
         return 0;
     }
 
