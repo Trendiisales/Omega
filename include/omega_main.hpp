@@ -443,6 +443,62 @@ int main(int argc, char* argv[])
                           << "GoldFlow blocked until M1 bars seed from tick data (~2min)\n";
                 std::cout.flush();
             }
+
+            // ── WARMUP SEED: inject disk-loaded bar state into engines that
+            // require 2+ bar closes before firing. Without this, every restart
+            // causes 2-120min blindness depending on engine and tick rate.
+            //
+            // Pattern: call set_bar_rsi / seed_bar_atr TWICE with the same
+            // disk-loaded value. First call sets current, second call moves
+            // current to prev -- engine sees "two bar closes" immediately.
+            // Safe: engines only act on direction CHANGE from prev to current,
+            // so seeding both to the same value means no spurious signals.
+            if (m1_ok) {
+                const double seed_rsi = g_bars_gold.m1.ind.rsi14.load();
+                const double seed_atr = g_bars_gold.m1.ind.atr14.load();
+                const double seed_mid = g_bars_gold.m1.ind.ema9.load();  // price proxy
+
+                // RSIReversalEngine: seed bar_rsi + bar_rsi_prev from disk
+                // Eliminates the "need 2 bar closes" block on every restart
+                if (seed_rsi > 0.0 && seed_rsi < 100.0) {
+                    g_rsi_reversal.set_bar_rsi(seed_rsi, seed_mid);
+                    g_rsi_reversal.set_bar_rsi(seed_rsi, seed_mid);  // second call sets prev
+                    std::cout << "[WARMUP-SEED] RSIReversal bar_rsi=" << seed_rsi
+                              << " (both current+prev seeded from disk)\n";
+                    std::cout.flush();
+                }
+
+                // RSIExtremeTurnEngine: seed bar_rsi
+                if (seed_rsi > 0.0 && seed_rsi < 100.0) {
+                    g_rsi_extreme.set_bar_rsi(seed_rsi);
+                    std::cout << "[WARMUP-SEED] RSIExtreme bar_rsi=" << seed_rsi << "\n";
+                    std::cout.flush();
+                }
+
+                // MicroMomentumEngine: seed bar ATR so m_rsi_seeded becomes true
+                if (seed_atr > 0.5 && seed_atr < 100.0) {
+                    g_micro_momentum.seed_bar_atr(seed_atr);
+                    std::cout << "[WARMUP-SEED] MicroMomentum bar_atr=" << seed_atr << "\n";
+                    std::cout.flush();
+                }
+
+                // DomPersistEngine: seed ATR + warmup counters from disk
+                if (seed_atr > 0.5 && seed_atr < 100.0) {
+                    g_dom_persist.seed_bar_atr(seed_atr);
+                    g_dom_persist.seed_warmup();  // skip 50+100 tick warmup requirement
+                    std::cout << "[WARMUP-SEED] DomPersist bar_atr=" << seed_atr
+                              << " warmup counters seeded\n";
+                    std::cout.flush();
+                }
+
+                std::cout << "[WARMUP-SEED] All engines seeded from disk state -- "
+                          << "no 2-minute blindness on restart\n";
+                std::cout.flush();
+            } else {
+                std::cout << "[WARMUP-SEED] SKIP -- bars not loaded from disk, "
+                          << "engines will warm from live ticks (~2min)\n";
+                std::cout.flush();
+            }
         }
 
         g_ctrader_depth.start();
