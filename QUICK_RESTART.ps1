@@ -148,30 +148,33 @@ Set-Content -Path "$refDir\main" -Value $ghSha -Encoding ASCII -Force
 Write-Host "  [OK] Source at $ghSha7" -ForegroundColor Green
 Write-Host ""
 
-# FULL build wipe -- nuke entire build directory so cmake has NO cached state.
-# Partial wipe (removing only .obj/.pch) fails when zip-extracted .hpp files
-# have older modification timestamps than existing .obj files.
-# cmake dependency tracking then considers .obj files up-to-date and SKIPS
-# recompile -- old MAX_LOT=0.50 code runs even after a "successful" restart.
-# Solution: delete everything including CMakeCache.txt and .vcxproj files.
-# Force-recreate build dir and run cmake configure from scratch every time.
+# INCREMENTAL build -- keep CMakeCache.txt and .vcxproj files, delete only .obj/.pch.
+# Force-touch all source files so MSVC sees them as newer than surviving .obj files
+# and recompiles everything. This avoids the 4-5 minute full reconfigure+recompile.
+#
+# Safe because:
+# (1) Source files are force-touched to NOW -- MSVC dependency tracking always recompiles them.
+# (2) Binary is verified via CimInstance after launch -- stale binary detection is reliable.
+# (3) CMakeCache.txt and .vcxproj are stable -- no need to regenerate on every restart.
+#
+# Fall back to full wipe if build dir doesn't exist yet (first run).
 if (Test-Path $buildDir) {
-    Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
-    if (Test-Path $buildDir) {
-        Write-Host "  [FATAL] Could not remove build directory -- locked files?" -ForegroundColor Red
-        Write-Host "  Try: Stop-Process -Name cmake,cl,link -Force" -ForegroundColor Yellow
-        exit 1
-    }
+    # Delete only compiled artifacts -- keep cmake config
+    Get-ChildItem -Path $buildDir -Include "*.obj","*.pch","*.pdb","*.iobj","*.ipdb" -Recurse -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    Write-Host "  [OK] Build artifacts wiped (.obj/.pch deleted, CMakeCache preserved)" -ForegroundColor Green
+} else {
+    New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+    Write-Host "  [OK] Build directory created (first run -- full configure will run)" -ForegroundColor Green
 }
-New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 
-# Force-touch all extracted source files to NOW so cmake sees them as newer
-# than any hypothetically surviving .obj (belt-and-suspenders after full wipe)
+# Force-touch ALL source files to NOW so MSVC sees every file as newer than any .obj
+# This guarantees full recompile of changed files without needing to track which changed.
 $touchTime = Get-Date
 Get-ChildItem -Path $OmegaDir -Include "*.cpp","*.hpp","*.h" -Recurse -ErrorAction SilentlyContinue |
     ForEach-Object { $_.LastWriteTime = $touchTime }
 
-Write-Host "  [OK] Build directory fully wiped + source timestamps updated" -ForegroundColor Green
+Write-Host "  [OK] Source timestamps updated -- MSVC will recompile all changed files" -ForegroundColor Green
 Write-Host ""
 
 # ==============================================================================
@@ -275,4 +278,5 @@ Write-Host "=======================================================" -Foreground
 Write-Host ("  DONE: {0:mm}m {0:ss}s" -f $elapsed) -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
+
 
