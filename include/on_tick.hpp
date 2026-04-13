@@ -853,7 +853,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (s_xau_bid > 0.0 && s_xau_ask > 0.0) {
                 const double ds_lim   = g_cfg.dollar_stop_usd;
                 const double xau_mid  = (s_xau_bid + s_xau_ask) * 0.5;
-                const int64_t ds_now  = static_cast<int64_t>(std::time(nullptr));
+                const int64_t ds_now     = static_cast<int64_t>(std::time(nullptr));
+                const int64_t ds_now_ms  = static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
 
                 // Compute unrealised USD P&L: pts * size * 100 (XAUUSD = $100/pt/lot)
                 auto xau_unr = [&](bool is_long, double entry, double size) -> double {
@@ -879,21 +881,51 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                 }
                 // CandleFlow
+                // DOLLAR-STOP for CFE: only fire if price has already passed the
+                // engine's own SL level. This prevents the dollar stop firing BEFORE
+                // the SL when lot size is large relative to the $50 limit.
+                // Example of old bug: sl=4719.13 (1.90pts away), dollar stop fires
+                // at 4719.68 ($52 loss) -- $0.55 before the SL. The SL never fires.
+                // Fix: check sl_breached first. Dollar stop is now a gap-fill safety
+                // net (fires when price skips past SL) not a premature position killer.
                 if (g_candle_flow.has_open_position()) {
                     const double unr = xau_unr(g_candle_flow.pos.is_long,
                                                g_candle_flow.pos.entry,
                                                g_candle_flow.pos.size);
-                    if (unr < -ds_lim) {
-                        printf("[DOLLAR-STOP] CandleFlow %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",
+                    // Effective SL: use trail SL if active, otherwise hard SL
+                    const double cfe_eff_sl = g_candle_flow.pos.trail_active
+                        ? g_candle_flow.pos.trail_sl
+                        : g_candle_flow.pos.sl;
+                    const bool cfe_sl_breached = g_candle_flow.pos.is_long
+                        ? (s_xau_bid <= cfe_eff_sl)
+                        : (s_xau_ask >= cfe_eff_sl);
+                    // Only fire dollar stop if:
+                    //   a) SL has already been breached (gap scenario), OR
+                    //   b) Loss exceeds 2x dollar_stop_usd (catastrophic runaway)
+                    const bool cfe_dollar_stop_ok = cfe_sl_breached
+                        || (unr < -(ds_lim * 2.0));
+                    if (unr < -ds_lim && cfe_dollar_stop_ok) {
+                        printf("[DOLLAR-STOP] CandleFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- CLOSING\n",
                                g_candle_flow.pos.is_long?"LONG":"SHORT",
-                               g_candle_flow.pos.entry, unr, ds_lim);
+                               g_candle_flow.pos.entry, unr, ds_lim,
+                               cfe_eff_sl, (int)cfe_sl_breached);
                         fflush(stdout);
-                        g_candle_flow.force_close(s_xau_bid, s_xau_ask, ds_now,
+                        g_candle_flow.force_close(s_xau_bid, s_xau_ask, ds_now_ms,
                             [&](const omega::TradeRecord& tr) {
                                 handle_closed_trade(tr);
                                 if (!g_candle_flow.shadow_mode)
                                     send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
                             });
+                    } else if (unr < -ds_lim) {
+                        // Dollar stop wanted to fire but SL not yet breached -- log only
+                        static int64_t s_ds_skip_log = 0;
+                        if (ds_now - s_ds_skip_log >= 10) {
+                            s_ds_skip_log = ds_now;
+                            printf("[DOLLAR-STOP-SKIP] CandleFlow %s unr=$%.2f > limit=$%.0f but sl=%.2f not breached (bid=%.2f ask=%.2f) -- letting SL handle\n",
+                                   g_candle_flow.pos.is_long?"LONG":"SHORT",
+                                   unr, ds_lim, cfe_eff_sl, s_xau_bid, s_xau_ask);
+                            fflush(stdout);
+                        }
                     }
                 }
                 // MacroCrash
