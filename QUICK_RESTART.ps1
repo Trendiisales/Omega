@@ -168,13 +168,26 @@ if (Test-Path $buildDir) {
     Write-Host "  [OK] Build directory created (first run -- full configure will run)" -ForegroundColor Green
 }
 
-# Force-touch ALL source files to NOW so MSVC sees every file as newer than any .obj
+# Force-touch ALL source files to NOW so MSVC sees every file as newer than any .obj.
 # This guarantees full recompile of changed files without needing to track which changed.
 $touchTime = Get-Date
 Get-ChildItem -Path $OmegaDir -Include "*.cpp","*.hpp","*.h" -Recurse -ErrorAction SilentlyContinue |
     ForEach-Object { $_.LastWriteTime = $touchTime }
 
-Write-Host "  [OK] Source timestamps updated -- MSVC will recompile all changed files" -ForegroundColor Green
+# Verify touch succeeded -- at least main.cpp must have a fresh timestamp.
+# If touch failed silently (permissions/locked), old .obj files survive and stale code runs.
+$mainCpp = "$OmegaDir\src\main.cpp"
+if (Test-Path $mainCpp) {
+    $mainAge = ((Get-Date) - (Get-Item $mainCpp).LastWriteTime).TotalSeconds
+    if ($mainAge -gt 10) {
+        Write-Host "  [FATAL] Source file touch failed -- main.cpp still has old timestamp (age=${mainAge}s)" -ForegroundColor Red
+        Write-Host "  Cannot guarantee incremental build is safe. Check file permissions." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  [OK] Source timestamps updated (main.cpp age=${mainAge}s)" -ForegroundColor Green
+} else {
+    Write-Host "  [WARN] Cannot verify touch -- main.cpp not found at expected path" -ForegroundColor Yellow
+}
 Write-Host ""
 
 # ==============================================================================
@@ -182,6 +195,11 @@ Write-Host ""
 # ==============================================================================
 Write-Host "[3/4] Building..." -ForegroundColor Yellow
 
+# ALWAYS run cmake configure to re-inject OMEGA_FORCE_GIT_HASH into the binary.
+# The hash is injected at configure time (not build time) via UpdateGitHash.cmake.
+# Skipping configure means the binary embeds the hash from the PREVIOUS restart.
+# Configure is fast (~5s) -- only the compile step is slow.
+# Using existing build dir (no --fresh) so .vcxproj files are reused -- fast configure.
 & $cmakeExe -S $OmegaDir -B $buildDir -DCMAKE_BUILD_TYPE=Release "-DOMEGA_FORCE_GIT_HASH=$ghSha7" 2>&1 | Where-Object { $_ -match "\[Omega\]|error" } | ForEach-Object { Write-Host "    $_" }
 $buildOut = & $cmakeExe --build $buildDir --config Release 2>&1
 $buildOut | Where-Object { $_ -match "Omega.vcxproj|error C" } | ForEach-Object { Write-Host "    $_" }
