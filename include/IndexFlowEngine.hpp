@@ -1137,7 +1137,10 @@ public:
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
-    bool has_open_position() const noexcept { return active_; }
+    bool has_open_position()  const noexcept { return active_; }
+    double entry_price()      const noexcept { return entry_; }
+    double sl_price()         const noexcept { return sl_; }
+    bool   is_long_at_entry() const noexcept { return is_long_; }
 
     // ── Main tick function ────────────────────────────────────────────────────
     // h1bars: g_bars_sp.h1 or g_bars_nq.h1
@@ -1145,74 +1148,74 @@ public:
     //         (pass h1bars for both if H4 not built for that symbol yet)
     // drift:  from g_iflow_sp.drift() -- tick-level EWM directional bias
     // on_close: callback for TradeRecord (shadow P&L logging)
-    void on_tick(double bid, double ask,
+    bool on_tick(double bid, double ask,
                  const OHLCBarEngine& h1bars, const OHLCBarEngine& h4bars,
                  double drift, CloseCb on_close) noexcept {
-        if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return;
+        if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return false;
         const double mid = (bid + ask) * 0.5;
 
         // Always manage open position first
         if (active_) {
             _manage(bid, ask, mid, on_close);
-            return;
+            return false;
         }
 
         // Cooldown gate
-        if (idx_now_ms() < cooldown_until_ms_) return;
+        if (idx_now_ms() < cooldown_until_ms_) return false;
 
         // H1 readiness: m1_ready flag reused by OHLCBarEngine for all timeframes
-        if (!h1bars.ind.m1_ready.load(std::memory_order_relaxed)) return;
+        if (!h1bars.ind.m1_ready.load(std::memory_order_relaxed)) return false;
 
         // H1 trend_state: +1=UP, -1=DOWN, 0=FLAT
         const int h1_trend = h1bars.ind.trend_state.load(std::memory_order_relaxed);
-        if (h1_trend == 0) return;
+        if (h1_trend == 0) return false;
 
         // H4 confirmation: if H4 has data, trend must agree with H1
         // If H4 not yet ready (cold start / indices don't build H4 yet), allow H1-only
         const bool h4_ready = h4bars.ind.m1_ready.load(std::memory_order_relaxed);
         if (h4_ready) {
             const int h4_trend = h4bars.ind.trend_state.load(std::memory_order_relaxed);
-            if (h4_trend != 0 && h4_trend != h1_trend) return;  // H4 disagrees
+            if (h4_trend != 0 && h4_trend != h1_trend) return false;  // H4 disagrees
         }
 
         // H1 EMA crossover confirmation
-        if (!h1bars.ind.m1_ema_live.load(std::memory_order_relaxed)) return;
+        if (!h1bars.ind.m1_ema_live.load(std::memory_order_relaxed)) return false;
         const double h1_e9  = h1bars.ind.ema9 .load(std::memory_order_relaxed);
         const double h1_e50 = h1bars.ind.ema50.load(std::memory_order_relaxed);
-        if (h1_e9 <= 0.0 || h1_e50 <= 0.0) return;
+        if (h1_e9 <= 0.0 || h1_e50 <= 0.0) return false;
 
         // EMA separation gate: crossover must not be marginal
         const double ema_sep = std::fabs(h1_e9 - h1_e50);
-        if (ema_sep < min_ema_sep_) return;
+        if (ema_sep < min_ema_sep_) return false;
 
         // EMA direction must match H1 trend_state
         const bool ema_long  = (h1_e9 > h1_e50);
         const bool ema_short = (h1_e9 < h1_e50);
-        if (h1_trend == +1 && !ema_long)  return;
-        if (h1_trend == -1 && !ema_short) return;
+        if (h1_trend == +1 && !ema_long)  return false;
+        if (h1_trend == -1 && !ema_short) return false;
 
         const bool is_long = (h1_trend == +1);
 
         // Tick drift alignment: block only strongly opposing drift
-        if (is_long  && drift < -cfg_.drift_threshold * 2.0) return;
-        if (!is_long && drift >  cfg_.drift_threshold * 2.0) return;
+        if (is_long  && drift < -cfg_.drift_threshold * 2.0) return false;
+        if (!is_long && drift >  cfg_.drift_threshold * 2.0) return false;
 
         // ATR gate: H1 ATR from OHLCBarEngine indicators
         const double h1_atr = h1bars.ind.atr14.load(std::memory_order_relaxed);
-        if (h1_atr > 0.0 && h1_atr < cfg_.atr_min) return;
+        if (h1_atr > 0.0 && h1_atr < cfg_.atr_min) return false;
 
         // Session gate: London + NY only (08:00-22:00 UTC)
         {
             struct tm ti{}; idx_utc(ti);
             const int mins = ti.tm_hour * 60 + ti.tm_min;
-            if (mins < 8 * 60 || mins >= 22 * 60) return;
+            if (mins < 8 * 60 || mins >= 22 * 60) return false;
             // NY open noise: block 13:15-14:00 UTC
-            if (mins >= 13 * 60 + 15 && mins < 14 * 60) return;
+            if (mins >= 13 * 60 + 15 && mins < 14 * 60) return false;
         }
 
         // Direction-flip cooldown: 4h before entering opposite of last exit
         if (last_exit_dir_ != 0 && last_exit_dir_ != (is_long ? 1 : -1)) {
-            if (idx_now_ms() - last_exit_ms_ < 14400000LL) return;
+            if (idx_now_ms() - last_exit_ms_ < 14400000LL) return false;
         }
 
         // ── Open position ─────────────────────────────────────────────────────
@@ -1235,6 +1238,7 @@ public:
                entry_, sl_, sl_pts_, ema_sep,
                h1_trend, h4_ready ? 1 : 0, drift);
         fflush(stdout);
+        return true;
     }
 
 private:
