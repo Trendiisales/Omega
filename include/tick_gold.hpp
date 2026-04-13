@@ -3678,7 +3678,8 @@ static void on_tick_gold(
                 handle_closed_trade(tr);
                 if (!g_candle_flow.shadow_mode)
                     send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
-            });
+            },
+            0.0);
     }
 
     // Entry: only when no other gold position open and gold_can_enter passes
@@ -3842,7 +3843,8 @@ static void on_tick_gold(
                     handle_closed_trade(tr);
                     if (!g_candle_flow.shadow_mode)
                         send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
-                });
+                },
+                g_gold_stack.ewm_drift());
 
             if (g_candle_flow.has_open_position()) {
                 g_telemetry.UpdateLastEntryTs();
