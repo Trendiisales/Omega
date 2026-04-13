@@ -492,12 +492,55 @@ static void on_tick_gold(
             const bool trend_day_corr_block =
                 is_mean_rev_engine && g_corr_matrix.trend_day_corr("XAUUSD");
 
-            if (!direction_ok || trend_day_corr_block) {
-                printf("[GOLD-STACK-BLOCKED] %s counter-trend mid=%.2f vwap=%.2f"
-                       " vol_ratio=%.3f eng=%s trend_day_corr=%d\n",
-                       gsig.is_long ? "LONG" : "SHORT",
-                       gold_mid_now, gold_vwap_now, gold_vol_ratio, gsig.engine,
-                       (int)trend_day_corr_block);
+            // ?? CVD divergence block for GoldStack ????????????????????????????????
+            // Block LONG when CVD bearish divergence: price made new high but CVD
+            // did NOT -- distribution signal, institutional selling into strength.
+            // Block SHORT when CVD bullish divergence: price made new low but CVD
+            // did NOT -- absorption signal, institutional buying into weakness.
+            // Applies to ALL GoldStack engines -- CVD divergence means execution
+            // flow opposes signal direction regardless of strategy type.
+            const bool cvd_gs_blocked =
+                ( gsig.is_long && g_macro_ctx.gold_cvd_bear_div) ||
+                (!gsig.is_long && g_macro_ctx.gold_cvd_bull_div);
+
+            // ?? PDH/PDL structural block for GoldStack ??????????????????????
+            // Block LONG when price is approaching PDH from below (within $1.50)
+            // but has not confirmed a breakout ($3+ above PDH).
+            // Block SHORT when price is approaching PDL from above (within $1.50)
+            // but has not confirmed a breakdown ($3+ below PDL).
+            // Breakout confirmed at $3+ past level -- allow entry.
+            const omega::edges::DayLevels gs_pdl = g_edges.prev_day.previous("XAUUSD");
+            bool gs_pdh_block = false;
+            bool gs_pdl_block = false;
+            if (gs_pdl.valid()) {
+                if (gsig.is_long) {
+                    const bool below_pdh = gold_mid_now <  gs_pdl.high + 3.00;
+                    const bool near_pdh  = gold_mid_now >= gs_pdl.high - 1.50;
+                    gs_pdh_block = near_pdh && below_pdh;
+                } else {
+                    const bool above_pdl = gold_mid_now >  gs_pdl.low - 3.00;
+                    const bool near_pdl  = gold_mid_now <= gs_pdl.low + 1.50;
+                    gs_pdl_block = near_pdl && above_pdl;
+                }
+            }
+            const bool pdlevel_gs_blocked = gs_pdh_block || gs_pdl_block;
+
+            if (!direction_ok || trend_day_corr_block || cvd_gs_blocked || pdlevel_gs_blocked) {
+                if (cvd_gs_blocked)
+                    printf("[GS-CVD-BLOCK] XAUUSD %s %s cvd_bear=%d cvd_bull=%d\n",
+                           gsig.is_long ? "LONG" : "SHORT", gsig.engine,
+                           (int)g_macro_ctx.gold_cvd_bear_div,
+                           (int)g_macro_ctx.gold_cvd_bull_div);
+                if (pdlevel_gs_blocked)
+                    printf("[GS-PDL-BLOCK] XAUUSD %s %s mid=%.2f pdh=%.2f pdl=%.2f\n",
+                           gsig.is_long ? "LONG" : "SHORT", gsig.engine,
+                           gold_mid_now, gs_pdl.high, gs_pdl.low);
+                if (!cvd_gs_blocked && !pdlevel_gs_blocked)
+                    printf("[GOLD-STACK-BLOCKED] %s counter-trend mid=%.2f vwap=%.2f"
+                           " vol_ratio=%.3f eng=%s trend_day_corr=%d\n",
+                           gsig.is_long ? "LONG" : "SHORT",
+                           gold_mid_now, gold_vwap_now, gold_vol_ratio, gsig.engine,
+                           (int)trend_day_corr_block);
                 fflush(stdout);
             } else {
                 g_telemetry.UpdateLastSignal("XAUUSD",
@@ -3101,7 +3144,81 @@ static void on_tick_gold(
                 }
                 gf_vpin_ok = false;
             }
-            if (gf_vpin_ok) {
+            // ?? CVD divergence block for GoldFlow ????????????????????????????????????????
+            // Block new GoldFlow entries when CVD diverges from price direction.
+            // bearish_div: price new high, CVD not -> distribution -> block LONG entry.
+            // bullish_div: price new low, CVD not  -> absorption  -> block SHORT entry.
+            // Management of existing positions is never affected -- only new entries.
+            bool gf_cvd_ok = true;
+            if (!g_gold_flow.has_open_position()) {
+                if (g_macro_ctx.gold_cvd_bear_div) {
+                    // Price rising but CVD diverging down -- distribution -- block longs
+                    // GoldFlow can still enter SHORT (flow is selling into strength)
+                    static int64_t s_gf_cvd_log = 0;
+                    if (nowSec() - s_gf_cvd_log > 15) {
+                        s_gf_cvd_log = nowSec();
+                        std::printf("[CVD-GF] GoldFlow LONG entry blocked: CVD bearish divergence (distribution)\n");
+                        std::fflush(stdout);
+                    }
+                    // Only block LONG entries -- SHORT allowed (flow is aligned)
+                    // We can't know direction before on_tick fires, so we set a flag
+                    // and let on_tick run; GoldFlowEngine internal direction gate won't
+                    // save us. Instead: use the ewm_drift sign as proxy.
+                    // ewm_drift > 0 -> engine wants LONG -> block it.
+                    // ewm_drift <= 0 -> engine wants SHORT -> allow.
+                    if (g_gold_stack.ewm_drift() > 0.0) gf_cvd_ok = false;
+                }
+                if (g_macro_ctx.gold_cvd_bull_div) {
+                    // Price falling but CVD diverging up -- absorption -- block shorts
+                    static int64_t s_gf_cvd2_log = 0;
+                    if (nowSec() - s_gf_cvd2_log > 15) {
+                        s_gf_cvd2_log = nowSec();
+                        std::printf("[CVD-GF] GoldFlow SHORT entry blocked: CVD bullish divergence (absorption)\n");
+                        std::fflush(stdout);
+                    }
+                    if (g_gold_stack.ewm_drift() < 0.0) gf_cvd_ok = false;
+                }
+            }
+            // ?? PDH/PDL structural block for GoldFlow ?????????????????????????????????????????
+            // Mirrors GoldStack PDH/PDL block. Block new entries approaching prior
+            // day levels that haven't been confirmed as breakouts.
+            // $1.50 = ~1/3 of a normal 5pt ATR -- inside that zone is S/R noise.
+            // $3.00 = confirmed break of level, trend entry allowed.
+            bool gf_pdlevel_ok = true;
+            if (!g_gold_flow.has_open_position()) {
+                const omega::edges::DayLevels gf_pdl = g_edges.prev_day.previous("XAUUSD");
+                if (gf_pdl.valid()) {
+                    const bool gf_is_long_bias = (g_gold_stack.ewm_drift() > 0.0);
+                    if (gf_is_long_bias) {
+                        const bool below_pdh = gold_mid_now <  gf_pdl.high + 3.00;
+                        const bool near_pdh  = gold_mid_now >= gf_pdl.high - 1.50;
+                        if (near_pdh && below_pdh) {
+                            gf_pdlevel_ok = false;
+                            static int64_t s_gf_pdh_log = 0;
+                            if (nowSec() - s_gf_pdh_log > 15) {
+                                s_gf_pdh_log = nowSec();
+                                std::printf("[PDL-GF] GoldFlow LONG blocked: approaching PDH mid=%.2f pdh=%.2f\n",
+                                            gold_mid_now, gf_pdl.high);
+                                std::fflush(stdout);
+                            }
+                        }
+                    } else {
+                        const bool above_pdl = gold_mid_now >  gf_pdl.low - 3.00;
+                        const bool near_pdl  = gold_mid_now <= gf_pdl.low + 1.50;
+                        if (near_pdl && above_pdl) {
+                            gf_pdlevel_ok = false;
+                            static int64_t s_gf_pdl_log = 0;
+                            if (nowSec() - s_gf_pdl_log > 15) {
+                                s_gf_pdl_log = nowSec();
+                                std::printf("[PDL-GF] GoldFlow SHORT blocked: approaching PDL mid=%.2f pdl=%.2f\n",
+                                            gold_mid_now, gf_pdl.low);
+                                std::fflush(stdout);
+                            }
+                        }
+                    }
+                }
+            }
+            if (gf_vpin_ok && gf_cvd_ok && gf_pdlevel_ok) {
             // ATR-based expansion flag: wide trail activates when ATR > 2x normal (10pt+)
             // OR when supervisor confirms EXPANSION_BREAKOUT/TREND_CONTINUATION.
             // This catches spikes where ATR expands before the regime label catches up.
