@@ -334,8 +334,14 @@ static void on_tick_us500(
                    tr.side.c_str(), tr.pnl, tr.exitReason.c_str());
             fflush(stdout);
         };
-        g_iswing_sp.on_tick(bid, ask, g_bars_sp.h1, g_bars_sp.h4,
+        const bool sw_sp_entered = g_iswing_sp.on_tick(bid, ask, g_bars_sp.h1, g_bars_sp.h4,
                             g_iflow_sp.drift(), swing_sp_cb);
+        if (sw_sp_entered)
+            g_telemetry.UpdateLastSignal("US500.F",
+                g_iswing_sp.is_long_at_entry() ? "LONG" : "SHORT",
+                g_iswing_sp.entry_price(), "H1+H4 EMA swing",
+                "ISWING", regime.c_str(), "IndexSwing",
+                0.0, g_iswing_sp.sl_price());
     }
 }
 
@@ -923,7 +929,13 @@ static void on_tick_nas100(
                    tr.side.c_str(), tr.pnl, tr.exitReason.c_str());
             fflush(stdout);
         };
-        g_iswing_nq.on_tick(bid, ask, g_bars_nq.h1, g_bars_nq.h4,
+        const bool sw_nq_entered = g_iswing_nq.on_tick(bid, ask, g_bars_nq.h1, g_bars_nq.h4,
                             g_iflow_nq.drift(), swing_nq_cb);
+        if (sw_nq_entered)
+            g_telemetry.UpdateLastSignal("USTEC.F",
+                g_iswing_nq.is_long_at_entry() ? "LONG" : "SHORT",
+                g_iswing_nq.entry_price(), "H1+H4 EMA swing",
+                "ISWING", regime.c_str(), "IndexSwing",
+                0.0, g_iswing_nq.sl_price());
     }
 }
