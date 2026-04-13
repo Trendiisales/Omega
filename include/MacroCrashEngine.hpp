@@ -163,6 +163,14 @@ public:
 
     bool has_open_position() const { return pos.active; }
 
+    // Emergency close -- dollar_stop and session-end force exit.
+    // Uses _close_all which fires on_trade_record (handle_closed_trade) and on_close.
+    void force_close(double bid, double ask, int64_t now_ms) {
+        if (!pos.active) return;
+        const double exit_px = pos.is_long ? bid : ask;
+        _close_all(exit_px, "DOLLAR_STOP", now_ms);
+    }
+
     // ── Main tick ─────────────────────────────────────────────────────────
     // DOM parameters added 2026-04-07:
     //   book_slope:      weighted bid-ask pressure ratio, -1..+1. >+0.15=buy pressure, <-0.15=sell.
