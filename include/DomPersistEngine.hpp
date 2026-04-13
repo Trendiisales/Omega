@@ -207,6 +207,16 @@ struct DomPersistEngine {
     double current_atr()    const noexcept { return m_atr; }
 
     // Seed ATR from bar data (same pattern as GFE)
+    // seed_warmup: call after seed_bar_atr on startup to skip tick warmup.
+    // Marks engine as having received DPE_MIN_ENTRY_TICKS + DPE_ATR_WARMUP_TICKS
+    // worth of data from disk state -- prevents 2-3min blindness on every restart.
+    void seed_warmup() noexcept {
+        m_ticks_received = DPE_MIN_ENTRY_TICKS;
+        m_atr_warmup     = DPE_ATR_WARMUP_TICKS;
+        printf("[DPE-SEED] Warmup counters seeded from disk -- entries unblocked immediately\n");
+        fflush(stdout);
+    }
+
     void seed_bar_atr(double bar_atr) noexcept {
         if (bar_atr <= 0.0) return;
         if (m_atr <= 0.0) {
