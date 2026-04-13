@@ -906,11 +906,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                g_macro_crash.pos.is_long?"LONG":"SHORT",
                                g_macro_crash.pos.entry, unr, ds_lim);
                         fflush(stdout);
-                        g_macro_crash.force_close(s_xau_bid, s_xau_ask, ds_now,
-                            [&](const omega::TradeRecord& tr) {
-                                handle_closed_trade(tr);
-                                send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
-                            });
+                        g_macro_crash.force_close(s_xau_bid, s_xau_ask, ds_now);
                     }
                 }
                 // GoldStack (MeanReversion / CompressionBreakout etc)
@@ -923,7 +919,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                g_gold_stack.live_is_long()?"LONG":"SHORT",
                                g_gold_stack.live_entry(), unr, ds_lim);
                         fflush(stdout);
-                        g_gold_stack.force_close(s_xau_bid, s_xau_ask, ds_now,
+                        g_gold_stack.force_close(s_xau_bid, s_xau_ask, 0.0,
                             [&](const omega::TradeRecord& tr) {
                                 handle_closed_trade(tr);
                                 send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
