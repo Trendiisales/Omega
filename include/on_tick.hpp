@@ -834,6 +834,104 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 push_live_trade("USDJPY","CarryUnw", g_ca_carry_unwind.open_is_long(),
                     g_ca_carry_unwind.open_entry(), 0.0, 0.0, g_ca_carry_unwind.open_size(), (int64_t)std::time(nullptr));
         }
+
+        // ── DOLLAR STOP: emergency per-trade runtime cut ──────────────────
+        // Fires every 250ms (inside the existing 250ms push block).
+        // Closes any position whose unrealised USD loss exceeds dollar_stop_usd.
+        // Independent of SL -- fires on live floating P&L regardless of broker order state.
+        // Uses last-seen XAUUSD bid/ask stored each tick so this works on any symbol tick.
+        // Set dollar_stop_usd=0 in omega_config.ini to disable.
+        if (g_cfg.dollar_stop_usd > 0.0) {
+            // Cache XAUUSD prices from this tick or prior ticks
+            static thread_local double s_xau_bid = 0.0;
+            static thread_local double s_xau_ask = 0.0;
+            if (sym == "XAUUSD" && bid > 0.0 && ask > 0.0) {
+                s_xau_bid = bid;
+                s_xau_ask = ask;
+            }
+            // Only check when we have a valid XAUUSD price
+            if (s_xau_bid > 0.0 && s_xau_ask > 0.0) {
+                const double ds_lim   = g_cfg.dollar_stop_usd;
+                const double xau_mid  = (s_xau_bid + s_xau_ask) * 0.5;
+                const int64_t ds_now  = static_cast<int64_t>(std::time(nullptr));
+
+                // Compute unrealised USD P&L: pts * size * 100 (XAUUSD = $100/pt/lot)
+                auto xau_unr = [&](bool is_long, double entry, double size) -> double {
+                    const double pts = is_long ? (xau_mid - entry) : (entry - xau_mid);
+                    return pts * size * 100.0;
+                };
+
+                // GoldFlow
+                if (g_gold_flow.pos.active) {
+                    const double unr = xau_unr(g_gold_flow.pos.is_long,
+                                               g_gold_flow.pos.entry,
+                                               g_gold_flow.pos.size);
+                    if (unr < -ds_lim) {
+                        printf("[DOLLAR-STOP] GoldFlow %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",
+                               g_gold_flow.pos.is_long?"LONG":"SHORT",
+                               g_gold_flow.pos.entry, unr, ds_lim);
+                        fflush(stdout);
+                        g_gold_flow.force_close(s_xau_bid, s_xau_ask, ds_now,
+                            [&](const omega::TradeRecord& tr) {
+                                handle_closed_trade(tr);
+                                send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
+                            });
+                    }
+                }
+                // CandleFlow
+                if (g_candle_flow.has_open_position()) {
+                    const double unr = xau_unr(g_candle_flow.pos.is_long,
+                                               g_candle_flow.pos.entry,
+                                               g_candle_flow.pos.size);
+                    if (unr < -ds_lim) {
+                        printf("[DOLLAR-STOP] CandleFlow %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",
+                               g_candle_flow.pos.is_long?"LONG":"SHORT",
+                               g_candle_flow.pos.entry, unr, ds_lim);
+                        fflush(stdout);
+                        g_candle_flow.force_close(s_xau_bid, s_xau_ask, ds_now,
+                            [&](const omega::TradeRecord& tr) {
+                                handle_closed_trade(tr);
+                                if (!g_candle_flow.shadow_mode)
+                                    send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
+                            });
+                    }
+                }
+                // MacroCrash
+                if (g_macro_crash.has_open_position()) {
+                    const double unr = xau_unr(g_macro_crash.pos.is_long,
+                                               g_macro_crash.pos.entry,
+                                               g_macro_crash.pos.size);
+                    if (unr < -ds_lim) {
+                        printf("[DOLLAR-STOP] MacroCrash %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",
+                               g_macro_crash.pos.is_long?"LONG":"SHORT",
+                               g_macro_crash.pos.entry, unr, ds_lim);
+                        fflush(stdout);
+                        g_macro_crash.force_close(s_xau_bid, s_xau_ask, ds_now,
+                            [&](const omega::TradeRecord& tr) {
+                                handle_closed_trade(tr);
+                                send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
+                            });
+                    }
+                }
+                // GoldStack (MeanReversion / CompressionBreakout etc)
+                if (g_gold_stack.has_open_position()) {
+                    const double unr = xau_unr(g_gold_stack.live_is_long(),
+                                               g_gold_stack.live_entry(),
+                                               g_gold_stack.live_size());
+                    if (unr < -ds_lim) {
+                        printf("[DOLLAR-STOP] GoldStack %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",
+                               g_gold_stack.live_is_long()?"LONG":"SHORT",
+                               g_gold_stack.live_entry(), unr, ds_lim);
+                        fflush(stdout);
+                        g_gold_stack.force_close(s_xau_bid, s_xau_ask, ds_now,
+                            [&](const omega::TradeRecord& tr) {
+                                handle_closed_trade(tr);
+                                send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
+                            });
+                    }
+                }
+            }  // s_xau_bid valid
+        }  // dollar_stop enabled
     }
 
     // symbol_risk_blocked -- converted to static function (see above on_tick)
