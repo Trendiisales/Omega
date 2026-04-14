@@ -123,8 +123,15 @@ $innerDir = Get-ChildItem $extractPath -Directory | Select-Object -First 1
 
 foreach ($ext in @("*.cpp","*.hpp","*.h","*.ini","*.cmake","*.txt","*.json","*.md")) {
     Get-ChildItem -Path $innerDir.FullName -Filter $ext -Recurse | ForEach-Object {
-        $rel  = $_.FullName.Substring($innerDir.FullName.Length).TrimStart('\','/')
-        $dest = Join-Path $OmegaDir $rel
+        $rel = $_.FullName.Substring($innerDir.FullName.Length).TrimStart('\','/')
+        # Guard: skip any rel path that looks absolute (contains drive letter colon),
+        # contains ".." traversal, or is empty. These cause Join-Path to produce
+        # broken paths like C:\Omega\C: which crash New-Item and Copy-Item.
+        if ($rel -eq "" -or $rel -match "^[A-Za-z]:" -or $rel -match "\.\.") {
+            Write-Host "  [SKIP] Bad relative path: $rel" -ForegroundColor DarkYellow
+            return
+        }
+        $dest    = Join-Path $OmegaDir $rel
         $destDir = Split-Path $dest -Parent
         if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
         Copy-Item $_.FullName $dest -Force
@@ -296,5 +303,6 @@ Write-Host "=======================================================" -Foreground
 Write-Host ("  DONE: {0:mm}m {0:ss}s" -f $elapsed) -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
+
 
 
