@@ -86,6 +86,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "OmegaCrowdingGuard.hpp"     // Directional crowding tracker + score penalty (RenTec #4)
 #include "OmegaWalkForward.hpp"       // Rolling live walk-forward OOS validation (RenTec #6)
 #include "OmegaParamGate.hpp"         // Adaptive parameter gate: dynamic score threshold (RenTec #7)
+#include "HTFSwingEngines.hpp"        // H1 ADX+EMA pullback engine + H4 Donchian breakout engine (XAUUSD)
 #include "omega_types.hpp"
 #include "globals.hpp"
 #include "omega_runtime.hpp"
@@ -93,3 +94,4 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "trade_loop.hpp"
 #include "engine_init.hpp"
 #include "omega_main.hpp"
+
