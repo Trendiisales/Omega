@@ -45,7 +45,8 @@ static void on_tick_gold(
         g_bracket_gold.has_open_position()      ||
         (gf_open && !gf_winning)                ||  // GoldFlow blocks unless it's a confirmed winner
         g_trend_pb_gold.has_open_position()     ||
-        g_nbm_gold_london.has_open_position();  // London NBM also blocks other gold engines
+        g_nbm_gold_london.has_open_position()   ||  // London NBM also blocks other gold engines
+        g_candle_flow.has_open_position();          // FIX: CFE open position blocks ALL other gold engines
 
     // Write GoldFlow state to telemetry for GUI pyramid indicator
     {
@@ -3854,9 +3855,30 @@ static void on_tick_gold(
             fflush(stdout);
         }
     }
+    // CFE TOD dead zone: block entries 00:00-01:30 UTC.
+    // All 5 consecutive losses on 2026-04-14 were in the 00:15-00:31 UTC window.
+    // Lowest-liquidity window on gold: Sydney thin tape, no NY/London flow.
+    const bool cfe_tod_dead_zone = [&]() -> bool {
+        const int64_t cfe_tod_utc_sec  = now_ms_g / 1000LL;
+        const int     cfe_tod_utc_hour = static_cast<int>((cfe_tod_utc_sec % 86400LL) / 3600LL);
+        const int     cfe_tod_utc_min  = static_cast<int>((cfe_tod_utc_sec % 3600LL) / 60LL);
+        const int     cfe_tod_mins     = cfe_tod_utc_hour * 60 + cfe_tod_utc_min;
+        return (cfe_tod_mins >= 0 && cfe_tod_mins < 90);  // 00:00-01:30 UTC
+    }();
+    if (cfe_tod_dead_zone) {
+        static int64_t s_cfe_tod_log = 0;
+        if (now_ms_g - s_cfe_tod_log > 60000) {
+            s_cfe_tod_log = now_ms_g;
+            printf("[CFE-TOD-DEAD] entries blocked: 00:00-01:30 UTC dead zone\n");
+            fflush(stdout);
+        }
+    }
+
     if (!g_candle_flow.has_open_position()
         && gold_can_enter
         && !cfe_startup_locked
+        && !cfe_tod_dead_zone
+        && !g_gold_stack.has_open_position()   // FIX: GoldStack open blocks CFE entry
         && !g_bracket_gold.has_open_position()
         && !g_gold_flow.has_open_position()
         && !g_trend_pb_gold.has_open_position()
@@ -3930,6 +3952,10 @@ static void on_tick_gold(
             // Mirrors GoldFlow Gate 3. Root cause of -$401 SHORT (12:24-04-11):
             // tick RSI slope said SHORT but M1 EMA9>EMA50 = bullish trend.
             bool cfe_bar_gate_ok = true;
+            // cfe_is_long_intent: declared here so VPIN and CVD blocks can use it.
+            // FIX: was re-declared inside both m1_ready, VPIN, CVD blocks causing
+            // shadowing and inconsistency. Single declaration from live drift.
+            const bool cfe_is_long_intent = (g_gold_stack.ewm_drift() > 0.0);
             if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
                 const bool   cfe_ema_live = g_bars_gold.m1.ind.m1_ema_live.load(std::memory_order_relaxed);
                 const double cfe_ema9    = cfe_ema_live ? g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed) : 0.0;
@@ -3937,12 +3963,7 @@ static void on_tick_gold(
                 const int    cfe_m1_trend = (cfe_ema9 > 0.0 && cfe_ema50 > 0.0)
                     ? (cfe_ema9 < cfe_ema50 ? -1 : +1) : 0;
                 const double cfe_bar_rsi  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-                // Use actual drift direction -- synthetic bar close/open is unreliable
-                // as a direction proxy (built from EMA/drift values, not real price action).
-                // ewm_drift>0 = CFE will enter LONG, ewm_drift<0 = SHORT.
-                const double cfe_drift_now    = g_gold_stack.ewm_drift();
-                const bool cfe_is_long_intent = (cfe_drift_now > 0.0);
-                // Counter-trend block
+                // Counter-trend block (uses cfe_is_long_intent declared at outer scope)
                 if (cfe_m1_trend != 0) {
                     const bool cfe_counter = (cfe_is_long_intent && cfe_m1_trend == -1)
                                           || (!cfe_is_long_intent && cfe_m1_trend == +1);
@@ -3988,10 +4009,10 @@ static void on_tick_gold(
             // This prevents entering the wrong side when institutions are active.
             // When VPIN not toxic or bias neutral: do not block (allow normal CFE logic).
             if (cfe_bar_gate_ok && g_vpin.warmed() && g_vpin.toxic()) {
-                const bool cfe_intends_long = (g_gold_stack.ewm_drift() > 0.0);  // use drift, not synthetic bar
+                // Uses cfe_is_long_intent from outer scope (FIX: removed duplicate local decl).
                 // vpin_short_bias: elevated VPIN with sell-heavy flow = informed selling
                 // vpin_long_bias:  elevated VPIN with buy-heavy flow  = informed buying
-                if (cfe_intends_long  && g_vpin.vpin_short_bias()) {
+                if (cfe_is_long_intent  && g_vpin.vpin_short_bias()) {
                     cfe_bar_gate_ok = false;
                     static int64_t s_vpin_long_log = 0;
                     if (now_ms_g - s_vpin_long_log > 10000) {
@@ -4000,7 +4021,7 @@ static void on_tick_gold(
                                g_vpin.vpin());
                         fflush(stdout);
                     }
-                } else if (!cfe_intends_long && g_vpin.vpin_long_bias()) {
+                } else if (!cfe_is_long_intent && g_vpin.vpin_long_bias()) {
                     cfe_bar_gate_ok = false;
                     static int64_t s_vpin_short_log = 0;
                     if (now_ms_g - s_vpin_short_log > 10000) {
@@ -4017,8 +4038,8 @@ static void on_tick_gold(
             // bearish_div: price new high, CVD falling -> distribution -> block LONG.
             // bullish_div: price new low, CVD rising  -> absorption  -> block SHORT.
             if (cfe_bar_gate_ok) {
-                const bool cfe_intends_long_cvd = (g_gold_stack.ewm_drift() > 0.0);
-                if (cfe_intends_long_cvd && g_macro_ctx.gold_cvd_bear_div) {
+                // Uses cfe_is_long_intent from outer scope (FIX: removed duplicate local decl).
+                if (cfe_is_long_intent && g_macro_ctx.gold_cvd_bear_div) {
                     cfe_bar_gate_ok = false;
                     static int64_t s_cvd_long_log = 0;
                     if (now_ms_g - s_cvd_long_log > 15000) {
@@ -4026,7 +4047,7 @@ static void on_tick_gold(
                         printf("[CFE-CVD-BLOCK] LONG blocked: CVD bearish divergence (distribution)\n");
                         fflush(stdout);
                     }
-                } else if (!cfe_intends_long_cvd && g_macro_ctx.gold_cvd_bull_div) {
+                } else if (!cfe_is_long_intent && g_macro_ctx.gold_cvd_bull_div) {
                     cfe_bar_gate_ok = false;
                     static int64_t s_cvd_short_log = 0;
                     if (now_ms_g - s_cvd_short_log > 15000) {
@@ -4072,6 +4093,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
