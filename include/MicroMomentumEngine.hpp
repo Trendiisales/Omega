@@ -183,8 +183,7 @@ public:
                 static int64_t s_asia_log = 0;
                 if (now_s - s_asia_log > 120) {
                     s_asia_log = now_s;
-                    printf("[MME-ASIA-BLOCK] UTC hour=%d blocked (22-07)
-", utch);
+                    printf("[MME-ASIA-BLOCK] UTC hour=%d blocked (22-07)\n", utch);
                     fflush(stdout);
                 }
                 return;
