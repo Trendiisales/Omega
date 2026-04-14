@@ -347,6 +347,19 @@ static void init_engines(const std::string& cfg_path)
     // All session trades: TIME_STOP losses shorting an uptrend. No edge confirmed.
     g_trend_pb_gold.enabled = false;
 
+    // HTF swing engines -- shadow_mode=true always until live validation complete.
+    // H1SwingEngine: ADX-filtered H1 EMA pullback, $15 risk, 0.10 lot max, London+NY only.
+    // H4RegimeEngine: Donchian 10-bar channel break, $10 risk, 0.10 lot max, 24h.
+    // Both engines start ENABLED in shadow mode -- they log but never send live orders.
+    // To enable live: set shadow_mode=false after shadow validation confirms positive edge.
+    g_h1_swing_gold.shadow_mode = true;
+    g_h1_swing_gold.enabled     = true;
+    g_h4_regime_gold.shadow_mode = true;
+    g_h4_regime_gold.enabled     = true;
+    printf("[INIT] H1SwingEngine:  shadow_mode=true enabled=true ($15 risk, max 0.10 lots)\n");
+    printf("[INIT] H4RegimeEngine: shadow_mode=true enabled=true ($10 risk, max 0.10 lots)\n");
+    fflush(stdout);
+
     // DISABLED: Index TrendPullback never explicitly disabled -- no live validation.
     // GER40: tighter band (index moves more cleanly around EMAs)
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500
@@ -1472,3 +1485,4 @@ static void init_engines(const std::string& cfg_path)
         }
     }
 }
+
