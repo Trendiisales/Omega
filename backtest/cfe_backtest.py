@@ -319,12 +319,39 @@ class CFEEngine:
         self.adverse_block      = False
 
         self.trade_id           = 0
+        self.last_tick_ms       = 0   # for gap detection
 
     # ── Public entry point ──────────────────────────────────────────────────
 
     def on_tick(self, bid: float, ask: float, ts_ms: int):
         mid    = (bid + ask) * 0.5
         spread = ask - bid
+
+        # ── Gap detection: reset time-sensitive state on gaps > 1 hour ───────
+        # Weekend/session gaps mean sustained drift, DFE persist, and EWM drift
+        # state are stale. A 60h weekend would make drift_sus_start_ms make
+        # Monday's first ticks look like they have days of sustained drift.
+        # Also reset bar builder so a partial bar from Friday doesn't bleed in.
+        if self.last_tick_ms > 0:
+            gap_ms = ts_ms - self.last_tick_ms
+            if gap_ms > 3_600_000:  # > 1 hour
+                self.drift_sus_start_ms = 0
+                self.drift_sus_dir      = 0
+                self.dfe_persist_ticks  = 0
+                self.dfe_persist_dir    = 0
+                self.ewm_mid            = mid   # reset EWM to current price
+                self.ewm_drift          = 0.0
+                self.prev_ewm_drift     = 0.0
+                self.dfe_warmed         = False
+                self.bar_bld            = BarBuilder()  # discard partial bar
+                self.recent_mid.clear()
+                # If position was open over the gap (shouldn't happen but defensive)
+                if self.phase == 'LIVE':
+                    p = self.pos
+                    exit_px = bid if p.is_long else ask
+                    pnl = ((exit_px - p.entry) if p.is_long else (p.entry - exit_px)) * p.size
+                    self._close(exit_px, 'FORCE_CLOSE', ts_ms, pnl, ts_ms - p.entry_ts_ms)
+        self.last_tick_ms = ts_ms
 
         # Always update indicators
         self.rsi.update(mid)
