@@ -65,6 +65,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "OHLCBarEngine.hpp"    // OHLCBar + get_bars() for seed_channel_from_bars()
 
 namespace omega {
 
@@ -593,6 +594,33 @@ struct H4RegimeEngine {
 
     bool has_open_position() const noexcept { return pos_.active; }
 
+    // seed_channel_from_bars: call on startup after load_indicators() to pre-fill
+    // the Donchian channel from saved H4 bar history. Without this the channel
+    // needs 20 new H4 bars (80 hours) to rebuild from scratch on cold start.
+    // With it: channel is ready from tick 1 if H4 bars were saved.
+    void seed_channel_from_bars(const std::deque<OHLCBar>& bars) noexcept {
+        h4_highs_.clear();
+        h4_lows_ .clear();
+        const int n = static_cast<int>(bars.size());
+        // Take last p.channel_bars bars
+        const int start = std::max(0, n - p.channel_bars);
+        for (int i = start; i < n; ++i) {
+            h4_highs_.push_back(bars[i].high);
+            h4_lows_ .push_back(bars[i].low);
+        }
+        if ((int)h4_highs_.size() >= p.channel_bars) {
+            channel_high_ = *std::max_element(h4_highs_.begin(), h4_highs_.end());
+            channel_low_  = *std::min_element(h4_lows_ .begin(), h4_lows_ .end());
+            printf("[H4REGIME-%s] Channel seeded from %d H4 bars: high=%.2f low=%.2f\n",
+                   symbol.c_str(), (int)h4_highs_.size(), channel_high_, channel_low_);
+        } else {
+            printf("[H4REGIME-%s] Partial channel: %d/%d bars (needs %d more H4 bars)\n",
+                   symbol.c_str(), (int)h4_highs_.size(), p.channel_bars,
+                   p.channel_bars - (int)h4_highs_.size());
+        }
+        fflush(stdout);
+    }
+
     HTFSignal on_h4_bar(
         double  h4_bar_high,  double h4_bar_low, double h4_bar_close,
         double  mid, double bid, double ask,
@@ -861,3 +889,4 @@ private:
 };
 
 } // namespace omega
+
