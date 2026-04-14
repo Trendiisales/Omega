@@ -612,9 +612,7 @@ struct CandleFlowEngine {
                     static int64_t s_sus_peak_log = 0;
                     if (now_ms - s_sus_peak_log > 30000) {
                         s_sus_peak_log = now_ms;
-                        printf("[CFE-SUS-PEAK] drift=%.2f < 70pct of peak=%.2f -- exhausting
-",
-                               std::fabs(ewm_drift), m_sus_drift_peak);
+                        printf("[CFE-SUS-PEAK] drift=%.2f < 70pct peak=%.2f -- exhausting\n", std::fabs(ewm_drift), m_sus_drift_peak);
                         fflush(stdout);
                     }
                     goto cfe_sustained_skip;
