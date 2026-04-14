@@ -3860,6 +3860,19 @@ static void on_tick_gold(
             });
     }
     // Entry: only when no other gold position open, L2 live, London+NY session
+    // DPE CHOP gate: same as CFE -- block when vol expanding without drift.
+    const bool dpe_chop_block = (gold_vol_ratio_now > 1.2)
+                               && (std::fabs(gold_ewm_drift_now) < 1.0);
+    if (dpe_chop_block) {
+        static int64_t s_dpe_chop_log = 0;
+        if (now_ms_g - s_dpe_chop_log > 20000) {
+            s_dpe_chop_log = now_ms_g;
+            printf("[DPE-CHOP-BLOCK] blocked: vol_ratio=%.2f drift=%.2f\n",
+                   gold_vol_ratio_now, gold_ewm_drift_now);
+            fflush(stdout);
+        }
+    }
+
     // DPE EWM drift gate -- block entries against the trend direction.
     // DomPersist fires on DOM persistence alone (no drift/momentum by design).
     // In trending markets this causes losses: bids build at resistance (longs into downtrend).
@@ -3878,7 +3891,8 @@ static void on_tick_gold(
         && !g_gold_stack.has_open_position()
         && !g_trend_pb_gold.has_open_position()
         && !g_nbm_gold_london.has_open_position()
-        && !in_ny_close_noise) {
+        && !in_ny_close_noise
+        && !dpe_chop_block) {
         g_dom_persist.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
             ? g_cfg.risk_per_trade_usd : DPE_RISK_DOLLARS;
         // Direction-specific drift gate: skip DPE entry if imbalance direction
@@ -4211,6 +4225,21 @@ static void on_tick_gold(
                     fflush(stdout);
                 }
             }
+            // CHOP gate: vol expanding + no drift = whipsaw. Block ALL CFE entries.
+            // vol_ratio > 1.2 AND |drift| < 1.0 = range expansion with no conviction.
+            // Catches: 09:39 LONG + 09:48 SHORT both lose in 4773-4780 chop range.
+            const bool cfe_chop_block = (gold_vol_ratio_now > 1.2)
+                                      && (std::fabs(gold_ewm_drift_now) < 1.0);
+            if (cfe_chop_block) {
+                static int64_t s_cfe_chop_log = 0;
+                if (now_ms_g - s_cfe_chop_log > 20000) {
+                    s_cfe_chop_log = now_ms_g;
+                    printf("[CFE-CHOP-BLOCK] blocked: vol_ratio=%.2f drift=%.2f\n",
+                           gold_vol_ratio_now, gold_ewm_drift_now);
+                    fflush(stdout);
+                }
+            }
+
             // VWAP position filter for CFE:
             // In low-drift (ranging) markets, only enter in the direction toward VWAP.
             // LONG: price must be below VWAP (buying below mean = mean-reversion long)
@@ -4252,7 +4281,7 @@ static void on_tick_gold(
                     }
                 }
             }
-            if (cfe_bar_gate_ok && cfe_spread_ok && cfe_vwap_ok)
+            if (cfe_bar_gate_ok && cfe_spread_ok && cfe_vwap_ok && !cfe_chop_block)
             g_candle_flow.on_tick(bid, ask, cfe_bar, cfe_dom_e,
                 now_ms_g, cfe_atr_e,
                 [&](const omega::TradeRecord& tr) {
@@ -4272,6 +4301,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
