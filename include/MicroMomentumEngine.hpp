@@ -183,7 +183,7 @@ public:
                 static int64_t s_asia_log = 0;
                 if (now_s - s_asia_log > 120) {
                     s_asia_log = now_s;
-                    printf("[MME-ASIA-BLOCK] entry blocked: UTC hour=%d (22-07 dead zone)
+                    printf("[MME-ASIA-BLOCK] UTC hour=%d blocked (22-07)
 ", utch);
                     fflush(stdout);
                 }
@@ -194,7 +194,7 @@ public:
         // ATR minimum gate: block entries when volatility is too low.
         // Low ATR = tight range, RSI delta is noise not signal.
         // Evidence: MME fires 4320 times/2yr, avg hold 18s = scalping noise.
-        if (m_tick_atr < MIN_ATR_PTS) return;
+        if (m_tick_atr < 1.0) return;  // block when ATR < 1.0pt -- noise range
 
         const double rsi_now   = m_tick_rsi;
         const double rsi_delta = rsi_now - m_rsi_window.front();
