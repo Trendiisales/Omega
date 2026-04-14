@@ -1189,6 +1189,8 @@ function renderTrades(trades){
     pnl>0?_playWinBell():_playLossBell();
   }
   _lastTradeCount=closed.length;
+  // Auto-scroll to bottom so newest trade is always visible
+  const sc=document.querySelector('.trades-scroll');if(sc)sc.scrollTop=sc.scrollHeight;
   // TOTALS FIX: exclude PARTIAL_1R/PARTIAL_2R from W/L/trade count.
   // Partials are banking events on an open position -- not completed trades.
   // Counting them inflates total_trades and distorts W/L. PnL dollars are
@@ -1199,7 +1201,7 @@ function renderTrades(trades){
   const wins=fullClosed.filter(t=>safe(t.net_pnl)>0).length,losses=fullClosed.filter(t=>safe(t.net_pnl)<0).length,totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
   if(cE)cE.textContent=fullClosed.length+' closed → '+wins+'W/'+losses+'L → '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
   const now=Math.floor(Date.now()/1000);
-  el.innerHTML=[...trades].reverse().slice(0,60).map(t=>{
+  el.innerHTML=[...trades].slice(-60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
     const win=net>0,loss=net<0,sc=t.side==='LONG'?'var(--green)':'var(--red)';
     const reason=t.exitReason||'',result=isOpen?'⬤':reason==='TP_HIT'?'✓TP':reason==='SL_HIT'?'✗SL':reason==='TRAIL_HIT'||reason==='TRAIL_SL'?'✓TR':reason==='BE_HIT'?'✓BE':reason==='TIMEOUT'||reason==='MAX_HOLD_TIMEOUT'?'✗TO':reason==='PARTIAL_1R'||reason==='PARTIAL_TP'?'$P1':reason==='PARTIAL_2R'||reason==='PARTIAL_SL'?'$P2':'✓FC';
