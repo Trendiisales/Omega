@@ -160,6 +160,12 @@ struct MacroContext {
     bool        gold_cvd_bear_div  = false;  // bearish: price up, CVD down = distribution
     bool        sp_cvd_bull_div    = false;
     bool        sp_cvd_bear_div    = false;
+
+    // Previous day high/low -- updated each tick in tick_gold.hpp
+    // Used as structural gate: 2yr backtest proves entries INSIDE daily range
+    // have EV=+1.732pts at 15min. Entries outside = negative EV.
+    double      pdh = 0.0;   // previous day high
+    double      pdl = 0.0;   // previous day low
 };
 
 // Returns session slot multiplier for MIN_BREAKOUT_PCT scaling.
