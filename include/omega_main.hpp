@@ -237,6 +237,14 @@ int main(int argc, char* argv[])
     std::cout.flush();  // flush before spawning GUI threads to avoid interleaved output
     gui_server.start(g_cfg.gui_port, g_cfg.ws_port, g_telemetry.snap());
     Sleep(200);  // let GUI threads print their startup lines before we continue
+
+    // ── Real DOM receiver -- connects to OmegaDomStreamer cBot on port 8765 ────
+    // Starts background thread that reads real XAUUSD DOM sizes from cTrader.
+    // Reconnects automatically if cBot restarts. No-op if cBot not running.
+    g_real_dom_receiver.start();
+    printf("[STARTUP] RealDomReceiver started -- connecting to cBot on localhost:8765\n");
+    fflush(stdout);
+
     std::cout << "[OMEGA] GUI http://localhost:" << g_cfg.gui_port
               << "  WS:" << g_cfg.ws_port << "\n";
     std::cout.flush();
@@ -995,6 +1003,7 @@ int main(int argc, char* argv[])
     g_shutdown_done.store(true);  // unblock console_ctrl_handler -- process may now exit
     return 0;
 }
+
 
 
 
