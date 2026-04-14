@@ -577,6 +577,7 @@ R"OMEGA5(
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
           <span style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Last Signals</span>
           <button id="bellBtn" onclick="toggleBell()" style="margin-left:auto;background:rgba(255,214,0,.1);border:1px solid rgba(255,214,0,0.3);border-radius:3px;padding:0 5px;cursor:pointer;font-size:9px;color:#ffd600;font-family:inherit;line-height:18px;">BELL</button>
+          <button onclick="clearLedger()" style="margin-left:6px;background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,0.3);border-radius:3px;padding:0 5px;cursor:pointer;font-size:9px;color:#ff3355;font-family:inherit;line-height:18px;" title="Clear session ledger">CLEAR SESSION</button>
         </div>
         <div id="lastSignalDetail" style="display:flex;flex-direction:column;gap:1px;"><span style="color:var(--t2);font-size:11px;">Waiting for first signal...</span></div>
       </div>
@@ -2053,6 +2054,17 @@ R"OMEGA26(
 function httpPoll(){if(wsConnected)return;fetch('/api/telemetry').then(r=>r.json()).then(updateDashboard).catch(()=>setConn(false));})OMEGA26"
 R"OMEGA27(
 
+
+function clearLedger(){
+  if(!confirm('Clear session ledger? This resets all today\'s P&L stats.')) return;
+  fetch('/api/clear_ledger',{method:'POST'})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){ pollTrades(); alert('Session cleared.'); }
+      else alert('Clear failed: '+(d.error||'unknown'));
+    })
+    .catch(e=>alert('Request failed: '+e.message));
+}
 
 // pollTrades -- reads /api/history which serves from the disk CSV file.
 // This survives restarts: yesterday's +$57 shows up immediately on reload.
