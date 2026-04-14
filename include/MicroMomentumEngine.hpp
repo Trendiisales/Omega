@@ -174,25 +174,10 @@ public:
         if (!m_rsi_seeded)                                return;
         if ((int)m_rsi_window.size() < RSI_DELTA_WINDOW) return;
 
-        // Asia session block (22:00-07:00 UTC): RSI oscillates on thin liquidity.
-        // MME fires constantly in Asia (537 trades at 22:00, -28 in backtest).
-        // RSI delta of 8+ during Asia = noise, not momentum. Block entirely.
-        {
-            const int utch = (int)((now_s % 86400) / 3600);
-            if (utch >= 22 || utch < 7) {
-                static int64_t s_asia_log = 0;
-                if (now_s - s_asia_log > 120) {
-                    s_asia_log = now_s;
-                    printf("[MME-ASIA-BLOCK] UTC hour=%d blocked (22-07)\n", utch);
-                    fflush(stdout);
-                }
-                return;
-            }
-        }
-
-        // ATR minimum gate: block entries when volatility is too low.
-        // Low ATR = tight range, RSI delta is noise not signal.
-        // Evidence: MME fires 4320 times/2yr, avg hold 18s = scalping noise.
+        // No session block -- Asia has the biggest macro moves (tariff crash Apr 2025,
+        // SNB, Fed surprises all break in Asia/early London). Session-blind ATR gate
+        // handles noise: if ATR < 2.0 there's no real move regardless of session.
+        // ATR minimum gate: all sessions.
         if (m_tick_atr < 2.0) return;
 
         const double rsi_now   = m_tick_rsi;
