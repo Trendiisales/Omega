@@ -307,6 +307,9 @@ public:
 
     int bar_count() const { return static_cast<int>(bars_.size()); }
 
+    // get_bars(): read-only access for seeding external channel windows on startup
+    const std::deque<OHLCBar>& get_bars() const noexcept { return bars_; }
+
     // last_bar() / prev_bar(): access last two completed bars for candle analysis.
     // Returns a zero-initialised bar if not enough bars available.
     OHLCBar last_bar() const noexcept {
@@ -1230,3 +1233,4 @@ struct SymBarState {
 //   g_bars_gold.m1.update_tick_metrics(ask - bid, now_ms);
 //   g_bars_gold.m1.update_volume_delta(g_macro_ctx.gold_l2_imbalance);
 // =============================================================================
+
