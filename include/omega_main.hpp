@@ -789,6 +789,7 @@ int main(int argc, char* argv[])
                     g_bars_gold.m1 .save_indicators(bs + "/bars_gold_m1.dat");
                     g_bars_gold.m5 .save_indicators(bs + "/bars_gold_m5.dat");
                     g_bars_gold.m15.save_indicators(bs + "/bars_gold_m15.dat");
+                    g_bars_gold.h1 .save_indicators(bs + "/bars_gold_h1.dat");
                     g_bars_gold.h4 .save_indicators(bs + "/bars_gold_h4.dat");
                     g_bars_sp.m1   .save_indicators(bs + "/bars_sp_m1.dat");
                     g_bars_nq.m1   .save_indicators(bs + "/bars_nq_m1.dat");
@@ -977,6 +978,7 @@ int main(int argc, char* argv[])
     g_bars_gold.m1 .save_indicators(base_save + "/bars_gold_m1.dat");
     g_bars_gold.m5 .save_indicators(base_save + "/bars_gold_m5.dat");
     g_bars_gold.m15.save_indicators(base_save + "/bars_gold_m15.dat");
+    g_bars_gold.h1 .save_indicators(base_save + "/bars_gold_h1.dat");
     g_bars_gold.h4 .save_indicators(base_save + "/bars_gold_h4.dat");
     g_bars_sp.m1   .save_indicators(base_save + "/bars_sp_m1.dat");
     g_bars_nq.m1   .save_indicators(base_save + "/bars_nq_m1.dat");
@@ -993,5 +995,6 @@ int main(int argc, char* argv[])
     g_shutdown_done.store(true);  // unblock console_ctrl_handler -- process may now exit
     return 0;
 }
+
 
 
