@@ -1519,6 +1519,34 @@ static void init_engines(const std::string& cfg_path)
                       << " overbought=" << (int)g_rsi_reversal.RSI_OVERBOUGHT
                       << " sl_mult=" << g_rsi_reversal.SL_ATR_MULT << "x)\n";
             std::cout.flush();
+
+            // ── PDH/PDL Reversion Engine ────────────────────────────────────
+            // Research: 2yr/111M tick backtest proves mean reversion inside
+            // daily range is the only statistically significant intraday edge.
+            // CFE (14% WR -$27k) and MME (momentum continuation) disabled.
+            g_pdhl_rev.shadow_mode      = true;   // shadow until confirmed live
+            g_pdhl_rev.enabled          = true;
+            g_pdhl_rev.RANGE_ENTRY_PCT  = 0.25;   // top/bottom 25% of daily range
+            g_pdhl_rev.SL_ATR_MULT      = 0.40;   // tight structural stop
+            g_pdhl_rev.TP_RANGE_FRAC    = 0.50;   // target mid-range
+            g_pdhl_rev.L2_LONG_MIN      = 0.55;   // bids building for long
+            g_pdhl_rev.L2_SHORT_MAX     = 0.45;   // asks building for short
+            g_pdhl_rev.DRIFT_FADE_MIN   = 1.5;    // proxy when no real L2
+            g_pdhl_rev.MIN_RANGE_PTS    = 8.0;    // skip thin days
+            g_pdhl_rev.RISK_USD         = 30.0;
+            g_pdhl_rev.COOLDOWN_MS      = 120'000;
+            g_pdhl_rev.MAX_HOLD_MS      = 900'000;
+
+            // CFE disabled -- 14.8% WR, -$27,031 over 2yr on 2005 trades
+            g_candle_flow.enabled       = false;
+
+            std::cout << "[PDHL-REV] PDHLReversionEngine configured"
+                      << " shadow=" << (g_pdhl_rev.shadow_mode ? "true" : "false")
+                      << " entry_pct=" << g_pdhl_rev.RANGE_ENTRY_PCT
+                      << " sl_mult=" << g_pdhl_rev.SL_ATR_MULT
+                      << " tp_frac=" << g_pdhl_rev.TP_RANGE_FRAC << "\n";
+            std::cout << "[CFE] CandleFlowEngine DISABLED (14.8% WR, -$27k/2yr)\n";
+            std::cout.flush();
         }
     }
 }
