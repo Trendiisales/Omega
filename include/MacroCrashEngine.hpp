@@ -331,6 +331,14 @@ public:
         }
 
         // ── Entry gates ──────────────────────────────────────────────────
+        // Session gate: MCE edge is in Asia/early London (22-12 UTC).
+        // NY overlap (12-20 UTC) reverses moves too fast for MCE positioning.
+        // Backtest: original 13 trades (22-03 UTC) = +$137. New NY trades = -$1071.
+        {
+            const int64_t mce_sec  = now_ms / 1000LL;
+            const int     mce_hour = (int)((mce_sec % 86400LL) / 3600LL);
+            if (mce_hour >= 12 && mce_hour < 20) return;
+        }
         if (now_ms < m_cooldown_until)             return;  // cooldown after prior trade
         if (atr < final_atr_min)                   return;
         if (vol_ratio < final_vol_min)             return;
