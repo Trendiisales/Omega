@@ -321,15 +321,19 @@ struct CandleFlowEngine {
                                   : (ewm_drift <= -CFE_DFE_DRIFT_SUSTAINED_THRESH) ? -1
                                   : 0;
             if (new_sus_dir != 0 && new_sus_dir == m_drift_sustained_dir) {
-                // Continuing same direction -- keep start time
+                // Continuing same direction -- track peak
+                if (std::fabs(ewm_drift) > m_sus_drift_peak)
+                    m_sus_drift_peak = std::fabs(ewm_drift);
             } else if (new_sus_dir != 0) {
                 // New direction started
                 m_drift_sustained_dir      = new_sus_dir;
                 m_drift_sustained_start_ms = now_ms;
+                m_sus_drift_peak           = std::fabs(ewm_drift);
             } else {
                 // Drift below threshold -- reset
                 m_drift_sustained_dir      = 0;
                 m_drift_sustained_start_ms = 0;
+                m_sus_drift_peak           = 0.0;
             }
         }
         const int64_t drift_sustained_ms = (m_drift_sustained_dir != 0 && m_drift_sustained_start_ms > 0)
@@ -599,6 +603,22 @@ struct CandleFlowEngine {
                     }
                     goto cfe_sustained_skip;
                 }
+                // Drift momentum check: require drift is still >= 70% of its peak
+                // during this sustained run. If drift has fallen to 50% of peak,
+                // the move is exhausting -- we are entering at the reversal not the trend.
+                // Evidence: 14.8% WR over 2yr = entering at drift exhaustion consistently.
+                // m_sus_drift_peak tracks the max |drift| seen in the current sustained run.
+                if (m_sus_drift_peak > 0.0 && std::fabs(ewm_drift) < m_sus_drift_peak * 0.70) {
+                    static int64_t s_sus_peak_log = 0;
+                    if (now_ms - s_sus_peak_log > 30000) {
+                        s_sus_peak_log = now_ms;
+                        printf("[CFE-SUS-PEAK] drift=%.2f < 70%% of peak=%.2f -- move exhausting, skip
+",
+                               std::fabs(ewm_drift), m_sus_drift_peak);
+                        fflush(stdout);
+                    }
+                    goto cfe_sustained_skip;
+                }
                 // SL raised 0.7->1.5x ATR: 0.7xATR was too tight for noise at entry ATR.
                 // Evidence: 74% SL rate over 2yr backtest. At ATR=2: old SL=.40, new=.00.
                 // The same ATR that sustained the drift signal must be the SL floor.
@@ -852,6 +872,7 @@ private:
     // Used for both the sustained-drift entry path and the bar trend-block gate.
     int64_t m_drift_sustained_start_ms = 0;  // when current sustained drift run began (0=none)
     int     m_drift_sustained_dir      = 0;  // +1 or -1, direction of current run
+    double  m_sus_drift_peak           = 0.0; // peak |drift| seen during current sustained run
 
     // DFE price-action confirmation state (2026-04-13)
     std::deque<double> m_recent_mid;    // ring buffer of recent mid prices
