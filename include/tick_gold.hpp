@@ -4242,23 +4242,22 @@ static void on_tick_gold(
 
             // VWAP position filter for CFE:
             // In low-drift (ranging) markets, only enter in the direction toward VWAP.
-            // LONG: price must be below VWAP (buying below mean = mean-reversion long)
-            // SHORT: price must be above VWAP (selling above mean = mean-reversion short)
-            // Gate only active when drift is weak (|drift| < 1.5) -- in strong trends
-            // (drift >= 1.5) CFE should follow trend regardless of VWAP position.
-            // Evidence: CFE SHORT 4781.53 below VWAP -> ran against position (VWAP ~4784).
-            //           CFE entry above VWAP on longs causes same issue.
+            // LONG: price must be at or below VWAP (buying above mean = counter-trend block)
+            // SHORT: price must be at or above VWAP (selling below mean = counter-trend block)
+            // Gate active when drift is weak (|drift| < 1.0) -- matches chop gate threshold.
+            // FIXED (2026-04-14): was using cfe_bar.close vs open to infer direction,
+            //   but a bearish M1 bar can still be a long signal (drift > 0). Now uses
+            //   cfe_is_long_intent (derived from ewm_drift sign) -- same as CVD/VPIN blocks.
+            // FIXED (2026-04-14): removed +/-1.0 buffer -- any price above VWAP blocks
+            //   long in ranging market. Evidence: 11:09 LONG at 4777.18, VWAP 4771.42,
+            //   drift=0.53, bar was bearish -> old code set cfe_intends_long=false -> skipped.
             // VWAP filter only applied when VWAP is valid (> 0).
-            const double cfe_vwap     = gold_vwap_now;
+            const double cfe_vwap      = gold_vwap_now;
             const double cfe_drift_abs = std::fabs(gold_ewm_drift_now);
             bool cfe_vwap_ok = true;
-            if (cfe_vwap > 0.0 && cfe_drift_abs < 1.5) {
-                // Detect intended direction from bar: bearish bar = short, bullish = long
-                // cfe_bar.close vs cfe_bar.open tells us direction
-                const bool cfe_intends_long  = (cfe_bar.close >= cfe_bar.open);
-                const bool cfe_intends_short = (cfe_bar.close <  cfe_bar.open);
+            if (cfe_vwap > 0.0 && cfe_drift_abs < 1.0) {
                 const double mid_now = (bid + ask) * 0.5;
-                if (cfe_intends_long  && mid_now > cfe_vwap + 1.0) {
+                if (cfe_is_long_intent && mid_now > cfe_vwap) {
                     // Longing above VWAP in ranging market -- block
                     cfe_vwap_ok = false;
                     static int64_t s_vwap_long_log = 0;
@@ -4269,7 +4268,7 @@ static void on_tick_gold(
                         fflush(stdout);
                     }
                 }
-                if (cfe_intends_short && mid_now < cfe_vwap - 1.0) {
+                if (!cfe_is_long_intent && mid_now < cfe_vwap) {
                     // Shorting below VWAP in ranging market -- block
                     cfe_vwap_ok = false;
                     static int64_t s_vwap_short_log = 0;
