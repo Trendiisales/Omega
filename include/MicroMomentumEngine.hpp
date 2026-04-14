@@ -55,8 +55,8 @@ public:
     double ENTRY_DISP_PTS    = 1.0;   // retained for config compat -- NOT used as hard gate
     double RSI_DELTA_MIN     = 15.0;  // raised 8->15: 8 fired on noise, need genuine momentum surge
     int    RSI_DELTA_WINDOW  = 10;    // ticks for RSI delta
-    double TP_PTS            = 4.0;   // fixed TP
-    double SL_ATR_MULT       = 0.5;   // SL = max(ATR*mult, spread*2)
+    double TP_PTS            = 6.0;   // raised 4->6: R:R was 0.67, need avg_win > avg_loss
+    double SL_ATR_MULT       = 0.35;  // tightened 0.5->0.35: cuts avg_loss, improves R:R
     double BE_TRIGGER_PTS    = 1.0;   // BE trigger
     double LOCK_TRIGGER_PTS  = 2.0;   // lock profit trigger
     double LOCK_SL_PTS       = 1.0;   // locked SL offset from entry
