@@ -423,10 +423,27 @@ static void init_engines(const std::string& cfg_path)
         const bool m5_ok  = g_bars_gold.m5 .load_indicators(base + "/bars_gold_m5.dat");
         const bool m15_ok = g_bars_gold.m15.load_indicators(base + "/bars_gold_m15.dat");
         const bool h4_ok  = g_bars_gold.h4 .load_indicators(base + "/bars_gold_h4.dat");
-        // H1 bars: gold + indices swing context (warm restart for IndexSwingEngine)
-        g_bars_gold.h1.load_indicators(base + "/bars_gold_h1.dat");
+        // H1 bars: gold + indices swing context (warm restart for H1SwingEngine + IndexSwingEngine)
+        const bool h1_gold_ok = g_bars_gold.h1.load_indicators(base + "/bars_gold_h1.dat");
         g_bars_sp.h1  .load_indicators(base + "/bars_sp_h1.dat");
         g_bars_nq.h1  .load_indicators(base + "/bars_nq_h1.dat");
+        if (h1_gold_ok) {
+            // H1 indicators loaded -- H1SwingEngine is hot immediately.
+            // m1_ready=true was set by load_indicators, so on_h1_bar() entry gate passes.
+            printf("[STARTUP] H1 bar state loaded: EMA9=%.2f EMA21=%.2f EMA50=%.2f"
+                   " ATR=%.2f RSI=%.1f ADX=%.1f trend=%+d -- H1SwingEngine hot\n",
+                   g_bars_gold.h1.ind.ema9 .load(std::memory_order_relaxed),
+                   g_bars_gold.h1.ind.ema21.load(std::memory_order_relaxed),
+                   g_bars_gold.h1.ind.ema50.load(std::memory_order_relaxed),
+                   g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
+                   g_bars_gold.h1.ind.rsi14.load(std::memory_order_relaxed),
+                   g_bars_gold.h1.ind.adx14.load(std::memory_order_relaxed),
+                   g_bars_gold.h1.ind.trend_state.load(std::memory_order_relaxed));
+            fflush(stdout);
+        } else {
+            printf("[STARTUP] H1 bar state cold -- H1SwingEngine needs 14 H1 bars to warm\n");
+            fflush(stdout);
+        }
         if (m15_ok) {
             // Immediately seed TrendPullback EMAs + ATR from M15 bar state
             g_trend_pb_gold.seed_bar_emas(
@@ -458,10 +475,18 @@ static void init_engines(const std::string& cfg_path)
             if (h4_ok) {
                 g_trend_pb_gold.seed_h4_trend(
                     g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
+                // Seed H4RegimeEngine Donchian channel from saved H4 bar history.
+                // Without this the channel needs 20 new H4 bars (80 hours) to warm.
+                // With this: channel is ready from tick 1 -- engine is hot immediately.
+                g_h4_regime_gold.seed_channel_from_bars(g_bars_gold.h4.get_bars());
+            } else {
+                printf("[STARTUP] H4 bar state cold -- H4RegimeEngine needs 20 H4 bars (~80hr)\n");
+                fflush(stdout);
             }
-            printf("[STARTUP] Bar state loaded: M1=%s M5=%s M15=%s H4=%s"
+            printf("[STARTUP] Bar state loaded: M1=%s M5=%s M15=%s H1=%s H4=%s"
                    " EMA50=%.2f ATR=%.2f H4_trend=%d\n",
-                   m1_ok?"ok":"cold", m5_ok?"ok":"cold", m15_ok?"ok":"cold", h4_ok?"ok":"cold",
+                   m1_ok?"ok":"cold", m5_ok?"ok":"cold", m15_ok?"ok":"cold",
+                   h1_gold_ok?"ok":"cold", h4_ok?"ok":"cold",
                    g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
                    g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed),
                    g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
@@ -1497,5 +1522,6 @@ static void init_engines(const std::string& cfg_path)
         }
     }
 }
+
 
 
