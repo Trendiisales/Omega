@@ -110,8 +110,12 @@ static constexpr int     CFE_DFE_DRIFT_PERSIST_TICKS = 2;
 // Threshold lower (-0.8) to catch early sustained moves.
 // Hold duration >= 45s required to distinguish trend from noise oscillation.
 // Same RSI level + price confirmation gates still apply.
-static constexpr double  CFE_DFE_DRIFT_SUSTAINED_THRESH = 0.8;   // lower bar: drift > 0.8pt for entry
-static constexpr int64_t CFE_DFE_DRIFT_SUSTAINED_MS     = 45000; // drift must persist >= 45s
+static constexpr double  CFE_DFE_DRIFT_SUSTAINED_THRESH = 0.8;   // base threshold -- ATR-scaled at entry (see below)
+static constexpr int64_t CFE_DFE_DRIFT_SUSTAINED_MS     = 90000; // raised 45s->90s: 45s was triggering on normal oscillation
+// ATR-normalised SUS entry threshold: max(0.8, atr * 0.30)
+// At ATR=2: max(0.8, 0.60) = 0.80pt   At ATR=3: max(0.8, 0.90) = 0.90pt
+// At ATR=4: max(0.8, 1.20) = 1.20pt   Evidence: 0.8pt fixed threshold fires
+// on normal noise when ATR=2-3. Backtest: 3223 SUS entries, 21% WR, -6k over 2yr.
 // Bar-based entry trend context gate (2026-04-13):
 // Block bar LONG entries when drift has been sustainedly negative (>= 45s below -0.5).
 // Block bar SHORT entries when drift has been sustainedly positive (>= 45s above +0.5).
@@ -584,7 +588,23 @@ struct CandleFlowEngine {
 
             if (sus_rsi_ok && sus_rsi_level_ok && sus_price_ok && sus_spread_ok) {
                 const double sus_atr    = (atr_pts > 0.0) ? atr_pts : sus_spread * 5.0;
-                const double sus_sl_pts = sus_atr * CFE_DFE_SL_MULT;
+                // ATR-normalised threshold: require drift >= max(0.8, atr*0.30) to confirm trend
+                const double sus_drift_min = std::max(CFE_DFE_DRIFT_SUSTAINED_THRESH, sus_atr * 0.30);
+                if (std::fabs(ewm_drift) < sus_drift_min) {
+                    static int64_t s_sus_drift_log = 0;
+                    if (now_ms - s_sus_drift_log > 30000) {
+                        s_sus_drift_log = now_ms;
+                        printf("[CFE-SUS-DRIFT-BLOCK] |drift|=%.2f < min=%.2f (atr=%.2f)
+",
+                               std::fabs(ewm_drift), sus_drift_min, sus_atr);
+                        fflush(stdout);
+                    }
+                    goto cfe_sustained_skip;
+                }
+                // SL raised 0.7->1.5x ATR: 0.7xATR was too tight for noise at entry ATR.
+                // Evidence: 74% SL rate over 2yr backtest. At ATR=2: old SL=.40, new=.00.
+                // The same ATR that sustained the drift signal must be the SL floor.
+                const double sus_sl_pts = sus_atr * 1.5;
                 const double entry_px   = sus_long ? ask : bid;
                 const double sl_px      = sus_long ? (entry_px - sus_sl_pts) : (entry_px + sus_sl_pts);
                 double size = risk_dollars / (sus_sl_pts * 100.0);
