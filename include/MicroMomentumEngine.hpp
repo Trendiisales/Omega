@@ -53,7 +53,7 @@ class MicroMomentumEngine {
 public:
     // ── Parameters ────────────────────────────────────────────────────────────
     double ENTRY_DISP_PTS    = 1.0;   // retained for config compat -- NOT used as hard gate
-    double RSI_DELTA_MIN     = 8.0;   // RSI units moved over window
+    double RSI_DELTA_MIN     = 15.0;  // raised 8->15: 8 fired on noise, need genuine momentum surge
     int    RSI_DELTA_WINDOW  = 10;    // ticks for RSI delta
     double TP_PTS            = 4.0;   // fixed TP
     double SL_ATR_MULT       = 0.5;   // SL = max(ATR*mult, spread*2)
@@ -77,7 +77,7 @@ public:
     // PRICE_MOVE_MIN: price must have moved at least N pts in signal direction
     // over the RSI_DELTA_WINDOW. Eliminates entries where RSI moves but price
     // doesn't follow (pure chop oscillation, common in ranging markets).
-    double PRICE_MOVE_MIN    = 1.5;   // min pts price must move to confirm RSI signal
+    double PRICE_MOVE_MIN    = 3.0;   // raised 1.5->3.0: 1.5pt move in 10s = noise on gold
     int    COOLDOWN_S        = 20;
     int    MAX_HOLD_S        = 240;
     int    MIN_HOLD_S        = 3;
@@ -193,7 +193,7 @@ public:
         // ATR minimum gate: block entries when volatility is too low.
         // Low ATR = tight range, RSI delta is noise not signal.
         // Evidence: MME fires 4320 times/2yr, avg hold 18s = scalping noise.
-        if (m_tick_atr < 1.0) return;  // block when ATR < 1.0pt -- noise range
+        if (m_tick_atr < 2.0) return;
 
         const double rsi_now   = m_tick_rsi;
         const double rsi_delta = rsi_now - m_rsi_window.front();
