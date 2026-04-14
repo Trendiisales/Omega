@@ -16,13 +16,18 @@ param(
     [int]$StaleThresholdSec   = 60,
     [int]$L2StaleThresholdSec = 120,
     [int]$CheckIntervalSec    = 15,
-    [int]$PostRestartWaitSec  = 30
+    [int]$PostRestartWaitSec  = 30,
+    [int]$GitHubPollIntervalSec = 300   # Check GitHub HEAD every 5 minutes
 )
 
 $ServiceName   = "Omega"
-$RestartScript = "C:\Omega\RESTART_OMEGA.ps1"
-$LogFile       = "C:\Omega\logs\latest.log"
-$WatchdogLog   = "C:\Omega\logs\watchdog.log"  # INDEPENDENT -- never stops even if latest.log dies
+$OmegaDir      = "C:\Omega"
+$RestartScript = "$OmegaDir\QUICK_RESTART.ps1"   # Use QUICK_RESTART not RESTART_OMEGA
+$LogFile       = "$OmegaDir\logs\latest.log"
+$WatchdogLog   = "$OmegaDir\logs\watchdog.log"  # INDEPENDENT -- never stops even if latest.log dies
+$TokenFile     = "$OmegaDir\.github_token"
+$LastGitHubCheck = [DateTime]::MinValue
+$LastKnownGitHubHead = $null
 
 function Write-WD {
     param([string]$msg)
@@ -30,6 +35,26 @@ function Write-WD {
     $line = "$ts [WATCHDOG] $msg"
     Write-Host $line
     Add-Content -Path $WatchdogLog -Value $line -ErrorAction SilentlyContinue
+}
+
+function Get-GitHubHead {
+    try {
+        $token = if (Test-Path $TokenFile) { (Get-Content $TokenFile -Raw).Trim() } else { $null }
+        if (-not $token) { return $null }
+        $hdr = @{ Authorization="token $token"; "User-Agent"="OmegaWatchdog" }
+        $resp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" `
+                    -Headers $hdr -TimeoutSec 10 -ErrorAction Stop
+        return $resp.sha.Substring(0,7)
+    } catch { return $null }
+}
+
+function Get-RunningHash {
+    try {
+        $tail = Get-Content $LogFile -Tail 300 -ErrorAction SilentlyContinue
+        $line = $tail | Select-String 'Git hash:' | Select-Object -Last 1
+        if ($line -match 'Git hash:\s+([a-f0-9]{7})') { return $Matches[1] }
+    } catch {}
+    return $null
 }
 
 function Get-L2CsvPath {
@@ -106,12 +131,39 @@ while ($true) {
         }
     }
 
-    # 4. Heartbeat every 5 minutes
+    # 4. Heartbeat + GitHub HEAD auto-update check every 5 minutes
     $nowMin = [int](Get-Date).Minute
     if ($nowMin % 5 -eq 0 -and [int](Get-Date).Second -lt $CheckIntervalSec) {
-        $l2path = Get-L2CsvPath
-        $l2size = if (Test-Path $l2path) { [math]::Round((Get-Item $l2path).Length/1MB,2) } else { "MISSING" }
-        $commit = Get-RunningCommit
-        Write-WD "HEARTBEAT log_age=${logAge}s L2=$l2size MB commit=$commit restarts=$restartCount l2alerts=$l2AlertCount"
+        $l2path  = Get-L2CsvPath
+        $l2size  = if (Test-Path $l2path) { [math]::Round((Get-Item $l2path).Length/1MB,2) } else { "MISSING" }
+        $running = Get-RunningHash
+        Write-WD "HEARTBEAT log_age=${logAge}s L2=$l2size MB hash=$running restarts=$restartCount l2alerts=$l2AlertCount"
+
+        # GitHub HEAD poll -- auto-restart if running hash differs from HEAD
+        $secsSinceGhCheck = ([DateTime]::Now - $LastGitHubCheck).TotalSeconds
+        if ($secsSinceGhCheck -ge $GitHubPollIntervalSec) {
+            $LastGitHubCheck = [DateTime]::Now
+            $ghHead = Get-GitHubHead
+            if ($ghHead -and $running -and $ghHead -ne $running) {
+                Write-WD "AUTO-UPDATE: running=$running github=$ghHead -- triggering QUICK_RESTART"
+                # Only auto-update if no open positions (check via api/state)
+                $hasOpen = $false
+                try {
+                    $state = Invoke-RestMethod -Uri "http://localhost:7779/api/state" -TimeoutSec 5
+                    $hasOpen = ($state.open_positions -gt 0)
+                } catch {}
+                if ($hasOpen) {
+                    Write-WD "AUTO-UPDATE DEFERRED: $($state.open_positions) open position(s) -- will retry next cycle"
+                } else {
+                    & $RestartScript -OmegaDir $OmegaDir -SkipVerify
+                    $restartCount++
+                    Write-WD "AUTO-UPDATE complete. New hash: $ghHead restarts=$restartCount"
+                    Start-Sleep -Seconds $PostRestartWaitSec
+                }
+            } elseif ($ghHead) {
+                Write-WD "HASH-OK: running=$running == github=$ghHead"
+            }
+        }
     }
 }
+
