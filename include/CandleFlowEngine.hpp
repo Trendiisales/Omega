@@ -501,6 +501,30 @@ struct CandleFlowEngine {
         // drift = a real trend, not noise.
         // Gates: sustained >= 45s, RSI level ok, price confirming, not in cooldown.
         // Does NOT require drift_accel -- sustained slow drift IS the signal.
+        //
+        // ASIA BLOCK (2026-04-14): sustained-drift entry DISABLED in Asia (22:00-07:00 UTC).
+        // Root cause of 5 consecutive losses on 2026-04-14 (00:15-00:31 UTC):
+        // In thin Asia tape, drift of 0.8pt sustained for 45s is pure chop noise.
+        // The same 0.8pt reading at London open (08:00 UTC) is a real grinding trend.
+        // Asia chop oscillates above/below 0.8pt threshold continuously -- this path
+        // fired 3-4 times in 16 minutes on meaningless sub-1pt drift wiggles.
+        // Fix: only allow sustained-drift entries during London/NY sessions (07:00-22:00 UTC).
+        // The spike DFE path (threshold = max(4.0, atr*0.40) in Asia) still runs.
+        {
+            const int64_t sus_utc_sec  = now_ms / 1000LL;
+            const int     sus_utc_hour = static_cast<int>((sus_utc_sec % 86400LL) / 3600LL);
+            const bool    sus_in_asia  = (sus_utc_hour >= 22 || sus_utc_hour < 7);
+            if (sus_in_asia) {
+                static int64_t s_sus_asia_log = 0;
+                if (now_ms - s_sus_asia_log > 120000) {
+                    s_sus_asia_log = now_ms;
+                    std::cout << "[CFE-SUS-ASIA-BLOCK] sustained-drift entry disabled in Asia session\n";
+                    std::cout.flush();
+                }
+                // Skip sustained-drift check entirely in Asia -- go straight to bar-based entry
+                goto cfe_sustained_skip;
+            }
+        }
         if (m_rsi_warmed &&
             m_drift_sustained_dir != 0 &&
             drift_sustained_ms >= CFE_DFE_DRIFT_SUSTAINED_MS &&
@@ -560,6 +584,7 @@ struct CandleFlowEngine {
             }
         }
 
+        cfe_sustained_skip:
         // ── Standard bar-based entry ───────────────────────────────────────────────
         if (!bar.valid) return;
         if (!m_rsi_warmed) return;
@@ -1114,6 +1139,7 @@ private:
 };
 
 } // namespace omega
+
 
 
 
