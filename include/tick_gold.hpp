@@ -3860,6 +3860,16 @@ static void on_tick_gold(
             });
     }
     // Entry: only when no other gold position open, L2 live, London+NY session
+    // DPE EWM drift gate -- block entries against the trend direction.
+    // DomPersist fires on DOM persistence alone (no drift/momentum by design).
+    // In trending markets this causes losses: bids build at resistance (longs into downtrend).
+    // Gate: if drift is strongly negative (< -1.0) block LONG persistence signals.
+    //        if drift is strongly positive (> +1.0) block SHORT persistence signals.
+    // Threshold 1.0pt: modest trend confirmation, doesn't block ranging markets.
+    // Evidence: 08:41 LONG -$34, 09:21 LONG -$49 both fired into negative drift.
+    const double dpe_drift_now = gold_ewm_drift_now;
+    const bool dpe_long_blocked  = (dpe_drift_now < -1.0);  // downtrend -- no longs
+    const bool dpe_short_blocked = (dpe_drift_now >  1.0);  // uptrend   -- no shorts
     if (!g_dom_persist.has_open_position()
         && gold_can_enter
         && g_macro_ctx.gold_l2_real
@@ -3871,6 +3881,15 @@ static void on_tick_gold(
         && !in_ny_close_noise) {
         g_dom_persist.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
             ? g_cfg.risk_per_trade_usd : DPE_RISK_DOLLARS;
+        // Direction-specific drift gate: skip DPE entry if imbalance direction
+        // conflicts with the drift gate computed above.
+        // l2_imb > 0.5 = bid heavy = DPE would enter LONG.
+        // l2_imb < 0.5 = ask heavy = DPE would enter SHORT.
+        const bool dpe_would_long  = (g_macro_ctx.gold_l2_imbalance > 0.5 + DPE_IMB_THRESHOLD);
+        const bool dpe_would_short = (g_macro_ctx.gold_l2_imbalance < 0.5 - DPE_IMB_THRESHOLD);
+        const bool dpe_drift_blocked = (dpe_would_long && dpe_long_blocked)
+                                     || (dpe_would_short && dpe_short_blocked);
+        if (!dpe_drift_blocked) {
         g_dom_persist.on_tick(bid, ask,
             g_macro_ctx.gold_l2_imbalance,
             g_macro_ctx.gold_l2_real,
@@ -3881,6 +3900,7 @@ static void on_tick_gold(
                 if (!g_dom_persist.shadow_mode)
                     send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
             });
+        } // end dpe_drift_blocked gate
         if (g_dom_persist.has_open_position()) {
             g_telemetry.UpdateLastSignal("XAUUSD",
                 g_dom_persist.pos.is_long ? "LONG" : "SHORT",
@@ -4211,6 +4231,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
