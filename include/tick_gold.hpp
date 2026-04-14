@@ -4211,7 +4211,48 @@ static void on_tick_gold(
                     fflush(stdout);
                 }
             }
-            if (cfe_bar_gate_ok && cfe_spread_ok)
+            // VWAP position filter for CFE:
+            // In low-drift (ranging) markets, only enter in the direction toward VWAP.
+            // LONG: price must be below VWAP (buying below mean = mean-reversion long)
+            // SHORT: price must be above VWAP (selling above mean = mean-reversion short)
+            // Gate only active when drift is weak (|drift| < 1.5) -- in strong trends
+            // (drift >= 1.5) CFE should follow trend regardless of VWAP position.
+            // Evidence: CFE SHORT 4781.53 below VWAP -> ran against position (VWAP ~4784).
+            //           CFE entry above VWAP on longs causes same issue.
+            // VWAP filter only applied when VWAP is valid (> 0).
+            const double cfe_vwap     = gold_vwap_now;
+            const double cfe_drift_abs = std::fabs(gold_ewm_drift_now);
+            bool cfe_vwap_ok = true;
+            if (cfe_vwap > 0.0 && cfe_drift_abs < 1.5) {
+                // Detect intended direction from bar: bearish bar = short, bullish = long
+                // cfe_bar.close vs cfe_bar.open tells us direction
+                const bool cfe_intends_long  = (cfe_bar.close >= cfe_bar.open);
+                const bool cfe_intends_short = (cfe_bar.close <  cfe_bar.open);
+                const double mid_now = (bid + ask) * 0.5;
+                if (cfe_intends_long  && mid_now > cfe_vwap + 1.0) {
+                    // Longing above VWAP in ranging market -- block
+                    cfe_vwap_ok = false;
+                    static int64_t s_vwap_long_log = 0;
+                    if (now_ms_g - s_vwap_long_log > 15000) {
+                        s_vwap_long_log = now_ms_g;
+                        printf("[CFE-VWAP-BLOCK] LONG blocked: price=%.2f above VWAP=%.2f drift=%.2f\n",
+                               mid_now, cfe_vwap, gold_ewm_drift_now);
+                        fflush(stdout);
+                    }
+                }
+                if (cfe_intends_short && mid_now < cfe_vwap - 1.0) {
+                    // Shorting below VWAP in ranging market -- block
+                    cfe_vwap_ok = false;
+                    static int64_t s_vwap_short_log = 0;
+                    if (now_ms_g - s_vwap_short_log > 15000) {
+                        s_vwap_short_log = now_ms_g;
+                        printf("[CFE-VWAP-BLOCK] SHORT blocked: price=%.2f below VWAP=%.2f drift=%.2f\n",
+                               mid_now, cfe_vwap, gold_ewm_drift_now);
+                        fflush(stdout);
+                    }
+                }
+            }
+            if (cfe_bar_gate_ok && cfe_spread_ok && cfe_vwap_ok)
             g_candle_flow.on_tick(bid, ask, cfe_bar, cfe_dom_e,
                 now_ms_g, cfe_atr_e,
                 [&](const omega::TradeRecord& tr) {
