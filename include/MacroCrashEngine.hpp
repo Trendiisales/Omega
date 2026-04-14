@@ -55,10 +55,14 @@ namespace omega {
 class MacroCrashEngine {
 public:
     // ── Entry triggers ────────────────────────────────────────────────────
-    double ATR_THRESHOLD    = 6.0;   // lowered 8->6: 8pt missed moderate macro moves
+    double ATR_THRESHOLD    = 4.5;   // lowered 6->4.5: backtest only 13 trades in 2yr at ATR>6
     double ATR_NORMAL       = 5.0;
-    double VOL_RATIO_MIN    = 2.5;
-    double DRIFT_MIN        = 5.0;   // lowered 6->5: 6pt was too high for early move entries
+    double VOL_RATIO_MIN    = 2.0;   // lowered 2.5->2.0: get more trades while keeping vol filter
+    double DRIFT_MIN        = 3.5;   // lowered 5->3.5: 5pt threshold too high for non-crash macro moves
+    // Rationale: MCE was the ONLY profitable engine in 2yr backtest (69% WR, +37)
+    // but only 13 trades total -- statistically insufficient. Lower bar to generate
+    // 3-5x more trades while keeping the core quality filters intact.
+    // Asia thresholds unchanged (ATR_THRESHOLD_ASIA=4.0) -- already well-calibrated.
     double ATR_SCALE_MAX    = 1.0;   // capped 6->1: 6x scaling produced $480 risk per trade; system max is $80
     double BASE_RISK_USD    = 80.0;
     double MAX_LOT          = 0.20;  // capped 0.50->0.20: matches CFE/DomPersist hard ceiling
