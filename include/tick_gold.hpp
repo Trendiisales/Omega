@@ -4311,7 +4311,17 @@ static void on_tick_gold(
                     }
                 }
             }
-            if (cfe_bar_gate_ok && cfe_spread_ok && cfe_vwap_ok && !cfe_chop_block)
+            // PDH/PDL structural gate: only enter inside yesterday's daily range.
+            // 2yr backtest: INSIDE PDH/PDL EV=+1.732pts. Outside = negative EV.
+            if (!gold_inside_daily_range) {
+                static int64_t s_pdhl_cfe_log = 0;
+                if (now_ms_g - s_pdhl_cfe_log > 60000) {
+                    s_pdhl_cfe_log = now_ms_g;
+                    printf("[CFE-PDH-BLOCK] mid=%.2f outside PDH=%.2f PDL=%.2f\n",
+                           gold_mid_now, g_macro_ctx.pdh, g_macro_ctx.pdl);
+                    fflush(stdout);
+                }
+            } else if (cfe_bar_gate_ok && cfe_spread_ok && cfe_vwap_ok && !cfe_chop_block)
             g_candle_flow.on_tick(bid, ask, cfe_bar, cfe_dom_e,
                 now_ms_g, cfe_atr_e,
                 [&](const omega::TradeRecord& tr) {
