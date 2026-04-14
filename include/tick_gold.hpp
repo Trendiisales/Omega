@@ -3526,6 +3526,24 @@ static void on_tick_gold(
         g_trend_pb_gold.seed_h4_trend(
             g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
     }
+    // H1/H4 engine status -> telemetry snap (every tick, lock-free)
+    {
+        auto* snap = g_telemetry.snap();
+        if (snap) {
+            snap->h1_swing_open      = g_h1_swing_gold.has_open_position() ? 1 : 0;
+            snap->h4_regime_open     = g_h4_regime_gold.has_open_position() ? 1 : 0;
+            snap->h1_swing_daily_pnl = static_cast<float>(g_h1_swing_gold.daily_pnl_);
+            snap->h4_regime_daily_pnl= static_cast<float>(g_h4_regime_gold.daily_pnl_);
+            snap->h1_swing_shadow    = g_h1_swing_gold.shadow_mode ? 1 : 0;
+            snap->h4_regime_shadow   = g_h4_regime_gold.shadow_mode ? 1 : 0;
+            snap->h1_adx = static_cast<float>(
+                g_bars_gold.h1.ind.adx14.load(std::memory_order_relaxed));
+            snap->h4_adx = static_cast<float>(
+                g_bars_gold.h4.ind.adx14.load(std::memory_order_relaxed));
+            snap->h4_trend_state = g_bars_gold.h4.ind.trend_state.load(
+                std::memory_order_relaxed);
+        }
+    }
     // H1/H4 engine tick-level management -- on_tick() handles SL/TP/partial/trail.
     // on_h1_bar() / on_h4_bar() handle bar-level exits (EMA cross, ADX collapse, timeout).
     if (g_h1_swing_gold.has_open_position())
