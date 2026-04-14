@@ -340,6 +340,22 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // raw_imb retained for logging/diagnostics only.
                 g_macro_ctx.gold_l2_imbalance = g_l2_gold.micro_edge.load(std::memory_order_relaxed);
 
+                // ── Real DOM override (OmegaDomStreamer cBot on port 8765) ──────────
+                // If real DOM data is fresh (<2s), use volume-weighted imbalance
+                // from actual cTrader platform sizes instead of level-count proxy.
+                // Falls back to micro_edge automatically if cBot disconnects.
+                {
+                    const int64_t REAL_DOM_MAX_STALE_MS = 2000;
+                    const int64_t real_dom_age = l2_now_ms - g_real_dom_last_ms.load(std::memory_order_relaxed);
+                    if (real_dom_age < REAL_DOM_MAX_STALE_MS) {
+                        const double real_imb = real_dom_imbalance(5);
+                        if (real_imb > 0.0 && real_imb < 1.0) {
+                            g_macro_ctx.gold_l2_imbalance = real_imb;
+                            g_macro_ctx.gold_l2_real = true;  // confirm real data present
+                        }
+                    }
+                }
+
                 static int64_t s_l2_log_ms = 0;
                 if (l2_now_ms - s_l2_log_ms > 10000) {
                     s_l2_log_ms = l2_now_ms;
@@ -1960,3 +1976,4 @@ static std::vector<std::string> extract_messages(const char* data, int n, bool r
 // FIX dispatch
 // ?????????????????????????????????????????????????????????????????????????????
 #include "fix_dispatch.hpp"
+
