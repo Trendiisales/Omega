@@ -352,6 +352,35 @@ struct CandleFlowEngine {
             }
         }
 
+        // Adverse-excursion re-entry filter (2026-04-15)
+        // After a loss where price moved >= 0.5 ATR against us, block same-direction
+        // re-entry until price recovers to within 0.5x ATR of the loss exit price.
+        // Structurally prevents entering into ongoing adverse moves.
+        if (m_adverse_block && m_last_loss_dir != 0 && m_last_loss_exit_px > 0.0) {
+            const double mid_now = (bid + ask) * 0.5;
+            // Distance from current price back to where we lost
+            const double dist_to_exit = (m_last_loss_dir == +1)
+                ? (m_last_loss_exit_px - mid_now)   // LONG loss: exit was below, need price near exit
+                : (mid_now - m_last_loss_exit_px);  // SHORT loss: exit was above
+            const double recovery_thresh = m_last_loss_atr * 0.5;
+            const bool intended_same_dir = (ewm_drift > 0 && m_last_loss_dir == +1)
+                                        || (ewm_drift < 0 && m_last_loss_dir == -1);
+            if (intended_same_dir && dist_to_exit > recovery_thresh) {
+                static int64_t s_adv_log = 0;
+                if (now_ms - s_adv_log > 20000) {
+                    s_adv_log = now_ms;
+                    printf("[CFE-ADVERSE-BLOCK] %s blocked: loss_exit=%.2f dist=%.2f need=%.2f atr=%.2f
+",
+                           (m_last_loss_dir==+1?"LONG":"SHORT"),
+                           m_last_loss_exit_px, dist_to_exit, recovery_thresh, m_last_loss_atr);
+                    fflush(stdout);
+                }
+                return;
+            }
+            if (!intended_same_dir || dist_to_exit <= recovery_thresh)
+                m_adverse_block = false;
+        }
+
         if (m_rsi_warmed && std::fabs(ewm_drift) >= m_dfe_eff_thresh) {
             const double drift_delta = ewm_drift - m_prev_ewm_drift;
             const bool drift_accel = m_dfe_warmed &&
@@ -643,9 +672,55 @@ struct CandleFlowEngine {
             }
         }
 
+        // Gate 0b: Minimum drift gate for bar entry (2026-04-15)
+        // Bar-close fires on RSI + candle shape alone -- no drift requirement.
+        // Drift near zero means market is going nowhere. Require |drift| >= 0.3
+        // AND drift sign must agree with intended direction.
+        // Evidence: 19:xx longs drift~0.2-0.4, 14:xx longs in active downtrend.
+        {
+            const double bar_drift_abs = std::fabs(ewm_drift);
+            if (bar_drift_abs < 0.3) {
+                static int64_t s_drift_min_log = 0;
+                if (now_ms - s_drift_min_log > 15000) {
+                    s_drift_min_log = now_ms;
+                    printf("[CFE-DRIFT-MIN] bar entry blocked: |drift|=%.2f < 0.3
+",
+                           bar_drift_abs);
+                    fflush(stdout);
+                }
+                return;
+            }
+        }
+
         // Gate 1: RSI trend direction
         const int rsi_dir = rsi_direction();
         if (rsi_dir == 0) return;
+
+        // Gate 1b: RSI direction must agree with drift sign (2026-04-15)
+        // Prevents: positive RSI slope (bullish) but negative drift (price falling).
+        // This is the canonical false signal: RSI bounces on dead-cat, drift still negative.
+        if (rsi_dir == +1 && ewm_drift < 0.0) {
+            static int64_t s_rsi_drift_log = 0;
+            if (now_ms - s_rsi_drift_log > 15000) {
+                s_rsi_drift_log = now_ms;
+                printf("[CFE-RSI-DRIFT-CONFLICT] LONG blocked: rsi_dir=+1 but drift=%.2f
+",
+                       ewm_drift);
+                fflush(stdout);
+            }
+            return;
+        }
+        if (rsi_dir == -1 && ewm_drift > 0.0) {
+            static int64_t s_rsi_drift_log2 = 0;
+            if (now_ms - s_rsi_drift_log2 > 15000) {
+                s_rsi_drift_log2 = now_ms;
+                printf("[CFE-RSI-DRIFT-CONFLICT] SHORT blocked: rsi_dir=-1 but drift=%.2f
+",
+                       ewm_drift);
+                fflush(stdout);
+            }
+            return;
+        }
 
         // Gate 2: expansion candle agreeing with RSI direction
         const bool bullish = candle_is_bullish(bar);
@@ -766,6 +841,17 @@ private:
 
     // DFE price-action confirmation state (2026-04-13)
     std::deque<double> m_recent_mid;    // ring buffer of recent mid prices
+
+    // Adverse-excursion re-entry filter (2026-04-15)
+    // After a loss where price moved > 0.5x ATR against us, record exit price
+    // and direction. Block same-direction re-entry until price returns within
+    // 0.5x ATR of that exit level -- proves the move has exhausted/reversed.
+    // Structurally prevents cascade re-entry into ongoing adverse moves.
+    // Evidence: 14:25-14:32 FC cluster, 17:05 FC -- all entered into live downtrends.
+    double  m_last_loss_exit_px  = 0.0;   // exit price of last losing trade
+    int     m_last_loss_dir      = 0;     // +1=was LONG, -1=was SHORT
+    double  m_last_loss_atr      = 0.0;   // ATR at time of loss (for threshold)
+    bool    m_adverse_block      = false; // currently blocking same-dir re-entry
 
     // -------------------------------------------------------------------------
     // RSI slope EMA -- updated every tick unconditionally
@@ -1136,6 +1222,20 @@ private:
         // Track direction for opposite-direction cooldown
         m_last_closed_dir = (tr.side == std::string("LONG")) ? +1 : -1;
         m_last_closed_ms  = now_ms;
+
+        // Adverse-excursion filter: record loss if price moved >= 0.5 ATR against us
+        {
+            const double actual_adverse = pos.is_long
+                ? (pos.entry - exit_px)   // LONG: loss = exit below entry
+                : (exit_px - pos.entry);  // SHORT: loss = exit above entry
+            if (actual_adverse > 0.0 && pos.atr_pts > 0.0
+                    && actual_adverse >= pos.atr_pts * 0.5) {
+                m_last_loss_exit_px = exit_px;
+                m_last_loss_dir     = pos.is_long ? +1 : -1;
+                m_last_loss_atr     = pos.atr_pts;
+                m_adverse_block     = true;
+            }
+        }
 
         pos = OpenPos{};
         phase = Phase::COOLDOWN;
