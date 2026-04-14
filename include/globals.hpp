@@ -151,6 +151,11 @@ static omega::MacroCrashEngine    g_macro_crash;
 // shadow_mode=true until 30 live shadow trades validate Asia WR
 #include "CandleFlowEngine.hpp"
 static omega::CandleFlowEngine    g_candle_flow;  // candle+DOM engine
+// DISABLED: 14.8% WR, -$27k/2yr backtest. Momentum continuation = negative EV.
+// g_candle_flow.enabled = false; -- set in engine_init
+
+#include "PDHLReversionEngine.hpp"
+static omega::PDHLReversionEngine g_pdhl_rev;     // mean reversion inside daily range
 
 #include "RSIReversalEngine.hpp"
 static omega::RSIReversalEngine   g_rsi_reversal;
@@ -166,7 +171,7 @@ static omega::RSIExtremeTurnEngine g_rsi_extreme;  // RSI extreme + sustained tu
 // RSI slope + price displacement, both directions, all sessions
 // shadow_mode=true until validated
 #include "MicroMomentumEngine.hpp"
-static omega::MicroMomentumEngine g_micro_momentum;  // always-on macro event engine
+static omega::MicroMomentumEngine g_micro_momentum;  // DISABLED: 4320 trades/2yr, -$3.8k. Momentum = negative EV per backtest.
 // Reload instance: independent GoldFlowEngine for continuation entries.
 // Fires after g_gold_flow banks PARTIAL_1R and confirms price still moving.
 // Managed exactly like g_gold_flow but never arms its own reload (avoids cascade).
