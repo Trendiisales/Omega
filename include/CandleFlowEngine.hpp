@@ -373,8 +373,7 @@ struct CandleFlowEngine {
                 static int64_t s_adv_log = 0;
                 if (now_ms - s_adv_log > 20000) {
                     s_adv_log = now_ms;
-                    printf("[CFE-ADVERSE-BLOCK] %s blocked: loss_exit=%.2f dist=%.2f need=%.2f atr=%.2f
-",
+                    printf("[CFE-ADVERSE-BLOCK] %s blocked: loss_exit=%.2f dist=%.2f need=%.2f atr=%.2f\n",
                            (m_last_loss_dir==+1?"LONG":"SHORT"),
                            m_last_loss_exit_px, dist_to_exit, recovery_thresh, m_last_loss_atr);
                     fflush(stdout);
@@ -594,8 +593,7 @@ struct CandleFlowEngine {
                     static int64_t s_sus_drift_log = 0;
                     if (now_ms - s_sus_drift_log > 30000) {
                         s_sus_drift_log = now_ms;
-                        printf("[CFE-SUS-DRIFT-BLOCK] |drift|=%.2f < min=%.2f (atr=%.2f)
-",
+                        printf("[CFE-SUS-DRIFT-BLOCK] |drift|=%.2f < min=%.2f (atr=%.2f)\n",
                                std::fabs(ewm_drift), sus_drift_min, sus_atr);
                         fflush(stdout);
                     }
@@ -651,8 +649,7 @@ struct CandleFlowEngine {
                 static int64_t s_pny_log = 0;
                 if (now_ms - s_pny_log > 120000) {
                     s_pny_log = now_ms;
-                    printf("[CFE-POST-NY-BLOCK] bar entry blocked: UTC hour=%d (19-22 dead zone)
-",
+                    printf("[CFE-POST-NY-BLOCK] bar entry blocked: UTC hour=%d (19-22 dead zone)\n",
                            pny_hour);
                     fflush(stdout);
                 }
@@ -703,8 +700,7 @@ struct CandleFlowEngine {
                 static int64_t s_drift_min_log = 0;
                 if (now_ms - s_drift_min_log > 15000) {
                     s_drift_min_log = now_ms;
-                    printf("[CFE-DRIFT-MIN] bar entry blocked: |drift|=%.2f < 0.3
-",
+                    printf("[CFE-DRIFT-MIN] bar entry blocked: |drift|=%.2f < 0.3\n",
                            bar_drift_abs);
                     fflush(stdout);
                 }
@@ -723,8 +719,7 @@ struct CandleFlowEngine {
             static int64_t s_rsi_drift_log = 0;
             if (now_ms - s_rsi_drift_log > 15000) {
                 s_rsi_drift_log = now_ms;
-                printf("[CFE-RSI-DRIFT-CONFLICT] LONG blocked: rsi_dir=+1 but drift=%.2f
-",
+                printf("[CFE-RSI-DRIFT-CONFLICT] LONG blocked: rsi_dir=+1 but drift=%.2f\n",
                        ewm_drift);
                 fflush(stdout);
             }
@@ -734,8 +729,7 @@ struct CandleFlowEngine {
             static int64_t s_rsi_drift_log2 = 0;
             if (now_ms - s_rsi_drift_log2 > 15000) {
                 s_rsi_drift_log2 = now_ms;
-                printf("[CFE-RSI-DRIFT-CONFLICT] SHORT blocked: rsi_dir=-1 but drift=%.2f
-",
+                printf("[CFE-RSI-DRIFT-CONFLICT] SHORT blocked: rsi_dir=-1 but drift=%.2f\n",
                        ewm_drift);
                 fflush(stdout);
             }
