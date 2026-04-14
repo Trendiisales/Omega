@@ -589,6 +589,28 @@ struct CandleFlowEngine {
         if (!bar.valid) return;
         if (!m_rsi_warmed) return;
 
+        // Gate -1: Post-NY dead-tape block (2026-04-15)
+        // Block ALL bar entries 19:00-22:00 UTC. Evidence: 2026-04-14 session,
+        // 10 consecutive losing longs 18:51-19:50 UTC in a 4839-4844 dead range.
+        // Post-NY is thin tape with no institutional flow -- CFE bar signals are noise.
+        // DFE path (high drift threshold) still runs in this window.
+        {
+            const int64_t pny_sec  = now_ms / 1000LL;
+            const int     pny_hour = static_cast<int>((pny_sec % 86400LL) / 3600LL);
+            const bool    post_ny  = (pny_hour >= 19 && pny_hour < 22);
+            if (post_ny) {
+                static int64_t s_pny_log = 0;
+                if (now_ms - s_pny_log > 120000) {
+                    s_pny_log = now_ms;
+                    printf("[CFE-POST-NY-BLOCK] bar entry blocked: UTC hour=%d (19-22 dead zone)
+",
+                           pny_hour);
+                    fflush(stdout);
+                }
+                return;
+            }
+        }
+
         // Gate 0: Trend context gate (2026-04-13)
         // Block bar LONG entries when drift has been sustainedly negative for >= 45s.
         // Block bar SHORT entries when drift has been sustainedly positive for >= 45s.
@@ -1123,12 +1145,20 @@ private:
                                 strcmp(reason,"IMB_EXIT")==0);
         // STAGNATION cooldown raised 10s->60s: entry quality failed, wait for real signal
         // Winner cooldown 30s: prevent immediate re-entry on momentum exhaustion
-        m_cooldown_ms = (strcmp(reason,"STAGNATION") == 0) ? 60000
-                      : (strcmp(reason,"IMB_EXIT")   == 0) ? 5000
-                      : is_winner                           ? 30000
-                      :                                       15000;
-        // DFE rearm: 120s after loss, 30s after winner
-        if (strcmp(reason,"SL_HIT")==0||strcmp(reason,"TRAIL_SL")==0)
+        // FORCE_CLOSE cooldown 300s (2026-04-15): price moved hard against position.
+        //   Re-entering same direction 15s later = fighting the tape.
+        //   Evidence: 14:25-14:32 UTC -- 4 consecutive FC longs 15s apart = -05.
+        // IMB_EXIT cooldown raised 5s->30s (2026-04-15): was re-entering immediately
+        //   after losing IMB exits. Evidence: 19:02-19:45 -- 5 losing longs 5s apart.
+        m_cooldown_ms = (strcmp(reason,"STAGNATION")  == 0) ? 60000
+                      : (strcmp(reason,"FORCE_CLOSE") == 0) ? 300000
+                      : (strcmp(reason,"IMB_EXIT")    == 0) ? 30000
+                      : is_winner                            ? 30000
+                      :                                        15000;
+        // DFE rearm: 120s after SL loss, 30s after winner, 300s after FC
+        if (strcmp(reason,"FORCE_CLOSE")==0)
+            m_dfe_cooldown_until = now_ms + 300000LL;
+        else if (strcmp(reason,"SL_HIT")==0||strcmp(reason,"TRAIL_SL")==0)
             m_dfe_cooldown_until = now_ms + CFE_DFE_COOLDOWN_MS;
         else if (is_winner)
             m_dfe_cooldown_until = now_ms + CFE_WINNER_COOLDOWN_MS;
