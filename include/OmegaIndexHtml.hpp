@@ -1194,7 +1194,7 @@ function renderTrades(trades){
   // Counting them inflates total_trades and distorts W/L. PnL dollars are
   // still correct (real money banked) but the count header should only
   // reflect fully-closed positions (TRAIL/SL/TP/BE/FC exits).
-  const isPartial=t=>t.exitReason==='PARTIAL_1R'||t.exitReason==='PARTIAL_2R';
+  const isPartial=t=>t.exitReason==='PARTIAL_1R'||t.exitReason==='PARTIAL_2R'||t.exitReason==='PARTIAL_TP'||t.exitReason==='PARTIAL_SL';
   const fullClosed=closed.filter(t=>!isPartial(t));
   const wins=fullClosed.filter(t=>safe(t.net_pnl)>0).length,losses=fullClosed.filter(t=>safe(t.net_pnl)<0).length,totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
   if(cE)cE.textContent=fullClosed.length+' closed → '+wins+'W/'+losses+'L → '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
@@ -1202,7 +1202,7 @@ function renderTrades(trades){
   el.innerHTML=[...trades].reverse().slice(0,60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
     const win=net>0,loss=net<0,sc=t.side==='LONG'?'var(--green)':'var(--red)';
-    const reason=t.exitReason||'',result=isOpen?'⬤':reason==='TP_HIT'?'✓TP':reason==='SL_HIT'?'✗SL':reason==='TRAIL_HIT'?'✓TR':reason==='BE_HIT'?'✓BE':reason==='TIMEOUT'?'✗TO':reason==='PARTIAL_1R'?'$P1':reason==='PARTIAL_2R'?'$P2':'✓FC';
+    const reason=t.exitReason||'',result=isOpen?'⬤':reason==='TP_HIT'?'✓TP':reason==='SL_HIT'?'✗SL':reason==='TRAIL_HIT'||reason==='TRAIL_SL'?'✓TR':reason==='BE_HIT'?'✓BE':reason==='TIMEOUT'||reason==='MAX_HOLD_TIMEOUT'?'✗TO':reason==='PARTIAL_1R'||reason==='PARTIAL_TP'?'$P1':reason==='PARTIAL_2R'||reason==='PARTIAL_SL'?'$P2':'✓FC';
     const rc=isOpen?'var(--blue)':win?'var(--green)':loss?'var(--red)':'var(--t2)';
     const netC=win?'var(--green)':loss?'var(--red)':'var(--t2)';
     let heldStr='--';
@@ -1223,7 +1223,7 @@ function renderTrades(trades){
     const regimeCell=`<span style="color:${regCol};font-size:10px">${tReg||'--'}</span>${engBadge}`;
     // Engine + reason combined cell
     const engName=(t.engine||'').replace('Engine','').replace('GoldFlow','GFlow').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag').replace('H1Swing','H1-SW').replace('H4Regime','H4-REG');
-    const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('BE_HIT','BE').replace('PARTIAL_1R','P1-BANK').replace('PARTIAL_2R','P2-BANK').replace('MAX_HOLD_TIMEOUT','T/O');
+    const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_SL','TRAIL').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('MAX_HOLD_TIMEOUT','T/O').replace('BE_HIT','BE').replace('IMM_REVERSAL','IMM-REV').replace('PARTIAL_TP','P-TP').replace('PARTIAL_SL','P-SL').replace('PARTIAL_1R','P1-BANK').replace('PARTIAL_2R','P2-BANK').replace('STAGNATION','STAG');
     const engReasonCell=`<span style="color:var(--cyan);font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
     return `<tr style="background:${rowBg}">
       <td style="color:var(--t2);font-size:11px">${fmtUTC(safe(t.entryTs))}</td>
@@ -2099,4 +2099,5 @@ pollTrades();
 
 ;
 } // namespace omega_gui
+
 
