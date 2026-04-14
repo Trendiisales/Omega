@@ -763,6 +763,7 @@ static void on_tick_gold(
                     g_bars_gold.h1.ind.trend_state.load(std::memory_order_relaxed),
                     g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed),
                     g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.atr14 .load(std::memory_order_relaxed),  // crash-day gate
                     gold_session_slot, now_ms_g, ca_on_close);
             } else if (!gold_any_open && !g_h4_regime_gold.has_open_position()
                        && g_bars_gold.h1.ind.m1_ready.load(std::memory_order_relaxed)) {
@@ -778,6 +779,7 @@ static void on_tick_gold(
                     g_bars_gold.h1.ind.trend_state.load(std::memory_order_relaxed),
                     g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed),
                     g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.atr14 .load(std::memory_order_relaxed),  // crash-day gate
                     gold_session_slot, now_ms_g, ca_on_close);
                 if (h1sig.valid) {
                     const double h1_lot = enter_directional("XAUUSD", h1sig.is_long,
@@ -3524,44 +3526,13 @@ static void on_tick_gold(
         g_trend_pb_gold.seed_h4_trend(
             g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
     }
-    // H1/H4 engine tick-level SL/TP check -- every tick, fast exit on breach.
-    // On-bar management (EMA cross, ADX collapse, timeout) fires in on_h1_bar / on_h4_bar.
-    // This tick path catches intra-bar SL/TP/trail hits immediately.
-    if (g_h1_swing_gold.has_open_position()) {
-        auto& p = g_h1_swing_gold.pos_;
-        const double m = (bid+ask)*0.5;
-        const double mv = p.is_long ? (m-p.entry) : (p.entry-m);
-        if (mv > p.mfe) p.mfe = mv;
-        const double ta = p.h1_atr * omega::H1_TRAIL_ARM_MULT;
-        const double td = p.h1_atr * omega::H1_TRAIL_DIST_MULT;
-        if (p.mfe >= ta) {
-            const double nt = p.is_long ? (m-td) : (m+td);
-            if (!p.trail_active) { if (p.is_long ? (nt>p.sl) : (nt<p.sl)) { p.trail_sl=nt; p.trail_active=true; } }
-            else { if (p.is_long ? (nt>p.trail_sl) : (nt<p.trail_sl)) p.trail_sl=nt; }
-        }
-        const double esl = p.trail_active ? p.trail_sl : p.sl;
-        const bool sl_hit = p.is_long ? (bid<=esl) : (ask>=esl);
-        const bool tp_hit = p.is_long ? (bid>=p.tp) : (ask<=p.tp);
-        if (sl_hit || tp_hit)
-            g_h1_swing_gold.force_close(bid, ask, now_ms_g, ca_on_close);
-    }
+    // H1/H4 engine tick-level management -- on_tick() handles SL/TP/partial/trail.
+    // on_h1_bar() / on_h4_bar() handle bar-level exits (EMA cross, ADX collapse, timeout).
+    if (g_h1_swing_gold.has_open_position())
+        g_h1_swing_gold.on_tick(bid, ask, now_ms_g, ca_on_close);
     if (g_h4_regime_gold.has_open_position()) {
-        auto& p = g_h4_regime_gold.pos_;
-        const double m = (bid+ask)*0.5;
-        const double mv = p.is_long ? (m-p.entry) : (p.entry-m);
-        if (mv > p.mfe) p.mfe = mv;
-        const double ta = p.h4_atr * omega::H4_TRAIL_ARM_MULT;
-        const double td = p.h4_atr * omega::H4_TRAIL_DIST_MULT;
-        if (p.mfe >= ta) {
-            const double nt = p.is_long ? (m-td) : (m+td);
-            if (!p.trail_active) { if (p.is_long ? (nt>p.sl) : (nt<p.sl)) { p.trail_sl=nt; p.trail_active=true; } }
-            else { if (p.is_long ? (nt>p.trail_sl) : (nt<p.trail_sl)) p.trail_sl=nt; }
-        }
-        const double esl = p.trail_active ? p.trail_sl : p.sl;
-        const bool sl_hit = p.is_long ? (bid<=esl) : (ask>=esl);
-        const bool tp_hit = p.is_long ? (bid>=p.tp) : (ask<=p.tp);
-        if (sl_hit || tp_hit)
-            g_h4_regime_gold.force_close(bid, ask, now_ms_g, ca_on_close);
+        g_h4_regime_gold.on_tick(bid, ask, now_ms_g, ca_on_close);
+        g_h4_regime_gold.check_weekend_close(bid, ask, now_ms_g, ca_on_close);
     }
     // ── Improvement 5: CVD confirmation gate ──────────────────────────────
     g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);
@@ -4222,6 +4193,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
