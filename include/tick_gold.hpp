@@ -46,7 +46,9 @@ static void on_tick_gold(
         (gf_open && !gf_winning)                ||  // GoldFlow blocks unless it's a confirmed winner
         g_trend_pb_gold.has_open_position()     ||
         g_nbm_gold_london.has_open_position()   ||  // London NBM also blocks other gold engines
-        g_candle_flow.has_open_position();          // FIX: CFE open position blocks ALL other gold engines
+        g_candle_flow.has_open_position()   ||      // FIX: CFE open position blocks ALL other gold engines
+        g_h1_swing_gold.has_open_position() ||      // H1 swing open blocks all other gold entries
+        g_h4_regime_gold.has_open_position();       // H4 regime open blocks all other gold entries
 
     // Write GoldFlow state to telemetry for GUI pyramid indicator
     {
@@ -723,11 +725,12 @@ static void on_tick_gold(
     // xau_mid hoisted out of block so VPIN + corr-matrix can reference it below
     const double xau_mid = (bid + ask) * 0.5;
     {
-        static OHLCBar s_cur1{}, s_cur5{}, s_cur15{}, s_cur_h4{};
-        static int64_t s_bar1_ms = 0, s_bar5_ms = 0, s_bar15_ms = 0, s_bar_h4_ms = 0;
+        static OHLCBar s_cur1{}, s_cur5{}, s_cur15{}, s_cur_h1{}, s_cur_h4{};
+        static int64_t s_bar1_ms = 0, s_bar5_ms = 0, s_bar15_ms = 0, s_bar_h1_ms = 0, s_bar_h4_ms = 0;
         const int64_t b1  = (now_ms_g /   60000LL) *   60000LL;
         const int64_t b5  = (now_ms_g /  300000LL) *  300000LL;
         const int64_t b15 = (now_ms_g /  900000LL) *  900000LL;
+        const int64_t bh1 = (now_ms_g /  3600000LL) * 3600000LL;   // 1h = 3600s
         const int64_t bh4 = (now_ms_g / 14400000LL) * 14400000LL;  // 4h = 14400s
         // M1
         if (s_bar1_ms == 0) { s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
@@ -741,11 +744,98 @@ static void on_tick_gold(
         if (s_bar15_ms == 0) { s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15; }
         else if (b15 != s_bar15_ms) { g_bars_gold.m15.add_bar(s_cur15); s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15; }
         else { if(xau_mid>s_cur15.high)s_cur15.high=xau_mid; if(xau_mid<s_cur15.low)s_cur15.low=xau_mid; s_cur15.close=xau_mid; }
-        // H4 -- HTF regime gate for TrendPullback gold
-        // 14 H4 bars = 56 hours to warm cold. trend_state drives seed_h4_trend().
+        // H1 -- feeds H1SwingEngine + broader HTF context.
+        // 14 H1 bars = 14 hours cold; warm restart immediate from saved indicators.
+        if (s_bar_h1_ms == 0) { s_cur_h1 = {bh1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h1_ms = bh1; }
+        else if (bh1 != s_bar_h1_ms) {
+            g_bars_gold.h1.add_bar(s_cur_h1);
+            // H1 bar close dispatch: management always runs; entry only when slot is clear
+            if (g_h1_swing_gold.has_open_position()) {
+                g_h1_swing_gold.on_h1_bar(
+                    xau_mid, bid, ask,
+                    g_bars_gold.h1.ind.ema9  .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.ema21 .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.ema50 .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.atr14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.rsi14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.adx14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.adx_rising.load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.trend_state.load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
+                    gold_session_slot, now_ms_g, ca_on_close);
+            } else if (!gold_any_open && !g_h4_regime_gold.has_open_position()
+                       && g_bars_gold.h1.ind.m1_ready.load(std::memory_order_relaxed)) {
+                const auto h1sig = g_h1_swing_gold.on_h1_bar(
+                    xau_mid, bid, ask,
+                    g_bars_gold.h1.ind.ema9  .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.ema21 .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.ema50 .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.atr14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.rsi14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.adx14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.adx_rising.load(std::memory_order_relaxed),
+                    g_bars_gold.h1.ind.trend_state.load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
+                    gold_session_slot, now_ms_g, ca_on_close);
+                if (h1sig.valid) {
+                    const double h1_lot = enter_directional("XAUUSD", h1sig.is_long,
+                        h1sig.entry, h1sig.sl, h1sig.tp, 0.01, true, bid, ask, sym, regime);
+                    if (!h1_lot) { g_h1_swing_gold.cancel(); }
+                    else {
+                        g_h1_swing_gold.patch_size(h1_lot);
+                        g_telemetry.UpdateLastSignal("XAUUSD",
+                            h1sig.is_long ? "LONG" : "SHORT", h1sig.entry, h1sig.reason,
+                            "H1_SWING", regime.c_str(), "H1_SWING", h1sig.tp, h1sig.sl);
+                    }
+                }
+            }
+            s_cur_h1 = {bh1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h1_ms = bh1;
+        } else { if(xau_mid>s_cur_h1.high)s_cur_h1.high=xau_mid; if(xau_mid<s_cur_h1.low)s_cur_h1.low=xau_mid; s_cur_h1.close=xau_mid; }
+        // H4 -- HTF gate for TrendPullback + H4RegimeEngine.
+        // 14 H4 bars = 56 hours cold; warm restart immediate.
         if (s_bar_h4_ms == 0) { s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4; }
-        else if (bh4 != s_bar_h4_ms) { g_bars_gold.h4.add_bar(s_cur_h4); s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4; }
-        else { if(xau_mid>s_cur_h4.high)s_cur_h4.high=xau_mid; if(xau_mid<s_cur_h4.low)s_cur_h4.low=xau_mid; s_cur_h4.close=xau_mid; }
+        else if (bh4 != s_bar_h4_ms) {
+            g_bars_gold.h4.add_bar(s_cur_h4);
+            // H4 bar close dispatch
+            if (g_h4_regime_gold.has_open_position()) {
+                g_h4_regime_gold.on_h4_bar(
+                    s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                    xau_mid, bid, ask,
+                    g_bars_gold.h4.ind.ema9  .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.ema50 .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.atr14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.rsi14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
+                    g_bars_gold.m15.ind.atr_expanding.load(std::memory_order_relaxed),
+                    now_ms_g, ca_on_close);
+            } else if (!gold_any_open && !g_h1_swing_gold.has_open_position()
+                       && g_bars_gold.h4.ind.m1_ready.load(std::memory_order_relaxed)) {
+                const auto h4sig = g_h4_regime_gold.on_h4_bar(
+                    s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                    xau_mid, bid, ask,
+                    g_bars_gold.h4.ind.ema9  .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.ema50 .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.atr14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.rsi14 .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
+                    g_bars_gold.m15.ind.atr_expanding.load(std::memory_order_relaxed),
+                    now_ms_g, ca_on_close);
+                if (h4sig.valid) {
+                    const double h4_lot = enter_directional("XAUUSD", h4sig.is_long,
+                        h4sig.entry, h4sig.sl, h4sig.tp, 0.01, true, bid, ask, sym, regime);
+                    if (!h4_lot) { g_h4_regime_gold.cancel(); }
+                    else {
+                        g_h4_regime_gold.patch_size(h4_lot);
+                        g_telemetry.UpdateLastSignal("XAUUSD",
+                            h4sig.is_long ? "LONG" : "SHORT", h4sig.entry, h4sig.reason,
+                            "H4_REGIME", regime.c_str(), "H4_REGIME", h4sig.tp, h4sig.sl);
+                    }
+                }
+            }
+            s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4;
+        } else { if(xau_mid>s_cur_h4.high)s_cur_h4.high=xau_mid; if(xau_mid<s_cur_h4.low)s_cur_h4.low=xau_mid; s_cur_h4.close=xau_mid; }
     }
 
     // ?? VPIN toxicity tracker -- updated every XAUUSD tick ????????????????
@@ -3434,6 +3524,45 @@ static void on_tick_gold(
         g_trend_pb_gold.seed_h4_trend(
             g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
     }
+    // H1/H4 engine tick-level SL/TP check -- every tick, fast exit on breach.
+    // On-bar management (EMA cross, ADX collapse, timeout) fires in on_h1_bar / on_h4_bar.
+    // This tick path catches intra-bar SL/TP/trail hits immediately.
+    if (g_h1_swing_gold.has_open_position()) {
+        auto& p = g_h1_swing_gold.pos_;
+        const double m = (bid+ask)*0.5;
+        const double mv = p.is_long ? (m-p.entry) : (p.entry-m);
+        if (mv > p.mfe) p.mfe = mv;
+        const double ta = p.h1_atr * omega::H1_TRAIL_ARM_MULT;
+        const double td = p.h1_atr * omega::H1_TRAIL_DIST_MULT;
+        if (p.mfe >= ta) {
+            const double nt = p.is_long ? (m-td) : (m+td);
+            if (!p.trail_active) { if (p.is_long ? (nt>p.sl) : (nt<p.sl)) { p.trail_sl=nt; p.trail_active=true; } }
+            else { if (p.is_long ? (nt>p.trail_sl) : (nt<p.trail_sl)) p.trail_sl=nt; }
+        }
+        const double esl = p.trail_active ? p.trail_sl : p.sl;
+        const bool sl_hit = p.is_long ? (bid<=esl) : (ask>=esl);
+        const bool tp_hit = p.is_long ? (bid>=p.tp) : (ask<=p.tp);
+        if (sl_hit || tp_hit)
+            g_h1_swing_gold.force_close(bid, ask, now_ms_g, ca_on_close);
+    }
+    if (g_h4_regime_gold.has_open_position()) {
+        auto& p = g_h4_regime_gold.pos_;
+        const double m = (bid+ask)*0.5;
+        const double mv = p.is_long ? (m-p.entry) : (p.entry-m);
+        if (mv > p.mfe) p.mfe = mv;
+        const double ta = p.h4_atr * omega::H4_TRAIL_ARM_MULT;
+        const double td = p.h4_atr * omega::H4_TRAIL_DIST_MULT;
+        if (p.mfe >= ta) {
+            const double nt = p.is_long ? (m-td) : (m+td);
+            if (!p.trail_active) { if (p.is_long ? (nt>p.sl) : (nt<p.sl)) { p.trail_sl=nt; p.trail_active=true; } }
+            else { if (p.is_long ? (nt>p.trail_sl) : (nt<p.trail_sl)) p.trail_sl=nt; }
+        }
+        const double esl = p.trail_active ? p.trail_sl : p.sl;
+        const bool sl_hit = p.is_long ? (bid<=esl) : (ask>=esl);
+        const bool tp_hit = p.is_long ? (bid>=p.tp) : (ask<=p.tp);
+        if (sl_hit || tp_hit)
+            g_h4_regime_gold.force_close(bid, ask, now_ms_g, ca_on_close);
+    }
     // ── Improvement 5: CVD confirmation gate ──────────────────────────────
     g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);
 
@@ -4093,6 +4222,7 @@ static void on_tick_gold(
         }
     }
 }
+
 
 
 
