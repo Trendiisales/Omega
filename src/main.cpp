@@ -70,6 +70,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "CrossAssetEngines.hpp" // Co-location speed advantage engines (LeadLag, SpreadDisloc, EventComp)
 #include "IndexFlowEngine.hpp"   // L2 flow + EWM drift engines for equity indices (IndexFlowEngine, IndexMacroCrashEngine)
 #include "CTraderDepthClient.hpp" // cTrader Open API v2 -- full order book depth feed
+#include "RealDomReceiver.hpp"   // OmegaDomStreamer cBot receiver -- real XAUUSD DOM sizes on port 8765
 
 // ?? Adaptive intelligence layer (gap-close vs best systems) ??????????????????
 #include "OmegaAdaptiveRisk.hpp"   // Kelly sizing, rolling Sharpe, DD throttle, corr heat
@@ -94,4 +95,5 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "trade_loop.hpp"
 #include "engine_init.hpp"
 #include "omega_main.hpp"
+
 
