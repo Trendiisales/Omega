@@ -566,8 +566,13 @@ struct CandleFlowEngine {
             drift_sustained_ms >= CFE_DFE_DRIFT_SUSTAINED_MS &&
             now_ms >= m_dfe_cooldown_until)
         {
-            const bool sus_long = (m_drift_sustained_dir == 1);
-            // RSI slope must agree with direction
+            // REVERSED (2026-04-15): 2yr backtest showed 14.8% WR following drift direction.
+            // Below-random WR = entries are ANTI-correlated with outcome.
+            // Sustained drift = exhaustion signal, not continuation signal.
+            // When drift sustains positive for 90s, the move is spent -> fade SHORT.
+            // When drift sustains negative for 90s, reversal due -> fade LONG.
+            const bool sus_long = (m_drift_sustained_dir == -1);  // FADE: negative drift = go LONG
+            // RSI slope must be reversing (fading the move)
             const bool sus_rsi_ok = sus_long
                 ? (m_rsi_trend > CFE_DFE_RSI_THRESH && m_rsi_trend < CFE_DFE_RSI_TREND_MAX)
                 : (m_rsi_trend < -CFE_DFE_RSI_THRESH && m_rsi_trend > -CFE_DFE_RSI_TREND_MAX);
