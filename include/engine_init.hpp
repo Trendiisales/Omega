@@ -347,18 +347,30 @@ static void init_engines(const std::string& cfg_path)
     // All session trades: TIME_STOP losses shorting an uptrend. No edge confirmed.
     g_trend_pb_gold.enabled = false;
 
-    // HTF swing engines -- shadow_mode=true always until live validation complete.
-    // H1SwingEngine: ADX-filtered H1 EMA pullback, $15 risk, 0.10 lot max, London+NY only.
-    // H4RegimeEngine: Donchian 10-bar channel break, $10 risk, 0.10 lot max, 24h.
-    // Both engines start ENABLED in shadow mode -- they log but never send live orders.
-    // To enable live: set shadow_mode=false after shadow validation confirms positive edge.
-    g_h1_swing_gold.shadow_mode = true;
-    g_h1_swing_gold.enabled     = true;
-    g_h4_regime_gold.shadow_mode = true;
-    g_h4_regime_gold.enabled     = true;
-    printf("[INIT] H1SwingEngine:  shadow_mode=true enabled=true ($15 risk, max 0.10 lots)\n");
-    printf("[INIT] H4RegimeEngine: shadow_mode=true enabled=true ($10 risk, max 0.10 lots)\n");
-    fflush(stdout);
+    // HTF swing engines v2 -- per-instrument params, partial TP, weekend close gate.
+    // shadow_mode=true always. To go live: validate shadow signals then set false.
+    {
+        g_h1_swing_gold.p           = omega::make_h1_gold_params();
+        g_h1_swing_gold.symbol      = "XAUUSD";
+        g_h1_swing_gold.shadow_mode = true;
+        g_h1_swing_gold.enabled     = true;
+        g_h4_regime_gold.p           = omega::make_h4_gold_params();
+        g_h4_regime_gold.symbol      = "XAUUSD";
+        g_h4_regime_gold.shadow_mode = true;
+        g_h4_regime_gold.enabled     = true;
+        printf("[INIT] H1SwingEngine  XAUUSD: shadow=true adx_min=%.0f sl=%.1fx"
+               " tp1=%.1fx trail_arm=%.1fx trail_dist=%.1fx daily_cap=$%.0f\n",
+               g_h1_swing_gold.p.adx_min,    g_h1_swing_gold.p.sl_mult,
+               g_h1_swing_gold.p.tp1_mult,   g_h1_swing_gold.p.tp2_trail_arm_mult,
+               g_h1_swing_gold.p.tp2_trail_dist_mult, g_h1_swing_gold.p.daily_cap);
+        printf("[INIT] H4RegimeEngine XAUUSD: shadow=true channel=%d bars adx=%.0f"
+               " sl=%.1fx tp=%.1fx trail_arm=%.1fx trail_dist=%.1fx daily_cap=$%.0f\n",
+               g_h4_regime_gold.p.channel_bars, g_h4_regime_gold.p.adx_min,
+               g_h4_regime_gold.p.sl_struct_mult, g_h4_regime_gold.p.tp_mult,
+               g_h4_regime_gold.p.trail_arm_mult, g_h4_regime_gold.p.trail_dist_mult,
+               g_h4_regime_gold.p.daily_cap);
+        fflush(stdout);
+    }
 
     // DISABLED: Index TrendPullback never explicitly disabled -- no live validation.
     // GER40: tighter band (index moves more cleanly around EMAs)
@@ -1485,4 +1497,5 @@ static void init_engines(const std::string& cfg_path)
         }
     }
 }
+
 
