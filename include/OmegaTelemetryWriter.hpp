@@ -310,13 +310,15 @@ struct OmegaTelemetrySnapshot
     // --- Per-engine live session P&L (closed trades, USD) ---
     // Updated on each trade close from handle_closed_trade.
     // Allows GUI to show which engines are contributing vs dragging.
-    double eng_pnl_breakout      = 0.0;  // all CRTP BreakoutEngine instances
-    double eng_pnl_bracket       = 0.0;  // all BracketEngine instances
-    double eng_pnl_gold_stack    = 0.0;  // GoldEngineStack (gold engines excl. MeanReversion)
-    double eng_pnl_gold_flow     = 0.0;  // GoldFlowEngine
-    double eng_pnl_cross         = 0.0;  // all CrossAsset engines (ORB/VWAP/TrendPB/etc)
-    double eng_pnl_latency       = 0.0;  // LatencyEdgeStack
-    double eng_pnl_mean_rev      = 0.0;  // MeanReversionEngine (GoldEngineStack)
+    double eng_pnl_breakout      = 0.0;
+    double eng_pnl_bracket       = 0.0;
+    double eng_pnl_gold_stack    = 0.0;
+    double eng_pnl_gold_flow     = 0.0;
+    double eng_pnl_cross         = 0.0;
+    double eng_pnl_latency       = 0.0;
+    double eng_pnl_mean_rev      = 0.0;
+    double eng_pnl_h1_swing      = 0.0;   // H1SwingEngine
+    double eng_pnl_h4_regime     = 0.0;   // H4RegimeEngine
     int    eng_trades_breakout   = 0;
     int    eng_trades_bracket    = 0;
     int    eng_trades_gold_stack = 0;
@@ -324,6 +326,18 @@ struct OmegaTelemetrySnapshot
     int    eng_trades_cross      = 0;
     int    eng_trades_latency    = 0;
     int    eng_trades_mean_rev   = 0;
+    int    eng_trades_h1_swing   = 0;
+    int    eng_trades_h4_regime  = 0;
+    // H1/H4 live status (updated every tick from tick_gold.hpp)
+    int    h1_swing_open         = 0;    // 1 = position live
+    int    h4_regime_open        = 0;
+    float  h1_swing_daily_pnl    = 0.0f;
+    float  h4_regime_daily_pnl   = 0.0f;
+    int    h1_swing_shadow       = 1;
+    int    h4_regime_shadow      = 1;
+    float  h1_adx                = 0.0f;  // latest H1 ADX (for GUI indicator)
+    float  h4_adx                = 0.0f;  // latest H4 ADX
+    int    h4_trend_state        = 0;     // -1/0/+1
 
     // --- Real-time dollar exposure per correlation cluster ---
     // Each value = sum of (lot * tick_value_multiplier) for all OPEN positions in cluster.
@@ -706,7 +720,9 @@ public:
              || strstr(engine_type, "FX_CASCADE") || strstr(engine_type, "LONDON_FIX")) return 4;
             if (strstr(engine_type, "LATENCY") || strstr(engine_type, "LEAD_LAG")
              || strstr(engine_type, "SPREAD_DISLOC"))  return 5;
-            return 0;  // default: BREAKOUT
+            if (strstr(engine_type, "H1_SWING")  || strstr(engine_type, "H1Swing"))  return 7;
+            if (strstr(engine_type, "H4_REGIME") || strstr(engine_type, "H4Regime")) return 8;
+            return 0;
         };
         switch (classify()) {
             case 0: m_snap->eng_pnl_breakout   += net_pnl; ++m_snap->eng_trades_breakout;   break;
@@ -716,6 +732,8 @@ public:
             case 4: m_snap->eng_pnl_cross      += net_pnl; ++m_snap->eng_trades_cross;      break;
             case 5: m_snap->eng_pnl_latency    += net_pnl; ++m_snap->eng_trades_latency;    break;
             case 6: m_snap->eng_pnl_mean_rev   += net_pnl; ++m_snap->eng_trades_mean_rev;   break;
+            case 7: m_snap->eng_pnl_h1_swing   += net_pnl; ++m_snap->eng_trades_h1_swing;   break;
+            case 8: m_snap->eng_pnl_h4_regime  += net_pnl; ++m_snap->eng_trades_h4_regime;  break;
         }
     }
 
