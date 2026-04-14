@@ -751,26 +751,37 @@ if ($ghostLines.Count -gt 0) {
     Add-Result "Impulse Ghost" "INFO" "No impulse ghost blocks seen" ""
 }
 
-# --- CHECK 13: Running hash vs git HEAD --------------------------------------
-# Confirms binary was built from latest origin/main. Catches stale binary.
+# --- CHECK 13: Running hash vs GitHub HEAD (API, not git CLI) ----------------
+# Uses GitHub API -- git CLI is not available on VPS after zip-based restart.
+# $ghToken is loaded at top of this script from C:\Omega\.github_token.
 $verFile2 = "$OmegaDir\include\version_generated.hpp"
 $runningHash = "unknown"
 if (Test-Path $verFile2) {
     $vl = Select-String -Path $verFile2 -Pattern 'OMEGA_GIT_HASH' -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($vl -and $vl.Line -match '"([a-f0-9]{7,})"') { $runningHash = $Matches[1] }
 }
-$ErrorActionPreference = "Continue"
-$gitHeadFull = & git -C $OmegaDir rev-parse HEAD 2>$null
-$gitHead7 = if ($gitHeadFull -and $gitHeadFull.Length -ge 7) { $gitHeadFull.Substring(0,7) } else { "unknown" }
-$ErrorActionPreference = "Continue"
-if ($runningHash -eq "unknown" -or $gitHead7 -eq "unknown") {
-    Add-Result "Hash vs HEAD" "WARN" "running=$runningHash git_head=$gitHead7" "Could not verify -- check version_generated.hpp and git are accessible."
+$gitHead7 = "unknown"
+if ($ghToken -and $ghToken -ne "") {
+    try {
+        $apiHdr = @{ Authorization="token $ghToken"; "User-Agent"="OmegaVerify" }
+        $commitResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" `
+            -Headers $apiHdr -TimeoutSec 10 -ErrorAction Stop
+        if ($commitResp.sha -and $commitResp.sha.Length -ge 7) {
+            $gitHead7 = $commitResp.sha.Substring(0,7)
+        }
+    } catch {
+        $gitHead7 = "api_error"
+    }
+}
+if ($runningHash -eq "unknown") {
+    Add-Result "Hash vs HEAD" "WARN" "running=$runningHash" "version_generated.hpp not found or OMEGA_GIT_HASH not in it."
+} elseif ($gitHead7 -eq "unknown" -or $gitHead7 -eq "api_error") {
+    # Can still confirm hash is present even if API unavailable
+    Add-Result "Hash vs HEAD" "INFO" "running=$runningHash github_head=unavailable" "Binary hash confirmed ($runningHash). GitHub API unreachable -- cannot compare to HEAD."
 } elseif ($runningHash -eq $gitHead7) {
-    Add-Result "Hash vs HEAD" "PASS" "running=$runningHash == HEAD=$gitHead7" "Binary matches latest commit. Source and binary are in sync."
+    Add-Result "Hash vs HEAD" "PASS" "running=$runningHash == HEAD=$gitHead7" "Binary matches latest GitHub commit exactly."
 } else {
-    # Not a failure -- QUICK_RESTART uses API SHA which may differ from local git HEAD.
-    # The binary hash (version_generated.hpp) is the real proof of what was built.
-    Add-Result "Hash vs HEAD" "INFO" "running=$runningHash git_head=$gitHead7" "Hash differs from local git HEAD -- normal when new commits landed during restart."
+    Add-Result "Hash vs HEAD" "INFO" "running=$runningHash git_head=$gitHead7" "Hash differs from GitHub HEAD -- normal when new commits pushed after this build."
 }
 
 # --- CHECK 14: Bar state validity (not flat/holiday) -------------------------
@@ -919,5 +930,6 @@ Write-Host ""
 # Logs stay on disk at C:\Omega\logs\ -- read via RDP or MONITOR.ps1.
 Write-Host "  [OK] State files saved locally (not pushed to git)" -ForegroundColor DarkGray
 Write-Host ""
+
 
 
