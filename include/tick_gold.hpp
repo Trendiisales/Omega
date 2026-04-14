@@ -267,6 +267,37 @@ static void on_tick_gold(
     const double gold_vwap_pts = (gold_vwap_now > 0.0) ? (gold_mid_now - gold_vwap_now) : 0.0;
     const bool gold_is_compressing  = (strcmp(gold_stack_regime,"COMPRESSION")==0);
 
+    // ── PDH/PDL daily range tracker ───────────────────────────────────────────
+    // Research (2026-04-15): 111M tick / 2yr backtest: inside daily range
+    // EV=+1.732pts at 15min. Outside = negative EV. Gold is mean-reverting intraday.
+    {
+        const int64_t pdhl_sec  = now_ms_g / 1000LL;
+        const int     pdhl_day  = static_cast<int>(pdhl_sec / 86400LL);
+        static int    s_pdhl_day  = -1;
+        static double s_pdhl_hi   = 0.0;
+        static double s_pdhl_lo   = 1e9;
+        static double s_pdhl_prev_hi = 0.0;
+        static double s_pdhl_prev_lo = 0.0;
+        if (pdhl_day != s_pdhl_day) {
+            if (s_pdhl_day >= 0) {
+                s_pdhl_prev_hi = s_pdhl_hi;
+                s_pdhl_prev_lo = (s_pdhl_lo < 1e8) ? s_pdhl_lo : 0.0;
+            }
+            s_pdhl_hi  = gold_mid_now;
+            s_pdhl_lo  = gold_mid_now;
+            s_pdhl_day = pdhl_day;
+        } else {
+            if (gold_mid_now > s_pdhl_hi) s_pdhl_hi = gold_mid_now;
+            if (gold_mid_now < s_pdhl_lo) s_pdhl_lo = gold_mid_now;
+        }
+        g_macro_ctx.pdh = s_pdhl_prev_hi;
+        g_macro_ctx.pdl = s_pdhl_prev_lo;
+    }
+    const bool gold_inside_daily_range =
+        (g_macro_ctx.pdh > 0.0 && g_macro_ctx.pdl > 0.0)
+        ? (gold_mid_now <= g_macro_ctx.pdh + 2.0 && gold_mid_now >= g_macro_ctx.pdl - 2.0)
+        : true;
+
     // REAL vol measurements from GoldEngineStack (tick-by-tick, no hardcoding)
     const double gold_recent_vol    = g_gold_stack.recent_vol_pct();  // 80-tick range/mid
     const double gold_base_vol      = g_gold_stack.base_vol_pct();    // 512-tick EWM baseline
