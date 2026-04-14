@@ -1017,6 +1017,29 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/trades"))      { ct = "application/json"; body = buildTradesJson(); }
         else if (strstr(buf, "GET /api/history"))     { ct = "application/json"; body = buildHistoryJson(); }
         else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
+        else if (strstr(buf, "POST /api/clear_ledger") || strstr(buf, "GET /api/clear_ledger")) {
+            // Clear in-memory ledger + rename today's CSV so it won't be re-read
+            ct = "application/json";
+            g_omegaLedger.resetDaily();
+            // Rename today's trade CSV so /api/history returns empty
+            char today[16] = {};
+            { time_t t = time(nullptr); struct tm ti{}; gmtime_s(&ti, &t);
+              snprintf(today, sizeof(today), "%04d-%02d-%02d",
+                       ti.tm_year+1900, ti.tm_mon+1, ti.tm_mday); }
+            static const char* DIRS[] = {
+                "C:\\Omega\\logs\\trades",
+                "logs/trades", nullptr };
+            bool cleared = false;
+            for (int pi = 0; DIRS[pi]; ++pi) {
+                char src[512], dst[512];
+                snprintf(src, sizeof(src), "%s/omega_trade_closes_%s.csv", DIRS[pi], today);
+                snprintf(dst, sizeof(dst), "%s/omega_trade_closes_%s.cleared.csv", DIRS[pi], today);
+                if (rename(src, dst) == 0) { cleared = true; break; }
+            }
+            body = cleared ? "{\"ok\":true,\"msg\":\"Ledger cleared\"}"
+                           : "{\"ok\":true,\"msg\":\"Ledger cleared (no CSV found)\"}" ;
+            printf("[LEDGER-CLEAR] Session ledger cleared via API\n"); fflush(stdout);
+        }
         else if (strstr(buf, "GET /api/shadow_csv"))  {
             // Serve the full shadow CSV for remote analysis -- tries all known paths
             ct = "text/csv";
@@ -1076,5 +1099,6 @@ void OmegaTelemetryServer::run(int port)
 }
 
 } // namespace omega
+
 
 
