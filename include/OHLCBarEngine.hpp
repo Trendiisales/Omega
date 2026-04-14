@@ -1077,7 +1077,14 @@ public:
         // or Bollinger bands collapsed to a single line
         const bool flat_emas   = (std::fabs(e9 - e50) < 0.01 && e9 > 0.0);
         const bool pegged_rsi  = (rsi < 5.0 || rsi > 95.0);
-        const bool tiny_atr    = (atr < 1.0 && atr > 0.0);
+        // ATR floor: 2.0pt minimum for gold instruments (XAUUSD price ~$4700).
+        // Previous floor of 1.0pt allowed Sunday/holiday M1 ATR of 1.03pt to be
+        // saved, producing stale bar state that seeded engines with wrong volatility.
+        // Gold M1 ATR in a real session is never below 2pt. M15 ATR is never below 5pt.
+        // H1 ATR is never below 6pt. H4 ATR is never below 15pt.
+        // This floor applies to all timeframes via the same save path -- the 2pt floor
+        // is conservative enough for M1 (real floor ~3pt) and is not restrictive for HTF.
+        const bool tiny_atr    = (atr < 2.0 && atr > 0.0);
         const bool flat_bb     = (std::fabs(bbu - bbl) < 0.01 && bbu > 0.0);
         if (flat_emas || pegged_rsi || tiny_atr || flat_bb) {
             printf("[OHLC] save_indicators SKIPPED -- flat/holiday state detected "
