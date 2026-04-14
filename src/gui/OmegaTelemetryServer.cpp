@@ -311,18 +311,23 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
 
     // Per-engine session P&L attribution
     {
-        char ep[512];
+        char ep[768];
         snprintf(ep, sizeof(ep),
-            ",\"eng_pnl\":{\"breakout\":%.2f,\"bracket\":%.2f,\"gold_stack\":%.2f,\"gold_flow\":%.2f,\"cross\":%.2f,\"latency\":%.2f,\"mean_rev\":%.2f}"
-            ",\"eng_trades\":{\"breakout\":%d,\"bracket\":%d,\"gold_stack\":%d,\"gold_flow\":%d,\"cross\":%d,\"latency\":%d,\"mean_rev\":%d}",
+            ",\"eng_pnl\":{\"breakout\":%.2f,\"bracket\":%.2f,\"gold_stack\":%.2f,\"gold_flow\":%.2f,\"cross\":%.2f,\"latency\":%.2f,\"mean_rev\":%.2f,\"h1_swing\":%.2f,\"h4_regime\":%.2f}"
+            ",\"eng_trades\":{\"breakout\":%d,\"bracket\":%d,\"gold_stack\":%d,\"gold_flow\":%d,\"cross\":%d,\"latency\":%d,\"mean_rev\":%d,\"h1_swing\":%d,\"h4_regime\":%d}"
+            ",\"htf\":{\"h1_open\":%d,\"h4_open\":%d,\"h1_pnl\":%.2f,\"h4_pnl\":%.2f,\"h1_shadow\":%d,\"h4_shadow\":%d,\"h1_adx\":%.1f,\"h4_adx\":%.1f,\"h4_trend\":%d}",
             s->eng_pnl_breakout,   s->eng_pnl_bracket,
             s->eng_pnl_gold_stack, s->eng_pnl_gold_flow,
             s->eng_pnl_cross,      s->eng_pnl_latency,
-            s->eng_pnl_mean_rev,
+            s->eng_pnl_mean_rev,   s->eng_pnl_h1_swing, s->eng_pnl_h4_regime,
             s->eng_trades_breakout,   s->eng_trades_bracket,
             s->eng_trades_gold_stack, s->eng_trades_gold_flow,
             s->eng_trades_cross,      s->eng_trades_latency,
-            s->eng_trades_mean_rev);
+            s->eng_trades_mean_rev,   s->eng_trades_h1_swing, s->eng_trades_h4_regime,
+            s->h1_swing_open,  s->h4_regime_open,
+            (double)s->h1_swing_daily_pnl, (double)s->h4_regime_daily_pnl,
+            s->h1_swing_shadow, s->h4_regime_shadow,
+            (double)s->h1_adx, (double)s->h4_adx, s->h4_trend_state);
         result += ep;
     }
 
@@ -1071,4 +1076,5 @@ void OmegaTelemetryServer::run(int port)
 }
 
 } // namespace omega
+
 
