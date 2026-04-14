@@ -123,8 +123,15 @@ $innerDir = Get-ChildItem $extractPath -Directory | Select-Object -First 1
 
 foreach ($ext in @("*.cpp","*.hpp","*.h","*.ini","*.cmake","*.txt","*.json","*.md")) {
     Get-ChildItem -Path $innerDir.FullName -Filter $ext -Recurse | ForEach-Object {
-        $rel  = $_.FullName.Substring($innerDir.FullName.Length).TrimStart('\','/')
-        $dest = Join-Path $OmegaDir $rel
+        $rel = $_.FullName.Substring($innerDir.FullName.Length).TrimStart('\','/')
+        # Guard: skip paths that look absolute after stripping the zip prefix.
+        # GitHub zip entries can produce rel paths starting with a drive letter,
+        # causing Join-Path C:\Omega + C:\... = C:\Omega\C: which crashes.
+        if ($rel -eq "" -or $rel -match "^[A-Za-z]:" -or $rel -match "\.\.") {
+            Write-Host "  [SKIP] Bad relative path: $rel" -ForegroundColor DarkYellow
+            return
+        }
+        $dest    = Join-Path $OmegaDir $rel
         $destDir = Split-Path $dest -Parent
         if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
         Copy-Item $_.FullName $dest -Force
