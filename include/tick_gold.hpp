@@ -4340,6 +4340,24 @@ static void on_tick_gold(
             }
         }
     }
+
+    // ── PDH/PDL Reversion Engine ────────────────────────────────────────────
+    // Mean reversion inside yesterday's daily range.
+    // Research: 2yr/111M tick backtest -- only statistically valid intraday edge.
+    g_pdhl_rev.on_tick(
+        bid, ask, now_ms_g,
+        g_macro_ctx.pdh,
+        g_macro_ctx.pdl,
+        gold_atr,
+        g_macro_ctx.gold_l2_imbalance,
+        g_l2_gold.raw_bid.load(std::memory_order_relaxed),
+        g_l2_gold.raw_ask.load(std::memory_order_relaxed),
+        g_macro_ctx.gold_l2_real,
+        static_cast<double>(g_gold_stack.ewm_drift()),
+        gold_session_slot,
+        [](const omega::TradeRecord& tr){ g_telemetry.RecordTrade(tr); }
+    );
+
 }
 
 
