@@ -123,15 +123,8 @@ $innerDir = Get-ChildItem $extractPath -Directory | Select-Object -First 1
 
 foreach ($ext in @("*.cpp","*.hpp","*.h","*.ini","*.cmake","*.txt","*.json","*.md")) {
     Get-ChildItem -Path $innerDir.FullName -Filter $ext -Recurse | ForEach-Object {
-        $rel = $_.FullName.Substring($innerDir.FullName.Length).TrimStart('\','/')
-        # Guard: skip any rel path that looks absolute (contains drive letter colon),
-        # contains ".." traversal, or is empty. These cause Join-Path to produce
-        # broken paths like C:\Omega\C: which crash New-Item and Copy-Item.
-        if ($rel -eq "" -or $rel -match "^[A-Za-z]:" -or $rel -match "\.\.") {
-            Write-Host "  [SKIP] Bad relative path: $rel" -ForegroundColor DarkYellow
-            return
-        }
-        $dest    = Join-Path $OmegaDir $rel
+        $rel  = $_.FullName.Substring($innerDir.FullName.Length).TrimStart('\','/')
+        $dest = Join-Path $OmegaDir $rel
         $destDir = Split-Path $dest -Parent
         if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
         Copy-Item $_.FullName $dest -Force
@@ -254,21 +247,19 @@ Write-Host ""
 $proc = Start-Process -FilePath $OmegaExe -ArgumentList "omega_config.ini" -WorkingDirectory $OmegaDir -PassThru -NoNewWindow
 Write-Host "  [DIRECT] PID $($proc.Id)" -ForegroundColor Green
 
-# Hard verify: use Get-CimInstance to get the real on-disk path of the running process.
-# Get-Process .Path is unreliable on Windows -- returns null for processes launched
-# without admin or under certain session contexts, causing the try/catch to swallow
-# the failure and print a green OK when the old binary is still running.
-# Get-CimInstance Win32_Process always returns ExecutablePath reliably.
-Start-Sleep -Seconds 5
+# ── STALE BINARY CHECK 1: CimInstance timestamp ──────────────────────────────
+# Wait 15s for process to stabilise (was 5s -- too short if startup is slow).
+Start-Sleep -Seconds 15
 $runningProc = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
 if (-not $runningProc) {
-    Write-Host "  [FATAL] Omega.exe not running after launch!" -ForegroundColor Red
+    Write-Host "  [FATAL] Omega.exe not running 15s after launch -- crashed on startup!" -ForegroundColor Red
+    Write-Host "  Check: $OmegaDir\logs\omega_service_stdout.log" -ForegroundColor Red
     exit 1
 }
 $runningPid  = ($runningProc | Select-Object -First 1).Id
 $cimProc     = Get-CimInstance Win32_Process -Filter "ProcessId = $runningPid" -ErrorAction SilentlyContinue
 if (-not $cimProc -or [string]::IsNullOrEmpty($cimProc.ExecutablePath)) {
-    Write-Host "  [FATAL] Cannot determine path of running Omega.exe (PID $runningPid) via CimInstance. Aborting." -ForegroundColor Red
+    Write-Host "  [FATAL] Cannot determine path of running Omega.exe (PID $runningPid) via CimInstance." -ForegroundColor Red
     Write-Host "  Kill PID $runningPid manually and re-run QUICK_RESTART.ps1" -ForegroundColor Red
     exit 1
 }
@@ -288,7 +279,52 @@ if ($diffSec -gt 10) {
     Write-Host "  Kill PID $runningPid manually and re-run QUICK_RESTART.ps1" -ForegroundColor Red
     exit 1
 }
-Write-Host "  [OK] Running EXE timestamp matches built EXE (+${diffSec}s) -- correct binary confirmed" -ForegroundColor Green
+Write-Host "  [OK] EXE timestamp matches built binary (+${diffSec}s)" -ForegroundColor Green
+
+# ── STALE BINARY CHECK 2: Git hash in startup log ────────────────────────────
+# The binary prints "[Omega] Git hash: XXXXXXX | Built: ..." unconditionally on
+# startup. Scrape the log and confirm the running binary reports $ghSha7.
+# This catches the case where cmake configure embedded a stale hash, or the wrong
+# Omega.exe was launched from a different directory.
+# Poll for up to 30s -- log may not be flushed instantly.
+$logStdout = "$OmegaDir\logs\omega_service_stdout.log"
+$hashFound = $false
+$hashInLog = ""
+for ($hi = 0; $hi -lt 15; $hi++) {
+    if (Test-Path $logStdout) {
+        $tail = Get-Content $logStdout -Tail 200 -ErrorAction SilentlyContinue
+        $hashLine = $tail | Where-Object { $_ -match "\[Omega\] Git hash:" } | Select-Object -Last 1
+        if ($hashLine) {
+            # Extract 7-char hash from line like: [Omega] Git hash: e1c70e5 | Built: ...
+            if ($hashLine -match "Git hash:\s*([0-9a-f]{7})") {
+                $hashInLog = $Matches[1]
+                $hashFound = $true
+                break
+            }
+        }
+    }
+    Start-Sleep -Seconds 2
+}
+
+if (-not $hashFound) {
+    Write-Host "  [FATAL] Git hash line not found in log after 30s." -ForegroundColor Red
+    Write-Host "  Binary may have crashed at startup or is not logging." -ForegroundColor Red
+    Write-Host "  Check: $logStdout" -ForegroundColor Red
+    exit 1
+}
+
+if ($hashInLog -ne $ghSha7) {
+    Write-Host "" -ForegroundColor Red
+    Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
+    Write-Host "  ║  STALE BINARY DETECTED -- WRONG HASH IN LOG      ║" -ForegroundColor Red
+    Write-Host "  ║  Expected hash : $ghSha7                          ║" -ForegroundColor Red
+    Write-Host "  ║  Log reports   : $hashInLog                       ║" -ForegroundColor Red
+    Write-Host "  ║  Binary built with wrong source. Kill and retry.  ║" -ForegroundColor Red
+    Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+    taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
+    exit 1
+}
+Write-Host "  [OK] Git hash confirmed in log: $hashInLog == $ghSha7 -- not stale" -ForegroundColor Green
 
 if (-not $SkipVerify) {
     Write-Host ""
