@@ -712,6 +712,21 @@ R"OMEGA5(
         </div>
         <div class="eng-row"><span class="eng-lbl">CROSS-ASSET</span><span class="eng-pnl" id="engPnlCross">$0</span><span class="eng-cnt" id="engCntCross">0</span></div>
         <div class="eng-row"><span class="eng-lbl">LATENCY</span><span class="eng-pnl" id="engPnlLatency">$0</span><span class="eng-cnt" id="engCntLatency">0</span></div>
+        <div class="eng-row" style="border-top:1px solid rgba(255,255,255,0.12);margin-top:3px;padding-top:4px;">
+          <span class="eng-lbl" style="font-size:9px;color:var(--t2)">HTF SWING</span>
+        </div>
+        <div class="eng-row">
+          <span class="eng-lbl">H1 SWING</span>
+          <span class="eng-pnl" id="engPnlH1Swing">$0</span>
+          <span class="eng-cnt" id="engCntH1Swing">0</span>
+          <span id="h1SwingStatus" style="font-size:9px;margin-left:4px;color:var(--t2)">IDLE</span>
+        </div>
+        <div class="eng-row">
+          <span class="eng-lbl">H4 REGIME</span>
+          <span class="eng-pnl" id="engPnlH4Regime">$0</span>
+          <span class="eng-cnt" id="engCntH4Regime">0</span>
+          <span id="h4RegimeStatus" style="font-size:9px;margin-left:4px;color:var(--t2)">IDLE</span>
+        </div>
       </div>
     </div>
 
@@ -1236,7 +1251,7 @@ function renderTrades(trades){
     const engBadge=tEng?`<span style="font-size:9px;color:var(--cyan);margin-left:3px">${tEng}</span>`:'';
     const regimeCell=`<span style="color:${regCol};font-size:10px">${tReg||'--'}</span>${engBadge}`;
     // Engine + reason combined cell
-    const engName=(t.engine||'').replace('Engine','').replace('GoldFlow','GFlow').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag');
+    const engName=(t.engine||'').replace('Engine','').replace('GoldFlow','GFlow').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag').replace('H1Swing','H1-SW').replace('H4Regime','H4-REG');
     const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('BE_HIT','BE').replace('PARTIAL_1R','P1-BANK').replace('PARTIAL_2R','P2-BANK').replace('MAX_HOLD_TIMEOUT','T/O');
     const engReasonCell=`<span style="color:var(--cyan);font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
     return `<tr style="background:${rowBg}">
@@ -1934,6 +1949,8 @@ R"OMEGA23B(
       ['GoldFlow',   ep.gold_flow,  et.gold_flow],
       ['Cross',      ep.cross,      et.cross],
       ['Latency',    ep.latency,    et.latency],
+      ['H1Swing',    ep.h1_swing,   et.h1_swing],
+      ['H4Regime',   ep.h4_regime,  et.h4_regime],
     ];
     pairs.forEach(([k,pnl,cnt])=>{
       const p=document.getElementById('engPnl'+k);
@@ -1942,6 +1959,46 @@ R"OMEGA23B(
       if(p){p.textContent=(v>=0?'+':'')+v.toFixed(2);p.style.color=v>0?'var(--green)':v<0?'var(--red)':' var(--t2)';}
       if(c){c.textContent=safe(cnt)+'t';}
     });
+    // H1/H4 swing engine status indicators
+    if (d.htf) {
+      const htf=d.htf;
+      const h1st=document.getElementById('h1SwingStatus');
+      const h4st=document.getElementById('h4RegimeStatus');
+      if (h1st) {
+        const shadow=htf.h1_shadow;
+        const open=htf.h1_open;
+        const adx=(htf.h1_adx||0).toFixed(1);
+        const pnl=safe(htf.h1_pnl);
+        if (open) {
+          h1st.textContent='LIVE '+(pnl>=0?'+$':'$')+pnl.toFixed(2);
+          h1st.style.color='var(--green)';
+        } else if (shadow) {
+          h1st.textContent='SHADOW ADX='+adx;
+          h1st.style.color='var(--yellow)';
+        } else {
+          h1st.textContent='IDLE ADX='+adx;
+          h1st.style.color='var(--t2)';
+        }
+      }
+      if (h4st) {
+        const shadow=htf.h4_shadow;
+        const open=htf.h4_open;
+        const adx=(htf.h4_adx||0).toFixed(1);
+        const trend=htf.h4_trend;
+        const trendStr=trend>0?'↑':trend<0?'↓':'─';
+        const pnl=safe(htf.h4_pnl);
+        if (open) {
+          h4st.textContent='LIVE '+(pnl>=0?'+$':'$')+pnl.toFixed(2);
+          h4st.style.color='var(--green)';
+        } else if (shadow) {
+          h4st.textContent='SHADOW ADX='+adx+' '+trendStr;
+          h4st.style.color='var(--yellow)';
+        } else {
+          h4st.textContent='IDLE ADX='+adx+' '+trendStr;
+          h4st.style.color='var(--t2)';
+        }
+      }
+    }
     // GoldFlow pyramid indicator
     const gfRow=document.getElementById('gfPyramidRow');
     const gfStage=document.getElementById('gfPyramidStage');
