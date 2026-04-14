@@ -260,13 +260,6 @@ td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:
 
 
 /* Governor */
-.gov-item{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;
-  border-bottom:1px solid var(--border);}
-.gov-item:last-of-type{border-bottom:none;}
-.gov-lbl{font-size:11px;color:var(--t2);}
-.gov-bar{flex:1;height:3px;background:rgba(255,255,255,0.06);margin:0 8px;border-radius:2px;overflow:hidden;}
-.gov-fill{height:100%;border-radius:2px;background:var(--amber);transition:width 0.5s;}
-.gov-n{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:var(--amber);min-width:22px;text-align:right;}
 
 /* Engine Attribution */
 .eng-row{display:flex;align-items:center;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);}
@@ -293,11 +286,6 @@ td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.025);white-space:
 
 
 /* Comp ranges */
-.comp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:8px 10px;}
-.comp-item{background:rgba(255,255,255,0.02);border-radius:6px;padding:7px 6px;text-align:center;}
-.comp-sym{font-size:11px;font-weight:700;color:var(--blue);margin-bottom:3px;}
-.comp-ph{font-size:10px;font-weight:700;margin-bottom:3px;}
-.comp-detail{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#a8bbd4;}
 </style>)OMEGA1"
 R"OMEGA2(
 
@@ -643,26 +631,9 @@ R"OMEGA5(
       <div class="fix-item"><span class="fix-lbl">BUILD <span style="font-size:9px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0">git hash</span></span><span class="fix-val" id="buildVersionRight" style="color:var(--t2);font-size:9px">...</span></div>
     </div>
 
-    <!-- Governor Blocks -->
-    <div class="card">
-      <div class="card-hd"><span class="dot" style="background:var(--amber)"></span>Governor Blocks</div>
-      <div class="gov-item" title="Trades blocked because spread is too wide -- entry cost exceeds edge threshold"><span class="gov-lbl">SPREAD <span style="font-size:9px;color:var(--t3)">wide spread</span></span><div class="gov-bar"><div class="gov-fill" id="gbarSpread" style="width:0%"></div></div><span class="gov-n" id="gnSpread">0</span></div>
-      <div class="gov-item" title="Trades blocked because FIX round-trip latency exceeded the configured cap -- stale prices"><span class="gov-lbl">LATENCY <span style="font-size:9px;color:var(--t3)">rtt cap</span></span><div class="gov-bar"><div class="gov-fill" id="gbarLat" style="width:0%"></div></div><span class="gov-n" id="gnLat">0</span></div>
-      <div class="gov-item" title="Trades blocked because daily P&amp;L loss limit was hit -- engine shut down for the day"><span class="gov-lbl">P&amp;L LIMIT <span style="font-size:9px;color:var(--t3)">daily cap</span></span><div class="gov-bar"><div class="gov-fill" id="gbarPnl" style="width:0%"></div></div><span class="gov-n" id="gnPnl">0</span></div>
-      <div class="gov-item" title="Trades blocked because max open positions reached -- waiting for existing trades to close"><span class="gov-lbl">POSITIONS <span style="font-size:9px;color:var(--t3)">cap reached</span></span><div class="gov-bar"><div class="gov-fill" id="gbarPos" style="width:0%"></div></div><span class="gov-n" id="gnPos">0</span></div>
-      <div class="gov-item" title="Trades blocked due to consecutive losses -- cooling off after a losing streak"><span class="gov-lbl">CONSEC LOSS <span style="font-size:9px;color:var(--t3)">streak block</span></span><div class="gov-bar"><div class="gov-fill" id="gbarConsec" style="width:0%"></div></div><span class="gov-n" id="gnConsec">0</span></div>
-      <div style="font-size:10px;color:var(--t2);padding:5px 10px;text-align:right;" id="govTotal">Total: 0</div>
-    </div>
 
-    <!-- Compression Ranges (SP/NQ/CL) -->
-    <div class="card">
-      <div class="card-hd"><span class="dot" style="background:var(--cyan)"></span>Compression Ranges<span style="font-size:9px;font-weight:400;color:var(--t3);letter-spacing:0;text-transform:none;margin-left:6px;">how close to breakout</span></div>
-      <div class="comp-grid">
-        <div class="comp-item"><div class="comp-sym">US500</div><div class="comp-ph" id="compSPPh" style="color:var(--t2)">FLAT</div><div class="comp-detail" id="compSPDet">--</div></div>
-        <div class="comp-item"><div class="comp-sym">USTEC</div><div class="comp-ph" id="compNQPh" style="color:var(--t2)">FLAT</div><div class="comp-detail" id="compNQDet">--</div></div>
-        <div class="comp-item"><div class="comp-sym">USOIL</div><div class="comp-ph" id="compCLPh" style="color:var(--t2)">FLAT</div><div class="comp-detail" id="compCLDet">--</div></div>
-      </div>
-    </div>
+
+
 
 
 
@@ -1901,13 +1872,7 @@ R"OMEGA23B(
     ub.textContent='UP '+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0');
     ub.style.color=h>=1?'var(--green)':'var(--t2)';}
 
-  // Governor
-  const gs=safe(d.gov_spread),gl=safe(d.gov_latency),gp=safe(d.gov_pnl),gpos=safe(d.gov_positions),gc=safe(d.gov_consec_loss);
-  const maxG=Math.max(1,gs,gl,gp,gpos,gc);
-  [['Spread',gs],['Lat',gl],['Pnl',gp],['Pos',gpos],['Consec',gc]].forEach(([id,n])=>{
-    const b=document.getElementById('gbar'+id),ni=document.getElementById('gn'+id);
-    if(b)b.style.width=(n/maxG*100)+'%';if(ni)ni.textContent=n;});
-  txt('govTotal','Total: '+(gs+gl+gp+gpos+gc));
+
 
   // ?? Cluster Exposure panel ????????????????????????????????????????????????
   {
