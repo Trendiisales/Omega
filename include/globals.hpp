@@ -79,6 +79,13 @@ static omega::cross::TrendPullbackEngine   g_trend_pb_ger40;  // GER40
 static omega::cross::TrendPullbackEngine   g_trend_pb_nq;     // USTEC.F
 static omega::cross::TrendPullbackEngine   g_trend_pb_sp;     // US500.F
 
+// HTF swing engines -- H1 trend + H4 regime breakout for XAUUSD
+// H1SwingEngine:  ADX-filtered EMA pullback, 4-16hr hold, $15 risk, shadow_mode=true
+// H4RegimeEngine: Donchian channel breakout, 1-3 day hold, $10 risk, shadow_mode=true
+// Both start in shadow_mode. Never set shadow_mode=false without live validation.
+static omega::H1SwingEngine  g_h1_swing_gold;   // XAUUSD H1 EMA+ADX trend
+static omega::H4RegimeEngine g_h4_regime_gold;  // XAUUSD H4 Donchian breakout
+
 // =============================================================================
 // IndexFlowEngine -- L2 flow + EWM drift engines for US equity indices.
 // Architecture mirrors GoldFlowEngine: L2 persistence + EWM drift + ATR-prop SL
@@ -660,3 +667,4 @@ inline std::string state_root_dir() {
     return "state";
 #endif
 }
+
