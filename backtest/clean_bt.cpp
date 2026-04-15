@@ -142,7 +142,10 @@ struct Ind {
     bool bhas=false;
 
     // Daily range tracker for regime filter
-    double day_hi=0, day_lo=1e9, daily_range=0;
+    // Use YESTERDAY's range to avoid look-ahead bias
+    double day_hi=0, day_lo=1e9;
+    double yesterday_range=0;  // previous complete day's range
+    double daily_range=0;      // running today's range (for display only)
     int    cur_day=-1;
 
     static double tba(double dt, double hl) {
@@ -172,14 +175,15 @@ struct Ind {
         if(day!=vday){vpv=vvol=0;vday=day;}
         vpv+=mid; vvol+=1; vwap=vpv/vvol;
 
-        // Daily range for regime filter
+        // Daily range for regime filter -- use YESTERDAY's range
         if(day!=cur_day){
-            if(cur_day>=0) daily_range=day_hi-day_lo;
+            if(cur_day>=0) yesterday_range=day_hi-day_lo; // save completed day
             day_hi=mid; day_lo=mid; cur_day=day;
+            daily_range=0; // reset today
         } else {
             if(mid>day_hi)day_hi=mid;
             if(mid<day_lo)day_lo=mid;
-            daily_range=day_hi-day_lo; // running today's range
+            daily_range=day_hi-day_lo;
         }
 
         const int64_t bm=ts/60000LL;
@@ -340,12 +344,10 @@ int main(int argc, char** argv) {
         // Jul-Aug 2025: daily range >50pts = extreme regime, all strategies lose
         // Normal months: daily range 15-40pts
         // Filter: skip entries when daily range > 45pts (yesterday's range)
-        const bool regime_normal = ind.daily_range <= 45.0;
-        // Dynamic SL: scale with daily volatility
-        // Normal day (range=20): sl_mult=1.0
-        // High day (range=35): sl_mult=1.75
-        // Extreme day (range=50+): blocked by regime_normal
-        const double vol_sl_mult = std::max(1.0, ind.daily_range / 20.0);
+        // Use YESTERDAY's daily range -- no look-ahead bias
+        // Jul 2025: avg 76.8pts/day. Normal: 15-40pts. Gate at 45pts.
+        const bool regime_normal = ind.yesterday_range <= 45.0;
+        const double vol_sl_mult = std::max(1.0, ind.yesterday_range / 20.0);
 
         // ---- A: Momentum continuation ----
         if(m60&&m300){
