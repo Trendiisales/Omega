@@ -752,6 +752,39 @@ static void on_tick_gold(
 
     // ?? Bar metric updates -- every XAUUSD tick ????????????????????????????
     g_bars_gold.m1.update_tick_metrics(ask - bid, now_ms_g);
+
+    // -- PDH/PDL daily range tracker -- uses now_ms_g (declared above) --------
+    // Research (2026-04-15): 111M tick / 2yr backtest: inside daily range
+    // EV=+1.732pts at 15min. Outside = negative EV.
+    {
+        const int64_t pdhl_sec  = now_ms_g / 1000LL;
+        const int     pdhl_day  = static_cast<int>(pdhl_sec / 86400LL);
+        static int    s_pdhl_day  = -1;
+        static double s_pdhl_hi   = 0.0;
+        static double s_pdhl_lo   = 1e9;
+        static double s_pdhl_prev_hi = 0.0;
+        static double s_pdhl_prev_lo = 0.0;
+        if (pdhl_day != s_pdhl_day) {
+            if (s_pdhl_day >= 0) {
+                s_pdhl_prev_hi = s_pdhl_hi;
+                s_pdhl_prev_lo = (s_pdhl_lo < 1e8) ? s_pdhl_lo : 0.0;
+            }
+            const double mid_now = (bid + ask) * 0.5;
+            s_pdhl_hi  = mid_now;
+            s_pdhl_lo  = mid_now;
+            s_pdhl_day = pdhl_day;
+        } else {
+            const double mid_now = (bid + ask) * 0.5;
+            if (mid_now > s_pdhl_hi) s_pdhl_hi = mid_now;
+            if (mid_now < s_pdhl_lo) s_pdhl_lo = mid_now;
+        }
+        g_macro_ctx.pdh = s_pdhl_prev_hi;
+        g_macro_ctx.pdl = s_pdhl_prev_lo;
+    }
+    const bool gold_inside_daily_range =
+        (g_macro_ctx.pdh > 0.0 && g_macro_ctx.pdl > 0.0)
+        ? (((bid+ask)*0.5) <= g_macro_ctx.pdh + 2.0 && ((bid+ask)*0.5) >= g_macro_ctx.pdl - 2.0)
+        : true;
     g_bars_gold.m1.update_volume_delta(g_macro_ctx.gold_l2_imbalance);
 
     // ?? FIX-tick bar builder -- accumulates ticks into M1/M5/M15/H4 OHLC bars ??
@@ -4320,7 +4353,7 @@ static void on_tick_gold(
                 if (now_ms_g - s_pdhl_cfe_log > 60000) {
                     s_pdhl_cfe_log = now_ms_g;
                     printf("[CFE-PDH-BLOCK] mid=%.2f outside PDH=%.2f PDL=%.2f\n",
-                           gold_mid_now, g_macro_ctx.pdh, g_macro_ctx.pdl);
+                           (bid+ask)*0.5, g_macro_ctx.pdh, g_macro_ctx.pdl);
                     fflush(stdout);
                 }
             } else if (cfe_bar_gate_ok && cfe_spread_ok && cfe_vwap_ok && !cfe_chop_block)
