@@ -54,7 +54,7 @@ namespace omega {
 
 class MacroCrashEngine {
 public:
-    // ── Entry triggers ────────────────────────────────────────────────────
+    // -- Entry triggers ----------------------------------------------------
     double ATR_THRESHOLD    = 6.0;   // original: only fires on genuine macro moves
     double ATR_NORMAL       = 5.0;
     double VOL_RATIO_MIN    = 2.5;   // original: high bar = 69% WR on 13 trades
@@ -66,32 +66,32 @@ public:
     double MAX_LOT          = 0.20;  // capped 0.50->0.20: matches CFE/DomPersist hard ceiling
     double MIN_LOT          = 0.01;
 
-    // ── Hybrid bracket floor ──────────────────────────────────────────────
+    // -- Hybrid bracket floor ----------------------------------------------
     double BRACKET_FRAC     = 0.30;   // 30% of lot for bracket guarantee
     double BRACKET_ATR_MULT = 2.0;    // bracket TP at 2xATR from entry
 
-    // ── Velocity trail ────────────────────────────────────────────────────
+    // -- Velocity trail ----------------------------------------------------
     double STEP1_TRIGGER_USD  = 50.0;   // lowered 200->50: $200 never hit at small lots; $50 arms trail faster
     double STEP2_TRIGGER_USD  = 150.0;  // lowered 400->150
     double VEL_TRAIL_ARM_ATR  = 3.0;
     double VEL_TRAIL_DIST_ATR = 2.0;
     double RATCHET_KEEP       = 0.80;
 
-    // ── Safe pyramid ──────────────────────────────────────────────────────
+    // -- Safe pyramid ------------------------------------------------------
     double  PYRAMID_ADD_ATR    = 2.0;   // add after 2xATR move from last add
     double  PYRAMID_SIZE_DECAY = 0.80;  // each add = prior * 0.80
     int     PYRAMID_MAX_ADDS   = 3;     // max 3 adds (4 total)
     double  PYRAMID_MAX_RISK   = 240.0; // total risk cap across all adds
     bool    pyramid_shadow     = true;  // ALWAYS shadow until explicitly false
 
-    // ── Timing ────────────────────────────────────────────────────────────
+    // -- Timing ------------------------------------------------------------
     int64_t COOLDOWN_MS     = 300000; // raised 60s->300s: fired 4x in one session; 5min cooldown prevents overtrading
     int64_t MAX_HOLD_MS     = 7200000;
 
     bool    enabled         = true;
     bool    shadow_mode     = true;   // DEFAULT -- change requires explicit auth
 
-    // ── SL multiplier (session-aware) ─────────────────────────────────────
+    // -- SL multiplier (session-aware) -------------------------------------
     // SL = atr * SL_ATR_MULT.  Asia oscillations are 10-15pt even on real moves.
     // A 1.0x multiplier (sl=4-6pt) sits inside the noise and gets stopped before
     // the move develops.  1.5x pushes the stop outside the 10pt Asia swing range.
@@ -101,13 +101,13 @@ public:
     double SL_ATR_MULT         = 1.0;   // London/NY: 1x ATR (tight, fast moves)
     double SL_ATR_MULT_ASIA    = 1.5;   // Asia: 1.5x ATR (wider -- outlast 10pt oscillation)
 
-    // ── Asia session thresholds (slot=6, 22:00-05:00 UTC) ─────────────────
+    // -- Asia session thresholds (slot=6, 22:00-05:00 UTC) -----------------
     // Asia moves are $10-25pt vs $50-150pt London/NY. Tuned to last 2 weeks.
     double ATR_THRESHOLD_ASIA  = 4.0;   // ATR > 4pt  (was 8pt -- missed every Asia spike)
     double VOL_RATIO_MIN_ASIA  = 2.0;   // vol > 2x baseline (was 2.5 -- Asia baseline lower)
     double DRIFT_MIN_ASIA      = 3.0;   // |drift| > 3pt (was 6pt -- Asia $12 move = drift~4)
 
-    // ── DOM primer thresholds ───────────────────────────────────────────────
+    // -- DOM primer thresholds -----------------------------------------------
     // book_slope > DOM_SLOPE_STRONG = meaningful directional DOM pressure.
     // 0.15 = 15% net weighted bias (microstructure literature standard for meaningful).
     // At BlackBull, book sizes are synthetic (size_raw=0 -> substituted as 1.0 lot each).
@@ -117,7 +117,7 @@ public:
     double DOM_MICRO_THRESH    = 0.02;  // microprice_bias threshold (pts) for confirmation
     double DOM_DRIFT_RELAX_FRAC = 0.40; // when DOM confirms: relax drift_min by 40%
 
-    // ── Callbacks ─────────────────────────────────────────────────────────
+    // -- Callbacks ---------------------------------------------------------
     using CloseCallback = std::function<void(double exit_px, bool is_long,
                                              double size, const std::string& reason)>;
     CloseCallback on_close;
@@ -127,7 +127,7 @@ public:
     using TradeRecordCallback = std::function<void(const omega::TradeRecord&)>;
     TradeRecordCallback on_trade_record;
 
-    // ── Base position ──────────────────────────────────────────────────────
+    // -- Base position ------------------------------------------------------
     struct Position {
         bool    active           = false;
         bool    is_long          = false;
@@ -149,7 +149,7 @@ public:
         double  bracket_tp       = 0.0;
     } pos;
 
-    // ── Pyramid add-ons ───────────────────────────────────────────────────
+    // -- Pyramid add-ons ---------------------------------------------------
     struct PyramidAdd {
         bool    active  = false;
         double  entry   = 0.0;
@@ -173,7 +173,7 @@ public:
         _close_all(exit_px, "DOLLAR_STOP", now_ms);
     }
 
-    // ── Main tick ─────────────────────────────────────────────────────────
+    // -- Main tick ---------------------------------------------------------
     // DOM parameters added 2026-04-07:
     //   book_slope:      weighted bid-ask pressure ratio, -1..+1. >+0.15=buy pressure, <-0.15=sell.
     //   vacuum_ask:      true when ask side is thin -- upward impulse probable.
@@ -194,7 +194,7 @@ public:
         if (!enabled) return;
         const double mid = (bid + ask) * 0.5;
 
-        // ── Weekend gap protection ────────────────────────────────────────
+        // -- Weekend gap protection ----------------------------------------
         // Gold gaps 1-2% on Sunday open due to weekend macro news.
         // Force-close any open position Friday >= 20:30 UTC.
         // Block new entries Friday >= 20:00 UTC through Sunday 22:30 UTC.
@@ -234,7 +234,7 @@ public:
                 static int64_t s_gap_block_log = 0;
                 if (now_sec - s_gap_block_log > 3600) {
                     s_gap_block_log = now_sec;
-                    printf("[MCE-WEEKEND] Entry blocked — weekend gap window\n");
+                    printf("[MCE-WEEKEND] Entry blocked -- weekend gap window\n");
                     fflush(stdout);
                 }
                 return;
@@ -247,13 +247,13 @@ public:
             return;
         }
 
-        // ── Session-aware threshold selection ────────────────────────────
+        // -- Session-aware threshold selection ----------------------------
         const bool is_asia = (session_slot == 6);
         const double eff_atr_threshold = is_asia ? ATR_THRESHOLD_ASIA : ATR_THRESHOLD;
         const double eff_vol_ratio_min = is_asia ? VOL_RATIO_MIN_ASIA : VOL_RATIO_MIN;
         const double eff_drift_min     = is_asia ? DRIFT_MIN_ASIA     : DRIFT_MIN;
 
-        // ── DOM primer: book_slope / vacuum override ──────────────────────
+        // -- DOM primer: book_slope / vacuum override ----------------------
         // The DOM gives us a lead indicator that the EWM drift cannot:
         //   book_slope > DOM_SLOPE_STRONG: buy pressure building, upspike probable
         //   book_slope < -DOM_SLOPE_STRONG: sell pressure building, downspike probable
@@ -280,7 +280,7 @@ public:
         const double final_atr_min    = eff_atr_threshold;  // ATR gate never relaxed
         const double final_vol_min    = eff_vol_ratio_min;
 
-        // ── RSI spike confirmation: both directions ───────────────────────
+        // -- RSI spike confirmation: both directions -----------------------
         // RSI < 35 and FALLING = downspike continuation (SHORT entry)
         // RSI > 65 and RISING  = upspike continuation (LONG entry)
         // RSI < 35 and RISING  = reversal bounce (LONG entry, covered in tick_gold.hpp)
@@ -300,7 +300,7 @@ public:
         const bool rsi_confirms_expansion = rsi_spike_long || rsi_spike_short;
         const bool eff_expansion = expansion_regime || rsi_confirms_expansion;
 
-        // ── NOSIG diagnostic -- log every 10s when ANY gate is blocking ──────
+        // -- NOSIG diagnostic -- log every 10s when ANY gate is blocking ------
         // Runs BEFORE cooldown/entry gates so it always fires -- even in cooldown.
         {
             static int64_t s_nosig_ts = 0;
@@ -328,7 +328,7 @@ public:
             }
         }
 
-        // ── Entry gates ──────────────────────────────────────────────────
+        // -- Entry gates --------------------------------------------------
         // Session gate: MCE edge is in Asia/early London (22-12 UTC).
         // NY overlap (12-20 UTC) reverses moves too fast for MCE positioning.
         // Backtest: original 13 trades (22-03 UTC) = +$137. New NY trades = -$1071.
@@ -439,7 +439,7 @@ private:
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
 
-        // ── Bracket floor check ───────────────────────────────────────────
+        // -- Bracket floor check -------------------------------------------
         if (!pos.bracket_filled && pos.bracket_size >= MIN_LOT) {
             const bool hit = pos.is_long ? (ask >= pos.bracket_tp)
                                          : (bid <= pos.bracket_tp);
@@ -462,13 +462,13 @@ private:
             }
         }
 
-        // ── SL check ─────────────────────────────────────────────────────
+        // -- SL check -----------------------------------------------------
         if (pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl)) {
             _close_all(pos.is_long ? bid : ask, "SL_HIT", now_ms);
             return;
         }
 
-        // ── Max hold ──────────────────────────────────────────────────────
+        // -- Max hold ------------------------------------------------------
         if (now_ms - pos.entry_ms >= MAX_HOLD_MS) {
             _close_all(pos.is_long ? bid : ask, "MAX_HOLD", now_ms);
             return;
@@ -478,7 +478,7 @@ private:
             ? (0.70 * pos.atr_at_entry + 0.30 * atr) : pos.atr_at_entry;
         const double open_pnl = move * pos.full_size * 100.0;
 
-        // ── Step 1 ────────────────────────────────────────────────────────
+        // -- Step 1 --------------------------------------------------------
         if (!pos.partial1_done && open_pnl >= STEP1_TRIGGER_USD
                 && pos.size > MIN_LOT) {
             const double qty = _rl(std::min(pos.size * 0.33, pos.size - MIN_LOT));
@@ -494,7 +494,7 @@ private:
             }
         }
 
-        // ── Step 2 ────────────────────────────────────────────────────────
+        // -- Step 2 --------------------------------------------------------
         if (pos.partial1_done && !pos.partial2_done
                 && open_pnl >= STEP2_TRIGGER_USD && pos.size > MIN_LOT) {
             const double qty = _rl(std::min(pos.size * 0.33, pos.size - MIN_LOT));
@@ -509,7 +509,7 @@ private:
             }
         }
 
-        // ── Velocity trail ────────────────────────────────────────────────
+        // -- Velocity trail ------------------------------------------------
         if (pos.be_locked && pos.mfe >= atr_live * VEL_TRAIL_ARM_ATR) {
             const double tsl = pos.is_long
                 ? (pos.entry + pos.mfe - atr_live * VEL_TRAIL_DIST_ATR)
@@ -518,7 +518,7 @@ private:
             if (!pos.is_long && tsl < pos.sl) pos.sl = tsl;
         }
 
-        // ── Ratchet ───────────────────────────────────────────────────────
+        // -- Ratchet -------------------------------------------------------
         const double rs   = std::max(50.0, 1.0 * pos.atr_at_entry * pos.full_size * 100.0);
         const int    tier = (int)(open_pnl / rs);
         if (tier > pos.ratchet_tier && tier >= 1) {
@@ -535,7 +535,7 @@ private:
             }
         }
 
-        // ── Safe pyramid check ────────────────────────────────────────────
+        // -- Safe pyramid check --------------------------------------------
         _check_pyramid(bid, ask, mid, atr, vol_ratio, ewm_drift,
                        expansion_regime, now_ms, atr_live, open_pnl);
     }
