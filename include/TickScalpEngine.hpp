@@ -114,6 +114,11 @@ static constexpr double   TSE_RSI_SLOPE_THRESH   = 0.08; // min |slope EMA| to c
 static constexpr double   TSE_RSI_REVERSAL_THRESH = 0.12; // slope flip threshold to trigger reversal exit
 static constexpr int64_t  TSE_REVERSAL_MIN_HOLD_MS = 3000; // minimum 3s hold before reversal exit fires
 
+// Startup warmup: minimum ticks before any entry allowed after restart.
+// At ~250 ticks/min London: 60 ticks = ~15s. Gives RSI slope EMA time to
+// stabilise from initial value before trading.
+static constexpr int      TSE_WARMUP_TICKS        = 60;
+
 // Tick history size
 static constexpr int      TSE_HIST_SIZE          = 60;
 static constexpr int      TSE_DOM_HIST_SIZE       = 20;
@@ -162,6 +167,7 @@ struct TickScalpEngine {
         _daily_reset(now_ms);
 
         // Update tick history (always, unconditional)
+        ++_ticks_total;
         _bid_hist.push_back(bid);
         if ((int)_bid_hist.size() > TSE_HIST_SIZE) _bid_hist.pop_front();
         _tick_times.push_back(now_ms);
@@ -233,7 +239,9 @@ struct TickScalpEngine {
                           << " spread=" << std::setprecision(2) << spread
                           << " daily=$" << _daily_pnl
                           << " shadow=" << (shadow_mode ? 1 : 0)
-                          << " hist=" << (int)_bid_hist.size() << "\n";
+                          << " hist=" << (int)_bid_hist.size()
+                          << " ticks=" << _ticks_total
+                          << " ready=" << ((_vel_baseline>=10.0&&_rsi_warmed&&_ticks_total>=TSE_WARMUP_TICKS)?1:0) << "\n";
                 std::cout.flush();
             }
         }
@@ -273,9 +281,10 @@ struct TickScalpEngine {
             return;
         }
 
-        // Entry readiness guard: require velocity baseline AND RSI warmed (14 ticks history).
-        // Prevents firing immediately after restart with no market context.
-        const bool vel_ready = (_vel_baseline >= 10.0 && _rsi_warmed);
+        // Entry readiness guard: require velocity baseline, RSI warmed, AND minimum
+        // warmup ticks since startup. TSE_WARMUP_TICKS=60 (~15s at London speed)
+        // gives the RSI slope EMA time to stabilise before any entries are allowed.
+        const bool vel_ready = (_vel_baseline >= 10.0 && _rsi_warmed && _ticks_total >= TSE_WARMUP_TICKS);
 
         // Try patterns
         if (vel_ready) _try_p1(bid, ask, spread, atr, now_ms, on_close);
@@ -299,6 +308,8 @@ private:
     double  _vel_baseline        = 0.0;
     int     _ticks_this_window   = 0;
     int64_t _vel_window_start_ms = 0;
+
+    int64_t _ticks_total    = 0;   // total ticks received since startup -- warmup guard
 
     // Self-contained tick RSI (same approach as CandleFlowEngine)
     std::deque<double> _rsi_gains;
