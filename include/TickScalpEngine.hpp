@@ -80,10 +80,10 @@ static constexpr double   TSE_ATR_MIN            = 1.5;    // min ATR for entrie
 static constexpr double   TSE_ATR_MAX            = 8.0;    // max ATR (not crash)
 
 // P1: Tick Momentum Burst
-static constexpr int      TSE_P1_TICKS           = 5;      // consecutive same-dir ticks
-static constexpr double   TSE_P1_MIN_MOVE        = 0.20;   // min net move (pts) over P1_TICKS
-static constexpr double   TSE_P1_TP_MULT         = 2.0;    // TP = net_move * mult
-static constexpr double   TSE_P1_SL_MULT         = 1.0;    // SL = net_move * mult
+static constexpr int      TSE_P1_TICKS           = 8;      // consecutive same-dir ticks
+static constexpr double   TSE_P1_MIN_MOVE        = 0.50;   // min net move (pts) over P1_TICKS
+static constexpr double   TSE_P1_TP_MULT         = 2.5;    // TP = net_move * mult
+static constexpr double   TSE_P1_SL_MULT         = 1.5;    // SL = net_move * mult
 
 // P2: DOM Absorption
 static constexpr double   TSE_P2_EDGE_LONG       = 0.65;   // micro_edge > this = bid pressure
