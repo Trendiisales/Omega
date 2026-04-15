@@ -865,6 +865,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (g_ca_carry_unwind.has_open_position())
                 push_live_trade("USDJPY","CarryUnw", g_ca_carry_unwind.open_is_long(),
                     g_ca_carry_unwind.open_entry(), 0.0, 0.0, g_ca_carry_unwind.open_size(), (int64_t)std::time(nullptr));
+            // ?? TickScalpEngine -- independent scalper, shows in GUI like all others ?
+            if (g_tick_scalp.has_open_position())
+                push_live_trade("XAUUSD", "TickScalp",
+                    g_tick_scalp.pos_.is_long, g_tick_scalp.pos_.entry,
+                    g_tick_scalp.pos_.tp,     g_tick_scalp.pos_.sl,
+                    g_tick_scalp.pos_.size,   g_tick_scalp.pos_.entry_ts_ms / 1000);
         }
 
         // ── DOLLAR STOP: emergency per-trade runtime cut ──────────────────
