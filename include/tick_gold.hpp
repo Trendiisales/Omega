@@ -1,7 +1,7 @@
-// tick_gold.hpp — per-symbol tick handlers
-// Extracted from on_tick(). Same translation unit — all static functions visible.
+// tick_gold.hpp -- per-symbol tick handlers
+// Extracted from on_tick(). Same translation unit -- all static functions visible.
 
-// ── XAUUSD ─────────────────────────────────────────────────
+// -- XAUUSD -------------------------------------------------
 static void on_tick_gold(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime,
@@ -267,7 +267,7 @@ static void on_tick_gold(
     const double gold_vwap_pts = (gold_vwap_now > 0.0) ? (gold_mid_now - gold_vwap_now) : 0.0;
     const bool gold_is_compressing  = (strcmp(gold_stack_regime,"COMPRESSION")==0);
 
-    // ── PDH/PDL daily range tracker ───────────────────────────────────────────
+    // -- PDH/PDL daily range tracker -------------------------------------------
     // Research (2026-04-15): 111M tick / 2yr backtest: inside daily range
     // EV=+1.732pts at 15min. Outside = negative EV. Gold is mean-reverting intraday.
     {
@@ -877,7 +877,7 @@ static void on_tick_gold(
     // ?? Correlation matrix feed -- XAUUSD ??????????????????????????????????
     g_corr_matrix.on_price("XAUUSD", xau_mid);
 
-    // ── L2 tick logger -- UNCONDITIONAL, every XAUUSD tick ───────────────
+    // -- L2 tick logger -- UNCONDITIONAL, every XAUUSD tick ---------------
     // CRITICAL: This MUST run outside the GoldFlow gate. Previously it was
     // inside the GoldFlow entry block -- when L2 watchdog blocked GoldFlow,
     // the logger also stopped, meaning we had ZERO L2 data saved on days
@@ -973,7 +973,7 @@ static void on_tick_gold(
             }
         }
     }
-    // ── end L2 tick logger (unconditional) ───────────────────────────────
+    // -- end L2 tick logger (unconditional) -------------------------------
 
     if (gold_spread_ok) {
         if (now_ms_g - g_bracket_gold_minute_start >= 60000) {
@@ -2791,7 +2791,7 @@ static void on_tick_gold(
 
             // Adaptive parameter gate (RenTec #7): dynamic threshold based on
             // rolling win-rate + expectancy. STRONG edge -> 4, NORMAL -> 5,
-            // SOFT_WARN -> 6, FAILING -> 7. Hysteresis: ±1 per 10 trades.
+            // SOFT_WARN -> 6, FAILING -> 7. Hysteresis: ?1 per 10 trades.
             const int min_score = g_param_gate.effective_min_score("XAUUSD");
 
             // SCORE GATE REMOVED FROM BLOCKING (2026-04-08):
@@ -3583,10 +3583,10 @@ static void on_tick_gold(
         g_h4_regime_gold.on_tick(bid, ask, now_ms_g, ca_on_close);
         g_h4_regime_gold.check_weekend_close(bid, ask, now_ms_g, ca_on_close);
     }
-    // ── Improvement 5: CVD confirmation gate ──────────────────────────────
+    // -- Improvement 5: CVD confirmation gate ------------------------------
     g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);
 
-    // ── Improvement 1: Volatility regime scaling ──────────────────────────
+    // -- Improvement 1: Volatility regime scaling --------------------------
     // Feed rolling 20-bar ATR average so engine can detect vol regime.
     // Use M1 ATR as proxy -- OHLCBarEngine computes true range ATR14.
     // avg_atr20 approximated as EWM of atr14 with alpha=2/21.
@@ -3599,7 +3599,7 @@ static void on_tick_gold(
             g_trend_pb_gold.seed_vol_atr_avg(s_atr_avg);
         }
     }
-    // ── Improvement 7: News proximity ─────────────────────────────────────
+    // -- Improvement 7: News proximity -------------------------------------
     g_trend_pb_gold.seed_news_secs(
         g_news_blackout.secs_until_next(static_cast<int64_t>(std::time(nullptr))));
     // TrendPullback gold position management -- always runs when position open
@@ -3694,7 +3694,7 @@ static void on_tick_gold(
         }
     }
 
-    // ── Improvement 8: Pyramid add-on on second EMA50 pullback ─────────────
+    // -- Improvement 8: Pyramid add-on on second EMA50 pullback -------------
     // When TrendPullback is live, check for second pullback directly from EMA state.
     // NEVER call on_tick() again while position is open -- that runs double management.
     // Instead: read EMA50 and check the same pullback+bounce condition manually.
@@ -3870,7 +3870,7 @@ static void on_tick_gold(
         }
     }
 
-    // ── DomPersistEngine -- pure L2 imbalance persistence, shadow mode ──────────
+    // -- DomPersistEngine -- pure L2 imbalance persistence, shadow mode ----------
     // Seed bar ATR every tick
     if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
         const double dpe_bar_atr = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
@@ -3966,7 +3966,7 @@ static void on_tick_gold(
         }
     }
 
-    // ── CandleFlowEngine -- candle structure + cost coverage + DOM entry/exit ──
+    // -- CandleFlowEngine -- candle structure + cost coverage + DOM entry/exit --
     // Manage always (position already open)
     if (g_candle_flow.has_open_position()) {
         // Build current DOM snapshot from L2Book
@@ -4130,7 +4130,7 @@ static void on_tick_gold(
             const double cfe_gf_atr_e = g_gold_flow.current_atr() > 0.0 ? g_gold_flow.current_atr() : 5.0;
             const double cfe_atr_e    = std::max({2.0, cfe_gf_atr_e, cfe_m1_atr_e});
 
-            // ── CFE BAR RSI + TREND PRE-FILTER ───────────────────────
+            // -- CFE BAR RSI + TREND PRE-FILTER -----------------------
             // Block counter-trend entries (EMA9 vs EMA50 on M1) and RSI extremes.
             // Mirrors GoldFlow Gate 3. Root cause of -$401 SHORT (12:24-04-11):
             // tick RSI slope said SHORT but M1 EMA9>EMA50 = bullish trend.
@@ -4341,7 +4341,7 @@ static void on_tick_gold(
         }
     }
 
-    // ── PDH/PDL Reversion Engine ────────────────────────────────────────────
+    // -- PDH/PDL Reversion Engine --------------------------------------------
     // Mean reversion inside yesterday's daily range.
     // Research: 2yr/111M tick backtest -- only statistically valid intraday edge.
     g_pdhl_rev.on_tick(
