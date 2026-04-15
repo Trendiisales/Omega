@@ -3,7 +3,7 @@
 // PDHLReversionEngine.hpp -- PDH/PDL Mean Reversion Engine for XAUUSD
 //
 // DESIGN BASIS: 2yr backtest on 111M ticks proves:
-//   INSIDE PDH/PDL: EV=+1.732pts at 15min (t=+477★)
+//   INSIDE PDH/PDL: EV=+1.732pts at 15min (t=+477?)
 //   OUTSIDE PDH/PDL: negative EV across all buckets
 //   Gold is a mean-reverting auction market inside the daily range.
 //   Breakouts, momentum continuation, RSI trend = negative EV.
@@ -36,7 +36,7 @@ namespace omega {
 
 class PDHLReversionEngine {
 public:
-    // ── Parameters ─────────────────────────────────────────────────────────
+    // -- Parameters ---------------------------------------------------------
     double RANGE_ENTRY_PCT   = 0.25;  // enter in top/bottom 25% of daily range
     double SL_ATR_MULT       = 0.40;  // SL = 0.4x ATR (tight structural stop)
     double TP_RANGE_FRAC     = 0.50;  // TP = mid of range (50% back from extreme)
@@ -55,7 +55,7 @@ public:
     bool    enabled          = true;
     bool    shadow_mode      = true;
 
-    // ── State ───────────────────────────────────────────────────────────────
+    // -- State ---------------------------------------------------------------
     struct Position {
         bool    active    = false;
         bool    is_long   = false;
@@ -73,7 +73,7 @@ public:
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
-    // ── Main tick ────────────────────────────────────────────────────────────
+    // -- Main tick ------------------------------------------------------------
     void on_tick(double bid, double ask,
                  int64_t now_ms,
                  double  pdh,          // previous day high
@@ -115,7 +115,7 @@ public:
         if (atr < MIN_ATR_PTS) return;
         if (session_slot == 0) return;  // dead zone
 
-        // ── Entry zones ──────────────────────────────────────────────────────
+        // -- Entry zones ------------------------------------------------------
         const double upper_zone = pdh - range * RANGE_ENTRY_PCT;  // top 25%
         const double lower_zone = pdl + range * RANGE_ENTRY_PCT;  // bottom 25%
 
@@ -124,7 +124,7 @@ public:
 
         if (!in_upper && !in_lower) return;
 
-        // ── L2 confirmation ──────────────────────────────────────────────────
+        // -- L2 confirmation --------------------------------------------------
         bool l2_long_ok  = true;
         bool l2_short_ok = true;
 
@@ -145,7 +145,7 @@ public:
 
         if (!enter_long && !enter_short) return;
 
-        // ── Size and SL ──────────────────────────────────────────────────────
+        // -- Size and SL ------------------------------------------------------
         const bool  is_long   = enter_long;
         const double ep       = is_long ? ask : bid;
         const double sl_pts   = std::max(atr * SL_ATR_MULT, spread * 2.0);
