@@ -4390,6 +4390,7 @@ static void on_tick_gold(
         g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed),
         g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed),
         static_cast<double>(g_gold_stack.ewm_drift()),
+        g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
         gold_session_slot,
         [&](const omega::TradeRecord& tr) {
             // Full GUI wiring: same as CandleFlow / DomPersist
