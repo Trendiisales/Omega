@@ -4027,7 +4027,8 @@ static void on_tick_gold(
                 if (!g_candle_flow.shadow_mode)
                     send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
             },
-            g_gold_stack.ewm_drift());  // FIX: was 0.0 -- corrupted sustained-drift tracker
+            g_gold_stack.ewm_drift(),   // FIX: was 0.0 -- corrupted sustained-drift tracker
+            g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed)); // HMM tick_rate
     }
 
     // Entry: only when no other gold position open and gold_can_enter passes
@@ -4345,7 +4346,8 @@ static void on_tick_gold(
                     if (!g_candle_flow.shadow_mode)
                         send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
                 },
-                g_gold_stack.ewm_drift());
+                g_gold_stack.ewm_drift(),
+                g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed)); // HMM tick_rate
 
             if (g_candle_flow.has_open_position()) {
                 g_telemetry.UpdateLastEntryTs();
