@@ -61,7 +61,7 @@ struct IndexHybridConfig {
     double lot_step           = 0.01;
     double lot_min            = 0.01;
     double lot_max            = 1.0;
-    int    cooldown_s         = 120;
+    int    cooldown_s         = 60;   // reduced 120->60: rearm faster after wins
     int    dir_sl_cooldown_s  = 60;
     int    pending_timeout_s  = 300;
     int    min_hold_s         = 15;
@@ -130,7 +130,7 @@ inline IndexHybridConfig make_nas100_config() {
     IndexHybridConfig c;
     c.symbol       = "NAS100";
     c.usd_per_pt   = 1.0;
-    c.min_range    = 28.0;
+    c.min_range    = 20.0;   // reduced 28->20: catch tighter compressions
     c.max_range    = 140.0;
     c.max_spread   = 2.0;
     c.risk_dollars = 25.0;
@@ -282,7 +282,7 @@ public:
             // Prevents hammering same rejected level (12:41/13:00/13:05 NAS100
             // all at 24874 = 3 consecutive SL hits at identical bracket).
             static constexpr double  SAME_LEVEL_BLOCK_PTS = 30.0;
-            static constexpr int64_t SAME_LEVEL_BLOCK_S   = 1800; // 30 min
+            static constexpr int64_t SAME_LEVEL_BLOCK_S   = 900;  // reduced 1800->900: 15min same-level block
             if (m_sl_price > 0.0 && (now_s < m_sl_cooldown_ts + SAME_LEVEL_BLOCK_S)) {
                 if (std::fabs(w_hi - m_sl_price) < SAME_LEVEL_BLOCK_PTS ||
                     std::fabs(w_lo - m_sl_price) < SAME_LEVEL_BLOCK_PTS) {
