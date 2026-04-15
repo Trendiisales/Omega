@@ -147,6 +147,7 @@ static omega::idx::IndexHybridBracketEngine   g_hybrid_nas100(omega::idx::make_n
 static GoldFlowEngine             g_gold_flow;
 static omega::MacroCrashEngine    g_macro_crash;
 static omega::PullbackContEngine  g_pullback_cont;
+static omega::PullbackContEngine  g_pullback_prem;  // premium: 30pt h07 only, 2x size, tight trail
 
 // RSI Reversal Engine -- direct RSI extreme entries, bypasses regime system
 // LONG when RSI < 35, SHORT when RSI > 65, ATR-based SL + trail
