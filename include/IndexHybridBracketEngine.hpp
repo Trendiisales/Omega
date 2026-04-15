@@ -130,7 +130,7 @@ inline IndexHybridConfig make_nas100_config() {
     IndexHybridConfig c;
     c.symbol       = "NAS100";
     c.usd_per_pt   = 1.0;
-    c.min_range    = 20.0;   // reduced 28->20: catch tighter compressions
+    c.min_range    = 28.0;   // reverted 20->28: 20pt too tight, captures noise (19:50 false breakout -$25)
     c.max_range    = 140.0;
     c.max_spread   = 2.0;
     c.risk_dollars = 25.0;
