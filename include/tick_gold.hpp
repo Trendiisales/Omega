@@ -4398,7 +4398,7 @@ static void on_tick_gold(
                 "XAUUSD",
                 tr.side == "SHORT" ? "SHORT" : "LONG",
                 tr.exitPrice,
-                tr.exitReason,
+                tr.exitReason.c_str(),
                 "TICK_SCALP", regime.c_str(), "TICK_SCALP",
                 0.0, 0.0);
         });
