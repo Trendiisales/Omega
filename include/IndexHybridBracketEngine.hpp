@@ -38,6 +38,8 @@
 #include <ctime>
 #include <deque>
 #include <functional>
+#include <iomanip>
+#include <iostream>
 #include <string>
 #include "OmegaTradeLedger.hpp"
 
@@ -207,16 +209,16 @@ public:
                 // resting stop orders at the broker (same fix as GoldHybridBracketEngine).
                 if (m_pending_blocked_since == 0) m_pending_blocked_since = now_s;
                 if ((now_s - m_pending_blocked_since) >= 15) {
-                    printf("[HYBRID-%s] PENDING CANCEL blocked=%llds -- cancelling orders\n",
-                           cfg_.symbol, (long long)(now_s - m_pending_blocked_since));
-                    fflush(stdout);
+                    std::cout << "[HYBRID-" << cfg_.symbol << "] PENDING CANCEL blocked="
+                              << (long long)(now_s - m_pending_blocked_since) << "s -- cancelling orders\n";
+                    std::cout.flush();
                     cancel_both(); reset_to_idle();
                 }
                 return;
             } else { m_pending_blocked_since = 0; }
             if ((now_s - m_armed_ts) > cfg_.pending_timeout_s) {
-                printf("[HYBRID-%s] PENDING TIMEOUT\n", cfg_.symbol);
-                fflush(stdout);
+                std::cout << "[HYBRID-" << cfg_.symbol << "] PENDING TIMEOUT\n";
+                std::cout.flush();
                 cancel_both(); reset_to_idle(); return;
             }
             if (shadow_mode) {
@@ -230,6 +232,15 @@ public:
         ++m_ticks_received;
         if ((int)m_window.size() > cfg_.structure_lookback * 2) m_window.pop_front();
 
+        // Heartbeat: every 300 ticks log state to tee'd log file
+        if (m_ticks_received > 0 && m_ticks_received % 300 == 0) {
+            std::cout << "[HYBRID-" << cfg_.symbol << "-DIAG] ticks=" << m_ticks_received
+                      << " phase=" << static_cast<int>(phase)
+                      << " window=" << (int)m_window.size() << "/" << cfg_.structure_lookback
+                      << " range=" << std::fixed << std::setprecision(2) << range
+                      << " can_enter=" << (int)can_enter << "\n";
+            std::cout.flush();
+        }
         if (m_ticks_received < cfg_.min_entry_ticks) return;
         if ((int)m_window.size() < cfg_.structure_lookback) return;
         if (!can_enter) {
@@ -284,9 +295,10 @@ public:
                 bracket_low  = w_lo;
                 m_armed_ts   = now_s;
                 m_inside_ticks = 0;
-                printf("[HYBRID-%s] ARMED hi=%.2f lo=%.2f range=%.2f\n",
-                       cfg_.symbol, bracket_high, bracket_low, range);
-                fflush(stdout);
+                std::cout << "[HYBRID-" << cfg_.symbol << "] ARMED hi="
+                          << std::fixed << std::setprecision(2) << bracket_high
+                          << " lo=" << bracket_low << " range=" << range << "\n";
+                std::cout.flush();
             }
             return;
         }
@@ -319,9 +331,10 @@ public:
             const double tp_dist = sl_dist * cfg_.tp_rr;
             const double min_tp  = spread * 3.0 + (cfg_.usd_per_pt >= 20.0 ? 0.50 : 0.10);
             if (tp_dist < min_tp) {
-                printf("[HYBRID-%s] COST_FAIL range=%.2f sl_dist=%.2f\n",
-                       cfg_.symbol, range, sl_dist);
-                fflush(stdout);
+                std::cout << "[HYBRID-" << cfg_.symbol << "] COST_FAIL range="
+                          << std::fixed << std::setprecision(2) << range
+                          << " sl_dist=" << sl_dist << "\n";
+                std::cout.flush();
                 phase = Phase::IDLE;
                 return;
             }
@@ -330,9 +343,13 @@ public:
             phase        = Phase::PENDING;
             m_armed_ts   = now_s;
 
-            printf("[HYBRID-%s] FIRE hi=%.2f lo=%.2f range=%.2f sl_dist=%.2f lot=%.3f %s\n",
-                   cfg_.symbol, bracket_high, bracket_low, range, sl_dist, lot,
-                   flow_pyramid_ok ? "[PYRAMID]" : "");
+            std::cout << "[HYBRID-" << cfg_.symbol << "] FIRE hi="
+                      << std::fixed << std::setprecision(2) << bracket_high
+                      << " lo=" << bracket_low << " range=" << range
+                      << " sl_dist=" << sl_dist
+                      << " lot=" << std::setprecision(3) << lot
+                      << " " << (flow_pyramid_ok ? "[PYRAMID]" : "") << "\n";
+            std::cout.flush();
             fflush(stdout);
         }
     }
@@ -355,9 +372,12 @@ public:
         pos.entry_ts  = static_cast<int64_t>(std::time(nullptr));
         phase         = Phase::LIVE;
 
-        printf("[HYBRID-%s] FILL %s @ %.2f sl=%.2f tp=%.2f lot=%.3f\n",
-               cfg_.symbol, is_long ? "LONG" : "SHORT",
-               fill_px, pos.sl, pos.tp, fill_lot);
+        std::cout << "[HYBRID-" << cfg_.symbol << "] FILL "
+                  << (is_long ? "LONG" : "SHORT")
+                  << " @ " << std::fixed << std::setprecision(2) << fill_px
+                  << " sl=" << pos.sl << " tp=" << pos.tp
+                  << " lot=" << std::setprecision(3) << fill_lot << "\n";
+        std::cout.flush();
         fflush(stdout);
     }
 
@@ -415,9 +435,10 @@ private:
 
         if (move >= tp_dist * 0.40 && !pos.be_locked) {
             pos.sl = pos.entry; pos.be_locked = true;
-            printf("[HYBRID-%s] TRAIL-BE %s move=%.2f\n", cfg_.symbol,
-                   pos.is_long ? "LONG" : "SHORT", move);
-            fflush(stdout);
+            std::cout << "[HYBRID-" << cfg_.symbol << "] TRAIL-BE "
+                      << (pos.is_long ? "LONG" : "SHORT")
+                      << " move=" << std::fixed << std::setprecision(2) << move << "\n";
+            std::cout.flush();
         }
         if (pos.be_locked && move >= tp_dist) {
             const double lock = pos.is_long
@@ -470,9 +491,12 @@ private:
         tr.regime     = "HYBRID";
         tr.spreadAtEntry = 0.0;
 
-        printf("[HYBRID-%s] EXIT %s @ %.2f reason=%s pnl_usd=%.2f\n",
-               cfg_.symbol, pos.is_long ? "LONG" : "SHORT",
-               exit_px, reason, tr.pnl * cfg_.usd_per_pt);
+        std::cout << "[HYBRID-" << cfg_.symbol << "] EXIT "
+                  << (pos.is_long ? "LONG" : "SHORT")
+                  << " @ " << std::fixed << std::setprecision(2) << exit_px
+                  << " reason=" << reason
+                  << " pnl_usd=" << std::setprecision(2) << (tr.pnl * cfg_.usd_per_pt) << "\n";
+        std::cout.flush();
         fflush(stdout);
 
         reset_to_idle();
@@ -484,3 +508,4 @@ private:
 
 } // namespace idx
 } // namespace omega
+
