@@ -106,11 +106,12 @@ static constexpr double   TSE_BE_FRAC            = 0.50;  // BE at 50% of TP dis
 static constexpr double   TSE_P3_TRAIL_ARM       = 0.50;  // arm trail at 0.5pt MFE
 static constexpr double   TSE_P3_TRAIL_DIST      = 0.30;  // trail 0.3pt behind MFE
 
-// RSI slope tracker
-static constexpr int      TSE_RSI_SLOPE_N        = 8;    // ticks for slope EMA
-static constexpr double   TSE_RSI_SLOPE_ALPHA    = 2.0 / (TSE_RSI_SLOPE_N + 1.0);
-static constexpr double   TSE_RSI_SLOPE_THRESH   = 0.10; // min |slope EMA| to confirm trend direction
-static constexpr double   TSE_RSI_REVERSAL_THRESH = 0.15; // slope flip threshold to trigger exit during trade
+// Tick RSI (self-contained, updates every tick from bid history)
+static constexpr int      TSE_RSI_PERIOD         = 14;   // tick RSI lookback -- tighter than CFE(30) for scalping
+static constexpr int      TSE_RSI_SLOPE_EMA_N    = 5;    // slope EMA smoothing -- fast response
+static constexpr double   TSE_RSI_SLOPE_ALPHA    = 2.0 / (TSE_RSI_SLOPE_EMA_N + 1.0);
+static constexpr double   TSE_RSI_SLOPE_THRESH   = 0.08; // min |slope EMA| to confirm trend (entry gate)
+static constexpr double   TSE_RSI_REVERSAL_THRESH = 0.12; // slope flip threshold to trigger reversal exit
 static constexpr int64_t  TSE_REVERSAL_MIN_HOLD_MS = 3000; // minimum 3s hold before reversal exit fires
 
 // Tick history size
@@ -151,7 +152,6 @@ struct TickScalpEngine {
                  double tick_rate,       // g_bars_gold.m1.ind.tick_rate
                  double atr,             // g_bars_gold.m1.ind.atr14
                  double ewm_drift,       // g_gold_stack.ewm_drift()
-                 double bar_rsi,         // g_bars_gold.m1.ind.rsi14 (0..100)
                  int    session_slot,    // g_macro_ctx.session_slot
                  CloseCallback on_close) noexcept
     {
@@ -187,17 +187,32 @@ struct TickScalpEngine {
             return;
         }
 
-        // RSI slope tracker: EMA of bar_rsi changes
-        // Positive slope = RSI trending up (bullish). Negative = trending down (bearish).
-        if (bar_rsi > 1.0) {
-            if (!_rsi_warmed) {
-                _rsi_prev      = bar_rsi;
-                _rsi_slope_ema = 0.0;
-                _rsi_warmed    = true;
-            } else if (bar_rsi != _rsi_prev) {
-                const double slope = bar_rsi - _rsi_prev;
-                _rsi_slope_ema = slope * TSE_RSI_SLOPE_ALPHA + _rsi_slope_ema * (1.0 - TSE_RSI_SLOPE_ALPHA);
-                _rsi_prev = bar_rsi;
+        // Self-contained tick RSI -- computed from bid price changes every tick.
+        // Identical approach to CandleFlowEngine::rsi_update() but uses TSE_RSI_PERIOD=14.
+        // Updates every tick so slope is always current -- NOT dependent on M1 bar close.
+        {
+            if (_rsi_prev_mid == 0.0) {
+                _rsi_prev_mid = bid;
+            } else {
+                const double chg = bid - _rsi_prev_mid;
+                _rsi_prev_mid = bid;
+                _rsi_gains.push_back(chg > 0.0 ? chg : 0.0);
+                _rsi_losses.push_back(chg < 0.0 ? -chg : 0.0);
+                if ((int)_rsi_gains.size() > TSE_RSI_PERIOD) {
+                    _rsi_gains.pop_front();
+                    _rsi_losses.pop_front();
+                }
+                if ((int)_rsi_gains.size() >= TSE_RSI_PERIOD) {
+                    double ag = 0.0, al = 0.0;
+                    for (auto x : _rsi_gains)  ag += x;
+                    for (auto x : _rsi_losses) al += x;
+                    ag /= TSE_RSI_PERIOD; al /= TSE_RSI_PERIOD;
+                    _rsi_prev_val = _rsi_cur;
+                    _rsi_cur = (al == 0.0) ? 100.0 : 100.0 - 100.0 / (1.0 + ag / al);
+                    const double slope = _rsi_cur - _rsi_prev_val;
+                    if (!_rsi_warmed) { _rsi_slope_ema = slope; _rsi_warmed = true; }
+                    else _rsi_slope_ema = slope * TSE_RSI_SLOPE_ALPHA + _rsi_slope_ema * (1.0 - TSE_RSI_SLOPE_ALPHA);
+                }
             }
         }
 
@@ -210,7 +225,7 @@ struct TickScalpEngine {
                 std::cout << "[TSE-ALIVE] slot=" << session_slot
                           << " atr=" << std::fixed << std::setprecision(2) << atr
                           << " vel_base=" << std::setprecision(1) << _vel_baseline
-                          << " rsi=" << std::setprecision(1) << bar_rsi
+                          << " rsi=" << std::setprecision(1) << _rsi_cur
                           << " rsi_slope=" << std::setprecision(3) << _rsi_slope_ema
                           << " spread=" << std::setprecision(2) << spread
                           << " daily=$" << _daily_pnl
@@ -260,7 +275,7 @@ struct TickScalpEngine {
         const bool vel_ready = (_vel_baseline >= 10.0);
 
         // Try patterns
-        if (vel_ready) _try_p1(bid, ask, spread, atr, bar_rsi, now_ms, on_close);
+        if (vel_ready) _try_p1(bid, ask, spread, atr, now_ms, on_close);
         if (pos_.active) return;
         if (l2_fresh) _try_p2(bid, ask, spread, micro_edge, atr, now_ms, on_close);
         if (pos_.active) return;
@@ -282,8 +297,12 @@ private:
     int     _ticks_this_window   = 0;
     int64_t _vel_window_start_ms = 0;
 
-    // RSI slope tracker
-    double  _rsi_prev      = 0.0;
+    // Self-contained tick RSI (same approach as CandleFlowEngine)
+    std::deque<double> _rsi_gains;
+    std::deque<double> _rsi_losses;
+    double  _rsi_prev_mid  = 0.0;
+    double  _rsi_cur       = 50.0;
+    double  _rsi_prev_val  = 50.0;
     double  _rsi_slope_ema = 0.0;
     bool    _rsi_warmed    = false;
 
@@ -298,7 +317,7 @@ private:
 
     // ── P1: Tick Momentum Burst ───────────────────────────────────────────────
     void _try_p1(double bid, double ask, double spread, double atr,
-                 double bar_rsi, int64_t now_ms, CloseCallback on_close) noexcept
+                 int64_t now_ms, CloseCallback on_close) noexcept
     {
         if ((int)_bid_hist.size() < TSE_P1_TICKS + 1) return;
 
