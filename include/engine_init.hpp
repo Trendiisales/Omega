@@ -1537,8 +1537,8 @@ static void init_engines(const std::string& cfg_path)
             g_pdhl_rev.COOLDOWN_MS      = 120'000;
             g_pdhl_rev.MAX_HOLD_MS      = 900'000;
 
-            // CFE disabled -- 14.8% WR, -$27,031 over 2yr on 2005 trades
-            g_candle_flow.enabled       = false;
+            // CFE shadow_mode=true already set above -- does not trade
+            // Note: CFE has no .enabled field, shadow_mode prevents real orders
 
             std::cout << "[PDHL-REV] PDHLReversionEngine configured"
                       << " shadow=" << (g_pdhl_rev.shadow_mode ? "true" : "false")
