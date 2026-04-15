@@ -271,7 +271,7 @@ int main(int argc,char** argv){
         if(ind.atr<0.5) continue;
 
         const int hour=(int)((ts/1000)%86400/3600);
-        const double sz_def=[&](double sl_pts){
+        auto calc_sz=[&](double sl_pts)->double{
             return std::max(0.01,std::min(0.20,RISK/(sl_pts*USD_PT)));
         };
 
@@ -284,7 +284,7 @@ int main(int argc,char** argv){
             const double ep=is_long?ask:bid;
             const double sl=is_long?ep-sl_pts:ep+sl_pts;
             const double tp=tp_pts>0?(is_long?ep+tp_pts:ep-tp_pts):0;
-            const double sz=sz_def(sl_pts);
+            const double sz=calc_sz(sl_pts);
             ps[s]={true,is_long,ep,sl,sl,tp,sz,0,ts,ps[s].cooldown};
         };
 
