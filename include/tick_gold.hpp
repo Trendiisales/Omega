@@ -48,7 +48,8 @@ static void on_tick_gold(
         g_nbm_gold_london.has_open_position()   ||  // London NBM also blocks other gold engines
         g_candle_flow.has_open_position()   ||      // FIX: CFE open position blocks ALL other gold engines
         g_h1_swing_gold.has_open_position() ||      // H1 swing open blocks all other gold entries
-        g_h4_regime_gold.has_open_position();       // H4 regime open blocks all other gold entries
+        g_h4_regime_gold.has_open_position()    ||  // H4 regime open blocks all other gold entries
+        g_pullback_cont.has_open_position();        // PCE open blocks other entries
 
     // Write GoldFlow state to telemetry for GUI pyramid indicator
     {
@@ -1846,6 +1847,13 @@ static void on_tick_gold(
             }
         }
     }
+    // ?? PullbackContEngine -- pullback continuation h07/h17/h23 ???????????
+    // Fires after a 20pt 5min move + 20% pullback. Shadow mode.
+    {
+        const bool pce_can_enter = gold_can_enter && !gold_any_open;
+        g_pullback_cont.on_tick(bid, ask, now_ms_g, pce_can_enter);
+    }
+
     // ?? RSIReversalEngine -- tick-level RSI entries, no bar dependency ????????
     // Computes its own RSI(14) from mid price on every tick.
     // No bars_ready gate, no bar RSI, fires as soon as tick RSI reaches extreme.
