@@ -4391,7 +4391,41 @@ static void on_tick_gold(
         g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed),
         static_cast<double>(g_gold_stack.ewm_drift()),
         gold_session_slot,
-        [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); });
+        [&](const omega::TradeRecord& tr) {
+            // Full GUI wiring: same as CandleFlow / DomPersist
+            handle_closed_trade(tr);           // records to ledger + GUI trade history
+            g_telemetry.UpdateLastSignal(       // shows in GUI signals panel
+                "XAUUSD",
+                tr.side == "SHORT" ? "SHORT" : "LONG",
+                tr.exitPrice,
+                tr.exitReason,
+                "TICK_SCALP", regime.c_str(), "TICK_SCALP",
+                0.0, 0.0);
+        });
+    // Update entry timestamp + signal when TSE opens a new position
+    {
+        static bool s_tse_was_open = false;
+        const bool tse_open_now = g_tick_scalp.has_open_position();
+        if (tse_open_now && !s_tse_was_open) {
+            // Position just opened -- fire GUI signal
+            g_telemetry.UpdateLastEntryTs();
+            g_telemetry.UpdateLastSignal(
+                "XAUUSD",
+                g_tick_scalp.pos_.is_long ? "LONG" : "SHORT",
+                g_tick_scalp.pos_.entry,
+                g_tick_scalp.pos_.pattern,
+                "TICK_SCALP", regime.c_str(), "TICK_SCALP",
+                g_tick_scalp.pos_.tp,
+                g_tick_scalp.pos_.sl);
+            write_trade_open_log("XAUUSD", "TickScalp",
+                g_tick_scalp.pos_.is_long ? "LONG" : "SHORT",
+                g_tick_scalp.pos_.entry,
+                g_tick_scalp.pos_.tp, g_tick_scalp.pos_.sl,
+                g_tick_scalp.pos_.size, ask - bid,
+                "TICK_SCALP", "TICK_SCALP");
+        }
+        s_tse_was_open = tse_open_now;
+    }
 
 }
 
