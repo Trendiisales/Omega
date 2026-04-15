@@ -32,7 +32,7 @@
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
 
-// ── Config ───────────────────────────────────────────────────────────────────
+// -- Config -------------------------------------------------------------------
 
 // Imbalance deviation threshold from neutral 0.5
 // Long signal:  l2_imb > 0.5 + DPE_IMB_THRESHOLD
@@ -75,7 +75,7 @@ static constexpr int    DPE_ATR_WARMUP_TICKS = 100;
 // Maximum spread allowed at entry
 static constexpr double DPE_MAX_SPREAD       = 2.5;
 
-// ── Engine ───────────────────────────────────────────────────────────────────
+// -- Engine -------------------------------------------------------------------
 
 struct DomPersistEngine {
 
@@ -103,7 +103,7 @@ struct DomPersistEngine {
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
-    // ── Main tick function ────────────────────────────────────────────────
+    // -- Main tick function ------------------------------------------------
     // bid, ask        : current quotes
     // l2_imb          : L2 imbalance 0..1 from cTrader depth
     // l2_live         : true when cTrader depth events are actively flowing
@@ -144,7 +144,7 @@ struct DomPersistEngine {
         if (m_atr_warmup < DPE_ATR_WARMUP_TICKS) return;
 
         // Session gate: London + NY only (slots 1-4)
-        // Not enough data to trust Asia (slot 6) — 2 days of backtest is insufficient
+        // Not enough data to trust Asia (slot 6) -- 2 days of backtest is insufficient
         const bool session_ok = (session_slot >= 1 && session_slot <= 4);
         if (!session_ok) {
             if (phase == Phase::BUILDING) phase = Phase::IDLE;
@@ -157,7 +157,7 @@ struct DomPersistEngine {
             return;
         }
 
-        // L2 must be live — DOM persistence requires real depth events
+        // L2 must be live -- DOM persistence requires real depth events
         if (!l2_live) {
             static int64_t s_l2_log = 0;
             if (now_ms - s_l2_log > 30000) {
