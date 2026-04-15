@@ -58,6 +58,9 @@
 #include <deque>
 #include <functional>
 #include <algorithm>
+#include <iostream>
+#include <sstream>
+#include <iomanip>
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -182,12 +185,14 @@ struct TickScalpEngine {
             static int64_t s_hb = 0;
             if (now_ms - s_hb > 60000LL) {
                 s_hb = now_ms;
-                printf("[TSE-ALIVE] slot=%d atr=%.2f vel_base=%.1f spread=%.2f"
-                       " daily=$%.2f shadow=%d hist=%d\n",
-                       session_slot, atr, _vel_baseline, spread,
-                       _daily_pnl, shadow_mode ? 1 : 0,
-                       (int)_bid_hist.size());
-                fflush(stdout);
+                std::cout << "[TSE-ALIVE] slot=" << session_slot
+                          << " atr=" << std::fixed << std::setprecision(2) << atr
+                          << " vel_base=" << std::setprecision(1) << _vel_baseline
+                          << " spread=" << std::setprecision(2) << spread
+                          << " daily=$" << _daily_pnl
+                          << " shadow=" << (shadow_mode ? 1 : 0)
+                          << " hist=" << (int)_bid_hist.size() << "\n";
+                std::cout.flush();
             }
         }
         // Session: slots 1-5 only (London + NY). Slot 0 = dead, slot 6 = Asia.
@@ -198,8 +203,8 @@ struct TickScalpEngine {
             static int64_t s_dl = 0;
             if (now_ms - s_dl > 60000) {
                 s_dl = now_ms;
-                printf("[TSE] Daily loss limit $%.0f hit -- stopped\n", TSE_DAILY_LOSS_LIMIT);
-                fflush(stdout);
+                std::cout << "[TSE] Daily loss limit $" << (int)TSE_DAILY_LOSS_LIMIT << " hit -- stopped\n";
+                std::cout.flush();
             }
             return;
         }
@@ -218,9 +223,10 @@ struct TickScalpEngine {
             static int64_t s_atr_log = 0;
             if (now_ms - s_atr_log > 60000LL) {
                 s_atr_log = now_ms;
-                printf("[TSE-ATR-BLOCK] atr=%.2f outside [%.1f,%.1f]\n",
-                       atr, TSE_ATR_MIN, TSE_ATR_MAX);
-                fflush(stdout);
+                std::cout << "[TSE-ATR-BLOCK] atr=" << std::fixed << std::setprecision(2) << atr
+                          << " outside [" << std::setprecision(1) << TSE_ATR_MIN
+                          << "," << TSE_ATR_MAX << "]\n";
+                std::cout.flush();
             }
             return;
         }
@@ -339,9 +345,10 @@ private:
             static int64_t s_cost = 0;
             if (now_ms - s_cost > 10000) {
                 s_cost = now_ms;
-                printf("[TSE-NOCOST] %s tp=%.2f <= cost=%.2f -- skip\n",
-                       pattern, tp_pts, cost);
-                fflush(stdout);
+                std::cout << "[TSE-NOCOST] " << pattern
+                          << " tp=" << std::fixed << std::setprecision(2) << tp_pts
+                          << " <= cost=" << cost << " -- skip\n";
+                std::cout.flush();
             }
             return;
         }
@@ -358,11 +365,15 @@ private:
 
         ++_trade_id;
 
-        printf("[TSE] %s %s @ %.2f sl=%.2f tp=%.2f size=%.3f spread=%.2f atr=%.2f%s\n",
-               pattern, is_long ? "LONG" : "SHORT",
-               entry_px, sl_px, tp_px, size, spread, atr,
-               shadow_mode ? " [SHADOW]" : "");
-        fflush(stdout);
+        std::cout << "[TSE] " << pattern
+                  << " " << (is_long ? "LONG" : "SHORT")
+                  << " @ " << std::fixed << std::setprecision(2) << entry_px
+                  << " sl=" << sl_px << " tp=" << tp_px
+                  << " size=" << std::setprecision(3) << size
+                  << " spread=" << std::setprecision(2) << spread
+                  << " atr=" << atr
+                  << (shadow_mode ? " [SHADOW]" : "") << "\n";
+        std::cout.flush();
 
         pos_.active      = true;
         pos_.is_long     = is_long;
@@ -398,19 +409,20 @@ private:
             pos_.sl      = pos_.entry;  // SL to breakeven
             pos_.trail_sl = pos_.entry; // sync trail SL
             pos_.be_done = true;
-            printf("[TSE-BE] %s %s entry=%.2f sl->BE mfe=%.3f\n",
-                   pos_.pattern, pos_.is_long ? "LONG" : "SHORT",
-                   pos_.entry, pos_.mfe);
-            fflush(stdout);
+            std::cout << "[TSE-BE] " << pos_.pattern
+                      << " " << (pos_.is_long ? "LONG" : "SHORT")
+                      << " entry=" << std::fixed << std::setprecision(2) << pos_.entry
+                      << " sl->BE mfe=" << std::setprecision(3) << pos_.mfe << "\n";
+            std::cout.flush();
         }
 
         // ── P3-only trail: arms at TSE_P3_TRAIL_ARM pts MFE ─────────────────
         if (std::strncmp(pos_.pattern, "P3", 2) == 0) {
             if (!pos_.trail_armed && pos_.mfe >= TSE_P3_TRAIL_ARM) {
                 pos_.trail_armed = true;
-                printf("[TSE-TRAIL-ARM] P3 %s mfe=%.3f\n",
-                       pos_.is_long ? "LONG" : "SHORT", pos_.mfe);
-                fflush(stdout);
+                std::cout << "[TSE-TRAIL-ARM] P3 " << (pos_.is_long ? "LONG" : "SHORT")
+                          << " mfe=" << std::fixed << std::setprecision(3) << pos_.mfe << "\n";
+                std::cout.flush();
             }
             if (pos_.trail_armed) {
                 const double new_trail = pos_.is_long
@@ -465,22 +477,25 @@ private:
             ++_consec_losses;
             if (_consec_losses >= TSE_MAX_CONSEC_LOSSES) {
                 _pause_until_ms = now_ms + TSE_PAUSE_MS;
-                printf("[TSE] %d consecutive losses -- pausing 5 min\n", _consec_losses);
-                fflush(stdout);
+                std::cout << "[TSE] " << _consec_losses << " consecutive losses -- pausing 5 min\n";
+                std::cout.flush();
                 _consec_losses = 0;
             }
         }
 
-        printf("[TSE] EXIT %s %s @ %.2f %s pnl=$%.2f mfe=%.2f held=%llds"
-               " daily=$%.2f W/T=%d/%d%s\n",
-               pos_.pattern, pos_.is_long ? "LONG" : "SHORT",
-               exit_px, reason, pnl_usd, pos_.mfe,
-               (long long)(now_ms - pos_.entry_ts_ms) / 1000LL,
-               _daily_pnl, _total_wins, _total_trades,
-               shadow_mode ? " [SHADOW]" : "");
-        fflush(stdout);
+        std::cout << "[TSE] EXIT " << pos_.pattern
+                  << " " << (pos_.is_long ? "LONG" : "SHORT")
+                  << " @ " << std::fixed << std::setprecision(2) << exit_px
+                  << " " << reason
+                  << " pnl=$" << std::setprecision(2) << pnl_usd
+                  << " mfe=" << std::setprecision(2) << pos_.mfe
+                  << " held=" << (long long)(now_ms - pos_.entry_ts_ms) / 1000LL << "s"
+                  << " daily=$" << _daily_pnl
+                  << " W/T=" << _total_wins << "/" << _total_trades
+                  << (shadow_mode ? " [SHADOW]" : "") << "\n";
+        std::cout.flush();
 
-        if (on_close && !shadow_mode) {
+        if (on_close) {
             omega::TradeRecord tr;
             tr.id         = pos_.trade_id;
             tr.symbol     = "XAUUSD";
@@ -509,9 +524,9 @@ private:
         const int64_t day = (now_ms / 1000LL) / 86400LL;
         if (day != _daily_day) {
             if (_daily_day > 0)
-                printf("[TSE] Daily reset. PnL=$%.2f W/T=%d/%d WR=%.0f%%\n",
-                       _daily_pnl, _total_wins, _total_trades,
-                       _total_trades > 0 ? 100.0 * _total_wins / _total_trades : 0.0);
+                std::cout << "[TSE] Daily reset. PnL=$" << std::fixed << std::setprecision(2) << _daily_pnl
+                          << " W/T=" << _total_wins << "/" << _total_trades
+                          << " WR=" << (int)(_total_trades > 0 ? 100.0 * _total_wins / _total_trades : 0.0) << "%\n";
             _daily_pnl = 0.0;
             _daily_day = day;
         }
@@ -519,3 +534,4 @@ private:
 };
 
 } // namespace omega
+
