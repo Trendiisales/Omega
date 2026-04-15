@@ -299,9 +299,16 @@ struct CandleFlowEngine {
         {
             const int64_t utc_sec  = now_ms / 1000LL;
             const int      utc_hour = static_cast<int>((utc_sec % 86400LL) / 3600LL);
-            const bool     in_asia  = (utc_hour >= 22 || utc_hour < 7);
+            const bool     in_asia        = (utc_hour >= 22 || utc_hour < 7);
+            // London open (07:00-08:30 UTC): raise DFE threshold to Asia level.
+            // Gap spikes at London open look like drift but reverse immediately.
+            // Evidence: 07:46 SHORT -$77, 08:01 SHORT -$57 both fired on gap spikes.
+            // Threshold raised to Asia level: requires genuine sustained move, not a gap.
+            const int64_t utc_min      = static_cast<int>((utc_sec % 3600LL) / 60LL);
+            const int     utc_mins_day = utc_hour * 60 + static_cast<int>(utc_min);
+            const bool     lon_open    = (utc_mins_day >= 420 && utc_mins_day < 510); // 07:00-08:30
             const double   atr_safe = (atr_pts > 0.0) ? atr_pts : 5.0;
-            m_dfe_eff_thresh = in_asia
+            m_dfe_eff_thresh = (in_asia || lon_open)
                 ? std::max(4.0,                  atr_safe * 0.40)
                 : std::max(CFE_DFE_DRIFT_THRESH, atr_safe * 0.30);
         }
@@ -720,6 +727,29 @@ struct CandleFlowEngine {
                     s_pny_log = now_ms;
                     printf("[CFE-POST-NY-BLOCK] bar entry blocked: UTC hour=%d (19-22 dead zone)\n",
                            pny_hour);
+                    fflush(stdout);
+                }
+                return;
+            }
+        }
+
+        // Gate -0.5: London open bar quality gate (07:00-08:30 UTC)
+        // Bar entries during London open require drift sustained >= 90s.
+        // Normal bar gate only requires 45s -- too loose for gap-spike environment.
+        // DFE path already raised to Asia threshold above.
+        // Evidence: 07:46 SHORT and 08:01 SHORT both fired within seconds of a gap spike.
+        {
+            const int64_t lon_utc_sec  = now_ms / 1000LL;
+            const int     lon_utc_hour = static_cast<int>((lon_utc_sec % 86400LL) / 3600LL);
+            const int     lon_utc_min  = static_cast<int>((lon_utc_sec % 3600LL) / 60LL);
+            const int     lon_mins_day = lon_utc_hour * 60 + lon_utc_min;
+            const bool    in_lon_open  = (lon_mins_day >= 420 && lon_mins_day < 510);
+            if (in_lon_open && drift_sustained_ms < 90000LL) {
+                static int64_t s_lon_log = 0;
+                if (now_ms - s_lon_log > 30000) {
+                    s_lon_log = now_ms;
+                    printf("[CFE-LON-QUALITY] bar blocked: London open, drift sustained=%lldsec < 90s\n",
+                           (long long)drift_sustained_ms / 1000LL);
                     fflush(stdout);
                 }
                 return;
