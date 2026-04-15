@@ -130,6 +130,7 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 #include "GoldFlowEngine.hpp"
 #include "DomPersistEngine.hpp"
 #include "MacroCrashEngine.hpp"
+#include "PullbackContEngine.hpp"
 static omega::GoldBracketEngine   g_bracket_gold;
 
 // ?? Hybrid bracket engines -- fire both sides simultaneously, cancel loser ??
@@ -145,6 +146,7 @@ static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us3
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nas100(omega::idx::make_nas100_config());
 static GoldFlowEngine             g_gold_flow;
 static omega::MacroCrashEngine    g_macro_crash;
+static omega::PullbackContEngine  g_pullback_cont;
 
 // RSI Reversal Engine -- direct RSI extreme entries, bypasses regime system
 // LONG when RSI < 35, SHORT when RSI > 65, ATR-based SL + trail
