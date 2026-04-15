@@ -970,7 +970,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                g_macro_crash.pos.is_long?"LONG":"SHORT",
                                g_macro_crash.pos.entry, unr, ds_lim);
                         fflush(stdout);
-                        g_macro_crash.force_close(s_xau_bid, s_xau_ask, ds_now);
+                        // CRITICAL FIX: pass ds_now_ms (milliseconds) not ds_now (seconds).
+                        // ds_now in seconds caused cooldown to be set ~1700s in the past
+                        // (seconds treated as ms), allowing immediate re-entry loop.
+                        g_macro_crash.force_close(s_xau_bid, s_xau_ask, ds_now_ms);
                     }
                 }
                 // GoldStack (MeanReversion / CompressionBreakout etc)
