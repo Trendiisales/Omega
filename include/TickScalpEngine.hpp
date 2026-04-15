@@ -210,8 +210,11 @@ struct TickScalpEngine {
                     _rsi_prev_val = _rsi_cur;
                     _rsi_cur = (al == 0.0) ? 100.0 : 100.0 - 100.0 / (1.0 + ag / al);
                     const double slope = _rsi_cur - _rsi_prev_val;
-                    if (!_rsi_warmed) { _rsi_slope_ema = slope; _rsi_warmed = true; }
-                    else _rsi_slope_ema = slope * TSE_RSI_SLOPE_ALPHA + _rsi_slope_ema * (1.0 - TSE_RSI_SLOPE_ALPHA);
+                    // Clamp slope to [-5, +5] before EMA -- prevents extreme values when
+                    // RSI hits 0 or 100 (all losses or all gains in the 14-tick window).
+                    const double slope_clamped = std::max(-5.0, std::min(5.0, slope));
+                    if (!_rsi_warmed) { _rsi_slope_ema = slope_clamped; _rsi_warmed = true; }
+                    else _rsi_slope_ema = slope_clamped * TSE_RSI_SLOPE_ALPHA + _rsi_slope_ema * (1.0 - TSE_RSI_SLOPE_ALPHA);
                 }
             }
         }
@@ -270,9 +273,9 @@ struct TickScalpEngine {
             return;
         }
 
-        // Velocity baseline guard: require at least one 30s window before P1/P3
-        // Prevents firing on the first 8 ticks after restart with no market context.
-        const bool vel_ready = (_vel_baseline >= 10.0);
+        // Entry readiness guard: require velocity baseline AND RSI warmed (14 ticks history).
+        // Prevents firing immediately after restart with no market context.
+        const bool vel_ready = (_vel_baseline >= 10.0 && _rsi_warmed);
 
         // Try patterns
         if (vel_ready) _try_p1(bid, ask, spread, atr, now_ms, on_close);
