@@ -144,6 +144,7 @@ struct TickScalpEngine {
                  double tick_rate,       // g_bars_gold.m1.ind.tick_rate
                  double atr,             // g_bars_gold.m1.ind.atr14
                  double ewm_drift,       // g_gold_stack.ewm_drift()
+                 double bar_rsi,         // g_bars_gold.m1.ind.rsi14 (0..100)
                  int    session_slot,    // g_macro_ctx.session_slot
                  CloseCallback on_close) noexcept
     {
@@ -231,12 +232,16 @@ struct TickScalpEngine {
             return;
         }
 
+        // Velocity baseline guard: require at least one 30s window before P1/P3
+        // Prevents firing on the first 8 ticks after restart with no market context.
+        const bool vel_ready = (_vel_baseline >= 10.0);
+
         // Try patterns
-        _try_p1(bid, ask, spread, atr, now_ms, on_close);
+        if (vel_ready) _try_p1(bid, ask, spread, atr, bar_rsi, now_ms, on_close);
         if (pos_.active) return;
         if (l2_fresh) _try_p2(bid, ask, spread, micro_edge, atr, now_ms, on_close);
         if (pos_.active) return;
-        if (l2_fresh) _try_p3(bid, ask, spread, tick_rate, atr, now_ms, on_close);
+        if (l2_fresh && vel_ready) _try_p3(bid, ask, spread, tick_rate, atr, now_ms, on_close);
     }
 
     void force_close(double bid, double ask, int64_t now_ms, CloseCallback cb) noexcept {
@@ -265,7 +270,7 @@ private:
 
     // ── P1: Tick Momentum Burst ───────────────────────────────────────────────
     void _try_p1(double bid, double ask, double spread, double atr,
-                 int64_t now_ms, CloseCallback on_close) noexcept
+                 double bar_rsi, int64_t now_ms, CloseCallback on_close) noexcept
     {
         if ((int)_bid_hist.size() < TSE_P1_TICKS + 1) return;
 
@@ -280,6 +285,33 @@ private:
         bool burst_up = (up >= TSE_P1_TICKS - 1 && dn == 0);
         bool burst_dn = (dn >= TSE_P1_TICKS - 1 && up == 0);
         if (!burst_up && !burst_dn) return;
+
+        // RSI direction gate: burst must agree with RSI trend.
+        // burst_up requires RSI > 50 (trending up). burst_dn requires RSI < 50 (trending down).
+        // Prevents entering a LONG burst when RSI is falling, and vice versa.
+        // bar_rsi=0 means not yet warmed -- skip gate.
+        if (bar_rsi > 1.0) {
+            if (burst_up && bar_rsi < 50.0) {
+                static int64_t s_rsi_log = 0;
+                if (now_ms - s_rsi_log > 10000) {
+                    s_rsi_log = now_ms;
+                    std::cout << "[TSE-RSI-BLOCK] P1 LONG blocked: burst_up but rsi="
+                              << std::fixed << std::setprecision(1) << bar_rsi << " < 50\n";
+                    std::cout.flush();
+                }
+                return;
+            }
+            if (burst_dn && bar_rsi > 50.0) {
+                static int64_t s_rsi_log2 = 0;
+                if (now_ms - s_rsi_log2 > 10000) {
+                    s_rsi_log2 = now_ms;
+                    std::cout << "[TSE-RSI-BLOCK] P1 SHORT blocked: burst_dn but rsi="
+                              << std::fixed << std::setprecision(1) << bar_rsi << " > 50\n";
+                    std::cout.flush();
+                }
+                return;
+            }
+        }
 
         double net = std::fabs(_bid_hist[n-1] - _bid_hist[n-1-TSE_P1_TICKS]);
         if (net < TSE_P1_MIN_MOVE) return;
@@ -534,4 +566,5 @@ private:
 };
 
 } // namespace omega
+
 
