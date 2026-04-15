@@ -55,6 +55,7 @@
 #include <iomanip>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaFIX.hpp"          // L2Book, L2Level
+#include "GoldHMM.hpp"            // 3-state regime HMM for CFE entry gating
 
 namespace omega {
 
@@ -162,6 +163,16 @@ struct CandleFlowEngine {
     double risk_dollars = CFE_RISK_DOLLARS;
     bool   shadow_mode  = true;
 
+    // HMM regime gate -- 3-state Gaussian HMM (CONTINUATION/MEAN_REV/NOISE).
+    // Seeded with session-aware priors from backtest evidence.
+    // update() called at M1 bar close; p_continuation() gates both DFE + bar entry.
+    // Fail-open: !warmed() -> no gating, returns p=1.0.
+    // Shadow gate: when HMM_GATING_LIVE=false, logs [CFE-HMM-GATE] but never blocks.
+    static constexpr bool HMM_GATING_LIVE = false;  // flip to true after shadow validation
+    omega::GoldHMM m_hmm;
+    double         m_hmm_last_p   = 1.0;   // last p_continuation (for logging)
+    int            m_hmm_last_state = omega::HMM_CONTINUATION;
+
     // -------------------------------------------------------------------------
     enum class Phase { IDLE, LIVE, COOLDOWN } phase = Phase::IDLE;
 
@@ -230,7 +241,8 @@ struct CandleFlowEngine {
                  int64_t now_ms,
                  double  atr_pts,
                  CloseCallback on_close,
-                 double ewm_drift = 0.0) noexcept
+                 double ewm_drift  = 0.0,
+                 double tick_rate  = 0.0) noexcept
     {
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
@@ -339,6 +351,19 @@ struct CandleFlowEngine {
         const int64_t drift_sustained_ms = (m_drift_sustained_dir != 0 && m_drift_sustained_start_ms > 0)
             ? (now_ms - m_drift_sustained_start_ms) : 0;
 
+        // HMM update: call at every tick but only re-runs EM every HMM_UPDATE_INTERVAL bars.
+        // Builds feature vector from current tick inputs and adds to rolling window.
+        {
+            const omega::HmmFeature hmm_feat = omega::HmmFeature::make(
+                ewm_drift, atr_pts, m_rsi_trend, tick_rate,
+                (bar.valid ? (bar.high - bar.low) : 0.0),
+                drift_sustained_ms);
+            m_hmm.update(hmm_feat);
+            m_hmm_last_p     = m_hmm.p_continuation(hmm_feat);
+            m_hmm_last_state = m_hmm.current_state(hmm_feat);
+            m_hmm.log_params(now_ms);
+        }
+
     // Opposite-direction cooldown: after a SHORT closes, block new LONG for 60s
         // (and vice versa). Prevents the rapid flip-flop pattern (09:45 / 10:16).
         if (m_last_closed_ms > 0 && m_last_closed_dir != 0) {
@@ -386,6 +411,27 @@ struct CandleFlowEngine {
             }
             if (!intended_same_dir || dist_to_exit <= recovery_thresh)
                 m_adverse_block = false;
+        }
+
+        // HMM regime gate for DFE entry.
+        // Blocks entry when P(CONTINUATION) < HMM_MIN_PROB and model is warmed.
+        // HMM_GATING_LIVE=false: logs only (shadow). =true: blocks entry.
+        if (m_hmm.warmed()) {
+            if (m_hmm_last_p < omega::HMM_MIN_PROB) {
+                static int64_t s_hmm_dfe_log = 0;
+                if (now_ms - s_hmm_dfe_log > 5000) {
+                    s_hmm_dfe_log = now_ms;
+                    printf("[CFE-HMM-GATE] DFE blocked: state=%s p_cont=%.3f < %.2f drift=%.2f%s\n",
+                           omega::GoldHMM::state_name(m_hmm_last_state),
+                           m_hmm_last_p, omega::HMM_MIN_PROB, ewm_drift,
+                           HMM_GATING_LIVE ? "" : " [SHADOW-LOG-ONLY]");
+                    fflush(stdout);
+                }
+                if (HMM_GATING_LIVE) {
+                    m_prev_ewm_drift = ewm_drift;
+                    return;
+                }
+            }
         }
 
         if (m_rsi_warmed && std::fabs(ewm_drift) >= m_dfe_eff_thresh) {
@@ -728,6 +774,23 @@ struct CandleFlowEngine {
                     fflush(stdout);
                 }
                 return;
+            }
+        }
+
+        // HMM regime gate for bar-based entry.
+        // Same gate as DFE: block entry when P(CONTINUATION) < HMM_MIN_PROB.
+        if (m_hmm.warmed()) {
+            if (m_hmm_last_p < omega::HMM_MIN_PROB) {
+                static int64_t s_hmm_bar_log = 0;
+                if (now_ms - s_hmm_bar_log > 5000) {
+                    s_hmm_bar_log = now_ms;
+                    printf("[CFE-HMM-GATE] BAR blocked: state=%s p_cont=%.3f < %.2f drift=%.2f%s\n",
+                           omega::GoldHMM::state_name(m_hmm_last_state),
+                           m_hmm_last_p, omega::HMM_MIN_PROB, ewm_drift,
+                           HMM_GATING_LIVE ? "" : " [SHADOW-LOG-ONLY]");
+                    fflush(stdout);
+                }
+                if (HMM_GATING_LIVE) return;
             }
         }
 
