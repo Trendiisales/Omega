@@ -57,6 +57,7 @@
 #include "../include/MicroMomentumEngine.hpp"
 #include "../include/DomPersistEngine.hpp"
 #include "../include/GoldHybridBracketEngine.hpp"
+#include "../include/PDHLReversionEngine.hpp"
 
 // =============================================================================
 // mmap
