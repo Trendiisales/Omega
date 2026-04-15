@@ -279,7 +279,9 @@ private:
             const double diff  = x.v[f] - mu_[s][f];
             const double sig2  = std::max(HMM_MIN_SIGMA2, sig2_[s][f]);
             // log N(x; mu, sigma2) = -0.5*log(2*pi*sigma2) - 0.5*(x-mu)^2/sigma2
-            log_p += -0.5 * std::log(2.0 * M_PI * sig2)
+            // 2*pi hardcoded: M_PI not defined in MSVC without _USE_MATH_DEFINES
+            static constexpr double TWO_PI = 6.28318530717958647692;
+            log_p += -0.5 * std::log(TWO_PI * sig2)
                      -0.5 * (diff * diff) / sig2;
         }
         const double p = std::exp(log_p);
