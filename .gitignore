@@ -46,3 +46,6 @@ symbols.ini
 
 # GitHub API token -- VPS only, never commit
 .github_token
+
+# L2 data CSVs -- too large for repo download
+data/
