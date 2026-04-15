@@ -86,6 +86,12 @@ static omega::cross::TrendPullbackEngine   g_trend_pb_sp;     // US500.F
 static omega::H1SwingEngine  g_h1_swing_gold;   // XAUUSD H1 EMA+ADX trend
 static omega::H4RegimeEngine g_h4_regime_gold;  // XAUUSD H4 Donchian breakout
 
+// TickScalpEngine: fully independent tick-pattern scalper.
+// Does NOT participate in gold_any_open. Does NOT block other engines.
+// Shadow mode ON. Max 0.01 lots. Sessions 1-5 only.
+#include "TickScalpEngine.hpp"
+static omega::TickScalpEngine g_tick_scalp;     // XAUUSD tick scalper (independent)
+
 // =============================================================================
 // IndexFlowEngine -- L2 flow + EWM drift engines for US equity indices.
 // Architecture mirrors GoldFlowEngine: L2 persistence + EWM drift + ATR-prop SL
