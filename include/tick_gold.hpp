@@ -783,6 +783,12 @@ static void on_tick_gold(
         if (s_bar_h1_ms == 0) { s_cur_h1 = {bh1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h1_ms = bh1; }
         else if (bh1 != s_bar_h1_ms) {
             g_bars_gold.h1.add_bar(s_cur_h1);
+            // HMM poll: update regime state from hmm_state.json (throttled to 30s).
+            // Snap is pushed to both engines so gates read fresh data this bar.
+            g_hmm_regime.poll_if_due(now_ms_g);
+            g_hmm_regime.log_state(now_ms_g);  // logs once/hr on state change
+            g_h1_swing_gold.hmm_snap = g_hmm_regime.get();
+            g_h4_regime_gold.hmm_snap = g_hmm_regime.get();
             // H1 bar close dispatch: management always runs; entry only when slot is clear
             if (g_h1_swing_gold.has_open_position()) {
                 g_h1_swing_gold.on_h1_bar(
