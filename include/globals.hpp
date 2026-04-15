@@ -85,6 +85,7 @@ static omega::cross::TrendPullbackEngine   g_trend_pb_sp;     // US500.F
 // Both start in shadow_mode. Never set shadow_mode=false without live validation.
 static omega::H1SwingEngine  g_h1_swing_gold;   // XAUUSD H1 EMA+ADX trend
 static omega::H4RegimeEngine g_h4_regime_gold;  // XAUUSD H4 Donchian breakout
+static omega::HmmRegimeReader g_hmm_regime(R"(C:\Omega\hmm_state.json)");  // HMM regime state (hourly refit)
 
 // =============================================================================
 // IndexFlowEngine -- L2 flow + EWM drift engines for US equity indices.
