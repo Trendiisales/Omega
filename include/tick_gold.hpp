@@ -271,7 +271,9 @@ static void on_tick_gold(
     // Research (2026-04-15): 111M tick / 2yr backtest: inside daily range
     // EV=+1.732pts at 15min. Outside = negative EV. Gold is mean-reverting intraday.
     {
-        const int64_t pdhl_sec  = now_ms_g / 1000LL;
+        const int64_t pdhl_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        const int64_t pdhl_sec  = pdhl_now_ms / 1000LL;
         const int     pdhl_day  = static_cast<int>(pdhl_sec / 86400LL);
         static int    s_pdhl_day  = -1;
         static double s_pdhl_hi   = 0.0;
