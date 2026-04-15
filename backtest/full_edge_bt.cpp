@@ -156,6 +156,7 @@ struct Pos {
     bool   active=false,is_long=false;
     double entry=0,sl=0,trail_sl=0,tp=0,size=0,mfe=0;
     int64_t entry_ts=0,cooldown=0;
+    int64_t opened_ts=0; // ts when opened -- skip manage on same tick
 };
 
 // Simple position manager: trail stop + hard SL + optional TP
@@ -163,6 +164,7 @@ static bool manage(Pos& p, double bid, double ask, int64_t ts,
                    double trail_pts, Stats& st,
                    const double COST, const double USD_PT) {
     if(!p.active) return false;
+    if(p.opened_ts==ts) return false; // skip manage on entry tick
     const double mid=(bid+ask)*0.5;
     const double m=p.is_long?(bid-p.entry):(p.entry-ask);
     if(m>p.mfe){
@@ -285,7 +287,7 @@ int main(int argc,char** argv){
             const double sl=is_long?ep-sl_pts:ep+sl_pts;
             const double tp=tp_pts>0?(is_long?ep+tp_pts:ep-tp_pts):0;
             const double sz=calc_sz(sl_pts);
-            ps[s]={true,is_long,ep,sl,sl,tp,sz,0,ts,ps[s].cooldown};
+            ps[s]={true,is_long,ep,sl,sl,tp,sz,0,ts,ps[s].cooldown,ts};
         };
 
         // Lookback helper
