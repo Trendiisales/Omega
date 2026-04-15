@@ -48,7 +48,7 @@ namespace omega {
 
 class RSIReversalEngine {
 public:
-    // ── Parameters ────────────────────────────────────────────────────────────
+    // -- Parameters ------------------------------------------------------------
     // RSI_OVERSOLD/OVERBOUGHT no longer used for entry (pure direction change)
     // Kept for legacy compat -- entry is now RSI turn + RSI side of 50
     double RSI_OVERSOLD       = 50.0;  // entry: RSI must be below 50 for LONG
@@ -79,7 +79,7 @@ public:
     bool   enabled            = true;
     bool   shadow_mode        = true;
 
-    // ── State ─────────────────────────────────────────────────────────────────
+    // -- State -----------------------------------------------------------------
     struct Position {
         bool    active    = false;
         bool    is_long   = false;
@@ -96,7 +96,7 @@ public:
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
-    // ── Indicator update -- MUST be called every tick unconditionally ──────────
+    // -- Indicator update -- MUST be called every tick unconditionally ----------
     void update_indicators(double bid, double ask) noexcept {
         if (bid <= 0.0 || ask <= 0.0) return;
         const double mid    = (bid + ask) * 0.5;
@@ -105,7 +105,7 @@ public:
         _update_tick_atr(mid, spread);
     }
 
-    // ── Main tick ─────────────────────────────────────────────────────────────
+    // -- Main tick -------------------------------------------------------------
     void on_tick(double bid, double ask,
                  int session_slot, int64_t now_ms,
                  // DOM data
@@ -259,7 +259,7 @@ public:
 
         const bool is_long = rsi_turn_long;
 
-        // ── EWM drift counter-trend gate (2026-04-13) ────────────────────────
+        // -- EWM drift counter-trend gate (2026-04-13) ------------------------
         // Block RSI reversal entries that go against a confirmed sustained drift.
         // RSI reversals are mean-reversion: valid when market is oscillating.
         // When ewm_drift > 2.5 (sustained uptrend), a SHORT RSI reversal is fighting
@@ -291,7 +291,7 @@ public:
             }
         }
 
-        // ── DOM filter ────────────────────────────────────────────────────────
+        // -- DOM filter --------------------------------------------------------
         bool vacuum_confirm = false;
         if (l2_real) {
             if (is_long) {
@@ -325,7 +325,7 @@ public:
             }
         }
 
-        // ── Entry ─────────────────────────────────────────────────────────────
+        // -- Entry -------------------------------------------------------------
         const double entry   = is_long ? ask : bid;
         const double sl_dist = std::max(m_tick_atr * SL_ATR_MULT, spread * 2.0);
 
