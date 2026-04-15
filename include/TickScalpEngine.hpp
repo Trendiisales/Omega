@@ -151,6 +151,8 @@ struct TickScalpEngine {
         if ((int)_dom_hist.size() > TSE_DOM_HIST_SIZE) _dom_hist.pop_front();
 
         // Velocity baseline (EWM over 30s windows)
+        // Initialise window start on first tick to prevent immediate bogus window close.
+        if (_vel_window_start_ms == 0) _vel_window_start_ms = now_ms;
         _ticks_this_window++;
         if (now_ms - _vel_window_start_ms >= 30000LL) {
             _vel_baseline = _vel_baseline * 0.7 + _ticks_this_window * 0.3;
@@ -165,6 +167,19 @@ struct TickScalpEngine {
         }
 
         // ── Entry guards ─────────────────────────────────────────────────────
+        // Heartbeat: log TSE state every 60s so it's visible in logs
+        {
+            static int64_t s_hb = 0;
+            if (now_ms - s_hb > 60000LL) {
+                s_hb = now_ms;
+                printf("[TSE-ALIVE] slot=%d atr=%.2f vel_base=%.1f spread=%.2f"
+                       " daily=$%.2f shadow=%d hist=%d\n",
+                       session_slot, atr, _vel_baseline, spread,
+                       _daily_pnl, shadow_mode ? 1 : 0,
+                       (int)_bid_hist.size());
+                fflush(stdout);
+            }
+        }
         // Session: slots 1-5 only (London + NY). Slot 0 = dead, slot 6 = Asia.
         if (session_slot < 1 || session_slot > 5) return;
 
@@ -189,7 +204,16 @@ struct TickScalpEngine {
         if (spread > TSE_MAX_SPREAD) return;
 
         // ATR quality gate -- not dead tape, not crash
-        if (atr < TSE_ATR_MIN || atr > TSE_ATR_MAX) return;
+        if (atr < TSE_ATR_MIN || atr > TSE_ATR_MAX) {
+            static int64_t s_atr_log = 0;
+            if (now_ms - s_atr_log > 60000LL) {
+                s_atr_log = now_ms;
+                printf("[TSE-ATR-BLOCK] atr=%.2f outside [%.1f,%.1f]\n",
+                       atr, TSE_ATR_MIN, TSE_ATR_MAX);
+                fflush(stdout);
+            }
+            return;
+        }
 
         // Try patterns
         _try_p1(bid, ask, spread, atr, now_ms, on_close);
