@@ -112,6 +112,34 @@ static void init_engines(const std::string& cfg_path)
     g_macro_crash.on_trade_record = [](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);
     };
+    // ?? PullbackContEngine config ????????????????????????????????????????????????????
+    // Session gates h07/h17/h23 UTC. Shadow mode until log validation.
+    // Backtest: h23 N=794 WR=85.6% avg_net=+14.72 | h17 N=849 WR=80.7% avg_net=+10.36
+    //           h07 N=803 WR=79.8% avg_net=+5.78
+    g_pullback_cont.enabled       = true;
+    g_pullback_cont.shadow_mode   = true;   // SHADOW: enable live after log validation
+    g_pullback_cont.MOVE_MIN      = 20.0;   // require 20pt move in 5min
+    g_pullback_cont.PB_FRAC       = 0.20;   // 20% pullback = 4pts on 20pt move
+    g_pullback_cont.LOOKBACK_S    = 300;    // 5min lookback
+    g_pullback_cont.HOLD_S        = 600;    // max 10min hold (trail exits earlier)
+    g_pullback_cont.SL_PTS        = 6.0;    // 6pt stop loss
+    g_pullback_cont.TRAIL_PTS     = 4.0;    // trail arms at 4pts, trails 4pts behind
+    g_pullback_cont.BASE_RISK_USD = 80.0;   // $80 risk per trade
+    g_pullback_cont.COOLDOWN_MS   = 120000; // 2min cooldown
+    g_pullback_cont.on_close = [](double exit_px, bool is_long, double size, const std::string& reason) {
+        if (g_pullback_cont.shadow_mode) return;
+        send_live_order("XAUUSD", is_long, size, exit_px);
+        printf("[PCE] Live close sent %s %.3f @ %.2f reason=%s\n",
+               is_long ? "LONG" : "SHORT", size, exit_px, reason.c_str());
+        fflush(stdout);
+    };
+    g_pullback_cont.on_trade_record = [](const omega::TradeRecord& tr) {
+        handle_closed_trade(tr);
+    };
+    printf("[PCE] PullbackContEngine ARMED (shadow_mode=%s) MOVE>=%.0fpt PB=%.0f%% h07/h17/h23\n",
+           g_pullback_cont.shadow_mode ? "true" : "false",
+           g_pullback_cont.MOVE_MIN, g_pullback_cont.PB_FRAC * 100.0);
+
     printf("[MCE] MacroCrashEngine ARMED (shadow_mode=%s) ATR>%.0f vol>%.1fx drift>%.0f\n",
            g_macro_crash.shadow_mode ? "true" : "false",
            g_macro_crash.ATR_THRESHOLD, g_macro_crash.VOL_RATIO_MIN, g_macro_crash.DRIFT_MIN);
