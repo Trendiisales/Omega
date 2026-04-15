@@ -110,6 +110,8 @@ static constexpr double   TSE_P3_TRAIL_DIST      = 0.30;  // trail 0.3pt behind 
 static constexpr int      TSE_RSI_SLOPE_N        = 8;    // ticks for slope EMA
 static constexpr double   TSE_RSI_SLOPE_ALPHA    = 2.0 / (TSE_RSI_SLOPE_N + 1.0);
 static constexpr double   TSE_RSI_SLOPE_THRESH   = 0.10; // min |slope EMA| to confirm trend direction
+static constexpr double   TSE_RSI_REVERSAL_THRESH = 0.15; // slope flip threshold to trigger exit during trade
+static constexpr int64_t  TSE_REVERSAL_MIN_HOLD_MS = 3000; // minimum 3s hold before reversal exit fires
 
 // Tick history size
 static constexpr int      TSE_HIST_SIZE          = 60;
@@ -495,6 +497,24 @@ private:
                 // Trail SL overrides hard SL once it is better (further in profit)
                 if (pos_.is_long  && pos_.trail_sl > pos_.sl) pos_.sl = pos_.trail_sl;
                 if (!pos_.is_long && pos_.trail_sl < pos_.sl) pos_.sl = pos_.trail_sl;
+            }
+        }
+
+        // ── RSI slope reversal exit ──────────────────────────────────────────
+        // If RSI slope flips strongly against our position after entry, exit immediately.
+        // Only fires after minimum hold (3s) to avoid exiting on entry-tick noise.
+        // Only fires if we have no MFE yet (still fighting from entry) -- if MFE>0 let BE/trail handle it.
+        if (_rsi_warmed && (now_ms - pos_.entry_ts_ms >= TSE_REVERSAL_MIN_HOLD_MS) && pos_.mfe < 0.05) {
+            const bool slope_against_long  = pos_.is_long  && (_rsi_slope_ema < -TSE_RSI_REVERSAL_THRESH);
+            const bool slope_against_short = !pos_.is_long && (_rsi_slope_ema >  TSE_RSI_REVERSAL_THRESH);
+            if (slope_against_long || slope_against_short) {
+                std::cout << "[TSE-REVERSAL] " << pos_.pattern
+                          << " " << (pos_.is_long ? "LONG" : "SHORT")
+                          << " rsi_slope=" << std::fixed << std::setprecision(3) << _rsi_slope_ema
+                          << " flipped against position -- exiting\n";
+                std::cout.flush();
+                _close(eff_price, "RSI_REVERSAL", now_ms, on_close);
+                return;
             }
         }
 
