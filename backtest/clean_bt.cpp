@@ -322,55 +322,60 @@ int main(int argc, char** argv) {
             cooldown[s] = ts + 60000LL; // 1min min between trades
         };
 
+        // ---- ATR regime filter ----
+        // Jul-Aug 2025: gold ATR>12 = sustained trend regime, all strategies break
+        // Filter tested at multiple thresholds: 10, 12, 15
+        const bool atr_normal_10 = ind.atr <= 10.0;
+        const bool atr_normal_12 = ind.atr <= 12.0;
+        const bool atr_normal_15 = ind.atr <= 15.0;
+
         // ---- A: Momentum continuation ----
-        // Signal: short window (60s) moving in same direction as medium window (5min/15min)
-        // Enter in direction of move while it's happening
         if(m60&&m300){
             bool same60_300 = (dv60>0&&dv300>0)||(dv60<0&&dv300<0);
             bool same30_300 = m30 && ((dv30>0&&dv300>0)||(dv30<0&&dv300<0));
-
-            // A1/A2: h07 momentum with 15min context
-            if(m900&&hour==7&&fabs(dv60)>=3&&fabs(dv900)>=8&&
-               ((dv60>0&&dv900>0)||(dv60<0&&dv900<0))){
-                enter(0, dv60>0, 8, 0); // LONG
-                enter(1, dv60<0, 8, 0); // SHORT
-            }
-            // A3/A4: h13-14 momentum
-            if(m900&&(hour==13||hour==14)&&fabs(dv60)>=3&&fabs(dv900)>=8&&
-               ((dv60>0&&dv900>0)||(dv60<0&&dv900<0))){
-                enter(2, dv60>0, 8, 0);
-                enter(3, dv60<0, 8, 0);
-            }
-            // A5/A6: h07-08 with 5min context, smaller threshold
-            if((hour==7||hour==8)&&fabs(dv60)>=2&&fabs(dv300)>=5&&same60_300){
-                enter(4, dv60>0, 6, 0);
-                enter(5, dv60<0, 6, 0);
-            }
-            // A7/A8: h07 tight -- 30s move + 5min same dir
-            if(m30&&hour==7&&fabs(dv30)>=2&&fabs(dv300)>=5&&same30_300){
-                enter(6, dv30>0, 5, 0);
-                enter(7, dv30<0, 5, 0);
+            if(atr_normal_12){  // ATR<=12 filter
+                if(m900&&hour==7&&fabs(dv60)>=3&&fabs(dv900)>=8&&
+                   ((dv60>0&&dv900>0)||(dv60<0&&dv900<0))){
+                    enter(0, dv60>0, 8, 0);
+                    enter(1, dv60<0, 8, 0);
+                }
+                if(m900&&(hour==13||hour==14)&&fabs(dv60)>=3&&fabs(dv900)>=8&&
+                   ((dv60>0&&dv900>0)||(dv60<0&&dv900<0))){
+                    enter(2, dv60>0, 8, 0);
+                    enter(3, dv60<0, 8, 0);
+                }
+                if((hour==7||hour==8)&&fabs(dv60)>=2&&fabs(dv300)>=5&&same60_300){
+                    enter(4, dv60>0, 6, 0);
+                    enter(5, dv60<0, 6, 0);
+                }
+                if(m30&&hour==7&&fabs(dv30)>=2&&fabs(dv300)>=5&&same30_300){
+                    enter(6, dv30>0, 5, 0);
+                    enter(7, dv30<0, 5, 0);
+                }
             }
         }
 
         // ---- B: Reversion -- large move stalling ----
+        // Note: B signals explicitly need ATR filter -- reversion in high-ATR = trend continuation
         // Signal: 5min moved a lot, but 30s move is tiny (exhaustion)
         if(m300&&m30){
             const double stall = fabs(dv30)<1.5; // 30s barely moving
-            // B1/B2: h00-03
-            if(stall&&hour<=3&&fabs(dv300)>=10){
-                enter(8,  dv300<0, 8, 0); // big down -> fade up (LONG)
-                enter(9,  dv300>0, 8, 0); // big up -> fade down (SHORT)
-            }
-            // B3/B4: h22-23
-            if(stall&&(hour==22||hour==23)&&fabs(dv300)>=10){
-                enter(10, dv300<0, 8, 0);
-                enter(11, dv300>0, 8, 0);
-            }
-            // B5/B6: h08-09 London exhaustion
-            if(m900&&fabs(dv30)<1.0&&(hour==8||hour==9)&&fabs(dv900)>=15){
-                enter(12, dv900<0, 8, 0);
-                enter(13, dv900>0, 8, 0);
+            if(atr_normal_12){
+                // B1/B2: h00-03
+                if(stall&&hour<=3&&fabs(dv300)>=10){
+                    enter(8,  dv300<0, 8, 0);
+                    enter(9,  dv300>0, 8, 0);
+                }
+                // B3/B4: h22-23
+                if(stall&&(hour==22||hour==23)&&fabs(dv300)>=10){
+                    enter(10, dv300<0, 8, 0);
+                    enter(11, dv300>0, 8, 0);
+                }
+                // B5/B6: h08-09 London exhaustion
+                if(m900&&fabs(dv30)<1.0&&(hour==8||hour==9)&&fabs(dv900)>=15){
+                    enter(12, dv900<0, 8, 0);
+                    enter(13, dv900>0, 8, 0);
+                }
             }
         }
 
@@ -379,12 +384,12 @@ int main(int argc, char** argv) {
             const double vd=tk.mid-ind.vwap;
             // C1/C2: h07-17, price >5pts from VWAP, trail
             if(hour>=7&&hour<=17){
-                if(vd>=5)  enter(14, false, 6);
-                if(vd<=-5) enter(15, true,  6);
+                if(atr_normal_12&&vd>=5)  enter(14, false, 6);
+                if(atr_normal_12&&vd<=-5) enter(15, true,  6);
             }
             // C3/C4: any hour, >8pts
-            if(vd>=8)  enter(16, false, 8);
-            if(vd<=-8) enter(17, true,  8);
+            if(atr_normal_12&&vd>=8)  enter(16, false, 8);
+            if(atr_normal_12&&vd<=-8) enter(17, true,  8);
             // C5/C6: with TP instead of trail
             if(hour>=7&&hour<=17){
                 if(vd>=5)  enter(18, false, 6);  // TP set in manage
