@@ -1177,54 +1177,35 @@ R"OMEGA21(
 function renderTrades(trades){
   const el=document.getElementById('tradesBody'),cE=document.getElementById('tradeCount');
   if(!trades||trades.length===0){el.innerHTML='<tr><td colspan="11" class="no-data">No trades yet</td></tr>';if(cE)cE.textContent='';return;}
-  // All closed events -- includes PARTIAL_1R/PARTIAL_2R as well as full closes.
-  // Partials are real money banked and deserve their own bell (win or loss by net_pnl).
   const closed=trades.filter(t=>t.exitReason&&t.exitReason!=='');
   if(_bellBootCount<0){_bellBootCount=closed.length;_lastTradeCount=closed.length;}
   if(_bellEnabled&&closed.length>_lastTradeCount&&_lastTradeCount>=_bellBootCount){
-    // Use the NEWEST trade -- closed[closed.length-1], not closed[0] (oldest).
-    // buildHistoryJson serves CSV top-to-bottom so index 0 is always the first
-    // trade of the day, not the one that just fired.
     const newest=closed[closed.length-1];
     const pnl=safe(newest?newest.net_pnl:0);
     pnl>0?_playWinBell():_playLossBell();
   }
   _lastTradeCount=closed.length;
-  // Auto-scroll to bottom so newest trade is always visible
-  const sc=document.querySelector('.trades-scroll');if(sc)sc.scrollTop=sc.scrollHeight;
-  // TOTALS FIX: exclude PARTIAL_1R/PARTIAL_2R from W/L/trade count.
-  // Partials are banking events on an open position -- not completed trades.
-  // Counting them inflates total_trades and distorts W/L. PnL dollars are
-  // still correct (real money banked) but the count header should only
-  // reflect fully-closed positions (TRAIL/SL/TP/BE/FC exits).
   const isPartial=t=>t.exitReason==='PARTIAL_1R'||t.exitReason==='PARTIAL_2R'||t.exitReason==='PARTIAL_TP'||t.exitReason==='PARTIAL_SL';
   const fullClosed=closed.filter(t=>!isPartial(t));
   const wins=fullClosed.filter(t=>safe(t.net_pnl)>0).length,losses=fullClosed.filter(t=>safe(t.net_pnl)<0).length,totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
-  if(cE)cE.textContent=fullClosed.length+' closed → '+wins+'W/'+losses+'L → '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
+  if(cE)cE.textContent=fullClosed.length+' closed \u2192 '+wins+'W/'+losses+'L \u2192 '+(totalNet>=0?'+':'-')+'$'+Math.abs(totalNet).toFixed(2);
   const now=Math.floor(Date.now()/1000);
-  el.innerHTML=[...trades].slice(-60).map(t=>{
+  // Newest first: reverse so latest trade is always at top -- no scroll needed
+  const rows=[...trades].reverse().slice(0,60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
     const win=net>0,loss=net<0,sc=t.side==='LONG'?'var(--green)':'var(--red)';
-    const reason=t.exitReason||'',result=isOpen?'⬤':reason==='TP_HIT'?'✓TP':reason==='SL_HIT'?'✗SL':reason==='TRAIL_HIT'||reason==='TRAIL_SL'?'✓TR':reason==='BE_HIT'?'✓BE':reason==='TIMEOUT'||reason==='MAX_HOLD_TIMEOUT'?'✗TO':reason==='PARTIAL_1R'||reason==='PARTIAL_TP'?'$P1':reason==='PARTIAL_2R'||reason==='PARTIAL_SL'?'$P2':'✓FC';
+    const reason=t.exitReason||'',result=isOpen?'\u25cf':reason==='TP_HIT'?'\u2713TP':reason==='SL_HIT'?'\u2717SL':reason==='TRAIL_HIT'||reason==='TRAIL_SL'?'\u2713TR':reason==='BE_HIT'?'\u2713BE':reason==='TIMEOUT'||reason==='MAX_HOLD_TIMEOUT'?'\u2717TO':reason==='PARTIAL_1R'||reason==='PARTIAL_TP'?'$P1':reason==='PARTIAL_2R'||reason==='PARTIAL_SL'?'$P2':'\u2713FC';
     const rc=isOpen?'var(--blue)':win?'var(--green)':loss?'var(--red)':'var(--t2)';
     const netC=win?'var(--green)':loss?'var(--red)':'var(--t2)';
     let heldStr='--';
-
     if(isOpen&&safe(t.entryTs)>0){const s=now-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
-
-
     else if(safe(t.entryTs)>0&&safe(t.exitTs)>0){const s=safe(t.exitTs)-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
     const rowBg=isOpen?'rgba(46,168,255,0.06)':win?'rgba(0,217,126,0.05)':loss?'rgba(255,51,85,0.05)':'';
-    // BUG FIX 2: gross column -- was (gross>=0?'+':'') now (gross>=0?'+':'-')
     const grossD=isOpen?'':(gross>=0?'+':'-')+'$'+Math.abs(gross).toFixed(2);
     const slipD=isOpen?'':slip>0?'-$'+slip.toFixed(2):'--';
-    // BUG FIX 3: net column -- was (net>=0?'+':'') now (net>=0?'+':'-')
     const netD=isOpen?'<span style="color:var(--t2);font-size:10px">live</span>':(net>=0?'+':'-')+'$'+Math.abs(net).toFixed(2);
     const tReg=t.regime||'';const tEng=t.engine||'';
     const regCol=tReg.includes('EXPANSION')||tReg.includes('TREND')?'var(--green)':tReg.includes('QUIET')?'var(--amber)':'var(--t2)';
-    const engBadge=tEng?`<span style="font-size:9px;color:var(--cyan);margin-left:3px">${tEng}</span>`:'';
-    const regimeCell=`<span style="color:${regCol};font-size:10px">${tReg||'--'}</span>${engBadge}`;
-    // Engine + reason combined cell
     const engName=(t.engine||'').replace('Engine','').replace('GoldFlow','GFlow').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag').replace('H1Swing','H1-SW').replace('H4Regime','H4-REG');
     const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_SL','TRAIL').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('MAX_HOLD_TIMEOUT','T/O').replace('BE_HIT','BE').replace('IMM_REVERSAL','IMM-REV').replace('PARTIAL_TP','P-TP').replace('PARTIAL_SL','P-SL').replace('PARTIAL_1R','P1-BANK').replace('PARTIAL_2R','P2-BANK').replace('STAGNATION','STAG');
     const engReasonCell=`<span style="color:var(--cyan);font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
@@ -1242,6 +1223,7 @@ function renderTrades(trades){
       <td style="font-family:'IBM Plex Mono',monospace;color:${netC};font-weight:900;font-size:14px;letter-spacing:-0.3px">${netD}</td>
     </tr>`;
   }).join('');
+  el.innerHTML=rows;
 }
 )OMEGA21"
 R"OMEGA22(
