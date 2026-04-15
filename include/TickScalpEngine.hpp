@@ -96,6 +96,13 @@ static constexpr double   TSE_P3_MIN_MOVE        = 0.15;   // min directional mo
 static constexpr double   TSE_P3_TP              = 1.00;
 static constexpr double   TSE_P3_SL              = 0.40;
 
+// BE and trail (profit locking)
+// P1/P2: move SL to breakeven when MFE >= TSE_BE_FRAC * TP
+// P3:    trail arms at TSE_P3_TRAIL_ARM pts MFE, trails TSE_P3_TRAIL_DIST pts
+static constexpr double   TSE_BE_FRAC            = 0.50;  // BE at 50% of TP distance
+static constexpr double   TSE_P3_TRAIL_ARM       = 0.50;  // arm trail at 0.5pt MFE
+static constexpr double   TSE_P3_TRAIL_DIST      = 0.30;  // trail 0.3pt behind MFE
+
 // Tick history size
 static constexpr int      TSE_HIST_SIZE          = 60;
 static constexpr int      TSE_DOM_HIST_SIZE       = 20;
@@ -116,6 +123,9 @@ struct TickScalpEngine {
         double  tp           = 0.0;
         double  size         = 0.0;
         double  mfe          = 0.0;
+        bool    be_done      = false;  // true after SL moved to entry
+        bool    trail_armed  = false;  // P3 only: trail engaged
+        double  trail_sl     = 0.0;    // P3 only: current trail SL
         int64_t entry_ts_ms  = 0;
         int     trade_id     = 0;
         char    pattern[16]  = {};
@@ -361,6 +371,9 @@ private:
         pos_.tp          = tp_px;
         pos_.size        = size;
         pos_.mfe         = 0.0;
+        pos_.be_done     = false;
+        pos_.trail_armed = false;
+        pos_.trail_sl    = sl_px;
         pos_.entry_ts_ms = now_ms;
         pos_.trade_id    = _trade_id;
         std::strncpy(pos_.pattern, pattern, sizeof(pos_.pattern) - 1);
@@ -368,6 +381,8 @@ private:
     }
 
     // ── Manage ────────────────────────────────────────────────────────────────
+    // P1/P2: fixed TP/SL + BE move at 50% of TP distance.
+    // P3:    fixed TP/SL + BE at 50% TP + trail arms at 0.5pt MFE (0.3pt dist).
     void _manage(double bid, double ask, double mid,
                  int64_t now_ms, CloseCallback on_close) noexcept
     {
@@ -375,18 +390,56 @@ private:
         if (move > pos_.mfe) pos_.mfe = move;
 
         const double eff_price = pos_.is_long ? bid : ask;
+        const double tp_dist   = std::fabs(pos_.tp - pos_.entry);
 
-        // TP
+        // ── BE move: P1/P2/P3 all get this ───────────────────────────────────
+        // Once MFE >= 50% of TP distance, move SL to entry (risk-free).
+        if (!pos_.be_done && tp_dist > 0.0 && pos_.mfe >= tp_dist * TSE_BE_FRAC) {
+            pos_.sl      = pos_.entry;  // SL to breakeven
+            pos_.trail_sl = pos_.entry; // sync trail SL
+            pos_.be_done = true;
+            printf("[TSE-BE] %s %s entry=%.2f sl->BE mfe=%.3f\n",
+                   pos_.pattern, pos_.is_long ? "LONG" : "SHORT",
+                   pos_.entry, pos_.mfe);
+            fflush(stdout);
+        }
+
+        // ── P3-only trail: arms at TSE_P3_TRAIL_ARM pts MFE ─────────────────
+        if (std::strncmp(pos_.pattern, "P3", 2) == 0) {
+            if (!pos_.trail_armed && pos_.mfe >= TSE_P3_TRAIL_ARM) {
+                pos_.trail_armed = true;
+                printf("[TSE-TRAIL-ARM] P3 %s mfe=%.3f\n",
+                       pos_.is_long ? "LONG" : "SHORT", pos_.mfe);
+                fflush(stdout);
+            }
+            if (pos_.trail_armed) {
+                const double new_trail = pos_.is_long
+                    ? (mid - TSE_P3_TRAIL_DIST)
+                    : (mid + TSE_P3_TRAIL_DIST);
+                // Ratchet: only move trail in profit direction, never past entry
+                if (pos_.is_long  && new_trail > pos_.trail_sl) pos_.trail_sl = new_trail;
+                if (!pos_.is_long && new_trail < pos_.trail_sl) pos_.trail_sl = new_trail;
+                // Trail SL overrides hard SL once it is better (further in profit)
+                if (pos_.is_long  && pos_.trail_sl > pos_.sl) pos_.sl = pos_.trail_sl;
+                if (!pos_.is_long && pos_.trail_sl < pos_.sl) pos_.sl = pos_.trail_sl;
+            }
+        }
+
+        // ── TP hit ────────────────────────────────────────────────────────────
         if (pos_.is_long ? (bid >= pos_.tp) : (ask <= pos_.tp)) {
             _close(eff_price, "TP_HIT", now_ms, on_close);
             return;
         }
-        // SL
-        if (pos_.is_long ? (bid <= pos_.sl) : (ask >= pos_.sl)) {
-            _close(eff_price, "SL_HIT", now_ms, on_close);
+        // ── SL / trail SL hit ─────────────────────────────────────────────────
+        const bool sl_hit = pos_.is_long ? (bid <= pos_.sl) : (ask >= pos_.sl);
+        if (sl_hit) {
+            const char* reason = pos_.trail_armed ? "TRAIL_SL"
+                               : pos_.be_done     ? "BE_HIT"
+                               :                    "SL_HIT";
+            _close(eff_price, reason, now_ms, on_close);
             return;
         }
-        // Timeout: 2 minutes
+        // ── Timeout: 2 minutes ────────────────────────────────────────────────
         if (now_ms - pos_.entry_ts_ms > 120000LL) {
             _close(eff_price, "TIMEOUT", now_ms, on_close);
             return;
