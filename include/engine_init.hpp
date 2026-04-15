@@ -294,13 +294,13 @@ static void init_engines(const std::string& cfg_path)
     //     EMA50 half-life = 17.3 bars = 260 min = 4.3 hours
     //
     //   PULLBACK_BAND_PCT: the critical setting.
-    //   Old value (0.08%) = ±3.7pts at $4700. With M15 EMA50 representing
+    //   Old value (0.08%) = ?3.7pts at $4700. With M15 EMA50 representing
     //   4.3h weighted average, price is typically 10-30pts from EMA50 during
     //   an active trend. 0.08% = never fires. Must be wide enough to detect
     //   genuine pullbacks TO the M15 EMA50 level.
-    //   0.50% = ±23.5pts at $4700. Fires when price is within ~24pts of
+    //   0.50% = ?23.5pts at $4700. Fires when price is within ~24pts of
     //   the M15 EMA50 -- correct for pullback-to-slow-average strategy.
-    //   Upper bound: 1.0% = ±47pts -- too loose, fires mid-trend constantly.
+    //   Upper bound: 1.0% = ?47pts -- too loose, fires mid-trend constantly.
     //
     //   COOLDOWN_SEC: M15 trade = swing trade, minimum 1 M15 bar (15min)
     //   between signals. 900s (15min) = 1 full M15 bar -- prevents rapid
@@ -311,7 +311,7 @@ static void init_engines(const std::string& cfg_path)
     //   Leave at class defaults (2.0x arm, 1.0x dist, 1.0x BE).
     //
     //   BE_ATR_MULT: lock BE at 1x M15 ATR (~5pts). Unchanged -- good.
-    g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.50;  // M15: ±23.5pts at $4700. Old 0.08% (±3.7pts) never fired.
+    g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.50;  // M15: ?23.5pts at $4700. Old 0.08% (?3.7pts) never fired.
     g_trend_pb_gold.COOLDOWN_SEC       = 60;    // 60s cooldown -- reduced from 900s (15min was insane, missed 100pt moves)
     g_trend_pb_gold.MIN_EMA_SEP        = 5.0;   // gold: 5pt EMA9-EMA50 separation = real trend
     g_trend_pb_gold.H4_GATE_ENABLED    = true;  // gate M15 entries on H4 trend direction
@@ -330,8 +330,8 @@ static void init_engines(const std::string& cfg_path)
     // Improvement 7: news SL widening
     g_trend_pb_gold.NEWS_WARN_SECS      = 900;   // 15min before event
     g_trend_pb_gold.NEWS_SL_MULT        = 1.5;
-    // Widen pullback band: 0.15% -> 0.50% (±23pts at 4620)
-    // Default 0.15% = ±6.9pts. On a $20 trending move price is 20pts from EMA50
+    // Widen pullback band: 0.15% -> 0.50% (?23pts at 4620)
+    // Default 0.15% = ?6.9pts. On a $20 trending move price is 20pts from EMA50
     // and never enters the band -- engine silent on all clean trends.
     // 0.50% allows entry when price is trending away from EMA50 but still directional.
     g_trend_pb_gold.PULLBACK_BAND_PCT   = 0.50;
@@ -1520,7 +1520,7 @@ static void init_engines(const std::string& cfg_path)
                       << " sl_mult=" << g_rsi_reversal.SL_ATR_MULT << "x)\n";
             std::cout.flush();
 
-            // ── PDH/PDL Reversion Engine ────────────────────────────────────
+            // -- PDH/PDL Reversion Engine ------------------------------------
             // Research: 2yr/111M tick backtest proves mean reversion inside
             // daily range is the only statistically significant intraday edge.
             // CFE (14% WR -$27k) and MME (momentum continuation) disabled.
