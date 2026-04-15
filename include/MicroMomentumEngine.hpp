@@ -5,7 +5,7 @@
 //
 // SIGNAL:
 //   rsi_delta = RSI_now - RSI_N_ticks_ago  (rolling window, level-agnostic)
-//   disp      = mid - anchor               (EWM anchor α=0.15)
+//   disp      = mid - anchor               (EWM anchor ?=0.15)
 //   l2_imb    = gold_l2_imbalance          (bid_vol/(bid+ask), 0..1)
 //   book_slope= gold_book_slope            (weighted directional pressure)
 //   vacuum    = gold_vacuum_ask/bid        (thin side = clear path)
@@ -24,7 +24,7 @@
 //         exactly when RSI delta is large -- the two gates are anti-correlated and
 //         combining them silenced the engine. RSI delta alone is the signal.
 //
-//   VACUUM BONUS: vacuum on trade side → lot size scaled up (clear path confirmed)
+//   VACUUM BONUS: vacuum on trade side -> lot size scaled up (clear path confirmed)
 //
 //   BORDERLINE RSI (delta 8-20): also require book_slope to agree with direction.
 //   Raised from 14 to 20: rsi_delta 8-14 is the normal swing range, not borderline.
@@ -51,7 +51,7 @@ namespace omega {
 
 class MicroMomentumEngine {
 public:
-    // ── Parameters ────────────────────────────────────────────────────────────
+    // -- Parameters ------------------------------------------------------------
     double ENTRY_DISP_PTS    = 1.0;   // retained for config compat -- NOT used as hard gate
     double RSI_DELTA_MIN     = 15.0;  // raised 8->15: 8 fired on noise, need genuine momentum surge
     int    RSI_DELTA_WINDOW  = 10;    // ticks for RSI delta
@@ -67,7 +67,7 @@ public:
     double BORDERLINE_DELTA  = 20.0;  // raised 14->20: rsi_delta 8-14 is normal, not borderline
     double BOOK_SLOPE_MIN    = 0.1;   // min book_slope for borderline entries
     double MAX_SPREAD_PTS    = 2.5;
-    // ── Chop filters ──────────────────────────────────────────────────────────
+    // -- Chop filters ----------------------------------------------------------
     // RSI_LEVEL_LONG/SHORT: RSI must be above/below mid (50) to confirm direction.
     // Prevents entries when RSI oscillates around 50 (chop). On the chart RSI
     // swings 48->68->50->62 -- without this gate every swing fires an entry.
@@ -85,7 +85,7 @@ public:
     bool   enabled           = true;
     bool   shadow_mode       = true;
 
-    // ── Position ──────────────────────────────────────────────────────────────
+    // -- Position --------------------------------------------------------------
     struct Position {
         bool    active       = false;
         bool    is_long      = false;
@@ -115,7 +115,7 @@ public:
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
-    // ── Main tick ──────────────────────────────────────────────────────────────
+    // -- Main tick --------------------------------------------------------------
     void on_tick(double bid, double ask,
                  int session_slot, int64_t now_ms,
                  // DOM data passed from tick_gold
@@ -143,7 +143,7 @@ public:
             return;
         }
 
-        // ── Periodic diagnostic log (every 30s) -- shows warmup/signal state ──
+        // -- Periodic diagnostic log (every 30s) -- shows warmup/signal state --
         {
             if (now_s - m_last_diag_log >= 30) {
                 m_last_diag_log = now_s;
@@ -167,7 +167,7 @@ public:
             }
         }
 
-        // ── Entry gates ───────────────────────────────────────────────────────
+        // -- Entry gates -------------------------------------------------------
         if (now_s < m_cooldown_until)                     return;
         if (m_tick_count < WARMUP_TICKS)                  return;
         if (spread > MAX_SPREAD_PTS)                      return;
@@ -183,7 +183,7 @@ public:
         const double rsi_now   = m_tick_rsi;
         const double rsi_delta = rsi_now - m_rsi_window.front();
 
-        // ── RSI delta signal (primary gate) ───────────────────────────────────
+        // -- RSI delta signal (primary gate) -----------------------------------
         // ENTRY_DISP_PTS intentionally NOT used here as a hard gate.
         // The EWM anchor (alpha=0.15) chases price at ~7-tick half-life, meaning
         // disp is near zero precisely when rsi_delta is large -- they are
@@ -197,7 +197,7 @@ public:
             return;
         }
 
-        // ── RSI level gate (chop filter) ──────────────────────────────────────
+        // -- RSI level gate (chop filter) --------------------------------------
         // RSI must be on the correct side of mid to confirm directional momentum.
         // In chop, RSI oscillates around 50 -- both LONG and SHORT signals fire
         // every few ticks producing a stream of losses. RSI > 52 = genuine upside
@@ -213,7 +213,7 @@ public:
             return;
         }
 
-        // ── Price move confirmation (chop filter) ─────────────────────────────
+        // -- Price move confirmation (chop filter) -----------------------------
         // Require price to have actually moved PRICE_MOVE_MIN pts in the signal
         // direction over the RSI window. RSI can swing without price following
         // (Wilder smoothing amplifies small moves). If price hasn't moved, it's
@@ -230,7 +230,7 @@ public:
             }
         }
 
-        // ── DOM filter ────────────────────────────────────────────────────────
+        // -- DOM filter --------------------------------------------------------
         // Only apply DOM filter when L2 data is live and real
         if (l2_real) {
             if (rsi_long) {
@@ -301,7 +301,7 @@ public:
             }
         }
 
-        // ── Entry ─────────────────────────────────────────────────────────────
+        // -- Entry -------------------------------------------------------------
         const bool   is_long  = rsi_long;
         const double entry    = is_long ? ask : bid;
         const double sl_pts   = std::max(m_tick_atr * SL_ATR_MULT, spread * 2.0);
@@ -348,7 +348,7 @@ public:
     double anchor_disp(double mid) const noexcept { return mid - m_anchor; }
 
 private:
-    // ── RSI (Wilder 14) ───────────────────────────────────────────────────────
+    // -- RSI (Wilder 14) -------------------------------------------------------
     double  m_tick_rsi      = 50.0;
     double  m_rsi_prev      = 50.0;
     double  m_rsi_avg_gain  = 0.0;
@@ -362,12 +362,12 @@ private:
     std::deque<double> m_rsi_window;
     std::deque<double> m_price_window;  // mid prices over RSI_DELTA_WINDOW for price move confirmation
 
-    // ── Price anchor (EWM α=0.15) ─────────────────────────────────────────────
+    // -- Price anchor (EWM ?=0.15) ---------------------------------------------
     double  m_anchor      = 0.0;
     bool    m_anchor_init = false;
     static constexpr double ANCHOR_ALPHA = 0.15;
 
-    // ── Tick ATR ──────────────────────────────────────────────────────────────
+    // -- Tick ATR --------------------------------------------------------------
     double  m_tick_atr     = 1.0;
     double  m_atr_last_mid = 0.0;
     bool    m_atr_init     = false;
@@ -379,7 +379,7 @@ private:
     int64_t m_last_diag_log  = 0;
     int     m_trade_id       = 0;
 
-    // ── Indicator update ──────────────────────────────────────────────────────
+    // -- Indicator update ------------------------------------------------------
     void _update(double mid, double spread) noexcept {
         ++m_tick_count;
 
@@ -435,7 +435,7 @@ private:
             m_price_window.pop_front();
     }
 
-    // ── Block diagnostic ──────────────────────────────────────────────────────
+    // -- Block diagnostic ------------------------------------------------------
     void _log_block(int64_t now_s, double rsi, double delta, double disp,
                     double spread, double l2, const char* reason,
                     double slope, bool, bool) noexcept
@@ -449,7 +449,7 @@ private:
         fflush(stdout);
     }
 
-    // ── Protection ladder ─────────────────────────────────────────────────────
+    // -- Protection ladder -----------------------------------------------------
     void _manage(double bid, double ask, double mid,
                  int64_t now_s, CloseCallback on_close) noexcept
     {
@@ -512,7 +512,7 @@ private:
         }
     }
 
-    // ── Close ─────────────────────────────────────────────────────────────────
+    // -- Close -----------------------------------------------------------------
     void _close(double exit_px, const char* reason,
                 int64_t now_s, CloseCallback on_close) noexcept
     {
