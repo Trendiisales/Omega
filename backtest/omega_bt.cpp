@@ -165,6 +165,11 @@ struct SharedInd {
     int trend_state=0; // +1/-1/0
     // Session slot
     int session_slot=0;
+    // PDH/PDL daily range
+    double pdh=0,pdl=0;        // previous day high/low
+    double today_hi=0,today_lo=1e9;
+    int    pdhl_day=-1;
+    bool   inside_range=true;  // price inside PDH/PDL +/-1pt
     // Timestamps
     int64_t last_ms=0,prev_ms=0;
     // Gap tracking
@@ -250,6 +255,19 @@ struct SharedInd {
         else if(hhmm>=1900&&hhmm<2100)session_slot=5;
         else if(hhmm>=100 &&hhmm<600 )session_slot=6;
         else session_slot=0;
+
+        // PDH/PDL daily range tracking
+        const int day=(int)(ts/86'400'000LL);
+        if(day!=pdhl_day){
+            if(pdhl_day>=0){ pdh=today_hi; pdl=(today_lo<1e8?today_lo:0.0); }
+            today_hi=mid; today_lo=mid; pdhl_day=day;
+        } else {
+            if(mid>today_hi)today_hi=mid;
+            if(mid<today_lo)today_lo=mid;
+        }
+        inside_range=(pdh>0&&pdl>0)
+            ?(mid<=pdh+1.0&&mid>=pdl-1.0)
+            :true;
     }
 
     bool expansion_regime() const noexcept {
@@ -415,6 +433,23 @@ struct HBERunner {
     }
 };
 
+struct PDHLRunner {
+    omega::PDHLReversionEngine eng;
+    PDHLRunner(){ eng.shadow_mode=false; }
+    void tick(const SharedInd& ind,double bid,double ask,int64_t ts){
+        auto cb=make_cb("PDHL");
+        eng.on_tick(bid,ask,ts,
+                    ind.pdh,ind.pdl,
+                    ind.atr,
+                    0.5,   // l2_imbalance: no real L2 in CSV backtest
+                    0,0,   // depth_bid, depth_ask
+                    false, // l2_real=false: use drift proxy
+                    ind.ewm_drift,
+                    ind.session_slot,
+                    cb);
+    }
+};
+
 // =============================================================================
 // Date parser
 // =============================================================================
@@ -521,7 +556,7 @@ int main(int argc,char** argv){
     int64_t s0=0,s1=0;
     bool diag=false;
     // Engine enable flags
-    bool en_cfe=true,en_gfe=true,en_mce=true,en_rre=true,en_mme=true,en_dpe=true,en_hbe=true;
+    bool en_cfe=true,en_gfe=true,en_mce=true,en_rre=true,en_mme=true,en_dpe=true,en_hbe=true,en_pdhl=true;
 
     for(int i=2;i<argc;++i){
         if(!strcmp(argv[i],"--start")&&i+1<argc) s0=parse_date(argv[++i]);
@@ -535,8 +570,8 @@ int main(int argc,char** argv){
             en_cfe=!!strstr(e,"cfe");en_gfe=!!strstr(e,"gfe");
             en_mce=!!strstr(e,"mce");en_rre=!!strstr(e,"rre");
             en_mme=!!strstr(e,"mme");en_dpe=!!strstr(e,"dpe");
-            en_hbe=!!strstr(e,"hbe");
-            if(!!strstr(e,"all")){en_cfe=en_gfe=en_mce=en_rre=en_mme=en_dpe=en_hbe=true;}
+            en_hbe=!!strstr(e,"hbe");en_pdhl=!!strstr(e,"pdhl");
+            if(!!strstr(e,"all")){en_cfe=en_gfe=en_mce=en_rre=en_mme=en_dpe=en_hbe=en_pdhl=true;}
         }
     }
 
@@ -550,9 +585,10 @@ int main(int argc,char** argv){
     // Warmup: skip first 5000 ticks worth of time for indicator warmup
     g_warmup_ts=ticks.size()>5000?ticks[5000].ts_ms:0;
 
-    printf("[OMEGA_BT] Engines: %s%s%s%s%s%s%s\n",
+    printf("[OMEGA_BT] Engines: %s%s%s%s%s%s%s%s\n",
            en_cfe?"CFE ":"",en_gfe?"GFE ":"",en_mce?"MCE ":"",
-           en_rre?"RRE ":"",en_mme?"MME ":"",en_dpe?"DPE ":"",en_hbe?"HBE ":"");
+           en_rre?"RRE ":"",en_mme?"MME ":"",en_dpe?"DPE ":"",en_hbe?"HBE ":"",
+           en_pdhl?"PDHL ":"");
     printf("[OMEGA_BT] Running %zu ticks...\n",ticks.size());
 
     // Suppress engine diagnostic stdout during tick loop
@@ -568,6 +604,7 @@ int main(int argc,char** argv){
     // Instantiate engines
     CFERunner cfe; GFERunner gfe; MCERunner mce;
     RRERunner rre; MMERunner mme; DPERunner dpe; HBERunner hbe;
+    PDHLRunner pdhl;
 
     SharedInd ind;
     int64_t diag_next=0;
@@ -585,6 +622,7 @@ int main(int argc,char** argv){
         if(en_mme) mme.tick(ind,tk.bid,tk.ask,tk.ts_ms);
         if(en_dpe) dpe.tick(ind,tk.bid,tk.ask,tk.ts_ms);
         if(en_hbe) hbe.tick(ind,tk.bid,tk.ask,tk.ts_ms);
+        if(en_pdhl) pdhl.tick(ind,tk.bid,tk.ask,tk.ts_ms);
 
         if(diag&&tk.ts_ms>=diag_next){
             diag_next=tk.ts_ms+DIAG_IV;
