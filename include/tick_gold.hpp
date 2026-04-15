@@ -4381,6 +4381,18 @@ static void on_tick_gold(
         );
     }
 
+    // -- TickScalpEngine -- fully independent, does NOT check gold_any_open ----
+    // Runs own position, own risk. Shadow mode ON. Slots 1-5 only (no Asia).
+    g_tick_scalp.on_tick(
+        bid, ask, now_ms_g,
+        g_l2_gold.micro_edge.load(std::memory_order_relaxed),
+        g_l2_gold.fresh(now_ms_g),
+        g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed),
+        g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed),
+        static_cast<double>(g_gold_stack.ewm_drift()),
+        gold_session_slot,
+        [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); });
+
 }
 
 
