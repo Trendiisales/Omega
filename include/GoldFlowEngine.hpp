@@ -81,7 +81,7 @@ static constexpr double GFE_DRIFT_FALLBACK_THRESHOLD = 1.5;  // raised back 0.5-
 // 20 ticks (~2s London) -- sufficient for real directional moves.
 // The chop guard (drift range > 4.0) blocks oscillating markets regardless.
 // 40 was too long for slow grinding trends where drift is consistent but small.
-static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 12;   // lowered 20→12: normal $20-40 moves complete in 3-6min; 20-tick requirement fires mid-move. 12 ticks (70%=8 aligned) still real confirmation without missing entry.
+static constexpr int    GFE_DRIFT_PERSIST_TICKS      = 12;   // lowered 20->12: normal $20-40 moves complete in 3-6min; 20-tick requirement fires mid-move. 12 ticks (70%=8 aligned) still real confirmation without missing entry.
 static constexpr int    GFE_ATR_PERIOD        = 100;   // ATR lookback ticks -- raised 20?100:
 static constexpr int    GFE_ATR_RANGE_WINDOW  = 100;   // raised 20?100: 20 ticks = 2s window at London
                                                         // = pure spread noise ($0.2-0.5pts), not real ATR.
@@ -118,7 +118,7 @@ static constexpr double GFE_PARTIAL_EXIT_R    = 1.0;   // stair step 1 trigger (
 static constexpr double GFE_PARTIAL_EXIT_FRAC = 0.50;  // fraction to close at partial exit trigger
 static constexpr double GFE_STAGE2_ATR_MULT   = 1.0;   // stair step 1 (same as BE)
 static constexpr double GFE_STAGE3_ATR_MULT   = 2.0;   // stair step 2
-static constexpr double GFE_STAGE4_ATR_MULT   = 3.0;   // lowered 6.0→3.0: tight trail arms at 3xATR on normal moves. Velocity path uses 6xATR inline in manage_position (unchanged).
+static constexpr double GFE_STAGE4_ATR_MULT   = 3.0;   // lowered 6.0->3.0: tight trail arms at 3xATR on normal moves. Velocity path uses 6xATR inline in manage_position (unchanged).
 static constexpr double GFE_MAX_SPREAD        = 2.5;   // pts -- London gold spread $1.50-$4.00; old 0.6 blocked all entries
 static constexpr int    GFE_MIN_HOLD_MS       = 5000;   // 5s minimum hold
 #ifndef GFE_MAX_HOLD_OVERRIDE
@@ -510,7 +510,7 @@ struct GoldFlowEngine {
             // Data: 2yr backtest shows drift threshold fires on signal indistinguishable
             // from spread noise at high gold prices, generating TIME_STOP-dominated entries.
             // Fix: threshold = max(GFE_DRIFT_FALLBACK_THRESHOLD, 0.18 * m_atr)
-            // Lowered coefficient 0.3→0.18 (2026-04-06): targeting normal $20-40 London moves.
+            // Lowered coefficient 0.3->0.18 (2026-04-06): targeting normal $20-40 London moves.
             // A $25-30 trending move sustains drift of 0.8-1.2pt; at 0.3*ATR(5pt)=1.5pt
             // those were being blocked entirely. 0.18*ATR(5pt)=0.9pt -- catches real moves.
             // Chop guard (mixed-sign drift window) still blocks oscillating markets.
@@ -928,7 +928,7 @@ struct GoldFlowEngine {
                 // drift direction: positive = bullish drift (bearish drift = negative).
                 // long_signal going LONG while drift<0 = reversal entry, not continuation.
                 // RSI gate: 38/62 = ATR-adaptive reversal zone (same formula as rsi_crash_lo/hi
-                // in tick_gold.hpp: 50 ± 6*clamp(ATR/5, 0.5, 3.0)).
+                // in tick_gold.hpp: 50 ? 6*clamp(ATR/5, 0.5, 3.0)).
                 // At ATR=5: lo=44 hi=56. Relaxed here to 38/62 to catch mid-range reversals
                 // that rsi_crash_lo/hi misses (those thresholds use ATR-scale, this is fixed).
                 // Only bypass EXHAUST BLOCK -- all other gates (VWAP, trend, score) still apply.
@@ -1245,7 +1245,7 @@ struct GoldFlowEngine {
     // Does not override live bar-derived ATR.
     void set_atr_override(double atr) noexcept {
         if (atr <= 0.0) return;
-        if (m_atr > 5.0) return;  // live ATR already better than floor — don't overwrite
+        if (m_atr > 5.0) return;  // live ATR already better than floor -- don't overwrite
         m_atr     = std::max(GFE_ATR_MIN, atr);
         m_atr_ewm = m_atr;
     }
@@ -2504,7 +2504,7 @@ private:
                     // CRITICAL: ratchet SL must never be ABOVE current price for longs
                     // or BELOW current price for shorts. If locked_pts places SL beyond
                     // current price, the trade exits on the very next tick.
-                    // Evidence: new_sl=4714.20 when price=4713.43 → immediate exit at 9s.
+                    // Evidence: new_sl=4714.20 when price=4713.43 -> immediate exit at 9s.
                     // Fix: cap ratchet_sl to current price minus a minimum buffer (0.5pt).
                     // This preserves the locked profit intent while preventing instant exit.
                     static constexpr double RATCHET_PRICE_BUFFER = 0.5; // pts below/above mid
