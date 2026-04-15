@@ -140,6 +140,35 @@ static void init_engines(const std::string& cfg_path)
            g_pullback_cont.shadow_mode ? "true" : "false",
            g_pullback_cont.MOVE_MIN, g_pullback_cont.PB_FRAC * 100.0);
 
+    // ?? PullbackContEngine PREMIUM -- 30pt h07 only, 2x size, tight trail ????????
+    // Backtest: LB=600s MOVE=30pt PB=20% h07 HOLD=900s: N=128 WR=100% avg_net=+22.46
+    //           LB=900s MOVE=20pt PB=40% h07 HOLD=900s: N=898 WR=100% avg_net=+11.67
+    // Aggressive: wider size, tight 2pt trail to lock profits fast.
+    // Session: h07 ONLY (London open -- strongest signal).
+    g_pullback_prem.enabled       = true;
+    g_pullback_prem.shadow_mode   = true;   // SHADOW until validated
+    g_pullback_prem.MOVE_MIN      = 30.0;   // require 30pt move (higher bar)
+    g_pullback_prem.PB_FRAC       = 0.20;   // 20% pullback = 6pts on 30pt move
+    g_pullback_prem.LOOKBACK_S    = 600;    // 10min lookback
+    g_pullback_prem.HOLD_S        = 900;    // max 15min hold
+    g_pullback_prem.SL_PTS        = 8.0;    // wider SL: 30pt moves have more noise
+    g_pullback_prem.TRAIL_PTS     = 2.0;    // TIGHT trail: arms at 2pts, locks fast
+    g_pullback_prem.BASE_RISK_USD = 160.0;  // 2x risk: high-confidence signal
+    g_pullback_prem.COOLDOWN_MS   = 300000; // 5min cooldown (30pt moves are rarer)
+    g_pullback_prem.on_close = [](double exit_px, bool is_long, double size, const std::string& reason) {
+        if (g_pullback_prem.shadow_mode) return;
+        send_live_order("XAUUSD", is_long, size, exit_px);
+        printf("[PCE-P] Live close sent %s %.3f @ %.2f reason=%s\n",
+               is_long ? "LONG" : "SHORT", size, exit_px, reason.c_str());
+        fflush(stdout);
+    };
+    g_pullback_prem.on_trade_record = [](const omega::TradeRecord& tr) {
+        handle_closed_trade(tr);
+    };
+    printf("[PCE-P] PullbackCont PREMIUM ARMED (shadow_mode=%s) MOVE>=%.0fpt PB=%.0f%% h07 only\n",
+           g_pullback_prem.shadow_mode ? "true" : "false",
+           g_pullback_prem.MOVE_MIN, g_pullback_prem.PB_FRAC * 100.0);
+
     printf("[MCE] MacroCrashEngine ARMED (shadow_mode=%s) ATR>%.0f vol>%.1fx drift>%.0f\n",
            g_macro_crash.shadow_mode ? "true" : "false",
            g_macro_crash.ATR_THRESHOLD, g_macro_crash.VOL_RATIO_MIN, g_macro_crash.DRIFT_MIN);
