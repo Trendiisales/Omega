@@ -59,8 +59,8 @@ public:
     double ATR_NORMAL       = 5.0;
     double VOL_RATIO_MIN    = 2.5;   // original: high bar = 69% WR on 13 trades
     double DRIFT_MIN        = 5.0;   // original: 5pt = confirmed macro move, not noise
-    // NOTE: MCE edge is Asia/early London only (22-12 UTC). Session gate below
-    // blocks 12-20 UTC where lowered thresholds lost -$1071 in 2yr backtest.
+    // NOTE: MCE fires on genuine macro impulse (ATR>6, drift>5) in ALL sessions.
+    // No session gate -- tariff crash Apr 2025 was 13:00 UTC, session gate missed it.
     double ATR_SCALE_MAX    = 1.0;   // capped 6->1: 6x scaling produced $480 risk per trade; system max is $80
     double BASE_RISK_USD    = 80.0;
     double MAX_LOT          = 0.20;  // capped 0.50->0.20: matches CFE/DomPersist hard ceiling
