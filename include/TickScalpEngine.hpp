@@ -106,6 +106,11 @@ static constexpr double   TSE_BE_FRAC            = 0.50;  // BE at 50% of TP dis
 static constexpr double   TSE_P3_TRAIL_ARM       = 0.50;  // arm trail at 0.5pt MFE
 static constexpr double   TSE_P3_TRAIL_DIST      = 0.30;  // trail 0.3pt behind MFE
 
+// RSI slope tracker
+static constexpr int      TSE_RSI_SLOPE_N        = 8;    // ticks for slope EMA
+static constexpr double   TSE_RSI_SLOPE_ALPHA    = 2.0 / (TSE_RSI_SLOPE_N + 1.0);
+static constexpr double   TSE_RSI_SLOPE_THRESH   = 0.10; // min |slope EMA| to confirm trend direction
+
 // Tick history size
 static constexpr int      TSE_HIST_SIZE          = 60;
 static constexpr int      TSE_DOM_HIST_SIZE       = 20;
@@ -180,6 +185,20 @@ struct TickScalpEngine {
             return;
         }
 
+        // RSI slope tracker: EMA of bar_rsi changes
+        // Positive slope = RSI trending up (bullish). Negative = trending down (bearish).
+        if (bar_rsi > 1.0) {
+            if (!_rsi_warmed) {
+                _rsi_prev      = bar_rsi;
+                _rsi_slope_ema = 0.0;
+                _rsi_warmed    = true;
+            } else if (bar_rsi != _rsi_prev) {
+                const double slope = bar_rsi - _rsi_prev;
+                _rsi_slope_ema = slope * TSE_RSI_SLOPE_ALPHA + _rsi_slope_ema * (1.0 - TSE_RSI_SLOPE_ALPHA);
+                _rsi_prev = bar_rsi;
+            }
+        }
+
         // ── Entry guards ─────────────────────────────────────────────────────
         // Heartbeat: log TSE state every 60s so it's visible in logs
         {
@@ -189,6 +208,8 @@ struct TickScalpEngine {
                 std::cout << "[TSE-ALIVE] slot=" << session_slot
                           << " atr=" << std::fixed << std::setprecision(2) << atr
                           << " vel_base=" << std::setprecision(1) << _vel_baseline
+                          << " rsi=" << std::setprecision(1) << bar_rsi
+                          << " rsi_slope=" << std::setprecision(3) << _rsi_slope_ema
                           << " spread=" << std::setprecision(2) << spread
                           << " daily=$" << _daily_pnl
                           << " shadow=" << (shadow_mode ? 1 : 0)
@@ -259,6 +280,11 @@ private:
     int     _ticks_this_window   = 0;
     int64_t _vel_window_start_ms = 0;
 
+    // RSI slope tracker
+    double  _rsi_prev      = 0.0;
+    double  _rsi_slope_ema = 0.0;
+    bool    _rsi_warmed    = false;
+
     double  _daily_pnl     = 0.0;
     int64_t _daily_day     = 0;
     int64_t _last_exit_ms  = 0;
@@ -286,27 +312,30 @@ private:
         bool burst_dn = (dn >= TSE_P1_TICKS - 1 && up == 0);
         if (!burst_up && !burst_dn) return;
 
-        // RSI direction gate: burst must agree with RSI trend.
-        // burst_up requires RSI > 50 (trending up). burst_dn requires RSI < 50 (trending down).
-        // Prevents entering a LONG burst when RSI is falling, and vice versa.
-        // bar_rsi=0 means not yet warmed -- skip gate.
-        if (bar_rsi > 1.0) {
-            if (burst_up && bar_rsi < 50.0) {
+        // RSI slope direction gate: burst must agree with RSI slope trend.
+        // Uses EMA of RSI bar-to-bar changes -- positive = RSI trending up (bullish),
+        // negative = RSI trending down (bearish).
+        // A P1 LONG burst is only valid when RSI slope is rising.
+        // A P1 SHORT burst is only valid when RSI slope is falling.
+        if (_rsi_warmed) {
+            if (burst_up && _rsi_slope_ema < -TSE_RSI_SLOPE_THRESH) {
                 static int64_t s_rsi_log = 0;
                 if (now_ms - s_rsi_log > 10000) {
                     s_rsi_log = now_ms;
-                    std::cout << "[TSE-RSI-BLOCK] P1 LONG blocked: burst_up but rsi="
-                              << std::fixed << std::setprecision(1) << bar_rsi << " < 50\n";
+                    std::cout << "[TSE-RSI-BLOCK] P1 LONG blocked: burst_up but rsi_slope="
+                              << std::fixed << std::setprecision(3) << _rsi_slope_ema
+                              << " (RSI falling)\n";
                     std::cout.flush();
                 }
                 return;
             }
-            if (burst_dn && bar_rsi > 50.0) {
+            if (burst_dn && _rsi_slope_ema > TSE_RSI_SLOPE_THRESH) {
                 static int64_t s_rsi_log2 = 0;
                 if (now_ms - s_rsi_log2 > 10000) {
                     s_rsi_log2 = now_ms;
-                    std::cout << "[TSE-RSI-BLOCK] P1 SHORT blocked: burst_dn but rsi="
-                              << std::fixed << std::setprecision(1) << bar_rsi << " > 50\n";
+                    std::cout << "[TSE-RSI-BLOCK] P1 SHORT blocked: burst_dn but rsi_slope="
+                              << std::fixed << std::setprecision(3) << _rsi_slope_ema
+                              << " (RSI rising)\n";
                     std::cout.flush();
                 }
                 return;
