@@ -300,35 +300,85 @@ int main(int argc,char** argv){
         };
 
         // ---- A: Momentum continuation ----
+        // Enter IN DIRECTION of move while it's happening:
+        // Require short-term (60s) move > threshold AND same direction over longer window
         {
-            double m15=back_mid(0,900000); if(m15>0){double mv=mid-m15;
-                if(fabs(mv)>=20&&hour==7) enter(0,mv>0,15,8);}
-            double m15b=back_mid(1,900000); if(m15b>0){double mv=mid-m15b;
-                if(fabs(mv)>=20&&(hour==13||hour==14)) enter(1,mv>0,15,8);}
-            double m30=back_mid(2,30000); if(m30>0){double mv=mid-m30;
-                if(fabs(mv)>=8&&hour==7) enter(2,mv>0,6,3);}
-            double m5=back_mid(3,300000); if(m5>0){double mv=mid-m5;
-                if(fabs(mv)>=10&&hour==7) enter(3,mv>0,8,4);}
+            // A1: 60s move>3pt AND 15min move>8pt same dir, h07 -- enter continuation
+            double s60=back_mid(0,60000); double l15=back_mid(0,900000);
+            if(s60>0&&l15>0){
+                double mv_s=mid-s60, mv_l=mid-l15;
+                if(fabs(mv_s)>=3&&fabs(mv_l)>=8&&
+                   ((mv_s>0&&mv_l>0)||(mv_s<0&&mv_l<0))&&hour==7)
+                    enter(0,mv_s>0,8,4);
+            }
+            // A2: same for h13-14
+            double s60b=back_mid(1,60000); double l15b=back_mid(1,900000);
+            if(s60b>0&&l15b>0){
+                double mv_s=mid-s60b, mv_l=mid-l15b;
+                if(fabs(mv_s)>=3&&fabs(mv_l)>=8&&
+                   ((mv_s>0&&mv_l>0)||(mv_s<0&&mv_l<0))&&(hour==13||hour==14))
+                    enter(1,mv_s>0,8,4);
+            }
+            // A3: 30s move>5pt AND 5min same dir, h07
+            double s30=back_mid(2,30000); double l5=back_mid(2,300000);
+            if(s30>0&&l5>0){
+                double mv_s=mid-s30, mv_l=mid-l5;
+                if(fabs(mv_s)>=5&&fabs(mv_l)>=8&&
+                   ((mv_s>0&&mv_l>0)||(mv_s<0&&mv_l<0))&&hour==7)
+                    enter(2,mv_s>0,6,3);
+            }
+            // A4: 60s move>3 AND 5min same dir, h07 (lower threshold)
+            double s60c=back_mid(3,60000); double l5b=back_mid(3,300000);
+            if(s60c>0&&l5b>0){
+                double mv_s=mid-s60c, mv_l=mid-l5b;
+                if(fabs(mv_s)>=3&&fabs(mv_l)>=5&&
+                   ((mv_s>0&&mv_l>0)||(mv_s<0&&mv_l<0))&&hour==7)
+                    enter(3,mv_s>0,6,3);
+            }
         }
 
         // ---- B: Mean reversion (AGAINST prior move) ----
+        // Fade exhausted moves: require large move over medium window AND
+        // short-term (30s) move is SLOWING or reversing
         {
-            double m30=back_mid(4,30000); if(m30>0){double mv=mid-m30;
-                if(fabs(mv)>=8&&(hour<=3)) enter(4,mv<0,8,4);} // revert: mv>0 -> SHORT
-            double m30b=back_mid(5,30000); if(m30b>0){double mv=mid-m30b;
-                if(fabs(mv)>=8&&(hour==22||hour==23)) enter(5,mv<0,8,4);}
-            double m30c=back_mid(6,30000); if(m30c>0){double mv=mid-m30c;
-                if(fabs(mv)>=6&&(hour==8||hour==9)) enter(6,mv<0,6,3);}
-            double m15c=back_mid(7,900000); if(m15c>0){double mv=mid-m15c;
-                if(fabs(mv)>=20&&(hour==2||hour==3)) enter(7,mv<0,15,8);}
-            double m15d=back_mid(8,900000); if(m15d>0){double mv=mid-m15d;
-                if(fabs(mv)>=15&&hour==0) enter(8,mv<0,12,6);}
-            double m60=back_mid(9,60000); if(m60>0){double mv=mid-m60;
-                if(fabs(mv)>=8&&hour<=3) enter(9,mv<0,8,4);}
-            double m5b=back_mid(10,300000); if(m5b>0){double mv=mid-m5b;
-                if(fabs(mv)>=15&&(hour==22||hour==23)) enter(10,mv<0,12,6);}
-            double m15e=back_mid(11,900000); if(m15e>0){double mv=mid-m15e;
-                if(fabs(mv)>=10&&(hour==8||hour==9)) enter(11,mv<0,10,5);}
+            // B1: 5min move>10pt h00-03, short-term momentum stalling -> fade
+            double l5=back_mid(4,300000); double s30=back_mid(4,30000);
+            if(l5>0&&s30>0){
+                double mv_l=mid-l5, mv_s=mid-s30;
+                // Large move happened, short term now opposite or stalling
+                if(fabs(mv_l)>=10&&fabs(mv_s)<=2&&hour<=3)
+                    enter(4,mv_l<0,8,4); // fade: big up move stalling -> SHORT
+            }
+            // B2: same h22-23
+            double l5b=back_mid(5,300000); double s30b=back_mid(5,30000);
+            if(l5b>0&&s30b>0){
+                double mv_l=mid-l5b, mv_s=mid-s30b;
+                if(fabs(mv_l)>=10&&fabs(mv_s)<=2&&(hour==22||hour==23))
+                    enter(5,mv_l<0,8,4);
+            }
+            // B3: h08-09 fade -- London open exhaustion
+            double l5c=back_mid(6,300000); double s30c=back_mid(6,30000);
+            if(l5c>0&&s30c>0){
+                double mv_l=mid-l5c, mv_s=mid-s30c;
+                if(fabs(mv_l)>=8&&fabs(mv_s)<=1.5&&(hour==8||hour==9))
+                    enter(6,mv_l<0,6,3);
+            }
+            // B4-B8: 15min extreme move, enter reversal immediately
+            double m15=back_mid(7,900000);
+            if(m15>0){double mv=mid-m15;
+                if(fabs(mv)>=20&&(hour==2||hour==3)) enter(7,mv<0,12,6);}
+            double m15b=back_mid(8,900000);
+            if(m15b>0){double mv=mid-m15b;
+                if(fabs(mv)>=15&&hour==0) enter(8,mv<0,10,5);}
+            double m15c=back_mid(9,900000);
+            if(m15c>0){double mv=mid-m15c;
+                if(fabs(mv)>=12&&(hour==8||hour==9)) enter(9,mv<0,8,4);}
+            double m15d=back_mid(10,900000);
+            if(m15d>0){double mv=mid-m15d;
+                if(fabs(mv)>=20&&(hour==22||hour==23)) enter(10,mv<0,12,6);}
+            double m15e=back_mid(11,900000);
+            if(m15e>0){double mv=mid-m15e;
+                if(fabs(mv)>=10&&hour<=3) enter(11,mv<0,8,4);}
         }
 
         // ---- C: VWAP reversion ----
