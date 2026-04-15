@@ -66,7 +66,6 @@
 #include <string>
 #include "OmegaTradeLedger.hpp"
 #include "OHLCBarEngine.hpp"    // OHLCBar + get_bars() for seed_channel_from_bars()
-#include "HmmRegimeReader.hpp"  // HMM regime state (CHOPPY/TRENDING/VOLATILE)
 
 namespace omega {
 
@@ -234,11 +233,6 @@ struct H1SwingEngine {
 
     bool has_open_position() const noexcept { return pos_.active; }
 
-    // HMM regime snapshot -- updated by caller (tick_gold.hpp) before on_h1_bar.
-    // Shadow gate: when gating=true and state==VOLATILE, entry blocked.
-    // Size scalar: TRENDING=1.0x, CHOPPY=0.75x, VOLATILE=0.50x.
-    omega::HmmSnapshot hmm_snap;
-
     // ── Called every H1 bar close ────────────────────────────────────────────
     HTFSignal on_h1_bar(
         double  mid, double bid, double ask,
@@ -281,20 +275,6 @@ struct H1SwingEngine {
         }
         if (session_slot < p.session_min || session_slot > p.session_max) return sig;
         if (h1_bar_count_ < cooldown_until_bar_) return sig;
-
-        // HMM regime gate: block H1 entries in VOLATILE state.
-        // CHOPPY allows entry but size_scalar() reduces risk to 0.75x.
-        // Gate is fail-open: if hmm_snap.gating=false, no block applied.
-        if (hmm_snap.blocks_h1_entry()) {
-            static int64_t s_hmm_h1 = 0;
-            if (now_ms - s_hmm_h1 > 3600000LL) {
-                s_hmm_h1 = now_ms;
-                printf("[H1SWING-%s] HMM-GATE: state=%s p_flip=%.3f -- entry blocked\n",
-                       symbol.c_str(), hmm_snap.label, hmm_snap.p_flip);
-                fflush(stdout);
-            }
-            return sig;
-        }
 
         // H4 regime gate: H4 trend must be non-flat AND H4 ADX >= threshold
         if (h4_trend_state == 0) return sig;
@@ -344,20 +324,8 @@ struct H1SwingEngine {
 
         // Crash-day gate: if H4 ATR > threshold, halve risk dollars
         // H4 ATR > 2x normal = crash/spike regime. Keep edge, reduce exposure.
-        const double crash_risk = (h4_atr > p.crash_atr_threshold)
+        const double effective_risk = (h4_atr > p.crash_atr_threshold)
             ? (p.risk_dollars * 0.5) : p.risk_dollars;
-        // HMM size scalar: TRENDING=1.0, CHOPPY=0.75, VOLATILE=0.50 (fail-open=1.0)
-        const double effective_risk = crash_risk * hmm_snap.size_scalar();
-        if (hmm_snap.gating && hmm_snap.state != omega::HmmState::TRENDING) {
-            static int64_t s_hmm_sz = 0;
-            if (now_ms - s_hmm_sz > 3600000LL) {
-                s_hmm_sz = now_ms;
-                printf("[H1SWING-%s] HMM-SIZE: state=%s scalar=%.2f risk=$%.0f->$%.0f\n",
-                       symbol.c_str(), hmm_snap.label, hmm_snap.size_scalar(),
-                       crash_risk, effective_risk);
-                fflush(stdout);
-            }
-        }
         if (h4_atr > p.crash_atr_threshold) {
             static int64_t s_crash = 0;
             if (now_ms - s_crash > 3600000LL) {
@@ -626,11 +594,6 @@ struct H4RegimeEngine {
 
     bool has_open_position() const noexcept { return pos_.active; }
 
-    // HMM regime snapshot -- updated by caller (tick_gold.hpp) before on_h4_bar.
-    // Gate: CHOPPY or VOLATILE blocks new Donchian breakout entries entirely.
-    // Fail-open: if hmm_snap.gating=false, no block applied.
-    omega::HmmSnapshot hmm_snap;
-
     // seed_channel_from_bars: call on startup after load_indicators() to pre-fill
     // the Donchian channel from saved H4 bar history. Without this the channel
     // needs 20 new H4 bars (80 hours) to rebuild from scratch on cold start.
@@ -713,20 +676,6 @@ struct H4RegimeEngine {
                 }
                 return sig;
             }
-        }
-
-        // HMM regime gate: block H4 Donchian breakout entries in CHOPPY or VOLATILE.
-        // CHOPPY = fakeout-prone; VOLATILE = erratic, SL placement unreliable.
-        // Gate is fail-open: if hmm_snap.gating=false, no block applied.
-        if (hmm_snap.blocks_h4_entry()) {
-            static int64_t s_hmm_h4 = 0;
-            if (now_ms - s_hmm_h4 > 3600000LL) {
-                s_hmm_h4 = now_ms;
-                printf("[H4REGIME-%s] HMM-GATE: state=%s p_flip=%.3f -- entry blocked\n",
-                       symbol.c_str(), hmm_snap.label, hmm_snap.p_flip);
-                fflush(stdout);
-            }
-            return sig;
         }
 
         // H4 ADX gate
