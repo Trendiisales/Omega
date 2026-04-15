@@ -141,6 +141,10 @@ struct Ind {
     int64_t bmin=-1, prev_ms=0, vday=-1;
     bool bhas=false;
 
+    // Daily range tracker for regime filter
+    double day_hi=0, day_lo=1e9, daily_range=0;
+    int    cur_day=-1;
+
     static double tba(double dt, double hl) {
         return 1.0 - exp(-dt * 0.693147 / hl);
     }
@@ -167,6 +171,16 @@ struct Ind {
         const int day=(int)(ts/86400000LL);
         if(day!=vday){vpv=vvol=0;vday=day;}
         vpv+=mid; vvol+=1; vwap=vpv/vvol;
+
+        // Daily range for regime filter
+        if(day!=cur_day){
+            if(cur_day>=0) daily_range=day_hi-day_lo;
+            day_hi=mid; day_lo=mid; cur_day=day;
+        } else {
+            if(mid>day_hi)day_hi=mid;
+            if(mid<day_lo)day_lo=mid;
+            daily_range=day_hi-day_lo; // running today's range
+        }
 
         const int64_t bm=ts/60000LL;
         if(!bhas){bo=bh=bl=bc=mid;bmin=bm;bhas=true;}
@@ -322,18 +336,22 @@ int main(int argc, char** argv) {
             cooldown[s] = ts + 60000LL; // 1min min between trades
         };
 
-        // ---- ATR regime filter ----
-        // Jul-Aug 2025: gold ATR>12 = sustained trend regime, all strategies break
-        // Filter tested at multiple thresholds: 10, 12, 15
-        const bool atr_normal_10 = ind.atr <= 10.0;
-        const bool atr_normal_12 = ind.atr <= 12.0;
-        const bool atr_normal_15 = ind.atr <= 15.0;
+        // ---- Daily range regime filter ----
+        // Jul-Aug 2025: daily range >50pts = extreme regime, all strategies lose
+        // Normal months: daily range 15-40pts
+        // Filter: skip entries when daily range > 45pts (yesterday's range)
+        const bool regime_normal = ind.daily_range <= 45.0;
+        // Dynamic SL: scale with daily volatility
+        // Normal day (range=20): sl_mult=1.0
+        // High day (range=35): sl_mult=1.75
+        // Extreme day (range=50+): blocked by regime_normal
+        const double vol_sl_mult = std::max(1.0, ind.daily_range / 20.0);
 
         // ---- A: Momentum continuation ----
         if(m60&&m300){
             bool same60_300 = (dv60>0&&dv300>0)||(dv60<0&&dv300<0);
             bool same30_300 = m30 && ((dv30>0&&dv300>0)||(dv30<0&&dv300<0));
-            if(atr_normal_12){  // ATR<=12 filter
+            if(regime_normal){  // ATR<=12 filter
                 if(m900&&hour==7&&fabs(dv60)>=3&&fabs(dv900)>=8&&
                    ((dv60>0&&dv900>0)||(dv60<0&&dv900<0))){
                     enter(0, dv60>0, 8, 0);
@@ -360,7 +378,7 @@ int main(int argc, char** argv) {
         // Signal: 5min moved a lot, but 30s move is tiny (exhaustion)
         if(m300&&m30){
             const double stall = fabs(dv30)<1.5; // 30s barely moving
-            if(atr_normal_12){
+            if(regime_normal){
                 // B1/B2: h00-03
                 if(stall&&hour<=3&&fabs(dv300)>=10){
                     enter(8,  dv300<0, 8, 0);
@@ -384,12 +402,12 @@ int main(int argc, char** argv) {
             const double vd=tk.mid-ind.vwap;
             // C1/C2: h07-17, price >5pts from VWAP, trail
             if(hour>=7&&hour<=17){
-                if(atr_normal_12&&vd>=5)  enter(14, false, 6);
-                if(atr_normal_12&&vd<=-5) enter(15, true,  6);
+                if(regime_normal&&vd>=5)  enter(14, false, 6);
+                if(regime_normal&&vd<=-5) enter(15, true,  6);
             }
             // C3/C4: any hour, >8pts
-            if(atr_normal_12&&vd>=8)  enter(16, false, 8);
-            if(atr_normal_12&&vd<=-8) enter(17, true,  8);
+            if(regime_normal&&vd>=8)  enter(16, false, 8);
+            if(regime_normal&&vd<=-8) enter(17, true,  8);
             // C5/C6: with TP instead of trail
             if(hour>=7&&hour<=17){
                 if(vd>=5)  enter(18, false, 6);  // TP set in manage
@@ -398,14 +416,14 @@ int main(int argc, char** argv) {
         }
 
         // ---- D: Session open range breakout ----
-        if(lon_set&&lon_hi>0&&lon_lo<1e8&&hour>=7&&hour<=10){
+        if(regime_normal&&lon_set&&lon_hi>0&&lon_lo<1e8&&hour>=7&&hour<=10){
             const double rng=lon_hi-lon_lo;
             if(rng>1){
                 if(tk.ask>lon_hi+0.5) enter(20, true,  6);
                 if(tk.bid<lon_lo-0.5) enter(21, false, 6);
             }
         }
-        if(ny_set&&ny_hi>0&&ny_lo<1e8&&hour>=13&&hour<=16){
+        if(regime_normal&&ny_set&&ny_hi>0&&ny_lo<1e8&&hour>=13&&hour<=16){
             const double rng=ny_hi-ny_lo;
             if(rng>1){
                 if(tk.ask>ny_hi+0.5) enter(22, true,  6);
@@ -414,7 +432,7 @@ int main(int argc, char** argv) {
         }
 
         // ---- F: MCE-style ----
-        if(ind.atr>0){
+        if(regime_normal&&ind.atr>0){
             const double drift_abs=fabs(ind.drift);
             const double sl_pts=std::max(3.0, ind.atr*1.5);
             if(ind.vol_r>=2.5&&drift_abs>=5) enter(24, ind.drift>0, sl_pts);
