@@ -229,7 +229,7 @@ private:
             tr.exitTs        = now_ms / 1000LL;
             tr.exitReason    = reason;
             tr.spreadAtEntry = 0.0;
-            tr.id            = ++s_trade_id;
+            tr.id            = static_cast<int>(++s_trade_id);
             on_trade_record(tr);
         }
 
