@@ -1,7 +1,7 @@
 // =============================================================================
 //  CandleFlowEngine.hpp
 //
-//  Strategy (updated — sweep-optimised against real L2 data 2026-04-10):
+//  Strategy (updated -- sweep-optimised against real L2 data 2026-04-10):
 //    ENTRY:  expansion candle (quality gate) + RSI trend direction
 //    EXIT:   L2 imbalance reversal (sustained N ticks) OR stagnation
 //
@@ -235,20 +235,20 @@ struct CandleFlowEngine {
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
 
-        // ── RSI update (unconditional, every tick) ───────────────────────────
+        // -- RSI update (unconditional, every tick) ---------------------------
         rsi_update(mid);
 
-        // ── Price history update (unconditional, every tick) ─────────────────
+        // -- Price history update (unconditional, every tick) -----------------
         // Used by DFE price-action confirmation gate.
         m_recent_mid.push_back(mid);
         if ((int)m_recent_mid.size() > CFE_DFE_PRICE_CONFIRM_TICKS + 2)
             m_recent_mid.pop_front();
 
-        // ── DOM history ──────────────────────────────────────────────────────
+        // -- DOM history ------------------------------------------------------
         m_dom_prev = m_dom_cur;
         m_dom_cur  = dom;
 
-        // ── Cooldown ─────────────────────────────────────────────────────────
+        // -- Cooldown ---------------------------------------------------------
         if (phase == Phase::COOLDOWN) {
             if (now_ms - m_cooldown_start_ms >= m_cooldown_ms)
                 phase = Phase::IDLE;
@@ -256,15 +256,15 @@ struct CandleFlowEngine {
                 return;
         }
 
-        // ── Manage open position ─────────────────────────────────────────────
+        // -- Manage open position ---------------------------------------------
         if (phase == Phase::LIVE) {
             manage(bid, ask, mid, dom, now_ms, on_close);
             return;
         }
 
-        // ── IDLE: check for entry ────────────────────────────────────────────
+        // -- IDLE: check for entry --------------------------------------------
 
-        // ── DRIFT FAST-ENTRY (DFE) ────────────────────────────────────────────────────
+        // -- DRIFT FAST-ENTRY (DFE) ----------------------------------------------------
         // Pre-empts bar-close when drift >= threshold and RSI confirms.
         //
         // SESSION-AWARE + ATR-NORMALISED THRESHOLD (2026-04-13, updated):
@@ -529,7 +529,7 @@ struct CandleFlowEngine {
             }
         } else { m_prev_ewm_drift=ewm_drift; m_dfe_warmed=true; }
 
-        // ── SUSTAINED-DRIFT ENTRY (secondary DFE path) ────────────────────────────
+        // -- SUSTAINED-DRIFT ENTRY (secondary DFE path) ----------------------------
         // Fires when drift has been consistently in one direction for >= 45s but
         // never spiked high enough for the main DFE gate.
         // Evidence: 08:01-08:08 UTC SHORT missed because drift peaked at -1.72 once
@@ -655,7 +655,7 @@ struct CandleFlowEngine {
         }
 
         cfe_sustained_skip:
-        // ── Standard bar-based entry ───────────────────────────────────────────────
+        // -- Standard bar-based entry -----------------------------------------------
         if (!bar.valid) return;
         if (!m_rsi_warmed) return;
 
@@ -1046,7 +1046,7 @@ private:
 
         const int64_t hold_ms = now_ms - pos.entry_ts_ms;
 
-        // ── PARTIAL EXIT: 50% of position at MFE >= 2x cost ──────────────────
+        // -- PARTIAL EXIT: 50% of position at MFE >= 2x cost ------------------
         // Locks in guaranteed profit on half the position. Remaining half is
         // trailed. Safe: only fires once, only when sufficiently in profit,
         // residual position is still protected by hard SL / trail SL.
@@ -1084,10 +1084,10 @@ private:
             if (on_close) on_close(ptr);
         }
 
-        // ── TRAILING SL: engage once MFE >= 1x cost ──────────────────────────
+        // -- TRAILING SL: engage once MFE >= 1x cost --------------------------
         // Trail distance = 0.7 * ATR (tight enough to lock profit, wide enough
         // to survive normal tick noise on gold). Once engaged, SL only moves
-        // in the profitable direction — never back toward entry.
+        // in the profitable direction -- never back toward entry.
         // Trail: arm only when MFE >= 2x ATR (real profit locked in).
         // Old: armed at 1x cost ($0.62), dist=0.7xATR=1.40pts.
         // At MFE=0.67 trail_SL = entry+0.67-1.40 = entry-0.73 (BELOW entry).
@@ -1101,7 +1101,7 @@ private:
                 ? (mid - trail_dist)
                 : (mid + trail_dist);
             if (!pos.trail_active) {
-                // First engagement — only activate if trail SL is better than hard SL
+                // First engagement -- only activate if trail SL is better than hard SL
                 if (pos.is_long ? (new_trail > pos.sl) : (new_trail < pos.sl)) {
                     pos.trail_sl     = new_trail;
                     pos.trail_active = true;
@@ -1119,7 +1119,7 @@ private:
             }
         }
 
-        // ── HARD SL or TRAIL SL ───────────────────────────────────────────────
+        // -- HARD SL or TRAIL SL -----------------------------------------------
         const double effective_sl = pos.trail_active ? pos.trail_sl : pos.sl;
         if (pos.is_long ? (bid <= effective_sl) : (ask >= effective_sl)) {
             const char* sl_reason = pos.trail_active ? "TRAIL_SL" : "SL_HIT";
