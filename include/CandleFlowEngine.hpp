@@ -885,6 +885,35 @@ struct CandleFlowEngine {
             }
             return;
         }
+        // Gate 4: counter-spike block (2026-04-15)
+        // If price has moved >= 0.5x ATR against the intended entry direction
+        // in the last 3 ticks, the market is spiking the wrong way -- block entry.
+        // Evidence: 09:27:12 SHORT entry, price immediately spiked +2.66pts = dollar stop.
+        // The bar closed bearish but the NEW bar was aggressively bullish -- bar signal was stale.
+        {
+            const bool bar_long = (rsi_dir == +1);
+            if ((int)m_recent_mid.size() >= 3) {
+                const double spike_oldest = m_recent_mid[m_recent_mid.size() - 3];
+                const double spike_move   = mid - spike_oldest;
+                const double spike_thresh = (atr_pts > 0.0 ? atr_pts : 2.0) * 0.5;
+                const bool counter_spike  = bar_long
+                    ? (spike_move <= -spike_thresh)   // LONG blocked: price falling fast
+                    : (spike_move >= spike_thresh);    // SHORT blocked: price rising fast
+                if (counter_spike) {
+                    static int64_t s_spike_log = 0;
+                    if (now_ms - s_spike_log > 5000) {
+                        s_spike_log = now_ms;
+                        std::cout << "[CFE-SPIKE-BLOCK] " << (bar_long ? "LONG" : "SHORT")
+                                  << " blocked: counter-spike move=" << std::fixed << std::setprecision(2)
+                                  << spike_move << " thresh=" << spike_thresh
+                                  << " atr=" << atr_pts << "\n";
+                        std::cout.flush();
+                    }
+                    return;
+                }
+            }
+        }
+
         enter(rsi_dir == +1, bid, ask, spread, cost_pts, atr_pts, now_ms);
     }
 
