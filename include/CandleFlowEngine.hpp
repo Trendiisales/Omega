@@ -381,10 +381,12 @@ struct CandleFlowEngine {
                     static int64_t s_opp_log = 0;
                     if (now_ms - s_opp_log > 20000) {
                         s_opp_log = now_ms;
-                        printf("[CFE-OPP-DIR] %s blocked: last_dir=%+d %llds ago\n",
-                               (intended_dir>0?"LONG":"SHORT"), m_last_closed_dir,
-                               (long long)since_close/1000);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[CFE-OPP-DIR] %s blocked: last_dir=%+d %llds ago\n",                                (intended_dir>0?"LONG":"SHORT"), m_last_closed_dir,                                (long long)since_close/1000);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     m_prev_ewm_drift = ewm_drift;
                     return;
@@ -409,10 +411,12 @@ struct CandleFlowEngine {
                 static int64_t s_adv_log = 0;
                 if (now_ms - s_adv_log > 20000) {
                     s_adv_log = now_ms;
-                    printf("[CFE-ADVERSE-BLOCK] %s blocked: loss_exit=%.2f dist=%.2f need=%.2f atr=%.2f\n",
-                           (m_last_loss_dir==+1?"LONG":"SHORT"),
-                           m_last_loss_exit_px, dist_to_exit, recovery_thresh, m_last_loss_atr);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[CFE-ADVERSE-BLOCK] %s blocked: loss_exit=%.2f dist=%.2f need=%.2f atr=%.2f\n",                            (m_last_loss_dir==+1?"LONG":"SHORT"),                            m_last_loss_exit_px, dist_to_exit, recovery_thresh, m_last_loss_atr);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -428,11 +432,12 @@ struct CandleFlowEngine {
                 static int64_t s_hmm_dfe_log = 0;
                 if (now_ms - s_hmm_dfe_log > 5000) {
                     s_hmm_dfe_log = now_ms;
-                    printf("[CFE-HMM-GATE] DFE blocked: state=%s p_cont=%.3f < %.2f drift=%.2f%s\n",
-                           omega::GoldHMM::state_name(m_hmm_last_state),
-                           m_hmm_last_p, omega::HMM_MIN_PROB, ewm_drift,
-                           HMM_GATING_LIVE ? "" : " [SHADOW-LOG-ONLY]");
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[CFE-HMM-GATE] DFE blocked: state=%s p_cont=%.3f < %.2f drift=%.2f%s\n",                            omega::GoldHMM::state_name(m_hmm_last_state),                            m_hmm_last_p, omega::HMM_MIN_PROB, ewm_drift,                            HMM_GATING_LIVE ? "" : " [SHADOW-LOG-ONLY]");
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 if (HMM_GATING_LIVE) {
                     m_prev_ewm_drift = ewm_drift;
@@ -543,9 +548,12 @@ struct CandleFlowEngine {
                     static int64_t s_atr_cap_log = 0;
                     if (now_ms - s_atr_cap_log > 30000) {
                         s_atr_cap_log = now_ms;
-                        printf("[CFE-ATR-CAP] DFE blocked: atr=%.2f > max=%.1f\n",
-                               dfe_atr_check, CFE_MAX_ATR_ENTRY);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[CFE-ATR-CAP] DFE blocked: atr=%.2f > max=%.1f\n",                                dfe_atr_check, CFE_MAX_ATR_ENTRY);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 } else {
                 const double dfe_cost = spread + CFE_COST_SLIPPAGE*2.0 + CFE_COMMISSION_PTS*2.0;
@@ -679,9 +687,12 @@ struct CandleFlowEngine {
                     static int64_t s_sus_drift_log = 0;
                     if (now_ms - s_sus_drift_log > 30000) {
                         s_sus_drift_log = now_ms;
-                        printf("[CFE-SUS-DRIFT-BLOCK] |drift|=%.2f < min=%.2f (atr=%.2f)\n",
-                               std::fabs(ewm_drift), sus_drift_min, sus_atr);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[CFE-SUS-DRIFT-BLOCK] |drift|=%.2f < min=%.2f (atr=%.2f)\n",                                std::fabs(ewm_drift), sus_drift_min, sus_atr);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     goto cfe_sustained_skip;
                 }
@@ -694,8 +705,12 @@ struct CandleFlowEngine {
                     static int64_t s_sus_peak_log = 0;
                     if (now_ms - s_sus_peak_log > 30000) {
                         s_sus_peak_log = now_ms;
-                        printf("[CFE-SUS-PEAK] drift=%.2f < 70pct peak=%.2f -- exhausting\n", std::fabs(ewm_drift), m_sus_drift_peak);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[CFE-SUS-PEAK] drift=%.2f < 70pct peak=%.2f -- exhausting\n", std::fabs(ewm_drift), m_sus_drift_peak);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     goto cfe_sustained_skip;
                 }
@@ -918,9 +933,12 @@ struct CandleFlowEngine {
                 static int64_t s_drift_min_log = 0;
                 if (now_ms - s_drift_min_log > 15000) {
                     s_drift_min_log = now_ms;
-                    printf("[CFE-DRIFT-MIN] bar entry blocked: |drift|=%.2f < 0.3\n",
-                           bar_drift_abs);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[CFE-DRIFT-MIN] bar entry blocked: |drift|=%.2f < 0.3\n",                            bar_drift_abs);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -933,11 +951,12 @@ struct CandleFlowEngine {
                 static int64_t s_hmm_bar_log = 0;
                 if (now_ms - s_hmm_bar_log > 5000) {
                     s_hmm_bar_log = now_ms;
-                    printf("[CFE-HMM-GATE] BAR blocked: state=%s p_cont=%.3f < %.2f drift=%.2f%s\n",
-                           omega::GoldHMM::state_name(m_hmm_last_state),
-                           m_hmm_last_p, omega::HMM_MIN_PROB, ewm_drift,
-                           HMM_GATING_LIVE ? "" : " [SHADOW-LOG-ONLY]");
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[CFE-HMM-GATE] BAR blocked: state=%s p_cont=%.3f < %.2f drift=%.2f%s\n",                            omega::GoldHMM::state_name(m_hmm_last_state),                            m_hmm_last_p, omega::HMM_MIN_PROB, ewm_drift,                            HMM_GATING_LIVE ? "" : " [SHADOW-LOG-ONLY]");
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 if (HMM_GATING_LIVE) return;
             }
@@ -954,9 +973,12 @@ struct CandleFlowEngine {
             static int64_t s_rsi_drift_log = 0;
             if (now_ms - s_rsi_drift_log > 15000) {
                 s_rsi_drift_log = now_ms;
-                printf("[CFE-RSI-DRIFT-CONFLICT] LONG blocked: rsi_dir=+1 but drift=%.2f\n",
-                       ewm_drift);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[CFE-RSI-DRIFT-CONFLICT] LONG blocked: rsi_dir=+1 but drift=%.2f\n",                        ewm_drift);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -964,9 +986,12 @@ struct CandleFlowEngine {
             static int64_t s_rsi_drift_log2 = 0;
             if (now_ms - s_rsi_drift_log2 > 15000) {
                 s_rsi_drift_log2 = now_ms;
-                printf("[CFE-RSI-DRIFT-CONFLICT] SHORT blocked: rsi_dir=-1 but drift=%.2f\n",
-                       ewm_drift);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[CFE-RSI-DRIFT-CONFLICT] SHORT blocked: rsi_dir=-1 but drift=%.2f\n",                        ewm_drift);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -998,9 +1023,12 @@ struct CandleFlowEngine {
             static int64_t s_bar_atr_log = 0;
             if (now_ms - s_bar_atr_log > 30000) {
                 s_bar_atr_log = now_ms;
-                printf("[CFE-ATR-CAP] Bar entry blocked: atr=%.2f > max=%.1f\n",
-                       atr_pts, CFE_MAX_ATR_ENTRY);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[CFE-ATR-CAP] Bar entry blocked: atr=%.2f > max=%.1f\n",                        atr_pts, CFE_MAX_ATR_ENTRY);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -1401,9 +1429,12 @@ private:
                 const double atr_thresh = pos.atr_pts * 0.5;
                 if (adverse > atr_thresh && hold_ms > 30000) {
                     const double px = pos.is_long ? bid : ask;
-                    printf("[CFE-ASIA-ADVERSE] Early exit: adverse=%.2f > %.2f (0.5xATR) hold=%lldms\n",
-                           adverse, atr_thresh, (long long)hold_ms);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[CFE-ASIA-ADVERSE] Early exit: adverse=%.2f > %.2f (0.5xATR) hold=%lldms\n",                            adverse, atr_thresh, (long long)hold_ms);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     close_pos(px, "STAGNATION", now_ms, on_close);
                     return;
                 }
