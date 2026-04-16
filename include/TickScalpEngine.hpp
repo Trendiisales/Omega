@@ -294,7 +294,9 @@ struct TickScalpEngine {
         const bool vel_ready = (_vel_baseline >= 10.0 && _rsi_warmed && _ticks_total >= TSE_WARMUP_TICKS);
 
         // Try patterns
-        if (vel_ready) _try_p1(bid, ask, spread, atr, ewm_drift, now_ms, on_close);
+        // TSE P1 (RSI+drift): disabled -- 6-day sweep showed no edge at any param
+        // Best config across 6 days: -$1234 total. P2/P3 still active.
+        // if (vel_ready) _try_p1(bid, ask, spread, atr, ewm_drift, now_ms, on_close);
         if (pos_.active) return;
         if (l2_fresh) _try_p2(bid, ask, spread, micro_edge, atr, now_ms, on_close);
         if (pos_.active) return;
