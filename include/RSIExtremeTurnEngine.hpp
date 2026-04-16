@@ -36,6 +36,8 @@
 // =============================================================================
 
 #pragma once
+#include <iomanip>
+#include <iostream>
 #include <cstdint>
 #include <cstdio>
 #include <cmath>
@@ -176,9 +178,13 @@ public:
             static int64_t s_cost_log = 0;
             if (now_s - s_cost_log >= 30) {
                 s_cost_log = now_s;
-                printf("[RSI-EXT-BLOCK] cost_gate: atr=%.2f < %.2fx cost=%.2f -- thin tape\\n",
-                       m_tick_atr, COST_ATR_MULT, total_cost);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-EXT-BLOCK] cost_gate: atr=%.2f < %.2fx cost=%.2f -- thin tape\\n",                        m_tick_atr, COST_ATR_MULT, total_cost);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -201,8 +207,13 @@ public:
             static int64_t s_log = 0;
             if (now_s - s_log >= 15) {
                 s_log = now_s;
-                printf("[RSI-EXT-BLOCK] LONG: rsi=%.1f already above 40 -- too late\\n", m_bar_rsi);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-EXT-BLOCK] LONG: rsi=%.1f already above 40 -- too late\\n", m_bar_rsi);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -210,8 +221,13 @@ public:
             static int64_t s_log = 0;
             if (now_s - s_log >= 15) {
                 s_log = now_s;
-                printf("[RSI-EXT-BLOCK] SHORT: rsi=%.1f already below 60 -- too late\\n", m_bar_rsi);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-EXT-BLOCK] SHORT: rsi=%.1f already below 60 -- too late\\n", m_bar_rsi);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -238,15 +254,13 @@ public:
         m_sustained_overbought_bars = 0;
 
         const char* pfx = shadow_mode ? "[RSI-EXT-SHADOW]" : "[RSI-EXT]";
-        printf("%s %s entry=%.2f sl=%.2f(dist=%.2f) rsi=%.1f(was %.1f) "
-               "sustained=%d atr=%.2f spread=%.2f slot=%d\\n",
-               pfx, is_long ? "LONG" : "SHORT",
-               entry, pos.sl, sl_dist,
-               m_bar_rsi, m_bar_rsi_prev,
-               is_long ? m_sustained_oversold_bars + MIN_SUSTAINED_BARS
-                       : m_sustained_overbought_bars + MIN_SUSTAINED_BARS,
-               m_tick_atr, spread, session_slot);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "%s %s entry=%.2f sl=%.2f(dist=%.2f) rsi=%.1f(was %.1f) "                "sustained=%d atr=%.2f spread=%.2f slot=%d\\n",                pfx, is_long ? "LONG" : "SHORT",                entry, pos.sl, sl_dist,                m_bar_rsi, m_bar_rsi_prev,                is_long ? m_sustained_oversold_bars + MIN_SUSTAINED_BARS                        : m_sustained_overbought_bars + MIN_SUSTAINED_BARS,                m_tick_atr, spread, session_slot);
+            std::cout << _buf;
+            std::cout.flush();
+        }
     }
 
     void force_close(double bid, double ask, int64_t now_ms,
@@ -350,9 +364,13 @@ private:
         if (!pos.be_locked && move >= pos.atr * BE_ATR_MULT) {
             pos.sl = pos.entry;
             pos.be_locked = true;
-            printf("[RSI-EXT] BE_LOCK %s move=%.2f atr=%.2f\\n",
-                   pos.is_long ? "LONG" : "SHORT", move, pos.atr);
-            fflush(stdout);
+            {
+                // converted from printf
+                char _buf[512];
+                snprintf(_buf, sizeof(_buf), "[RSI-EXT] BE_LOCK %s move=%.2f atr=%.2f\\n",                    pos.is_long ? "LONG" : "SHORT", move, pos.atr);
+                std::cout << _buf;
+                std::cout.flush();
+            }
         }
 
         // Trail once BE locked
@@ -371,11 +389,13 @@ private:
             const bool rsi_exit = pos.is_long  ? (m_bar_rsi >= RSI_EXIT_LONG)
                                                : (m_bar_rsi <= RSI_EXIT_SHORT);
             if (rsi_exit) {
-                printf("[RSI-EXT] RSI_EXIT %s rsi=%.1f (threshold=%.1f) profit=%.2f\\n",
-                       pos.is_long ? "LONG" : "SHORT", m_bar_rsi,
-                       pos.is_long ? RSI_EXIT_LONG : RSI_EXIT_SHORT,
-                       pos.is_long ? (mid - pos.entry) : (pos.entry - mid));
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-EXT] RSI_EXIT %s rsi=%.1f (threshold=%.1f) profit=%.2f\\n",                        pos.is_long ? "LONG" : "SHORT", m_bar_rsi,                        pos.is_long ? RSI_EXIT_LONG : RSI_EXIT_SHORT,                        pos.is_long ? (mid - pos.entry) : (pos.entry - mid));
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
                 _close(pos.is_long ? bid : ask, "RSI_TP", now_s, on_close);
                 return;
             }
@@ -397,10 +417,13 @@ private:
     {
         const double pnl = (pos.is_long ? (exit_px - pos.entry)
                                         : (pos.entry - exit_px)) * pos.size;
-        printf("[RSI-EXT] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f rsi_at_entry=%.1f\\n",
-               pos.is_long ? "LONG" : "SHORT",
-               exit_px, reason, pnl, pos.mfe, pos.rsi_at_entry);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[RSI-EXT] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f rsi_at_entry=%.1f\\n",                pos.is_long ? "LONG" : "SHORT",                exit_px, reason, pnl, pos.mfe, pos.rsi_at_entry);
+            std::cout << _buf;
+            std::cout.flush();
+        }
 
         omega::TradeRecord tr;
         tr.id          = ++m_trade_id;
