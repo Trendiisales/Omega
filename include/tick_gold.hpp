@@ -110,13 +110,19 @@ static void on_tick_gold(
             // Cooldown reduced 45s -> 20s: shorter re-arm window after real impulses.
             if (s_impulse_ticks >= 8) {
                 g_gold_post_impulse_until.store(now_pi + 20);
-                printf("[POST-IMPULSE] Regime left IMPULSE after %d ticks -- blocking 20s\n",
-                       s_impulse_ticks);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[POST-IMPULSE] Regime left IMPULSE after %d ticks -- blocking 20s\n",                        s_impulse_ticks);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             } else {
-                printf("[POST-IMPULSE] Regime flicker (%d ticks) -- no block\n",
-                       s_impulse_ticks);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[POST-IMPULSE] Regime flicker (%d ticks) -- no block\n",                        s_impulse_ticks);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
         s_was_impulse = is_impulse_now;
@@ -152,8 +158,12 @@ static void on_tick_gold(
         static int64_t s_rev_log = 0;
         if (now_s_gate - s_rev_log > 10) {
             s_rev_log = now_s_gate;
-            printf("[GOLD-REVERSAL] Drift reversed -- GoldStack cooldown cleared for counter-entry\n");
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLD-REVERSAL] Drift reversed -- GoldStack cooldown cleared for counter-entry\n");
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
     }
 
@@ -347,12 +357,12 @@ static void on_tick_gold(
             static int64_t s_vel_reentry_log = 0;
             if (now_p4 - s_vel_reentry_log >= 30) {
                 s_vel_reentry_log = now_p4;
-                printf("[GF-VEL-REENTRY] Exclusivity bypass vol_ratio=%.2f conf=%.2f "
-                       "no_pos_for=%lldsec regime=%s -- GoldFlow re-entry ALLOWED\n",
-                       gf_vel_ratio_p4, gold_sdec.confidence,
-                       (long long)(now_p4 - last_gf_close),
-                       omega::regime_name(gold_sdec.regime));
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GF-VEL-REENTRY] Exclusivity bypass vol_ratio=%.2f conf=%.2f "                        "no_pos_for=%lldsec regime=%s -- GoldFlow re-entry ALLOWED\n",                        gf_vel_ratio_p4, gold_sdec.confidence,                        (long long)(now_p4 - last_gf_close),                        omega::regime_name(gold_sdec.regime));
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
         g_gf_vel_reentry_bypass.store(vel_reentry_bypass ? 1 : 0);
@@ -367,12 +377,12 @@ static void on_tick_gold(
         if (now_ms_vl - s_last_vol_log >= 30000) {
             s_last_vol_log = now_ms_vl;
             const double vr = (gold_base_vol > 0.0) ? gold_recent_vol / gold_base_vol : 0.0;
-            printf("[GOLD-VOL] regime=%s recent_vol=%.4f%% base_vol=%.4f%% ratio=%.3f"
-                   " sdec_regime=%s conf=%.3f allow_bo=%d\n",
-                   gold_stack_regime, gold_recent_vol, gold_base_vol, vr,
-                   omega::regime_name(gold_sdec.regime), gold_sdec.confidence,
-                   (int)gold_sdec.allow_breakout);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLD-VOL] regime=%s recent_vol=%.4f%% base_vol=%.4f%% ratio=%.3f"                    " sdec_regime=%s conf=%.3f allow_bo=%d\n",                    gold_stack_regime, gold_recent_vol, gold_base_vol, vr,                    omega::regime_name(gold_sdec.regime), gold_sdec.confidence,                    (int)gold_sdec.allow_breakout);
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
     }
 
@@ -506,10 +516,12 @@ static void on_tick_gold(
                     if (!gsig.is_long && bar_rsi_gs < 22.0) gs_bar_blocked = true;
                 }
                 if (gs_bar_blocked) {
-                    printf("[GS-BAR-BLOCK] XAUUSD %s %s blocked RSI=%.1f trend=%+d\n",
-                           gsig.is_long ? "LONG" : "SHORT", gsig.engine,
-                           bar_rsi_gs, bar_trend_gs);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GS-BAR-BLOCK] XAUUSD %s %s blocked RSI=%.1f trend=%+d\n",                            gsig.is_long ? "LONG" : "SHORT", gsig.engine,                            bar_rsi_gs, bar_trend_gs);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
             if (!gs_bar_blocked) {
@@ -571,21 +583,26 @@ static void on_tick_gold(
 
             if (!direction_ok || trend_day_corr_block || cvd_gs_blocked || pdlevel_gs_blocked) {
                 if (cvd_gs_blocked)
-                    printf("[GS-CVD-BLOCK] XAUUSD %s %s cvd_bear=%d cvd_bull=%d\n",
-                           gsig.is_long ? "LONG" : "SHORT", gsig.engine,
-                           (int)g_macro_ctx.gold_cvd_bear_div,
-                           (int)g_macro_ctx.gold_cvd_bull_div);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GS-CVD-BLOCK] XAUUSD %s %s cvd_bear=%d cvd_bull=%d\n",                            gsig.is_long ? "LONG" : "SHORT", gsig.engine,                            (int)g_macro_ctx.gold_cvd_bear_div,                            (int)g_macro_ctx.gold_cvd_bull_div);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 if (pdlevel_gs_blocked)
-                    printf("[GS-PDL-BLOCK] XAUUSD %s %s mid=%.2f pdh=%.2f pdl=%.2f\n",
-                           gsig.is_long ? "LONG" : "SHORT", gsig.engine,
-                           gold_mid_now, gs_pdl.high, gs_pdl.low);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GS-PDL-BLOCK] XAUUSD %s %s mid=%.2f pdh=%.2f pdl=%.2f\n",                            gsig.is_long ? "LONG" : "SHORT", gsig.engine,                            gold_mid_now, gs_pdl.high, gs_pdl.low);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 if (!cvd_gs_blocked && !pdlevel_gs_blocked)
-                    printf("[GOLD-STACK-BLOCKED] %s counter-trend mid=%.2f vwap=%.2f"
-                           " vol_ratio=%.3f eng=%s trend_day_corr=%d\n",
-                           gsig.is_long ? "LONG" : "SHORT",
-                           gold_mid_now, gold_vwap_now, gold_vol_ratio, gsig.engine,
-                           (int)trend_day_corr_block);
-                fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GOLD-STACK-BLOCKED] %s counter-trend mid=%.2f vwap=%.2f"                            " vol_ratio=%.3f eng=%s trend_day_corr=%d\n",                            gsig.is_long ? "LONG" : "SHORT",                            gold_mid_now, gold_vwap_now, gold_vol_ratio, gsig.engine,                            (int)trend_day_corr_block);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
             } else {
                 g_telemetry.UpdateLastSignal("XAUUSD",
                     gsig.is_long ? "LONG" : "SHORT", gsig.entry, gsig.reason,
@@ -614,9 +631,12 @@ static void on_tick_gold(
                     const double seas_mult = std::max(1.0, std::min(1.5,
                         1.0 + (tstat - 0.51) / (2.42 - 0.51) * 0.5));
                     conf_mult = std::max(conf_mult, seas_mult);
-                    printf("[SEAS-SIZE] bucket t=%.1f -> lot_mult=%.2fx\n",
-                           tstat * 10.0, seas_mult);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[SEAS-SIZE] bucket t=%.1f -> lot_mult=%.2fx\n",                            tstat * 10.0, seas_mult);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 // ?? RSI conviction mult: SHORT in momentum regime with RSI<20 ??
                 // is_momentum_regime() = ADX>=25 AND ATR expanding.
@@ -672,9 +692,12 @@ static void on_tick_gold(
                     if (g_macro_ctx.regime == "RISK_OFF" && !gs_is_long) gs_xa_mult *= 0.60;
                     gs_xa_mult = std::max(0.30, std::min(1.20, gs_xa_mult));
                     if (gs_xa_mult != 1.0)
-                        printf("[XA-FILTER] XAUUSD STACK %s mult=%.2f DXY=%.4f HTF=%s macro=%s\n",
-                               gs_is_long?"LONG":"SHORT", gs_xa_mult, dxy_ret,
-                               g_htf_filter.bias_name("XAUUSD"), g_macro_ctx.regime.c_str());
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[XA-FILTER] XAUUSD STACK %s mult=%.2f DXY=%.4f HTF=%s macro=%s\n",                                gs_is_long?"LONG":"SHORT", gs_xa_mult, dxy_ret,                                g_htf_filter.bias_name("XAUUSD"), g_macro_ctx.regime.c_str());
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     gold_lot = std::max(0.01, std::min(gold_lot * gs_xa_mult, g_cfg.max_lot_gold));
                 }
                 // Max loss per trade dollar cap (gold stack bypasses enter_directional)
@@ -682,8 +705,12 @@ static void on_tick_gold(
                     const double max_loss_lot = g_cfg.max_loss_per_trade_usd / (gold_sl_abs * 100.0);
                     if (gold_lot > max_loss_lot) {
                         const double capped = std::max(0.01, std::floor(max_loss_lot * 100.0 + 0.5) / 100.0);
-                        printf("[MAX-LOSS-CAP] XAUUSD lot capped %.4f?%.4f (sl=$%.2f max=$%.0f)\n",
-                               gold_lot, capped, gold_sl_abs * 100.0 * gold_lot, g_cfg.max_loss_per_trade_usd);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[MAX-LOSS-CAP] XAUUSD lot capped %.4f?%.4f (sl=$%.2f max=$%.0f)\n",                                gold_lot, capped, gold_sl_abs * 100.0 * gold_lot, g_cfg.max_loss_per_trade_usd);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                         gold_lot = capped;
                     }
                 }
@@ -1112,10 +1139,12 @@ static void on_tick_gold(
             static int64_t s_bias_inject_log = 0;
             if (now_ms_g - s_bias_inject_log > 30000) {
                 s_bias_inject_log = now_ms_g;
-                printf("[FLOW-BIAS-INJECT] XAUUSD GoldFlow trail_stage=%d %s ? bias=%d (L2=%.3f)\n",
-                       g_gold_flow.pos.trail_stage,
-                       g_gold_flow.pos.is_long ? "LONG" : "SHORT",
-                       flow_dir, g_macro_ctx.gold_l2_imbalance);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[FLOW-BIAS-INJECT] XAUUSD GoldFlow trail_stage=%d %s ? bias=%d (L2=%.3f)\n",                        g_gold_flow.pos.trail_stage,                        g_gold_flow.pos.is_long ? "LONG" : "SHORT",                        flow_dir, g_macro_ctx.gold_l2_imbalance);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
         // Withdraw bias injection when flow closes or reverses
@@ -1176,8 +1205,12 @@ static void on_tick_gold(
             static int64_t s_bypass_log = 0;
             if (now_ms_g - s_bypass_log > 10000) {
                 s_bypass_log = now_ms_g;
-                printf("[BRACKET-COOLDOWN-BYPASS] XAUUSD bias=%d -- trend leg bypasses 90s cooldown\n",
-                       gold_trend.bias);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[BRACKET-COOLDOWN-BYPASS] XAUUSD bias=%d -- trend leg bypasses 90s cooldown\n",                        gold_trend.bias);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
 
@@ -1271,12 +1304,12 @@ static void on_tick_gold(
             const int64_t now_ovr = static_cast<int64_t>(std::time(nullptr));
             if (now_ovr - s_chop_ovr_log >= 5) {
                 s_chop_ovr_log = now_ovr;
-                printf("[BRK-CHOP-OVERRIDE] XAUUSD supervisor chop_detected bypassed -- "
-                       "price broke %s by %.1fpt (brk_hi=%.2f brk_lo=%.2f bid=%.2f ask=%.2f)\n",
-                       price_breaks_hi ? "brk_hi" : "brk_lo",
-                       price_breaks_hi ? (ask - brk_hi_now) : (brk_lo_now - bid),
-                       brk_hi_now, brk_lo_now, bid, ask);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[BRK-CHOP-OVERRIDE] XAUUSD supervisor chop_detected bypassed -- "                        "price broke %s by %.1fpt (brk_hi=%.2f brk_lo=%.2f bid=%.2f ask=%.2f)\n",                        price_breaks_hi ? "brk_hi" : "brk_lo",                        price_breaks_hi ? (ask - brk_hi_now) : (brk_lo_now - bid),                        brk_hi_now, brk_lo_now, bid, ask);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
         const bool can_arm_bracket = can_arm_bracket_base || chop_price_break_override;
@@ -1338,13 +1371,12 @@ static void on_tick_gold(
                     "XAUUSD", ask - bid, tb_tp_dist, tb_lot);
 
                 if (tb_cost_ok && tb_lot >= 0.01) {
-                    printf("[TREND-BRACKET] XAUUSD %s entry=%.2f sl=%.2f(dist=%.2f) tp=%.2f"
-                           " atr=%.2f mult=%.1f lot=%.4f bias=%d drift=%.2f\n",
-                           is_long_trend ? "LONG" : "SHORT",
-                           trend_entry, trend_sl, trend_sl_dist, trend_tp,
-                           trend_atr, sl_mult, tb_lot, gold_trend.bias,
-                           gold_ewm_drift_now);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[TREND-BRACKET] XAUUSD %s entry=%.2f sl=%.2f(dist=%.2f) tp=%.2f"                            " atr=%.2f mult=%.1f lot=%.4f bias=%d drift=%.2f\n",                            is_long_trend ? "LONG" : "SHORT",                            trend_entry, trend_sl, trend_sl_dist, trend_tp,                            trend_atr, sl_mult, tb_lot, gold_trend.bias,                            gold_ewm_drift_now);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
 
                     // Send ONLY trend-direction stop order -- no counter leg
                     write_trade_open_log("XAUUSD", "TrendBracket",
@@ -1388,8 +1420,12 @@ static void on_tick_gold(
                         trend_tp, trend_sl);
                     ++g_bracket_gold_trades_this_minute;
                 } else {
-                    printf("[TREND-BRACKET] XAUUSD BLOCKED cost_ok=%d lot=%.4f tp_dist=%.2f\n",
-                           (int)tb_cost_ok, tb_lot, tb_tp_dist);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[TREND-BRACKET] XAUUSD BLOCKED cost_ok=%d lot=%.4f tp_dist=%.2f\n",                            (int)tb_cost_ok, tb_lot, tb_tp_dist);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
         }
@@ -1509,9 +1545,12 @@ static void on_tick_gold(
                     long_id  = send_live_order("XAUUSD", true,  long_lot,  bgsigs.long_entry);
                     short_id = send_live_order("XAUUSD", false, short_lot, bgsigs.short_entry);
                     g_telemetry.UpdateLastEntryTs();  // watchdog: bracket (biased) entry
-                    printf("[BRACKET-L2] XAUUSD bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",
-                           gold_trend.bias, bg_lot, bg_lot * 0.5,
-                           g_macro_ctx.gold_l2_imbalance);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[BRACKET-L2] XAUUSD bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",                            gold_trend.bias, bg_lot, bg_lot * 0.5,                            g_macro_ctx.gold_l2_imbalance);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 } else {
                     write_trade_open_log("XAUUSD", "BracketGold", "LONG",
                         bgsigs.long_entry,
@@ -1561,9 +1600,12 @@ static void on_tick_gold(
             // Evidence: 09:03 LONG SL_HIT -> 09:07 SHORT IMM_REVERSAL -$23 4min later.
             g_gf_long_blocked_until.store(now_s + 300);
             g_gf_short_blocked_until.store(now_s + 300);
-            printf("[GOLD-REVERSAL] GoldFlow SL_HIT %s -- reversal window 60s, both dirs blocked 300s\n",
-                   tr.side.c_str());
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLD-REVERSAL] GoldFlow SL_HIT %s -- reversal window 60s, both dirs blocked 300s\n",                    tr.side.c_str());
+                std::cout << _msg;
+                std::cout.flush();
+            }
             const bool is_long_sl = (tr.side == "LONG");
             auto& sl_count = is_long_sl ? g_gf_dir_sl_long_count  : g_gf_dir_sl_short_count;
             auto& sl_first = is_long_sl ? g_gf_dir_sl_long_first  : g_gf_dir_sl_short_first;
@@ -1578,10 +1620,12 @@ static void on_tick_gold(
                     blocked.store(now_s + GF_DIR_SL_COOLDOWN_SEC);
                     sl_count.store(0);
                     sl_first.store(0);
-                    printf("[GFE-FADE-BLOCK] %s direction blocked %llds after %d consecutive SL_HITs\n",
-                           is_long_sl ? "LONG" : "SHORT",
-                           (long long)GF_DIR_SL_COOLDOWN_SEC, count);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-FADE-BLOCK] %s direction blocked %llds after %d consecutive SL_HITs\n",                            is_long_sl ? "LONG" : "SHORT",                            (long long)GF_DIR_SL_COOLDOWN_SEC, count);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
         }
@@ -1598,9 +1642,12 @@ static void on_tick_gold(
             const bool was_short = (tr.side == "SHORT");
             auto& opp_block = was_short ? g_gf_long_blocked_until : g_gf_short_blocked_until;
             opp_block.store(now_s + 300);  // 5 min opposite-direction block after trail
-            printf("[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir blocked 10s, opposite blocked 300s\n",
-                   tr.exitReason.c_str(), tr.side.c_str());
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLD-TRAIL-BLOCK] GoldFlow %s %s -- same-dir blocked 10s, opposite blocked 300s\n",                    tr.exitReason.c_str(), tr.side.c_str());
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
     };
 
@@ -1691,9 +1738,12 @@ static void on_tick_gold(
             // Clear hard stop tombstone for this reload position
             clear_hard_stop_tombstone("XAUUSD", tr.entryTs);
             // Reload exits do not set reversal windows -- main flow owns those.
-            printf("[GF-RELOAD] POSITION CLOSED reason=%s pnl_raw=%.4f\n",
-                   tr.exitReason.c_str(), tr.pnl);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GF-RELOAD] POSITION CLOSED reason=%s pnl_raw=%.4f\n",                    tr.exitReason.c_str(), tr.pnl);
+                std::cout << _msg;
+                std::cout.flush();
+            }
         };
         g_gold_flow_reload.on_tick(bid, ask,
             g_l2_gold.micro_edge.load(std::memory_order_relaxed),
@@ -1728,9 +1778,12 @@ static void on_tick_gold(
             handle_closed_trade(tr);
             send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
             clear_hard_stop_tombstone("XAUUSD", tr.entryTs);
-            printf("[GF-ADDON] POSITION CLOSED reason=%s pnl_raw=%.4f\n",
-                   tr.exitReason.c_str(), tr.pnl);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GF-ADDON] POSITION CLOSED reason=%s pnl_raw=%.4f\n",                    tr.exitReason.c_str(), tr.pnl);
+                std::cout << _msg;
+                std::cout.flush();
+            }
         };
         g_gold_flow_addon.on_tick(bid, ask,
             g_l2_gold.micro_edge.load(std::memory_order_relaxed),
@@ -1828,9 +1881,12 @@ static void on_tick_gold(
             static int64_t s_mce_conflict_log = 0;
             if (now_ms_g - s_mce_conflict_log > 10000) {
                 s_mce_conflict_log = now_ms_g;
-                printf("[MCE-BLOCK] MacroCrash entry blocked -- opposing HybridBracket %s active\n",
-                       g_hybrid_gold.pos.is_long ? "LONG" : "SHORT");
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[MCE-BLOCK] MacroCrash entry blocked -- opposing HybridBracket %s active\n",                        g_hybrid_gold.pos.is_long ? "LONG" : "SHORT");
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             // Still call on_tick to manage any existing MacroCrash position
             if (g_macro_crash.has_open_position()) {
@@ -2169,16 +2225,19 @@ static void on_tick_gold(
                         g_gold_flow_reload.pos.entry);
                 }
                 g_telemetry.UpdateLastEntryTs();  // watchdog: GoldFlow reload entry
-                printf("[GF-RELOAD] ENTRY FIRED %s lot=%.3f entry=%.2f sl=%.2f atr=%.2f\n",
-                       g_gold_flow_reload.pos.is_long ? "LONG" : "SHORT",
-                       g_gold_flow_reload.pos.size,
-                       g_gold_flow_reload.pos.entry,
-                       g_gold_flow_reload.pos.sl,
-                       atr_for_reload);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GF-RELOAD] ENTRY FIRED %s lot=%.3f entry=%.2f sl=%.2f atr=%.2f\n",                        g_gold_flow_reload.pos.is_long ? "LONG" : "SHORT",                        g_gold_flow_reload.pos.size,                        g_gold_flow_reload.pos.entry,                        g_gold_flow_reload.pos.sl,                        atr_for_reload);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             } else {
-                printf("[GF-RELOAD] ENTRY FAILED -- force_entry returned false\n");
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GF-RELOAD] ENTRY FAILED -- force_entry returned false\n");
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
     }
@@ -2202,17 +2261,21 @@ static void on_tick_gold(
         if (nowSec() - s_outer_gate_log >= 30) {
             s_outer_gate_log = nowSec();
             if (outer_blocked) {
-                printf("[GF-OUTER-BLOCK] can_enter=%d bracket=%d stack=%d flow=%d "
-                       "le=%d trend=%d reload=%d trail=%d slot=%d\n",
-                       gold_can_enter ? 1 : 0,
-                       bracket_open ? 1 : 0, stack_open ? 1 : 0, flow_open ? 1 : 0,
-                       le_open ? 1 : 0, trend_open ? 1 : 0, reload_open ? 1 : 0,
-                       gold_trail_blocked ? 1 : 0, g_macro_ctx.session_slot);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GF-OUTER-BLOCK] can_enter=%d bracket=%d stack=%d flow=%d "                        "le=%d trend=%d reload=%d trail=%d slot=%d\n",                        gold_can_enter ? 1 : 0,                        bracket_open ? 1 : 0, stack_open ? 1 : 0, flow_open ? 1 : 0,                        le_open ? 1 : 0, trend_open ? 1 : 0, reload_open ? 1 : 0,                        gold_trail_blocked ? 1 : 0, g_macro_ctx.session_slot);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             } else {
-                printf("[GF-OUTER-PASS] can_enter=1 all_flat slot=%d l2_imb=%.3f\n",
-                       g_macro_ctx.session_slot, g_macro_ctx.gold_l2_imbalance);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GF-OUTER-PASS] can_enter=1 all_flat slot=%d l2_imb=%.3f\n",                        g_macro_ctx.session_slot, g_macro_ctx.gold_l2_imbalance);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
-            fflush(stdout);
+            std::cout.flush();
         }
     }
     if ((gold_can_enter || g_gf_vel_reentry_bypass.load())
@@ -2236,9 +2299,12 @@ static void on_tick_gold(
             const int64_t now_ig = static_cast<int64_t>(std::time(nullptr));
             if (now_ig - s_imp_log >= 10) {
                 s_imp_log = now_ig;
-                printf("[GF-IMPULSE-GHOST] Blocked -- IMPULSE only %d ticks, need 3\n",
-                       g_gold_impulse_ticks.load());
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GF-IMPULSE-GHOST] Blocked -- IMPULSE only %d ticks, need 3\n",                        g_gold_impulse_ticks.load());
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         } else {
         g_gold_flow.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
@@ -2318,11 +2384,12 @@ static void on_tick_gold(
                 s_size_log = nowSec();
                 const double gf_sl_pts = gf_atr_gate * GFE_ATR_SL_MULT;
                 const double lot_est   = std::min(0.20, scaled_risk / (gf_sl_pts * 100.0));  // capped 0.50->0.20 (diagnostic log)
-                printf("[GFE-ATR-SIZE] atr=%.2f scale=%.2fx risk_base=$%.0f risk_scaled=$%.0f "
-                       "lot_est=%.3f sl_pts=%.2f vol_ratio=%.2f wide_trail=%d\n",
-                       gf_atr_gate, atr_scale, g_cfg.risk_per_trade_usd, scaled_risk,
-                       lot_est, gf_sl_pts, gf_vol_ratio_scale, (int)wide_trail_active);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-ATR-SIZE] atr=%.2f scale=%.2fx risk_base=$%.0f risk_scaled=$%.0f "                        "lot_est=%.3f sl_pts=%.2f vol_ratio=%.2f wide_trail=%d\n",                        gf_atr_gate, atr_scale, g_cfg.risk_per_trade_usd, scaled_risk,                        lot_est, gf_sl_pts, gf_vol_ratio_scale, (int)wide_trail_active);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             // Store expansion flag for use later in this tick (set_trend_bias call)
             // We need a local so the later set_trend_bias uses the ATR-adjusted value
@@ -2394,8 +2461,12 @@ static void on_tick_gold(
             static int64_t s_cull_log = 0;
             if (nowSec() - s_cull_log >= 60) {
                 s_cull_log = nowSec();
-                printf("[GF-GATE-BLOCK] reason=ENGINE_CULLED -- GoldFlow disabled after 4 consecutive SL_HITs\n");
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GF-GATE-BLOCK] reason=ENGINE_CULLED -- GoldFlow disabled after 4 consecutive SL_HITs\n");
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             gf_tick_ok = false;
             gf_block_reason = "ENGINE_CULLED";
@@ -2446,22 +2517,22 @@ static void on_tick_gold(
                 }
                 if (now_wup - s_warmup_log >= 60) {
                     s_warmup_log = now_wup;
-                    printf("[GF-GATE-0D] BARS_PERMANENTLY_UNAVAILABLE -- "
-                           "bars_missing=%llds tick_atr=%.2f %s. "
-                           "Gates 3/4/Score skipped. Restart Omega to retry bar seeding.\n",
-                           (long long)bars_missing_secs, tick_atr,
-                           (tick_atr >= 2.0) ? "ALLOWING entries (tick ATR warm)"
-                                             : "BLOCKING entries (tick ATR cold)");
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-GATE-0D] BARS_PERMANENTLY_UNAVAILABLE -- "                            "bars_missing=%llds tick_atr=%.2f %s. "                            "Gates 3/4/Score skipped. Restart Omega to retry bar seeding.\n",                            (long long)bars_missing_secs, tick_atr,                            (tick_atr >= 2.0) ? "ALLOWING entries (tick ATR warm)"                                              : "BLOCKING entries (tick ATR cold)");
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             } else {
                 if (now_wup - s_warmup_log >= 30) {
                     s_warmup_log = now_wup;
-                    printf("[GF-GATE-BLOCK] reason=BARS_NOT_READY -- GoldFlow blocked until "
-                           "M1 bars seeded (need %d bars, Gates 3+4 inactive without them). "
-                           "Will allow entries in %llds if bars never seed.\n",
-                           52, (long long)(120 - bars_missing_secs));
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-GATE-BLOCK] reason=BARS_NOT_READY -- GoldFlow blocked until "                            "M1 bars seeded (need %d bars, Gates 3+4 inactive without them). "                            "Will allow entries in %llds if bars never seed.\n",                            52, (long long)(120 - bars_missing_secs));
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 gf_tick_ok = false;
                 gf_block_reason = "BARS_NOT_READY";
@@ -2532,11 +2603,12 @@ static void on_tick_gold(
                 static int64_t s_comp_log = 0;
                 if (static_cast<int64_t>(std::time(nullptr)) - s_comp_log >= 30) {
                     s_comp_log = static_cast<int64_t>(std::time(nullptr));
-                    printf("[GF-GATE-BLOCK] reason=COMPRESSION_NO_VOL regime=%s "
-                           "vol_range=%.2f < %.1fpts drift=%.2f -- dead flat tape\n",
-                           gold_stack_regime, vol_range_now, GF_COMPRESSION_VOL_FLOOR,
-                           g_gold_stack.ewm_drift());
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-GATE-BLOCK] reason=COMPRESSION_NO_VOL regime=%s "                            "vol_range=%.2f < %.1fpts drift=%.2f -- dead flat tape\n",                            gold_stack_regime, vol_range_now, GF_COMPRESSION_VOL_FLOOR,                            g_gold_stack.ewm_drift());
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 gf_tick_ok = false;
                 gf_block_reason = "COMPRESSION_NO_VOL";
@@ -2544,9 +2616,12 @@ static void on_tick_gold(
                     static int64_t s_comp_bypass_log = 0;
                     if (static_cast<int64_t>(std::time(nullptr)) - s_comp_bypass_log >= 30) {
                         s_comp_bypass_log = static_cast<int64_t>(std::time(nullptr));
-                        printf("[GF-COMP-BYPASS] regime=%s vol_range=%.2f but drift=%.2f -- compression breaking, allowing entry\n",
-                               gold_stack_regime, vol_range_now, g_gold_stack.ewm_drift());
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GF-COMP-BYPASS] regime=%s vol_range=%.2f but drift=%.2f -- compression breaking, allowing entry\n",                                gold_stack_regime, vol_range_now, g_gold_stack.ewm_drift());
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
             }
@@ -2587,13 +2662,12 @@ static void on_tick_gold(
                     static int64_t s_room_log = 0;
                     if (static_cast<int64_t>(std::time(nullptr)) - s_room_log >= 30) {
                         s_room_log = static_cast<int64_t>(std::time(nullptr));
-                        printf("[GF-GATE-BLOCK] reason=NO_ROOM_TO_TARGET %s "
-                               "vwap=%.2f mid=%.2f dist=%.2fpts atr=%.2f need=%.2fpts (%.1fR of %.1fR)\n",
-                               gf_long_rt ? "LONG" : "SHORT",
-                               gf_vwap_rt, gf_mid_rt, vwap_dist, gf_atr_rt,
-                               gf_atr_rt * GF_MIN_VWAP_ROOM_R,
-                               vwap_dist / gf_atr_rt, GF_MIN_VWAP_ROOM_R);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GF-GATE-BLOCK] reason=NO_ROOM_TO_TARGET %s "                                "vwap=%.2f mid=%.2f dist=%.2fpts atr=%.2f need=%.2fpts (%.1fR of %.1fR)\n",                                gf_long_rt ? "LONG" : "SHORT",                                gf_vwap_rt, gf_mid_rt, vwap_dist, gf_atr_rt,                                gf_atr_rt * GF_MIN_VWAP_ROOM_R,                                vwap_dist / gf_atr_rt, GF_MIN_VWAP_ROOM_R);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     gf_tick_ok = false;
                     gf_block_reason = "NO_ROOM_TO_TARGET";
@@ -2661,10 +2735,12 @@ static void on_tick_gold(
             static constexpr double RSI_OB = 80.0;  // overbought threshold
             static constexpr double RSI_OS = 20.0;  // oversold threshold
             if (gf_long && bar_rsi > RSI_OB) {
-                printf("[GF-BAR-BLOCK] XAUUSD LONG blocked RSI=%.1f > %.0f (overbought)"
-                       " bb_pct=%.2f trend=%d\n",
-                       bar_rsi, RSI_OB, bar_bb_pct, bar_trend);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GF-BAR-BLOCK] XAUUSD LONG blocked RSI=%.1f > %.0f (overbought)"                        " bb_pct=%.2f trend=%d\n",                        bar_rsi, RSI_OB, bar_bb_pct, bar_trend);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 gf_tick_ok = false;
                 gf_block_reason = "RSI_OVERBOUGHT";
             } else if (!gf_long && bar_rsi < RSI_OS) {
@@ -2674,18 +2750,19 @@ static void on_tick_gold(
                 const bool momentum_regime = g_vol_targeter.is_momentum_regime(
                     g_bars_gold.m1.ind);
                 if (momentum_regime) {
-                    printf("[GF-BAR-ALLOW] XAUUSD SHORT allowed RSI=%.1f < %.0f"
-                           " -- momentum regime (ADX=%.1f ATR expanding)"
-                           " bb_pct=%.2f trend=%d\n",
-                           bar_rsi, RSI_OS,
-                           g_bars_gold.m1.ind.adx14.load(std::memory_order_relaxed),
-                           bar_bb_pct, bar_trend);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-BAR-ALLOW] XAUUSD SHORT allowed RSI=%.1f < %.0f"                            " -- momentum regime (ADX=%.1f ATR expanding)"                            " bb_pct=%.2f trend=%d\n",                            bar_rsi, RSI_OS,                            g_bars_gold.m1.ind.adx14.load(std::memory_order_relaxed),                            bar_bb_pct, bar_trend);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 } else {
-                    printf("[GF-BAR-BLOCK] XAUUSD SHORT blocked RSI=%.1f < %.0f (oversold)"
-                           " bb_pct=%.2f trend=%d\n",
-                           bar_rsi, RSI_OS, bar_bb_pct, bar_trend);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-BAR-BLOCK] XAUUSD SHORT blocked RSI=%.1f < %.0f (oversold)"                            " bb_pct=%.2f trend=%d\n",                            bar_rsi, RSI_OS, bar_bb_pct, bar_trend);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     gf_tick_ok = false;
                     gf_block_reason = "RSI_OVERSOLD";
                 }
@@ -2711,9 +2788,12 @@ static void on_tick_gold(
                     static int64_t s_rsi_dir_log = 0;
                     if (nowSec() - s_rsi_dir_log >= 10) {
                         s_rsi_dir_log = nowSec();
-                        printf("[GF-BAR-BLOCK] XAUUSD LONG blocked RSI=%.1f slope=%.2f (falling below 50)\n",
-                               bar_rsi, rsi_slope);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GF-BAR-BLOCK] XAUUSD LONG blocked RSI=%.1f slope=%.2f (falling below 50)\n",                                bar_rsi, rsi_slope);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     gf_tick_ok = false;
                     gf_block_reason = "RSI_DIR_FALLING";
@@ -2721,9 +2801,12 @@ static void on_tick_gold(
                     static int64_t s_rsi_dir_log2 = 0;
                     if (nowSec() - s_rsi_dir_log2 >= 10) {
                         s_rsi_dir_log2 = nowSec();
-                        printf("[GF-BAR-BLOCK] XAUUSD SHORT blocked RSI=%.1f slope=%.2f (rising above 50)\n",
-                               bar_rsi, rsi_slope);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GF-BAR-BLOCK] XAUUSD SHORT blocked RSI=%.1f slope=%.2f (rising above 50)\n",                                bar_rsi, rsi_slope);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     gf_tick_ok = false;
                     gf_block_reason = "RSI_DIR_RISING";
@@ -2742,9 +2825,12 @@ static void on_tick_gold(
                     // EWM smoothing on the EMAs already prevents single-tick false crossovers.
                     // If bar_trend == -1, EMA9 < EMA50: downtrend is confirmed. Block LONG immediately.
                     // If bar_trend == +1, EMA9 > EMA50: uptrend is confirmed. Block SHORT immediately.
-                    printf("[GF-BAR-BLOCK] XAUUSD %s blocked -- counter-trend M1=%+d (EMA9 vs EMA50)\n",
-                           gf_long ? "LONG" : "SHORT", bar_trend);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-BAR-BLOCK] XAUUSD %s blocked -- counter-trend M1=%+d (EMA9 vs EMA50)\n",                            gf_long ? "LONG" : "SHORT", bar_trend);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     gf_tick_ok = false;
                     gf_block_reason = "COUNTER_TREND";
                 }
@@ -2798,10 +2884,12 @@ static void on_tick_gold(
                 static int64_t s_crowd_log_ts = 0;
                 if (nowSec() - s_crowd_log_ts >= 30) {
                     s_crowd_log_ts = nowSec();
-                    printf("[CROWDING] XAUUSD %s penalty=%d score %d->%d\n",
-                           gf_long_sc ? "LONG" : "SHORT",
-                           crowding_penalty, sr.total, adjusted_score);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[CROWDING] XAUUSD %s penalty=%d score %d->%d\n",                            gf_long_sc ? "LONG" : "SHORT",                            crowding_penalty, sr.total, adjusted_score);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
 
@@ -2824,12 +2912,12 @@ static void on_tick_gold(
                 static int64_t s_score_log_ts = 0;
                 if (nowSec() - s_score_log_ts >= 15) {
                     s_score_log_ts = nowSec();
-                    printf("[GF-SCORE-INFO] XAUUSD %s score=%d crowd_adj=%d/%d < %d%s -- LOG ONLY, not blocking\n",
-                           gf_long_sc ? "LONG" : "SHORT",
-                           sr.total, adjusted_score, sr.max_points,
-                           min_score,
-                           crowding_penalty > 0 ? " (crowding)" : "");
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-SCORE-INFO] XAUUSD %s score=%d crowd_adj=%d/%d < %d%s -- LOG ONLY, not blocking\n",                            gf_long_sc ? "LONG" : "SHORT",                            sr.total, adjusted_score, sr.max_points,                            min_score,                            crowding_penalty > 0 ? " (crowding)" : "");
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 // NOT setting gf_tick_ok = false -- score is advisory only
             }
@@ -2859,11 +2947,12 @@ static void on_tick_gold(
                     static int64_t s_spread_gate_log = 0;
                     if (nowSec() - s_spread_gate_log >= 30) {
                         s_spread_gate_log = nowSec();
-                        printf("[GF-BAR-BLOCK] XAUUSD %s blocked SPREAD_ANOMALY"
-                               " spread=%.2f avg=%.2f ratio=%.2f\n",
-                               gf_long_g4 ? "LONG" : "SHORT",
-                               ask - bid, spread_avg, spread_ratio);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GF-BAR-BLOCK] XAUUSD %s blocked SPREAD_ANOMALY"                                " spread=%.2f avg=%.2f ratio=%.2f\n",                                gf_long_g4 ? "LONG" : "SHORT",                                ask - bid, spread_avg, spread_ratio);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     gf_tick_ok = false;
                     gf_block_reason = "SPREAD_ANOMALY";
@@ -2884,9 +2973,12 @@ static void on_tick_gold(
                     static int64_t s_storm_log = 0;
                     if (nowSec() - s_storm_log >= 30) {
                         s_storm_log = nowSec();
-                        printf("[GF-BAR-INFO] XAUUSD tick storm rate=%.1f/s -- LOG ONLY\n",
-                               tick_rate);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GF-BAR-INFO] XAUUSD tick storm rate=%.1f/s -- LOG ONLY\n",                                tick_rate);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
             }
@@ -2912,13 +3004,12 @@ static void on_tick_gold(
                 static int64_t s_coherence_log = 0;
                 if (nowSec() - s_coherence_log >= 60) {
                     s_coherence_log = nowSec();
-                    printf("[GF-BAR-INFO] XAUUSD %s atr_slope=%.3f atr_exp=%d atr_con=%d"
-                           " vwap_dir=%+d vol_delta=%.3f gate4d=%s (LOG ONLY)\n",
-                           gf_long_g4 ? "LONG" : "SHORT",
-                           atr_slope, atr_exp ? 1 : 0, atr_contract ? 1 : 0,
-                           vwap_dir, vol_delta,
-                           (atr_contract && vwap_opposing) ? "would_block" : "pass");
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-BAR-INFO] XAUUSD %s atr_slope=%.3f atr_exp=%d atr_con=%d"                            " vwap_dir=%+d vol_delta=%.3f gate4d=%s (LOG ONLY)\n",                            gf_long_g4 ? "LONG" : "SHORT",                            atr_slope, atr_exp ? 1 : 0, atr_contract ? 1 : 0,                            vwap_dir, vol_delta,                            (atr_contract && vwap_opposing) ? "would_block" : "pass");
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
 
@@ -2940,11 +3031,12 @@ static void on_tick_gold(
                                             .load(std::memory_order_relaxed);
                 if (bb_sq && sq_bars == 1) {
                     // Log the moment squeeze is first detected
-                    printf("[GF-BBW-SQUEEZE] XAUUSD SQUEEZE DETECTED"
-                           " bb_width=%.5f bb_width_min=%.5f sq_bars=%d"
-                           " -- breakout setup forming\n",
-                           bb_w, bb_w_min, sq_bars);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-BBW-SQUEEZE] XAUUSD SQUEEZE DETECTED"                            " bb_width=%.5f bb_width_min=%.5f sq_bars=%d"                            " -- breakout setup forming\n",                            bb_w, bb_w_min, sq_bars);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 // Squeeze active: GoldFlow counter-trend entries get extra blocking.
                 // When bands are coiling, price is about to break one way hard --
@@ -2959,10 +3051,12 @@ static void on_tick_gold(
                     const bool   counter_sq    = (gf_long_g4  && bar_trend_sq == -1)
                                               || (!gf_long_g4 && bar_trend_sq == +1);
                     if (counter_sq) {
-                        printf("[GF-BAR-BLOCK] XAUUSD %s blocked BBW_SQUEEZE_COUNTER"
-                               " sq_bars=%d M5_trend=%+d -- coiling against trend\n",
-                               gf_long_g4 ? "LONG" : "SHORT", sq_bars, bar_trend_sq);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GF-BAR-BLOCK] XAUUSD %s blocked BBW_SQUEEZE_COUNTER"                                " sq_bars=%d M5_trend=%+d -- coiling against trend\n",                                gf_long_g4 ? "LONG" : "SHORT", sq_bars, bar_trend_sq);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                         gf_tick_ok = false;
                         gf_block_reason = "BBW_SQUEEZE_COUNTER";
                     }
@@ -2975,8 +3069,12 @@ static void on_tick_gold(
         // Spread blows out around NFP/FOMC/CPI -- fills are unreliable.
         // Complements OmegaNewsBlackout (hardcoded windows) with precise event times.
         if (gf_tick_ok && g_vol_targeter.high_impact_window()) {
-            printf("[GF-BAR-BLOCK] XAUUSD entry blocked -- high-impact macro event window\n");
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GF-BAR-BLOCK] XAUUSD entry blocked -- high-impact macro event window\n");
+                std::cout << _msg;
+                std::cout.flush();
+            }
             gf_tick_ok = false;
             gf_block_reason = "HIGH_IMPACT_WINDOW";
         }
@@ -3016,9 +3114,12 @@ static void on_tick_gold(
                     static int64_t s_fade_log = 0;
                     if (now_fade - s_fade_log >= 15) {
                         s_fade_log = now_fade;
-                        printf("[GFE-FADE-BLOCK] %s entry blocked -- %llds remaining after consecutive SL_HITs\n",
-                               likely_long_fb ? "LONG" : "SHORT", (long long)remaining);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GFE-FADE-BLOCK] %s entry blocked -- %llds remaining after consecutive SL_HITs\n",                                likely_long_fb ? "LONG" : "SHORT", (long long)remaining);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     gf_tick_ok = false;
                     gf_block_reason = "DIR_SL_COOLDOWN";
@@ -3050,27 +3151,12 @@ static void on_tick_gold(
                                                 .load(std::memory_order_relaxed);
                 const bool   bear_div     = g_bars_gold.m1.ind.rsi_bear_div
                                                 .load(std::memory_order_relaxed);
-                printf("[GF-GATE-BLOCK] reason=%s atr=%.2f spread=%.3f spread_ratio=%.2f "
-                       "l2=%.3f micro=%.4f "
-                       "wall_below=%d wall_above=%d absorb=%d vac_ask=%d vac_bid=%d "
-                       "trail_block=%d post_impulse=%d ny_noise=%d gold_can_enter=%d "
-                       "tick_rate=%.1f bb_sq=%d bull_div=%d bear_div=%d\n",
-                       gf_block_reason ? gf_block_reason : "UNKNOWN",
-                       g_gold_flow.current_atr(), ask - bid, spread_ratio,
-                       g_macro_ctx.gold_l2_imbalance,
-                       g_macro_ctx.gold_microprice_bias,
-                       g_macro_ctx.gold_wall_below ? 1 : 0,
-                       g_macro_ctx.gold_wall_above ? 1 : 0,
-                       g_edges.absorption.is_absorbing("XAUUSD", gf_dir) ? 1 : 0,
-                       g_macro_ctx.gold_vacuum_ask ? 1 : 0,
-                       g_macro_ctx.gold_vacuum_bid ? 1 : 0,
-                       gold_trail_blocked ? 1 : 0,
-                       gold_post_impulse_block ? 1 : 0,
-                       in_ny_close_noise ? 1 : 0,
-                       gold_can_enter ? 1 : 0,
-                       tick_rate, bb_sq ? 1 : 0,
-                       bull_div ? 1 : 0, bear_div ? 1 : 0);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GF-GATE-BLOCK] reason=%s atr=%.2f spread=%.3f spread_ratio=%.2f "                        "l2=%.3f micro=%.4f "                        "wall_below=%d wall_above=%d absorb=%d vac_ask=%d vac_bid=%d "                        "trail_block=%d post_impulse=%d ny_noise=%d gold_can_enter=%d "                        "tick_rate=%.1f bb_sq=%d bull_div=%d bear_div=%d\n",                        gf_block_reason ? gf_block_reason : "UNKNOWN",                        g_gold_flow.current_atr(), ask - bid, spread_ratio,                        g_macro_ctx.gold_l2_imbalance,                        g_macro_ctx.gold_microprice_bias,                        g_macro_ctx.gold_wall_below ? 1 : 0,                        g_macro_ctx.gold_wall_above ? 1 : 0,                        g_edges.absorption.is_absorbing("XAUUSD", gf_dir) ? 1 : 0,                        g_macro_ctx.gold_vacuum_ask ? 1 : 0,                        g_macro_ctx.gold_vacuum_bid ? 1 : 0,                        gold_trail_blocked ? 1 : 0,                        gold_post_impulse_block ? 1 : 0,                        in_ny_close_noise ? 1 : 0,                        gold_can_enter ? 1 : 0,                        tick_rate, bb_sq ? 1 : 0,                        bull_div ? 1 : 0, bear_div ? 1 : 0);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 // Store for health watchdog GUI display
                 if (gf_block_reason) g_last_gf_block_reason.store(gf_block_reason, std::memory_order_relaxed);
             }
@@ -3101,12 +3187,12 @@ static void on_tick_gold(
                     const int64_t block_until = now_s + GF_CRASH_BYPASS_COOLDOWN_SEC;
                     g_gf_crash_bypass_block_until.store(block_until);
                     g_gf_crash_consec_sl.store(0);
-                    printf("[GF-CRASH-BYPASS-COOLDOWN] %d consecutive SL_HITs -- "
-                           "crash_impulse_bypass BLOCKED for %llds (until epoch %lld)\n",
-                           GF_CRASH_BYPASS_CONSEC_SL_MAX,
-                           static_cast<long long>(GF_CRASH_BYPASS_COOLDOWN_SEC),
-                           static_cast<long long>(block_until));
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-CRASH-BYPASS-COOLDOWN] %d consecutive SL_HITs -- "                            "crash_impulse_bypass BLOCKED for %llds (until epoch %lld)\n",                            GF_CRASH_BYPASS_CONSEC_SL_MAX,                            static_cast<long long>(GF_CRASH_BYPASS_COOLDOWN_SEC),                            static_cast<long long>(block_until));
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             } else {
                 g_gf_crash_consec_sl.store(0);
@@ -3124,9 +3210,12 @@ static void on_tick_gold(
             static int64_t s_l2_dead_log = 0;
             if (now_ms_g - s_l2_dead_log > 60000) {
                 s_l2_dead_log = now_ms_g;
-                printf("[GFE-GATE] L2 DEAD -- GoldFlow entries BLOCKED (ctid=43014358 not flowing)\n"
-                       "[GFE-GATE] Check C:\\Omega\\logs\\L2_ALERT.txt for details\n");
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-GATE] L2 DEAD -- GoldFlow entries BLOCKED (ctid=43014358 not flowing)\n"                        "[GFE-GATE] Check C:\\Omega\\logs\\L2_ALERT.txt for details\n");
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             // Skip entry block entirely -- fall through to manage open positions only
             goto gfe_entry_skip;
@@ -3148,8 +3237,12 @@ static void on_tick_gold(
             static int64_t s_feed_stale_log = 0;
             if (now_ms_g - s_feed_stale_log > 60000) {
                 s_feed_stale_log = now_ms_g;
-                printf("[FEED-STALE] XAUUSD depth starved -- all new entries BLOCKED. "                       "CTraderDepthClient is escalating (resub -> reconnect).\n");
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[FEED-STALE] XAUUSD depth starved -- all new entries BLOCKED. "                       "CTraderDepthClient is escalating (resub -> reconnect).\n");
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             goto gfe_entry_skip;
         }
@@ -3198,11 +3291,12 @@ static void on_tick_gold(
                     const double snap_reversal_est = std::fabs(snap_drift) * 2.0;  // use drift magnitude as reversal proxy
                     g_gold_stack.reset_drift_on_reversal(snap_reversal_est);
                     g_gold_flow.reset_drift_persistence();
-                    printf("[ASIA-RSI-SNAP] RSI=%.1f drift=%.2f -> snap fired (no prior GFE position needed) "
-                           "reversal_est=%.1f slot=%d vdisp=%.1f\n",
-                           snap_rsi, snap_drift, snap_reversal_est,
-                           g_macro_ctx.session_slot, snap_vdisp);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[ASIA-RSI-SNAP] RSI=%.1f drift=%.2f -> snap fired (no prior GFE position needed) "                            "reversal_est=%.1f slot=%d vdisp=%.1f\n",                            snap_rsi, snap_drift, snap_reversal_est,                            g_macro_ctx.session_slot, snap_vdisp);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
 
@@ -3259,9 +3353,12 @@ static void on_tick_gold(
                             // immediately rather than fighting 20 old opposing ticks.
                             g_gold_flow.reset_drift_persistence();
                             s_drift_reset_done = true;  // one-shot per close
-                            printf("[DRIFT-RESET] GFE close_dir=%+d exit=%.2f now=%.2f reversal=%.1fpt (min=%.1f) -- drift+persistence snapped\n",
-                                   gf_close_dir, exit_px, bid, reversal_dist, min_reversal);
-                            fflush(stdout);
+                            {
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg), "[DRIFT-RESET] GFE close_dir=%+d exit=%.2f now=%.2f reversal=%.1fpt (min=%.1f) -- drift+persistence snapped\n",                                    gf_close_dir, exit_px, bid, reversal_dist, min_reversal);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
                         }
                     }
                 }
@@ -3289,7 +3386,7 @@ static void on_tick_gold(
                     s_gf_vpin_log = nowSec();
                     std::printf("[VPIN-GF] GoldFlow entry blocked: vpin=%.3f toxic\n",
                                 g_vpin.vpin());
-                    std::fflush(stdout);
+                    std::cout.flush();
                 }
                 gf_vpin_ok = false;
             }
@@ -3307,7 +3404,7 @@ static void on_tick_gold(
                     if (nowSec() - s_gf_cvd_log > 15) {
                         s_gf_cvd_log = nowSec();
                         std::printf("[CVD-GF] GoldFlow LONG entry blocked: CVD bearish divergence (distribution)\n");
-                        std::fflush(stdout);
+                        std::cout.flush();
                     }
                     // Only block LONG entries -- SHORT allowed (flow is aligned)
                     // We can't know direction before on_tick fires, so we set a flag
@@ -3323,7 +3420,7 @@ static void on_tick_gold(
                     if (nowSec() - s_gf_cvd2_log > 15) {
                         s_gf_cvd2_log = nowSec();
                         std::printf("[CVD-GF] GoldFlow SHORT entry blocked: CVD bullish divergence (absorption)\n");
-                        std::fflush(stdout);
+                        std::cout.flush();
                     }
                     if (g_gold_stack.ewm_drift() < 0.0) gf_cvd_ok = false;
                 }
@@ -3348,7 +3445,7 @@ static void on_tick_gold(
                                 s_gf_pdh_log = nowSec();
                                 std::printf("[PDL-GF] GoldFlow LONG blocked: approaching PDH mid=%.2f pdh=%.2f\n",
                                             gold_mid_now, gf_pdl.high);
-                                std::fflush(stdout);
+                                std::cout.flush();
                             }
                         }
                     } else {
@@ -3361,7 +3458,7 @@ static void on_tick_gold(
                                 s_gf_pdl_log = nowSec();
                                 std::printf("[PDL-GF] GoldFlow SHORT blocked: approaching PDL mid=%.2f pdl=%.2f\n",
                                             gold_mid_now, gf_pdl.low);
-                                std::fflush(stdout);
+                                std::cout.flush();
                             }
                         }
                     }
@@ -3443,7 +3540,12 @@ static void on_tick_gold(
                     if (gf_is_long && dxy_ret > dxy_risk_off_thr) {
                         // DXY rising fast -- gold LONG opposes dollar strength
                         gf_cross_mult *= 0.70;
-                        printf("[XA-FILTER] XAUUSD LONG vs rising DXY (ret=%.4f) -- size x0.70\n", dxy_ret);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[XA-FILTER] XAUUSD LONG vs rising DXY (ret=%.4f) -- size x0.70\n", dxy_ret);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     } else if (!gf_is_long && dxy_ret > dxy_risk_off_thr) {
                         // DXY rising + gold SHORT -- momentum aligned, slight boost
                         gf_cross_mult *= 1.10;
@@ -3457,9 +3559,12 @@ static void on_tick_gold(
                     // Opposing bias = halve size. Aligned = full size. Neutral = 0.75x.
                     const double htf_mult = g_htf_filter.size_scale("XAUUSD", gf_is_long);
                     if (htf_mult < 1.0) {
-                        printf("[XA-FILTER] XAUUSD %s HTF bias=%s -- size x%.2f\n",
-                               gf_is_long ? "LONG" : "SHORT",
-                               g_htf_filter.bias_name("XAUUSD"), htf_mult);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[XA-FILTER] XAUUSD %s HTF bias=%s -- size x%.2f\n",                                gf_is_long ? "LONG" : "SHORT",                                g_htf_filter.bias_name("XAUUSD"), htf_mult);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     gf_cross_mult *= htf_mult;
 
@@ -3470,7 +3575,12 @@ static void on_tick_gold(
                     if (macro == "RISK_OFF" && !gf_is_long) {
                         // Shorting gold in a flight-to-safety = low edge
                         gf_cross_mult *= 0.60;
-                        printf("[XA-FILTER] XAUUSD SHORT in RISK_OFF -- size x0.60\n");
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[XA-FILTER] XAUUSD SHORT in RISK_OFF -- size x0.60\n");
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     } else if (macro == "RISK_ON" && gf_is_long) {
                         // Gold LONG when risk appetite is high = mild headwind
                         gf_cross_mult *= 0.85;
@@ -3489,13 +3599,21 @@ static void on_tick_gold(
                     if (gf_lot > max_loss_lot) {
                         gf_lot = std::max(GFE_MIN_LOT,
                             std::floor(max_loss_lot * 100.0 + 0.5) / 100.0);
-                        printf("[MAX-LOSS-CAP] XAUUSD FLOW lot capped %.4f?%.4f (sl=$%.2f max=$%.0f)\n",
-                               gf_final, gf_lot, gf_sl_abs * 100.0 * gf_final, g_cfg.max_loss_per_trade_usd);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[MAX-LOSS-CAP] XAUUSD FLOW lot capped %.4f?%.4f (sl=$%.2f max=$%.0f)\n",                                gf_final, gf_lot, gf_sl_abs * 100.0 * gf_final, g_cfg.max_loss_per_trade_usd);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
                 if (gf_lot != g_gold_flow.pos.size) {
-                    printf("[GF-SIZE] XAUUSD FLOW size %.4f?%.4f (regime_wt=%.2f kelly/dd/vol applied)\n",
-                           g_gold_flow.pos.size, gf_lot, gf_regime_wt);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GF-SIZE] XAUUSD FLOW size %.4f?%.4f (regime_wt=%.2f kelly/dd/vol applied)\n",                            g_gold_flow.pos.size, gf_lot, gf_regime_wt);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     g_gold_flow.pos.size = gf_lot;  // patch directly -- pos is public
                 }
             }
@@ -3539,8 +3657,12 @@ static void on_tick_gold(
                 le_sig.is_long ? "LONG" : "SHORT", le_sig.entry, le_sig.reason,
                 "LEAD_LAG", regime.c_str(), "LE",
                 le_sig.tp, le_sig.sl);
-            printf("[LE-SIZE] XAUUSD eng=%s sl_abs=%.2f spread=%.2f (enter_directional)\n",
-                   le_sig.engine, std::fabs(le_sig.entry - le_sig.sl), ask - bid);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[LE-SIZE] XAUUSD eng=%s sl_abs=%.2f spread=%.2f (enter_directional)\n",                    le_sig.engine, std::fabs(le_sig.entry - le_sig.sl), ask - bid);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             enter_directional("XAUUSD", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size, false, bid, ask, sym, regime);
         }
     }
@@ -3671,9 +3793,12 @@ static void on_tick_gold(
             static int64_t s_crash_log = 0;
             if (nowSec() - s_crash_log > 30) {
                 s_crash_log = nowSec();
-                printf("[CRASH-OVERRIDE] drift=%.2f RSI=%.1f -- TrendPB cooldown bypassed\n",
-                       drift_now, rsi_now);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[CRASH-OVERRIDE] drift=%.2f RSI=%.1f -- TrendPB cooldown bypassed\n",                        drift_now, rsi_now);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
     }
@@ -3689,9 +3814,12 @@ static void on_tick_gold(
             const bool drift_ok = (tpb.is_long  && gold_drift >= -1.0) ||
                                   (!tpb.is_long && gold_drift <=  1.0);
             if (!drift_ok) {
-                printf("[TRENDPB-GOLD] %s suppressed -- EWM drift=%.2f opposes direction\n",
-                       tpb.is_long ? "LONG" : "SHORT", gold_drift);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[TRENDPB-GOLD] %s suppressed -- EWM drift=%.2f opposes direction\n",                        tpb.is_long ? "LONG" : "SHORT", gold_drift);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 g_trend_pb_gold.cancel();
             } else {
                 const double tpb_lot = enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true, bid, ask, sym, regime);
@@ -3744,9 +3872,12 @@ static void on_tick_gold(
                 * g_trend_pb_gold.PYRAMID_SIZE_MULT);
             if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true, bid, ask, sym, regime)) {
                 ++g_trend_pb_gold.pyramid_adds_;
-                printf("[TRENDPB-GOLD] PYRAMID ADD #%d lot=%.4f sl=%.3f tp=%.3f\n",
-                       g_trend_pb_gold.pyramid_adds_, add_lot, pyr_sl, pyr_tp);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[TRENDPB-GOLD] PYRAMID ADD #%d lot=%.4f sl=%.3f tp=%.3f\n",                        g_trend_pb_gold.pyramid_adds_, add_lot, pyr_sl, pyr_tp);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
     }
@@ -3845,11 +3976,12 @@ static void on_tick_gold(
                 const std::string h_short_id = send_live_order("XAUUSD", false, h_lot, h_lo);
                 g_hybrid_gold.pending_long_clOrdId  = h_long_id;
                 g_hybrid_gold.pending_short_clOrdId = h_short_id;
-                printf("[HYBRID-GOLD] ORDERS SENT long_id=%s short_id=%s "
-                       "hi=%.2f lo=%.2f range=%.2f lot=%.3f\n",
-                       h_long_id.c_str(), h_short_id.c_str(),
-                       h_hi, h_lo, g_hybrid_gold.range, h_lot);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[HYBRID-GOLD] ORDERS SENT long_id=%s short_id=%s "                        "hi=%.2f lo=%.2f range=%.2f lot=%.3f\n",                        h_long_id.c_str(), h_short_id.c_str(),                        h_hi, h_lo, g_hybrid_gold.range, h_lot);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
     }
@@ -3914,9 +4046,12 @@ static void on_tick_gold(
         static int64_t s_dpe_chop_log = 0;
         if (now_ms_g - s_dpe_chop_log > 20000) {
             s_dpe_chop_log = now_ms_g;
-            printf("[DPE-CHOP-BLOCK] blocked: vol_ratio=%.2f drift=%.2f\n",
-                   gold_vol_ratio_now, gold_ewm_drift_now);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[DPE-CHOP-BLOCK] blocked: vol_ratio=%.2f drift=%.2f\n",                    gold_vol_ratio_now, gold_ewm_drift_now);
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
     }
 
@@ -4050,9 +4185,12 @@ static void on_tick_gold(
             s_cfe_lock_log = now_ms_g;
             const int secs_remaining = static_cast<int>(
                 (90000LL - (now_ms_g - s_cfe_startup_ms)) / 1000LL);
-            printf("[CFE-STARTUP-LOCK] entries blocked %ds remaining (cold-start warmup)\n",
-                   secs_remaining);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[CFE-STARTUP-LOCK] entries blocked %ds remaining (cold-start warmup)\n",                    secs_remaining);
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
     }
     // CFE TOD dead zone: block entries 00:00-01:30 UTC.
@@ -4069,8 +4207,12 @@ static void on_tick_gold(
         static int64_t s_cfe_tod_log = 0;
         if (now_ms_g - s_cfe_tod_log > 60000) {
             s_cfe_tod_log = now_ms_g;
-            printf("[CFE-TOD-DEAD] entries blocked: 00:00-01:30 UTC dead zone\n");
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[CFE-TOD-DEAD] entries blocked: 00:00-01:30 UTC dead zone\n");
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
     }
 
@@ -4172,10 +4314,12 @@ static void on_tick_gold(
                         static int64_t s_cfe_trend_log = 0;
                         if (now_ms_g - s_cfe_trend_log > 10000) {
                             s_cfe_trend_log = now_ms_g;
-                            printf("[CFE-BAR-BLOCK] %s blocked counter-trend M1=%+d EMA9=%.2f EMA50=%.2f\n",
-                                   cfe_is_long_intent ? "LONG" : "SHORT",
-                                   cfe_m1_trend, cfe_ema9, cfe_ema50);
-                            fflush(stdout);
+                            {
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg), "[CFE-BAR-BLOCK] %s blocked counter-trend M1=%+d EMA9=%.2f EMA50=%.2f\n",                                    cfe_is_long_intent ? "LONG" : "SHORT",                                    cfe_m1_trend, cfe_ema9, cfe_ema50);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
                         }
                     }
                 }
@@ -4186,16 +4330,24 @@ static void on_tick_gold(
                         static int64_t s_cfe_ob_log = 0;
                         if (now_ms_g - s_cfe_ob_log > 10000) {
                             s_cfe_ob_log = now_ms_g;
-                            printf("[CFE-BAR-BLOCK] LONG blocked RSI=%.1f > 75 (overbought)\n", cfe_bar_rsi);
-                            fflush(stdout);
+                            {
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg), "[CFE-BAR-BLOCK] LONG blocked RSI=%.1f > 75 (overbought)\n", cfe_bar_rsi);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
                         }
                     } else if (!cfe_is_long_intent && cfe_bar_rsi < 25.0) {
                         cfe_bar_gate_ok = false;
                         static int64_t s_cfe_os_log = 0;
                         if (now_ms_g - s_cfe_os_log > 10000) {
                             s_cfe_os_log = now_ms_g;
-                            printf("[CFE-BAR-BLOCK] SHORT blocked RSI=%.1f < 25 (oversold)\n", cfe_bar_rsi);
-                            fflush(stdout);
+                            {
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg), "[CFE-BAR-BLOCK] SHORT blocked RSI=%.1f < 25 (oversold)\n", cfe_bar_rsi);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
                         }
                     }
                 }
@@ -4217,18 +4369,24 @@ static void on_tick_gold(
                     static int64_t s_vpin_long_log = 0;
                     if (now_ms_g - s_vpin_long_log > 10000) {
                         s_vpin_long_log = now_ms_g;
-                        printf("[CFE-VPIN-BLOCK] LONG blocked: VPIN=%.3f toxic + sell-heavy bias\n",
-                               g_vpin.vpin());
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[CFE-VPIN-BLOCK] LONG blocked: VPIN=%.3f toxic + sell-heavy bias\n",                                g_vpin.vpin());
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 } else if (!cfe_is_long_intent && g_vpin.vpin_long_bias()) {
                     cfe_bar_gate_ok = false;
                     static int64_t s_vpin_short_log = 0;
                     if (now_ms_g - s_vpin_short_log > 10000) {
                         s_vpin_short_log = now_ms_g;
-                        printf("[CFE-VPIN-BLOCK] SHORT blocked: VPIN=%.3f toxic + buy-heavy bias\n",
-                               g_vpin.vpin());
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[CFE-VPIN-BLOCK] SHORT blocked: VPIN=%.3f toxic + buy-heavy bias\n",                                g_vpin.vpin());
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
             }
@@ -4244,16 +4402,24 @@ static void on_tick_gold(
                     static int64_t s_cvd_long_log = 0;
                     if (now_ms_g - s_cvd_long_log > 15000) {
                         s_cvd_long_log = now_ms_g;
-                        printf("[CFE-CVD-BLOCK] LONG blocked: CVD bearish divergence (distribution)\n");
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[CFE-CVD-BLOCK] LONG blocked: CVD bearish divergence (distribution)\n");
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 } else if (!cfe_is_long_intent && g_macro_ctx.gold_cvd_bull_div) {
                     cfe_bar_gate_ok = false;
                     static int64_t s_cvd_short_log = 0;
                     if (now_ms_g - s_cvd_short_log > 15000) {
                         s_cvd_short_log = now_ms_g;
-                        printf("[CFE-CVD-BLOCK] SHORT blocked: CVD bullish divergence (absorption)\n");
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[CFE-CVD-BLOCK] SHORT blocked: CVD bullish divergence (absorption)\n");
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
             }
@@ -4268,9 +4434,12 @@ static void on_tick_gold(
                 static int64_t s_cfe_spread_log = 0;
                 if (now_ms_g - s_cfe_spread_log > 10000) {
                     s_cfe_spread_log = now_ms_g;
-                    printf("[CFE-SPREAD-BLOCK] entry blocked: spread=%.3f > atr*0.30=%.3f\n",
-                           cfe_spread_now, cfe_atr_e * 0.30);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[CFE-SPREAD-BLOCK] entry blocked: spread=%.3f > atr*0.30=%.3f\n",                            cfe_spread_now, cfe_atr_e * 0.30);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
             // CHOP gate: vol expanding + no drift = whipsaw. Block ALL CFE entries.
@@ -4282,9 +4451,12 @@ static void on_tick_gold(
                 static int64_t s_cfe_chop_log = 0;
                 if (now_ms_g - s_cfe_chop_log > 20000) {
                     s_cfe_chop_log = now_ms_g;
-                    printf("[CFE-CHOP-BLOCK] blocked: vol_ratio=%.2f drift=%.2f\n",
-                           gold_vol_ratio_now, gold_ewm_drift_now);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[CFE-CHOP-BLOCK] blocked: vol_ratio=%.2f drift=%.2f\n",                            gold_vol_ratio_now, gold_ewm_drift_now);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
 
@@ -4311,9 +4483,12 @@ static void on_tick_gold(
                     static int64_t s_vwap_long_log = 0;
                     if (now_ms_g - s_vwap_long_log > 15000) {
                         s_vwap_long_log = now_ms_g;
-                        printf("[CFE-VWAP-BLOCK] LONG blocked: price=%.2f above VWAP=%.2f drift=%.2f\n",
-                               mid_now, cfe_vwap, gold_ewm_drift_now);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[CFE-VWAP-BLOCK] LONG blocked: price=%.2f above VWAP=%.2f drift=%.2f\n",                                mid_now, cfe_vwap, gold_ewm_drift_now);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
                 if (!cfe_is_long_intent && mid_now < cfe_vwap) {
@@ -4322,9 +4497,12 @@ static void on_tick_gold(
                     static int64_t s_vwap_short_log = 0;
                     if (now_ms_g - s_vwap_short_log > 15000) {
                         s_vwap_short_log = now_ms_g;
-                        printf("[CFE-VWAP-BLOCK] SHORT blocked: price=%.2f below VWAP=%.2f drift=%.2f\n",
-                               mid_now, cfe_vwap, gold_ewm_drift_now);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[CFE-VWAP-BLOCK] SHORT blocked: price=%.2f below VWAP=%.2f drift=%.2f\n",                                mid_now, cfe_vwap, gold_ewm_drift_now);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
             }
@@ -4334,9 +4512,12 @@ static void on_tick_gold(
                 static int64_t s_pdhl_cfe_log = 0;
                 if (now_ms_g - s_pdhl_cfe_log > 60000) {
                     s_pdhl_cfe_log = now_ms_g;
-                    printf("[CFE-PDH-BLOCK] mid=%.2f outside PDH=%.2f PDL=%.2f\n",
-                           (bid+ask)*0.5, g_macro_ctx.pdh, g_macro_ctx.pdl);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[CFE-PDH-BLOCK] mid=%.2f outside PDH=%.2f PDL=%.2f\n",                            (bid+ask)*0.5, g_macro_ctx.pdh, g_macro_ctx.pdl);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             } else if (cfe_bar_gate_ok && cfe_spread_ok && cfe_vwap_ok && !cfe_chop_block)
             g_candle_flow.on_tick(bid, ask, cfe_bar, cfe_dom_e,
