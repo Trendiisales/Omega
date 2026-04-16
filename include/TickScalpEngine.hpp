@@ -387,8 +387,10 @@ private:
                 }
                 if ((int)_p1_rsi_g.size() >= TSE_P1_RSI_PERIOD) {
                     double ag=0,al=0;
-                    for (double x:_p1_rsi_g) ag+=x; ag/=TSE_P1_RSI_PERIOD;
-                    for (double x:_p1_rsi_l) al+=x; al/=TSE_P1_RSI_PERIOD;
+                    for (double x:_p1_rsi_g) ag+=x;
+                    ag/=TSE_P1_RSI_PERIOD;
+                    for (double x:_p1_rsi_l) al+=x;
+                    al/=TSE_P1_RSI_PERIOD;
                     _p1_rsi_prv = _p1_rsi_cur;
                     _p1_rsi_cur = (al==0.0) ? 100.0 : 100.0 - 100.0/(1.0+ag/al);
                     const double s = _p1_rsi_cur - _p1_rsi_prv;
