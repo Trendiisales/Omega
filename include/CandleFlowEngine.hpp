@@ -712,6 +712,27 @@ struct CandleFlowEngine {
         if (!bar.valid) return;
         if (!m_rsi_warmed) return;
 
+        // Gate -2: Asia session bar block (22:00-05:00 UTC)
+        // Bar entries in Asia are low-quality -- thin liquidity, synthetic book sizes,
+        // frequent whipsaws. Sustained-drift path already blocked in Asia (CFE-SUS-ASIA-BLOCK).
+        // Extend that block to bar-based entries too.
+        // Evidence: 00:40 MacroCrash -$63, multiple overnight CFE losses.
+        {
+            const int64_t asia_sec  = now_ms / 1000LL;
+            const int     asia_hour = static_cast<int>((asia_sec % 86400LL) / 3600LL);
+            const bool    in_asia   = (asia_hour >= 22 || asia_hour < 5);
+            if (in_asia) {
+                static int64_t s_asia_bar_log = 0;
+                if (now_ms - s_asia_bar_log > 300000) {
+                    s_asia_bar_log = now_ms;
+                    std::cout << "[CFE-ASIA-BAR-BLOCK] bar entry blocked: UTC hour=" << asia_hour
+                              << " (Asia 22:00-05:00)\n";
+                    std::cout.flush();
+                }
+                return;
+            }
+        }
+
         // Gate -1: Post-NY dead-tape block (2026-04-15)
         // Block ALL bar entries 19:00-22:00 UTC. Evidence: 2026-04-14 session,
         // 10 consecutive losing longs 18:51-19:50 UTC in a 4839-4844 dead range.
