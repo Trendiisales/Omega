@@ -4559,50 +4559,18 @@ static void on_tick_gold(
         );
     }
 
-    // -- TickScalpEngine -- fully independent, does NOT check gold_any_open ----
-    // Runs own position, own risk. Shadow mode ON. Slots 1-5 only (no Asia).
-    g_tick_scalp.on_tick(
-        bid, ask, now_ms_g,
-        g_l2_gold.micro_edge.load(std::memory_order_relaxed),
-        g_l2_gold.fresh(now_ms_g),
-        g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed),
-        g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed),
-        static_cast<double>(g_gold_stack.ewm_drift()),
-        gold_session_slot,
-        [&](const omega::TradeRecord& tr) {
-            // Full GUI wiring: same as CandleFlow / DomPersist
-            handle_closed_trade(tr);           // records to ledger + GUI trade history
-            g_telemetry.UpdateLastSignal(       // shows in GUI signals panel
-                "XAUUSD",
-                tr.side == "SHORT" ? "SHORT" : "LONG",
-                tr.exitPrice,
-                tr.exitReason.c_str(),
-                "TICK_SCALP", regime.c_str(), "TICK_SCALP",
-                0.0, 0.0);
-        });
-    // Update entry timestamp + signal when TSE opens a new position
+    // -- TickScalpEngine -- DISABLED 2026-04-16 --
+    // 6-day sweep (1.5M ticks): no edge across all 7776 configs.
+    // All patterns (P1 RSI+drift, P2 DOM, P3 velocity) negative.
+    // Re-enable only after a new strategy with proven backtest edge.
+    // g_tick_scalp.on_tick(...) call removed.
     {
-        static bool s_tse_was_open = false;
-        const bool tse_open_now = g_tick_scalp.has_open_position();
-        if (tse_open_now && !s_tse_was_open) {
-            // Position just opened -- fire GUI signal
-            g_telemetry.UpdateLastEntryTs();
-            g_telemetry.UpdateLastSignal(
-                "XAUUSD",
-                g_tick_scalp.pos_.is_long ? "LONG" : "SHORT",
-                g_tick_scalp.pos_.entry,
-                g_tick_scalp.pos_.pattern,
-                "TICK_SCALP", regime.c_str(), "TICK_SCALP",
-                g_tick_scalp.pos_.tp,
-                g_tick_scalp.pos_.sl);
-            write_trade_open_log("XAUUSD", "TickScalp",
-                g_tick_scalp.pos_.is_long ? "LONG" : "SHORT",
-                g_tick_scalp.pos_.entry,
-                g_tick_scalp.pos_.tp, g_tick_scalp.pos_.sl,
-                g_tick_scalp.pos_.size, ask - bid,
-                "TICK_SCALP", "TICK_SCALP");
+        static int64_t s_tse_disabled_log = 0;
+        if (now_ms_g - s_tse_disabled_log > 300000) {
+            s_tse_disabled_log = now_ms_g;
+            std::cout << "[TSE-DISABLED] TickScalpEngine disabled 2026-04-16: no edge in 6-day sweep\n";
+            std::cout.flush();
         }
-        s_tse_was_open = tse_open_now;
     }
 
 }
