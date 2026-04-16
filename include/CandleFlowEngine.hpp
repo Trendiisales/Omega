@@ -84,7 +84,7 @@ static constexpr double  CFE_MAX_LOT           = 0.10;  // reduced 0.20->0.10: d
 // RSI trend (entry direction signal)
 static constexpr int     CFE_RSI_PERIOD        = 30;    // tick RSI lookback
 static constexpr int     CFE_RSI_EMA_N         = 10;    // slope EMA smoothing
-static constexpr double  CFE_RSI_THRESH        = 2.0;   // min slope EMA to enter (sweep-optimised: rn=30 rt=2.0 best $122.90)
+static constexpr double  CFE_RSI_THRESH        = 3.0;   // min slope EMA to enter (multi-day sweep: rn=30 rt=3.0 best $47.50/6d)
 
 // RSI LEVEL gates for DFE (2026-04-13):
 // Block DFE LONG when raw RSI < 35 -- oversold bounce territory.
