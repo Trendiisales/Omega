@@ -3384,8 +3384,7 @@ static void on_tick_gold(
                 static int64_t s_gf_vpin_log = 0;
                 if (nowSec() - s_gf_vpin_log > 15) {
                     s_gf_vpin_log = nowSec();
-                    std::printf("[VPIN-GF] GoldFlow entry blocked: vpin=%.3f toxic\n",
-                                g_vpin.vpin());
+                    { char _m[512]; snprintf(_m,sizeof(_m),"[VPIN-GF] GoldFlow entry blocked: vpin=%.3f toxic\n",                                 g_vpin.vpin()); std::cout<<_m; std::cout.flush(); }
                     std::cout.flush();
                 }
                 gf_vpin_ok = false;
@@ -3403,7 +3402,7 @@ static void on_tick_gold(
                     static int64_t s_gf_cvd_log = 0;
                     if (nowSec() - s_gf_cvd_log > 15) {
                         s_gf_cvd_log = nowSec();
-                        std::printf("[CVD-GF] GoldFlow LONG entry blocked: CVD bearish divergence (distribution)\n");
+                        { char _m[512]; snprintf(_m,sizeof(_m),"[CVD-GF] GoldFlow LONG entry blocked: CVD bearish divergence (distribution)\n"); std::cout<<_m; std::cout.flush(); }
                         std::cout.flush();
                     }
                     // Only block LONG entries -- SHORT allowed (flow is aligned)
@@ -3419,7 +3418,7 @@ static void on_tick_gold(
                     static int64_t s_gf_cvd2_log = 0;
                     if (nowSec() - s_gf_cvd2_log > 15) {
                         s_gf_cvd2_log = nowSec();
-                        std::printf("[CVD-GF] GoldFlow SHORT entry blocked: CVD bullish divergence (absorption)\n");
+                        { char _m[512]; snprintf(_m,sizeof(_m),"[CVD-GF] GoldFlow SHORT entry blocked: CVD bullish divergence (absorption)\n"); std::cout<<_m; std::cout.flush(); }
                         std::cout.flush();
                     }
                     if (g_gold_stack.ewm_drift() < 0.0) gf_cvd_ok = false;
@@ -3443,8 +3442,7 @@ static void on_tick_gold(
                             static int64_t s_gf_pdh_log = 0;
                             if (nowSec() - s_gf_pdh_log > 15) {
                                 s_gf_pdh_log = nowSec();
-                                std::printf("[PDL-GF] GoldFlow LONG blocked: approaching PDH mid=%.2f pdh=%.2f\n",
-                                            gold_mid_now, gf_pdl.high);
+                                { char _m[512]; snprintf(_m,sizeof(_m),"[PDL-GF] GoldFlow LONG blocked: approaching PDH mid=%.2f pdh=%.2f\n",                                             gold_mid_now, gf_pdl.high); std::cout<<_m; std::cout.flush(); }
                                 std::cout.flush();
                             }
                         }
@@ -3456,8 +3454,7 @@ static void on_tick_gold(
                             static int64_t s_gf_pdl_log = 0;
                             if (nowSec() - s_gf_pdl_log > 15) {
                                 s_gf_pdl_log = nowSec();
-                                std::printf("[PDL-GF] GoldFlow SHORT blocked: approaching PDL mid=%.2f pdl=%.2f\n",
-                                            gold_mid_now, gf_pdl.low);
+                                { char _m[512]; snprintf(_m,sizeof(_m),"[PDL-GF] GoldFlow SHORT blocked: approaching PDL mid=%.2f pdl=%.2f\n",                                             gold_mid_now, gf_pdl.low); std::cout<<_m; std::cout.flush(); }
                                 std::cout.flush();
                             }
                         }
