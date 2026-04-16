@@ -84,7 +84,7 @@ static constexpr double  CFE_MAX_LOT           = 0.10;  // reduced 0.20->0.10: d
 // RSI trend (entry direction signal)
 static constexpr int     CFE_RSI_PERIOD        = 30;    // tick RSI lookback
 static constexpr int     CFE_RSI_EMA_N         = 10;    // slope EMA smoothing
-static constexpr double  CFE_RSI_THRESH        = 6.0;   // min slope EMA to enter
+static constexpr double  CFE_RSI_THRESH        = 2.0;   // min slope EMA to enter (sweep-optimised: rn=30 rt=2.0 best $122.90)
 
 // RSI LEVEL gates for DFE (2026-04-13):
 // Block DFE LONG when raw RSI < 35 -- oversold bounce territory.
@@ -111,8 +111,8 @@ static constexpr int     CFE_DFE_DRIFT_PERSIST_TICKS = 2;
 // Threshold lower (-0.8) to catch early sustained moves.
 // Hold duration >= 45s required to distinguish trend from noise oscillation.
 // Same RSI level + price confirmation gates still apply.
-static constexpr double  CFE_DFE_DRIFT_SUSTAINED_THRESH = 0.8;   // base threshold -- ATR-scaled at entry (see below)
-static constexpr int64_t CFE_DFE_DRIFT_SUSTAINED_MS     = 90000; // raised 45s->90s: 45s was triggering on normal oscillation
+static constexpr double  CFE_DFE_DRIFT_SUSTAINED_THRESH = 0.5;   // sweep-optimised: st=0.50 best $122.90
+static constexpr int64_t CFE_DFE_DRIFT_SUSTAINED_MS     = 30000; // sweep-optimised: sm=30s best $122.90
 // ATR-normalised SUS entry threshold: max(0.8, atr * 0.30)
 // At ATR=2: max(0.8, 0.60) = 0.80pt   At ATR=3: max(0.8, 0.90) = 0.90pt
 // At ATR=4: max(0.8, 1.20) = 1.20pt   Evidence: 0.8pt fixed threshold fires
@@ -147,7 +147,7 @@ static constexpr double  CFE_DFE_RSI_TREND_MAX   = 12.0;  // RSI trend EMA maxim
                                                             // entering late into a spent move.
                                                             // Data: rsi_trend=20.62 on -$59 loss,
                                                             // rsi_trend=6-9 on all winners.
-static constexpr double  CFE_DFE_SL_MULT         = 0.7;   // SL = 0.7 * ATR (tighter)
+static constexpr double  CFE_DFE_SL_MULT         = 0.4;   // SL = 0.4 * ATR (sweep-optimised: sl=0.40 best $122.90)
 static constexpr double  CFE_MAX_ATR_ENTRY       = 6.0;   // block ALL entries when ATR > 6pt
                                                             // At ATR=6pt: SL=4.2pt, 4 max loss at 0.20 lots
                                                             // At ATR=12pt: SL=8.4pt, 68 loss -- not a scalp
@@ -1263,7 +1263,7 @@ private:
                double atr_pts, int64_t now_ms) noexcept
     {
         const double entry_px = is_long ? ask : bid;
-        const double sl_pts   = (atr_pts > 0.0) ? atr_pts : spread * 5.0;
+        const double sl_pts   = (atr_pts > 0.0) ? atr_pts * CFE_DFE_SL_MULT : spread * 5.0;
         const double sl_px    = is_long ? (entry_px - sl_pts) : (entry_px + sl_pts);
         double size = risk_dollars / (sl_pts * 100.0);
         size = std::floor(size / 0.001) * 0.001;
