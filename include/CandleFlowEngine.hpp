@@ -111,8 +111,8 @@ static constexpr int     CFE_DFE_DRIFT_PERSIST_TICKS = 2;
 // Threshold lower (-0.8) to catch early sustained moves.
 // Hold duration >= 45s required to distinguish trend from noise oscillation.
 // Same RSI level + price confirmation gates still apply.
-static constexpr double  CFE_DFE_DRIFT_SUSTAINED_THRESH = 0.5;   // sweep-optimised: st=0.50 best $122.90
-static constexpr int64_t CFE_DFE_DRIFT_SUSTAINED_MS     = 30000; // sweep-optimised: sm=30s best $122.90
+static constexpr double  CFE_DFE_DRIFT_SUSTAINED_THRESH = 0.2;   // 6-day sweep: st=0.20 sm=60s best $31.50/day
+static constexpr int64_t CFE_DFE_DRIFT_SUSTAINED_MS     = 60000; // 6-day sweep: sm=60s best $31.50/day
 // ATR-normalised SUS entry threshold: max(0.8, atr * 0.30)
 // At ATR=2: max(0.8, 0.60) = 0.80pt   At ATR=3: max(0.8, 0.90) = 0.90pt
 // At ATR=4: max(0.8, 1.20) = 1.20pt   Evidence: 0.8pt fixed threshold fires
