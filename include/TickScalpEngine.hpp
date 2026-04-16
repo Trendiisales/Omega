@@ -166,6 +166,9 @@ struct TickScalpEngine {
         // Daily reset
         _daily_reset(now_ms);
 
+        // Store previous drift for acceleration check
+        _prev_drift = ewm_drift;
+
         // Update tick history (always, unconditional)
         ++_ticks_total;
         _bid_hist.push_back(bid);
@@ -310,6 +313,7 @@ private:
     int64_t _vel_window_start_ms = 0;
 
     int64_t _ticks_total    = 0;   // total ticks received since startup -- warmup guard
+    double  _prev_drift     = 0.0; // previous ewm_drift for acceleration check
 
     // Self-contained tick RSI (same approach as CandleFlowEngine)
     std::deque<double> _rsi_gains;
@@ -377,20 +381,23 @@ private:
             }
         }
 
-        // Drift confirmation gate: ewm_drift must agree with burst direction.
-        // If burst is LONG but drift is negative (or flat), the burst is being
-        // absorbed -- price is fighting the underlying flow. Skip entry.
-        // TSE_P1_DRIFT_MIN=0.20: requires meaningful drift, not just non-zero.
-        // This is the primary filter for false bursts (MFE=0 trades in backtest).
+        // Drift confirmation + acceleration gate:
+        // 1. Drift must agree with burst direction (>= 0.30)
+        // 2. Drift must be accelerating (building, not fading)
+        //    drift fading = late entry into exhausting move (the losing pattern)
+        //    drift building = early entry into real momentum (the winning pattern)
         {
-            const bool drift_ok = burst_up ? (ewm_drift >= 0.50) : (ewm_drift <= -0.50);
-            if (!drift_ok) {
+            const bool drift_agrees = burst_up ? (ewm_drift >= 0.30) : (ewm_drift <= -0.30);
+            const bool drift_accel  = burst_up ? (ewm_drift >= _prev_drift)
+                                               : (ewm_drift <= _prev_drift);
+            if (!drift_agrees || !drift_accel) {
                 static int64_t s_drift_log = 0;
                 if (now_ms - s_drift_log > 5000) {
                     s_drift_log = now_ms;
                     std::cout << "[TSE-DRIFT-BLOCK] P1 " << (burst_up?"LONG":"SHORT")
                               << " blocked: drift=" << std::fixed << std::setprecision(2)
-                              << ewm_drift << " not confirming burst\n";
+                              << ewm_drift << " prev=" << _prev_drift
+                              << " agrees=" << drift_agrees << " accel=" << drift_accel << "\n";
                     std::cout.flush();
                 }
                 return;
