@@ -63,7 +63,7 @@ public:
     // No session gate -- tariff crash Apr 2025 was 13:00 UTC, session gate missed it.
     double ATR_SCALE_MAX    = 1.0;   // capped 6->1: 6x scaling produced $480 risk per trade; system max is $80
     double BASE_RISK_USD    = 80.0;
-    double MAX_LOT          = 0.20;  // capped 0.50->0.20: matches CFE/DomPersist hard ceiling
+    double MAX_LOT          = 0.10;  // reduced 0.20->0.10: dollar_stop=$50 at 0.20=2.5pt, at 0.10=5pt
     double MIN_LOT          = 0.01;
 
     // -- Hybrid bracket floor ----------------------------------------------
