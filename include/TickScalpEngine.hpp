@@ -83,7 +83,7 @@ static constexpr double   TSE_ATR_MAX            = 8.0;    // max ATR (not crash
 static constexpr int      TSE_P1_TICKS           = 8;      // consecutive same-dir ticks
 static constexpr double   TSE_P1_MIN_MOVE        = 0.50;   // min net move (pts) over P1_TICKS
 static constexpr double   TSE_P1_TP_MULT         = 2.5;    // TP = net_move * mult
-static constexpr double   TSE_P1_SL_MULT         = 1.5;    // SL = net_move * mult
+static constexpr double   TSE_P1_SL_MULT         = 1.0;    // SL = net_move * mult -- tightened 1.5->1.0
 
 // P2: DOM Absorption
 static constexpr double   TSE_P2_EDGE_LONG       = 0.65;   // micro_edge > this = bid pressure
@@ -383,7 +383,7 @@ private:
         // TSE_P1_DRIFT_MIN=0.20: requires meaningful drift, not just non-zero.
         // This is the primary filter for false bursts (MFE=0 trades in backtest).
         {
-            const bool drift_ok = burst_up ? (ewm_drift >= 0.20) : (ewm_drift <= -0.20);
+            const bool drift_ok = burst_up ? (ewm_drift >= 0.50) : (ewm_drift <= -0.50);
             if (!drift_ok) {
                 static int64_t s_drift_log = 0;
                 if (now_ms - s_drift_log > 5000) {
