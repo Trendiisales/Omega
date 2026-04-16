@@ -95,7 +95,7 @@ static constexpr double  ECE_RSI_LO         = 40.0;  // LONG: RSI must be > this
 static constexpr double  ECE_RSI_HI         = 50.0;  // SHORT: RSI must be < this
 static constexpr double  ECE_SL_MULT        = 1.5;   // SL = ATR * 1.5
 static constexpr double  ECE_TP_RR          = 1.0;   // TP = SL (1:1 confirmed)
-static constexpr bool    ECE_CROSS_EXIT     = false; // CONFIRMED OFF: $-256 on 16 trades
+// ECE_CROSS_EXIT: permanently removed -- confirmed harmful ($-256 on 16 trades, -$16/trade avg)
 static constexpr int64_t ECE_MAX_LAG_MS     = 60000; // 60s: lag>60s loses $397
 static constexpr int64_t ECE_TIMEOUT_MS     = 180000;
 static constexpr int64_t ECE_COOLDOWN_MS    = 20000;
@@ -226,14 +226,8 @@ struct EMACrossEngine {
             if (now_ms - pos.ets > ECE_TIMEOUT_MS) {
                 _close(ep, "TIMEOUT", now_ms, on_close); return;
             }
-            // Cross-exit: EMA flipped against position AND we have some MFE
-            if (ECE_CROSS_EXIT && pos.mfe > 0.0) {
-                bool cross_against = (pos.is_long  && _ema_fast < _ema_slow) ||
-                                     (!pos.is_long && _ema_fast > _ema_slow);
-                if (cross_against) {
-                    _close(ep, "CROSS_EXIT", now_ms, on_close); return;
-                }
-            }
+            // Cross-exit: PERMANENTLY DISABLED (diagnostic: -$256 on 16 trades)
+            // Removed to avoid MSVC C4127 constant expression warning
             return;
         }
 
