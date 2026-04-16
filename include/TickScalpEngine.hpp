@@ -72,11 +72,11 @@ static constexpr double   TSE_MAX_LOT           = 0.01;   // hard cap -- tiny
 static constexpr double   TSE_RISK_DOLLARS       = 10.0;   // risk per trade
 static constexpr double   TSE_DAILY_LOSS_LIMIT   = 50.0;   // stop for day
 static constexpr int      TSE_MAX_CONSEC_LOSSES  = 3;      // then 5-min pause
-static constexpr int64_t  TSE_COOLDOWN_MS        = 30000;  // 30s after any exit
+static constexpr int64_t  TSE_COOLDOWN_MS        = 15000;  // reduced 30s->15s after any exit
 static constexpr int64_t  TSE_PAUSE_MS           = 300000; // 5-min consec-loss pause
 static constexpr double   TSE_MAX_SPREAD         = 0.50;   // max spread to enter
 static constexpr double   TSE_COMMISSION_RT      = 0.20;   // round-trip commission estimate (pts)
-static constexpr double   TSE_ATR_MIN            = 1.5;    // min ATR for entries (not dead tape)
+static constexpr double   TSE_ATR_MIN            = 1.0;    // min ATR for entries (not dead tape) -- lowered 1.5->1.0
 static constexpr double   TSE_ATR_MAX            = 8.0;    // max ATR (not crash)
 
 // P1: Tick Momentum Burst
@@ -110,7 +110,7 @@ static constexpr double   TSE_P3_TRAIL_DIST      = 0.30;  // trail 0.3pt behind 
 static constexpr int      TSE_RSI_PERIOD         = 14;   // tick RSI lookback -- tighter than CFE(30) for scalping
 static constexpr int      TSE_RSI_SLOPE_EMA_N    = 5;    // slope EMA smoothing -- fast response
 static constexpr double   TSE_RSI_SLOPE_ALPHA    = 2.0 / (TSE_RSI_SLOPE_EMA_N + 1.0);
-static constexpr double   TSE_RSI_SLOPE_THRESH   = 0.08; // min |slope EMA| to confirm trend (entry gate)
+static constexpr double   TSE_RSI_SLOPE_THRESH   = 0.05; // reduced 0.08->0.05: less aggressive filtering
 static constexpr double   TSE_RSI_REVERSAL_THRESH = 0.12; // slope flip threshold to trigger reversal exit
 static constexpr int64_t  TSE_REVERSAL_MIN_HOLD_MS = 3000; // minimum 3s hold before reversal exit fires
 
@@ -566,7 +566,7 @@ private:
             return;
         }
         // ── Timeout: 2 minutes ────────────────────────────────────────────────
-        if (now_ms - pos_.entry_ts_ms > 120000LL) {
+        if (now_ms - pos_.entry_ts_ms > 300000LL) {  // raised 2min->5min: was cutting winners short
             _close(eff_price, "TIMEOUT", now_ms, on_close);
             return;
         }
