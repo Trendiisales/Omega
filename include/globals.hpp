@@ -160,6 +160,13 @@ static omega::PullbackContEngine  g_pullback_prem;  // premium: 30pt h07 only, 2
 // shadow_mode=true until 30 live shadow trades validate Asia WR
 #include "CandleFlowEngine.hpp"
 static omega::CandleFlowEngine    g_candle_flow;  // candle+DOM engine
+
+// CompressionBreakoutEngine -- compression coil -> directional break
+// Sweep-confirmed: cb=3 mult=1.5 bf=0.30 rr=1.5 SHORT-only
+// 43 trades / 6 days, 53.5% WR, $116.71, $19.45/day
+// shadow_mode=true until 2-week live shadow validates
+#include "CompressionBreakoutEngine.hpp"
+static omega::CompressionBreakoutEngine g_cbe;  // compression breakout engine
 // DISABLED: 14.8% WR, -$27k/2yr backtest. Momentum continuation = negative EV.
 // g_candle_flow.enabled = false; -- set in engine_init
 

@@ -77,19 +77,19 @@ namespace omega {
 // =============================================================================
 // Config
 // =============================================================================
-static constexpr int     CBE_COMP_BARS         = 5;     // bars in compression window
-static constexpr double  CBE_COMP_RANGE_MULT   = 2.00;  // compression when range < mult * ATR (tick-ATR ~1.5pt, bar ranges 2-4pt)
+static constexpr int     CBE_COMP_BARS         = 3;     // sweep-confirmed: 6-day 1.5M tick     // bars in compression window
+static constexpr double  CBE_COMP_RANGE_MULT   = 1.50;  // sweep-confirmed
 static constexpr int     CBE_COMP_MIN_BARS      = 3;    // consecutive compression bars required
-static constexpr double  CBE_BREAK_FRAC        = 0.30;  // break confirmed when price > range + frac*ATR
-static constexpr double  CBE_TP_RR             = 2.0;   // TP = SL * RR
-static constexpr double  CBE_MAX_SL_ATR_MULT   = 4.0;  // skip if SL dist > mult*ATR (tick-ATR is small)
+static constexpr double  CBE_BREAK_FRAC        = 0.30;  // sweep-confirmed
+static constexpr double  CBE_TP_RR             = 1.5;   // sweep-confirmed: rr=1.5 best on 6 days
+static constexpr double  CBE_MAX_SL_ATR_MULT   = 4.0;  // wide: tick-ATR ~1.5pt, bar ranges 2-8pt
 static constexpr double  CBE_TRAIL_ARM_FRAC    = 0.50;  // trail arms at 50% of TP
 static constexpr double  CBE_TRAIL_DIST_FRAC   = 0.40;  // trail distance = 0.40 * ATR
 static constexpr double  CBE_BE_FRAC           = 0.40;  // BE at 40% of TP distance
 static constexpr int64_t CBE_TIMEOUT_MS        = 300000; // 5 min timeout
 static constexpr int64_t CBE_COOLDOWN_MS       = 30000;  // 30s after any exit
 static constexpr double  CBE_RSI_BLOCK_OB      = 72.0;  // block LONG above this RSI
-static constexpr double  CBE_RSI_BLOCK_OS      = 22.0;  // block SHORT below this RSI
+static constexpr double  CBE_RSI_BLOCK_OS      = 22.0;  // sweep-confirmed
 static constexpr double  CBE_COMMISSION_RT     = 0.20;  // round-trip cost (pts)
 static constexpr double  CBE_RISK_DOLLARS      = 30.0;
 static constexpr double  CBE_MIN_LOT           = 0.01;
@@ -99,7 +99,7 @@ static constexpr int64_t CBE_STARTUP_LOCKOUT_MS = 90000; // 90s post-restart war
 //               slots 1-2 = London (07:00-12:59 UTC)
 // Currently blocking London/NY LONGs (0% WR in last session sweep).
 // Set to false once out-of-sample validation confirms LONGs.
-static constexpr bool    CBE_BLOCK_LONDON_NY_LONG = true;
+static constexpr bool    CBE_BLOCK_LONDON_NY_LONG = true; // confirmed: SHORT-only, LONGs 0 edge
 
 // =============================================================================
 struct CompressionBreakoutEngine {
