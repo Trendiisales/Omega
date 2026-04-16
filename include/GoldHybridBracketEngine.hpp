@@ -1,4 +1,6 @@
 #pragma once
+#include <iomanip>
+#include <iostream>
 // =============================================================================
 // GoldHybridBracketEngine.hpp  --  Compression breakout bracket for XAUUSD
 // =============================================================================
@@ -127,10 +129,13 @@ public:
                 auto it_lo = std::min_element(m_window.begin(), m_window.end());
                 live_range = *it_hi - *it_lo;
             }
-            printf("[HYBRID-GOLD-DIAG] ticks=%d phase=%d window=%d/%d range=%.2f spread=%.2f\n",
-                   m_ticks_received, (int)phase, (int)m_window.size(), window_needed,
-                   live_range, spread);
-            fflush(stdout);
+            {
+                // converted from printf
+                char _buf[512];
+                snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD-DIAG] ticks=%d phase=%d window=%d/%d range=%.2f spread=%.2f\n",                    m_ticks_received, (int)phase, (int)m_window.size(), window_needed,                    live_range, spread);
+                std::cout << _buf;
+                std::cout.flush();
+            }
         }
 
         // ── COOLDOWN ─────────────────────────────────────────────────────────
@@ -150,8 +155,13 @@ public:
             if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot_long);  return; }
             if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot_short); return; }
             if (now_s - m_armed_ts > PENDING_TIMEOUT_S) {
-                printf("[HYBRID-GOLD] PENDING TIMEOUT after %ds -- resetting\n", PENDING_TIMEOUT_S);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD] PENDING TIMEOUT after %ds -- resetting\n", PENDING_TIMEOUT_S);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
                 if (cancel_fn) {
                     if (!pending_long_clOrdId.empty())  cancel_fn(pending_long_clOrdId);
                     if (!pending_short_clOrdId.empty()) cancel_fn(pending_short_clOrdId);
@@ -187,9 +197,13 @@ public:
                 bracket_low  = w_lo;
                 m_inside_ticks = 0;
                 m_armed_ts   = now_s;
-                printf("[HYBRID-GOLD] ARMED hi=%.2f lo=%.2f range=%.2f spread=%.2f\n",
-                       bracket_high, bracket_low, range, spread);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD] ARMED hi=%.2f lo=%.2f range=%.2f spread=%.2f\n",                        bracket_high, bracket_low, range, spread);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -216,9 +230,13 @@ public:
             const double tp_dist = sl_dist * TP_RR;
             const double min_tp  = spread * 2.0 + 0.12;
             if (tp_dist < min_tp) {
-                printf("[HYBRID-GOLD] COST_FAIL range=%.2f sl_dist=%.2f tp_dist=%.2f min=%.2f\n",
-                       range, sl_dist, tp_dist, min_tp);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD] COST_FAIL range=%.2f sl_dist=%.2f tp_dist=%.2f min=%.2f\n",                        range, sl_dist, tp_dist, min_tp);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
                 phase = Phase::IDLE;
                 return;
             }
@@ -234,8 +252,13 @@ public:
             if (l2_real) {
                 // Both sides walled = no clear path, skip
                 if (wall_above && wall_below) {
-                    printf("[HYBRID-GOLD] DOM_BLOCK both walls present -- skipping fire\n");
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD] DOM_BLOCK both walls present -- skipping fire\n");
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                     phase = Phase::IDLE;
                     return;
                 }
@@ -256,15 +279,13 @@ public:
             m_armed_ts        = now_s;
             m_pending_blocked_since = 0;
 
-            printf("[HYBRID-GOLD] FIRE hi=%.2f lo=%.2f range=%.2f sl=%.2f tp=%.2f "
-                   "lot_base=%.3f lot_L=%.3f lot_S=%.3f slope=%.2f vac_a=%d vac_b=%d "
-                   "wall_a=%d wall_b=%d %s\n",
-                   bracket_high, bracket_low, range, sl_dist, tp_dist,
-                   base_lot, lot_long, lot_short,
-                   book_slope, (int)vacuum_ask, (int)vacuum_bid,
-                   (int)wall_above, (int)wall_below,
-                   is_pyramid ? "[PYRAMID]" : "[STANDALONE]");
-            fflush(stdout);
+            {
+                // converted from printf
+                char _buf[512];
+                snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD] FIRE hi=%.2f lo=%.2f range=%.2f sl=%.2f tp=%.2f "                    "lot_base=%.3f lot_L=%.3f lot_S=%.3f slope=%.2f vac_a=%d vac_b=%d "                    "wall_a=%d wall_b=%d %s\n",                    bracket_high, bracket_low, range, sl_dist, tp_dist,                    base_lot, lot_long, lot_short,                    book_slope, (int)vacuum_ask, (int)vacuum_bid,                    (int)wall_above, (int)wall_below,                    is_pyramid ? "[PYRAMID]" : "[STANDALONE]");
+                std::cout << _buf;
+                std::cout.flush();
+            }
         }
     }
 
@@ -288,9 +309,13 @@ public:
         pos.entry_ts = static_cast<int64_t>(std::time(nullptr));
         phase        = Phase::LIVE;
 
-        printf("[HYBRID-GOLD] FILL %s @ %.2f sl=%.2f(dist=%.2f) tp=%.2f lot=%.3f\n",
-               is_long ? "LONG" : "SHORT", fill_px, pos.sl, sl_dist, pos.tp, fill_lot);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD] FILL %s @ %.2f sl=%.2f(dist=%.2f) tp=%.2f lot=%.3f\n",                is_long ? "LONG" : "SHORT", fill_px, pos.sl, sl_dist, pos.tp, fill_lot);
+            std::cout << _buf;
+            std::cout.flush();
+        }
     }
 
     void manage(double bid, double ask, double mid,
@@ -353,9 +378,13 @@ private:
     {
         const double pnl = (pos.is_long ? (exit_px - pos.entry)
                                         : (pos.entry - exit_px)) * pos.size;
-        printf("[HYBRID-GOLD] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f\n",
-               pos.is_long ? "LONG" : "SHORT", exit_px, reason, pnl, pos.mfe);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f\n",                pos.is_long ? "LONG" : "SHORT", exit_px, reason, pnl, pos.mfe);
+            std::cout << _buf;
+            std::cout.flush();
+        }
 
         if (reason == std::string("SL_HIT")) {
             m_sl_cooldown_dir = pos.is_long ? 1 : -1;
