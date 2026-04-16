@@ -287,7 +287,7 @@ struct TickScalpEngine {
         const bool vel_ready = (_vel_baseline >= 10.0 && _rsi_warmed && _ticks_total >= TSE_WARMUP_TICKS);
 
         // Try patterns
-        if (vel_ready) _try_p1(bid, ask, spread, atr, now_ms, on_close);
+        if (vel_ready) _try_p1(bid, ask, spread, atr, ewm_drift, now_ms, on_close);
         if (pos_.active) return;
         if (l2_fresh) _try_p2(bid, ask, spread, micro_edge, atr, now_ms, on_close);
         if (pos_.active) return;
@@ -331,7 +331,7 @@ private:
 
     // ── P1: Tick Momentum Burst ───────────────────────────────────────────────
     void _try_p1(double bid, double ask, double spread, double atr,
-                 int64_t now_ms, CloseCallback on_close) noexcept
+                 double ewm_drift, int64_t now_ms, CloseCallback on_close) noexcept
     {
         if ((int)_bid_hist.size() < TSE_P1_TICKS + 1) return;
 
@@ -371,6 +371,26 @@ private:
                     std::cout << "[TSE-RSI-BLOCK] P1 SHORT blocked: burst_dn but rsi_slope="
                               << std::fixed << std::setprecision(3) << _rsi_slope_ema
                               << " (RSI rising)\n";
+                    std::cout.flush();
+                }
+                return;
+            }
+        }
+
+        // Drift confirmation gate: ewm_drift must agree with burst direction.
+        // If burst is LONG but drift is negative (or flat), the burst is being
+        // absorbed -- price is fighting the underlying flow. Skip entry.
+        // TSE_P1_DRIFT_MIN=0.20: requires meaningful drift, not just non-zero.
+        // This is the primary filter for false bursts (MFE=0 trades in backtest).
+        {
+            const bool drift_ok = burst_up ? (ewm_drift >= 0.20) : (ewm_drift <= -0.20);
+            if (!drift_ok) {
+                static int64_t s_drift_log = 0;
+                if (now_ms - s_drift_log > 5000) {
+                    s_drift_log = now_ms;
+                    std::cout << "[TSE-DRIFT-BLOCK] P1 " << (burst_up?"LONG":"SHORT")
+                              << " blocked: drift=" << std::fixed << std::setprecision(2)
+                              << ewm_drift << " not confirming burst\n";
                     std::cout.flush();
                 }
                 return;
