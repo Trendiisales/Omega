@@ -1,4 +1,6 @@
 #pragma once
+#include <iomanip>
+#include <iostream>
 // on_tick.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
@@ -46,9 +48,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                             0.002;   // FX: 20 pip floor
                 const double threshold = std::max(5.0 * atr_s, min_threshold);
                 if (move > threshold) {
-                    printf("[TICK-SPIKE] %s REJECTED mid=%.5f prev=%.5f move=%.5f threshold=%.5f (5xATR_SLOW)\n",
-                           sym.c_str(), mid, prev, move, threshold);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[TICK-SPIKE] %s REJECTED mid=%.5f prev=%.5f move=%.5f threshold=%.5f (5xATR_SLOW)\n",                            sym.c_str(), mid, prev, move, threshold);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     return;  // drop tick -- no engine state updated
                 }
             }
@@ -359,19 +364,24 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static int64_t s_l2_log_ms = 0;
                 if (l2_now_ms - s_l2_log_ms > 10000) {
                     s_l2_log_ms = l2_now_ms;
-                    printf("[GOLD-L2-LIVE] imb=%.3f age_ms=%lld\n",
-                           raw_imb,
-                           (long long)(l2_now_ms - g_l2_gold.last_update_ms.load(std::memory_order_relaxed)));
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GOLD-L2-LIVE] imb=%.3f age_ms=%lld\n",                            raw_imb,                            (long long)(l2_now_ms - g_l2_gold.last_update_ms.load(std::memory_order_relaxed)));
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             } else {
                 // cTrader XAUUSD events stale. Hold last known imbalance.
                 static int64_t s_fallback_log_ms = 0;
                 if (l2_now_ms - s_fallback_log_ms > 10000) {
                     s_fallback_log_ms = l2_now_ms;
-                    printf("[GOLD-L2-WAIT] cTrader stale -- holding imb=%.3f\n",
-                           g_macro_ctx.gold_l2_imbalance);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GOLD-L2-WAIT] cTrader stale -- holding imb=%.3f\n",                            g_macro_ctx.gold_l2_imbalance);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
         }
@@ -440,8 +450,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // H1 bars for SP/NQ swing engine warm restart
                 g_bars_sp.h1.save_indicators(base + "/bars_sp_h1.dat");
                 g_bars_nq.h1.save_indicators(base + "/bars_nq_h1.dat");
-                printf("[BAR-SAVE] Periodic save -- bars_gold_m1/m5/m15/h1/h4 + sp_h1/nq_h1.dat updated\n");
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[BAR-SAVE] Periodic save -- bars_gold_m1/m5/m15/h1/h4 + sp_h1/nq_h1.dat updated\n");
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
     }
@@ -453,16 +467,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const int64_t now_l2 = nowSec();
         if (now_l2 - s_l2_log >= 60) {
             s_l2_log = now_l2;
-            printf("[L2-STATUS] ctrader_live=%d events=%llu gold_real=%d gold_imb=%.3f "
-                   "gold_mp=%.3f sp_real=%d cl_real=%d\n",
-                   (int)g_macro_ctx.ctrader_l2_live,
-                   (unsigned long long)g_ctrader_depth.depth_events_total.load(),
-                   (int)g_macro_ctx.gold_l2_real,
-                   g_macro_ctx.gold_l2_imbalance,
-                   g_macro_ctx.gold_microprice_bias,
-                   (int)g_macro_ctx.sp_l2_real,
-                   (int)g_macro_ctx.cl_l2_real);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[L2-STATUS] ctrader_live=%d events=%llu gold_real=%d gold_imb=%.3f "                    "gold_mp=%.3f sp_real=%d cl_real=%d\n",                    (int)g_macro_ctx.ctrader_l2_live,                    (unsigned long long)g_ctrader_depth.depth_events_total.load(),                    (int)g_macro_ctx.gold_l2_real,                    g_macro_ctx.gold_l2_imbalance,                    g_macro_ctx.gold_microprice_bias,                    (int)g_macro_ctx.sp_l2_real,                    (int)g_macro_ctx.cl_l2_real);
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
     }
 
@@ -907,10 +917,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                g_gold_flow.pos.entry,
                                                g_gold_flow.pos.size);
                     if (unr < -ds_lim) {
-                        printf("[DOLLAR-STOP] GoldFlow %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",
-                               g_gold_flow.pos.is_long?"LONG":"SHORT",
-                               g_gold_flow.pos.entry, unr, ds_lim);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] GoldFlow %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",                                g_gold_flow.pos.is_long?"LONG":"SHORT",                                g_gold_flow.pos.entry, unr, ds_lim);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                         g_gold_flow.force_close(s_xau_bid, s_xau_ask, ds_now,
                             [&](const omega::TradeRecord& tr) {
                                 handle_closed_trade(tr);
@@ -943,11 +955,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     const bool cfe_dollar_stop_ok = cfe_sl_breached
                         || (unr < -(ds_lim * 2.0));
                     if (unr < -ds_lim && cfe_dollar_stop_ok) {
-                        printf("[DOLLAR-STOP] CandleFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- CLOSING\n",
-                               g_candle_flow.pos.is_long?"LONG":"SHORT",
-                               g_candle_flow.pos.entry, unr, ds_lim,
-                               cfe_eff_sl, (int)cfe_sl_breached);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] CandleFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- CLOSING\n",                                g_candle_flow.pos.is_long?"LONG":"SHORT",                                g_candle_flow.pos.entry, unr, ds_lim,                                cfe_eff_sl, (int)cfe_sl_breached);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                         g_candle_flow.force_close(s_xau_bid, s_xau_ask, ds_now_ms,
                             [&](const omega::TradeRecord& tr) {
                                 handle_closed_trade(tr);
@@ -959,10 +972,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         static int64_t s_ds_skip_log = 0;
                         if (ds_now - s_ds_skip_log >= 10) {
                             s_ds_skip_log = ds_now;
-                            printf("[DOLLAR-STOP-SKIP] CandleFlow %s unr=$%.2f > limit=$%.0f but sl=%.2f not breached (bid=%.2f ask=%.2f) -- letting SL handle\n",
-                                   g_candle_flow.pos.is_long?"LONG":"SHORT",
-                                   unr, ds_lim, cfe_eff_sl, s_xau_bid, s_xau_ask);
-                            fflush(stdout);
+                            {
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP-SKIP] CandleFlow %s unr=$%.2f > limit=$%.0f but sl=%.2f not breached (bid=%.2f ask=%.2f) -- letting SL handle\n",                                    g_candle_flow.pos.is_long?"LONG":"SHORT",                                    unr, ds_lim, cfe_eff_sl, s_xau_bid, s_xau_ask);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
                         }
                     }
                 }
@@ -972,10 +987,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                g_macro_crash.pos.entry,
                                                g_macro_crash.pos.size);
                     if (unr < -ds_lim) {
-                        printf("[DOLLAR-STOP] MacroCrash %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",
-                               g_macro_crash.pos.is_long?"LONG":"SHORT",
-                               g_macro_crash.pos.entry, unr, ds_lim);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] MacroCrash %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",                                g_macro_crash.pos.is_long?"LONG":"SHORT",                                g_macro_crash.pos.entry, unr, ds_lim);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                         // CRITICAL FIX: pass ds_now_ms (milliseconds) not ds_now (seconds).
                         // ds_now in seconds caused cooldown to be set ~1700s in the past
                         // (seconds treated as ms), allowing immediate re-entry loop.
@@ -988,10 +1005,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                                g_gold_stack.live_entry(),
                                                g_gold_stack.live_size());
                     if (unr < -ds_lim) {
-                        printf("[DOLLAR-STOP] GoldStack %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",
-                               g_gold_stack.live_is_long()?"LONG":"SHORT",
-                               g_gold_stack.live_entry(), unr, ds_lim);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] GoldStack %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",                                g_gold_stack.live_is_long()?"LONG":"SHORT",                                g_gold_stack.live_entry(), unr, ds_lim);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                         g_gold_stack.force_close(s_xau_bid, s_xau_ask, 0.0,
                             [&](const omega::TradeRecord& tr) {
                                 handle_closed_trade(tr);
@@ -1170,9 +1189,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     ? g_macro_ctx.gbp_wall_above : g_macro_ctx.gbp_wall_below;
                 if (absorbing || wall_in_dir) {
                     pyr_l2_ok = false;
-                    printf("[PYRAMID-L2-BLOCK] %s %s absorb=%d wall=%d -- pyramid suppressed\n",
-                           sym.c_str(), eng.pos.is_long?"LONG":"SHORT",
-                           absorbing?1:0, wall_in_dir?1:0);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[PYRAMID-L2-BLOCK] %s %s absorb=%d wall=%d -- pyramid suppressed\n",                            sym.c_str(), eng.pos.is_long?"LONG":"SHORT",                            absorbing?1:0, wall_in_dir?1:0);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
             // Also block pyramid during session transition noise windows
@@ -1199,9 +1221,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             static thread_local int64_t s_atr_log = 0;
             if (nowSec() - s_atr_log > 30) {
                 s_atr_log = nowSec();
-                printf("[ATR-SL-FLOOR] %s sl_raw=%.5f ? sl_floor=%.5f (ATR slow=%.5f)\n",
-                       sym.c_str(), sl_abs_raw, sl_abs,
-                       g_adaptive_risk.vol_scaler.atr_slow(sym));
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[ATR-SL-FLOOR] %s sl_raw=%.5f ? sl_floor=%.5f (ATR slow=%.5f)\n",                        sym.c_str(), sl_abs_raw, sl_abs,                        g_adaptive_risk.vol_scaler.atr_slow(sym));
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
         // Compute lot_size but do NOT write back to eng.ENTRY_SIZE yet.
@@ -1232,8 +1257,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         {
             const double tod_mult = g_edges.tod.size_scale(sym, "ALL", nowSec());
             if (tod_mult < 1.0) {
-                printf("[TOD-SCALE] %s lot %.4f ? %.4f (tod_mult=%.2f)\n",
-                       sym.c_str(), lot_size, lot_size * tod_mult, tod_mult);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[TOD-SCALE] %s lot %.4f ? %.4f (tod_mult=%.2f)\n",                        sym.c_str(), lot_size, lot_size * tod_mult, tod_mult);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 lot_size *= tod_mult;
                 lot_size = std::max(0.01, std::floor(lot_size * 100.0 + 0.5) / 100.0);
             }
@@ -1249,10 +1278,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static thread_local int64_t s_htf_log = 0;
                 if (nowSec() - s_htf_log > 30) {
                     s_htf_log = nowSec();
-                    printf("[HTF-BIAS] %s %s bias=%s ? lot %.4f ? %.2f\n",
-                           sym.c_str(), sig.is_long ? "LONG" : "SHORT",
-                           g_htf_filter.bias_name(sym),
-                           lot_size, htf_mult);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[HTF-BIAS] %s %s bias=%s ? lot %.4f ? %.2f\n",                            sym.c_str(), sig.is_long ? "LONG" : "SHORT",                            g_htf_filter.bias_name(sym),                            lot_size, htf_mult);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 lot_size *= htf_mult;
                 lot_size = std::max(0.01, std::floor(lot_size * 100.0 + 0.5) / 100.0);
@@ -1432,8 +1463,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 static thread_local int64_t s_last_log = 0;
                 if (nowSec() - s_last_log > 30) {
                     s_last_log = nowSec();
-                    printf("[BRACKET-SPREAD-BLOCK] %s spread_pct=%.3f%% >= max=%.3f%%\n",
-                           sym.c_str(), spread_pct, sup.cfg.max_spread_pct);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[BRACKET-SPREAD-BLOCK] %s spread_pct=%.3f%% >= max=%.3f%%\n",                            sym.c_str(), spread_pct, sup.cfg.max_spread_pct);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 ++g_gov_spread;
                 return true;
@@ -1487,12 +1522,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                        const int64_t now_do = static_cast<int64_t>(std::time(nullptr));
                                        if (now_do - s_disp_ovr_log >= 5) {
                                            s_disp_ovr_log = now_do;
-                                           printf("[BRK-CHOP-OVERRIDE] %s supervisor chop bypassed -- "
-                                                  "price broke %s by %.1fpt\n",
-                                                  sym.c_str(),
-                                                  brk_hi_hit ? "brk_hi" : "brk_lo",
-                                                  brk_hi_hit ? (ask - bhi) : (blo - bid));
-                                           fflush(stdout);
+                                           {
+                                               char _msg[512];
+                                               snprintf(_msg, sizeof(_msg), "[BRK-CHOP-OVERRIDE] %s supervisor chop bypassed -- "                                                   "price broke %s by %.1fpt\n",                                                   sym.c_str(),                                                   brk_hi_hit ? "brk_hi" : "brk_lo",                                                   brk_hi_hit ? (ask - bhi) : (blo - bid));
+                                               std::cout << _msg;
+                                               std::cout.flush();
+                                           }
                                        }
                                        return true;
                                    }());
@@ -1544,8 +1579,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             {
                 const double bkt_rr = bracket_eng.RR > 0.0 ? bracket_eng.RR : 1.5;
                 if (bkt_rr < 1.5) {
-                    printf("[RR-FLOOR] %s BRACKET blocked: R:R=%.2f < 1.5 floor\n",
-                           sym.c_str(), bkt_rr);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[RR-FLOOR] %s BRACKET blocked: R:R=%.2f < 1.5 floor\n",                            sym.c_str(), bkt_rr);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     return;
                 }
             }
@@ -1626,8 +1665,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     sym, bsigs.short_entry, false, bsigs.short_tp,
                     nowSec(), bkt_microprice, bkt_l2_imb, bkt_vac_bid, bkt_wall_below);
                 if (score_long <= -3 && score_short <= -3) {
-                    printf("[EDGE-BLOCK-BKT] %s BRACKET both legs blocked: L=%d S=%d\n",
-                           sym.c_str(), score_long, score_short);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[EDGE-BLOCK-BKT] %s BRACKET both legs blocked: L=%d S=%d\n",                            sym.c_str(), score_long, score_short);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     return;
                 }
             }
@@ -1638,8 +1681,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 auto _it = g_last_cross_entry.find(sym);
                 if (_it != g_last_cross_entry.end() &&
                     (nowSec() - _it->second) < CROSS_ENG_DEDUP_SEC) {
-                    printf("[CROSS-DEDUP] %s BRACKET blocked -- another engine entered %.0fs ago\n",
-                           sym.c_str(), static_cast<double>(nowSec() - _it->second));
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[CROSS-DEDUP] %s BRACKET blocked -- another engine entered %.0fs ago\n",                            sym.c_str(), static_cast<double>(nowSec() - _it->second));
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     return;
                 }
                 g_last_cross_entry[sym] = nowSec();
@@ -1672,8 +1719,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const double counter_lot  = lot * 0.5;
                 long_id  = send_live_order(sym, true,  long_is_trend  ? trend_lot : counter_lot, bsigs.long_entry);
                 short_id = send_live_order(sym, false, !long_is_trend ? trend_lot : counter_lot, bsigs.short_entry);
-                printf("[BRACKET-L2] %s bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",
-                       sym.c_str(), trend.bias, trend_lot, counter_lot, l2_imb);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[BRACKET-L2] %s bias=%d trend_lot=%.4f counter_lot=%.4f l2=%.3f\n",                        sym.c_str(), trend.bias, trend_lot, counter_lot, l2_imb);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             } else {
                 long_id  = send_live_order(sym, true,  lot, bsigs.long_entry);
                 short_id = send_live_order(sym, false, lot, bsigs.short_entry);
