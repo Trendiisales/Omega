@@ -79,21 +79,15 @@ static constexpr double   TSE_COMMISSION_RT      = 0.20;   // round-trip commiss
 static constexpr double   TSE_ATR_MIN            = 1.0;    // min ATR for entries (not dead tape) -- lowered 1.5->1.0
 static constexpr double   TSE_ATR_MAX            = 8.0;    // max ATR (not crash)
 
-// P1: Tick Momentum Burst
-// P1: RSI slope + sustained drift (sweep-optimised 2026-04-16)
-// Replaces burst detection which had no edge (best $+0.13 across 21600 configs).
-// Uses same logic as CFE sweep winner but with faster sustained window (5s vs 30s).
-// Sweep result: sm=5s best=$+136 N=32 WR=47%, sm=30s best=$+186 N=16 WR=44%.
-// Using sm=5s for TSE to get more trades at similar WR.
-// Both LONG and SHORT confirmed with edge at all sm values 5s-30s.
-static constexpr int      TSE_P1_RSI_PERIOD      = 30;     // RSI period -- matches CFE sweep winner (rn=30)
-static constexpr double   TSE_P1_RSI_THRESH      = 2.0;    // RSI slope EMA threshold (rt=2.0)
-static constexpr double   TSE_P1_RSI_MAX         = 15.0;   // RSI slope EMA max (exhaustion block)
-static constexpr double   TSE_P1_DRIFT_MIN       = 0.30;   // min |ewm_drift| to enter (dm=0.3)
-static constexpr double   TSE_P1_DRIFT_SUS_THRESH= 0.50;   // sustained drift threshold (st=0.5)
-static constexpr int64_t  TSE_P1_DRIFT_SUS_MS    = 5000;   // sustained drift duration ms (sm=5s)
-static constexpr double   TSE_P1_SL_ATR_MULT     = 0.30;   // SL = sl * ATR (sl=0.30)
-static constexpr double   TSE_P1_TP_ATR_MULT     = 3.0;    // TP = tp * SL (tp=3.0)
+// P1: RSI slope + sustained drift (sweep-optimised 2026-04-16, sm=5s best=$136 N=32 WR=47%)
+// Reuses existing _rsi_slope_ema (TSE_RSI_PERIOD=14) and _bid_hist. No new RSI state.
+static constexpr double   TSE_P1_RSI_THRESH      = 2.0;    // rsi_slope_ema threshold (sweep: rt=2.0)
+static constexpr double   TSE_P1_RSI_MAX         = 15.0;   // rsi_slope_ema exhaustion ceiling
+static constexpr double   TSE_P1_DRIFT_MIN       = 0.30;   // min |ewm_drift| (sweep: dm=0.3)
+static constexpr double   TSE_P1_DRIFT_SUS_THRESH= 0.50;   // sustained drift threshold (sweep: st=0.5)
+static constexpr int64_t  TSE_P1_DRIFT_SUS_MS    = 5000;   // sustained ms (sweep: sm=5s)
+static constexpr double   TSE_P1_SL_ATR_MULT     = 0.30;   // SL = atr * 0.30 (sweep: sl=0.30)
+static constexpr double   TSE_P1_TP_SL_MULT      = 3.0;    // TP = sl * 3.0 (sweep: tp=3.0)
 
 // P2: DOM Absorption
 static constexpr double   TSE_P2_EDGE_LONG       = 0.65;   // micro_edge > this = bid pressure
@@ -324,26 +318,9 @@ private:
 
     int64_t _ticks_total    = 0;   // total ticks received since startup -- warmup guard
     double  _prev_drift     = 0.0; // previous ewm_drift for acceleration check
-
-    // P1 sustained-drift state (replaces burst detection)
-    // Mirrors CFE sustained-drift tracking: direction + start time.
+    // P1 sustained-drift state (reuses _rsi_slope_ema for RSI signal)
     int     _p1_sus_dir     = 0;    // +1/-1/0
     int64_t _p1_sus_start   = 0;    // ms when current sustained run began
-    // P1 RSI state (separate from TSE's existing RSI -- period=30 vs period=14)
-    std::deque<double> _p1_rsi_g, _p1_rsi_l;
-    double  _p1_rsi_pm  = 0.0;
-    double  _p1_rsi_cur = 50.0, _p1_rsi_prv = 50.0, _p1_rsi_trend = 0.0;
-    bool    _p1_rsi_rdy = false;
-    double  _p1_rsi_ra  = 2.0 / (TSE_P1_RSI_PERIOD + 1.0);
-    // P1 recent-mid buffer for price-confirm gate (last 10)
-    std::deque<double> _p1_mid_buf;
-    // P1 adverse-block state (mirrors CFE)
-    int64_t _p1_cd_until  = 0;
-    int     _p1_lcd       = 0;
-    int64_t _p1_lcm       = 0;
-    bool    _p1_ab        = false;
-    double  _p1_lex       = 0.0;
-    int     _p1_lld       = 0;
 
     // Self-contained tick RSI (same approach as CandleFlowEngine)
     std::deque<double> _rsi_gains;
@@ -364,113 +341,55 @@ private:
     int     _trade_id      = 0;
 
     // ── P1: Tick Momentum Burst ───────────────────────────────────────────────
-    // P1: RSI slope + sustained drift entry (replaces burst detection)
-    // Called every tick from on_tick() -- updates its own RSI(30) and sustained-drift
-    // state, then checks entry gates. Both LONG and SHORT confirmed with edge.
-    // Sweep result: $+136 N=32 WR=47% at sm=5s on 2026-04-16 data.
+    // P1: RSI slope + sustained drift entry (sweep-optimised 2026-04-16)
+    // Reuses existing _rsi_slope_ema (updated every tick above) and _bid_hist.
     void _try_p1(double bid, double ask, double spread, double atr,
                  double ewm_drift, int64_t now_ms, CloseCallback on_close) noexcept
     {
-        const double mid = (bid + ask) * 0.5;
-
-        // ── Update P1 RSI(30) -- independent of existing TSE RSI(14) ─────────
-        // Uses same ursi() approach as CFE sweep engine.
-        {
-            if (_p1_rsi_pm == 0.0) {
-                _p1_rsi_pm = mid;
-            } else {
-                const double c = mid - _p1_rsi_pm; _p1_rsi_pm = mid;
-                _p1_rsi_g.push_back(c > 0 ? c : 0.0);
-                _p1_rsi_l.push_back(c < 0 ? -c : 0.0);
-                if ((int)_p1_rsi_g.size() > TSE_P1_RSI_PERIOD) {
-                    _p1_rsi_g.pop_front(); _p1_rsi_l.pop_front();
-                }
-                if ((int)_p1_rsi_g.size() >= TSE_P1_RSI_PERIOD) {
-                    double ag=0,al=0;
-                    for (double x:_p1_rsi_g) ag+=x;
-                    ag/=TSE_P1_RSI_PERIOD;
-                    for (double x:_p1_rsi_l) al+=x;
-                    al/=TSE_P1_RSI_PERIOD;
-                    _p1_rsi_prv = _p1_rsi_cur;
-                    _p1_rsi_cur = (al==0.0) ? 100.0 : 100.0 - 100.0/(1.0+ag/al);
-                    const double s = _p1_rsi_cur - _p1_rsi_prv;
-                    if (!_p1_rsi_rdy) { _p1_rsi_trend=s; _p1_rsi_rdy=true; }
-                    else _p1_rsi_trend = s*_p1_rsi_ra + _p1_rsi_trend*(1.0-_p1_rsi_ra);
-                }
-            }
-        }
-
-        // ── Update mid buffer ─────────────────────────────────────────────────
-        _p1_mid_buf.push_back(mid);
-        if ((int)_p1_mid_buf.size() > 10) _p1_mid_buf.pop_front();
-
-        // ── Update sustained-drift state ──────────────────────────────────────
+        // Update sustained-drift state
         if (ewm_drift >= TSE_P1_DRIFT_SUS_THRESH) {
-            if (_p1_sus_dir != 1) { _p1_sus_dir=1; _p1_sus_start=now_ms; }
+            if (_p1_sus_dir != 1) { _p1_sus_dir = 1; _p1_sus_start = now_ms; }
         } else if (ewm_drift <= -TSE_P1_DRIFT_SUS_THRESH) {
-            if (_p1_sus_dir != -1) { _p1_sus_dir=-1; _p1_sus_start=now_ms; }
+            if (_p1_sus_dir != -1) { _p1_sus_dir = -1; _p1_sus_start = now_ms; }
         } else {
-            _p1_sus_dir=0; _p1_sus_start=0;
+            _p1_sus_dir = 0; _p1_sus_start = 0;
         }
         const int64_t dsms = (_p1_sus_dir != 0) ? (now_ms - _p1_sus_start) : 0;
 
-        // ── Entry gates ───────────────────────────────────────────────────────
-        if (!_p1_rsi_rdy) return;
-        if (atr < 1.0 || spread > 0.40) return;
-        if (now_ms < _p1_cd_until) return;
+        if (!_rsi_warmed) return;
+        if (atr < TSE_ATR_MIN || atr > TSE_ATR_MAX) return;
 
-        // RSI slope direction + exhaustion gate (both directions)
+        // RSI slope direction + exhaustion gate
         int rd = 0;
-        if      (_p1_rsi_trend >  TSE_P1_RSI_THRESH && _p1_rsi_trend <  TSE_P1_RSI_MAX) rd =  1;
-        else if (_p1_rsi_trend < -TSE_P1_RSI_THRESH && _p1_rsi_trend > -TSE_P1_RSI_MAX) rd = -1;
+        if      (_rsi_slope_ema >  TSE_P1_RSI_THRESH && _rsi_slope_ema <  TSE_P1_RSI_MAX) rd =  1;
+        else if (_rsi_slope_ema < -TSE_P1_RSI_THRESH && _rsi_slope_ema > -TSE_P1_RSI_MAX) rd = -1;
         if (!rd) return;
 
-        // Drift must agree with RSI direction
+        // Drift agrees with RSI direction and is sustained
         if (rd ==  1 && ewm_drift <  0.0) return;
         if (rd == -1 && ewm_drift >  0.0) return;
         if (std::fabs(ewm_drift) < TSE_P1_DRIFT_MIN) return;
-
-        // Sustained duration gate
         if (dsms < TSE_P1_DRIFT_SUS_MS) return;
 
-        // Price confirm: last 3 ticks moving in entry direction
-        if ((int)_p1_mid_buf.size() >= 3) {
-            const double n3  = _p1_mid_buf[_p1_mid_buf.size()-3];
-            const double mv3 = mid - n3;
+        // Price confirm: last 3 bids moving in entry direction
+        if ((int)_bid_hist.size() >= 3) {
+            int nb = (int)_bid_hist.size();
+            const double mv3 = _bid_hist[nb-1] - _bid_hist[nb-3];
             if (rd ==  1 && mv3 < -atr * 0.3) return;
             if (rd == -1 && mv3 >  atr * 0.3) return;
         }
 
-        // Opposite-direction cooldown 45s
-        if (_p1_lcd != 0 && (now_ms - _p1_lcm) < 45000LL && rd != _p1_lcd) return;
-
-        // Adverse block (mirrors CFE)
-        if (_p1_ab && _p1_lld != 0) {
-            const double dist = (_p1_lld==1) ? (_p1_lex-mid) : (mid-_p1_lex);
-            const bool same = (rd==1&&_p1_lld==1)||(rd==-1&&_p1_lld==-1);
-            if (same && dist > atr*0.4) return;
-            else _p1_ab = false;
-        }
-
-        // ── Fire entry ────────────────────────────────────────────────────────
-        const bool il  = (rd == 1);
+        const bool il = (rd == 1);
         const double sl_pts = atr * TSE_P1_SL_ATR_MULT;
-        const double tp_pts = sl_pts * TSE_P1_TP_ATR_MULT;
+        const double tp_pts = sl_pts * TSE_P1_TP_SL_MULT;
 
-        std::cout << "[TSE-P1] " << (il?"LONG":"SHORT")
-                  << " rsi_trend=" << std::fixed << std::setprecision(2) << _p1_rsi_trend
-                  << " drift=" << ewm_drift
-                  << " dsms=" << dsms
-                  << " atr=" << atr << "\n";
+        std::cout << "[TSE-P1] " << (il ? "LONG" : "SHORT")
+                  << " rsi_slope=" << std::fixed << std::setprecision(2) << _rsi_slope_ema
+                  << " drift=" << ewm_drift << " dsms=" << dsms << " atr=" << atr << "\n";
         std::cout.flush();
 
         _enter("P1-DRIFT", il, bid, ask, spread, tp_pts, sl_pts, atr, now_ms, on_close);
-
-        // Record direction for cooldown/adverse tracking
-        // _close() updates these on exit; we prime them here for re-entry logic
-        // (actual update happens in the on_close callback path via _close)
     }
-
     // ── P2: DOM Absorption ────────────────────────────────────────────────────
     void _try_p2(double bid, double ask, double spread, double micro_edge, double atr,
                  int64_t now_ms, CloseCallback on_close) noexcept
@@ -713,18 +632,6 @@ private:
             tr.regime     = "TICK_SCALP";
             tr.l2_live    = true;
             on_close(tr);
-        }
-
-        // Update P1 re-entry state (adverse block + opp-dir cooldown)
-        if (std::strncmp(pos_.pattern, "P1", 2) == 0) {
-            _p1_lcd = pos_.is_long ? 1 : -1;
-            _p1_lcm = now_ms;
-            if (pnl_usd < 0) {
-                _p1_ab  = true;
-                _p1_lex = exit_px;
-                _p1_lld = pos_.is_long ? 1 : -1;
-                _p1_cd_until = now_ms + 15000LL; // 15s cooldown after P1 loss
-            }
         }
 
         pos_ = OpenPos{};
