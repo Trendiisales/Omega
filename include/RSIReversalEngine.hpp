@@ -176,6 +176,7 @@ public:
                     std::cout << _buf;
                     std::cout.flush();
                 }
+            }
             return;
         }
         if (m_tick_atr < MIN_ATR_PTS) {
@@ -188,6 +189,7 @@ public:
                     std::cout << _buf;
                     std::cout.flush();
                 }
+            }
             return;
         }
         if (m_rsi_count < RSI_PERIOD + 2) {
@@ -200,6 +202,7 @@ public:
                     std::cout << _buf;
                     std::cout.flush();
                 }
+            }
             return;
         }
 
@@ -253,6 +256,7 @@ public:
                     std::cout << _buf;
                     std::cout.flush();
                 }
+            }
             return;
         }
 
