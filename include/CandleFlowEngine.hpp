@@ -113,6 +113,12 @@ static constexpr int     CFE_DFE_DRIFT_PERSIST_TICKS = 2;
 // Same RSI level + price confirmation gates still apply.
 static constexpr double  CFE_DFE_DRIFT_SUSTAINED_THRESH = 0.2;   // 6-day sweep: st=0.20 sm=60s best $31.50/day
 static constexpr int64_t CFE_DFE_DRIFT_SUSTAINED_MS     = 60000; // 6-day sweep: sm=60s best $31.50/day
+// Trade analysis gates (6-day WR breakdown 2026-04-16 session):
+// London/NY LONG (07-20 UTC): 0% WR across all 4 trades -- block entirely.
+// Asia LONG (20-07 UTC): 50% WR. Asia SHORT: 40% WR. Both profitable.
+// dsms 60-90s: 57% WR. dsms 90s+: collapses to 0-17%. Cap at 90s max.
+static constexpr bool    CFE_BLOCK_LONDON_NY_LONG   = true;    // block LONG entries 07:00-20:00 UTC
+static constexpr int64_t CFE_DFE_DRIFT_MAX_MS       = 90000;   // block entry when drift sustained > 90s (exhausted)
 // ATR-normalised SUS entry threshold: max(0.8, atr * 0.30)
 // At ATR=2: max(0.8, 0.60) = 0.80pt   At ATR=3: max(0.8, 0.90) = 0.90pt
 // At ATR=4: max(0.8, 1.20) = 1.20pt   Evidence: 0.8pt fixed threshold fires
@@ -539,8 +545,37 @@ struct CandleFlowEngine {
                 }
             }
 
+            // Gate: block London/NY LONG (07-20 UTC) -- 0% WR across 6-day data
+            // Gate: block entries when drift sustained > 90s -- move is exhausted
+            if (CFE_BLOCK_LONDON_NY_LONG && dfe_long) {
+                const int64_t dfe_utc_sec  = now_ms / 1000LL;
+                const int     dfe_utc_hour = static_cast<int>((dfe_utc_sec % 86400LL) / 3600LL);
+                const bool    dfe_london_ny = (dfe_utc_hour >= 7 && dfe_utc_hour < 20);
+                if (dfe_london_ny) {
+                    static int64_t s_lon_long_log = 0;
+                    if (now_ms - s_lon_long_log > 60000) {
+                        s_lon_long_log = now_ms;
+                        std::cout << "[CFE-LON-LONG-BLOCK] LONG blocked in London/NY (07-20 UTC) -- 0% WR\n";
+                        std::cout.flush();
+                    }
+                    goto cfe_sustained_skip;
+                }
+            }
             if (drift_accel && rsi_ok && rsi_level_ok && persist_ok && price_confirms &&
                 (now_ms >= m_dfe_cooldown_until)) {
+                // Sustained duration cap: entry at 60-90s has 57% WR; 90s+ collapses to 0-17%.
+                // When drift has been sustained > 90s the move is already spent.
+                if (drift_sustained_ms > CFE_DFE_DRIFT_MAX_MS) {
+                    static int64_t s_exhaust_sus_log = 0;
+                    if (now_ms - s_exhaust_sus_log > 20000) {
+                        s_exhaust_sus_log = now_ms;
+                        std::cout << "[CFE-SUS-EXHAUST] DFE blocked: sustained="
+                                  << drift_sustained_ms/1000 << "s > max="
+                                  << CFE_DFE_DRIFT_MAX_MS/1000 << "s -- move exhausted\n";
+                        std::cout.flush();
+                    }
+                    goto cfe_sustained_skip;
+                }
                 // ATR cap: block CFE entry when ATR > CFE_MAX_ATR_ENTRY.
                 // At ATR=12pt: SL=8.4pt = $168 loss at 0.20 lots -- not a scalp.
                 const double dfe_atr_check = (atr_pts > 0.0) ? atr_pts : 5.0;
