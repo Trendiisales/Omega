@@ -75,11 +75,11 @@ static constexpr int64_t CFE_STAGNATION_MS     = 90000;  // Asia default -- Lond
 static constexpr double  CFE_STAGNATION_MULT   = 1.0;   // exit if mfe < cost*1.0
 static constexpr double  CFE_RISK_DOLLARS      = 30.0;
 static constexpr double  CFE_MIN_LOT           = 0.01;
-// MAX_LOT reduced from 0.50 to 0.20: at $30 risk and 2pt floor ATR,
+// MAX_LOT reduced from 0.50 to 0.20 to 0.10: at $30 risk, dollar_stop=$50,
 // correct size = 30/(1.4*100) = 0.214 lots. 0.20 is a hard safety ceiling
 // so even if ATR computation goes wrong again, damage is capped.
 // 0.50 lots was 3x the correct size and caused $111 loss on a stale ATR tick.
-static constexpr double  CFE_MAX_LOT           = 0.20;
+static constexpr double  CFE_MAX_LOT           = 0.10;  // reduced 0.20->0.10: dollar_stop=$50 at 0.20=2.5pt room, at 0.10=5pt room
 
 // RSI trend (entry direction signal)
 static constexpr int     CFE_RSI_PERIOD        = 30;    // tick RSI lookback
@@ -725,9 +725,29 @@ struct CandleFlowEngine {
                 static int64_t s_pny_log = 0;
                 if (now_ms - s_pny_log > 120000) {
                     s_pny_log = now_ms;
-                    printf("[CFE-POST-NY-BLOCK] bar entry blocked: UTC hour=%d (19-22 dead zone)\n",
-                           pny_hour);
-                    fflush(stdout);
+                    std::cout << "[CFE-POST-NY-BLOCK] bar entry blocked: UTC hour=" << pny_hour
+                              << " (19-22 dead zone)\n";
+                    std::cout.flush();
+                }
+                return;
+            }
+        }
+
+        // Gate -0.75: Pre-London dead zone bar block (05:00-07:00 UTC)
+        // Sydney close to London open -- thin liquidity, wide spreads, frequent spikes.
+        // Bar entries in this window get caught by gap moves (05:59 SHORT -$56 evidence).
+        // DFE path already blocked by Asia threshold. Block bar entries too.
+        {
+            const int64_t pre_lon_sec  = now_ms / 1000LL;
+            const int     pre_lon_hour = static_cast<int>((pre_lon_sec % 86400LL) / 3600LL);
+            const bool    pre_london   = (pre_lon_hour >= 5 && pre_lon_hour < 7);
+            if (pre_london) {
+                static int64_t s_pre_lon_log = 0;
+                if (now_ms - s_pre_lon_log > 120000) {
+                    s_pre_lon_log = now_ms;
+                    std::cout << "[CFE-PRE-LON-BLOCK] bar entry blocked: UTC hour=" << pre_lon_hour
+                              << " (05:00-07:00 dead zone)\n";
+                    std::cout.flush();
                 }
                 return;
             }
@@ -748,9 +768,9 @@ struct CandleFlowEngine {
                 static int64_t s_lon_log = 0;
                 if (now_ms - s_lon_log > 30000) {
                     s_lon_log = now_ms;
-                    printf("[CFE-LON-QUALITY] bar blocked: London open, drift sustained=%lldsec < 90s\n",
-                           (long long)drift_sustained_ms / 1000LL);
-                    fflush(stdout);
+                    std::cout << "[CFE-LON-QUALITY] bar blocked: London open, drift sustained="
+                              << drift_sustained_ms/1000LL << "s < 90s\n";
+                    std::cout.flush();
                 }
                 return;
             }
