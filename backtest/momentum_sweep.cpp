@@ -1,191 +1,209 @@
-#include <iostream>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <deque>
 #include <fstream>
 #include <sstream>
-#include <vector>
 #include <string>
-#include <cmath>
-#include <cstdint>
-#include <deque>
-#include <algorithm>
-#include <iomanip>
+#include <vector>
 
-struct TD { uint64_t ts; double ask,bid; };
-struct Bar { double open=0,high=0,low=0,close=0; uint64_t ts=0; bool valid=false; };
-struct M1Builder {
-    Bar cur,last,prev; uint64_t cur_min=0; bool new_bar=false;
-    void update(uint64_t ts_ms, double mid) {
-        new_bar=false; uint64_t bm=ts_ms/60000;
-        if(bm!=cur_min){if(cur.valid){prev=last;last=cur;new_bar=true;}
-            cur={mid,mid,mid,mid,ts_ms,true};cur_min=bm;}
-        else{if(mid>cur.high)cur.high=mid;if(mid<cur.low)cur.low=mid;cur.close=mid;}
-    }
-    bool has2()const{return last.valid&&prev.valid;}
-};
-struct EMA {
-    int period; double val=0; bool warm=false; int count=0; double alpha;
-    explicit EMA(int p):period(p),alpha(2.0/(p+1)){}
-    void update(double v){
-        if(!warm){val=v;count++;if(count>=period)warm=true;}
-        else val=v*alpha+val*(1.0-alpha);
-    }
-};
-struct ATR14 {
-    std::deque<double> r; double val=0;
-    void add(const Bar&b){r.push_back(b.high-b.low);if((int)r.size()>14)r.pop_front();
-        double s=0;for(auto x:r)s+=x;val=s/r.size();}
-};
-struct Params { int ef,es,to,ss,se; double bm,sm,tm,sep; };
-struct Result { Params p; int trades,wins; double wr,total,aw,al,rr,exp_pt,maxdd; };
-
-Result run(const std::vector<TD>& ticks, const Params& p) {
-    M1Builder bars; EMA efa(p.ef),esa(p.es); ATR14 atr;
-    bool in_t=false,is_long=false;
-    double entry=0,sl=0,tp=0,sz=0,mfe=0;
-    int bh=0; int64_t cool=0; uint64_t lbm=0;
-    int trades=0,wins=0;
-    double total=0,wpnl=0,lpnl=0,peak=0,eq=0,maxdd=0;
-    for(auto& t:ticks){
-        const double mid=(t.ask+t.bid)*0.5;
-        const double sp=t.ask-t.bid;
-        if(sp>0.40||sp<=0) continue;
-        const int uh=(int)((t.ts/1000)%86400/3600);
-        const bool in_sess=(uh>=p.ss&&uh<p.se);
-        bars.update(t.ts,mid);
-        const uint64_t bm=t.ts/60000;
-        if(bm!=lbm&&bars.last.valid){efa.update(bars.last.close);esa.update(bars.last.close);atr.add(bars.last);lbm=bm;}
-        if((int64_t)t.ts<cool) continue;
-        if(in_t){
-            const double move=is_long?(mid-entry):(entry-mid);
-            if(move>mfe)mfe=move;
-            if(is_long?(t.bid<=sl):(t.ask>=sl)){
-                double pnl=(is_long?(t.bid-entry):(entry-t.ask))*sz*100;
-                total+=pnl;eq+=pnl;if(eq>peak)peak=eq;maxdd=std::max(maxdd,peak-eq);
-                if(pnl>0){wins++;wpnl+=pnl;}else lpnl+=pnl;
-                trades++;in_t=false;cool=(int64_t)t.ts+10000;continue;
-            }
-            if(is_long?(t.ask>=tp):(t.bid<=tp)){
-                double pnl=(is_long?(t.ask-entry):(entry-t.bid))*sz*100;
-                total+=pnl;eq+=pnl;if(eq>peak)peak=eq;maxdd=std::max(maxdd,peak-eq);
-                if(pnl>0){wins++;wpnl+=pnl;}else lpnl+=pnl;
-                trades++;in_t=false;cool=(int64_t)t.ts+10000;continue;
-            }
-            if(bars.new_bar&&bars.has2()){
-                bh++;
-                bool ca=(is_long&&efa.val<esa.val-p.sep)||(!is_long&&efa.val>esa.val+p.sep);
-                if(ca||bh>=p.to){
-                    double px=is_long?t.bid:t.ask;
-                    double pnl=(is_long?(px-entry):(entry-px))*sz*100;
-                    total+=pnl;eq+=pnl;if(eq>peak)peak=eq;maxdd=std::max(maxdd,peak-eq);
-                    if(pnl>0){wins++;wpnl+=pnl;}else lpnl+=pnl;
-                    trades++;in_t=false;cool=(int64_t)t.ts+10000;continue;
-                }
-            }
-            continue;
+struct TickRSI {
+    std::deque<double> gains,losses;
+    double prev_mid=0,cur=50,prev=50,slope_ema=0;
+    bool warmed=false;
+    int period; double alpha;
+    TickRSI(int n,int en):period(n),alpha(2.0/(en+1)){}
+    void update(double bid){
+        if(!prev_mid){prev_mid=bid;return;}
+        double c=bid-prev_mid;prev_mid=bid;
+        gains.push_back(c>0?c:0);losses.push_back(c<0?-c:0);
+        if((int)gains.size()>period){gains.pop_front();losses.pop_front();}
+        if((int)gains.size()>=period){
+            double ag=0,al=0;
+            for(auto x:gains)ag+=x;ag/=period;
+            for(auto x:losses)al+=x;al/=period;
+            prev=cur;cur=al==0?100.0:100.0-100.0/(1.0+ag/al);
+            double s=std::max(-5.0,std::min(5.0,cur-prev));
+            if(!warmed){slope_ema=s;warmed=true;}
+            else slope_ema=s*alpha+slope_ema*(1-alpha);
         }
-        if(!bars.new_bar||!bars.has2()||!efa.warm||!esa.warm||atr.val<=0||!in_sess) continue;
-        double esep=efa.val-esa.val;
-        bool up=(esep>p.sep),dn=(esep<-p.sep);
-        if(!up&&!dn) continue;
-        double brk=atr.val*p.bm;
-        bool lb=up&&(bars.last.close>bars.prev.high+brk);
-        bool sb=dn&&(bars.last.close<bars.prev.low-brk);
-        if(!lb&&!sb) continue;
-        is_long=lb; entry=is_long?t.ask:t.bid;
-        double slp=atr.val*p.sm;
-        sl=is_long?entry-slp:entry+slp;
-        tp=is_long?entry+atr.val*p.tm:entry-atr.val*p.tm;
-        sz=std::max(0.01,std::min(0.50,30.0/(slp*100)));
-        sz=std::floor(sz/0.001)*0.001;
-        mfe=0;bh=0;in_t=true;
     }
-    double wr=trades?100.0*wins/trades:0;
-    double aw=wins?wpnl/wins:0,al=(trades-wins)?lpnl/(trades-wins):0;
-    double rr=al!=0?-aw/al:0;
-    double ep=trades?(wr/100.0*aw+(1.0-wr/100.0)*al):0;
-    return {p,trades,wins,wr,total,aw,al,rr,ep,maxdd};
+};
+
+struct Params{
+    int rsi_n=14; double rsi_thresh=0.5,drift_min=0.3;
+    double sl_pts=0.8,tp_rr=2.5,trail_arm=1.5,trail_dist=0.8;
+    int max_hold_s=300,cooldown_s=15;
+};
+
+struct Trade{double pnl,mfe;bool is_long;int held_s;char reason[8];};
+
+struct Engine{
+    Params p; TickRSI rsi;
+    int ticks=0; bool pa=false,pl=false,pbe=false;
+    double pe=0,psl=0,ptp=0,pm=0,ps=0.01,prev_drift=0;
+    int64_t pts=0,cd=0;
+    std::vector<Trade> trades;
+    Engine(Params pp):p(pp),rsi(pp.rsi_n,5){}
+    void tick(int64_t ms,double bid,double ask,double drift,double atr){
+        ++ticks;double sp=ask-bid,mid=(bid+ask)/2;rsi.update(bid);
+        if(pa){
+            double mv=pl?(mid-pe):(pe-mid);if(mv>pm)pm=mv;
+            double eff=pl?bid:ask,td=std::fabs(ptp-pe);
+            if(!pbe&&td>0&&pm>=td*0.5){psl=pe;pbe=true;}
+            if(mv>=p.trail_arm){
+                double tsl=pl?(mid-p.trail_dist):(mid+p.trail_dist);
+                if(pl&&tsl>psl)psl=tsl;if(!pl&&tsl<psl)psl=tsl;
+            }
+            if((pl&&bid>=ptp)||(!pl&&ask<=ptp)){close(eff,"TP",ms);return;}
+            if((pl&&bid<=psl)||(!pl&&ask>=psl)){close(eff,pbe?"BE":"SL",ms);return;}
+            if((ms-pts)/1000>p.max_hold_s){close(eff,"TO",ms);return;}
+            prev_drift=drift;return;
+        }
+        if(ticks<300||sp>0.40||atr<1.0||ms<cd||!rsi.warmed){prev_drift=drift;return;}
+        bool rl=rsi.slope_ema>p.rsi_thresh,rs=rsi.slope_ema<-p.rsi_thresh;
+        bool dl=drift>=p.drift_min,ds=drift<=-p.drift_min;
+        bool gl=rl&&dl,gs=rs&&ds;
+        if(!gl&&!gs){prev_drift=drift;return;}
+        if(gl&&drift<prev_drift-0.10){prev_drift=drift;return;}
+        if(gs&&drift>prev_drift+0.10){prev_drift=drift;return;}
+        bool il=gl;double sl=p.sl_pts,tp=sl*p.tp_rr,e=il?ask:bid;
+        pa=true;pl=il;pe=e;psl=il?e-sl:e+sl;ptp=il?e+tp:e-tp;
+        pts=ms;pm=0;pbe=false;
+        ps=std::min(0.10,std::max(0.01,std::round(10.0/(sl*100)/0.01)*0.01));
+        prev_drift=drift;
+    }
+    void close(double ep,const char* r,int64_t ms){
+        double pp=pl?(ep-pe):(pe-ep),pu=pp*ps*100;
+        if(pu<0)cd=ms+(int64_t)p.cooldown_s*1000;
+        Trade t;t.pnl=pu;t.mfe=pm;t.is_long=pl;
+        t.held_s=(int)((ms-pts)/1000);
+        strncpy(t.reason,r,7);t.reason[7]=0;trades.push_back(t);pa=false;
+    }
+    void fin(int64_t ms){if(pa)close(pe,"END",ms);}
+    double totpnl()const{double s=0;for(auto&t:trades)s+=t.pnl;return s;}
+    double lpnl()const{double s=0;for(auto&t:trades)s+=t.is_long?t.pnl:0;return s;}
+    double spnl()const{double s=0;for(auto&t:trades)s+=t.is_long?0:t.pnl;return s;}
+    int wins()const{int n=0;for(auto&t:trades)n+=(t.pnl>0);return n;}
+    int n()const{return(int)trades.size();}
+};
+
+struct Tick{int64_t ms;double bid,ask,drift,atr;};
+
+std::vector<Tick> load(const char* path){
+    std::vector<Tick> v; std::ifstream f(path);
+    if(!f){fprintf(stderr,"Cannot open %s\n",path);return v;}
+    std::string line,tok;std::getline(f,line);
+    int tc=-1,bc=-1,ac=-1,dc=-1,rc=-1,ci=0;
+    std::istringstream hss(line);
+    while(std::getline(hss,tok,',')){
+        if(tok=="ts_ms"||tok=="timestamp_ms")tc=ci;
+        if(tok=="bid")bc=ci;if(tok=="ask")ac=ci;
+        if(tok=="ewm_drift")dc=ci;if(tok=="atr")rc=ci;++ci;
+    }
+    if(bc<0||ac<0){fprintf(stderr,"Bad header\n");return v;}
+    double pb=0,av=2;std::deque<double> aw;
+    v.reserve(300000);
+    while(std::getline(f,line)){
+        std::vector<std::string> c;std::istringstream ss(line);
+        while(std::getline(ss,tok,','))c.push_back(tok);
+        int mx=std::max({tc,bc,ac});if((int)c.size()<=mx)continue;
+        try{
+            Tick t;
+            t.ms=tc>=0?(int64_t)std::stod(c[tc]):0;
+            t.bid=std::stod(c[bc]);t.ask=std::stod(c[ac]);
+            t.drift=dc>=0?std::stod(c[dc]):0;
+            t.atr=rc>=0?std::stod(c[rc]):0;
+            if(t.bid<=0||t.ask<t.bid)continue;
+            if(t.atr<=0){
+                if(pb>0){
+                    double tr=t.ask-t.bid+std::fabs(t.bid-pb);
+                    aw.push_back(tr);if((int)aw.size()>200)aw.pop_front();
+                    if((int)aw.size()>=50){double s=0;for(auto x:aw)s+=x;av=s/aw.size()*14;}
+                }
+                t.atr=av;
+            }
+            pb=t.bid;v.push_back(t);
+        }catch(...){}
+    }
+    return v;
 }
 
-int main(int argc,char* argv[]) {
-    const char* fn=argc>1?argv[1]:"/Users/jo/tick/xauusd_merged_24months.csv";
-    std::ifstream f(fn);
-    if(!f){std::cerr<<"Cannot open "<<fn<<"\n";return 1;}
-    std::cerr<<"Loading...\n";
-    std::vector<TD> ticks; ticks.reserve(140000000);
-    std::string line; std::getline(f,line);
-    while(std::getline(f,line)){
-        if(line.empty())continue;
-        std::stringstream ss(line); std::string tok; TD td;
-        if(!std::getline(ss,tok,','))continue;
-        if(tok.empty()||!isdigit((unsigned char)tok[0]))continue;
-        try{td.ts=std::stoull(tok);}catch(...){continue;}
-        if(!std::getline(ss,tok,','))continue;try{td.ask=std::stod(tok);}catch(...){continue;}
-        if(!std::getline(ss,tok,','))continue;try{td.bid=std::stod(tok);}catch(...){continue;}
-        if(td.ask>0&&td.bid>0&&td.ask>=td.bid)ticks.push_back(td);
+struct Res{double pnl,wr,lp,sp;int n;Params p;};
+
+int main(int argc,char* argv[]){
+    if(argc<2){puts("Usage: momentum_sweep <csv>");return 1;}
+    auto t0=std::chrono::steady_clock::now();
+    auto ticks=load(argv[1]);
+    printf("Loaded %zu ticks\n",ticks.size());
+
+    double rsi_t[]={0.3,0.5,0.8,1.2};
+    double drft[]={0.2,0.3,0.5,0.8};
+    double sl[]={0.6,0.8,1.0,1.5};
+    double tp[]={2.0,2.5,3.0,4.0};
+    double arm[]={1.0,1.5,2.0};
+    double dst[]={0.5,0.8,1.0};
+    int    mh[]={180,300,600};
+    int    cd[]={10,20};
+    int    rn[]={10,14,20};
+    int total=(int)(sizeof(rsi_t)/8*sizeof(drft)/8*sizeof(sl)/8*sizeof(tp)/8*
+                    sizeof(arm)/8*sizeof(dst)/8*sizeof(mh)/4*sizeof(cd)/4*sizeof(rn)/4);
+    printf("Testing %d combinations...\n",total);
+
+    std::vector<Res> results;results.reserve(total);
+    int done=0;
+    for(int ri:rn)for(double rt:rsi_t)for(double dm:drft)
+    for(double s:sl)for(double t:tp)for(double a:arm)
+    for(double d:dst)for(int m:mh)for(int c:cd){
+        Params p;p.rsi_n=ri;p.rsi_thresh=rt;p.drift_min=dm;
+        p.sl_pts=s;p.tp_rr=t;p.trail_arm=a;p.trail_dist=d;
+        p.max_hold_s=m;p.cooldown_s=c;
+        Engine eng(p);
+        for(auto& tk:ticks)eng.tick(tk.ms,tk.bid,tk.ask,tk.drift,tk.atr);
+        if(!ticks.empty())eng.fin(ticks.back().ms);
+        if(eng.n()>=5){
+            Res r;r.pnl=eng.totpnl();r.wr=(double)eng.wins()/eng.n();
+            r.lp=eng.lpnl();r.sp=eng.spnl();r.n=eng.n();r.p=p;
+            results.push_back(r);
+        }
+        if(++done%5000==0){
+            double best=0;for(auto& r:results)if(r.pnl>best)best=r.pnl;
+            printf("  %d/%d best=$%+.2f\n",done,total,best);fflush(stdout);
+        }
     }
-    std::cerr<<"Loaded "<<ticks.size()<<" ticks. Sweeping...\n";
+    std::sort(results.begin(),results.end(),[](const Res&a,const Res&b){return a.pnl>b.pnl;});
+    auto t1=std::chrono::steady_clock::now();
+    printf("Done in %.2fs\n",std::chrono::duration<double>(t1-t0).count());
 
-    int efs[]={10,20,50};
-    int ess[]={50,100,200};
-    double bms[]={0.5,1.0,1.5,2.0,3.0};
-    double sms[]={0.8,1.2,2.0};
-    double tms[]={1.5,2.5,4.0};
-    double seps[]={0.05,0.20,0.50};
-    int tos[]={10,20,40};
-    int ss_arr[]={7,7,9};
-    int se_arr[]={22,17,17};
-    int n_sess=3;
-
-    std::vector<Result> results;
-    int total_runs=0;
-
-    for(int ef:efs) {
-    for(int es:ess) { if(ef>=es) continue;
-    for(double bm:bms) {
-    for(double sm:sms) {
-    for(double tm:tms) { if(tm<=sm) continue;
-    for(double sep:seps) {
-    for(int to:tos) {
-    for(int si=0;si<n_sess;si++) {
-        Params p{ef,es,to,ss_arr[si],se_arr[si],bm,sm,tm,sep};
-        Result res=run(ticks,p);
-        total_runs++;
-        if(res.trades>=100&&res.wr>=42.0&&res.exp_pt>0)
-            results.push_back(res);
-    }}}}}}}
+    puts("\n================================================================");
+    puts("TOP 20");
+    puts("================================================================");
+    printf("%-3s %-8s %-6s %-4s %-7s %-7s %-5s %-5s %-5s %-4s %-4s %-4s\n",
+           "#","PnL","WR","N","L$","S$","rsi_t","drift","sl","tp","arm","hold");
+    int show=std::min((int)results.size(),20);
+    for(int i=0;i<show;++i){
+        auto& r=results[i];
+        printf("%-3d $%+7.2f %5.1f%% %4d $%+6.2f $%+6.2f %5.2f %5.2f %5.2f %4.1f %4.1f %4d\n",
+               i+1,r.pnl,r.wr*100,r.n,r.lp,r.sp,
+               r.p.rsi_thresh,r.p.drift_min,r.p.sl_pts,r.p.tp_rr,r.p.trail_arm,r.p.max_hold_s);
     }
-
-    std::sort(results.begin(),results.end(),[](const Result&a,const Result&b){
-        return a.exp_pt>b.exp_pt;
-    });
-
-    std::cout<<"\n=== MomentumBreakout Sweep (trades>=100, WR>=42%, exp>0) ===\n";
-    std::cout<<std::left
-        <<std::setw(5)<<"EF"<<std::setw(5)<<"ES"<<std::setw(5)<<"BRK"
-        <<std::setw(5)<<"SL"<<std::setw(5)<<"TP"<<std::setw(6)<<"SEP"
-        <<std::setw(5)<<"TO"<<std::setw(6)<<"SESS"
-        <<std::setw(6)<<"N"<<std::setw(7)<<"WR%"
-        <<std::setw(10)<<"TOTAL"<<std::setw(6)<<"R:R"
-        <<std::setw(9)<<"EXP/TR"<<std::setw(10)<<"MAXDD"<<"\n";
-    std::cout<<std::string(88,'-')<<"\n";
-
-    int shown=0;
-    for(auto& res:results){
-        if(shown++>=40) break;
-        std::cout<<std::fixed
-            <<std::setw(5)<<res.p.ef<<std::setw(5)<<res.p.es
-            <<std::setw(5)<<std::setprecision(1)<<res.p.bm
-            <<std::setw(5)<<std::setprecision(1)<<res.p.sm
-            <<std::setw(5)<<std::setprecision(1)<<res.p.tm
-            <<std::setw(6)<<std::setprecision(2)<<res.p.sep
-            <<std::setw(5)<<res.p.to
-            <<std::setw(3)<<res.p.ss<<"-"<<std::setw(2)<<res.p.se
-            <<std::setw(6)<<res.trades
-            <<std::setw(7)<<std::setprecision(1)<<res.wr
-            <<std::setw(10)<<std::setprecision(0)<<res.total
-            <<std::setw(6)<<std::setprecision(2)<<res.rr
-            <<std::setw(9)<<std::setprecision(2)<<res.exp_pt
-            <<std::setw(10)<<std::setprecision(0)<<res.maxdd<<"\n";
+    if(!results.empty()){
+        auto& b=results[0];
+        printf("\nBEST: $%+.2f WR=%.1f%% N=%d L=$%+.2f S=$%+.2f\n",
+               b.pnl,b.wr*100,b.n,b.lp,b.sp);
+        printf("rsi_n=%d thresh=%.2f drift=%.2f sl=%.2f tp=%.1f arm=%.1f dist=%.1f hold=%d cd=%d\n",
+               b.p.rsi_n,b.p.rsi_thresh,b.p.drift_min,b.p.sl_pts,b.p.tp_rr,
+               b.p.trail_arm,b.p.trail_dist,b.p.max_hold_s,b.p.cooldown_s);
+        // Rerun best with trade detail
+        Engine eng(b.p);
+        for(auto& tk:ticks)eng.tick(tk.ms,tk.bid,tk.ask,tk.drift,tk.atr);
+        if(!ticks.empty())eng.fin(ticks.back().ms);
+        puts("\nAll trades:");
+        for(auto& t:eng.trades)
+            printf("  %-5s $%+6.2f mfe=%5.2f %-4s %ds\n",
+                   t.is_long?"LONG":"SHORT",t.pnl,t.mfe,t.reason,t.held_s);
     }
-    std::cout<<"\nTotal configs: "<<total_runs<<"\nPassing: "<<results.size()<<"\n";
     return 0;
 }
