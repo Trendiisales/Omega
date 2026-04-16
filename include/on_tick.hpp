@@ -1777,12 +1777,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 send_live_order(sym, close_is_long, pe_lot, pe_price);
             }
             // Log in both modes -- shadow records the simulated partial as if it were real.
-            std::printf("[PARTIAL-EXIT]%s %s %s %.2f lots @ %.5f  entry_long=%d\n",
-                        g_cfg.mode == "LIVE" ? "" : "[SHADOW]",
-                        sym.c_str(),
-                        act == PE::PARTIAL ? "TP1-HIT" : "TP2/TRAIL-HIT",
-                        pe_lot, pe_price,
-                        g_partial_exit.entry_is_long(sym) ? 1 : 0);
+            { char _m[512]; snprintf(_m,sizeof(_m),"[PARTIAL-EXIT]%s %s %s %.2f lots @ %.5f  entry_long=%d\n",                         g_cfg.mode == "LIVE" ? "" : "[SHADOW]",                         sym.c_str(),                         act == PE::PARTIAL ? "TP1-HIT" : "TP2/TRAIL-HIT",                         pe_lot, pe_price,                         g_partial_exit.entry_is_long(sym) ? 1 : 0); std::cout<<_m; std::cout.flush(); }
             if (act == PE::FULL) {
                 g_partial_exit.reset(sym);
             }
