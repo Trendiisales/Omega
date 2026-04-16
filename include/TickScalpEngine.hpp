@@ -83,9 +83,9 @@ static constexpr double   TSE_ATR_MAX            = 8.0;    // max ATR (not crash
 // Reuses existing _rsi_slope_ema (TSE_RSI_PERIOD=14) and _bid_hist. No new RSI state.
 static constexpr double   TSE_P1_RSI_THRESH      = 2.0;    // rsi_slope_ema threshold (sweep: rt=2.0)
 static constexpr double   TSE_P1_RSI_MAX         = 15.0;   // rsi_slope_ema exhaustion ceiling
-static constexpr double   TSE_P1_DRIFT_MIN       = 0.30;   // min |ewm_drift| (sweep: dm=0.3)
-static constexpr double   TSE_P1_DRIFT_SUS_THRESH= 0.50;   // sustained drift threshold (sweep: st=0.5)
-static constexpr int64_t  TSE_P1_DRIFT_SUS_MS    = 5000;   // sustained ms (sweep: sm=5s)
+static constexpr double   TSE_P1_DRIFT_MIN       = 0.50;   // min |ewm_drift| -- raised 0.30->0.50 to cut noise
+static constexpr double   TSE_P1_DRIFT_SUS_THRESH= 0.50;   // sustained drift threshold
+static constexpr int64_t  TSE_P1_DRIFT_SUS_MS    = 15000;  // sustained ms -- raised 5s->15s to cut noise entries
 static constexpr double   TSE_P1_SL_ATR_MULT     = 0.30;   // SL = atr * 0.30 (sweep: sl=0.30)
 static constexpr double   TSE_P1_TP_SL_MULT      = 3.0;    // TP = sl * 3.0 (sweep: tp=3.0)
 
