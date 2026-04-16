@@ -3572,7 +3572,12 @@ public:
             if(confirm_count_>=CONFIRM_TICKS&&ms>=MIN_LOCK_MS){
                 if(current_!=raw){
                     current_=raw; last_switch_=now;
-                    printf("[GOLD-REGIME] %s\n",name(raw)); fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GOLD-REGIME] %s\n",name(raw)); fflush(stdout);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 confirm_count_=0;
             }
@@ -3693,9 +3698,12 @@ public:
         // are impossible in normal market conditions.
         const double old_drift = ewm_fast_ - ewm_slow_;
         ewm_slow_ = ewm_fast_;  // drift = 0; next tick in new direction fires GFE
-        printf("[DRIFT-RESET] reversal=%.1fpt old_drift=%.2f -> 0.00 (full snap)\n",
-               reversal_pts, old_drift);
-        fflush(stdout);
+        {
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg), "[DRIFT-RESET] reversal=%.1fpt old_drift=%.2f -> 0.00 (full snap)\n",                reversal_pts, old_drift);
+            std::cout << _msg;
+            std::cout.flush();
+        }
     }
 
     // is_drift_trending() -- Asia bracket gate.
@@ -3792,9 +3800,12 @@ public:
         const size_t needed = WINDOW - history_.size();
         for (size_t i = 0; i < needed; ++i)
             history_.push_back(mid);
-        printf("[VOL-FILTER] Seeded with mid=%.2f (%zu ticks) -- skipping cold-start warmup\n",
-               mid, needed);
-        fflush(stdout);
+        {
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg), "[VOL-FILTER] Seeded with mid=%.2f (%zu ticks) -- skipping cold-start warmup\n",                mid, needed);
+            std::cout << _msg;
+            std::cout.flush();
+        }
     }
 };
 
@@ -3859,9 +3870,12 @@ class GoldPositionManager {
         // Safety guard: exit_px should never be zero or negative for XAUUSD.
         // If it is, fall back to entry price (flat trade) and log the anomaly.
         if (exit_px <= 0.0) {
-            printf("[GOLD-STACK-WARN] emit_close called with exit_px=%.4f why=%s entry=%.4f -- clamping to entry\n",
-                   exit_px, why ? why : "?", leg.entry);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLD-STACK-WARN] emit_close called with exit_px=%.4f why=%s entry=%.4f -- clamping to entry\n",                    exit_px, why ? why : "?", leg.entry);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             exit_px = leg.entry;
         }
         omega::TradeRecord tr;
@@ -4087,10 +4101,12 @@ class GoldPositionManager {
         legs_.push_back(leg);
         last_add_price_ = mid;
         last_add_ts_ = leg.entry_ts;
-        printf("[GOLD-PYRAMID-ADD] %s lvl=%zu entry=%.2f tp=%.2f sl=%.2f size=%.4f\n",
-               is_long ? "LONG" : "SHORT",
-               legs_.size(), leg.entry, leg.tp, leg.sl, leg.size);
-        fflush(stdout);
+        {
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg), "[GOLD-PYRAMID-ADD] %s lvl=%zu entry=%.2f tp=%.2f sl=%.2f size=%.4f\n",                is_long ? "LONG" : "SHORT",                legs_.size(), leg.entry, leg.tp, leg.sl, leg.size);
+            std::cout << _msg;
+            std::cout.flush();
+        }
         (void)latency_ms;
     }
 
@@ -4144,9 +4160,12 @@ public:
         // Fall back to a minimal TP (2? SL) so the position isn't immediately closed flat.
         const double tp_ticks = (sig.tp_ticks > 0.0) ? sig.tp_ticks : sl_ticks * 2.0;
         if (sig.tp_ticks <= 0.0) {
-            printf("[GOLD-STACK-WARN] open() called with tp_ticks=0 engine=%s -- using fallback tp_ticks=%.0f\n",
-                   sig.engine, sl_ticks * 2.0);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLD-STACK-WARN] open() called with tp_ticks=0 engine=%s -- using fallback tp_ticks=%.0f\n",                    sig.engine, sl_ticks * 2.0);
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
         GoldPos leg;
         leg.active   = true;
@@ -4174,10 +4193,12 @@ public:
         legs_.push_back(leg);
         last_add_price_ = leg.entry;
         last_add_ts_ = leg.entry_ts;
-        printf("[GOLD-STACK-ENTRY] %s entry=%.2f tp=%.2f sl=%.2f eng=%s reason=%s regime=%s\n",
-               leg.is_long?"LONG":"SHORT", leg.entry, leg.tp, leg.sl,
-               leg.engine, leg.reason, regime?regime:"?");
-        fflush(stdout);
+        {
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg), "[GOLD-STACK-ENTRY] %s entry=%.2f tp=%.2f sl=%.2f eng=%s reason=%s regime=%s\n",                leg.is_long?"LONG":"SHORT", leg.entry, leg.tp, leg.sl,                leg.engine, leg.reason, regime?regime:"?");
+            std::cout << _msg;
+            std::cout.flush();
+        }
         (void)latency_ms;
     }
 
@@ -4210,9 +4231,12 @@ public:
                 // self-funding -- let the trail manage the exit. A regime flip
                 // on a winner just means the market is transitioning, not reversing.
                 if (leg_profit_locked(leg)) {
-                    printf("[GOLD-STACK-REGIME_FLIP-SUPPRESSED] %s hold=%lds trail in profit sl=%.2f entry=%.2f\n",
-                           leg.engine, (long)held_so_far, leg.sl, leg.entry);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GOLD-STACK-REGIME_FLIP-SUPPRESSED] %s hold=%lds trail in profit sl=%.2f entry=%.2f\n",                            leg.engine, (long)held_so_far, leg.sl, leg.entry);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     // Update regime so this logs once per flip, not every tick.
                     std::strncpy(leg.regime, regime, 31);
                     leg.regime[31] = '\0';
@@ -4235,10 +4259,12 @@ public:
             const bool tp_hit = leg.is_long ? (ask >= leg.tp) : (bid <= leg.tp);
             if (tp_hit) {
                 const double fill = leg.tp;
-                printf("[GOLD-STACK-TP] %s fill=%.2f pnl=%.2f\n",
-                       leg.engine, fill,
-                       leg.is_long ? (fill - leg.entry) : (leg.entry - fill));
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GOLD-STACK-TP] %s fill=%.2f pnl=%.2f\n",                        leg.engine, fill,                        leg.is_long ? (fill - leg.entry) : (leg.entry - fill));
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 close_leg(static_cast<size_t>(i), fill, "TP_HIT", latency_ms, regime, on_close);
                 closed_any = true;
                 continue;
@@ -4247,10 +4273,12 @@ public:
             const bool sl_hit = leg.is_long ? (bid <= leg.sl) : (ask >= leg.sl);
             if (sl_hit) {
                 const double fill = leg.sl;
-                printf("[GOLD-STACK-SL] %s fill=%.2f pnl=%.2f\n",
-                       leg.engine, fill,
-                       leg.is_long ? (fill - leg.entry) : (leg.entry - fill));
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GOLD-STACK-SL] %s fill=%.2f pnl=%.2f\n",                        leg.engine, fill,                        leg.is_long ? (fill - leg.entry) : (leg.entry - fill));
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 close_leg(static_cast<size_t>(i), fill, "SL_HIT", latency_ms, regime, on_close);
                 closed_any = true;
                 continue;
@@ -4265,9 +4293,12 @@ public:
                     ? (leg.sl >= leg.entry + LOCK_GAIN)
                     : (leg.sl <= leg.entry - LOCK_GAIN);
                 if (trail_in_profit) {
-                    printf("[GOLD-STACK-TIMEOUT-SUPPRESSED] %s hold=%lds trail in profit sl=%.2f entry=%.2f mfe=%.2f\n",
-                           leg.engine, (long)(now - leg.entry_ts), leg.sl, leg.entry, leg.mfe);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GOLD-STACK-TIMEOUT-SUPPRESSED] %s hold=%lds trail in profit sl=%.2f entry=%.2f mfe=%.2f\n",                            leg.engine, (long)(now - leg.entry_ts), leg.sl, leg.entry, leg.mfe);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
 
                     // ?? EXTENDED PYRAMID on long runners ??????????????????????
                     // Profit is locked -- add-on regardless of regime. Fires once
@@ -4285,10 +4316,12 @@ public:
                             base_move  >= TRAIL_ARM_1                         &&
                             leg_profit_locked(leg);
                         if (ext_ok) {
-                            printf("[GOLD-STACK-EXTENDED-PYRAMID] leg=%s legs=%d hold=%lds move=%.2f\n",
-                                   leg.engine, (int)legs_.size(),
-                                   (long)(now - leg.entry_ts), base_move);
-                            fflush(stdout);
+                            {
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg), "[GOLD-STACK-EXTENDED-PYRAMID] leg=%s legs=%d hold=%lds move=%.2f\n",                                    leg.engine, (int)legs_.size(),                                    (long)(now - leg.entry_ts), base_move);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
                             add_pyramid_leg(mid, ask - bid, latency_ms, regime);
                             // Override the new leg's SL to the base leg's trail SL
                             if (!legs_.empty()) legs_.back().sl = leg.sl;
@@ -4307,10 +4340,12 @@ public:
                 if (sl_breached) {
                     timeout_exit = leg.sl;  // fill at SL price, not at current mid
                 }
-                printf("[GOLD-STACK-TIMEOUT] %s hold=%lds exit=%.2f%s\n",
-                       leg.engine, (long)(now - leg.entry_ts), timeout_exit,
-                       sl_breached ? " (capped at SL)" : "");
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GOLD-STACK-TIMEOUT] %s hold=%lds exit=%.2f%s\n",                        leg.engine, (long)(now - leg.entry_ts), timeout_exit,                        sl_breached ? " (capped at SL)" : "");
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 close_leg(static_cast<size_t>(i), timeout_exit, "TIMEOUT", latency_ms, regime, on_close);
                 closed_any = true;
                 continue;
@@ -4464,14 +4499,12 @@ public:
             }
         }
 
-        printf("[GOLD-STACK-CFG] gap=%llds sl_cooldown=%llds chop_win=%llds chop_pause=%llds\n"
-               "                 vwap_min=%.2f spread_max=%.2f max_hold=%ds\n"
-               "                 trail1_arm=%.2f trail1_dist=%.2f trail2_arm=%.2f trail2_dist=%.2f\n",
-               (long long)MIN_ENTRY_GAP_SEC, (long long)HARD_SL_GLOBAL_COOLDOWN_SEC,
-               (long long)SIDE_CHOP_WINDOW_SEC, (long long)SIDE_CHOP_PAUSE_SEC,
-               MIN_VWAP_DISLOCATION, MAX_ENTRY_SPREAD, c.max_hold_sec,
-               c.trail_arm_1, c.trail_dist_1, c.trail_arm_2, c.trail_dist_2);
-        fflush(stdout);
+        {
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg), "[GOLD-STACK-CFG] gap=%llds sl_cooldown=%llds chop_win=%llds chop_pause=%llds\n"                "                 vwap_min=%.2f spread_max=%.2f max_hold=%ds\n"                "                 trail1_arm=%.2f trail1_dist=%.2f trail2_arm=%.2f trail2_dist=%.2f\n",                (long long)MIN_ENTRY_GAP_SEC, (long long)HARD_SL_GLOBAL_COOLDOWN_SEC,                (long long)SIDE_CHOP_WINDOW_SEC, (long long)SIDE_CHOP_PAUSE_SEC,                MIN_VWAP_DISLOCATION, MAX_ENTRY_SPREAD, c.max_hold_sec,                c.trail_arm_1, c.trail_dist_1, c.trail_arm_2, c.trail_dist_2);
+            std::cout << _msg;
+            std::cout.flush();
+        }
     }
 
     // Call every tick.
@@ -4568,9 +4601,12 @@ public:
                     e->reset();
                 }
             }
-            printf("[GOLD-SESSION-CHANGE] %s ? %s: SessionMomentum + MomentumContinuation history cleared\n",
-                   session_name(last_session_), session_name(snap.session));
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLD-SESSION-CHANGE] %s ? %s: SessionMomentum + MomentumContinuation history cleared\n",                    session_name(last_session_), session_name(snap.session));
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
         last_session_ = snap.session;
 
@@ -4737,9 +4773,12 @@ public:
 
     void print_stats() const {
         for(const auto& e:engines_)
-            printf("[GOLD-ENGINE] %-26s signals=%llu\n",
-                   e->getName().c_str(),(unsigned long long)e->signal_count_);
-        fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLD-ENGINE] %-26s signals=%llu\n",                    e->getName().c_str(),(unsigned long long)e->signal_count_);
+                std::cout << _msg;
+                std::cout.flush();
+            }
     }
 
     // ?? Warm-restart persistence ??????????????????????????????????????????????
@@ -4794,13 +4833,20 @@ public:
         if (age > 4 * 3600 || age < 0) {
             ewm_vol_baseline_ = 0.0; baseline_vol_pct_ = 0.0; ewm_vol_init_ = false;
             governor_.ewm_fast_ = 0.0; governor_.ewm_slow_ = 0.0; governor_.ewm_init_ = false;
-            printf("[GOLDSTACK] State stale (age=%llds) -- regime cold start\n", (long long)age);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLDSTACK] State stale (age=%llds) -- regime cold start\n", (long long)age);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             // Fall through to seed vol_filter_ with the captured price -- do NOT return.
         } else {
-            printf("[GOLDSTACK] Warm restart: ewm_vol_baseline=%.4f gov_ewm_fast=%.2f"
-                   " gov_ewm_slow=%.2f age=%llds\n",
-                   ewm_vol_baseline_, governor_.ewm_fast_, governor_.ewm_slow_, (long long)age);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLDSTACK] Warm restart: ewm_vol_baseline=%.4f gov_ewm_fast=%.2f"                    " gov_ewm_slow=%.2f age=%llds\n",                    ewm_vol_baseline_, governor_.ewm_fast_, governor_.ewm_slow_, (long long)age);
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
         // Seed VolatilityFilter from saved gold price.
         // Runs on EVERY restart (fresh or stale) as long as a valid price was saved.
@@ -4810,12 +4856,19 @@ public:
         // still acts as a real gate -- we just skip the cold-buffer warmup delay.
         if (vol_seed_mid > 0.0) {
             vol_filter_.seed(vol_seed_mid);
-            printf("[GOLDSTACK] VolatilityFilter seeded mid=%.2f (age=%llds)\n",
-                   vol_seed_mid, (long long)age);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLDSTACK] VolatilityFilter seeded mid=%.2f (age=%llds)\n",                    vol_seed_mid, (long long)age);
+                std::cout << _msg;
+                std::cout.flush();
+            }
         } else {
-            printf("[GOLDSTACK] VolatilityFilter NOT seeded -- no valid price in state file\n");
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLDSTACK] VolatilityFilter NOT seeded -- no valid price in state file\n");
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
     }
 
@@ -4950,11 +5003,12 @@ private:
         if (q.size() >= SIDE_CHOP_TRIGGER_COUNT) {
             side_pause_until_[u] = now_s + SIDE_CHOP_PAUSE_SEC;
             q.clear();
-            printf("[GOLD-CHOP-PAUSE] side=%s pause=%llds window=%llds\n",
-                   side_name(idx),
-                   static_cast<long long>(SIDE_CHOP_PAUSE_SEC),
-                   static_cast<long long>(SIDE_CHOP_WINDOW_SEC));
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GOLD-CHOP-PAUSE] side=%s pause=%llds window=%llds\n",                    side_name(idx),                    static_cast<long long>(SIDE_CHOP_PAUSE_SEC),                    static_cast<long long>(SIDE_CHOP_WINDOW_SEC));
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
     }
 
@@ -5034,9 +5088,12 @@ private:
             const int64_t now_al = static_cast<int64_t>(std::time(nullptr));
             if (now_al - s_last_asia_log >= 30) {  // rate-limit to once per 30s
                 s_last_asia_log = now_al;
-                printf("[GOLD-ASIA-TREND] Regime=%s -- trend engines enabled in Asia\n",
-                       current_regime_ == MarketRegime::TREND ? "TREND" : "IMPULSE");
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GOLD-ASIA-TREND] Regime=%s -- trend engines enabled in Asia\n",                        current_regime_ == MarketRegime::TREND ? "TREND" : "IMPULSE");
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
     }
@@ -5111,10 +5168,12 @@ private:
         const double sl_ticks = sl_pts / 0.10;
         const double tp_ticks = sl_ticks * 2.0;  // always 2:1 RR
         if (sl_ticks > gs.sl_ticks) {  // only widen, never tighten below engine floor
-            printf("[CB-VOL-SL] %s vol_range=%.1f sl=%.0fticks($%.0f) tp=%.0fticks($%.0f) "
-                   "[was sl=%.0f tp=%.0f]\n",
-                   gs.engine, vr, sl_ticks, sl_pts, tp_ticks, sl_pts*2.0,
-                   gs.sl_ticks, gs.tp_ticks);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[CB-VOL-SL] %s vol_range=%.1f sl=%.0fticks($%.0f) tp=%.0fticks($%.0f) "                    "[was sl=%.0f tp=%.0f]\n",                    gs.engine, vr, sl_ticks, sl_pts, tp_ticks, sl_pts*2.0,                    gs.sl_ticks, gs.tp_ticks);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             gs.sl_ticks = sl_ticks;
             gs.tp_ticks = tp_ticks;
         }
