@@ -259,6 +259,18 @@ public:
             return;
         }
 
+        // -- Update rolling 90s price range (always, not gated) ----------
+        // Decay old extremes: if the recorded extreme is >90s old, reset it.
+        // This gives us a live window of recent price range for velocity checks.
+        if (now_ms - m_roll_high_ms > 90000LL || m_roll_high == 0.0)
+            { m_roll_high = mid; m_roll_high_ms = now_ms; }
+        else if (mid > m_roll_high)
+            { m_roll_high = mid; m_roll_high_ms = now_ms; }
+        if (now_ms - m_roll_low_ms > 90000LL || m_roll_low >= 1e8)
+            { m_roll_low = mid; m_roll_low_ms = now_ms; }
+        else if (mid < m_roll_low)
+            { m_roll_low = mid; m_roll_low_ms = now_ms; }
+
         // -- Session-aware threshold selection ----------------------------
         const bool is_asia = (session_slot == 6);
         const double eff_atr_threshold = is_asia ? ATR_THRESHOLD_ASIA : ATR_THRESHOLD;
@@ -348,6 +360,132 @@ public:
         // Direction: ewm_drift direction
         const bool is_long = (ewm_drift > 0.0);
 
+        // -- Gate A: Dollar-stop direction block --------------------------
+        // After a DOLLAR_STOP in a direction, block that direction for 4hrs.
+        // A dollar-stop means the engine entered catastrophically wrong.
+        // Never retry the same direction within 4hrs of a dollar-stop.
+        if (is_long  && now_ms < m_dollar_stop_long_block)  {
+            static int64_t s_dsl = 0;
+            if (now_ms - s_dsl > 30000) {
+                s_dsl = now_ms;
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                    "[MCE-GATE-A] LONG blocked: dollar-stop direction lock %llds remain\n",
+                    (long long)((m_dollar_stop_long_block - now_ms)/1000LL));
+                std::cout << buf; std::cout.flush();
+            }
+            return;
+        }
+        if (!is_long && now_ms < m_dollar_stop_short_block) {
+            static int64_t s_dss = 0;
+            if (now_ms - s_dss > 30000) {
+                s_dss = now_ms;
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                    "[MCE-GATE-A] SHORT blocked: dollar-stop direction lock %llds remain\n",
+                    (long long)((m_dollar_stop_short_block - now_ms)/1000LL));
+                std::cout << buf; std::cout.flush();
+            }
+            return;
+        }
+
+        // -- Gate B: Price velocity gate ----------------------------------
+        // MCE exists to catch mega moves IN PROGRESS, not stale RSI/drift.
+        // Require price is STILL near the extreme of the recent 90s range.
+        //
+        // SHORT: price must be within 2*ATR of the 90s HIGH.
+        //   If price has bounced >2*ATR from the 90s low, the crash is over.
+        // LONG:  price must be within 2*ATR of the 90s LOW.
+        //   If price has pulled back >2*ATR from the 90s high, the rally is over.
+        //
+        // This specifically prevents: bracket trails SHORT -> price bounces 20pt
+        // -> RSI still low, drift still negative -> MCE enters SHORT into rally.
+        {
+            const double velocity_window = atr * 2.0;  // 2*ATR = move must still be here
+            bool velocity_ok = true;
+            if (!is_long && m_roll_high > 0.0) {
+                // SHORT: price should still be near the recent high (crash ongoing).
+                // If price has bounced more than 2*ATR from the 90s low, crash is over.
+                const double bounce_from_low = mid - m_roll_low;
+                if (bounce_from_low > velocity_window) {
+                    velocity_ok = false;
+                    static int64_t s_vb = 0;
+                    if (now_ms - s_vb > 5000) {
+                        s_vb = now_ms;
+                        char buf[256];
+                        snprintf(buf, sizeof(buf),
+                            "[MCE-GATE-B] SHORT blocked: price bounced %.1fpt from 90s low "
+                            "(%.2f->%.2f), move OVER. Need bounce < %.1fpt\n",
+                            bounce_from_low, m_roll_low, mid, velocity_window);
+                        std::cout << buf; std::cout.flush();
+                    }
+                }
+            }
+            if (is_long && m_roll_low < 1e8) {
+                // LONG: price should still be near the recent low (rally ongoing).
+                // If price has pulled back more than 2*ATR from the 90s high, rally is over.
+                const double pullback_from_high = m_roll_high - mid;
+                if (pullback_from_high > velocity_window) {
+                    velocity_ok = false;
+                    static int64_t s_vl = 0;
+                    if (now_ms - s_vl > 5000) {
+                        s_vl = now_ms;
+                        char buf[256];
+                        snprintf(buf, sizeof(buf),
+                            "[MCE-GATE-B] LONG blocked: price pulled back %.1fpt from 90s high "
+                            "(%.2f->%.2f), move OVER. Need pullback < %.1fpt\n",
+                            pullback_from_high, m_roll_high, mid, velocity_window);
+                        std::cout << buf; std::cout.flush();
+                    }
+                }
+            }
+            if (!velocity_ok) return;
+        }
+
+        // -- Gate C: Minimum move size gate ------------------------------
+        // MCE must only fire on genuine macro moves -- minimum 1.5*ATR
+        // price displacement in the drift direction within 90s.
+        // SHORT: 90s high - current must be >= 1.5*ATR (price fell sharply).
+        // LONG:  current - 90s low must be >= 1.5*ATR (price rallied sharply).
+        // This prevents firing on slow drifts where RSI/vol happen to be elevated.
+        {
+            const double min_move = atr * 1.5;
+            bool move_ok = true;
+            if (!is_long && m_roll_high > 0.0) {
+                const double crash_size = m_roll_high - mid;  // how far price fell
+                if (crash_size < min_move) {
+                    move_ok = false;
+                    static int64_t s_mc = 0;
+                    if (now_ms - s_mc > 5000) {
+                        s_mc = now_ms;
+                        char buf[256];
+                        snprintf(buf, sizeof(buf),
+                            "[MCE-GATE-C] SHORT blocked: 90s move=%.1fpt < min=%.1fpt "
+                            "(hi=%.2f now=%.2f). Not a macro move.\n",
+                            crash_size, min_move, m_roll_high, mid);
+                        std::cout << buf; std::cout.flush();
+                    }
+                }
+            }
+            if (is_long && m_roll_low < 1e8) {
+                const double rally_size = mid - m_roll_low;  // how far price rose
+                if (rally_size < min_move) {
+                    move_ok = false;
+                    static int64_t s_ml = 0;
+                    if (now_ms - s_ml > 5000) {
+                        s_ml = now_ms;
+                        char buf[256];
+                        snprintf(buf, sizeof(buf),
+                            "[MCE-GATE-C] LONG blocked: 90s move=%.1fpt < min=%.1fpt "
+                            "(lo=%.2f now=%.2f). Not a macro move.\n",
+                            rally_size, min_move, m_roll_low, mid);
+                        std::cout << buf; std::cout.flush();
+                    }
+                }
+            }
+            if (!move_ok) return;
+        }
+
         // Log entry -- always, not conditional on session/DOM/RSI
         {
             // converted from printf
@@ -419,6 +557,18 @@ private:
     double  m_last_px           = 0.0;
     double  m_last_atr          = 0.0;
     int     m_trade_id          = 0;
+
+    // Rolling 90s price range tracker for velocity gate
+    // Tracks high and low over last 90s so we can detect if move is still ongoing.
+    double  m_roll_high         = 0.0;   // highest mid seen in last 90s
+    double  m_roll_low          = 1e9;   // lowest mid seen in last 90s
+    int64_t m_roll_high_ms      = 0;
+    int64_t m_roll_low_ms       = 0;
+
+    // Dollar-stop direction block: after any DOLLAR_STOP, block that direction 4hrs.
+    // A dollar-stop means MCE was catastrophically wrong -- never retry same direction soon.
+    int64_t m_dollar_stop_long_block  = 0;
+    int64_t m_dollar_stop_short_block = 0;
     // Consecutive directional SL tracking -- blocks same direction after 2 SL_HITs in 2hr
     int     m_sl_long_count     = 0;
     int     m_sl_short_count    = 0;
@@ -694,6 +844,23 @@ private:
                 }
             }
         }
+        // Dollar-stop direction lock: block same direction for 4hrs after DOLLAR_STOP.
+        // DOLLAR_STOP means external DD limit killed the position -- catastrophic misfire.
+        // Never allow MCE to retry same direction within 4hrs.
+        if (std::string(reason) == "DOLLAR_STOP") {
+            const int64_t DOLLAR_STOP_BLOCK_MS = 14400000LL; // 4 hours
+            if (pos.is_long) {
+                m_dollar_stop_long_block = now_ms + DOLLAR_STOP_BLOCK_MS;
+            } else {
+                m_dollar_stop_short_block = now_ms + DOLLAR_STOP_BLOCK_MS;
+            }
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                "[MCE-DOLLAR-STOP-LOCK] %s direction blocked 4hrs after DOLLAR_STOP\n",
+                pos.is_long ? "LONG" : "SHORT");
+            std::cout << buf; std::cout.flush();
+        }
+
         // Shadow: always call on_close so trade appears in GUI with correct costs
         if (on_close)
             on_close(exit_px, pos.is_long, pos.size, reason);
