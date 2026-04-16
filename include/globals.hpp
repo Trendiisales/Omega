@@ -174,6 +174,11 @@ static omega::CompressionBreakoutEngine g_cbe;  // compression breakout engine
 // shadow_mode=true until 2-week live shadow validates
 #include "EMACrossEngine.hpp"
 static omega::EMACrossEngine g_ema_cross;
+
+// BBMeanReversionEngine -- BB25/2SD mean reversion, 68.2% WR diagnostic-confirmed 2026-04-17
+// sess=L+NY wed=Y llong=Y ov=0.20 srsi=75 lrsi=27 hk=Agg T=22 WR=68.2% MaxDD=$46.80
+#include "BBMeanReversionEngine.hpp"
+static omega::BBMeanReversionEngine g_bb_mr;
 // DISABLED: 14.8% WR, -$27k/2yr backtest. Momentum continuation = negative EV.
 // g_candle_flow.enabled = false; -- set in engine_init
 
