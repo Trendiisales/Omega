@@ -1,4 +1,6 @@
 #pragma once
+#include <iomanip>
+#include <iostream>
 // =============================================================================
 // MicroMomentumEngine.hpp  --  Tick momentum capture on XAUUSD with DOM filter
 // =============================================================================
@@ -150,20 +152,13 @@ public:
                 const double rsi_delta_now = ((int)m_rsi_window.size() >= RSI_DELTA_WINDOW)
                     ? (m_tick_rsi - m_rsi_window.front()) : 0.0;
                 const double disp_now = mid - m_anchor;
-                printf("[MICROMOM-DIAG] ticks=%d seeded=%d window=%d/%d "
-                       "rsi=%.1f delta=%.2f(need %.1f) disp=%.2f "
-                       "spread=%.2f(max %.1f) l2=%.2f slope=%.2f "
-                       "vac_ask=%d vac_bid=%d wall_a=%d wall_b=%d l2_real=%d "
-                       "cooldown=%llds\n",
-                       m_tick_count, (int)m_rsi_seeded,
-                       (int)m_rsi_window.size(), RSI_DELTA_WINDOW,
-                       m_tick_rsi, rsi_delta_now, RSI_DELTA_MIN, disp_now,
-                       spread, MAX_SPREAD_PTS,
-                       l2_imbalance, book_slope,
-                       (int)vacuum_ask, (int)vacuum_bid,
-                       (int)wall_above, (int)wall_below, (int)l2_real,
-                       (long long)std::max((int64_t)0, m_cooldown_until - now_s));
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[MICROMOM-DIAG] ticks=%d seeded=%d window=%d/%d "                        "rsi=%.1f delta=%.2f(need %.1f) disp=%.2f "                        "spread=%.2f(max %.1f) l2=%.2f slope=%.2f "                        "vac_ask=%d vac_bid=%d wall_a=%d wall_b=%d l2_real=%d "                        "cooldown=%llds\n",                        m_tick_count, (int)m_rsi_seeded,                        (int)m_rsi_window.size(), RSI_DELTA_WINDOW,                        m_tick_rsi, rsi_delta_now, RSI_DELTA_MIN, disp_now,                        spread, MAX_SPREAD_PTS,                        l2_imbalance, book_slope,                        (int)vacuum_ask, (int)vacuum_bid,                        (int)wall_above, (int)wall_below, (int)l2_real,                        (long long)std::max((int64_t)0, m_cooldown_until - now_s));
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
         }
 
@@ -246,9 +241,13 @@ public:
                 static int64_t s_mm_drift_log = 0;
                 if (now_ms/1000 - s_mm_drift_log >= 10) {
                     s_mm_drift_log = now_ms/1000;
-                    printf("[MM-BLOCK] LONG blocked: ewm_drift=%.2f < -2.5 (downtrend)\n",
-                           ewm_drift);
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[MM-BLOCK] LONG blocked: ewm_drift=%.2f < -2.5 (downtrend)\n",                            ewm_drift);
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -256,9 +255,13 @@ public:
                 static int64_t s_mm_drift_log2 = 0;
                 if (now_ms/1000 - s_mm_drift_log2 >= 10) {
                     s_mm_drift_log2 = now_ms/1000;
-                    printf("[MM-BLOCK] SHORT blocked: ewm_drift=%.2f > 2.5 (uptrend)\n",
-                           ewm_drift);
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[MM-BLOCK] SHORT blocked: ewm_drift=%.2f > 2.5 (uptrend)\n",                            ewm_drift);
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -324,16 +327,13 @@ public:
 
         const double disp_at_entry = mid - m_anchor;
         const char* pfx = shadow_mode ? "[MICROMOM-SHADOW]" : "[MICROMOM]";
-        printf("%s %s entry=%.2f tp=%.2f sl=%.2f(%.2fpt) "
-               "rsi=%.1f delta=%.2f disp=%.2f "
-               "l2=%.2f slope=%.2f vac=%d wall_a=%d wall_b=%d lot_mult=%.1f slot=%d\n",
-               pfx, is_long ? "LONG" : "SHORT",
-               entry, pos.tp, pos.sl, sl_pts,
-               rsi_now, rsi_delta, disp_at_entry,
-               l2_imbalance, book_slope,
-               (int)vacuum_confirm, (int)wall_above, (int)wall_below,
-               lot_mult, session_slot);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "%s %s entry=%.2f tp=%.2f sl=%.2f(%.2fpt) "                "rsi=%.1f delta=%.2f disp=%.2f "                "l2=%.2f slope=%.2f vac=%d wall_a=%d wall_b=%d lot_mult=%.1f slot=%d\n",                pfx, is_long ? "LONG" : "SHORT",                entry, pos.tp, pos.sl, sl_pts,                rsi_now, rsi_delta, disp_at_entry,                l2_imbalance, book_slope,                (int)vacuum_confirm, (int)wall_above, (int)wall_below,                lot_mult, session_slot);
+            std::cout << _buf;
+            std::cout.flush();
+        }
     }
 
     void patch_size(double lot) noexcept {
@@ -442,11 +442,13 @@ private:
     {
         if (now_s - m_last_block_log < 30) return;
         m_last_block_log = now_s;
-        printf("[MICROMOM-BLOCK] reason=%s rsi=%.1f delta=%.2f disp=%.2f "
-               "spread=%.2f l2=%.2f slope=%.2f cooldown=%llds\n",
-               reason, rsi, delta, disp, spread, l2, slope,
-               (long long)std::max((int64_t)0, m_cooldown_until - now_s));
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[MICROMOM-BLOCK] reason=%s rsi=%.1f delta=%.2f disp=%.2f "                "spread=%.2f l2=%.2f slope=%.2f cooldown=%llds\n",                reason, rsi, delta, disp, spread, l2, slope,                (long long)std::max((int64_t)0, m_cooldown_until - now_s));
+            std::cout << _buf;
+            std::cout.flush();
+        }
     }
 
     // -- Protection ladder -----------------------------------------------------
@@ -461,17 +463,25 @@ private:
         if (pos.step == 0 && move >= BE_TRIGGER_PTS) {
             pos.sl   = pos.entry;
             pos.step = 1;
-            printf("[MICROMOM-BE] %s BE sl=%.2f move=%.2f\n",
-                   pos.is_long ? "LONG" : "SHORT", pos.sl, move);
-            fflush(stdout);
+            {
+                // converted from printf
+                char _buf[512];
+                snprintf(_buf, sizeof(_buf), "[MICROMOM-BE] %s BE sl=%.2f move=%.2f\n",                    pos.is_long ? "LONG" : "SHORT", pos.sl, move);
+                std::cout << _buf;
+                std::cout.flush();
+            }
         }
         if (pos.step <= 1 && move >= LOCK_TRIGGER_PTS) {
             pos.sl   = pos.is_long ? (pos.entry + LOCK_SL_PTS)
                                    : (pos.entry - LOCK_SL_PTS);
             pos.step = 2;
-            printf("[MICROMOM-LOCK] %s +%.1fpt locked sl=%.2f move=%.2f\n",
-                   pos.is_long ? "LONG" : "SHORT", LOCK_SL_PTS, pos.sl, move);
-            fflush(stdout);
+            {
+                // converted from printf
+                char _buf[512];
+                snprintf(_buf, sizeof(_buf), "[MICROMOM-LOCK] %s +%.1fpt locked sl=%.2f move=%.2f\n",                    pos.is_long ? "LONG" : "SHORT", LOCK_SL_PTS, pos.sl, move);
+                std::cout << _buf;
+                std::cout.flush();
+            }
         }
         if (pos.step >= 2) {
             const double trail_sl = pos.is_long ? (mid - TRAIL_DIST_PTS)
@@ -519,10 +529,13 @@ private:
         const double pnl_pts = pos.is_long
             ? (exit_px - pos.entry) : (pos.entry - exit_px);
 
-        printf("[MICROMOM] EXIT %s @ %.2f reason=%s pnl_pts=%.2f mfe=%.2f step=%d\n",
-               pos.is_long ? "LONG" : "SHORT",
-               exit_px, reason, pnl_pts, pos.mfe, pos.step);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[MICROMOM] EXIT %s @ %.2f reason=%s pnl_pts=%.2f mfe=%.2f step=%d\n",                pos.is_long ? "LONG" : "SHORT",                exit_px, reason, pnl_pts, pos.mfe, pos.step);
+            std::cout << _buf;
+            std::cout.flush();
+        }
 
         omega::TradeRecord tr;
         tr.id            = ++m_trade_id;
