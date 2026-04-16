@@ -73,19 +73,56 @@ namespace omega {
 // =============================================================================
 // Config -- sweep-confirmed 2026-04-16
 // =============================================================================
-static constexpr int     ECE_FAST_PERIOD    = 9;     // fast EMA period
-static constexpr int     ECE_SLOW_PERIOD    = 15;    // slow EMA period -- NOT 21, 15 confirmed
-static constexpr double  ECE_RSI_LO         = 40.0;  // LONG: RSI must be > this (not extreme OS)
-static constexpr double  ECE_RSI_HI         = 50.0;  // SHORT: RSI must be < this (not extreme OB)
+// =============================================================================
+// TUNED PARAMS -- ema_tuned_sweep.cpp confirmed 2026-04-16
+//   Baseline (9/15 sweep):   T=275 WR=41.1% PnL=$53   Avg=$0.19  MaxDD=$342
+//   Tuned:                   T=91  WR=58.2% PnL=$731  Avg=$8.03  MaxDD=$56
+//   Improvement: 13.7x PnL, 84% MaxDD reduction, Sharpe proxy 0.16 -> 13.1
+//
+// Active filters confirmed by diagnostic + tuned sweep:
+//   max_lag_s=60    : only enter within 60s of cross (lag>60 loses $397)
+//   rsi_exclude_bad : block RSI 30-35, 35-40, 50-55, 65-70 (all bleed)
+//   gap_block=0.30  : block EMA spread >0.30 (stale late entries lose $260)
+//   hour_kill       : block UTC 05,12,14,16,20 (all strongly negative hours)
+//   cross_exit=OFF  : confirmed harmful ($-256 on 16 trades)
+//   rr=1.0          : 1:1 confirmed again (gold M1 mean-reverts)
+//   long_only=OFF   : both directions better than LONG-only
+//   atr_block=OFF   : ATR 2-3 block not needed after other filters applied
+// =============================================================================
+static constexpr int     ECE_FAST_PERIOD    = 9;
+static constexpr int     ECE_SLOW_PERIOD    = 15;
+static constexpr double  ECE_RSI_LO         = 40.0;  // LONG: RSI must be > this
+static constexpr double  ECE_RSI_HI         = 50.0;  // SHORT: RSI must be < this
 static constexpr double  ECE_SL_MULT        = 1.5;   // SL = ATR * 1.5
-static constexpr double  ECE_TP_RR          = 1.0;   // TP = SL * 1.0 (1:1 -- gold mean-reverts)
-static constexpr bool    ECE_CROSS_EXIT     = true;  // exit when EMA crosses back against position
-static constexpr int64_t ECE_TIMEOUT_MS     = 180000; // 3 min
-static constexpr int64_t ECE_COOLDOWN_MS    = 20000;  // 20s after exit
+static constexpr double  ECE_TP_RR          = 1.0;   // TP = SL (1:1 confirmed)
+static constexpr bool    ECE_CROSS_EXIT     = false; // CONFIRMED OFF: $-256 on 16 trades
+static constexpr int64_t ECE_MAX_LAG_MS     = 60000; // 60s: lag>60s loses $397
+static constexpr int64_t ECE_TIMEOUT_MS     = 180000;
+static constexpr int64_t ECE_COOLDOWN_MS    = 20000;
+static constexpr double  ECE_GAP_BLOCK      = 0.30;  // block EMA spread > 0.30
 static constexpr double  ECE_RISK_DOLLARS   = 30.0;
 static constexpr double  ECE_MIN_LOT        = 0.01;
 static constexpr double  ECE_MAX_LOT        = 0.10;
-static constexpr int64_t ECE_STARTUP_MS     = 120000; // 2 min warmup
+static constexpr int64_t ECE_STARTUP_MS     = 120000;
+
+// Bad RSI buckets confirmed by diagnostic (all bleed):
+// 30-35: -$56, 35-40: -$128, 50-55: -$113, 65-70: -$111
+static inline bool ece_rsi_allowed(double rsi, bool is_long) noexcept {
+    if (rsi >= 30.0 && rsi < 35.0) return false;
+    if (rsi >= 35.0 && rsi < 40.0) return false;
+    if (rsi >= 50.0 && rsi < 55.0) return false;
+    if (rsi >= 65.0 && rsi < 70.0) return false;
+    if (is_long  && (rsi < ECE_RSI_LO || rsi > 75.0)) return false;
+    if (!is_long && (rsi > ECE_RSI_HI || rsi < 25.0)) return false;
+    return true;
+}
+
+// Bad UTC hours confirmed by diagnostic (all negative):
+// 05: -$54, 12: -$112, 14: -$80, 16: -$105, 20: -$45
+static inline bool ece_hour_allowed(int64_t ms) noexcept {
+    int h = (int)(((ms/1000LL)%86400LL)/3600LL);
+    return !(h==5 || h==12 || h==14 || h==16 || h==20);
+}
 
 // =============================================================================
 struct EMACrossEngine {
@@ -206,16 +243,20 @@ struct EMACrossEngine {
         if (_atr <= 0.0) return;
         if (now_ms - _last_exit_ms < ECE_COOLDOWN_MS) return;
         if (spread > _atr * 0.30) return;
-        // Cross must be fresh (within last 3 minutes = 3 bars)
-        if (now_ms - _cross_ms > 180000LL) { _cross_dir = 0; return; }
+        // Hour kill: UTC 05,12,14,16,20 all bleed (diagnostic confirmed)
+        if (!ece_hour_allowed(now_ms)) return;
+        // EMA gap block: spread >0.30 = stale late entry, loses $260
+        if (std::fabs(_ema_fast - _ema_slow) > ECE_GAP_BLOCK) return;
+        // Cross must be fresh (within 60s -- lag>60s loses $397 in diagnostic)
+        if (now_ms - _cross_ms > ECE_MAX_LAG_MS) { _cross_dir = 0; return; }
 
         bool isl = (_cross_dir == 1);
 
         // RSI filter: confirm entry is not into exhausted move
         // LONG: RSI must be between rsi_lo and 75 (confirmed momentum, not overbought)
         // SHORT: RSI must be between 25 and rsi_hi (confirmed momentum, not oversold)
-        if (isl  && (_rsi < ECE_RSI_LO || _rsi > 75.0)) return;
-        if (!isl && (_rsi > ECE_RSI_HI || _rsi < 25.0)) return;
+        // RSI gate: exclude confirmed bad buckets (30-35, 35-40, 50-55, 65-70)
+        if (!ece_rsi_allowed(_rsi, isl)) return;
 
         // Cost coverage
         double sl_dist = _atr * ECE_SL_MULT;
