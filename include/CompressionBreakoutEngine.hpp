@@ -86,7 +86,7 @@ static constexpr double  CBE_MAX_SL_ATR_MULT   = 4.0;  // wide: tick-ATR ~1.5pt,
 static constexpr double  CBE_TRAIL_ARM_FRAC    = 0.50;  // trail arms at 50% of TP
 static constexpr double  CBE_TRAIL_DIST_FRAC   = 0.40;  // trail distance = 0.40 * ATR
 static constexpr double  CBE_BE_FRAC           = 0.40;  // BE at 40% of TP distance
-static constexpr int64_t CBE_TIMEOUT_MS        = 300000; // 5 min timeout
+static constexpr int64_t CBE_TIMEOUT_MS        = 180000; // 3 min -- sweep: 180s best (58.1% WR vs 53.5% at 300s)
 static constexpr int64_t CBE_COOLDOWN_MS       = 30000;  // 30s after any exit
 static constexpr double  CBE_RSI_BLOCK_OB      = 72.0;  // block LONG above this RSI
 static constexpr double  CBE_RSI_BLOCK_OS      = 22.0;  // sweep-confirmed
