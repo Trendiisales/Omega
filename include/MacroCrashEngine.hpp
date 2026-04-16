@@ -1,4 +1,6 @@
 #pragma once
+#include <iomanip>
+#include <iostream>
 // =============================================================================
 // MacroCrashEngine  v2.0  --  Hybrid Bracket Floor + Safe Cost-Covered Pyramid
 // =============================================================================
@@ -217,8 +219,13 @@ public:
                 static int64_t s_gap_close_log = 0;
                 if (now_sec - s_gap_close_log > 3600) {
                     s_gap_close_log = now_sec;
-                    printf("[MCE-WEEKEND] Force-closing position before weekend gap\n");
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[MCE-WEEKEND] Force-closing position before weekend gap\n");
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                 }
                 _close_all(pos.is_long ? bid : ask, "WEEKEND_CLOSE", now_ms);
                 return;
@@ -234,8 +241,13 @@ public:
                 static int64_t s_gap_block_log = 0;
                 if (now_sec - s_gap_block_log > 3600) {
                     s_gap_block_log = now_sec;
-                    printf("[MCE-WEEKEND] Entry blocked -- weekend gap window\n");
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[MCE-WEEKEND] Entry blocked -- weekend gap window\n");
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -312,19 +324,13 @@ public:
             if ((!cooldown_ok || !atr_ok || !vol_ok || !exp_ok || !drift_ok)
                     && now_ms >= s_nosig_ts) {
                 s_nosig_ts = now_ms + 10000;
-                printf("[MCE-NOSIG] slot=%d cooldown=%s atr=%.1f(need %.1f %s) "
-                       "vol=%.2f(need %.2f %s) "
-                       "exp=%d(regime=%d rsi=%d) "
-                       "drift=%.1f(need %.1f %s) "
-                       "rsi=%.1f\n",
-                       session_slot,
-                       cooldown_ok ? "no" : "BLOCK",
-                       atr,  final_atr_min,  atr_ok  ? "OK" : "BLOCK",
-                       vol_ratio, final_vol_min, vol_ok  ? "OK" : "BLOCK",
-                       (int)exp_ok, (int)expansion_regime, (int)rsi_confirms_expansion,
-                       std::fabs(ewm_drift), final_drift_min, drift_ok ? "OK" : "BLOCK",
-                       rsi14);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[MCE-NOSIG] slot=%d cooldown=%s atr=%.1f(need %.1f %s) "                        "vol=%.2f(need %.2f %s) "                        "exp=%d(regime=%d rsi=%d) "                        "drift=%.1f(need %.1f %s) "                        "rsi=%.1f\n",                        session_slot,                        cooldown_ok ? "no" : "BLOCK",                        atr,  final_atr_min,  atr_ok  ? "OK" : "BLOCK",                        vol_ratio, final_vol_min, vol_ok  ? "OK" : "BLOCK",                        (int)exp_ok, (int)expansion_regime, (int)rsi_confirms_expansion,                        std::fabs(ewm_drift), final_drift_min, drift_ok ? "OK" : "BLOCK",                        rsi14);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
         }
 
@@ -343,20 +349,13 @@ public:
         const bool is_long = (ewm_drift > 0.0);
 
         // Log entry -- always, not conditional on session/DOM/RSI
-        printf("[MCE%s] TRIGGER %s atr=%.1f(thr=%.1f) drift=%.1f(thr=%.1f) "
-               "vol=%.1f(thr=%.1f) slot=%d dom_slope=%.2f vac_ask=%d vac_bid=%d "
-               "rsi=%.1f rsi_exp=%d expansion=%d dom_confirm=%d\n",
-               shadow_mode ? "-SHADOW" : "",
-               is_long ? "LONG" : "SHORT",
-               atr, final_atr_min,
-               std::fabs(ewm_drift), final_drift_min,
-               vol_ratio, final_vol_min,
-               session_slot, book_slope,
-               (int)vacuum_ask, (int)vacuum_bid,
-               rsi14, (int)rsi_confirms_expansion,
-               (int)expansion_regime,
-               (int)(dom_long_confirm || dom_short_confirm));
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[MCE%s] TRIGGER %s atr=%.1f(thr=%.1f) drift=%.1f(thr=%.1f) "                "vol=%.1f(thr=%.1f) slot=%d dom_slope=%.2f vac_ask=%d vac_bid=%d "                "rsi=%.1f rsi_exp=%d expansion=%d dom_confirm=%d\n",                shadow_mode ? "-SHADOW" : "",                is_long ? "LONG" : "SHORT",                atr, final_atr_min,                std::fabs(ewm_drift), final_drift_min,                vol_ratio, final_vol_min,                session_slot, book_slope,                (int)vacuum_ask, (int)vacuum_bid,                rsi14, (int)rsi_confirms_expansion,                (int)expansion_regime,                (int)(dom_long_confirm || dom_short_confirm));
+            std::cout << _buf;
+            std::cout.flush();
+        }
 
         // Sizing -- session-aware SL multiplier
         // Asia (slot=6): 1.5x ATR stop to outlast 10-15pt oscillations before move develops.
@@ -396,21 +395,21 @@ public:
         m_last_atr        = atr;
 
         const char* pfx = shadow_mode ? "[MCE-SHADOW]" : "[MCE]";
-        printf("%s ENTRY %s @ %.2f sl=%.2f(%.1fpt) lot=%.3f "
-               "[trail=%.3f | bracket=%.3f @ %.2f] "
-               "atr=%.1f vol=%.1f drift=%.1f risk=$%.0f\n",
-               pfx, is_long ? "LONG" : "SHORT",
-               entry_px, sl_px, sl_pts, lot,
-               t_lot, b_lot, b_tp, atr, vol_ratio, ewm_drift, risk);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "%s ENTRY %s @ %.2f sl=%.2f(%.1fpt) lot=%.3f "                "[trail=%.3f | bracket=%.3f @ %.2f] "                "atr=%.1f vol=%.1f drift=%.1f risk=$%.0f\n",                pfx, is_long ? "LONG" : "SHORT",                entry_px, sl_px, sl_pts, lot,                t_lot, b_lot, b_tp, atr, vol_ratio, ewm_drift, risk);
+            std::cout << _buf;
+            std::cout.flush();
+        }
 
-        printf("[MCE-BRACKET-%s] PLACE %s LIMIT @ %.2f size=%.3f "
-               "guarantee=$%.0f (%.1fpt * %.3f lots)\n",
-               shadow_mode ? "SHADOW" : "LIVE",
-               is_long ? "SELL" : "BUY",
-               b_tp, b_lot,
-               (atr * BRACKET_ATR_MULT) * b_lot * 100.0,
-               atr * BRACKET_ATR_MULT, b_lot);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[MCE-BRACKET-%s] PLACE %s LIMIT @ %.2f size=%.3f "                "guarantee=$%.0f (%.1fpt * %.3f lots)\n",                shadow_mode ? "SHADOW" : "LIVE",                is_long ? "SELL" : "BUY",                b_tp, b_lot,                (atr * BRACKET_ATR_MULT) * b_lot * 100.0,                atr * BRACKET_ATR_MULT, b_lot);
+            std::cout << _buf;
+            std::cout.flush();
+        }
     }
 
 private:
@@ -448,10 +447,13 @@ private:
                 pos.size          -= pos.bracket_size;
                 if (!pos.be_locked) { pos.sl = pos.entry; pos.be_locked = true; }
 
-                printf("[MCE-BRACKET-%s] FILLED @ %.2f pnl=$%.0f sl->BE trail=%.3f remain\n",
-                       shadow_mode ? "SHADOW" : "LIVE",
-                       pos.bracket_tp, bpnl, pos.size);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[MCE-BRACKET-%s] FILLED @ %.2f pnl=$%.0f sl->BE trail=%.3f remain\n",                        shadow_mode ? "SHADOW" : "LIVE",                        pos.bracket_tp, bpnl, pos.size);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
                 // Shadow: always call on_close to simulate the partial close in GUI
                 if (on_close)
                     on_close(pos.bracket_tp, pos.is_long, pos.bracket_size, "BRACKET_TP");
@@ -484,8 +486,13 @@ private:
                 pos.banked_usd += p; pos.size -= qty;
                 pos.partial1_done = true;
                 if (!pos.be_locked) { pos.sl = pos.entry; pos.be_locked = true; }
-                printf("[MCE] STEP1 banked %.3f @ %.2f pnl=$%.0f sl->BE\n", qty, ex, p);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[MCE] STEP1 banked %.3f @ %.2f pnl=$%.0f sl->BE\n", qty, ex, p);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
                 if (on_close) on_close(ex, pos.is_long, qty, "PARTIAL_1");  // shadow: simulate
             }
         }
@@ -499,8 +506,13 @@ private:
                 const double p  = (pos.is_long ? (ex-pos.entry) : (pos.entry-ex)) * qty * 100.0;
                 pos.banked_usd += p; pos.size -= qty;
                 pos.partial2_done = true;
-                printf("[MCE] STEP2 banked %.3f @ %.2f pnl=$%.0f\n", qty, ex, p);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[MCE] STEP2 banked %.3f @ %.2f pnl=$%.0f\n", qty, ex, p);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
                 if (on_close) on_close(ex, pos.is_long, qty, "PARTIAL_2");  // shadow: simulate
             }
         }
@@ -525,9 +537,13 @@ private:
             const double csl = pos.is_long ? std::min(rsl, mid-0.5) : std::max(rsl, mid+0.5);
             if (pos.is_long ? (csl > pos.sl) : (csl < pos.sl)) {
                 pos.sl = csl; pos.ratchet_tier = tier;
-                printf("[MCE] RATCHET tier=%d open=$%.0f locked=$%.0f sl=%.2f\n",
-                       tier, open_pnl, lu, csl);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[MCE] RATCHET tier=%d open=$%.0f locked=$%.0f sl=%.2f\n",                        tier, open_pnl, lu, csl);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
         }
 
@@ -570,14 +586,13 @@ private:
 
         // Cost-covered SL advance: move ALL prior SLs to this add's entry
         const bool adv = pos.is_long ? (add_px > pos.sl) : (add_px < pos.sl);
-        printf("[MCE-PYRAMID-%s] ADD_%d %s @ %.2f sl=%.2f(%.1fpt) size=%.3f risk=$%.0f "
-               "from_last=%.1fpt  SL_ADVANCE->%.2f(%s)\n",
-               pyramid_shadow ? "SHADOW" : "LIVE",
-               n, pos.is_long ? "LONG" : "SHORT",
-               add_px, add_sl, add_slpt, new_sz, add_risk,
-               from_last, add_px,
-               adv ? "all prior now at BE" : "no improvement");
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[MCE-PYRAMID-%s] ADD_%d %s @ %.2f sl=%.2f(%.1fpt) size=%.3f risk=$%.0f "                "from_last=%.1fpt  SL_ADVANCE->%.2f(%s)\n",                pyramid_shadow ? "SHADOW" : "LIVE",                n, pos.is_long ? "LONG" : "SHORT",                add_px, add_sl, add_slpt, new_sz, add_risk,                from_last, add_px,                adv ? "all prior now at BE" : "no improvement");
+            std::cout << _buf;
+            std::cout.flush();
+        }
 
         if (!pyramid_shadow && adv) pos.sl = add_px;
 
@@ -594,12 +609,13 @@ private:
             const double am = pos.is_long ? (mid - a.entry) : (a.entry - mid);
             adds_pnl += std::max(0.0, am) * a.size * 100.0;
         }
-        printf("[MCE-PYRAMID-%s] COMBINED_PNL_PROJECTION $%.0f "
-               "(base_open=$%.0f banked=$%.0f adds=$%.0f adds=%d)\n",
-               pyramid_shadow ? "SHADOW" : "LIVE",
-               open_pnl + pos.banked_usd + adds_pnl,
-               open_pnl, pos.banked_usd, adds_pnl, pyramid_add_count);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[MCE-PYRAMID-%s] COMBINED_PNL_PROJECTION $%.0f "                "(base_open=$%.0f banked=$%.0f adds=$%.0f adds=%d)\n",                pyramid_shadow ? "SHADOW" : "LIVE",                open_pnl + pos.banked_usd + adds_pnl,                open_pnl, pos.banked_usd, adds_pnl, pyramid_add_count);
+            std::cout << _buf;
+            std::cout.flush();
+        }
     }
 
     void _close_all(double exit_px, const char* reason, int64_t now_ms) {
@@ -611,22 +627,25 @@ private:
             auto& a = pyramid_adds[i];
             if (!a.active || a.closed) continue;
             const double ap = pos.is_long ? (exit_px-a.entry) : (a.entry-exit_px);
-            printf("[MCE-PYRAMID-%s] ADD_%d CLOSE @ %.2f pnl=$%.0f\n",
-                   pyramid_shadow ? "SHADOW" : "LIVE",
-                   a.num, exit_px, ap * a.size * 100.0);
-            fflush(stdout);
+            {
+                // converted from printf
+                char _buf[512];
+                snprintf(_buf, sizeof(_buf), "[MCE-PYRAMID-%s] ADD_%d CLOSE @ %.2f pnl=$%.0f\n",                    pyramid_shadow ? "SHADOW" : "LIVE",                    a.num, exit_px, ap * a.size * 100.0);
+                std::cout << _buf;
+                std::cout.flush();
+            }
             a.closed = true;
             if (on_close && !pyramid_shadow)
                 on_close(exit_px, pos.is_long, a.size, "PYRAMID_CLOSE");
         }
 
-        printf("[MCE%s] CLOSE %s @ %.2f reason=%s "
-               "trail=$%.0f banked=$%.0f TOTAL=$%.0f mfe=%.1fpt adds=%d\n",
-               shadow_mode ? "-SHADOW" : "",
-               pos.is_long ? "LONG" : "SHORT",
-               exit_px, reason, tpnl, pos.banked_usd, total,
-               pos.mfe, pyramid_add_count);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[MCE%s] CLOSE %s @ %.2f reason=%s "                "trail=$%.0f banked=$%.0f TOTAL=$%.0f mfe=%.1fpt adds=%d\n",                shadow_mode ? "-SHADOW" : "",                pos.is_long ? "LONG" : "SHORT",                exit_px, reason, tpnl, pos.banked_usd, total,                pos.mfe, pyramid_add_count);
+            std::cout << _buf;
+            std::cout.flush();
+        }
 
         if (std::string(reason) == "TP_HIT" || std::string(reason) == "TRAIL_STOP") {
             // Reset directional SL counter on TP -- thesis was correct, streak is broken
@@ -649,9 +668,13 @@ private:
                 ++m_sl_long_count;
                 if (m_sl_long_count >= 2) {
                     m_long_block_until = now_ms + SESSION_BLOCK;
-                    printf("[MCE] LONG direction blocked for 8hr after %d consecutive LONG SL_HITs\n",
-                           m_sl_long_count);
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[MCE] LONG direction blocked for 8hr after %d consecutive LONG SL_HITs\n",                            m_sl_long_count);
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                 }
             } else {
                 if (m_sl_short_first_ms > 0 && (now_ms - m_sl_short_first_ms) > TWO_HR_MS) {
@@ -661,9 +684,13 @@ private:
                 ++m_sl_short_count;
                 if (m_sl_short_count >= 2) {
                     m_short_block_until = now_ms + SESSION_BLOCK;
-                    printf("[MCE] SHORT direction blocked for 8hr after %d consecutive SHORT SL_HITs\n",
-                           m_sl_short_count);
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[MCE] SHORT direction blocked for 8hr after %d consecutive SHORT SL_HITs\n",                            m_sl_short_count);
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                 }
             }
         }
