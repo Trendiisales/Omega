@@ -162,8 +162,13 @@ struct DomPersistEngine {
             static int64_t s_l2_log = 0;
             if (now_ms - s_l2_log > 30000) {
                 s_l2_log = now_ms;
-                printf("[DPE] L2 not live -- no entries\n");
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[DPE] L2 not live -- no entries\n");
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
             if (phase == Phase::BUILDING) phase = Phase::IDLE;
             return;
@@ -192,10 +197,13 @@ struct DomPersistEngine {
             static int64_t s_build_log = 0;
             if (now_ms - s_build_log > 5000) {
                 s_build_log = now_ms;
-                printf("[DPE-BUILDING] %s l2_imb=%.4f long_cnt=%d short_cnt=%d atr=%.2f slot=%d\n",
-                       is_long ? "LONG" : "SHORT",
-                       l2_imb, m_long_count, m_short_count, m_atr, session_slot);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[DPE-BUILDING] %s l2_imb=%.4f long_cnt=%d short_cnt=%d atr=%.2f slot=%d\n",                        is_long ? "LONG" : "SHORT",                        l2_imb, m_long_count, m_short_count, m_atr, session_slot);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
         }
 
@@ -213,8 +221,13 @@ struct DomPersistEngine {
     void seed_warmup() noexcept {
         m_ticks_received = DPE_MIN_ENTRY_TICKS;
         m_atr_warmup     = DPE_ATR_WARMUP_TICKS;
-        printf("[DPE-SEED] Warmup counters seeded from disk -- entries unblocked immediately\n");
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[DPE-SEED] Warmup counters seeded from disk -- entries unblocked immediately\n");
+            std::cout << _buf;
+            std::cout.flush();
+        }
     }
 
     void seed_bar_atr(double bar_atr) noexcept {
@@ -243,8 +256,13 @@ struct DomPersistEngine {
         m_last_mid      = mid;
         m_price_window.clear();
         for (int i = 0; i < 100; ++i) m_price_window.push_back(mid);
-        printf("[DPE-SEED] mid=%.2f vix=%.1f seed_atr=%.1f\n", mid, vix_level, seed_range);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[DPE-SEED] mid=%.2f vix=%.1f seed_atr=%.1f\n", mid, vix_level, seed_range);
+            std::cout << _buf;
+            std::cout.flush();
+        }
     }
 
     void force_close(double bid, double ask, int64_t now_ms, CloseCallback on_close) noexcept {
@@ -358,10 +376,13 @@ private:
         m_long_count  = m_short_count  = 0;
 
         const char* mode = shadow_mode ? " [SHADOW]" : "";
-        printf("[DPE] ENTRY %s @ %.2f sl=%.2f sl_pts=%.2f size=%.3f atr=%.2f spread=%.3f%s\n",
-               is_long ? "LONG" : "SHORT",
-               entry_px, sl_px, sl_pts, size, atr, spread, mode);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[DPE] ENTRY %s @ %.2f sl=%.2f sl_pts=%.2f size=%.3f atr=%.2f spread=%.3f%s\n",                is_long ? "LONG" : "SHORT",                entry_px, sl_px, sl_pts, size, atr, spread, mode);
+            std::cout << _buf;
+            std::cout.flush();
+        }
 
         if (shadow_mode) {
             // Shadow: do not fire on_close callback (no broker order)
@@ -452,11 +473,13 @@ private:
                     pos.partial_closed = true;
                     pos.be_locked    = true;
 
-                    printf("[DPE] PARTIAL_1R %s @ %.2f qty=%.3f pnl_usd=%.0f remaining=%.3f%s\n",
-                           pos.is_long ? "LONG" : "SHORT",
-                           exit_px, close_qty, pnl * 100.0, pos.size,
-                           shadow_mode ? " [SHADOW]" : "");
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[DPE] PARTIAL_1R %s @ %.2f qty=%.3f pnl_usd=%.0f remaining=%.3f%s\n",                            pos.is_long ? "LONG" : "SHORT",                            exit_px, close_qty, pnl * 100.0, pos.size,                            shadow_mode ? " [SHADOW]" : "");
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
 
                     if (!shadow_mode && on_close) on_close(ptr);
                 }
@@ -507,10 +530,13 @@ private:
 
         const double held_s = static_cast<double>(now_ms / 1000 - pos.entry_ts);
         const char* mode = shadow_mode ? " [SHADOW]" : "";
-        printf("[DPE] EXIT %s @ %.2f reason=%s pnl_usd=%.0f mfe=%.2f held=%.0fs%s\n",
-               pos.is_long ? "LONG" : "SHORT",
-               exit_px, reason, tr.pnl * 100.0, pos.mfe, held_s, mode);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[DPE] EXIT %s @ %.2f reason=%s pnl_usd=%.0f mfe=%.2f held=%.0fs%s\n",                pos.is_long ? "LONG" : "SHORT",                exit_px, reason, tr.pnl * 100.0, pos.mfe, held_s, mode);
+            std::cout << _buf;
+            std::cout.flush();
+        }
 
         pos              = OpenPos{};
         phase            = Phase::COOLDOWN;
