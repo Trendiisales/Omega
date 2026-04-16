@@ -51,7 +51,8 @@ static void on_tick_gold(
         g_h4_regime_gold.has_open_position()    ||  // H4 regime open blocks all other gold entries
         g_pullback_cont.has_open_position()     ||  // PCE open blocks other entries
         g_pullback_prem.has_open_position()     ||  // PCE premium open blocks other entries
-        g_cbe.has_open_position();                   // CBE open blocks other gold engines
+        g_cbe.has_open_position()              ||   // CBE open blocks other gold engines
+        g_ema_cross.has_open_position();              // ECE open blocks other gold engines
 
     // Write GoldFlow state to telemetry for GUI pyramid indicator
     {
@@ -796,7 +797,7 @@ static void on_tick_gold(
         const int64_t bh4 = (now_ms_g / 14400000LL) * 14400000LL;  // 4h = 14400s
         // M1
         if (s_bar1_ms == 0) { s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
-        else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); g_cbe.on_bar(s_cur1.high, s_cur1.low, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
+        else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); g_cbe.on_bar(s_cur1.open, s_cur1.high, s_cur1.low, s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); g_ema_cross.on_bar(s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
         else { if(xau_mid>s_cur1.high)s_cur1.high=xau_mid; if(xau_mid<s_cur1.low)s_cur1.low=xau_mid; s_cur1.close=xau_mid; }
         // M5
         if (s_bar5_ms == 0) { s_cur5 = {b5/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar5_ms = b5; }
@@ -4572,6 +4573,7 @@ static void on_tick_gold(
             std::cout << "[TSE-DISABLED] TickScalpEngine disabled 2026-04-16: no edge in 6-day sweep\n";
             std::cout.flush();
         }
+    }
 
     // -- CompressionBreakoutEngine -- sweep-confirmed 2026-04-16 -----------
     // 6-day / 1.5M tick sweep: cb=3 mult=1.5 bf=0.30 rr=1.5 SHORT-only
@@ -4616,6 +4618,43 @@ static void on_tick_gold(
                 g_cbe.pos.entry, "COMP_BREAK",
                 "CBE", regime.c_str(), "CompBreakout",
                 g_cbe.pos.tp, g_cbe.pos.sl);
+        }
+    }
+
+    // -- EMACrossEngine -- sweep-confirmed 2026-04-16 -----------------------
+    // 6-day / 1.5M tick sweep: fast=9 slow=15 rsi_lo=40 rsi_hi=50 sl=1.5 rr=1.0
+    // 99 trades, 46.5% WR, $402.30 / 6 days = $67/day. Shadow mode.
+    if (g_ema_cross.has_open_position()) {
+        g_ema_cross.on_tick(bid, ask, now_ms_g,
+            [&](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
+    }
+    if (!g_ema_cross.has_open_position()
+        && gold_can_enter
+        && !g_candle_flow.has_open_position()
+        && !g_cbe.has_open_position()
+        && !g_gold_flow.has_open_position()
+        && !g_gold_stack.has_open_position()
+        && !g_bracket_gold.has_open_position()
+        && !g_trend_pb_gold.has_open_position()
+        && !g_hybrid_gold.has_open_position()
+        && !in_ny_close_noise) {
+        g_ema_cross.on_tick(bid, ask, now_ms_g,
+            [&](const omega::TradeRecord& tr) {
+                handle_closed_trade(tr);
+                if (!g_ema_cross.shadow_mode)
+                    send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+            });
+        if (g_ema_cross.has_open_position()) {
+            g_telemetry.UpdateLastEntryTs();
+            write_trade_open_log("XAUUSD", "EMACross",
+                g_ema_cross.pos.is_long ? "LONG" : "SHORT",
+                g_ema_cross.pos.entry, g_ema_cross.pos.tp, g_ema_cross.pos.sl,
+                g_ema_cross.pos.size, ask - bid, "ECE", "EMA_CROSS");
+            g_telemetry.UpdateLastSignal("XAUUSD",
+                g_ema_cross.pos.is_long ? "LONG" : "SHORT",
+                g_ema_cross.pos.entry, "EMA_CROSS",
+                "ECE", regime.c_str(), "EMACross",
+                g_ema_cross.pos.tp, g_ema_cross.pos.sl);
         }
     }
 

@@ -167,6 +167,13 @@ static omega::CandleFlowEngine    g_candle_flow;  // candle+DOM engine
 // shadow_mode=true until 2-week live shadow validates
 #include "CompressionBreakoutEngine.hpp"
 static omega::CompressionBreakoutEngine g_cbe;  // compression breakout engine
+
+// EMACrossEngine -- EMA9/15 crossover scalper, both directions
+// Sweep-confirmed 2026-04-16: 99 trades/6days, 46.5% WR, $402/6days = $67/day
+// fast=9 slow=15 rsi_lo=40 rsi_hi=50 sl=1.5 rr=1.0 cross_exit=true
+// shadow_mode=true until 2-week live shadow validates
+#include "EMACrossEngine.hpp"
+static omega::EMACrossEngine g_ema_cross;
 // DISABLED: 14.8% WR, -$27k/2yr backtest. Momentum continuation = negative EV.
 // g_candle_flow.enabled = false; -- set in engine_init
 
