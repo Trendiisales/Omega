@@ -117,11 +117,11 @@ static inline bool ece_rsi_allowed(double rsi, bool is_long) noexcept {
     return true;
 }
 
-// Bad UTC hours confirmed by diagnostic (all negative):
-// 05: -$54, 12: -$112, 14: -$80, 16: -$105, 20: -$45
+// Bad UTC hours (diagnostic + live 2026-04-17):
+// 05:-$54 12:-$112 13:10%WR 14:-$80 16:-$105 17-19:NYlate chop 20:-$45
 static inline bool ece_hour_allowed(int64_t ms) noexcept {
     int h = (int)(((ms/1000LL)%86400LL)/3600LL);
-    return !(h==5 || h==12 || h==14 || h==16 || h==20);
+    return !(h==5 || h==12 || h==13 || h==14 || h==16 || h==17 || h==18 || h==19 || h==20);
 }
 
 // =============================================================================
@@ -236,6 +236,18 @@ struct EMACrossEngine {
         if (_cross_dir == 0) return;
         if (_atr <= 0.0) return;
         if (now_ms - _last_exit_ms < ECE_COOLDOWN_MS) return;
+        // Consecutive SL kill: 3 SLs in a row = chop, block for 30min
+        if (now_ms < _sl_kill_until) {
+            static int64_t s_kl = 0;
+            if (now_ms - s_kl > 120000) {
+                s_kl = now_ms;
+                char km[128];
+                snprintf(km, sizeof(km), "[ECE-SL-KILL] blocked %d SLs %llds remain\n",
+                    _consec_sl, (long long)((_sl_kill_until - now_ms) / 1000LL));
+                std::cout << km; std::cout.flush();
+            }
+            return;
+        }
         if (spread > _atr * 0.30) return;
         // Hour kill: UTC 05,12,14,16,20 all bleed (diagnostic confirmed)
         if (!ece_hour_allowed(now_ms)) return;
@@ -292,6 +304,8 @@ private:
     int     _total_trades  = 0;
     int     _total_wins    = 0;
     int     _trade_id      = 0;
+    int     _consec_sl     = 0;    // consecutive SL counter
+    int64_t _sl_kill_until = 0;    // block entries until this ms
 
     // ── EMA update ────────────────────────────────────────────────────────────
     static void _update_ema(double& ema, double alpha, double price,
@@ -367,6 +381,18 @@ private:
 
         const bool win = (pnl_usd > 0);
         if (win) ++_total_wins;
+
+        // Consecutive SL tracker
+        if (std::string(reason) == "SL") {
+            if (++_consec_sl >= 3) {
+                _sl_kill_until = now_ms + 1800000LL;
+                char km[128];
+                snprintf(km, sizeof(km), "[ECE-SL-KILL] %d consec SLs -- 30min block\n", _consec_sl);
+                std::cout << km; std::cout.flush();
+            }
+        } else {
+            _consec_sl = 0;
+        }
 
         std::cout << "[ECE] EXIT " << (pos.is_long ? "LONG" : "SHORT")
                   << " @ " << std::fixed << std::setprecision(2) << exit_px
