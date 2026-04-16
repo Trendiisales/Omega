@@ -1,4 +1,6 @@
 #pragma once
+#include <iomanip>
+#include <iostream>
 // =============================================================================
 // GoldHMM.hpp -- Inline 3-state Gaussian HMM for CandleFlowEngine regime gating
 //
@@ -178,16 +180,20 @@ public:
         static int64_t s_last = 0;
         if (now_ms - s_last < 3600000LL) return;
         s_last = now_ms;
-        printf("[HMM] bars=%d warmed=%d  A: C->C=%.2f M->M=%.2f N->N=%.2f\n",
-               bar_count_, warmed() ? 1 : 0,
-               A_[HMM_CONTINUATION][HMM_CONTINUATION],
-               A_[HMM_MEAN_REVERSION][HMM_MEAN_REVERSION],
-               A_[HMM_NOISE][HMM_NOISE]);
-        printf("[HMM] mu_drift: C=%.2f MR=%.2f N=%.2f\n",
-               mu_[HMM_CONTINUATION][0],
-               mu_[HMM_MEAN_REVERSION][0],
-               mu_[HMM_NOISE][0]);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[HMM] bars=%d warmed=%d  A: C->C=%.2f M->M=%.2f N->N=%.2f\n",                bar_count_, warmed() ? 1 : 0,                A_[HMM_CONTINUATION][HMM_CONTINUATION],                A_[HMM_MEAN_REVERSION][HMM_MEAN_REVERSION],                A_[HMM_NOISE][HMM_NOISE]);
+            std::cout << _buf;
+            std::cout.flush();
+        }
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[HMM] mu_drift: C=%.2f MR=%.2f N=%.2f\n",                mu_[HMM_CONTINUATION][0],                mu_[HMM_MEAN_REVERSION][0],                mu_[HMM_NOISE][0]);
+            std::cout << _buf;
+            std::cout.flush();
+        }
     }
 
 private:
