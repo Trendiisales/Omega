@@ -266,11 +266,24 @@ static void print_top(const char* title, std::vector<Res>& results, int days) {
 }
 
 int main(int argc,char* argv[]){
-    if(argc<2){puts("Usage: multi_sweep <dir_with_csvs>");return 1;}
+    if(argc<2){puts("Usage: multi_sweep file1.csv file2.csv ...");return 1;}
 
     auto t0=std::chrono::steady_clock::now();
-    auto ticks=load_dir(argv[1]);
+    // Accept either a directory or individual files
+    std::vector<Tick> ticks;
+    for(int i=1;i<argc;++i){
+        // check if it's a directory
+        DIR* td=opendir(argv[i]);
+        if(td){closedir(td);auto v=load_dir(argv[i]);ticks.insert(ticks.end(),v.begin(),v.end());}
+        else{
+            auto v=load_csv(argv[i]);
+            if(v.size()<1000){fprintf(stderr,"Skip %s (%zu ticks)\n",argv[i],v.size());continue;}
+            fprintf(stderr,"Loaded %s: %zu ticks\n",argv[i],v.size());
+            ticks.insert(ticks.end(),v.begin(),v.end());
+        }
+    }
     if(ticks.empty()){fprintf(stderr,"No ticks loaded\n");return 1;}
+    std::stable_sort(ticks.begin(),ticks.end(),[](const Tick&a,const Tick&b){return a.ms<b.ms;});
 
     // Count unique days
     int days=1; int64_t prev_day=ticks[0].ms/86400000LL;
