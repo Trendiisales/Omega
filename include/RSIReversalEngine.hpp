@@ -1,4 +1,6 @@
 #pragma once
+#include <iomanip>
+#include <iostream>
 // =============================================================================
 // RSIReversalEngine.hpp  --  Tick-level RSI reversal entries for XAUUSD
 // =============================================================================
@@ -138,9 +140,13 @@ public:
             static int64_t s_cd_log = 0;
             if (now_s - s_cd_log >= 30) {
                 s_cd_log = now_s;
-                printf("[RSI-REV-BLOCK] cooldown: %llds remaining\n",
-                       (long long)(m_cooldown_until - now_s));
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] cooldown: %llds remaining\n",                        (long long)(m_cooldown_until - now_s));
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -150,39 +156,50 @@ public:
             static int64_t s_diag_log = 0;
             if (now_s - s_diag_log >= 30) {
                 s_diag_log = now_s;
-                printf("[RSI-REV-DIAG] spread=%.2f(max=%.1f) tick_atr=%.2f(min=%.1f) "
-                       "rsi_count=%d(need=%d) bar_rsi=%.1f bar_rsi_prev=%.1f "
-                       "bar_atr=%.2f(min=%.1f) tick_rsi=%.1f bb_sq=%d\n",
-                       spread, MAX_SPREAD_PTS,
-                       m_tick_atr, MIN_ATR_PTS,
-                       m_rsi_count, RSI_PERIOD + 2,
-                       m_bar_rsi, m_bar_rsi_prev,
-                       m_bar_atr, MIN_BAR_ATR,
-                       m_tick_rsi, (int)m_bb_squeeze);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-REV-DIAG] spread=%.2f(max=%.1f) tick_atr=%.2f(min=%.1f) "                        "rsi_count=%d(need=%d) bar_rsi=%.1f bar_rsi_prev=%.1f "                        "bar_atr=%.2f(min=%.1f) tick_rsi=%.1f bb_sq=%d\n",                        spread, MAX_SPREAD_PTS,                        m_tick_atr, MIN_ATR_PTS,                        m_rsi_count, RSI_PERIOD + 2,                        m_bar_rsi, m_bar_rsi_prev,                        m_bar_atr, MIN_BAR_ATR,                        m_tick_rsi, (int)m_bb_squeeze);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
         }
 
         if (spread > MAX_SPREAD_PTS) {
             static int64_t s_sp_log = 0;
             if (now_s - s_sp_log >= 30) { s_sp_log = now_s;
-                printf("[RSI-REV-BLOCK] spread=%.2f > max=%.1f\n", spread, MAX_SPREAD_PTS);
-                fflush(stdout); }
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] spread=%.2f > max=%.1f\n", spread, MAX_SPREAD_PTS);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             return;
         }
         if (m_tick_atr < MIN_ATR_PTS) {
             static int64_t s_atr_log = 0;
             if (now_s - s_atr_log >= 30) { s_atr_log = now_s;
-                printf("[RSI-REV-BLOCK] tick_atr=%.2f < min=%.1f\n", m_tick_atr, MIN_ATR_PTS);
-                fflush(stdout); }
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] tick_atr=%.2f < min=%.1f\n", m_tick_atr, MIN_ATR_PTS);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             return;
         }
         if (m_rsi_count < RSI_PERIOD + 2) {
             static int64_t s_cnt_log = 0;
             if (now_s - s_cnt_log >= 30) { s_cnt_log = now_s;
-                printf("[RSI-REV-BLOCK] rsi_count=%d < need=%d (warming up)\n",
-                       m_rsi_count, RSI_PERIOD + 2);
-                fflush(stdout); }
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] rsi_count=%d < need=%d (warming up)\n",                        m_rsi_count, RSI_PERIOD + 2);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             return;
         }
 
@@ -192,8 +209,13 @@ public:
             static int64_t s_chop_log = 0;
             if (now_ms/1000 - s_chop_log >= 30) {
                 s_chop_log = now_ms/1000;
-                printf("[RSI-REV-BLOCK] chop: bar_atr=%.2f < %.2f\n", m_bar_atr, MIN_BAR_ATR);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] chop: bar_atr=%.2f < %.2f\n", m_bar_atr, MIN_BAR_ATR);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -202,8 +224,13 @@ public:
             static int64_t s_sq_log = 0;
             if (now_ms/1000 - s_sq_log >= 30) {
                 s_sq_log = now_ms/1000;
-                printf("[RSI-REV-BLOCK] chop: BB_SQUEEZE active\n");
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] chop: BB_SQUEEZE active\n");
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -219,9 +246,13 @@ public:
         if (rsi <= 0.0 || m_bar_rsi_prev <= 0.0) {
             static int64_t s_rsi_log = 0;
             if (now_s - s_rsi_log >= 30) { s_rsi_log = now_s;
-                printf("[RSI-REV-BLOCK] bar_rsi=%.1f bar_rsi_prev=%.1f -- need 2 bar closes\n",
-                       m_bar_rsi, m_bar_rsi_prev);
-                fflush(stdout); }
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] bar_rsi=%.1f bar_rsi_prev=%.1f -- need 2 bar closes\n",                        m_bar_rsi, m_bar_rsi_prev);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             return;
         }
 
@@ -249,9 +280,13 @@ public:
             static int64_t s_pc_log = 0;
             if (now_ms/1000 - s_pc_log >= 5) {
                 s_pc_log = now_ms/1000;
-                printf("[RSI-REV-BLOCK] price_confirm=%.2f < %.2f pts -- waiting for move\n",
-                       price_move_since_extreme, PRICE_CONFIRM_PTS);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] price_confirm=%.2f < %.2f pts -- waiting for move\n",                        price_move_since_extreme, PRICE_CONFIRM_PTS);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -273,9 +308,13 @@ public:
                 static int64_t s_rsi_drift_log = 0;
                 if (now_ms/1000 - s_rsi_drift_log >= 10) {
                     s_rsi_drift_log = now_ms/1000;
-                    printf("[RSI-REV-BLOCK] LONG blocked: ewm_drift=%.2f < -2.5 (downtrend)\n",
-                           ewm_drift);
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] LONG blocked: ewm_drift=%.2f < -2.5 (downtrend)\n",                            ewm_drift);
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -283,9 +322,13 @@ public:
                 static int64_t s_rsi_drift_log2 = 0;
                 if (now_ms/1000 - s_rsi_drift_log2 >= 10) {
                     s_rsi_drift_log2 = now_ms/1000;
-                    printf("[RSI-REV-BLOCK] SHORT blocked: ewm_drift=%.2f > 2.5 (uptrend)\n",
-                           ewm_drift);
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] SHORT blocked: ewm_drift=%.2f > 2.5 (uptrend)\n",                            ewm_drift);
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -297,28 +340,46 @@ public:
             if (is_long) {
                 // Don't bounce into ask-heavy book -- sellers still dominating
                 if (l2_imbalance < L2_LONG_MIN) {
-                    printf("[RSI-REV-BLOCK] LONG blocked: l2_imbalance=%.2f < %.2f (ask-heavy)\n",
-                           l2_imbalance, L2_LONG_MIN);
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] LONG blocked: l2_imbalance=%.2f < %.2f (ask-heavy)\n",                            l2_imbalance, L2_LONG_MIN);
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                     return;
                 }
                 // Wall below just got hit -- may not hold
                 if (wall_below) {
-                    printf("[RSI-REV-BLOCK] LONG blocked: wall_below (support may break)\n");
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] LONG blocked: wall_below (support may break)\n");
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                     return;
                 }
                 vacuum_confirm = vacuum_bid; // thin bid = reversal has room up
             } else {
                 if (l2_imbalance > L2_SHORT_MAX) {
-                    printf("[RSI-REV-BLOCK] SHORT blocked: l2_imbalance=%.2f > %.2f (bid-heavy)\n",
-                           l2_imbalance, L2_SHORT_MAX);
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] SHORT blocked: l2_imbalance=%.2f > %.2f (bid-heavy)\n",                            l2_imbalance, L2_SHORT_MAX);
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                     return;
                 }
                 if (wall_above) {
-                    printf("[RSI-REV-BLOCK] SHORT blocked: wall_above (resistance may hold)\n");
-                    fflush(stdout);
+                    {
+                        // converted from printf
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf), "[RSI-REV-BLOCK] SHORT blocked: wall_above (resistance may hold)\n");
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                     return;
                 }
                 vacuum_confirm = vacuum_ask; // thin ask = reversal has room down
@@ -342,13 +403,13 @@ public:
         m_vacuum_confirm = vacuum_confirm;
 
         const char* pfx = shadow_mode ? "[RSI-REV-SHADOW]" : "[RSI-REV]";
-        printf("%s %s entry=%.2f sl=%.2f rsi=%.1f atr=%.2f "
-               "l2=%.2f wall_a=%d wall_b=%d vac=%d slot=%d\n",
-               pfx, is_long ? "LONG" : "SHORT",
-               entry, pos.sl, rsi, m_tick_atr,
-               l2_imbalance, (int)wall_above, (int)wall_below,
-               (int)vacuum_confirm, session_slot);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "%s %s entry=%.2f sl=%.2f rsi=%.1f atr=%.2f "                "l2=%.2f wall_a=%d wall_b=%d vac=%d slot=%d\n",                pfx, is_long ? "LONG" : "SHORT",                entry, pos.sl, rsi, m_tick_atr,                l2_imbalance, (int)wall_above, (int)wall_below,                (int)vacuum_confirm, session_slot);
+            std::cout << _buf;
+            std::cout.flush();
+        }
     }
 
     void patch_size(double lot) noexcept { if (pos.active) pos.size = lot; }
@@ -473,8 +534,13 @@ private:
         }
         if (!pos.be_locked && move >= pos.atr * BE_ATR_MULT) {
             pos.sl = pos.entry; pos.be_locked = true;
-            printf("[RSI-REV] BE_LOCK %s move=%.2f\n", pos.is_long ? "LONG" : "SHORT", move);
-            fflush(stdout);
+            {
+                // converted from printf
+                char _buf[512];
+                snprintf(_buf, sizeof(_buf), "[RSI-REV] BE_LOCK %s move=%.2f\n", pos.is_long ? "LONG" : "SHORT", move);
+                std::cout << _buf;
+                std::cout.flush();
+            }
         }
         if (pos.be_locked) {
             const double trail_sl = pos.is_long
@@ -513,10 +579,13 @@ private:
                 : (m_last_l2 > L2_EXIT_THRESHOLD && m_l2_at_entry <= L2_EXIT_THRESHOLD);
             const double open_pnl = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
             if (l2_flipped_against && open_pnl >= L2_EXIT_MIN_PROFIT) {
-                printf("[RSI-REV] L2_FLIP_EXIT %s l2=%.3f was=%.3f profit=%.2f\n",
-                       pos.is_long ? "LONG" : "SHORT",
-                       m_last_l2, m_l2_at_entry, open_pnl);
-                fflush(stdout);
+                {
+                    // converted from printf
+                    char _buf[512];
+                    snprintf(_buf, sizeof(_buf), "[RSI-REV] L2_FLIP_EXIT %s l2=%.3f was=%.3f profit=%.2f\n",                        pos.is_long ? "LONG" : "SHORT",                        m_last_l2, m_l2_at_entry, open_pnl);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
                 _close(pos.is_long ? bid : ask, "L2_FLIP", now_s, on_close); return;
             }
         }
@@ -533,9 +602,13 @@ private:
     {
         const double pnl = (pos.is_long ? (exit_px - pos.entry)
                                         : (pos.entry - exit_px)) * pos.size;
-        printf("[RSI-REV] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f\n",
-               pos.is_long ? "LONG" : "SHORT", exit_px, reason, pnl, pos.mfe);
-        fflush(stdout);
+        {
+            // converted from printf
+            char _buf[512];
+            snprintf(_buf, sizeof(_buf), "[RSI-REV] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f\n",                pos.is_long ? "LONG" : "SHORT", exit_px, reason, pnl, pos.mfe);
+            std::cout << _buf;
+            std::cout.flush();
+        }
         omega::TradeRecord tr;
         tr.id = ++m_trade_id; tr.symbol = "XAUUSD";
         tr.side = pos.is_long ? "LONG" : "SHORT";
