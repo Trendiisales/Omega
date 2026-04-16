@@ -550,6 +550,30 @@ struct CandleFlowEngine {
                 } else {
                 const double dfe_cost = spread + CFE_COST_SLIPPAGE*2.0 + CFE_COMMISSION_PTS*2.0;
                 if (spread < dfe_cost * CFE_DFE_MIN_SPREAD_MULT) {
+                    // Counter-spike block for DFE: if last 3 ticks moving hard against
+                    // intended direction, price is spiking the wrong way -- block entry.
+                    // Same logic as bar entry counter-spike gate.
+                    if ((int)m_recent_mid.size() >= 3) {
+                        const double dfe_spike_oldest = m_recent_mid[m_recent_mid.size() - 3];
+                        const double dfe_spike_move   = mid - dfe_spike_oldest;
+                        const double dfe_spike_thresh = (atr_pts > 0.0 ? atr_pts : 2.0) * 0.5;
+                        const bool dfe_counter_spike  = dfe_long
+                            ? (dfe_spike_move <= -dfe_spike_thresh)
+                            : (dfe_spike_move >= dfe_spike_thresh);
+                        if (dfe_counter_spike) {
+                            static int64_t s_dfe_spike = 0;
+                            if (now_ms - s_dfe_spike > 5000) {
+                                s_dfe_spike = now_ms;
+                                std::cout << "[CFE-DFE-SPIKE-BLOCK] " << (dfe_long?"LONG":"SHORT")
+                                          << " blocked: counter-spike move=" << std::fixed
+                                          << std::setprecision(2) << dfe_spike_move
+                                          << " thresh=" << dfe_spike_thresh << "\n";
+                                std::cout.flush();
+                            }
+                            m_prev_ewm_drift = ewm_drift;
+                            goto cfe_sustained_skip;
+                        }
+                    }
                     const double dfe_atr    = (atr_pts > 0.0) ? atr_pts : spread * 5.0;
                     const double dfe_sl_pts = dfe_atr * CFE_DFE_SL_MULT;
                     const double entry_px   = dfe_long ? ask : bid;
@@ -712,24 +736,78 @@ struct CandleFlowEngine {
         if (!bar.valid) return;
         if (!m_rsi_warmed) return;
 
-        // Gate -2: Asia session bar block (22:00-05:00 UTC)
-        // Bar entries in Asia are low-quality -- thin liquidity, synthetic book sizes,
-        // frequent whipsaws. Sustained-drift path already blocked in Asia (CFE-SUS-ASIA-BLOCK).
-        // Extend that block to bar-based entries too.
-        // Evidence: 00:40 MacroCrash -$63, multiple overnight CFE losses.
+        // Gate -2: Asia session bar quality gate (22:00-05:00 UTC)
+        // Asia bar entries allowed ONLY with very tight confirmation:
+        //   1. Drift must be >= max(3.0, atr*0.40) -- real macro move, not chop
+        //   2. RSI trend must strongly agree with direction (|rsi_trend| >= 8.0)
+        //   3. Last 3 ticks price confirming direction
+        // This catches genuine overnight macro moves (gold +$30 on news) while
+        // blocking the noise entries that caused consistent overnight losses.
         {
             const int64_t asia_sec  = now_ms / 1000LL;
             const int     asia_hour = static_cast<int>((asia_sec % 86400LL) / 3600LL);
             const bool    in_asia   = (asia_hour >= 22 || asia_hour < 5);
             if (in_asia) {
-                static int64_t s_asia_bar_log = 0;
-                if (now_ms - s_asia_bar_log > 300000) {
-                    s_asia_bar_log = now_ms;
-                    std::cout << "[CFE-ASIA-BAR-BLOCK] bar entry blocked: UTC hour=" << asia_hour
-                              << " (Asia 22:00-05:00)\n";
+                const double asia_atr_safe = (atr_pts > 0.0) ? atr_pts : 5.0;
+                // Gate 1: high drift threshold
+                const double asia_drift_min = std::max(3.0, asia_atr_safe * 0.40);
+                if (std::fabs(ewm_drift) < asia_drift_min) {
+                    static int64_t s_asia_drift_log = 0;
+                    if (now_ms - s_asia_drift_log > 120000) {
+                        s_asia_drift_log = now_ms;
+                        std::cout << "[CFE-ASIA-BAR-BLOCK] drift=" << std::fixed
+                                  << std::setprecision(2) << ewm_drift
+                                  << " < min=" << asia_drift_min << " (Asia)\n";
+                        std::cout.flush();
+                    }
+                    return;
+                }
+                // Gate 2: RSI trend must strongly agree
+                const bool asia_bar_long = (ewm_drift > 0);
+                const bool asia_rsi_ok = asia_bar_long
+                    ? (m_rsi_trend >= 8.0)
+                    : (m_rsi_trend <= -8.0);
+                if (!asia_rsi_ok) {
+                    static int64_t s_asia_rsi_log = 0;
+                    if (now_ms - s_asia_rsi_log > 60000) {
+                        s_asia_rsi_log = now_ms;
+                        std::cout << "[CFE-ASIA-BAR-BLOCK] rsi_trend=" << std::fixed
+                                  << std::setprecision(2) << m_rsi_trend
+                                  << " insufficient for Asia entry\n";
+                        std::cout.flush();
+                    }
+                    return;
+                }
+                // Gate 3: last 3 ticks price confirming direction
+                if ((int)m_recent_mid.size() >= 3) {
+                    const double asia_oldest = m_recent_mid[m_recent_mid.size() - 3];
+                    const double asia_move   = mid - asia_oldest;
+                    const double asia_thresh = asia_atr_safe * 0.15;
+                    const bool asia_price_ok = asia_bar_long
+                        ? (asia_move >= asia_thresh)
+                        : (asia_move <= -asia_thresh);
+                    if (!asia_price_ok) {
+                        static int64_t s_asia_px_log = 0;
+                        if (now_ms - s_asia_px_log > 30000) {
+                            s_asia_px_log = now_ms;
+                            std::cout << "[CFE-ASIA-BAR-BLOCK] price not confirming: move="
+                                      << std::fixed << std::setprecision(2) << asia_move
+                                      << " thresh=" << asia_thresh << " (Asia)\n";
+                            std::cout.flush();
+                        }
+                        return;
+                    }
+                }
+                // All Asia gates passed -- log it so we can validate
+                static int64_t s_asia_pass_log = 0;
+                if (now_ms - s_asia_pass_log > 5000) {
+                    s_asia_pass_log = now_ms;
+                    std::cout << "[CFE-ASIA-BAR-PASS] Asia bar entry gates passed:"
+                              << " drift=" << std::fixed << std::setprecision(2) << ewm_drift
+                              << " rsi_trend=" << m_rsi_trend
+                              << " hour=" << asia_hour << "\n";
                     std::cout.flush();
                 }
-                return;
             }
         }
 
