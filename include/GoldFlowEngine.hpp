@@ -327,8 +327,12 @@ struct GoldFlowEngine {
             static int64_t s_dz_log = 0;
             if (now_ms - s_dz_log > 60000) {
                 s_dz_log = now_ms;
-                printf("[GFE-DEAD-ZONE] slot=0 phase!=LIVE -- no entry\n");
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-DEAD-ZONE] slot=0 phase!=LIVE -- no entry\n");
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -348,9 +352,12 @@ struct GoldFlowEngine {
                 static int64_t s_cd_log = 0;
                 if (now_ms - s_cd_log > 10000) {
                     s_cd_log = now_ms;
-                    printf("[GFE-COOLDOWN] remaining=%lldms cd=%dms -- waiting\n",
-                           (long long)remaining_ms, cd);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-COOLDOWN] remaining=%lldms cd=%dms -- waiting\n",                            (long long)remaining_ms, cd);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -370,9 +377,12 @@ struct GoldFlowEngine {
                 const char* ph = (phase == Phase::IDLE)          ? "IDLE"
                                : (phase == Phase::FLOW_BUILDING) ? "FLOW_BUILDING"
                                : "UNKNOWN";
-                printf("[GFE-PHASE] phase=%s ticks=%d atr_warm=%d l2_imb=%.3f slot=%d\n",
-                       ph, m_ticks_received, m_atr_warmup_ticks, l2_imb, session_slot);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-PHASE] phase=%s ticks=%d atr_warm=%d l2_imb=%.3f slot=%d\n",                        ph, m_ticks_received, m_atr_warmup_ticks, l2_imb, session_slot);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
 
@@ -381,9 +391,12 @@ struct GoldFlowEngine {
             static int64_t s_atr_wu_log = 0;
             if (now_ms - s_atr_wu_log > 30000) {
                 s_atr_wu_log = now_ms;
-                printf("[GFE-ATR-WARMUP] warmup=%d/%d -- waiting for ATR\n",
-                       m_atr_warmup_ticks, GFE_ATR_PERIOD);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-ATR-WARMUP] warmup=%d/%d -- waiting for ATR\n",                        m_atr_warmup_ticks, GFE_ATR_PERIOD);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -402,9 +415,12 @@ struct GoldFlowEngine {
             static int64_t s_tick_wu_log = 0;
             if (now_ms - s_tick_wu_log > 15000) {
                 s_tick_wu_log = now_ms;
-                printf("[GFE-TICK-WARMUP] ticks=%d/%d -- waiting for persistence windows\n",
-                       m_ticks_received, GFE_MIN_ENTRY_TICKS);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-TICK-WARMUP] ticks=%d/%d -- waiting for persistence windows\n",                        m_ticks_received, GFE_MIN_ENTRY_TICKS);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -421,9 +437,12 @@ struct GoldFlowEngine {
             static int64_t s_spread_log = 0;
             if (now_ms - s_spread_log > 10000) {
                 s_spread_log = now_ms;
-                printf("[GFE-SPREAD-BLOCK] spread=%.3f > max=%.3f (slot=%d)\n",
-                       spread, eff_max_spread, session_slot);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-SPREAD-BLOCK] spread=%.3f > max=%.3f (slot=%d)\n",                        spread, eff_max_spread, session_slot);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -446,9 +465,12 @@ struct GoldFlowEngine {
                 static int64_t s_sess_log = 0;
                 if (now_ms - s_sess_log > 30000) {
                     s_sess_log = now_ms;
-                    printf("[GFE-SESSION-BLOCK] slot=%d not tradeable (need 1-4 or 6)\n",
-                           m_last_session_slot);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-SESSION-BLOCK] slot=%d not tradeable (need 1-4 or 6)\n",                            m_last_session_slot);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -460,9 +482,12 @@ struct GoldFlowEngine {
                 static int64_t s_asia_atr_log = 0;
                 if (now_ms - s_asia_atr_log > 20000) {
                     s_asia_atr_log = now_ms;
-                    printf("[GFE-ASIA-ATR-BLOCK] atr=%.3f < min=%.3f -- tape too dead\n",
-                           m_atr, GFE_ASIA_ATR_MIN);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-ASIA-ATR-BLOCK] atr=%.3f < min=%.3f -- tape too dead\n",                            m_atr, GFE_ASIA_ATR_MIN);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -470,9 +495,12 @@ struct GoldFlowEngine {
                 static int64_t s_asia_ratio_log = 0;
                 if (now_ms - s_asia_ratio_log > 20000) {
                     s_asia_ratio_log = now_ms;
-                    printf("[GFE-ASIA-RATIO-BLOCK] atr/spread=%.2f < %.1f (atr=%.3f spread=%.3f)\n",
-                           m_atr / spread, GFE_ASIA_ATR_SPREAD_RATIO, m_atr, spread);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-ASIA-RATIO-BLOCK] atr/spread=%.2f < %.1f (atr=%.3f spread=%.3f)\n",                            m_atr / spread, GFE_ASIA_ATR_SPREAD_RATIO, m_atr, spread);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
                 return;
             }
@@ -566,20 +594,24 @@ struct GoldFlowEngine {
                 static int64_t s_chop_log = 0;
                 if (now_ms - s_chop_log > 10000) {
                     s_chop_log = now_ms;
-                    printf("[GFE-CHOP] drift range=%.2f (min=%.2f max=%.2f) mixed=%d"
-                           " -- chop guard active, no entry\n",
-                           drift_range, drift_min, drift_max, (int)drift_mixed);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-CHOP] drift range=%.2f (min=%.2f max=%.2f) mixed=%d"                            " -- chop guard active, no entry\n",                            drift_range, drift_min, drift_max, (int)drift_mixed);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             } else if (drift_range > 4.0 && !drift_mixed) {
                 // Directional grind: wide range but all one sign -- NOT chop. Log once.
                 static int64_t s_dir_grind_log = 0;
                 if (now_ms - s_dir_grind_log > 30000) {
                     s_dir_grind_log = now_ms;
-                    printf("[GFE-CHOP] drift range=%.2f (min=%.2f max=%.2f) mixed=0"
-                           " -- DIRECTIONAL GRIND, chop guard bypassed\n",
-                           drift_range, drift_min, drift_max);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-CHOP] drift range=%.2f (min=%.2f max=%.2f) mixed=0"                            " -- DIRECTIONAL GRIND, chop guard bypassed\n",                            drift_range, drift_min, drift_max);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
             // For slow confirmation, require the same drift ratio over the full window
@@ -596,18 +628,12 @@ struct GoldFlowEngine {
                 const double eff_dt = (m_atr > 0.0)
                     ? std::max(GFE_DRIFT_FALLBACK_THRESHOLD, 0.18 * m_atr)
                     : GFE_DRIFT_FALLBACK_THRESHOLD;
-                printf("[GFE-NOSIG] drift=%.3f atr=%.3f eff_thresh=%.3f "
-                       "fast_long=%d fast_short=%d need=%d "
-                       "window=%d/%d slot=%d l2_live=%d l2_imb=%.3f\n",
-                       ewm_drift, m_atr, eff_dt,
-                       (int)fast_long, (int)fast_short,
-                       (GFE_DRIFT_PERSIST_TICKS * 7) / 10,
-                       (int)m_drift_persist_window.size(),
-                       GFE_DRIFT_PERSIST_TICKS,
-                       session_slot,
-                       (int)(std::fabs(l2_imb - 0.5) > 0.001),
-                       l2_imb);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-NOSIG] drift=%.3f atr=%.3f eff_thresh=%.3f "                        "fast_long=%d fast_short=%d need=%d "                        "window=%d/%d slot=%d l2_live=%d l2_imb=%.3f\n",                        ewm_drift, m_atr, eff_dt,                        (int)fast_long, (int)fast_short,                        (GFE_DRIFT_PERSIST_TICKS * 7) / 10,                        (int)m_drift_persist_window.size(),                        GFE_DRIFT_PERSIST_TICKS,                        session_slot,                        (int)(std::fabs(l2_imb - 0.5) > 0.001),                        l2_imb);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             phase = Phase::IDLE; return;
         }
@@ -624,9 +650,12 @@ struct GoldFlowEngine {
             static int64_t s_dom_log = 0;
             if (now_ms - s_dom_log > 8000) {
                 s_dom_log = now_ms;
-                printf("[GFE-DOMINANCE-BLOCK] LONG blocked: short_count=%d >= max=%d (fast_window=%d)\n",
-                       m_fast_short_count, eff_dominance_max, (int)m_fast_window.size());
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-DOMINANCE-BLOCK] LONG blocked: short_count=%d >= max=%d (fast_window=%d)\n",                        m_fast_short_count, eff_dominance_max, (int)m_fast_window.size());
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             phase = Phase::IDLE; return;
         }
@@ -634,9 +663,12 @@ struct GoldFlowEngine {
             static int64_t s_dom2_log = 0;
             if (now_ms - s_dom2_log > 8000) {
                 s_dom2_log = now_ms;
-                printf("[GFE-DOMINANCE-BLOCK] SHORT blocked: long_count=%d >= max=%d (fast_window=%d)\n",
-                       m_fast_long_count, eff_dominance_max, (int)m_fast_window.size());
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-DOMINANCE-BLOCK] SHORT blocked: long_count=%d >= max=%d (fast_window=%d)\n",                        m_fast_long_count, eff_dominance_max, (int)m_fast_window.size());
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             phase = Phase::IDLE; return;
         }
@@ -782,11 +814,12 @@ struct GoldFlowEngine {
             static int64_t s_exp_block_log = 0;
             if (now_ms - s_exp_block_log >= 3000) {
                 s_exp_block_log = now_ms;
-                printf("[GFE-CHOP] DIRECTIONAL GRIND blocked_%s ewm_drift=%.2f threshold=%.1f vol_ratio=%.2f expansion=%d\n",
-                       expansion_crash_block_long ? "LONG" : "SHORT",
-                       ewm_drift, EXPANSION_BLOCK_DRIFT,
-                       m_vol_ratio, (int)m_expansion_mode);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-CHOP] DIRECTIONAL GRIND blocked_%s ewm_drift=%.2f threshold=%.1f vol_ratio=%.2f expansion=%d\n",                        expansion_crash_block_long ? "LONG" : "SHORT",                        ewm_drift, EXPANSION_BLOCK_DRIFT,                        m_vol_ratio, (int)m_expansion_mode);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
 
@@ -799,13 +832,12 @@ struct GoldFlowEngine {
             static int64_t s_bias_log = 0;
             if (now_ms - s_bias_log >= 5000) {
                 s_bias_log = now_ms;
-                printf("[GOLD-FLOW] TREND-BLOCK block_long=%d(vwap_dn=%d overext=%d lower_hi=%d exp_crash=%d) block_short=%d(vwap_up=%d overext=%d higher_lo=%d exp_surge=%d) drift=%.2f vwap_pts=%.2f atr=%.2f\n",
-                       (int)block_long,
-                       (int)vwap_trend_down, (int)vwap_overext_up, (int)struct_lower_high, (int)expansion_crash_block_long,
-                       (int)block_short,
-                       (int)vwap_trend_up, (int)vwap_overext_dn, (int)struct_higher_low, (int)expansion_surge_block_short,
-                       ewm_drift, m_vwap_pts_dev, atr_struct);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GOLD-FLOW] TREND-BLOCK block_long=%d(vwap_dn=%d overext=%d lower_hi=%d exp_crash=%d) block_short=%d(vwap_up=%d overext=%d higher_lo=%d exp_surge=%d) drift=%.2f vwap_pts=%.2f atr=%.2f\n",                        (int)block_long,                        (int)vwap_trend_down, (int)vwap_overext_up, (int)struct_lower_high, (int)expansion_crash_block_long,                        (int)block_short,                        (int)vwap_trend_up, (int)vwap_overext_dn, (int)struct_higher_low, (int)expansion_surge_block_short,                        ewm_drift, m_vwap_pts_dev, atr_struct);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         }
 
@@ -827,16 +859,12 @@ struct GoldFlowEngine {
             static int64_t s_sigfail_log = 0;
             if (now_ms - s_sigfail_log > 8000) {
                 s_sigfail_log = now_ms;
-                printf("[GFE-SIGNAL-FAIL] no entry: fast_l=%d fast_s=%d slow_l=%d slow_s=%d"
-                       " drift=%.3f thresh=%.3f momentum=%.3f mom_floor=%.3f"
-                       " expanding=%d block_l=%d block_s=%d\n",
-                       (int)fast_long, (int)fast_short,
-                       (int)slow_long, (int)slow_short,
-                       ewm_drift, drift_threshold,
-                       mid_momentum(), momentum_floor,
-                       (int)price_expanding,
-                       (int)block_long, (int)block_short);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-SIGNAL-FAIL] no entry: fast_l=%d fast_s=%d slow_l=%d slow_s=%d"                        " drift=%.3f thresh=%.3f momentum=%.3f mom_floor=%.3f"                        " expanding=%d block_l=%d block_s=%d\n",                        (int)fast_long, (int)fast_short,                        (int)slow_long, (int)slow_short,                        ewm_drift, drift_threshold,                        mid_momentum(), momentum_floor,                        (int)price_expanding,                        (int)block_long, (int)block_short);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -846,8 +874,12 @@ struct GoldFlowEngine {
             static int64_t s_atr0_log = 0;
             if (now_ms - s_atr0_log > 10000) {
                 s_atr0_log = now_ms;
-                printf("[GFE-ATR-ZERO] m_atr=0 -- skipping entry\n");
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-ATR-ZERO] m_atr=0 -- skipping entry\n");
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
             return;
         }
@@ -943,10 +975,12 @@ struct GoldFlowEngine {
                     static int64_t s_rev_bypass_log = 0;
                     if (now_ms - s_rev_bypass_log > 5000) {
                         s_rev_bypass_log = now_ms;
-                        printf("[GFE-REVERSAL-BYPASS] %s drift=%.2f(stale) rsi=%.1f -- "
-                               "exhaust block bypassed (reversal entry, not continuation)\n",
-                               long_signal ? "LONG" : "SHORT", ewm_drift, m_bar_rsi14);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GFE-REVERSAL-BYPASS] %s drift=%.2f(stale) rsi=%.1f -- "                                "exhaust block bypassed (reversal entry, not continuation)\n",                                long_signal ? "LONG" : "SHORT", ewm_drift, m_bar_rsi14);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
                 // Block on either: overextended OR plateaued-at-elevation
@@ -955,11 +989,12 @@ struct GoldFlowEngine {
                     static int64_t s_exhaust_log = 0;
                     if (now_ms - s_exhaust_log > 5000) {
                         s_exhaust_log = now_ms;
-                        printf("[GFE-EXHAUST-BLOCK] %s drift=%.2f atr=%.2f ratio=%.2f ext=%d plateau=%d\n",
-                               long_signal ? "LONG" : "SHORT",
-                               ewm_drift, m_atr, drift_abs / m_atr,
-                               (int)drift_overextended, (int)drift_plateau);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GFE-EXHAUST-BLOCK] %s drift=%.2f atr=%.2f ratio=%.2f ext=%d plateau=%d\n",                                long_signal ? "LONG" : "SHORT",                                ewm_drift, m_atr, drift_abs / m_atr,                                (int)drift_overextended, (int)drift_plateau);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     return;
                 }
@@ -998,10 +1033,12 @@ struct GoldFlowEngine {
                     static int64_t s_dist_log = 0;
                     if (now_ms - s_dist_log > 8000) {
                         s_dist_log = now_ms;
-                        printf("[GFE-DIST-BLOCK] %s net_move=%.3f need=%.3f (%.2f*ATR=%.2f) -- no price distance\n",
-                               long_signal ? "LONG" : "SHORT",
-                               net_move, dist_gate, dist_mult, m_atr);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GFE-DIST-BLOCK] %s net_move=%.3f need=%.3f (%.2f*ATR=%.2f) -- no price distance\n",                                long_signal ? "LONG" : "SHORT",                                net_move, dist_gate, dist_mult, m_atr);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     return;
                 }
@@ -1021,10 +1058,12 @@ struct GoldFlowEngine {
                     static int64_t s_rec_log = 0;
                     if (now_ms - s_rec_log > 8000) {
                         s_rec_log = now_ms;
-                        printf("[GFE-RECENCY-BLOCK] %s recent_move=%.3f need=%.3f (%.2f*ATR=%.2f) -- move fading\n",
-                               long_signal ? "LONG" : "SHORT",
-                               recent_move, recency_gate, recency_mult, m_atr);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GFE-RECENCY-BLOCK] %s recent_move=%.3f need=%.3f (%.2f*ATR=%.2f) -- move fading\n",                                long_signal ? "LONG" : "SHORT",                                recent_move, recency_gate, recency_mult, m_atr);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     return;
                 }
@@ -1068,10 +1107,12 @@ struct GoldFlowEngine {
                     static int64_t s_rsi_log = 0;
                     if (now_ms - s_rsi_log > 8000) {
                         s_rsi_log = now_ms;
-                        printf("[GFE-RSI-BLOCK] %s rsi=%.1f trend=%+d -- overextended, no entry\n",
-                               long_signal ? "LONG" : "SHORT",
-                               m_bar_rsi14, m_bar_trend);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GFE-RSI-BLOCK] %s rsi=%.1f trend=%+d -- overextended, no entry\n",                                long_signal ? "LONG" : "SHORT",                                m_bar_rsi14, m_bar_trend);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                     return;
                 }
@@ -1109,8 +1150,12 @@ struct GoldFlowEngine {
         m_fast_window.clear(); m_slow_window.clear();
         m_fast_long_count = m_fast_short_count = 0;
         m_slow_long_count = m_slow_short_count = 0;
-        printf("[GFE-PERSIST-RESET] Direction windows cleared for reversal\n");
-        fflush(stdout);
+        {
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg), "[GFE-PERSIST-RESET] Direction windows cleared for reversal\n");
+            std::cout << _msg;
+            std::cout.flush();
+        }
     }
 
     // ?? Reload API -- called from main.cpp ?????????????????????????????????????
@@ -1132,9 +1177,12 @@ struct GoldFlowEngine {
     // cancel_reload(): disarm without firing -- called when conditions fail
     void cancel_reload() noexcept {
         if (m_reload_pending) {
-            printf("[GFE-RELOAD] CANCELLED price_at_arm=%.2f tick_count=%d\n",
-                   m_reload_price_at_arm, m_reload_tick_count);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE-RELOAD] CANCELLED price_at_arm=%.2f tick_count=%d\n",                    m_reload_price_at_arm, m_reload_tick_count);
+                std::cout << _msg;
+                std::cout.flush();
+            }
         }
         m_reload_pending   = false;
         m_reload_tick_count = 0;
@@ -1171,9 +1219,12 @@ struct GoldFlowEngine {
 
         // ?? Timeout gate ??????????????????????????????????????????????????????
         if (now_ms - m_reload_armed_ms > RELOAD_TIMEOUT_MS) {
-            printf("[GFE-RELOAD] TIMEOUT after %dms -- cancelled\n",
-                   static_cast<int>(now_ms - m_reload_armed_ms));
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE-RELOAD] TIMEOUT after %dms -- cancelled\n",                    static_cast<int>(now_ms - m_reload_armed_ms));
+                std::cout << _msg;
+                std::cout.flush();
+            }
             cancel_reload();
             return false;
         }
@@ -1183,9 +1234,12 @@ struct GoldFlowEngine {
             ? (m_reload_price_at_arm - mid)
             : (mid - m_reload_price_at_arm);
         if (retrace >= m_reload_atr_at_arm * RELOAD_CANCEL_RETRACE) {
-            printf("[GFE-RELOAD] RETRACE_CANCEL retrace=%.2f >= %.2f?ATR(%.2f)\n",
-                   retrace, RELOAD_CANCEL_RETRACE, m_reload_atr_at_arm);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE-RELOAD] RETRACE_CANCEL retrace=%.2f >= %.2f?ATR(%.2f)\n",                    retrace, RELOAD_CANCEL_RETRACE, m_reload_atr_at_arm);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             cancel_reload();
             return false;
         }
@@ -1193,9 +1247,12 @@ struct GoldFlowEngine {
         // ?? Drift gate ????????????????????????????????????????????????????????
         const bool drift_aligned = m_reload_is_long ? (ewm_drift >= 0.0) : (ewm_drift <= 0.0);
         if (!drift_aligned) {
-            printf("[GFE-RELOAD] DRIFT_CANCEL drift=%.3f not aligned with %s\n",
-                   ewm_drift, m_reload_is_long ? "LONG" : "SHORT");
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE-RELOAD] DRIFT_CANCEL drift=%.3f not aligned with %s\n",                    ewm_drift, m_reload_is_long ? "LONG" : "SHORT");
+                std::cout << _msg;
+                std::cout.flush();
+            }
             cancel_reload();
             return false;
         }
@@ -1209,9 +1266,12 @@ struct GoldFlowEngine {
 
         // ?? Spread gate ???????????????????????????????????????????????????????
         if (spread > m_spread_at_entry * 1.5) {
-            printf("[GFE-RELOAD] SPREAD_CANCEL spread=%.3f > 1.5?entry_spread=%.3f\n",
-                   spread, m_spread_at_entry);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE-RELOAD] SPREAD_CANCEL spread=%.3f > 1.5?entry_spread=%.3f\n",                    spread, m_spread_at_entry);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             cancel_reload();
             return false;
         }
@@ -1220,10 +1280,12 @@ struct GoldFlowEngine {
         if (m_atr <= 0.0) { cancel_reload(); return false; }
 
         // ?? ALL GATES PASSED ??????????????????????????????????????????????????
-        printf("[GFE-RELOAD] SIGNAL %s @ %.2f progress=%.2fpts ticks=%d drift=%.3f atr=%.2f\n",
-               m_reload_is_long ? "LONG" : "SHORT",
-               mid, progress, m_reload_tick_count, ewm_drift, m_atr);
-        fflush(stdout);
+        {
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg), "[GFE-RELOAD] SIGNAL %s @ %.2f progress=%.2fpts ticks=%d drift=%.3f atr=%.2f\n",                m_reload_is_long ? "LONG" : "SHORT",                mid, progress, m_reload_tick_count, ewm_drift, m_atr);
+            std::cout << _msg;
+            std::cout.flush();
+        }
 
         m_reload_pending    = false;
         m_reload_tick_count = 0;
@@ -1332,7 +1394,12 @@ struct GoldFlowEngine {
         // is real and useful. 3.0 floor was discarding valid ATR every save cycle,
         // meaning next startup always fell back to VIX seed instead of real recent value.
         if (m_atr < 1.5) {
-            printf("[GFE] ATR save skipped (atr=%.4f < 1.5 -- too small to be useful)\n", m_atr);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE] ATR save skipped (atr=%.4f < 1.5 -- too small to be useful)\n", m_atr);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             return;
         }
         FILE* f = fopen(path.c_str(), "w");
@@ -1358,8 +1425,12 @@ struct GoldFlowEngine {
         fclose(f);
 
         if (parsed < 3 || warmed != 1 || atr <= 0.0) {
-            printf("[GFE] ATR state rejected (bad format or zero atr -- parsed=%d atr=%.4f)\n",
-                   parsed, atr);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE] ATR state rejected (bad format or zero atr -- parsed=%d atr=%.4f)\n",                    parsed, atr);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             return;
         }
 
@@ -1370,8 +1441,12 @@ struct GoldFlowEngine {
 
         // Reject if saved_ts is 0, negative, or in the future -- corrupted file
         if (saved_ts <= 0 || saved_ts > now_s) {
-            printf("[GFE] ATR state rejected (saved_ts=%lld invalid -- corrupted file, deleting)\n",
-                   (long long)saved_ts);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE] ATR state rejected (saved_ts=%lld invalid -- corrupted file, deleting)\n",                    (long long)saved_ts);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             remove(path.c_str());  // delete so it doesn't keep loading
             return;
         }
@@ -1380,8 +1455,12 @@ struct GoldFlowEngine {
         // 4h was rejecting overnight saves (NY close 22:00 -> London open 07:00 = 9h).
         // 12h allows a full overnight gap while still rejecting weekend-stale files.
         if (age_s > 12 * 3600) {
-            printf("[GFE] ATR state rejected (age=%lldmin > 720min -- too stale, deleting)\n",
-                   (long long)(age_s / 60));
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE] ATR state rejected (age=%lldmin > 720min -- too stale, deleting)\n",                    (long long)(age_s / 60));
+                std::cout << _msg;
+                std::cout.flush();
+            }
             remove(path.c_str());
             return;
         }
@@ -1390,7 +1469,12 @@ struct GoldFlowEngine {
         // valid -- the old 5.0 threshold rejected these and forced a cold seed (which then
         // used vix=0 -> 10pt fallback, or worse got pinned at 5.0 by GFE_ATR_MIN floor).
         if (atr < 2.0) {
-            printf("[GFE] ATR state rejected (atr=%.4f < 2.0 -- dead session or stale value)\n", atr);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE] ATR state rejected (atr=%.4f < 2.0 -- dead session or stale value)\n", atr);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             return;
         }
         // Valid -- restore
@@ -1400,8 +1484,12 @@ struct GoldFlowEngine {
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
         m_last_mid_atr     = last_mid;
         m_atr_loaded_      = true;  // seed() will not overwrite this
-        printf("[GFE] ATR state loaded: atr=%.4f age=%lldmin\n",
-               m_atr, (long long)(age_s / 60));
+        {
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg), "[GFE] ATR state loaded: atr=%.4f age=%lldmin\n",                m_atr, (long long)(age_s / 60));
+            std::cout << _msg;
+            std::cout.flush();
+        }
     }
 
     // seed() -- pre-warm ATR and direction windows from a single price on reconnect.
@@ -1430,8 +1518,12 @@ struct GoldFlowEngine {
         // If ATR was successfully loaded from disk, don't overwrite it with a generic
         // VIX-based seed. The loaded value is actual recent market ATR -- far more accurate.
         if (m_atr_loaded_) {
-            printf("[GFE-SEED] Skipping -- ATR already loaded from disk (atr=%.4f)\n", m_atr);
-            fflush(stdout);
+            {
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[GFE-SEED] Skipping -- ATR already loaded from disk (atr=%.4f)\n", m_atr);
+                std::cout << _msg;
+                std::cout.flush();
+            }
             return;
         }
         double seed_range;
@@ -1440,10 +1532,12 @@ struct GoldFlowEngine {
         else if (vix_level <  20.0) seed_range =  8.0;  // normal
         else if (vix_level <  25.0) seed_range = 12.0;  // elevated
         else                        seed_range = 18.0;  // high vol -- VIX 25+
-        printf("[GFE-SEED] mid=%.2f vix=%.1f seed_atr=%.1f (SL will be ~%.1fpts)%s\n",
-               mid, vix_level, seed_range, seed_range,
-               vix_level <= 0.0 ? " [VIX-UNKNOWN: using default]" : "");
-        fflush(stdout);
+        {
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg), "[GFE-SEED] mid=%.2f vix=%.1f seed_atr=%.1f (SL will be ~%.1fpts)%s\n",                mid, vix_level, seed_range, seed_range,                vix_level <= 0.0 ? " [VIX-UNKNOWN: using default]" : "");
+            std::cout << _msg;
+            std::cout.flush();
+        }
         m_atr_ewm          = seed_range;
         m_atr_warmup_ticks = GFE_ATR_PERIOD;
         m_atr              = seed_range;
@@ -1792,19 +1886,21 @@ private:
                     // Check if price has escaped far enough to lift block early
                     const double dist_from_exit = std::fabs(mid - m_last_profitable_exit_price);
                     if (dist_from_exit < OPP_DIR_ESCAPE_PTS) {
-                        printf("[GFE-OPP-BLOCK] Opposite-direction blocked: "
-                               "last_exit=%s@%.2f %.1fs ago price_dist=%.2fpts < %.1fpts escape\n",
-                               m_last_profitable_exit_long ? "LONG" : "SHORT",
-                               m_last_profitable_exit_price,
-                               ms_since_exit / 1000.0,
-                               dist_from_exit,
-                               OPP_DIR_ESCAPE_PTS);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GFE-OPP-BLOCK] Opposite-direction blocked: "                                "last_exit=%s@%.2f %.1fs ago price_dist=%.2fpts < %.1fpts escape\n",                                m_last_profitable_exit_long ? "LONG" : "SHORT",                                m_last_profitable_exit_price,                                ms_since_exit / 1000.0,                                dist_from_exit,                                OPP_DIR_ESCAPE_PTS);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                         return;
                     }
                     // Price escaped -- log early lift and allow entry
-                    printf("[GFE-OPP-BLOCK] Block lifted early: dist=%.2fpts >= %.1fpts escape "
-                           "after %.1fs\n",
-                           dist_from_exit, OPP_DIR_ESCAPE_PTS, ms_since_exit / 1000.0);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-OPP-BLOCK] Block lifted early: dist=%.2fpts >= %.1fpts escape "                            "after %.1fs\n",                            dist_from_exit, OPP_DIR_ESCAPE_PTS, ms_since_exit / 1000.0);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
         }
@@ -1895,10 +1991,12 @@ private:
                 const double hard_sl_px = pos.is_long
                     ? (pos.entry - GFE_HARD_STOP_PTS)
                     : (pos.entry + GFE_HARD_STOP_PTS);
-                printf("[GOLD-FLOW] HARD-STOP triggered %s adverse=%.2f >= %.1f pts hard_sl=%.2f qty=%.4f entry_ts=%lld\n",
-                       pos.is_long ? "LONG" : "SHORT",
-                       adverse, GFE_HARD_STOP_PTS, hard_sl_px, pos.size, (long long)pos.entry_ts);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GOLD-FLOW] HARD-STOP triggered %s adverse=%.2f >= %.1f pts hard_sl=%.2f qty=%.4f entry_ts=%lld\n",                        pos.is_long ? "LONG" : "SHORT",                        adverse, GFE_HARD_STOP_PTS, hard_sl_px, pos.size, (long long)pos.entry_ts);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 on_hard_stop("XAUUSD", pos.is_long, pos.size, hard_sl_px, pos.entry_ts);
             }
         }
@@ -1928,10 +2026,12 @@ private:
             if (adverse > gap_threshold && pos.mfe < GFE_GAP_MFE_EXCUSE) {
                 const double loss_pts = adverse;
                 const double loss_usd = loss_pts * pos.size * 100.0;
-                printf("[GOLD-FLOW] GAP-CLOSE %s adverse=%.2f > threshold=%.2f (intended_sl=%.2f mfe=%.2f) loss_usd=%.2f -- force close\n",
-                       pos.is_long ? "LONG" : "SHORT",
-                       adverse, gap_threshold, intended_sl_dist, pos.mfe, loss_usd);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GOLD-FLOW] GAP-CLOSE %s adverse=%.2f > threshold=%.2f (intended_sl=%.2f mfe=%.2f) loss_usd=%.2f -- force close\n",                        pos.is_long ? "LONG" : "SHORT",                        adverse, gap_threshold, intended_sl_dist, pos.mfe, loss_usd);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 const double exit_px = pos.is_long ? bid : ask;
                 close_position(exit_px, "GAP_CLOSE", now_ms, on_close);
                 return;
@@ -1965,10 +2065,12 @@ private:
             const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
             const double  imm_rev_thresh = std::max(1.5, m_atr * 0.20);
             if (held_s <= 30 && adverse > imm_rev_thresh && pos.mfe < 0.30) {
-                printf("[GOLD-FLOW] IMM-REVERSAL %s adverse=%.2f > %.2f in %llds, mfe=%.2f atr=%.2f -- wrong thesis, bail\n",
-                       pos.is_long ? "LONG" : "SHORT",
-                       adverse, imm_rev_thresh, (long long)held_s, pos.mfe, m_atr);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GOLD-FLOW] IMM-REVERSAL %s adverse=%.2f > %.2f in %llds, mfe=%.2f atr=%.2f -- wrong thesis, bail\n",                        pos.is_long ? "LONG" : "SHORT",                        adverse, imm_rev_thresh, (long long)held_s, pos.mfe, m_atr);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 const double exit_px = pos.is_long ? bid : ask;
                 close_position(exit_px, "IMM_REVERSAL", now_ms, on_close);
                 return;
@@ -2001,10 +2103,12 @@ private:
                 && (pos.mfe < 0.01)          // never moved our way
                 && !m_expansion_mode;        // expansion crashes need room
             if (adv_early) {
-                printf("[GOLD-FLOW] ADVERSE-EARLY %s adverse=%.3f>%.3f held=%llds spread_entry=%.3f\n",
-                       pos.is_long ? "LONG" : "SHORT",
-                       adverse, adv_gate, (long long)held_s, m_spread_at_entry);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GOLD-FLOW] ADVERSE-EARLY %s adverse=%.3f>%.3f held=%llds spread_entry=%.3f\n",                        pos.is_long ? "LONG" : "SHORT",                        adverse, adv_gate, (long long)held_s, m_spread_at_entry);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 const double exit_px = pos.is_long ? bid : ask;
                 close_position(exit_px, "ADVERSE_EARLY", now_ms, on_close);
                 return;
@@ -2062,11 +2166,12 @@ private:
                 static int64_t s_vel_ts_log = 0;
                 if (now_ms - s_vel_ts_log > 10000) {
                     s_vel_ts_log = now_ms;
-                    printf("[GFE-VEL-STEP1] TIME_STOP suppressed %s held=%llds adverse=%.2f mfe=%.2f vol_ratio=%.2f (threshold=%.1f)\n",
-                           pos.is_long ? "LONG" : "SHORT",
-                           (long long)held_s, adverse, pos.mfe, m_vol_ratio,
-                           VEL_TS_SUPPRESS_VOL_RATIO);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-VEL-STEP1] TIME_STOP suppressed %s held=%llds adverse=%.2f mfe=%.2f vol_ratio=%.2f (threshold=%.1f)\n",                            pos.is_long ? "LONG" : "SHORT",                            (long long)held_s, adverse, pos.mfe, m_vol_ratio,                            VEL_TS_SUPPRESS_VOL_RATIO);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
 
@@ -2075,10 +2180,12 @@ private:
                 && adverse > time_stop_adverse
                 && pos.mfe < time_stop_adverse  // FIXED 2026-04-05: was *0.5 -- fired even when MFE proved direction correct
                 && !velocity_time_suppress) {
-                printf("[GOLD-FLOW] TIME-STOP %s adverse=%.2f>%.2f held=%llds mfe=%.2f atr=%.2f -- thesis dead\n",
-                       pos.is_long ? "LONG" : "SHORT",
-                       adverse, time_stop_adverse, (long long)held_s, pos.mfe, pos.atr_at_entry);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GOLD-FLOW] TIME-STOP %s adverse=%.2f>%.2f held=%llds mfe=%.2f atr=%.2f -- thesis dead\n",                        pos.is_long ? "LONG" : "SHORT",                        adverse, time_stop_adverse, (long long)held_s, pos.mfe, pos.atr_at_entry);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
                 const double exit_px = pos.is_long ? bid : ask;
                 close_position(exit_px, "TIME_STOP", now_ms, on_close);
                 return;
@@ -2110,23 +2217,24 @@ private:
                 // DIAGNOSTIC: log every 50,000 evaluations to understand values
                 static int64_t s_bleed_eval_count = 0;
                 if ((++s_bleed_eval_count % 50000) == 0) {
-                    printf("[GFE-BLEED-DIAG] evals=%lld held=%llds(need>300) "
-                           "progress=%.2f(need<%.2f) partial1=%d partial2=%d\n",
-                           (long long)s_bleed_eval_count,
-                           (long long)held_s_bg, progress_bg, min_progress,
-                           (int)pos.partial_closed, (int)pos.partial_closed_2);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-BLEED-DIAG] evals=%lld held=%llds(need>300) "                            "progress=%.2f(need<%.2f) partial1=%d partial2=%d\n",                            (long long)s_bleed_eval_count,                            (long long)held_s_bg, progress_bg, min_progress,                            (int)pos.partial_closed, (int)pos.partial_closed_2);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
 
                 if (held_s_bg > BLEED_SECS && progress_bg < min_progress) {
                     const double flip_atr = pos.atr_at_entry;
                     const double orig_entry = pos.entry;
                     const bool   orig_long  = pos.is_long;
-                    printf("[GOLD-FLOW] BLEED-EXIT %s held=%llds progress=%.2f<%.2f -- stalled, %s\n",
-                           pos.is_long ? "LONG" : "SHORT",
-                           (long long)held_s_bg, progress_bg, min_progress,
-                           on_bleed_flip ? "flipping direction" : "exiting flat");
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GOLD-FLOW] BLEED-EXIT %s held=%llds progress=%.2f<%.2f -- stalled, %s\n",                            pos.is_long ? "LONG" : "SHORT",                            (long long)held_s_bg, progress_bg, min_progress,                            on_bleed_flip ? "flipping direction" : "exiting flat");
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     const double exit_px = pos.is_long ? bid : ask;
                     close_position(exit_px, "BLEED_EXIT", now_ms, on_close);
                     // Fire flip AFTER close (position is now flat)
@@ -2245,10 +2353,12 @@ private:
                 m_reload_atr_at_arm    = atr;
                 m_reload_armed_ms      = now_ms;
                 m_reload_tick_count    = 0;
-                printf("[GFE-RELOAD] ARMED %s @ %.2f atr=%.2f -- waiting confirmation\n",
-                       pos.is_long ? "LONG" : "SHORT",
-                       m_reload_price_at_arm, atr);
-                fflush(stdout);
+                {
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg), "[GFE-RELOAD] ARMED %s @ %.2f atr=%.2f -- waiting confirmation\n",                        pos.is_long ? "LONG" : "SHORT",                        m_reload_price_at_arm, atr);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
             }
         };
 
@@ -2313,11 +2423,12 @@ private:
                 static int64_t s_vel_step1_log = 0;
                 if (now_ms - s_vel_step1_log > 5000) {
                     s_vel_step1_log = now_ms;
-                    printf("[GFE-VEL-STEP1] WAITING $%.2f / $%.2f (%.0f%%) vol_ratio=%.2f mfe=%.2fpts trail_arm_at=%.2fpts\n",
-                           open_pnl_usd_full, actual_step1,
-                           open_pnl_usd_full / actual_step1 * 100.0,
-                           m_vol_ratio, pos.mfe, pos.atr_at_entry * 3.0);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-VEL-STEP1] WAITING $%.2f / $%.2f (%.0f%%) vol_ratio=%.2f mfe=%.2fpts trail_arm_at=%.2fpts\n",                            open_pnl_usd_full, actual_step1,                            open_pnl_usd_full / actual_step1 * 100.0,                            m_vol_ratio, pos.mfe, pos.atr_at_entry * 3.0);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
         }
@@ -2366,10 +2477,12 @@ private:
                         static int64_t s_vel_prearm_log = 0;
                         if (now_ms - s_vel_prearm_log > 5000) {
                             s_vel_prearm_log = now_ms;
-                            printf("[VEL-TRAIL-SHADOW] %s PRE-ARM mfe=%.2f need=%.2f(3xATR) vol_ratio=%.2f expansion=%d -- holding normal SL\n",
-                                   pos.is_long ? "LONG" : "SHORT",
-                                   pos.mfe, atr_live * 3.0, m_vol_ratio, (int)m_expansion_mode);
-                            fflush(stdout);
+                            {
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg), "[VEL-TRAIL-SHADOW] %s PRE-ARM mfe=%.2f need=%.2f(3xATR) vol_ratio=%.2f expansion=%d -- holding normal SL\n",                                    pos.is_long ? "LONG" : "SHORT",                                    pos.mfe, atr_live * 3.0, m_vol_ratio, (int)m_expansion_mode);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
                         }
                     }
                     goto skip_velocity_trail;
@@ -2379,14 +2492,19 @@ private:
                                                    1.0;     // very extended move (6x ATR): tighten
                 // SHADOW: emit verification log every tick velocity trail is active
                 if (velocity_shadow_mode) {
-                    printf("[VEL-TRAIL-SHADOW] %s ARMED mfe=%.1f move=%.1f atr=%.1f trail_mult=%.1f vol_ratio=%.2f sl_before=%.2f\n",
-                           pos.is_long ? "LONG" : "SHORT",
-                           pos.mfe, move, atr_live, trail_mult, m_vol_ratio, pos.sl);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[VEL-TRAIL-SHADOW] %s ARMED mfe=%.1f move=%.1f atr=%.1f trail_mult=%.1f vol_ratio=%.2f sl_before=%.2f\n",                            pos.is_long ? "LONG" : "SHORT",                            pos.mfe, move, atr_live, trail_mult, m_vol_ratio, pos.sl);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 } else {
-                    printf("[GFE-VEL-TRAIL] %s mfe=%.1f atr=%.1f trail_mult=%.1f vol_ratio=%.1f\n",
-                           pos.is_long ? "LONG" : "SHORT", pos.mfe, atr_live, trail_mult, m_vol_ratio);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-VEL-TRAIL] %s mfe=%.1f atr=%.1f trail_mult=%.1f vol_ratio=%.1f\n",                            pos.is_long ? "LONG" : "SHORT", pos.mfe, atr_live, trail_mult, m_vol_ratio);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             } else {
                 // NORMAL TRAIL: MFE-proportional trail distance
@@ -2599,25 +2717,19 @@ private:
                 pos.addon_fired = true;  // tombstone -- fires exactly once
 
                 if (addon_shadow_mode) {
-                    printf("[GFE-ADDON-SHADOW] %s GATES PASSED trail_stage=%d expansion=%d "
-                           "vol_ratio=%.2f drift=%.2f move=%.1f(%.1fxATR) spread=%.2f "
-                           "base_sl=%.2f -- would fire add-on entry @ %.2f size=%.4f*0.5\n",
-                           pos.is_long ? "LONG" : "SHORT",
-                           pos.trail_stage, (int)m_expansion_mode,
-                           m_vol_ratio, ewm_drift, move, (atr > 0 ? move / atr : 0),
-                           spread, pos.sl,
-                           pos.is_long ? ask : bid,
-                           pos.full_size);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-ADDON-SHADOW] %s GATES PASSED trail_stage=%d expansion=%d "                            "vol_ratio=%.2f drift=%.2f move=%.1f(%.1fxATR) spread=%.2f "                            "base_sl=%.2f -- would fire add-on entry @ %.2f size=%.4f*0.5\n",                            pos.is_long ? "LONG" : "SHORT",                            pos.trail_stage, (int)m_expansion_mode,                            m_vol_ratio, ewm_drift, move, (atr > 0 ? move / atr : 0),                            spread, pos.sl,                            pos.is_long ? ask : bid,                            pos.full_size);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 } else if (on_addon) {
-                    printf("[GFE-ADDON] %s FIRING add-on trail_stage=%d vol_ratio=%.2f "
-                           "drift=%.2f move=%.1f base_sl=%.2f entry=%.2f size=%.4f*0.5\n",
-                           pos.is_long ? "LONG" : "SHORT",
-                           pos.trail_stage, m_vol_ratio, ewm_drift, move,
-                           pos.sl,
-                           pos.is_long ? ask : bid,
-                           pos.full_size);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-ADDON] %s FIRING add-on trail_stage=%d vol_ratio=%.2f "                            "drift=%.2f move=%.1f base_sl=%.2f entry=%.2f size=%.4f*0.5\n",                            pos.is_long ? "LONG" : "SHORT",                            pos.trail_stage, m_vol_ratio, ewm_drift, move,                            pos.sl,                            pos.is_long ? ask : bid,                            pos.full_size);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                     on_addon(pos.is_long, bid, ask, atr_live, pos.sl, pos.entry_ts);
                 }
             } else {
@@ -2625,14 +2737,12 @@ private:
                 static int64_t s_addon_fail_log = 0;
                 if (now_ms - s_addon_fail_log >= 30000 && m_expansion_mode) {
                     s_addon_fail_log = now_ms;
-                    printf("[GFE-ADDON-BLOCK] %s stage=%d(need>=2) expand=%d vol=%.2f(need>2.5) "
-                           "drift=%.2f(need>4) move=%.1f(need>=%.1f) spread=%.2f(lim=%.2f)\n",
-                           pos.is_long ? "LONG" : "SHORT",
-                           pos.trail_stage, (int)m_expansion_mode,
-                           m_vol_ratio, ewm_drift,
-                           move, atr * 4.0,
-                           spread, m_spread_at_entry * 2.0);
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GFE-ADDON-BLOCK] %s stage=%d(need>=2) expand=%d vol=%.2f(need>2.5) "                            "drift=%.2f(need>4) move=%.1f(need>=%.1f) spread=%.2f(lim=%.2f)\n",                            pos.is_long ? "LONG" : "SHORT",                            pos.trail_stage, (int)m_expansion_mode,                            m_vol_ratio, ewm_drift,                            move, atr * 4.0,                            spread, m_spread_at_entry * 2.0);
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
         }
@@ -2694,16 +2804,21 @@ private:
                     }
                     const int64_t suppress_held = (now_ms - m_sl_suppress_start_ms) / 1000;
                     if (suppress_held < 30) {
-                        printf("[GOLD-FLOW] SL-HOLD %s rsi=%.1f trend=%+d bb=%.2f held=%llds suppress=%llds -- bar context says hold\n",
-                               pos.is_long ? "LONG" : "SHORT",
-                               m_bar_rsi14, m_bar_trend, m_bar_bb_pct,
-                               (long long)held_s, (long long)suppress_held);
-                        fflush(stdout);
+                        {
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg), "[GOLD-FLOW] SL-HOLD %s rsi=%.1f trend=%+d bb=%.2f held=%llds suppress=%llds -- bar context says hold\n",                                pos.is_long ? "LONG" : "SHORT",                                m_bar_rsi14, m_bar_trend, m_bar_bb_pct,                                (long long)held_s, (long long)suppress_held);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                         return;  // suppress SL this tick
                     }
                     // Suppression expired -- fall through to SL exit
-                    printf("[GOLD-FLOW] SL-HOLD expired after 30s -- exiting\n");
-                    fflush(stdout);
+                    {
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg), "[GOLD-FLOW] SL-HOLD expired after 30s -- exiting\n");
+                        std::cout << _msg;
+                        std::cout.flush();
+                    }
                 }
             }
         }
