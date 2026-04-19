@@ -67,7 +67,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "OmegaTelemetryServer.hpp"
 #include "GoldEngineStack.hpp"    // Multi-engine gold stack (ported from ChimeraMetals)
 #include "LatencyEdgeEngines.hpp"
-#include "CrossAssetEngines.hpp" // Co-location speed advantage engines (LeadLag, SpreadDisloc, EventComp)
+#include "CrossAssetEngines.hpp" // 9 cross-asset engines: EsNqDiv, OilFade, BrentWti, FxCascade, CarryUnwind, ORB, VWAPRev, TrendPB, NBM (SilverTurtle removed at Batch 5V)
 #include "IndexFlowEngine.hpp"   // L2 flow + EWM drift engines for equity indices (IndexFlowEngine, IndexMacroCrashEngine)
 #include "CTraderDepthClient.hpp" // cTrader Open API v2 -- full order book depth feed
 #include "RealDomReceiver.hpp"   // OmegaDomStreamer cBot receiver -- real XAUUSD DOM sizes on port 8765

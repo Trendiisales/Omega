@@ -875,12 +875,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (g_ca_carry_unwind.has_open_position())
                 push_live_trade("USDJPY","CarryUnw", g_ca_carry_unwind.open_is_long(),
                     g_ca_carry_unwind.open_entry(), 0.0, 0.0, g_ca_carry_unwind.open_size(), (int64_t)std::time(nullptr));
-            // ?? TickScalpEngine -- independent scalper, shows in GUI like all others ?
-            if (g_tick_scalp.has_open_position())
-                push_live_trade("XAUUSD", "TickScalp",
-                    g_tick_scalp.pos_.is_long, g_tick_scalp.pos_.entry,
-                    g_tick_scalp.pos_.tp,     g_tick_scalp.pos_.sl,
-                    g_tick_scalp.pos_.size,   g_tick_scalp.pos_.entry_ts_ms / 1000);
+            // (TickScalpEngine push_live_trade block REMOVED at Batch 5V §1.3 2026-04-20.
+            //  See wiki tombstone wiki/entities/TickScalpEngine.md.)
         }
 
         // ── DOLLAR STOP: emergency per-trade runtime cut ──────────────────
@@ -1794,11 +1790,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const bool is_active_sym = (sym == "XAUUSD"  || sym == "USOIL.F"  ||
                                     sym == "US500.F" || sym == "USTEC.F"  ||
                                     sym == "NAS100"  || sym == "DJ30.F");
-        // XAGUSD hard-blocked: SilverTurtleTick real-tick backtest result:
-        // Sharpe=-16.23, MaxDD=$18,381, 0 positive months across 24 months.
+        // XAGUSD hard-blocked: real-tick backtest of the silver Turtle-style
+        // breakout strategy returned Sharpe=-16.23, MaxDD=$18,381, 0 positive
+        // months across 24 months on 42M XAGUSD ticks (Jan 2023-Jan 2025).
         // Root cause: 65% timeout rate, TP=$0.30 requires 49x the actual
         // avg 45-min move. Silver reverts too fast for Turtle architecture.
         // All 12 silver strategies were audited -- none viable. DROP silver.
+        // (Engine itself removed at Batch 5V 2026-04-20; see ISSUE-124.)
         if (!is_active_sym) return;
     }
 

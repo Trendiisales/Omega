@@ -285,7 +285,7 @@ if (Test-Path $LogFile) {
 Hdr "10. WHAT TO WATCH"
 $utcHour = [int]([System.TimeZoneInfo]::ConvertTimeToUtc((Get-Date))).Hour
 if ($utcHour -ge 5 -and $utcHour -lt 7) {
-    WARN "Session" "Pre-London (05-07 UTC) -- RSIReversal + MicroMomentum active, MacroCrash needs ATR>6"
+    WARN "Session" "Pre-London (05-07 UTC) -- RSIReversal active, MacroCrash needs ATR>6 (MicroMomentum removed at 5V section 1.2)"
 } elseif ($utcHour -ge 7 -and $utcHour -lt 9) {
     OK "Session" "LONDON OPEN (07-09 UTC) -- all engines active, best opportunity window"
 } elseif ($utcHour -ge 13 -and $utcHour -lt 17) {

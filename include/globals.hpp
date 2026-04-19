@@ -63,12 +63,9 @@ static omega::cross::NoiseBandMomentumEngine g_nbm_us30;  // DJ30.F  -- NY 13:30
 static omega::cross::NoiseBandMomentumEngine g_nbm_gold_london;  // XAUUSD  -- London 07:00-13:30 UTC
 static omega::cross::NoiseBandMomentumEngine g_nbm_oil_london;   // USOIL.F -- London 07:00-13:30 UTC
 
-// Engine 10: SilverTurtleTick -- DISABLED after real-tick backtest FAILURE.
-// Backtest on 42,306,203 real XAGUSD ticks (Jan 2023-Jan 2025):
-//   Sharpe=-16.23, MaxDD=$18,381, WR=31.8%, 0/24 positive months.
-// Root cause: 65% timeout rate, TP=$0.30 = 49x the actual avg 45-min move.
-// Instance retained for force_close safety only. No new entries ever.
-static omega::cross::SilverTurtleTickEngine g_silver_turtle;  // DISABLED
+// (Engine 10 SilverTurtleTick REMOVED at Batch 5V 2026-04-19. Class + instance
+//  both stripped. XAGUSD hard-blocked at on_tick.hpp routing layer. See
+//  wiki/entities/SilverTurtleTickEngine.md tombstone for full record.)
 
 // Engine 8: Trend Pullback -- EMA9/21/50 trend + pullback to EMA50 + bounce confirmation
 // Wired to: XAUUSD (gated -- no other gold position), GER40, USTEC.F, US500.F
@@ -86,11 +83,10 @@ static omega::cross::TrendPullbackEngine   g_trend_pb_sp;     // US500.F
 static omega::H1SwingEngine  g_h1_swing_gold;   // XAUUSD H1 EMA+ADX trend
 static omega::H4RegimeEngine g_h4_regime_gold;  // XAUUSD H4 Donchian breakout
 
-// TickScalpEngine: fully independent tick-pattern scalper.
-// Does NOT participate in gold_any_open. Does NOT block other engines.
-// Shadow mode ON. Max 0.01 lots. Sessions 1-5 only.
-#include "TickScalpEngine.hpp"
-static omega::TickScalpEngine g_tick_scalp;     // XAUUSD tick scalper (independent)
+// TickScalpEngine REMOVED at Batch 5V §1.3 (2026-04-20).
+// Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
+// See wiki tombstone wiki/entities/TickScalpEngine.md for historical record.
+// (cTrader cBot ctrader_cbot/TickScalper.cs preserved -- different artifact, separate scope.)
 
 // =============================================================================
 // IndexFlowEngine -- L2 flow + EWM drift engines for US equity indices.
@@ -195,11 +191,9 @@ static omega::RSIReversalEngine   g_rsi_reversal;
 #include "RSIExtremeTurnEngine.hpp"
 static omega::RSIExtremeTurnEngine g_rsi_extreme;  // RSI extreme + sustained turn engine
 
-// MicroMomentumEngine -- fast 4-8pt momentum capture
-// RSI slope + price displacement, both directions, all sessions
-// shadow_mode=true until validated
-#include "MicroMomentumEngine.hpp"
-static omega::MicroMomentumEngine g_micro_momentum;  // DISABLED: 4320 trades/2yr, -$3.8k. Momentum = negative EV per backtest.
+// MicroMomentumEngine REMOVED at Batch 5V §1.2 (2026-04-20).
+// Real-tick backtest result: 4320 trades / 2 years, -$3.8k -- momentum = negative EV.
+// See wiki tombstone wiki/entities/MicroMomentumEngine.md for historical record.
 // Reload instance: independent GoldFlowEngine for continuation entries.
 // Fires after g_gold_flow banks PARTIAL_1R and confirms price still moving.
 // Managed exactly like g_gold_flow but never arms its own reload (avoids cascade).

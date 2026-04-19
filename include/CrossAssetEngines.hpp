@@ -5,20 +5,26 @@
 // These engines exploit relationships BETWEEN instruments and SCHEDULED EVENTS.
 // All data they need is already flowing in the system -- no new feeds required.
 //
-// ENGINES:
-//   1. EsNqDivergenceEngine  -- ES/NQ diverge >threshold ? enter laggard
-//   2. OilEventFadeEngine    -- EIA inventory spike ? fade 50% of move
-//   3. BrentWtiSpreadEngine  -- Brent/WTI spread >$5 ? enter convergence
-//   4. FxCascadeEngine       -- EURUSD breaks ? arm GBPUSD + AUDUSD + NZDUSD
-//   5. CarryUnwindEngine     -- VIX spike + USDJPY falling ? short USDJPY
-//   6. OpeningRangeEngine    -- Time-anchored first-30-min range breakout
-//   7. VWAPReversionEngine   -- Price extends from daily VWAP ? enter on reversal tick
-//   8. TrendPullbackEngine   -- EMA-9/21/50 trend + pullback to slow EMA with bounce
+// ENGINES (9 co-resident under namespace omega::cross):
+//   1. EsNqDivergenceEngine    -- ES/NQ diverge >threshold -> enter laggard
+//   2. OilEventFadeEngine      -- EIA inventory spike -> fade 50% of move
+//   3. BrentWtiSpreadEngine    -- Brent/WTI spread >$5 -> enter convergence
+//   4. FxCascadeEngine         -- EURUSD breaks -> arm GBPUSD + AUDUSD + NZDUSD
+//   5. CarryUnwindEngine       -- VIX spike + USDJPY falling -> short USDJPY
+//   6. OpeningRangeEngine      -- Time-anchored first-30-min range breakout (5 instances)
+//   7. VWAPReversionEngine     -- Price extends from daily VWAP -> enter on reversal tick (4 instances)
+//   8. TrendPullbackEngine     -- EMA-9/21/50 trend + pullback to slow EMA with bounce (4 instances)
+//   9. NoiseBandMomentumEngine -- ATR-band breakout + session-open anchor (6 instances; gold_london live)
 //
-// COST ENFORCEMENT (ExecutionCostGuard):
-//   Every engine's on_tick() checks execution costs before firing any signal.
-//   Commission + spread + slippage must be covered by the expected TP move.
-//   No trade is allowed to execute if costs are not covered. See struct below.
+// (Engine 10 SilverTurtleTickEngine REMOVED at Batch 5V 2026-04-19 after real-tick
+//  backtest showed Sharpe=-16.23 on 42M XAGUSD ticks. See SilverTurtleTickEngine.md
+//  wiki tombstone for historical record.)
+//
+// COST ENFORCEMENT: engine-local on_tick() cost checks have been REMOVED across
+// the module. The canonical cost gate now lives in trade_lifecycle.hpp's
+// enter_directional() function (spread + slip + commission vs TP distance).
+// Each engine signals freely; the close-sink pipeline enforces cost viability
+// uniformly. See wiki/entities/trade_lifecycle.md for the canonical gate.
 //
 // Architecture: all engines are self-contained, no external deps beyond
 // OmegaTradeLedger. Called from on_tick() in main.cpp after existing dispatch.
@@ -2351,133 +2357,13 @@ private:
     }
 };
 
-
-// =============================================================================
-// ENGINE 10 -- SilverTurtleTickEngine (XAGUSD)
-// =============================================================================
-// Turtle N=20 on 300-tick bars. HTF EMA50/250 filter. XAGUSD-calibrated.
-//
-// AUDIT RESULT (12 strategies x 500 days):
-//   ONLY engine that passes Sharpe >= 2.0 with year-by-year stability.
-//   Sharpe=4.74  Y1=$1,725 S=5.61  Y2=$1,354 S=3.96  WR=43%  MaxDD=$128
-//   2yr total: $3,079 on 0.02 lots. Stable across normal/trending/choppy/volatile.
-//
-//   ALL other silver strategies REJECTED:
-//     Compression breakout: Sharpe -1.25  (existing engine -- correctly disabled)
-//     SessionMomentum: Sharpe -0.00       (no directional edge intraday)
-//     VWAP Stretch:    Sharpe 1.68        (below threshold)
-//     NBM COMEX:       Sharpe 1.73        (below threshold)
-//     COMEX ORB:       Sharpe 1.42        (Y2 only, inconsistent)
-//     Industrial timing: Sharpe 3.65 BUT only 192 trades / 2yr = statistically thin
-//
-// CALIBRATION vs gold TurtleTick (engine 16):
-//   N=20 (gold uses 40) -- silver is faster/thinner, shorter lookback needed
-//   SL=$0.10 (0.31% at $32) vs gold SL=$8.00 (0.18%) -- proportionally similar
-//   TP=$0.30 (3:1 RR) vs gold TP=$24.00 (3:1 RR) -- same RR geometry
-//   MAX_SPREAD=$0.15 -- silver spread $0.03-0.08 normal, $0.12+ = avoid
-//   Cooldown=900s -- identical to gold
-//
-// SESSION: ALL sessions (tick bars self-filter dead periods naturally)
-// REGIME: ALL regimes
-// LOTS: 0.02 default, enter_directional/compute_size handles real sizing
-// SL_TICKS equivalent: $0.10 / $0.01 per tick = 10 ticks
-// =============================================================================
-class SilverTurtleTickEngine {
-public:
-    static constexpr double MAX_SPREAD   = 0.15;
-    static constexpr double SL_DOLLARS   = 0.10;
-    static constexpr double TP_DOLLARS   = 0.30;
-    static constexpr int    COOLDOWN_SEC = 900;
-    static constexpr int    TICK_BAR_SZ  = 300;
-    static constexpr int    TURTLE_N     = 20;
-    static constexpr int    KEEP_BARS    = 64;
-    bool enabled = true;
-
-    using CloseCb = std::function<void(const omega::TradeRecord&)>;
-
-    CrossSignal on_tick(const std::string& sym, double bid, double ask,
-                        CloseCb on_close) noexcept {
-        if (!enabled || bid <= 0.0 || ask <= 0.0) return {};
-        const double mid    = (bid + ask) * 0.5;
-        const double spread = ask - bid;
-
-        if (pos_.active) {
-            pos_.manage(bid, ask, 2700, on_close);
-            return {};
-        }
-
-        if (spread > MAX_SPREAD) return {};
-
-        // EMA update
-        if (!ema_init_) { ema50_ = ema250_ = mid; ema_init_ = true; }
-        else { ema50_ += (2.0/51.0)*(mid-ema50_); ema250_ += (2.0/251.0)*(mid-ema250_); }
-        const int htf_dir = (ema50_ > ema250_) ? 1 : -1;
-
-        // Tick bar accumulation
-        if (!bar_init_) { bar_init_=true; bar_hi_=bar_lo_=mid; }
-        if (mid > bar_hi_) bar_hi_ = mid;
-        if (mid < bar_lo_) bar_lo_ = mid;
-        tick_count_++;
-
-        if (tick_count_ >= TICK_BAR_SZ) {
-            bars_hi_[bar_head_ % KEEP_BARS] = bar_hi_;
-            bars_lo_[bar_head_ % KEEP_BARS] = bar_lo_;
-            bar_head_++; if (n_bars_ < KEEP_BARS) n_bars_++;
-            bar_hi_ = bar_lo_ = mid; tick_count_ = 0;
-        }
-
-        if (n_bars_ < TURTLE_N + 2) return {};
-
-        const auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(
-                now - last_sig_).count() < COOLDOWN_SEC) return {};
-
-        // Donchian N-bar channel from completed bars only
-        double dhi = 0.0, dlo = 1e9;
-        const int nc = std::min(n_bars_, TURTLE_N);
-        for (int i = 0; i < nc; ++i) {
-            const int idx = (bar_head_ - 1 - i + KEEP_BARS*2) % KEEP_BARS;
-            if (bars_hi_[idx] > dhi) dhi = bars_hi_[idx];
-            if (bars_lo_[idx] < dlo) dlo = bars_lo_[idx];
-        }
-        if (dhi <= 0.0 || dlo >= 1e8) return {};
-
-        CrossSignal sig; sig.size=0.02; sig.symbol=sym.c_str(); sig.engine="SilverTurtleTick";
-
-        if (mid > dhi && htf_dir == 1) {
-            sig.valid=true; sig.is_long=true; sig.entry=ask;
-            sig.tp=ask+TP_DOLLARS; sig.sl=ask-SL_DOLLARS;
-            sig.reason="SILVTURT_LONG";
-            printf("[SILVTURT] LONG  dhi=%.4f entry=%.4f tp=%.4f sl=%.4f\n",dhi,ask,sig.tp,sig.sl);
-        } else if (mid < dlo && htf_dir == -1) {
-            sig.valid=true; sig.is_long=false; sig.entry=bid;
-            sig.tp=bid-TP_DOLLARS; sig.sl=bid+SL_DOLLARS;
-            sig.reason="SILVTURT_SHORT";
-            printf("[SILVTURT] SHORT dlo=%.4f entry=%.4f tp=%.4f sl=%.4f\n",dlo,bid,sig.tp,sig.sl);
-        }
-
-        if (sig.valid) { pos_.open(sig, spread); last_sig_ = now; }
-        return sig;
-    }
-
-    bool has_open_position() const  { return pos_.active; }
-    void cancel()   noexcept        { pos_.reset(); }
-    void rollback() noexcept        { pos_.reset(); }
-    void patch_size(double lot) noexcept { pos_.patch_size(lot); }
-    void force_close(double bid, double ask, CloseCb on_close) {
-        pos_.force_close(bid, ask, on_close);
-    }
-
-private:
-    CrossPosition pos_;
-    double bars_hi_[KEEP_BARS]={}, bars_lo_[KEEP_BARS]={};
-    int    bar_head_=0, n_bars_=0, tick_count_=0;
-    double bar_hi_=0, bar_lo_=0;
-    bool   bar_init_=false;
-    double ema50_=0, ema250_=0; bool ema_init_=false;
-    std::chrono::steady_clock::time_point last_sig_{
-        std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SEC+1)};
-};
+// -- SilverTurtleTickEngine REMOVED at Batch 5V (2026-04-19) --
+// Real-tick backtest on 42M XAGUSD ticks (Jan 2023 - Jan 2025): Sharpe=-16.23,
+// MaxDD=$18,381, 0/24 positive months. Root cause: 65% timeout rate; TP=$0.30
+// requires 49x the actual 45-min average XAGUSD move.
+// See wiki/entities/SilverTurtleTickEngine.md (tombstone) for full historical
+// record; wiki/issues.md ISSUE-124 for the header doc-drift closure that
+// bundled with this removal. XAGUSD remains hard-blocked at on_tick.hpp:1794.
 
 } // namespace cross
 } // namespace omega

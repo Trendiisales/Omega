@@ -249,13 +249,7 @@ static void quote_loop() {
                                p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe, (int)p.be_locked);
                         any_open = true;
                     }
-                    // MicroMomentum
-                    if (g_micro_momentum.has_open_position()) {
-                        const auto& p = g_micro_momentum.pos;
-                        printf("[OPEN-POS] MicroMomentum %s entry=%.2f sl=%.2f tp=%.2f mfe=%.2f step=%d\n",
-                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.tp, p.mfe, p.step);
-                        any_open = true;
-                    }
+                    // (MicroMomentum [OPEN-POS] block REMOVED at Batch 5V §1.2.)
                     // MacroCrash
                     if (g_macro_crash.has_open_position()) {
                         const auto& p = g_macro_crash.pos;

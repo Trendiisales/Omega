@@ -427,7 +427,8 @@ int main(int argc, char* argv[])
         // ── BAR STATE LOAD -- MUST run before ctrader start() ────────────────
         // Loads saved indicator state (EMA, ATR, RSI, BB) from prior session.
         // Sets m1_ready=true immediately so GoldFlow/GoldStack/RSIReversal/
-        // CandleFlow/MicroMomentum/RSIExtremeTurn are all unblocked from tick 1.
+        // CandleFlow/RSIExtremeTurn are all unblocked from tick 1.
+        // (MicroMomentum removed at Batch 5V §1.2.)
         // Without this every restart is a cold start -- bars never seed because
         // BlackBull blocks all trendbar API requests (bar_failed_reqs above).
         // save_indicators() is called on clean shutdown (signal handler below).
@@ -483,12 +484,7 @@ int main(int argc, char* argv[])
                     std::cout.flush();
                 }
 
-                // MicroMomentumEngine: seed bar ATR so m_rsi_seeded becomes true
-                if (seed_atr > 0.5 && seed_atr < 100.0) {
-                    g_micro_momentum.seed_bar_atr(seed_atr);
-                    std::cout << "[WARMUP-SEED] MicroMomentum bar_atr=" << seed_atr << "\n";
-                    std::cout.flush();
-                }
+                // (MicroMomentumEngine warmup-seed REMOVED at Batch 5V §1.2.)
 
                 // DomPersistEngine: seed ATR + warmup counters from disk
                 if (seed_atr > 0.5 && seed_atr < 100.0) {

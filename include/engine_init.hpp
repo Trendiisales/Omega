@@ -203,53 +203,9 @@ static void init_engines(const std::string& cfg_path)
            g_rsi_reversal.SL_ATR_MULT);
     fflush(stdout);
 
-    // MicroMomentumEngine startup config
-    // FIX 2026-04-07 v3: chop filters added -- RSI level gate + price move confirmation.
-    // Root cause of losses: RSI_DELTA_MIN=3 fired on every RSI wiggle in ranging markets.
-    // Chart showed RSI 48->68->50->62 producing entries every 20s all hitting SL.
-    // Two new gates in engine prevent this:
-    //   RSI_LEVEL_LONG/SHORT: RSI must be above 52 / below 48 -- dead zone around 50 = chop.
-    //   PRICE_MOVE_MIN: price must have moved 1.5pt in signal direction over the window.
-    //                   RSI moving without price following = Wilder smoothing noise = skip.
-    // RSI_DELTA_MIN raised 3->6. COOLDOWN raised 20->45s.
-    // SL_ATR_MULT raised 0.5->1.5, TP raised 4->6pt (prior 3s SL hit).
-    // MicroMomentum tuned to emulate observed winning pattern:
-    // Winners are SLOPE_EXIT trades: 8-17s hold, +$36-63 = 3-4pt moves at 0.01 lots.
-    // Losers are SL hits where prior SL_ATR_MULT=1.5 * ATR=8pt = 12pt SL -- far too wide.
-    // New design: tight SL to match the move size, lean on SLOPE_EXIT as primary exit.
-    //   SL_ATR_MULT=0.3 -> 0.3*8=2.4pt SL -- cuts losers before they compound
-    //   TP_PTS=3.0       -> matches observed winner move size
-    //   BE_TRIGGER=0.5   -> BE faster so winners never flip to losers
-    //   TRAIL_DIST=0.5   -> tight trail to lock small wins
-    //   COOLDOWN=15s     -> fast scalp engine, more opportunities
-    //   MAX_HOLD=45s     -> force exit if move stalls, don't overstay
-    g_micro_momentum.enabled           = false;  // DISABLED -- no edge confirmed in backtest
-    g_micro_momentum.shadow_mode       = true;
-    g_micro_momentum.ENTRY_DISP_PTS    = 0.0;
-    g_micro_momentum.RSI_DELTA_MIN     = 6.0;
-    g_micro_momentum.RSI_DELTA_WINDOW  = 10;
-    g_micro_momentum.BORDERLINE_DELTA  = 3.0;
-    g_micro_momentum.RSI_LEVEL_LONG    = 52.0;
-    g_micro_momentum.RSI_LEVEL_SHORT   = 48.0;
-    g_micro_momentum.PRICE_MOVE_MIN    = 1.5;
-    g_micro_momentum.L2_LONG_MIN       = 0.40;
-    g_micro_momentum.L2_SHORT_MAX      = 0.60;
-    g_micro_momentum.TP_PTS            = 3.0;   // matches observed 3-4pt winner moves
-    g_micro_momentum.SL_ATR_MULT       = 0.3;   // 0.3*ATR=2.4pt -- tight, cuts losers fast
-    g_micro_momentum.BE_TRIGGER_PTS    = 0.5;   // BE at +0.5pt -- protect early
-    g_micro_momentum.LOCK_TRIGGER_PTS  = 1.5;   // lock +0.5pt at +1.5pt
-    g_micro_momentum.LOCK_SL_PTS       = 0.5;   // locked SL 0.5pt from entry
-    g_micro_momentum.TRAIL_DIST_PTS    = 0.5;   // tight 0.5pt trail
-    g_micro_momentum.COOLDOWN_S        = 15;    // fast scalp -- 15s between trades
-    g_micro_momentum.MAX_HOLD_S        = 45;    // force exit at 45s if stalled
-    printf("[MICROMOM] MicroMomentumEngine configured "
-           "(shadow_mode=%s disp=%.1fpt rsi_delta_min=%.1f tp=%.1fpt cooldown=%ds)\n",
-           g_micro_momentum.shadow_mode ? "true" : "false",
-           g_micro_momentum.ENTRY_DISP_PTS,
-           g_micro_momentum.RSI_DELTA_MIN,
-           g_micro_momentum.TP_PTS,
-           g_micro_momentum.COOLDOWN_S);
-    fflush(stdout);
+    // (MicroMomentumEngine configure block REMOVED at Batch 5V §1.2 2026-04-20.
+    //  Real-tick backtest: 4320 trades / 2yr, -$3.8k. Momentum = negative EV.
+    //  See wiki tombstone wiki/entities/MicroMomentumEngine.md.)
 
     // [BUG-5 NOTE] MCE is shadow_mode=true by design -- it logs [MCE-SHADOW] but sends
     // no FIX orders. Entry/exit logic is fully functional via on_close callback wired above.

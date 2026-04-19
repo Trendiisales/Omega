@@ -222,7 +222,8 @@ static void on_tick_gold(
     // This prevents blind entries on 0.500 synthetic imbalance values.
     // gold_l2_gate REMOVED from gold_can_enter:
     // gold_l2_real (depth event freshness) was blocking ALL gold engines -- bracket,
-    // stack, MacroCrash, RSIReversal, MicroMomentum, HybridBracket, TrendPullback --
+    // stack, MacroCrash, RSIReversal, HybridBracket, TrendPullback --
+    // (MicroMomentum removed at Batch 5V §1.2.)
     // whenever a depth event was >N ms old. Those engines do not need live DOM.
     // GoldFlow has its own DOM gates: g_l2_watchdog_dead and g_feed_stale_xauusd.
     // gold_l2_real is still used inside GoldFlow for imbalance direction (correct).
@@ -2031,7 +2032,6 @@ static void on_tick_gold(
             && !g_trend_pb_gold.has_open_position()
             && !g_rsi_reversal.has_open_position()
             && !g_hybrid_gold.has_open_position()
-            && !g_micro_momentum.has_open_position()
             && !g_nbm_gold_london.has_open_position();
 
         if (rsi_ext_can_enter) {
@@ -2077,92 +2077,9 @@ static void on_tick_gold(
         }
     }
 
-    // ?? MicroMomentumEngine -- fast momentum capture ???????????????????
-    // RSI slope + price displacement, both directions, all sessions.
-    // No bar dependency, no regime gate. Catches moves AS THEY HAPPEN.
-    {
-        // Seed bar ATR every tick so SL is correctly sized from real volatility.
-        // Without this m_tick_atr cold-starts at spread (~2.2pt) and SL_ATR_MULT=1.5
-        // gives only 3.3pt -- gets hit in 3s on volatile tape.
-        // Bar ATR (true range) correctly reflects current session volatility.
-        if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
-            const double mm_bar_atr = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
-            if (mm_bar_atr > 0.5 && mm_bar_atr < 100.0)
-                g_micro_momentum.seed_bar_atr(mm_bar_atr);
-        }
-
-        // Position management always runs
-        if (g_micro_momentum.has_open_position()) {
-            g_micro_momentum.on_tick(bid, ask,
-                g_macro_ctx.session_slot, now_ms_g,
-                g_macro_ctx.gold_l2_imbalance,
-                g_macro_ctx.gold_slope,
-                g_macro_ctx.gold_vacuum_ask,
-                g_macro_ctx.gold_vacuum_bid,
-                g_macro_ctx.gold_wall_above,
-                g_macro_ctx.gold_wall_below,
-                g_macro_ctx.gold_l2_real,
-                bracket_on_close,
-                g_gold_stack.ewm_drift());  // drift: counter-trend block inside engine
-        }
-
-        // Entry gate: STANDALONE -- only blocked by its own open position,
-        // tradeable flag, and NY close noise. No other engine can block this.
-        // MicroMomentum is a fast 3pt scalp with its own spread/RSI/cooldown
-        // gates inside the engine. It runs independently alongside any other
-        // open position. Blocking it on other engines was wrong and is removed.
-        const bool mm_can_enter =
-            !g_micro_momentum.has_open_position()
-            && tradeable
-            && !in_ny_close_noise;
-
-        if (mm_can_enter) {
-            g_micro_momentum.on_tick(bid, ask,
-                g_macro_ctx.session_slot, now_ms_g,
-                g_macro_ctx.gold_l2_imbalance,
-                g_macro_ctx.gold_slope,
-                g_macro_ctx.gold_vacuum_ask,
-                g_macro_ctx.gold_vacuum_bid,
-                g_macro_ctx.gold_wall_above,
-                g_macro_ctx.gold_wall_below,
-                g_macro_ctx.gold_l2_real,
-                bracket_on_close,
-                g_gold_stack.ewm_drift());  // drift: counter-trend block inside engine
-
-            if (g_micro_momentum.has_open_position()) {
-                // Size: risk_per_trade_usd / (sl_dist * 100)
-                const double mm_sl_dist = std::fabs(
-                    g_micro_momentum.pos.entry - g_micro_momentum.pos.sl);
-                const double mm_lot = (mm_sl_dist > 0.0)
-                    ? std::max(0.01, std::min(g_cfg.max_lot_gold,
-                        g_cfg.risk_per_trade_usd / (mm_sl_dist * 100.0)))
-                    : 0.01;
-                g_micro_momentum.patch_size(mm_lot);
-
-                write_trade_open_log("XAUUSD", "MicroMomentum",
-                    g_micro_momentum.pos.is_long ? "LONG" : "SHORT",
-                    g_micro_momentum.pos.entry,
-                    g_micro_momentum.pos.tp,
-                    g_micro_momentum.pos.sl,
-                    g_micro_momentum.pos.size, ask - bid,
-                    "MOMENTUM", "MICRO_MOM");
-
-                g_telemetry.UpdateLastSignal("XAUUSD",
-                    g_micro_momentum.pos.is_long ? "LONG" : "SHORT",
-                    g_micro_momentum.pos.entry, "MICRO_MOM",
-                    "MicroMomentum", regime.c_str(), "MicroMomentum",
-                    g_micro_momentum.pos.tp, g_micro_momentum.pos.sl);
-
-                if (!g_micro_momentum.shadow_mode) {
-                    send_live_order("XAUUSD",
-                        g_micro_momentum.pos.is_long,
-                        g_micro_momentum.pos.size,
-                        g_micro_momentum.pos.entry);
-                    g_telemetry.UpdateLastEntryTs();
-                }
-            }
-        }
-    }
+    // (MicroMomentumEngine dispatch block REMOVED at Batch 5V §1.2 2026-04-20.
+    //  Real-tick backtest: 4320 trades / 2yr, -$3.8k. Momentum = negative EV.
+    //  See wiki tombstone wiki/entities/MicroMomentumEngine.md.)
 
     // When stair step 1 banks the first 33% and arms a reload, try_reload()
     // is called every tick until it fires, cancels, or times out (5s).
@@ -4600,19 +4517,9 @@ static void on_tick_gold(
         }
     }
 
-    // -- TickScalpEngine -- DISABLED 2026-04-16 --
-    // 6-day sweep (1.5M ticks): no edge across all 7776 configs.
-    // All patterns (P1 RSI+drift, P2 DOM, P3 velocity) negative.
-    // Re-enable only after a new strategy with proven backtest edge.
-    // g_tick_scalp.on_tick(...) call removed.
-    {
-        static int64_t s_tse_disabled_log = 0;
-        if (now_ms_g - s_tse_disabled_log > 300000) {
-            s_tse_disabled_log = now_ms_g;
-            std::cout << "[TSE-DISABLED] TickScalpEngine disabled 2026-04-16: no edge in 6-day sweep\n";
-            std::cout.flush();
-        }
-    }
+    // (TickScalpEngine [TSE-DISABLED] block REMOVED at Batch 5V §1.3 2026-04-20.
+    //  Engine itself REMOVED -- 6-day sweep / 1.5M ticks showed no edge.
+    //  See wiki tombstone wiki/entities/TickScalpEngine.md.)
 
     // -- CompressionBreakoutEngine -- sweep-confirmed 2026-04-16 -----------
     // 6-day / 1.5M tick sweep: cb=3 mult=1.5 bf=0.30 rr=1.5 SHORT-only

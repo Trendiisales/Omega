@@ -27,7 +27,8 @@ static bool session_tradeable() noexcept {
 
     // PRE-LONDON WINDOW -- 05:00-07:00 UTC
     // Previously a gap between Asia (ends 05:00) and primary (starts 07:00).
-    // RSIReversal and MicroMomentum trade this session -- clear moves visible.
+    // RSIReversal trades this session -- clear moves visible.
+    // (MicroMomentum removed at Batch 5V §1.2.)
     // Gold trades 24h -- there is no dead period, only thin spread.
     const bool in_pre_london = (h >= 5 && h < 7);
 

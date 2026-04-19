@@ -1,5 +1,8 @@
 // tse_p1_sweep.cpp — sweep P1 burst detection params against real tick data
 // Exact P1 logic from TickScalpEngine: N consecutive same-dir ticks + net move
+// (TickScalpEngine itself was removed at Batch 5V §1.3 2026-04-20; this sweep
+//  file is standalone and reproduces the P1 logic inline -- no dependency on
+//  the deleted TickScalpEngine.hpp. Preserved as historical sweep record.)
 // Build: clang++ -O3 -std=c++20 -o /tmp/tse_p1 /tmp/tse_p1_sweep.cpp
 // Run:   /tmp/tse_p1 ~/Downloads/l2_ticks_2026-04-16.csv
 

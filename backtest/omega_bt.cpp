@@ -7,7 +7,7 @@
 //   2. GoldFlowEngine    (GFE) -- L2 imbalance + drift persistence
 //   3. MacroCrashEngine  (MCE) -- high-ATR expansion moves
 //   4. RSIReversalEngine (RRE) -- RSI extreme reversal
-//   5. MicroMomentumEngine (MME) -- RSI delta momentum
+//   5. (MicroMomentumEngine MME -- REMOVED at 5V §1.2 2026-04-20)
 //   6. DomPersistEngine  (DPE) -- DOM persistence
 //   7. GoldHybridBracketEngine (HBE) -- structure breakout bracket
 //
@@ -54,7 +54,7 @@
 #include "../include/GoldFlowEngine.hpp"
 #include "../include/MacroCrashEngine.hpp"
 #include "../include/RSIReversalEngine.hpp"
-#include "../include/MicroMomentumEngine.hpp"
+// (MicroMomentumEngine.hpp removed at Batch 5V §1.2 2026-04-20.)
 #include "../include/DomPersistEngine.hpp"
 #include "../include/GoldHybridBracketEngine.hpp"
 #include "../include/PDHLReversionEngine.hpp"
@@ -406,15 +406,7 @@ struct RRERunner {
     }
 };
 
-struct MMERunner {
-    omega::MicroMomentumEngine eng;
-    MMERunner(){ eng.shadow_mode=false; }
-    void tick(const SharedInd& ind,double bid,double ask,int64_t ts){
-        auto cb=make_cb("MME");
-        eng.on_tick(bid,ask,ind.session_slot,ts,
-                    0.5,0.0,false,false,false,false,false,cb,ind.ewm_drift);
-    }
-};
+// (MMERunner REMOVED at Batch 5V §1.2 2026-04-20.)
 
 struct DPERunner {
     DomPersistEngine eng;
@@ -557,7 +549,7 @@ int main(int argc,char** argv){
     int64_t s0=0,s1=0;
     bool diag=false;
     // Engine enable flags
-    bool en_cfe=true,en_gfe=true,en_mce=true,en_rre=true,en_mme=true,en_dpe=true,en_hbe=true,en_pdhl=true;
+    bool en_cfe=true,en_gfe=true,en_mce=true,en_rre=true,en_dpe=true,en_hbe=true,en_pdhl=true; // (en_mme removed at 5V §1.2)
 
     for(int i=2;i<argc;++i){
         if(!strcmp(argv[i],"--start")&&i+1<argc) s0=parse_date(argv[++i]);
@@ -570,9 +562,9 @@ int main(int argc,char** argv){
             const char* e=argv[++i];
             en_cfe=!!strstr(e,"cfe");en_gfe=!!strstr(e,"gfe");
             en_mce=!!strstr(e,"mce");en_rre=!!strstr(e,"rre");
-            en_mme=!!strstr(e,"mme");en_dpe=!!strstr(e,"dpe");
+            /*en_mme removed at 5V §1.2*/ en_dpe=!!strstr(e,"dpe");
             en_hbe=!!strstr(e,"hbe");en_pdhl=!!strstr(e,"pdhl");
-            if(!!strstr(e,"all")){en_cfe=en_gfe=en_mce=en_rre=en_mme=en_dpe=en_hbe=en_pdhl=true;}
+            if(!!strstr(e,"all")){en_cfe=en_gfe=en_mce=en_rre=en_dpe=en_hbe=en_pdhl=true;}
         }
     }
 
@@ -586,9 +578,9 @@ int main(int argc,char** argv){
     // Warmup: skip first 5000 ticks worth of time for indicator warmup
     g_warmup_ts=ticks.size()>5000?ticks[5000].ts_ms:0;
 
-    printf("[OMEGA_BT] Engines: %s%s%s%s%s%s%s%s\n",
+    printf("[OMEGA_BT] Engines: %s%s%s%s%s%s%s\n",
            en_cfe?"CFE ":"",en_gfe?"GFE ":"",en_mce?"MCE ":"",
-           en_rre?"RRE ":"",en_mme?"MME ":"",en_dpe?"DPE ":"",en_hbe?"HBE ":"",
+           en_rre?"RRE ":"",en_dpe?"DPE ":"",en_hbe?"HBE ":"",
            en_pdhl?"PDHL ":"");
     printf("[OMEGA_BT] Running %zu ticks...\n",ticks.size());
 
@@ -604,7 +596,7 @@ int main(int argc,char** argv){
 
     // Instantiate engines
     CFERunner cfe; GFERunner gfe; MCERunner mce;
-    RRERunner rre; MMERunner mme; DPERunner dpe; HBERunner hbe;
+    RRERunner rre; DPERunner dpe; HBERunner hbe; // (MMERunner removed at 5V §1.2)
     PDHLRunner pdhl;
 
     SharedInd ind;
@@ -620,7 +612,7 @@ int main(int argc,char** argv){
         if(en_gfe) gfe.tick(ind,tk.bid,tk.ask,tk.ts_ms);
         if(en_mce) mce.tick(ind,tk.bid,tk.ask,tk.ts_ms);
         if(en_rre) rre.tick(ind,tk.bid,tk.ask,tk.ts_ms);
-        if(en_mme) mme.tick(ind,tk.bid,tk.ask,tk.ts_ms);
+        // (en_mme/mme.tick REMOVED at 5V §1.2)
         if(en_dpe) dpe.tick(ind,tk.bid,tk.ask,tk.ts_ms);
         if(en_hbe) hbe.tick(ind,tk.bid,tk.ask,tk.ts_ms);
         if(en_pdhl) pdhl.tick(ind,tk.bid,tk.ask,tk.ts_ms);
