@@ -1253,6 +1253,19 @@ static void init_engines(const std::string& cfg_path)
                     // Send live order
                     send_live_order("XAUUSD", is_long, g_gold_flow_addon.pos.size,
                                     is_long ? ask : bid);
+                    // OPEN-LOG FIX 2026-04-22: GoldFlowAddon emit (canonical arg9 = live macro regime).
+                    // Fires after force_entry succeeded and SL was overridden to base trail. Uses
+                    // g_macro_ctx.regime (live cross-asset macro state) for arg9 since the callback
+                    // has no local regime variable in scope. GoldFlow trails internally -- tp=0.0.
+                    write_trade_open_log("XAUUSD", "GoldFlowAddon",
+                        is_long ? "LONG" : "SHORT",
+                        is_long ? ask : bid,              // entry price (post-SL-override)
+                        0.0,                               // tp: addon trails, no fixed tp
+                        g_gold_flow_addon.pos.sl,
+                        g_gold_flow_addon.pos.size,
+                        ask - bid,
+                        g_macro_ctx.regime,                // arg9 canonical: live macro regime
+                        "VELOCITY_EXPANSION");
                 } else {
                     printf("[GFE-ADDON] force_entry failed (already has position?)\n");
                     fflush(stdout);
