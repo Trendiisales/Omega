@@ -2184,9 +2184,24 @@ static void on_tick_gold(
             // Asia SL floor (slot==6) is only applied when confirmed in Asia.
             const int reload_slot = (g_macro_ctx.session_slot >= 0)
                 ? g_macro_ctx.session_slot : 1;
+            // OPEN-LOG FIX 2026-04-22: GoldFlowReload transition detector (canonical post-dispatch).
+            // force_entry returns true if the engine opened the position. Mirror that
+            // via has_open_position() for canonical symmetry with MCE / PCE / PCE-prem.
+            // GoldFlow trails internally -- pass tp=0.0 (OpenPos has no tp field).
+            const bool reload_was_open_before_tick = g_gold_flow_reload.has_open_position();
             const bool entered = g_gold_flow_reload.force_entry(
                 reload_long, bid, ask, atr_for_reload, now_ms_g,
                 reload_slot);
+
+            if (!reload_was_open_before_tick && g_gold_flow_reload.has_open_position()) {
+                write_trade_open_log("XAUUSD", "GoldFlowReload",
+                    g_gold_flow_reload.pos.is_long ? "LONG" : "SHORT",
+                    g_gold_flow_reload.pos.entry,
+                    0.0,                                      // tp: GoldFlow trails, no fixed tp
+                    g_gold_flow_reload.pos.sl,
+                    g_gold_flow_reload.pos.size,
+                    ask - bid, regime, "GF_RELOAD");
+            }
 
             if (entered) {
                 if (g_cfg.mode == "LIVE") {
