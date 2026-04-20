@@ -2,29 +2,40 @@
 // ==============================================================================
 // OmegaFIX.hpp -- BlackBull cTrader FIX 4.4 constants and symbol tables
 //
-// ── DEPTH UPGRADE (2026-03-24) ──────────────────────────────────────────────
-// 264=5 (5-level depth) replaces 264=1 (top-of-book only).
-// Evidence for compatibility:
-//   ✓ BlackBull cTrader GUI shows live DoM with 4+ levels AND real size data
-//     (confirmed from BRENT screenshot: bid 5000/10000/85000/500 visible)
-//   ✓ cTrader FIX 4.4 spec supports 264=N for N levels on DMA accounts
-//   ✓ L2Book parser already handles up to 5 levels (bid_count<5 check present)
-//   ✓ 271 (MDEntrySize) parsing already in place
+// ── DEPTH UPGRADE (2026-04-20) ──────────────────────────────────────────────
+// 264=0 (FULL BOOK) replaces 264=1 (top-of-book).
+//
+// History of the depth parameter:
+//   2026-03-24  Attempted 264=5 (5-level). BlackBull rejected with 35=Y
+//               "INVALID_REQUEST: MarketDepth should be either 0 or 1".
+//               Code fell back to 264=1 (top-of-book), which returns a
+//               single level per side with MDEntrySize=0. L2 imbalance
+//               was pinned to 0.500 on all XAUUSD ticks. The team routed
+//               L2 via the OmegaDomStreamer cBot (ports 8765) to work
+//               around this, which itself proved unreliable (mostly
+//               symmetric synthesized sizes from the cTrader Algo SDK).
+//   2026-04-20  FIX probe confirmed 264=0 (full book) returns genuine
+//               multi-level L2 with real MDEntrySize values on XAUUSD
+//               (5 bids / 6 asks / imb5=0.8079 on first snapshot). The
+//               primary subscribe builder now sends 264=0 by default.
 //
 // FALLBACK SAFETY:
-//   If BlackBull rejects 264=5 (MarketDataRequestReject, 35=Y), the handler
-//   in dispatch_fix() sets g_md_depth_fallback=true and re-subscribes at 264=1.
-//   This prevents the ghost session loop. The fallback is permanent for the
-//   session -- if 264=5 is rejected, the session stays at 264=1 forever.
+//   If BlackBull rejects 264=0 for any symbol in the batch, the 35=Y
+//   handler in dispatch_fix() sets g_md_depth_fallback=true and re-
+//   subscribes at 264=1. The fallback is permanent for the session --
+//   once 264=0 is rejected the session stays at 264=1 until restart.
+//   The fallback flag is read at subscribe-build time by
+//   fix_build_md_subscribe_all() (see fix_builders.hpp).
 //
 // ORIGINAL CONSTRAINTS (still enforced where applicable):
 //   265 (MDUpdateType)  : MUST be 0 (full refresh only).
 //   267 (NoMDEntryTypes): MUST be 2 -- bid(0) + ask(1) only.
 //   269 (MDEntryType)   : 0=bid, 1=ask ONLY.
 //   263 (SubReqType)    : 1=subscribe, 2=unsubscribe ONLY.
+//   264 (MarketDepth)   : MUST be 0 or 1. Never 2..5, never 10.
 //
-// FIX message builders live in main.cpp under "// ── IMMUTABLE FIX SECTION ──"
-// Symbol IDs and tables live here.
+// FIX message builders live in fix_builders.hpp under
+// "// ── IMMUTABLE FIX SECTION ──". Symbol IDs and tables live here.
 // ==============================================================================
 #include <string>
 #include <vector>
@@ -57,9 +68,11 @@ static std::vector<ExtSymbolDef> g_ext_syms = {
 };
 
 // ── Depth capability flags ───────────────────────────────────────────────────
-// g_md_depth_ok: starts true (we request 264=5). Set false if broker rejects.
+// g_md_depth_ok: starts true (we request 264=0). Set false if broker rejects.
 // g_md_depth_fallback: set true by 35=Y handler -- triggers re-sub at 264=1.
 // Both are written only from the quote thread (dispatch_fix context).
+// fix_build_md_subscribe_all() reads g_md_depth_fallback at build time and
+// emits 264=1 instead of 264=0 when the flag is true (fallback path).
 static std::atomic<bool> g_md_depth_ok{true};
 static std::atomic<bool> g_md_depth_fallback{false};
 
@@ -87,14 +100,20 @@ static void build_id_map() {
 // =============================================================================
 // L2Book -- up to 5 levels per symbol
 // Fed from cTrader Open API ProtoOADepthEvent (real multi-level) when active,
-// falls back to FIX 264=1 single-level when cTrader feed is not connected.
+// falls back to FIX 264=0 full-book depth when cTrader feed is not connected.
+// On the fallback-of-fallback path (35=Y after 264=0 reject), FIX delivers
+// 264=1 single-level top-of-book; imbalance_level() degrades gracefully to
+// bid_count/ask_count in that case.
 // All methods degrade gracefully when size data is absent (no false blocks).
 //
 // ── MICROSTRUCTURE SIGNAL SUITE ─────────────────────────────────────────────
 // Stateless signals (only current snapshot needed):
 //   imbalance()          -- bid_vol / (bid+ask) vol, 0=ask-heavy, 1=bid-heavy
+//                          With 264=0 full book (primary), this is the
+//                          PRIMARY signal again -- real sizes available.
 //   imbalance_level()    -- bid_count / (bid+ask count): level-count imbalance.
-//                          PRIMARY signal for BlackBull (size_raw=0 always).
+//                          Primary signal when 264=1 fallback is active and
+//                          sizes are unreliable (legacy BlackBull behavior).
 //                          bid_count=3, ask_count=2 → 0.60 (mild bid pressure).
 //                          More levels active on a side = stronger conviction.
 //   ratio3()             -- bid/ask ratio top-3 levels: >1.5 strong bid
@@ -124,10 +143,12 @@ struct L2Book {
     // ── Imbalance 0..1 (volume-based) ───────────────────────────────────────
     // bid_vol / (bid_vol + ask_vol) across top `levels` levels.
     // 0.5 = balanced | >0.65 = bid-heavy | <0.35 = ask-heavy
-    // NOTE: BlackBull sends size_raw=0 for XAUUSD depth quotes. The parse path
-    // substitutes 1 lot per level, making bid_total == ask_total == 0.500 always.
-    // Use imbalance_level() instead for BlackBull feeds. This method remains
-    // correct for brokers that send real size data.
+    //
+    // As of 2026-04-20: with the primary FIX path at 264=0 (full book),
+    // BlackBull sends real MDEntrySize values and this method is the
+    // preferred signal. On the 264=1 fallback path (post-35=Y reject),
+    // sizes are omitted or zero and this method degrades to ~0.5; the
+    // fallback path should use imbalance_level() in that case.
     double imbalance(int levels = 5) const noexcept {
         double bs = 0.0, as = 0.0;
         const int bn = std::min(bid_count, levels);
@@ -333,3 +354,4 @@ struct L2Book {
     bool has_data()    const noexcept { return bid_count > 0 && ask_count > 0 &&
                                                bids[0].size > 0.0 && asks[0].size > 0.0; }
 };
+

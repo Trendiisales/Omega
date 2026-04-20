@@ -61,7 +61,25 @@ static std::string fix_build_logout(int seq, const char* subID) {
 }
 // ?? SINGLE subscription covering ALL symbols (primary + extended) ??????????
 // ONE fixed req ID = OMEGA-MD-ALL. Unsub always matches. No ghost possible.
-// 264=1 (top-of-book). BlackBull ONLY supports 0 or 1 -- confirmed by 35=Y rejection.
+//
+// ── DEPTH SELECTION (2026-04-20 upgrade) ────────────────────────────────────
+// Primary path:  264=0 (FULL BOOK) -- delivers REAL asymmetric L2 sizes.
+// Fallback path: 264=1 (top-of-book) -- used only if broker rejects 264=0.
+//
+// BlackBull cTrader ONLY accepts MarketDepth values of 0 or 1 (confirmed by
+// "INVALID_REQUEST: MarketDepth should be either 0 or 1" 35=Y rejections).
+// Historically this code sent 264=1, which returns a single level per side
+// with MDEntrySize=0 -- producing the "imbalance always 0.500" problem that
+// forced the team to route L2 via the OmegaDomStreamer cBot instead. A FIX
+// probe on 2026-04-20 confirmed that 264=0 returns genuine multi-level book
+// data with real MDEntrySize values (5 bids / 6 asks / imb5=0.8079 on first
+// snapshot). Switching to 264=0 eliminates the need for the cBot path.
+//
+// The fallback flag g_md_depth_fallback is declared in OmegaFIX.hpp and is
+// set to true by the 35=Y handler in fix_dispatch.hpp. When true, this
+// builder emits 264=1 instead of 264=0, which prevents a rejection loop.
+// The flag starts false, so the first subscribe always tries 264=0.
+// ????????????????????????????????????????????????????????????????????????????
 static std::string fix_build_md_subscribe_all(int seq) {
     // Collect all symbol IDs: primary + extended + passive L2 observers
     std::vector<int> ids;
@@ -71,9 +89,8 @@ static std::string fix_build_md_subscribe_all(int seq) {
         for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
     }
     // Passive L2 cross-pairs disabled -- not subscribing, not needed for price feed.
-    // BlackBull confirmed: MarketDepth MUST be 0 or 1. Never use 5.
-    // Log message: "INVALID_REQUEST: MarketDepth should be either 0 or 1"
-    const int depth_val = 1;
+    // Depth: 0 = full book (primary); 1 = top-of-book (fallback after 35=Y reject).
+    const int depth_val = g_md_depth_fallback.load(std::memory_order_acquire) ? 1 : 0;
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
@@ -90,16 +107,22 @@ static std::string fix_build_md_unsub_all(int seq) {
         std::lock_guard<std::mutex> lk(g_symbol_map_mtx);
         for (const auto& e : g_ext_syms) if (e.id > 0) ids.push_back(e.id);
     }
+    // Unsub depth must match the sub depth for cTrader to match the request.
+    const int depth_val = g_md_depth_fallback.load(std::memory_order_acquire) ? 1 : 0;
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
       << "50=QUOTE\x01" << "57=QUOTE\x01" << "34=" << seq << "\x01" << "52=" << timestamp() << "\x01"
-      << "262=OMEGA-MD-ALL\x01" << "263=2\x01" << "264=1\x01" << "265=0\x01"
+      << "262=OMEGA-MD-ALL\x01" << "263=2\x01" << "264=" << depth_val << "\x01" << "265=0\x01"
       << "146=" << ids.size() << "\x01";
     for (int id : ids) b << "55=" << id << "\x01";
     b << "267=2\x01" << "269=0\x01" << "269=1\x01";
     return wrap_fix(b.str());
 }
-// Legacy individual builders kept for ghost cleanup of old session IDs
+// Legacy individual builders kept for ghost cleanup of old session IDs.
+// These are NOT used by the primary subscribe path (fix_build_md_subscribe_all
+// is the live path). They're retained to cancel any orphan session subscriptions
+// that may linger at broker side from older builds. Left at 264=1 intentionally
+// -- these paths don't need the upgraded depth signal.
 static std::string fix_build_md_subscribe(int seq) {
     std::ostringstream b;
     b << "35=V\x01" << "49=" << g_cfg.sender << "\x01" << "56=" << g_cfg.target << "\x01"
