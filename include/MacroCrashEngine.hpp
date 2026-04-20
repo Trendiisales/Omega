@@ -49,6 +49,7 @@
 #include <functional>
 #include <string>
 #include <algorithm>
+#include <mutex>   // RACE-FIX 2026-04-21: m_close_mtx serialises close paths (cTrader/FIX threads)
 #include "OmegaTradeLedger.hpp"
 #include <array>
 
@@ -551,6 +552,15 @@ public:
     }
 
 private:
+    // RACE-FIX 2026-04-21: serialises _close_all + force_close + PARTIAL/
+    // PYRAMID/BRACKET emit paths. The cTrader depth thread and the FIX
+    // quote_loop thread can both reach MCE's close paths via on_tick() or
+    // via force_close() during cTrader/FIX failover windows; without this
+    // mutex, two concurrent arrivals could fire duplicate on_close /
+    // on_trade_record callbacks from stale pos state. Same pattern as
+    // CFE 602aed07, DPE 18ee4ca5, GFE 73a081fe.
+    mutable std::mutex m_close_mtx;
+
     int64_t m_cooldown_until    = 0;
     int64_t m_long_block_until  = 0;
     int64_t m_short_block_until = 0;
@@ -768,7 +778,24 @@ private:
         }
     }
 
+    // RACE-FIX 2026-04-21: public wrapper holds m_close_mtx while delegating
+    // to _close_all_locked. Protects against concurrent arrivals from the
+    // cTrader depth thread and the FIX quote_loop thread entering via
+    // on_tick()->_manage() or via force_close().
+    // Same pattern as CFE 602aed07 / DPE 18ee4ca5 / GFE 73a081fe.
     void _close_all(double exit_px, const char* reason, int64_t now_ms) {
+        std::lock_guard<std::mutex> lk(m_close_mtx);
+        _close_all_locked(exit_px, reason, now_ms);
+    }
+
+    void _close_all_locked(double exit_px, const char* reason, int64_t now_ms) {
+        // RACE-FIX 2026-04-21: silent bail on second concurrent arrival.
+        // First thread wins the lock, sets pos.active=false at the tail of
+        // this function. Second thread then acquires the lock and finds
+        // pos.active==false -- re-firing on_close / on_trade_record here
+        // would be duplicate callbacks on already-closed state. Bail.
+        if (!pos.active) return;
+
         const double ppts  = pos.is_long ? (exit_px - pos.entry) : (pos.entry - exit_px);
         const double tpnl  = ppts * pos.size * 100.0;
         const double total = tpnl + pos.banked_usd;
