@@ -1936,13 +1936,38 @@ static void on_tick_gold(
     // Fires after a 20pt 5min move + 20% pullback. Shadow mode.
     {
         const bool pce_can_enter = gold_can_enter && !gold_any_open;
+        // OPEN-LOG FIX 2026-04-22: PullbackCont transition detector (canonical post-dispatch).
+        // PCE trails internally -- pass tp=0.0 since pos has no tp field.
+        // Fires in both shadow and live -- shadow_mode only gates on_close/send_live_order.
+        const bool pce_was_open_before_tick = g_pullback_cont.has_open_position();
         g_pullback_cont.on_tick(bid, ask, now_ms_g, pce_can_enter);
+        if (!pce_was_open_before_tick && g_pullback_cont.has_open_position()) {
+            write_trade_open_log("XAUUSD", "PullbackCont",
+                g_pullback_cont.pos.is_long ? "LONG" : "SHORT",
+                g_pullback_cont.pos.entry,
+                0.0,                                  // tp: PCE trails, no fixed tp
+                g_pullback_cont.pos.sl,
+                g_pullback_cont.pos.size,
+                ask - bid, regime, "PULLBACK_CONT");
+        }
     }
 
     // ?? PullbackContEngine PREMIUM -- 30pt h07 only, 2x size, tight trail ????????
     {
         const bool pce_can_enter = gold_can_enter && !gold_any_open;
+        // OPEN-LOG FIX 2026-04-22: PullbackPrem transition detector (canonical post-dispatch).
+        // Same engine class as PullbackCont -- pos struct identical, tp field absent.
+        const bool pcep_was_open_before_tick = g_pullback_prem.has_open_position();
         g_pullback_prem.on_tick(bid, ask, now_ms_g, pce_can_enter);
+        if (!pcep_was_open_before_tick && g_pullback_prem.has_open_position()) {
+            write_trade_open_log("XAUUSD", "PullbackPrem",
+                g_pullback_prem.pos.is_long ? "LONG" : "SHORT",
+                g_pullback_prem.pos.entry,
+                0.0,                                  // tp: PCE-prem trails, no fixed tp
+                g_pullback_prem.pos.sl,
+                g_pullback_prem.pos.size,
+                ask - bid, regime, "PULLBACK_PREM");
+        }
     }
 
     // ?? RSIReversalEngine -- tick-level RSI entries, no bar dependency ????????
