@@ -53,6 +53,7 @@
 #include <cstring>
 #include <iostream>
 #include <iomanip>
+#include <mutex>      // RACE-FIX 2026-04-20: serialize close paths across on_tick invocations
 #include "OmegaTradeLedger.hpp"
 #include "OmegaFIX.hpp"          // L2Book, L2Level
 #include "GoldHMM.hpp"            // 3-state regime HMM for CFE entry gating
@@ -1102,8 +1103,12 @@ struct CandleFlowEngine {
     bool has_open_position() const noexcept { return phase == Phase::LIVE; }
 
     void force_close(double bid, double ask, int64_t now_ms, CloseCallback cb) noexcept {
+        // RACE-FIX 2026-04-20: serialize vs concurrent close_pos invocations.
+        // Take lock first, re-check has_open_position() under lock (prevents race with
+        // a concurrent SL close_pos that already reset pos but hasn't released the lock).
+        std::lock_guard<std::mutex> lk(m_close_mtx);
         if (!has_open_position()) return;
-        close_pos(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms, cb);
+        close_pos_locked(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms, cb);
     }
 
     // -------------------------------------------------------------------------
@@ -1144,6 +1149,17 @@ private:
     int     m_trade_id          = 0;
     DOMSnap m_dom_cur;
     DOMSnap m_dom_prev;
+
+    // RACE-FIX 2026-04-20: serialize close_pos / force_close / PARTIAL_TP emit.
+    // Root cause: g_candle_flow.on_tick is called from multiple paths per XAUUSD tick
+    //   (tick_gold.hpp mgmt L4075, tick_gold.hpp entry L4441, on_tick.hpp DOLLAR_STOP L960)
+    // with zero synchronization. Two paths could both observe pos.active==true on the
+    // same SL-breached tick and both invoke close_pos, emitting a phantom TradeRecord
+    // from default-constructed pos state (entry=0, entry_ts=0, size=0.01) on the second
+    // call. Confirmed 2026-04-14 12:23:36 (interleaved stdout log, see diagnostics).
+    // Fix: mutex + pos.active re-check inside lock. First entrant does the close;
+    // subsequent entrants bail silently. Mutable so const methods could also acquire.
+    mutable std::mutex m_close_mtx;
 
     // RSI state
     std::deque<double> m_rsi_gains;
@@ -1355,6 +1371,16 @@ private:
         // trailed. Safe: only fires once, only when sufficiently in profit,
         // residual position is still protected by hard SL / trail SL.
         if (!pos.partial_done && pos.mfe >= pos.cost_pts * 2.0) {
+            // RACE-FIX 2026-04-20: take close mutex to serialize against close_pos.
+            // Re-check partial_done under lock — another thread may have set it.
+            // Use unique_lock so we can release early (before on_close callback
+            // which may re-enter engine methods via handle_closed_trade chain).
+            std::unique_lock<std::mutex> lk(m_close_mtx);
+            if (pos.partial_done || !pos.active) {
+                // Another thread beat us to it (either partial or full close).
+                // Release lock and skip partial emit.
+                lk.unlock();
+            } else {
             const double partial_px   = pos.is_long ? bid : ask;
             const double partial_size = pos.full_size * 0.5;
             // Emit partial close record
@@ -1386,7 +1412,12 @@ private:
             std::cout.flush();
             pos.partial_done = true;
             pos.size         = partial_size;   // remaining half
+            // Release lock BEFORE on_close callback to prevent deadlock if the
+            // callback re-enters engine methods (e.g. handle_closed_trade may
+            // trigger push_live_trade or similar that reads pos state).
+            lk.unlock();
             if (on_close) on_close(ptr);
+            }
         }
 
         // -- TRAILING SL: engage once MFE >= 1x cost --------------------------
@@ -1532,8 +1563,23 @@ private:
     }
 
     // -------------------------------------------------------------------------
+    // RACE-FIX 2026-04-20: public close_pos acquires mutex and double-checks pos.active.
+    // All internal close paths (SL_HIT, IMB_EXIT, STAGNATION, FORCE_CLOSE, PARTIAL_TP)
+    // go through either this public wrapper or close_pos_locked (lock already held).
+    // This prevents duplicate emit when tick_gold's mgmt + entry + DOLLAR_STOP paths
+    // concurrently trip the same SL condition. Second entrant sees !pos.active and bails.
     void close_pos(double exit_px, const char* reason,
                    int64_t now_ms, CloseCallback on_close) noexcept
+    {
+        std::lock_guard<std::mutex> lk(m_close_mtx);
+        if (!pos.active) return;        // race guard: prior path already closed
+        close_pos_locked(exit_px, reason, now_ms, on_close);
+    }
+
+    // Internal close path -- MUST be called with m_close_mtx held AND pos.active==true.
+    // Same body as the pre-2026-04-20 close_pos, no functional change.
+    void close_pos_locked(double exit_px, const char* reason,
+                          int64_t now_ms, CloseCallback on_close) noexcept
     {
         omega::TradeRecord tr;
         tr.id         = m_trade_id;
@@ -1616,6 +1662,7 @@ private:
 };
 
 } // namespace omega
+
 
 
 
