@@ -20,6 +20,12 @@
 //  Integration:
 //    In globals.hpp:  static DomPersistEngine g_dom_persist;
 //    In tick_gold.hpp: call g_dom_persist.on_tick() in entry block
+//
+//  RACE-FIX 2026-04-20: Added m_close_mtx to serialise close_position() and
+//  force_close() calls. Multiple threads calling close paths concurrently were
+//  double-emitting phantom TradeRecord rows from default-constructed pos state.
+//  Same pattern as CFE commit 602aed07. PARTIAL_1R emit path uses unique_lock
+//  with explicit early release to avoid re-entry deadlock in on_close callback.
 // =============================================================================
 
 #pragma once
@@ -30,6 +36,7 @@
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
+#include <mutex>          // RACE-FIX 2026-04-20
 #include "OmegaTradeLedger.hpp"
 
 // -- Config -------------------------------------------------------------------
@@ -265,13 +272,36 @@ struct DomPersistEngine {
         }
     }
 
+    // RACE-FIX 2026-04-20: force_close now acquires m_close_mtx. Previously
+    // this was a concurrent entry point into close_position() from external
+    // threads (tick_gold/on_tick DOLLAR_STOP path) that did not synchronise
+    // with internal management-driven closes.
     void force_close(double bid, double ask, int64_t now_ms, CloseCallback on_close) noexcept {
-        if (!has_open_position()) return;
+        std::lock_guard<std::mutex> lk(m_close_mtx);
+        if (!has_open_position() || !pos.active) return;  // race-path bail
         const double exit_px = pos.is_long ? bid : ask;
-        close_position(exit_px, "FORCE_CLOSE", now_ms, on_close);
+        close_position_locked(exit_px, "FORCE_CLOSE", now_ms, on_close);
+    }
+
+    // RACE-FIX 2026-04-20: public wrapper acquires lock and re-checks active
+    // state. The race path (second thread arrives after first already reset
+    // pos to default) bails silently here rather than producing a phantom
+    // TradeRecord emitted from default-constructed state.
+    void close_position(double exit_px, const char* reason,
+                        int64_t now_ms, CloseCallback on_close) noexcept
+    {
+        std::lock_guard<std::mutex> lk(m_close_mtx);
+        if (!pos.active) return;  // race-path bail -- first thread already closed
+        close_position_locked(exit_px, reason, now_ms, on_close);
     }
 
 private:
+
+    // RACE-FIX 2026-04-20: mutex serialising all paths that mutate pos on close.
+    // Covered paths: close_position (wrapper), force_close, PARTIAL_1R emit.
+    // mutable because force_close-style paths may be invoked via interfaces that
+    // retain const-correctness on the engine reference.
+    mutable std::mutex m_close_mtx;
 
     // ATR state
     double             m_atr         = 0.0;
@@ -436,6 +466,11 @@ private:
         }
 
         // Step 1: bank 33% at $35 open PnL, lock BE
+        //
+        // RACE-FIX 2026-04-20: This path also mutates pos (size, sl, be_locked,
+        // partial_closed) and emits a TradeRecord. Must hold m_close_mtx while
+        // mutating; use unique_lock with explicit early release before invoking
+        // on_close to avoid deadlock if callback chain re-enters the engine.
         if (!pos.partial_closed) {
             const double open_pnl = move * pos.size * 100.0;
             const double step1_trigger = std::max(35.0, 0.75 * atr * pos.size * 100.0);
@@ -443,6 +478,9 @@ private:
                 // Bank partial
                 const double close_qty = std::floor(pos.size * 0.33 / 0.001) * 0.001;
                 if (close_qty >= 0.01) {
+                    std::unique_lock<std::mutex> lk(m_close_mtx);  // RACE-FIX 2026-04-20
+                    if (!pos.active || pos.partial_closed) return; // race-path bail
+
                     const double exit_px = pos.is_long ? bid : ask;
                     const double pnl = (pos.is_long ? (exit_px - pos.entry) : (pos.entry - exit_px))
                                        * close_qty;
@@ -473,6 +511,8 @@ private:
                     pos.partial_closed = true;
                     pos.be_locked    = true;
 
+                    const bool fire_callback = !shadow_mode && on_close;
+
                     {
                         // converted from printf
                         char _buf[512];
@@ -481,7 +521,12 @@ private:
                         std::cout.flush();
                     }
 
-                    if (!shadow_mode && on_close) on_close(ptr);
+                    // RACE-FIX 2026-04-20: release lock BEFORE invoking callback.
+                    // on_close writes CSV and may trigger further engine methods
+                    // that would deadlock if we held m_close_mtx through it.
+                    lk.unlock();
+
+                    if (fire_callback) on_close(ptr);
                 }
             }
         }
@@ -507,8 +552,12 @@ private:
         close_position(exit_px, reason, now_ms, on_close);
     }
 
-    void close_position(double exit_px, const char* reason,
-                        int64_t now_ms, CloseCallback on_close) noexcept
+    // RACE-FIX 2026-04-20: locked implementation. Callers must hold m_close_mtx.
+    // This is the sole code path that resets pos to default and emits the final
+    // TradeRecord for a closed position. Race protection happens in the public
+    // wrapper above (close_position) and in force_close.
+    void close_position_locked(double exit_px, const char* reason,
+                               int64_t now_ms, CloseCallback on_close) noexcept
     {
         omega::TradeRecord tr;
         tr.id          = m_trade_id;
