@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-param([switch]$SkipVerify,[string]$OmegaDir="C:\Omega",[string]$GitHubToken="")
+param([switch]$SkipVerify,[string]$OmegaDir="C:\Omega",[string]$GitHubToken="",[int]$GracefulTimeoutSec=20,[switch]$ForceKill)
 
 Set-StrictMode -Off
 $ErrorActionPreference = "Continue"
@@ -72,27 +72,90 @@ Write-Host "  Mode: $mode" -ForegroundColor $modeColor
 Write-Host ""
 
 # ==============================================================================
-# STEP 1: STOP
+# STEP 1: STOP  --  GRACEFUL SHUTDOWN, THEN FORCE KILL ONLY IF NEEDED
+# ==============================================================================
+# Omega's own shutdown path (include/quote_loop.hpp:802-892 + trade_lifecycle.hpp:422)
+# is wired to flatten every open position, save all state, and send a clean FIX
+# Logout when either:
+#   * SIGINT/SIGTERM is delivered (std::signal handlers in omega_main.hpp:33-34)
+#   * The process receives CTRL_CLOSE_EVENT / CTRL_BREAK_EVENT / CTRL_C_EVENT
+#     (SetConsoleCtrlHandler in omega_main.hpp:35)
+#
+# On a Windows console app, `taskkill` WITHOUT /F sends CTRL_BREAK_EVENT which
+# triggers console_ctrl_handler() -> g_running=false -> main loop exits ->
+# shutdown_cb runs forceClose() across every engine. Typical completion time
+# is 2-4 seconds. The handler itself waits up to 4s for g_shutdown_done so
+# we give it a 20s ceiling ($GracefulTimeoutSec) before escalating.
+#
+# `taskkill /F` bypasses ALL of this: positions stay open at the broker until
+# the new binary reconnects and each engine's recovery logic catches up. Use
+# /F ONLY when graceful shutdown has already failed, or the operator passed
+# -ForceKill explicitly (e.g. process is truly hung).
 # ==============================================================================
 Write-Host "[1/4] Stopping Omega..." -ForegroundColor Yellow
 
-# Kill ALL Omega.exe processes -- loop until confirmed dead
-for ($i = 0; $i -lt 15; $i++) {
-    taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
-    Start-Sleep -Seconds 2
-    $still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
-    if (-not $still) { break }
-    if ($i -eq 14) {
-        Write-Host "  [FATAL] Cannot kill Omega.exe after 30s -- PIDs still running:" -ForegroundColor Red
-        $still | ForEach-Object { Write-Host "    PID $($_.Id)" -ForegroundColor Red }
-        exit 1
+$initialProcs = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if (-not $initialProcs) {
+    Write-Host "  [OK] No Omega.exe running -- nothing to stop" -ForegroundColor Green
+} else {
+    $initialPids = ($initialProcs | ForEach-Object { $_.Id }) -join ","
+    Write-Host "  Found Omega.exe PID(s): $initialPids" -ForegroundColor Cyan
+
+    if ($ForceKill) {
+        Write-Host "  -ForceKill specified -- skipping graceful shutdown" -ForegroundColor Yellow
+        taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
+    } else {
+        # Send CTRL_BREAK to every Omega.exe PID. Without /F taskkill delivers
+        # WM_CLOSE to GUI apps; for console apps like Omega it delivers
+        # CTRL_BREAK_EVENT which hits console_ctrl_handler().
+        Write-Host "  Sending graceful shutdown signal (taskkill without /F)..." -ForegroundColor Cyan
+        foreach ($p in $initialProcs) {
+            taskkill /PID $p.Id /T 2>&1 | Out-Null
+        }
+
+        # Poll for clean exit. Show a heartbeat every 3s so the operator can
+        # see Omega's own shutdown logs scrolling past if they want.
+        $gracefulStart  = Get-Date
+        $exitedCleanly  = $false
+        while (((Get-Date) - $gracefulStart).TotalSeconds -lt $GracefulTimeoutSec) {
+            $still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+            if (-not $still) { $exitedCleanly = $true; break }
+            $elapsedSec = [math]::Floor(((Get-Date) - $gracefulStart).TotalSeconds)
+            Write-Host ("  Waiting for graceful exit... {0}s / {1}s (PIDs still alive: {2})" -f $elapsedSec, $GracefulTimeoutSec, (($still | ForEach-Object { $_.Id }) -join ",")) -ForegroundColor DarkGray
+            Start-Sleep -Seconds 3
+        }
+
+        if ($exitedCleanly) {
+            $elapsedGraceful = [math]::Round(((Get-Date) - $gracefulStart).TotalSeconds, 1)
+            Write-Host "  [OK] Omega shut down cleanly in ${elapsedGraceful}s -- positions flattened by shutdown_cb" -ForegroundColor Green
+        } else {
+            Write-Host "  [WARN] Graceful shutdown timed out after ${GracefulTimeoutSec}s. Falling back to taskkill /F." -ForegroundColor Yellow
+            Write-Host "  Check logs/omega_service_stdout.log for shutdown progress BEFORE next restart." -ForegroundColor Yellow
+        }
+    }
+
+    # Hard-kill loop -- runs only if graceful was skipped or timed out, or to
+    # mop up stragglers (e.g. child processes with /T).
+    for ($i = 0; $i -lt 10; $i++) {
+        $still = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+        if (-not $still) { break }
+        taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
+        if ($i -eq 9) {
+            $stillAgain = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+            if ($stillAgain) {
+                Write-Host "  [FATAL] Cannot kill Omega.exe after 20s of /F attempts -- PIDs still running:" -ForegroundColor Red
+                $stillAgain | ForEach-Object { Write-Host "    PID $($_.Id)" -ForegroundColor Red }
+                exit 1
+            }
+        }
     }
 }
 
-# Hard confirmation: process must be gone
+# Hard confirmation: process must be gone before we proceed to build+launch
 $confirm = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
 if ($confirm) {
-    Write-Host "  [FATAL] Omega.exe still running after kill attempts. Aborting." -ForegroundColor Red
+    Write-Host "  [FATAL] Omega.exe still running after all kill attempts. Aborting." -ForegroundColor Red
     exit 1
 }
 Start-Sleep -Seconds 2
@@ -345,7 +408,6 @@ Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ("  DONE: {0:mm}m {0:ss}s" -f $elapsed) -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host ""
 
 
 
