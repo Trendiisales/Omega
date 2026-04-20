@@ -1122,7 +1122,8 @@ static void cross_engine_dedup_stamp(const std::string& sym) {
 static double enter_directional(
     const char* esym, bool is_long, double entry, double sl, double tp,
     double fallback_lot, bool skip_vwap_gate,
-    double bid, double ask, const std::string& sym, const std::string& regime)
+    double bid, double ask, const std::string& sym, const std::string& regime,
+    const char* engine_name)
 {
     // Returns computed lot size on success, 0.0 on failure/blocked.
     // Callers use the return value directly -- eliminates g_last_directional_lot
@@ -1530,8 +1531,9 @@ static double enter_directional(
     cross_engine_dedup_stamp(std::string(esym));
     g_last_directional_lot = final_lot;  // expose for caller pos_.size patch
     // Log entry to trade opens CSV before firing
+    // OPEN-LOG FIX 2026-04-22: canonical PascalCase engine name from caller
     write_trade_open_log(esym,
-        "directional",                       // refined by caller via UpdateLastSignal
+        engine_name,                         // PascalCase from caller (canonical convention 2026-04-21)
         is_long ? "LONG" : "SHORT",
         entry,
         tp_scaled > 0 ? tp_scaled : entry + (is_long?1:-1)*tp_dist,
