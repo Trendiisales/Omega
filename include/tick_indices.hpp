@@ -94,7 +94,7 @@ static void on_tick_us500(
             g_telemetry.UpdateLastSignal(sym.c_str(), esnq.is_long?"LONG":"SHORT",
                 esnq.entry, esnq.reason, "ESNQ_DIV", regime.c_str(), "ESNQ_DIV",
                 esnq.tp, esnq.sl);
-            if (!enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp, 0.01, false, bid, ask, sym, regime))
+            if (!enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp, 0.01, false, bid, ask, sym, regime, "ESNQDivergence"))
                 g_ca_esnq.cancel();
                 else g_ca_esnq.patch_size(g_last_directional_lot);
         }
@@ -130,7 +130,7 @@ static void on_tick_us500(
         const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
         if (orb.valid) {
             g_telemetry.UpdateLastSignal("US500.F", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-            if (!enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime))
+            if (!enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime, "ORB"))
                 g_orb_us.cancel();
                 else g_orb_us.patch_size(g_last_directional_lot);
         }
@@ -179,7 +179,7 @@ static void on_tick_us500(
                 const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
                                         (vr.confluence_score == 3) ? 2.0 :
                                         (vr.confluence_score == 2) ? 1.5 : 1.0;
-                if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime))
+                if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime, "VWAPRev"))
                     g_vwap_rev_sp.cancel();
                 else g_vwap_rev_sp.patch_size(g_last_directional_lot);
             }
@@ -203,7 +203,7 @@ static void on_tick_us500(
             if (nbm.valid) {
                 g_telemetry.UpdateLastSignal("US500.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
                     nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
+                if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime, "NoiseBandMomentum"))
                     g_nbm_sp.cancel();
                 else g_nbm_sp.patch_size(g_last_directional_lot);
             }
@@ -228,7 +228,7 @@ static void on_tick_us500(
                     tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
                     tp_sig.tp, tp_sig.sl);
                 if (!enter_directional("US500.F", tp_sig.is_long, tp_sig.entry,
-                                       tp_sig.sl, tp_sig.tp, 0.01, true, bid, ask, sym, regime))
+                                       tp_sig.sl, tp_sig.tp, 0.01, true, bid, ask, sym, regime, "TrendPullback"))
                     g_trend_pb_sp.cancel();
             }
         }
@@ -315,7 +315,7 @@ static void on_tick_us500(
                     isig.entry, isig.reason, "IFLOW", regime.c_str(), "IndexFlow",
                     isig.tp, isig.sl);
                 if (!enter_directional("US500.F", isig.is_long, isig.entry,
-                                       isig.sl, isig.tp, isig.size, true, bid, ask, sym, regime))
+                                       isig.sl, isig.tp, isig.size, true, bid, ask, sym, regime, "IndexFlow"))
                     g_iflow_sp.patch_size(0.0);
                 else g_iflow_sp.patch_size(g_last_directional_lot);
             }
@@ -464,7 +464,7 @@ static void on_tick_ustec(
                 const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
                                         (vr.confluence_score == 3) ? 2.0 :
                                         (vr.confluence_score == 2) ? 1.5 : 1.0;
-                if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime))
+                if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime, "VWAPRev"))
                     g_vwap_rev_nq.cancel();
                 else g_vwap_rev_nq.patch_size(g_last_directional_lot);
             }
@@ -491,7 +491,7 @@ static void on_tick_ustec(
                     tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
                     tp_sig.tp, tp_sig.sl);
                 if (!enter_directional("USTEC.F", tp_sig.is_long, tp_sig.entry,
-                                       tp_sig.sl, tp_sig.tp, 0.01, true, bid, ask, sym, regime))
+                                       tp_sig.sl, tp_sig.tp, 0.01, true, bid, ask, sym, regime, "TrendPullback"))
                     g_trend_pb_nq.cancel();
             }
         }
@@ -512,7 +512,7 @@ static void on_tick_ustec(
             if (nbm.valid) {
                 g_telemetry.UpdateLastSignal("USTEC.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
                     nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
+                if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime, "NoiseBandMomentum"))
                     g_nbm_nq.cancel();
                 else g_nbm_nq.patch_size(g_last_directional_lot);
             }
@@ -586,7 +586,7 @@ static void on_tick_ustec(
                     isig.entry, isig.reason, "IFLOW", regime.c_str(), "IndexFlow",
                     isig.tp, isig.sl);
                 if (!enter_directional("USTEC.F", isig.is_long, isig.entry,
-                                       isig.sl, isig.tp, isig.size, true, bid, ask, sym, regime))
+                                       isig.sl, isig.tp, isig.size, true, bid, ask, sym, regime, "IndexFlow"))
                     g_iflow_nq.patch_size(0.0);
                 else g_iflow_nq.patch_size(g_last_directional_lot);
             }
@@ -634,7 +634,7 @@ static void on_tick_dj30(
             if (nbm.valid) {
                 g_telemetry.UpdateLastSignal("DJ30.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
                     nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
+                if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime, "NoiseBandMomentum"))
                     g_nbm_us30.cancel();
                 else g_nbm_us30.patch_size(g_last_directional_lot);
             }
@@ -704,7 +704,7 @@ static void on_tick_dj30(
                     isig.entry, isig.reason, "IFLOW", regime.c_str(), "IndexFlow",
                     isig.tp, isig.sl);
                 if (!enter_directional("DJ30.F", isig.is_long, isig.entry,
-                                       isig.sl, isig.tp, isig.size, true, bid, ask, sym, regime))
+                                       isig.sl, isig.tp, isig.size, true, bid, ask, sym, regime, "IndexFlow"))
                     g_iflow_us30.patch_size(0.0);
                 else g_iflow_us30.patch_size(g_last_directional_lot);
             }
@@ -759,7 +759,7 @@ static void on_tick_uk100(
         const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
         if (orb.valid) {
             g_telemetry.UpdateLastSignal("UK100", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-            if (!enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime))
+            if (!enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime, "ORB"))
                 g_orb_uk100.cancel();
                 else g_orb_uk100.patch_size(g_last_directional_lot);
         }
@@ -785,7 +785,7 @@ static void on_tick_estx50(
         const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
         if (orb.valid) {
             g_telemetry.UpdateLastSignal("ESTX50", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-            if (!enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime))
+            if (!enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime, "ORB"))
                 g_orb_estx50.cancel();
                 else g_orb_estx50.patch_size(g_last_directional_lot);
         }
@@ -838,7 +838,7 @@ static void on_tick_nas100(
             if (nbm.valid) {
                 g_telemetry.UpdateLastSignal("NAS100", nbm.is_long?"LONG":"SHORT", nbm.entry,
                     nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime))
+                if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime, "NoiseBandMomentum"))
                     g_nbm_nas.cancel();
                 else g_nbm_nas.patch_size(g_last_directional_lot);
             }
@@ -908,7 +908,7 @@ static void on_tick_nas100(
                     isig.entry, isig.reason, "IFLOW", regime.c_str(), "IndexFlow",
                     isig.tp, isig.sl);
                 if (!enter_directional("NAS100", isig.is_long, isig.entry,
-                                       isig.sl, isig.tp, isig.size, true, bid, ask, sym, regime))
+                                       isig.sl, isig.tp, isig.size, true, bid, ask, sym, regime, "IndexFlow"))
                     g_iflow_nas.patch_size(0.0);
                 else g_iflow_nas.patch_size(g_last_directional_lot);
             }
