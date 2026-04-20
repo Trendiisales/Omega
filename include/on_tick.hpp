@@ -1800,6 +1800,20 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (!is_active_sym) return;
     }
 
+    // Router-level indices_enabled gate — blocks all index dispatchers
+    // when disabled. Covers 7 indices: US500.F / USTEC.F / DJ30.F /
+    // GER40 / UK100 / ESTX50 / NAS100. Non-index symbols (USOIL.F /
+    // XAGUSD / FX / BRENT / XAUUSD) unaffected. Supersedes per-dispatcher
+    // kill-switches at tick_indices.hpp:36/353/804 (deleted in same
+    // commit). Resolves ISSUE-044 — pre-fix DJ30.F was runtime-reachable
+    // under indices_enabled=false; UK100/ESTX50 were whitelist-gated
+    // zombies whose live entry code is now defensively covered.
+    if (!g_cfg.indices_enabled &&
+        (sym == "US500.F" || sym == "USTEC.F" || sym == "DJ30.F" ||
+         sym == "GER40"   || sym == "UK100"   || sym == "ESTX50" ||
+         sym == "NAS100"))
+        return;
+
     // ?? Routing -- every symbol goes through supervisor ????????????????????????
     // ── Symbol dispatch ────────────────────────────────────────────────────────
     if      (sym == "US500.F")                          on_tick_us500(sym, bid, ask, tradeable, lat_ok, regime);
