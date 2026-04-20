@@ -848,7 +848,7 @@ static void on_tick_gold(
                     gold_session_slot, now_ms_g, ca_on_close);
                 if (h1sig.valid) {
                     const double h1_lot = enter_directional("XAUUSD", h1sig.is_long,
-                        h1sig.entry, h1sig.sl, h1sig.tp, 0.01, true, bid, ask, sym, regime);
+                        h1sig.entry, h1sig.sl, h1sig.tp, 0.01, true, bid, ask, sym, regime, "H1SwingGold");
                     if (!h1_lot) { g_h1_swing_gold.cancel(); }
                     else {
                         g_h1_swing_gold.patch_size(h1_lot);
@@ -891,7 +891,7 @@ static void on_tick_gold(
                     now_ms_g, ca_on_close);
                 if (h4sig.valid) {
                     const double h4_lot = enter_directional("XAUUSD", h4sig.is_long,
-                        h4sig.entry, h4sig.sl, h4sig.tp, 0.01, true, bid, ask, sym, regime);
+                        h4sig.entry, h4sig.sl, h4sig.tp, 0.01, true, bid, ask, sym, regime, "H4RegimeGold");
                     if (!h4_lot) { g_h4_regime_gold.cancel(); }
                     else {
                         g_h4_regime_gold.patch_size(h4_lot);
@@ -3604,7 +3604,7 @@ static void on_tick_gold(
                 std::cout << _msg;
                 std::cout.flush();
             }
-            enter_directional("XAUUSD", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size, false, bid, ask, sym, regime);
+            enter_directional("XAUUSD", le_sig.is_long, le_sig.entry, le_sig.sl, le_sig.tp, le_sig.size, false, bid, ask, sym, regime, "LatencyEdgeStack");
         }
     }
     // ?? TrendPullbackEngine position management -- ALWAYS runs when position open ??
@@ -3763,7 +3763,7 @@ static void on_tick_gold(
                 }
                 g_trend_pb_gold.cancel();
             } else {
-                const double tpb_lot = enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true, bid, ask, sym, regime);
+                const double tpb_lot = enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true, bid, ask, sym, regime, "TrendPullbackGold");
                 if (!tpb_lot) {
                     g_trend_pb_gold.cancel();
                 } else {
@@ -3811,7 +3811,7 @@ static void on_tick_gold(
             const double add_lot     = std::max(0.005,
                 compute_size("XAUUSD", pyr_sl_dist, ask - bid, base_open_lot)
                 * g_trend_pb_gold.PYRAMID_SIZE_MULT);
-            if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true, bid, ask, sym, regime)) {
+            if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true, bid, ask, sym, regime, "TrendPullbackGoldPyramid")) {
                 ++g_trend_pb_gold.pyramid_adds_;
                 {
                     char _msg[512];
@@ -3953,7 +3953,7 @@ static void on_tick_gold(
                 nbm_lon.reason, "NBM_LONDON", regime.c_str(), "NBM_LONDON",
                 nbm_lon.tp, nbm_lon.sl);
             if (!enter_directional("XAUUSD", nbm_lon.is_long, nbm_lon.entry,
-                                   nbm_lon.sl, nbm_lon.tp, 0.01, false, bid, ask, sym, regime))
+                                   nbm_lon.sl, nbm_lon.tp, 0.01, false, bid, ask, sym, regime, "NBMGoldLondon"))
                 g_nbm_gold_london.cancel();
             else g_nbm_gold_london.patch_size(g_last_directional_lot);
         }
