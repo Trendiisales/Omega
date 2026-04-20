@@ -2002,10 +2002,11 @@ static void on_tick_gold(
                 g_rsi_reversal.patch_size(rsi_lot);
 
                 // Log and telemetry always fire (shadow or live) -- GUI shows signal
+                // OPEN-LOG FIX 2026-04-22: RSIReversal (arg9 regime slot)
                 write_trade_open_log("XAUUSD", "RSIReversal",
                     g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
                     g_rsi_reversal.pos.entry, 0.0, g_rsi_reversal.pos.sl,
-                    g_rsi_reversal.pos.size, ask - bid, "RSI_REVERSAL", "RSI_EXTREME");
+                    g_rsi_reversal.pos.size, ask - bid, regime, "RSI_EXTREME");
                 g_telemetry.UpdateLastSignal("XAUUSD",
                     g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
                     g_rsi_reversal.pos.entry, "RSI_EXTREME",
@@ -2080,11 +2081,12 @@ static void on_tick_gold(
                 g_rsi_extreme.patch_size(rsi_ext_lot);
 
                 // Log and telemetry
+                // OPEN-LOG FIX 2026-04-22: RSIExtremeTurn (arg9 regime slot)
                 write_trade_open_log("XAUUSD", "RSIExtremeTurn",
                     g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
                     g_rsi_extreme.pos.entry, 0.0, g_rsi_extreme.pos.sl,
                     g_rsi_extreme.pos.size, ask - bid,
-                    "RSI_EXTREME", "RSI_EXTREME_TURN");
+                    regime, "RSI_EXTREME_TURN");
                 g_telemetry.UpdateLastSignal("XAUUSD",
                     g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
                     g_rsi_extreme.pos.entry, "RSI_EXTREME_TURN",
@@ -4044,16 +4046,19 @@ static void on_tick_gold(
                 g_dom_persist.pos.entry, "DOM_PERSIST",
                 "DOM", regime.c_str(), "DOM_PERSIST",
                 0.0, g_dom_persist.pos.sl);
+            // OPEN-LOG FIX 2026-04-22: DomPersist (arg9 regime slot + lift WTOL out of shadow gate)
+            // Shadow-mode entries must also be logged to trade_opens CSV for diagnostics.
+            // send_live_order remains inside the shadow gate -- only logging is lifted.
+            write_trade_open_log("XAUUSD", "DomPersist",
+                g_dom_persist.pos.is_long ? "LONG" : "SHORT",
+                g_dom_persist.pos.entry, 0.0, g_dom_persist.pos.sl,
+                g_dom_persist.pos.size, ask - bid, regime, "DOM_PERSIST");
             if (!g_dom_persist.shadow_mode) {
                 send_live_order("XAUUSD",
                     g_dom_persist.pos.is_long,
                     g_dom_persist.pos.size,
                     g_dom_persist.pos.entry);
                 g_telemetry.UpdateLastEntryTs();
-                write_trade_open_log("XAUUSD", "DomPersist",
-                    g_dom_persist.pos.is_long ? "LONG" : "SHORT",
-                    g_dom_persist.pos.entry, 0.0, g_dom_persist.pos.sl,
-                    g_dom_persist.pos.size, ask - bid, "DOM_PERSIST", "DOM_PERSIST");
             }
         }
     }
@@ -4473,10 +4478,11 @@ static void on_tick_gold(
 
             if (g_candle_flow.has_open_position()) {
                 g_telemetry.UpdateLastEntryTs();
+                // OPEN-LOG FIX 2026-04-22: CandleFlow (arg9 regime slot)
                 write_trade_open_log("XAUUSD", "CandleFlow",
                     g_candle_flow.pos.is_long ? "LONG" : "SHORT",
                     g_candle_flow.pos.entry, 0.0, g_candle_flow.pos.sl,
-                    g_candle_flow.pos.size, ask - bid, "CANDLE_FLOW", "CANDLE_DOM");
+                    g_candle_flow.pos.size, ask - bid, regime, "CANDLE_DOM");
             }
         }
     }
@@ -4529,10 +4535,11 @@ static void on_tick_gold(
             });
         if (g_bb_mr.has_open_position()) {
             g_telemetry.UpdateLastEntryTs();
+            // OPEN-LOG FIX 2026-04-22: BBMeanRev (arg9 regime slot)
             write_trade_open_log("XAUUSD", "BBMeanRev",
                 g_bb_mr.pos.is_long ? "LONG" : "SHORT",
                 g_bb_mr.pos.entry, g_bb_mr.pos.tp, g_bb_mr.pos.sl,
-                g_bb_mr.pos.size, ask - bid, "BB_MEAN_REV", "BB25_2SD");
+                g_bb_mr.pos.size, ask - bid, regime, "BB25_2SD");
             g_telemetry.UpdateLastSignal("XAUUSD",
                 g_bb_mr.pos.is_long ? "LONG" : "SHORT",
                 g_bb_mr.pos.entry, "BB_OUTSIDE",
@@ -4579,10 +4586,11 @@ static void on_tick_gold(
             });
         if (g_cbe.has_open_position()) {
             g_telemetry.UpdateLastEntryTs();
+            // OPEN-LOG FIX 2026-04-22: CompBreakout (arg9 regime slot)
             write_trade_open_log("XAUUSD", "CompBreakout",
                 g_cbe.pos.is_long ? "LONG" : "SHORT",
                 g_cbe.pos.entry, g_cbe.pos.tp, g_cbe.pos.sl,
-                g_cbe.pos.size, ask - bid, "CBE", "COMP_BREAK");
+                g_cbe.pos.size, ask - bid, regime, "COMP_BREAK");
             g_telemetry.UpdateLastSignal("XAUUSD",
                 g_cbe.pos.is_long ? "LONG" : "SHORT",
                 g_cbe.pos.entry, "COMP_BREAK",
@@ -4616,10 +4624,11 @@ static void on_tick_gold(
             });
         if (g_ema_cross.has_open_position()) {
             g_telemetry.UpdateLastEntryTs();
+            // OPEN-LOG FIX 2026-04-22: EMACross (arg9 regime slot)
             write_trade_open_log("XAUUSD", "EMACross",
                 g_ema_cross.pos.is_long ? "LONG" : "SHORT",
                 g_ema_cross.pos.entry, g_ema_cross.pos.tp, g_ema_cross.pos.sl,
-                g_ema_cross.pos.size, ask - bid, "ECE", "EMA_CROSS");
+                g_ema_cross.pos.size, ask - bid, regime, "EMA_CROSS");
             g_telemetry.UpdateLastSignal("XAUUSD",
                 g_ema_cross.pos.is_long ? "LONG" : "SHORT",
                 g_ema_cross.pos.entry, "EMA_CROSS",
