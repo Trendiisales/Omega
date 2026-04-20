@@ -1865,6 +1865,15 @@ static void on_tick_gold(
         // Block MacroCrash entry when HybridBracketGold has an opposing position.
         // MacroCrash SHORT into a bracket LONG = engines fighting each other.
         // If bracket is active and MacroCrash has no position, check direction conflict.
+        //
+        // OPEN-LOG FIX 2026-04-21: capture "was open before on_tick" so we can
+        // detect a fresh MCE entry transition after on_tick returns and emit
+        // write_trade_open_log -- parity with the other 10 engines already
+        // logged here (GoldFlow, DomPersist, CandleFlow, BBMeanRev,
+        // CompBreakout, EMACross, RSIReversal, RSIExtremeTurn, BracketGold,
+        // TrendBracket). MCE was silently opening positions with no row in
+        // the open-trades CSV.
+        const bool mce_was_open_before_tick = g_macro_crash.has_open_position();
         const bool mce_bracket_conflict =
             !g_macro_crash.has_open_position() &&
             g_hybrid_gold.has_open_position() &&
@@ -1906,6 +1915,21 @@ static void on_tick_gold(
                     mce_rsi,
                     g_macro_ctx.session_slot);
             }
+        }
+
+        // OPEN-LOG FIX 2026-04-21: detect MCE fresh-entry transition and log.
+        // Fires exactly once per MCE entry (the tick where pos.active flipped
+        // false->true). Same shape as the 10 other engines' open-log calls.
+        // MCE's tp field = bracket_tp (the floor limit price); 0.0 when bracket
+        // is not armed. reason = "MACRO_EXPANSION" (the gate that MCE uses).
+        if (!mce_was_open_before_tick && g_macro_crash.has_open_position()) {
+            write_trade_open_log("XAUUSD", "MacroCrash",
+                g_macro_crash.pos.is_long ? "LONG" : "SHORT",
+                g_macro_crash.pos.entry,
+                g_macro_crash.pos.bracket_tp,  // 0.0 if bracket not armed
+                g_macro_crash.pos.sl,
+                g_macro_crash.pos.full_size,
+                ask - bid, regime, "MACRO_EXPANSION");
         }
     }
     // ?? PullbackContEngine -- pullback continuation h07/h17/h23 ???????????
