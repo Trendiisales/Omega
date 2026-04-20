@@ -58,6 +58,7 @@
 #include <iostream>
 #include <algorithm>
 #include <iomanip>
+#include <mutex>   // RACE-FIX 2026-04-21: m_close_mtx serialises close paths (cTrader/FIX threads)
 #include "OmegaTradeLedger.hpp"
 
 // -----------------------------------------------------------------------------
@@ -1594,6 +1595,14 @@ struct GoldFlowEngine {
 
 private:
 
+    // RACE-FIX 2026-04-21: serialises close_position + force_close + PARTIAL emit
+    // paths. The cTrader depth thread and FIX quote_loop thread can both reach
+    // on_tick()->manage_position()->close_position() during cTrader/FIX failover
+    // windows; without this mutex, two concurrent arrivals could emit phantom
+    // TradeRecord rows from default-constructed pos state. Same pattern as
+    // CFE commit 602aed07 and DPE commit 18ee4ca5.
+    mutable std::mutex m_close_mtx;
+
     // ATR calculation -- EWM-smoothed tick-to-tick range, 100-tick warmup
     double              m_atr           = 0.0;   // exposed ATR (0 until warmup complete)
     bool                m_l2_was_live   = false; // true once L2 imbalance != 0.5 seen this session
@@ -2286,6 +2295,18 @@ private:
 
         // Helper to fire a partial close record and update position
         auto fire_stair = [&](int step_num, const char* label) {
+            // RACE-FIX 2026-04-21: PARTIAL emit + pos-state mutation must be
+            // serialised against close_position and force_close. Uses
+            // unique_lock with explicit unlock() before on_close(ptr) so any
+            // future callback re-entry into the engine cannot deadlock on
+            // m_close_mtx. Same pattern as DPE 18ee4ca5 PARTIAL_1R path.
+            std::unique_lock<std::mutex> lk(m_close_mtx);
+
+            // RACE-FIX 2026-04-21: silent bail on second concurrent arrival.
+            // If close_position_locked already zeroed pos, emitting a PARTIAL
+            // here would be a phantom row from default-constructed pos.
+            if (!pos.active) return;
+
             const double exit_px   = pos.is_long ? bid : ask;
             const double close_qty = std::floor(pos.size * STEP_FRAC / 0.001) * 0.001;
             if (close_qty < GFE_MIN_LOT) {
@@ -2335,6 +2356,15 @@ private:
                       << " pnl_usd=" << std::setprecision(0) << (pnl * 100.0)
                       << " new_sl=" << std::setprecision(2) << pos.sl << "\n";
             std::cout.flush();
+
+            // RACE-FIX 2026-04-21: release the lock before invoking on_close.
+            // Prevents deadlock if the callback ever re-enters GFE (today it
+            // does not, but the pattern makes the PARTIAL path robust to
+            // future callback wiring changes). Ordering after unlock:
+            //   1. on_close(ptr)       -- dispatches PARTIAL_1R TradeRecord
+            //   2. arm reload (step 1) -- preserves original post-callback
+            //                             ordering of the original code.
+            lk.unlock();
             if (on_close) on_close(ptr);
 
             // ?? Arm reload on step 1 (PARTIAL_1R) ????????????????????????????
@@ -2832,9 +2862,29 @@ private:
         close_position(exit_px, reason, now_ms, on_close);
     }
 
+    // RACE-FIX 2026-04-21: public wrapper holds m_close_mtx while delegating
+    // to close_position_locked. Protects against concurrent arrivals from the
+    // cTrader depth thread and the FIX quote_loop thread entering via
+    // on_tick()->manage_position() or via force_close().
+    // Same pattern as CFE 602aed07 and DPE 18ee4ca5.
     void close_position(double exit_px, const char* reason,
                         int64_t now_ms, CloseCallback on_close) noexcept
     {
+        std::lock_guard<std::mutex> lk(m_close_mtx);
+        close_position_locked(exit_px, reason, now_ms, on_close);
+    }
+
+    void close_position_locked(double exit_px, const char* reason,
+                               int64_t now_ms, CloseCallback on_close) noexcept
+    {
+        // RACE-FIX 2026-04-21: silent bail on second concurrent arrival.
+        // First thread wins the lock, mutates pos to default OpenPos{} at the
+        // tail of this function. Second thread then acquires the lock and
+        // finds pos.active==false -- emitting a TradeRecord here would be a
+        // phantom row from default-constructed pos state (entry=0, size=0,
+        // is_long=false, entryTs=0). Bail without emitting.
+        if (!pos.active) return;
+
         omega::TradeRecord tr;
         tr.id           = m_trade_id;
         tr.symbol       = "XAUUSD";
