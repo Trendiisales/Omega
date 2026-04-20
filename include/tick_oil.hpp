@@ -32,7 +32,7 @@ static void on_tick_oil(
         if (g_nbm_oil_london.has_open_position()) { g_nbm_oil_london.on_tick(sym, bid, ask, ca_on_close); }
         if (!g_ca_eia_fade.has_open_position() && !g_ca_brent_wti.has_open_position() && base_can) {
             const auto ef = g_ca_eia_fade.on_tick(sym, bid, ask, ca_on_close);
-            if (ef.valid) { if (!enter_directional(sym.c_str(), ef.is_long, ef.entry, ef.sl, ef.tp, 0.01, false, bid, ask, sym, regime)) g_ca_eia_fade.cancel();
+            if (ef.valid) { if (!enter_directional(sym.c_str(), ef.is_long, ef.entry, ef.sl, ef.tp, 0.01, false, bid, ask, sym, regime, "EIAFade")) g_ca_eia_fade.cancel();
                 else g_ca_eia_fade.patch_size(g_last_directional_lot); }
         }
         if (!g_ca_brent_wti.has_open_position() && !g_ca_eia_fade.has_open_position() && base_can) {
@@ -43,7 +43,7 @@ static void on_tick_oil(
             const double brent_mid = (brent_b > 0 && brent_a > 0) ? (brent_b+brent_a)*0.5 : 0.0;
             if (brent_mid > 0) {
                 const auto bw = g_ca_brent_wti.on_tick_wti(bid, ask, brent_mid, ca_on_close);
-                if (bw.valid) { if (!enter_directional(sym.c_str(), bw.is_long, bw.entry, bw.sl, bw.tp, 0.01, false, bid, ask, sym, regime)) g_ca_brent_wti.cancel();
+                if (bw.valid) { if (!enter_directional(sym.c_str(), bw.is_long, bw.entry, bw.sl, bw.tp, 0.01, false, bid, ask, sym, regime, "BrentWTIArb")) g_ca_brent_wti.cancel();
                 else g_ca_brent_wti.patch_size(g_last_directional_lot); }
             }
         }
@@ -58,7 +58,7 @@ static void on_tick_oil(
                     nbm_oil.reason, "NBM_LONDON", regime.c_str(), "NBM_LONDON",
                     nbm_oil.tp, nbm_oil.sl);
                 if (!enter_directional("USOIL.F", nbm_oil.is_long, nbm_oil.entry,
-                                       nbm_oil.sl, nbm_oil.tp, 0.01, false, bid, ask, sym, regime))
+                                       nbm_oil.sl, nbm_oil.tp, 0.01, false, bid, ask, sym, regime, "NBMOilLondon"))
                     g_nbm_oil_london.cancel();
                 else g_nbm_oil_london.patch_size(g_last_directional_lot);
             }
