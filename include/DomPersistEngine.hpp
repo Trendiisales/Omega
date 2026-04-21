@@ -376,10 +376,12 @@ private:
         static constexpr double TICK_MULT  = 100.0;
         static constexpr double LOT_STEP   = 0.001;
         static constexpr double MIN_LOT    = 0.01;
-        // MAX_LOT reduced from 0.50 to 0.15: at $80 risk and 2pt ATR floor,
-        // size = 80/(2.0*100) = 0.40 lots hit this cap and caused $97 loss
-        // on a 2.44pt adverse move. 0.15 lots = safe ceiling regardless of risk cfg.
-        static constexpr double MAX_LOT    = 0.15;
+        // MAX_LOT reduced from 0.15 to 0.01 per trader directive 2026-04-21:
+        // At 2pt ATR floor and $30 risk, size would clamp to 0.15 (= $30/pt/0.15)
+        // and produce ~$32 gross loss per SL -- too aggressive vs other engines
+        // running 0.01-0.10. Hard-cap at MIN_LOT to equalise per-trade risk with
+        // BRACKET/CandleFlow until DomPersist proves edge in SHADOW.
+        static constexpr double MAX_LOT    = 0.01;
         double size = risk_dollars / (sl_pts * TICK_MULT);
         size = std::floor(size / LOT_STEP) * LOT_STEP;
         size = std::max(MIN_LOT, std::min(MAX_LOT, size));
