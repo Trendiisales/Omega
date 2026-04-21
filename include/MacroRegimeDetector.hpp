@@ -218,14 +218,37 @@ public:
     }
 
     // Size multiplier: 1.0 if bias aligns with direction, 0.5 if opposed, 0.75 if neutral
+    // FIX 2026-04-22: legacy soft-filter -- still callable for backwards compat,
+    // but no longer used as the primary HTF gate. New behaviour uses bias_opposes()
+    // for hard-block at the call site. Halving a 0.01 lot trade is a no-op
+    // because the floor immediately restores it to 0.01. Either we trade with
+    // the trend at full size, or we don't trade at all.
     double size_scale(const std::string& sym, bool is_long) const {
         if (!enabled) return 1.0;
         const HTFBias b = bias(sym);
-        if (b == HTFBias::NEUTRAL)                  return 0.75;
+        if (b == HTFBias::NEUTRAL)                  return 1.00;  // FIX: was 0.75 -- neutral = no penalty
         if (is_long  && b == HTFBias::BULLISH)      return 1.00;
         if (!is_long && b == HTFBias::BEARISH)      return 1.00;
-        // Opposing bias -- halve size, don't block entirely
-        return 0.50;
+        // Opposed: callers should use bias_opposes() to hard-block instead.
+        // Returning 1.0 here so legacy multiply call sites become no-ops.
+        return 1.00;
+    }
+
+    // FIX 2026-04-22: HARD GATE -- returns true when HTF bias is unambiguously
+    // against the proposed trade direction. Use this at call sites to skip
+    // the trade entirely instead of soft-scaling. Both daily AND intraday
+    // windows must agree (2/2 rule in bias()), so chop days return NEUTRAL
+    // and never trigger this block.
+    //   LONG  + BEARISH HTF -> opposed = true  (skip)
+    //   SHORT + BULLISH HTF -> opposed = true  (skip)
+    //   any   + NEUTRAL HTF -> opposed = false (take trade normally)
+    //   aligned             -> opposed = false (take trade normally)
+    bool bias_opposes(const std::string& sym, bool is_long) const {
+        if (!enabled) return false;
+        const HTFBias b = bias(sym);
+        if (is_long  && b == HTFBias::BEARISH) return true;
+        if (!is_long && b == HTFBias::BULLISH) return true;
+        return false;
     }
 
     const char* bias_name(const std::string& sym) const {
