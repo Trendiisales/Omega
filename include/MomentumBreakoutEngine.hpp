@@ -287,6 +287,7 @@ private:
         tr.engine     = "MomentumBreakoutEngine";
         tr.regime     = "MOMENTUM_BREAKOUT";
         tr.l2_live    = false;
+        tr.shadow     = shadow_mode;
 
         std::cout << "[MBE] EXIT " << (pos.is_long?"LONG":"SHORT")
                   << " @ " << std::fixed << std::setprecision(2) << exit_px
