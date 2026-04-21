@@ -510,6 +510,7 @@ private:
             tr.exitReason = reason;
             tr.regime     = "BB_MEAN_REV";
             tr.l2_live    = true;
+            tr.shadow     = shadow_mode;
             on_close(tr);
         }
 
