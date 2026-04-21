@@ -51,6 +51,7 @@ public:
     int    WARMUP_TICKS    = 1000;   // need real session range first
     double LOT_SIZE        = 0.16;   // ATR-normal sizing
     bool   enabled         = true;
+    bool   shadow_mode     = true;  // default true = log only, no live orders (Class C added 2026-04-21)
     // Internal computed per tick (not user-settable)
     double SWEEP_BUFFER    = 0.40;   // updated each tick
     double REJECT_DIST     = 0.25;   // updated each tick
@@ -277,6 +278,7 @@ private:
             tr.exitTs     = now_ms / 1000;
             tr.exitReason = reason;
             tr.regime     = "STOP_RUN";
+            tr.shadow     = shadow_mode;
             on_close(tr);
         }
 
