@@ -469,6 +469,7 @@ private:
             tr.regime     = "EMA_CROSS";
             tr.l2_live    = true;
             tr.shadow     = shadow_mode;
+            tr.spreadAtEntry = pos.spread_at_entry;
             on_close(tr);
         }
 
