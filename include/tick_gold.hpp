@@ -684,26 +684,48 @@ static void on_tick_gold(
                 // ?? Cross-asset size filters for GoldStack ????????????????
                 {
                     const bool gs_is_long = gsig.is_long;
-                    double gs_xa_mult = 1.0;
-                    // DXY momentum
-                    const double dxy_ret = g_macroDetector.dxyReturn();
-                    const double dxy_thr = g_macroDetector.DXY_RISK_OFF_PCT / 100.0;
-                    if (gs_is_long  && dxy_ret >  dxy_thr) gs_xa_mult *= 0.70;
-                    if (!gs_is_long && dxy_ret < -dxy_thr) gs_xa_mult *= 0.70;
-                    // HTF bias
-                    gs_xa_mult *= g_htf_filter.size_scale("XAUUSD", gs_is_long);
-                    // Macro: don't short gold in RISK_OFF
-                    if (g_macro_ctx.regime == "RISK_OFF" && !gs_is_long) gs_xa_mult *= 0.60;
-                    gs_xa_mult = std::max(0.30, std::min(1.20, gs_xa_mult));
-                    if (gs_xa_mult != 1.0)
-                        {
+                    // FIX 2026-04-22: HTF regime HARD-BLOCK before any sizing logic.
+                    // Counter-regime trades have negative expectancy on clean trend
+                    // days (today: 16 LONGs in 101pt BEARISH gold = -$49.01).
+                    // bias() requires daily+intraday agreement (2/2 rule) so chop
+                    // days return NEUTRAL and never trigger this block.
+                    if (g_htf_filter.bias_opposes("XAUUSD", gs_is_long)) {
+                        static thread_local int64_t s_gs_blk_log = 0;
+                        const int64_t now_s = std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count();
+                        if (now_s - s_gs_blk_log > 30) {
+                            s_gs_blk_log = now_s;
                             char _msg[512];
-                            snprintf(_msg, sizeof(_msg), "[XA-FILTER] XAUUSD STACK %s mult=%.2f DXY=%.4f HTF=%s macro=%s\n",                                gs_is_long?"LONG":"SHORT", gs_xa_mult, dxy_ret,                                g_htf_filter.bias_name("XAUUSD"), g_macro_ctx.regime.c_str());
-                            std::cout << _msg;
-                            std::cout.flush();
+                            snprintf(_msg, sizeof(_msg),
+                                "[HTF-BLOCK] XAUUSD STACK %s skipped -- HTF bias=%s opposes\n",
+                                gs_is_long?"LONG":"SHORT",
+                                g_htf_filter.bias_name("XAUUSD"));
+                            std::cout << _msg; std::cout.flush();
                         }
-                    gold_lot = std::max(0.01, std::min(gold_lot * gs_xa_mult, g_cfg.max_lot_gold));
+                        gold_lot = 0.0;  // sentinel: downstream guard skips trade
+                    } else {
+                        double gs_xa_mult = 1.0;
+                        // DXY momentum
+                        const double dxy_ret = g_macroDetector.dxyReturn();
+                        const double dxy_thr = g_macroDetector.DXY_RISK_OFF_PCT / 100.0;
+                        if (gs_is_long  && dxy_ret >  dxy_thr) gs_xa_mult *= 0.70;
+                        if (!gs_is_long && dxy_ret < -dxy_thr) gs_xa_mult *= 0.70;
+                        // HTF bias soft scale (now no-op since size_scale returns 1.0)
+                        gs_xa_mult *= g_htf_filter.size_scale("XAUUSD", gs_is_long);
+                        // Macro: don't short gold in RISK_OFF
+                        if (g_macro_ctx.regime == "RISK_OFF" && !gs_is_long) gs_xa_mult *= 0.60;
+                        gs_xa_mult = std::max(0.30, std::min(1.20, gs_xa_mult));
+                        if (gs_xa_mult != 1.0)
+                            {
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg), "[XA-FILTER] XAUUSD STACK %s mult=%.2f DXY=%.4f HTF=%s macro=%s\n",                                gs_is_long?"LONG":"SHORT", gs_xa_mult, dxy_ret,                                g_htf_filter.bias_name("XAUUSD"), g_macro_ctx.regime.c_str());
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
+                        gold_lot = std::max(0.01, std::min(gold_lot * gs_xa_mult, g_cfg.max_lot_gold));
+                    }
                 }
+
                 // Max loss per trade dollar cap (gold stack bypasses enter_directional)
                 if (g_cfg.max_loss_per_trade_usd > 0.0 && gold_sl_abs > 0.0) {
                     const double max_loss_lot = g_cfg.max_loss_per_trade_usd / (gold_sl_abs * 100.0);
@@ -718,6 +740,10 @@ static void on_tick_gold(
                         gold_lot = capped;
                     }
                 }
+                // FIX 2026-04-22: HTF block sentinel check -- gold_lot=0 from upstream
+                if (gold_lot < 0.005) {
+                    g_telemetry.IncrCostBlocked();  // count as a blocked entry for telemetry
+                } else {
                 g_gold_stack.patch_position_size(gold_lot);
                 std::cout << "\033[1;" << (gsig.is_long ? "32" : "31") << "m"
                           << "[GOLD-STACK-ENTRY] " << (gsig.is_long ? "LONG" : "SHORT")
@@ -758,6 +784,7 @@ static void on_tick_gold(
                         g_telemetry.UpdateLastEntryTs();  // watchdog: GoldStack entry counts as activity
                     }
                 }
+                }  // FIX 2026-04-22: close HTF-block else
             }
             } // end !gs_bar_blocked
         }
