@@ -82,6 +82,12 @@ static constexpr int    DPE_ATR_WARMUP_TICKS = 100;
 // Maximum spread allowed at entry
 static constexpr double DPE_MAX_SPREAD       = 2.5;
 
+// Maximum SL distance in points (FIX 2026-04-22): skip entry if computed sl_pts
+// exceeds this cap. At 0.01 lot * $100/pt, 15pt SL = $15 max gross loss per trade.
+// Root cause: in high-ATR regimes (e.g. Asia open), atr * DPE_SL_MULT could exceed
+// 30pt, producing $30+ losses per trade (see 10:17 -$35.85 on 2026-04-22).
+static constexpr double DPE_SL_PTS_MAX       = 15.0;
+
 // -- Engine -------------------------------------------------------------------
 
 struct DomPersistEngine {
@@ -371,6 +377,18 @@ private:
         const double atr       = std::max(atr_floor, m_atr);
         const double sl_pts    = std::max(atr * DPE_SL_MULT, spread * 5.0);
         if (sl_pts <= 0.0) return;
+
+        // FIX 2026-04-22: skip entry if SL distance exceeds max. Caps per-trade
+        // gross loss at DPE_SL_PTS_MAX * MAX_LOT * $100/pt = 15 * 0.01 * 100 = $15.
+        // Without this, high-ATR regimes produced -$30+ trades (see 10:17 -$35.85).
+        if (sl_pts > DPE_SL_PTS_MAX) {
+            char _buf[256];
+            snprintf(_buf, sizeof(_buf),
+                "[DPE-SL-CAP] SKIP sl_pts=%.2f > max=%.2f atr=%.2f spread=%.3f\n",
+                sl_pts, DPE_SL_PTS_MAX, atr, spread);
+            std::cout << _buf; std::cout.flush();
+            return;
+        }
 
         // Sizing: risk_dollars / (sl_pts * $100/pt for gold)
         static constexpr double TICK_MULT  = 100.0;
