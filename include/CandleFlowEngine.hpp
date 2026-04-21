@@ -80,7 +80,7 @@ static constexpr double  CFE_MIN_LOT           = 0.01;
 // correct size = 30/(1.4*100) = 0.214 lots. 0.20 is a hard safety ceiling
 // so even if ATR computation goes wrong again, damage is capped.
 // 0.50 lots was 3x the correct size and caused $111 loss on a stale ATR tick.
-static constexpr double  CFE_MAX_LOT           = 0.10;  // reduced 0.20->0.10: dollar_stop=$50 at 0.20=2.5pt room, at 0.10=5pt room
+static constexpr double  CFE_MAX_LOT           = 0.01;  // FIX 2026-04-21 uniformity: all engines capped at 0.01 until SHADOW validated
 
 // RSI trend (entry direction signal)
 static constexpr int     CFE_RSI_PERIOD        = 30;    // tick RSI lookback
