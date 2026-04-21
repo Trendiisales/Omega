@@ -3838,6 +3838,8 @@ class GoldPositionManager {
     double MIN_LOCKED_PROFIT  = 0.30;  // must lock meaningful profit above entry+spread
     double MAX_BASE_SL_TICKS  = 50.0;  // DATA-CALIBRATED: $5 SL (50 ticks)
 
+    bool   shadow_mode        = true;  // default true = log only, no live orders (Class C added 2026-04-21)
+
     struct GoldPos {
         bool    active    = false;
         bool    is_long   = true;
@@ -3898,6 +3900,7 @@ class GoldPositionManager {
         tr.latencyMs   = latency_ms;
         tr.engine      = std::string(leg.engine);
         tr.regime      = regime ? regime : "";
+        tr.shadow      = shadow_mode;
         if (on_close) on_close(tr);
     }
 
