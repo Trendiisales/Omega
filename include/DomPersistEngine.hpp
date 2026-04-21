@@ -502,6 +502,7 @@ private:
                     ptr.engine     = "DomPersistEngine";
                     ptr.regime     = "DOM_PERSIST";
                     ptr.spreadAtEntry = m_spread_at_entry;
+                    ptr.shadow     = shadow_mode;
 
                     // Lock SL to entry (BE)
                     if (pos.is_long  && pos.entry > pos.sl) pos.sl = pos.entry;
@@ -576,6 +577,7 @@ private:
         tr.engine      = "DomPersistEngine";
         tr.regime      = "DOM_PERSIST";
         tr.spreadAtEntry = m_spread_at_entry;
+        tr.shadow      = shadow_mode;
 
         const double held_s = static_cast<double>(now_ms / 1000 - pos.entry_ts);
         const char* mode = shadow_mode ? " [SHADOW]" : "";
