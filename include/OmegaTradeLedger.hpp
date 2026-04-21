@@ -61,6 +61,14 @@ struct TradeRecord
     // ?? L2 / DOM data at entry (for post-trade analysis and L2 threshold calibration) ?
     double      l2_imbalance    = 0.5; // bid/(bid+ask) volume ratio at entry (0=ask-heavy, 1=bid-heavy)
     bool        l2_live         = false; // true = real L2 data, false = synthetic
+
+    // ?? Shadow-mode guard -- set true when the originating engine is running in shadow mode.
+    //    handle_closed_trade() short-circuits shadow records to audit-only logging so they
+    //    never pollute g_omegaLedger, daily_pnl, consec_losses, fast_loss_streak, engine_culled,
+    //    crowding guard, walk-forward, param gate, time-of-day gate, or auto-disable state.
+    //    Engines with their own shadow_mode member should stamp this at TradeRecord construction.
+    //    Engines without shadow_mode rely on the g_cfg.mode != "LIVE" fallback in handle_closed_trade.
+    bool        shadow          = false;
 };
 
 // ?????????????????????????????????????????????????????????????????????????????
