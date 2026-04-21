@@ -40,6 +40,7 @@ $buildDir     = "$OmegaDir\build"
 $cmakeExe     = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
 $ConfigSrc    = "$OmegaDir\omega_config.ini"
 $LogStdout    = "$OmegaDir\logs\omega_service_stdout.log"
+$LogStderr    = "$OmegaDir\logs\omega_service_stderr.log"
 $startTime    = Get-Date
 
 Write-Host ""
@@ -417,8 +418,8 @@ Write-Host "  [OK] EXE timestamp matches built binary (+${diffSec}s)" -Foregroun
 $hashFound = $false
 $hashInLog = ""
 for ($hi = 0; $hi -lt 15; $hi++) {
-    if (Test-Path $LogStdout) {
-        $tail = Get-Content $LogStdout -Tail 200 -ErrorAction SilentlyContinue
+    if (Test-Path $LogStderr) {
+        $tail = Get-Content $LogStderr -Tail 200 -ErrorAction SilentlyContinue
         $hashLine = $tail | Where-Object { $_ -match "\[Omega\] Git hash:" } | Select-Object -Last 1
         if ($hashLine -and $hashLine -match "Git hash:\s*([0-9a-f]{7})") {
             $hashInLog = $Matches[1]
@@ -431,7 +432,7 @@ for ($hi = 0; $hi -lt 15; $hi++) {
 
 if (-not $hashFound) {
     Write-Host "  [FATAL] Git hash line not found in log after 30s" -ForegroundColor Red
-    Write-Host "  Check: $LogStdout" -ForegroundColor Red
+    Write-Host "  Check: $LogStderr" -ForegroundColor Red
     exit 1
 }
 
