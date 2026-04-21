@@ -30,6 +30,7 @@
 
 #pragma once
 #include <cmath>
+#include <cstring>    // FIX DPE-SL-KILL 2026-04-22: std::strcmp
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -330,6 +331,13 @@ private:
     double  m_spread_at_entry  = 0.0;
     int     m_trade_id         = 0;
 
+    // FIX DPE-SL-KILL 2026-04-22: consecutive-SL circuit breaker (mirror of ECE
+    // /BBMR/CFE patterns). After 3 consecutive SL_HIT exits, block entries for
+    // 30 minutes. TRAIL_HIT does NOT increment -- it is an intended trailing
+    // exit, not an adverse SL. Only raw SL_HIT counts.
+    int     m_consec_sl        = 0;
+    int64_t m_sl_kill_until    = 0;
+
     void update_atr(double mid, double spread) noexcept {
         m_price_window.push_back(mid);
         if ((int)m_price_window.size() > 100) m_price_window.pop_front();
@@ -372,6 +380,27 @@ private:
                bool l2_live, int64_t now_ms, CloseCallback on_close) noexcept
     {
         if (m_atr <= 0.0) return;
+
+        // FIX DPE-SL-KILL 2026-04-22: block entries after 3 consec SL_HITs.
+        if (now_ms < m_sl_kill_until) {
+            static int64_t s_kl = 0;
+            if (now_ms - s_kl > 120000) {
+                s_kl = now_ms;
+                char km[128];
+                snprintf(km, sizeof(km), "[DPE-SL-KILL] blocked %d SLs %llds remain\n",
+                    m_consec_sl, (long long)((m_sl_kill_until - now_ms) / 1000LL));
+                std::cout << km; std::cout.flush();
+            }
+            return;
+        }
+        // FIX DPE-SL-KILL 2026-04-22: auto-reset once kill window expires.
+        if (m_consec_sl >= 3 && now_ms >= m_sl_kill_until && m_sl_kill_until != 0) {
+            std::cout << "[DPE-SL-KILL] Reset after 30min, "
+                      << m_consec_sl << " SLs cleared\n";
+            std::cout.flush();
+            m_consec_sl     = 0;
+            m_sl_kill_until = 0;
+        }
 
         const double atr_floor = l2_live ? DPE_ATR_MIN : DPE_ATR_FLOOR_NO_L2;
         const double atr       = std::max(atr_floor, m_atr);
@@ -618,6 +647,20 @@ private:
             snprintf(_buf, sizeof(_buf), "[DPE] EXIT %s @ %.2f reason=%s pnl_usd=%.0f mfe=%.2f held=%.0fs%s\n",                pos.is_long ? "LONG" : "SHORT",                exit_px, reason, tr.pnl * 100.0, pos.mfe, held_s, mode);
             std::cout << _buf;
             std::cout.flush();
+        }
+
+        // FIX DPE-SL-KILL 2026-04-22: consec-SL_HIT tracker. Increment only on
+        // raw SL_HIT. TRAIL_HIT = intended trailing exit and does NOT count.
+        // On 3rd consecutive SL_HIT, arm 30-minute entry kill.
+        if (std::strcmp(reason, "SL_HIT") == 0) {
+            if (++m_consec_sl >= 3) {
+                m_sl_kill_until = now_ms + 1800000LL;  // 30 min
+                char km[128];
+                snprintf(km, sizeof(km), "[DPE-SL-KILL] %d consec SLs -- 30min block\n", m_consec_sl);
+                std::cout << km; std::cout.flush();
+            }
+        } else {
+            m_consec_sl = 0;
         }
 
         pos              = OpenPos{};
