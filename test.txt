@@ -1,1 +1,1 @@
-x
+DELETE THIS FILE -- accidentally created by omega-proxy schema probe on 2026-04-21. Safe to remove via git rm test.txt && git commit -m "cleanup probe" && git push.
