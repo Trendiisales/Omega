@@ -1,8 +1,15 @@
 #Requires -Version 5.1
+#Requires -RunAsAdministrator
 # ==============================================================================
 #                          OMEGA - START
 #
-#  Clean rebuild from current checkout, swap Omega.exe, launch.
+#  CANONICAL entry point: stop service, rebuild from current checkout,
+#  swap Omega.exe, start service via NSSM. This is the only supported way
+#  to deploy a new build.
+#
+#  Uses the NSSM-managed "Omega" service for start/stop. Also briefly stops
+#  "OmegaWatchdog" during rebuild so it doesn't fire QUICK_RESTART.ps1
+#  mid-build and fight us for the exe.
 #
 #  Streams compile progress line-by-line so the terminal never looks hung.
 #  Full logs still go to C:\Omega\configure_log.txt and C:\Omega\build_log.txt.
@@ -18,25 +25,122 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$OmegaDir  = "C:\Omega"
-$OmegaExe  = "C:\Omega\Omega.exe"
-$BuildExe  = "C:\Omega\build\Release\Omega.exe"
-$StampFile = "C:\Omega\omega_build.stamp"
+$OmegaDir      = "C:\Omega"
+$OmegaExe      = "C:\Omega\Omega.exe"
+$BuildExe      = "C:\Omega\build\Release\Omega.exe"
+$StampFile     = "C:\Omega\omega_build.stamp"
+$ServiceName   = "Omega"
+$WatchdogName  = "OmegaWatchdog"
+$NssmExe       = "C:\nssm\nssm-2.24\win64\nssm.exe"
+
+$StopTimeoutSec  = 30
+$StartTimeoutSec = 30
 
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host "   OMEGA - START                                       " -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# [1/7] Stop
-Write-Host "[1/7] Stopping Omega..." -ForegroundColor Yellow
-Stop-Process -Name "Omega" -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 3
-Write-Host "      [OK]" -ForegroundColor Green
+# ------------------------------------------------------------------------------
+# Helper: wait for a service to reach a target status, return $true on success.
+# ------------------------------------------------------------------------------
+function Wait-ForServiceStatus {
+    param(
+        [string]$Name,
+        [string]$TargetStatus,
+        [int]   $TimeoutSec
+    )
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        $svc = Get-Service -Name $Name -ErrorAction SilentlyContinue
+        if ($null -eq $svc) { return $false }
+        if ($svc.Status -eq $TargetStatus) { return $true }
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
+}
+
+# ------------------------------------------------------------------------------
+# [1/8] Pause watchdog so it does not restart Omega mid-rebuild
+# ------------------------------------------------------------------------------
+Write-Host "[1/8] Pausing OmegaWatchdog..." -ForegroundColor Yellow
+$watchdogSvc      = Get-Service -Name $WatchdogName -ErrorAction SilentlyContinue
+$watchdogWasUp    = $false
+if ($null -eq $watchdogSvc) {
+    Write-Host "      [SKIP] $WatchdogName not installed" -ForegroundColor DarkGray
+} elseif ($watchdogSvc.Status -eq 'Running') {
+    $watchdogWasUp = $true
+    Stop-Service -Name $WatchdogName -Force -ErrorAction SilentlyContinue
+    if (Wait-ForServiceStatus -Name $WatchdogName -TargetStatus 'Stopped' -TimeoutSec 15) {
+        Write-Host "      [OK] $WatchdogName stopped (will restart at end)" -ForegroundColor Green
+    } else {
+        Write-Host "      [WARN] $WatchdogName did not stop cleanly -- continuing anyway" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "      [SKIP] $WatchdogName already $($watchdogSvc.Status)" -ForegroundColor DarkGray
+}
 Write-Host ""
 
-# [2/7] Sync to origin/main
-Write-Host "[2/7] Syncing to origin/main..." -ForegroundColor Yellow
+# ------------------------------------------------------------------------------
+# [2/8] Stop Omega service
+#
+#   Sequence:
+#     a) Stop-Service Omega               -- normal path
+#     b) nssm stop Omega (if NSSM exists) -- handles NSSM-specific states
+#     c) taskkill /F /IM Omega.exe        -- last resort
+#     d) verify no Omega.exe running      -- abort if still alive
+# ------------------------------------------------------------------------------
+Write-Host "[2/8] Stopping Omega service..." -ForegroundColor Yellow
+
+$omegaSvc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($null -eq $omegaSvc) {
+    Write-Host "      [WARN] Service '$ServiceName' not installed -- is this a first run?" -ForegroundColor Yellow
+    Write-Host "             Run INSTALL_SERVICE.ps1 -InstallNssm before START.ps1" -ForegroundColor Yellow
+    # Don't exit -- maybe user wants to rebuild then install. But flag it.
+} else {
+    if ($omegaSvc.Status -eq 'Stopped') {
+        Write-Host "      [OK] Service already Stopped" -ForegroundColor Green
+    } else {
+        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+        if (Wait-ForServiceStatus -Name $ServiceName -TargetStatus 'Stopped' -TimeoutSec $StopTimeoutSec) {
+            Write-Host "      [OK] Service Stopped via Stop-Service" -ForegroundColor Green
+        } else {
+            Write-Host "      [WARN] Stop-Service did not reach Stopped in ${StopTimeoutSec}s -- trying NSSM stop" -ForegroundColor Yellow
+            if (Test-Path $NssmExe) {
+                & $NssmExe stop $ServiceName 2>&1 | Out-Null
+                if (Wait-ForServiceStatus -Name $ServiceName -TargetStatus 'Stopped' -TimeoutSec 15) {
+                    Write-Host "      [OK] Service Stopped via nssm stop" -ForegroundColor Green
+                } else {
+                    Write-Host "      [WARN] nssm stop did not reach Stopped either -- falling back to taskkill" -ForegroundColor Yellow
+                }
+            } else {
+                Write-Host "      [WARN] NSSM not found at $NssmExe -- falling back to taskkill" -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
+# Final belt-and-braces: no Omega.exe process may remain.
+$remaining = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if ($remaining) {
+    Write-Host "      [WARN] Omega.exe still alive after service stop -- taskkill /F" -ForegroundColor Yellow
+    taskkill /F /IM Omega.exe /T 2>&1 | Out-Null
+    Start-Sleep -Seconds 2
+    $stillThere = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+    if ($stillThere) {
+        Write-Host "      [FATAL] Cannot kill Omega.exe -- aborting rebuild" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "      [OK] Omega.exe killed via taskkill /F" -ForegroundColor Green
+} else {
+    Write-Host "      [OK] No Omega.exe process remains" -ForegroundColor Green
+}
+Write-Host ""
+
+# ------------------------------------------------------------------------------
+# [3/8] Sync to origin/main
+# ------------------------------------------------------------------------------
+Write-Host "[3/8] Syncing to origin/main..." -ForegroundColor Yellow
 Set-Location $OmegaDir
 # git commands write informational messages to stderr ("Already on 'main'",
 # fetch progress, etc.). PowerShell with $ErrorActionPreference="Stop" treats
@@ -59,8 +163,10 @@ if ($localHead -ne $remoteHead) {
 Write-Host "      [OK] HEAD $localHead  ($(git log --oneline -1))" -ForegroundColor Green
 Write-Host ""
 
-# [3/7] Clean build -- with streaming progress
-Write-Host "[3/7] Clean build..." -ForegroundColor Yellow
+# ------------------------------------------------------------------------------
+# [4/8] Clean build -- with streaming progress
+# ------------------------------------------------------------------------------
+Write-Host "[4/8] Clean build..." -ForegroundColor Yellow
 Remove-Item -Path "$OmegaDir\build" -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 Set-Location "$OmegaDir\build"
@@ -144,8 +250,13 @@ if (-not (Test-Path $BuildExe)) {
 Write-Host "      [OK] Build succeeded ($script:fileCount files compiled)" -ForegroundColor Green
 Write-Host ""
 
-# [4/7] Copy assets -- exe to canonical path
-Write-Host "[4/7] Copying assets to $OmegaDir..." -ForegroundColor Yellow
+# ------------------------------------------------------------------------------
+# [5/8] Copy assets -- exe to canonical path
+#
+#   Copy-Item can fail transiently if the filesystem has not fully released
+#   the old exe handle after stop. Retry up to 5 times with 1s spacing.
+# ------------------------------------------------------------------------------
+Write-Host "[5/8] Copying assets to $OmegaDir..." -ForegroundColor Yellow
 
 $configSource = "$OmegaDir\config\omega_config.ini"
 if (-not (Test-Path $configSource)) { $configSource = "$OmegaDir\omega_config.ini" }
@@ -154,7 +265,22 @@ if (-not (Test-Path $configSource)) {
     exit 1
 }
 
-Copy-Item $BuildExe     $OmegaExe                       -Force
+$copied = $false
+for ($attempt = 1; $attempt -le 5; $attempt++) {
+    try {
+        Copy-Item $BuildExe $OmegaExe -Force -ErrorAction Stop
+        $copied = $true
+        break
+    } catch {
+        Write-Host "      [RETRY $attempt/5] exe copy failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Start-Sleep -Seconds 1
+    }
+}
+if (-not $copied) {
+    Write-Host "      [FATAL] Could not copy new Omega.exe after 5 attempts -- old binary still on disk" -ForegroundColor Red
+    exit 1
+}
+
 Copy-Item $configSource "$OmegaDir\omega_config.ini"    -Force
 git show HEAD:symbols.ini | Out-File -FilePath "$OmegaDir\symbols.ini" -Encoding utf8 -Force
 Copy-Item "$OmegaDir\src\gui\www\omega_index.html" "$OmegaDir\omega_index.html" -Force -ErrorAction SilentlyContinue
@@ -164,15 +290,17 @@ Write-Host "      [OK] Omega.exe -> $OmegaExe" -ForegroundColor Green
 Write-Host "      [OK] config + symbols + GUI assets copied" -ForegroundColor Green
 Write-Host ""
 
-# [5/7] Write build stamp
-Write-Host "[5/7] Writing build stamp..." -ForegroundColor Yellow
+# ------------------------------------------------------------------------------
+# [6/8] Write build stamp
+# ------------------------------------------------------------------------------
+Write-Host "[6/8] Writing build stamp..." -ForegroundColor Yellow
 $exeHash   = (Get-FileHash -Path $OmegaExe -Algorithm SHA256).Hash
 $buildTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC")
 
 "GIT_HASH=$localHead"   | Out-File -FilePath $StampFile -Encoding utf8
-"EXE_SHA256=$exeHash"  | Out-File -FilePath $StampFile -Encoding utf8 -Append
+"EXE_SHA256=$exeHash"   | Out-File -FilePath $StampFile -Encoding utf8 -Append
 "BUILD_TIME=$buildTime" | Out-File -FilePath $StampFile -Encoding utf8 -Append
-"EXE_PATH=$OmegaExe"   | Out-File -FilePath $StampFile -Encoding utf8 -Append
+"EXE_PATH=$OmegaExe"    | Out-File -FilePath $StampFile -Encoding utf8 -Append
 
 # Verify: re-read stamp and confirm hash matches the exe we just copied
 $stampLines  = Get-Content $StampFile
@@ -187,8 +315,10 @@ if ($stampHash.Trim() -ne $currentHash.Trim()) {
 Write-Host "      [OK] Stamp verified: git=$localHead  sha256=$($exeHash.Substring(0,16))..." -ForegroundColor Green
 Write-Host ""
 
-# [6/7] Pre-live config check
-Write-Host "[6/7] Config check..." -ForegroundColor Yellow
+# ------------------------------------------------------------------------------
+# [7/8] Pre-live config check
+# ------------------------------------------------------------------------------
+Write-Host "[7/8] Config check..." -ForegroundColor Yellow
 $configFile = "$OmegaDir\omega_config.ini"
 $wmMatch    = Select-String -Path $configFile -Pattern "session_watermark_pct\s*=\s*([0-9.]+)" -ErrorAction SilentlyContinue
 $modeMatch  = Select-String -Path $configFile -Pattern "^mode\s*=\s*(\S+)" -ErrorAction SilentlyContinue
@@ -218,7 +348,10 @@ if ($mode -eq "LIVE" -and $testingActive) {
     Write-Host ""
     Write-Host "  *** FATAL: mode=LIVE with testing values -- BLOCKED ***" -ForegroundColor Red
     Remove-Item $StampFile -Force -ErrorAction SilentlyContinue
-    Read-Host "Press Enter to exit"
+    # Restart watchdog on blocked exit so system state is restored.
+    if ($watchdogWasUp) {
+        Start-Service -Name $WatchdogName -ErrorAction SilentlyContinue
+    }
     exit 1
 }
 Write-Host "=======================================================" -ForegroundColor Yellow
@@ -228,13 +361,69 @@ New-Item -ItemType Directory -Path "$OmegaDir\logs"        -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\shadow" -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\trades" -Force | Out-Null
 
-# [7/7] Launch
-Write-Host "[7/7] Starting Omega.exe from $OmegaDir..." -ForegroundColor Yellow
+# ------------------------------------------------------------------------------
+# [8/8] Start Omega service via NSSM
+#
+#   Start-Service Omega is the correct path -- NSSM registers as a real
+#   Windows service so SCM commands work. If the service isn't installed
+#   yet, fall through with a clear instruction.
+# ------------------------------------------------------------------------------
+Write-Host "[8/8] Starting Omega service..." -ForegroundColor Yellow
+
+$omegaSvc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($null -eq $omegaSvc) {
+    Write-Host "      [FATAL] Service '$ServiceName' not installed" -ForegroundColor Red
+    Write-Host "              Run: .\INSTALL_SERVICE.ps1 -InstallNssm" -ForegroundColor Red
+    Write-Host "              Then re-run START.ps1" -ForegroundColor Red
+    if ($watchdogWasUp) {
+        Start-Service -Name $WatchdogName -ErrorAction SilentlyContinue
+    }
+    exit 1
+}
+
+Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if (-not (Wait-ForServiceStatus -Name $ServiceName -TargetStatus 'Running' -TimeoutSec $StartTimeoutSec)) {
+    Write-Host "      [FATAL] Service did not reach Running in ${StartTimeoutSec}s" -ForegroundColor Red
+    Write-Host "              Check: $OmegaDir\logs\omega_service_stdout.log" -ForegroundColor Red
+    Write-Host "              Check: $OmegaDir\logs\omega_service_stderr.log" -ForegroundColor Red
+    if ($watchdogWasUp) {
+        Start-Service -Name $WatchdogName -ErrorAction SilentlyContinue
+    }
+    exit 1
+}
+
+# Confirm the service actually has a process behind it (NSSM can show Running
+# briefly even if the child exe crashes immediately; give it 5s then verify).
+Start-Sleep -Seconds 5
+$omegaProc = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if ($null -eq $omegaProc) {
+    Write-Host "      [FATAL] Service reports Running but no Omega.exe process found" -ForegroundColor Red
+    Write-Host "              Binary likely crashed on startup. Check logs." -ForegroundColor Red
+    if ($watchdogWasUp) {
+        Start-Service -Name $WatchdogName -ErrorAction SilentlyContinue
+    }
+    exit 1
+}
+$pidList = ($omegaProc | ForEach-Object { $_.Id }) -join ", "
+Write-Host "      [OK] Service Running  PID(s): $pidList" -ForegroundColor Green
+Write-Host ""
+
+# ------------------------------------------------------------------------------
+# Restart watchdog if we stopped it
+# ------------------------------------------------------------------------------
+if ($watchdogWasUp) {
+    Write-Host "      Resuming $WatchdogName..." -ForegroundColor Yellow
+    Start-Service -Name $WatchdogName -ErrorAction SilentlyContinue
+    if (Wait-ForServiceStatus -Name $WatchdogName -TargetStatus 'Running' -TimeoutSec 10) {
+        Write-Host "      [OK] $WatchdogName resumed" -ForegroundColor Green
+    } else {
+        Write-Host "      [WARN] $WatchdogName did not reach Running -- start manually if needed" -ForegroundColor Yellow
+    }
+    Write-Host ""
+}
+
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host "  git=$localHead  |  mode=$mode" -ForegroundColor Cyan
 Write-Host "  GUI -> http://185.167.119.59:7779" -ForegroundColor Green
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
-
-Set-Location $OmegaDir
-.\Omega.exe omega_config.ini
