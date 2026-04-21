@@ -4,7 +4,7 @@
 
 int main(int argc, char* argv[])
 {
-    g_singleton_mutex = CreateMutexA(NULL, TRUE, "Global\\Omega_Breakout_System");
+    g_singleton_mutex = CreateMutexA(NULL, TRUE, "Global\Omega_Breakout_System");
     if (!g_singleton_mutex || GetLastError() == ERROR_ALREADY_EXISTS) {
         std::cout << "[OMEGA] ALREADY RUNNING -- another Omega instance holds the mutex. Exiting.\n";
         std::cerr << "[OMEGA] ALREADY RUNNING -- another Omega instance holds the mutex. Exiting.\n";
@@ -20,7 +20,7 @@ int main(int argc, char* argv[])
     SetConsoleMode(hOut, dwMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 
     // Startup marker read by QUICK_RESTART.ps1 verify step -- match regex: \[Omega\] Git hash: [0-9a-f]{7}
-    std::cout << "[Omega] Git hash: " << OMEGA_VERSION << "\n"; std::cout.flush();
+    std::fprintf(stderr, "[Omega] Git hash: %s\n", OMEGA_VERSION); std::fflush(stderr);
 
     std::cout << "\033[1;36m"
               << "=======================================================\n"
@@ -43,7 +43,7 @@ int main(int argc, char* argv[])
         cfg_path = argv[1];
     } else {
         std::ifstream test_cwd("omega_config.ini");
-        if (!test_cwd.is_open()) cfg_path = "config\\omega_config.ini";
+        if (!test_cwd.is_open()) cfg_path = "config\omega_config.ini";
     }
     load_config(cfg_path);
     sanitize_config();
