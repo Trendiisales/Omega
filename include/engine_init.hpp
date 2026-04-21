@@ -32,14 +32,17 @@ static void init_engines(const std::string& cfg_path)
     g_hybrid_us30.shadow_mode   = kShadowDefault;
     g_hybrid_nas100.shadow_mode = kShadowDefault;
     // IndexFlowEngine (4 instances, uniform):
-    g_iflow_sp.shadow_mode    = kShadowDefault;
-    g_iflow_nq.shadow_mode    = kShadowDefault;
-    g_iflow_nas.shadow_mode   = kShadowDefault;
-    g_iflow_us30.shadow_mode  = kShadowDefault;
+    // shadow_mode lives on private IdxOpenPosition pos_; use set_shadow_mode() proxy.
+    g_iflow_sp.set_shadow_mode(kShadowDefault);
+    g_iflow_nq.set_shadow_mode(kShadowDefault);
+    g_iflow_nas.set_shadow_mode(kShadowDefault);
+    g_iflow_us30.set_shadow_mode(kShadowDefault);
     // Class C (stamped 2026-04-21):
     g_hybrid_gold.shadow_mode  = kShadowDefault;  // GoldHybridBracketEngine
-    g_le_stack.shadow_mode     = kShadowDefault;  // LatencyEdgeStack
-    g_gold_stack.shadow_mode   = kShadowDefault;  // GoldEngineStack / GoldPositionManager
+    // LatencyEdgeStack: currently DISABLED (VPS RTT ~68ms, needs <1ms). No positions
+    // possible, so shadow_mode wiring is moot. When the stack is re-enabled, add:
+    //   g_le_stack.set_shadow_mode(kShadowDefault);  // requires setter on the stack
+    g_gold_stack.set_shadow_mode(kShadowDefault);  // GoldEngineStack / GoldPositionManager via proxy
     // TrendPullbackEngine (4 instances, uniform per Q1 decision):
     g_trend_pb_gold.shadow_mode  = kShadowDefault;
     g_trend_pb_ger40.shadow_mode = kShadowDefault;
