@@ -97,6 +97,8 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <mutex>      // FIX BBMR-MUTEX 2026-04-21: serialize close paths (force_close vs on_tick SL/TP/TIMEOUT)
+#include <cstring>    // FIX BBMR-SL-KILL 2026-04-21: strcmp for consec-SL tracking
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -131,7 +133,7 @@ static constexpr double  BBMR_MIN_BB_WIDTH    = 0.50;   // band must exist
 static constexpr double  BBMR_MIN_RR          = 0.50;   // TP dist >= SL dist * 0.5
 static constexpr double  BBMR_RISK_DOLLARS    = 30.0;
 static constexpr double  BBMR_MIN_LOT         = 0.01;
-static constexpr double  BBMR_MAX_LOT         = 0.10;
+static constexpr double  BBMR_MAX_LOT         = 0.01;  // FIX 2026-04-21 uniformity: all engines capped at 0.01 until SHADOW validated
 static constexpr double  BBMR_BE_FRAC         = 0.40;   // BE at 40% MFE
 static constexpr double  BBMR_DAILY_DD_LIMIT  = 200.0;
 static constexpr double  BBMR_COMMISSION      = 0.20;   // per side
@@ -290,6 +292,29 @@ public:
         }
 
         // ── Entry checks ──────────────────────────────────────────────────────
+        // FIX BBMR-SL-KILL 2026-04-21: consecutive-SL kill switch (mirror of ECE
+        // and CBE-10 pattern). After 3 consecutive SL exits, block entries for
+        // 30 minutes. Death-spiral circuit breaker: 3 SLs at the same BB-reversion
+        // level means the regime has changed (trend-day) and re-entering keeps
+        // paying spread+slippage on doomed trades.
+        if (_consec_sl >= 3 && now_ms < _sl_kill_until) {
+            static int64_t s_bbmr_kill_log = 0;
+            if (now_ms - s_bbmr_kill_log > 60000) {
+                s_bbmr_kill_log = now_ms;
+                std::cout << "[BBMR-SL-KILL] " << _consec_sl
+                          << " consec SLs, blocking entries for "
+                          << ((_sl_kill_until - now_ms) / 1000LL) << "s more\n";
+                std::cout.flush();
+            }
+            return;
+        }
+        if (_consec_sl >= 3 && now_ms >= _sl_kill_until) {
+            std::cout << "[BBMR-SL-KILL] Reset after 30min, "
+                      << _consec_sl << " SLs cleared\n";
+            std::cout.flush();
+            _consec_sl = 0;
+        }
+
         if (!_bar_has_entry_candidate) return;
         if (_bb_width < BBMR_MIN_BB_WIDTH) return;
         if (_atr <= 0.0) return;
@@ -376,8 +401,16 @@ public:
 
     void force_close(double bid, double ask, int64_t now_ms,
                      CloseCallback cb) noexcept {
+        // FIX BBMR-MUTEX 2026-04-21: serialize against concurrent _close path from
+        // on_tick (TP / SL / BE / TIMEOUT). tick_gold.hpp may invoke force_close
+        // (session-end / daily-kill path) while a tick-driven on_tick is mid-flight
+        // on the same engine -- without this lock both paths could observe
+        // pos.active==true and both invoke the close body, emitting a duplicate
+        // TradeRecord with the same trade_id. Mirror of CandleFlow RACE-FIX and
+        // CBE-8 pattern.
+        std::lock_guard<std::mutex> lk(_close_mtx);
         if (!pos.active) return;
-        _close(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms, cb);
+        _close_locked(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms, cb);
     }
 
     bool has_open_position() const noexcept { return pos.active; }
@@ -389,6 +422,14 @@ public:
     }
 
 private:
+    // FIX BBMR-MUTEX 2026-04-21: race guard for _close / force_close.
+    // mutable so const-qualified methods could also acquire if needed.
+    mutable std::mutex _close_mtx;
+
+    // FIX BBMR-SL-KILL 2026-04-21: consecutive-SL kill state.
+    int     _consec_sl     = 0;    // consecutive SL counter
+    int64_t _sl_kill_until = 0;    // block entries until this ms (set on 3rd SL)
+
     // ── BB state ──────────────────────────────────────────────────────────────
     std::deque<double> _bb_closes;
     double  _bb_mid    = 0.0;
@@ -469,8 +510,23 @@ private:
     }
 
     // ── Close ─────────────────────────────────────────────────────────────────
+    // FIX BBMR-MUTEX 2026-04-21: public _close acquires mutex and double-checks
+    // pos.active. All internal call sites (TP, SL/BE, TIMEOUT) now go through
+    // here. force_close uses _close_locked directly because it already holds
+    // the lock.
     void _close(double exit_px, const char* reason,
                 int64_t now_ms, CloseCallback on_close) noexcept
+    {
+        std::lock_guard<std::mutex> lk(_close_mtx);
+        if (!pos.active) return;
+        _close_locked(exit_px, reason, now_ms, on_close);
+    }
+
+    // Internal close path -- MUST be called with _close_mtx held AND pos.active==true.
+    // Body is unchanged from pre-2026-04-21 _close, plus FIX BBMR-SL-KILL 2026-04-21
+    // consec-SL tracking.
+    void _close_locked(double exit_px, const char* reason,
+                       int64_t now_ms, CloseCallback on_close) noexcept
     {
         double pnl_pts = pos.is_long
             ? (exit_px - pos.entry) : (pos.entry - exit_px);
@@ -480,6 +536,20 @@ private:
         _last_exit_s   = now_ms / 1000LL;
         ++_total_trades;
         if (pnl_usd > 0.0) ++_total_wins;
+
+        // FIX BBMR-SL-KILL 2026-04-21: consecutive-SL tracker. Increment on true SL
+        // exits only (not BE / TP / TIMEOUT / FORCE_CLOSE). On 3rd consecutive SL,
+        // arm the 30-min entry block. Any non-SL exit resets the counter.
+        if (std::strcmp(reason, "SL") == 0) {
+            if (++_consec_sl >= 3) {
+                _sl_kill_until = now_ms + 1800000LL;   // 30 minutes
+                std::cout << "[BBMR-SL-KILL] " << _consec_sl
+                          << " consec SLs -- blocking entries for 30min\n";
+                std::cout.flush();
+            }
+        } else {
+            _consec_sl = 0;
+        }
 
         std::cout << "[BBMR] EXIT " << (pos.is_long ? "LONG" : "SHORT")
                   << " @ " << std::fixed << std::setprecision(2) << exit_px
