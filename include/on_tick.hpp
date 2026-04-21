@@ -1418,26 +1418,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
         }
 
-        // ?? HTF bias size scale ???????????????????????????????????????????
-        // 1.0? when daily+intraday both agree with direction (Jane Street 2/2 rule).
-        // 0.5? when both TFs oppose direction -- trade is counter-trend on all TFs.
-        // 0.75? when TFs are mixed/neutral -- modest size reduction for uncertainty.
-        {
-            const double htf_mult = g_htf_filter.size_scale(sym, sig.is_long);
-            if (htf_mult < 1.0) {
-                static thread_local int64_t s_htf_log = 0;
-                if (nowSec() - s_htf_log > 30) {
-                    s_htf_log = nowSec();
-                    {
-                        char _msg[512];
-                        snprintf(_msg, sizeof(_msg), "[HTF-BIAS] %s %s bias=%s ? lot %.4f ? %.2f\n",                            sym.c_str(), sig.is_long ? "LONG" : "SHORT",                            g_htf_filter.bias_name(sym),                            lot_size, htf_mult);
-                        std::cout << _msg;
-                        std::cout.flush();
-                    }
-                }
-                lot_size *= htf_mult;
-                lot_size = std::max(0.01, std::floor(lot_size * 100.0 + 0.5) / 100.0);
+        // FIX 2026-04-22: HTF regime HARD-BLOCK (replaced halve-lot soft filter).
+        // Old design halved size when bias opposed direction, but at base_lot=0.01
+        // the std::max(0.01, ...) floor immediately restored it -- soft filter was
+        // a complete no-op. Today's tape: 16 LONG trades during a 101pt BEARISH
+        // gold day, no halving applied, -$49.01 in counter-trend losses.
+        // New design: bias() requires both daily AND intraday to agree (2/2 rule)
+        // so on chop days returns NEUTRAL and we never block. Only on clean
+        // trend days does this fire, and on those days counter-trend trades
+        // have negative expectancy -- skip them entirely.
+        if (g_htf_filter.bias_opposes(sym, sig.is_long)) {
+            static thread_local int64_t s_htf_blk_log = 0;
+            if (nowSec() - s_htf_blk_log > 30) {
+                s_htf_blk_log = nowSec();
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg), "[HTF-BLOCK] %s %s skipped -- HTF bias=%s opposes direction\n",
+                    sym.c_str(), sig.is_long ? "LONG" : "SHORT",
+                    g_htf_filter.bias_name(sym));
+                std::cout << _msg; std::cout.flush();
             }
+            return;  // skip entire trade -- counter-regime trades blocked
         }
 
         omega::TradeCandidate cand = omega::build_candidate(
