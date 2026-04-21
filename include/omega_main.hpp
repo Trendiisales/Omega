@@ -19,6 +19,9 @@ int main(int argc, char* argv[])
     DWORD dwMode = 0; GetConsoleMode(hOut, &dwMode);
     SetConsoleMode(hOut, dwMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 
+    // Startup marker read by QUICK_RESTART.ps1 verify step -- match regex: \[Omega\] Git hash: [0-9a-f]{7}
+    std::cout << "[Omega] Git hash: " << OMEGA_VERSION << "\n"; std::cout.flush();
+
     std::cout << "\033[1;36m"
               << "=======================================================\n"
               << "  OMEGA  |  Commodities & Indices  |  Breakout System  \n"
