@@ -436,12 +436,23 @@ private:
         const double atr    = pos.atr_at_entry;
         const int64_t held_ms = now_ms - (pos.entry_ts * 1000LL);
 
-        // Immediate reversal guard: price never went our way in 30s
+        // Immediate reversal guard: price never went our way within first 30s after entry.
+        // 2026-04-21 forensics: 16s LONG -$41 reversal caused by
+        //   (a) 1.5pt floor being ~0.5 ATR at DPE_ATR_MIN=2.0 (noise, not signal),
+        //   (b) 0.30 mfe allowance being too generous (still allowed favorable ticks),
+        //   (c) no minimum hold, so a 1-tick slippage spike right after a market-order
+        //       entry could trip the reversal close.
+        // Bundled fix:
+        //   - threshold = max(spread_at_entry * 4, ATR * 0.40)
+        //     (spread-scaled so a wide-spread entry needs a bigger adverse move;
+        //      0.40 ATR floor replaces 0.20 ATR which was sub-noise)
+        //   - mfe tolerance tightened from 0.30 -> 0.15 (real reversal = never ticked up)
+        //   - require held_s >= 5 before IMM check fires (absorbs entry-tick slippage)
         {
             const int64_t held_s = held_ms / 1000;
             const double  adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
-            const double  imm_thresh = std::max(1.5, atr * 0.20);
-            if (held_s <= 30 && adverse > imm_thresh && pos.mfe < 0.30) {
+            const double  imm_thresh = std::max(m_spread_at_entry * 4.0, atr * 0.40);
+            if (held_s >= 5 && held_s <= 30 && adverse > imm_thresh && pos.mfe < 0.15) {
                 const double exit_px = pos.is_long ? bid : ask;
                 close_position(exit_px, "IMM_REVERSAL", now_ms, on_close);
                 return;
