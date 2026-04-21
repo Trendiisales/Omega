@@ -197,6 +197,7 @@ struct CandleFlowEngine {
         double  trail_sl      = 0.0;     // current trailing SL price
         bool    partial_done  = false;   // true after 50% partial exit at 2x cost
         double  atr_pts       = 0.0;     // ATR at entry, used for trail distance
+        double  spread_at_entry = 0.0;   // bid-ask spread captured at entry (ledger forensics)
     } pos;
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
@@ -1333,6 +1334,7 @@ private:
         pos.trail_sl      = sl_px;   // initialise trail SL to hard SL
         pos.partial_done  = false;
         pos.atr_pts       = atr_pts;
+        pos.spread_at_entry = spread;
         ++m_trade_id;
         phase = Phase::LIVE;
 
@@ -1403,6 +1405,7 @@ private:
             ptr.regime     = "CANDLE_FLOW";
             ptr.l2_live    = true;
             ptr.shadow     = shadow_mode;
+            ptr.spreadAtEntry = pos.spread_at_entry;
             omega::apply_realistic_costs(ptr, pos.entry, partial_size);
             std::cout << "[CFE] PARTIAL-TP " << (pos.is_long?"LONG":"SHORT")
                       << " @ " << std::fixed << std::setprecision(2) << partial_px
@@ -1601,6 +1604,7 @@ private:
         tr.regime     = "CANDLE_FLOW";
         tr.l2_live    = true;
         tr.shadow     = shadow_mode;
+        tr.spreadAtEntry = pos.spread_at_entry;
         omega::apply_realistic_costs(tr, pos.entry, pos.size);
 
         std::cout << "[CFE] EXIT " << (pos.is_long?"LONG":"SHORT")
