@@ -130,6 +130,7 @@ struct CrossPosition {
     bool    tp_extended_    = false; // true once TP has been extended past initial target
     double  init_tp_dist_   = 0.0;  // cached original TP distance for trail calc after extension
     bool    allow_tp_extend = true;  // set false for mean-reversion engines that must close at TP
+    bool    shadow_mode     = true;  // default true = log only, no live orders (Class C added 2026-04-21)
     char    symbol[16]      = {};
     char    engine[32]      = {};
     char    reason[32]      = {};
@@ -271,6 +272,7 @@ private:
         tr.exitReason  = exit_reason;
         tr.spreadAtEntry = spread_at_entry;
         tr.engine      = engine;
+        tr.shadow      = shadow_mode;
         active = false;
         if (on_close) on_close(tr);
     }
@@ -1490,6 +1492,8 @@ public:
     bool    PYRAMID_ENABLED     = false; // enable per-symbol; gold=true in main.cpp
     double  PYRAMID_SIZE_MULT   = 0.5;  // add-on = 50% of original size
     int     PYRAMID_MAX_ADDS    = 1;    // max 1 pyramid add-on
+
+    bool    shadow_mode         = true; // default true = log only, no live orders (Class C added 2026-04-21)
     // EMA alphas calibrated for ~10 ticks/sec (London gold rate).
     // Using tick-count periods directly produced EMAs with half-life <1s
     // (EMA9 at alpha=0.2 = 3-tick half-life = 0.3s) -- flipping trend
@@ -1624,6 +1628,7 @@ public:
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
                     tr.exitReason="IMM_REVERSAL"; tr.engine="TrendPullback";
                     tr.spreadAtEntry=pos_.spread_at_entry;
+                    tr.shadow=shadow_mode;
                     pos_.reset(); be_locked_=false; prev_at_ema50_=false;
                     cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
                     if (on_close) on_close(tr);
@@ -1656,6 +1661,7 @@ public:
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
                     tr.exitReason="TIME_STOP"; tr.engine="TrendPullback";
                     tr.spreadAtEntry=pos_.spread_at_entry;
+                    tr.shadow=shadow_mode;
                     pos_.reset(); be_locked_=false; prev_at_ema50_=false;
                     cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
                     if (on_close) on_close(tr);
@@ -1686,6 +1692,7 @@ public:
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
                     tr.exitReason="TIME_STOP"; tr.engine="TrendPullback";
                     tr.spreadAtEntry=pos_.spread_at_entry;
+                    tr.shadow=shadow_mode;
                     pos_.reset(); be_locked_=false; prev_at_ema50_=false;
                     cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
                     if (on_close) on_close(tr);
@@ -1718,6 +1725,7 @@ public:
                 tr.exitReason = reason;
                 tr.engine     = "TrendPullback";
                 tr.spreadAtEntry = pos_.spread_at_entry;
+                tr.shadow     = shadow_mode;
                 record_daily_pnl(tr.pnl);  // track for daily cap
                 // Full symbol?tick_value table -- must match tick_value_multiplier() in main.cpp
                 // XAUUSD=100, US500.F=50, USTEC.F=20, DJ30.F=5, GER40=1.10, UK100=1.33,
