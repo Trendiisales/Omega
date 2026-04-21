@@ -77,6 +77,72 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         }
     }
 
+    // ???????????????????????????????????????????????????????????????????????????????
+    // ?? SHADOW-MODE CENTRAL GUARD (2026-04-21)
+    // ???????????????????????????????????????????????????????????????????????????????
+    // Short-circuits shadow trades to audit-only logging so they never pollute:
+    //   g_omegaLedger, g_telemetry, daily_pnl, consec_losses, fast_loss_streak,
+    //   engine_culled, g_crowding_guard, g_walk_forward, g_param_gate, g_edges.tod,
+    //   g_perf auto-disable state, g_indices_disconnect_until cooldown, or trigger
+    //   send_live_order on phantom positions.
+    //
+    // A trade is treated as shadow when EITHER:
+    //   (a) tr_in.shadow == true              (engine stamped itself as shadow)
+    //   (b) g_cfg.mode != "LIVE"              (global mode fallback for engines that
+    //                                          don't own a shadow_mode field)
+    //
+    // Condition (b) is the catch-all: every engine is implicitly shadow while
+    // global mode is SHADOW, regardless of whether the engine stamped tr.shadow.
+    //
+    // This guard is the first line of defence. The second line is in quote_loop.hpp
+    // where shutdown/disconnect callbacks pre-filter TradeRecords before even calling
+    // handle_closed_trade, which also blocks send_live_order from firing real orders
+    // on shadow positions that don't exist at the broker.
+    //
+    // Shadow audit side-effects preserved:
+    //   - tick_value_multiplier + apply_realistic_costs (so net_pnl is USD-correct)
+    //   - write_shadow_csv (shadow CSV audit trail)
+    //   - write_trade_close_logs (standard close log for forensic analysis)
+    //   - [TRADE-COST] and [SHADOW-CLOSE] stdout line for live monitoring
+    // ???????????????????????????????????????????????????????????????????????????????
+    {
+        const bool is_shadow = tr_in.shadow || (g_cfg.mode != "LIVE");
+        if (is_shadow) {
+            // Cost-correct PnL for the audit row
+            const double mult = tick_value_multiplier(tr.symbol);
+            tr.pnl *= mult; tr.mfe *= mult; tr.mae *= mult;
+            double cps_sh = 0.0;
+            {
+                const std::string& s = tr.symbol;
+                if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" ||
+                    s == "NZDUSD" || s == "USDJPY" ||
+                    s == "XAUUSD" || s == "XAGUSD")
+                    cps_sh = 3.0;
+            }
+            omega::apply_realistic_costs(tr, cps_sh, mult);
+
+            // Preserve visibility in stdout -- same format as live close so log parsers
+            // don't break, but prefixed [SHADOW-CLOSE] for unambiguous filtering.
+            std::cout << "[SHADOW-CLOSE] " << tr.symbol
+                      << " engine=" << tr.engine
+                      << " side=" << tr.side
+                      << " gross=$" << std::fixed << std::setprecision(2) << tr.pnl
+                      << " net=$" << tr.net_pnl
+                      << " exit=" << tr.exitReason
+                      << " reason=" << (tr_in.shadow ? "engine_shadow" : "global_shadow")
+                      << " -- SKIPPING ledger/risk/perf/TOD/crowding/WFO/cooldown mutation\n";
+            std::cout.flush();
+
+            // CSV audit trails only. write_shadow_csv writes to shadow-specific CSV;
+            // write_trade_close_logs writes the universal per-trade close log which
+            // forensic tools read for post-mortems.
+            if (g_cfg.mode == "SHADOW") write_shadow_csv(tr);
+            write_trade_close_logs(tr);
+
+            return;
+        }
+    }
+
     // ?? Indices FORCE_CLOSE circuit breaker -- stamp cooldown on disconnect ?????
     // When a US index position is FORCE_CLOSEd (disconnect/reconnect), stamp a 30-min
     // cooldown to prevent immediate re-entry into the same losing conditions.
