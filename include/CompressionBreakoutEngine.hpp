@@ -125,6 +125,7 @@ struct CompressionBreakoutEngine {
         double  trail_sl       = 0.0;
         int64_t entry_ts_ms    = 0;
         int     trade_id       = 0;
+        double  spread_at_entry = 0.0;  // bid-ask spread captured at entry (ledger forensics)
     } pos;
 
     bool has_open_position() const noexcept { return pos.active; }
@@ -401,6 +402,7 @@ private:
         pos.trail_sl      = sl_px;
         pos.entry_ts_ms   = now_ms;
         pos.trade_id      = _trade_id;
+        pos.spread_at_entry = spread;
 
         // Reset armed state after entry -- require new compression to re-arm
         _armed          = false;
@@ -526,6 +528,7 @@ private:
             tr.regime     = "CBE";
             tr.l2_live    = true;
             tr.shadow     = shadow_mode;
+            tr.spreadAtEntry = pos.spread_at_entry;
             on_close(tr);
         }
 
