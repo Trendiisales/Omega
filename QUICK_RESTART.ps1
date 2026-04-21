@@ -244,11 +244,49 @@ Write-Host ""
 # STEP 3: BUILD
 # ==============================================================================
 Write-Host "[3/4] Building..." -ForegroundColor Yellow
+Write-Host "  (streaming cmake output -- errors in red, compiling files in gray)" -ForegroundColor DarkCyan
 
-& $cmakeExe -S $OmegaDir -B $buildDir -DCMAKE_BUILD_TYPE=Release "-DOMEGA_FORCE_GIT_HASH=$ghSha7" 2>&1 |
-    Where-Object { $_ -match "\[Omega\]|error" } | ForEach-Object { Write-Host "    $_" }
-$buildOut = & $cmakeExe --build $buildDir --config Release 2>&1
-$buildOut | Where-Object { $_ -match "Omega.vcxproj|error C" } | ForEach-Object { Write-Host "    $_" }
+# --- CONFIGURE ---
+$cfgStart = Get-Date
+& $cmakeExe -S $OmegaDir -B $buildDir -DCMAKE_BUILD_TYPE=Release "-DOMEGA_FORCE_GIT_HASH=$ghSha7" 2>&1 | ForEach-Object {
+    $line = $_.ToString()
+    if ($line -match "error|FAILED|CMake Error") {
+        Write-Host "    $line" -ForegroundColor Red
+    } elseif ($line -match "\[Omega\]|Build hash|Build time") {
+        Write-Host "    $line" -ForegroundColor Cyan
+    } elseif ($line -match "^-- ") {
+        Write-Host "    $line" -ForegroundColor DarkGray
+    } else {
+        Write-Host "    $line" -ForegroundColor Gray
+    }
+}
+$cfgSec = [math]::Round(((Get-Date) - $cfgStart).TotalSeconds, 1)
+Write-Host "  [configure] done in ${cfgSec}s" -ForegroundColor DarkCyan
+
+# --- BUILD (compile + link) ---
+$bldStart = Get-Date
+$compileCount = 0
+& $cmakeExe --build $buildDir --config Release 2>&1 | ForEach-Object {
+    $line = $_.ToString()
+    if ($line -match "error C\d+|fatal error|LINK : fatal|LNK\d{4}") {
+        Write-Host "    $line" -ForegroundColor Red
+    } elseif ($line -match "warning C\d+") {
+        Write-Host "    $line" -ForegroundColor Yellow
+    } elseif ($line -match "^\s*([A-Za-z0-9_\-]+\.cpp)\s*$") {
+        $compileCount++
+        Write-Host "    [$compileCount] $line" -ForegroundColor DarkGray
+    } elseif ($line -match "Omega\.vcxproj.*->.*Omega\.exe") {
+        Write-Host "    $line" -ForegroundColor Green
+    } elseif ($line -match "Generating Code|Creating library|Linking") {
+        Write-Host "    $line" -ForegroundColor Cyan
+    } elseif ($line -match "Building Custom Rule|Auto build dll exports") {
+        # Noisy MSBuild chatter - suppress
+    } else {
+        Write-Host "    $line" -ForegroundColor DarkGray
+    }
+}
+$bldSec = [math]::Round(((Get-Date) - $bldStart).TotalSeconds, 1)
+Write-Host "  [compile+link] done in ${bldSec}s ($compileCount .cpp files compiled)" -ForegroundColor DarkCyan
 
 if (-not (Test-Path $BuildExe)) {
     Write-Host "  [FATAL] Build failed -- Omega.exe not produced" -ForegroundColor Red
