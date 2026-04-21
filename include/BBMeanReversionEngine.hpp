@@ -188,6 +188,7 @@ public:
         double   entry_rsi= 0.0;
         double   bb_mid   = 0.0;
         double   overshoot= 0.0;
+        double   spread_at_entry = 0.0;  // bid-ask spread captured at entry (ledger forensics)
     } pos;
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
@@ -462,6 +463,7 @@ private:
         pos.entry_rsi = _rsi;
         pos.bb_mid    = _bb_mid;
         pos.overshoot = overshoot;
+        pos.spread_at_entry = ask - bid;
 
         (void)on_close;
     }
@@ -511,6 +513,7 @@ private:
             tr.regime     = "BB_MEAN_REV";
             tr.l2_live    = true;
             tr.shadow     = shadow_mode;
+            tr.spreadAtEntry = pos.spread_at_entry;
             on_close(tr);
         }
 
