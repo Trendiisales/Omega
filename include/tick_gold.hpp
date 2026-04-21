@@ -1905,7 +1905,32 @@ static void on_tick_gold(
             !g_macro_crash.has_open_position() &&
             g_hybrid_gold.has_open_position() &&
             (g_hybrid_gold.pos.is_long ? (mce_ewm_drift < 0) : (mce_ewm_drift > 0));
-        if (!mce_bracket_conflict) {
+        // FIX 2026-04-22: HTF hard-block for MacroCrash entry.
+        // MCE enters LONG on spikes up, SHORT on crashes (direction = sign of ewm_drift).
+        // bias() returns BULLISH/BEARISH only when daily+intraday agree (2/2 rule);
+        // NEUTRAL chop days bypass this block.
+        // Only block NEW entries -- management of existing MCE position is
+        // handled below in the else branch via mce_was_open_before_tick.
+        const bool mce_htf_long_intent = (mce_ewm_drift > 0.0);
+        const bool mce_htf_blocked = !g_macro_crash.has_open_position()
+            && g_htf_filter.bias_opposes("XAUUSD", mce_htf_long_intent);
+        if (mce_htf_blocked) {
+            static thread_local int64_t s_mce_htf_log = 0;
+            if (now_ms_g - s_mce_htf_log > 30000) {
+                s_mce_htf_log = now_ms_g;
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg),
+                    "[HTF-BLOCK] XAUUSD MCE %s skipped -- HTF bias=%s opposes\n",
+                    mce_htf_long_intent ? "LONG" : "SHORT",
+                    g_htf_filter.bias_name("XAUUSD"));
+                std::cout << _msg; std::cout.flush();
+            }
+        }
+        // Dispatch order:
+        //   entry-allowed          -> dispatch (entry or manage)
+        //   HTF blocks entry       -> manage open position only; log handled above
+        //   bracket-conflict blocks-> manage open position only; log [MCE-BLOCK]
+        if (!mce_bracket_conflict && !mce_htf_blocked) {
             g_macro_crash.on_tick(bid, ask,
                 mce_atr, mce_vol_ratio_eff,
                 mce_ewm_drift,
@@ -1917,7 +1942,7 @@ static void on_tick_gold(
                 mce_microprice,
                 mce_rsi,
                 g_macro_ctx.session_slot);
-        } else {
+        } else if (mce_bracket_conflict) {
             static int64_t s_mce_conflict_log = 0;
             if (now_ms_g - s_mce_conflict_log > 10000) {
                 s_mce_conflict_log = now_ms_g;
@@ -1943,6 +1968,9 @@ static void on_tick_gold(
                     g_macro_ctx.session_slot);
             }
         }
+        // Note: mce_htf_blocked branch needs no else-if body -- [HTF-BLOCK] was
+        // already logged above, and the block itself requires !has_open_position(),
+        // so there is no open position to manage here.
 
         // OPEN-LOG FIX 2026-04-21: detect MCE fresh-entry transition and log.
         // Fires exactly once per MCE entry (the tick where pos.active flipped
@@ -4694,8 +4722,27 @@ static void on_tick_gold(
             [&](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
     }
     // Entry: only when no other gold position open, gold_can_enter passes
+    // FIX 2026-04-22: HTF hard-block for CompressionBreakout entry.
+    // CBE's internal direction gate (lines 278-279 of engine) requires
+    // ewm_drift alignment: LONG needs drift>0, SHORT needs drift<0.
+    // Therefore ewm_drift sign is a reliable pre-dispatch direction proxy.
+    const bool cbe_htf_long_intent = (g_gold_stack.ewm_drift() > 0.0);
+    const bool cbe_htf_blocked = g_htf_filter.bias_opposes("XAUUSD", cbe_htf_long_intent);
+    if (cbe_htf_blocked) {
+        static thread_local int64_t s_cbe_htf_log = 0;
+        if (now_ms_g - s_cbe_htf_log > 30000) {
+            s_cbe_htf_log = now_ms_g;
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg),
+                "[HTF-BLOCK] XAUUSD CBE %s skipped -- HTF bias=%s opposes\n",
+                cbe_htf_long_intent ? "LONG" : "SHORT",
+                g_htf_filter.bias_name("XAUUSD"));
+            std::cout << _msg; std::cout.flush();
+        }
+    }
     if (!g_cbe.has_open_position()
         && gold_can_enter
+        && !cbe_htf_blocked
         && !g_candle_flow.has_open_position()
         && !g_gold_flow.has_open_position()
         && !g_gold_stack.has_open_position()
@@ -4735,8 +4782,26 @@ static void on_tick_gold(
         g_ema_cross.on_tick(bid, ask, now_ms_g,
             [&](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
     }
+    // FIX 2026-04-22: HTF hard-block for EMACross entry.
+    // EMACross is trend-following (9/15 crossover); valid crossovers align
+    // with short-term drift direction. ewm_drift sign is a reliable proxy.
+    const bool ece_htf_long_intent = (g_gold_stack.ewm_drift() > 0.0);
+    const bool ece_htf_blocked = g_htf_filter.bias_opposes("XAUUSD", ece_htf_long_intent);
+    if (ece_htf_blocked) {
+        static thread_local int64_t s_ece_htf_log = 0;
+        if (now_ms_g - s_ece_htf_log > 30000) {
+            s_ece_htf_log = now_ms_g;
+            char _msg[512];
+            snprintf(_msg, sizeof(_msg),
+                "[HTF-BLOCK] XAUUSD ECE %s skipped -- HTF bias=%s opposes\n",
+                ece_htf_long_intent ? "LONG" : "SHORT",
+                g_htf_filter.bias_name("XAUUSD"));
+            std::cout << _msg; std::cout.flush();
+        }
+    }
     if (!g_ema_cross.has_open_position()
         && gold_can_enter
+        && !ece_htf_blocked
         && !g_candle_flow.has_open_position()
         && !g_cbe.has_open_position()
         && !g_gold_flow.has_open_position()
