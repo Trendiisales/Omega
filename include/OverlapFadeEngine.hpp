@@ -45,6 +45,7 @@ public:
     int    WARMUP_TICKS   = 500;
     double LOT_SIZE       = 0.16;
     bool   enabled        = true;
+    bool   shadow_mode    = true;  // default true = log only, no live orders (Class C added 2026-04-21)
 
     using CloseCallback = std::function<void(const TradeRecord&)>;
     CloseCallback on_close;
@@ -170,6 +171,7 @@ private:
             tr.exitTs     = now_ms / 1000;
             tr.exitReason = reason;
             tr.regime     = "OVERLAP_FADE";
+            tr.shadow     = shadow_mode;
             on_close(tr);
         }
 
