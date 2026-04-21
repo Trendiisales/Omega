@@ -103,6 +103,27 @@ public:
     // increments. If price spikes outside (sweep), counter resets to 0. Only when
     // counter reaches MIN_BREAK_TICKS does arm_both_sides() fire.
     int    MIN_BREAK_TICKS     = 0;
+    // ?? Whipsaw guards (default ON) ??????????????????????????????????????????
+    // Two independent mechanisms, both default ON, both disable cleanly:
+    //
+    // 1) Same-bracket lockout (WHIPSAW_OVERLAP_K):
+    //    After a LOSING close (SL_HIT, BREAKOUT_FAIL, or any negative-pnl exit),
+    //    the stopped bracket's [hi, lo] is remembered. Future IDLE->ARMED attempts
+    //    are blocked while the new structural range overlaps the stopped range by
+    //    >= WHIPSAW_OVERLAP_K (fraction of the NEW range). Expires once price
+    //    establishes a non-overlapping range OR WHIPSAW_LOCKOUT_MAX_MS elapses.
+    //    Set WHIPSAW_OVERLAP_K=0.0 to disable.
+    //
+    // 2) Whipsaw counter (WHIPSAW_COOLDOWN_MULT):
+    //    Consecutive losses on overlapping brackets increment a counter. When it
+    //    reaches 2, the NEXT cooldown is multiplied by WHIPSAW_COOLDOWN_MULT.
+    //    A winning close or a non-overlapping loss resets the counter.
+    //    Set WHIPSAW_COOLDOWN_MULT=1.0 to disable.
+    //
+    // TP wins never trigger either mechanism and always reset the counter.
+    double WHIPSAW_OVERLAP_K        = 0.5;      // 0.0 disables lockout
+    double WHIPSAW_COOLDOWN_MULT    = 2.0;      // 1.0 disables cooldown extension
+    int    WHIPSAW_LOCKOUT_MAX_MS   = 900000;   // 15 min safety ceiling
     const char* symbol         = "???";
     bool   shadow_mode         = false;  // set by main.cpp -- enables price-triggered fill sim in PENDING
 
@@ -210,9 +231,17 @@ public:
         const int64_t now       = nowSec();
 
         // ?? COOLDOWN ??????????????????????????????????????????????????????????
+        // m_cooldown_ms_override, when non-zero, takes precedence for this single
+        // cooldown cycle -- used by the whipsaw-counter mechanism to extend the
+        // cooldown after consecutive overlapping losses. Cleared on IDLE entry.
         if (phase == BracketPhase::COOLDOWN) {
-            if (now - m_cooldown_start >= static_cast<int64_t>(COOLDOWN_MS / 1000))
+            const int64_t effective_cd_ms = (m_cooldown_ms_override > 0)
+                ? static_cast<int64_t>(m_cooldown_ms_override)
+                : static_cast<int64_t>(COOLDOWN_MS);
+            if (now - m_cooldown_start >= effective_cd_ms / 1000) {
                 phase = BracketPhase::IDLE;
+                m_cooldown_ms_override = 0;  // single-use: clear after cooldown expires
+            }
             else return;
         }
 
@@ -506,6 +535,68 @@ public:
         bracket_high = shi + buf;
         bracket_low  = slo - buf;
 
+        // ?? Same-bracket lockout (whipsaw guard) ??????????????????????????????
+        // Only consulted on IDLE->ARMED attempts. ARMED/PENDING/LIVE phases pass
+        // through untouched -- we only block NEW arming into the zone we just
+        // lost money in.
+        //
+        // Release conditions (checked in order):
+        //   1) Age: (now - m_last_stop_ts) * 1000 >= WHIPSAW_LOCKOUT_MAX_MS
+        //   2) Range has moved away: overlap(new_range, stopped_range) < OVERLAP_K
+        // Either condition clears the lockout.
+        //
+        // Overlap math: overlap = max(0, min(hi_a,hi_b) - max(lo_a,lo_b))
+        // Normalise by the NEW range (not the stopped range) so that a tight
+        // new compression inside the old wide range still counts as "same zone".
+        if (phase == BracketPhase::IDLE
+            && WHIPSAW_OVERLAP_K > 0.0
+            && m_last_stop_hi > 0.0 && m_last_stop_lo > 0.0)
+        {
+            const int64_t age_ms = (nowSec() - m_last_stop_ts) * 1000;
+            if (age_ms >= static_cast<int64_t>(WHIPSAW_LOCKOUT_MAX_MS)) {
+                // Safety ceiling -- release lockout unconditionally
+                std::cout << "[BRACKET-" << symbol << "] WHIPSAW-LOCKOUT RELEASED (age)"
+                          << " age_ms=" << age_ms << " max=" << WHIPSAW_LOCKOUT_MAX_MS << "\n";
+                std::cout.flush();
+                m_last_stop_hi = 0.0;
+                m_last_stop_lo = 0.0;
+                m_whipsaw_count = 0;
+            } else {
+                const double ov_lo  = std::max(bracket_low,  m_last_stop_lo);
+                const double ov_hi  = std::min(bracket_high, m_last_stop_hi);
+                const double ov     = (ov_hi > ov_lo) ? (ov_hi - ov_lo) : 0.0;
+                const double new_rng = bracket_high - bracket_low;
+                const double ov_frac = (new_rng > 0.0) ? (ov / new_rng) : 0.0;
+                if (ov_frac >= WHIPSAW_OVERLAP_K) {
+                    static int64_t s_ws_log = 0;
+                    const int64_t now_ws = nowSec();
+                    if (now_ws - s_ws_log >= 30) {
+                        s_ws_log = now_ws;
+                        std::cout << "[BRACKET-" << symbol << "] WHIPSAW-LOCKOUT BLOCK"
+                                  << " new=[" << bracket_low << "," << bracket_high << "]"
+                                  << " stopped=[" << m_last_stop_lo << "," << m_last_stop_hi << "]"
+                                  << " overlap_frac=" << ov_frac
+                                  << " thresh=" << WHIPSAW_OVERLAP_K
+                                  << " count=" << m_whipsaw_count << "\n";
+                        std::cout.flush();
+                    }
+                    // Hold IDLE -- do NOT arm. Lockout persists until price
+                    // establishes a non-overlapping range or ages out.
+                    return;
+                }
+                // Overlap below threshold -- market has moved. Clear lockout.
+                std::cout << "[BRACKET-" << symbol << "] WHIPSAW-LOCKOUT RELEASED (range moved)"
+                          << " overlap_frac=" << ov_frac
+                          << " thresh=" << WHIPSAW_OVERLAP_K << "\n";
+                std::cout.flush();
+                m_last_stop_hi = 0.0;
+                m_last_stop_lo = 0.0;
+                // Do NOT reset m_whipsaw_count here -- it resets on winning close
+                // or on the natural COOLDOWN->IDLE transition path, not just because
+                // the market drifted. Counter only matters for the NEXT stopout.
+            }
+        }
+
         // ?? IDLE ? ARMED ??????????????????????????????????????????????????????
         if (phase == BracketPhase::IDLE) {
             phase      = BracketPhase::ARMED;
@@ -637,6 +728,19 @@ protected:
     // Using the recent 60-tick range for MAX_RANGE asks "is the market currently trending?"
     // not "did the market ever move this much in the last 10 minutes?"
     double  m_recent_range    = 0.0;
+
+    // ?? Whipsaw guard state ??????????????????????????????????????????????????
+    // Set on any LOSING close (closePos with pnl < 0). Cleared on:
+    //   - TP win / any winning close (counter reset to 0)
+    //   - Lockout age exceeds WHIPSAW_LOCKOUT_MAX_MS (safety release)
+    //   - New structural range that overlaps the stopped range by < OVERLAP_K
+    // A value of m_last_stop_hi == 0.0 means "no active lockout".
+    double  m_last_stop_hi       = 0.0;
+    double  m_last_stop_lo       = 0.0;
+    int64_t m_last_stop_ts       = 0;
+    int     m_whipsaw_count      = 0;
+    bool    m_next_cooldown_ext  = false;  // set true when counter>=2 at close time
+    int     m_cooldown_ms_override = 0;    // non-zero overrides COOLDOWN_MS for this cycle
 
     // Locked at the moment both orders are sent -- never change after PENDING
     double m_locked_hi        = 0.0;
@@ -823,6 +927,81 @@ protected:
         tr.regime        = (macro_regime && *macro_regime) ? macro_regime : pos.regime;
         tr.bracket_hi    = m_locked_hi;   // upper boundary locked at arm time
         tr.bracket_lo    = m_locked_lo;   // lower boundary locked at arm time
+
+        // ?? Whipsaw guard bookkeeping ?????????????????????????????????????????
+        // Classify this exit:
+        //   LOSS    : raw pnl (pts) is negative beyond a half-spread dead zone
+        //   WIN     : raw pnl is positive beyond a half-spread dead zone
+        //   NEUTRAL : |pnl| within dead zone (BE_HIT, tiny scratch) -- no change
+        //
+        // On LOSS:
+        //   - Record stopped-bracket [hi, lo] and timestamp for same-bracket lockout
+        //   - If the NEW stopped bracket overlaps the PREVIOUS stopped bracket by
+        //     >= WHIPSAW_OVERLAP_K, this is a chased chop -> increment counter.
+        //     Non-overlapping loss = different structure, reset counter to 1.
+        //   - If counter >= 2 AND WHIPSAW_COOLDOWN_MULT > 1.0: set cooldown override
+        //     so the NEXT cooldown is extended.
+        //
+        // On WIN:
+        //   - Clear lockout (hi/lo = 0) and reset counter to 0.
+        //
+        // NEUTRAL leaves state untouched.
+        const double raw_pnl_pts = pos.is_long ? (exit_px - pos.entry)
+                                               : (pos.entry - exit_px);
+        const double dead_zone   = pos.spread_at_entry * 0.5;
+        const bool   is_loss     = (raw_pnl_pts < -dead_zone);
+        const bool   is_win      = (raw_pnl_pts >  dead_zone);
+
+        if (is_loss) {
+            // Overlap with PREVIOUS stopped bracket (if any)?
+            bool overlaps_prev = false;
+            if (m_last_stop_hi > 0.0 && m_last_stop_lo > 0.0
+                && WHIPSAW_OVERLAP_K > 0.0)
+            {
+                const double ov_lo  = std::max(m_locked_lo, m_last_stop_lo);
+                const double ov_hi  = std::min(m_locked_hi, m_last_stop_hi);
+                const double ov     = (ov_hi > ov_lo) ? (ov_hi - ov_lo) : 0.0;
+                const double rng    = m_locked_hi - m_locked_lo;
+                const double ov_frac = (rng > 0.0) ? (ov / rng) : 0.0;
+                overlaps_prev = (ov_frac >= WHIPSAW_OVERLAP_K);
+            }
+            if (overlaps_prev) {
+                ++m_whipsaw_count;
+            } else {
+                m_whipsaw_count = 1;  // first loss or loss on new zone
+            }
+            // Record THIS bracket as the stopped bracket for lockout
+            m_last_stop_hi = m_locked_hi;
+            m_last_stop_lo = m_locked_lo;
+            m_last_stop_ts = nowSec();
+            // Extend next cooldown if counter crossed threshold
+            if (m_whipsaw_count >= 2 && WHIPSAW_COOLDOWN_MULT > 1.0) {
+                m_cooldown_ms_override = static_cast<int>(
+                    static_cast<double>(COOLDOWN_MS) * WHIPSAW_COOLDOWN_MULT);
+            } else {
+                m_cooldown_ms_override = 0;
+            }
+            std::cout << "[BRACKET-" << symbol << "] WHIPSAW-STATE loss"
+                      << " reason=" << (reason ? reason : "?")
+                      << " pnl_pts=" << raw_pnl_pts
+                      << " count=" << m_whipsaw_count
+                      << " overlaps_prev=" << (overlaps_prev ? 1 : 0)
+                      << " next_cd_ms=" << (m_cooldown_ms_override > 0 ? m_cooldown_ms_override : COOLDOWN_MS)
+                      << "\n";
+            std::cout.flush();
+        } else if (is_win) {
+            // Winning close clears lockout entirely
+            if (m_last_stop_hi > 0.0 || m_whipsaw_count > 0) {
+                std::cout << "[BRACKET-" << symbol << "] WHIPSAW-STATE cleared_on_win"
+                          << " pnl_pts=" << raw_pnl_pts << "\n";
+                std::cout.flush();
+            }
+            m_last_stop_hi = 0.0;
+            m_last_stop_lo = 0.0;
+            m_whipsaw_count = 0;
+            m_cooldown_ms_override = 0;
+        }
+        // NEUTRAL: no change
 
         pos              = OpenPos{};
         pending_both     = BracketBothSignals{};
