@@ -70,6 +70,7 @@
 #include <iostream>
 #include <iomanip>
 #include <cstring>
+#include <mutex>      // FIX CBE-8 (2026-04-21): serialize close paths (force_close vs _manage SL)
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -219,8 +220,47 @@ struct CompressionBreakoutEngine {
         if (now_ms - _last_exit_ms < CBE_COOLDOWN_MS) return;
         if (spread > _atr_cur * 0.30) return;   // spread anomaly block
 
+        // FIX CBE-10 (2026-04-21): consecutive-loss kill switch.
+        // Mirrors Bracket Fix A committed this morning (80969b44). After 3
+        // consecutive losses, block entries for 30 minutes. _consec_losses
+        // was previously tracked in _close_locked but never checked -- dead
+        // counter. This is the death-spiral circuit breaker: 3 SLs at the
+        // same compression level means the regime has changed or the signal
+        // is wrong, and re-entering every 30s compounds losses.
+        if (_consec_losses >= 3) {
+            const int64_t since = now_ms - _last_exit_ms;
+            if (since < 1800000LL) {   // 30 minutes
+                static int64_t s_kill_log = 0;
+                if (now_ms - s_kill_log > 60000) {
+                    s_kill_log = now_ms;
+                    std::cout << "[CBE-LOSS-KILL] " << _consec_losses
+                              << " consec losses, blocking entries for "
+                              << (1800 - since/1000) << "s more\n";
+                    std::cout.flush();
+                }
+                return;
+            } else {
+                // 30min elapsed -- reset counter, allow re-entry
+                std::cout << "[CBE-LOSS-KILL] Reset after 30min, "
+                          << _consec_losses << " losses cleared\n";
+                std::cout.flush();
+                _consec_losses = 0;
+            }
+        }
+
+        // FIX CBE-2 (2026-04-21): log when daily loss cap is tripped (was silent).
         // Daily loss limit
-        if (_daily_pnl <= -150.0) return;
+        if (_daily_pnl <= -150.0) {
+            static int64_t s_daily_kill = 0;
+            if (now_ms - s_daily_kill > 300000) {   // log once per 5 min
+                s_daily_kill = now_ms;
+                std::cout << "[CBE-DAILY-KILL] blocked: daily PnL=$"
+                          << std::fixed << std::setprecision(2) << _daily_pnl
+                          << " <= -150.00\n";
+                std::cout.flush();
+            }
+            return;
+        }
 
         // Session gate: slots 1-5 (London+NY), not Asia (6), not dead zone (0)
         if (session_slot < 1 || session_slot > 5) return;
@@ -329,8 +369,17 @@ struct CompressionBreakoutEngine {
     }
 
     void force_close(double bid, double ask, int64_t now_ms, CloseCallback cb) noexcept {
+        // FIX CBE-8 (2026-04-21): serialize against concurrent _close path from
+        // _manage (SL hit / TP / timeout). tick_gold.hpp calls engine methods
+        // from multiple paths per tick -- without this lock, force_close and
+        // an in-flight _manage SL path can both observe pos.active==true on
+        // the same tick and both invoke _close, emitting a duplicate
+        // TradeRecord with the same trade_id. Mirror of CandleFlow's
+        // RACE-FIX 2026-04-20 pattern. Re-check pos.active under lock so
+        // the second entrant bails silently.
+        std::lock_guard<std::mutex> lk(_close_mtx);
         if (!pos.active) return;
-        _close(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms, cb);
+        _close_locked(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms, cb);
     }
 
 private:
@@ -355,6 +404,10 @@ private:
     int     _total_wins    = 0;
     int     _trade_id      = 0;
     int64_t _startup_ms    = 0;
+
+    // FIX CBE-8 (2026-04-21): race guard for _close / force_close.
+    // mutable so const-qualified methods could also acquire if needed.
+    mutable std::mutex _close_mtx;
 
     // ── Entry ─────────────────────────────────────────────────────────────────
     void _enter(bool is_long, double bid, double ask, double spread,
@@ -407,6 +460,27 @@ private:
         // Reset armed state after entry -- require new compression to re-arm
         _armed          = false;
         _break_detected = true;
+        // FIX CBE-3 (2026-04-21): force a fresh compression cycle before next arm.
+        // Without these resets, if the trade closes before the next M1 bar (e.g.,
+        // a failed breakout stopped out in 30s), _consec_comp is still >= 3 and
+        // the rolling window bars are still tight. On the first bar after close,
+        // _armed re-engages with IDENTICAL _comp_hi / _comp_lo. Next tick that
+        // probes the same level fires another entry at the same breakout price --
+        // the Bracket death-spiral pathology (3+ SLs at 4777.50 / 4789.34 this
+        // morning). Forcing _consec_comp=0 requires CBE_COMP_MIN_BARS fresh
+        // compression bars before arming again. Clearing _comp_hi/_comp_lo is
+        // belt-and-braces -- they get overwritten on next arm, but zeroing them
+        // prevents accidental use of stale values by any future code that reads
+        // them before checking _armed.
+        _consec_comp    = 0;
+        _comp_hi        = 0.0;
+        _comp_lo        = 0.0;
+        _comp_armed_ms  = 0;
+        // Clear rolling bar window so compression can't snap back immediately
+        // from the exact same bars that produced the (just-failed) breakout.
+        _bar_hi.clear();
+        _bar_lo.clear();
+        _bar_cl.clear();
 
         (void)on_close;
     }
@@ -453,7 +527,17 @@ private:
         const bool reenter_comp = pos.is_long
             ? (bid < pos.comp_range_hi - 0.10)
             : (ask > pos.comp_range_lo + 0.10);
-        if (reenter_comp && pos.mfe < 0.0 && (now_ms - pos.entry_ts_ms) > 5000) {
+        // FIX CBE-4 (2026-04-21): original gate was `pos.mfe < 0.0` which is never
+        // true -- mfe starts at 0.0 and only moves upward (see line ~420 where
+        // `if (move > pos.mfe) pos.mfe = move;` never writes negative values).
+        // Result: REENTER_COMP exit has NEVER fired since this engine was written.
+        // Failed breakouts where price falls back into the compression range without
+        // first showing profit would run until SL / timeout. Correct gate is
+        // "not yet at breakeven" -- if the thesis had worked, BE would have fired
+        // at 40% of TP (~0.6xSL), so !be_done means position never showed material
+        // profit. Combined with the existing 5s hold guard, this cuts failed
+        // breakouts early rather than waiting for the full SL.
+        if (reenter_comp && !pos.be_done && (now_ms - pos.entry_ts_ms) > 5000) {
             _close(eff_price, "REENTER_COMP", now_ms, on_close);
             return;
         }
@@ -482,8 +566,22 @@ private:
     }
 
     // ── Close ─────────────────────────────────────────────────────────────────
+    // FIX CBE-8 (2026-04-21): public _close acquires mutex and double-checks
+    // pos.active. All internal call sites (SL_HIT, TP_HIT, TRAIL_HIT, BE_HIT,
+    // TIMEOUT, REENTER_COMP) now go through here. force_close uses
+    // _close_locked directly because it already holds the lock.
     void _close(double exit_px, const char* reason,
                 int64_t now_ms, CloseCallback on_close) noexcept
+    {
+        std::lock_guard<std::mutex> lk(_close_mtx);
+        if (!pos.active) return;
+        _close_locked(exit_px, reason, now_ms, on_close);
+    }
+
+    // Internal close path -- MUST be called with _close_mtx held AND pos.active==true.
+    // Same body as the pre-2026-04-21 _close, no functional change below this point.
+    void _close_locked(double exit_px, const char* reason,
+                       int64_t now_ms, CloseCallback on_close) noexcept
     {
         const double pnl_pts = pos.is_long
             ? (exit_px - pos.entry)
