@@ -48,7 +48,7 @@ public:
     double MIN_ATR_PTS       = 1.0;   // minimum ATR for entry
     double RISK_USD          = 30.0;
     double MIN_LOT           = 0.01;
-    double MAX_LOT           = 0.20;
+    double MAX_LOT           = 0.01;  // FIX 2026-04-22 uniformity: capped to 0.01 SHADOW-mode
     int64_t COOLDOWN_MS      = 120'000;  // 2min cooldown between trades
     int64_t MAX_HOLD_MS      = 900'000;  // 15min max hold
     int64_t MIN_HOLD_MS      = 20'000;   // 20s min hold before L2 exit
