@@ -33,7 +33,7 @@ static void sanitize_config() noexcept {
     // Risk-based sizing sanitization
     g_cfg.risk_per_trade_usd = clampd(g_cfg.risk_per_trade_usd, 0.0, 10000.0, 0.0);
     g_live_equity.store(std::max(g_cfg.account_equity, 100.0), std::memory_order_relaxed);
-    g_cfg.max_lot_gold       = clampd(g_cfg.max_lot_gold,    0.01, 10.0, 0.50);
+    g_cfg.max_lot_gold       = clampd(g_cfg.max_lot_gold,    0.01, 10.0, 0.01);  // FIX 2026-04-22 uniformity: master cap 0.50 -> 0.01 SHADOW-mode
     g_cfg.max_lot_indices    = clampd(g_cfg.max_lot_indices, 0.01, 10.0, 0.20);
     g_cfg.max_lot_oil        = clampd(g_cfg.max_lot_oil,     0.01, 10.0, 0.50);
     g_cfg.max_lot_silver     = clampd(g_cfg.max_lot_silver,  0.01, 10.0, 0.20);
