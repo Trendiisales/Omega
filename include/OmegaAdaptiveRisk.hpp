@@ -1043,6 +1043,15 @@ public:
             }
         }
 
+        // 12. HARD CEILING: multipliers can only reduce, never boost above base_lot.
+        //     Prevents Kelly (max 1.5x) + low_vol_scale (1.10x) + equity_upscale (1.15x)
+        //     from compounding to produce implied lots > base. Observed bug 2026-04-21:
+        //     SessionMomentum emitted sig.size=0.01 but adjusted_lot produced 0.03
+        //     (3x oversize, -$15 loss on 5pt SL instead of -$5). Adaptive risk is
+        //     defensive only -- upsize logic above is preserved for scaling DOWN
+        //     a larger future base_lot, but can never push above the engine's choice.
+        lot = std::min(lot, base_lot);
+
         // Floor to 0.01 lots, round to 2dp
         lot = std::max(0.01, std::floor(lot * 100.0 + 0.5) / 100.0);
         return lot;
