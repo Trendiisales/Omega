@@ -236,6 +236,7 @@ private:
         tr.exitTs     = now_ms / 1000;
         tr.exitReason = reason;
         tr.l2_live    = true;
+        tr.shadow     = shadow_mode;
 
         printf("[PDHL%s] EXIT %s @ %.2f  pnl=$%.2f  mfe=%.3f  reason=%s  held=%llds\n",
                shadow_mode ? "-SHADOW" : "",
