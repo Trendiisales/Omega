@@ -302,6 +302,7 @@ public:
     int         MAX_TRADES_PER_MIN    = 2;
     double      ENTRY_SIZE            = 0.01;
     bool        AGGRESSIVE_SHADOW     = false;  // deprecated -- no longer used, kept for ABI compatibility only
+    bool        shadow_mode           = true;   // default true = log only, no live orders (Class C added 2026-04-21)
     const char* symbol                = "???";
     int         WATCH_TIMEOUT_SEC     = 300;
     // ?? Compression stability params (spec values) ????????????????????????????
@@ -1311,6 +1312,7 @@ protected:
         // are identifiable in the CSV. Was hardcoded "BreakoutEngine" for all types.
         tr.engine        = std::string(symbol ? symbol : "???") + "_BE";
         tr.regime        = (macro_regime && *macro_regime) ? macro_regime : pos.regime;
+        tr.shadow        = shadow_mode;
 
         // Record exit for same-level re-entry guard
         m_last_exit_price = exit_px;
