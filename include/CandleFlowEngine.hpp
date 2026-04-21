@@ -1402,6 +1402,7 @@ private:
             ptr.engine     = "CandleFlowEngine";
             ptr.regime     = "CANDLE_FLOW";
             ptr.l2_live    = true;
+            ptr.shadow     = shadow_mode;
             omega::apply_realistic_costs(ptr, pos.entry, partial_size);
             std::cout << "[CFE] PARTIAL-TP " << (pos.is_long?"LONG":"SHORT")
                       << " @ " << std::fixed << std::setprecision(2) << partial_px
@@ -1599,6 +1600,7 @@ private:
         tr.engine     = "CandleFlowEngine";
         tr.regime     = "CANDLE_FLOW";
         tr.l2_live    = true;
+        tr.shadow     = shadow_mode;
         omega::apply_realistic_costs(tr, pos.entry, pos.size);
 
         std::cout << "[CFE] EXIT " << (pos.is_long?"LONG":"SHORT")
