@@ -423,6 +423,7 @@ private:
             tr.exitReason = reason;
             tr.regime     = "EMA_CROSS";
             tr.l2_live    = true;
+            tr.shadow     = shadow_mode;
             on_close(tr);
         }
 
