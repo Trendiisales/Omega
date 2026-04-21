@@ -33,6 +33,7 @@ struct EdgeEngineBase {
     int WARMUP_TICKS   = 500;
     double LOT_SIZE    = 0.16;
     bool enabled       = true;
+    bool shadow_mode   = true;  // default true = log only, no live orders (Class C added 2026-04-21)
     std::string name   = "EdgeEngine";
 
     using CloseCallback = std::function<void(const TradeRecord&)>;
@@ -122,6 +123,7 @@ protected:
             tr.mfe = pos.mfe; tr.mae = 0;
             tr.entryTs = pos.entry_ms/1000; tr.exitTs = now_ms/1000;
             tr.exitReason = reason; tr.regime = name;
+            tr.shadow = shadow_mode;
             on_close(tr);
         }
         pos.active = false;
