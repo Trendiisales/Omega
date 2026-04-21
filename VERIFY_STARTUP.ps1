@@ -38,6 +38,14 @@ param(
     [string] $OmegaDir = "C:\Omega"
 )
 
+# FIX 2026-04-21 (StrictMode safety):
+# $ghToken is loaded conditionally inside STEP 0 (only when C:\Omega\.github_token
+# exists). CHECK 13 later reads $ghToken after Set-StrictMode -Version Latest is
+# enabled at L~124. Under strict mode, reading an undefined variable throws
+# VariableIsUndefined. Pre-declare $ghToken = $null here so the later read is
+# always defined, regardless of whether the token file exists.
+$ghToken = $null
+
 # ==============================================================================
 # STEP 0: GitHub API binary staleness check -- RUNS BEFORE EVERYTHING ELSE
 # Hits the GitHub contents API to get live HEAD SHA.
@@ -753,7 +761,9 @@ if ($ghostLines.Count -gt 0) {
 
 # --- CHECK 13: Running hash vs GitHub HEAD (API, not git CLI) ----------------
 # Uses GitHub API -- git CLI is not available on VPS after zip-based restart.
-# $ghToken is loaded at top of this script from C:\Omega\.github_token.
+# $ghToken is pre-initialized to $null after param() block and optionally
+# populated by STEP 0 from C:\Omega\.github_token. Safe under StrictMode
+# regardless of token file presence.
 $verFile2 = "$OmegaDir\include\version_generated.hpp"
 $runningHash = "unknown"
 if (Test-Path $verFile2) {
