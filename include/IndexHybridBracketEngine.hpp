@@ -490,6 +490,7 @@ private:
         tr.engine     = "HybridBracketIndex";
         tr.regime     = "HYBRID";
         tr.spreadAtEntry = 0.0;
+        tr.shadow     = shadow_mode;
 
         std::cout << "[HYBRID-" << cfg_.symbol << "] EXIT "
                   << (pos.is_long ? "LONG" : "SHORT")
