@@ -517,6 +517,11 @@ public:
     void   patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void   reset_drift()    noexcept { regime_.reset_on_reversal(); }
     void   seed_atr(double v) noexcept { atr_tracker_.seed(v); }
+    // ISSUE-5: proxy for per-engine shadow_mode control from engine_init.hpp.
+    // shadow_mode lives on the private IdxOpenPosition pos_; this setter lets
+    // external init code (engine_init.hpp kShadowDefault wiring) flip the flag
+    // without breaking encapsulation.
+    void   set_shadow_mode(bool b) noexcept { pos_.shadow_mode = b; }
 
     // Force-close open position (disconnect / session end)
     void force_close(double bid, double ask, CloseCb on_close) noexcept {
