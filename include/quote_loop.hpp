@@ -800,6 +800,27 @@ static void quote_loop() {
             }
         };
         auto shutdown_cb = [](const omega::TradeRecord& tr) {
+            // Shadow-aware guard (2026-04-21): when an engine flags itself as shadow
+            // (tr.shadow == true) we must NOT call handle_closed_trade (which would
+            // pollute the live ledger, daily_pnl, risk state, crowding/WFO/TOD gates,
+            // and auto-disable tracker) and we must NOT call send_live_order (which
+            // would send a real broker order to close a phantom position that never
+            // existed at the broker).
+            //
+            // Note: this whole do_reconnect_close block is already gated on
+            // g_cfg.mode == "LIVE" above, so reaching shutdown_cb means global mode
+            // is LIVE. The per-engine shadow flag is the only path that can slip
+            // through the outer gate.
+            //
+            // handle_closed_trade itself has its own shadow short-circuit as the
+            // central guard (belt), but we also check here (braces) specifically to
+            // stop send_live_order from firing on shadow records.
+            if (tr.shadow) {
+                printf("[SHUTDOWN-CB-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                       tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
+                fflush(stdout);
+                return;
+            }
             handle_closed_trade(tr);
             send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
         };
@@ -919,6 +940,16 @@ static void quote_loop() {
                 if (b <= 0.0) { b = 1.0; a = 1.01; }
             };
             auto scb = [](const omega::TradeRecord& tr) {
+                // Shadow-aware guard (2026-04-21): mirror of shutdown_cb. Same
+                // rationale -- per-engine shadow_mode=true while global mode is LIVE
+                // can slip a shadow TradeRecord into this path. Both handle_closed_trade
+                // and send_live_order must be blocked for shadow records.
+                if (tr.shadow) {
+                    printf("[SCB-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                           tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
+                    fflush(stdout);
+                    return;
+                }
                 handle_closed_trade(tr);
                 send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
             };
@@ -1017,6 +1048,13 @@ static void quote_loop() {
                 eng.forceClose(bid, ask, "DISCONNECT", g_rtt_last,
                     g_macroDetector.regime().c_str(),
                     [](const omega::TradeRecord& tr) {
+                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
+                        if (tr.shadow) {
+                            printf("[FC-DISCONNECT-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                                   tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
+                            fflush(stdout);
+                            return;
+                        }
                         handle_closed_trade(tr);
                         // Send market close -- broker doesn't know we're disconnecting
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
@@ -1036,6 +1074,13 @@ static void quote_loop() {
             if (bxag_bid > 0.0 && bxag_ask > 0.0)
                 g_bracket_xag.forceClose(bxag_bid, bxag_ask, "FORCE_CLOSE", g_rtt_last, "",
                     [](const omega::TradeRecord& tr) {
+                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
+                        if (tr.shadow) {
+                            printf("[BRACKET-XAG-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                                   tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
+                            fflush(stdout);
+                            return;
+                        }
                         handle_closed_trade(tr);
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     });
@@ -1048,6 +1093,13 @@ static void quote_loop() {
             if (bgld_bid > 0.0 && bgld_ask > 0.0)
                 g_bracket_gold.forceClose(bgld_bid, bgld_ask, "FORCE_CLOSE", g_rtt_last, "",
                     [](const omega::TradeRecord& tr) {
+                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
+                        if (tr.shadow) {
+                            printf("[BRACKET-GOLD-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                                   tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
+                            fflush(stdout);
+                            return;
+                        }
                         handle_closed_trade(tr);
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     });
@@ -1064,6 +1116,13 @@ static void quote_loop() {
             if (b > 0.0 && a > 0.0)
                 beng.forceClose(b, a, "FORCE_CLOSE", g_rtt_last, "",
                     [](const omega::TradeRecord& tr) {
+                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
+                        if (tr.shadow) {
+                            printf("[FC-BRACKET-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                                   tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
+                            fflush(stdout);
+                            return;
+                        }
                         handle_closed_trade(tr);
                         // Send market close -- broker doesn't know we disconnected.
                         // Matches gold/xag bracket behaviour on disconnect.
@@ -1087,6 +1146,13 @@ static void quote_loop() {
         {
             std::function<void(const omega::TradeRecord&)> ca_cb =
                 [](const omega::TradeRecord& tr) {
+                    // Shadow-aware guard (2026-04-21): see shutdown_cb/scb rationale.
+                    if (tr.shadow) {
+                        printf("[CA-CB-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                               tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
+                        fflush(stdout);
+                        return;
+                    }
                     handle_closed_trade(tr);
                     send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                 };
@@ -1147,6 +1213,13 @@ static void quote_loop() {
             if (g_bid > 0.0 && g_ask > 0.0) {
                 omega::gold::GoldEngineStack::CloseCallback gold_fc_cb =
                     [](const omega::TradeRecord& tr) {
+                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
+                        if (tr.shadow) {
+                            printf("[GOLD-FC-CB-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                                   tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
+                            fflush(stdout);
+                            return;
+                        }
                         handle_closed_trade(tr);
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     };
@@ -1160,6 +1233,13 @@ static void quote_loop() {
                 // Force-close latency edge engines
                 omega::latency::LatencyEdgeStack::CloseCb le_cb =
                     [](const omega::TradeRecord& tr) {
+                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
+                        if (tr.shadow) {
+                            printf("[LE-CB-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                                   tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
+                            fflush(stdout);
+                            return;
+                        }
                         handle_closed_trade(tr);
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     };
