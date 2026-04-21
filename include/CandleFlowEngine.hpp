@@ -578,9 +578,26 @@ struct CandleFlowEngine {
                     }
                     goto cfe_sustained_skip;
                 }
+                // FIX #8 (2026-04-21): require warmed ATR for DFE entry.
+                // Prior fallback (atr_pts > 0.0) ? atr_pts : 5.0 meant that when
+                // the ATR calculator had not warmed (atr_pts == 0), the engine
+                // treated the session as 5pt ATR, computed SL = 0.4 * 5 = 2pt,
+                // and sized at risk_dollars / (2.0 * 100) = 0.15 lots (clamped
+                // to 0.10 MAX_LOT). If real ATR was 10pt, the same SL of 2pt
+                // became a 5-tick-out stop at the wrong price scale -- classic
+                // "stale ATR" pathology (see MAX_LOT comment at line 82).
+                // Fix: block DFE entry until ATR is properly warmed.
+                if (atr_pts <= 0.0) {
+                    static int64_t s_atr_warm_log = 0;
+                    if (now_ms - s_atr_warm_log > 30000) {
+                        s_atr_warm_log = now_ms;
+                        std::cout << "[CFE-ATR-WARMUP] DFE blocked: atr_pts not warmed (=0)\n";
+                        std::cout.flush();
+                    }
+                } else {
                 // ATR cap: block CFE entry when ATR > CFE_MAX_ATR_ENTRY.
                 // At ATR=12pt: SL=8.4pt = $168 loss at 0.20 lots -- not a scalp.
-                const double dfe_atr_check = (atr_pts > 0.0) ? atr_pts : 5.0;
+                const double dfe_atr_check = atr_pts;
                 if (dfe_atr_check > CFE_MAX_ATR_ENTRY) {
                     static int64_t s_atr_cap_log = 0;
                     if (now_ms - s_atr_cap_log > 30000) {
@@ -619,7 +636,7 @@ struct CandleFlowEngine {
                             goto cfe_sustained_skip;
                         }
                     }
-                    const double dfe_atr    = (atr_pts > 0.0) ? atr_pts : spread * 5.0;
+                    const double dfe_atr    = atr_pts;  // FIX #8: guaranteed > 0 by warmup guard above
                     const double dfe_sl_pts = dfe_atr * CFE_DFE_SL_MULT;
                     const double entry_px   = dfe_long ? ask : bid;
                     const double sl_px      = dfe_long
@@ -648,6 +665,7 @@ struct CandleFlowEngine {
                     std::cout.flush(); return;
                 }
                 } // end ATR-cap else
+                } // end FIX#8 atr-warmup else
             }
         } else { m_prev_ewm_drift=ewm_drift; m_dfe_warmed=true; }
 
@@ -717,7 +735,17 @@ struct CandleFlowEngine {
             const bool sus_spread_ok = (sus_spread < sus_cost * CFE_DFE_MIN_SPREAD_MULT);
 
             if (sus_rsi_ok && sus_rsi_level_ok && sus_price_ok && sus_spread_ok) {
-                const double sus_atr    = (atr_pts > 0.0) ? atr_pts : sus_spread * 5.0;
+                // FIX #8c (2026-04-21): require warmed ATR for SUS entry.
+                if (atr_pts <= 0.0) {
+                    static int64_t s_sus_atr_warm = 0;
+                    if (now_ms - s_sus_atr_warm > 30000) {
+                        s_sus_atr_warm = now_ms;
+                        std::cout << "[CFE-ATR-WARMUP] SUS blocked: atr_pts not warmed (=0)\n";
+                        std::cout.flush();
+                    }
+                    goto cfe_sustained_skip;
+                }
+                const double sus_atr    = atr_pts;  // FIX #8c: guaranteed > 0 by warmup guard above
                 // ATR-normalised threshold: require drift >= max(0.8, atr*0.30) to confirm trend
                 const double sus_drift_min = std::max(CFE_DFE_DRIFT_SUSTAINED_THRESH, sus_atr * 0.30);
                 if (std::fabs(ewm_drift) < sus_drift_min) {
@@ -1416,6 +1444,21 @@ private:
             std::cout.flush();
             pos.partial_done = true;
             pos.size         = partial_size;   // remaining half
+            // FIX #2 (2026-04-21): move hard SL + trail_sl to breakeven instantly.
+            // Rationale: partial fires at mfe >= 2x cost (~1.4pts). Trail arms at
+            // mfe >= 2x ATR (~4pts). Between those two thresholds there is a
+            // 2.6pt dead zone where the residual half is only protected by the
+            // original hard SL (0.4x ATR ~= 0.8pt below entry). Every partial-
+            // then-retrace is a net loser: +1.4*0.5 lot - 0.8*0.5 lot = ~-$0
+            // gross, negative after commission. Setting pos.sl and pos.trail_sl
+            // to pos.entry converts these into guaranteed scratch trades.
+            // Note: effective_sl already picks up whichever of sl / trail_sl is
+            // relevant via `pos.trail_active ? pos.trail_sl : pos.sl`. We set
+            // both so the transition to trail_active later keeps the floor at
+            // breakeven or better. Ratchet logic at line 1456 only moves trail
+            // in the profitable direction so this can never regress.
+            pos.sl       = pos.entry;
+            pos.trail_sl = pos.entry;
             // Release lock BEFORE on_close callback to prevent deadlock if the
             // callback re-enters engine methods (e.g. handle_closed_trade may
             // trigger push_live_trade or similar that reads pos state).
@@ -1639,6 +1682,21 @@ private:
         pos = OpenPos{};
         phase = Phase::COOLDOWN;
         m_cooldown_start_ms = now_ms;
+        // FIX #7 (2026-04-21): reset all drift / persistence trackers.
+        // Without these, the sustained-drift timer continues to accumulate
+        // through the entire trade + cooldown. First post-cooldown tick
+        // in the same drift direction immediately passes the >= 60s gate
+        // and re-fires SUSTAINED-DRIFT-ENTRY. Same applies to the DFE
+        // persistence counter. m_prev_ewm_drift reset forces next-tick
+        // drift_delta to re-acquire a fresh reference (otherwise a stale
+        // delta from entry time leaks into the next arm decision).
+        m_drift_sustained_start_ms = 0;
+        m_drift_sustained_dir      = 0;
+        m_sus_drift_peak           = 0.0;
+        m_dfe_persist_ticks        = 0;
+        m_dfe_persist_dir          = 0;
+        m_prev_ewm_drift           = 0.0;
+        m_dfe_warmed               = false;  // force re-warm so first delta is 0
         const bool is_winner = (strcmp(reason,"PARTIAL_TP")==0||
                                 strcmp(reason,"TRAIL_SL")==0||
                                 strcmp(reason,"IMB_EXIT")==0);
