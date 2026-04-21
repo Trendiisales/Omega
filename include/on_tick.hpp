@@ -908,14 +908,48 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 };
 
                 // GoldFlow
+                // DOLLAR-STOP-SHADOW-FIX 2026-04-21:
+                //   (1) Skip entirely when in SHADOW mode -- portfolio-level dollar
+                //       stop is a live-broker protection; simulated shadow positions
+                //       have no real order to defend, so the engine's own SL must be
+                //       allowed to fire. Previously shadow trades were being killed
+                //       at synthetic unr values, polluting the ledger as fake losses.
+                //   (2) Add SL-breach guard (matches CFE pattern): only fire if the
+                //       engine's own SL has been breached OR loss exceeds 2x limit
+                //       (true catastrophic runaway / gap scenario).
                 if (g_gold_flow.pos.active) {
                     const double unr = xau_unr(g_gold_flow.pos.is_long,
                                                g_gold_flow.pos.entry,
                                                g_gold_flow.pos.size);
-                    if (unr < -ds_lim) {
+                    const bool gf_is_shadow = (g_cfg.mode != "LIVE");
+                    const double gf_sl      = g_gold_flow.pos.sl;
+                    const bool gf_sl_breached = (gf_sl > 0.0) && (g_gold_flow.pos.is_long
+                        ? (s_xau_bid <= gf_sl)
+                        : (s_xau_ask >= gf_sl));
+                    const bool gf_dollar_stop_ok = gf_sl_breached
+                        || (unr < -(ds_lim * 2.0));
+
+                    if (gf_is_shadow) {
+                        // SHADOW: never force_close from dollar stop -- let engine SL handle.
+                        // Log-only so we can see which shadow trades WOULD have been killed live.
+                        if (unr < -ds_lim) {
+                            static int64_t s_gf_shadow_log = 0;
+                            if (ds_now - s_gf_shadow_log >= 10) {
+                                s_gf_shadow_log = ds_now;
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg),
+                                    "[DOLLAR-STOP-SHADOW] GoldFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- SKIPPING (shadow mode)\n",
+                                    g_gold_flow.pos.is_long?"LONG":"SHORT",
+                                    g_gold_flow.pos.entry, unr, ds_lim,
+                                    gf_sl, (int)gf_sl_breached);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
+                        }
+                    } else if (unr < -ds_lim && gf_dollar_stop_ok) {
                         {
                             char _msg[512];
-                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] GoldFlow %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",                                g_gold_flow.pos.is_long?"LONG":"SHORT",                                g_gold_flow.pos.entry, unr, ds_lim);
+                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] GoldFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- CLOSING\n",                                g_gold_flow.pos.is_long?"LONG":"SHORT",                                g_gold_flow.pos.entry, unr, ds_lim,                                gf_sl, (int)gf_sl_breached);
                             std::cout << _msg;
                             std::cout.flush();
                         }
@@ -924,6 +958,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                 handle_closed_trade(tr);
                                 send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
                             });
+                    } else if (unr < -ds_lim) {
+                        // LIVE, dollar stop wanted to fire but SL not yet breached -- log only
+                        static int64_t s_gf_skip_log = 0;
+                        if (ds_now - s_gf_skip_log >= 10) {
+                            s_gf_skip_log = ds_now;
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg),
+                                "[DOLLAR-STOP-SKIP] GoldFlow %s unr=$%.2f > limit=$%.0f but sl=%.2f not breached -- letting SL handle\n",
+                                g_gold_flow.pos.is_long?"LONG":"SHORT",
+                                unr, ds_lim, gf_sl);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
                 // CandleFlow
@@ -950,7 +997,27 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     //   b) Loss exceeds 2x dollar_stop_usd (catastrophic runaway)
                     const bool cfe_dollar_stop_ok = cfe_sl_breached
                         || (unr < -(ds_lim * 2.0));
-                    if (unr < -ds_lim && cfe_dollar_stop_ok) {
+
+                    // DOLLAR-STOP-SHADOW-FIX 2026-04-21: shadow short-circuit.
+                    // In shadow mode the engine's simulated SL must be allowed to fire
+                    // cleanly. Portfolio-level dollar stop exists to defend live broker
+                    // positions; shadow has none. Log-only for audit.
+                    if (g_candle_flow.shadow_mode) {
+                        if (unr < -ds_lim) {
+                            static int64_t s_cfe_shadow_log = 0;
+                            if (ds_now - s_cfe_shadow_log >= 10) {
+                                s_cfe_shadow_log = ds_now;
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg),
+                                    "[DOLLAR-STOP-SHADOW] CandleFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- SKIPPING (shadow mode)\n",
+                                    g_candle_flow.pos.is_long?"LONG":"SHORT",
+                                    g_candle_flow.pos.entry, unr, ds_lim,
+                                    cfe_eff_sl, (int)cfe_sl_breached);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
+                        }
+                    } else if (unr < -ds_lim && cfe_dollar_stop_ok) {
                         {
                             char _msg[512];
                             snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] CandleFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- CLOSING\n",                                g_candle_flow.pos.is_long?"LONG":"SHORT",                                g_candle_flow.pos.entry, unr, ds_lim,                                cfe_eff_sl, (int)cfe_sl_breached);
@@ -978,14 +1045,46 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                 }
                 // MacroCrash
+                // DOLLAR-STOP-SHADOW-FIX 2026-04-21:
+                //   (1) Skip entirely in SHADOW mode -- portfolio-level dollar stop
+                //       exists to defend live broker positions; shadow has no real
+                //       order to defend, so the engine's own SL must be allowed to
+                //       run. Previously MCE shadow trades were killed at synthetic
+                //       unr values (see v4 postmortem: 4 MCE losses $723, all
+                //       hold_s=0 MFE=0 DOLLAR_STOP while shadow_mode=true).
+                //   (2) Add SL-breach guard (matches CFE pattern): only fire when
+                //       engine's own SL has been breached OR loss > 2x limit.
                 if (g_macro_crash.has_open_position()) {
                     const double unr = xau_unr(g_macro_crash.pos.is_long,
                                                g_macro_crash.pos.entry,
                                                g_macro_crash.pos.size);
-                    if (unr < -ds_lim) {
+                    const double mce_sl = g_macro_crash.pos.sl;
+                    const bool mce_sl_breached = (mce_sl > 0.0) && (g_macro_crash.pos.is_long
+                        ? (s_xau_bid <= mce_sl)
+                        : (s_xau_ask >= mce_sl));
+                    const bool mce_dollar_stop_ok = mce_sl_breached
+                        || (unr < -(ds_lim * 2.0));
+
+                    if (g_macro_crash.shadow_mode) {
+                        // SHADOW: never force_close from dollar stop -- engine SL handles.
+                        if (unr < -ds_lim) {
+                            static int64_t s_mce_shadow_log = 0;
+                            if (ds_now - s_mce_shadow_log >= 10) {
+                                s_mce_shadow_log = ds_now;
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg),
+                                    "[DOLLAR-STOP-SHADOW] MacroCrash %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- SKIPPING (shadow mode)\n",
+                                    g_macro_crash.pos.is_long?"LONG":"SHORT",
+                                    g_macro_crash.pos.entry, unr, ds_lim,
+                                    mce_sl, (int)mce_sl_breached);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
+                        }
+                    } else if (unr < -ds_lim && mce_dollar_stop_ok) {
                         {
                             char _msg[512];
-                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] MacroCrash %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",                                g_macro_crash.pos.is_long?"LONG":"SHORT",                                g_macro_crash.pos.entry, unr, ds_lim);
+                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] MacroCrash %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- CLOSING\n",                                g_macro_crash.pos.is_long?"LONG":"SHORT",                                g_macro_crash.pos.entry, unr, ds_lim,                                mce_sl, (int)mce_sl_breached);
                             std::cout << _msg;
                             std::cout.flush();
                         }
@@ -993,17 +1092,59 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         // ds_now in seconds caused cooldown to be set ~1700s in the past
                         // (seconds treated as ms), allowing immediate re-entry loop.
                         g_macro_crash.force_close(s_xau_bid, s_xau_ask, ds_now_ms);
+                    } else if (unr < -ds_lim) {
+                        // LIVE, dollar stop wanted to fire but SL not yet breached -- log only
+                        static int64_t s_mce_skip_log = 0;
+                        if (ds_now - s_mce_skip_log >= 10) {
+                            s_mce_skip_log = ds_now;
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg),
+                                "[DOLLAR-STOP-SKIP] MacroCrash %s unr=$%.2f > limit=$%.0f but sl=%.2f not breached -- letting SL handle\n",
+                                g_macro_crash.pos.is_long?"LONG":"SHORT",
+                                unr, ds_lim, mce_sl);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
                 // GoldStack (MeanReversion / CompressionBreakout etc)
+                // DOLLAR-STOP-SHADOW-FIX 2026-04-21:
+                //   (1) Skip entirely when global g_cfg.mode != "LIVE" -- GoldStack
+                //       does not expose a per-engine shadow_mode flag; it follows
+                //       the global config mode. Shadow trades use simulated SL.
+                //   (2) Add SL-breach guard (matches CFE pattern): only fire if the
+                //       live SL has been breached OR loss exceeds 2x limit.
                 if (g_gold_stack.has_open_position()) {
                     const double unr = xau_unr(g_gold_stack.live_is_long(),
                                                g_gold_stack.live_entry(),
                                                g_gold_stack.live_size());
-                    if (unr < -ds_lim) {
+                    const bool gs_is_shadow = (g_cfg.mode != "LIVE");
+                    const double gs_sl      = g_gold_stack.live_sl();
+                    const bool gs_sl_breached = (gs_sl > 0.0) && (g_gold_stack.live_is_long()
+                        ? (s_xau_bid <= gs_sl)
+                        : (s_xau_ask >= gs_sl));
+                    const bool gs_dollar_stop_ok = gs_sl_breached
+                        || (unr < -(ds_lim * 2.0));
+
+                    if (gs_is_shadow) {
+                        if (unr < -ds_lim) {
+                            static int64_t s_gs_shadow_log = 0;
+                            if (ds_now - s_gs_shadow_log >= 10) {
+                                s_gs_shadow_log = ds_now;
+                                char _msg[512];
+                                snprintf(_msg, sizeof(_msg),
+                                    "[DOLLAR-STOP-SHADOW] GoldStack %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- SKIPPING (shadow mode)\n",
+                                    g_gold_stack.live_is_long()?"LONG":"SHORT",
+                                    g_gold_stack.live_entry(), unr, ds_lim,
+                                    gs_sl, (int)gs_sl_breached);
+                                std::cout << _msg;
+                                std::cout.flush();
+                            }
+                        }
+                    } else if (unr < -ds_lim && gs_dollar_stop_ok) {
                         {
                             char _msg[512];
-                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] GoldStack %s entry=%.2f unr=$%.2f limit=$%.0f -- CLOSING\n",                                g_gold_stack.live_is_long()?"LONG":"SHORT",                                g_gold_stack.live_entry(), unr, ds_lim);
+                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] GoldStack %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- CLOSING\n",                                g_gold_stack.live_is_long()?"LONG":"SHORT",                                g_gold_stack.live_entry(), unr, ds_lim,                                gs_sl, (int)gs_sl_breached);
                             std::cout << _msg;
                             std::cout.flush();
                         }
@@ -1012,6 +1153,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                                 handle_closed_trade(tr);
                                 send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
                             });
+                    } else if (unr < -ds_lim) {
+                        // LIVE, dollar stop wanted to fire but SL not yet breached -- log only
+                        static int64_t s_gs_skip_log = 0;
+                        if (ds_now - s_gs_skip_log >= 10) {
+                            s_gs_skip_log = ds_now;
+                            char _msg[512];
+                            snprintf(_msg, sizeof(_msg),
+                                "[DOLLAR-STOP-SKIP] GoldStack %s unr=$%.2f > limit=$%.0f but sl=%.2f not breached -- letting SL handle\n",
+                                g_gold_stack.live_is_long()?"LONG":"SHORT",
+                                unr, ds_lim, gs_sl);
+                            std::cout << _msg;
+                            std::cout.flush();
+                        }
                     }
                 }
             }  // s_xau_bid valid
