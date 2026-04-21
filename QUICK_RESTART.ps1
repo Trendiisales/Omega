@@ -322,9 +322,32 @@ New-Item -ItemType Directory -Path "$OmegaDir\logs"        -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\shadow" -Force | Out-Null
 New-Item -ItemType Directory -Path "$OmegaDir\logs\trades" -Force | Out-Null
 
-# Truncate latest.log (but not the NSSM stdout log, which accumulates)
+# Truncate latest.log
 $latestLog = "$OmegaDir\logs\latest.log"
 if (Test-Path $latestLog) { Clear-Content $latestLog -ErrorAction SilentlyContinue }
+
+# Rotate omega_service_stdout.log -- NSSM will create a fresh one on service start.
+# This lets the verify step below actually find the new startup banner without
+# scanning through hundreds of MB of historical tick output from previous runs.
+$stdoutLog = "$OmegaDir\logs\omega_service_stdout.log"
+if (Test-Path $stdoutLog) {
+    $stderrLog  = "$OmegaDir\logs\omega_service_stderr.log"
+    $archiveDir = "$OmegaDir\logs\archive"
+    if (-not (Test-Path $archiveDir)) { New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null }
+    $stamp = (Get-Date).ToString("yyyyMMdd_HHmmss")
+    try {
+        Move-Item -Path $stdoutLog -Destination "$archiveDir\omega_service_stdout_$stamp.log" -Force -ErrorAction Stop
+        Write-Host "  [OK] Rotated stdout log -> archive\omega_service_stdout_$stamp.log" -ForegroundColor DarkGray
+    } catch {
+        Write-Host "  [WARN] Could not rotate stdout log (locked?): $_ -- attempting truncate" -ForegroundColor Yellow
+        try { Clear-Content $stdoutLog -ErrorAction Stop }
+        catch { Write-Host "  [WARN] Truncate also failed: $_ -- verify may scan stale content" -ForegroundColor Yellow }
+    }
+    if (Test-Path $stderrLog) {
+        try { Move-Item -Path $stderrLog -Destination "$archiveDir\omega_service_stderr_$stamp.log" -Force -ErrorAction Stop }
+        catch { }
+    }
+}
 
 Write-Host ""
 Write-Host "########################################################" -ForegroundColor Yellow
