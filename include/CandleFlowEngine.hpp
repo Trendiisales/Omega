@@ -282,6 +282,28 @@ struct CandleFlowEngine {
             return;
         }
 
+        // FIX CFE-SL-KILL 2026-04-22: block entries after 3 consec SL_HITs.
+        // Log once per 120s while blocked to avoid spam.
+        if (now_ms < m_sl_kill_until) {
+            static int64_t s_kl = 0;
+            if (now_ms - s_kl > 120000) {
+                s_kl = now_ms;
+                char km[128];
+                snprintf(km, sizeof(km), "[CFE-SL-KILL] blocked %d SLs %llds remain\n",
+                    m_consec_sl, (long long)((m_sl_kill_until - now_ms) / 1000LL));
+                std::cout << km; std::cout.flush();
+            }
+            return;
+        }
+        // FIX CFE-SL-KILL 2026-04-22: auto-reset once kill window expires.
+        if (m_consec_sl >= 3 && now_ms >= m_sl_kill_until && m_sl_kill_until != 0) {
+            std::cout << "[CFE-SL-KILL] Reset after 30min, "
+                      << m_consec_sl << " SLs cleared\n";
+            std::cout.flush();
+            m_consec_sl     = 0;
+            m_sl_kill_until = 0;
+        }
+
         // -- IDLE: check for entry --------------------------------------------
 
         // -- DRIFT FAST-ENTRY (DFE) ----------------------------------------------------
@@ -1176,6 +1198,12 @@ private:
     int64_t m_cooldown_start_ms = 0;
     int64_t m_cooldown_ms       = 15000;
     int     m_trade_id          = 0;
+    // FIX CFE-SL-KILL 2026-04-22: consecutive-SL circuit breaker, mirror of ECE
+    // and BBMR patterns. After 3 consecutive SL_HIT exits, block entries for
+    // 30 minutes. TRAIL_SL, IMB_EXIT, PARTIAL_TP, STAGNATION do NOT increment
+    // -- they are intended/managed exits. Only raw SL_HIT counts as adverse.
+    int     m_consec_sl         = 0;
+    int64_t m_sl_kill_until     = 0;
     DOMSnap m_dom_cur;
     DOMSnap m_dom_prev;
 
@@ -1697,6 +1725,21 @@ private:
         m_dfe_persist_dir          = 0;
         m_prev_ewm_drift           = 0.0;
         m_dfe_warmed               = false;  // force re-warm so first delta is 0
+
+        // FIX CFE-SL-KILL 2026-04-22: consec-SL_HIT tracker. Increment only on
+        // raw SL_HIT. TRAIL_SL = intended profit exit and does NOT count.
+        // On 3rd consecutive SL_HIT, arm 30-minute entry kill.
+        if (strcmp(reason, "SL_HIT") == 0) {
+            if (++m_consec_sl >= 3) {
+                m_sl_kill_until = now_ms + 1800000LL;  // 30 min
+                char km[128];
+                snprintf(km, sizeof(km), "[CFE-SL-KILL] %d consec SLs -- 30min block\n", m_consec_sl);
+                std::cout << km; std::cout.flush();
+            }
+        } else {
+            m_consec_sl = 0;
+        }
+
         const bool is_winner = (strcmp(reason,"PARTIAL_TP")==0||
                                 strcmp(reason,"TRAIL_SL")==0||
                                 strcmp(reason,"IMB_EXIT")==0);
