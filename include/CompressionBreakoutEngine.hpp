@@ -525,6 +525,7 @@ private:
             tr.exitReason = reason;
             tr.regime     = "CBE";
             tr.l2_live    = true;
+            tr.shadow     = shadow_mode;
             on_close(tr);
         }
 
