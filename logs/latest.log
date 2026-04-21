@@ -1738,12 +1738,11 @@
 00:40:11 [GOLD-ENGINE] TwoBarReversal             signals=0
 00:40:11 [GOLD-ENGINE] MeanReversion              signals=0
 00:40:11 [GOLD-ENGINE] VWAP_SNAPBACK              signals=0
-00:40:11 [GOLD-ENGINE] LiquiditySwe02:41:28 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.12 [SHADOW-LOG-ONLY]
-02:41:28 [TICK] USTEC.F 26818.69/26821.40
-02:41:28 [TICK] UK100 10617.40/10619.20
-02:41:28 [TICK] DX.F 97.88/97.98
-02:41:28 [TICK] US500.F 7159.47/7160.28
-signals=0
+00:40:11 [GOLD-ENGINE] LiquiditySweepPro          signals=0
+00:40:11 [GOLD-ENGINE] LiquiditySweepPressure     signals=0
+00:40:11 [GOLD-ENGINE] LondonFixMomentum          signals=0
+00:40:11 [GOLD-ENGINE] VWAPStretchReversion       signals=0
+00:40:11 [GOLD-ENGINE] ORBNewYork                 signals=0
 00:40:11 [GOLD-ENGINE] DXYDivergence              signals=0
 00:40:11 [GOLD-ENGINE] SessionOpenMomentum        signals=0
 00:40:11 [GOLD-DIAG] regime=COMPRESSION vwap=4819.16 vol_range=0.89
@@ -2534,8 +2533,9 @@ signals=0
 00:44:32 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
 00:44:33 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.48 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
 00:44:33 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
-00:44:33 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.46(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.4(need 1.8 BLOCK) rsi=78.1
-00:44:33 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+00:44:33 [MCE-NOSIG] slot=6 cooldow02:46:21 [L2-CSV-HEALTH] file=OPEN rows=3967 date=2026-4-21
+02:46:21 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+ORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
 00:44:33 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
 00:44:34 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
 00:44:34 [TICK] XAGUSD 79.74/79.77
@@ -25556,3 +25556,819 @@ signals=0
 02:41:24 [GF-SCORE-INFO] XAUUSD SHORT score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
 02:41:24 [TICK] NAS100 26661.25/26662.95
 02:41:26 [TICK] USDJPY 158.96/158.97
+02:41:28 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.12 [SHADOW-LOG-ONLY]
+02:41:28 [TICK] USTEC.F 26818.69/26821.40
+02:41:28 [TICK] UK100 10617.40/10619.20
+02:41:28 [TICK] DX.F 97.88/97.98
+02:41:28 [TICK] US500.F 7159.47/7160.28
+02:41:30 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.15 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:41:30 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.38(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.1(need 3.0 BLOCK) rsi=56.2
+02:41:30 [GOLD-L2-LIVE] imb=0.500 age_ms=0
+02:41:31 [TICK] USOIL.F 86.52/86.58
+02:41:31 [GFE-PHASE] phase=IDLE ticks=1813 atr_warm=1913 l2_imb=0.500 slot=6
+02:41:33 [GFE-NOSIG] drift=-0.249 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:41:33 [TICK] AUDUSD 0.72/0.72
+02:41:33 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.26 [SHADOW-LOG-ONLY]
+02:41:34 [TICK] GER40 24506.90/24508.60
+02:41:39 [GF-SCORE-INFO] XAUUSD LONG score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:41:39 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.25 [SHADOW-LOG-ONLY]
+02:41:40 [TICK] GBPUSD 1.35/1.35
+02:41:40 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.25 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:41:40 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.42(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.3(need 3.0 BLOCK) rsi=50.9
+02:41:40 [GOLD-L2-LIVE] imb=0.500 age_ms=0
+02:41:41 [TICK] NZDUSD 0.59/0.59
+02:41:43 [GFE-NOSIG] drift=-0.248 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:41:44 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.25 [SHADOW-LOG-ONLY]
+02:41:46 [RSI-REV-DIAG] spread=0.22(max=2.5) tick_atr=0.22(min=1.0) rsi_count=2293(need=16) bar_rsi=43.3 bar_rsi_prev=43.3 bar_atr=2.07(min=2.0) tick_rsi=39.2 bb_sq=0
+02:41:46 [RSI-REV-BLOCK] tick_atr=0.22 < min=1.0
+02:41:46 [GF-OUTER-PASS] can_enter=1 all_flat slot=6 l2_imb=0.500
+02:41:46 [GFE-ATR-SIZE] atr=2.00 scale=0.50x risk_base=$80 risk_scaled=$40 lot_est=0.200 sl_pts=2.00 vol_ratio=0.21 wide_trail=0
+02:41:49 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.42 [SHADOW-LOG-ONLY]
+02:41:50 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.43 l2_imb=0.499 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:41:50 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.29(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.4(need 3.0 BLOCK) rsi=38.8
+02:41:50 [TICK] XAGUSD 79.31/79.35
+02:41:50 [GOLD-L2-LIVE] imb=0.500 age_ms=161
+02:41:51 [TICK] XAUUSD 4805.73/4805.95
+02:41:51 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0173% base_vol=0.0605% ratio=0.285 sdec_regime=QUIET_COMPRESSION conf=0.776 allow_bo=0
+02:41:52 [TICK] EURUSD 1.18/1.18
+02:41:53 [GFE-NOSIG] drift=-0.345 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=1 l2_imb=0.524
+02:41:54 [GF-SCORE-INFO] XAUUSD LONG score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:41:54 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.31 [SHADOW-LOG-ONLY]
+02:41:54 [TICK] NAS100 26661.75/26662.95
+02:41:54 [TICK] DJ30.F 49734.60/49740.40
+02:41:54 [TICK] VIX.F 20.28/20.66
+02:41:57 [TICK] USDJPY 158.96/158.97
+02:41:57 [TICK] BRENT 90.81/91.34
+02:42:08 [GF-BAR-INFO] XAUUSD SHORT atr_slope=-0.063 atr_exp=0 atr_con=0 vwap_dir=+0 vol_delta=0.004 gate4d=pass (LOG ONLY)
+02:42:08 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.24 [SHADOW-LOG-ONLY]
+02:42:08 [TICK] AUDUSD 0.7[GOLD-L2-LIVE] imb=0.500 age_ms=9949
+02:42:08 2/0.72
+02:42:08 [TICK] UK100 10617.60/10619.40
+02:42:08 [TICK] ESTX50 5998.10/5999.70
+02:42:08 [TICK] GER40 24507.50/24509.90
+02:42:08 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.24 l2_imb=0.473 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:42:08 [TICK] USOIL.F 86.50/86.57
+02:42:08 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.27(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.2(need 1.8 BLOCK) rsi=53.0
+02:42:08 [TICK] USTEC.F 26819.32/[GFE-PHASE] phase=IDLE ticks=1935 atr_warm=2035 l2_imb=0.473 slot=6
+02:42:08 26822.03
+02:42:08 [GFE-NOSIG] drift=-0.242 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=1 l2_imb=0.473
+02:42:08 [CFE-HMM-GATE] DFE blocked: state=MEAN_REV p_cont=0.000 < 0.55 drift=-0.24 [SHADOW-LOG-ONLY]
+02:42:08 [TICK] US500.F 7159.97/7160.78
+02:42:08 [TICK] DX.F 97.88/97.98
+02:42:09 [GF-SCORE-INFO] XAUUSD SHORT score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:42:09 [GF-BAR-INFO] XAUUSD tick storm rate=8.0/s -- LOG ONLY
+02:42:09 [HYBRID-GOLD-DIAG] ticks=3000 phase=0 window=40/20 range=0.39 spread=0.22
+02:42:10 [TICK] GBPUSD 1.35/1.35
+02:42:14 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.36 [SHADOW-LOG-ONLY]
+02:42:14 [TICK] NZDUSD 0.59/0.59
+02:42:16 [LOG-HEALTH] dated=ok latest=ok ts=02:42:16
+02:42:16 [L2-STATUS] ctrader_live=1 events=13693 gold_real=1 gold_imb=0.500 gold_mp=0.000 sp_real=0 cl_real=0
+02:42:16 [BAR-SAVE] Periodic save -- bars_gold_m1/m5/m15/h1/h4 + sp_h1/nq_h1.dat updated
+02:42:16 [RSI-REV-DIAG] spread=0.22(max=2.5) tick_atr=0.22(min=1.0) rsi_count=2392(need=16) bar_rsi=43.3 bar_rsi_prev=43.3 bar_atr=2.04(min=2.0) tick_rsi=35.4 bb_sq=0
+02:42:16 [RSI-REV-BLOCK] tick_atr=0.22 < min=1.0
+02:42:16 [GF-OUTER-PASS] can_enter=1 all_flat slot=6 l2_imb=0.500
+02:42:16 [GFE-ATR-SIZE] atr=2.00 scale=0.50x risk_base=$80 risk_scaled=$40 lot_est=0.200 sl_pts=2.00 vol_ratio=0.27 wide_trail=0
+02:42:17 [CTRADER-STATUS] events_total=13711 this_min=1109 symbols=19
+02:42:17 [CTRADER-EVTS] XAUUSD=258
+02:42:17 [CTRADER-EVTS] XAGUSD=180
+02:42:17 [CTRADER-EVTS] US500.F=13
+02:42:17 [CTRADER-EVTS] ESTX50=11
+02:42:17 [CTRADER-EVTS] AUDUSD=98
+02:42:17 [CTRADER-EVTS] DJ30.F=18
+02:42:17 [CTRADER-EVTS] GBPUSD=116
+02:42:17 [CTRADER-EVTS] UK100=36
+02:42:17 [CTRADER-EVTS] EURUSD=81
+02:42:17 [CTRADER-EVTS] GER40=11
+02:42:17 [CTRADER-EVTS] NAS100=86
+02:42:17 [CTRADER-EVTS] USTEC.F=78
+02:42:17 [CTRADER-EVTS] NZDUSD=41
+02:42:17 [CTRADER-EVTS] DX.F=14
+02:42:17 [CTRADER-EVTS] BRENT=12
+02:42:17 [CTRADER-EVTS] USOIL.F=22
+02:42:17 [CTRADER-EVTS] VIX.F=5
+02:42:17 [CTRADER-EVTS] USDJPY=29
+02:42:17 [CTRADER-EVTS] NGAS.F=0 (no events this minute)
+02:42:18 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=5.372ms cap=120ms lat_ok=1 session=ACTIVE
+02:42:18 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+02:42:18 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+02:42:18 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+02:42:18 [GOLD-ENGINE] SessionMomentum            signals=0
+02:42:18 [GOLD-ENGINE] MomentumContinuation       signals=0
+02:42:18 [GOLD-ENGINE] IntradaySeasonality        signals=0
+02:42:18 [GOLD-ENGINE] DonchianBreakout           signals=0
+02:42:18 [GOLD-ENGINE] NR3Breakout                signals=0
+02:42:18 [GOLD-ENGINE] SpikeFade                  signals=0
+02:42:18 [GOLD-ENGINE] AsianRange                 signals=0
+02:42:18 [GOLD-ENGINE] DynamicRange               signals=0
+02:42:18 [GOLD-ENGINE] TurtleTick                 signals=0
+02:42:18 [GOLD-ENGINE] NR3Tick                    signals=0
+02:42:18 [GOLD-ENGINE] TwoBarReversal             signals=0
+02:42:18 [GOLD-ENGINE] MeanReversion              signals=0
+02:42:18 [GOLD-ENGINE] VWAP_SNAPBACK              signals=0
+02:42:18 [GOLD-ENGINE] LiquiditySweepPro          signals=0
+02:42:18 [GOLD-ENGINE] LiquiditySweepPressure     signals=0
+02:42:18 [GOLD-ENGINE] LondonFixMomentum          signals=0
+02:42:18 [GOLD-ENGINE] VWAPStretchReversion       signals=0
+02:42:18 [GOLD-ENGINE] ORBNewYork                 signals=0
+02:42:18 [GOLD-ENGINE] DXYDivergence              signals=0
+02:42:18 [GOLD-ENGINE] SessionOpenMomentum        signals=0
+02:42:18 [GOLD-DIAG] regime=COMPRESSION vwap=4804.72 vol_range=0.30
+02:42:18 [GOLD-L2-LIVE] imb=0.500 age_ms=171
+02:42:19 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.38 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:42:19 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.28(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.4(need 3.0 BLOCK) rsi=57.7
+02:42:19 [GFE-NOSIG] drift=-0.376 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:42:19 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.37 [SHADOW-LOG-ONLY]
+02:42:20 [L2-CSV-HEALTH] file=OPEN rows=3078 date=2026-4-21
+02:42:21 [TICK] XAGUSD 79.31/79.34
+02:42:21 [TICK] XAUUSD 4805.51/4805.72
+02:42:21 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0156% base_vol=0.0550% ratio=0.284 sdec_regime=QUIET_COMPRESSION conf=0.781 allow_bo=0
+02:42:23 [TICK] EURUSD 1.18/1.18
+02:42:24 [GF-SCORE-INFO] XAUUSD SHORT score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:42:24 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.32 [SHADOW-LOG-ONLY]
+02:42:24 [TICK] NAS100 26662.30/26663.50
+02:42:25 [TICK] DJ30.F 49736.60/49742.40
+02:42:27 [TICK] USDJPY 158.96/158.97
+02:42:28 [TICK] BRENT 90.81/90.92
+02:42:29 [GOLD-L2-LIVE] imb=0.500 age_ms=51
+02:42:29 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.26 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:42:29 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.29(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.3(need 3.0 BLOCK) rsi=42.8
+02:42:29 [GFE-NOSIG] drift=-0.262 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:42:29 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.26 [SHADOW-LOG-ONLY]
+02:42:34 [CFE-VWAP-BLOCK] LONG blocked: price=4806.14 above VWAP=4804.74 drift=-0.01
+02:42:39 [GOLD-L2-LIVE] imb=0.500 age_ms=620
+02:42:39 [TICK] USTEC.F 26820.32/26823.03
+02:42:39 [TICK] AUDUSD 0.72/0.72
+02:42:39 [TICK] US500.F 7160.09/7160.90
+02:42:39 [TICK] DX.F 97.88/97.98
+02:42:40 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.16 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:42:40 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.65(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.2(need 3.0 BLOCK) rsi=54.8
+02:42:40 [GF-SCORE-INFO] XAUUSD LONG score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:42:40 [GFE-PHASE] phase=IDLE ticks=2104 atr_warm=2204 l2_imb=0.500 slot=6
+02:42:40 [GFE-NOSIG] drift=0.157 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:42:40 [TICK] GER40 24509.90/24511.80
+02:42:43 [TICK] GBPUSD 1.35/1.35
+02:42:45 [TICK] USOIL.F 86.53/86.59
+02:42:46 [RSI-REV-DIAG] spread=0.22(max=2.5) tick_atr=0.25(min=1.0) rsi_count=2478(need=16) bar_rsi=43.3 bar_rsi_prev=43.3 bar_atr=2.04(min=2.0) tick_rsi=46.9 bb_sq=0
+02:42:46 [RSI-REV-BLOCK] tick_atr=0.25 < min=1.0
+02:42:46 [GF-OUTER-PASS] can_enter=1 all_flat slot=6 l2_imb=0.500
+02:42:46 [GFE-ATR-SIZE] atr=2.00 scale=0.50x risk_base=$80 risk_scaled=$40 lot_est=0.200 sl_pts=2.00 vol_ratio=0.66 wide_trail=0
+02:42:47 [TICK] NZDUSD 0.59/0.59
+02:42:48 [TICK] ESTX50 5998.90/6000.70
+02:42:48 [TICK] UK100 10618.50/10620.30
+02:42:49 [GOLD-L2-LIVE] imb=0.500 age_ms=771
+02:42:49 [CFE-VWAP-BLOCK] LONG blocked: price=4805.88 above VWAP=4804.76 drift=0.10
+02:42:50 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.06 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:42:50 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.66(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.1(need 3.0 BLOCK) rsi=43.9
+02:42:50 [GFE-NOSIG] drift=0.065 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:42:51 [TICK] XAGUSD 79.34/79.37
+02:42:52 [TICK] XAUUSD 4805.79/4806.01
+02:42:52 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0345% base_vol=0.0521% ratio=0.663 sdec_regime=QUIET_COMPRESSION conf=0.585 allow_bo=0
+02:42:53 [TICK] EURUSD 1.18/1.18
+02:42:55 [TICK] NAS100 26662.25/26663.45
+02:42:55 [GF-SCORE-INFO] XAUUSD LONG score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:42:57 [TICK] DJ30.F 49741.60/49747.40
+02:42:59 [GOLD-L2-LIVE] imb=0.500 age_ms=280
+02:43:00 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.30 l2_imb=0.491 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:43:00 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.67(need 2.00 BLOCK) exp=1(regime=0 rsi=1) drift=0.3(need 3.0 BLOCK) rsi=72.6
+02:43:00 [GFE-NOSIG] drift=0.301 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=1 l2_imb=0.491
+02:43:00 [TICK] USDJPY 158.96/158.97
+02:43:01 [TICK] BRENT 90.81/90.92
+02:43:04 [CFE-VWAP-BLOCK] LONG blocked: price=4805.88 above VWAP=4804.79 drift=0.20
+02:43:08 [GF-BAR-INFO] XAUUSD SHORT atr_slope=-0.139 atr_exp=0 atr_con=1 vwap_dir=+0 vol_delta=0.001 gate4d=pass (LOG ONLY)
+02:43:09 [TICK] USTEC.F 26817.94/26820.65
+02:43:09 [GOLD-L2-LIVE] imb=0.500 age_ms=207
+02:43:10 [GF-SCORE-INFO] XAUUSD SHORT score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:43:10 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.04 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:43:10 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.57(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.0(need 3.0 BLOCK) rsi=51.9
+02:43:10 [GFE-PHASE] phase=IDLE ticks=2224 atr_warm=2324 l2_imb=0.500 slot=6
+02:43:10 [GFE-NOSIG] drift=0.044 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:43:12 [TICK] AUDUSD 0.72/0.72
+02:43:12 [TICK] VIX.F 20.28/20.66
+02:43:13 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.00 [SHADOW-LOG-ONLY]
+02:43:13 [TICK] GBPUSD 1.35/1.35
+02:43:14 [TICK] GER40 24508.90/24511.20
+02:43:14 [TICK] DX.F 97.88/97.98
+02:43:15 [HYBRID-GOLD-DIAG] ticks=3300 phase=0 window=40/20 range=1.25 spread=0.22
+02:43:16 [LOG-HEALTH] dated=ok latest=ok ts=02:43:16
+02:43:16 [BAR-SAVE] Periodic save -- bars_gold_m1/m5/m15/h1/h4 + sp_h1/nq_h1.dat updated
+02:43:16 [L2-STATUS] ctrader_live=1 events=14779 gold_real=1 gold_imb=0.500 gold_mp=0.000 sp_real=0 cl_real=0
+02:43:16 [RSI-REV-DIAG] spread=0.22(max=2.5) tick_atr=0.24(min=1.0) rsi_count=2571(need=16) bar_rsi=43.3 bar_rsi_prev=43.3 bar_atr=2.01(min=2.0) tick_rsi=43.2 bb_sq=0
+02:43:16 [RSI-REV-BLOCK] tick_atr=0.24 < min=1.0
+02:43:16 [GF-OUTER-PASS] can_enter=1 all_flat slot=6 l2_imb=0.500
+02:43:16 [GFE-ATR-SIZE] atr=2.00 scale=0.50x risk_base=$80 risk_scaled=$40 lot_est=0.200 sl_pts=2.00 vol_ratio=0.52 wide_trail=0
+02:43:17 [CTRADER-STATUS] events_total=14796 this_min=1085 symbols=19
+02:43:17 [CTRADER-EVTS] XAUUSD=224
+02:43:17 [CTRADER-EVTS] DJ30.F=45
+02:43:17 [CTRADER-EVTS] GBPUSD=77
+02:43:17 [CTRADER-EVTS] AUDUSD=96
+02:43:17 [CTRADER-EVTS] XAGUSD=173
+02:43:17 [CTRADER-EVTS] NAS100=109
+02:43:17 [CTRADER-EVTS] ESTX50=14
+02:43:17 [CTRADER-EVTS] US500.F=18
+02:43:17 [CTRADER-EVTS] USTEC.F=94
+02:43:17 [CTRADER-EVTS] UK100=25
+02:43:17 [CTRADER-EVTS] GER40=28
+02:43:17 [CTRADER-EVTS] NZDUSD=46
+02:43:17 [CTRADER-EVTS] EURUSD=73
+02:43:17 [CTRADER-EVTS] DX.F=8
+02:43:17 [CTRADER-EVTS] USDJPY=44
+02:43:17 [CTRADER-EVTS] BRENT=4
+02:43:17 [CTRADER-EVTS] USOIL.F=6
+02:43:17 [CTRADER-EVTS] VIX.F=1
+02:43:17 [CTRADER-EVTS] NGAS.F=0 (no events this minute)
+02:43:17 [TICK] NZDUSD 0.59/0.59
+02:43:18 [RSI-REV-BLOCK] spread=2.77 > max=2.5
+02:43:18 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.10 [SHADOW-LOG-ONLY]
+02:43:18 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=5.372ms cap=120ms lat_ok=1 session=ACTIVE
+02:43:18 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+02:43:18 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+02:43:18 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+02:43:18 [GOLD-ENGINE] SessionMomentum            signals=0
+02:43:18 [GOLD-ENGINE] MomentumContinuation       signals=0
+02:43:18 [GOLD-ENGINE] IntradaySeasonality        signals=0
+02:43:18 [GOLD-ENGINE] DonchianBreakout           signals=0
+02:43:18 [GOLD-ENGINE] NR3Breakout                signals=0
+02:43:18 [GOLD-ENGINE] SpikeFade                  signals=0
+02:43:18 [GOLD-ENGINE] AsianRange                 signals=0
+02:43:18 [GOLD-ENGINE] DynamicRange               signals=0
+02:43:18 [GOLD-ENGINE] TurtleTick                 signals=0
+02:43:18 [GOLD-ENGINE] NR3Tick                    signals=0
+02:43:18 [GOLD-ENGINE] TwoBarReversal             signals=0
+02:43:18 [GOLD-ENGINE] MeanReversion              signals=0
+02:43:18 [GOLD-ENGINE] VWAP_SNAPBACK              signals=0
+02:43:18 [GOLD-ENGINE] LiquiditySweepPro          signals=0
+02:43:18 [GOLD-ENGINE] LiquiditySweepPressure     signals=0
+02:43:18 [GOLD-ENGINE] LondonFixMomentum          signals=0
+02:43:18 [GOLD-ENGINE] VWAPStretchReversion       signals=0
+02:43:18 [GOLD-ENGINE] ORBNewYork                 signals=0
+02:43:18 [GOLD-ENGINE] DXYDivergence              signals=0
+02:43:18 [GOLD-ENGINE] SessionOpenMomentum        signals=0
+02:43:18 [GOLD-DIAG] regime=COMPRESSION vwap=4804.81 vol_range=1.25
+02:43:18 [TICK] USOIL.F 86.52/86.58
+02:43:19 [TICK] ESTX50 5998.90/6001.30
+02:43:19 [TICK] UK100 10618.30/10620.10
+02:43:19 [GOLD-L2-LIVE] imb=0.500 age_ms=325
+02:43:20 [L2-CSV-HEALTH] file=OPEN rows=3315 date=2026-4-21
+02:43:20 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.13 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:43:20 [GFE-NOSIG] drift=-0.127 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:43:20 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.53(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.1(need 3.0 BLOCK) rsi=43.9
+02:43:22 [TICK] XAGUSD 79.28/79.34
+02:43:22 [TICK] XAUUSD 4805.63/4805.85
+02:43:22 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0260% base_vol=0.0494% ratio=0.527 sdec_regime=QUIET_COMPRESSION conf=0.656 allow_bo=0
+02:43:25 [TICK] NAS100 26660.90/26662.10
+02:43:26 [TICK] EURUSD 1.18/1.18
+02:43:27 [TICK] DJ30.F 49741.10/49746.90
+02:43:28 [GF-SCORE-INFO] XAUUSD SHORT score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:43:28 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.15 [SHADOW-LOG-ONLY]
+02:43:28 [CFE-SUS-ASIA-BLOCK] sustained-drift entry disabled in Asia session
+02:43:28 [CFE-ASIA-BAR-BLOCK] drift=-0.15 < min=3.00 (Asia)
+02:43:29 [GOLD-L2-LIVE] imb=0.500 age_ms=985
+02:43:31 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.15 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:43:31 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.53(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.1(need 3.0 BLOCK) rsi=65.6
+02:43:31 [GFE-NOSIG] drift=-0.150 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:43:32 [TICK] USDJPY 158.96/158.97
+02:43:33 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.01 [SHADOW-LOG-ONLY]
+02:43:34 [CFE-VWAP-BLOCK] LONG blocked: price=4806.17 above VWAP=4804.82 drift=-0.00
+02:43:35 [TICK] US500.F 7159.84/7160.65
+02:43:39 [TICK] USTEC.F 26819.44/26822.15
+02:43:39 [GOLD-L2-LIVE] imb=0.500 age_ms=597
+02:43:40 [GFE-PHASE] phase=IDLE ticks=2317 atr_warm=2417 l2_imb=0.500 slot=6
+02:43:41 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.22 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:43:41 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.54(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.2(need 3.0 BLOCK) rsi=57.0
+02:43:41 [GFE-NOSIG] drift=0.224 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:43:42 [TICK] AUDUSD 0.72/0.72
+02:43:43 [GF-SCORE-INFO] XAUUSD LONG score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:43:44 [TICK] GBPUSD 1.35/1.35
+02:43:44 [TICK] BRENT 90.81/90.92
+02:43:45 [TICK] GER40 24514.05/24515.75
+02:43:46 [RSI-REV-DIAG] spread=0.22(max=2.5) tick_atr=0.25(min=1.0) rsi_count=2643(need=16) bar_rsi=43.3 bar_rsi_prev=43.3 bar_atr=2.01(min=2.0) tick_rsi=51.4 bb_sq=0
+02:43:46 [RSI-REV-BLOCK] tick_atr=0.25 < min=1.0
+02:43:46 [GF-OUTER-PASS] can_enter=1 all_flat slot=6 l2_imb=0.496
+02:43:46 [GFE-ATR-SIZE] atr=2.00 scale=0.50x risk_base=$80 risk_scaled=$40 lot_est=0.200 sl_pts=2.00 vol_ratio=0.55 wide_trail=0
+02:43:48 [TICK] NZDUSD 0.59/0.59
+02:43:49 [GOLD-L2-LIVE] imb=0.500 age_ms=0
+02:43:49 [CFE-VWAP-BLOCK] LONG blocked: price=4806.40 above VWAP=4804.84 drift=0.28
+02:43:51 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.29 l2_imb=0.502 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:43:51 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.41(need 2.00 BLOCK) exp=1(regime=0 rsi=1) drift=0.3(need 3.0 BLOCK) rsi=63.1
+02:43:51 [GFE-NOSIG] drift=0.293 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=1 l2_imb=0.502
+02:43:52 [TICK] XAUUSD 4806.20/4806.42
+02:43:52 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0201% base_vol=0.0468% ratio=0.429 sdec_regime=QUIET_COMPRESSION conf=0.707 allow_bo=0
+02:43:52 [TICK] XAGUSD 79.33/79.36
+02:43:53 [TICK] USOIL.F 86.54/86.61
+02:43:54 [TICK] UK100 10618.80/10620.60
+02:43:56 [TICK] NAS100 26662.00/26663.20
+02:43:56 [TICK] EURUSD 1.18/1.18
+02:43:58 [RSI-REV-BLOCK] spread=2.82 > max=2.5
+02:43:58 [GF-SCORE-INFO] XAUUSD SHORT score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:43:59 [GOLD-L2-LIVE] imb=0.500 age_ms=86
+02:43:59 [TICK] ESTX50 6000.10/6001.70
+02:44:00 [TICK] DX.F 97.88/97.98
+02:44:01 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.42 l2_imb=0.477 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:44:01 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.65(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.4(need 3.0 BLOCK) rsi=60.1
+02:44:01 [GFE-NOSIG] drift=0.415 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=1 l2_imb=0.477
+02:44:02 [TICK] USDJPY 158.96/158.97
+02:44:04 [CFE-VWAP-BLOCK] LONG blocked: price=4806.42 above VWAP=4804.87 drift=0.43
+02:44:05 [TICK] DJ30.F 49742.60/49748.40
+02:44:05 [TICK] US500.F 7159.84/7160.65
+02:44:08 [GF-BAR-INFO] XAUUSD SHORT atr_slope=-0.088 atr_exp=0 atr_con=1 vwap_dir=+0 vol_delta=-0.006 gate4d=pass (LOG ONLY)
+02:44:09 [GOLD-L2-LIVE] imb=0.500 age_ms=636
+02:44:10 [TICK] USTEC.F 26818.69/26821.40
+02:44:10 [GFE-PHASE] phase=IDLE ticks=2427 atr_warm=2527 l2_imb=0.500 slot=6
+02:44:11 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.33 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:44:11 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.58(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.3(need 3.0 BLOCK) rsi=51.2
+02:44:11 [GFE-NOSIG] drift=0.325 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:44:13 [GF-SCORE-INFO] XAUUSD SHORT score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:44:13 [TICK] AUDUSD 0.72/0.72
+02:44:14 [TICK] GBPUSD 1.35/1.35
+02:44:16 [LOG-HEALTH] dated=ok latest=ok ts=02:44:16
+02:44:16 [L2-STATUS] ctrader_live=1 events=15810 gold_real=1 gold_imb=0.500 gold_mp=0.000 sp_real=0 cl_real=0
+02:44:16 [BAR-SAVE] Periodic save -- bars_gold_m1/m5/m15/h1/h4 + sp_h1/nq_h1.dat updated
+02:44:16 [RSI-REV-DIAG] spread=0.22(max=2.5) tick_atr=0.22(min=1.0) rsi_count=2719(need=16) bar_rsi=43.3 bar_rsi_prev=43.3 bar_atr=1.98(min=2.0) tick_rsi=44.5 bb_sq=0
+02:44:16 [RSI-REV-BLOCK] tick_atr=0.22 < min=1.0
+02:44:16 [GFE-ATR-SIZE] atr=2.00 scale=0.50x risk_base=$80 risk_scaled=$40 lot_est=0.200 sl_pts=2.00 vol_ratio=0.59 wide_trail=0
+02:44:16 [GF-OUTER-PASS] can_enter=1 all_flat slot=6 l2_imb=0.500
+02:44:17 [CTRADER-STATUS] events_total=15825 this_min=1029 symbols=19
+02:44:17 [CTRADER-EVTS] XAUUSD=178
+02:44:17 [CTRADER-EVTS] NAS100=100
+02:44:17 [CTRADER-EVTS] USTEC.F=79
+02:44:17 [CTRADER-EVTS] AUDUSD=86
+02:44:17 [CTRADER-EVTS] NZDUSD=59
+02:44:17 [CTRADER-EVTS] EURUSD=78
+02:44:17 [CTRADER-EVTS] XAGUSD=133
+02:44:17 [CTRADER-EVTS] DJ30.F=16
+02:44:17 [CTRADER-EVTS] GBPUSD=82
+02:44:17 [CTRADER-EVTS] DX.F=10
+02:44:17 [CTRADER-EVTS] US500.F=5
+02:44:17 [CTRADER-EVTS] ESTX50=12
+02:44:17 [CTRADER-EVTS] UK100=20
+02:44:17 [CTRADER-EVTS] GER40=25
+02:44:17 [CTRADER-EVTS] USDJPY=122
+02:44:17 [CTRADER-EVTS] BRENT=7
+02:44:17 [CTRADER-EVTS] USOIL.F=16
+02:44:17 [CTRADER-EVTS] VIX.F=1
+02:44:17 [CTRADER-EVTS] NGAS.F=0 (no events this minute)
+02:44:18 [TICK] NZDUSD 0.59/0.59
+02:44:18 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=5.372ms cap=120ms lat_ok=1 session=ACTIVE
+02:44:18 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+02:44:18 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+02:44:18 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+02:44:18 [GOLD-ENGINE] SessionMomentum            signals=0
+02:44:18 [GOLD-ENGINE] MomentumContinuation       signals=0
+02:44:18 [GOLD-ENGINE] IntradaySeasonality        signals=0
+02:44:18 [GOLD-ENGINE] DonchianBreakout           signals=0
+02:44:18 [GOLD-ENGINE] NR3Breakout                signals=0
+02:44:18 [GOLD-ENGINE] SpikeFade                  signals=0
+02:44:18 [GOLD-ENGINE] AsianRange                 signals=0
+02:44:18 [GOLD-ENGINE] DynamicRange               signals=0
+02:44:18 [GOLD-ENGINE] TurtleTick                 signals=0
+02:44:18 [GOLD-ENGINE] NR3Tick                    signals=0
+02:44:18 [GOLD-ENGINE] TwoBarReversal             signals=0
+02:44:18 [GOLD-ENGINE] MeanReversion              signals=0
+02:44:18 [GOLD-ENGINE] VWAP_SNAPBACK              signals=0
+02:44:18 [GOLD-ENGINE] LiquiditySweepPro          signals=0
+02:44:18 [GOLD-ENGINE] LiquiditySweepPressure     signals=0
+02:44:18 [GOLD-ENGINE] LondonFixMomentum          signals=0
+02:44:18 [GOLD-ENGINE] VWAPStretchReversion       signals=0
+02:44:18 [GOLD-ENGINE] ORBNewYork                 signals=0
+02:44:18 [GOLD-ENGINE] DXYDivergence              signals=0
+02:44:18 [GOLD-ENGINE] SessionOpenMomentum        signals=0
+02:44:18 [GOLD-DIAG] regime=COMPRESSION vwap=4804.89 vol_range=0.56
+02:44:19 [GOLD-L2-LIVE] imb=0.500 age_ms=588
+02:44:19 [TICK] GER40 24513.50/24516.80
+02:44:20 [CFE-VWAP-BLOCK] LONG blocked: price=4806.50 above VWAP=4804.89 drift=0.28
+02:44:21 [L2-CSV-HEALTH] file=OPEN rows=3518 date=2026-4-21
+02:44:21 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.26 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:44:21 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.59(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.3(need 3.0 BLOCK) rsi=49.1
+02:44:21 [GFE-NOSIG] drift=0.261 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:44:22 [TICK] XAUUSD 4806.30/4806.52
+02:44:22 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0266% base_vol=0.0452% ratio=0.590 sdec_regime=QUIET_COMPRESSION conf=0.627 allow_bo=0
+02:44:22 [TICK] XAGUSD 79.34/79.38
+02:44:23 [TICK] USOIL.F 86.53/86.60
+02:44:27 [TICK] EURUSD 1.18/1.18
+02:44:27 [TICK] NAS100 26660.75/26662.45
+02:44:27 [TICK] UK100 10618.10/10619.90
+02:44:28 [GF-SCORE-INFO] XAUUSD SHORT score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:44:28 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.00 [SHADOW-LOG-ONLY]
+02:44:29 [GOLD-L2-LIVE] imb=0.500 age_ms=1
+02:44:30 [TICK] ESTX50 5999.30/6001.10
+02:44:31 [TICK] BRENT 90.81/90.92
+02:44:31 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.05 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:44:31 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.67(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.1(need 3.0 BLOCK) rsi=57.6
+02:44:31 [GFE-NOSIG] drift=-0.053 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:44:33 [TICK] USDJPY 158.95/158.96
+02:44:33 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.02 [SHADOW-LOG-ONLY]
+02:44:34 [TICK] NGAS.F 2.65/2.67
+02:44:37 [TICK] US500.F 7159.97/7160.78
+02:44:38 [TICK] DJ30.F 49743.60/49749.40
+02:44:38 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.00 [SHADOW-LOG-ONLY]
+02:44:38 [TICK] DX.F 97.88/97.98
+02:44:39 [GOLD-L2-LIVE] imb=0.500 age_ms=0
+02:44:41 [TICK] USTEC.F 26818.32/26821.03
+02:44:41 [GFE-PHASE] phase=IDLE ticks=2536 atr_warm=2636 l2_imb=0.500 slot=6
+02:44:42 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=[MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.57(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.0(need 3.0 BLOCK) rsi=47.4
+02:44:42 -0.01 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:44:42 [GFE-NOSIG] drift=-0.014 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:44:42 [HYBRID-GOLD-DIAG] ticks=3600 phase=0 window=40/20 range=0.25 spread=0.22
+02:44:43 [GF-SCORE-INFO] XAUUSD SHORT score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:44:43 [TICK] AUDUSD 0.72/0.72
+02:44:43 [CFE-HMM-GATE] DFE blocked: state=NOISE p_cont=0.000 < 0.55 drift=-0.02 [SHADOW-LOG-ONLY]
+02:44:44 [CFE-VWAP-BLOCK] LONG blocked: price=4806.35 above VWAP=4804.93 drift=-0.00
+02:44:46 [RSI-REV-DIAG] spread=0.22(max=2.5) tick_atr=0.22(min=1.0) rsi_count=2802(need=16) bar_rsi=43.3 bar_rsi_prev=43.3 bar_atr=1.98(min=2.0) tick_rsi=61.8 bb_sq=0
+02:44:46 [RSI-REV-BLOCK] tick_atr=0.22 < min=1.0
+02:44:46 [GF-OUTER-PASS] can_enter=1 all_flat slot=6 l2_imb=0.501
+02:44:46 [GFE-ATR-SIZE] atr=2.00 scale=0.50x risk_base=$80 risk_scaled=$40 lot_est=0.200 sl_pts=2.00 vol_ratio=0.51 wide_trail=0
+02:44:47 [TICK] GBPUSD 1.35/1.35
+02:44:48 [TICK] NZDUSD 0.59/0.59
+02:44:50 [GOLD-L2-LIVE] imb=0.500 age_ms=178
+02:44:52 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.11 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:44:52 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.50(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.1(need 3.0 BLOCK) rsi=51.6
+02:44:52 [GFE-NOSIG] drift=0.110 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:44:52 [TICK] XAUUSD 4806.21/4806.43
+02:44:52 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0218% base_vol=0.0439% ratio=0.497 sdec_regime=QUIET_COMPRESSION conf=0.674 allow_bo=0
+02:44:53 [TICK] XAGUSD 79.33/79.36
+02:44:54 [TICK] USOIL.F 86.53/86.60
+02:44:55 [RSI-REV-BLOCK] spread=2.74 > max=2.5
+02:44:58 [GF-SCORE-INFO] XAUUSD LONG score=1 crowd_adj=1/16 < 5 -- LOG ONLY, not blocking
+02:44:59 [TICK] NAS100 26661.05/26662.25
+02:44:59 [TICK] GER40 24509.80/24511.50
+02:44:59 [TICK] UK100 10617.20/10619.00
+02:45:00 [GOLD-L2-LIVE] imb=0.500 age_ms=0
+02:45:00 [CBE-STATE] armed=1 consec_comp=4 range=1.88 comp_thresh=2.92 atr=1.94 rsi=60.0 break=0 shadow=1
+02:45:00 [CFE-VWAP-BLOCK] LONG blocked: price=4806.61 above VWAP=4804.95 drift=0.17
+02:45:00 [TICK] ESTX50 5999.00/6000.60
+02:45:01 [TICK] BRENT 90.81/90.92
+02:45:02 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.21 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:45:02 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.54(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.2(need 3.0 BLOCK) rsi=60.3
+02:45:02 [GFE-NOSIG] drift=0.207 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:45:03 [TICK] USDJPY 158.93/158.94
+02:45:05 [TICK] EURUSD 1.18/1.18
+02:45:08 [GF-BAR-INFO] XAUUSD LONG atr_slope=-0.096 atr_exp=0 atr_con=1 vwap_dir=+0 vol_delta=0.001 gate4d=pass (LOG ONLY)
+02:45:10 [GOLD-L2-LIVE] imb=0.500 age_ms=152
+02:45:10 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:10 [GF-GATE-BLOCK] reason=COUNTER_TREND atr=2.00 spread=0.220 spread_ratio=0.89 l2=0.500 micro=0.0000 wall_below=0 wall_above=0 absorb=0 vac_ask=0 vac_bid=0 trail_block=0 post_impulse=0 ny_noise=0 gold_can_enter=1 tick_rate=4.0 bb_sq=0 bull_div=0 bear_div=0
+02:45:11 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:11 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:12 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:12 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:12 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.12 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:45:12 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.21(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.1(need 3.0 BLOCK) rsi=33.9
+02:45:12 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:12 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:13 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:13 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:13 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:14 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:14 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:15 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:15 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:15 [CFE-VWAP-BLOCK] LONG blocked: price=4806.22 above VWAP=4804.97 drift=0.06
+02:45:16 [LOG-HEALTH] dated=ok latest=ok ts=02:45:16
+02:45:16 [L2-STATUS] ctrader_live=1 events=16702 gold_real=1 gold_imb=0.500 gold_mp=0.000 sp_real=0 cl_real=0
+02:45:16 [BAR-SAVE] Periodic save -- bars_gold_m1/m5/m15/h1/h4 + sp_h1/nq_h1.dat updated
+02:45:16 [RSI-REV-DIAG] spread=0.22(max=2.5) tick_atr=0.22(min=1.0) rsi_count=2877(need=16) bar_rsi=60.0 bar_rsi_prev=60.0 bar_atr=1.94(min=2.0) tick_rsi=30.8 bb_sq=0
+02:45:16 [RSI-REV-BLOCK] tick_atr=0.22 < min=1.0
+02:45:16 [GF-OUTER-PASS] can_enter=1 all_flat slot=6 l2_imb=0.500
+02:45:16 [GFE-ATR-SIZE] atr=2.00 scale=0.50x risk_base=$80 risk_scaled=$40 lot_est=0.200 sl_pts=2.00 vol_ratio=0.22 wide_trail=0
+02:45:16 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:16 [TICK] USTEC.F 26817.82/26820.53
+02:45:16 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:17 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:17 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:17 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:17 [CTRADER-STATUS] events_total=16716 this_min=891 symbols=19
+02:45:17 [CTRADER-EVTS] XAUUSD=197
+02:45:17 [CTRADER-EVTS] USDJPY=82
+02:45:17 [CTRADER-EVTS] DJ30.F=19
+02:45:17 [CTRADER-EVTS] GBPUSD=76
+02:45:17 [CTRADER-EVTS] XAGUSD=145
+02:45:17 [CTRADER-EVTS] AUDUSD=65
+02:45:17 [CTRADER-EVTS] NAS100=53
+02:45:17 [CTRADER-EVTS] EURUSD=45
+02:45:17 [CTRADER-EVTS] NZDUSD=37
+02:45:17 [CTRADER-EVTS] UK100=32
+02:45:17 [CTRADER-EVTS] GER40=27
+02:45:17 [CTRADER-EVTS] DX.F=7
+02:45:17 [CTRADER-EVTS] USTEC.F=54
+02:45:17 [CTRADER-EVTS] US500.F=12
+02:45:17 [CTRADER-EVTS] ESTX50=18
+02:45:17 [CTRADER-EVTS] USOIL.F=13
+02:45:17 [CTRADER-EVTS] BRENT=7
+02:45:17 [CTRADER-EVTS] NGAS.F=2
+02:45:17 [CTRADER-EVTS] VIX.F=0 (no events this minute)
+02:45:17 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:17 [TICK] AUDUSD 0.72/0.72
+02:45:17 [TICK] GBPUSD 1.35/1.35
+02:45:17 [TICK] DX.F 97.87/97.97
+02:45:17 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:18 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:18 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:18 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:18 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:18 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:18 [CFE-BAR-BLOCK] SHORT blocked counter-trend M1=+1 EMA9=4805.94 EMA50=4804.76
+02:45:18 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=5.372ms cap=120ms lat_ok=1 session=ACTIVE
+02:45:18 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+02:45:18 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+02:45:18 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+02:45:18 [GOLD-ENGINE] SessionMomentum            signals=0
+02:45:18 [GOLD-ENGINE] MomentumContinuation       signals=0
+02:45:18 [GOLD-ENGINE] IntradaySeasonality        signals=0
+02:45:18 [GOLD-ENGINE] DonchianBreakout           signals=0
+02:45:18 [GOLD-ENGINE] NR3Breakout                signals=0
+02:45:18 [GOLD-ENGINE] SpikeFade                  signals=0
+02:45:18 [GOLD-ENGINE] AsianRange                 signals=0
+02:45:18 [GOLD-ENGINE] DynamicRange               signals=0
+02:45:18 [GOLD-ENGINE] TurtleTick                 signals=0
+02:45:18 [GOLD-ENGINE] NR3Tick                    signals=0
+02:45:18 [GOLD-ENGINE] TwoBarReversal             signals=0
+02:45:18 [GOLD-ENGINE] MeanReversion              signals=0
+02:45:18 [GOLD-ENGINE] VWAP_SNAPBACK              signals=0
+02:45:18 [GOLD-ENGINE] LiquiditySweepPro          signals=0
+02:45:18 [GOLD-ENGINE] LiquiditySweepPressure     signals=0
+02:45:18 [GOLD-ENGINE] LondonFixMomentum          signals=0
+02:45:18 [GOLD-ENGINE] VWAPStretchReversion       signals=0
+02:45:18 [GOLD-ENGINE] ORBNewYork                 signals=0
+02:45:18 [GOLD-ENGINE] DXYDivergence              signals=0
+02:45:18 [GOLD-ENGINE] SessionOpenMomentum        signals=0
+02:45:18 [GOLD-DIAG] regime=COMPRESSION vwap=4804.98 vol_range=0.42
+02:45:18 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:19 [TICK] NZDUSD 0.59/0.59
+02:45:19 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:19 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:19 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:20 [GOLD-L2-LIVE] imb=0.500 age_ms=281
+02:45:20 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:21 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:21 [L2-CSV-HEALTH] file=OPEN rows=3739 date=2026-4-21
+02:45:21 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:21 [TICK] DJ30.F 49743.60/49749.40
+02:45:21 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:21 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:22 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:22 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:22 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:22 [TICK] XAUUSD 4806.18/4806.40
+02:45:22 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0092% base_vol=0.0418% ratio=0.219 sdec_regime=QUIET_COMPRESSION conf=0.814 allow_bo=0
+02:45:22 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.02 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:45:22 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.22(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.0(need 3.0 BLOCK) rsi=48.6
+02:45:22 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:23 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:23 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:23 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:23 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:24 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:24 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:24 [TICK] XAGUSD 79.31/79.35
+02:45:24 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:24 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:25 [TICK] US500.F 7159.97/7160.78
+02:45:25 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:25 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:25 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:25 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:25 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:25 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:26 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:26 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:26 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:26 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:26 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:27 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:27 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:27 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:28 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:28 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:28 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:28 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:29 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:29 [TICK] NAS100 26660.35/26661.55
+02:45:29 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:29 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:29 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:30 [TICK] GER40 24508.15/24509.85
+02:45:30 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:30 [TICK] UK100 10616.90/10619.10
+02:45:30 [GOLD-L2-LIVE] imb=0.500 age_ms=195
+02:45:30 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:30 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:30 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:30 [TICK] ESTX50 5999.00/6000.50
+02:45:30 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:31 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:31 [CFE-VWAP-BLOCK] LONG blocked: price=4806.57 above VWAP=4805.00 drift=0.08
+02:45:31 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:32 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:32 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:32 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:32 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:33 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.12 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:45:33 [MCE-NOSIG] slot=6 cooldown=no atr=1.9(need 4.0 BLOCK) vol=0.24(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.1(need 3.0 BLOCK) rsi=61.6
+02:45:33 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:33 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:33 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:33 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:33 [TICK] USOIL.F 86.50/86.57
+02:45:33 [TICK] BRENT 90.80/90.92
+02:45:33 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:33 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:34 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:34 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:34 [TICK] USDJPY 158.91/158.93
+02:45:34 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:34 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:35 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:35 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:35 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:35 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:35 [TICK] VIX.F 20.28/20.66
+02:45:35 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:36 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:36 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:37 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:37 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:37 [TICK] EURUSD 1.18/1.18
+02:45:37 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:37 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:37 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:37 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:38 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:38 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:38 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:38 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:38 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:39 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:39 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:39 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:39 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:40 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:40 [GF-GATE-BLOCK] reason=COUNTER_TREND atr=1.95 spread=0.220 spread_ratio=0.90 l2=0.500 micro=0.0000 wall_below=0 wall_above=0 absorb=0 vac_ask=0 vac_bid=0 trail_block=0 post_impulse=0 ny_noise=0 gold_can_enter=1 tick_rate=5.0 bb_sq=0 bull_div=0 bear_div=0
+02:45:40 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:40 [GOLD-L2-LIVE] imb=0.500 age_ms=4
+02:45:40 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:40 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:40 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:41 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:41 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:41 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:41 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:42 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:42 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:43 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:43 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.32 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:45:43 [MCE-NOSIG] slot=6 cooldown=no atr=1.9(need 4.0 BLOCK) vol=0.53(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.3(need 3.0 BLOCK) rsi=52.9
+02:45:43 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:43 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:43 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:43 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:44 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:44 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:44 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:44 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:44 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:45 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:45 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:45 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:46 [RSI-REV-DIAG] spread=0.22(max=2.5) tick_atr=0.26(min=1.0) rsi_count=2978(need=16) bar_rsi=60.0 bar_rsi_prev=60.0 bar_atr=1.94(min=2.0) tick_rsi=49.7 bb_sq=0
+02:45:46 [RSI-REV-BLOCK] tick_atr=0.26 < min=1.0
+02:45:46 [GF-OUTER-PASS] can_enter=1 all_flat slot=6 l2_imb=0.500
+02:45:46 [GFE-ATR-SIZE] atr=2.00 scale=0.50x risk_base=$80 risk_scaled=$40 lot_est=0.200 sl_pts=2.00 vol_ratio=0.53 wide_trail=0
+02:45:46 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:46 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:46 [CFE-VWAP-BLOCK] LONG blocked: price=4806.78 above VWAP=4805.03 drift=0.32
+02:45:46 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:46 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:46 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:47 [TICK] USTEC.F 26817.07/26819.78
+02:45:47 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:48 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:48 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:48 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:48 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:48 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:49 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:49 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:49 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:49 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:50 [GOLD-L2-LIVE] imb=0.500 age_ms=0
+02:45:50 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:50 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:51 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:51 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:51 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:52 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:52 [TICK] GBPUSD 1.35/1.35
+02:45:52 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:52 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:52 [TICK] AUDUSD 0.72/0.72
+02:45:52 [TICK] NZDUSD 0.59/0.59
+02:45:52 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:52 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:53 [TICK] XAUUSD 4806.62/4806.84
+02:45:53 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0215% base_vol=0.0400% ratio=0.539 sdec_regime=QUIET_COMPRESSION conf=0.655 allow_bo=0
+02:45:53 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:53 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.25 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:45:53 [MCE-NOSIG] slot=6 cooldown=no atr=1.9(need 4.0 BLOCK) vol=0.54(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.2(need 3.0 BLOCK) rsi=48.5
+02:45:53 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:45:53 [TICK] DJ30.F 49744.60/49750.40
+02:45:53 [GF-SCORE-INFO] XAUUSD LONG score=3 crowd_adj=3/16 < 5 -- LOG ONLY, not blocking
+02:45:53 [GFE-PHASE] phase=IDLE ticks=2645 atr_warm=2745 l2_imb=0.522 slot=6
+02:45:53 [GFE-NOSIG] drift=0.246 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=1 l2_imb=0.522
+02:45:54 [TICK] XAGUSD 79.33/79.36
+02:46:00 [TICK] NAS100 26660.65/26661.85
+02:46:00 [GOLD-L2-LIVE] imb=0.500 age_ms=0
+02:46:00 [HYBRID-GOLD-DIAG] ticks=3900 phase=0 window=40/20 range=0.19 spread=0.22
+02:46:00 [TICK] DX.F 97.87/97.97
+02:46:01 [CFE-VWAP-BLOCK] LONG blocked: price=4806.78 above VWAP=4805.05 drift=0.23
+02:46:03 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=[MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.55(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.2(need 3.0 BLOCK) rsi=53.4
+02:46:03 1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.24 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:46:03 [GFE-NOSIG] drift=0.241 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:46:05 [TICK] USDJPY 158.92/158.93
+02:46:06 [TICK] USOIL.F 86.53/86.60
+02:46:06 [TICK] GER40 24507.00/24508.70
+02:46:08 [TICK] ESTX50 5999.00/6000.70
+02:46:08 [TICK] UK100 10617.20/10619.00
+02:46:08 [TICK] US500.F 7159.84/7160.65
+02:46:08 [TICK] EURUSD 1.18/1.18
+02:46:08 [GF-SCORE-INFO] XAUUSD LONG score=3 crowd_adj=3/16 < 5 -- LOG ONLY, not blocking
+02:46:08 [GF-BAR-INFO] XAUUSD LONG atr_slope=-0.134 atr_exp=0 atr_con=1 vwap_dir=+0 vol_delta=0.002 gate4d=pass (LOG ONLY)
+02:46:10 [GOLD-L2-LIVE] imb=0.500 age_ms=749
+02:46:13 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.30 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+02:46:13 [MCE-NOSIG] slot=6 cooldown=no atr=2.0(need 4.0 BLOCK) vol=0.74(need 2.00 BLOCK) exp=0(regime=0 rsi=0) drift=0.3(need 3.0 BLOCK) rsi=56.7
+02:46:13 [GFE-NOSIG] drift=0.305 atr=2.000 eff_thresh=1.500 fast_long=0 fast_short=0 need=8 window=12/12 slot=6 l2_live=0 l2_imb=0.500
+02:46:16 [LOG-HEALTH] dated=ok latest=ok ts=02:46:16
+02:46:16 [L2-STATUS] ctrader_live=1 events=17707 gold_real=1 gold_imb=0.500 gold_mp=0.000 sp_real=0 cl_real=0
+02:46:16 [BAR-SAVE] Periodic save -- bars_gold_m1/m5/m15/h1/h4 + sp_h1/nq_h1.dat updated
+02:46:16 [RSI-REV-DIAG] spread=0.17(max=2.5) tick_atr=0.26(min=1.0) rsi_count=3053(need=16) bar_rsi=60.8 bar_rsi_prev=60.8 bar_atr=1.88(min=2.0) tick_rsi=52.0 bb_sq=0
+02:46:16 [RSI-REV-BLOCK] tick_atr=0.26 < min=1.0
+02:46:16 [GF-OUTER-PASS] can_enter=1 all_flat slot=6 l2_imb=0.478
+02:46:16 [GFE-ATR-SIZE] atr=2.00 scale=0.50x risk_base=$80 risk_scaled=$40 lot_est=0.200 sl_pts=2.00 vol_ratio=0.74 wide_trail=0
+02:46:16 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:16 [GF-GATE-BLOCK] reason=COUNTER_TREND atr=1.99 spread=0.170 spread_ratio=0.72 l2=0.478 micro=0.0000 wall_below=0 wall_above=0 absorb=0 vac_ask=0 vac_bid=0 trail_block=0 post_impulse=0 ny_noise=0 gold_can_enter=1 tick_rate=4.0 bb_sq=0 bull_div=0 bear_div=0
+02:46:16 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:16 [CFE-VWAP-BLOCK] LONG blocked: price=4806.98 above VWAP=4805.07 drift=0.33
+02:46:16 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:17 [TICK] USTEC.F 26818.82/26821.53
+02:46:17 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:17 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:17 [CTRADER-STATUS] events_total=17734 this_min=1018 symbols=19
+02:46:17 [CTRADER-EVTS] XAUUSD=211
+02:46:17 [CTRADER-EVTS] USDJPY=99
+02:46:17 [CTRADER-EVTS] XAGUSD=142
+02:46:17 [CTRADER-EVTS] EURUSD=66
+02:46:17 [CTRADER-EVTS] AUDUSD=63
+02:46:17 [CTRADER-EVTS] DJ30.F=32
+02:46:17 [CTRADER-EVTS] GBPUSD=52
+02:46:17 [CTRADER-EVTS] NAS100=87
+02:46:17 [CTRADER-EVTS] NZDUSD=35
+02:46:17 [CTRADER-EVTS] USTEC.F=86
+02:46:17 [CTRADER-EVTS] DX.F=10
+02:46:17 [CTRADER-EVTS] BRENT=7
+02:46:17 [CTRADER-EVTS] USOIL.F=13
+02:46:17 [CTRADER-EVTS] US500.F=27
+02:46:17 [CTRADER-EVTS] ESTX50=15
+02:46:17 [CTRADER-EVTS] UK100=32
+02:46:17 [CTRADER-EVTS] GER40=37
+02:46:17 [CTRADER-EVTS] VIX.F=4
+02:46:17 [CTRADER-EVTS] NGAS.F=0 (no events this minute)
+02:46:17 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:17 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:17 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:18 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:18 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:18 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:19 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:19 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=5.633ms cap=120ms lat_ok=1 session=ACTIVE
+02:46:19 [OMEGA-DIAG] SP phase=0 recent=0% base=0% ratio=0
+02:46:19 [OMEGA-DIAG] NQ phase=0 recent=0% base=0% ratio=0
+02:46:19 [OMEGA-DIAG] CL phase=0 recent=0% base=0% ratio=0
+02:46:19 [GOLD-ENGINE] SessionMomentum            signals=0
+02:46:19 [GOLD-ENGINE] MomentumContinuation       signals=0
+02:46:19 [GOLD-ENGINE] IntradaySeasonality        signals=0
+02:46:19 [GOLD-ENGINE] DonchianBreakout           signals=0
+02:46:19 [GOLD-ENGINE] NR3Breakout                signals=0
+02:46:19 [GOLD-ENGINE] SpikeFade                  signals=0
+02:46:19 [GOLD-ENGINE] AsianRange                 signals=0
+02:46:19 [GOLD-ENGINE] DynamicRange               signals=0
+02:46:19 [GOLD-ENGINE] TurtleTick                 signals=0
+02:46:19 [GOLD-ENGINE] NR3Tick                    signals=0
+02:46:19 [GOLD-ENGINE] TwoBarReversal             signals=0
+02:46:19 [GOLD-ENGINE] MeanReversion              signals=0
+02:46:19 [GOLD-ENGINE] VWAP_SNAPBACK              signals=0
+02:46:19 [GOLD-ENGINE] LiquiditySweepPro          signals=0
+02:46:19 [GOLD-ENGINE] LiquiditySweepPressure     signals=0
+02:46:19 [GOLD-ENGINE] LondonFixMomentum          signals=0
+02:46:19 [GOLD-ENGINE] VWAPStretchReversion       signals=0
+02:46:19 [GOLD-ENGINE] ORBNewYork                 signals=0
+02:46:19 [GOLD-ENGINE] DXYDivergence              signals=0
+02:46:19 [GOLD-ENGINE] SessionOpenMomentum        signals=0
+02:46:19 [GOLD-DIAG] regime=COMPRESSION vwap=4805.08 vol_range=0.72
+02:46:19 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:19 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:19 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:19 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:20 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:20 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:20 [GOLD-L2-LIVE] imb=0.500 age_ms=0
+02:46:20 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:21 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)
+02:46:21 [GF-BAR-BLOCK] XAUUSD SHORT blocked -- counter-trend M1=+1 (EMA9 vs EMA50)

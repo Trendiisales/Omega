@@ -1,23 +1,21 @@
 ﻿OMEGA SESSION SNAPSHOT
-Generated : 2026-04-21 02:41:26 UTC
+Generated : 2026-04-21 02:46:21 UTC
 ============================================================
-[ATR-DAT] atr=2.000000 atr_ewm=1.417099 warmed=1 last_mid=4806.17500 saved_ts=1776739279
-[ATR-WARN] atr=2 AT FLOOR -- check seed
+[ATR-DAT] atr=1.944774 atr_ewm=1.540044 warmed=1 last_mid=4807.01500 saved_ts=1776739579
+[ATR-WARN] atr=1.944774 AT FLOOR -- check seed
 
-[DIAG]        02:41:19 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=4.658ms cap=120ms lat_ok=1 session=ACTIVE
-[VOL]         02:41:21 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0193% base_vol=0.0651% ratio=0.297 sdec_regime=QUIET_COMPRESSION conf=0.771 allow_bo=0
-[GOLD-DIAG]   02:41:19 [GOLD-DIAG] regime=COMPRESSION vwap=4804.61 vol_range=0.93
-[BRK-DIAG]    02:41:20 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.10 l2_imb=0.500 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
-[L2]          02:41:16 [L2-STATUS] ctrader_live=1 events=12590 gold_real=1 gold_imb=0.500 gold_mp=0.000 sp_real=0 cl_real=0
-[SUPERVISOR]  02:40:24 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.58 bracket=0.69 breakout=0.40 top_score=0.69 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
-[BAR-INFO]    02:41:00 [GF-BAR-INFO] XAUUSD SHORT atr_slope=-0.063 atr_exp=0 atr_con=0 vwap_dir=+0 vol_delta=-0.002 gate4d=pass (LOG ONLY)
-[VIX]         02:41:23 [TICK] VIX.F 20.28/20.66
-[GOLD-PRICE]  02:41:21 [TICK] XAUUSD 4806.13/4806.34
+[DIAG]        02:46:19 [OMEGA-DIAG] PnL=0 T=0 WR=0% RTTp95=5.633ms cap=120ms lat_ok=1 session=ACTIVE
+[VOL]         02:45:53 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0215% base_vol=0.0400% ratio=0.539 sdec_regime=QUIET_COMPRESSION conf=0.655 allow_bo=0
+[GOLD-DIAG]   02:46:19 [GOLD-DIAG] regime=COMPRESSION vwap=4805.08 vol_range=0.72
+[BRK-DIAG]    02:46:13 [GOLD-BRK-DIAG] phase=IDLE can_enter=0 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=0.30 l2_imb=0.500 can_arm=0 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+[L2]          02:46:16 [L2-STATUS] ctrader_live=1 events=17707 gold_real=1 gold_imb=0.500 gold_mp=0.000 sp_real=0 cl_real=0
+[BAR-INFO]    02:46:08 [GF-BAR-INFO] XAUUSD LONG atr_slope=-0.134 atr_exp=0 atr_con=1 vwap_dir=+0 vol_delta=0.002 gate4d=pass (LOG ONLY)
+[VIX]         02:45:35 [TICK] VIX.F 20.28/20.66
+[GOLD-PRICE]  02:45:53 [TICK] XAUUSD 4806.62/4806.84
 
-[GATE-COUNTS-LAST500] NO_ROOM=4 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
-[GATE]        02:38:03 [GF-GATE-BLOCK] reason=NO_ROOM_TO_TARGET LONG vwap=4804.27 mid=4804.76 dist=0.49pts atr=2.00 need=0.50pts (0.2R of 0.2R)
-[GATE]        02:38:03 [GF-GATE-BLOCK] reason=NO_ROOM_TO_TARGET atr=2.00 spread=0.220 spread_ratio=0.90 l2=0.500 micro=0.0000 wall_below=0 wall_above=0 absorb=0 vac_ask=0 vac_bid=0 trail_block=0 post_impulse=0 ny_noise=0 gold_can_enter=1 tick_rate=5.0 bb_sq=0 bull_div=0 bear_div=0
-[GATE]        02:38:35 [GF-GATE-BLOCK] reason=NO_ROOM_TO_TARGET SHORT vwap=4804.26 mid=4803.73 dist=0.53pts atr=2.22 need=0.55pts (0.2R of 0.2R)
-[GATE]        02:38:35 [GF-GATE-BLOCK] reason=NO_ROOM_TO_TARGET atr=2.22 spread=0.220 spread_ratio=0.95 l2=0.526 micro=0.0000 wall_below=0 wall_above=0 absorb=0 vac_ask=0 vac_bid=0 trail_block=0 post_impulse=0 ny_noise=0 gold_can_enter=1 tick_rate=3.5 bb_sq=0 bull_div=0 bear_div=0
+[GATE-COUNTS-LAST500] NO_ROOM=0 COMP_NO_VOL=0 BAR_BLOCK=184 SPREAD_Z=0
+[GATE]        02:45:10 [GF-GATE-BLOCK] reason=COUNTER_TREND atr=2.00 spread=0.220 spread_ratio=0.89 l2=0.500 micro=0.0000 wall_below=0 wall_above=0 absorb=0 vac_ask=0 vac_bid=0 trail_block=0 post_impulse=0 ny_noise=0 gold_can_enter=1 tick_rate=4.0 bb_sq=0 bull_div=0 bear_div=0
+[GATE]        02:45:40 [GF-GATE-BLOCK] reason=COUNTER_TREND atr=1.95 spread=0.220 spread_ratio=0.90 l2=0.500 micro=0.0000 wall_below=0 wall_above=0 absorb=0 vac_ask=0 vac_bid=0 trail_block=0 post_impulse=0 ny_noise=0 gold_can_enter=1 tick_rate=5.0 bb_sq=0 bull_div=0 bear_div=0
+[GATE]        02:46:16 [GF-GATE-BLOCK] reason=COUNTER_TREND atr=1.99 spread=0.170 spread_ratio=0.72 l2=0.478 micro=0.0000 wall_below=0 wall_above=0 absorb=0 vac_ask=0 vac_bid=0 trail_block=0 post_impulse=0 ny_noise=0 gold_can_enter=1 tick_rate=4.0 bb_sq=0 bull_div=0 bear_div=0
 
 END-OF-SNAPSHOT
