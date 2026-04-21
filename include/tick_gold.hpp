@@ -2073,31 +2073,54 @@ static void on_tick_gold(
                 g_gold_stack.ewm_drift());  // drift: counter-trend block inside engine
 
             if (g_rsi_reversal.has_open_position()) {
-                // Size using standard risk engine -- same as GoldFlow sizing
-                const double rsi_sl_dist = std::fabs(g_rsi_reversal.pos.entry - g_rsi_reversal.pos.sl);
-                const double rsi_lot     = (rsi_sl_dist > 0.0)
-                    ? std::max(0.01, std::min(g_cfg.max_lot_gold,
-                        g_cfg.risk_per_trade_usd / (rsi_sl_dist * 100.0)))
-                    : 0.05;  // fixed fallback 0.05 lots
-                g_rsi_reversal.patch_size(rsi_lot);
+                // FIX 2026-04-22 P1a: HTF post-dispatch hard-block for RSIReversal.
+                // RSIReversal is a mean-reverter: direction is determined inside
+                // on_tick() based on RSI extremes, so pre-dispatch drift gating
+                // does not work (engine intentionally enters opposite to drift).
+                // Post-dispatch pattern: if HTF bias opposes the just-opened
+                // position, force-close immediately before any broker order
+                // (send_live_order) is issued. No broker reversal needed because
+                // the entry order has not yet been sent from this block.
+                // Log marker: [HTF-BLOCK-POST] -- distinct from pre-dispatch [HTF-BLOCK].
+                if (g_htf_filter.bias_opposes("XAUUSD", g_rsi_reversal.pos.is_long)) {
+                    static thread_local int64_t s_rrv_htf_post_log = 0;
+                    if (now_ms_g - s_rrv_htf_post_log > 30000) {
+                        s_rrv_htf_post_log = now_ms_g;
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg),
+                            "[HTF-BLOCK-POST] XAUUSD RSIReversal %s forced-close -- HTF bias=%s opposes\n",
+                            g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
+                            g_htf_filter.bias_name("XAUUSD"));
+                        std::cout << _msg; std::cout.flush();
+                    }
+                    g_rsi_reversal.force_close(bid, ask, now_ms_g, handle_closed_trade);
+                } else {
+                    // Size using standard risk engine -- same as GoldFlow sizing
+                    const double rsi_sl_dist = std::fabs(g_rsi_reversal.pos.entry - g_rsi_reversal.pos.sl);
+                    const double rsi_lot     = (rsi_sl_dist > 0.0)
+                        ? std::max(0.01, std::min(g_cfg.max_lot_gold,
+                            g_cfg.risk_per_trade_usd / (rsi_sl_dist * 100.0)))
+                        : 0.05;  // fixed fallback 0.05 lots
+                    g_rsi_reversal.patch_size(rsi_lot);
 
-                // Log and telemetry always fire (shadow or live) -- GUI shows signal
-                // OPEN-LOG FIX 2026-04-22: RSIReversal (arg9 regime slot)
-                write_trade_open_log("XAUUSD", "RSIReversal",
-                    g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
-                    g_rsi_reversal.pos.entry, 0.0, g_rsi_reversal.pos.sl,
-                    g_rsi_reversal.pos.size, ask - bid, regime, "RSI_EXTREME");
-                g_telemetry.UpdateLastSignal("XAUUSD",
-                    g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
-                    g_rsi_reversal.pos.entry, "RSI_EXTREME",
-                    "RSI_REVERSAL", regime.c_str(), "RSI_REVERSAL",
-                    0.0, g_rsi_reversal.pos.sl);
-                if (!g_rsi_reversal.shadow_mode) {
-                    send_live_order("XAUUSD",
-                        g_rsi_reversal.pos.is_long,
-                        g_rsi_reversal.pos.size,
-                        g_rsi_reversal.pos.entry);
-                    g_telemetry.UpdateLastEntryTs();
+                    // Log and telemetry always fire (shadow or live) -- GUI shows signal
+                    // OPEN-LOG FIX 2026-04-22: RSIReversal (arg9 regime slot)
+                    write_trade_open_log("XAUUSD", "RSIReversal",
+                        g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
+                        g_rsi_reversal.pos.entry, 0.0, g_rsi_reversal.pos.sl,
+                        g_rsi_reversal.pos.size, ask - bid, regime, "RSI_EXTREME");
+                    g_telemetry.UpdateLastSignal("XAUUSD",
+                        g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
+                        g_rsi_reversal.pos.entry, "RSI_EXTREME",
+                        "RSI_REVERSAL", regime.c_str(), "RSI_REVERSAL",
+                        0.0, g_rsi_reversal.pos.sl);
+                    if (!g_rsi_reversal.shadow_mode) {
+                        send_live_order("XAUUSD",
+                            g_rsi_reversal.pos.is_long,
+                            g_rsi_reversal.pos.size,
+                            g_rsi_reversal.pos.entry);
+                        g_telemetry.UpdateLastEntryTs();
+                    }
                 }
             }
         }
@@ -2151,33 +2174,54 @@ static void on_tick_gold(
                 });
 
             if (g_rsi_extreme.has_open_position()) {
-                // Size using standard risk engine
-                const double rsi_ext_sl_dist = std::fabs(
-                    g_rsi_extreme.pos.entry - g_rsi_extreme.pos.sl);
-                const double rsi_ext_lot = (rsi_ext_sl_dist > 0.0)
-                    ? std::max(0.01, std::min(g_cfg.max_lot_gold,
-                        g_cfg.risk_per_trade_usd / (rsi_ext_sl_dist * 100.0)))
-                    : 0.02;  // fixed fallback
-                g_rsi_extreme.patch_size(rsi_ext_lot);
+                // FIX 2026-04-22 P1a: HTF post-dispatch hard-block for RSIExtremeTurn.
+                // RSIExtremeTurn is a mean-reverter: direction determined inside
+                // on_tick() from sustained bar-RSI extremes. Pre-dispatch drift
+                // gating cannot be used (engine enters counter to prevailing
+                // drift by design). Post-dispatch pattern identical to RSIReversal:
+                // if HTF bias opposes the just-opened position, force-close
+                // before any broker order is sent.
+                if (g_htf_filter.bias_opposes("XAUUSD", g_rsi_extreme.pos.is_long)) {
+                    static thread_local int64_t s_rext_htf_post_log = 0;
+                    if (now_ms_g - s_rext_htf_post_log > 30000) {
+                        s_rext_htf_post_log = now_ms_g;
+                        char _msg[512];
+                        snprintf(_msg, sizeof(_msg),
+                            "[HTF-BLOCK-POST] XAUUSD RSIExtremeTurn %s forced-close -- HTF bias=%s opposes\n",
+                            g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
+                            g_htf_filter.bias_name("XAUUSD"));
+                        std::cout << _msg; std::cout.flush();
+                    }
+                    g_rsi_extreme.force_close(bid, ask, now_ms_g, handle_closed_trade);
+                } else {
+                    // Size using standard risk engine
+                    const double rsi_ext_sl_dist = std::fabs(
+                        g_rsi_extreme.pos.entry - g_rsi_extreme.pos.sl);
+                    const double rsi_ext_lot = (rsi_ext_sl_dist > 0.0)
+                        ? std::max(0.01, std::min(g_cfg.max_lot_gold,
+                            g_cfg.risk_per_trade_usd / (rsi_ext_sl_dist * 100.0)))
+                        : 0.02;  // fixed fallback
+                    g_rsi_extreme.patch_size(rsi_ext_lot);
 
-                // Log and telemetry
-                // OPEN-LOG FIX 2026-04-22: RSIExtremeTurn (arg9 regime slot)
-                write_trade_open_log("XAUUSD", "RSIExtremeTurn",
-                    g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
-                    g_rsi_extreme.pos.entry, 0.0, g_rsi_extreme.pos.sl,
-                    g_rsi_extreme.pos.size, ask - bid,
-                    regime, "RSI_EXTREME_TURN");
-                g_telemetry.UpdateLastSignal("XAUUSD",
-                    g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
-                    g_rsi_extreme.pos.entry, "RSI_EXTREME_TURN",
-                    "RSI_EXTREME", regime.c_str(), "RSI_EXTREME",
-                    0.0, g_rsi_extreme.pos.sl);
-                if (!g_rsi_extreme.shadow_mode) {
-                    send_live_order("XAUUSD",
-                        g_rsi_extreme.pos.is_long,
-                        g_rsi_extreme.pos.size,
-                        g_rsi_extreme.pos.entry);
-                    g_telemetry.UpdateLastEntryTs();
+                    // Log and telemetry
+                    // OPEN-LOG FIX 2026-04-22: RSIExtremeTurn (arg9 regime slot)
+                    write_trade_open_log("XAUUSD", "RSIExtremeTurn",
+                        g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
+                        g_rsi_extreme.pos.entry, 0.0, g_rsi_extreme.pos.sl,
+                        g_rsi_extreme.pos.size, ask - bid,
+                        regime, "RSI_EXTREME_TURN");
+                    g_telemetry.UpdateLastSignal("XAUUSD",
+                        g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
+                        g_rsi_extreme.pos.entry, "RSI_EXTREME_TURN",
+                        "RSI_EXTREME", regime.c_str(), "RSI_EXTREME",
+                        0.0, g_rsi_extreme.pos.sl);
+                    if (!g_rsi_extreme.shadow_mode) {
+                        send_live_order("XAUUSD",
+                            g_rsi_extreme.pos.is_long,
+                            g_rsi_extreme.pos.size,
+                            g_rsi_extreme.pos.entry);
+                        g_telemetry.UpdateLastEntryTs();
+                    }
                 }
             }
         }
@@ -4691,17 +4735,41 @@ static void on_tick_gold(
                     send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
             });
         if (g_bb_mr.has_open_position()) {
-            g_telemetry.UpdateLastEntryTs();
-            // OPEN-LOG FIX 2026-04-22: BBMeanRev (arg9 regime slot)
-            write_trade_open_log("XAUUSD", "BBMeanRev",
-                g_bb_mr.pos.is_long ? "LONG" : "SHORT",
-                g_bb_mr.pos.entry, g_bb_mr.pos.tp, g_bb_mr.pos.sl,
-                g_bb_mr.pos.size, ask - bid, regime, "BB25_2SD");
-            g_telemetry.UpdateLastSignal("XAUUSD",
-                g_bb_mr.pos.is_long ? "LONG" : "SHORT",
-                g_bb_mr.pos.entry, "BB_OUTSIDE",
-                "BBMR", regime.c_str(), "BBMeanRev",
-                g_bb_mr.pos.tp, g_bb_mr.pos.sl);
+            // FIX 2026-04-22 P1a: HTF post-dispatch hard-block for BBMeanReversion.
+            // BBMR is a mean-reverter: direction determined inside on_tick() from
+            // price position relative to Bollinger band (below lower -> LONG,
+            // above upper -> SHORT). By design, BBMR enters against prevailing
+            // intraday price action. Pre-dispatch drift gating cannot be used.
+            // Post-dispatch pattern: if HTF daily/intraday bias opposes the
+            // just-opened position, force-close before any entry broker order
+            // is sent. Uses the engine's existing public force_close(), which
+            // acquires _close_mtx and synthesizes a TradeRecord with reason
+            // "FORCE_CLOSE" via handle_closed_trade.
+            if (g_htf_filter.bias_opposes("XAUUSD", g_bb_mr.pos.is_long)) {
+                static thread_local int64_t s_bbmr_htf_post_log = 0;
+                if (now_ms_g - s_bbmr_htf_post_log > 30000) {
+                    s_bbmr_htf_post_log = now_ms_g;
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg),
+                        "[HTF-BLOCK-POST] XAUUSD BBMeanRev %s forced-close -- HTF bias=%s opposes\n",
+                        g_bb_mr.pos.is_long ? "LONG" : "SHORT",
+                        g_htf_filter.bias_name("XAUUSD"));
+                    std::cout << _msg; std::cout.flush();
+                }
+                g_bb_mr.force_close(bid, ask, now_ms_g, handle_closed_trade);
+            } else {
+                g_telemetry.UpdateLastEntryTs();
+                // OPEN-LOG FIX 2026-04-22: BBMeanRev (arg9 regime slot)
+                write_trade_open_log("XAUUSD", "BBMeanRev",
+                    g_bb_mr.pos.is_long ? "LONG" : "SHORT",
+                    g_bb_mr.pos.entry, g_bb_mr.pos.tp, g_bb_mr.pos.sl,
+                    g_bb_mr.pos.size, ask - bid, regime, "BB25_2SD");
+                g_telemetry.UpdateLastSignal("XAUUSD",
+                    g_bb_mr.pos.is_long ? "LONG" : "SHORT",
+                    g_bb_mr.pos.entry, "BB_OUTSIDE",
+                    "BBMR", regime.c_str(), "BBMeanRev",
+                    g_bb_mr.pos.tp, g_bb_mr.pos.sl);
+            }
         }
     }
 
