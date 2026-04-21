@@ -77,7 +77,7 @@ namespace omega {
 
 struct H1Params {
     double risk_dollars         = 15.0;
-    double max_lot              = 0.10;
+    double max_lot              = 0.01;  // FIX 2026-04-22 uniformity: 0.10 -> 0.01 SHADOW-mode (gold defaults; indices overrides untouched)
     double sl_mult              = 1.0;    // SL = sl_mult * H1 ATR
     double tp1_mult             = 2.0;    // partial TP1 = tp1_mult * H1 ATR (50% exit)
     double tp2_trail_arm_mult   = 1.5;    // trail arms at this * H1 ATR MFE
@@ -103,7 +103,7 @@ struct H1Params {
 
 struct H4Params {
     double risk_dollars         = 10.0;
-    double max_lot              = 0.10;
+    double max_lot              = 0.01;  // FIX 2026-04-22 uniformity: 0.10 -> 0.01 SHADOW-mode (gold defaults; indices overrides untouched)
     double sl_struct_mult       = 0.5;    // SL = 0.5 * H4 ATR behind channel
     double tp_mult              = 2.0;    // gold: 2.0, indices: 2.5
     double trail_arm_mult       = 0.8;    // trail arms at 0.8x H4 ATR MFE
