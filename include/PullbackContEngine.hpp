@@ -143,7 +143,7 @@ private:
         const double entry_px = m_long_dir ? ask : bid;
         const double sl_px    = m_long_dir ? (entry_px - SL_PTS) : (entry_px + SL_PTS);
         const double size     = std::max(0.01,
-                                std::min(0.20, BASE_RISK_USD / (SL_PTS * 100.0)));
+                                std::min(0.01, BASE_RISK_USD / (SL_PTS * 100.0)));  // FIX 2026-04-22 uniformity: capped to 0.01
 
         pos.active     = true;
         pos.is_long    = m_long_dir;
