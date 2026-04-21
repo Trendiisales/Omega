@@ -529,6 +529,7 @@ private:
         tr.exitReason = reason;
         tr.regime     = "H1_SWING";
         tr.l2_live    = false;
+        tr.shadow     = shadow_mode;
     }
 
     void _close(double exit_px, const char* reason,
@@ -881,6 +882,7 @@ private:
             tr.exitReason = reason;
             tr.regime     = "H4_REGIME";
             tr.l2_live    = false;
+            tr.shadow     = shadow_mode;
             on_close(tr);
         }
         cooldown_until_bar_ = h4_bar_count_ + p.cooldown_h4_bars;
