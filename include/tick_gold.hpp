@@ -2255,6 +2255,31 @@ static void on_tick_gold(
         && true   // 24h -- no session slot block
         && !in_ny_close_noise) {
 
+        // FIX 2026-04-22 P1b: HTF hard-block for GoldFlowReload.
+        // The reload path fires on the direction LOCKED at the original GFE entry.
+        // HTF bias may have flipped between the original entry (when HTF was
+        // checked at line ~3578) and the reload confirmation tick, so we must
+        // re-check here. Pre-dispatch gating uses reload_is_long() which is the
+        // authoritative pending direction (not a drift proxy). If HTF opposes,
+        // we disarm the reload via cancel_reload() so it does not retry on
+        // subsequent ticks (avoids per-tick log spam and keeps GFE internal state
+        // consistent: m_reload_pending=false, tick_count=0). No broker order
+        // has been sent yet (force_entry is not yet called), so no reversal needed.
+        const bool reload_pending_long = g_gold_flow.reload_is_long();
+        if (g_htf_filter.bias_opposes("XAUUSD", reload_pending_long)) {
+            static thread_local int64_t s_gfrl_htf_log = 0;
+            if (now_ms_g - s_gfrl_htf_log > 30000) {
+                s_gfrl_htf_log = now_ms_g;
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg),
+                    "[HTF-BLOCK] XAUUSD GF_RELOAD %s cancelled -- HTF bias=%s opposes\n",
+                    reload_pending_long ? "LONG" : "SHORT",
+                    g_htf_filter.bias_name("XAUUSD"));
+                std::cout << _msg; std::cout.flush();
+            }
+            g_gold_flow.cancel_reload();
+        } else {
+
         const double gf_mid_r = (bid + ask) * 0.5;
         const bool signal = g_gold_flow.try_reload(
             bid, ask, gf_mid_r, ask - bid,
@@ -2265,6 +2290,7 @@ static void on_tick_gold(
             // try_reload() confirmed -- fire directly on reload instance
             const bool reload_long = g_gold_flow.reload_is_long();
             const double reload_atr = g_gold_flow.reload_atr();
+
 
             g_gold_flow_reload.risk_dollars = g_gold_flow.risk_dollars;
 
@@ -2325,6 +2351,7 @@ static void on_tick_gold(
                 }
             }
         }
+        }  // end !htf_opposes reload branch (P1b 2026-04-22)
     }
 
     // GoldFlowEngine: L2 order-flow directional engine.
