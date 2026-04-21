@@ -47,7 +47,7 @@ static constexpr int     MBE_TIMEOUT_BARS    = 20;    // exit after 20 M1 bars i
 static constexpr int64_t MBE_COOLDOWN_MS     = 10000; // 10s cooldown after exit
 static constexpr double  MBE_RISK_DOLLARS    = 30.0;
 static constexpr double  MBE_MIN_LOT         = 0.01;
-static constexpr double  MBE_MAX_LOT         = 0.20;  // capped 0.50->0.20: matches all gold engine hard ceiling
+static constexpr double  MBE_MAX_LOT         = 0.01;  // FIX 2026-04-22 uniformity: capped to 0.01 SHADOW-mode
 static constexpr double  MBE_TICK_VALUE      = 100.0; // XAUUSD $100/pt/lot
 
 // Session filter: only trade 07:00-22:00 UTC (London + NY)
