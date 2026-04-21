@@ -8,6 +8,51 @@
 
 static void init_engines(const std::string& cfg_path)
 {
+    // ── SHADOW/LIVE policy (ISSUE-5) ──────────────────────────────────────
+    // Global default for newly-stamped engines (#4 Class A + C).
+    // Engines in the hardcoded-lock cohort (MCE, PullbackCont, PullbackPrem,
+    // RSIReversal, PDHL, H1Swing, H4Regime, ISwingSP/NQ) override this below
+    // with `shadow_mode = true` AFTER this assignment -- those locks are
+    // load-bearing safety interlocks and are NOT affected by g_cfg.mode.
+    const bool kShadowDefault = (g_cfg.mode != "LIVE");
+
+    // ── ISSUE-5 newly-stamped engines: follow kShadowDefault ─────────────
+    // Engines with no prior explicit shadow_mode wiring in engine_init.hpp.
+    // All flip to LIVE atomically when g_cfg.mode = "LIVE" in omega_config.ini.
+    // Class A (stamped 2026-04-21):
+    g_cbe.shadow_mode          = kShadowDefault;  // CompressionBreakoutEngine
+    g_ema_cross.shadow_mode    = kShadowDefault;  // EMACrossEngine
+    g_rsi_extreme.shadow_mode  = kShadowDefault;  // RSIExtremeTurnEngine
+    g_bb_mr.shadow_mode        = kShadowDefault;  // BBMeanReversionEngine
+    g_dom_persist.shadow_mode  = kShadowDefault;  // DomPersistEngine
+    g_candle_flow.shadow_mode  = kShadowDefault;  // CandleFlowEngine
+    // IndexHybridBracket (4 instances, uniform per Q2 decision):
+    g_hybrid_sp.shadow_mode     = kShadowDefault;
+    g_hybrid_nq.shadow_mode     = kShadowDefault;
+    g_hybrid_us30.shadow_mode   = kShadowDefault;
+    g_hybrid_nas100.shadow_mode = kShadowDefault;
+    // IndexFlowEngine (4 instances, uniform):
+    g_iflow_sp.shadow_mode    = kShadowDefault;
+    g_iflow_nq.shadow_mode    = kShadowDefault;
+    g_iflow_nas.shadow_mode   = kShadowDefault;
+    g_iflow_us30.shadow_mode  = kShadowDefault;
+    // Class C (stamped 2026-04-21):
+    g_hybrid_gold.shadow_mode  = kShadowDefault;  // GoldHybridBracketEngine
+    g_le_stack.shadow_mode     = kShadowDefault;  // LatencyEdgeStack
+    g_gold_stack.shadow_mode   = kShadowDefault;  // GoldEngineStack / GoldPositionManager
+    // TrendPullbackEngine (4 instances, uniform per Q1 decision):
+    g_trend_pb_gold.shadow_mode  = kShadowDefault;
+    g_trend_pb_ger40.shadow_mode = kShadowDefault;
+    g_trend_pb_nq.shadow_mode    = kShadowDefault;
+    g_trend_pb_sp.shadow_mode    = kShadowDefault;
+    // BreakoutEngine non-index instances (FX + XAG, uniform per Q2 decision):
+    g_eng_xag.shadow_mode     = kShadowDefault;
+    g_eng_eurusd.shadow_mode  = kShadowDefault;
+    g_eng_gbpusd.shadow_mode  = kShadowDefault;
+    g_eng_audusd.shadow_mode  = kShadowDefault;
+    g_eng_nzdusd.shadow_mode  = kShadowDefault;
+    g_eng_usdjpy.shadow_mode  = kShadowDefault;
+
     apply_engine_config(g_eng_sp);   // [sp] section: tp=0.60%, sl=0.35%, vol=0.04%, regime-gated
     apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated
     apply_engine_config(g_eng_cl);   // [oil] section: tp=1.20%, sl=0.60%, vol=0.08%, inventory-blocked
@@ -1505,6 +1550,10 @@ static void init_engines(const std::string& cfg_path)
         } else {
             std::cout << "[OMEGA-PILOT] Multi-symbol shadow enabled | all configured engines may trade\n";
         }
+        std::cout << "[OMEGA-SHADOW-POLICY] Newly-stamped engines follow g_cfg.mode"
+                  << " (kShadowDefault=" << (kShadowDefault ? "true" : "false") << ")"
+                  << " | locked-shadow: MCE, PullbackCont, PullbackPrem, RSIReversal,"
+                  << " PDHL, H1Swing, H4Regime, ISwingSP, ISwingNQ\n";
         std::cout << "[OMEGA-MODE] SHADOW -- exact live simulation (orders paper only, all risk gates active)\n";
     }
 
