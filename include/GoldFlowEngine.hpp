@@ -147,7 +147,7 @@ static constexpr int    GFE_COOLDOWN_MS       = 30000;  // 30s cooldown after ex
 static constexpr int    GFE_MIN_ENTRY_TICKS   = 50;    // ~5-10s real time before first entry allowed
 static constexpr double GFE_RISK_DOLLARS      = 30.0;  // $ risk per trade (fallback)
 static constexpr double GFE_MIN_LOT           = 0.01;
-static constexpr double GFE_MAX_LOT           = 0.20;  // capped 1.0->0.20: hard ceiling across all gold engines
+static constexpr double GFE_MAX_LOT           = 0.01;  // FIX 2026-04-22 uniformity: capped to 0.01 SHADOW-mode until edge proven
 static constexpr int    GFE_MOMENTUM_TICKS    = 12;    // ticks back for momentum check (int -- used as array index)
                                                         // 12 ticks = ~120-240ms at London, ~2-4s at Asia -- real directional move.
 static constexpr int    GFE_MOMENTUM_BUF_SIZE = 64;    // independent momentum history buffer (separate from ATR buffer)
@@ -1919,7 +1919,7 @@ private:
         // Cap at 0.08 lots: prevents oversizing when ATR collapses on overnight tape.
         // Round to 0.001 lot precision (many brokers support this for gold).
         // Old rounding to 0.01 could inflate risk by up to 1% per trade.
-        static constexpr double GFE_MAX_LOT_FLOW = 0.20;  // capped 0.50->0.20: hard ceiling across all gold engines
+        static constexpr double GFE_MAX_LOT_FLOW = 0.01;  // FIX 2026-04-22 uniformity: capped to 0.01 SHADOW-mode until edge proven
         static constexpr double GFE_LOT_STEP     = 0.001; // broker lot precision
         const double tick_mult = 100.0;
         double size = risk_dollars / (sl_pts * tick_mult);
