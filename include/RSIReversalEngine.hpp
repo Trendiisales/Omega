@@ -625,6 +625,7 @@ private:
         tr.mfe = pos.mfe * pos.size; tr.mae = 0.0;
         tr.entryTs = pos.entry_ts; tr.exitTs = now_s;
         tr.exitReason = reason; tr.spreadAtEntry = 0.0;
+        tr.shadow = shadow_mode;
         pos = Position{};
         // Vacuum confirm = shorter cooldown: re-enter faster on confirmed direction
         m_cooldown_until = now_s + (m_vacuum_confirm ? COOLDOWN_S_VACUUM : COOLDOWN_S);
