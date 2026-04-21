@@ -178,72 +178,33 @@ Write-Host "  [OK] Confirmed no Omega.exe process AND service=Stopped" -Foregrou
 Write-Host ""
 
 # ==============================================================================
-# STEP 2: DOWNLOAD SOURCE FROM GITHUB API
+# STEP 2: PULL SOURCE VIA GIT
 # ==============================================================================
-Write-Host "[2/4] Downloading source from GitHub..." -ForegroundColor Yellow
+Write-Host "[2/4] Pulling source from GitHub..." -ForegroundColor Yellow
 
-if (-not $GitHubToken) {
-    Write-Host "  [FATAL] No GitHub token available. Create $OmegaDir\.github_token" -ForegroundColor Red
-    exit 1
-}
-
-$apiHdr = @{ Authorization="token $GitHubToken"; "User-Agent"="OmegaRestart" }
-
+Push-Location $OmegaDir
 try {
-    $commitResp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/main" -Headers $apiHdr -TimeoutSec 20 -ErrorAction Stop
-} catch {
-    Write-Host "  [FATAL] GitHub API request failed: $_" -ForegroundColor Red
-    Write-Host "  Restarting service with EXISTING binary..." -ForegroundColor Yellow
-    Start-Service -Name $ServiceName
-    exit 1
-}
-$ghSha  = $commitResp.sha
-$ghSha7 = $ghSha.Substring(0,7)
-Write-Host "  HEAD: $ghSha7" -ForegroundColor Cyan
-
-$zipPath = "$env:TEMP\Omega_$ghSha7.zip"
-try {
-    Invoke-WebRequest -Uri "https://api.github.com/repos/Trendiisales/Omega/zipball/$ghSha" -Headers $apiHdr -OutFile $zipPath -TimeoutSec 120 -ErrorAction Stop
-} catch {
-    Write-Host "  [FATAL] Zipball download failed: $_" -ForegroundColor Red
-    Start-Service -Name $ServiceName
-    exit 1
-}
-Write-Host "  Downloaded: $([math]::Round((Get-Item $zipPath).Length/1MB,1)) MB" -ForegroundColor Cyan
-
-$extractPath = "$env:TEMP\Omega_ext_$ghSha7"
-if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force }
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
-$innerDir = Get-ChildItem $extractPath -Directory | Select-Object -First 1
-
-foreach ($ext in @("*.cpp","*.hpp","*.h","*.ini","*.cmake","*.txt","*.json","*.md")) {
-    Get-ChildItem -Path $innerDir.FullName -Filter $ext -Recurse | ForEach-Object {
-        $rel = $_.FullName.Substring($innerDir.FullName.Length).TrimStart('\','/')
-        if ($rel -eq "" -or $rel -match "^[A-Za-z]:" -or $rel -match "\.\.") {
-            Write-Host "  [SKIP] Bad relative path: $rel" -ForegroundColor DarkYellow
-            return
-        }
-        $dest    = Join-Path $OmegaDir $rel
-        $destDir = Split-Path $dest -Parent
-        if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
-        Copy-Item $_.FullName $dest -Force
+    git fetch origin main 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [FATAL] git fetch failed" -ForegroundColor Red
+        Start-Service -Name $ServiceName
+        Pop-Location
+        exit 1
     }
-}
+    $ghSha  = (git rev-parse origin/main).Trim()
+    $ghSha7 = $ghSha.Substring(0,7)
+    Write-Host "  HEAD: $ghSha7" -ForegroundColor Cyan
 
-Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
-
-# Update git HEAD to match downloaded SHA
-$packedRefs = "$OmegaDir\.git\packed-refs"
-if (Test-Path $packedRefs) {
-    $pr = Get-Content $packedRefs
-    $pr = $pr | Where-Object { $_ -notmatch "refs/heads/main" }
-    Set-Content -Path $packedRefs -Value $pr -Force
+    git reset --hard origin/main 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [FATAL] git reset --hard failed" -ForegroundColor Red
+        Start-Service -Name $ServiceName
+        Pop-Location
+        exit 1
+    }
+} finally {
+    Pop-Location
 }
-$refDir = "$OmegaDir\.git\refs\heads"
-if (-not (Test-Path $refDir)) { New-Item -ItemType Directory -Path $refDir -Force | Out-Null }
-Set-Content -Path "$refDir\main" -Value $ghSha -Encoding ASCII -Force
 
 Write-Host "  [OK] Source at $ghSha7" -ForegroundColor Green
 Write-Host ""
