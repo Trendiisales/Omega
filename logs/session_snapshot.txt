@@ -1,0 +1,22 @@
+﻿OMEGA SESSION SNAPSHOT
+Generated : 2026-04-21 02:30:15 UTC
+============================================================
+[ATR-DAT] atr=2.000000 atr_ewm=0.714421 warmed=1 last_mid=4805.89000 saved_ts=1776738300
+[ATR-WARN] atr=2 AT FLOOR -- check seed
+
+[DIAG]        02:25:00 [OMEGA-DIAG] PnL=-3 T=1 WR=0% RTTp95=5.88ms cap=120ms lat_ok=1 session=ACTIVE
+[REGIME]      02:22:18 [GOLD-REGIME] COMPRESSION
+[VOL]         02:24:59 [GOLD-VOL] regime=COMPRESSION recent_vol=0.0165% base_vol=0.0479% ratio=0.345 sdec_regime=QUIET_COMPRESSION conf=0.749 allow_bo=0
+[GOLD-DIAG]   02:25:00 [GOLD-DIAG] regime=COMPRESSION vwap=4805.72 vol_range=0.22
+[BRK-DIAG]    02:24:53 [GOLD-BRK-DIAG] phase=IDLE can_enter=1 spread_ok=1 freq_ok=1 bracket_open=0 stack_open=0 in_dead_zone=0 london_noise=0 in_asia=1 asia_ok=1 drift=-0.89 l2_imb=0.498 can_arm=1 trend_bias=0 trend_blocked=0 pyramid_ok=0 impulse_block=0 cd_bypass=0 pyr_sl_age_s=never brk_hi=0.00 brk_lo=0.00 range=0.00 session_slot=6
+[L2]          02:24:58 [L2-STATUS] ctrader_live=1 events=2901 gold_real=1 gold_imb=0.500 gold_mp=0.000 sp_real=0 cl_real=0
+[SUPERVISOR]  02:23:34 [SUPERVISOR-XAUUSD] regime=QUIET_COMPRESSION conf=0.51 bracket=0.62 breakout=0.40 top_score=0.62 threshold=0.25 winner=BRACKET allow=1 cooldown=0 reason=valid_signal
+[BAR-INFO]    02:24:58 [GF-BAR-INFO] XAUUSD SHORT atr_slope=0.000 atr_exp=0 atr_con=0 vwap_dir=+0 vol_delta=0.002 gate4d=pass (LOG ONLY)
+[VIX]         02:24:35 [TICK] VIX.F 20.28/20.66
+[GOLD-PRICE]  02:24:59 [TICK] XAUUSD 4805.95/4806.17
+
+[GATE-COUNTS-LAST500] NO_ROOM=2 COMP_NO_VOL=0 BAR_BLOCK=0 SPREAD_Z=0
+[GATE]        02:22:28 [GF-GATE-BLOCK] reason=NO_ROOM_TO_TARGET SHORT vwap=4804.64 mid=4804.48 dist=0.16pts atr=7.44 need=1.86pts (0.0R of 0.2R)
+[GATE]        02:22:28 [GF-GATE-BLOCK] reason=NO_ROOM_TO_TARGET atr=7.44 spread=0.220 spread_ratio=1.00 l2=0.489 micro=0.0000 wall_below=0 wall_above=0 absorb=0 vac_ask=0 vac_bid=0 trail_block=0 post_impulse=0 ny_noise=0 gold_can_enter=1 tick_rate=5.5 bb_sq=0 bull_div=0 bear_div=0
+
+END-OF-SNAPSHOT
