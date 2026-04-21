@@ -283,6 +283,19 @@ public:
     // ?????????????????????????????????????????????????????????????????????????
     void seed(const std::vector<OHLCBar>& historical) {
         bars_.clear();
+        // Reset ADX Wilder accumulators before bulk-seeding (fix 2026-04-22).
+        // Without this, a seed() call after live ticks have already populated
+        // adx_*_smooth_ would produce garbage ADX on the first post-seed bar.
+        // NOTE: seed() itself calls _update_adx() only once at the end, which
+        // is NOT mathematically correct for Wilder-smoothed ADX. That is a
+        // separate latent bug -- this reset at least ensures a clean slate for
+        // future iterative-seed callers and prevents state contamination.
+        adx_plus_dm_smooth_  = 0.0;
+        adx_minus_dm_smooth_ = 0.0;
+        adx_tr_smooth_       = 0.0;
+        adx_dx_smooth_       = 0.0;
+        adx_prev_            = 0.0;
+        adx_init_            = false;
         for (const auto& b : historical) bars_.push_back(b);
         if (bars_.size() > 300) {
             while (bars_.size() > 300) bars_.pop_front();
@@ -1110,6 +1123,22 @@ public:
         fprintf(f, "trend_state=%d\n", ind.trend_state.load());
         fprintf(f, "swing_high=%.4f\n",ind.swing_high.load());
         fprintf(f, "swing_low=%.4f\n", ind.swing_low.load());
+        // ADX Wilder state persistence (fix 2026-04-22):
+        // Without these, H1/H4 ADX = 0.0 for 14-56 hours after every restart,
+        // causing H1SwingEngine and H4RegimeEngine to sit idle through entire
+        // trending sessions (e.g. 2026-04-17 101pt move missed by all HTF engines).
+        // Public indicator values -- what engines read via ind.adx14.load():
+        fprintf(f, "adx14=%.6f\n",                ind.adx14.load());
+        fprintf(f, "adx_rising=%d\n",             ind.adx_rising.load() ? 1 : 0);
+        // Private Wilder smoothing state -- required for correct incremental
+        // updates on the first live bar after restart. Without these, the first
+        // _update_adx() call uses uninitialised accumulators and jumps wildly.
+        fprintf(f, "adx_plus_dm_smooth=%.6f\n",   adx_plus_dm_smooth_);
+        fprintf(f, "adx_minus_dm_smooth=%.6f\n",  adx_minus_dm_smooth_);
+        fprintf(f, "adx_tr_smooth=%.6f\n",        adx_tr_smooth_);
+        fprintf(f, "adx_dx_smooth=%.6f\n",        adx_dx_smooth_);
+        fprintf(f, "adx_prev=%.6f\n",             adx_prev_);
+        fprintf(f, "adx_init=%d\n",               adx_init_ ? 1 : 0);
         fclose(f);
     }
 
@@ -1122,6 +1151,12 @@ public:
         double swhi=0, swlo=0;
         int trend=0;
         long long saved_ts = 0;
+        // ADX Wilder state restore (fix 2026-04-22) -- see save_indicators comment.
+        // Defaults match the private-member defaults at class declaration so that
+        // an older save file without these fields loads cleanly (cold ADX only).
+        double adx14_v=0.0, adx_plus_dm=0.0, adx_minus_dm=0.0;
+        double adx_tr=0.0, adx_dx=0.0, adx_prev_v=0.0;
+        int adx_rising_v=0, adx_init_v=0;
         while (fgets(line, sizeof(line), f)) {
             char key[32]; double val=0;
             if (sscanf(line, "%31[^=]=%lf", key, &val) == 2) {
@@ -1139,6 +1174,14 @@ public:
                 else if (k=="trend_state")trend = (int)val;
                 else if (k=="swing_high") swhi  = val;
                 else if (k=="swing_low")  swlo  = val;
+                else if (k=="adx14")               adx14_v      = val;
+                else if (k=="adx_rising")          adx_rising_v = (int)val;
+                else if (k=="adx_plus_dm_smooth")  adx_plus_dm  = val;
+                else if (k=="adx_minus_dm_smooth") adx_minus_dm = val;
+                else if (k=="adx_tr_smooth")       adx_tr       = val;
+                else if (k=="adx_dx_smooth")       adx_dx       = val;
+                else if (k=="adx_prev")            adx_prev_v   = val;
+                else if (k=="adx_init")            adx_init_v   = (int)val;
             }
         }
         fclose(f);
@@ -1183,10 +1226,28 @@ public:
         ind.trend_state.store(trend, std::memory_order_relaxed);
         ind.swing_high .store(swhi,  std::memory_order_relaxed);
         ind.swing_low  .store(swlo,  std::memory_order_relaxed);
+        // Restore ADX Wilder state (fix 2026-04-22) -- only if the save file
+        // contained it (adx_init=1). Older save files predating this fix have
+        // adx_init=0 and all ADX fields zero; leave the private-member defaults
+        // in place so ADX rebuilds from live bars exactly as before.
+        if (adx_init_v == 1) {
+            adx_plus_dm_smooth_  = adx_plus_dm;
+            adx_minus_dm_smooth_ = adx_minus_dm;
+            adx_tr_smooth_       = adx_tr;
+            adx_dx_smooth_       = adx_dx;
+            adx_prev_            = adx_prev_v;
+            adx_init_            = true;
+            ind.adx14     .store(adx14_v,      std::memory_order_relaxed);
+            ind.adx_rising.store(adx_rising_v != 0, std::memory_order_relaxed);
+            // Trending/strong flags are derived on next _update_adx() call; seed
+            // them now so any read between load and first live bar is consistent.
+            ind.adx_trending.store(adx14_v >= ADX_TREND_THRESHOLD,  std::memory_order_relaxed);
+            ind.adx_strong  .store(adx14_v >= ADX_STRONG_THRESHOLD, std::memory_order_relaxed);
+        }
         // Mark ready -- this is the key: unblocks all bar-gated entries immediately
         ind.m1_ready   .store(true,  std::memory_order_relaxed);
-        printf("[OHLC] Bar state loaded: EMA50=%.2f ATR=%.2f RSI=%.1f trend=%d age=%llds\n",
-               e50, atr, rsi, trend, age);
+        printf("[OHLC] Bar state loaded: EMA50=%.2f ATR=%.2f RSI=%.1f trend=%d ADX=%.2f(init=%d) age=%llds\n",
+               e50, atr, rsi, trend, adx14_v, adx_init_v, age);
         fflush(stdout);
         return true;
     }
