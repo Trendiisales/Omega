@@ -4736,6 +4736,11 @@ public:
     // risk-adjusted lot size from compute_size(). Without this, the ledger
     // records PnL on the sub-engine default (0.01 lots) not the actual size.
     void patch_position_size(double lot) { pos_mgr_.patch_base_size(lot); }
+    // ISSUE-5: proxy for per-engine shadow_mode control from engine_init.hpp.
+    // shadow_mode lives on the private GoldPositionManager pos_mgr_; this
+    // setter lets external init code (engine_init.hpp kShadowDefault wiring)
+    // flip the flag without breaking encapsulation.
+    void set_shadow_mode(bool b) { pos_mgr_.shadow_mode = b; }
     const char* regime_name()    const { return RegimeGovernor::name(current_regime_); }
     double vwap()                const { return features_.get_vwap(); }
     double vol_range()           const { return vol_filter_.current_range(); }
