@@ -444,6 +444,7 @@ private:
         tr.exitTs      = now_s;
         tr.exitReason  = reason;
         tr.spreadAtEntry = 0.0;
+        tr.shadow      = shadow_mode;
 
         pos = Position{};
         m_cooldown_until = now_s + COOLDOWN_S;
