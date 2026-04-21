@@ -4136,6 +4136,12 @@ public:
         legs_[0].size = lot;
     }
 
+    // ISSUE-5: public setter for shadow_mode (field declared in private section
+    // at L3841). Called by GoldEngineStack::set_shadow_mode() which is itself
+    // called by engine_init.hpp kShadowDefault wiring. Keeps the field's
+    // declared access unchanged.
+    void set_shadow_mode(bool b) { shadow_mode = b; }
+
     // Apply config-driven parameters from GoldStackCfg.
     void set_cfg(int max_hold_sec,
                  double lock_arm_move, double lock_gain,
@@ -4739,8 +4745,10 @@ public:
     // ISSUE-5: proxy for per-engine shadow_mode control from engine_init.hpp.
     // shadow_mode lives on the private GoldPositionManager pos_mgr_; this
     // setter lets external init code (engine_init.hpp kShadowDefault wiring)
-    // flip the flag without breaking encapsulation.
-    void set_shadow_mode(bool b) { pos_mgr_.shadow_mode = b; }
+    // flip the flag without breaking encapsulation. Delegates to
+    // GoldPositionManager::set_shadow_mode() since the field is in the
+    // manager's private section.
+    void set_shadow_mode(bool b) { pos_mgr_.set_shadow_mode(b); }
     const char* regime_name()    const { return RegimeGovernor::name(current_regime_); }
     double vwap()                const { return features_.get_vwap(); }
     double vol_range()           const { return vol_filter_.current_range(); }
