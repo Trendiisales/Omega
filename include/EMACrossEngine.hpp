@@ -70,6 +70,7 @@
 #include <algorithm>
 #include <iostream>
 #include <iomanip>
+#include <mutex>      // FIX ECE-MUTEX 2026-04-21: serialize close paths (force_close vs on_tick SL/TP/TIMEOUT)
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -106,7 +107,7 @@ static constexpr int64_t ECE_COOLDOWN_MS    = 20000;
 static constexpr double  ECE_GAP_BLOCK      = 0.30;  // block EMA spread > 0.30
 static constexpr double  ECE_RISK_DOLLARS   = 30.0;
 static constexpr double  ECE_MIN_LOT        = 0.01;
-static constexpr double  ECE_MAX_LOT        = 0.10;
+static constexpr double  ECE_MAX_LOT        = 0.01;   // FIX 2026-04-21 uniformity: all engines capped at 0.01 until SHADOW validated
 static constexpr int64_t ECE_STARTUP_MS     = 120000;
 // BE-stop cost coverage -- BE SL must sit above entry by enough to cover
 // spread-crossing loss + commission, else every BE exit deterministically
@@ -318,8 +319,17 @@ struct EMACrossEngine {
     }
 
     void force_close(double bid, double ask, int64_t now_ms, CloseCallback cb) noexcept {
+        // FIX ECE-MUTEX 2026-04-21: serialize against concurrent _close path from
+        // on_tick (TP / SL / BE / TIMEOUT). tick_gold.hpp may invoke force_close
+        // (session-end / daily-kill path) while a tick-driven on_tick is mid-flight
+        // on the same engine -- without this lock both paths could observe
+        // pos.active==true and both invoke the close body, emitting a duplicate
+        // TradeRecord with the same trade_id. Mirror of CandleFlow RACE-FIX and
+        // CBE-8 pattern. Re-check pos.active under lock so the second entrant
+        // bails silently.
+        std::lock_guard<std::mutex> lk(_close_mtx);
         if (!pos.active) return;
-        _close(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms, cb);
+        _close_locked(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms, cb);
     }
 
 private:
@@ -350,6 +360,10 @@ private:
     int     _trade_id      = 0;
     int     _consec_sl     = 0;    // consecutive SL counter
     int64_t _sl_kill_until = 0;    // block entries until this ms
+
+    // FIX ECE-MUTEX 2026-04-21: race guard for _close / force_close.
+    // mutable so const-qualified methods could also acquire if needed.
+    mutable std::mutex _close_mtx;
 
     // ── EMA update ────────────────────────────────────────────────────────────
     static void _update_ema(double& ema, double alpha, double price,
@@ -413,8 +427,22 @@ private:
     // (handled inline in on_tick above)
 
     // ── Close ─────────────────────────────────────────────────────────────────
+    // FIX ECE-MUTEX 2026-04-21: public _close acquires mutex and double-checks
+    // pos.active. All internal call sites (TP, SL, BE, TIMEOUT) now go through
+    // here. force_close uses _close_locked directly because it already holds
+    // the lock.
     void _close(double exit_px, const char* reason,
                 int64_t now_ms, CloseCallback on_close) noexcept
+    {
+        std::lock_guard<std::mutex> lk(_close_mtx);
+        if (!pos.active) return;
+        _close_locked(exit_px, reason, now_ms, on_close);
+    }
+
+    // Internal close path -- MUST be called with _close_mtx held AND pos.active==true.
+    // Body is unchanged from pre-2026-04-21 _close.
+    void _close_locked(double exit_px, const char* reason,
+                       int64_t now_ms, CloseCallback on_close) noexcept
     {
         double pnl_pts = pos.is_long
             ? (exit_px - pos.entry) : (pos.entry - exit_px);
