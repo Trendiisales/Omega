@@ -914,6 +914,7 @@ private:
             tr.exitReason  = reason;
             tr.spreadAtEntry = 0.0;
             tr.id          = ++m_trade_id;
+            tr.shadow      = shadow_mode;
             on_trade_record(tr);
         }
 
