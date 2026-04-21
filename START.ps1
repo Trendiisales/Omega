@@ -69,7 +69,10 @@ Set-Location "$OmegaDir\build"
 Write-Host "      cmake configure..." -ForegroundColor DarkGray
 $savedPrefCmake = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1 |
+# -A x64 is load-bearing. Default VS generator platform is Win32 (x86),
+# whose 32-bit cl.exe has a ~2 GB heap ceiling and C1060s on large CRTP
+# templates like BreakoutEngineBase<>. x64 cl.exe has no such ceiling.
+cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release 2>&1 |
     Tee-Object -FilePath "$OmegaDir\configure_log.txt" |
     ForEach-Object {
         $line = $_
