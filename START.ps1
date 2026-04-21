@@ -69,10 +69,23 @@ Set-Location "$OmegaDir\build"
 Write-Host "      cmake configure..." -ForegroundColor DarkGray
 $savedPrefCmake = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
+
+# WORKAROUND MSB8071: VS 17.14's MSBuild has a regex-engine OOM bug when
+# "structured output" is enabled. Symptom during cmake's compiler probe:
+#   error MSB8071: Cannot parse tool output '...Compiler Version 19.44.35222 for x64'
+#   ...System.OutOfMemoryException at System.Text.RegularExpressions.RegexRunner.Scan
+# Disabling structured output dodges the bug entirely without affecting build output.
+$env:UseStructuredOutput = "false"
+
+# Also pass /p:UseStructuredOutput=false explicitly to any MSBuild invocation
+# cmake forks, because cmake's generator doesn't always inherit the env var.
+$env:_CL_ = "/Zm256"   # bump cl.exe precompiled-header heap for safety on large CRTP headers
+
 # -A x64 is load-bearing. Default VS generator platform is Win32 (x86),
 # whose 32-bit cl.exe has a ~2 GB heap ceiling and C1060s on large CRTP
 # templates like BreakoutEngineBase<>. x64 cl.exe has no such ceiling.
-cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release 2>&1 |
+cmake .. -A x64 -DCMAKE_BUILD_TYPE=Release `
+    "-DCMAKE_VS_GLOBALS=UseStructuredOutput=false" 2>&1 |
     Tee-Object -FilePath "$OmegaDir\configure_log.txt" |
     ForEach-Object {
         $line = $_
@@ -95,7 +108,7 @@ $script:fileCount  = 0
 
 $savedPrefCmake = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-cmake --build . --config Release 2>&1 |
+cmake --build . --config Release -- /p:UseStructuredOutput=false 2>&1 |
     Tee-Object -FilePath "$OmegaDir\build_log.txt" |
     ForEach-Object {
         $line = $_
