@@ -86,6 +86,8 @@ class LePositionManager {
 public:
     LePosition pos;
 
+    bool  shadow_mode = true;  // default true = log only, no live orders (Class C added 2026-04-21)
+
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
     // Returns true if position was closed this tick
@@ -193,6 +195,7 @@ private:
         tr.latencyMs   = latency_ms;
         tr.engine      = std::string(pos.engine);
         tr.regime      = regime ? regime : "";
+        tr.shadow      = shadow_mode;
         pos.active     = false;
         pos            = LePosition{};
         if (on_close) on_close(tr);
