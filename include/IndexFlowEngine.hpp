@@ -968,6 +968,7 @@ private:
         tr.exitTs     = idx_now_sec();
         tr.exitReason = why;
         tr.regime     = "MACRO_CRASH";
+        tr.shadow     = shadow_mode;
         if (on_close) on_close(tr);
     }
 };
@@ -1319,6 +1320,7 @@ private:
         tr.exitTs     = idx_now_sec();
         tr.exitReason = why;
         tr.regime     = "SWING";
+        tr.shadow     = shadow_mode;
 
         last_exit_dir_     = is_long_ ? 1 : -1;
         last_exit_ms_      = idx_now_ms();
