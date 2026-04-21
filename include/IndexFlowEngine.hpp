@@ -350,6 +350,7 @@ public:
     bool    be_locked      = false;
     bool    partial_done   = false;  // first stair step (33%) already banked
     double  full_size      = 0.0;    // original size before partial
+    bool    shadow_mode    = true;   // default true = log only, no live orders (Class C added 2026-04-21)
     char    symbol[16]     = {};
     char    reason[32]     = {};
 
@@ -477,6 +478,7 @@ private:
         tr.exitTs      = idx_now_sec();
         tr.exitReason  = why;
         tr.regime      = regime ? regime : "";
+        tr.shadow      = shadow_mode;
         active = false;
         if (on_close) on_close(tr);
     }
