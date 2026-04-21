@@ -68,6 +68,8 @@ public:
     enum class Phase { IDLE, ARMED, PENDING, LIVE, COOLDOWN };
     Phase phase = Phase::IDLE;
 
+    bool  shadow_mode = true;  // default true = log only, no live orders (Class C added 2026-04-21)
+
     // ── State ─────────────────────────────────────────────────────────────────
     struct LivePos {
         bool    active   = false;
@@ -405,6 +407,7 @@ private:
         tr.entryTs = pos.entry_ts; tr.exitTs = now_s;
         tr.exitReason = reason; tr.spreadAtEntry = 0.0;
         tr.bracket_hi = bracket_high; tr.bracket_lo = bracket_low;
+        tr.shadow = shadow_mode;
 
         pos = LivePos{};
         phase = Phase::COOLDOWN;
