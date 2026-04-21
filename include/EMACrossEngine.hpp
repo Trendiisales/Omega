@@ -14,7 +14,11 @@
 // SL:    ATR * 1.5 behind entry
 // TP:    SL * 1.0 (1:1 RR -- gold mean-reverts, 2R rarely fills)
 // EXIT:  TP hit, SL hit, EMA crosses back (cross_exit), or 3min timeout
-// BE:    SL moves to entry when MFE >= 50% of TP distance
+// BE:    SL moves to (entry + cost_buffer) when MFE >= 50% of TP distance.
+//        Buffer = spread + commission + safety. This covers the spread-crossing
+//        loss (entry at ask, exit at bid) so BE exits lock a small profit
+//        instead of deterministically losing spread+commission.
+//        Audit 04-20..04-21: pre-fix BE exits were 100% losers (-$6.40 avg).
 //
 // NOTE: rr=1.0 is unusual but sweep-proven. Gold at M1 mean-reverts
 // within the SL distance consistently. Higher RR (1.5, 2.0) cuts PnL
@@ -104,6 +108,18 @@ static constexpr double  ECE_RISK_DOLLARS   = 30.0;
 static constexpr double  ECE_MIN_LOT        = 0.01;
 static constexpr double  ECE_MAX_LOT        = 0.10;
 static constexpr int64_t ECE_STARTUP_MS     = 120000;
+// BE-stop cost coverage -- BE SL must sit above entry by enough to cover
+// spread-crossing loss + commission, else every BE exit deterministically
+// loses spread+commission. Audit 04-20..04-21: 3/3 BE exits lost money
+// (100% lose rate, avg -$6.40). Mechanism: entry at ask-side, exit at
+// bid-side, so SL=entry triggers when bid touches entry == -spread at exit.
+// Fix: BE SL = entry +/- (spread_entry + commission + safety).
+// Values chosen for XAUUSD 0.1 lot: commission ~0.06 pts, typical spread
+// 0.15-0.35 pts, safety 0.05 pts. Uses spread captured at entry time.
+static constexpr double  ECE_BE_COMMISSION_PTS = 0.06;  // ~$0.60 per 0.1 lot round-trip
+static constexpr double  ECE_BE_SAFETY_PTS     = 0.05;  // small guaranteed profit cushion
+static constexpr double  ECE_BE_MIN_BUFFER_PTS = 0.20;  // floor: cover typical spread+comm
+static constexpr double  ECE_BE_MAX_BUFFER_PTS = 0.80;  // ceiling: don't defeat BE purpose
 
 // Bad RSI buckets confirmed by diagnostic (all bleed):
 // 30-35: -$56, 35-40: -$128, 50-55: -$113, 65-70: -$111
@@ -141,6 +157,7 @@ struct EMACrossEngine {
         double size      = 0.0;
         double mfe       = 0.0;
         double atr       = 0.0;
+        double spread_at_entry = 0.0;  // captured at entry, used for BE buffer
         int64_t ets      = 0;
         int    trade_id  = 0;
     } pos;
@@ -206,10 +223,37 @@ struct EMACrossEngine {
 
             double td = std::fabs(pos.tp - pos.entry);
             if (!pos.be_done && td > 0 && pos.mfe >= td * 0.50) {
-                pos.sl = pos.entry; pos.be_done = true;
-                std::cout << "[ECE-BE] " << (pos.is_long ? "LONG" : "SHORT")
-                          << " mfe=" << std::fixed << std::setprecision(2) << pos.mfe << "\n";
-                std::cout.flush();
+                // Fix: BE SL must cover spread-crossing + commission, else
+                // every BE exit loses ~spread deterministically.
+                // Use MAX(spread_at_entry, current_spread) so widening after
+                // entry doesn't defeat us. Clamp to sane range AND ensure
+                // buffer < current MFE - spread, or BE would trigger on arm.
+                double live_sp = spread;
+                double use_sp  = std::max(pos.spread_at_entry, live_sp);
+                double buffer  = use_sp + ECE_BE_COMMISSION_PTS + ECE_BE_SAFETY_PTS;
+                if (buffer < ECE_BE_MIN_BUFFER_PTS) buffer = ECE_BE_MIN_BUFFER_PTS;
+                if (buffer > ECE_BE_MAX_BUFFER_PTS) buffer = ECE_BE_MAX_BUFFER_PTS;
+
+                // Safety: BE SL must sit below current fillable price.
+                // For LONG: current bid = mid - spread/2 = pos.entry + pos.mfe - spread/2.
+                //   Required: entry + buffer < bid  -->  buffer < mfe - spread/2
+                // For SHORT: current ask = mid + spread/2 = pos.entry - pos.mfe + spread/2 (on pos side).
+                //   Required (flipped sign): entry - buffer > ask  -->  buffer < mfe - spread/2
+                // If buffer cannot satisfy this, defer BE arming (return without setting be_done).
+                double max_safe_buffer = pos.mfe - live_sp * 0.5 - ECE_BE_SAFETY_PTS;
+                if (buffer <= max_safe_buffer && max_safe_buffer > 0.0) {
+                    pos.sl = pos.is_long ? (pos.entry + buffer)
+                                         : (pos.entry - buffer);
+                    pos.be_done = true;
+                    std::cout << "[ECE-BE] " << (pos.is_long ? "LONG" : "SHORT")
+                              << " mfe=" << std::fixed << std::setprecision(2) << pos.mfe
+                              << " sp_entry=" << std::setprecision(3) << pos.spread_at_entry
+                              << " sp_live=" << live_sp
+                              << " buf=" << buffer
+                              << " sl=" << std::setprecision(2) << pos.sl << "\n";
+                    std::cout.flush();
+                }
+                // else: defer BE -- MFE not yet large enough to cover buffer safely.
             }
 
             double ep = pos.is_long ? bid : ask;
@@ -356,6 +400,7 @@ private:
         pos.mfe      = 0.0;
         pos.be_done  = false;
         pos.atr      = _atr;
+        pos.spread_at_entry = spread;
         pos.ets      = now_ms;
         pos.trade_id = _trade_id;
 
